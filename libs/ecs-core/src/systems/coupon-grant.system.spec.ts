@@ -28,10 +28,11 @@ import {
 import { CouponGrantSystem } from './coupon-grant.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/coupon-grant.spec.ts, copied
- * over plain flat entities (the class spec keeps running against its shim):
- * `markUsed` is `burn`, instants are `UtcEpochMs`. Plus the inverse the visit
- * editor's undo needs (`restore`), as an exact-inverse property.
+ * The cases of the legacy engagement `coupon-grant.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
+ * plain flat entities: `markUsed` is `burn`, instants are `UtcEpochMs`. Plus
+ * the inverse the visit editor's undo needs (`restore`), as an exact-inverse
+ * property.
  */
 
 const JAN_1 = utcMs('2026-01-01T00:00:00+02:00');

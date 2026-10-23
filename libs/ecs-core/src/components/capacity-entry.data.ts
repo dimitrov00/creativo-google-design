@@ -14,8 +14,8 @@ import {
  * absent and zero render the same.
  *
  * Sorted by `(localDate, barberId, locationId)`, one entry per key, so a
- * month view is one read and a linear scan. (The stored body still names the
- * day `dayKey` until the booking-core flip; the shim converts.)
+ * month view is one read and a linear scan. (Until the booking-core flip the
+ * stored body named the day `dayKey`, and the legacy shim converted it.)
  */
 export type CapacityEntry = {
   readonly localDate: LocalDate;

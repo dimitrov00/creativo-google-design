@@ -25,11 +25,12 @@ import { IntervalSetSystem } from './interval-set.system';
 
 /**
  * One (barber, shop day) projection document's share of an appointment
- * (`appointment-document.ts:1172-1195`): the chair time of every seat the
- * barber holds — setup + service + cleanup around each SOLD slot, the same
- * envelope the commit writes, clipped to the shop day (T7) — on the
- * appointment's `localDate`, in seat order (unnormalized: the merge is the
- * projection's). No zone, no instant (Law 7.3).
+ * (the legacy `appointment-document.ts:1172-1195`, deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1): the chair time
+ * of every seat the barber holds — setup + service + cleanup around each
+ * SOLD slot, the same envelope the commit writes, clipped to the shop day
+ * (T7) — on the appointment's `localDate`, in seat order (unnormalized: the
+ * merge is the projection's). No zone, no instant (Law 7.3).
  */
 export type BusyContribution = {
   readonly id: BusyKey;
@@ -84,11 +85,12 @@ function blocksFrom(spans: readonly MinuteRange[]): readonly MinuteBlock[] {
 
 /**
  * BusySystem — the PUBLIC busy projection, `barberBusy/{barberId}__{localDate}`
- * (`rebuild-busy.ts:105-116`, `application/booking` `busyContributionsOf`/
- * `mergeBusy`). Geometry and nothing else — no client, no service, no price,
- * no reason — stored UNPADDED (the reader applies the barber's turnaround)
- * and NORMALIZED (touching spans merged, so a visitor learns density, never
- * client count).
+ * (the retired functions trigger `rebuild-busy.ts:105-116`, deleted in flip 1
+ * — its successor is `rebuild-busy.pipeline.ts` — and the legacy booking
+ * library's `busyContributionsOf`/`mergeBusy`, deleted in Phase 4b).
+ * Geometry and nothing else — no client, no service, no price, no reason —
+ * stored UNPADDED (the reader applies the barber's turnaround) and NORMALIZED
+ * (touching spans merged, so a visitor learns density, never client count).
  *
  * Why a rebuild, not a subtraction: merged geometry is lossy on purpose and
  * cannot be subtracted from, so a change RECOMPUTES each affected
@@ -176,7 +178,8 @@ export const BusySystem = {
   },
 
   /**
-   * ONE busy document recomputed from the truth (`rebuild-busy.ts:85-123`):
+   * ONE busy document recomputed from the truth (the retired trigger's
+   * `rebuild-busy.ts:85-123`; now `rebuild-busy.pipeline.ts`):
    * the chair time of every seat of every LIVE (pending or confirmed)
    * appointment in `live` on the key's barber and shop day, merged. Nothing
    * live occupies it → a `Delete` (readers treat a deleted and an empty

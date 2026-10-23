@@ -77,13 +77,13 @@ export default [
     rules: {},
   },
   {
-    // One of the two places firebase/* may be imported directly (blueprint
-    // §0.3/§1.2) — override the workspace-wide no-restricted-imports rule
-    // to drop the firebase half, keeping the dinero/luxon/libphonenumber
-    // half (infrastructure goes through the `Money` struct, `ZonedTimeSystem`
-    // and `PhoneSystem` of ecs-core, never the raw libs). See the comment in
-    // the root eslint.config.mjs for why this lives here instead of an
-    // `ignores` pattern on the shared rule.
+    // One of the projects that may import firebase/* directly
+    // (docs/architecture/module-boundaries.md "Import cages") — override the
+    // workspace-wide no-restricted-imports rule to drop ONLY the firebase
+    // half, keeping the libphonenumber cage (infrastructure goes through
+    // ecs-core's `PhoneSystem`, never the raw lib) and the retired
+    // luxon/dinero.js bans. See the comment in the root eslint.config.mjs for
+    // why this lives here instead of an `ignores` pattern on the shared rule.
     files: ['**/*.ts'],
     rules: {
       'no-restricted-imports': [

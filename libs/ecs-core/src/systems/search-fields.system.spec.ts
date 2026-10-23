@@ -11,8 +11,8 @@ import { SearchFieldsSystem } from './search-fields.system';
  * libs/infrastructure/firestore/src/lib/profile.adapter.spec.ts (`saveProfile`
  * rebuilds the keys from the edited name and the STORED contact channels)
  * and apps/functions/src/adapters/firestore-user-repository.spec.ts (the
- * registered document's denormalized search fields). The adapter specs keep
- * running against the shimmed adapters.
+ * registered document's denormalized search fields). The adapter specs ran
+ * against the shimmed adapters until their flips deleted them.
  */
 
 describe('SearchFieldsSystem.fromForms (profile.adapter.spec.ts › saveProfile)', () => {

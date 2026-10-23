@@ -1,5 +1,5 @@
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { BookingErrorCode, RepositoryError, Result } from '@core/primitives';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import { createProjectionFirestore } from './fake-projection-firestore';
@@ -49,7 +49,7 @@ describe('FakeProjectionFirestore', () => {
       );
       await fake.commit(
         async () => null,
-        () => Result.err({ code: 'booking.commit.slot_unavailable' }),
+        () => Result.err({ errorCode: BookingErrorCode.SlotUnavailable }),
       );
       const conflict = await fake.commit(
         async () => null,

@@ -6,14 +6,14 @@ import { deepFreeze, localDate, minute, utcMs } from '@core/testing';
 import { NotificationSystem } from './notification.system';
 
 /*
- * The cases of libs/domain/notifications/src/lib/notification.spec.ts,
- * COPIED (the legacy spec keeps running against `Notification`'s shim) and
- * re-targeted to the flat `InboxNotification`: instants are `UtcEpochMs`, a
- * receipt is `readAtUtcMs`, the payload sits at the root. Not copied: the
- * blank id and blank title cases (the id is guarded at the edge before
- * `NotificationId.of`; a notification carries facts, not a title — §9 D20),
- * the body trim (no body any more) and `NotificationId` equality (a brand
- * is a string).
+ * The cases of the legacy notifications `notification.spec.ts` (deleted in
+ * Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * while it still ran against `Notification`'s shim, and re-targeted to the flat
+ * `InboxNotification`: instants are `UtcEpochMs`, a receipt is `readAtUtcMs`,
+ * the payload sits at the root. Not copied: the blank id and blank title cases
+ * (the id is guarded at the edge before `NotificationId.of`; a notification
+ * carries facts, not a title — §9 D20), the body trim (no body any more) and
+ * `NotificationId` equality (a brand is a string).
  */
 
 const SENT = utcMs('2026-07-29T09:00:00Z');

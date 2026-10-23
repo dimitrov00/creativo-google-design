@@ -5,10 +5,10 @@ import { deepFreeze, serviceFixture } from '@core/testing';
 import { LocationScopeSystem } from './location-scope.system';
 
 /*
- * The `locationScopeServes` cases of
- * libs/domain/catalog/src/lib/location.spec.ts (2), COPIED, plus the
- * `Service.servesLocation` convention the commit re-check relies on
- * (decide-booking.spec.ts: "empty means everywhere").
+ * The `locationScopeServes` cases of the legacy catalog `location.spec.ts` (2;
+ * deleted in Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), COPIED, plus the `Service.servesLocation` convention the commit
+ * re-check relies on (decide-booking.spec.ts: "empty means everywhere").
  */
 
 const CENTER = LocationId.of('center');

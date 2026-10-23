@@ -4,13 +4,22 @@
  * `dist/apps/functions/package.json` from the project graph, so its
  * `dependencies` keys are the runtime packages the Cloud Functions deploy
  * installs. A new graph edge (a lib the functions start importing, or a
- * config file that imports tooling) silently grows that list. The Phase 1
- * gate asserts it equals the baseline recorded beside this file; the end of
- * Phase 3b re-records it with `@angular/*` and `rxjs` gone.
+ * config file that imports tooling) silently grows that list. The check
+ * asserts two things, in this order:
  *
- * Pure apart from reading the two files, and no emulator — so it runs both
- * inside `verify-p0.mjs` (check f) and alone through
- * `node tools/verify/p0/check-functions-deps.mjs`.
+ * 1. No forbidden key (`FORBIDDEN_FUNCTIONS_DEPS`) — the blueprint's
+ *    end-of-Phase-3b assertion, kept as code: Phase 4a took `@angular/*`
+ *    and `luxon` out of the dist, Phase 4b `dinero.js` (with the money
+ *    spec's cross-check, phase-4b-delete.md 4B-6, 4B-8). A forbidden key
+ *    fails the check before any baseline comparison, and it can never be
+ *    recorded. `rxjs` stays (phase-4a-repoint.md 4A-15, §10.1): Nx's
+ *    `createPackageJson` scans the transitive projects whole, and
+ *    ecs-core's ports name `Observable`.
+ * 2. The keys equal the baseline recorded beside this file.
+ *
+ * Pure apart from reading the two files (and `--record` writing one), and
+ * no emulator — so it runs both inside `verify-p0.mjs` (check f) and alone
+ * through `node tools/verify/p0/check-functions-deps.mjs`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
@@ -27,6 +36,30 @@ export const FUNCTIONS_DEPS_BASELINE = resolve(
   HERE,
   'functions-deps.baseline.json',
 );
+
+/**
+ * Packages the functions dist must never list: Angular is the web app's
+ * framework, `luxon` and `dinero.js` (with `@types/luxon`) were the legacy
+ * kernel's time and money libraries — time is native `Intl`, money integer
+ * cents (CLAUDE.md §3). A string matches one key exactly; a RegExp (never
+ * global, so `test` keeps no state) matches a family.
+ */
+export const FORBIDDEN_FUNCTIONS_DEPS = [
+  /^@angular\//,
+  'luxon',
+  '@types/luxon',
+  'dinero.js',
+];
+
+const isForbidden = (key) =>
+  FORBIDDEN_FUNCTIONS_DEPS.some((rule) =>
+    typeof rule === 'string' ? key === rule : rule.test(key),
+  );
+
+/** The keys `FORBIDDEN_FUNCTIONS_DEPS` refuses, sorted. */
+export function forbiddenDependencyKeys(keys) {
+  return keys.filter(isForbidden).sort();
+}
 
 /** Keys present on one side only, each list sorted. */
 export function diffDependencyKeys(actualKeys, baselineKeys) {
@@ -52,17 +85,34 @@ function readText(path, hint) {
   }
 }
 
+/** The build's dependency keys; throws naming any forbidden one. */
+function permittedDependencyKeys(packageJsonPath) {
+  const keys = dependencyKeysOf(
+    readText(packageJsonPath, 'run `pnpm nx build functions` first.'),
+  );
+  const forbidden = forbiddenDependencyKeys(keys);
+  if (forbidden.length > 0) {
+    throw new Error(
+      [
+        `${relative(WORKSPACE_ROOT, packageJsonPath)} lists a forbidden runtime dependency`,
+        `forbidden: ${forbidden.join(', ')}`,
+        'The functions never ship @angular/*, luxon, @types/luxon or dinero.js; remove the graph edge that brought it in (re-recording cannot accept it).',
+      ].join('\n      '),
+    );
+  }
+  return keys;
+}
+
 /**
- * Compares the build's dependency keys with the baseline. Returns the
- * evidence line on a match; throws with the added/removed keys otherwise.
+ * Refuses a forbidden key, then compares the build's dependency keys with
+ * the baseline. Returns the evidence line on a match; throws with the
+ * forbidden or the added/removed keys otherwise.
  */
 export function checkFunctionsDeps({
   packageJsonPath = FUNCTIONS_PACKAGE_JSON,
   baselinePath = FUNCTIONS_DEPS_BASELINE,
 } = {}) {
-  const actual = dependencyKeysOf(
-    readText(packageJsonPath, 'run `pnpm nx build functions` first.'),
-  );
+  const actual = permittedDependencyKeys(packageJsonPath);
   const baseline = JSON.parse(
     readText(
       baselinePath,
@@ -82,20 +132,21 @@ export function checkFunctionsDeps({
         .join('\n      '),
     );
   }
-  return `${actual.length} runtime dependencies, as recorded: ${actual.join(', ')}`;
+  return `${actual.length} runtime dependencies, as recorded, none forbidden: ${actual.join(', ')}`;
 }
 
-/** Writes the build's current dependency keys as the new baseline. */
+/**
+ * Writes the build's current dependency keys as the new baseline. Refuses
+ * (throws, writing nothing) when the build lists a forbidden key.
+ */
 export function recordFunctionsDeps({
   packageJsonPath = FUNCTIONS_PACKAGE_JSON,
   baselinePath = FUNCTIONS_DEPS_BASELINE,
   recordedAt = new Date().toISOString().slice(0, 10),
 } = {}) {
-  const keys = dependencyKeysOf(
-    readText(packageJsonPath, 'run `pnpm nx build functions` first.'),
-  );
+  const keys = permittedDependencyKeys(packageJsonPath);
   const baseline = {
-    '//': 'The dependency keys of the generated dist/apps/functions/package.json (pnpm nx build functions). Checked by tools/verify/p0/functions-deps.mjs; re-record with `node tools/verify/p0/check-functions-deps.mjs --record` only for an intended change (blueprint §6: Phase 1 records, the end of Phase 3b re-records with @angular/* and rxjs absent).',
+    '//': 'The dependency keys of the generated dist/apps/functions/package.json (pnpm nx build functions). Checked by tools/verify/p0/functions-deps.mjs, which first refuses @angular/*, luxon, @types/luxon and dinero.js (none can be recorded; rxjs stays, phase-4a-repoint.md §10.1); re-record with `node tools/verify/p0/check-functions-deps.mjs --record` only for an intended change, and say why in the commit.',
     recordedAt,
     dependencies: keys,
   };

@@ -5,8 +5,9 @@ import { GovernanceErrorCode } from '@core/primitives';
 import { FLAG_NAMES, FeatureFlags, FlagName } from './feature-flags.data';
 
 /*
- * The cases of libs/domain/governance/src/lib/feature-flags.spec.ts, copied
- * over the plain map, plus the manifest parity: every environment of
+ * The cases of the legacy governance `feature-flags.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
+ * the plain map, plus the manifest parity: every environment of
  * `config/feature-flags.json` names exactly the `FlagName` dictionary.
  */
 

@@ -4,10 +4,11 @@ import { deepFreeze } from '@core/testing';
 import { AvatarSystem } from './avatar.system';
 
 /*
- * The cases of `UploadAvatarUseCase`'s spec (`libs/application/accounts`,
- * deleted in 4b) and the Storage adapter's two guard cases
- * (`avatar-uploader.adapter.spec.ts`: a non-image type, a blob over 5 MiB),
- * on the one rule they shared.
+ * The cases of `UploadAvatarUseCase`'s spec (the legacy accounts application
+ * lib, deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1) and the Storage adapter's two guard cases
+ * (`avatar-uploader.adapter.spec.ts`: a non-image type, a blob over 5 MiB), on
+ * the one rule they shared.
  */
 describe('AvatarSystem.check — what may be a profile photo', () => {
   it('takes an image within the limit', () => {

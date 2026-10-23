@@ -30,16 +30,17 @@ import { ZonedTimeSystem } from './zoned-time.system';
 const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 /*
- * The cases of libs/domain/engagement/src/lib/loyalty/streak-projector.spec.ts,
- * COPIED, never moved: the legacy spec keeps running against the
- * projector's shim. Every case body is the legacy one; only this header
- * changed, so the subject is `StreakSystem.trace`. A version of the rule is
- * the plain `StreakRule` struct now (the legacy `StreakDefinition` class
- * and its props were the same figures), the facts are written as the
- * legacy spec wrote them and made strict by `strict` (absent is `null`),
- * and an instant is epoch ms (`lastQualifiedAt: Date` → `lastQualifiedAtUtcMs`).
- * After the copy: the purity case of the system contract, and the cases of
- * the two presenter functions the system took over (`inChairDue`, `track`).
+ * The cases of the legacy engagement `streak-projector.spec.ts` (deleted in
+ * Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED,
+ * never moved, while it still ran against the projector's shim. Every case body
+ * is the legacy one; only this header changed, so the subject is
+ * `StreakSystem.trace`. A version of the rule is the plain `StreakRule` struct
+ * now (the legacy `StreakDefinition` class and its props were the same
+ * figures), the facts are written as the legacy spec wrote them and made strict
+ * by `strict` (absent is `null`), and an instant is epoch ms (`lastQualifiedAt:
+ * Date` → `lastQualifiedAtUtcMs`). After the copy: the purity case of the
+ * system contract, and the cases of the two presenter functions the system took
+ * over (`inChairDue`, `track`).
  *
  * Flattened (Laws 6 and 7): the rule's parts are its flat fields
  * (`protectionsMaxBanked`, `repairEnabled`, the interval slice), the

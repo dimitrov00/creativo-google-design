@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { IdentityErrorCode } from '@core/primitives';
 import { OtpCode } from './otp-code.data';
 
-// The cases of libs/domain/identity/src/lib/otp-code.spec.ts, on the brand.
+// The cases of the legacy identity `otp-code.spec.ts` (deleted in Phase 4b;
+// ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), on the brand.
 describe('OtpCode.parse', () => {
   it('accepts a 6-digit code', () => {
     expect(OtpCode.parse('123456')).toEqual({ ok: true, value: '123456' });

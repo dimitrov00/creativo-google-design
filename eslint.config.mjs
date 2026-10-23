@@ -3,18 +3,20 @@ import security from 'eslint-plugin-security';
 import noUnsanitized from 'eslint-plugin-no-unsanitized';
 import templateParser from '@angular-eslint/template-parser';
 import creativo, {
-  ECS_ROOT_SUFFIXES,
+  ECS_ALL_SUFFIXES,
+  ECS_TOKEN_RESTRICTIONS,
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
 } from './tools/lint-rules/index.mjs';
 
 /**
- * The layer half of `no-restricted-imports` (blueprint §0.3/§1.2): Firebase
- * only in infrastructure and the functions; libphonenumber only inside
- * `PhoneSystem` (libs/ecs-core/src/systems/phone.system.ts); luxon and
- * dinero.js nowhere new — owner decisions D5/D4 (2026-10-10) replace them
- * with native `Intl` in `ZonedTimeSystem` and the plain `Money` struct, and
- * the legacy kernel keeps its exemption only until Phase 4 deletes it.
+ * The layer half of `no-restricted-imports` (docs/architecture/module-boundaries.md,
+ * "Import cages"): Firebase only in infrastructure and the functions;
+ * libphonenumber only inside `PhoneSystem`
+ * (libs/ecs-core/src/systems/phone.system.ts); luxon and dinero.js nowhere —
+ * owner decisions D5/D4 (2026-10-10) replaced them with native `Intl` in
+ * `ZonedTimeSystem` and the plain `Money` struct, and Phase 4b removed both
+ * packages; their bans stay as retired-package guards.
  * Named and exported so the spec override below, and the projects that
  * exempt one package for one file (libs/ecs-core), restate it exactly.
  */
@@ -28,19 +30,19 @@ export const LAYER_IMPORT_RESTRICTIONS = {
     {
       group: ['libphonenumber-js', 'libphonenumber-js/*'],
       message:
-        'libphonenumber-js may only be imported from libs/ecs-core/src/systems/phone.system.ts (and the legacy libs/domain/kernel/** until Phase 4) — use PhoneSystem and the PhoneNumber component instead.',
+        'libphonenumber-js may only be imported from libs/ecs-core/src/systems/phone.system.ts — use PhoneSystem and the PhoneNumber component instead.',
     },
   ],
   paths: [
     {
       name: 'dinero.js',
       message:
-        'dinero.js is retired (D4): money is integer `…Cents: PriceCents` beside a `currency: Currency`, and arithmetic the plain Money { amountCents, currency } struct of libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
+        'dinero.js is retired (D4): money is integer `…Cents: PriceCents` beside a `currency: Currency`, and arithmetic the plain Money { amountCents, currency } struct of libs/ecs-core/src/components/money.data.ts.',
     },
     {
       name: 'luxon',
       message:
-        'luxon is retired (D5, Law 7.1): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — instants are UtcEpochMs, converted once at ingestion with ZonedTimeSystem.toUtc/toLocal and the location timeZone (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
+        'luxon is retired (D5, Law 7.1): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — instants are UtcEpochMs, converted once at ingestion with ZonedTimeSystem.toUtc/toLocal and the location timeZone.',
     },
   ],
 };
@@ -50,10 +52,12 @@ export const LAYER_IMPORT_RESTRICTIONS = {
  * test-support tier, Law 8) hold TEST SUPPORT — a port's
  * executable contract, its in-memory reference adapter, fixtures — kept off
  * the production barrels so a provider can never be handed one
- * (`libs/application/booking/src/testing.ts`). Specs import them; nothing
- * else may. Exported for the projects that restate `no-restricted-imports`
- * for their own exempt zone (apps/functions, libs/infrastructure/*,
- * libs/domain/kernel): a restated rule drops this half unless it lists it.
+ * (`libs/features/marketing/landing/src/testing.ts`, behind
+ * `@creativo/features/marketing/landing/testing`). Specs import them;
+ * nothing else may. Exported for the projects that restate
+ * `no-restricted-imports` for their own exempt zone (apps/functions,
+ * libs/infrastructure/*, libs/ecs-core): a restated rule drops this half
+ * unless it lists it.
  */
 export const TESTING_ENTRY_POINT_RESTRICTION = {
   group: ['@creativo/**/testing', '@core/testing'],
@@ -70,6 +74,7 @@ export const TESTING_ENTRY_POINT_RESTRICTION = {
  * its generated package.json (caught by tools/verify/p0/functions-deps.mjs).
  */
 export {
+  ECS_ALL_SUFFIXES,
   ECS_DATE_RESTRICTIONS,
   ECS_ID_CAST_RESTRICTIONS,
   ECS_PRIMITIVE_RESTRICTIONS,
@@ -117,9 +122,9 @@ export default [
           allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
           depConstraints: [
             // Scope isolation: a project can only depend on its own scope
-            // plus scope:shared. `domain`/`application`/`infrastructure`/`ui`
-            // libs are all scope:shared (blueprint §1.2); every `type:feature`
-            // lib is `scope:app`.
+            // plus scope:shared. The ECS core (libs/ecs-core, `type:domain`)
+            // and the `infrastructure`/`ui` libs are all scope:shared; every
+            // `type:feature` lib is `scope:app`.
             //
             // `scope:app` replaced the four product-surface scopes
             // (marketing/client/staff/admin) on 2026-07-28 — owner ruling:
@@ -127,8 +132,8 @@ export default [
             // practical effect was blocking legitimate edges (the shell's
             // account chrome reading the client session model). Cross-surface
             // isolation was never the boundary that mattered here; the
-            // LAYERING rules below — which keep domain/application/ui from
-            // ever seeing a feature — are, and they are untouched.
+            // LAYERING rules below — which keep domain/infrastructure/ui
+            // from ever seeing a feature — are, and they are untouched.
             {
               sourceTag: 'scope:shared',
               onlyDependOnLibsWithTags: ['scope:shared'],
@@ -142,9 +147,9 @@ export default [
               onlyDependOnLibsWithTags: ['scope:app', 'scope:shared'],
             },
             // scope:backend (Cloud Functions) doesn't fit any of the
-            // frontend-app-shaped scopes above — see the "Amendments" note
-            // in docs/architecture/module-boundaries.md for why this isn't
-            // just scope:shared.
+            // frontend-app-shaped scopes above — see the `## scope:backend`
+            // section of docs/architecture/module-boundaries.md for why this
+            // isn't just scope:shared.
             {
               sourceTag: 'scope:backend',
               onlyDependOnLibsWithTags: ['scope:backend', 'scope:shared'],
@@ -160,16 +165,16 @@ export default [
                 'scope:shared',
               ],
             },
-            // Layering (blueprint §1.2): keeps the hexagon's arrows one-way —
-            // ui never sees application/infrastructure, application never
-            // sees Angular templates or Firebase, infrastructure is the only
-            // place firebase/* resolves (enforced below via
-            // no-restricted-imports), domain only ever depends on domain.
+            // Layering (docs/architecture/module-boundaries.md): keeps the
+            // arrows one-way — ui never sees infrastructure or a feature,
+            // infrastructure never sees ui or a feature and is the only
+            // library layer where firebase/* resolves (enforced below via
+            // no-restricted-imports), domain (libs/ecs-core) only ever
+            // depends on domain.
             {
               sourceTag: 'type:app',
               onlyDependOnLibsWithTags: [
                 'type:feature',
-                'type:application',
                 'type:ui',
                 'type:infrastructure',
                 'type:domain',
@@ -186,7 +191,6 @@ export default [
               sourceTag: 'type:feature',
               onlyDependOnLibsWithTags: [
                 'type:feature',
-                'type:application',
                 'type:ui',
                 'type:infrastructure',
                 'type:domain',
@@ -194,21 +198,14 @@ export default [
               ],
             },
             {
-              sourceTag: 'type:application',
-              onlyDependOnLibsWithTags: [
-                'type:application',
-                'type:domain',
-                'type:util',
-              ],
-            },
-            {
               // `type:domain` added 2026-07-25 (auth-flow design, slice
-              // "UiPhoneField"): DS composites may consume the PURE domain
-              // kernel (Result/value objects/branded types, zero Angular,
-              // zero IO — and the caged libphonenumber wrapper UiPhoneField
-              // needs for as-you-type formatting). The hexagon's critical
-              // arrow is unchanged: ui still never sees `application` or
-              // `infrastructure` — see docs/architecture/module-boundaries.md.
+              // "UiPhoneField"): DS composites may consume the PURE ECS core
+              // (libs/ecs-core: branded primitives, plain data and pure
+              // systems — zero Angular, zero IO — e.g. the `PhoneSystem`
+              // UiPhoneField imports lazily from `@core/systems` for
+              // as-you-type formatting, owner ruling F6). The critical arrow
+              // is unchanged: ui never sees `infrastructure` or a feature —
+              // see docs/architecture/module-boundaries.md.
               sourceTag: 'type:ui',
               onlyDependOnLibsWithTags: [
                 'type:ui',
@@ -220,17 +217,16 @@ export default [
             {
               // `type:infrastructure` may also depend on itself (added
               // Goal 04): every Firebase-backed adapter lib (`firestore`,
-              // `firebase-auth`, `storage`) injects the `FIREBASE_*` SDK
-              // singleton tokens from `infrastructure/firebase-app`
-              // (blueprint §1.3's composition-root wiring — `useClass`
-              // providers resolve those tokens from inside the adapter
-              // class itself, not just at `app.config.ts`) — this is the
-              // one legitimate infra→infra edge, not a general license for
-              // one adapter concern to reach into an unrelated one.
+              // `firebase-auth`, `storage`) takes the `FIREBASE_*` SDK
+              // singleton tokens (and `provideLazyPort`) from
+              // `infrastructure/firebase-app`, whose providers resolve the
+              // SDK once and bind the `@core/ports` bundles to their
+              // adapters. That shared wiring is what the edge is for,
+              // not a general license for one adapter concern to reach into
+              // an unrelated one.
               sourceTag: 'type:infrastructure',
               onlyDependOnLibsWithTags: [
                 'type:infrastructure',
-                'type:application',
                 'type:domain',
                 'type:util',
               ],
@@ -249,8 +245,8 @@ export default [
               // (`tools/seed/fixtures/*.ts`) import their entity types from
               // `@core/entities` (`type:domain`) to `satisfies
               // Omit<XEntity, 'id'>` them, which the `type:util` row above
-              // forbids. Never application or infrastructure: a fixture is
-              // a document body, not a mapper's input.
+              // forbids. Never infrastructure: a fixture is a document body,
+              // not an adapter's input.
               sourceTag: 'type:tooling',
               onlyDependOnLibsWithTags: [
                 'type:tooling',
@@ -267,22 +263,21 @@ export default [
       ],
     },
   },
-  // Firebase/dinero/luxon/libphonenumber restrictions (blueprint §0.3/§1.2),
-  // plus the testing entry points outside specs (round 6, 2026-09-26).
+  // Firebase/dinero/luxon/libphonenumber restrictions (the "Import cages" of
+  // docs/architecture/module-boundaries.md), plus the testing entry points
+  // outside specs (round 6, 2026-09-26).
   // Nx runs each project's `lint` target with `cwd` set to that project's
   // own directory (`eslint .`), so ESLint's basePath is the PROJECT root,
   // not the workspace root — a repo-root-relative `ignores` pattern like
-  // `**/libs/domain/kernel/**` can never match once basePath already IS
-  // `libs/domain/kernel` (the prefix is stripped away). So these rules are
-  // unconditional here, and the exempt zones (`libs/domain/kernel` for
-  // dinero/luxon/libphonenumber until Phase 4; libs/ecs-core's
-  // `src/systems/phone.system.ts` for libphonenumber and its spec-only
-  // `src/components/money.data.spec.ts` for dinero; `libs/infrastructure/*`
-  // + `apps/functions` for firebase) turn the relevant half off in their OWN
-  // eslint.config.mjs instead — see the `no-restricted-imports` overrides
-  // in kernel/eslint.config.mjs, ecs-core/eslint.config.mjs,
-  // apps/functions/eslint.config.mjs, and each
-  // libs/infrastructure/*/eslint.config.mjs. The one exempt zone that is NOT
+  // `**/libs/infrastructure/firestore/**` can never match once basePath
+  // already IS `libs/infrastructure/firestore` (the prefix is stripped
+  // away). So these rules are unconditional here, and the exempt zones
+  // (`libs/infrastructure/*` and `apps/functions` for firebase;
+  // libs/ecs-core's `src/systems/phone.system.ts` for libphonenumber) turn
+  // the relevant half off in their OWN eslint.config.mjs instead — see the
+  // `no-restricted-imports` overrides in apps/functions/eslint.config.mjs,
+  // the libs/infrastructure/*/eslint.config.mjs of the projects that import
+  // firebase, and libs/ecs-core/eslint.config.mjs. The one exempt zone that is NOT
   // a project — Playwright's Node-side tooling under `apps/*/e2e/` — has no
   // config of its own and is linted under three different basePaths (the
   // nx executor's workspace root, a direct `eslint apps/web/e2e` from the
@@ -363,34 +358,47 @@ export default [
   // either brand comes only from its companion. Specs may still cast to
   // UiIconName to exercise the runtime fallback.
   ...ecsRootEveryFileBlocks(),
-  // ── ECS file kinds (CLAUDE.md §1–2, blueprint §6 Phase 1) ─────────────
+  // ── ECS file kinds (CLAUDE.md §1–2) ───────────────────────────────────
   // One `files:` block per suffix — AST selectors cannot see file names, so
   // spreading the ECS selectors into the `**/*.ts` block above would fire
   // `Date.now`, the import bans and the optional-property ban across the
   // whole repo. Each block restates `[...ICON_SYNTAX_RESTRICTIONS,
-  // ...ECS_<SUFFIX>_RESTRICTIONS]` because options replace, never merge;
-  // systems also get `no-restricted-globals`, data and entities turn
-  // `@typescript-eslint/no-namespace` off for their one type-only
-  // namespace, systems and data turn `security/detect-object-injection`
-  // off. Every suffix array carries the flatten-pass guards (Laws 6 and 7,
-  // flatten-spec §7): no `kind`/`type`/`status`, no nested 1-to-1 type (data,
-  // entities, primitives), no raw coordinate/money/id, no `Date`, no
-  // `throw`, no `UserId`/`CustomerId` cast. Only the five suffixes no legacy
-  // file carries live here: the
-  // `*.port.ts`/`*.adapter.ts` blocks and the `InjectionToken` guard would
-  // hit libs/application's 44 port files and the 40 class adapters, so in
-  // Phase 1 they sit in libs/ecs-core's and apps/functions' own configs and
-  // move here in Phase 4 with the legacy files. Selectors live in
+  // ...ECS_<SUFFIX>_RESTRICTIONS, ...ECS_TOKEN_RESTRICTIONS]` because options
+  // replace, never merge; systems also get `no-restricted-globals`, data,
+  // entities and primitives turn `@typescript-eslint/no-namespace` off for
+  // their one type-only namespace, systems, data and primitives turn
+  // `security/detect-object-injection` off, ports get
+  // `consistent-type-imports`. Every suffix array carries the flatten-pass
+  // guards (Laws 6 and 7, flatten-spec §7): no `kind`/`type`/`status`, no
+  // nested 1-to-1 type (data, entities, primitives), no raw
+  // coordinate/money/id, no `Date`, no `throw`, no `UserId`/`CustomerId`
+  // cast. All seven suffixes live here — `*.port.ts` and `*.adapter.ts`
+  // included, wherever they sit (libs/ecs-core/src/ports,
+  // apps/functions/src/adapters, libs/infrastructure/*) — each with the
+  // `InjectionToken` guard (Law 4). The guard rides on the suffix blocks
+  // only, never on every `*.ts`: the web's Angular wiring
+  // (`ports.tokens.ts`, the SDK providers, the `libs/ui/*` tokens,
+  // `app.config.ts`) declares its tokens lawfully, so the every-file half
+  // stays in libs/ecs-core's and apps/functions' own configs
+  // (`ecsProjectBlocks`), where no Angular lives. Selectors live in
   // tools/lint-rules/ecs-syntax.mjs and are tested there.
-  ...ecsSyntaxBlocks(ECS_ROOT_SUFFIXES),
+  ...ecsSyntaxBlocks(ECS_ALL_SUFFIXES, { extra: ECS_TOKEN_RESTRICTIONS }),
   // Law 9 — bottom-up port composition: no `Pick`/`Omit` slice of a `*Ports`
   // bundle anywhere (pipelines, adapters, composition roots, features,
-  // specs). libs/ecs-core's own config adds the ports tier's strict mode
-  // (no `Pick`/`Omit` at all). Tested in tools/lint-rules/no-sliced-ports.spec.mjs.
+  // specs). Tested in tools/lint-rules/no-sliced-ports.spec.mjs.
   {
     files: ['**/*.ts'],
     plugins: { creativo },
     rules: { 'creativo/no-sliced-ports': 'error' },
+  },
+  // …and strict mode on every port file: no `Pick`/`Omit` at all — a port's
+  // argument shape is a named type (.claude/rules/ecs-ports.md).
+  // libs/ecs-core keeps its own `src/ports/**` strict block, which also
+  // covers the ports barrel and the ports specs (neither is a `*.port.ts`).
+  {
+    files: ['**/*.port.ts'],
+    plugins: { creativo },
+    rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
   },
   {
     files: ['**/*.html'],

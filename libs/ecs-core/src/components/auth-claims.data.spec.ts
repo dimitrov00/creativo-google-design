@@ -4,12 +4,12 @@ import { IdentityErrorCode, TenantId } from '@core/primitives';
 import { Role } from './role.data';
 
 /*
- * The cases of libs/domain/identity/src/lib/auth-claims.spec.ts, copied over
- * the in-memory struct: `tenantId` beside `authStage`, and `roles: []` on
- * onboarding claims (the token itself omits that key — `toToken`). The
- * struct says `authStage`; the TOKEN keeps the claim key `stage`. Roles are
- * now the closed `Role` vocabulary, so the legacy fixture's `'owner'` is
- * `admin` here.
+ * The cases of the legacy identity `auth-claims.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over the
+ * in-memory struct: `tenantId` beside `authStage`, and `roles: []` on
+ * onboarding claims (the token itself omits that key — `toToken`). The struct
+ * says `authStage`; the TOKEN keeps the claim key `stage`. Roles are now the
+ * closed `Role` vocabulary, so the legacy fixture's `'owner'` is `admin` here.
  */
 const TENANT = TenantId.of('creativo');
 

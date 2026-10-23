@@ -26,7 +26,13 @@ import {
 } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables, type StoredFile } from '@core/ports';
-import { MediaError, PipelineError, Result, UserId } from '@core/primitives';
+import {
+  AccountsErrorCode,
+  MediaError,
+  PipelineError,
+  Result,
+  UserId,
+} from '@core/primitives';
 import {
   locationFixture,
   memoryAppointmentReadPorts,
@@ -382,9 +388,10 @@ describe('ClientProfile', () => {
     click(host, 'profile-sheet-save');
     await settle();
 
+    // Empty test catalog → the line falls back to the raw code it looked up.
     expect(
-      host.querySelector('[data-testid="profile-sheet-error"]'),
-    ).not.toBeNull();
+      host.querySelector('[data-testid="profile-sheet-error"]')?.textContent,
+    ).toContain(AccountsErrorCode.UpdateProfileRepositoryFailure);
     expect(
       host.querySelector('[data-testid="profile-edit-name"]'),
     ).not.toBeNull();
@@ -479,8 +486,8 @@ describe('ClientProfile', () => {
     await settle();
 
     expect(
-      host.querySelector('[data-testid="profile-photo-error"]'),
-    ).not.toBeNull();
+      host.querySelector('[data-testid="profile-photo-error"]')?.textContent,
+    ).toContain(AccountsErrorCode.RemoveAvatarRemoveFailed);
     expect(host.querySelector('ui-menu')).not.toBeNull();
   });
 

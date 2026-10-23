@@ -30,7 +30,7 @@ describe('PhoneError', () => {
     expect(PhoneError.is(error, PhoneErrorCode.CountryUnsupported)).toBe(false);
   });
 
-  it('keeps the kernel reason strings, which map 1:1 onto errors.identity.phone.* keys', () => {
+  it('keeps the legacy kernel reason strings, which key errors.PHONE_INVALID.<reason> 1:1 — the value itself, nothing mapped', () => {
     expect(Object.values(PhoneInvalidReason)).toEqual([
       'not-a-number',
       'too-short',
@@ -38,16 +38,17 @@ describe('PhoneError', () => {
       'invalid-country',
       'invalid',
     ]);
-    // The onboarding page words a reason as `identity.phone.${reason with _}`.
-    const keys = Object.values(PhoneInvalidReason).map((r) =>
-      r.replace(/-/g, '_'),
+    // The onboarding page words a reason as `PHONE_INVALID.${reason}`: the
+    // struct keeps its own code and the reason segment is the value as is.
+    const keys = Object.values(PhoneInvalidReason).map(
+      (reason) => `${PhoneErrorCode.Invalid}.${reason}`,
     );
     expect(keys).toEqual([
-      'not_a_number',
-      'too_short',
-      'too_long',
-      'invalid_country',
-      'invalid',
+      'PHONE_INVALID.not-a-number',
+      'PHONE_INVALID.too-short',
+      'PHONE_INVALID.too-long',
+      'PHONE_INVALID.invalid-country',
+      'PHONE_INVALID.invalid',
     ]);
   });
 });

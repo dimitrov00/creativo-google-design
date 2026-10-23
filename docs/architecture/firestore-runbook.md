@@ -111,7 +111,7 @@ git grep -nE "onDocument(Written|Created|Updated|Deleted)\(|document: *['\`]" --
 git grep -nE "provideLazyPort\(|useClass" -- apps/web/src/app/app.config.ts
 git grep -nE "inject\((APPOINTMENT_REPOSITORY|APPOINTMENT_NOTES|APPOINTMENT_PHOTOS|CATALOG_READER|AVAILABILITY_READER|SCHEDULE_EXCEPTION_WRITER|WAITLIST_READER|BOOKING_POLICY_READER|CLIENT_STATS_READER|CLIENT_STATS_DIRECTORY|CLIENT_HISTORY_READER|CLIENT_PHOTOS_READER|LOYALTY_READER|LOYALTY_CATALOG_READER|STREAK_DEFINITION_REPOSITORY|CLIENT_VOUCHERS_READER|LOYALTY_ACTIVITY_READER|NOTIFICATION_READER|COUPON_GRANT_REPOSITORY|COUPON_READER|GIFT_VOUCHER_READER|REWARD_PROGRESS_READER|INVITATION_PORT|PROFILE_PORT|IMPERSONATION_PORT|USER_SEARCH_PORT|POSITION_REPOSITORY|COURSE_REPOSITORY|SHOP_EVENT_REPOSITORY)\b" -- libs/features apps/web/src ':(exclude)*.spec.ts'
 # shape-coupled readers outside the adapters: who still imports a legacy mapper
-git grep -noE "\b[a-zA-Z]+(FromDocument|ToDocument|FromDocuments)\b" -- apps libs tools ':(exclude)libs/application/**' ':(exclude)*.spec.*' | sort -u
+git grep -noE "\b[a-zA-Z]+(FromDocument|ToDocument|FromDocuments)\b" -- apps libs tools ':(exclude)*.spec.*' | sort -u
 ```
 
 ## 2. TTL policies
@@ -206,6 +206,8 @@ In short: indexes and rules always go before functions, and TTL is `ACTIVE` befo
 - **Functions and hosting deploy together** (steps 4 and 5 back to back, no traffic window between them, or behind one maintenance page): the callable wire flipped in both directions at once — the requests are the call components, the refusals `HttpsError(status, errorCode, details)` with the projected struct — so an old web against new functions (or the reverse) speaks a wire the other side refuses or cannot read.
 - **Rules deploy AFTER functions and hosting** (step 2 moves after step 5 for this deploy only): the tightenings close client writes the old web still makes — the owner's direct `users/{uid}` profile update, the client's `invitations` create and `+1` update and its `redemptions` create, the admin's direct `impersonationSessions` write — and the callables that replace them (`updateProfile`, `redeemInvitation`, `startImpersonation`, `endImpersonation`) must be live first. Indexes (step 1) and TTL (step 3, `impersonationSessions` gaining its writer) still go first.
 
+**Phase 4b (the deletion) — the ordinary order, nothing staged ahead.** No index changed, `firestore.rules` changed in comments only, and no callable answer or stored shape moved (phase-4b plan 4B-1), so 4b adds no step of its own; if the Phase 4a deploy has not gone out yet, deploy 4a's way. The flip-4 precondition (the default location's `timeZone`) still stands.
+
 ## 4. Per-flip grep gates
 
 A flip passes its gate when no surviving file names a field the flip removed. Each gate runs **after its flip lands, with every earlier flip already landed**. On the 3a tree every gate failed; that is the "before" state they prove away. Flip 1's gate passes since flip 1 landed (§4.1). The hard scope `STORE` is every file that touches a stored body: handlers, both adapter trees, seed, e2e support, P0 proofs and rules. The blueprint's gate scope listed only `apps/functions/src/{lib,adapters}`, `libs/infrastructure`, web stores and the seed, which leaves out the e2e support and the P0 proofs (§1.3 (1)–(2)). Stores and components get a **review** list rather than a hard gate. In those files a hit is either a read of the flipped entity, which the flip fixes, or a view-model, callable or draft name, which Phase 4 retires; the reviewer records which. A hit in a comment counts: a comment naming a removed field is stale.
@@ -217,9 +219,9 @@ Paste §4.0 once per shell (bash or zsh), then the block of the flip. Every bloc
 ```bash
 cd "$(git rev-parse --show-toplevel)" || echo 'ERROR run this inside the repository'
 
-# Every file that touches a stored body. libs/application and libs/domain are
-# legacy (Phase 4); libs/ecs-core has its own Law-6 lint, but its pipelines are
-# new code that must not learn an old name (flip 1).
+# Every file that touches a stored body. libs/application and libs/domain were
+# deleted in Phase 4b; libs/ecs-core has its own Law-6 lint, but its pipelines
+# are new code that must not learn an old name (flip 1).
 STORE=(apps/functions/src libs/infrastructure tools/seed tools/seed-dev-catalog.mjs
        apps/web/e2e apps/web/src/testing tools/verify firestore.rules
        libs/ecs-core/src/pipelines)
@@ -459,14 +461,14 @@ gate 'flip 2 · status maps'                -F  "${S2[@]}" -- "${STORE2[@]}" "${
 gate 'flip 2 · otp, user and session keys' -F  "${K2[@]}" -- "${IDENTITY[@]}" "${NOT_FS[@]}"
 gate 'flip 2 · rebound tokens'             -wF "${T2[@]}" -- libs/features apps/web/src libs/infrastructure "${NOT_FS[@]}"
 gate 'flip 2 · stale pointers to deleted files' -F "${F2[@]}" -- "${STORE2[@]}" "${NOT_FS[@]}" \
-  ':(exclude)tools/verify/bundle/initial-bundle.spec.mjs' ':(exclude)libs/application/**'
+  ':(exclude)tools/verify/bundle/initial-bundle.spec.mjs'
 gate 'flip 2 · P3/P4 legacy ids and form value objects' -E -e 'UserId\.create\(' -e 'User\.reconstitute\(' \
   -e 'as UserId([^A-Za-z0-9_]|$)' -e 'FirstName\.create\(' -e 'LastName\.create\(' -e 'BirthDate\.create\(' \
   -- "${WEB_P34[@]}" "${NOT_FS[@]}"
 gate 'flip 2 · libs/domain/models has no importer' -F -e '@creativo/domain/models' \
-  -- apps libs tools ':(exclude)libs/domain/models/**' "${NOT_FS[@]}"
+  -- apps libs tools "${NOT_FS[@]}"
 gate 'flip 2 · no project reference to libs/domain/models' -F -e 'domain/models/tsconfig' \
-  -- '*.json' ':(exclude)libs/domain/models/**'
+  -- '*.json'
 gate 'flip 2 · functions off the identity legacy libs' -F \
   -e '@creativo/application/identity' -e '@creativo/domain/identity' -e '@creativo/domain/models' \
   -e 'libs/application/identity/' -e 'libs/domain/identity/' -e 'libs/domain/models/' \
@@ -500,13 +502,13 @@ review 'flip 2 · Law 9 *Ports aliases outside ports/pipelines (expect only inte
   ':(exclude)libs/ecs-core/src/ports/**' ':(exclude)libs/ecs-core/src/pipelines/**'
 review 'flip 2 · stores and components' -F -e '.status.kind' -e 'fullName()' -e '.firstName.value' \
   -e '.lastName.value' -e '.phone.value' -e '.email?.value' -e 'toISODate()' -e 'profileCompletion(' \
-  -- "${REVIEW[@]}" libs/application/accounts/src/lib/read-models
+  -- "${REVIEW[@]}"
 [ "$FAILED" = 0 ] && echo 'flip 2 gate: PASS' || echo 'flip 2 gate: FAIL'
 ```
 
 **Status: PASS** on the flip-2 tree (2026-10-21, the integrator's dry run under bash: all 28 gates `ok`, both `review` lists informational — the `*Ports` aliases outside the ports and pipelines tiers are exactly the intersections `FirestorePorts`, `EdgePorts`, `ServerPorts`; the stores-and-components hits are `profileCompletion(` / `fullName()` template reads and `toISODate()` on Phase-4 legacy `ZonedDateTime` values outside the flip). Measured on `3ff1793` (the plan's §6 note 6) the Law 9 gates failed exactly on the F2-18 residue and `AccountReadPorts`, so a hit now is a regression.
 
-Fields removed: users lose the `status` map (`{ kind: 'active' }`, `{ kind: 'blocked', reason, untilIso }`) for the flat `AccountLifecycle` root keys `accountStatus` (+ `blockReason`, `blockedUntilUtcMs` while `BLOCKED`) and gain `registrationState`; the `{ email, phone }` stub becomes the `PROVISIONED` body with every key present. Otps lose `expiresAt`, `consumedAt`, `createdAt` (ISO) for `expiresAtUtcMs`, `consumedAtUtcMs`, `createdAtUtcMs`, and `destinationType`/`purpose` for `otpDestinationType`/`otpPurpose`. Impersonation sessions lose `startedAt`, `expiresAt`, `scope` and the `status` map (`status.kind`, `status.endedAt`) for `startedAtUtcMs`, `expiresAtUtcMs`, `impersonationScope`, `impersonationStatus` (+ the `ENDED` variant's `endedAtUtcMs`, `impersonationEndReason`, …). Index #9 is re-keyed to `adminUserId, impersonationStatus`, #10 to `destination, consumedAtUtcMs, createdAtUtcMs`, and `users.roles` gets an `indexes: []` override. The five audited user keys (`firstName`, `lastName`, `phone`, `email`, `birthDate`) and `roles` keep their names, so `audit-profile-change.pipeline.ts` and the backfill's caller-roles read stay as they are (§1.2), and they appear in no word list here. Notes on the lists: `S2` names the users and impersonation status maps only (`status: { kind` alone matches flip 1's symbolic seed plans and flip 3's `phase: { kind`); `T2` leaves `libs/application/**` out (the legacy token declarations die with the layer in Phase 4); `F2` excludes `tools/verify/bundle/initial-bundle.spec.mjs` (a synthetic `profile.adapter.ts` path) and `libs/application/**`; the Law 9 grep gates are single-line complements of `creativo/no-sliced-ports` in `pnpm nx run-many -t lint`, which sees the type tree.
+Fields removed: users lose the `status` map (`{ kind: 'active' }`, `{ kind: 'blocked', reason, untilIso }`) for the flat `AccountLifecycle` root keys `accountStatus` (+ `blockReason`, `blockedUntilUtcMs` while `BLOCKED`) and gain `registrationState`; the `{ email, phone }` stub becomes the `PROVISIONED` body with every key present. Otps lose `expiresAt`, `consumedAt`, `createdAt` (ISO) for `expiresAtUtcMs`, `consumedAtUtcMs`, `createdAtUtcMs`, and `destinationType`/`purpose` for `otpDestinationType`/`otpPurpose`. Impersonation sessions lose `startedAt`, `expiresAt`, `scope` and the `status` map (`status.kind`, `status.endedAt`) for `startedAtUtcMs`, `expiresAtUtcMs`, `impersonationScope`, `impersonationStatus` (+ the `ENDED` variant's `endedAtUtcMs`, `impersonationEndReason`, …). Index #9 is re-keyed to `adminUserId, impersonationStatus`, #10 to `destination, consumedAtUtcMs, createdAtUtcMs`, and `users.roles` gets an `indexes: []` override. The five audited user keys (`firstName`, `lastName`, `phone`, `email`, `birthDate`) and `roles` keep their names, so `audit-profile-change.pipeline.ts` and the backfill's caller-roles read stay as they are (§1.2), and they appear in no word list here. Notes on the lists: `S2` names the users and impersonation status maps only (`status: { kind` alone matches flip 1's symbolic seed plans and flip 3's `phase: { kind`); `T2` leaves `libs/application/**` out (the legacy token declarations died with the layer in Phase 4b); `F2` excludes `tools/verify/bundle/initial-bundle.spec.mjs` (a synthetic `profile.adapter.ts` path) — its `libs/application/**` exclusion, and the review's `libs/application/accounts/src/lib/read-models` pathspec and the models gates' `libs/domain/models/**` exclusions, were dropped in Phase 4b (inert pathspecs into deleted paths; phase-4b plan §6); the Law 9 grep gates are single-line complements of `creativo/no-sliced-ports` in `pnpm nx run-many -t lint`, which sees the type tree.
 
 ### 4.3 Flip 3 · loyalty and invitations
 
@@ -602,7 +604,7 @@ gate 'flip 3 · removed keys and map reads' -F "${K3[@]}" -- "${STORE[@]}" "${RE
 gate 'flip 3 · no streak map read'        -E -e "$K3m" -- "${STORE[@]}" "${REVIEW[@]}" "${NOT_FS[@]}" "${WIRE3[@]}"
 gate 'flip 3 · nested document shapes'    -F  "${S3[@]}" -- "${STORE[@]}" "${REVIEW[@]}" "${NOT_FS[@]}" "${WIRE3[@]}" "${NOT_I18N[@]}"
 gate 'flip 3 · nested draft off the wire' -F  "${D3[@]}" -- "${STORE[@]}" "${REVIEW[@]}" "${NOT_FS[@]}" "${WIRE3[@]}" "${NOT_I18N[@]}"
-gate 'flip 3 · retired tokens and classes' -wF "${T3[@]}" -- apps libs tools "${NOT_FS[@]}" ':(exclude)libs/domain/**'
+gate 'flip 3 · retired tokens and classes' -wF "${T3[@]}" -- apps libs tools "${NOT_FS[@]}"
 gate 'flip 3 · the functions clock is gone' -wF "${FCLOCK[@]}" -- apps/functions "${NOT_FS[@]}"
 gate 'flip 3 · stale pointers to deleted files' -F "${F3[@]}" -- "${STORE[@]}" "${REVIEW[@]}" "${NOT_FS[@]}" \
   ':(exclude)tools/verify/bundle/initial-bundle.spec.mjs'
@@ -611,9 +613,10 @@ gate 'flip 3 · no legacy engagement import in the flipped directories' -F \
 gate 'flip 3 · functions off the engagement legacy libs' -F \
   -e 'libs/application/engagement/' -e 'libs/domain/engagement/' -e 'libs/application/shared/' -e 'libs/domain/kernel/' \
   -- apps/functions/src ':(glob)apps/functions/tsconfig*.json' "${NOT_FS[@]}"
-gate 'flip 3 · the legacy loyalty half is gone' -F -e 'loyalty-document' -e 'streak-definition.port' \
-  -e 'loyalty-reader.port' -e 'loyalty-activity-reader.port' -e 'loyalty-catalog-reader.port' -e 'invitation.port' \
-  -- libs/application/engagement/src/index.ts
+# Since Phase 4b the barrel this gate grepped is deleted, and `git grep` on a missing positive
+# pathspec says ok whatever it holds — the gate is an existence check now (§4.4's precedent).
+[ ! -e libs/application/engagement ] && [ ! -e libs/domain/engagement ] \
+  && echo 'ok    flip 3 · the legacy loyalty half is gone' || { echo 'FAIL  flip 3 · the legacy loyalty half is gone'; FAILED=1; }
 gate 'flip 3 · journal rule on the flat key' -F -e "resource.data.visibility" -- firestore.rules
 node -e '
   const groups = new Set(process.argv[1].split(","));
@@ -804,7 +807,7 @@ index_gate 'end of 3b · indexes' \
 [ "$FAILED" = 0 ] && echo 'end-of-3b gate: PASS' || echo 'end-of-3b gate: FAIL'
 ```
 
-This gate runs beside the blueprint's end-of-3b graph and bundle assertions (no `functions → libs/application/*` edge, and no `@angular/*` or `rxjs` in `dist/apps/functions/package.json`); the graph/bundle half is deferred to Phase 4, flip-4 plan F4-2.
+This gate runs beside the blueprint's end-of-3b graph and bundle assertions (no `functions → libs/application/*` edge, and no `@angular/*` or `rxjs` in `dist/apps/functions/package.json`); the graph/bundle half was deferred to Phase 4, flip-4 plan F4-2, and is closed: the dist lists no `@angular/*`, `luxon` or `dinero.js` (asserted by the forbidden-key check of `tools/verify/p0/functions-deps.mjs` since 4b); `rxjs` stays (phase-4a plan §10.1, 4A-15); the graph half is §4.8 gate 8 (no legacy project in the graph, hence no functions → legacy edge).
 
 **Status: PASS** on the flip-4 tree (2026-10-22, all six gates `ok`). Its first dry run FAILed on three files that name no stored body, each fixed at integration (flip-4 plan §8.1): `apps/web/e2e/booking-core.spec.ts` (it asserts the retired keys are ABSENT and reads the `data-day-key` DOM attribute) is excluded from the removed-field and wire-spelling gates, as §4.2 already does (flip-2 plan delta 10); `libs/ecs-core/src/testing/test-support.spec.ts` (the memory double's query-engine spec, whose synthetic `status.kind` row proves dotted-path reads) is excluded from the removed-key gate; and the `@core/testing` helpers `at`/`until` (`booking-core.fixtures.ts`) name their parameter `hour`, no longer the retired key `hours:`. The graph/bundle half measured on that tree, for Phase 4 to start from: seven `apps/functions` files still import `@creativo/(application|domain)/*` (`wire/booking.wire.ts`, `wire/loyalty.wire.ts`, `lib/booking/caller-roles.ts` (+ spec), `lib/flags.ts` (+ spec), `adapters/flags.adapter.spec.ts`), and `dist/apps/functions/package.json` lists the 8 recorded runtime dependencies (`@angular/compiler`, `@angular/core`, `dinero.js`, `firebase-admin`, `firebase-functions`, `libphonenumber-js`, `luxon`, `rxjs`) — `tools/verify/p0/functions-deps.baseline.json` unchanged.
 
@@ -834,7 +837,7 @@ The phase-4a plan's §6 gate (`docs/architecture/flips/phase-4a-repoint.md`) on 
 1. It uses §4.0's `gate` (`git grep --untracked -nI`, `ERROR` on an exit above 1). The plan's own `gate` searched tracked files only — blind to every file a package created and nobody had added yet (97 on the 4a tree) — and read a grep error as `ok`.
 2. The class-form row `adapter: \(` has its own gate without `-w`. Under `-w` the match `adapter: (` is followed by the row's parameter (`(m) => m.storage.StorageMediaReader`), a word character, so that alternative could never fail.
 3. The four prose-prone gates (date classes, legacy wire, legacy tokens, tenant-zone names) skip comment lines (`NOT_COMMENT`: a line opening with `*`, `//` or `/*`). Provenance comments ("successor of the legacy `wordError`", "as the legacy `FEATURE_FLAGS` defaulted") and the specs' `dead:` ledger notes name the retired words on purpose; they are 4b's provenance sweep (plan 4A-13), and the closing `review` lists them for it. A trailing comment on a code line still fails, and a comment that describes a retired member as present is a defect to fix, not a survivor.
-4. Three files leave one gate each, the reason beside the exclusion: two specs that prove a retired spelling ABSENT (§4.2's `booking-core.spec.ts` precedent) and the i18n lint config whose import-restriction messages 4b deletes with `luxon` and `dinero.js`.
+4. Three files leave one gate each, the reason beside the exclusion: two specs that prove a retired spelling ABSENT (§4.2's `booking-core.spec.ts` precedent) and the i18n lint config whose import-restriction messages 4b deletes with `luxon` and `dinero.js`. **Done:** the i18n exclusion went at the 4a integration (status below); the two spec exclusions stay, each still proving its spelling absent.
 
 It adds two gates: the plan's graph assertion as gate 8 (no edge from a project outside `libs/application/*` and `libs/domain/*` into one inside), and, beside gate 5, no binding of the retired tenant-zone PORT in `tools` or `apps/web/e2e` — the plan's gate 5 leaves the seed's and the e2e helpers' own zone constants out of scope, and with them it missed `tools/seed-dev-catalog.mjs` and `tools/seed/load-domain.spec.mjs` still handing `projectClientStats` a `tenantTimeZone` it no longer reads (`ports.loadLocation is not a function`).
 
@@ -843,8 +846,10 @@ FAILED=0
 command -v gate >/dev/null 2>&1 || { echo 'ERROR the §4.0 preamble is not loaded'; FAILED=1; }
 # NO `\b` anywhere: git 2.45's ERE on macOS never matches it, so a `\b` gate always says ok.
 # Word ends are `-w`, or an explicit class `([^A-Za-z0-9_]|$)`; whitespace is `[[:space:]]`.
-LEGACY=(':!libs/application/**' ':!libs/domain/**' ':!docs/**' ':!tsconfig.base.json'
-        ':!.nxignore' ':!CLAUDE.md' ':!AGENTS.md')
+# History only: docs/** and the constitution's REMOVED sentences. Phase 4b dropped the two
+# deleted trees and tsconfig.base.json/.nxignore (clean since the deletion), so gates 1–2
+# run over the whole tree.
+LEGACY=(':!docs/**' ':!CLAUDE.md' ':!AGENTS.md')
 # A comment line. Provenance and the specs' `dead:` notes name retired words on purpose (4A-13).
 COMMENT_LINE='^[[:space:]]*(\*|//|/\*)'
 NOT_COMMENT=(--and --not -e "$COMMENT_LINE")
@@ -854,15 +859,13 @@ TOKENS4A='AUTH_GATEWAY|OTP_CLIENT|AUTH_DEPLOYMENT|BOOKING_GATEWAY|WAITLIST_GATEW
 ZONES4A='TENANT_ZONE|TENANT_ZONE_PORTS|TenantZonePorts|tenantTimeZone|WIRE_ZONE|LOYALTY_SHOP_ZONE|APPOINTMENTS_ZONE|STAFF_ZONE'
 
 # 1. No legacy import or lazy import anywhere else (code, specs, fixtures, tools, mjs, md).
-gate '4a · legacy aliases' -E "@creativo/(application|domain)/" -- "${LEGACY[@]}" \
-  ':!firestore.rules'                       # its comments are 4b's docs rewrite (4A-13)
+gate '4a · legacy aliases' -E "@creativo/(application|domain)/" -- "${LEGACY[@]}"
 # Library tsconfigs reference the legacy libs RELATIVELY with no `libs/` segment
 # ("../../../application/shared/tsconfig.lib.json") — 27 lines in 9 files on e9d1ca4, 3 of them apps.
 gate '4a · legacy project references' -E '"path": "(\.\./)+(libs/)?(application|domain)/[a-z-]+/tsconfig' -- \
-  'apps/**/tsconfig*.json' 'libs/**/tsconfig*.json' ':!libs/application/**' ':!libs/domain/**'
-# 2. No date classes / Luxon / dinero outside the legacy libs (the dinero cross-check is 4b's).
-gate '4a · luxon/dinero' -E "from '(luxon|dinero\.js)'" -- "${LEGACY[@]}" \
-  ':!libs/ecs-core/src/components/money.data.spec.ts'
+  'apps/**/tsconfig*.json' 'libs/**/tsconfig*.json'
+# 2. No date classes / Luxon / dinero anywhere (the money spec's dinero cross-check went in 4b).
+gate '4a · luxon/dinero' -E "from '(luxon|dinero\.js)'" -- "${LEGACY[@]}"
 gate '4a · ZonedDateTime/CalendarDay/TimeSlot' -wE -e "$DATES4A" "${NOT_COMMENT[@]}" -- \
   'apps/**/*.ts' 'libs/features/**' 'libs/infrastructure/**' 'libs/ui/**' 'tools/**' \
   ':!**/*.md'
@@ -939,6 +942,7 @@ gate '4a · one home for the moved types' -wE "export (type|const) (EditCommandI
 # 7. The nested voucher fixture is gone.
 gate '4a · nested vouchers' -wE "balanceMinorUnits|currencyCode|issuedAt" -- libs/ecs-core/src/testing tools/seed
 # 8. The project graph: no edge from a project outside the legacy libs into one inside.
+#    Superseded by §4.8 gate 8 since Phase 4b (no legacy project is left, so this is trivially ok).
 GRAPH4A="${TMPDIR:-/tmp}/phase-4a-graph.json"
 if pnpm nx graph --file="$GRAPH4A" >/dev/null 2>&1 && node -e '
   const { nodes, dependencies } = require(process.argv[1]).graph;
@@ -954,3 +958,136 @@ review '4a · retired names in comments (provenance and dead: notes — 4b sweep
 ```
 
 **Status: PASS** on the integrated Phase 4a tree (2026-10-22, the integrator, under bash, phase-4a plan §8.1 items 8–10): the 22 gates of the plan's §6 (its 21, the class-form row split in two), "no tenant-zone port bound by the tools" and the graph gate — 24 `ok`; the closing review lists 33 comment mentions, all provenance or `dead:` notes for 4b. With it §4.2 28 `ok`, §4.3 22 `ok`, §4.4 17 `ok`, §4.5 PASS (6 `ok`) with the preamble's `STORE` and with §4.4's. The P9 sweep's run (dry run first: 63 probes, every gate failed on its known-bad line and passed its known-good one — `MoveRefusal`, `StaffEditGuardRefusal`, `CLOCK_PORTS`, `AUTH_DEPLOYMENT_PORTS`, `wordPipelineError`, `new Date(ms)`, a comment, a `nonce: Date.now()` — after correction 2 above) had failed the tools' tenant-zone binding (`tools/seed-dev-catalog.mjs`, `tools/seed/load-domain.spec.mjs`) and, in §4.2–§4.4, the Law 9 "no bundle record outside ports" on the lazy-port specs' spec-local records; both fixed at integration, and the i18n lint config's exclusion from the date-class gate is gone with its retired messages. A hit from now on is a regression.
+
+**Re-run on the 4b tree** (phase-4b plan §6: `LEGACY` narrowed to `docs/**`, `CLAUDE.md`, `AGENTS.md`; the `firestore.rules`, `money.data.spec.ts` and legacy-tree pathspecs dropped, so gates 1–2 run over the whole tree; gate 8 superseded by §4.8 gate 8): **PASS** on the Phase 4b tree (2026-10-23, the integrator, under bash, after `nx reset`) — 24 `ok`, no `FAIL`, no `ERROR`; the closing review lists 34 comment mentions, every one past-tense provenance or a `dead:` note (none promises a later deletion — §4.8 gate 3c). With it §4.2 PASS (28 `ok`), §4.3 PASS (22), §4.4 PASS (17), §4.5 PASS (6) on the preamble's `STORE`. (§4.1 is not part of this run, as in 4a: §4.2's block 1 restates it with its later exclusions. Run alone on the 4b tree, §4.1 fails three gates on files 4b did not touch — `booking-core.spec.ts`'s absence assertions and `data-day-key` reads (delta 10), the 4a wire specs' «reads no legacy field» cases in `booking.wire.spec.ts`/`waitlist.wire.spec.ts`, and one `edge.spec.ts` comment, all four files unchanged since `e2d7a8f`.)
+
+### 4.8 Phase 4b · the deletion
+
+The phase-4b plan's §6 gate (`docs/architecture/flips/phase-4b-delete.md`) on this preamble's helpers. It runs after Phase 4b lands, after §4.2–§4.5 (as rewritten for 4b: the inert pathspecs into the deleted trees dropped, §4.3's "legacy loyalty half" gate an existence check) and §4.7. It proves that no path, alias, tag, package or dotted key of the legacy shape survives outside the history (`docs/**`, and the constitution's REMOVED sentences, reviewed rather than gated).
+
+Two rules carried from §4.7: NO `\b` (git 2.45's ERE on macOS never matches it), and `git grep` on a MISSING positive pathspec exits 1 (`ok`) whatever the tree holds — a gate over a deleted path proves nothing, so the deletions are proved with `[ ! -e … ]`, the project graph and the catalogue walk instead. Every gate is proved by a known-bad probe (a scratch line or file that must FAIL) and then by the tree (must be `ok`) before the status line below is written. Gate 9 probes the root ESLint config and can pass only once the root carries the widened ECS blocks (phase-4b plan 4B-7); if its selector names drift (`ClassDeclaration` is the root of `CLASS_GUARD` in `tools/lint-rules/ecs-syntax.mjs`), fix the probe, never the rule, and if `eslint --print-config` refuses a missing path, use the Node API (`new ESLint().calculateConfigForFile`). Its third probe runs from `libs/ui/icons` itself (ESLint 9 resolves only the cwd's config, and Nx lints each project from its root), so it proves that no nested project config cancels the root blocks (phase-4b plan R8); gate 6c proves the feature-level aliases of dictionary members stay deleted (R7), word-bounded because the successor values contain the alias names.
+
+```bash
+FAILED=0
+command -v gate >/dev/null 2>&1 || { echo 'ERROR the §4.0 preamble is not loaded'; FAILED=1; }
+# History lives in docs/** only. CLAUDE.md/AGENTS.md name the deleted libs in their REMOVED
+# sentences (reviewed at the end, not gated).
+HISTORY=(':!docs/**' ':!CLAUDE.md' ':!AGENTS.md')
+# 1. The legacy libraries are gone.
+[ ! -e libs/application ] && [ ! -e libs/domain ] \
+  && echo 'ok    4b · the legacy libraries are gone' || { echo 'FAIL  4b · the legacy libraries are gone'; FAILED=1; }
+# 2. No legacy alias anywhere: code, specs, tsconfigs, eslint configs, rules, mjs, json, .nxignore.
+gate '4b · legacy aliases' -E '@creativo/(application|domain)/' -- . "${HISTORY[@]}"
+# 3. No legacy path, kernel or relative project reference — comments included (4B-9).
+gate '4b · legacy paths' -E 'libs/(application|domain)([^A-Za-z0-9_-]|$)|domain/kernel|"(\.\./)+(application|domain)/[a-z-]+/' \
+  -- . "${HISTORY[@]}"
+# 3b. The same paths cited WITHOUT the libs/ prefix (added 2026-10-23, OQ 12). On the tree before
+#     R1 it lists exactly booking-flow.system.ts:266, busy.system.ts:87, booking-cart.system.ts:310,
+#     busy.system.spec.ts:39 — the known-bad run.
+gate '4b · legacy paths without libs/' -E '(^|[^A-Za-z0-9_@-])(application/(accounts|booking|catalog|engagement|governance|identity|notifications|shared)|domain/(accounts|catalog|engagement|governance|identity|kernel|models|notifications|scheduling))([^A-Za-z0-9_-]|$)' \
+  -- . "${HISTORY[@]}"
+# 3c. No code promises a Phase 4 deletion any more (added 2026-10-23). "until Phase 4a/4b" (past
+#     tense) is allowed. Before R5 it lists exactly visit-ecs.shim.ts:28 — the known-bad run.
+gate '4b · no promise of a Phase 4 deletion' -E '\(Phase 4\)|until Phase 4([^ab]|$)|Phase 4 deletes' -- apps libs tools
+# 4. The tag is retired.
+gate '4b · type:application' -F 'type:application' -- . "${HISTORY[@]}"
+# 5. No luxon / dinero: no import (the lint bans keep their names as retired guards), no
+#    dependency, no lockfile entry.
+gate '4b · luxon/dinero imports' -E "(from |import\(|require\()'(luxon|dinero\.js)'" -- apps libs tools
+gate '4b · luxon/dinero in the lockfile' -iE 'luxon|dinero' -- pnpm-lock.yaml
+node -e '
+  const p = require(process.cwd() + "/package.json");
+  const all = { ...p.dependencies, ...p.devDependencies, ...p.optionalDependencies, ...p.peerDependencies };
+  const bad = ["luxon", "@types/luxon", "dinero.js"].filter((n) => Object.hasOwn(all, n));
+  for (const n of bad) console.log("package.json: " + n);
+  process.exit(bad.length ? 1 : 0);
+' && echo 'ok    4b · package.json lists no luxon/dinero' || { echo 'FAIL  4b · package.json lists no luxon/dinero'; FAILED=1; }
+# 6. The { code } arm and translateFunctionsError are gone (CodedError's type keeps multi-line
+#    calls honest; this catches the one-line ones and the retired names).
+gate '4b · translateFunctionsError' -wE 'translateFunctionsError|FunctionsErrorDetails|UNKNOWN_ERROR_KEY' -- apps libs tools
+gate '4b · the i18n lib off firebase and the code arm' -E "firebase/functions|readonly code: string" -- libs/infrastructure/i18n/src
+gate '4b · { code } arguments' -E 'translateDomainError\([^)]*\{[[:space:]]*code[[:space:]]*[:,}]' -- apps libs
+# 6b. No legacy-dotted error or log payload (added 2026-10-23). The prefixes are the legacy wire
+#     domains; journal codes (`points.rule`, `tier.changed`, …) and the synthetic `x.y` are not
+#     matched. Before R2 it lists exactly R2's eight lines — the known-bad run.
+gate '4b · legacy-dotted error payloads' \
+  -E "code: '(booking|identity|accounts|scheduling|time|money|catalog|engagement|governance|phone)\.[a-z_.]+'" \
+  -- apps libs tools
+# 6c. No feature-level alias of a dictionary member (added 2026-10-23, R7, OQ 14). Word-bounded
+#     (-w): the successor values ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED / …_REMOVE_FAILED contain the
+#     alias names as substrings. On e2d7a8f it lists 15 lines — the known-bad run.
+gate '4b · feature-level dictionary aliases' -wE 'PROFILE_WRITE_FAILED|AVATAR_(UPLOAD|REMOVE)_FAILED' -- apps libs
+# 7. No dotted errors key in either catalogue, and no reader of one.
+node -e '
+  let bad = 0;
+  for (const lang of ["en", "bg"]) {
+    const { errors } = require(process.cwd() + `/libs/infrastructure/i18n/src/assets/i18n/${lang}.json`);
+    for (const key of Object.keys(errors)) if (!/^[A-Z]/.test(key)) { console.log(`${lang}.json errors.${key}`); bad++; }
+  }
+  process.exit(bad ? 1 : 0);
+' && echo 'ok    4b · no dotted errors key' || { echo 'FAIL  4b · no dotted errors key'; FAILED=1; }
+# The leading class keeps file names (`booking-errors.data.ts`, `*.errors.ts`) out. On e2d7a8f it
+# listed exactly the 13 sites the 4b packages rewrote (comments included) — the known-bad run.
+gate '4b · dotted errors reads' -E "(^|[^A-Za-z0-9_.-])errors\.[a-z][A-Za-z_]*[.'\"\`]" -- apps libs ':!**/*.md'
+gate '4b · retired dotted constants' -F -e "'accounts.upload_avatar" -e "'accounts.remove_avatar" \
+  -e "'accounts.update_profile" -e "'identifier_missing'" -e "'booking.gateway.failed'" -e 'identity.phone.' \
+  -e "'booking.transition.seat_resolved'" \
+  -e 'identity.identifier.invalid' -e 'identity.birth_date.invalid' -e 'identity.otp_code.invalid' \
+  -e 'booking.reschedule.carried_seat_unplaceable' -- apps libs \
+  ':!libs/ecs-core/src/primitives/legacy-wire-successors.spec.ts' \
+  ':!libs/ecs-core/src/primitives/pipeline-errors.data.spec.ts'   # wire ledger labels (legacy code → successor), no i18n read
+gate "4b · the generic 'unknown' constant" -E "= 'unknown';" -- libs/features libs/infrastructure
+gate "4b · 'repository_failure' as an i18n code" -F "code: 'repository_failure'" -- apps libs
+# 8. The graph: no project rooted under the legacy trees, so no functions → legacy edge.
+GRAPH4B="${TMPDIR:-/tmp}/phase-4b-graph.json"
+if pnpm nx graph --file="$GRAPH4B" >/dev/null 2>&1 && node -e '
+  const { nodes } = require(process.argv[1]).graph;
+  const legacy = Object.keys(nodes).filter((n) => /^libs\/(application|domain)\//.test(nodes[n].data.root));
+  for (const n of legacy) console.log(`nx graph: ${n}`);
+  process.exit(legacy.length ? 1 : 0);
+' "$GRAPH4B"; then echo 'ok    4b · no legacy project in the graph'; else echo 'FAIL  4b · no legacy project in the graph'; FAILED=1; fi
+# 9. The root config carries the port/adapter blocks and the token guard (4B-7). Probe paths
+#    need not exist; an infrastructure path proves the ROOT installs it (no project block there).
+#    The icons probe runs FROM its project (ESLint 9 resolves only the cwd's config, and Nx lints
+#    each project from its root) and proves no nested config cancels the root blocks: libs/ui/icons
+#    turns the rule off on its other .ts files. It FAILS before R8 — the known-bad run. A probe is
+#    `<cwd>|<file relative to it>`; severity 0 ('off' keeping stale options — measured: the icons
+#    probe keeps `ClassDeclaration` at severity 0) is a FAIL. NOT `pnpm exec`: it runs from the
+#    workspace root whatever the cwd, so the nested config would never load.
+ROOT4B="$PWD"
+for probe in '.|libs/infrastructure/clock/src/lib/probe.adapter.ts' '.|libs/features/probe/src/lib/probe.port.ts' \
+  'libs/ui/icons|src/lib/probe.data.ts'; do
+  dir="${probe%%|*}"; file="${probe#*|}"
+  if (cd "$dir" && node "$ROOT4B/node_modules/eslint/bin/eslint.js" --print-config "$file" 2>/dev/null) | node -e '
+    let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      const rules = JSON.parse(s).rules ?? {};
+      const entry = rules["no-restricted-syntax"] ?? [];
+      const on = entry[0] === 2 || entry[0] === "error";
+      const syntax = JSON.stringify(entry);
+      const ok = on && syntax.includes("InjectionToken") && syntax.includes("ClassDeclaration");
+      const port = !process.argv[1].endsWith(".port.ts") || JSON.stringify(rules["creativo/no-sliced-ports"] ?? []).includes("anyType");
+      process.exit(ok && port ? 0 : 1);
+    });' "$file"; then echo "ok    4b · root ECS blocks on $dir/$file"; else echo "FAIL  4b · root ECS blocks on $dir/$file"; FAILED=1; fi
+done
+grep -q 'ECS_ROOT_SUFFIXES' eslint.config.mjs tools/lint-rules/*.mjs \
+  && { echo 'FAIL  4b · ECS_ROOT_SUFFIXES retired'; FAILED=1; } || echo 'ok    4b · ECS_ROOT_SUFFIXES retired'
+# 10. The constitution mirror.
+cmp -s CLAUDE.md AGENTS.md && echo 'ok    4b · CLAUDE.md = AGENTS.md' || { echo 'FAIL  4b · CLAUDE.md = AGENTS.md'; FAILED=1; }
+review '4b · the constitution names the deleted libs only as removed' -nE 'libs/(application|domain)|Phase 4 deletes|until Phase 4' -- CLAUDE.md AGENTS.md
+# 11. firestore.rules is a test input of the projects whose specs parse it (moved from the deleted
+#     domain-accounts) — otherwise a rules-only change serves the parity specs from cache.
+for proj in ecs-core functions; do
+  if pnpm nx show project "$proj" --json 2>/dev/null | node -e '
+    let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      const t = JSON.parse(s).targets ?? {};
+      process.exit(JSON.stringify(t.test?.inputs ?? []).includes("{workspaceRoot}/firestore.rules") ? 0 : 1);
+    });'; then echo "ok    4b · firestore.rules is a $proj test input"; else echo "FAIL  4b · firestore.rules is a $proj test input"; FAILED=1; fi
+done
+# 12. The design-research specs that still link the deleted trees carry the deletion banner (4B-10).
+review '4b · design-research files citing the deleted trees (each must carry the banner)' -lE 'libs/(application|domain)' -- docs/design-research
+[ "$FAILED" = 0 ] && echo 'phase-4b gate: PASS' || echo 'phase-4b gate: FAIL'
+```
+
+Gate 12 is a review: every file it lists must open with the one-line Phase 4b banner (`git grep -L 'Phase 4b' -- <the listed files>` prints none). Gate 10's review lists the constitution's lines naming the deleted libraries; each must read as REMOVED history (phase-4b plan 4B-11) — if the owner declined the constitution edits, its "until Phase 4" clauses are listed here and recorded in the plan's §8.1, and the gate does not fail on them.
+
+**Status: PASS** on the integrated Phase 4b tree (2026-10-23, the integrator, under bash, after `nx reset` and `nx sync:check`): 26 `ok`, no `FAIL`, no `ERROR` (27 `ok` on the second pass the same day, after `nx reset`, with gate 6c added — its known-bad run lists 15 lines on `e2d7a8f`; §4.2 28, §4.3 22, §4.4 17, §4.5 6 and §4.7 24 `ok` again). The known-bad run: every `git grep` gate (2, 3, 3b, 3c, 4, both halves of 5, the three of 6, 6b and the four reader gates of 7) re-run against the committed `e2d7a8f` tree FAILS (633, 563, 875, 48, 15, 5 + 9, 7 + 3 + 8, 22, 14 + 80 + 2 + 4 hits); gate 1 fails there (`libs/application` exists), gate 5's `package.json` check lists `luxon`, `@types/luxon`, `dinero.js` and gate 7's catalogue walk finds 90 lowercase-rooted `errors` keys per locale (139 leaves). Before wave 4, 3b listed exactly R1's four sites, 3c `visit-ecs.shim.ts:28` and 6b R2's eight lines, and gate 9's icons probe failed (severity 0) until R8 — the packages' dry runs. Gate 9's three probes pass with `eslint --print-config` from each probe's own directory. The reviews: gate 10 lists `CLAUDE.md`/`AGENTS.md` :25, :179, :378-379 and :388 — the "until Phase 4" clauses of the pre-4b constitution, because its edits (phase-4b plan §4.R R4) await the owner's own approval (4B-11): pending, reviewed, not failed; gate 12 lists the ten design-research files, each carrying the Phase 4b banner (`git grep -L 'Phase 4b'` over them prints none). A hit from now on is a regression.

@@ -6,15 +6,16 @@ import { deepFreeze, utcMs } from '@core/testing';
 import { ReferralSystem } from './referral.system';
 
 /*
- * COPIED, never moved (the legacy specs keep running against the shims):
- * the `recordRedemption` and `isSelfInvitation` cases of
- * libs/domain/engagement/src/lib/invitation.spec.ts, the `forInvitation`
- * cases of invitation-redemption.spec.ts, and the decision half of
- * the legacy redeem-invitation use case spec (deleted in flip 3, F3-12)
- * (the counter bump and the self-redemption refusal; «not found» is the
- * pipeline's read, not the system's). Re-targeted to the flat
- * `Invitation`. Not copied: the factories' blank-id and blank-name cases —
- * the edge guards' (`XId.of` after a guard), not the referral's.
+ * COPIED, never moved, while the legacy specs still ran against the shims: the
+ * `recordRedemption` and `isSelfInvitation` cases of the legacy engagement
+ * `invitation.spec.ts`, the `forInvitation` cases of
+ * `invitation-redemption.spec.ts` (both deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), and the decision half of
+ * the legacy redeem-invitation use case spec (deleted in flip 3, F3-12) (the
+ * counter bump and the self-redemption refusal; «not found» is the pipeline's
+ * read, not the system's). Re-targeted to the flat `Invitation`. Not copied:
+ * the factories' blank-id and blank-name cases — the edge guards' (`XId.of`
+ * after a guard), not the referral's.
  */
 
 function invitation(inviterUserId: string): Invitation {

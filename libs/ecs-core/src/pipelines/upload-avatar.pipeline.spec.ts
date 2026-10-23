@@ -6,9 +6,10 @@ import { memoryAvatarPorts } from '@core/testing';
 import { uploadAvatar } from './upload-avatar.pipeline';
 
 /*
- * The cases of `UploadAvatarUseCase`'s spec (`libs/application/accounts`,
- * deleted in 4b): the avatar rule before the upload, never touching
- * Storage for a file it refuses.
+ * The cases of `UploadAvatarUseCase`'s spec (the legacy accounts application
+ * lib, deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1): the avatar rule before the upload, never touching Storage for a file
+ * it refuses.
  */
 const UID = UserId.of('user_1');
 

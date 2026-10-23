@@ -5,16 +5,25 @@
  *
  *   pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
  *
- * `--record` rewrites functions-deps.baseline.json from the current build
- * (an intended dependency change only; say why in the commit).
+ * The check refuses a forbidden dependency (`@angular/*`, `luxon`,
+ * `@types/luxon`, `dinero.js`) before it compares the build with
+ * functions-deps.baseline.json. `--record` rewrites that baseline from the
+ * current build (an intended dependency change only; say why in the
+ * commit) and refuses, writing nothing, when the build lists a forbidden
+ * key.
  */
 import { checkFunctionsDeps, recordFunctionsDeps } from './functions-deps.mjs';
 
 if (process.argv.includes('--record')) {
-  const keys = recordFunctionsDeps();
-  console.log(
-    `recorded  ${keys.length} runtime dependencies: ${keys.join(', ')}`,
-  );
+  try {
+    const keys = recordFunctionsDeps();
+    console.log(
+      `recorded  ${keys.length} runtime dependencies: ${keys.join(', ')}`,
+    );
+  } catch (error) {
+    console.error(`FAIL  record refused\n      ${error.message}`);
+    process.exit(1);
+  }
 } else {
   try {
     console.log(

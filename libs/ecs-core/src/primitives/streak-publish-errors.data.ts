@@ -4,8 +4,9 @@ import type { LocalDate } from './local-date.primitive';
  * The refusal codes of the rhythm rule's publish callable
  * (`publishStreakDefinition`) — flat `{ errorCode, … }` structs (Law 7.5),
  * SCREAMING_SNAKE under the `LOYALTY_STREAK_PUBLISH_` prefix (flatten-spec
- * §4.2); the callable's answer keeps the legacy dotted code on the wire
- * until Phase 4. Every non-`errorCode` field is an i18n parameter.
+ * §4.2); since the Phase 4a wire flip the callable answers these codes
+ * themselves (no legacy dotted code on the wire). Every non-`errorCode`
+ * field is an i18n parameter.
  *
  * The two `CALLER_*` codes judge WHO asks (the verified token, never the
  * payload) before anything is read; the callable never lets either reach

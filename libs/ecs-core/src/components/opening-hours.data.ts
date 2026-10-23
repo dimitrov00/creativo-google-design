@@ -159,11 +159,11 @@ export const DayHours = {
 
   /**
    * The legacy `validateHours` (`location.ts:251-292`) on the clock-text
-   * shape every location stores today (`hours: [{ kind: 'open', opens:
-   * '09:00', closes: '20:00' }, …]`, re-tagged by the shim), converting to
-   * minutes: the same codes, in the same order, as {@link parseWeek} — the
-   * one guard the `hours` → `openingHours` reshaping and the seed run their
-   * seven days through.
+   * shape locations stored before the booking-core flip (`hours: [{ kind:
+   * 'open', opens: '09:00', closes: '20:00' }, …]`, which the legacy shim
+   * re-tagged), converting to minutes: the same codes, in the same order, as
+   * {@link parseWeek} — the one guard the `hours` → `openingHours` reshaping
+   * and the seed ran their seven days through.
    */
   parseClockWeek(
     raw: readonly ClockDayHours[],

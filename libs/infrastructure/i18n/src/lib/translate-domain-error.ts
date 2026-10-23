@@ -1,29 +1,12 @@
 import { TranslocoService } from '@jsverse/transloco';
-import { FunctionsError } from 'firebase/functions';
-
-const UNKNOWN_ERROR_KEY = 'errors.unknown';
 
 /**
- * The two shapes a refusal reaches the UI in (flatten-spec §4.3, F-23):
- *
- * - `{ code, params }` — a legacy `DomainError` class or the wire's
- *   `details` (the dotted code; looked up as `errors.<code>`);
- * - `{ errorCode, …fields }` — an ecs-core error struct (Law 7.5): the
- *   SCREAMING `errorCode` is looked up as `errors.<errorCode>` and the
- *   struct IS its params — every other field interpolates.
+ * The one shape a refusal reaches the UI in (Law 7.5): an ecs-core error
+ * struct, `{ errorCode, …fields }`. The SCREAMING `errorCode` is looked up
+ * as `errors.<errorCode>` and the struct IS its params — every other field
+ * interpolates.
  */
-type CodedError =
-  | { readonly code: string; readonly params?: Record<string, unknown> }
-  | ({ readonly errorCode: string } & Record<string, unknown>);
-
-interface FunctionsErrorDetails {
-  readonly code?: string;
-  readonly params?: Record<string, unknown>;
-  readonly errors?: readonly {
-    readonly code: string;
-    readonly params?: Record<string, unknown>;
-  }[];
-}
+type CodedError = { readonly errorCode: string } & Record<string, unknown>;
 
 /** The owner-locked DST code (`TimeErrorCode.DstGap`, Law 7.3). */
 const DST_GAP_INVALID_TIME = 'DST_GAP_INVALID_TIME';
@@ -53,51 +36,24 @@ function displayParamsOf(
 }
 
 /**
- * Looks up `errors.<code>` (or `errors.<errorCode>` for an ecs-core struct)
- * for the active locale, interpolating `params` (or the struct's own
- * fields). Falls back to the raw code (never a raw, untranslated exception
- * message) if the catalog has no entry for it.
+ * Looks up `errors.<errorCode>` for the active locale, interpolating the
+ * struct's own fields. Falls back to the raw `errorCode` (never a raw,
+ * untranslated exception message) if the catalog has no entry for it.
+ *
+ * With a `reason`, the lookup goes one level down — `errors.<errorCode>.<reason>`,
+ * falling back to the raw `<errorCode>.<reason>` — so a struct keeps its own
+ * dictionary `errorCode` (Law 7.5) while its reason picks the words
+ * (`PHONE_INVALID.too-short`, the `PhoneInvalidReason` value itself: nothing
+ * is mapped). The ONE place a reason-level key is built for a struct.
  */
 export function translateDomainError(
   transloco: TranslocoService,
   error: CodedError,
+  reason?: string,
 ): string {
-  const [code, params] =
-    'errorCode' in error && typeof error.errorCode === 'string'
-      ? [error.errorCode, error]
-      : [String(error.code), (error.params ?? {}) as Record<string, unknown>];
+  const base = error.errorCode;
+  const code = reason === undefined ? base : `${base}.${reason}`;
   const key = `errors.${code}`;
-  const translated = transloco.translate(key, displayParamsOf(code, params));
+  const translated = transloco.translate(key, displayParamsOf(base, error));
   return translated === key ? code : translated;
-}
-
-/**
- * Unwraps a Firebase Callable Function error (thrown by `httpsCallable()`)
- * and resolves it to a localized message using the `code`/`params` (or
- * aggregated `errors[]`) forwarded via `HttpsError`'s `details`.
- */
-export function translateFunctionsError(
-  error: unknown,
-  transloco: TranslocoService,
-): string {
-  if (!(error instanceof FunctionsError)) {
-    return transloco.translate(UNKNOWN_ERROR_KEY);
-  }
-
-  const details = error.details as FunctionsErrorDetails | undefined;
-
-  if (details?.errors && details.errors.length > 0) {
-    return details.errors
-      .map((e) => translateDomainError(transloco, e))
-      .join(' ');
-  }
-
-  if (details?.code) {
-    return translateDomainError(transloco, {
-      code: details.code,
-      params: details.params,
-    });
-  }
-
-  return transloco.translate(UNKNOWN_ERROR_KEY);
 }

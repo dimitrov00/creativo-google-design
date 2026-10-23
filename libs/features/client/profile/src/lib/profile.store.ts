@@ -1,14 +1,17 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Principal, type ProfileEdits } from '@core/components';
 import { uploadAvatar } from '@core/pipelines';
-import type { UserId } from '@core/primitives';
+import {
+  AccountsErrorCode,
+  IdentityErrorCode,
+  type UserId,
+} from '@core/primitives';
 import { AvatarSystem } from '@core/systems';
 import {
   AccountStateService,
   saveOwnProfile,
 } from '@creativo/features/client/account-state';
 import {
-  AVATAR_REMOVE_FAILED,
   SessionIdentityService,
   avatarUploadRefusal,
 } from '@creativo/features/shared/shell';
@@ -16,9 +19,6 @@ import {
   AVATAR_PORTS,
   GATEWAY_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-
-/** The refusal shown when no active session owns the edit — today's `errors.identifier_missing`. */
-const IDENTIFIER_MISSING = 'identifier_missing';
 
 /**
  * The write half of `/account/profile` — one place where an edit becomes a
@@ -30,7 +30,10 @@ const IDENTIFIER_MISSING = 'identifier_missing';
  * intact (same contract as onboarding's steps — a user's typing must never
  * silently vanish). A refused edit answers its ecs-core `errorCode`
  * (`ACCOUNTS_UPDATE_PROFILE_*`); every other failure answers
- * `PROFILE_WRITE_FAILED` — both keys hold today's words.
+ * `AccountsErrorCode.UpdateProfileRepositoryFailure`
+ * (`ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE`), and
+ * an edit no active session owns `IDENTITY_IDENTIFIER_MISSING` — every
+ * `errors.<errorCode>` key holds today's words.
  *
  * The write is the `updateProfile` callable (`saveOwnProfile`, Phase 4a
  * 4A-3 (2)): the server's `ProfileEditSystem.decide` judges the edit
@@ -73,7 +76,7 @@ export class ProfileStore {
   }
 
   private async write(edits: ProfileEdits): Promise<string | null> {
-    if (!this.currentUserId()) return IDENTIFIER_MISSING;
+    if (!this.currentUserId()) return IdentityErrorCode.IdentifierMissing;
 
     this._pending.set(true);
     try {
@@ -98,7 +101,7 @@ export class ProfileStore {
     });
     if (!checked.ok) return checked.error.errorCode;
     const userId = this.currentUserId();
-    if (!userId) return IDENTIFIER_MISSING;
+    if (!userId) return IdentityErrorCode.IdentifierMissing;
 
     this._pending.set(true);
     try {
@@ -120,12 +123,12 @@ export class ProfileStore {
    */
   async removePhoto(): Promise<string | null> {
     const userId = this.currentUserId();
-    if (!userId) return IDENTIFIER_MISSING;
+    if (!userId) return IdentityErrorCode.IdentifierMissing;
 
     this._pending.set(true);
     try {
       const result = await this.avatars.removeAvatar(userId);
-      if (!result.ok) return AVATAR_REMOVE_FAILED;
+      if (!result.ok) return AccountsErrorCode.RemoveAvatarRemoveFailed;
       this.sessionIdentity.refreshAvatar();
       return null;
     } finally {

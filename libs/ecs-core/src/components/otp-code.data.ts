@@ -25,7 +25,7 @@ export const OtpCode = {
 
   /**
    * The edge guard — the ONLY way typed input becomes a code: trimmed, then
-   * exactly six digits, or `identity.otp_code.invalid` carrying the raw text.
+   * exactly six digits, or `IDENTITY_OTP_CODE_INVALID` carrying the raw text.
    */
   parse(raw: string): Result<OtpCode, IdentityError> {
     const trimmed = raw.trim();

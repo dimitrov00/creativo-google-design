@@ -42,6 +42,18 @@ const BANNED_PHRASES: readonly RegExp[] = [
   /\blast chance\b/iu,
 ];
 
+/** Where the refusal copy lives — `translateDomainError` reads `errors.<errorCode>`. */
+const ERRORS_PREFIX = 'errors.';
+const SCREAMING_CHARS = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * SCREAMING_SNAKE — a leading letter, then `_`-separated non-empty segments
+ * of capitals and digits. Checked without a nested quantifier: the character
+ * class plus "no empty segment" (`__`) and "no trailing separator".
+ */
+const isScreamingSnake = (code: string): boolean =>
+  SCREAMING_CHARS.test(code) && !code.includes('__') && !code.endsWith('_');
+
 function leaves(node: unknown, path = ''): Map<string, unknown> {
   const out = new Map<string, unknown>();
   if (node !== null && typeof node === 'object' && !Array.isArray(node)) {
@@ -114,6 +126,21 @@ describe('i18n catalogue parity', () => {
           placeholders(BG.leaves.get(key)) !== placeholders(EN.leaves.get(key)),
       );
     expect(mismatched).toEqual([]);
+  });
+
+  it('every `errors` key is an errorCode — its first segment SCREAMING', () => {
+    // An `errors` key is `<errorCode>` or `<errorCode>.<reason>`, the
+    // errorCode a SCREAMING dictionary value (Law 7.5) — the dotted keys of
+    // the legacy classes were retired in Phase 4b (phase-4b-delete.md §2).
+    for (const { lang, leaves: entries } of BOTH) {
+      const dotted = [...entries.keys()]
+        .filter((key) => key.startsWith(ERRORS_PREFIX))
+        .filter((key) => {
+          const [errorCode = ''] = key.slice(ERRORS_PREFIX.length).split('.');
+          return !isScreamingSnake(errorCode);
+        });
+      expect(dotted, `non-errorCode errors keys in ${lang}.json`).toEqual([]);
+    }
   });
 
   it('every plural `.one` has its `.other`', () => {

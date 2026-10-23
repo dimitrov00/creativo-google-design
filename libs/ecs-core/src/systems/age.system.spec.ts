@@ -6,16 +6,15 @@ import { deepFreeze, localDate, unwrapErr, unwrapOk } from '@core/testing';
 import { AgeSystem, AgeWindow } from './age.system';
 
 /*
- * The cases of BOTH birth-date specs, COPIED and re-targeted:
- * libs/domain/accounts/src/lib/birth-date.spec.ts and
- * libs/domain/identity/src/lib/birth-date.spec.ts. "Today" was a
- * `ZonedDateTime` noon in Europe/Sofia; it is now the shop's `LocalDate`
- * (what `ShopNow.localDate` answers for it), and the age is whole calendar
- * years over local dates. The accounts codes (`accounts.birth_date.*`)
- * collapsed into the identity ones (blueprint §2.7); the accounts class's
- * "a future date is too young" reading is `ageOn` + `windowRefusal`, the
- * identity class's `IN_FUTURE` is `ageAt`.
- * The class specs keep running against their shims.
+ * The cases of BOTH legacy birth-date specs — the accounts and the identity
+ * `birth-date.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) — COPIED and re-targeted.
+ * "Today" was a `ZonedDateTime` noon in Europe/Sofia; it is now the shop's
+ * `LocalDate` (what `ShopNow.localDate` answers for it), and the age is whole
+ * calendar years over local dates. The accounts codes (`accounts.birth_date.*`)
+ * collapsed into the identity ones (blueprint §2.7); the accounts class's "a
+ * future date is too young" reading is `ageOn` + `windowRefusal`, the identity
+ * class's `IN_FUTURE` is `ageAt`.
  *
  * Also copied: the birth-date reasons of apps/functions/src/use-cases/
  * complete-registration.use-case.spec.ts, and the birthday arithmetic of the

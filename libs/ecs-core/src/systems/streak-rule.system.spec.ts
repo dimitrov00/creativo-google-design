@@ -23,9 +23,11 @@ import {
 } from './streak-rule.system';
 
 /*
- * COPIED, never moved (the legacy specs keep running against their shims):
+ * COPIED, never moved, while the legacy specs still ran against their shims
+ * (deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1):
  *
- * - every case of libs/domain/engagement/src/lib/loyalty/streak-schedule.spec.ts
+ * - every case of the legacy engagement `streak-schedule.spec.ts`
  *   but two — `refuses a version of another rule` and the `id_mismatch` line
  *   of `reports every fault at once` (engagement Q8 retired the code with
  *   the class: the head's bodies carry no id), and `cannot be re-scheduled

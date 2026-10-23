@@ -56,8 +56,8 @@ export type ShopCover = {
  * (F-17: `Location` would shadow the DOM global). Every 1-to-1 field at the
  * root (Law 6): the identity slice, the `GeoPoint` slice (`latitude`,
  * `longitude`), the `VenuePhone` slice (`phoneE164`, `phoneDisplay`) and the
- * cover. The stored body keeps its legacy `geo`, `phone`, `cover`, `hours`
- * (clock text), `timezone` and `status` until the booking-core flip; the
- * shims convert.
+ * cover. Until the booking-core flip the stored body kept its legacy `geo`,
+ * `phone`, `cover`, `hours` (clock text), `timezone` and `status`, which
+ * the legacy shims converted.
  */
 export type ShopLocation = ShopLocationMeta & GeoPoint & VenuePhone & ShopCover;

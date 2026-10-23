@@ -26,11 +26,12 @@ import { deepFreeze, unwrapOk, utcMs, customerOf } from '@core/testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/discount-application.spec.ts
- * and of libs/application/engagement/.../apply-discounts.use-case.spec.ts
- * (the anti-abuse cap over a client's grants), copied — `grantedAtUtcMs` is
- * an instant, `minSpendCents` is `null` when ungated, the cap is `null` when
- * none. The originals keep running against the `DiscountApplication` shim.
+ * The cases of the legacy engagement `discount-application.spec.ts` and of the
+ * engagement application lib's `apply-discounts.use-case.spec.ts` (the
+ * anti-abuse cap over a client's grants; both deleted in Phase 4b, ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), copied —
+ * `grantedAtUtcMs` is an instant, `minSpendCents` is `null` when ungated, the
+ * cap is `null` when none.
  */
 
 const BASE = utcMs('2026-01-01T00:00:00+02:00');

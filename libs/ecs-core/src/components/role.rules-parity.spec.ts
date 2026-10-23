@@ -10,14 +10,14 @@ import {
 } from './role.data';
 
 /**
- * The role groupings of `role.data.ts` and the helpers in `firestore.rules`
- * are "two dialects of one rule", and the rules file cannot import this one.
- * This spec reads the rules text and holds them equal. Copied (not moved)
- * from `libs/domain/accounts/src/lib/user-role.rules-parity.spec.ts`, which
- * keeps guarding the legacy `user-role.ts` until the accounts lib is deleted
- * in Phase 4. It is the seed of the capability-matrix harness
- * (client-details design §12.6.3), which later drives the rules lane from
- * the same role sets.
+ * The role groupings of `role.data.ts` and the helpers in `firestore.rules` are
+ * "two dialects of one rule", and the rules file cannot import this one. This
+ * spec reads the rules text and holds them equal. Copied (not moved) from the
+ * legacy accounts `user-role.rules-parity.spec.ts`, which guarded the legacy
+ * `user-role.ts` until the accounts lib was deleted in Phase 4b (ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1). It is the seed of the
+ * capability-matrix harness (client-details design §12.6.3), which later drives
+ * the rules lane from the same role sets.
  *
  * The reader is deliberately small: it understands a helper whose body is a
  * single `return` of role checks joined by `||`, which is how every

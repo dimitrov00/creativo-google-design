@@ -3849,7 +3849,7 @@ export class StaffDashboard {
 
   private refuse(
     error: PipelineError | null,
-    fallbackKey = 'errors.booking.gateway.failed',
+    fallbackKey = `errors.${BookingErrorCode.CallFailed}`,
   ): void {
     this.undo.set(null);
     this.notice.set(
@@ -6584,12 +6584,12 @@ export class StaffDashboard {
   /**
    * A refusal, as a sentence.
    *
-   * The gateway files every refusal under one coarse code (`booking.gateway.
-   * failed`, "something went wrong") and carries the server's OWN code in its
-   * params — and the server's is the one that knows why. It is translated
-   * first, when the catalogue has a line for it, with a status name in the
-   * shop's words rather than the graph's; a seat already resolved has its
-   * own line, because "from resolved to cancelled" is the graph talking.
+   * The server's OWN code (`serverErrorCode`) is the one that knows why. It
+   * is translated first, when the catalogue has a line for it, with a status
+   * name in the shop's words rather than the graph's; a seat already
+   * resolved has its own line, because "from resolved to cancelled" is the
+   * graph talking. The surface's own "something went wrong"
+   * (`BookingErrorCode.CallFailed`) is only the fallback.
    */
   private describeError(error: PipelineError): string {
     // THE TRANSITION'S TWO STATUSES, in the shop's words: the wire carries
@@ -6604,7 +6604,7 @@ export class StaffDashboard {
       // A SEAT already resolved names no status it moves from.
       if (typeof fromRaw === 'string' && fromRaw.length > 0 && from === null) {
         return this.transloco.translate(
-          'errors.booking.transition.seat_resolved',
+          `errors.${BookingErrorCode.TransitionSeatResolved}`,
         );
       }
       const to = statusOf(error.serverParams['toBookingStatus']);
@@ -6630,7 +6630,7 @@ export class StaffDashboard {
       error,
       (code, params) =>
         translateDomainError(this.transloco, { ...params, errorCode: code }),
-      'booking.gateway.failed',
+      BookingErrorCode.CallFailed,
       extra,
     );
   }

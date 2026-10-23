@@ -19,7 +19,7 @@ import type { Otp } from '@core/entities';
 
 /**
  * OtpSystem — the one-time-code challenge as pure math (blueprint §2.8),
- * ported from identity's pure `Otp` (`libs/domain/identity/src/lib/otp.ts`:
+ * ported from identity's legacy pure `Otp` (`otp.ts`, deleted in Phase 4b:
  * `issue`, `verify(codeMatches, now)`, `recordFailedAttempt`) and the
  * throttle and channel checks of `apps/functions/src/use-cases/
  * request-otp.use-case.ts`.

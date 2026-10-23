@@ -6,6 +6,7 @@ import {
   heldFacts,
   hungJoints,
   joined,
+  levelNumeral,
   partedAtJoints,
   quietRun,
   runsOf,
@@ -169,5 +170,31 @@ describe('partedAtJoints', () => {
     expect(partedAtJoints([quietRun('Първо посещение')])).toEqual([
       [quietRun('Първо посещение')],
     ]);
+  });
+});
+
+/*
+ * The cases of the legacy engagement `standing.spec.ts`'s
+ * `describe('levelNumeral')` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), recovered from
+ * `e2d7a8f` with the same rows and titles: the numeral is a template-layer
+ * format now, so its cases live beside it.
+ */
+describe('levelNumeral', () => {
+  it.each([
+    [1, 'I'],
+    [2, 'II'],
+    [3, 'III'],
+    [4, 'IV'],
+    [5, 'V'],
+    [9, 'IX'],
+    [10, 'X'],
+    [14, 'XIV'],
+  ])('draws %i as «%s»', (level, numeral) => {
+    expect(levelNumeral(level)).toBe(numeral);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('draws nothing for %s', (level) => {
+    expect(levelNumeral(level)).toBe('');
   });
 });

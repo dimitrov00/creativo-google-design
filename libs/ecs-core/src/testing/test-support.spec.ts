@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BookingErrorCode,
   Result,
   Weekday,
   RepositoryErrorCode,
@@ -539,11 +540,11 @@ describe('memoryCommitPlan', () => {
     const { commit, plans } = memoryCommitPlan(store);
     const result = await commit(
       async () => null,
-      () => Result.err({ code: 'booking.slot_unavailable' }),
+      () => Result.err({ errorCode: BookingErrorCode.SlotUnavailable }),
     );
     expect(result).toEqual({
       ok: false,
-      error: { code: 'booking.slot_unavailable' },
+      error: { errorCode: BookingErrorCode.SlotUnavailable },
     });
     expect(store.size).toBe(0);
     expect(plans).toEqual([]);
@@ -638,7 +639,7 @@ describe('memoryTxPorts / recordingTelemetry', () => {
   it('records log lines and tracked errors, absent fields as null', () => {
     const telemetry = recordingTelemetry();
     telemetry.log('warn', 'booking.rejected', {
-      code: 'booking.outside_window',
+      errorCode: BookingErrorCode.SlotUnavailable,
     });
     telemetry.log('info', 'tick');
     const failure = new Error('boom');
@@ -648,7 +649,7 @@ describe('memoryTxPorts / recordingTelemetry', () => {
       {
         level: 'warn',
         msg: 'booking.rejected',
-        fields: { code: 'booking.outside_window' },
+        fields: { errorCode: BookingErrorCode.SlotUnavailable },
       },
       { level: 'info', msg: 'tick', fields: null },
     ]);

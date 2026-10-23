@@ -10,13 +10,17 @@
  * block restates the full list: `[...ICON_SYNTAX_RESTRICTIONS,
  * ...ECS_<SUFFIX>_RESTRICTIONS]` (see `ecsSyntaxBlocks` below).
  *
- * Where each array is installed in Phase 1:
- *  - root eslint.config.mjs — system, data, entity, pipeline (no legacy file
- *    carries those suffixes, so the blocks hit nothing that predates them);
- *  - libs/ecs-core and apps/functions eslint.config.mjs — all six, plus the
- *    port and adapter blocks and the `InjectionToken` guard, which would hit
- *    the 44 legacy `libs/application/**\/*.port.ts` files and the 40 class
- *    adapters elsewhere. Phase 4 widens them to the root when those go.
+ * Where each array is installed:
+ *  - root eslint.config.mjs — all seven suffix blocks (`ECS_ALL_SUFFIXES`),
+ *    each with the `InjectionToken` guard as its `extra`, so every port,
+ *    adapter, system, component, entity, primitive and pipeline file of the
+ *    workspace carries its kind's guards wherever it lives;
+ *  - libs/ecs-core and apps/functions eslint.config.mjs — the same seven,
+ *    restated through `ecsProjectBlocks` beside the `InjectionToken` guard on
+ *    every file (no Angular lives in either project).
+ * Phase 1 kept the port and adapter blocks and the token guard
+ * project-scoped while the legacy port files and class adapters existed;
+ * Phase 4b deleted those and widened them to the root.
  *
  * The flatten-pass guards (Laws 6 and 7, flatten-spec §7, L1–L7) live in
  * the suffix arrays themselves: data, entities and primitives carry all of
@@ -407,9 +411,11 @@ export const ECS_PRIMITIVE_RESTRICTIONS = [
 ];
 
 /**
- * Law 4: no IoC container outside Angular UI wiring. Installed only by the
- * project configs of libs/ecs-core and apps/functions in Phase 1 (on every
- * file there); the root gains it in Phase 4 with the legacy token files gone.
+ * Law 4: no IoC container outside Angular UI wiring. Installed at the root
+ * on the seven suffix blocks, and on every file of libs/ecs-core and
+ * apps/functions through `ecsProjectBlocks`. Never on every root `*.ts`: the
+ * web's Angular wiring (`ports.tokens.ts`, the SDK providers, the
+ * `libs/ui/*` tokens, `app.config.ts`) declares its tokens lawfully.
  */
 export const ECS_TOKEN_RESTRICTIONS = [
   {
@@ -429,17 +435,19 @@ const ECS_SUFFIX_RESTRICTIONS = {
   adapter: ECS_ADAPTER_RESTRICTIONS,
 };
 
-/** The five suffixes no legacy file carries — safe at the workspace root. */
-export const ECS_ROOT_SUFFIXES = [
+/**
+ * All seven ECS file kinds — installed by the root config and restated by
+ * the project-scoped configs of libs/ecs-core and apps/functions.
+ */
+export const ECS_ALL_SUFFIXES = [
   'system',
   'data',
   'entity',
   'primitive',
   'pipeline',
+  'port',
+  'adapter',
 ];
-
-/** All seven — the project-scoped configs of libs/ecs-core and apps/functions. */
-export const ECS_ALL_SUFFIXES = [...ECS_ROOT_SUFFIXES, 'port', 'adapter'];
 
 /** A system reaches no ambient I/O or timer. */
 export const ECS_SYSTEM_GLOBALS = [
@@ -466,7 +474,7 @@ export const ECS_SYSTEM_GLOBALS = [
 /**
  * One `files:` block per suffix. Each restates the FULL syntax list —
  * `ICON_SYNTAX_RESTRICTIONS`, the suffix's own array, then `extra` (the
- * token guard in the project configs) — because `no-restricted-syntax`
+ * token guard, at the root and in the project configs) — because `no-restricted-syntax`
  * options replace, never merge. Systems also get `no-restricted-globals`; data, entities
  * and primitives turn `@typescript-eslint/no-namespace` off for the one
  * type-only namespace; systems, data and primitives turn
@@ -543,12 +551,12 @@ export function ecsRootEveryFileBlocks() {
 /**
  * The project-scoped half for libs/ecs-core and apps/functions, appended
  * after `...baseConfig`: the `InjectionToken` guard and L7 on every file
- * (specs keep their UiIconName-cast allowance), then all seven suffix
- * blocks — the root's five restated with the token guard, plus `*.port.ts`
- * and `*.adapter.ts`. `everyFile` adds a project's own guards to all of them
- * (libs/ecs-core: L4, no `Date` — specs and test support included). Order
- * matters: a later block replaces the rule's options, so the suffix blocks
- * come after the `**\/*.ts` one.
+ * (specs keep their UiIconName-cast allowance), then the root's seven suffix
+ * blocks restated with the same extras. `everyFile` adds a project's own
+ * guards to all of them (libs/ecs-core: L4, no `Date` — specs and test
+ * support included). Order matters: a later block replaces the rule's
+ * options, so the project's `**\/*.ts` block would replace the root suffix
+ * blocks' options on its suffix files — the restated ones come after it.
  */
 export function ecsProjectBlocks({ everyFile = [] } = {}) {
   const extra = [...ECS_TOKEN_RESTRICTIONS, ...everyFile];

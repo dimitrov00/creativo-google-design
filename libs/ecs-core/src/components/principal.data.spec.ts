@@ -5,10 +5,11 @@ import { Principal, PrincipalKind } from './principal.data';
 import { Role } from './role.data';
 
 /*
- * The cases of libs/domain/identity/src/lib/principal.spec.ts, copied over
- * the flat union: the legacy `active` principal is `CLIENT` or `STAFF` here,
- * by whether any role is a staff role; `ONBOARDING` is kept for the guards;
- * the tag is `principalKind` and the account is `userId`.
+ * The cases of the legacy identity `principal.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over the
+ * flat union: the legacy `active` principal is `CLIENT` or `STAFF` here, by
+ * whether any role is a staff role; `ONBOARDING` is kept for the guards; the
+ * tag is `principalKind` and the account is `userId`.
  */
 const userId = UserId.of('u-1');
 const TENANT = TenantId.of('creativo');

@@ -136,7 +136,7 @@ const PHOTO_PNG = Buffer.from(
 );
 
 /**
- * Puts a profile photo where `AvatarUploader.find` looks
+ * Puts a profile photo where `AvatarPorts.findAvatar` looks
  * (`avatars/{uid}/original`), which is what completes a profile's last
  * checklist item.
  */

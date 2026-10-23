@@ -8,8 +8,8 @@ import {
 
 /**
  * OnboardingFlowSystem — the onboarding flow's transition function
- * (blueprint §2.8), the pure port of `libs/application/identity/src/lib/
- * flow/onboarding-flow.ts` (`advanceOnboardingFlow`), plus the resume plan
+ * (blueprint §2.8), the pure port of the legacy identity application lib's
+ * `flow/onboarding-flow.ts` (`advanceOnboardingFlow`), plus the resume plan
  * the `OnboardingFlowStore` walked by hand (`onboarding-flow.store.ts`:
  * `skipStepsOutsidePlan`, `back`, `planPosition`).
  *

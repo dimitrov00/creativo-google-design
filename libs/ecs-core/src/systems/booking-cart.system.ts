@@ -306,12 +306,13 @@ function mergeByStartThenShop(
 }
 
 /**
- * The cart's math beyond the component's own operations
- * (`booking-cart.ts`, `application/booking/src/lib/use-cases/{observe-availability.use-case,party-shops}.ts`,
- * `booking-flow.store.ts` helpers): the cart as engine lines, the shops a
- * party can be served at, one shop day's options split per shop, the commit
- * request, a bag rebuilt from a visit and a draft brought back to today.
- * Placement runs on one shop day's local minutes (Law 7.3).
+ * The cart's math beyond the component's own operations (the legacy
+ * `booking-cart.ts`, `observe-availability.use-case.ts` and `party-shops.ts`,
+ * deleted in Phase 4b — ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1 — and the `booking-flow.store.ts` helpers): the cart as engine lines,
+ * the shops a party can be served at, one shop day's options split per shop,
+ * the commit request, a bag rebuilt from a visit and a draft brought back to
+ * today. Placement runs on one shop day's local minutes (Law 7.3).
  *
  * The cart's own operations (add, remove, re-point a line, drop a seat, the
  * accepted barbers) are the {@link BookingCart} component.

@@ -3,8 +3,8 @@ import { BarberId, type LocationId, ServiceVariantId } from './ids.primitive';
 import type { Locale } from './locale.data';
 
 /**
- * The catalog context's error codes — the 25 codes of
- * `libs/domain/catalog/src/lib/*.errors.ts`, SCREAMING_SNAKE with the
+ * The catalog context's error codes — the 25 codes of the legacy catalog
+ * domain lib's `*.errors.ts` (deleted in Phase 4b), SCREAMING_SNAKE with the
  * `CATALOG_` prefix (Law 7.5, flatten-spec §4.2; the legacy dotted
  * `catalog.service.invalid_duration` is now `CATALOG_SERVICE_INVALID_DURATION`):
  * the `DomainError` subclasses collapse into this one dictionary of flat

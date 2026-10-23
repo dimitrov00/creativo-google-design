@@ -1,9 +1,10 @@
 /**
- * The phone context's error codes — the kernel's flat `phone_number_invalid`
- * (`phone-number.errors.ts`) and `country_unsupported`
- * (`phone-country.errors.ts`) — flat structs discriminated by `errorCode`
- * (Law 7.5), SCREAMING_SNAKE with the `PHONE_` prefix (flatten-spec §4.2).
- * Raised only by `PhoneSystem`, the one libphonenumber-caged module.
+ * The phone context's error codes — the legacy kernel's flat
+ * `phone_number_invalid` (`phone-number.errors.ts`) and `country_unsupported`
+ * (`phone-country.errors.ts`; both deleted in Phase 4b) — flat structs
+ * discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the `PHONE_`
+ * prefix (flatten-spec §4.2). Raised only by `PhoneSystem`, the one
+ * libphonenumber-caged module.
  */
 export const PhoneErrorCode = {
   /** The raw text is not a valid phone number; `reason` says why. */
@@ -15,12 +16,13 @@ export type PhoneErrorCode =
   (typeof PhoneErrorCode)[keyof typeof PhoneErrorCode];
 
 /**
- * Why a raw string failed to parse — maps 1:1 onto the
- * `errors.identity.phone.*` i18n keys (hyphens → underscores), so the UI says
- * "too short, for example 088 123 4567" instead of one generic "invalid".
- * `Invalid` is the fallback for a number that parses but fails validation
- * without a more specific diagnosis. The strings are the kernel's
- * `PhoneNumberInvalidReason`, unchanged.
+ * Why a raw string failed to parse — each value IS the reason segment of its
+ * i18n key, `errors.PHONE_INVALID.<reason>` (`PHONE_INVALID.too-short`,
+ * nothing mapped; `translateDomainError`'s `reason` argument builds it), so
+ * the UI says "too short, for example 088 123 4567" instead of one generic
+ * "invalid". `Invalid` is the fallback for a number that parses but fails
+ * validation without a more specific diagnosis. The strings are the legacy
+ * kernel's `PhoneNumberInvalidReason`, unchanged.
  */
 export const PhoneInvalidReason = {
   NotANumber: 'not-a-number',

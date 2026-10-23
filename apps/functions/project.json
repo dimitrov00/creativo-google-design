@@ -85,6 +85,12 @@
       "options": {
         "configFile": "apps/functions/vitest.integration.config.mts"
       }
+    },
+    "test": {
+      "inputs": ["...", "{workspaceRoot}/firestore.rules"]
+    },
+    "test-ci--src/lib/booking/caller-roles.spec.ts": {
+      "inputs": ["...", "{workspaceRoot}/firestore.rules"]
     }
   }
 }

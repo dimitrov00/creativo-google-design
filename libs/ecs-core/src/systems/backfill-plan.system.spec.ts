@@ -21,7 +21,8 @@ import {
 
 /*
  * The cases of apps/functions/src/lib/ops/backfill-plan.spec.ts, copied (the
- * legacy spec keeps running against its shim) and re-targeted: a stored row
+ * legacy spec ran against its shim until a flip deleted it) and
+ * re-targeted: a stored row
  * — in the flat seat layout (`seatSubject`, `subjectUserId`) with SCREAMING
  * placements — is read into a `MirrorRow` first (`rowOf` — the seats'
  * subjects derived the R33 way as `UserId`s, the placements through the

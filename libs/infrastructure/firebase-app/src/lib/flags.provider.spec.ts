@@ -11,9 +11,10 @@ import { provideFlags } from './flags.provider';
 import { FLAGS_PORTS } from './ports.tokens';
 
 /*
- * The cases of `feature-flags.token.spec.ts` (`libs/application/shared`,
- * deleted in 4b), on `FLAGS_PORTS`: the parsed manifest, and a boot that
- * refuses a bad one — every bad entry named at once.
+ * The cases of `feature-flags.token.spec.ts` (the legacy shared application
+ * lib, deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), on `FLAGS_PORTS`: the parsed manifest, and a boot that refuses a
+ * bad one — every bad entry named at once.
  */
 function flagsFrom(raw: Readonly<Record<string, unknown>>): FlagsPorts {
   const injector = createEnvironmentInjector(

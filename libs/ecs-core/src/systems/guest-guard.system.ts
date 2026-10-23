@@ -2,8 +2,8 @@ import { type Principal, PrincipalKind } from '@core/components';
 
 /**
  * GuestGuardSystem — the settled account verdict `/auth` and `/onboarding`
- * branch on (blueprint §2.8), the pure port of `libs/application/identity/
- * src/lib/flow/guest-guard.ts` (`classify`, `latchSettledPrincipal`).
+ * branch on (blueprint §2.8), the pure port of the legacy identity application
+ * lib's `flow/guest-guard.ts` (`classify`, `latchSettledPrincipal`).
  *
  * - `LOADING`    — no principal observed yet → render a splash.
  * - `ANONYMOUS`  — not signed in → allow the auth flow.

@@ -21,15 +21,16 @@ import { deepFreeze, localDate, utcMs } from '@core/testing';
 import { BadgeSystem } from './badge.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/loyalty/badge-series.spec.ts,
- * COPIED (the legacy spec keeps running against `BadgeSeries`' shim) and
- * re-targeted to the flat `BadgeSeries` (the `MetricRef` and
- * `BadgeSubjectSlot` slices at its root): `standing`, the family's
- * own questions, and the rows of `BadgeSeries.create`'s refusal table that
- * are the family's rules (`BadgeSystem.validate`). Not copied: the rows of
- * an empty subject, narrowing or category id and a one-locale title, and
- * the case that types every id — those are the edge guards' (`XId.of`
- * after a guard, `LocalizedText.parse`), not the family's.
+ * The cases of the legacy engagement `badge-series.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED while
+ * it still ran against `BadgeSeries`' shim, and re-targeted to the flat
+ * `BadgeSeries` (the `MetricRef` and `BadgeSubjectSlot` slices at its root):
+ * `standing`, the family's own questions, and the rows of
+ * `BadgeSeries.create`'s refusal table that are the family's rules
+ * (`BadgeSystem.validate`). Not copied: the rows of an empty subject, narrowing
+ * or category id and a one-locale title, and the case that types every id —
+ * those are the edge guards' (`XId.of` after a guard, `LocalizedText.parse`),
+ * not the family's.
  */
 
 const text = (bg: string, en = bg) => ({ bg, en });

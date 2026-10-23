@@ -23,9 +23,9 @@ export const Email = {
   /**
    * The edge guard: trim, lower-case, check the shape — the canonical
    * `Email`, or `null`. Context-free on purpose: identity words a refusal as
-   * `identity.identifier.invalid`, the booking contact as
-   * `booking.contact.invalid_email`, accounts as `accounts.email.invalid` —
-   * one rule, each edge its own code.
+   * `IDENTITY_IDENTIFIER_INVALID`, the booking contact as
+   * `SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL`, accounts as
+   * `ACCOUNTS_EMAIL_INVALID` — one rule, each edge its own code.
    */
   parse(raw: string): Email | null {
     const cleaned = raw.trim().toLowerCase();

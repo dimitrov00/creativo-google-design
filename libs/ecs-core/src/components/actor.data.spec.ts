@@ -5,7 +5,8 @@ import { ImpersonationScope } from './impersonation-scope.data';
 import { Role } from './role.data';
 
 /*
- * The cases of libs/domain/governance/src/lib/actor.spec.ts, copied over the
+ * The cases of the legacy governance `actor.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over the
  * flat union (`actorForCaller` is `Actor.forCaller`; the free-string system
  * sources are the `SystemSource` dictionary now; every field carries the
  * `actor` prefix and the tag is `actorRole`).

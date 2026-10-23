@@ -47,6 +47,15 @@ describe('EngagementErrorCode', () => {
     );
   });
 
+  it('spells the admin rhythm page’s own failure word — the successor of a dotted i18n key (Phase 4b, 4B-4)', () => {
+    expect(EngagementErrorCode.RepositoryFailure).toBe(
+      'ENGAGEMENT_REPOSITORY_FAILURE',
+    );
+    expect(EngagementError.repositoryFailure()).toEqual({
+      errorCode: 'ENGAGEMENT_REPOSITORY_FAILURE',
+    });
+  });
+
   it('retires the schedule id mismatch and the notification title', () => {
     expect(ENGAGEMENT_ERROR_CODES).not.toContain(
       'ENGAGEMENT_STREAK_SCHEDULE_ID_MISMATCH',

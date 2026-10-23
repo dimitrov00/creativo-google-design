@@ -26,7 +26,7 @@ export const BirthDate = {
   /**
    * The edge guard for the server-submitted value: a strict `YYYY-MM-DD`
    * (surrounding whitespace trimmed) naming a real calendar day, or `null`.
-   * Context-free: the caller words the refusal (`identity.birth_date.invalid`).
+   * Context-free: the caller words the refusal (`IDENTITY_BIRTH_DATE_INVALID`).
    */
   parse(raw: string): BirthDate | null {
     const match = ISO_DATE_PATTERN.exec(raw.trim());

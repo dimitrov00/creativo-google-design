@@ -6,6 +6,7 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
 import { Principal, WallTime } from '@core/components';
+import { AccountsErrorCode } from '@core/primitives';
 import { ProfileCompletionKey } from '@core/systems';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
@@ -340,6 +341,8 @@ export class ClientAccount {
   }
 
   protected translateRepositoryError(): string {
-    return translateDomainError(this.transloco, { code: 'repository_failure' });
+    return translateDomainError(this.transloco, {
+      errorCode: AccountsErrorCode.RepositoryFailure,
+    });
   }
 }

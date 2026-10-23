@@ -1,5 +1,7 @@
 # Карта на клиента: ревизия 3 (the staff client card, revision 3)
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 Status: design spec, **revision 3, second issue**, 2026-09-29. The lead designer's answer to the owner's round-2 feedback **F1–F11** on the BUILT client card, written against the lead's brief **L1–L11** and the binding rulings **R2-A … R2-M**, and revised after two adversarial reviews (taste and owner lens; feasibility, house rules and build plan). Every finding of both reviews is answered in **§9**. It is a NEW file (R2-M): the first spec, `docs/design-research/client-card-redesign.md` (below: **the first spec**), stays as the record of what was built and is superseded only where §0.2 says so.
 
 **What the owner rejected** was the taste, not the engineering: grey rectangles, a brown-red ink, a head packed against the leading edge, grey-on-grey cards, rails that hide medals, a bar under a medal, a records strip at the foot of a page. **What this revision builds** is one sentence long: _spacious, centred on the person, colour carried by surfaces and glyphs in the one orange, white elevated cards, discs, grids and rings._ If a region of a wireframe below could be mistaken for the rejected build, it is a defect of this spec.

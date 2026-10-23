@@ -10,11 +10,11 @@ import {
 import { OfferingPriceSystem } from './offering-price.system';
 
 /*
- * The `Service terms matrix` cases of
- * libs/domain/catalog/src/lib/service.spec.ts (6), COPIED over the
- * flat `Service` matrix — `byVariant` is the `overrides` array, and every
- * terms struct (the service's, an offering's, an override's) sits at its
- * owner's root.
+ * The `Service terms matrix` cases of the legacy catalog `service.spec.ts` (6;
+ * deleted in Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), COPIED over the flat `Service` matrix — `byVariant` is the
+ * `overrides` array, and every terms struct (the service's, an offering's, an
+ * override's) sits at its owner's root.
  */
 
 const terms = (priceCents: number, durationMinutes: number) =>

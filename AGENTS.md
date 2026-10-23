@@ -17,27 +17,25 @@ edit both together.
   goal is mechanical sympathy with V8 (monomorphic plain objects, flat arrays,
   no hidden-class churn, no prototype chains) and with Firestore's pricing and
   indexing mechanics.
-- **The 3-tier OOP shape that preceded it is legacy to remove, not extend.**
+- **The 3-tier OOP shape that preceded it is REMOVED (Phase 4b, 2026-10).**
   Rich entities with `private constructor` + `static create()`, class-based
   `Result`/`Success`/`Failure`, the `DomainError` class hierarchy,
-  `reconstitute()`/`toDocument()` mappers, `InjectionToken` ports and
-  `@Injectable` use-case classes (built 2026-07 → 2026-10 across
-  `libs/domain/*`, `libs/application/*`, `libs/infrastructure/*`,
-  `apps/functions`) all violate the laws below. Convert what you touch; never
-  add to it.
+  `reconstitute()`/`toDocument()` mappers, and application-layer port
+  interfaces keyed by `InjectionToken` and consumed by `@Injectable` use-case
+  classes (built 2026-07 → 2026-10; `libs/domain/*` and `libs/application/*`
+  deleted, their consumers in `libs/infrastructure/*`, `libs/features/*` and
+  `apps/functions` converted) violated the laws below. Never reintroduce any
+  of it. A web `InjectionToken` typed against an `@core/ports` bundle (Law
+  9.1, `ports.tokens.ts`) is the lawful Angular wiring and stays.
 
 ## 1. The nine laws
 
 Laws 6 (flat archetypes, domain-prefixed discriminators) and 7 (branded
 primitives, shop-anchored time, error structs) were added by the owner on
-2026-10-10 and override any earlier wording below. They are applied to the
-whole codebase by one **flatten pass** that runs after Phase 3a lands and
-before the 3b document flips. Until that pass, existing ecs-core shapes
-(nested component maps, `kind` tags, `*Ms` instants, per-entity `zone`
-fields, `ZonedInstant`, raw-number coordinates, `{ code }` errors) stay as
-they are — never convert a file piecemeal; new files follow Laws 6 and 7 from
-the start. Every name, shape and staging step of that pass is fixed in
-`docs/architecture/flatten-spec.md`.
+2026-10-10 and override any earlier wording below. They were applied to the
+whole codebase by one **flatten pass** that ran after Phase 3a and before the
+3b document flips. Every name, shape and staging step of that pass is fixed
+in `docs/architecture/flatten-spec.md`.
 
 ### Law 1 — Components are plain data (`*.data.ts`)
 
@@ -175,8 +173,7 @@ cancelledAtUtcMs })`). Security rules and composite indexes query top-level
 1. **No date classes, anywhere.** `ZonedDateTime`, Luxon `DateTime`, Moment,
    date-fns/dayjs wrappers and any custom date class are banned; ecs-core
    never constructs a `Date`. They allocate on the heap, chase pointers and
-   couple pure logic to a time-zone database. (The legacy kernel's
-   `ZonedDateTime` survives only until Phase 4 deletes it — never add a use.)
+   couple pure logic to a time-zone database.
 2. **The physical chair invariant.** A haircut happens on the shop's wall
    clock, wherever the client was when they booked. The IANA time zone is
    configuration of the **shop location only** —
@@ -344,8 +341,9 @@ observeBusyDay: ObserveBusyDay; … };`. Each bundle is cohesive and
    a port function type is never declared in a pipeline or an adapter.
 4. **Enforced, not trusted.** `creativo/no-sliced-ports`
    (`tools/lint-rules/no-sliced-ports.mjs`, tested beside it) runs on every
-   `.ts` file from the root config, and in strict mode (`anyType`) on
-   `libs/ecs-core/src/ports/**`.
+   `.ts` file from the root config, and in strict mode (`anyType`) on every
+   `*.port.ts` from the root config and on all of `libs/ecs-core/src/ports/**`
+   from its own config.
 
 The file suffix stays `*.port.ts` (one family per file, singular like every
 other kind); the owner's example `scheduling.ports.ts` names the same file.
@@ -374,9 +372,9 @@ other kind); the owner's example `scheduling.ports.ts` names the same file.
 - **ECS core:** `libs/ecs-core` (tags `scope:shared`, `type:domain`), six
   tiers exported only through `@core/primitives`, `@core/components`,
   `@core/entities`, `@core/ports`, `@core/systems`, `@core/pipelines` (+
-  `@core/testing` for specs) — Law 8; no root barrel. It replaces
-  `libs/domain/*` (the kernel folds in) and the port halves of
-  `libs/application/*`; every pipeline, server or browser, lives in
+  `@core/testing` for specs) — Law 8; no root barrel. It replaced
+  `libs/domain/*` and the port halves of `libs/application/*` (both deleted
+  in Phase 4b); every pipeline, server or browser, lives in
   `@core/pipelines`.
 - **Design system:** `libs/ui/*` (`ui-*` elements, `--sys-*` tokens), with
   taste rules in `docs/styling-conventions.md` and the design-research docs.
@@ -384,13 +382,20 @@ other kind); the owner's example `scheduling.ports.ts` names the same file.
 - **Boundaries** are enforced by `@nx/enforce-module-boundaries` in
   `eslint.config.mjs` (`scope:*` + `type:*` tags, documented in
   `docs/architecture/module-boundaries.md`). The layering arrows stay: ui
-  never sees application/infrastructure; only `libs/infrastructure/**` and
-  `apps/functions/**` may import `firebase/*`; `libphonenumber-js` only inside `libs/ecs-core/src/systems/phone.system.ts` (and the kernel until Phase 4 deletes it). **No Luxon and no dinero.js** — time is native `Intl` inside `zoned-time.system.ts`, money is integer `…Cents: PriceCents` beside a `currency: Currency`, with the plain `Money { amountCents: PriceCents; currency: Currency }` struct for arithmetic; both packages leave `package.json` when the kernel is deleted.
+  never sees infrastructure; only `libs/infrastructure/**`, `apps/functions/**`
+  and the Playwright e2e tooling (`**/e2e/**/*.ts`) may import `firebase/*`;
+  `libphonenumber-js` only inside `libs/ecs-core/src/systems/phone.system.ts`.
+  **No Luxon and no dinero.js** — time is native `Intl` inside
+  `zoned-time.system.ts`, money is integer `…Cents: PriceCents` beside a
+  `currency: Currency`, with the plain `Money { amountCents: PriceCents;
+currency: Currency }` struct for arithmetic; neither is a dependency
+  (removed in Phase 4b).
 
 ## 4. Decisions and the migration record
 
-The ECS migration runs bottom-up in four phases (foundation, systems,
-pipelines and adapters, client integration and legacy deletion). On
+The ECS migration ran bottom-up in four phases (foundation, systems,
+pipelines and adapters, client integration and legacy deletion). All four
+phases are complete (Phase 4b, 2026-10). On
 2026-10-10 the owner adopted every recommendation of
 `docs/architecture/ecs-migration.md` §9 (D1–D28), with two amendments: time
 is native `Intl`, no Luxon (D5); money is a plain integer struct, no
@@ -399,11 +404,9 @@ shipped; its adapter goes), D16(b) (the public exception effect is the only
 record) and D27(b) (server pipelines in `apps/functions/src/pipelines/` —
 **superseded 2026-10-11 by Law 8**: all pipelines live in `@core/pipelines`;
 D2's single root barrel is superseded by Law 8's tier barrels too).
-**Where the work stands and what to do next — for any agent or developer
-resuming it — is `docs/architecture/HANDOFF.md`; read it before starting.**
-Phase status and baselines live in the auto-memory note
-`project-ecs-migration-status`. Implement the phase plan of the blueprint's
-§6; do not reopen a decided question in code.
+**The migration record (what landed, the gate, the baselines, what is
+carried forward) is `docs/architecture/HANDOFF.md`.** The decisions D1–D28
+and the owner rulings stand; do not reopen a decided question in code.
 
 ## 5. Verification (run through Nx, never the raw tool)
 

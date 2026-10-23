@@ -8,11 +8,12 @@ import {
 } from './profile-completion.system';
 
 /*
- * The cases of libs/application/accounts/src/lib/read-models/
- * profile-completion.spec.ts, COPIED and re-targeted: `profileCompletion(
- * user, hasPhoto)` → `ProfileCompletionSystem.completion(profile,
- * hasPhoto)` over the plain `birthDate` field. The read-model spec keeps
- * running until its file is shimmed (cross-group).
+ * The cases of the legacy accounts application lib's read-model
+ * `profile-completion.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED and re-targeted:
+ * `profileCompletion(user, hasPhoto)` →
+ * `ProfileCompletionSystem.completion(profile, hasPhoto)` over the plain
+ * `birthDate` field.
  */
 
 const user = (birthDate: string | null = null) => ({

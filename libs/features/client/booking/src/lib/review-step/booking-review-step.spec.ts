@@ -75,7 +75,7 @@ const COPY: Translation = {
     reach: { call: 'REACH:call', contact: 'REACH:contact' },
   },
   errors: {
-    'booking.gateway.failed': 'COPY:gateway-failed',
+    [BookingErrorCode.CallFailed]: 'COPY:gateway-failed',
     [BookingErrorCode.InvalidInput]: 'COPY:invalid-input',
     [`${BookingErrorCode.InvalidInput}.person_overlap`]: 'COPY:person-overlap',
     [CARRIED]: 'COPY:carried-generic {{reach}}',

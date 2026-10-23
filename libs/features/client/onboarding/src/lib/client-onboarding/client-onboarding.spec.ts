@@ -28,6 +28,7 @@ import {
   type MediaVariant,
 } from '@core/ports';
 import {
+  AccountsErrorCode,
   IdentityErrorCode,
   MediaError,
   MediaRefId,
@@ -392,8 +393,9 @@ describe('ClientOnboarding', () => {
       const error = host().querySelector('.ui-phone-field__error');
       expect(error).not.toBeNull();
       // Empty test catalog → translateDomainError falls back to the raw
-      // reason-mapped code — proving the reason reached the copy lookup.
-      expect(error?.textContent).toContain('identity.phone.too_short');
+      // `<errorCode>.<reason>` key — proving the reason reached the copy
+      // lookup, unmapped.
+      expect(error?.textContent).toContain('PHONE_INVALID.too-short');
 
       // Reward early: completing the number clears the error live.
       typePhone(exampleDigits);
@@ -614,7 +616,7 @@ describe('ClientOnboarding', () => {
       expect(query('onboarding-avatar')).toBeNull();
       expect(query('onboarding-birthday-step')).not.toBeNull();
       expect(query('onboarding-birthday-error')?.textContent).toContain(
-        'accounts.update_profile.repository_failure',
+        AccountsErrorCode.UpdateProfileRepositoryFailure,
       );
     });
   });

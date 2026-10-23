@@ -3,28 +3,30 @@ import type { IdentifierChannel } from './identifier-channel.data';
 import type { PhoneError } from './phone-errors.data';
 
 /**
- * The identity context's error codes — the codes of
- * `libs/domain/identity/src/lib/*.errors.ts` and the identity flow machines,
- * collapsed from `DomainError` subclasses into one dictionary of flat
- * structs discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the
- * `IDENTITY_` prefix (flatten-spec §4.2). Every non-`errorCode` field is an
- * i18n parameter, so each one is an i18n-safe scalar (infrastructure Q5);
- * the UI looks them up as `errors.<errorCode>`, and the edge still sends the
- * legacy dotted code on the wire until Phase 4 (§4.3).
+ * The identity context's error codes — the codes of the legacy identity
+ * domain's `*.errors.ts` (deleted in Phase 4b) and of the identity flow
+ * machines, collapsed from `DomainError` subclasses into one dictionary of
+ * flat structs discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with
+ * the `IDENTITY_` prefix (flatten-spec §4.2). Every non-`errorCode` field is
+ * an i18n parameter, so each one is an i18n-safe scalar (infrastructure Q5);
+ * the UI looks them up as `errors.<errorCode>`, and the edge sends the code
+ * itself on the wire (Phase 4a 4A-4).
  *
  * The first four are the OTP verdicts (`IdentityError.Otp`): payload-free on
  * purpose — a `wrong_code` never smuggles the next entity state into an
  * error value; the incremented attempt is `OtpSystem.recordAttempt(otp)`, a
  * separate pure step. The edge-guard codes are raised by
  * `ParsedIdentifier.parse`, `OtpCode.parse`, `AuthClaims.active`,
- * `AuthStrategy.parse`, AgeSystem and the two flow machines. The last nine
- * (identity flip (2), F2-4) are the refusals of the `requestOtp`,
- * `verifyOtp` and `completeRegistration` pipelines that no dictionary
- * spelled before; their edge rows carry NEW dotted wire codes, and the three
- * OTP callables translate them back to today's undotted codes before the
- * wire. Their context fields are scalars: the primitives tier imports no
- * component (Law 8), so a component value (`IdentifierChannel` aside,
- * which lives here) rides as its plain string.
+ * `AuthStrategy.parse`, AgeSystem and the two flow machines. The nine from
+ * `OtpChannelMismatch` to `RegistrationFieldMissing` (identity flip (2),
+ * F2-4) are the refusals of the `requestOtp`, `verifyOtp` and
+ * `completeRegistration` pipelines that no dictionary spelled before; the
+ * callables' own faults follow them (Phase 4a 4A-4), and the web's own two
+ * failure words close the dictionary (Phase 4b, 4B-4: no pipeline raises
+ * them, so they stay outside the {@link IdentityError} union and their edge
+ * rows are inert). Their context fields are scalars: the primitives tier
+ * imports no component (Law 8), so a component value (`IdentifierChannel`
+ * aside, which lives here) rides as its plain string.
  */
 export const IdentityErrorCode = {
   /** The challenge was already used — a code is good for one sign-in. */
@@ -85,7 +87,7 @@ export const IdentityErrorCode = {
   RegistrationFieldMissing: 'IDENTITY_REGISTRATION_FIELD_MISSING',
   /*
    * The OTP and registration callables' own faults and payload refusals —
-   * the successors of today's undotted wire codes (Phase 4a 4A-4).
+   * the successors of the undotted wire codes retired in Phase 4a (4A-4).
    */
   /** A payload the callable could not read — `reason` says what (was `invalid_input`). */
   InvalidInput: 'IDENTITY_INVALID_INPUT',
@@ -99,6 +101,24 @@ export const IdentityErrorCode = {
   ClaimsPromotionFailure: 'IDENTITY_CLAIMS_PROMOTION_FAILURE',
   /** The registration's birth date was refused — its cause nested in `errors` (was `registration_birth_date_invalid`). */
   RegistrationBirthDateInvalid: 'IDENTITY_REGISTRATION_BIRTH_DATE_INVALID',
+  /*
+   * The web's own failure words (Phase 4b, 4B-4) — the successors of the
+   * dotted i18n keys the onboarding, profile and auth pages read.
+   */
+  /**
+   * The session carries no phone number or email (or no account) to
+   * register or save against — the onboarding and profile stores word it;
+   * no pipeline raises it (succeeds a retired dotted i18n key —
+   * `docs/architecture/flips/phase-4b-delete.md` §2 row 4).
+   */
+  IdentifierMissing: 'IDENTITY_IDENTIFIER_MISSING',
+  /**
+   * An auth or onboarding call failed and the server named no code the
+   * surface words — the auth and onboarding pages' own generic copy; no
+   * pipeline raises it (succeeds a retired dotted i18n key —
+   * `docs/architecture/flips/phase-4b-delete.md` §2 row 5).
+   */
+  CallFailed: 'IDENTITY_CALL_FAILED',
 } as const;
 export type IdentityErrorCode =
   (typeof IdentityErrorCode)[keyof typeof IdentityErrorCode];
@@ -302,6 +322,12 @@ export const IdentityError = {
       errors,
     };
   },
+  identifierMissing(): IdentityError.IdentifierMissing {
+    return { errorCode: IdentityErrorCode.IdentifierMissing };
+  },
+  callFailed(): IdentityError.CallFailed {
+    return { errorCode: IdentityErrorCode.CallFailed };
+  },
 
   /** Narrows an error to one code — `IdentityError.is(e, IdentityErrorCode.OtpExpired)`. */
   is<C extends IdentityErrorCode>(
@@ -454,6 +480,12 @@ export namespace IdentityError {
     readonly errorCode: typeof IdentityErrorCode.RegistrationBirthDateInvalid;
     /** The cause — the one birth-date refusal, as today's wrapper nested it. */
     readonly errors: readonly BirthDate[];
+  };
+  export type IdentifierMissing = {
+    readonly errorCode: typeof IdentityErrorCode.IdentifierMissing;
+  };
+  export type CallFailed = {
+    readonly errorCode: typeof IdentityErrorCode.CallFailed;
   };
 }
 

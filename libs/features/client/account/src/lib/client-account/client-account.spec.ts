@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { EnvironmentProviders, Injectable, signal } from '@angular/core';
@@ -84,13 +86,27 @@ function appointment(zone = 'Europe/Sofia'): Appointment {
   });
 }
 
+/** The app's own bg catalogue — its `errors` words are what a failed read shows. */
+function bgCatalogue(): Translation {
+  return JSON.parse(
+    readFileSync(
+      resolve(
+        __dirname,
+        '../../../../../../infrastructure/i18n/src/assets/i18n/bg.json',
+      ),
+      'utf8',
+    ),
+  ) as Translation;
+}
+
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
   getTranslation(): Observable<Translation> {
     // The status word the dashboard borrows from the appointments screen,
-    // the card's own heading, and the two sentences the shared card is
-    // named by; every other key renders as itself.
+    // the card's own heading, the two sentences the shared card is named
+    // by, and the app's own error words; every other key renders as itself.
     return of({
+      errors: bgCatalogue()['errors'],
       account: { upcoming: { title: 'Предстоящ час' } },
       appointments: { status: { confirmed: 'Потвърден' } },
       visits: {
@@ -416,6 +432,29 @@ describe('ClientAccount', () => {
     ).not.toBeNull();
     // Telling a client with a booking "no upcoming appointments" while the
     // query attaches is the one thing this card must never do.
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).toBeNull();
+  });
+
+  it('says a failed read in the app’s own words, never the empty state', async () => {
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      of(
+        EcsResult.err(
+          RepositoryError.readFailed('appointments', 'permission-denied'),
+        ),
+      ),
+    );
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('error');
+    const upcoming = host.querySelector('[data-testid="account-upcoming"]');
+    expect(upcoming?.getAttribute('data-state')).toBe('error');
+    expect(upcoming?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      'Възникна проблем от наша страна — моля, опитайте отново.',
+    );
     expect(
       host.querySelector('[data-testid="account-upcoming-book-cta"]'),
     ).toBeNull();

@@ -1,11 +1,18 @@
 /**
- * The accounts context's error codes — the codes of
- * `libs/domain/accounts/src/lib/*.errors.ts` and of the accounts use cases
- * (`update-profile.errors.ts`, the avatar upload checks), collapsed from
- * `DomainError` subclasses into one dictionary of flat structs
- * discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the
- * `ACCOUNTS_` prefix (flatten-spec §4.2). Every non-`errorCode` field is an
- * i18n parameter, so each one is an i18n-safe scalar (infrastructure Q5).
+ * The accounts context's error codes — the codes of the legacy accounts
+ * domain's `*.errors.ts` and of the accounts use cases
+ * (`update-profile.errors.ts`, the avatar upload checks; all deleted in
+ * Phase 4b), collapsed from `DomainError` subclasses into one dictionary of
+ * flat structs discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with
+ * the `ACCOUNTS_` prefix (flatten-spec §4.2). Every non-`errorCode` field is
+ * an i18n parameter, so each one is an i18n-safe scalar (infrastructure Q5).
+ *
+ * The last four are the web's own failure words (Phase 4b, 4B-4): the
+ * successors of the dotted i18n keys the profile, onboarding and account
+ * pages read. No system or pipeline raises them — a surface names one when a
+ * write or a read it made failed for a reason no refusal explains — so they
+ * stay outside the {@link AccountsError} union, and their edge rows are
+ * inert.
  *
  * Not here: the birth-date age window (one `BirthDate` now, its refusals are
  * the `IDENTITY_BIRTH_DATE_*` codes of `identity-errors.data.ts`),
@@ -35,6 +42,34 @@ export const AccountsErrorCode = {
   UploadAvatarNotAnImage: 'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE',
   /** The picked avatar file is over `maxBytes`. */
   UploadAvatarTooLarge: 'ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE',
+  /**
+   * The avatar upload failed for a reason the picked file does not explain
+   * (a Storage failure) — the profile and onboarding pages word it
+   * (`avatar-refusal.ts`); no pipeline raises it (succeeds a retired dotted
+   * i18n key — `docs/architecture/flips/phase-4b-delete.md` §2 row 1).
+   */
+  UploadAvatarUploadFailed: 'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
+  /**
+   * The avatar removal failed — the profile page words it
+   * (`avatar-refusal.ts`); no pipeline raises it (succeeds a retired dotted
+   * i18n key — `docs/architecture/flips/phase-4b-delete.md` §2 row 2).
+   */
+  RemoveAvatarRemoveFailed: 'ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED',
+  /**
+   * An owner's profile write failed for any reason but a refusal of the edit
+   * (a store, transport or session failure) — the profile and onboarding
+   * pages word it (`own-profile.ts`); no pipeline raises it (succeeds a
+   * retired dotted i18n key — `docs/architecture/flips/phase-4b-delete.md`
+   * §2 row 3).
+   */
+  UpdateProfileRepositoryFailure: 'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+  /**
+   * The account page could not read the client's upcoming visits — its error
+   * state words it (`client-account.ts`); no pipeline raises it (succeeds a
+   * retired dotted i18n key — `docs/architecture/flips/phase-4b-delete.md`
+   * §2 row 6).
+   */
+  RepositoryFailure: 'ACCOUNTS_REPOSITORY_FAILURE',
 } as const;
 export type AccountsErrorCode =
   (typeof AccountsErrorCode)[keyof typeof AccountsErrorCode];
@@ -100,6 +135,18 @@ export const AccountsError = {
   uploadAvatarTooLarge(maxBytes: number): AccountsError.UploadAvatarTooLarge {
     return { errorCode: AccountsErrorCode.UploadAvatarTooLarge, maxBytes };
   },
+  uploadAvatarUploadFailed(): AccountsError.UploadAvatarUploadFailed {
+    return { errorCode: AccountsErrorCode.UploadAvatarUploadFailed };
+  },
+  removeAvatarRemoveFailed(): AccountsError.RemoveAvatarRemoveFailed {
+    return { errorCode: AccountsErrorCode.RemoveAvatarRemoveFailed };
+  },
+  updateProfileRepositoryFailure(): AccountsError.UpdateProfileRepositoryFailure {
+    return { errorCode: AccountsErrorCode.UpdateProfileRepositoryFailure };
+  },
+  repositoryFailure(): AccountsError.RepositoryFailure {
+    return { errorCode: AccountsErrorCode.RepositoryFailure };
+  },
 
   /** Narrows an error to one code — `AccountsError.is(e, AccountsErrorCode.EmailInvalid)`. */
   is<C extends AccountsErrorCode>(
@@ -151,5 +198,17 @@ export namespace AccountsError {
   export type UploadAvatarTooLarge = {
     readonly errorCode: typeof AccountsErrorCode.UploadAvatarTooLarge;
     readonly maxBytes: number;
+  };
+  export type UploadAvatarUploadFailed = {
+    readonly errorCode: typeof AccountsErrorCode.UploadAvatarUploadFailed;
+  };
+  export type RemoveAvatarRemoveFailed = {
+    readonly errorCode: typeof AccountsErrorCode.RemoveAvatarRemoveFailed;
+  };
+  export type UpdateProfileRepositoryFailure = {
+    readonly errorCode: typeof AccountsErrorCode.UpdateProfileRepositoryFailure;
+  };
+  export type RepositoryFailure = {
+    readonly errorCode: typeof AccountsErrorCode.RepositoryFailure;
   };
 }

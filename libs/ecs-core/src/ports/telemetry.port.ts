@@ -1,7 +1,7 @@
 /**
  * Logging and error tracking — the law's signatures VERBATIM
  * (`.claude/rules/ecs-pipelines.md`, blueprint §4.3), so a pipeline calls
- * `ports.log('warn', 'booking.rejected', { code })` exactly as the rule's
+ * `ports.log('warn', 'booking.rejected', { errorCode })` exactly as the rule's
  * example does. `fields?`/`context?` are optional FUNCTION parameters, which
  * the optional-property guard leaves legal; no `LogEvent`/`ErrorContext`
  * struct is invented.

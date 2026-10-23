@@ -34,15 +34,17 @@ import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
 import { StandingSystem } from './standing.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/loyalty/standing.spec.ts,
- * COPIED (the legacy spec keeps running against `standing.ts`'s shim) and
- * re-targeted: the catalogue is the flat `ValidLoyaltyCatalog` of entities,
- * a client's progress the array of `BadgeProgress` (id = the family), each
- * earned level stamped with its instant AND its Sofia day (T5, derived once
- * by the boundary here), so a scope or a day's grouping reads no zone.
- * Not here: `levelNumeral` (a template pipe now, §2.8 — the legacy cases
- * stay with it), `redeemProblem`/`bestAffordable`/`nextAffordable`
- * (reward.system.spec.ts) and `tierSteps` (tier.system.spec.ts).
+ * The cases of the legacy engagement `standing.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED while it
+ * still ran against `standing.ts`'s shim, and re-targeted: the catalogue is the
+ * flat `ValidLoyaltyCatalog` of entities, a client's progress the array of
+ * `BadgeProgress` (id = the family), each earned level stamped with its instant
+ * AND its Sofia day (T5, derived once by the boundary here), so a scope or a
+ * day's grouping reads no zone. Not here: `levelNumeral` (a template pipe now,
+ * §2.8 — its legacy cases live in
+ * `libs/features/staff/client-card/src/lib/client-card.format.spec.ts`, R5),
+ * `redeemProblem`/`bestAffordable`/`nextAffordable` (reward.system.spec.ts) and
+ * `tierSteps` (tier.system.spec.ts).
  */
 
 // ── A small catalogue in the seed's image (§4.6), on its today ──────────

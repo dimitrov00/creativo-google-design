@@ -32,6 +32,19 @@ describe('IdentityError', () => {
     );
   });
 
+  it('spells the web’s own failure words — the successors of the dotted i18n keys (Phase 4b, 4B-4)', () => {
+    expect(IdentityErrorCode.IdentifierMissing).toBe(
+      'IDENTITY_IDENTIFIER_MISSING',
+    );
+    expect(IdentityErrorCode.CallFailed).toBe('IDENTITY_CALL_FAILED');
+    expect(IdentityError.identifierMissing()).toEqual({
+      errorCode: 'IDENTITY_IDENTIFIER_MISSING',
+    });
+    expect(IdentityError.callFailed()).toEqual({
+      errorCode: 'IDENTITY_CALL_FAILED',
+    });
+  });
+
   it('the four OTP verdicts carry no payload and are shared structs', () => {
     expect(IdentityError.otpAlreadyConsumed()).toEqual({
       errorCode: 'IDENTITY_OTP_ALREADY_CONSUMED',

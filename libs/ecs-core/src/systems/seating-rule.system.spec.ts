@@ -6,11 +6,12 @@ import { deepFreeze, endMinute, minute } from '@core/testing';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/person-slot.spec.ts (18),
- * COPIED over plain structs — the class spec stays in place and keeps
- * running against the shim. `StandingDoubleSeatings` instances become the
- * normalized `readonly SeatIdPair[]` the system folds; the `[a, b]` tuple
- * becomes the stored `{ seatId, otherSeatId }` struct.
+ * The cases of the legacy scheduling `person-slot.spec.ts` (18; deleted in
+ * Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * over plain structs while the class spec still ran against the shim.
+ * `StandingDoubleSeatings` instances become the normalized `readonly
+ * SeatIdPair[]` the system folds; the `[a, b]` tuple becomes the stored `{
+ * seatId, otherSeatId }` struct.
  */
 
 /**

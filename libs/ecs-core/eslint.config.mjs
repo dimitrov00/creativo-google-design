@@ -112,8 +112,8 @@ function tierRestrictions(tier, { test }) {
  * The FULL `no-restricted-imports` options for one file kind of one tier,
  * optionally minus one caged package for the one file allowed it. A rule's
  * options replace, never merge, so every block restates the whole set: the
- * firebase ban, the caged packages (`libphonenumber-js`, `dinero.js`,
- * `luxon`), the testing entry points in production code — test support
+ * firebase ban, the caged packages (`libphonenumber-js`, and the retired
+ * `dinero.js` and `luxon`), the testing entry points in production code — test support
  * (`src/testing`) composes test support, and specs and type-specs are what
  * it is for — and the tier half above.
  */
@@ -184,13 +184,11 @@ const tierBlocks = [...CORE_TIER_IMPORTS.keys()].flatMap((tier) => [
 
 export default [
   ...baseConfig,
-  // The InjectionToken guard on every file, and the `*.port.ts` /
-  // `*.adapter.ts` blocks beside the root's suffix blocks (restated with the
-  // token guard). Project-scoped in Phase 1 because at the root they would
-  // hit libs/application's legacy port files and class adapters; Phase 4
-  // moves them to the root config (blueprint §6 Phase 1). L4 — no `Date` —
-  // reaches every file of the core, specs and test support included
-  // (flatten-spec §7).
+  // The InjectionToken guard on every file (the root carries it on the seven
+  // suffix blocks only — the web's Angular wiring declares tokens lawfully,
+  // no Angular lives here), and the root's seven suffix blocks restated after
+  // it so its options do not replace theirs. L4 — no `Date` — reaches every
+  // file of the core, specs and test support included (flatten-spec §7).
   ...ecsProjectBlocks({ everyFile: ECS_DATE_RESTRICTIONS }),
   {
     // L7's one exemption: the id family's own file mints `UserId` and
@@ -225,10 +223,13 @@ export default [
     },
   },
   // The local plugin, for `creativo/no-restricted-import-expressions` (the
-  // root installs it for templates only).
+  // root registers the same plugin object for its own `creativo/*` rules,
+  // none of which is that one).
   { files: ['**/*.ts'], plugins: { creativo } },
-  // Law 9: the ports tier names its shapes — no `Pick`/`Omit` at all there
-  // (the root reports a slice of a `*Ports` bundle everywhere else).
+  // Law 9: the ports tier names its shapes — no `Pick`/`Omit` at all there.
+  // The root reports a slice of a `*Ports` bundle everywhere and every
+  // `Pick`/`Omit` in a `*.port.ts`; this block adds the rest of the tier
+  // (the ports barrel and the ports specs).
   {
     files: ['src/ports/**/*.ts'],
     rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
@@ -238,32 +239,19 @@ export default [
   // `no-restricted-imports`, `import()` / `import('…')` type queries /
   // `import = require()` through `creativo/no-restricted-import-expressions`.
   // They come after the root's `no-restricted-imports` blocks and before the
-  // two package exemptions below, which restate the static half only (the
-  // lazy half they leave untouched).
+  // package exemption below, which restates the static half only (the lazy
+  // half it leaves untouched).
   ...tierBlocks,
   {
     // The libphonenumber cage: PhoneSystem is its only importer (CLAUDE.md
-    // §3). Only that one package is exempt; firebase, luxon, dinero, the
-    // testing entry points and the systems tier's Law 8 restrictions stay
-    // in force in this file too.
+    // §3). Only that one package is exempt; firebase, the retired luxon and
+    // dinero.js bans, the testing entry points and the systems tier's Law 8
+    // restrictions stay in force in this file too.
     files: ['src/systems/phone.system.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
         coreImports('systems', { exempt: 'libphonenumber-js' }),
-      ],
-    },
-  },
-  {
-    // Spec-only: a property test of Money's integer arithmetic against
-    // dinero.js (Risk 10), deleted with dinero itself. `money.data.ts`
-    // imports no package — a `*.data.ts` never may. The components tier's
-    // spec restrictions stay in force.
-    files: ['src/components/money.data.spec.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        coreImports('components', { test: true, exempt: 'dinero.js' }),
       ],
     },
   },

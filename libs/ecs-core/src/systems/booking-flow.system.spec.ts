@@ -121,9 +121,10 @@ function services(
 const guests = (party: Party) => Party.guests(party);
 
 /*
- * Copied (not moved) from
- * libs/application/booking/src/lib/flow/booking-flow.spec.ts — all 23
- * cases, re-targeted from `advanceBookingFlow(state, { type })` to
+ * Copied (not moved) from the legacy booking application lib's
+ * `booking-flow.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) — all 23 cases,
+ * re-targeted from `advanceBookingFlow(state, { type })` to
  * `BookingFlowSystem.next(state, { bookingFlowEventKind }, policy)` over the
  * ECS bags (`Party`, `BookingCart`, seat keys as `SeatKeyText`), `isSuccess()`
  * → `.ok` and `error.params.x` → `error.x`.

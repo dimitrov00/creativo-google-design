@@ -11,10 +11,11 @@ import { IdentifierChannel, IdentityErrorCode } from '@core/primitives';
 import { RegistrationField } from './registration.data';
 
 /*
- * The cases of libs/domain/identity/src/lib/auth-strategy.spec.ts and
- * auth-deployment.spec.ts, copied over the flat union and its companion:
- * the tag is `authStrategyKind` (SCREAMING), the TTL a `DurationMinutes`
- * (equal to its plain number at runtime).
+ * The cases of the legacy identity `auth-strategy.spec.ts` and
+ * `auth-deployment.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over the flat
+ * union and its companion: the tag is `authStrategyKind` (SCREAMING), the TTL a
+ * `DurationMinutes` (equal to its plain number at runtime).
  */
 function validPhoneOtpInput() {
   return {

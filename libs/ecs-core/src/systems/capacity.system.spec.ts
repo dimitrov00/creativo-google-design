@@ -31,11 +31,12 @@ import {
 
 /*
  * The cases of apps/functions/src/lib/booking/capacity-plan.spec.ts (14) and
- * libs/application/booking/src/lib/ports/capacity-document.spec.ts (5 —
- * shop sums and narrowing, read through `CapacityEntry.freeMinutesOn`),
- * COPIED over plain structs; the legacy specs keep running against the
- * shims. Plus the replace-not-merge fold of §3.6 (`applyPlan`) proved
- * against brute-force filter + concat + sort.
+ * the legacy booking application lib's `capacity-document.spec.ts` (5 — shop
+ * sums and narrowing, read through `CapacityEntry.freeMinutesOn`; deleted in
+ * Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * over plain structs while the legacy specs still ran against the shims. Plus
+ * the replace-not-merge fold of §3.6 (`applyPlan`) proved against brute-force
+ * filter + concat + sort.
  */
 
 const B1 = BarberId.of('b1');

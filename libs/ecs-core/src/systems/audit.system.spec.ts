@@ -46,8 +46,8 @@ import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
  * the per-person plan, the people on a stored visit and on a requested cart,
- * the staff edit's people, the T5 context, the row id's basis), of
- * libs/domain/governance/src/lib/audit-entry.spec.ts and of
+ * the staff edit's people, the T5 context, the row id's basis), of the
+ * legacy governance `audit-entry.spec.ts` (deleted in Phase 4b) and of
  * apps/functions/src/lib/booking/audit-profile-changes.spec.ts, copied onto
  * the flat audit row (actor, context and target slices at its root). The
  * row id is `hash(rowBasis(…))` — the hash is the pipeline's, so the id

@@ -1,4 +1,5 @@
 import { logger } from 'firebase-functions';
+import { BookingErrorCode } from '@core/primitives';
 import type { TelemetryPorts } from '@core/ports';
 import { type LogSink, consoleTelemetry } from './console-telemetry.adapter';
 
@@ -45,11 +46,13 @@ describe('console-telemetry adapter', () => {
 
     it('rides the fields as the structured payload — a plain copy, never the caller object', () => {
       const { sink, calls } = recordingSink();
-      const fields = Object.freeze({ code: 'booking.commit.slot_unavailable' });
+      const fields = Object.freeze({
+        errorCode: BookingErrorCode.SlotUnavailable,
+      });
       consoleTelemetry(sink).log('warn', 'booking.rejected', fields);
       const [msg, payload] = calls[0]?.args ?? [];
       expect(msg).toBe('booking.rejected');
-      expect(payload).toEqual({ code: 'booking.commit.slot_unavailable' });
+      expect(payload).toEqual({ errorCode: BookingErrorCode.SlotUnavailable });
       expect(payload).not.toBe(fields);
       expect((payload as object).constructor).toBe(Object);
     });

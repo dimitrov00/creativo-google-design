@@ -29,11 +29,12 @@ import {
 } from '@core/testing';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/roster-window.spec.ts, copied
- * over plain arrays on the shop's wall clock (the class spec stays in place
- * and runs against its shim), plus version selection, shop hours from a
- * stored week, DST days (immune by construction: no zone reaches the
- * roster, flatten-spec T1), purity and a brute-force minute-set property.
+ * The cases of the legacy scheduling `roster-window.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
+ * plain arrays on the shop's wall clock while the class spec still ran against
+ * its shim, plus version selection, shop hours from a stored week, DST days
+ * (immune by construction: no zone reaches the roster, flatten-spec T1), purity
+ * and a brute-force minute-set property.
  */
 
 const key = (raw: string) => localDate(raw);

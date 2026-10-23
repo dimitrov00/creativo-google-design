@@ -7,7 +7,8 @@ import { TierSystem } from './tier.system';
 
 /*
  * COPIED, never moved:
- * - the `tierSteps` cases of libs/domain/engagement/src/lib/loyalty/standing.spec.ts
+ * - the `tierSteps` cases of the legacy engagement `standing.spec.ts` (deleted
+ *   in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1)
  *   (→ `TierSystem.steps`);
  * - the ring and gauge math of the `walletTierVm` cases of
  *   libs/features/staff/client-card/src/lib/wallet.presenter.spec.ts

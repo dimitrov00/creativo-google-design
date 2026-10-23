@@ -41,12 +41,12 @@ import {
 import { StreakRuleSystem } from './streak-rule.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/loyalty/loyalty-catalog.spec.ts,
- * COPIED (the legacy spec keeps running against `ValidLoyaltyCatalog`'s shim)
- * and re-targeted: the rows are the flat entities, the catalogue a struct,
- * its lookups `LoyaltyCatalogSystem` functions over it (by branded ids), and
- * the rhythm's heads `streaks` (`StreakDefinition`, its `rules` list), `[]`
- * for none.
+ * The cases of the legacy engagement `loyalty-catalog.spec.ts` (deleted in
+ * Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * while it still ran against `ValidLoyaltyCatalog`'s shim, and re-targeted: the
+ * rows are the flat entities, the catalogue a struct, its lookups
+ * `LoyaltyCatalogSystem` functions over it (by branded ids), and the rhythm's
+ * heads `streaks` (`StreakDefinition`, its `rules` list), `[]` for none.
  */
 
 const text = (bg: string, en = bg) => ({ bg, en });

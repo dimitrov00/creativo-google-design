@@ -19,8 +19,8 @@ export type PageStep = (typeof PageStep)[keyof typeof PageStep];
  * A page key: the stored value a page is ordered and resumed by. GENERIC and
  * OPAQUE on purpose (flatten-spec §3.9): the system only compares keys, so
  * the typed cursor — `beforeUtcMs: UtcEpochMs` on `PageClientHistory`, a
- * journal sequence on `PageClientJournal` — belongs to the caller's port, and
- * its shim converts it.
+ * journal sequence on `PageClientJournal` — belongs to the caller's port,
+ * never to this system.
  */
 export type PageKey = string | number;
 

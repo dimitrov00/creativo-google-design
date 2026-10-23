@@ -76,8 +76,8 @@ import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The 56 cases of apps/functions/src/use-cases/decide-booking.spec.ts,
- * COPIED (never moved) — the legacy spec keeps running against the shim
- * until `use-cases/*` dies in the booking-core flip. Re-targeted: the
+ * COPIED (never moved) — the legacy spec ran against the shim until
+ * `use-cases/*` died in the booking-core flip. Re-targeted: the
  * legacy aggregates are plain structs (`Service`, `ScheduleVersion`, the
  * snapshot's arrays), `isSuccess(r)` is `r.ok`, a legacy error class is its
  * `{ errorCode, field }` struct, and `deps` is the policy, the placement
@@ -952,7 +952,7 @@ describe('decide — one person is never in two chairs at once', () => {
     const error = refusal(result);
     expect(error).toMatchObject(personDoubleBooked);
     // The reason rides on the wire as the field — never the person's key,
-    // which can name somebody else's account (the shim keeps it off the wire).
+    // which can name somebody else's account (the edge keeps it off the wire).
     expect(error?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 

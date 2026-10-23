@@ -60,17 +60,19 @@ import {
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/client-stats.spec.ts (the BGN
- * → EUR case included) and of apps/functions/src/lib/clients/
- * client-stats-projection.spec.ts (the canonical-JSON change detection, the
- * subjects, the clock, the revision guard, the placements), copied — the
- * legacy specs keep running against their shims — and re-targeted to the
- * flat shapes (Laws 6 and 7): an appointment is the stats slice of the
- * entity (`localDate` + minutes on the shop's clock, `utcEpochMs` the start
- * instant) with its bill in cents; a seat is the flat `Seat` (subject,
- * terms and outcome at its root, SCREAMING tags); the answer is the flat
- * `ClientStats` (`lifetime*`, `last365*`, `lastVisit*`, `pauseSuggested*`);
- * the spend is `lifetimeSpendCents` + `currency`; "now" is a `ShopNow`.
+ * The cases of the legacy scheduling `client-stats.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1; the BGN → EUR
+ * case included) and of
+ * apps/functions/src/lib/clients/client-stats-projection.spec.ts (the
+ * canonical-JSON change detection, the subjects, the clock, the revision guard,
+ * the placements), copied while the legacy specs still ran against their shims
+ * — and re-targeted to the flat shapes (Laws 6 and 7): an appointment is the
+ * stats slice of the entity (`localDate` + minutes on the shop's clock,
+ * `utcEpochMs` the start instant) with its bill in cents; a seat is the flat
+ * `Seat` (subject, terms and outcome at its root, SCREAMING tags); the answer
+ * is the flat `ClientStats` (`lifetime*`, `last365*`, `lastVisit*`,
+ * `pauseSuggested*`); the spend is `lifetimeSpendCents` + `currency`; "now" is
+ * a `ShopNow`.
  *
  * A case still NAMES a visit by its instant (`daysAgo(n)`, the legacy
  * vocabulary) and the spec converts it at its own boundary — exactly what

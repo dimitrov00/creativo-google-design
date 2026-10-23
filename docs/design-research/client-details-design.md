@@ -1,5 +1,7 @@
 # Карта на клиента
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 ## The client details redesign: the visit-sheet page, the profile route, gamification, pauses and the support toolkit
 
 **Status:** design specification · **canonical for the client-details surface.** Supersedes the client-page sketch in [staff-visit-editor-design.md](./staff-visit-editor-design.md) («Enrichment — inside the client's pushed page», which was never built) and the "open the person" item of [staff-surfaces-proposal.md](./staff-surfaces-proposal.md).

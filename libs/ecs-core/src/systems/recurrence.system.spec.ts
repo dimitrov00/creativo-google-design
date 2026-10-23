@@ -12,13 +12,13 @@ import { deepFreeze, localDate, unwrapOk } from '@core/testing';
 import { RecurrenceSystem } from './recurrence.system';
 
 /*
- * Copied (not moved) from libs/domain/scheduling/src/lib/recurrence-rule.spec.ts
- * — every case, re-targeted: `RecurrenceRule.create(props)` → the component's
- * `create(pattern, interval, end)`, `RecurrenceSeries.create` →
+ * Copied (not moved) from the legacy scheduling `recurrence-rule.spec.ts`
+ * (deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1) — every case, re-targeted: `RecurrenceRule.create(props)` → the
+ * component's `create(pattern, interval, end)`, `RecurrenceSeries.create` →
  * `RecurrenceSystem.series`, weekday names → ISO `Weekday`, error classes →
- * their `errorCode`; flattened by the pass (Law 6: the pattern, interval
- * and end at the rule's root). The legacy spec keeps running against the
- * shim.
+ * their `errorCode`; flattened by the pass (Law 6: the pattern, interval and
+ * end at the rule's root).
  */
 
 const day = (raw: string): LocalDate => localDate(raw);

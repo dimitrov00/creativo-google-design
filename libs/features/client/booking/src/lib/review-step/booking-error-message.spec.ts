@@ -56,7 +56,7 @@ const bg = catalogue('bg');
 
 /**
  * Transloco's lookup over one real catalogue: `errors` holds flat keys
- * (`"BOOKING_TOO_SOON"`, `"booking.gateway.failed"`) beside nested groups,
+ * (`"BOOKING_TOO_SOON"`, `"BOOKING_CALL_FAILED"`) beside nested groups,
  * so a key resolves to `errors` + the rest, verbatim — and a missing key
  * comes back as itself, which is what the real service answers too.
  */
@@ -256,14 +256,14 @@ describe('bookingErrorMessage — what the review step says about a refusal', ()
   it('falls back to the review step’s own copy for a code the catalogue does not know — never a raw code', () => {
     const error = refused('unknown', { errorCode: 'BOOKING_SOMETHING_NEW' });
     expect(bookingErrorMessage(translator(en), error)).toBe(
-      en.errors['booking.gateway.failed'],
+      copy(en, BookingErrorCode.CallFailed),
     );
   });
 
   it('uses the review step’s own copy when the server sent no code at all', () => {
     const error = PipelineError.bare(PipelineErrorCode.Unavailable);
     expect(bookingErrorMessage(translator(en), error)).toBe(
-      en.errors['booking.gateway.failed'],
+      copy(en, BookingErrorCode.CallFailed),
     );
   });
 

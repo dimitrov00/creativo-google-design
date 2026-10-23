@@ -44,6 +44,33 @@ describe('AccountsError', () => {
       errorCode: 'ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE',
       maxBytes: 5_242_880,
     });
+    expect(AccountsError.uploadAvatarUploadFailed()).toEqual({
+      errorCode: 'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
+    });
+    expect(AccountsError.removeAvatarRemoveFailed()).toEqual({
+      errorCode: 'ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED',
+    });
+    expect(AccountsError.updateProfileRepositoryFailure()).toEqual({
+      errorCode: 'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+    });
+    expect(AccountsError.repositoryFailure()).toEqual({
+      errorCode: 'ACCOUNTS_REPOSITORY_FAILURE',
+    });
+  });
+
+  it('spells the web’s own failure words — the successors of the dotted i18n keys (Phase 4b, 4B-4)', () => {
+    expect(AccountsErrorCode.UploadAvatarUploadFailed).toBe(
+      'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
+    );
+    expect(AccountsErrorCode.RemoveAvatarRemoveFailed).toBe(
+      'ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED',
+    );
+    expect(AccountsErrorCode.UpdateProfileRepositoryFailure).toBe(
+      'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+    );
+    expect(AccountsErrorCode.RepositoryFailure).toBe(
+      'ACCOUNTS_REPOSITORY_FAILURE',
+    );
   });
 
   it('keeps every code in the ACCOUNTS_ domain, SCREAMING_SNAKE, each once', () => {

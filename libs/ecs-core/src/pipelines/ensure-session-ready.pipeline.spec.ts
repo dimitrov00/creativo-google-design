@@ -11,9 +11,11 @@ import {
 import { ensureSessionReady } from './ensure-session-ready.pipeline';
 
 /*
- * The cases of `EnsureSessionReadyUseCase`'s spec (`libs/application/identity`,
- * deleted in 4b), on a scripted principal stream: each refresh unlocks the
- * next principal of the script; the timer records the back-off it was asked.
+ * The cases of `EnsureSessionReadyUseCase`'s spec (the legacy identity
+ * application lib, deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), on a scripted principal
+ * stream: each refresh unlocks the next principal of the script; the timer
+ * records the back-off it was asked.
  */
 function rig(script: readonly Principal[]) {
   const principals$ = new BehaviorSubject<Principal>(script[0] as Principal);

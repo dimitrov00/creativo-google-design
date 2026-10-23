@@ -19,8 +19,8 @@ import type {
 
 /**
  * ImpersonationSystem — the time-bounded, audited session in which a staff
- * member acts on behalf of a user (blueprint §2.8), the pure port of
- * `libs/domain/governance/src/lib/impersonation-session.ts`
+ * member acts on behalf of a user (blueprint §2.8), the pure port of the
+ * legacy governance `impersonation-session.ts` (deleted in Phase 4b)
  * (`start`/`reconstitute` invariants, `end`, `isExpired`) and of the reason
  * pick of `EndImpersonationUseCase` (`end-impersonation.use-case.ts:42-44`).
  *

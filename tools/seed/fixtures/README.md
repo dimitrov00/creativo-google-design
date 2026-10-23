@@ -81,7 +81,8 @@ every body's keys are `SearchFieldsSystem.searchFields`'.)
 `eslint.config.mjs` lets it depend on `type:tooling`, `type:util` and
 `type:domain` — so `import type { X } from '@core/entities'` (the archetype
 noun, no `Entity` suffix — flatten-spec N1) is legal here, and nothing of
-`type:application`/`type:infrastructure` is.
+`type:infrastructure` is (a fixture is a document body, not an adapter's
+input).
 
 ## Not here
 

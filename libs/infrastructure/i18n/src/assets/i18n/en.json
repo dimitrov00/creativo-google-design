@@ -1,186 +1,5 @@
 {
   "errors": {
-    "empty_id": "{{idType}} cannot be empty.",
-    "invalid_email": "\"{{rawValue}}\" is not a valid email address.",
-    "tenant_name_empty": "Business name cannot be empty.",
-    "invalid_tenant_slug": "\"{{rawValue}}\" is not a valid URL slug — use lowercase letters, digits, and hyphens only.",
-    "invalid_tenant_timezone": "\"{{rawValue}}\" is not a valid time zone.",
-    "referral_code_empty": "Referral code cannot be empty.",
-    "gamification_points_negative": "Points cannot be negative.",
-    "invalid_time_of_day": "\"{{rawValue}}\" is not a valid time — use HH:mm.",
-    "invalid_working_hours_range": "Working hours on {{weekday}} must end after they start.",
-    "staff_display_name_empty": "Staff display name cannot be empty.",
-    "service_name_empty": "Service name cannot be empty.",
-    "invalid_service_duration": "Service duration must be a positive number of minutes.",
-    "invalid_appointment_time_range": "The appointment end time must be after the start time.",
-    "appointment_not_in_future": "New appointments must start in the future.",
-    "invalid_appointment_transition": "This appointment cannot move from \"{{from}}\" to \"{{to}}\".",
-    "otp_destination_empty": "An email or phone number is required.",
-    "otp_destination_corrupted": "Something went wrong on our end — please try again.",
-    "invalid_otp_max_attempts": "Invalid attempt limit configuration.",
-    "invalid_session_claims": "Your session is invalid — please sign in again.",
-    "invalid_money_amount": "That is not a valid amount.",
-    "currency_mismatch": "Cannot combine amounts in different currencies.",
-    "unknown_currency_code": "\"{{rawCode}}\" is not a supported currency.",
-    "invalid_date_time": "\"{{rawValue}}\" is not a valid date and time.",
-    "invalid_time_zone": "\"{{rawZone}}\" is not a valid time zone.",
-    "money": {
-      "invalid_amount": "That is not a valid amount.",
-      "currency_mismatch": "Cannot combine amounts in {{leftCurrency}} and {{rightCurrency}}.",
-      "unknown_currency": "\"{{rawCode}}\" is not a supported currency.",
-      "invalid_ratio": "That share of the amount can't be worked out."
-    },
-    "time": {
-      "invalid_date_time": "\"{{rawValue}}\" is not a valid date and time.",
-      "invalid_time_zone": "\"{{rawZone}}\" is not a valid time zone.",
-      "nonexistent_local_time": "{{rawValue}} doesn't exist in {{zone}} — the clocks jump past it. Pick another time.",
-      "ambiguous_local_time": "{{rawValue}} happens twice in {{zone}} — the clocks go back and repeat it. Pick another time."
-    },
-    "phone": {
-      "invalid": "\"{{attempted}}\" doesn't look like a valid phone number.",
-      "country_unsupported": "We don't recognize the country code \"{{attempted}}\"."
-    },
-    "invalid_input": "The information provided is invalid.",
-    "otp_rate_limited": "A code was already sent recently — please wait before requesting another.",
-    "otp_channel_mismatch": "Sign-in over this channel isn't available — please use the sign-in form.",
-    "repository_failure": "Something went wrong on our end — please try again.",
-    "otp_send_failure": "We couldn't send your verification code — please try again.",
-    "otp_validation_failed": "The information provided is invalid.",
-    "otp_not_found": "This verification code request no longer exists.",
-    "otp_already_consumed": "This code has already been used.",
-    "otp_expired": "That code expired. We can send you a new one.",
-    "otp_locked_out": "Too many incorrect attempts — please request a new code.",
-    "otp_incorrect_code": "That code isn't right — check and try again.",
-    "user_validation_failed": "The information provided is invalid.",
-    "token_minting_failure": "We couldn't sign you in — please try again.",
-    "unknown": "Something went wrong — please try again.",
-    "identity": {
-      "identifier": {
-        "invalid": "Enter a valid phone number or email address."
-      },
-      "otp_code": {
-        "invalid": "Enter the 6-digit code."
-      },
-      "phone": {
-        "not_a_number": "Enter a phone number, like {{example}}.",
-        "too_short": "This number looks too short — for example, {{example}}.",
-        "too_long": "This number looks too long — for example, {{example}}.",
-        "invalid_country": "We don't recognize that country code — for example, {{example}}.",
-        "invalid": "This doesn't look like a valid phone number — for example, {{example}}."
-      },
-      "birth_date": {
-        "invalid": "This doesn't look like a real date — check the day, month and year.",
-        "in_future": "A birthday can't be in the future.",
-        "too_young": "You need to be at least {{minAge}} to register.",
-        "too_old": "Please check the year — that's more than {{maxAge}} years ago."
-      }
-    },
-    "accounts": {
-      "first_name": {
-        "too_short": "First name needs at least 2 characters."
-      },
-      "upload_avatar": {
-        "not_an_image": "That file isn't an image — pick a photo.",
-        "too_large": "That photo is too large — up to 5 MB.",
-        "upload_failed": "We couldn't upload the photo — please try again."
-      },
-      "last_name": {
-        "too_short": "Last name needs at least 2 characters."
-      },
-      "update_profile": {
-        "not_found": "We couldn't find your profile — please sign in again.",
-        "validation_failed": "The information provided is invalid — please check it.",
-        "repository_failure": "We couldn't save that right now — please try again."
-      },
-      "remove_avatar": {
-        "remove_failed": "We couldn't remove the photo — please try again."
-      }
-    },
-    "identifier_missing": "We couldn't find your phone number or email — please sign in again.",
-    "identifier_invalid": "Enter a valid phone number or email address.",
-    "registration_field_missing": "Please fill in all required fields.",
-    "registration_birth_date_invalid": "The birthday provided is not valid.",
-    "registration_unauthenticated": "Your session has expired — please sign in again.",
-    "registration_forbidden": "This registration doesn't belong to your session — please sign in again.",
-    "booking": {
-      "flow": {
-        "invalid_transition": "That action isn't available right now.",
-        "invalid_guest": "Enter a name for this person.",
-        "guest_not_found": "That person is no longer in the booking.",
-        "empty_cart": "Pick at least one service to continue.",
-        "seat_without_service": "Everyone in the booking needs at least one service.",
-        "invalid_cart_operation": "That item is no longer in your bag.",
-        "party_full": "That's the most people we can seat in one booking.",
-        "flexible_days_full": "That's the most days we can search at once.",
-        "no_flexible_days": "Pick at least one day first."
-      },
-      "waitlist": {
-        "unauthenticated": "Sign in so we know who to tell.",
-        "invalid_request": "That request can't be watched — try picking the days again.",
-        "already_watching": "We're already watching those days for you.",
-        "too_many_days": "That's the most days we can watch at once.",
-        "failed": "Something went wrong. Please try again."
-      }
-    },
-    "booking.gateway.failed": "Something went wrong. Please try again.",
-    "booking.commit.unauthenticated": "Sign in to finish your booking.",
-    "booking.commit.invalid_input": "Something about this booking is off. Please try again.",
-    "booking.commit.invalid_input.person_overlap": "One person can't be in two chairs at the same time. Pick another time.",
-    "booking.commit.invalid_input.guest_label": "Two people in the party have the same name. Go back and rename one of them.",
-    "booking.commit.invalid_input.locationId": "This shop isn't taking online bookings right now.",
-    "booking.commit.unknown_service": "That service is no longer available.",
-    "booking.commit.service_not_at_location": "That service is not offered at this shop.",
-    "booking.commit.conflicting_services": "Those services cannot be combined.",
-    "booking.commit.barber_not_rostered": "That barber does not work then.",
-    "booking.commit.slot_unavailable": "That time is already taken.",
-    "booking.commit.too_soon": "Bookings need at least {{minLeadMinutes}} minutes' notice.",
-    "booking.commit.beyond_horizon": "We are not taking bookings that far ahead yet.",
-    "booking.commit.party_too_large": "A booking seats at most {{maxPartySize}} people.",
-    "booking.commit.invariant_violated": "That combination is not possible. Try another time.",
-    "booking.commit.store_failed": "We could not save the booking. Please try again.",
-    "booking.staffEdit.overlaps": "That time overlaps another booking.",
-    "booking.staffEdit.invalid_command": "That request isn't valid for this visit.",
-    "booking.staffEdit.stale": "Someone else just changed this visit — here it is as it stands now.",
-    "booking.staffEdit.before_arrival": "The visit can't end before the client arrived.",
-    "booking.staffEdit.forbidden": "You aren't allowed to make that change.",
-    "booking.cancel.window_closed": "Free cancellation ends {{windowHours}} h before the appointment — {{reach}}.",
-    "booking.cancel.policy_unavailable": "We couldn't check the cancellation terms. Try again in a moment.",
-    "booking.reschedule.carried_seat_unplaceable": "Someone else on this visit can't come at that time. To move everyone together, {{reach}}.",
-    "booking.reschedule.carried_seat_unplaceable.barber_unavailable": "Someone coming with you can't make that time — their barber isn't free then. Pick another time, or {{reach}} and we'll move everyone together.",
-    "booking.reschedule.carried_seat_unplaceable.outside_booking_window": "At that time, someone coming with you would fall outside the hours we take bookings for. Pick another time, or {{reach}}.",
-    "booking.reschedule.carried_seat_unplaceable.party_conflict": "That time doesn't work for everyone on this visit. Pick another time, or {{reach}} and we'll move everyone together.",
-    "booking.reschedule.carried_seat_unplaceable.service_unavailable": "The shop no longer offers the service booked for someone coming with you, so only the shop can move this visit — {{reach}} and we'll sort it out together.",
-    "booking.reschedule.carried_seat_unplaceable.shop_only": "The shop moves this visit because it only holds someone the shop added for you — {{reach}} and we'll move it together.",
-    "booking.contact.empty_name": "Enter a name for the booking.",
-    "booking.contact.invalid_phone": "That number doesn't look valid.",
-    "booking.contact.invalid_email": "\"{{rawValue}}\" is not a valid email address.",
-    "booking.contact.note_too_long": "A note can be at most {{maxLength}} characters.",
-    "booking.transition.forbidden": "Only staff can do that.",
-    "booking.transition.not_allowed": "The appointment cannot move from \"{{from}}\" to \"{{to}}\".",
-    "booking.transition.seat_resolved": "That seat is already settled.",
-    "booking.transition.not_found": "That appointment no longer exists.",
-    "booking.transition.invalid_input": "That request is not valid.",
-    "booking.transition.unauthenticated": "Sign in again to continue.",
-    "scheduling": {
-      "booking_contact": {
-        "empty_name": "Enter a name for the booking.",
-        "invalid_phone": "That number doesn't look valid.",
-        "invalid_email": "\"{{rawValue}}\" is not a valid email address.",
-        "note_too_long": "A note can be at most {{maxLength}} characters."
-      },
-      "booking_party": {
-        "duplicate_label": "Someone in the party is already called “{{label}}”. Pick another name so we can tell them apart."
-      },
-      "recurrence": {
-        "invalid_interval": "Repeats every 1 to {{max}} periods.",
-        "no_weekdays": "Choose at least one day of the week.",
-        "invalid_day": "There is no such day.",
-        "invalid_count": "Occurrences run from 1 to {{max}}.",
-        "ends_before_start": "The end is before the start.",
-        "never_occurs": "No day falls before the end.",
-        "too_long": "At most {{max}} times — choose an earlier end."
-      }
-    },
     "DST_GAP_INVALID_TIME": "{{wallClock}} doesn't exist in {{timeZone}} — the clocks jump past it. Pick another time.",
     "TIME_INVALID_DATE_TIME": "\"{{rawValue}}\" is not a valid date and time.",
     "TIME_INVALID_TIME_ZONE": "\"{{rawZone}}\" is not a valid time zone.",
@@ -253,6 +72,7 @@
     "SCHEDULING_RECURRENCE_NEVER_OCCURS": "No day falls before the end.",
     "SCHEDULING_RECURRENCE_TOO_LONG": "At most {{max}} times — choose an earlier end.",
     "IDENTITY_IDENTIFIER_INVALID": "Enter a valid phone number or email address.",
+    "IDENTITY_IDENTIFIER_MISSING": "We couldn't find your phone number or email — please sign in again.",
     "IDENTITY_OTP_CODE_INVALID": "Enter the 6-digit code.",
     "IDENTITY_BIRTH_DATE_INVALID": "This doesn't look like a real date — check the day, month and year.",
     "IDENTITY_BIRTH_DATE_IN_FUTURE": "A birthday can't be in the future.",
@@ -264,11 +84,20 @@
     "ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED": "The information provided is invalid — please check it.",
     "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "That file isn't an image — pick a photo.",
     "ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE": "That photo is too large — up to 5 MB.",
+    "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "We couldn't upload the photo — please try again.",
+    "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "We couldn't remove the photo — please try again.",
+    "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "We couldn't save that right now — please try again.",
+    "ACCOUNTS_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
     "MONEY_INVALID_AMOUNT": "That is not a valid amount.",
     "MONEY_CURRENCY_MISMATCH": "Cannot combine amounts in {{leftCurrency}} and {{rightCurrency}}.",
     "MONEY_UNKNOWN_CURRENCY": "\"{{rawCode}}\" is not a supported currency.",
     "MONEY_INVALID_RATIO": "That share of the amount can't be worked out.",
     "PHONE_INVALID": "\"{{attempted}}\" doesn't look like a valid phone number.",
+    "PHONE_INVALID.not-a-number": "Enter a phone number, like {{example}}.",
+    "PHONE_INVALID.too-short": "This number looks too short — for example, {{example}}.",
+    "PHONE_INVALID.too-long": "This number looks too long — for example, {{example}}.",
+    "PHONE_INVALID.invalid-country": "We don't recognize that country code — for example, {{example}}.",
+    "PHONE_INVALID.invalid": "This doesn't look like a valid phone number — for example, {{example}}.",
     "PHONE_COUNTRY_UNSUPPORTED": "We don't recognize the country code \"{{attempted}}\".",
     "BOOKING_COMMIT_STORE_FAILED": "We could not save the booking. Please try again.",
     "BOOKING_TRANSITION_UNAUTHENTICATED": "Sign in again to continue.",
@@ -276,6 +105,8 @@
     "BOOKING_TRANSITION_INVALID_INPUT": "That request is not valid.",
     "BOOKING_TRANSITION_NOT_FOUND": "That appointment no longer exists.",
     "BOOKING_TRANSITION_NOT_ALLOWED": "The appointment cannot move from \"{{from}}\" to \"{{to}}\".",
+    "BOOKING_TRANSITION_SEAT_RESOLVED": "That seat is already settled.",
+    "BOOKING_CALL_FAILED": "Something went wrong. Please try again.",
     "IDENTITY_INVALID_INPUT": "The information provided is invalid.",
     "IDENTITY_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
     "IDENTITY_OTP_CHANNEL_MISMATCH": "Sign-in over this channel isn't available — please use the sign-in form.",
@@ -293,6 +124,8 @@
     "IDENTITY_REGISTRATION_FIELD_MISSING": "Please fill in all required fields.",
     "IDENTITY_REGISTRATION_BIRTH_DATE_INVALID": "The birthday provided is not valid.",
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "The information provided is invalid.",
+    "IDENTITY_CALL_FAILED": "Something went wrong — please try again.",
+    "ENGAGEMENT_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Please try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Please try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Please try again.",

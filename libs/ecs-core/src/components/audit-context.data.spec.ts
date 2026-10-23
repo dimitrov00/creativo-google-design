@@ -75,7 +75,8 @@ describe('AuditAction', () => {
 
   it('isAuditAction narrows known verbs and rejects strangers', () => {
     expect(AuditContext.isAuditAction('BOOKING_CANCELLED')).toBe(true);
-    // The stored dotted spelling is not a verb of the dictionary — shims convert.
+    // The legacy dotted spelling is not a verb of the dictionary — no shim
+    // converts it.
     expect(AuditContext.isAuditAction('booking.cancelled')).toBe(false);
     expect(AuditContext.isAuditAction('register_user')).toBe(false);
     expect(AuditContext.isAuditAction(undefined)).toBe(false);

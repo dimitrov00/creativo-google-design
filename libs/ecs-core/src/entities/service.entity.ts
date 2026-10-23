@@ -62,9 +62,9 @@ export type ServiceCover = {
  * every 1-to-1 field at the root (Law 6). The five `ServiceTerms` fields sit
  * at the root, which is how the document stores them today (the earlier
  * `baseTerms` wrapper is gone); the composition is the flat
- * `compositionKind` (+ `bundleServiceIds`) slice. The stored body keeps its
- * legacy `status`, `cover` and `composition` until the booking-core flip;
- * the shims convert.
+ * `compositionKind` (+ `bundleServiceIds`) slice. Until the booking-core
+ * flip the stored body kept its legacy `status`, `cover` and
+ * `composition`, which the legacy shims converted.
  */
 export type Service = ServiceMeta &
   ServiceTerms &

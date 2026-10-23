@@ -55,12 +55,13 @@ import { AuditSystem } from './audit.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
- * The lifecycle cases of libs/domain/scheduling/src/lib/appointment.spec.ts,
- * copied (the class spec keeps running against its shim): admission and the
- * party's invariants, the transition matrix, cancel, the write-time
- * captures, seat outcomes, the correction edges and arrival — over plain
- * flat entities. `isSuccess(r)` → `r.ok`; the verbs' instant is a
- * parameter, and "today" is the shop's `ShopNow`.
+ * The lifecycle cases of the legacy scheduling `appointment.spec.ts` (deleted
+ * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
+ * copied while the class spec still ran against its shim: admission and the
+ * party's invariants, the transition matrix, cancel, the write-time captures,
+ * seat outcomes, the correction edges and arrival — over plain flat entities.
+ * `isSuccess(r)` → `r.ok`; the verbs' instant is a parameter, and "today" is
+ * the shop's `ShopNow`.
  */
 
 /** An instant on the fixture shop's wall clock today (Sofia, UTC+3). */

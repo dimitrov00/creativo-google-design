@@ -301,6 +301,10 @@ const BOOKING_WIRE: WireTable<BookingErrorCode> = {
   [BookingErrorCode.TipForbidden]: fields(S.PermissionDenied),
   [BookingErrorCode.TipInvalidInput]: fields(S.InvalidArgument),
   [BookingErrorCode.TipNotFound]: fields(S.NotFound),
+  // The booking surfaces' own words (Phase 4b, 4B-5): no pipeline raises
+  // them; inert rows — the answer the edge gives a code it does not know.
+  [BookingErrorCode.CallFailed]: fields(S.Internal),
+  [BookingErrorCode.TransitionSeatResolved]: fields(S.Internal),
 };
 
 const MOVE_WIRE: WireTable<MoveErrorCode> = {
@@ -423,6 +427,10 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.TokenMintingFailure]: fields(S.Internal),
   [IdentityErrorCode.ClaimsPromotionFailure]: fields(S.Internal),
   [IdentityErrorCode.RegistrationBirthDateInvalid]: wrapped(S.InvalidArgument),
+  // The web's own failure words (Phase 4b, 4B-5): no pipeline raises them;
+  // inert rows — the answer the edge gives a code it does not know.
+  [IdentityErrorCode.IdentifierMissing]: fields(S.Internal),
+  [IdentityErrorCode.CallFailed]: fields(S.Internal),
 };
 
 const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
@@ -437,6 +445,12 @@ const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
   [AccountsErrorCode.UpdateProfileUnauthenticated]: fields(S.Unauthenticated),
   [AccountsErrorCode.UploadAvatarNotAnImage]: fields(S.InvalidArgument),
   [AccountsErrorCode.UploadAvatarTooLarge]: fields(S.InvalidArgument),
+  // The web's own failure words (Phase 4b, 4B-5): no pipeline raises them;
+  // inert rows — the answer the edge gives a code it does not know.
+  [AccountsErrorCode.UploadAvatarUploadFailed]: fields(S.Internal),
+  [AccountsErrorCode.RemoveAvatarRemoveFailed]: fields(S.Internal),
+  [AccountsErrorCode.UpdateProfileRepositoryFailure]: fields(S.Internal),
+  [AccountsErrorCode.RepositoryFailure]: fields(S.Internal),
 };
 
 const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
@@ -466,7 +480,8 @@ const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {
 };
 
 const REPOSITORY_WIRE: WireTable<RepositoryErrorCode> = {
-  // Today's `repository_failure`: `internal`, the cause in the log only.
+  // As the retired `repository_failure` did: `internal`, the cause in the
+  // log only.
   [RepositoryErrorCode.ReadFailed]: fields(S.Internal),
   [RepositoryErrorCode.WriteFailed]: fields(S.Internal),
   // A `Create` that met its document — normally read by the pipeline as the
@@ -568,6 +583,10 @@ const ENGAGEMENT_WIRE = uniform(
     [EngagementErrorCode.CourseNotFound]: fields(S.NotFound),
     [EngagementErrorCode.ShopEventNotFound]: fields(S.NotFound),
     [EngagementErrorCode.ShopEventZoneUnknown]: fields(S.FailedPrecondition),
+    // The admin rhythm page's own failure word (Phase 4b, 4B-5): no pipeline
+    // raises it; an inert row — the answer the edge gives a code it does not
+    // know, not the dictionary's `invalid-argument` default.
+    [EngagementErrorCode.RepositoryFailure]: fields(S.Internal),
   },
 );
 
@@ -580,7 +599,7 @@ const CATALOG_WIRE = uniform(CatalogErrorCode, fields(S.InvalidArgument), {
 const MONEY_WIRE = uniform(MoneyErrorCode, fields(S.InvalidArgument), {});
 const PHONE_WIRE = uniform(PhoneErrorCode, fields(S.InvalidArgument), {});
 const TIME_WIRE = uniform(TimeErrorCode, fields(S.InvalidArgument), {
-  // Today's `invalid_time_zone` — a server zone, never the caller's.
+  // As the retired `invalid_time_zone` did — a server zone, never the caller's.
   [TimeErrorCode.InvalidTimeZone]: fields(S.Internal),
 });
 /** A refused primitive: what was sent is not one. */

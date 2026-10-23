@@ -11,9 +11,10 @@ import {
 
 /*
  * COPIED, never moved:
- * - the `redeemProblem`, `bestAffordable` and `nextAffordable` cases of
- *   libs/domain/engagement/src/lib/loyalty/standing.spec.ts
- *   (→ `RewardSystem.problem`/`bestAffordable`/`nextAffordable`);
+ * - the `redeemProblem`, `bestAffordable` and `nextAffordable` cases of the
+ *   legacy engagement `standing.spec.ts` (deleted in Phase 4b; ledger
+ *   `docs/architecture/flips/phase-4b-delete.md` §11.1) (→
+ *   `RewardSystem.problem`/`bestAffordable`/`nextAffordable`);
  * - the reach math of `rewardTiles` in
  *   libs/features/staff/client-card/src/lib/wallet.presenter.spec.ts
  *   (→ `RewardSystem.affordable`: the verdict, what is missing, the meter;

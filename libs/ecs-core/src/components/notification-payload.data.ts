@@ -11,8 +11,9 @@ import type { LocalizedText } from './localized-text.data';
  * What a notification is ABOUT — the discriminator `notificationTopic` —
  * drives its glyph and its copy (and, later, whether a channel may
  * suppress it). A closed set: the UI renders every case, so a new topic
- * breaks the build until someone gives it an icon and words. (Stored bytes
- * are today's lowercase `kind` until the notifications flip; the shims map.)
+ * breaks the build until someone gives it an icon and words. (Until the
+ * notifications flip the stored bytes were the lowercase `kind`, which the
+ * legacy shims mapped.)
  */
 export const NotificationTopic = {
   AppointmentReminder: 'APPOINTMENT_REMINDER',

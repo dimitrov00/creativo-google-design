@@ -7,8 +7,9 @@ import { LeadTimeSystem } from './lead-time.system';
 
 /*
  * The cases of apps/functions/src/lib/booking/sample-lead-time.spec.ts (7),
- * COPIED over the rollup's sorted entries — the legacy spec keeps running
- * against the shim (it seeds the legacy `days` map through a fake
+ * COPIED over the rollup's sorted entries — the legacy spec ran against the
+ * shim until a flip deleted it (it seeded the legacy `days` map through a
+ * fake
  * Firestore; here the same days are `CapacityEntry` rows). The horizon is
  * today + 2 months under the default policy; the threshold is its 15-minute
  * slot step.

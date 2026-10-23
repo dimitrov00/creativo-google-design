@@ -1,7 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { Result } from './result.data';
 
-/* The cases of libs/domain/kernel/src/lib/result.spec.ts over the plain union. */
+/* The cases of the legacy kernel's `result.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) over the plain union. */
 
 describe('Result.ok / Result.err', () => {
   it('ok() is a plain { ok: true, value } struct, narrowed by r.ok', () => {

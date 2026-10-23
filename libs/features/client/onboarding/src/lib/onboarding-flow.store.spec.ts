@@ -9,10 +9,12 @@ import {
   RegistrationField,
   type RegistrationFields,
 } from '@core/components';
-import { Callables } from '@core/ports';
+import { Callables, type OtpChallengePorts } from '@core/ports';
 import {
+  AccountsErrorCode,
   IdentityErrorCode,
   PipelineError,
+  PipelineErrorCode,
   Result,
   UserId,
 } from '@core/primitives';
@@ -62,12 +64,21 @@ describe('OnboardingFlowStore — birthday step', () => {
   let gatewayCalls: GatewayCall[];
   /** A spec sets it to make the `updateProfile` call fail as a store failure. */
   let writeFails: boolean;
+  /** A spec sets it to make `completeRegistration` fail with no server code. */
+  let registerFails: boolean;
+  /** The live session — a spec `next`s it to sign the visitor out mid-flow. */
+  let principals$: BehaviorSubject<Principal>;
   let store: OnboardingFlowStore;
 
   beforeEach(() => {
     otpCalls = [];
     gatewayCalls = [];
     writeFails = false;
+    registerFails = false;
+    principals$ = new BehaviorSubject<Principal>(
+      principalFixture.onboarding(UID),
+    );
+    const otp = memoryOtpChallengePorts({ calls: otpCalls });
 
     TestBed.configureTestingModule({
       providers: [
@@ -80,16 +91,24 @@ describe('OnboardingFlowStore — birthday step', () => {
         {
           provide: AUTH_SESSION_PORTS,
           useValue: memoryAuthSessionPorts({
-            principals$: new BehaviorSubject<Principal>(
-              principalFixture.onboarding(UID),
-            ),
+            principals$,
             identifier: emailIdentifier(),
           }),
         },
         { provide: TIMER_PORTS, useValue: immediateTimerPorts() },
         {
           provide: OTP_CHALLENGE_PORTS,
-          useValue: memoryOtpChallengePorts({ calls: otpCalls }),
+          useValue: {
+            ...otp,
+            // Recorded as ever; a transport failure (no server code) when
+            // the spec says so.
+            completeRegistration: async (identifier, fields) => {
+              const answer = await otp.completeRegistration(identifier, fields);
+              return registerFails
+                ? Result.err(PipelineError.bare(PipelineErrorCode.Unavailable))
+                : answer;
+            },
+          } satisfies OtpChallengePorts,
         },
         {
           provide: GATEWAY_PORTS,
@@ -222,8 +241,40 @@ describe('OnboardingFlowStore — birthday step', () => {
     const state = store.state();
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
     if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe('accounts.update_profile.repository_failure');
+      expect(state.error).toBe(
+        AccountsErrorCode.UpdateProfileRepositoryFailure,
+      );
     }
+  });
+
+  it('a session gone before the birthday save words it as the missing identifier, without calling', async () => {
+    await walkToBirthday();
+    principals$.next(principalFixture.anonymous());
+
+    await store.submitBirthday({ day: 3, month: 7, year: 1990 });
+
+    expect(gatewayCalls).toEqual([]);
+    const state = store.state();
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
+      expect(state.error).toBe(IdentityErrorCode.IdentifierMissing);
+    }
+    // The avatar step answers the same code for the same missing owner.
+    expect(await store.uploadAvatar(new Blob(['x']))).toBe(
+      IdentityErrorCode.IdentifierMissing,
+    );
+  });
+
+  it('a registration that fails with no server code stays on about with the generic code', async () => {
+    registerFails = true;
+
+    await store.submitAbout(ABOUT_FIELDS);
+
+    expect(otpCalls).toHaveLength(1);
+    expect(store.state()).toEqual({
+      onboardingFlowStep: OnboardingFlowStep.About,
+      error: IdentityErrorCode.CallFailed,
+    });
   });
 
   it('registers through completeRegistration with the session identifier and every about field', async () => {

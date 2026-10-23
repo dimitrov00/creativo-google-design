@@ -52,13 +52,14 @@ import {
 } from './billing.system';
 
 /*
- * The bill cases of libs/domain/scheduling/src/lib/applied-discount.spec.ts
- * (an appointment's discounts and voucher lines), the subtotal case of
- * appointment.spec.ts, and the bill's math of
- * apps/functions/src/use-cases/staff-edit-appointment.use-case.spec.ts
- * («the discounts on the bill», «the vouchers paying the bill») — the
- * callable's write re-targeted to the settle it decides with. Copied; the
- * originals keep running against their shims.
+ * The bill cases of the legacy scheduling `applied-discount.spec.ts` (an
+ * appointment's discounts and voucher lines), the subtotal case of the legacy
+ * `appointment.spec.ts` (both deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), and the bill's math of
+ * apps/functions/src/use-cases/staff-edit-appointment.use-case.spec.ts («the
+ * discounts on the bill», «the vouchers paying the bill») — the callable's
+ * write re-targeted to the settle it decides with. Copied while the originals
+ * still ran against their shims.
  */
 
 /** 09:00 on the fixture shop's today. */

@@ -126,10 +126,11 @@ function storedLine(
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Copied (not moved) from libs/domain/scheduling/src/lib/booking-cart.spec.ts
- * — all 24 cases, re-targeted from the `BookingCart` class to the
- * `BookingCart` component (its operations) and `BookingCartSystem.salvage`
- * (the forgiving `reconstitute`).
+ * Copied (not moved) from the legacy scheduling `booking-cart.spec.ts` (deleted
+ * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1) — all
+ * 24 cases, re-targeted from the `BookingCart` class to the `BookingCart`
+ * component (its operations) and `BookingCartSystem.salvage` (the forgiving
+ * `reconstitute`).
  * ═════════════════════════════════════════════════════════════════════ */
 
 describe('SeatKey.text', () => {
@@ -456,10 +457,11 @@ describe('BookingCart.acceptedBarbers', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Copied (not moved) from
- * libs/application/booking/src/lib/use-cases/party-shops.spec.ts — all 9
- * cases, re-targeted to `BookingCartSystem.shopsServingParty` /
- * `partyServicesOf` over `CartService` structs.
+ * Copied (not moved) from the legacy booking application lib's
+ * `party-shops.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) — all 9 cases,
+ * re-targeted to `BookingCartSystem.shopsServingParty` / `partyServicesOf` over
+ * `CartService` structs.
  * ═════════════════════════════════════════════════════════════════════ */
 
 const SHOPS = ['loc-center', 'loc-mladost', 'loc-lozenets'].map(shop);
@@ -584,13 +586,14 @@ describe('booking-cart.system — the lower module', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Copied (not moved) from
- * libs/application/booking/src/lib/use-cases/observe-availability.use-case.spec.ts
- * — 15 of its 16 cases (the DateRange fixture sanity is not this system's),
- * re-targeted from the use case + reader to `BookingCartSystem
- * .toAvailabilityLines` / `optionsForDay` over ONE shop day's local minutes
- * (Law 7.3): the reader's padding is `AvailabilitySystem.paddedBusy`, its
- * shop filter `RosterSystem.windowsAt`, "now" a `ShopNow`.
+ * Copied (not moved) from the legacy booking application lib's
+ * `observe-availability.use-case.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) — 15 of its 16 cases (the
+ * DateRange fixture sanity is not this system's), re-targeted from the use case
+ * + reader to `BookingCartSystem .toAvailabilityLines` / `optionsForDay` over
+ * ONE shop day's local minutes (Law 7.3): the reader's padding is
+ * `AvailabilitySystem.paddedBusy`, its shop filter `RosterSystem.windowsAt`,
+ * "now" a `ShopNow`.
  * ═════════════════════════════════════════════════════════════════════ */
 
 const DAY = localDate('2026-08-03');

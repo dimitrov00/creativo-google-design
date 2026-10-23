@@ -9,7 +9,7 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { NEVER, type Observable, of } from 'rxjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CATALOG_PORTS,
   CLIENT_STATS_READ_PORTS,
@@ -46,6 +46,8 @@ import {
   LocalDate,
   type MinuteOfDay,
   PublishRequestId,
+  RepositoryError,
+  Result,
   ServiceCategoryId,
   ServiceId,
   StreakPublishError,
@@ -828,6 +830,69 @@ describe('«Запази»', () => {
       ),
     ).toBeNull();
     expect(byId(host, 'admin-rhythm-refusal')).toBeNull();
+  });
+
+  /*
+   * A WRITE THAT GOT NO ANSWER (a `RepositoryError`, not the server's no) is
+   * said in the shop's "our side" words — on the real catalogue, byte for
+   * byte, so the words survive whichever key carries them.
+   */
+  const OUR_SIDE = 'Възникна проблем от наша страна — моля, опитайте отново.';
+  const toastLabel = (host: HTMLElement) =>
+    host
+      .querySelector('[data-testid="admin-rhythm-toast"] .ui-toast__label')
+      ?.textContent?.trim() ?? null;
+
+  it('toasts our side’s words, without «Отмени», when a save gets no answer', async () => {
+    const rules = seeded();
+    vi.spyOn(rules.ports, 'publishStreakRule').mockResolvedValue(
+      Result.err(RepositoryError.unavailable()),
+    );
+    const { host, fixture } = await rig({ rules });
+    slide(host, 'admin-rhythm-interval-weeks', 8);
+    await settle(fixture);
+    click(host, 'admin-rhythm-save');
+    await settle(fixture);
+    expect(toastLabel(host)).toBe(OUR_SIDE);
+    expect(
+      host.querySelector(
+        '[data-testid="admin-rhythm-toast"] .ui-toast__action',
+      ),
+    ).toBeNull();
+  });
+
+  it('says our side’s words under the head when a save gets no answer', async () => {
+    const rules = seeded();
+    vi.spyOn(rules.ports, 'publishStreakRule').mockResolvedValue(
+      Result.err(RepositoryError.unavailable()),
+    );
+    const { host, fixture } = await rig({ rules });
+    slide(host, 'admin-rhythm-interval-weeks', 8);
+    await settle(fixture);
+    click(host, 'admin-rhythm-save');
+    await settle(fixture);
+    expect(text(host, 'admin-rhythm-refusal')).toBe(OUR_SIDE);
+  });
+
+  it('toasts our side’s words when «Отмени» gets no answer', async () => {
+    const rules = seeded();
+    const { host, fixture, store } = await rig({ rules });
+    slide(host, 'admin-rhythm-interval-weeks', 8);
+    await settle(fixture);
+    click(host, 'admin-rhythm-save');
+    await settle(fixture);
+    expect(store.upcoming()).not.toBeNull();
+    vi.spyOn(rules.ports, 'withdrawStreakRule').mockResolvedValue(
+      Result.err(RepositoryError.unavailable()),
+    );
+    (
+      host.querySelector(
+        '[data-testid="admin-rhythm-toast"] .ui-toast__action',
+      ) as HTMLElement
+    ).click();
+    await settle(fixture);
+    expect(toastLabel(host)).toBe(OUR_SIDE);
+    expect(store.upcoming()).not.toBeNull();
   });
 });
 

@@ -18,10 +18,11 @@ import {
 } from './role.data';
 
 /*
- * The cases of libs/domain/accounts/src/lib/user-role.spec.ts, copied (not
- * moved — the accounts barrel keeps exporting user-role.ts until Phase 4)
- * and run against the `Role` dictionary: `isUserRole` → `isRole`,
- * `worksTheBook` → `mayBook`, `handlesMoney` → `seesMoney`.
+ * The cases of the legacy accounts `user-role.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied while the
+ * accounts barrel still exported `user-role.ts`, and run against the `Role`
+ * dictionary: `isUserRole` → `isRole`, `worksTheBook` → `mayBook`,
+ * `handlesMoney` → `seesMoney`.
  */
 
 describe('isRole', () => {

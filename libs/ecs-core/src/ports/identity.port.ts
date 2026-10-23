@@ -164,8 +164,8 @@ export type MintCustomToken = (
 
 /**
  * The Auth user's display name — what the header/menu account monogram reads
- * through `AuthGateway.currentDisplayName()` (session-cached, no Firestore
- * read). `completeRegistration` calls it after the registered `Set` with
+ * through `AuthSessionPorts.currentDisplayName` (auth.port.ts; session-cached,
+ * no Firestore read). `completeRegistration` calls it after the registered `Set` with
  * `Profile.fullName` and IGNORES its Result — best-effort identity chrome
  * that must never fail a complete registration (the monogram falls back to
  * the identifier's initial).

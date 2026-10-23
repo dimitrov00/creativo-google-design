@@ -44,7 +44,7 @@ export type BarberAvatar = {
 /**
  * A craftsman's public profile — `barbers/{id}` (`barber.ts:28-34`,
  * `catalog-reader.adapter.ts:174-186`): every 1-to-1 field at the root
- * (Law 6). The stored document keeps its legacy body (`status`, the nested
- * `avatar`) until the booking-core flip; the shims convert.
+ * (Law 6). Until the booking-core flip the stored document kept its legacy
+ * body (`status`, the nested `avatar`), which the legacy shims converted.
  */
 export type Barber = BarberMeta & BarberAvatar;

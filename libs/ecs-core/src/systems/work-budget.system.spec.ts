@@ -6,7 +6,8 @@ import { WorkBudgetSystem } from './work-budget.system';
 
 /*
  * The cases of apps/functions/src/lib/ops/work-budget.spec.ts, copied (the
- * legacy spec keeps running against its shim). `timeBudget` is re-targeted
+ * legacy spec ran against its shim until a flip deleted it). `timeBudget`
+ * is re-targeted
  * to `isSpent` over a clock the case reads itself — instants as
  * `UtcEpochMs` (flatten-spec T2) — and `walkWithin` to the pure chunk steps
  * it is built from, driven by `walk` below exactly as the shim drives them —

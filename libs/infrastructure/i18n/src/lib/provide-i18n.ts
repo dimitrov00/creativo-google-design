@@ -18,7 +18,7 @@ export function provideI18n(): EnvironmentProviders[] {
       fallbackLang: 'bg',
       reRenderOnLangChange: true,
       prodMode: true,
-      // translateDomainError() owns the missing-key fallback (raw code) —
+      // translateDomainError() owns the missing-key fallback (the raw errorCode) —
       // suppress Transloco's own console warning to avoid double-reporting.
       missingHandler: { logMissingKey: false },
     },

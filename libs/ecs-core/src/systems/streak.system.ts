@@ -24,7 +24,7 @@ import {
 
 /*
  * THE RHYTHM'S PROJECTOR (client-card revision 3 §4.2), ported from
- * `libs/domain/engagement/src/lib/loyalty/streak-projector.ts:60-802`: one
+ * the legacy engagement `streak-projector.ts:60-802` (deleted in Phase 4b): one
  * person's «Посещения в ритъм» under one version of the rule, folded from
  * facts. Pure: the same rule, facts and day are the same trace.
  *

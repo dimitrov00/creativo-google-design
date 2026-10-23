@@ -1,8 +1,9 @@
 import type { ImpersonationSessionId, UserId } from './ids.primitive';
 
 /**
- * The governance context's error codes — the codes of
- * `libs/domain/governance/src/lib/*.errors.ts` and of the governance use
+ * The governance context's error codes — the codes of the legacy
+ * governance domain lib's `*.errors.ts` (deleted in Phase 4b) and of the
+ * governance use
  * cases (`end-impersonation.errors.ts`, `search-users.errors.ts`), collapsed
  * from `DomainError` subclasses into one dictionary of flat structs
  * discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the

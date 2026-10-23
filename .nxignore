@@ -1,23 +1,6 @@
 # Bundler metadata only. Each `src/package.json` below says `"sideEffects": false`,
 # which lets esbuild skip the modules behind a barrel that a bundle does not
 # use (the web app's initial chunk). None of them is an Nx project.
-libs/application/accounts/src/package.json
-libs/application/booking/src/package.json
-libs/application/catalog/src/package.json
-libs/application/engagement/src/package.json
-libs/application/governance/src/package.json
-libs/application/identity/src/package.json
-libs/application/notifications/src/package.json
-libs/application/shared/src/package.json
-libs/domain/accounts/src/package.json
-libs/domain/catalog/src/package.json
-libs/domain/engagement/src/package.json
-libs/domain/governance/src/package.json
-libs/domain/identity/src/package.json
-libs/domain/kernel/src/package.json
-libs/domain/models/src/package.json
-libs/domain/notifications/src/package.json
-libs/domain/scheduling/src/package.json
 libs/ecs-core/src/package.json
 libs/features/client/account-state/src/package.json
 libs/infrastructure/clock/src/package.json

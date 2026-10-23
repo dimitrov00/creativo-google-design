@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsError, MediaError } from '@core/primitives';
+import { AccountsError, AccountsErrorCode, MediaError } from '@core/primitives';
 import { AvatarSystem } from '@core/systems';
-import { AVATAR_UPLOAD_FAILED, avatarUploadRefusal } from './avatar-refusal';
+import { avatarUploadRefusal } from './avatar-refusal';
 
 /*
  * The one wording rule for a refused avatar upload: the picked file's own
@@ -27,8 +27,12 @@ describe('avatarUploadRefusal', () => {
   ] as const)(
     'words a %s Storage failure as the upload-failed copy',
     (_name, error) => {
-      expect(avatarUploadRefusal(error)).toBe(AVATAR_UPLOAD_FAILED);
-      expect(AVATAR_UPLOAD_FAILED).toBe('accounts.upload_avatar.upload_failed');
+      expect(avatarUploadRefusal(error)).toBe(
+        AccountsErrorCode.UploadAvatarUploadFailed,
+      );
+      expect(AccountsErrorCode.UploadAvatarUploadFailed).toBe(
+        'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
+      );
     },
   );
 });

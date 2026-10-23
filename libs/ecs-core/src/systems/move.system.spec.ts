@@ -67,15 +67,16 @@ import { BookingDecisionSystem } from './booking-decision.system';
 import { type MovePlan, MoveSystem } from './move.system';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/move-shift.spec.ts,
+ * The cases of the legacy scheduling `move-shift.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
  * libs/features/client/booking/.../rider-placement.spec.ts and
- * .../carried-reach.spec.ts, the booker's-seats and chair-time cases of
- * appointment.spec.ts, and the plan's math of
+ * .../carried-reach.spec.ts, the booker's-seats and chair-time cases of the
+ * legacy `appointment.spec.ts`, and the plan's math of
  * apps/functions/src/use-cases/reschedule-booking.use-case.spec.ts — copied
- * (the originals keep running against their shims), on the ONE shop day a
- * move lands on (wall-clock minutes, F-6). The decision itself (is the
- * chair free?) is BookingDecisionSystem's and its own spec's; here the plan
- * it is decided with, and the refusal a carried seat's failure becomes.
+ * while the originals still ran against their shims, on the ONE shop day a move
+ * lands on (wall-clock minutes, F-6). The decision itself (is the chair free?)
+ * is BookingDecisionSystem's and its own spec's; here the plan it is decided
+ * with, and the refusal a carried seat's failure becomes.
  */
 
 const at = (hour: number, min = 0): MinuteOfDay => minute(hour * 60 + min);

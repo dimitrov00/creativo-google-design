@@ -23,9 +23,9 @@ export type CompositionKind =
  * {@link ServiceComposition.parse} refuses an empty one.
  *
  * Named *composition*, not "offering": on a service, `offerings` is the
- * per-barber pricing matrix, and one word cannot mean both. (The stored
- * document keeps the nested `composition: { kind, includes } | null` until
- * the booking-core flip; the shim converts.)
+ * per-barber pricing matrix, and one word cannot mean both. (Until the
+ * booking-core flip the stored document kept the nested `composition:
+ * { kind, includes } | null`, which the legacy shim converted.)
  */
 export type ServiceComposition =
   | ServiceComposition.Single

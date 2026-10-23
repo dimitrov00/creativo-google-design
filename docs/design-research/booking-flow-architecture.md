@@ -1,5 +1,7 @@
 # `/book` — booking flow architecture
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 Design record for goal 6.5 (`docs/migration/goals/06-feature-slices.md`).
 Written 2026-07-29 alongside the Phase 0/1 landing; the owner rulings in §1
 are settled and should not be relitigated.

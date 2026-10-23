@@ -8,10 +8,11 @@ import { unwrapOk as okOf, deepFreeze } from '@core/testing';
 const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
 
 /*
- * The cases of libs/domain/scheduling/src/lib/interval.spec.ts, copied over
- * plain arrays of `MinuteRange`s on one shop day (flatten-spec §2.2 — the
- * successor of the epoch-ms `TimeInterval` sets), plus property tests
- * against a brute-force minute-set model.
+ * The cases of the legacy scheduling `interval.spec.ts` (deleted in Phase 2,
+ * when its class became a shim), copied over plain arrays of `MinuteRange`s on
+ * one shop day (flatten-spec §2.2 — the successor of the epoch-ms
+ * `TimeInterval` sets), plus property tests against a brute-force minute-set
+ * model.
  */
 
 /**

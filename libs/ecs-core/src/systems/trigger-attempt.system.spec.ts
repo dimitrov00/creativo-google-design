@@ -6,7 +6,8 @@ import { AttemptOutcome, TriggerAttemptSystem } from './trigger-attempt.system';
 
 /*
  * The cases of apps/functions/src/lib/trigger-attempts.spec.ts, copied (the
- * legacy spec keeps running against its shim). The event's time is a
+ * legacy spec ran against its shim until a flip deleted it). The event's
+ * time is a
  * `UtcEpochMs` here (`null` when unreadable — the shim parses the wire
  * string), the outcome is the SCREAMING `AttemptOutcome` on the field
  * `attemptOutcome`, and the logging/rethrowing cases are re-targeted to the

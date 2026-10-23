@@ -26,9 +26,9 @@ import {
 
 /**
  * THE SCHEDULING PORTS' BUSY CONTRACT, AS DATA ANY RUNNER CAN EXECUTE — the
- * successor of `availabilityReaderBusyCases`
- * (`libs/application/booking/src/lib/ports/availability-reader.contract.ts`,
- * blueprint §7), with the same six cases under the same names.
+ * successor of `availabilityReaderBusyCases` (the legacy booking application
+ * lib's `availability-reader.contract.ts`, deleted in Phase 4b; blueprint
+ * §7), with the same six cases under the same names.
  *
  * The legacy port computed a day's availability BEHIND the adapter, so its
  * contract pinned the adapter's padding. The ECS ports hand out the raw
@@ -50,9 +50,9 @@ import {
  * Three runners, one case list (§7): the in-memory port doubles
  * (`memoryLoadBusyDay`/`memoryObserveBusyDay`, ecs-core's own spec), the
  * browser `scheduling.adapter.ts` bundle and the functions busy adapter of
- * the booking-core flip — and until that flip, the legacy matcher's reader
+ * the booking-core flip — and, until that flip, the legacy matcher's reader
  * (`apps/functions/src/lib/booking/load-day-availability.spec.ts`), which
- * converts each case's {@link SchedulingBusyCase.spans} and `busy` to its
+ * converted each case's {@link SchedulingBusyCase.spans} and `busy` to its
  * own instants at its boundary (`ZonedTimeSystem.toUtc`). The answers are
  * worked out by hand; the contract's own spec checks every one against the
  * derivation too, so the cases and the systems cannot drift apart.

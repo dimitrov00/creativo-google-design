@@ -2190,9 +2190,9 @@ describe('StaffDashboard', () => {
     );
     // The loader returns no translations, so the KEY reached for is the assertion.
     expect(alert?.textContent?.trim()).toBe(
-      'errors.booking.transition.seat_resolved',
+      'errors.BOOKING_TRANSITION_SEAT_RESOLVED',
     );
-    expect(alert?.textContent).not.toContain('booking.gateway.failed');
+    expect(alert?.textContent).not.toContain('BOOKING_CALL_FAILED');
   });
 
   /*
@@ -3607,7 +3607,7 @@ describe('StaffDashboard', () => {
     // the running app shows, verified live. No undo on offer, only the
     // dismiss.
     expect(toast()?.querySelector('[role="status"]')?.textContent?.trim()).toBe(
-      'booking.gateway.failed',
+      'BOOKING_CALL_FAILED',
     );
     expect(toast()?.querySelectorAll('button').length).toBe(1);
     expect(component.undo()).toBeNull();
@@ -3673,7 +3673,7 @@ describe('StaffDashboard', () => {
     expect(component.describeError(invalid(null))).toBe('Невалидни данни.');
     expect(
       component.describeError(PipelineError.bare(PipelineErrorCode.Unknown)),
-    ).toBe('booking.gateway.failed');
+    ).toBe('BOOKING_CALL_FAILED');
   });
 
   /*
@@ -4845,6 +4845,52 @@ describe('StaffDashboard', () => {
         }),
       ]);
     });
+  });
+
+  // A REFUSAL WITH NOTHING ON FILE: the toast falls to `refuse()`'s own
+  // default key — the one surface that translates a KEY directly rather
+  // than an `errorCode`, so the key itself (the loader is empty) is the
+  // assertion.
+  it('toasts the surface’s own words when a save is refused with no refusal on file', async () => {
+    const component = fixture.componentInstance as unknown as {
+      store: {
+        staffEdit: (request: unknown) => Promise<boolean>;
+        errorFor: (id: string) => PipelineError | null;
+      };
+      undo: () => unknown;
+      notice: () => string | null;
+      rowWaitMs: number;
+    };
+    component.rowWaitMs = 0;
+    let sent = 0;
+    component.store.staffEdit = async () => {
+      sent += 1;
+      return false;
+    };
+    component.store.errorFor = () => null;
+    (
+      host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+    ).click();
+    fixture.detectChanges();
+    const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+      .componentInstance as unknown as {
+      onFrameCommit: (commit: unknown) => void;
+    };
+    editor.onFrameCommit({
+      id: 'appointment-1',
+      kind: 'move',
+      startMinute: 660,
+      endMinute: 690,
+    });
+    fixture.detectChanges();
+    (
+      host().querySelector('[data-testid="staff-visit-save"]') as HTMLElement
+    ).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(sent).toBe(1);
+    expect(component.undo()).toBeNull();
+    expect(component.notice()).toBe('errors.BOOKING_CALL_FAILED');
   });
 
   it('says a refused undo left the save standing, and offers nothing to try again', async () => {

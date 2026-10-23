@@ -2,8 +2,8 @@ import type { User } from '@core/entities';
 
 /**
  * ProfileCompletionSystem — how complete a profile is (blueprint §2.8), the
- * pure port of `libs/application/accounts/src/lib/read-models/
- * profile-completion.ts`. One definition of "complete" and one item order,
+ * pure port of the legacy accounts application lib's read-model
+ * `profile-completion.ts`. One definition of "complete" and one item order,
  * read by the `/account` completion card and the shell menu's "finish your
  * profile" row, so the two can never disagree about what is still missing.
  *

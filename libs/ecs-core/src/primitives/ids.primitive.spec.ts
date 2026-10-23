@@ -183,9 +183,10 @@ describe('SeatKeyText — the text of a cart seat key', () => {
 });
 
 /*
- * The guards of `libs/application/booking/.../booking-gateway.port.spec.ts`
- * (`isClientOperationId`, `isGuestKey`; deleted in 4b), ported onto the two
- * primitives (Phase 4a 4A-12).
+ * The guards of the legacy booking application lib's
+ * `booking-gateway.port.spec.ts` (`isClientOperationId`, `isGuestKey`; deleted
+ * in Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
+ * ported onto the two primitives (Phase 4a 4A-12).
  */
 describe('ClientOperationId — a client-minted idempotency key', () => {
   it('takes a UUID and any 16–64 character id-shaped string', () => {

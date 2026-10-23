@@ -269,8 +269,8 @@ const SUCCESSORS: readonly (readonly [string, string, DictionaryName])[] = [
 
 /**
  * dead: the seven rows no handler raised on `e9d1ca4` (their handlers gone
- * with flips 1–3; `edge.spec.ts` kept them pinned until Phase 4) — no
- * successor, no `errors.<CODE>` key.
+ * with flips 1–3; `edge.spec.ts` kept them pinned until Phase 4a deleted the
+ * `LegacyWireCode` table) — no successor, no `errors.<CODE>` key.
  */
 const DEAD: readonly string[] = [
   'otp_validation_failed',

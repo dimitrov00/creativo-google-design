@@ -12,9 +12,10 @@ import { OtpDestinationType } from './otp-destination-type.data';
 import { E164 } from './phone-number.data';
 
 /*
- * The cases of libs/domain/identity/src/lib/identifier.spec.ts, copied over
- * the brand: the phone reader is the real PhoneSystem bound to Bulgaria, as
- * an edge would wire it.
+ * The cases of the legacy identity `identifier.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over the
+ * brand: the phone reader is the real PhoneSystem bound to Bulgaria, as an edge
+ * would wire it.
  */
 const readPhone: ReadPhone = (raw) => {
   const result = PhoneSystem.parse(raw, CountryIso2.of('BG'));

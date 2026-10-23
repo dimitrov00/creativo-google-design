@@ -59,13 +59,15 @@ import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The digest case of apps/functions/src/use-cases/
- * staff-edit-appointment.operations.spec.ts, the ledger's CAP / newest /
- * unique cases of libs/application/booking/.../applied-operations-document
- * .spec.ts:72-170 (as properties — the companion spec holds the examples),
- * and the FOLD's math of staff-edit-appointment.use-case.spec.ts (move,
- * resize, services added and removed, the acts that are not geometry, the
- * revision, the ledger, the batch) — copied, on the shop's wall clock; the
- * decision that prices and places the folded seats is BookingDecisionSystem's.
+ * staff-edit-appointment.operations.spec.ts, the ledger's CAP / newest / unique
+ * cases of the legacy booking application lib's
+ * `applied-operations-document.spec.ts:72-170` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1; as properties — the
+ * companion spec holds the examples), and the FOLD's math of
+ * staff-edit-appointment.use-case.spec.ts (move, resize, services added and
+ * removed, the acts that are not geometry, the revision, the ledger, the batch)
+ * — copied, on the shop's wall clock; the decision that prices and places the
+ * folded seats is BookingDecisionSystem's.
  */
 
 /** A point on the fixture shop's wall clock today. */

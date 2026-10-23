@@ -81,7 +81,7 @@ export const stubAsUser: User = stub;
 
 /**
  * Exactly the five keys `updateProfile` writes for the owner — no more, no
- * fewer (the rules' owner allowlist until Phase 4a closed `users` to every
+ * fewer (the rules' owner allowlist, until Phase 4a closed `users` to every
  * client write).
  */
 export const ownerKeysAreTheAllowlist: Equals<

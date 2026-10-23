@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import tsParser from '@typescript-eslint/parser';
 import {
@@ -19,7 +20,6 @@ import {
   ECS_THROW_RESTRICTION,
   ECS_PIPELINE_RESTRICTIONS,
   ECS_PORT_RESTRICTIONS,
-  ECS_ROOT_SUFFIXES,
   ECS_SYSTEM_GLOBALS,
   ECS_SYSTEM_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
@@ -28,6 +28,12 @@ import {
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
 } from './ecs-syntax.mjs';
+
+/** The workspace root and its eslint.config.mjs, which installs the suffix blocks. */
+const WORKSPACE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const ROOT_CONFIG = fileURLToPath(
+  new URL('../../eslint.config.mjs', import.meta.url),
+);
 
 /**
  * Lints TypeScript source with exactly the given `no-restricted-syntax`
@@ -692,16 +698,53 @@ describe('ecsSyntaxBlocks', () => {
     ).toHaveLength(1);
   });
 
-  it('the root suffixes are the five no legacy file carries', () => {
-    expect(ECS_ROOT_SUFFIXES).toEqual([
+  it('the root installs all seven suffix blocks, each with the InjectionToken guard', async () => {
+    expect(ECS_ALL_SUFFIXES).toEqual([
       'system',
       'data',
       'entity',
       'primitive',
       'pipeline',
+      'port',
+      'adapter',
     ]);
     expect(() => ecsSyntaxBlocks(['ports'])).toThrow(/Unknown ECS suffix/);
-  });
+    // The ROOT config's resolved options, on probe paths no project config
+    // restates (an infrastructure lib, a feature): each suffix file carries
+    // its own list plus the token guard, and a port file the strict
+    // `no-sliced-ports`. A plain file keeps neither — the every-file token
+    // guard stays project-scoped, because the web's Angular wiring declares
+    // its tokens lawfully (Law 4).
+    const eslint = new ESLint({
+      cwd: WORKSPACE_ROOT,
+      overrideConfigFile: ROOT_CONFIG,
+    });
+    for (const dir of [
+      'libs/infrastructure/clock/src/lib',
+      'libs/features/probe/src/lib',
+    ]) {
+      for (const suffix of ECS_ALL_SUFFIXES) {
+        const { rules } = await eslint.calculateConfigForFile(
+          `${dir}/probe.${suffix}.ts`,
+        );
+        const [, ...expected] = ecsSyntaxBlocks([suffix], {
+          extra: ECS_TOKEN_RESTRICTIONS,
+        })[0].rules['no-restricted-syntax'];
+        expect(rules['no-restricted-syntax']).toEqual([2, ...expected]);
+        expect(rules['no-restricted-syntax']).toEqual(
+          expect.arrayContaining(ECS_TOKEN_RESTRICTIONS),
+        );
+        expect(rules['creativo/no-sliced-ports']).toEqual(
+          suffix === 'port' ? [2, { anyType: true }] : [2],
+        );
+      }
+      const { rules } = await eslint.calculateConfigForFile(`${dir}/probe.ts`);
+      expect(rules['no-restricted-syntax']).not.toEqual(
+        expect.arrayContaining(ECS_TOKEN_RESTRICTIONS),
+      );
+      expect(rules['creativo/no-sliced-ports']).toEqual([2]);
+    }
+  }, 30_000);
 
   it('a primitive is data plus every flatten-pass guard (L6)', async () => {
     const [primitive] = ecsSyntaxBlocks(['primitive']);

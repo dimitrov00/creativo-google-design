@@ -8,16 +8,13 @@ import {
   Result,
 } from '@core/primitives';
 import { type GatewayCall, scriptedGatewayPorts } from '@core/testing';
-import {
-  PROFILE_WRITE_FAILED,
-  nameRefusalCodes,
-  saveOwnProfile,
-} from './own-profile';
+import { nameRefusalCodes, saveOwnProfile } from './own-profile';
 
 /*
  * The owner's profile write through `updateProfile` (Phase 4a 4A-3 (2)):
  * `null` on success; the edit's own refusals worded by their codes; EVERY
- * other failure today's one copy, `PROFILE_WRITE_FAILED` — a store
+ * other failure today's one copy,
+ * `AccountsErrorCode.UpdateProfileRepositoryFailure` — a store
  * failure, a transport failure, an expired session, an unavailable or an
  * unknown one (§3.9). Each branch pinned over the scripted gateway.
  */
@@ -84,7 +81,10 @@ describe('saveOwnProfile', () => {
     ['an unknown failure', PipelineError.bare(PipelineErrorCode.Unknown)],
   ])('words %s as today’s one failed-write copy', async (_what, error) => {
     expect(await saveOwnProfile(failingWith(error), EDITS)).toBe(
-      PROFILE_WRITE_FAILED,
+      AccountsErrorCode.UpdateProfileRepositoryFailure,
+    );
+    expect(AccountsErrorCode.UpdateProfileRepositoryFailure).toBe(
+      'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
     );
   });
 });

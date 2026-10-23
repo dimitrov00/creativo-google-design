@@ -44,15 +44,6 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 
 /**
- * The refusal shown when the session carries no identifier (or no account)
- * to register or save against — today's `errors.identifier_missing`.
- */
-const IDENTIFIER_MISSING = 'identifier_missing';
-
-/** The refusal shown for a failed callable the server named no code for — today's generic `errors.unknown`. */
-const UNKNOWN_ERROR_CODE = 'unknown';
-
-/**
  * Wraps the onboarding flow machine (`OnboardingFlowSystem`, pure,
  * blueprint §5.3). One instance per `/onboarding` visit — component-scoped,
  * not root. Stepping over the steps a resume's plan leaves out is that
@@ -131,7 +122,12 @@ export class OnboardingFlowStore {
   async submitAbout(fields: RegistrationFields): Promise<void> {
     const identifier = this.currentIdentifier();
     if (!identifier) {
-      this.dispatch(OnboardingFlowEvent.registrationFailed(IDENTIFIER_MISSING));
+      // The session carries no identifier to register against.
+      this.dispatch(
+        OnboardingFlowEvent.registrationFailed(
+          IdentityErrorCode.IdentifierMissing,
+        ),
+      );
       return;
     }
 
@@ -142,12 +138,13 @@ export class OnboardingFlowStore {
 
     if (!result.ok) {
       // A field the strategy requires is missing (`IDENTITY_REGISTRATION_
-      // FIELD_MISSING`, before any call), else the callable's own code.
+      // FIELD_MISSING`, before any call), else the callable's own code, else
+      // the surface's own generic copy (`IDENTITY_CALL_FAILED`).
       const error = result.error;
       const message =
         error.errorCode === IdentityErrorCode.RegistrationFieldMissing
           ? error.errorCode
-          : (error.serverErrorCode ?? UNKNOWN_ERROR_CODE);
+          : (error.serverErrorCode ?? IdentityErrorCode.CallFailed);
       this.dispatch(OnboardingFlowEvent.registrationFailed(message));
       return;
     }
@@ -237,7 +234,9 @@ export class OnboardingFlowStore {
     }
 
     if (this.currentUserId() === null) {
-      this.dispatch(OnboardingFlowEvent.birthdayFailed(IDENTIFIER_MISSING));
+      this.dispatch(
+        OnboardingFlowEvent.birthdayFailed(IdentityErrorCode.IdentifierMissing),
+      );
       return;
     }
 
@@ -282,7 +281,7 @@ export class OnboardingFlowStore {
    */
   async uploadAvatar(data: Blob): Promise<string | null> {
     const owner = this.currentUserId();
-    if (owner === null) return IDENTIFIER_MISSING;
+    if (owner === null) return IdentityErrorCode.IdentifierMissing;
 
     this._pending.set(true);
     const result = await this.upload(owner, data);

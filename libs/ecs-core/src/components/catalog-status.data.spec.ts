@@ -5,9 +5,10 @@ import {
   ServiceStatus,
 } from './catalog-status.data';
 
-// The tags are pinned: the legacy shims map them to the stored lowercase
-// strings composite indexes #1–#5 filter by, so a renamed value would empty
-// every public catalogue query read through them.
+// The tags are pinned: they are the stored strings composite indexes #1–#5
+// filter by (the legacy shims mapped them to lowercase until the booking-core
+// flip), so a renamed value would empty every public catalogue query read
+// through them.
 describe('catalog status dictionaries', () => {
   it('pins the service status tags', () => {
     expect(ServiceStatus).toEqual({ Active: 'ACTIVE', Archived: 'ARCHIVED' });

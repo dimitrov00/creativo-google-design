@@ -1,5 +1,5 @@
 import nx from '@nx/eslint-plugin';
-import baseConfig from '#eslint-config';
+import baseConfig, { ECS_ALL_SUFFIXES } from '#eslint-config';
 
 export default [
   ...nx.configs['flat/angular'],
@@ -28,6 +28,8 @@ export default [
     // ui-icon / ui-logo / UiIconRegistry. Nothing here imports an icon
     // font either: the artwork is the generated path table.
     files: ['**/*.ts'],
+    // An ECS-suffix file here keeps the root's suffix block, icon selectors included.
+    ignores: ECS_ALL_SUFFIXES.map((suffix) => `**/*.${suffix}.ts`),
     rules: {
       'no-restricted-syntax': 'off',
     },

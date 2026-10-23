@@ -1,6 +1,7 @@
 /**
  * The scheduling context's error codes — the 51 `DomainError` subclasses of
- * `libs/domain/scheduling/src/lib/*.errors.ts` collapsed into ONE `as const`
+ * the legacy scheduling domain lib's `*.errors.ts` (deleted in Phase 4b)
+ * collapsed into ONE `as const`
  * dictionary (blueprint §2.1), SCREAMING_SNAKE and prefixed `SCHEDULING_`
  * after the flatten pass (Law 7.5, flatten-spec §4.2) — `appointment.not_arrivable`
  * included (`SCHEDULING_APPOINTMENT_NOT_ARRIVABLE`). The UI resolves

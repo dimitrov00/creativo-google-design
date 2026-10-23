@@ -23,13 +23,14 @@ import {
 import { AppointmentIndexSystem } from './appointment-index.system';
 
 /*
- * The R33 rule cases of
- * libs/application/booking/src/lib/ports/appointment-document.mirrors.spec.ts:106-185
- * (8), COPIED so they survive the mapper's Phase 4 deletion: the subject
- * mirror lists every account once, sorted, guests left out; the placement
- * is the commit's stamp and is never inferred. The mapper-shape assertions
- * (`APPOINTMENT_DOCUMENT_FIELDS`, `preservedAppointmentFields`) become the
- * entity's own keys — there is no document type besides the entity.
+ * The R33 rule cases of the legacy booking application lib's
+ * `appointment-document.mirrors.spec.ts:106-185` (8; deleted with the mapper in
+ * Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * before it went: the subject mirror lists every account once, sorted, guests
+ * left out; the placement is the commit's stamp and is never inferred. The
+ * mapper-shape assertions (`APPOINTMENT_DOCUMENT_FIELDS`,
+ * `preservedAppointmentFields`) become the entity's own keys — there is no
+ * document type besides the entity.
  */
 
 const JUNE_1 = localDate('2026-06-01');

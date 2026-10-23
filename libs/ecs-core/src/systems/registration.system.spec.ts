@@ -29,8 +29,10 @@ import {
 import { SearchFieldsSystem } from './search-fields.system';
 
 /*
- * COPIED and re-targeted (the originals keep running against their shims):
- * - libs/application/identity/src/lib/use-cases/register-user.use-case.spec.ts
+ * COPIED and re-targeted while the originals still ran against their shims (the
+ * legacy ones deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1):
+ * - the legacy identity application lib's `register-user.use-case.spec.ts`
  *   — the client-side field check (`effectiveFields` + `missingField`);
  * - the math of apps/functions/src/use-cases/complete-registration.use-case.spec.ts
  *   — the field check, the settle of a first registration and of a re-run
@@ -40,7 +42,7 @@ import { SearchFieldsSystem } from './search-fields.system';
  * - the claims math of apps/functions/src/use-cases/verify-otp.use-case.spec.ts
  *   (onboarding for a stub, the STORED roles once registered, `client` when
  *   none were granted) and its provisioned stub;
- * - libs/domain/identity/src/lib/registration-field.spec.ts (the field
+ * - the legacy identity `registration-field.spec.ts` (the field
  *   vocabulary, blueprint §7);
  * - the provisioned stub of apps/functions/src/adapters/
  *   firestore-user-repository.spec.ts.

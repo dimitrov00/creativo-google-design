@@ -5,9 +5,9 @@ import type { PrincipalTag } from './guest-guard.system';
  * SessionAccessSystem — who may enter which route, and when a session is
  * ready to be asked (blueprint §2.8). The pure halves of
  * `apps/web/src/app/guards/*` (`activeGuard`, `anonGuard`, `homeGuard`,
- * `rolesGuard`) and of `EnsureSessionReadyUseCase`'s refresh backoff
- * (`libs/application/identity/src/lib/use-cases/
- * ensure-session-ready.use-case.ts`).
+ * `rolesGuard`) and of `EnsureSessionReadyUseCase`'s refresh backoff (the
+ * legacy identity application lib's `ensure-session-ready.use-case.ts`,
+ * deleted in Phase 4b).
  *
  * The guards keep the router and the gateway; this decides. The backoff
  * keeps the timer and the token refresh; this says whether to wait, how

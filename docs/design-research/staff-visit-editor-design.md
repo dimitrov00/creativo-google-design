@@ -1,5 +1,7 @@
 # Редизайн на листа за час
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 ## A case study of calendar event creation, and the complete specification for this app's staff appointment sheet
 
 **Status:** design brief · **canonical for this surface.** Supersedes the visit-sheet sections of [staff-schedule-uiux-design.md](./staff-schedule-uiux-design.md), records a dated override of that document's drag-to-reschedule rejection (§4.3), and — **2026-08-26, first pass — records the owner's reversal of its OWN body-drag exclusion (§3.4.9, §4.4) together with four further rulings: the segmented list is the design system's, ~~services and people are one token field~~ _(withdrawn the same day — see the note below)_, the frame and the typed clock are both always visible, and the sheet is always editable (§3.2).**

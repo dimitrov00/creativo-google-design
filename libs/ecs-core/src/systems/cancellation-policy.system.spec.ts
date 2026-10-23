@@ -47,9 +47,10 @@ import { CancellationPolicySystem } from './cancellation-policy.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/cancellation-window.spec.ts and
+ * The cases of the legacy scheduling `cancellation-window.spec.ts` (deleted
+ * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1) and
  * apps/functions/src/lib/booking/cancellation-window-stamp.spec.ts, copied
- * (the originals keep running against their shims): the window is whole
+ * while the originals still ran against their shims: the window is whole
  * hours (`windowOf`), the deadline its one formula on `UtcEpochMs` (a T2
  * lifecycle comparison), and every path that cancels a seat stamps the
  * window in force on it — the stamp spec's callables re-targeted to the

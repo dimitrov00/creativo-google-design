@@ -13,9 +13,9 @@ const PLACEMENT = {
  * are not banned). `placement` is the COMMIT's own stamp;
  * `inferredPlacement` is the backfill's reconstruction from the commit audit
  * row and is never promoted to a stamp. `null` on either is "nobody may read
- * this as either" — a row written before the field. The stored documents keep
- * the lowercase `'self' | 'staff'` until the booking-core flip; the shims
- * convert.
+ * this as either" — a row written before the field. Until the booking-core
+ * flip the stored documents kept the lowercase `'self' | 'staff'`, which
+ * the legacy shims converted.
  */
 export type Placement = (typeof PLACEMENT)[keyof typeof PLACEMENT];
 

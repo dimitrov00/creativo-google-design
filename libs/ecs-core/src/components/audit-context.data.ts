@@ -21,9 +21,9 @@ import type {
  * `reschedule-appointment.ts:172`, `cancel-appointment.ts:226`,
  * `publish-streak-definition.pipeline.ts`, `run-backfill.ts:693`,
  * `audit-profile-changes.ts:60-65`) upper-snaked, dots and camel humps to
- * `_` (flatten-spec §3.7); the stored bytes stay the dotted strings until
- * the governance flip, the shims converting. A new audited act is a
- * deliberate code change here.
+ * `_` (flatten-spec §3.7); the stored bytes were the dotted strings until
+ * the governance flip, which the legacy shims converted. A new audited act
+ * is a deliberate code change here.
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',

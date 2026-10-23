@@ -24,8 +24,8 @@ import type {
  * caller keep the legacy lower-case words and epoch instants. Each
  * dictionary has ONE table here, the legacy word of each value, and its
  * inverse, so `visit-filter.ts`, `visit-sections.ts` and
- * `visit-row.presenter.ts` convert the same way. Deleted with the legacy
- * view models (Phase 4).
+ * `visit-row.presenter.ts` convert the same way. Carried forward past
+ * Phase 4b to the view-model pass (HANDOFF §3.3, carried forward; 4A-13).
  */
 
 /** The legacy word of each row outcome — and its inverse below. */

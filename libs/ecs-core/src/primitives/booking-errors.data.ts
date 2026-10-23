@@ -10,14 +10,15 @@ import type { MinuteOfDay } from './minute-of-day.primitive';
 import type { SchedulingError } from './scheduling-errors.data';
 
 /**
- * The booking commit's refusals — the codes of `commit-booking.errors.ts` and
- * `decide-booking.errors.ts` as flat structs discriminated by `errorCode`
- * (Law 7.5). The values are SCREAMING_SNAKE with the `BOOKING_` prefix
- * (flatten-spec §4.2, owner-locked: the commit dictionary drops `COMMIT`, so
+ * The booking commit's refusals — the codes of the retired
+ * `commit-booking.errors.ts` and `decide-booking.errors.ts` (deleted in
+ * flip 1) as flat structs discriminated by `errorCode` (Law 7.5). The values
+ * are SCREAMING_SNAKE with the `BOOKING_` prefix (flatten-spec §4.2,
+ * owner-locked: the commit dictionary drops `COMMIT`, so the legacy
  * `booking.commit.slot_unavailable` is `BOOKING_SLOT_UNAVAILABLE`); the
- * callable edge still sends the legacy dotted code on the wire until Phase 4
- * (§4.3). Admission (`PartyAdmissionSystem`) is the lowest system that
- * refuses with them; `BookingDecisionSystem` and `MoveSystem` re-use them.
+ * callable edge sends the code itself on the wire (Phase 4a 4A-4).
+ * Admission (`PartyAdmissionSystem`) is the lowest system that refuses with
+ * them; `BookingDecisionSystem` and `MoveSystem` re-use them.
  *
  * Every field beside `errorCode` is an i18n parameter: an i18n-safe scalar
  * (ids and coordinates under their brands), except
@@ -40,8 +41,8 @@ export const BookingErrorCode = {
   InvariantViolated: 'BOOKING_INVARIANT_VIOLATED',
   /*
    * The booking callables' own refusals before (or around) a pipeline — the
-   * successors of today's legacy dotted wire codes (Phase 4a 4A-4), the
-   * dotted code in SCREAMING. Their structs are `BookingCallRefusal`.
+   * successors of the legacy dotted wire codes retired in Phase 4a (4A-4),
+   * the dotted code in SCREAMING. Their structs are `BookingCallRefusal`.
    */
   /** A placement on someone else's behalf by a caller who may not book (was `booking.commit.forbidden`). */
   CommitForbidden: 'BOOKING_COMMIT_FORBIDDEN',
@@ -67,6 +68,27 @@ export const BookingErrorCode = {
   TipForbidden: 'BOOKING_TIP_FORBIDDEN',
   TipInvalidInput: 'BOOKING_TIP_INVALID_INPUT',
   TipNotFound: 'BOOKING_TIP_NOT_FOUND',
+  /*
+   * The booking surfaces' own words (Phase 4b, 4B-4) — the successors of the
+   * dotted i18n keys the review step, the appointments page and the staff
+   * day read. No pipeline raises them; their structs are
+   * `BookingError.BareCall<BookingError.SurfaceCode>`, outside
+   * `BookingCallRefusal`, and their edge rows are inert.
+   */
+  /**
+   * A booking call failed and the server's code has no copy of its own —
+   * the review step's, the appointments page's and the staff day's generic
+   * words (succeeds a retired dotted i18n key —
+   * `docs/architecture/flips/phase-4b-delete.md` §2 row 13).
+   */
+  CallFailed: 'BOOKING_CALL_FAILED',
+  /**
+   * The staff day's words for a lifecycle move refused because a seat is
+   * already settled — the refusal names a `fromBookingStatus` that is no
+   * booking status (succeeds a retired dotted i18n key —
+   * `docs/architecture/flips/phase-4b-delete.md` §2 row 14).
+   */
+  TransitionSeatResolved: 'BOOKING_TRANSITION_SEAT_RESOLVED',
 } as const;
 export type BookingErrorCode =
   (typeof BookingErrorCode)[keyof typeof BookingErrorCode];
@@ -204,8 +226,11 @@ export const BookingError = {
   ): BookingError.InvariantViolated {
     return { errorCode: E.InvariantViolated, violations };
   },
-  /** One of the call family's refusals that carries nothing but its code. */
-  bare<C extends BookingError.BareCallCode>(
+  /**
+   * One of the call family's refusals that carries nothing but its code — or
+   * one of the surfaces' own words, which carry nothing else either.
+   */
+  bare<C extends BookingError.BareCallCode | BookingError.SurfaceCode>(
     errorCode: C,
   ): BookingError.BareCall<C> {
     return { errorCode };
@@ -324,7 +349,13 @@ export namespace BookingError {
     | typeof BookingErrorCode.ArrivedForbidden
     | typeof BookingErrorCode.TipUnauthenticated
     | typeof BookingErrorCode.TipForbidden;
-  export type BareCall<C extends BareCallCode> = { readonly errorCode: C };
+  /** The booking surfaces' own words (Phase 4b) — no pipeline raises them. */
+  export type SurfaceCode =
+    | typeof BookingErrorCode.CallFailed
+    | typeof BookingErrorCode.TransitionSeatResolved;
+  export type BareCall<C extends BareCallCode | SurfaceCode> = {
+    readonly errorCode: C;
+  };
 
   export type CallInvalidInputCode =
     | typeof BookingErrorCode.TransitionInvalidInput

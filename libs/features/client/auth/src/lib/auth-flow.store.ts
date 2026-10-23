@@ -21,12 +21,6 @@ import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 export const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
- * The refusal shown for a failed callable the server named no code for —
- * today's generic `errors.unknown`, the auth surface's own copy.
- */
-const UNKNOWN_ERROR_CODE = 'unknown';
-
-/**
  * Wraps `AuthFlowSystem.next` (pure, blueprint §5.3) with the async OTP
  * round-trip and the challenge-id side channel the pure state doesn't
  * model. One instance per `/auth` visit — provided component-scoped on
@@ -203,7 +197,10 @@ export class AuthFlowStore {
   }
 }
 
-/** The refusal to show for a failed callable: the server's own code, else the generic one. */
+/**
+ * The refusal to show for a failed callable: the server's own code, else
+ * the auth surface's own generic copy (`IDENTITY_CALL_FAILED`).
+ */
 function messageOf(error: PipelineError): string {
-  return error.serverErrorCode ?? UNKNOWN_ERROR_CODE;
+  return error.serverErrorCode ?? IdentityErrorCode.CallFailed;
 }

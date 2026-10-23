@@ -11,8 +11,8 @@ const COMBINABILITY = {
  * field `combinability` (flatten-spec §3.2: today's union of two tag-only
  * objects carried no variant field, so it is the tag alone). A tag rather
  * than a `stackable: boolean`, so the stacking vocabulary can grow
- * (`coupon-combinability.ts:9`). The stored legacy values are the
- * lower-case `{ kind }` objects; the legacy shims map them.
+ * (`coupon-combinability.ts:9`). The legacy stored values were the
+ * lower-case `{ kind }` objects, which the legacy shims mapped.
  */
 export type Combinability = (typeof COMBINABILITY)[keyof typeof COMBINABILITY];
 

@@ -32,9 +32,10 @@ function range(from: string, to: string): MinuteRange {
 }
 
 /*
- * Copied (not moved) from
- * libs/application/booking/src/lib/ports/schedule-exception-document.spec.ts:40-120
- * — the GDPR boundary, re-targeted from `exceptionToDocument(exception)` to
+ * Copied (not moved) from the legacy booking application lib's
+ * `schedule-exception-document.spec.ts:40-120` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) — the GDPR boundary,
+ * re-targeted from `exceptionToDocument(exception)` to
  * `ScheduleExceptionSystem.publicEffect(detail)`: under §9 D16(b) the public
  * effect IS the stored record, so the sanitiser is the system.
  */

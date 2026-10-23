@@ -508,7 +508,7 @@ export interface VisitEditorFrameDay {
 /**
  * One catalogue row for the pushed add-service page.
  *
- * A second input rather than an injected `CatalogReader`: the visit VM is
+ * A second input rather than an injected catalogue read port: the visit VM is
  * the appointment, and the catalogue is the shop. Threading it as data keeps
  * this component free of a port it would otherwise have to stub in every
  * test, and the owner of the store already holds the catalogue.

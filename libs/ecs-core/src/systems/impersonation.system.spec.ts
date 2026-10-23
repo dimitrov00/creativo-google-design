@@ -23,17 +23,18 @@ import {
 } from './impersonation.system';
 
 /*
- * The cases of libs/domain/governance/src/lib/impersonation-session.spec.ts,
- * COPIED and re-targeted: `ImpersonationSession.start/.reconstitute/.end/
- * .isExpired` → `ImpersonationSystem.start/.faults/.end/.isExpired`, ISO
- * instants → `UtcEpochMs`, the `Clock` → `nowUtcMs`, `isSuccess(r)` →
- * `r.ok`, the nested status → the flat lifecycle slice at the session's
- * root. The class spec keeps running against its shim. A raw scope string
+ * The cases of the legacy governance `impersonation-session.spec.ts` (deleted
+ * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
+ * COPIED and re-targeted:
+ * `ImpersonationSession.start/.reconstitute/.end/.isExpired` →
+ * `ImpersonationSystem.start/.faults/.end/.isExpired`, ISO instants →
+ * `UtcEpochMs`, the `Clock` → `nowUtcMs`, `isSuccess(r)` → `r.ok`, the nested
+ * status → the flat lifecycle slice at the session's root. A raw scope string
  * is now refused at its own edge (`parseImpersonationScope`) before start.
  *
- * Also copied: the session math of libs/application/governance/src/lib/
- * use-cases/start-impersonation.use-case.spec.ts and
- * end-impersonation.use-case.spec.ts (the staff gate; `EXPIRED` vs
+ * Also copied: the session math of the legacy governance application lib's
+ * `start-impersonation.use-case.spec.ts` and
+ * `end-impersonation.use-case.spec.ts` (the staff gate; `EXPIRED` vs
  * `ADMIN_ENDED` by the one expiry rule).
  */
 

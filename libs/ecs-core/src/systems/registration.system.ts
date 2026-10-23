@@ -26,8 +26,8 @@ import { SearchFieldsSystem } from './search-fields.system';
  * RegistrationSystem — how a provisioned account becomes a registered one
  * (blueprint §2.8: `settle`, `missingField`), the math of the
  * `completeRegistration` pipeline (`complete-registration.pipeline.ts`) and
- * of its client twin `RegisterUserUseCase`
- * (`libs/application/identity/src/lib/use-cases/register-user.use-case.ts`),
+ * of its client twin `RegisterUserUseCase` (the legacy identity application
+ * lib's `register-user.use-case.ts`, deleted in Phase 4b),
  * the claims the `verifyOtp` pipeline mints (`verify-otp.pipeline.ts`), the
  * contact-channel stub it provisions and its in-transaction decision over a
  * stored account ({@link RegistrationSystem.adoptStub}, F2-9).

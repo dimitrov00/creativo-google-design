@@ -17,10 +17,10 @@ import { type Page, PageStep, PagingSystem } from './paging.system';
  * property (paging to the end reads every row exactly once, newest first)
  * and purity.
  *
- * Flatten pass (Law 7): the page key is the visit's start INSTANT — the
- * typed cursor `beforeUtcMs: UtcEpochMs` of the `PageClientHistory` port
- * (flatten-spec §3.8) — while `PageKey` stays generic and opaque to the
- * system; the legacy adapter's shim keeps its stored ISO string as the key.
+ * Flatten pass (Law 7): the page key is the visit's start INSTANT — the typed
+ * cursor `beforeUtcMs: UtcEpochMs` of the `PageClientHistory` port
+ * (flatten-spec §3.8) — while `PageKey` stays generic and opaque to the system
+ * (the legacy adapter's shim once kept its stored ISO string as the key).
  */
 
 const S = PagingSystem;

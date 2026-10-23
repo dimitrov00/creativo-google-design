@@ -24,7 +24,8 @@ import { ZonedTimeSystem } from './zoned-time.system';
 /*
  * The cases of apps/functions/src/lib/clients/policy-recompute-plan.spec.ts
  * and the policy-pass cases of client-stats-projection.spec.ts, copied (the
- * legacy specs keep running against their shims) and re-targeted to the
+ * legacy specs ran against their shims until a flip deleted them) and
+ * re-targeted to the
  * flat job entity: every lifecycle instant a `UtcEpochMs` (`*UtcMs`), the
  * change instant the D17 halves `changedAtSeconds` + `changedAtNanos` (a
  * `PreciseInstant` value in system I/O) compared as integers, the cursor a

@@ -1,12 +1,17 @@
-# ECS migration — handoff and continuation guide
+# ECS migration — the record and handoff
 
-Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
-a developer picking up the ECS / data-oriented migration. It says where the
-work stands, what to do next in which order, and how to prove each step.
-Last updated 2026-10-22 (flip 1 complete; Law 9 port-composition pass;
-flips 2, 3 and 4 integrated — the Phase 3b flips are complete; Phase 4a
-integrated — the full gate green, the "Phase 4a" commit; Phase 4b next,
-§3.3).
+**Phase 4b integrated — the ECS migration is complete.** Read this first if
+you are an agent (Claude Code, Codex, Cursor, Gemini, …) or a developer
+working on this codebase after the ECS / data-oriented migration. It is the
+migration record: what landed in which order and how each step was proved
+(§2, §3), the gate every change still passes and its baselines (§4), the
+operating rules (§5), the owner's rulings and open questions (§6), and what
+was carried forward as follow-up work (end of §3.3). Last updated 2026-10-23
+(flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
+Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
+`libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
+§3.3; the FULL §4 gate — the emulator journeys included — and the dev smoke
+green on the 4b tree, §3.3 "Gate").
 
 ## 1. Read these, in this order
 
@@ -19,39 +24,56 @@ integrated — the full gate green, the "Phase 4a" commit; Phase 4b next,
 4. `docs/architecture/flatten-spec.md` — every name, shape and time rule of
    the flat archetypes (Laws 6–7); §2.3 T1–T9 are the time rules.
 5. `docs/architecture/firestore-runbook.md` — the reader/writer matrix of every
-   collection, the flip closures, TTL steps, per-flip grep gates.
+   collection, the flip closures, TTL steps, deploy order, per-flip grep gates
+   and the Phase 4a/4b gates (§4.7, §4.8).
 6. `docs/architecture/flips/flip-1-booking-core.md` — the worked example of a
    flip (its adapter table predates Law 9; the note above it says so).
+7. `docs/architecture/module-boundaries.md` — the `scope:*`/`type:*` tags,
+   the ecs-core tiers and the import cages, rewritten from the post-4b graph.
 
 ## 2. Where the work stands
 
-| Step                                                                                  | State                                                                                                                                                                     | Commit(s)                                                    |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Constitution + blueprint                                                              | done                                                                                                                                                                      | 81ac087                                                      |
-| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                           | done                                                                                                                                                                      | defb4da                                                      |
-| Phase 1 — `libs/ecs-core` foundation                                                  | done                                                                                                                                                                      | 056ae43                                                      |
-| Phase 2 — all business math in pure systems, legacy classes shimmed                   | done                                                                                                                                                                      | 0416587                                                      |
-| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)             | done                                                                                                                                                                      | a6c7253                                                      |
-| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support    | done                                                                                                                                                                      | 291d3f9                                                      |
-| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`) | done                                                                                                                                                                      | 268aa0e, dbd39d4                                             |
-| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                        | done                                                                                                                                                                      | 3458349, ab6d266, c0e5d73                                    |
-| **Phase 3b flip 1 — booking core**                                                    | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
-| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)         | done — 2026-10-21, full gate green                                                                                                                                        | the "Law 9" commit                                           |
-| **Phase 3b flip 2 — identity and accounts**                                           | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                    | the "flip 2 commit"                                          |
-| **Phase 3b flip 3 — loyalty and invitations**                                         | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                             | the "flip 3 commit"                                          |
-| **Phase 3b flip 4 — programs**                                                        | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                              | the "flip 4 commit"                                          |
-| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**   | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                               | the "Phase 4a" commit                                        |
-| Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`; the docs rewrite        | not started (a pure deletion once 4a is green)                                                                                                                            |                                                              |
+| Step                                                                                                                | State                                                                                                                                                                                                                      | Commit(s)                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                       | 81ac087                                                      |
+| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                       | defb4da                                                      |
+| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                       | 056ae43                                                      |
+| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                       | 0416587                                                      |
+| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                       | a6c7253                                                      |
+| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                       | 291d3f9                                                      |
+| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                       | 268aa0e, dbd39d4                                             |
+| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                       | 3458349, ab6d266, c0e5d73                                    |
+| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                  | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                         | the "Law 9" commit                                           |
+| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                     | the "flip 2 commit"                                          |
+| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                              | the "flip 3 commit"                                          |
+| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                               | the "flip 4 commit"                                          |
+| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                | the "Phase 4a" commit                                        |
+| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 awaits the owner | the "Phase 4b" commit                                        |
 
-`main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass and
-Phase 4a, and the FULL gate of §4 is green on it (baseline reds only). The
-Phase 3b flips are complete and so is the blueprint's end-of-3b graph/bundle
-assertion (no project edge into `libs/application/*` or `libs/domain/*`; the
-functions dist without `@angular/*` and `luxon` — `rxjs` stays, 4A-2 (d)).
-The last fully green commit is the "Phase 4a" commit; check `git log` for
-anything newer. Next: Phase 4b, a pure deletion (§3.3).
+`main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
+and Phase 4b, and the FULL gate of §4 is green on it (baseline reds only). All
+four phases of the blueprint are complete: no `libs/application/*` or
+`libs/domain/*` project, alias, tag or path survives outside the historical
+docs, `package.json` lists no `luxon`, `@types/luxon` or `dinero.js`, and
+both catalogues hold only SCREAMING `errors.<errorCode>` keys. The
+blueprint's end-of-3b graph/bundle assertion is code since 4b: runbook §4.8
+gate 8 (no legacy project in the graph, hence no functions → legacy edge) and
+the forbidden-key check of `tools/verify/p0/functions-deps.mjs` (no
+`@angular/*`, `luxon` or `dinero.js` in the functions dist — `rxjs`
+stays, 4A-2 (d), 4a §10.1). The last fully green commit is the "Phase 4b"
+commit; check `git log` for anything newer. (On 2026-10-23 the full §4
+gate — `verify:p0`, `test:emulator` and `e2e:web` included — every grep gate
+and the dev smoke were green on the 4b tree, §3.3 "Gate".) **The migration
+is COMPLETE.** Two things wait for the owner, neither a migration step: the
+constitution and ports-rule edits of phase-4b plan §4.R R4 (pending their
+own approval of that exact text, §6 OQ-7/OQ-11), and the "Phase 4b" commit
+itself (plan §8.1 item 7 (d): `git add -A libs/application libs/domain`,
+add the untracked plan and `rhythm-service-groups.spec.ts`, then
+`pnpm nx reset`). Everything else is follow-up work, not migration (the
+carried-forward list at the end of §3.3).
 
-## 3. What to do next, in order
+## 3. What landed, in order
 
 ### 3.1 Flip 1 (booking core) — complete
 
@@ -71,8 +93,8 @@ callable-gated wait (the `completeRegistration` cold start outlasted 5 s in a
 full parallel run).
 
 Carried forward, not blocking (from the integration): `libs/application/**`
-still exports the retired flip-1 tokens and `*_COLLECTION` constants
-(Phase 4 deletes the layer); `markNotificationRead`,
+exported the retired flip-1 tokens and `*_COLLECTION` constants (deleted
+with the layer in Phase 4b); `markNotificationRead`,
 `loadWaitlistRequest`, `loadCouponGrant`, `readCustomers`,
 `CouponGrantSystem.transitionWrite` have no caller yet (grant
 burn/restore deferred, F1-2); a notification produced by the waitlist
@@ -280,9 +302,11 @@ invitation redemption via callable, users allowlist) each with its web switch;
 rewrite `module-boundaries.md`, delete `domain-model.md` (D6).
 It also closes the blueprint's end-of-3b graph/bundle assertion that flip 4
 deferred (flip-4 plan F4-2, runbook §4.5's measured state): no `functions →
-libs/application/*` edge, no `@angular/*` or `rxjs` in
-`dist/apps/functions/package.json`, `functions-deps.baseline.json`
-re-recorded.
+libs/application/*` edge, no `@angular/*` in
+`dist/apps/functions/package.json` (`rxjs` stays — Nx's `createPackageJson`
+scans ecs-core, whose ports name `Observable`; 4A-2 (d), 4a §10.1),
+`functions-deps.baseline.json` re-recorded (4a, then again in 4b when
+`dinero.js` left).
 
 Phase 4 runs in two halves. **4a** (plan
 `docs/architecture/flips/phase-4a-repoint.md`, its §0 the decisions 4A-1 …
@@ -334,50 +358,200 @@ together, THEN the rules (the tightenings close write paths the old web
 still uses); no index deploy; the flip-4 precondition (the default
 location's `timeZone`) still stands.
 
-**Phase 4b — what it must do (a pure deletion; nothing may change
-behaviour):**
+**Phase 4b — integrated 2026-10-23** (plan
+`docs/architecture/flips/phase-4b-delete.md`: §0 the decisions 4B-1 … 4B-11,
+§4 the packages P0–P9 in four waves, §4.R the residue packages R1–R8
+(wave 4, R4 applied on the owner's go-ahead) and the integrator (wave 5), §8.1 the
+integration record, §11 the case ledgers). A pure deletion and re-wording: behaviour frozen, no departure
+(4B-1) — every screen, every message in `bg` and `en`, every callable status
+and `details`, every stored document and telemetry line as on the 4a tree.
 
-1. Delete `libs/application/*` and `libs/domain/*` (17 Nx projects —
-   `nx graph` shows no edge into them), their `tsconfig.base.json` aliases
-   (incl. `@creativo/application/engagement/testing`, whose `src/testing.ts`
-   4a already deleted), their `.nxignore` lines, their eslint `files`
-   blocks; keep `.nxignore`'s `ecs-core`, `infrastructure/*` and
-   `features/client/account-state` lines. Their specs die with a §7-style
-   ledger that cites plan §11.3's successors (each legacy spec's rule
-   already has its 4a successor there).
-2. Remove `luxon`, `@types/luxon`, `dinero.js` from `package.json`, the
-   dinero cross-check in `libs/ecs-core/src/components/money.data.spec.ts`
-   and its `no-restricted-imports` override; re-run
-   `check-functions-deps.mjs` and re-record its baseline (`dinero.js`
-   leaves; `rxjs` stays unless the owner rules on plan §10.1).
-3. The dotted i18n keys and their readers: `translateFunctionsError` lost
-   its last 4a reader — delete it with the dotted keys, EXCEPT the keys
-   still read (plan §8.1 item 9 (g): `errors.accounts.upload_avatar.upload_failed`,
-   `errors.accounts.remove_avatar.remove_failed`,
-   `errors.identifier_missing`, `errors.unknown`,
-   `errors.repository_failure`, `errors.identity.phone.<reason>`,
-   `accounts.update_profile.repository_failure`, `booking.gateway.failed`,
-   `errors.booking.transition.seat_resolved`). `translateDomainError`'s
-   `{ code }` branch is NOT readerless: its last readers are exactly the
-   (g) keys' (`admin-rhythm.ts`, `client-account.ts`, `client-onboarding.ts`
-   `phoneError`, and the `translateError(code)` of `client-auth.ts`,
-   `client-profile.ts`, `client-onboarding.ts` — plan 4A-5). To delete the
-   branch, first give each (g) key a SCREAMING successor with today's text
-   verbatim, re-point its constant and pass its reader a flat
-   `{ errorCode }` struct; else keep the keys and the branch.
-4. Lint: the root-widened adapter/port/token guards (blueprint §6 Phase 4
-   "Nx") and the `type:application` depConstraints rows retired; the
-   remaining `libs/domain/kernel` mentions in lint messages.
-5. Docs: rewrite `module-boundaries.md` from the new graph, delete
-   `domain-model.md` (D6), banner `docs/migration-blueprint.md`, drop the
-   "until Phase 4" clauses of `CLAUDE.md`/`AGENTS.md` (both, byte for
-   byte), the provenance comments naming the legacy libs (the 33 of runbook
-   §4.7's closing review) and the `firestore.rules` comments naming
-   `@creativo/domain/accounts`.
-6. Then the gate of §4, unchanged. Later (4A-13, not 4b): the view-model
-   `kind`/`state`/`status` unions of plan §8.1 item 7, the UI-only
-   `Date.now()`/`Math.random()` reads, `visit-ecs.shim.ts`, the owner's
-   confirmation of §11.4 (a)'s time-sheet re-pin.
+- **Deleted.** The 17 Nx projects under `libs/application/*` (accounts,
+  booking, catalog, engagement, governance, identity, notifications, shared)
+  and `libs/domain/*` (accounts, catalog, engagement, governance, identity,
+  kernel, models, notifications, scheduling) — 621 tracked files, 169 spec
+  files, each with its successor or `dead:` reason in plan §11.1 (the three
+  live cases that had none — the legacy `standing.spec.ts`'s two
+  `levelNumeral` tables and `list-services-grouped-by-category.use-case.spec.ts`'s
+  one — recovered from `e2d7a8f` into `client-card.format.spec.ts` and the
+  new `rhythm-service-groups.spec.ts`, R5, plan §11.3) — with their
+  19 `tsconfig.base.json` aliases, 17 `.nxignore` lines and the
+  `type:application` tag and depConstraints row (61 → 44 projects); `luxon`,
+  `@types/luxon` and `dinero.js` from `package.json` and the lockfile, with
+  the dinero cross-check of `money.data.spec.ts` (its properties kept against
+  exact `BigInt` arithmetic, plus a golden table of dinero's own answers
+  captured before the package left, 4B-6); `translateFunctionsError`,
+  `FunctionsErrorDetails`, `UNKNOWN_ERROR_KEY`, `CodedError`'s `{ code }`
+  member and branch, and the i18n lib's `firebase/functions` import with its
+  lint exemption; every lowercase-rooted `errors` leaf of both catalogues
+  (139 per locale); `docs/architecture/domain-model.md` (D6). The only
+  `{workspaceRoot}/firestore.rules` test input (the deleted `domain-accounts`)
+  moved to `ecs-core` and `functions`, whose specs parse the rules (runbook
+  §4.8 gate 11). Already gone before 4b, so not re-deleted: `LegacyWireCode`
+  and its tables (4a, 4A-4); the Phase 2 shim bridges died inside the legacy
+  directories.
+- **The dotted keys' successors (plan §2).** Each still-read dotted key got a
+  SCREAMING, domain-prefixed `errorCode` declared once in its primitives
+  dictionary, holding today's words verbatim in both locales; its readers
+  were re-pointed before the key was retired, and each now reads the
+  dictionary member itself (the feature-level aliases and module constants
+  that carried the dotted strings are deleted — R7, OQ 14):
+
+  | Retired (`errors.…`)                         | Successor (`errors.…`)                       | Readers re-pointed (the deleted alias or constant in brackets)                                                                                                                                |
+  | -------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `accounts.upload_avatar.upload_failed`       | `ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED`       | `avatar-refusal.ts` (`AVATAR_UPLOAD_FAILED`)                                                                                                                                                  |
+  | `accounts.remove_avatar.remove_failed`       | `ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED`       | `profile.store.ts` (`avatar-refusal.ts` `AVATAR_REMOVE_FAILED`)                                                                                                                               |
+  | `accounts.update_profile.repository_failure` | `ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE` | `own-profile.ts` (`PROFILE_WRITE_FAILED`)                                                                                                                                                     |
+  | `identifier_missing`                         | `IDENTITY_IDENTIFIER_MISSING`                | `onboarding-flow.store.ts`, `profile.store.ts` (`IDENTIFIER_MISSING`)                                                                                                                         |
+  | `unknown`                                    | `IDENTITY_CALL_FAILED`                       | `auth-flow.store.ts`, `onboarding-flow.store.ts` (`UNKNOWN_ERROR_CODE`)                                                                                                                       |
+  | `repository_failure` (client account)        | `ACCOUNTS_REPOSITORY_FAILURE`                | `client-account.ts` `translateRepositoryError`                                                                                                                                                |
+  | `repository_failure` (admin rhythm)          | `ENGAGEMENT_REPOSITORY_FAILURE`              | `admin-rhythm.ts` ×3                                                                                                                                                                          |
+  | `identity.phone.<reason>` (5)                | `PHONE_INVALID.<reason>` (flat keys)         | `client-onboarding.ts` `phoneError`, through `translateDomainError`'s reason argument                                                                                                         |
+  | `booking.gateway.failed`                     | `BOOKING_CALL_FAILED`                        | FOUR: `booking-error-message.ts` (`REVIEW_FALLBACK_CODE`); `client-appointments.ts` (`CANCEL_FAILED`); `staff-dashboard.ts` `refuse()`'s default `fallbackKey` and `describeError`'s fallback |
+  | `booking.transition.seat_resolved`           | `BOOKING_TRANSITION_SEAT_RESOLVED`           | `staff-dashboard.ts` `describeError`                                                                                                                                                          |
+
+  The other lowercase-rooted leaves had no reader since the 4a wire flip and
+  went in one edit. No value was added to the dictionaries enumerated in
+  production (`PipelineErrorCode`, `RepositoryErrorCode`,
+  `StreakPublishErrorCode`); every new code has an inert `EDGE_WIRE` row
+  (4B-5). The words, re-measured at integration with a node one-liner
+  against `e2d7a8f`'s catalogues: all 14 successors hold the retired keys'
+  words byte for byte in `bg` and in `en`; the 126 SCREAMING keys of
+  `e2d7a8f` are unchanged; 139 lowercase-rooted leaves left each locale;
+  `errors` holds 140 keys in each (126 + 14); the i18n suite (5 files, 66
+  tests) pins the words permanently («the Phase 4b successors carry the
+  retired keys' words»). The smoke's (c) — the same comparison on the
+  catalogues the running app serves — found the same: all 14 exact in `bg`
+  and `en`, 140 SCREAMING `errors` keys each ("Gate" below).
+
+- **The lint widening (plan §3, 4B-7).** The root config spreads
+  `ecsSyntaxBlocks(ECS_ALL_SUFFIXES, { extra: ECS_TOKEN_RESTRICTIONS })` —
+  the `*.port.ts` and `*.adapter.ts` blocks and the `InjectionToken` guard
+  on every ECS-suffix file of the workspace — and a `**/*.port.ts` block
+  with `creativo/no-sliced-ports` in strict mode (`anyType`); ecs-core keeps
+  its `src/ports/**` strict block (moving it would narrow coverage);
+  `ECS_ROOT_SUFFIXES` is retired. The token guard is NOT installed on every
+  root `*.ts`: it would flag 67 lawful Angular-wiring sites in 15 files
+  (`ports.tokens.ts` ×37, `firebase-app.provider.ts`, `lazy-port.ts` and its
+  specs, `app.config.ts`, the `libs/ui/*` tokens, feature rigs) — Law 4
+  allows `InjectionToken` in Angular UI wiring — so the every-file half stays
+  project-scoped (`ecsProjectBlocks`, libs/ecs-core and apps/functions, where
+  no Angular lives). The `luxon`/`dinero.js` bans stay as retired-package
+  guards, their messages without the kernel clauses; the i18n lib takes the
+  root firebase ban whole again. `libs/ui/icons/eslint.config.mjs` no
+  longer cancels the root blocks: its registry-boundary
+  `no-restricted-syntax: 'off'` ignores the seven ECS suffixes (R8), so an
+  ECS-suffix file there keeps the root's suffix block (runbook §4.8 gate 9's
+  icons probe). What the widened blocks flagged on the 4b tree: nothing —
+  `run-many -t lint` is 44 projects, 0 errors, and no warning sits on a line
+  4b changed (the one new finding of the tree, `catalogue-parity.spec.ts`'s
+  nested-quantifier regex, was rewritten without one, R6). No exemption was
+  added (no new `eslint-disable`, no new `ignores` but R8's narrowing of an
+  `'off'`); the one stated non-widening is the every-file token guard above.
+- **The functions deps re-record (plan §8 step 3).** After R8, the last
+  lint-config change: `pnpm nx build functions --skip-nx-cache`, whose
+  `dist/apps/functions/package.json` lists exactly `firebase-admin`,
+  `firebase-functions`, `libphonenumber-js`, `rxjs` (no devDependencies, no
+  peers); the check before the record failed as it must ("removed:
+  dinero.js"); `node tools/verify/p0/check-functions-deps.mjs --record`
+  re-recorded `functions-deps.baseline.json` (four keys, the recorder's
+  rxjs-stays `//` text, `recordedAt` the UTC day); the check without
+  `--record` then passes, the forbidden-key half included ("4 runtime
+  dependencies, as recorded, none forbidden"). Why, for the commit message:
+  dinero.js leaves with the money spec's cross-check (4B-6, 4B-8); rxjs stays
+  (4a §10.1). `functions-deps.mjs` refuses a forbidden key (`@angular/*`,
+  `luxon`, `@types/luxon`, `dinero.js`) before the baseline diff, and
+  `--record` refuses to write one — with runbook §4.8 gate 8 (no legacy
+  project in the graph, so no functions → legacy edge) that is the
+  blueprint's end-of-3b assertion as code.
+- **The docs.** `module-boundaries.md` rewritten from the post-4b graph (44
+  projects, the ecs-core tiers, the import cages, `## scope:backend`); the
+  Phase 4b deletion banner on `docs/migration-blueprint.md`,
+  `domain-deviations.md` and every design-research spec still citing the
+  deleted trees (runbook §4.8 gate 12), and on `docs/migration/goals/`
+  `README.md`, `00`, `02`, `03`, `08` (plan OQ 10, re-decided; R3); the
+  blueprint's status "executed"; `flatten-spec.md`'s "until Phase 4" sites
+  noted done and the spec bannered executed (R3); the runbook's gates over
+  deleted paths rewritten (§4.2, §4.3, §4.5, §4.7) and §4.8 added (with
+  gates 3b, 3c and 6b, and gate 9's per-project probes, R3);
+  `firestore.rules` comments re-pointed to `role.data.ts` (`STAFF_ROLES`,
+  `BOOK_ROLES`). `CLAUDE.md` = `AGENTS.md` (§0 the 3-tier shape REMOVED, §1,
+  Law 7.1, Law 9.4, §3, §4) and `.claude/rules/ecs-ports.md` are agent
+  configuration, changed only on the owner's own approval (4B-11, plan R4):
+  **applied 2026-10-23** on the owner's go-ahead for Phase 4 (plan §4.R R4's
+  exact text; `cmp CLAUDE.md AGENTS.md` clean, no "until Phase 4" clause
+  left, `ecs-ports.md` names `DefaultLocationPorts`).
+- **Gate (plan §8.1, 2026-10-23, after `nx reset`).** The static half of §4
+  green but the baseline reds: `sync:check` up to date;
+  `verify-tools:layering --skip-nx-cache` ok (644 files, 2,874 import edges
+  in ecs-core; 2,238 files scanned in libs/apps/tools);
+  `run-many -t typecheck --skip-nx-cache` only `patterns` red;
+  `run-many -t lint` 44 projects, 0 errors;
+  `run-many -t test --parallel=3` 43 projects, 10,698 passed, 6 failed (the
+  baseline `gauge.spec.ts` 4, `visit-pills.spec.ts` 1,
+  `visits-page.presenter.spec.ts` «strikes an hour that did not happen» 1),
+  plus `verify-tools`' 79 node tests — down from 12,605 passed + 6 on the 4a
+  tree with the 169 legacy spec files (per-project totals in plan §8.1);
+  `nx test ecs-core --coverage --skip-nx-cache` 272 files, 4,530 tests,
+  97.85 % statements, 98.82 % lines; `nx test functions --skip-nx-cache` 37
+  files, 937 tests; `typecheck seed-tools` green; `build web` green (initial
+  598.10 kB, 4a 597.59 kB; the `gauge.css` budget warning as before);
+  `verify:bundle` ok; `build functions --skip-nx-cache` +
+  `check-functions-deps.mjs` pass on the re-recorded baseline. Grep gates
+  under bash: runbook §4.2 PASS (28 `ok`), §4.3 PASS (22), §4.4 PASS (17),
+  §4.5 PASS (6), §4.7 re-run on the 4b tree PASS (24; its closing review 34
+  comment mentions, all past-tense provenance or `dead:` notes), §4.8 PASS
+  (26 `ok`, its gates 1–7 each first failing on the committed `e2d7a8f`
+  tree — the known-bad run). **The second pass, the same day (plan §8.1
+  item 9), after `nx reset`:** the whole of §4 again, identical numbers
+  (ecs-core 97.86 % statements; `nx test lint-rules` 6 files, 145 tests),
+  §4.8 27 `ok` with gate 6c (the feature-level aliases, word-bounded), and
+  the emulator journeys ONE AT A TIME: `pnpm run verify:p0` "all proved"
+  (check (f) on the re-recorded deps); `pnpm run test:emulator` 65 + 255,
+  unchanged; `pnpm run e2e:web` 19 failed / 41 passed — exactly the
+  baseline. The plan's §8 step 6 dev smoke: 35 checks, 0 failed — `/book`
+  to the review step, `/account` and the profile sheet, the staff agenda
+  and a visit sheet, `/admin/loyalty` → the rhythm page, each with no
+  console error; the formerly-dotted families in `bg` and `en` with the
+  same words — the onboarding phone field's too-short refusal; with the
+  Functions emulator unreachable, the `/auth` OTP request
+  (`IDENTITY_CALL_FAILED`), an appointment cancel (`BOOKING_CALL_FAILED`),
+  a profile save (`ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE`) and an
+  admin rhythm save's toast (`ENGAGEMENT_REPOSITORY_FAILURE`); the
+  `/account` read refused (`ACCOUNTS_REPOSITORY_FAILURE`, the emulator's
+  rules swapped and put back); (c) the served catalogues. 4b's gate is
+  green, whole.
+
+**Deploy (runbook §3).** The ordinary order; nothing to stage ahead of the
+code: no index changed, `firestore.rules` changed in comments only, and no
+callable answer or stored shape moved (4B-1). The flip-4 precondition (the
+default location's `timeZone`) still stands.
+
+**Carried forward — follow-up work, not migration (4a plan 4A-13; none of it
+blocks anything):** the view-model `kind`/`state`/`status` unions of the 4a
+plan's §8.1 item 7 and the admin programs view-state `kind` unions; the
+UI-only `Date.now()`/`Math.random()` reads (gesture frames, menu/sheet open
+stamps, draft seat and guest ids, nonces, the media cache's retry jitter,
+photo file names) still to move to `CLOCK_PORTS`/`ID_PORTS`;
+`libs/features/shared/visits/src/lib/visit-ecs.shim.ts` and the frozen visit
+view models (the view-model pass); five undecorated classes outside the
+Angular row, none new and none legacy-tree code (phase-4b plan OQ 15) — the
+presenter value objects `VisitClock` (`visit-row.presenter.ts`) and
+`CardClock` (`visit-card/visit-card.presenter.ts`), for the view-model
+pass; `EdgeScroller` (`staff/dashboard/…/time-grid/grid-gesture.ts`), a DOM
+frame driver of the UI (the Angular row in substance); and the test doubles
+`FakeFirestore` (`libs/infrastructure/firestore/src/testing/fake-firestore.ts`,
+a fake of the SDK) and `FixtureLoader` (`translate-domain-error.spec.ts`,
+implementing Transloco's `TranslocoLoader`), for a test-support pass — which
+is why the root class guard stays on the ECS suffixes (plus every file of
+libs/ecs-core and apps/functions) rather than every `*.ts`: Angular classes
+live in files of many names (phase-4b plan §3); the flip-1 ports parked with no caller
+(`markNotificationRead`, `loadWaitlistRequest`, `loadCouponGrant`,
+`readCustomers`, `CouponGrantSystem.transitionWrite`) waiting for grant
+burn/restore, and flip 1's other deferred behaviours (reopen busy write,
+trigger `retry: true`); the owner's confirmation of the 4a plan's §11.4 (a)
+time-sheet re-pin; the programs rules tightenings, a location picker, i18n of
+the programs status words and a programs e2e journey (flip 4).
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -392,28 +566,39 @@ pnpm nx typecheck seed-tools
 pnpm nx build web
 pnpm run verify:bundle
 pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
-# the grep gates, under bash: runbook §4.0 (the preamble), then §4.2–§4.5 and,
-# since Phase 4a, §4.7 (no legacy consumer, the wire flipped, no graph edge)
+# the grep gates, under bash: runbook §4.0 (the preamble), then §4.2–§4.5,
+# §4.7 (since Phase 4a: no legacy consumer, the wire flipped, no graph edge)
+# and §4.8 (since Phase 4b: the deletion — no legacy path, alias, tag, package
+# or dotted key; the root ECS lint blocks; the firestore.rules test inputs)
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
 pnpm run e2e:web
 ```
 
-**Pre-existing red — not yours, do not chase:** typecheck of `patterns`,
-`staff-client-card`, `staff-dashboard` (spec-only errors; `admin-loyalty` is
-green since flip 1);
+**Pre-existing red — not yours, do not chase:** typecheck of `patterns`
+(spec-only errors) and nothing else — `admin-loyalty` is green since flip 1,
+`staff-client-card` and `staff-dashboard` since Phase 4a, so a typecheck red
+in any other project is a regression;
 unit tests `gauge.spec.ts` (4), `visit-pills.spec.ts` (1),
 `visits-page.presenter.spec.ts` "strikes an hour that did not happen" (1);
 e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:121`
 (MapLibre; `:120` before Phase 4a), 12 `client-card-glance.spec.ts` runs at `:343`/`:686` (`:341`/`:684` before flip 3); and
 `appointments.spec.ts:152` flakes under load (passes alone with
-`--repeat-each=3`). Anything else red is a regression. Since Phase 4a
-`staff-client-card` and `staff-dashboard` typecheck green (only
-`patterns` stays red — a new red in either is a regression), and under
+`--repeat-each=3`). Anything else red is a regression. Under
 `run-many -t test --parallel=3` the heavy `staff-dashboard`,
 `staff-client-card` and `marketing-landing` specs can time out — re-run
 the project alone before calling it a regression.
+
+**Reference numbers on the 4b tree (2026-10-23)** — a drop without a reason
+is a lost case: 44 projects lint, 0 errors; `run-many -t test` 43 projects,
+10,698 passed + the 6 baseline reds, `verify-tools` 79 node tests; ecs-core
+272 files, 4,530 tests, 97.86 % statements, 98.82 % lines; functions 37
+files, 937 tests; `test:emulator` 65 + 255; `e2e:web` 41 passed + the 19
+baseline failures; `build web` initial 598.10 kB; the functions dist's four
+runtime dependencies (`firebase-admin`, `firebase-functions`,
+`libphonenumber-js`, `rxjs`); runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5
+6, §4.7 24, §4.8 27.
 
 ## 5. Operating rules
 
@@ -452,5 +637,28 @@ the project alone before calling it a regression.
 - Flip-1 plan open questions (its §open questions) proceed on the plan's
   defaults: customer ids sit beside `subjectUserIds`; grant burn/restore,
   reopen busy write, trigger `retry: true` deferred to their own commits;
-  `cancelWaitlist` keeps `{ code }`; customers writes per flatten-spec §5.5.
+  `cancelWaitlist` kept `{ code }` until the Phase 4a wire flip (it now
+  refuses with `CancelWaitlistRefusalCode` structs keyed by `errorCode`);
+  customers writes per flatten-spec §5.5.
 - The test runner stays Analog 2.8 (owner ruling 2026-10-10).
+- Phase 4b plan §10: OQ-1 … OQ-9 proceed on their defaults — two
+  `repository_failure` successors (`ACCOUNTS_REPOSITORY_FAILURE`,
+  `ENGAGEMENT_REPOSITORY_FAILURE`), a generic call-failure code per surface
+  (`IDENTITY_CALL_FAILED`, `BOOKING_CALL_FAILED`), inert `EDGE_WIRE` rows for
+  the web-only codes, the retired-package lint bans kept, the strict
+  `no-sliced-ports` block at the root AND in ecs-core, the i18n firebase ban
+  re-instated (and web-storage's at the review-fix pass — it imports no
+  firebase either; plan §8.1 item 10), `rxjs` accepted in the functions dist, provenance by legacy
+  basename with a pointer to the plan's §11.1. OQ-10 was RE-DECIDED
+  2026-10-23: `docs/migration/goals/{README,00,02,03,08}.md` carry the
+  one-line Phase 4b banner (R3), since their exit gates grep deleted paths.
+  OQ-7 and OQ-11 (the constitution and rules edits): **applied 2026-10-23**
+  on the owner's go-ahead for Phase 4 — plan §4.R R4's exact text. OQ-12: runbook §4.8 gate 3b
+  (deleted-tree paths cited without `libs/`) added; its four sites
+  re-worded (R1). OQ-13: the legacy-dotted `{ code }` error and log payloads
+  of four specs and `telemetry.port.ts`' doc re-targeted to the flat
+  `{ errorCode }` of their successors (R2), gated by §4.8 gate 6b. OQ-14:
+  the feature-level aliases `PROFILE_WRITE_FAILED`, `AVATAR_UPLOAD_FAILED`,
+  `AVATAR_REMOVE_FAILED` deleted — every reader names the `AccountsErrorCode`
+  member (R7). OQ-15: the five undecorated non-Angular classes carried
+  forward (end of §3.3), not converted in 4b.

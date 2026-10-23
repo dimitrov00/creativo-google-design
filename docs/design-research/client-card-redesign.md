@@ -1,5 +1,7 @@
 # Карта на клиента: редизайн (the staff client card, redesigned)
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 > Revision 3 (2026-09-29) supersedes parts of this file: see [client-card-revision-3.md](client-card-revision-3.md).
 
 Status: design spec, **revision 2**, 2026-09-28. The lead designer's answer to the owner's five critiques of the client-card prototype, written against the lead's binding decisions D1–D8 and revised after three reviews (house rules and DS reuse; taste, HIG and Mobbin; feasibility and build plan). Every blocker and major of those reviews is resolved; the item-by-item record is the appendix **«Critique resolution»** at the end. Where this revision departs from the letter of a D-decision, §0 says so, says why, and gives the one-line fallback.
@@ -586,7 +588,9 @@ The existing `photo` page (`staff-visit-editor.html:869-970`) is reused **read-o
 
 ## 4. The achievements and loyalty model (D4, D7)
 
-The house domain style holds (memory "rich domain models"; `docs/architecture/domain-model.md`): ids are `Id<'…'>` classes with `create()` → `Result`; things with invariants are classes with private constructors, validating factories and `*.errors.ts`; wire shapes are `*Document` interfaces in the application layer, parsed by mappers that go through those factories. The **per-client projections** (account, family progress, season progress, ledger rows, records) stay flat readonly interfaces, deliberately, on the `ClientStats` precedent (`libs/domain/scheduling/src/lib/client-stats.ts:73`): they are server-written projections the web app never mutates, and the behaviour over them is cross-aggregate (catalogue × progress), so it lives in pure domain services beside them, exactly as `statWindows(stats, now)` lives beside `ClientStats`.
+> **Superseded (`CLAUDE.md` Laws 2 and 7):** ids are branded primitives (`Brand<string, 'CustomerId'>` with a `Result` smart constructor), never `Id<'…'>` classes; there are no classes, mappers or `*.errors.ts` outside Angular, and errors are flat `{ errorCode }` structs. The paragraph below records the 2026-09 style; `docs/architecture/domain-model.md` and the memory note it cites were retired (the doc deleted in Phase 4b).
+
+The house domain style holds (memory "rich domain models"; the deleted `docs/architecture/domain-model.md`): ids are `Id<'…'>` classes with `create()` → `Result`; things with invariants are classes with private constructors, validating factories and `*.errors.ts`; wire shapes are `*Document` interfaces in the application layer, parsed by mappers that go through those factories. The **per-client projections** (account, family progress, season progress, ledger rows, records) stay flat readonly interfaces, deliberately, on the `ClientStats` precedent (`libs/domain/scheduling/src/lib/client-stats.ts:73`): they are server-written projections the web app never mutates, and the behaviour over them is cross-aggregate (catalogue × progress), so it lives in pure domain services beside them, exactly as `statWindows(stats, now)` lives beside `ClientStats`.
 
 ### 4.1 Domain types (`libs/domain/engagement/src/lib/loyalty/`, NEW folder)
 

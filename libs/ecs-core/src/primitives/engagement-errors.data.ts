@@ -27,14 +27,17 @@ import type { VoucherRefusal } from './voucher-refusal.data';
  * The engagement context's error codes — coupons, grants, gift vouchers,
  * points, invitations, the loyalty catalogue, the rhythm's rule,
  * notifications and the programs pages (blueprint §2.3). The legacy
- * `DomainError` subclasses of `libs/domain/engagement` and `libs/domain/
- * notifications`, and the programs classes (deleted by flip 4), collapsed
- * into ONE dictionary
- * of flat `{ errorCode, … }` structs (Law 7.5): SCREAMING_SNAKE codes under
- * the `ENGAGEMENT_` prefix (flatten-spec §4.2), the UI's lookup key
- * `errors.<errorCode>` — no i18n table holds any of them yet. The legacy
- * classes and the wire keep the dotted codes until Phase 4; the shims and
- * the edge map them.
+ * `DomainError` subclasses of the engagement and notifications domain
+ * libraries (deleted in Phase 4b), and the programs classes (deleted by
+ * flip 4), collapsed into ONE dictionary of flat `{ errorCode, … }` structs
+ * (Law 7.5): SCREAMING_SNAKE codes under the `ENGAGEMENT_` prefix
+ * (flatten-spec §4.2), the UI's lookup key `errors.<errorCode>` (the
+ * catalogues hold copy only for the codes a surface words) and the code the
+ * edge sends on the wire (Phase 4a 4A-4).
+ *
+ * `RepositoryFailure` is the admin rhythm page's own failure word (Phase 4b,
+ * 4B-4): no system or pipeline raises it, so it stays outside the
+ * {@link EngagementError} union and its edge row is inert.
  *
  * Retired with their classes, never ported: the `Achievement`, `Milestone`,
  * `RewardProgram` and `RewardProgress` codes (§2.3: deleted),
@@ -53,10 +56,10 @@ import type { VoucherRefusal } from './voucher-refusal.data';
  * waiting version's three identity fields, prefixed `scheduled`), spelled
  * as the admin page keys its controls (client-card revision 3 §2.6.2). A
  * closed set, so a page that words a refusal by its field cannot miss one.
- * Field locators on the wire, not codes (flatten-spec §3.5): the legacy
- * dotted paths of `StreakDefinitionField` (`'interval.days'`,
- * `'scheduled.version'`) are what the publish callable still answers with
- * until the loyalty flip (3) — its edge maps them back.
+ * Field locators on the wire, not codes (flatten-spec §3.5): the publish
+ * callable answers with these flat names since the loyalty flip (3), which
+ * retired the legacy dotted paths of `StreakDefinitionField`
+ * (`'interval.days'`, `'scheduled.version'`).
  */
 export const StreakRuleField = {
   Id: 'id',
@@ -200,6 +203,13 @@ export const EngagementErrorCode = {
   /** The waiting version does not take effect after the one in force did. */
   StreakScheduleNotAfterCurrent:
     'ENGAGEMENT_STREAK_SCHEDULE_SCHEDULED_NOT_AFTER_CURRENT',
+  /**
+   * The admin rhythm page's publish or undo failed for any reason but a
+   * refusal of the rule — the page's toast and refusal fallback word it
+   * (`admin-rhythm.ts`); no pipeline raises it (succeeds a retired dotted
+   * i18n key — `docs/architecture/flips/phase-4b-delete.md` §2 row 7).
+   */
+  RepositoryFailure: 'ENGAGEMENT_REPOSITORY_FAILURE',
 
   // ── Notifications ─────────────────────────────────────────────────────
   /** A receipt that predates its own message — surfaced, never rounded. */
@@ -745,6 +755,9 @@ export const EngagementError = {
       currentEffectiveFromLocalDate,
     };
   },
+  repositoryFailure(): EngagementError.RepositoryFailure {
+    return { errorCode: EngagementErrorCode.RepositoryFailure };
+  },
 
   // ── Notifications ─────────────────────────────────────────────────────
   notificationReadBeforeSent(
@@ -1066,6 +1079,9 @@ export namespace EngagementError {
     readonly value: LocalDate;
     readonly currentEffectiveFromLocalDate: LocalDate;
   };
+  export type RepositoryFailure = Bare<
+    typeof EngagementErrorCode.RepositoryFailure
+  >;
 
   export type NotificationReadBeforeSent = {
     readonly errorCode: typeof EngagementErrorCode.NotificationReadBeforeSent;

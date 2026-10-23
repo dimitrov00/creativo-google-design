@@ -16,15 +16,16 @@ import {
 } from './onboarding-flow.system';
 
 /*
- * The cases of libs/application/identity/src/lib/flow/onboarding-flow.spec.ts,
- * COPIED and re-targeted: `advanceOnboardingFlow` → `OnboardingFlowSystem.next`,
- * the `{ type }` events → the `OnboardingFlowEvent` companion, `isSuccess(r)`
- * → `r.ok`, the transition error class → the
- * `IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION` struct. The class spec keeps
- * running against its shim. Then the resume plan the OnboardingFlowStore
- * walked by hand (libs/features/client/onboarding/src/lib/
- * onboarding-flow.store.spec.ts: steps outside the plan are stepped over
- * forward and backward, the 1-based plan position).
+ * The cases of the legacy identity application lib's `onboarding-flow.spec.ts`
+ * (deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), COPIED and re-targeted: `advanceOnboardingFlow` →
+ * `OnboardingFlowSystem.next`, the `{ type }` events → the
+ * `OnboardingFlowEvent` companion, `isSuccess(r)` → `r.ok`, the transition
+ * error class → the `IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION` struct. Then
+ * the resume plan the OnboardingFlowStore walked by hand
+ * (libs/features/client/onboarding/ src/lib/onboarding-flow.store.spec.ts:
+ * steps outside the plan are stepped over forward and backward, the 1-based
+ * plan position).
  */
 
 const SERVICE = ServiceId.of('service_1');

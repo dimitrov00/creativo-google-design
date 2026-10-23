@@ -80,6 +80,7 @@ import {
 import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
+  BookingErrorCode,
   BookingStatus,
   CancellationRefusalCode,
   LocalDate,
@@ -146,9 +147,6 @@ const STATUS_TONES: Record<BookingStatus, UiBadgeTone> = {
 const DEFAULT_CANCEL_REASON = '';
 
 const MS_PER_MINUTE = 60_000;
-
-/** The surface's own words for a cancel the server gave no more words for. */
-const CANCEL_FAILED = 'booking.gateway.failed';
 
 /** One day cell of the calendar view. */
 interface VisitDayVm {
@@ -1015,7 +1013,8 @@ export class ClientAppointments {
    * review step follows too). Unreadable cancellation terms say to try
    * again in a moment, and the sheet stays open on the same button to do
    * exactly that; a closed window names its hours. The surface's own
-   * "something went wrong" is only the fallback.
+   * "something went wrong" (`BookingErrorCode.CallFailed`) is only the
+   * fallback — for a cancel the server gave no more words for.
    */
   protected translateCancelError(): string | null {
     const error = this.store.cancelError();
@@ -1029,7 +1028,7 @@ export class ClientAppointments {
       error,
       (code, params) =>
         translateDomainError(this.transloco, { ...params, errorCode: code }),
-      CANCEL_FAILED,
+      BookingErrorCode.CallFailed,
       { reach },
     );
   }

@@ -35,15 +35,18 @@ import { BusySystem } from './busy.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
- * The busy projection's rules, as `busyContributionsOf`/`mergeBusy`
- * (application/booking) and the rebuild trigger (`rebuild-busy.ts:85-123`)
- * state them: a seat projects its CHAIR time (setup + service + cleanup),
- * clipped to the shop day, onto its appointment's ONE shop day (T7) — the
- * cases of appointment-document.spec.ts "holds the chairs the busy
- * projection holds for the visit" — the merge leaks density never count,
- * and a document nothing live occupies is deleted, never written empty. The
- * zone never reaches the system: the busy day's `utcEpochMs` (its first
- * instant) comes from the pipeline's `startOfLocalDay`.
+ * The busy projection's rules, as `busyContributionsOf`/`mergeBusy` (the
+ * legacy booking library, deleted in Phase 4b) and the rebuild trigger
+ * (the retired `rebuild-busy.ts:85-123`, deleted in flip 1; now
+ * `rebuild-busy.pipeline.ts`) state them: a seat projects its CHAIR time
+ * (setup + service + cleanup), clipped to the shop day, onto its
+ * appointment's ONE shop day (T7) — the cases of the legacy
+ * `appointment-document.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) "holds the chairs the
+ * busy projection holds for the visit" — the merge leaks density never
+ * count, and a document nothing live occupies is deleted, never written
+ * empty. The zone never reaches the system: the busy day's `utcEpochMs` (its
+ * first instant) comes from the pipeline's `startOfLocalDay`.
  */
 
 const JUNE_1 = localDate('2026-06-01');

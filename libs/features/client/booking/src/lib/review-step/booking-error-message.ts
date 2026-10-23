@@ -1,14 +1,15 @@
 import type { TranslocoService } from '@jsverse/transloco';
 import { ShopReach } from '@core/components';
-import { MoveErrorCode, PipelineError } from '@core/primitives';
+import {
+  BookingErrorCode,
+  MoveErrorCode,
+  PipelineError,
+} from '@core/primitives';
 import {
   translateDomainError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import type { BookingFlowFailure } from '../booking-flow.store';
-
-/** The review step's own generic copy — what a call failure says when the server said nothing more. */
-const REVIEW_FALLBACK_CODE = 'booking.gateway.failed';
 
 /**
  * What the review step says about a failed commit or move.
@@ -21,7 +22,8 @@ const REVIEW_FALLBACK_CODE = 'booking.gateway.failed';
  * shop may move is fixed by the shop, and one sentence cannot honestly say
  * both. One person in two chairs, or two guests under one name, say so in
  * their own words (`field`). A step the machine itself refused words its
- * own `errors.<errorCode>`.
+ * own `errors.<errorCode>`. A call the server said nothing more about is
+ * the review step's own generic copy (`BookingErrorCode.CallFailed`).
  *
  * `callHref` is the call the PAGE offers beside the message, or `null`. Copy
  * that sends the client to the shop says "call" only when that button is
@@ -40,7 +42,7 @@ export function bookingErrorMessage(
     error,
     (code, params) =>
       translateDomainError(transloco, { ...params, errorCode: code }),
-    REVIEW_FALLBACK_CODE,
+    BookingErrorCode.CallFailed,
     { reach: transloco.translate(ShopReach.forCallHref(callHref)) },
   );
 }

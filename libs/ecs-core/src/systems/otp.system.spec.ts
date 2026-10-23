@@ -28,15 +28,16 @@ import {
 import { type OtpChallenge, OtpLimits, OtpSystem } from './otp.system';
 
 /*
- * The cases of libs/domain/identity/src/lib/otp.spec.ts (attempt limits,
- * expiry, lock-out), COPIED over struct literals — the class spec keeps
- * running against its shim. `isSuccess(r)` became `r.ok`, the class's
- * `ZonedDateTime` instants became `UtcEpochMs` lifecycle stamps, and the
- * `{ kind }` verdicts became the four payload-free `IDENTITY_OTP_*` codes. The edge refusals
- * the class collected at issue time (blank hash/salt, a bad id, a bad
- * stored instant) are re-targeted to the edges that now own them: issue is
- * total over inputs already through `ParsedIdentifier.parse`,
- * `AuthStrategy.parse` and the `OtpCrypto` port.
+ * The cases of the legacy identity `otp.spec.ts` (attempt limits, expiry,
+ * lock-out; deleted in Phase 4b, ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED over struct
+ * literals while the class spec still ran against its shim. `isSuccess(r)`
+ * became `r.ok`, the class's `ZonedDateTime` instants became `UtcEpochMs`
+ * lifecycle stamps, and the `{ kind }` verdicts became the four payload-free
+ * `IDENTITY_OTP_*` codes. The edge refusals the class collected at issue time
+ * (blank hash/salt, a bad id, a bad stored instant) are re-targeted to the
+ * edges that now own them: issue is total over inputs already through
+ * `ParsedIdentifier.parse`, `AuthStrategy.parse` and the `OtpCrypto` port.
  *
  * Also copied: the OTP math of apps/functions/src/use-cases/
  * verify-otp.use-case.spec.ts (a wrong code persists the attempt, lock-out

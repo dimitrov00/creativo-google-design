@@ -3,9 +3,8 @@ import { IdentityError, Result, LocalDate } from '@core/primitives';
 
 /**
  * AgeSystem — a person's age from a birth date and a calendar day (blueprint
- * §2.8): the registration window of the identity and accounts `BirthDate`
- * classes (`libs/domain/identity/src/lib/birth-date.ts`,
- * `libs/domain/accounts/src/lib/birth-date.ts`) and the birthday arithmetic
+ * §2.8): the registration window of the legacy identity and accounts
+ * `BirthDate` classes (deleted in Phase 4b) and the birthday arithmetic
  * of the staff client card (`glance.presenter.ts` `birthdayIn`/`ageOn`,
  * `client-card.presenter.ts` `isBirthdayToday`).
  *

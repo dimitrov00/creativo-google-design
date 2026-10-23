@@ -268,7 +268,7 @@ export class ClientAuth {
 
   protected translateError(code: string | undefined | null): string | null {
     if (!code) return null;
-    return translateDomainError(this.transloco, { code });
+    return translateDomainError(this.transloco, { errorCode: code });
   }
 
   /**

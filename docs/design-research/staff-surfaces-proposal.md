@@ -1,5 +1,7 @@
 # Staff surfaces — what a staff account should see
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 **Status:** proposal, pending owner rulings (§10)
 **Scope:** the `/staff` area — its navigation, its screens, and the domain gaps each one implies
 **Date:** 2026-08-05

@@ -1,5 +1,7 @@
 # Goal 03 — Application layer (ports, use-cases, pure flows)
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history, and an exit gate that greps them proves nothing.
+
 **Depends on:** 02 · **Blueprint refs:** §1.3, §5.3, §8 Phase 3
 
 ## Kickoff prompt

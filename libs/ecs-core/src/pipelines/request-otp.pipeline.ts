@@ -27,10 +27,10 @@ import { parseContactPhone } from './booking-read-set.pipeline';
 
 /**
  * `requestOtp` — a new login challenge for a phone or an e-mail (blueprint
- * §4.1; identity flip (2), §3.2): today's `RequestOtpUseCase` and the
- * `requestOtpChallenge` handler, as one sandwich with no transaction (as
- * today — the resend window is the throttle, a lost race costs one extra
- * code).
+ * §4.1; identity flip (2), §3.2): the successor of the legacy
+ * `RequestOtpUseCase` (deleted in Phase 4b) and the `requestOtpChallenge`
+ * handler, as one sandwich with no transaction (as before — the resend
+ * window is the throttle, a lost race costs one extra code).
  *
  * The order is frozen, refusal by refusal: (1) the deployment's ONE
  * challenge channel (`OtpSystem.channelAccepts`; a magic-link deployment

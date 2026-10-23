@@ -74,8 +74,9 @@ export type SeatOccupant = SeatOccupant.Account | SeatOccupant.Anonymous;
  * The `ACCOUNT` variant as the ACCOUNT rules read it — who signed in, never
  * whom the shop serves (D29): the booker's own seat, one person in two
  * chairs, the uid mirrors. A {@link SeatOccupant.Account} passes straight in
- * (Law 3); so does an occupant a legacy shim built, which cannot know a
- * `CustomerId` — no placeholder value, no uid→customer cast (flatten L7).
+ * (Law 3); so did an occupant a legacy shim built (until Phase 4b), which
+ * could not know a `CustomerId` — no placeholder value, no uid→customer cast
+ * (flatten L7).
  */
 export type AccountRef = Omit<SeatOccupant.Account, 'subjectCustomerId'>;
 
@@ -271,7 +272,8 @@ export const Seat = {
   /**
    * An {@link AccountSeat} from its slices — {@link compose} for the
    * account-rules view, with the same field order, the client record left
-   * out (a seat a legacy shim reads off a stored visit has none to give).
+   * out (a seat read without one — as the legacy shims read a stored visit
+   * until Phase 4b — has none to give).
    */
   composeAccount(
     core: SeatCore,

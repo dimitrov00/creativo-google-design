@@ -9,11 +9,12 @@ import {
 } from './account-status.data';
 
 /*
- * The cases of libs/domain/accounts/src/lib/account-status.spec.ts and
- * block-reason.spec.ts, copied (not moved — the class path keeps its own
- * specs until Phase 4) and run against the flat lifecycle slice: instants
- * are `UtcEpochMs`, and a permanent block carries `blockedUntilUtcMs: null`
- * instead of omitting it.
+ * The cases of the legacy accounts `account-status.spec.ts` and
+ * `block-reason.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), copied while the class
+ * path still ran its own specs, and run against the flat lifecycle slice:
+ * instants are `UtcEpochMs`, and a permanent block carries `blockedUntilUtcMs:
+ * null` instead of omitting it.
  */
 
 /** 2026-07-22T12:00:00 Europe/Sofia (UTC+3) as a literal instant. */
@@ -101,7 +102,8 @@ describe('BlockReason', () => {
     expect(AccountLifecycle.isBlockReason('MANUAL')).toBe(true);
     expect(AccountLifecycle.isBlockReason('FRAUD_SUSPECT')).toBe(true);
     expect(AccountLifecycle.isBlockReason('BOGUS_REASON')).toBe(false);
-    // The pre-flatten lowercase spelling is a stranger now — shims convert.
+    // The pre-flatten lowercase spelling is a stranger now — no shim converts
+    // it.
     expect(AccountLifecycle.isBlockReason('manual')).toBe(false);
     expect(AccountLifecycle.isBlockReason(7)).toBe(false);
   });

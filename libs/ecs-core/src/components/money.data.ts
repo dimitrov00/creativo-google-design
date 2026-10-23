@@ -7,25 +7,36 @@ import {
 } from '@core/primitives';
 
 /**
- * How `Money.scale` resolves a quotient that falls between two minor units.
- * Names and semantics match dinero.js v2's divide functions one for one
- * (`down`, `up`, `halfUp`, `halfDown`, `halfEven`, `halfTowardsZero`,
- * `halfAwayFromZero`) — the property spec holds them to it.
+ * How `Money.scale` resolves a quotient that falls between two minor units;
+ * an exact quotient never rounds. Each member states its own rule. History:
+ * the names match dinero.js v2's divide functions (`down`, `up`, `halfUp`,
+ * `halfDown`, `halfEven`, `halfTowardsZero`, `halfAwayFromZero`), which the
+ * money spec held them to until Phase 4b removed the package; its recorded
+ * answers stay pinned there as a golden tie-and-sign table.
  */
 export const RoundingMode = {
-  /** Toward −∞ (dinero `down`). */
+  /** Floor: always toward −∞, whatever the remainder (2.5 → 2, −2.5 → −3). */
   Floor: 'FLOOR',
-  /** Toward +∞ (dinero `up`). */
+  /** Ceil: always toward +∞, whatever the remainder (2.5 → 3, −2.5 → −2). */
   Ceil: 'CEIL',
-  /** Nearest; a tie goes toward +∞ (`Math.round`, dinero `halfUp`). */
+  /**
+   * Half-up: nearest; a tie goes toward +∞, as `Math.round` does
+   * (2.5 → 3, −2.5 → −2).
+   */
   HalfUp: 'HALF_UP',
-  /** Nearest; a tie goes toward −∞ (dinero `halfDown`). */
+  /** Half-down: nearest; a tie goes toward −∞ (2.5 → 2, −2.5 → −3). */
   HalfDown: 'HALF_DOWN',
-  /** Nearest; a tie goes to the even neighbour — banker's rounding. */
+  /**
+   * Half-even: nearest; a tie goes to the even neighbour — banker's
+   * rounding (2.5 → 2, 3.5 → 4, −2.5 → −2).
+   */
   HalfEven: 'HALF_EVEN',
-  /** Nearest; a tie goes toward zero. */
+  /** Half toward zero: nearest; a tie goes toward zero (2.5 → 2, −2.5 → −2). */
   HalfTowardsZero: 'HALF_TOWARDS_ZERO',
-  /** Nearest; a tie goes away from zero (commercial rounding). */
+  /**
+   * Half away from zero: nearest; a tie goes away from zero — commercial
+   * rounding (2.5 → 3, −2.5 → −3).
+   */
   HalfAwayFromZero: 'HALF_AWAY_FROM_ZERO',
 } as const;
 export type RoundingMode = (typeof RoundingMode)[keyof typeof RoundingMode];
@@ -39,9 +50,10 @@ export type RoundingMode = (typeof RoundingMode)[keyof typeof RoundingMode];
  * beside one `currency: Currency` (N6).
  *
  * `Money.of` is the edge guard (a non-negative safe integer in a tradable
- * currency, the kernel's `fromMinorUnitsAndCode` invariant). Arithmetic is
- * plain integer math with a same-currency guard; `sub` may go below zero —
- * a difference is not a price, and clamping is the caller's decision.
+ * currency, the retired kernel's `fromMinorUnitsAndCode` invariant).
+ * Arithmetic is plain integer math with a same-currency guard; `sub` may go
+ * below zero — a difference is not a price, and clamping is the caller's
+ * decision.
  */
 export type Money = {
   readonly amountCents: PriceCents;
@@ -76,7 +88,8 @@ export const Money = {
 
   /**
    * The tradable currency a raw code names (trimmed, case-insensitive),
-   * or `null` — the kernel's `currencyFromCode`, minus dinero.
+   * or `null` — the successor of the retired kernel's `currencyFromCode`,
+   * which answered a dinero.js currency object where this answers the brand.
    */
   currencyFrom(raw: string): Currency | null {
     return Currency.tradable(raw);

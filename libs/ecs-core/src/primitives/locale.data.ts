@@ -3,9 +3,9 @@
  * matching the i18n lib's `availableLangs: ['en', 'bg']`. A closed set: the
  * type is the dictionary's values, so a `Locale` compares with `===` against
  * `Locale.Bg`, and `LocalizedText` is keyed by exactly these values.
- * Governance's `Locale` union, `LOCALES` array and `isLocale` guard
- * (`libs/domain/governance/src/lib/locale.ts`), re-shaped from a tuple into
- * the dictionary.
+ * Governance's legacy `Locale` union, `LOCALES` array and `isLocale`
+ * guard (the governance domain lib's `locale.ts`, deleted in Phase 4b),
+ * re-shaped from a tuple into the dictionary.
  */
 export const Locale = {
   Bg: 'bg',

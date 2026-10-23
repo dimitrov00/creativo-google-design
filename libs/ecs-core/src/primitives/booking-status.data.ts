@@ -1,8 +1,8 @@
 /**
  * Lifecycle tags of an appointment's root — the field `bookingStatus`
- * (Law 6.2), the ONLY source of these strings. The stored legacy values are
- * the lower-case forms (`appointment-status.ts:20-32`, `status.kind`); the
- * legacy shims map them until the appointment flip.
+ * (Law 6.2), the ONLY source of these strings. The legacy stored values
+ * were the lower-case forms (`appointment-status.ts:20-32`, `status.kind`),
+ * which the legacy shims mapped until the appointment flip.
  */
 export const BookingStatus = {
   /** Awaiting confirmation — the gate before a slot holds. */

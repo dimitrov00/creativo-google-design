@@ -5,8 +5,8 @@ import { EngagementError, Result } from '@core/primitives';
  * `couponOccasion` (was `occasion`, N15), a closed set, so the card that
  * dresses a grant for the day reads a fact, never a name («Рожден ден −20 %»
  * is copy an admin may reword). `BIRTHDAY` is the gift a client holds on
- * their birthday. The stored legacy value is the lower-case `birthday`
- * (`coupon.ts:64`); the legacy shims map it until the engagement flip.
+ * their birthday. The legacy stored value was the lower-case `birthday`
+ * (`coupon.ts:64`), which the legacy shims mapped until the engagement flip.
  */
 export const CouponOccasion = {
   Birthday: 'BIRTHDAY',

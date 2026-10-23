@@ -496,7 +496,7 @@ export const LOCATIONS: readonly LocationVm[] = [
 /**
  * Editorial extras the catalog deliberately does not carry, keyed by the
  * CATALOG's ids (`svc-*`, not the legacy fixture slugs above) and merged
- * onto whatever `CatalogReader` returns.
+ * onto whatever the catalogue read ports (`CatalogReadPorts`) return.
  *
  * This is the honest home for it: a barber's selected-work gallery and
  * one-line craft summary are marketing copy, not business data, and

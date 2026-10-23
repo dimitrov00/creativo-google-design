@@ -1,5 +1,7 @@
 # Goal 02 — Domain port (bounded contexts + bug-class tests)
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history, and an exit gate that greps them proves nothing. `docs/architecture/domain-model.md`, the conventions authority named below, was deleted too (D6).
+
 **Depends on:** 00 · **Parallel with:** 01 · **Blueprint refs:** §2, §7, §8 Phase 2
 
 ## Kickoff prompt

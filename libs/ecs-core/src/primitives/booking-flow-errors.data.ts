@@ -3,9 +3,10 @@ import type { SchedulingError } from './scheduling-errors.data';
 
 /**
  * What the booking wizard (`BookingFlowSystem.next`) can refuse — the
- * `BOOKING_FLOW_*` codes (Law 7.5, flatten-spec §4.2; the legacy
- * `booking.flow.*` codes of `application/booking/src/lib/flow/booking-flow.errors.ts`
- * until Phase 4 flips the client). The one domain refusal the flow passes
+ * `BOOKING_FLOW_*` codes (Law 7.5, flatten-spec §4.2; formerly the legacy
+ * `booking.flow.*` codes of the booking application lib's
+ * `booking-flow.errors.ts`, deleted in Phase 4b). The one domain refusal
+ * the flow passes
  * through unchanged is the party's duplicate label
  * (`SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL`), which has its own copy; it
  * rides in {@link BookingFlowError} as the scheduling struct it is.

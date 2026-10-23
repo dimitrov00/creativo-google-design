@@ -1,37 +1,277 @@
 # Module boundaries
 
-> **Note 2026-10-10:** the tag matrix below is still enforced, but every mention of the domain kernel's `ZonedDateTime`, `Money`, `Result` classes or `DomainError` describes code the ECS migration deletes — `CLAUDE.md` Laws 1–7 govern new code (no date classes, branded primitives, flat `errorCode` errors). `libs/ecs-core` (`type:domain`) is the new core, imported only through its `@core/*` tier barrels (Law 8 — see the 2026-10-11 amendment below); the doc is rewritten from the Nx graph in Phase 4.
+Every Nx project in this workspace carries two independent tags, a `scope:*`
+and a `type:*`, enforced by `@nx/enforce-module-boundaries` in the root
+`eslint.config.mjs` (its `depConstraints` are the only ones: `nx.json` carries
+none). Run `pnpm nx run <project>:lint` to see violations; there is no way
+around the rule short of editing the config. Inside `libs/ecs-core` the tags
+stop and `CLAUDE.md` Law 8's tier hierarchy takes over (below).
 
-Every Nx project in this workspace carries two independent tags, enforced by
-`@nx/enforce-module-boundaries` in `eslint.config.mjs`. Run `nx run <project>:lint`
-to see violations; there is no way to bypass the rule short of editing the config.
+Rewritten 2026-10-23 from the post-Phase-4b graph. `libs/application/*` and
+`libs/domain/*` (the kernel and `libs/domain/models` included) were deleted in
+Phase 4b, and the `type:application` tag went with them; `libs/ecs-core` is
+the whole domain layer. `CLAUDE.md` Laws 1–9 govern the shape of the code;
+this doc covers only who may import whom.
 
-**This doc reflects the Phase 0 (workspace alignment) layout** — see
-`docs/migration-blueprint.md` §1.1/§1.2 for the target architecture and
-`docs/migration/goals/00-workspace-alignment.md` for the pass that produced it.
-The pre-Phase-0 tag matrix (scope:owner/performer, type:data-access,
-`libs/adapters/*`) is superseded; see "Amendments" for the history.
+## `scope:*` — which part of the product a project belongs to
 
-## `scope:*` — which product surface a project belongs to
+| Tag              | Meaning                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `scope:shared`   | The ECS core, the design system and the adapters: `libs/ecs-core`, `libs/ui/*`, `libs/shared/*`, `libs/infrastructure/*` |
+| `scope:app`      | Every `type:feature` slice — marketing, client, staff, admin, the shared shell, catalogue and visits (`libs/features/*`) |
+| `scope:web`      | The single consolidated SPA (`apps/web`)                                                                                 |
+| `scope:showcase` | The design-system workbench (`apps/showcase`)                                                                            |
+| `scope:backend`  | Cloud Functions (`apps/functions`) — see [`scope:backend`](#scopebackend)                                                |
+| `scope:tooling`  | Workspace tooling projects under `tools/` (lint rules, icons, flags, seed, verify)                                       |
 
-| Tag              | Meaning                                                                               | Exists today?               |
-| ---------------- | ------------------------------------------------------------------------------------- | --------------------------- |
-| `scope:shared`   | Design system + hexagon core: tokens, ui, domain, application, infrastructure, cursor | Yes                         |
-| `scope:showcase` | The design-system/token showcase app                                                  | Yes                         |
-| `scope:app`      | Every `type:feature` slice — marketing, client, staff, admin, shell                   | `scope:app`, `type:feature` |
-| `scope:backend`  | Cloud Functions / server-side logic                                                   | Yes                         |
-| `scope:web`      | The single consolidated SPA shell (`apps/web`)                                        | Yes                         |
+**Rules** (the root `depConstraints`, scope half):
 
-**Rule:** a project can only depend on projects in its own scope, plus
-`scope:shared`. So a feature may import any other feature, but `scope:shared`
-— the whole hexagon core and design system — can never import a feature.
+```
+scope:shared    ──▶ shared
+scope:app       ──▶ app, shared
+scope:web       ──▶ web, app, shared
+scope:showcase  ──▶ showcase, shared
+scope:backend   ──▶ backend, shared
+```
 
-**`scope:web`** additionally depends on `scope:app`: `apps/web` is the single
-app that composes every surface (marketing at `/`, client at `/auth`
-`/onboarding` `/book` `/account`, staff at `/staff`, admin at `/admin` — see
-blueprint §1.4).
+A feature may import any other feature (`scope:app` → `scope:app`), but no
+`scope:shared` project — the ECS core, the design system, the adapters — can
+ever import a feature, the SPA or the functions. `scope:web` additionally
+depends on `scope:app`: `apps/web` composes every surface (marketing at `/`,
+client at `/auth` `/onboarding` `/book` `/account`, staff at `/staff`, admin
+at `/admin`).
 
-**Amendment 2026-07-28 — `scope:app` replaced `scope:marketing|client|staff|admin`.**
+**No `depConstraints` row names `scope:tooling`.** A tooling project's scope
+is therefore unconstrained (its `type:*` row still applies), and because every
+other scope's row omits it, no product project may depend on a tooling
+project. `tools/lint-rules` (the local ESLint plugin) is imported by the root
+`eslint.config.mjs` by relative path, outside any project; a nested project's
+`eslint.config.mjs` names the root config `#eslint-config` (the root
+`package.json` `imports` entry) and never imports `tools/lint-rules` itself — a
+direct import would give that project a graph edge to `lint-rules` (for
+`apps/functions`, eslint's parsers in its generated `package.json`, caught by
+`tools/verify/p0/functions-deps.mjs`).
+
+## scope:backend
+
+`apps/functions` (Firebase Cloud Functions gen 2, Node 22) is the backend
+composition root: it binds the `@core/ports` bundles to its Firebase Admin
+adapters (`apps/functions/src/adapters/*.adapter.ts`), wires the
+`@core/pipelines` use cases in `src/main.ts`, and answers the callables
+through `src/edge.ts` and `src/wire/*`. It gets a scope of its own rather than
+`scope:shared` or `scope:app` because:
+
+- **Nothing may depend on it.** It is a deployable app, not a library; its
+  row's absence from every other scope's list makes an import of it a lint
+  error.
+- **It may depend only on `scope:shared`** — in practice `libs/ecs-core`
+  through the seven `@core/*` aliases. A `scope:backend` → `scope:app` edge
+  (an Angular feature slice) is a lint error, which keeps `@angular/*` out of
+  the functions bundle; the build-time half of that guarantee is the
+  forbidden-key check of `tools/verify/p0/functions-deps.mjs` (no
+  `@angular/*`, `luxon` or `dinero.js` in `dist/apps/functions/package.json`),
+  run by `node tools/verify/p0/check-functions-deps.mjs` against
+  `functions-deps.baseline.json`.
+- **Its import cage differs from the browser's.** It is one of the exempt
+  zones for `firebase-admin` (below), and its own `eslint.config.mjs` installs
+  `ecsProjectBlocks()` — the `InjectionToken` guard on every file (the backend
+  composes ports as closure parameters, never through a container) and the
+  seven ECS suffix blocks.
+
+## `type:*` — architectural layer
+
+| Tag                   | Meaning                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type:app`            | A deployable application (`apps/web`, `apps/showcase`, `apps/functions`)                                                                                                                                                  |
+| `type:feature`        | A routed presentation slice: Angular components, stores and their templates, reading `@core/*` data and calling `@core/systems` directly (`libs/features/*`)                                                              |
+| `type:ui`             | The design system: presentational components and modifiers, no business logic or data access (`libs/ui/*`, `libs/shared/ui`)                                                                                              |
+| `type:infrastructure` | Adapters implementing `@core/ports` bundles over one SDK each, the web's `InjectionToken` wiring and the SDK providers (`libs/infrastructure/*`)                                                                          |
+| `type:domain`         | `libs/ecs-core` **only** (D10(a)): primitives, components, entities, ports, systems and pipelines — pure TypeScript, zero Angular, zero Firebase                                                                          |
+| `type:util`           | Pure helpers with no framework opinions (`libs/shared/cursor`), and the `scope:tooling` projects `tools/lint-rules`, `tools/icons`, `tools/flags`, `tools/verify` (Node scripts, `.mjs` — outside the `.ts` rules, below) |
+| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/shared/design-tokens`, `libs/ui/tokens`)                                                                                                                               |
+| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed`, the `seed-tools` project)                                                                                                                    |
+
+**Rule** (the root `depConstraints`, layer half):
+
+```
+type:app             ──▶ feature, ui, infrastructure, domain, util, tokens
+type:feature         ──▶ feature, ui, infrastructure, domain, util
+type:ui              ──▶ ui, tokens, util, domain           (never infrastructure or feature)
+type:infrastructure  ──▶ infrastructure, domain, util       (never ui or feature)
+type:domain          ──▶ domain                             (libs/ecs-core depends on nothing else)
+type:util            ──▶ util, tokens
+type:tokens          ──▶ tokens                             (never depends on anything else)
+type:tooling         ──▶ tooling, util, domain              (never infrastructure)
+```
+
+Why each arrow:
+
+- **`ui` never sees `infrastructure`** — the arrow that keeps the design
+  system reusable without dragging in ports, adapters or Firebase. `type:ui`
+  may depend on `type:domain` (added 2026-07-25 for `UiPhoneField`): the ECS
+  core is pure TypeScript, so a DS composite may read its plain data and call
+  its pure systems — the month picker's `CalendarGridSystem`, the phone
+  field's `PhoneSystem` (imported lazily from `@core/systems`, owner ruling
+  F6, `.claude/rules/ecs-layering.md`) — without any app wiring.
+- **`feature` → `domain`** (D10(a), 2026-10-10): a feature reads the plain ECS
+  data and calls the pure systems of `libs/ecs-core` straight from its stores
+  and `computed()`s; there is no view-model layer in between
+  (`.claude/rules/angular-ui.md`). A feature reaches I/O only through an
+  `InjectionToken` typed against an `@core/ports` bundle (Law 9.1,
+  `libs/infrastructure/firebase-app/src/lib/ports.tokens.ts`).
+- **`feature` → `infrastructure`** directly: the tokens above live there, and
+  narrow cross-cutting infrastructure (the i18n locale types, the language
+  service) needs no port of its own — the same edge `apps/*` composition
+  roots always had.
+- **`infrastructure` → `infrastructure`** (Goal 04): the Firebase-backed
+  adapter libs (`firestore`, `firebase-auth`, `storage`) take the
+  `FIREBASE_*` SDK singletons from `infrastructure/firebase-app`; that is the
+  one legitimate infra → infra edge, not a licence for one adapter concern to
+  reach into an unrelated one.
+- **`domain` → `domain` only**: `libs/ecs-core` imports no other project.
+- **`tooling` → `domain`** (2026-10-10, ECS Phase 3a): `seed-tools`' fixture
+  bodies (`tools/seed/fixtures/*.ts`) import their archetype from
+  `@core/entities` to `satisfies Omit<X, 'id'>` it, which the `type:util`
+  row forbids. Never infrastructure: a fixture is a document body, not an
+  adapter's input.
+
+## Inside `type:domain` — the Law 8 tiers
+
+`libs/ecs-core` has no root barrel and no `@creativo/ecs-core` alias. It is
+imported only through its tier barrels (`tsconfig.base.json`, paths written
+relative):
+
+| Alias              | Barrel                                  | May import                                             |
+| ------------------ | --------------------------------------- | ------------------------------------------------------ |
+| `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` | nothing from the library                               |
+| `@core/components` | `libs/ecs-core/src/components/index.ts` | primitives                                             |
+| `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   | components, primitives                                 |
+| `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      | entities, components, primitives                       |
+| `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    | entities, components, primitives                       |
+| `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  | systems, ports, entities, components, primitives       |
+| `@core/testing`    | `libs/ecs-core/src/testing/index.ts`    | every tier — imported from specs and test support only |
+
+Because the library imports its own tier aliases across tiers, the root
+`@nx/enforce-module-boundaries` options set `allowCircularSelfDependency:
+true`. The one-way tier table is enforced twice: by
+`libs/ecs-core/eslint.config.mjs` (`no-restricted-imports` per tier and file
+kind, plus `creativo/no-restricted-import-expressions` for `import()` and
+`import('…')` type queries) and by the layering verifier
+`tools/verify/layering/check-layering.mjs`
+(`pnpm nx run verify-tools:layering --skip-nx-cache`: the hierarchy, runtime
+import cycles, barrel contents, one home tier per exported name, and no deep
+relative import of code — three or more `../` — anywhere in the monorepo).
+
+## Import cages (`no-restricted-imports`)
+
+Read off the root `eslint.config.mjs` and the project configs that restate it.
+The root declares the rule **unconditionally** on every `**/*.ts`, `**/*.tsx`,
+`**/*.js`, `**/*.jsx` file, because Nx runs each project's `lint` target with
+`cwd` set to the project's own directory: a repo-root `ignores` pattern
+(`**/libs/infrastructure/**`) can never match once ESLint's basePath already
+_is_ `libs/infrastructure/firestore`. So an exempt project turns the relevant
+half off in its OWN `eslint.config.mjs`, restating the rest (a later block's
+options replace, never merge), and the root exports
+`LAYER_IMPORT_RESTRICTIONS` and `TESTING_ENTRY_POINT_RESTRICTION` for exactly
+that.
+
+| Cage                                                           | Allowed only in                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firebase`, `firebase/*`, `firebase-admin`, `firebase-admin/*` | `libs/infrastructure/**` — the projects that need it restate the rule without the firebase half (`firebase-app`, `firebase-auth`, `firestore`, `storage`; `clock`, `i18n` and `web-storage` take the root rule whole) — `apps/functions/**`, and the Playwright e2e tooling under `**/e2e/**/*.ts`        |
+| `libphonenumber-js`, `libphonenumber-js/*`                     | `libs/ecs-core/src/systems/phone.system.ts` (ecs-core's config exempts that one file); everything else goes through `PhoneSystem` and the `PhoneNumber` component                                                                                                                                         |
+| `luxon`, `dinero.js`                                           | nowhere — retired (D5, D4). Neither is a dependency since Phase 4b; the bans stay as guards (root `LAYER_IMPORT_RESTRICTIONS`, restated by `apps/functions`). Time is native `Intl` inside `zoned-time.system.ts`, money the plain integer `Money` struct                                                 |
+| `@creativo/**/testing`, `@core/testing`                        | specs (`*.spec.ts`, `*.type-spec.ts` — the root's spec block restates the layer half without the testing one) and the e2e tooling; never production code (`TESTING_ENTRY_POINT_RESTRICTION`, e.g. `libs/features/marketing/landing/src/testing.ts` behind `@creativo/features/marketing/landing/testing`) |
+
+**The Playwright exemption.** `apps/web/e2e/**` is Node-side test support
+that seeds the emulators and mints custom tokens with `firebase-admin`, and
+takes its fixtures from the testing entry points; it never ships in a bundle,
+so neither half applies. It is not a project of its own and is linted under
+three basePaths (the Nx executor's workspace root, a direct
+`eslint apps/web/e2e` from the root, `eslint e2e` from the app), so its
+exemption lives in the root config as the basePath-independent
+`files: ['**/e2e/**/*.ts']` block turning the rule off — never as an
+`apps/web/e2e/**` pattern in `apps/web/eslint.config.mjs`.
+
+**Node scripts under `tools/`** (`*.mjs`) sit outside both `.ts`-scoped
+rules: `@nx/enforce-module-boundaries` and `no-restricted-imports` are
+declared for `ts`/`tsx`/`js`/`jsx` files. The seed loader, the verify scripts
+and the lint-rule specs therefore name `@core/*` aliases freely (the deep
+relative-import half of Law 8 still covers them through the layering
+verifier).
+
+## Today's projects (44)
+
+| Project                | Root                                 | Tags                                  |
+| ---------------------- | ------------------------------------ | ------------------------------------- |
+| `web`                  | `apps/web`                           | `scope:web`, `type:app`               |
+| `showcase`             | `apps/showcase`                      | `scope:showcase`, `type:app`          |
+| `functions`            | `apps/functions`                     | `scope:backend`, `type:app`           |
+| `ecs-core`             | `libs/ecs-core`                      | `scope:shared`, `type:domain`         |
+| `admin-impersonation`  | `libs/features/admin/impersonation`  | `scope:app`, `type:feature`           |
+| `admin-loyalty`        | `libs/features/admin/loyalty`        | `scope:app`, `type:feature`           |
+| `admin-programs`       | `libs/features/admin/programs`       | `scope:app`, `type:feature`           |
+| `client-account`       | `libs/features/client/account`       | `scope:app`, `type:feature`           |
+| `client-account-state` | `libs/features/client/account-state` | `scope:app`, `type:feature`           |
+| `client-appointments`  | `libs/features/client/appointments`  | `scope:app`, `type:feature`           |
+| `client-auth`          | `libs/features/client/auth`          | `scope:app`, `type:feature`           |
+| `client-booking`       | `libs/features/client/booking`       | `scope:app`, `type:feature`           |
+| `client-onboarding`    | `libs/features/client/onboarding`    | `scope:app`, `type:feature`           |
+| `client-profile`       | `libs/features/client/profile`       | `scope:app`, `type:feature`           |
+| `marketing-careers`    | `libs/features/marketing/careers`    | `scope:app`, `type:feature`           |
+| `marketing-courses`    | `libs/features/marketing/courses`    | `scope:app`, `type:feature`           |
+| `marketing-events`     | `libs/features/marketing/events`     | `scope:app`, `type:feature`           |
+| `marketing-landing`    | `libs/features/marketing/landing`    | `scope:app`, `type:feature`           |
+| `shared-catalog`       | `libs/features/shared/catalog`       | `scope:app`, `type:feature`           |
+| `shared-shell`         | `libs/features/shared/shell`         | `scope:app`, `type:feature`           |
+| `shared-visits`        | `libs/features/shared/visits`        | `scope:app`, `type:feature`           |
+| `staff-client-card`    | `libs/features/staff/client-card`    | `scope:app`, `type:feature`           |
+| `staff-dashboard`      | `libs/features/staff/dashboard`      | `scope:app`, `type:feature`           |
+| `clock`                | `libs/infrastructure/clock`          | `scope:shared`, `type:infrastructure` |
+| `firebase-app`         | `libs/infrastructure/firebase-app`   | `scope:shared`, `type:infrastructure` |
+| `firebase-auth`        | `libs/infrastructure/firebase-auth`  | `scope:shared`, `type:infrastructure` |
+| `firestore`            | `libs/infrastructure/firestore`      | `scope:shared`, `type:infrastructure` |
+| `i18n`                 | `libs/infrastructure/i18n`           | `scope:shared`, `type:infrastructure` |
+| `storage`              | `libs/infrastructure/storage`        | `scope:shared`, `type:infrastructure` |
+| `web-storage`          | `libs/infrastructure/web-storage`    | `scope:shared`, `type:infrastructure` |
+| `controls`             | `libs/ui/controls`                   | `scope:shared`, `type:ui`             |
+| `icons`                | `libs/ui/icons`                      | `scope:shared`, `type:ui`             |
+| `layout`               | `libs/ui/layout`                     | `scope:shared`, `type:ui`             |
+| `modifiers`            | `libs/ui/modifiers`                  | `scope:shared`, `type:ui`             |
+| `patterns`             | `libs/ui/patterns`                   | `scope:shared`, `type:ui`             |
+| `tokens`               | `libs/ui/tokens`                     | `scope:shared`, `type:tokens`         |
+| `ui` (shared)          | `libs/shared/ui`                     | `scope:shared`, `type:ui`             |
+| `cursor`               | `libs/shared/cursor`                 | `scope:shared`, `type:util`           |
+| `design-tokens`        | `libs/shared/design-tokens`          | `scope:shared`, `type:tokens`         |
+| `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
+| `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
+| `lint-rules`           | `tools/lint-rules`                   | `scope:tooling`, `type:util`          |
+| `seed-tools`           | `tools/seed`                         | `scope:tooling`, `type:tooling`       |
+| `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:util`          |
+
+Read off every `project.json` (`git ls-files '**/project.json'`); check it at
+any time with `pnpm nx show projects` (44) and `pnpm nx graph`.
+
+## Worked example
+
+`apps/web` depends on every feature lib (`scope:app`) plus any `scope:shared`
+lib it needs directly (`libs/infrastructure/firebase-app` and
+`libs/infrastructure/i18n` for its composition root, `@core/*` for the
+pipelines its providers bind) — all legal because `apps/web` is tagged
+`scope:web`. `libs/features/shared/shell` importing
+`libs/features/client/account-state` is likewise legal (`scope:app` →
+`scope:app`): the app-wide header and menu read the same session model the
+account screens do.
+
+The edges still rejected are the ones that matter: any `scope:shared` project
+— `libs/ecs-core`, `libs/ui/patterns`, `libs/infrastructure/firestore` —
+importing a feature, the SPA or the functions; `libs/ui/*` importing an
+adapter; `libs/ecs-core` importing anything at all. The ECS core and the
+design system never learn what screens exist; features depend on them, never
+the reverse.
+
+## Amendments (history)
+
+**2026-07-28 — `scope:app` replaced `scope:marketing|client|staff|admin`.**
 Owner ruling: this is one app, and the four product surfaces were legacy
 structure inherited from the pre-migration multi-app layout. In practice the
 split never prevented a bad edge; it only blocked legitimate ones — the shared
@@ -39,239 +279,26 @@ shell's account chrome could not read the client session model, which would
 have forced either a duplicate profile fetch or a lib move to work around a
 boundary that was not protecting anything. Cross-surface isolation is not the
 constraint that matters in a single deployed SPA. The constraint that does —
-**layering** — is untouched: `type:*` still keeps domain/application/ui from
-ever seeing a feature, and infrastructure remains the only place `firebase/*`
-resolves.
+**layering** — was untouched: `type:*` still keeps the core and the design
+system from ever seeing a feature.
 
-## `type:*` — architectural layer
+**2026-09-24 — `libs/ui/icons` and `scope:tooling`.** The icon registry moved
+out of `libs/ui/controls` into its own `type:ui` project, `libs/ui/icons`,
+because `ui/patterns` (the rating star) must compose `ui-icon` and
+`ui/controls` re-exports `ui/patterns` — the registry has to sit below both.
+It is also the ALLOW-LIST of the workspace icon guards (`no-restricted-syntax`
+icon selectors and `creativo/icon-registry-only`, both declared in the root
+`eslint.config.mjs` and turned off only in `libs/ui/icons/eslint.config.mjs`).
+`tools/lint-rules` (the local ESLint plugin) and `tools/icons` (the glyph
+generator and usage checker) became Nx projects tagged `scope:tooling`,
+`type:util` so their tests run under `nx affected -t test`.
 
-| Tag                   | Meaning                                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `type:app`            | A deployable application                                                                                   |
-| `type:feature`        | Routed, business-logic presentation slice (`libs/features/*`)                                              | `scope:app`, `type:feature` |
-| `type:application`    | Ports (interfaces + `InjectionToken`s) + use-cases (`libs/application/*`)                                  |
-| `type:ui`             | Presentational components/modifiers only, no business logic or data access (`libs/ui/*`, `libs/shared/ui`) |
-| `type:infrastructure` | Adapters — the only libs allowed to import `firebase/*` (`libs/infrastructure/*`)                          |
-| `type:domain`         | Hexagon core — entities/VOs/domain events, zero Angular/Firebase (`libs/domain/*`)                         |
-| `type:util`           | Pure helpers with no framework opinions (`libs/shared/cursor`)                                             |
-| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/shared/design-tokens`, `libs/ui/tokens`)                |
-| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed` — the `seed-tools` project)    |
-
-**Rule (layering, blueprint §1.2):**
-
-```
-type:app            ──▶ feature, application, ui, infrastructure, domain, util, tokens
-type:feature         ─▶ feature, application, ui, infrastructure, util
-type:application     ─▶ application, domain, util
-type:ui              ──▶ ui, tokens, util, domain            (never application or infrastructure)
-type:infrastructure  ─▶ application, domain, util             (never ui or feature)
-type:domain          ─▶ domain                                (never depends on application/infrastructure/ui)
-type:util            ──▶ util, tokens
-type:tokens          ─▶ tokens                                (never depends on anything else)
-type:tooling         ─▶ tooling, util, domain                 (never application or infrastructure)
-```
-
-**Amendment 2026-10-10 — `type:tooling` (ECS migration Phase 3a).**
-`seed-tools` (`tools/seed`) is retagged from `type:util` to `type:tooling`
-before its first fixture body (`tools/seed/fixtures/*.ts`) imports its
-entity type from `@core/entities` (libs/ecs-core, `type:domain`) to `satisfies
-Omit<XEntity, 'id'>` it — the `type:util` row allows only `util`/`tokens`.
-Never application or infrastructure: a fixture is a document body, not a
-mapper's input. The row lives in the root `eslint.config.mjs`
-`depConstraints`.
-
-**Amendment 2026-10-11 — Law 8 tier barrels inside `libs/ecs-core`.**
-The tag matrix stops at the project edge; inside `libs/ecs-core` the
-`CLAUDE.md` Law 8 hierarchy takes over. The library has no root barrel and
-is imported only through `@core/primitives`, `@core/components`,
-`@core/entities`, `@core/ports`, `@core/systems` and `@core/pipelines`
-(`@core/testing` from specs and test support only — the root
-`TESTING_ENTRY_POINT_RESTRICTION`). Because the library imports its own
-tier aliases across tiers, the root `@nx/enforce-module-boundaries` options
-set `allowCircularSelfDependency: true`; the one-way tier table lives in
-`libs/ecs-core/eslint.config.mjs` (`no-restricted-imports`, one block per
-tier and file kind) and in `tools/verify/layering/check-layering.mjs`
-(`pnpm nx run verify-tools:layering`: hierarchy, runtime cycles, barrel
-contents, one home tier per exported name, and no `../../../` import
-anywhere in libs/apps/tools — a nested project's `eslint.config.mjs` names
-the root config `#eslint-config`, the root `package.json` `imports` entry).
-
-The critical arrow is **`ui` never sees `application` or `infrastructure`** —
-that's the one that keeps the design system reusable across every product
-surface without dragging in app-specific ports or Firebase. `type:ui` IS
-allowed to depend on `type:domain` (added 2026-07-25 for `UiPhoneField`):
-the domain kernel is pure TypeScript — Result types, value objects and the
-caged `libphonenumber-js` wrapper — with zero Angular and zero IO, so
-consuming it from a DS composite drags in no app wiring; the constraint
-that matters (no ports, no Firebase, no use-cases in the DS) is untouched. `type:feature`
-is allowed a direct `type:infrastructure` dependency (e.g.
-`libs/features/marketing/landing`'s `language.service.ts` reads
-`SupportedLang` from `@creativo/infrastructure/i18n`) — narrow,
-cross-cutting infrastructure like i18n locale types doesn't warrant a
-dedicated `application` port the way a Firestore repository does, and this
-mirrors how `apps/*` composition roots always could. **`application` never
-sees Angular templates or Firebase** (it may only import
-`InjectionToken`/`inject` from `@angular/core`). **`infrastructure` is the
-only place `firebase/*` resolves** (apart from `apps/functions`, which
-imports `firebase-admin` directly since it's the Cloud Functions backend,
-not a browser bundle) — enforced by a `no-restricted-imports` rule in the
-root `eslint.config.mjs` restricting `firebase`/`firebase/*`/
-`firebase-admin`/`firebase-admin/*`. A parallel rule in the same block
-restricts `dinero.js`/`luxon`/`libphonenumber-js` to `libs/domain/kernel/**`
-— everywhere else goes through `Money`/`ZonedDateTime`/`PhoneNumber`.
-
-**Implementation note:** both rules are declared _unconditionally_ in the
-root config (no `ignores`), because Nx's `lint` target runs
-`eslint .` with `cwd` set to **the project's own directory** — so
-`ignores: ['**/libs/infrastructure/**']` in the root config can never match
-once ESLint's basePath already _is_ `libs/infrastructure/firebase-app` (the
-prefix that pattern is looking for has already been stripped away). Instead,
-the four exempt projects (`libs/domain/kernel`, `libs/infrastructure/*`,
-`apps/functions`) each override the rule in their _own_
-`eslint.config.mjs`, re-declaring only the half of the restriction that
-still applies to them.
-
-**Amendment 2026-09-24 — `libs/ui/icons` and `scope:tooling`.** The icon
-registry moved out of `libs/ui/controls` into its own `type:ui` project,
-`libs/ui/icons`, because `ui/patterns` (the rating star) must compose
-`ui-icon` and `ui/controls` re-exports `ui/patterns` — the registry has to
-sit below both. It is also the ALLOW-LIST of the workspace icon guards
-(`no-restricted-syntax` icon selectors and `creativo/icon-registry-only`,
-both declared in the root `eslint.config.mjs` and turned off only in
-`libs/ui/icons/eslint.config.mjs`). `tools/lint-rules` (the local ESLint
-plugin) and `tools/icons` (the glyph generator and usage checker) are Nx
-projects tagged `scope:tooling`, `type:util` so their tests run under
-`nx affected -t test`; they import nothing from `libs/` (their fixtures are
-lint-ignored). No `depConstraints` entry names `scope:tooling`, so nothing
-may depend on it — the root ESLint config imports the plugin by relative
-path, outside any project.
-
-## Temporary duplication: `libs/domain/models/src/lib/ports/*`
-
-The port interfaces that used to live in `libs/domain/models/src/lib/ports/`
-moved to their matching `libs/application/*/ports/` lib (blueprint §0.3's
-"ports move to `libs/application`" decision) — but `apps/functions` still
-imports them from `@creativo/domain/models`. Rather than re-exporting
-(`export * from '@creativo/application/...'`), which would make
-`domain/models` (`type:domain`) depend on `type:application` and — because
-those same `application/*` ports import entities back from
-`@creativo/domain/models` — create a circular TypeScript project reference
-(`domain/models → application/identity → domain/models`) that breaks
-composite builds (`TS6059`/`TS6307` rootDir errors), **each old port file is
-temporarily duplicated verbatim** in both locations, with a `TODO(goal-03)`
-comment on the `domain/models` copy pointing at its new canonical home.
-**Delete the `domain/models` copies once goal-03** (application layer) ports
-every `apps/functions` consumer over to importing directly from
-`@creativo/application/*`.
-
-## Amendments
-
-**Phase 0 (workspace alignment) supersedes the scope/type matrix below this
-line.** Kept for history — the reasoning about _why_ boundaries matter still
-applies, only the concrete tag names changed:
-
-**`scope:owner`/`scope:performer` → `scope:staff`.** The pre-migration
-workspace hosted the staff/performer role inside `apps/staff` tagged
-`scope:owner` (with `scope:performer` reserved-unused). Phase 0 folds
-`apps/staff` into `apps/web` as `libs/features/staff/dashboard`, tagged
-`scope:staff` to match the blueprint's four-scope frontend vocabulary
-(`marketing`/`client`/`staff`/`admin`). The underlying reasoning (staff and
-performer are one internal product surface, gated by in-app RBAC rather than
-a separate scope) is unchanged.
-
-**`type:data-access` → `type:infrastructure` (adapters) + `type:application`
-(ports).** The pre-migration workspace had no ports/adapters split at the
-type-tag level — `libs/adapters/firebase` was tagged `type:data-access` and
-port _interfaces_ lived alongside entities in `libs/domain/models` untagged
-separately. Phase 0 gives ports their own layer (`type:application`,
-`libs/application/*`) per blueprint §0.3, and `type:data-access` is retired
-in favor of `type:infrastructure` for the adapters that implement those
-ports. `scope:client`/`scope:staff` still do not get their own data-access
-libs — Firestore Security Rules remain the real authorization boundary, not
-the Nx lib graph (unchanged reasoning from the original Foundation pass).
-
-**`libs/adapters/*` → `libs/infrastructure/*` (Phase 0, `nx g mv`).**
-`libs/adapters/firebase` → `libs/infrastructure/firebase-app`,
-`libs/adapters/i18n` → `libs/infrastructure/i18n` — mechanical moves,
-project names changed too (`firebase` → `firebase-app`) to match the
-blueprint's `libs/infrastructure/firebase-app` naming (§1.1, since more
-Firebase-adjacent infra libs — `firebase-auth`, `firestore`, `storage`,
-`web-storage` — land in later phases and need `firebase-app` to mean
-specifically the SDK-singleton providers, not "all things Firebase").
-
-**`libs/shared/kernel`/`domain-models`/`data-access-firebase` moved to
-`libs/domain/kernel`, `libs/domain/models`, `libs/adapters/firebase` (same
-day, pre-migration).** Same reasoning one level up: `libs/shared/*` had
-become an undifferentiated bucket holding both the domain layer and the
-generic design-system infra. `scope:*`/`type:*` tags were unchanged for all
-three at the time — see `docs/architecture/domain-model.md`'s "Why
-`libs/domain/*` and `libs/adapters/*`" section for the full reasoning
-(the `libs/adapters/*` half of that is itself now superseded by the
-`libs/infrastructure/*` move above).
-
-## Today's projects
-
-| Project                | Path                                | Tags                                  |
-| ---------------------- | ----------------------------------- | ------------------------------------- |
-| `web`                  | `apps/web`                          | `scope:web`, `type:app`               |
-| `showcase`             | `apps/showcase`                     | `scope:showcase`, `type:app`          |
-| `functions`            | `apps/functions`                    | `scope:backend`, `type:app`           |
-| `identity`             | `libs/application/identity`         | `scope:shared`, `type:application`    |
-| `booking`              | `libs/application/booking`          | `scope:shared`, `type:application`    |
-| `catalog`              | `libs/application/catalog`          | `scope:shared`, `type:application`    |
-| `engagement`           | `libs/application/engagement`       | `scope:shared`, `type:application`    |
-| `accounts`             | `libs/application/accounts`         | `scope:shared`, `type:application`    |
-| `governance`           | `libs/application/governance`       | `scope:shared`, `type:application`    |
-| `shared` (application) | `libs/application/shared`           | `scope:shared`, `type:application`    |
-| `tokens`               | `libs/ui/tokens`                    | `scope:shared`, `type:tokens`         |
-| `modifiers`            | `libs/ui/modifiers`                 | `scope:shared`, `type:ui`             |
-| `controls`             | `libs/ui/controls`                  | `scope:shared`, `type:ui`             |
-| `layout`               | `libs/ui/layout`                    | `scope:shared`, `type:ui`             |
-| `patterns`             | `libs/ui/patterns`                  | `scope:shared`, `type:ui`             |
-| `marketing-landing`    | `libs/features/marketing/landing`   | `scope:app`, `type:feature`           |
-| `client-auth`          | `libs/features/client/auth`         | `scope:app`, `type:feature`           |
-| `client-onboarding`    | `libs/features/client/onboarding`   | `scope:app`, `type:feature`           |
-| `client-booking`       | `libs/features/client/booking`      | `scope:app`, `type:feature`           |
-| `client-account`       | `libs/features/client/account`      | `scope:app`, `type:feature`           |
-| `staff-dashboard`      | `libs/features/staff/dashboard`     | `scope:app`, `type:feature`           |
-| `admin-impersonation`  | `libs/features/admin/impersonation` | `scope:app`, `type:feature`           |
-| `firebase-app`         | `libs/infrastructure/firebase-app`  | `scope:shared`, `type:infrastructure` |
-| `i18n`                 | `libs/infrastructure/i18n`          | `scope:shared`, `type:infrastructure` |
-| `kernel`               | `libs/domain/kernel`                | `scope:shared`, `type:domain`         |
-| `models`               | `libs/domain/models`                | `scope:shared`, `type:domain`         |
-| `domain-identity`      | `libs/domain/identity`              | `scope:shared`, `type:domain`         |
-| `domain-accounts`      | `libs/domain/accounts`              | `scope:shared`, `type:domain`         |
-| `domain-scheduling`    | `libs/domain/scheduling`            | `scope:shared`, `type:domain`         |
-| `domain-catalog`       | `libs/domain/catalog`               | `scope:shared`, `type:domain`         |
-| `domain-engagement`    | `libs/domain/engagement`            | `scope:shared`, `type:domain`         |
-| `domain-governance`    | `libs/domain/governance`            | `scope:shared`, `type:domain`         |
-| `design-tokens`        | `libs/shared/design-tokens`         | `scope:shared`, `type:tokens`         |
-| `ui` (shared)          | `libs/shared/ui`                    | `scope:shared`, `type:ui`             |
-| `cursor`               | `libs/shared/cursor`                | `scope:shared`, `type:util`           |
-
-**Why `domain-*` project names for the six new bounded contexts** (Goal 02):
-Nx project names are workspace-unique regardless of directory, and
-`libs/application/{identity,accounts,catalog,engagement,governance}` (Goal 00) already claimed the unprefixed names — `libs/domain/identity`'s Nx
-project is therefore `domain-identity`, not `identity`, and likewise for
-the other five. `kernel`/`models` predate this collision (no
-`libs/application/kernel` or `.../models` exists) so they keep their plain
-names. Import paths are unaffected either way — every one of these
-resolves via its own `@creativo/domain/<name>` TS path alias, never by Nx
-project name.
-
-Verify the graph matches this table at any time with `nx graph`.
-
-## Worked example
-
-`apps/web` depends on every feature lib (`scope:app`) plus any `scope:shared`
-lib it needs directly (e.g. `libs/infrastructure/firebase-app` and
-`libs/infrastructure/i18n` for its composition root) — all legal because
-`apps/web` is tagged `scope:web`. `libs/features/shared/shell` importing
-`libs/features/client/account-state` is likewise legal (`scope:app` →
-`scope:app`): the app-wide header and menu read the same session model the
-account screens do.
-
-The edge that is still rejected is the one that matters: any `scope:shared`
-project — `libs/application/accounts`, `libs/ui/patterns`, `libs/domain/*` —
-importing a feature. The hexagon core and the design system never learn what
-screens exist; features depend on them, never the reverse.
+**2026-10-23 — Phase 4b.** `libs/application/*` (`type:application`: ports
+keyed by `InjectionToken`, `@Injectable` use cases) and `libs/domain/*`
+(`type:domain`: the class-based kernel, `models` and the bounded-context
+libs) were deleted; their ports live in `@core/ports`, their rules in
+`@core/systems` and `@core/pipelines`. The `type:application` row and its
+mentions in the `type:app`, `type:feature` and `type:infrastructure` rows went
+with the tag; `type:domain` now names `libs/ecs-core` alone. The phase plan is
+`docs/architecture/flips/phase-4b-delete.md`; the migration record is
+`docs/architecture/HANDOFF.md`.

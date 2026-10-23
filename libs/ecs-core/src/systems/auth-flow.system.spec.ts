@@ -15,12 +15,12 @@ import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { AuthFlowSystem } from './auth-flow.system';
 
 /*
- * The cases of libs/application/identity/src/lib/flow/auth-flow.spec.ts,
- * COPIED and re-targeted: `advanceAuthFlow` → `AuthFlowSystem.next`, the
- * `{ type }` events → the `AuthFlowEvent` companion, `isSuccess(r)` →
+ * The cases of the legacy identity application lib's `auth-flow.spec.ts`
+ * (deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), COPIED and re-targeted: `advanceAuthFlow` → `AuthFlowSystem.next`,
+ * the `{ type }` events → the `AuthFlowEvent` companion, `isSuccess(r)` →
  * `r.ok`, the `InvalidAuthFlowTransitionError` class → the
- * `IDENTITY_AUTH_FLOW_INVALID_TRANSITION` struct. The class spec keeps
- * running against its shim.
+ * `IDENTITY_AUTH_FLOW_INVALID_TRANSITION` struct.
  */
 
 const IDENTIFIER: ParsedIdentifier = Parsed.email(

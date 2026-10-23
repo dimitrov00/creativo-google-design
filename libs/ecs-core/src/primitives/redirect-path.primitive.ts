@@ -15,8 +15,8 @@ const ABSOLUTE_OR_DANGEROUS = /^(\/[/\\]|[a-z][a-z0-9+.-]*:)/i;
  * craft a link), so this is the open-redirect guard: an absolute,
  * protocol-relative or backslash URL, a `scheme:` and anything not starting
  * with `/` never becomes one. Whether the path resolves to a route is the
- * router's question, not this primitive's (was the legacy class
- * `RedirectPath`, `libs/domain/identity`).
+ * router's question, not this primitive's (was the legacy identity class
+ * `RedirectPath`, deleted in Phase 4b).
  */
 export type RedirectPath = Brand<string, 'RedirectPath'>;
 

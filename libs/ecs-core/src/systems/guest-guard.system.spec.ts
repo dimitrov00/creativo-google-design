@@ -10,11 +10,11 @@ import {
 } from './guest-guard.system';
 
 /*
- * The cases of libs/application/identity/src/lib/flow/guest-guard.spec.ts,
- * COPIED and re-targeted: `classify` → `GuestGuardSystem.classify`,
+ * The cases of the legacy identity application lib's `guest-guard.spec.ts`
+ * (deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), COPIED and re-targeted: `classify` → `GuestGuardSystem.classify`,
  * `latchSettledPrincipal` → `GuestGuardSystem.latch`, the legacy
  * `activePrincipal`/`onboardingPrincipal` factories → `Principal.fromClaims`.
- * The class spec keeps running against its shim.
  */
 
 const UID = UserId.of('user_1');

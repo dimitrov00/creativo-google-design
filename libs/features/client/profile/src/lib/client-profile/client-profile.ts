@@ -306,7 +306,9 @@ export class ClientProfile {
   }
 
   protected translateError(code: string | null): string | null {
-    return code ? translateDomainError(this.transloco, { code }) : null;
+    return code
+      ? translateDomainError(this.transloco, { errorCode: code })
+      : null;
   }
 
   /* ── Commits ──────────────────────────────────────────────────────── */

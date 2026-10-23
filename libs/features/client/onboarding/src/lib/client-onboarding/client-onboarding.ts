@@ -457,7 +457,7 @@ export class ClientOnboarding {
 
   protected translateError(code: string | undefined | null): string | null {
     if (!code) return null;
-    return translateDomainError(this.transloco, { code });
+    return translateDomainError(this.transloco, { errorCode: code });
   }
 
   protected currentError(): string | null {
@@ -468,20 +468,22 @@ export class ClientOnboarding {
   }
 
   /**
-   * Reason-mapped, example-bearing phone copy (design §2.5): the stable
-   * `PhoneInvalidReason` maps 1:1 onto
-   * `errors.identity.phone.*` keys, each interpolating a REAL example
-   * number for the effective country so the fix is shown, not described.
+   * Reason-worded, example-bearing phone copy (design §2.5): the stable
+   * `PhoneInvalidReason` IS the reason segment of its
+   * `errors.PHONE_INVALID.<reason>` key (nothing mapped), each
+   * interpolating a REAL example number for the effective country so the
+   * fix is shown, not described.
    */
   protected phoneError(): string | null {
     const reason = this.phoneErrorReason();
     if (!reason) return null;
     const example =
       PhoneSystem.example(this.phoneCountry() ?? this.defaultCountry) ?? '';
-    return translateDomainError(this.transloco, {
-      code: `identity.phone.${reason.replace(/-/g, '_')}`,
-      params: { example },
-    });
+    return translateDomainError(
+      this.transloco,
+      { errorCode: PhoneErrorCode.Invalid, example },
+      reason,
+    );
   }
 
   /** Name validate-on-blur — an untouched (empty) field stays silent; the disabled CTA already says "not done", a red line would say "wrong" (punish late). */
@@ -565,7 +567,7 @@ export class ClientOnboarding {
     void this.store.submitAbout(fields);
   }
 
-  /** Quiet inline copy for a failed birthday SAVE (use-case/port failure) — the flow state carries the stable code, `translateDomainError` maps it. */
+  /** Quiet inline copy for a failed birthday SAVE (a refused or failed `updateProfile` call) — the flow state carries the stable code, `translateDomainError` words it. */
   protected birthdaySaveError(): string | null {
     const state = this.store.state();
     return state.onboardingFlowStep === OnboardingFlowStep.Birthday

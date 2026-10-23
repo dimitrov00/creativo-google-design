@@ -262,8 +262,9 @@ function invalid(state: BookingFlowState, event: BookingFlowEvent): FlowResult {
 }
 
 /**
- * The booking wizard as a total function over tagged unions
- * (`application/booking/src/lib/flow/booking-flow.ts:404-600`):
+ * The booking wizard as a total function over tagged unions (the legacy
+ * booking `booking-flow.ts`, deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1):
  * `LOCATION → SERVICES → SCHEDULE → REVIEW → CONFIRMED`, with `WAITLISTED`
  * as the schedule step's other, equally terminal exit. Never performs I/O —
  * `CONFIRMED` and `WAITLISTED` are events the wrapping store dispatches once

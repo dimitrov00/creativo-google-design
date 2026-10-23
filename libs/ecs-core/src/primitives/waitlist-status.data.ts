@@ -1,9 +1,9 @@
 /**
  * Where a waitlist request is in its life — the ONLY source of these strings,
  * named after the field it types (`waitlistStatus`, N15; index #14 filters on
- * it). SCREAMING since the flatten pass; the stored legacy documents still
- * read `open`/`matched`/… until the booking-flow 3b flip, and the legacy
- * shim maps them.
+ * it). SCREAMING since the flatten pass; the legacy stored documents read
+ * `open`/`matched`/… until the booking-flow 3b flip, which the legacy shim
+ * mapped.
  */
 export const WaitlistStatus = {
   /** Watching. The only state a matcher considers. */

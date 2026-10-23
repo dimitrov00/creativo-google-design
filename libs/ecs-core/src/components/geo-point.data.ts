@@ -10,8 +10,8 @@ import {
  * A WGS 84 position — a flat SLICE (Law 6): `ShopLocation` intersects it, so
  * `latitude` and `longitude` sit at the location's root as the branded
  * coordinates of `primitives/geo.primitive.ts` (flatten-spec §1.6, §3.1;
- * was the nested `geo: { lat, lng }` map — the stored document keeps it until
- * the booking-core flip, and the shim converts).
+ * was the nested `geo: { lat, lng }` map — the stored document kept it until
+ * the booking-core flip, and the legacy shim converted it).
  */
 export type GeoPoint = {
   readonly latitude: Latitude;

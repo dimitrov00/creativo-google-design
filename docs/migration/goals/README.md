@@ -1,5 +1,7 @@
 # Migration goals — execution package for Claude Code `/goal`
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history, and an exit gate that greps them proves nothing.
+
 Companion to [../migration-blueprint.md](../migration-blueprint.md). The blueprint is the _knowledge base_; these files are the _execution units_. Each file is one phase, packaged for the `/goal` feature (Claude Code v2.1.139+): a **kickoff prompt** (the work order) plus a **goal condition** (the completion check the evaluator model verifies after every turn).
 
 ## Why split instead of one mega-goal

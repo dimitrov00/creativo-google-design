@@ -26,41 +26,6 @@
       ],
       "@creativo/shared/ui": ["./libs/shared/ui/src/index.ts"],
       "@creativo/shared/cursor": ["./libs/shared/cursor/src/index.ts"],
-      "@creativo/domain/models": ["./libs/domain/models/src/index.ts"],
-      "@creativo/domain/kernel": ["./libs/domain/kernel/src/index.ts"],
-      "@creativo/domain/identity": ["./libs/domain/identity/src/index.ts"],
-      "@creativo/domain/accounts": ["./libs/domain/accounts/src/index.ts"],
-      "@creativo/domain/scheduling": ["./libs/domain/scheduling/src/index.ts"],
-      "@creativo/domain/catalog": ["./libs/domain/catalog/src/index.ts"],
-      "@creativo/domain/engagement": ["./libs/domain/engagement/src/index.ts"],
-      "@creativo/domain/governance": ["./libs/domain/governance/src/index.ts"],
-      "@creativo/application/identity": [
-        "./libs/application/identity/src/index.ts"
-      ],
-      "@creativo/application/booking": [
-        "./libs/application/booking/src/index.ts"
-      ],
-      "@creativo/application/booking/testing": [
-        "./libs/application/booking/src/testing.ts"
-      ],
-      "@creativo/application/catalog": [
-        "./libs/application/catalog/src/index.ts"
-      ],
-      "@creativo/application/engagement": [
-        "./libs/application/engagement/src/index.ts"
-      ],
-      "@creativo/application/engagement/testing": [
-        "./libs/application/engagement/src/testing.ts"
-      ],
-      "@creativo/application/accounts": [
-        "./libs/application/accounts/src/index.ts"
-      ],
-      "@creativo/application/governance": [
-        "./libs/application/governance/src/index.ts"
-      ],
-      "@creativo/application/shared": [
-        "./libs/application/shared/src/index.ts"
-      ],
       "@creativo/ui/tokens": ["./libs/ui/tokens/src/index.ts"],
       "@creativo/ui/modifiers": ["./libs/ui/modifiers/src/index.ts"],
       "@creativo/ui/controls": ["./libs/ui/controls/src/index.ts"],
@@ -122,12 +87,6 @@
       ],
       "@creativo/features/client/profile": [
         "./libs/features/client/profile/src/index.ts"
-      ],
-      "@creativo/domain/notifications": [
-        "./libs/domain/notifications/src/index.ts"
-      ],
-      "@creativo/application/notifications": [
-        "./libs/application/notifications/src/index.ts"
       ],
       "@creativo/features/marketing/careers": [
         "./libs/features/marketing/careers/src/index.ts"

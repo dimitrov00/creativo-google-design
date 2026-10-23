@@ -10,9 +10,10 @@ import {
 } from './service-conflict.system';
 
 /*
- * The cases of libs/domain/catalog/src/lib/service-conflicts.spec.ts (15),
- * COPIED over plain structs — the legacy spec keeps running against the
- * shim. A legacy call without a catalogue passes `[]`.
+ * The cases of the legacy catalog `service-conflicts.spec.ts` (15; deleted in
+ * Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED
+ * over plain structs while it still ran against the shim. A legacy call without
+ * a catalogue passes `[]`.
  */
 
 function service(props: {

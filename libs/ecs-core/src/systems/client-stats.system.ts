@@ -44,8 +44,8 @@ import {
 import type { Appointment } from '@core/entities';
 
 /**
- * One client's statistics, from every appointment they have a seat on
- * (`libs/domain/scheduling/src/lib/client-stats.ts:16-615`), and the pure
+ * One client's statistics, from every appointment they have a seat on (the
+ * legacy scheduling domain lib's `client-stats.ts:16-615`), and the pure
  * half of the projection that keeps `clientStats/{customerId}` current
  * (`apps/functions/src/lib/clients/client-stats-projection.ts:21-231`, hot
  * path #8): which writes can move anybody's stats, whom they concern, and

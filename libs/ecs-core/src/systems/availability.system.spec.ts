@@ -51,11 +51,12 @@ import { type DayException, RosterSystem } from './roster.system';
 import { ScheduleExceptionSystem } from './schedule-exception.system';
 
 /*
- * The cases of libs/domain/scheduling/src/lib/availability.spec.ts, copied
- * over plain arrays and the index-addressed query of ONE shop day on its
- * wall clock (the class spec stays in place and runs against its shim), the
- * `toIntervals` cases of day-windows.spec.ts as `withinOf`, plus: one case
- * per side of `within` null-vs-[], the budget as a pure output, the seed
+ * The cases of the legacy scheduling `availability.spec.ts` (deleted in Phase
+ * 2, when its class became a shim), copied over plain arrays and the
+ * index-addressed query of ONE shop day on its wall clock, the `toIntervals`
+ * cases of the legacy `day-windows.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1) as `withinOf`, plus: one
+ * case per side of `within` null-vs-[], the budget as a pure output, the seed
  * catalogue against the legacy engine's recorded node counts and answers, a
  * fast-check equivalence against a naive reference search, determinism and
  * purity.
@@ -1640,9 +1641,9 @@ describe('the search budget — nodeBudget, maxOptions, nodesVisited, exhausted'
  * A Tuesday at Center as `tools/seed/catalog.mjs` stocks it: Ivan and Stefan
  * on the split shift (turnaround 10 and 15), Niko on the late shift
  * (turnaround 0), each with the seed's busy pattern, and the classic cut,
- * fade and beard priced per barber. The legacy engine
- * (`libs/domain/scheduling/src/lib/availability.ts`, run once on 2026-10-10
- * with a node counter added in a scratch copy) visited the node counts and
+ * fade and beard priced per barber. The legacy engine (the scheduling
+ * domain lib's `availability.ts`, run once on 2026-10-10 with a node counter
+ * added in a scratch copy) visited the node counts and
  * produced the answers recorded below; the digest is djb2-xor over the
  * rendered list. The port must answer the same and never search more.
  */
@@ -2222,14 +2223,13 @@ describe('AvailabilitySystem — purity', () => {
 });
 
 /*
- * libs/domain/scheduling/src/lib/availability-composition.spec.ts, COPIED
- * (the original keeps running against the shims): the roster feeding the
- * search — `RosterSystem.buildDayWindows` → `RosterSystem.intervalsOf` →
- * `AvailabilitySystem.availableOptions` — against the real seeded shop:
- *   Ivan   — classic cut 35m (short) / 50m (long)
- *   Niko   — classic cut 30m (short) / 45m (long)
- *   Stefan — flat 45m, Center only
- * Shop opens 09:00–20:00 Mon–Fri. 2026-07-29 is a Wednesday.
+ * The legacy scheduling `availability-composition.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED: the
+ * roster feeding the search — `RosterSystem.buildDayWindows` →
+ * `RosterSystem.intervalsOf` → `AvailabilitySystem.availableOptions` — against
+ * the real seeded shop: Ivan — classic cut 35m (short) / 50m (long) Niko —
+ * classic cut 30m (short) / 45m (long) Stefan — flat 45m, Center only Shop
+ * opens 09:00–20:00 Mon–Fri. 2026-07-29 is a Wednesday.
  */
 describe('RosterSystem → AvailabilitySystem composed', () => {
   const CENTER = LocationId.of('loc-center');

@@ -8,8 +8,8 @@ import { RequestedSubjectRole, type BookingCall } from '@core/components';
 /*
  * The cases of `firstUnusedLabel — the one placeholder rule`
  * (libs/features/client/booking/src/lib/booking-flow.store.spec.ts, 5) and of
- * `labelSharedByTwoGuests — the one implementation`
- * (libs/domain/scheduling/src/lib/booking-party.spec.ts, the three over
+ * `labelSharedByTwoGuests — the one implementation` (the legacy scheduling
+ * `booking-party.spec.ts`, deleted in Phase 4b; the three over
  * plain guests), COPIED; plus the person keys the commit counts people by
  * (decide-booking.spec.ts: «Maria» and « Maria » are one guest).
  */

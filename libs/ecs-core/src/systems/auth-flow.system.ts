@@ -9,7 +9,7 @@ import { IdentityError, Result } from '@core/primitives';
 
 /**
  * AuthFlowSystem — the identity flow's transition function (blueprint
- * §2.8), the pure port of `libs/application/identity/src/lib/flow/
+ * §2.8), the pure port of the legacy identity application lib's `flow/
  * auth-flow.ts` (`advanceAuthFlow`): `identify → otp → authenticated | done`,
  * with `BLOCKED` for a locked-out channel.
  *

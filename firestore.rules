@@ -33,9 +33,9 @@ service cloud.firestore {
       return roles().hasAny(candidates);
     }
 
-    // Everyone who isn't a plain `client` — mirrors
-    // `@creativo/domain/accounts`' `isStaff` (barber | receptionist |
-    // content_manager | admin | sysadmin).
+    // Everyone who isn't a plain `client` — mirrors `STAFF_ROLES` / `isStaff`
+    // in libs/ecs-core/src/components/role.data.ts (barber | receptionist |
+    // content_manager | admin | sysadmin), pinned by role.rules-parity.spec.ts.
     function isStaff() {
       return hasAnyRole(['barber', 'receptionist', 'content_manager', 'admin', 'sysadmin']);
     }
@@ -217,7 +217,8 @@ service cloud.firestore {
       //
       // Note the READ rule above is `worksTheBook()`, deliberately narrower
       // than `isStaff()`. Every appointment callable now gates on the SAME
-      // grouping (`worksTheBook` in `@creativo/domain/accounts`); before that,
+      // grouping (`BOOK_ROLES` in libs/ecs-core/src/components/role.data.ts,
+      // pinned to `worksTheBook()` by role.rules-parity.spec.ts); before that,
       // `content_manager` could not read an appointment but could transition
       // one — the wrong way round.
       allow create: if false;

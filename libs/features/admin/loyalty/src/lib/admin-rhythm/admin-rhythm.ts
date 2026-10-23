@@ -22,7 +22,11 @@ import {
   StreakQualifierRule,
   StreakRuleDirection,
 } from '@core/components';
-import { StaffEditError, StreakPublishErrorCode } from '@core/primitives';
+import {
+  EngagementErrorCode,
+  StaffEditError,
+  StreakPublishErrorCode,
+} from '@core/primitives';
 import {
   type RhythmServiceGroup,
   rhythmServiceGroupsOf,
@@ -794,7 +798,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     if (!isPublishRefusal(refusal)) {
       this.toast.set({
         label: translateDomainError(this.transloco, {
-          code: 'repository_failure',
+          errorCode: EngagementErrorCode.RepositoryFailure,
         }),
         undo: false,
       });
@@ -839,7 +843,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     if (!outcome.ok && !isPublishRefusal(outcome.error)) {
       this.toast.set({
         label: translateDomainError(this.transloco, {
-          code: 'repository_failure',
+          errorCode: EngagementErrorCode.RepositoryFailure,
         }),
         undo: false,
       });
@@ -897,7 +901,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const t = context.translate;
     if (!isPublishRefusal(refusal)) {
       return translateDomainError(this.transloco, {
-        code: 'repository_failure',
+        errorCode: EngagementErrorCode.RepositoryFailure,
       });
     }
     switch (refusal.errorCode) {

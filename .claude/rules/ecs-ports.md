@@ -84,13 +84,15 @@ export function observeDay(ports: ShopDayStreamPorts, …) { … }
 - A port function type and its bundle live in `libs/ecs-core/src/ports/`
   only — never declared inside a pipeline or an adapter; a pipeline-local
   `XPorts` type is an intersection of tier bundles and nothing else.
-- Configuration a pipeline needs beside its functions (`tenantTimeZone`)
-  is a bundle too (`TenantZonePorts`).
+- Configuration a pipeline needs beside its functions (`defaultLocationId`)
+  is a bundle too (`DefaultLocationPorts`, `ports/catalog.port.ts`), never a
+  loose parameter.
 
 ## Enforcement
 
 `creativo/no-sliced-ports` (`tools/lint-rules/no-sliced-ports.mjs`, spec
 beside it, run by `nx run lint-rules:test`): the root `eslint.config.mjs`
 reports a `Pick`/`Omit` whose sliced type names a `*Ports` type on every
-`.ts` file; `libs/ecs-core/eslint.config.mjs` adds `{ anyType: true }` on
-`src/ports/**`, reporting every `Pick`/`Omit` there.
+`.ts` file, and every `Pick`/`Omit` in a `*.port.ts` (`{ anyType: true }`);
+`libs/ecs-core/eslint.config.mjs` adds `{ anyType: true }` on all of
+`src/ports/**` (the barrel and the ports specs).

@@ -1,5 +1,7 @@
 # /staff/schedule — the day sheet, designed
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 **Status:** design brief · **owner rulings on Q2 (auto-confirm) and Q3 (staff may move) granted 2026-08-07**; Q1 and Q4–Q7 still open (§11)
 **Scope:** the `/staff/schedule` surface only — its representation, its anatomy, its verbs, and the ranked feature set
 **Superseded in part:** the visit-sheet sections are replaced by [staff-visit-editor-design.md](./staff-visit-editor-design.md) (2026-08-26), which also overrides §11's drag-to-reschedule rejection

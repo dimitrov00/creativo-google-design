@@ -7,6 +7,7 @@ import {
   SessionKind,
 } from '@core/components';
 import {
+  IdentityErrorCode,
   OtpId,
   PipelineError,
   PipelineErrorCode,
@@ -242,7 +243,7 @@ describe('AuthFlowStore', () => {
     await store.submitIdentifier(emailIdentifier('other@example.com'));
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Identify,
-      error: 'unknown',
+      error: IdentityErrorCode.CallFailed,
     });
   });
 

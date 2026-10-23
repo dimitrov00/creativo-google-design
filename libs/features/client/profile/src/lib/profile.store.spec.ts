@@ -5,6 +5,7 @@ import type { User } from '@core/entities';
 import { Callables } from '@core/ports';
 import {
   AccountsErrorCode,
+  IdentityErrorCode,
   MediaError,
   PipelineError,
   Result,
@@ -153,7 +154,7 @@ describe('ProfileStore', () => {
     });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      'accounts.update_profile.repository_failure',
+      AccountsErrorCode.UpdateProfileRepositoryFailure,
     );
   });
 
@@ -166,7 +167,7 @@ describe('ProfileStore', () => {
     });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      'accounts.update_profile.repository_failure',
+      AccountsErrorCode.UpdateProfileRepositoryFailure,
     );
   });
 
@@ -199,7 +200,7 @@ describe('ProfileStore', () => {
     });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      'identifier_missing',
+      IdentityErrorCode.IdentifierMissing,
     );
     expect(calls).toEqual([]);
   });
@@ -256,7 +257,7 @@ describe('ProfileStore', () => {
     });
 
     expect(await store.removePhoto()).toBe(
-      'accounts.remove_avatar.remove_failed',
+      AccountsErrorCode.RemoveAvatarRemoveFailed,
     );
   });
 });

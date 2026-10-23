@@ -1,5 +1,7 @@
 # Auth + Onboarding Flow — Adopted Design (2026-07-25)
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history.
+
 Produced by a research/design fleet (2 web researchers, 2 repo auditors, 2
 competing designers). The HIG-first proposal below is adopted **with these
 amendments**, which override the matching sections of the appendix:

@@ -4,7 +4,12 @@ import {
   type Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
-import { RepositoryError, RepositoryErrorCode, Result } from '@core/primitives';
+import {
+  CancellationRefusalCode,
+  RepositoryError,
+  RepositoryErrorCode,
+  Result,
+} from '@core/primitives';
 import { type DocPath, WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import { type ReadTx } from '@core/ports';
@@ -379,7 +384,9 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
   describe('refusals and conflicts', () => {
     it('a refusal writes nothing and comes back as it was decided', async () => {
       const { fake, commit } = store({ 'appointments/a1': { v: 1 } });
-      const refusal = { code: 'booking.cancel.not_cancellable' } as const;
+      const refusal = {
+        errorCode: CancellationRefusalCode.NotCancellable,
+      } as const;
       const result = await commit(
         async (tx) => tx.get(APPT),
         () => Result.err(refusal),

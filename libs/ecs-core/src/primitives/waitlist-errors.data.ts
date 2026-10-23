@@ -1,9 +1,10 @@
 /**
  * What the waitlist's door can refuse — the ONLY source of these strings,
  * SCREAMING_SNAKE and prefixed `BOOKING_WAITLIST_` (Law 7.5, flatten-spec
- * §4.2). The UI resolves `errors.<errorCode>`; the wire keeps the legacy
- * `booking.waitlist.*` codes until Phase 4. Every non-`errorCode` field is
- * an i18n parameter: an i18n-safe scalar.
+ * §4.2). The UI resolves `errors.<errorCode>`; since the Phase 4a wire flip
+ * the wire carries these codes too (the legacy `booking.waitlist.*` codes
+ * are retired). Every non-`errorCode` field is an i18n parameter: an
+ * i18n-safe scalar.
  */
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */

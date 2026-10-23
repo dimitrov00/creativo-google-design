@@ -3,10 +3,9 @@
  * source of these strings, each named after the field it types (Law 1, N8/
  * N15): `serviceStatus: ServiceStatus`, `barberStatus: BarberStatus`,
  * `locationStatus: LocationStatus` (was `status`, flatten-spec §3.1). Values
- * SCREAMING_SNAKE (Law 6.2). The stored documents keep their legacy
- * lowercase `status` until the booking-core flip: the legacy shims convert at
- * their boundary, and the composite indexes #1–#5 keep filtering the stored
- * field.
+ * SCREAMING_SNAKE (Law 6.2). Until the booking-core flip the stored documents
+ * kept their legacy lowercase `status`, which the legacy shims converted at
+ * their boundary; the composite indexes #1–#5 filter the stored field.
  *
  * Status is a plain field an admin flips, not a transition graph — there is
  * nothing to compute on it beyond `===` against a tag, so no companion

@@ -29,10 +29,10 @@ import { ZonedTimeSystem } from './zoned-time.system';
 import { VoucherSystem } from './voucher.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/gift-voucher.spec.ts, copied
- * over plain entities (the class spec keeps running against its shim), plus
- * the cancellation's give-back (`voucher-restore.ts`), the wallet's
- * spendable math and the balance algebra as properties.
+ * The cases of the legacy engagement `gift-voucher.spec.ts` (deleted in Phase
+ * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
+ * plain entities, plus the cancellation's give-back (`voucher-restore.ts`), the
+ * wallet's spendable math and the balance algebra as properties.
  */
 
 const NOW = utcMs('2026-09-10T09:00:00Z');

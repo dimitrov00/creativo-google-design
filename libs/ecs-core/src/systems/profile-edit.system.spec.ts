@@ -28,11 +28,12 @@ import {
 import { SearchFieldsSystem } from './search-fields.system';
 
 /*
- * COPIED, not moved (the legacy specs keep running until Phase 4):
- * - libs/domain/accounts/src/lib/first-name.spec.ts and last-name.spec.ts —
- *   the name rule (`nameRefusals`);
- * - libs/domain/accounts/src/lib/user.spec.ts — `User.create`'s phone,
- *   names, e-mail, roles and create-mode birth-date checks
+ * COPIED, not moved, while the legacy specs still ran (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1):
+ * - the legacy accounts `first-name.spec.ts` and `last-name.spec.ts` — the
+ *   name rule (`nameRefusals`);
+ * - the legacy accounts `user.spec.ts` — `User.create`'s phone, names,
+ *   e-mail, roles and create-mode birth-date checks
  *   (`registrationProfile`), on its fixture day 2026-07-22;
  * - libs/infrastructure/firestore/src/lib/profile.adapter.spec.ts — the
  *   owner edit's search keys (the STORED contact wins, a name-only edit

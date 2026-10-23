@@ -46,6 +46,10 @@ describe('BookingError', () => {
         'BOOKING_TIP_FORBIDDEN',
         'BOOKING_TIP_INVALID_INPUT',
         'BOOKING_TIP_NOT_FOUND',
+        // Phase 4b: the booking surfaces' own words (the dotted i18n keys'
+        // successors, 4B-4) — no pipeline raises them.
+        'BOOKING_CALL_FAILED',
+        'BOOKING_TRANSITION_SEAT_RESOLVED',
       ].sort(),
     );
   });
@@ -53,7 +57,11 @@ describe('BookingError', () => {
   it('has one factory per code, each a plain struct', () => {
     const violation = SchedulingError.appointmentEmptySeats();
     const visit = AppointmentId.of('apt-1');
-    const errors: readonly (BookingError | BookingCallRefusal)[] = [
+    const errors: readonly (
+      | BookingError
+      | BookingCallRefusal
+      | BookingError.BareCall<BookingError.SurfaceCode>
+    )[] = [
       BookingError.invalidInput('seats'),
       BookingError.unauthenticated(),
       BookingError.unknownService('svc-1'),
@@ -116,6 +124,8 @@ describe('BookingError', () => {
       BookingError.bare(BookingErrorCode.TipForbidden),
       BookingError.callInvalidInput(BookingErrorCode.TipInvalidInput, 'seatId'),
       BookingError.callNotFound(BookingErrorCode.TipNotFound, visit),
+      BookingError.bare(BookingErrorCode.CallFailed),
+      BookingError.bare(BookingErrorCode.TransitionSeatResolved),
     ];
     expect(errors.map((error) => error.errorCode).sort()).toEqual(
       Object.values(BookingErrorCode).sort(),
@@ -138,6 +148,19 @@ describe('BookingError', () => {
     expect(
       BookingError.callNotFound(BookingErrorCode.TipNotFound, visit),
     ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND', appointmentId: 'apt-1' });
+  });
+
+  it('spells the surfaces’ own words — the successors of the dotted i18n keys (Phase 4b, 4B-4)', () => {
+    expect(BookingErrorCode.CallFailed).toBe('BOOKING_CALL_FAILED');
+    expect(BookingErrorCode.TransitionSeatResolved).toBe(
+      'BOOKING_TRANSITION_SEAT_RESOLVED',
+    );
+    expect(BookingError.bare(BookingErrorCode.CallFailed)).toEqual({
+      errorCode: 'BOOKING_CALL_FAILED',
+    });
+    expect(BookingError.bare(BookingErrorCode.TransitionSeatResolved)).toEqual({
+      errorCode: 'BOOKING_TRANSITION_SEAT_RESOLVED',
+    });
   });
 
   it('carries the slot refusal on the shop’s wall clock — the day and the minute, never an instant', () => {

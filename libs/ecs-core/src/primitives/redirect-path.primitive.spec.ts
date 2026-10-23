@@ -3,9 +3,10 @@ import { PrimitiveErrorCode } from './primitive-errors.data';
 import { RedirectPath } from './redirect-path.primitive';
 
 /*
- * The cases of `libs/domain/identity/src/lib/redirect-path.spec.ts` (the
- * legacy class, deleted in 4b), ported onto the primitive. Its `equals` /
- * `toString` case is `dead:` — a brand IS its string (`===`).
+ * The cases of the legacy identity `redirect-path.spec.ts` (the legacy class,
+ * deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), ported onto the primitive. Its `equals` / `toString` case is `dead:`
+ * — a brand IS its string (`===`).
  */
 
 const parsed = (raw: string) => RedirectPath.parse(raw);

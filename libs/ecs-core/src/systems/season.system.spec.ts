@@ -12,15 +12,15 @@ import { type SeasonShapeInput, SeasonSystem } from './season.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
- * The cases of libs/domain/engagement/src/lib/loyalty/season.spec.ts,
- * COPIED (the legacy spec keeps running against `Season`'s shim) and
- * re-targeted to the flat `Season`: the announcement is `announcedAtUtcMs`
- * beside its shop day `announcedLocalDate` (T5 — the boundary derives the
- * day once, in the shop's zone), the window is `windowFrom`/`windowUntil`,
- * ids are brands, and `Season.create`'s window, notice and track rules are
- * `SeasonSystem.validate`. Not copied: `an empty family id` — a blank id is
- * refused by the edge guard before `BadgeSeriesId.of`, not by the season's
- * rules.
+ * The cases of the legacy engagement `season.spec.ts` (deleted in Phase 4b;
+ * ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED while it
+ * still ran against `Season`'s shim, and re-targeted to the flat `Season`: the
+ * announcement is `announcedAtUtcMs` beside its shop day `announcedLocalDate`
+ * (T5 — the boundary derives the day once, in the shop's zone), the window is
+ * `windowFrom`/`windowUntil`, ids are brands, and `Season.create`'s window,
+ * notice and track rules are `SeasonSystem.validate`. Not copied: `an empty
+ * family id` — a blank id is refused by the edge guard before
+ * `BadgeSeriesId.of`, not by the season's rules.
  */
 
 const SEASON_NOTICE_DAYS = Gamification.SEASON_NOTICE_DAYS;

@@ -532,7 +532,8 @@ describe('WaitlistSystem.withinReadBounds — a crafted cart costs the shop no r
 });
 
 describe('WaitlistSystem.hasLapsed / cooldownSinceUtcMs', () => {
-  // Copied from libs/domain/scheduling/src/lib/waitlist-request.spec.ts (expiry).
+  // Copied from the legacy scheduling `waitlist-request.spec.ts` (expiry;
+  // deleted in Phase 4b).
   const when = FlexibleWhen.of([
     DayWindows.wholeDay(localDate('2026-08-25')),
     DayWindows.of(localDate('2026-08-26'), [window('08:00', '12:00')]),

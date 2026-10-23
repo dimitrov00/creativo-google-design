@@ -3,6 +3,7 @@ import {
   BookingErrorCode,
   BookingStatus,
   CancellationRefusalCode,
+  IdentityErrorCode,
   MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
@@ -13,10 +14,10 @@ import { bookingStatusWords } from './booking-status-words';
 import { wordPipelineError } from './word-pipeline-error';
 
 /*
- * The cases of `wordError` (`booking-gateway.port.spec.ts`,
- * `libs/application/booking`, deleted in 4b), on the flipped vocabulary —
- * plus the two consuming surfaces' copy and the staff day's transition
- * sentence, byte for byte in bg and en.
+ * The cases of the legacy `wordError` (`booking-gateway.port.spec.ts`,
+ * deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1), on the flipped vocabulary — plus the two consuming surfaces' copy
+ * and the staff day's transition sentence, byte for byte in bg and en.
  */
 
 /** A catalogue as a lookup: copy for the codes it knows, the code itself else. */
@@ -59,17 +60,17 @@ const wired = (
 
 describe('wordPipelineError — the most specific words the catalogue has', () => {
   it('tries the server’s code one level deep, then the code, then the surface’s own', () => {
-    const words = catalogue({ 'booking.gateway.failed': 'generic' });
+    const words = catalogue({ [BookingErrorCode.CallFailed]: 'generic' });
     const error = wired(BookingErrorCode.InvalidInput, {
       field: 'person_overlap',
     });
     expect(
-      wordPipelineError(error, words.translate, 'booking.gateway.failed'),
+      wordPipelineError(error, words.translate, BookingErrorCode.CallFailed),
     ).toBe('generic');
     expect(words.asked).toEqual([
       'BOOKING_INVALID_INPUT.person_overlap',
       'BOOKING_INVALID_INPUT',
-      'booking.gateway.failed',
+      BookingErrorCode.CallFailed,
     ]);
   });
 
@@ -92,7 +93,7 @@ describe('wordPipelineError — the most specific words the catalogue has', () =
   it('words a server code that names no reason by itself — the retryable cancel', () => {
     const words = catalogue({
       BOOKING_CANCEL_POLICY_UNAVAILABLE: 'try again in a moment',
-      'booking.gateway.failed': 'generic',
+      [BookingErrorCode.CallFailed]: 'generic',
     });
     const error = {
       ...PipelineError.of(
@@ -103,20 +104,20 @@ describe('wordPipelineError — the most specific words the catalogue has', () =
       ),
     };
     expect(
-      wordPipelineError(error, words.translate, 'booking.gateway.failed'),
+      wordPipelineError(error, words.translate, BookingErrorCode.CallFailed),
     ).toBe('try again in a moment');
   });
 
   it('is the surface’s own code when the server sent none', () => {
-    const words = catalogue({ 'booking.gateway.failed': 'generic' });
+    const words = catalogue({ [BookingErrorCode.CallFailed]: 'generic' });
     expect(
       wordPipelineError(
         PipelineError.bare(PipelineErrorCode.Unavailable),
         words.translate,
-        'booking.gateway.failed',
+        BookingErrorCode.CallFailed,
       ),
     ).toBe('generic');
-    expect(words.asked).toEqual(['booking.gateway.failed']);
+    expect(words.asked).toEqual([BookingErrorCode.CallFailed]);
   });
 });
 
@@ -130,16 +131,26 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
       },
     );
     expect(
-      wordPipelineError(error, errorsOf(en.errors), 'booking.gateway.failed', {
-        reach: en.booking.reach.call,
-      }),
+      wordPipelineError(
+        error,
+        errorsOf(en.errors),
+        BookingErrorCode.CallFailed,
+        {
+          reach: en.booking.reach.call,
+        },
+      ),
     ).toBe(
       'Free cancellation ends 24 h before the appointment — call the shop.',
     );
     expect(
-      wordPipelineError(error, errorsOf(bg.errors), 'booking.gateway.failed', {
-        reach: bg.booking.reach.call,
-      }),
+      wordPipelineError(
+        error,
+        errorsOf(bg.errors),
+        BookingErrorCode.CallFailed,
+        {
+          reach: bg.booking.reach.call,
+        },
+      ),
     ).toBe(
       `Безплатното отказване е до 24 ч. преди часа — ${bg.booking.reach.call}.`,
     );
@@ -150,7 +161,7 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
       wordPipelineError(
         wired(BookingErrorCode.SlotUnavailable),
         errorsOf(en.errors),
-        'booking.gateway.failed',
+        BookingErrorCode.CallFailed,
       ),
     ).toBe('That time is already taken.');
   });
@@ -169,10 +180,20 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
       to: bookingStatusWords[BookingStatus.Confirmed],
     };
     expect(
-      wordPipelineError(error, errorsOf(en.errors), 'unknown', words),
+      wordPipelineError(
+        error,
+        errorsOf(en.errors),
+        IdentityErrorCode.CallFailed,
+        words,
+      ),
     ).toBe('The appointment cannot move from "completed" to "confirmed".');
     expect(
-      wordPipelineError(error, errorsOf(bg.errors), 'unknown', words),
+      wordPipelineError(
+        error,
+        errorsOf(bg.errors),
+        IdentityErrorCode.CallFailed,
+        words,
+      ),
     ).toBe('Часът не може да мине от „completed“ към „confirmed“.');
   });
 });

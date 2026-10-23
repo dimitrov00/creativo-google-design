@@ -628,7 +628,7 @@ export class BookingScheduleStep {
       // Everybody a MOVE carries, pinned to the party's start, for the
       // engine's rider check (`AvailabilityQuery.riders`): a start where one
       // of them cannot sit is not offered, because the server would refuse
-      // it (`booking.reschedule.carried_seat_unplaceable`).
+      // it (`BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE`).
       riders: this.store.availabilityRiders(),
       // …and the visit's own chairs, handed back: its own seats never block
       // its own move, for the cart's lines and the riders alike.

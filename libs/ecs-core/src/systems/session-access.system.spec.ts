@@ -19,12 +19,13 @@ import {
 } from './session-access.system';
 
 /*
- * The cases of libs/application/identity/src/lib/use-cases/
- * ensure-session-ready.use-case.spec.ts, COPIED and re-targeted: the
- * use case's loop (observe → refresh on the backoff → observe) is driven
- * here by `SessionAccessSystem.readiness` over the same principal
- * sequences, and the refresh count is the number of `REFRESH` steps taken.
- * Then the four route guards of apps/web/src/app/guards/* as decisions
+ * The cases of the legacy identity application lib's
+ * `ensure-session-ready.use-case.spec.ts` (deleted in Phase 4b; ledger
+ * `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED and re-targeted:
+ * the use case's loop (observe → refresh on the backoff → observe) is driven
+ * here by `SessionAccessSystem.readiness` over the same principal sequences,
+ * and the refresh count is the number of `REFRESH` steps taken. Then the four
+ * route guards of apps/web/src/app/guards/* as decisions
  * (`home.guard.spec.ts`'s three cases copied).
  */
 

@@ -12,9 +12,10 @@ import { type OtpChallengeCall, memoryOtpChallengePorts } from '@core/testing';
 import { registerUser } from './register-user.pipeline';
 
 /*
- * The cases of `RegisterUserUseCase`'s spec (`libs/application/identity`,
- * deleted in 4b): the deployment's strategy gates the call; the identifier
- * satisfies its own channel's field; optional extras go through untouched.
+ * The cases of `RegisterUserUseCase`'s spec (the legacy identity application
+ * lib, deleted in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md`
+ * §11.1): the deployment's strategy gates the call; the identifier satisfies
+ * its own channel's field; optional extras go through untouched.
  */
 const PHONE = ParsedIdentifier.phone(E164.of('+359881234567'));
 

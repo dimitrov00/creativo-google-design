@@ -43,10 +43,10 @@ import {
 import { type RequestOtpCommand, requestOtp } from './request-otp.pipeline';
 
 /*
- * `requestOtp` (identity flip (2), §3.2): today's `RequestOtpUseCase` as a
- * transaction-free sandwich — channel, parse, resend window, tenant, then
- * issue → save → send — with the stored destination the payload text
- * trimmed (F2-10). Every case the deleted use-case spec held, plus the
+ * `requestOtp` (identity flip (2), §3.2): the successor of the legacy
+ * `RequestOtpUseCase` (deleted in Phase 4b) as a transaction-free
+ * sandwich — channel, parse, resend window, tenant, then issue → save →
+ * send — with the stored destination the payload text trimmed (F2-10). Every case the deleted use-case spec held, plus the
  * flip's own.
  */
 

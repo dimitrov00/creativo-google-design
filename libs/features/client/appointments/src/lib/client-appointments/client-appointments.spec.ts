@@ -203,7 +203,7 @@ const COPY: Translation = {
     visit: { shopMoves: 'COPY:shop-moves {{reach}}' },
   },
   errors: {
-    'booking.gateway.failed': 'COPY:gateway-failed',
+    BOOKING_CALL_FAILED: 'COPY:gateway-failed',
     BOOKING_CANCEL_POLICY_UNAVAILABLE: 'COPY:policy-unavailable',
     BOOKING_CANCEL_WINDOW_CLOSED:
       'COPY:window-closed {{windowHours}} {{reach}}',

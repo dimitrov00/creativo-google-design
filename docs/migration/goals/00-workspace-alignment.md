@@ -1,5 +1,7 @@
 # Goal 00 — Workspace alignment
 
+> **Phase 4b (2026-10) — read `CLAUDE.md` Laws 1–9 for the current shape.** `libs/domain/*` and `libs/application/*` were deleted in Phase 4b (2026-10); links and paths into them below are dead history, and an exit gate that greps them proves nothing.
+
 **Depends on:** nothing · **Blueprint refs:** §0.3–0.4, §1.1, §1.2, §8 Phase 0
 
 ## Kickoff prompt
