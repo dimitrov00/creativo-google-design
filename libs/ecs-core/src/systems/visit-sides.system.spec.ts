@@ -12,7 +12,7 @@ import {
 
 /*
  * Every case of libs/features/staff/dashboard/src/lib/visit-editor/
- * visit-sides.spec.ts (9, two of them properties), COPIED and re-targeted:
+ * visit-sides.spec.ts (10, two of them properties), COPIED and re-targeted:
  * the legacy free functions are local adapters over `VisitSidesSystem`. The
  * one shape change is the live reading — the legacy `undefined` for a field
  * this device does not hear is `heard: false` (system I/O never carries
@@ -70,6 +70,18 @@ describe('the side fields — the note and the tip beside the batch', () => {
     expect(storedNote(undefined)).toBeNull();
     expect(sameNote(' дължи 5 € ', 'дължи 5 €')).toBe(true);
     expect(sameNote('', null)).toBe(true);
+  });
+
+  it('appends a line below the note on a line of its own, never over it (D23)', () => {
+    expect(S.appendedNote('алергия към ментол', ' наводнение ')).toBe(
+      'алергия към ментол\nнаводнение',
+    );
+    // No note yet: the line IS the note, stored trimmed.
+    expect(S.appendedNote(null, '  наводнение ')).toBe('наводнение');
+    expect(S.appendedNote('   ', 'flooded')).toBe('flooded');
+    // Nothing to add keeps the note as stored; nothing at all is none.
+    expect(S.appendedNote(' алергия ', '  ')).toBe('алергия');
+    expect(S.appendedNote(null, null)).toBeNull();
   });
 
   it('follows what is stored while the barber leaves a field alone', () => {
@@ -255,6 +267,9 @@ describe('VisitSidesSystem — purity', () => {
     expect(S.movedUnder(writes, once.drawn, once, stored)).toBe(true);
     expect(S.movedUnder(writes, once.drawn, once, stored)).toBe(
       S.movedUnder(writes, once.drawn, once, stored),
+    );
+    expect(S.appendedNote(' дължи 5 € ', 'наводнение ')).toBe(
+      S.appendedNote(' дължи 5 € ', 'наводнение '),
     );
   });
 });

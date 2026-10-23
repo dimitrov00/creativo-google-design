@@ -19,8 +19,8 @@ export type AppointmentPhotoFacts = {
   readonly barberId: BarberId;
   /**
    * The client record the photo shows (D29, flatten-spec §5.4) — the client
-   * card's photo strip (`clientCustomerId ==`, `takenAtUtcMs desc`, index
-   * #22); `null` for a guest seat with no record.
+   * card's photo strip (`clientCustomerId ==`, `photoOrigin == SHOT`,
+   * `takenAtUtcMs desc`, index #22); `null` for a guest seat with no record.
    */
   readonly clientCustomerId: CustomerId | null;
   readonly clientLabel: string;

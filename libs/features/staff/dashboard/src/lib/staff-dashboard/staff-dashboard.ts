@@ -87,6 +87,7 @@ import {
   BillingSystem,
   ClientQueryShape,
   GridEvent as GridEventTag,
+  OfferingPriceSystem,
   PhoneSystem,
   SearchFieldsSystem,
   ZonedTimeSystem,
@@ -132,6 +133,7 @@ import { assignBarberTones } from '../barber-tone';
 import {
   CatalogContentService,
   CatalogPresenter,
+  termsToVm,
 } from '@creativo/features/shared/catalog';
 import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
 import { walkInLabels } from '../shared/walk-in-labels';
@@ -792,20 +794,20 @@ function isTerminalStatus(status: BookingStatus): boolean {
 
 /**
  * One lifecycle move as the call carries it — the whole party (`seatId`
- * `null`) or one seat; a reason and its note only on a cancellation.
+ * `null`) or one seat; a reason only on a cancellation, and a CODE only
+ * (D23): what the barber typed beside «Друго…» is the visit's note, written
+ * once the cancel has landed (`confirmCancel`), never the call's.
  */
 function transitionOf(
   appointmentId: string,
   toBookingStatus: BookingStatus,
   cancellationReason: CancellationReason | null,
-  note: string | null,
   seatId: string | null,
 ): BookingCall.Transition {
   return {
     appointmentId: AppointmentId.of(appointmentId),
     toBookingStatus,
     cancellationReason,
-    note,
     seatId: seatId === null ? null : SeatId.of(seatId),
   };
 }
@@ -1858,11 +1860,16 @@ export class StaffDashboard {
    * comes off the LANE holding this row, which `visitEditorVm` already looks
    * up for its neighbours; `DayRowVm` need not grow a field for it.
    *
-   * ⚠ THE VM PATH, not a second terms resolver: `serviceVms()` carries the
-   * catalogue's per-chair matrix with plain-string barber ids, and
-   * `CatalogPresenter.price` is the formatter the client's own catalogue
-   * already renders through, so this borrows both rather than minting a
-   * second answer.
+   * ⚠ THE SERVER'S TERMS, not a second resolver: every chair is offered
+   * the whole catalogue, a service he does not perform included, and the
+   * terms are `OfferingPriceSystem.termsFor` — the resolution the server's
+   * own decision prices an added seat with. It reads the chair's offering
+   * and, for a chair with none, the service's OWN terms; the VM path this
+   * replaced fell back to the FIRST barber's offering and quoted another
+   * chair's price and minutes for a seat the server would charge
+   * differently. `serviceVms()` still names the services and variants, and
+   * `CatalogPresenter.price` words the figure as the client's catalogue
+   * does.
    */
   protected readonly visitServiceOptions = computed<
     readonly VisitEditorServiceOption[]
@@ -1886,25 +1893,25 @@ export class StaffDashboard {
       this.createVisit()?.barberId ??
       null;
     if (barberId === null) return [];
+    const chair = BarberId.of(barberId);
     return this.catalog
       .serviceVms()
       .flatMap((vm): VisitEditorServiceOption[] => {
-        const offering =
-          vm.offerings.find((entry) => entry.barberId === barberId) ??
-          vm.offerings[0];
-        // A service nobody is priced for at all is DROPPED, not offered at
-        // zero minutes: adding it would put a leg on the booking that the grid
-        // cannot draw and the shop cannot sell.
-        if (offering === undefined) return [];
+        const service = this.catalog.findService(vm.id);
+        // The VM is the entity's own (`serviceVms` maps `services`); one
+        // the list no longer holds has no terms to quote.
+        if (service === undefined) return [];
+        const termsOf = (variantId: ServiceVariantId | null) =>
+          termsToVm(OfferingPriceSystem.termsFor(service, chair, variantId));
         const name = this.content.text(vm.name);
         // A service WITH variants is offered per variant — `Класическа
         // подстрижка · Дълга коса` — and never bare: the server refuses a
         // seat whose price the variant would move. Terms come from the
         // chair's own matrix, falling back to its base for a variant it has
-        // not priced separately.
+        // not priced separately (`termsFor`).
         if (vm.variants.length > 0) {
           return vm.variants.map((variant) => {
-            const terms = offering.byVariant?.[variant.id] ?? offering.base;
+            const terms = termsOf(ServiceVariantId.of(variant.id));
             return {
               id: `${vm.id}:${variant.id}`,
               serviceId: vm.id,
@@ -1917,6 +1924,7 @@ export class StaffDashboard {
             };
           });
         }
+        const terms = termsOf(null);
         return [
           {
             id: vm.id,
@@ -1924,8 +1932,8 @@ export class StaffDashboard {
             variantId: null,
             label: name,
             serviceLabel: name,
-            minutes: offering.base.minutes,
-            priceLabel: this.content.price(offering.base.price),
+            minutes: terms.minutes,
+            priceLabel: this.content.price(terms.price),
           },
         ];
       });
@@ -2536,7 +2544,12 @@ export class StaffDashboard {
    */
   protected readonly periodLabel = computed(() => {
     const days = this.store.visibleDays();
-    const first = days[0] as string;
+    const first = days[0];
+    // NO DAYS YET — a cold load before the shop's zone is read, when there
+    // is no "today" to anchor a period on. The canvas binds its region
+    // label off this before `store.ready()`, so it names nothing rather
+    // than formatting a day that is not there (it threw on every load).
+    if (first === undefined) return '';
     if (days.length <= 1) {
       /*
        * ⚠ THE WEEKDAY LEADS. (owner ruling 2026-09-04)
@@ -3406,18 +3419,16 @@ export class StaffDashboard {
    * booked terms then stand in, exactly as they do on the sheet.
    */
   private chairMinutesOf(seat: Seat, barberId: string): number | null {
-    const service = this.catalog
-      .serviceVms()
-      .find((entry) => entry.id === seat.serviceId);
-    const offering =
-      service?.offerings.find((entry) => entry.barberId === barberId) ??
-      service?.offerings[0];
-    if (offering === undefined) return null;
-    const variantId = seat.variantId;
-    const variantTerms = Object.entries(offering.byVariant ?? {}).find(
-      ([id]) => id === variantId,
-    )?.[1];
-    return (variantTerms ?? offering.base).minutes;
+    const service = this.catalog.findService(seat.serviceId);
+    if (service === undefined) return null;
+    // The server's resolution (`OfferingPriceSystem.termsFor`): a chair
+    // that does not perform the service is measured against the service's
+    // own minutes — never against another chair's offering.
+    return OfferingPriceSystem.termsFor(
+      service,
+      BarberId.of(barberId),
+      seat.variantId,
+    ).durationMinutes;
   }
 
   /**
@@ -3745,6 +3756,7 @@ export class StaffDashboard {
       this.cancelSeatIds.set(seatScopeOf(row));
       this.cancelReasonCode.set(null);
       this.cancelNote.set('');
+      this.cancelNoteFiled.set(false);
       return;
     }
     if (
@@ -3757,7 +3769,7 @@ export class StaffDashboard {
       const seatIds = to === BookingStatus.Confirmed ? [] : seatScopeOf(row);
       const move = (seatId: string | null): Promise<boolean> =>
         this.store.transition(
-          transitionOf(row.appointmentId, to, null, null, seatId),
+          transitionOf(row.appointmentId, to, null, seatId),
         );
       let done = true;
       if (seatIds.length === 0) {
@@ -3806,7 +3818,6 @@ export class StaffDashboard {
                 transitionOf(
                   row.appointmentId,
                   BookingStatus.Confirmed,
-                  null,
                   null,
                   null,
                 ),
@@ -5256,6 +5267,13 @@ export class StaffDashboard {
   protected readonly cancelSeatIds = signal<readonly string[]>([]);
   protected readonly cancelReasonCode = signal<CancellationReason | null>(null);
   protected readonly cancelNote = signal('');
+  /**
+   * Whether this sheet has already filed its «Друго…» words. ONCE PER
+   * SHEET: a chair whose second seat was refused files them with the first
+   * seat's cancel, and the retry that lands the second must not append them
+   * again (`appendTeamNote` appends, it never replaces).
+   */
+  private readonly cancelNoteFiled = signal(false);
 
   /** The codes a human may pick — the domain's list, not a local copy. */
   protected readonly reasonCodes = SeatOutcome.OFFERED_REASONS;
@@ -5282,9 +5300,11 @@ export class StaffDashboard {
      * to enter such issue"). Nothing picked sends no code, and the server
      * files the cancellation as `unspecified`. «Друго…» with nothing
      * written is the same: a door opened and not walked through, not a
-     * reason — the domain refuses an empty `other` as saying less than not
-     * asking, and a disabled button would have stopped the barber who
+     * reason — and a disabled button would have stopped the barber who
      * tapped the chip by accident with no word about why.
+     *
+     * THE CALL CARRIES THE CODE ONLY (D23). What the barber wrote under
+     * «Друго…» is the visit's note, saved below once the cancel has landed.
      */
     const picked = this.cancelReasonCode();
     const note = this.cancelNote().trim();
@@ -5296,7 +5316,6 @@ export class StaffDashboard {
           appointmentId,
           BookingStatus.Cancelled,
           reasonCode,
-          reasonCode === CancellationReason.Other ? note : null,
           seatId,
         ),
       );
@@ -5309,13 +5328,25 @@ export class StaffDashboard {
      * already re-derived, so firing them together would race on the same
      * aggregate. A chair holding two seats is the only case that loops.
      */
-    let done = true;
+    let done: boolean;
+    let landed: boolean;
     if (seatIds.length === 0) {
       done = await cancel(null);
+      landed = done;
     } else {
+      const refused: string[] = [];
       for (const seatId of seatIds) {
-        done = (await cancel(seatId)) && done;
+        if (!(await cancel(seatId))) refused.push(seatId);
       }
+      done = refused.length === 0;
+      landed = refused.length < seatIds.length;
+      /*
+       * A CANCEL THAT ONLY PARTLY LANDED keeps the sheet open on the seats
+       * still to go. The ones that landed are resolved now, and sending them
+       * again was refused as already resolved — on every retry, so the sheet
+       * could never close and the second seat never be called off.
+       */
+      if (!done) this.cancelSeatIds.set(refused);
     }
     if (done) {
       this.cancelId.set(null);
@@ -5330,6 +5361,28 @@ export class StaffDashboard {
         );
       if (row && seatIds.length === 0) {
         this.offerUndo(row, BookingStatus.Cancelled);
+      }
+    }
+    /*
+     * THE WORDS GO ON THE VISIT'S NOTE (D23: "free text, when staff type
+     * it, is an appointment note") — only once a cancel landed, so a
+     * refused cancel files nothing, and BELOW a note the visit already
+     * has, never over it (`appendTeamNote`). ANY seat landing is enough: a
+     * chair whose second seat was refused still carries the first seat's
+     * OTHER, and its words belong beside it now rather than after a retry
+     * that may never come. Once per sheet (`cancelNoteFiled`), so the retry
+     * that lands the second seat does not append them twice. A note that
+     * did not save raises the page's toast in place of the way back,
+     * saying the cancellation itself stands.
+     */
+    if (
+      reasonCode === CancellationReason.Other &&
+      landed &&
+      !this.cancelNoteFiled()
+    ) {
+      this.cancelNoteFiled.set(true);
+      if (!(await this.store.appendTeamNote(appointmentId, note))) {
+        this.refuse(null, 'staff.day.cancelNoteFailed');
       }
     }
   }

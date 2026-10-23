@@ -36,8 +36,11 @@ export type DeleteAppointmentPhoto = (
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * A client record's newest photos across visits — `clientCustomerId ==`
- * (D29), `orderBy takenAtUtcMs desc`, at most `limit` (index #22).
+ * A client record's newest photos across visits, the visits' own shots
+ * only — `clientCustomerId ==` (D29), `photoOrigin == SHOT`,
+ * `orderBy takenAtUtcMs desc`, at most `limit` (index #22). The origin
+ * filters the query, so a library picture adopted onto a visit never takes
+ * one of the `limit` places; no room (`limit` under one) answers nothing.
  */
 export type ListClientPhotos = (
   clientCustomerId: CustomerId,
@@ -45,8 +48,9 @@ export type ListClientPhotos = (
 ) => Promise<Result<readonly AppointmentPhoto[], RepositoryError>>;
 
 /**
- * How many photos each visit holds — `appointmentId ==` count aggregations,
- * single-field. Positions preserved: `out[i]` counts `appointmentIds[i]`.
+ * How many of its own shots each visit holds — a library picture adopted
+ * onto it never counts; `appointmentId in`, single-field. Positions
+ * preserved: `out[i]` counts `appointmentIds[i]`.
  */
 export type CountPhotosByAppointment = (
   appointmentIds: readonly AppointmentId[],

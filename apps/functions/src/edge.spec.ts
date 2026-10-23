@@ -528,17 +528,23 @@ describe('edge — the wire table', () => {
       });
     });
 
-    it('a refused time and a refused primitive leave as themselves — a gap is the owner-locked `DST_GAP_INVALID_TIME`', () => {
+    it('a refused time and a refused primitive leave as themselves — a gap is the owner-locked `DST_GAP_INVALID_TIME`, naming its wall clock and zone', () => {
       const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
       const gapDay = LocalDate.parse('2026-03-29');
       const minute = MinuteOfDay.of(210);
       if (!zone.ok || !gapDay.ok || !minute.ok) throw new Error('fixture');
+      // The copy names the erased wall clock and the shop's zone — both leave.
       expect(
         wire(TimeError.dstGap(gapDay.value, minute.value, zone.value)),
       ).toEqual({
         status: 'invalid-argument',
         message: TimeErrorCode.DstGap,
-        details: { errorCode: TimeErrorCode.DstGap },
+        details: {
+          errorCode: TimeErrorCode.DstGap,
+          localDate: '2026-03-29',
+          minute: 210,
+          timeZone: 'Europe/Sofia',
+        },
       });
       expect(wire(TimeError.invalidTimeZone('Not/AZone'))).toEqual({
         status: 'internal',

@@ -101,6 +101,7 @@ import {
   SeatId,
   ServiceCategoryId,
   ServiceId,
+  ServiceVariantId,
   UserId as AccountId,
   UtcEpochMs,
   Weekday,
@@ -124,6 +125,7 @@ import {
   type SchedulingReadPorts,
 } from '@core/ports';
 import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
+import { CatalogPresenter } from '@creativo/features/shared/catalog';
 import {
   FIXTURE_TIME_ZONE,
   appointmentFixture,
@@ -495,6 +497,7 @@ type GatewayHandlers = {
 /** The app's own catalogue, as shipped — read for the sentences a case pins byte for byte. */
 type CatalogueCopy = {
   readonly errors: { readonly BOOKING_TRANSITION_NOT_ALLOWED: string };
+  readonly staff: { readonly day: { readonly cancelNoteFailed: string } };
   readonly appointments: {
     readonly status: {
       readonly completed: string;
@@ -655,6 +658,8 @@ describe('StaffDashboard', () => {
   let defaultShop: Promise<
     PortResult<ShopLocation | null, RepositoryError>
   > | null = null;
+  /** The catalogue's services, when a case prices its own; `null` is the one timed fade. */
+  let catalogServices: readonly Service[] | null = null;
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -752,7 +757,7 @@ describe('StaffDashboard', () => {
               ? ports
               : { ...ports, observeLocations: () => catalogShops ?? of() })(
             memoryCatalogReadPorts({
-              services: [service('fade', 45)],
+              services: catalogServices ?? [service('fade', 45)],
               barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
               categories: [],
               locations: [SHOP_LOCATION],
@@ -934,6 +939,44 @@ describe('StaffDashboard', () => {
       );
     } finally {
       shops.next(PortResult.ok([SHOP_LOCATION]));
+      catalogShops = null;
+      defaultShop = null;
+    }
+  });
+
+  /*
+   * NO DAYS, NO PERIOD — and no throw. Before the zone is read the store
+   * shows no days, and the canvas binds its region label (the period) off
+   * them before `store.ready()`: the label formatted `visibleDays()[0]`
+   * while the list was empty and threw on every staff-page load.
+   */
+  it('names an empty period while no day is shown, and the shown one once it is', async () => {
+    let settleDefault: (
+      answer: PortResult<ShopLocation | null, RepositoryError>,
+    ) => void = () => undefined;
+    catalogShops = new ReplaySubject<
+      PortResult<readonly ShopLocation[], RepositoryError>
+    >(1);
+    defaultShop = new Promise((resolve) => (settleDefault = resolve));
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const page = fixture.componentInstance as unknown as {
+        store: { visibleDays: () => readonly string[] };
+        periodLabel: () => string;
+        regionLabel: () => string;
+      };
+      expect(page.store.visibleDays()).toEqual([]);
+      expect(page.periodLabel()).toBe('');
+      expect(() => page.regionLabel()).not.toThrow();
+
+      settleDefault(PortResult.ok(SHOP_LOCATION));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(page.periodLabel()).toContain('5.08');
+    } finally {
       catalogShops = null;
       defaultShop = null;
     }
@@ -2263,13 +2306,540 @@ describe('StaffDashboard', () => {
     const request = transition.mock.calls[0]?.[0];
     expect(request?.toBookingStatus).toBe(BookingStatus.Cancelled);
     // No reason picked and no note: the call says none (the server files
-    // the cancellation as unspecified).
+    // the cancellation as unspecified) — and it is a code-only call (D23).
     expect(request?.cancellationReason).toBeNull();
-    expect(request?.note).toBeNull();
+    expect(request).not.toHaveProperty('note');
     // The sheet closed on success.
     expect(
       host().querySelector('[data-testid="staff-cancel-sheet"]'),
     ).toBeNull();
+  });
+
+  /*
+   * THE SHEET QUOTES WHAT THE SERVER CHARGES. Every chair is offered the
+   * whole catalogue — a service he does not perform included — and the
+   * server prices an added seat with `OfferingPriceSystem.termsFor`: the
+   * chair's own offering, or the SERVICE's own terms for a chair with none.
+   * The menu read `offerings.find(chair) ?? offerings[0]` and quoted the
+   * first barber's price and minutes to a chair the server would charge
+   * the service's terms.
+   */
+  it('quotes each chair the terms the server will charge — the service’s own for a chair without an offering', async () => {
+    const shaveTerms = termsFixture(2000, 30);
+    const ivanTerms = termsFixture(3500, 50);
+    const longTerms = termsFixture(4200, 60);
+    const long = ServiceVariantId.of('long');
+    catalogServices = [
+      serviceFixture({
+        id: ServiceId.of('shave'),
+        name: textFixture('shave'),
+        description: textFixture('x'),
+        categoryId: ServiceCategoryId.of('cat-hair'),
+        ...shaveTerms,
+        variants: [],
+        // Only Ivan performs it, on terms of his own.
+        offerings: [
+          { barberId: BarberId.of('ivan'), overrides: [], ...ivanTerms },
+        ],
+        locationIds: [],
+        compositionKind: CompositionKind.Single,
+      }),
+      serviceFixture({
+        id: ServiceId.of('cut'),
+        name: textFixture('cut'),
+        description: textFixture('x'),
+        categoryId: ServiceCategoryId.of('cat-hair'),
+        ...shaveTerms,
+        variants: [{ variantId: long, name: textFixture('long') }],
+        offerings: [
+          {
+            barberId: BarberId.of('ivan'),
+            overrides: [{ variantId: long, ...longTerms }],
+            ...ivanTerms,
+          },
+        ],
+        locationIds: [],
+        compositionKind: CompositionKind.Single,
+      }),
+    ];
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const page = fixture.componentInstance as unknown as {
+        onVisitChairChanged: (barberId: string) => void;
+        visitServiceOptions: () => readonly {
+          readonly id: string;
+          readonly minutes: number;
+          readonly priceLabel: string;
+        }[];
+        chairMinutesOf: (seat: Seat, barberId: string) => number | null;
+      };
+      const price = (major: number) =>
+        TestBed.inject(CatalogPresenter).price(major);
+      const quoted = (id: string) =>
+        page.visitServiceOptions().find((option) => option.id === id);
+
+      // Niko performs neither: the service's own terms, never Ivan's.
+      page.onVisitChairChanged('niko');
+      expect(quoted('shave')).toMatchObject({
+        minutes: 30,
+        priceLabel: price(20),
+      });
+      expect(quoted('cut:long')).toMatchObject({
+        minutes: 30,
+        priceLabel: price(20),
+      });
+      // Ivan: his own offering, and his own price for the long cut.
+      page.onVisitChairChanged('ivan');
+      expect(quoted('shave')).toMatchObject({
+        minutes: 50,
+        priceLabel: price(35),
+      });
+      expect(quoted('cut:long')).toMatchObject({
+        minutes: 60,
+        priceLabel: price(42),
+      });
+
+      // The row's tag measures against the same terms.
+      const seat = (barberId: string): Seat =>
+        seatFixture({
+          serviceId: ServiceId.of('shave'),
+          barberId: BarberId.of(barberId),
+        });
+      expect(page.chairMinutesOf(seat('niko'), 'niko')).toBe(30);
+      expect(page.chairMinutesOf(seat('ivan'), 'ivan')).toBe(50);
+    } finally {
+      catalogServices = null;
+    }
+  });
+
+  /*
+   * ── «ДРУГО…» FILES ITS WORDS AS THE VISIT'S NOTE (D23) ──────────────
+   * The cancellation is code-only: the call says `OTHER` and nothing more.
+   * What the barber wrote is "an appointment note" — saved, once the
+   * cancel has landed, BELOW whatever note the visit already has, through
+   * the same note write the visit sheet uses.
+   */
+  describe('«Друго…» files its words as the visit’s note (D23)', () => {
+    /** The visit's stored note, as the notes collection would answer it. */
+    let storedText: string | null;
+    let saveAnswer: PortResult<void, RepositoryError>;
+    /** Every note write, in order, beside every call — one timeline. */
+    let timeline: string[];
+    let saved: (AppointmentNote | null)[];
+    /** The lanes' own visits, put back after a case that rebuilt with its own. */
+    let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
+
+    beforeEach(() => {
+      storedText = null;
+      saveAnswer = PortResult.ok(undefined);
+      timeline = [];
+      saved = [];
+      visits = observeBarberDay.getMockImplementation();
+      wireNotes();
+    });
+
+    /**
+     * The notes and the call, both onto the one timeline — on the module
+     * `build()` made, so a case that rebuilds with a visit of its own wires
+     * them again.
+     */
+    function wireNotes(): void {
+      const notes = TestBed.inject(APPOINTMENT_NOTE_PORTS) as {
+        observeAppointmentNote: AppointmentNotePorts['observeAppointmentNote'];
+        saveAppointmentNote: AppointmentNotePorts['saveAppointmentNote'];
+      };
+      notes.observeAppointmentNote = (appointmentId) =>
+        of(
+          PortResult.ok<AppointmentNote | null>(
+            storedText === null
+              ? null
+              : {
+                  id: appointmentId,
+                  text: storedText,
+                  authorUserId: null,
+                  writtenAtUtcMs: wall('2026-08-05T08:00:00').utcEpochMs,
+                },
+          ),
+        );
+      notes.saveAppointmentNote = async (_appointmentId, note) => {
+        timeline.push('note');
+        saved.push(note);
+        return saveAnswer;
+      };
+      transition.mockImplementation(async (input) => {
+        timeline.push('transition');
+        return PortResult.ok({
+          appointmentId: input.appointmentId,
+          toBookingStatus: input.toBookingStatus,
+        });
+      });
+    }
+
+    /** The page again, on Ivan's lane holding `visit` alone, its notes wired. */
+    async function rebuildWith(visit: Appointment): Promise<void> {
+      observeBarberDay.mockImplementation((barberId: string) =>
+        of(PortResult.ok(barberId === 'ivan' ? [visit] : [])),
+      );
+      TestBed.resetTestingModule();
+      await build();
+      wireNotes();
+    }
+
+    /** The seat each call addressed, in order — `null` is the whole booking. */
+    function sentSeats(): (string | null)[] {
+      return transition.mock.calls.map((call) => call[0].seatId);
+    }
+
+    afterEach(() => {
+      if (visits) observeBarberDay.mockImplementation(visits);
+      transition.mockReset();
+      transition.mockImplementation(async (input) =>
+        PortResult.ok({
+          appointmentId: input.appointmentId,
+          toBookingStatus: input.toBookingStatus,
+        }),
+      );
+    });
+
+    /** The visit's sheet, its cancel, a reason picked and words written. */
+    async function cancelWith(
+      reasonWord: string,
+      written: string,
+    ): Promise<void> {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-testid="staff-visit-cancel"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          `[data-testid="staff-cancel-reason-${reasonWord}"]`,
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const note = host().querySelector(
+        '[data-testid="staff-cancel-note"]',
+      ) as HTMLTextAreaElement | null;
+      if (note !== null) {
+        note.value = written;
+        note.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+      }
+      (
+        host().querySelector(
+          '[data-testid="staff-cancel-confirm"]',
+        ) as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function notice(): string | null {
+      return (
+        fixture.componentInstance as unknown as { notice: () => string | null }
+      ).notice();
+    }
+
+    it('sends OTHER as a code alone, then saves the words as the visit’s note', async () => {
+      await cancelWith('other', '  наводнение в салона ');
+
+      const request = transition.mock.calls[0]?.[0];
+      expect(request?.cancellationReason).toBe(CancellationReason.Other);
+      expect(request).not.toHaveProperty('note');
+      // After the cancel landed, never before it.
+      expect(timeline).toEqual(['transition', 'note']);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        id: 'appointment-1',
+        text: 'наводнение в салона',
+        authorUserId: 'dev-staff-ivan',
+      });
+      expect(notice()).toBeNull();
+    });
+
+    it('appends below a note the visit already has, never over it', async () => {
+      storedText = 'алергия към ментол';
+      await cancelWith('other', 'наводнение');
+
+      expect(saved.map((note) => note?.text)).toEqual([
+        'алергия към ментол\nнаводнение',
+      ]);
+    });
+
+    it('saves nothing when nothing was written — no code, and no note', async () => {
+      await cancelWith('other', '   ');
+
+      expect(timeline).toEqual(['transition']);
+      expect(transition.mock.calls[0]?.[0].cancellationReason).toBeNull();
+      expect(saved).toEqual([]);
+    });
+
+    it('saves nothing beside a code of its own — it carries no words to file', async () => {
+      await cancelWith('client_unwell', '');
+
+      expect(timeline).toEqual(['transition']);
+      expect(transition.mock.calls[0]?.[0].cancellationReason).toBe(
+        CancellationReason.ClientUnwell,
+      );
+      expect(saved).toEqual([]);
+    });
+
+    it('files nothing when the cancel was refused', async () => {
+      transition.mockImplementation(async () => {
+        timeline.push('transition');
+        return PortResult.err(
+          refusal(
+            PipelineErrorCode.InvalidRequest,
+            BookingErrorCode.TransitionNotAllowed,
+            {
+              fromBookingStatus: 'RESOLVED',
+              toBookingStatus: BookingStatus.Cancelled,
+            },
+          ),
+        );
+      });
+      await cancelWith('other', 'наводнение');
+
+      expect(timeline).toEqual(['transition']);
+      expect(saved).toEqual([]);
+    });
+
+    it('says so in the page’s toast when the note did not save — the cancel stands', async () => {
+      saveAnswer = PortResult.err(
+        RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+      );
+      await cancelWith('other', 'наводнение');
+
+      expect(timeline).toEqual(['transition', 'note']);
+      // The loader returns no translations, so the KEY is the assertion.
+      expect(notice()).toBe('staff.day.cancelNoteFailed');
+      // The cancel sheet closed on the cancel's success all the same.
+      expect(
+        host().querySelector('[data-testid="staff-cancel-sheet"]'),
+      ).toBeNull();
+    });
+
+    /*
+     * ONE SENTENCE FOR EITHER SCOPE. The toast is raised after a seat called
+     * off out of a party as well as after a whole booking, so it says only
+     * that the cancel stands — never «Часът е отказан», which told the
+     * barber the rest of the party had lost its booking too. The fixture's
+     * own row is Ivan's share of a split party: the SEAT case.
+     */
+    const noteLost = [
+      ['bg', 'Отказано е, но бележката не се запази.'],
+      ['en', "Cancelled, but the note didn't save."],
+    ] as const;
+
+    /** The shipped catalogue's toast, live in `lang`, for the length of `run`. */
+    async function inCatalogue(
+      lang: 'bg' | 'en',
+      run: () => Promise<void>,
+    ): Promise<void> {
+      const transloco = TestBed.inject(TranslocoService);
+      const catalogue = lang === 'bg' ? bgCatalogue : enCatalogue;
+      transloco.setTranslation(
+        {
+          'staff.day.cancelNoteFailed': catalogue.staff.day.cancelNoteFailed,
+        },
+        lang,
+        { merge: true },
+      );
+      transloco.setActiveLang(lang);
+      try {
+        await run();
+      } finally {
+        transloco.setActiveLang('bg');
+      }
+    }
+
+    it.each(noteLost)(
+      'says the cancel stands and only the note was lost, for a seat called off out of a party — exact %s',
+      async (lang, sentence) => {
+        await inCatalogue(lang, async () => {
+          saveAnswer = PortResult.err(
+            RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+          );
+          await cancelWith('other', 'наводнение');
+
+          // One call, for Ivan's seat alone — the party keeps the rest.
+          expect(sentSeats()).toEqual([expect.any(String)]);
+          expect(timeline).toEqual(['transition', 'note']);
+          expect(notice()).toBe(sentence);
+        });
+      },
+    );
+
+    it.each(noteLost)(
+      'says the same for a whole booking called off — exact %s',
+      async (lang, sentence) => {
+        await rebuildWith(appointment('appointment-1', '2026-08-05T10:00:00'));
+        await inCatalogue(lang, async () => {
+          saveAnswer = PortResult.err(
+            RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+          );
+          await cancelWith('other', 'наводнение');
+
+          expect(sentSeats()).toEqual([null]);
+          expect(timeline).toEqual(['transition', 'note']);
+          expect(notice()).toBe(sentence);
+        });
+      },
+    );
+
+    /**
+     * A father and son in Ivan's chair, one after the other, and a friend in
+     * Niko's — so Ivan's row is a share of the party, two seats wide.
+     */
+    function fatherAndSon(): Appointment {
+      const seatOf = (
+        seatId: string,
+        chair: string,
+        startsAt: string,
+        relationship: SubjectRelationship,
+      ) =>
+        seatAt({
+          seatId,
+          chair,
+          startsAt,
+          occupant: accountOf(freshId('user'), relationship),
+        });
+      return visitOf('appointment-pair', [
+        seatOf(
+          'seat-father',
+          'ivan',
+          '2026-08-05T10:00:00',
+          SubjectRelationship.Self,
+        ),
+        seatOf(
+          'seat-son',
+          'ivan',
+          '2026-08-05T10:30:00',
+          SubjectRelationship.Companion,
+        ),
+        seatOf(
+          'seat-friend',
+          'niko',
+          '2026-08-05T10:00:00',
+          SubjectRelationship.Companion,
+        ),
+      ]);
+    }
+
+    /*
+     * A CHAIR HOLDING TWO SEATS, THE SECOND REFUSED. The first seat now
+     * carries OTHER, so its words are filed at once — and once: the sheet
+     * stays open on the seat still to go, the retry sends that seat alone
+     * (the first would be refused as already resolved, for ever), and the
+     * words are not appended a second time when it lands.
+     */
+    it('files the words once when a chair’s second seat is refused, and retries only that seat', async () => {
+      await rebuildWith(fatherAndSon());
+      let sonRefused = true;
+      transition.mockImplementation(async (input) => {
+        timeline.push('transition');
+        return sonRefused && input.seatId === 'seat-son'
+          ? PortResult.err(PipelineError.bare(PipelineErrorCode.Unavailable))
+          : PortResult.ok({
+              appointmentId: input.appointmentId,
+              toBookingStatus: input.toBookingStatus,
+            });
+      });
+      const page = fixture.componentInstance as unknown as {
+        cancelId: () => string | null;
+        cancelSeatIds: () => readonly string[];
+      };
+
+      await cancelWith('other', 'наводнение');
+
+      expect(sentSeats()).toEqual(['seat-father', 'seat-son']);
+      expect(timeline).toEqual(['transition', 'transition', 'note']);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        id: 'appointment-pair',
+        text: 'наводнение',
+      });
+      expect(notice()).toBeNull();
+      // Still open, on the seat still to go.
+      expect(page.cancelId()).toBe('appointment-pair');
+      expect(page.cancelSeatIds()).toEqual(['seat-son']);
+      expect(
+        host().querySelector('[data-testid="staff-cancel-sheet"]'),
+      ).not.toBeNull();
+
+      // The retry lands the son: his seat alone, and no second note.
+      sonRefused = false;
+      transition.mockClear();
+      (
+        host().querySelector(
+          '[data-testid="staff-cancel-confirm"]',
+        ) as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(sentSeats()).toEqual(['seat-son']);
+      expect(transition.mock.calls[0]?.[0].cancellationReason).toBe(
+        CancellationReason.Other,
+      );
+      expect(timeline).toEqual([
+        'transition',
+        'transition',
+        'note',
+        'transition',
+      ]);
+      expect(saved).toHaveLength(1);
+      expect(page.cancelId()).toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-cancel-sheet"]'),
+      ).toBeNull();
+    });
+
+    it('files nothing when every seat of the chair was refused, and keeps both to retry', async () => {
+      await rebuildWith(fatherAndSon());
+      transition.mockImplementation(async () => {
+        timeline.push('transition');
+        return PortResult.err(
+          PipelineError.bare(PipelineErrorCode.Unavailable),
+        );
+      });
+      const page = fixture.componentInstance as unknown as {
+        cancelSeatIds: () => readonly string[];
+      };
+
+      await cancelWith('other', 'наводнение');
+
+      expect(timeline).toEqual(['transition', 'transition']);
+      expect(saved).toEqual([]);
+      expect(page.cancelSeatIds()).toEqual(['seat-father', 'seat-son']);
+    });
+
+    it('writes over nothing it could not read: a failed read saves nothing and says so', async () => {
+      storedText = 'алергия към ментол';
+      const notes = TestBed.inject(APPOINTMENT_NOTE_PORTS) as {
+        observeAppointmentNote: AppointmentNotePorts['observeAppointmentNote'];
+      };
+      notes.observeAppointmentNote = () =>
+        of(
+          PortResult.err(
+            RepositoryError.readFailed(
+              'appointmentNotes/appointment-1',
+              'unavailable',
+            ),
+          ),
+        );
+      await cancelWith('other', 'наводнение');
+
+      expect(saved).toEqual([]);
+      expect(notice()).toBe('staff.day.cancelNoteFailed');
+    });
   });
 
   it('slides the week strip a WHOLE week, in CSS, with nothing to press', () => {

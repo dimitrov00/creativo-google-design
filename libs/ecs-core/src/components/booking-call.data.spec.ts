@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AppointmentId,
   BarberId,
+  BookingStatus,
   CartLineId,
   SeatId,
   ServiceId,
@@ -118,6 +119,29 @@ describe('BookingCall.clientCancel — the code a client’s cancel is filed und
       );
     },
   );
+});
+
+describe('BookingCall.Transition — a staff cancel is a code, never words (D23)', () => {
+  it('carries the code alone: `OTHER` needs no note, and no note rides the call', () => {
+    const cancel: BookingCall.Transition = {
+      appointmentId: AppointmentId.of('apt-1'),
+      toBookingStatus: BookingStatus.Cancelled,
+      cancellationReason: CancellationReason.Other,
+      seatId: null,
+    };
+    // What a barber types beside «Друго» is the visit's note
+    // (`appointmentNotes`), written after the cancel — the call has no room
+    // for it.
+    // @ts-expect-error — `note` is no field of the transition call.
+    const worded: BookingCall.Transition = { ...cancel, note: 'flooded' };
+    expect(worded.cancellationReason).toBe(CancellationReason.Other);
+    expect(Object.keys(cancel).sort()).toEqual([
+      'appointmentId',
+      'cancellationReason',
+      'seatId',
+      'toBookingStatus',
+    ]);
+  });
 });
 
 describe('BookingCall — the answer decoders', () => {

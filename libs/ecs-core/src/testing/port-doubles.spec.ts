@@ -790,6 +790,44 @@ describe('memoryAppointmentPhotoPorts — a visit’s photos, in place', () => {
     expect(photos.map((entry) => entry.id)).toEqual(['p1', 'p3']);
   });
 
+  it('answers the record’s strip and the counts with shots only, as the adapter’s query does — a library picture adopted onto a visit takes no place', async () => {
+    const adopted = (id: string, takenIso: string): AppointmentPhoto => ({
+      ...photo(id, takenIso),
+      photoOrigin: PhotoOrigin.Library,
+      label: 'Фейд · витрина',
+      path: '/work/fade.jpg',
+      url: '/work/fade.jpg',
+    });
+    const ports = memoryAppointmentPhotoPorts([
+      adopted('cover-new', '2026-09-30T10:00:00+03:00'),
+      photo('shot-3', '2026-09-29T10:00:00+03:00'),
+      adopted('cover-old', '2026-09-28T12:00:00+03:00'),
+      photo('shot-2', '2026-09-28T10:00:00+03:00'),
+      photo('shot-1', '2026-09-20T10:00:00+03:00', AppointmentId.of('appt-2')),
+    ]);
+
+    expect(
+      unwrapOk(await ports.listClientPhotos(ANA_RECORD, 2)).map((p) => p.id),
+    ).toEqual(['shot-3', 'shot-2']);
+    expect(
+      unwrapOk(await ports.listClientPhotos(ANA_RECORD, 12)).map((p) => p.id),
+    ).toEqual(['shot-3', 'shot-2', 'shot-1']);
+    // No room, nothing — the adapter reads nothing for it.
+    expect(unwrapOk(await ports.listClientPhotos(ANA_RECORD, 0))).toEqual([]);
+    expect(
+      unwrapOk(
+        await ports.countPhotosByAppointment([
+          FIXTURE_IDS.appointment,
+          AppointmentId.of('appt-2'),
+        ]),
+      ),
+    ).toEqual([2, 1]);
+    // The visit's own strip shows every picture on it, whatever its origin.
+    expect(
+      await first(ports.observeAppointmentPhotos(FIXTURE_IDS.appointment)),
+    ).toHaveLength(4);
+  });
+
   it('uploads to today’s object path, derived from the photo’s own facts', async () => {
     expect(
       unwrapOk(

@@ -15,6 +15,7 @@ import {
   JournalVisibility,
   LocationStatus,
   ParsedIdentifier,
+  PhotoOrigin,
   ServiceStatus,
   TenantConfig,
   type VoucherCode,
@@ -605,14 +606,21 @@ export function memoryAppointmentNotePorts(
 
 /**
  * `APPOINTMENT_PHOTO_PORTS` — `appointmentPhotos` in `photos`, written IN
- * PLACE: a visit's photos, a save (by id), a delete, a client record's
- * newest `limit` (`takenAtUtcMs desc`), the count per visit — and the
- * upload, which stores nothing and answers today's object path
+ * PLACE: a visit's photos (every origin), a save (by id), a delete, a
+ * client record's newest `limit` SHOTS (`photoOrigin == SHOT`,
+ * `takenAtUtcMs desc`, ties by id desc as Firestore breaks them; nothing
+ * for a `limit` under one — index #22's query), the shots per visit — and
+ * the upload, which stores nothing and answers today's object path
  * `appointmentPhotos/{appointmentId}/{id}` and a `memory://` URL of it.
+ * Library pictures adopted onto a visit are stored like any photo and
+ * answered exactly where the adapter answers them, so a fixture never sets
+ * them aside by hand.
  */
 export function memoryAppointmentPhotoPorts(
   photos: AppointmentPhoto[],
 ): AppointmentPhotoPorts {
+  const isShot = (entry: AppointmentPhoto): boolean =>
+    entry.photoOrigin === PhotoOrigin.Shot;
   return {
     observeAppointmentPhotos: (appointmentId) =>
       stream(() =>
@@ -631,19 +639,26 @@ export function memoryAppointmentPhotoPorts(
     },
     listClientPhotos: async (clientCustomerId, limit) =>
       Result.ok(
-        photos
-          .filter((entry) => entry.clientCustomerId === clientCustomerId)
-          .sort(
-            (a, b) => b.takenAtUtcMs - a.takenAtUtcMs || byString(b.id, a.id),
-          )
-          .slice(0, PagingSystem.pageSize(limit)),
+        limit >= 1
+          ? photos
+              .filter(
+                (entry) =>
+                  entry.clientCustomerId === clientCustomerId && isShot(entry),
+              )
+              .sort(
+                (a, b) =>
+                  b.takenAtUtcMs - a.takenAtUtcMs || byString(b.id, a.id),
+              )
+              .slice(0, PagingSystem.pageSize(limit))
+          : [],
       ),
     countPhotosByAppointment: async (appointmentIds) =>
       Result.ok(
         appointmentIds.map(
           (appointmentId) =>
-            photos.filter((entry) => entry.appointmentId === appointmentId)
-              .length,
+            photos.filter(
+              (entry) => entry.appointmentId === appointmentId && isShot(entry),
+            ).length,
         ),
       ),
     uploadPhotoBytes: async (photo) => {

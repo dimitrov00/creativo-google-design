@@ -100,6 +100,49 @@ function stored(overrides: Partial<AppointmentPhoto>) {
   return { id, data: () => body };
 }
 
+type StoredPhoto = ReturnType<typeof stored>;
+
+/** A stored document's field, by the name a query part gives it. */
+const fieldOf = (entry: StoredPhoto, field: string): unknown =>
+  new Map<string, unknown>(Object.entries(entry.data())).get(field);
+
+/** One part of the query the mocked `query` hands `getDocs`. */
+type QueryPart = {
+  readonly where?: readonly [string, string, unknown];
+  readonly orderBy?: readonly [string, 'asc' | 'desc'];
+  readonly limit?: number;
+};
+
+/**
+ * `getDocs` answering from `documents` as Firestore does — every `==`
+ * filter, then the `orderBy`, then the `limit` — so a spec reads what the
+ * query really asks for, not what a canned answer happens to hold.
+ */
+function answerFrom(documents: readonly StoredPhoto[]): void {
+  getDocsMock.mockImplementation(async (parts: readonly QueryPart[]) => {
+    let docs = [...documents];
+    for (const part of parts) {
+      if (part.where !== undefined) {
+        const [field, op, value] = part.where;
+        expect(op).toBe('==');
+        docs = docs.filter((entry) => fieldOf(entry, field) === value);
+      }
+    }
+    for (const part of parts) {
+      if (part.orderBy !== undefined) {
+        const [field, direction] = part.orderBy;
+        const sign = direction === 'desc' ? -1 : 1;
+        const of = (entry: StoredPhoto) => fieldOf(entry, field) as number;
+        docs.sort((a, b) => sign * (of(a) - of(b)));
+      }
+    }
+    for (const part of parts) {
+      if (part.limit !== undefined) docs = docs.slice(0, part.limit);
+    }
+    return { docs };
+  });
+}
+
 const image = (type: string, size = 120_000) => ({ type, size }) as Blob;
 
 describe('appointmentPhotoPorts', () => {
@@ -361,7 +404,7 @@ describe('appointmentPhotoPorts', () => {
   });
 
   describe('listClientPhotos', () => {
-    it('asks for the client record’s newest photos, ordered so the limit keeps the newest', async () => {
+    it('asks for the client record’s newest shots, both filters in the query, ordered so the limit keeps the newest', async () => {
       getDocsMock.mockResolvedValue({
         docs: [
           stored({ id: AppointmentPhotoId.of('p3') }),
@@ -374,39 +417,66 @@ describe('appointmentPhotoPorts', () => {
         6,
       );
 
-      expect(whereMock).toHaveBeenCalledWith(
-        'clientCustomerId',
-        '==',
-        'cus_georgi',
-      );
+      // Index #22: (clientCustomerId, photoOrigin, takenAtUtcMs desc).
+      expect(whereMock.mock.calls).toEqual([
+        ['clientCustomerId', '==', 'cus_georgi'],
+        ['photoOrigin', '==', PhotoOrigin.Shot],
+      ]);
       expect(orderByMock).toHaveBeenCalledWith('takenAtUtcMs', 'desc');
       expect(limitMock).toHaveBeenCalledWith(6);
-      // The origin never goes into the query: the index is (client, taken).
-      expect(whereMock).not.toHaveBeenCalledWith(
-        'photoOrigin',
-        expect.anything(),
-        expect.anything(),
-      );
+      // The answer is the read as it came: nothing is set aside afterwards.
       expect(answer.ok && answer.value.map((p) => p.id)).toEqual(['p3', 'p2']);
     });
 
-    it('sets the shop’s own pictures aside', async () => {
-      getDocsMock.mockResolvedValue({
-        docs: [
-          stored({
-            id: AppointmentPhotoId.of('cover'),
-            photoOrigin: PhotoOrigin.Library,
-          }),
-          stored({ id: AppointmentPhotoId.of('shot') }),
-        ],
-      });
+    it('fills every place with a shot although library pictures adopted onto the visits are the newest documents', async () => {
+      answerFrom([
+        stored({
+          id: AppointmentPhotoId.of('cover-new'),
+          photoOrigin: PhotoOrigin.Library,
+          label: 'Фейд · витрина',
+          takenAtUtcMs: utcMs('2026-09-17T19:00:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('shot-4'),
+          takenAtUtcMs: utcMs('2026-09-17T18:00:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('cover-old'),
+          photoOrigin: PhotoOrigin.Library,
+          label: 'Модерна визия',
+          takenAtUtcMs: utcMs('2026-09-17T17:30:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('shot-3'),
+          takenAtUtcMs: utcMs('2026-09-10T17:00:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('someone-else'),
+          clientCustomerId: CustomerId.of('cus_ivo'),
+          takenAtUtcMs: utcMs('2026-09-12T12:00:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('shot-2'),
+          takenAtUtcMs: utcMs('2026-08-20T17:00:00+03:00'),
+        }),
+        stored({
+          id: AppointmentPhotoId.of('shot-1'),
+          takenAtUtcMs: utcMs('2026-08-01T17:00:00+03:00'),
+        }),
+      ]);
 
       const answer = await ports().listClientPhotos(
         CustomerId.of('cus_georgi'),
-        6,
+        3,
       );
 
-      expect(answer.ok && answer.value.map((p) => p.id)).toEqual(['shot']);
+      // Filtered after the limit, the two covers would have taken two of
+      // the three places and left one shot (`shot-4`) on the card.
+      expect(answer.ok && answer.value.map((p) => p.id)).toEqual([
+        'shot-4',
+        'shot-3',
+        'shot-2',
+      ]);
     });
 
     it('reads nothing for no room', async () => {

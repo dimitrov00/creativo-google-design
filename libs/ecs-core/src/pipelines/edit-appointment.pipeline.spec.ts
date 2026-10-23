@@ -21,6 +21,7 @@ import {
   MinuteBlock,
   Role,
   SeatLabel,
+  SeatOccupant,
   VoucherCode,
   VoucherLifecycle,
   WriteAction,
@@ -38,6 +39,7 @@ import {
   CouponId,
   Currency,
   GiftVoucherId,
+  LocationId,
   OperationId,
   Result,
   SeatId,
@@ -58,7 +60,11 @@ import {
   type GiftVoucher,
 } from '@core/entities';
 
-import { AppointmentEditSystem, AuditSystem } from '@core/systems';
+import {
+  AppointmentEditSystem,
+  AuditSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -68,14 +74,17 @@ import {
   duration,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
   fixtureHash,
   localDate,
   locationFixture,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
+  seatFixture,
   serviceFixture,
   until,
+  unwrapOk,
   utcMs,
 } from '@core/testing';
 import {
@@ -488,6 +497,172 @@ describe('editAppointment — the shop moving its own book', () => {
       errorCode: TimeErrorCode.DstGap,
     });
     expect(tx.plans).toEqual([]);
+  });
+
+  /*
+   * Every chair of the folded visit is read on the TARGET shop's clock — a
+   * seat no command named included (the rest of a party moved as one, the
+   * seat that starts the envelope once the first is gone, every seat of a
+   * relocated visit). Europe/Sofia springs 03:00 → 04:00 on 2027-03-28: a
+   * start in that hour is refused, never written with the stored instant.
+   */
+  describe('the clock of every chair (Law 7.3)', () => {
+    const GAP_DAY = localDate('2027-03-28');
+    const GUEST_SEAT = SeatId.of('seat-guest');
+    const MLADOST = LocationId.of('loc-mladost');
+    const UTC = unwrapOk(ZonedTimeSystem.checkZone('UTC'));
+
+    /** The client's cut at 10:00 and a guest's straight after it, at 10:30. */
+    function party(): Appointment {
+      return visit({
+        seats: [
+          seatFixture(),
+          seatFixture({
+            seatId: GUEST_SEAT,
+            startMinutes: at(10, 30),
+            occupant: SeatOccupant.anonymous(SeatLabel.of('Guest')),
+          }),
+        ],
+        endMinutes: until(11),
+      });
+    }
+
+    const moveTo = (startMinutes: ReturnType<typeof at>) =>
+      ({
+        editCommand: EditCommand.Move,
+        localDate: GAP_DAY,
+        startMinutes,
+        seatIds: null,
+      }) as const satisfies BookingCall.EditCommand;
+
+    it('refuses a party moved as one when the seat it carries lands in the gap — the move named 02:45, the guest lands at 03:15', async () => {
+      const { store, tx, rows, run } = rig([...catalogue(), stored(party())]);
+      const answer = await run(command({ commands: [moveTo(at(2, 45))] }));
+      expect(!answer.ok && answer.error).toEqual({
+        errorCode: TimeErrorCode.DstGap,
+        localDate: GAP_DAY,
+        minute: at(3, 15),
+        timeZone: FIXTURE_TIME_ZONE,
+      });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(PATH)).toMatchObject({
+        localDate: THURSDAY,
+        utcEpochMs: utcMs('2026-10-01T10:00:00.000+03:00'),
+        revision: 1,
+      });
+      expect(rows).toEqual([]);
+    });
+
+    it('refuses the seat that becomes the envelope’s start inside the gap once the first is removed — never the stored instant', async () => {
+      const { store, tx, run } = rig([...catalogue(), stored(party())]);
+      const answer = await run(
+        command({
+          commands: [
+            moveTo(at(2, 45)),
+            {
+              editCommand: EditCommand.RemoveSeat,
+              seatId: FIXTURE_IDS.seat,
+            },
+          ],
+        }),
+      );
+      expect(!answer.ok && answer.error).toMatchObject({
+        errorCode: TimeErrorCode.DstGap,
+        localDate: GAP_DAY,
+        minute: at(3, 15),
+      });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(PATH)?.['utcEpochMs']).toBe(
+        utcMs('2026-10-01T10:00:00.000+03:00'),
+      );
+    });
+
+    it('moves the envelope’s instant to the seat that now starts it when the first is removed', async () => {
+      const { store, run } = rig([...catalogue(), stored(party())]);
+      const answer = await run(
+        command({
+          commands: [
+            { editCommand: EditCommand.RemoveSeat, seatId: FIXTURE_IDS.seat },
+          ],
+        }),
+      );
+      expect(answer.ok).toBe(true);
+      expect(store.get(PATH)).toMatchObject({
+        startMinutes: at(10, 30),
+        utcEpochMs: utcMs('2026-10-01T10:30:00.000+03:00'),
+      });
+    });
+
+    /** The centre on UTC's clock, and Mladost on Sofia's — Ivan's cut offered at both. */
+    function twoZones(appointment: Appointment) {
+      return [
+        {
+          path: [Collections.Locations, FIXTURE_IDS.location],
+          body: bodyOf(locationFixture({ timeZone: UTC })),
+        },
+        {
+          path: [Collections.Locations, MLADOST],
+          body: bodyOf(locationFixture({ id: MLADOST })),
+        },
+        {
+          path: [Collections.Services, FIXTURE_IDS.service],
+          body: bodyOf(
+            serviceFixture({ locationIds: [FIXTURE_IDS.location, MLADOST] }),
+          ),
+        },
+        {
+          path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
+          body: bodyOf(barberScheduleFixture()),
+        },
+        customerRecord(),
+        stored(appointment),
+      ];
+    }
+
+    const RELOCATE: BookingCall.EditCommand = {
+      editCommand: EditCommand.Relocate,
+      locationId: MLADOST,
+    };
+
+    it('reads a relocated visit on the TARGET shop’s zone — its instant recomputed there', async () => {
+      const atUtcShop = visit({
+        utcEpochMs: utcMs('2026-10-01T10:00:00.000+00:00'),
+      });
+      const { store, run } = rig(twoZones(atUtcShop));
+      const answer = await run(command({ commands: [RELOCATE] }));
+      expect(answer.ok).toBe(true);
+      expect(store.get(PATH)).toMatchObject({
+        locationId: MLADOST,
+        localDate: THURSDAY,
+        startMinutes: at(10),
+        utcEpochMs: utcMs('2026-10-01T10:00:00.000+03:00'),
+      });
+    });
+
+    it('refuses relocating a visit onto a wall clock the target shop’s zone never shows, writing nothing', async () => {
+      // 03:30 on 2027-03-28 is on UTC's clock, and erased from Sofia's.
+      const atUtcShop = visit({
+        localDate: GAP_DAY,
+        seats: [seatFixture({ startMinutes: at(3, 30) })],
+        startMinutes: at(3, 30),
+        endMinutes: until(4),
+        utcEpochMs: utcMs('2027-03-28T03:30:00.000+00:00'),
+        busyKeys: [BusyKey.of(FIXTURE_IDS.barber, GAP_DAY)],
+      });
+      const { store, tx, run } = rig(twoZones(atUtcShop));
+      const answer = await run(command({ commands: [RELOCATE] }));
+      expect(!answer.ok && answer.error).toEqual({
+        errorCode: TimeErrorCode.DstGap,
+        localDate: GAP_DAY,
+        minute: at(3, 30),
+        timeZone: FIXTURE_TIME_ZONE,
+      });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(PATH)).toMatchObject({
+        locationId: FIXTURE_IDS.location,
+        utcEpochMs: utcMs('2027-03-28T03:30:00.000+00:00'),
+      });
+    });
   });
 
   it('refuses a fresh seat on a chair this shop does not roster (barberId)', async () => {

@@ -63,6 +63,18 @@ export function storedNote(note: string | null | undefined): string | null {
   return VisitSidesSystem.storedNote(note ?? null);
 }
 
+/**
+ * A line written BELOW a note the visit may already have — on a line of its
+ * own, never over it — in the stored form (`VisitSidesSystem.appendedNote`,
+ * D23: the words beside a cancellation's «Друго…» are the visit's note).
+ */
+export function appendedNote(
+  note: string | null | undefined,
+  line: string | null | undefined,
+): string | null {
+  return VisitSidesSystem.appendedNote(note ?? null, line ?? null);
+}
+
 /** Two notes that store the same text. */
 export function sameNote(
   a: string | null | undefined,

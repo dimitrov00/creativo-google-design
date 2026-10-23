@@ -698,12 +698,6 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         {
           appointmentId: 'a1',
           toBookingStatus: BookingStatus.Cancelled,
-          cancellationReason: CancellationReason.Other,
-          note: ' ',
-        },
-        {
-          appointmentId: 'a1',
-          toBookingStatus: BookingStatus.Cancelled,
           cancellationReason: 'client_unwell',
         },
         {
@@ -731,7 +725,6 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
               toBookingStatus: BookingStatus.Cancelled,
               seatId: 'seat-2',
               cancellationReason: CancellationReason.ClientUnwell,
-              note: null,
             },
           }),
         ),
@@ -753,19 +746,46 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           }),
         ).reason,
       ).toBe(CancellationReason.Unspecified);
-      expect(
-        valueOf(
-          decodeTransitionAppointment({
-            ...staff,
-            data: {
-              appointmentId: 'a1',
-              toBookingStatus: BookingStatus.Cancelled,
-              cancellationReason: CancellationReason.Other,
-              note: 'flooded',
-            },
-          }),
-        ).reason,
-      ).toBe(CancellationReason.Other);
+      // CODE-ONLY (D23): `OTHER` stands on its own — nothing written beside
+      // it is no refusal, and the command carries no words at all (the staff
+      // day files what the barber typed as the visit's note). A stray `note`
+      // from an older client is ignored, never decoded.
+      for (const data of [
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: CancellationReason.Other,
+        },
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: CancellationReason.Other,
+          note: ' ',
+        },
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: CancellationReason.Other,
+          note: 'flooded',
+        },
+      ]) {
+        const command = valueOf(
+          decodeTransitionAppointment({ ...staff, data }),
+        );
+        expect(command).toMatchObject({
+          appointmentId: 'a1',
+          to: BookingStatus.Cancelled,
+          seatId: null,
+          reason: CancellationReason.Other,
+        });
+        expect(Object.keys(command).sort()).toEqual([
+          'actor',
+          'appointmentId',
+          'reason',
+          'seatId',
+          'to',
+        ]);
+      }
       // A verb that is no cancel carries no reason.
       expect(
         valueOf(

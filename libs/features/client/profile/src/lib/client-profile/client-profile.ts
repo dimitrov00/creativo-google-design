@@ -15,6 +15,7 @@ import {
 } from '@creativo/features/client/account-state';
 import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
+import type { IdentityError } from '@core/errors';
 import { LocalDate } from '@core/primitives';
 import { AgeSystem, PhoneSystem, ProfileCompletionSystem } from '@core/systems';
 import { LoadState, loadStateWords } from '@creativo/shared/view-state';
@@ -211,7 +212,10 @@ export class ClientProfile {
   protected readonly birthDraft = signal<UiDateFieldParts | null>(null);
   protected readonly firstNameErrorCode = signal<string | null>(null);
   protected readonly lastNameErrorCode = signal<string | null>(null);
-  protected readonly birthErrorCode = signal<string | null>(null);
+  /** The refusal `AgeSystem.fromParts` answered — the whole struct, never
+   *  its bare code, so the age window's own figure (`minAge`, `maxAge`)
+   *  reaches the words (onboarding's birthday grammar). */
+  private readonly birthErrorState = signal<IdentityError | null>(null);
   protected readonly saveErrorCode = signal<string | null>(null);
 
   protected readonly sheetTitleKey = computed(() => {
@@ -271,7 +275,7 @@ export class ClientProfile {
     this.birthDraft.set(toDateFieldParts(user));
     this.firstNameErrorCode.set(null);
     this.lastNameErrorCode.set(null);
-    this.birthErrorCode.set(null);
+    this.birthErrorState.set(null);
     this.saveErrorCode.set(null);
     this._editing.set(edit);
     this._sheetClosing.set(false);
@@ -328,11 +332,18 @@ export class ClientProfile {
     if (event.uiDateFieldFill !== UiDateFieldFill.Complete) {
       // An empty field is the untouched state, not an error; a partial one
       // is mid-typing. Neither deserves a red line.
-      this.birthErrorCode.set(null);
+      this.birthErrorState.set(null);
       return;
     }
     const result = AgeSystem.fromParts(event.parts, this.ageDay);
-    this.birthErrorCode.set(result.ok ? null : result.error.errorCode);
+    this.birthErrorState.set(result.ok ? null : result.error);
+  }
+
+  /** The birth-date line — `AgeSystem`'s refusal worded with its own fields
+   *  as the params (`errors.IDENTITY_BIRTH_DATE_TOO_YOUNG` names `minAge`). */
+  protected birthError(): string | null {
+    const error = this.birthErrorState();
+    return error === null ? null : translateDomainError(this.transloco, error);
   }
 
   protected translateError(code: string | null): string | null {
@@ -361,7 +372,7 @@ export class ClientProfile {
       if (!parts) return;
       const birthDate = AgeSystem.fromParts(parts, this.ageDay);
       if (!birthDate.ok) {
-        this.birthErrorCode.set(birthDate.error.errorCode);
+        this.birthErrorState.set(birthDate.error);
         return;
       }
       code = await this.store.saveBirthDate(birthDate.value);

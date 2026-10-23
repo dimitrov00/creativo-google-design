@@ -9,7 +9,15 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { type Observable, combineLatest, from, map, of, switchMap } from 'rxjs';
+import {
+  type Observable,
+  combineLatest,
+  firstValueFrom,
+  from,
+  map,
+  of,
+  switchMap,
+} from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
   AppointmentId,
@@ -99,6 +107,7 @@ import {
   type VisitEditorPromoOption,
   discountValueOf,
 } from './visit-editor/staff-visit-editor';
+import { appendedNote, storedNote } from './visit-editor/visit-sides';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /**
@@ -1739,6 +1748,31 @@ export class StaffDayStore {
     const result = await this.notes.saveAppointmentNote(id, note);
     this._noteError.set(result.ok ? null : appointmentId);
     return result.ok;
+  }
+
+  /**
+   * A line added BELOW the visit's note, never over it — what a cancel's
+   * «Друго…» files (D23: the words staff type are the visit's note, not
+   * the seat's reason). The note as stored now is read once, off the port
+   * the sheet listens on, and the joined text goes out through
+   * `saveTeamNote`, the one write. A read that fails writes nothing — a
+   * note this device could not read would be written over — and is a
+   * failure; blank text writes nothing and is none.
+   */
+  async appendTeamNote(appointmentId: string, line: string): Promise<boolean> {
+    if (storedNote(line) === null) return true;
+    const read = await firstValueFrom(
+      this.notes.observeAppointmentNote(AppointmentId.of(appointmentId)),
+      { defaultValue: null },
+    );
+    if (read === null || !read.ok) {
+      this._noteError.set(appointmentId);
+      return false;
+    }
+    return this.saveTeamNote(
+      appointmentId,
+      appendedNote(read.value?.text, line),
+    );
   }
 
   private readonly _probeDay = signal<string | null>(null);

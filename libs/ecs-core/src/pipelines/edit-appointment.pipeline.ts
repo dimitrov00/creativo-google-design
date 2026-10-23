@@ -120,6 +120,7 @@ import {
   voucherPath,
   zoneOf,
 } from './booking-read-set.pipeline';
+import { frameWallClock } from './book-appointment.pipeline';
 import {
   customerIdsFor,
   customerIdsOf,
@@ -146,9 +147,10 @@ import {
  *   by `couponId || grantId`, not exclusive); the vouchers by id (the live
  *   lines), then `giftVouchers where code == normalized limit 1` for each
  *   code the batch names that the id reads did not resolve; the booking
- *   read set of the target shop (its zone is the clock every wire instant
- *   is read on); and the busy days, exceptions and added accounts' client
- *   records of the folded placement in one `getAll`.
+ *   read set of the target shop (its zone is the clock every wire instant,
+ *   and every chair of the folded visit, is read on — a gap start is
+ *   `DST_GAP_INVALID_TIME`); and the busy days, exceptions and added
+ *   accounts' client records of the folded placement in one `getAll`.
  * - **The decision:** `AppointmentEditSystem` folds and guards (a visit
  *   that never happened is history; nothing may end before its arrival);
  *   `BookingDecisionSystem` re-decides under the shop's rules (outside the
@@ -281,6 +283,8 @@ type Loaded = {
   readonly set: BookingReadSet;
   readonly placement: PlacementSet;
   readonly draft: EditDraft;
+  /** The folded envelope's instant on the target shop's zone — computed ONCE, by the fold. */
+  readonly startUtcMs: UtcEpochMs;
   readonly requests: readonly EditCommandRequest[];
   readonly targetLocationId: LocationId;
   readonly freshSeatIds: readonly SeatId[];
@@ -536,6 +540,14 @@ function requestOf(
  * command read on the clock of the draft the one before it left
  * (`AppointmentEditSystem.applyCommand`, the system's own step): a save
  * that moves the day and then stretches the block resizes the MOVED seats.
+ *
+ * Then EVERY CHAIR OF THE FOLDED VISIT is read on the target shop's zone,
+ * as the booking's frame reads a new party (`frameWallClock`, Law 7.3): a
+ * relocated visit lands on another zone's clock, and a seat no command named
+ * moves too — the rest of a party shifted as one, the seat that becomes the
+ * envelope's start once the first is removed. A start the zone never shows
+ * is refused `DST_GAP_INVALID_TIME`, never shifted and never answered with
+ * the stored instant; the envelope's instant is computed here, ONCE.
  */
 function foldOnClock(
   stored: Appointment,
@@ -545,6 +557,7 @@ function foldOnClock(
 ): Result<
   {
     readonly draft: EditDraft;
+    readonly startUtcMs: UtcEpochMs;
     readonly fresh: readonly SeatId[];
     readonly requests: readonly EditCommandRequest[];
   },
@@ -576,11 +589,20 @@ function foldOnClock(
     if (!applied.ok) return applied;
     draft = applied.value;
   }
+  const framed = frameWallClock(
+    draft.localDate,
+    draft.seats.map((seat) => seat.startMinutes),
+    zone,
+  );
+  if (!framed.ok) return framed;
+  const startUtcMs = framed.value.startUtcMs;
+  if (startUtcMs === null)
+    return Result.err(StaffEditError.invalidCommand('seats'));
   const fresh: SeatId[] = [];
   for (const seat of draft.seats) {
     if (!context.held.includes(seat.seatId)) fresh.push(seat.seatId);
   }
-  return Result.ok({ draft, fresh, requests });
+  return Result.ok({ draft, startUtcMs, fresh, requests });
 }
 
 /** The accounts the batch adds — an added `SELF` seat names the owner (nobody else can join through an edit). */
@@ -770,6 +792,7 @@ async function readEdit(
     set,
     placement,
     draft: folded.value.draft,
+    startUtcMs: folded.value.startUtcMs,
     requests: folded.value.requests,
     targetLocationId,
     freshSeatIds: folded.value.fresh,
@@ -1025,7 +1048,7 @@ function decideEdit(
     MoveSystem.release(stored),
     {
       now: ZonedTimeSystem.shopNow(nowUtcMs, zone),
-      startUtcMs: stored.utcEpochMs,
+      startUtcMs: loaded.startUtcMs,
       nextId: () => ids[cursor++] ?? '',
       ownerUserId: owner,
       customerIds: customerIdsFor(
@@ -1109,6 +1132,8 @@ function decideEdit(
     ...stored,
     locationId: loaded.targetLocationId,
     localDate: draft.localDate,
+    // The envelope's instant, read ONCE by the fold on the target shop's zone.
+    utcEpochMs: loaded.startUtcMs,
     seats,
     discounts,
     voucherRedemptions: paid.value.voucherRedemptions,
@@ -1138,15 +1163,6 @@ function decideEdit(
       ),
     ),
   });
-  const start = ZonedTimeSystem.toUtc(
-    draft.localDate,
-    after.startMinutes,
-    zone,
-  );
-  const placed: Appointment = {
-    ...after,
-    utcEpochMs: start.ok ? start.value : stored.utcEpochMs,
-  };
   const voucherWrites: WriteOp[] = [];
   for (const settled of paid.value.touched) {
     const was = loaded.vouchers.find((voucher) => voucher.id === settled.id);
@@ -1161,11 +1177,11 @@ function decideEdit(
     requests: loaded.requests,
     writes: [
       WriteOp.update(appointmentPath(stored.id), {
-        ...placementFields(placed),
-        discounts: placed.discounts,
-        voucherRedemptions: placed.voucherRedemptions,
-        stoodSeatPairsRevision: placed.stoodSeatPairsRevision,
-        stoodSeatPairs: placed.stoodSeatPairs,
+        ...placementFields(after),
+        discounts: after.discounts,
+        voucherRedemptions: after.voucherRedemptions,
+        stoodSeatPairsRevision: after.stoodSeatPairsRevision,
+        stoodSeatPairs: after.stoodSeatPairs,
       }),
       ...busyMergeWrites(loaded.placement, decided.value.busyWrites, zone),
       ...voucherWrites,

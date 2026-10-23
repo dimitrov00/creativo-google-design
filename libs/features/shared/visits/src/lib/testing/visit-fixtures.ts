@@ -572,15 +572,6 @@ export function waitlistOf(
   };
 }
 
-/**
- * The visits' OWN pictures — the shots, never a library picture pointed at
- * — what a row's photo mark counts (the photos adapter counts
- * `photoOrigin == SHOT` alone, as the legacy reader did).
- */
-export const GEORGI_SHOTS: AppointmentPhoto[] = GEORGI_PHOTOS.filter(
-  (entry) => entry.photoOrigin === PhotoOrigin.Shot,
-);
-
 /** Георги waiting for a free afternoon slot on two days next week. */
 export function georgiWaitlistRequest(): WaitlistRequest {
   return waitlistOf('waitlist-georgi', [

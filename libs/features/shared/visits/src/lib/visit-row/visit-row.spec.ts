@@ -11,7 +11,7 @@ import {
 import { VisitGrain, VisitPerspective } from '@core/systems';
 import {
   CURRENT_APPOINTMENT_ID,
-  GEORGI_SHOTS,
+  GEORGI_PHOTOS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -93,7 +93,7 @@ beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
-      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
+      photos: memoryAppointmentPhotoPorts([...GEORGI_PHOTOS]),
     },
     {
       words: STAFF_WORDS,

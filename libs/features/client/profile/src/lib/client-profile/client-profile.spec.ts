@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -63,6 +65,25 @@ function user(overrides?: { birthDate?: string; email?: string }): User {
         : BirthDate.of(overrides.birthDate),
     email: overrides?.email === undefined ? null : Email.parse(overrides.email),
   });
+}
+
+/** The two age-window refusals' sentences, as the app's catalogue ships them. */
+type AgeWindowCopy = {
+  readonly IDENTITY_BIRTH_DATE_TOO_YOUNG: string;
+  readonly IDENTITY_BIRTH_DATE_TOO_OLD: string;
+};
+
+/** The app's own `errors` table for `lang` — read, never re-typed, so a case pins today's words. */
+function errorsCatalogue(lang: 'bg' | 'en'): AgeWindowCopy {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly errors: AgeWindowCopy;
+  };
+  return catalogue.errors;
 }
 
 @Injectable()
@@ -433,6 +454,59 @@ describe('ClientProfile', () => {
     });
     fixture.detectChanges();
     expect(error()).toBeNull();
+  });
+
+  describe('words the age window with its figure — never a sentence missing its number', () => {
+    /** Opens the birthday editor in `lang` with the shipped `errors` words loaded; answers its blur and its alert line. */
+    async function birthdayEditor(lang: 'bg' | 'en') {
+      const { host, fixture } = await render({ lang });
+      const copy = errorsCatalogue(lang);
+      TestBed.inject(TranslocoService).setTranslation({ errors: copy }, lang);
+      click(host, 'profile-row-birthday');
+      fixture.detectChanges();
+      const field = fixture.debugElement.query(By.directive(UiDateField))
+        .componentInstance as UiDateField;
+      const blur = (year: number) => {
+        field.uiBlurred.emit({
+          uiDateFieldFill: UiDateFieldFill.Complete,
+          parts: { day: 5, month: 5, year },
+        });
+        fixture.detectChanges();
+      };
+      const error = () =>
+        host
+          .querySelector('[data-testid="profile-edit-birthday"] [role="alert"]')
+          ?.textContent?.trim() ?? null;
+      return { copy, blur, error };
+    }
+
+    it.each(['bg', 'en'] as const)(
+      'names the minimum age (16) for a too-young birth date, in %s',
+      async (lang) => {
+        const { copy, blur, error } = await birthdayEditor(lang);
+        // Five years old on the pinned day (2026-01-01).
+        blur(2020);
+        expect(error()).toBe(
+          copy.IDENTITY_BIRTH_DATE_TOO_YOUNG.replace('{{minAge}}', '16'),
+        );
+        expect(error()).toContain('16');
+        expect(error()).not.toContain('{{');
+      },
+    );
+
+    it.each(['bg', 'en'] as const)(
+      'names the maximum age (120) for a too-old birth date, in %s',
+      async (lang) => {
+        const { copy, blur, error } = await birthdayEditor(lang);
+        // 135 years old on the pinned day (2026-01-01).
+        blur(1890);
+        expect(error()).toBe(
+          copy.IDENTITY_BIRTH_DATE_TOO_OLD.replace('{{maxAge}}', '120'),
+        );
+        expect(error()).toContain('120');
+        expect(error()).not.toContain('{{');
+      },
+    );
   });
 
   it('saves a new name through updateProfile and closes the sheet', async () => {

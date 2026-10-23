@@ -118,6 +118,10 @@ export const WIRE_PARAM_ALLOWLIST: {
   BOOKING_STAFF_EDIT_INVARIANT_VIOLATED: ['what'],
   BOOKING_CANCEL_WINDOW_CLOSED: ['windowHours'],
   BOOKING_WAITLIST_TOO_MANY_DAYS: ['max'],
+  // The wall clock a spring-forward erased and the shop's zone — what the
+  // copy names (`{{wallClock}}`, built from `localDate` + `minute`, and
+  // `{{timeZone}}`); without them the refusal reads as a blank.
+  DST_GAP_INVALID_TIME: ['localDate', 'minute', 'timeZone'],
   IDENTITY_INVALID_INPUT: ['reason'],
   IDENTITY_OTP_CHANNEL_MISMATCH: ['requested', 'authStrategyKind'],
   IDENTITY_BIRTH_DATE_INVALID: ['attempted'],

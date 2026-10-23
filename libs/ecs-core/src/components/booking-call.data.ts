@@ -449,12 +449,16 @@ export namespace BookingCall {
     readonly reason: CancellationReason;
   };
 
-  /** `transitionAppointment`: one seat (`seatId`) or the whole party (`null`). */
+  /**
+   * `transitionAppointment`: one seat (`seatId`) or the whole party (`null`).
+   * A cancel carries its CODE only (D23): words a barber types beside
+   * `OTHER` are the visit's note (`appointmentNotes/{appointmentId}`),
+   * written by the staff day once the cancel has landed — never this call's.
+   */
   export type Transition = {
     readonly appointmentId: AppointmentId;
     readonly toBookingStatus: BookingStatus;
     readonly cancellationReason: CancellationReason | null;
-    readonly note: string | null;
     readonly seatId: SeatId | null;
   };
 

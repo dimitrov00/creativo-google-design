@@ -346,7 +346,7 @@
         [monthPlaceholder]="t('account.profile.edit.monthPlaceholder')"
         [yearPlaceholder]="t('account.profile.edit.yearPlaceholder')"
         [disabled]="store.pending()"
-        [error]="translateError(birthErrorCode())"
+        [error]="birthError()"
         [(value)]="birthDraft"
         (uiBlurred)="onBirthBlur($event)"
       />

@@ -1274,11 +1274,13 @@ describe('firestore.rules', () => {
     it('lets the book read a client’s photos by their record, newest first, and save one', async () => {
       const db = signedIn('staff-1', 'barber').firestore();
       await assertSucceeds(getDoc(doc(db, photoPath)));
+      // The strip's own query (`listClientPhotos`, index #22): shots only.
       await assertSucceeds(
         getDocs(
           query(
             collection(db, 'appointmentPhotos'),
             where('clientCustomerId', '==', recordOf('client-1')),
+            where('photoOrigin', '==', PhotoOrigin.Shot),
             orderBy('takenAtUtcMs', 'desc'),
           ),
         ),

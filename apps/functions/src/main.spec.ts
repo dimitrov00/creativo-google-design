@@ -436,7 +436,6 @@ const FLIPPED: { readonly [name: string]: Case } = {
         appointmentId: 'a-1',
         toBookingStatus: 'COMPLETED',
         cancellationReason: null,
-        note: null,
         seatId: null,
       },
       STAFF,

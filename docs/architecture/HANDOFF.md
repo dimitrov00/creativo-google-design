@@ -65,6 +65,7 @@ signatures identical to `fd5f2a6` but the agenda's relative minutes, end of
 | **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only)                                                                                                                                                                                                                                                                                                                                                                                                                                            | the "@core/errors tier" commit                               |
 | **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | the "Law 10" commit                                          |
 | **Law 10.2 — the decision-extraction pass (presenters word, systems decide)**                                       | **done** — integrated 2026-10-23 (`flips/law-10-decision-extraction.md` §9): every MOVE/DUP row answered by an ecs-core system with a purity + boundary spec (2 new systems — `LoyaltyPassSystem`, `WalletSystem` — and 23 extended, 4 component companions, 23 new tag dictionaries plus `BirthdayMoment` moved down from the vm; 428 new ecs-core cases), every presenter spec unchanged; the FULL gate of §4 green (baseline reds only — `verify:p0`, `test:emulator` 65 + 255, `e2e:web` 41 + the 19), runbook §4.2–§4.5, §4.7–§4.9 PASS, the §5 review checklist clean, a DOM differential of 2,611 specs and the §6.3 dev-stack smoke (90 signatures) identical to `fd5f2a6` but the agenda's relative minutes | the "decision-extraction" commit                             |
+| **Pass A — the audit's defects**                                                                                    | **done — static gate green; full gate by the orchestrator** — 2026-10-24: the four defects of the read-only audit fixed (end of §3.3): the client photo strip's post-`limit` origin filter (index #22 gains `photoOrigin`), the client profile's age-window words missing their figure, the edit and reschedule pipelines' DST-gap fallback to a stale instant, and three staff-day defects (a cancel's words on the call, `periodLabel` on an empty day list, another chair's terms quoted)                                                                                                                                                                                                                         | the "Pass A" commit                                          |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it (baseline reds only). All
@@ -650,12 +651,10 @@ bare literals that are neither a `kind`/`type`/`status` field nor a load state
 (the dashboard's `StaffView` and `discardPending`, the grid's `Placement`,
 `readoutTone`, marketing-events' `EventsTab`, admin-programs' `ProgramsTab`,
 the rhythm page's `confirm` switch, the editor's `discountKind()`/`by`/
-`refusal`, the menu's `lang() === 'en'`), the
+`refusal`, the menu's `lang() === 'en'`), and the
 `angular-ui.md` sentence that still names the i18n lib as the formatting home
-(UR plan OQ-7, the owner's text), and a pre-existing defect the smoke
-surfaced, identical on `c77e932`: `StaffDashboard.periodLabel` formats
-`visibleDays()[0]` while the list is still empty and throws once or a few
-times per staff-page load (the page recovers).
+(UR plan OQ-7, the owner's text). (The `StaffDashboard.periodLabel` throw the
+smoke surfaced is fixed by pass A, below.)
 
 **Law 10.2 decision-extraction pass (2026-10-23,
 `docs/architecture/flips/law-10-decision-extraction.md`) — presenters word,
@@ -725,6 +724,96 @@ newest-family rule), `JournalEffectRecord.isTier` narrows the ledger's TIER
 line, the reserved publisher uid's two fixture copies read
 `StreakPublishSystem.SYSTEM_PUBLISHER`, and the stale
 `catalog-pricing.system.ts` JSDoc names its callers.
+
+**Pass A — the audit's defects (2026-10-24).** A read-only audit of `main`
+at `fe4635a` confirmed four defects; four fixers worked on disjoint files
+and one integrator fitted them together.
+
+1. **The client photo strip came up short.** `listClientPhotos` read the
+   newest `limit` photos of a client record and only then set the shop's
+   library pictures aside, so a library picture adopted onto a visit took
+   one of the 12 places. The origin is now a filter of the query
+   (`clientCustomerId ==`, `photoOrigin == SHOT`, `takenAtUtcMs desc`,
+   `limit`), and index #22 became (`clientCustomerId` ASC, `photoOrigin`
+   ASC, `takenAtUtcMs` DESC), replaced in place under the same blueprint
+   number (runbook matrix row updated). The memory double answers what the
+   adapter answers: shots only for the strip and the per-visit counts, and
+   nothing for a limit under one. So the `GEORGI_SHOTS` hand filter of the
+   shared visits fixtures is gone, and the rules integration spec copies
+   the production query. **Deploy:** the new composite must be `READY`
+   before the web code reaches a real project (runbook §3 step 1, indexes
+   first, additive); the old two-field composite goes at step 6 (prune),
+   once hosting is live.
+2. **The age window was worded without its figure.** The client profile's
+   birth-date line rebuilt `{ errorCode }` from the bare code, so
+   `errors.IDENTITY_BIRTH_DATE_TOO_YOUNG` / `_TOO_OLD` printed without 16
+   or 120. The page now holds `AgeSystem.fromParts`' whole `IdentityError`
+   and words it with `translateDomainError`, onboarding's grammar (spec:
+   bg + en from the shipped catalogues). A survey of every other
+   `errors.*` site found no other rendered parameter lost, except the
+   onboarding residual carried below.
+3. **A DST gap was swallowed into a stale instant.** The staff edit and the
+   client reschedule wrote `start.ok ? start.value : stored.utcEpochMs`
+   (and the cart's instant), so a seat moved into a spring-forward gap was
+   saved with the old `utcEpochMs`. Now every chair of the folded visit
+   (the edit, on the TARGET shop's zone, so a relocation included) and the
+   whole party with its carried seats (the reschedule) go through
+   `frameWallClock`, as a new booking does. A start in the gap is refused
+   `DST_GAP_INVALID_TIME` before the placement read, and the envelope's
+   instant is computed once and used for both the decision and the write.
+   `WIRE_PARAM_ALLOWLIST` gained `DST_GAP_INVALID_TIME: ['localDate',
+'minute', 'timeZone']`, so the web's copy names the erased wall clock
+   and the zone. **Behaviour change:** a stored visit with a seat inside a
+   gap (only the old whole-party move could make one) now answers any staff
+   edit with the refusal until it is moved.
+4. **Three staff-day defects.** (a) A cancel's «Друго…» words rode the
+   `transitionAppointment` call as `note`, and the wire refused an `OTHER`
+   with nothing written, against D23 (code-only). `BookingCall.Transition`
+   lost `note`; the wire accepts `OTHER` alone and ignores a stray `note`.
+   Once a cancel has landed, the dashboard appends the words BELOW the
+   visit's note (`StaffDayStore.appendTeamNote` → `saveTeamNote`, the rule
+   `VisitSidesSystem.appendedNote`), and a note that did not save raises
+   `staff.day.cancelNoteFailed` (new key, bg + en, worded for either scope —
+   «Отказано е, …», since a seat called off out of a party leaves the rest
+   booked). A chair holding two seats whose second seat is refused files the
+   words with the first seat's cancel, once per sheet, and the sheet narrows
+   to the refused seats, so the retry no longer re-sends a seat already
+   resolved (which was refused on every retry). (b) `periodLabel`
+   formatted `visibleDays()[0]` while the list was still empty and threw
+   on every cold staff-page load. It now names nothing until a day is
+   shown. (c) The visit editor's service options and the row's catalogue
+   tag fell back to the FIRST barber's offering for a chair with none, so
+   they quoted a price and minutes the server would not charge. Both now
+   resolve through `OfferingPriceSystem.termsFor`, the server's own
+   resolution (the service's own terms for such a chair).
+
+The integrator's own edits: the append rule moved from the dashboard's
+`visit-sides.ts` into `VisitSidesSystem` (math case + purity), the new i18n
+key and its bg/en spec, `appointment-photo.entity.ts`'s strip JSDoc, the
+rules spec's strip query, the `GEORGI_SHOTS` removal and its three
+consumers, and `main.spec.ts`'s stray `note: null`. The review's fixer:
+the partly-landed multi-seat cancel above (`confirmCancel`, two dashboard
+cases) and the scope-neutral bg toast (its bg/en pin for a seat cancel and
+a whole booking). **Static gate
+(2026-10-24, re-run after the review's fixer):** typecheck after
+`rm -rf dist/out-tsc` (only `patterns`, the baseline), lint 46 projects 0
+errors, test 46 projects 11,343 passed +
+exactly the 6 baseline reds, layering OK, ecs-core 275 files 5,002 tests
+98.01 % statements (the threshold holds), `build web` (initial 604.34 kB,
++0.08 kB) + `verify:bundle`, `build functions` + the deps check; the runbook
+grep gates, `verify:p0`, `test:emulator` and `e2e:web` are the
+orchestrator's full gate. **Carried from pass A** (none blocks anything):
+the onboarding birthday SAVE path still dispatches a bare code into the flow
+state's `error: string`, so a 120 → 121 refusal re-judged across a UTC
+midnight reads without `{{maxAge}}` (the struct would have to ride
+`OnboardingFlowEvent.birthdayFailed`); `appendTeamNote` reads the note once,
+so offline with the note document never cached it could write over the
+server's copy (the editor's guard has the same limit); the client time sheet
+cannot see where a carried companion lands, so such a reschedule is now
+refused by the server instead of written wrong; an end-to-end
+`word-pipeline-error.spec.ts` case for the DST chain (today covered in two
+halves); and `ecs-migration.md` / `flips/flip-1-booking-core.md` still
+describe #22's earlier two-field shape, as the historical records they are.
 
 ## 4. The gate — every step must pass it before landing on `main`
 

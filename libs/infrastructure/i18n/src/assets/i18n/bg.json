@@ -984,6 +984,7 @@
       "blockFailed": "Не се запази. Опитай пак.",
       "cancelNote": "Какво се случи?",
       "cancelNotePlaceholder": "Напр. записан по грешка",
+      "cancelNoteFailed": "Отказано е, но бележката не се запази.",
       "cancelSeatOnly": "Отменя се само мястото на този човек. Останалите от групата запазват часа си.",
       "cancelReasonCode": {
         "client_changed_plans": "Промени плановете си",

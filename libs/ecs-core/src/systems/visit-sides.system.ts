@@ -63,6 +63,21 @@ export const VisitSidesSystem = {
   },
 
   /**
+   * A line written BELOW a note the visit may already have — on a line of
+   * its own, never over it — in the stored form: trimmed, and `null` when
+   * neither says anything. D23: the words a barber types beside a
+   * cancellation's «Друго…» are the visit's note, and whatever the team
+   * wrote there before them stays.
+   */
+  appendedNote(note: string | null, line: string | null): string | null {
+    const before = VisitSidesSystem.storedNote(note);
+    const added = VisitSidesSystem.storedNote(line);
+    if (before === null) return added;
+    if (added === null) return before;
+    return `${before}\n${added}`;
+  },
+
+  /**
    * The stored side fields arrived: a field the barber left alone follows
    * them; one the barber changed keeps their value. A changed field whose
    * stored value now says exactly what the barber typed — their own save

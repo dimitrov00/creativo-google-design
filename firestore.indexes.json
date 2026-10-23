@@ -317,6 +317,10 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "photoOrigin",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "takenAtUtcMs",
           "order": "DESCENDING"
         }

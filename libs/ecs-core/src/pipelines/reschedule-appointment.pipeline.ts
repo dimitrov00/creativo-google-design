@@ -104,6 +104,10 @@ import { customerIdsFor } from './customer-records.pipeline';
  * - **The wall clock, once (Law 7.3):** the call carries the shop day and
  *   each cart seat's minute; having read the shop, the pipeline places them
  *   on ITS zone (`frameWallClock`) — a gap start is `DST_GAP_INVALID_TIME`.
+ *   Once planned, the carried seats (minutes no request named) are read on
+ *   that zone too, and the envelope's instant is the whole party's earliest
+ *   start — a carried seat in the gap is the same refusal, never answered
+ *   with the cart's instant.
  * - **The plan** (`MoveSystem.plan`): the cart stands in for the seats the
  *   booker can name; everybody else is CARRIED at their kept distance, on
  *   the terms they were sold at. A request for exactly where the visit
@@ -168,7 +172,8 @@ type Loaded = {
   readonly locationId: LocationId;
   readonly localDate: LocalDate;
   readonly zone: TimeZone;
-  readonly cartStartUtcMs: UtcEpochMs;
+  /** The whole party's envelope instant on the shop's zone — cart and carried seats, computed ONCE. */
+  readonly startUtcMs: UtcEpochMs;
   readonly plan: MovePlan;
   readonly set: BookingReadSet;
   readonly placement: PlacementSet;
@@ -435,6 +440,21 @@ async function readMove(
       startMinutes: line.startMinutes,
     });
   }
+  // THE PARTY ON THE CLOCK: a carried seat keeps its distance from the
+  // booker, so it lands on a minute the request never named — one the zone
+  // must show too; the envelope's instant is the party's earliest start.
+  const party = frameWallClock(
+    frame.localDate,
+    keyed.map((seat) => seat.startMinutes),
+    zone,
+  );
+  if (!party.ok) return { snapshot: 'REFUSED', error: party.error };
+  if (party.value.startUtcMs === null) {
+    return {
+      snapshot: 'REFUSED',
+      error: BookingError.invalidInput('startMinutes'),
+    };
+  }
   const placement = await readPlacementSet(
     tx,
     placementKeysOf(keyed, frame.localDate),
@@ -445,7 +465,7 @@ async function readMove(
     locationId: locationId.value,
     localDate: frame.localDate,
     zone,
-    cartStartUtcMs: frame.startUtcMs,
+    startUtcMs: party.value.startUtcMs,
     plan: plan.value,
     set,
     placement,
@@ -560,7 +580,7 @@ function decideLines(
     loaded.plan.release,
     {
       now: ZonedTimeSystem.shopNow(nowUtcMs, loaded.zone),
-      startUtcMs: loaded.cartStartUtcMs,
+      startUtcMs: loaded.startUtcMs,
       nextId: () => ids[cursor++] ?? ports.nextId(),
       ownerUserId: owner,
       customerIds: customerIdsFor(
@@ -676,10 +696,12 @@ function decideMove(
     );
   }
   const revision = stored.revision + 1;
-  const placed = AppointmentIndexSystem.withQueryKeys({
+  const after = AppointmentIndexSystem.withQueryKeys({
     ...stored,
     locationId: loaded.locationId,
     localDate: loaded.localDate,
+    // The envelope's instant, computed ONCE at ingestion from the shop's zone.
+    utcEpochMs: loaded.startUtcMs,
     seats,
     revision,
     appliedOperations:
@@ -692,16 +714,6 @@ function decideMove(
             operation.digest,
           ),
   });
-  // The envelope's instant, computed ONCE at ingestion from the shop's zone.
-  const start = ZonedTimeSystem.toUtc(
-    loaded.localDate,
-    placed.startMinutes,
-    loaded.zone,
-  );
-  const after: Appointment = {
-    ...placed,
-    utcEpochMs: start.ok ? start.value : loaded.cartStartUtcMs,
-  };
   return Result.ok({
     stored,
     after,

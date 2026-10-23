@@ -42,7 +42,7 @@ const PHOTOS = Collections.AppointmentPhotos;
 const photoOf = (id: string, data: DocumentData): AppointmentPhoto =>
   ({ id, ...data }) as AppointmentPhoto;
 
-/** Only the visit's own pictures count as a client's photos — the shop's library pictures never do. */
+/** Only the visit's own pictures count as its photos — the shop's library pictures never do. */
 const isShot = (photo: AppointmentPhoto): boolean =>
   photo.photoOrigin === PhotoOrigin.Shot;
 
@@ -171,18 +171,21 @@ export const appointmentPhotoPorts = (
     },
 
     /**
-     * A client's newest photos across visits — `clientCustomerId ==`,
-     * `takenAtUtcMs` desc (index #22; the `orderBy` is what makes `limit`
-     * keep the newest), the visits' own shots only. No room, no read.
+     * A client's newest photos across visits, the visits' own shots only —
+     * `clientCustomerId ==`, `photoOrigin == SHOT`, `takenAtUtcMs` desc
+     * (index #22; the `orderBy` is what makes `limit` keep the newest). The
+     * origin is a filter of the query, never of the answer: a library
+     * picture adopted onto a visit takes none of the `max` places. No room,
+     * no read.
      */
     listClientPhotos: async (clientCustomerId, max) => {
       if (!(max >= 1)) return Result.ok([]);
-      const read = await readPhotos(
+      return readPhotos(
         where('clientCustomerId', '==', clientCustomerId),
+        where('photoOrigin', '==', PhotoOrigin.Shot),
         orderBy('takenAtUtcMs', 'desc'),
         limit(Math.floor(max)),
       );
-      return read.ok ? Result.ok(read.value.filter(isShot)) : read;
     },
 
     /**

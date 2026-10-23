@@ -21,7 +21,7 @@ import { UiButton } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
 import {
-  GEORGI_SHOTS,
+  GEORGI_PHOTOS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -247,7 +247,7 @@ beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
-      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
+      photos: memoryAppointmentPhotoPorts([...GEORGI_PHOTOS]),
     },
     {
       words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),

@@ -378,21 +378,16 @@ export function rescheduleAppointmentRefusal(
 
 /**
  * A cancel's reason: one of the dictionary's values, `UNSPECIFIED` when the
- * shop names none; an `OTHER` with nothing written is refused as today —
- * `null` when refused.
+ * shop names none — `null` when refused. CODE-ONLY (D23): `OTHER` stands on
+ * its own, as `SeatOutcome.reasonOf` reads it; the words a barber types
+ * beside it are the visit's note (`appointmentNotes`), written by the staff
+ * day after the cancel lands, never carried here.
  */
-function transitionReasonOf(
-  raw: unknown,
-  note: string,
-): CancellationReason | null {
+function transitionReasonOf(raw: unknown): CancellationReason | null {
   if (raw === undefined || raw === null) return CancellationReason.Unspecified;
-  if (typeof raw !== 'string' || !CANCELLATION_REASONS.includes(raw)) {
-    return null;
-  }
-  const reason = raw as CancellationReason;
-  return reason === CancellationReason.Other && note.trim().length === 0
-    ? null
-    : reason;
+  return typeof raw === 'string' && CANCELLATION_REASONS.includes(raw)
+    ? (raw as CancellationReason)
+    : null;
 }
 
 export function decodeTransitionAppointment(
@@ -433,10 +428,7 @@ export function decodeTransitionAppointment(
   }
   const reason =
     to === BookingStatus.Cancelled
-      ? transitionReasonOf(
-          field(payload, 'cancellationReason'),
-          text(payload, 'note'),
-        )
+      ? transitionReasonOf(field(payload, 'cancellationReason'))
       : null;
   if (to === BookingStatus.Cancelled && reason === null) {
     return invalid('cancellationReason');

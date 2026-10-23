@@ -9,6 +9,7 @@ import {
   WIRE_PARAM_ALLOWLIST,
 } from './pipeline.error';
 import { StaffEditErrorCode } from './staff-edit.error';
+import { TimeErrorCode } from './time.error';
 import { WaitlistErrorCode } from './waitlist.error';
 
 /*
@@ -531,6 +532,22 @@ describe('PipelineError.serverParams — bounded by the per-code allowlist (§10
         toBookingStatus: 'CONFIRMED',
       }).serverParams,
     ).toEqual({ fromBookingStatus: 'COMPLETED', toBookingStatus: 'CONFIRMED' });
+  });
+
+  it('pins the DST gap’s wall clock and zone — the copy names both — as a refused request', () => {
+    const refused = PipelineError.fromWire('invalid-argument', {
+      errorCode: TimeErrorCode.DstGap,
+      localDate: '2027-03-28',
+      minute: 210,
+      timeZone: 'Europe/Sofia',
+    });
+    expect(refused.errorCode).toBe(P.InvalidRequest);
+    expect(refused.serverErrorCode).toBe('DST_GAP_INVALID_TIME');
+    expect(refused.serverParams).toEqual({
+      localDate: '2027-03-28',
+      minute: 210,
+      timeZone: 'Europe/Sofia',
+    });
   });
 
   it('a code with no allowlist carries none', () => {

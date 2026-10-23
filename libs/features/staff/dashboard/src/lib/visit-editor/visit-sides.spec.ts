@@ -4,6 +4,7 @@ import {
   type DrawnSides,
   type VisitSides,
   adoptSides,
+  appendedNote,
   sameNote,
   sideWritesOf,
   sidesMovedUnder,
@@ -24,6 +25,18 @@ describe('the side fields — the note and the tip beside the batch', () => {
     expect(storedNote(undefined)).toBeNull();
     expect(sameNote(' дължи 5 € ', 'дължи 5 €')).toBe(true);
     expect(sameNote('', null)).toBe(true);
+  });
+
+  it('appends a line below the note on a line of its own, never over it (D23)', () => {
+    expect(appendedNote('алергия към ментол', ' наводнение ')).toBe(
+      'алергия към ментол\nнаводнение',
+    );
+    // No note yet: the line IS the note, stored trimmed.
+    expect(appendedNote(null, '  наводнение ')).toBe('наводнение');
+    expect(appendedNote('   ', 'flooded')).toBe('flooded');
+    // Nothing to add keeps the note as stored; nothing at all is none.
+    expect(appendedNote(' алергия ', '  ')).toBe('алергия');
+    expect(appendedNote(undefined, null)).toBeNull();
   });
 
   it('follows what is stored while the barber leaves a field alone', () => {

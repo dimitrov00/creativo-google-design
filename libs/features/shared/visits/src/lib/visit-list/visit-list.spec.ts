@@ -13,7 +13,7 @@ import { VisitGrain, VisitPerspective, VisitRowOutcome } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
-  GEORGI_SHOTS,
+  GEORGI_PHOTOS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -135,7 +135,7 @@ beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
-      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
+      photos: memoryAppointmentPhotoPorts([...GEORGI_PHOTOS]),
     },
     {
       words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),
@@ -519,7 +519,7 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
     const rows = await georgiStaffRows(
       {
         history: memoryAppointmentReadPorts(GEORGI_VISITS),
-        photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
+        photos: memoryAppointmentPhotoPorts([...GEORGI_PHOTOS]),
       },
       {
         words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),

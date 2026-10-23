@@ -984,6 +984,7 @@
       "blockFailed": "That didn't save. Try again.",
       "cancelNote": "What happened?",
       "cancelNotePlaceholder": "e.g. Booked by mistake",
+      "cancelNoteFailed": "Cancelled, but the note didn't save.",
       "cancelSeatOnly": "This calls off only this person’s seat. The rest of the party keeps its booking.",
       "cancelReasonCode": {
         "client_changed_plans": "Changed plans",

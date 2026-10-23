@@ -43,6 +43,7 @@ import {
   barberBusyDayFixture,
   barberScheduleFixture,
   FIXTURE_IDS,
+  FIXTURE_TIME_ZONE,
   fixtureHash,
   localDate,
   locationFixture,
@@ -408,6 +409,67 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       expect(!answer.ok && answer.error).toMatchObject({
         errorCode: MoveErrorCode.CarriedSeatUnplaceable,
         refusal: CarriedSeatRefusal.ShopOnly,
+      });
+    });
+
+    /*
+     * A carried seat keeps its distance from the booker, so it lands on a
+     * minute the request never named. Europe/Sofia springs 03:00 → 04:00 on
+     * 2027-03-28: the cart's own start is on the clock, the companion's is
+     * not — refused, never written with the cart's instant.
+     */
+    it.each([
+      ['before the booker, starting the envelope', at(9, 30), 240, at(3, 30)],
+      ['after the booker', at(10, 30), 165, at(3, 15)],
+    ])(
+      'refuses a carried seat that lands inside the spring-forward gap (%s) DST_GAP_INVALID_TIME, writing nothing',
+      async (_label, sonStart, cartStart, landsAt) => {
+        const gapDay = localDate('2027-03-28');
+        const { store, tx, rows, run } = rig([
+          ...catalogue(),
+          stored(
+            visit({
+              seats: [seatFixture(), { ...son, startMinutes: sonStart }],
+            }),
+          ),
+        ]);
+        const answer = await run(
+          command({
+            localDate: gapDay,
+            seats: [{ ...CART_SEAT, startMinutes: cartStart }],
+          }),
+        );
+        expect(!answer.ok && answer.error).toEqual({
+          errorCode: TimeErrorCode.DstGap,
+          localDate: gapDay,
+          minute: landsAt,
+          timeZone: FIXTURE_TIME_ZONE,
+        });
+        expect(tx.plans).toEqual([]);
+        expect(store.get(PATH)).toMatchObject({
+          localDate: THURSDAY,
+          utcEpochMs: utcMs('2026-10-01T10:00:00.000+03:00'),
+          revision: 1,
+        });
+        expect(rows).toEqual([]);
+      },
+    );
+
+    it('stamps the envelope’s instant from the carried seat that starts it, not the cart', async () => {
+      const { store, run } = rig([
+        ...catalogue(),
+        stored(
+          visit({
+            seats: [seatFixture(), { ...son, startMinutes: at(9, 30) }],
+          }),
+        ),
+      ]);
+      const answer = await run(command());
+      expect(answer.ok).toBe(true);
+      expect(store.get(PATH)).toMatchObject({
+        localDate: FRIDAY,
+        startMinutes: at(10, 30),
+        utcEpochMs: utcMs('2026-10-02T10:30:00.000+03:00'),
       });
     });
 
