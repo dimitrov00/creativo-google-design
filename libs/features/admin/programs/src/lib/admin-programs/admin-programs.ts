@@ -31,16 +31,28 @@ import {
   positionStatusWords,
 } from '@creativo/infrastructure/i18n';
 
+/** Which program the edit form is open on — the field `programEditing`, the
+ *  ONLY source of these strings (Law 6). */
+const ProgramEditing = {
+  /** A careers position. */
+  Position: 'POSITION',
+  /** A course. */
+  Course: 'COURSE',
+  /** A shop event. */
+  Event: 'EVENT',
+} as const;
+type ProgramEditing = (typeof ProgramEditing)[keyof typeof ProgramEditing];
+
 type PositionEditing = {
-  readonly kind: 'position';
+  readonly programEditing: typeof ProgramEditing.Position;
   readonly source: Position | null;
 };
 type CourseEditing = {
-  readonly kind: 'course';
+  readonly programEditing: typeof ProgramEditing.Course;
   readonly source: Course | null;
 };
 type EventEditing = {
-  readonly kind: 'event';
+  readonly programEditing: typeof ProgramEditing.Event;
   readonly source: ShopEvent | null;
 };
 type Editing = PositionEditing | CourseEditing | EventEditing | null;
@@ -100,6 +112,8 @@ export class AdminPrograms {
   /** The rows' trailing status text — today's lowercase word (F4-7). */
   protected readonly positionStatusWords = positionStatusWords;
   protected readonly enrollmentStatusWords = enrollmentStatusWords;
+  /** The edit form's program kinds, for the template. */
+  protected readonly ProgramEditing = ProgramEditing;
 
   protected readonly tab = signal<ProgramsTab>('positions');
   protected readonly editing = signal<Editing>(null);
@@ -154,20 +168,26 @@ export class AdminPrograms {
     const tab = this.tab();
     if (tab === 'positions') {
       this.fillPosition(ProgramInput.blankPosition());
-      this.editing.set({ kind: 'position', source: null });
+      this.editing.set({
+        programEditing: ProgramEditing.Position,
+        source: null,
+      });
     } else if (tab === 'courses') {
       this.fillCourse(ProgramInput.blankCourse());
-      this.editing.set({ kind: 'course', source: null });
+      this.editing.set({ programEditing: ProgramEditing.Course, source: null });
     } else {
       this.fillEvent(ProgramInput.blankShopEvent());
-      this.editing.set({ kind: 'event', source: null });
+      this.editing.set({ programEditing: ProgramEditing.Event, source: null });
     }
     this.saveFailed.set(false);
   }
 
   protected startEditPosition(position: Position): void {
     this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
-    this.editing.set({ kind: 'position', source: position });
+    this.editing.set({
+      programEditing: ProgramEditing.Position,
+      source: position,
+    });
     this.saveFailed.set(false);
   }
 
@@ -177,7 +197,7 @@ export class AdminPrograms {
       startsLabel: course.startsLabel ?? ProgramInput.blankCourse().startsLabel,
       applyUrl: course.applyUrl ?? '',
     });
-    this.editing.set({ kind: 'course', source: course });
+    this.editing.set({ programEditing: ProgramEditing.Course, source: course });
     this.saveFailed.set(false);
   }
 
@@ -188,7 +208,7 @@ export class AdminPrograms {
       locationId: event.locationId ?? '',
       applyUrl: event.applyUrl ?? '',
     });
-    this.editing.set({ kind: 'event', source: event });
+    this.editing.set({ programEditing: ProgramEditing.Event, source: event });
     this.saveFailed.set(false);
   }
 
@@ -204,12 +224,12 @@ export class AdminPrograms {
     this.saveFailed.set(false);
 
     let succeeded: boolean;
-    if (editing.kind === 'position') {
+    if (editing.programEditing === ProgramEditing.Position) {
       succeeded = await this.store.submitPosition({
         id: editing.source?.id ?? null,
         input: this.positionInput(),
       });
-    } else if (editing.kind === 'course') {
+    } else if (editing.programEditing === ProgramEditing.Course) {
       succeeded = await this.store.submitCourse({
         id: editing.source?.id ?? null,
         input: this.courseInput(),

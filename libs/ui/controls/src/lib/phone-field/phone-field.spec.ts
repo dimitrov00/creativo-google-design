@@ -201,6 +201,47 @@ describe('UiPhoneField', () => {
     expect(fixture.componentInstance.country()).toBe(expectedCode);
   });
 
+  /* Listbox type-ahead: keystrokes inside the reset window refine one
+     search; a keystroke after it starts a fresh one. The window is a
+     monotonic interval (`performance.now()`), pinned here. */
+  it('type-ahead refines inside its window and starts over after it', async () => {
+    await openPicker();
+    const listbox: HTMLElement =
+      fixture.nativeElement.querySelector('[role="listbox"]');
+    const press = (key: string): void => {
+      listbox.dispatchEvent(
+        new KeyboardEvent('keydown', { key, bubbles: true }),
+      );
+      fixture.detectChanges();
+    };
+    const activeCode = (): string | undefined =>
+      listbox.getAttribute('aria-activedescendant')?.split('-option-')[1];
+    const now = vi.spyOn(performance, 'now');
+    try {
+      now.mockReturnValue(10_000);
+      press('g');
+      now.mockReturnValue(10_100);
+      press('e');
+      expect(activeCode()).toBe('GE');
+
+      // 'b' 1 s later is a new search, not «geb» (which matches nothing
+      // and would leave Georgia active).
+      now.mockReturnValue(11_100);
+      press('b');
+      const active = activeCode();
+      expect(active).not.toBe('GE');
+      expect(
+        fixture.nativeElement
+          .querySelector(`[data-testid="phone-field-option-${active}"]`)
+          ?.textContent?.trim()
+          .toLowerCase()
+          .startsWith('b'),
+      ).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('filters countries by name, ISO code and dial code', async () => {
     await openPicker();
     const search: HTMLInputElement = fixture.nativeElement.querySelector(

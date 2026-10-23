@@ -1,9 +1,11 @@
-import type { JournalFeed, PersonalRecordKind } from '@core/components';
-import type {
-  VisitCardVm,
-  VisitLinePart,
-  VisitRowVm,
-  VisitSectionVm,
+import { type JournalFeed, PersonalRecordKind } from '@core/components';
+import {
+  TrailingFactFace,
+  VisitCardSlot,
+  type VisitCardVm,
+  type VisitLinePart,
+  type VisitRowVm,
+  type VisitSectionVm,
 } from '@creativo/features/shared/visits';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
@@ -35,7 +37,7 @@ import {
 } from '../testing/client-pages.vm-fixtures';
 import {
   type ActivityGroupVm,
-  CardLoadState,
+  BirthdayMoment,
   type ClientHeroVm,
   type ClientOverviewVm,
   type DetailActionVm,
@@ -49,15 +51,21 @@ import {
   type RecordCardVm,
   type RecordRowVm,
   type RecordsPageVm,
-  type Slice,
   type VisitCardsVm,
   type VisitsPageVm,
   type WalletActionId,
   type WalletActionVm,
+  WalletHolding,
   type WalletHoldingVm,
   type WalletVm,
 } from './client-pages.vm';
-import type { RECORD_KIND_WORDS, RecordKindWord } from './client-card.words';
+import {
+  type LoadSlice,
+  LoadState,
+  type PagingState,
+} from '@creativo/shared/view-state';
+import { VisitFilter, VisitRowOutcome } from '@core/systems';
+import type { RECORD_KIND_WORDS } from './client-card.words';
 
 /*
  * THE PAGES' VIEW MODELS (client-card-revision-3 §4.9). The file is types
@@ -144,7 +152,7 @@ describe('the pages’ view models: the shapes', () => {
 
   it('makes every module of the overview a slice of its own, absent when it cannot exist', () => {
     expectTypeOf<ClientOverviewVm['visits']>().toEqualTypeOf<
-      Slice<VisitCardsVm> | undefined
+      LoadSlice<VisitCardsVm> | undefined
     >();
     // The discs, the exit and the failed regions are always stated.
     expectTypeOf<
@@ -159,25 +167,30 @@ describe('the pages’ view models: the shapes', () => {
     expectTypeOf<WalletActionVm['prominence']>().toEqualTypeOf<
       'standard' | 'accent'
     >();
-    expectTypeOf<WalletHoldingVm['kind']>().toEqualTypeOf<
-      'voucher' | 'ticket' | 'stamps'
+    expectTypeOf<
+      WalletHoldingVm['walletHolding']
+    >().toEqualTypeOf<WalletHolding>();
+    expectTypeOf<WalletHolding>().toEqualTypeOf<
+      'VOUCHER' | 'TICKET' | 'STAMPS'
     >();
     expectTypeOf<WalletVm['activity']>().toEqualTypeOf<
-      Slice<readonly ActivityGroupVm[]> | undefined
+      LoadSlice<readonly ActivityGroupVm[]> | undefined
     >();
   });
 
   it('filters the ledger by the journal’s own kinds', () => {
     expectTypeOf<LedgerPageVm['filter']>().toEqualTypeOf<JournalFeed>();
-    expectTypeOf<NonNullable<LedgerPageVm['paging']>['kind']>().toEqualTypeOf<
-      'more' | 'loading' | 'failed' | 'end'
-    >();
+    expectTypeOf<
+      NonNullable<LedgerPageVm['paging']>['pagingState']
+    >().toEqualTypeOf<PagingState>();
   });
 
   it('keeps a record’s kind the domain’s and a row’s id the card’s own', () => {
-    // The domain's kind (`PersonalRecordKind`) reaches the card as its word:
-    // every kind has one, and the word is the test id's and the key's.
-    expectTypeOf<RecordCardVm['kind']>().toEqualTypeOf<RecordKindWord>();
+    // The domain's kind (`PersonalRecordKind`) reaches the card as it is;
+    // every kind has a word, and the word is the test id's and the key's.
+    expectTypeOf<
+      RecordCardVm['personalRecordKind']
+    >().toEqualTypeOf<PersonalRecordKind>();
     expectTypeOf<
       keyof typeof RECORD_KIND_WORDS
     >().toEqualTypeOf<PersonalRecordKind>();
@@ -278,16 +291,20 @@ describe('the hand-built fixtures: the glance', () => {
     expect(BIRTHDAY.gift.gift.applied).toBe(false);
     expect(BIRTHDAY.giftApplied.gift.applied).toBe(true);
     expect(BIRTHDAY.bandOnly.gift).toBeNull();
-    expect(BIRTHDAY.upcoming.kind).toBe('upcoming');
+    expect(BIRTHDAY.upcoming.birthdayMoment).toBe(BirthdayMoment.Upcoming);
     expect(BIRTHDAY.upcoming.gift).toBeNull();
   });
 
   it('draws the three visit cards in ONE order, each under its own test id', () => {
     const { last, next, waitlist } = VISIT_CARDS.full;
-    expect([last.kind, next.kind, waitlist.kind]).toEqual([
-      'last',
-      'next',
-      'waitlist',
+    expect([
+      last.visitCardSlot,
+      next.visitCardSlot,
+      waitlist.visitCardSlot,
+    ]).toEqual([
+      VisitCardSlot.Last,
+      VisitCardSlot.Next,
+      VisitCardSlot.Waitlist,
     ]);
     expect([last.testId, next.testId, waitlist.testId]).toEqual([
       'client-visit-last',
@@ -306,9 +323,9 @@ describe('the hand-built fixtures: the glance', () => {
         expect(tile.medal.title).not.toBeNull();
         expect(tile.medal.caption).toBeNull();
       }
-      expect(glance.records.map((record) => record.kind)).not.toContain(
-        'longestRhythm',
-      );
+      expect(
+        glance.records.map((record) => record.personalRecordKind),
+      ).not.toContain(PersonalRecordKind.LongestRhythm);
       expect(glance.recordsName === null).toBe(glance.records.length === 0);
     }
   });
@@ -324,7 +341,7 @@ describe('the hand-built fixtures: the glance', () => {
   });
 
   it('states a failed module’s region beside its failed slice', () => {
-    expect(OVERVIEW.oneFailed.loyalty.cardLoadState).toBe(CardLoadState.Failed);
+    expect(OVERVIEW.oneFailed.loyalty.loadState).toBe(LoadState.Failed);
     expect(OVERVIEW.oneFailed.failed).toEqual(['loyalty']);
     expect(OVERVIEW.twoFailed.failed.length).toBeGreaterThanOrEqual(2);
     expect(OVERVIEW.georgi.failed).toEqual([]);
@@ -358,9 +375,13 @@ describe('the hand-built fixtures: the wallet and the ledger', () => {
   });
 
   it('files the holdings as the wallet does: vouchers, tickets, stamp cards', () => {
-    const order = { voucher: 0, ticket: 1, stamps: 2 };
+    const order = {
+      [WalletHolding.Voucher]: 0,
+      [WalletHolding.Ticket]: 1,
+      [WalletHolding.Stamps]: 2,
+    };
     for (const holdings of Object.values(WALLET_HOLDINGS)) {
-      const ranks = holdings.map((holding) => order[holding.kind]);
+      const ranks = holdings.map((holding) => order[holding.walletHolding]);
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
     }
   });
@@ -435,8 +456,8 @@ describe('the hand-built fixtures: the wallet and the ledger', () => {
     expect(WALLET.paused.pass.figure).toBe(WALLET.georgi.pass.figure);
     expect(WALLET.paused.rhythm.frozen).toBe(true);
     expect(
-      WALLET.paused.holdings.data.map((holding) => holding.kind),
-    ).not.toContain('ticket');
+      WALLET.paused.holdings.data.map((holding) => holding.walletHolding),
+    ).not.toContain(WalletHolding.Ticket);
     expect(WALLET.paused.actions.map((action) => action.id)).toEqual([
       'catalog',
       'history',
@@ -642,22 +663,30 @@ describe('the hand-built fixtures: the visits page', () => {
   it('ends a staff row with one fact, the face on the trailing edge', () => {
     const rows = VISITS_PAGE.barber.sections.flatMap((section) => section.rows);
     expect(
-      new Set(rows.map((row) => row.trailingFact?.kind ?? 'none')),
-    ).toEqual(new Set(['none', 'badge', 'amount', 'status']));
+      new Set(rows.map((row) => row.trailingFact?.trailingFactFace ?? 'none')),
+    ).toEqual(
+      new Set([
+        'none',
+        TrailingFactFace.Badge,
+        TrailingFactFace.Amount,
+        TrailingFactFace.Status,
+      ]),
+    );
     for (const row of rows) {
-      expect(row.trailing?.kind).toBe('barber');
+      expect(row.trailing).not.toBeNull();
       // An hour that did not happen is struck, and never fades as well.
       expect(row.struck).toBe(
-        row.outcome === 'no_show' || row.outcome === 'cancelled',
+        row.outcome === VisitRowOutcome.NoShow ||
+          row.outcome === VisitRowOutcome.Cancelled,
       );
     }
   });
 
   it('offers only the filters the rows can answer, the choice in force among them', () => {
     for (const page of Object.values(VISITS_PAGE) as readonly VisitsPageVm[]) {
-      expect(page.offeredFilters).toContain('all');
+      expect(page.offeredFilters).toContain(VisitFilter.All);
       expect(page.offeredFilters).toContain(page.filter);
-      expect(page.paging === null).toBe(page.status !== 'ready');
+      expect(page.paging === null).toBe(page.loadState !== LoadState.Ready);
     }
     expect(VISITS_PAGE.filteredEmpty.sections).toEqual([]);
   });

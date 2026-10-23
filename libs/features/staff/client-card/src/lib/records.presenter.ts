@@ -205,8 +205,8 @@ function recordRow(
   const card = recordCardVm(record, data, ctx);
   if (card === null) return null;
   const base = {
-    id: card.kind,
-    theme: themeOf(card.kind),
+    id: card.id,
+    theme: themeOf(card.id),
     title: card.label,
     faceName: null,
   };

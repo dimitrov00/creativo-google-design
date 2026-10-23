@@ -1,11 +1,10 @@
-import { VisitListSystem } from '@core/systems';
 import {
-  LEGACY_VISIT_FILTER,
-  VISIT_FILTER_OF,
-  VISIT_PERSPECTIVE_OF,
-  filterRowOf,
-} from './visit-ecs.shim';
-import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
+  type FilterRow,
+  VisitFilter,
+  VisitListSystem,
+  VisitPerspective,
+} from '@core/systems';
+import { visitFilterWords } from '@creativo/infrastructure/i18n';
 
 /*
  * THE FUNNEL'S RULE (client-card redesign §5.3.1) — moved out of
@@ -18,22 +17,11 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
  * looking for "did I ever no-show?" — and each is an outcome the row
  * genuinely carries, so no option can ever be a lie.
  *
- * Phase 2 shim: the options, their order and the narrowing rule are
- * `VisitListSystem` in `@core/systems`; the option words stay here.
- * Flatten pass: the system's tags are SCREAMING; the legacy words are
- * converted at this boundary (`visit-ecs.shim.ts`).
+ * The options, their order and the narrowing rule are `VisitListSystem`
+ * in `@core/systems`, over its own tags and the rows as they are (a row IS
+ * a `FilterRow`); the option's key is built here from its one lower-case
+ * word (`visitFilterWords`).
  */
-
-/** Each reader's options in the legacy words, built once — a stable array per reader. */
-const FILTERS_FOR: Readonly<Record<VisitPerspective, readonly VisitFilter[]>> =
-  {
-    client: VisitListSystem.filtersFor(VISIT_PERSPECTIVE_OF.client).map(
-      (filter) => LEGACY_VISIT_FILTER[filter],
-    ),
-    staff: VisitListSystem.filtersFor(VISIT_PERSPECTIVE_OF.staff).map(
-      (filter) => LEGACY_VISIT_FILTER[filter],
-    ),
-  };
 
 /**
  * The options, in the order each menu offers them: the client's list as it
@@ -43,7 +31,7 @@ const FILTERS_FOR: Readonly<Record<VisitPerspective, readonly VisitFilter[]>> =
 export function visitFiltersFor(
   perspective: VisitPerspective,
 ): readonly VisitFilter[] {
-  return FILTERS_FOR[perspective];
+  return VisitListSystem.filtersFor(perspective);
 }
 
 /**
@@ -54,9 +42,11 @@ export function visitFilterWordKey(
   filter: VisitFilter,
   perspective: VisitPerspective,
 ): string {
-  return filter === 'no_show' && perspective === 'staff'
-    ? 'visits.filter.no_show_staff'
-    : `visits.filter.${filter}`;
+  if (filter === VisitFilter.NoShow && perspective === VisitPerspective.Staff) {
+    return 'visits.filter.no_show_staff';
+  }
+  // eslint-disable-next-line security/detect-object-injection -- `filter` is a member of the closed dictionary the table is total over.
+  return `visits.filter.${visitFilterWords[filter]}`;
 }
 
 /**
@@ -76,14 +66,10 @@ export function visitFilterWordKey(
  */
 export function offeredVisitFilters(
   perspective: VisitPerspective,
-  rows: readonly VisitRowVm[],
+  rows: readonly FilterRow[],
   options: { readonly complete: boolean },
 ): readonly VisitFilter[] {
-  return VisitListSystem.offered(
-    VISIT_PERSPECTIVE_OF[perspective],
-    rows.map(filterRowOf),
-    options.complete,
-  ).map((filter) => LEGACY_VISIT_FILTER[filter]);
+  return VisitListSystem.offered(perspective, rows, options.complete);
 }
 
 /**
@@ -97,8 +83,8 @@ export function offeredVisitFilters(
  * nobody settled, which is none of the three.
  */
 export function matchesVisitFilter(
-  row: VisitRowVm,
+  row: FilterRow,
   filter: VisitFilter,
 ): boolean {
-  return VisitListSystem.matches(filterRowOf(row), VISIT_FILTER_OF[filter]);
+  return VisitListSystem.matches(row, filter);
 }

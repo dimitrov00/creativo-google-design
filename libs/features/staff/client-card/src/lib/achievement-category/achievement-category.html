@@ -46,7 +46,7 @@
 >
   <p>{{ words()?.offline }}</p>
 </ui-notice>
-} } @switch (state().kind) { @case ('loading') {
+} } @switch (state().loadState) { @case (LoadState.Loading) {
 <!-- Six discs on a white card, where a grid of families will land. -->
 <ui-card
   uiTone="elevated"
@@ -78,7 +78,7 @@
     }
   </ui-grid>
 </ui-card>
-} @case ('failed') {
+} @case (LoadState.Failed) {
 <ui-notice
   [uiLabel]="words()?.failed.achievements ?? null"
   data-testid="achievements-error"
@@ -97,7 +97,7 @@
     {{ words()?.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('absent') {
+} @case (LoadState.Empty) {
 <ui-empty-state data-testid="achievements-empty">
   <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
     {{ words()?.achievements.firstHint }}

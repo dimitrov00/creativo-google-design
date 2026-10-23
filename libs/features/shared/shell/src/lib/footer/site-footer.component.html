@@ -28,7 +28,7 @@
             <ul class="cr-footer__list">
               @for (link of column.links; track link.labelKey) {
                 <li>
-                  @if (link.kind === 'router') {
+                  @if (link.footerLinkTarget === FooterLinkTarget.Router) {
                     <a
                       class="cr-footer__link"
                       [routerLink]="link.target"
@@ -43,9 +43,15 @@
                     <a
                       class="cr-footer__link"
                       [href]="link.target"
-                      [attr.target]="link.kind === 'external' ? '_blank' : null"
+                      [attr.target]="
+                        link.footerLinkTarget === FooterLinkTarget.External
+                          ? '_blank'
+                          : null
+                      "
                       [attr.rel]="
-                        link.kind === 'external' ? 'noreferrer' : null
+                        link.footerLinkTarget === FooterLinkTarget.External
+                          ? 'noreferrer'
+                          : null
                       "
                       uiText
                       uiFont="subheadline"
@@ -56,7 +62,9 @@
                         <ui-icon uiName="social.instagram" />
                       }
                       {{ t(link.labelKey) }}
-                      @if (link.kind === 'external') {
+                      @if (
+                        link.footerLinkTarget === FooterLinkTarget.External
+                      ) {
                         <!-- Sized by font inheritance — rides the link's em box. -->
                         <ui-icon
                           uiName="link.external"

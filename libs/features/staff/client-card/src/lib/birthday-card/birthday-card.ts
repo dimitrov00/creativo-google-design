@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   input,
   output,
@@ -15,7 +16,11 @@ import {
 } from '@creativo/ui/controls';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
 import { ClientCardStore } from '../client-card.store';
-import type { BirthdayVm } from '../client-pages.vm';
+import {
+  BirthdayMoment,
+  type BirthdayVm,
+  birthdayMomentWords,
+} from '../client-pages.vm';
 
 /**
  * BD — THE BIRTHDAY CARD (client-card-revision-3 §2.1.2, §3.12; R2-D). A
@@ -61,7 +66,7 @@ import type { BirthdayVm } from '../client-pages.vm';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'data-testid': 'client-birthday',
-    '[attr.data-kind]': 'vm().kind',
+    '[attr.data-kind]': 'momentWord()',
     '[attr.data-gift]':
       "vm().gift ? (vm().gift?.applied ? 'applied' : 'ready') : null",
   },
@@ -75,4 +80,11 @@ export class BirthdayCard {
   readonly removeGift = output<string>();
 
   protected readonly words = inject(ClientCardStore).words;
+
+  /** Which birthday the card says, for the template's switch. */
+  protected readonly BirthdayMoment = BirthdayMoment;
+  /** The moment as the host's `data-kind` prints it: `today` · `upcoming`. */
+  protected readonly momentWord = computed(
+    () => birthdayMomentWords[this.vm().birthdayMoment],
+  );
 }

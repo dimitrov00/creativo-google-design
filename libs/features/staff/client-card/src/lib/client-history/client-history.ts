@@ -5,12 +5,12 @@ import {
   inject,
   input,
 } from '@angular/core';
+import { VisitFilter, VisitPerspective } from '@core/systems';
 import {
-  type VisitFilter,
   VisitFilterMenu,
-  type VisitListState,
   VisitsBrowser,
 } from '@creativo/features/shared/visits';
+import { LoadState } from '@creativo/shared/view-state';
 import {
   UI_SHEET_HEADLINE,
   UiButton,
@@ -121,18 +121,10 @@ export class ClientHistoryPage {
   protected readonly visits = this.store.visits;
 
   protected readonly placeholder = LINE_PLACEHOLDER;
-
-  /** The list's own state, from the first page's read. */
-  protected readonly listState = computed<VisitListState>(() => {
-    switch (this.visits().status) {
-      case 'loading':
-        return 'loading';
-      case 'failed':
-        return 'error';
-      case 'ready':
-        return 'ready';
-    }
-  });
+  /** Whose list the browser and the funnel draw: the staff's. */
+  protected readonly VisitPerspective = VisitPerspective;
+  /** The funnel's way back out: «Покажи всички». */
+  protected readonly VisitFilter = VisitFilter;
 
   /**
    * HB before the record is known: the line's placeholder. Once the
@@ -140,7 +132,9 @@ export class ClientHistoryPage {
    * them over its notice (P5-2 c).
    */
   protected readonly lineWaits = computed(
-    () => this.visits().status === 'loading' && this.visits().line.length === 0,
+    () =>
+      this.visits().loadState === LoadState.Loading &&
+      this.visits().line.length === 0,
   );
 
   /**
@@ -179,7 +173,9 @@ export class ClientHistoryPage {
   });
 
   /** A filter narrows the list: an empty list is the filter's, and says so. */
-  protected readonly filtering = computed(() => this.visits().filter !== 'all');
+  protected readonly filtering = computed(
+    () => this.visits().filter !== VisitFilter.All,
+  );
 
   /**
    * The funnel only while it offers a choice that narrows the list, or a
@@ -188,7 +184,7 @@ export class ClientHistoryPage {
    */
   protected readonly funnel = computed(() => {
     const vm = this.visits();
-    return vm.offeredFilters.length > 1 || vm.filter !== 'all';
+    return vm.offeredFilters.length > 1 || vm.filter !== VisitFilter.All;
   });
 
   protected setFilter(filter: VisitFilter): void {

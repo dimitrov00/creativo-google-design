@@ -25,14 +25,34 @@ export interface UiDateFieldParts {
 }
 
 /**
- * Blur payload for validate-on-blur consumers: `empty` (untouched — an
- * optional field stays quiet), `partial` (some segments filled — worth an
- * "incomplete" nudge), or `complete` with the parts to validate.
+ * How much of the group was filled when focus left it — the field
+ * `uiDateFieldFill` of {@link UiDateFieldBlurEvent} (Law 6: a
+ * domain-prefixed discriminator, SCREAMING_SNAKE values, compared with
+ * `===` against this dictionary).
+ */
+export const UiDateFieldFill = {
+  /** Untouched — an optional field stays quiet. */
+  Empty: 'EMPTY',
+  /** Some segments filled — worth an "incomplete" nudge. */
+  Partial: 'PARTIAL',
+  /** All three segments complete — the parts ride along to validate. */
+  Complete: 'COMPLETE',
+} as const;
+export type UiDateFieldFill =
+  (typeof UiDateFieldFill)[keyof typeof UiDateFieldFill];
+
+/**
+ * Blur payload for validate-on-blur consumers, discriminated by
+ * `uiDateFieldFill`: `EMPTY`, `PARTIAL`, or `COMPLETE` with the parts to
+ * validate.
  */
 export type UiDateFieldBlurEvent =
-  | { readonly kind: 'empty' }
-  | { readonly kind: 'partial' }
-  | { readonly kind: 'complete'; readonly parts: UiDateFieldParts };
+  | { readonly uiDateFieldFill: typeof UiDateFieldFill.Empty }
+  | { readonly uiDateFieldFill: typeof UiDateFieldFill.Partial }
+  | {
+      readonly uiDateFieldFill: typeof UiDateFieldFill.Complete;
+      readonly parts: UiDateFieldParts;
+    };
 
 type UiDateSlotState = 'active' | 'filled' | 'idle';
 
@@ -296,14 +316,21 @@ export class UiDateField {
     }
     const parts = this.completeParts();
     if (parts) {
-      this.uiBlurred.emit({ kind: 'complete', parts });
+      this.uiBlurred.emit({
+        uiDateFieldFill: UiDateFieldFill.Complete,
+        parts,
+      });
       return;
     }
     const anyFilled =
       this.texts.day() !== '' ||
       this.texts.month() !== '' ||
       this.texts.year() !== '';
-    this.uiBlurred.emit(anyFilled ? { kind: 'partial' } : { kind: 'empty' });
+    this.uiBlurred.emit(
+      anyFilled
+        ? { uiDateFieldFill: UiDateFieldFill.Partial }
+        : { uiDateFieldFill: UiDateFieldFill.Empty },
+    );
   }
 
   /**

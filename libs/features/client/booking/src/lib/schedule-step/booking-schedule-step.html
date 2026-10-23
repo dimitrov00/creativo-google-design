@@ -42,12 +42,13 @@
           <p uiLede>{{ t('booking.schedule.lede.single') }}</p>
         </ui-section-header>
 
-        <!-- A shop that cannot serve somebody on the visit (`shopReach`). The
+        <!-- A shop that cannot serve somebody on the visit (`shopCoverage`). The
              calendar under it is grey, so this is the whole answer: why, and
              the one tap to a shop that can — or, when no shop offers it all
              together, back to the services. Never "this day is busy" and a
              waitlist bell, for a shop that will never have a time for it. -->
-        @if (shopReach(); as reach) { @if (reach.kind === 'elsewhere') {
+        @if (shopCoverage(); as reach) { @if (reach.shopCoverage ===
+        ShopCoverage.Elsewhere) {
         <ui-stack
           uiSpacing="compact"
           uiAlignment="leading"
@@ -79,7 +80,7 @@
             t('booking.schedule.shopScope.elsewhere.switchAny') }} }
           </button>
         </ui-stack>
-        } @else if (reach.kind === 'nowhere') {
+        } @else if (reach.shopCoverage === ShopCoverage.Nowhere) {
         <ui-stack
           uiSpacing="compact"
           uiAlignment="leading"

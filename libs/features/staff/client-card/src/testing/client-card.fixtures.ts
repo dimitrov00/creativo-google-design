@@ -68,6 +68,7 @@ import {
   PolicyPassStamp,
   PublicLabel,
   type ScheduledStreakRule,
+  type ShopNow,
   StreakRule,
   Seat,
   SeatOccupant,
@@ -213,6 +214,17 @@ export function wallOf(iso: string): {
 
 /** Monday 28 September 2026, 12:40 in Sofia. */
 export const NOW_MS: UtcEpochMs = sofia('2026-09-28T12:40:00');
+
+/** "Now" on the shop's wall clock at an instant, read once in its zone — as the store derives it (Law 7.3). */
+export function shopNowAt(nowMs: number): ShopNow {
+  return ZonedTimeSystem.shopNow(
+    unwrapOk(UtcEpochMs.of(nowMs)),
+    SHOP_TIME_ZONE,
+  );
+}
+
+/** `NOW_MS` on the shop's wall clock: Monday 28 September 2026, minute 760. */
+export const NOW: ShopNow = shopNowAt(NOW_MS);
 
 /**
  * A stored fact's shop wall clock as the instant it names — what the

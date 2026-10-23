@@ -6,7 +6,7 @@
     class="admin-rhythm"
     uiPaddingHorizontal="regular"
     data-testid="admin-rhythm"
-    [attr.data-state]="state()"
+    [attr.data-state]="stateWord()"
   >
     <div class="admin-rhythm__bar">
       <a
@@ -39,7 +39,7 @@
         </p>
       </header>
 
-      @switch (state()) { @case ('loading') {
+      @switch (state()) { @case (LoadState.Loading) {
       <!-- MC as one block; each group as its rows' skeleton. -->
       <div
         class="admin-rhythm__module admin-rhythm__module--rule admin-rhythm__skeleton"
@@ -53,7 +53,7 @@
         <ui-skeleton uiFrame uiFrameHeight="1.5rem" uiFrameWidth="8rem" />
         <ui-skeleton uiFrame uiFrameHeight="7.5rem" />
       </div>
-      } } @case ('failed') {
+      } } @case (LoadState.Failed) {
       <ui-notice
         class="admin-rhythm__module admin-rhythm__module--rule"
         uiTone="destructive"
@@ -232,14 +232,13 @@
                   >{{ t('admin.rhythm.preview.estimate') }}</span
                 >
               </div>
-              @switch (previewSlice.rhythmLoadState) { @case
-              (RhythmLoadState.Loading) {
+              @switch (previewSlice.loadState) { @case (LoadState.Loading) {
               <ui-skeleton
                 uiFrame
                 uiFrameHeight="5.5rem"
                 data-testid="admin-rhythm-preview-skeleton"
               />
-              } @case (RhythmLoadState.Failed) {
+              } @case (LoadState.Failed) {
               <ui-notice
                 uiTone="destructive"
                 data-testid="admin-rhythm-preview-failed"
@@ -257,8 +256,8 @@
                   {{ t('visits.retry') }}
                 </button>
               </ui-notice>
-              } @case (RhythmLoadState.Ready) { @if (preview(); as words) { @if
-              (words.kind === 'unavailable') {
+              } @case (LoadState.Ready) { @if (preview(); as words) { @if
+              (words.rhythmEstimate === RhythmEstimate.Unavailable) {
               <p
                 uiText
                 uiFont="callout"
@@ -867,14 +866,13 @@
             >
             }
           </button>
-          } @switch (store.versions().rhythmLoadState) { @case
-          (RhythmLoadState.Loading) {
+          } @switch (store.versions().loadState) { @case (LoadState.Loading) {
           <ui-skeleton
             uiFrame
             uiFrameHeight="7.5rem"
             data-testid="admin-rhythm-history-skeleton"
           />
-          } @case (RhythmLoadState.Failed) {
+          } @case (LoadState.Failed) {
           <ui-notice
             uiTone="destructive"
             data-testid="admin-rhythm-history-failed"
@@ -892,7 +890,7 @@
               {{ t('visits.retry') }}
             </button>
           </ui-notice>
-          } @case (RhythmLoadState.Ready) { @if (history().length > 0) {
+          } @case (LoadState.Ready) { @if (history().length > 0) {
           <ul uiListGroup data-testid="admin-rhythm-history">
             @for (row of history(); track row.version) {
             <li

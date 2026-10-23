@@ -30,10 +30,10 @@ import {
 import {
   type ActivityGroupVm,
   type ActivityRowVm,
-  CardLoadState,
   type LedgerPageVm,
   type LedgerPagingVm,
 } from './client-pages.vm';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
 
 /*
@@ -550,7 +550,7 @@ export function activityGroups(
 
 export interface LedgerPageInput extends ActivityInput {
   /** The first page's read. */
-  readonly cardLoadState: CardLoadState;
+  readonly loadState: LoadState;
   /** Every entry loaded so far under the pill, in any order. */
   readonly entries: readonly JournalEntry[];
   /** The cursor of the next page; `null` = nothing older is left. */
@@ -574,12 +574,14 @@ function netsUnder(filter: JournalFeed): boolean {
 }
 
 function pagingOf(input: LedgerPageInput): LedgerPagingVm | null {
-  if (input.cardLoadState !== CardLoadState.Ready) return null;
-  if (input.loadingMore) return { kind: 'loading' };
-  if (input.next === null) return { kind: 'end' };
+  if (input.loadState !== LoadState.Ready) return null;
+  if (input.loadingMore) return { pagingState: PagingState.Loading };
+  if (input.next === null) return { pagingState: PagingState.End };
   // Offline with a cursor left: nothing to offer, and nothing has ended.
   if (!input.online) return null;
-  return { kind: input.failedMore ? 'failed' : 'more' };
+  return {
+    pagingState: input.failedMore ? PagingState.Failed : PagingState.More,
+  };
 }
 
 /** The ledger page «Движение» (§2.2.6). */
@@ -587,9 +589,9 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
   const { words } = input;
   const balance = words.ledgerPage.points(input.balance);
   const holder = input.holder.trim();
-  const ready = input.cardLoadState === CardLoadState.Ready;
+  const ready = input.loadState === LoadState.Ready;
   return {
-    cardLoadState: input.cardLoadState,
+    loadState: input.loadState,
     subline:
       holder === ''
         ? [{ text: balance, fact: true }]

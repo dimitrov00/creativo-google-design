@@ -20,8 +20,10 @@ import {
  * INSTANT (a photo's `takenAtUtcMs`, the clock's "now") needs the shop's
  * zone, and it is read in the location's `timeZone`, never the device's.
  *
- * Shared by the visit lists, the staff client card and the staff day, so
- * the three never format a day or a price apart.
+ * The ONE set of formatters of the web UI (`@creativo/ui/wall-clock`):
+ * the features, the `libs/ui` pickers, the shell and the showcase all
+ * format a day, an instant or a price here, so no two of them ever format
+ * one apart.
  */
 
 const MS_PER_DAY = 86_400_000;
@@ -112,6 +114,25 @@ export function formatWallClockParts(
     .formatToParts(civilMs(localDate, minute ?? 0))
     .map((part) => part.value)
     .join('');
+}
+
+/**
+ * «4 – 6 септември» — two shop days as ONE range, in the locale's own range
+ * form: `Intl`'s `formatRange` owns the separator and the pieces the two
+ * ends share, and its output is never post-processed. Both ends take the
+ * same `options` and are read, like every face here, on the UTC axis
+ * (`timeZone: 'UTC'`, cached formatter) — so no device zone can move a day.
+ */
+export function formatWallClockRange(
+  from: LocalDate,
+  to: LocalDate,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  return dateFormat(locale, 'UTC', options).formatRange(
+    civilMs(from),
+    civilMs(to),
+  );
 }
 
 /** «10:00» — a minute of the shop's day. */

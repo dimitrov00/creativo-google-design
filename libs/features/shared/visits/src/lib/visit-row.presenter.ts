@@ -11,40 +11,41 @@ import {
   BookingStatus,
   CustomerId,
   LocalDate,
+  type LocationId,
+  MinuteOfDay,
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
 import {
   BillingSystem,
+  CancelledSide,
   type PersonSubject,
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
   VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
-import {
-  LEGACY_CANCELLED_SIDE,
-  LEGACY_VISIT_ROW_OUTCOME,
-  VISITS_TIME_ZONE,
-  VISIT_ROW_OUTCOME_OF,
-  shopNowOf,
-} from './visit-ecs.shim';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
 import { UPCOMING_SECTION_KEY, visitSectionKey } from './visit-sections';
-import { formatCents, formatMinute, formatWallClock } from './wall-clock';
-import type {
-  VisitGrain,
-  VisitLookup,
-  VisitPerspective,
-  VisitRowMark,
-  VisitRowOutcome,
-  VisitRowVariant,
-  VisitRowVm,
-  VisitTrailing,
-  VisitTrailingFact,
-  VisitWaitlistWords,
-  VisitWords,
+import {
+  formatCents,
+  formatMinute,
+  formatWallClock,
+} from '@creativo/ui/wall-clock';
+import {
+  TrailingFactFace,
+  type VisitLookup,
+  type VisitRowMark,
+  VisitRowEntry,
+  type VisitRowVm,
+  type VisitTrailing,
+  type VisitTrailingFact,
+  type VisitWaitlistWords,
+  type VisitWords,
 } from './visit-row.vm';
 
 /*
@@ -52,17 +53,21 @@ import type {
  * or a waiting request, into the one row both lists draw.
  *
  * Pure on purpose: the words arrive translated (`VisitWords`), the
- * catalogue arrives as a lookup (`VisitLookup`), the clock arrives as a
- * number. So the staff sheet builds rows without injecting a catalogue
- * service into specs that never provided one (FE-7), and a row reads the
- * same in a spec, on the client's page and on the staff card.
+ * catalogue arrives as a lookup (`VisitLookup`), "now" arrives as the
+ * shop's `ShopNow`, derived ONCE by the host (Law 7.3). So the staff sheet
+ * builds rows without injecting a catalogue service into specs that never
+ * provided one (FE-7), and a row reads the same in a spec, on the client's
+ * page and on the staff card.
  *
  * The visit is the FLAT entity straight from its document (flip 1, Law 5):
  * its day and hour are the shop's wall clock (`localDate` +
- * `startMinutes`, Law 7.3) and are printed as stored; only "now" — and a
- * photo's instant — is read on the shop's calendar, in the LOCATION's zone
- * (`VisitLookup.locationTimeZone`, the tenant's while the lookup names
- * none), never the device's.
+ * `startMinutes`, Law 7.3) and are printed as stored, and the row carries
+ * them as they are, so the list's system sections it with no conversion. A
+ * photo's instant is read on the shop's calendar, in the LOCATION's zone
+ * (`VisitLookup.locationTimeZone`, the zone "now" was read in while the
+ * lookup names none), never the device's. The story's tags are the
+ * system's (`VisitRowOutcome`, `CancelledSide`), compared against their
+ * dictionaries.
  *
  * The story's math — whose seats, the root outcome, the decisive
  * cancellation and its side, the people counted, the upcoming rule, the
@@ -78,14 +83,26 @@ const DAYPART_KEY = {
   [Daypart.Evening]: 'evening',
 } as const satisfies Record<Daypart, string>;
 
+/** The first minute of a shop day — where a waiting request's row starts. */
+const DAY_START: MinuteOfDay = MinuteOfDay.ofProven(0);
+
+/**
+ * Where a waiting request that watches no day files (§9 R-4): the first
+ * day of the civil axis at its first minute, so it orders before every real
+ * row, as the legacy instant 0 did — built from the constructors, never a
+ * throw.
+ */
+const WAITLIST_UNDATED = {
+  localDate: LocalDate.fromEpochDay(0),
+  startMinutes: DAY_START,
+} as const;
+
 /**
  * The row's words as the builders read them: `VisitWords`, and the one word
- * revision 3 adds for a row (§2.5, Fresha adopt-now N5). It stands HERE,
- * optional, until the view model's own table carries it (`visit-row.vm.ts`
- * is frozen between the contract wave and the cleanup): `visitWordsOf`
- * always fills it, so a host that hands its words on as plain `VisitWords`
- * still hands the word on, and a hand-built table without it draws no
- * voucher mark.
+ * revision 3 adds for a row (§2.5, Fresha adopt-now N5), optional:
+ * `visitWordsOf` always fills it, so a host that hands its words on as
+ * plain `VisitWords` still hands the word on, and a hand-built table
+ * without it draws no voucher mark.
  */
 export interface VisitBuilderWords extends VisitWords {
   /** «платено с ваучер» — the voucher mark's hidden word (`visits.marks.voucher`). */
@@ -129,26 +146,19 @@ export interface VisitRowOptions {
   readonly subjectCustomerId?: string | null;
   /** The appointment the sheet is open on: it wears «Този час» wherever its date files it. */
   readonly currentAppointmentId: string | null;
-  readonly nowMs: number;
-  readonly locale: string;
   /**
-   * @deprecated RETIRED (revision 3 §3.10, W4): a row draws no thumbs — the
-   * glance's card is `lib-visit-card`, built by `visitCardOf`, which takes
-   * the photos itself. Accepted and IGNORED (a row counts its photos from
-   * `photoCount` alone) until the one caller left, the built
-   * `visitsModuleVm` (`client-card.presenter.ts`), is gone; the key goes
-   * with it (contract delta Z2-1).
+   * "Now" on the shop's wall clock, derived ONCE by the host (Law 7.3,
+   * `ZonedTimeSystem.shopNow`): every row of a list reads the same one.
    */
-  readonly photos?: readonly VisitRowPhotoSource[];
+  readonly now: ShopNow;
+  /**
+   * The zone `now` was read in — a photo's day falls back to it when the
+   * lookup names no zone for the visit's shop.
+   */
+  readonly timeZone: TimeZone;
+  readonly locale: string;
   /** The visit's photos, counted (`countPhotosByAppointment`): a row's mark. */
   readonly photoCount?: number;
-  /**
-   * @deprecated RETIRED (revision 3 §3.11, W4): a row is a row, and
-   * `lib-visit-row` takes no variant any more. Accepted and IGNORED until
-   * the one caller left, the built `visitsModuleVm`, is gone; the key and
-   * `VisitRowVariant` go with it (contract delta Z2-1).
-   */
-  readonly variant?: VisitRowVariant;
   readonly words: VisitBuilderWords;
   /**
    * False withholds the client's own words from a viewer who may not read
@@ -193,7 +203,7 @@ export function visitWordsOf(
 ): VisitCatalogueWords {
   const plural = (key: string, count: number) =>
     translate(`${key}.${pluralForm(count, lang)}`, { count });
-  const staff = perspective === 'staff';
+  const staff = perspective === VisitPerspective.Staff;
   return {
     today: translate('visits.today'),
     thisVisit: translate('visits.thisVisit'),
@@ -216,7 +226,7 @@ export function visitWordsOf(
       translate(
         !staff
           ? 'appointments.status.cancelled'
-          : side === 'client'
+          : side === CancelledSide.Client
             ? 'staff.visit.resolution.cancelledByClient'
             : 'staff.visit.resolution.cancelledByStaff',
       ),
@@ -246,7 +256,7 @@ export function visitWaitlistWordsOf(
 
 /**
  * A person's own story of one appointment, as the row tells it. Exported
- * with `storyOf`, `VisitClock` and `distinct` for the card's builders
+ * with `storyOf`, `visitClockOf` and `distinct` for the card's builders
  * (`visit-card.presenter.ts`, contract delta V1-1): a card is a row told at
  * length, and it reads the same story off the same clock.
  */
@@ -254,19 +264,22 @@ export interface VisitStory {
   /** The seats the row is about — the subject's, or the whole party's. */
   readonly seats: readonly Seat[];
   readonly outcome: VisitRowOutcome;
-  /** Who called it off — set exactly when the outcome is `cancelled`. */
-  readonly cancelledBy: 'client' | 'shop' | null;
+  /** Who called it off — set exactly when the outcome is `CANCELLED`. */
+  readonly cancelledBy: CancelledSide | null;
 }
 
-/** The shop's zone a visit is read in: its location's, else the tenant's. */
+/**
+ * The shop's zone a visit is read in — its location's, as the lookup names
+ * it (`VisitLookup.locationTimeZone`); `null` where the lookup names none,
+ * and the caller falls back to the zone it read "now" in.
+ */
 export function visitZoneOf(
-  locationId: string | null,
+  locationId: LocationId | null,
   lookup: Pick<VisitLookup, 'locationTimeZone'>,
-): TimeZone {
-  return (
-    (locationId === null ? null : lookup.locationTimeZone?.(locationId)) ??
-    VISITS_TIME_ZONE
-  );
+): TimeZone | null {
+  return locationId === null
+    ? null
+    : (lookup.locationTimeZone?.(locationId) ?? null);
 }
 
 /** One appointment as a row of either list. */
@@ -276,26 +289,27 @@ export function visitRowOf(
   lookup: VisitLookup,
 ): VisitRowVm {
   const words = options.words;
-  const staff = options.perspective === 'staff';
-  const zone = visitZoneOf(appointment.locationId, lookup);
-  // One reading per list: every row shares the list's `nowMs`.
-  const now = shopNowOf(options.nowMs, zone);
-  const at = new VisitClock(
+  const staff = options.perspective === VisitPerspective.Staff;
+  // One reading per list: every row shares the host's `now`.
+  const now = options.now;
+  const at = visitClockOf(
     appointment.localDate,
     appointment.startMinutes,
     now,
     options.locale,
-    zone,
+    visitZoneOf(appointment.locationId, lookup) ?? options.timeZone,
   );
   const story = storyOf(appointment, options);
   const id: string = appointment.id;
   const current = id === options.currentAppointmentId;
   const upcoming = VisitStorySystem.isUpcoming(
-    VISIT_ROW_OUTCOME_OF[story.outcome],
+    story.outcome,
     { localDate: appointment.localDate, minute: appointment.startMinutes },
     now,
   );
-  const hollow = story.outcome === 'cancelled' || story.outcome === 'no_show';
+  const hollow =
+    story.outcome === VisitRowOutcome.Cancelled ||
+    story.outcome === VisitRowOutcome.NoShow;
 
   const title =
     distinct(
@@ -311,9 +325,10 @@ export function visitRowOf(
   const cancelledWord =
     story.cancelledBy === null ? null : words.cancelledBy(story.cancelledBy);
   const statusWord =
-    story.outcome === 'no_show'
+    story.outcome === VisitRowOutcome.NoShow
       ? words.noShow
-      : story.outcome === 'open' && status === BookingStatus.Pending
+      : story.outcome === VisitRowOutcome.Open &&
+          status === BookingStatus.Pending
         ? words.statusPending
         : cancelledWord;
   const outcomeSlot = [current ? words.thisVisit : null, statusWord]
@@ -327,7 +342,9 @@ export function visitRowOf(
   const day = LocalDate.parts(appointment.localDate);
   const tile = {
     caption:
-      options.grain === 'month' ? at.weekday() : words.tileMonth(day.month),
+      options.grain === VisitGrain.Month
+        ? at.weekday()
+        : words.tileMonth(day.month),
     day: day.day,
     tone: hollow
       ? ('hollow' as const)
@@ -338,8 +355,10 @@ export function visitRowOf(
 
   const base = {
     id,
-    kind: 'visit' as const,
-    startMs: appointment.utcEpochMs,
+    visitRowEntry: VisitRowEntry.Visit,
+    // The shop's wall clock, as stored — the order within a section.
+    localDate: appointment.localDate,
+    startMinutes: appointment.startMinutes,
     sectionKey: upcoming
       ? UPCOMING_SECTION_KEY
       : visitSectionKey(appointment.localDate, options.grain),
@@ -350,7 +369,7 @@ export function visitRowOf(
     struck: hollow,
     outcome: story.outcome,
     // The STORED tag (F1-9): the client row's `data-status` reads it.
-    status,
+    bookingStatus: status,
   };
 
   if (!staff) {
@@ -366,7 +385,6 @@ export function visitRowOf(
       lines: [{ text: [barberLabel, at.time()].join(' · ') }],
       quote: null,
       trailing: {
-        kind: 'barber',
         avatarSrc: single === null ? null : lookup.barberAvatarSrc(single),
         name: barberLabel,
         several: barberIds.length > 1,
@@ -402,7 +420,7 @@ export function visitRowOf(
   // The shop as a line names it: its short name, without the tenant's brand
   // that every shop shares (`VisitLookup.locationName`).
   const locationText =
-    story.outcome === 'worked' && lookup.locationCount > 1
+    story.outcome === VisitRowOutcome.Worked && lookup.locationCount > 1
       ? lookup.locationName(appointment.locationId)
       : null;
 
@@ -428,7 +446,7 @@ export function visitRowOf(
   const statusLine = !current && cancelledWord !== null ? cancelledWord : null;
   const lead: readonly string[] = current
     ? [at.time()]
-    : story.outcome === 'open'
+    : story.outcome === VisitRowOutcome.Open
       ? [at.whenShort(words.today)]
       : [];
   const before = [
@@ -447,7 +465,8 @@ export function visitRowOf(
     statusLine === null ? [factLine] : [{ text: statusLine }, factLine];
 
   const price =
-    story.outcome === 'worked' || story.outcome === 'cancelled'
+    story.outcome === VisitRowOutcome.Worked ||
+    story.outcome === VisitRowOutcome.Cancelled
       ? priceOf(appointment, story.seats, options.locale)
       : null;
 
@@ -460,7 +479,6 @@ export function visitRowOf(
     barberIds.length === 0
       ? null
       : {
-          kind: 'barber',
           avatarSrc:
             soleBarber === null ? null : lookup.barberAvatarSrc(soleBarber),
           name:
@@ -473,21 +491,32 @@ export function visitRowOf(
   // THE STAFF'S FACT ends the second line: money, a state in words, or
   // «Този час». At most one.
   const trailingFact: VisitTrailingFact = current
-    ? { kind: 'badge', text: words.thisVisit }
-    : story.outcome === 'worked' && price !== null
-      ? { kind: 'amount', text: price, emphasis: 'primary', struck: false }
-      : story.outcome === 'cancelled' && price !== null
-        ? { kind: 'amount', text: price, emphasis: 'secondary', struck: true }
-        : story.outcome === 'no_show'
+    ? { trailingFactFace: TrailingFactFace.Badge, text: words.thisVisit }
+    : story.outcome === VisitRowOutcome.Worked && price !== null
+      ? {
+          trailingFactFace: TrailingFactFace.Amount,
+          text: price,
+          emphasis: 'primary',
+          struck: false,
+        }
+      : story.outcome === VisitRowOutcome.Cancelled && price !== null
+        ? {
+            trailingFactFace: TrailingFactFace.Amount,
+            text: price,
+            emphasis: 'secondary',
+            struck: true,
+          }
+        : story.outcome === VisitRowOutcome.NoShow
           ? {
-              kind: 'status',
+              trailingFactFace: TrailingFactFace.Status,
               icon: 'visit.noShow',
               text: words.noShow,
               tone: 'warning',
             }
-          : story.outcome === 'open' && status === BookingStatus.Pending
+          : story.outcome === VisitRowOutcome.Open &&
+              status === BookingStatus.Pending
             ? {
-                kind: 'status',
+                trailingFactFace: TrailingFactFace.Status,
                 icon: 'visit.pending',
                 text: words.statusPending,
                 tone: 'neutral',
@@ -495,7 +524,7 @@ export function visitRowOf(
             : null;
 
   const marks: VisitRowMark[] = [];
-  if (story.outcome === 'worked') {
+  if (story.outcome === VisitRowOutcome.Worked) {
     const photoCount = options.photoCount ?? 0;
     if (photoCount > 0) {
       marks.push({
@@ -631,16 +660,13 @@ export function waitlistRowOf(
 
   return {
     id: request.id,
-    kind: 'waitlist',
-    // The first watched day's first instant on the shop's calendar — the
-    // order within the upcoming run.
-    startMs:
-      first === undefined
-        ? 0
-        : ZonedTimeSystem.startOfLocalDay(
-            first.localDate,
-            visitZoneOf(request.locationId, lookup),
-          ),
+    visitRowEntry: VisitRowEntry.Waitlist,
+    // The first watched day, from its first minute — the order within the
+    // upcoming run; a request that watches no day files first (§9 R-4).
+    localDate:
+      first === undefined ? WAITLIST_UNDATED.localDate : first.localDate,
+    startMinutes:
+      first === undefined ? WAITLIST_UNDATED.startMinutes : DAY_START,
     sectionKey: UPCOMING_SECTION_KEY,
     upcoming: true,
     tile: null,
@@ -656,7 +682,7 @@ export function waitlistRowOf(
     trailingFact: null,
     marks: [],
     outcome: null,
-    status: null,
+    bookingStatus: null,
     accessibleName: `${words.name(services, whenLong)}${more}`,
     testId: 'client-visit-waitlist',
   };
@@ -680,15 +706,12 @@ export function storyOf(
   const story = VisitStorySystem.subjectStory(
     appointment,
     subjectRecordOf(appointment, options),
-    options.perspective === 'staff',
+    options.perspective === VisitPerspective.Staff,
   );
   return {
     seats: story.seatIndexes.map((index) => appointment.seats[index] as Seat),
-    outcome: LEGACY_VISIT_ROW_OUTCOME[story.outcome],
-    cancelledBy:
-      story.cancelledBy === null
-        ? null
-        : LEGACY_CANCELLED_SIDE[story.cancelledBy],
+    outcome: story.outcome,
+    cancelledBy: story.cancelledBy,
   };
 }
 
@@ -775,83 +798,135 @@ function listFormat(locale: string): Intl.ListFormat {
 }
 
 /**
- * A visit's wall-clock start, read against the shop's "now". The day and
- * the minute print as stored (`formatWallClock`); a photo's instant is read
- * on the shop's calendar (`timeZone`, the location's).
+ * A visit's wall-clock start, read against the shop's "now" — ONE clock for
+ * the row and the card (a card is a row told at length). The day and the
+ * minute print as stored (`formatWallClock`); a photo's instant is read on
+ * the shop's calendar (`timeZone`, the location's). The row's faces and the
+ * card's own date faces (`dayShort`, `weekdayAndDay`, `whenHeard`: a row
+ * never prints its date) sit side by side.
  */
-export class VisitClock {
-  constructor(
-    private readonly localDate: LocalDate,
-    private readonly minute: number,
-    private readonly now: ShopNow,
-    private readonly locale: string,
-    private readonly timeZone: TimeZone,
-  ) {}
-
+export type VisitClock = {
   /** «10:00». */
-  time(): string {
-    return formatMinute(this.minute, this.locale);
-  }
-
+  readonly time: () => string;
   /** «пт» — the tile's caption under a month. */
-  weekday(): string {
-    return formatWallClock(this.localDate, null, this.locale, {
-      weekday: 'short',
-    });
-  }
-
+  readonly weekday: () => string;
   /**
    * «днес, 10:00» · «пт, 10:00» — an hour still to come, in the fact line:
    * the day, then the time, two readings joined the same way whichever the
    * day is (`Intl`'s own weekday-and-time pattern appends « ч.» in bg).
    */
-  whenShort(today: string): string {
-    return `${this.isToday() ? today : this.weekday()}, ${this.time()}`;
-  }
-
+  readonly whenShort: (today: string) => string;
   /** «4 септември в 10:00» — the row's name, where a reader hears the month (R59). */
-  whenLong(today: string): string {
-    return this.isToday()
-      ? `${today}, ${this.time()}`
-      : formatWallClock(this.localDate, this.minute, this.locale, {
+  readonly whenLong: (today: string) => string;
+  /** «4 септември» — a photo's day, for its name; the visit's own day without one. */
+  readonly dayLong: (takenAtUtcMs?: UtcEpochMs) => string;
+  /** «Иван» · «Иван и Петър» — the people, as the locale lists them. */
+  readonly list: (names: readonly string[]) => string;
+  /** The visit's day is today's, on the shop's calendar. */
+  readonly isToday: () => boolean;
+  /** The year only outside the current one (R59). */
+  readonly yearIfElsewhere: (
+    day: LocalDate,
+  ) => Pick<Intl.DateTimeFormatOptions, 'year'>;
+  /** «5.09» — a last visit's day on the card (R59); the year only outside the current one. */
+  readonly dayShort: () => string;
+  /** «пт, 23.10» — the day of a visit to come, as `/account` has always printed it. */
+  readonly weekdayAndDay: () => string;
+  /** «петък, 23 октомври в 10:00» · «днес, 10:00» — a card's visit to come, heard. */
+  readonly whenHeard: (today: string) => string;
+};
+
+/** The clock of one visit — its shop day and minute, against the shop's `now`. */
+export function visitClockOf(
+  localDate: LocalDate,
+  minute: MinuteOfDay,
+  now: ShopNow,
+  locale: string,
+  timeZone: TimeZone,
+): VisitClock {
+  const time = (): string => formatMinute(minute, locale);
+
+  const weekday = (): string =>
+    formatWallClock(localDate, null, locale, { weekday: 'short' });
+
+  const isToday = (): boolean => now.localDate === localDate;
+
+  const yearIfElsewhere = (
+    day: LocalDate,
+  ): Pick<Intl.DateTimeFormatOptions, 'year'> =>
+    LocalDate.parts(now.localDate).year === LocalDate.parts(day).year
+      ? {}
+      : { year: 'numeric' };
+
+  const whenShort = (today: string): string =>
+    `${isToday() ? today : weekday()}, ${time()}`;
+
+  const whenLong = (today: string): string =>
+    isToday()
+      ? `${today}, ${time()}`
+      : formatWallClock(localDate, minute, locale, {
           day: 'numeric',
           month: 'long',
-          ...this.yearIfElsewhere(this.localDate),
+          ...yearIfElsewhere(localDate),
           hour: '2-digit',
           minute: '2-digit',
         });
-  }
 
-  /** «4 септември» — a photo's day, for its name; the visit's own day without one. */
-  dayLong(takenAtUtcMs?: UtcEpochMs): string {
+  const dayLong = (takenAtUtcMs?: UtcEpochMs): string => {
     const day =
       takenAtUtcMs === undefined
-        ? this.localDate
-        : ZonedTimeSystem.toLocal(takenAtUtcMs, this.timeZone).localDate;
-    return formatWallClock(day, null, this.locale, {
+        ? localDate
+        : ZonedTimeSystem.toLocal(takenAtUtcMs, timeZone).localDate;
+    return formatWallClock(day, null, locale, {
       day: 'numeric',
       month: 'long',
-      ...this.yearIfElsewhere(day),
+      ...yearIfElsewhere(day),
     });
-  }
+  };
 
-  /** «Иван» · «Иван и Петър» — the people, as the locale lists them. */
-  list(names: readonly string[]): string {
-    return listFormat(this.locale).format(names);
-  }
+  const list = (names: readonly string[]): string =>
+    listFormat(locale).format(names);
 
-  /** The visit's day is today's, on the shop's calendar. */
-  isToday(): boolean {
-    return this.now.localDate === this.localDate;
-  }
+  const dayShort = (): string =>
+    formatWallClock(localDate, null, locale, {
+      day: 'numeric',
+      month: 'short',
+      ...yearIfElsewhere(localDate),
+    });
 
-  /** The year only outside the current one (R59). */
-  yearIfElsewhere(day: LocalDate): Pick<Intl.DateTimeFormatOptions, 'year'> {
-    return LocalDate.parts(this.now.localDate).year ===
-      LocalDate.parts(day).year
-      ? {}
-      : { year: 'numeric' };
-  }
+  const weekdayAndDay = (): string =>
+    formatWallClock(localDate, null, locale, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      ...yearIfElsewhere(localDate),
+    });
+
+  const whenHeard = (today: string): string =>
+    isToday()
+      ? `${today}, ${time()}`
+      : formatWallClock(localDate, minute, locale, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          ...yearIfElsewhere(localDate),
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+  return {
+    time,
+    weekday,
+    whenShort,
+    whenLong,
+    dayLong,
+    list,
+    isToday,
+    yearIfElsewhere,
+    dayShort,
+    weekdayAndDay,
+    whenHeard,
+  };
 }
 
 // ── The waiting request's days ─────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
+import { afterEach, vi } from 'vitest';
 import { Result } from '@core/primitives';
 import { UI_LOGO } from '../manifest/icon-vocabulary';
 import { MATERIAL_GLYPHS } from '../material/material-glyphs.generated';
@@ -9,6 +10,7 @@ import {
   UiIconDiagnostic,
   UiIconManifestSource,
   UiIconRegistry,
+  consoleUiIconReporter,
   provideUiIcons,
 } from './icon-registry.service';
 
@@ -182,5 +184,48 @@ describe('UiIconRegistry', () => {
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe(
       pathOf('storefront'),
     );
+  });
+});
+
+describe('consoleUiIconReporter', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const diagnostic: UiIconDiagnostic = {
+    code: 'icon-missing',
+    key: 'no.such',
+    origin: 'bundled',
+    detail: 'not in the registry',
+  };
+
+  it('sends a loud diagnostic to console.error, with its key', () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    consoleUiIconReporter(true).report(diagnostic);
+
+    expect(error).toHaveBeenCalledWith(
+      '[ui-icon] icon-missing "no.such" (bundled): not in the registry',
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('sends a quiet diagnostic to console.warn, without a key it lacks', () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    consoleUiIconReporter(false).report({
+      code: 'source-failed',
+      origin: 'source',
+      detail: 'offline',
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      '[ui-icon] source-failed (source): offline',
+    );
+    expect(error).not.toHaveBeenCalled();
   });
 });

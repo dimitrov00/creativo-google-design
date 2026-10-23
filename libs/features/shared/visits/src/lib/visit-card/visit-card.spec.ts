@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
+import { VisitPerspective } from '@core/systems';
 import { FIXTURE_TODAY } from '@core/testing';
 import type { UiCardPadding, UiCardTone } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
@@ -12,14 +13,15 @@ import {
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   georgiWaitlistRequest,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import { visitWaitlistWordsOf, visitWordsOf } from '../visit-row.presenter';
 import { VisitCard, type VisitCardHeaderProminence } from './visit-card';
 import { visitCardOf, waitlistCardOf } from './visit-card.presenter';
-import type { VisitCardVm } from './visit-card.vm';
+import { VisitCardSlot, type VisitCardVm } from './visit-card.vm';
 
 /*
  * THE DRAWING of `lib-visit-card` (revision 3 §3.10). Its public API is
@@ -36,11 +38,11 @@ import type { VisitCardVm } from './visit-card.vm';
 
 const BG = catalogueTranslator(appCatalogue('bg'));
 const STAFF_WORDS = {
-  ...visitWordsOf(BG, 'bg', 'staff'),
+  ...visitWordsOf(BG, 'bg', VisitPerspective.Staff),
   statusConfirmed: BG('appointments.status.confirmed'),
 };
 const CLIENT_WORDS = {
-  ...visitWordsOf(BG, 'bg', 'client'),
+  ...visitWordsOf(BG, 'bg', VisitPerspective.Client),
   statusConfirmed: BG('appointments.status.confirmed'),
 };
 const CARD_WORDS = {
@@ -49,7 +51,7 @@ const CARD_WORDS = {
   name: (label: string, sentence: string) =>
     BG('visits.card.name', { label, sentence }),
 };
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const NOW = visitsNow(FIXTURE_TODAY);
 const CSS = readFileSync(resolve(__dirname, 'visit-card.css'), 'utf8');
 const NBSP = ' ';
 
@@ -64,10 +66,11 @@ function lastVisit(): VisitCardVm {
   return visitCardOf(
     visit('appt-sep'),
     {
-      kind: 'last',
-      perspective: 'staff',
+      visitCardSlot: VisitCardSlot.Last,
+      perspective: VisitPerspective.Staff,
       subjectUserId: GEORGI_UID,
-      nowMs: NOW_MS,
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
       locale: 'bg',
       words: STAFF_WORDS,
       cardWords: CARD_WORDS,
@@ -89,10 +92,11 @@ function nextVisit(): VisitCardVm {
   return visitCardOf(
     visit('appt-oct'),
     {
-      kind: 'next',
-      perspective: 'staff',
+      visitCardSlot: VisitCardSlot.Next,
+      perspective: VisitPerspective.Staff,
       subjectUserId: GEORGI_UID,
-      nowMs: NOW_MS,
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
       locale: 'bg',
       words: STAFF_WORDS,
       cardWords: CARD_WORDS,
@@ -121,10 +125,11 @@ function upcoming(): VisitCardVm {
   return visitCardOf(
     visit('appt-oct'),
     {
-      kind: 'next',
-      perspective: 'client',
+      visitCardSlot: VisitCardSlot.Next,
+      perspective: VisitPerspective.Client,
       subjectUserId: null,
-      nowMs: NOW_MS,
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
       locale: 'bg',
       words: CLIENT_WORDS,
       cardWords: CARD_WORDS,
@@ -475,6 +480,20 @@ describe('VisitCard · the card to read (the staff glance)', () => {
     expect(text('.visit-card__label')).toBe('Следващ час');
     expect(q('.visit-card__thumbs')).toBeNull();
     expect(q('.visit-card__capsule')).not.toBeNull();
+  });
+
+  it('keeps data-kind’s lower-case word for every slot', async () => {
+    // The slot is a SCREAMING tag; the host prints its word
+    // (`visitCardSlotWords`), the value the CSS and the e2e read.
+    const { fixture, host, q } = await mount(lastVisit());
+    expect(lastVisit().visitCardSlot).toBe(VisitCardSlot.Last);
+    expect(q('lib-visit-card')?.getAttribute('data-kind')).toBe('last');
+    host.vm.set(nextVisit());
+    fixture.detectChanges();
+    expect(q('lib-visit-card')?.getAttribute('data-kind')).toBe('next');
+    host.vm.set(waitingRequest());
+    fixture.detectChanges();
+    expect(q('lib-visit-card')?.getAttribute('data-kind')).toBe('waitlist');
   });
 });
 

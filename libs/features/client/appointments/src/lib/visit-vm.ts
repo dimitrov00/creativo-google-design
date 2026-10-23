@@ -38,5 +38,5 @@ export interface ClientVisitVm {
   /** Still ahead — open, and not yet begun (the row's `upcoming`, filed under «Предстоящи»). */
   readonly upcoming: boolean;
   /** The stored `bookingStatus` (`'CONFIRMED'`, …). */
-  readonly status: BookingStatus;
+  readonly bookingStatus: BookingStatus;
 }

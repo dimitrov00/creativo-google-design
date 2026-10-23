@@ -1,3 +1,6 @@
+import type { CouponOccasion } from '@core/components';
+import type { LocationId, TimeZone } from '@core/primitives';
+
 /**
  * What the client card is handed from outside (client-card-redesign §5.2.1):
  * who it is about and the visit it was opened from. The card reads
@@ -40,13 +43,13 @@ export interface ClientCardGrant {
   /** ISO date, or `null` when the grant does not expire. */
   readonly expiresOn: string | null;
   /**
-   * The moment the grant's coupon was made for (`Coupon.occasion`,
-   * revision 3 §4.6): the birthday card carries a grant only when its
-   * coupon says `birthday` — a name is never parsed. Optional, and absent
-   * reads as `null`: a host that does not know the coupon's occasion yet
-   * (the editor, until its wiring wave) states nothing.
+   * The moment the grant's coupon was made for (`Coupon.couponOccasion`,
+   * revision 3 §4.6), passed through as the coupon holds it: the birthday
+   * card carries a grant only when its coupon says `BIRTHDAY` — a name is
+   * never parsed. Optional, and absent reads as `null`: a host that does
+   * not know the coupon's occasion states nothing.
    */
-  readonly occasion?: 'birthday' | null;
+  readonly couponOccasion?: CouponOccasion | null;
 }
 
 /**
@@ -87,6 +90,12 @@ export interface ClientCardCatalog {
    * page draws the barbers the loyalty catalogue itself names (P4-1).
    */
   barberIds?(): readonly string[];
+  /**
+   * A location's own zone (Law 7.2) — what a visit row reads a photo's day
+   * in (`VisitLookup.locationTimeZone`); the dashboard fills it. Optional:
+   * without it a row falls back to the zone the card read "now" in.
+   */
+  locationTimeZone?(locationId: LocationId): TimeZone | null;
 }
 
 /**

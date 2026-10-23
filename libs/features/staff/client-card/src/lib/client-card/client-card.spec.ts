@@ -1,6 +1,7 @@
-import type { VisitLeg } from '@core/components';
+import { CouponOccasion, type VisitLeg } from '@core/components';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
+import { RECORD_KIND_WORDS } from '../client-card.words';
 import {
   GEORGI,
   GEORGI_GRANT,
@@ -31,7 +32,7 @@ import {
 } from '../../testing/achievements-pages.rig';
 import { cssRule } from '../../testing/css-rule';
 import { ClientCard } from './client-card';
-import { CardLoadState } from '../client-pages.vm';
+import { LoadState } from '@creativo/shared/view-state';
 
 /*
  * THE GLANCE PAGE (client-card-revision-3 §2.1), mounted as the visit editor
@@ -122,7 +123,7 @@ function martinWithGift(overrides: Parameters<typeof martinContext>[0] = {}) {
         grantId: 'grant-birthday',
         title: 'Рожден ден',
         valueLabel: '−20 %',
-        occasion: 'birthday',
+        couponOccasion: CouponOccasion.Birthday,
       },
     ],
     ...overrides,
@@ -473,7 +474,7 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     expect(all.getAttribute('aria-label')).toBe('Лоялност: всички подробности');
 
     const loyalty = overview().loyalty;
-    if (loyalty?.cardLoadState !== CardLoadState.Ready)
+    if (loyalty?.loadState !== LoadState.Ready)
       throw new Error('the loyalty card is not ready');
     const card = must(byId<HTMLButtonElement>('client-loyalty-points'));
     expect(card.closest('lib-loyalty-glance')).not.toBeNull();
@@ -506,7 +507,7 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
   it('draws three named medals in a grid under the earned levels, the cue, and the records line that pushes «Рекорди»', async () => {
     const { byId, text, click, emitted, overview, all, host } = await mount();
     const medals = overview().medals;
-    if (medals?.cardLoadState !== CardLoadState.Ready)
+    if (medals?.loadState !== LoadState.Ready)
       throw new Error('the medals card is not ready');
     expect(medals.data.levelCount).toBeGreaterThan(0);
     const allButton = must(byId('client-achievements-all'));
@@ -545,7 +546,11 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     const line = must(byId('client-records-line'));
     expect(line.getAttribute('aria-label')).toBe(medals.data.recordsName);
     for (const record of medals.data.records) {
-      expect(text(byId(`client-record-${record.kind}`))).toBe(record.value);
+      expect(
+        text(
+          byId(`client-record-${RECORD_KIND_WORDS[record.personalRecordKind]}`),
+        ),
+      ).toBe(record.value);
     }
     await click('client-records-line');
     expect(emitted.records).toBe(1);
@@ -739,7 +744,7 @@ describe('lib-client-card — Мартин, in the chair on his birthday', () =>
             grantId: 'grant-birthday',
             title: 'Рожден ден',
             valueLabel: '−20 %',
-            occasion: 'birthday',
+            couponOccasion: CouponOccasion.Birthday,
           },
         ],
       }),

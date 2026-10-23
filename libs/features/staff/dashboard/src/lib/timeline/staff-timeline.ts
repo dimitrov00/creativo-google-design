@@ -19,18 +19,24 @@ import { UiAvatar, UiIcon } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import {
   DRAG_THRESHOLD_PX,
-  EdgeScroller,
+  type DragGesture,
   HOLD_MS,
   HOLD_SLOP_PX,
   buzz,
   capturePointer,
   clamp,
+  edgeScrollerOf,
   fill,
   hourLabel,
+  PlacementVerdict,
+  type PlacementVerdictSlice,
   releasePointer,
   snapTo,
   timeLabel,
 } from '../time-grid/grid-gesture';
+import { gridEventWords } from '../tag-words';
+import { EditCommand, ResizeEdge } from '@core/components';
+import { GridEvent as GridEventTag } from '@core/systems';
 import type {
   GridColumn,
   GridCommit,
@@ -122,13 +128,11 @@ interface TimelineBand extends GridDraft {
   readonly whole: boolean;
 }
 
-/** Which edge — or the whole band — a live gesture is holding. */
-type DragKind = 'move' | 'resize-start' | 'resize-end';
-
 /** One live pointer gesture. Plain mutable state: nothing here is drawn. */
 interface DragState {
   readonly id: string;
-  readonly kind: DragKind;
+  /** Which edge — or the whole band — the gesture is holding. */
+  readonly dragGesture: DragGesture;
   readonly pointerId: number;
   readonly x0: number;
   readonly y0: number;
@@ -182,6 +186,8 @@ interface DragState {
   host: { class: 'staff-timeline' },
 })
 export class StaffTimeline {
+  /** A bar's `data-kind` — the lower-case words the CSS selects on. */
+  protected readonly gridEventWords = gridEventWords;
   /** One column per chair — each becomes a row. */
   readonly columns = input.required<readonly GridColumn[]>();
   /** The stretch of the clock to draw; the civil day when absent. */
@@ -363,7 +369,7 @@ export class StaffTimeline {
           // A gap is the ABSENCE of a booking — landing on one is the point.
           collides:
             band !== null &&
-            event.kind !== 'gap' &&
+            event.gridEvent !== GridEventTag.Gap &&
             event.startMinute < band.endMinute &&
             event.endMinute > band.startMinute,
         })),
@@ -372,14 +378,19 @@ export class StaffTimeline {
 
   /* ── The gesture ──────────────────────────────────────────────── */
 
-  private readonly gesture = signal<DragKind | null>(null);
+  private readonly gesture = signal<DragGesture | null>(null);
   protected readonly dragging = computed(() => this.gesture() !== null);
-  protected readonly moving = computed(() => this.gesture() === 'move');
-  protected readonly draggingEdge = computed(() => {
-    const kind = this.gesture();
-    if (kind === 'resize-start') return 'start';
-    return kind === 'resize-end' ? 'end' : null;
+  protected readonly moving = computed(
+    () => this.gesture() === EditCommand.Move,
+  );
+  protected readonly draggingEdge = computed<ResizeEdge | null>(() => {
+    const gesture = this.gesture();
+    return gesture === ResizeEdge.Start || gesture === ResizeEdge.End
+      ? gesture
+      : null;
   });
+  /** The two handles' edges, for the template's calls. */
+  protected readonly ResizeEdge = ResizeEdge;
 
   /** What each handle may be dragged to — `aria-valuemin`/`max`, the keyboard's bounds. */
   protected readonly handleBounds = computed(() => {
@@ -401,43 +412,42 @@ export class StaffTimeline {
    * under the band anywhere names the overlap, and the band is outside the
    * shift when any chosen chair is shut for part of it.
    */
-  protected readonly draftVerdict = computed<
-    | { readonly kind: 'short'; readonly minutes: number }
-    | { readonly kind: 'overlap'; readonly name: string; readonly time: string }
-    | { readonly kind: 'outside' }
-    | null
-  >(() => {
-    const band = this.band();
-    if (band === null) return null;
-    const floor = this.minMinutes();
-    if (band.endMinute - band.startMinute <= floor) {
-      return { kind: 'short', minutes: floor };
-    }
-    for (const row of this.rows()) {
-      const hit = row.bars.find((bar) => bar.collides);
-      if (hit !== undefined) {
-        return {
-          kind: 'overlap',
-          name: hit.title,
-          time: timeLabel(hit.startMinute),
-        };
+  protected readonly draftVerdict = computed<PlacementVerdictSlice | null>(
+    () => {
+      const band = this.band();
+      if (band === null) return null;
+      const floor = this.minMinutes();
+      if (band.endMinute - band.startMinute <= floor) {
+        return { placementVerdict: PlacementVerdict.Short, minutes: floor };
       }
-    }
-    const inside = this.columns().every((column) =>
-      column.open.some(
-        (window) =>
-          band.startMinute >= window.startMinute &&
-          band.endMinute <= window.endMinute,
-      ),
-    );
-    return inside ? null : { kind: 'outside' };
-  });
+      for (const row of this.rows()) {
+        const hit = row.bars.find((bar) => bar.collides);
+        if (hit !== undefined) {
+          return {
+            placementVerdict: PlacementVerdict.Overlap,
+            name: hit.title,
+            time: timeLabel(hit.startMinute),
+          };
+        }
+      }
+      const inside = this.columns().every((column) =>
+        column.open.some(
+          (window) =>
+            band.startMinute >= window.startMinute &&
+            band.endMinute <= window.endMinute,
+        ),
+      );
+      return inside ? null : { placementVerdict: PlacementVerdict.Outside };
+    },
+  );
 
   protected readonly readoutTone = computed<'destructive' | 'warning' | null>(
     () => {
       const verdict = this.draftVerdict();
       if (verdict === null) return null;
-      return verdict.kind === 'outside' ? 'warning' : 'destructive';
+      return verdict.placementVerdict === PlacementVerdict.Outside
+        ? 'warning'
+        : 'destructive';
     },
   );
 
@@ -447,21 +457,22 @@ export class StaffTimeline {
    * for the same physical reason.
    */
   protected readonly readoutAnchor = computed(() => {
-    const kind = this.gesture();
+    const gesture = this.gesture();
     const band = this.band();
-    if (kind === null || band === null) return null;
-    return kind === 'resize-start' ? band.from + band.span : band.from;
+    if (gesture === null || band === null) return null;
+    return gesture === ResizeEdge.Start ? band.from + band.span : band.from;
   });
 
   protected readonly readoutText = computed(() => {
-    const kind = this.gesture();
+    const gesture = this.gesture();
     const band = this.band();
-    if (kind === null || band === null) return '';
+    if (gesture === null || band === null) return '';
     const length = this.lengthText(band.endMinute - band.startMinute);
-    if (kind === 'move') {
+    if (gesture === EditCommand.Move) {
       return `${timeLabel(band.startMinute)} – ${timeLabel(band.endMinute)} · ${length}`;
     }
-    const edge = kind === 'resize-start' ? band.startMinute : band.endMinute;
+    const edge =
+      gesture === ResizeEdge.Start ? band.startMinute : band.endMinute;
     return `${timeLabel(edge)} · ${length}`;
   });
 
@@ -469,10 +480,12 @@ export class StaffTimeline {
     const verdict = this.draftVerdict();
     const copy = this.uiDragCopy();
     if (verdict === null) return '';
-    if (verdict.kind === 'short') {
+    if (verdict.placementVerdict === PlacementVerdict.Short) {
       return fill(copy.tooShort, { minutes: verdict.minutes });
     }
-    if (verdict.kind === 'outside') return copy.outside;
+    if (verdict.placementVerdict === PlacementVerdict.Outside) {
+      return copy.outside;
+    }
     return (
       fill(copy.overlap, { name: verdict.name, time: verdict.time }) ||
       `${verdict.name} ${verdict.time}`
@@ -480,10 +493,10 @@ export class StaffTimeline {
   });
 
   /** `aria-valuetext` — the same sentence the pill draws, for a reader. */
-  protected handleText(edge: 'start' | 'end'): string {
+  protected handleText(edge: ResizeEdge): string {
     const band = this.band();
     if (band === null) return '';
-    const at = edge === 'start' ? band.startMinute : band.endMinute;
+    const at = edge === ResizeEdge.Start ? band.startMinute : band.endMinute;
     const length = this.lengthText(band.endMinute - band.startMinute);
     const note = this.readoutNote();
     return note === ''
@@ -502,26 +515,22 @@ export class StaffTimeline {
 
   protected onHandleDown(
     event: PointerEvent,
-    edge: 'start' | 'end',
+    edge: ResizeEdge,
     band: GridDraft,
   ): void {
-    this.beginDrag(
-      event,
-      edge === 'start' ? 'resize-start' : 'resize-end',
-      band,
-      true,
-    );
+    // A resize gesture IS its edge.
+    this.beginDrag(event, edge, band, true);
   }
 
   /** The band's body moves. A `<button>`, so the sheet's own drag-to-dismiss bails on it. */
   protected onBandDown(event: PointerEvent, band: GridDraft): void {
     if (band.id !== this.editableId()) return;
-    this.beginDrag(event, 'move', band, false);
+    this.beginDrag(event, EditCommand.Move, band, false);
   }
 
   private beginDrag(
     event: PointerEvent,
-    kind: DragKind,
+    dragGesture: DragGesture,
     band: GridDraft,
     armed: boolean,
   ): void {
@@ -531,7 +540,7 @@ export class StaffTimeline {
     const touch = event.pointerType === 'touch';
     this.drag = {
       id: band.id,
-      kind,
+      dragGesture,
       pointerId: event.pointerId,
       x0: event.clientX,
       y0: event.clientY,
@@ -563,7 +572,7 @@ export class StaffTimeline {
     event?.preventDefault();
     event?.stopPropagation();
     capturePointer(drag.target, drag.pointerId);
-    this.gesture.set(drag.kind);
+    this.gesture.set(drag.dragGesture);
     buzz(10);
   }
 
@@ -591,7 +600,7 @@ export class StaffTimeline {
     if (event.cancelable) event.preventDefault();
     drag.x = event.clientX;
     this.applyDelta(drag, dx);
-    // The edge loop reads the finger, never the band — see `EdgeScroller`.
+    // The edge loop reads the finger, never the band — see `edgeScrollerOf`.
     this.edge.update(event.clientX);
   }
 
@@ -610,7 +619,7 @@ export class StaffTimeline {
     return box && box.width > 0 ? clamp(clientX, box.left, box.right) : clientX;
   }
 
-  private readonly edge = new EdgeScroller(
+  private readonly edge = edgeScrollerOf(
     'x',
     () => this.frame()?.nativeElement,
     () => this.followFinger(),
@@ -625,9 +634,9 @@ export class StaffTimeline {
     const moved = dx / drag.pxPerMinute;
     const snap = this.snapMinutes();
     const next =
-      drag.kind === 'move'
+      drag.dragGesture === EditCommand.Move
         ? this.moveTo(drag, snapTo(drag.startMinute + moved, snap))
-        : drag.kind === 'resize-start'
+        : drag.dragGesture === ResizeEdge.Start
           ? this.resizeStartTo(drag, snapTo(drag.startMinute + moved, snap))
           : this.resizeEndTo(drag, snapTo(drag.endMinute + moved, snap));
     const current = this.draft() ?? this.eventById(drag.id);
@@ -659,7 +668,10 @@ export class StaffTimeline {
     buzz(12);
     this.draftCommitted.emit({
       ...final,
-      kind: drag.kind === 'move' ? 'move' : 'resize',
+      editCommand:
+        drag.dragGesture === EditCommand.Move
+          ? EditCommand.Move
+          : EditCommand.Resize,
     });
   }
 
@@ -709,25 +721,24 @@ export class StaffTimeline {
 
   protected onHandleKey(
     event: KeyboardEvent,
-    edge: 'start' | 'end',
+    edge: ResizeEdge,
     band: GridDraft,
   ): void {
     const bounds = this.handleBounds();
     if (bounds === null) return;
-    const at = edge === 'start' ? band.startMinute : band.endMinute;
+    const start = edge === ResizeEdge.Start;
+    const at = start ? band.startMinute : band.endMinute;
     const to = this.keyTarget(
       event,
       at,
-      edge === 'start' ? bounds.startMin : bounds.endMin,
-      edge === 'start' ? bounds.startMax : bounds.endMax,
+      start ? bounds.startMin : bounds.endMin,
+      start ? bounds.startMax : bounds.endMax,
     );
     if (to === null) return;
     event.preventDefault();
     this.step(
-      edge === 'start'
-        ? this.resizeStartTo(band, to)
-        : this.resizeEndTo(band, to),
-      'resize',
+      start ? this.resizeStartTo(band, to) : this.resizeEndTo(band, to),
+      EditCommand.Resize,
     );
   }
 
@@ -739,7 +750,7 @@ export class StaffTimeline {
     const to = this.keyTarget(event, band.startMinute, start, end - duration);
     if (to === null) return;
     event.preventDefault();
-    this.step(this.moveTo(band, to), 'move');
+    this.step(this.moveTo(band, to), EditCommand.Move);
   }
 
   /**
@@ -775,7 +786,7 @@ export class StaffTimeline {
   }
 
   /** One keyboard step is a whole gesture: it publishes AND commits. */
-  private step(next: GridDraft, kind: GridCommit['kind']): void {
+  private step(next: GridDraft, editCommand: GridCommit['editCommand']): void {
     const current = this.draft() ?? this.eventById(next.id);
     if (
       current !== null &&
@@ -785,7 +796,7 @@ export class StaffTimeline {
       return;
     }
     this.publish(next);
-    this.draftCommitted.emit({ ...next, kind });
+    this.draftCommitted.emit({ ...next, editCommand });
     buzz(4);
   }
 

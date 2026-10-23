@@ -166,10 +166,14 @@ relative import of code — three or more `../` — anywhere in the monorepo).
 
 Read off the root `eslint.config.mjs` and the project configs that restate it.
 The root declares the rule **unconditionally** on every `**/*.ts`, `**/*.tsx`,
-`**/*.js`, `**/*.jsx` file, because Nx runs each project's `lint` target with
-`cwd` set to the project's own directory: a repo-root `ignores` pattern
-(`**/libs/infrastructure/**`) can never match once ESLint's basePath already
-_is_ `libs/infrastructure/firestore`. So an exempt project turns the relevant
+`**/*.js`, `**/*.jsx` file, because ESLint's basePath depends on how it is
+invoked: the `@nx/eslint:lint` executor (each project's `lint` target)
+`chdir`s to the workspace root and passes the project's config as
+`overrideConfigFile` (basePath = the workspace root), while directory lookup
+(an IDE, `eslint` run inside a project) loads the same config with the
+project dir as basePath — so a repo-root path pattern
+(`libs/infrastructure/**`) matches under the executor and never under lookup,
+and a project-relative one the reverse. So an exempt project turns the relevant
 half off in its OWN `eslint.config.mjs`, restating the rest (a later block's
 options replace, never merge), and the root exports
 `LAYER_IMPORT_RESTRICTIONS` and `TESTING_ENTRY_POINT_RESTRICTION` for exactly
@@ -186,8 +190,9 @@ that.
 that seeds the emulators and mints custom tokens with `firebase-admin`, and
 takes its fixtures from the testing entry points; it never ships in a bundle,
 so neither half applies. It is not a project of its own and is linted under
-three basePaths (the Nx executor's workspace root, a direct
-`eslint apps/web/e2e` from the root, `eslint e2e` from the app), so its
+both basePaths (the workspace root for the Nx executor and a direct
+`eslint apps/web/e2e` from the root; the app dir for `eslint e2e` run inside
+apps/web), so its
 exemption lives in the root config as the basePath-independent
 `files: ['**/e2e/**/*.ts']` block turning the rule off — never as an
 `apps/web/e2e/**` pattern in `apps/web/eslint.config.mjs`.
@@ -199,7 +204,7 @@ and the lint-rule specs therefore name `@core/*` aliases freely (the deep
 relative-import half of Law 8 still covers them through the layering
 verifier).
 
-## Today's projects (44)
+## Today's projects (46)
 
 | Project                | Root                                 | Tags                                  |
 | ---------------------- | ------------------------------------ | ------------------------------------- |
@@ -238,9 +243,11 @@ verifier).
 | `layout`               | `libs/ui/layout`                     | `scope:shared`, `type:ui`             |
 | `modifiers`            | `libs/ui/modifiers`                  | `scope:shared`, `type:ui`             |
 | `patterns`             | `libs/ui/patterns`                   | `scope:shared`, `type:ui`             |
+| `ui-wall-clock`        | `libs/ui/wall-clock`                 | `scope:shared`, `type:ui`             |
 | `tokens`               | `libs/ui/tokens`                     | `scope:shared`, `type:tokens`         |
 | `ui` (shared)          | `libs/shared/ui`                     | `scope:shared`, `type:ui`             |
 | `cursor`               | `libs/shared/cursor`                 | `scope:shared`, `type:util`           |
+| `view-state`           | `libs/shared/view-state`             | `scope:shared`, `type:util`           |
 | `design-tokens`        | `libs/shared/design-tokens`          | `scope:shared`, `type:tokens`         |
 | `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
 | `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
@@ -249,7 +256,29 @@ verifier).
 | `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:util`          |
 
 Read off every `project.json` (`git ls-files '**/project.json'`); check it at
-any time with `pnpm nx show projects` (44) and `pnpm nx graph`.
+any time with `pnpm nx show projects` (46) and `pnpm nx graph`.
+
+Two of them exist for the UI residue cleanup
+(`docs/architecture/flips/ui-residue-cleanup.md` UR-2, UR-9) and carry a
+dependency budget stricter than their tag's row:
+
+| Project         | May import                                   | Imported by                                    |
+| --------------- | -------------------------------------------- | ---------------------------------------------- |
+| `view-state`    | nothing — zero dependencies (`type:util`)    | every `type:feature`, `type:ui` and `type:app` |
+| `ui-wall-clock` | `@core/primitives` only (`type:ui` → domain) | every `type:feature`, `type:ui` and `type:app` |
+
+`view-state` (`@creativo/shared/view-state`) is the one read-state
+vocabulary — `LoadState`, `LoadSlice`, `PagingState`, `loadStateWords` — so
+a `type:ui` lib and a feature can share it without a feature → feature or
+ui → infrastructure edge; being `type:util` it cannot reach `@core/*`, which
+is why it is not the home of anything domain-shaped. `ui-wall-clock`
+(`@creativo/ui/wall-clock`) is the template layer's ONE set of cached `Intl`
+date and money formatters, moved out of `shared-visits` so the design
+system, the showcase, the shell and every feature format through the same
+cache instead of growing their own; `type:ui` because a `type:util` lib may
+not import `@core/primitives`, and because `@creativo/infrastructure/i18n`
+(which `.claude/rules/angular-ui.md` names for formatting) is unreachable
+from `type:ui`.
 
 ## Worked example
 
@@ -302,3 +331,11 @@ mentions in the `type:app`, `type:feature` and `type:infrastructure` rows went
 with the tag; `type:domain` now names `libs/ecs-core` alone. The phase plan is
 `docs/architecture/flips/phase-4b-delete.md`; the migration record is
 `docs/architecture/HANDOFF.md`.
+
+**2026-10-23 — UI residue cleanup, wave 0.** Two `scope:shared` libraries
+joined the graph (44 → 46 projects): `libs/shared/view-state` (`type:util`,
+no dependencies — the shared read-state dictionaries) and
+`libs/ui/wall-clock` (`type:ui`, `@core/primitives` only — `wall-clock.ts`
+moved verbatim out of `libs/features/shared/visits`, which no longer
+re-exports it). No `depConstraints` row changed. The plan is
+`docs/architecture/flips/ui-residue-cleanup.md`.

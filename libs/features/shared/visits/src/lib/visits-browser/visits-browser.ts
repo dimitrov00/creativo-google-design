@@ -11,16 +11,14 @@ import {
   linkedSignal,
   output,
 } from '@angular/core';
+import { visitPerspectiveWords } from '@creativo/infrastructure/i18n';
+import { LoadState } from '@creativo/shared/view-state';
 import { nearestScroller } from '@creativo/ui/controls';
+import { VisitList, type VisitListPaging } from '../visit-list/visit-list';
 import {
-  VisitList,
-  type VisitListPaging,
-  type VisitListState,
-} from '../visit-list/visit-list';
-import type {
-  VisitListStyle,
+  type VisitListStyle,
   VisitPerspective,
-  VisitSectionVm,
+  type VisitSectionVm,
 } from '../visit-row.vm';
 import { VisitPills, type VisitPillsBleed } from './visit-pills';
 
@@ -101,7 +99,7 @@ const LINE_SLACK_PX = 1;
   styleUrl: './visits-browser.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[attr.data-perspective]': 'perspective()',
+    '[attr.data-perspective]': 'perspectiveWord()',
     '[attr.data-bleed]': 'bleed()',
   },
 })
@@ -110,7 +108,7 @@ export class VisitsBrowser {
   readonly perspective = input.required<VisitPerspective>();
   /** ≙ `.listStyle`: both perspectives run their rows as inset groups. */
   readonly listStyle = input<VisitListStyle>('insetGrouped');
-  readonly state = input<VisitListState>('ready');
+  readonly state = input<LoadState>(LoadState.Ready);
   readonly paging = input<VisitListPaging | null>(null);
   /**
    * The family the browser's test ids belong to; null reads the
@@ -134,15 +132,25 @@ export class VisitsBrowser {
   /** The whole list, again, after it failed. */
   readonly retry = output<void>();
 
+  /** The template's dictionary, for the rail's loading flag. */
+  protected readonly LoadState = LoadState;
+
+  /** The perspective as the host prints it: `client` · `staff` (`visitPerspectiveWords`). */
+  protected readonly perspectiveWord = computed(
+    () => visitPerspectiveWords[this.perspective()],
+  );
+
   protected readonly prefix = computed(
     () =>
       this.testIdPrefix() ??
-      (this.perspective() === 'staff' ? 'history' : 'appointments'),
+      (this.perspective() === VisitPerspective.Staff
+        ? 'history'
+        : 'appointments'),
   );
 
   /** The rail's pills: the sections of a list that is drawn, and no others. */
   protected readonly railSections = computed<readonly VisitSectionVm[]>(() =>
-    this.state() === 'ready' ? this.sections() : [],
+    this.state() === LoadState.Ready ? this.sections() : [],
   );
 
   /** The sections' keys, in order; the same run of keys is the same value. */
@@ -192,7 +200,7 @@ export class VisitsBrowser {
     // sections exists in the DOM only once `lib-visit-list` has drawn it.
     afterRenderEffect((onCleanup) => {
       this.keys();
-      if (!this.pills() || this.state() !== 'ready') return;
+      if (!this.pills() || this.state() !== LoadState.Ready) return;
       const anchors = this.anchors();
       const first = anchors[0];
       const view = this.host.ownerDocument.defaultView;

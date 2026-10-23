@@ -99,7 +99,7 @@ export function serviceToVm(
     id: service.id,
     // An unspecified composition (`composition: null` as authored) draws as
     // a single service, as it always did.
-    kind: bundle ? 'bundle' : 'single',
+    compositionKind: bundle ? CompositionKind.Bundle : CompositionKind.Single,
     name: localized(service.name),
     description: localized(service.description),
     ...(coverSrc ? { coverSrc } : {}),

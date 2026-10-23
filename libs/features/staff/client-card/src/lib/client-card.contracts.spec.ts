@@ -3,6 +3,7 @@ import type {
   VisitWaitlistWords,
   VisitWords,
 } from '@creativo/features/shared/visits';
+import type { CouponOccasion } from '@core/components';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import * as achievements from './achievements.presenter';
 import * as card from './client-card.presenter';
@@ -27,12 +28,12 @@ import * as loyalty from './loyalty.presenter';
 
 describe('client card contracts, revision 3', () => {
   it('lets a grant say the moment its coupon was made for, and lets it say nothing', () => {
-    expectTypeOf<ClientCardGrant['occasion']>().toEqualTypeOf<
-      'birthday' | null | undefined
+    expectTypeOf<ClientCardGrant['couponOccasion']>().toEqualTypeOf<
+      CouponOccasion | null | undefined
     >();
     // Additive: a host that builds a grant without it still builds a grant.
     expectTypeOf<
-      Omit<ClientCardGrant, 'occasion'>
+      Omit<ClientCardGrant, 'couponOccasion'>
     >().toExtend<ClientCardGrant>();
   });
 
@@ -154,9 +155,9 @@ describe('the built helpers the new presenters import (§7.3)', () => {
 
   it('keeps the signatures the new files call', () => {
     expectTypeOf(loyalty.sliceMap<number, string>).returns.toEqualTypeOf<
-      | { readonly cardLoadState: 'LOADING' }
-      | { readonly cardLoadState: 'READY'; readonly data: string }
-      | { readonly cardLoadState: 'FAILED' }
+      | { readonly loadState: 'LOADING' }
+      | { readonly loadState: 'READY'; readonly data: string }
+      | { readonly loadState: 'FAILED' }
       | undefined
     >();
     expectTypeOf(achievements.isOneOff).returns.toEqualTypeOf<boolean>();

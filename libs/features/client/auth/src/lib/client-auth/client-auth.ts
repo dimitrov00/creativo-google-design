@@ -76,9 +76,21 @@ const AUTH_FLOW_STEP_WORDS = {
   [AuthFlowStep.Authenticated]: 'authenticated',
 } as const satisfies Record<AuthFlowStep, string>;
 
+/** Which piece of the legal sentence a part is — the field `consentPart`,
+ *  the ONLY source of these strings (Law 6). */
+const ConsentPart = {
+  /** Plain sentence text, printed as it is. */
+  Text: 'TEXT',
+  /** The `{terms}` slot — the inline link to `/terms`. */
+  Terms: 'TERMS',
+  /** The `{privacy}` slot — the inline link to `/privacy`. */
+  Privacy: 'PRIVACY',
+} as const;
+type ConsentPart = (typeof ConsentPart)[keyof typeof ConsentPart];
+
 /** One piece of the legal sentence — plain text or an inline link slot. */
 interface LegalPart {
-  readonly kind: 'text' | 'terms' | 'privacy';
+  readonly consentPart: ConsentPart;
   readonly text: string;
 }
 
@@ -143,6 +155,8 @@ export class ClientAuth {
 
   protected readonly store = inject(AuthFlowStore);
   protected readonly AuthFlowStep = AuthFlowStep;
+  /** The legal sentence's piece kinds, for the template. */
+  protected readonly ConsentPart = ConsentPart;
 
   /** The flow step as its `data-state` word. */
   protected readonly stepWord = computed(
@@ -282,9 +296,11 @@ export class ClientAuth {
       .split(/(\{terms\}|\{privacy\})/)
       .filter((piece) => piece !== '')
       .map((piece): LegalPart => {
-        if (piece === '{terms}') return { kind: 'terms', text: '' };
-        if (piece === '{privacy}') return { kind: 'privacy', text: '' };
-        return { kind: 'text', text: piece };
+        if (piece === '{terms}')
+          return { consentPart: ConsentPart.Terms, text: '' };
+        if (piece === '{privacy}')
+          return { consentPart: ConsentPart.Privacy, text: '' };
+        return { consentPart: ConsentPart.Text, text: piece };
       });
   }
 

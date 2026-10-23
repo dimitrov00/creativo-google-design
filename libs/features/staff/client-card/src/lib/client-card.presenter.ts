@@ -5,7 +5,7 @@ import {
   type TimeZone,
   UtcEpochMs,
 } from '@core/primitives';
-import type { VisitLeg, WallTime } from '@core/components';
+import type { ShopNow, VisitLeg, WallTime } from '@core/components';
 import {
   AgeSystem,
   BadgeSystem,
@@ -14,6 +14,7 @@ import {
   PhoneSystem,
   StandingSystem,
   type ValidLoyaltyCatalog,
+  VisitRowOutcome,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -358,8 +359,9 @@ export interface VisitsModuleInput {
   readonly paused: boolean;
   readonly count: number;
   readonly clientWords: boolean;
-  readonly nowMs: number;
-  /** The shop's zone (Law 7.2): where «днес» is read. */
+  /** "Now" on the shop's wall clock (Law 7.3), derived ONCE by the store: «днес» and what is still to come. */
+  readonly now: ShopNow;
+  /** The shop's zone (Law 7.2) — the one `now` was read in. */
   readonly zone: TimeZone;
   readonly words: ClientCardWords;
 }
@@ -379,7 +381,7 @@ export function lastWorkedVisit(
   for (const appointment of newestFirst) {
     if (appointment.id === currentAppointmentId) continue;
     const row = rowOf(appointment);
-    if (row.outcome === 'worked') return { appointment, row };
+    if (row.outcome === VisitRowOutcome.Worked) return { appointment, row };
   }
   return null;
 }

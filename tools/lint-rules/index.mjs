@@ -9,7 +9,10 @@
  */
 import { iconRegistryOnly } from './icon-registry-only.mjs';
 import { noRestrictedImportExpressions } from './restricted-import-expressions.mjs';
+import { noAmbientClock } from './no-ambient-clock.mjs';
+import { noGenericDiscriminator } from './no-generic-discriminator.mjs';
 import { noSlicedPorts } from './no-sliced-ports.mjs';
+import { noUndecoratedClass } from './no-undecorated-class.mjs';
 
 export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
@@ -41,7 +44,10 @@ const plugin = {
   rules: {
     'icon-registry-only': iconRegistryOnly,
     'no-restricted-import-expressions': noRestrictedImportExpressions,
+    'no-ambient-clock': noAmbientClock,
+    'no-generic-discriminator': noGenericDiscriminator,
     'no-sliced-ports': noSlicedPorts,
+    'no-undecorated-class': noUndecoratedClass,
   },
 };
 

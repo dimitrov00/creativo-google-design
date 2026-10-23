@@ -4,6 +4,7 @@ import {
   computed,
   signal,
 } from '@angular/core';
+import { LocalDate } from '@core/primitives';
 import {
   UiButton,
   UiIcon,
@@ -11,6 +12,7 @@ import {
   UiMonthPicker,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import {
   UiListGroup,
   UiListRow,
@@ -29,15 +31,18 @@ import { ScPage } from '@showcase/shared/page';
 /** A fixed today, so the page draws the same month on every visit. */
 const TODAY = '2026-10-06';
 
-/** `вт, 6.10` — the day pill's grammar, as Intl writes it for Bulgarian. */
+/**
+ * `вт, 6.10` — the day pill's grammar, as Intl writes it for Bulgarian,
+ * through the shared wall-clock face (no `Date`, a cached formatter).
+ */
 function dayPill(dayKey: string): string {
-  const [year = 1970, month = 1, day = 1] = dayKey.split('-').map(Number);
-  return new Intl.DateTimeFormat('bg', {
+  const day = LocalDate.parse(dayKey);
+  if (!day.ok) return '';
+  return formatWallClock(day.value, null, 'bg', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+  });
 }
 
 @Component({

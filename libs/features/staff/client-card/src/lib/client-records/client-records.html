@@ -32,7 +32,7 @@
 >
   <p>{{ words()?.offline }}</p>
 </ui-notice>
-} @switch (state().kind) { @case ('loading') {
+} @switch (state().loadState) { @case (LoadState.Loading) {
 <!-- Shaped like what lands: one featured block, two groups of two rows. -->
 <ui-stack uiSpacing="loose" aria-busy="true" data-testid="records-skeleton">
   <ui-skeleton
@@ -60,7 +60,7 @@
   </ui-stack>
   }
 </ui-stack>
-} @case ('failed') {
+} @case (LoadState.Failed) {
 <!-- The records ride the account's read: its notice, and «Опитай пак». -->
 <ui-notice
   [uiLabel]="words()?.failed.loyalty ?? null"
@@ -80,13 +80,13 @@
     {{ words()?.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('empty') {
+} @case (LoadState.Empty) {
 <ui-empty-state data-testid="records-empty">
   <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
     {{ words()?.records.empty }}
   </p>
 </ui-empty-state>
-} @case ('ready') { @if (ready(); as vm) { @let copy = words();
+} @case (LoadState.Ready) { @if (ready(); as vm) { @let copy = words();
 <!-- RC — the newest record, the page's ONE hero figure: the emblem on the
      solid accent (or the service's cover), the figure in the display rung,
      what it counts, the day it was set; «Нов рекорд» within thirty days. -->
@@ -97,7 +97,7 @@
   role="group"
   class="client-records__featured"
   [attr.aria-label]="featured.accessibleName"
-  [attr.data-kind]="featured.kind"
+  [attr.data-kind]="recordKindWords[featured.personalRecordKind]"
   [attr.data-new]="featured.isNew ? '' : null"
   data-testid="records-featured"
 >

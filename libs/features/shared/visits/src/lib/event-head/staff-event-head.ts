@@ -5,6 +5,7 @@ import {
   computed,
   input,
 } from '@angular/core';
+import { BookingStatus } from '@core/primitives';
 import { UiIcon } from '@creativo/ui/controls';
 import type { StaffEventLine, StaffEventRun } from './staff-event-line';
 
@@ -17,8 +18,13 @@ export type StaffEventHeadSize = 'compact' | 'regular';
  * appear with strikethrough so it's recognisable"); the glyph in the
  * host's foot still says which.
  */
-export function hollowStatus(status: string | null | undefined): boolean {
-  return status === 'cancelled' || status === 'no_show';
+export function hollowStatus(
+  bookingStatus: BookingStatus | null | undefined,
+): boolean {
+  return (
+    bookingStatus === BookingStatus.Cancelled ||
+    bookingStatus === BookingStatus.NoShow
+  );
 }
 
 /**

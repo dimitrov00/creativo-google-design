@@ -50,6 +50,9 @@
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../shared/view-state/tsconfig.lib.json"
     }
   ]
 }

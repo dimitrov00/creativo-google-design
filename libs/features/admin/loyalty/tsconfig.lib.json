@@ -44,6 +44,12 @@
     },
     {
       "path": "../../../ecs-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../shared/view-state/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
     }
   ]
 }

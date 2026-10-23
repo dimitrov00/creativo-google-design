@@ -13,7 +13,7 @@ import {
   UiIcon,
 } from '@creativo/ui/controls';
 import { UiTextDirective } from '@creativo/ui/modifiers';
-import type { WalletHoldingVm } from '../client-pages.vm';
+import { WalletHolding, type WalletHoldingVm } from '../client-pages.vm';
 
 /** The two words the holdings print that no view model carries. */
 export interface WalletHoldingsWords {
@@ -80,14 +80,17 @@ export class WalletHoldings {
   /** An applied ticket's «Премахни»: the grant to take off the bill. */
   readonly removeReward = output<string>();
 
+  /** What each holding is, for the template's switch. */
+  protected readonly WalletHolding = WalletHolding;
+
   /** One key per holding, by kind: a voucher's, a grant's, a rule's id. */
   protected keyOf(holding: WalletHoldingVm): string {
-    switch (holding.kind) {
-      case 'voucher':
+    switch (holding.walletHolding) {
+      case WalletHolding.Voucher:
         return `voucher:${holding.voucher.voucherId}`;
-      case 'ticket':
+      case WalletHolding.Ticket:
         return `ticket:${holding.ticket.grantId}`;
-      case 'stamps':
+      case WalletHolding.Stamps:
         return `stamps:${holding.card.ruleId}`;
     }
   }

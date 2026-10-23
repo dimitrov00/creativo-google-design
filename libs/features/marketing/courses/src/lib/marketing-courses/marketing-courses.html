@@ -14,17 +14,17 @@
           <p uiLede>{{ t('programs.courses.subtitle') }}</p>
         </ui-section-header>
 
-        @switch (state().kind) { @case ('loading') {
+        @switch (state().loadState) { @case (LoadState.Loading) {
         <ui-stack uiSpacing="tight">
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
         </ui-stack>
-        } @case ('error') {
+        } @case (LoadState.Failed) {
         <ui-card data-testid="courses-error">
           {{ t('programs.courses.empty.title') }}
         </ui-card>
-        } @case ('ready') {
+        } @case (LoadState.Ready) {
         <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
           <button
             type="button"

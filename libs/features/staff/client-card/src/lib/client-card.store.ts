@@ -33,13 +33,14 @@ import {
   RepositoryError,
   Result,
   type TimeZone,
-  type UtcEpochMs,
+  UtcEpochMs,
   UserId,
 } from '@core/primitives';
 import {
   FlagName,
   JournalFeed,
   Registration,
+  type ShopNow,
   StreakState,
   type VisitFact,
 } from '@core/components';
@@ -48,6 +49,8 @@ import {
   StreakRuleSystem,
   type StreakRuleSummary,
   type ValidLoyaltyCatalog,
+  VisitFilter,
+  VisitRowOutcome,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -67,7 +70,7 @@ import {
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
-  type VisitFilter,
+  VisitRowEntry,
   type VisitRowVm,
   firstNameOf,
   matchesVisitFilter,
@@ -99,7 +102,6 @@ import {
 import {
   type AchievementsData,
   type BirthdayVm,
-  CardLoadState,
   type ClientHeadVm,
   type ClientHeroVm,
   type ClientOverviewVm,
@@ -107,12 +109,11 @@ import {
   type DetailActionVm,
   type LedgerPageVm,
   type RecordsPageVm,
-  type Slice,
   type VisitCardsVm,
-  type VisitsPageStatus,
   type VisitsPageVm,
   type WalletVm,
 } from './client-pages.vm';
+import { LoadSlice, LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
@@ -184,22 +185,22 @@ const READ_THREW = RepositoryError.readFailed(null, 'threw');
 /** The history's pages as the store holds them. */
 interface HistoryState {
   /** The FIRST page's read: the list's skeleton, its rows, or its retry notice. */
-  readonly cardLoadState: CardLoadState;
+  readonly loadState: LoadState;
   /** Every loaded visit, newest first, page after page. */
   readonly appointments: readonly Appointment[];
   /** Where the next page starts — the start instant it reads before; `null` = nothing older. */
   readonly cursor: UtcEpochMs | null;
-  /** The «Покажи още» read. */
-  readonly more: 'idle' | 'loading' | 'failed';
+  /** The «Покажи още» read: `MORE` while idle (the end is the `null` cursor, never stored). */
+  readonly pagingState: Exclude<PagingState, typeof PagingState.End>;
   /** Each loaded visit's own photos, counted, for the rows' marks. */
   readonly photoCounts: ReadonlyMap<string, number>;
 }
 
 const LOADING_HISTORY: HistoryState = {
-  cardLoadState: CardLoadState.Loading,
+  loadState: LoadState.Loading,
   appointments: [],
   cursor: null,
-  more: 'idle',
+  pagingState: PagingState.More,
   photoCounts: new Map(),
 };
 
@@ -220,21 +221,21 @@ interface LedgerState {
   /** The pill; its rows are `clientJournal` entries of `JournalFeed.effectsOf(filter)`. */
   readonly filter: JournalFeed;
   /** The FIRST page's read under the pill: the skeleton, the rows, or the retry notice. */
-  readonly cardLoadState: CardLoadState;
+  readonly loadState: LoadState;
   /** Every loaded entry, newest first, page after page. */
   readonly entries: readonly JournalEntry[];
   /** Where the next page starts (the oldest row's `seq`); `null` = nothing older. */
   readonly next: number | null;
-  /** The «Покажи още» read. */
-  readonly more: 'idle' | 'loading' | 'failed';
+  /** The «Покажи още» read: `MORE` while idle (the end is the `null` cursor, never stored). */
+  readonly pagingState: Exclude<PagingState, typeof PagingState.End>;
 }
 
 const LOADING_LEDGER: LedgerState = {
   filter: JournalFeed.All,
-  cardLoadState: CardLoadState.Loading,
+  loadState: LoadState.Loading,
   entries: [],
   next: null,
-  more: 'idle',
+  pagingState: PagingState.More,
 };
 
 const EMPTY_HERO: ClientHeroVm = {
@@ -263,15 +264,17 @@ const EMPTY_OVERVIEW: ClientOverviewVm = {
  */
 const NO_COVERS: ReadonlyMap<string, string> = new Map();
 
-const LOADING: Slice<never> = { cardLoadState: CardLoadState.Loading };
-const FAILED: Slice<never> = { cardLoadState: CardLoadState.Failed };
+const LOADING = LoadSlice.loading;
+const FAILED = LoadSlice.failed;
 
-function loadStateOf(slice: Slice<unknown> | null): CardLoadState | null {
-  return slice?.cardLoadState ?? null;
+function loadStateOf(slice: LoadSlice<unknown> | null): LoadState | null {
+  return slice?.loadState ?? null;
 }
 
-function dataOf<T>(slice: Slice<T> | null): T | null {
-  return slice?.cardLoadState === CardLoadState.Ready ? slice.data : null;
+/** The account and the catalogue the tier capsule reads. */
+interface TierInputs {
+  readonly account: LoyaltyAccount;
+  readonly catalog: ValidLoyaltyCatalog;
 }
 
 /**
@@ -282,6 +285,13 @@ function dataOf<T>(slice: Slice<T> | null): T | null {
  */
 function registeredOnly(user: User | null): User | null {
   return user !== null && Registration.isRegistered(user) ? user : null;
+}
+
+/** A known client record as the read answers it: `READY` with the id, `EMPTY` for none. */
+function recordSliceOf(
+  record: CustomerId | null,
+): LoadSlice.WithEmpty<CustomerId> {
+  return record === null ? LoadSlice.empty : LoadSlice.ready(record);
 }
 
 /**
@@ -402,38 +412,42 @@ export class ClientCardStore {
   );
   private readonly _context = signal<ClientCardContext | null>(null);
   private readonly _nowMs = signal(0);
-  private readonly _profile = signal<Slice<User | null> | null>(null);
-  private readonly _stats = signal<Slice<ClientStatsRecord | null> | null>(
+  private readonly _profile = signal<LoadSlice<User | null> | null>(null);
+  private readonly _stats = signal<LoadSlice<ClientStatsRecord | null> | null>(
     null,
   );
   private readonly _avatar = signal<string | null>(null);
   private readonly _money = signal<ClientMoneyRecord | null>(null);
   private readonly _history = signal<HistoryState | null>(null);
-  private readonly _waitlist = signal<Slice<readonly WaitlistRequest[]> | null>(
+  private readonly _waitlist = signal<LoadSlice<
+    readonly WaitlistRequest[]
+  > | null>(null);
+  private readonly _photos = signal<LoadSlice<
+    readonly AppointmentPhoto[]
+  > | null>(null);
+  private readonly _account = signal<LoadSlice<LoyaltyAccount | null> | null>(
     null,
   );
-  private readonly _photos = signal<Slice<readonly AppointmentPhoto[]> | null>(
-    null,
-  );
-  private readonly _account = signal<Slice<LoyaltyAccount | null> | null>(null);
   /** The catalogue as `LoyaltyCatalogSystem.validate` answered it; a refused one is `failed`. */
-  private readonly _catalog = signal<Slice<ValidLoyaltyCatalog> | null>(null);
-  private readonly _progress = signal<Slice<readonly BadgeProgress[]> | null>(
+  private readonly _catalog = signal<LoadSlice<ValidLoyaltyCatalog> | null>(
     null,
   );
-  private readonly _seasonProgress = signal<Slice<
+  private readonly _progress = signal<LoadSlice<
+    readonly BadgeProgress[]
+  > | null>(null);
+  private readonly _seasonProgress = signal<LoadSlice<
     readonly SeasonProgress[]
   > | null>(null);
-  private readonly _filter = signal<VisitFilter>('all');
+  private readonly _filter = signal<VisitFilter>(VisitFilter.All);
   private readonly _online = signal(this.window?.navigator.onLine ?? true);
   /** The vouchers issued to the person, any state; `null` = not read. */
-  private readonly _vouchers = signal<Slice<readonly GiftVoucher[]> | null>(
+  private readonly _vouchers = signal<LoadSlice<readonly GiftVoucher[]> | null>(
     null,
   );
   /** The wallet's feed: the journal's newest rows under «Всички»; `null` = not read. */
-  private readonly _activity = signal<Slice<readonly JournalEntry[]> | null>(
-    null,
-  );
+  private readonly _activity = signal<LoadSlice<
+    readonly JournalEntry[]
+  > | null>(null);
   /** The ledger page's pages under its pill; `null` = not read (`loyalty.points` off, no reader, a guest). */
   private readonly _ledgerPage = signal<LedgerState | null>(null);
   /** The chip «Постижения» is open on (§2.3.3): the store's, so ‹ from a medal's detail returns to it. */
@@ -482,8 +496,8 @@ export class ClientCardStore {
       : clientCardWordsOf(translate, lang);
   });
 
-  private readonly user = computed(() => dataOf(this._profile()));
-  private readonly stats = computed(() => dataOf(this._stats()));
+  private readonly user = computed(() => LoadSlice.dataOf(this._profile()));
+  private readonly stats = computed(() => LoadSlice.dataOf(this._stats()));
   /** The shop calendar's today on the shop's zone; `null` until the zone resolves. */
   private readonly today = computed((): string | null => {
     const zone = this.zone();
@@ -497,8 +511,8 @@ export class ClientCardStore {
   /** `users/{uid}`, `clientStats/{uid}` or the shop's zone failed: the whole card's S7. */
   private readonly profileFailed = computed(
     () =>
-      loadStateOf(this._profile()) === CardLoadState.Failed ||
-      loadStateOf(this._stats()) === CardLoadState.Failed ||
+      loadStateOf(this._profile()) === LoadState.Failed ||
+      loadStateOf(this._stats()) === LoadState.Failed ||
       this.zoneFailed(),
   );
 
@@ -513,8 +527,8 @@ export class ClientCardStore {
     return (
       this._subject()?.userId != null &&
       this.zone() !== null &&
-      (profile === null || profile === CardLoadState.Ready) &&
-      (stats === null || stats === CardLoadState.Ready)
+      (profile === null || profile === LoadState.Ready) &&
+      (stats === null || stats === LoadState.Ready)
     );
   });
 
@@ -551,6 +565,18 @@ export class ClientCardStore {
   });
 
   /**
+   * "Now" on the shop's wall clock for the visit rows and cards (Law 7.3),
+   * derived ONCE from the open's clock reading in the shop's zone; `null`
+   * until the zone resolves (the rows wait for it, the page stays loading).
+   */
+  private readonly visitNow = computed((): ShopNow | null => {
+    const zone = this.zone();
+    if (zone === null) return null;
+    const now = UtcEpochMs.of(this._nowMs());
+    return now.ok ? ZonedTimeSystem.shopNow(now.value, zone) : null;
+  });
+
+  /**
    * What the staff rows are worded with — the built `historyRows` (by
    * year) and revision 3's `visitsRows` (by month) take the same input,
    * and the medal detail words its counted visits with it. `null` until
@@ -575,7 +601,8 @@ export class ClientCardStore {
       subjectUserId: subject.userId,
       subjectCustomerId: this._customerId() ?? null,
       currentAppointmentId: context.appointmentId,
-      nowMs: this._nowMs(),
+      now: this.visitNow(),
+      timeZone: this.zone(),
       photoCounts: history.photoCounts,
       clientWords: !context.viewer.roles.includes('sysadmin'),
       catalog: context.catalog,
@@ -595,11 +622,14 @@ export class ClientCardStore {
     const history = this._history();
     const subject = this._subject();
     const words = this.words();
+    // No rows before the shop's "now" is known (the overview waits for the
+    // zone before it asks): nothing to feature yet.
     if (
       context === null ||
-      history?.cardLoadState !== CardLoadState.Ready ||
+      history?.loadState !== LoadState.Ready ||
       subject?.userId == null ||
-      words === null
+      words === null ||
+      this.visitNow() === null
     ) {
       return null;
     }
@@ -612,32 +642,24 @@ export class ClientCardStore {
     return featured?.appointment.id ?? null;
   });
 
-  /** The tier capsule's inputs: `null` = no capsule, `'loading'` = not known yet. */
-  private readonly tierInputs = computed(
-    ():
-      | {
-          readonly account: LoyaltyAccount;
-          readonly catalog: ValidLoyaltyCatalog;
-        }
-      | null
-      | 'loading' => {
-      if (!this.flags.tiers) return null;
-      const account = this._account();
-      const catalog = this._catalog();
-      if (account === null || catalog === null) return null;
-      if (
-        account.cardLoadState === CardLoadState.Loading ||
-        catalog.cardLoadState === CardLoadState.Loading
-      ) {
-        return 'loading';
-      }
-      const loaded = dataOf(account);
-      const table = dataOf(catalog);
-      return loaded === null || table === null
-        ? null
-        : { account: loaded, catalog: table };
-    },
-  );
+  /** The tier capsule's inputs: `null` = no capsule, `LOADING` = not known yet. */
+  private readonly tierInputs = computed((): LoadSlice<TierInputs> | null => {
+    if (!this.flags.tiers) return null;
+    const account = this._account();
+    const catalog = this._catalog();
+    if (account === null || catalog === null) return null;
+    if (
+      account.loadState === LoadState.Loading ||
+      catalog.loadState === LoadState.Loading
+    ) {
+      return LOADING;
+    }
+    const loaded = LoadSlice.dataOf(account);
+    const table = LoadSlice.dataOf(catalog);
+    return loaded === null || table === null
+      ? null
+      : LoadSlice.ready({ account: loaded, catalog: table });
+  });
 
   /**
    * The visits the rhythm reads: the stats' worked visits of the last year,
@@ -662,11 +684,14 @@ export class ClientCardStore {
    */
   private readonly visitTitles = computed((): ReadonlyMap<string, string> => {
     const titles = new Map<string, string[]>();
-    const zone = this.zone();
-    if (zone === null) return new Map();
     for (const row of this.historyRowVms()) {
-      if (row.kind !== 'visit' || row.outcome !== 'worked') continue;
-      const day = shopDayOf(row.startMs, zone);
+      if (
+        row.visitRowEntry !== VisitRowEntry.Visit ||
+        row.outcome !== VisitRowOutcome.Worked
+      ) {
+        continue;
+      }
+      const day = row.localDate;
       titles.set(day, [...(titles.get(day) ?? []), row.title]);
     }
     return new Map(
@@ -689,8 +714,8 @@ export class ClientCardStore {
    * the family and season progress. `null` with `loyalty.achievements` off,
    * for a guest, without the readers, and for a client with no account.
    */
-  readonly achievementsData: Signal<Slice<AchievementsData> | null> = computed(
-    () => {
+  readonly achievementsData: Signal<LoadSlice<AchievementsData> | null> =
+    computed(() => {
       if (!this.flags.achievements) return null;
       const account = this._account();
       const catalog = this._catalog();
@@ -706,9 +731,8 @@ export class ClientCardStore {
       }
       if (this.profileFailed()) return FAILED;
       const parts = [account, catalog, progress, seasons];
-      if (parts.some((part) => part.cardLoadState === CardLoadState.Failed)) {
-        return account.cardLoadState === CardLoadState.Ready &&
-          account.data === null
+      if (parts.some((part) => part.loadState === LoadState.Failed)) {
+        return account.loadState === LoadState.Ready && account.data === null
           ? null
           : FAILED;
       }
@@ -716,28 +740,29 @@ export class ClientCardStore {
       if (
         !this.gateOpen() ||
         today === null ||
-        parts.some((part) => part.cardLoadState === CardLoadState.Loading)
+        parts.some((part) => part.loadState === LoadState.Loading)
       ) {
         return LOADING;
       }
-      const loadedAccount = dataOf(account);
-      const loadedCatalog = dataOf(catalog);
+      const loadedAccount = LoadSlice.dataOf(account);
+      const loadedCatalog = LoadSlice.dataOf(catalog);
       if (loadedAccount === null || loadedCatalog === null) return null;
       return {
-        cardLoadState: CardLoadState.Ready,
+        loadState: LoadState.Ready,
         data: {
           catalog: loadedCatalog,
           account: loadedAccount,
-          progress: new Map((dataOf(progress) ?? []).map((p) => [p.id, p])),
+          progress: new Map(
+            (LoadSlice.dataOf(progress) ?? []).map((p) => [p.id, p]),
+          ),
           seasonProgress: new Map(
-            (dataOf(seasons) ?? []).map((p) => [p.id, p]),
+            (LoadSlice.dataOf(seasons) ?? []).map((p) => [p.id, p]),
           ),
           today,
           previousVisitAtMs: this.previousVisitAtMs(),
         },
       };
-    },
-  );
+    });
 
   /** The start of the client's last worked visit before the one on screen — what «Ново» is measured from. */
   private readonly previousVisitAtMs = computed(() => {
@@ -828,7 +853,7 @@ export class ClientCardStore {
       nowMs: this._nowMs(),
       zone: this.zone(),
       words: this.words(),
-      tier: tier === 'loading' ? null : tier,
+      tier: LoadSlice.dataOf(tier),
     });
   });
 
@@ -894,7 +919,7 @@ export class ClientCardStore {
   });
 
   /**
-   * The glance under the hero (§2.1): each module's `Slice`, an absent key
+   * The glance under the hero (§2.1): each module's `LoadSlice`, an absent key
    * an absent module, the birthday card as a fact of the day, and the
    * regions whose read failed. The built `glance`'s gates, module for
    * module; what changed is what each module is made of.
@@ -955,7 +980,7 @@ export class ClientCardStore {
       const capsules = overviewCapsulesVm({ user, stats, nowMs, zone, words });
       if (capsules.shown.length > 0) {
         overview.capsules = {
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           data: capsules,
         };
       }
@@ -978,7 +1003,7 @@ export class ClientCardStore {
         const reward = this.rewardBesideBirthday();
         if (reward !== null) {
           overview.reward = {
-            cardLoadState: CardLoadState.Ready,
+            loadState: LoadState.Ready,
             data: reward,
           };
         }
@@ -989,7 +1014,7 @@ export class ClientCardStore {
     const visits = this.visitCardsSlice(gate);
     if (visits !== undefined) {
       overview.visits = visits;
-      if (visits.cardLoadState === CardLoadState.Failed) failed.push('visits');
+      if (visits.loadState === LoadState.Failed) failed.push('visits');
     }
 
     // F — one card: the points, what they buy, what else is held.
@@ -999,16 +1024,14 @@ export class ClientCardStore {
     );
     if (loyalty !== undefined) {
       overview.loyalty = loyalty;
-      if (loyalty.cardLoadState === CardLoadState.Failed)
-        failed.push('loyalty');
+      if (loyalty.loadState === LoadState.Failed) failed.push('loyalty');
     }
 
     // G — the medals and the records' line
     const medals = this.medalsGlanceSlice(gate);
     if (medals !== undefined) {
       overview.medals = medals;
-      if (medals.cardLoadState === CardLoadState.Failed)
-        failed.push('achievements');
+      if (medals.loadState === LoadState.Failed) failed.push('achievements');
     }
 
     // I — as built: waits for the featured visit, whose photos it leaves out.
@@ -1017,11 +1040,11 @@ export class ClientCardStore {
       const history = this._history();
       if (
         !gate ||
-        photos.cardLoadState === CardLoadState.Loading ||
-        history?.cardLoadState === CardLoadState.Loading
+        photos.loadState === LoadState.Loading ||
+        history?.loadState === LoadState.Loading
       ) {
         overview.photos = LOADING;
-      } else if (photos.cardLoadState === CardLoadState.Failed) {
+      } else if (photos.loadState === LoadState.Failed) {
         overview.photos = FAILED;
         failed.push('photos');
       } else {
@@ -1033,14 +1056,14 @@ export class ClientCardStore {
           words,
         );
         if (rail.length > 0)
-          overview.photos = { cardLoadState: CardLoadState.Ready, data: rail };
+          overview.photos = { loadState: LoadState.Ready, data: rail };
       }
     }
     return overview;
   });
 
   /** H — the built module's gates over the three cards: the list, then the waitlist and the photos the cards carry. */
-  private visitCardsSlice(gate: boolean): Slice<VisitCardsVm> | undefined {
+  private visitCardsSlice(gate: boolean): LoadSlice<VisitCardsVm> | undefined {
     const subject = this._subject();
     const context = this._context();
     const words = this.words();
@@ -1054,28 +1077,28 @@ export class ClientCardStore {
     ) {
       return undefined;
     }
-    if (zone === null) return LOADING;
-    if (!gate || history.cardLoadState === CardLoadState.Loading)
-      return LOADING;
-    if (history.cardLoadState === CardLoadState.Failed) return FAILED;
+    const now = this.visitNow();
+    if (zone === null || now === null) return LOADING;
+    if (!gate || history.loadState === LoadState.Loading) return LOADING;
+    if (history.loadState === LoadState.Failed) return FAILED;
     const waitlist = this._waitlist();
     const photos = this._photos();
-    const settled = (slice: Slice<unknown> | null) =>
-      slice === null || slice.cardLoadState !== CardLoadState.Loading;
+    const settled = (slice: LoadSlice<unknown> | null) =>
+      slice === null || slice.loadState !== LoadState.Loading;
     if (!settled(waitlist) || !settled(photos)) return LOADING;
     return {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: visitCardsVm({
         appointments: history.appointments,
         subjectUserId: subject.userId,
         subjectCustomerId: this._customerId() ?? null,
         context,
-        photos: dataOf(photos) ?? [],
-        waitlist: dataOf(waitlist),
+        photos: LoadSlice.dataOf(photos) ?? [],
+        waitlist: LoadSlice.dataOf(waitlist),
         paused: this.paused(),
         count: this.stats()?.lifetimeVisitsCompleted ?? 0,
         clientWords: !context.viewer.roles.includes('sysadmin'),
-        nowMs: this._nowMs(),
+        now,
         zone,
         words,
       }),
@@ -1102,25 +1125,20 @@ export class ClientCardStore {
     const catalog = this._catalog();
     const vouchers = this._vouchers();
     const today = this.today();
-    if (
-      !gate ||
-      today === null ||
-      account.cardLoadState === CardLoadState.Loading
-    ) {
+    if (!gate || today === null || account.loadState === LoadState.Loading) {
       return LOADING;
     }
-    if (account.cardLoadState === CardLoadState.Failed) return FAILED;
+    if (account.loadState === LoadState.Failed) return FAILED;
     if (account.data === null) return undefined;
-    if (flags.points && catalog?.cardLoadState === CardLoadState.Loading)
+    if (flags.points && catalog?.loadState === LoadState.Loading)
       return LOADING;
-    if (flags.points && catalog?.cardLoadState === CardLoadState.Failed)
-      return FAILED;
-    if (vouchers?.cardLoadState === CardLoadState.Loading) return LOADING;
-    if (flags.streaks && catalog?.cardLoadState === CardLoadState.Loading)
+    if (flags.points && catalog?.loadState === LoadState.Failed) return FAILED;
+    if (vouchers?.loadState === LoadState.Loading) return LOADING;
+    if (flags.streaks && catalog?.loadState === LoadState.Loading)
       return LOADING;
     const vm = loyaltyGlanceVm({
       account: account.data,
-      catalog: dataOf(catalog),
+      catalog: LoadSlice.dataOf(catalog),
       flags,
       visitsMs: this.visitsMs(),
       lifetimeVisits: this.stats()?.lifetimeVisitsCompleted ?? null,
@@ -1129,12 +1147,10 @@ export class ClientCardStore {
       today,
       words,
       heldRewards,
-      vouchers: dataOf(vouchers),
+      vouchers: LoadSlice.dataOf(vouchers),
       rhythm: this.rhythm(),
     });
-    return vm === null
-      ? undefined
-      : { cardLoadState: CardLoadState.Ready, data: vm };
+    return vm === null ? undefined : { loadState: LoadState.Ready, data: vm };
   }
 
   /** G — the built module's gates over the medals in their rings and the records' line. */
@@ -1142,12 +1158,10 @@ export class ClientCardStore {
     const data = this.achievementsData();
     const ctx = this.achievementsContext();
     if (data === null || ctx === null) return undefined;
-    if (!gate || data.cardLoadState === CardLoadState.Loading) return LOADING;
-    if (data.cardLoadState === CardLoadState.Failed) return FAILED;
+    if (!gate || data.loadState === LoadState.Loading) return LOADING;
+    if (data.loadState === LoadState.Failed) return FAILED;
     const vm = medalsGlanceVm(data.data, ctx);
-    return vm === null
-      ? undefined
-      : { cardLoadState: CardLoadState.Ready, data: vm };
+    return vm === null ? undefined : { loadState: LoadState.Ready, data: vm };
   }
 
   /**
@@ -1158,9 +1172,9 @@ export class ClientCardStore {
    * rhythm.
    */
   private readonly rhythmHead = computed((): StreakDefinition | null => {
-    const catalog = dataOf(this._catalog());
+    const catalog = LoadSlice.dataOf(this._catalog());
     if (catalog === null) return null;
-    const states = dataOf(this._account())?.streaks ?? [];
+    const states = LoadSlice.dataOf(this._account())?.streaks ?? [];
     for (let i = 0; i < catalog.streaks.length; i++) {
       const head = catalog.streaks[i] as StreakDefinition;
       if (StreakState.find(states, head.id) !== null) return head;
@@ -1202,7 +1216,10 @@ export class ClientCardStore {
   private readonly visitNames = computed((): ReadonlyMap<string, string> => {
     const names = new Map<string, string>(this.visitTitles());
     for (const row of this.historyRowVms()) {
-      if (row.kind === 'visit' && row.outcome === 'worked') {
+      if (
+        row.visitRowEntry === VisitRowEntry.Visit &&
+        row.outcome === VisitRowOutcome.Worked
+      ) {
         names.set(row.id, row.title);
       }
     }
@@ -1220,13 +1237,11 @@ export class ClientCardStore {
   private readonly visitBarbers = computed((): ReadonlyMap<string, string> => {
     const barbers = new Map<string, string>();
     const byDay = new Map<string, string[]>();
-    const zone = this.zone();
-    if (zone === null) return barbers;
     for (const row of this.historyRowVms()) {
       if (
-        row.kind !== 'visit' ||
-        row.outcome !== 'worked' ||
-        row.trailing?.kind !== 'barber'
+        row.visitRowEntry !== VisitRowEntry.Visit ||
+        row.outcome !== VisitRowOutcome.Worked ||
+        row.trailing === null
       ) {
         continue;
       }
@@ -1234,7 +1249,7 @@ export class ClientCardStore {
         ? row.trailing.name
         : firstNameOf(row.trailing.name);
       barbers.set(row.id, name);
-      const day = shopDayOf(row.startMs, zone);
+      const day = row.localDate;
       byDay.set(day, [...(byDay.get(day) ?? []), name]);
     }
     for (const [day, names] of byDay) {
@@ -1250,7 +1265,7 @@ export class ClientCardStore {
    * built page's gates; the vouchers' and the feed's reads ride inside
    * (each section follows its own, §2.2.4).
    */
-  readonly wallet: Signal<Slice<WalletVm> | null> = computed(() => {
+  readonly wallet: Signal<LoadSlice<WalletVm> | null> = computed(() => {
     const flags = this.flags;
     if (
       !flags.points &&
@@ -1279,17 +1294,17 @@ export class ClientCardStore {
       !this.gateOpen() ||
       zone === null ||
       today === null ||
-      account.cardLoadState === CardLoadState.Loading
+      account.loadState === LoadState.Loading
     ) {
       return LOADING;
     }
-    if (account.cardLoadState === CardLoadState.Failed) return FAILED;
+    if (account.loadState === LoadState.Failed) return FAILED;
     if (account.data === null) return null;
     const usable = this.rewardsUsable();
     const catalog = context.catalog;
     const stats = this.stats();
     return {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: walletVm({
         account: account.data,
         catalog: this._catalog(),
@@ -1335,45 +1350,42 @@ export class ClientCardStore {
     const state = this._ledgerPage();
     const account = this._account();
     const filter = state?.filter ?? JournalFeed.All;
-    const blank = (cardLoadState: CardLoadState): LedgerPageVm => ({
-      cardLoadState,
+    const blank = (loadState: LoadState): LedgerPageVm => ({
+      loadState,
       subline: [],
       filter,
       groups: [],
       paging: null,
     });
     if (words === null || this._subject()?.userId == null) {
-      return blank(CardLoadState.Loading);
+      return blank(LoadState.Loading);
     }
-    if (state === null || account === null) return blank(CardLoadState.Failed);
-    if (this.profileFailed()) return blank(CardLoadState.Failed);
+    if (state === null || account === null) return blank(LoadState.Failed);
+    if (this.profileFailed()) return blank(LoadState.Failed);
     const today = this.today();
     if (
       !this.gateOpen() ||
       today === null ||
-      account.cardLoadState === CardLoadState.Loading
+      account.loadState === LoadState.Loading
     ) {
-      return blank(CardLoadState.Loading);
+      return blank(LoadState.Loading);
     }
-    if (
-      account.cardLoadState === CardLoadState.Failed ||
-      account.data === null
-    ) {
-      return blank(CardLoadState.Failed);
+    if (account.loadState === LoadState.Failed || account.data === null) {
+      return blank(LoadState.Failed);
     }
     return ledgerPageVm({
-      cardLoadState: state.cardLoadState,
+      loadState: state.loadState,
       entries: state.entries,
       next: state.next,
-      loadingMore: state.more === 'loading',
-      failedMore: state.more === 'failed',
+      loadingMore: state.pagingState === PagingState.Loading,
+      failedMore: state.pagingState === PagingState.Failed,
       filter: state.filter,
       holder: this.displayName() ?? '',
       balance: account.data.balance,
       online: this._online(),
       visitTitles: this.visitNames(),
       visitBarbers: this.visitBarbers(),
-      catalog: dataOf(this._catalog()),
+      catalog: LoadSlice.dataOf(this._catalog()),
       today,
       wholeMonths: wholeMonthsOf(state.entries, state.next === null),
       words,
@@ -1388,13 +1400,13 @@ export class ClientCardStore {
    * `loyalty.achievements` off, for a guest, without the readers, and for
    * a client with no account), computed over the history's loaded pages.
    */
-  readonly records: Signal<Slice<RecordsPageVm> | null> = computed(() => {
+  readonly records: Signal<LoadSlice<RecordsPageVm> | null> = computed(() => {
     const data = this.achievementsData();
     const ctx = this.achievementsContext();
     if (data === null || ctx === null) return null;
-    if (data.cardLoadState !== CardLoadState.Ready) return data;
+    if (data.loadState !== LoadState.Ready) return data;
     return {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: recordsPageVm({
         data: data.data,
         ctx,
@@ -1418,27 +1430,29 @@ export class ClientCardStore {
     const filter = this._filter();
     const rows = this.visitRowsInput();
     if (words === null || this._subject()?.userId == null) {
-      return visitsPageBlank('loading', filter);
+      return visitsPageBlank(LoadState.Loading, filter);
     }
     if (history === null || rows === null) {
-      return visitsPageBlank('failed', filter);
+      return visitsPageBlank(LoadState.Failed, filter);
     }
-    const status: VisitsPageStatus =
-      this.profileFailed() || history.cardLoadState === CardLoadState.Failed
-        ? 'failed'
-        : !this.gateOpen() || history.cardLoadState === CardLoadState.Loading
-          ? 'loading'
-          : 'ready';
+    // The shop's zone gates the rows (`now`) as it gates the page: while it
+    // is pending `gateOpen` is shut, so the page is LOADING, never FAILED.
+    const loadState =
+      this.profileFailed() || history.loadState === LoadState.Failed
+        ? LoadState.Failed
+        : !this.gateOpen() || history.loadState === LoadState.Loading
+          ? LoadState.Loading
+          : LoadState.Ready;
     const stats = this.stats();
     return visitsPageVm({
-      status,
+      loadState,
       rows,
       filter,
       stats,
       spend: historyFacts(stats, this._money(), words).spend,
       paging: visitsPaging({
         cursor: history.cursor,
-        more: history.more,
+        pagingState: history.pagingState,
         online: this._online(),
         stats,
         words,
@@ -1454,9 +1468,7 @@ export class ClientCardStore {
   /** The loaded pages are the client's WHOLE history: read, and no cursor left. */
   readonly historyComplete: Signal<boolean> = computed(() => {
     const history = this._history();
-    return (
-      history?.cardLoadState === CardLoadState.Ready && history.cursor === null
-    );
+    return history?.loadState === LoadState.Ready && history.cursor === null;
   });
 
   constructor() {
@@ -1525,8 +1537,7 @@ export class ClientCardStore {
       const state = this._ledgerPage();
       const uid = this._subject()?.userId ?? null;
       if (state === null || uid === null) return;
-      if (state.filter === kind && state.cardLoadState !== CardLoadState.Failed)
-        return;
+      if (state.filter === kind && state.loadState !== LoadState.Failed) return;
       this._ledgerPage.set({ ...LOADING_LEDGER, filter: kind });
       void this.readLedgerPage(this.generation, uid, kind);
     });
@@ -1550,7 +1561,7 @@ export class ClientCardStore {
    * dock draws ✓ alone. Read inside the editor's `computed`.
    */
   detailAction(seriesId: string): DetailActionVm | null {
-    const data = dataOf(this.achievementsData());
+    const data = LoadSlice.dataOf(this.achievementsData());
     const ctx = this.achievementsContext();
     const context = this._context();
     if (data === null || ctx === null || context === null) return null;
@@ -1574,8 +1585,8 @@ export class ClientCardStore {
       const userId = this._subject()?.userId ?? null;
       if (userId === null) return;
       const generation = this.generation;
-      const failed = (slice: Slice<unknown> | null) =>
-        slice?.cardLoadState === CardLoadState.Failed;
+      const failed = (slice: LoadSlice<unknown> | null) =>
+        slice?.loadState === LoadState.Failed;
       // Behind a failed gate nothing else was read: any retry is the
       // profile's (the pages' own notices land here too).
       const scope = this.profileFailed() ? 'profile' : region;
@@ -1589,13 +1600,13 @@ export class ClientCardStore {
           return;
         case 'visits':
         case 'history':
-          if (this._history()?.cardLoadState === CardLoadState.Failed) {
+          if (this._history()?.loadState === LoadState.Failed) {
             void this.withRecord(generation, userId, (record) =>
               this.loadFirstPage(generation, record),
             );
           } else if (
             region === 'history' &&
-            this._history()?.more === 'failed'
+            this._history()?.pagingState === PagingState.Failed
           ) {
             void this.fetchMore();
           }
@@ -1622,9 +1633,9 @@ export class ClientCardStore {
           return;
         case 'activity':
           if (failed(this._activity())) void this.loadFeed(generation, userId);
-          if (this._ledgerPage()?.cardLoadState === CardLoadState.Failed) {
+          if (this._ledgerPage()?.loadState === LoadState.Failed) {
             this.loadLedgerFirst(generation, userId);
-          } else if (this._ledgerPage()?.more === 'failed') {
+          } else if (this._ledgerPage()?.pagingState === PagingState.Failed) {
             void this.fetchMoreLedger();
           }
           return;
@@ -1634,7 +1645,7 @@ export class ClientCardStore {
 
   /** One past cut for the read-only `photo` page (the editor maps it to its own photo type). */
   photoById(photoId: string): ClientPhotoVm | null {
-    const photos = dataOf(this._photos());
+    const photos = LoadSlice.dataOf(this._photos());
     const words = this.words();
     const zone = this.zone();
     const photo = photos?.find((p) => p.id === photoId);
@@ -1669,7 +1680,7 @@ export class ClientCardStore {
       case 'achievementCategory': {
         const scope = subjectId === null ? null : achievementScopeOf(subjectId);
         if (scope === null) return null;
-        const data = dataOf(this.achievementsData());
+        const data = LoadSlice.dataOf(this.achievementsData());
         if (data !== null) return scopeTitleOf(data, scope, words);
         if (scope.achievementScope === AchievementScope.Archive) {
           return words.achievements.archive;
@@ -1683,7 +1694,7 @@ export class ClientCardStore {
         return null;
       }
       case 'achievementDetail': {
-        const data = dataOf(this.achievementsData());
+        const data = LoadSlice.dataOf(this.achievementsData());
         const series =
           subjectId === null || data === null
             ? null
@@ -1708,16 +1719,16 @@ export class ClientCardStore {
   /**
    * The subject's client record (D29): the one the store already read, else
    * `customers where userId == uid` (`CUSTOMER_PORTS.loadCustomerForUser`) —
-   * `null` for an account with no record yet, and with no port bound;
-   * `'failed'` when the read failed or timed out (the record stays unknown,
+   * `EMPTY` for an account with no record yet, and with no port bound;
+   * `FAILED` when the read failed or timed out (the record stays unknown,
    * so a retry reads it again). An answer for an older open is dropped.
    */
   private recordOf(
     generation: number,
     uid: string,
-  ): Promise<CustomerId | null | 'failed'> {
+  ): Promise<LoadSlice.WithEmpty<CustomerId>> {
     const known = untracked(this._customerId);
-    if (known !== undefined) return Promise.resolve(known);
+    if (known !== undefined) return Promise.resolve(recordSliceOf(known));
     // ONE read per open: every keyed read waits on the same answer.
     const pending = this.recordRead;
     if (
@@ -1739,28 +1750,28 @@ export class ClientCardStore {
   private recordRead: {
     readonly uid: string;
     readonly generation: number;
-    readonly answer: Promise<CustomerId | null | 'failed'>;
+    readonly answer: Promise<LoadSlice.WithEmpty<CustomerId>>;
   } | null = null;
 
   private async readRecord(
     generation: number,
     uid: string,
-  ): Promise<CustomerId | null | 'failed'> {
+  ): Promise<LoadSlice.WithEmpty<CustomerId>> {
     const customers = this.customers;
     if (customers === null) {
       this._customerId.set(null);
-      return null;
+      return LoadSlice.empty;
     }
     const userId = UserId.parse(uid);
-    if (!userId.ok) return 'failed';
+    if (!userId.ok) return FAILED;
     const result = await this.timed(() =>
       customers.loadCustomerForUser(userId.value),
     );
-    if (generation !== this.generation) return 'failed';
-    if (!result.ok) return 'failed';
+    if (generation !== this.generation) return FAILED;
+    if (!result.ok) return FAILED;
     const record = result.value === null ? null : result.value.id;
     this._customerId.set(record);
-    return record;
+    return recordSliceOf(record);
   }
 
   /**
@@ -1778,9 +1789,9 @@ export class ClientCardStore {
   ): Promise<void> {
     const record = await this.recordOf(generation, uid);
     if (generation !== this.generation) return;
-    if (record === 'failed') failed?.();
-    else if (record === null) none?.();
-    else await run(record);
+    if (record.loadState === LoadState.Failed) failed?.();
+    else if (record.loadState === LoadState.Ready) await run(record.data);
+    else none?.();
   }
 
   /** A new person: every slice back to its first state (loading where it will be read, absent where it will not). */
@@ -1788,7 +1799,7 @@ export class ClientCardStore {
     this.waitlistSubscription?.unsubscribe();
     this.waitlistSubscription = null;
     this._customerId.set(undefined);
-    this._filter.set('all');
+    this._filter.set(VisitFilter.All);
     this._avatar.set(null);
     this._money.set(null);
     const account = subject.userId !== null;
@@ -1797,7 +1808,8 @@ export class ClientCardStore {
       account &&
       this.loyaltyPorts !== null &&
       (flags.points || flags.streaks || flags.achievements || flags.tiers);
-    const when = <T>(read: boolean): Slice<T> | null => (read ? LOADING : null);
+    const when = <T>(read: boolean): LoadSlice<T> | null =>
+      read ? LOADING : null;
     this._profile.set(when(account && this.profiles !== null));
     this._stats.set(when(account && this.statsReader !== null));
     this._history.set(
@@ -1811,7 +1823,7 @@ export class ClientCardStore {
     this._catalog.set(
       loyalty && this.catalogPorts !== null
         ? this.catalogCache !== null
-          ? { cardLoadState: CardLoadState.Ready, data: this.catalogCache }
+          ? { loadState: LoadState.Ready, data: this.catalogCache }
           : LOADING
         : null,
     );
@@ -1858,8 +1870,7 @@ export class ClientCardStore {
           );
         },
         // No record yet: no projection either — the head's "first visit".
-        () =>
-          this._stats.set({ cardLoadState: CardLoadState.Ready, data: null }),
+        () => this._stats.set({ loadState: LoadState.Ready, data: null }),
         () => this._stats.set(FAILED),
       );
       if (this._context()?.viewer.roles.includes('admin') === true) {
@@ -1879,13 +1890,13 @@ export class ClientCardStore {
         this._history.update((history) =>
           history === null
             ? null
-            : { ...LOADING_HISTORY, cardLoadState: CardLoadState.Ready },
+            : { ...LOADING_HISTORY, loadState: LoadState.Ready },
         ),
       () =>
         this._history.update((history) =>
-          history === null || history.cardLoadState === CardLoadState.Ready
+          history === null || history.loadState === LoadState.Ready
             ? history
-            : { ...LOADING_HISTORY, cardLoadState: CardLoadState.Failed },
+            : { ...LOADING_HISTORY, loadState: LoadState.Failed },
         ),
     );
     this.watchWaitlist(generation, uid);
@@ -1895,12 +1906,12 @@ export class ClientCardStore {
       (customerId) => this.loadPhotos(generation, customerId),
       () => {
         if (this._photos() !== null) {
-          this._photos.set({ cardLoadState: CardLoadState.Ready, data: [] });
+          this._photos.set({ loadState: LoadState.Ready, data: [] });
         }
       },
       () => {
         if (
-          this._photos()?.cardLoadState !== CardLoadState.Ready &&
+          this._photos()?.loadState !== LoadState.Ready &&
           this._photos() !== null
         ) {
           this._photos.set(FAILED);
@@ -1915,12 +1926,12 @@ export class ClientCardStore {
       (customerId) => this.loadVouchers(generation, customerId),
       () => {
         if (this._vouchers() !== null) {
-          this._vouchers.set({ cardLoadState: CardLoadState.Ready, data: [] });
+          this._vouchers.set({ loadState: LoadState.Ready, data: [] });
         }
       },
       () => {
         if (
-          this._vouchers()?.cardLoadState !== CardLoadState.Ready &&
+          this._vouchers()?.loadState !== LoadState.Ready &&
           this._vouchers() !== null
         ) {
           this._vouchers.set(FAILED);
@@ -1939,17 +1950,17 @@ export class ClientCardStore {
    */
   private async read<T>(
     generation: number,
-    target: WritableSignal<Slice<T> | null>,
+    target: WritableSignal<LoadSlice<T> | null>,
     read: () => Promise<ReadAnswer<T>>,
   ): Promise<boolean> {
-    if (target()?.cardLoadState !== CardLoadState.Ready) target.set(LOADING);
+    if (target()?.loadState !== LoadState.Ready) target.set(LOADING);
     const result = await this.timed(read);
     if (generation !== this.generation) return false;
     if (result.ok) {
-      target.set({ cardLoadState: CardLoadState.Ready, data: result.value });
+      target.set({ loadState: LoadState.Ready, data: result.value });
       return true;
     }
-    if (target()?.cardLoadState !== CardLoadState.Ready) {
+    if (target()?.loadState !== LoadState.Ready) {
       target.set(FAILED);
       return false;
     }
@@ -2012,26 +2023,26 @@ export class ClientCardStore {
   ): Promise<void> {
     const reader = this.historyReader;
     if (reader === null) return;
-    if (this._history()?.cardLoadState !== CardLoadState.Ready)
+    if (this._history()?.loadState !== LoadState.Ready)
       this._history.set(LOADING_HISTORY);
     const result = await this.timed(() =>
       reader.pageClientHistory(customerId, null, HISTORY_PAGE_SIZE),
     );
     if (generation !== this.generation) return;
     if (!result.ok) {
-      if (this._history()?.cardLoadState !== CardLoadState.Ready) {
+      if (this._history()?.loadState !== LoadState.Ready) {
         this._history.set({
           ...LOADING_HISTORY,
-          cardLoadState: CardLoadState.Failed,
+          loadState: LoadState.Failed,
         });
       }
       return;
     }
     this._history.set({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       appointments: result.value.appointments,
       cursor: result.value.nextBeforeUtcMs,
-      more: 'idle',
+      pagingState: PagingState.More,
       photoCounts: new Map(),
     });
     void this.loadCounts(generation, result.value.appointments);
@@ -2073,16 +2084,16 @@ export class ClientCardStore {
       reader === null ||
       customerId === null ||
       history === null ||
-      history.cardLoadState !== CardLoadState.Ready ||
+      history.loadState !== LoadState.Ready ||
       history.cursor === null ||
-      history.more === 'loading' ||
+      history.pagingState === PagingState.Loading ||
       !untracked(this._online)
     ) {
       return false;
     }
     const generation = this.generation;
     const cursor = history.cursor;
-    this._history.set({ ...history, more: 'loading' });
+    this._history.set({ ...history, pagingState: PagingState.Loading });
     const result = await this.timed(() =>
       reader.pageClientHistory(customerId, cursor, HISTORY_PAGE_SIZE),
     );
@@ -2090,14 +2101,14 @@ export class ClientCardStore {
     const now = this._history();
     if (now === null) return false;
     if (!result.ok) {
-      this._history.set({ ...now, more: 'failed' });
+      this._history.set({ ...now, pagingState: PagingState.Failed });
       return false;
     }
     this._history.set({
       ...now,
       appointments: [...now.appointments, ...result.value.appointments],
       cursor: result.value.nextBeforeUtcMs,
-      more: 'idle',
+      pagingState: PagingState.More,
     });
     void this.loadCounts(generation, result.value.appointments);
     return true;
@@ -2128,13 +2139,13 @@ export class ClientCardStore {
       return;
     }
     this.waitlistSubscription?.unsubscribe();
-    if (this._waitlist()?.cardLoadState !== CardLoadState.Ready)
+    if (this._waitlist()?.loadState !== LoadState.Ready)
       this._waitlist.set(LOADING);
     const timer = setTimeout(() => {
       this.timers.delete(timer);
       if (
         generation === this.generation &&
-        this._waitlist()?.cardLoadState === CardLoadState.Loading
+        this._waitlist()?.loadState === LoadState.Loading
       ) {
         this._waitlist.set(FAILED);
       }
@@ -2152,10 +2163,10 @@ export class ClientCardStore {
           if (generation !== this.generation) return;
           if (result.ok) {
             this._waitlist.set({
-              cardLoadState: CardLoadState.Ready,
+              loadState: LoadState.Ready,
               data: result.value,
             });
-          } else if (this._waitlist()?.cardLoadState !== CardLoadState.Ready) {
+          } else if (this._waitlist()?.loadState !== LoadState.Ready) {
             this._waitlist.set(FAILED);
           }
         },
@@ -2163,7 +2174,7 @@ export class ClientCardStore {
           settle();
           if (
             generation === this.generation &&
-            this._waitlist()?.cardLoadState !== CardLoadState.Ready
+            this._waitlist()?.loadState !== LoadState.Ready
           ) {
             this._waitlist.set(FAILED);
           }
@@ -2199,16 +2210,15 @@ export class ClientCardStore {
   ): void {
     const ports = this.loyaltyPorts;
     if (ports === null) return;
-    const due = (slice: Slice<unknown> | null) =>
-      slice !== null &&
-      (!failedOnly || slice.cardLoadState === CardLoadState.Failed);
+    const due = (slice: LoadSlice<unknown> | null) =>
+      slice !== null && (!failedOnly || slice.loadState === LoadState.Failed);
     const account = due(this._account());
     const progress = due(this._progress());
     const seasons = due(this._seasonProgress());
     if (!account && !progress && !seasons) return;
     // Loading at once, as a read sets it, while the record is resolved.
-    const loading = <T>(target: WritableSignal<Slice<T> | null>) => {
-      if (target()?.cardLoadState !== CardLoadState.Ready) target.set(LOADING);
+    const loading = <T>(target: WritableSignal<LoadSlice<T> | null>) => {
+      if (target()?.loadState !== LoadState.Ready) target.set(LOADING);
     };
     if (account) loading(this._account);
     if (progress) loading(this._progress);
@@ -2236,19 +2246,18 @@ export class ClientCardStore {
       // No record yet: no loyalty account either.
       () => {
         if (account)
-          this._account.set({ cardLoadState: CardLoadState.Ready, data: null });
+          this._account.set({ loadState: LoadState.Ready, data: null });
         if (progress)
-          this._progress.set({ cardLoadState: CardLoadState.Ready, data: [] });
+          this._progress.set({ loadState: LoadState.Ready, data: [] });
         if (seasons)
           this._seasonProgress.set({
-            cardLoadState: CardLoadState.Ready,
+            loadState: LoadState.Ready,
             data: [],
           });
       },
       () => {
-        const fail = <T>(target: WritableSignal<Slice<T> | null>) => {
-          if (target()?.cardLoadState !== CardLoadState.Ready)
-            target.set(FAILED);
+        const fail = <T>(target: WritableSignal<LoadSlice<T> | null>) => {
+          if (target()?.loadState !== LoadState.Ready) target.set(FAILED);
         };
         if (account) fail(this._account);
         if (progress) fail(this._progress);
@@ -2268,7 +2277,7 @@ export class ClientCardStore {
     if (ports === null || this._catalog() === null) return;
     if (this.catalogCache !== null) {
       this._catalog.set({
-        cardLoadState: CardLoadState.Ready,
+        loadState: LoadState.Ready,
         data: this.catalogCache,
       });
       return;
@@ -2282,11 +2291,11 @@ export class ClientCardStore {
       this.catalogCache = valid.value;
       if (this._catalog() !== null) {
         this._catalog.set({
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           data: valid.value,
         });
       }
-    } else if (this._catalog()?.cardLoadState !== CardLoadState.Ready) {
+    } else if (this._catalog()?.loadState !== LoadState.Ready) {
       this._catalog.set(FAILED);
     }
   }
@@ -2316,7 +2325,7 @@ export class ClientCardStore {
   private async loadFeed(generation: number, uid: string): Promise<void> {
     const ports = this.journalPorts;
     if (ports === null || this._activity() === null) return;
-    if (this._activity()?.cardLoadState !== CardLoadState.Ready)
+    if (this._activity()?.loadState !== LoadState.Ready)
       this._activity.set(LOADING);
     await this.withRecord(
       generation,
@@ -2336,12 +2345,12 @@ export class ClientCardStore {
       },
       () => {
         if (this._activity() !== null) {
-          this._activity.set({ cardLoadState: CardLoadState.Ready, data: [] });
+          this._activity.set({ loadState: LoadState.Ready, data: [] });
         }
       },
       () => {
         if (
-          this._activity()?.cardLoadState !== CardLoadState.Ready &&
+          this._activity()?.loadState !== LoadState.Ready &&
           this._activity() !== null
         ) {
           this._activity.set(FAILED);
@@ -2358,8 +2367,8 @@ export class ClientCardStore {
   private loadLedgerFirst(generation: number, uid: string): void {
     const state = this._ledgerPage();
     if (state === null || this.journalPorts === null) return;
-    if (state.cardLoadState !== CardLoadState.Ready) {
-      this._ledgerPage.set({ ...state, cardLoadState: CardLoadState.Loading });
+    if (state.loadState !== LoadState.Ready) {
+      this._ledgerPage.set({ ...state, loadState: LoadState.Loading });
     }
     void this.readLedgerPage(generation, uid, state.filter);
   }
@@ -2388,8 +2397,8 @@ export class ClientCardStore {
     };
     const fail = () => {
       const now = current();
-      if (now !== null && now.cardLoadState !== CardLoadState.Ready) {
-        this._ledgerPage.set({ ...now, cardLoadState: CardLoadState.Failed });
+      if (now !== null && now.loadState !== LoadState.Ready) {
+        this._ledgerPage.set({ ...now, loadState: LoadState.Failed });
       }
     };
     await this.withRecord(
@@ -2411,20 +2420,20 @@ export class ClientCardStore {
         }
         this._ledgerPage.set({
           filter: kind,
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           entries: result.value.entries,
           next: result.value.nextBeforeSeq,
-          more: 'idle',
+          pagingState: PagingState.More,
         });
       },
       () => {
         if (current() === null) return;
         this._ledgerPage.set({
           filter: kind,
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           entries: [],
           next: null,
-          more: 'idle',
+          pagingState: PagingState.More,
         });
       },
       fail,
@@ -2444,9 +2453,9 @@ export class ClientCardStore {
       ports === null ||
       customerId === null ||
       state === null ||
-      state.cardLoadState !== CardLoadState.Ready ||
+      state.loadState !== LoadState.Ready ||
       state.next === null ||
-      state.more === 'loading' ||
+      state.pagingState === PagingState.Loading ||
       !untracked(this._online)
     ) {
       return;
@@ -2454,7 +2463,7 @@ export class ClientCardStore {
     const generation = this.generation;
     const sequence = this.ledgerSequence;
     const after = state.next;
-    this._ledgerPage.set({ ...state, more: 'loading' });
+    this._ledgerPage.set({ ...state, pagingState: PagingState.Loading });
     const result = await this.timed(() =>
       ports.pageClientJournal(
         customerId,
@@ -2469,14 +2478,14 @@ export class ClientCardStore {
     const now = this._ledgerPage();
     if (now === null || now.filter !== state.filter) return;
     if (!result.ok) {
-      this._ledgerPage.set({ ...now, more: 'failed' });
+      this._ledgerPage.set({ ...now, pagingState: PagingState.Failed });
       return;
     }
     this._ledgerPage.set({
       ...now,
       entries: [...now.entries, ...result.value.entries],
       next: result.value.nextBeforeSeq,
-      more: 'idle',
+      pagingState: PagingState.More,
     });
   }
 }

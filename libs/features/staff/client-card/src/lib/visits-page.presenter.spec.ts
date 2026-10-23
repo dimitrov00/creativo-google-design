@@ -1,9 +1,11 @@
 import type { ClientStatsRecord } from '@core/entities';
-import type {
-  VisitFilter,
-  VisitRowVm,
-  VisitSectionVm,
+import { VisitFilter, VisitRowOutcome } from '@core/systems';
+import {
+  TrailingFactFace,
+  type VisitRowVm,
+  type VisitSectionVm,
 } from '@creativo/features/shared/visits';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ClientCardWords } from './client-card.words';
 import type {
@@ -31,8 +33,9 @@ import {
   MARTIN_CUSTOMER_ID,
   MARTIN_TODAY_ID,
   NBSP_EURO,
-  NOW_MS,
+  NOW,
   SHOP_CATALOG,
+  SHOP_TIME_ZONE,
   georgiHistory,
   martinHistory,
   sofia,
@@ -88,7 +91,8 @@ function georgiInput(
     subjectUserId: GEORGI,
     subjectCustomerId: GEORGI_CUSTOMER_ID,
     currentAppointmentId: 'appt-dev-1',
-    nowMs: NOW_MS,
+    now: NOW,
+    timeZone: SHOP_TIME_ZONE,
     photoCounts: new Map([['appt-hist-c1-23', 1]]),
     clientWords: true,
     catalog: SHOP_CATALOG,
@@ -111,16 +115,19 @@ function martinInput(
 }
 
 const END: HistoryPagingVm = {
-  kind: 'end',
+  pagingState: PagingState.End,
   endLabel: 'Първо посещение: 6.03.2025 г.',
 };
-const MORE: HistoryPagingVm = { kind: 'more', endLabel: null };
+const MORE: HistoryPagingVm = {
+  pagingState: PagingState.More,
+  endLabel: null,
+};
 
 function page(overrides: Partial<VisitsPageInput> = {}): VisitsPageVm {
   return visitsPageVm({
-    status: 'ready',
+    loadState: LoadState.Ready,
     rows: georgiInput(),
-    filter: 'all',
+    filter: VisitFilter.All,
     stats: GEORGI_STATS,
     spend: null,
     paging: END,
@@ -179,13 +186,12 @@ describe('the rows, by month', () => {
       lines: [{ text: 'Център · Иван', hold: ' · Иван' }],
       quote: `„${GEORGI_NOTE}“`,
       trailing: {
-        kind: 'barber',
         avatarSrc: 'https://example.test/barbers/ivan.jpg',
         name: 'Иван',
         several: false,
       },
       trailingFact: {
-        kind: 'amount',
+        trailingFactFace: TrailingFactFace.Amount,
         text: NBSP_EURO('17,50 €'),
         emphasis: 'primary',
         struck: false,
@@ -201,14 +207,17 @@ describe('the rows, by month', () => {
       sectionKey: '2026-09',
       tile: { caption: 'пн', day: 28, tone: 'past' },
       lines: [{ text: '10:00 · Иван' }],
-      trailingFact: { kind: 'badge', text: 'Този час' },
+      trailingFact: {
+        trailingFactFace: TrailingFactFace.Badge,
+        text: 'Този час',
+      },
     });
     // An hour ahead, confirmed: the face alone, no fact to end the line.
     expect(rows.find((row) => row.id === GEORGI_NEXT_ID)).toMatchObject({
       sectionKey: 'upcoming',
       upcoming: true,
       tile: { caption: 'пт', day: 2, tone: 'upcoming' },
-      trailing: { kind: 'barber', name: 'Иван' },
+      trailing: { name: 'Иван' },
       trailingFact: null,
     });
   });
@@ -220,9 +229,9 @@ describe('the rows, by month', () => {
       struck: true,
       tile: { tone: 'hollow' },
       lines: [{ text: 'Отказан от салона · Нико' }],
-      trailing: { kind: 'barber', name: 'Нико' },
+      trailing: { name: 'Нико' },
       trailingFact: {
-        kind: 'amount',
+        trailingFactFace: TrailingFactFace.Amount,
         text: NBSP_EURO('15,00 €'),
         emphasis: 'secondary',
         struck: true,
@@ -263,7 +272,11 @@ describe('the rows, by month', () => {
 
 describe('the sections', () => {
   it('opens with the run ahead, then the months newest first, under the history’s ids', () => {
-    const sections = visitsSections(visitsRows(georgiInput()), 'all', WORDS);
+    const sections = visitsSections(
+      visitsRows(georgiInput()),
+      VisitFilter.All,
+      WORDS,
+    );
     expect(
       sections
         .slice(0, 4)
@@ -300,10 +313,14 @@ describe('the sections', () => {
   });
 
   it('counts a month’s worked visits from two up: a month of one visit is its heading alone', () => {
-    const sections = visitsSections(visitsRows(georgiInput()), 'all', WORDS);
+    const sections = visitsSections(
+      visitsRows(georgiInput()),
+      VisitFilter.All,
+      WORDS,
+    );
     for (const section of sections.slice(1)) {
       const worked = section.rows.filter(
-        (row) => row.outcome === 'worked',
+        (row) => row.outcome === VisitRowOutcome.Worked,
       ).length;
       expect(section.detail).toBe(worked >= 2 ? `${worked} посещения` : null);
     }
@@ -313,12 +330,16 @@ describe('the sections', () => {
   });
 
   it('never counts an hour that did not happen, and draws no month nobody came in', () => {
-    const sections = visitsSections(visitsRows(martinInput()), 'all', WORDS);
+    const sections = visitsSections(
+      visitsRows(martinInput()),
+      VisitFilter.All,
+      WORDS,
+    );
     // May 2026: one cut and the shop's cancellation.
     const may = sections.find((section) => section.key === '2026-05');
     expect(may?.rows.map((row) => row.outcome)).toEqual([
-      'worked',
-      'cancelled',
+      VisitRowOutcome.Worked,
+      VisitRowOutcome.Cancelled,
     ]);
     expect(may?.detail).toBeNull();
     // Nothing in June 2026 or January 2026: no heading, so no pill.
@@ -329,27 +350,36 @@ describe('the sections', () => {
     expect(keys).not.toContain('upcoming');
     expect(sections[0]?.rows[0]).toMatchObject({
       id: MARTIN_TODAY_ID,
-      trailingFact: { kind: 'badge', text: 'Този час' },
+      trailingFact: {
+        trailingFactFace: TrailingFactFace.Badge,
+        text: 'Този час',
+      },
     });
   });
 
   it('narrows to the subject’s own outcome, and to nothing when no row answers', () => {
     const rows = visitsRows(martinInput());
-    const cancelled = visitsSections(rows, 'cancelled', WORDS);
+    const cancelled = visitsSections(rows, VisitFilter.Cancelled, WORDS);
     expect(cancelled.map((s) => [s.key, s.detail, s.rows.length])).toEqual([
       ['2026-05', null, 1],
     ]);
     expect(cancelled[0]?.rows[0]?.id).toBe('appt-hist-c2-11');
-    expect(visitsSections(rows, 'no_show', WORDS)).toEqual([]);
-    expect(rowsOf(visitsSections(rows, 'completed', WORDS))).toHaveLength(13);
-    const ahead = visitsSections(visitsRows(georgiInput()), 'upcoming', WORDS);
+    expect(visitsSections(rows, VisitFilter.NoShow, WORDS)).toEqual([]);
+    expect(
+      rowsOf(visitsSections(rows, VisitFilter.Completed, WORDS)),
+    ).toHaveLength(13);
+    const ahead = visitsSections(
+      visitsRows(georgiInput()),
+      VisitFilter.Upcoming,
+      WORDS,
+    );
     expect(ahead.map((section) => section.key)).toEqual(['upcoming']);
   });
 
   it('heads the months in the reader’s language', () => {
     const sections = visitsSections(
       visitsRows(georgiInput({ words: EN })),
-      'all',
+      VisitFilter.All,
       EN,
     );
     expect(sections.slice(0, 2).map((s) => [s.label, s.detail])).toEqual([
@@ -607,23 +637,27 @@ describe('the lines’ runs', () => {
 describe('the page', () => {
   it('hands the browser the choice, the options the rows answer, the months and the foot', () => {
     const vm = page({ spend: SPEND });
-    expect(vm.status).toBe('ready');
-    expect(vm.filter).toBe('all');
+    expect(vm.loadState).toBe(LoadState.Ready);
+    expect(vm.filter).toBe(VisitFilter.All);
     // A complete book with nothing but worked visits and one hour ahead.
-    expect(vm.offeredFilters).toEqual(['all', 'upcoming', 'completed']);
+    expect(vm.offeredFilters).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+    ]);
     expect(vm.sections).toEqual(
-      visitsSections(visitsRows(georgiInput()), 'all', WORDS),
+      visitsSections(visitsRows(georgiInput()), VisitFilter.All, WORDS),
     );
     expect(vm.paging).toEqual(END);
   });
 
   it('keeps the terminal options on offer while older pages remain', () => {
     expect(page({ paging: MORE }).offeredFilters).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
     ]);
     // Offline with a cursor left: no foot, and the list is still not whole.
     const offline = page({
@@ -633,24 +667,24 @@ describe('the page', () => {
     });
     expect(offline.paging).toBeNull();
     expect(offline.offeredFilters).toEqual([
-      'all',
-      'completed',
-      'no_show',
-      'cancelled',
+      VisitFilter.All,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
     ]);
     // Мартин's whole book: the shop's cancellation answers «Отказани».
     expect(
       page({ rows: martinInput(), stats: MARTIN_STATS }).offeredFilters,
-    ).toEqual(['all', 'completed', 'cancelled']);
+    ).toEqual([VisitFilter.All, VisitFilter.Completed, VisitFilter.Cancelled]);
   });
 
   it('narrows the list and leaves the lines alone', () => {
     const vm = page({
       rows: martinInput(),
       stats: MARTIN_STATS,
-      filter: 'cancelled',
+      filter: VisitFilter.Cancelled,
     });
-    expect(vm.filter).toBe('cancelled');
+    expect(vm.filter).toBe(VisitFilter.Cancelled);
     expect(rowsOf(vm.sections).map((row) => row.id)).toEqual([
       'appt-hist-c2-11',
     ]);
@@ -659,51 +693,53 @@ describe('the page', () => {
   });
 
   it('ends a list the filter emptied on nothing, and still offers the older pages', () => {
-    const whole = page({ filter: 'no_show' });
+    const whole = page({ filter: VisitFilter.NoShow });
     expect(whole.sections).toEqual([]);
-    expect(whole.paging).toEqual({ kind: 'end', endLabel: null });
-    const partial = page({ filter: 'no_show', paging: MORE });
+    expect(whole.paging).toEqual({
+      pagingState: PagingState.End,
+      endLabel: null,
+    });
+    const partial = page({ filter: VisitFilter.NoShow, paging: MORE });
     expect(partial.sections).toEqual([]);
     expect(partial.paging).toEqual(MORE);
   });
 
   it('always lists the choice in force, in the menu’s order, so the list can be widened again', () => {
     // Picked while older pages remained; the last page held no no-show.
-    expect(page({ filter: 'no_show' }).offeredFilters).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
+    expect(page({ filter: VisitFilter.NoShow }).offeredFilters).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
     ]);
-    expect(page({ filter: 'cancelled' }).offeredFilters).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'cancelled',
+    expect(page({ filter: VisitFilter.Cancelled }).offeredFilters).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.Cancelled,
     ]);
   });
 
   it('draws no row, no foot and no option while the first page is on its way, or failed', () => {
-    for (const status of ['loading', 'failed'] as const) {
-      const vm = page({ status, spend: SPEND, paging: MORE });
-      expect(vm.status).toBe(status);
+    for (const loadState of [LoadState.Loading, LoadState.Failed] as const) {
+      const vm = page({ loadState, spend: SPEND, paging: MORE });
+      expect(vm.loadState).toBe(loadState);
       expect(vm.sections).toEqual([]);
       expect(vm.paging).toBeNull();
-      expect(vm.offeredFilters).toEqual(['all']);
+      expect(vm.offeredFilters).toEqual([VisitFilter.All]);
       // The record is its own read: what it knows is still said.
       expect(text(vm.line)).toBe(held('24 посещения · през 4 седмици'));
       expect(vm.lineName).toBe('Общо: 24 посещения, средно на 4 седмици');
       expect(factsIn(vm.facts)).toEqual([NBSP_EURO('462,50 €')]);
-      expect(page({ status, filter: 'completed' }).offeredFilters).toEqual([
-        'all',
-        'completed',
-      ]);
+      expect(
+        page({ loadState, filter: VisitFilter.Completed }).offeredFilters,
+      ).toEqual([VisitFilter.All, VisitFilter.Completed]);
     }
   });
 
   it('tells nobody «Първо посещение» before a read has answered', () => {
-    for (const status of ['loading', 'failed'] as const) {
-      const vm = page({ status, stats: null, spend: SPEND });
+    for (const loadState of [LoadState.Loading, LoadState.Failed] as const) {
+      const vm = page({ loadState, stats: null, spend: SPEND });
       expect(vm.line).toEqual([]);
       expect(vm.lineName).toBe('');
       expect(vm.facts).toBeNull();
@@ -712,47 +748,47 @@ describe('the page', () => {
   });
 
   it('answers a blank page before the words are there', () => {
-    expect(visitsPageBlank('loading', 'all')).toEqual({
-      status: 'loading',
+    expect(visitsPageBlank(LoadState.Loading, VisitFilter.All)).toEqual({
+      loadState: LoadState.Loading,
       line: [],
       lineName: '',
       facts: null,
       cells: [],
-      filter: 'all',
-      offeredFilters: ['all'],
+      filter: VisitFilter.All,
+      offeredFilters: [VisitFilter.All],
       sections: [],
       paging: null,
     });
-    expect(visitsPageBlank('failed', 'no_show').offeredFilters).toEqual([
-      'all',
-      'no_show',
-    ]);
+    expect(
+      visitsPageBlank(LoadState.Failed, VisitFilter.NoShow).offeredFilters,
+    ).toEqual([VisitFilter.All, VisitFilter.NoShow]);
   });
 
   it('holds what the contract’s fixtures hold (client-pages.vm.spec)', () => {
     const filters: readonly VisitFilter[] = [
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
     ];
     const pages = filters.flatMap((filter) => [
       page({ filter }),
       page({ filter, paging: MORE }),
       page({ filter, rows: martinInput(), stats: MARTIN_STATS }),
-      page({ filter, status: 'loading' }),
-      page({ filter, status: 'failed', stats: null }),
+      page({ filter, loadState: LoadState.Loading }),
+      page({ filter, loadState: LoadState.Failed, stats: null }),
     ]);
     for (const vm of pages) {
-      expect(vm.offeredFilters).toContain('all');
+      expect(vm.offeredFilters).toContain(VisitFilter.All);
       expect(vm.offeredFilters).toContain(vm.filter);
-      if (vm.status !== 'ready') expect(vm.paging).toBeNull();
+      if (vm.loadState !== LoadState.Ready) expect(vm.paging).toBeNull();
       for (const row of rowsOf(vm.sections)) {
         // The face keeps the trailing edge; the fact is never the barber.
-        expect(row.trailing?.kind).toBe('barber');
+        expect(row.trailing).not.toBeNull();
         expect(row.struck).toBe(
-          row.outcome === 'no_show' || row.outcome === 'cancelled',
+          row.outcome === VisitRowOutcome.NoShow ||
+            row.outcome === VisitRowOutcome.Cancelled,
         );
       }
       for (const section of vm.sections) {
@@ -770,7 +806,7 @@ describe('HI/HJ · the list’s foot', () => {
   const foot = (overrides: Partial<VisitsPagingInput> = {}) =>
     visitsPaging({
       cursor: sofia('2025-03-06T10:00:00'),
-      more: 'idle',
+      pagingState: PagingState.More,
       online: true,
       stats: GEORGI_STATS,
       words: WORDS,
@@ -778,27 +814,27 @@ describe('HI/HJ · the list’s foot', () => {
     });
 
   it('offers «Покажи още» while older visits remain, its busy and failed states on the way', () => {
-    expect(foot()).toEqual({ kind: 'more', endLabel: null });
-    expect(foot({ more: 'loading' })).toEqual({
-      kind: 'loading',
+    expect(foot()).toEqual({ pagingState: PagingState.More, endLabel: null });
+    expect(foot({ pagingState: PagingState.Loading })).toEqual({
+      pagingState: PagingState.Loading,
       endLabel: null,
     });
-    expect(foot({ more: 'failed' })).toEqual({
-      kind: 'failed',
+    expect(foot({ pagingState: PagingState.Failed })).toEqual({
+      pagingState: PagingState.Failed,
       endLabel: null,
     });
   });
 
   it('offers nothing offline: a read that cannot answer', () => {
     expect(foot({ online: false })).toBeNull();
-    expect(foot({ online: false, more: 'failed' })).toBeNull();
+    expect(foot({ online: false, pagingState: PagingState.Failed })).toBeNull();
     // The last page is read: the end is a fact, online or not.
     expect(foot({ online: false, cursor: null })).toEqual(END);
   });
 
   it('ends on the first visit’s day, the year always named', () => {
     expect(foot({ cursor: null })).toEqual({
-      kind: 'end',
+      pagingState: PagingState.End,
       endLabel: 'Първо посещение: 6.03.2025 г.',
     });
     expect(foot({ cursor: null, words: EN })?.endLabel).toMatch(
@@ -808,7 +844,7 @@ describe('HI/HJ · the list’s foot', () => {
 
   it('ends on «Това е първото посещение.» before the first worked visit, and on nothing without the day', () => {
     expect(foot({ cursor: null, stats: null })).toEqual({
-      kind: 'end',
+      pagingState: PagingState.End,
       endLabel: 'Това е първото посещение.',
     });
     expect(foot({ cursor: null, stats: NEW_CLIENT })?.endLabel).toBe(
@@ -816,7 +852,7 @@ describe('HI/HJ · the list’s foot', () => {
     );
     expect(
       foot({ cursor: null, stats: { ...GEORGI_STATS, ...NO_FIRST_VISIT } }),
-    ).toEqual({ kind: 'end', endLabel: null });
+    ).toEqual({ pagingState: PagingState.End, endLabel: null });
   });
 });
 

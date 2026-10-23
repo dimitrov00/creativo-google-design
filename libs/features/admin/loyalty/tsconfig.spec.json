@@ -49,6 +49,12 @@
     },
     {
       "path": "../../../ui/patterns/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../shared/view-state/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
     }
   ]
 }

@@ -76,7 +76,7 @@
            because a list that is hiding things has to say so, and its name
            says which option bites. -->
         <lib-visit-filter
-          perspective="client"
+          [perspective]="VisitPerspective.Client"
           testIdPrefix="appointments-filter"
           [value]="filter()"
           (valueChange)="setFilter($event)"
@@ -163,7 +163,7 @@
          the EMPTY is the page's, because only the page knows whether
          nothing is there or the funnel is hiding it. -->
     <lib-visits-browser
-      perspective="client"
+      [perspective]="VisitPerspective.Client"
       testIdPrefix="appointments"
       class="appointments__browser"
       [sections]="sections()"
@@ -187,7 +187,7 @@
           uiButtonStyle="bordered"
           uiControlSize="regular"
           data-testid="appointments-clear-filter"
-          (click)="setFilter('all')"
+          (click)="setFilter(VisitFilter.All)"
         >
           {{ t('visits.filter.clear') }}
         </button>
@@ -208,8 +208,7 @@
     }
 
     <!-- ── CALENDAR ──────────────────────────────────────────────────── -->
-    @else { @switch (store.upcoming().appointmentsViewState) { @case
-    (ViewState.Loading) {
+    @else { @switch (store.upcoming().loadState) { @case (LoadState.Loading) {
     <ui-stack
       uiSpacing="comfortable"
       class="appointments__status"
@@ -219,7 +218,7 @@
       <ui-skeleton uiFrame uiFrameHeight="8rem" />
       <ui-skeleton uiFrame uiFrameHeight="8rem" />
     </ui-stack>
-    } @case (ViewState.Error) {
+    } @case (LoadState.Failed) {
     <!-- The list's own failure grammar: what did not load, and the one
          retry word of the stack. -->
     <ui-notice
@@ -392,8 +391,8 @@
         <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
           {{ fullDayLabel(visit) }} · {{ visit.timeLabel }}
         </p>
-        <span uiBadge [uiTone]="statusTone(visit.status)">
-          {{ t('appointments.status.' + statusKey(visit.status)) }}
+        <span uiBadge [uiTone]="statusTone(visit.bookingStatus)">
+          {{ t('appointments.status.' + statusKey(visit.bookingStatus)) }}
         </span>
       </ui-stack>
 

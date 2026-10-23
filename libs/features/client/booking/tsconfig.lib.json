@@ -59,7 +59,7 @@
       "path": "../../shared/catalog/tsconfig.lib.json"
     },
     {
-      "path": "../../shared/visits/tsconfig.lib.json"
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
     },
     {
       "path": "../../../ecs-core/tsconfig.lib.json"

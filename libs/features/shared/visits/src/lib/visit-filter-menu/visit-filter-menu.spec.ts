@@ -5,27 +5,29 @@ import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
 import { UiButton, type UiControlSize } from '@creativo/ui/controls';
+import { VisitGrain } from '@core/systems';
 import { FIXTURE_TODAY } from '@core/testing';
 import {
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   provideVisitsCatalogues,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
 import { matchesVisitFilter } from '../visit-filter';
 import { VisitList } from '../visit-list/visit-list';
 import { visitRowOf, visitWordsOf } from '../visit-row.presenter';
-import type { VisitFilter, VisitPerspective } from '../visit-row.vm';
+import { VisitFilter, VisitPerspective } from '../visit-row.vm';
 import { sectionVisits, visitSectionLabel } from '../visit-sections';
 import { VisitFilterMenu } from './visit-filter-menu';
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const NOW = visitsNow(FIXTURE_TODAY);
 
 @Component({
   imports: [VisitFilterMenu],
@@ -39,9 +41,9 @@ const NOW_MS = visitsNowMs(FIXTURE_TODAY);
   `,
 })
 class MenuHost {
-  readonly perspective = signal<VisitPerspective>('client');
+  readonly perspective = signal<VisitPerspective>(VisitPerspective.Client);
   readonly prefix = signal('appointments-filter');
-  readonly filter = signal<VisitFilter>('all');
+  readonly filter = signal<VisitFilter>(VisitFilter.All);
   readonly offered = signal<readonly VisitFilter[] | null>(null);
 }
 
@@ -55,12 +57,12 @@ class MenuHost {
   imports: [VisitFilterMenu, VisitList, UiButton],
   template: `
     <lib-visit-filter
-      perspective="client"
+      [perspective]="VisitPerspective.Client"
       testIdPrefix="appointments-filter"
       [(value)]="filter"
     />
     <lib-visit-list
-      perspective="client"
+      [perspective]="VisitPerspective.Client"
       listStyle="insetGrouped"
       [sections]="sections()"
     >
@@ -73,7 +75,7 @@ class MenuHost {
         uiButtonStyle="bordered"
         uiControlSize="regular"
         data-testid="appointments-clear-filter"
-        (click)="filter.set('all')"
+        (click)="filter.set(VisitFilter.All)"
       >
         {{ clearText }}
       </button>
@@ -81,22 +83,25 @@ class MenuHost {
   `,
 })
 class PageHost {
-  readonly filter = signal<VisitFilter>('all');
+  protected readonly VisitFilter = VisitFilter;
+  protected readonly VisitPerspective = VisitPerspective;
+  readonly filter = signal<VisitFilter>(VisitFilter.All);
   /** The page's book; a spec narrows it to reach the filtered empty. */
   readonly visits = signal(GEORGI_VISITS);
   readonly emptyText = BG('appointments.empty.filtered');
   readonly clearText = BG('visits.filter.clear');
-  private readonly words = visitWordsOf(BG, 'bg', 'client');
+  private readonly words = visitWordsOf(BG, 'bg', VisitPerspective.Client);
   private readonly rows = computed(() =>
     this.visits().map((visit) =>
       visitRowOf(
         visit,
         {
-          perspective: 'client',
-          grain: 'month',
+          perspective: VisitPerspective.Client,
+          grain: VisitGrain.Month,
           subjectUserId: GEORGI_UID,
           currentAppointmentId: null,
-          nowMs: NOW_MS,
+          now: NOW,
+          timeZone: VISITS_TIME_ZONE,
           locale: 'bg',
           words: this.words,
         },
@@ -108,7 +113,7 @@ class PageHost {
     sectionVisits(
       this.rows().filter((row) => matchesVisitFilter(row, this.filter())),
       {
-        grain: 'month',
+        grain: VisitGrain.Month,
         labels: {
           upcoming: BG('appointments.sections.upcoming'),
           section: (key) => visitSectionLabel(key, 'bg'),
@@ -196,7 +201,7 @@ describe('VisitFilterMenu', () => {
 
   it('offers a barber the record’s own order and word: «Неявявания» before «Отказани»', async () => {
     const { host, byId } = await mount(MenuHost, (h) => {
-      h.perspective.set('staff');
+      h.perspective.set(VisitPerspective.Staff);
       h.prefix.set('history-filter');
     });
 
@@ -219,7 +224,7 @@ describe('VisitFilterMenu', () => {
 
   it('opens from its trigger; a pick sets the host’s filter, closes, and turns the funnel accent', async () => {
     const { fixture, byId, settle } = await mount(MenuHost, (h) => {
-      h.perspective.set('staff');
+      h.perspective.set(VisitPerspective.Staff);
       h.prefix.set('history-filter');
     });
     const trigger = () => byId<HTMLButtonElement>('history-filter');
@@ -230,7 +235,7 @@ describe('VisitFilterMenu', () => {
 
     byId<HTMLButtonElement>('history-filter-no_show')?.click();
     await settle();
-    expect(fixture.componentInstance.filter()).toBe('no_show');
+    expect(fixture.componentInstance.filter()).toBe(VisitFilter.NoShow);
     expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
     expect(trigger()?.hasAttribute('data-filtering')).toBe(true);
     // Accent while it bites: the button's own tint, no neutral.
@@ -243,10 +248,14 @@ describe('VisitFilterMenu', () => {
 
   it('leaves out what no row answers — absent, never disabled — but keeps «Всички» and the choice in force', async () => {
     const { fixture, host, byId, settle } = await mount(MenuHost, (h) => {
-      h.perspective.set('staff');
+      h.perspective.set(VisitPerspective.Staff);
       h.prefix.set('history-filter');
       // A book read to its end with no no-show and no cancellation in it.
-      h.offered.set(['all', 'upcoming', 'completed']);
+      h.offered.set([
+        VisitFilter.All,
+        VisitFilter.Upcoming,
+        VisitFilter.Completed,
+      ]);
     });
 
     expect(optionIds(host, 'history-filter')).toEqual([
@@ -258,7 +267,7 @@ describe('VisitFilterMenu', () => {
 
     // The choice in force stays offered even once nothing answers it, so
     // the menu still shows what bites and the list can be widened again.
-    fixture.componentInstance.filter.set('no_show');
+    fixture.componentInstance.filter.set(VisitFilter.NoShow);
     await settle();
     expect(optionIds(host, 'history-filter')).toEqual([
       'history-filter-all',
@@ -273,12 +282,12 @@ describe('VisitFilterMenu', () => {
 
   it('follows the host when it resets the filter', async () => {
     const { fixture, byId, settle } = await mount(MenuHost, (h) =>
-      h.filter.set('cancelled'),
+      h.filter.set(VisitFilter.Cancelled),
     );
     expect(byId('appointments-filter')?.hasAttribute('data-filtering')).toBe(
       true,
     );
-    fixture.componentInstance.filter.set('all');
+    fixture.componentInstance.filter.set(VisitFilter.All);
     await settle();
     expect(byId('appointments-filter')?.hasAttribute('data-filtering')).toBe(
       false,
@@ -313,7 +322,7 @@ describe('VisitFilterMenu', () => {
   template: `
     <lib-visit-filter
       visitPillsAction
-      perspective="staff"
+      [perspective]="VisitPerspective.Staff"
       testIdPrefix="history-filter"
       [controlSize]="controlSize()"
       [(value)]="filter"
@@ -321,20 +330,21 @@ describe('VisitFilterMenu', () => {
   `,
 })
 class PinnedHost {
-  readonly filter = signal<VisitFilter>('all');
+  protected readonly VisitPerspective = VisitPerspective;
+  readonly filter = signal<VisitFilter>(VisitFilter.All);
   readonly controlSize = signal<UiControlSize | null>(null);
 }
 
 describe('VisitFilterMenu · narrowed: the accent as a shape (revision 3 §1.3)', () => {
   it('wears a dot on its rim while a filter bites, and none while it does not', async () => {
     const { fixture, byId, settle } = await mount(MenuHost, (h) => {
-      h.perspective.set('staff');
+      h.perspective.set(VisitPerspective.Staff);
       h.prefix.set('history-filter');
     });
     const trigger = () => byId<HTMLButtonElement>('history-filter');
     expect(trigger()?.querySelector('.visit-filter__dot')).toBeNull();
 
-    fixture.componentInstance.filter.set('no_show');
+    fixture.componentInstance.filter.set(VisitFilter.NoShow);
     await settle();
     const dot = trigger()?.querySelector('.visit-filter__dot');
     expect(dot).not.toBeNull();
@@ -343,13 +353,15 @@ describe('VisitFilterMenu · narrowed: the accent as a shape (revision 3 §1.3)'
     expect(dot?.textContent).toBe('');
     expect(trigger()?.getAttribute('aria-label')).toBe('Филтър: Неявявания');
 
-    fixture.componentInstance.filter.set('all');
+    fixture.componentInstance.filter.set(VisitFilter.All);
     await settle();
     expect(trigger()?.querySelector('.visit-filter__dot')).toBeNull();
   });
 
   it('keeps its glyph ink on the accent wash: the button’s own icon-only rule, no paint of its own', async () => {
-    const { byId } = await mount(MenuHost, (h) => h.filter.set('cancelled'));
+    const { byId } = await mount(MenuHost, (h) =>
+      h.filter.set(VisitFilter.Cancelled),
+    );
     const trigger = byId<HTMLButtonElement>('appointments-filter');
     // Bordered with no tint is the accent wash; icon-only keeps the
     // foreground glyph (button.css): nothing else names the control.
@@ -449,7 +461,7 @@ describe('VisitFilterMenu · «Моите часове» rebuilt from the shared
         GEORGI_VISITS.filter((visit) => visit.bookingStatus !== 'NO_SHOW'),
       );
       // …asked for its no-shows.
-      h.filter.set('no_show');
+      h.filter.set(VisitFilter.NoShow);
     });
 
     expect(rowIds(host)).toEqual([]);
@@ -460,7 +472,7 @@ describe('VisitFilterMenu · «Моите часове» rebuilt from the shared
 
     clear?.click();
     await settle();
-    expect(fixture.componentInstance.filter()).toBe('all');
+    expect(fixture.componentInstance.filter()).toBe(VisitFilter.All);
     expect(byId('appointments-filter')?.hasAttribute('data-filtering')).toBe(
       false,
     );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Appointment } from '@core/entities';
 import { type Seat, SeatOutcome } from '@core/components';
+import { VisitGrain, VisitPerspective } from '@core/systems';
 import { FIXTURE_TODAY } from '@core/testing';
 import { appCatalogue } from '../testing/app-catalogue';
 import {
@@ -9,13 +10,14 @@ import {
   GEORGI_VISITS,
   IVO_UID,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   type VisitStatusSpec,
   georgiWaitlistRequest,
   sofia,
   visitOf,
   visitSeat,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import {
   visitRowOf,
@@ -23,12 +25,17 @@ import {
   visitWordsOf,
   waitlistRowOf,
 } from '../visit-row.presenter';
-import type { VisitLookup, VisitWords } from '../visit-row.vm';
+import {
+  TrailingFactFace,
+  type VisitLookup,
+  type VisitWords,
+} from '../visit-row.vm';
 import { visitCardOf, waitlistCardOf } from './visit-card.presenter';
-import type {
-  VisitCardOptions,
-  VisitCardVm,
-  VisitCardWords,
+import {
+  type VisitCardOptions,
+  VisitCardSlot,
+  type VisitCardVm,
+  type VisitCardWords,
 } from './visit-card.vm';
 
 /*
@@ -44,7 +51,7 @@ const EN = catalogueTranslator(appCatalogue('en'));
 function wordsOf(
   translate: typeof BG,
   lang: 'bg' | 'en',
-  perspective: 'staff' | 'client',
+  perspective: VisitPerspective,
 ): VisitWords {
   return {
     ...visitWordsOf(translate, lang, perspective),
@@ -61,10 +68,10 @@ function cardWordsOf(translate: typeof BG): VisitCardWords {
   };
 }
 
-const STAFF_WORDS = wordsOf(BG, 'bg', 'staff');
-const CLIENT_WORDS = wordsOf(BG, 'bg', 'client');
+const STAFF_WORDS = wordsOf(BG, 'bg', VisitPerspective.Staff);
+const CLIENT_WORDS = wordsOf(BG, 'bg', VisitPerspective.Client);
 const CARD_WORDS = cardWordsOf(BG);
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const NOW = visitsNow(FIXTURE_TODAY);
 
 /** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', ' €');
@@ -77,21 +84,25 @@ function visit(id: string): Appointment {
 
 function staffCard(
   appointment: Appointment,
-  kind: 'last' | 'next',
+  visitCardSlot: Exclude<VisitCardSlot, typeof VisitCardSlot.Waitlist>,
   overrides: Partial<VisitCardOptions> = {},
   lookup: VisitLookup = VISITS_LOOKUP,
 ): VisitCardVm {
   return visitCardOf(
     appointment,
     {
-      kind,
-      perspective: 'staff',
+      visitCardSlot,
+      perspective: VisitPerspective.Staff,
       subjectUserId: GEORGI_UID,
-      nowMs: NOW_MS,
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
       locale: 'bg',
       words: STAFF_WORDS,
       cardWords: CARD_WORDS,
-      testId: kind === 'last' ? 'client-visit-last' : 'client-visit-next',
+      testId:
+        visitCardSlot === VisitCardSlot.Last
+          ? 'client-visit-last'
+          : 'client-visit-next',
       ...overrides,
     },
     lookup,
@@ -145,10 +156,10 @@ const seatWorked = SeatOutcome.worked;
 
 describe('visitCardOf · the last visit, on the staff glance', () => {
   it('leads with the services and sets the DATE apart in the quiet line', () => {
-    const card = staffCard(visit('appt-sep'), 'last');
+    const card = staffCard(visit('appt-sep'), VisitCardSlot.Last);
 
     expect(card.id).toBe('appt-sep');
-    expect(card.kind).toBe('last');
+    expect(card.visitCardSlot).toBe(VisitCardSlot.Last);
     expect(card.label).toBe('Последно посещение');
     expect(card.services).toBe('Фейд');
     // date · who · where: the runs carry their own joints.
@@ -160,49 +171,55 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
   });
 
   it('prints what the visit cost, as the row does', () => {
-    expect(staffCard(visit('appt-sep'), 'last').figure).toBe(EURO('27,50 €'));
+    expect(staffCard(visit('appt-sep'), VisitCardSlot.Last).figure).toBe(
+      EURO('27,50 €'),
+    );
     // A cut and a beard with a first-visit code: the bill, discount taken off.
-    const august = staffCard(visit('appt-aug'), 'last');
+    const august = staffCard(visit('appt-aug'), VisitCardSlot.Last);
     expect(august.services).toBe('Фейд · Оформяне на брада');
     expect(august.figure).toBe(EURO('38,25 €'));
     // One figure in the lib: whatever the row prints, the card prints.
     const row = visitRowOf(
       visit('appt-aug'),
       {
-        perspective: 'staff',
-        grain: 'year',
+        perspective: VisitPerspective.Staff,
+        grain: VisitGrain.Year,
         subjectUserId: GEORGI_UID,
         currentAppointmentId: null,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'bg',
         words: STAFF_WORDS,
       },
       VISITS_LOOKUP,
     );
-    const money = [row.trailingFact ?? null, row.trailing].find(
-      (slot) => slot !== null && slot.kind === 'amount',
-    );
-    expect(money).toMatchObject({ text: august.figure });
+    expect(row.trailingFact).toMatchObject({
+      trailingFactFace: TrailingFactFace.Amount,
+      text: august.figure,
+    });
     expect(august.services).toBe(row.title);
   });
 
   it('carries the client’s own words, already quoted', () => {
-    const card = staffCard(visit('appt-sep'), 'last');
+    const card = staffCard(visit('appt-sep'), VisitCardSlot.Last);
     expect(card.quote).toBe('„Къса отстрани, по-дълго отгоре“');
     // Withheld from a viewer who may not read free text (R15)…
     expect(
-      staffCard(visit('appt-sep'), 'last', { clientWords: false }).quote,
+      staffCard(visit('appt-sep'), VisitCardSlot.Last, { clientWords: false })
+        .quote,
     ).toBeNull();
     // …and never a companion's: the words belong to whoever booked.
     expect(
-      staffCard(visit('appt-sep'), 'last', { subjectUserId: IVO_UID }).quote,
+      staffCard(visit('appt-sep'), VisitCardSlot.Last, {
+        subjectUserId: IVO_UID,
+      }).quote,
     ).toBeNull();
     // A visit booked without a note has none.
-    expect(staffCard(visit('appt-aug'), 'last').quote).toBeNull();
+    expect(staffCard(visit('appt-aug'), VisitCardSlot.Last).quote).toBeNull();
   });
 
   it('shows who cut as a face, by the whole name', () => {
-    expect(staffCard(visit('appt-sep'), 'last').barber).toEqual({
+    expect(staffCard(visit('appt-sep'), VisitCardSlot.Last).barber).toEqual({
       name: 'Иван',
       avatarSrc: 'https://example.test/barbers/ivan.jpg',
     });
@@ -210,7 +227,7 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
       ...VISITS_LOOKUP,
       barberName: (id) => (id === 'barber-ivan' ? 'Иван Колев' : null),
     };
-    const card = staffCard(visit('appt-sep'), 'last', {}, lookup);
+    const card = staffCard(visit('appt-sep'), VisitCardSlot.Last, {}, lookup);
     // The face and the sentence keep the whole name; the line goes by the first.
     expect(card.barber?.name).toBe('Иван Колев');
     expect(line(card)).toBe('4.09 · Иван · Център');
@@ -219,7 +236,7 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
 
   it('draws no status and no capsule: the label already says it happened', () => {
     for (const id of ['appt-sep', 'appt-aug', 'appt-dec-party']) {
-      expect(staffCard(visit(id), 'last').capsule).toBeNull();
+      expect(staffCard(visit(id), VisitCardSlot.Last).capsule).toBeNull();
     }
   });
 
@@ -231,7 +248,7 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
       url: photo.url,
       takenAtUtcMs: photo.takenAtUtcMs,
     }));
-    const card = staffCard(visit('appt-aug'), 'last', { photos });
+    const card = staffCard(visit('appt-aug'), VisitCardSlot.Last, { photos });
     expect(card.photos).toEqual([
       {
         id: 'photo-aug-1',
@@ -254,23 +271,23 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
       id: `photo-${index}`,
     }));
     expect(
-      staffCard(visit('appt-aug'), 'last', { photos: many }).photos.map(
-        (photo) => photo.id,
-      ),
+      staffCard(visit('appt-aug'), VisitCardSlot.Last, {
+        photos: many,
+      }).photos.map((photo) => photo.id),
     ).toEqual(['photo-0', 'photo-1', 'photo-2']);
     // None listed, none drawn.
-    expect(staffCard(visit('appt-aug'), 'last').photos).toEqual([]);
+    expect(staffCard(visit('appt-aug'), VisitCardSlot.Last).photos).toEqual([]);
   });
 
   it('names the shop only where the tenant has more than one', () => {
     const oneShop: VisitLookup = { ...VISITS_LOOKUP, locationCount: 1 };
-    expect(line(staffCard(visit('appt-sep'), 'last', {}, oneShop))).toBe(
-      '4.09 · Иван',
-    );
+    expect(
+      line(staffCard(visit('appt-sep'), VisitCardSlot.Last, {}, oneShop)),
+    ).toBe('4.09 · Иван');
   });
 
   it('tells the SUBJECT’s story of a party: their seat, their barber, their share', () => {
-    const card = staffCard(visit('appt-dec-party'), 'last');
+    const card = staffCard(visit('appt-dec-party'), VisitCardSlot.Last);
     expect(card.services).toBe('Фейд');
     // Last December: the year, since it is not this one (R59).
     expect(card.facts).toEqual([
@@ -286,15 +303,23 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
 
   it('prints no figure for a visit that was not worked', () => {
     // A host hands the card a worked visit; one that is not keeps its money to itself.
-    expect(staffCard(visit('appt-jul-cancelled'), 'last').figure).toBeNull();
-    expect(staffCard(visit('appt-jul-no-show'), 'last').figure).toBeNull();
+    expect(
+      staffCard(visit('appt-jul-cancelled'), VisitCardSlot.Last).figure,
+    ).toBeNull();
+    expect(
+      staffCard(visit('appt-jul-no-show'), VisitCardSlot.Last).figure,
+    ).toBeNull();
   });
 
   it('says the card in one sentence: the label, then every fact the eye reads', () => {
-    expect(staffCard(visit('appt-sep'), 'last').accessibleName).toBe(
+    expect(
+      staffCard(visit('appt-sep'), VisitCardSlot.Last).accessibleName,
+    ).toBe(
       `Последно посещение: Фейд, 4 септември, Иван, Център, ${EURO('27,50 €')}, от клиента: „Къса отстрани, по-дълго отгоре“`,
     );
-    expect(staffCard(visit('appt-aug'), 'last').accessibleName).toBe(
+    expect(
+      staffCard(visit('appt-aug'), VisitCardSlot.Last).accessibleName,
+    ).toBe(
       `Последно посещение: Фейд · Оформяне на брада, 12 август, Иван, Център, ${EURO('38,25 €')}`,
     );
   });
@@ -302,8 +327,8 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
 
 describe('visitCardOf · the next visit', () => {
   it('reads in the same order, the TIME set apart', () => {
-    const card = staffCard(visit('appt-oct'), 'next');
-    expect(card.kind).toBe('next');
+    const card = staffCard(visit('appt-oct'), VisitCardSlot.Next);
+    expect(card.visitCardSlot).toBe(VisitCardSlot.Next);
     expect(card.label).toBe('Следващ час');
     expect(card.services).toBe('Фейд');
     expect(card.facts).toEqual([
@@ -316,11 +341,11 @@ describe('visitCardOf · the next visit', () => {
   });
 
   it('wears its status as a capsule: a status is news on a visit to come', () => {
-    expect(staffCard(visit('appt-oct'), 'next').capsule).toEqual({
+    expect(staffCard(visit('appt-oct'), VisitCardSlot.Next).capsule).toEqual({
       text: 'Заявен',
       tone: 'accent',
     });
-    expect(staffCard(visit('appt-today'), 'next').capsule).toEqual({
+    expect(staffCard(visit('appt-today'), VisitCardSlot.Next).capsule).toEqual({
       text: 'Потвърден',
       tone: 'accent',
     });
@@ -328,24 +353,24 @@ describe('visitCardOf · the next visit', () => {
 
   it('draws no capsule for a confirmed visit while the words carry no «Потвърден»', () => {
     const words: VisitWords = { ...STAFF_WORDS, statusConfirmed: undefined };
-    const card = staffCard(visit('appt-today'), 'next', { words });
+    const card = staffCard(visit('appt-today'), VisitCardSlot.Next, { words });
     expect(card.capsule).toBeNull();
     expect(card.accessibleName).not.toContain('Потвърден');
     // «Заявен» has always been the row's.
-    expect(staffCard(visit('appt-oct'), 'next', { words }).capsule?.text).toBe(
-      'Заявен',
-    );
+    expect(
+      staffCard(visit('appt-oct'), VisitCardSlot.Next, { words }).capsule?.text,
+    ).toBe('Заявен');
   });
 
   it('prints no money, no shop, no quote: nothing has happened yet', () => {
-    const card = staffCard(visit('appt-oct'), 'next');
+    const card = staffCard(visit('appt-oct'), VisitCardSlot.Next);
     expect(card.figure).toBeNull();
     expect(card.quote).toBeNull();
     expect(line(card)).not.toContain('Център');
   });
 
   it('says «днес» for a visit later today', () => {
-    const card = staffCard(visit('appt-today'), 'next');
+    const card = staffCard(visit('appt-today'), VisitCardSlot.Next);
     expect(card.facts).toEqual([
       { text: 'днес · ', fact: false },
       { text: '10:00', fact: true },
@@ -357,9 +382,9 @@ describe('visitCardOf · the next visit', () => {
   });
 
   it('says the card in one sentence, the status word in it', () => {
-    expect(staffCard(visit('appt-oct'), 'next').accessibleName).toBe(
-      'Следващ час: Фейд, петък, 2 октомври в 10:00, Иван, Заявен',
-    );
+    expect(
+      staffCard(visit('appt-oct'), VisitCardSlot.Next).accessibleName,
+    ).toBe('Следващ час: Фейд, петък, 2 октомври в 10:00, Иван, Заявен');
   });
 
   it('names a party cut by several in the line, and draws no face', () => {
@@ -374,7 +399,7 @@ describe('visitCardOf · the next visit', () => {
       ],
       { kind: 'confirmed' },
     );
-    const card = staffCard(party, 'next');
+    const card = staffCard(party, VisitCardSlot.Next);
     expect(card.barber).toBeNull();
     expect(card.services).toBe('Фейд · Оформяне на брада');
     expect(line(card)).toBe('пт, 9.10 · 10:00 · Иван и Петър');
@@ -391,7 +416,7 @@ describe('visitCardOf · the next visit', () => {
       locationName: () => null,
       locationCount: 1,
     };
-    const card = staffCard(visit('appt-oct'), 'next', {}, empty);
+    const card = staffCard(visit('appt-oct'), VisitCardSlot.Next, {}, empty);
     expect(card.services).toBe('Посещение');
     expect(line(card)).toBe('пт, 2.10 · 10:00 · Бръснар');
     expect(card.barber).toEqual({ name: 'Бръснар', avatarSrc: null });
@@ -406,10 +431,11 @@ describe('visitCardOf · `/account`’s «Предстоящ час»', () => {
     return visitCardOf(
       appointment,
       {
-        kind: 'next',
-        perspective: 'client',
+        visitCardSlot: VisitCardSlot.Next,
+        perspective: VisitPerspective.Client,
         subjectUserId: null,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'bg',
         words: CLIENT_WORDS,
         cardWords: CARD_WORDS,
@@ -455,10 +481,11 @@ describe('visitCardOf · `/account`’s «Предстоящ час»', () => {
     const card = visitCardOf(
       visit('appt-sep'),
       {
-        kind: 'next',
-        perspective: 'staff',
+        visitCardSlot: VisitCardSlot.Next,
+        perspective: VisitPerspective.Staff,
         subjectUserId: GEORGI_UID,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'bg',
         words: STAFF_WORDS,
         cardWords: CARD_WORDS,
@@ -473,7 +500,9 @@ describe('visitCardOf · `/account`’s «Предстоящ час»', () => {
   });
 
   it('prints no money to the client, whatever the visit', () => {
-    const card = accountCard(visit('appt-sep'), { kind: 'last' });
+    const card = accountCard(visit('appt-sep'), {
+      visitCardSlot: VisitCardSlot.Last,
+    });
     expect(card.figure).toBeNull();
     expect(card.quote).toBeNull();
     expect(line(card)).toBe('4.09');
@@ -505,12 +534,13 @@ describe('visitCardOf · in English', () => {
     const card = visitCardOf(
       visit('appt-oct'),
       {
-        kind: 'next',
-        perspective: 'staff',
+        visitCardSlot: VisitCardSlot.Next,
+        perspective: VisitPerspective.Staff,
         subjectUserId: GEORGI_UID,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'en',
-        words: wordsOf(EN, 'en', 'staff'),
+        words: wordsOf(EN, 'en', VisitPerspective.Staff),
         cardWords: cardWordsOf(EN),
         testId: 'client-visit-next',
       },
@@ -546,7 +576,7 @@ describe('waitlistCardOf', () => {
   it('is labelled by its state, leads with the services, and names the days it watches', () => {
     const card = waiting();
     expect(card.id).toBe('waitlist-georgi');
-    expect(card.kind).toBe('waitlist');
+    expect(card.visitCardSlot).toBe(VisitCardSlot.Waitlist);
     expect(card.label).toBe('Чака свободен час');
     expect(card.services).toBe('Фейд');
     expect(card.facts).toEqual([{ text: 'чт – пт, следобед', fact: false }]);
@@ -606,7 +636,7 @@ describe('the card’s figures against a worked party the subject paid alone', (
       { kind: 'completed' },
       'loc-mladost',
     );
-    const card = staffCard(alone, 'last');
+    const card = staffCard(alone, VisitCardSlot.Last);
     expect(card.figure).toBe(EURO('30,00 €'));
     expect(line(card)).toBe('10.09 · Иван · Младост');
   });

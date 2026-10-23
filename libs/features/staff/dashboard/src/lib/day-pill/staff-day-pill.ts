@@ -14,6 +14,8 @@ import {
   UiMonthPickerRelative,
 } from '@creativo/ui/controls';
 import { UiMenu, UiMenuTrigger } from '@creativo/ui/patterns';
+import { civilMs } from '@creativo/ui/wall-clock';
+import { LocalDate } from '@core/primitives';
 
 /**
  * `ср, 9.09` — the one grammar for a day named in a pill, COMPACT, exactly
@@ -29,7 +31,7 @@ export function formatDayPill(dayKey: string, locale: string): string {
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',
-  }).format(noonOf(dayKey));
+  }).format(civilMs(localDateOfKey(dayKey)));
 }
 
 /**
@@ -54,8 +56,8 @@ export function formatDayPillRange(
   lastKey: string,
   locale: string,
 ): string {
-  const first = noonOf(firstKey);
-  const last = noonOf(lastKey);
+  const first = civilMs(localDateOfKey(firstKey));
+  const last = civilMs(localDateOfKey(lastKey));
   const sameYear = firstKey.slice(0, 4) === lastKey.slice(0, 4);
   const sameMonth = sameYear && firstKey.slice(5, 7) === lastKey.slice(5, 7);
   const dayMonth = new Intl.DateTimeFormat(locale, {
@@ -87,10 +89,18 @@ export function formatDayPillRange(
     : `${dayMonth.format(first)} – ${dayOnly.format(last)}`;
 }
 
-/** Noon UTC on a `YYYY-MM-DD` key — a civil day, immune to any zone's midnight. */
-function noonOf(dayKey: string): Date {
+/**
+ * A `YYYY-MM-DD` key as the shop day it names, FOR FORMATTING — its own
+ * fields by civil arithmetic (`LocalDate`), no `Date`. Laid on the UTC axis
+ * with `civilMs`, it is what every formatter here reads on `timeZone:
+ * 'UTC'`, so the day is immune to any zone's midnight; `Intl`'s `format`,
+ * `formatRange` and `formatToParts` all take the number. Not a validation:
+ * the keys are the store's own, and an out-of-range day rolls over exactly
+ * as `Date.UTC` rolled it.
+ */
+export function localDateOfKey(dayKey: string): LocalDate {
   const [year = 1970, month = 1, day = 1] = dayKey.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 12));
+  return LocalDate.fromEpochDay(LocalDate.epochDayOf(year, month, day));
 }
 
 /**

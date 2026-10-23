@@ -12,6 +12,7 @@ import {
   StreakExcuse,
   type StreakPeriodReason,
 } from '@core/components';
+import { VisitPerspective } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { figure, inSentence } from './client-card.format';
 
@@ -1001,7 +1002,7 @@ export function clientCardWordsOf(
     );
   return {
     lang,
-    visits: visitWordsOf(translate, lang, 'staff'),
+    visits: visitWordsOf(translate, lang, VisitPerspective.Staff),
     waitlist: visitWaitlistWordsOf(translate),
     monthShort: (month) => t(`visits.tile.month.${month}`),
     head: {

@@ -11,7 +11,13 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { StaffEventHead } from '../event-head/staff-event-head';
-import type { VisitRowVm, VisitTrailingFact } from '../visit-row.vm';
+import {
+  TrailingFactFace,
+  VisitRowEntry,
+  VisitRowOutcome,
+  type VisitRowVm,
+  type VisitTrailingFact,
+} from '../visit-row.vm';
 
 /**
  * A STAFF ROW'S WORDS (client-card revision 3 §2.5, §3.11) — the event
@@ -68,6 +74,9 @@ export class VisitRowWords {
    */
   readonly wraps = input(false);
 
+  /** The fact's faces, for the template's `@case`s. */
+  protected readonly TrailingFactFace = TrailingFactFace;
+
   /** Where the quote sits, for a test to find it: `history-row-{id}-quote`. */
   protected readonly quoteTestId = computed(() =>
     this.vm().quote === null ? null : `${this.vm().testId}-quote`,
@@ -86,6 +95,8 @@ export class VisitRowWords {
    * (visit-row-words.css, "a status-led row").
    */
   protected readonly leadWhole = computed(
-    () => this.vm().kind === 'visit' && this.vm().outcome === 'cancelled',
+    () =>
+      this.vm().visitRowEntry === VisitRowEntry.Visit &&
+      this.vm().outcome === VisitRowOutcome.Cancelled,
   );
 }

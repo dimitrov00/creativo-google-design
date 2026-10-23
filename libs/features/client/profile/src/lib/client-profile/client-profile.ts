@@ -15,7 +15,10 @@ import {
 } from '@creativo/features/client/account-state';
 import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
+import { LocalDate } from '@core/primitives';
 import { AgeSystem, PhoneSystem, ProfileCompletionSystem } from '@core/systems';
+import { LoadState, loadStateWords } from '@creativo/shared/view-state';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import {
   SessionIdentityService,
   SiteHeaderComponent,
@@ -26,8 +29,9 @@ import {
   UiAvatar,
   UiButton,
   UiDateField,
-  UiDateFieldBlurEvent,
-  UiDateFieldParts,
+  type UiDateFieldBlurEvent,
+  UiDateFieldFill,
+  type UiDateFieldParts,
   UiIcon,
   UiModalSheet,
   UiSkeleton,
@@ -51,10 +55,23 @@ import {
 } from '@creativo/ui/patterns';
 import { ProfileStore } from '../profile.store';
 
+/** Which value the sheet edits — the field `profileEditField`, the ONLY
+ *  source of these strings (Law 6). */
+const ProfileEditField = {
+  /** The first and last name, edited together. */
+  Name: 'NAME',
+  /** The date of birth. */
+  Birthday: 'BIRTHDAY',
+} as const;
+type ProfileEditField =
+  (typeof ProfileEditField)[keyof typeof ProfileEditField];
+
 /** Which value the sheet is currently editing. One editor at a time is not
  *  a policy but a fact — the sheet is modal, so no second row can be
  *  tapped while it is up; a union makes any other state unrepresentable. */
-type ProfileEdit = { readonly kind: 'name' } | { readonly kind: 'birthday' };
+type ProfileEdit =
+  | { readonly profileEditField: typeof ProfileEditField.Name }
+  | { readonly profileEditField: typeof ProfileEditField.Birthday };
 
 /**
  * `/account/profile` — the personal-information surface (Apple's split:
@@ -99,7 +116,7 @@ type ProfileEdit = { readonly kind: 'name' } | { readonly kind: 'birthday' };
   styleUrl: './client-profile.css',
   host: {
     'data-testid': 'profile-page',
-    '[attr.data-state]': 'pageState()',
+    '[attr.data-state]': 'pageStateWord()',
   },
 })
 export class ClientProfile {
@@ -111,10 +128,19 @@ export class ClientProfile {
   protected readonly identity = inject(SessionIdentityService);
   protected readonly account = this.accountState.account;
 
-  protected readonly pageState = computed(() => {
-    if (this.accountState.accountLoading()) return 'loading';
-    return this.account() ? 'ready' : 'empty';
+  /** The load states and the editor's fields, for the template. */
+  protected readonly LoadState = LoadState;
+  protected readonly ProfileEditField = ProfileEditField;
+
+  protected readonly pageState = computed<LoadState>(() => {
+    if (this.accountState.accountLoading()) return LoadState.Loading;
+    return this.account() ? LoadState.Ready : LoadState.Empty;
   });
+
+  /** The host's `data-state` — `loading` · `ready` · `empty`. */
+  protected readonly pageStateWord = computed(
+    () => loadStateWords[this.pageState()],
+  );
 
   /**
    * The day the birth-date window is judged on — the UTC civil date, taken
@@ -150,13 +176,17 @@ export class ClientProfile {
   protected readonly birthDateLabel = computed(() => {
     const birthDate = this.account()?.birthDate;
     if (!birthDate) return null;
-    // Parse at LOCAL midnight — `new Date('1990-07-03')` is UTC midnight
-    // and renders as the previous day in negative-offset zones.
-    return new Intl.DateTimeFormat(this.transloco.getActiveLang(), {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }).format(new Date(`${birthDate}T00:00:00`));
+    // A civil date, printed as stored on the cached wall-clock formatter
+    // (no zone consulted, so no device ever shows the previous day). The
+    // language is read as before — once per run, not as a dependency.
+    const day = LocalDate.parse(birthDate);
+    return day.ok
+      ? formatWallClock(day.value, null, this.transloco.getActiveLang(), {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })
+      : null;
   });
 
   protected readonly phoneLabel = computed(() => {
@@ -187,14 +217,14 @@ export class ClientProfile {
   protected readonly sheetTitleKey = computed(() => {
     const edit = this._editing();
     if (!edit) return null;
-    return edit.kind === 'name'
+    return edit.profileEditField === ProfileEditField.Name
       ? 'account.profile.edit.nameTitle'
       : 'account.profile.edit.birthdayTitle';
   });
   protected readonly sheetLedeKey = computed(() => {
     const edit = this._editing();
     if (!edit) return null;
-    return edit.kind === 'name'
+    return edit.profileEditField === ProfileEditField.Name
       ? 'account.profile.edit.nameLede'
       : 'account.profile.edit.birthdayLede';
   });
@@ -206,7 +236,7 @@ export class ClientProfile {
     const edit = this._editing();
     const user = this.account();
     if (!edit || !user) return false;
-    if (edit.kind === 'name') {
+    if (edit.profileEditField === ProfileEditField.Name) {
       const first = this.firstNameDraft();
       const last = this.lastNameDraft();
       const refused = nameRefusalCodes(first, last);
@@ -295,7 +325,7 @@ export class ClientProfile {
   }
 
   protected onBirthBlur(event: UiDateFieldBlurEvent): void {
-    if (event.kind !== 'complete') {
+    if (event.uiDateFieldFill !== UiDateFieldFill.Complete) {
       // An empty field is the untouched state, not an error; a partial one
       // is mid-typing. Neither deserves a red line.
       this.birthErrorCode.set(null);
@@ -319,7 +349,7 @@ export class ClientProfile {
     this.saveErrorCode.set(null);
 
     let code: string | null;
-    if (edit.kind === 'name') {
+    if (edit.profileEditField === ProfileEditField.Name) {
       const refused = this.nameRefusals();
       if (refused.firstName !== null || refused.lastName !== null) return;
       code = await this.store.saveName(

@@ -1,10 +1,6 @@
-import {
-  type LocalDate,
-  type TimeZone,
-  UtcEpochMs,
-  defect,
-} from '@core/primitives';
+import { LocalDate, type TimeZone, UtcEpochMs, defect } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { LinePart } from './client-pages.vm';
 
 /*
@@ -16,8 +12,9 @@ import type { LinePart } from './client-pages.vm';
  * sentence someone hears says the month in words («4 септември»). Every
  * date is a day on the SHOP'S calendar (its location's zone, Law 7.2): an
  * instant becomes one through `shopDayOf`, and a day is formatted as
- * itself — placed at UTC noon and read back in UTC — so no device zone can
- * move it. `Intl`'s output is never post-processed (its « г.» included).
+ * itself — the shared wall-clock face (`formatWallClock`, read back in UTC,
+ * no `Date` built) — so no device zone can move it. `Intl`'s output is
+ * never post-processed (its « г.» included).
  *
  * The second half is THE CARD'S QUIET LINES: one grammar for cutting a
  * sentence into runs, binding a fact's words and hanging its joints, so
@@ -31,12 +28,15 @@ export function cardLocaleOf(lang: string): CardLocale {
   return lang === 'en' ? 'en' : 'bg';
 }
 
-/** A `YYYY-MM-DD` shop day as a `Date` that reads back as that day in UTC. */
-function noonOf(day: string): Date {
-  const [year, month, date] = day.split('-').map(Number);
-  return new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1, 12, 0, 0),
-  );
+/**
+ * A `YYYY-MM-DD` shop day as the branded day it is (Law 7.4). Every day the
+ * card formats is a stored or computed `LocalDate`: one that is not is a
+ * defect, never a guess.
+ */
+function localDateOf(day: string): LocalDate {
+  const parsed = LocalDate.parse(day);
+  if (!parsed.ok) defect(`${day} is not a shop day`);
+  return parsed.value;
 }
 
 function yearOf(day: string): string {
@@ -56,9 +56,7 @@ function formatDay(
   lang: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return new Intl.DateTimeFormat(lang, { ...options, timeZone: 'UTC' }).format(
-    noonOf(day),
-  );
+  return formatWallClock(localDateOf(day), null, lang, options);
 }
 
 /**
@@ -130,16 +128,12 @@ export { dayRange } from '@creativo/features/shared/visits';
 
 /** Whole calendar days from one shop day to another (negative when `to` comes first). */
 export function daysBetweenDays(from: string, to: string): number {
-  return Math.round(
-    (noonOf(to).getTime() - noonOf(from).getTime()) / 86_400_000,
-  );
+  return LocalDate.daysBetween(localDateOf(from), localDateOf(to));
 }
 
 /** The shop day `days` whole calendar days after `day` (`YYYY-MM-DD`). */
-export function dayPlus(day: string, days: number): string {
-  return new Date(noonOf(day).getTime() + days * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+export function dayPlus(day: string, days: number): LocalDate {
+  return LocalDate.addDays(localDateOf(day), days);
 }
 
 /** «12 450» — a count or a figure, grouped the locale's way. */

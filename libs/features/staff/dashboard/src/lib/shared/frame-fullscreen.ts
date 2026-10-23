@@ -1,4 +1,4 @@
-import { Injector, inject, signal } from '@angular/core';
+import { type Signal, Injector, inject, signal } from '@angular/core';
 import { runViewTransition } from './view-transition';
 
 /**
@@ -13,8 +13,11 @@ import { runViewTransition } from './view-transition';
  * carries a `view-transition-name` — and where the platform has none, or
  * motion is reduced, the frame simply switches.
  *
- * A plain class made in a field initialiser: `inject()` still resolves
- * there, so the editor that owns it need not thread a document through.
+ * A plain object made by a factory in a field initialiser — Angular's
+ * `inject*` idiom: `inject()` still resolves there, so the editor that owns
+ * it need not thread a document through. Called anywhere else it throws
+ * (no injection context), which is why both call sites stay field
+ * initialisers.
  *
  * `settled` runs once the frame has its new height, either way — the
  * editor centres the block in it (owner, 2026-09-10: "after rescheduling
@@ -31,21 +34,29 @@ import { runViewTransition } from './view-transition';
  * the date menu, a popover too, still opens above it. Where the platform
  * has no popovers the fixed box remains the fallback.
  */
-export class FrameFullscreen {
-  readonly expanded = signal(false);
-  private readonly injector = inject(Injector);
+export type FrameFullscreenOptions = {
+  /** The section that lifts — the one carrying the `popover` attribute. */
+  readonly surface?: () => HTMLElement | undefined;
+  readonly settled?: (expanded: boolean) => void;
+};
 
-  constructor(
-    private readonly options: {
-      /** The section that lifts — the one carrying the `popover` attribute. */
-      readonly surface?: () => HTMLElement | undefined;
-      readonly settled?: (expanded: boolean) => void;
-    } = {},
-  ) {}
+export type FrameFullscreen = {
+  readonly expanded: Signal<boolean>;
+  readonly toggle: () => void;
+  readonly onEscape: (event: Event) => void;
+  readonly set: (next: boolean) => void;
+};
+
+/** Must run in an injection context — a component FIELD INITIALISER. */
+export function injectFrameFullscreen(
+  options: FrameFullscreenOptions = {},
+): FrameFullscreen {
+  const expanded = signal(false);
+  const injector = inject(Injector);
 
   /** The top layer, entered once the attribute is rendered and left before it goes. */
-  private raise(): void {
-    const el = this.options.surface?.();
+  function raise(): void {
+    const el = options.surface?.();
     if (!el || typeof el.showPopover !== 'function') return;
     if (!el.hasAttribute('popover') || el.matches(':popover-open')) return;
     try {
@@ -55,8 +66,8 @@ export class FrameFullscreen {
     }
   }
 
-  private lower(): void {
-    const el = this.options.surface?.();
+  function lower(): void {
+    const el = options.surface?.();
     if (!el || typeof el.hidePopover !== 'function') return;
     try {
       if (el.matches(':popover-open')) el.hidePopover();
@@ -65,42 +76,42 @@ export class FrameFullscreen {
     }
   }
 
-  private settle(next: boolean): void {
-    if (next) this.raise();
-    this.options.settled?.(next);
+  function settle(next: boolean): void {
+    if (next) raise();
+    options.settled?.(next);
   }
 
-  toggle(): void {
-    this.set(!this.expanded());
-  }
-
-  onEscape(event: Event): void {
-    if (!this.expanded()) return;
-    // A menu open inside the frame owns this Escape — the date picker, a
-    // choice — and the key reaches the section only when focus sits on
-    // the menu's trigger rather than inside it. Leave it to the menu.
-    if (
-      this.options.surface?.()?.querySelector('.ui-menu__surface[data-open]')
-    ) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    this.set(false);
-  }
-
-  set(next: boolean): void {
+  function set(next: boolean): void {
     // A transition that waits for a render that never comes would hang the
     // page; the same state twice is no change.
-    if (this.expanded() === next) return;
-    if (!next) this.lower();
+    if (expanded() === next) return;
+    if (!next) lower();
     // The platform's transition, or a plain switch where there is none or
     // motion is reduced — the shared recipe (`shared/view-transition.ts`),
     // which the schedule's view switch runs through as well.
     runViewTransition(
-      () => this.expanded.set(next),
-      this.injector,
-      () => this.settle(next),
+      () => expanded.set(next),
+      injector,
+      () => settle(next),
     );
   }
+
+  function toggle(): void {
+    set(!expanded());
+  }
+
+  function onEscape(event: Event): void {
+    if (!expanded()) return;
+    // A menu open inside the frame owns this Escape — the date picker, a
+    // choice — and the key reaches the section only when focus sits on
+    // the menu's trigger rather than inside it. Leave it to the menu.
+    if (options.surface?.()?.querySelector('.ui-menu__surface[data-open]')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    set(false);
+  }
+
+  return { expanded: expanded.asReadonly(), toggle, onEscape, set };
 }

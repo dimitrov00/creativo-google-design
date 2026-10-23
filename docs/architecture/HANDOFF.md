@@ -11,7 +11,10 @@ was carried forward as follow-up work (end of §3.3). Last updated 2026-10-23
 Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
 `libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
 §3.3; the FULL §4 gate — the emulator journeys included — and the dev smoke
-green on the 4b tree, §3.3 "Gate").
+green on the 4b tree, §3.3 "Gate"; the UI residue cleanup integrated — the
+visit shim, the `kind`/`status` view-state unions, the stray classes and the
+ambient clock reads gone and lint-guarded, the FULL §4 gate green again and
+the dev smoke byte-identical to `c77e932`, end of §3.3).
 
 ## 1. Read these, in this order
 
@@ -25,7 +28,7 @@ green on the 4b tree, §3.3 "Gate").
    the flat archetypes (Laws 6–7); §2.3 T1–T9 are the time rules.
 5. `docs/architecture/firestore-runbook.md` — the reader/writer matrix of every
    collection, the flip closures, TTL steps, deploy order, per-flip grep gates
-   and the Phase 4a/4b gates (§4.7, §4.8).
+   the Phase 4a/4b gates (§4.7, §4.8) and the UI residue gate (§4.9).
 6. `docs/architecture/flips/flip-1-booking-core.md` — the worked example of a
    flip (its adapter table predates Law 9; the note above it says so).
 7. `docs/architecture/module-boundaries.md` — the `scope:*`/`type:*` tags,
@@ -33,23 +36,24 @@ green on the 4b tree, §3.3 "Gate").
 
 ## 2. Where the work stands
 
-| Step                                                                                                                | State                                                                                                                                                                                                                      | Commit(s)                                                    |
-| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                       | 81ac087                                                      |
-| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                       | defb4da                                                      |
-| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                       | 056ae43                                                      |
-| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                       | 0416587                                                      |
-| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                       | a6c7253                                                      |
-| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                       | 291d3f9                                                      |
-| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                       | 268aa0e, dbd39d4                                             |
-| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                       | 3458349, ab6d266, c0e5d73                                    |
-| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                  | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
-| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                         | the "Law 9" commit                                           |
-| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                     | the "flip 2 commit"                                          |
-| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                              | the "flip 3 commit"                                          |
-| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                               | the "flip 4 commit"                                          |
-| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                | the "Phase 4a" commit                                        |
-| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 awaits the owner | the "Phase 4b" commit                                        |
+| Step                                                                                                                | State                                                                                                                                                                                                                                                  | Commit(s)                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                                                   | 81ac087                                                      |
+| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                                                   | defb4da                                                      |
+| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                                                   | 056ae43                                                      |
+| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                                                   | 0416587                                                      |
+| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                                                   | a6c7253                                                      |
+| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                                                   | 291d3f9                                                      |
+| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                                                   | 268aa0e, dbd39d4                                             |
+| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                                                   | 3458349, ab6d266, c0e5d73                                    |
+| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                                              | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                                                     | the "Law 9" commit                                           |
+| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                                                 | the "flip 2 commit"                                          |
+| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                                                          | the "flip 3 commit"                                          |
+| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                                                           | the "flip 4 commit"                                          |
+| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                                            | the "Phase 4a" commit                                        |
+| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 awaits the owner                             | the "Phase 4b" commit                                        |
+| **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932` | the "UI residue cleanup" commit                              |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it (baseline reds only). All
@@ -61,17 +65,16 @@ blueprint's end-of-3b graph/bundle assertion is code since 4b: runbook §4.8
 gate 8 (no legacy project in the graph, hence no functions → legacy edge) and
 the forbidden-key check of `tools/verify/p0/functions-deps.mjs` (no
 `@angular/*`, `luxon` or `dinero.js` in the functions dist — `rxjs`
-stays, 4A-2 (d), 4a §10.1). The last fully green commit is the "Phase 4b"
-commit; check `git log` for anything newer. (On 2026-10-23 the full §4
-gate — `verify:p0`, `test:emulator` and `e2e:web` included — every grep gate
-and the dev smoke were green on the 4b tree, §3.3 "Gate".) **The migration
-is COMPLETE.** Two things wait for the owner, neither a migration step: the
-constitution and ports-rule edits of phase-4b plan §4.R R4 (pending their
-own approval of that exact text, §6 OQ-7/OQ-11), and the "Phase 4b" commit
-itself (plan §8.1 item 7 (d): `git add -A libs/application libs/domain`,
-add the untracked plan and `rhythm-service-groups.spec.ts`, then
-`pnpm nx reset`). Everything else is follow-up work, not migration (the
-carried-forward list at the end of §3.3).
+stays, 4A-2 (d), 4a §10.1). The last fully green commit is the "UI residue
+cleanup" commit (before it, the "Phase 4b" commit, `f9cef52`); check
+`git log` for anything newer. (On 2026-10-23 the full §4 gate — `verify:p0`,
+`test:emulator` and `e2e:web` included — every grep gate and the dev smoke
+were green on the 4b tree and again on the cleanup tree, §3.3 "Gate" and the
+UI residue plan's §8.1.) **The migration is COMPLETE**, and the phase-4b plan
+§4.R R4 constitution and rules edits are applied (§6, OQ-7/OQ-11). The first
+follow-up pass, the UI residue cleanup, closed four carried items (end of
+§3.3); everything else is follow-up work, not migration (the carried-forward
+list at the end of §3.3).
 
 ## 3. What landed, in order
 
@@ -527,31 +530,101 @@ code: no index changed, `firestore.rules` changed in comments only, and no
 callable answer or stored shape moved (4B-1). The flip-4 precondition (the
 default location's `timeZone`) still stands.
 
-**Carried forward — follow-up work, not migration (4a plan 4A-13; none of it
-blocks anything):** the view-model `kind`/`state`/`status` unions of the 4a
-plan's §8.1 item 7 and the admin programs view-state `kind` unions; the
-UI-only `Date.now()`/`Math.random()` reads (gesture frames, menu/sheet open
-stamps, draft seat and guest ids, nonces, the media cache's retry jitter,
-photo file names) still to move to `CLOCK_PORTS`/`ID_PORTS`;
-`libs/features/shared/visits/src/lib/visit-ecs.shim.ts` and the frozen visit
-view models (the view-model pass); five undecorated classes outside the
-Angular row, none new and none legacy-tree code (phase-4b plan OQ 15) — the
-presenter value objects `VisitClock` (`visit-row.presenter.ts`) and
-`CardClock` (`visit-card/visit-card.presenter.ts`), for the view-model
-pass; `EdgeScroller` (`staff/dashboard/…/time-grid/grid-gesture.ts`), a DOM
-frame driver of the UI (the Angular row in substance); and the test doubles
-`FakeFirestore` (`libs/infrastructure/firestore/src/testing/fake-firestore.ts`,
-a fake of the SDK) and `FixtureLoader` (`translate-domain-error.spec.ts`,
-implementing Transloco's `TranslocoLoader`), for a test-support pass — which
-is why the root class guard stays on the ECS suffixes (plus every file of
-libs/ecs-core and apps/functions) rather than every `*.ts`: Angular classes
-live in files of many names (phase-4b plan §3); the flip-1 ports parked with no caller
+**UI residue cleanup (2026-10-23, `docs/architecture/flips/ui-residue-cleanup.md`)
+— four of the items 4A-13 and phase-4b OQ 15 carried forward are closed.**
+(1) The visit shim `libs/features/shared/visits/src/lib/visit-ecs.shim.ts` is
+deleted with every legacy translation table of the UI layer (its five
+tables, `client-query.ts`'s `LEGACY_CLIENT_QUERY_SHAPE` pair, `GRID_EVENT_OF`,
+`COUPON_OCCASION_OF`, the dashboard's verb, status and resolution word round
+trips): the visit rows carry the ecs-core tags and `localDate` +
+`startMinutes`, "now" is a `ShopNow` the host derives, and no Sofia fallback
+is left. (2) The view-model `kind`/`status` discriminators (the 4a plan's
+§8.1 item 7, the admin programs view state and the rest — 27 files) are
+domain-prefixed fields over SCREAMING `as const` dictionaries, and every
+load state reads the ONE `LoadState`/`LoadSlice`/`PagingState` vocabulary of
+`@creativo/shared/view-state`. (3) The five undecorated classes — `VisitClock`,
+`CardClock`, `EdgeScroller`, `FrameFullscreen` and the
+`ConsoleUiIconReporter` the inventories missed — are factories:
+`visitClockOf` (one clock for rows and cards), `edgeScrollerOf`,
+`injectFrameFullscreen`, `consoleUiIconReporter`. (4) The UI's ambient clock
+and entropy reads are the injected `CLOCK_PORTS` clock, `ZonedTimeSystem`,
+`LocalDate` and the one cached set of `@creativo/ui/wall-clock` formatters
+(moved out of the visits lib); the draft seat and guest ids keep their
+persisted format on a `CLOCK_PORTS` stamp (plan UR-11). What stays, by name:
+the media cache's retry jitter and the confetti (`Math.random()`), and the
+two sanctioned adapters (`browser-runtime.adapter.ts`,
+`auth-session.adapter.ts`). Enforced, not trusted: three lint rules in the
+root config — `creativo/no-undecorated-class` on every production `.ts` of
+the apps and libs, `creativo/no-ambient-clock` and
+`creativo/no-generic-discriminator` on the UI layer — scoped by path-fragment
+options so they hold under the nx executor and under directory lookup alike,
+and runbook §4.9 (gates 1–8). Since the class rule recognises an Angular
+class by its called decorator rather than by a file name, the class guard no
+longer stops at the ECS suffixes (plus every file of libs/ecs-core and
+apps/functions): it covers every production file, and the suffix blocks'
+class ban is defence in depth there. The test doubles — `FakeFirestore`
+(`libs/infrastructure/firestore/src/testing/fake-firestore.ts`), the observer
+polyfills, spec-local stubs such as `FixtureLoader`
+(`translate-domain-error.spec.ts`) — stay legal under the rules' test-support
+ignores (plan UR-8). **Gate (2026-10-23, plan §8.1):** `sync:check` (after
+`nx sync` + `nx reset` for the two new libs), layering, typecheck (only
+`patterns`), lint 46 projects 0 errors, test 46 projects 10,832 passed + the 6
+baseline reds, ecs-core coverage unchanged, seed-tools, lint-rules 9 files
+221 tests, `build web` (initial 604.22 kB: +6.14 kB raw / +0.81 kB transfer,
+all of it Angular's `resource()` chunk joining the initial `@angular/core`
+code for client-account's zone read — kept, plan §8.1 ruling 8),
+`verify:bundle`, `build functions` + the deps check, runbook §4.2–§4.5, §4.7,
+§4.8 PASS and §4.9 PASS (24 `ok`), `verify:p0`, `test:emulator` 65 + 255,
+`e2e:web` 41 passed + exactly the 19 baseline failures; the dev smoke drove
+29 screens and states in bg and en against the integrated tree and a HEAD
+copy of `c77e932` on the same emulators — every DOM signature identical but
+the now-label minute and the bare static `perspective` attribute the hosts
+no longer carry (no reader; `data-perspective` unchanged). Integrator
+rulings: the `/account` card's failed zone read prints the card's existing
+`ACCOUNTS_REPOSITORY_FAILURE` line (DEP-5), the path-scope helper of the
+three rules lives in `tools/lint-rules/path-scope.mjs`.
+
+**Carried forward — follow-up work, not migration (4a plan 4A-13, UI residue
+plan UR-13; none of it blocks anything):** the **view-model pass** (UR-13 f,
+plan OQ-11) — the presenter/view-model mapper layer the cleanup left because
+it is behaviour-frozen: `visitRowOf`/`waitlistRowOf`/`visitCardOf` still
+build `VisitRowVm`/`VisitCardVm` full of preformatted strings (title, lines,
+accessible name, the clock faces), and `catalog-to-vm.ts`,
+`client-pages.vm.ts` and the client-card presenters stay mappers;
+`angular-ui.md` bans that layer, and removing it moves formatting into
+templates and pipes screen by screen, a pass that may change markup; the
+Law 7.4 branding/T1 pass (UR-13 c) — the staff day's instant-based
+agenda/grid fields (`startMs: number` threads in `staff-day.store.ts`,
+`staff-dashboard.ts`, the booking time sheet), the client card's raw
+`nowMs: number` threads into its non-visit presenters (pause, photos,
+capsules), and the raw ids the cleanup's contracts leave raw
+(`VisitRowVm.id`, `VisitRowOptions.subjectUserId`/`subjectCustomerId`/
+`currentAppointmentId`, `PlacementVerdictSlice` `minutes`); the icon
+manifest's `kind` wire field, allowlisted in `no-generic-discriminator` until
+an icons pass bumps its `schemaVersion` (UR-13 a, OQ-5); the Node tooling
+classes outside the apps (`ExecutionTally` in `tools/seed/settle.mjs`,
+`LostAnswer extends Error` in `tools/verify/p0/verify-p0.mjs`, OQ-6);
+libs/ecs-core's project-relative Law 8 tier lint blocks, which do not match
+under the nx executor (the layering verifier still enforces the hierarchy;
+OQ-12); the flip-1 ports parked with no caller
 (`markNotificationRead`, `loadWaitlistRequest`, `loadCouponGrant`,
 `readCustomers`, `CouponGrantSystem.transitionWrite`) waiting for grant
 burn/restore, and flip 1's other deferred behaviours (reopen busy write,
 trigger `retry: true`); the owner's confirmation of the 4a plan's §11.4 (a)
 time-sheet re-pin; the programs rules tightenings, a location picker, i18n of
-the programs status words and a programs e2e journey (flip 4).
+the programs status words and a programs e2e journey (flip 4); from the UI
+residue cleanup (plan §8.1 "Left as found"): the lower-case unions compared as
+bare literals that are neither a `kind`/`type`/`status` field nor a load state
+(the dashboard's `StaffView` and `discardPending`, the grid's `Placement`,
+`readoutTone`, marketing-events' `EventsTab`, admin-programs' `ProgramsTab`,
+the rhythm page's `confirm` switch, the editor's `discountKind()`/`by`/
+`source`/`refusal`, the menu's `lang() === 'en'`), a cached parts face in
+`@creativo/ui/wall-clock` for the dashboard's `formatTitled`, the
+`angular-ui.md` sentence that still names the i18n lib as the formatting home
+(UR plan OQ-7, the owner's text), and a pre-existing defect the smoke
+surfaced, identical on `c77e932`: `StaffDashboard.periodLabel` formats
+`visibleDays()[0]` while the list is still empty and throws once or a few
+times per staff-page load (the page recovers).
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -570,6 +643,9 @@ pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
 # §4.7 (since Phase 4a: no legacy consumer, the wire flipped, no graph edge)
 # and §4.8 (since Phase 4b: the deletion — no legacy path, alias, tag, package
 # or dotted key; the root ECS lint blocks; the firestore.rules test inputs)
+# and §4.9 (since the UI residue cleanup: no shim or legacy table, no kind/status
+# discriminator, no undecorated class, no ambient clock — the three rules
+# proven under both ESLint base paths, with a canary)
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
@@ -590,15 +666,17 @@ e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:121`
 `staff-client-card` and `marketing-landing` specs can time out — re-run
 the project alone before calling it a regression.
 
-**Reference numbers on the 4b tree (2026-10-23)** — a drop without a reason
-is a lost case: 44 projects lint, 0 errors; `run-many -t test` 43 projects,
-10,698 passed + the 6 baseline reds, `verify-tools` 79 node tests; ecs-core
-272 files, 4,530 tests, 97.86 % statements, 98.82 % lines; functions 37
+**Reference numbers on the UI residue cleanup tree (2026-10-23)** — a drop
+without a reason is a lost case: 46 projects lint, 0 errors; `run-many -t
+test` 46 projects, 10,832 passed + the 6 baseline reds, `verify-tools` 79
+node tests, `lint-rules` 9 files and 221 tests; ecs-core 272 files, 4,530
+tests, 97.85 % statements (12,108/12,373), 98.82 % lines; functions 37
 files, 937 tests; `test:emulator` 65 + 255; `e2e:web` 41 passed + the 19
-baseline failures; `build web` initial 598.10 kB; the functions dist's four
-runtime dependencies (`firebase-admin`, `firebase-functions`,
-`libphonenumber-js`, `rxjs`); runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5
-6, §4.7 24, §4.8 27.
+baseline failures; `build web` initial 604.22 kB (598.10 kB on the 4b tree,
+598.08 kB on `c77e932`; the difference is Angular's `resource()` chunk, UI
+residue plan §8.1); the functions dist's four runtime dependencies
+(`firebase-admin`, `firebase-functions`, `libphonenumber-js`, `rxjs`);
+runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 24.
 
 ## 5. Operating rules
 
@@ -660,5 +738,22 @@ runtime dependencies (`firebase-admin`, `firebase-functions`,
   `{ errorCode }` of their successors (R2), gated by §4.8 gate 6b. OQ-14:
   the feature-level aliases `PROFILE_WRITE_FAILED`, `AVATAR_UPLOAD_FAILED`,
   `AVATAR_REMOVE_FAILED` deleted — every reader names the `AccountsErrorCode`
-  member (R7). OQ-15: the five undecorated non-Angular classes carried
-  forward (end of §3.3), not converted in 4b.
+  member (R7). OQ-15: the undecorated non-Angular classes carried
+  forward, not converted in 4b — the production ones converted by the UI
+  residue cleanup and guarded by `creativo/no-undecorated-class` since; the
+  test doubles stay under its test-support ignores (end of §3.3).
+- UI residue plan (`docs/architecture/flips/ui-residue-cleanup.md`) §10:
+  OQ-1 … OQ-12 proceed on their defaults — the landing locations line and
+  today row on the SHOP's clock (DEP-1), the footer year on the UTC calendar
+  (`ageDayOf`, DEP-2), the month picker's shortcuts inert without `uiToday`
+  (DEP-3), `/account`'s card waiting inside its pending state for the zone
+  (DEP-4) and reading "now" in the appointment's OWN location's zone, a failed
+  read showing the existing `'error'` state (DEP-5 — integrator ruling: with
+  the card's existing `ACCOUNTS_REPOSITORY_FAILURE` line, never the zone
+  answer's code), the icon manifest's `kind` allowlisted (OQ-5), the tools
+  classes left (OQ-6), `wall-clock.ts` in `@creativo/ui/wall-clock` (OQ-7 —
+  the owner may rename the home and owns `angular-ui.md`'s wording), draft ids
+  on the `CLOCK_PORTS` stamp (OQ-8), one-variant tags deleted (OQ-9), the
+  view-model pass carried (OQ-11), ecs-core's tier lint blocks under the nx
+  executor a follow-up (OQ-12). Also for the owner: the +6.14 kB initial
+  bundle of Angular's `resource()` (plan §8.1 ruling 8), kept.

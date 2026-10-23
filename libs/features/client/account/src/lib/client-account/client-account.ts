@@ -1,13 +1,32 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, resource } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  APPOINTMENT_READ_PORTS,
+  CLOCK_PORTS,
+  type ShopZoneAnswer,
+  ShopZoneService,
+} from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
 import { Principal, WallTime } from '@core/components';
-import { AccountsErrorCode } from '@core/primitives';
-import { ProfileCompletionKey } from '@core/systems';
+import {
+  AccountsErrorCode,
+  type AppointmentId,
+  type LocationId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import {
+  ProfileCompletionKey,
+  VisitPerspective,
+  ZonedTimeSystem,
+} from '@core/systems';
+import {
+  LoadSlice,
+  LoadState,
+  loadStateWords,
+} from '@creativo/shared/view-state';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   SessionIdentityService,
@@ -15,6 +34,7 @@ import {
 } from '@creativo/features/shared/shell';
 import {
   VisitCard,
+  VisitCardSlot,
   type VisitCardVm,
   type VisitCardWords,
   type VisitLookup,
@@ -61,11 +81,24 @@ const PERSONALIZE_STEP_SLUGS = {
   [ProfileCompletionKey.Photo]: 'avatar',
 } as const satisfies Record<ProfileCompletionKey, string>;
 
-type UpcomingState =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'empty' }
-  | { readonly kind: 'error' }
-  | { readonly kind: 'populated'; readonly appointment: Appointment };
+/**
+ * Where the next visit stands, as the host's `data-upcoming` and the waiting
+ * card's `data-state` spell it — the e2e suite's contract (`populated`,
+ * `error`), so this page keeps ONE page table over the ONE shared
+ * {@link LoadState} dictionary (UI residue cleanup UR-3).
+ */
+const upcomingStateWords = {
+  [LoadState.Loading]: 'loading',
+  [LoadState.Empty]: 'empty',
+  [LoadState.Failed]: 'error',
+  [LoadState.Ready]: 'populated',
+} as const satisfies Record<LoadState, string>;
+
+/** The shown visit and its shop — the key its zone is read once for. */
+interface ShownVisitPlace {
+  readonly appointmentId: AppointmentId;
+  readonly locationId: LocationId;
+}
 
 /** The words the shared card is built from, once the catalogue has loaded. */
 interface CardWords {
@@ -158,29 +191,41 @@ const NO_CATALOGUE: VisitLookup = {
   styleUrl: './client-account.css',
   host: {
     'data-testid': 'account-page',
-    '[attr.data-state]': "accountState.accountLoading() ? 'loading' : 'ready'",
+    '[attr.data-state]': 'accountDataState()',
     '[attr.data-completion]': 'completionState()',
-    '[attr.data-upcoming]': 'upcomingState()',
+    '[attr.data-upcoming]': 'upcomingWord()',
   },
 })
 export class ClientAccount {
   private readonly appointments = inject(APPOINTMENT_READ_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly router = inject(Router);
+  private readonly shopZones = inject(ShopZoneService);
 
   protected readonly accountState = inject(AccountStateService);
+
+  /** The load states, for the template's `@switch`. */
+  protected readonly LoadState = LoadState;
+
+  /** The host's `data-state` — the account snapshot loading, or ready. */
+  protected readonly accountDataState = computed(
+    () =>
+      loadStateWords[
+        this.accountState.accountLoading() ? LoadState.Loading : LoadState.Ready
+      ],
+  );
 
   /** The photo lookup and the checklist — the shell's, shared with the header and the menu. */
   private readonly identity = inject(SessionIdentityService);
 
   /**
    * "Now", once, as the page opened — what the card measures its day
-   * against («днес», the year only outside the current one). A snapshot
-   * rather than a clock read inside a `computed`, which would be a value
-   * that changes under a pure function; the appointments store fixes its
-   * `today` the same way.
+   * against («днес», the year only outside the current one), read through
+   * the clock port (never a raw JS date). A snapshot rather than a clock
+   * read inside a `computed`, which would be a value that changes under a
+   * pure function; the appointments store fixes its `today` the same way.
    */
-  private readonly openedAtMs = Date.now();
+  private readonly openedAtUtcMs: UtcEpochMs = inject(CLOCK_PORTS).nowUtcMs();
 
   /** The nudge card's model — null while loading AND once complete: a
    *  finished profile shows no completion card at all (Apple's suggestion
@@ -209,20 +254,68 @@ export class ClientAccount {
     { initialValue: undefined },
   );
 
-  protected readonly upcoming = computed<UpcomingState>(() => {
-    const result = this.upcomingResult();
-    if (result === undefined) return { kind: 'loading' };
-    if (result === null) return { kind: 'empty' };
-    if (!result.ok) return { kind: 'error' };
+  protected readonly upcoming = computed<LoadSlice.WithEmpty<Appointment>>(
+    () => {
+      const result = this.upcomingResult();
+      if (result === undefined) return LoadSlice.loading;
+      if (result === null) return LoadSlice.empty;
+      if (!result.ok) return LoadSlice.failed;
 
-    // The soonest, on the shop's wall clock (`localDate` + `startMinutes`).
-    const next = [...result.value].sort((a, b) =>
-      WallTime.compare(
-        WallTime.of(a.localDate, a.startMinutes),
-        WallTime.of(b.localDate, b.startMinutes),
-      ),
-    )[0];
-    return next ? { kind: 'populated', appointment: next } : { kind: 'empty' };
+      // The soonest, on the shop's wall clock (`localDate` + `startMinutes`).
+      const next = [...result.value].sort((a, b) =>
+        WallTime.compare(
+          WallTime.of(a.localDate, a.startMinutes),
+          WallTime.of(b.localDate, b.startMinutes),
+        ),
+      )[0];
+      return next ? LoadSlice.ready(next) : LoadSlice.empty;
+    },
+  );
+
+  /**
+   * The shown visit's place — its id and its shop — or `undefined` while no
+   * visit is shown. Equal while the same visit stays at the same shop, so
+   * its zone is read ONCE per visit, not on every snapshot of it.
+   */
+  private readonly shownVisitPlace = computed<ShownVisitPlace | undefined>(
+    () => {
+      const appointment = LoadSlice.dataOf(this.upcoming());
+      return appointment === null
+        ? undefined
+        : {
+            appointmentId: appointment.id,
+            locationId: appointment.locationId,
+          };
+    },
+    {
+      equal: (a, b) =>
+        a?.appointmentId === b?.appointmentId &&
+        a?.locationId === b?.locationId,
+    },
+  );
+
+  /**
+   * The zone the card reads "now" in: the shown visit's OWN shop's (Law
+   * 7.2 — the zone belongs to the location, never the device or a default
+   * shop), read once per visit and fed back from the read as a signal.
+   */
+  private readonly cardZone = resource({
+    params: () => this.shownVisitPlace(),
+    loader: ({ params }) => this.shopZones.zoneOf(params.locationId),
+  });
+
+  /** The card's zone answer — `null` while the read is on its way. */
+  private readonly cardZoneAnswer = computed<ShopZoneAnswer | null>(() =>
+    this.cardZone.hasValue() ? (this.cardZone.value() ?? null) : null,
+  );
+
+  /** The card's zone could not be read — no zone stored, or the read failed. */
+  private readonly cardZoneFailed = computed(() => {
+    const answer = this.cardZoneAnswer();
+    // A read that threw (never an answer) fails the card too.
+    return (
+      (answer !== null && !answer.ok) || this.cardZone.error() !== undefined
+    );
   });
 
   /**
@@ -250,7 +343,7 @@ export class ClientAccount {
     ) => this.transloco.translate(key, params, lang);
     return {
       lang,
-      words: visitWordsOf(translate, lang, 'client'),
+      words: visitWordsOf(translate, lang, VisitPerspective.Client),
       cardWords: {
         last: translate('visits.card.last'),
         next: translate('visits.card.next'),
@@ -265,19 +358,30 @@ export class ClientAccount {
    * The next visit as the shared card draws it: «Предстоящ час» as the
    * heading, no services and no face (§3.10 — `/account`'s form, until Q7),
    * the day and the hour on the visit's own calendar, the status as the
-   * capsule. Null until there is a visit AND the words it is told in.
+   * capsule. Null until there is a visit, the words it is told in AND its
+   * shop's zone — "now" is read on that shop's wall clock (Law 7.3).
    */
   protected readonly upcomingCard = computed<VisitCardVm | null>(() => {
     const state = this.upcoming();
     const words = this.cardWords();
-    if (state.kind !== 'populated' || words === null) return null;
+    const zone = this.cardZoneAnswer();
+    if (
+      state.loadState !== LoadState.Ready ||
+      words === null ||
+      zone === null ||
+      !zone.ok
+    ) {
+      return null;
+    }
+    const timeZone = zone.value;
     return visitCardOf(
-      state.appointment,
+      state.data,
       {
-        kind: 'next',
-        perspective: 'client',
+        visitCardSlot: VisitCardSlot.Next,
+        perspective: VisitPerspective.Client,
         subjectUserId: null,
-        nowMs: this.openedAtMs,
+        now: ZonedTimeSystem.shopNow(this.openedAtUtcMs, timeZone),
+        timeZone,
         locale: words.lang,
         words: words.words,
         cardWords: words.cardWords,
@@ -287,23 +391,29 @@ export class ClientAccount {
         // `account-upcoming-status` — the ids this page has always worn.
         testId: 'account-upcoming',
       },
-      NO_CATALOGUE,
+      { ...NO_CATALOGUE, locationTimeZone: () => timeZone },
     );
   });
 
   /**
    * Where the next visit stands, on the HOST (`data-upcoming`) — the card
    * is a button and wears no state of its own — and on the waiting card
-   * (`data-state`): `populated` only once the card can be drawn; a visit
-   * whose words have not loaded is still on its way, never "no upcoming
-   * appointments".
+   * (`data-state`): READY only once the card can be drawn; a visit whose
+   * words or shop zone have not loaded is still on its way, never "no
+   * upcoming appointments"; a zone that could not be read is the card's
+   * failed state, never loading forever.
    */
-  protected readonly upcomingState = computed(() => {
-    const kind = this.upcoming().kind;
-    return kind === 'populated' && this.upcomingCard() === null
-      ? 'loading'
-      : kind;
+  protected readonly upcomingState = computed<LoadState>(() => {
+    const state = this.upcoming().loadState;
+    if (state !== LoadState.Ready) return state;
+    if (this.cardZoneFailed()) return LoadState.Failed;
+    return this.upcomingCard() === null ? LoadState.Loading : LoadState.Ready;
   });
+
+  /** The same state in the e2e suite's word (`loading` · `empty` · `error` · `populated`). */
+  protected readonly upcomingWord = computed(
+    () => upcomingStateWords[this.upcomingState()],
+  );
 
   constructor() {
     // `account` is live, so profile writes elsewhere (onboarding's birthday
@@ -340,6 +450,12 @@ export class ClientAccount {
     return PERSONALIZE_STEP_SLUGS[key];
   }
 
+  /**
+   * The failed card's alert line — one line whichever read failed (the
+   * visits or the shop's zone), the words this card has always printed:
+   * a zone read has no words of its own a client should see (plan DEP-5,
+   * integrator ruling).
+   */
   protected translateRepositoryError(): string {
     return translateDomainError(this.transloco, {
       errorCode: AccountsErrorCode.RepositoryFailure,

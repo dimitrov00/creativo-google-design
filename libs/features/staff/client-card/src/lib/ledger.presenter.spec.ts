@@ -29,11 +29,8 @@ import {
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { utcMs } from '@core/testing';
-import {
-  type ActivityRowVm,
-  CardLoadState,
-  type LinePart,
-} from './client-pages.vm';
+import { type ActivityRowVm, type LinePart } from './client-pages.vm';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type ActivityInput,
   LEDGER_PAGE_READ,
@@ -929,7 +926,7 @@ describe('ledgerPageVm', () => {
   ): LedgerPageInput {
     return {
       ...activityInput(),
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       entries: JOURNAL,
       next: null,
       loadingMore: false,
@@ -961,10 +958,10 @@ describe('ledgerPageVm', () => {
 
   it('draws every page read so far, and ends the list when no cursor is left', () => {
     const page = ledgerPageVm(pageInput());
-    expect(page.cardLoadState).toBe(CardLoadState.Ready);
+    expect(page.loadState).toBe(LoadState.Ready);
     expect(page.filter).toBe(JournalFeed.All);
     expect(page.groups.flatMap((group) => group.rows)).toHaveLength(10);
-    expect(page.paging).toEqual({ kind: 'end' });
+    expect(page.paging).toEqual({ pagingState: PagingState.End });
   });
 
   it('offers the next page, holding the event the boundary may have cut', () => {
@@ -972,13 +969,13 @@ describe('ledgerPageVm', () => {
       pageInput({ next: 30, wholeMonths: wholeMonthsOf(JOURNAL, false) }),
     );
     expect(page.groups.flatMap((group) => group.rows)).toHaveLength(9);
-    expect(page.paging).toEqual({ kind: 'more' });
+    expect(page.paging).toEqual({ pagingState: PagingState.More });
     expect(
       ledgerPageVm(pageInput({ next: 30, loadingMore: true })).paging,
-    ).toEqual({ kind: 'loading' });
+    ).toEqual({ pagingState: PagingState.Loading });
     expect(
       ledgerPageVm(pageInput({ next: 30, failedMore: true })).paging,
-    ).toEqual({ kind: 'failed' });
+    ).toEqual({ pagingState: PagingState.Failed });
   });
 
   it('states no foot offline while a cursor is left, and still ends a list that has ended', () => {
@@ -986,17 +983,14 @@ describe('ledgerPageVm', () => {
       ledgerPageVm(pageInput({ next: 30, online: false })).paging,
     ).toBeNull();
     expect(ledgerPageVm(pageInput({ online: false })).paging).toEqual({
-      kind: 'end',
+      pagingState: PagingState.End,
     });
   });
 
   it('draws nothing under the headline until the first page is read', () => {
-    for (const cardLoadState of [
-      CardLoadState.Loading,
-      CardLoadState.Failed,
-    ] as const) {
-      const page = ledgerPageVm(pageInput({ cardLoadState }));
-      expect(page).toMatchObject({ cardLoadState, groups: [], paging: null });
+    for (const loadState of [LoadState.Loading, LoadState.Failed] as const) {
+      const page = ledgerPageVm(pageInput({ loadState }));
+      expect(page).toMatchObject({ loadState, groups: [], paging: null });
       expect(joined(page.subline)).toBe('Георги Петров · 371 т.');
     }
   });
@@ -1004,7 +998,7 @@ describe('ledgerPageVm', () => {
   it('reads an empty journal, and a kind nothing answers, as a list that has ended', () => {
     expect(ledgerPageVm(pageInput({ entries: [] }))).toMatchObject({
       groups: [],
-      paging: { kind: 'end' },
+      paging: { pagingState: PagingState.End },
     });
     expect(
       ledgerPageVm(pageInput({ entries: [], filter: JournalFeed.Rewards })),

@@ -8,16 +8,18 @@ import {
   memoryAppointmentReadPorts,
   FIXTURE_TODAY,
 } from '@core/testing';
+import { VisitGrain, VisitPerspective } from '@core/systems';
 import {
   CURRENT_APPOINTMENT_ID,
   GEORGI_SHOTS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   georgiStaffRows,
   georgiWaitlistRequest,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
@@ -27,13 +29,13 @@ import {
   visitWordsOf,
   waitlistRowOf,
 } from '../visit-row.presenter';
-import type { VisitPerspective, VisitRowVm } from '../visit-row.vm';
+import type { VisitRowVm } from '../visit-row.vm';
 import { VisitRow } from './visit-row';
 
 const BG = catalogueTranslator(appCatalogue('bg'));
-const STAFF_WORDS = visitWordsOf(BG, 'bg', 'staff');
-const CLIENT_WORDS = visitWordsOf(BG, 'bg', 'client');
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const STAFF_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Staff);
+const CLIENT_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Client);
+const NOW = visitsNow(FIXTURE_TODAY);
 
 /** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', '\u00a0€');
@@ -53,14 +55,14 @@ const EURO = (text: string) => text.replaceAll(' €', '\u00a0€');
 })
 class Host {
   readonly vm = signal<VisitRowVm>(null as unknown as VisitRowVm);
-  readonly perspective = signal<VisitPerspective>('staff');
+  readonly perspective = signal<VisitPerspective>(VisitPerspective.Staff);
   readonly interactive = signal<boolean | null>(null);
   readonly opened: string[] = [];
 }
 
 async function mount(
   vm: VisitRowVm,
-  perspective: VisitPerspective = 'staff',
+  perspective: VisitPerspective = VisitPerspective.Staff,
   interactive: boolean | null = null,
 ) {
   await TestBed.configureTestingModule({
@@ -93,7 +95,12 @@ beforeAll(async () => {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
       photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
-    { words: STAFF_WORDS, nowMs: NOW_MS, grain: 'month' },
+    {
+      words: STAFF_WORDS,
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
+      grain: VisitGrain.Month,
+    },
   );
   staffRows = new Map(rows.map((row) => [row.id, row]));
 });
@@ -413,7 +420,6 @@ describe('VisitRow · the staff row’s face', () => {
     const vm: VisitRowVm = {
       ...staffRow('appt-aug'),
       trailing: {
-        kind: 'barber',
         avatarSrc: null,
         name: STAFF_WORDS.severalBarbers(2),
         several: true,
@@ -565,7 +571,7 @@ describe('VisitRow · the staff row’s words, laid out', () => {
 describe('VisitRow · the element is the host’s to say', () => {
   it('makes a staff row the control when its host asks: a DS row button, named by its sentence', async () => {
     const vm = staffRow('appt-sep');
-    const { fixture, q } = await mount(vm, 'staff', true);
+    const { fixture, q } = await mount(vm, VisitPerspective.Staff, true);
 
     const row = q<HTMLButtonElement>('[data-testid="history-row-appt-sep"]');
     expect(row?.tagName).toBe('BUTTON');
@@ -589,17 +595,18 @@ describe('VisitRow · the element is the host’s to say', () => {
       GEORGI_VISITS.find((each) => each.id === 'appt-oct') ??
         (GEORGI_VISITS[0] as (typeof GEORGI_VISITS)[number]),
       {
-        perspective: 'client',
-        grain: 'month',
+        perspective: VisitPerspective.Client,
+        grain: VisitGrain.Month,
         subjectUserId: GEORGI_UID,
         currentAppointmentId: null,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'bg',
         words: CLIENT_WORDS,
       },
       VISITS_LOOKUP,
     );
-    const { host, q } = await mount(vm, 'client', false);
+    const { host, q } = await mount(vm, VisitPerspective.Client, false);
     expect(host.querySelector('button')).toBeNull();
     const row = q('[data-testid="appointment-row"]');
     expect(row?.tagName).toBe('UI-LIST-ROW');
@@ -685,11 +692,12 @@ describe('VisitRow · «Моите часове»', () => {
     return visitRowOf(
       visit,
       {
-        perspective: 'client',
-        grain: 'month',
+        perspective: VisitPerspective.Client,
+        grain: VisitGrain.Month,
         subjectUserId: GEORGI_UID,
         currentAppointmentId: null,
-        nowMs: NOW_MS,
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
         locale: 'bg',
         words: CLIENT_WORDS,
       },
@@ -699,7 +707,7 @@ describe('VisitRow · «Моите часове»', () => {
 
   it('is the control: a DS row button with the ids the page and its e2e rely on', async () => {
     const vm = clientRow('appt-oct');
-    const { fixture, q } = await mount(vm, 'client');
+    const { fixture, q } = await mount(vm, VisitPerspective.Client);
 
     const row = q<HTMLButtonElement>('[data-testid="appointment-row"]');
     expect(row?.tagName).toBe('BUTTON');
@@ -717,7 +725,10 @@ describe('VisitRow · «Моите часове»', () => {
   });
 
   it('stamps the weekday over the day, who and when as the facts, the barber’s face trailing', async () => {
-    const { q, text } = await mount(clientRow('appt-oct'), 'client');
+    const { q, text } = await mount(
+      clientRow('appt-oct'),
+      VisitPerspective.Client,
+    );
 
     expect(text('.ui-date-tile__caption')).toBe('пт');
     expect(text('.ui-date-tile__day')).toBe('2');
@@ -739,20 +750,22 @@ describe('VisitRow · «Моите часове»', () => {
     const vm: VisitRowVm = {
       ...clientRow('appt-oct'),
       trailing: {
-        kind: 'barber',
         avatarSrc: null,
         name: CLIENT_WORDS.severalBarbers(2),
         several: true,
       },
     };
-    const { q } = await mount(vm, 'client');
+    const { q } = await mount(vm, VisitPerspective.Client);
     expect(
       q('[data-trailing="barber"] [data-name="booking.anyBarber"]'),
     ).not.toBeNull();
   });
 
   it('strikes a cancelled visit on the client’s own list too, in the full ink', async () => {
-    const { q } = await mount(clientRow('appt-jul-cancelled'), 'client');
+    const { q } = await mount(
+      clientRow('appt-jul-cancelled'),
+      VisitPerspective.Client,
+    );
     const row = q('[data-testid="appointment-row"]');
     expect(row?.getAttribute('data-status')).toBe('CANCELLED');
     expect(row?.hasAttribute('data-receded')).toBe(false);

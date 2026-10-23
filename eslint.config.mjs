@@ -94,6 +94,40 @@ export {
  */
 export { creativo };
 
+/**
+ * The UI-residue guards (docs/architecture/flips/ui-residue-cleanup.md §3)
+ * run on production code only. Test support is not production: specs and
+ * type-specs, `testing/` folders (`FakeFirestore`, the fixtures, the
+ * `StubResizeObserver` rig), `test-setup.ts` polyfills and the Playwright
+ * `e2e/` tooling (UR-8). Every pattern is `**\/`-prefixed so it matches
+ * under BOTH basePaths (the note above the import cages).
+ */
+const PRODUCTION_TS_IGNORES = [
+  '**/*.spec.ts',
+  '**/*.type-spec.ts',
+  '**/testing/**',
+  '**/test-setup.ts',
+  '**/e2e/**',
+  '**/*.d.ts',
+];
+
+/**
+ * The web UI layer, as path FRAGMENTS matched against the linted file's
+ * physical path (`include` of the clock and discriminator guards):
+ * features, design system, shared and infrastructure libs, the web app and
+ * the showcase. `apps/functions` (its composition root is the sanctioned
+ * backend clock) and `libs/ecs-core` (its own suffix and project bans) are
+ * outside it.
+ */
+const UI_LAYER_FRAGMENTS = [
+  '/libs/features/',
+  '/libs/ui/',
+  '/libs/shared/',
+  '/libs/infrastructure/',
+  '/apps/web/src/',
+  '/apps/showcase/src/',
+];
+
 export default [
   ...nx.configs['flat/base'],
   ...nx.configs['flat/typescript'],
@@ -266,23 +300,32 @@ export default [
   // Firebase/dinero/luxon/libphonenumber restrictions (the "Import cages" of
   // docs/architecture/module-boundaries.md), plus the testing entry points
   // outside specs (round 6, 2026-09-26).
-  // Nx runs each project's `lint` target with `cwd` set to that project's
-  // own directory (`eslint .`), so ESLint's basePath is the PROJECT root,
-  // not the workspace root — a repo-root-relative `ignores` pattern like
-  // `**/libs/infrastructure/firestore/**` can never match once basePath
-  // already IS `libs/infrastructure/firestore` (the prefix is stripped
-  // away). So these rules are unconditional here, and the exempt zones
-  // (`libs/infrastructure/*` and `apps/functions` for firebase;
+  // ESLint resolves every `files`/`ignores` pattern against a basePath that
+  // depends on HOW it is invoked. Each project's `lint` target is the
+  // `@nx/eslint:lint` executor: it `chdir`s to the WORKSPACE root and passes
+  // the project's own eslint.config.mjs as `overrideConfigFile`, so the
+  // basePath is the workspace root. Directory lookup — an IDE, or `eslint`
+  // run inside a project — finds that same nested config and uses the
+  // PROJECT dir as basePath. A repo-root-relative pattern
+  // (`libs/infrastructure/firestore/**`) therefore matches under the
+  // executor and never under lookup (the prefix is already the base), and a
+  // project-relative one (`src/systems/**`) the reverse — silently, either
+  // way (the consequence for libs/ecs-core's project-relative tier blocks is
+  // docs/architecture/flips/ui-residue-cleanup.md §10 OQ-12). That is why
+  // the UI-residue guards below decide their scope from the file's physical
+  // path, not from a glob. So these rules are unconditional here, and the
+  // exempt zones (`libs/infrastructure/*` and `apps/functions` for firebase;
   // libs/ecs-core's `src/systems/phone.system.ts` for libphonenumber) turn
   // the relevant half off in their OWN eslint.config.mjs instead — see the
   // `no-restricted-imports` overrides in apps/functions/eslint.config.mjs,
   // the libs/infrastructure/*/eslint.config.mjs of the projects that import
   // firebase, and libs/ecs-core/eslint.config.mjs. The one exempt zone that is NOT
   // a project — Playwright's Node-side tooling under `apps/*/e2e/` — has no
-  // config of its own and is linted under three different basePaths (the
-  // nx executor's workspace root, a direct `eslint apps/web/e2e` from the
-  // root, `eslint e2e` from the app), so its exemption lives here, as a
-  // basePath-independent pattern, right after the two rule blocks below.
+  // config of its own and is linted under both basePaths (the executor's
+  // workspace root and a direct `eslint apps/web/e2e` from the root; the
+  // app dir for `eslint e2e` run inside apps/web), so its exemption lives
+  // here, as a basePath-independent pattern, right after the two rule
+  // blocks below.
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
     rules: {
@@ -316,7 +359,7 @@ export default [
     // never ships in an app bundle, so neither half of the boundary applies
     // (blueprint §1.2). `**/e2e/**` on purpose, not `apps/web/e2e/**`: a
     // `files` pattern is resolved against ESLint's basePath, and this folder
-    // is linted under three of them (see the note above).
+    // is linted under both of them (see the note above).
     files: ['**/e2e/**/*.ts'],
     rules: {
       'no-restricted-imports': 'off',
@@ -399,6 +442,103 @@ export default [
     files: ['**/*.port.ts'],
     plugins: { creativo },
     rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
+  },
+  // ── The UI-residue guards (ui-residue-cleanup.md §3, UR-12) ────────────
+  // Three rules, not `no-restricted-syntax` entries: a later block REPLACES
+  // that rule's options, and libs/ui/icons turns it off on its non-suffix
+  // files, so a selector there could be erased; a separate rule name cannot.
+  // Scope is decided INSIDE each rule — `include` / `allowIn` /
+  // `allowRandomIn` path fragments matched against the file's physical path
+  // (the `icon-registry-only` `allowInlineSvg` precedent) — never by a
+  // `files` glob, which is silently off under one of the two basePaths (the
+  // note above the import cages). Hence `**/*.ts` and `**/` ignores only, and
+  // no second path block. Each allowlist entry carries its reason; a new
+  // entry is a decision for the plan, not a shortcut. Rules and their
+  // RuleTester specs: tools/lint-rules/no-{undecorated-class,ambient-clock,
+  // generic-discriminator}.mjs; runbook §4.9 gate 5 proves both basePaths.
+  {
+    // CLAUDE.md §2: `class` only in the Angular row — a called `@Component`,
+    // `@Directive`, `@Pipe`, `@Injectable` or `@NgModule`. Everything else is
+    // a plain object from a factory (`visitClockOf`, `edgeScrollerOf`,
+    // `injectFrameFullscreen`, `consoleUiIconReporter`). Every app and lib
+    // (libs/ecs-core and apps/functions overlap their own class bans:
+    // defence in depth); tools/** stays out (Node script classes, OQ-6).
+    files: ['**/*.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: {
+      'creativo/no-undecorated-class': [
+        'error',
+        { include: ['/libs/', '/apps/'] },
+      ],
+    },
+  },
+  {
+    // Law 7: no ambient clock, date object or entropy read in the UI layer —
+    // `inject(CLOCK_PORTS).nowUtcMs()` (specs pin `memoryClockPorts`),
+    // `ZonedTimeSystem`, `LocalDate`, the `@creativo/ui/wall-clock`
+    // formatters, `ID_PORTS`. `Date.UTC` and `performance.now()` stay legal.
+    files: ['**/*.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: {
+      'creativo/no-ambient-clock': [
+        'error',
+        {
+          include: UI_LAYER_FRAGMENTS,
+          // The sanctioned clock and entropy ADAPTERS, by exact path — every
+          // other infrastructure file stays guarded (UR-10).
+          allowIn: [
+            // `browserClockPorts` / `browserIdPorts`: the one place the web
+            // reads `Date.now()` and `crypto.randomUUID()`, behind
+            // CLOCK_PORTS and ID_PORTS.
+            '/libs/infrastructure/clock/src/lib/browser-runtime.adapter.ts',
+            // The Firebase session adapter stamps `iat`/`exp` (epoch
+            // seconds) on the UNSIGNED custom token it mints for the Auth
+            // emulator only — an SDK seam, not a UI read.
+            '/libs/infrastructure/firebase-auth/src/lib/auth-session.adapter.ts',
+          ],
+          // Files where ONLY `Math.random` is lifted; every clock form stays
+          // reported there (UR-10).
+          allowRandomIn: [
+            // Equal-jitter retry backoff: the policy is injectable through
+            // the cache's `policy` parameter and its spec pins `Math.random`
+            // — a `RandomPorts` bundle for retry jitter would be ceremony.
+            '/libs/features/shared/catalog/src/lib/content/media-url-cache.ts',
+            // A purely visual particle effect; nothing observable depends on
+            // where a confetto lands.
+            '/libs/ui/patterns/src/lib/confetti/confetti.ts',
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Law 6.2 for view state and every other UI union: no `kind`/`type`/
+    // `status` property signature — a domain-prefixed discriminator
+    // (`loadState: LoadState`, `pagingState: PagingState`,
+    // `bookingStatus: BookingStatus`) with SCREAMING values from its
+    // `as const` dictionary. Object-literal properties (`Intl` options, a
+    // CSS height key) are not signatures and are not reported.
+    files: ['**/*.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: {
+      'creativo/no-generic-discriminator': [
+        'error',
+        {
+          include: UI_LAYER_FRAGMENTS,
+          allowIn: [
+            // The icon MANIFEST: a `schemaVersion`'d JSON input format whose
+            // `kind` (vector | material | image) is validated by
+            // icon-manifest.ts and `pnpm icons:check` — renaming it is a
+            // manifest schema change, its own pass (UR-13 a, OQ-5), not view
+            // state.
+            '/libs/ui/icons/src/lib/manifest/',
+          ],
+        },
+      ],
+    },
   },
   {
     files: ['**/*.html'],

@@ -6,12 +6,20 @@ import {
   input,
   output,
 } from '@angular/core';
+import { LocalDate } from '@core/primitives';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
+import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 
 /** An ISO weekday: 1 = Monday … 7 = Sunday. */
 export type UiIsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const ISO_WEEK: readonly UiIsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
+
+/** 2026-08-03, a Monday — walking seven from it names the week in order. */
+const MONDAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 8, 3));
+
+/** A toggle's accessible name — the whole weekday («понеделник»). */
+const WHOLE_NAME: Intl.DateTimeFormatOptions = { weekday: 'long' };
 
 interface WeekdayCell {
   readonly iso: UiIsoWeekday;
@@ -92,23 +100,22 @@ export class UiWeekdayPicker {
   protected readonly days = computed<readonly WeekdayCell[]>(() => {
     const locale = this.uiLocale();
     const selected = new Set(this.uiSelected());
-    const short = new Intl.DateTimeFormat(locale, {
-      weekday: 'short',
-      timeZone: 'UTC',
-    });
-    const long = new Intl.DateTimeFormat(locale, {
-      weekday: 'long',
-      timeZone: 'UTC',
-    });
+    // The shared, per-locale cached faces of `@creativo/ui/wall-clock`:
+    // the Monday-first `short` row, and each day's `long` name read on the
+    // civil axis — never a formatter of this picker's own.
+    const short = formatWeekdayLabels(locale);
     const atFloor = selected.size <= this.uiMinimum();
-    // 2026-08-03 is a Monday; walking seven from it names the week in order.
     return ISO_WEEK.map((iso) => {
-      const at = new Date(Date.UTC(2026, 7, 2 + iso));
       const on = selected.has(iso);
       return {
         iso,
-        short: short.format(at),
-        name: long.format(at),
+        short: short[iso - 1] ?? '',
+        name: formatWallClock(
+          LocalDate.addDays(MONDAY, iso - 1),
+          null,
+          locale,
+          WHOLE_NAME,
+        ),
         on,
         locked: on && atFloor,
       };

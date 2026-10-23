@@ -1,5 +1,11 @@
 import type { Daypart } from '@core/components';
-import type { TimeZone } from '@core/primitives';
+import type {
+  BookingStatus,
+  LocalDate,
+  MinuteOfDay,
+  TimeZone,
+} from '@core/primitives';
+import type { CancelledSide, VisitRowOutcome } from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { StaffEventLine } from './event-head/staff-event-line';
 
@@ -18,13 +24,24 @@ import type { StaffEventLine } from './event-head/staff-event-line';
  * (`VisitWords`) and the catalogue (`VisitLookup`) as arguments, so a row
  * builds the same in a spec, in the client's page and in the staff sheet —
  * no DI anywhere, no NullInjectorError in anyone's TestBed.
+ *
+ * The list's own vocabulary is `VisitListSystem`'s (`@core/systems`): who
+ * reads (`VisitPerspective`), what a section heads (`VisitGrain`), how a
+ * visit went (`VisitRowOutcome`) and the funnel's choice (`VisitFilter`),
+ * SCREAMING tags re-exported here for the templates and hosts. A row IS a
+ * `SectionRow` and a `FilterRow` — its shop day and minute, its outcome — so
+ * it goes to the system as it is (Law 3, zero inbound mapping). Where a tag
+ * reaches the DOM or a key, its lower-case word comes from ONE table
+ * (`visitFilterWords`, `visitGrainWords`, `visitPerspectiveWords` of
+ * `@creativo/infrastructure/i18n`).
  */
 
-/** Whose list: the client's own «Моите часове», or a client's history on the staff card. */
-export type VisitPerspective = 'client' | 'staff';
-
-/** What a section heads: a month («Септември 2026 г.») or a year («2026»). */
-export type VisitGrain = 'month' | 'year';
+export {
+  VisitFilter,
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
+} from '@core/systems';
 
 /**
  * ≙ SwiftUI's `.listStyle(…)`. `insetGrouped` runs the rows as one
@@ -33,25 +50,26 @@ export type VisitGrain = 'month' | 'year';
  */
 export type VisitListStyle = 'insetGrouped' | 'plain';
 
-/**
- * RETIRED (revision 3 §3.11, W4): a row is a row, and the featured card
- * is `lib-visit-card`. `lib-visit-row` no longer takes a variant; the alias
- * stands only for `VisitRowOptions.variant`, which `visitRowOf` accepts and
- * ignores until its last caller (the built `visitsModuleVm`) is gone — it
- * goes with that caller (contract delta Z2-1).
- */
-export type VisitRowVariant = 'row' | 'card';
+/** What a row of the list is — the field `visitRowEntry`, the ONLY source of these strings. */
+export const VisitRowEntry = {
+  /** An appointment: a tile, the event head, a fact or a face. */
+  Visit: 'VISIT',
+  /** A request waiting for a free slot: a glyph in place of the tile. */
+  Waitlist: 'WAITLIST',
+} as const;
+export type VisitRowEntry = (typeof VisitRowEntry)[keyof typeof VisitRowEntry];
 
-/**
- * How the visit went — for the SUBJECT on the staff card (their own seats
- * alone: a companion's no-show says nothing about the booker), for the
- * appointment as a whole on the client's list.
- */
-export type VisitRowOutcome = 'open' | 'worked' | 'no_show' | 'cancelled';
-
-/** The filter's one choice; `all` is the unfiltered list. */
-export type VisitFilter =
-  'all' | 'upcoming' | 'completed' | 'no_show' | 'cancelled';
+/** Which fact ends a staff row's second line — the field `trailingFactFace`. */
+export const TrailingFactFace = {
+  /** Money, `formatMoney`'s «27,50 €». */
+  Amount: 'AMOUNT',
+  /** A state in words beside its glyph — «Заявен», «Не дойде». */
+  Status: 'STATUS',
+  /** «Този час»: the appointment the sheet is open on. */
+  Badge: 'BADGE',
+} as const;
+export type TrailingFactFace =
+  (typeof TrailingFactFace)[keyof typeof TrailingFactFace];
 
 /**
  * A 16 px glyph at the end of a staff row's second line, before its fact —
@@ -75,7 +93,6 @@ export interface VisitRowMark {
  * the row's second line (`VisitTrailingFact`).
  */
 export type VisitTrailing = {
-  readonly kind: 'barber';
   readonly avatarSrc: string | null;
   readonly name: string;
   readonly several: boolean;
@@ -94,7 +111,7 @@ export type VisitTrailingFact =
    * visit, booked, secondary and struck on a cancelled one.
    */
   | {
-      readonly kind: 'amount';
+      readonly trailingFactFace: typeof TrailingFactFace.Amount;
       readonly text: string;
       readonly emphasis: 'primary' | 'secondary';
       readonly struck: boolean;
@@ -104,13 +121,16 @@ export type VisitTrailingFact =
    * tints the GLYPH only; the word keeps the primary ink.
    */
   | {
-      readonly kind: 'status';
+      readonly trailingFactFace: typeof TrailingFactFace.Status;
       readonly icon: UiIconName;
       readonly text: string;
       readonly tone: 'neutral' | 'warning';
     }
   /** «Този час»: the appointment the sheet is open on. */
-  | { readonly kind: 'badge'; readonly text: string }
+  | {
+      readonly trailingFactFace: typeof TrailingFactFace.Badge;
+      readonly text: string;
+    }
   | null;
 
 /** A thumb on `lib-visit-card` (`VisitCardVm.photos`); each opens its photo. */
@@ -124,9 +144,15 @@ export interface VisitRowPhoto {
 export interface VisitRowVm {
   /** The appointment's id, or the waitlist request's. */
   readonly id: string;
-  readonly kind: 'visit' | 'waitlist';
-  /** When the visit starts, epoch ms — the order within a section. */
-  readonly startMs: number;
+  readonly visitRowEntry: VisitRowEntry;
+  /**
+   * The shop day the visit starts on (Law 7.3) — with `startMinutes`, the
+   * order within a section (`VisitListSystem.sections`). A waiting request
+   * starts on the first day it still watches.
+   */
+  readonly localDate: LocalDate;
+  /** The minute of that shop day it starts at; a waiting request's is 0. */
+  readonly startMinutes: MinuteOfDay;
   /** The section the row files under: `upcoming`, `YYYY-MM` or `YYYY`. */
   readonly sectionKey: string;
   readonly upcoming: boolean;
@@ -173,7 +199,7 @@ export interface VisitRowVm {
    * The appointment's STORED `bookingStatus` — `'CONFIRMED'`, `'CANCELLED'`
    * … (F1-9), the client row's `data-status`; null on a waitlist row.
    */
-  readonly status: string | null;
+  readonly bookingStatus: BookingStatus | null;
   /**
    * The row as one sentence — every fact, the status word, the price and
    * the whole quote included, since no row carries a visible `›` or a
@@ -213,9 +239,10 @@ export interface VisitLookup {
   /** More than one shop puts the shop's name in a worked visit's fact line. */
   readonly locationCount: number;
   /**
-   * The shop's IANA zone (`ShopLocation.timeZone`, Law 7.2) — what "today"
-   * and a photo's day are read in. Optional: a lookup that names none reads
-   * the tenant's zone (every shop of the tenant keeps one clock).
+   * The shop's IANA zone (`ShopLocation.timeZone`, Law 7.2) — what a
+   * photo's day is read in. Optional: a lookup that names none reads it in
+   * the zone the host read "now" in (`VisitRowOptions.timeZone`; every shop
+   * of the tenant keeps one clock).
    */
   locationTimeZone?(id: string): TimeZone | null;
 }
@@ -291,7 +318,7 @@ export interface VisitWords {
    * «Отказан от клиента» · «Отказан от салона»
    * (`staff.visit.resolution.cancelledByClient` / `.cancelledByStaff`).
    */
-  readonly cancelledBy: (side: 'client' | 'shop') => string;
+  readonly cancelledBy: (side: CancelledSide) => string;
   /** «„…“» — the client's words under the facts (`visits.quote`). */
   readonly quote: (text: string) => string;
   /** «, от клиента: „…“» — the quote inside the row's sentence (`visits.quoteName`). */

@@ -1,6 +1,7 @@
 <!-- WC · EVERY THING HELD, a ticket on white paper, in the wallet's order. -->
-@for (holding of holdings(); track keyOf(holding)) { @switch (holding.kind) {
-@case ('voucher') { @let voucher = holding.voucher;
+@for (holding of holdings(); track keyOf(holding)) { @switch
+(holding.walletHolding) { @case (WalletHolding.Voucher) { @let voucher =
+holding.voucher;
 <!-- WC1 · a gift voucher: its balance is the accent figure, the one chip
      says what it was issued for and how long it is good. Nothing to
      press: it is spent at the bill. -->
@@ -14,7 +15,8 @@
 >
   <ui-icon uiCouponGlyph uiName="promo.voucher" />
 </article>
-} @case ('ticket') { @let ticket = holding.ticket; @if (ticket.applied) {
+} @case (WalletHolding.Ticket) { @let ticket = holding.ticket; @if
+(ticket.applied) {
 <!-- WC2 · a ticket already on the bill: the discount page's own applied
      card, with its real «Премахни». ‹ from the discount page lands on it. -->
 <article
@@ -60,7 +62,7 @@
   <span uiBadge uiCouponBadge uiProminence="increased">{{ stack }}</span>
   }
 </article>
-} } @case ('stamps') { @let card = holding.card;
+} } @case (WalletHolding.Stamps) { @let card = holding.card;
 <!-- WC3 · a stamp card: the stamps are the count. -->
 <ui-card
   uiTone="elevated"

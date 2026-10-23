@@ -215,16 +215,16 @@
         (pointerdown)="onBlockDown($event, event)"
         (contextmenu)="onContextMenu($event)"
         (keydown)="onBlockKey($event, event)"
-        [attr.data-kind]="event.kind"
+        [attr.data-kind]="gridEventWords[event.gridEvent]"
         [attr.data-barber-tone]="event.barberTone"
-        [attr.data-status]="event.status"
+        [attr.data-status]="gridStatusWord(event)"
         [attr.data-terminal]="event.terminal ? '' : null"
         [attr.data-past]="event.past ? '' : null"
         [attr.data-short]="event.short ? '' : null"
         [attr.data-testid]="
-          event.kind === 'gap'
+          event.gridEvent === GridEventTag.Gap
             ? 'staff-grid-gap'
-            : event.kind === 'block'
+            : event.gridEvent === GridEventTag.Block
               ? 'staff-grid-block'
               : 'staff-grid-event'
         "
@@ -237,7 +237,7 @@
              welded to the block's own rectangle. A carve-out gets one too —
              it is a thing on the calendar, and the rail is what says so —
              but in the neutral tone, because hue means "a booking". -->
-        @if (event.kind !== 'gap') {
+        @if (event.gridEvent !== GridEventTag.Gap) {
         <span class="staff-grid__event-rail" aria-hidden="true"></span>
         <!-- THE QUALIFIED STRETCHES, painted over the block's own fill and
              under its words. Each is a span of this booking rather than a
@@ -247,7 +247,7 @@
         <span
           class="staff-grid__event-mask"
           aria-hidden="true"
-          [attr.data-kind]="mask.kind"
+          [attr.data-kind]="gridMaskWords[mask.gridMask]"
           [style.--staff-mask-from]="mask.from"
           [style.--staff-mask-to]="mask.to"
         ></span>
@@ -263,7 +263,7 @@
         <lib-staff-event-head
           size="compact"
           [title]="event.title"
-          [struck]="hollowStatus(event.status)"
+          [struck]="hollowStatus(event.bookingStatus)"
           [lines]="eventLines(event)"
           [inline]="event.short && event.detail !== null"
           [start]="timeOf(event.startMinute)"
@@ -291,7 +291,7 @@
           <!-- THE TAG — how far the drafted length is from the catalogue's,
                on the block's own face, where the length is being changed.
                Never on an hour that did not happen (2026-09-24). -->
-          @if (event.tag && !hollowStatus(event.status)) {
+          @if (event.tag && !hollowStatus(event.bookingStatus)) {
           <span
             class="staff-event-tag staff-grid__event-tag"
             data-testid="staff-grid-tag"
@@ -365,15 +365,15 @@
         aria-orientation="vertical"
         [style.--staff-event-top]="block.top"
         [style.--staff-event-height]="block.height"
-        [attr.data-dragging]="draggingEdge() === 'start' ? '' : null"
+        [attr.data-dragging]="draggingEdge() === ResizeEdge.Start ? '' : null"
         [attr.aria-label]="uiDragCopy().handleStart || null"
         [attr.aria-valuemin]="handleBounds()?.startMin"
         [attr.aria-valuemax]="handleBounds()?.startMax"
         [attr.aria-valuenow]="block.startMinute"
-        [attr.aria-valuetext]="handleText('start')"
-        (pointerdown)="onHandleDown($event, 'start', block)"
+        [attr.aria-valuetext]="handleText(ResizeEdge.Start)"
+        (pointerdown)="onHandleDown($event, ResizeEdge.Start, block)"
         (contextmenu)="onContextMenu($event)"
-        (keydown)="onHandleKey($event, 'start', block)"
+        (keydown)="onHandleKey($event, ResizeEdge.Start, block)"
         data-testid="staff-frame-handle-start"
       >
         <ui-icon uiName="frame.handleStart" uiScale="small" />
@@ -387,15 +387,15 @@
         aria-orientation="vertical"
         [style.--staff-event-top]="block.top"
         [style.--staff-event-height]="block.height"
-        [attr.data-dragging]="draggingEdge() === 'end' ? '' : null"
+        [attr.data-dragging]="draggingEdge() === ResizeEdge.End ? '' : null"
         [attr.aria-label]="uiDragCopy().handleEnd || null"
         [attr.aria-valuemin]="handleBounds()?.endMin"
         [attr.aria-valuemax]="handleBounds()?.endMax"
         [attr.aria-valuenow]="block.endMinute"
-        [attr.aria-valuetext]="handleText('end')"
-        (pointerdown)="onHandleDown($event, 'end', block)"
+        [attr.aria-valuetext]="handleText(ResizeEdge.End)"
+        (pointerdown)="onHandleDown($event, ResizeEdge.End, block)"
         (contextmenu)="onContextMenu($event)"
-        (keydown)="onHandleKey($event, 'end', block)"
+        (keydown)="onHandleKey($event, ResizeEdge.End, block)"
         data-testid="staff-frame-handle-end"
       >
         <ui-icon uiName="frame.handleEnd" uiScale="small" />

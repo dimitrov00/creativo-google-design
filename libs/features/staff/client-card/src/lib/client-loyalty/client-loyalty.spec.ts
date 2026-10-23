@@ -34,10 +34,11 @@ import type {
   WalletAnchor,
 } from '../client-card.contracts';
 import {
-  CardLoadState,
+  WalletHolding,
   type WalletHoldingVm,
   type WalletVm,
 } from '../client-pages.vm';
+import { LoadState } from '@creativo/shared/view-state';
 import { ClientLoyaltyPage } from './client-loyalty';
 
 /*
@@ -83,12 +84,12 @@ interface Emitted {
 
 /** The holding's test id, by kind. */
 function holdingId(holding: WalletHoldingVm): string {
-  switch (holding.kind) {
-    case 'voucher':
+  switch (holding.walletHolding) {
+    case WalletHolding.Voucher:
       return `rewards-voucher-${holding.voucher.voucherId}`;
-    case 'ticket':
+    case WalletHolding.Ticket:
       return `rewards-ready-${holding.ticket.grantId}`;
-    case 'stamps':
+    case WalletHolding.Stamps:
       return `rewards-stamp-${holding.card.ruleId}`;
   }
 }
@@ -124,7 +125,7 @@ async function mount(options: WalletMountOptions = {}) {
   /** The page as the store worded it — what every region must bind. */
   const wallet = (): WalletVm => {
     const slice = mounted.store.wallet();
-    if (slice?.cardLoadState !== CardLoadState.Ready)
+    if (slice?.loadState !== LoadState.Ready)
       throw new Error('the wallet is not ready');
     return slice.data;
   };
@@ -304,7 +305,7 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
   it('«В портфейла» stacks what he holds as white tickets — the voucher, the reward, the stamp card — no bare count in the heading, the holdings named', async () => {
     const { byId, text, wallet } = await mount();
     const held = wallet().holdings;
-    if (held.cardLoadState !== CardLoadState.Ready)
+    if (held.loadState !== LoadState.Ready)
       throw new Error('the holdings are not ready');
     const section = must(byId('rewards-wallet'));
     const heading = must(section.querySelector('h3'));
@@ -327,15 +328,18 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
       child.getAttribute('data-testid'),
     );
     expect(ids).toEqual(held.data.map(holdingId));
-    expect(held.data.map((holding) => holding.kind)).toEqual([
-      'voucher',
-      'ticket',
-      'stamps',
+    expect(held.data.map((holding) => holding.walletHolding)).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Ticket,
+      WalletHolding.Stamps,
     ]);
     // The voucher's figure is its balance; the reward is static here (the
     // disc is the verb); the stamps count themselves.
     const [voucher, ticket, stamps] = held.data;
-    if (voucher?.kind !== 'voucher' || ticket?.kind !== 'ticket') {
+    if (
+      voucher?.walletHolding !== WalletHolding.Voucher ||
+      ticket?.walletHolding !== WalletHolding.Ticket
+    ) {
       throw new Error('the holdings moved');
     }
     expect(
@@ -381,7 +385,7 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
   it('«Статус»: a ring holding what remains beside two lines, the four tiers as steps under them, on one white card', async () => {
     const { byId, text, wallet } = await mount();
     const tier = wallet().tier;
-    if (tier?.cardLoadState !== CardLoadState.Ready)
+    if (tier?.loadState !== LoadState.Ready)
       throw new Error('the status is not ready');
     const status = tier.data;
     const section = must(byId('rewards-status'));
@@ -423,7 +427,7 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
   it('«Награди за точки»: a 2-up grid of static white tiles, within reach first, the one out of reach greyed with its gap in the capsule and its progress as a bar', async () => {
     const { byId, text, wallet } = await mount();
     const catalog = wallet().catalog;
-    if (catalog?.cardLoadState !== CardLoadState.Ready)
+    if (catalog?.loadState !== LoadState.Ready)
       throw new Error('the catalogue is not ready');
     const section = must(byId('rewards-catalog-module'));
     const heading = must(section.querySelector('h3'));
@@ -487,7 +491,7 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
   it('«Движение»: the newest events by month, «Всички ›» the small plain action inside the column, and the ledger page behind it', async () => {
     const { byId, text, wallet, emitted, click } = await mount();
     const activity = wallet().activity;
-    if (activity?.cardLoadState !== CardLoadState.Ready)
+    if (activity?.loadState !== LoadState.Ready)
       throw new Error('the feed is not ready');
     const groups = activity.data;
     const section = must(byId('rewards-ledger'));
@@ -808,9 +812,9 @@ describe('lib-client-loyalty — its states', () => {
     await render();
     expect(byId('rewards-failed-wallet')).toBeNull();
     const held = wallet().holdings;
-    expect(held.cardLoadState).toBe(CardLoadState.Ready);
+    expect(held.loadState).toBe(LoadState.Ready);
     expect(byId('rewards-holdings')?.children).toHaveLength(
-      held.cardLoadState === CardLoadState.Ready ? held.data.length : -1,
+      held.loadState === LoadState.Ready ? held.data.length : -1,
     );
     expect(
       byId('rewards-holdings')?.querySelector(

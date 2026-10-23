@@ -1,5 +1,5 @@
-@if (words(); as w) { @let card = vm(); @switch (card.kind) { @case ('upcoming')
-{
+@if (words(); as w) { @let card = vm(); @switch (card.birthdayMoment) { @case
+(BirthdayMoment.Upcoming) {
 <!-- (d) · WITHIN THE WEEK — one quiet line in the accent tone: the weekday
      and the date, the age when the year is known. A date, never a
      countdown; no band, no flecks. -->
@@ -11,7 +11,7 @@
 >
   <p>{{ card.title }}</p>
 </ui-notice>
-} @case ('today') { @if (card.gift; as gift) { @if (gift.applied) {
+} @case (BirthdayMoment.Today) { @if (card.gift; as gift) { @if (gift.applied) {
 <!-- (a′) · THE GIFT IS ON THE BILL — the band stays; the body is the
      applied ticket: the check beside the figure, a real «Премахни» where
      the pill stood. It takes the focus when the discount page pops. -->

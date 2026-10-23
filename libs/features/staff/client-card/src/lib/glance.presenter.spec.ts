@@ -4,6 +4,7 @@ import {
   BirthDate,
   BlockReason,
   BookingLifecycle,
+  CouponOccasion,
   E164,
   PersonalRecordKind,
   StreakState,
@@ -31,6 +32,7 @@ import {
 } from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
 import { registeredUserFixture } from '@core/testing';
+import { VisitCardSlot } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
   PENDING_RING,
@@ -43,15 +45,16 @@ import {
   medalStripVm,
 } from './client-card.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
-import type {
-  AchievementsData,
-  BirthdayVm,
-  ClientCapsulesVm,
-  ClientHeroVm,
-  LinePart,
-  LoyaltyGlanceVm,
-  MedalsGlanceVm,
-  VisitCardsVm,
+import {
+  type AchievementsData,
+  BirthdayMoment,
+  type BirthdayVm,
+  type ClientCapsulesVm,
+  type ClientHeroVm,
+  type LinePart,
+  type LoyaltyGlanceVm,
+  type MedalsGlanceVm,
+  type VisitCardsVm,
 } from './client-pages.vm';
 import {
   type BirthdayInput,
@@ -78,6 +81,7 @@ import {
   MARTIN_CUSTOMER_ID,
   MARTIN_PREVIOUS_MS,
   NBSP_EURO,
+  NOW,
   NOW_MS,
   SHOP_TIME_ZONE,
   TODAY,
@@ -98,6 +102,7 @@ import {
   martinWaitlist,
   must,
   pausedUntilOctober,
+  shopNowAt,
   rhythmHead,
   rhythmHeadWith,
   seatOf,
@@ -550,7 +555,7 @@ const BIRTHDAY_GRANT: ClientCardGrant = {
   title: 'Рожден ден',
   valueLabel: '−20 %',
   expiresOn: '2026-10-28',
-  occasion: 'birthday',
+  couponOccasion: CouponOccasion.Birthday,
 };
 
 /** Лили, a registered client — born on `birthDate`, or with no date of birth given. */
@@ -583,7 +588,7 @@ function birthdayOf(overrides: Partial<Parameters<typeof birthdayVm>[0]> = {}) {
 describe('the birthday card (BD)', () => {
   it('is the band alone when no gift is held: the day and the age, a statement', () => {
     expect(birthdayOf()).toEqual({
-      kind: 'today',
+      birthdayMoment: BirthdayMoment.Today,
       title: 'Рожден ден · 34 г.',
       gift: null,
       giftLabel: 'Подарък от салона',
@@ -593,7 +598,7 @@ describe('the birthday card (BD)', () => {
 
   it('carries the gift under the band: the grant whose coupon says `birthday`', () => {
     expect(birthdayOf({ grants: [GEORGI_GRANT, BIRTHDAY_GRANT] })).toEqual({
-      kind: 'today',
+      birthdayMoment: BirthdayMoment.Today,
       title: 'Рожден ден · 34 г.',
       gift: {
         grantId: 'grant-dev-martin-birthday',
@@ -633,7 +638,8 @@ describe('the birthday card (BD)', () => {
     };
     expect(birthdayOf({ grants: [named, GEORGI_GRANT] })?.gift).toBeNull();
     expect(
-      birthdayOf({ grants: [{ ...BIRTHDAY_GRANT, occasion: null }] })?.gift,
+      birthdayOf({ grants: [{ ...BIRTHDAY_GRANT, couponOccasion: null }] })
+        ?.gift,
     ).toBeNull();
   });
 
@@ -678,7 +684,7 @@ describe('the birthday card (BD)', () => {
     expect(
       birthdayOf({ user: born('1992-10-02'), grants: [BIRTHDAY_GRANT] }),
     ).toEqual({
-      kind: 'upcoming',
+      birthdayMoment: BirthdayMoment.Upcoming,
       title: 'Рожден ден · петък, 2.10 · 34 г.',
       gift: null,
       giftLabel: 'Подарък от салона',
@@ -703,7 +709,7 @@ describe('the birthday card (BD)', () => {
         today: '2026-12-29',
       }),
     ).toMatchObject({
-      kind: 'upcoming',
+      birthdayMoment: BirthdayMoment.Upcoming,
       title: 'Рожден ден · събота, 2.01.2027 г. · 37 г.',
     });
   });
@@ -714,7 +720,7 @@ describe('the birthday card (BD)', () => {
       'Рожден ден · неделя, 28.02 · 27 г.',
     );
     expect(birthdayOf({ user: leapling, today: '2027-02-28' })).toMatchObject({
-      kind: 'today',
+      birthdayMoment: BirthdayMoment.Today,
       title: 'Рожден ден · 27 г.',
     });
     expect(birthdayOf({ user: leapling, today: '2028-02-25' })?.title).toBe(
@@ -722,7 +728,7 @@ describe('the birthday card (BD)', () => {
     );
     // In a leap year the 28th is the day before, not the day.
     expect(birthdayOf({ user: leapling, today: '2028-02-28' })).toMatchObject({
-      kind: 'upcoming',
+      birthdayMoment: BirthdayMoment.Upcoming,
       title: 'Рожден ден · вторник, 29.02 · 28 г.',
     });
   });
@@ -799,7 +805,7 @@ describe('«Посещения» (H)', () => {
       paused: false,
       count: 24,
       clientWords: true,
-      nowMs: NOW_MS,
+      now: NOW,
       zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
@@ -809,7 +815,7 @@ describe('«Посещения» (H)', () => {
     expect(georgi()).toEqual({
       last: {
         id: 'appt-hist-c1-23',
-        kind: 'last',
+        visitCardSlot: VisitCardSlot.Last,
         label: 'Последно посещение',
         services: 'Фейд',
         facts: [
@@ -837,7 +843,7 @@ describe('«Посещения» (H)', () => {
       },
       next: {
         id: GEORGI_NEXT_ID,
-        kind: 'next',
+        visitCardSlot: VisitCardSlot.Next,
         label: 'Следващ час',
         services: 'Фейд',
         facts: [
@@ -945,7 +951,7 @@ describe('«Посещения» (H)', () => {
       paused: false,
       count: 13,
       clientWords: true,
-      nowMs: NOW_MS,
+      now: NOW,
       zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
@@ -965,7 +971,7 @@ describe('«Посещения» (H)', () => {
     expect(vm.next).toBeNull();
     expect(vm.waitlist).toEqual({
       id: 'waitlist-dev-martin',
-      kind: 'waitlist',
+      visitCardSlot: VisitCardSlot.Waitlist,
       label: 'Чака свободен час',
       services: 'Класическа подстрижка',
       facts: [{ text: '8.10 – 9.10, следобед', fact: false }],
@@ -997,7 +1003,9 @@ describe('«Посещения» (H)', () => {
     expect(
       martin({ waitlist: [martinWaitlist({ status: 'booked' })] }).waitlist,
     ).toBeNull();
-    expect(martin({ nowMs: sofia('2026-10-12T09:00:00') }).waitlist).toBeNull();
+    expect(
+      martin({ now: shopNowAt(sofia('2026-10-12T09:00:00')) }).waitlist,
+    ).toBeNull();
     expect(georgi({ waitlist: [martinWaitlist()] }).waitlist).toBeNull();
     expect(martin({ waitlist: null }).waitlist).toBeNull();
   });
@@ -1484,8 +1492,16 @@ describe('«Постижения» (G)', () => {
   it('says the first two records that exist as one quiet line, never the rhythm’s', () => {
     const vm = must(medalsGlanceVm(LOYALTY, settled));
     expect(vm.records).toEqual([
-      { kind: 'favouriteService', label: 'Любима услуга', value: 'Фейд' },
-      { kind: 'mostVisitsInYear', label: 'Най-много за година', value: '13' },
+      {
+        personalRecordKind: PersonalRecordKind.FavouriteService,
+        label: 'Любима услуга',
+        value: 'Фейд',
+      },
+      {
+        personalRecordKind: PersonalRecordKind.MostVisitsInYear,
+        label: 'Най-много за година',
+        value: '13',
+      },
     ]);
     expect(vm.recordsName).toBe(
       'Рекорди: любима услуга Фейд, най-много за година 13',
@@ -1521,9 +1537,13 @@ describe('«Постижения» (G)', () => {
       recordsOf((kind) => kind !== PersonalRecordKind.MostVisitsInYear),
     ).toMatchObject({
       records: [
-        { kind: 'favouriteService', label: 'Любима услуга', value: 'Фейд' },
         {
-          kind: 'firstVisit',
+          personalRecordKind: PersonalRecordKind.FavouriteService,
+          label: 'Любима услуга',
+          value: 'Фейд',
+        },
+        {
+          personalRecordKind: PersonalRecordKind.FirstVisit,
           label: 'Първо посещение',
           value: '6.03.2025 г.',
         },
@@ -1531,8 +1551,13 @@ describe('«Постижения» (G)', () => {
       recordsName: 'Рекорди: любима услуга Фейд, първо посещение 6.03.2025 г.',
     });
     expect(
-      recordsOf(() => true, 'svc-gone').records.map((record) => record.kind),
-    ).toEqual(['mostVisitsInYear', 'firstVisit']);
+      recordsOf(() => true, 'svc-gone').records.map(
+        (record) => record.personalRecordKind,
+      ),
+    ).toEqual([
+      PersonalRecordKind.MostVisitsInYear,
+      PersonalRecordKind.FirstVisit,
+    ]);
     expect(
       recordsOf((kind) => kind === PersonalRecordKind.LongestRhythm),
     ).toMatchObject({

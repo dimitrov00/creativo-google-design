@@ -10,6 +10,8 @@
  * shares. Stated once, so a ruling on one surface is a ruling on both.
  */
 
+import type { EditCommand, ResizeEdge } from '@core/components';
+
 /** How close to an edge the finger has to be before the frame scrolls itself. */
 export const EDGE_SCROLL_MARGIN_PX = 28;
 
@@ -168,75 +170,116 @@ export function edgeScrollVelocity(
  * past the end of the day. After every scroll the surface is told, so it can
  * re-measure the drag against the content the finger is now resting over.
  */
-export class EdgeScroller {
-  private pending: number | null = null;
-  /** Fractions of a pixel carried between frames — `scrollTop` is whole. */
-  private carry = 0;
-  private at = 0;
-
-  constructor(
-    private readonly axis: 'x' | 'y',
-    private readonly scroller: () => HTMLElement | null | undefined,
-    private readonly scrolled: () => void,
-  ) {}
-
+export type EdgeScroller = {
   /** The pointer is at `at` on the axis (a viewport coordinate). */
-  update(at: number): void {
-    this.at = at;
-    if (this.pending === null) this.schedule();
+  readonly update: (at: number) => void;
+  readonly stop: () => void;
+};
+
+export function edgeScrollerOf(
+  axis: 'x' | 'y',
+  scroller: () => HTMLElement | null | undefined,
+  scrolled: () => void,
+): EdgeScroller {
+  let pending: number | null = null;
+  /** Fractions of a pixel carried between frames — `scrollTop` is whole. */
+  let carry = 0;
+  let at = 0;
+
+  function update(next: number): void {
+    at = next;
+    if (pending === null) schedule();
   }
 
-  stop(): void {
-    if (this.pending !== null) {
+  function stop(): void {
+    if (pending !== null) {
       const cancel = globalThis.cancelAnimationFrame ?? clearTimeout;
-      cancel(this.pending);
-      this.pending = null;
+      cancel(pending);
+      pending = null;
     }
-    this.carry = 0;
+    carry = 0;
   }
 
-  private schedule(): void {
-    const raf =
+  function schedule(): void {
+    // The fallback frame ignores its timestamp, as `tick` does — no clock.
+    const raf: (run: () => void) => number =
       globalThis.requestAnimationFrame ??
-      ((callback: FrameRequestCallback) =>
-        setTimeout(() => callback(Date.now()), 16) as unknown as number);
-    this.pending = raf(() => {
-      this.pending = null;
-      this.tick();
+      ((run: () => void) => setTimeout(run, 16) as unknown as number);
+    pending = raf(() => {
+      pending = null;
+      tick();
     });
   }
 
-  private tick(): void {
-    const frame = this.scroller();
+  function tick(): void {
+    const frame = scroller();
     if (!frame) return;
     const box = frame.getBoundingClientRect();
-    const vertical = this.axis === 'y';
+    const vertical = axis === 'y';
     const velocity = vertical
-      ? edgeScrollVelocity(this.at, box.top, box.bottom)
-      : edgeScrollVelocity(this.at, box.left, box.right);
+      ? edgeScrollVelocity(at, box.top, box.bottom)
+      : edgeScrollVelocity(at, box.left, box.right);
     if (velocity === 0) {
-      this.carry = 0;
+      carry = 0;
       return;
     }
     const room = vertical
       ? frame.scrollHeight - frame.clientHeight
       : frame.scrollWidth - frame.clientWidth;
     if (room <= 0) return;
-    this.carry += velocity;
-    const step = Math.trunc(this.carry);
+    carry += velocity;
+    const step = Math.trunc(carry);
     if (step !== 0) {
-      this.carry -= step;
+      carry -= step;
       const current = vertical ? frame.scrollTop : frame.scrollLeft;
       const next = clamp(current + step, 0, room);
       // The end of the day: nothing more to give, so the loop rests.
       if (next === current) return;
       if (vertical) frame.scrollTop = next;
       else frame.scrollLeft = next;
-      this.scrolled();
+      scrolled();
     }
-    this.schedule();
+    schedule();
   }
+
+  return { update, stop };
 }
+
+/**
+ * WHAT A DRAG DOES — a move, or a resize at one edge — built from the
+ * ecs-core vocabulary, no new dictionary: a resize gesture IS its edge, so
+ * the edge a handle names is the gesture it starts, and a finished gesture
+ * reports `EditCommand.Move` or `EditCommand.Resize` without a mapping
+ * table. Never printed (no attribute reads it), so no words table.
+ */
+export type DragGesture = typeof EditCommand.Move | ResizeEdge;
+
+/**
+ * Why the drafted interval cannot stand as drawn — the field
+ * `placementVerdict`, the ONLY source of these strings. `SHORT`: under the
+ * floor. `OVERLAP`: another booking holds the chair. `OUTSIDE`: past the
+ * shift. Shared by the grid and the chair timeline.
+ */
+export const PlacementVerdict = {
+  Short: 'SHORT',
+  Overlap: 'OVERLAP',
+  Outside: 'OUTSIDE',
+} as const;
+export type PlacementVerdict =
+  (typeof PlacementVerdict)[keyof typeof PlacementVerdict];
+
+/** A verdict with what its readout names — the floor, or the neighbour. */
+export type PlacementVerdictSlice =
+  | {
+      readonly placementVerdict: typeof PlacementVerdict.Short;
+      readonly minutes: number;
+    }
+  | {
+      readonly placementVerdict: typeof PlacementVerdict.Overlap;
+      readonly name: string;
+      readonly time: string;
+    }
+  | { readonly placementVerdict: typeof PlacementVerdict.Outside };
 
 export function clamp(value: number, min: number, max: number): number {
   // `min` last: on a block longer than the extent the two bounds cross, and

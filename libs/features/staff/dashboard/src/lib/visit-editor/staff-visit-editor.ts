@@ -2,7 +2,6 @@ import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.direc
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import {
-  type ParsedClientQuery,
   type TextSegment,
   emailSegments,
   nameSegments,
@@ -12,8 +11,11 @@ import {
   rankClients,
 } from './client-query';
 import { type VisitSides, adoptSides } from './visit-sides';
+import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
+import { clientQueryShapeWords } from '../tag-words';
 import {
   AppliedDiscountId,
+  BookingStatus,
   Currency,
   DurationMinutes,
   EndMinute,
@@ -26,6 +28,7 @@ import {
 } from '@core/primitives';
 import {
   type CountryIso2,
+  type CouponOccasion,
   CouponValue,
   DiscountMethod,
   FlagName,
@@ -34,18 +37,24 @@ import {
 } from '@core/components';
 import {
   BillingSystem,
+  ClientQueryShape,
   type DiscountInput,
   DiscountSystem,
   type DraftLegMinutes,
+  GridEvent as GridEventTag,
+  type ParsedClientQuery,
   PhoneSystem,
   TipPreset,
   VisitDraftSystem,
+  VisitRowOutcome,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   AUTH_DEPLOYMENT_PORTS,
+  CLOCK_PORTS,
   FLAGS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { LoadState } from '@creativo/shared/view-state';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {
@@ -123,10 +132,13 @@ import {
   StaffEventHead,
   type StaffEventLine,
   type StaffEventRun,
+} from '@creativo/features/shared/visits';
+import {
   formatCents,
   formatInstant,
-} from '@creativo/features/shared/visits';
-import { FrameFullscreen } from '../shared/frame-fullscreen';
+  formatWallClock,
+} from '@creativo/ui/wall-clock';
+import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
   UiMaterialDirective,
@@ -211,8 +223,8 @@ export interface VisitEditorLeg {
 
 /** One status transition the graph currently allows, already named. */
 export interface VisitEditorVerb {
-  /** The verb's lowercase word — what the sheet emits back to its host (`acted`). */
-  readonly kind: string;
+  /** The verb itself — what the sheet emits back to its host (`acted`). */
+  readonly rowVerb: RowVerb;
   /** Translated — `Дойде`, `Готово`, `Не дойде`, `Откажи`. */
   readonly label: string;
   /** Cancelling asks a question first; the others do not. */
@@ -232,7 +244,6 @@ export interface VisitEditorVerb {
  * "regimes of writing".
  */
 export type VisitEditorCommit = {
-  readonly kind: 'save';
   /**
    * The stored revision the draft was DRAWN from (`VisitEditorVm.revision`
    * at seed time), or `null`/absent for none — what the owner claims as the
@@ -310,7 +321,9 @@ export type VisitEditorCommit = {
  * which the head shows as nothing rather than as "no reason".
  */
 export interface VisitEditorResolution {
-  readonly kind: 'cancelled' | 'no_show';
+  /** What settled it — the lifecycle tag the chair ended on. */
+  readonly bookingStatus:
+    typeof BookingStatus.Cancelled | typeof BookingStatus.NoShow;
   /** Whose act a cancellation was; `null` on a no-show, which is nobody's. */
   readonly by: 'client' | 'staff' | null;
   /** `14:32` on the visit's own day, `24.08, 14:32` on another. */
@@ -428,14 +441,18 @@ export interface VisitEditorVm {
    * and on a finished visit, whose ending needs no explaining.
    */
   readonly resolution: VisitEditorResolution | null;
-  readonly status: string;
+  /**
+   * Where the visit stands in its lifecycle — `null` for a visit not booked
+   * yet (the sheet drafting a new one), which has no status to be in.
+   */
+  readonly bookingStatus: BookingStatus | null;
   readonly statusLabel: string;
   /**
    * When the party walked in, minutes from midnight in shop time, or `null`.
    *
    * `arrivedAt` is a stamp, not a status (see `Appointment.arrivedAt`), so it
-   * rides beside `status` rather than inside it. The state header reads the
-   * waiting time off it; nothing else on the sheet does.
+   * rides beside `bookingStatus` rather than inside it. The state header
+   * reads the waiting time off it; nothing else on the sheet does.
    */
   readonly arrivedMinute: number | null;
   /**
@@ -584,7 +601,11 @@ interface ClientRowVm extends VisitEditorClientOption {
 
 /** One detected part of what was typed, as the create row shows it. */
 interface CreatePart {
-  readonly kind: 'name' | 'phone' | 'email';
+  /** Which part of the reading it is — never the empty one. */
+  readonly clientQueryShape: Exclude<
+    ClientQueryShape,
+    typeof ClientQueryShape.Empty
+  >;
   readonly icon: UiIconName;
   readonly value: string;
 }
@@ -664,13 +685,14 @@ export interface VisitEditorGrantOption {
   readonly value: VisitEditorDiscountValue;
   readonly exclusive: boolean;
   /**
-   * The moment the coupon was made for (`Coupon.occasion`, revision 3): the
-   * client card heads a birthday gift with its band and keeps it out of
-   * the generic ticket. Absent or `null` for a coupon tied to no occasion —
-   * the owner of this sheet reads it off the coupon; a host that does not
-   * know it yet hands nothing and the card draws a plain ticket.
+   * The moment the coupon was made for (`Coupon.couponOccasion`, revision
+   * 3): the client card heads a birthday gift with its band and keeps it
+   * out of the generic ticket. Absent or `null` for a coupon tied to no
+   * occasion — the owner of this sheet reads it off the coupon; a host
+   * that does not know it yet hands nothing and the card draws a plain
+   * ticket.
    */
-  readonly occasion?: 'birthday' | null;
+  readonly couponOccasion?: CouponOccasion | null;
   /**
    * The shop's day the grant lapses on (`YYYY-MM-DD`, Europe/Sofia), read
    * off `CouponGrant.state.expiration` by the owner of this sheet: the
@@ -850,29 +872,56 @@ interface VisitDraft {
  * (client-card-redesign §2) stack under the person's page, four deep at
  * most; every other page sits one deep, straight on the ladder.
  *
- * Revision 3 (§5.1) adds the wallet's ledger «Движение» (`clientLedger`,
+ * Revision 3 (§5.1) adds the wallet's ledger «Движение» (`ClientLedger`,
  * three deep under «Лоялност») and the records page «Рекорди»
- * (`clientRecords`, two deep from the glance's line, three from
- * «Постижения»). `achievementCategory` stays for the season, archive and
+ * (`ClientRecords`, two deep from the glance's line, three from
+ * «Постижения»). `AchievementCategory` stays for the season, archive and
  * day scopes; a category is a chip on «Постижения» now, never a page.
+ * The field is `editorPage`; `editorPageWords` keeps each page's word.
  */
-type EditorPageKind =
-  | 'client'
-  | 'clientSearch'
-  | 'clientNew'
-  | 'service'
-  | 'discount'
-  | 'scan'
-  | 'photo'
-  | 'camera'
-  | 'library'
-  | 'clientLoyalty'
-  | 'clientLedger'
-  | 'clientAchievements'
-  | 'clientRecords'
-  | 'achievementCategory'
-  | 'achievementDetail'
-  | 'clientHistory';
+const EditorPage = {
+  Client: 'CLIENT',
+  ClientSearch: 'CLIENT_SEARCH',
+  ClientNew: 'CLIENT_NEW',
+  Service: 'SERVICE',
+  Discount: 'DISCOUNT',
+  Scan: 'SCAN',
+  Photo: 'PHOTO',
+  Camera: 'CAMERA',
+  Library: 'LIBRARY',
+  ClientLoyalty: 'CLIENT_LOYALTY',
+  ClientLedger: 'CLIENT_LEDGER',
+  ClientAchievements: 'CLIENT_ACHIEVEMENTS',
+  ClientRecords: 'CLIENT_RECORDS',
+  AchievementCategory: 'ACHIEVEMENT_CATEGORY',
+  AchievementDetail: 'ACHIEVEMENT_DETAIL',
+  ClientHistory: 'CLIENT_HISTORY',
+} as const;
+type EditorPage = (typeof EditorPage)[keyof typeof EditorPage];
+
+/**
+ * Each page as the DOM and the client card's store spell it — the
+ * section's `data-page` (the CSS and the specs select on it) and the word
+ * `ClientCardStore.barTitle` names a card page by.
+ */
+const editorPageWords = {
+  [EditorPage.Client]: 'client',
+  [EditorPage.ClientSearch]: 'clientSearch',
+  [EditorPage.ClientNew]: 'clientNew',
+  [EditorPage.Service]: 'service',
+  [EditorPage.Discount]: 'discount',
+  [EditorPage.Scan]: 'scan',
+  [EditorPage.Photo]: 'photo',
+  [EditorPage.Camera]: 'camera',
+  [EditorPage.Library]: 'library',
+  [EditorPage.ClientLoyalty]: 'clientLoyalty',
+  [EditorPage.ClientLedger]: 'clientLedger',
+  [EditorPage.ClientAchievements]: 'clientAchievements',
+  [EditorPage.ClientRecords]: 'clientRecords',
+  [EditorPage.AchievementCategory]: 'achievementCategory',
+  [EditorPage.AchievementDetail]: 'achievementDetail',
+  [EditorPage.ClientHistory]: 'clientHistory',
+} as const satisfies Record<EditorPage, string>;
 
 /** How deep the client stack goes; a push past it replaces the top page (§2.2). */
 const MAX_PAGE_DEPTH = 4;
@@ -912,13 +961,23 @@ const AMOUNT_SLIDER_STEP_MINOR = 50;
 const AMOUNT_SLIDER_TICK_MINOR = 100;
 const AMOUNT_SLIDER_MAJOR_MINOR = 500;
 
+/** Where an offer on the discount card comes from — the field `offerSource`. */
+const OfferSource = {
+  /** One of the shop's published codes. */
+  Promo: 'PROMO',
+  /** A coupon the client holds. */
+  Grant: 'GRANT',
+} as const;
+type OfferSource = (typeof OfferSource)[keyof typeof OfferSource];
+
 /**
  * One offer on the discount card — a coupon the client holds or a code the
  * shop published — in one of three states: on offer, applied (its line is
  * on the bill), or blocked by what is on the bill.
  */
 interface OfferChoice {
-  readonly kind: 'promo' | 'grant';
+  /** Where the offer comes from — a shop code or the client's own coupon. */
+  readonly offerSource: OfferSource;
   /** The code, or the grant id. */
   readonly id: string;
   /** The bill line's key, for the way off. */
@@ -938,8 +997,8 @@ interface OfferChoice {
   readonly blocked: boolean;
 }
 
-interface EditorPage {
-  readonly kind: EditorPageKind;
+interface EditorStackPage {
+  readonly editorPage: EditorPage;
   /**
    * What the page is about: the leg or client for the ladder's pages; the
    * person (`DraftClient.id`) on `client`, `clientLoyalty`, `clientLedger`,
@@ -952,10 +1011,55 @@ interface EditorPage {
   /** The row that opened it — focus goes back there on pop (WCAG 3.2.2). */
   readonly originTestId: string | null;
   /** The page this one was pushed from; `null` for a page pushed from the ladder. */
-  readonly returnTo: EditorPage | null;
+  readonly returnTo: EditorStackPage | null;
   /** The sheet scroller's `scrollTop` when this page was pushed, restored on pop. */
   readonly returnScrollTop: number;
 }
+
+/** Which of a ladder leg's chips has its menu open — the field `legMenuFace`. */
+const LegMenuFace = {
+  /** The variant chip. */
+  Variant: 'VARIANT',
+  /** The person chip, on a party. */
+  Client: 'CLIENT',
+} as const;
+type LegMenuFace = (typeof LegMenuFace)[keyof typeof LegMenuFace];
+
+/** The one open leg menu: whose seat, and which chip. */
+type LegMenu = {
+  readonly seatId: string;
+  readonly legMenuFace: LegMenuFace;
+};
+
+/** What the line under the frame says — the field `frameVerdict`. */
+const FrameVerdict = {
+  /** The drafted span runs into a neighbour's. */
+  Conflict: 'CONFLICT',
+  /** The drafted span leaves the chair's shift. */
+  OutsideRoster: 'OUTSIDE_ROSTER',
+} as const;
+type FrameVerdict = (typeof FrameVerdict)[keyof typeof FrameVerdict];
+
+/** Each verdict as the line's `data-verdict` spells it (the CSS selects on it). */
+const frameVerdictWords = {
+  [FrameVerdict.Conflict]: 'conflict',
+  [FrameVerdict.OutsideRoster]: 'outsideRoster',
+} as const satisfies Record<FrameVerdict, string>;
+
+/** The line under the frame, with what each verdict names. */
+type FrameVerdictSlice =
+  | {
+      readonly frameVerdict: typeof FrameVerdict.Conflict;
+      /** The neighbour run into, and its hours. */
+      readonly name: string;
+      readonly start: string;
+      readonly end: string;
+    }
+  | {
+      readonly frameVerdict: typeof FrameVerdict.OutsideRoster;
+      /** When the shift opens. */
+      readonly time: string;
+    };
 
 /**
  * Status → badge tone.
@@ -979,7 +1083,7 @@ interface VisitExit {
   readonly label: string;
   readonly icon: UiIconName;
   readonly destructive: boolean;
-  readonly act: string | null;
+  readonly act: RowVerb | null;
 }
 /** A chair the picker offers — the shop's roster, not this visit's. */
 export interface VisitEditorBarberOption {
@@ -1226,7 +1330,6 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
  */
 function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
   return {
-    kind: 'save',
     revision: draft.revision,
     dayKey: draft.dayKey,
     startMinute: draft.startMinute,
@@ -1407,6 +1510,12 @@ export class StaffVisitEditor {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly transloco = inject(TranslocoService);
+  /**
+   * The app's clock — the stamp in a minted seat or guest id, and the
+   * captured photo's file name. Never placement math: the sheet's days and
+   * minutes are the VM's shop wall clock.
+   */
+  private readonly clock = inject(CLOCK_PORTS);
 
   readonly vm = input.required<VisitEditorVm>();
   /** The shop's catalogue, for the pushed add-service page. */
@@ -1511,7 +1620,7 @@ export class StaffVisitEditor {
   readonly dismissed = output<void>();
 
   /** A status transition the parent performs — never a draft edit. */
-  readonly acted = output<string>();
+  readonly acted = output<RowVerb>();
 
   /**
    * A finished geometry gesture, in the editor's own vocabulary.
@@ -1616,7 +1725,7 @@ export class StaffVisitEditor {
   constructor() {
     // The catalogue's keys: heard only while its page is up.
     effect(() => {
-      const open = this.page()?.kind === 'service';
+      const open = this.page()?.editorPage === EditorPage.Service;
       untracked(() => {
         if (open) this.listenForPickerKeys();
         else this.detachPickerKeys?.();
@@ -1868,22 +1977,24 @@ export class StaffVisitEditor {
    * row (owner, 2026-09-09): the sheet is opened for a chair, and the chair
    * row at the top is where it changes.
    */
-  protected readonly legMenu = signal<{
-    readonly seatId: string;
-    readonly kind: 'variant' | 'client';
-  } | null>(null);
+  protected readonly legMenu = signal<LegMenu | null>(null);
+  protected readonly LegMenuFace = LegMenuFace;
 
-  protected isLegMenu(seatId: string, kind: 'variant' | 'client'): boolean {
+  protected isLegMenu(seatId: string, legMenuFace: LegMenuFace): boolean {
     const open = this.legMenu();
-    return open !== null && open.seatId === seatId && open.kind === kind;
+    return (
+      open !== null &&
+      open.seatId === seatId &&
+      open.legMenuFace === legMenuFace
+    );
   }
 
   protected setLegMenu(
     seatId: string,
-    kind: 'variant' | 'client',
+    legMenuFace: LegMenuFace,
     open: boolean,
   ): void {
-    this.legMenu.set(open ? { seatId, kind } : null);
+    this.legMenu.set(open ? { seatId, legMenuFace } : null);
   }
 
   /**
@@ -1967,7 +2078,7 @@ export class StaffVisitEditor {
   private readonly frameSection =
     viewChild<ElementRef<HTMLElement>>('frameSection');
 
-  protected readonly fullscreen = new FrameFullscreen({
+  protected readonly fullscreen = injectFrameFullscreen({
     surface: () => this.frameSection()?.nativeElement,
     settled: () => this.frameGrid()?.recenter('auto'),
   });
@@ -1982,8 +2093,13 @@ export class StaffVisitEditor {
 
   /* ── The navigation stack ──────────────────────────────────────────── */
 
-  private readonly page = signal<EditorPage | null>(null);
+  private readonly page = signal<EditorStackPage | null>(null);
   protected readonly currentPage = computed(() => this.page());
+  protected readonly EditorPage = EditorPage;
+  protected readonly editorPageWords = editorPageWords;
+  protected readonly FrameVerdict = FrameVerdict;
+  protected readonly frameVerdictWords = frameVerdictWords;
+  protected readonly clientQueryShapeWords = clientQueryShapeWords;
   /**
    * PUBLIC: the sheet shell draws the way back in its header bar. The
    * length of the chain — 0 at the ladder, up to `MAX_PAGE_DEPTH` in the
@@ -2015,8 +2131,10 @@ export class StaffVisitEditor {
    * pass passes under a crisp edge.
    */
   readonly pageHasNoLargeTitle = computed(() => {
-    const kind = this.page()?.kind;
-    return kind === 'photo' || kind === 'clientLoyalty';
+    const editorPage = this.page()?.editorPage;
+    return (
+      editorPage === EditorPage.Photo || editorPage === EditorPage.ClientLoyalty
+    );
   });
 
   /**
@@ -2054,57 +2172,57 @@ export class StaffVisitEditor {
     // or the family's title — each falling back to what is known before
     // the card's words and data have loaded.
     const store = this.cardStoreRef();
-    switch (page.kind) {
-      case 'client':
+    switch (page.editorPage) {
+      case EditorPage.Client:
         return store?.displayName() ?? this.currentClient()?.label ?? null;
-      case 'clientSearch':
+      case EditorPage.ClientSearch:
         return this.rawCopy('staff.visit.addClient');
-      case 'clientNew':
+      case EditorPage.ClientNew:
         return this.rawCopy('staff.visit.newClientTitle');
-      case 'service':
+      case EditorPage.Service:
         return this.rawCopy('staff.visit.addService');
-      case 'discount':
+      case EditorPage.Discount:
         return this.rawCopy('staff.visit.discount');
-      case 'scan':
+      case EditorPage.Scan:
         return this.rawCopy('staff.visit.scanTitle');
-      case 'photo': {
+      case EditorPage.Photo: {
         // The day, as Photos names it — the picture itself is the page.
         const photo = this.currentPhoto();
         return photo === null
           ? this.rawCopy('staff.visit.photo')
           : this.photoTitle(photo);
       }
-      case 'camera':
+      case EditorPage.Camera:
         return this.rawCopy('staff.visit.photoTake');
-      case 'library':
+      case EditorPage.Library:
         return this.rawCopy('staff.visit.photoSystem');
-      case 'clientLoyalty':
+      case EditorPage.ClientLoyalty:
         return (
-          store?.barTitle(page.kind, page.subjectId) ??
+          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.loyalty.title')
         );
       // Revision 3's two leaves: the wallet's ledger and the records page
       // (§5.3), named by the store's `barTitle` as the module pages are.
-      case 'clientLedger':
+      case EditorPage.ClientLedger:
         return (
-          store?.barTitle(page.kind, page.subjectId) ??
+          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.ledgerPage.title')
         );
-      case 'clientRecords':
+      case EditorPage.ClientRecords:
         return (
-          store?.barTitle(page.kind, page.subjectId) ??
+          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.achievements.records')
         );
-      case 'clientHistory':
+      case EditorPage.ClientHistory:
         return (
-          store?.barTitle(page.kind, page.subjectId) ??
+          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.visits.title')
         );
-      case 'clientAchievements':
-      case 'achievementCategory':
-      case 'achievementDetail':
+      case EditorPage.ClientAchievements:
+      case EditorPage.AchievementCategory:
+      case EditorPage.AchievementDetail:
         return (
-          store?.barTitle(page.kind, page.subjectId) ??
+          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.achievements.title')
         );
     }
@@ -2118,14 +2236,14 @@ export class StaffVisitEditor {
    * ✓ goes back to the visit — two controls, two intents.
    */
   protected confirmPage(): void {
-    const leaving = this.page()?.kind ?? null;
+    const leaving = this.page()?.editorPage ?? null;
     if (this.clientOfStack() !== null) {
       this.popToLadder();
       return;
     }
     this.pop();
     // The add-client page's ✓ asks the party's next question at once.
-    if (leaving === 'clientSearch') this.serveNext();
+    if (leaving === EditorPage.ClientSearch) this.serveNext();
   }
 
   /** The catalogue's terms for a leg, by service and variant — or none. */
@@ -2461,7 +2579,7 @@ export class StaffVisitEditor {
     const chair = this.frameChair();
     const edited: GridEvent = {
       id: vm.appointmentId,
-      kind: 'visit',
+      gridEvent: GridEventTag.Visit,
       barberTone: chair.tone,
       tag: this.frameTag(),
       // The minutes beyond what the services need, drawn as their own
@@ -2474,7 +2592,10 @@ export class StaffVisitEditor {
       // variant is a description, and the block's one line is for names.
       detail: draft.legs.map((leg) => this.legService(leg)).join(' + ') || null,
       attribution: null,
-      status: vm.status,
+      bookingStatus: vm.bookingStatus,
+      // A visit not booked yet has no status — and still prints the frame's
+      // `data-status="new"`, which the grid's editable ink keys on.
+      ...(vm.bookingStatus === null ? { draftNew: true as const } : {}),
       terminal: false,
       past: false,
       accessibleName: this.frameSummary(),
@@ -2492,14 +2613,14 @@ export class StaffVisitEditor {
     const dayGone = draft.dayKey < vm.todayKey;
     const neighbours = day.neighbours.map<GridEvent>((neighbour, index) => ({
       id: `neighbour-${index}`,
-      kind: 'visit',
+      gridEvent: GridEventTag.Visit,
       barberTone: neighbour.tone,
       startMinute: neighbour.startMinute,
       endMinute: neighbour.endMinute,
       title: neighbour.name,
       detail: null,
       attribution: null,
-      status: null,
+      bookingStatus: null,
       terminal: false,
       past:
         dayGone ||
@@ -2567,13 +2688,7 @@ export class StaffVisitEditor {
    * may be off-screen, or a consequence (no online booking) that a hatch
    * cannot state. Everything else the frame already draws.
    */
-  protected readonly frameVerdict = computed<{
-    kind: 'conflict' | 'outsideRoster';
-    name: string;
-    start: string;
-    end: string;
-    time: string;
-  } | null>(() => {
+  protected readonly frameVerdict = computed<FrameVerdictSlice | null>(() => {
     const vm = this.vm();
     const start = this.draft().startMinute;
     const end = this.endMinute();
@@ -2583,11 +2698,10 @@ export class StaffVisitEditor {
     );
     if (clash) {
       return {
-        kind: 'conflict',
+        frameVerdict: FrameVerdict.Conflict,
         name: clash.name,
         start: clockLabel(clash.startMinute),
         end: clockLabel(clash.endMinute),
-        time: '',
       };
     }
 
@@ -2598,10 +2712,7 @@ export class StaffVisitEditor {
     const shift = shiftOf(vm);
     if (shift && (start < shift.startMinute || end > shift.endMinute)) {
       return {
-        kind: 'outsideRoster',
-        name: '',
-        start: '',
-        end: '',
+        frameVerdict: FrameVerdict.OutsideRoster,
         time: clockLabel(shift.startMinute),
       };
     }
@@ -2612,7 +2723,7 @@ export class StaffVisitEditor {
 
   protected readonly currentClient = computed(() => {
     const page = this.page();
-    if (!page || page.kind !== 'client') return null;
+    if (!page || page.editorPage !== EditorPage.Client) return null;
     return (
       this.draft().clients.find((client) => client.id === page.subjectId) ??
       null
@@ -2627,7 +2738,9 @@ export class StaffVisitEditor {
    */
   protected readonly clientOfStack = computed<DraftClient | null>(() => {
     let page = this.page();
-    while (page !== null && page.kind !== 'client') page = page.returnTo;
+    while (page !== null && page.editorPage !== EditorPage.Client) {
+      page = page.returnTo;
+    }
     if (page === null) return null;
     const id = page.subjectId;
     return this.draft().clients.find((client) => client.id === id) ?? null;
@@ -2889,9 +3002,11 @@ export class StaffVisitEditor {
 
   /** Over, one way or another — the graph has settled it. */
   protected readonly settled = computed(() => {
-    const status = this.vm().status;
+    const status = this.vm().bookingStatus;
     return (
-      status === 'completed' || status === 'cancelled' || status === 'no_show'
+      status === BookingStatus.Completed ||
+      status === BookingStatus.Cancelled ||
+      status === BookingStatus.NoShow
     );
   });
 
@@ -2904,8 +3019,10 @@ export class StaffVisitEditor {
    * (the state word, «Запиши пак»); only `gone` locks the rows.
    */
   protected readonly gone = computed(() => {
-    const status = this.vm().status;
-    return status === 'cancelled' || status === 'no_show';
+    const status = this.vm().bookingStatus;
+    return (
+      status === BookingStatus.Cancelled || status === BookingStatus.NoShow
+    );
   });
 
   /*
@@ -2931,7 +3048,7 @@ export class StaffVisitEditor {
   >(() => {
     const resolution = this.vm().resolution;
     if (resolution === null) return null;
-    if (resolution.kind === 'no_show') return 'noShow';
+    if (resolution.bookingStatus === BookingStatus.NoShow) return 'noShow';
     return resolution.by === 'client'
       ? 'cancelledByClient'
       : 'cancelledByStaff';
@@ -2943,19 +3060,25 @@ export class StaffVisitEditor {
    * client's fact rather than the shop's.
    */
   protected readonly resolutionTone = computed<'destructive' | 'warning'>(() =>
-    this.vm().resolution?.kind === 'no_show' ? 'warning' : 'destructive',
+    this.vm().resolution?.bookingStatus === BookingStatus.NoShow
+      ? 'warning'
+      : 'destructive',
   );
 
   protected readonly resolutionIcon = computed<UiIconName>(() =>
-    this.vm().resolution?.kind === 'no_show'
+    this.vm().resolution?.bookingStatus === BookingStatus.NoShow
       ? 'visit.noShow'
       : 'visit.cancelled',
   );
 
   /** A REQUEST waiting for its answer: the confirm edge, while pending. */
   protected readonly requestVerb = computed<VisitEditorVerb | null>(() => {
-    if (this.vm().status !== 'pending') return null;
-    return this.allVerbs().find((verb) => verb.kind === 'confirmed') ?? null;
+    if (this.vm().bookingStatus !== BookingStatus.Pending) return null;
+    return (
+      this.allVerbs().find(
+        (verb) => verb.rowVerb === BookingStatus.Confirmed,
+      ) ?? null
+    );
   });
 
   private allVerbs(): readonly VisitEditorVerb[] {
@@ -2983,37 +3106,43 @@ export class StaffVisitEditor {
         vm.nowMinute >= vm.startMinute);
     const out: VisitExit[] = [];
     for (const verb of this.allVerbs()) {
-      if (verb.kind === 'arrived' || verb.kind === 'completed') continue;
-      if (verb.kind === 'cancelled') continue; // last, below
-      if (verb.kind === 'confirmed') {
-        if (vm.status === 'pending') continue; // the head's own
+      if (
+        verb.rowVerb === ArrivalVerb.Arrived ||
+        verb.rowVerb === BookingStatus.Completed
+      ) {
+        continue;
+      }
+      if (verb.rowVerb === BookingStatus.Cancelled) continue; // last, below
+      if (verb.rowVerb === BookingStatus.Confirmed) {
+        if (vm.bookingStatus === BookingStatus.Pending) continue; // the head's own
         out.push({
           id: 'reinstate',
           label: verb.label,
           icon: 'visit.confirmed',
           destructive: false,
-          act: verb.kind,
+          act: verb.rowVerb,
         });
         continue;
       }
-      if (verb.kind === 'no_show') {
+      if (verb.rowVerb === BookingStatus.NoShow) {
         if (started) {
           out.push({
             id: 'no-show',
             label: verb.label,
             icon: 'visit.noShow',
             destructive: false,
-            act: verb.kind,
+            act: verb.rowVerb,
           });
         }
         continue;
       }
       out.push({
-        id: verb.kind,
+        // The exit's id is the verb's word — what its test id prints.
+        id: ROW_VERB_WORD[verb.rowVerb],
         label: verb.label,
         icon: 'visit.confirmed',
         destructive: verb.destructive,
-        act: verb.kind,
+        act: verb.rowVerb,
       });
     }
     // A FINISHED visit offers the next one here; a visit that is GONE
@@ -3028,7 +3157,9 @@ export class StaffVisitEditor {
         act: null,
       });
     }
-    const cancel = this.allVerbs().find((verb) => verb.kind === 'cancelled');
+    const cancel = this.allVerbs().find(
+      (verb) => verb.rowVerb === BookingStatus.Cancelled,
+    );
     if (cancel) {
       // ON A PARTY'S CHAIR the exit calls off THIS chair's share alone —
       // the shell scopes it to the chair's seats — so it says whose
@@ -3044,7 +3175,7 @@ export class StaffVisitEditor {
             : this.rawCopy('staff.visit.cancelVisit'),
         icon: 'visit.cancelled',
         destructive: true,
-        act: cancel.kind,
+        act: cancel.rowVerb,
       });
       out.push({
         id: 'cancel-block',
@@ -3096,7 +3227,7 @@ export class StaffVisitEditor {
    * REPLACES the top page instead, keeping its way back.
    */
   protected push(
-    kind: EditorPageKind,
+    editorPage: EditorPage,
     subjectId: string | null,
     originTestId: string | null,
     arrival: PageArrival = 'container',
@@ -3104,7 +3235,7 @@ export class StaffVisitEditor {
     const under = this.page();
     if (under !== null && this.depth() >= MAX_PAGE_DEPTH) {
       // The page it replaces is the one ‹ must land on the origin of.
-      this.replace(kind, subjectId, under.originTestId);
+      this.replace(editorPage, subjectId, under.originTestId);
       this.openAtTop(arrival);
       return;
     }
@@ -3112,13 +3243,13 @@ export class StaffVisitEditor {
     // A page re-opened must not remember the focus its last field had.
     this.searchFocused.set(false);
     this.page.set({
-      kind,
+      editorPage,
       subjectId,
       originTestId,
       returnTo: under,
       returnScrollTop: this.sheetScroller()?.scrollTop ?? 0,
     });
-    if (kind === 'clientSearch') this.clientsBrowsed.emit();
+    if (editorPage === EditorPage.ClientSearch) this.clientsBrowsed.emit();
     this.openAtTop(arrival);
   }
 
@@ -3164,13 +3295,13 @@ export class StaffVisitEditor {
    * The caller moves the focus.
    */
   private replace(
-    kind: EditorPageKind,
+    editorPage: EditorPage,
     subjectId: string | null,
     originTestId: string | null,
   ): void {
     const top = this.page();
     this.page.set({
-      kind,
+      editorPage,
       subjectId,
       originTestId,
       returnTo: top?.returnTo ?? null,
@@ -3193,13 +3324,15 @@ export class StaffVisitEditor {
    * same tap): a landing on a page no longer up is dropped.
    */
   private land(
-    target: EditorPage | null,
+    target: EditorStackPage | null,
     scrollTop: number,
     focusTestId: string | null,
   ): void {
     // The loyalty page's anchor is the ARRIVAL's; landing back on the page
     // it must not scroll to its section and take the focus again.
-    if (target?.kind === 'clientLoyalty') this.loyaltyAnchor.set(null);
+    if (target?.editorPage === EditorPage.ClientLoyalty) {
+      this.loyaltyAnchor.set(null);
+    }
     this.page.set(target);
     afterNextRender(
       () => {
@@ -3235,10 +3368,14 @@ export class StaffVisitEditor {
    * seated, a code half-typed, a figure drafted, a kind picked. What is on
    * the bill stays — it is the draft's.
    */
-  private leavePage(page: EditorPage): void {
-    if (page.kind === 'service') this.servicePicks.set(new Map());
-    if (page.kind === 'discount') this.resetDiscountEntry();
-    if (page.kind === 'library') this.librarySelection.set(new Set());
+  private leavePage(page: EditorStackPage): void {
+    if (page.editorPage === EditorPage.Service) {
+      this.servicePicks.set(new Map());
+    }
+    if (page.editorPage === EditorPage.Discount) this.resetDiscountEntry();
+    if (page.editorPage === EditorPage.Library) {
+      this.librarySelection.set(new Set());
+    }
   }
 
   /**
@@ -3285,12 +3422,12 @@ export class StaffVisitEditor {
     if (page === null) return;
     // The new-client form REPLACED the search; back replaces it again,
     // with what was typed still in the field.
-    if (page.kind === 'clientNew') {
-      this.replace('clientSearch', null, 'staff-visit-add-client');
+    if (page.editorPage === EditorPage.ClientNew) {
+      this.replace(EditorPage.ClientSearch, null, 'staff-visit-add-client');
       this.focusLater('[data-testid="staff-visit-client-query"]');
       return;
     }
-    if (page.kind === 'scan') {
+    if (page.editorPage === EditorPage.Scan) {
       // Back to the discount page the camera stood in for — its field
       // focused again, with nothing lost.
       this.returnToDiscountPage('[data-testid="staff-visit-discount-code"]');
@@ -3700,7 +3837,7 @@ export class StaffVisitEditor {
     label: string;
     count: number;
   } | null>(() => {
-    if (this.page()?.kind !== 'service') return null;
+    if (this.page()?.editorPage !== EditorPage.Service) return null;
     const count = this.servicePickTotal();
     if (count === 0) return null;
     return {
@@ -3748,7 +3885,7 @@ export class StaffVisitEditor {
    */
   protected openServicePage(forClientId: string | null = null): void {
     this.servicePicks.set(new Map());
-    this.push('service', forClientId, 'staff-visit-add-service');
+    this.push(EditorPage.Service, forClientId, 'staff-visit-add-service');
   }
 
   /**
@@ -3829,7 +3966,7 @@ export class StaffVisitEditor {
             // may add the same service twice, and two taps in one
             // millisecond must still be two seats, so a counter joins the
             // clock.
-            seatId: `draft-${option.id}-${Date.now().toString(36)}-${this.minted++}`,
+            seatId: `draft-${option.id}-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`,
             serviceId: option.serviceId,
             variantId: option.variantId,
             serviceLabel: option.serviceLabel ?? option.label,
@@ -3873,7 +4010,7 @@ export class StaffVisitEditor {
    * verb here.
    */
   protected readonly searchActive = computed(
-    () => this.parsedQuery().kind !== 'empty',
+    () => this.parsedQuery().clientQueryShape !== ClientQueryShape.Empty,
   );
 
   /**
@@ -3897,10 +4034,10 @@ export class StaffVisitEditor {
     // EVERY PAGE WITH A SEARCH folds the same way (owner, 2026-09-24:
     // "this should be done in adding a service and other places"): the
     // people and the catalogue.
-    switch (this.page()?.kind) {
-      case 'clientSearch':
+    switch (this.page()?.editorPage) {
+      case EditorPage.ClientSearch:
         return this.searchFocused() || this.searchActive();
-      case 'service':
+      case EditorPage.Service:
         return this.searchFocused() || this.query().trim().length > 0;
       default:
         return false;
@@ -3930,10 +4067,10 @@ export class StaffVisitEditor {
 
   /** The field's own glyph says what it took the typing for. */
   protected readonly searchGlyph = computed<UiIconName>(() => {
-    const kind = this.parsedQuery().kind;
-    return kind === 'phone'
+    const shape = this.parsedQuery().clientQueryShape;
+    return shape === ClientQueryShape.Phone
       ? 'contact.phone'
-      : kind === 'email'
+      : shape === ClientQueryShape.Email
         ? 'contact.email'
         : 'action.search';
   });
@@ -3948,17 +4085,25 @@ export class StaffVisitEditor {
     const parsed = this.parsedQuery();
     const parts: CreatePart[] = [];
     if (parsed.name.length > 0) {
-      parts.push({ kind: 'name', icon: 'contact.person', value: parsed.name });
+      parts.push({
+        clientQueryShape: ClientQueryShape.Name,
+        icon: 'contact.person',
+        value: parsed.name,
+      });
     }
     if (parsed.phoneTyped.length > 0) {
       parts.push({
-        kind: 'phone',
+        clientQueryShape: ClientQueryShape.Phone,
         icon: 'contact.phone',
         value: this.phoneAsTyped(parsed),
       });
     }
     if (parsed.email.length > 0) {
-      parts.push({ kind: 'email', icon: 'contact.email', value: parsed.email });
+      parts.push({
+        clientQueryShape: ClientQueryShape.Email,
+        icon: 'contact.email',
+        value: parsed.email,
+      });
     }
     return parts;
   });
@@ -3985,7 +4130,7 @@ export class StaffVisitEditor {
     this.createParts().map((part) => ({
       text: part.value,
       icon: part.icon,
-      testId: `staff-visit-new-client-${part.kind}`,
+      testId: `staff-visit-new-client-${clientQueryShapeWords[part.clientQueryShape]}`,
     })),
   );
 
@@ -4025,7 +4170,9 @@ export class StaffVisitEditor {
    */
   protected onSearchEnter(event: Event): void {
     event.preventDefault();
-    if (this.parsedQuery().kind === 'empty') return;
+    if (this.parsedQuery().clientQueryShape === ClientQueryShape.Empty) {
+      return;
+    }
     /*
      * THE INDEX HAS NOT ANSWERED YET: the book's one «Мартин» may be one of
      * three, so Return waits for the answer instead of racing it — unless
@@ -4051,7 +4198,9 @@ export class StaffVisitEditor {
 
   private answerEnter(event: Event | null): void {
     const rows = this.clientResults();
-    if (this.parsedQuery().kind === 'empty') return;
+    if (this.parsedQuery().clientQueryShape === ClientQueryShape.Empty) {
+      return;
+    }
     const [only] = rows;
     if (rows.length === 1 && only !== undefined) {
       if (!only.selected) this.toggleClient(only);
@@ -4069,7 +4218,7 @@ export class StaffVisitEditor {
     // ↓ from a search moves into ITS list — the people's answers, or the
     // catalogue's rows — the one keyboard path both searches share.
     const list =
-      this.page()?.kind === 'service'
+      this.page()?.editorPage === EditorPage.Service
         ? 'staff-visit-service-list'
         : 'staff-visit-client-results';
     const first = this.host.nativeElement.querySelector<HTMLElement>(
@@ -4212,7 +4361,7 @@ export class StaffVisitEditor {
     this.newClientCountry.set(this.deployment.defaultCountry);
     // The form REPLACES the search at the same depth — the query stays
     // typed — and `pop` replaces it back.
-    this.replace('clientNew', null, 'staff-visit-add-client');
+    this.replace(EditorPage.ClientNew, null, 'staff-visit-add-client');
     this.focusLater('[data-testid="staff-visit-new-name"]');
   }
 
@@ -4237,7 +4386,7 @@ export class StaffVisitEditor {
     // guest the id of one already unticked, and the flow then took the
     // newcomer for served — the seat-id rule, `minted`, applies to people
     // too. The `guest-` prefix is what the shell keys a walk-in on.
-    const id = `guest-${Date.now().toString(36)}-${this.minted++}`;
+    const id = `guest-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`;
     this.draft.update((draft) => ({
       ...draft,
       clients: [
@@ -4769,7 +4918,7 @@ export class StaffVisitEditor {
    */
   protected openDiscountPage(): void {
     this.resetDiscountEntry();
-    this.push('discount', null, 'staff-visit-discount-row');
+    this.push(EditorPage.Discount, null, 'staff-visit-discount-row');
   }
 
   /** What the page was in the middle of — a code half-checked or typed, a figure typed, a kind picked — goes; the lines on the bill stay. */
@@ -4789,8 +4938,12 @@ export class StaffVisitEditor {
    */
   private returnToDiscountPage(focus: string): void {
     const scan = this.page();
-    const origin = scan?.kind === 'scan' ? scan.subjectId : null;
-    this.replace('discount', null, origin ?? 'staff-visit-discount-row');
+    const origin = scan?.editorPage === EditorPage.Scan ? scan.subjectId : null;
+    this.replace(
+      EditorPage.Discount,
+      null,
+      origin ?? 'staff-visit-discount-row',
+    );
     this.focusLater(focus);
   }
 
@@ -4821,7 +4974,7 @@ export class StaffVisitEditor {
       .map((promo) => {
         const applied = onBill.has(promo.code);
         return {
-          kind: 'promo',
+          offerSource: OfferSource.Promo,
           id: promo.code,
           key: `code:${promo.code}`,
           testId: `staff-visit-discount-promo-${promo.code}`,
@@ -4861,7 +5014,7 @@ export class StaffVisitEditor {
   /** A card's «Използвай» — a coupon of the client's or one of the shop's codes; a blocked card asks nothing. */
   protected applyOffer(offer: OfferChoice): void {
     if (offer.applied || offer.blocked) return;
-    if (offer.kind === 'grant') {
+    if (offer.offerSource === OfferSource.Grant) {
       this.applyGrant(offer.id);
       return;
     }
@@ -4895,7 +5048,7 @@ export class StaffVisitEditor {
    */
   protected readonly currentPhoto = computed<VisitEditorPhoto | null>(() => {
     const page = this.page();
-    if (page?.kind !== 'photo') return null;
+    if (page?.editorPage !== EditorPage.Photo) return null;
     return (
       this.vm().photos?.find((photo) => photo.photoId === page.subjectId) ??
       this.pastCut(page.subjectId)
@@ -4937,7 +5090,7 @@ export class StaffVisitEditor {
   protected readonly photoReadOnly = computed(() => {
     const page = this.page();
     return (
-      page?.kind === 'photo' &&
+      page?.editorPage === EditorPage.Photo &&
       !(this.vm().photos ?? []).some(
         (photo) => photo.photoId === page.subjectId,
       )
@@ -4952,14 +5105,16 @@ export class StaffVisitEditor {
    */
   protected photoTitle(photo: VisitEditorPhoto): string {
     return this.photoReadOnly()
-      ? (this.cardStoreRef()?.barTitle('photo', photo.photoId) ??
-          this.photoDay(photo))
+      ? (this.cardStoreRef()?.barTitle(
+          editorPageWords[EditorPage.Photo],
+          photo.photoId,
+        ) ?? this.photoDay(photo))
       : this.photoDay(photo);
   }
 
   /** A thumbnail's tap: the picture as a page, the facts in rows under it, «Изтрий» in the dock. */
   protected openPhoto(photoId: string): void {
-    this.push('photo', photoId, `staff-visit-photo-${photoId}`);
+    this.push(EditorPage.Photo, photoId, `staff-visit-photo-${photoId}`);
   }
 
   /**
@@ -5054,7 +5209,7 @@ export class StaffVisitEditor {
     switch (id) {
       case 'camera':
         this.cameraState.set('starting');
-        this.push('camera', null, 'staff-visit-add-photo');
+        this.push(EditorPage.Camera, null, 'staff-visit-add-photo');
         return;
       case 'upload':
         // Inside the tap that picked the door, so the engine lets the
@@ -5063,7 +5218,7 @@ export class StaffVisitEditor {
         return;
       case 'system':
         this.librarySelection.set(new Set());
-        this.push('library', null, 'staff-visit-add-photo');
+        this.push(EditorPage.Library, null, 'staff-visit-add-photo');
         return;
     }
   }
@@ -5089,7 +5244,9 @@ export class StaffVisitEditor {
   /** The picture taken: up like a picked file, and the page pops — the live read draws it. */
   protected shot(picture: Blob): void {
     this.photoPicked.emit(
-      new File([picture], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }),
+      new File([picture], `photo-${this.clock.nowUtcMs()}.jpg`, {
+        type: 'image/jpeg',
+      }),
     );
     this.pop();
   }
@@ -5205,7 +5362,7 @@ export class StaffVisitEditor {
     // where ‹ goes after it.
     const discount = this.page();
     this.replace(
-      'scan',
+      EditorPage.Scan,
       discount?.originTestId ?? null,
       'staff-visit-discount-scan',
     );
@@ -5260,8 +5417,14 @@ export class StaffVisitEditor {
 
   /** The typed figure, read: a whole percent or a sum in minor units; `null` when it is neither. */
   private readonly figureRead = computed<
-    | { kind: 'percent'; percent: number }
-    | { kind: 'amount'; minor: number }
+    | {
+        readonly discountMethod: typeof DiscountMethod.PercentOff;
+        readonly percent: number;
+      }
+    | {
+        readonly discountMethod: typeof DiscountMethod.FixedAmount;
+        readonly minor: number;
+      }
     | null
   >(() => {
     const raw = this.figureDraft().trim();
@@ -5271,12 +5434,14 @@ export class StaffVisitEditor {
         const digits = raw.replace(/[^\d]/g, '');
         const percent = digits.length === 0 ? NaN : Number(digits);
         return Number.isInteger(percent) && percent > 0
-          ? { kind: 'percent', percent }
+          ? { discountMethod: DiscountMethod.PercentOff, percent }
           : null;
       }
       case 'amount': {
         const minor = parsePriceInput(raw);
-        return minor !== null && minor > 0 ? { kind: 'amount', minor } : null;
+        return minor !== null && minor > 0
+          ? { discountMethod: DiscountMethod.FixedAmount, minor }
+          : null;
       }
       default:
         return null;
@@ -5296,7 +5461,7 @@ export class StaffVisitEditor {
     label: string;
     disabled: boolean;
   } | null>(() => {
-    if (this.page()?.kind !== 'discount') return null;
+    if (this.page()?.editorPage !== EditorPage.Discount) return null;
     const apply = (what: string) =>
       this.transloco.translate('staff.visit.applyDiscount', { what });
     switch (this.discountKind()) {
@@ -5316,7 +5481,7 @@ export class StaffVisitEditor {
         const read = this.figureRead();
         if (read === null) return null;
         const what =
-          read.kind === 'percent'
+          read.discountMethod === DiscountMethod.PercentOff
             ? percentOffLabel(read.percent)
             : `−${this.moneyLabel(read.minor)}`;
         return { label: apply(what), disabled: false };
@@ -5351,7 +5516,7 @@ export class StaffVisitEditor {
           source: 'manual',
           label: 'manual',
           value:
-            read.kind === 'percent'
+            read.discountMethod === DiscountMethod.PercentOff
               ? {
                   discountMethod: DiscountMethod.PercentOff,
                   percent: read.percent,
@@ -5593,14 +5758,14 @@ export class StaffVisitEditor {
 
   /** The manual line the discount page's figure would put on the bill, while it would take. */
   private readonly draftedManual = computed<VisitEditorDiscount | null>(() => {
-    if (this.page()?.kind !== 'discount') return null;
+    if (this.page()?.editorPage !== EditorPage.Discount) return null;
     const read = this.figureRead();
     if (read === null) return null;
     return {
       source: 'manual',
       label: 'manual',
       value:
-        read.kind === 'percent'
+        read.discountMethod === DiscountMethod.PercentOff
           ? {
               discountMethod: DiscountMethod.PercentOff,
               percent: read.percent,
@@ -5818,7 +5983,7 @@ export class StaffVisitEditor {
     return this.uiGrants().map((grant) => {
       const applied = onBill.has(grant.grantId);
       return {
-        kind: 'grant',
+        offerSource: OfferSource.Grant,
         id: grant.grantId,
         key: `grant:${grant.grantId}`,
         testId: `staff-visit-discount-grant-${grant.grantId}`,
@@ -6259,7 +6424,9 @@ export class StaffVisitEditor {
   /** «За Мартин» under the catalogue's title, when the page is for someone. */
   protected readonly serviceFor = computed<string | null>(() => {
     const page = this.page();
-    if (page?.kind !== 'service' || page.subjectId === null) return null;
+    if (page?.editorPage !== EditorPage.Service || page.subjectId === null) {
+      return null;
+    }
     return (
       this.draft().clients.find((client) => client.id === page.subjectId)
         ?.label ?? null
@@ -6320,10 +6487,11 @@ export class StaffVisitEditor {
    * steps from wherever the draft already is instead of snapping back.
    */
   protected stepDay(offset: number): void {
-    const [year, month, day] = this.draft().dayKey.split('-').map(Number);
-    const at = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
-    at.setUTCDate(at.getUTCDate() + offset);
-    this.pickDay(at.toISOString().slice(0, 10));
+    const day = LocalDate.parse(this.draft().dayKey);
+    if (!day.ok) {
+      defect(`a drafted day off the calendar: ${this.draft().dayKey}`);
+    }
+    this.pickDay(LocalDate.addDays(day.value, offset));
   }
 
   /**
@@ -6344,7 +6512,9 @@ export class StaffVisitEditor {
     this.enterPending.set(false);
     // The client list is a search the OWNER runs (a prefix index, not a
     // local filter), so the query has to leave this component.
-    if (this.page()?.kind === 'clientSearch') this.clientQuery.emit(value);
+    if (this.page()?.editorPage === EditorPage.ClientSearch) {
+      this.clientQuery.emit(value);
+    }
   }
 
   /** The locale the shared picker writes its month and weekday row in. */
@@ -6406,7 +6576,8 @@ export class StaffVisitEditor {
   /** The scope an `achievementCategory` page shows, decoded once per page. */
   protected readonly currentScope = computed<AchievementScope | null>(() => {
     const page = this.page();
-    return page?.kind === 'achievementCategory' && page.subjectId !== null
+    return page?.editorPage === EditorPage.AchievementCategory &&
+      page.subjectId !== null
       ? achievementScopeOf(page.subjectId)
       : null;
   });
@@ -6522,7 +6693,7 @@ export class StaffVisitEditor {
           expiresOn: grant.expiresOn ?? null,
           // The coupon's moment, when the owner knows it (revision 3 §5.4):
           // the card heads a birthday gift with its band.
-          occasion: grant.occasion ?? null,
+          couponOccasion: grant.couponOccasion ?? null,
         }))
       : [];
     const grants = held.filter((grant) => !onBill.has(grant.grantId));
@@ -6604,7 +6775,11 @@ export class StaffVisitEditor {
    */
   protected openClient(clientId: string): void {
     if (this.profileOn) this.ensureCardStore();
-    this.push('client', clientId, `staff-visit-client-row-${clientId}`);
+    this.push(
+      EditorPage.Client,
+      clientId,
+      `staff-visit-client-row-${clientId}`,
+    );
     const opening = untracked(this.cardOpening);
     if (opening !== null) this.openCard(opening);
   }
@@ -6653,7 +6828,7 @@ export class StaffVisitEditor {
         : `client-loyalty-${anchor === 'catalog' ? 'points' : anchor}`;
     // A tile's push lands on its section: the page focuses the heading.
     this.push(
-      'clientLoyalty',
+      EditorPage.ClientLoyalty,
       client.id,
       this.originOf(tile),
       anchor === null ? 'container' : 'section',
@@ -6671,7 +6846,7 @@ export class StaffVisitEditor {
     if (client === null) return;
     this.ensureCardStore().setMedalsChip('all');
     this.push(
-      'clientAchievements',
+      EditorPage.ClientAchievements,
       client.id,
       this.originOf('client-achievements-all'),
     );
@@ -6681,7 +6856,11 @@ export class StaffVisitEditor {
   protected openHistory(): void {
     const client = this.clientOfStack();
     if (client === null) return;
-    this.push('clientHistory', client.id, this.originOf('client-visits-all'));
+    this.push(
+      EditorPage.ClientHistory,
+      client.id,
+      this.originOf('client-visits-all'),
+    );
   }
 
   /**
@@ -6693,9 +6872,9 @@ export class StaffVisitEditor {
   protected openRecords(): void {
     const client = this.clientOfStack();
     if (client === null) return;
-    const fromGlance = this.page()?.kind === 'client';
+    const fromGlance = this.page()?.editorPage === EditorPage.Client;
     this.push(
-      'clientRecords',
+      EditorPage.ClientRecords,
       client.id,
       this.originOf(
         fromGlance ? 'client-records-line' : 'achievements-records-all',
@@ -6711,7 +6890,7 @@ export class StaffVisitEditor {
     const client = this.clientOfStack();
     if (client === null) return;
     this.push(
-      'clientLedger',
+      EditorPage.ClientLedger,
       client.id,
       this.originOf('rewards-action-history'),
     );
@@ -6730,7 +6909,7 @@ export class StaffVisitEditor {
     const client = this.clientOfStack();
     if (client === null || !this.isOwnerOf(client)) return;
     this.resetDiscountEntry();
-    this.push('discount', null, this.originOf('rewards-action-code'));
+    this.push(EditorPage.Discount, null, this.originOf('rewards-action-code'));
   }
 
   /**
@@ -6744,14 +6923,14 @@ export class StaffVisitEditor {
     const client = this.clientOfStack();
     if (client === null) return;
     this.ensureCardStore().setMedalsChip(categoryId);
-    this.push('clientAchievements', client.id, this.originOf(null));
+    this.push(EditorPage.ClientAchievements, client.id, this.originOf(null));
   }
 
   /** A medal — the glance's strip, a rail, a shelf, a scope's grid — pushes its family. */
   protected openMedal(seriesId: string): void {
-    const fromGlance = this.page()?.kind === 'client';
+    const fromGlance = this.page()?.editorPage === EditorPage.Client;
     this.push(
-      'achievementDetail',
+      EditorPage.AchievementDetail,
       seriesId,
       this.originOf(fromGlance ? `client-medal-${seriesId}` : null),
     );
@@ -6764,14 +6943,18 @@ export class StaffVisitEditor {
   protected replaceMedal(seriesId: string): void {
     const top = this.page();
     this.pressedTestId = null;
-    this.replace('achievementDetail', seriesId, top?.originTestId ?? null);
+    this.replace(
+      EditorPage.AchievementDetail,
+      seriesId,
+      top?.originTestId ?? null,
+    );
     this.openAtTop();
   }
 
   /** A category, a season, an event, the archive or a day: its scope page. */
   protected openScope(scope: AchievementScope): void {
     this.push(
-      'achievementCategory',
+      EditorPage.AchievementCategory,
       achievementScopeKey(scope),
       this.originOf(null),
     );
@@ -6779,7 +6962,11 @@ export class StaffVisitEditor {
 
   /** A past cut — the rail's, the featured visit's thumbs — on the photo page, read-only (§3.7). */
   protected openPastCut(photoId: string): void {
-    this.push('photo', photoId, this.originOf(`client-photo-${photoId}`));
+    this.push(
+      EditorPage.Photo,
+      photoId,
+      this.originOf(`client-photo-${photoId}`),
+    );
   }
 
   /**
@@ -6807,9 +6994,9 @@ export class StaffVisitEditor {
     // On the wallet the press is the «Използвай» DISC (revision 3 §2.2.3),
     // which gives way once the ticket is on the bill: ‹ lands on the
     // stamped ticket itself, where the glance's own press already is.
-    const fromWallet = this.page()?.kind === 'clientLoyalty';
+    const fromWallet = this.page()?.editorPage === EditorPage.ClientLoyalty;
     if (fromWallet) this.pressedTestId = null;
-    this.push('discount', null, this.originOf(fallback));
+    this.push(EditorPage.Discount, null, this.originOf(fallback));
   }
 
   /**
@@ -6835,7 +7022,7 @@ export class StaffVisitEditor {
     // the selector list lands there when it is drawn and on the ticket else.
     const ticket = `[data-testid="${this.rewardTicket(grantId)}"]`;
     this.focusLater(
-      this.page()?.kind === 'clientLoyalty'
+      this.page()?.editorPage === EditorPage.ClientLoyalty
         ? `[data-testid="rewards-action-use"], ${ticket}`
         : ticket,
     );
@@ -6843,7 +7030,7 @@ export class StaffVisitEditor {
 
   /** The ticket a held reward stands on, on the page up: «Лоялност»'s own, else the glance's one. */
   private rewardTicket(grantId: string): string {
-    return this.page()?.kind === 'clientLoyalty'
+    return this.page()?.editorPage === EditorPage.ClientLoyalty
       ? `rewards-ready-${grantId}`
       : 'client-reward-ready';
   }
@@ -6856,7 +7043,10 @@ export class StaffVisitEditor {
    */
   protected readonly detailAction = computed<DetailActionVm | null>(() => {
     const page = this.page();
-    if (page?.kind !== 'achievementDetail' || page.subjectId === null) {
+    if (
+      page?.editorPage !== EditorPage.AchievementDetail ||
+      page.subjectId === null
+    ) {
       return null;
     }
     return this.cardStoreRef()?.detailAction(page.subjectId) ?? null;
@@ -6920,7 +7110,7 @@ export class StaffVisitEditor {
       );
       return [
         {
-          seatId: `draft-${option.id}-${Date.now().toString(36)}-${this.minted++}`,
+          seatId: `draft-${option.id}-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`,
           serviceId: option.serviceId,
           variantId: option.variantId,
           serviceLabel: option.serviceLabel ?? option.label,
@@ -6992,21 +7182,43 @@ export class StaffVisitEditor {
   private lastVisitDate(): string | null {
     const store = this.cardStoreRef();
     const rows =
-      store?.visits().status === 'ready' ? store.visitRowsInput() : null;
+      store?.visits().loadState === LoadState.Ready
+        ? store.visitRowsInput()
+        : null;
     if (rows === null || rows === undefined) return null;
     const current = this.vm().appointmentId;
-    let lastMs: number | null = null;
+    // The newest by the shop's wall clock — its day, then its minute.
+    let last: {
+      readonly localDate: LocalDate;
+      readonly startMinutes: MinuteOfDay;
+    } | null = null;
     for (const row of visitsRows(rows)) {
-      if (row.outcome !== 'worked' || row.id === current) continue;
-      if (lastMs === null || row.startMs > lastMs) lastMs = row.startMs;
+      if (row.outcome !== VisitRowOutcome.Worked || row.id === current) {
+        continue;
+      }
+      const order =
+        last === null ? 1 : LocalDate.compare(row.localDate, last.localDate);
+      if (
+        order > 0 ||
+        (order === 0 && last !== null && row.startMinutes > last.startMinutes)
+      ) {
+        last = row;
+      }
     }
-    if (lastMs === null) return null;
-    const year = this.shopMoment(lastMs, 'en-CA', { year: 'numeric' });
-    return this.shopMoment(lastMs, this.transloco.getActiveLang(), {
-      day: 'numeric',
-      month: 'long',
-      ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
-    });
+    if (last === null) return null;
+    const thisYear =
+      LocalDate.parts(last.localDate).year ===
+      Number(this.vm().todayKey.slice(0, 4));
+    return formatWallClock(
+      last.localDate,
+      null,
+      this.transloco.getActiveLang(),
+      {
+        day: 'numeric',
+        month: 'long',
+        ...(thisYear ? {} : { year: 'numeric' }),
+      },
+    );
   }
 
   /**

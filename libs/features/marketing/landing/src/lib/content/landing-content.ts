@@ -11,6 +11,7 @@
  * v2 ships with.
  */
 
+import { CompositionKind } from '@core/components';
 import type {
   BarberVm,
   Localized,
@@ -201,7 +202,7 @@ const t = (price: number, minutes: number): ServiceTermsVm => ({
 export const SERVICES: readonly ServiceVm[] = [
   {
     id: 'haircut',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Classic haircut', 'Класическо подстригване'),
     description: lt(
       'Scissor or clipper cut shaped to your head, finished with a wash and styling.',
@@ -236,7 +237,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'fade',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Fade', 'Фейд'),
     description: lt(
       'Precision gradient — skin, low or high — blended to nothing and lined up sharp.',
@@ -268,7 +269,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'beard',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     // No cover — exercises the scissors-glyph fallback tile, exactly like v2.
     name: lt('Beard grooming', 'Оформяне на брада'),
     description: lt(
@@ -286,7 +287,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'shave',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Hot towel shave', 'Бръснене с топла кърпа'),
     description: lt(
       'Old-school straight-razor shave with hot towels and essential oils.',
@@ -307,7 +308,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'fullcare',
-    kind: 'bundle',
+    compositionKind: CompositionKind.Bundle,
     name: lt('Full care', 'Пълна грижа'),
     description: lt(
       'Haircut, beard grooming and a hot towel shave in one sitting.',
@@ -329,7 +330,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'fatherson',
-    kind: 'bundle',
+    compositionKind: CompositionKind.Bundle,
     name: lt('Father & son', 'Баща и син'),
     description: lt(
       'Two classic haircuts back to back — bring the little one along.',
@@ -350,7 +351,7 @@ export const SERVICES: readonly ServiceVm[] = [
   // bundle math and the eventual /book port.
   {
     id: 'scalpmassage',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Scalp Massage', 'Масаж на скалпа'),
     description: lt(
       '10-minute scalp massage with essential oils.',
@@ -367,7 +368,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'hottowel',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Hot Towel Treatment', 'Гореща кърпа'),
     description: lt(
       'Luxury hot towel wrap — deep pore cleanse.',
@@ -384,7 +385,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'premiumoil',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Premium Beard Oil', 'Премиум брадно масло'),
     description: lt(
       'Conditioning beard oil application by your barber.',
@@ -401,7 +402,7 @@ export const SERVICES: readonly ServiceVm[] = [
   },
   {
     id: 'premiumstyling',
-    kind: 'single',
+    compositionKind: CompositionKind.Single,
     name: lt('Premium Styling', 'Премиум стайлинг'),
     description: lt(
       'Clay, paste, or pomade finish — expert application.',
@@ -420,9 +421,22 @@ export const SERVICES: readonly ServiceVm[] = [
 
 // ─── Locations ──────────────────────────────────────────────────────────
 
+/** Whether a shop opens on a weekday — the field `dayOpening` (Law 6). */
+export const DayOpening = {
+  /** Open, from `opens` to `closes` (shop wall clock, `HH:mm`). */
+  Open: 'OPEN',
+  /** Closed all day. */
+  Closed: 'CLOSED',
+} as const;
+export type DayOpening = (typeof DayOpening)[keyof typeof DayOpening];
+
 export type DayHoursVm =
-  | { readonly kind: 'open'; readonly opens: string; readonly closes: string }
-  | { readonly kind: 'closed' };
+  | {
+      readonly dayOpening: typeof DayOpening.Open;
+      readonly opens: string;
+      readonly closes: string;
+    }
+  | { readonly dayOpening: typeof DayOpening.Closed };
 
 export interface LocationVm {
   readonly id: string;
@@ -438,11 +452,11 @@ export interface LocationVm {
 }
 
 const open = (opens: string, closes: string): DayHoursVm => ({
-  kind: 'open',
+  dayOpening: DayOpening.Open,
   opens,
   closes,
 });
-const closed: DayHoursVm = { kind: 'closed' };
+const closed: DayHoursVm = { dayOpening: DayOpening.Closed };
 
 export const LOCATIONS: readonly LocationVm[] = [
   {

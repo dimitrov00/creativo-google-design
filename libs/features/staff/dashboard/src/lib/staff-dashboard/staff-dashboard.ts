@@ -2,6 +2,7 @@ import {
   StaffDayPill,
   formatDayPill,
   formatDayPillRange,
+  localDateOfKey,
 } from '../day-pill/staff-day-pill';
 import { runViewTransition } from '../shared/view-transition';
 import { fill } from '../time-grid/grid-gesture';
@@ -83,6 +84,8 @@ import {
 } from '@core/components';
 import {
   BillingSystem,
+  ClientQueryShape,
+  GridEvent as GridEventTag,
   PhoneSystem,
   SearchFieldsSystem,
   ZonedTimeSystem,
@@ -133,13 +136,16 @@ import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
 import { walkInLabels } from '../shared/walk-in-labels';
 import {
   firstNameOf,
-  formatCents,
-  formatInstant,
-  formatWallClock,
   hollowStatus,
   StaffEventHead,
   type StaffEventLine,
 } from '@creativo/features/shared/visits';
+import {
+  civilMs,
+  formatCents,
+  formatInstant,
+  formatWallClock,
+} from '@creativo/ui/wall-clock';
 import {
   bookingStatusWords,
   cancellationReasonWords,
@@ -223,35 +229,7 @@ import {
   rankClients,
 } from '../visit-editor/client-query';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
-
-/**
- * The two row acts that are NOT lifecycle moves — the arrival stamp, set and
- * taken back. Arriving is a stamp beside the status, never an edge in the
- * lifecycle graph (see `Appointment.arrivedAtUtcMs`).
- */
-const ArrivalVerb = {
-  Arrived: 'ARRIVED',
-  Unarrived: 'UNARRIVED',
-} as const;
-type ArrivalVerb = (typeof ArrivalVerb)[keyof typeof ArrivalVerb];
-
-/**
- * What a row can DO: a lifecycle move — the `BookingStatus` the callable is
- * asked for — or one of the arrival stamps.
- */
-type RowVerb = BookingStatus | ArrivalVerb;
-
-/**
- * Each verb's word (Phase 4a 4A-10) — the `staff.day.act.<word>` and
- * `staff.day.undo.<word>` key segments, and the sheet's `VisitEditorVerb.kind`
- * it emits back. The statuses read the ONE shared table; the stamps add
- * their own two words beside it.
- */
-const ROW_VERB_WORD = {
-  ...bookingStatusWords,
-  [ArrivalVerb.Arrived]: 'arrived',
-  [ArrivalVerb.Unarrived]: 'unarrived',
-} as const satisfies Record<RowVerb, string>;
+import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
 
 /**
  * A ROW'S NAME — the aggregate it belongs to, plus the lane it is drawn in.
@@ -320,12 +298,12 @@ const ROW_WAIT_MS = 5000;
  * (found in review).
  */
 export function reversibleSave(
-  row: { readonly status: BookingStatus } | null,
+  row: { readonly bookingStatus: BookingStatus } | null,
   commands: readonly BookingCall.EditCommand[],
 ): boolean {
   return !(
     row !== null &&
-    row.status === BookingStatus.Completed &&
+    row.bookingStatus === BookingStatus.Completed &&
     commands.some((command) => command.editCommand === EditCommand.AddSeat)
   );
 }
@@ -413,8 +391,28 @@ function searchLabelOf(user: User): string {
   return written.length > 0 ? written : (user.searchName ?? '');
 }
 
+/**
+ * What an agenda entry is — the field `agendaRow`: a booked VISIT, or a
+ * sellable GAP between them. One run, two row grammars.
+ */
+export const AgendaRow = {
+  Visit: 'VISIT',
+  Gap: 'GAP',
+} as const;
+export type AgendaRow = (typeof AgendaRow)[keyof typeof AgendaRow];
+
+/**
+ * Which door the ＋ menu opened — a BOOKING (the visit sheet) or a BLOCK
+ * (the block sheet). Passed to `openCreate`, never stored.
+ */
+export const CreateIntent = {
+  Booking: 'BOOKING',
+  Block: 'BLOCK',
+} as const;
+export type CreateIntent = (typeof CreateIntent)[keyof typeof CreateIntent];
+
 interface DayRowVm {
-  readonly kind: 'visit';
+  readonly agendaRow: typeof AgendaRow.Visit;
   /**
    * THE ROW'S OWN IDENTITY — `appointmentId#barberId`, never the bare
    * appointment id. (owner ruling 2026-09-03)
@@ -606,7 +604,7 @@ interface DayRowVm {
    */
   readonly people: readonly VisitEditorClientOption[];
   /** THIS chair's status — the stored tag (`SeatOutcome.summarize`). */
-  readonly status: BookingStatus;
+  readonly bookingStatus: BookingStatus;
   /** Whether the party has walked in — the gate for offering "Done". */
   readonly arrived: boolean;
   /**
@@ -672,7 +670,7 @@ interface AgendaGroupVm {
 
 /** A sellable hole. Same row grammar, no segment fill (§4.4). */
 interface GapRowVm {
-  readonly kind: 'gap';
+  readonly agendaRow: typeof AgendaRow.Gap;
   readonly id: string;
   readonly startLabel: string;
   readonly endLabel: string;
@@ -871,7 +869,7 @@ interface SearchHitVm {
   /** The party's start, for ordering the two halves outward from now. */
   readonly whenMs: number;
   readonly past: boolean;
-  readonly status: BookingStatus;
+  readonly bookingStatus: BookingStatus;
   readonly titleParts: readonly {
     readonly text: string;
     readonly hit: boolean;
@@ -1098,6 +1096,10 @@ function primaryVerb(
 export class StaffDashboard {
   /** An hour that did not happen — struck on the card's head (staff-event-head). */
   protected readonly hollowStatus = hollowStatus;
+  /** The agenda's two row grammars, for the template's comparison. */
+  protected readonly AgendaRow = AgendaRow;
+  /** The ＋ menu's two doors, for the template's calls. */
+  protected readonly CreateIntent = CreateIntent;
   private readonly transloco = inject(TranslocoService);
   /**
    * THE LOADED TABLE, AS A SIGNAL (review r4, 2026-10-06: the agenda's
@@ -1571,7 +1573,7 @@ export class StaffDashboard {
         // answers, on two surfaces a person moves between. Whatever is
         // happening right now belongs with what is coming.
         past: this.endInstantOf(appointment) <= nowMs,
-        status: appointment.bookingStatus,
+        bookingStatus: appointment.bookingStatus,
         titleParts: titleField
           ? splitOnTerm(titleField.value, term)
           : [{ text: '', hit: false }],
@@ -1871,7 +1873,9 @@ export class StaffDashboard {
       row === null
         ? null
         : this.lanes().find((entry) =>
-            entry.entries.some((e) => e.kind === 'visit' && e.id === row.id),
+            entry.entries.some(
+              (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
+            ),
           );
     // The DRAFT's chair first (2026-09-09): the catalogue and its terms are
     // per chair, so a switched barber offers his own services.
@@ -2084,7 +2088,7 @@ export class StaffDashboard {
       .flatMap((lane) => lane.entries)
       .find(
         (entry): entry is DayRowVm =>
-          entry.kind === 'visit' && entry.id === appointmentId,
+          entry.agendaRow === AgendaRow.Visit && entry.id === appointmentId,
       );
     // The visit SHEET, not the row popover this used to open — that surface
     // was removed with the row's overflow, so a tap on a calendar block had
@@ -2119,7 +2123,7 @@ export class StaffDashboard {
         timeZone: zone,
         timeZoneName: 'short',
       })
-        .formatToParts(new Date(this.nowMs()))
+        .formatToParts(this.nowMs())
         .find((part) => part.type === 'timeZoneName')?.value ?? zone
     );
   });
@@ -2258,7 +2262,7 @@ export class StaffDashboard {
       return [
         {
           id: row.id,
-          kind: 'visit' as const,
+          gridEvent: GridEventTag.Visit,
           // The seat's own wall clock, as stored (Law 7.3).
           startMinute: row.startMinute,
           endMinute: row.endMinute,
@@ -2268,8 +2272,8 @@ export class StaffDashboard {
           // service matters less than that it did not happen (2026-09-24).
           detail: this.stateLabel(row) ?? row.serviceLabel,
           attribution: attribute ? this.barberNameOf(lane.barberId) : null,
-          // The block's DOM word — lowercase, as its stylesheet keys it.
-          status: bookingStatusWords[row.status],
+          // The stored tag; the grid prints its lowercase DOM word.
+          bookingStatus: row.bookingStatus,
           terminal: row.terminal,
           barberTone: this.toneOf(lane.barberId),
           // The hour, not the outcome: whatever became of it, a 10:00 slot is
@@ -2282,7 +2286,7 @@ export class StaffDashboard {
           statusIcon:
             row.arrived && !row.terminal
               ? 'visit.arrived'
-              : (STATUS_ICONS[row.status] ?? null),
+              : (STATUS_ICONS[row.bookingStatus] ?? null),
           partyLabel: row.partyLabel,
         },
       ];
@@ -2318,7 +2322,7 @@ export class StaffDashboard {
         // this block uniquely without inventing an id the store cannot
         // resolve back to anything.
         id: `block:${lane.barberId}:${interval.startMs}`,
-        kind: 'block' as const,
+        gridEvent: GridEventTag.Block,
         startMinute: this.minuteOfDay(interval.startMs),
         endMinute: this.minuteOfDay(interval.endMs, interval.startMs),
         title: label,
@@ -2327,7 +2331,7 @@ export class StaffDashboard {
         // business, and the rail stays neutral (the grid's own ruling).
         barberTone: null,
         attribution: attribute ? this.barberNameOf(lane.barberId) : null,
-        status: null,
+        bookingStatus: null,
         terminal: false,
         past: interval.endMs <= nowMs,
         // Says WHAT it is and WHEN — the channel the shading never had.
@@ -2403,7 +2407,7 @@ export class StaffDashboard {
       `${row.startLabel}–${row.endLabel}`,
       this.barberNameOf(barberId),
       this.transloco.translate(
-        `appointments.status.${bookingStatusWords[row.status]}`,
+        `appointments.status.${bookingStatusWords[row.bookingStatus]}`,
       ),
       // The party share is drawn as a glyph and a ratio, and a short block
       // drops it entirely — neither reaches a screen reader, and "this is one
@@ -2488,18 +2492,14 @@ export class StaffDashboard {
    * pickers may not differ in facts, 2026-09-04).
    */
   private weekdayInitial(dayKey: string): string {
-    return new Intl.DateTimeFormat(this.content.locale(), {
+    const locale = this.content.locale();
+    return formatWallClock(localDateOfKey(dayKey), null, locale, {
       weekday: 'narrow',
-      timeZone: 'UTC',
-    }).format(new Date(`${dayKey}T12:00:00Z`));
+    });
   }
 
   private formatDay(dayKey: string, options: Intl.DateTimeFormatOptions) {
-    const [year, month, day] = dayKey.split('-').map(Number);
-    return this.formatTitled(
-      new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1)),
-      options,
-    );
+    return this.formatTitled(localDateOfKey(dayKey), options);
   }
 
   /**
@@ -2512,10 +2512,13 @@ export class StaffDashboard {
    * separators come back untouched, and English (already capitalised) is
    * unchanged.
    */
-  private formatTitled(at: Date, options: Intl.DateTimeFormatOptions): string {
+  private formatTitled(
+    at: LocalDate,
+    options: Intl.DateTimeFormatOptions,
+  ): string {
     const locale = this.content.locale();
     return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' })
-      .formatToParts(at)
+      .formatToParts(civilMs(at))
       .map((part) =>
         part.type === 'month'
           ? part.value.charAt(0).toLocaleUpperCase(locale) + part.value.slice(1)
@@ -2564,17 +2567,6 @@ export class StaffDashboard {
     }),
   );
 
-  /** "сряда, 5 август" — the header's whole answer. */
-  protected readonly dayLabel = computed(() => {
-    const [year, month, day] = this.store.dayKey().split('-').map(Number);
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      timeZone: 'UTC',
-    }).format(new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1)));
-  });
-
   /**
    * Every barber's identity tone, assigned once for the whole catalogue.
    *
@@ -2604,7 +2596,7 @@ export class StaffDashboard {
       );
       const barberName = vm ? this.content.text(vm.name) : lane.barberId;
       const gaps: GapRowVm[] = lane.gaps.map((gap) => ({
-        kind: 'gap' as const,
+        agendaRow: AgendaRow.Gap,
         // The BARBER in the id: two chairs free from 14:00 are two different
         // holes, and a shared key would collapse them in the agenda's track.
         // The START too, since one hole now splits into two at the clock.
@@ -2634,7 +2626,7 @@ export class StaffDashboard {
       // should find first; the NOW hairline is where the day actually is.
       const next = visits.find((row) => !row.terminal && row.startMs > nowMs);
       const entries: RunEntryVm[] = clockOrder.map((entry) =>
-        entry.kind === 'visit' && entry.id === next?.id
+        entry.agendaRow === AgendaRow.Visit && entry.id === next?.id
           ? { ...entry, isNext: true }
           : entry,
       );
@@ -2654,7 +2646,7 @@ export class StaffDashboard {
         entries,
         extentLabel,
         visitCount: visits.filter(
-          (row) => row.status !== BookingStatus.Cancelled,
+          (row) => row.bookingStatus !== BookingStatus.Cancelled,
         ).length,
         rostered: extent.length > 0,
         failed: lane.failed,
@@ -2704,7 +2696,7 @@ export class StaffDashboard {
     const items = this.lanes()
       .flatMap((lane) => lane.entries)
       .filter((entry) => {
-        if (entry.kind !== 'gap') return true;
+        if (entry.agendaRow !== AgendaRow.Gap) return true;
         // Holes are a SECOND question — off unless someone is asking it.
         if (!freeTime) return false;
         return !(wholeShop && !entry.sellable);
@@ -2731,8 +2723,11 @@ export class StaffDashboard {
         // what is merely available, and a stable order stops cards jumping
         // as the store ticks.
         items: [...group].sort((a, b) => {
-          if (a.kind !== b.kind) return a.kind === 'visit' ? -1 : 1;
-          return a.kind === 'visit' && b.kind === 'visit'
+          if (a.agendaRow !== b.agendaRow) {
+            return a.agendaRow === AgendaRow.Visit ? -1 : 1;
+          }
+          return a.agendaRow === AgendaRow.Visit &&
+            b.agendaRow === AgendaRow.Visit
             ? a.barberName.localeCompare(b.barberName)
             : 0;
         }),
@@ -2783,22 +2778,14 @@ export class StaffDashboard {
    * change detection lets go.
    *
    * Split out, the skeleton recomputes only when the DATE or the LOCALE
-   * turns over, and the two formatters are built once for the whole strip
-   * instead of once per cell.
+   * turns over, and the two faces come from the shared, cached formatters
+   * (`formatWallClock`) instead of two built per cell.
    */
   private readonly weekCalendar = computed(() => {
     const today = this.store.todayKey();
     // No today before the shop's zone is known: no strip to build.
     if (today === '') return [];
     const locale = this.content.locale();
-    const asInitial = new Intl.DateTimeFormat(locale, {
-      weekday: 'narrow',
-      timeZone: 'UTC',
-    });
-    const asNumber = new Intl.DateTimeFormat(locale, {
-      day: 'numeric',
-      timeZone: 'UTC',
-    });
     const first = addDays(startOfWeek(today), -StaffDashboard.WEEKS_BACK * 7);
     const weeks = StaffDashboard.WEEKS_BACK + StaffDashboard.WEEKS_AHEAD + 1;
 
@@ -2808,14 +2795,14 @@ export class StaffDashboard {
         key: weekStart,
         days: Array.from({ length: 7 }, (_, d) => {
           const key = addDays(weekStart, d);
-          const at = new Date(`${key}T12:00:00Z`);
+          const at = localDateOfKey(key);
           return {
             key,
             // The weekday INITIAL, Apple's own strip: the column position
             // already says which day it is, so the letter is a reminder and
             // not a label.
-            initial: asInitial.format(at),
-            number: asNumber.format(at),
+            initial: formatWallClock(at, null, locale, { weekday: 'narrow' }),
+            number: formatWallClock(at, null, locale, { day: 'numeric' }),
             today: key === today,
           };
         }),
@@ -2866,8 +2853,7 @@ export class StaffDashboard {
     this.strippedWeek.set(week);
     const first = untracked(() => this.weekCalendar())[0]?.key ?? week;
     const index = Math.round(
-      (Date.parse(`${week}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) /
-        (7 * 86_400_000),
+      LocalDate.daysBetween(localDateOfKey(first), localDateOfKey(week)) / 7,
     );
     afterNextRender(() => this.settleOnWeek(index, ANCHOR_FRAMES), {
       injector: this.injector,
@@ -2933,7 +2919,7 @@ export class StaffDashboard {
     let freeMinutes = 0;
     for (const lane of lanes) {
       for (const entry of lane.entries) {
-        if (entry.kind === 'gap') freeMinutes += entry.minutes;
+        if (entry.agendaRow === AgendaRow.Gap) freeMinutes += entry.minutes;
       }
     }
     if (freeMinutes === 0) return null;
@@ -3084,10 +3070,10 @@ export class StaffDashboard {
    * is the sheet's head, one tap away.
    */
   protected stateLabel(entry: DayRowVm): string | null {
-    if (entry.status === BookingStatus.NoShow) {
+    if (entry.bookingStatus === BookingStatus.NoShow) {
       return this.transloco.translate('staff.visit.resolution.noShow');
     }
-    if (entry.status === BookingStatus.Cancelled) {
+    if (entry.bookingStatus === BookingStatus.Cancelled) {
       return this.transloco.translate(
         `appointments.status.${bookingStatusWords[BookingStatus.Cancelled]}`,
       );
@@ -3103,8 +3089,10 @@ export class StaffDashboard {
    * live or finished.
    */
   protected stateIcon(entry: DayRowVm): UiIconName | null {
-    if (entry.status === BookingStatus.Cancelled) return 'visit.cancelled';
-    if (entry.status === BookingStatus.NoShow) return 'visit.noShow';
+    if (entry.bookingStatus === BookingStatus.Cancelled) {
+      return 'visit.cancelled';
+    }
+    if (entry.bookingStatus === BookingStatus.NoShow) return 'visit.noShow';
     return null;
   }
 
@@ -3221,7 +3209,7 @@ export class StaffDashboard {
     // a screen reader. What is left is exactly the set of states the card
     // says with its FORM — hollow, hollow-and-struck, dashed — none of
     // which a screen reader can perceive.
-    return this.statusWord(entry.status);
+    return this.statusWord(entry.bookingStatus);
   }
 
   /**
@@ -3391,8 +3379,8 @@ export class StaffDashboard {
       );
     }
     return {
-      // The sheet's own lowercase word for what settled the chair.
-      kind: bookingStatusWords[status],
+      // What settled the chair — the stored tag, narrowed above.
+      bookingStatus: status,
       by:
         cancellations.length === 0
           ? null
@@ -3621,7 +3609,7 @@ export class StaffDashboard {
     const note = appointment.contactNote?.trim() || null;
 
     return {
-      kind: 'visit',
+      agendaRow: AgendaRow.Visit,
       id: rowKey(appointment.id, barberId),
       appointmentId: appointment.id,
       revision: appointment.revision,
@@ -3700,7 +3688,7 @@ export class StaffDashboard {
           overridden: seat.catalogPriceCents !== null,
         };
       }),
-      status,
+      bookingStatus: status,
       primary,
       overflow: legal.filter((verb) => verb !== primary),
       terminal: isTerminalStatus(status),
@@ -3930,7 +3918,9 @@ export class StaffDashboard {
       const shownDay = this.store.dayKey();
       const draftDay = this.visitDraftDay() ?? shownDay;
       const lane = this.lanes().find((entry) =>
-        entry.entries.some((e) => e.kind === 'visit' && e.id === row.id),
+        entry.entries.some(
+          (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
+        ),
       );
       const rowChair = lane?.barberId ?? '';
       // THE DRAFT'S CHAIR, not the row's (owner, 2026-09-09): switching the
@@ -4013,7 +4003,9 @@ export class StaffDashboard {
     if (id === null) return null;
     for (const lane of this.lanes()) {
       for (const entry of lane.entries) {
-        if (entry.kind === 'visit' && entry.id === id) return entry;
+        if (entry.agendaRow === AgendaRow.Visit && entry.id === id) {
+          return entry;
+        }
       }
     }
     return null;
@@ -4041,13 +4033,15 @@ export class StaffDashboard {
     // windows. `LaneVm.rostered` is a boolean — "does this chair work today" —
     // and the intervals it is named after live one layer down.
     const lane = this.lanes().find((entry) =>
-      entry.entries.some((e) => e.kind === 'visit' && e.id === row.id),
+      entry.entries.some(
+        (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
+      ),
     );
 
     const neighbours = (lane?.entries ?? [])
       .filter(
         (entry): entry is DayRowVm =>
-          entry.kind === 'visit' && entry.id !== row.id,
+          entry.agendaRow === AgendaRow.Visit && entry.id !== row.id,
       )
       .map((entry) => ({
         name: entry.clientLabel,
@@ -4086,7 +4080,7 @@ export class StaffDashboard {
         .flatMap((lane) => lane.entries)
         .filter(
           (entry): entry is DayRowVm =>
-            entry.kind === 'visit' &&
+            entry.agendaRow === AgendaRow.Visit &&
             entry.appointmentId === row.appointmentId &&
             entry.id !== row.id,
         )
@@ -4143,10 +4137,10 @@ export class StaffDashboard {
       discounts: row.discounts,
       vouchers: row.vouchers,
       resolution: row.resolution,
-      // The sheet's lowercase status word — the shared table's.
-      status: bookingStatusWords[row.status],
+      // The chair's stored tag; the sheet prints its word where it shows one.
+      bookingStatus: row.bookingStatus,
       statusLabel: this.transloco.translate(
-        'appointments.status.' + bookingStatusWords[row.status],
+        'appointments.status.' + bookingStatusWords[row.bookingStatus],
       ),
       arrivedMinute:
         row.arrivedMs === null ? null : this.minuteAt(row.arrivedMs),
@@ -4178,9 +4172,9 @@ export class StaffDashboard {
 
   private toEditorVerb(row: DayRowVm, verb: RowVerb): VisitEditorVerb {
     return {
-      // The sheet's own lowercase word for the verb — what it emits back.
-      kind: ROW_VERB_WORD[verb],
-      label: this.transloco.translate(this.verbKey(row.status, verb)),
+      // The verb itself — what the sheet emits back through `(acted)`.
+      rowVerb: verb,
+      label: this.transloco.translate(this.verbKey(row.bookingStatus, verb)),
       // ONE red in the menu (owner review, 2026-09-08). Cancelling is the
       // destructive act: it is terminal and it pages the waitlist. A no-show
       // is a fact about the client, and the graph keeps a correction edge for
@@ -4196,26 +4190,17 @@ export class StaffDashboard {
    * pill after the barber steps a day while this one formats it on open.
    * Two functions for one label is why shortening it in the editor alone
    * left the sheet still rendering `пт, 4 септември` until this changed
-   * too. They must move together until one of them absorbs the other.
+   * too. Both now call `formatDayPill`, so they cannot drift again.
    */
   private dayPillLabel(dayKey: string): string {
-    const parts = dayKey.split('-').map(Number);
-    const [year = 1970, month = 1, day = 1] = parts;
-    return new Intl.DateTimeFormat(this.transloco.getActiveLang(), {
-      weekday: 'short',
-      day: 'numeric',
-      // ⚠ `short`, reversing the `long` this carried. (owner ruling
-      // 2026-09-04) The old note was right that Bulgarian renders a `short`
-      // month numerically and wrong that this was a defect: numeric IS bg's
-      // abbreviated date (CLDR gives `dateStyle: 'medium'` as `4.09.2026
-      // г.`, exactly as it gives `Sep 4, 2026` in en). The reasoning in
-      // full is on the editor's twin of this function.
-      month: 'short',
-      // UTC throughout: the key is a wall-clock date with no instant behind
-      // it, and letting the host zone interpret it moves the label a day west
-      // of Sofia every evening.
-      timeZone: 'UTC',
-    }).format(new Date(Date.UTC(year, month - 1, day)));
+    // The pill's own formatter — `weekday: 'short'`, `day: 'numeric'`,
+    // `month: 'short'` on UTC — which the editor's twin already calls, so
+    // the two can no longer drift. ⚠ `short`, reversing the `long` this
+    // carried (owner ruling 2026-09-04): numeric IS bg's abbreviated date
+    // (CLDR gives `dateStyle: 'medium'` as `4.09.2026 г.`, exactly as it
+    // gives `Sep 4, 2026` in en). UTC throughout: the key is a wall-clock
+    // date with no instant behind it.
+    return formatDayPill(dayKey, this.transloco.getActiveLang());
   }
 
   protected openVisitSheet(row: DayRowVm): void {
@@ -4381,27 +4366,28 @@ export class StaffDashboard {
   /**
    * The editor's `(acted)`, resolved back to the row it belongs to.
    *
-   * The editor is handed a flat view model and emits a verb string; it has no
+   * The editor is handed a flat view model and emits a `RowVerb`; it has no
    * `DayRowVm` and must not need one. Resolving the row here keeps the party
    * arithmetic — which seat a terminal act settles — in the one place that
    * already knows it.
    */
   protected async actFromEditor(
     appointmentId: string,
-    to: string,
+    verb: RowVerb,
   ): Promise<void> {
     const row = this.visitSheetRow();
     // The editor speaks the AGGREGATE's name — `visitSheetRow` has already
     // resolved which of a party's rows is open, so this only guards against a
     // late emit from a sheet that has since moved on.
     if (row === null || row.appointmentId !== appointmentId) return;
-    // The sheet speaks the verb's WORD; the row's own verbs are what it may
-    // have said — a word none of them wears asks for nothing.
-    const verb = [row.primary, ...row.overflow].find(
-      (candidate): candidate is RowVerb =>
-        candidate !== null && ROW_VERB_WORD[candidate] === to,
-    );
-    if (verb === undefined) return;
+    // The row's own verbs are what the sheet may have said — a verb none of
+    // them wears asks for nothing.
+    if (
+      verb !== row.primary &&
+      !row.overflow.some((offered) => offered === verb)
+    ) {
+      return;
+    }
     await this.actFromSheet(row, verb);
   }
 
@@ -5057,7 +5043,9 @@ export class StaffDashboard {
     const holds = (ids: readonly string[]) =>
       ids.some((id) => seatIds.includes(id));
     const shown = this.lanes().flatMap((lane) =>
-      lane.entries.filter((entry): entry is DayRowVm => entry.kind === 'visit'),
+      lane.entries.filter(
+        (entry): entry is DayRowVm => entry.agendaRow === AgendaRow.Visit,
+      ),
     );
     const named = shown.find((entry) => entry.id === rowId);
     if (named !== undefined) return named;
@@ -5337,7 +5325,8 @@ export class StaffDashboard {
         .flatMap((lane) => lane.entries)
         .find(
           (entry): entry is DayRowVm =>
-            entry.kind === 'visit' && entry.appointmentId === appointmentId,
+            entry.agendaRow === AgendaRow.Visit &&
+            entry.appointmentId === appointmentId,
         );
       if (row && seatIds.length === 0) {
         this.offerUndo(row, BookingStatus.Cancelled);
@@ -5355,12 +5344,19 @@ export class StaffDashboard {
 
   private readonly userSearch = inject(USER_SEARCH_PORTS);
 
+  /** The last create's nonce — counted, never read off the clock (UR-11). */
+  private createSeq = 0;
+
   protected readonly createVisit = signal<{
     readonly barberId: string;
     readonly startMinute: number;
     /** A span to draw, when the caller knows one (a block turned visit). */
     readonly minutes?: number;
-    /** Fresh per create — the editor keys its draft on it. */
+    /**
+     * Fresh per create — the editor keys its draft on it (`new-<nonce>`).
+     * A counter (`createSeq`), so two creates are strictly distinct even
+     * under a pinned clock.
+     */
     readonly nonce: number;
     /** Prefilled from a finished visit (`Запиши пак`). */
     readonly legs?: readonly VisitEditorLeg[];
@@ -5396,7 +5392,8 @@ export class StaffDashboard {
     }));
     const neighbours = (lane?.entries ?? [])
       .filter(
-        (entry): entry is DayRowVm => entry.kind === 'visit' && !entry.terminal,
+        (entry): entry is DayRowVm =>
+          entry.agendaRow === AgendaRow.Visit && !entry.terminal,
       )
       .map((entry) => ({
         name: entry.clientLabel,
@@ -5444,7 +5441,8 @@ export class StaffDashboard {
       vouchers: [],
       // Nothing has happened to a visit that does not exist yet.
       resolution: null,
-      status: 'new',
+      // Not booked yet: no stored tag (the sheet's «new» visit).
+      bookingStatus: null,
       statusLabel: this.transloco.translate('staff.visit.newTitle'),
       arrivedMinute: null,
       chairId: create.barberId,
@@ -5500,13 +5498,13 @@ export class StaffDashboard {
    * front of the barber, and the frame moves it anywhere; the walk-in is
    * one tap in the people group.
    */
-  protected openCreate(kind: 'booking' | 'block'): void {
+  protected openCreate(createIntent: CreateIntent): void {
     this.createMenu.set(false);
     // No day before the shop's zone is known (4A-11): nothing to author on.
     if (!this.store.ready()) return;
     const chair = this.createChair();
     if (chair === null) return;
-    if (kind === 'block') {
+    if (createIntent === CreateIntent.Block) {
       this.openBlockSheet(chair);
       return;
     }
@@ -5515,7 +5513,7 @@ export class StaffDashboard {
     this.createVisit.set({
       barberId: chair,
       startMinute: this.nowSnapped(),
-      nonce: Date.now(),
+      nonce: ++this.createSeq,
     });
   }
 
@@ -5530,7 +5528,7 @@ export class StaffDashboard {
     this.createVisit.set({
       barberId,
       startMinute: this.minuteAt(startMs),
-      nonce: Date.now(),
+      nonce: ++this.createSeq,
     });
   }
 
@@ -5554,10 +5552,10 @@ export class StaffDashboard {
       barberId: vm.chairId,
       startMinute: vm.startMinute,
       minutes: Math.max(vm.endMinute - vm.startMinute, 5),
-      nonce: Date.now(),
+      nonce: ++this.createSeq,
       legs: vm.legs.map((leg, index) => ({
         ...leg,
-        seatId: `draft-${leg.serviceId}-${index}-${Date.now().toString(36)}`,
+        seatId: `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
         overridden: false,
       })),
       client: {
@@ -5794,7 +5792,7 @@ export class StaffDashboard {
     const keys = clientLookupKeys(parsed, code);
     // The book's own matches are on screen already — their faces are owed
     // now, not when the index answers. Only the rows a phone can show.
-    if (parsed.kind !== 'empty') {
+    if (parsed.clientQueryShape !== ClientQueryShape.Empty) {
       this.resolveAvatars(
         rankClients(this.visitClientBook(), parsed, code)
           .slice(0, BOOK_FACES_PER_QUERY)
@@ -5923,9 +5921,7 @@ export class StaffDashboard {
    * Legs run serially from the chosen minute, in ladder order, whatever
    * chair each sits on; a party across two chairs at once is not drawn yet.
    */
-  protected async createFromEditor(
-    commit: Extract<VisitEditorCommit, { kind: 'save' }>,
-  ): Promise<void> {
+  protected async createFromEditor(commit: VisitEditorCommit): Promise<void> {
     const create = this.createVisit();
     if (create === null || commit.legs.length === 0) return;
     // The shop the sheet drafted — the «Салон» row's pick — or, where the
@@ -6134,7 +6130,7 @@ export class StaffDashboard {
         neighbours: (lane?.entries ?? [])
           .filter(
             (entry): entry is DayRowVm =>
-              entry.kind === 'visit' && !entry.terminal,
+              entry.agendaRow === AgendaRow.Visit && !entry.terminal,
           )
           .map((entry) => ({
             name: entry.clientLabel,
@@ -6203,7 +6199,7 @@ export class StaffDashboard {
         GRAIN_MINUTES_FOR_KIND,
         range.endMinute - range.startMinute,
       ),
-      nonce: Date.now(),
+      nonce: ++this.createSeq,
     });
   }
 

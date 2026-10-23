@@ -43,6 +43,9 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
+    },
+    {
       "path": "../../shared/catalog/tsconfig.lib.json"
     },
     {
@@ -52,10 +55,13 @@
       "path": "../account-state/tsconfig.lib.json"
     },
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
+      "path": "../../../shared/view-state/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

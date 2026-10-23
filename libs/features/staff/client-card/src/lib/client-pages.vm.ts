@@ -3,16 +3,26 @@ import type {
   VisitCardVm,
   VisitFilter,
   VisitLinePart,
+  VisitListPaging,
   VisitRowVm,
   VisitSectionVm,
 } from '@creativo/features/shared/visits';
+import type {
+  LoadSlice,
+  LoadState,
+  PagingState,
+} from '@creativo/shared/view-state';
 import type {
   UiBadgeTone,
   UiIconName,
   UiStreakPeriod,
 } from '@creativo/ui/controls';
 import type { ClientCardRegion } from './client-card.contracts';
-import type { JournalFeed, VisitLeg } from '@core/components';
+import type {
+  JournalFeed,
+  PersonalRecordKind,
+  VisitLeg,
+} from '@core/components';
 import type {
   BadgeProgress,
   LoyaltyAccount,
@@ -21,7 +31,6 @@ import type {
 import type { ValidLoyaltyCatalog } from '@core/systems';
 import type { UiMark, UiMedalState } from '@creativo/ui/controls';
 import type { AchievementScope } from './client-card.contracts';
-import type { RecordKindWord } from './client-card.words';
 // ── The built pages’ view models that survive (moved here in W4 from
 // `client-card.vm.ts`, which is gone): what the new presenters and bodies
 // still read, under the names they always imported from here. ──────────
@@ -42,25 +51,14 @@ import type { RecordKindWord } from './client-card.words';
  * one retry notice.
  */
 
-/**
- * Where one region's read stands (old spec §7.9, reused): a skeleton, the
- * content, or the heading over «Опитай пак». The discriminator of
- * {@link Slice}, named after its field (Law 6, Phase 4a 4A-13). A region
- * that cannot exist at all — a flag off, no account, a guest — is not a
- * fourth state: its slice is absent.
+/*
+ * Where one region's read stands (old spec §7.9, reused) is the ONE shared
+ * view-state vocabulary (`@creativo/shared/view-state`, UI residue cleanup
+ * UR-2): a region's `LoadSlice<T>` — a skeleton (`LOADING`), the content
+ * (`READY`, its `data`), or the heading over «Опитай пак» (`FAILED`). A
+ * region that cannot exist at all — a flag off, no account, a guest — is
+ * not a fourth state: its slice is absent.
  */
-export const CardLoadState = {
-  Loading: 'LOADING',
-  Ready: 'READY',
-  Failed: 'FAILED',
-} as const;
-export type CardLoadState = (typeof CardLoadState)[keyof typeof CardLoadState];
-
-/** One region's read as the page draws it — its {@link CardLoadState}, and the data once ready. */
-export type Slice<T> =
-  | { readonly cardLoadState: typeof CardLoadState.Loading }
-  | { readonly cardLoadState: typeof CardLoadState.Ready; readonly data: T }
-  | { readonly cardLoadState: typeof CardLoadState.Failed };
 
 /**
  * What a `ui-gauge` takes besides its style and size, which are the
@@ -431,12 +429,15 @@ export interface HistoryFactsVm {
   readonly spend: HistorySpendVm | null;
 }
 
-/** HG/HH — the list's foot, in the shape `lib-visit-list [paging]` takes. */
-export interface HistoryPagingVm {
-  readonly kind: 'more' | 'loading' | 'failed' | 'end';
-  /** HH on `end`: «Това е всичко · първото посещение е на 6.03.2025 г.» / «Това е първото посещение.». */
+/**
+ * HG/HH — the list's foot, in the shape `lib-visit-list [paging]` takes:
+ * where the next page stands (`pagingState`, the shared `PagingState`) and
+ * HH's words on `END`: «Това е всичко · първото посещение е на 6.03.2025
+ * г.» / «Това е първото посещение.».
+ */
+export type HistoryPagingVm = VisitListPaging & {
   readonly endLabel: string | null;
-}
+};
 
 /**
  * One run of a quiet line; a `fact` run is set in primary ink at weight
@@ -485,10 +486,30 @@ export interface ClientHeroVm {
   readonly paused: boolean;
 }
 
+/**
+ * BD — which birthday the card says, the field `birthdayMoment` (Law 6):
+ * `TODAY` the solid band, `UPCOMING` the quiet notice of a birthday within
+ * the week.
+ */
+export const BirthdayMoment = {
+  /** Today is the birthday: the band, and the gift under it when one is held. */
+  Today: 'TODAY',
+  /** The birthday falls within the week to come: one quiet line. */
+  Upcoming: 'UPCOMING',
+} as const;
+export type BirthdayMoment =
+  (typeof BirthdayMoment)[keyof typeof BirthdayMoment];
+
+/** Each moment as the birthday card's host `data-kind` prints it. */
+export const birthdayMomentWords = {
+  [BirthdayMoment.Today]: 'today',
+  [BirthdayMoment.Upcoming]: 'upcoming',
+} as const satisfies Record<BirthdayMoment, string>;
+
 /** BD — the birthday, a card of its own (R2-D): the band, and the gift under it when one is held. */
 export interface BirthdayVm {
-  /** `today`: the solid band; `upcoming`: the quiet notice of a birthday within the week. */
-  readonly kind: 'today' | 'upcoming';
+  /** `TODAY`: the solid band; `UPCOMING`: the quiet notice of a birthday within the week. */
+  readonly birthdayMoment: BirthdayMoment;
   /** «Рожден ден · 34 г.» · «Рожден ден днес» · «Рожден ден · петък, 2.10 · 34 г.». */
   readonly title: string;
   /**
@@ -541,8 +562,8 @@ export interface LoyaltyGlanceVm {
 
 /** G1 — one record on the medals card's quiet line. */
 export interface RecordFactVm {
-  /** The `client-record-{kind}` test id. */
-  readonly kind: RecordKindWord;
+  /** The record's kind; its word (`RECORD_KIND_WORDS`) is the `client-record-{word}` test id. */
+  readonly personalRecordKind: PersonalRecordKind;
   /** «Любима услуга» · «Най-много за година». */
   readonly label: string;
   /** «Фейд» · «13» — the run in primary ink. */
@@ -564,28 +585,28 @@ export interface MedalsGlanceVm {
 }
 
 /**
- * The glance under the hero. Each module is its own `Slice`, and an ABSENT
+ * The glance under the hero. Each module is its own `LoadSlice`, and an ABSENT
  * key is an absent module — a flag off, no account, a guest, nothing to
  * show once loaded — so the page's order is the template's and its
  * content is this object's.
  */
 export interface ClientOverviewVm {
   /** B — warnings and tags only: no tier (the plate), no birthday (the card). Absent when empty. */
-  readonly capsules?: Slice<ClientCapsulesVm>;
+  readonly capsules?: LoadSlice<ClientCapsulesVm>;
   /** BD — absent on any other day; never promised by a skeleton. */
   readonly birthday?: BirthdayVm;
   /** D — from the seat's snapshot at once; the body promotes `same`. */
   readonly actions: readonly QuickActionVm[];
   /** E — the owner's reward ticket, less the birthday grant while BD carries it. */
-  readonly reward?: Slice<RewardReadyVm>;
+  readonly reward?: LoadSlice<RewardReadyVm>;
   /** H */
-  readonly visits?: Slice<VisitCardsVm>;
+  readonly visits?: LoadSlice<VisitCardsVm>;
   /** F */
-  readonly loyalty?: Slice<LoyaltyGlanceVm>;
+  readonly loyalty?: LoadSlice<LoyaltyGlanceVm>;
   /** G — absent until the first earned level. */
-  readonly medals?: Slice<MedalsGlanceVm>;
+  readonly medals?: LoadSlice<MedalsGlanceVm>;
   /** I — the newest three, without the featured visit's (they ride H1). */
-  readonly photos?: Slice<readonly ClientPhotoVm[]>;
+  readonly photos?: LoadSlice<readonly ClientPhotoVm[]>;
   /** K — «Махни от посещението» can be written now. */
   readonly canRemove: boolean;
   /** The regions whose read failed: one notice under a module, or one under the head for two and more. */
@@ -647,12 +668,29 @@ export interface WalletActionVm {
   readonly count: number | null;
 }
 
+/** WC — what one held thing is, the field `walletHolding` (Law 6), in the wallet's order. */
+export const WalletHolding = {
+  /** A gift voucher with a balance. */
+  Voucher: 'VOUCHER',
+  /** A reward ticket. */
+  Ticket: 'TICKET',
+  /** A stamp card. */
+  Stamps: 'STAMPS',
+} as const;
+export type WalletHolding = (typeof WalletHolding)[keyof typeof WalletHolding];
+
 /** WC — one thing held, in the wallet's order: vouchers, reward tickets, stamp cards. */
 export type WalletHoldingVm =
-  | { readonly kind: 'voucher'; readonly voucher: VoucherVm }
-  | { readonly kind: 'ticket'; readonly ticket: RewardReadyVm }
   | {
-      readonly kind: 'stamps';
+      readonly walletHolding: typeof WalletHolding.Voucher;
+      readonly voucher: VoucherVm;
+    }
+  | {
+      readonly walletHolding: typeof WalletHolding.Ticket;
+      readonly ticket: RewardReadyVm;
+    }
+  | {
+      readonly walletHolding: typeof WalletHolding.Stamps;
       readonly card: StampCardVm;
       /** «10 печата за безплатно подстригване» — the stamps themselves do the counting. */
       readonly line: string;
@@ -780,28 +818,28 @@ export interface WalletVm {
   /** WB — only the discs that work today; the run closes up. */
   readonly actions: readonly WalletActionVm[];
   /** WC — `ready` with none held is the empty wallet (WC0). */
-  readonly holdings: Slice<readonly WalletHoldingVm[]>;
+  readonly holdings: LoadSlice<readonly WalletHoldingVm[]>;
   /** The heading's detail: «3 · 55,00 €» with several spendable vouchers (their sum is nowhere else); `null` otherwise — a bare count says nothing the tickets under it do not. */
   readonly holdingsDetail: string | null;
   /** WD — absent with `loyalty.streaks` off, and when the rule in force is off. */
   readonly rhythm?: WalletRhythmVm;
   /** WE — absent with `loyalty.tiers` off. */
-  readonly tier?: Slice<WalletTierVm>;
+  readonly tier?: LoadSlice<WalletTierVm>;
   /** WF — absent with `loyalty.points` off, and with an empty catalogue. */
-  readonly catalog?: Slice<RewardGridVm>;
+  readonly catalog?: LoadSlice<RewardGridVm>;
   /** WG — the newest five events; absent with `loyalty.points` off and before the first entry. */
-  readonly activity?: Slice<readonly ActivityGroupVm[]>;
+  readonly activity?: LoadSlice<readonly ActivityGroupVm[]>;
 }
 
-/** LF, LG — the ledger's foot. */
+/** LF, LG — the ledger's foot: where its next page stands (the shared `PagingState`). */
 export interface LedgerPagingVm {
-  readonly kind: 'more' | 'loading' | 'failed' | 'end';
+  readonly pagingState: PagingState;
 }
 
 /** The ledger page «Движение» (§2.2.6). */
 export interface LedgerPageVm {
   /** The first page's read: skeletons, the rows, or «Движението не се зареди.» [Опитай пак]. */
-  readonly cardLoadState: CardLoadState;
+  readonly loadState: LoadState;
   /** LB — «Георги Петров · **371 т.**». */
   readonly subline: readonly LinePart[];
   /** LC — the chosen pill (its words and test id are the card's `LEDGER_FILTER_WORDS`). */
@@ -828,7 +866,8 @@ export interface AchievementChipVm {
 export interface RecordCardVm {
   /** The `achievements-record-{id}` test id. */
   readonly id: string;
-  readonly kind: RecordKindWord;
+  /** The record's kind; its word (`RECORD_KIND_WORDS`) is the card's `data-kind`. */
+  readonly personalRecordKind: PersonalRecordKind;
   /** «Най-дълъг ритъм», sentence case. */
   readonly label: string;
   /** «23» · «Фейд» · «1 март» — a favourite's figure is the SERVICE. */
@@ -1072,17 +1111,14 @@ export interface MedalDetailVm {
 
 // ── «Посещения» (§2.5) ──────────────────────────────────────────────────
 
-/** Where the «Посещения» page's first read stands. */
-export type VisitsPageStatus = 'loading' | 'ready' | 'failed';
-
 /** The «Посещения» page: two quiet lines under the title, then the shared browser. */
 export interface VisitsPageVm {
   /**
-   * The first page's read: skeletons, the list, or «Посещенията не се
-   * заредиха.» [Опитай пак]. A view-model union the visit editor reads too
-   * (`visits().status`), deferred to the flatten pass (Phase 4a 4A-13).
+   * The first page's read: skeletons (`LOADING`), the list (`READY`), or
+   * «Посещенията не се заредиха.» [Опитай пак] (`FAILED`) — never `EMPTY`.
+   * The visit editor reads it too (`visits().loadState`).
    */
-  readonly status: VisitsPageStatus;
+  readonly loadState: LoadState;
   /** HB — «**23** посещения · през **4** седмици»; 0 visits: «Първо посещение». */
   readonly line: readonly LinePart[];
   /** HB as one sentence (`clientCard.history.statsName`). */

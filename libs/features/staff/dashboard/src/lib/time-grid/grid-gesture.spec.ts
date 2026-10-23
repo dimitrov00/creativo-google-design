@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EDGE_SCROLL_MARGIN_PX,
   EDGE_SCROLL_MAX_PX_PER_FRAME,
-  EdgeScroller,
+  edgeScrollerOf,
   edgeScrollVelocity,
 } from './grid-gesture';
 
@@ -61,7 +61,7 @@ describe('edge auto-scroll', () => {
       vi.stubGlobal('cancelAnimationFrame', () => undefined);
       const box = frame();
       const told: number[] = [];
-      const edge = new EdgeScroller(
+      const edge = edgeScrollerOf(
         'y',
         () => box,
         () => told.push(box.scrollTop),
@@ -95,7 +95,7 @@ describe('edge auto-scroll', () => {
       vi.stubGlobal('cancelAnimationFrame', () => undefined);
       const box = frame();
       box.scrollTop = 800;
-      const edge = new EdgeScroller(
+      const edge = edgeScrollerOf(
         'y',
         () => box,
         () => undefined,

@@ -15,7 +15,7 @@
     <ng-container ngProjectAs="[sheet-badge]">
       <!-- The badge's ONE glyph grammar (`uiIcon`): the capsule draws the
            mark itself, in the accent, beside the word in ink. -->
-      @if (service().kind === 'bundle') {
+      @if (service().compositionKind === CompositionKind.Bundle) {
         <span
           uiBadge
           uiTone="accent"

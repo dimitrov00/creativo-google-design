@@ -36,6 +36,7 @@ import {
   SeatOccupant,
   SeatOutcome,
   SeatSubject,
+  type ShopNow,
   SubjectRelationship,
   VoucherCode,
   WaitlistLifecycle,
@@ -61,7 +62,7 @@ import {
   type UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { VisitGrain, VisitPerspective, ZonedTimeSystem } from '@core/systems';
 import type {
   AppointmentPhotoRecordPorts,
   ClientHistoryReadPorts,
@@ -156,9 +157,13 @@ export function sofiaWall(iso: string): {
   };
 }
 
-/** The fixtures' day (`FIXTURE_TODAY`, `@core/testing`), 09:00 in Sofia — before the 10:00 visit. */
-export function visitsNowMs(today: string): number {
-  return sofia(`${today}T09:00:00`);
+/**
+ * "Now" on the shop's clock as a host derives it once (`ZonedTimeSystem.shopNow`):
+ * the fixtures' day (`FIXTURE_TODAY`, `@core/testing`), 09:00 in Sofia —
+ * before the 10:00 visit.
+ */
+export function visitsNow(today: string): ShopNow {
+  return ZonedTimeSystem.shopNow(sofia(`${today}T09:00:00`), VISITS_TIME_ZONE);
 }
 
 /** A seat that was worked at `iso` (Sofia). */
@@ -590,7 +595,7 @@ export async function georgiStaffRows(
     readonly history: ClientHistoryReadPorts;
     readonly photos: AppointmentPhotoRecordPorts;
   },
-  options: Pick<VisitRowOptions, 'words' | 'nowMs'> &
+  options: Pick<VisitRowOptions, 'words' | 'now' | 'timeZone'> &
     Partial<Pick<VisitRowOptions, 'grain' | 'currentAppointmentId'>>,
 ): Promise<readonly VisitRowVm[]> {
   const page = await readers.history.pageClientHistory(
@@ -607,15 +612,16 @@ export async function georgiStaffRows(
     visitRowOf(
       visit,
       {
-        perspective: 'staff',
-        grain: options.grain ?? 'year',
+        perspective: VisitPerspective.Staff,
+        grain: options.grain ?? VisitGrain.Year,
         subjectUserId: GEORGI_UID,
         subjectCustomerId: GEORGI_CUSTOMER_ID,
         currentAppointmentId:
           options.currentAppointmentId === undefined
             ? CURRENT_APPOINTMENT_ID
             : options.currentAppointmentId,
-        nowMs: options.nowMs,
+        now: options.now,
+        timeZone: options.timeZone,
         locale: 'bg',
         photoCount: counts.value[index] ?? 0,
         words: options.words,

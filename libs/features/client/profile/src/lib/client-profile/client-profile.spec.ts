@@ -1,9 +1,11 @@
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { BehaviorSubject, Observable, of } from 'rxjs';
@@ -49,6 +51,7 @@ import {
   scriptedGatewayPorts,
   utcMs,
 } from '@core/testing';
+import { UiDateField, UiDateFieldFill } from '@creativo/ui/controls';
 import { ClientProfile } from './client-profile';
 
 const USER_ID = UserId.of('user_1');
@@ -103,6 +106,8 @@ async function render(options?: {
   uploadResult?: () => Result<StoredFile, MediaError>;
   photoUrl?: string | null;
   removeResult?: () => Result<void, MediaError>;
+  /** The active language when the page opens — the catalogue's default (`en`) unless given. */
+  lang?: 'bg' | 'en';
 }): Promise<Harness> {
   const saved: IdentityCall.UpdateProfile[] = [];
   const uploads: Blob[] = [];
@@ -192,6 +197,9 @@ async function render(options?: {
     ],
   }).compileComponents();
 
+  if (options?.lang !== undefined) {
+    TestBed.inject(TranslocoService).setActiveLang(options.lang);
+  }
   const fixture = TestBed.createComponent(ClientProfile);
   // A save travels click → store → use case → getProfile → saveProfile →
   // signal, which is several promise generations; each pass flushes one.
@@ -245,6 +253,33 @@ describe('ClientProfile', () => {
     ).toContain('ada@example.com');
     // The page is a list of facts until a row is tapped.
     expect(host.querySelector('main input[uiTextField]')).toBeNull();
+  });
+
+  it('prints the birth date as the civil day it is stored as, in English', async () => {
+    const { host } = await render({
+      profile: user({ birthDate: '2000-05-05' }),
+    });
+
+    const birthday = host.querySelector('[data-testid="profile-row-birthday"]');
+    expect(birthday?.getAttribute('data-empty')).toBe('false');
+    expect(
+      host
+        .querySelector('[data-testid="profile-row-birthday-value"]')
+        ?.textContent?.trim(),
+    ).toBe('May 5, 2000');
+  });
+
+  it('prints the birth date as the civil day it is stored as, in Bulgarian', async () => {
+    const { host } = await render({
+      profile: user({ birthDate: '2000-05-05' }),
+      lang: 'bg',
+    });
+
+    expect(
+      host
+        .querySelector('[data-testid="profile-row-birthday-value"]')
+        ?.textContent?.trim(),
+    ).toBe('5 май 2000 г.');
   });
 
   it('marks an unset birthday and an unset email as empty, with invitation copy', async () => {
@@ -356,6 +391,53 @@ describe('ClientProfile', () => {
     expect(
       host.querySelector('[data-testid="profile-first-name-error"]'),
     ).toBeNull();
+  });
+
+  it('names a complete but refused birth date on blur, and stays quiet on an empty or partial one', async () => {
+    const { host, fixture } = await render();
+    click(host, 'profile-row-birthday');
+    fixture.detectChanges();
+
+    // The field's own blur payload, as it reaches the page.
+    const field = fixture.debugElement.query(By.directive(UiDateField))
+      .componentInstance as UiDateField;
+    const error = () =>
+      host
+        .querySelector('[data-testid="profile-edit-birthday"] [role="alert"]')
+        ?.textContent?.trim() ?? null;
+    // Five years old on the pinned day (2026-01-01): under the age window.
+    const tooYoung = {
+      uiDateFieldFill: UiDateFieldFill.Complete,
+      parts: { day: 5, month: 5, year: 2020 },
+    } as const;
+
+    field.uiBlurred.emit(tooYoung);
+    fixture.detectChanges();
+    expect(error()).toBe('IDENTITY_BIRTH_DATE_TOO_YOUNG');
+
+    // A partial date is mid-typing — no red line.
+    field.uiBlurred.emit({ uiDateFieldFill: UiDateFieldFill.Partial });
+    fixture.detectChanges();
+    expect(error()).toBeNull();
+
+    field.uiBlurred.emit(tooYoung);
+    fixture.detectChanges();
+    expect(error()).toBe('IDENTITY_BIRTH_DATE_TOO_YOUNG');
+
+    // An empty field is the untouched state — no red line either.
+    field.uiBlurred.emit({ uiDateFieldFill: UiDateFieldFill.Empty });
+    fixture.detectChanges();
+    expect(error()).toBeNull();
+
+    // A complete date inside the window clears it.
+    field.uiBlurred.emit(tooYoung);
+    fixture.detectChanges();
+    field.uiBlurred.emit({
+      uiDateFieldFill: UiDateFieldFill.Complete,
+      parts: { day: 5, month: 5, year: 1990 },
+    });
+    fixture.detectChanges();
+    expect(error()).toBeNull();
   });
 
   it('saves a new name through updateProfile and closes the sheet', async () => {

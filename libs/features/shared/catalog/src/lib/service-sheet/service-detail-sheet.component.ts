@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { CompositionKind } from '@core/components';
 import {
   UiAvatar,
   UiBadge,
@@ -124,6 +125,8 @@ export class ServiceDetailSheetComponent {
   readonly barberSelected = output<BarberVm>();
 
   protected readonly content = inject(CatalogPresenter);
+  /** The dictionary, for the template's bundle badge (never a bare literal). */
+  protected readonly CompositionKind = CompositionKind;
 
   private readonly sheet = viewChild.required(UiDetailSheet);
 
@@ -227,7 +230,12 @@ export class ServiceDetailSheetComponent {
   } | null>(() => {
     const service = this.service();
     const members = this.includedServices();
-    if (service.kind !== 'bundle' || members.length === 0) return null;
+    if (
+      service.compositionKind !== CompositionKind.Bundle ||
+      members.length === 0
+    ) {
+      return null;
+    }
 
     const cheapest = service.offerings.reduce<ServiceOfferingVm | null>(
       (best, offering) =>

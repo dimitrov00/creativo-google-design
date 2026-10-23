@@ -9,22 +9,24 @@ import {
   memoryAppointmentReadPorts,
   FIXTURE_TODAY,
 } from '@core/testing';
+import { VisitGrain, VisitPerspective, VisitRowOutcome } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   GEORGI_SHOTS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   georgiStaffRows,
   provideVisitsCatalogues,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import { appCatalogue } from '../testing/app-catalogue';
 import { visitRowOf, visitWordsOf } from '../visit-row.presenter';
 import type {
   VisitListStyle,
-  VisitPerspective,
   VisitRowVm,
   VisitSectionVm,
 } from '../visit-row.vm';
@@ -34,15 +36,11 @@ import {
   visitSectionLabel,
   workedVisitsDetail,
 } from '../visit-sections';
-import {
-  VisitList,
-  type VisitListPaging,
-  type VisitListState,
-} from './visit-list';
+import { VisitList, type VisitListPaging } from './visit-list';
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const NOW = visitsNow(FIXTURE_TODAY);
 
 @Component({
   imports: [VisitList, UiButton],
@@ -77,9 +75,9 @@ const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 })
 class Host {
   readonly sections = signal<readonly VisitSectionVm[]>([]);
-  readonly perspective = signal<VisitPerspective>('staff');
+  readonly perspective = signal<VisitPerspective>(VisitPerspective.Staff);
   readonly listStyle = signal<VisitListStyle>('plain');
-  readonly state = signal<VisitListState>('ready');
+  readonly state = signal<LoadState>(LoadState.Ready);
   readonly skeletonRows = signal(5);
   readonly paging = signal<VisitListPaging | null>(null);
   readonly opened: string[] = [];
@@ -112,14 +110,14 @@ async function mount(setup: (host: Host) => void) {
 /** The staff card's history sections: by year, the worked visits counted in each heading. */
 function historySections(rows: readonly VisitRowVm[]) {
   return sectionVisits(rows, {
-    grain: 'year',
+    grain: VisitGrain.Year,
     testIdPrefix: 'history',
     labels: {
       upcoming: BG('appointments.sections.upcoming'),
       section: (key) => visitSectionLabel(key, 'bg'),
       detail: (sectionRows) => {
         const worked = sectionRows.filter(
-          (row) => row.outcome === 'worked',
+          (row) => row.outcome === VisitRowOutcome.Worked,
         ).length;
         return worked === 0
           ? null
@@ -139,7 +137,11 @@ beforeAll(async () => {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
       photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
-    { words: visitWordsOf(BG, 'bg', 'staff'), nowMs: NOW_MS },
+    {
+      words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
+    },
   );
   staffSections = historySections(rows);
 });
@@ -227,7 +229,7 @@ describe('VisitList · the staff history (plain, by year)', () => {
 
   it('stands five placeholder rows in the rows’ own shape while the first page loads', async () => {
     const { byId, q } = await mount((h) => {
-      h.state.set('loading');
+      h.state.set(LoadState.Loading);
       h.sections.set(staffSections);
     });
 
@@ -242,7 +244,7 @@ describe('VisitList · the staff history (plain, by year)', () => {
 
   it('draws as many placeholders as it is asked for', async () => {
     const { byId } = await mount((h) => {
-      h.state.set('loading');
+      h.state.set(LoadState.Loading);
       h.skeletonRows.set(3);
     });
     expect(
@@ -251,7 +253,7 @@ describe('VisitList · the staff history (plain, by year)', () => {
   });
 
   it('says the history did not load, with the one retry', async () => {
-    const { fixture, byId } = await mount((h) => h.state.set('error'));
+    const { fixture, byId } = await mount((h) => h.state.set(LoadState.Failed));
 
     const notice = byId('history-error');
     expect(notice?.tagName).toBe('UI-NOTICE');
@@ -295,7 +297,7 @@ describe('VisitList · the foot', () => {
   it('offers the next page, hugged and centred', async () => {
     const { fixture, byId } = await mount((h) => {
       h.sections.set(staffSections);
-      h.paging.set({ kind: 'more', endLabel: null });
+      h.paging.set({ pagingState: PagingState.More, endLabel: null });
     });
 
     const more = byId<HTMLButtonElement>('history-more');
@@ -313,7 +315,7 @@ describe('VisitList · the foot', () => {
   it('turns its own ring while the page is on its way, and asks nothing twice', async () => {
     const { fixture, byId } = await mount((h) => {
       h.sections.set(staffSections);
-      h.paging.set({ kind: 'loading', endLabel: null });
+      h.paging.set({ pagingState: PagingState.Loading, endLabel: null });
     });
 
     const more = byId<HTMLButtonElement>('history-more');
@@ -327,7 +329,7 @@ describe('VisitList · the foot', () => {
   it('says the next page did not come, and tries it again', async () => {
     const { fixture, byId } = await mount((h) => {
       h.sections.set(staffSections);
-      h.paging.set({ kind: 'failed', endLabel: null });
+      h.paging.set({ pagingState: PagingState.Failed, endLabel: null });
     });
 
     expect(byId('history-more-failed')?.textContent?.trim()).toBe(
@@ -344,14 +346,17 @@ describe('VisitList · the foot', () => {
     const endLabel = BG('clientCard.history.end', { date: '6.03.2025 г.' });
     const { fixture, byId } = await mount((h) => {
       h.sections.set(staffSections);
-      h.paging.set({ kind: 'end', endLabel });
+      h.paging.set({ pagingState: PagingState.End, endLabel });
     });
     expect(byId('history-end')?.textContent?.trim()).toBe(endLabel);
     expect(byId('history-end')?.getAttribute('data-text-alignment')).toBe(
       'center',
     );
 
-    fixture.componentInstance.paging.set({ kind: 'end', endLabel: null });
+    fixture.componentInstance.paging.set({
+      pagingState: PagingState.End,
+      endLabel: null,
+    });
     fixture.detectChanges();
     expect(byId('history-end')).toBeNull();
     expect(fixture.nativeElement.querySelector('.visit-list__foot')).toBeNull();
@@ -361,14 +366,17 @@ describe('VisitList · the foot', () => {
     const endLabel = BG('clientCard.history.end', { date: '6.03.2025 г.' });
     const { fixture, byId } = await mount((h) => {
       h.sections.set([]);
-      h.paging.set({ kind: 'end', endLabel });
+      h.paging.set({ pagingState: PagingState.End, endLabel });
     });
     expect(byId('history-empty')).not.toBeNull();
     expect(byId('history-end')).toBeNull();
     expect(fixture.nativeElement.querySelector('.visit-list__foot')).toBeNull();
 
     // An older page may still hold what the filter asks for.
-    fixture.componentInstance.paging.set({ kind: 'more', endLabel: null });
+    fixture.componentInstance.paging.set({
+      pagingState: PagingState.More,
+      endLabel: null,
+    });
     fixture.detectChanges();
     expect(byId('history-more')).not.toBeNull();
   });
@@ -376,16 +384,17 @@ describe('VisitList · the foot', () => {
 
 describe('VisitList · «Моите часове» (inset grouped, by month)', () => {
   function clientSections(): readonly VisitSectionVm[] {
-    const words = visitWordsOf(BG, 'bg', 'client');
+    const words = visitWordsOf(BG, 'bg', VisitPerspective.Client);
     const rows = GEORGI_VISITS.map((visit) =>
       visitRowOf(
         visit,
         {
-          perspective: 'client',
-          grain: 'month',
+          perspective: VisitPerspective.Client,
+          grain: VisitGrain.Month,
           subjectUserId: GEORGI_UID,
           currentAppointmentId: null,
-          nowMs: NOW_MS,
+          now: NOW,
+          timeZone: VISITS_TIME_ZONE,
           locale: 'bg',
           words,
         },
@@ -393,7 +402,7 @@ describe('VisitList · «Моите часове» (inset grouped, by month)', (
       ),
     );
     return sectionVisits(rows, {
-      grain: 'month',
+      grain: VisitGrain.Month,
       labels: {
         upcoming: BG('appointments.sections.upcoming'),
         section: (key) => visitSectionLabel(key, 'bg'),
@@ -403,7 +412,7 @@ describe('VisitList · «Моите часове» (inset grouped, by month)', (
 
   it('runs each month as one segmented group under a quiet label, with the year in it', async () => {
     const { byId, host } = await mount((h) => {
-      h.perspective.set('client');
+      h.perspective.set(VisitPerspective.Client);
       h.listStyle.set('insetGrouped');
       h.sections.set(clientSections());
     });
@@ -433,7 +442,7 @@ describe('VisitList · «Моите часове» (inset grouped, by month)', (
 
   it('opens the tapped visit by its id', async () => {
     const { fixture, host } = await mount((h) => {
-      h.perspective.set('client');
+      h.perspective.set(VisitPerspective.Client);
       h.listStyle.set('insetGrouped');
       h.sections.set(clientSections());
     });
@@ -449,9 +458,9 @@ describe('VisitList · «Моите часове» (inset grouped, by month)', (
 
   it('stands its placeholders in a segmented group, like the rows they stand for', async () => {
     const { byId } = await mount((h) => {
-      h.perspective.set('client');
+      h.perspective.set(VisitPerspective.Client);
       h.listStyle.set('insetGrouped');
-      h.state.set('loading');
+      h.state.set(LoadState.Loading);
     });
     const group = byId('appointments-skeleton')?.querySelector('ui-list-group');
     expect(group?.querySelectorAll(':scope > ui-list-row').length).toBe(5);
@@ -477,8 +486,8 @@ describe('VisitList · «Моите часове» (inset grouped, by month)', (
 })
 class BrowserHost {
   readonly sections = signal<readonly VisitSectionVm[]>([]);
-  readonly perspective = signal<VisitPerspective>('staff');
-  readonly state = signal<VisitListState>('ready');
+  readonly perspective = signal<VisitPerspective>(VisitPerspective.Staff);
+  readonly state = signal<LoadState>(LoadState.Ready);
   readonly interactive = signal<boolean | null>(null);
   readonly skeletonRows = signal(2);
   readonly skeletonGroups = signal(2);
@@ -513,13 +522,14 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
         photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
       },
       {
-        words: visitWordsOf(BG, 'bg', 'staff'),
-        nowMs: NOW_MS,
-        grain: 'month',
+        words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),
+        now: NOW,
+        timeZone: VISITS_TIME_ZONE,
+        grain: VisitGrain.Month,
       },
     );
     monthSections = sectionVisits(rows, {
-      grain: 'month',
+      grain: VisitGrain.Month,
       testIdPrefix: 'history',
       labels: {
         upcoming: BG('appointments.sections.upcoming'),
@@ -600,7 +610,7 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
 
   it('makes a client’s rows read rows when the host says so', async () => {
     const { fixture, host } = await mountBrowserHost((h) => {
-      h.perspective.set('client');
+      h.perspective.set(VisitPerspective.Client);
       h.interactive.set(false);
       h.sections.set(monthSections);
     });
@@ -611,7 +621,9 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
   });
 
   it('stands its placeholders as the list stands: groups, each under its heading’s line', async () => {
-    const { byId } = await mountBrowserHost((h) => h.state.set('loading'));
+    const { byId } = await mountBrowserHost((h) =>
+      h.state.set(LoadState.Loading),
+    );
 
     const skeleton = byId('history-skeleton');
     expect(skeleton?.getAttribute('aria-busy')).toBe('true');
@@ -638,7 +650,7 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
 
   it('heads a single placeholder group with nothing: a bare run of rows, as it always was', async () => {
     const { byId } = await mountBrowserHost((h) => {
-      h.state.set('loading');
+      h.state.set(LoadState.Loading);
       h.skeletonGroups.set(1);
       h.skeletonRows.set(5);
     });

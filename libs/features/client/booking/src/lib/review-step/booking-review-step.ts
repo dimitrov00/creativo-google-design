@@ -35,7 +35,7 @@ import {
   formatCents,
   formatMinute,
   formatWeekdayLabels,
-} from '@creativo/features/shared/visits';
+} from '@creativo/ui/wall-clock';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,

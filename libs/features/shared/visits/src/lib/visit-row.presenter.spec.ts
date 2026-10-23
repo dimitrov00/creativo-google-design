@@ -11,13 +11,28 @@ import {
   VoucherCode,
   type VoucherRedemption,
 } from '@core/components';
-import { GiftVoucherId, type UtcEpochMs } from '@core/primitives';
+import {
+  BookingStatus,
+  GiftVoucherId,
+  type LocalDate,
+  type MinuteOfDay,
+  type UtcEpochMs,
+} from '@core/primitives';
+import {
+  CancelledSide,
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { EUR, cents } from '@core/testing';
 import { dayRange } from './day-range';
 import {
   type SeatSpec,
+  VISITS_TIME_ZONE,
   type VisitStatusSpec,
   sofia,
+  sofiaWall,
   visitOf,
   visitSeat,
   waitlistOf,
@@ -26,12 +41,18 @@ import {
   type VisitRowOptions,
   type VisitBuilderWords,
   type VisitTranslate,
+  visitClockOf,
   visitRowOf,
   visitWaitlistWordsOf,
   visitWordsOf,
   waitlistRowOf,
 } from './visit-row.presenter';
-import type { VisitLookup } from './visit-row.vm';
+import {
+  TrailingFactFace,
+  type VisitLookup,
+  VisitRowEntry,
+} from './visit-row.vm';
+import { sectionVisits } from './visit-sections';
 
 // ── The app's own words ──────────────────────────────────────────────────
 //
@@ -74,8 +95,8 @@ function translator(tree: Catalogue): VisitTranslate {
 }
 
 const BG = translator(catalogue('bg'));
-const STAFF_WORDS = visitWordsOf(BG, 'bg', 'staff');
-const CLIENT_WORDS = visitWordsOf(BG, 'bg', 'client');
+const STAFF_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Staff);
+const CLIENT_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Client);
 const WAITLIST_WORDS = visitWaitlistWordsOf(BG);
 
 // ── The shop ─────────────────────────────────────────────────────────────
@@ -104,6 +125,17 @@ const LOOKUP: VisitLookup = {
 
 /** Monday 28 September 2026, 09:00 in Sofia. */
 const NOW_MS = sofia('2026-09-28T09:00:00');
+/** The same reading as the shop's "now", derived once as a host derives it. */
+const NOW = ZonedTimeSystem.shopNow(NOW_MS, VISITS_TIME_ZONE);
+
+/** A wall-clock reading in Sofia as the row carries its start: the shop day and minute. */
+function wall(iso: string): {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+} {
+  const start = sofiaWall(iso);
+  return { localDate: start.localDate, startMinutes: start.minute };
+}
 
 /** Each seat's own start, so a visit knows its shop day (a seat holds only its minute). */
 const SEAT_START = new WeakMap<Seat, string>();
@@ -184,11 +216,12 @@ function staffOptions(
   overrides: Partial<VisitRowOptions> = {},
 ): VisitRowOptions {
   return {
-    perspective: 'staff',
-    grain: 'year',
+    perspective: VisitPerspective.Staff,
+    grain: VisitGrain.Year,
     subjectUserId: GEORGI,
     currentAppointmentId: null,
-    nowMs: NOW_MS,
+    now: NOW,
+    timeZone: VISITS_TIME_ZONE,
     locale: 'bg',
     words: STAFF_WORDS,
     ...overrides,
@@ -204,8 +237,8 @@ describe('visitRowOf · the staff card', () => {
 
     expect(row).toEqual({
       id: 'appt-sep',
-      kind: 'visit',
-      startMs: sofia('2026-09-04T10:00:00'),
+      visitRowEntry: VisitRowEntry.Visit,
+      ...wall('2026-09-04T10:00:00'),
       sectionKey: '2026',
       upcoming: false,
       // Under a year the tile says the month, from the catalogue's table
@@ -223,21 +256,20 @@ describe('visitRowOf · the staff card', () => {
       // The trailing edge is the barber's face, as on the client's own
       // list (revision 3 §2.5)…
       trailing: {
-        kind: 'barber',
         avatarSrc: 'https://example.test/ivan.jpg',
         name: 'Иван',
         several: false,
       },
       // …and what was paid ends the second line, the staff's fact.
       trailingFact: {
-        kind: 'amount',
+        trailingFactFace: TrailingFactFace.Amount,
         text: EURO('27,50 €'),
         emphasis: 'primary',
         struck: false,
       },
       marks: [{ icon: 'client.photos', label: '1 снимка', count: 1 }],
-      outcome: 'worked',
-      status: 'COMPLETED',
+      outcome: VisitRowOutcome.Worked,
+      bookingStatus: BookingStatus.Completed,
       accessibleName: EURO(
         'Фейд, 4 септември в 10:00, Иван, Център, 27,50 €, 1 снимка, от клиента: „Къса отстрани, по-дълго отгоре“',
       ),
@@ -285,14 +317,14 @@ describe('visitRowOf · the staff card', () => {
       { text: 'Иван' },
     ]);
     expect(row.trailingFact).toEqual({
-      kind: 'amount',
+      trailingFactFace: TrailingFactFace.Amount,
       text: EURO('17,50 €'),
       emphasis: 'secondary',
       struck: true,
     });
-    expect(row.trailing).toMatchObject({ kind: 'barber', name: 'Иван' });
+    expect(row.trailing).toMatchObject({ name: 'Иван' });
     expect(row.marks).toEqual([]);
-    expect(row.outcome).toBe('cancelled');
+    expect(row.outcome).toBe(VisitRowOutcome.Cancelled);
     expect(row.accessibleName).toBe(
       EURO('Фейд, 16 юли в 10:00, Иван, Отказан от клиента, 17,50 €'),
     );
@@ -368,12 +400,12 @@ describe('visitRowOf · the staff card', () => {
     expect(row.struck).toBe(true);
     expect(row.lines).toEqual([{ text: 'Иван' }]);
     expect(row.trailingFact).toEqual({
-      kind: 'status',
+      trailingFactFace: TrailingFactFace.Status,
       icon: 'visit.noShow',
       text: 'Не дойде',
       tone: 'warning',
     });
-    expect(row.trailing).toMatchObject({ kind: 'barber', name: 'Иван' });
+    expect(row.trailing).toMatchObject({ name: 'Иван' });
     expect(row.accessibleName).toBe('Фейд, 7 юли в 10:00, Иван, Не дойде');
   });
 
@@ -390,7 +422,6 @@ describe('visitRowOf · the staff card', () => {
     // still stands on the trailing edge.
     expect(row.trailingFact).toBeNull();
     expect(row.trailing).toEqual({
-      kind: 'barber',
       avatarSrc: 'https://example.test/ivan.jpg',
       name: 'Иван',
       several: false,
@@ -405,7 +436,7 @@ describe('visitRowOf · the staff card', () => {
     });
     const row = visitRowOf(pending, staffOptions(), LOOKUP);
     expect(row.trailingFact).toEqual({
-      kind: 'status',
+      trailingFactFace: TrailingFactFace.Status,
       icon: 'visit.pending',
       text: 'Заявен',
       tone: 'neutral',
@@ -427,8 +458,11 @@ describe('visitRowOf · the staff card', () => {
     // leave the capsule (and a settled visit's marks) room on the second
     // line at 390 (review 2, fix-visits-r1). The sentence still says it.
     expect(row.lines).toEqual([{ text: '10:00 · Иван', hold: ' · Иван' }]);
-    expect(row.trailingFact).toEqual({ kind: 'badge', text: 'Този час' });
-    expect(row.trailing).toMatchObject({ kind: 'barber', name: 'Иван' });
+    expect(row.trailingFact).toEqual({
+      trailingFactFace: TrailingFactFace.Badge,
+      text: 'Този час',
+    });
+    expect(row.trailing).toMatchObject({ name: 'Иван' });
     expect(row.accessibleName).toBe('Фейд, днес, 10:00, Иван, Този час');
 
     // Settled, it is still the visit on screen — and no longer ahead.
@@ -444,7 +478,10 @@ describe('visitRowOf · the staff card', () => {
     );
     expect(worked.upcoming).toBe(false);
     expect(worked.sectionKey).toBe('2026');
-    expect(worked.trailingFact).toEqual({ kind: 'badge', text: 'Този час' });
+    expect(worked.trailingFact).toEqual({
+      trailingFactFace: TrailingFactFace.Badge,
+      text: 'Този час',
+    });
     // Settled and on screen: the time, never the shop (the location's own
     // rule), and the photos' mark beside the capsule is what the shorter
     // line makes room for.
@@ -478,7 +515,7 @@ describe('visitRowOf · the staff card', () => {
     it('tells the subject’s own story — their seats, their outcome, their share, the others counted', () => {
       const georgi = visitRowOf(party, staffOptions(), LOOKUP);
       // A companion's no-show says nothing about the booker.
-      expect(georgi.outcome).toBe('worked');
+      expect(georgi.outcome).toBe(VisitRowOutcome.Worked);
       expect(georgi.struck).toBe(false);
       expect(georgi.title).toBe('Фейд');
       expect(georgi.lines).toEqual([
@@ -487,13 +524,13 @@ describe('visitRowOf · the staff card', () => {
       // His seat's own price: a root discount is not pro-rated (Q2), so the
       // row carries no discount mark beside an undiscounted figure.
       expect(georgi.trailingFact).toEqual({
-        kind: 'amount',
+        trailingFactFace: TrailingFactFace.Amount,
         text: EURO('27,50 €'),
         emphasis: 'primary',
         struck: false,
       });
       // The face is of who cut HIS seat, not the companion's.
-      expect(georgi.trailing).toMatchObject({ kind: 'barber', name: 'Иван' });
+      expect(georgi.trailing).toMatchObject({ name: 'Иван' });
       expect(georgi.marks).toEqual([]);
       // He booked it: the words are his.
       expect(georgi.quote).toBe('„Ще дойдем двамата“');
@@ -503,18 +540,17 @@ describe('visitRowOf · the staff card', () => {
         staffOptions({ subjectUserId: IVO }),
         LOOKUP,
       );
-      expect(ivo.outcome).toBe('no_show');
+      expect(ivo.outcome).toBe(VisitRowOutcome.NoShow);
       expect(ivo.struck).toBe(true);
       expect(ivo.title).toBe('Брада');
       expect(ivo.lines).toEqual([
         { text: 'с още 1 · Петър', hold: ' · Петър' },
       ]);
       expect(ivo.trailingFact).toMatchObject({
-        kind: 'status',
+        trailingFactFace: TrailingFactFace.Status,
         text: 'Не дойде',
       });
       expect(ivo.trailing).toEqual({
-        kind: 'barber',
         avatarSrc: null,
         name: 'Петър',
         several: false,
@@ -636,7 +672,6 @@ describe('visitRowOf · the staff card', () => {
     // Cut by several: no one face, the group by its count. The row draws
     // none and keeps the face's column (revision 3 §2.5).
     expect(row.trailing).toEqual({
-      kind: 'barber',
       avatarSrc: null,
       name: '2 бръснари',
       several: true,
@@ -651,7 +686,6 @@ describe('visitRowOf · the staff card', () => {
       barberName: (id) => (id === 'barber-ivan' ? 'Иван Колев' : null),
     };
     expect(visitRowOf(LAST_VISIT, staffOptions(), lookup).trailing).toEqual({
-      kind: 'barber',
       avatarSrc: 'https://example.test/ivan.jpg',
       name: 'Иван Колев',
       several: false,
@@ -669,7 +703,6 @@ describe('visitRowOf · the staff card', () => {
       { kind: 'completed' },
     );
     expect(visitRowOf(gone, staffOptions(), LOOKUP).trailing).toEqual({
-      kind: 'barber',
       avatarSrc: null,
       name: 'Бръснар',
       several: false,
@@ -808,7 +841,7 @@ describe('visitRowOf · the staff card', () => {
       staffOptions({ subjectUserId: null }),
       LOOKUP,
     );
-    expect(row.outcome).toBe('worked');
+    expect(row.outcome).toBe(VisitRowOutcome.Worked);
     expect(row.quote).toBeNull();
   });
 });
@@ -817,11 +850,12 @@ describe('visitRowOf · the client’s own list', () => {
   const clientOptions = (
     overrides: Partial<VisitRowOptions> = {},
   ): VisitRowOptions => ({
-    perspective: 'client',
-    grain: 'month',
+    perspective: VisitPerspective.Client,
+    grain: VisitGrain.Month,
     subjectUserId: GEORGI,
     currentAppointmentId: null,
-    nowMs: NOW_MS,
+    now: NOW,
+    timeZone: VISITS_TIME_ZONE,
     locale: 'bg',
     words: CLIENT_WORDS,
     ...overrides,
@@ -831,8 +865,8 @@ describe('visitRowOf · the client’s own list', () => {
     const row = visitRowOf(LAST_VISIT, clientOptions(), LOOKUP);
     expect(row).toEqual({
       id: 'appt-sep',
-      kind: 'visit',
-      startMs: sofia('2026-09-04T10:00:00'),
+      visitRowEntry: VisitRowEntry.Visit,
+      ...wall('2026-09-04T10:00:00'),
       sectionKey: '2026-09',
       upcoming: false,
       tile: { caption: 'пт', day: 4, tone: 'past' },
@@ -843,7 +877,6 @@ describe('visitRowOf · the client’s own list', () => {
       // The client's own words are their own: the list never quotes them back.
       quote: null,
       trailing: {
-        kind: 'barber',
         avatarSrc: 'https://example.test/ivan.jpg',
         name: 'Иван',
         several: false,
@@ -851,8 +884,8 @@ describe('visitRowOf · the client’s own list', () => {
       // Money and status words are the staff's: a client's row states none.
       trailingFact: null,
       marks: [],
-      outcome: 'worked',
-      status: 'COMPLETED',
+      outcome: VisitRowOutcome.Worked,
+      bookingStatus: BookingStatus.Completed,
       accessibleName: 'Фейд, 4 септември в 10:00, Иван',
       // The id every client spec and e2e reads (§5.3.5).
       testId: 'appointment-row',
@@ -876,7 +909,7 @@ describe('visitRowOf · the client’s own list', () => {
     );
     const row = visitRowOf(cancelled, clientOptions(), LOOKUP);
     expect(row.struck).toBe(true);
-    expect(row.status).toBe('CANCELLED');
+    expect(row.bookingStatus).toBe(BookingStatus.Cancelled);
     expect(row.lines).toEqual([{ text: 'Иван · 10:00' }]);
     expect(row.accessibleName).toBe('Фейд, 16 юли в 10:00, Иван, Отказан');
 
@@ -915,7 +948,6 @@ describe('visitRowOf · the client’s own list', () => {
     expect(row.tile).toEqual({ caption: 'пт', day: 2, tone: 'upcoming' });
     expect(row.lines).toEqual([{ text: '2 бръснари · 10:00' }]);
     expect(row.trailing).toEqual({
-      kind: 'barber',
       avatarSrc: null,
       name: '2 бръснари',
       several: true,
@@ -926,7 +958,10 @@ describe('visitRowOf · the client’s own list', () => {
     const en = translator(catalogue('en'));
     const row = visitRowOf(
       LAST_VISIT,
-      clientOptions({ locale: 'en', words: visitWordsOf(en, 'en', 'client') }),
+      clientOptions({
+        locale: 'en',
+        words: visitWordsOf(en, 'en', VisitPerspective.Client),
+      }),
       LOOKUP,
     );
     expect(row.tile?.caption).toBe('Fri');
@@ -938,7 +973,10 @@ describe('visitRowOf · the client’s own list', () => {
     const en = translator(catalogue('en'));
     const row = visitRowOf(
       LAST_VISIT,
-      staffOptions({ locale: 'en', words: visitWordsOf(en, 'en', 'staff') }),
+      staffOptions({
+        locale: 'en',
+        words: visitWordsOf(en, 'en', VisitPerspective.Staff),
+      }),
       LOOKUP,
     );
     expect(row.tile).toEqual({ caption: 'Sep', day: 4, tone: 'past' });
@@ -950,7 +988,10 @@ describe('visitWordsOf', () => {
     for (const lang of ['bg', 'en'] as const) {
       // The translator throws on a key its catalogue lacks.
       const translate = translator(catalogue(lang));
-      for (const perspective of ['client', 'staff'] as const) {
+      for (const perspective of [
+        VisitPerspective.Client,
+        VisitPerspective.Staff,
+      ]) {
         const words = visitWordsOf(translate, lang, perspective);
         const sentence = [
           words.today,
@@ -971,8 +1012,8 @@ describe('visitWordsOf', () => {
           words.statusPending,
           words.statusConfirmed,
           words.noShow,
-          words.cancelledBy('client'),
-          words.cancelledBy('shop'),
+          words.cancelledBy(CancelledSide.Client),
+          words.cancelledBy(CancelledSide.Shop),
           words.quote('…'),
           words.quoteName('…'),
           words.rowName({
@@ -1004,11 +1045,15 @@ describe('visitWordsOf', () => {
   it('words the two outcomes that differ by who reads them', () => {
     expect(STAFF_WORDS.noShow).toBe('Не дойде');
     expect(CLIENT_WORDS.noShow).toBe('Пропуснат');
-    expect(STAFF_WORDS.cancelledBy('client')).toBe('Отказан от клиента');
-    expect(STAFF_WORDS.cancelledBy('shop')).toBe('Отказан от салона');
+    expect(STAFF_WORDS.cancelledBy(CancelledSide.Client)).toBe(
+      'Отказан от клиента',
+    );
+    expect(STAFF_WORDS.cancelledBy(CancelledSide.Shop)).toBe(
+      'Отказан от салона',
+    );
     // The client reads their own status, whoever called it off.
-    expect(CLIENT_WORDS.cancelledBy('client')).toBe('Отказан');
-    expect(CLIENT_WORDS.cancelledBy('shop')).toBe('Отказан');
+    expect(CLIENT_WORDS.cancelledBy(CancelledSide.Client)).toBe('Отказан');
+    expect(CLIENT_WORDS.cancelledBy(CancelledSide.Shop)).toBe('Отказан');
     // Plurals by the language's own rule.
     expect(STAFF_WORDS.photos(1)).toBe('1 снимка');
     expect(STAFF_WORDS.photos(3)).toBe('3 снимки');
@@ -1078,8 +1123,8 @@ describe('waitlistRowOf', () => {
     );
     expect(row).toEqual({
       id: 'waitlist-1',
-      kind: 'waitlist',
-      startMs: sofia('2026-10-01T00:00:00'),
+      visitRowEntry: VisitRowEntry.Waitlist,
+      ...wall('2026-10-01T00:00:00'),
       sectionKey: 'upcoming',
       upcoming: true,
       tile: null,
@@ -1094,7 +1139,7 @@ describe('waitlistRowOf', () => {
       trailingFact: null,
       marks: [],
       outcome: null,
-      status: null,
+      bookingStatus: null,
       // Spelled out: a reader never hears «чт – пт».
       accessibleName: 'Фейд, чака свободен час: четвъртък и петък, следобед',
       testId: 'client-visit-waitlist',
@@ -1122,7 +1167,10 @@ describe('waitlistRowOf', () => {
     expect(row.accessibleName).toBe(
       'Фейд, чака свободен час: четвъртък, 12 октомври, 14 октомври, 20 октомври и 22 октомври',
     );
-    expect(row.startMs).toBe(sofia('2026-10-01T00:00:00'));
+    expect({
+      localDate: row.localDate,
+      startMinutes: row.startMinutes,
+    }).toEqual(wall('2026-10-01T00:00:00'));
   });
 
   it('prints a run of days through the house range, one face at both ends', () => {
@@ -1202,5 +1250,107 @@ describe('waitlistRowOf', () => {
     expect(row.accessibleName).toBe(
       'Фейд, чака свободен час: четвъртък, следобед · още 1',
     );
+  });
+
+  it('files a request that watches no day first in the upcoming run, without throwing', () => {
+    // Every watched day spent: the row still draws, at the first day of the
+    // civil axis and its first minute (§9 R-4), so it orders before every
+    // real row, as the legacy instant 0 did — whatever the ids say.
+    const undated = waitlistRowOf(
+      waitlistOf(
+        'waitlist-undated',
+        [],
+        ['svc-fade'],
+        '2026-09-20T12:00:00+03:00',
+      ),
+      options,
+      LOOKUP,
+    );
+    expect(undated.localDate).toBe('1970-01-01');
+    expect(undated.startMinutes).toBe(0);
+    expect(undated.lines).toEqual([{ text: 'Чака свободен час' }]);
+
+    const dated = waitlistRowOf(
+      request([{ dayKey: '2026-10-01', windows: AFTERNOON }]),
+      options,
+      LOOKUP,
+    );
+    const ahead = visitRowOf(
+      visit('appt-oct', [seat('2026-10-02T10:00:00')], { kind: 'confirmed' }),
+      staffOptions(),
+      LOOKUP,
+    );
+    const [upcoming] = sectionVisits([ahead, dated, undated], {
+      grain: VisitGrain.Month,
+      labels: { upcoming: 'Предстоящи', section: (key) => key },
+    });
+    expect(upcoming?.key).toBe('upcoming');
+    expect(upcoming?.rows.map((row) => row.id)).toEqual([
+      'waitlist-undated',
+      'waitlist-1',
+      'appt-oct',
+    ]);
+  });
+});
+
+describe('visitClockOf · one clock for rows and cards', () => {
+  const FRIDAY = wall('2026-09-04T10:00:00');
+  const LAST_YEAR = wall('2025-12-05T11:30:00');
+  const clock = (
+    start: {
+      readonly localDate: LocalDate;
+      readonly startMinutes: MinuteOfDay;
+    },
+    locale: string,
+    now = NOW,
+  ) =>
+    visitClockOf(
+      start.localDate,
+      start.startMinutes,
+      now,
+      locale,
+      VISITS_TIME_ZONE,
+    );
+
+  it('prints the card’s own date faces as the card always has, the year only outside the current one', () => {
+    const bg = clock(FRIDAY, 'bg');
+    expect(bg.dayShort()).toBe('4.09');
+    expect(bg.weekdayAndDay()).toBe('пт, 4.09');
+    expect(bg.whenHeard('днес')).toBe('петък, 4 септември в 10:00');
+
+    const bgElsewhere = clock(LAST_YEAR, 'bg');
+    expect(bgElsewhere.dayShort()).toBe('5.12.2025 г.');
+    expect(bgElsewhere.weekdayAndDay()).toBe('пт, 5.12.2025 г.');
+    expect(bgElsewhere.whenHeard('днес')).toBe(
+      'петък, 5 декември 2025 г. в 11:30',
+    );
+
+    const en = clock(FRIDAY, 'en');
+    expect(en.dayShort()).toBe('Sep 4');
+    expect(en.weekdayAndDay()).toBe('Fri, Sep 4');
+    expect(en.whenHeard('today')).toBe('Friday, September 4 at 10:00 AM');
+
+    const enElsewhere = clock(LAST_YEAR, 'en');
+    expect(enElsewhere.dayShort()).toBe('Dec 5, 2025');
+    expect(enElsewhere.weekdayAndDay()).toBe('Fri, Dec 5, 2025');
+    expect(enElsewhere.whenHeard('today')).toBe(
+      'Friday, December 5, 2025 at 11:30 AM',
+    );
+  });
+
+  it('keeps the row’s long form without a weekday beside the card’s heard one', () => {
+    const bg = clock(FRIDAY, 'bg');
+    expect(bg.whenLong('днес')).toBe('4 септември в 10:00');
+    expect(bg.whenHeard('днес')).toBe('петък, 4 септември в 10:00');
+    // On the visit's own day both say «днес» and the time.
+    const sameDay = clock(
+      FRIDAY,
+      'bg',
+      ZonedTimeSystem.shopNow(sofia('2026-09-04T09:00:00'), VISITS_TIME_ZONE),
+    );
+    expect(sameDay.isToday()).toBe(true);
+    expect(sameDay.whenLong('днес')).toBe('днес, 10:00');
+    expect(sameDay.whenHeard('днес')).toBe('днес, 10:00');
+    expect(sameDay.whenShort('днес')).toBe('днес, 10:00');
   });
 });

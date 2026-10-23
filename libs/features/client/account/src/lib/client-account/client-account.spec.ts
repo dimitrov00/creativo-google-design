@@ -13,11 +13,16 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts, FindAvatar } from '@core/ports';
+import type {
+  AppointmentReadPorts,
+  FindAvatar,
+  LoadLocation,
+} from '@core/ports';
 import type { Appointment, User } from '@core/entities';
 import { BirthDate, type Principal, Seat } from '@core/components';
 import {
@@ -35,6 +40,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
@@ -153,6 +159,8 @@ async function configure(
     readonly hasPhoto?: boolean;
     /** Stands in for Storage outright — for the specs that count or sequence its answers. */
     readonly find?: FindAvatar;
+    /** Stands in for the shops' read — the zone the card's "now" is read in. */
+    readonly loadLocation?: LoadLocation;
   } = {},
 ): Promise<ComponentFixture<ClientAccount>> {
   const upcoming$ = Array.isArray(upcoming)
@@ -175,13 +183,20 @@ async function configure(
           displayName: 'Ада Тестова',
         }),
       },
-      // The shell menu's schedule row names the default location's day.
+      // The shell menu's schedule row names the default location's day, and
+      // the card reads "now" in its visit's own shop's zone (Europe/Sofia).
       {
         provide: LOCATION_LOAD_PORTS,
-        useValue: memoryLocationLoadPorts(
-          memoryProgramsWorld({ locations: [locationFixture()] }),
-        ),
+        useValue:
+          options.loadLocation === undefined
+            ? memoryLocationLoadPorts(
+                memoryProgramsWorld({ locations: [locationFixture()] }),
+              )
+            : { loadLocation: options.loadLocation },
       },
+      // "Now" is pinned in 2026: the fixture visit (2030-01-01) keeps its
+      // year and is never «днес».
+      { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
       {
         provide: DEFAULT_LOCATION_PORTS,
         useValue: memoryDefaultLocationPorts(),
@@ -455,6 +470,64 @@ describe('ClientAccount', () => {
     expect(upcoming?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
       'Възникна проблем от наша страна — моля, опитайте отново.',
     );
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).toBeNull();
+  });
+
+  it('a pending zone read keeps data-upcoming="loading"', async () => {
+    // The visit has answered; its shop's zone — what the card reads "now"
+    // in — has not. The card waits in the pending state, never the empty.
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [appointment()],
+      { loadLocation: () => new Promise(() => undefined) },
+    );
+    // No `whenStable`: the zone read never answers, so the page never is.
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('loading');
+    const upcoming = host.querySelector('[data-testid="account-upcoming"]');
+    expect(upcoming?.getAttribute('data-state')).toBe('loading');
+    expect(host.querySelector('lib-visit-card')).toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-skeleton"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).toBeNull();
+  });
+
+  it('a failed zone read shows data-upcoming="error", never loading forever', async () => {
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [appointment()],
+      {
+        loadLocation: () =>
+          Promise.resolve(
+            EcsResult.err(
+              RepositoryError.readFailed('locations', 'permission-denied'),
+            ),
+          ),
+      },
+    );
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('error');
+    const upcoming = host.querySelector('[data-testid="account-upcoming"]');
+    expect(upcoming?.getAttribute('data-state')).toBe('error');
+    // The card's one alert line, whichever read failed.
+    expect(upcoming?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      'Възникна проблем от наша страна — моля, опитайте отново.',
+    );
+    expect(host.querySelector('lib-visit-card')).toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-skeleton"]'),
+    ).toBeNull();
     expect(
       host.querySelector('[data-testid="account-upcoming-book-cta"]'),
     ).toBeNull();

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
+import { BookingStatus } from '@core/primitives';
 import { cssRule } from '../testing/css-rule';
 import { StaffEventHead, hollowStatus } from './staff-event-head';
 import type { StaffEventLine } from './staff-event-line';
@@ -147,10 +148,12 @@ describe('StaffEventHead', () => {
     expect(head.hasAttribute('data-struck')).toBe(true);
     expect(head.hasAttribute('data-receded')).toBe(true);
     // The predicate the hosts share: both hollow outcomes, nothing else.
-    expect(hollowStatus('cancelled')).toBe(true);
-    expect(hollowStatus('no_show')).toBe(true);
-    expect(hollowStatus('completed')).toBe(false);
-    expect(hollowStatus('confirmed')).toBe(false);
+    expect(hollowStatus(BookingStatus.Cancelled)).toBe(true);
+    expect(hollowStatus(BookingStatus.NoShow)).toBe(true);
+    expect(hollowStatus(BookingStatus.Completed)).toBe(false);
+    expect(hollowStatus(BookingStatus.Confirmed)).toBe(false);
+    expect(hollowStatus(BookingStatus.Pending)).toBe(false);
+    expect(hollowStatus(null)).toBe(false);
   });
   /*
    * STRUCK, NEVER GREYED (review r5, a11y). An hour that did not happen is

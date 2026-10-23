@@ -9,52 +9,47 @@ import {
   achievementsIdPrefix,
   achievementsPageState,
 } from './achievements-page-state';
-import { CardLoadState } from '../client-pages.vm';
+import { LoadState } from '@creativo/shared/view-state';
 
 const DATA = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const CTX = achievementsContextOf(georgiContext(), 'Георги Петров');
-const READY = { cardLoadState: CardLoadState.Ready, data: DATA } as const;
+const READY = { loadState: LoadState.Ready, data: DATA } as const;
 
 describe('achievementsPageState', () => {
-  it('is absent where there is no achievements data at all', () => {
+  it('is absent (EMPTY) where there is no achievements data at all', () => {
     expect(achievementsPageState(null, CTX, () => 'vm')).toEqual({
-      kind: 'absent',
+      loadState: LoadState.Empty,
     });
   });
 
   it('waits for the reads, and for the card’s words', () => {
     expect(
-      achievementsPageState(
-        { cardLoadState: CardLoadState.Loading },
-        CTX,
-        () => 'vm',
-      ),
-    ).toEqual({ kind: 'loading' });
+      achievementsPageState({ loadState: LoadState.Loading }, CTX, () => 'vm'),
+    ).toEqual({ loadState: LoadState.Loading });
     expect(achievementsPageState(READY, null, () => 'vm')).toEqual({
-      kind: 'loading',
+      loadState: LoadState.Loading,
     });
   });
 
   it('fails with the read', () => {
     expect(
-      achievementsPageState(
-        { cardLoadState: CardLoadState.Failed },
-        CTX,
-        () => 'vm',
-      ),
-    ).toEqual({ kind: 'failed' });
+      achievementsPageState({ loadState: LoadState.Failed }, CTX, () => 'vm'),
+    ).toEqual({ loadState: LoadState.Failed });
   });
 
   it('is the page’s VM and its words once built', () => {
     const state = achievementsPageState(READY, CTX, (data, ctx) =>
       data === DATA && ctx === CTX ? 'built' : null,
     );
-    expect(state).toEqual({ kind: 'ready', vm: 'built', words: CTX.words });
+    expect(state).toEqual({
+      loadState: LoadState.Ready,
+      data: { vm: 'built', words: CTX.words },
+    });
   });
 
   it('fails a scope or a family the catalogue does not hold: nothing true can be drawn', () => {
     expect(achievementsPageState(READY, CTX, () => null)).toEqual({
-      kind: 'failed',
+      loadState: LoadState.Failed,
     });
   });
 });

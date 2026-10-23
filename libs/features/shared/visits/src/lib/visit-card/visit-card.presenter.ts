@@ -1,27 +1,26 @@
 import type { Appointment, WaitlistRequest } from '@core/entities';
-import type { ShopNow } from '@core/components';
-import {
-  BookingStatus,
-  LocalDate,
-  type TimeZone,
-  type UtcEpochMs,
-} from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { BookingStatus } from '@core/primitives';
+import { VisitGrain, VisitPerspective, VisitRowOutcome } from '@core/systems';
 import { firstNameOf } from '../first-name';
-import { shopNowOf } from '../visit-ecs.shim';
 import {
+  distinct,
   storyOf,
+  visitClockOf,
   visitRowOf,
   visitZoneOf,
   waitlistRowOf,
 } from '../visit-row.presenter';
-import { formatMinute, formatWallClock } from '../wall-clock';
-import type { VisitLookup, VisitRowVm } from '../visit-row.vm';
-import type {
-  VisitCardOptions,
-  VisitCardVm,
-  VisitLinePart,
-  WaitlistCardOptions,
+import {
+  TrailingFactFace,
+  type VisitLookup,
+  type VisitRowVm,
+} from '../visit-row.vm';
+import {
+  type VisitCardOptions,
+  VisitCardSlot,
+  type VisitCardVm,
+  type VisitLinePart,
+  type WaitlistCardOptions,
 } from './visit-card.vm';
 
 /*
@@ -30,8 +29,9 @@ import type {
  * draw.
  *
  * Pure, as the row's builders are: the words arrive translated, the
- * catalogue arrives as a lookup, the clock arrives as a number. A card
- * builds the same in a spec, on the client's page and on the staff sheet.
+ * catalogue arrives as a lookup, "now" arrives as the shop's `ShopNow`. A
+ * card builds the same in a spec, on the client's page and on the staff
+ * sheet, and reads the row's own clock (`visitClockOf`).
  *
  * A card is a ROW TOLD AT LENGTH, so it asks the row's own builders for
  * everything the two share and words nothing a second time: whose seats
@@ -57,15 +57,14 @@ export function visitCardOf(
   lookup: VisitLookup,
 ): VisitCardVm {
   const words = options.words;
-  const staff = options.perspective === 'staff';
-  const last = options.kind === 'last';
-  const zone = visitZoneOf(appointment.locationId, lookup);
-  const at = new CardClock(
+  const staff = options.perspective === VisitPerspective.Staff;
+  const last = options.visitCardSlot === VisitCardSlot.Last;
+  const at = visitClockOf(
     appointment.localDate,
     appointment.startMinutes,
-    shopNowOf(options.nowMs, zone),
+    options.now,
     options.locale,
-    zone,
+    visitZoneOf(appointment.locationId, lookup) ?? options.timeZone,
   );
 
   // The visit as both lists tell it. The grain is the list's, and a card
@@ -74,11 +73,12 @@ export function visitCardOf(
     appointment,
     {
       perspective: options.perspective,
-      grain: 'month',
+      grain: VisitGrain.Month,
       subjectUserId: options.subjectUserId,
       subjectCustomerId: options.subjectCustomerId,
       currentAppointmentId: null,
-      nowMs: options.nowMs,
+      now: options.now,
+      timeZone: options.timeZone,
       locale: options.locale,
       words,
       clientWords: options.clientWords,
@@ -122,20 +122,24 @@ export function visitCardOf(
   // WHERE — a worked visit's shop, by its short name, and only where the
   // tenant has more than one: the row's rule.
   const where =
-    staff && last && row.outcome === 'worked' && lookup.locationCount > 1
+    staff &&
+    last &&
+    row.outcome === VisitRowOutcome.Worked &&
+    lookup.locationCount > 1
       ? lookup.locationName(appointment.locationId)
       : null;
 
-  // The figure is the staff's, of a worked visit: what the row prints on
-  // its trailing edge, read from whichever of its two slots carries it
-  // (`trailingFact` since revision 3, `trailing` before).
+  // The figure is the staff's, of a worked visit: what the row prints at
+  // the end of its second line (`trailingFact`).
   const figure =
-    staff && last && row.outcome === 'worked' ? amountOf(row) : null;
+    staff && last && row.outcome === VisitRowOutcome.Worked
+      ? amountOf(row)
+      : null;
 
   // A status is news on a visit still to come, and only there.
   const status = appointment.bookingStatus;
   const statusWord =
-    last || row.outcome !== 'open'
+    last || row.outcome !== VisitRowOutcome.Open
       ? null
       : status === BookingStatus.Pending
         ? words.statusPending
@@ -150,7 +154,7 @@ export function visitCardOf(
   const today = at.isToday();
   const facts: readonly VisitLinePart[] = last
     ? [
-        { text: today ? words.today : at.day(), fact: true },
+        { text: today ? words.today : at.dayShort(), fact: true },
         ...(tail === '' ? [] : [{ text: tail, fact: false }]),
       ]
     : [
@@ -172,7 +176,7 @@ export function visitCardOf(
   const said = [whoLong, where, figure, statusWord].filter(
     (part): part is string => part !== null && part !== '',
   );
-  const when = last ? at.dayLong() : at.whenLong(words.today);
+  const when = last ? at.dayLong() : at.whenHeard(words.today);
   const worded = words.rowName({
     title: row.title,
     when,
@@ -192,7 +196,7 @@ export function visitCardOf(
 
   return {
     id: appointment.id,
-    kind: options.kind,
+    visitCardSlot: options.visitCardSlot,
     label,
     services: row.title,
     facts,
@@ -246,7 +250,7 @@ export function waitlistCardOf(
 
   return {
     id: row.id,
-    kind: 'waitlist',
+    visitCardSlot: VisitCardSlot.Waitlist,
     label: words.waiting,
     services: row.title,
     facts: line === '' ? [] : [{ text: line, fact: false }],
@@ -265,108 +269,10 @@ export function waitlistCardOf(
 
 /** The row's money, charged: «27,50 €». A struck amount is a visit that did not happen. */
 function amountOf(row: VisitRowVm): string | null {
-  for (const slot of [row.trailingFact ?? null, row.trailing]) {
-    if (slot !== null && slot.kind === 'amount' && !slot.struck) {
-      return slot.text;
-    }
-  }
-  return null;
-}
-
-/** Each once, in first-seen order. */
-function distinct(values: readonly string[]): string[] {
-  return [...new Set(values)];
-}
-
-// ── The clock ──────────────────────────────────────────────────────────
-
-/**
- * A visit's wall-clock start as a card prints it, against the shop's
- * "now". The two date faces are the card's own («5.09», «пт, 23.10»: a
- * row never prints its date); the day in words, the time and the list are
- * the row's forms.
- */
-class CardClock {
-  constructor(
-    private readonly localDate: LocalDate,
-    private readonly minute: number,
-    private readonly now: ShopNow,
-    private readonly locale: string,
-    private readonly timeZone: TimeZone,
-  ) {}
-
-  /** «10:00». */
-  time(): string {
-    return formatMinute(this.minute, this.locale);
-  }
-
-  /** «5.09» — a last visit's day (R59); the year only outside the current one. */
-  day(): string {
-    return formatWallClock(this.localDate, null, this.locale, {
-      day: 'numeric',
-      month: 'short',
-      ...this.yearIfElsewhere(this.localDate),
-    });
-  }
-
-  /** «пт, 23.10» — the day of a visit to come, as `/account` has always printed it. */
-  weekdayAndDay(): string {
-    return formatWallClock(this.localDate, null, this.locale, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      ...this.yearIfElsewhere(this.localDate),
-    });
-  }
-
-  /**
-   * «5 септември» — the day as a reader hears it; a photo's own day (read
-   * on the shop's calendar) for its name, the visit's without one.
-   */
-  dayLong(takenAtUtcMs?: UtcEpochMs): string {
-    const day =
-      takenAtUtcMs === undefined
-        ? this.localDate
-        : ZonedTimeSystem.toLocal(takenAtUtcMs, this.timeZone).localDate;
-    return formatWallClock(day, null, this.locale, {
-      day: 'numeric',
-      month: 'long',
-      ...this.yearIfElsewhere(day),
-    });
-  }
-
-  /** «петък, 23 октомври в 10:00» · «днес, 10:00» — a visit to come, heard. */
-  whenLong(today: string): string {
-    return this.isToday()
-      ? `${today}, ${this.time()}`
-      : formatWallClock(this.localDate, this.minute, this.locale, {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          ...this.yearIfElsewhere(this.localDate),
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-  }
-
-  /** «Иван» · «Иван и Петър» — the people, as the locale lists them. */
-  list(names: readonly string[]): string {
-    return new Intl.ListFormat(this.locale, { type: 'conjunction' }).format(
-      names,
-    );
-  }
-
-  isToday(): boolean {
-    return this.now.localDate === this.localDate;
-  }
-
-  /** The year only outside the current one (R59). */
-  private yearIfElsewhere(
-    day: LocalDate,
-  ): Pick<Intl.DateTimeFormatOptions, 'year'> {
-    return LocalDate.parts(this.now.localDate).year ===
-      LocalDate.parts(day).year
-      ? {}
-      : { year: 'numeric' };
-  }
+  const fact = row.trailingFact;
+  return fact !== null &&
+    fact.trailingFactFace === TrailingFactFace.Amount &&
+    !fact.struck
+    ? fact.text
+    : null;
 }

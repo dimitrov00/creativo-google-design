@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { LocalDate, type UtcEpochMs } from '@core/primitives';
+import { BookingStatus, LocalDate, type UtcEpochMs } from '@core/primitives';
 import type { WallTime } from '@core/components';
 import { ZonedTimeSystem } from '@core/systems';
 import { unwrapOk } from '@core/testing';
-import type { VisitRowOutcome, VisitRowVm } from './visit-row.vm';
+import {
+  VisitGrain,
+  VisitRowEntry,
+  VisitRowOutcome,
+  type VisitRowVm,
+} from './visit-row.vm';
 import {
   UPCOMING_SECTION_KEY,
   sectionVisits,
@@ -26,7 +31,7 @@ function row(
   iso: string,
   options: {
     readonly upcoming?: boolean;
-    readonly grain?: 'month' | 'year';
+    readonly grain?: VisitGrain;
     readonly outcome?: VisitRowOutcome;
   } = {},
 ): VisitRowVm {
@@ -34,11 +39,12 @@ function row(
   const upcoming = options.upcoming ?? false;
   return {
     id,
-    kind: 'visit',
-    startMs: start.utcMs,
+    visitRowEntry: VisitRowEntry.Visit,
+    localDate: start.localDate,
+    startMinutes: start.minute,
     sectionKey: upcoming
       ? UPCOMING_SECTION_KEY
-      : visitSectionKey(start.localDate, options.grain ?? 'month'),
+      : visitSectionKey(start.localDate, options.grain ?? VisitGrain.Month),
     upcoming,
     tile: {
       caption: 'пт',
@@ -53,8 +59,10 @@ function row(
     trailing: null,
     trailingFact: null,
     marks: [],
-    outcome: options.outcome ?? (upcoming ? 'open' : 'worked'),
-    status: upcoming ? 'confirmed' : 'completed',
+    outcome:
+      options.outcome ??
+      (upcoming ? VisitRowOutcome.Open : VisitRowOutcome.Worked),
+    bookingStatus: upcoming ? BookingStatus.Confirmed : BookingStatus.Completed,
     accessibleName: id,
     testId: `row-${id}`,
   };
@@ -80,7 +88,7 @@ describe('sectionVisits', () => {
         row('aug-late', '2026-08-27T10:00:00'),
         row('sep-early', '2026-09-04T10:00:00'),
       ],
-      { grain: 'month', labels: LABELS },
+      { grain: VisitGrain.Month, labels: LABELS },
     );
 
     expect(sections.map((section) => section.key)).toEqual([
@@ -108,7 +116,7 @@ describe('sectionVisits', () => {
         row('july-2026', '2026-07-16T10:00:00'),
         row('july-2025', '2025-07-07T10:00:00'),
       ],
-      { grain: 'month', labels: LABELS },
+      { grain: VisitGrain.Month, labels: LABELS },
     );
     expect(sections.map((section) => section.label)).toEqual([
       'Юли 2026\u202fг.',
@@ -120,18 +128,22 @@ describe('sectionVisits', () => {
     const sections = sectionVisits(
       [
         // Built for the year grain, and for the month grain: both file by year.
-        row('sep-2026', '2026-09-04T10:00:00', { grain: 'year' }),
-        row('jul-2026', '2026-07-16T10:00:00', { outcome: 'cancelled' }),
-        row('mar-2025', '2025-03-06T10:00:00', { grain: 'year' }),
+        row('sep-2026', '2026-09-04T10:00:00', { grain: VisitGrain.Year }),
+        row('jul-2026', '2026-07-16T10:00:00', {
+          outcome: VisitRowOutcome.Cancelled,
+        }),
+        row('mar-2025', '2025-03-06T10:00:00', { grain: VisitGrain.Year }),
         row('this-visit', '2026-10-02T10:00:00', { upcoming: true }),
       ],
       {
-        grain: 'year',
+        grain: VisitGrain.Year,
         labels: {
           ...LABELS,
           // The staff heading's figure: worked visits only, absent at zero.
           detail: (rows) => {
-            const worked = rows.filter((entry) => entry.outcome === 'worked');
+            const worked = rows.filter(
+              (entry) => entry.outcome === VisitRowOutcome.Worked,
+            );
             return worked.length === 0 ? null : `${worked.length} посещения`;
           },
         },
@@ -177,7 +189,7 @@ describe('sectionVisits', () => {
         row('past', '2026-09-04T10:00:00'),
       ],
       {
-        grain: 'year',
+        grain: VisitGrain.Year,
         labels: {
           ...LABELS,
           detail: (rows) => {
@@ -193,7 +205,7 @@ describe('sectionVisits', () => {
   it('gives a period with no visit no section at all, and an empty list none', () => {
     const sections = sectionVisits(
       [row('sep', '2026-09-04T10:00:00'), row('jun', '2026-06-11T10:00:00')],
-      { grain: 'month', labels: LABELS },
+      { grain: VisitGrain.Month, labels: LABELS },
     );
     expect(sections.map((section) => section.key)).toEqual([
       '2026-09',
@@ -201,7 +213,9 @@ describe('sectionVisits', () => {
     ]);
     // No upcoming row, no upcoming heading.
     expect(sections.some((section) => section.key === 'upcoming')).toBe(false);
-    expect(sectionVisits([], { grain: 'month', labels: LABELS })).toEqual([]);
+    expect(
+      sectionVisits([], { grain: VisitGrain.Month, labels: LABELS }),
+    ).toEqual([]);
   });
 
   it('keeps one order whatever order the rows arrive in', () => {
@@ -210,9 +224,12 @@ describe('sectionVisits', () => {
       row('a', '2026-09-04T10:00:00'),
       row('c', '2026-09-01T10:00:00'),
     ];
-    const forward = sectionVisits(rows, { grain: 'month', labels: LABELS });
+    const forward = sectionVisits(rows, {
+      grain: VisitGrain.Month,
+      labels: LABELS,
+    });
     const backward = sectionVisits([...rows].reverse(), {
-      grain: 'month',
+      grain: VisitGrain.Month,
       labels: LABELS,
     });
     expect(ids(forward[0]?.rows ?? [])).toEqual(['a', 'b', 'c']);
@@ -225,7 +242,7 @@ describe('sectionVisits', () => {
         row('ahead', '2026-10-02T10:00:00', { upcoming: true }),
         row('past', '2026-09-04T10:00:00'),
       ],
-      { grain: 'month', labels: LABELS },
+      { grain: VisitGrain.Month, labels: LABELS },
     );
     expect(sections.map((section) => section.testId)).toEqual([
       'visits-upcoming',
@@ -248,7 +265,7 @@ describe('workedVisitsDetail', () => {
         row('aug', '2026-08-03T10:00:00'),
       ],
       {
-        grain: 'month',
+        grain: VisitGrain.Month,
         labels: { ...LABELS, detail: workedVisitsDetail(word) },
       },
     );
@@ -266,15 +283,21 @@ describe('workedVisitsDetail', () => {
     expect(
       detail([
         row('worked', '2026-07-20T10:00:00'),
-        row('missed', '2026-07-07T10:00:00', { outcome: 'no_show' }),
-        row('called-off', '2026-07-16T10:00:00', { outcome: 'cancelled' }),
+        row('missed', '2026-07-07T10:00:00', {
+          outcome: VisitRowOutcome.NoShow,
+        }),
+        row('called-off', '2026-07-16T10:00:00', {
+          outcome: VisitRowOutcome.Cancelled,
+        }),
       ]),
     ).toBeNull();
     expect(
       detail([
         row('worked-a', '2026-07-20T10:00:00'),
         row('worked-b', '2026-07-02T10:00:00'),
-        row('missed', '2026-07-07T10:00:00', { outcome: 'no_show' }),
+        row('missed', '2026-07-07T10:00:00', {
+          outcome: VisitRowOutcome.NoShow,
+        }),
       ]),
     ).toBe('2 посещения');
     expect(detail([])).toBeNull();
@@ -283,14 +306,18 @@ describe('workedVisitsDetail', () => {
   it('takes the floor its grain asks for: a year’s figure is a fact from the first visit on', () => {
     const byYear = workedVisitsDetail(word, 1);
     expect(
-      byYear([row('only', '2025-03-06T10:00:00', { grain: 'year' })]),
+      byYear([row('only', '2025-03-06T10:00:00', { grain: VisitGrain.Year })]),
     ).toBe('1 посещение');
     // Nothing worked is never «0 посещения», whatever the floor.
     expect(
       workedVisitsDetail(
         word,
         0,
-      )([row('missed', '2025-03-06T10:00:00', { outcome: 'no_show' })]),
+      )([
+        row('missed', '2025-03-06T10:00:00', {
+          outcome: VisitRowOutcome.NoShow,
+        }),
+      ]),
     ).toBeNull();
   });
 });
@@ -300,12 +327,14 @@ describe('visitSectionKey', () => {
     // 00:30 on 1 October in Sofia is still 30 September in UTC: the visit
     // files under its SHOP day, the one it is stored on.
     const justAfterMidnight = at('2026-10-01T00:30:00');
-    expect(visitSectionKey(justAfterMidnight.localDate, 'month')).toBe(
+    expect(visitSectionKey(justAfterMidnight.localDate, VisitGrain.Month)).toBe(
       '2026-10',
     );
-    expect(visitSectionKey(justAfterMidnight.localDate, 'year')).toBe('2026');
+    expect(visitSectionKey(justAfterMidnight.localDate, VisitGrain.Year)).toBe(
+      '2026',
+    );
     const newYear = at('2027-01-01T00:15:00');
-    expect(visitSectionKey(newYear.localDate, 'year')).toBe('2027');
+    expect(visitSectionKey(newYear.localDate, VisitGrain.Year)).toBe('2027');
   });
 });
 

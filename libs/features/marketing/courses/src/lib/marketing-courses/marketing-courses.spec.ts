@@ -11,6 +11,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CLOCK_PORTS,
   COURSE_READ_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
@@ -26,6 +27,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryClockPorts,
   memoryCourseReadPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
@@ -117,6 +119,8 @@ async function configure(
         provide: DEFAULT_LOCATION_PORTS,
         useValue: memoryDefaultLocationPorts(),
       },
+      // The shell reads the injected clock (the menu's day, the footer's year).
+      { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
     ],
   }).compileComponents();
 

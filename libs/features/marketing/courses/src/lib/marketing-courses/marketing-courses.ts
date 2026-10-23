@@ -38,11 +38,7 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-
-type CoursesListState =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'error' }
-  | { readonly kind: 'ready'; readonly courses: readonly Course[] };
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
 type CoursesTab =
   typeof EnrollmentStatus.Open | typeof EnrollmentStatus.Upcoming;
@@ -100,6 +96,8 @@ export class MarketingCourses {
   protected readonly instagramUrl = INSTAGRAM_URL;
   /** The dictionary, for the template's tab chips (never bare literals). */
   protected readonly EnrollmentStatus = EnrollmentStatus;
+  /** The dictionary, for the template's `@case`s (never bare literals). */
+  protected readonly LoadState = LoadState;
   protected readonly tab = signal<CoursesTab>(EnrollmentStatus.Open);
 
   private readonly result = toSignal(
@@ -107,17 +105,17 @@ export class MarketingCourses {
     { initialValue: undefined },
   );
 
-  protected readonly state = computed<CoursesListState>(() => {
+  protected readonly state = computed<LoadSlice<readonly Course[]>>(() => {
     const result = this.result();
-    if (result === undefined) return { kind: 'loading' };
-    if (!result.ok) return { kind: 'error' };
-    return { kind: 'ready', courses: result.value };
+    if (result === undefined) return LoadSlice.loading;
+    if (!result.ok) return LoadSlice.failed;
+    return LoadSlice.ready(result.value);
   });
 
   protected readonly visibleCourses = computed<readonly Course[]>(() => {
     const state = this.state();
-    if (state.kind !== 'ready') return [];
-    return state.courses.filter(
+    if (state.loadState !== LoadState.Ready) return [];
+    return state.data.filter(
       (course) => course.enrollmentStatus === this.tab(),
     );
   });

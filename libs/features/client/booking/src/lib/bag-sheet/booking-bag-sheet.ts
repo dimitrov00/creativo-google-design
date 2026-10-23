@@ -23,7 +23,7 @@ import {
   type Money as MoneyData,
 } from '@core/components';
 import { type TermsSpan, TermsSpanSystem } from '@core/systems';
-import { formatCents } from '@creativo/features/shared/visits';
+import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   CatalogPresenter,

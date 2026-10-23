@@ -2,11 +2,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { EnvironmentProviders, Injectable, signal } from '@angular/core';
 import {
+  TRANSLOCO_LOADER,
   Translation,
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { NEVER, Observable, of } from 'rxjs';
+import { NEVER, Observable, Subject, of } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
@@ -51,6 +52,7 @@ import {
   UserId,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
+import { LoadState } from '@creativo/shared/view-state';
 import {
   FIXTURE_TIME_ZONE,
   appointmentFixture,
@@ -306,6 +308,8 @@ interface ConfigureExtras {
   readonly barbers?: readonly Barber[];
   /** Replaces the upcoming read (a failure, a read that never answers). */
   readonly observeUpcoming?: AppointmentReadPorts['observeUpcoming'];
+  /** Replaces the catalogue's words — a load the spec answers when it says so. */
+  readonly translation?: Observable<Translation>;
 }
 
 /** How the cancel callable answers one call. */
@@ -383,6 +387,16 @@ async function configure(
         provide: DEFAULT_LOCATION_PORTS,
         useValue: memoryDefaultLocationPorts(),
       },
+      ...(extras.translation === undefined
+        ? []
+        : [
+            {
+              provide: TRANSLOCO_LOADER,
+              useValue: {
+                getTranslation: () => extras.translation,
+              } as TranslocoLoader,
+            },
+          ]),
     ],
   }).compileComponents();
 
@@ -757,6 +771,49 @@ describe('ClientAppointments', () => {
       expect(
         host.querySelectorAll('[data-testid="appointments-pill"]').length,
       ).toBe(0);
+    });
+
+    it('stays loading, never empty, until the catalogue words load', async () => {
+      // The read answers (the store is READY with one visit) while the
+      // catalogue's words are still on their way: the rows cannot be worded
+      // yet, so the list is still LOADING — never READY over no rows, which
+      // would flash «no visits» before the one visit draws.
+      const words = new Subject<Translation>();
+      const fixture = await configure(
+        [appointment('appt_1', FAR)],
+        undefined,
+        [],
+        [],
+        { translation: words },
+      );
+      const host = await render(fixture);
+      const page = fixture.componentInstance;
+
+      expect(page['store'].upcoming().loadState).toBe(LoadState.Ready);
+      expect(page['listState']()).toBe(LoadState.Loading);
+      expect(page['isEmpty']()).toBe(false);
+      expect(
+        host.querySelector('[data-testid="appointments-empty"]'),
+      ).toBeNull();
+      expect(
+        host.querySelectorAll('[data-testid="appointment-row"]').length,
+      ).toBe(0);
+
+      words.next(COPY);
+      words.complete();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(page['listState']()).toBe(LoadState.Ready);
+      expect(host.getAttribute('data-state')).toBe('ready');
+      expect(
+        host.querySelector('[data-testid="appointments-empty"]'),
+      ).toBeNull();
+      expect(
+        host.querySelectorAll('[data-testid="appointment-row"]').length,
+      ).toBe(1);
+      expect(rowById(host, 'appt_1')).not.toBeNull();
     });
 
     it('says the visits did not load, and «Опитай пак» reads them again', async () => {

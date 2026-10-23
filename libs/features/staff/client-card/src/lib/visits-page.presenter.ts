@@ -1,6 +1,7 @@
 import type { ClientStatsRecord } from '@core/entities';
+import { VisitFilter, VisitGrain, VisitPerspective } from '@core/systems';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
-  type VisitFilter,
   type VisitRowVm,
   type VisitSectionVm,
   matchesVisitFilter,
@@ -27,7 +28,6 @@ import type {
   HistoryPagingVm,
   HistorySpendVm,
   LinePart,
-  VisitsPageStatus,
   VisitsPageVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
@@ -64,6 +64,8 @@ const TEST_ID_PREFIX = 'history';
  * second line (`trailingFact`).
  */
 export function visitsRows(input: HistoryRowsInput): readonly VisitRowVm[] {
+  const { now, timeZone } = input;
+  if (now === null || timeZone === null) return [];
   const seen = new Set<string>();
   return input.appointments.flatMap((appointment) => {
     const id: string = appointment.id;
@@ -73,12 +75,13 @@ export function visitsRows(input: HistoryRowsInput): readonly VisitRowVm[] {
       visitRowOf(
         appointment,
         {
-          perspective: 'staff',
-          grain: 'month',
+          perspective: VisitPerspective.Staff,
+          grain: VisitGrain.Month,
           subjectUserId: input.subjectUserId,
           subjectCustomerId: input.subjectCustomerId,
           currentAppointmentId: input.currentAppointmentId,
-          nowMs: input.nowMs,
+          now,
+          timeZone,
           locale: input.words.lang,
           photoCount: input.photoCounts.get(id) ?? 0,
           words: input.words.visits,
@@ -106,7 +109,7 @@ export function visitsSections(
   return sectionVisits(
     rows.filter((row) => matchesVisitFilter(row, filter)),
     {
-      grain: 'month',
+      grain: VisitGrain.Month,
       testIdPrefix: TEST_ID_PREFIX,
       labels: {
         upcoming: words.visitsModule.upcoming,
@@ -241,7 +244,8 @@ function factsOf(
 
 /** What `visitsPageVm` takes: the first page's read, the loaded pages, the choice, the record. */
 export interface VisitsPageInput {
-  readonly status: VisitsPageStatus;
+  /** The first page's read: `LOADING`, `READY` or `FAILED` (never `EMPTY`). */
+  readonly loadState: LoadState;
   readonly rows: HistoryRowsInput;
   readonly filter: VisitFilter;
   readonly stats: ClientStatsRecord | null;
@@ -263,7 +267,7 @@ function offeredOf(
 ): readonly VisitFilter[] {
   return offered.includes(inForce)
     ? offered
-    : visitFiltersFor('staff').filter(
+    : visitFiltersFor(VisitPerspective.Staff).filter(
         (filter) => filter === inForce || offered.includes(filter),
       );
 }
@@ -274,14 +278,14 @@ function offeredOf(
  * still on its way.
  */
 export function visitsPageBlank(
-  status: VisitsPageStatus,
+  loadState: LoadState,
   filter: VisitFilter,
 ): VisitsPageVm {
   return {
-    status,
+    loadState,
     ...NOTHING_SAID,
     filter,
-    offeredFilters: offeredOf(['all'], filter),
+    offeredFilters: offeredOf([VisitFilter.All], filter),
     sections: [],
     paging: null,
   };
@@ -303,32 +307,34 @@ export function visitsPageBlank(
  */
 export function visitsPageVm(input: VisitsPageInput): VisitsPageVm {
   const words = input.rows.words;
-  const ready = input.status === 'ready';
+  const ready = input.loadState === LoadState.Ready;
   const head =
     ready || input.stats !== null
       ? headOf(input.stats, input.spend, words)
       : NOTHING_SAID;
   if (!ready) {
-    return { ...visitsPageBlank(input.status, input.filter), ...head };
+    return { ...visitsPageBlank(input.loadState, input.filter), ...head };
   }
 
   const rows = visitsRows(input.rows);
   const sections = visitsSections(rows, input.filter, words);
   const paging = input.paging;
   return {
-    status: 'ready',
+    loadState: LoadState.Ready,
     ...head,
     filter: input.filter,
     offeredFilters: offeredOf(
-      offeredVisitFilters('staff', rows, { complete: paging?.kind === 'end' }),
+      offeredVisitFilters(VisitPerspective.Staff, rows, {
+        complete: paging?.pagingState === PagingState.End,
+      }),
       input.filter,
     ),
     sections,
     // A list with no row ends on nothing: a closing line under the empty
     // state would close a list that is not there.
     paging:
-      paging?.kind === 'end' && sections.length === 0
-        ? { kind: 'end', endLabel: null }
+      paging?.pagingState === PagingState.End && sections.length === 0
+        ? { pagingState: PagingState.End, endLabel: null }
         : paging,
   };
 }
@@ -339,7 +345,8 @@ export function visitsPageVm(input: VisitsPageInput): VisitsPageVm {
 export interface VisitsPagingInput {
   /** The next page's cursor (the start instant it reads before); `null` once the last page is read. */
   readonly cursor: number | null;
-  readonly more: 'idle' | 'loading' | 'failed';
+  /** The «Покажи още» read; `MORE` while idle — the end is the `null` cursor. */
+  readonly pagingState: Exclude<PagingState, typeof PagingState.End>;
   readonly online: boolean;
   readonly stats: ClientStatsRecord | null;
   readonly words: ClientCardWords;
@@ -354,11 +361,16 @@ export interface VisitsPagingInput {
  * first day ends on nothing.
  */
 export function visitsPaging(input: VisitsPagingInput): HistoryPagingVm | null {
-  if (input.more === 'loading') return { kind: 'loading', endLabel: null };
+  if (input.pagingState === PagingState.Loading) {
+    return { pagingState: PagingState.Loading, endLabel: null };
+  }
   if (input.cursor !== null) {
     if (!input.online) return null;
     return {
-      kind: input.more === 'failed' ? 'failed' : 'more',
+      pagingState:
+        input.pagingState === PagingState.Failed
+          ? PagingState.Failed
+          : PagingState.More,
       endLabel: null,
     };
   }
@@ -366,7 +378,7 @@ export function visitsPaging(input: VisitsPagingInput): HistoryPagingVm | null {
   const visits = input.stats?.lifetimeVisitsCompleted ?? 0;
   const first = input.stats?.firstVisitLocalDate ?? null;
   return {
-    kind: 'end',
+    pagingState: PagingState.End,
     endLabel:
       visits === 0
         ? history.onlyThisVisit

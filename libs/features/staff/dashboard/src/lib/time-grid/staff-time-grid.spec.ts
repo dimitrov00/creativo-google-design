@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { EditCommand } from '@core/components';
+import { BookingStatus } from '@core/primitives';
+import { GridEvent as GridEventTag } from '@core/systems';
 import {
   type GridColumn,
   type GridCommit,
@@ -20,13 +23,13 @@ import {
 
 function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
   return {
-    kind: 'visit',
+    gridEvent: GridEventTag.Visit,
     startMinute: 600,
     endMinute: 645,
     title: 'Георги Петров',
     detail: 'Фейд',
     attribution: null,
-    status: 'confirmed',
+    bookingStatus: BookingStatus.Confirmed,
     terminal: false,
     past: false,
     accessibleName: 'Георги Петров, Фейд, 10:00–10:45',
@@ -284,7 +287,7 @@ describe('StaffTimeGrid', () => {
           events: [
             event({
               id: 'block:ivan:1',
-              kind: 'block',
+              gridEvent: GridEventTag.Block,
               startMinute: 900,
               endMinute: 960,
               title: 'Blocked',
@@ -311,7 +314,11 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'block:ivan:1', kind: 'block', title: 'Blocked' }),
+            event({
+              id: 'block:ivan:1',
+              gridEvent: GridEventTag.Block,
+              title: 'Blocked',
+            }),
           ],
         }),
       ]);
@@ -1068,7 +1075,7 @@ describe('StaffTimeGrid', () => {
             event({ id: 'a', startMinute: 600, endMinute: 660 }),
             {
               ...event({ id: 'g', startMinute: 600, endMinute: 660 }),
-              kind: 'gap' as const,
+              gridEvent: GridEventTag.Gap,
             },
           ],
         }),
@@ -1215,7 +1222,12 @@ describe('StaffTimeGrid', () => {
 
       document.dispatchEvent(finger('pointerup', travel(15)));
       expect(seen.committed).toEqual([
-        { id: 'a', startMinute: 615, endMinute: 660, kind: 'move' },
+        {
+          id: 'a',
+          startMinute: 615,
+          endMinute: 660,
+          editCommand: EditCommand.Move,
+        },
       ]);
     });
 
@@ -1425,7 +1437,12 @@ describe('StaffTimeGrid', () => {
 
       document.dispatchEvent(pointer('pointerup', travel(15)));
       expect(seen.committed).toEqual([
-        { id: 'a', startMinute: 600, endMinute: 660, kind: 'resize' },
+        {
+          id: 'a',
+          startMinute: 600,
+          endMinute: 660,
+          editCommand: EditCommand.Resize,
+        },
       ]);
     });
 
@@ -1448,7 +1465,7 @@ describe('StaffTimeGrid', () => {
       const last = seen.changed.at(-1);
       expect(last).toEqual({ id: 'a', startMinute: 610, endMinute: 655 });
       expect((last?.endMinute ?? 0) - (last?.startMinute ?? 0)).toBe(45);
-      expect(seen.committed.at(-1)?.kind).toBe('move');
+      expect(seen.committed.at(-1)?.editCommand).toBe(EditCommand.Move);
     });
 
     /*
@@ -1582,7 +1599,10 @@ describe('StaffTimeGrid', () => {
       );
       fixture.detectChanges();
       expect(seen.changed.at(-1)?.endMinute).toBe(651);
-      expect(seen.committed.map((c) => c.kind)).toEqual(['resize', 'resize']);
+      expect(seen.committed.map((c) => c.editCommand)).toEqual([
+        EditCommand.Resize,
+        EditCommand.Resize,
+      ]);
 
       // The block's own vocabulary: the arrows slide the whole interval.
       grab(host, 'staff-grid-event').dispatchEvent(
@@ -1594,7 +1614,7 @@ describe('StaffTimeGrid', () => {
         startMinute: 595,
         endMinute: 646,
       });
-      expect(seen.committed.at(-1)?.kind).toBe('move');
+      expect(seen.committed.at(-1)?.editCommand).toBe(EditCommand.Move);
     });
 
     /* The handles publish their own bounds, which is what makes `Home`/`End`
@@ -1829,13 +1849,13 @@ describe('StaffTimeGrid', () => {
               id: 'missed',
               startMinute: 600,
               endMinute: 645,
-              status: 'no_show',
+              bookingStatus: BookingStatus.NoShow,
             }),
             event({
               id: 'off',
               startMinute: 660,
               endMinute: 705,
-              status: 'cancelled',
+              bookingStatus: BookingStatus.Cancelled,
             }),
           ],
         }),
@@ -1857,6 +1877,83 @@ describe('StaffTimeGrid', () => {
         'no_show:true',
         'cancelled:true',
       ]);
+    });
+  });
+
+  /*
+   * The blocks carry ecs-core tags (`gridEvent`, `bookingStatus`); the DOM
+   * keeps the lower-case words its stylesheets select on
+   * (`[data-kind='block']`, `.staff-grid__event[data-editable][data-status]`)
+   * — one words table per family, and `new` for the visit the editor is
+   * drafting that is not booked yet (UI residue cleanup, §1.2 row 31).
+   */
+  describe('the DOM words', () => {
+    it('data-kind and data-status keep their lower-case words', () => {
+      const statuses = [
+        [BookingStatus.Pending, 'pending'],
+        [BookingStatus.Confirmed, 'confirmed'],
+        [BookingStatus.Completed, 'completed'],
+        [BookingStatus.NoShow, 'no_show'],
+        [BookingStatus.Cancelled, 'cancelled'],
+      ] as const;
+      const host = render([
+        column({
+          open: [{ startMinute: 0, endMinute: 1440 }],
+          events: [
+            ...statuses.map(([bookingStatus], index) =>
+              event({
+                id: `visit-${index}`,
+                startMinute: 60 * index,
+                endMinute: 60 * index + 45,
+                bookingStatus,
+              }),
+            ),
+            event({
+              id: 'gap',
+              gridEvent: GridEventTag.Gap,
+              bookingStatus: null,
+              startMinute: 600,
+              endMinute: 645,
+            }),
+            event({
+              id: 'block',
+              gridEvent: GridEventTag.Block,
+              bookingStatus: null,
+              startMinute: 700,
+              endMinute: 745,
+            }),
+            event({
+              id: 'draft',
+              bookingStatus: null,
+              draftNew: true,
+              startMinute: 800,
+              endMinute: 845,
+            }),
+            event({
+              id: 'bare',
+              bookingStatus: null,
+              startMinute: 900,
+              endMinute: 945,
+            }),
+          ],
+        }),
+      ]);
+      const words = (id: string) => {
+        const block = host.querySelector(`[data-event-id="${id}"]`);
+        return [
+          block?.getAttribute('data-kind'),
+          block?.getAttribute('data-status'),
+        ];
+      };
+      statuses.forEach(([, word], index) =>
+        expect(words(`visit-${index}`)).toEqual(['visit', word]),
+      );
+      expect(words('gap')).toEqual(['gap', null]);
+      expect(words('block')).toEqual(['block', null]);
+      // The editor's unbooked visit keeps `new` — the primary ink's hook…
+      expect(words('draft')).toEqual(['visit', 'new']);
+      // …and a block with no tag and no flag prints no status at all.
+      expect(words('bare')).toEqual(['visit', null]);
     });
   });
 

@@ -63,23 +63,28 @@ export interface UiIconReporter {
   report(diagnostic: UiIconDiagnostic): void;
 }
 
-export class ConsoleUiIconReporter implements UiIconReporter {
-  constructor(private readonly loud: boolean) {}
-
-  report(diagnostic: UiIconDiagnostic): void {
-    const message = `[ui-icon] ${diagnostic.code}${
-      diagnostic.key ? ` "${diagnostic.key}"` : ''
-    } (${diagnostic.origin}): ${diagnostic.detail}`;
-    if (this.loud) console.error(message);
-    else console.warn(message);
-  }
+/**
+ * The console reporter — a plain object over a closure, not a class
+ * (CLAUDE.md §2: `class` belongs to Angular kinds only). `loud` sends each
+ * diagnostic to `console.error`, otherwise to `console.warn`.
+ */
+export function consoleUiIconReporter(loud: boolean): UiIconReporter {
+  return {
+    report(diagnostic: UiIconDiagnostic): void {
+      const message = `[ui-icon] ${diagnostic.code}${
+        diagnostic.key ? ` "${diagnostic.key}"` : ''
+      } (${diagnostic.origin}): ${diagnostic.detail}`;
+      if (loud) console.error(message);
+      else console.warn(message);
+    },
+  };
 }
 
 export const UI_ICON_REPORTER = new InjectionToken<UiIconReporter>(
   'UI_ICON_REPORTER',
   {
     providedIn: 'root',
-    factory: () => new ConsoleUiIconReporter(isDevMode()),
+    factory: () => consoleUiIconReporter(isDevMode()),
   },
 );
 

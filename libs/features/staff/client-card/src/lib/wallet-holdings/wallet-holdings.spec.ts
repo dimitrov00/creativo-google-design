@@ -8,7 +8,7 @@ import {
   WALLET_HOLDINGS,
 } from '../../testing/client-pages.vm-fixtures';
 import { cssRule } from '../../testing/css-rule';
-import type { WalletHoldingVm } from '../client-pages.vm';
+import { WalletHolding, type WalletHoldingVm } from '../client-pages.vm';
 import {
   WalletHoldings,
   type WalletHoldingsColumns,
@@ -110,7 +110,7 @@ describe('lib-wallet-holdings — every thing held, a ticket on white paper', ()
     expect(ticket.hasAttribute('tabindex')).toBe(false);
     expect(ticket.classList.contains('wallet-holdings__origin')).toBe(false);
     expect(text(ticket.querySelector('.ui-coupon-card__title'))).toBe(
-      WALLET_HOLDINGS.georgi[1]?.kind === 'ticket'
+      WALLET_HOLDINGS.georgi[1]?.walletHolding === WalletHolding.Ticket
         ? WALLET_HOLDINGS.georgi[1].ticket.title
         : '',
     );
@@ -123,7 +123,7 @@ describe('lib-wallet-holdings — every thing held, a ticket on white paper', ()
     // The name is the view model's, bound as it came (the presenter words
     // «Награда: …, важи до …»; the body never re-words a ticket).
     expect(ticket.getAttribute('aria-label')).toBe(
-      WALLET_HOLDINGS.georgi[1]?.kind === 'ticket'
+      WALLET_HOLDINGS.georgi[1]?.walletHolding === WalletHolding.Ticket
         ? WALLET_HOLDINGS.georgi[1].ticket.accessibleName
         : '',
     );
@@ -132,7 +132,8 @@ describe('lib-wallet-holdings — every thing held, a ticket on white paper', ()
   it('keeps an applied ticket as the discount page’s own card, with its real «Премахни»', () => {
     const { fixture, byId, text } = mount(WALLET_HOLDINGS.vouchers);
     const applied = WALLET_HOLDINGS.vouchers[2];
-    if (applied?.kind !== 'ticket') throw new Error('the fixture moved');
+    if (applied?.walletHolding !== WalletHolding.Ticket)
+      throw new Error('the fixture moved');
     const ticket = must(byId(`rewards-ready-${applied.ticket.grantId}`));
     expect(ticket.hasAttribute('data-applied')).toBe(true);
     expect(ticket.getAttribute('tabindex')).toBe('-1');

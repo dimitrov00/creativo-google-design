@@ -20,7 +20,7 @@ import {
   SiteFooterComponent,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
-import { formatWallClock } from '@creativo/features/shared/visits';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import { UiButton, UiChip, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -30,13 +30,9 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
 type EventsTab = 'upcoming' | 'past';
-
-type EventsListState =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'error' }
-  | { readonly kind: 'ready'; readonly events: readonly ShopEvent[] };
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
@@ -88,6 +84,8 @@ export class MarketingEvents {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The dictionary, for the template's `@case`s (never bare literals). */
+  protected readonly LoadState = LoadState;
   protected readonly tab = signal<EventsTab>('upcoming');
 
   private readonly result = toSignal(
@@ -102,11 +100,11 @@ export class MarketingEvents {
     { initialValue: undefined },
   );
 
-  protected readonly state = computed<EventsListState>(() => {
+  protected readonly state = computed<LoadSlice<readonly ShopEvent[]>>(() => {
     const result = this.result();
-    if (result === undefined) return { kind: 'loading' };
-    if (!result.ok) return { kind: 'error' };
-    return { kind: 'ready', events: result.value };
+    if (result === undefined) return LoadSlice.loading;
+    if (!result.ok) return LoadSlice.failed;
+    return LoadSlice.ready(result.value);
   });
 
   constructor() {

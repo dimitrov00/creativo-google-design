@@ -6,7 +6,11 @@ import {
   CancelledBy,
   SeatOutcome,
 } from '@core/components';
-import { PersonalRecord, StreakState } from '@core/components';
+import {
+  PersonalRecord,
+  PersonalRecordKind,
+  StreakState,
+} from '@core/components';
 import type { Appointment, ClientStatsRecord } from '@core/entities';
 import { BarberId, ServiceId, UtcEpochMs } from '@core/primitives';
 import { localDate } from '@core/testing';
@@ -225,7 +229,7 @@ describe('recordsPageVm', () => {
     it('is the record set most recently: the hero figure over what it counts', () => {
       expect(page.featured).toEqual({
         id: 'longestRhythm',
-        kind: 'longestRhythm',
+        personalRecordKind: PersonalRecordKind.LongestRhythm,
         label: 'Най-дълъг ритъм',
         value: '24',
         sentence: 'поредни посещения в ритъм',
@@ -298,7 +302,7 @@ describe('recordsPageVm', () => {
       const data = withRecords([record('favouriteService')]);
       expect(recordsPageVm(georgi({ data })).featured).toEqual({
         id: 'favouriteService',
-        kind: 'favouriteService',
+        personalRecordKind: PersonalRecordKind.FavouriteService,
         label: 'Любима услуга',
         value: '24',
         sentence: 'посещения с фейд',

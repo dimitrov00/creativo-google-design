@@ -612,8 +612,8 @@
             class="agenda-group__items"
             [attr.aria-labelledby]="'agenda-time-' + group.key"
           >
-            @for (entry of group.items; track entry.id) { @if (entry.kind ===
-            'gap') {
+            @for (entry of group.items; track entry.id) { @if (entry.agendaRow
+            === AgendaRow.Gap) {
             <!-- A HOLE, attributed. Free time belongs to one chair, so a gap
                  card that did not name the barber would be meaningless sitting
                  between two other people's cuts. -->
@@ -680,7 +680,7 @@
               uiInteractive
               tabindex="-1"
               [attr.data-row-id]="entry.id"
-              [attr.data-status]="statusWords[entry.status]"
+              [attr.data-status]="statusWords[entry.bookingStatus]"
               [attr.data-terminal]="entry.terminal ? '' : null"
               [attr.data-past]="entry.past ? '' : null"
               [attr.data-next]="entry.isNext ? '' : null"
@@ -761,7 +761,7 @@
                   class="agenda-card__head"
                   size="regular"
                   [title]="entry.clientLabel"
-                  [struck]="hollowStatus(statusWords[entry.status])"
+                  [struck]="hollowStatus(entry.bookingStatus)"
                   [receded]="entry.past"
                   [lines]="factLines(entry)"
                   [start]="fields.isOn('timeStart') ? entry.startLabel : null"
@@ -849,7 +849,7 @@
                     >{{ entry.partyLabel }}</span
                   >
                 </span>
-                } @if (entry.tag && !hollowStatus(statusWords[entry.status])) {
+                } @if (entry.tag && !hollowStatus(entry.bookingStatus)) {
                 <!-- (Not on an hour that did not happen, 2026-09-24: how far
                      a run is from the catalogue's length means nothing for a
                      visit that will not run.)
@@ -1029,7 +1029,7 @@
             uiListRow
             [uiInteractive]="true"
             data-testid="staff-add-booking"
-            (click)="openCreate('booking')"
+            (click)="openCreate(CreateIntent.Booking)"
           >
             <span uiLeading><ui-icon uiName="appointment.book" /></span>
             {{ t('staff.day.fab.booking') }}
@@ -1040,7 +1040,7 @@
             uiListRow
             [uiInteractive]="true"
             data-testid="staff-add-block"
-            (click)="openCreate('block')"
+            (click)="openCreate(CreateIntent.Block)"
           >
             <span uiLeading><ui-icon uiName="booking.blocked" /></span>
             {{ t('staff.day.fab.block') }}

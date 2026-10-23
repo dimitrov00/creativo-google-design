@@ -40,7 +40,7 @@ import {
   ProfileCompletionKey,
   SettledVerdict,
 } from '@core/systems';
-import { formatCents } from '@creativo/features/shared/visits';
+import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   ServiceCardComponent,
@@ -53,6 +53,7 @@ import {
   UiButton,
   UiDateField,
   UiDateFieldBlurEvent,
+  UiDateFieldFill,
   UiDateFieldParts,
   UiIcon,
   UiPhoneField,
@@ -531,11 +532,11 @@ export class ClientOnboarding {
 
   /** `ui-date-field` validate-on-blur — never on keystroke; an untouched (empty) optional field stays silent. */
   protected onBirthBlur(event: UiDateFieldBlurEvent): void {
-    if (event.kind === 'empty') {
+    if (event.uiDateFieldFill === UiDateFieldFill.Empty) {
       this.birthErrorState.set(null);
       return;
     }
-    if (event.kind === 'partial') {
+    if (event.uiDateFieldFill === UiDateFieldFill.Partial) {
       this.birthErrorState.set('partial');
       return;
     }

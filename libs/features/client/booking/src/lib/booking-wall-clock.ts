@@ -1,5 +1,5 @@
 import { LocalDate } from '@core/primitives';
-import { formatWallClock } from '@creativo/features/shared/visits';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 
 /*
  * THE BOOKING STEPS' CLOCK FACES — the one place the flow says a day or a

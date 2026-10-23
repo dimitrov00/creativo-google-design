@@ -35,8 +35,15 @@ import {
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+import { LocalDate, type TimeZone, type UtcEpochMs } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { ThemeService } from '@creativo/features/shared/shell';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
+import {
+  type LandingLocationId,
+  landingLocationZone,
+} from '../landing-location-zone';
 
 /** Theme-matched basemap styles (OpenFreeMap hosts both). */
 const MAP_STYLE_URLS = {
@@ -45,7 +52,7 @@ const MAP_STYLE_URLS = {
 } as const;
 const STATUS_REFRESH_MS = 60_000;
 
-/** Index convention matches `Date.getDay()` — 0 is Sunday, 6 is Saturday. */
+/** Index convention: 0 is Sunday, 6 is Saturday — the ISO weekday mod 7. */
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 /** Display order for the week list — starts Monday, ends Sunday. */
 const WEEK_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
@@ -66,6 +73,10 @@ type WeekSchedule = readonly [
 ];
 
 interface LocationItem {
+  /** The shop's `LOCATIONS` id — the join its zone is read through. */
+  readonly locationId: LandingLocationId;
+  /** The shop's IANA zone: its open/closed line runs on the SHOP's clock. */
+  readonly timeZone: TimeZone;
   readonly nameKey: string;
   readonly addressKey: string;
   readonly phoneKey?: string;
@@ -75,9 +86,22 @@ interface LocationItem {
   readonly lng: number;
 }
 
-interface LocationStatus {
+/** What a shop's status line says — the field `shopOpening` (Law 6). */
+const ShopOpening = {
+  /** Open: «Closes at 20:00». */
+  ClosesAt: 'CLOSES_AT',
+  /** Open, within the closing-soon threshold: the warning tone. */
+  ClosesSoon: 'CLOSES_SOON',
+  /** Closed, today's hours not started yet: «Opens at 10:00». */
+  OpensAt: 'OPENS_AT',
+  /** Closed for today: «Opens Tuesday at 10:00». */
+  OpensOn: 'OPENS_ON',
+} as const;
+type ShopOpening = (typeof ShopOpening)[keyof typeof ShopOpening];
+
+interface ShopOpeningLine {
   readonly isOpen: boolean;
-  readonly kind: 'closesAt' | 'closesSoon' | 'opensAt' | 'opensOn';
+  readonly shopOpening: ShopOpening;
   readonly time: string;
   readonly dayIndex: number;
 }
@@ -94,6 +118,10 @@ const CENTER_SCHEDULE: WeekSchedule = [
   { open: '09:00', close: '21:00' },
   { open: '10:00', close: '18:00' },
 ];
+
+/** Each shop's zone, checked ONCE at module load (no zone literal here). */
+const CENTER_ZONE = landingLocationZone('center');
+const MLADOST_ZONE = landingLocationZone('mladost');
 
 const MLADOST_SCHEDULE: WeekSchedule = [
   null,
@@ -143,6 +171,7 @@ export class LocationsComponent implements AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly transloco = inject(TranslocoService);
   private readonly theme = inject(ThemeService);
+  private readonly clock = inject(CLOCK_PORTS);
   // The imperative MapLibre DOM below can't host <ui-icon>, but its glyphs
   // are still built by the SAME registry (plus any provideUiIcons
   // overrides), so a remap of 'location.pin' / 'location.recenter' — in
@@ -174,9 +203,13 @@ export class LocationsComponent implements AfterViewInit {
 
   protected readonly weekdayKeys = WEEKDAY_KEYS;
   protected readonly weekOrder = WEEK_DISPLAY_ORDER;
+  /** The dictionary, for the template's status lines (never bare literals). */
+  protected readonly ShopOpening = ShopOpening;
 
   protected readonly locations: readonly LocationItem[] = [
     {
+      locationId: 'center',
+      timeZone: CENTER_ZONE,
       nameKey: 'landing.location.center.name',
       addressKey: 'landing.location.center.address',
       phoneKey: 'landing.location.center.phone',
@@ -190,6 +223,8 @@ export class LocationsComponent implements AfterViewInit {
       lng: 25.6366,
     },
     {
+      locationId: 'mladost',
+      timeZone: MLADOST_ZONE,
       nameKey: 'landing.location.mladost.name',
       addressKey: 'landing.location.mladost.address',
       phoneKey: 'landing.location.mladost.phone',
@@ -207,8 +242,16 @@ export class LocationsComponent implements AfterViewInit {
   protected readonly activeIndex = signal(0);
   protected readonly sheetOpen = signal(false);
   protected readonly sheetClosing = signal(false);
-  protected readonly now = signal(new Date());
-  protected readonly todayIndex = computed(() => this.now().getDay());
+  /** The clock's instant, re-read every minute — the status lines' "now". */
+  private readonly now = signal<UtcEpochMs>(this.clock.nowUtcMs());
+  /**
+   * The open sheet's bold row: today on the ACTIVE shop's own calendar (the
+   * first shop's while the list is somehow empty — `activeLocation` falls
+   * back to it too).
+   */
+  protected readonly todayIndex = computed(
+    () => this.wallAt(this.activeLocation()?.timeZone ?? CENTER_ZONE).day,
+  );
   protected readonly activeLocation = computed(
     () => this.locations[this.activeIndex()] ?? this.locations[0],
   );
@@ -229,7 +272,7 @@ export class LocationsComponent implements AfterViewInit {
 
     if (isPlatformBrowser(this.platformId)) {
       const timer = window.setInterval(
-        () => this.now.set(new Date()),
+        () => this.now.set(this.clock.nowUtcMs()),
         STATUS_REFRESH_MS,
       );
       this.destroyRef.onDestroy(() => window.clearInterval(timer));
@@ -453,12 +496,11 @@ export class LocationsComponent implements AfterViewInit {
    * Whether `location` is open right now, plus what to say about it — "Closes
    * at 20:00" while open, "Opens at 10:00" if today's hours haven't started
    * yet, or "Opens Tuesday at 10:00" scanning forward when today's closed
-   * (or already past closing).
+   * (or already past closing). Read on the SHOP's wall clock — the
+   * location's zone, never the visitor's device (Law 7.2).
    */
-  protected statusFor(location: LocationItem): LocationStatus {
-    const now = this.now();
-    const day = now.getDay();
-    const minutesNow = now.getHours() * 60 + now.getMinutes();
+  protected statusFor(location: LocationItem): ShopOpeningLine {
+    const { day, minute: minutesNow } = this.wallAt(location.timeZone);
     const today = location.schedule[day];
 
     if (today) {
@@ -469,7 +511,9 @@ export class LocationsComponent implements AfterViewInit {
           closeMinutes - minutesNow <= CLOSES_SOON_THRESHOLD_MINUTES;
         return {
           isOpen: true,
-          kind: closingSoon ? 'closesSoon' : 'closesAt',
+          shopOpening: closingSoon
+            ? ShopOpening.ClosesSoon
+            : ShopOpening.ClosesAt,
           time: today.close,
           dayIndex: day,
         };
@@ -477,7 +521,7 @@ export class LocationsComponent implements AfterViewInit {
       if (minutesNow < openMinutes) {
         return {
           isOpen: false,
-          kind: 'opensAt',
+          shopOpening: ShopOpening.OpensAt,
           time: today.open,
           dayIndex: day,
         };
@@ -488,11 +532,34 @@ export class LocationsComponent implements AfterViewInit {
       const dayIndex = (day + offset) % 7;
       const hours = location.schedule[dayIndex];
       if (hours) {
-        return { isOpen: false, kind: 'opensOn', time: hours.open, dayIndex };
+        return {
+          isOpen: false,
+          shopOpening: ShopOpening.OpensOn,
+          time: hours.open,
+          dayIndex,
+        };
       }
     }
 
-    return { isOpen: false, kind: 'opensAt', time: '', dayIndex: day };
+    return {
+      isOpen: false,
+      shopOpening: ShopOpening.OpensAt,
+      time: '',
+      dayIndex: day,
+    };
+  }
+
+  /**
+   * The shop's wall clock now, in its `timeZone`: the weekday as a
+   * `WEEKDAY_KEYS` index (Sunday = 0 — the ISO weekday mod 7) and the
+   * minute from local midnight.
+   */
+  private wallAt(timeZone: TimeZone): {
+    readonly day: number;
+    readonly minute: number;
+  } {
+    const { localDate, minute } = ZonedTimeSystem.toLocal(this.now(), timeZone);
+    return { day: LocalDate.weekday(localDate) % 7, minute };
   }
 
   protected phoneHref(phone: string): string {

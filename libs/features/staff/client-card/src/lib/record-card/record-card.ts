@@ -9,7 +9,9 @@ import {
 import { UiAvatar, UiBadge, UiCard } from '@creativo/ui/controls';
 import { type UiFontStyle, UiTextDirective } from '@creativo/ui/modifiers';
 import { boundSuffix } from '../client-card.format';
+import { PersonalRecordKind } from '@core/components';
 import type { RecordCardVm } from '../client-pages.vm';
+import { RECORD_KIND_WORDS } from '../client-card.words';
 import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
 
 /**
@@ -62,7 +64,7 @@ import { measuredWidthOf, recordFigureFontFor } from '../sheet-width';
       [uiInteractive]="true"
       class="record-card"
       [attr.aria-label]="record.accessibleName"
-      [attr.data-kind]="record.kind"
+      [attr.data-kind]="recordKindWords[record.personalRecordKind]"
       [attr.data-new]="record.isNew ? '' : null"
       (click)="open.emit(record.id)"
     >
@@ -121,6 +123,9 @@ export class RecordCard {
   /** A tap: the record's id; the page opens «Рекорди». */
   readonly open = output<string>();
 
+  /** Each record kind's word: the card's `data-kind`. */
+  protected readonly recordKindWords = RECORD_KIND_WORDS;
+
   /** The card's own width, followed as it resizes: what a word figure's rung is chosen by. */
   private readonly width = measuredWidthOf(
     inject<ElementRef<HTMLElement>>(ElementRef),
@@ -138,7 +143,7 @@ export class RecordCard {
 
   /** A favourite's figure is the service — a word, not a number. */
   protected wordFigure(record: RecordCardVm): boolean {
-    return record.kind === 'favouriteService';
+    return record.personalRecordKind === PersonalRecordKind.FavouriteService;
   }
 
   /** The figure's rung: the display rung for a number; for a word, the rung the card's width holds. */

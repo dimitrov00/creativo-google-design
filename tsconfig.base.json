@@ -26,11 +26,13 @@
       ],
       "@creativo/shared/ui": ["./libs/shared/ui/src/index.ts"],
       "@creativo/shared/cursor": ["./libs/shared/cursor/src/index.ts"],
+      "@creativo/shared/view-state": ["./libs/shared/view-state/src/index.ts"],
       "@creativo/ui/tokens": ["./libs/ui/tokens/src/index.ts"],
       "@creativo/ui/modifiers": ["./libs/ui/modifiers/src/index.ts"],
       "@creativo/ui/controls": ["./libs/ui/controls/src/index.ts"],
       "@creativo/ui/layout": ["./libs/ui/layout/src/index.ts"],
       "@creativo/ui/patterns": ["./libs/ui/patterns/src/index.ts"],
+      "@creativo/ui/wall-clock": ["./libs/ui/wall-clock/src/index.ts"],
       "@creativo/features/marketing/landing": [
         "./libs/features/marketing/landing/src/index.ts"
       ],

@@ -18,7 +18,7 @@ import { UiMonthPicker } from './month-picker';
 })
 class Host {
   readonly selected = signal('2026-08-26');
-  readonly today = signal('2026-08-24');
+  readonly today = signal<string | null>('2026-08-24');
   readonly marked = signal<readonly string[]>([]);
   readonly min = signal<string | null>(null);
   readonly relatives = [
@@ -96,6 +96,28 @@ describe('UiMonthPicker', () => {
     expect(fixture.componentInstance.selected()).toBe('2026-08-26');
   });
 
+  /* The head is a TITLE: the month in the locale's words, title-cased, and
+     paging walks across a year boundary in both directions. */
+  it('titles the month, and pages it across a year', async () => {
+    const { fixture, host } = await render();
+    const title = () =>
+      host.querySelector('.ui-month-picker__title')?.textContent?.trim();
+    fixture.componentInstance.selected.set('2026-12-10');
+    fixture.detectChanges();
+    expect(title()).toBe('Декември 2026 г.');
+
+    host.querySelector<HTMLElement>('[data-testid="ui-month-next"]')?.click();
+    fixture.detectChanges();
+    expect(title()).toBe('Януари 2027 г.');
+    expect(day(host, '2027-01-01')).not.toBeNull();
+
+    host.querySelector<HTMLElement>('[data-testid="ui-month-prev"]')?.click();
+    host.querySelector<HTMLElement>('[data-testid="ui-month-prev"]')?.click();
+    fixture.detectChanges();
+    expect(title()).toBe('Ноември 2026 г.');
+    expect(day(host, '2026-11-30')).not.toBeNull();
+  });
+
   /*
    * ⚠ A paged month must SURVIVE an unrelated recompute. The browsed month
    * is a `linkedSignal` carrying `previous` forward for exactly this: source
@@ -146,6 +168,24 @@ describe('UiMonthPicker', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.picked).toEqual(['2026-08-25']);
+  });
+
+  /* DEP-3 (ui-residue-cleanup): with no `uiToday` there is nothing to
+     resolve a shortcut against, and this lib never reads a device clock —
+     the chip is drawn as before and does nothing. */
+  it('leaves a shortcut inert while there is no today to resolve it against', async () => {
+    const { fixture, host } = await render();
+    fixture.componentInstance.today.set(null);
+    fixture.detectChanges();
+
+    const chip = host.querySelector<HTMLElement>(
+      '[data-testid="ui-month-relative-0"]',
+    );
+    expect(chip).not.toBeNull();
+    chip?.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.picked).toEqual([]);
   });
 
   it('offers no shortcuts unless a consumer asks', async () => {

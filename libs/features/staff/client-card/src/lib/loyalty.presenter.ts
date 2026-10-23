@@ -28,11 +28,8 @@ import {
   daysBetweenDays,
   shopDayOf,
 } from './client-card.format';
-import {
-  CardLoadState,
-  type RewardReadyVm,
-  type Slice,
-} from './client-pages.vm';
+import { type RewardReadyVm } from './client-pages.vm';
+import { type LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
 
 /*
@@ -254,7 +251,7 @@ export interface LoyaltyPageInput {
   /** `loyaltyAccounts/{customerId}` as stored. */
   readonly account: LoyaltyAccount;
   /** `null` = no catalogue reader bound: the sections that need it are absent. */
-  readonly catalog: Slice<ValidLoyaltyCatalog> | null;
+  readonly catalog: LoadSlice<ValidLoyaltyCatalog> | null;
   readonly flags: LoyaltyFlags;
   readonly paused: boolean;
   /**
@@ -286,15 +283,13 @@ export interface LoyaltyPageInput {
 }
 
 export function sliceMap<T, U>(
-  slice: Slice<T> | null,
+  slice: LoadSlice<T> | null,
   map: (data: T) => U | null,
-): Slice<U> | undefined {
+): LoadSlice<U> | undefined {
   if (slice === null) return undefined;
-  if (slice.cardLoadState !== CardLoadState.Ready) return slice;
+  if (slice.loadState !== LoadState.Ready) return slice;
   const data = map(slice.data);
-  return data === null
-    ? undefined
-    : { cardLoadState: CardLoadState.Ready, data };
+  return data === null ? undefined : { loadState: LoadState.Ready, data };
 }
 
 // ── The card's own values → ecs-core structs ──────────────────────────────

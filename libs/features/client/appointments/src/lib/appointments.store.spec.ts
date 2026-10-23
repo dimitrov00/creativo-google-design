@@ -51,7 +51,8 @@ import {
   seatFixture,
   unwrapOk,
 } from '@core/testing';
-import { AppointmentsStore, AppointmentsViewState } from './appointments.store';
+import { LoadState } from '@creativo/shared/view-state';
+import { AppointmentsStore } from './appointments.store';
 
 type AppointmentsResult = Result<readonly Appointment[], RepositoryError>;
 
@@ -162,21 +163,15 @@ describe('AppointmentsStore', () => {
     );
     await settle();
 
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Loading,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
 
     store.setUserId(UserId.of('user_1'));
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Loading,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
 
     upcoming$.next(Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]));
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Ready,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
     expect(store.appointments()).toHaveLength(1);
   });
 
@@ -191,9 +186,7 @@ describe('AppointmentsStore', () => {
 
     store.setUserId(UserId.of('user_1'));
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Error,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Failed);
   });
 
   it('retry() opens both reads afresh, and loads until the new listener answers', async () => {
@@ -220,9 +213,7 @@ describe('AppointmentsStore', () => {
       Result.err(RepositoryError.readFailed('appointments', 'denied')),
     );
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Error,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Failed);
 
     store.retry();
     TestBed.tick();
@@ -231,17 +222,13 @@ describe('AppointmentsStore', () => {
     expect(upcomingReads).toHaveLength(2);
     expect(historyReads).toBe(2);
     expect(upcomingReads[0]?.observed).toBe(false);
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Loading,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
 
     upcomingReads[1]?.next(
       Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]),
     );
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Ready,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
     expect(store.appointments()).toHaveLength(1);
   });
 
@@ -296,17 +283,13 @@ describe('AppointmentsStore', () => {
     expect(store.now()).toBeNull();
     expect(store.today()).toBeNull();
     expect(store.focusedMonth()).toBeNull();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Loading,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
 
     await settle();
     expect(store.today()).toBe('2026-09-27');
     expect(store.now()?.currentMinute).toBe(23 * 60);
     expect(store.nowUtcMs).toBe(FIXTURE_NOW_UTC_MS);
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Ready,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
   });
 
   it('shows its failed state when the shop’s zone cannot be read, and reads the zone again on retry (4A-2 (e))', async () => {
@@ -328,21 +311,15 @@ describe('AppointmentsStore', () => {
     store.setUserId(UserId.of('user_1'));
     await settle();
     expect(store.today()).toBeNull();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Error,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Failed);
 
     up = true;
     store.retry();
     TestBed.tick();
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Loading,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
     await settle();
     expect(store.today()).toBe('2026-09-28');
-    expect(store.upcoming().appointmentsViewState).toBe(
-      AppointmentsViewState.Ready,
-    );
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
   });
 
   it('nextMonth()/previousMonth() move the focused month forward/back from today', async () => {

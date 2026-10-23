@@ -22,7 +22,8 @@ import {
   type ValidLoyaltyCatalog,
   VoucherSystem,
 } from '@core/systems';
-import { formatCents, rhythmRuleWords } from '@creativo/features/shared/visits';
+import { rhythmRuleWords } from '@creativo/features/shared/visits';
+import { formatCents } from '@creativo/ui/wall-clock';
 import type {
   UiMark,
   UiStreakMark,
@@ -39,22 +40,22 @@ import {
   runningCase,
 } from './client-card.format';
 import {
-  CardLoadState,
   type GaugeVm,
   type PassVm,
   type RewardGridVm,
   type RewardReadyVm,
   type RewardTileVm,
   type RhythmPhaseVm,
-  type Slice,
   type StampCardVm,
   type VoucherVm,
   type WalletActionVm,
+  WalletHolding,
   type WalletHoldingVm,
   type WalletRhythmVm,
   type WalletTierVm,
   type WalletVm,
 } from './client-pages.vm';
+import { type LoadSlice, LoadState } from '@creativo/shared/view-state';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
@@ -111,13 +112,13 @@ export interface WalletInput extends LoyaltyPageInput {
   /** The first worked visit's shop day (`ClientStatsRecord.firstVisitLocalDate`); `null` before it. */
   readonly sinceDay: string | null;
   /** The vouchers issued to the person, any state; `null` = not read (no reader bound). */
-  readonly vouchers: Slice<readonly GiftVoucher[]> | null;
+  readonly vouchers: LoadSlice<readonly GiftVoucher[]> | null;
   /**
    * The journal's newest rows under «Всички», one per entry, as
    * `CLIENT_JOURNAL_PORTS.pageClientJournal(customerId, JournalFeed.effectsOf(ALL), null, WALLET_ACTIVITY_READ)`
    * answers them; `null` = not read (`loyalty.points` off, no reader).
    */
-  readonly activity: Slice<readonly JournalEntry[]> | null;
+  readonly activity: LoadSlice<readonly JournalEntry[]> | null;
   /**
    * The rhythm the account is judged by (its head): the rule in force and
    * the one that waits are `StreakRuleSystem.inForceOn` / `upcomingOn` on
@@ -154,7 +155,7 @@ export interface WalletInput extends LoyaltyPageInput {
 }
 
 function catalogOf(input: WalletInput): ValidLoyaltyCatalog | null {
-  return input.catalog?.cardLoadState === CardLoadState.Ready
+  return input.catalog?.loadState === LoadState.Ready
     ? input.catalog.data
     : null;
 }
@@ -412,7 +413,7 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
       sentence: page.stampsToNext(Math.max(1, left)),
     };
     return {
-      kind: 'stamps',
+      walletHolding: WalletHolding.Stamps,
       card,
       line: page.stampsFor(punch.size, spoken),
     };
@@ -421,7 +422,7 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
 
 /** The vouchers the read answered; none while it is on its way, failed or not made. */
 function vouchersOf(input: WalletInput): readonly GiftVoucher[] {
-  return input.vouchers?.cardLoadState === CardLoadState.Ready
+  return input.vouchers?.loadState === LoadState.Ready
     ? input.vouchers.data
     : [];
 }
@@ -434,10 +435,13 @@ export function walletHoldings(input: WalletInput): readonly WalletHoldingVm[] {
   const { today, words } = input;
   return [
     ...voucherVms(vouchersOf(input), today, words).map(
-      (voucher): WalletHoldingVm => ({ kind: 'voucher', voucher }),
+      (voucher): WalletHoldingVm => ({
+        walletHolding: WalletHolding.Voucher,
+        voucher,
+      }),
     ),
     ...walletTickets(input).map((ticket): WalletHoldingVm => ({
-      kind: 'ticket',
+      walletHolding: WalletHolding.Ticket,
       ticket,
     })),
     ...stampCards(input),
@@ -549,7 +553,7 @@ function catalogSectionStands(input: WalletInput): boolean {
   const catalog = input.catalog;
   if (catalog === null) return false;
   return (
-    catalog.cardLoadState !== CardLoadState.Ready ||
+    catalog.loadState !== LoadState.Ready ||
     tilesOf(input, catalog.data).length > 0
   );
 }
@@ -1081,10 +1085,12 @@ function walletActivity(entries: readonly JournalEntry[], input: WalletInput) {
  * over a notice. Not read at all, the wallet holds the tickets and the
  * stamp cards alone.
  */
-function holdingsSlice(input: WalletInput): Slice<readonly WalletHoldingVm[]> {
+function holdingsSlice(
+  input: WalletInput,
+): LoadSlice<readonly WalletHoldingVm[]> {
   const vouchers = input.vouchers;
-  return vouchers === null || vouchers.cardLoadState === CardLoadState.Ready
-    ? { cardLoadState: CardLoadState.Ready, data: walletHoldings(input) }
+  return vouchers === null || vouchers.loadState === LoadState.Ready
+    ? { loadState: LoadState.Ready, data: walletHoldings(input) }
     : vouchers;
 }
 
@@ -1111,7 +1117,7 @@ export function walletVm(input: WalletInput): WalletVm {
     actions: walletActions(input),
     holdings,
     holdingsDetail:
-      holdings.cardLoadState === CardLoadState.Ready
+      holdings.loadState === LoadState.Ready
         ? holdingsDetailOf(input, holdings.data)
         : null,
     ...(rhythm === null ? {} : { rhythm }),

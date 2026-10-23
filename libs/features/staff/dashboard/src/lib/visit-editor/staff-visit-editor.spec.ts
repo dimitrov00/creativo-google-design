@@ -16,8 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BirthDate,
   BookingLifecycle,
+  CouponOccasion,
   CustomerOrigin,
   DiscountMethod,
+  EditCommand,
   E164,
   FlagName,
   PhotoOrigin,
@@ -38,6 +40,7 @@ import {
   AppointmentId,
   AppointmentPhotoId,
   BarberId,
+  BookingStatus,
   BusyKey,
   EndMinute,
   LocalDate,
@@ -103,6 +106,7 @@ import {
   ClientRecordsPage,
 } from '@creativo/features/staff/client-card';
 import { StaffTimeGrid } from '../time-grid/staff-time-grid';
+import { ArrivalVerb } from '../row-verb';
 import {
   type VisitEditorPhoto,
   StaffVisitEditor,
@@ -317,7 +321,11 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     peers: [],
     // Regime A — the status verbs write today, through a callable that
     // ships. They are not part of the draft.
-    primaryVerb: { kind: 'arrived', label: 'Дойде', destructive: false },
+    primaryVerb: {
+      rowVerb: ArrivalVerb.Arrived,
+      label: 'Дойде',
+      destructive: false,
+    },
     overflowVerbs: [],
     acting: false,
     dayKey: '2026-08-26',
@@ -378,7 +386,7 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     vouchers: [],
     // Live — nothing has settled it, so the head has nothing to say.
     resolution: null,
-    status: 'confirmed',
+    bookingStatus: BookingStatus.Confirmed,
     statusLabel: 'Потвърден',
     arrivedMinute: null,
     chairId: 'ivan',
@@ -463,13 +471,23 @@ describe('parsePriceInput', () => {
   });
 });
 
+/**
+ * The app's clock as the sheet reads it — pinned, never the wall clock: it
+ * only stamps a minted seat or guest id and a captured photo's name. The
+ * fixture day's 10:00 in the shop's zone.
+ */
+const EDITOR_NOW_MS = utcMs('2026-08-26T10:00:00+03:00');
+
 describe('StaffVisitEditor', () => {
   let fixture: ComponentFixture<StaffVisitEditor>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [StaffVisitEditor],
-      providers: [...provideTestI18n()],
+      providers: [
+        ...provideTestI18n(),
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts(EDITOR_NOW_MS) },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(StaffVisitEditor);
   });
@@ -1439,15 +1457,19 @@ describe('StaffVisitEditor', () => {
     it('asks to answer a request, and only a request, at the top', () => {
       const host = render(
         visit({
-          status: 'pending',
+          bookingStatus: BookingStatus.Pending,
           statusLabel: 'Заявен',
           primaryVerb: {
-            kind: 'confirmed',
+            rowVerb: BookingStatus.Confirmed,
             label: 'Потвърди',
             destructive: false,
           },
           overflowVerbs: [
-            { kind: 'cancelled', label: 'Откажи', destructive: true },
+            {
+              rowVerb: BookingStatus.Cancelled,
+              label: 'Откажи',
+              destructive: true,
+            },
           ],
         }),
       );
@@ -1458,9 +1480,9 @@ describe('StaffVisitEditor', () => {
         'warning',
       );
       const acted: string[] = [];
-      fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
+      fixture.componentInstance.acted.subscribe((verb) => acted.push(verb));
       click(host, 'staff-visit-confirm');
-      expect(acted).toEqual(['confirmed']);
+      expect(acted).toEqual([BookingStatus.Confirmed]);
       // The refusal is an exit, at the foot, with the others.
       expect(
         find(host, 'staff-visit-cancel')?.closest(
@@ -1495,11 +1517,27 @@ describe('StaffVisitEditor', () => {
     const cancellable = (nowMinute: number) =>
       visit({
         nowMinute,
-        primaryVerb: { kind: 'arrived', label: 'Дойде', destructive: false },
+        primaryVerb: {
+          rowVerb: ArrivalVerb.Arrived,
+          label: 'Дойде',
+          destructive: false,
+        },
         overflowVerbs: [
-          { kind: 'completed', label: 'Готово', destructive: false },
-          { kind: 'no_show', label: 'Не дойде', destructive: false },
-          { kind: 'cancelled', label: 'Откажи', destructive: true },
+          {
+            rowVerb: BookingStatus.Completed,
+            label: 'Готово',
+            destructive: false,
+          },
+          {
+            rowVerb: BookingStatus.NoShow,
+            label: 'Не дойде',
+            destructive: false,
+          },
+          {
+            rowVerb: BookingStatus.Cancelled,
+            label: 'Откажи',
+            destructive: true,
+          },
         ],
       });
     const ids = (host: HTMLElement) =>
@@ -1531,11 +1569,11 @@ describe('StaffVisitEditor', () => {
       ).toBe('destructive');
 
       const acted: string[] = [];
-      fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
+      fixture.componentInstance.acted.subscribe((verb) => acted.push(verb));
       const blocked: number[] = [];
       fixture.componentInstance.blockedInstead.subscribe(() => blocked.push(1));
       click(host, 'staff-visit-cancel');
-      expect(acted).toEqual(['cancelled']);
+      expect(acted).toEqual([BookingStatus.Cancelled]);
       click(host, 'staff-visit-cancel-block');
       expect(blocked.length).toBe(1);
     });
@@ -1548,18 +1586,18 @@ describe('StaffVisitEditor', () => {
         'staff-visit-cancel-block',
       ]);
       const acted: string[] = [];
-      fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
+      fixture.componentInstance.acted.subscribe((verb) => acted.push(verb));
       click(host, 'staff-visit-no-show');
-      expect(acted).toEqual(['no_show']);
+      expect(acted).toEqual([BookingStatus.NoShow]);
     });
 
     it('offers the way back from a no-show at the foot, and the next visit after a finished one', () => {
       const missed = render(
         visit({
-          status: 'no_show',
+          bookingStatus: BookingStatus.NoShow,
           statusLabel: 'Пропуснат',
           primaryVerb: {
-            kind: 'confirmed',
+            rowVerb: BookingStatus.Confirmed,
             label: 'Върни часа',
             destructive: false,
           },
@@ -1574,13 +1612,13 @@ describe('StaffVisitEditor', () => {
         find(missed, 'staff-visit-rebook')?.closest('ui-sheet-action-bar'),
       ).not.toBeNull();
       const acted: string[] = [];
-      fixture.componentInstance.acted.subscribe((kind) => acted.push(kind));
+      fixture.componentInstance.acted.subscribe((verb) => acted.push(verb));
       click(missed, 'staff-visit-reinstate');
-      expect(acted).toEqual(['confirmed']);
+      expect(acted).toEqual([BookingStatus.Confirmed]);
 
       const done = render(
         visit({
-          status: 'completed',
+          bookingStatus: BookingStatus.Completed,
           statusLabel: 'Минал',
           primaryVerb: null,
           overflowVerbs: [],
@@ -1608,7 +1646,11 @@ describe('StaffVisitEditor', () => {
       const host = render(
         visit({
           overflowVerbs: [
-            { kind: 'cancelled', label: 'Откажи', destructive: true },
+            {
+              rowVerb: BookingStatus.Cancelled,
+              label: 'Откажи',
+              destructive: true,
+            },
           ],
         }),
       );
@@ -1697,7 +1739,7 @@ describe('StaffVisitEditor', () => {
         }
       ).onFrameCommit({
         id: 'appt-1',
-        kind: 'move',
+        editCommand: EditCommand.Move,
         startMinute: 660,
         endMinute: 705,
       });
@@ -1710,7 +1752,6 @@ describe('StaffVisitEditor', () => {
       fixture.detectChanges();
       expect(commits).toEqual([
         expect.objectContaining({
-          kind: 'save',
           startMinute: 660,
           endMinute: 705,
         }),
@@ -1754,7 +1795,6 @@ describe('StaffVisitEditor', () => {
 
       expect(commits).toEqual([
         {
-          kind: 'save',
           // The fixture's reader said no revision: the save claims nothing.
           revision: null,
           dayKey: '2026-08-27',
@@ -1913,7 +1953,7 @@ describe('StaffVisitEditor', () => {
         }
       ).onFrameCommit({
         id: 'appt',
-        kind: 'move',
+        editCommand: EditCommand.Move,
         startMinute: 605,
         endMinute: 650,
       });
@@ -2145,7 +2185,7 @@ describe('StaffVisitEditor', () => {
       const commits: unknown[] = [];
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
-      expect(commits[0]).toMatchObject({ kind: 'save', tipMinorUnits: 200 });
+      expect(commits[0]).toMatchObject({ tipMinorUnits: 200 });
 
       // «Друга сума» is a NEW choice: the preset is let go, the entry opens
       // on its muted zero, and the plus waits for a sum.
@@ -2405,7 +2445,12 @@ describe('StaffVisitEditor', () => {
       // Cancelled: no money group at all.
       expect(
         find(
-          render(visit({ status: 'cancelled', statusLabel: 'Отказан' })),
+          render(
+            visit({
+              bookingStatus: BookingStatus.Cancelled,
+              statusLabel: 'Отказан',
+            }),
+          ),
           'staff-visit-tip',
         ),
       ).toBeNull();
@@ -2449,12 +2494,12 @@ describe('StaffVisitEditor', () => {
     it('carries the next visit instead of a bill once the visit is gone', () => {
       const host = render(
         visit({
-          status: 'cancelled',
+          bookingStatus: BookingStatus.Cancelled,
           statusLabel: 'Отказан',
           primaryVerb: null,
           overflowVerbs: [],
           resolution: {
-            kind: 'cancelled',
+            bookingStatus: BookingStatus.Cancelled,
             by: 'staff',
             whenLabel: '11:51',
             detail: null,
@@ -2485,7 +2530,7 @@ describe('StaffVisitEditor', () => {
       // A FINISHED visit keeps its bill: money was owed and paid.
       const done = render(
         visit({
-          status: 'completed',
+          bookingStatus: BookingStatus.Completed,
           statusLabel: 'Минал',
           primaryVerb: null,
           overflowVerbs: [],
@@ -2759,10 +2804,10 @@ describe('StaffVisitEditor', () => {
     it('states the shop as a fact on a settled visit, and says nothing where there is one shop', () => {
       const host = renderShops(
         visit({
-          status: 'cancelled',
+          bookingStatus: BookingStatus.Cancelled,
           statusLabel: 'Отказан',
           resolution: {
-            kind: 'cancelled',
+            bookingStatus: BookingStatus.Cancelled,
             by: 'client',
             whenLabel: '11:51',
             detail: null,
@@ -2853,7 +2898,7 @@ describe('StaffVisitEditor', () => {
         visit({
           appointmentId: '',
           rowId: 'new-1',
-          status: 'new',
+          bookingStatus: null,
           primaryVerb: null,
         }),
       );
@@ -2879,7 +2924,11 @@ describe('StaffVisitEditor', () => {
       const host = render(
         visit({
           overflowVerbs: [
-            { kind: 'cancelled', label: 'Откажи часа', destructive: true },
+            {
+              rowVerb: BookingStatus.Cancelled,
+              label: 'Откажи часа',
+              destructive: true,
+            },
           ],
         }),
       );
@@ -3010,7 +3059,7 @@ describe('StaffVisitEditor', () => {
         visit({
           appointmentId: '',
           rowId: 'new-1',
-          status: 'new',
+          bookingStatus: null,
           primaryVerb: null,
           priceLabel: null,
           priceCents: null,
@@ -3026,10 +3075,10 @@ describe('StaffVisitEditor', () => {
     it('draws no hollow note or photo group on a settled visit that has neither', () => {
       const host = render(
         visit({
-          status: 'cancelled',
+          bookingStatus: BookingStatus.Cancelled,
           statusLabel: 'Отказан',
           resolution: {
-            kind: 'cancelled',
+            bookingStatus: BookingStatus.Cancelled,
             by: 'client',
             whenLabel: '11:51',
             detail: null,
@@ -3949,12 +3998,12 @@ describe('StaffVisitEditor', () => {
           appointmentId: 'appointment-3',
           rowId: 'appointment-3#ivan',
           photos: PHOTOS,
-          status: 'cancelled',
+          bookingStatus: BookingStatus.Cancelled,
           statusLabel: 'Отказан',
           primaryVerb: null,
           overflowVerbs: [],
           resolution: {
-            kind: 'cancelled',
+            bookingStatus: BookingStatus.Cancelled,
             by: 'staff',
             whenLabel: '11:51',
             detail: null,
@@ -4694,7 +4743,6 @@ describe('StaffVisitEditor', () => {
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
       expect(commits[0]).toMatchObject({
-        kind: 'save',
         discounts: [
           {
             source: 'grant',
@@ -4827,7 +4875,7 @@ describe('StaffVisitEditor', () => {
       const commits: unknown[] = [];
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
-      expect(commits[0]).toMatchObject({ kind: 'save' });
+      expect(commits).toHaveLength(1);
       expect(
         (
           commits[0] as { discounts: readonly { code: string | null }[] }
@@ -5135,7 +5183,6 @@ describe('StaffVisitEditor', () => {
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
       expect(commits[0]).toMatchObject({
-        kind: 'save',
         discounts: [{ source: 'code', code: 'FIRST10' }],
         vouchers: [
           { voucherId: 'v1', code: 'GIFT2025' },
@@ -5440,7 +5487,6 @@ describe('StaffVisitEditor', () => {
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
       expect(commits[0]).toMatchObject({
-        kind: 'save',
         discounts: [
           {
             source: 'manual',
@@ -5496,7 +5542,12 @@ describe('StaffVisitEditor', () => {
       ).toBeNull();
       expect(
         find(
-          renderWith(visit({ status: 'cancelled', statusLabel: 'Отказан' })),
+          renderWith(
+            visit({
+              bookingStatus: BookingStatus.Cancelled,
+              statusLabel: 'Отказан',
+            }),
+          ),
           'staff-visit-discount-row',
         ),
       ).toBeNull();
@@ -5734,7 +5785,7 @@ describe('StaffVisitEditor', () => {
         clientUserId: null,
         phone: null,
         phoneHref: null,
-        status: 'new',
+        bookingStatus: null,
         statusLabel: 'Нов час',
         primaryVerb: null,
         priceLabel: null,
@@ -5926,6 +5977,44 @@ describe('StaffVisitEditor', () => {
       expect(find(host, 'staff-visit-save')).not.toBeNull();
       click(host, 'staff-visit-save');
       expect(commits[0]?.legs.map((leg) => leg.serviceId)).toEqual(['fade']);
+    });
+
+    it('mints the draft seat and guest ids in their stored draft-/guest- formats', () => {
+      // The edit pipeline STORES these ids (UR-11): the clock's reading in
+      // base 36 is the stamp, and the sheet's counter joins it, so two
+      // mints under one reading are still two.
+      const stamp = EDITOR_NOW_MS.toString(36);
+      const host = render(fresh());
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-add-client');
+      click(host, 'staff-visit-new-client-dock');
+      const name = find(host, 'staff-visit-new-name') as HTMLInputElement;
+      name.value = 'Петър Нов';
+      name.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      click(host, 'staff-visit-new-client-save');
+      // The catalogue opens for the newcomer; two picks, two seats.
+      click(host, 'staff-visit-service-fade');
+      click(host, 'staff-visit-service-wash');
+      click(host, 'staff-visit-service-apply');
+      click(host, 'staff-visit-save');
+      expect(commits).toHaveLength(1);
+      const [guest] = commits[0]?.clients ?? [];
+      const guestShape = /^guest-([0-9a-z]+)-(\d+)$/;
+      expect(guest?.id).toMatch(guestShape);
+      expect(guest?.id.match(guestShape)?.[1]).toBe(stamp);
+      const seats = commits[0]?.legs.map((leg) => leg.seatId) ?? [];
+      const seatShape = /^draft-(fade|wash)-([0-9a-z]+)-(\d+)$/;
+      expect(seats.map((seat) => seat.match(seatShape)?.slice(1, 3))).toEqual([
+        ['fade', stamp],
+        ['wash', stamp],
+      ]);
+      expect(new Set(seats).size).toBe(2);
+      expect(commits[0]?.legs.map((leg) => leg.clientId)).toEqual([
+        guest?.id,
+        guest?.id,
+      ]);
     });
 
     /*
@@ -6290,7 +6379,11 @@ describe('StaffVisitEditor', () => {
         const host = render(
           visit({
             overflowVerbs: [
-              { kind: 'cancelled', label: 'Откажи', destructive: true },
+              {
+                rowVerb: BookingStatus.Cancelled,
+                label: 'Откажи',
+                destructive: true,
+              },
             ],
             peers: [
               {
@@ -6369,7 +6462,9 @@ describe('StaffVisitEditor', () => {
    */
   describe('a finished visit', () => {
     it('is still editable — rows, frame and services', () => {
-      const host = render(visit({ status: 'completed', statusLabel: 'Минал' }));
+      const host = render(
+        visit({ bookingStatus: BookingStatus.Completed, statusLabel: 'Минал' }),
+      );
       expect(find(host, 'staff-visit-remove-leg-seat-cut')).not.toBeNull();
       expect(find(host, 'staff-visit-add-service')).not.toBeNull();
       expect(find(host, 'staff-visit-duration')).not.toBeNull();
@@ -6384,7 +6479,10 @@ describe('StaffVisitEditor', () => {
 
     it('locks a cancelled one — nothing happened, nothing to correct', () => {
       const host = render(
-        visit({ status: 'cancelled', statusLabel: 'Отказан' }),
+        visit({
+          bookingStatus: BookingStatus.Cancelled,
+          statusLabel: 'Отказан',
+        }),
       );
       expect(find(host, 'staff-visit-remove-leg-seat-cut')).toBeNull();
       expect(find(host, 'staff-visit-add-service')).toBeNull();
@@ -6540,10 +6638,10 @@ describe('StaffVisitEditor', () => {
     it("says who called it off, when, and why — in the sheet's one red", () => {
       const host = render(
         visit({
-          status: 'cancelled',
+          bookingStatus: BookingStatus.Cancelled,
           statusLabel: 'Отказан',
           resolution: {
-            kind: 'cancelled',
+            bookingStatus: BookingStatus.Cancelled,
             by: 'client',
             whenLabel: '24.08, 18:40',
             detail: 'Не вдига телефона',
@@ -6562,10 +6660,10 @@ describe('StaffVisitEditor', () => {
     it("reads a no-show as nobody's act, in warning ink, with no reason line", () => {
       const host = render(
         visit({
-          status: 'no_show',
+          bookingStatus: BookingStatus.NoShow,
           statusLabel: 'Пропуснат',
           resolution: {
-            kind: 'no_show',
+            bookingStatus: BookingStatus.NoShow,
             by: null,
             whenLabel: '10:15',
             detail: null,
@@ -6603,6 +6701,30 @@ describe('StaffVisitEditor', () => {
       expect(
         host.querySelector('[data-editable]')?.getAttribute('data-event-id'),
       ).toBe('appointment-1');
+    });
+
+    it('leave a new visit\'s frame block its data-status="new" and data-editable', () => {
+      // A visit not booked yet has no status (`bookingStatus: null`), and
+      // its block still prints the word the editable block's ink keys on
+      // (`.staff-grid__event[data-editable][data-status]`).
+      const fresh = render(
+        visit({
+          appointmentId: '',
+          rowId: 'new-1',
+          bookingStatus: null,
+          primaryVerb: null,
+        }),
+      );
+      const block = fresh.querySelector('[data-editable]');
+      expect(block?.getAttribute('data-event-id')).toBe('');
+      expect(block?.getAttribute('data-status')).toBe('new');
+      expect(neighbour(fresh)?.hasAttribute('data-status')).toBe(false);
+      // A booked visit's block prints its own word instead.
+      const booked = render();
+      expect(
+        booked.querySelector('[data-editable]')?.getAttribute('data-status'),
+      ).toBe('confirmed');
+      expect(neighbour(booked)?.hasAttribute('data-status')).toBe(false);
     });
 
     it('are marked past only once their hour has gone', () => {
@@ -6777,7 +6899,7 @@ const GEORGI_BIRTHDAY_GRANT = {
   label: 'Рожден ден',
   value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
   exclusive: true,
-  occasion: 'birthday' as const,
+  couponOccasion: CouponOccasion.Birthday,
   expiresOn: '2026-10-28',
 };
 
@@ -7781,7 +7903,11 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
   });
 
   it('draws ✓ alone on a medal page of a visit that is gone: nothing can be seated on it (§2.4)', async () => {
-    render({ ...georgiVisit(), status: 'cancelled', statusLabel: 'Отказан' });
+    render({
+      ...georgiVisit(),
+      bookingStatus: BookingStatus.Cancelled,
+      statusLabel: 'Отказан',
+    });
     fixture.componentRef.setInput('uiServices', [...CATALOGUE, FADE_OPTION]);
     await openCard();
     child(ClientCard).openMedal.emit('series-svc-fade');

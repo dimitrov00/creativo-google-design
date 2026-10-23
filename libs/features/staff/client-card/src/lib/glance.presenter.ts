@@ -7,11 +7,12 @@ import type {
   WaitlistRequest,
 } from '@core/entities';
 import {
-  formatCents,
+  VisitCardSlot,
   visitCardOf,
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
+import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
 import { LocalDate, UtcEpochMs } from '@core/primitives';
 import {
   type BirthDate,
@@ -30,6 +31,8 @@ import {
   StandingSystem,
   TierSystem,
   type ValidLoyaltyCatalog,
+  VisitGrain,
+  VisitPerspective,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -66,19 +69,20 @@ import {
   medalStripVm,
   pauseOf,
 } from './client-card.presenter';
-import type {
-  AchievementTileVm,
-  AchievementsData,
-  BirthdayVm,
-  ClientCapsulesVm,
-  ClientHeroVm,
-  HeroTierVm,
-  HoldingFactVm,
-  LinePart,
-  LoyaltyGlanceVm,
-  MedalsGlanceVm,
-  RecordFactVm,
-  VisitCardsVm,
+import {
+  type AchievementTileVm,
+  type AchievementsData,
+  BirthdayMoment,
+  type BirthdayVm,
+  type ClientCapsulesVm,
+  type ClientHeroVm,
+  type HeroTierVm,
+  type HoldingFactVm,
+  type LinePart,
+  type LoyaltyGlanceVm,
+  type MedalsGlanceVm,
+  type RecordFactVm,
+  type VisitCardsVm,
 } from './client-pages.vm';
 import { type ClientCardWords, RECORD_KIND_WORDS } from './client-card.words';
 import { cadenceWeeks } from './history.presenter';
@@ -149,11 +153,8 @@ function plainLine(sentence: string): readonly LinePart[] {
 }
 
 /** «петък» — a shop day's weekday in words, formatted as the day itself (no zone moves it). */
-function weekdayLong(day: string, lang: string): string {
-  return new Intl.DateTimeFormat(lang, {
-    weekday: 'long',
-    timeZone: 'UTC',
-  }).format(new Date(`${day}T12:00:00Z`));
+function weekdayLong(day: LocalDate, lang: string): string {
+  return formatWallClock(day, null, lang, { weekday: 'long' });
 }
 
 // ── A · the hero ────────────────────────────────────────────────────────
@@ -331,9 +332,8 @@ export interface BirthdayInput {
 
 /** The grant's coupon was made for the birthday; a name is never parsed (§4.6). */
 function isBirthdayGrant(grant: ClientCardGrant): boolean {
-  const occasion = grant.occasion ?? null;
   return CouponGrantSystem.isOccasion(
-    occasion === null ? null : COUPON_OCCASION_OF[occasion],
+    grant.couponOccasion ?? null,
     CouponOccasion.Birthday,
   );
 }
@@ -379,7 +379,7 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
     // («Безплатно подстригване») is said by its name.
     const worth = gift === null ? null : (gift.value ?? gift.title);
     return {
-      kind: 'today',
+      birthdayMoment: BirthdayMoment.Today,
       title: age === null ? words.birthday.today : words.birthday.todayAge(age),
       gift,
       giftLabel: words.birthday.gift,
@@ -404,7 +404,7 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
     next.turning,
   );
   return {
-    kind: 'upcoming',
+    birthdayMoment: BirthdayMoment.Upcoming,
     title,
     gift: null,
     giftLabel: words.birthday.gift,
@@ -423,7 +423,8 @@ export function grantsBesideBirthday(
   grants: readonly ClientCardGrant[],
   birthday: BirthdayVm | null,
 ): readonly ClientCardGrant[] {
-  return birthday?.kind === 'today' && birthday.gift !== null
+  return birthday?.birthdayMoment === BirthdayMoment.Today &&
+    birthday.gift !== null
     ? grants.filter((grant) => !isBirthdayGrant(grant))
     : grants;
 }
@@ -439,20 +440,21 @@ export function grantsBesideBirthday(
  * after it.
  */
 export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
-  const { context, words } = input;
-  const today = shopDayOf(input.nowMs, input.zone);
+  const { context, words, now } = input;
+  const today = now.localDate;
   // The rows tell which visit was worked and which is still to come, as
   // the history tells it; the cards are built from the visits they pick.
   const rowOf = (appointment: Appointment) =>
     visitRowOf(
       appointment,
       {
-        perspective: 'staff',
-        grain: 'month',
+        perspective: VisitPerspective.Staff,
+        grain: VisitGrain.Month,
         subjectUserId: input.subjectUserId,
         subjectCustomerId: input.subjectCustomerId,
         currentAppointmentId: context.appointmentId,
-        nowMs: input.nowMs,
+        now,
+        timeZone: input.zone,
         locale: words.lang,
         words: words.visits,
         clientWords: input.clientWords,
@@ -461,24 +463,25 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
     );
   const cardOf = (
     appointment: Appointment,
-    kind: 'last' | 'next',
+    visitCardSlot: typeof VisitCardSlot.Last | typeof VisitCardSlot.Next,
     testId: string,
   ) =>
     visitCardOf(
       appointment,
       {
-        kind,
-        perspective: 'staff',
+        visitCardSlot,
+        perspective: VisitPerspective.Staff,
         subjectUserId: input.subjectUserId,
         subjectCustomerId: input.subjectCustomerId,
-        nowMs: input.nowMs,
+        now,
+        timeZone: input.zone,
         locale: words.lang,
         words: words.visits,
         cardWords: words.visitCard,
         clientWords: input.clientWords,
         // The last visit's own cuts, newest first; the card draws three.
         photos:
-          kind === 'last'
+          visitCardSlot === VisitCardSlot.Last
             ? input.photos.filter(
                 (photo) => photo.appointmentId === appointment.id,
               )
@@ -498,12 +501,16 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
     .filter((appointment) => appointment.id !== context.appointmentId)
     .map((appointment) => ({ appointment, row: rowOf(appointment) }))
     .filter(({ row }) => row.upcoming)
-    .sort((a, b) => a.row.startMs - b.row.startMs);
+    // Soonest first, on the shop's wall clock: the day, then the minute.
+    .sort(
+      (a, b) =>
+        LocalDate.compare(a.row.localDate, b.row.localDate) ||
+        a.row.startMinutes - b.row.startMinutes,
+    );
   const soonest = upcoming[0];
 
   let waitlist: VisitCardsVm['waitlist'] = null;
   if (!input.paused && input.waitlist !== null) {
-    const day = LocalDate.parse(today);
     // Booked at or after the request was made: the visit answers it (a
     // stamp-order rule, T2 — the two instants compared as stamped).
     const bookedAfter = (request: WaitlistRequest) =>
@@ -519,7 +526,7 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
       .filter(
         (request) =>
           WaitlistLifecycle.isWatching(request) &&
-          (!day.ok || !WaitlistSystem.hasLapsed(request, day.value)) &&
+          !WaitlistSystem.hasLapsed(request, today) &&
           !bookedAfter(request),
       )
       .sort((a, b) => UtcEpochMs.compare(b.createdAtUtcMs, a.createdAtUtcMs));
@@ -543,11 +550,11 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
     last:
       featured === null
         ? null
-        : cardOf(featured.appointment, 'last', 'client-visit-last'),
+        : cardOf(featured.appointment, VisitCardSlot.Last, 'client-visit-last'),
     next:
       soonest === undefined
         ? null
-        : cardOf(soonest.appointment, 'next', 'client-visit-next'),
+        : cardOf(soonest.appointment, VisitCardSlot.Next, 'client-visit-next'),
     waitlist,
     count: input.count,
   };
@@ -784,7 +791,7 @@ function recordFact(
   if (value === null) return null;
   const kind = RECORD_KIND_WORDS[record.personalRecordKind];
   return {
-    kind,
+    personalRecordKind: record.personalRecordKind,
     label: words.records.label(kind),
     value,
     spoken: `${words.achievements.record(kind)} ${value}`,
@@ -840,7 +847,11 @@ export function medalsGlanceVm(
     levelCount,
     tiles,
     cue: strip.cue,
-    records: facts.map(({ kind, label, value }) => ({ kind, label, value })),
+    records: facts.map(({ personalRecordKind, label, value }) => ({
+      personalRecordKind,
+      label,
+      value,
+    })),
     recordsName:
       facts.length === 0
         ? null
@@ -849,13 +860,3 @@ export function medalsGlanceVm(
           ),
   };
 }
-
-// ── The coupon occasion's word ─────────────────────────────────────────
-
-/** The card's occasion words ↔ `CouponOccasion` — the ONE table. */
-const COUPON_OCCASION_OF = {
-  birthday: CouponOccasion.Birthday,
-} as const satisfies Record<
-  NonNullable<ClientCardGrant['occasion']>,
-  CouponOccasion
->;

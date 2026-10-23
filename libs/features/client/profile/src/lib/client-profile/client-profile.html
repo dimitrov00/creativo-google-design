@@ -17,7 +17,7 @@
          document structure and screen readers only. -->
     <h1 uiVisuallyHidden>{{ t('account.profile.title') }}</h1>
 
-    @if (pageState() === 'loading') {
+    @if (pageState() === LoadState.Loading) {
     <ui-stack uiSpacing="comfortable" data-testid="profile-skeleton">
       <ui-skeleton uiFrame uiFrameHeight="7rem" />
       <ui-skeleton uiFrame uiFrameHeight="9rem" />
@@ -145,7 +145,7 @@
           uiSize="large"
           [uiInteractive]="true"
           data-testid="profile-row-name"
-          (click)="openEditor({ kind: 'name' })"
+          (click)="openEditor({ profileEditField: ProfileEditField.Name })"
         >
           {{ t('account.profile.rows.name') }}
           <ng-container ngProjectAs="[uiTrailing]">
@@ -167,7 +167,7 @@
           [uiInteractive]="true"
           data-testid="profile-row-birthday"
           [attr.data-empty]="birthDateLabel() ? 'false' : 'true'"
-          (click)="openEditor({ kind: 'birthday' })"
+          (click)="openEditor({ profileEditField: ProfileEditField.Birthday })"
         >
           {{ t('account.profile.rows.birthday') }}
           <ng-container ngProjectAs="[uiTrailing]">
@@ -263,7 +263,7 @@
         </p>
       </ui-stack>
 
-      @switch (edit.kind) { @case ('name') {
+      @switch (edit.profileEditField) { @case (ProfileEditField.Name) {
       <ui-stack uiSpacing="regular" data-testid="profile-edit-name">
         <ui-stack uiSpacing="tight">
           <label>
@@ -333,7 +333,7 @@
           }
         </ui-stack>
       </ui-stack>
-      } @case ('birthday') {
+      } @case (ProfileEditField.Birthday) {
       <ui-date-field
         uiControlSize="large"
         data-testid="profile-edit-birthday"

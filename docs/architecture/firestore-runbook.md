@@ -895,8 +895,10 @@ gate '4a · moved error structs outside primitives' -wE "export (const|type) (Ca
   'libs/ecs-core/src' ':!libs/ecs-core/src/primitives/**'
 # 4. The retired wire and legacy tokens.
 # `dayKey` is NOT here: it is a stored capacity-entry field and a DOM attribute; the waitlist
-# wire's `dayKey` is covered by the waitlist wire spec. The frozen visit view models
-# (libs/features/shared/visits) keep their `startIso` fixtures until the shim pass (4A-13).
+# wire's `dayKey` is covered by the waitlist wire spec. libs/features/shared/visits stays out:
+# its fixtures and specs name a seat by a `startIso` TEST INPUT (an ISO wall time they read in
+# the fixture zone, never a wire field) — the visit shim that spoke the legacy words is deleted
+# (UI residue cleanup, §4.9 gate 1).
 # The visit editor's VM money fields ARE renamed in 4a (P6), so the editor is NOT excluded.
 gate '4a · legacy wire' -wE -e "$WIRE4A" "${NOT_COMMENT[@]}" -- \
   apps/functions/src libs/infrastructure libs/features tools/verify libs/ecs-core/src \
@@ -921,13 +923,13 @@ gate '4a · zone literals' -F "'Europe/Sofia'" -- 'libs/features/**/*.ts' 'libs/
   'apps/web/src/**/*.ts' 'apps/functions/src/**/*.ts' \
   ':!**/*.spec.ts' ':!**/testing/**' \
   ':!libs/features/marketing/landing/src/lib/content/landing-content.ts' \
-  ':!libs/features/shared/visits/src/lib/visit-ecs.shim.ts' \
   ':!apps/functions/src/lib/cron-zone.ts'    # the deploy-time cron option, OQ-2
 # Product code and its specs; the seed tools' and e2e helpers' own local constants (they build
-# the seeded locations) and the shim (4A-13) are out of scope.
+# the seeded locations) are out of scope. The visit shim's exemption went with the shim (UI
+# residue cleanup, 2026-10-23): no file of the UI layer is excluded from either zone gate.
 gate '4a · tenant zone names' -wE -e "$ZONES4A" "${NOT_COMMENT[@]}" -- \
   apps/functions/src apps/web/src libs/ecs-core/src libs/features libs/infrastructure \
-  ':!**/*.md' ':!libs/features/shared/visits/src/lib/visit-ecs.shim.ts' \
+  ':!**/*.md' \
   ':!apps/functions/src/main.spec.ts'   # asserts `tenantTimeZone` is ABSENT from the bound bundle (the same precedent)
 # The tools and e2e helpers keep their own zone CONSTANTS (they build the seeded locations), but
 # never bind the retired PORT: a pipeline that read `tenantTimeZone` takes LocationLoadPorts &
@@ -961,11 +963,13 @@ review '4a · retired names in comments (provenance and dead: notes — 4b sweep
 
 **Re-run on the 4b tree** (phase-4b plan §6: `LEGACY` narrowed to `docs/**`, `CLAUDE.md`, `AGENTS.md`; the `firestore.rules`, `money.data.spec.ts` and legacy-tree pathspecs dropped, so gates 1–2 run over the whole tree; gate 8 superseded by §4.8 gate 8): **PASS** on the Phase 4b tree (2026-10-23, the integrator, under bash, after `nx reset`) — 24 `ok`, no `FAIL`, no `ERROR`; the closing review lists 34 comment mentions, every one past-tense provenance or a `dead:` note (none promises a later deletion — §4.8 gate 3c). With it §4.2 PASS (28 `ok`), §4.3 PASS (22), §4.4 PASS (17), §4.5 PASS (6) on the preamble's `STORE`. (§4.1 is not part of this run, as in 4a: §4.2's block 1 restates it with its later exclusions. Run alone on the 4b tree, §4.1 fails three gates on files 4b did not touch — `booking-core.spec.ts`'s absence assertions and `data-day-key` reads (delta 10), the 4a wire specs' «reads no legacy field» cases in `booking.wire.spec.ts`/`waitlist.wire.spec.ts`, and one `edge.spec.ts` comment, all four files unchanged since `e2d7a8f`.)
 
+**Re-run on the UI-residue tree** (ui-residue-cleanup plan §4 G2: the two `visit-ecs.shim.ts` exemptions of gate 5 deleted with the shim, the gate-4 comment on `libs/features/shared/visits` re-worded — the lib stays out of the legacy-wire gate for its `startIso` test inputs): **PASS** (2026-10-23, package G2, under bash) — 24 `ok`, no `FAIL`, no `ERROR`. The known-bad run: on `c77e932` the zone-literal gate without the exemption lists exactly the shim's `VISITS_TIME_ZONE = zoneOf('Europe/Sofia')` (`visit-ecs.shim.ts:89`). §4.9 carries the rest of the cleanup's proof.
+
 ### 4.8 Phase 4b · the deletion
 
 The phase-4b plan's §6 gate (`docs/architecture/flips/phase-4b-delete.md`) on this preamble's helpers. It runs after Phase 4b lands, after §4.2–§4.5 (as rewritten for 4b: the inert pathspecs into the deleted trees dropped, §4.3's "legacy loyalty half" gate an existence check) and §4.7. It proves that no path, alias, tag, package or dotted key of the legacy shape survives outside the history (`docs/**`, and the constitution's REMOVED sentences, reviewed rather than gated).
 
-Two rules carried from §4.7: NO `\b` (git 2.45's ERE on macOS never matches it), and `git grep` on a MISSING positive pathspec exits 1 (`ok`) whatever the tree holds — a gate over a deleted path proves nothing, so the deletions are proved with `[ ! -e … ]`, the project graph and the catalogue walk instead. Every gate is proved by a known-bad probe (a scratch line or file that must FAIL) and then by the tree (must be `ok`) before the status line below is written. Gate 9 probes the root ESLint config and can pass only once the root carries the widened ECS blocks (phase-4b plan 4B-7); if its selector names drift (`ClassDeclaration` is the root of `CLASS_GUARD` in `tools/lint-rules/ecs-syntax.mjs`), fix the probe, never the rule, and if `eslint --print-config` refuses a missing path, use the Node API (`new ESLint().calculateConfigForFile`). Its third probe runs from `libs/ui/icons` itself (ESLint 9 resolves only the cwd's config, and Nx lints each project from its root), so it proves that no nested project config cancels the root blocks (phase-4b plan R8); gate 6c proves the feature-level aliases of dictionary members stay deleted (R7), word-bounded because the successor values contain the alias names.
+Two rules carried from §4.7: NO `\b` (git 2.45's ERE on macOS never matches it), and `git grep` on a MISSING positive pathspec exits 1 (`ok`) whatever the tree holds — a gate over a deleted path proves nothing, so the deletions are proved with `[ ! -e … ]`, the project graph and the catalogue walk instead. Every gate is proved by a known-bad probe (a scratch line or file that must FAIL) and then by the tree (must be `ok`) before the status line below is written. Gate 9 probes the root ESLint config and can pass only once the root carries the widened ECS blocks (phase-4b plan 4B-7); if its selector names drift (`ClassDeclaration` is the root of `CLASS_GUARD` in `tools/lint-rules/ecs-syntax.mjs`), fix the probe, never the rule, and if `eslint --print-config` refuses a missing path, use the Node API (`new ESLint().calculateConfigForFile`). Its third probe runs from `libs/ui/icons` itself (ESLint 9's lookup resolves only the cwd's config; the Nx executor runs from the workspace root and hands ESLint the project's config as `overrideConfigFile`), so it proves that no nested project config cancels the root blocks (phase-4b plan R8); gate 6c proves the feature-level aliases of dictionary members stay deleted (R7), word-bounded because the successor values contain the alias names.
 
 ```bash
 FAILED=0
@@ -1048,8 +1052,9 @@ if pnpm nx graph --file="$GRAPH4B" >/dev/null 2>&1 && node -e '
 ' "$GRAPH4B"; then echo 'ok    4b · no legacy project in the graph'; else echo 'FAIL  4b · no legacy project in the graph'; FAILED=1; fi
 # 9. The root config carries the port/adapter blocks and the token guard (4B-7). Probe paths
 #    need not exist; an infrastructure path proves the ROOT installs it (no project block there).
-#    The icons probe runs FROM its project (ESLint 9 resolves only the cwd's config, and Nx lints
-#    each project from its root) and proves no nested config cancels the root blocks: libs/ui/icons
+#    The icons probe runs FROM its project (ESLint 9's lookup resolves only the cwd's config; the
+#    Nx executor runs from the workspace root with the project's config as overrideConfigFile — the
+#    same nested file) and proves no nested config cancels the root blocks: libs/ui/icons
 #    turns the rule off on its other .ts files. It FAILS before R8 — the known-bad run. A probe is
 #    `<cwd>|<file relative to it>`; severity 0 ('off' keeping stale options — measured: the icons
 #    probe keeps `ClassDeclaration` at severity 0) is a FAIL. NOT `pnpm exec`: it runs from the
@@ -1091,3 +1096,134 @@ review '4b · design-research files citing the deleted trees (each must carry th
 Gate 12 is a review: every file it lists must open with the one-line Phase 4b banner (`git grep -L 'Phase 4b' -- <the listed files>` prints none). Gate 10's review lists the constitution's lines naming the deleted libraries; each must read as REMOVED history (phase-4b plan 4B-11) — if the owner declined the constitution edits, its "until Phase 4" clauses are listed here and recorded in the plan's §8.1, and the gate does not fail on them.
 
 **Status: PASS** on the integrated Phase 4b tree (2026-10-23, the integrator, under bash, after `nx reset` and `nx sync:check`): 26 `ok`, no `FAIL`, no `ERROR` (27 `ok` on the second pass the same day, after `nx reset`, with gate 6c added — its known-bad run lists 15 lines on `e2d7a8f`; §4.2 28, §4.3 22, §4.4 17, §4.5 6 and §4.7 24 `ok` again). The known-bad run: every `git grep` gate (2, 3, 3b, 3c, 4, both halves of 5, the three of 6, 6b and the four reader gates of 7) re-run against the committed `e2d7a8f` tree FAILS (633, 563, 875, 48, 15, 5 + 9, 7 + 3 + 8, 22, 14 + 80 + 2 + 4 hits); gate 1 fails there (`libs/application` exists), gate 5's `package.json` check lists `luxon`, `@types/luxon`, `dinero.js` and gate 7's catalogue walk finds 90 lowercase-rooted `errors` keys per locale (139 leaves). Before wave 4, 3b listed exactly R1's four sites, 3c `visit-ecs.shim.ts:28` and 6b R2's eight lines, and gate 9's icons probe failed (severity 0) until R8 — the packages' dry runs. Gate 9's three probes pass with `eslint --print-config` from each probe's own directory. The reviews: gate 10 lists `CLAUDE.md`/`AGENTS.md` :25, :179, :378-379 and :388 — the "until Phase 4" clauses of the pre-4b constitution, because its edits (phase-4b plan §4.R R4) await the owner's own approval (4B-11): pending, reviewed, not failed; gate 12 lists the ten design-research files, each carrying the Phase 4b banner (`git grep -L 'Phase 4b'` over them prints none). A hit from now on is a regression.
+
+### 4.9 UI residue cleanup · the shim, the `kind` unions, the stray classes, the ambient clock
+
+The UI residue plan's §6 gate (`docs/architecture/flips/ui-residue-cleanup.md`) on this preamble's helpers. It runs after the cleanup lands, after §4.7 (whose two zone gates lost their `visit-ecs.shim.ts` exemptions with the shim) and §4.8. It proves the four residue kinds the migration carried forward (HANDOFF §3.3) stay gone: the visit shim and every legacy translation table, the `kind`/`status` discriminators and bare load-state words of the view state, the undecorated non-Angular classes, the ambient clock and entropy reads. Three of the facts are the lint rules `creativo/no-undecorated-class`, `creativo/no-ambient-clock` and `creativo/no-generic-discriminator` (`tools/lint-rules/`, RuleTester specs beside them, switched on in the root `eslint.config.mjs`, part of `run-many -t lint`); gate 5 proves they are on under BOTH ESLint base paths, which is where a guard silently goes off, and the `git grep` gates add what a rule cannot see (the shim file, the tables, the zone literal, untyped literal keys, bare comparisons).
+
+The rules decide their scope from path-fragment options matched against the file's physical path (`include`, `allowIn`, `allowRandomIn`), never from a `files` glob: the `@nx/eslint:lint` executor `chdir`s to the workspace root and passes the project's config as `overrideConfigFile` (base = the workspace root), while directory lookup — an IDE, `eslint` run inside a project — uses the project dir as base, so a repo-root-relative glob matches under one and silently not under the other. Gate 5 therefore probes every project twice: the executor's own call (`new ESLint({ cwd: <root>, overrideConfigFile: <project>/eslint.config.mjs })`, `lint.impl.js`) and the eslint bin run from inside the project dir. NOT `pnpm exec eslint`: pnpm runs it from the workspace root whatever the cwd (measured 2026-10-23), so the lookup half would never run. Its canary (5c) writes a temporary `__canary__.ts` into four projects and deletes it after each probe; the executor's JSON report goes to the gitignored `tmp/` because the executor joins `outputFile` onto the workspace root (an absolute path lands INSIDE the repo). Run under bash; the canary half takes about a minute.
+
+```bash
+FAILED=0
+command -v gate >/dev/null 2>&1 || { echo 'ERROR the §4.0 preamble is not loaded'; FAILED=1; }
+# NO `\b` (git 2.45's ERE on macOS never matches it); production code only — specs, `testing/`
+# and prose name the retired words on purpose.
+PROD49=(':!**/*.spec.ts' ':!**/testing/**' ':!**/*.md')
+# 1. The visit shim is gone (known-bad: the file exists).
+[ ! -e libs/features/shared/visits/src/lib/visit-ecs.shim.ts ] \
+  && echo 'ok    ui · the visit shim is gone' || { echo 'FAIL  ui · the visit shim is gone'; FAILED=1; }
+# 2. No legacy translation table or shim file in the UI layer (known-bad: the shim's five tables,
+#    client-query.ts's two, GRID_EVENT_OF, COUPON_OCCASION_OF — 20 lines).
+gate 'ui · no legacy tables' -E "LEGACY_[A-Z_]+|(^|[^A-Za-z0-9_])[A-Z][A-Z_]*_OF = \{" -- \
+  libs/features libs/ui apps/web/src ':!**/*.md'
+gate 'ui · no shim files' -E "." -- 'libs/features/**/*.shim.ts' 'libs/ui/**/*.shim.ts'
+# 3. No zone literal in feature production code but the static landing content (§4.7's shim
+#    exemption went with the shim).
+gate 'ui · zone literal' -F "'Europe/Sofia'" -- 'libs/features/**/*.ts' ':!**/*.spec.ts' ':!**/testing/**' \
+  ':!libs/features/marketing/landing/src/lib/content/landing-content.ts'
+# 4. No kind/status key in a production object literal of features/ui (the rule covers type
+#    signatures; this covers untyped literals and a bare-literal PARAMETER such as the retired
+#    `openCreate(kind: 'booking' | 'block')`). client-loyalty.ts: PLACEHOLDER_HEIGHTS.status is a
+#    CSS height key, not a discriminator; libs/ui/icons: the manifest wire format and its
+#    README/vocabulary (UR-13 a).
+gate 'ui · kind/status literal keys' -E "(^|[^A-Za-z_.])(kind|status)[[:space:]]*:[[:space:]]*'" -- \
+  libs/features libs/ui apps/web/src "${PROD49[@]}" \
+  ':!libs/ui/icons/**' \
+  ':!libs/features/staff/client-card/src/lib/client-loyalty/client-loyalty.ts'
+# 5. The three rules, on under BOTH basePaths. The `@nx/eslint:lint` executor chdirs to the
+#    workspace root and hands ESLint the project's config as `overrideConfigFile` (base = the
+#    workspace root); directory lookup (an IDE, eslint run inside a project) loads the same file
+#    with base = the project dir. A root-only probe sees one of the two. NOT `pnpm exec eslint`
+#    from a project dir: pnpm runs it from the workspace root whatever the cwd (measured), so the
+#    lookup half would never run — the eslint bin through node, as §4.8 gate 9.
+ROOT49="$PWD"
+RULES49='creativo/no-undecorated-class creativo/no-ambient-clock creativo/no-generic-discriminator'
+# 5a. --print-config: each rule at severity 2 with its `include` option, both ways; the icons
+#     MANIFEST probe shows no-generic-discriminator at 2 with the manifest allowed by `allowIn`.
+#     A probe is `<project dir>|<file relative to it>`; the file need not exist.
+for probe in 'libs/features/shared/visits|src/lib/probe.ts' 'libs/ui/controls|src/lib/probe.ts' \
+  'apps/showcase|src/app/probe.ts' 'apps/web|src/app/probe.ts' 'libs/ui/icons|src/lib/manifest/icon-manifest.ts'; do
+  dir="${probe%%|*}"; file="${probe#*|}"
+  for base in executor lookup; do
+    if [ "$base" = executor ]; then
+      config=$(node --input-type=module -e '
+        import { ESLint } from "eslint";
+        const [dir, file] = process.argv.slice(1);
+        const eslint = new ESLint({ cwd: process.cwd(), overrideConfigFile: `${dir}/eslint.config.mjs` });
+        console.log(JSON.stringify(await eslint.calculateConfigForFile(`${dir}/${file}`)));' "$dir" "$file" 2>/dev/null)
+    else
+      config=$(cd "$dir" && node "$ROOT49/node_modules/eslint/bin/eslint.js" --print-config "$file" 2>/dev/null)
+    fi
+    if printf '%s' "$config" | node -e '
+      let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        const rules = JSON.parse(s || "{}").rules ?? {};
+        const manifest = process.argv[1].includes("/manifest/");
+        const on = process.argv[2].split(" ").every((id) => {
+          const entry = rules[id] ?? [];
+          return (entry[0] === 2 || entry[0] === "error") && Array.isArray(entry[1]?.include);
+        });
+        const allowed = !manifest || JSON.stringify(rules["creativo/no-generic-discriminator"]?.[1]?.allowIn ?? [])
+          .includes("/libs/ui/icons/src/lib/manifest/");
+        process.exit(on && allowed ? 0 : 1);
+      });' "$file" "$RULES49"; then echo "ok    ui · the three rules on $dir/$file ($base)"; else echo "FAIL  ui · the three rules on $dir/$file ($base)"; FAILED=1; fi
+  done
+done
+# 5b. The manifest's own `kind` signatures are NOT reported, from the root and from libs/ui/icons.
+for base in executor lookup; do
+  if [ "$base" = executor ]; then
+    hits=$(node --input-type=module -e '
+      import { ESLint } from "eslint";
+      const eslint = new ESLint({ cwd: process.cwd(), overrideConfigFile: "libs/ui/icons/eslint.config.mjs" });
+      const [r] = await eslint.lintFiles(["libs/ui/icons/src/lib/manifest/icon-manifest.ts"]);
+      console.log(r.messages.filter((m) => m.ruleId === "creativo/no-generic-discriminator").length);' 2>/dev/null)
+  else
+    hits=$(cd libs/ui/icons && node "$ROOT49/node_modules/eslint/bin/eslint.js" -f json src/lib/manifest/icon-manifest.ts 2>/dev/null \
+      | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>console.log(JSON.parse(s)[0].messages.filter((m)=>m.ruleId==="creativo/no-generic-discriminator").length))')
+  fi
+  [ "$hits" = 0 ] && echo "ok    ui · the icon manifest's kind is allowed ($base)" || { echo "FAIL  ui · the icon manifest's kind is allowed ($base)"; FAILED=1; }
+done
+# 5c. The canary: one class, one Date.now() and one `kind:` signature in a temporary file,
+#     flagged EXACTLY three times by `pnpm nx lint <project>` (the executor) and by eslint run
+#     inside the project dir (lookup), in a feature, a ui lib, the showcase and the web app. Each
+#     canary is deleted right after its two runs (interrupted, `git status` shows the one left).
+CANARY49='export class Canary {}
+export const canaryNow = Date.now();
+export type CanaryState = { kind: "CANARY" };'
+for probe in 'shared-visits|libs/features/shared/visits|src/lib' 'controls|libs/ui/controls|src/lib' \
+  'showcase|apps/showcase|src/app' 'web|apps/web|src/app'; do
+  project="${probe%%|*}"; rest="${probe#*|}"; dir="${rest%%|*}"; sub="${rest#*|}"
+  canary="$dir/$sub/__canary__.ts"
+  printf '%s\n' "$CANARY49" > "$canary"
+  # The executor joins `outputFile` onto the workspace root: a root-relative path in the ignored tmp/.
+  report="tmp/ui-residue-canary-$project.json"; mkdir -p tmp; rm -f "$report"
+  pnpm nx lint "$project" --skip-nx-cache --outputStyle=static --format=json --outputFile="$report" >/dev/null 2>&1
+  viaNx=$(node -e '
+    const fs = require("fs"); const [report, ids] = process.argv.slice(1);
+    const results = fs.existsSync(report) ? JSON.parse(fs.readFileSync(report, "utf8")) : [];
+    console.log(results.filter((r) => r.filePath.endsWith("/__canary__.ts"))
+      .flatMap((r) => r.messages).filter((m) => ids.split(" ").includes(m.ruleId)).length);' "$report" "$RULES49")
+  viaLookup=$(cd "$dir" && node "$ROOT49/node_modules/eslint/bin/eslint.js" "$sub/__canary__.ts" 2>&1 \
+    | grep -cE 'creativo/no-(undecorated-class|ambient-clock|generic-discriminator)')
+  rm -f "$canary" "$report"
+  [ "$viaNx" = 3 ] && [ "$viaLookup" = 3 ] && echo "ok    ui · canary flagged 3× in $dir (nx $viaNx, lookup $viaLookup)" \
+    || { echo "FAIL  ui · canary flagged 3× in $dir (nx $viaNx, lookup $viaLookup)"; FAILED=1; }
+done
+# 6. No bare legacy visit word compared in the visits lib or its readers (known-bad: 34 lines).
+gate 'ui · no legacy visit literals' -E "(outcome|grain|perspective|filter)\(?\)?[[:space:]]*[!=]==[[:space:]]*'(open|worked|no_show|cancelled|month|year|client|staff|all|upcoming|completed)'" -- \
+  libs/features "${PROD49[@]}"
+# 7. No bare SCREAMING tag compared or cased — every dictionary is compared against its member
+#    (UR-4); a DOM tagName check is not a tag. Known-bad on c77e932: 0 — the two raw hits,
+#    staff-visit-editor.ts:3273 and medal.ts:207, are tagName lines; its proof is the canary
+#    `state() === 'LOADING'`, which must FAIL it.
+gate 'ui · no bare SCREAMING tag comparisons' -E -e "([!=]==[[:space:]]*|@case \()'[A-Z][A-Z_]{2,}'" --and --not -e "tagName" -- \
+  libs/features libs/ui apps/web/src apps/showcase/src "${PROD49[@]}"
+# 8. No bare load-state word compared (UR-2: the one LoadState/PagingState vocabulary), outside
+#    the DS state signals UR-13 b leaves (the camera capture, the editor's cameraState/codeState).
+#    Known-bad on c77e932: 33 lines.
+gate 'ui · no bare load-state words' -E -e "[!=]==[[:space:]]*'(loading|failed|ready|error|empty|idle)'" --and --not -e "cameraState|codeState" -- \
+  libs/features libs/ui apps/web/src apps/showcase/src "${PROD49[@]}" \
+  ':!libs/ui/patterns/src/lib/camera/**'
+[ "$FAILED" = 0 ] && echo 'ui residue gate: PASS' || echo 'ui residue gate: FAIL'
+```
+
+**Status: PASS** on the wave-2 tree (2026-10-23, package G2, under bash, after §4.0): 24 `ok`, no `FAIL`, no `ERROR` — gates 1–4 and 6–8 `ok`; gate 5's ten `--print-config` probes (four projects and the icons manifest, each under the executor and under lookup) show the three rules at severity 2 with their `include`, the manifest's `allowIn`; its two manifest runs report no `kind`; its four canaries are flagged exactly 3× by `pnpm nx lint` and 3× by lookup. With it §4.7 PASS (24 `ok`, the two shim exemptions removed) and `run-many -t lint` 46 projects, 0 errors. **The known-bad run** (each gate's patterns against the committed `c77e932` tree): gate 1 fails (the shim exists); gate 2's tables 20 lines in 6 files (the shim's 7, `visit-filter.ts` 4, `visit-row.presenter.ts` 4, `client-query.ts` 3, `GRID_EVENT_OF`, `COUPON_OCCASION_OF`) and its shim-file half 131 lines; gate 3 1 line (the shim's literal); gate 4 190 lines in 31 files (`openCreate`'s bare-literal parameter among them); gate 6 34 lines in 13 files; gate 7 0 — its two raw hits there are `tagName` lines — so its proof is the canary: a temporary `state() === 'LOADING'` line in `libs/features/shared/visits` FAILS it, as `state() === 'loading'` FAILS gate 8; gate 8 33 lines in 18 files; gate 5 under the pre-cleanup root config: the three rules absent from the resolved config of every probe and the canary reported 0 times in all four projects. The rules on the `c77e932` sources, with the options above: `no-undecorated-class` 5 files (the five classes), `no-ambient-clock` 54 reports in 20 files (22 − the two `allowRandomIn` files; 0 in `libs/infrastructure` outside the two `allowIn` adapters), `no-generic-discriminator` 90 reports in 27 files (the icon manifest allowed). **Re-run by the integrator at the full gate (2026-10-23, plan §8.1): PASS, 24 `ok`** — the same 8 grep `ok` and 16 gate-5 `ok` (the four canaries 3× under `pnpm nx lint` and 3× under lookup); an extra `pnpm nx lint i18n` canary flags all three rules in `libs/infrastructure` outside the two adapters, and a scratch file with `state() === 'LOADING'`, `state() === 'loading'`, a `kind: '…'` literal, `outcome === 'worked'`, a `LEGACY_X` table and the Sofia literal FAILS gates 2, 3, 4, 6, 7 and 8. A hit from now on is a regression.

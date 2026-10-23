@@ -29,15 +29,16 @@ import {
   RecurrenceRule,
   WeekOfMonth,
 } from '@core/components';
-import { RecurrenceSystem, RepeatPreset } from '@core/systems';
+import {
+  GridEvent as GridEventTag,
+  RecurrenceSystem,
+  RepeatPreset,
+} from '@core/systems';
 import {
   pluralForm,
   translateDomainError,
 } from '@creativo/infrastructure/i18n';
-import {
-  formatWallClock,
-  formatWeekdayLabels,
-} from '@creativo/features/shared/visits';
+import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
   UiChoiceMenu,
   type UiChoiceOption,
@@ -67,7 +68,7 @@ import {
   formatDayPill,
   formatDayPillRange,
 } from '../day-pill/staff-day-pill';
-import { FrameFullscreen } from '../shared/frame-fullscreen';
+import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { StaffTimeline } from '../timeline/staff-timeline';
 import { addDays } from '../staff-day.store';
@@ -1038,7 +1039,7 @@ export class StaffBlockEditor {
   private readonly frameSection =
     viewChild<ElementRef<HTMLElement>>('frameSection');
 
-  protected readonly fullscreen = new FrameFullscreen({
+  protected readonly fullscreen = injectFrameFullscreen({
     surface: () => this.frameSection()?.nativeElement,
     settled: () => {
       this.frameGrid()?.recenter('auto');
@@ -1074,14 +1075,14 @@ export class StaffBlockEditor {
       // the whole axis says what the switch says.
       const block: GridEvent = {
         id: 'draft-block',
-        kind: 'block',
+        gridEvent: GridEventTag.Block,
         barberTone: null,
         startMinute: draft.allDay ? 0 : draft.startMinute,
         endMinute: draft.allDay ? DAY_MINUTES : draft.endMinute,
         title: label,
         detail: null,
         attribution: null,
-        status: null,
+        bookingStatus: null,
         terminal: false,
         past: false,
         accessibleName: draft.allDay
@@ -1093,14 +1094,14 @@ export class StaffBlockEditor {
       const neighbours = (lane?.neighbours ?? []).map<GridEvent>(
         (neighbour, index) => ({
           id: `neighbour-${barber.id}-${index}`,
-          kind: 'visit',
+          gridEvent: GridEventTag.Visit,
           barberTone: neighbour.tone,
           startMinute: neighbour.startMinute,
           endMinute: neighbour.endMinute,
           title: neighbour.name,
           detail: null,
           attribution: null,
-          status: null,
+          bookingStatus: null,
           terminal: false,
           past: true,
           accessibleName: neighbour.name,

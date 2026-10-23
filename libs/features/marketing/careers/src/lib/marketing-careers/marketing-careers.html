@@ -14,17 +14,18 @@
           <p uiLede>{{ t('programs.careers.subtitle') }}</p>
         </ui-section-header>
 
-        @if (state(); as current) { @switch (current.kind) { @case ('loading') {
+        @if (state(); as current) { @switch (current.loadState) { @case
+        (LoadState.Loading) {
         <ui-stack uiSpacing="tight">
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
         </ui-stack>
-        } @case ('error') {
+        } @case (LoadState.Failed) {
         <ui-card data-testid="careers-error">
           {{ t('programs.careers.empty.title') }}
         </ui-card>
-        } @case ('ready') { @if (current.positions.length === 0) {
+        } @case (LoadState.Ready) { @if (current.data.length === 0) {
         <ui-card data-testid="careers-empty">
           <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
             <p>{{ t('programs.careers.empty.body') }}</p>
@@ -44,7 +45,7 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="careers-list">
-          @for (position of current.positions; track position.id) {
+          @for (position of current.data; track position.id) {
           <a
             uiListRow
             [uiInteractive]="true"

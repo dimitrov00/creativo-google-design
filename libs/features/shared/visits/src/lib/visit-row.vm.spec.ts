@@ -1,13 +1,21 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { LocalDate, MinuteOfDay } from '@core/primitives';
 import type {
+  CancelledSide,
+  VisitRowOutcome as EcsVisitRowOutcome,
+} from '@core/systems';
+import { visitFilterWords } from '@creativo/infrastructure/i18n';
+import {
+  TrailingFactFace,
   VisitFilter,
-  VisitLookup,
-  VisitRowNameParts,
-  VisitRowVm,
-  VisitTrailing,
-  VisitTrailingFact,
-  VisitWaitlistWords,
-  VisitWords,
+  type VisitLookup,
+  VisitRowEntry,
+  type VisitRowNameParts,
+  type VisitRowVm,
+  type VisitTrailing,
+  type VisitTrailingFact,
+  type VisitWaitlistWords,
+  type VisitWords,
 } from './visit-row.vm';
 
 /*
@@ -19,19 +27,24 @@ import type {
 
 describe('visit row view model', () => {
   it('keeps the five filter ids the client page names its test ids after', () => {
-    // `appointments-filter-{option}` survives the move (§5.3.5).
-    expectTypeOf<VisitFilter>().toEqualTypeOf<
-      'all' | 'upcoming' | 'completed' | 'no_show' | 'cancelled'
-    >();
+    // `appointments-filter-{option}` survives the move (§5.3.5): the tags
+    // are the system's, and each prints its one lower-case word.
+    expect(
+      Object.values(VisitFilter).map(
+        // eslint-disable-next-line security/detect-object-injection -- `filter` iterates the closed dictionary the table is total over.
+        (filter) => visitFilterWords[filter],
+      ),
+    ).toEqual(['all', 'upcoming', 'completed', 'cancelled', 'no_show']);
+    expectTypeOf<
+      VisitRowVm['outcome']
+    >().toEqualTypeOf<EcsVisitRowOutcome | null>();
   });
 
   it('ends every row in the barber’s face, or in nothing', () => {
     // Revision 3 §3.11 (W4): the trailing edge is the face in BOTH
-    // perspectives — the one union the two screens share.
-    expectTypeOf<
-      NonNullable<VisitTrailing>['kind']
-    >().toEqualTypeOf<'barber'>();
+    // perspectives — one shape the two screens share, so it needs no tag.
     expectTypeOf<NonNullable<VisitTrailing>>().toHaveProperty('several');
+    expectTypeOf<NonNullable<VisitTrailing>>().toHaveProperty('avatarSrc');
     expectTypeOf<null>().toExtend<VisitTrailing>();
   });
 
@@ -39,9 +52,9 @@ describe('visit row view model', () => {
     // Revision 3 §3.11: the face keeps the trailing edge in both
     // perspectives; money, a state in words and «Този час» end the second
     // line, and none of them is ever the edge.
-    expectTypeOf<NonNullable<VisitTrailingFact>['kind']>().toEqualTypeOf<
-      'amount' | 'status' | 'badge'
-    >();
+    expectTypeOf<
+      NonNullable<VisitTrailingFact>['trailingFactFace']
+    >().toEqualTypeOf<TrailingFactFace>();
     expectTypeOf<null>().toExtend<VisitTrailingFact>();
     expectTypeOf<
       NonNullable<VisitTrailing>
@@ -58,7 +71,7 @@ describe('visit row view model', () => {
     >().toEqualTypeOf<VisitTrailingFact>();
     expectTypeOf<Omit<VisitRowVm, 'trailingFact'>>().not.toExtend<VisitRowVm>();
     const amount = {
-      kind: 'amount',
+      trailingFactFace: TrailingFactFace.Amount,
       text: '27,50 €',
       emphasis: 'primary',
       struck: false,
@@ -75,7 +88,7 @@ describe('visit row view model', () => {
   it('takes the words as values, so a host fills them from the catalogue once', () => {
     expectTypeOf<VisitWords['cancelledBy']>()
       .parameter(0)
-      .toEqualTypeOf<'client' | 'shop'>();
+      .toEqualTypeOf<CancelledSide>();
     expectTypeOf<VisitWords['rowName']>().returns.toEqualTypeOf<string>();
     expectTypeOf<VisitWaitlistWords['daypart']>()
       .parameter(0)
@@ -105,8 +118,9 @@ describe('visit row view model', () => {
   it('draws a waitlist row with a glyph in place of the tile', () => {
     const waiting = {
       id: 'waitlist-1',
-      kind: 'waitlist',
-      startMs: Date.UTC(2026, 9, 1, 12),
+      visitRowEntry: VisitRowEntry.Waitlist,
+      localDate: LocalDate.fromEpochDay(20_727),
+      startMinutes: MinuteOfDay.ofProven(0),
       sectionKey: 'upcoming',
       upcoming: true,
       tile: null,
@@ -119,7 +133,7 @@ describe('visit row view model', () => {
       trailingFact: null,
       marks: [],
       outcome: null,
-      status: null,
+      bookingStatus: null,
       accessibleName: 'Фейд, чака свободен час: четвъртък и петък, следобед',
       testId: 'client-visit-waitlist',
     } as const satisfies VisitRowVm;

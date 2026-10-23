@@ -9,6 +9,7 @@ import {
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { ServiceDetailSheetComponent } from './service-detail-sheet.component';
+import { CompositionKind } from '@core/components';
 import type { BarberVm, ServiceVm } from '../content/catalog-vm';
 
 const bg: Translation = {
@@ -49,7 +50,7 @@ class Loader implements TranslocoLoader {
 
 const SERVICE: ServiceVm = {
   id: 'svc-classic-cut',
-  kind: 'single',
+  compositionKind: CompositionKind.Single,
   name: { en: 'Classic cut', bg: 'Класическа подстрижка' },
   description: { en: 'A precise cut.', bg: 'Прецизна подстрижка.' },
   variants: [],
@@ -172,7 +173,7 @@ const SHAVE: ServiceVm = {
 const BUNDLE: ServiceVm = {
   ...SERVICE,
   id: 'svc-full-care',
-  kind: 'bundle',
+  compositionKind: CompositionKind.Bundle,
   name: { en: 'Full care', bg: 'Пълна грижа' },
   includes: ['svc-classic-cut', 'svc-shave'],
   offerings: [{ barberId: 'ivan', base: { price: 21.5, minutes: 55 } }],

@@ -14,11 +14,12 @@ import {
   UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
 import { StaffEventHead } from '../event-head/staff-event-head';
-import type {
+import {
   VisitPerspective,
-  VisitRowVm,
-  VisitTrailing,
-  VisitTrailingFact,
+  VisitRowEntry,
+  type VisitRowVm,
+  type VisitTrailing,
+  type VisitTrailingFact,
 } from '../visit-row.vm';
 import { VisitRowWords } from './visit-row-words';
 
@@ -98,7 +99,7 @@ export class VisitRow {
 
   /** Which element carries the parts. */
   protected readonly shape = computed<'button' | 'static'>(() =>
-    (this.interactive() ?? this.perspective() === 'client')
+    (this.interactive() ?? this.perspective() === VisitPerspective.Client)
       ? 'button'
       : 'static',
   );
@@ -107,7 +108,9 @@ export class VisitRow {
    * The staff's layout: the words with the fact at the end of their second
    * line, the face in its reserved column. The client's row is as it was.
    */
-  protected readonly staff = computed(() => this.perspective() === 'staff');
+  protected readonly staff = computed(
+    () => this.perspective() === VisitPerspective.Staff,
+  );
 
   /**
    * A waiting request's words wrap and are never cut. Its state has a fact
@@ -117,7 +120,9 @@ export class VisitRow {
    * label wraps (`uiLabelWraps`, `.lineLimit(nil)`). Every other row keeps
    * to one line each.
    */
-  protected readonly wraps = computed(() => this.vm().kind === 'waitlist');
+  protected readonly wraps = computed(
+    () => this.vm().visitRowEntry === VisitRowEntry.Waitlist,
+  );
 
   /** Where the quote sits, for a test to find it: `history-row-{id}-quote`. */
   protected readonly quoteTestId = computed(() =>
@@ -138,7 +143,7 @@ export class VisitRow {
    * states no fact and keeps its whole width for its words.
    */
   protected readonly reservesFace = computed(
-    () => this.staff() && this.vm().kind === 'visit',
+    () => this.staff() && this.vm().visitRowEntry === VisitRowEntry.Visit,
   );
 
   /**

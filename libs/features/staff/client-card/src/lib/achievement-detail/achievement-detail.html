@@ -41,7 +41,7 @@
     <span>{{ part.text }}</span>
     } }
   </p>
-  } @else if (state().kind === 'loading') {
+  } @else if (state().loadState === LoadState.Loading) {
   <ui-skeleton
     class="achievement-detail__state-skeleton"
     uiRadius="capsule"
@@ -65,7 +65,7 @@
     [uiLabel]="page.vm.medal.accessibleName"
     data-testid="achievements-detail-medal"
   />
-  } @else if (state().kind === 'loading') {
+  } @else if (state().loadState === LoadState.Loading) {
   <ui-skeleton
     uiHeadlineMedia
     uiRadius="capsule"
@@ -86,7 +86,7 @@
 >
   <p>{{ words()?.offline }}</p>
 </ui-notice>
-} @switch (state().kind) { @case ('loading') {
+} @switch (state().loadState) { @case (LoadState.Loading) {
 <!-- The progress card's block and the «Как се печели» block while the
      family is on its way (§2.4.4); the stage above holds its disc. -->
 <div
@@ -105,7 +105,7 @@
     uiFrameHeight="calc(var(--sys-space-unit) * 89)"
   />
 </div>
-} @case ('failed') {
+} @case (LoadState.Failed) {
 <ui-notice
   [uiLabel]="words()?.failed.achievements ?? null"
   data-testid="achievements-error"
@@ -124,7 +124,7 @@
     {{ words()?.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('absent') {
+} @case (LoadState.Empty) {
 <ui-empty-state data-testid="achievements-empty">
   <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
     {{ words()?.achievements.firstHint }}
@@ -376,7 +376,7 @@
       data-testid="achievements-detail-visits"
     >
       @for (row of vm.visits; track row.id) {
-      <lib-visit-row [vm]="row" perspective="staff" />
+      <lib-visit-row [vm]="row" [perspective]="VisitPerspective.Staff" />
       }
     </ul>
   </section>

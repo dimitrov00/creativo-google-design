@@ -6,6 +6,7 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
+import { CompositionKind } from '@core/components';
 import type { ServiceVm } from '../content/catalog-vm';
 import { ServiceRowComponent } from './service-row.component';
 
@@ -28,7 +29,7 @@ class Loader implements TranslocoLoader {
 
 const CUT: ServiceVm = {
   id: 'svc-classic-cut',
-  kind: 'single',
+  compositionKind: CompositionKind.Single,
   name: { en: 'Classic cut', bg: 'Класическа подстрижка' },
   description: { en: 'A precise cut.', bg: 'Прецизна подстрижка.' },
   variants: [],
@@ -40,7 +41,7 @@ const CUT: ServiceVm = {
 const BUNDLE: ServiceVm = {
   ...CUT,
   id: 'svc-full-care',
-  kind: 'bundle',
+  compositionKind: CompositionKind.Bundle,
   name: { en: 'Full care', bg: 'Пълна грижа' },
   includes: ['svc-classic-cut'],
 };

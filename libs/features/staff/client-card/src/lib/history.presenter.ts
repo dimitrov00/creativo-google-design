@@ -1,13 +1,13 @@
+import type { ShopNow } from '@core/components';
 import type {
   Appointment,
   ClientMoneyRecord,
   ClientStatsRecord,
 } from '@core/entities';
-import {
-  type VisitRowVm,
-  formatCents,
-  visitRowOf,
-} from '@creativo/features/shared/visits';
+import type { TimeZone } from '@core/primitives';
+import { VisitGrain, VisitPerspective } from '@core/systems';
+import { type VisitRowVm, visitRowOf } from '@creativo/features/shared/visits';
+import { formatCents } from '@creativo/ui/wall-clock';
 import type { ClientCardCatalog } from './client-card.contracts';
 import { figure } from './client-card.format';
 import type {
@@ -129,7 +129,13 @@ export interface HistoryRowsInput {
    */
   readonly subjectCustomerId: string | null;
   readonly currentAppointmentId: string | null;
-  readonly nowMs: number;
+  /**
+   * "Now" on the shop's wall clock (Law 7.3), derived ONCE by the store;
+   * `null` while the shop's zone is pending — then there are no rows yet.
+   */
+  readonly now: ShopNow | null;
+  /** The zone `now` was read in (a photo's day falls back to it); `null` as `now` is. */
+  readonly timeZone: TimeZone | null;
   /** Each visit's own photos, counted (`countByAppointment`); a visit it does not name has none. */
   readonly photoCounts: ReadonlyMap<string, number>;
   /** False for a sysadmin viewer: the client's own words stay off the rows (R15). */
@@ -138,8 +144,10 @@ export interface HistoryRowsInput {
   readonly words: ClientCardWords;
 }
 
-/** Every loaded visit as a staff row, each visit once (pages never overlap, but a refresh may). */
+/** Every loaded visit as a staff row, each visit once (pages never overlap, but a refresh may); none before "now" is known. */
 export function historyRows(input: HistoryRowsInput): readonly VisitRowVm[] {
+  const { now, timeZone } = input;
+  if (now === null || timeZone === null) return [];
   const seen = new Set<string>();
   return input.appointments.flatMap((appointment) => {
     const id: string = appointment.id;
@@ -149,12 +157,13 @@ export function historyRows(input: HistoryRowsInput): readonly VisitRowVm[] {
       visitRowOf(
         appointment,
         {
-          perspective: 'staff',
-          grain: 'year',
+          perspective: VisitPerspective.Staff,
+          grain: VisitGrain.Year,
           subjectUserId: input.subjectUserId,
           subjectCustomerId: input.subjectCustomerId,
           currentAppointmentId: input.currentAppointmentId,
-          nowMs: input.nowMs,
+          now,
+          timeZone,
           locale: input.words.lang,
           photoCount: input.photoCounts.get(id) ?? 0,
           words: input.words.visits,

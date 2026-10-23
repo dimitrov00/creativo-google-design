@@ -17,7 +17,7 @@
     tabindex="-1"
     [attr.aria-labelledby]="'staff-visit-page-title'"
     data-testid="staff-visit-page"
-    [attr.data-page]="page.kind"
+    [attr.data-page]="editorPageWords[page.editorPage]"
   >
     <!-- NO BACK BUTTON HERE (owner, 2026-09-09): the way back lives in the
          sheet's header bar, opposite the ✕, drawn by the shell that owns the
@@ -26,8 +26,8 @@
     <!-- ONE HEAD FOR EVERY PAGE (2026-09-24): `ui-sheet-headline` — the
          large title and at most one line under it, tight, subheadline in
          secondary ink; it folds while a page's search is engaged. -->
-    @switch (page.kind) { @case ('client') { @if (currentClient(); as client) {
-    @if (profileOn) {
+    @switch (page.editorPage) { @case (EditorPage.Client) { @if
+    (currentClient(); as client) { @if (profileOn) {
     <!-- THE CLIENT CARD (client-card-redesign §3.1): the page's one h2 is
          the card's own, inside its headline — the container above is
          labelled by it. The card writes nothing; each output is a push, a
@@ -90,7 +90,7 @@
            page's rows toggle, so unticking a person is where removal lives.
            (The client card, behind `client.profile`, carries its own
            destructive row, «Махни от посещението».) -->
-    } } } @case ('clientLoyalty') {
+    } } } @case (EditorPage.ClientLoyalty) {
     <!-- THE WALLET (revision 3 §2.2): the bar names it from rest
          (`pageHasNoLargeTitle`), its own h2 for assistive tech alone; the
          pass stands straight under the bar. «Код» opens the discount page
@@ -103,29 +103,30 @@
       (openCode)="openCode()"
       (openLedger)="openLedger()"
     />
-    } @case ('clientLedger') {
+    } @case (EditorPage.ClientLedger) {
     <!-- «ДВИЖЕНИЕ» (§2.2.6): the wallet's whole ledger, three deep; a leaf
          — it reads the store and pages itself, nothing to bind. -->
     <lib-client-ledger titleId="staff-visit-page-title" />
-    } @case ('clientAchievements') {
+    } @case (EditorPage.ClientAchievements) {
     <lib-client-achievements
       titleId="staff-visit-page-title"
       (openScope)="openScope($event)"
       (openMedal)="openMedal($event)"
       (openRecords)="openRecords()"
     />
-    } @case ('clientRecords') {
+    } @case (EditorPage.ClientRecords) {
     <!-- «РЕКОРДИ» (§2.3.4): from the glance's line (two deep) or from
          «Постижения» (three); a leaf. -->
     <lib-client-records titleId="staff-visit-page-title" />
-    } @case ('achievementCategory') { @if (currentScope(); as scope) {
+    } @case (EditorPage.AchievementCategory) { @if (currentScope(); as scope) {
     <lib-achievement-category
       titleId="staff-visit-page-title"
       [scope]="scope"
       (openScope)="openScope($event)"
       (openMedal)="openMedal($event)"
     />
-    } } @case ('achievementDetail') { @if (page.subjectId; as seriesId) {
+    } } @case (EditorPage.AchievementDetail) { @if (page.subjectId; as seriesId)
+    {
     <!-- A related medal REPLACES this page (§2.1): same depth, same way back.
          Its category link opens «Постижения» on that chip (revision 3 §5.2);
          the page's one verb is the DOCK's, not the body's (DV-C). -->
@@ -135,9 +136,9 @@
       (openMedal)="replaceMedal($event)"
       (openCategory)="openCategory($event)"
     />
-    } } @case ('clientHistory') {
+    } } @case (EditorPage.ClientHistory) {
     <lib-client-history titleId="staff-visit-page-title" />
-    } @case ('clientSearch') {
+    } @case (EditorPage.ClientSearch) {
     <!-- THE TITLE FOLDS WHILE A SEARCH IS ENGAGED (2026-09-22): the field
          rises under the bar and the compact title lands there — the
          UISearchController grammar. Folded, not scrolled: the sheet's own
@@ -171,7 +172,7 @@
       [uiValue]="query()"
       [uiPlaceholder]="t('staff.visit.searchClient')"
       [uiIcon]="searchGlyph()"
-      [uiIconKind]="parsedQuery().kind"
+      [uiIconKind]="clientQueryShapeWords[parsedQuery().clientQueryShape]"
       uiAutocapitalize="words"
       [uiBusy]="uiClientSearching()"
       uiBusyTestId="staff-visit-client-searching"
@@ -381,7 +382,7 @@
         {{ t('staff.visit.searchHint') }}
       </figcaption>
     </figure>
-    } } } @case ('clientNew') {
+    } } } @case (EditorPage.ClientNew) {
     <ui-sheet-headline>
       <h2
         uiSheetLargeTitle
@@ -445,7 +446,7 @@
         </ui-stack>
       </label>
     </ui-stack>
-    } @case ('service') {
+    } @case (EditorPage.Service) {
     <!-- THE SERVICE PAGE (owner, 2026-09-17: "adding a service → push sheet
          / page"): the catalogue under its name, the search PINNED under
          the bar as the client page pins its own — not focused until
@@ -567,7 +568,7 @@
       </li>
       }
     </ul>
-    } } @case ('discount') {
+    } } @case (EditorPage.Discount) {
     <!-- THE DISCOUNT PAGE (owner, 2026-09-17: "adding a discount → push
          sheet / page; the bottom toolbar for applying goes to the main
          sheet; applied discounts live in the push sheet"; then: "it
@@ -933,7 +934,7 @@
         }
       </ui-scroll-column>
     </ui-stack>
-    } } @case ('photo') { @if (currentPhoto(); as photo) {
+    } } @case (EditorPage.Photo) { @if (currentPhoto(); as photo) {
     <!-- THE PHOTO AS A VIEWER (owner, 2026-09-17: "full sheet screen, no
          title — the image at its original ratio, centered"; then: "make
          the information shown by default … the people as user rows"): the
@@ -1042,7 +1043,7 @@
       </li>
       }
     </ul>
-    } } @case ('camera') {
+    } } @case (EditorPage.Camera) {
     <!-- THE SHUTTER'S PAGE (owner, 2026-09-17: "take a photo doesn't open
          the camera"): the DS viewfinder, asked for at the moment of use,
          showing exactly what the shutter takes; the shutter is the dock's.
@@ -1069,7 +1070,7 @@
       (uiCaptured)="shot($event)"
       (uiStateChange)="cameraState.set($event)"
     />
-    } @case ('library') {
+    } @case (EditorPage.Library) {
     <!-- THE SHOP'S OWN PICTURES (owner, 2026-09-17: "assign an image that
          is already in our system"): the catalogue's covers and work shots
          as a grid, each named; a tap assigns it to the visit as it stands
@@ -1119,7 +1120,7 @@
         {{ t('staff.visit.photoSystemEmpty') }}
       </figcaption>
     </figure>
-    } } @case ('scan') {
+    } } @case (EditorPage.Scan) {
     <!-- THE CAMERA, in place of the discount page: the viewfinder reads the
          first QR or barcode it sees and the field gets it, asked at once.
          The camera is asked for here, at the moment of use, and a refusal
@@ -1229,7 +1230,7 @@
         class="staff-visit__verb"
         [uiLoading]="vm().acting"
         data-testid="staff-visit-confirm"
-        (click)="acted.emit(verb.kind)"
+        (click)="acted.emit(verb.rowVerb)"
       >
         {{ t('staff.visit.confirmRequest') }}
       </button>
@@ -1448,8 +1449,8 @@
               [uiOptions]="legClientOptions()"
               [uiSelectedId]="leg.clientId"
               [uiLabel]="t('staff.visit.forWhom')"
-              [uiPresented]="isLegMenu(leg.seatId, 'client')"
-              (uiPresentedChange)="setLegMenu(leg.seatId, 'client', $event)"
+              [uiPresented]="isLegMenu(leg.seatId, LegMenuFace.Client)"
+              (uiPresentedChange)="setLegMenu(leg.seatId, LegMenuFace.Client, $event)"
               (uiPicked)="setLegClient(leg.seatId, $event)"
             >
               <button
@@ -1463,7 +1464,7 @@
                 class="staff-visit__leg-face-chip"
                 [attr.aria-label]="t('staff.visit.forWhom') + ': ' + legClientLabel(leg)"
                 [attr.data-testid]="'staff-visit-leg-person-' + leg.seatId"
-                (click)="setLegMenu(leg.seatId, 'client', true)"
+                (click)="setLegMenu(leg.seatId, LegMenuFace.Client, true)"
               >
                 <ui-avatar
                   [uiName]="legClientLabel(leg)"
@@ -1478,8 +1479,8 @@
               [uiOptions]="variants"
               [uiSelectedId]="legVariantId(leg)"
               [uiLabel]="t('staff.visit.variant')"
-              [uiPresented]="isLegMenu(leg.seatId, 'variant')"
-              (uiPresentedChange)="setLegMenu(leg.seatId, 'variant', $event)"
+              [uiPresented]="isLegMenu(leg.seatId, LegMenuFace.Variant)"
+              (uiPresentedChange)="setLegMenu(leg.seatId, LegMenuFace.Variant, $event)"
               (uiPicked)="pickLegVariant(leg.seatId, $event)"
             >
               <!-- An ICON (owner, 2026-09-09): the variant's name is in the
@@ -1495,7 +1496,7 @@
                 class="staff-visit__leg-variant-chip"
                 [attr.aria-label]="t('staff.visit.variant') + ': ' + legVariantLabel(leg)"
                 [attr.data-testid]="'staff-visit-leg-variant-' + leg.seatId"
-                (click)="setLegMenu(leg.seatId, 'variant', true)"
+                (click)="setLegMenu(leg.seatId, LegMenuFace.Variant, true)"
               >
                 <ui-icon uiName="service.variants" />
               </button>
@@ -1708,15 +1709,17 @@
             uiText
             uiFont="footnote"
             [uiForegroundStyle]="
-              verdict.kind === 'conflict' ? 'destructive' : 'secondary'
+              verdict.frameVerdict === FrameVerdict.Conflict
+                ? 'destructive'
+                : 'secondary'
             "
-            [attr.data-verdict]="verdict.kind"
+            [attr.data-verdict]="frameVerdictWords[verdict.frameVerdict]"
             data-testid="staff-visit-frame-note"
           >
-            @if (verdict.kind === 'conflict') { {{ t('staff.visit.conflict', {
-            name: verdict.name, start: verdict.start, end: verdict.end }) }} }
-            @else { {{ t('staff.visit.outsideRoster', { time: verdict.time }) }}
-            }
+            @if (verdict.frameVerdict === FrameVerdict.Conflict) { {{
+            t('staff.visit.conflict', { name: verdict.name, start:
+            verdict.start, end: verdict.end }) }} } @else { {{
+            t('staff.visit.outsideRoster', { time: verdict.time }) }} }
           </p>
           }
         </section>
@@ -1957,7 +1960,7 @@
           type="button"
           [uiInteractive]="true"
           data-testid="staff-visit-add-client"
-          (click)="push('clientSearch', null, 'staff-visit-add-client')"
+          (click)="push(EditorPage.ClientSearch, null, 'staff-visit-add-client')"
         >
           <span uiLeading>
             <ui-icon uiName="action.add" aria-hidden="true" />
@@ -2639,7 +2642,7 @@
     uiAnchor="scroll"
     class="staff-visit__dock"
   >
-    @let dockPage = currentPage()?.kind ?? null;
+    @let dockPage = currentPage()?.editorPage ?? null;
     <!-- THE BILL READS AT THE ROOT, AND ON THE DISCOUNT PAGE where the
          price moves (owner, 2026-09-17: "the bottom toolbar for applying
          should go to the main sheet"): the old figure struck beside what
@@ -2652,7 +2655,7 @@
          there is not — Wallet's "Buy Again", on the thumb rail where
          «Запази» lives, hugging the call. The receipt survives in the
          ladder, where every service row still shows its own price. -->
-    @if ((dockPage === null || dockPage === 'discount') && !gone()) {
+    @if ((dockPage === null || dockPage === EditorPage.Discount) && !gone()) {
     <ui-stack
       uiSpacing="none"
       uiAlignment="leading"
@@ -2723,7 +2726,7 @@
     >
       {{ t('staff.visit.chooseService') }}
     </button>
-    } } @else if (dockPage === 'clientSearch') {
+    } } @else if (dockPage === EditorPage.ClientSearch) {
     <!-- THE COUNT of the picked (2026-09-18), in the bill's own dress —
          the gallery page's grammar — leading; «Нов клиент» hugs the ✓ on
          the thumb rail (owner ruling 2026-09-22, back from the list's first
@@ -2766,7 +2769,7 @@
       <ui-icon uiName="party.addGuest" />
     </button>
     <!-- The ✓ beside it comes from the every-page fallback below. -->
-    } @if (dockPage === 'clientNew') {
+    } @if (dockPage === EditorPage.ClientNew) {
     <button
       type="button"
       uiButton
@@ -2780,7 +2783,7 @@
     >
       <ui-icon uiName="checklist.done" />
     </button>
-    } @else if (dockPage === 'camera') {
+    } @else if (dockPage === EditorPage.Camera) {
     <!-- THE SHUTTER — prominent, the camera's glyph, where «Запази»
          stands; while the camera cannot be had, «От устройството» takes
          its place as the honest way in. -->
@@ -2812,7 +2815,7 @@
     >
       <ui-icon uiName="media.camera" />
     </button>
-    } } @else if (dockPage === 'library') {
+    } } @else if (dockPage === EditorPage.Library) {
     <!-- SELECTING, AS PHOTOS DOES (owner, 2026-09-17): the count at the
          leading edge, «Добави» for them all on the thumb rail — or the ✓
          back while nothing is picked. -->
@@ -2853,7 +2856,7 @@
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
-    } } @else if (dockPage === 'photo') { @if (photoReadOnly()) {
+    } } @else if (dockPage === EditorPage.Photo) { @if (photoReadOnly()) {
     <!-- A PAST CUT (client-card-redesign §3.7) is read-only — it belongs to
          its own visit: ✓ only, back to the visit like every page of the
          client stack. -->
@@ -2873,7 +2876,7 @@
     >
       {{ t('staff.visit.photoRemove') }}
     </button>
-    } } @else if (dockPage === 'scan') {
+    } } @else if (dockPage === EditorPage.Scan) {
     <!-- THE CAMERA'S ONE WAY BACK — «Въведи на ръка», where the search
          page's «Нов клиент» stands: the page has nothing to confirm, and
          the shell's ‹ is the same road. -->
@@ -2888,7 +2891,7 @@
     >
       {{ t('staff.visit.scanTypeInstead') }}
     </button>
-    } @else if (dockPage === 'discount') {
+    } @else if (dockPage === EditorPage.Discount) {
     <!-- THE PROMISE, IN THE DOCK (owner, 2026-09-16: "the bottom CTA
          should say what it applies and switch"; 2026-09-17: in the main
          sheet's toolbar): «Приложи −10 %», «Приложи FIRST10» — the one act
@@ -2910,7 +2913,7 @@
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
-    } } @else if (dockPage === 'service') {
+    } } @else if (dockPage === EditorPage.Service) {
     <!-- «Добави», «Добави 3 услуги» — every pick seated at once — while
          something is picked; the ✓ while the page is only read. -->
     @if (serviceApply(); as apply) {
@@ -2926,7 +2929,7 @@
     </button>
     } @else {
     <ng-container *ngTemplateOutlet="pageDone" />
-    } } @else if (dockPage === 'achievementDetail') {
+    } } @else if (dockPage === EditorPage.AchievementDetail) {
     <!-- THE MEDAL PAGE'S ONE VERB (revision 3 §5.2, DV-C): «Добави фейд» —
          the family's service onto this person's seat, beside ✓ — while the
          seat lacks it and the visit can take it (the store's gate). The body

@@ -25,9 +25,7 @@ import {
   CatalogPresenter,
 } from '@creativo/features/shared/catalog';
 import {
-  type VisitFilter,
   VisitFilterMenu,
-  type VisitListState,
   type VisitLookup,
   type VisitRowVm,
   type VisitSectionVm,
@@ -39,12 +37,14 @@ import {
   visitSectionKey,
   visitSectionLabel,
   visitWordsOf,
+} from '@creativo/features/shared/visits';
+import {
   formatCents,
   formatInstant,
   formatMinute,
   formatWallClock,
   formatWeekdayLabels,
-} from '@creativo/features/shared/visits';
+} from '@creativo/ui/wall-clock';
 import {
   UiAvatar,
   UiBadge,
@@ -100,7 +100,11 @@ import {
   CancellationPolicySystem,
   MoveSystem,
   ShopReachSystem,
+  VisitFilter,
+  VisitGrain,
+  VisitPerspective,
 } from '@core/systems';
+import { LoadState } from '@creativo/shared/view-state';
 import {
   bookingStatusWords,
   translateDomainError,
@@ -108,8 +112,7 @@ import {
 } from '@creativo/infrastructure/i18n';
 import {
   AppointmentsStore,
-  AppointmentsViewState,
-  appointmentsViewStateWords,
+  appointmentsStateWords,
 } from '../appointments.store';
 import type { ClientVisitVm } from '../visit-vm';
 import { buildVisitIcs } from '../visit-ics';
@@ -267,13 +270,16 @@ export class ClientAppointments {
   protected readonly store = inject(AppointmentsStore);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
 
-  /** The view states, for the template's `@switch`. */
-  protected readonly ViewState = AppointmentsViewState;
+  /** The load states, for the template's `@switch`. */
+  protected readonly LoadState = LoadState;
+  /** The funnel's choices, for the template's «clear the filter». */
+  protected readonly VisitFilter = VisitFilter;
+  /** Whose list this is, for the shared funnel and browser. */
+  protected readonly VisitPerspective = VisitPerspective;
 
-  /** The host's `data-state` — the e2e suite's lowercase word for the view state. */
+  /** The host's `data-state` — the e2e suite's lowercase word for the load state. */
   protected readonly dataState = computed(
-    () =>
-      appointmentsViewStateWords[this.store.upcoming().appointmentsViewState],
+    () => appointmentsStateWords[this.store.upcoming().loadState],
   );
 
   /**
@@ -298,10 +304,12 @@ export class ClientAppointments {
    * trigger, names the choice in force and goes to the accent while it
    * bites); the list and the calendar both show only what matches it.
    */
-  protected readonly filter = signal<VisitFilter>('all');
+  protected readonly filter = signal<VisitFilter>(VisitFilter.All);
 
   /** A narrowed list — its empty offers the filter back rather than a booking. */
-  protected readonly filtering = computed(() => this.filter() !== 'all');
+  protected readonly filtering = computed(
+    () => this.filter() !== VisitFilter.All,
+  );
 
   /** How far the rendered run reaches, in months, either side of today. */
   private readonly monthsBack = signal(INITIAL_MONTH_SPAN);
@@ -363,7 +371,7 @@ export class ClientAppointments {
       : visitWordsOf(
           (key, params) => this.transloco.translate(key, params, lang),
           lang,
-          'client',
+          VisitPerspective.Client,
         );
   });
 
@@ -420,24 +428,30 @@ export class ClientAppointments {
   /**
    * Every visit as the list's row, and the calendar's and the sheet's view
    * model built from that row. Empty until the catalogue's words have
-   * loaded — the list shows its placeholders meanwhile.
+   * loaded — the list shows its placeholders meanwhile — and until the
+   * shop's zone has resolved: "now" is read on the shop's wall clock
+   * (`ShopNow`, Law 7.3), and both reads stay empty without it anyway.
    */
   private readonly visits = computed<readonly PageVisit[]>(() => {
     const words = this.words();
     const lang = this.loadedLang();
-    if (words === null || lang === null) return [];
+    const now = this.store.now();
+    const timeZone = this.store.zone();
+    if (words === null || lang === null || now === null || timeZone === null) {
+      return [];
+    }
     const lookup = this.lookup();
-    const nowMs = this.store.nowUtcMs;
     const owner = this.store.owner();
     return this.appointments().map((appointment) => {
       const row = visitRowOf(
         appointment,
         {
-          perspective: 'client',
-          grain: 'month',
+          perspective: VisitPerspective.Client,
+          grain: VisitGrain.Month,
           subjectUserId: owner,
           currentAppointmentId: null,
-          nowMs,
+          now,
+          timeZone,
           locale: lang,
           words,
         },
@@ -465,7 +479,7 @@ export class ClientAppointments {
     return sectionVisits(
       this.shownVisits().map(({ row }) => row),
       {
-        grain: 'month',
+        grain: VisitGrain.Month,
         testIdPrefix: 'appointments',
         labels: {
           upcoming: this.transloco.translate(
@@ -479,13 +493,16 @@ export class ClientAppointments {
     );
   });
 
-  /** Where the list stands: the catalogue's words are part of "loaded". */
-  protected readonly listState = computed<VisitListState>(() => {
-    const state = this.store.upcoming().appointmentsViewState;
-    if (state === AppointmentsViewState.Error) return 'error';
-    return state === AppointmentsViewState.Loading || this.words() === null
-      ? 'loading'
-      : 'ready';
+  /**
+   * Where the list stands: the catalogue's words are part of "loaded" — a
+   * READY read whose rows cannot be worded yet is still LOADING, never an
+   * empty list (`visits()` is `[]` until the words arrive).
+   */
+  protected readonly listState = computed<LoadState>(() => {
+    const state = this.store.upcoming().loadState;
+    return state === LoadState.Ready && this.words() === null
+      ? LoadState.Loading
+      : state;
   });
 
   /** Every visit by its id — what a row, or a day, opens. */
@@ -505,7 +522,7 @@ export class ClientAppointments {
   });
 
   protected readonly isEmpty = computed(
-    () => this.listState() === 'ready' && this.totalVisits() === 0,
+    () => this.listState() === LoadState.Ready && this.totalVisits() === 0,
   );
 
   /**
@@ -793,7 +810,7 @@ export class ClientAppointments {
   protected scrollToToday(smooth = false): void {
     const today = this.store.today();
     if (today === null) return;
-    const key = visitSectionKey(today, 'month');
+    const key = visitSectionKey(today, VisitGrain.Month);
     afterNextRender(
       () => {
         this.calendarScroller()
@@ -1064,12 +1081,12 @@ export class ClientAppointments {
       id: row.id,
       appointment,
       title: row.title,
-      barberLabel: trailing?.kind === 'barber' ? trailing.name : '',
+      barberLabel: trailing !== null ? trailing.name : '',
       barberAvatarSrc: single === null ? null : lookup.barberAvatarSrc(single),
       barberMonogram: single === null ? '' : (lookup.barberName(single) ?? ''),
       timeLabel: formatMinute(appointment.startMinutes, locale),
       upcoming: row.upcoming,
-      status: appointment.bookingStatus,
+      bookingStatus: appointment.bookingStatus,
     };
   }
 
@@ -1104,7 +1121,7 @@ export class ClientAppointments {
     const sameYear =
       LocalDate.parts(month).year === LocalDate.parts(today).year;
     return {
-      key: visitSectionKey(month, 'month'),
+      key: visitSectionKey(month, VisitGrain.Month),
       // The month's name as the shop's calendar has it (no zone consulted).
       label: this.capitalize(
         formatWallClock(month, null, this.locale(), {

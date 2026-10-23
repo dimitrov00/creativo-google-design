@@ -25,7 +25,8 @@
     </span>
     }
   </span>
-  } @if (fact(); as fact) { @switch (fact.kind) { @case ('amount') {
+  } @if (fact(); as fact) { @switch (fact.trailingFactFace) { @case
+  (TrailingFactFace.Amount) {
   <!-- Money: charged in the primary ink at weight 600, booked and
        cancelled in the secondary and struck (`<s>`: no longer what it
        says). -->
@@ -41,7 +42,7 @@
     <s>{{ fact.text }}</s>
     } @else { {{ fact.text }} }
   </span>
-  } @case ('status') {
+  } @case (TrailingFactFace.Status) {
   <!-- A state in words beside its glyph: the warning is the GLYPH's, the
        word keeps the primary ink; a neutral state's glyph is detail. -->
   <span
@@ -62,7 +63,7 @@
       >{{ fact.text }}</span
     >
   </span>
-  } @case ('badge') {
+  } @case (TrailingFactFace.Badge) {
   <!-- «Този час»: the accent's wash under ink (the accent law). -->
   <span uiBadge uiTone="accent" data-fact="badge">{{ fact.text }}</span>
   } } }

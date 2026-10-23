@@ -7,6 +7,7 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
+import { VisitPerspective } from '@core/systems';
 import {
   type RhythmRuleWords,
   VisitRow,
@@ -37,6 +38,7 @@ import {
   UiTextDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { AchievementTile } from '../client-achievements/achievement-tile';
 import {
   achievementsIdPrefix,
@@ -163,10 +165,12 @@ export class AchievementDetailPage {
     );
   });
 
-  protected readonly ready = computed(() => {
-    const state = this.state();
-    return state.kind === 'ready' ? state : null;
-  });
+  protected readonly ready = computed(() => LoadSlice.dataOf(this.state()));
+
+  /** Where the page stands, for the template's switch. */
+  protected readonly LoadState = LoadState;
+  /** Whose rows the counted visits are: the staff's. */
+  protected readonly VisitPerspective = VisitPerspective;
 
   /**
    * The hero head with its stage: while the family is on its way and once
@@ -176,8 +180,8 @@ export class AchievementDetailPage {
    * bar's word would float under an empty box.
    */
   protected readonly hero = computed(() => {
-    const kind = this.state().kind;
-    return kind === 'ready' || kind === 'loading';
+    const loadState = this.state().loadState;
+    return loadState === LoadState.Ready || loadState === LoadState.Loading;
   });
 
   protected readonly words = this.store.words;

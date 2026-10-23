@@ -1,41 +1,33 @@
 import type { AchievementsContext } from '../achievements.presenter';
-import {
-  type AchievementsData,
-  CardLoadState,
-  type Slice,
-} from '../client-pages.vm';
+import type { AchievementsData } from '../client-pages.vm';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from '../client-card.words';
+
+/** An achievements page once it can be drawn: its VM, and the words it was built in. */
+export interface AchievementsPage<T> {
+  readonly vm: T;
+  readonly words: ClientCardWords;
+}
 
 /**
  * WHERE AN ACHIEVEMENTS PAGE STANDS — the collection, a scope and a medal
  * (client-card-redesign §3.3.4, §3.4, §3.5, §3.8) read the same store
- * data and stand in the same four places:
+ * data and stand in the same four places, the shared `LoadState`:
  *
- * - `loading` — the catalogue, the account or the progress is still on its
+ * - `LOADING` — the catalogue, the account or the progress is still on its
  *   way (or the card's words are): shaped placeholders.
- * - `failed` — a read failed: the heading stays, and under it the one
+ * - `FAILED` — a read failed: the heading stays, and under it the one
  *   retry grammar of the stack. Drawing every medal `notStarted` over a
  *   failed progress read would be a fake zero, so a partial read is a
  *   failure too. A scope or a family the catalogue does not hold is the
  *   same page: nothing true can be drawn for it.
- * - `absent` — there is no achievements data for this person at all (no
+ * - `EMPTY` — there is no achievements data for this person at all (no
  *   loyalty account, the flag off): the pages are unreachable from the
- *   glance, and a deep push says how the first achievement comes.
- * - `ready` — the page's VM, and the words it was built in.
+ *   glance, and a deep push says how the first achievement comes. No page
+ *   draws any other "nothing" state (UI residue cleanup R-6).
+ * - `READY` — the page's VM, and the words it was built in.
  */
-export type AchievementsPageState<T> =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'failed' }
-  | { readonly kind: 'absent' }
-  | {
-      readonly kind: 'ready';
-      readonly vm: T;
-      readonly words: ClientCardWords;
-    };
-
-const LOADING = { kind: 'loading' } as const;
-const FAILED = { kind: 'failed' } as const;
-const ABSENT = { kind: 'absent' } as const;
+export type AchievementsPageState<T> = LoadSlice.WithEmpty<AchievementsPage<T>>;
 
 /**
  * The page's state from the store's slice and the presenters' context,
@@ -44,17 +36,19 @@ const ABSENT = { kind: 'absent' } as const;
  * the catalogue lacks.
  */
 export function achievementsPageState<T>(
-  data: Slice<AchievementsData> | null,
+  data: LoadSlice<AchievementsData> | null,
   ctx: AchievementsContext | null,
   build: (data: AchievementsData, ctx: AchievementsContext) => T | null,
 ): AchievementsPageState<T> {
-  if (data === null) return ABSENT;
-  if (ctx === null || data.cardLoadState === CardLoadState.Loading) {
-    return LOADING;
+  if (data === null) return LoadSlice.empty;
+  if (ctx === null || data.loadState === LoadState.Loading) {
+    return LoadSlice.loading;
   }
-  if (data.cardLoadState === CardLoadState.Failed) return FAILED;
+  if (data.loadState === LoadState.Failed) return LoadSlice.failed;
   const vm = build(data.data, ctx);
-  return vm === null ? FAILED : { kind: 'ready', vm, words: ctx.words };
+  return vm === null
+    ? LoadSlice.failed
+    : LoadSlice.ready({ vm, words: ctx.words });
 }
 
 let nextPrefix = 0;

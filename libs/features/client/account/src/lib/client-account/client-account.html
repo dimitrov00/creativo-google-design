@@ -102,16 +102,16 @@
       <ui-card
         uiPadding="comfortable"
         data-testid="account-upcoming"
-        [attr.data-state]="upcomingState()"
+        [attr.data-state]="upcomingWord()"
       >
         <p uiText uiFont="headline">{{ t('account.upcoming.title') }}</p>
-        @switch (upcomingState()) { @case ('loading') {
+        @switch (upcomingState()) { @case (LoadState.Loading) {
         <ui-skeleton
           uiFrame
           uiFrameHeight="2.75rem"
           data-testid="account-upcoming-skeleton"
         />
-        } @case ('error') {
+        } @case (LoadState.Failed) {
         <p
           uiText
           uiFont="footnote"

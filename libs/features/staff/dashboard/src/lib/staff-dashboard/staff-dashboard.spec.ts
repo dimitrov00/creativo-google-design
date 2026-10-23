@@ -156,7 +156,12 @@ import {
   until,
   utcMs,
 } from '@core/testing';
-import { StaffDashboard, reversibleSave } from './staff-dashboard';
+import {
+  AgendaRow,
+  CreateIntent,
+  StaffDashboard,
+  reversibleSave,
+} from './staff-dashboard';
 import {
   StaffVisitEditor,
   snapshotCommitOf,
@@ -1399,7 +1404,7 @@ describe('StaffDashboard', () => {
       rowLabel: (e: {
         clientLabel: string;
         startLabel: string;
-        status: BookingStatus;
+        bookingStatus: BookingStatus;
         arrived: boolean;
         terminal: boolean;
       }) => string;
@@ -1408,7 +1413,7 @@ describe('StaffDashboard', () => {
       component.rowLabel({
         clientLabel: 'Николай',
         startLabel: '10:00',
-        status,
+        bookingStatus: status,
         arrived: false,
         terminal: false,
       });
@@ -1530,7 +1535,10 @@ describe('StaffDashboard', () => {
     const entries = component
       .agenda()
       .flatMap((group) => group.items)
-      .filter((item) => (item as { kind?: string }).kind === 'visit');
+      .filter(
+        (item) =>
+          (item as { agendaRow?: string }).agendaRow === AgendaRow.Visit,
+      );
 
     let checked = 0;
     for (const entry of entries) {
@@ -1796,13 +1804,13 @@ describe('StaffDashboard', () => {
     // translations, so this asserts the key it reaches for, not the word.)
     const component = fixture.componentInstance as unknown as {
       statusNote: (e: {
-        status: BookingStatus;
+        bookingStatus: BookingStatus;
         arrived: boolean;
         terminal: boolean;
       }) => string | null;
     };
     const of = (status: BookingStatus, arrived = false) =>
-      component.statusNote({ status, arrived, terminal: false });
+      component.statusNote({ bookingStatus: status, arrived, terminal: false });
 
     // Arrival is NOT announced here — it is visible text in the trailing
     // gloss now (`whenLabel`), and saying it twice is a screen-reader bug.
@@ -2066,7 +2074,7 @@ describe('StaffDashboard', () => {
       cards.fields.isOn = (id: string) => (id === 'avatar' ? false : isOn(id));
       expect(
         cards.rowIcons({
-          status: BookingStatus.Cancelled,
+          bookingStatus: BookingStatus.Cancelled,
           rebooked: false,
           hasNote: false,
         }),
@@ -2074,7 +2082,7 @@ describe('StaffDashboard', () => {
       cards.fields.isOn = isOn;
       expect(
         cards.rowIcons({
-          status: BookingStatus.Cancelled,
+          bookingStatus: BookingStatus.Cancelled,
           rebooked: false,
           hasNote: false,
         }),
@@ -3050,6 +3058,56 @@ describe('StaffDashboard', () => {
     }
   });
 
+  // The other hour that did not happen: the case above pins the strike for
+  // a no-show only, and the card reads the STORED tag straight into the
+  // head's strike and the tag's gate — no lowercase word between them, so a
+  // cancellation must strike exactly as a no-show does (UI residue cleanup,
+  // §1.2 row 28).
+  it('strikes a cancelled agenda card and draws no tag on it, like a no-show', async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const base = appointment(
+      'appointment-called-off',
+      '2026-08-05T14:00:00',
+      undefined,
+      'ivan',
+      false,
+      'fade',
+    );
+    const seat = base.seats[0];
+    if (seat === undefined) throw new Error('the fixture has no seat');
+    const calledOff: Appointment = {
+      ...base,
+      seats: [
+        Seat.withOutcome(
+          seat,
+          SeatOutcome.cancelled(
+            wall('2026-08-05T10:00:00').utcEpochMs,
+            CancelledBy.Client,
+            CancellationReason.ClientUnwell,
+            null,
+          ),
+        ),
+      ],
+    };
+    observeBarberDay.mockImplementation((barberId: string) =>
+      of(PortResult.ok(barberId === 'ivan' ? [calledOff] : [])),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      const card = host().querySelector(
+        '[data-row-id="appointment-called-off#ivan"]',
+      );
+      expect(card?.getAttribute('data-status')).toBe('cancelled');
+      expect(
+        card?.querySelector('.staff-event-head')?.hasAttribute('data-struck'),
+      ).toBe(true);
+      expect(card?.querySelector('[data-testid="staff-visit-tag"]')).toBeNull();
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    }
+  });
+
   // An hour that did not happen drops the marks that only matter to a
   // live visit (owner, 2026-09-24): the catalogue tag first.
   it('draws no duration tag on a cancelled visit', async () => {
@@ -3202,12 +3260,12 @@ describe('StaffDashboard', () => {
       TestBed.resetTestingModule();
       await build();
       const component = fixture.componentInstance as unknown as {
-        openCreate: (kind: 'booking' | 'block') => void;
+        openCreate: (createIntent: CreateIntent) => void;
         lanes: () => readonly unknown[];
         blockLaneId: () => string | null;
       };
       expect(component.lanes()).toHaveLength(0);
-      component.openCreate('block');
+      component.openCreate(CreateIntent.Block);
       fixture.detectChanges();
       expect(
         host().querySelector('[data-testid="staff-block-sheet"]'),
@@ -3543,7 +3601,6 @@ describe('StaffDashboard', () => {
       if (row === null) throw new Error('the sheet did not open');
 
       await component.commitFromEditor(row.appointmentId, {
-        kind: 'save',
         dayKey: '2026-08-05',
         startMinute: 600,
         endMinute: 630,
@@ -3587,7 +3644,6 @@ describe('StaffDashboard', () => {
 
     // Every seat dropped: a batch with something in it, refused.
     await component.commitFromEditor(row.appointmentId, {
-      kind: 'save',
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
@@ -3649,7 +3705,6 @@ describe('StaffDashboard', () => {
     if (row === null) throw new Error('the sheet did not open');
 
     await component.commitFromEditor(row.appointmentId, {
-      kind: 'save',
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
@@ -4158,7 +4213,7 @@ describe('StaffDashboard', () => {
       .componentInstance as unknown as {
       onFrameCommit: (commit: {
         id: string;
-        kind: 'move';
+        editCommand: typeof EditCommand.Move;
         startMinute: number;
         endMinute: number;
       }) => void;
@@ -4166,7 +4221,7 @@ describe('StaffDashboard', () => {
     };
     editor.onFrameCommit({
       id: 'appt-1',
-      kind: 'move',
+      editCommand: EditCommand.Move,
       startMinute: 660,
       endMinute: 705,
     });
@@ -4220,7 +4275,7 @@ describe('StaffDashboard', () => {
       .componentInstance as unknown as {
       onFrameCommit: (commit: {
         id: string;
-        kind: 'move';
+        editCommand: typeof EditCommand.Move;
         startMinute: number;
         endMinute: number;
       }) => void;
@@ -4228,7 +4283,7 @@ describe('StaffDashboard', () => {
     };
     editor.onFrameCommit({
       id: 'appointment-1',
-      kind: 'move',
+      editCommand: EditCommand.Move,
       startMinute: 660,
       endMinute: 690,
     });
@@ -4319,7 +4374,7 @@ describe('StaffDashboard', () => {
       };
       editor.onFrameCommit({
         id: 'appointment-1',
-        kind: 'move',
+        editCommand: EditCommand.Move,
         startMinute: 660,
         endMinute: 690,
       });
@@ -4675,7 +4730,7 @@ describe('StaffDashboard', () => {
     function drag(editor: EditorHandle): void {
       editor.onFrameCommit({
         id: 'appointment-1',
-        kind: 'move',
+        editCommand: EditCommand.Move,
         startMinute: 660,
         endMinute: 690,
       });
@@ -4878,7 +4933,7 @@ describe('StaffDashboard', () => {
     };
     editor.onFrameCommit({
       id: 'appointment-1',
-      kind: 'move',
+      editCommand: EditCommand.Move,
       startMinute: 660,
       endMinute: 690,
     });
@@ -4921,7 +4976,7 @@ describe('StaffDashboard', () => {
     };
     editor.onFrameCommit({
       id: 'appointment-1',
-      kind: 'move',
+      editCommand: EditCommand.Move,
       startMinute: 660,
       endMinute: 690,
     });
@@ -5043,15 +5098,15 @@ describe('StaffDashboard', () => {
     const moved = [{ editCommand: EditCommand.Move }] as unknown as Parameters<
       typeof reversibleSave
     >[1];
-    expect(reversibleSave({ status: BookingStatus.Completed }, added)).toBe(
-      false,
-    );
-    expect(reversibleSave({ status: BookingStatus.Completed }, moved)).toBe(
-      true,
-    );
-    expect(reversibleSave({ status: BookingStatus.Confirmed }, added)).toBe(
-      true,
-    );
+    expect(
+      reversibleSave({ bookingStatus: BookingStatus.Completed }, added),
+    ).toBe(false);
+    expect(
+      reversibleSave({ bookingStatus: BookingStatus.Completed }, moved),
+    ).toBe(true);
+    expect(
+      reversibleSave({ bookingStatus: BookingStatus.Confirmed }, added),
+    ).toBe(true);
     expect(reversibleSave(null, added)).toBe(true);
     // A save that removed a seat keeps its «Отмени» — one half of a pair
     // the visit already held included: the server remembers the pairs a
@@ -5061,9 +5116,9 @@ describe('StaffDashboard', () => {
     const removed = [
       BookingCall.editRemoveSeat(SeatId.of('seat-2')),
     ] as Parameters<typeof reversibleSave>[1];
-    expect(reversibleSave({ status: BookingStatus.Confirmed }, removed)).toBe(
-      true,
-    );
+    expect(
+      reversibleSave({ bookingStatus: BookingStatus.Confirmed }, removed),
+    ).toBe(true);
   });
 
   it("undoes a save by the save's own arithmetic: the added seat goes, the removed one returns with its terms, the block and the bill go back", () => {
@@ -5242,7 +5297,7 @@ describe('StaffDashboard', () => {
 
   describe('«Запиши пак» and the rebooking edge (defect §2.3 #6)', () => {
     type RebookHarness = {
-      openCreate: (kind: 'booking' | 'block') => void;
+      openCreate: (createIntent: CreateIntent) => void;
       rebookFromEditor: (vm: unknown) => void;
       createFromEditor: (commit: unknown) => Promise<void>;
       visitEditorVm: () => {
@@ -5253,7 +5308,6 @@ describe('StaffDashboard', () => {
 
     /** One cut for `clientId`, saved from the create sheet. */
     const saveFor = (clientId: string, label: string) => ({
-      kind: 'save',
       dayKey: '2026-09-02',
       startMinute: 600,
       endMinute: 630,
@@ -5319,7 +5373,7 @@ describe('StaffDashboard', () => {
       // Somebody else in the chair: their first booking, not a return.
       await component.createFromEditor(saveFor('user-someone-else', 'Петър'));
 
-      component.openCreate('booking');
+      component.openCreate(CreateIntent.Booking);
       fixture.detectChanges();
       await component.createFromEditor(saveFor('user-martin', 'Мартин'));
 
@@ -5361,7 +5415,6 @@ describe('StaffDashboard', () => {
     // The row knows its shop — the appointment's own.
     expect(row.locationId.length).toBeGreaterThan(0);
     const save = (locationId: string) => ({
-      kind: 'save',
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
@@ -5433,7 +5486,6 @@ describe('StaffDashboard', () => {
     const [leg] = row.legs;
     if (leg === undefined) throw new Error('no seat on the row');
     await component.commitFromEditor(row.appointmentId, {
-      kind: 'save',
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
@@ -5506,13 +5558,13 @@ describe('StaffDashboard', () => {
     // «Бърз час» is gone (owner, 2026-09-09): a walk-in is a kind of client,
     // chosen in the sheet, and someone at the counter may want tomorrow.
     const component = fixture.componentInstance as unknown as {
-      openCreate: (kind: 'booking' | 'block') => void;
+      openCreate: (createIntent: CreateIntent) => void;
       createVm: () => { clientLabel: string; startMinute: number } | null;
     };
     expect(
       host().querySelector('[data-testid="staff-add-walk-in"]'),
     ).toBeNull();
-    component.openCreate('booking');
+    component.openCreate(CreateIntent.Booking);
     fixture.detectChanges();
     expect(
       host().querySelector('[data-testid="staff-create-sheet"]'),
@@ -5532,14 +5584,13 @@ describe('StaffDashboard', () => {
       return PortResult.ok({ appointmentId: AppointmentId.of('apt-party') });
     };
     const component = fixture.componentInstance as unknown as {
-      openCreate: (kind: 'booking' | 'block') => void;
+      openCreate: (createIntent: CreateIntent) => void;
       createFromEditor: (commit: unknown) => Promise<void>;
       createVisit: () => unknown;
     };
-    component.openCreate('booking');
+    component.openCreate(CreateIntent.Booking);
     fixture.detectChanges();
     await component.createFromEditor({
-      kind: 'save',
       dayKey: '2026-09-03',
       startMinute: 600,
       endMinute: 645,
@@ -5601,10 +5652,10 @@ describe('StaffDashboard', () => {
       });
     };
     const component = fixture.componentInstance as unknown as {
-      openCreate: (kind: 'booking' | 'block') => void;
+      openCreate: (createIntent: CreateIntent) => void;
       createFromEditor: (commit: unknown) => Promise<void>;
     };
-    component.openCreate('booking');
+    component.openCreate(CreateIntent.Booking);
     fixture.detectChanges();
     const leg = (seatId: string, clientId: string) => ({
       seatId,
@@ -5616,7 +5667,6 @@ describe('StaffDashboard', () => {
       clientId,
     });
     await component.createFromEditor({
-      kind: 'save',
       dayKey: '2026-09-03',
       startMinute: 600,
       endMinute: 690,
@@ -6093,12 +6143,12 @@ describe('StaffDashboard', () => {
    * an option that arrives without one is a plain ticket, the band alone
    * above it (review 2, fix-editor r1: the store dropped the field).
    */
-  it("offers the booker's coupons with their occasion: a birthday grant reaches the sheet as `occasion: 'birthday'`, a plain one as `null`", async () => {
+  it("offers the booker's coupons with their occasion: a birthday grant reaches the sheet as `couponOccasion: BIRTHDAY`, a plain one as `null`", async () => {
     const coupon = (
       id: string,
       name: string,
       percent: number,
-      occasion: 'birthday' | null,
+      occasion: CouponOccasion | null,
     ): Coupon => ({
       id: CouponId.of(id),
       name,
@@ -6107,7 +6157,7 @@ describe('StaffDashboard', () => {
         occasion === null ? Combinability.Stackable : Combinability.Exclusive,
       usageLimit: null,
       couponStatus: CouponStatus.Enabled,
-      couponOccasion: occasion === null ? null : CouponOccasion.Birthday,
+      couponOccasion: occasion,
       ...unwrapOk(CouponValue.percentOff(percent)),
       ...CouponExpiryRule.never(),
     });
@@ -6140,7 +6190,7 @@ describe('StaffDashboard', () => {
     heldGrants = [
       held(
         'grant-birthday',
-        coupon('coupon-birthday', 'Рожден ден', 20, 'birthday'),
+        coupon('coupon-birthday', 'Рожден ден', 20, CouponOccasion.Birthday),
         utcMs('2026-10-28T22:30:00+00:00'),
       ),
       held('grant-loyal', coupon('coupon-loyal', 'Постоянен клиент', 5, null)),
@@ -6175,7 +6225,7 @@ describe('StaffDashboard', () => {
           label: 'Рожден ден',
           value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
           exclusive: true,
-          occasion: 'birthday',
+          couponOccasion: CouponOccasion.Birthday,
           // The shop's day, not the UTC instant's (review 2, POLISH-editor).
           expiresOn: '2026-10-29',
         },
@@ -6185,7 +6235,7 @@ describe('StaffDashboard', () => {
           label: 'Постоянен клиент',
           value: { discountMethod: DiscountMethod.PercentOff, percent: 5 },
           exclusive: false,
-          occasion: null,
+          couponOccasion: null,
           expiresOn: null,
         },
       ]);

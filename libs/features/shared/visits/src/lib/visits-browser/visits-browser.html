@@ -6,7 +6,7 @@
   [activeKey]="activeKey()"
   [bleed]="bleed()"
   [testIdPrefix]="prefix()"
-  [loading]="state() === 'loading'"
+  [loading]="state() === LoadState.Loading"
   (jump)="jumpTo($event)"
 >
   <ng-content select="[visitPillsAction]" ngProjectAs="[visitPillsAction]" />

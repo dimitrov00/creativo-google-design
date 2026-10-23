@@ -96,12 +96,12 @@
      EMPTY under a filter is this page's: the words and the way back out. -->
 <lib-visits-browser
   class="client-history__browser"
-  perspective="staff"
+  [perspective]="VisitPerspective.Staff"
   listStyle="insetGrouped"
   bleed="container"
   testIdPrefix="history"
   [sections]="vm.sections"
-  [state]="listState()"
+  [state]="vm.loadState"
   [paging]="vm.paging"
   (loadMore)="loadMore()"
   (retry)="retry()"
@@ -109,7 +109,7 @@
   @if (funnel()) {
   <lib-visit-filter
     visitPillsAction
-    perspective="staff"
+    [perspective]="VisitPerspective.Staff"
     testIdPrefix="history-filter"
     [value]="vm.filter"
     [offered]="vm.offeredFilters"
@@ -139,7 +139,7 @@
     uiControlSize="regular"
     class="client-history__clear"
     data-testid="history-filter-clear"
-    (click)="setFilter('all')"
+    (click)="setFilter(VisitFilter.All)"
   >
     {{ w.visitsModule.filterClear }}
   </button>

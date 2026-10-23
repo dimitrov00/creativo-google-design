@@ -69,7 +69,8 @@ import {
   voucherExpiry,
   wordsOf,
 } from '../testing/client-card.fixtures';
-import { CardLoadState } from './client-pages.vm';
+import { LoadState } from '@creativo/shared/view-state';
+import { WalletHolding } from './client-pages.vm';
 
 /*
  * «ЛОЯЛНОСТ» AS A WALLET (client-card-revision-3 §2.2). Every model here
@@ -149,7 +150,7 @@ function ruleWith(edit: (rule: StreakRule) => StreakRule): StreakDefinition {
 function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
   return {
     account: GEORGI_ACCOUNT,
-    catalog: { cardLoadState: CardLoadState.Ready, data: CATALOG },
+    catalog: { loadState: LoadState.Ready, data: CATALOG },
     flags: ALL_FLAGS,
     paused: false,
     usableGrants: [GEORGI_GRANT],
@@ -164,8 +165,8 @@ function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
     words: WORDS,
     holder: 'Георги Петров',
     sinceDay: GEORGI_STATS.firstVisitLocalDate,
-    vouchers: { cardLoadState: CardLoadState.Ready, data: vouchersOf(GEORGI) },
-    activity: { cardLoadState: CardLoadState.Ready, data: journalOf('georgi') },
+    vouchers: { loadState: LoadState.Ready, data: vouchersOf(GEORGI) },
+    activity: { loadState: LoadState.Ready, data: journalOf('georgi') },
     rhythm: RHYTHM,
     online: true,
     isOwner: true,
@@ -188,8 +189,8 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
     inChairToday: true,
     holder: 'Мартин Илиев',
     sinceDay: MARTIN_STATS.firstVisitLocalDate,
-    vouchers: { cardLoadState: CardLoadState.Ready, data: vouchersOf(MARTIN) },
-    activity: { cardLoadState: CardLoadState.Ready, data: journalOf('martin') },
+    vouchers: { loadState: LoadState.Ready, data: vouchersOf(MARTIN) },
+    activity: { loadState: LoadState.Ready, data: journalOf('martin') },
     ...overrides,
   });
 }
@@ -403,8 +404,7 @@ describe('passVm', () => {
         'Карта за лоялност: Георги Петров, 358 точки за размяна, клиент от март 2025 г.',
     });
     expect(
-      passVm(walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }))
-        .tier,
+      passVm(walletInput({ catalog: { loadState: LoadState.Loading } })).tier,
     ).toBeNull();
     expect(passVm(walletInput({ catalog: null })).tier).toBeNull();
   });
@@ -516,7 +516,7 @@ describe('walletHoldings', () => {
   it('files what is held as the wallet does: the voucher, the ticket, the stamp card', () => {
     expect(walletHoldings(walletInput())).toEqual([
       {
-        kind: 'voucher',
+        walletHolding: WalletHolding.Voucher,
         voucher: {
           voucherId: 'voucher-dev-georgi',
           title: 'Ваучер за подарък',
@@ -526,7 +526,7 @@ describe('walletHoldings', () => {
         },
       },
       {
-        kind: 'ticket',
+        walletHolding: WalletHolding.Ticket,
         ticket: {
           grantId: 'grant-dev-georgi-punch',
           title: 'Безплатно подстригване',
@@ -541,7 +541,7 @@ describe('walletHoldings', () => {
         },
       },
       {
-        kind: 'stamps',
+        walletHolding: WalletHolding.Stamps,
         card: {
           ruleId: 'rule-every-10th-visit',
           title: 'Безплатно подстригване',
@@ -578,7 +578,7 @@ describe('walletHoldings', () => {
     );
     expect(tickets).toMatchObject([
       {
-        kind: 'ticket',
+        walletHolding: WalletHolding.Ticket,
         ticket: {
           grantId: 'grant-dev-georgi-punch',
           applied: true,
@@ -587,7 +587,7 @@ describe('walletHoldings', () => {
         },
       },
       {
-        kind: 'ticket',
+        walletHolding: WalletHolding.Ticket,
         ticket: {
           grantId: 'grant-beard',
           applied: false,
@@ -600,25 +600,41 @@ describe('walletHoldings', () => {
 
   it('draws no ticket for a companion, nor for a paused client', () => {
     const kinds = (input: Partial<WalletInput>) =>
-      walletHoldings(walletInput(input)).map((holding) => holding.kind);
-    expect(kinds({ isOwner: false })).toEqual(['voucher', 'stamps']);
-    expect(kinds({ paused: true })).toEqual(['voucher', 'stamps']);
+      walletHoldings(walletInput(input)).map(
+        (holding) => holding.walletHolding,
+      );
+    expect(kinds({ isOwner: false })).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Stamps,
+    ]);
+    expect(kinds({ paused: true })).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Stamps,
+    ]);
     // Read-only ways in keep what is held on show.
-    expect(kinds({ online: false })).toEqual(['voucher', 'ticket', 'stamps']);
-    expect(kinds({ visitGone: true })).toEqual(['voucher', 'ticket', 'stamps']);
+    expect(kinds({ online: false })).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Ticket,
+      WalletHolding.Stamps,
+    ]);
+    expect(kinds({ visitGone: true })).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Ticket,
+      WalletHolding.Stamps,
+    ]);
   });
 
   it('draws no stamp card with `loyalty.achievements` off, and none the account does not hold', () => {
     expect(
       walletHoldings(
         walletInput({ flags: { ...ALL_FLAGS, achievements: false } }),
-      ).map((holding) => holding.kind),
-    ).toEqual(['voucher', 'ticket']);
+      ).map((holding) => holding.walletHolding),
+    ).toEqual([WalletHolding.Voucher, WalletHolding.Ticket]);
     expect(
       walletHoldings(walletInput({ account: account({ punchCards: [] }) })).map(
-        (holding) => holding.kind,
+        (holding) => holding.walletHolding,
       ),
-    ).toEqual(['voucher', 'ticket']);
+    ).toEqual([WalletHolding.Voucher, WalletHolding.Ticket]);
   });
 
   it('agrees a stamp card’s words with its size, and never counts past it', () => {
@@ -634,7 +650,7 @@ describe('walletHoldings', () => {
       }),
     );
     expect(card).toMatchObject({
-      kind: 'stamps',
+      walletHolding: WalletHolding.Stamps,
       card: {
         figure: '10 от 10',
         gauge: {
@@ -741,10 +757,10 @@ describe('walletActions', () => {
   });
 
   it('draws «Награди» while its section stands: on its way, failed, or holding a reward', () => {
-    expect(
-      ids({ catalog: { cardLoadState: CardLoadState.Loading } }),
-    ).toContain('catalog');
-    expect(ids({ catalog: { cardLoadState: CardLoadState.Failed } })).toContain(
+    expect(ids({ catalog: { loadState: LoadState.Loading } })).toContain(
+      'catalog',
+    );
+    expect(ids({ catalog: { loadState: LoadState.Failed } })).toContain(
       'catalog',
     );
     expect(ids({ catalog: null })).not.toContain('catalog');
@@ -753,7 +769,7 @@ describe('walletActions', () => {
       rewards: [],
     }));
     expect(
-      ids({ catalog: { cardLoadState: CardLoadState.Ready, data: empty } }),
+      ids({ catalog: { loadState: LoadState.Ready, data: empty } }),
     ).toEqual(['use', 'code', 'history']);
   });
 
@@ -1405,15 +1421,13 @@ describe('walletTierVm', () => {
       walletTierVm(walletInput({ flags: { ...ALL_FLAGS, tiers: false } })),
     ).toBeNull();
     expect(
-      walletTierVm(
-        walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }),
-      ),
+      walletTierVm(walletInput({ catalog: { loadState: LoadState.Loading } })),
     ).toBeNull();
     expect(
       walletTierVm(
         walletInput({
           catalog: {
-            cardLoadState: CardLoadState.Ready,
+            loadState: LoadState.Ready,
             data: loyaltyCatalogWith((catalog) => ({
               ...catalog,
               tiers: [],
@@ -1551,7 +1565,7 @@ describe('rewardTiles', () => {
     expect(
       rewardTiles(
         walletInput({
-          catalog: { cardLoadState: CardLoadState.Ready, data: catalog },
+          catalog: { loadState: LoadState.Ready, data: catalog },
         }),
       ),
     ).toEqual([]);
@@ -1562,9 +1576,7 @@ describe('rewardTiles', () => {
       rewardTiles(walletInput({ flags: { ...ALL_FLAGS, points: false } })),
     ).toEqual([]);
     expect(
-      rewardTiles(
-        walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }),
-      ),
+      rewardTiles(walletInput({ catalog: { loadState: LoadState.Loading } })),
     ).toEqual([]);
     expect(rewardTiles(walletInput({ catalog: null }))).toEqual([]);
   });
@@ -1582,7 +1594,7 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(wallet.holdings).toEqual({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: walletHoldings(walletInput()),
     });
     // One voucher: the heading carries no detail — a bare count said
@@ -1590,11 +1602,11 @@ describe('walletVm', () => {
     expect(wallet.holdingsDetail).toBeNull();
     expect(wallet.rhythm).toEqual(walletRhythmVm(walletInput()));
     expect(wallet.tier).toEqual({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: walletTierVm(walletInput()),
     });
     expect(wallet.catalog).toEqual({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: {
         name: 'Награди за точки: 358 точки, стигат за 2 от 3 награди',
         tiles: rewardTiles(walletInput()),
@@ -1607,7 +1619,7 @@ describe('walletVm', () => {
     expect(WALLET_ACTIVITY_ROWS).toBe(5);
     const wallet = walletVm(walletInput());
     const groups =
-      wallet.activity?.cardLoadState === CardLoadState.Ready
+      wallet.activity?.loadState === LoadState.Ready
         ? wallet.activity.data
         : [];
     expect(
@@ -1639,13 +1651,13 @@ describe('walletVm', () => {
     const wallet = walletVm(
       walletInput({
         activity: {
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           data: journalOf('georgi').slice(0, 7),
         },
       }),
     );
     const groups =
-      wallet.activity?.cardLoadState === CardLoadState.Ready
+      wallet.activity?.loadState === LoadState.Ready
         ? wallet.activity.data
         : [];
     // Seven rows are everything there is: six events, of which five show.
@@ -1658,15 +1670,13 @@ describe('walletVm', () => {
     const cut = walletVm(
       walletInput({
         activity: {
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           data: journalOf('georgi').filter((row) => row.seq !== 34),
         },
       }),
     );
     const shown =
-      cut.activity?.cardLoadState === CardLoadState.Ready
-        ? cut.activity.data
-        : [];
+      cut.activity?.loadState === LoadState.Ready ? cut.activity.data : [];
     expect(shown.flatMap((group) => group.rows)).toHaveLength(5);
     expect(shown.at(-1)).toMatchObject({ key: '2026-05', net: '+17 т.' });
   });
@@ -1674,17 +1684,17 @@ describe('walletVm', () => {
   it('draws a section on its way as loading and a failed one as failed, each under its own heading', () => {
     const loading = walletVm(
       walletInput({
-        catalog: { cardLoadState: CardLoadState.Loading },
-        vouchers: { cardLoadState: CardLoadState.Loading },
-        activity: { cardLoadState: CardLoadState.Loading },
+        catalog: { loadState: LoadState.Loading },
+        vouchers: { loadState: LoadState.Loading },
+        activity: { loadState: LoadState.Loading },
       }),
     );
     expect(loading).toMatchObject({
-      holdings: { cardLoadState: CardLoadState.Loading },
+      holdings: { loadState: LoadState.Loading },
       holdingsDetail: null,
-      tier: { cardLoadState: CardLoadState.Loading },
-      catalog: { cardLoadState: CardLoadState.Loading },
-      activity: { cardLoadState: CardLoadState.Loading },
+      tier: { loadState: LoadState.Loading },
+      catalog: { loadState: LoadState.Loading },
+      activity: { loadState: LoadState.Loading },
     });
     // The account is read: the pass and the rhythm draw at once.
     expect(loading.pass.figure).toBe('358');
@@ -1692,25 +1702,28 @@ describe('walletVm', () => {
 
     const failed = walletVm(
       walletInput({
-        catalog: { cardLoadState: CardLoadState.Failed },
-        vouchers: { cardLoadState: CardLoadState.Failed },
-        activity: { cardLoadState: CardLoadState.Failed },
+        catalog: { loadState: LoadState.Failed },
+        vouchers: { loadState: LoadState.Failed },
+        activity: { loadState: LoadState.Failed },
       }),
     );
     expect(failed).toMatchObject({
-      holdings: { cardLoadState: CardLoadState.Failed },
+      holdings: { loadState: LoadState.Failed },
       holdingsDetail: null,
-      tier: { cardLoadState: CardLoadState.Failed },
-      catalog: { cardLoadState: CardLoadState.Failed },
-      activity: { cardLoadState: CardLoadState.Failed },
+      tier: { loadState: LoadState.Failed },
+      catalog: { loadState: LoadState.Failed },
+      activity: { loadState: LoadState.Failed },
     });
   });
 
   it('holds the tickets and the stamp cards alone while no reader answers for the vouchers', () => {
     const wallet = walletVm(walletInput({ vouchers: null, activity: null }));
     expect(wallet.holdings).toMatchObject({
-      cardLoadState: CardLoadState.Ready,
-      data: [{ kind: 'ticket' }, { kind: 'stamps' }],
+      loadState: LoadState.Ready,
+      data: [
+        { walletHolding: WalletHolding.Ticket },
+        { walletHolding: WalletHolding.Stamps },
+      ],
     });
     expect(wallet.holdingsDetail).toBeNull();
     expect('activity' in wallet).toBe(false);
@@ -1725,17 +1738,22 @@ describe('walletVm', () => {
     const wallet = walletVm(
       walletInput({
         vouchers: {
-          cardLoadState: CardLoadState.Ready,
+          loadState: LoadState.Ready,
           data: [...vouchersOf(GEORGI), second],
         },
       }),
     );
     expect(wallet.holdingsDetail).toBe(`4 · ${euro('55,00')}`);
     expect(
-      wallet.holdings.cardLoadState === CardLoadState.Ready
-        ? wallet.holdings.data.map((holding) => holding.kind)
+      wallet.holdings.loadState === LoadState.Ready
+        ? wallet.holdings.data.map((holding) => holding.walletHolding)
         : [],
-    ).toEqual(['voucher', 'voucher', 'ticket', 'stamps']);
+    ).toEqual([
+      WalletHolding.Voucher,
+      WalletHolding.Voucher,
+      WalletHolding.Ticket,
+      WalletHolding.Stamps,
+    ]);
   });
 
   it('reads an account that holds nothing as an empty wallet, and one that moved nothing as no feed', () => {
@@ -1743,12 +1761,12 @@ describe('walletVm', () => {
       walletInput({
         account: account({ balance: 50, punchCards: [] }),
         usableGrants: [],
-        vouchers: { cardLoadState: CardLoadState.Ready, data: [] },
-        activity: { cardLoadState: CardLoadState.Ready, data: [] },
+        vouchers: { loadState: LoadState.Ready, data: [] },
+        activity: { loadState: LoadState.Ready, data: [] },
       }),
     );
     expect(wallet.holdings).toEqual({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: [],
     });
     expect(wallet.holdingsDetail).toBeNull();
@@ -1759,7 +1777,7 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(wallet.catalog).toMatchObject({
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: { name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди' },
     });
   });
@@ -1789,10 +1807,10 @@ describe('walletVm', () => {
     });
     expect(off.actions.map((action) => action.id)).toEqual(['use', 'code']);
     expect(
-      off.holdings.cardLoadState === CardLoadState.Ready
-        ? off.holdings.data.map((holding) => holding.kind)
+      off.holdings.loadState === LoadState.Ready
+        ? off.holdings.data.map((holding) => holding.walletHolding)
         : [],
-    ).toEqual(['voucher', 'ticket']);
+    ).toEqual([WalletHolding.Voucher, WalletHolding.Ticket]);
 
     const pointsOnly = walletVm(
       walletInput({
@@ -1822,11 +1840,11 @@ describe('walletVm', () => {
     }));
     const wallet = walletVm(
       walletInput({
-        catalog: { cardLoadState: CardLoadState.Ready, data: empty },
+        catalog: { loadState: LoadState.Ready, data: empty },
       }),
     );
     expect('catalog' in wallet).toBe(false);
-    expect(wallet.tier?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(wallet.tier?.loadState).toBe(LoadState.Ready);
   });
 
   it('keeps a paused wallet’s values, and takes its tickets and the verbs that write', () => {
@@ -1839,17 +1857,17 @@ describe('walletVm', () => {
     });
     expect(wallet.rhythm).toMatchObject({ figure: '24', frozen: true });
     expect(
-      wallet.holdings.cardLoadState === CardLoadState.Ready
-        ? wallet.holdings.data.map((holding) => holding.kind)
+      wallet.holdings.loadState === LoadState.Ready
+        ? wallet.holdings.data.map((holding) => holding.walletHolding)
         : [],
-    ).toEqual(['voucher', 'stamps']);
+    ).toEqual([WalletHolding.Voucher, WalletHolding.Stamps]);
     expect(wallet.holdingsDetail).toBeNull();
     expect(wallet.actions.map((action) => action.id)).toEqual([
       'catalog',
       'history',
     ]);
     // History is never frozen.
-    expect(wallet.activity?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(wallet.activity?.loadState).toBe(LoadState.Ready);
   });
 
   it('draws a companion’s own account without the tickets and the verbs of the visit', () => {
@@ -1865,10 +1883,10 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(
-      wallet.holdings.cardLoadState === CardLoadState.Ready
-        ? wallet.holdings.data.map((holding) => holding.kind)
+      wallet.holdings.loadState === LoadState.Ready
+        ? wallet.holdings.data.map((holding) => holding.walletHolding)
         : [],
-    ).toEqual(['voucher', 'stamps']);
+    ).toEqual([WalletHolding.Voucher, WalletHolding.Stamps]);
   });
 
   it('holds final copy only, in both languages: no slot, no stray value, a minus for a minus', () => {

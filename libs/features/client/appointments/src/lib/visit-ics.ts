@@ -1,3 +1,5 @@
+import { LocalDate, type UtcEpochMs } from '@core/primitives';
+
 /**
  * A visit as an `.ics` event — the one format every calendar on earth reads.
  *
@@ -16,18 +18,41 @@ export interface VisitCalendarEvent {
   /** Stable per appointment — re-import updates rather than duplicates. */
   readonly uid: string;
   readonly title: string;
-  readonly startMs: number;
-  readonly endMs: number;
+  readonly startMs: UtcEpochMs;
+  readonly endMs: UtcEpochMs;
   readonly location: string;
   readonly description: string;
 }
 
-/** `20260821T113000Z` — the iCalendar UTC form. */
-function toIcsUtc(millis: number): string {
-  return `${new Date(millis)
-    .toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\.\d{3}/, '')}`;
+const MS_PER_DAY = 86_400_000;
+const MS_PER_SECOND = 1_000;
+const SECONDS_PER_HOUR = 3_600;
+const SECONDS_PER_MINUTE = 60;
+
+/** `7` → `07` — a two-digit field of the iCalendar time. */
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * `20260821T113000Z` — the iCalendar UTC form, by integer arithmetic on the
+ * instant (Law 7: no date object): the civil UTC day of its epoch day
+ * (`LocalDate.fromEpochDay`, the dashes dropped), then the hour, minute and
+ * second of that day. The milliseconds are dropped, never rounded — a
+ * DTSTAMP keeps the real second it was taken in.
+ */
+function toIcsUtc(instant: UtcEpochMs): string {
+  const epochDay = Math.floor(instant / MS_PER_DAY);
+  const secondOfDay = Math.floor(
+    (instant - epochDay * MS_PER_DAY) / MS_PER_SECOND,
+  );
+  const hours = Math.floor(secondOfDay / SECONDS_PER_HOUR);
+  const minutes = Math.floor(
+    (secondOfDay % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE,
+  );
+  const seconds = secondOfDay % SECONDS_PER_MINUTE;
+  const day = LocalDate.fromEpochDay(epochDay).replace(/-/g, '');
+  return `${day}T${twoDigits(hours)}${twoDigits(minutes)}${twoDigits(seconds)}Z`;
 }
 
 /**
@@ -70,7 +95,7 @@ function foldIcsLine(line: string): string {
  */
 export function buildVisitIcs(
   event: VisitCalendarEvent,
-  stampMs: number,
+  stampMs: UtcEpochMs,
 ): string {
   const lines = [
     'BEGIN:VCALENDAR',

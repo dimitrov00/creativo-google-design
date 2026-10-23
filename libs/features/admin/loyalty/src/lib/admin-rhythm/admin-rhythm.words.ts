@@ -1,5 +1,10 @@
 import type { StreakDefinitionVersion } from '@core/entities';
-import { StreakRuleField, type TimeZone } from '@core/primitives';
+import {
+  LocalDate,
+  StreakRuleField,
+  type TimeZone,
+  defect,
+} from '@core/primitives';
 import {
   FreezeReason,
   STREAK_EXCUSES,
@@ -27,6 +32,7 @@ import type {
   VisitTranslate,
 } from '@creativo/features/shared/visits';
 import { pluralForm } from '@creativo/infrastructure/i18n';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import type {
   UiChoiceOption,
   UiSliderMark,
@@ -131,24 +137,26 @@ export function onBreakOf(id: string): StreakOnBreak {
 /** The typographic minus, as the spec draws a signed figure. */
 const MINUS = '−';
 
-// ── Dates (the house form, R59; the card's formatter is another feature's) ──
+// ── Dates (the house form, R59; the shared wall-clock face) ────────────────
 
-/** A `YYYY-MM-DD` shop day as a `Date` that reads back as that day in UTC. */
-function noonOf(day: string): Date {
-  const [year, month, date] = day.split('-').map(Number);
-  return new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1, 12, 0, 0),
-  );
+/**
+ * A `YYYY-MM-DD` shop day as the branded day it is (Law 7.4). Every day the
+ * page formats is a stored or computed `LocalDate`: one that is not is a
+ * defect, never a guess.
+ */
+function localDateOf(day: string): LocalDate {
+  const parsed = LocalDate.parse(day);
+  if (!parsed.ok) defect(`${day} is not a shop day`);
+  return parsed.value;
 }
 
+/** A shop day in the locale's form, on the cached wall-clock formatter (read back in UTC, no `Date` built). */
 function formatDay(
   day: string,
   lang: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return new Intl.DateTimeFormat(lang, { ...options, timeZone: 'UTC' }).format(
-    noonOf(day),
-  );
+  return formatWallClock(localDateOf(day), null, lang, options);
 }
 
 const yearUnlessCurrent = (
@@ -723,10 +731,23 @@ export interface AdminRhythmPreviewMetric {
   readonly label: string;
 }
 
+/**
+ * What «Какво ще се промени» can say — the field `rhythmEstimate`, the ONLY
+ * source of these strings (Law 6): the estimate, or why there is none.
+ */
+export const RhythmEstimate = {
+  /** The counts the draft would move. */
+  Estimate: 'ESTIMATE',
+  /** No estimate for this draft (the line says why). */
+  Unavailable: 'UNAVAILABLE',
+} as const;
+export type RhythmEstimate =
+  (typeof RhythmEstimate)[keyof typeof RhythmEstimate];
+
 /** «Какво ще се промени», worded. */
-export type AdminRhythmPreviewWords =
+export type RhythmEstimateLine =
   | {
-      readonly kind: 'estimate';
+      readonly rhythmEstimate: typeof RhythmEstimate.Estimate;
       /** «214 клиенти с посещение за 12 месеца». */
       readonly clients: string;
       /** «от първите 1 000 клиенти»; `null` unless the walk stopped short. */
@@ -736,7 +757,10 @@ export type AdminRhythmPreviewWords =
       /** «17 се връщат в ритъм · никой не излиза от ритъм». */
       readonly summary: string;
     }
-  | { readonly kind: 'unavailable'; readonly reason: string };
+  | {
+      readonly rhythmEstimate: typeof RhythmEstimate.Unavailable;
+      readonly reason: string;
+    };
 
 /** One standing's count, read by name (no dynamic index). */
 function standingOf(
@@ -764,11 +788,11 @@ export function previewWords(
   preview: StreakPreview,
   capped: boolean,
   cap: number,
-): AdminRhythmPreviewWords {
+): RhythmEstimateLine {
   const t = context.translate;
   if (preview.streakPreviewOutcome === StreakPreviewOutcome.Unavailable) {
     return {
-      kind: 'unavailable',
+      rhythmEstimate: RhythmEstimate.Unavailable,
       reason: t('admin.rhythm.preview.unavailable'),
     };
   }
@@ -800,7 +824,7 @@ export function previewWords(
       ? t('admin.rhythm.preview.nobodyOut')
       : counted(context, 'admin.rhythm.preview.out', preview.out);
   return {
-    kind: 'estimate',
+    rhythmEstimate: RhythmEstimate.Estimate,
     clients: counted(context, 'admin.rhythm.preview.clients', preview.clients),
     capped: capped
       ? t('admin.rhythm.preview.capped', { count: figure(context, cap) })

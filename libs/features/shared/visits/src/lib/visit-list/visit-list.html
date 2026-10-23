@@ -27,7 +27,7 @@
   </ui-list-row>
 </ng-template>
 
-@switch (state()) { @case ('loading') {
+@switch (state()) { @case (LoadState.Loading) {
 <div
   class="visit-list__placeholders"
   aria-busy="true"
@@ -61,7 +61,7 @@
   </div>
   }
 </div>
-} @case ('error') {
+} @case (LoadState.Failed) {
 <!-- The one retry grammar of the stack: what did not load, and «Опитай пак». -->
 <ng-container *transloco="let t">
   <ui-notice
@@ -150,7 +150,7 @@
      or the end, in the host's words. -->
 <ng-container *transloco="let t">
   <ui-stack uiSpacing="compact" uiAlignment="center" class="visit-list__foot">
-    @switch (page.kind) { @case ('end') {
+    @switch (page.pagingState) { @case (PagingState.End) {
     <p
       uiText
       uiFont="footnote"
@@ -160,7 +160,7 @@
     >
       {{ page.endLabel }}
     </p>
-    } @case ('failed') {
+    } @case (PagingState.Failed) {
     <p
       uiText
       uiFont="footnote"
@@ -189,7 +189,7 @@
       uiButtonStyle="bordered"
       uiTint="neutral"
       uiControlSize="regular"
-      [uiLoading]="page.kind === 'loading'"
+      [uiLoading]="page.pagingState === PagingState.Loading"
       [attr.data-testid]="prefix() + '-more'"
       (click)="more()"
     >

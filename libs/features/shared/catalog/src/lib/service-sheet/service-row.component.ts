@@ -7,6 +7,7 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { CompositionKind } from '@core/components';
 import { UiAsyncImage, UiIcon } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -107,7 +108,7 @@ import type { ServiceVm } from '../content/catalog-vm';
                 >{{ duration }} {{ t('landing.services.durationLabel') }}</span
               >
             }
-            @if (service().kind === 'bundle') {
+            @if (service().compositionKind === CompositionKind.Bundle) {
               @if (minutes() !== undefined) {
                 <span aria-hidden="true">·</span>
               }
@@ -206,4 +207,6 @@ export class ServiceRowComponent {
   readonly pressed = output<void>();
 
   protected readonly content = inject(CatalogPresenter);
+  /** The dictionary, for the template's bundle mark (never a bare literal). */
+  protected readonly CompositionKind = CompositionKind;
 }

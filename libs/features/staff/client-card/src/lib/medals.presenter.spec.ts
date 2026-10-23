@@ -4,6 +4,7 @@ import {
   EarnedVia,
   HeadRole,
   type PersonalRecord,
+  PersonalRecordKind,
 } from '@core/components';
 import type { BadgeProgress } from '@core/entities';
 import {
@@ -618,7 +619,7 @@ describe('records', () => {
   it('words the longest run: the count, the month it was set, new while it is', () => {
     expect(recordCardVm(record('longestRhythm'), GEORGI, SETTLED)).toEqual({
       id: 'longestRhythm',
-      kind: 'longestRhythm',
+      personalRecordKind: PersonalRecordKind.LongestRhythm,
       label: 'Най-дълъг ритъм',
       value: '24',
       detail: 'септември 2026 г.',
@@ -633,7 +634,7 @@ describe('records', () => {
   it('words the best year: the count, the year', () => {
     expect(recordCardVm(record('mostVisitsInYear'), GEORGI, SETTLED)).toEqual({
       id: 'mostVisitsInYear',
-      kind: 'mostVisitsInYear',
+      personalRecordKind: PersonalRecordKind.MostVisitsInYear,
       label: 'Най-много за година',
       value: '13',
       detail: '2025 г.',
@@ -647,7 +648,7 @@ describe('records', () => {
   it('makes the SERVICE the hero of a favourite: its name the figure, its cover the emblem, the count the detail', () => {
     expect(recordCardVm(record('favouriteService'), GEORGI, SETTLED)).toEqual({
       id: 'favouriteService',
-      kind: 'favouriteService',
+      personalRecordKind: PersonalRecordKind.FavouriteService,
       label: 'Любима услуга',
       value: 'Фейд',
       detail: '24 пъти',
@@ -674,7 +675,7 @@ describe('records', () => {
   it('words the first visit as its day over its year, whatever the year', () => {
     expect(recordCardVm(record('firstVisit'), GEORGI, SETTLED)).toEqual({
       id: 'firstVisit',
-      kind: 'firstVisit',
+      personalRecordKind: PersonalRecordKind.FirstVisit,
       label: 'Първо посещение',
       value: '6 март',
       detail: '2025 г.',

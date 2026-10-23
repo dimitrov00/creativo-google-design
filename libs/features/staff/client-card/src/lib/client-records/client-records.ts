@@ -32,22 +32,15 @@ import {
 import { achievementsIdPrefix } from '../client-achievements/achievements-page-state';
 import { ClientCardStore } from '../client-card.store';
 import {
-  CardLoadState,
   type RecordRowVm,
   type RecordTheme,
   type RecordsPageVm,
 } from '../client-pages.vm';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { RECORD_KIND_WORDS } from '../client-card.words';
 
-/** Where the page stands: the slice's status, the page's VM, or nothing to show. */
-type RecordsState =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'failed' }
-  | { readonly kind: 'empty' }
-  | { readonly kind: 'ready'; readonly vm: RecordsPageVm };
-
-const LOADING: RecordsState = { kind: 'loading' };
-const FAILED: RecordsState = { kind: 'failed' };
-const EMPTY: RecordsState = { kind: 'empty' };
+/** Where the page stands: the slice's state, the page's VM, or nothing to show (`EMPTY`). */
+type RecordsState = LoadSlice.WithEmpty<RecordsPageVm>;
 
 /** From this many characters a value is long: «6.03.2025 г.» is, «Фейд» and «24» are not. */
 const LONG_FIGURE = 10;
@@ -143,24 +136,23 @@ export class ClientRecordsPage {
    */
   protected readonly state = computed((): RecordsState => {
     const slice = this.store.records();
-    if (slice === null) return EMPTY;
-    if (
-      this.words() === null ||
-      slice.cardLoadState === CardLoadState.Loading
-    ) {
-      return LOADING;
+    if (slice === null) return LoadSlice.empty;
+    if (this.words() === null || slice.loadState === LoadState.Loading) {
+      return LoadSlice.loading;
     }
-    if (slice.cardLoadState === CardLoadState.Failed) return FAILED;
+    if (slice.loadState === LoadState.Failed) return LoadSlice.failed;
     const vm = slice.data;
     return vm.featured === null && vm.groups.length === 0
-      ? EMPTY
-      : { kind: 'ready', vm };
+      ? LoadSlice.empty
+      : LoadSlice.ready(vm);
   });
 
-  protected readonly ready = computed(() => {
-    const state = this.state();
-    return state.kind === 'ready' ? state.vm : null;
-  });
+  protected readonly ready = computed(() => LoadSlice.dataOf(this.state()));
+
+  /** Where the page stands, for the template's switch. */
+  protected readonly LoadState = LoadState;
+  /** Each record kind's word: the featured card's `data-kind`. */
+  protected readonly recordKindWords = RECORD_KIND_WORDS;
 
   /** RB — the head's name: the VM's once drawn, the store's until then. */
   protected readonly subline = computed(

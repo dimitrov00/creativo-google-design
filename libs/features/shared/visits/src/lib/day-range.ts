@@ -1,3 +1,6 @@
+import { LocalDate, defect } from '@core/primitives';
+import { formatWallClockRange } from '@creativo/ui/wall-clock';
+
 /*
  * THE HOUSE DATE RANGE — a span of shop days as the locale's own range,
  * the one formatter a list or a card prints one with: a season's window
@@ -6,8 +9,9 @@
  * `Intl`'s `formatRange` owns the separator (the spaced en dash) and the
  * pieces the two ends share; its output is never post-processed, so no
  * list writes a hand-built «8.10–9.10» beside a card's «1.09 – 30.11»
- * (wave D r6). A day is a `YYYY-MM-DD` key on the shop's calendar, placed
- * at UTC noon and read back in UTC, so no device zone can move it.
+ * (wave D r6). A day is a `YYYY-MM-DD` key on the shop's calendar, laid on
+ * the civil axis and read back in UTC (`formatWallClockRange`, the one
+ * cached formatter), so no device zone can move it and no `Date` is built.
  */
 
 /**
@@ -43,18 +47,13 @@ export function dayRange(
             ? {}
             : { year: 'numeric' }),
         };
-  return new Intl.DateTimeFormat(lang, {
-    ...options,
-    timeZone: 'UTC',
-  }).formatRange(noonOf(from), noonOf(until));
+  return formatWallClockRange(dayOf(from), dayOf(until), lang, options);
 }
 
-/** A `YYYY-MM-DD` shop day as a `Date` that reads back as that day in UTC. */
-function noonOf(day: string): Date {
-  const [year, month, date] = day.split('-').map(Number);
-  return new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1, 12, 0, 0),
-  );
+/** A `YYYY-MM-DD` shop day as the brand; anything else is a caller's defect. */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`not a shop day: ${raw}`);
 }
 
 function yearOf(day: string): string {

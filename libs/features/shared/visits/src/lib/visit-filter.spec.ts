@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { LocalDate, MinuteOfDay } from '@core/primitives';
 import { describe, expect, it } from 'vitest';
 import {
   matchesVisitFilter,
@@ -7,45 +8,55 @@ import {
   visitFilterWordKey,
   visitFiltersFor,
 } from './visit-filter';
-import type { VisitFilter, VisitRowOutcome, VisitRowVm } from './visit-row.vm';
+import {
+  VisitFilter,
+  VisitPerspective,
+  VisitRowEntry,
+  VisitRowOutcome,
+  type VisitRowVm,
+} from './visit-row.vm';
 
 /** A row as the funnel reads it: whether it is ahead, and how it went. */
 function row(
   id: string,
   upcoming: boolean,
   outcome: VisitRowOutcome | null,
-  kind: VisitRowVm['kind'] = 'visit',
+  visitRowEntry: VisitRowEntry = VisitRowEntry.Visit,
 ): VisitRowVm {
+  const waiting = visitRowEntry === VisitRowEntry.Waitlist;
   return {
     id,
-    kind,
-    startMs: 0,
+    visitRowEntry,
+    localDate: LocalDate.fromEpochDay(0),
+    startMinutes: MinuteOfDay.ofProven(0),
     sectionKey: upcoming ? 'upcoming' : '2026-09',
     upcoming,
-    tile: kind === 'waitlist' ? null : { caption: 'пт', day: 4, tone: 'past' },
-    leadingIcon: kind === 'waitlist' ? 'calendar.watching' : null,
+    tile: waiting ? null : { caption: 'пт', day: 4, tone: 'past' },
+    leadingIcon: waiting ? 'calendar.watching' : null,
     title: 'Фейд',
-    struck: outcome === 'cancelled' || outcome === 'no_show',
+    struck:
+      outcome === VisitRowOutcome.Cancelled ||
+      outcome === VisitRowOutcome.NoShow,
     lines: [],
     quote: null,
     trailing: null,
     trailingFact: null,
     marks: [],
     outcome,
-    status: null,
+    bookingStatus: null,
     accessibleName: id,
     testId: id,
   };
 }
 
 const ROWS: readonly VisitRowVm[] = [
-  row('ahead', true, 'open'),
-  row('waiting', true, null, 'waitlist'),
-  row('worked', false, 'worked'),
-  row('no-show', false, 'no_show'),
-  row('cancelled', false, 'cancelled'),
+  row('ahead', true, VisitRowOutcome.Open),
+  row('waiting', true, null, VisitRowEntry.Waitlist),
+  row('worked', false, VisitRowOutcome.Worked),
+  row('no-show', false, VisitRowOutcome.NoShow),
+  row('cancelled', false, VisitRowOutcome.Cancelled),
   // A past hour nobody settled: none of the three outcomes, not ahead.
-  row('unsettled', false, 'open'),
+  row('unsettled', false, VisitRowOutcome.Open),
 ];
 
 const kept = (filter: VisitFilter) =>
@@ -55,71 +66,76 @@ const kept = (filter: VisitFilter) =>
 
 describe('matchesVisitFilter', () => {
   it('keeps every row unfiltered', () => {
-    expect(kept('all')).toEqual(ROWS.map((entry) => entry.id));
+    expect(kept(VisitFilter.All)).toEqual(ROWS.map((entry) => entry.id));
   });
 
   it('keeps the run ahead under «Предстоящи», a waiting request included', () => {
-    expect(kept('upcoming')).toEqual(['ahead', 'waiting']);
+    expect(kept(VisitFilter.Upcoming)).toEqual(['ahead', 'waiting']);
   });
 
   it('narrows the past to the one outcome each terminal filter names', () => {
-    expect(kept('completed')).toEqual(['worked']);
-    expect(kept('no_show')).toEqual(['no-show']);
-    expect(kept('cancelled')).toEqual(['cancelled']);
+    expect(kept(VisitFilter.Completed)).toEqual(['worked']);
+    expect(kept(VisitFilter.NoShow)).toEqual(['no-show']);
+    expect(kept(VisitFilter.Cancelled)).toEqual(['cancelled']);
   });
 
   it('reads the row’s OWN outcome — the subject’s on the staff card', () => {
     // A companion no-showed on a visit the subject was worked on: the
     // subject's row is `worked`, and «Неявявания» must not list it.
-    const party = row('party', false, 'worked');
-    expect(matchesVisitFilter(party, 'no_show')).toBe(false);
-    expect(matchesVisitFilter(party, 'completed')).toBe(true);
+    const party = row('party', false, VisitRowOutcome.Worked);
+    expect(matchesVisitFilter(party, VisitFilter.NoShow)).toBe(false);
+    expect(matchesVisitFilter(party, VisitFilter.Completed)).toBe(true);
   });
 });
 
 describe('visitFiltersFor', () => {
   it('offers the client’s options in the order their list always read', () => {
-    expect(visitFiltersFor('client')).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'cancelled',
-      'no_show',
+    expect(visitFiltersFor(VisitPerspective.Client)).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.Cancelled,
+      VisitFilter.NoShow,
     ]);
   });
 
   it('offers the staff history’s options as its spec lists them', () => {
-    expect(visitFiltersFor('staff')).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+    expect(visitFiltersFor(VisitPerspective.Staff)).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
     ]);
   });
 });
 
 describe('offeredVisitFilters', () => {
   const past = ROWS.filter((entry) => !entry.upcoming);
-  const workedOnly = [row('worked', false, 'worked')];
+  const workedOnly = [row('worked', false, VisitRowOutcome.Worked)];
 
   it('offers every option a row answers, in the menu’s order', () => {
-    expect(offeredVisitFilters('staff', ROWS, { complete: true })).toEqual(
-      visitFiltersFor('staff'),
-    );
-    expect(offeredVisitFilters('client', ROWS, { complete: true })).toEqual(
-      visitFiltersFor('client'),
-    );
+    expect(
+      offeredVisitFilters(VisitPerspective.Staff, ROWS, { complete: true }),
+    ).toEqual(visitFiltersFor(VisitPerspective.Staff));
+    expect(
+      offeredVisitFilters(VisitPerspective.Client, ROWS, { complete: true }),
+    ).toEqual(visitFiltersFor(VisitPerspective.Client));
   });
 
   it('leaves out what no row answers once the book is read to its end — «Всички» always stays', () => {
-    const withNoShow = [...workedOnly, row('missed', false, 'no_show')];
+    const withNoShow = [
+      ...workedOnly,
+      row('missed', false, VisitRowOutcome.NoShow),
+    ];
     expect(
-      offeredVisitFilters('staff', withNoShow, { complete: true }),
-    ).toEqual(['all', 'completed', 'no_show']);
-    expect(offeredVisitFilters('staff', [], { complete: true })).toEqual([
-      'all',
-    ]);
+      offeredVisitFilters(VisitPerspective.Staff, withNoShow, {
+        complete: true,
+      }),
+    ).toEqual([VisitFilter.All, VisitFilter.Completed, VisitFilter.NoShow]);
+    expect(
+      offeredVisitFilters(VisitPerspective.Staff, [], { complete: true }),
+    ).toEqual([VisitFilter.All]);
   });
 
   it('leaves out what every row answers once the book is read to its end: a choice that narrows nothing', () => {
@@ -127,47 +143,60 @@ describe('offeredVisitFilters', () => {
     // rows, so only «Всички» is left and the host shows no funnel.
     const worked = [
       ...workedOnly,
-      row('worked-2', false, 'worked'),
-      row('worked-3', false, 'worked'),
+      row('worked-2', false, VisitRowOutcome.Worked),
+      row('worked-3', false, VisitRowOutcome.Worked),
     ];
-    expect(offeredVisitFilters('staff', worked, { complete: true })).toEqual([
-      'all',
-    ]);
-    expect(offeredVisitFilters('client', worked, { complete: true })).toEqual([
-      'all',
-    ]);
+    expect(
+      offeredVisitFilters(VisitPerspective.Staff, worked, { complete: true }),
+    ).toEqual([VisitFilter.All]);
+    expect(
+      offeredVisitFilters(VisitPerspective.Client, worked, { complete: true }),
+    ).toEqual([VisitFilter.All]);
     // Nothing but what is ahead: «Предстоящи» narrows nothing either.
     const ahead = [
-      row('next', true, 'open'),
-      row('waiting', true, null, 'waitlist'),
+      row('next', true, VisitRowOutcome.Open),
+      row('waiting', true, null, VisitRowEntry.Waitlist),
     ];
-    expect(offeredVisitFilters('staff', ahead, { complete: true })).toEqual([
-      'all',
-    ]);
+    expect(
+      offeredVisitFilters(VisitPerspective.Staff, ahead, { complete: true }),
+    ).toEqual([VisitFilter.All]);
     // One hour ahead is enough for both to narrow.
     expect(
-      offeredVisitFilters('staff', [...worked, row('next', true, 'open')], {
-        complete: true,
-      }),
-    ).toEqual(['all', 'upcoming', 'completed']);
+      offeredVisitFilters(
+        VisitPerspective.Staff,
+        [...worked, row('next', true, VisitRowOutcome.Open)],
+        {
+          complete: true,
+        },
+      ),
+    ).toEqual([VisitFilter.All, VisitFilter.Upcoming, VisitFilter.Completed]);
     // While older pages remain, an older page is a past hour, so a list of
     // upcoming rows alone still narrows under «Предстоящи».
-    expect(offeredVisitFilters('staff', ahead, { complete: false })).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+    expect(
+      offeredVisitFilters(VisitPerspective.Staff, ahead, { complete: false }),
+    ).toEqual([
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
     ]);
   });
 
   it('keeps the past outcomes while older pages remain, but «Предстоящи» is the first read’s to answer', () => {
     expect(
-      offeredVisitFilters('staff', workedOnly, { complete: false }),
-    ).toEqual(['all', 'completed', 'no_show', 'cancelled']);
+      offeredVisitFilters(VisitPerspective.Staff, workedOnly, {
+        complete: false,
+      }),
+    ).toEqual([
+      VisitFilter.All,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
+    ]);
     expect(
-      offeredVisitFilters('staff', past, { complete: false }),
-    ).not.toContain('upcoming');
+      offeredVisitFilters(VisitPerspective.Staff, past, { complete: false }),
+    ).not.toContain(VisitFilter.Upcoming);
   });
 });
 
@@ -196,21 +225,24 @@ describe('visitFilterWordKey', () => {
       );
 
   it('words the no-show by who reads it, every other option alike', () => {
-    expect(visitFilterWordKey('no_show', 'client')).toBe(
-      'visits.filter.no_show',
-    );
-    expect(visitFilterWordKey('no_show', 'staff')).toBe(
+    expect(
+      visitFilterWordKey(VisitFilter.NoShow, VisitPerspective.Client),
+    ).toBe('visits.filter.no_show');
+    expect(visitFilterWordKey(VisitFilter.NoShow, VisitPerspective.Staff)).toBe(
       'visits.filter.no_show_staff',
     );
-    expect(visitFilterWordKey('cancelled', 'staff')).toBe(
-      'visits.filter.cancelled',
-    );
+    expect(
+      visitFilterWordKey(VisitFilter.Cancelled, VisitPerspective.Staff),
+    ).toBe('visits.filter.cancelled');
   });
 
   it('names a word both catalogues carry, for every option of both menus', () => {
     const bg = catalogue('bg');
     const en = catalogue('en');
-    for (const perspective of ['client', 'staff'] as const) {
+    for (const perspective of [
+      VisitPerspective.Client,
+      VisitPerspective.Staff,
+    ]) {
       for (const filter of visitFiltersFor(perspective)) {
         const key = visitFilterWordKey(filter, perspective);
         expect(typeof word(bg, key), `bg ${key}`).toBe('string');

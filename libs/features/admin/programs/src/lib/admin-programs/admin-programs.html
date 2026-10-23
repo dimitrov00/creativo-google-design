@@ -43,7 +43,7 @@
       @if (editing(); as current) {
       <ui-card data-testid="admin-form">
         <ui-stack uiSpacing="comfortable">
-          @switch (current.kind) { @case ('position') {
+          @switch (current.programEditing) { @case (ProgramEditing.Position) {
           <ui-stack uiSpacing="tight">
             <label>
               Title (EN)
@@ -117,7 +117,7 @@
               />
             </label>
           </ui-stack>
-          } @case ('course') {
+          } @case (ProgramEditing.Course) {
           <ui-stack uiSpacing="tight">
             <label>
               Title (EN)
@@ -217,7 +217,7 @@
               />
             </label>
           </ui-stack>
-          } @case ('event') {
+          } @case (ProgramEditing.Event) {
           <ui-stack uiSpacing="tight">
             <label>
               Title (EN)

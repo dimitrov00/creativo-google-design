@@ -376,7 +376,7 @@ export function recordCardVm(
   const isNew = isNewRecord(record, data.today);
   return {
     id: kind,
-    kind,
+    personalRecordKind: record.personalRecordKind,
     label,
     value,
     detail,

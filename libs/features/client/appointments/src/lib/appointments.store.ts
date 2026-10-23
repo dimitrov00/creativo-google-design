@@ -23,6 +23,7 @@ import {
   WallTime,
 } from '@core/components';
 import { ZonedTimeSystem } from '@core/systems';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
 /**
  * How far back the history reads.
@@ -34,45 +35,19 @@ import { ZonedTimeSystem } from '@core/systems';
 export const HISTORY_LIMIT = 30;
 
 /**
- * Where the upcoming list stands — the ONLY source of these strings, named
- * after the field they type (`appointmentsViewState`, Law 6). The DOM keeps
- * its lowercase `data-state` words through {@link appointmentsViewStateWords}.
+ * Each load state as the page's `data-state` attribute spells it — the e2e
+ * suite's contract, kept lowercase (Phase 4a 4A-10): this page says `error`
+ * where the shared `loadStateWords` says `failed`, so it keeps ONE page
+ * table over the ONE shared dictionary (UI residue cleanup UR-3). `EMPTY` is
+ * never drawn here (the upcoming read is a plain {@link LoadSlice}); its word
+ * completes the table.
  */
-export const AppointmentsViewState = {
-  /** A listener (or the shop's zone, which "now" is read on) has not answered yet. */
-  Loading: 'LOADING',
-  /** The upcoming read failed — the list's «Опитай пак». */
-  Error: 'ERROR',
-  /** The upcoming read answered. */
-  Ready: 'READY',
-} as const;
-export type AppointmentsViewState =
-  (typeof AppointmentsViewState)[keyof typeof AppointmentsViewState];
-
-/**
- * Each view state as the page's `data-state` attribute spells it — the e2e
- * suite's contract, kept lowercase (Phase 4a 4A-10). ONE table.
- */
-export const appointmentsViewStateWords = {
-  [AppointmentsViewState.Loading]: 'loading',
-  [AppointmentsViewState.Error]: 'error',
-  [AppointmentsViewState.Ready]: 'ready',
-} as const satisfies Record<AppointmentsViewState, string>;
-
-export type UpcomingListState =
-  | { readonly appointmentsViewState: typeof AppointmentsViewState.Loading }
-  | { readonly appointmentsViewState: typeof AppointmentsViewState.Error }
-  | {
-      readonly appointmentsViewState: typeof AppointmentsViewState.Ready;
-      readonly appointments: readonly Appointment[];
-    };
-
-const LOADING: UpcomingListState = {
-  appointmentsViewState: AppointmentsViewState.Loading,
-};
-const ERROR: UpcomingListState = {
-  appointmentsViewState: AppointmentsViewState.Error,
-};
+export const appointmentsStateWords = {
+  [LoadState.Loading]: 'loading',
+  [LoadState.Failed]: 'error',
+  [LoadState.Ready]: 'ready',
+  [LoadState.Empty]: 'empty',
+} as const satisfies Record<LoadState, string>;
 
 /**
  * Page-scoped store for `/account/appointments` (goal 6.4) — the account's
@@ -165,27 +140,23 @@ export class AppointmentsStore {
    * "today", which is a day on the shop's wall clock. A zone that cannot be
    * read is the page's failed state, as a failed listener is (4A-2 (e)).
    */
-  readonly upcoming = computed<UpcomingListState>(() => {
+  readonly upcoming = computed<LoadSlice<readonly Appointment[]>>(() => {
     const result = this.upcomingResult();
-    if (result === null) return LOADING;
-    if (this.zoneFailed()) return ERROR;
-    if (result === undefined || this.now() === null) return LOADING;
-    if (!result.ok) return ERROR;
-    return {
-      appointmentsViewState: AppointmentsViewState.Ready,
+    if (result === null) return LoadSlice.loading;
+    if (this.zoneFailed()) return LoadSlice.failed;
+    if (result === undefined || this.now() === null) return LoadSlice.loading;
+    if (!result.ok) return LoadSlice.failed;
+    return LoadSlice.ready(
       // The account's live bookings — a settled one is never "upcoming".
-      appointments: result.value.filter(
+      result.value.filter(
         (appointment) => !BookingLifecycle.isSettled(appointment),
       ),
-    };
+    );
   });
 
-  readonly appointments = computed<readonly Appointment[]>(() => {
-    const state = this.upcoming();
-    return state.appointmentsViewState === AppointmentsViewState.Ready
-      ? state.appointments
-      : [];
-  });
+  readonly appointments = computed<readonly Appointment[]>(
+    () => LoadSlice.dataOf(this.upcoming()) ?? [],
+  );
 
   /**
    * Past visits, newest first — a SECOND listener, bounded at

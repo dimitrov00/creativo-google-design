@@ -1,7 +1,9 @@
+import type { ShopNow } from '@core/components';
+import type { TimeZone } from '@core/primitives';
+import type { VisitPerspective } from '@core/systems';
 import type { UiBadgeTone } from '@creativo/ui/controls';
 import type { VisitRowPhotoSource } from '../visit-row.presenter';
 import type {
-  VisitPerspective,
   VisitRowPhoto,
   VisitWaitlistWords,
   VisitWords,
@@ -24,8 +26,24 @@ import type {
  * page and on the staff sheet.
  */
 
-/** What the card is about: the last worked visit, the soonest one to come, a request waiting for a free slot. */
-export type VisitCardKind = 'last' | 'next' | 'waitlist';
+/**
+ * What the card is about — the field `visitCardSlot`, the ONLY source of
+ * these strings: the last worked visit, the soonest one to come, a request
+ * waiting for a free slot.
+ */
+export const VisitCardSlot = {
+  Last: 'LAST',
+  Next: 'NEXT',
+  Waitlist: 'WAITLIST',
+} as const;
+export type VisitCardSlot = (typeof VisitCardSlot)[keyof typeof VisitCardSlot];
+
+/** Each slot as the card's host prints it in `data-kind` (`last`, `next`, `waitlist`). */
+export const visitCardSlotWords = {
+  [VisitCardSlot.Last]: 'last',
+  [VisitCardSlot.Next]: 'next',
+  [VisitCardSlot.Waitlist]: 'waitlist',
+} as const satisfies Record<VisitCardSlot, string>;
 
 /** One run of a quiet line; `fact` runs are set in primary ink at weight 500. */
 export interface VisitLinePart {
@@ -37,7 +55,7 @@ export interface VisitLinePart {
 export interface VisitCardVm {
   /** The appointment's id, or the waitlist request's. */
   readonly id: string;
-  readonly kind: VisitCardKind;
+  readonly visitCardSlot: VisitCardSlot;
   /** «Последно посещение» · «Следващ час» · «Предстоящ час» · «Чака свободен час». */
   readonly label: string;
   /** Always the services, deduplicated: «Фейд · Оформяне на брада». */
@@ -104,7 +122,7 @@ export interface VisitCardWords {
 
 /** What `visitCardOf` takes besides the appointment and the catalogue. */
 export interface VisitCardOptions {
-  readonly kind: Exclude<VisitCardKind, 'waitlist'>;
+  readonly visitCardSlot: Exclude<VisitCardSlot, typeof VisitCardSlot.Waitlist>;
   /**
    * Who reads: `staff` tells the SUBJECT's story (their seats, their
    * share, the figure of a worked visit); `client` tells the
@@ -119,7 +137,10 @@ export interface VisitCardOptions {
    * names it (`VisitRowOptions.subjectCustomerId`).
    */
   readonly subjectCustomerId?: string | null;
-  readonly nowMs: number;
+  /** "Now" on the shop's wall clock, derived ONCE by the host (Law 7.3). */
+  readonly now: ShopNow;
+  /** The zone `now` was read in — a photo's day falls back to it. */
+  readonly timeZone: TimeZone;
   readonly locale: string;
   /**
    * The row's words, of the same perspective: the card's sentence is the
@@ -128,7 +149,7 @@ export interface VisitCardOptions {
   readonly words: VisitWords;
   readonly cardWords: VisitCardWords;
   /**
-   * The label in the host's own words, in place of the kind's:
+   * The label in the host's own words, in place of the slot's:
    * `/account`'s «Предстоящ час» (`account.upcoming.title`).
    */
   readonly label?: string;

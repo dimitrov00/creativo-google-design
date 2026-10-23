@@ -68,6 +68,7 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { LoadState, loadStateWords } from '@creativo/shared/view-state';
 import type { AdminRhythmLeaving } from '../admin-rhythm.guard';
 import { RHYTHM_PREVIEW_CAP } from '../admin-rhythm.preview';
 import {
@@ -75,7 +76,6 @@ import {
   type AdminRhythmRefusal,
   type AdminRhythmSaveOutcome,
   AdminRhythmStore,
-  RhythmLoadState,
   fixedInterval,
   isPublishRefusal,
   personalInterval,
@@ -87,7 +87,8 @@ import {
 import {
   type AdminRhythmContext,
   type AdminRhythmHistoryRow,
-  type AdminRhythmPreviewWords,
+  RhythmEstimate,
+  type RhythmEstimateLine,
   afterMissRow,
   daysOf,
   effectiveOptions,
@@ -187,13 +188,15 @@ let sequence = 0;
   encapsulation: ViewEncapsulation.None,
   host: {
     class: 'admin-rhythm-host',
-    '[attr.data-state]': 'state()',
+    '[attr.data-state]': 'stateWord()',
   },
 })
 export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly store = inject(AdminRhythmStore);
   /** Where each read stands, for the template's switches. */
-  protected readonly RhythmLoadState = RhythmLoadState;
+  protected readonly LoadState = LoadState;
+  /** What the preview can say, for the template. */
+  protected readonly RhythmEstimate = RhythmEstimate;
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CATALOG_PORTS, { optional: true });
 
@@ -277,16 +280,18 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   // ── The page's state ────────────────────────────────────────────────────
 
-  /** `loading` · `ready` · `failed`: what the page draws. */
-  protected readonly state = computed(() => {
+  /** `READY` · `FAILED` · `LOADING`: what the page draws. */
+  protected readonly state = computed((): LoadState => {
     const schedule = this.store.schedule();
-    return schedule.rhythmLoadState === RhythmLoadState.Ready &&
-      this.context() !== null
-      ? 'ready'
-      : schedule.rhythmLoadState === RhythmLoadState.Failed
-        ? 'failed'
-        : 'loading';
+    return schedule.loadState === LoadState.Ready && this.context() !== null
+      ? LoadState.Ready
+      : schedule.loadState === LoadState.Failed
+        ? LoadState.Failed
+        : LoadState.Loading;
   });
+
+  /** The page's `data-state` — `loading` · `ready` · `failed`. */
+  protected readonly stateWord = computed(() => loadStateWords[this.state()]);
 
   /** The rule as the form holds it (`@let draft = current()` in the template). */
   protected readonly current = this.store.draft;
@@ -461,13 +466,13 @@ export class AdminRhythm implements AdminRhythmLeaving {
   });
 
   /** «Какво ще се промени», worded; `null` while there is nothing to preview. */
-  protected readonly preview = computed((): AdminRhythmPreviewWords | null => {
+  protected readonly preview = computed((): RhythmEstimateLine | null => {
     const context = this.context();
     const preview = this.store.preview();
     if (
       context === null ||
       preview === null ||
-      preview.rhythmLoadState !== RhythmLoadState.Ready
+      preview.loadState !== LoadState.Ready
     ) {
       return null;
     }
@@ -484,10 +489,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     (): readonly AdminRhythmHistoryRow[] => {
       const context = this.context();
       const versions = this.store.versions();
-      if (
-        context === null ||
-        versions.rhythmLoadState !== RhythmLoadState.Ready
-      ) {
+      if (context === null || versions.loadState !== LoadState.Ready) {
         return [];
       }
       return [...versions.data]
@@ -557,7 +559,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
         return this.store.rule()?.sentence ?? null;
       case 'stricter': {
         const preview = this.preview();
-        return preview !== null && preview.kind === 'estimate'
+        return preview !== null &&
+          preview.rhythmEstimate === RhythmEstimate.Estimate
           ? `${preview.clients} · ${preview.summary}`
           : null;
       }

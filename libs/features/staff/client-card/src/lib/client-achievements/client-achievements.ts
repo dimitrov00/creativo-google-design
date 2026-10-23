@@ -31,6 +31,7 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { AchievementCategoryPage } from '../achievement-category/achievement-category';
 import { AchievementChips } from '../achievement-chips/achievement-chips';
 import { AchievementScope } from '../client-card.contracts';
@@ -46,6 +47,7 @@ import {
   medalsPageVm,
   sectionTilesShown,
 } from '../medals.presenter';
+import { RECORD_KIND_WORDS } from '../client-card.words';
 import { RecordCard } from '../record-card/record-card';
 import { familyGridOf, medalGridOf, recordColumnsOf } from '../sheet-width';
 import { AchievementTile } from './achievement-tile';
@@ -152,10 +154,12 @@ export class ClientAchievementsPage {
   );
 
   /** The page once it can be drawn: its VM and the words it was built in. */
-  protected readonly ready = computed(() => {
-    const state = this.state();
-    return state.kind === 'ready' ? state : null;
-  });
+  protected readonly ready = computed(() => LoadSlice.dataOf(this.state()));
+
+  /** Where the page stands, for the template's switch. */
+  protected readonly LoadState = LoadState;
+  /** Each record kind's word: a record card's `achievements-record-{word}` test id. */
+  protected readonly recordKindWords = RECORD_KIND_WORDS;
 
   /** The words for what shows before the page is ready: the head and the notices. */
   protected readonly words = this.store.words;

@@ -1,5 +1,6 @@
 import type { AppointmentReadPorts } from '@core/ports';
 import { RepositoryError, Result } from '@core/primitives';
+import { VisitRowOutcome } from '@core/systems';
 import { memoryAppointmentReadPorts } from '@core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -250,7 +251,9 @@ describe('lib-client-history — the browser', () => {
       expect(head.hasAttribute('data-pinned')).toBe(false);
       expect(element.querySelector('ul[uilistgroup]')).not.toBeNull();
       // «3 посещения» prints only from two worked visits up.
-      const worked = section.rows.filter((row) => row.outcome === 'worked');
+      const worked = section.rows.filter(
+        (row) => row.outcome === VisitRowOutcome.Worked,
+      );
       const detail = text(head.querySelector('[uisectiondetail]'));
       expect([section.key, detail]).toEqual([
         section.key,
@@ -503,7 +506,9 @@ describe('lib-client-history — its states', () => {
           section.rows.some((row) => row.id === 'appt-hist-c2-11'),
         ),
     );
-    const worked = month.rows.filter((row) => row.outcome === 'worked').length;
+    const worked = month.rows.filter(
+      (row) => row.outcome === VisitRowOutcome.Worked,
+    ).length;
     expect(
       text(byId(month.testId)?.querySelector('[uisectiondetail]') ?? null),
     ).toBe(worked >= 2 ? `${worked} посещения` : null);

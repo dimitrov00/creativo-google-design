@@ -35,7 +35,7 @@
 >
   <p>{{ words()?.offline }}</p>
 </ui-notice>
-} @switch (state().kind) { @case ('loading') {
+} @switch (state().loadState) { @case (LoadState.Loading) {
 <!-- Shaped like what lands (§2.3.5): four record blocks, two rows of
      chip-shaped bones, one grid card of six medal-shaped discs. -->
 <ui-stack
@@ -104,7 +104,7 @@
     </ui-card>
   </ui-stack>
 </ui-stack>
-} @case ('failed') {
+} @case (LoadState.Failed) {
 <!-- The one retry grammar: what did not load, and «Опитай пак». A partial
      read is a failure too — every medal `notStarted` would be a fake zero. -->
 <ui-notice
@@ -125,7 +125,7 @@
     {{ words()?.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('absent') {
+} @case (LoadState.Empty) {
 <ui-empty-state data-testid="achievements-empty">
   <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
     {{ words()?.achievements.firstHint }}
@@ -168,7 +168,9 @@
       class="client-achievements__origin"
       [vm]="record"
       [newWord]="copy.achievements.newRecord"
-      [attr.data-testid]="'achievements-record-' + record.kind"
+      [attr.data-testid]="
+        'achievements-record-' + recordKindWords[record.personalRecordKind]
+      "
       (open)="openRecords.emit()"
     />
     }

@@ -1,9 +1,9 @@
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { Injectable, type Signal, computed, inject } from '@angular/core';
+import { CompositionKind } from '@core/components';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
   type BarberVm,
-  type DayHoursVm,
   LOCATIONS,
   type Localized,
   type LocationVm,
@@ -54,10 +54,14 @@ export class LandingContentService {
     this.allServices().filter((service) => !service.upsellOnly),
   );
   readonly singleServices = computed<readonly ServiceVm[]>(() =>
-    this.shelfServices().filter((service) => service.kind === 'single'),
+    this.shelfServices().filter(
+      (service) => service.compositionKind === CompositionKind.Single,
+    ),
   );
   readonly bundleServices = computed<readonly ServiceVm[]>(() =>
-    this.shelfServices().filter((service) => service.kind === 'bundle'),
+    this.shelfServices().filter(
+      (service) => service.compositionKind === CompositionKind.Bundle,
+    ),
   );
 
   /** Resolve a localized pair against the active language. */
@@ -71,40 +75,5 @@ export class LandingContentService {
 
   durationRange(from: number, to: number): string {
     return formatDurationRange(from, to, this.locale());
-  }
-
-  /** Monday-first ISO weekday index at the location, per its timezone. */
-  todayIndexAt(location: LocationVm, now: Date = new Date()): number {
-    const weekday = new Intl.DateTimeFormat('en-US', {
-      timeZone: location.timezone,
-      weekday: 'short',
-    }).format(now);
-    const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return Math.max(0, order.indexOf(weekday));
-  }
-
-  /** Open right now? — v2 `isOpenNow` semantics ([opens, closes) local time). */
-  isOpenNow(location: LocationVm, now: Date = new Date()): boolean {
-    const today: DayHoursVm | undefined =
-      location.hours[this.todayIndexAt(location, now)];
-    if (!today || today.kind === 'closed') return false;
-    const time = new Intl.DateTimeFormat('en-GB', {
-      timeZone: location.timezone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(now);
-    return time >= today.opens && time < today.closes;
-  }
-
-  /** Localized weekday label for the hours grid (v2 `weekdayLabel` — long). */
-  weekdayLabel(isoIndex: number): string {
-    // 2024-01-01 is a Monday — offset from it keeps the mapping ISO-stable.
-    const monday = Date.UTC(2024, 0, 1);
-    const date = new Date(monday + isoIndex * 86_400_000);
-    return new Intl.DateTimeFormat(this.locale(), {
-      weekday: 'long',
-      timeZone: 'UTC',
-    }).format(date);
   }
 }

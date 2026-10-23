@@ -27,19 +27,25 @@ import {
 } from '@creativo/features/shared/visits';
 import {
   DRAG_THRESHOLD_PX,
-  EdgeScroller,
+  type DragGesture,
   HOLD_MS,
   HOLD_SLOP_PX,
   buzz,
   capturePointer,
   clamp,
+  edgeScrollerOf,
   fill,
   hourLabel,
+  PlacementVerdict,
+  type PlacementVerdictSlice,
   releasePointer,
   snapTo,
   timeLabel,
 } from './grid-gesture';
-import { EndMinute, MinuteOfDay } from '@core/primitives';
+import { gridEventWords } from '../tag-words';
+import { EditCommand, ResizeEdge } from '@core/components';
+import { BookingStatus, EndMinute, MinuteOfDay } from '@core/primitives';
+import { bookingStatusWords } from '@creativo/infrastructure/i18n';
 import {
   type EventRuns,
   GridEvent as GridEventTag,
@@ -53,8 +59,9 @@ import {
 export interface GridEvent {
   readonly id: string;
   /**
-   * `visit` — a booking. `gap` — a sellable hole. `block` — time carved OUT
-   * of the worked day (a break, an admin hour).
+   * `VISIT` — a booking. `GAP` — a sellable hole. `BLOCK` — time carved OUT
+   * of the worked day (a break, an admin hour). Printed as `data-kind`
+   * through `gridEventWords` (`visit`/`gap`/`block`, what the CSS selects).
    *
    * A block is a THING, not the absence of one. It used to reach this
    * component as the complement of a roster window and got painted as
@@ -63,7 +70,7 @@ export interface GridEvent {
    * nothing to remove. HIG's direct-manipulation rule settles the rendering —
    * anything a person is meant to move has to be an object they can grab.
    */
-  readonly kind: 'visit' | 'gap' | 'block';
+  readonly gridEvent: GridEventTag;
   /**
    * WHOSE CHAIR, as one of the five identity tones.
    *
@@ -108,7 +115,18 @@ export interface GridEvent {
    * day view, where the column header already says it.
    */
   readonly attribution: string | null;
-  readonly status: string | null;
+  /**
+   * The booking's stored tag — `null` on a gap, a carve-out, and a visit not
+   * booked yet. Printed as `data-status` through `gridStatusWord`.
+   */
+  readonly bookingStatus: BookingStatus | null;
+  /**
+   * A visit the editor is drafting that is NOT BOOKED YET — set only by the
+   * visit editor's frame event, where `bookingStatus` is `null`. The block
+   * then prints `data-status="new"`, the hook the editable block's primary
+   * ink keys on (`staff-time-grid.block.css`).
+   */
+  readonly draftNew?: true;
   readonly terminal: boolean;
   /**
    * This block's hour has already gone.
@@ -244,13 +262,13 @@ export interface GridDraft {
 /**
  * A finished gesture, naming WHICH gesture it was.
  *
- * The caller cannot re-derive `kind` from the numbers: a move that happens
+ * The caller cannot re-derive the command from the numbers: a move that happens
  * to land on a legal duration is arithmetically indistinguishable from two
  * resizes, and the toast, the announcement and the server command all differ
  * by which one the barber actually performed.
  */
 export interface GridCommit extends GridDraft {
-  readonly kind: 'move' | 'resize';
+  readonly editCommand: typeof EditCommand.Move | typeof EditCommand.Resize;
 }
 
 /**
@@ -315,11 +333,29 @@ interface ClosedRun {
  * `from`/`to` are fractions of the block's OWN height, so the mask needs no
  * knowledge of the extent, the density or the scale it is drawn at.
  */
+/**
+ * What a stretch of a block is — the field `gridMask`. `ELAPSED` — already
+ * happened. `SURPLUS` — beyond what the services need. `CLOSED` — outside
+ * the shift. `OVERLAP` — another booking is in this chair at the same time.
+ */
+const GridMask = {
+  Elapsed: 'ELAPSED',
+  Surplus: 'SURPLUS',
+  Closed: 'CLOSED',
+  Overlap: 'OVERLAP',
+} as const;
+type GridMask = (typeof GridMask)[keyof typeof GridMask];
+
+/** Each stretch as its `data-kind` — the words the hatches' CSS selects on. */
+const gridMaskWords = {
+  [GridMask.Elapsed]: 'elapsed',
+  [GridMask.Surplus]: 'surplus',
+  [GridMask.Closed]: 'closed',
+  [GridMask.Overlap]: 'overlap',
+} as const satisfies Record<GridMask, string>;
+
 interface EventMask {
-  /** `elapsed` — already happened. `surplus` — beyond what the services
-   *  need. `closed` — outside the shift. `overlap` — another booking is in
-   *  this chair at the same time. */
-  readonly kind: 'elapsed' | 'surplus' | 'closed' | 'overlap';
+  readonly gridMask: GridMask;
   readonly from: number;
   readonly to: number;
 }
@@ -380,13 +416,11 @@ interface GhostBlock {
 /** Which arithmetic places a block. See `uiPlacement`. */
 type Placement = 'slots' | 'proportional';
 
-/** Which edge — or the whole block — a live gesture is holding. */
-type DragKind = 'move' | 'resize-start' | 'resize-end';
-
 /** One live pointer gesture. Plain mutable state: nothing here is drawn. */
 interface DragState {
   readonly id: string;
-  readonly kind: DragKind;
+  /** Which edge — or the whole block — the gesture is holding. */
+  readonly dragGesture: DragGesture;
   readonly pointerId: number;
   readonly y0: number;
   readonly scrollTop0: number;
@@ -524,6 +558,14 @@ const FALLBACK_PX_PER_MINUTE = 2.4;
 export class StaffTimeGrid {
   /** An hour that did not happen — struck on the block's head (staff-event-head). */
   protected readonly hollowStatus = hollowStatus;
+  /** The block kinds, for the template's comparisons. */
+  protected readonly GridEventTag = GridEventTag;
+  /** A block's `data-kind` — the lower-case words the CSS selects on. */
+  protected readonly gridEventWords = gridEventWords;
+  /** A stretch's `data-kind` — the hatches' words. */
+  protected readonly gridMaskWords = gridMaskWords;
+  /** A block's `data-status`. */
+  protected readonly gridStatusWord = gridStatusWord;
   readonly columns = input.required<readonly GridColumn[]>();
   /**
    * The first rostered minute across the visible columns — no longer the
@@ -1079,9 +1121,13 @@ export class StaffTimeGrid {
   }
 
   protected pick(event: GridEvent): void {
-    if (event.kind === 'gap') this.gapPicked.emit(event.id);
-    else if (event.kind === 'block') this.blockPicked.emit(event.id);
-    else this.eventPicked.emit(event.id);
+    if (event.gridEvent === GridEventTag.Gap) {
+      this.gapPicked.emit(event.id);
+    } else if (event.gridEvent === GridEventTag.Block) {
+      this.blockPicked.emit(event.id);
+    } else {
+      this.eventPicked.emit(event.id);
+    }
   }
 
   /* ── The draft, and the gesture that writes it ─────────────────────── */
@@ -1144,15 +1190,20 @@ export class StaffTimeGrid {
   );
 
   /** Which gesture is live, if any. Drives `[data-dragging]`/`[data-moving]`. */
-  private readonly gesture = signal<DragKind | null>(null);
+  private readonly gesture = signal<DragGesture | null>(null);
   protected readonly dragging = computed(() => this.gesture() !== null);
-  protected readonly moving = computed(() => this.gesture() === 'move');
+  protected readonly moving = computed(
+    () => this.gesture() === EditCommand.Move,
+  );
   /** Which handle is under the finger — so only that one lights up. */
-  protected readonly draggingEdge = computed(() => {
-    const kind = this.gesture();
-    if (kind === 'resize-start') return 'start';
-    return kind === 'resize-end' ? 'end' : null;
+  protected readonly draggingEdge = computed<ResizeEdge | null>(() => {
+    const gesture = this.gesture();
+    return gesture === ResizeEdge.Start || gesture === ResizeEdge.End
+      ? gesture
+      : null;
   });
+  /** The two handles' edges, for the template's calls. */
+  protected readonly ResizeEdge = ResizeEdge;
 
   /** The editable block AS PLACED — draft applied, laned, boxed. */
   protected readonly editableBlock = computed(() => {
@@ -1346,48 +1397,49 @@ export class StaffTimeGrid {
     return timeLabel(minute);
   }
 
-  protected readonly draftVerdict = computed<
-    | { readonly kind: 'short'; readonly minutes: number }
-    | { readonly kind: 'overlap'; readonly name: string; readonly time: string }
-    | { readonly kind: 'outside' }
-    | null
-  >(() => {
-    const block = this.editableBlock();
-    if (block === null) return null;
-    const floor = this.minMinutes();
-    if (block.endMinute - block.startMinute <= floor) {
-      return { kind: 'short', minutes: floor };
-    }
-    const column = this.placedColumns().find((c) => c.editable !== null);
-    if (column === undefined) return null;
-    for (const other of column.events) {
-      // A gap is the ABSENCE of a booking — landing on one is the point of
-      // the gesture, not a collision.
-      if (other.id === block.id || other.kind === 'gap') continue;
-      if (
-        other.startMinute < block.endMinute &&
-        other.endMinute > block.startMinute
-      ) {
-        return {
-          kind: 'overlap',
-          name: other.title,
-          time: timeLabel(other.startMinute),
-        };
+  protected readonly draftVerdict = computed<PlacementVerdictSlice | null>(
+    () => {
+      const block = this.editableBlock();
+      if (block === null) return null;
+      const floor = this.minMinutes();
+      if (block.endMinute - block.startMinute <= floor) {
+        return { placementVerdict: PlacementVerdict.Short, minutes: floor };
       }
-    }
-    const inside = column.open.some(
-      (window) =>
-        block.startMinute >= window.startMinute &&
-        block.endMinute <= window.endMinute,
-    );
-    return inside ? null : { kind: 'outside' };
-  });
+      const column = this.placedColumns().find((c) => c.editable !== null);
+      if (column === undefined) return null;
+      for (const other of column.events) {
+        // A gap is the ABSENCE of a booking — landing on one is the point of
+        // the gesture, not a collision.
+        if (other.id === block.id || other.gridEvent === GridEventTag.Gap) {
+          continue;
+        }
+        if (
+          other.startMinute < block.endMinute &&
+          other.endMinute > block.startMinute
+        ) {
+          return {
+            placementVerdict: PlacementVerdict.Overlap,
+            name: other.title,
+            time: timeLabel(other.startMinute),
+          };
+        }
+      }
+      const inside = column.open.some(
+        (window) =>
+          block.startMinute >= window.startMinute &&
+          block.endMinute <= window.endMinute,
+      );
+      return inside ? null : { placementVerdict: PlacementVerdict.Outside };
+    },
+  );
 
   protected readonly readoutTone = computed<'destructive' | 'warning' | null>(
     () => {
       const verdict = this.draftVerdict();
       if (verdict === null) return null;
-      return verdict.kind === 'outside' ? 'warning' : 'destructive';
+      return verdict.placementVerdict === PlacementVerdict.Outside
+        ? 'warning'
+        : 'destructive';
     },
   );
 
@@ -1400,27 +1452,28 @@ export class StaffTimeGrid {
    * edge the pill's own first number names.
    */
   protected readonly readoutAnchor = computed(() => {
-    const kind = this.gesture();
+    const gesture = this.gesture();
     const block = this.editableBlock();
-    if (kind === null || block === null) return null;
+    if (gesture === null || block === null) return null;
     if (block.top === null || block.height === null) return null;
-    return kind === 'resize-start'
+    return gesture === ResizeEdge.Start
       ? { fraction: block.top + block.height, side: 'below' as const }
       : { fraction: block.top, side: 'above' as const };
   });
 
   /** The numbers: the boundary the gesture moved, and the length it left. */
   protected readonly readoutText = computed(() => {
-    const kind = this.gesture();
+    const gesture = this.gesture();
     const block = this.editableBlock();
-    if (kind === null || block === null) return '';
+    if (gesture === null || block === null) return '';
     const length = this.lengthText(block.endMinute - block.startMinute);
-    if (kind === 'move') {
+    if (gesture === EditCommand.Move) {
       // BOTH boundaries, always: a move changed both and kept the duration,
       // so naming one edge would hide the other.
       return `${timeLabel(block.startMinute)} – ${timeLabel(block.endMinute)} · ${length}`;
     }
-    const edge = kind === 'resize-start' ? block.startMinute : block.endMinute;
+    const edge =
+      gesture === ResizeEdge.Start ? block.startMinute : block.endMinute;
     return `${timeLabel(edge)} · ${length}`;
   });
 
@@ -1429,10 +1482,12 @@ export class StaffTimeGrid {
     const verdict = this.draftVerdict();
     const copy = this.uiDragCopy();
     if (verdict === null) return '';
-    if (verdict.kind === 'short') {
+    if (verdict.placementVerdict === PlacementVerdict.Short) {
       return fill(copy.tooShort, { minutes: verdict.minutes });
     }
-    if (verdict.kind === 'outside') return copy.outside;
+    if (verdict.placementVerdict === PlacementVerdict.Outside) {
+      return copy.outside;
+    }
     return (
       fill(copy.overlap, { name: verdict.name, time: verdict.time }) ||
       `${verdict.name} ${verdict.time}`
@@ -1440,10 +1495,10 @@ export class StaffTimeGrid {
   });
 
   /** `aria-valuetext` — the same sentence the pill draws, for a reader. */
-  protected handleText(edge: 'start' | 'end'): string {
+  protected handleText(edge: ResizeEdge): string {
     const block = this.editableBlock();
     if (block === null) return '';
-    const at = edge === 'start' ? block.startMinute : block.endMinute;
+    const at = edge === ResizeEdge.Start ? block.startMinute : block.endMinute;
     const length = this.lengthText(block.endMinute - block.startMinute);
     const note = this.readoutNote();
     return note === ''
@@ -1474,15 +1529,11 @@ export class StaffTimeGrid {
    */
   protected onHandleDown(
     event: PointerEvent,
-    edge: 'start' | 'end',
+    edge: ResizeEdge,
     block: GridDraft,
   ): void {
-    this.beginDrag(
-      event,
-      edge === 'start' ? 'resize-start' : 'resize-end',
-      block,
-      true,
-    );
+    // A resize gesture IS its edge.
+    this.beginDrag(event, edge, block, true);
   }
 
   /**
@@ -1496,12 +1547,12 @@ export class StaffTimeGrid {
     // five-minute snap if it wanted to.
     if (block.id !== this.editableId()) return;
     if (this.editableBlock()?.top === null) return;
-    this.beginDrag(event, 'move', block, false);
+    this.beginDrag(event, EditCommand.Move, block, false);
   }
 
   private beginDrag(
     event: PointerEvent,
-    kind: DragKind,
+    dragGesture: DragGesture,
     block: GridDraft,
     armed: boolean,
   ): void {
@@ -1512,7 +1563,7 @@ export class StaffTimeGrid {
     const touch = event.pointerType === 'touch';
     this.drag = {
       id: block.id,
-      kind,
+      dragGesture,
       pointerId: event.pointerId,
       y0: event.clientY,
       x0: event.clientX,
@@ -1564,7 +1615,7 @@ export class StaffTimeGrid {
     // wants the scroll it is not getting from a captured pointer anyway.
     event?.stopPropagation();
     capturePointer(drag.target, drag.pointerId);
-    this.gesture.set(drag.kind);
+    this.gesture.set(drag.dragGesture);
     // Guarded and never load-bearing: `navigator.vibrate` is Android-only in
     // practice and is policy-blocked without a real gesture. The pill carries
     // the whole job on its own.
@@ -1605,7 +1656,7 @@ export class StaffTimeGrid {
     this.applyDelta(drag, dy);
     // The edge loop reads the finger's position, never the block's, and
     // keeps the frame scrolling while the finger rests at an edge — see
-    // `EdgeScroller`. Each scroll comes back through `followFinger`.
+    // `edgeScrollerOf`. Each scroll comes back through `followFinger`.
     this.edge.update(event.clientY);
   }
 
@@ -1635,7 +1686,7 @@ export class StaffTimeGrid {
       : clientY;
   }
 
-  private readonly edge = new EdgeScroller(
+  private readonly edge = edgeScrollerOf(
     'y',
     () => this.frame()?.nativeElement,
     () => this.followFinger(),
@@ -1655,9 +1706,9 @@ export class StaffTimeGrid {
     const moved = dy / drag.pxPerMinute;
     const snap = this.snapMinutes();
     const next =
-      drag.kind === 'move'
+      drag.dragGesture === EditCommand.Move
         ? this.moveTo(drag, snapTo(drag.startMinute + moved, snap))
-        : drag.kind === 'resize-start'
+        : drag.dragGesture === ResizeEdge.Start
           ? this.resizeStartTo(drag, snapTo(drag.startMinute + moved, snap))
           : this.resizeEndTo(drag, snapTo(drag.endMinute + moved, snap));
     const current = this.draft() ?? this.eventById(drag.id);
@@ -1691,7 +1742,10 @@ export class StaffTimeGrid {
     buzz(12);
     this.draftCommitted.emit({
       ...final,
-      kind: drag.kind === 'move' ? 'move' : 'resize',
+      editCommand:
+        drag.dragGesture === EditCommand.Move
+          ? EditCommand.Move
+          : EditCommand.Resize,
     });
   }
 
@@ -1758,25 +1812,24 @@ export class StaffTimeGrid {
 
   protected onHandleKey(
     event: KeyboardEvent,
-    edge: 'start' | 'end',
+    edge: ResizeEdge,
     block: GridDraft,
   ): void {
     const bounds = this.handleBounds();
     if (bounds === null) return;
-    const at = edge === 'start' ? block.startMinute : block.endMinute;
+    const start = edge === ResizeEdge.Start;
+    const at = start ? block.startMinute : block.endMinute;
     const to = this.keyTarget(
       event,
       at,
-      edge === 'start' ? bounds.startMin : bounds.endMin,
-      edge === 'start' ? bounds.startMax : bounds.endMax,
+      start ? bounds.startMin : bounds.endMin,
+      start ? bounds.startMax : bounds.endMax,
     );
     if (to === null) return;
     event.preventDefault();
     this.step(
-      edge === 'start'
-        ? this.resizeStartTo(block, to)
-        : this.resizeEndTo(block, to),
-      'resize',
+      start ? this.resizeStartTo(block, to) : this.resizeEndTo(block, to),
+      EditCommand.Resize,
     );
   }
 
@@ -1795,7 +1848,7 @@ export class StaffTimeGrid {
     const to = this.keyTarget(event, block.startMinute, start, end - duration);
     if (to === null) return;
     event.preventDefault();
-    this.step(this.moveTo(block, to), 'move');
+    this.step(this.moveTo(block, to), EditCommand.Move);
   }
 
   /** Where a key press wants to land, or `null` if the key means nothing. */
@@ -1834,7 +1887,7 @@ export class StaffTimeGrid {
    * surface with no grab has nothing to cancel, and the draft is still a
    * draft until the sheet's own save.
    */
-  private step(next: GridDraft, kind: GridCommit['kind']): void {
+  private step(next: GridDraft, editCommand: GridCommit['editCommand']): void {
     const current = this.draft() ?? this.eventById(next.id);
     if (
       current !== null &&
@@ -1844,7 +1897,7 @@ export class StaffTimeGrid {
       return;
     }
     this.publish(next);
-    this.draftCommitted.emit({ ...next, kind });
+    this.draftCommitted.emit({ ...next, editCommand });
     buzz(4);
   }
 
@@ -2330,15 +2383,13 @@ function maskEvent(
   if (span <= 0) return { ...event, masks: [], outside: false };
   /** A minute of the day → where it falls down this block, as 0–1. */
   const at = (minute: number): number => (minute - event.startMinute) / span;
-  const run = (
-    kind: EventMask['kind'],
-    [from, to]: readonly [number, number],
-  ) => ({ kind, from: at(from), to: at(to) }) satisfies EventMask;
+  const run = (gridMask: GridMask, [from, to]: readonly [number, number]) =>
+    ({ gridMask, from: at(from), to: at(to) }) satisfies EventMask;
 
   const masks: EventMask[] = [];
   if (now !== null && now > event.startMinute) {
     masks.push({
-      kind: 'elapsed',
+      gridMask: GridMask.Elapsed,
       from: 0,
       // Clamped, so a block that finished hours ago is wholly washed rather
       // than asking the renderer for 400% of its own height.
@@ -2350,7 +2401,9 @@ function maskEvent(
   // and only when there is a real remainder to draw.
   const surplus = event.surplusMinutes ?? 0;
   if (surplus > 0 && surplus < span) {
-    masks.push(run('surplus', [event.endMinute - surplus, event.endMinute]));
+    masks.push(
+      run(GridMask.Surplus, [event.endMinute - surplus, event.endMinute]),
+    );
   }
 
   // A carve-out is time taken OUT of the day; it is not a booking that can
@@ -2358,10 +2411,10 @@ function maskEvent(
   // ABSENCE of a booking — never the other side of a collision.
   const closed = runs.outside;
   for (const shut of closed) {
-    masks.push(run('closed', [shut.startMinutes, shut.endMinutes]));
+    masks.push(run(GridMask.Closed, [shut.startMinutes, shut.endMinutes]));
   }
   for (const hit of runs.overlap) {
-    masks.push(run('overlap', [hit.startMinutes, hit.endMinutes]));
+    masks.push(run(GridMask.Overlap, [hit.startMinutes, hit.endMinutes]));
   }
   return { ...event, masks, outside: closed.length > 0 };
 }
@@ -2475,24 +2528,29 @@ function fraction(value: number): number {
   return Number(value.toFixed(6));
 }
 
+/**
+ * A block's `data-status` — the booking's lower-case word (the ONE shared
+ * table), `new` for a visit the editor is drafting that is not booked yet,
+ * and nothing on a gap or a carve-out.
+ */
+export function gridStatusWord(event: GridEvent): string | null {
+  if (event.bookingStatus !== null) {
+    return bookingStatusWords[event.bookingStatus];
+  }
+  return event.draftNew === true ? 'new' : null;
+}
+
 /* ── The geometry system's boundary (flatten pass) ────────────────────── */
 
 /*
  * `GridLayoutSystem` reads ONE shop day's track as branded minutes
  * (`MinuteOfDay` starts in `[0, 1440)`, `EndMinute` ends in `(0, 1440]`) and
- * tags a block by `gridEvent` (SCREAMING). This component's public types keep
- * their plain `startMinute` / `endMinute` and the lower-case `kind`; the
- * figures it draws are whole minutes of the column's day by construction (a
+ * tags a block by `gridEvent` (SCREAMING), the same tag this component's
+ * `GridEvent` carries. Its public types keep their plain `startMinute` /
+ * `endMinute`; the figures it draws are whole minutes of the column's day by construction (a
  * visit never crosses midnight, F-6), so the conversion clamps onto the day
  * rather than inventing a figure the track does not have.
  */
-
-/** The system's tag of each block kind — the ONE table. */
-const GRID_EVENT_OF = {
-  visit: GridEventTag.Visit,
-  gap: GridEventTag.Gap,
-  block: GridEventTag.Block,
-} as const satisfies Record<GridEvent['kind'], GridEventTag>;
 
 /** A minute of the track as a start, clamped onto the day — proven, so no `Result` per drag tick. */
 function trackStart(minute: number): MinuteOfDay {
@@ -2519,7 +2577,7 @@ function toMinuteRun(stretch: {
 function toRunEvent(event: LaidEvent): RunEvent {
   return {
     id: event.id,
-    gridEvent: GRID_EVENT_OF[event.kind],
+    gridEvent: event.gridEvent,
     startMinutes: trackStart(event.startMinute),
     endMinutes: trackEnd(event.endMinute),
   };

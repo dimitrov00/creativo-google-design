@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { EditCommand } from '@core/components';
+import { GridEvent as GridEventTag } from '@core/systems';
 import type {
   GridColumn,
   GridCommit,
@@ -15,13 +17,13 @@ import { StaffTimeline } from './staff-timeline';
 
 function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
   return {
-    kind: 'visit',
+    gridEvent: GridEventTag.Visit,
     startMinute: 600,
     endMinute: 645,
     title: 'Георги Петров',
     detail: null,
     attribution: null,
-    status: null,
+    bookingStatus: null,
     terminal: false,
     past: false,
     accessibleName: 'Георги Петров, 10:00–10:45',
@@ -34,7 +36,7 @@ function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
 
 const BLOCK = event({
   id: 'draft-block',
-  kind: 'block',
+  gridEvent: GridEventTag.Block,
   startMinute: 720,
   endMinute: 780,
   title: 'Блок',
@@ -230,7 +232,12 @@ describe('StaffTimeline', () => {
 
     document.dispatchEvent(pointer('pointerup', travel(15)));
     expect(seen.committed).toEqual([
-      { id: 'draft-block', startMinute: 720, endMinute: 795, kind: 'resize' },
+      {
+        id: 'draft-block',
+        startMinute: 720,
+        endMinute: 795,
+        editCommand: EditCommand.Resize,
+      },
     ]);
   });
 
@@ -249,7 +256,7 @@ describe('StaffTimeline', () => {
       startMinute: 730,
       endMinute: 790,
     });
-    expect(seen.committed.at(-1)?.kind).toBe('move');
+    expect(seen.committed.at(-1)?.editCommand).toBe(EditCommand.Move);
   });
 
   it('steps from the keyboard: the arrows slide, End reaches the bound', () => {
@@ -263,7 +270,7 @@ describe('StaffTimeline', () => {
       id: 'draft-block',
       startMinute: 725,
       endMinute: 785,
-      kind: 'move',
+      editCommand: EditCommand.Move,
     });
     fixture.detectChanges();
     const end = grab(host, 'staff-timeline-handle-end');
@@ -275,7 +282,7 @@ describe('StaffTimeline', () => {
       id: 'draft-block',
       startMinute: 725,
       endMinute: 1440,
-      kind: 'resize',
+      editCommand: EditCommand.Resize,
     });
   });
 

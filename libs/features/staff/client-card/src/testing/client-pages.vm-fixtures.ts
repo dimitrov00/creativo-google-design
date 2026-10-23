@@ -20,16 +20,23 @@
  * birthday. «Today» is Monday 28 September 2026, the lib's fixture day.
  * Every string is final copy in Bulgarian, as the catalogue words it.
  *
- * Plain data, no imports but types and the one dictionary a field is
- * spelled with (`JournalFeed`): a spec may spread a fixture and
+ * Plain data, no imports but types, the dictionaries a field is spelled
+ * with (`JournalFeed`, `LoadState`, `BookingStatus`, …) and the brands a
+ * day and a minute are made of: a spec may spread a fixture and
  * change one field to reach a state (`{ ...PASS.georgi, frozen: true }`),
  * and the builders at the top do the same for the shapes that repeat.
  */
-import { JournalFeed } from '@core/components';
-import type {
-  VisitCardVm,
-  VisitRowVm,
-  VisitSectionVm,
+import { JournalFeed, PersonalRecordKind } from '@core/components';
+import { BookingStatus } from '@core/primitives';
+import { VisitFilter, VisitRowOutcome } from '@core/systems';
+import { localDate, minute } from '@core/testing';
+import {
+  TrailingFactFace,
+  VisitCardSlot,
+  type VisitCardVm,
+  VisitRowEntry,
+  type VisitRowVm,
+  type VisitSectionVm,
 } from '@creativo/features/shared/visits';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
@@ -37,8 +44,8 @@ import {
   type AchievementTileVm,
   type ActivityGroupVm,
   type ActivityRowVm,
+  BirthdayMoment,
   type BirthdayVm,
-  CardLoadState,
   type ClientHeroVm,
   type ClientOverviewVm,
   type ClientPhotoVm,
@@ -68,11 +75,13 @@ import {
   type VisitsPageVm,
   type VoucherVm,
   type WalletActionVm,
+  WalletHolding,
   type WalletHoldingVm,
   type WalletRhythmVm,
   type WalletTierVm,
   type WalletVm,
 } from '../lib/client-pages.vm';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
 
 // ── Builders for the shapes that repeat ─────────────────────────────────
 
@@ -127,8 +136,10 @@ export function visitRowOf(
 ): VisitRowVm {
   return {
     id,
-    kind: 'visit',
-    startMs: Date.UTC(2026, 8, 5, 7),
+    visitRowEntry: VisitRowEntry.Visit,
+    // Saturday 5 September 2026, 10:00 on the shop's wall clock (Sofia).
+    localDate: localDate('2026-09-05'),
+    startMinutes: minute(600),
     sectionKey: '2026-09',
     upcoming: false,
     tile: { caption: 'сб', day: 5, tone: 'past' },
@@ -138,20 +149,19 @@ export function visitRowOf(
     lines: [{ text: 'Център · Иван', hold: ' · Иван' }],
     quote: null,
     trailing: {
-      kind: 'barber',
       avatarSrc: null,
       name: 'Иван Колев',
       several: false,
     },
     trailingFact: {
-      kind: 'amount',
+      trailingFactFace: TrailingFactFace.Amount,
       text: '17,50 €',
       emphasis: 'primary',
       struck: false,
     },
     marks: [],
-    outcome: 'worked',
-    status: 'completed',
+    outcome: VisitRowOutcome.Worked,
+    bookingStatus: BookingStatus.Completed,
     accessibleName: 'Фейд, 5 септември, Иван Колев, Център, 17,50 €',
     testId: `history-row-${id}`,
     ...overrides,
@@ -371,7 +381,7 @@ const BIRTHDAY_GIFT: RewardReadyVm = {
 export const BIRTHDAY = {
   /** (a) The band over the gift's ticket: «Използвай». */
   gift: {
-    kind: 'today',
+    birthdayMoment: BirthdayMoment.Today,
     title: 'Рожден ден · 34 г.',
     gift: BIRTHDAY_GIFT,
     giftLabel: 'Подарък от салона',
@@ -380,7 +390,7 @@ export const BIRTHDAY = {
   },
   /** (c) The gift on this visit's bill: stamped, «Премахни» where «Използвай» stood. */
   giftApplied: {
-    kind: 'today',
+    birthdayMoment: BirthdayMoment.Today,
     title: 'Рожден ден · 34 г.',
     gift: {
       ...BIRTHDAY_GIFT,
@@ -393,7 +403,7 @@ export const BIRTHDAY = {
   },
   /** (b) The band alone: no gift held, a party member, offline, a paused client. */
   bandOnly: {
-    kind: 'today',
+    birthdayMoment: BirthdayMoment.Today,
     title: 'Рожден ден · 34 г.',
     gift: null,
     giftLabel: 'Подарък от салона',
@@ -401,7 +411,7 @@ export const BIRTHDAY = {
   },
   /** The year of birth is not on record: no age. */
   noAge: {
-    kind: 'today',
+    birthdayMoment: BirthdayMoment.Today,
     title: 'Рожден ден днес',
     gift: null,
     giftLabel: 'Подарък от салона',
@@ -409,7 +419,7 @@ export const BIRTHDAY = {
   },
   /** (d) Within the week: the quiet notice. */
   upcoming: {
-    kind: 'upcoming',
+    birthdayMoment: BirthdayMoment.Upcoming,
     title: 'Рожден ден · петък, 2.10 · 34 г.',
     gift: null,
     giftLabel: 'Подарък от салона',
@@ -423,7 +433,7 @@ export const VISIT_CARD = {
   /** H1 — everything a last visit can carry: the figure, the quote, two thumbs. */
   last: {
     id: 'apt-2026-09-05',
-    kind: 'last',
+    visitCardSlot: VisitCardSlot.Last,
     label: 'Последно посещение',
     services: 'Фейд · Оформяне на брада',
     facts: [
@@ -453,7 +463,7 @@ export const VISIT_CARD = {
   /** H1 at its least: the services and the facts. */
   lastBare: {
     id: 'apt-2026-08-08',
-    kind: 'last',
+    visitCardSlot: VisitCardSlot.Last,
     label: 'Последно посещение',
     services: 'Фейд',
     facts: [
@@ -471,7 +481,7 @@ export const VISIT_CARD = {
   /** H2 — the time is the fact; the status is news. */
   next: {
     id: 'apt-2026-10-23',
-    kind: 'next',
+    visitCardSlot: VisitCardSlot.Next,
     label: 'Следващ час',
     services: 'Фейд',
     facts: [
@@ -491,7 +501,7 @@ export const VISIT_CARD = {
   /** H2, asked for and not yet confirmed; cut by two, so no face. */
   nextPending: {
     id: 'apt-2026-11-06',
-    kind: 'next',
+    visitCardSlot: VisitCardSlot.Next,
     label: 'Следващ час',
     services: 'Фейд · Оформяне на брада',
     facts: [
@@ -511,7 +521,7 @@ export const VISIT_CARD = {
   /** H3 — a request waiting for a free slot: no capsule, no face, no figure. */
   waitlist: {
     id: 'waitlist-1',
-    kind: 'waitlist',
+    visitCardSlot: VisitCardSlot.Waitlist,
     label: 'Чака свободен час',
     services: 'Класическа подстрижка',
     facts: [{ text: '8.10 – 9.10, следобед · още 1', fact: false }],
@@ -527,7 +537,7 @@ export const VISIT_CARD = {
   /** `/account`'s «Предстоящ час»: `increased`, no services line, no face. */
   accountUpcoming: {
     id: 'apt-2026-10-23',
-    kind: 'next',
+    visitCardSlot: VisitCardSlot.Next,
     label: 'Предстоящ час',
     services: 'Фейд',
     facts: [{ text: 'петък, 23 октомври · 10:00', fact: false }],
@@ -621,8 +631,16 @@ export const MEDALS_GLANCE = {
     ],
     cue: 'С това посещение: Есен 2026, ниво II',
     records: [
-      { kind: 'favouriteService', label: 'Любима услуга', value: 'Фейд' },
-      { kind: 'mostVisitsInYear', label: 'Най-много за година', value: '13' },
+      {
+        personalRecordKind: PersonalRecordKind.FavouriteService,
+        label: 'Любима услуга',
+        value: 'Фейд',
+      },
+      {
+        personalRecordKind: PersonalRecordKind.MostVisitsInYear,
+        label: 'Най-много за година',
+        value: '13',
+      },
     ],
     recordsName: 'Рекорди: любима услуга Фейд, най-много за година 13',
   },
@@ -747,21 +765,21 @@ export const OVERVIEW = {
   /** Every module present and read. */
   georgi: {
     actions: QUICK_ACTIONS,
-    reward: { cardLoadState: CardLoadState.Ready, data: REWARD_READY.haircut },
-    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.full },
+    reward: { loadState: LoadState.Ready, data: REWARD_READY.haircut },
+    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.full },
     loyalty: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: LOYALTY_GLANCE.georgi,
     },
-    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.georgi },
-    photos: { cardLoadState: CardLoadState.Ready, data: PHOTOS },
+    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.georgi },
+    photos: { loadState: LoadState.Ready, data: PHOTOS },
     canRemove: true,
     failed: [],
   },
   /** Мартин, in the chair on his birthday; two no-shows in ninety days. */
   birthday: {
     capsules: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: {
         shown: [
           {
@@ -776,49 +794,49 @@ export const OVERVIEW = {
     },
     birthday: BIRTHDAY.gift,
     actions: QUICK_ACTIONS,
-    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.lastOnly },
+    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.lastOnly },
     loyalty: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: LOYALTY_GLANCE.toNext,
     },
-    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.first },
+    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.first },
     canRemove: true,
     failed: [],
   },
   /** Behind the D-9 gate: the discs at once, every module a placeholder. */
   loading: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    reward: { cardLoadState: CardLoadState.Loading },
-    visits: { cardLoadState: CardLoadState.Loading },
-    loyalty: { cardLoadState: CardLoadState.Loading },
-    medals: { cardLoadState: CardLoadState.Loading },
-    photos: { cardLoadState: CardLoadState.Loading },
+    reward: { loadState: LoadState.Loading },
+    visits: { loadState: LoadState.Loading },
+    loyalty: { loadState: LoadState.Loading },
+    medals: { loadState: LoadState.Loading },
+    photos: { loadState: LoadState.Loading },
     canRemove: true,
     failed: [],
   },
   /** A new client: three discs, the welcome points, no medals, no photos. */
   newClient: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.none },
-    loyalty: { cardLoadState: CardLoadState.Ready, data: LOYALTY_GLANCE.bare },
+    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.none },
+    loyalty: { loadState: LoadState.Ready, data: LOYALTY_GLANCE.bare },
     canRemove: true,
     failed: [],
   },
   /** One module failed: its heading over «Опитай пак». */
   oneFailed: {
     actions: QUICK_ACTIONS,
-    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.lastOnly },
-    loyalty: { cardLoadState: CardLoadState.Failed },
-    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.georgi },
+    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.lastOnly },
+    loyalty: { loadState: LoadState.Failed },
+    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.georgi },
     canRemove: true,
     failed: ['loyalty'],
   },
   /** Two failed: one notice under the head, the headings alone. */
   twoFailed: {
     actions: QUICK_ACTIONS,
-    visits: { cardLoadState: CardLoadState.Failed },
-    loyalty: { cardLoadState: CardLoadState.Failed },
-    medals: { cardLoadState: CardLoadState.Failed },
+    visits: { loadState: LoadState.Failed },
+    loyalty: { loadState: LoadState.Failed },
+    medals: { loadState: LoadState.Failed },
     canRemove: true,
     failed: ['visits', 'loyalty', 'achievements'],
   },
@@ -1008,19 +1026,19 @@ export const STAMP_CARD: StampCardVm = {
 export const WALLET_HOLDINGS = {
   /** In the wallet's order: the voucher, the ticket, the stamp card. */
   georgi: [
-    { kind: 'voucher', voucher: VOUCHER.partial },
-    { kind: 'ticket', ticket: REWARD_READY.haircut },
+    { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.partial },
+    { walletHolding: WalletHolding.Ticket, ticket: REWARD_READY.haircut },
     {
-      kind: 'stamps',
+      walletHolding: WalletHolding.Stamps,
       card: STAMP_CARD,
       line: '10 печата за безплатно подстригване',
     },
   ],
   /** Two vouchers: the heading's detail carries their sum. */
   vouchers: [
-    { kind: 'voucher', voucher: VOUCHER.partial },
-    { kind: 'voucher', voucher: VOUCHER.open },
-    { kind: 'ticket', ticket: REWARD_READY.applied },
+    { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.partial },
+    { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.open },
+    { walletHolding: WalletHolding.Ticket, ticket: REWARD_READY.applied },
   ],
   /** Nothing held: «Портфейлът е празен.» */
   empty: [],
@@ -1452,21 +1470,21 @@ export const WALLET = {
     pass: PASS.expiring,
     actions: WALLET_ACTIONS.owner,
     holdings: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: WALLET_HOLDINGS.georgi,
     },
     holdingsDetail: '3',
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
+    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
     catalog: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: {
         name: 'Награди за точки: 371 точки, стигат за 2 от 3 награди',
         tiles: REWARD_TILES,
       },
     },
     activity: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: ACTIVITY_GROUPS.newestFive,
     },
   },
@@ -1475,12 +1493,12 @@ export const WALLET = {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { cardLoadState: CardLoadState.Loading },
+    holdings: { loadState: LoadState.Loading },
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { cardLoadState: CardLoadState.Loading },
-    catalog: { cardLoadState: CardLoadState.Loading },
-    activity: { cardLoadState: CardLoadState.Loading },
+    tier: { loadState: LoadState.Loading },
+    catalog: { loadState: LoadState.Loading },
+    activity: { loadState: LoadState.Loading },
   },
   /** An account with nothing held and no entry yet. */
   empty: {
@@ -1488,13 +1506,13 @@ export const WALLET = {
     pass: { ...PASS.georgi, figure: '50', tier: 'Бронз', state: null },
     actions: WALLET_ACTIONS.readOnly,
     holdings: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: WALLET_HOLDINGS.empty,
     },
     holdingsDetail: null,
-    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
+    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
     catalog: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: {
         name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди',
         tiles: REWARD_TILES,
@@ -1507,14 +1525,16 @@ export const WALLET = {
     pass: PASS.frozen,
     actions: WALLET_ACTIONS.readOnly,
     holdings: {
-      cardLoadState: CardLoadState.Ready,
-      data: [{ kind: 'voucher', voucher: VOUCHER.partial }],
+      loadState: LoadState.Ready,
+      data: [
+        { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.partial },
+      ],
     },
     holdingsDetail: '1',
     rhythm: WALLET_RHYTHM.frozen,
-    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
+    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
     activity: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: ACTIVITY_GROUPS.newestFive,
     },
   },
@@ -1523,12 +1543,12 @@ export const WALLET = {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { cardLoadState: CardLoadState.Failed },
+    holdings: { loadState: LoadState.Failed },
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
-    catalog: { cardLoadState: CardLoadState.Failed },
-    activity: { cardLoadState: CardLoadState.Failed },
+    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
+    catalog: { loadState: LoadState.Failed },
+    activity: { loadState: LoadState.Failed },
   },
   /** Every loyalty flag but the vouchers' off: the pass, the holdings. */
   flagsOff: {
@@ -1536,7 +1556,7 @@ export const WALLET = {
     pass: PASS.pointsOff,
     actions: WALLET_ACTIONS.codeOnly,
     holdings: {
-      cardLoadState: CardLoadState.Ready,
+      loadState: LoadState.Ready,
       data: WALLET_HOLDINGS.vouchers,
     },
     holdingsDetail: '3 · 55,00 €',
@@ -1551,71 +1571,71 @@ const LEDGER_SUBLINE = [
 export const LEDGER_PAGE = {
   /** The first page, an older one waiting. */
   first: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
-    paging: { kind: 'more' },
+    paging: { pagingState: PagingState.More },
   },
   /** Every page read: «Това е всичко.» */
   whole: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [...ACTIVITY_GROUPS.newestFive, ...ACTIVITY_GROUPS.everyKind],
-    paging: { kind: 'end' },
+    paging: { pagingState: PagingState.End },
   },
   /** A page on its way, and one that did not come. */
   loadingMore: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
-    paging: { kind: 'loading' },
+    paging: { pagingState: PagingState.Loading },
   },
   failedMore: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
-    paging: { kind: 'failed' },
+    paging: { pagingState: PagingState.Failed },
   },
   /** Narrowed to one kind. */
   status: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.Status,
     groups: ACTIVITY_GROUPS.statusOnly,
-    paging: { kind: 'end' },
+    paging: { pagingState: PagingState.End },
   },
   /** A kind nothing answers: «Няма записи от този вид.» */
   filteredEmpty: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.Rewards,
     groups: [],
-    paging: { kind: 'end' },
+    paging: { pagingState: PagingState.End },
   },
   /** No entry yet: «Още няма движение.» */
   empty: {
-    cardLoadState: CardLoadState.Ready,
+    loadState: LoadState.Ready,
     subline: [
       { text: 'Калоян Димов · ', fact: false },
       { text: '0 т.', fact: true },
     ],
     filter: JournalFeed.All,
     groups: [],
-    paging: { kind: 'end' },
+    paging: { pagingState: PagingState.End },
   },
   loading: {
-    cardLoadState: CardLoadState.Loading,
+    loadState: LoadState.Loading,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [],
     paging: null,
   },
   failed: {
-    cardLoadState: CardLoadState.Failed,
+    loadState: LoadState.Failed,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [],
@@ -1655,7 +1675,7 @@ export const RECORD_CARD = {
   /** Set this month: the capsule «Нов рекорд». */
   longestRhythm: {
     id: 'longestRhythm',
-    kind: 'longestRhythm',
+    personalRecordKind: PersonalRecordKind.LongestRhythm,
     label: 'Най-дълъг ритъм',
     value: '23',
     detail: 'септември 2026 г.',
@@ -1666,7 +1686,7 @@ export const RECORD_CARD = {
   },
   mostVisitsInYear: {
     id: 'mostVisitsInYear',
-    kind: 'mostVisitsInYear',
+    personalRecordKind: PersonalRecordKind.MostVisitsInYear,
     label: 'Най-много за година',
     value: '13',
     detail: '2025 г.',
@@ -1678,7 +1698,7 @@ export const RECORD_CARD = {
   /** The hero of a favourite is the SERVICE: its cover in the emblem's place. */
   favouriteService: {
     id: 'favouriteService',
-    kind: 'favouriteService',
+    personalRecordKind: PersonalRecordKind.FavouriteService,
     label: 'Любима услуга',
     value: 'Фейд',
     detail: '23 пъти',
@@ -1689,7 +1709,7 @@ export const RECORD_CARD = {
   },
   firstVisit: {
     id: 'firstVisit',
-    kind: 'firstVisit',
+    personalRecordKind: PersonalRecordKind.FirstVisit,
     label: 'Първо посещение',
     value: '1 март',
     detail: '2025 г.',
@@ -2205,20 +2225,24 @@ const LADDER_FADE: readonly DetailLevelVm[] = [
 
 const COUNTED_VISITS: readonly VisitRowVm[] = [
   visitRowOf('apt-2026-09-28', {
-    startMs: Date.UTC(2026, 8, 28, 7),
+    localDate: localDate('2026-09-28'),
+    startMinutes: minute(600),
     upcoming: false,
     tile: { caption: 'пн', day: 28, tone: 'upcoming' },
     lines: [{ text: '10:00 · Иван', hold: ' · Иван' }],
-    trailingFact: { kind: 'badge', text: 'Този час' },
-    outcome: 'open',
-    status: 'confirmed',
+    trailingFact: {
+      trailingFactFace: TrailingFactFace.Badge,
+      text: 'Този час',
+    },
+    outcome: VisitRowOutcome.Open,
+    bookingStatus: BookingStatus.Confirmed,
     accessibleName: 'Фейд, днес, 10:00, Иван Колев, Този час',
   }),
   visitRowOf('apt-2026-09-05', {
     title: 'Фейд · Оформяне на брада',
     marks: [{ icon: 'client.photos', label: '2 снимки', count: 2 }],
     trailingFact: {
-      kind: 'amount',
+      trailingFactFace: TrailingFactFace.Amount,
       text: '27,50 €',
       emphasis: 'primary',
       struck: false,
@@ -2227,7 +2251,8 @@ const COUNTED_VISITS: readonly VisitRowVm[] = [
       'Фейд · Оформяне на брада, 5 септември, Иван Колев, Център, 27,50 €, 2 снимки',
   }),
   visitRowOf('apt-2026-08-08', {
-    startMs: Date.UTC(2026, 7, 8, 7),
+    localDate: localDate('2026-08-08'),
+    startMinutes: minute(600),
     sectionKey: '2026-08',
     tile: { caption: 'сб', day: 8, tone: 'past' },
     marks: [{ icon: 'client.photos', label: '1 снимка', count: 1 }],
@@ -2415,32 +2440,33 @@ export const MEDAL_DETAIL = {
 // ── «Посещения» ─────────────────────────────────────────────────────────
 
 const UPCOMING_ROW = visitRowOf('apt-2026-10-23', {
-  startMs: Date.UTC(2026, 9, 23, 7),
+  localDate: localDate('2026-10-23'),
+  startMinutes: minute(600),
   sectionKey: 'upcoming',
   upcoming: true,
   tile: { caption: 'пт', day: 23, tone: 'upcoming' },
   lines: [{ text: '10:00 · Иван', hold: ' · Иван' }],
   trailingFact: null,
-  outcome: 'open',
-  status: 'confirmed',
+  outcome: VisitRowOutcome.Open,
+  bookingStatus: BookingStatus.Confirmed,
   accessibleName: 'Фейд, петък, 23 октомври, 10:00, Иван Колев',
 });
 
 const SEVERAL_ROW = visitRowOf('apt-2026-07-11', {
-  startMs: Date.UTC(2026, 6, 11, 7),
+  localDate: localDate('2026-07-11'),
+  startMinutes: minute(600),
   sectionKey: '2026-07',
   tile: { caption: 'сб', day: 11, tone: 'past' },
   title: 'Фейд · Оформяне на брада',
   lines: [{ text: 'Център' }],
   // Cut by two: no face, and its column still reserved.
   trailing: {
-    kind: 'barber',
     avatarSrc: null,
     name: '2 бръснари',
     several: true,
   },
   trailingFact: {
-    kind: 'amount',
+    trailingFactFace: TrailingFactFace.Amount,
     text: '35,00 €',
     emphasis: 'primary',
     struck: false,
@@ -2451,36 +2477,38 @@ const SEVERAL_ROW = visitRowOf('apt-2026-07-11', {
 });
 
 const NO_SHOW_ROW = visitRowOf('apt-2026-06-27', {
-  startMs: Date.UTC(2026, 5, 27, 7),
+  localDate: localDate('2026-06-27'),
+  startMinutes: minute(600),
   sectionKey: '2026-06',
   tile: { caption: 'сб', day: 27, tone: 'hollow' },
   struck: true,
   lines: [{ text: 'Иван' }],
   trailingFact: {
-    kind: 'status',
+    trailingFactFace: TrailingFactFace.Status,
     icon: 'visit.noShow',
     text: 'Не дойде',
     tone: 'warning',
   },
-  outcome: 'no_show',
-  status: 'no_show',
+  outcome: VisitRowOutcome.NoShow,
+  bookingStatus: BookingStatus.NoShow,
   accessibleName: 'Фейд, 27 юни, Иван Колев, Не дойде',
 });
 
 const CANCELLED_ROW = visitRowOf('apt-2026-06-20', {
-  startMs: Date.UTC(2026, 5, 20, 7),
+  localDate: localDate('2026-06-20'),
+  startMinutes: minute(600),
   sectionKey: '2026-06',
   tile: { caption: 'сб', day: 20, tone: 'hollow' },
   struck: true,
   lines: [{ text: 'Отказан от клиента · Иван', hold: ' · Иван' }],
   trailingFact: {
-    kind: 'amount',
+    trailingFactFace: TrailingFactFace.Amount,
     text: '17,50 €',
     emphasis: 'secondary',
     struck: true,
   },
-  outcome: 'cancelled',
-  status: 'cancelled',
+  outcome: VisitRowOutcome.Cancelled,
+  bookingStatus: BookingStatus.Cancelled,
   accessibleName: 'Фейд, 20 юни, Иван Колев, Отказан от клиента, 17,50 €',
 });
 
@@ -2542,7 +2570,7 @@ const VISITS_LINE = [
 export const VISITS_PAGE = {
   /** An admin viewing: the spend joins the second line. */
   admin: {
-    status: 'ready',
+    loadState: LoadState.Ready,
     line: VISITS_LINE,
     lineName: 'Общо: 23 посещения, средно на 4 седмици',
     facts: [
@@ -2556,14 +2584,18 @@ export const VISITS_PAGE = {
       { id: 'visits', value: '23', caption: 'посещения' },
       { id: 'cadence', value: '~4', unit: 'седм.', caption: 'интервал' },
     ],
-    filter: 'all',
-    offeredFilters: ['all', 'upcoming', 'completed'],
+    filter: VisitFilter.All,
+    offeredFilters: [
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+    ],
     sections: VISIT_SECTIONS.slice(0, 4),
-    paging: { kind: 'more', endLabel: null },
+    paging: { pagingState: PagingState.More, endLabel: null },
   },
   /** A barber viewing a client with a no-show and a cancellation: no money, the risks in the line. */
   barber: {
-    status: 'ready',
+    loadState: LoadState.Ready,
     line: [
       ...VISITS_LINE,
       { text: ' · ', fact: false },
@@ -2581,57 +2613,71 @@ export const VISITS_PAGE = {
       { id: 'noShows', value: '1', caption: 'неявяване' },
       { id: 'cancelled', value: '1', caption: 'отказ от клиента' },
     ],
-    filter: 'all',
-    offeredFilters: ['all', 'upcoming', 'completed', 'no_show', 'cancelled'],
+    filter: VisitFilter.All,
+    offeredFilters: [
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+      VisitFilter.Cancelled,
+    ],
     sections: VISIT_SECTIONS,
     paging: {
-      kind: 'end',
+      pagingState: PagingState.End,
       endLabel: 'Това е всичко · първото посещение е на 1.03.2025 г.',
     },
   },
   /** Narrowed to a filter nothing on the loaded pages answers. */
   filteredEmpty: {
-    status: 'ready',
+    loadState: LoadState.Ready,
     line: VISITS_LINE,
     lineName: 'Общо: 23 посещения, средно на 4 седмици',
     facts: null,
     cells: [{ id: 'visits', value: '23', caption: 'посещения' }],
-    filter: 'no_show',
-    offeredFilters: ['all', 'upcoming', 'completed', 'no_show'],
+    filter: VisitFilter.NoShow,
+    offeredFilters: [
+      VisitFilter.All,
+      VisitFilter.Upcoming,
+      VisitFilter.Completed,
+      VisitFilter.NoShow,
+    ],
     sections: [],
-    paging: { kind: 'more', endLabel: null },
+    paging: { pagingState: PagingState.More, endLabel: null },
   },
   /** Before the first worked visit: this visit under «Предстоящи». */
   first: {
-    status: 'ready',
+    loadState: LoadState.Ready,
     line: [{ text: 'Първо посещение', fact: false }],
     lineName: 'Първо посещение',
     facts: null,
     cells: [],
-    filter: 'all',
-    offeredFilters: ['all'],
+    filter: VisitFilter.All,
+    offeredFilters: [VisitFilter.All],
     sections: VISIT_SECTIONS.slice(0, 1),
-    paging: { kind: 'end', endLabel: 'Това е първото посещение.' },
+    paging: {
+      pagingState: PagingState.End,
+      endLabel: 'Това е първото посещение.',
+    },
   },
   loading: {
-    status: 'loading',
+    loadState: LoadState.Loading,
     line: VISITS_LINE,
     lineName: 'Общо: 23 посещения, средно на 4 седмици',
     facts: null,
     cells: [],
-    filter: 'all',
-    offeredFilters: ['all'],
+    filter: VisitFilter.All,
+    offeredFilters: [VisitFilter.All],
     sections: [],
     paging: null,
   },
   failed: {
-    status: 'failed',
+    loadState: LoadState.Failed,
     line: VISITS_LINE,
     lineName: 'Общо: 23 посещения, средно на 4 седмици',
     facts: null,
     cells: [],
-    filter: 'all',
-    offeredFilters: ['all'],
+    filter: VisitFilter.All,
+    offeredFilters: [VisitFilter.All],
     sections: [],
     paging: null,
   },

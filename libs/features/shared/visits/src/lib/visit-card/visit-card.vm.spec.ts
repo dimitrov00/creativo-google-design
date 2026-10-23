@@ -6,13 +6,14 @@ import type {
   VisitWaitlistWords,
   VisitWords,
 } from '../visit-row.vm';
-import type {
-  VisitCardKind,
-  VisitCardOptions,
-  VisitCardVm,
-  VisitCardWords,
-  VisitLinePart,
-  WaitlistCardOptions,
+import {
+  type VisitCardOptions,
+  VisitCardSlot,
+  type VisitCardVm,
+  type VisitCardWords,
+  type VisitLinePart,
+  type WaitlistCardOptions,
+  visitCardSlotWords,
 } from './visit-card.vm';
 
 /*
@@ -26,7 +27,7 @@ import type {
 
 const last = {
   id: 'apt-1',
-  kind: 'last',
+  visitCardSlot: VisitCardSlot.Last,
   label: 'Последно посещение',
   services: 'Фейд · Оформяне на брада',
   facts: [
@@ -45,7 +46,7 @@ const last = {
 
 const next = {
   id: 'apt-2',
-  kind: 'next',
+  visitCardSlot: VisitCardSlot.Next,
   label: 'Следващ час',
   services: 'Фейд',
   facts: [
@@ -64,7 +65,7 @@ const next = {
 
 const waitlist = {
   id: 'waitlist-1',
-  kind: 'waitlist',
+  visitCardSlot: VisitCardSlot.Waitlist,
   label: 'Чака свободен час',
   services: 'Класическа подстрижка',
   facts: [{ text: '8.10 – 9.10, следобед · още 1', fact: false }],
@@ -80,8 +81,14 @@ const waitlist = {
 
 describe('visit card view model', () => {
   it('names three kinds: the last visit, the next one, a waiting request', () => {
-    expectTypeOf<VisitCardKind>().toEqualTypeOf<'last' | 'next' | 'waitlist'>();
-    expectTypeOf<VisitCardVm['kind']>().toEqualTypeOf<VisitCardKind>();
+    expectTypeOf<VisitCardSlot>().toEqualTypeOf<'LAST' | 'NEXT' | 'WAITLIST'>();
+    expectTypeOf<VisitCardVm['visitCardSlot']>().toEqualTypeOf<VisitCardSlot>();
+    // The host prints each slot's lower-case word (`data-kind`).
+    expect(visitCardSlotWords).toEqual({
+      LAST: 'last',
+      NEXT: 'next',
+      WAITLIST: 'waitlist',
+    });
   });
 
   it('always carries the services, and the label of its kind', () => {
@@ -152,7 +159,9 @@ describe('visit card view model', () => {
   });
 
   it('builds a visit from the words the row already reads', () => {
-    expectTypeOf<VisitCardOptions['kind']>().toEqualTypeOf<'last' | 'next'>();
+    expectTypeOf<VisitCardOptions['visitCardSlot']>().toEqualTypeOf<
+      typeof VisitCardSlot.Last | typeof VisitCardSlot.Next
+    >();
     expectTypeOf<
       VisitCardOptions['perspective']
     >().toEqualTypeOf<VisitPerspective>();
@@ -164,10 +173,11 @@ describe('visit card view model', () => {
     expectTypeOf<
       Pick<
         VisitCardOptions,
-        | 'kind'
+        | 'visitCardSlot'
         | 'perspective'
         | 'subjectUserId'
-        | 'nowMs'
+        | 'now'
+        | 'timeZone'
         | 'locale'
         | 'words'
         | 'cardWords'

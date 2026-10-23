@@ -216,7 +216,7 @@ export class UiToast {
     if (held) {
       this.remaining = Math.max(
         0,
-        this.remaining - (Date.now() - this.armedAt),
+        this.remaining - (performance.now() - this.armedAt),
       );
       this.clear();
       this.drain?.pause();
@@ -238,7 +238,8 @@ export class UiToast {
   }
 
   private arm(): void {
-    this.armedAt = Date.now();
+    // A monotonic interval (the hold's elapsed time), not a domain clock.
+    this.armedAt = performance.now();
     this.timer = setTimeout(() => {
       this.timer = null;
       this.uiDismissed.emit();

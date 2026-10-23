@@ -17,8 +17,9 @@ import {
   UiIcon,
   UiMenuTrigger,
 } from '@creativo/ui/controls';
+import { visitFilterWords } from '@creativo/infrastructure/i18n';
 import { visitFilterWordKey, visitFiltersFor } from '../visit-filter';
-import type { VisitFilter, VisitPerspective } from '../visit-row.vm';
+import { VisitFilter, type VisitPerspective } from '../visit-row.vm';
 
 /**
  * THE FUNNEL (client-card redesign §5.3.3) — the ONE filter menu both
@@ -94,7 +95,7 @@ import type { VisitFilter, VisitPerspective } from '../visit-row.vm';
 })
 export class VisitFilterMenu {
   /** The choice, two-way: the host narrows its rows with `matchesVisitFilter`. */
-  readonly value = model<VisitFilter>('all');
+  readonly value = model<VisitFilter>(VisitFilter.All);
   readonly perspective = input.required<VisitPerspective>();
   /** The trigger's test id; each option's is `{prefix}-{option}`. */
   readonly testIdPrefix = input.required<string>();
@@ -123,7 +124,9 @@ export class VisitFilterMenu {
   protected readonly presented = signal(false);
 
   /** A narrowed list says so: the accent wash, the dot and `data-filtering`. */
-  protected readonly filtering = computed(() => this.value() !== 'all');
+  protected readonly filtering = computed(
+    () => this.value() !== VisitFilter.All,
+  );
 
   private readonly filters = computed(() =>
     visitFiltersFor(this.perspective()),
@@ -150,14 +153,15 @@ export class VisitFilterMenu {
     const value = this.value();
     return this.filters().flatMap((filter, index) =>
       offered === null ||
-      filter === 'all' ||
+      filter === VisitFilter.All ||
       filter === value ||
       offered.includes(filter)
         ? [
             {
               id: filter,
               label: words.at(index) ?? '',
-              testId: `${this.testIdPrefix()}-${filter}`,
+              // eslint-disable-next-line security/detect-object-injection -- `filter` is a member of the closed dictionary the table is total over.
+              testId: `${this.testIdPrefix()}-${visitFilterWords[filter]}`,
             },
           ]
         : [],

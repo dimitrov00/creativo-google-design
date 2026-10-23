@@ -20,9 +20,16 @@ import type {
   BadgeSeries,
   BadgeSeriesMeta,
 } from '@core/entities';
-import { LoyaltyCatalogSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  LoyaltyCatalogSystem,
+  VisitRowOutcome,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { customerOf, localDate, utcMs } from '@core/testing';
-import type { RhythmRuleWords } from '@creativo/features/shared/visits';
+import {
+  type RhythmRuleWords,
+  TrailingFactFace,
+} from '@creativo/features/shared/visits';
 import type { AchievementsContext } from './achievements.presenter';
 import type {
   AchievementsData,
@@ -48,7 +55,7 @@ import {
   MARTIN_CUSTOMER_ID,
   MARTIN_PREVIOUS_MS,
   MARTIN_TODAY_ID,
-  NOW_MS,
+  NOW,
   SHOP_CATALOG,
   SHOP_TIME_ZONE,
   achievementsContextOf,
@@ -133,7 +140,8 @@ function rowsOf(
     subjectUserId,
     subjectCustomerId: recordOf(subjectUserId),
     currentAppointmentId,
-    nowMs: NOW_MS,
+    now: NOW,
+    timeZone: SHOP_TIME_ZONE,
     photoCounts: new Map(),
     clientWords: true,
     catalog: SHOP_CATALOG,
@@ -1723,14 +1731,17 @@ describe('medalDetailVm', () => {
       ]);
       expect(page.visits[0]).toMatchObject({
         title: 'Фейд',
-        outcome: 'worked',
-        trailingFact: { kind: 'badge', text: 'Този час' },
+        outcome: VisitRowOutcome.Worked,
+        trailingFact: {
+          trailingFactFace: TrailingFactFace.Badge,
+          text: 'Този час',
+        },
         testId: 'history-row-appt-dev-1',
       });
       expect(page.visits[3]).toMatchObject({
         title: 'Фейд · Оформяне на брада',
-        trailing: { kind: 'barber', name: 'Иван' },
-        trailingFact: { kind: 'amount' },
+        trailing: { name: 'Иван' },
+        trailingFact: { trailingFactFace: TrailingFactFace.Amount },
       });
     });
 
@@ -1778,8 +1789,11 @@ describe('medalDetailVm', () => {
         'appt-hist-c1-21',
       ]);
       expect(page.visits[0]).toMatchObject({
-        outcome: 'open',
-        trailingFact: { kind: 'badge', text: 'Този час' },
+        outcome: VisitRowOutcome.Open,
+        trailingFact: {
+          trailingFactFace: TrailingFactFace.Badge,
+          text: 'Този час',
+        },
       });
       expect(page.progress.thisVisit).not.toBeNull();
       // Мартин's cut in the chair counts towards «Класическа подстрижка», not «Фейд».

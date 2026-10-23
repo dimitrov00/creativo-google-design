@@ -5,7 +5,8 @@ import {
   reflectComponentType,
 } from '@angular/core';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { VisitListPaging, VisitListState } from '../visit-list/visit-list';
+import type { LoadState } from '@creativo/shared/view-state';
+import type { VisitListPaging } from '../visit-list/visit-list';
 import type {
   VisitListStyle,
   VisitPerspective,
@@ -67,7 +68,7 @@ describe('lib-visits-browser, the public API', () => {
       InputSignal<VisitListStyle>
     >();
     expectTypeOf<VisitsBrowser['state']>().toEqualTypeOf<
-      InputSignal<VisitListState>
+      InputSignal<LoadState>
     >();
     expectTypeOf<VisitsBrowser['paging']>().toEqualTypeOf<
       InputSignal<VisitListPaging | null>

@@ -61,7 +61,7 @@
   }
 </ui-flow>
 
-@switch (vm.cardLoadState) { @case (CardLoadState.Loading) {
+@switch (vm.loadState) { @case (LoadState.Loading) {
 <!-- The first page on its way: three months of two rows. -->
 <div
   class="client-ledger__placeholders"
@@ -106,7 +106,7 @@
   </div>
   }
 </div>
-} @case (CardLoadState.Failed) {
+} @case (LoadState.Failed) {
 <!-- The first page did not come: one notice, one retry. -->
 <ui-notice
   uiTone="neutral"
@@ -127,8 +127,8 @@
     {{ w.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case (CardLoadState.Ready) { @if (vm.groups.length === 0) { @if (vm.filter
-=== all) {
+} @case (LoadState.Ready) { @if (vm.groups.length === 0) { @if (vm.filter ===
+all) {
 <!-- No entry yet. -->
 <ui-empty-state data-testid="ledger-empty">
   <p uiText uiFont="callout" uiForegroundStyle="secondary">
@@ -161,12 +161,12 @@
   testIdPrefix="ledger"
   [headingLevel]="3"
 />
-} @if (vm.paging; as paging) { @if (paging.kind !== 'end' || vm.groups.length >
-0) {
+} @if (vm.paging; as paging) { @if (paging.pagingState !== PagingState.End ||
+vm.groups.length > 0) {
 <!-- LF/LG · the foot: more to read, a page on its way, one that did not
      come, or the end (said under a list, never under nothing). -->
 <div class="client-ledger__foot">
-  @switch (paging.kind) { @case ('more') {
+  @switch (paging.pagingState) { @case (PagingState.More) {
   <button
     type="button"
     uiButton
@@ -178,7 +178,7 @@
   >
     {{ w.visitsModule.more }}
   </button>
-  } @case ('loading') {
+  } @case (PagingState.Loading) {
   <button
     type="button"
     uiButton
@@ -191,7 +191,7 @@
   >
     {{ w.visitsModule.more }}
   </button>
-  } @case ('failed') {
+  } @case (PagingState.Failed) {
   <button
     type="button"
     uiButton
@@ -203,7 +203,7 @@
   >
     {{ w.visitsModule.retry }}
   </button>
-  } @case ('end') {
+  } @case (PagingState.End) {
   <p
     uiText
     uiFont="footnote"

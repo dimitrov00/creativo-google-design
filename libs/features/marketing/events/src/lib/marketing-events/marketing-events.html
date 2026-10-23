@@ -35,17 +35,18 @@
           </button>
         </ui-stack>
 
-        @if (state(); as current) { @switch (current.kind) { @case ('loading') {
+        @if (state(); as current) { @switch (current.loadState) { @case
+        (LoadState.Loading) {
         <ui-stack uiSpacing="tight">
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
           <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
         </ui-stack>
-        } @case ('error') {
+        } @case (LoadState.Failed) {
         <ui-card data-testid="events-error">
           {{ t('programs.events.empty.title') }}
         </ui-card>
-        } @case ('ready') { @if (current.events.length === 0) {
+        } @case (LoadState.Ready) { @if (current.data.length === 0) {
         <ui-card data-testid="events-empty">
           <ui-stack uiSpacing="tight">
             @if (tab() === 'upcoming') {
@@ -74,7 +75,7 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="events-list">
-          @for (event of current.events; track event.id) {
+          @for (event of current.data; track event.id) {
           <a
             uiListRow
             [uiInteractive]="true"

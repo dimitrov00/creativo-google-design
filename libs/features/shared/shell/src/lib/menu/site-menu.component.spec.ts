@@ -12,6 +12,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
@@ -25,12 +26,18 @@ import type {
 } from '@core/ports';
 import { BirthDate, Principal } from '@core/components';
 import type { Appointment, InboxNotification, User } from '@core/entities';
-import { Result as EcsResult, RepositoryError, UserId } from '@core/primitives';
+import {
+  Result as EcsResult,
+  RepositoryError,
+  UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
 import {
   locationFixture,
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
@@ -38,6 +45,7 @@ import {
   memoryProgramsWorld,
   principalFixture,
   registeredUserFixture,
+  utcMs,
 } from '@core/testing';
 import { SiteMenuComponent } from './site-menu.component';
 
@@ -121,6 +129,8 @@ describe('SiteMenuComponent', () => {
     profile?: User | null;
     /** The shops the zone is read from — the centre shop unless given. */
     locations?: LocationLoadPorts;
+    /** The clock's pinned instant — the fixture instant unless given. */
+    now?: UtcEpochMs;
   }) {
     const principal: Principal = inputs.isAuthed
       ? ACTIVE_PRINCIPAL
@@ -144,6 +154,8 @@ describe('SiteMenuComponent', () => {
           provide: DEFAULT_LOCATION_PORTS,
           useValue: memoryDefaultLocationPorts(),
         },
+        // …on the injected clock.
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts(inputs.now) },
         {
           provide: AVATAR_PORTS,
           useValue: {
@@ -634,21 +646,16 @@ describe('SiteMenuComponent', () => {
      * under it. Pinned on exactly that date, the shop's own day.
      */
     it('subtitles itself with the day the schedule opens on — the weekday short, so the longest date stays one line', async () => {
-      vi.useFakeTimers({ toFake: ['Date'] });
-      vi.setSystemTime(new Date('2026-09-17T10:00:00+03:00'));
-      try {
-        const fixture = await render({
-          open: true,
-          isAuthed: true,
-          isStaffMember: true,
-        });
-        const date = fixture.nativeElement.querySelector(
-          '[data-testid="menu-staff-day-date"]',
-        );
-        expect(date!.textContent!.trim()).toBe('чт, 17 септември');
-      } finally {
-        vi.useRealTimers();
-      }
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        now: utcMs('2026-09-17T07:00:00Z'),
+      });
+      const date = fixture.nativeElement.querySelector(
+        '[data-testid="menu-staff-day-date"]',
+      );
+      expect(date!.textContent!.trim()).toBe('чт, 17 септември');
     });
 
     /**

@@ -6,7 +6,7 @@ import {
   ServiceVariantId,
   defect,
 } from '@core/primitives';
-import { ServiceTerms } from '@core/components';
+import { CompositionKind, ServiceTerms } from '@core/components';
 import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
 
 /**
@@ -67,7 +67,15 @@ export interface ServiceVariantVm {
 
 export interface ServiceVm {
   readonly id: string;
-  readonly kind: 'single' | 'bundle';
+  /**
+   * Single or bundle — the catalogue's own `CompositionKind` (reused, never
+   * re-spelled); an unspecified composition draws as a single service, so
+   * the view model never carries `UNSPECIFIED`.
+   */
+  readonly compositionKind: Exclude<
+    CompositionKind,
+    typeof CompositionKind.Unspecified
+  >;
   readonly name: Localized;
   readonly description: Localized;
   readonly coverSrc?: string;

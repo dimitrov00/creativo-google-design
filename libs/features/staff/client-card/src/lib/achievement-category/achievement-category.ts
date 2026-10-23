@@ -26,6 +26,7 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { achievementScopeKey } from '../achievements.presenter';
 import type { AchievementScope } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
@@ -127,10 +128,10 @@ export class AchievementCategoryPage {
     );
   });
 
-  protected readonly ready = computed(() => {
-    const state = this.state();
-    return state.kind === 'ready' ? state : null;
-  });
+  protected readonly ready = computed(() => LoadSlice.dataOf(this.state()));
+
+  /** Where the page stands, for the template's switch. */
+  protected readonly LoadState = LoadState;
 
   protected readonly words = this.store.words;
 

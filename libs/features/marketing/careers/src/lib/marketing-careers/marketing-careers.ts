@@ -32,11 +32,7 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
-
-type PositionsListState =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'error' }
-  | { readonly kind: 'ready'; readonly positions: readonly Position[] };
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
@@ -49,7 +45,7 @@ const STATUS_TONES = {
  *  landing hiring teaser's Instagram-only "Apply" CTA with a real
  *  destination. Structure mirrors `client-appointments`: a page-scoped
  *  `toSignal` over the live read (`POSITION_READ_PORTS`, open roles only),
- *  a `loading | error | ready` state union, `ui-list-group` for the list
+ *  the shared `LoadSlice` read state, `ui-list-group` for the list
  *  body (no `ui-divider`s — the seam is the separator), a hand-composed
  *  empty state falling back to the shop's Instagram link. Chrome is the
  *  real site header/footer (`@creativo/features/shared/shell`), solid
@@ -84,17 +80,19 @@ export class MarketingCareers {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The dictionary, for the template's `@case`s (never bare literals). */
+  protected readonly LoadState = LoadState;
 
   private readonly result = toSignal(
     this.positions.observePositions(PositionStatus.Open),
     { initialValue: undefined },
   );
 
-  protected readonly state = computed<PositionsListState>(() => {
+  protected readonly state = computed<LoadSlice<readonly Position[]>>(() => {
     const result = this.result();
-    if (result === undefined) return { kind: 'loading' };
-    if (!result.ok) return { kind: 'error' };
-    return { kind: 'ready', positions: result.value };
+    if (result === undefined) return LoadSlice.loading;
+    if (!result.ok) return LoadSlice.failed;
+    return LoadSlice.ready(result.value);
   });
 
   constructor() {

@@ -15,6 +15,7 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
+  CLOCK_PORTS,
   INBOX_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
@@ -37,6 +38,7 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiListGroup, UiListRow } from '@creativo/ui/patterns';
+import { formatInstant } from '@creativo/ui/wall-clock';
 import { SessionIdentityService } from '../identity/session-identity.service';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
 
@@ -97,6 +99,8 @@ export class SiteMenuComponent {
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
   private readonly session = inject(AUTH_SESSION_PORTS);
+  /** The injected clock — the schedule row's date reads it on every open. */
+  private readonly clock = inject(CLOCK_PORTS);
 
   /**
    * The shop's zone — the default location's (Law 7.2, F-4: no zone
@@ -186,12 +190,12 @@ export class SiteMenuComponent {
   protected readonly todayLabel = computed(() => {
     const zone = this.shopZone();
     if (zone === null) return null;
-    return new Intl.DateTimeFormat(this.lang() === 'en' ? 'en-GB' : 'bg-BG', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'long',
-      timeZone: zone,
-    }).format(new Date(this.openedAt()));
+    return formatInstant(
+      this.openedAt(),
+      zone,
+      this.lang() === 'en' ? 'en-GB' : 'bg-BG',
+      { weekday: 'short', day: 'numeric', month: 'long' },
+    );
   });
 
   /**
@@ -209,9 +213,9 @@ export class SiteMenuComponent {
   /**
    * Recomputed on every open, so a menu left mounted across midnight does
    * not keep naming yesterday. `computed` needs a signal to depend on, and
-   * `Date.now()` is not one — this is that dependency.
+   * the clock's reading is not one — this is that dependency.
    */
-  private readonly openedAt = signal(Date.now());
+  private readonly openedAt = signal(this.clock.nowUtcMs());
 
   /** The portrait's headline: the name, or — for a session with no name
    *  stamped — the identifier itself rather than an empty line. */
@@ -254,7 +258,7 @@ export class SiteMenuComponent {
       this.identity.refreshAvatar();
       // …and re-reads the clock, so the schedule row's date is right on a
       // menu opened after midnight in a session left running overnight.
-      this.openedAt.set(Date.now());
+      this.openedAt.set(this.clock.nowUtcMs());
     });
   }
 

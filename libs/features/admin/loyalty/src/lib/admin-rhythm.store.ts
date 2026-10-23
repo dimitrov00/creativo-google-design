@@ -70,6 +70,7 @@ import {
   type RhythmRuleWords,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import {
   RHYTHM_PREVIEW_DELAY_MS,
   rhythmPreviewOf,
@@ -80,25 +81,12 @@ import {
 
 // ── What the page reads ────────────────────────────────────────────────────
 
-/**
- * Where one read stands: a skeleton, the content, or «Опитай пак» — the
- * discriminator of {@link Slice}, named after its field (Law 6, Phase 4a
- * 4A-13). The client card's three states, which a feature cannot import
- * from another feature.
+/*
+ * Where one read stands — a skeleton, the content, or «Опитай пак» — is the
+ * shared `LoadState` on a `LoadSlice` (`@creativo/shared/view-state`, UI
+ * residue cleanup UR-2): this page reads the ONE vocabulary every screen
+ * reads, never a local copy of it.
  */
-export const RhythmLoadState = {
-  Loading: 'LOADING',
-  Ready: 'READY',
-  Failed: 'FAILED',
-} as const;
-export type RhythmLoadState =
-  (typeof RhythmLoadState)[keyof typeof RhythmLoadState];
-
-/** One read as the page draws it — its {@link RhythmLoadState}, and the data once ready. */
-export type Slice<T> =
-  | { readonly rhythmLoadState: typeof RhythmLoadState.Loading }
-  | { readonly rhythmLoadState: typeof RhythmLoadState.Ready; readonly data: T }
-  | { readonly rhythmLoadState: typeof RhythmLoadState.Failed };
 
 /** The business has ONE rhythm rule (§4.1): the recommended rule's id. */
 export const ADMIN_RHYTHM_STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
@@ -340,9 +328,6 @@ function headAfterWithdrawal(head: AdminRhythmHead): AdminRhythmHead | null {
 
 const laterOf = (a: LocalDate, b: LocalDate): LocalDate => (a > b ? a : b);
 
-const LOADING: Slice<never> = { rhythmLoadState: RhythmLoadState.Loading };
-const FAILED: Slice<never> = { rhythmLoadState: RhythmLoadState.Failed };
-
 /** The rule moved under the draft: what the draft was made on, against what the head now holds. */
 const staleAgainst = (
   base: AdminRhythmHead | null,
@@ -452,9 +437,7 @@ export class AdminRhythmStore {
   private readonly _zone = signal<TimeZone | null>(null);
   /** The shop's zone the page words a stamp's day in; `null` until the first `load` has read it. */
   readonly zone: Signal<TimeZone | null> = this._zone.asReadonly();
-  private readonly _loadState = signal<RhythmLoadState>(
-    RhythmLoadState.Loading,
-  );
+  private readonly _loadState = signal<LoadState>(LoadState.Loading);
   /** The head as the stream last said it. */
   private readonly _live = signal<AdminRhythmHead | null>(null);
   /** The head the draft was made on. */
@@ -469,11 +452,12 @@ export class AdminRhythmStore {
     readonly day: LocalDate;
     readonly direction: StreakRuleChange['direction'];
   } | null>(null);
-  private readonly _preview = signal<Slice<StreakPreview> | null>(null);
+  private readonly _preview = signal<LoadSlice<StreakPreview> | null>(null);
   private readonly _previewBusy = signal(false);
   private readonly _previewCapped = signal(false);
-  private readonly _versions =
-    signal<Slice<readonly StreakDefinitionVersion[]>>(LOADING);
+  private readonly _versions = signal<
+    LoadSlice<readonly StreakDefinitionVersion[]>
+  >(LoadSlice.loading);
   private readonly _saving = signal(false);
   private readonly _withdrawing = signal(false);
   private readonly _refusal = signal<AdminRhythmRefusal | null>(null);
@@ -483,13 +467,15 @@ export class AdminRhythmStore {
   // ── The rule as published ────────────────────────────────────────────────
 
   /** The head: the rule in force and the one that waits. Where the shop has published none, the recommended rule. */
-  readonly schedule: Signal<Slice<StreakSchedule>> = computed(() => {
+  readonly schedule: Signal<LoadSlice<StreakSchedule>> = computed(() => {
     const loadState = this._loadState();
     const head = this._live();
     if (head !== null) {
-      return { rhythmLoadState: RhythmLoadState.Ready, data: head.schedule };
+      return LoadSlice.ready(head.schedule);
     }
-    return loadState === RhythmLoadState.Failed ? FAILED : LOADING;
+    return loadState === LoadState.Failed
+      ? LoadSlice.failed
+      : LoadSlice.loading;
   });
 
   /** `false`: the shop has published no rule yet and the form holds the recommended one («Още няма правило»). */
@@ -733,17 +719,17 @@ export class AdminRhythmStore {
       this.tick();
       const definitions = this.definitions;
       if (definitions === null) {
-        this._loadState.set(RhythmLoadState.Failed);
-        this._versions.set(FAILED);
+        this._loadState.set(LoadState.Failed);
+        this._versions.set(LoadSlice.failed);
         return;
       }
-      if (this._live() === null) this._loadState.set(RhythmLoadState.Loading);
+      if (this._live() === null) this._loadState.set(LoadState.Loading);
       const generation = this.generation;
       const ticket = (this.loadTicket += 1);
       this.headTimer = setTimeout(() => {
         this.headTimer = null;
         if (generation === this.generation && this._live() === null) {
-          this._loadState.set(RhythmLoadState.Failed);
+          this._loadState.set(LoadState.Failed);
         }
       }, ADMIN_RHYTHM_READ_TIMEOUT_MS);
       void this.listen(generation, ticket, definitions);
@@ -760,10 +746,10 @@ export class AdminRhythmStore {
     untracked(() => {
       if (this._live() === null) {
         this.load();
-      } else if (this._versions().rhythmLoadState === RhythmLoadState.Failed) {
+      } else if (this._versions().loadState === LoadState.Failed) {
         void this.loadVersions();
       }
-      if (this._preview()?.rhythmLoadState === RhythmLoadState.Failed) {
+      if (this._preview()?.loadState === LoadState.Failed) {
         this.facts?.forget();
         this.previewSoon(0);
       }
@@ -876,7 +862,7 @@ export class AdminRhythmStore {
       if (!zone.ok) {
         if (this._live() === null) {
           this.clearHeadTimer();
-          this._loadState.set(RhythmLoadState.Failed);
+          this._loadState.set(LoadState.Failed);
         }
         return;
       }
@@ -910,14 +896,14 @@ export class AdminRhythmStore {
       // stays open and says the rule again when it can.
       if (this._live() === null) {
         this.clearHeadTimer();
-        this._loadState.set(RhythmLoadState.Failed);
+        this._loadState.set(LoadState.Failed);
       }
       return;
     }
     this.clearHeadTimer();
     const before = this._live();
     this._live.set(head.value);
-    this._loadState.set(RhythmLoadState.Ready);
+    this._loadState.set(LoadState.Ready);
     if (before !== null && versionsOf(before) !== versionsOf(head.value)) {
       void this.loadVersions();
     }
@@ -1037,8 +1023,8 @@ export class AdminRhythmStore {
     if (definitions === null) return;
     const ticket = (this.versionsTicket += 1);
     const generation = this.generation;
-    if (this._versions().rhythmLoadState !== RhythmLoadState.Ready)
-      this._versions.set(LOADING);
+    if (this._versions().loadState !== LoadState.Ready)
+      this._versions.set(LoadSlice.loading);
     const read = await this.timed(() =>
       definitions.listStreakDefinitionVersions(
         ADMIN_RHYTHM_STREAK_ID,
@@ -1049,12 +1035,9 @@ export class AdminRhythmStore {
       return;
     }
     if (read.ok) {
-      this._versions.set({
-        rhythmLoadState: RhythmLoadState.Ready,
-        data: read.value,
-      });
-    } else if (this._versions().rhythmLoadState !== RhythmLoadState.Ready) {
-      this._versions.set(FAILED);
+      this._versions.set(LoadSlice.ready(read.value));
+    } else if (this._versions().loadState !== LoadState.Ready) {
+      this._versions.set(LoadSlice.failed);
     }
   }
 
@@ -1316,12 +1299,12 @@ export class AdminRhythmStore {
     if (reads && facts.failed()) {
       // The walk failed and nobody asked for it again: the notice stays,
       // with no skeleton in between, until «Опитай пак».
-      this._preview.set(FAILED);
+      this._preview.set(LoadSlice.failed);
       this._previewBusy.set(false);
       return;
     }
-    if (this._preview()?.rhythmLoadState !== RhythmLoadState.Ready)
-      this._preview.set(LOADING);
+    if (this._preview()?.loadState !== LoadState.Ready)
+      this._preview.set(LoadSlice.loading);
     this._previewBusy.set(true);
     if (reads) void facts.read(this.shopZone());
     const ticket = this.previewTicket;
@@ -1346,15 +1329,16 @@ export class AdminRhythmStore {
     const zone = this.shopZone();
 
     if (!rhythmPreviewReadsFacts(inForce, draft)) {
-      this._preview.set({
-        rhythmLoadState: RhythmLoadState.Ready,
-        data: rhythmPreviewOf({
-          inForce,
-          draft,
-          facts: { clients: [], capped: false },
-          today,
-        }),
-      });
+      this._preview.set(
+        LoadSlice.ready(
+          rhythmPreviewOf({
+            inForce,
+            draft,
+            facts: { clients: [], capped: false },
+            today,
+          }),
+        ),
+      );
       this._previewCapped.set(false);
       this._previewBusy.set(false);
       return;
@@ -1363,14 +1347,15 @@ export class AdminRhythmStore {
     if (stale()) return;
     if (!read.ok) {
       // The answer on screen is about another draft: it goes.
-      this._preview.set(FAILED);
+      this._preview.set(LoadSlice.failed);
       this._previewBusy.set(false);
       return;
     }
-    this._preview.set({
-      rhythmLoadState: RhythmLoadState.Ready,
-      data: rhythmPreviewOf({ inForce, draft, facts: read.value, today }),
-    });
+    this._preview.set(
+      LoadSlice.ready(
+        rhythmPreviewOf({ inForce, draft, facts: read.value, today }),
+      ),
+    );
     this._previewCapped.set(read.value.capped);
     this._previewBusy.set(false);
   }

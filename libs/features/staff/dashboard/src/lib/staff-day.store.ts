@@ -42,7 +42,6 @@ import {
 import {
   type BookingCall,
   Combinability,
-  CouponOccasion,
   ExceptionEffectRule,
   GrantExpiry,
   MinuteRange,
@@ -1633,8 +1632,7 @@ export class StaffDayStore {
       // The coupon's moment (revision 3 §4.6): the client card heads a
       // birthday gift with its band only when the coupon says so — a
       // grant that reaches it without one is a plain ticket, every day.
-      occasion:
-        coupon.couponOccasion === CouponOccasion.Birthday ? 'birthday' : null,
+      couponOccasion: coupon.couponOccasion ?? null,
       // When it lapses, on the shop's calendar: the card's tickets print
       // it as their chip («до 28.10») and put the soonest first; a grant
       // that never lapses prints none (review 2: every ticket was chipless).

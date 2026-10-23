@@ -647,7 +647,8 @@ export class UiPhoneField {
   }
 
   private typeahead(char: string): void {
-    const now = Date.now();
+    // A monotonic interval between keystrokes, not a domain clock.
+    const now = performance.now();
     if (now - this.typeaheadAt > TYPEAHEAD_RESET_MS) this.typeaheadBuffer = '';
     this.typeaheadAt = now;
     this.typeaheadBuffer += char.toLowerCase();

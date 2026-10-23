@@ -18,6 +18,7 @@ import {
 import { AchievementTile } from '../client-achievements/achievement-tile';
 import { ClientCardStore } from '../client-card.store';
 import type { MedalsGlanceVm } from '../client-pages.vm';
+import { RECORD_KIND_WORDS } from '../client-card.words';
 import { glanceCardPaddingFor, sheetColumnOf } from '../sheet-width';
 
 /**
@@ -75,6 +76,8 @@ export class MedalsGlance {
   readonly openRecords = output<void>();
 
   protected readonly words = inject(ClientCardStore).words;
+  /** Each record kind's word: a record's `client-record-{word}` test id. */
+  protected readonly recordKindWords = RECORD_KIND_WORDS;
 
   private readonly column = sheetColumnOf(
     inject<ElementRef<HTMLElement>>(ElementRef),

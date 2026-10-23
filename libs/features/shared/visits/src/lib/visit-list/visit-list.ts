@@ -7,6 +7,8 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
+import { visitPerspectiveWords } from '@creativo/infrastructure/i18n';
 import {
   UiButton,
   UiEmptyState,
@@ -24,24 +26,21 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { VisitRow } from '../visit-row/visit-row';
-import type {
-  VisitListStyle,
+import {
+  type VisitListStyle,
   VisitPerspective,
-  VisitSectionVm,
+  type VisitSectionVm,
 } from '../visit-row.vm';
 
-/** Where the list stands: its rows, their placeholders, or the reason there are none. */
-export type VisitListState = 'loading' | 'ready' | 'error';
-
 /**
- * The foot of a paged list — `more`: another page waits («Покажи още»);
- * `loading`: it is on its way (the button's own ring); `failed`: it did not
- * come («Опитай пак»); `end`: nothing older is left, and `endLabel` says
- * so in the host's words («Това е всичко · първото посещение е на …»), or
- * nothing when null.
+ * The foot of a paged list, on the shared `pagingState` — `MORE`: another
+ * page waits («Покажи още»); `LOADING`: it is on its way (the button's own
+ * ring); `FAILED`: it did not come («Опитай пак»); `END`: nothing older is
+ * left, and `endLabel` says so in the host's words («Това е всичко ·
+ * първото посещение е на …»), or nothing when null.
  */
 export interface VisitListPaging {
-  readonly kind: 'more' | 'loading' | 'failed' | 'end';
+  readonly pagingState: PagingState;
   readonly endLabel: string | null;
 }
 
@@ -94,14 +93,19 @@ export interface VisitListPaging {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.data-list-style]': 'listStyle()',
-    '[attr.data-perspective]': 'perspective()',
+    '[attr.data-perspective]': 'perspectiveWord()',
   },
 })
 export class VisitList {
   readonly sections = input.required<readonly VisitSectionVm[]>();
   readonly perspective = input.required<VisitPerspective>();
   readonly listStyle = input<VisitListStyle>('insetGrouped');
-  readonly state = input<VisitListState>('ready');
+  /**
+   * Where the list stands: its rows (`READY`), their placeholders
+   * (`LOADING`), or the reason there are none (`FAILED`). `EMPTY` is never
+   * passed: an empty list is the host's words under `READY`.
+   */
+  readonly state = input<LoadState>(LoadState.Ready);
   /**
    * How many placeholder rows stand in while the first page loads — in
    * EACH group, when the host asks for more than one.
@@ -133,10 +137,21 @@ export class VisitList {
   /** The whole list, again, after it failed. */
   readonly retry = output<void>();
 
+  /** The template's dictionaries, for its `@case`s. */
+  protected readonly LoadState = LoadState;
+  protected readonly PagingState = PagingState;
+
+  /** The perspective as the host prints it: `client` · `staff` (`visitPerspectiveWords`). */
+  protected readonly perspectiveWord = computed(
+    () => visitPerspectiveWords[this.perspective()],
+  );
+
   protected readonly prefix = computed(
     () =>
       this.testIdPrefix() ??
-      (this.perspective() === 'staff' ? 'history' : 'appointments'),
+      (this.perspective() === VisitPerspective.Staff
+        ? 'history'
+        : 'appointments'),
   );
 
   protected readonly plain = computed(() => this.listStyle() === 'plain');
@@ -150,7 +165,7 @@ export class VisitList {
   protected readonly foot = computed<VisitListPaging | null>(() => {
     const paging = this.paging();
     return paging === null ||
-      (paging.kind === 'end' &&
+      (paging.pagingState === PagingState.End &&
         (!paging.endLabel || this.sections().length === 0))
       ? null
       : paging;
@@ -177,7 +192,12 @@ export class VisitList {
   }
 
   protected more(): void {
-    const kind = this.paging()?.kind;
-    if (kind === 'more' || kind === 'failed') this.loadMore.emit();
+    const pagingState = this.paging()?.pagingState;
+    if (
+      pagingState === PagingState.More ||
+      pagingState === PagingState.Failed
+    ) {
+      this.loadMore.emit();
+    }
   }
 }

@@ -7,6 +7,7 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { CompositionKind } from '@core/components';
 import { UiIcon, UiMediaCard } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -103,7 +104,7 @@ import {
             }
           </ui-stack>
 
-          @if (service().kind === 'bundle') {
+          @if (service().compositionKind === CompositionKind.Bundle) {
             <span
               uiOverlayTrailing
               class="cr-services__bundle-chip"
@@ -241,4 +242,6 @@ export class ServiceTileComponent {
 
   protected readonly content = inject(LandingContentService);
   protected readonly servicePriceFrom = servicePriceFrom;
+  /** The dictionary, for the template's bundle mark (never a bare literal). */
+  protected readonly CompositionKind = CompositionKind;
 }

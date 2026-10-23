@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   UiDateField,
   UiDateFieldBlurEvent,
+  UiDateFieldFill,
   UiDateFieldParts,
 } from './date-field';
 
@@ -171,13 +172,17 @@ describe('UiDateField', () => {
     fixture.nativeElement
       .querySelector('ui-date-field')
       .dispatchEvent(new FocusEvent('focusout', { relatedTarget: null }));
-    expect(host.blurs.at(-1)).toEqual({ kind: 'empty' });
+    expect(host.blurs.at(-1)).toEqual({
+      uiDateFieldFill: UiDateFieldFill.Empty,
+    });
 
     type('day', '03');
     fixture.nativeElement
       .querySelector('ui-date-field')
       .dispatchEvent(new FocusEvent('focusout', { relatedTarget: null }));
-    expect(host.blurs.at(-1)).toEqual({ kind: 'partial' });
+    expect(host.blurs.at(-1)).toEqual({
+      uiDateFieldFill: UiDateFieldFill.Partial,
+    });
 
     type('month', '07');
     type('year', '1990');
@@ -185,7 +190,7 @@ describe('UiDateField', () => {
       .querySelector('ui-date-field')
       .dispatchEvent(new FocusEvent('focusout', { relatedTarget: null }));
     expect(host.blurs.at(-1)).toEqual({
-      kind: 'complete',
+      uiDateFieldFill: UiDateFieldFill.Complete,
       parts: { day: 3, month: 7, year: 1990 },
     });
   });

@@ -10,6 +10,7 @@ import {
 import { LocalDate } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
+import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
   UiFontDirective,
   UiForegroundStyleDirective,
@@ -37,13 +38,10 @@ export interface UiMonthPickerRelative {
   readonly label: string;
 }
 
-const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-
-function addDays(dayKey: UiDayKey, delta: number): UiDayKey {
-  const [year, month, day] = dayKey.split('-').map(Number);
-  const at = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
-  at.setUTCDate(at.getUTCDate() + delta);
-  return at.toISOString().slice(0, 10);
+/** The 1st of a `YYYY-MM` month as a shop day, or `null` when it is not one. */
+function firstOfMonth(month: string): LocalDate | null {
+  const first = LocalDate.parse(`${month}-01`);
+  return first.ok ? first.value : null;
 }
 
 /**
@@ -172,13 +170,15 @@ export class UiMonthPicker {
    * a stand-alone month is title case, and Apple's picker follows it.
    */
   protected readonly monthLabel = computed(() => {
-    const [year, month] = this.shownMonth().split('-').map(Number);
+    const first = firstOfMonth(this.shownMonth());
+    if (first === null) return '';
     const locale = this.uiLocale();
-    const label = new Intl.DateTimeFormat(locale, {
+    // The shared wall-clock face of `@creativo/ui/wall-clock` (cached per
+    // locale, read on the civil axis) — never a formatter of this picker's.
+    const label = formatWallClock(first, null, locale, {
       month: 'long',
       year: 'numeric',
-      timeZone: 'UTC',
-    }).format(new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1)));
+    });
     return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
   });
 
@@ -190,24 +190,19 @@ export class UiMonthPicker {
    * bespoke abbreviator, which is a second answer to a question the platform
    * has already answered per locale.
    */
-  protected readonly weekdays = computed(() => {
-    const locale = this.uiLocale();
-    // 2026-08-03 is a Monday; walking seven from it labels the key in order.
-    return Array.from({ length: 7 }, (_, index) =>
-      new Intl.DateTimeFormat(locale, {
-        weekday: 'short',
-        timeZone: 'UTC',
-      }).format(new Date(Date.UTC(2026, 7, 3 + index))),
-    );
-  });
+  protected readonly weekdays = computed(() =>
+    // The shared Monday-first `short` row of `@creativo/ui/wall-clock`,
+    // cached per locale — never a formatter of this picker's own.
+    formatWeekdayLabels(this.uiLocale()),
+  );
 
   /** The month as weeks of cells, `null` padding either end. */
   protected readonly weeks = computed(() => {
     // Monday-first, padded to whole weeks (`CalendarGridSystem.monthGrid`);
     // a weekday is civil arithmetic on the `LocalDate`, so no zone is read.
-    const first = LocalDate.parse(`${this.shownMonth()}-01`);
-    if (!first.ok) return [];
-    return CalendarGridSystem.monthGrid(first.value, []).map((week) =>
+    const first = firstOfMonth(this.shownMonth());
+    if (first === null) return [];
+    return CalendarGridSystem.monthGrid(first, []).map((week) =>
       week.map((cell): { day: number; dayKey: UiDayKey } | null =>
         cell.inMonth ? { day: cell.dayOfMonth, dayKey: cell.localDate } : null,
       ),
@@ -223,23 +218,28 @@ export class UiMonthPicker {
     return min !== null && dayKey < min;
   }
 
-  /** Resolved against today, so a relative shortcut cannot drift from it. */
-  protected relativeDay(offset: number): UiDayKey {
+  /**
+   * Resolved against `uiToday`, so a relative shortcut cannot drift from
+   * the shop's own today. Without a valid `uiToday` there is nothing to
+   * resolve against and the shortcut is inert (`null`) — this lib never
+   * reads a device clock (Law 7; ui-residue-cleanup DEP-3).
+   */
+  protected relativeDay(offset: number): UiDayKey | null {
     const today = this.uiToday();
-    const from =
-      today !== null && DAY_KEY.test(today)
-        ? today
-        : new Date().toISOString().slice(0, 10);
-    return addDays(from, offset);
+    if (today === null) return null;
+    const from = LocalDate.parse(today);
+    return from.ok ? LocalDate.addDays(from.value, offset) : null;
   }
 
   protected page(delta: number): void {
-    const [year, month] = this.shownMonth().split('-').map(Number);
-    const at = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1 + delta, 1));
-    this.shownMonth.set(at.toISOString().slice(0, 7));
+    const first = firstOfMonth(this.shownMonth());
+    if (first === null) return;
+    this.shownMonth.set(LocalDate.addMonths(first, delta).slice(0, 7));
   }
 
-  protected pick(dayKey: UiDayKey): void {
+  /** An inert shortcut (`null`) picks nothing. */
+  protected pick(dayKey: UiDayKey | null): void {
+    if (dayKey === null) return;
     this.uiPicked.emit(dayKey);
   }
 }

@@ -61,6 +61,7 @@ import {
   qualifierOptions,
   repairPerYearOptions,
   repairWindowOptions,
+  RhythmEstimate,
   riskLeadOptions,
   ruleDigest,
   sampleLabel,
@@ -569,8 +570,8 @@ describe('previewWords', () => {
 
   it('words the clients, three figures with their deltas, and the two halves', () => {
     const words = previewWords(context, estimate, false, 1000);
-    expect(words.kind).toBe('estimate');
-    if (words.kind !== 'estimate') return;
+    expect(words.rhythmEstimate).toBe(RhythmEstimate.Estimate);
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate) return;
     expect(words.clients).toBe('214 клиенти с посещение за 12 месеца');
     expect(words.capped).toBeNull();
     expect(
@@ -593,7 +594,8 @@ describe('previewWords', () => {
       false,
       1000,
     );
-    if (words.kind !== 'estimate') throw new Error('estimate');
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
     expect(words.summary).toBe('1 се връща в ритъм\u00a0· 1 излиза от ритъм');
     expect(
       previewWords(context, { ...estimate, clients: 1 }, false, 1000),
@@ -602,12 +604,14 @@ describe('previewWords', () => {
 
   it('says where the walk stopped', () => {
     const words = previewWords(context, estimate, true, 1000);
-    if (words.kind !== 'estimate') throw new Error('estimate');
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
     // Bulgarian groups from five digits (CLDR's minimum grouping), so a
     // thousand prints whole; English groups it.
     expect(words.capped).toBe('от първите 1000 клиенти');
     const english = previewWords(contextOf('en'), estimate, true, 1000);
-    if (english.kind !== 'estimate') throw new Error('estimate');
+    if (english.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
     expect(english.capped).toBe('of the first 1,000 clients');
   });
 
@@ -618,7 +622,8 @@ describe('previewWords', () => {
       false,
       1000,
     );
-    if (words.kind !== 'estimate') throw new Error('estimate');
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
     expect(words.metrics).toEqual([]);
     expect(words.summary).toBe(
       'никой не се връща\u00a0· никой не излиза от ритъм',
@@ -637,7 +642,7 @@ describe('previewWords', () => {
         1000,
       ),
     ).toEqual({
-      kind: 'unavailable',
+      rhythmEstimate: RhythmEstimate.Unavailable,
       reason: 'Прегледът не е наличен за избрани услуги.',
     });
   });

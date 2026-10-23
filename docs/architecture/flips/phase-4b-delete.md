@@ -1754,6 +1754,7 @@ functions --skip-nx-cache` + `check-functions-deps.mjs` pass (4 runtime
     SDK or a Transloco interface) — so §0's "REMOVED" stays accurate about
     the 3-tier shape and the plan says why the class guard stays
     suffix-scoped (§3). Alternative: convert them in 4b (out of scope).
+    **Closed 2026-10-23** by the UI residue cleanup (`ui-residue-cleanup.md` UR-7/UR-8): the production classes (these three plus `FrameFullscreen` and `ConsoleUiIconReporter`) are factories, the two test doubles stay under the test-support ignores of `creativo/no-undecorated-class`, which now covers every production file (HANDOFF §3.3).
 
 ---
 

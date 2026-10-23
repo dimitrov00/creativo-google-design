@@ -177,12 +177,12 @@
           [uiRevealDelay]="300"
         >
           @for (part of legalParts(t('auth.identify.legal')); track $index) {
-          @switch (part.kind) { @case ('terms') {<a
+          @switch (part.consentPart) { @case (ConsentPart.Terms) {<a
             uiLink
             href="/terms"
             data-testid="auth-terms-link"
             >{{ t('auth.identify.terms') }}</a
-          >} @case ('privacy') {<a
+          >} @case (ConsentPart.Privacy) {<a
             uiLink
             href="/privacy"
             data-testid="auth-privacy-link"

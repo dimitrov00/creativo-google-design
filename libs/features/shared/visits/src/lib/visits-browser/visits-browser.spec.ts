@@ -25,19 +25,22 @@ import {
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
+  VISITS_TIME_ZONE,
   catalogueTranslator,
   georgiStaffRows,
   provideVisitsCatalogues,
-  visitsNowMs,
+  visitsNow,
 } from '../testing/visit-fixtures';
 import { VisitFilterMenu } from '../visit-filter-menu/visit-filter-menu';
-import type { VisitListPaging, VisitListState } from '../visit-list/visit-list';
+import { VisitGrain } from '@core/systems';
+import { LoadState, PagingState } from '@creativo/shared/view-state';
+import type { VisitListPaging } from '../visit-list/visit-list';
 import { visitRowOf, visitWordsOf } from '../visit-row.presenter';
-import type {
+import {
   VisitFilter,
-  VisitListStyle,
+  type VisitListStyle,
   VisitPerspective,
-  VisitSectionVm,
+  type VisitSectionVm,
 } from '../visit-row.vm';
 import {
   sectionVisits,
@@ -59,7 +62,7 @@ import { VisitsBrowser, type VisitsBrowserBleed } from './visits-browser';
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(FIXTURE_TODAY);
+const NOW = visitsNow(FIXTURE_TODAY);
 
 // ── The observer's stand-in ─────────────────────────────────────────────
 
@@ -132,7 +135,7 @@ class FakeObserver {
         @if (funnel()) {
           <lib-visit-filter
             visitPillsAction
-            perspective="staff"
+            [perspective]="VisitPerspective.Staff"
             testIdPrefix="history-filter"
             [(value)]="filter"
           />
@@ -156,10 +159,11 @@ class FakeObserver {
   `,
 })
 class Host {
+  protected readonly VisitPerspective = VisitPerspective;
   readonly sections = signal<readonly VisitSectionVm[]>([]);
-  readonly perspective = signal<VisitPerspective>('staff');
+  readonly perspective = signal<VisitPerspective>(VisitPerspective.Staff);
   readonly listStyle = signal<VisitListStyle>('insetGrouped');
-  readonly state = signal<VisitListState>('ready');
+  readonly state = signal<LoadState>(LoadState.Ready);
   readonly paging = signal<VisitListPaging | null>(null);
   readonly prefix = signal<string | null>(null);
   readonly pills = signal(true);
@@ -167,7 +171,7 @@ class Host {
   readonly interactive = signal<boolean | null>(null);
   readonly funnel = signal(true);
   readonly scrolls = signal(true);
-  readonly filter = signal<VisitFilter>('all');
+  readonly filter = signal<VisitFilter>(VisitFilter.All);
   readonly opened: string[] = [];
   loads = 0;
   retries = 0;
@@ -217,24 +221,25 @@ let staffSections: readonly VisitSectionVm[];
 
 /** «Моите часове»: the client's own rows, by month. */
 function clientSections(): readonly VisitSectionVm[] {
-  const words = visitWordsOf(BG, 'bg', 'client');
+  const words = visitWordsOf(BG, 'bg', VisitPerspective.Client);
   return sectionVisits(
     GEORGI_VISITS.map((visit) =>
       visitRowOf(
         visit,
         {
-          perspective: 'client',
-          grain: 'month',
+          perspective: VisitPerspective.Client,
+          grain: VisitGrain.Month,
           subjectUserId: GEORGI_UID,
           currentAppointmentId: null,
-          nowMs: NOW_MS,
+          now: NOW,
+          timeZone: VISITS_TIME_ZONE,
           locale: 'bg',
           words,
         },
         VISITS_LOOKUP,
       ),
     ),
-    { grain: 'month', testIdPrefix: 'appointments', labels: LABELS },
+    { grain: VisitGrain.Month, testIdPrefix: 'appointments', labels: LABELS },
   );
 }
 
@@ -244,10 +249,15 @@ beforeAll(async () => {
       history: memoryAppointmentReadPorts(GEORGI_VISITS),
       photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
-    { words: visitWordsOf(BG, 'bg', 'staff'), nowMs: NOW_MS, grain: 'month' },
+    {
+      words: visitWordsOf(BG, 'bg', VisitPerspective.Staff),
+      now: NOW,
+      timeZone: VISITS_TIME_ZONE,
+      grain: VisitGrain.Month,
+    },
   );
   staffSections = sectionVisits(rows, {
-    grain: 'month',
+    grain: VisitGrain.Month,
     testIdPrefix: 'history',
     labels: {
       ...LABELS,
@@ -409,7 +419,7 @@ describe('VisitsBrowser · the body of both visit screens', () => {
 
   it('draws «Моите часове» with today’s ids, to the viewport’s edge, its rows the controls', async () => {
     const { fixture, all, byId, settle } = await mount((h) => {
-      h.perspective.set('client');
+      h.perspective.set(VisitPerspective.Client);
       h.bleed.set('viewport');
       h.funnel.set(false);
       h.sections.set(clientSections());
@@ -463,13 +473,13 @@ describe('VisitsBrowser · the body of both visit screens', () => {
   it('hands the list’s events on, under the list’s own names', async () => {
     const { fixture, byId, settle } = await mount((h) => {
       h.sections.set(staffSections);
-      h.paging.set({ kind: 'more', endLabel: null });
+      h.paging.set({ pagingState: PagingState.More, endLabel: null });
     });
     byId<HTMLButtonElement>('history-more')?.click();
     await settle();
     expect(fixture.componentInstance.loads).toBe(1);
 
-    fixture.componentInstance.state.set('error');
+    fixture.componentInstance.state.set(LoadState.Failed);
     await settle();
     byId<HTMLButtonElement>('history-retry')?.click();
     await settle();
@@ -502,7 +512,7 @@ describe('VisitsBrowser · one control at the rail’s end', () => {
 
   it('keeps the funnel over a filtered empty, the pills gone, the host’s own words under it', async () => {
     const { byId, all } = await mount((h) => {
-      h.filter.set('no_show');
+      h.filter.set(VisitFilter.NoShow);
       h.sections.set([]);
     });
 
@@ -526,7 +536,7 @@ describe('VisitsBrowser · one control at the rail’s end', () => {
 
 describe('VisitsBrowser · the states', () => {
   it('stands three pill capsules over two groups of two rows while the first page loads', async () => {
-    const { byId, all } = await mount((h) => h.state.set('loading'));
+    const { byId, all } = await mount((h) => h.state.set(LoadState.Loading));
 
     expect(
       byId('history-pills-skeleton')?.querySelectorAll('ui-skeleton').length,
@@ -546,7 +556,7 @@ describe('VisitsBrowser · the states', () => {
 
   it('draws no pill over a list that did not load, even for sections it still holds', async () => {
     const { byId, all } = await mount((h) => {
-      h.state.set('error');
+      h.state.set(LoadState.Failed);
       h.sections.set(staffSections);
     });
     expect(all('[data-testid="history-pill"]')).toEqual([]);

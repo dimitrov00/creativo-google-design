@@ -24,7 +24,11 @@ import {
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
-import type { VisitCardVm, VisitLinePart } from './visit-card.vm';
+import {
+  type VisitCardVm,
+  type VisitLinePart,
+  visitCardSlotWords,
+} from './visit-card.vm';
 
 // The card's pure builders (`visitCardOf`, `waitlistCardOf`) ride this
 // file's line in the lib's barrel (contract delta K3-3).
@@ -112,7 +116,7 @@ function hung(text: string): string {
   styleUrl: './visit-card.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[attr.data-kind]': 'vm().kind',
+    '[attr.data-kind]': 'slotWord()',
     '[attr.data-header-prominence]': 'headerProminence()',
   },
 })
@@ -131,6 +135,11 @@ export class VisitCard {
   readonly open = output<void>();
   /** A thumb was tapped: the photo's id. */
   readonly openPhoto = output<string>();
+
+  /** The slot as the host prints it — `last` · `next` · `waitlist` (`visitCardSlotWords`). */
+  protected readonly slotWord = computed(
+    () => visitCardSlotWords[this.vm().visitCardSlot],
+  );
 
   /** What names the static card: its sentence, by id. */
   protected readonly nameId = `visit-card-name-${nextCard++}`;

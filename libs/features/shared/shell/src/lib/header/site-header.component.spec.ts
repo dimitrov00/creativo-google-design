@@ -12,6 +12,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
@@ -24,6 +25,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
@@ -127,6 +129,8 @@ async function configure(
         provide: DEFAULT_LOCATION_PORTS,
         useValue: memoryDefaultLocationPorts(),
       },
+      // …and reads the injected clock for that day.
+      { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
       // The trigger's account circle reads its photo off the shared
       // session identity (no avatar uploaded).
       { provide: AVATAR_PORTS, useValue: memoryAvatarPorts() },

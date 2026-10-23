@@ -9,6 +9,7 @@ import type { Barber, Service } from '@core/entities';
 import {
   BarberOffering,
   BarberStatus,
+  CompositionKind,
   LocalizedText,
   ServiceComposition,
   ServiceStatus,
@@ -121,7 +122,7 @@ function serviceFromVm(vm: ServiceVm): Service {
     ),
   );
   const composition: ServiceComposition =
-    vm.kind === 'bundle'
+    vm.compositionKind === CompositionKind.Bundle
       ? ServiceComposition.bundle(
           (vm.includes ?? []).map((id) => ServiceId.of(id)),
         )

@@ -42,7 +42,7 @@ import {
 } from '@core/components';
 import { BookingCartSystem, ZonedTimeSystem } from '@core/systems';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { formatWeekdayLabels } from '@creativo/features/shared/visits';
+import { formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -135,7 +135,7 @@ import {
  * capacity projection knows nothing of services. Left alone, a shop the
  * party cannot be served at would show a calendar of live days whose every
  * sheet says "busy", with a waitlist bell for a shop that will never serve
- * it. So the step asks the same rule first ({@link shopReach}): such a shop
+ * it. So the step asks the same rule first ({@link shopCoverage}): such a shop
  * greys the calendar and SAYS why, with the one tap to a shop that can.
  *
  * ### Everything here is an OFFER
@@ -187,6 +187,8 @@ export class BookingScheduleStep {
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
+  /** The shop-coverage answers, for the template. */
+  protected readonly ShopCoverage = ShopCoverage;
 
   /**
    * Tenant policy, live (`SCHEDULING_READ_PORTS.observePolicy`).
@@ -304,13 +306,13 @@ export class BookingScheduleStep {
   /**
    * Can the chosen shop serve this visit, and if not, where can it be?
    *
-   * - `served`: the grid answers. Under "any shop" that holds whenever ONE
+   * - `SERVED`: the grid answers. Under "any shop" that holds whenever ONE
    *   active shop can, since the grid runs only those.
-   * - `elsewhere`: the chosen shop does not offer something on the visit,
+   * - `ELSEWHERE`: the chosen shop does not offer something on the visit,
    *   and another shop does. The way there is one tap: the shop, when one
    *   alone can serve it, else "any shop", which runs exactly the ones that
    *   can.
-   * - `nowhere`: no active shop offers everything on the visit together.
+   * - `NOWHERE`: no active shop offers everything on the visit together.
    *   Only a change to the services can fix that. A move whose CARRIED seats
    *   no one active shop serves together never gets here: the shell ends it
    *   in the call panel (`carriedSeatsInReach` asks about all of them at
@@ -321,23 +323,23 @@ export class BookingScheduleStep {
    * answer (it would read as "does not offer your services", which is not
    * why), so it counts as served.
    */
-  protected readonly shopReach = computed<ShopReach>(() => {
+  protected readonly shopCoverage = computed<ShopCoverageVerdict>(() => {
     const serving = this.servingShops();
     if (serving === null) return SERVED;
     const chosen = this.store.locationId();
     if (chosen === null) {
-      return serving.length > 0 ? SERVED : { kind: 'nowhere' };
+      return serving.length > 0 ? SERVED : NOWHERE;
     }
     const chosenShop = this.location();
     if (!chosenShop || serving.includes(chosen)) return SERVED;
-    if (serving.length === 0) return { kind: 'nowhere' };
+    if (serving.length === 0) return NOWHERE;
 
     const only = serving.length === 1 ? serving[0] : undefined;
     const target = only
       ? this.locations().find((shop) => shop.id === only)
       : undefined;
     return {
-      kind: 'elsewhere',
+      shopCoverage: ShopCoverage.Elsewhere,
       shop: this.shopName(chosenShop),
       target: target
         ? { locationId: target.id, name: this.shopName(target) }
@@ -346,12 +348,12 @@ export class BookingScheduleStep {
   });
 
   /**
-   * `shopReach` as the calendar needs it: a boolean, so a fresh notice for
-   * the same answer (a locale change renames the shops) does not re-derive
-   * every cell of the run.
+   * `shopCoverage` as the calendar needs it: a boolean, so a fresh notice
+   * for the same answer (a locale change renames the shops) does not
+   * re-derive every cell of the run.
    */
   private readonly shopServed = computed(
-    () => this.shopReach().kind === 'served',
+    () => this.shopCoverage().shopCoverage === ShopCoverage.Served,
   );
 
   private shopName(shop: {
@@ -431,7 +433,7 @@ export class BookingScheduleStep {
   /** One cell's resting facts — everything except whether it is selected. */
   private describe(cell: AvailabilityDayCell): ScheduleDayVm {
     // A shop that cannot serve the visit has no bookable day, whatever its
-    // chairs say: the grid runs nothing there (`shopReach`).
+    // chairs say: the grid runs nothing there (`shopCoverage`).
     const bookable = this.shopServed() && this.isBookable(cell);
     const date = formatBookingDay(cell.localDate, this.content.locale());
     return {
@@ -829,7 +831,7 @@ export class BookingScheduleStep {
    * a control that vanishes when you toggle a neighbouring one is the bar
    * churn this step was rebuilt to stop.
    *
-   * Never at a shop that cannot serve the visit (`shopReach`): its sheet
+   * Never at a shop that cannot serve the visit (`shopCoverage`): its sheet
    * could only say "busy" and offer a waitlist for times that shop will
    * never have for this party.
    */
@@ -918,11 +920,23 @@ interface CapacityQuery {
 /** One exact day's documents, or why they could not be read. */
 type DayDocsResult = Result<DayDocs, RepositoryError>;
 
-/** Can the chosen shop serve the visit — see `BookingScheduleStep.shopReach`. */
-type ShopReach =
-  | { readonly kind: 'served' }
+/** Can the chosen shop serve the visit — the field `shopCoverage`, the ONLY
+ *  source of these strings (Law 6); see `BookingScheduleStep.shopCoverage`. */
+const ShopCoverage = {
+  /** The grid answers: the chosen shop (or one of "any shop") serves it. */
+  Served: 'SERVED',
+  /** The chosen shop does not, another active shop does. */
+  Elsewhere: 'ELSEWHERE',
+  /** No active shop offers everything on the visit together. */
+  Nowhere: 'NOWHERE',
+} as const;
+type ShopCoverage = (typeof ShopCoverage)[keyof typeof ShopCoverage];
+
+/** The answer to `shopCoverage`, with what the notice names. */
+type ShopCoverageVerdict =
+  | { readonly shopCoverage: typeof ShopCoverage.Served }
   | {
-      readonly kind: 'elsewhere';
+      readonly shopCoverage: typeof ShopCoverage.Elsewhere;
       /** The chosen shop's name. */
       readonly shop: string;
       /** The one shop that can serve it, or `null` for "any shop". */
@@ -931,6 +945,7 @@ type ShopReach =
         readonly name: string;
       } | null;
     }
-  | { readonly kind: 'nowhere' };
+  | { readonly shopCoverage: typeof ShopCoverage.Nowhere };
 
-const SERVED: ShopReach = { kind: 'served' };
+const SERVED: ShopCoverageVerdict = { shopCoverage: ShopCoverage.Served };
+const NOWHERE: ShopCoverageVerdict = { shopCoverage: ShopCoverage.Nowhere };

@@ -67,7 +67,7 @@
                   <ui-status-indicator
                     [uiTone]="
                       status.isOpen
-                        ? status.kind === 'closesSoon'
+                        ? status.shopOpening === ShopOpening.ClosesSoon
                           ? 'warning'
                           : 'success'
                         : 'destructive'
@@ -79,29 +79,29 @@
                         : t('landing.location.closed')
                     }}
                     <span uiDetail>
-                      @switch (status.kind) {
-                        @case ('closesAt') {
+                      @switch (status.shopOpening) {
+                        @case (ShopOpening.ClosesAt) {
                           {{
                             t('landing.location.closesAt', {
                               time: status.time,
                             })
                           }}
                         }
-                        @case ('closesSoon') {
+                        @case (ShopOpening.ClosesSoon) {
                           {{
                             t('landing.location.closesSoon', {
                               time: status.time,
                             })
                           }}
                         }
-                        @case ('opensAt') {
+                        @case (ShopOpening.OpensAt) {
                           {{
                             t('landing.location.opensAt', {
                               time: status.time,
                             })
                           }}
                         }
-                        @case ('opensOn') {
+                        @case (ShopOpening.OpensOn) {
                           {{
                             t('landing.location.opensOn', {
                               day: t(
@@ -283,7 +283,7 @@
                   class="location-sheet__hours-label"
                   [uiTone]="
                     status.isOpen
-                      ? status.kind === 'closesSoon'
+                      ? status.shopOpening === ShopOpening.ClosesSoon
                         ? 'warning'
                         : 'success'
                       : 'destructive'
@@ -295,27 +295,27 @@
                       : t('landing.location.closed')
                   }}
                   <span uiDetail>
-                    @switch (status.kind) {
-                      @case ('closesAt') {
+                    @switch (status.shopOpening) {
+                      @case (ShopOpening.ClosesAt) {
                         {{
                           t('landing.location.closesAt', {
                             time: status.time,
                           })
                         }}
                       }
-                      @case ('closesSoon') {
+                      @case (ShopOpening.ClosesSoon) {
                         {{
                           t('landing.location.closesSoon', {
                             time: status.time,
                           })
                         }}
                       }
-                      @case ('opensAt') {
+                      @case (ShopOpening.OpensAt) {
                         {{
                           t('landing.location.opensAt', { time: status.time })
                         }}
                       }
-                      @case ('opensOn') {
+                      @case (ShopOpening.OpensOn) {
                         {{
                           t('landing.location.opensOn', {
                             day: t(

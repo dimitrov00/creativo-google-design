@@ -9,16 +9,34 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { Principal } from '@core/components';
-import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  AUTH_SESSION_PORTS,
+  CLOCK_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { ageDayOf } from '@creativo/features/client/account-state';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
 
+/** Where a sitemap row leads — the field `footerLinkTarget` (Law 6). */
+const FooterLinkTarget = {
+  /** An in-page anchor of the landing (`/#work`). */
+  Hash: 'HASH',
+  /** An app route, through `routerLink`. */
+  Router: 'ROUTER',
+  /** Another site, in a new tab. */
+  External: 'EXTERNAL',
+  /** A `tel:` link. */
+  Tel: 'TEL',
+} as const;
+type FooterLinkTarget =
+  (typeof FooterLinkTarget)[keyof typeof FooterLinkTarget];
+
 /** One sitemap row — the four destination shapes the footer links out to. */
 interface FooterLink {
   readonly labelKey: string;
-  readonly kind: 'hash' | 'router' | 'external' | 'tel';
+  readonly footerLinkTarget: FooterLinkTarget;
   /** href for hash/external/tel, routerLink path for router. */
   readonly target: string;
   readonly queryParams?: Record<string, string>;
@@ -69,6 +87,10 @@ export interface FooterFlagshipLocation {
 })
 export class SiteFooterComponent {
   private readonly session = inject(AUTH_SESSION_PORTS);
+  private readonly clock = inject(CLOCK_PORTS);
+
+  /** The dictionary, for the template's link branches (never bare literals). */
+  protected readonly FooterLinkTarget = FooterLinkTarget;
 
   /** The flagship shop anchors the Visit column's directions/call rows
    *  (v2 `locations[0]`) — `null` on pages with no location data, in
@@ -89,12 +111,12 @@ export class SiteFooterComponent {
       ? [
           {
             labelKey: 'landing.footer.links.directions',
-            kind: 'external',
+            footerLinkTarget: FooterLinkTarget.External,
             target: flagship.mapUrl,
           },
           {
             labelKey: 'landing.footer.links.call',
-            kind: 'tel',
+            footerLinkTarget: FooterLinkTarget.Tel,
             target: `tel:${flagship.phoneE164}`,
           },
         ]
@@ -105,27 +127,27 @@ export class SiteFooterComponent {
         links: [
           {
             labelKey: 'landing.footer.nav.work',
-            kind: 'hash',
+            footerLinkTarget: FooterLinkTarget.Hash,
             target: '/#work',
           },
           {
             labelKey: 'landing.footer.nav.team',
-            kind: 'hash',
+            footerLinkTarget: FooterLinkTarget.Hash,
             target: '/#team',
           },
           {
             labelKey: 'landing.footer.nav.careers',
-            kind: 'router',
+            footerLinkTarget: FooterLinkTarget.Router,
             target: '/careers',
           },
           {
             labelKey: 'landing.footer.nav.courses',
-            kind: 'router',
+            footerLinkTarget: FooterLinkTarget.Router,
             target: '/courses',
           },
           {
             labelKey: 'landing.footer.nav.events',
-            kind: 'router',
+            footerLinkTarget: FooterLinkTarget.Router,
             target: '/events',
           },
         ],
@@ -136,7 +158,7 @@ export class SiteFooterComponent {
           ...visitLinks,
           {
             labelKey: 'landing.footer.links.hours',
-            kind: 'hash',
+            footerLinkTarget: FooterLinkTarget.Hash,
             target: '/#visit',
           },
         ],
@@ -146,24 +168,24 @@ export class SiteFooterComponent {
         links: [
           {
             labelKey: 'landing.footer.links.instagram',
-            kind: 'external',
+            footerLinkTarget: FooterLinkTarget.External,
             target: 'https://instagram.com/creativo.barbershop',
             social: true,
           },
           {
             labelKey: 'landing.footer.links.book',
-            kind: 'router',
+            footerLinkTarget: FooterLinkTarget.Router,
             target: '/book',
           },
           this.isAuthed()
             ? {
                 labelKey: 'landing.footer.links.account',
-                kind: 'router',
+                footerLinkTarget: FooterLinkTarget.Router,
                 target: '/account',
               }
             : {
                 labelKey: 'landing.footer.links.login',
-                kind: 'router',
+                footerLinkTarget: FooterLinkTarget.Router,
                 target: '/auth',
                 queryParams: { redirect: '/account' },
               },
@@ -172,5 +194,10 @@ export class SiteFooterComponent {
     ];
   });
 
-  protected readonly year = new Date().getFullYear();
+  /**
+   * The copyright year — the civil year of the one `CLOCK_PORTS` reading,
+   * on the UTC calendar (`ageDayOf`, the zone-less civil day): read once,
+   * like the device year it replaces.
+   */
+  protected readonly year = ageDayOf(this.clock).slice(0, 4);
 }

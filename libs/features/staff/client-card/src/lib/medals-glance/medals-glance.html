@@ -66,13 +66,15 @@
       uiForegroundStyle="secondary"
       class="medals-glance__facts fact-line"
       aria-hidden="true"
-      >@for (record of card.records; track record.kind) {<span
+      >@for (record of card.records; track record.personalRecordKind) {<span
         class="medals-glance__record fact-line__fact"
         >{{ record.label }}
         <span
           uiForegroundStyle="primary"
           uiWeight="medium"
-          [attr.data-testid]="'client-record-' + record.kind"
+          [attr.data-testid]="
+            'client-record-' + recordKindWords[record.personalRecordKind]
+          "
           >{{ record.value }}</span
         ></span
       >}</span
