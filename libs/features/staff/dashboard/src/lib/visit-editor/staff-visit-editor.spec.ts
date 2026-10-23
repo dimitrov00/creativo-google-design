@@ -19,6 +19,7 @@ import {
   CouponOccasion,
   CustomerOrigin,
   DiscountMethod,
+  DiscountSource,
   EditCommand,
   E164,
   FlagName,
@@ -3817,7 +3818,7 @@ describe('StaffVisitEditor', () => {
         clientLabel: 'Георги Петров',
         width: 1600,
         height: 1200,
-        origin: 'shot',
+        photoOrigin: PhotoOrigin.Shot,
         label: null,
       },
       {
@@ -3829,7 +3830,7 @@ describe('StaffVisitEditor', () => {
         clientLabel: 'Георги Петров',
         width: null,
         height: null,
-        origin: 'shot',
+        photoOrigin: PhotoOrigin.Shot,
         label: null,
       },
     ];
@@ -3843,7 +3844,7 @@ describe('StaffVisitEditor', () => {
       clientLabel: 'Георги Петров',
       width: null,
       height: null,
-      origin: 'library',
+      photoOrigin: PhotoOrigin.Library,
       label: 'Модерна визия',
     };
     const LIBRARY = [
@@ -4745,7 +4746,7 @@ describe('StaffVisitEditor', () => {
       expect(commits[0]).toMatchObject({
         discounts: [
           {
-            source: 'grant',
+            discountSource: DiscountSource.Grant,
             grantId: 'grant-birthday',
             label: 'Рожден ден',
             value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
@@ -5183,7 +5184,7 @@ describe('StaffVisitEditor', () => {
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
       expect(commits[0]).toMatchObject({
-        discounts: [{ source: 'code', code: 'FIRST10' }],
+        discounts: [{ discountSource: DiscountSource.Code, code: 'FIRST10' }],
         vouchers: [
           { voucherId: 'v1', code: 'GIFT2025' },
           { voucherId: 'v2', code: 'GIFT99' },
@@ -5489,7 +5490,7 @@ describe('StaffVisitEditor', () => {
       expect(commits[0]).toMatchObject({
         discounts: [
           {
-            source: 'manual',
+            discountSource: DiscountSource.Manual,
             value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
             grantId: null,
             code: null,
@@ -5503,7 +5504,7 @@ describe('StaffVisitEditor', () => {
         visit({
           discounts: [
             {
-              source: 'code',
+              discountSource: DiscountSource.Code,
               label: 'Първо посещение',
               value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
               grantId: null,
@@ -7548,7 +7549,9 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     editor().committed.subscribe((commit) => commits.push(commit));
     find('staff-visit-save')?.click();
     expect(commits[0]).toMatchObject({
-      discounts: [{ source: 'grant', grantId: GEORGI_GRANT.grantId }],
+      discounts: [
+        { discountSource: DiscountSource.Grant, grantId: GEORGI_GRANT.grantId },
+      ],
     });
   });
 

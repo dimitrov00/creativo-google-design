@@ -8,12 +8,11 @@ import {
 import {
   FreezeReason,
   STREAK_EXCUSES,
-  StreakExcuse,
+  type StreakExcuse,
   StreakInterval,
   type StreakIntervalRule,
   StreakOnBreak,
   StreakPeriodMark,
-  type StreakPeriodReason,
   StreakPhase,
   StreakQualifier,
   StreakRuleParameter,
@@ -31,7 +30,11 @@ import type {
   RhythmRuleWords,
   VisitTranslate,
 } from '@creativo/features/shared/visits';
-import { pluralForm } from '@creativo/infrastructure/i18n';
+import {
+  pluralForm,
+  streakPeriodMarkWords,
+  streakPeriodReasonWords,
+} from '@creativo/infrastructure/i18n';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type {
   UiChoiceOption,
@@ -83,37 +86,15 @@ const QUALIFIER_KEY = {
   [StreakQualifier.Categories]: 'categories',
 } as const satisfies Record<StreakQualifier, string>;
 
-/** A closed period's mark, as the track draws it. */
-const PERIOD_MARK = {
-  [StreakPeriodMark.Kept]: 'kept',
-  [StreakPeriodMark.Protected]: 'protected',
-  [StreakPeriodMark.Repaired]: 'repaired',
-  [StreakPeriodMark.Missed]: 'missed',
-} as const satisfies Record<StreakPeriodMark, UiStreakPeriod['mark']>;
-
-/** What covered a period, as its key (`clientCard.rhythm.reason.*`). */
-const PERIOD_REASON_KEY = {
-  [FreezeReason.Freeze]: 'freeze',
-  [FreezeReason.Pause]: 'pause',
-  [FreezeReason.ClientPause]: 'clientPause',
-  [StreakExcuse.ShopClosure]: 'shopClosure',
-  [StreakExcuse.BarberAbsence]: 'barberAbsence',
-  [StreakExcuse.StaffCancelled]: 'staffCancelled',
-  [StreakExcuse.ClosedDays]: 'closedDays',
-} as const satisfies Record<StreakPeriodReason, string>;
-
-/** «shopClosure» — an excuse as its key and its test id (`admin.rhythm.excuses.*`). */
+/**
+ * «shopClosure» — an excuse as its key and its test id
+ * (`admin.rhythm.excuses.*`): the word of the shared
+ * `streakPeriodReasonWords` table (`@creativo/infrastructure/i18n`), ONE
+ * table for the `StreakExcuse` family.
+ */
 export function excuseKey(excuse: StreakExcuse): string {
-  switch (excuse) {
-    case StreakExcuse.ShopClosure:
-      return 'shopClosure';
-    case StreakExcuse.BarberAbsence:
-      return 'barberAbsence';
-    case StreakExcuse.StaffCancelled:
-      return 'staffCancelled';
-    case StreakExcuse.ClosedDays:
-      return 'closedDays';
-  }
+  // eslint-disable-next-line security/detect-object-injection -- `excuse` is a member of the closed dictionary the table is total over.
+  return streakPeriodReasonWords[excuse];
 }
 
 /** The menu's id and key for a miss that holds the count. */
@@ -850,7 +831,10 @@ export function samplePeriods(
   const { today, lang } = context;
   const closed = state.periods.map((fact, index): UiStreakPeriod => {
     const period = monthWord(fact.on, lang);
-    const mark = PERIOD_MARK[fact.streakPeriodMark];
+    // The track's mark (`@creativo/infrastructure/i18n`'s one table), typed
+    // against the DS's own words so a drifted word fails here.
+    const mark: UiStreakPeriod['mark'] =
+      streakPeriodMarkWords[fact.streakPeriodMark];
     const id = `${mark}-${fact.on}-${index}`;
     switch (fact.streakPeriodMark) {
       case StreakPeriodMark.Kept:
@@ -878,7 +862,7 @@ export function samplePeriods(
           description: t('clientCard.rhythm.mark.protected', {
             period,
             reason: t(
-              `clientCard.rhythm.reason.${PERIOD_REASON_KEY[fact.periodReason ?? FreezeReason.Freeze]}`,
+              `clientCard.rhythm.reason.${streakPeriodReasonWords[fact.periodReason ?? FreezeReason.Freeze]}`,
             ),
           }),
         };

@@ -747,21 +747,18 @@ export class ClientCardStore {
       const loadedAccount = LoadSlice.dataOf(account);
       const loadedCatalog = LoadSlice.dataOf(catalog);
       if (loadedAccount === null || loadedCatalog === null) return null;
-      return {
-        loadState: LoadState.Ready,
-        data: {
-          catalog: loadedCatalog,
-          account: loadedAccount,
-          progress: new Map(
-            (LoadSlice.dataOf(progress) ?? []).map((p) => [p.id, p]),
-          ),
-          seasonProgress: new Map(
-            (LoadSlice.dataOf(seasons) ?? []).map((p) => [p.id, p]),
-          ),
-          today,
-          previousVisitAtMs: this.previousVisitAtMs(),
-        },
-      };
+      return LoadSlice.ready({
+        catalog: loadedCatalog,
+        account: loadedAccount,
+        progress: new Map(
+          (LoadSlice.dataOf(progress) ?? []).map((p) => [p.id, p]),
+        ),
+        seasonProgress: new Map(
+          (LoadSlice.dataOf(seasons) ?? []).map((p) => [p.id, p]),
+        ),
+        today,
+        previousVisitAtMs: this.previousVisitAtMs(),
+      });
     });
 
   /** The start of the client's last worked visit before the one on screen — what «Ново» is measured from. */
@@ -979,10 +976,7 @@ export class ClientCardStore {
     } else {
       const capsules = overviewCapsulesVm({ user, stats, nowMs, zone, words });
       if (capsules.shown.length > 0) {
-        overview.capsules = {
-          loadState: LoadState.Ready,
-          data: capsules,
-        };
+        overview.capsules = LoadSlice.ready(capsules);
       }
     }
 
@@ -1002,10 +996,7 @@ export class ClientCardStore {
       } else if (!this.paused()) {
         const reward = this.rewardBesideBirthday();
         if (reward !== null) {
-          overview.reward = {
-            loadState: LoadState.Ready,
-            data: reward,
-          };
+          overview.reward = LoadSlice.ready(reward);
         }
       }
     }
@@ -1055,8 +1046,7 @@ export class ClientCardStore {
           zone,
           words,
         );
-        if (rail.length > 0)
-          overview.photos = { loadState: LoadState.Ready, data: rail };
+        if (rail.length > 0) overview.photos = LoadSlice.ready(rail);
       }
     }
     return overview;
@@ -1086,9 +1076,8 @@ export class ClientCardStore {
     const settled = (slice: LoadSlice<unknown> | null) =>
       slice === null || slice.loadState !== LoadState.Loading;
     if (!settled(waitlist) || !settled(photos)) return LOADING;
-    return {
-      loadState: LoadState.Ready,
-      data: visitCardsVm({
+    return LoadSlice.ready(
+      visitCardsVm({
         appointments: history.appointments,
         subjectUserId: subject.userId,
         subjectCustomerId: this._customerId() ?? null,
@@ -1102,7 +1091,7 @@ export class ClientCardStore {
         zone,
         words,
       }),
-    };
+    );
   }
 
   /**
@@ -1150,7 +1139,7 @@ export class ClientCardStore {
       vouchers: LoadSlice.dataOf(vouchers),
       rhythm: this.rhythm(),
     });
-    return vm === null ? undefined : { loadState: LoadState.Ready, data: vm };
+    return vm === null ? undefined : LoadSlice.ready(vm);
   }
 
   /** G — the built module's gates over the medals in their rings and the records' line. */
@@ -1161,7 +1150,7 @@ export class ClientCardStore {
     if (!gate || data.loadState === LoadState.Loading) return LOADING;
     if (data.loadState === LoadState.Failed) return FAILED;
     const vm = medalsGlanceVm(data.data, ctx);
-    return vm === null ? undefined : { loadState: LoadState.Ready, data: vm };
+    return vm === null ? undefined : LoadSlice.ready(vm);
   }
 
   /**
@@ -1303,9 +1292,8 @@ export class ClientCardStore {
     const usable = this.rewardsUsable();
     const catalog = context.catalog;
     const stats = this.stats();
-    return {
-      loadState: LoadState.Ready,
-      data: walletVm({
+    return LoadSlice.ready(
+      walletVm({
         account: account.data,
         catalog: this._catalog(),
         flags,
@@ -1335,7 +1323,7 @@ export class ClientCardStore {
         // about them (V3-1: nothing breaks).
         nameOf: (id) => catalog.serviceName(id),
       }),
-    };
+    );
   });
 
   /**
@@ -1405,9 +1393,8 @@ export class ClientCardStore {
     const ctx = this.achievementsContext();
     if (data === null || ctx === null) return null;
     if (data.loadState !== LoadState.Ready) return data;
-    return {
-      loadState: LoadState.Ready,
-      data: recordsPageVm({
+    return LoadSlice.ready(
+      recordsPageVm({
         data: data.data,
         ctx,
         stats: this.stats(),
@@ -1415,7 +1402,7 @@ export class ClientCardStore {
         visits: this.loadedVisits(),
         historyComplete: this.historyComplete(),
       }),
-    };
+    );
   });
 
   /**
@@ -1823,7 +1810,7 @@ export class ClientCardStore {
     this._catalog.set(
       loyalty && this.catalogPorts !== null
         ? this.catalogCache !== null
-          ? { loadState: LoadState.Ready, data: this.catalogCache }
+          ? LoadSlice.ready(this.catalogCache)
           : LOADING
         : null,
     );
@@ -1870,7 +1857,7 @@ export class ClientCardStore {
           );
         },
         // No record yet: no projection either — the head's "first visit".
-        () => this._stats.set({ loadState: LoadState.Ready, data: null }),
+        () => this._stats.set(LoadSlice.ready(null)),
         () => this._stats.set(FAILED),
       );
       if (this._context()?.viewer.roles.includes('admin') === true) {
@@ -1906,7 +1893,7 @@ export class ClientCardStore {
       (customerId) => this.loadPhotos(generation, customerId),
       () => {
         if (this._photos() !== null) {
-          this._photos.set({ loadState: LoadState.Ready, data: [] });
+          this._photos.set(LoadSlice.ready([]));
         }
       },
       () => {
@@ -1926,7 +1913,7 @@ export class ClientCardStore {
       (customerId) => this.loadVouchers(generation, customerId),
       () => {
         if (this._vouchers() !== null) {
-          this._vouchers.set({ loadState: LoadState.Ready, data: [] });
+          this._vouchers.set(LoadSlice.ready([]));
         }
       },
       () => {
@@ -1957,7 +1944,7 @@ export class ClientCardStore {
     const result = await this.timed(read);
     if (generation !== this.generation) return false;
     if (result.ok) {
-      target.set({ loadState: LoadState.Ready, data: result.value });
+      target.set(LoadSlice.ready(result.value));
       return true;
     }
     if (target()?.loadState !== LoadState.Ready) {
@@ -2162,10 +2149,7 @@ export class ClientCardStore {
           settle();
           if (generation !== this.generation) return;
           if (result.ok) {
-            this._waitlist.set({
-              loadState: LoadState.Ready,
-              data: result.value,
-            });
+            this._waitlist.set(LoadSlice.ready(result.value));
           } else if (this._waitlist()?.loadState !== LoadState.Ready) {
             this._waitlist.set(FAILED);
           }
@@ -2245,15 +2229,9 @@ export class ClientCardStore {
       },
       // No record yet: no loyalty account either.
       () => {
-        if (account)
-          this._account.set({ loadState: LoadState.Ready, data: null });
-        if (progress)
-          this._progress.set({ loadState: LoadState.Ready, data: [] });
-        if (seasons)
-          this._seasonProgress.set({
-            loadState: LoadState.Ready,
-            data: [],
-          });
+        if (account) this._account.set(LoadSlice.ready(null));
+        if (progress) this._progress.set(LoadSlice.ready([]));
+        if (seasons) this._seasonProgress.set(LoadSlice.ready([]));
       },
       () => {
         const fail = <T>(target: WritableSignal<LoadSlice<T> | null>) => {
@@ -2276,10 +2254,7 @@ export class ClientCardStore {
     const ports = this.catalogPorts;
     if (ports === null || this._catalog() === null) return;
     if (this.catalogCache !== null) {
-      this._catalog.set({
-        loadState: LoadState.Ready,
-        data: this.catalogCache,
-      });
+      this._catalog.set(LoadSlice.ready(this.catalogCache));
       return;
     }
     this._catalog.set(LOADING);
@@ -2290,10 +2265,7 @@ export class ClientCardStore {
     if (valid !== null && valid.ok) {
       this.catalogCache = valid.value;
       if (this._catalog() !== null) {
-        this._catalog.set({
-          loadState: LoadState.Ready,
-          data: valid.value,
-        });
+        this._catalog.set(LoadSlice.ready(valid.value));
       }
     } else if (this._catalog()?.loadState !== LoadState.Ready) {
       this._catalog.set(FAILED);
@@ -2345,7 +2317,7 @@ export class ClientCardStore {
       },
       () => {
         if (this._activity() !== null) {
-          this._activity.set({ loadState: LoadState.Ready, data: [] });
+          this._activity.set(LoadSlice.ready([]));
         }
       },
       () => {

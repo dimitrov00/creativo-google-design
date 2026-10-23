@@ -26,7 +26,7 @@ import {
   VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
-import { pluralForm } from '@creativo/infrastructure/i18n';
+import { daypartWords, pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
@@ -75,13 +75,6 @@ import {
  * bill is `BillingSystem`'s. The words, the clock's formatting and the
  * money's stay here.
  */
-
-/** The catalogue's key segment of each part of the day (`*.daypart.morning`, …). */
-const DAYPART_KEY = {
-  [Daypart.Morning]: 'morning',
-  [Daypart.Afternoon]: 'afternoon',
-  [Daypart.Evening]: 'evening',
-} as const satisfies Record<Daypart, string>;
 
 /** The first minute of a shop day — where a waiting request's row starts. */
 const DAY_START: MinuteOfDay = MinuteOfDay.ofProven(0);
@@ -246,7 +239,7 @@ export function visitWaitlistWordsOf(
     name: (services, when) =>
       translate('clientCard.visits.waitlistName', { services, when }),
     daypart: (part) =>
-      translate(`clientCard.visits.daypart.${DAYPART_KEY[part]}`),
+      translate(`clientCard.visits.daypart.${daypartWords[part]}`),
     moreDays: (count) =>
       translate('clientCard.visits.waitlistMoreDays', { count }),
     moreRequests: (count) =>

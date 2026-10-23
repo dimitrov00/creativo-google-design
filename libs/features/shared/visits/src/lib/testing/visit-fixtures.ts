@@ -480,7 +480,7 @@ function photo(
   photoId: string,
   appointmentId: string,
   takenAtIso: string,
-  origin: 'shot' | 'library' = 'shot',
+  photoOrigin: PhotoOrigin = PhotoOrigin.Shot,
 ): AppointmentPhoto {
   return {
     id: AppointmentPhotoId.of(photoId),
@@ -494,8 +494,8 @@ function photo(
     url: `https://example.test/photos/${photoId}.jpg`,
     width: 1100,
     height: 1400,
-    photoOrigin: origin === 'library' ? PhotoOrigin.Library : PhotoOrigin.Shot,
-    label: origin === 'library' ? 'Фейд · витрина' : null,
+    photoOrigin,
+    label: photoOrigin === PhotoOrigin.Library ? 'Фейд · витрина' : null,
   };
 }
 
@@ -504,7 +504,12 @@ export const GEORGI_PHOTOS: readonly AppointmentPhoto[] = [
   photo('photo-sep-1', 'appt-sep', '2026-09-04T07:40:00.000Z'),
   photo('photo-aug-1', 'appt-aug', '2026-08-12T15:25:00.000Z'),
   photo('photo-aug-2', 'appt-aug', '2026-08-12T15:26:00.000Z'),
-  photo('photo-aug-cover', 'appt-aug', '2026-08-12T15:27:00.000Z', 'library'),
+  photo(
+    'photo-aug-cover',
+    'appt-aug',
+    '2026-08-12T15:27:00.000Z',
+    PhotoOrigin.Library,
+  ),
 ];
 
 /** One whole-day or windowed day a request watches (`HH:mm` windows). */

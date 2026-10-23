@@ -553,10 +553,12 @@ and entropy reads are the injected `CLOCK_PORTS` clock, `ZonedTimeSystem`,
 persisted format on a `CLOCK_PORTS` stamp (plan UR-11). What stays, by name:
 the media cache's retry jitter and the confetti (`Math.random()`), and the
 two sanctioned adapters (`browser-runtime.adapter.ts`,
-`auth-session.adapter.ts`). Enforced, not trusted: three lint rules in the
+`auth-session.adapter.ts`). Enforced, not trusted: four lint rules in the
 root config — `creativo/no-undecorated-class` on every production `.ts` of
-the apps and libs, `creativo/no-ambient-clock` and
-`creativo/no-generic-discriminator` on the UI layer — scoped by path-fragment
+the apps and libs, `creativo/no-ambient-clock`,
+`creativo/no-generic-discriminator` and `creativo/no-hand-built-load-slice`
+(a `LoadSlice` comes from its companion, never a hand-built literal; added by
+the review fixes) on the UI layer — scoped by path-fragment
 options so they hold under the nx executor and under directory lookup alike,
 and runbook §4.9 (gates 1–8). Since the class rule recognises an Angular
 class by its called decorator rather than by a file name, the class guard no
@@ -582,7 +584,7 @@ the now-label minute and the bare static `perspective` attribute the hosts
 no longer carry (no reader; `data-perspective` unchanged). Integrator
 rulings: the `/account` card's failed zone read prints the card's existing
 `ACCOUNTS_REPOSITORY_FAILURE` line (DEP-5), the path-scope helper of the
-three rules lives in `tools/lint-rules/path-scope.mjs`.
+rules lives in `tools/lint-rules/path-scope.mjs`.
 
 **Carried forward — follow-up work, not migration (4a plan 4A-13, UI residue
 plan UR-13; none of it blocks anything):** the **view-model pass** (UR-13 f,
@@ -618,8 +620,7 @@ bare literals that are neither a `kind`/`type`/`status` field nor a load state
 (the dashboard's `StaffView` and `discardPending`, the grid's `Placement`,
 `readoutTone`, marketing-events' `EventsTab`, admin-programs' `ProgramsTab`,
 the rhythm page's `confirm` switch, the editor's `discountKind()`/`by`/
-`source`/`refusal`, the menu's `lang() === 'en'`), a cached parts face in
-`@creativo/ui/wall-clock` for the dashboard's `formatTitled`, the
+`refusal`, the menu's `lang() === 'en'`), the
 `angular-ui.md` sentence that still names the i18n lib as the formatting home
 (UR plan OQ-7, the owner's text), and a pre-existing defect the smoke
 surfaced, identical on `c77e932`: `StaffDashboard.periodLabel` formats
@@ -644,8 +645,8 @@ pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
 # and §4.8 (since Phase 4b: the deletion — no legacy path, alias, tag, package
 # or dotted key; the root ECS lint blocks; the firestore.rules test inputs)
 # and §4.9 (since the UI residue cleanup: no shim or legacy table, no kind/status
-# discriminator, no undecorated class, no ambient clock — the three rules
-# proven under both ESLint base paths, with a canary)
+# discriminator, no undecorated class, no ambient clock, no hand-built load
+# slice — the four rules proven under both ESLint base paths, with a canary)
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
@@ -668,15 +669,18 @@ the project alone before calling it a regression.
 
 **Reference numbers on the UI residue cleanup tree (2026-10-23)** — a drop
 without a reason is a lost case: 46 projects lint, 0 errors; `run-many -t
-test` 46 projects, 10,832 passed + the 6 baseline reds, `verify-tools` 79
-node tests, `lint-rules` 9 files and 221 tests; ecs-core 272 files, 4,530
+test` 46 projects, 10,864 passed + the 6 baseline reds (10,843 before the
+second review round's 21 `no-hand-built-load-slice` cases, 10,832 before
+the first round's 11), `verify-tools` 79
+node tests, `lint-rules` 10 files and 242 tests; ecs-core 272 files, 4,530
 tests, 97.85 % statements (12,108/12,373), 98.82 % lines; functions 37
 files, 937 tests; `test:emulator` 65 + 255; `e2e:web` 41 passed + the 19
 baseline failures; `build web` initial 604.22 kB (598.10 kB on the 4b tree,
 598.08 kB on `c77e932`; the difference is Angular's `resource()` chunk, UI
 residue plan §8.1); the functions dist's four runtime dependencies
 (`firebase-admin`, `firebase-functions`, `libphonenumber-js`, `rxjs`);
-runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 24.
+runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 25
+(24 before the review's gate 6b).
 
 ## 5. Operating rules
 
@@ -744,8 +748,9 @@ runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 24
   test doubles stay under its test-support ignores (end of §3.3).
 - UI residue plan (`docs/architecture/flips/ui-residue-cleanup.md`) §10:
   OQ-1 … OQ-12 proceed on their defaults — the landing locations line and
-  today row on the SHOP's clock (DEP-1), the footer year on the UTC calendar
-  (`ageDayOf`, DEP-2), the month picker's shortcuts inert without `uiToday`
+  today row on the SHOP's clock (DEP-1), the footer year on the SHOP's
+  calendar (the default location's zone, the UTC calendar only while that
+  read is pending — DEP-2 as amended by the review), the month picker's shortcuts inert without `uiToday`
   (DEP-3), `/account`'s card waiting inside its pending state for the zone
   (DEP-4) and reading "now" in the appointment's OWN location's zone, a failed
   read showing the existing `'error'` state (DEP-5 — integrator ruling: with

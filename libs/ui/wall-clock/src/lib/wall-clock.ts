@@ -98,6 +98,24 @@ export function formatWallClock(
 }
 
 /**
+ * The PARTS of a wall-clock reading (`formatToParts`, cached formatter) —
+ * for a face that reads the locale's own order or touches one part: the
+ * day pill's shared month said once on the side the locale puts it, the
+ * dashboard's title-cased month. The reading is {@link formatWallClock}'s,
+ * on the UTC axis.
+ */
+export function wallClockParts(
+  localDate: LocalDate,
+  minute: MinuteOfDay | number | null,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormatPart[] {
+  return dateFormat(locale, 'UTC', options).formatToParts(
+    civilMs(localDate, minute ?? 0),
+  );
+}
+
+/**
  * The same reading as {@link formatWallClock}, joined from its PARTS
  * (`formatToParts`) — the form a heading takes: ICU keeps the narrow
  * no-break space inside a part («2026\u202fг.» in bg) that the one-string
@@ -110,8 +128,7 @@ export function formatWallClockParts(
   locale: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return dateFormat(locale, 'UTC', options)
-    .formatToParts(civilMs(localDate, minute ?? 0))
+  return wallClockParts(localDate, minute, locale, options)
     .map((part) => part.value)
     .join('');
 }

@@ -444,7 +444,7 @@ export default [
     rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
   },
   // ── The UI-residue guards (ui-residue-cleanup.md §3, UR-12) ────────────
-  // Three rules, not `no-restricted-syntax` entries: a later block REPLACES
+  // Four rules, not `no-restricted-syntax` entries: a later block REPLACES
   // that rule's options, and libs/ui/icons turns it off on its non-suffix
   // files, so a selector there could be erased; a separate rule name cannot.
   // Scope is decided INSIDE each rule — `include` / `allowIn` /
@@ -455,7 +455,8 @@ export default [
   // no second path block. Each allowlist entry carries its reason; a new
   // entry is a decision for the plan, not a shortcut. Rules and their
   // RuleTester specs: tools/lint-rules/no-{undecorated-class,ambient-clock,
-  // generic-discriminator}.mjs; runbook §4.9 gate 5 proves both basePaths.
+  // generic-discriminator,hand-built-load-slice}.mjs; runbook §4.9 gate 5
+  // proves both basePaths.
   {
     // CLAUDE.md §2: `class` only in the Angular row — a called `@Component`,
     // `@Directive`, `@Pipe`, `@Injectable` or `@NgModule`. Everything else is
@@ -536,6 +537,26 @@ export default [
             // state.
             '/libs/ui/icons/src/lib/manifest/',
           ],
+        },
+      ],
+    },
+  },
+  {
+    // Reuse, never copy (UR-2): a `LoadSlice` comes from its companion —
+    // `LoadSlice.ready(data)`, `LoadSlice.loading`, `LoadSlice.failed`,
+    // `LoadSlice.empty` — never a hand-built `{ loadState: LoadState.… }`
+    // literal. A literal with any other field or a spread (a paging or page
+    // state) is a different slice type and is not reported.
+    files: ['**/*.ts'],
+    ignores: PRODUCTION_TS_IGNORES,
+    plugins: { creativo },
+    rules: {
+      'creativo/no-hand-built-load-slice': [
+        'error',
+        {
+          include: UI_LAYER_FRAGMENTS,
+          // The companion's own home: it is where the variants are built.
+          allowIn: ['/libs/shared/view-state/'],
         },
       ],
     },

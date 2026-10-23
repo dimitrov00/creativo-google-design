@@ -9,11 +9,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { Principal } from '@core/components';
+import { UTC_ZONE } from '@core/pipelines';
+import { LocalDate } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   AUTH_SESSION_PORTS,
   CLOCK_PORTS,
+  ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
-import { ageDayOf } from '@creativo/features/client/account-state';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
@@ -194,10 +197,27 @@ export class SiteFooterComponent {
     ];
   });
 
+  /** The one `CLOCK_PORTS` reading the copyright year is dated by — read once, like the device year it replaced. */
+  private readonly nowUtcMs = this.clock.nowUtcMs();
+
   /**
-   * The copyright year — the civil year of the one `CLOCK_PORTS` reading,
-   * on the UTC calendar (`ageDayOf`, the zone-less civil day): read once,
-   * like the device year it replaces.
+   * The shop's zone — the default location's (Law 7.2), the session's ONE
+   * read through the root `ShopZoneService` (the site menu asks for the
+   * same signal); `null` until it answers.
    */
-  protected readonly year = ageDayOf(this.clock).slice(0, 4);
+  private readonly shopZone = inject(ShopZoneService).defaultZone();
+
+  /**
+   * The copyright year — the civil year of that reading on the SHOP's
+   * calendar (a displayed "today" is the location's, never the device's
+   * or UTC's). While the zone is on its way the same instant is read on
+   * the UTC calendar, so the legal bar never renders without a year.
+   */
+  protected readonly year = computed(
+    () =>
+      LocalDate.parts(
+        ZonedTimeSystem.toLocal(this.nowUtcMs, this.shopZone() ?? UTC_ZONE)
+          .localDate,
+      ).year,
+  );
 }

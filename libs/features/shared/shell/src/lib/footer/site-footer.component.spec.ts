@@ -11,9 +11,20 @@ import { Observable, of } from 'rxjs';
 import {
   AUTH_SESSION_PORTS,
   CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  LOCATION_LOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import type { LoadLocation } from '@core/ports';
 import type { UtcEpochMs } from '@core/primitives';
-import { memoryAuthSessionPorts, memoryClockPorts, utcMs } from '@core/testing';
+import {
+  locationFixture,
+  memoryAuthSessionPorts,
+  memoryClockPorts,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
+  utcMs,
+} from '@core/testing';
 import { SiteFooterComponent } from './site-footer.component';
 
 const bg: Translation = {
@@ -45,7 +56,10 @@ function provideTestI18n(): EnvironmentProviders[] {
 }
 
 describe('SiteFooterComponent', () => {
-  function configure(now?: UtcEpochMs): Promise<void> {
+  function configure(
+    now?: UtcEpochMs,
+    loadLocation?: LoadLocation,
+  ): Promise<void> {
     return TestBed.configureTestingModule({
       imports: [SiteFooterComponent],
       providers: [
@@ -53,10 +67,28 @@ describe('SiteFooterComponent', () => {
         ...provideTestI18n(),
         // An anonymous visitor (the double's default session).
         { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
-        // The copyright year reads the injected clock.
+        // The copyright year reads the injected clock…
         { provide: CLOCK_PORTS, useValue: memoryClockPorts(now) },
+        // …on the default location's calendar (Europe/Sofia).
+        {
+          provide: LOCATION_LOAD_PORTS,
+          useValue:
+            loadLocation === undefined
+              ? memoryLocationLoadPorts(
+                  memoryProgramsWorld({ locations: [locationFixture()] }),
+                )
+              : { loadLocation },
+        },
+        {
+          provide: DEFAULT_LOCATION_PORTS,
+          useValue: memoryDefaultLocationPorts(),
+        },
       ],
     }).compileComponents();
+  }
+
+  function legalBar(host: HTMLElement): string | undefined {
+    return host.querySelector('span[uifont="caption"]')?.textContent?.trim();
   }
 
   it('renders in the language chosen at bootstrap — its locale toggle, the first to inject the language service, changes nothing mid-render', async () => {
@@ -88,9 +120,34 @@ describe('SiteFooterComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const legal = (fixture.nativeElement as HTMLElement).querySelector(
-      'span[uifont="caption"]',
+    expect(legalBar(fixture.nativeElement)).toBe('© 2027 Creativo · bg');
+  });
+
+  it('dates the legal bar on the SHOP’s calendar — 22:30 UTC on 31 December is already the new year in Sofia', async () => {
+    await configure(utcMs('2026-12-31T22:30:00Z'));
+
+    const fixture = TestBed.createComponent(SiteFooterComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The zone read answers on a later turn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(legalBar(fixture.nativeElement)).toBe('© 2027 Creativo · bg');
+  });
+
+  it('never renders without a year while the shop’s zone is on its way — the same instant on the UTC calendar', async () => {
+    await configure(
+      utcMs('2026-12-31T22:30:00Z'),
+      () => new Promise(() => undefined),
     );
-    expect(legal?.textContent?.trim()).toBe('© 2027 Creativo · bg');
+
+    const fixture = TestBed.createComponent(SiteFooterComponent);
+    // No `whenStable`: the zone read never answers.
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(legalBar(fixture.nativeElement)).toBe('© 2026 Creativo · bg');
   });
 });

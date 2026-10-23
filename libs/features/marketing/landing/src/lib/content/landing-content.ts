@@ -421,23 +421,6 @@ export const SERVICES: readonly ServiceVm[] = [
 
 // ─── Locations ──────────────────────────────────────────────────────────
 
-/** Whether a shop opens on a weekday — the field `dayOpening` (Law 6). */
-export const DayOpening = {
-  /** Open, from `opens` to `closes` (shop wall clock, `HH:mm`). */
-  Open: 'OPEN',
-  /** Closed all day. */
-  Closed: 'CLOSED',
-} as const;
-export type DayOpening = (typeof DayOpening)[keyof typeof DayOpening];
-
-export type DayHoursVm =
-  | {
-      readonly dayOpening: typeof DayOpening.Open;
-      readonly opens: string;
-      readonly closes: string;
-    }
-  | { readonly dayOpening: typeof DayOpening.Closed };
-
 export interface LocationVm {
   readonly id: string;
   readonly name: Localized;
@@ -446,17 +429,8 @@ export interface LocationVm {
   readonly phoneDisplay: string;
   readonly mapUrl: string;
   readonly geo: { readonly lat: number; readonly lng: number };
-  /** ISO order — index 0 is Monday. */
-  readonly hours: readonly DayHoursVm[];
   readonly timezone: string;
 }
-
-const open = (opens: string, closes: string): DayHoursVm => ({
-  dayOpening: DayOpening.Open,
-  opens,
-  closes,
-});
-const closed: DayHoursVm = { dayOpening: DayOpening.Closed };
 
 export const LOCATIONS: readonly LocationVm[] = [
   {
@@ -470,15 +444,6 @@ export const LOCATIONS: readonly LocationVm[] = [
     phoneDisplay: '+359 88 123 4567',
     mapUrl: 'https://maps.google.com/?q=Stara+Zagora+Tsar+Simeon+Veliki+120',
     geo: { lat: 42.4271, lng: 25.6366 },
-    hours: [
-      open('09:00', '20:00'),
-      open('09:00', '20:00'),
-      open('09:00', '20:00'),
-      open('09:00', '20:00'),
-      open('09:00', '21:00'),
-      open('10:00', '18:00'),
-      closed,
-    ],
     timezone: 'Europe/Sofia',
   },
   {
@@ -492,15 +457,6 @@ export const LOCATIONS: readonly LocationVm[] = [
     phoneDisplay: '+359 88 765 4321',
     mapUrl: 'https://maps.google.com/?q=Stara+Zagora+Mladost+Armeyska+14',
     geo: { lat: 42.46, lng: 25.685 },
-    hours: [
-      closed,
-      open('10:00', '19:00'),
-      open('10:00', '19:00'),
-      open('10:00', '19:00'),
-      open('10:00', '19:00'),
-      open('09:00', '16:00'),
-      closed,
-    ],
     timezone: 'Europe/Sofia',
   },
 ];

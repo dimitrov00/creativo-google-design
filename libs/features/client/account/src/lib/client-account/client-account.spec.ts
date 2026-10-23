@@ -17,6 +17,7 @@ import {
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
+  ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import type {
   AppointmentReadPorts,
@@ -72,11 +73,17 @@ function user(birthDate?: string): User {
  * clock, its instant placed in the shop's `zone` (the one field that zone
  * reaches: a temporal entity stores no zone of its own).
  */
-function appointment(zone = 'Europe/Sofia'): Appointment {
+function appointment(
+  zone = 'Europe/Sofia',
+  at: { readonly id: string; readonly startMinute: number } = {
+    id: 'appt_1',
+    startMinute: 600,
+  },
+): Appointment {
   const day = unwrapOk(LocalDate.parse('2030-01-01'));
-  const seat = seatFixture({ startMinutes: minute(600) });
+  const seat = seatFixture({ startMinutes: minute(at.startMinute) });
   return appointmentFixture({
-    id: AppointmentId.of('appt_1'),
+    id: AppointmentId.of(at.id),
     localDate: day,
     startMinutes: seat.startMinutes,
     endMinutes: Seat.endMinutes(seat),
@@ -531,6 +538,44 @@ describe('ClientAccount', () => {
     expect(
       host.querySelector('[data-testid="account-upcoming-book-cta"]'),
     ).toBeNull();
+  });
+
+  it('replaces a drawn card straight with a sooner visit at the same shop — no skeleton between, the shop’s zone read once', async () => {
+    const upcoming$ = new BehaviorSubject<
+      EcsResult<readonly Appointment[], RepositoryError>
+    >(EcsResult.ok([appointment()]));
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      upcoming$,
+    );
+    const zoneOf = vi.spyOn(TestBed.inject(ShopZoneService), 'zoneOf');
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    const card = () =>
+      host.querySelector<HTMLElement>('[data-testid="account-upcoming"]');
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    expect(card()?.getAttribute('aria-label')).toMatch(/10:00, Потвърден$/);
+
+    // A sooner booking at the same shop becomes the soonest.
+    upcoming$.next(
+      EcsResult.ok([
+        appointment(),
+        appointment('Europe/Sofia', { id: 'appt_2', startMinute: 540 }),
+      ]),
+    );
+    // The very next render already draws the new visit — no async hop.
+    fixture.detectChanges();
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    expect(
+      host.querySelector('[data-testid="account-upcoming-skeleton"]'),
+    ).toBeNull();
+    expect(card()?.getAttribute('aria-label')).toMatch(/09:00, Потвърден$/);
+
+    await settle(fixture);
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    expect(card()?.getAttribute('aria-label')).toMatch(/09:00, Потвърден$/);
+    expect(zoneOf).toHaveBeenCalledTimes(1);
   });
 
   it('says on the host whether the profile is complete, with the card gone once it is', async () => {

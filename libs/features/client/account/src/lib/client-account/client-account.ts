@@ -13,7 +13,6 @@ import type { Appointment } from '@core/entities';
 import { Principal, WallTime } from '@core/components';
 import {
   AccountsErrorCode,
-  type AppointmentId,
   type LocationId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -93,12 +92,6 @@ const upcomingStateWords = {
   [LoadState.Failed]: 'error',
   [LoadState.Ready]: 'populated',
 } as const satisfies Record<LoadState, string>;
-
-/** The shown visit and its shop — the key its zone is read once for. */
-interface ShownVisitPlace {
-  readonly appointmentId: AppointmentId;
-  readonly locationId: LocationId;
-}
 
 /** The words the shared card is built from, once the catalogue has loaded. */
 interface CardWords {
@@ -273,35 +266,24 @@ export class ClientAccount {
   );
 
   /**
-   * The shown visit's place — its id and its shop — or `undefined` while no
-   * visit is shown. Equal while the same visit stays at the same shop, so
-   * its zone is read ONCE per visit, not on every snapshot of it.
+   * The shown visit's shop, or `undefined` while no visit is shown — the
+   * zone read's ONE input. A branded string, equal by value: a snapshot of
+   * the same visit, or a sooner visit at the same shop, leaves it as it
+   * was, so the zone is read ONCE per shop and a drawn card is replaced
+   * straight by the next one, never through the skeleton.
    */
-  private readonly shownVisitPlace = computed<ShownVisitPlace | undefined>(
-    () => {
-      const appointment = LoadSlice.dataOf(this.upcoming());
-      return appointment === null
-        ? undefined
-        : {
-            appointmentId: appointment.id,
-            locationId: appointment.locationId,
-          };
-    },
-    {
-      equal: (a, b) =>
-        a?.appointmentId === b?.appointmentId &&
-        a?.locationId === b?.locationId,
-    },
+  private readonly shownLocationId = computed<LocationId | undefined>(
+    () => LoadSlice.dataOf(this.upcoming())?.locationId,
   );
 
   /**
    * The zone the card reads "now" in: the shown visit's OWN shop's (Law
    * 7.2 — the zone belongs to the location, never the device or a default
-   * shop), read once per visit and fed back from the read as a signal.
+   * shop), read once per shop and fed back from the read as a signal.
    */
   private readonly cardZone = resource({
-    params: () => this.shownVisitPlace(),
-    loader: ({ params }) => this.shopZones.zoneOf(params.locationId),
+    params: () => this.shownLocationId(),
+    loader: ({ params }) => this.shopZones.zoneOf(params),
   });
 
   /** The card's zone answer — `null` while the read is on its way. */

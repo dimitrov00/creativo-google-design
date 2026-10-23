@@ -1099,7 +1099,7 @@ Gate 12 is a review: every file it lists must open with the one-line Phase 4b ba
 
 ### 4.9 UI residue cleanup · the shim, the `kind` unions, the stray classes, the ambient clock
 
-The UI residue plan's §6 gate (`docs/architecture/flips/ui-residue-cleanup.md`) on this preamble's helpers. It runs after the cleanup lands, after §4.7 (whose two zone gates lost their `visit-ecs.shim.ts` exemptions with the shim) and §4.8. It proves the four residue kinds the migration carried forward (HANDOFF §3.3) stay gone: the visit shim and every legacy translation table, the `kind`/`status` discriminators and bare load-state words of the view state, the undecorated non-Angular classes, the ambient clock and entropy reads. Three of the facts are the lint rules `creativo/no-undecorated-class`, `creativo/no-ambient-clock` and `creativo/no-generic-discriminator` (`tools/lint-rules/`, RuleTester specs beside them, switched on in the root `eslint.config.mjs`, part of `run-many -t lint`); gate 5 proves they are on under BOTH ESLint base paths, which is where a guard silently goes off, and the `git grep` gates add what a rule cannot see (the shim file, the tables, the zone literal, untyped literal keys, bare comparisons).
+The UI residue plan's §6 gate (`docs/architecture/flips/ui-residue-cleanup.md`) on this preamble's helpers. It runs after the cleanup lands, after §4.7 (whose two zone gates lost their `visit-ecs.shim.ts` exemptions with the shim) and §4.8. It proves the four residue kinds the migration carried forward (HANDOFF §3.3) stay gone: the visit shim and every legacy translation table, the `kind`/`status` discriminators and bare load-state words of the view state, the undecorated non-Angular classes, the ambient clock and entropy reads. Four of the facts are the lint rules `creativo/no-undecorated-class`, `creativo/no-ambient-clock`, `creativo/no-generic-discriminator` and `creativo/no-hand-built-load-slice` (`tools/lint-rules/`, RuleTester specs beside them, switched on in the root `eslint.config.mjs`, part of `run-many -t lint`); gate 5 proves they are on under BOTH ESLint base paths, which is where a guard silently goes off, and the `git grep` gates add what a rule cannot see (the shim file, the tables, the zone literal, untyped literal keys, bare comparisons).
 
 The rules decide their scope from path-fragment options matched against the file's physical path (`include`, `allowIn`, `allowRandomIn`), never from a `files` glob: the `@nx/eslint:lint` executor `chdir`s to the workspace root and passes the project's config as `overrideConfigFile` (base = the workspace root), while directory lookup — an IDE, `eslint` run inside a project — uses the project dir as base, so a repo-root-relative glob matches under one and silently not under the other. Gate 5 therefore probes every project twice: the executor's own call (`new ESLint({ cwd: <root>, overrideConfigFile: <project>/eslint.config.mjs })`, `lint.impl.js`) and the eslint bin run from inside the project dir. NOT `pnpm exec eslint`: pnpm runs it from the workspace root whatever the cwd (measured 2026-10-23), so the lookup half would never run. Its canary (5c) writes a temporary `__canary__.ts` into four projects and deletes it after each probe; the executor's JSON report goes to the gitignored `tmp/` because the executor joins `outputFile` onto the workspace root (an absolute path lands INSIDE the repo). Run under bash; the canary half takes about a minute.
 
@@ -1130,14 +1130,14 @@ gate 'ui · kind/status literal keys' -E "(^|[^A-Za-z_.])(kind|status)[[:space:]
   libs/features libs/ui apps/web/src "${PROD49[@]}" \
   ':!libs/ui/icons/**' \
   ':!libs/features/staff/client-card/src/lib/client-loyalty/client-loyalty.ts'
-# 5. The three rules, on under BOTH basePaths. The `@nx/eslint:lint` executor chdirs to the
+# 5. The four rules, on under BOTH basePaths. The `@nx/eslint:lint` executor chdirs to the
 #    workspace root and hands ESLint the project's config as `overrideConfigFile` (base = the
 #    workspace root); directory lookup (an IDE, eslint run inside a project) loads the same file
 #    with base = the project dir. A root-only probe sees one of the two. NOT `pnpm exec eslint`
 #    from a project dir: pnpm runs it from the workspace root whatever the cwd (measured), so the
 #    lookup half would never run — the eslint bin through node, as §4.8 gate 9.
 ROOT49="$PWD"
-RULES49='creativo/no-undecorated-class creativo/no-ambient-clock creativo/no-generic-discriminator'
+RULES49='creativo/no-undecorated-class creativo/no-ambient-clock creativo/no-generic-discriminator creativo/no-hand-built-load-slice'
 # 5a. --print-config: each rule at severity 2 with its `include` option, both ways; the icons
 #     MANIFEST probe shows no-generic-discriminator at 2 with the manifest allowed by `allowIn`.
 #     A probe is `<project dir>|<file relative to it>`; the file need not exist.
@@ -1165,7 +1165,7 @@ for probe in 'libs/features/shared/visits|src/lib/probe.ts' 'libs/ui/controls|sr
         const allowed = !manifest || JSON.stringify(rules["creativo/no-generic-discriminator"]?.[1]?.allowIn ?? [])
           .includes("/libs/ui/icons/src/lib/manifest/");
         process.exit(on && allowed ? 0 : 1);
-      });' "$file" "$RULES49"; then echo "ok    ui · the three rules on $dir/$file ($base)"; else echo "FAIL  ui · the three rules on $dir/$file ($base)"; FAILED=1; fi
+      });' "$file" "$RULES49"; then echo "ok    ui · the four rules on $dir/$file ($base)"; else echo "FAIL  ui · the four rules on $dir/$file ($base)"; FAILED=1; fi
   done
 done
 # 5b. The manifest's own `kind` signatures are NOT reported, from the root and from libs/ui/icons.
@@ -1182,13 +1182,14 @@ for base in executor lookup; do
   fi
   [ "$hits" = 0 ] && echo "ok    ui · the icon manifest's kind is allowed ($base)" || { echo "FAIL  ui · the icon manifest's kind is allowed ($base)"; FAILED=1; }
 done
-# 5c. The canary: one class, one Date.now() and one `kind:` signature in a temporary file,
-#     flagged EXACTLY three times by `pnpm nx lint <project>` (the executor) and by eslint run
+# 5c. The canary: one class, one Date.now(), one `kind:` signature and one hand-built load slice in
+#     a temporary file, flagged EXACTLY four times by `pnpm nx lint <project>` (the executor) and by eslint run
 #     inside the project dir (lookup), in a feature, a ui lib, the showcase and the web app. Each
 #     canary is deleted right after its two runs (interrupted, `git status` shows the one left).
 CANARY49='export class Canary {}
 export const canaryNow = Date.now();
-export type CanaryState = { kind: "CANARY" };'
+export type CanaryState = { kind: "CANARY" };
+export const canarySlice = { loadState: LoadState.Loading };'
 for probe in 'shared-visits|libs/features/shared/visits|src/lib' 'controls|libs/ui/controls|src/lib' \
   'showcase|apps/showcase|src/app' 'web|apps/web|src/app'; do
   project="${probe%%|*}"; rest="${probe#*|}"; dir="${rest%%|*}"; sub="${rest#*|}"
@@ -1203,14 +1204,19 @@ for probe in 'shared-visits|libs/features/shared/visits|src/lib' 'controls|libs/
     console.log(results.filter((r) => r.filePath.endsWith("/__canary__.ts"))
       .flatMap((r) => r.messages).filter((m) => ids.split(" ").includes(m.ruleId)).length);' "$report" "$RULES49")
   viaLookup=$(cd "$dir" && node "$ROOT49/node_modules/eslint/bin/eslint.js" "$sub/__canary__.ts" 2>&1 \
-    | grep -cE 'creativo/no-(undecorated-class|ambient-clock|generic-discriminator)')
+    | grep -cE 'creativo/no-(undecorated-class|ambient-clock|generic-discriminator|hand-built-load-slice)')
   rm -f "$canary" "$report"
-  [ "$viaNx" = 3 ] && [ "$viaLookup" = 3 ] && echo "ok    ui · canary flagged 3× in $dir (nx $viaNx, lookup $viaLookup)" \
-    || { echo "FAIL  ui · canary flagged 3× in $dir (nx $viaNx, lookup $viaLookup)"; FAILED=1; }
+  [ "$viaNx" = 4 ] && [ "$viaLookup" = 4 ] && echo "ok    ui · canary flagged 4× in $dir (nx $viaNx, lookup $viaLookup)" \
+    || { echo "FAIL  ui · canary flagged 4× in $dir (nx $viaNx, lookup $viaLookup)"; FAILED=1; }
 done
 # 6. No bare legacy visit word compared in the visits lib or its readers (known-bad: 34 lines).
 gate 'ui · no legacy visit literals' -E "(outcome|grain|perspective|filter)\(?\)?[[:space:]]*[!=]==[[:space:]]*'(open|worked|no_show|cancelled|month|year|client|staff|all|upcoming|completed)'" -- \
   libs/features "${PROD49[@]}"
+# 6b. No ecs-core discount source or photo origin worded back to a lower-case word and compared or
+#     built as one (the review's two translation layers beside the shim: VisitEditorDiscount.source,
+#     VisitEditorPhoto.origin — §1.5). Known-bad on 474e771: 19 lines in staff-visit-editor.ts/.html.
+gate 'ui · no worded discount source or photo origin' -E "(source|origin)\(?\)?[[:space:]]*[!=]==[[:space:]]*'(grant|code|manual|shot|library)'|(source|origin):[[:space:]]*'(grant|code|manual|shot|library)'" -- \
+  libs/features libs/ui apps/web/src apps/showcase/src "${PROD49[@]}"
 # 7. No bare SCREAMING tag compared or cased — every dictionary is compared against its member
 #    (UR-4); a DOM tagName check is not a tag. Known-bad on c77e932: 0 — the two raw hits,
 #    staff-visit-editor.ts:3273 and medal.ts:207, are tagName lines; its proof is the canary
@@ -1226,4 +1232,4 @@ gate 'ui · no bare load-state words' -E -e "[!=]==[[:space:]]*'(loading|failed|
 [ "$FAILED" = 0 ] && echo 'ui residue gate: PASS' || echo 'ui residue gate: FAIL'
 ```
 
-**Status: PASS** on the wave-2 tree (2026-10-23, package G2, under bash, after §4.0): 24 `ok`, no `FAIL`, no `ERROR` — gates 1–4 and 6–8 `ok`; gate 5's ten `--print-config` probes (four projects and the icons manifest, each under the executor and under lookup) show the three rules at severity 2 with their `include`, the manifest's `allowIn`; its two manifest runs report no `kind`; its four canaries are flagged exactly 3× by `pnpm nx lint` and 3× by lookup. With it §4.7 PASS (24 `ok`, the two shim exemptions removed) and `run-many -t lint` 46 projects, 0 errors. **The known-bad run** (each gate's patterns against the committed `c77e932` tree): gate 1 fails (the shim exists); gate 2's tables 20 lines in 6 files (the shim's 7, `visit-filter.ts` 4, `visit-row.presenter.ts` 4, `client-query.ts` 3, `GRID_EVENT_OF`, `COUPON_OCCASION_OF`) and its shim-file half 131 lines; gate 3 1 line (the shim's literal); gate 4 190 lines in 31 files (`openCreate`'s bare-literal parameter among them); gate 6 34 lines in 13 files; gate 7 0 — its two raw hits there are `tagName` lines — so its proof is the canary: a temporary `state() === 'LOADING'` line in `libs/features/shared/visits` FAILS it, as `state() === 'loading'` FAILS gate 8; gate 8 33 lines in 18 files; gate 5 under the pre-cleanup root config: the three rules absent from the resolved config of every probe and the canary reported 0 times in all four projects. The rules on the `c77e932` sources, with the options above: `no-undecorated-class` 5 files (the five classes), `no-ambient-clock` 54 reports in 20 files (22 − the two `allowRandomIn` files; 0 in `libs/infrastructure` outside the two `allowIn` adapters), `no-generic-discriminator` 90 reports in 27 files (the icon manifest allowed). **Re-run by the integrator at the full gate (2026-10-23, plan §8.1): PASS, 24 `ok`** — the same 8 grep `ok` and 16 gate-5 `ok` (the four canaries 3× under `pnpm nx lint` and 3× under lookup); an extra `pnpm nx lint i18n` canary flags all three rules in `libs/infrastructure` outside the two adapters, and a scratch file with `state() === 'LOADING'`, `state() === 'loading'`, a `kind: '…'` literal, `outcome === 'worked'`, a `LEGACY_X` table and the Sofia literal FAILS gates 2, 3, 4, 6, 7 and 8. A hit from now on is a regression.
+**Status: PASS** on the wave-2 tree (2026-10-23, package G2, under bash, after §4.0): 24 `ok`, no `FAIL`, no `ERROR` — gates 1–4 and 6–8 `ok`; gate 5's ten `--print-config` probes (four projects and the icons manifest, each under the executor and under lookup) show the three rules at severity 2 with their `include`, the manifest's `allowIn`; its two manifest runs report no `kind`; its four canaries are flagged exactly 3× by `pnpm nx lint` and 3× by lookup. With it §4.7 PASS (24 `ok`, the two shim exemptions removed) and `run-many -t lint` 46 projects, 0 errors. **The known-bad run** (each gate's patterns against the committed `c77e932` tree): gate 1 fails (the shim exists); gate 2's tables 20 lines in 6 files (the shim's 7, `visit-filter.ts` 4, `visit-row.presenter.ts` 4, `client-query.ts` 3, `GRID_EVENT_OF`, `COUPON_OCCASION_OF`) and its shim-file half 131 lines; gate 3 1 line (the shim's literal); gate 4 190 lines in 31 files (`openCreate`'s bare-literal parameter among them); gate 6 34 lines in 13 files; gate 7 0 — its two raw hits there are `tagName` lines — so its proof is the canary: a temporary `state() === 'LOADING'` line in `libs/features/shared/visits` FAILS it, as `state() === 'loading'` FAILS gate 8; gate 8 33 lines in 18 files; gate 5 under the pre-cleanup root config: the three rules absent from the resolved config of every probe and the canary reported 0 times in all four projects. The rules on the `c77e932` sources, with the options above: `no-undecorated-class` 5 files (the five classes), `no-ambient-clock` 54 reports in 20 files (22 − the two `allowRandomIn` files; 0 in `libs/infrastructure` outside the two `allowIn` adapters), `no-generic-discriminator` 90 reports in 27 files (the icon manifest allowed). **Re-run by the integrator at the full gate (2026-10-23, plan §8.1): PASS, 24 `ok`** — the same 8 grep `ok` and 16 gate-5 `ok` (the four canaries 3× under `pnpm nx lint` and 3× under lookup); an extra `pnpm nx lint i18n` canary flags all three rules in `libs/infrastructure` outside the two adapters, and a scratch file with `state() === 'LOADING'`, `state() === 'loading'`, a `kind: '…'` literal, `outcome === 'worked'`, a `LEGACY_X` table and the Sofia literal FAILS gates 2, 3, 4, 6, 7 and 8. **Re-run after the review fixes (2026-10-23, the fixer): PASS, 25 `ok`** — gate 6b added (the visit editor's worded `DiscountSource`/`PhotoOrigin`, converted to the tags end to end): its known-bad run lists 19 lines on `474e771` (`staff-visit-editor.ts`/`.html`), and a temporary `d.source === 'manual'` line in `libs/features/shared/visits` FAILS it; the other 24 `ok` as before, the four canaries 3× under `pnpm nx lint` and 3× under lookup. **Re-run after review round 2 (2026-10-23, the fixer): PASS, 25 `ok`** — gate 5 now probes FOUR rules (`creativo/no-hand-built-load-slice` added: a `LoadSlice` comes from its companion): the ten `--print-config` probes show all four at severity 2 with their `include`, and the canary's fourth line (`{ loadState: LoadState.Loading }`) makes it 4× under `pnpm nx lint` and 4× under lookup in each of the four projects; the rule's known-bad run on `474e771` reports 23 (`client-card.store.ts` 21, `wallet.presenter.ts` 1, `loyalty.presenter.ts` 1). A hit from now on is a regression.

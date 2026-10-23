@@ -55,11 +55,14 @@ import {
   type WalletTierVm,
   type WalletVm,
 } from './client-pages.vm';
-import { type LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import {
+  streakPeriodMarkWords,
+  streakPeriodReasonWords,
+} from '@creativo/infrastructure/i18n';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
-  RHYTHM_REASON_WORDS,
 } from './client-card.words';
 import { activityGroups, foldByEvent, wholeMonthsOf } from './ledger.presenter';
 import {
@@ -611,7 +614,9 @@ function standingOf(
             ? rhythm.stateFrozenExcuse
             : state.phaseFreezeReason === FreezeReason.ClientPause
               ? capitalised(
-                  rhythm.reason(RHYTHM_REASON_WORDS[FreezeReason.ClientPause]),
+                  rhythm.reason(
+                    streakPeriodReasonWords[FreezeReason.ClientPause],
+                  ),
                   lang,
                 )
               : rhythm.frozen;
@@ -678,14 +683,6 @@ function standingOf(
   }
 }
 
-/** A closed period's mark as the DS track draws it: the SAME glyph as before the flip. */
-const PERIOD_MARKS = {
-  [StreakPeriodMark.Kept]: 'kept',
-  [StreakPeriodMark.Protected]: 'protected',
-  [StreakPeriodMark.Repaired]: 'repaired',
-  [StreakPeriodMark.Missed]: 'missed',
-} as const satisfies Record<StreakPeriodMark, UiStreakMark>;
-
 /** A closed period as the track draws it; a visit's caption is chosen with its neighbours' (`rhythmMarks`). */
 function closedPeriod(
   mark: StreakTrackMark & {
@@ -696,7 +693,9 @@ function closedPeriod(
   const { words, today } = input;
   const rhythm = words.rhythm;
   const month = monthLong(mark.on, words.lang);
-  const drawn = PERIOD_MARKS[mark.streakTrackMarkKind];
+  // A closed period's mark as the DS track draws it — the SAME glyph as
+  // before the flip, from the one table, typed against the DS's own words.
+  const drawn: UiStreakMark = streakPeriodMarkWords[mark.streakTrackMarkKind];
   const id = `${drawn}-${mark.on}`;
   switch (mark.streakTrackMarkKind) {
     case StreakPeriodMark.Kept:
@@ -728,7 +727,7 @@ function closedPeriod(
           month,
           reason === null || reason === FreezeReason.Excuse
             ? rhythm.reasonFreeze
-            : rhythm.reason(RHYTHM_REASON_WORDS[reason]),
+            : rhythm.reason(streakPeriodReasonWords[reason]),
         ),
       };
     }
@@ -780,7 +779,7 @@ function openPeriod(
             rhythm.markCurrent(dayLong(mark.on, today, lang))
           : rhythm.markProtected(
               monthLong(mark.on, lang),
-              rhythm.reason(RHYTHM_REASON_WORDS[reason]),
+              rhythm.reason(streakPeriodReasonWords[reason]),
             ),
     };
   }
@@ -1090,7 +1089,7 @@ function holdingsSlice(
 ): LoadSlice<readonly WalletHoldingVm[]> {
   const vouchers = input.vouchers;
   return vouchers === null || vouchers.loadState === LoadState.Ready
-    ? { loadState: LoadState.Ready, data: walletHoldings(input) }
+    ? LoadSlice.ready(walletHoldings(input))
     : vouchers;
 }
 

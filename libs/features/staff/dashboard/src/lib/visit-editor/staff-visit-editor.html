@@ -1031,7 +1031,7 @@
           >{{ photoTime(photo) }}</span
         >
       </li>
-      @if (photo.origin === 'library' && photo.label; as name) {
+      @if (photo.photoOrigin === PhotoOrigin.Library && photo.label; as name) {
       <li uiListRow uiSize="large">
         {{ t('staff.visit.photoSystem') }}
         <span

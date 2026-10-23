@@ -81,7 +81,7 @@ import {
   type WalletTierVm,
   type WalletVm,
 } from '../lib/client-pages.vm';
-import { LoadState, PagingState } from '@creativo/shared/view-state';
+import { LoadSlice, LoadState, PagingState } from '@creativo/shared/view-state';
 
 // ── Builders for the shapes that repeat ─────────────────────────────────
 
@@ -765,78 +765,69 @@ export const OVERVIEW = {
   /** Every module present and read. */
   georgi: {
     actions: QUICK_ACTIONS,
-    reward: { loadState: LoadState.Ready, data: REWARD_READY.haircut },
-    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.full },
-    loyalty: {
-      loadState: LoadState.Ready,
-      data: LOYALTY_GLANCE.georgi,
-    },
-    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.georgi },
-    photos: { loadState: LoadState.Ready, data: PHOTOS },
+    reward: LoadSlice.ready(REWARD_READY.haircut),
+    visits: LoadSlice.ready(VISIT_CARDS.full),
+    loyalty: LoadSlice.ready(LOYALTY_GLANCE.georgi),
+    medals: LoadSlice.ready(MEDALS_GLANCE.georgi),
+    photos: LoadSlice.ready(PHOTOS),
     canRemove: true,
     failed: [],
   },
   /** Мартин, in the chair on his birthday; two no-shows in ninety days. */
   birthday: {
-    capsules: {
-      loadState: LoadState.Ready,
-      data: {
-        shown: [
-          {
-            id: 'noShows',
-            text: '2 неявявания',
-            tone: 'warning',
-            icon: null,
-          },
-        ],
-        more: null,
-      },
-    },
+    capsules: LoadSlice.ready({
+      shown: [
+        {
+          id: 'noShows',
+          text: '2 неявявания',
+          tone: 'warning',
+          icon: null,
+        },
+      ],
+      more: null,
+    }),
     birthday: BIRTHDAY.gift,
     actions: QUICK_ACTIONS,
-    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.lastOnly },
-    loyalty: {
-      loadState: LoadState.Ready,
-      data: LOYALTY_GLANCE.toNext,
-    },
-    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.first },
+    visits: LoadSlice.ready(VISIT_CARDS.lastOnly),
+    loyalty: LoadSlice.ready(LOYALTY_GLANCE.toNext),
+    medals: LoadSlice.ready(MEDALS_GLANCE.first),
     canRemove: true,
     failed: [],
   },
   /** Behind the D-9 gate: the discs at once, every module a placeholder. */
   loading: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    reward: { loadState: LoadState.Loading },
-    visits: { loadState: LoadState.Loading },
-    loyalty: { loadState: LoadState.Loading },
-    medals: { loadState: LoadState.Loading },
-    photos: { loadState: LoadState.Loading },
+    reward: LoadSlice.loading,
+    visits: LoadSlice.loading,
+    loyalty: LoadSlice.loading,
+    medals: LoadSlice.loading,
+    photos: LoadSlice.loading,
     canRemove: true,
     failed: [],
   },
   /** A new client: three discs, the welcome points, no medals, no photos. */
   newClient: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.none },
-    loyalty: { loadState: LoadState.Ready, data: LOYALTY_GLANCE.bare },
+    visits: LoadSlice.ready(VISIT_CARDS.none),
+    loyalty: LoadSlice.ready(LOYALTY_GLANCE.bare),
     canRemove: true,
     failed: [],
   },
   /** One module failed: its heading over «Опитай пак». */
   oneFailed: {
     actions: QUICK_ACTIONS,
-    visits: { loadState: LoadState.Ready, data: VISIT_CARDS.lastOnly },
-    loyalty: { loadState: LoadState.Failed },
-    medals: { loadState: LoadState.Ready, data: MEDALS_GLANCE.georgi },
+    visits: LoadSlice.ready(VISIT_CARDS.lastOnly),
+    loyalty: LoadSlice.failed,
+    medals: LoadSlice.ready(MEDALS_GLANCE.georgi),
     canRemove: true,
     failed: ['loyalty'],
   },
   /** Two failed: one notice under the head, the headings alone. */
   twoFailed: {
     actions: QUICK_ACTIONS,
-    visits: { loadState: LoadState.Failed },
-    loyalty: { loadState: LoadState.Failed },
-    medals: { loadState: LoadState.Failed },
+    visits: LoadSlice.failed,
+    loyalty: LoadSlice.failed,
+    medals: LoadSlice.failed,
     canRemove: true,
     failed: ['visits', 'loyalty', 'achievements'],
   },
@@ -1469,96 +1460,72 @@ export const WALLET = {
     frozen: false,
     pass: PASS.expiring,
     actions: WALLET_ACTIONS.owner,
-    holdings: {
-      loadState: LoadState.Ready,
-      data: WALLET_HOLDINGS.georgi,
-    },
+    holdings: LoadSlice.ready(WALLET_HOLDINGS.georgi),
     holdingsDetail: '3',
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
-    catalog: {
-      loadState: LoadState.Ready,
-      data: {
-        name: 'Награди за точки: 371 точки, стигат за 2 от 3 награди',
-        tiles: REWARD_TILES,
-      },
-    },
-    activity: {
-      loadState: LoadState.Ready,
-      data: ACTIVITY_GROUPS.newestFive,
-    },
+    tier: LoadSlice.ready(WALLET_TIER.gold),
+    catalog: LoadSlice.ready({
+      name: 'Награди за точки: 371 точки, стигат за 2 от 3 награди',
+      tiles: REWARD_TILES,
+    }),
+    activity: LoadSlice.ready(ACTIVITY_GROUPS.newestFive),
   },
   /** The account at once, the sections that ride a read of their own still on their way. */
   loading: {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { loadState: LoadState.Loading },
+    holdings: LoadSlice.loading,
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { loadState: LoadState.Loading },
-    catalog: { loadState: LoadState.Loading },
-    activity: { loadState: LoadState.Loading },
+    tier: LoadSlice.loading,
+    catalog: LoadSlice.loading,
+    activity: LoadSlice.loading,
   },
   /** An account with nothing held and no entry yet. */
   empty: {
     frozen: false,
     pass: { ...PASS.georgi, figure: '50', tier: 'Бронз', state: null },
     actions: WALLET_ACTIONS.readOnly,
-    holdings: {
-      loadState: LoadState.Ready,
-      data: WALLET_HOLDINGS.empty,
-    },
+    holdings: LoadSlice.ready(WALLET_HOLDINGS.empty),
     holdingsDetail: null,
-    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
-    catalog: {
-      loadState: LoadState.Ready,
-      data: {
-        name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди',
-        tiles: REWARD_TILES,
-      },
-    },
+    tier: LoadSlice.ready(WALLET_TIER.gold),
+    catalog: LoadSlice.ready({
+      name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди',
+      tiles: REWARD_TILES,
+    }),
   },
   /** A paused client: frozen whole, no tickets, no verbs that write. */
   paused: {
     frozen: true,
     pass: PASS.frozen,
     actions: WALLET_ACTIONS.readOnly,
-    holdings: {
-      loadState: LoadState.Ready,
-      data: [
-        { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.partial },
-      ],
-    },
+    holdings: LoadSlice.ready([
+      { walletHolding: WalletHolding.Voucher, voucher: VOUCHER.partial },
+    ]),
     holdingsDetail: '1',
     rhythm: WALLET_RHYTHM.frozen,
-    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
-    activity: {
-      loadState: LoadState.Ready,
-      data: ACTIVITY_GROUPS.newestFive,
-    },
+    tier: LoadSlice.ready(WALLET_TIER.gold),
+    activity: LoadSlice.ready(ACTIVITY_GROUPS.newestFive),
   },
   /** Two sections' own reads failed: each keeps its heading over a notice. */
   sectionsFailed: {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { loadState: LoadState.Failed },
+    holdings: LoadSlice.failed,
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { loadState: LoadState.Ready, data: WALLET_TIER.gold },
-    catalog: { loadState: LoadState.Failed },
-    activity: { loadState: LoadState.Failed },
+    tier: LoadSlice.ready(WALLET_TIER.gold),
+    catalog: LoadSlice.failed,
+    activity: LoadSlice.failed,
   },
   /** Every loyalty flag but the vouchers' off: the pass, the holdings. */
   flagsOff: {
     frozen: false,
     pass: PASS.pointsOff,
     actions: WALLET_ACTIONS.codeOnly,
-    holdings: {
-      loadState: LoadState.Ready,
-      data: WALLET_HOLDINGS.vouchers,
-    },
+    holdings: LoadSlice.ready(WALLET_HOLDINGS.vouchers),
     holdingsDetail: '3 · 55,00 €',
   },
 } satisfies Record<string, WalletVm>;

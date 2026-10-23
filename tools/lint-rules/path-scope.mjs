@@ -1,7 +1,8 @@
 /**
- * The path scope shared by the three UI-residue guards
+ * The path scope shared by the four UI-residue guards
  * (`creativo/no-undecorated-class`, `creativo/no-ambient-clock`,
- * `creativo/no-generic-discriminator`; `ui-residue-cleanup.md` §3 "Scoping").
+ * `creativo/no-generic-discriminator`, `creativo/no-hand-built-load-slice`;
+ * `ui-residue-cleanup.md` §3 "Scoping").
  *
  * ESLint resolves a config block's `files`/`ignores` against a base path
  * that depends on how it is invoked: the `@nx/eslint:lint` executor runs

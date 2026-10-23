@@ -14,7 +14,11 @@ import {
   UiMonthPickerRelative,
 } from '@creativo/ui/controls';
 import { UiMenu, UiMenuTrigger } from '@creativo/ui/patterns';
-import { civilMs } from '@creativo/ui/wall-clock';
+import {
+  formatWallClock,
+  formatWallClockRange,
+  wallClockParts,
+} from '@creativo/ui/wall-clock';
 import { LocalDate } from '@core/primitives';
 
 /**
@@ -26,12 +30,11 @@ import { LocalDate } from '@core/primitives';
  * touched afterwards — no capitaliser, no padding.
  */
 export function formatDayPill(dayKey: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
+  return formatWallClock(localDateOfKey(dayKey), null, locale, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
-    timeZone: 'UTC',
-  }).format(civilMs(localDateOfKey(dayKey)));
+  });
 }
 
 /**
@@ -56,45 +59,38 @@ export function formatDayPillRange(
   lastKey: string,
   locale: string,
 ): string {
-  const first = civilMs(localDateOfKey(firstKey));
-  const last = civilMs(localDateOfKey(lastKey));
+  const first = localDateOfKey(firstKey);
+  const last = localDateOfKey(lastKey);
   const sameYear = firstKey.slice(0, 4) === lastKey.slice(0, 4);
   const sameMonth = sameYear && firstKey.slice(5, 7) === lastKey.slice(5, 7);
-  const dayMonth = new Intl.DateTimeFormat(locale, {
+  const dayMonth: Intl.DateTimeFormatOptions = {
     day: 'numeric',
     month: 'short',
-    timeZone: 'UTC',
-  });
+  };
   if (!sameMonth) {
-    const across = sameYear
-      ? dayMonth
-      : new Intl.DateTimeFormat(locale, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
-    return across.formatRange(first, last);
+    return formatWallClockRange(
+      first,
+      last,
+      locale,
+      sameYear ? dayMonth : { ...dayMonth, year: 'numeric' },
+    );
   }
-  const parts = dayMonth.formatToParts(last);
+  const parts = wallClockParts(last, null, locale, dayMonth);
   const dayLeads =
     parts.findIndex((part) => part.type === 'day') <
     parts.findIndex((part) => part.type === 'month');
-  const dayOnly = new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
+  const dayOnly: Intl.DateTimeFormatOptions = { day: 'numeric' };
   return dayLeads
-    ? `${dayOnly.format(first)} – ${dayMonth.format(last)}`
-    : `${dayMonth.format(first)} – ${dayOnly.format(last)}`;
+    ? `${formatWallClock(first, null, locale, dayOnly)} – ${formatWallClock(last, null, locale, dayMonth)}`
+    : `${formatWallClock(first, null, locale, dayMonth)} – ${formatWallClock(last, null, locale, dayOnly)}`;
 }
 
 /**
  * A `YYYY-MM-DD` key as the shop day it names, FOR FORMATTING — its own
- * fields by civil arithmetic (`LocalDate`), no `Date`. Laid on the UTC axis
- * with `civilMs`, it is what every formatter here reads on `timeZone:
- * 'UTC'`, so the day is immune to any zone's midnight; `Intl`'s `format`,
- * `formatRange` and `formatToParts` all take the number. Not a validation:
+ * fields by civil arithmetic (`LocalDate`), no `Date`. The
+ * `@creativo/ui/wall-clock` faces lay it on the UTC axis and read it on
+ * `timeZone: 'UTC'` (one cached formatter per locale and option set), so
+ * the day is immune to any zone's midnight. Not a validation:
  * the keys are the store's own, and an out-of-range day rolls over exactly
  * as `Date.UTC` rolled it.
  */

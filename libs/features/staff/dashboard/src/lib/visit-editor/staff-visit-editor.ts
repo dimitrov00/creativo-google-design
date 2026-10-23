@@ -31,8 +31,10 @@ import {
   type CouponOccasion,
   CouponValue,
   DiscountMethod,
+  DiscountSource,
   FlagName,
   type Money,
+  PhotoOrigin,
   type VisitLeg,
 } from '@core/components';
 import {
@@ -562,8 +564,8 @@ export interface VisitEditorPhoto {
   readonly clientAvatarSrc?: string | null;
   readonly width: number | null;
   readonly height: number | null;
-  /** The visit's own picture, or one of the shop's pointed at — with its name. */
-  readonly origin: 'shot' | 'library';
+  /** The visit's own picture, or one of the shop's pointed at — with its name (the stored tag). */
+  readonly photoOrigin: PhotoOrigin;
   readonly label: string | null;
 }
 
@@ -648,14 +650,15 @@ export type VisitEditorDiscountValue =
 
 /**
  * A discount ON the visit — saved (on the VM) or drafted (in the draft).
- * `source` says where it came from and what the save sends: a grant and a
+ * `discountSource` (the stored ecs-core tag, carried as it is) says where
+ * it came from and what the save sends: a grant and a
  * code travel as references the server re-resolves; a manual figure travels
  * as its value. `label` is the coupon's name; a manual discount has none and
  * the line names it by its value. `exclusive` is the coupon's own rule: such
  * a discount must be alone on the bill.
  */
 export interface VisitEditorDiscount {
-  readonly source: 'grant' | 'code' | 'manual';
+  readonly discountSource: DiscountSource;
   readonly label: string;
   readonly value: VisitEditorDiscountValue;
   readonly grantId: string | null;
@@ -1949,7 +1952,7 @@ export class StaffVisitEditor {
       // The bill travels as its own commands (2026-09-10): the discounts as
       // a set, the vouchers as codes in cover order.
       discounts: draft.discounts.map((discount) => ({
-        source: discount.source,
+        discountSource: discount.discountSource,
         grantId: discount.grantId,
         code: discount.code,
         value: discount.value,
@@ -2099,6 +2102,7 @@ export class StaffVisitEditor {
   protected readonly editorPageWords = editorPageWords;
   protected readonly FrameVerdict = FrameVerdict;
   protected readonly frameVerdictWords = frameVerdictWords;
+  protected readonly PhotoOrigin = PhotoOrigin;
   protected readonly clientQueryShapeWords = clientQueryShapeWords;
   /**
    * PUBLIC: the sheet shell draws the way back in its header bar. The
@@ -5023,7 +5027,7 @@ export class StaffVisitEditor {
     const promo = this.uiPromos().find((entry) => entry.code === offer.id);
     if (promo === undefined) return;
     this.addDiscount({
-      source: 'code',
+      discountSource: DiscountSource.Code,
       label: promo.label,
       value: promo.value,
       grantId: null,
@@ -5077,7 +5081,7 @@ export class StaffVisitEditor {
         this.faceOfPicked(this.clientOfStack()?.id ?? null),
       width: cut.width,
       height: cut.height,
-      origin: 'shot',
+      photoOrigin: PhotoOrigin.Shot,
       label: null,
     };
   }
@@ -5513,7 +5517,7 @@ export class StaffVisitEditor {
         const read = this.figureRead();
         if (read === null) return;
         this.addDiscount({
-          source: 'manual',
+          discountSource: DiscountSource.Manual,
           label: 'manual',
           value:
             read.discountMethod === DiscountMethod.PercentOff
@@ -5544,7 +5548,7 @@ export class StaffVisitEditor {
    */
   protected readonly manualFigure = computed(() => {
     const manual = this.draft().discounts.find(
-      (discount) => discount.source === 'manual',
+      (discount) => discount.discountSource === DiscountSource.Manual,
     );
     if (manual === undefined) return '';
     const kind = this.discountKind();
@@ -5750,7 +5754,7 @@ export class StaffVisitEditor {
     if (drafted === null) return this.bill();
     return this.evaluate([
       ...this.draft().discounts.filter(
-        (discount) => discount.source !== 'manual',
+        (discount) => discount.discountSource !== DiscountSource.Manual,
       ),
       drafted,
     ]);
@@ -5762,7 +5766,7 @@ export class StaffVisitEditor {
     const read = this.figureRead();
     if (read === null) return null;
     return {
-      source: 'manual',
+      discountSource: DiscountSource.Manual,
       label: 'manual',
       value:
         read.discountMethod === DiscountMethod.PercentOff
@@ -5842,16 +5846,19 @@ export class StaffVisitEditor {
       const value = this.couponValue(title, line.discount.value);
       const took = `−${this.moneyLabel(line.amount)}`;
       const glyph: UiIconName =
-        line.discount.source === 'manual'
+        line.discount.discountSource === DiscountSource.Manual
           ? line.discount.value.discountMethod === DiscountMethod.PercentOff
             ? 'promo.percent'
             : 'promo.sum'
           : 'promo.coupon';
-      const code = line.discount.source === 'code' ? line.discount.code : null;
+      const code =
+        line.discount.discountSource === DiscountSource.Code
+          ? line.discount.code
+          : null;
       const detail = took === value ? null : took;
       return {
         key: line.key,
-        source: line.discount.source,
+        discountSource: line.discount.discountSource,
         testId: `staff-visit-discount-${line.key}`,
         title,
         code,
@@ -5968,7 +5975,7 @@ export class StaffVisitEditor {
 
   /** The line's title: the coupon's name, or the row's own word for a manual figure. */
   private discountTitle(discount: VisitEditorDiscount): string {
-    return discount.source === 'manual'
+    return discount.discountSource === DiscountSource.Manual
       ? this.rawCopy('staff.visit.discount')
       : discount.label;
   }
@@ -5977,7 +5984,9 @@ export class StaffVisitEditor {
   protected readonly grantChoices = computed<readonly OfferChoice[]>(() => {
     const onBill = new Set(
       this.draft()
-        .discounts.filter((discount) => discount.source === 'grant')
+        .discounts.filter(
+          (discount) => discount.discountSource === DiscountSource.Grant,
+        )
         .map((discount) => discount.grantId),
     );
     return this.uiGrants().map((grant) => {
@@ -6134,7 +6143,7 @@ export class StaffVisitEditor {
     const grant = this.uiGrants().find((entry) => entry.grantId === grantId);
     if (grant === undefined) return;
     this.addDiscount({
-      source: 'grant',
+      discountSource: DiscountSource.Grant,
       label: grant.label,
       value: grant.value,
       grantId: grant.grantId,
@@ -6159,7 +6168,10 @@ export class StaffVisitEditor {
       const keeps = draft.discounts.filter(
         (entry) =>
           !entry.exclusive &&
-          !(entry.source === 'manual' && discount.source === 'manual'),
+          !(
+            entry.discountSource === DiscountSource.Manual &&
+            discount.discountSource === DiscountSource.Manual
+          ),
       );
       return {
         ...draft,
@@ -6239,7 +6251,7 @@ export class StaffVisitEditor {
       if (answer.code.trim().toUpperCase() !== pending) return;
       if (answer.promo !== null) {
         this.addDiscount({
-          source: 'code',
+          discountSource: DiscountSource.Code,
           label: answer.promo.label,
           value: answer.promo.value,
           grantId: null,
@@ -6680,7 +6692,7 @@ export class StaffVisitEditor {
     // stood, «Премахни» where «Използвай» stood (WP7 review r6).
     const onBill = new Set(
       draft.discounts
-        .filter((discount) => discount.source === 'grant')
+        .filter((discount) => discount.discountSource === DiscountSource.Grant)
         .map((discount) => discount.grantId),
     );
     const held: ClientCardGrant[] = isOwner
@@ -7012,7 +7024,9 @@ export class StaffVisitEditor {
     // The press was the act, not a push: no origin to remember.
     this.pressedTestId = null;
     const line = this.draft().discounts.find(
-      (discount) => discount.source === 'grant' && discount.grantId === grantId,
+      (discount) =>
+        discount.discountSource === DiscountSource.Grant &&
+        discount.grantId === grantId,
     );
     if (line === undefined) return;
     this.removeDiscount(discountKey(line));
@@ -7300,20 +7314,20 @@ export function nameSaysRule(
 
 /** A line's identity on the ladder — the promise, never a stored id. */
 function discountKey(discount: VisitEditorDiscount): string {
-  switch (discount.source) {
-    case 'grant':
+  switch (discount.discountSource) {
+    case DiscountSource.Grant:
       return `grant:${discount.grantId ?? ''}`;
-    case 'code':
+    case DiscountSource.Code:
       return `code:${discount.code ?? ''}`;
-    case 'manual':
+    case DiscountSource.Manual:
       return 'manual';
   }
 }
 
 /** The same promise: source and provenance agree (a manual figure by its value). */
 function samePromise(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
-  if (a.source !== b.source) return false;
-  if (a.source === 'manual') {
+  if (a.discountSource !== b.discountSource) return false;
+  if (a.discountSource === DiscountSource.Manual) {
     return JSON.stringify(a.value) === JSON.stringify(b.value);
   }
   return a.grantId === b.grantId && a.code === b.code;

@@ -6,4 +6,6 @@ export * from './lib/translation-loader';
 export * from './lib/translate-domain-error';
 export * from './lib/booking-status-words';
 export * from './lib/visit-list-words';
+export * from './lib/streak-period-words';
+export * from './lib/daypart-words';
 export * from './lib/word-pipeline-error';

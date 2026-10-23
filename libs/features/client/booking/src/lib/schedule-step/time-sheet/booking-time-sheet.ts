@@ -14,6 +14,7 @@ import {
   CLOCK_PORTS,
   SCHEDULING_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { type DaypartWord, daypartWords } from '@creativo/infrastructure/i18n';
 import type {
   BarberId,
   CartLineId,
@@ -58,16 +59,10 @@ import {
   sameDayDocsKey,
 } from '../day-availability';
 
-/** The catalogue's key segment of each part of the day (`booking.schedule.daypart.morning`, …). */
-const DAYPART_KEY = {
-  [Daypart.Morning]: 'morning',
-  [Daypart.Afternoon]: 'afternoon',
-  [Daypart.Evening]: 'evening',
-} as const satisfies Record<Daypart, string>;
-
 /** A run of start times sharing a part of the day (`Daypart.of`). */
 interface DaypartVm {
-  readonly key: (typeof DAYPART_KEY)[Daypart];
+  /** Its catalogue key segment (`booking.schedule.daypart.morning`, …) — the one i18n table's word. */
+  readonly key: DaypartWord;
   readonly starts: readonly StartVm[];
 }
 
@@ -309,7 +304,7 @@ export class BookingTimeSheet {
       [...groups.entries()]
         .filter(([, starts]) => starts.length > 0)
         // eslint-disable-next-line security/detect-object-injection -- closed union.
-        .map(([part, starts]) => ({ key: DAYPART_KEY[part], starts }))
+        .map(([part, starts]) => ({ key: daypartWords[part], starts }))
     );
   });
 

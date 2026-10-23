@@ -29,7 +29,7 @@ import {
   shopDayOf,
 } from './client-card.format';
 import { type RewardReadyVm } from './client-pages.vm';
-import { type LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
 
 /*
@@ -289,7 +289,7 @@ export function sliceMap<T, U>(
   if (slice === null) return undefined;
   if (slice.loadState !== LoadState.Ready) return slice;
   const data = map(slice.data);
-  return data === null ? undefined : { loadState: LoadState.Ready, data };
+  return data === null ? undefined : LoadSlice.ready(data);
 }
 
 // ── The card's own values → ecs-core structs ──────────────────────────────

@@ -5,15 +5,12 @@ import {
   visitWaitlistWordsOf,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
-import {
-  FreezeReason,
-  JournalFeed,
-  PersonalRecordKind,
-  StreakExcuse,
-  type StreakPeriodReason,
-} from '@core/components';
+import { JournalFeed, PersonalRecordKind } from '@core/components';
 import { VisitPerspective } from '@core/systems';
-import { pluralForm } from '@creativo/infrastructure/i18n';
+import {
+  pluralForm,
+  type StreakPeriodReasonWord,
+} from '@creativo/infrastructure/i18n';
 import { figure, inSentence } from './client-card.format';
 
 /*
@@ -50,8 +47,9 @@ import { figure, inSentence } from './client-card.format';
  *   of the card's own words: a dictionary value of ecs-core
  *   (`PersonalRecordKind.FirstVisit`, `JournalFeed.All`, …) reaches it
  *   through ONE table keyed by that dictionary (`RECORD_KIND_WORDS`,
- *   `LEDGER_FILTER_WORDS`, `RHYTHM_REASON_WORDS`), so the words and the
- *   test ids keep their spelling.
+ *   `LEDGER_FILTER_WORDS` here; `streakPeriodReasonWords` in
+ *   `@creativo/infrastructure/i18n`, read by two libs), so the words and
+ *   the test ids keep their spelling.
  */
 
 /** Transloco's `translate`, or anything shaped like it. */
@@ -64,16 +62,11 @@ export type LoyaltyHoldingWord = 'voucher' | 'stamps' | 'rhythm';
 
 /**
  * Why a period of the rhythm is protected: a used protection, the account's
- * pause, one of the shop's excuses (`STREAK_EXCUSES`), the client's own pause.
+ * pause, one of the shop's excuses (`STREAK_EXCUSES`), the client's own pause
+ * — the word of `@creativo/infrastructure/i18n`'s ONE table
+ * (`streakPeriodReasonWords`), which the admin rhythm page reads too.
  */
-export type RhythmReasonWord =
-  | 'freeze'
-  | 'pause'
-  | 'staffCancelled'
-  | 'barberAbsence'
-  | 'shopClosure'
-  | 'closedDays'
-  | 'clientPause';
+export type RhythmReasonWord = StreakPeriodReasonWord;
 
 /** The ledger page's pill, as its i18n key and its test id spell it (`JournalFeed`). */
 export type LedgerFilterWord = 'all' | 'points' | 'rewards' | 'status';
@@ -97,17 +90,6 @@ export const RECORD_KIND_WORDS = {
   [PersonalRecordKind.FavouriteService]: 'favouriteService',
   [PersonalRecordKind.FirstVisit]: 'firstVisit',
 } as const satisfies Record<PersonalRecordKind, RecordKindWord>;
-
-/** What covered a protected period (`StreakPeriodReason`), as the rhythm's words name it. */
-export const RHYTHM_REASON_WORDS = {
-  [FreezeReason.Freeze]: 'freeze',
-  [FreezeReason.Pause]: 'pause',
-  [FreezeReason.ClientPause]: 'clientPause',
-  [StreakExcuse.StaffCancelled]: 'staffCancelled',
-  [StreakExcuse.BarberAbsence]: 'barberAbsence',
-  [StreakExcuse.ShopClosure]: 'shopClosure',
-  [StreakExcuse.ClosedDays]: 'closedDays',
-} as const satisfies Record<StreakPeriodReason, RhythmReasonWord>;
 
 /** The records page's five rows that are not a record of the account's. */
 export type RecordRowWord =

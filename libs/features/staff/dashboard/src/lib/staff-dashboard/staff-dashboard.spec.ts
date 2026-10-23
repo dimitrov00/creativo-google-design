@@ -46,6 +46,7 @@ import {
   CouponValue,
   DayHours,
   DiscountMethod,
+  DiscountSource,
   E164,
   EditCommand,
   Email,
@@ -5170,7 +5171,7 @@ describe('StaffDashboard', () => {
       ],
       discounts: [
         {
-          source: 'code',
+          discountSource: DiscountSource.Code,
           label: 'FIRST10',
           value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
           grantId: null,

@@ -69,7 +69,6 @@ import {
   EditCommand,
   MinuteRange,
   MONEY_ROLES,
-  PhotoOrigin,
   Placement,
   Principal,
   Registration,
@@ -141,10 +140,10 @@ import {
   type StaffEventLine,
 } from '@creativo/features/shared/visits';
 import {
-  civilMs,
   formatCents,
   formatInstant,
   formatWallClock,
+  wallClockParts,
 } from '@creativo/ui/wall-clock';
 import {
   bookingStatusWords,
@@ -351,7 +350,7 @@ function rowShape(row: DayRowVm): string {
     discounts: row.discounts
       .map((discount) =>
         JSON.stringify([
-          discount.source,
+          discount.discountSource,
           discount.grantId,
           discount.code,
           discount.value,
@@ -2517,8 +2516,7 @@ export class StaffDashboard {
     options: Intl.DateTimeFormatOptions,
   ): string {
     const locale = this.content.locale();
-    return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' })
-      .formatToParts(civilMs(at))
+    return wallClockParts(at, null, locale, options)
       .map((part) =>
         part.type === 'month'
           ? part.value.charAt(0).toLocaleUpperCase(locale) + part.value.slice(1)
@@ -5145,7 +5143,7 @@ export class StaffDashboard {
       clientLabel: photo.clientLabel,
       width: photo.width,
       height: photo.height,
-      origin: photo.photoOrigin === PhotoOrigin.Library ? 'library' : 'shot',
+      photoOrigin: photo.photoOrigin,
       label: photo.label,
     };
   }
@@ -6661,17 +6659,10 @@ function utcEpochMsOf(epochMs: number): UtcEpochMs {
   return instant.ok ? instant.value : defect(`not an instant ${epochMs}`);
 }
 
-/** The sheet's word for where a discount came from. */
-const DISCOUNT_SOURCE_WORD = {
-  [DiscountSource.Grant]: 'grant',
-  [DiscountSource.Code]: 'code',
-  [DiscountSource.Manual]: 'manual',
-} as const satisfies Record<DiscountSource, VisitEditorDiscount['source']>;
-
 /** The bill's discounts as the sheet reads them — every snapshot, in stored order. */
 function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
   return appointment.discounts.map((applied) => ({
-    source: DISCOUNT_SOURCE_WORD[applied.discountSource],
+    discountSource: applied.discountSource,
     label: applied.label,
     value: discountValueOf(applied),
     grantId: DiscountProvenance.grantIdOf(applied),
@@ -6699,7 +6690,7 @@ function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
 /** Same promise: source, provenance and value agree. */
 function sameDiscount(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
   return (
-    a.source === b.source &&
+    a.discountSource === b.discountSource &&
     a.grantId === b.grantId &&
     (a.code ?? null) === (b.code ?? null) &&
     JSON.stringify(a.value) === JSON.stringify(b.value)
@@ -6738,8 +6729,8 @@ function sameCodes(a: readonly string[], b: readonly string[]): boolean {
 function toDiscountRequest(
   discount: VisitEditorDiscount,
 ): Result<BookingCall.StaffDiscount | null, PipelineError> {
-  switch (discount.source) {
-    case 'grant':
+  switch (discount.discountSource) {
+    case DiscountSource.Grant:
       return Result.ok(
         discount.grantId === null
           ? null
@@ -6748,7 +6739,7 @@ function toDiscountRequest(
               grantId: CouponGrantId.of(discount.grantId),
             },
       );
-    case 'code':
+    case DiscountSource.Code:
       return Result.ok(
         discount.code === null
           ? null
@@ -6757,7 +6748,7 @@ function toDiscountRequest(
               code: VoucherCode.of(VoucherCode.normalize(discount.code)),
             },
       );
-    case 'manual': {
+    case DiscountSource.Manual: {
       // A manual discount is a percent or an amount; `FREE_SERVICE` is a
       // coupon's word, not the counter's, and cannot be typed here.
       const value = discount.value;

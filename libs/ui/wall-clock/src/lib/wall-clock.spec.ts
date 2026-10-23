@@ -5,8 +5,10 @@ import { unwrapOk } from '@core/testing';
 import {
   formatCents,
   formatInstant,
+  formatWallClockParts,
   formatWallClockRange,
   formatWeekdayLabels,
+  wallClockParts,
 } from './wall-clock';
 
 /*
@@ -177,5 +179,46 @@ describe('formatWallClockRange', () => {
     ).toBe(
       formatWallClockRange(day('2026-10-01'), day('2026-10-02'), 'bg', options),
     );
+  });
+});
+
+/*
+ * The raw parts face (the UI residue cleanup's review): the day pill's
+ * same-month branch and the dashboard's title-cased heading read a
+ * reading's PARTS — the same cached formatter `formatWallClockParts` joins,
+ * so a parts reader and a joined face never format one day apart.
+ */
+describe('wallClockParts', () => {
+  const sept9 = unwrapOk(LocalDate.parse('2026-09-09'));
+  const dayMonth: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'short',
+  };
+
+  it('reads the locale’s own part order — the day leads in bg, the month in en', () => {
+    const order = (locale: string) =>
+      wallClockParts(sept9, null, locale, dayMonth)
+        .filter((part) => part.type === 'day' || part.type === 'month')
+        .map((part) => part.type);
+    expect(order('bg')).toEqual(['day', 'month']);
+    expect(order('en')).toEqual(['month', 'day']);
+  });
+
+  it('joins to exactly what formatWallClockParts prints', () => {
+    const long: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
+    for (const locale of ['bg', 'en']) {
+      expect(
+        wallClockParts(sept9, null, locale, long)
+          .map((part) => part.value)
+          .join(''),
+      ).toBe(formatWallClockParts(sept9, null, locale, long));
+    }
+  });
+
+  it('reads the shop day as stored, on the UTC axis — no zone moves it', () => {
+    const parts = wallClockParts(sept9, 23 * 60 + 59, 'en', {
+      day: 'numeric',
+    });
+    expect(parts.find((part) => part.type === 'day')?.value).toBe('9');
   });
 });
