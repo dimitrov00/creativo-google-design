@@ -8,10 +8,8 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-} from '@creativo/application/identity';
+import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
+import { memoryAuthSessionPorts } from '@core/testing';
 import { SiteFooterComponent } from './site-footer.component';
 
 const bg: Translation = {
@@ -49,10 +47,8 @@ describe('SiteFooterComponent', () => {
       providers: [
         provideRouter([]),
         ...provideTestI18n(),
-        {
-          provide: AUTH_GATEWAY,
-          useValue: { observePrincipal: () => of(ANONYMOUS_PRINCIPAL) },
-        },
+        // An anonymous visitor (the double's default session).
+        { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       ],
     }).compileComponents();
     // The app's bootstrap restores a returning visitor's stored choice
