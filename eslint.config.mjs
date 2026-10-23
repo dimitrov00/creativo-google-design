@@ -310,8 +310,8 @@ export default [
   // (`libs/infrastructure/firestore/**`) therefore matches under the
   // executor and never under lookup (the prefix is already the base), and a
   // project-relative one (`src/systems/**`) the reverse — silently, either
-  // way (the consequence for libs/ecs-core's project-relative tier blocks is
-  // docs/architecture/flips/ui-residue-cleanup.md §10 OQ-12). That is why
+  // way (libs/ecs-core writes each of its `src/…` globs for both bases —
+  // `fromEitherBase`, ui-residue-cleanup.md §10 OQ-12). That is why
   // the UI-residue guards below decide their scope from the file's physical
   // path, not from a glob. So these rules are unconditional here, and the
   // exempt zones (`libs/infrastructure/*` and `apps/functions` for firebase;

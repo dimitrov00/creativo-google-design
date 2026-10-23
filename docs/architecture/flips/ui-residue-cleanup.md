@@ -1888,6 +1888,18 @@ URLs, and all text. It ran in bg, then en, and the two origins were diffed.
   verifier (`verify-tools:layering`) still enforces the hierarchy, so Law 8
   holds, but its lint half is off in CI. Default: a follow-up re-scopes those
   blocks the way §3 scopes the new rules (owner to rule; outside this pass).
+  **Resolved 2026-10-23 (after this pass): "off in CI" was wrong, the
+  fragility was real.** `ecs-core`'s lint target is the INFERRED `eslint .`
+  run from `libs/ecs-core` (`nx:run-commands`), not `@nx/eslint:lint` — a
+  canary primitives file importing `@core/components` was flagged by
+  `nx run ecs-core:lint` on `72af6e4`, so CI enforced the tiers all along.
+  The same canary linted with `eslint -c libs/ecs-core/eslint.config.mjs`
+  from the workspace root was NOT flagged: the bare `src/…` globs went silent
+  from that base. Every `src/…` glob of that config is now written for both
+  base paths (`fromEitherBase`), pinned by
+  `tools/lint-rules/ecs-core-base-paths.spec.mjs` (both bases, one upward
+  import each). No other project carries a project-relative glob (the 37 on
+  `@nx/eslint:lint` use `**/` globs only).
 
 ---
 

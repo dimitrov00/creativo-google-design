@@ -158,10 +158,21 @@ function coreImportExpressions(tier, { test = false } = {}) {
   };
 }
 
+/**
+ * A `files` glob under this project's `src/`, written for BOTH base paths
+ * ESLint may resolve it against: this project's directory (the inferred
+ * `eslint .` lint target, run from `libs/ecs-core`) and the workspace root
+ * (`eslint -c libs/ecs-core/eslint.config.mjs …` from the root, or an
+ * `@nx/eslint:lint` target, which runs from there). A bare `src/…` glob
+ * matches nothing from the root, and every rule it scopes would go silent.
+ */
+const fromEitherBase = (...globs) =>
+  globs.flatMap((glob) => [glob, `libs/ecs-core/${glob}`]);
+
 /** Per tier: its production files, then its specs and type-specs. */
 const tierBlocks = [...CORE_TIER_IMPORTS.keys()].flatMap((tier) => [
   {
-    files: [`src/${tier}/**/*.ts`],
+    files: fromEitherBase(`src/${tier}/**/*.ts`),
     rules: {
       'no-restricted-imports': ['error', coreImports(tier)],
       'creativo/no-restricted-import-expressions': [
@@ -171,7 +182,10 @@ const tierBlocks = [...CORE_TIER_IMPORTS.keys()].flatMap((tier) => [
     },
   },
   {
-    files: [`src/${tier}/**/*.spec.ts`, `src/${tier}/**/*.type-spec.ts`],
+    files: fromEitherBase(
+      `src/${tier}/**/*.spec.ts`,
+      `src/${tier}/**/*.type-spec.ts`,
+    ),
     rules: {
       'no-restricted-imports': ['error', coreImports(tier, { test: true })],
       'creativo/no-restricted-import-expressions': [
@@ -194,7 +208,7 @@ export default [
     // L7's one exemption: the id family's own file mints `UserId` and
     // `CustomerId` (`CustomerId.forUser`), so it restates the primitive list
     // without the cast guard.
-    files: ['src/primitives/ids.primitive.ts'],
+    files: fromEitherBase('src/primitives/ids.primitive.ts'),
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -212,7 +226,7 @@ export default [
     // replace, never merge — so every other purity guard still holds here.
     // The file's module-level `Map<zone, Intl.DateTimeFormat>` cache is the
     // one sanctioned module state in any system (ecs-systems.md).
-    files: ['src/systems/zoned-time.system.ts'],
+    files: fromEitherBase('src/systems/zoned-time.system.ts'),
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -231,7 +245,7 @@ export default [
   // `Pick`/`Omit` in a `*.port.ts`; this block adds the rest of the tier
   // (the ports barrel and the ports specs).
   {
-    files: ['src/ports/**/*.ts'],
+    files: fromEitherBase('src/ports/**/*.ts'),
     rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
   },
   // Law 8: the tier hierarchy, the own-barrel ban and the `../` ban, one
@@ -247,7 +261,7 @@ export default [
     // §3). Only that one package is exempt; firebase, the retired luxon and
     // dinero.js bans, the testing entry points and the systems tier's Law 8
     // restrictions stay in force in this file too.
-    files: ['src/systems/phone.system.ts'],
+    files: fromEitherBase('src/systems/phone.system.ts'),
     rules: {
       'no-restricted-imports': [
         'error',

@@ -759,6 +759,9 @@ runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 25
   classes left (OQ-6), `wall-clock.ts` in `@creativo/ui/wall-clock` (OQ-7 —
   the owner may rename the home and owns `angular-ui.md`'s wording), draft ids
   on the `CLOCK_PORTS` stamp (OQ-8), one-variant tags deleted (OQ-9), the
-  view-model pass carried (OQ-11), ecs-core's tier lint blocks under the nx
-  executor a follow-up (OQ-12). Also for the owner: the +6.14 kB initial
+  view-model pass carried (OQ-11), ecs-core's tier lint blocks (OQ-12) —
+  resolved 2026-10-23: CI enforced them all along (its lint target runs
+  `eslint .` from the project), and their globs now also match from the
+  workspace root (`fromEitherBase`, pinned by
+  `tools/lint-rules/ecs-core-base-paths.spec.mjs`). Also for the owner: the +6.14 kB initial
   bundle of Angular's `resource()` (plan §8.1 ruling 8), kept.
