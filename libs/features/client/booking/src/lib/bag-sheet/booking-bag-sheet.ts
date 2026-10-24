@@ -22,7 +22,11 @@ import {
   type CartLine,
   type Money as MoneyData,
 } from '@core/components';
-import { type TermsSpan, TermsSpanSystem } from '@core/systems';
+import {
+  CatalogPricingSystem,
+  type TermsSpan,
+  TermsSpanSystem,
+} from '@core/systems';
 import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
@@ -437,13 +441,7 @@ export class BookingBagSheet {
           ),
           priceLabel: this.priceLabel(span) ?? '',
           variant: this.variantSelect(service, vm, key, variantId, barberId),
-          performer: this.performerSelect(
-            service,
-            vm,
-            key,
-            variantId,
-            barberId,
-          ),
+          performer: this.performerSelect(service, key, variantId, barberId),
           editLabel: this.transloco.translate('booking.bag.edit', {
             service: name,
           }),
@@ -496,11 +494,11 @@ export class BookingBagSheet {
   /**
    * Who does it — "anyone" first, then the named performers cheapest-first on
    * the terms actually shown, since a list that claims cheapest-first has to
-   * be one.
+   * be one (`CatalogPricingSystem.performersByPrice`); which of them are on
+   * the active list is the catalogue's answer.
    */
   private performerSelect(
     service: Service,
-    vm: ServiceVm,
     lineKey: string,
     variantId: ServiceVariantId | null,
     barberId: BarberId | null,
@@ -518,22 +516,20 @@ export class BookingBagSheet {
       selected: barberId === null,
     };
 
-    const named = vm.offerings
-      .flatMap((offering) => {
-        const candidate = this.catalog
-          .barberVms()
-          .find((entry) => entry.id === offering.barberId);
+    const barbers = this.catalog.barberVms();
+    const named = CatalogPricingSystem.performersByPrice(service, variantId)
+      .flatMap((performer) => {
+        const candidate = barbers.find(
+          (entry) => entry.id === performer.barberId,
+        );
         if (!candidate) return [];
-        const id = BarberId.parse(candidate.id);
-        if (!id.ok) return [];
         return [
           {
             barber: candidate,
-            span: this.spanFor(service, variantId, id.value),
+            span: this.spanFor(service, variantId, performer.barberId),
           },
         ];
       })
-      .sort((a, b) => a.span.minPriceCents - b.span.minPriceCents)
       .map((entry): BagOptionVm => ({
         key: entry.barber.id,
         id: entry.barber.id,

@@ -1,9 +1,11 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { type Localized, type ServiceVm } from './catalog.vm';
+import type { PriceCents } from '@core/primitives';
 import {
   formatDurationRange,
   formatPrice,
+  formatPriceCents,
   formatServiceMeta,
 } from './catalog.presenter';
 
@@ -30,6 +32,11 @@ export class CatalogWording {
 
   price(major: number): string {
     return formatPrice(major, this.locale());
+  }
+
+  /** A figure a system answered in cents — the same money string. */
+  priceCents(cents: PriceCents): string {
+    return formatPriceCents(cents, this.locale());
   }
 
   durationRange(from: number, to: number): string {

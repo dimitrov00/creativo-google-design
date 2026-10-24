@@ -1,6 +1,14 @@
-import { AuditAction, Placement, BackfillJobName } from '@core/components';
-import type { BackfillJob } from '@core/entities';
+import {
+  AuditAction,
+  type BackfillCall,
+  BackfillOutcome,
+  Placement,
+  BackfillJobName,
+} from '@core/components';
+import type { Appointment, BackfillJob } from '@core/entities';
 import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
+import { AppointmentIndexSystem } from './appointment-index.system';
+import { WorkBudgetSystem } from './work-budget.system';
 
 /**
  * The pure half of the ops backfill (`apps/functions/src/lib/ops/
@@ -291,6 +299,29 @@ export const BackfillPlanSystem = {
   },
 
   /**
+   * A stored appointment's mirrors as the backfill judges them (pass C,
+   * P-27 — the pipeline's read model, homed here): each stored subject list
+   * when it IS a list (`null` for a row without one, or a corrupt value),
+   * beside the lists its seats name (`AppointmentIndexSystem.queryKeys`, the
+   * commit's own derivation), and both placement stamps.
+   */
+  mirrorRowOf(appointment: Appointment): MirrorRow {
+    const keys = AppointmentIndexSystem.queryKeys(appointment);
+    const storedUsers: unknown = appointment.subjectUserIds;
+    const storedCustomers: unknown = appointment.subjectCustomerIds;
+    return {
+      storedSubjectUserIds: Array.isArray(storedUsers) ? storedUsers : null,
+      seatSubjectUserIds: keys.subjectUserIds,
+      storedSubjectCustomerIds: Array.isArray(storedCustomers)
+        ? storedCustomers
+        : null,
+      seatSubjectCustomerIds: keys.subjectCustomerIds,
+      placement: appointment.placement,
+      inferredPlacement: appointment.inferredPlacement,
+    };
+  },
+
+  /**
    * Could this row be missing a mirror? A subject list (either) that
    * disagrees with the seats, or no placement of either kind yet — whether the audit trail
    * can supply one is the pipeline's to find out.
@@ -303,11 +334,12 @@ export const BackfillPlanSystem = {
   },
 
   /**
-   * `items` in consecutive slices of `width` (at least one) — a bounded
-   * fan-out, or the 30 values an `in` query takes.
+   * `items` in consecutive slices of `width` (at least one —
+   * `WorkBudgetSystem.chunkSize`) — a bounded fan-out, or the 30 values an
+   * `in` query takes.
    */
   chunk<T>(items: readonly T[], width: number): readonly (readonly T[])[] {
-    const size = Math.max(1, Math.floor(width));
+    const size = WorkBudgetSystem.chunkSize(width);
     const out: (readonly T[])[] = [];
     for (let start = 0; start < items.length; start += size) {
       out.push(items.slice(start, start + size));
@@ -371,6 +403,16 @@ export const BackfillPlanSystem = {
       exhausted: !stoppedEarly && ids.length < pageSize,
       stoppedEarly,
     };
+  },
+
+  /**
+   * What a RETURNED call's audit row says it came to (pass C, P-27): the
+   * walk reached the end (`COMPLETE`), or a page finished and the job goes
+   * on from its cursor (`PARTIAL`). A call that failed is `FAILED` by
+   * construction — the pipeline's other branch.
+   */
+  outcomeOf(page: Pick<BackfillCall.Page, 'done'>): BackfillOutcome {
+    return page.done ? BackfillOutcome.Complete : BackfillOutcome.Partial;
   },
 
   /**

@@ -13,10 +13,16 @@ import {
   AVATAR_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { ADMIN_ROLES, E164, Principal, STAFF_ROLES } from '@core/components';
+import {
+  ADMIN_ROLES,
+  E164,
+  OnboardingFlowStep,
+  Principal,
+  STAFF_ROLES,
+} from '@core/components';
 import { Profile } from '@core/entities';
 import { IdentifierChannel, type UserId } from '@core/primitives';
-import { ProfileCompletionSystem } from '@core/systems';
+import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
 
 /** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
 function settled(url: string | null): Observable<string | null | undefined> {
@@ -261,12 +267,17 @@ export class SessionIdentityService {
 
   /**
    * Which personalization step "continue" should land on — the first one
-   * still open. `name`/`phone` are registration invariants, so the only
-   * candidates are the two optional enhancements. A hint for the deep
-   * link's `?step=`; the onboarding screen recomputes the full remaining
-   * set from `profileProgress` on arrival, so a stale hint costs nothing.
+   * still open (`OnboardingFlowSystem.openPersonalizeSteps`, the same rule
+   * the onboarding resume reads), the avatar step when none is. `name`/
+   * `phone` are registration invariants, so the only candidates are the two
+   * optional enhancements. A hint for the deep link's `?step=` (its word);
+   * the onboarding screen recomputes the full remaining set from
+   * `profileProgress` on arrival, so a stale hint costs nothing.
    */
   readonly nextOpenStep = computed<'birthday' | 'avatar'>(() =>
-    this.accountState.account()?.birthDate ? 'avatar' : 'birthday',
+    OnboardingFlowSystem.openPersonalizeSteps(this.profileProgress())[0] ===
+    OnboardingFlowStep.Birthday
+      ? 'birthday'
+      : 'avatar',
   );
 }

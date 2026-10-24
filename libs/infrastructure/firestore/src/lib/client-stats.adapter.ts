@@ -24,10 +24,6 @@ import { readDoc, readQuery } from './observe';
 /** The id a page of stored stats is ordered and resumed by. */
 const idOf = (record: ClientStatsRecord) => record.id;
 
-/** A whole page size of at least one, whatever was asked (`NaN` included). */
-const pageSizeOf = (raw: number): number =>
-  Number.isFinite(raw) ? PagingSystem.pageSize(raw) : 1;
-
 /**
  * `clientStats/{customerId}` and its admin-only `restricted/money` (flip 1,
  * plan §3.4; D29: keyed by the client RECORD, never the account) — the
@@ -60,7 +56,7 @@ export const clientStatsReadPorts = (db: Firestore): ClientStatsReadPorts => ({
    * spend is never read here.
    */
   pageClientStats: async (afterCustomerId, max) => {
-    const size = pageSizeOf(max);
+    const size = PagingSystem.pageSizeOf(max);
     const after: QueryConstraint[] =
       afterCustomerId === null ? [] : [startAfter(afterCustomerId)];
     const read = await readQuery<ClientStatsRecord>(

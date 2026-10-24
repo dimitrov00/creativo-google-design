@@ -6,6 +6,10 @@ import {
   OnboardingFlowState,
   OnboardingFlowStep,
 } from '@core/components';
+import {
+  type ProfileCompletion,
+  ProfileCompletionKey,
+} from './profile-completion.system';
 
 /**
  * OnboardingFlowSystem — the onboarding flow's transition function
@@ -40,6 +44,36 @@ function skipEventOf(step: PersonalizeStep): OnboardingFlowEvent {
     default:
       return OnboardingFlowEvent.skipAvatar();
   }
+}
+
+/**
+ * The completion item a personalization step finishes — `null` for
+ * `SERVICES`: nothing about a service selection is persisted, so it is never
+ * "done" and is never offered on a resume.
+ */
+function completionKeyOf(step: PersonalizeStep): ProfileCompletionKey | null {
+  switch (step) {
+    case OnboardingFlowStep.Birthday:
+      return ProfileCompletionKey.Birthday;
+    case OnboardingFlowStep.Avatar:
+      return ProfileCompletionKey.Photo;
+    default:
+      return null;
+  }
+}
+
+/** Whether the completion lists `key` as an item still open (linear scan of four items). */
+function isOpen(
+  completion: ProfileCompletion,
+  key: ProfileCompletionKey,
+): boolean {
+  for (let i = 0; i < completion.items.length; i++) {
+    const item = completion.items[i];
+    if (item !== undefined && item.profileCompletionKey === key && !item.done) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Linear scan of the (at most three-entry) plan. */
@@ -200,6 +234,28 @@ export const OnboardingFlowSystem = {
       current = stepped.value;
     }
     return Result.ok(current);
+  },
+
+  /**
+   * The personalization steps a resume offers for THIS profile, in flow
+   * order: each step whose completion item is still open — `BIRTHDAY` for
+   * the birthday step, `PHOTO` for the avatar step. `SERVICES` is never
+   * offered (nothing about a service selection is persisted, so it would nag
+   * on every resume). `[]` when nothing is left — and while the completion
+   * is not known yet (`null`): the caller waits for it, or falls back to its
+   * own plan.
+   */
+  openPersonalizeSteps(
+    completion: ProfileCompletion | null,
+  ): readonly PersonalizeStep[] {
+    if (completion === null) return [];
+    const open: PersonalizeStep[] = [];
+    for (let i = 0; i < PERSONALIZE_STEPS.length; i++) {
+      const step = PERSONALIZE_STEPS[i] as PersonalizeStep;
+      const key = completionKeyOf(step);
+      if (key !== null && isOpen(completion, key)) open.push(step);
+    }
+    return open;
   },
 
   /** 1-based position of the state's step within the plan; 0 outside the personalization phase or the plan. */

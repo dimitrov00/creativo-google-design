@@ -13,7 +13,6 @@ import {
 import {
   BookingPolicy,
   type BookingCart,
-  ServiceStatus,
   WriteOp,
   type WaitlistCall,
 } from '@core/components';
@@ -143,16 +142,9 @@ export const requestWaitlist =
         const catalog = await ports.loadCatalog(serviceIds, locationId);
         if (!catalog.ok) return catalog;
         // A retired service is ABSENT, exactly as the commit reads it.
-        const active: Service[] = [];
-        for (const service of catalog.value.services) {
-          if (
-            service !== null &&
-            service.serviceStatus === ServiceStatus.Active
-          ) {
-            active.push(service);
-          }
-        }
-        services = active;
+        services = PartyAdmissionSystem.bookableServices(
+          catalog.value.services,
+        );
         location = catalog.value.location;
       }
     }

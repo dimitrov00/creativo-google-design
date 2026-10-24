@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BookingFlowStep, MoveRefusalReason } from '@core/components';
+import {
+  BookingFlowStep,
+  MoveRefusalReason,
+  SeatArrangement,
+} from '@core/components';
 import {
   BOOKING_STEP_WORDS,
   MOVE_REFUSAL_WORDS,
+  SEAT_ARRANGEMENT_WORDS,
   bookingStepOfWord,
 } from './booking-words';
 
@@ -41,6 +46,13 @@ describe('the booking flow’s lowercase words', () => {
       [MoveRefusalReason.CompanionsOnly]: 'companions_only',
       [MoveRefusalReason.Unavailable]: 'unavailable',
       [MoveRefusalReason.CarriedOutOfReach]: 'carried_out_of_reach',
+    });
+  });
+
+  it('spells every seat arrangement as the time sheet’s heading key always has', () => {
+    expect(SEAT_ARRANGEMENT_WORDS).toEqual({
+      [SeatArrangement.Parallel]: 'parallel',
+      [SeatArrangement.Sequential]: 'sequential',
     });
   });
 });

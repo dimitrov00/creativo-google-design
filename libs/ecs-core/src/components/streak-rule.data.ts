@@ -79,6 +79,22 @@ export type StreakRuleDirection =
   (typeof StreakRuleDirection)[keyof typeof StreakRuleDirection];
 
 /**
+ * What «Запази» owes the admin before a change goes out, by its direction
+ * (client-card revision 3 §2.6.4) — the field `streakPublishConsent`,
+ * answered by `StreakRuleSystem.publishConsent`: `AT_ONCE` for a looser or
+ * neutral change (saved straight away), `ASK` for a stricter or mixed one,
+ * `ASK_SWITCH` for the rule going on or off. Which words the question
+ * prints is the page's.
+ */
+export const StreakPublishConsent = {
+  AtOnce: 'AT_ONCE',
+  Ask: 'ASK',
+  AskSwitch: 'ASK_SWITCH',
+} as const;
+export type StreakPublishConsent =
+  (typeof StreakPublishConsent)[keyof typeof StreakPublishConsent];
+
+/**
  * A parameter of the rule a change can list, in the rule's own order —
  * every one of them, and the head's name. A version's identity (`version`,
  * `effectiveFromLocalDate`) is never listed: it is what every revision
@@ -585,6 +601,22 @@ export const StreakRule = {
   /** Is this cause one the rule never counts against the client? */
   isExcused(rule: Pick<StreakRule, 'excuses'>, cause: StreakExcuse): boolean {
     return isOneOf(rule.excuses, cause);
+  },
+
+  /**
+   * Every visit the SHOP calls off is excused — all of
+   * {@link STREAK_SHOP_EXCUSES}, in any order: what the rule's sentence
+   * promises together (`StreakRuleSystem.summary`'s `shopExcuses`), and
+   * what the admin's excuses sheet warns about when one of the three is
+   * off. A list without any of them, or without one, covers nothing.
+   */
+  coversShopExcuses(excuses: readonly StreakExcuse[]): boolean {
+    for (let i = 0; i < STREAK_SHOP_EXCUSES.length; i++) {
+      if (!isOneOf(excuses, STREAK_SHOP_EXCUSES[i] as StreakExcuse)) {
+        return false;
+      }
+    }
+    return true;
   },
 } as const;
 

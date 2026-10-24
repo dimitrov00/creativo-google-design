@@ -1,5 +1,9 @@
 import { Result } from '@core/primitives';
-import { PreciseInstant, type WriteOp } from '@core/components';
+import {
+  PolicySweepOutcome,
+  PreciseInstant,
+  type WriteOp,
+} from '@core/components';
 import type { PolicyRecomputeJob } from '@core/entities';
 import type {
   ClockPorts,
@@ -7,8 +11,11 @@ import type {
   LogPorts,
   PolicyLinePorts,
 } from '@core/ports';
-import { type AttemptFailure, PolicyRecomputeJobSystem } from '@core/systems';
-import { repositoryFailure } from './project-client-stats.pipeline';
+import {
+  type AttemptFailure,
+  PolicyRecomputeJobSystem,
+  TriggerAttemptSystem,
+} from '@core/systems';
 import {
   POLICY_RECOMPUTE_JOB_PATH,
   policyJobWrite,
@@ -31,20 +38,6 @@ import {
  * Idempotent: a started pass records the document's update time as its
  * change, and a nudge keeps the step's key.
  */
-
-/** What the daily sweep did to the job — the ONLY source of these strings, the field `policySweepOutcome`. */
-export const PolicySweepOutcome = {
-  /** No job, a finished one, or one that moved within the hour — and no dropped change. */
-  Idle: 'IDLE',
-  /** A policy change whose start was dropped: its pass started from the top. */
-  Started: 'STARTED',
-  /** An unfinished pass that had stopped moving: its step fired again. */
-  Nudged: 'NUDGED',
-  /** The policy or the job could not be read or written. */
-  Failed: 'FAILED',
-} as const;
-export type PolicySweepOutcome =
-  (typeof PolicySweepOutcome)[keyof typeof PolicySweepOutcome];
 
 export type PolicySweepReport = {
   readonly policySweepOutcome: PolicySweepOutcome;
@@ -76,7 +69,11 @@ export const sweepPolicyRecompute =
   async (): Promise<Result<PolicySweepReport, never>> => {
     // Outside the transaction: tuning data never widens the job's conflict set.
     const live = await ports.loadPolicyLine();
-    if (!live.ok) return Result.ok(failed(repositoryFailure(live.error)));
+    if (!live.ok) {
+      return Result.ok(
+        failed(TriggerAttemptSystem.repositoryFailure(live.error)),
+      );
+    }
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       (tx) => tx.get<PolicyRecomputeJob>(POLICY_RECOMPUTE_JOB_PATH),
@@ -120,8 +117,11 @@ export const sweepPolicyRecompute =
         });
       },
     );
-    if (!committed.ok)
-      return Result.ok(failed(repositoryFailure(committed.error)));
+    if (!committed.ok) {
+      return Result.ok(
+        failed(TriggerAttemptSystem.repositoryFailure(committed.error)),
+      );
+    }
     const { policySweepOutcome, job } = committed.value;
     if (policySweepOutcome === PolicySweepOutcome.Started && job !== null) {
       ports.log(

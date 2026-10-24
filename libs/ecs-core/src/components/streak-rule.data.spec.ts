@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceCategoryId, ServiceId, type LocalDate } from '@core/primitives';
 import { type EngagementError } from '@core/errors';
-import { localDate } from '@core/testing';
+import { deepFreeze, localDate } from '@core/testing';
 import {
   StreakInterval,
   type StreakIntervalRule,
@@ -13,6 +13,7 @@ import {
   STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakOnBreak,
+  StreakPublishConsent,
   StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
@@ -755,5 +756,77 @@ describe('the head’s guards', () => {
       value: '',
       locale: 'bg',
     });
+  });
+});
+
+describe('StreakPublishConsent — what «Запази» owes the admin first', () => {
+  it('declares its three tags SCREAMING, under the field `streakPublishConsent`', () => {
+    expect(Object.values(StreakPublishConsent)).toEqual([
+      'AT_ONCE',
+      'ASK',
+      'ASK_SWITCH',
+    ]);
+    const tags: readonly StreakPublishConsent[] = [
+      StreakPublishConsent.AtOnce,
+      StreakPublishConsent.Ask,
+      StreakPublishConsent.AskSwitch,
+    ];
+    // @ts-expect-error — the page's old lower-case word is no tag
+    const lower: StreakPublishConsent = 'stricter';
+    expect(tags).toHaveLength(3);
+    expect(lower).toBe('stricter');
+  });
+});
+
+describe('StreakRule.coversShopExcuses — every visit the shop calls off is excused', () => {
+  it('covers the recommended rule’s excuses, and the whole vocabulary', () => {
+    expect(StreakRule.coversShopExcuses(StreakRule.DEFAULT.excuses)).toBe(true);
+    expect(StreakRule.coversShopExcuses(STREAK_EXCUSES)).toBe(true);
+  });
+
+  it('covers the three in any order — the excuses sheet lists them in P9’s', () => {
+    expect(
+      StreakRule.coversShopExcuses([
+        StreakExcuse.StaffCancelled,
+        StreakExcuse.BarberAbsence,
+        StreakExcuse.ShopClosure,
+      ]),
+    ).toBe(true);
+  });
+
+  it('covers nothing once one of the shop’s three is off', () => {
+    for (const off of STREAK_SHOP_EXCUSES) {
+      expect(
+        StreakRule.coversShopExcuses(
+          STREAK_EXCUSES.filter((excuse) => excuse !== off),
+        ),
+      ).toBe(false);
+    }
+    expect(StreakRule.coversShopExcuses([])).toBe(false);
+  });
+
+  it('is not moved by the days off: closed days alone are not the shop calling a visit off', () => {
+    expect(StreakRule.coversShopExcuses([StreakExcuse.ClosedDays])).toBe(false);
+    expect(StreakRule.coversShopExcuses(STREAK_SHOP_EXCUSES)).toBe(true);
+    expect(
+      StreakRule.coversShopExcuses([
+        StreakExcuse.ClosedDays,
+        ...STREAK_SHOP_EXCUSES,
+      ]),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const excuses = deepFreeze([
+      StreakExcuse.StaffCancelled,
+      StreakExcuse.ShopClosure,
+    ]);
+    expect(StreakRule.coversShopExcuses(excuses)).toBe(
+      StreakRule.coversShopExcuses(excuses),
+    );
+    expect(excuses).toEqual([
+      StreakExcuse.StaffCancelled,
+      StreakExcuse.ShopClosure,
+    ]);
   });
 });

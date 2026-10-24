@@ -161,6 +161,27 @@ export const StreakQualifierRule = {
   equals(a: StreakQualifierRule, b: StreakQualifierRule): boolean {
     return StreakQualifierRule.compare(a, b) === QualifierComparison.Same;
   },
+
+  /**
+   * A service in or out of a «Посещение с избрани услуги» list: one not
+   * chosen joins at the end (the order the admin chose is kept); one chosen
+   * leaves — unless it is the LAST one, which stays, because a list of
+   * services names at least one (`parse`). The list handed in is never
+   * written; the one kept is answered as it is.
+   */
+  toggleService(
+    ids: readonly ServiceId[],
+    id: ServiceId,
+  ): readonly ServiceId[] {
+    if (!includes(ids, id)) return [...ids, id];
+    if (ids.length === 1) return ids;
+    const out: ServiceId[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const other = ids[i] as ServiceId;
+      if (other !== id) out.push(other);
+    }
+    return out;
+  },
 } as const;
 
 /** A list's ids, each once, or `null` when it is empty or holds a blank one. */

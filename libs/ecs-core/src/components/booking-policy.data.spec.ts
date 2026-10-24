@@ -1,6 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { localDate, utcMs, duration, minuteCount } from '@core/testing';
+import {
+  deepFreeze,
+  localDate,
+  utcMs,
+  duration,
+  minuteCount,
+} from '@core/testing';
 import { UtcEpochMs } from '@core/primitives';
 import { type SchedulingError, SchedulingErrorCode } from '@core/errors';
 import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
@@ -263,5 +269,25 @@ describe('cancellation window (elapsed time on instants — flatten-spec §2.3 T
     );
     expect(Number.isSafeInteger(deadline)).toBe(true);
     expect(Math.abs(deadline)).toBeLessThanOrEqual(8_640_000_000_000_000);
+  });
+});
+
+describe('BookingPolicy.freeThreshold — a day counts once it holds one slot step (pass C, P-31)', () => {
+  it('is the policy’s slot step, as a minute count', () => {
+    expect(BookingPolicy.freeThreshold(VALID)).toBe(minuteCount(15));
+    expect(
+      BookingPolicy.freeThreshold({ ...VALID, slotStepMinutes: duration(30) }),
+    ).toBe(minuteCount(30));
+    expect(BookingPolicy.freeThreshold(BookingPolicy.DEFAULT)).toBe(
+      minuteCount(15),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const policy = deepFreeze({ ...VALID });
+    expect(BookingPolicy.freeThreshold(policy)).toBe(
+      BookingPolicy.freeThreshold(policy),
+    );
+    expect(policy.slotStepMinutes).toBe(15);
   });
 });

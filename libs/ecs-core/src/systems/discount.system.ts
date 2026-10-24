@@ -1,16 +1,21 @@
 import {
   AppliedDiscount,
+  Combinability,
   CouponValue,
   DiscountMethod,
   DiscountProvenance,
+  DiscountSource,
   type Money,
+  type VoucherCode,
 } from '@core/components';
 import {
   type Currency,
   type AppliedDiscountId,
+  type CouponId,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import type { Coupon } from '@core/entities';
 
 /**
  * One discount to apply — a discount on the visit, or one the visit editor
@@ -48,6 +53,26 @@ export type DiscountBreakdown = {
   readonly totalCents: PriceCents;
   readonly currency: Currency;
 };
+
+/** An enabled coupon a code opens, and its value — what the staff save's bill settle reads. */
+export type ResolvedCode = {
+  readonly couponId: CouponId;
+  readonly label: string;
+  /** The code as stored — normalised — so the snapshot records what was matched. */
+  readonly code: VoucherCode;
+  readonly exclusive: boolean;
+} & CouponValue;
+
+/**
+ * What a discount PROMISES, as the set rules read it — where it came from,
+ * what it takes off, and whether it must be alone. An applied discount is
+ * one as it is; a caller holding another shape hands a reader in
+ * (`withAdded`'s `promiseOf`).
+ */
+export type DiscountPromise = {
+  readonly combinability: Combinability;
+} & DiscountProvenance &
+  CouponValue;
 
 /**
  * A non-negative amount: the clamp keeps every figure a price, `+ 0` folds a
@@ -231,13 +256,105 @@ export const DiscountSystem = {
 
   /**
    * The same PROMISE: source, provenance and value agree — the instant it
-   * was applied is not identity (`AppliedDiscount.equals`).
+   * was applied is not identity (`AppliedDiscount.equals`). Reads the
+   * provenance and value slices alone, so an applied discount or any
+   * promise passes as it is.
    */
-  samePromise(a: AppliedDiscount, b: AppliedDiscount): boolean {
+  samePromise(
+    a: DiscountProvenance & CouponValue,
+    b: DiscountProvenance & CouponValue,
+  ): boolean {
     return (
       DiscountProvenance.sameProvenance(a, b) &&
       CouponValue.methodRank(a) === CouponValue.methodRank(b) &&
       CouponValue.magnitude(a) === CouponValue.magnitude(b)
     );
+  },
+
+  /**
+   * The inputs in the evaluator's own total order — method rank, magnitude,
+   * then `grantedAtUtcMs`, then id: the order {@link apply} takes them in,
+   * every input kept (a min-spend gate is {@link apply}'s, not the
+   * order's). A new array; the input is untouched.
+   */
+  ordered(inputs: readonly DiscountInput[]): readonly DiscountInput[] {
+    const sorted = [...inputs];
+    sorted.sort(compareByTotalOrder);
+    return sorted;
+  },
+
+  /**
+   * What the drafted set becomes once `candidate` joins it (the visit
+   * editor's `addDiscount`): the same promise already on it changes nothing
+   * (the SAME array comes back, {@link samePromise}); an exclusive candidate
+   * takes the others off; otherwise every exclusive line gives way, a
+   * manual figure replaces the manual figure before it (the counter
+   * corrects, it does not pile up), and the candidate joins last. The
+   * promise of each element is read through `promiseOf`. Whether an offer
+   * may join at all (`Combinability.canAdd`) is the caller's gate on the
+   * card path; a typed code joins through here alone.
+   */
+  withAdded<D>(
+    current: readonly D[],
+    candidate: D,
+    promiseOf: (discount: D) => DiscountPromise,
+  ): readonly D[] {
+    const promise = promiseOf(candidate);
+    for (let i = 0; i < current.length; i++) {
+      if (DiscountSystem.samePromise(promiseOf(current[i] as D), promise)) {
+        return current;
+      }
+    }
+    if (Combinability.isExclusive(promise.combinability)) return [candidate];
+    const kept: D[] = [];
+    for (let i = 0; i < current.length; i++) {
+      const entry = current[i] as D;
+      const each = promiseOf(entry);
+      if (Combinability.isExclusive(each.combinability)) continue;
+      if (
+        each.discountSource === DiscountSource.Manual &&
+        promise.discountSource === DiscountSource.Manual
+      ) {
+        continue;
+      }
+      kept.push(entry);
+    }
+    kept.push(candidate);
+    return kept;
+  },
+
+  /**
+   * The shop's codes worth offering beside the client's own coupons (the
+   * visit editor's `promoChoices`): a code whose coupon the client already
+   * holds as a grant is offered once, as theirs — left out here. Input
+   * order kept; the coupon of each promo is read through `couponIdOf`.
+   */
+  offerablePromos<P>(
+    promos: readonly P[],
+    heldCouponIds: readonly CouponId[],
+    couponIdOf: (promo: P) => CouponId,
+  ): readonly P[] {
+    const held = new Set<CouponId>(heldCouponIds);
+    const kept: P[] = [];
+    for (let i = 0; i < promos.length; i++) {
+      const promo = promos[i] as P;
+      if (!held.has(couponIdOf(promo))) kept.push(promo);
+    }
+    return kept;
+  },
+
+  /**
+   * A coupon a typed code opened, as the staff save's bill settle reads it
+   * (moved here from `edit-appointment.pipeline.ts` in pass C): its name as the
+   * label, the code as matched, its own combinability and value.
+   */
+  resolvedCode(coupon: Coupon, code: VoucherCode): ResolvedCode {
+    return {
+      couponId: coupon.id,
+      label: coupon.name,
+      code,
+      exclusive: Combinability.isExclusive(coupon.combinability),
+      ...CouponValue.of(coupon),
+    };
   },
 } as const;

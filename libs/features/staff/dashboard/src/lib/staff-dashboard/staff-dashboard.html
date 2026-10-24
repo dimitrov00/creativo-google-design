@@ -359,8 +359,8 @@
 
         @if (store.searchLoading()) {
         <!-- The ring in the field says it; nothing below until it lands. -->
-        } @else if (store.term().trim().length >= 2) { @if (searchResults(); as
-        hits) { @if (hits.length === 0) {
+        } @else if (searchTermSearchable()) { @if (searchResults(); as hits) {
+        @if (hits.length === 0) {
         <p
           uiText
           uiFont="footnote"

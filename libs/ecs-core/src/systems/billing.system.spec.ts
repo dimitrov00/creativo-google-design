@@ -2,6 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   type AppliedDiscount,
+  AuditAction,
+  type BookingCall,
   Combinability,
   CouponValue,
   DiscountMethod,
@@ -39,14 +41,15 @@ import {
   customerOf,
 } from '@core/testing';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
+import type { ResolvedGrant } from './coupon-grant.system';
+import type { DiscountInput, ResolvedCode } from './discount.system';
 import {
   BillPending,
   BillingSystem,
+  type ManualDiscountValue,
   type PendingDiscount,
   type PendingDiscounts,
   type PendingVouchers,
-  type ResolvedCode,
-  type ResolvedGrant,
   TipPreset,
 } from './billing.system';
 
@@ -898,5 +901,443 @@ describe('BillingSystem — purity', () => {
         NOW,
       ),
     ).toEqual(once);
+  });
+});
+
+/* ── Pass C: the drafted bill, the typed figure's cap, tips, pending ───── */
+
+/** A drafted discount as the editor hands it in — its key, the order it was drafted in (the instant), its value. */
+function drafted(
+  key: string,
+  index: number,
+  value: CouponValue,
+): DiscountInput {
+  return {
+    id: AppliedDiscountId.of(key),
+    label: key,
+    grantedAtUtcMs: unwrapOk(UtcEpochMs.of(index)),
+    minSpendCents: null,
+    ...value,
+  };
+}
+
+/** The editor spec's 28,00 € visit. */
+const SHEET = eur(2800);
+
+describe('BillingSystem.draftBill — the bill being drafted', () => {
+  it("lists every line in the evaluator's order with what it took — the 21,85 € stack and the 22,40 € gift", () => {
+    // Picked in this order; the fixed sum comes off first, then 5 % of
+    // what is left: 28,00 − 5,00 = 23,00, then 1,15.
+    const stack = BillingSystem.draftBill(
+      SHEET,
+      [
+        drafted('grant:grant-loyal', 0, percent(5)),
+        drafted('code:BEARD5', 1, fixed(500)),
+      ],
+      [],
+    );
+    expect(stack.lines).toEqual([
+      { id: 'code:BEARD5', amountCents: 500 },
+      { id: 'grant:grant-loyal', amountCents: 115 },
+    ]);
+    expect(stack.totalCents).toBe(2185);
+    expect(stack.discountTotalCents).toBe(615);
+    expect(stack.balanceDueCents).toBe(2185);
+    expect(stack.takenCents).toBe(615);
+    const gift = BillingSystem.draftBill(
+      SHEET,
+      [drafted('grant:grant-birthday', 0, percent(20))],
+      [],
+    );
+    expect(gift.totalCents).toBe(2240);
+    expect(gift.takenCents).toBe(560);
+  });
+
+  it('cascades the vouchers over the total — −10,00 / «остават 0,00», −15,20 / «остават 34,80», then −25,20 without the first', () => {
+    const first10 = [drafted('code:FIRST10', 0, percent(10))];
+    const one = BillingSystem.draftBill(SHEET, first10, [cents(1000)]);
+    expect(one.totalCents).toBe(2520);
+    expect(one.covers).toEqual([1000]);
+    expect(one.left).toEqual([0]);
+    expect(one.balanceDueCents).toBe(1520);
+    const two = BillingSystem.draftBill(SHEET, first10, [
+      cents(1000),
+      cents(5000),
+    ]);
+    expect(two.covers).toEqual([1000, 1520]);
+    expect(two.left).toEqual([0, 3480]);
+    expect(two.voucherTotalCents).toBe(2520);
+    // Nothing left for a third to cover.
+    expect(two.balanceDueCents).toBe(0);
+    // What came off together: the discount and both vouchers.
+    expect(two.takenCents).toBe(2800);
+    const without = BillingSystem.draftBill(SHEET, first10, [cents(5000)]);
+    expect(without.covers).toEqual([2520]);
+    expect(without.left).toEqual([2480]);
+  });
+
+  it('keeps a line that took nothing, at zero — a percent after a fixed sum ate the bill, a sum in another currency', () => {
+    const eaten = BillingSystem.draftBill(
+      SHEET,
+      [
+        drafted('code:FIRST10', 0, percent(10)),
+        drafted('manual', 1, fixed(3000)),
+      ],
+      [],
+    );
+    expect(eaten.lines).toEqual([
+      { id: 'manual', amountCents: 2800 },
+      { id: 'code:FIRST10', amountCents: 0 },
+    ]);
+    expect(eaten.totalCents).toBe(0);
+    const leva = BillingSystem.draftBill(
+      SHEET,
+      [
+        drafted(
+          'code:LEVA',
+          0,
+          unwrapOk(CouponValue.fixedAmount(cents(500), Currency.BGN)),
+        ),
+        drafted('code:FIRST10', 1, percent(10)),
+      ],
+      [],
+    );
+    expect(leva.lines).toEqual([
+      { id: 'code:LEVA', amountCents: 0 },
+      { id: 'code:FIRST10', amountCents: 280 },
+    ]);
+    expect(leva.totalCents).toBe(2520);
+  });
+
+  it('has no total and nothing to cover without a subtotal — every line and cover zero', () => {
+    expect(
+      BillingSystem.draftBill(
+        null,
+        [
+          drafted('code:BEARD5', 0, fixed(500)),
+          drafted('code:FIRST10', 1, percent(10)),
+        ],
+        [cents(1000), cents(300)],
+      ),
+    ).toEqual({
+      lines: [
+        { id: 'code:BEARD5', amountCents: 0 },
+        { id: 'code:FIRST10', amountCents: 0 },
+      ],
+      discountTotalCents: 0,
+      totalCents: null,
+      covers: [0, 0],
+      left: [1000, 300],
+      voucherTotalCents: 0,
+      balanceDueCents: null,
+      takenCents: 0,
+    });
+    expect(BillingSystem.draftBill(SHEET, [], [])).toMatchObject({
+      lines: [],
+      totalCents: 2800,
+      balanceDueCents: 2800,
+      takenCents: 0,
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const subtotal = deepFreeze(SHEET);
+    const discounts = deepFreeze([
+      drafted('grant:grant-loyal', 0, percent(5)),
+      drafted('code:BEARD5', 1, fixed(500)),
+    ]);
+    const available = deepFreeze([cents(1000), cents(5000)]);
+    expect(BillingSystem.draftBill(subtotal, discounts, available)).toEqual(
+      BillingSystem.draftBill(subtotal, discounts, available),
+    );
+    expect(discounts.map((entry) => entry.id)).toEqual([
+      'grant:grant-loyal',
+      'code:BEARD5',
+    ]);
+  });
+});
+
+describe('BillingSystem.capManual — a typed figure held to what the bill can take', () => {
+  const typedPercent = (discountPercent: number): ManualDiscountValue => ({
+    discountMethod: DiscountMethod.PercentOff,
+    discountPercent,
+  });
+  const typedAmount = (
+    minor: number,
+    currency: Currency = Currency.EUR,
+  ): ManualDiscountValue => ({
+    discountMethod: DiscountMethod.FixedAmount,
+    discountAmountCents: cents(minor),
+    discountCurrency: currency,
+  });
+
+  it('snaps a percent past 100 to 100, and keeps one within it as it is', () => {
+    expect(BillingSystem.capManual(typedPercent(101), SHEET)).toEqual(
+      typedPercent(100),
+    );
+    expect(BillingSystem.capManual(typedPercent(125), null)).toEqual(
+      typedPercent(100),
+    );
+    const whole = typedPercent(100);
+    expect(BillingSystem.capManual(whole, SHEET)).toBe(whole);
+    const ten = typedPercent(10);
+    expect(BillingSystem.capManual(ten, SHEET)).toBe(ten);
+  });
+
+  it('snaps an amount past the subtotal to the subtotal, and keeps one under it — or with no subtotal, or in another currency — as it is', () => {
+    expect(BillingSystem.capManual(typedAmount(3500), SHEET)).toEqual(
+      typedAmount(2800),
+    );
+    const exact = typedAmount(2800);
+    expect(BillingSystem.capManual(exact, SHEET)).toBe(exact);
+    const under = typedAmount(500);
+    expect(BillingSystem.capManual(under, SHEET)).toBe(under);
+    const unbilled = typedAmount(3500);
+    expect(BillingSystem.capManual(unbilled, null)).toBe(unbilled);
+    const leva = typedAmount(3500, Currency.BGN);
+    expect(BillingSystem.capManual(leva, SHEET)).toBe(leva);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const value = deepFreeze(typedAmount(3500));
+    const subtotal = deepFreeze(SHEET);
+    expect(BillingSystem.capManual(value, subtotal)).toEqual(
+      BillingSystem.capManual(value, subtotal),
+    );
+    expect(
+      value.discountMethod === DiscountMethod.FixedAmount &&
+        value.discountAmountCents,
+    ).toBe(3500);
+  });
+});
+
+describe('BillingSystem — the manual percent range (DEP-6: the edge rule, homed once)', () => {
+  it('settles a whole percent 1–100 and refuses 0, a fraction and 101', () => {
+    expect(settle([manual(1)], ['admin']).ok).toBe(true);
+    expect(settle([manual(100)], ['admin']).ok).toBe(true);
+    for (const refused of [0, 12.5, 101]) {
+      expect(unwrapErr(settle([manual(refused)], ['admin']))).toEqual({
+        errorCode: StaffEditErrorCode.InvalidCommand,
+        field: 'discounts',
+      });
+    }
+  });
+});
+
+describe("BillingSystem.recordedTipsTotal — the day's tips, strictly", () => {
+  const tipped = (
+    minor: number | null,
+    currency: Currency = Currency.EUR,
+  ): Seat =>
+    Seat.withTip(
+      seat(2000, 10, 's', currency),
+      minor === null ? null : cents(minor),
+    );
+
+  it('sums the recorded tips, skipping a seat with none — and says nothing when none is recorded', () => {
+    expect(
+      BillingSystem.recordedTipsTotal([tipped(200), tipped(null), tipped(150)]),
+    ).toEqual(eur(350));
+    expect(BillingSystem.recordedTipsTotal([tipped(0)])).toEqual(eur(0));
+    expect(
+      BillingSystem.recordedTipsTotal([tipped(null), tipped(null)]),
+    ).toBeNull();
+    expect(BillingSystem.recordedTipsTotal([])).toBeNull();
+  });
+
+  it('refuses a figure across two currencies — unlike tipsOf, which skips the other one', () => {
+    const mixed = [tipped(200), tipped(500, Currency.BGN)];
+    expect(BillingSystem.recordedTipsTotal(mixed)).toBeNull();
+    expect(BillingSystem.tipsOf(mixed, Currency.EUR)).toEqual(eur(200));
+    // A seat in another currency without a tip names no currency.
+    expect(
+      BillingSystem.recordedTipsTotal([
+        tipped(null, Currency.BGN),
+        tipped(300),
+      ]),
+    ).toEqual(eur(300));
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const seats = deepFreeze([tipped(200), tipped(150)]);
+    expect(BillingSystem.recordedTipsTotal(seats)).toEqual(
+      BillingSystem.recordedTipsTotal(seats),
+    );
+  });
+});
+
+describe("BillingSystem.recordTip — one seat's tip", () => {
+  const S10 = SeatId.of('s10');
+
+  it('refuses a seat the visit does not have', () => {
+    expect(
+      unwrapErr(
+        BillingSystem.recordTip(visit(), SeatId.of('nope'), cents(200)),
+      ),
+    ).toEqual({
+      errorCode: SchedulingErrorCode.AppointmentUnknownSeat,
+      seatId: 'nope',
+    });
+  });
+
+  it('records a tip on that seat alone, as BOOKING_TIP_RECORDED', () => {
+    const appointment = visit();
+    const recorded = unwrapOk(
+      BillingSystem.recordTip(appointment, S10, cents(200)),
+    );
+    expect(recorded?.auditAction).toBe(AuditAction.BookingTipRecorded);
+    expect(recorded?.seats.map((each) => each.tipCents)).toEqual([200, null]);
+    expect(recorded?.seats[1]).toBe(appointment.seats[1]);
+  });
+
+  it('is no change for the same figure again — null — and clears a tip as BOOKING_TIP_CLEARED', () => {
+    const tippedVisit: Appointment = {
+      ...visit(),
+      seats: [Seat.withTip(seat(2000, 10), cents(200)), seat(800, 11)],
+    };
+    expect(
+      unwrapOk(BillingSystem.recordTip(tippedVisit, S10, cents(200))),
+    ).toBeNull();
+    expect(unwrapOk(BillingSystem.recordTip(visit(), S10, null))).toBeNull();
+    const cleared = unwrapOk(BillingSystem.recordTip(tippedVisit, S10, null));
+    expect(cleared?.auditAction).toBe(AuditAction.BookingTipCleared);
+    expect(cleared?.seats.map((each) => each.tipCents)).toEqual([null, null]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const appointment = deepFreeze(visit());
+    expect(BillingSystem.recordTip(appointment, S10, cents(300))).toEqual(
+      BillingSystem.recordTip(appointment, S10, cents(300)),
+    );
+    expect(appointment.seats[0]?.tipCents).toBeNull();
+  });
+});
+
+describe("BillingSystem.pendingDiscounts — the batch's discounts, resolved", () => {
+  const resolvedGrants = [...grants.values()];
+  const resolvedCodes = [...codes.values()];
+
+  it('keeps the stored set when the batch said nothing', () => {
+    expect(
+      BillingSystem.pendingDiscounts(
+        null,
+        resolvedGrants,
+        resolvedCodes,
+        Currency.EUR,
+      ),
+    ).toEqual({ billPending: BillPending.Keep });
+  });
+
+  it("pairs each request with what was resolved for it — null where nothing was — and stamps a manual sum in the visit's currency", () => {
+    const requests: readonly BookingCall.StaffDiscount[] = [
+      {
+        discountSource: DiscountSource.Grant,
+        grantId: CouponGrantId.of('grant-loyal'),
+      },
+      {
+        discountSource: DiscountSource.Grant,
+        grantId: CouponGrantId.of('grant-unknown'),
+      },
+      { discountSource: DiscountSource.Code, code: VoucherCode.of('FIRST10') },
+      { discountSource: DiscountSource.Code, code: VoucherCode.of('SUMMER') },
+      {
+        discountSource: DiscountSource.Manual,
+        discountMethod: DiscountMethod.PercentOff,
+        discountPercent: 10,
+      },
+      {
+        discountSource: DiscountSource.Manual,
+        discountMethod: DiscountMethod.FixedAmount,
+        discountAmountCents: cents(300),
+      },
+    ];
+    expect(
+      BillingSystem.pendingDiscounts(
+        requests,
+        resolvedGrants,
+        resolvedCodes,
+        Currency.BGN,
+      ),
+    ).toEqual({
+      billPending: BillPending.Set,
+      items: [
+        { ...grantArm('grant-loyal') },
+        {
+          discountSource: DiscountSource.Grant,
+          grantId: 'grant-unknown',
+          resolved: null,
+        },
+        { ...codeArm('FIRST10') },
+        { discountSource: DiscountSource.Code, code: 'SUMMER', resolved: null },
+        { ...manual(10) },
+        {
+          discountSource: DiscountSource.Manual,
+          value: {
+            discountMethod: DiscountMethod.FixedAmount,
+            discountAmountCents: 300,
+            discountCurrency: Currency.BGN,
+          },
+        },
+      ],
+    });
+    expect(
+      BillingSystem.pendingDiscounts(
+        [],
+        resolvedGrants,
+        resolvedCodes,
+        Currency.EUR,
+      ),
+    ).toEqual({ billPending: BillPending.Set, items: [] });
+  });
+
+  it('answers a grant named twice in what was resolved with the first', () => {
+    const first = grants.get('grant-1') as ResolvedGrant;
+    const second: ResolvedGrant = { ...first, label: 'Втори' };
+    const pending = BillingSystem.pendingDiscounts(
+      [
+        {
+          discountSource: DiscountSource.Grant,
+          grantId: CouponGrantId.of('grant-1'),
+        },
+      ],
+      [first, second],
+      [],
+      Currency.EUR,
+    );
+    expect(pending).toEqual({
+      billPending: BillPending.Set,
+      items: [
+        {
+          discountSource: DiscountSource.Grant,
+          grantId: 'grant-1',
+          resolved: first,
+        },
+      ],
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const requests = deepFreeze([
+      { discountSource: DiscountSource.Code, code: VoucherCode.of('BEARD5') },
+    ] as const);
+    const frozenGrants = deepFreeze(
+      resolvedGrants.map((grant) => ({ ...grant })),
+    );
+    const frozenCodes = deepFreeze(resolvedCodes.map((code) => ({ ...code })));
+    expect(
+      BillingSystem.pendingDiscounts(
+        requests,
+        frozenGrants,
+        frozenCodes,
+        Currency.EUR,
+      ),
+    ).toEqual(
+      BillingSystem.pendingDiscounts(
+        requests,
+        frozenGrants,
+        frozenCodes,
+        Currency.EUR,
+      ),
+    );
   });
 });

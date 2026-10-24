@@ -14,6 +14,7 @@ import {
   type BookingCart,
   LocationStatus,
   PlacementPolicy,
+  ServiceStatus,
   RequestedSubjectRole,
   type BookingCall,
 } from '@core/components';
@@ -262,6 +263,45 @@ describe('shopListed — the shop a waitlist may watch', () => {
         locationFixture({ locationStatus: LocationStatus.Hidden }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('bookableServices — the services a party may be booked into', () => {
+  const active = serviceFixture({ id: ServiceId.of('svc-fade') });
+  const archived = serviceFixture({
+    id: ServiceId.of('svc-old'),
+    serviceStatus: ServiceStatus.Archived,
+  });
+  const unmodelled = serviceFixture({
+    id: ServiceId.of('svc-draft'),
+    serviceStatus: 'DRAFT' as ServiceStatus,
+  });
+  const beard = serviceFixture({ id: ServiceId.of('svc-beard') });
+
+  it('keeps the ACTIVE rows in their order — a retired one, or a status nobody modelled, is absent', () => {
+    expect(
+      PartyAdmissionSystem.bookableServices([
+        beard,
+        archived,
+        active,
+        unmodelled,
+      ]),
+    ).toEqual([beard, active]);
+  });
+
+  it('drops a row that was not there (null), and answers none for none', () => {
+    expect(PartyAdmissionSystem.bookableServices([null, active, null])).toEqual(
+      [active],
+    );
+    expect(PartyAdmissionSystem.bookableServices([])).toEqual([]);
+    expect(PartyAdmissionSystem.bookableServices([null, archived])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze([active, null, archived, beard]);
+    const once = PartyAdmissionSystem.bookableServices(frozen);
+    expect(PartyAdmissionSystem.bookableServices(frozen)).toEqual(once);
+    expect(frozen).toHaveLength(4);
   });
 });
 

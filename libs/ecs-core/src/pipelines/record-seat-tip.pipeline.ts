@@ -1,10 +1,4 @@
-import {
-  type Actor,
-  AuditAction,
-  AuditContext,
-  Seat,
-  WriteOp,
-} from '@core/components';
+import { type Actor, AuditContext, WriteOp } from '@core/components';
 import {
   Result,
   type AppointmentId,
@@ -15,10 +9,10 @@ import {
 import {
   BookingError,
   type RepositoryError,
-  SchedulingError,
+  type SchedulingError,
 } from '@core/errors';
 import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
-import { type AuditFact, AuditSystem } from '@core/systems';
+import { type AuditFact, AuditSystem, BillingSystem } from '@core/systems';
 import {
   appendAuditFacts,
   appointmentPath,
@@ -82,21 +76,14 @@ export const recordSeatTip =
         if (appointment === null) {
           return Result.err(BookingError.invalidInput('appointmentId'));
         }
-        let index = -1;
-        for (let i = 0; i < appointment.seats.length && index < 0; i++) {
-          if ((appointment.seats[i] as Seat).seatId === cmd.seatId) index = i;
-        }
-        if (index < 0) {
-          return Result.err(SchedulingError.appointmentUnknownSeat(cmd.seatId));
-        }
-        const seat = appointment.seats[index] as Seat;
-        if (seat.tipCents === cmd.tipCents) {
+        const tip = BillingSystem.recordTip(
+          appointment,
+          cmd.seatId,
+          cmd.tipCents,
+        );
+        if (!tip.ok) return tip;
+        if (tip.value === null) {
           return Result.ok({ auditFacts: [], unchanged: true, writes: [] });
-        }
-        const seats: Seat[] = [];
-        for (let i = 0; i < appointment.seats.length; i++) {
-          const each = appointment.seats[i] as Seat;
-          seats.push(i === index ? Seat.withTip(each, cmd.tipCents) : each);
         }
         return Result.ok({
           auditFacts: [
@@ -107,16 +94,15 @@ export const recordSeatTip =
                 cmd.seatId,
               ),
               changeKey: AuditSystem.changeKey.tip(cmd.seatId, recordedAtUtcMs),
-              context: AuditContext.tip(
-                cmd.tipCents === null
-                  ? AuditAction.BookingTipCleared
-                  : AuditAction.BookingTipRecorded,
-                cmd.seatId,
-              ),
+              context: AuditContext.tip(tip.value.auditAction, cmd.seatId),
             },
           ],
           unchanged: false,
-          writes: [WriteOp.update(appointmentPath(appointment.id), { seats })],
+          writes: [
+            WriteOp.update(appointmentPath(appointment.id), {
+              seats: tip.value.seats,
+            }),
+          ],
         });
       },
     );

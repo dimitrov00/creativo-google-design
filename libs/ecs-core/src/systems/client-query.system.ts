@@ -1,3 +1,6 @@
+import { Seat, SeatSubject, type AccountOccupant } from '@core/components';
+import { UtcEpochMs, type UserId } from '@core/primitives';
+
 /**
  * Which part of a typed query leads the lookup — the field
  * `clientQueryShape` (N15), the ONLY source of these strings.
@@ -54,11 +57,49 @@ export type TextSegment = {
   readonly hit: boolean;
 };
 
+/**
+ * A visit as the add-client page's account lists read it — whose booking it
+ * is (`ownerUserId`, else its `SELF` account seat) and the booker's own
+ * contact snapshot. A whole `Appointment` passes straight in.
+ */
+export type AccountVisit = {
+  readonly ownerUserId: UserId | null;
+  readonly seats: readonly AccountOccupant[];
+  readonly contactName: string | null;
+};
+
+/**
+ * One account read off a visit: the BOOKER's account, paired with the
+ * visit it was read from — whose contact (`contactName`, `contactPhone`,
+ * `contactEmail`) is that booker's, never a companion's.
+ */
+export type AccountPick<V extends AccountVisit = AccountVisit> = {
+  readonly userId: UserId;
+  readonly visit: V;
+};
+
+/**
+ * A visit as the local book reads it — an {@link AccountVisit} with the
+ * instant it starts, which orders the book newest contact first. A whole
+ * `Appointment` passes straight in.
+ */
+export type BookVisit = AccountVisit & {
+  readonly utcEpochMs: UtcEpochMs;
+};
+
+/** A book entry — an {@link AccountPick} whose visit carries a contact name, read out. */
+export type NamedAccountPick<V extends AccountVisit = AccountVisit> =
+  AccountPick<V> & {
+    readonly contactName: string;
+  };
+
 /** Bulgaria's calling code — the shop's, and the default a bare number gets. */
 const DEFAULT_CALLING_CODE = '359';
 
 const MIN_PHONE_DIGITS = 3;
 const MIN_KEY_LENGTH = 3;
+/** Fewer typed digits than this are no number on its way into the new-client form. */
+const PREFILL_PHONE_DIGITS = 5;
 const PHONE_TOKEN = /^[+(]*\d[\d()./-]*$/;
 const WRAPPING = /^[<("'[]+|[>)"'\],;:]+$/g;
 const NAME_WRAPPING = /^[<"'[]+|[>"'\],;:]+$/g;
@@ -158,6 +199,25 @@ function plain(text: string): readonly TextSegment[] {
   return text.length === 0 ? [] : [{ text, hit: false }];
 }
 
+/**
+ * The visit's BOOKER — its `ownerUserId`, else its first own-account seat
+ * (`Seat.isOwnAccount`: an ACCOUNT seated as `SELF`, the seat the
+ * `ownerUserId` mirror is read from); `null` for a visit with neither — a
+ * party of guests, or companions alone.
+ */
+function bookerOf(visit: AccountVisit): UserId | null {
+  if (visit.ownerUserId !== null) return visit.ownerUserId;
+  const seats = visit.seats;
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i] as AccountOccupant;
+    // The subject check narrows the variant; the rule is the companion's.
+    if (seat.seatSubject === SeatSubject.Account && Seat.isOwnAccount(seat)) {
+      return seat.subjectUserId;
+    }
+  }
+  return null;
+}
+
 type Scored = {
   readonly index: number;
   readonly score: number;
@@ -172,10 +232,84 @@ type Scored = {
  * selective part LEADS the lookup (mail, then number, then name); the others
  * rank what comes back and prefill the new-client form. Strings and scores
  * only; the editor and the page read the same answers.
+ *
+ * Beside the query (pass C): the page's two lists of accounts read off the
+ * loaded visits — «Скорошни» and the local book (`recentAccounts`,
+ * `bookAccounts`, the staff dashboard's `browseClients`) — and the new-client
+ * form's phone prefill threshold (`prefillsPhone`).
  */
 export const ClientQuerySystem = {
   /** Bulgaria's calling code — the default a bare number is read under. */
   DEFAULT_CALLING_CODE,
+
+  /** Fewer typed digits than this are no number on its way into the new-client form. */
+  PREFILL_PHONE_DIGITS,
+
+  /**
+   * Does the typed number go into the new-client form's phone field — at
+   * least {@link PREFILL_PHONE_DIGITS} digits typed? Fewer are not a number
+   * on its way anywhere.
+   */
+  prefillsPhone(parsed: { readonly phoneDigits: string }): boolean {
+    return parsed.phoneDigits.length >= PREFILL_PHONE_DIGITS;
+  },
+
+  /**
+   * «СКОРОШНИ» — the accounts of the visits handed in, IN THE ORDER HANDED
+   * IN (the caller filters and orders them: the page hands the past visits,
+   * newest first), each account once — its first visit in that order —
+   * and at most `limit` of them. The account is the visit's BOOKER
+   * (`ownerUserId`, else its `SELF` account seat), whose contact the visit
+   * carries: a companion is never filed under the booker's name or number.
+   * A visit with no booker contributes no account.
+   */
+  recentAccounts<V extends AccountVisit>(
+    orderedPast: readonly V[],
+    limit: number,
+  ): readonly AccountPick<V>[] {
+    const out: AccountPick<V>[] = [];
+    if (limit <= 0) return out;
+    const seen = new Set<UserId>();
+    for (let i = 0; i < orderedPast.length; i++) {
+      const visit = orderedPast[i] as V;
+      const userId = bookerOf(visit);
+      if (userId === null || seen.has(userId)) continue;
+      seen.add(userId);
+      out.push({ userId, visit });
+      if (out.length >= limit) break;
+    }
+    return out;
+  },
+
+  /**
+   * THE BOOK — every NAMED account of the visits handed in (the page hands
+   * every loaded visit, in any order), each account once. The system orders
+   * the visits newest contact first itself — by `utcEpochMs`, a stamp
+   * ordering; visits at the same instant keep the order handed in — so a
+   * changed number is the one read: each account's first visit in that order
+   * that carries a contact name (read out as `contactName`), in that order.
+   * The account is the visit's booker, as in {@link recentAccounts}.
+   */
+  bookAccounts<V extends BookVisit>(
+    visits: readonly V[],
+  ): readonly NamedAccountPick<V>[] {
+    const newestFirst = [...visits].sort((a, b) =>
+      UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs),
+    );
+    const out: NamedAccountPick<V>[] = [];
+    const seen = new Set<UserId>();
+    for (let i = 0; i < newestFirst.length; i++) {
+      const visit = newestFirst[i] as V;
+      const userId = bookerOf(visit);
+      const contactName = visit.contactName;
+      if (userId === null || seen.has(userId) || contactName === null) {
+        continue;
+      }
+      seen.add(userId);
+      out.push({ userId, visit, contactName });
+    }
+    return out;
+  },
 
   /** The typed line, read into its parts. */
   parse(raw: string): ParsedClientQuery {

@@ -9,12 +9,12 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
-  type RepositoryError,
+  RepositoryError,
   type RunBackfillRefusal,
   RunBackfillRefusalCode,
 } from '@core/errors';
 import {
-  Actor,
+  type Actor,
   type AuditAction,
   AuditContext,
   type BackfillCall,
@@ -51,7 +51,6 @@ import {
   BackfillPlanSystem,
   type BackfillRequest,
   ClientStatsSystem,
-  type MirrorRow,
   TriggerAttemptSystem,
   WorkBudgetSystem,
   ZonedTimeSystem,
@@ -62,7 +61,6 @@ import {
   clientStatsOf,
   readClientStats,
   recomputeClients,
-  repositoryFailure,
 } from './project-client-stats.pipeline';
 import { readShopZone } from './shop-zone-read.pipeline';
 
@@ -172,42 +170,6 @@ type Ended =
     }
   | { readonly callEnd: typeof CallEnd.Failed; readonly failureCode: string };
 
-/** A stored appointment's mirrors as the backfill judges them. */
-function mirrorRowOf(appointment: Appointment): MirrorRow {
-  const keys = AppointmentIndexSystem.queryKeys(appointment);
-  const storedUsers: unknown = appointment.subjectUserIds;
-  const storedCustomers: unknown = appointment.subjectCustomerIds;
-  return {
-    storedSubjectUserIds: Array.isArray(storedUsers) ? storedUsers : null,
-    seatSubjectUserIds: keys.subjectUserIds,
-    storedSubjectCustomerIds: Array.isArray(storedCustomers)
-      ? storedCustomers
-      : null,
-    seatSubjectCustomerIds: keys.subjectCustomerIds,
-    placement: appointment.placement,
-    inferredPlacement: appointment.inferredPlacement,
-  };
-}
-
-/**
- * What makes one returned page ONE logical change for the audit log: the
- * same person walking the same stretch of the same run to the same end. A
- * replayed call derives the same key and logs once; anything else is
- * another change. (A home in `AuditSystem.changeKey` is reported.)
- */
-function backfillChangeKey(result: BackfillCall.Page, actor: Actor): string {
-  return JSON.stringify([
-    'ops.backfill/v1',
-    result.backfillJobName,
-    result.runStartedAtUtcMs,
-    result.startedFrom,
-    result.cursor,
-    result.done,
-    actor.actorRole,
-    Actor.apparentUserId(actor),
-  ]);
-}
-
 /** The audit context of how a call ended — ids, counts and codes only (T5). */
 function backfillContext(
   backfillJobName: BackfillJobName,
@@ -228,9 +190,7 @@ function backfillContext(
   const { result } = ended;
   return AuditContext.backfill({
     backfillJobName,
-    backfillOutcome: result.done
-      ? BackfillOutcome.Complete
-      : BackfillOutcome.Partial,
+    backfillOutcome: BackfillPlanSystem.outcomeOf(result),
     backfillFailureCode: null,
     backfillProcessed: result.processed,
     backfillStoredClients: result.storedClients,
@@ -242,19 +202,7 @@ function backfillContext(
 
 /** A failure's canonical code, for the `FAILED` row — a port's by its reason, a throw by its own. */
 function failureCodeOf(failure: unknown): string {
-  return isRepositoryError(failure)
-    ? repositoryFailure(failure).failureCode
-    : TriggerAttemptSystem.failureCode(failure);
-}
-
-function isRepositoryError(value: unknown): value is RepositoryError {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'errorCode' in value &&
-    'path' in value &&
-    'reason' in value
-  );
+  return TriggerAttemptSystem.attemptFailure(failure).failureCode;
 }
 
 /** How much one call takes at once — the runbook's sizes; a spec walks a small book with small ones. */
@@ -343,7 +291,7 @@ export const runBackfill = (
       > => {
         if (fresh === null) return Result.ok({ stamped: false, writes: [] });
         const patch = BackfillPlanSystem.mirrorPatch(
-          mirrorRowOf(fresh),
+          BackfillPlanSystem.mirrorRowOf(fresh),
           BackfillPlanSystem.inferPlacement(auditActions),
         );
         if (patch === null) return Result.ok({ stamped: false, writes: [] });
@@ -376,7 +324,11 @@ export const runBackfill = (
     const stale: Appointment[] = [];
     const lacking: AppointmentId[] = [];
     for (const row of rows) {
-      if (!BackfillPlanSystem.mayLackMirrors(mirrorRowOf(row))) continue;
+      if (
+        !BackfillPlanSystem.mayLackMirrors(BackfillPlanSystem.mirrorRowOf(row))
+      ) {
+        continue;
+      }
       stale.push(row);
       if (
         BackfillPlanSystem.lacksPlacement(row.placement, row.inferredPlacement)
@@ -688,7 +640,7 @@ export const runBackfill = (
           subjects: [],
           changeKey:
             ended.callEnd === CallEnd.Returned
-              ? backfillChangeKey(ended.result, cmd.actor)
+              ? AuditSystem.backfillChangeKey(ended.result, cmd.actor)
               : null,
           context: backfillContext(backfillJobName, ended),
         },
@@ -745,7 +697,7 @@ export const runBackfill = (
         callEnd: CallEnd.Failed,
         failureCode: failureCodeOf(paged.error),
       };
-      if (isRepositoryError(paged.error)) return Result.err(paged.error);
+      if (RepositoryError.guard(paged.error)) return Result.err(paged.error);
       // Anything else is an infrastructure failure the walk caught: it goes
       // on to the edge, as it was thrown.
       throw paged.error;

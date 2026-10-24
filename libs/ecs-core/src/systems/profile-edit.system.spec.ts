@@ -130,6 +130,122 @@ describe('ProfileEditSystem.nameRefusals (first-name.spec.ts, last-name.spec.ts)
   });
 });
 
+/*
+ * Pass C (C-21, C-29): the "would this change the profile" tests of the
+ * booking contact sheet (`booking-contact-sheet.spec.ts` FIX 2, its stored
+ * profile «Ада Тестова») and the profile page's save gating
+ * (`client-profile.spec.ts` "keeps Save dim until the draft is both valid
+ * and changed"), restated as values on the same fixture data.
+ */
+describe('ProfileEditSystem.nameFromFull — one typed full name split as the write splits it', () => {
+  it('takes the first word as the given name and the rest as the family name', () => {
+    expect(ProfileEditSystem.nameFromFull('Ада Иванова', 'Тестова')).toEqual({
+      firstName: 'Ада',
+      lastName: 'Иванова',
+    });
+    expect(
+      ProfileEditSystem.nameFromFull('Ана  Мария   Петрова', 'Тестова'),
+    ).toEqual({ firstName: 'Ана', lastName: 'Мария Петрова' });
+  });
+
+  it('settles the spacing around and between the words', () => {
+    expect(
+      ProfileEditSystem.nameFromFull('  Ада   Тестова ', 'Тестова'),
+    ).toEqual({ firstName: 'Ада', lastName: 'Тестова' });
+  });
+
+  it('keeps the stored surname for a single word, and an empty one when there is none', () => {
+    expect(ProfileEditSystem.nameFromFull('Адела', 'Тестова')).toEqual({
+      firstName: 'Адела',
+      lastName: 'Тестова',
+    });
+    expect(ProfileEditSystem.nameFromFull(' Ада ', null)).toEqual({
+      firstName: 'Ада',
+      lastName: '',
+    });
+  });
+
+  it('keeps the case as typed', () => {
+    expect(ProfileEditSystem.nameFromFull('ада тестова', 'Тестова')).toEqual({
+      firstName: 'ада',
+      lastName: 'тестова',
+    });
+  });
+
+  it('answers null when nothing but whitespace was typed', () => {
+    expect(ProfileEditSystem.nameFromFull('', 'Тестова')).toBeNull();
+    expect(ProfileEditSystem.nameFromFull('   ', 'Тестова')).toBeNull();
+  });
+});
+
+describe('ProfileEditSystem.namesChanged / birthChanged — what the profile would change', () => {
+  const stored = owner({ firstName: 'Ада', lastName: 'Тестова' });
+  const changedBy = (typed: string): boolean => {
+    const next = ProfileEditSystem.nameFromFull(typed, stored.lastName);
+    return (
+      next !== null &&
+      ProfileEditSystem.namesChanged(stored, next.firstName, next.lastName)
+    );
+  };
+
+  it('reads a typed name that says what the profile says as no change', () => {
+    expect(ProfileEditSystem.namesChanged(stored, 'Ада', 'Тестова')).toBe(
+      false,
+    );
+    expect(changedBy('  Ада   Тестова ')).toBe(false);
+    // A single word keeps the stored surname: «Ада» saves exactly what is stored.
+    expect(changedBy('Ада')).toBe(false);
+  });
+
+  it('reads either name differing as a change', () => {
+    expect(changedBy('Ада Иванова')).toBe(true);
+    expect(changedBy('Адела')).toBe(true);
+    expect(ProfileEditSystem.namesChanged(stored, 'Ана', 'Тестова')).toBe(true);
+  });
+
+  it('counts a change of case as a change', () => {
+    expect(changedBy('ада тестова')).toBe(true);
+  });
+
+  it('compares the names exactly as given — the caller hands in what the write stores', () => {
+    expect(ProfileEditSystem.namesChanged(stored, 'Ада ', 'Тестова')).toBe(
+      true,
+    );
+  });
+
+  it('reads every name over a provisioned account’s null names as a change', () => {
+    const stub = owner({ firstName: null, lastName: null });
+    expect(ProfileEditSystem.namesChanged(stub, 'Ада', 'Тестова')).toBe(true);
+  });
+
+  it('reads a birth date as changed only when it is another day (null equals null)', () => {
+    const born = owner({ birthDate: BirthDate.of('2000-05-05') });
+    expect(
+      ProfileEditSystem.birthChanged(born, BirthDate.of('2000-05-05')),
+    ).toBe(false);
+    expect(
+      ProfileEditSystem.birthChanged(born, BirthDate.of('2000-05-06')),
+    ).toBe(true);
+    expect(ProfileEditSystem.birthChanged(born, null)).toBe(true);
+    const unborn = owner({ birthDate: null });
+    expect(ProfileEditSystem.birthChanged(unborn, null)).toBe(false);
+    expect(
+      ProfileEditSystem.birthChanged(unborn, BirthDate.of('2000-05-05')),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(owner({ firstName: 'Ада', lastName: 'Тестова' }));
+    const run = () => ({
+      names: ProfileEditSystem.namesChanged(frozen, 'Ада', 'Иванова'),
+      birth: ProfileEditSystem.birthChanged(frozen, null),
+      split: ProfileEditSystem.nameFromFull(' Ада  Иванова ', frozen.lastName),
+    });
+    expect(run()).toEqual(run());
+    expect(frozen).toEqual(owner({ firstName: 'Ада', lastName: 'Тестова' }));
+  });
+});
+
 describe('ProfileEditSystem.decide — the owner edit (F2-6)', () => {
   it('rebuilds the search keys from the edited name and the STORED contact channels', () => {
     const fields = unwrapOk(

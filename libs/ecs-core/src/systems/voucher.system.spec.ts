@@ -576,3 +576,79 @@ describe('VoucherSystem — purity', () => {
     expect(voucher.balanceCents).toBe(1500);
   });
 });
+
+/* ── Pass C: the one in-order cascade (the visit editor, the settle) ───── */
+
+describe('VoucherSystem.cascade — vouchers covering a bill in order', () => {
+  it('covers what the vouchers before left, never more than each has — the editor chain of 25,20 €', () => {
+    // FIRST10 off 28,00 € leaves 25,20 €: GIFT2025 pays 10,00 € and keeps
+    // 0,00 €; GIFT99 pays the 15,20 € left and keeps 34,80 €.
+    const chain = VoucherSystem.cascade([cents(1000), cents(5000)], eur(2520));
+    expect(chain.covers).toEqual([eur(1000), eur(1520)]);
+    expect(chain.left).toEqual([eur(0), eur(3480)]);
+    expect(chain.dueAfter).toEqual(eur(0));
+    // A third has nothing left to cover.
+    const third = VoucherSystem.cascade(
+      [cents(1000), cents(5000), cents(500)],
+      eur(2520),
+    );
+    expect(third.covers[2]).toEqual(eur(0));
+    expect(third.left[2]).toEqual(eur(500));
+    // Without the first, the second covers the whole 25,20 €.
+    expect(VoucherSystem.cascade([cents(5000)], eur(2520)).covers).toEqual([
+      eur(2520),
+    ]);
+  });
+
+  it('leaves what no voucher covered, and covers nothing of a bill of nothing', () => {
+    expect(VoucherSystem.cascade([cents(300), cents(200)], eur(1000))).toEqual({
+      covers: [eur(300), eur(200)],
+      left: [eur(0), eur(0)],
+      dueAfter: eur(500),
+    });
+    expect(VoucherSystem.cascade([cents(300)], eur(0))).toEqual({
+      covers: [eur(0)],
+      left: [eur(300)],
+      dueAfter: eur(0),
+    });
+    expect(VoucherSystem.cascade([], eur(700))).toEqual({
+      covers: [],
+      left: [],
+      dueAfter: eur(700),
+    });
+  });
+
+  it("works in the bill's currency", () => {
+    const leva = VoucherSystem.cascade([cents(400)], money(1000, Currency.BGN));
+    expect(leva.covers).toEqual([money(400, Currency.BGN)]);
+    expect(leva.dueAfter).toEqual(money(600, Currency.BGN));
+  });
+
+  it('never covers more than is due, and covers plus what is left add up', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 0, max: 100_000 }), { maxLength: 6 }),
+        fc.integer({ min: 0, max: 200_000 }),
+        (balances, due) => {
+          const chain = VoucherSystem.cascade(balances.map(cents), eur(due));
+          const covers = chain.covers.map((cover) => cover.amountCents);
+          const kept = chain.left.map(
+            (left, at) => left.amountCents + (covers.at(at) ?? 0),
+          );
+          expect(kept).toEqual(balances);
+          const covered = covers.reduce((sum, cover) => sum + cover, 0);
+          expect(covered + chain.dueAfter.amountCents).toBe(due);
+        },
+      ),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const available = deepFreeze([cents(1000), cents(5000)]);
+    const due = deepFreeze(eur(2520));
+    expect(VoucherSystem.cascade(available, due)).toEqual(
+      VoucherSystem.cascade(available, due),
+    );
+    expect(available).toEqual([1000, 5000]);
+  });
+});

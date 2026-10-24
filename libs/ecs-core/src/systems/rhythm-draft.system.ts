@@ -10,7 +10,7 @@ import {
   type StreakOnBreak,
   type StreakRuleInput,
 } from '@core/components';
-import type { LocalDate } from '@core/primitives';
+import { LocalDate } from '@core/primitives';
 
 /*
  * THE ADMIN'S DRAFT OF THE RHYTHM'S RULE, CLAMPED (client-card revision 3
@@ -96,6 +96,17 @@ export type RhythmBounds = {
   readonly startWith: RhythmRange;
   /** Under a personal interval: the clamp itself. Under a fixed one: the interval's whole range. */
   readonly fallbackDays: RhythmRange;
+};
+
+/**
+ * The three days «Влизане в сила» names (P13): today, tomorrow and the first
+ * day of the coming month — shop days, read off the shop's today.
+ */
+export type RhythmEffectivePresets = {
+  readonly today: LocalDate;
+  readonly tomorrow: LocalDate;
+  /** The first day of the month after today's. */
+  readonly firstOfMonth: LocalDate;
 };
 
 const NO_CHANGE: RhythmPatch = {
@@ -463,6 +474,65 @@ export const RhythmDraftSystem = {
       repairWindowDays: repairMoved ? draft.repairWindowDays : null,
       repairPerYear: repairMoved ? draft.repairPerYear : null,
       onBreak: draft.onBreak === madeOn.onBreak ? null : draft.onBreak,
+    };
+  },
+
+  /**
+   * What the draft remembers of the interval it HELD, before a change goes
+   * over it: the interval of the kind it holds, kept beside the last one of
+   * the other kind, so switching the kind and back loses nothing typed.
+   */
+  remember(
+    remembered: RememberedIntervals,
+    held: StreakIntervalRule,
+  ): RememberedIntervals {
+    return held.streakInterval === StreakInterval.Fixed
+      ? { ...remembered, fixed: StreakIntervalRule.fixed(held.intervalDays) }
+      : {
+          ...remembered,
+          personal: StreakIntervalRule.personal(
+            held.intervalTolerancePct,
+            held.intervalMinDays,
+            held.intervalMaxDays,
+            held.intervalFallbackDays,
+          ),
+        };
+  },
+
+  /**
+   * A draft made on one rule, carried over another: what the admin changed
+   * against the rule it was made on (`diff`) laid over the rule `now` holds
+   * and clamped to it (`clamp`, the cue to the longest of `riskLeadChoices`
+   * that fits) — so every parameter the admin did not touch follows the
+   * rule as it now stands. What the rule the draft lands on is — the head
+   * somebody else published, or the version a day turn brought into force —
+   * is the caller's to know.
+   */
+  carryOver<Day extends string>(
+    draft: StreakRuleInput,
+    madeOn: StreakRuleInput,
+    now: StreakRuleInput & { readonly effectiveFromLocalDate: Day },
+    remembered: RememberedIntervals,
+    riskLeadChoices: readonly number[],
+  ): StreakRuleInput & { readonly effectiveFromLocalDate: Day } {
+    return RhythmDraftSystem.clamp(
+      now,
+      RhythmDraftSystem.diff(draft, madeOn),
+      remembered,
+      riskLeadChoices,
+    );
+  },
+
+  /**
+   * The three days «Влизане в сила» names, off the shop's today: today,
+   * tomorrow, and the first of the month after today's (civil arithmetic,
+   * `LocalDate.addMonths` from the 1st).
+   */
+  effectivePresets(today: LocalDate): RhythmEffectivePresets {
+    return {
+      today,
+      tomorrow: LocalDate.addDays(today, 1),
+      firstOfMonth: LocalDate.addMonths(LocalDate.startOfMonth(today), 1),
     };
   },
 

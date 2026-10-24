@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UtcEpochMs, BookingStatus } from '@core/primitives';
-import { unwrapOk } from '@core/testing';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import { BookingLifecycle } from './booking-lifecycle.data';
 import { CancellationReasonSet } from './seat-outcome.data';
 
@@ -91,6 +91,70 @@ describe('BookingLifecycle.isSettled / isLive', () => {
     expect(BookingLifecycle.isLive(CONFIRMED)).toBe(true);
     expect(BookingLifecycle.isLive(NO_SHOW)).toBe(false);
   });
+
+  it('reads the status alone — a bare `{ bookingStatus }` passes as the whole slice does (widened)', () => {
+    for (const bookingStatus of Object.values(BookingStatus)) {
+      const bare = { bookingStatus };
+      const whole = [PENDING, CONFIRMED, COMPLETED, NO_SHOW, CANCELLED].find(
+        (lifecycle) => lifecycle.bookingStatus === bookingStatus,
+      ) as BookingLifecycle;
+      expect(BookingLifecycle.isSettled(bare)).toBe(
+        BookingLifecycle.isSettled(whole),
+      );
+      expect(BookingLifecycle.isLive(bare)).toBe(
+        BookingLifecycle.isLive(whole),
+      );
+    }
+  });
+});
+
+describe('BookingLifecycle.LIVE_STATUSES', () => {
+  it('is PENDING then CONFIRMED — the live-occupancy filter, in index order', () => {
+    expect(BookingLifecycle.LIVE_STATUSES).toEqual(['PENDING', 'CONFIRMED']);
+  });
+
+  it('holds exactly the statuses isLive answers true for', () => {
+    for (const bookingStatus of Object.values(BookingStatus)) {
+      expect(BookingLifecycle.LIVE_STATUSES.includes(bookingStatus)).toBe(
+        BookingLifecycle.isLive({ bookingStatus }),
+      );
+    }
+  });
+});
+
+describe('BookingLifecycle.didNotHappen', () => {
+  // `staff-event-head.spec.ts`'s `hollowStatus` truth table, on the slice.
+  it('is true for a cancellation and a no-show, false for the rest', () => {
+    expect(
+      BookingLifecycle.didNotHappen({ bookingStatus: BookingStatus.Cancelled }),
+    ).toBe(true);
+    expect(
+      BookingLifecycle.didNotHappen({ bookingStatus: BookingStatus.NoShow }),
+    ).toBe(true);
+    expect(
+      BookingLifecycle.didNotHappen({ bookingStatus: BookingStatus.Completed }),
+    ).toBe(false);
+    expect(
+      BookingLifecycle.didNotHappen({ bookingStatus: BookingStatus.Confirmed }),
+    ).toBe(false);
+    expect(
+      BookingLifecycle.didNotHappen({ bookingStatus: BookingStatus.Pending }),
+    ).toBe(false);
+  });
+
+  it('a whole lifecycle passes straight in', () => {
+    expect(BookingLifecycle.didNotHappen(CANCELLED)).toBe(true);
+    expect(BookingLifecycle.didNotHappen(NO_SHOW)).toBe(true);
+    expect(BookingLifecycle.didNotHappen(COMPLETED)).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const slice = deepFreeze({ ...NO_SHOW });
+    const once = BookingLifecycle.didNotHappen(slice);
+    const twice = BookingLifecycle.didNotHappen(slice);
+    expect(twice).toBe(once);
+    expect(slice).toEqual(NO_SHOW);
+  });
 });
 
 describe('BookingLifecycle.canTransition — the full lifecycle matrix', () => {
@@ -145,5 +209,52 @@ describe('BookingLifecycle.canTransition — the full lifecycle matrix', () => {
     expect(BookingLifecycle.canTransition(NO_SHOW, BookingStatus.NoShow)).toBe(
       false,
     );
+  });
+});
+
+describe('BookingLifecycle.isTransitionTarget — the edge guard of a move’s target', () => {
+  it('accepts every status some legal move lands on', () => {
+    for (const to of [
+      BookingStatus.Confirmed,
+      BookingStatus.Cancelled,
+      BookingStatus.Completed,
+      BookingStatus.NoShow,
+    ]) {
+      expect(BookingLifecycle.isTransitionTarget(to)).toBe(true);
+    }
+  });
+
+  it('refuses PENDING — a first state, never a destination', () => {
+    expect(BookingLifecycle.isTransitionTarget(BookingStatus.Pending)).toBe(
+      false,
+    );
+  });
+
+  it('refuses foreign strings and non-strings', () => {
+    expect(BookingLifecycle.isTransitionTarget('cancelled')).toBe(false);
+    expect(BookingLifecycle.isTransitionTarget('')).toBe(false);
+    expect(BookingLifecycle.isTransitionTarget(null)).toBe(false);
+    expect(BookingLifecycle.isTransitionTarget(undefined)).toBe(false);
+    expect(BookingLifecycle.isTransitionTarget(3)).toBe(false);
+    expect(
+      BookingLifecycle.isTransitionTarget({ bookingStatus: 'CONFIRMED' }),
+    ).toBe(false);
+  });
+
+  it('is exactly the statuses canTransition can reach from some state', () => {
+    const lifecycles = [PENDING, CONFIRMED, COMPLETED, NO_SHOW, CANCELLED];
+    for (const to of Object.values(BookingStatus)) {
+      const reachable = lifecycles.some((from) =>
+        BookingLifecycle.canTransition(from, to),
+      );
+      expect(BookingLifecycle.isTransitionTarget(to)).toBe(reachable);
+    }
+  });
+
+  it('is pure: same input → same output, input untouched', () => {
+    const input = deepFreeze({ raw: BookingStatus.NoShow });
+    const first = BookingLifecycle.isTransitionTarget(input.raw);
+    expect(BookingLifecycle.isTransitionTarget(input.raw)).toBe(first);
+    expect(input).toEqual({ raw: BookingStatus.NoShow });
   });
 });

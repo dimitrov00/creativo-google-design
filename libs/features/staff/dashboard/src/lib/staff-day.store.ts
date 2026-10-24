@@ -9,53 +9,36 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import {
-  type Observable,
-  combineLatest,
-  firstValueFrom,
-  from,
-  map,
-  of,
-  switchMap,
-} from 'rxjs';
+import { type Observable, combineLatest, from, map, of, switchMap } from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
   AppointmentId,
-  AppointmentPhotoId,
   BarberId,
   BusyKey,
   ClientOperationId,
-  CouponId,
   CustomerId,
   EndMinute,
-  ExceptionEffect,
-  GrantStatus,
   LocalDate,
   LocationId,
   MinuteOfDay,
   OperationId,
   Result,
-  ScheduleExceptionId,
   type TimeZone,
   type UserId,
   UtcEpochMs,
-  VoucherRefusal,
+  type VoucherRefusal,
   defect,
 } from '@core/primitives';
 import {
   PipelineError,
   PipelineErrorCode,
   type RepositoryError,
-  SchedulingError,
   StaffEditErrorCode,
 } from '@core/errors';
 import {
   type BookingCall,
   Combinability,
-  ExceptionEffectRule,
-  GrantExpiry,
   MinuteRange,
-  PhotoOrigin,
   Principal,
   type ShopNow,
   VoucherCode,
@@ -72,23 +55,32 @@ import type {
   CouponGrant,
   GiftVoucher,
   ScheduleException,
-  ScheduleExceptionMeta,
   ShopLocation,
 } from '@core/entities';
 import {
   AvailabilitySystem,
   CouponGrantSystem,
   GridLayoutSystem,
+  type HeldGrant,
   type LandedRevision,
   type LaneGap as EcsLaneGap,
   RosterSystem,
-  ScheduleExceptionSystem,
+  ShopZoneSystem,
   StaffIntentSystem,
   type UnsettledName,
   VisitSidesSystem,
   VoucherSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import {
+  adoptVisitPhoto,
+  appendTeamNote as appendTeamNotePipeline,
+  attachVisitPhoto,
+  clearScheduleBlock,
+  loadHeldGrants,
+  type VisitPhotoSubject,
+  writeScheduleBlocks,
+} from '@core/pipelines';
 import { downscaleImage } from '@creativo/infrastructure/storage';
 import {
   APPOINTMENT_NOTE_PORTS,
@@ -103,28 +95,12 @@ import {
   SCHEDULING_READ_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  type VisitEditorGrantOption,
-  type VisitEditorPromoOption,
-  discountValueOf,
+import type {
+  VisitEditorGrantOption,
+  VisitEditorPromoOption,
 } from './visit-editor/staff-visit-editor';
+import { discountValueOf } from './visit-editor/visit-editor-discount';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
-
-/**
- * The shop's day a held coupon lapses on (`YYYY-MM-DD`), or `null` for one
- * that never does. The grant's expiry is an instant (`grantExpiresAtUtcMs`);
- * the card prints a DAY on the shop's calendar («до 28.10»), so the instant
- * is read in the shop's zone — a grant lapsing at 00:30 Sofia is one more
- * day held here, not one less.
- */
-export function grantExpiresOn(
-  grant: CouponGrant,
-  timeZone: TimeZone,
-): string | null {
-  if (grant.grantStatus !== GrantStatus.Active) return null;
-  if (grant.grantExpiry !== GrantExpiry.ExpiresAt) return null;
-  return ZonedTimeSystem.toLocal(grant.grantExpiresAtUtcMs, timeZone).localDate;
-}
 
 /**
  * What makes two sends the SAME staff intent: the visit, the batch, and the
@@ -168,33 +144,19 @@ export function invalidCommand(field: string): PipelineError {
  */
 const SEARCH_WINDOW_PER_SIDE = 300;
 
-/** A held grant and the coupon it was issued from — one row of the «Отстъпка» menu. */
-interface HeldGrant {
-  readonly grant: CouponGrant;
-  readonly coupon: Coupon;
-}
-
-/** The sheet's word for each refusal a typed voucher can earn. */
-const VOUCHER_REFUSAL_WORD = {
-  [VoucherRefusal.Void]: 'void',
-  [VoucherRefusal.Expired]: 'expired',
-  [VoucherRefusal.Empty]: 'empty',
-} as const satisfies Record<VoucherRefusal, 'void' | 'expired' | 'empty'>;
-
-/** The largest visit photo the shop takes, after downscaling — today's limit. */
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
-
 /**
- * THE UPLOAD GUARD — run BEFORE the bytes go up (`media.port.ts`: limits
- * are a guard before the upload, never the adapter's): what is not an image
- * is refused, and so is one over the limit. `null` lets it through.
+ * The shop's day a held coupon lapses on (`YYYY-MM-DD`), or `null` for one
+ * that never does. Which grants lapse, and when, is the system's
+ * (`CouponGrantSystem.expiresAtUtcMs` — an instant); the card prints a DAY
+ * on the shop's calendar («до 28.10»), so the instant is read in the shop's
+ * zone here, at the boundary — a grant lapsing at 00:30 Sofia is one more
+ * day held here, not one less.
  */
-export function photoUploadRefusal(
-  image: Blob,
-): 'not_an_image' | 'too_large' | null {
-  if (!image.type.startsWith('image/')) return 'not_an_image';
-  if (image.size > MAX_PHOTO_BYTES) return 'too_large';
-  return null;
+function expiresOnIn(grant: CouponGrant, timeZone: TimeZone): string | null {
+  const expiresAt = CouponGrantSystem.expiresAtUtcMs(grant);
+  return expiresAt === null
+    ? null
+    : ZonedTimeSystem.toLocal(expiresAt, timeZone).localDate;
 }
 
 /**
@@ -719,12 +681,12 @@ const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
  * raw streams with the systems `/book` and the commit use, so the shop is
  * never shown a hole the public grid would refuse to sell:
  *
- * - the windows are `RosterSystem.buildDayWindows` — the version in force,
+ * - the windows are `RosterSystem.offeredWindows` — the version in force,
  *   the day's exception, each shop's published hours — kept only at a shop
  *   the day OFFERS (an active shop of the catalogue): a shop absent from the
  *   hours would otherwise read as "publishes no bound" and its chair reach
  *   the grid unclamped;
- * - the blocks are `RosterSystem.buildDayCarveOuts`, the same inputs' second
+ * - the blocks are `RosterSystem.offeredCarveOuts`, the same inputs' second
  *   question — the windows say what is left, these say what was blocked;
  * - the busy spans are the projection's, padded by the schedule's
  *   turnaround (`AvailabilitySystem.paddedBusy`). Busy is location-agnostic
@@ -743,64 +705,19 @@ export function laneGeometryOf(
   locations: readonly ShopLocation[],
 ): LaneGeometry {
   if (schedule === null) return NO_GEOMETRY;
-  const offered = new Set<LocationId>(locations.map((shop) => shop.id));
   const input = {
     barberId,
     localDate,
     versions: schedule.versions,
     exceptions: exception === null ? [] : [exception],
-    shopHours: locations.map((shop) => ({
-      locationId: shop.id,
-      hours: RosterSystem.shopDayHours(shop.openingHours, localDate),
-    })),
+    shopHours: RosterSystem.shopHoursOn(locations, localDate),
   };
-  const rostered = RosterSystem.buildDayWindows(input).filter((window) =>
-    offered.has(window.locationId),
-  );
+  const rostered = RosterSystem.offeredWindows(input);
   if (rostered.length === 0) return NO_GEOMETRY;
   return {
     rostered,
-    blocks: RosterSystem.buildDayCarveOuts(input).filter((window) =>
-      offered.has(window.locationId),
-    ),
-    busy: AvailabilitySystem.paddedBusy({
-      barberId,
-      spans: busyDay?.blocks ?? [],
-      turnaroundMinutes: schedule.turnaroundMinutes,
-      release: [],
-    }),
-  };
-}
-
-/**
- * A changed day's identity slice — keyed by its `BusyKey` (the busy
- * projection's key, read by the commit beside it), its `utcEpochMs` the
- * shop day's first instant in the shop's zone (computed once, here, at the
- * write — F-28).
- */
-function exceptionMetaOf(
-  barberId: BarberId,
-  localDate: LocalDate,
-  locationId: string,
-  timeZone: TimeZone,
-): ScheduleExceptionMeta {
-  return {
-    id: ScheduleExceptionId.of(BusyKey.of(barberId, localDate)),
-    barberId,
-    localDate,
-    utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, timeZone),
-    locationId: LocationId.of(locationId),
-  };
-}
-
-/** A stored changed day's identity slice alone — its effect left behind for the next one. */
-function metaOfStored(stored: ScheduleException): ScheduleExceptionMeta {
-  return {
-    id: stored.id,
-    barberId: stored.barberId,
-    localDate: stored.localDate,
-    utcEpochMs: stored.utcEpochMs,
-    locationId: stored.locationId,
+    blocks: RosterSystem.offeredCarveOuts(input),
+    busy: AvailabilitySystem.paddedBusy(barberId, busyDay, schedule, []),
   };
 }
 
@@ -904,8 +821,12 @@ export class StaffDayStore {
    * {@link ready} (its chrome drawn, its lanes {@link loading}). "Today",
    * "now" on the wall clock and every lane's shop day are read in it.
    */
-  readonly zone = computed<TimeZone | null>(
-    () => this.catalog.locations()[0]?.timeZone ?? this.defaultZone(),
+  readonly zone = computed<TimeZone | null>(() =>
+    ShopZoneSystem.zoneOfScope(
+      null,
+      this.catalog.locations()[0] ?? null,
+      this.defaultZone(),
+    ),
   );
 
   /**
@@ -1427,7 +1348,9 @@ export class StaffDayStore {
       return undefined;
     }
     const note = read.result.value;
-    return note === null || note.text.trim().length === 0 ? null : note.text;
+    return note === null || VisitSidesSystem.storedNote(note.text) === null
+      ? null
+      : note.text;
   }
 
   /* ── The shop's photos of the open visit ─────────────────────────────── */
@@ -1456,16 +1379,15 @@ export class StaffDayStore {
 
   /**
    * The open visit's photos in the order they were taken — none while
-   * loading, absent, or with no visit open. The read is one equality, so
-   * the order is the store's (an `orderBy` would need a composite index for
-   * a list never longer than a visit).
+   * loading, absent, or with no visit open. The order is the port's
+   * (`ObserveAppointmentPhotos`: ascending by `takenAtUtcMs`, stably — the
+   * adapter's sort stands in for an `orderBy`, which would need a composite
+   * index for a list never longer than a visit).
    */
   readonly visitPhotos = computed<readonly AppointmentPhoto[]>(() => {
     const result = this.photosResult();
     if (result === undefined || !result.ok) return [];
-    return [...result.value].sort((a, b) =>
-      UtcEpochMs.compare(a.takenAtUtcMs, b.takenAtUtcMs),
-    );
+    return result.value;
   });
 
   private readonly _photoWork = signal(0);
@@ -1473,13 +1395,14 @@ export class StaffDayStore {
   readonly photoBusy = computed(() => this._photoWork() > 0);
 
   /**
-   * A shutter press: the picture sized for the wire, checked against the
-   * upload guard, then its bytes up and its document written with the
-   * visit's facts. The photo's id, its instant and its taker are stamped
-   * HERE, from the store's clock and session (`notes-photos.port.ts`), and
-   * the guard runs BEFORE the upload (`media.port.ts`: limits are never the
-   * adapter's). `true` once the photo is on the visit — the live read draws
-   * it; the caller has no thumbnail to place.
+   * A shutter press: the picture sized for the wire HERE (`downscaleImage`
+   * — the guard judges the downscaled blob), then `attachVisitPhoto`: the
+   * upload guard BEFORE anything is read or sent (`media.port.ts`: limits
+   * are never the adapter's), the photo's id and instant stamped from the
+   * store's id source and clock, its taker from the session
+   * (`notes-photos.port.ts`), its bytes up and its document written. `true`
+   * once the photo is on the visit — the live read draws it; the caller has
+   * no thumbnail to place. A refusal or a failure is `false`.
    */
   async attachPhoto(request: {
     readonly appointmentId: string;
@@ -1491,37 +1414,27 @@ export class StaffDayStore {
     this._photoWork.update((count) => count + 1);
     try {
       const sized = await downscaleImage(request.file);
-      if (photoUploadRefusal(sized.image) !== null) return false;
-      const facts: Omit<AppointmentPhoto, 'path' | 'url'> = {
-        id: AppointmentPhotoId.of(this.ids.nextId()),
-        appointmentId: AppointmentId.of(request.appointmentId),
-        barberId: BarberId.of(request.barberId),
-        clientCustomerId:
-          request.clientCustomerId === null
-            ? null
-            : CustomerId.of(request.clientCustomerId),
-        clientLabel: request.clientLabel,
-        takenByUserId: this.currentUserId(),
-        takenAtUtcMs: this.nowUtcMs(),
+      const result = await attachVisitPhoto({
+        ...this.photos,
+        ...this.ids,
+        ...this.clock,
+      })({
+        ...this.photoSubjectOf(request),
+        image: sized.image,
         width: sized.width,
         height: sized.height,
-        photoOrigin: PhotoOrigin.Shot,
-        label: null,
-      };
-      const stored = await this.photos.uploadPhotoBytes(facts, sized.image);
-      if (!stored.ok) return false;
-      const saved = await this.photos.saveAppointmentPhoto({
-        ...facts,
-        path: stored.value.path,
-        url: stored.value.url,
       });
-      return saved.ok;
+      return result.ok;
     } finally {
       this._photoWork.update((count) => count - 1);
     }
   }
 
-  /** One of the shop's own pictures onto the visit: a document, no bytes. */
+  /**
+   * One of the shop's own pictures onto the visit: a document, no bytes
+   * (`adoptVisitPhoto` — the same record builder as a shot, a `LIBRARY`
+   * origin).
+   */
   async adoptPhoto(reference: {
     readonly appointmentId: string;
     readonly barberId: string;
@@ -1533,28 +1446,39 @@ export class StaffDayStore {
   }): Promise<boolean> {
     this._photoWork.update((count) => count + 1);
     try {
-      const result = await this.photos.saveAppointmentPhoto({
-        id: AppointmentPhotoId.of(this.ids.nextId()),
-        appointmentId: AppointmentId.of(reference.appointmentId),
-        barberId: BarberId.of(reference.barberId),
-        clientCustomerId:
-          reference.clientCustomerId === null
-            ? null
-            : CustomerId.of(reference.clientCustomerId),
-        clientLabel: reference.clientLabel,
-        takenByUserId: this.currentUserId(),
-        takenAtUtcMs: this.nowUtcMs(),
+      const result = await adoptVisitPhoto({
+        ...this.photos,
+        ...this.ids,
+        ...this.clock,
+      })({
+        ...this.photoSubjectOf(reference),
         path: reference.path,
         url: reference.url,
-        width: null,
-        height: null,
-        photoOrigin: PhotoOrigin.Library,
         label: reference.label,
       });
       return result.ok;
     } finally {
       this._photoWork.update((count) => count - 1);
     }
+  }
+
+  /** The visit a picture goes onto, its ids read as the brands they are, and the session's taker. */
+  private photoSubjectOf(request: {
+    readonly appointmentId: string;
+    readonly barberId: string;
+    readonly clientCustomerId: string | null;
+    readonly clientLabel: string;
+  }): VisitPhotoSubject {
+    return {
+      appointmentId: AppointmentId.of(request.appointmentId),
+      barberId: BarberId.of(request.barberId),
+      clientCustomerId:
+        request.clientCustomerId === null
+          ? null
+          : CustomerId.of(request.clientCustomerId),
+      clientLabel: request.clientLabel,
+      takenByUserId: this.currentUserId(),
+    };
   }
 
   async removePhoto(photo: AppointmentPhoto): Promise<boolean> {
@@ -1592,42 +1516,15 @@ export class StaffDayStore {
       switchMap((id) =>
         id === null
           ? of(Result.ok<readonly HeldGrant[]>([]))
-          : from(this.loadGrants(CustomerId.of(id))),
+          : from(
+              loadHeldGrants({ ...this.couponsVouchers, ...this.clock })(
+                CustomerId.of(id),
+              ),
+            ),
       ),
     ),
     { initialValue: undefined },
   );
-
-  /**
-   * The record's ACTIVE grants (the port's query) that are still usable now
-   * (`CouponGrantSystem.isUsable`, so an expired one never reaches the
-   * menu), each joined to its coupon by id — WHATEVER the coupon's status
-   * (`loadCoupons`): a held grant whose coupon was disabled since keeps its
-   * name, value and exclusivity in the menu. A grant whose coupon is gone
-   * altogether has nothing to say and is left out.
-   */
-  private async loadGrants(
-    customerId: CustomerId,
-  ): Promise<Result<readonly HeldGrant[], RepositoryError>> {
-    const held = await this.couponsVouchers.listUsableCouponGrants(customerId);
-    if (!held.ok) return held;
-    const nowUtcMs = this.nowUtcMs();
-    const usable = held.value.filter((grant) =>
-      CouponGrantSystem.isUsable(grant, nowUtcMs),
-    );
-    if (usable.length === 0) return Result.ok([]);
-    const coupons = await this.couponsVouchers.loadCoupons([
-      ...new Set<CouponId>(usable.map((grant) => grant.couponId)),
-    ]);
-    if (!coupons.ok) return coupons;
-    const byId = new Map(coupons.value.map((coupon) => [coupon.id, coupon]));
-    return Result.ok(
-      usable.flatMap((grant) => {
-        const coupon = byId.get(grant.couponId);
-        return coupon === undefined ? [] : [{ grant, coupon }];
-      }),
-    );
-  }
 
   /** What the sheet's discount menu offers — empty while loading, on failure, or for nobody. */
   readonly grants = computed<readonly VisitEditorGrantOption[]>(() => {
@@ -1647,7 +1544,7 @@ export class StaffDayStore {
       // When it lapses, on the shop's calendar: the card's tickets print
       // it as their chip («до 28.10») and put the soonest first; a grant
       // that never lapses prints none (review 2: every ticket was chipless).
-      expiresOn: zone === null ? null : grantExpiresOn(grant, zone),
+      expiresOn: zone === null ? null : expiresOnIn(grant, zone),
     }));
   });
 
@@ -1707,7 +1604,7 @@ export class StaffDayStore {
    */
   async resolveVoucher(code: string): Promise<{
     readonly voucher: GiftVoucher;
-    readonly refusal: 'void' | 'expired' | 'empty' | null;
+    readonly refusal: VoucherRefusal | null;
   } | null> {
     const typed = VoucherCode.parseTyped(code);
     if (!typed.ok) return null;
@@ -1715,10 +1612,9 @@ export class StaffDayStore {
       typed.value,
     );
     if (!result.ok || result.value === null) return null;
-    const refusal = VoucherSystem.refusal(result.value, this.nowUtcMs());
     return {
       voucher: result.value,
-      refusal: refusal === null ? null : VOUCHER_REFUSAL_WORD[refusal],
+      refusal: VoucherSystem.refusal(result.value, this.nowUtcMs()),
     };
   }
 
@@ -1735,13 +1631,13 @@ export class StaffDayStore {
     text: string | null,
   ): Promise<boolean> {
     const id = AppointmentId.of(appointmentId);
-    const trimmed = text?.trim() ?? '';
+    const stored = VisitSidesSystem.storedNote(text);
     const note: AppointmentNote | null =
-      trimmed.length === 0
+      stored === null
         ? null
         : {
             id,
-            text: trimmed,
+            text: stored,
             authorUserId: this.currentUserId(),
             writtenAtUtcMs: this.nowUtcMs(),
           };
@@ -1753,26 +1649,25 @@ export class StaffDayStore {
   /**
    * A line added BELOW the visit's note, never over it — what a cancel's
    * «Друго…» files (D23: the words staff type are the visit's note, not
-   * the seat's reason). The note as stored now is read once, off the port
-   * the sheet listens on, and the joined text goes out through
-   * `saveTeamNote`, the one write. A read that fails writes nothing — a
-   * note this device could not read would be written over — and is a
-   * failure; blank text writes nothing and is none.
+   * the seat's reason): `appendTeamNote` (`@core/pipelines`) reads the note
+   * as stored now, once, off the port the sheet listens on, and writes the
+   * joined text stamped from the session and the store's clock. A read that
+   * fails writes nothing — a note this device could not read would be
+   * written over — and is a failure the sheet says; blank text writes
+   * nothing and is none (the pipeline's `ok(null)`), saying nothing.
    */
   async appendTeamNote(appointmentId: string, line: string): Promise<boolean> {
-    if (VisitSidesSystem.storedNote(line) === null) return true;
-    const read = await firstValueFrom(
-      this.notes.observeAppointmentNote(AppointmentId.of(appointmentId)),
-      { defaultValue: null },
-    );
-    if (read === null || !read.ok) {
-      this._noteError.set(appointmentId);
-      return false;
-    }
-    return this.saveTeamNote(
-      appointmentId,
-      VisitSidesSystem.appendedNote(read.value?.text ?? null, line),
-    );
+    const result = await appendTeamNotePipeline({
+      ...this.notes,
+      ...this.clock,
+    })({
+      appointmentId: AppointmentId.of(appointmentId),
+      line,
+      authorUserId: this.currentUserId(),
+    });
+    if (result.ok && result.value === null) return true;
+    this._noteError.set(result.ok ? null : appointmentId);
+    return result.ok;
   }
 
   private readonly _probeDay = signal<string | null>(null);
@@ -2048,8 +1943,8 @@ export class StaffDayStore {
    * the slots and those clients still walk through the door.
    */
   readonly workingLanes = computed(() =>
-    this.lanes().filter(
-      (lane) => lane.rostered.length > 0 || lane.appointments.length > 0,
+    this.lanes().filter((lane) =>
+      RosterSystem.worksDay(lane.rostered.length, lane.appointments.length),
     ),
   );
 
@@ -2057,7 +1952,11 @@ export class StaffDayStore {
   readonly offToday = computed(() =>
     this.lanes()
       .filter(
-        (lane) => lane.rostered.length === 0 && lane.appointments.length === 0,
+        (lane) =>
+          !RosterSystem.worksDay(
+            lane.rostered.length,
+            lane.appointments.length,
+          ),
       )
       .map((lane) => lane.barberId),
   );
@@ -2224,10 +2123,11 @@ export class StaffDayStore {
   }
 
   /**
-   * The one exception write behind `blockTime` and `blockSeries`: per day,
-   * a whole-day stand-down REPLACES what the day held (`CLOSED`), and a
-   * range MERGES into its stored blocks (`ScheduleExceptionSystem.addRanges`
-   * — a day already off whole stays off, never demoted to a partial block).
+   * The one exception write behind `blockTime` and `blockSeries` —
+   * `writeScheduleBlocks` (`@core/pipelines`): per day, a whole-day
+   * stand-down REPLACES what the day held (`CLOSED`), and a range MERGES
+   * into its stored blocks (`ScheduleExceptionSystem.block` — a day already
+   * off whole stays off, never demoted to a partial block).
    */
   private async writeBlocks(
     barberId: string,
@@ -2235,17 +2135,18 @@ export class StaffDayStore {
     ranges: readonly MinuteRange[],
     dayKeys: readonly string[],
   ): Promise<boolean> {
-    const barber = BarberId.of(barberId);
     const days = dayKeys.flatMap((dayKey) => {
       const day = localDateOf(dayKey);
       return day === null ? [] : [day];
     });
     // The exception's day instant is read in ITS shop's zone (Law 7.2), the
     // day's own until the catalogue lists that shop; none known, no write.
-    const zone =
+    const zone = ShopZoneSystem.zoneOr(
       untracked(() => this.catalog.locations()).find(
         (shop) => shop.id === locationId,
-      )?.timeZone ?? untracked(this.zone);
+      ) ?? null,
+      untracked(this.zone),
+    );
     if (zone === null) {
       this._absenceError.set('failed');
       return false;
@@ -2253,30 +2154,13 @@ export class StaffDayStore {
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.exceptions.writeScheduleException(
-        days.map((day) => BusyKey.of(barber, day)),
-        (stored) => {
-          const next: (ScheduleException | null)[] = [];
-          for (const [index, day] of days.entries()) {
-            const existing = stored[index] ?? null;
-            const effect: Result<ExceptionEffectRule, SchedulingError> | null =
-              ranges.length === 0
-                ? Result.ok(ExceptionEffectRule.closed())
-                : ScheduleExceptionSystem.addRanges(existing, ranges);
-            if (effect === null) {
-              // A whole day off already covers every minute asked for.
-              next.push(existing);
-              continue;
-            }
-            if (!effect.ok) return effect;
-            next.push({
-              ...exceptionMetaOf(barber, day, locationId, zone),
-              ...effect.value,
-            });
-          }
-          return Result.ok(next);
-        },
-      );
+      const result = await writeScheduleBlocks(this.exceptions)({
+        barberId: BarberId.of(barberId),
+        locationId: LocationId.of(locationId),
+        timeZone: zone,
+        ranges,
+        localDates: days,
+      });
       if (!result.ok) {
         this._absenceError.set('failed');
         return false;
@@ -2307,33 +2191,13 @@ export class StaffDayStore {
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.exceptions.writeScheduleException(
-        [BusyKey.of(BarberId.of(barberId), day)],
-        (stored) => {
-          const existing = stored[0] ?? null;
-          if (range === null || existing === null) {
-            return Result.ok([null]);
-          }
-          if (existing.exceptionEffect === ExceptionEffect.Closed) {
-            return Result.err(
-              SchedulingError.scheduleExceptionEmptyRanges(
-                ExceptionEffect.Closed,
-              ),
-            );
-          }
-          const left = ScheduleExceptionSystem.withoutRange(
-            existing.exceptionRanges,
-            range,
-          );
-          if (left.length === 0) return Result.ok([null]);
-          const effect =
-            existing.exceptionEffect === ExceptionEffect.Hours
-              ? ExceptionEffectRule.hours(left)
-              : ExceptionEffectRule.blocked(left);
-          if (!effect.ok) return effect;
-          return Result.ok([{ ...metaOfStored(existing), ...effect.value }]);
-        },
-      );
+      // `clearScheduleBlock` (`@core/pipelines`): the day's stored body
+      // through `ScheduleExceptionSystem.unblock` inside the write.
+      const result = await clearScheduleBlock(this.exceptions)({
+        barberId: BarberId.of(barberId),
+        localDate: day,
+        range,
+      });
       if (!result.ok) {
         this._absenceError.set('failed');
         return false;

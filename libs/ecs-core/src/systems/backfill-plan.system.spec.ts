@@ -1,14 +1,29 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AuditAction, Placement, BackfillJobName } from '@core/components';
-import type { BackfillJob } from '@core/entities';
+import {
+  AuditAction,
+  BackfillOutcome,
+  Placement,
+  BackfillJobName,
+  SeatOccupant,
+  SubjectRelationship,
+} from '@core/components';
+import type { Appointment, BackfillJob } from '@core/entities';
 import {
   BackfillJobId,
   CustomerId,
+  SeatId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import { customerOf, deepFreeze, unwrapOk, utcMs } from '@core/testing';
+import {
+  appointmentFixture,
+  customerOf,
+  deepFreeze,
+  seatFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   BackfillPhase,
   type BackfillPageWalk,
@@ -667,6 +682,99 @@ describe('pageWalk and nextPage — how a run goes on', () => {
       takeSample: false,
       sampleDeferred: false,
     });
+  });
+});
+
+describe('chunk — the width is WorkBudgetSystem.chunkSize (pass C, P-25)', () => {
+  it('reads a fractional width down and anything below one as one', () => {
+    expect(BackfillPlanSystem.chunk([1, 2, 3, 4, 5], 2.9)).toEqual([
+      [1, 2],
+      [3, 4],
+      [5],
+    ]);
+    expect(BackfillPlanSystem.chunk([1, 2], -3)).toEqual([[1], [2]]);
+  });
+});
+
+describe('mirrorRowOf — a stored appointment as the backfill judges it (pass C, P-27)', () => {
+  const ANA = UserId.of('ana');
+  const ZORA = UserId.of('zora');
+  /** A party of two account seats — zora first, as written — and a guest. */
+  const party = (overrides: Partial<Appointment> = {}): Appointment =>
+    appointmentFixture({
+      seats: [
+        seatFixture({
+          seatId: SeatId.of('s-zora'),
+          occupant: SeatOccupant.account(
+            ZORA,
+            customerOf(ZORA),
+            SubjectRelationship.Companion,
+          ),
+        }),
+        seatFixture({
+          seatId: SeatId.of('s-ana'),
+          occupant: SeatOccupant.account(
+            ANA,
+            customerOf(ANA),
+            SubjectRelationship.Self,
+          ),
+        }),
+      ],
+      ...overrides,
+    });
+
+  it('sets the stored mirrors beside the ones the seats name — every account once, sorted', () => {
+    const appointment = party({
+      subjectUserIds: [ZORA],
+      subjectCustomerIds: [],
+      placement: Placement.Staff,
+      inferredPlacement: null,
+    });
+    expect(BackfillPlanSystem.mirrorRowOf(appointment)).toEqual({
+      storedSubjectUserIds: [ZORA],
+      seatSubjectUserIds: [ANA, ZORA],
+      storedSubjectCustomerIds: [],
+      seatSubjectCustomerIds: RECORDS,
+      placement: Placement.Staff,
+      inferredPlacement: null,
+    });
+  });
+
+  it('reads a stored mirror that is no list — absent on a row written before it — as none', () => {
+    const legacy = {
+      ...party(),
+      subjectUserIds: undefined,
+      subjectCustomerIds: 'cus_ana',
+    } as unknown as Appointment;
+    const row = BackfillPlanSystem.mirrorRowOf(legacy);
+    expect(row.storedSubjectUserIds).toBeNull();
+    expect(row.storedSubjectCustomerIds).toBeNull();
+    expect(mayLackMirrors(row)).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const appointment = deepFreeze(party());
+    expect(BackfillPlanSystem.mirrorRowOf(appointment)).toEqual(
+      BackfillPlanSystem.mirrorRowOf(appointment),
+    );
+  });
+});
+
+describe('outcomeOf — what a returned call’s audit row says (pass C, P-27)', () => {
+  it('is COMPLETE when the walk reached the end, PARTIAL when a page finished and the job goes on', () => {
+    expect(BackfillPlanSystem.outcomeOf({ done: true })).toBe(
+      BackfillOutcome.Complete,
+    );
+    expect(BackfillPlanSystem.outcomeOf({ done: false })).toBe(
+      BackfillOutcome.Partial,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const page = deepFreeze({ done: false });
+    expect(BackfillPlanSystem.outcomeOf(page)).toBe(
+      BackfillPlanSystem.outcomeOf(page),
+    );
   });
 });
 

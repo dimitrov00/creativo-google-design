@@ -13,6 +13,12 @@ import { SearchFieldsSystem } from './search-fields.system';
  * and apps/functions/src/adapters/firestore-user-repository.spec.ts (the
  * registered document's denormalized search fields). The adapter specs ran
  * against the shimmed adapters until their flips deleted them.
+ *
+ * Pass C (S-17): the staff dashboard's book search thresholds and digit
+ * rule (`staff-dashboard.ts` `searchResults` / `matches`, the template's
+ * `term().trim().length >= 2`), as values — staff-dashboard.spec.ts :3480
+ * («георги» searched; the text match stays the page's) and :3504
+ * («359881234567» finds «+359 88 123 4567» across the formatter's spaces).
  */
 
 describe('SearchFieldsSystem.fromForms (profile.adapter.spec.ts › saveProfile)', () => {
@@ -218,6 +224,65 @@ describe('SearchFieldsSystem properties', () => {
   });
 });
 
+describe('SearchFieldsSystem — the book search (staff-dashboard.ts searchResults)', () => {
+  it('searches a term from two characters on', () => {
+    expect(SearchFieldsSystem.TERM_MIN).toBe(2);
+    expect(SearchFieldsSystem.termSearchable('')).toBe(false);
+    expect(SearchFieldsSystem.termSearchable('г')).toBe(false);
+    expect(SearchFieldsSystem.termSearchable('ге')).toBe(true);
+    expect(SearchFieldsSystem.termSearchable('георги')).toBe(true);
+  });
+
+  it('measures the operand it is handed, never re-trimming it', () => {
+    // The template hands the trimmed text; a padded term is the caller's to trim.
+    expect(SearchFieldsSystem.termSearchable(' г')).toBe(true);
+    expect(SearchFieldsSystem.termSearchable(' г'.trim())).toBe(false);
+  });
+
+  it('reads four or more digits as a phone’s bare run, three or fewer as none', () => {
+    expect(SearchFieldsSystem.DIGIT_QUERY_MIN).toBe(4);
+    expect(SearchFieldsSystem.digitQuery('359881234567')).toBe('359881234567');
+    expect(SearchFieldsSystem.digitQuery('8812')).toBe('8812');
+    expect(SearchFieldsSystem.digitQuery('881')).toBeNull();
+    expect(SearchFieldsSystem.digitQuery('георги')).toBeNull();
+    expect(SearchFieldsSystem.digitQuery('')).toBeNull();
+  });
+
+  it('drops separators and letters from the typed term — the digits alone count', () => {
+    expect(SearchFieldsSystem.digitQuery('+359 88 123')).toBe('35988123');
+    expect(SearchFieldsSystem.digitQuery('88-1')).toBeNull();
+    expect(SearchFieldsSystem.digitQuery('иван 0881')).toBe('0881');
+    expect(SearchFieldsSystem.digitQuery('(088) 1')).toBe('0881');
+  });
+
+  it("finds a phone by its bare digits across the formatter's spaces", () => {
+    const digits = SearchFieldsSystem.digitQuery('359881234567') as string;
+    expect(SearchFieldsSystem.digitsMatch('+359 88 123 4567', digits)).toBe(
+      true,
+    );
+    expect(
+      SearchFieldsSystem.digitsMatch('+359 88 777 8899', '887778899'),
+    ).toBe(true);
+    expect(SearchFieldsSystem.digitsMatch('+359 88 777 8899', '8877799')).toBe(
+      false,
+    );
+    expect(SearchFieldsSystem.digitsMatch('Георги Петров', '8877')).toBe(false);
+  });
+
+  it('a digit query always matches the field it was typed from (property)', () => {
+    fc.assert(
+      fc.property(fc.stringMatching(/^\+?[\d ()-]{0,16}$/), (typed) => {
+        const digits = SearchFieldsSystem.digitQuery(typed);
+        const bare = typed.replace(/\D/g, '');
+        expect(digits).toBe(bare.length >= 4 ? bare : null);
+        if (digits !== null) {
+          expect(SearchFieldsSystem.digitsMatch(typed, digits)).toBe(true);
+        }
+      }),
+    );
+  });
+});
+
 describe('SearchFieldsSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const forms = deepFreeze(['+359888123456', '0888 123 456']);
@@ -225,5 +290,19 @@ describe('SearchFieldsSystem purity', () => {
       SearchFieldsSystem.fromForms('Ivan Petrov', forms, 'i@x.bg');
     expect(run()).toEqual(run());
     expect(forms).toEqual(['+359888123456', '0888 123 456']);
+  });
+
+  it('the book search is pure: same input → same output', () => {
+    const term = '+359 88 777 8899';
+    expect(SearchFieldsSystem.digitQuery(term)).toBe(
+      SearchFieldsSystem.digitQuery(term),
+    );
+    expect(SearchFieldsSystem.digitsMatch(term, '8877')).toBe(
+      SearchFieldsSystem.digitsMatch(term, '8877'),
+    );
+    expect(SearchFieldsSystem.termSearchable(term)).toBe(
+      SearchFieldsSystem.termSearchable(term),
+    );
+    expect(term).toBe('+359 88 777 8899');
   });
 });

@@ -8,7 +8,11 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { type GovernanceError, type RepositoryError } from '@core/errors';
-import { BookingPolicy, PreciseInstant } from '@core/components';
+import {
+  BookingPolicy,
+  CapacityTrigger,
+  PreciseInstant,
+} from '@core/components';
 import {
   type Appointment,
   POLICY_RECOMPUTE_DOC,
@@ -25,13 +29,11 @@ import {
 import {
   type AuditProfileChangeAnswer,
   type ClientStatsProjection,
-  CapacityTrigger,
   type ContinuePolicyRecomputeCommand,
   type MatchWaitlistCommand,
   type ProjectClientStatsCommand,
   type RebuildBusyCommand,
   type RebuildCapacityCommand,
-  repositoryFailure,
   type StartPolicyRecomputeCommand,
 } from '@core/pipelines';
 import {
@@ -39,6 +41,7 @@ import {
   type DeliveredEvent,
   type EdgePorts,
 } from '../edge';
+import { eventInstantOf } from './wire-read';
 
 /**
  * The flip-1 TRIGGERS' edge (blueprint §4.1, F1-3): a Firestore write or a
@@ -112,12 +115,6 @@ function bodyOf(snapshot: StoredSnapshot | undefined): {
   readonly [field: string]: unknown;
 } {
   return snapshot?.data() ?? {};
-}
-
-/** The instant a delivery's wire time names (RFC 3339), `null` when it does not parse. */
-function eventInstantOf(time: string): UtcEpochMs | null {
-  const instant = ZonedTimeSystem.parseOffsetIso(time);
-  return instant.ok ? instant.value : null;
 }
 
 /** Whole seconds, an optional fraction (dot included), a zone. */
@@ -386,7 +383,7 @@ export function projectionReport(
   return {
     attemptFailure: result.ok
       ? result.value.attemptFailure
-      : repositoryFailure(result.error),
+      : TriggerAttemptSystem.repositoryFailure(result.error),
     survivedFailure: null,
   };
 }
@@ -403,7 +400,7 @@ export function profileAuditReport(
   return {
     attemptFailure:
       'path' in error
-        ? repositoryFailure(error)
+        ? TriggerAttemptSystem.repositoryFailure(error)
         : TriggerAttemptSystem.attemptFailure(error, error.errorCode),
     survivedFailure: null,
   };
@@ -415,5 +412,5 @@ export function profileAuditReport(
  */
 export function failOnRefusal<T>(result: Result<T, RepositoryError>): T {
   if (result.ok) return result.value;
-  throw attemptThrowable(repositoryFailure(result.error));
+  throw attemptThrowable(TriggerAttemptSystem.repositoryFailure(result.error));
 }

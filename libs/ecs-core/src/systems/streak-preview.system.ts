@@ -1,9 +1,14 @@
 import {
+  type ClientStats,
+  StreakIntervalRule,
   StreakQualifier,
-  type StreakRule,
+  type StreakQualifierRule,
+  StreakRule,
   StreakPhase,
+  type StreakState,
+  type VisitFact,
 } from '@core/components';
-import { LocalDate } from '@core/primitives';
+import { LocalDate, type UtcEpochMs } from '@core/primitives';
 import {
   StreakSystem,
   type StreakFacts,
@@ -82,6 +87,27 @@ export type StreakPreview =
       readonly reason: StreakPreviewUnavailable;
     };
 
+/**
+ * The first instant of a shop day — the boundary's reader, handed in
+ * (flatten-spec T3): a statistic, and the sample client, know a visit by its
+ * day alone, so the visit is stamped with the start of its shop day. The
+ * zone stays with the caller (`ZonedTimeSystem.startOfLocalDay` on the
+ * shop's zone); this system reads none.
+ */
+export type StreakDayStart = (day: LocalDate) => UtcEpochMs;
+
+/** A fold of nothing: no visit, no excuse, no booking, no pause, no grant. */
+const NO_FACTS: StreakFacts = {
+  visits: [],
+  excused: [],
+  bookings: [],
+  pauses: [],
+  grants: [],
+};
+
+/** How many visits the sample client makes on time before the due date they miss. */
+const SAMPLE_VISITS_BEFORE_THE_MISS = 6;
+
 /** Where a state stands; `null` for no state (the rule is off). */
 function standingOf(phase: StreakPhase | null): StreakStanding | null {
   if (phase === null) return null;
@@ -132,12 +158,117 @@ function tally(counts: Counts, standing: StreakStanding): void {
 }
 
 export const StreakPreviewSystem = {
+  /** A fold of nothing — the facts of a person nothing is known of. */
+  NO_FACTS,
+
+  /**
+   * Whether the two rules can be previewed from visit days alone. A rule
+   * that counts by a list asks what a visit HELD, which the statistics do
+   * not say: the preview is then unavailable, and nothing has to be read to
+   * know it. The ONE qualifier check `estimate` makes too.
+   */
+  readsFacts(
+    inForce: StreakQualifierRule,
+    draft: StreakQualifierRule,
+  ): boolean {
+    return (
+      inForce.streakQualifier === StreakQualifier.AnyVisit &&
+      draft.streakQualifier === StreakQualifier.AnyVisit
+    );
+  },
+
+  /**
+   * One person's statistics as the projector's facts: every worked visit of
+   * the last year counts, on its shop day, stamped with the first instant of
+   * that day (`dayStart`, T3). Nothing is known of what the shop called off,
+   * of a visit on the book or of a pause — that is why the preview is
+   * labelled «приблизително».
+   */
+  factsOfStats(
+    record: Pick<ClientStats, 'last365VisitsCompleted'>,
+    dayStart: StreakDayStart,
+  ): StreakFacts {
+    const visits: StreakVisitFact[] = [];
+    const worked = record.last365VisitsCompleted;
+    for (let i = 0; i < worked.length; i++) {
+      const { localDate } = worked[i] as VisitFact;
+      visits.push({
+        localDate,
+        counted: true,
+        utcEpochMs: dayStart(localDate),
+      });
+    }
+    return { ...NO_FACTS, visits };
+  },
+
+  /**
+   * One invented client's visits under a rule, ending yesterday: six visits
+   * on time (enough to earn a protection under the recommended rule), then
+   * ONE due date missed by a whole period and the visit that came after it.
+   * The projector marks every visit and the due date nobody met, so the run
+   * ends «kept, kept, kept, the miss, kept» and an open period: the track
+   * the rule card draws (§2.6.1).
+   *
+   * On time is the newcomer's interval, which every later period of the same
+   * rule is at least as long as. The late visit falls on the day the missed
+   * due date would move to under a protection (twice the period a visit on
+   * time opens): past the grace, so the miss is judged, and no later than a
+   * protection forgives. Plain calendar arithmetic on the shop's day; each
+   * visit is stamped with the first instant of its day (`dayStart`).
+   */
+  sampleFacts(
+    rule: StreakRule,
+    today: LocalDate,
+    dayStart: StreakDayStart,
+  ): StreakFacts {
+    const onTime = StreakIntervalRule.daysFor(rule, null).days;
+    const late = 2 * StreakIntervalRule.daysFor(rule, onTime).days;
+    // Counted back from yesterday, the newest visit first: the late gap,
+    // then the gaps on time.
+    const daysAgo: number[] = [1];
+    let ago = 1 + late;
+    daysAgo.push(ago);
+    for (let i = 0; i < SAMPLE_VISITS_BEFORE_THE_MISS - 1; i++) {
+      ago += onTime;
+      daysAgo.push(ago);
+    }
+    const visits: StreakVisitFact[] = [];
+    for (let i = daysAgo.length - 1; i >= 0; i--) {
+      const localDate = LocalDate.addDays(today, -(daysAgo[i] as number));
+      visits.push({
+        localDate,
+        counted: true,
+        utcEpochMs: dayStart(localDate),
+      });
+    }
+    return { ...NO_FACTS, visits };
+  },
+
+  /**
+   * The sample client's rhythm under a rule ({@link sampleFacts} through the
+   * projector, `StreakSystem.project`): what the rule card's track draws.
+   * `null` under a rule that is off — it judges nobody.
+   */
+  sampleRun(
+    rule: StreakRule,
+    today: LocalDate,
+    dayStart: StreakDayStart,
+  ): StreakState | null {
+    return StreakSystem.project(
+      StreakRule.DEFAULT_DEFINITION_ID,
+      rule,
+      StreakPreviewSystem.sampleFacts(rule, today, dayStart),
+      today,
+    );
+  },
+
   /**
    * The estimate of moving from `inForce` to `draft`, over one person's
    * facts each (their visits judged by NO LIST: every worked visit
-   * counts). Unavailable while either rule counts by a list. On no `today`
-   * (`null`: the boundary was handed a day that is no day) nobody is
-   * judged. No zone: a phase is read off day numbers alone.
+   * counts). Unavailable while either rule counts by a list
+   * ({@link readsFacts}). On no `today` (`null`: the boundary was handed a
+   * day that is no day) nobody is judged. No zone: a phase is read off day
+   * numbers alone.
    */
   estimate(
     inForce: StreakRule,
@@ -145,10 +276,7 @@ export const StreakPreviewSystem = {
     clients: readonly StreakFacts[],
     today: LocalDate | null,
   ): StreakPreview {
-    if (
-      inForce.streakQualifier !== StreakQualifier.AnyVisit ||
-      draft.streakQualifier !== StreakQualifier.AnyVisit
-    ) {
+    if (!StreakPreviewSystem.readsFacts(inForce, draft)) {
       return {
         streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
         reason: StreakPreviewUnavailable.Qualifier,

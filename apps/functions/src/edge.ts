@@ -7,7 +7,6 @@ import {
   PrimitiveErrorCode,
   type Result,
   TriggerEventId,
-  UtcEpochMs,
 } from '@core/primitives';
 import {
   AccountsErrorCode,
@@ -46,6 +45,7 @@ import {
   TriggerAttemptSystem,
   WorkBudgetSystem,
 } from '@core/systems';
+import { eventInstantOf } from './wire/wire-read';
 
 /**
  * THE EDGE (blueprint §4.3, D1(a)) — the one place a `Result.err` becomes an
@@ -492,6 +492,11 @@ const MEDIA_WIRE: WireTable<MediaErrorCode> = {
   [MediaErrorCode.NotFound]: fields(S.NotFound),
   [MediaErrorCode.Forbidden]: fields(S.PermissionDenied),
   [MediaErrorCode.Transient]: fields(S.Unavailable),
+  // The visit photo's upload guard (`attachVisitPhoto`, in the browser,
+  // before any byte goes up): no callable raises them — inert rows, a
+  // refusal of what was sent, as the avatar's own guard codes are.
+  [MediaErrorCode.PhotoNotAnImage]: fields(S.InvalidArgument),
+  [MediaErrorCode.PhotoTooLarge]: fields(S.InvalidArgument),
 };
 
 const BOOKING_FLOW_WIRE: WireTable<BookingFlowErrorCode> = {
@@ -890,12 +895,11 @@ export const retryingTrigger =
       await handle(event, budget);
     } catch (thrown) {
       const failure = TriggerAttemptSystem.attemptFailure(thrown);
-      const eventAt = UtcEpochMs.of(Date.parse(event.time));
       const line = TriggerAttemptSystem.attemptLine(
         spec.fn,
         {
           id: TriggerEventId.of(event.id),
-          eventAtUtcMs: eventAt.ok ? eventAt.value : null,
+          eventAtUtcMs: eventInstantOf(event.time),
         },
         failure,
         ports.nowUtcMs(),

@@ -1,13 +1,10 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Principal, type ProfileEdits } from '@core/components';
-import { uploadAvatar } from '@core/pipelines';
+import { saveOwnProfile, uploadAvatar } from '@core/pipelines';
 import { type UserId } from '@core/primitives';
 import { AccountsErrorCode, IdentityErrorCode } from '@core/errors';
 import { AvatarSystem } from '@core/systems';
-import {
-  AccountStateService,
-  saveOwnProfile,
-} from '@creativo/features/client/account-state';
+import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   SessionIdentityService,
   avatarUploadRefusal,
@@ -79,7 +76,7 @@ export class ProfileStore {
     try {
       // No refresh: `account` is the live `users/{uid}` listener, so the
       // write reaches every screen that reads it on its own.
-      return await saveOwnProfile(this.gateway, edits);
+      return await saveOwnProfile(this.gateway)(edits);
     } finally {
       this._pending.set(false);
     }
@@ -92,10 +89,7 @@ export class ProfileStore {
    * with a domain error instead of a raw permission-denied.
    */
   async uploadPhoto(file: File): Promise<string | null> {
-    const checked = AvatarSystem.check({
-      contentType: file.type,
-      sizeBytes: file.size,
-    });
+    const checked = AvatarSystem.check(file);
     if (!checked.ok) return checked.error.errorCode;
     const userId = this.currentUserId();
     if (!userId) return IdentityErrorCode.IdentifierMissing;

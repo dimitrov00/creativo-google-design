@@ -11,9 +11,11 @@ import {
   DurationMinutes,
   MinuteDelta,
   LocalDate,
+  UserId,
   type EndMinute,
   type MinuteOfDay,
 } from '@core/primitives';
+import type { TrackSpan } from './grid-layout.system';
 import { RecurrenceSystem } from './recurrence.system';
 
 /**
@@ -62,13 +64,44 @@ const DEFAULT_COUNT = 10;
 
 /** The id a service picked before anyone was named sits on. */
 const PLACEHOLDER_CLIENT_ID = 'primary';
+/**
+ * The prefix of a stranger's key on a staff sheet — a walk-in by label
+ * (`guest-<label>`) or a person minted on the add-client page
+ * (`guest-<instant>-<n>`). Never an account's.
+ */
+const GUEST_KEY_PREFIX = 'guest-';
 /** A visit with no service yet still needs a shape to draw: half an hour. */
 const DEFAULT_SPAN_MINUTES = durationOf(30);
+/**
+ * The booking increment — every authored time on a staff sheet lands on it,
+ * and the shortest span a visit or a block may be drawn at.
+ */
+const GRAIN_MINUTES = durationOf(5);
+/** A shop day's minutes — a typed end before the start runs into the next day. */
+const DAY_MINUTES = 1440;
 
 /** A positive whole number of minutes this file knows is one (a constant, a sum, a span). */
 function durationOf(raw: number): DurationMinutes {
   const minutes = DurationMinutes.of(raw);
   return minutes.ok ? minutes.value : defect('visit-draft: a duration ≤ 0');
+}
+
+/** The nearer of the two grain marks around `minute` (a half rounds up). */
+function snapToGrain(minute: number): number {
+  return Math.round(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
+}
+
+/** The legs' minutes summed — `null` for no legs at all. */
+function legSum(legs: readonly DraftLegMinutes[]): DurationMinutes | null {
+  if (legs.length === 0) return null;
+  let total = (legs[0] as DraftLegMinutes).durationMinutes;
+  for (let i = 1; i < legs.length; i++) {
+    total = DurationMinutes.sum(
+      total,
+      (legs[i] as DraftLegMinutes).durationMinutes,
+    );
+  }
+  return total;
 }
 
 /** A leg as the span reads it — its minutes. */
@@ -164,9 +197,17 @@ function fitted(
  * behalf, as minutes, keys and rules (never words), on the shop's calendar
  * alone (`LocalDate`, Law 7 — no zone, no instant):
  *
+ * - the five-minute grain every authored time lands on, and the typed
+ *   pair of a block (`block-editor/staff-block-editor.ts`
+ *   `commitStart`/`commitEnd`) — pass C;
  * - the visit's span and the placeholder seats
  *   (`visit-editor/staff-visit-editor.ts` `spanOf`/`seedDraft`/
- *   `adoptPlaceholderLegs`);
+ *   `adoptPlaceholderLegs`), the frame's and the typed figure's two
+ *   override rules and a typed end (`onFrameDraft`/`setDuration`/
+ *   `commitEnd`) — pass C;
+ * - whose a person key is: the placeholder, a stranger's `guest-…` key, or
+ *   an account (`accountKeyOf`, the editor's `accountIdOf` and the
+ *   dashboard's `isAccount`) — pass C;
  * - names for the strangers on one visit (the staff dashboard's
  *   `walkInNames`);
  * - the catalogue tag's arithmetic (the `−10 мин` wording is the dashboard's
@@ -176,23 +217,115 @@ function fitted(
  */
 export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
+  GUEST_KEY_PREFIX,
   DEFAULT_SPAN_MINUTES,
+  GRAIN_MINUTES,
   REPEAT_PRESETS,
   MONDAY_TO_FRIDAY,
+
+  /* ── The grain ───────────────────────────────────────────────────────── */
+
+  /*
+   * THE TRACK-MINUTE EXCEPTION (R-6, as `TrackSpan` documents it). A clock
+   * minute goes in branded (`MinuteOfDay`); a snapped mark comes out as a
+   * TRACK minute — a plain number on the sheets' anchored axis — because a
+   * half rounds up, so `1439` lands on the closing midnight `1440`, which no
+   * `MinuteOfDay` holds, while `0` stays `0`, which no `EndMinute` holds.
+   * The block sheet's typed pair is a `TrackSpan` for the same reason: a
+   * start typed at 23:58 snaps to `1440` and pushes its end one grain past
+   * it, to `1445`; clamping either at 1440 would change what the sheet does.
+   */
+
+  /**
+   * A clock minute pulled onto the nearer grain mark — a half rounds up, so
+   * `1439` lands on `1440` (the staff sheets' `snap`). A track minute out,
+   * in `[0, 1440]`; the caller's own bounds apply after.
+   */
+  snap(minute: MinuteOfDay): number {
+    return snapToGrain(minute);
+  },
+
+  /**
+   * A clock minute pulled UP to the next grain mark — a walk-in starts at
+   * the next tick. A track minute out, in `[0, 1440]` (`1436`–`1439` land
+   * on `1440`).
+   */
+  snapUp(minute: MinuteOfDay): number {
+    return Math.ceil(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
+  },
+
+  /**
+   * A START typed on a block sheet: snapped, and the end pushed out to keep
+   * at least one grain of block after it (an end already further on stays).
+   * The draft's pair passes straight in, on the track axis (see above).
+   */
+  typedStart(range: TrackSpan, minute: MinuteOfDay): TrackSpan {
+    const start = snapToGrain(minute);
+    return {
+      startMinute: start,
+      endMinute: Math.max(start + GRAIN_MINUTES, range.endMinute),
+    };
+  },
+
+  /**
+   * An END typed on a block sheet: snapped, and the start pulled back to
+   * keep at least one grain of block before it (an earlier start stays) —
+   * never before the day's first minute.
+   */
+  typedEnd(range: TrackSpan, minute: MinuteOfDay): TrackSpan {
+    const end = snapToGrain(minute);
+    const start = Math.min(range.startMinute, end - GRAIN_MINUTES);
+    return { startMinute: Math.max(0, start), endMinute: end };
+  },
+
+  /**
+   * A drawn span floored at one grain — the shortest span a visit or a
+   * block may be drawn at. Its minutes are a count read off the track axis
+   * (a frame's end minus its start, which may run past midnight; a legs'
+   * sum; `0` for none), so they come in raw, as `TrackSpan`'s do; whole
+   * minutes, the brand out. No snap: the grid already drew on the grain.
+   */
+  floorSpan(minutes: number): DurationMinutes {
+    return durationOf(Math.max(GRAIN_MINUTES, minutes));
+  },
+
+  /**
+   * A duration TYPED on the visit sheet, believed: pulled onto the nearer
+   * grain mark, then floored at one grain ({@link floorSpan}) — a `0`, a
+   * `2` or a negative figure is a typo for the floor, never a shorter
+   * booking. The field's figure comes in as the field hands it; the brand
+   * comes out — this IS the typed figure's ingestion.
+   */
+  typedSpan(typed: number): DurationMinutes {
+    return VisitDraftSystem.floorSpan(snapToGrain(typed));
+  },
+
+  /* ── Whose a person key is ───────────────────────────────────────────── */
+
+  /**
+   * The ACCOUNT a staff sheet's person key names — `null` for the
+   * placeholder a service sits on before anyone is named, and for a
+   * stranger's `guest-…` key. Every other key is an account's uid, through
+   * `UserId.parse` (a refused key — blank, or one that would name a nested
+   * document — is no account). The key's spelling is the sheet's, until the
+   * draft carries an origin tag (pass D).
+   */
+  accountKeyOf(clientId: string): UserId | null {
+    if (
+      clientId === PLACEHOLDER_CLIENT_ID ||
+      clientId.startsWith(GUEST_KEY_PREFIX)
+    ) {
+      return null;
+    }
+    const account = UserId.parse(clientId);
+    return account.ok ? account.value : null;
+  },
 
   /* ── The span and the placeholder seats ─────────────────────────────── */
 
   /** The legs' minutes summed — or half an hour for a visit with none yet. */
   legMinutes(legs: readonly DraftLegMinutes[]): DurationMinutes {
-    if (legs.length === 0) return DEFAULT_SPAN_MINUTES;
-    let total = (legs[0] as DraftLegMinutes).durationMinutes;
-    for (let i = 1; i < legs.length; i++) {
-      total = DurationMinutes.sum(
-        total,
-        (legs[i] as DraftLegMinutes).durationMinutes,
-      );
-    }
-    return total;
+    return legSum(legs) ?? DEFAULT_SPAN_MINUTES;
   },
 
   /** The minutes a draft describes — its override, or the legs it holds. */
@@ -217,6 +350,60 @@ export const VisitDraftSystem = {
     const span = DurationMinutes.between(start, end);
     if (!span.ok) return null;
     return span.value === VisitDraftSystem.legMinutes(legs) ? null : span.value;
+  },
+
+  /**
+   * The minutes the visit sheet draws — its override, else its legs (half
+   * an hour with none), never under one grain. Unlike {@link span}, the
+   * legs' figure is floored at {@link GRAIN_MINUTES}.
+   */
+  editorSpan(
+    durationOverride: DurationMinutes | null,
+    legs: readonly DraftLegMinutes[],
+  ): DurationMinutes {
+    if (durationOverride !== null) return durationOverride;
+    return VisitDraftSystem.floorSpan(VisitDraftSystem.legMinutes(legs));
+  },
+
+  /**
+   * The override a FRAME pins (the grid's drag or resize): none when the
+   * frame's span is what the legs would draw — their raw sum (`0` with no
+   * legs), floored at one grain — else the span. Differs from
+   * {@link typedOverrideFor}, which compares a typed figure with the raw
+   * sum unfloored, and from {@link durationOverrideOf} (a seeded draft,
+   * half an hour for no legs).
+   */
+  overrideFor(
+    span: DurationMinutes,
+    legs: readonly DraftLegMinutes[],
+  ): DurationMinutes | null {
+    const drawn = VisitDraftSystem.floorSpan(legSum(legs) ?? 0);
+    return span === drawn ? null : span;
+  },
+
+  /**
+   * The override a TYPED figure pins (minutes or an end typed on the visit
+   * sheet): none when it is the legs' raw sum, else the figure. With no
+   * legs the sum is `0`, so any typed figure is pinned — five typed on a
+   * draft with no service stores five.
+   */
+  typedOverrideFor(
+    minutes: DurationMinutes,
+    legs: readonly DraftLegMinutes[],
+  ): DurationMinutes | null {
+    return minutes === (legSum(legs) ?? 0) ? null : minutes;
+  },
+
+  /**
+   * The span an END typed as a clock describes from `start`: an end at or
+   * before the start's minute is the NEXT day (a 23:25 cut that ends at
+   * 00:15 — never a negative visit), then snapped to the grain and floored
+   * at one grain, like a typed duration.
+   */
+  spanToEnd(start: MinuteOfDay, typedEnd: MinuteOfDay): DurationMinutes {
+    let span = typedEnd - (start % DAY_MINUTES);
+    if (span <= 0) span += DAY_MINUTES;
+    return VisitDraftSystem.typedSpan(span);
   },
 
   /**

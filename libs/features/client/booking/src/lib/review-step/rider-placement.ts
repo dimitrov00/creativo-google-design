@@ -24,8 +24,5 @@ export function placeRiders(
   selection: ScheduleSelection,
   riders: readonly MoveRider[],
 ): readonly PlacedRider[] {
-  return MoveSystem.placeRiders(
-    selection.assignments.map((assignment) => assignment.startMinutes),
-    riders,
-  );
+  return MoveSystem.placeRiders(selection.assignments, riders);
 }

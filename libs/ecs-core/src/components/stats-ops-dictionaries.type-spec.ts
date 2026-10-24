@@ -19,6 +19,13 @@ import {
   RecomputeJobName,
 } from '@core/entities';
 import { BackfillJobName } from './backfill-job-name.data';
+import { CapacityTrigger } from './capacity-trigger.data';
+import { ClientStatsOutcome } from './client-stats-outcome.data';
+import {
+  PolicyStartOutcome,
+  PolicyStepOutcome,
+  PolicySweepOutcome,
+} from './policy-recompute-outcome.data';
 import {
   BackfillPhase,
   type BackfillPosition,
@@ -70,6 +77,11 @@ dictionary(
 dictionary(StatsWriteDecision satisfies Dictionary<StatsWriteDecision>);
 dictionary(PolicyPassVerdict satisfies Dictionary<PolicyPassVerdict>);
 dictionary(AttemptOutcome satisfies Dictionary<AttemptOutcome>);
+dictionary(PolicyStartOutcome satisfies Dictionary<PolicyStartOutcome>);
+dictionary(PolicyStepOutcome satisfies Dictionary<PolicyStepOutcome>);
+dictionary(PolicySweepOutcome satisfies Dictionary<PolicySweepOutcome>);
+dictionary(ClientStatsOutcome satisfies Dictionary<ClientStatsOutcome>);
+dictionary(CapacityTrigger satisfies Dictionary<CapacityTrigger>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type StatsOpsDictionariesHold = [
@@ -82,6 +94,11 @@ export type StatsOpsDictionariesHold = [
   Expect<Holds<typeof StatsWriteDecision, StatsWriteDecision>>, // systems/client-stats.system.ts
   Expect<Holds<typeof PolicyPassVerdict, PolicyPassVerdict>>, // systems/policy-recompute-job.system.ts
   Expect<Holds<typeof AttemptOutcome, AttemptOutcome>>, // systems/trigger-attempt.system.ts
+  Expect<Holds<typeof PolicyStartOutcome, PolicyStartOutcome>>, // components/policy-recompute-outcome.data.ts
+  Expect<Holds<typeof PolicyStepOutcome, PolicyStepOutcome>>, // components/policy-recompute-outcome.data.ts
+  Expect<Holds<typeof PolicySweepOutcome, PolicySweepOutcome>>, // components/policy-recompute-outcome.data.ts
+  Expect<Holds<typeof ClientStatsOutcome, ClientStatsOutcome>>, // components/client-stats-outcome.data.ts
+  Expect<Holds<typeof CapacityTrigger, CapacityTrigger>>, // components/capacity-trigger.data.ts
 ];
 
 // (3) SCREAMING values.
@@ -95,6 +112,11 @@ export type StatsOpsScreamingChecks = [
   Expect<Screaming<StatsWriteDecision>>,
   Expect<Screaming<PolicyPassVerdict>>,
   Expect<Screaming<AttemptOutcome>>,
+  Expect<Screaming<PolicyStartOutcome>>,
+  Expect<Screaming<PolicyStepOutcome>>,
+  Expect<Screaming<PolicySweepOutcome>>,
+  Expect<Screaming<ClientStatsOutcome>>,
+  Expect<Screaming<CapacityTrigger>>,
 ];
 
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.

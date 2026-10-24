@@ -1,4 +1,5 @@
 import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 
 /**
  * How a retrying handler judges one failed attempt
@@ -96,6 +97,17 @@ function codeOf(error: unknown): unknown {
   return 'code' in error ? error.code : undefined;
 }
 
+/**
+ * The code a failure is JUDGED by: a port's refusal (`RepositoryError.guard`)
+ * by the canonical code its adapter recorded as its `reason` (`unavailable`,
+ * `aborted`, …; `unknown` without one), anything else by its own `code`.
+ */
+function judgedCode(error: unknown): string {
+  return RepositoryError.guard(error)
+    ? TriggerAttemptSystem.failureCode({ code: error.reason ?? '' })
+    : TriggerAttemptSystem.failureCode(error);
+}
+
 export const TriggerAttemptSystem = {
   UNKNOWN_CODE,
 
@@ -137,10 +149,15 @@ export const TriggerAttemptSystem = {
       : 0;
   },
 
-  /** One failure, judged by its code — read off it unless given. */
+  /**
+   * One failure, judged by its code — read off it unless given: a port's
+   * refusal (a `RepositoryError`) by the code in its `reason`, a throw by
+   * its own `code` (pass C, P-24 — the pipelines' `failureOf` /
+   * `failureCodeOf` copies, homed here).
+   */
   attemptFailure(
     error: unknown,
-    failureCode: string = TriggerAttemptSystem.failureCode(error),
+    failureCode: string = judgedCode(error),
   ): AttemptFailure {
     return {
       error,
@@ -150,9 +167,22 @@ export const TriggerAttemptSystem = {
   },
 
   /**
+   * A port's refusal as the retrying edge judges it: by the canonical code
+   * the adapter recorded as its `reason` (`unavailable`, `aborted`, …), else
+   * `unknown` — a failure no redelivery is known to fix. What
+   * {@link TriggerAttemptSystem.attemptFailure} reads off a
+   * `RepositoryError` (the pipeline tier's `repositoryFailure`, homed here).
+   */
+  repositoryFailure(error: RepositoryError): AttemptFailure {
+    return TriggerAttemptSystem.attemptFailure(error, judgedCode(error));
+  },
+
+  /**
    * One attempt's verdict over several INDEPENDENT failures: transient when
    * any one is — the redelivery that one earns re-runs them all, which
    * state-based work makes safe — else the first; `null` when nothing failed.
+   * Each is judged by {@link TriggerAttemptSystem.attemptFailure}: a port's
+   * refusal by its `reason`, a throw as thrown.
    */
   decisiveFailure(errors: readonly unknown[]): AttemptFailure | null {
     let first: AttemptFailure | null = null;

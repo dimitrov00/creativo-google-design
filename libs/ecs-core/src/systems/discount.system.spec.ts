@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   type AppliedDiscount,
   Combinability,
+  CouponExpiryRule,
+  CouponStatus,
   CouponValue,
+  DiscountProvenance,
   DiscountSource,
   type Money,
   VoucherCode,
@@ -12,11 +15,17 @@ import {
   Currency,
   AppliedDiscountId,
   CouponGrantId,
+  CouponId,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import type { Coupon } from '@core/entities';
 import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
-import { type DiscountInput, DiscountSystem } from './discount.system';
+import {
+  type DiscountInput,
+  type DiscountPromise,
+  DiscountSystem,
+} from './discount.system';
 
 /*
  * The cases of the legacy engagement `discount-application.spec.ts` (deleted
@@ -360,5 +369,268 @@ describe('DiscountSystem — purity', () => {
     const twice = DiscountSystem.apply(subtotal, inputs, 20);
     expect(twice).toEqual(once);
     expect(inputs.map((entry) => entry.id)).toEqual(['b', 'a', 'c']);
+  });
+});
+
+/* ── Pass C: the order, the drafted set, the offers, the code resolver ── */
+
+describe("DiscountSystem.ordered — the evaluator's total order", () => {
+  it('orders by method rank, magnitude, then the grant instant, then id — every input kept, a min-spend gate included', () => {
+    const inputs = [
+      input('b', pct(10)),
+      input('free', CouponValue.freeService()),
+      input('c', pct(15), { minSpend: eur(500) }),
+      input('d', pct(10), { grantedAtOffset: 5 }),
+      input('a', fixed(5)),
+      input('e', pct(10)),
+    ];
+    expect(DiscountSystem.ordered(inputs).map((entry) => entry.id)).toEqual([
+      'a',
+      'b',
+      'e',
+      'd',
+      'c',
+      'free',
+    ]);
+    expect(DiscountSystem.ordered([])).toEqual([]);
+  });
+
+  it('is the order the evaluator applies its lines in', () => {
+    const inputs = [
+      input('p15', pct(15)),
+      input('f5', fixed(5)),
+      input('p10', pct(10)),
+    ];
+    const lines = DiscountSystem.apply(eur(100), inputs, null).lines;
+    expect(lines.map((line) => line.id)).toEqual(
+      DiscountSystem.ordered(inputs).map((entry) => entry.id),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const inputs = deepFreeze([input('b', pct(10)), input('a', fixed(5))]);
+    const once = DiscountSystem.ordered(inputs);
+    expect(DiscountSystem.ordered(inputs)).toEqual(once);
+    expect(once).not.toBe(inputs);
+    expect(inputs.map((entry) => entry.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('DiscountSystem.samePromise — any provenance and value slice', () => {
+  it('compares a drafted promise that is not an applied discount', () => {
+    const typed = {
+      ...DiscountProvenance.code(VoucherCode.of('FIRST10')),
+      ...pct(10),
+    };
+    expect(
+      DiscountSystem.samePromise(typed, {
+        ...DiscountProvenance.code(VoucherCode.of('FIRST10')),
+        ...pct(10),
+      }),
+    ).toBe(true);
+    expect(
+      DiscountSystem.samePromise(typed, {
+        ...DiscountProvenance.code(VoucherCode.of('BEARD5')),
+        ...pct(10),
+      }),
+    ).toBe(false);
+    expect(
+      DiscountSystem.samePromise(
+        { ...DiscountProvenance.manual(), ...pct(10) },
+        { ...DiscountProvenance.manual(), ...fixed(10) },
+      ),
+    ).toBe(false);
+  });
+
+  it('tells a grant line apart from the same grant offered at another value (DEP-12 — the editor compared ids alone)', () => {
+    const stale = {
+      ...DiscountProvenance.grant(CouponGrantId.of('grant-1')),
+      ...pct(10),
+    };
+    const offered = {
+      ...DiscountProvenance.grant(CouponGrantId.of('grant-1')),
+      ...pct(20),
+    };
+    expect(DiscountSystem.samePromise(stale, offered)).toBe(false);
+    expect(DiscountSystem.samePromise(offered, birthday)).toBe(true);
+  });
+});
+
+/** A drafted line as a caller holds it — its own key beside the promise it reads. */
+type Drafted = { readonly key: string; readonly promise: DiscountPromise };
+
+const drafted = (
+  key: string,
+  provenance: DiscountProvenance,
+  value: CouponValue,
+  combinability: Combinability = Combinability.Stackable,
+): Drafted => ({ key, promise: { combinability, ...provenance, ...value } });
+
+const promiseOf = (line: Drafted): DiscountPromise => line.promise;
+const keys = (lines: readonly Drafted[]): string[] =>
+  lines.map((line) => line.key);
+
+const loyal = drafted(
+  'grant:grant-loyal',
+  DiscountProvenance.grant(CouponGrantId.of('grant-loyal')),
+  pct(5),
+);
+const birthdayGift = drafted(
+  'grant:grant-birthday',
+  DiscountProvenance.grant(CouponGrantId.of('grant-birthday')),
+  pct(20),
+  Combinability.Exclusive,
+);
+const beard5 = drafted(
+  'code:BEARD5',
+  DiscountProvenance.code(VoucherCode.of('BEARD5')),
+  fixed(5),
+);
+const first10 = drafted(
+  'code:FIRST10',
+  DiscountProvenance.code(VoucherCode.of('FIRST10')),
+  pct(10),
+);
+const manual10 = drafted('manual', DiscountProvenance.manual(), pct(10));
+
+describe('DiscountSystem.withAdded — what the drafted set becomes', () => {
+  it('changes nothing for the same promise twice — the same array comes back', () => {
+    const current = [loyal, beard5];
+    expect(DiscountSystem.withAdded(current, beard5, promiseOf)).toBe(current);
+    expect(
+      DiscountSystem.withAdded(
+        [manual10],
+        drafted('manual', DiscountProvenance.manual(), pct(10)),
+        promiseOf,
+      ),
+    ).toEqual([manual10]);
+  });
+
+  it('stacks what may stack, the newcomer last', () => {
+    const once = DiscountSystem.withAdded([], loyal, promiseOf);
+    expect(keys(once)).toEqual(['grant:grant-loyal']);
+    expect(keys(DiscountSystem.withAdded(once, beard5, promiseOf))).toEqual([
+      'grant:grant-loyal',
+      'code:BEARD5',
+    ]);
+  });
+
+  it('lets an exclusive coupon take the others off, and makes an exclusive line give way to whatever comes next', () => {
+    const alone = DiscountSystem.withAdded(
+      [loyal, beard5],
+      birthdayGift,
+      promiseOf,
+    );
+    expect(keys(alone)).toEqual(['grant:grant-birthday']);
+    expect(keys(DiscountSystem.withAdded(alone, first10, promiseOf))).toEqual([
+      'code:FIRST10',
+    ]);
+  });
+
+  it('replaces the manual figure with the next one — the counter corrects, it does not pile up', () => {
+    const next = drafted('manual', DiscountProvenance.manual(), fixed(3));
+    expect(
+      DiscountSystem.withAdded([manual10, first10], next, promiseOf).map(
+        (line) => line.promise,
+      ),
+    ).toEqual([first10.promise, next.promise]);
+    expect(
+      keys(DiscountSystem.withAdded([manual10], first10, promiseOf)),
+    ).toEqual(['manual', 'code:FIRST10']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const current = deepFreeze([loyal, birthdayGift, manual10]);
+    const candidate = deepFreeze(beard5);
+    const once = DiscountSystem.withAdded(current, candidate, promiseOf);
+    expect(DiscountSystem.withAdded(current, candidate, promiseOf)).toEqual(
+      once,
+    );
+    expect(keys(current)).toEqual([
+      'grant:grant-loyal',
+      'grant:grant-birthday',
+      'manual',
+    ]);
+  });
+});
+
+describe("DiscountSystem.offerablePromos — a held coupon's code is not offered again", () => {
+  const promos = [
+    { code: 'FIRST10', couponId: CouponId.of('coupon-first10') },
+    { code: 'BEARD5', couponId: CouponId.of('coupon-beard5') },
+    { code: 'ALONE20', couponId: CouponId.of('coupon-alone20') },
+  ];
+  const couponIdOf = (promo: (typeof promos)[number]): CouponId =>
+    promo.couponId;
+
+  it('leaves out the codes whose coupon the client holds as a grant, the rest in their order', () => {
+    expect(
+      DiscountSystem.offerablePromos(
+        promos,
+        [CouponId.of('coupon-beard5')],
+        couponIdOf,
+      ).map((promo) => promo.code),
+    ).toEqual(['FIRST10', 'ALONE20']);
+    expect(DiscountSystem.offerablePromos(promos, [], couponIdOf)).toEqual(
+      promos,
+    );
+    expect(
+      DiscountSystem.offerablePromos(
+        [],
+        [CouponId.of('coupon-beard5')],
+        couponIdOf,
+      ),
+    ).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(promos.map((promo) => ({ ...promo })));
+    const held = deepFreeze([CouponId.of('coupon-first10')]);
+    expect(DiscountSystem.offerablePromos(frozen, held, couponIdOf)).toEqual(
+      DiscountSystem.offerablePromos(frozen, held, couponIdOf),
+    );
+  });
+});
+
+describe('DiscountSystem.resolvedCode — a coupon a typed code opened', () => {
+  const coupon = (combinability: Combinability): Coupon => ({
+    id: CouponId.of('coupon-first10'),
+    name: 'Първо посещение',
+    code: VoucherCode.of('FIRST10'),
+    combinability,
+    usageLimit: null,
+    couponStatus: CouponStatus.Enabled,
+    couponOccasion: null,
+    ...pct(10),
+    ...CouponExpiryRule.never(),
+  });
+
+  it('labels it with its name, keeps the code as matched, and reads its own rule and value', () => {
+    expect(
+      DiscountSystem.resolvedCode(
+        coupon(Combinability.Stackable),
+        VoucherCode.of('FIRST10'),
+      ),
+    ).toEqual({
+      couponId: 'coupon-first10',
+      label: 'Първо посещение',
+      code: 'FIRST10',
+      exclusive: false,
+      discountMethod: 'PERCENT_OFF',
+      discountPercent: 10,
+    });
+    expect(
+      DiscountSystem.resolvedCode(
+        coupon(Combinability.Exclusive),
+        VoucherCode.of('FIRST10'),
+      ).exclusive,
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(coupon(Combinability.Stackable));
+    expect(
+      DiscountSystem.resolvedCode(frozen, VoucherCode.of('FIRST10')),
+    ).toEqual(DiscountSystem.resolvedCode(frozen, VoucherCode.of('FIRST10')));
   });
 });

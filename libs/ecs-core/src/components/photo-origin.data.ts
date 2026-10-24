@@ -29,4 +29,15 @@ export const PhotoOrigin = {
   ownsBytes(origin: PhotoOrigin): boolean {
     return origin === PHOTO_ORIGIN.Shot;
   },
+
+  /**
+   * Whether the photo counts as one of the visit's (and so its client's)
+   * own pictures — only a shot: a library picture adopted onto a visit never
+   * takes a place in the client card's strip (`ListClientPhotos`) nor in a
+   * visit's photo count (`CountPhotosByAppointment`). The visit's own live
+   * strip (`ObserveAppointmentPhotos`) still shows every picture on it.
+   */
+  countsForClient(origin: PhotoOrigin): boolean {
+    return origin === PHOTO_ORIGIN.Shot;
+  },
 } as const;

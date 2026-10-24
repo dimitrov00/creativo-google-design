@@ -8,8 +8,20 @@ import {
 } from '@jsverse/transloco';
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
+import {
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { ServiceDetailSheetComponent } from './service-detail-sheet.component';
-import { CompositionKind } from '@core/components';
+import { CompositionKind, ServiceComposition } from '@core/components';
+import type { Service } from '@core/entities';
+import { BarberId, ServiceId } from '@core/primitives';
+import {
+  memoryCatalogReadPorts,
+  memoryMediaResolvePorts,
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 import type { BarberVm, ServiceVm } from '../content/catalog.vm';
 
 const bg: Translation = {
@@ -104,11 +116,48 @@ class DefaultHost {
   readonly barbers = signal(BARBERS);
 }
 
+/**
+ * The stored twin of a fixture view model — the catalogue entity the sheet
+ * asks `CatalogPricingSystem` about (performers, the bundle saving): Ivan
+ * offers it at `priceCents` / `minutes`, which are also its own terms.
+ */
+function stored(
+  id: string,
+  priceCents: number,
+  minutes: number,
+  parts: readonly string[] = [],
+): Service {
+  const terms = termsFixture(priceCents, minutes);
+  return serviceFixture({
+    id: ServiceId.of(id),
+    ...terms,
+    offerings: [{ barberId: BarberId.of('ivan'), overrides: [], ...terms }],
+    ...(parts.length > 0
+      ? ServiceComposition.bundle(parts.map((part) => ServiceId.of(part)))
+      : ServiceComposition.single()),
+  });
+}
+
+/** The live catalogue behind the fixtures below — their entity twins. */
+const CATALOG: readonly Service[] = [
+  stored('svc-classic-cut', 1450, 35),
+  stored('svc-shave', 1200, 25),
+  stored('svc-full-care', 2150, 55, ['svc-classic-cut', 'svc-shave']),
+  stored('svc-wash', 110, 10),
+  stored('svc-trim', 220, 15),
+  stored('svc-wash-trim', 330, 25, ['svc-wash', 'svc-trim']),
+];
+
 async function render(host: Type<unknown>) {
   await TestBed.configureTestingModule({
     imports: [host],
     providers: [
       provideRouter([]),
+      {
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({ services: CATALOG }),
+      },
+      { provide: MEDIA_RESOLVE_PORTS, useValue: memoryMediaResolvePorts() },
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -202,6 +251,52 @@ class BundleHost {
   readonly catalog = signal<readonly ServiceVm[]>([SERVICE, SHAVE, BUNDLE]);
 }
 
+const WASH: ServiceVm = {
+  ...SERVICE,
+  id: 'svc-wash',
+  name: { en: 'Wash', bg: 'Измиване' },
+  offerings: [{ barberId: 'ivan', base: { price: 1.1, minutes: 10 } }],
+  priceFrom: 1.1,
+  cardPrice: { cheapest: 1.1, spread: false },
+  minutesRange: { from: 10, to: 10 },
+};
+
+const TRIM: ServiceVm = {
+  ...SERVICE,
+  id: 'svc-trim',
+  name: { en: 'Trim', bg: 'Оформяне' },
+  offerings: [{ barberId: 'ivan', base: { price: 2.2, minutes: 15 } }],
+  priceFrom: 2.2,
+  cardPrice: { cheapest: 2.2, spread: false },
+  minutesRange: { from: 15, to: 15 },
+};
+
+const WASH_TRIM: ServiceVm = {
+  ...SERVICE,
+  id: 'svc-wash-trim',
+  compositionKind: CompositionKind.Bundle,
+  name: { en: 'Wash and trim', bg: 'Измиване и оформяне' },
+  includes: ['svc-wash', 'svc-trim'],
+  offerings: [{ barberId: 'ivan', base: { price: 3.3, minutes: 25 } }],
+  priceFrom: 3.3,
+  cardPrice: { cheapest: 3.3, spread: false },
+  minutesRange: { from: 25, to: 25 },
+};
+
+@Component({
+  imports: [ServiceDetailSheetComponent],
+  template: `<cr-service-detail-sheet
+    [service]="service()"
+    [barbers]="barbers()"
+    [catalogServices]="catalog()"
+  />`,
+})
+class ExactSumBundleHost {
+  readonly service = signal(WASH_TRIM);
+  readonly barbers = signal(BARBERS);
+  readonly catalog = signal<readonly ServiceVm[]>([WASH, TRIM, WASH_TRIM]);
+}
+
 describe('ServiceDetailSheetComponent — a bundle under the accent law', () => {
   const byId = (host: HTMLElement, id: string): HTMLElement | null =>
     host.querySelector(`[data-testid="${id}"]`);
@@ -260,5 +355,14 @@ describe('ServiceDetailSheetComponent — a bundle under the accent law', () => 
     const host = await render(BundleHost);
     expect(byId(host, 'service-row-svc-classic-cut')).not.toBeNull();
     expect(byId(host, 'service-row-svc-shave')).not.toBeNull();
+  });
+
+  // DEP-10: the saving is whole cents. 1,10 + 2,20 apart and 3,30 together
+  // saves nothing — the float sum (3.3000000000000003) printed a
+  // «Спестяваш 0,00 €» capsule.
+  it('says nothing of a saving on a bundle priced exactly at its members’ sum', async () => {
+    const host = await render(ExactSumBundleHost);
+    expect(byId(host, 'catalog-sheet-bundle')).not.toBeNull();
+    expect(byId(host, 'catalog-sheet-savings')).toBeNull();
   });
 });

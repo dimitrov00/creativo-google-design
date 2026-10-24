@@ -84,6 +84,21 @@ export const BookingContact = {
     });
   },
 
+  /**
+   * A present contact with the note the client just typed
+   * (`booking-review-step.ts` `saveNote`): trimmed, then cut to
+   * {@link BookingContact.MAX_NOTE_LENGTH} — a TRUNCATION, unlike
+   * {@link create}, which refuses an over-long note — and a blank one is
+   * none (`null`). Everything else of the contact is kept as it is.
+   */
+  withNote(
+    contact: BookingContact.Present,
+    raw: string,
+  ): BookingContact.Present {
+    const note = raw.trim().slice(0, BookingContact.MAX_NOTE_LENGTH);
+    return { ...contact, contactNote: note || null };
+  },
+
   /** Is there somebody to call? Narrows to the present contact. */
   isPresent(contact: BookingContact): contact is BookingContact.Present {
     return contact.contactName !== null && contact.contactPhone !== null;

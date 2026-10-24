@@ -29,6 +29,28 @@ const NO_CONTACT: AccountContact = {
 
 export const CustomerRecordSystem = {
   /**
+   * The accounts whose record the transaction found ABSENT and for whom no
+   * contact snapshot was read yet — in `resolved`'s order. The staff edit
+   * reads their contacts OUTSIDE any transaction and runs again, so
+   * {@link createsFor} never writes a nameless record for a contact it
+   * could have read. A record never read (`undefined` in `stored`) is not
+   * absent: nobody is asked for.
+   */
+  missingContacts(
+    resolved: ReadonlyMap<UserId, CustomerId>,
+    stored: ReadonlyMap<CustomerId, Customer | null>,
+    contacts: ReadonlyMap<UserId, AccountContact>,
+  ): readonly UserId[] {
+    const missing: UserId[] = [];
+    for (const [userId, customerId] of resolved) {
+      if (stored.get(customerId) === null && !contacts.has(userId)) {
+        missing.push(userId);
+      }
+    }
+    return missing;
+  },
+
+  /**
    * The `Create`s of the records the transaction found ABSENT — one per
    * account, at its deterministic path `customers/{customerId}`; a record
    * it read is left alone (no writer ever rewrites somebody's record), and

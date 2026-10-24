@@ -4,7 +4,6 @@ import {
   type E164,
   MinuteBlock,
   type MinuteRange,
-  ServiceStatus,
   VoucherRedemption,
   WriteAction,
   WriteOp,
@@ -22,9 +21,8 @@ import {
   type ServiceId,
   LocalDate,
   type MinuteOfDay,
-  type TimeZone,
+  TimeZone,
   UtcEpochMs,
-  defect,
 } from '@core/primitives';
 import {
   type Appointment,
@@ -51,9 +49,8 @@ import {
   AuditSystem,
   type BookingSnapshot,
   type BusyWrite,
-  type DecisionBusyDay,
-  type DecisionSchedule,
   BusySystem,
+  PartyAdmissionSystem,
   PhoneSystem,
   VoucherSystem,
   ZonedTimeSystem,
@@ -267,39 +264,21 @@ export function placementKeysOf(
 
 /**
  * The decision's snapshot over what this attempt read: the shop's week,
- * the BOOKABLE services (a retired one is absent, so the decision refuses
- * it as unknown rather than guessing at terms nobody authored), each
- * schedule under its barber, each busy day's blocks as its spans (a block
- * IS a minute range) and every published exception as read.
+ * the BOOKABLE services (`PartyAdmissionSystem.bookableServices` — a
+ * retired one is absent, so the decision refuses it as unknown rather than
+ * guessing at terms nobody authored), and the schedules, busy days and
+ * published exceptions exactly as read (the decision reads the stored
+ * slices: no inbound mapping).
  */
 export function bookingSnapshotOf(
   set: BookingReadSet,
   placement: PlacementSet,
 ): BookingSnapshot {
-  const services: Service[] = [];
-  for (const service of set.services) {
-    if (service.serviceStatus === ServiceStatus.Active) services.push(service);
-  }
-  const schedules: DecisionSchedule[] = [];
-  for (const schedule of set.schedules) {
-    schedules.push({
-      barberId: schedule.id,
-      versions: schedule.versions,
-      turnaroundMinutes: schedule.turnaroundMinutes,
-    });
-  }
-  const busy: DecisionBusyDay[] = [];
-  for (const day of placement.busy) {
-    busy.push({
-      id: BusyKey.of(day.barberId, day.localDate),
-      spans: day.blocks,
-    });
-  }
   return {
     shopHours: set.location === null ? [] : set.location.openingHours,
-    services,
-    schedules,
-    busy,
+    services: PartyAdmissionSystem.bookableServices(set.services),
+    schedules: set.schedules,
+    busy: placement.busy,
     exceptions: placement.exceptions,
   };
 }
@@ -389,16 +368,6 @@ export function parseContactPhone(raw: string): E164 | null {
   const parsed = PhoneSystem.parse(raw, null);
   return parsed.ok ? parsed.value.e164 : null;
 }
-
-/**
- * The clock a request whose shop zone cannot be read is judged on — UTC,
- * as today: every seat of such a request is refused unplaced before any
- * answer reads its day.
- */
-export const UTC_ZONE: TimeZone = ((): TimeZone => {
-  const zone = ZonedTimeSystem.checkZone('UTC');
-  return zone.ok ? zone.value : defect('the runtime knows no UTC zone');
-})();
 
 /** The location's zone, or `null` when its stored zone is not one the runtime knows. */
 export function zoneOf(location: ShopLocation): TimeZone | null {

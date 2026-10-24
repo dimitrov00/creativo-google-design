@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { TriggerEventId, UtcEpochMs } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import { AttemptOutcome, TriggerAttemptSystem } from './trigger-attempt.system';
 
@@ -152,6 +153,80 @@ describe('the attempt line — what every retrying handler logs', () => {
       failureCode: 'aborted',
       ageMs: null,
     });
+  });
+});
+
+describe('a port’s refusal — judged by the code its adapter recorded as its reason (pass C, P-24)', () => {
+  const { repositoryFailure } = TriggerAttemptSystem;
+
+  it('reads a RepositoryError by its reason: a contended or absent store retries', () => {
+    const refusal = RepositoryError.readFailed(
+      'settings/bookingPolicy',
+      'unavailable',
+    );
+    expect(repositoryFailure(refusal)).toEqual({
+      error: refusal,
+      failureCode: 'unavailable',
+      attemptOutcome: 'TRANSIENT',
+    });
+    // attemptFailure reads the same off it, unless a code is given.
+    expect(attemptFailure(refusal)).toEqual(repositoryFailure(refusal));
+    expect(attemptFailure(refusal, 'internal')).toEqual({
+      error: refusal,
+      failureCode: 'internal',
+      attemptOutcome: 'PERMANENT',
+    });
+  });
+
+  it('reads the reason in any common spelling, and no reason as unknown — no redelivery is known to fix it', () => {
+    expect(
+      repositoryFailure(
+        RepositoryError.writeFailed('a/1', 'firestore/ABORTED'),
+      ),
+    ).toMatchObject({ failureCode: 'aborted', attemptOutcome: 'TRANSIENT' });
+    expect(
+      repositoryFailure(RepositoryError.readFailed('a/1', 'permission-denied')),
+    ).toMatchObject({
+      failureCode: 'permission-denied',
+      attemptOutcome: 'PERMANENT',
+    });
+    expect(repositoryFailure(RepositoryError.unavailable())).toMatchObject({
+      failureCode: 'unknown',
+      attemptOutcome: 'PERMANENT',
+    });
+    expect(
+      repositoryFailure(RepositoryError.writeFailed(null, '')),
+    ).toMatchObject({ failureCode: 'unknown', attemptOutcome: 'PERMANENT' });
+  });
+
+  it('never reads a port’s refusal by a `code` it does not carry — failureCode alone still says unknown', () => {
+    expect(failureCode(RepositoryError.readFailed('a/1', 'unavailable'))).toBe(
+      'unknown',
+    );
+  });
+
+  it('decides an attempt over refusals and throws alike: transient when any one is, else the first', () => {
+    const permanentThrow = { code: 13 };
+    const transientRefusal = RepositoryError.readFailed('x', 'unavailable');
+    expect(decisiveFailure([permanentThrow, transientRefusal])).toEqual({
+      error: transientRefusal,
+      failureCode: 'unavailable',
+      attemptOutcome: 'TRANSIENT',
+    });
+    const permanentRefusal = RepositoryError.writeFailed('x', 'internal');
+    expect(decisiveFailure([permanentRefusal, { code: 7 }])).toEqual({
+      error: permanentRefusal,
+      failureCode: 'internal',
+      attemptOutcome: 'PERMANENT',
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const refusal = deepFreeze(RepositoryError.writeFailed('x', 'aborted'));
+    const failures = deepFreeze([{ code: 7 }, refusal]);
+    expect(repositoryFailure(refusal)).toEqual(repositoryFailure(refusal));
+    expect(decisiveFailure(failures)).toEqual(decisiveFailure(failures));
+    expect(decisiveFailure(failures)?.error).toBe(refusal);
   });
 });
 

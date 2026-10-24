@@ -42,6 +42,7 @@ import {
   FIXTURE_TODAY,
   cents,
   deepFreeze,
+  endMinute,
   localDate,
   minute,
   unwrapOk,
@@ -50,6 +51,7 @@ import {
   termsFixture,
   customerOf,
 } from '@core/testing';
+import { LocationScopeSystem } from './location-scope.system';
 import { VisitRowOutcome } from './visit-list.system';
 import {
   type PersonSubject,
@@ -1017,6 +1019,14 @@ describe('VisitStorySystem.namesShop — the shop named on a worked visit', () =
       expect(S.namesShop(outcome, 3)).toBe(false);
     }
   });
+
+  it('composes LocationScopeSystem.isMultiShop for the shop count', () => {
+    for (const count of [0, 1, 2, 5]) {
+      expect(S.namesShop('WORKED', count)).toBe(
+        LocationScopeSystem.isMultiShop(count),
+      );
+    }
+  });
 });
 
 describe('VisitStorySystem.subjectBarberIds — who cut the story’s seats', () => {
@@ -1216,6 +1226,384 @@ describe('VisitStorySystem.lastWorked — the featured visit', () => {
     expect(
       S.lastWorked(book, (appointment) => staffStory(appointment, IVO).outcome),
     ).toBe(earlier);
+  });
+});
+
+/*
+ * WHAT SETTLED ONE CHAIR (pass C, S-7) — ported from the staff dashboard's
+ * `resolutionOf`, with DEP-1: whose act a cancellation was is the side of
+ * the seat called off LAST by the rule the card's rows and the statistics
+ * read (reason first, the actor only for UNSPECIFIED/OTHER) — no longer
+ * "the client's only when every seat says CLIENT".
+ */
+describe('VisitStorySystem.chairResolution — what settled one chair', () => {
+  const cancelledSeat = (
+    local: string,
+    by: CancelledBy,
+    reason: CancellationReason,
+    id = `seat-${local}-${by}`,
+  ) =>
+    seat('2026-09-04T10:00:00', { id, outcome: cancelled(local, by, reason) });
+  const noShowSeat = (local: string, id = `seat-ns-${local}`) =>
+    seat('2026-09-04T10:00:00', {
+      id,
+      outcome: SeatOutcome.noShow(at(local)),
+    });
+
+  it('reads a desk-filed CLIENT_UNWELL as the client’s — the reason first (DEP-1, the sheet’s former «от салона»)', () => {
+    const chair = [
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Staff,
+        CancellationReason.ClientUnwell,
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, chair)).toEqual({
+      bookingStatus: 'CANCELLED',
+      cancelledBy: 'CLIENT',
+      atUtcMs: at('2026-09-04T10:00:00'),
+      reasons: ['CLIENT_UNWELL'],
+    });
+  });
+
+  it('reads a client-filed shop reason as the shop’s, and a converted no-show as the shop’s', () => {
+    for (const reason of [
+      CancellationReason.StaffShopClosure,
+      CancellationReason.StaffBarberAbsence,
+      CancellationReason.NoShowConverted,
+    ]) {
+      const chair = [
+        cancelledSeat('2026-09-04T10:00:00', CancelledBy.Client, reason),
+      ];
+      expect(
+        S.chairResolution(BookingStatus.Cancelled, chair)?.cancelledBy,
+      ).toBe('SHOP');
+    }
+    const plans = [
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Staff,
+        CancellationReason.ClientChangedPlans,
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, plans)?.cancelledBy).toBe(
+      'CLIENT',
+    );
+  });
+
+  it('reads UNSPECIFIED and OTHER by who filed them', () => {
+    for (const reason of [
+      CancellationReason.Unspecified,
+      CancellationReason.Other,
+    ]) {
+      const byClient = [
+        cancelledSeat('2026-09-04T10:00:00', CancelledBy.Client, reason),
+      ];
+      const byStaff = [
+        cancelledSeat('2026-09-04T10:00:00', CancelledBy.Staff, reason),
+      ];
+      expect(
+        S.chairResolution(BookingStatus.Cancelled, byClient)?.cancelledBy,
+      ).toBe('CLIENT');
+      expect(
+        S.chairResolution(BookingStatus.Cancelled, byStaff)?.cancelledBy,
+      ).toBe('SHOP');
+    }
+  });
+
+  it('two seats: the latest stamp is the moment, and its seat’s side wins', () => {
+    const chair = [
+      cancelledSeat(
+        '2026-09-04T11:30:00',
+        CancelledBy.Client,
+        CancellationReason.ClientChangedPlans,
+        'a',
+      ),
+      cancelledSeat(
+        '2026-09-04T09:15:00',
+        CancelledBy.Staff,
+        CancellationReason.StaffShopClosure,
+        'b',
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, chair)).toEqual({
+      bookingStatus: 'CANCELLED',
+      cancelledBy: 'CLIENT',
+      atUtcMs: at('2026-09-04T11:30:00'),
+      reasons: ['CLIENT_CHANGED_PLANS', 'STAFF_SHOP_CLOSURE'],
+    });
+  });
+
+  it('two seats cancelled by different actors read the LAST one’s side, in both orders (DEP-1)', () => {
+    const clientFirst = [
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Client,
+        CancellationReason.Unspecified,
+        'a',
+      ),
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Staff,
+        CancellationReason.Unspecified,
+        'b',
+      ),
+    ];
+    const staffFirst = [
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Staff,
+        CancellationReason.Unspecified,
+        'a',
+      ),
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Client,
+        CancellationReason.Unspecified,
+        'b',
+      ),
+    ];
+    // Client first, then the shop: «от салона», as before.
+    expect(
+      S.chairResolution(BookingStatus.Cancelled, clientFirst)?.cancelledBy,
+    ).toBe('SHOP');
+    // The shop first, then the client: «от клиента» (was «от салона»).
+    expect(
+      S.chairResolution(BookingStatus.Cancelled, staffFirst)?.cancelledBy,
+    ).toBe('CLIENT');
+    // The seat order does not decide — the stamps do.
+    expect(
+      S.chairResolution(BookingStatus.Cancelled, [...staffFirst].reverse())
+        ?.cancelledBy,
+    ).toBe('CLIENT');
+  });
+
+  it('is the root story’s side — composes rootStory', () => {
+    const chair = [
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Staff,
+        CancellationReason.Other,
+        'a',
+      ),
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Client,
+        CancellationReason.StaffBarberAbsence,
+        'b',
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, chair)?.cancelledBy).toBe(
+      S.rootStory(BookingStatus.Cancelled, chair).cancelledBy,
+    );
+  });
+
+  it('lists each reason once, in seat order; a reason nobody gave adds nothing', () => {
+    const chair = [
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Client,
+        CancellationReason.ClientUnwell,
+        'a',
+      ),
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Client,
+        CancellationReason.Unspecified,
+        'b',
+      ),
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Client,
+        CancellationReason.ClientUnwell,
+        'c',
+      ),
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Staff,
+        CancellationReason.Other,
+        'd',
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, chair)?.reasons).toEqual([
+      'CLIENT_UNWELL',
+      'OTHER',
+    ]);
+    const silent = [
+      cancelledSeat(
+        '2026-09-04T09:00:00',
+        CancelledBy.Staff,
+        CancellationReason.Unspecified,
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, silent)?.reasons).toEqual(
+      [],
+    );
+  });
+
+  it('a no-show is nobody’s act: no side, no reasons, the latest no-show stamp', () => {
+    const chair = [
+      noShowSeat('2026-09-04T10:00:00', 'a'),
+      noShowSeat('2026-09-04T10:20:00', 'b'),
+    ];
+    expect(S.chairResolution(BookingStatus.NoShow, chair)).toEqual({
+      bookingStatus: 'NO_SHOW',
+      cancelledBy: null,
+      atUtcMs: at('2026-09-04T10:20:00'),
+      reasons: [],
+    });
+  });
+
+  it('reads only the seats that match the chair’s status', () => {
+    const mixed = [
+      noShowSeat('2026-09-04T12:00:00', 'a'),
+      cancelledSeat(
+        '2026-09-04T10:00:00',
+        CancelledBy.Client,
+        CancellationReason.ClientUnwell,
+        'b',
+      ),
+    ];
+    expect(S.chairResolution(BookingStatus.Cancelled, mixed)).toEqual({
+      bookingStatus: 'CANCELLED',
+      cancelledBy: 'CLIENT',
+      atUtcMs: at('2026-09-04T10:00:00'),
+      reasons: ['CLIENT_UNWELL'],
+    });
+    expect(S.chairResolution(BookingStatus.NoShow, mixed)).toEqual({
+      bookingStatus: 'NO_SHOW',
+      cancelledBy: null,
+      atUtcMs: at('2026-09-04T12:00:00'),
+      reasons: [],
+    });
+  });
+
+  it('is null on a live or finished chair, and on a settled one with no matching stamp', () => {
+    const scheduled = [seat('2026-09-04T10:00:00')];
+    const worked = [
+      seat('2026-09-04T10:00:00', { outcome: SeatOutcome.worked(WORKED_AT) }),
+    ];
+    for (const status of [
+      BookingStatus.Pending,
+      BookingStatus.Confirmed,
+      BookingStatus.Completed,
+    ]) {
+      expect(S.chairResolution(status, worked)).toBeNull();
+      expect(S.chairResolution(status, scheduled)).toBeNull();
+    }
+    expect(S.chairResolution(BookingStatus.Cancelled, scheduled)).toBeNull();
+    expect(S.chairResolution(BookingStatus.NoShow, worked)).toBeNull();
+    expect(S.chairResolution(BookingStatus.Cancelled, [])).toBeNull();
+  });
+});
+
+/*
+ * HAS THE VISIT BEGUN / ENDED (pass C, E-10, E-13) — the visit sheet's
+ * `started` (its exits) and its frame's neighbour `past`, on the shop's
+ * wall clock. NOW is 2026-09-28 12:00 (minute 720).
+ */
+describe('VisitStorySystem.hasStarted / hasEnded — on the shop’s wall clock', () => {
+  it('has started at the start minute, after it, and on any earlier day', () => {
+    expect(S.hasStarted(wall('2026-09-28T12:00:00'), NOW)).toBe(true);
+    expect(S.hasStarted(wall('2026-09-28T11:59:00'), NOW)).toBe(true);
+    expect(S.hasStarted(wall('2026-09-27T23:59:00'), NOW)).toBe(true);
+  });
+
+  it('has not started a minute before, nor on a later day', () => {
+    expect(S.hasStarted(wall('2026-09-28T12:01:00'), NOW)).toBe(false);
+    expect(S.hasStarted(wall('2026-09-29T00:00:00'), NOW)).toBe(false);
+  });
+
+  it('is not `!isUpcoming` — at the start minute an open visit has begun AND is still upcoming', () => {
+    const start = wall('2026-09-28T12:00:00');
+    expect(S.hasStarted(start, NOW)).toBe(true);
+    expect(S.isUpcoming('OPEN', start, NOW)).toBe(true);
+  });
+
+  it('has ended at the end minute, after it, and on any earlier day', () => {
+    expect(S.hasEnded(wall('2026-09-28T12:00:00'), NOW)).toBe(true);
+    expect(S.hasEnded(wall('2026-09-28T09:30:00'), NOW)).toBe(true);
+    expect(S.hasEnded(wall('2026-09-27T23:59:00'), NOW)).toBe(true);
+  });
+
+  it('has not ended a minute before its end, nor on a later day', () => {
+    expect(S.hasEnded(wall('2026-09-28T12:01:00'), NOW)).toBe(false);
+    expect(S.hasEnded(wall('2026-09-29T00:00:00'), NOW)).toBe(false);
+  });
+
+  it('a visit ending at the closing midnight ends only once its day has gone', () => {
+    const closing = {
+      localDate: localDate('2026-09-28'),
+      minute: endMinute(1440),
+    };
+    const lastMinute = ZonedTimeSystem.shopNow(
+      at('2026-09-28T23:59:00'),
+      FIXTURE_TIME_ZONE,
+    );
+    const nextDay = ZonedTimeSystem.shopNow(
+      at('2026-09-29T00:00:00'),
+      FIXTURE_TIME_ZONE,
+    );
+    expect(S.hasEnded(closing, lastMinute)).toBe(false);
+    expect(S.hasEnded(closing, nextDay)).toBe(true);
+  });
+});
+
+describe('VisitStorySystem.seatPersonKey — one person, one key, off the seat', () => {
+  it('keys an account by its id and a guest by the seat’s name, as personKeyOf does', () => {
+    const account = seat('2026-09-04T10:00:00', { who: IVO });
+    const guest = seat('2026-09-04T10:00:00', { guest: 'Мария' });
+    expect(S.seatPersonKey(account)).toBe('account:ivo');
+    expect(S.seatPersonKey(guest)).toBe('guest:Мария');
+    for (const entry of [account, guest]) {
+      expect(S.seatPersonKey(entry)).toBe(S.personKeyOf(personOf(entry)));
+    }
+  });
+
+  it('keys a companion and a self seat of one account alike — one person', () => {
+    expect(
+      S.seatPersonKey(
+        seat('2026-09-04T10:00:00', {
+          who: IVO,
+          relationship: SubjectRelationship.Companion,
+        }),
+      ),
+    ).toBe(S.seatPersonKey(seat('2026-09-04T10:00:00', { who: IVO })));
+  });
+});
+
+describe('VisitStorySystem — the pass-C additions are pure', () => {
+  it('same input → same output, inputs untouched', () => {
+    const chair = deepFreeze([
+      seat('2026-09-04T10:00:00', {
+        id: 'p-a',
+        outcome: cancelled(
+          '2026-09-04T09:00:00',
+          CancelledBy.Staff,
+          CancellationReason.ClientUnwell,
+        ),
+      }),
+      seat('2026-09-04T10:30:00', {
+        id: 'p-b',
+        outcome: cancelled(
+          '2026-09-04T10:00:00',
+          CancelledBy.Client,
+          CancellationReason.Other,
+        ),
+      }),
+    ]);
+    const before = JSON.stringify(chair);
+    expect(S.chairResolution(BookingStatus.Cancelled, chair)).toEqual(
+      S.chairResolution(BookingStatus.Cancelled, chair),
+    );
+    const now = deepFreeze(NOW);
+    const start = deepFreeze(wall('2026-09-28T12:00:00'));
+    expect(S.hasStarted(start, now)).toBe(S.hasStarted(start, now));
+    expect(S.hasEnded(start, now)).toBe(S.hasEnded(start, now));
+    expect(S.seatPersonKey(chair[0] as Seat)).toBe(
+      S.seatPersonKey(chair[0] as Seat),
+    );
+    expect(JSON.stringify(chair)).toBe(before);
   });
 });
 

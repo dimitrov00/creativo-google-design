@@ -21,3 +21,17 @@ export const BookingStatus = {
   Cancelled: 'CANCELLED',
 } as const;
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus];
+
+/**
+ * The edge guard for an untrusted value — a wire scalar, a refusal's server
+ * parameter: the stored tag it names, exact match (no case folding, no
+ * legacy lower-case form), or `false` for anything else, non-strings
+ * included. The one copy of the rule — the staff dashboard's refusal
+ * reader and the callable's wire read it.
+ */
+export function isBookingStatus(value: unknown): value is BookingStatus {
+  for (const status of Object.values(BookingStatus)) {
+    if (status === value) return true;
+  }
+  return false;
+}

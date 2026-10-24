@@ -10,12 +10,12 @@ import {
   phoneSegments,
   rankClients,
 } from './client-query';
-import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
+import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
   AppliedDiscountId,
   BookingStatus,
-  Currency,
+  CouponId,
   DurationMinutes,
   EndMinute,
   LocalDate,
@@ -24,9 +24,12 @@ import {
   PriceCents,
   type TimeZone,
   UtcEpochMs,
+  VoucherRefusal,
   defect,
 } from '@core/primitives';
 import {
+  BookingLifecycle,
+  Combinability,
   type CountryIso2,
   type CouponOccasion,
   CouponValue,
@@ -35,24 +38,41 @@ import {
   FlagName,
   type Money,
   PhotoOrigin,
+  PlacementVerdict,
+  ShopNow,
   type VisitLeg,
+  VoucherCode,
+  WallTime,
 } from '@core/components';
 import {
+  AppointmentEditSystem,
+  AppointmentLifecycleSystem,
   BillingSystem,
+  CancelledSide,
   ClientQueryShape,
+  ClientQuerySystem,
   type DiscountInput,
   DiscountSystem,
+  type DraftBill,
   type DraftLegMinutes,
   GridEvent as GridEventTag,
+  GridLayoutSystem,
+  LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
   TipPreset,
   VisitDraftSystem,
-  VisitRowOutcome,
   type VisitSides,
   VisitSidesSystem,
+  VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import {
+  MONEY_CODE,
+  combinabilityOf,
+  promiseOf,
+  toCouponValue,
+} from './visit-editor-discount';
 import {
   AUTH_DEPLOYMENT_PORTS,
   CLOCK_PORTS,
@@ -100,6 +120,7 @@ import {
   type WalletAnchor,
   achievementScopeKey,
   achievementScopeOf,
+  lastWorkedVisit,
   visitsRows,
 } from '@creativo/features/staff/client-card';
 import {
@@ -139,6 +160,7 @@ import {
   StaffEventHead,
   type StaffEventLine,
   type StaffEventRun,
+  type VisitRowVm,
 } from '@creativo/features/shared/visits';
 import {
   formatCents,
@@ -331,8 +353,12 @@ export interface VisitEditorResolution {
   /** What settled it — the lifecycle tag the chair ended on. */
   readonly bookingStatus:
     typeof BookingStatus.Cancelled | typeof BookingStatus.NoShow;
-  /** Whose act a cancellation was; `null` on a no-show, which is nobody's. */
-  readonly by: 'client' | 'staff' | null;
+  /**
+   * Whose act a cancellation was — the story's side
+   * (`VisitStorySystem.chairResolution`); `null` on a no-show, which is
+   * nobody's.
+   */
+  readonly by: CancelledSide | null;
   /** `14:32` on the visit's own day, `24.08, 14:32` on another. */
   readonly whenLabel: string;
   readonly detail: string | null;
@@ -736,29 +762,8 @@ export interface VisitEditorCodeResult {
     readonly exclusive: boolean;
   } | null;
   readonly voucher: VisitEditorVoucher | null;
-  readonly refusal: 'void' | 'expired' | 'empty' | null;
-}
-
-/**
- * The stored value (a coupon's, a grant's, an applied discount's — any
- * slice carrying `discountMethod`) → the sheet's plain one. The one place
- * the two meet.
- */
-export function discountValueOf(value: CouponValue): VisitEditorDiscountValue {
-  switch (value.discountMethod) {
-    case DiscountMethod.PercentOff:
-      return {
-        discountMethod: DiscountMethod.PercentOff,
-        percent: value.discountPercent,
-      };
-    case DiscountMethod.FixedAmount:
-      return {
-        discountMethod: DiscountMethod.FixedAmount,
-        amountCents: value.discountAmountCents,
-      };
-    case DiscountMethod.FreeService:
-      return { discountMethod: DiscountMethod.FreeService };
-  }
+  /** Why the voucher will not take (`VoucherSystem.refusal`'s tag); `null` when it will. */
+  readonly refusal: VoucherRefusal | null;
 }
 
 /**
@@ -774,27 +779,6 @@ function percentLabel(percent: number): string {
 /** A percent discount's RULE: «−20 %» — one grammar for the ticket, the dock and the slider alike. */
 function percentOffLabel(percent: number): string {
   return `−${percentLabel(percent)}`;
-}
-
-/** The sheet's plain value → the domain's, through its validating doors, or `null`. */
-function toCouponValue(
-  value: VisitEditorDiscountValue,
-  currency: Currency,
-): CouponValue | null {
-  switch (value.discountMethod) {
-    case DiscountMethod.PercentOff: {
-      const result = CouponValue.percentOff(value.percent);
-      return result.ok ? result.value : null;
-    }
-    case DiscountMethod.FixedAmount: {
-      const cents = PriceCents.of(value.amountCents);
-      if (!cents.ok) return null;
-      const result = CouponValue.fixedAmount(cents.value, currency);
-      return result.ok ? result.value : null;
-    }
-    case DiscountMethod.FreeService:
-      return CouponValue.freeService();
-  }
 }
 
 /* ── The draft ─────────────────────────────────────────────────────────── */
@@ -954,13 +938,6 @@ function canTakeFocus(element: HTMLElement): boolean {
   );
 }
 
-/** An account's id, or `null` for a walk-in: a `guest-…` seat or the placeholder. */
-function accountIdOf(clientId: string): string | null {
-  return clientId === 'primary' || clientId.startsWith('guest-')
-    ? null
-    : clientId;
-}
-
 /** What the discount page adds: a code, the client's coupon, or — for money roles — a figure. */
 /** What the «Вид» pop-up offers: the shop's codes, a voucher or coupon, a percent, a sum. */
 type DiscountKind = 'promo' | 'coupon' | 'percent' | 'amount';
@@ -1039,32 +1016,27 @@ type LegMenu = {
   readonly legMenuFace: LegMenuFace;
 };
 
-/** What the line under the frame says — the field `frameVerdict`. */
-const FrameVerdict = {
-  /** The drafted span runs into a neighbour's. */
-  Conflict: 'CONFLICT',
-  /** The drafted span leaves the chair's shift. */
-  OutsideRoster: 'OUTSIDE_ROSTER',
-} as const;
-type FrameVerdict = (typeof FrameVerdict)[keyof typeof FrameVerdict];
+/** The verdicts the line under the frame speaks (`GridLayoutSystem.frameVerdict`). */
+type SheetVerdict =
+  typeof PlacementVerdict.Overlap | typeof PlacementVerdict.Outside;
 
 /** Each verdict as the line's `data-verdict` spells it (the CSS selects on it). */
-const frameVerdictWords = {
-  [FrameVerdict.Conflict]: 'conflict',
-  [FrameVerdict.OutsideRoster]: 'outsideRoster',
-} as const satisfies Record<FrameVerdict, string>;
+const placementVerdictWords = {
+  [PlacementVerdict.Overlap]: 'conflict',
+  [PlacementVerdict.Outside]: 'outsideRoster',
+} as const satisfies Record<SheetVerdict, string>;
 
 /** The line under the frame, with what each verdict names. */
 type FrameVerdictSlice =
   | {
-      readonly frameVerdict: typeof FrameVerdict.Conflict;
+      readonly placementVerdict: typeof PlacementVerdict.Overlap;
       /** The neighbour run into, and its hours. */
       readonly name: string;
       readonly start: string;
       readonly end: string;
     }
   | {
-      readonly frameVerdict: typeof FrameVerdict.OutsideRoster;
+      readonly placementVerdict: typeof PlacementVerdict.Outside;
       /** When the shift opens. */
       readonly time: string;
     };
@@ -1153,8 +1125,22 @@ function shiftOf(
     : null;
 }
 
-/** The booking increment. Every authored time on this surface lands on it. */
-const GRAIN_MINUTES = 5;
+/**
+ * The shift as ONE shop day's range — the frame verdict's edge parse:
+ * `null` for a pair `shiftOf` cannot read (inverted, empty) or one off the
+ * day's clock (a start outside `MinuteOfDay`, an end outside `EndMinute`) —
+ * no roster a visit can be OUTSIDE of.
+ */
+function readableShiftOf(
+  day: VisitEditorFrameDay,
+): { startMinute: number; endMinute: number } | null {
+  const shift = shiftOf(day);
+  return shift !== null &&
+    MinuteOfDay.of(shift.startMinute).ok &&
+    EndMinute.of(shift.endMinute).ok
+    ? shift
+    : null;
+}
 
 /**
  * The shortest duration worth applying MID-TYPE.
@@ -1179,10 +1165,6 @@ function parseClock(value: string): number | null {
   const minutes = Number(match[2]);
   if (hours > 23 || minutes > 59) return null;
   return hours * 60 + minutes;
-}
-
-function snap(minute: number): number {
-  return Math.round(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
 }
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
@@ -1240,7 +1222,8 @@ function billCentsOf(minorUnits: number | null): PriceCents | null {
 
 /**
  * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS. A service picked before
- * anyone was named sits on `'primary'`; when the first person joins an
+ * anyone was named sits on the placeholder
+ * (`VisitDraftSystem.PLACEHOLDER_CLIENT_ID`); when the first person joins an
  * empty draft those seats become theirs — the mirror of the heir rule in
  * `toggleClient` — so the catalogue is not asked for them again and the
  * save does not file their cut under a walk-in (found in review).
@@ -1273,7 +1256,9 @@ function withoutClient(draft: VisitDraft, clientId: string): VisitDraft {
       ...draft,
       clients,
       legs: draft.legs.map((leg) =>
-        leg.clientId === clientId ? { ...leg, clientId: 'primary' } : leg,
+        leg.clientId === clientId
+          ? { ...leg, clientId: VisitDraftSystem.PLACEHOLDER_CLIENT_ID }
+          : leg,
       ),
     };
   }
@@ -1295,7 +1280,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     : vm.clientLabel
       ? [
           {
-            id: vm.clientUserId ?? 'primary',
+            id: vm.clientUserId ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID,
             label: vm.clientLabel,
             phone: vm.phone,
             phoneHref: vm.phoneHref,
@@ -1303,7 +1288,7 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
           },
         ]
       : [];
-  const firstClient = clients[0]?.id ?? 'primary';
+  const firstClient = clients[0]?.id ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID;
   const legs = vm.legs.map<DraftLeg>((leg) => ({
     ...leg,
     clientId: leg.clientId ?? firstClient,
@@ -2117,8 +2102,8 @@ export class StaffVisitEditor {
   protected readonly currentPage = computed(() => this.page());
   protected readonly EditorPage = EditorPage;
   protected readonly editorPageWords = editorPageWords;
-  protected readonly FrameVerdict = FrameVerdict;
-  protected readonly frameVerdictWords = frameVerdictWords;
+  protected readonly PlacementVerdict = PlacementVerdict;
+  protected readonly placementVerdictWords = placementVerdictWords;
   protected readonly PhotoOrigin = PhotoOrigin;
   protected readonly clientQueryShapeWords = clientQueryShapeWords;
   /**
@@ -2354,19 +2339,16 @@ export class StaffVisitEditor {
 
   /* ── Derived time ──────────────────────────────────────────────────── */
 
-  /** The catalogue's span — sequential legs, which is every visit today. */
-  protected readonly legSum = computed(() =>
-    this.draft().legs.reduce((total, leg) => total + leg.minutes, 0),
-  );
-
-  protected readonly durationMinutes = computed(
-    () =>
-      this.draft().durationOverride ??
-      Math.max(
-        VisitDraftSystem.legMinutes(legMinutesOf(this.draft().legs)),
-        GRAIN_MINUTES,
-      ),
-  );
+  /** The minutes the frame draws — the override, else the legs, never under a grain (`VisitDraftSystem.editorSpan`). */
+  protected readonly durationMinutes = computed(() => {
+    const draft = this.draft();
+    return VisitDraftSystem.editorSpan(
+      draft.durationOverride === null
+        ? null
+        : durationOf(draft.durationOverride),
+      legMinutesOf(draft.legs),
+    );
+  });
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
   protected readonly endMinute = computed(
@@ -2412,15 +2394,14 @@ export class StaffVisitEditor {
   /**
    * An end typed as a clock. Before the start means the NEXT day — a 23:25
    * cut that ends at 00:15 — never a negative visit. Snapped to the grain
-   * and floored like a typed duration.
+   * and floored like a typed duration (`VisitDraftSystem.spanToEnd`).
    */
   protected commitEnd(value: string): void {
     const minute = parseClock(value);
     if (minute === null) return;
-    const start = this.draft().startMinute;
-    let span = minute - (start % DAY_MINUTES);
-    if (span <= 0) span += DAY_MINUTES;
-    this.setDuration(Math.max(GRAIN_MINUTES, snap(span)));
+    // The start's minute on the clock — a start snapped onto midnight reads 00:00.
+    const start = startMinuteOf(this.draft().startMinute % DAY_MINUTES);
+    this.setDuration(VisitDraftSystem.spanToEnd(start, startMinuteOf(minute)));
   }
   /** `input[type=time]` speaks `HH:MM` and nothing else. */
   protected readonly startValue = this.startLabel;
@@ -2630,7 +2611,26 @@ export class StaffVisitEditor {
     // A neighbour's hour has gone when the day has, or when the clock on
     // this day is past its end — not always, as it was marked: `past` is a
     // fact the drag guards read, and a 16:00 neighbour at noon is not one.
+    // The story's wall-clock rule (`VisitStorySystem.hasEnded`). The
+    // neighbours are the FRAME day's, and a frame carries a clock only when
+    // that day is today (§8 OQ-9: after a re-date the frame still reads the
+    // day it was seeded with) — so a neighbour is measured on today's date,
+    // never on the draft's. With no clock (any day but today) only a gone
+    // day has ended.
     const dayGone = draft.dayKey < vm.todayKey;
+    const now = this.shopNowAt(day.nowMinute);
+    const ended = (endMinute: number): boolean => {
+      if (dayGone) return true;
+      const end = EndMinute.of(endMinute);
+      return (
+        now !== null &&
+        end.ok &&
+        VisitStorySystem.hasEnded(
+          { localDate: now.localDate, minute: end.value },
+          now,
+        )
+      );
+    };
     const neighbours = day.neighbours.map<GridEvent>((neighbour, index) => ({
       id: `neighbour-${index}`,
       gridEvent: GridEventTag.Visit,
@@ -2642,9 +2642,7 @@ export class StaffVisitEditor {
       attribution: null,
       bookingStatus: null,
       terminal: false,
-      past:
-        dayGone ||
-        (day.nowMinute !== null && neighbour.endMinute <= day.nowMinute),
+      past: ended(neighbour.endMinute),
       accessibleName: neighbour.name,
       statusIcon: null,
       // The frame draws THIS chair's share and the peer run above it names
@@ -2710,29 +2708,33 @@ export class StaffVisitEditor {
    */
   protected readonly frameVerdict = computed<FrameVerdictSlice | null>(() => {
     const vm = this.vm();
-    const start = this.draft().startMinute;
-    const end = this.endMinute();
-
-    const clash = vm.neighbours.find(
-      (neighbour) => neighbour.startMinute < end && start < neighbour.endMinute,
+    // WHAT the drafted span breaks is the grid's rule
+    // (`GridLayoutSystem.frameVerdict`): the first neighbour it runs into,
+    // else leaving the shift — never against a roster that cannot be read
+    // (`readableShiftOf` null: judging the raw pair pinned this warning on
+    // for every visit in a chair rostered to midnight — a footnote that is
+    // always on is a footnote nobody reads when it finally means something;
+    // nor one off the day's clock). A span with a part past midnight is
+    // never inside one day's shift.
+    const shift = readableShiftOf(vm);
+    const placed = GridLayoutSystem.frameVerdict(
+      { startMinute: this.draft().startMinute, endMinute: this.endMinute() },
+      vm.neighbours,
+      shift,
     );
-    if (clash) {
+    const clash =
+      placed.hit === null ? undefined : vm.neighbours[placed.hit.event];
+    if (placed.placementVerdict === PlacementVerdict.Overlap && clash) {
       return {
-        frameVerdict: FrameVerdict.Conflict,
+        placementVerdict: PlacementVerdict.Overlap,
         name: clash.name,
         start: clockLabel(clash.startMinute),
         end: clockLabel(clash.endMinute),
       };
     }
-
-    // A roster that cannot be read is not a roster the visit can be OUTSIDE
-    // of. Judging against the raw pair pinned this warning on for every visit
-    // in a chair rostered to midnight — a footnote that is always on is a
-    // footnote nobody reads when it finally means something.
-    const shift = shiftOf(vm);
-    if (shift && (start < shift.startMinute || end > shift.endMinute)) {
+    if (placed.placementVerdict === PlacementVerdict.Outside && shift) {
       return {
-        frameVerdict: FrameVerdict.OutsideRoster,
+        placementVerdict: PlacementVerdict.Outside,
         time: clockLabel(shift.startMinute),
       };
     }
@@ -3020,13 +3022,11 @@ export class StaffVisitEditor {
    * legal transition for the barber who wants to.
    */
 
-  /** Over, one way or another — the graph has settled it. */
+  /** Over, one way or another — the graph has settled it (`BookingLifecycle.isSettled`). */
   protected readonly settled = computed(() => {
     const status = this.vm().bookingStatus;
     return (
-      status === BookingStatus.Completed ||
-      status === BookingStatus.Cancelled ||
-      status === BookingStatus.NoShow
+      status !== null && BookingLifecycle.isSettled({ bookingStatus: status })
     );
   });
 
@@ -3036,13 +3036,12 @@ export class StaffVisitEditor {
    * gone (owner, 2026-09-09): the barber who had no time for the sheet
    * mid-cut comes back to it — services, length, price, even the time —
    * and the book takes the correction. `settled` still shapes the header
-   * (the state word, «Запиши пак»); only `gone` locks the rows.
+   * (the state word, «Запиши пак»); only `gone` locks the rows — the
+   * server's own edit lock (`AppointmentEditSystem.locksEdits`).
    */
   protected readonly gone = computed(() => {
     const status = this.vm().bookingStatus;
-    return (
-      status === BookingStatus.Cancelled || status === BookingStatus.NoShow
-    );
+    return status !== null && AppointmentEditSystem.locksEdits(status);
   });
 
   /*
@@ -3069,7 +3068,7 @@ export class StaffVisitEditor {
     const resolution = this.vm().resolution;
     if (resolution === null) return null;
     if (resolution.bookingStatus === BookingStatus.NoShow) return 'noShow';
-    return resolution.by === 'client'
+    return resolution.by === CancelledSide.Client
       ? 'cancelledByClient'
       : 'cancelledByStaff';
   });
@@ -3109,6 +3108,37 @@ export class StaffVisitEditor {
   }
 
   /**
+   * "Now" as the story's wall-clock rules read it — today's key and the
+   * clock's minute on it — or `null` when the VM carries no clock (any day
+   * but today, `nowMinute: null`). The instant rides along as `ShopNow`
+   * asks; the placement rules never read it (Law 7.3).
+   */
+  private shopNowAt(minute: number | null): ShopNow | null {
+    if (minute === null) return null;
+    const today = LocalDate.parse(this.vm().todayKey);
+    const at = MinuteOfDay.of(minute);
+    return today.ok && at.ok
+      ? ShopNow.of(today.value, at.value, this.clock.nowUtcMs())
+      : null;
+  }
+
+  /**
+   * Has the visit begun — its start at or before the shop's "now" on the
+   * wall clock (`VisitStorySystem.hasStarted`, the start minute included).
+   * With no clock on the VM only a gone day has begun: today without a
+   * clock stays "not started".
+   */
+  private readonly started = computed(() => {
+    const vm = this.vm();
+    const now = this.shopNowAt(vm.nowMinute);
+    const day = LocalDate.parse(vm.dayKey);
+    const start = MinuteOfDay.of(vm.startMinute);
+    return now !== null && day.ok && start.ok
+      ? VisitStorySystem.hasStarted(WallTime.of(day.value, start.value), now)
+      : vm.dayKey < vm.todayKey;
+  });
+
+  /**
    * THE EXITS — the sheet's last group. Every act that is not an edit and
    * not a stamp: no-show once the start has passed (before it, nobody has
    * failed to come), cancel, cancel-and-block for the appointment that
@@ -3118,23 +3148,23 @@ export class StaffVisitEditor {
    */
   protected readonly exits = computed<readonly VisitExit[]>(() => {
     const vm = this.vm();
-    if (this.isNew()) return [];
-    const started =
-      vm.dayKey < vm.todayKey ||
-      (vm.dayKey === vm.todayKey &&
-        vm.nowMinute !== null &&
-        vm.nowMinute >= vm.startMinute);
+    const status = vm.bookingStatus;
+    if (this.isNew() || status === null) return [];
+    // WHICH verbs are exits, in which order, is the lifecycle's
+    // (`AppointmentLifecycleSystem.exitVerbs`): never the stamps (arrived,
+    // completed); reinstate only off a request (a PENDING chair's confirm
+    // is the head's own); no-show once the start has passed — before it,
+    // nobody has failed to come; cancel last, below.
+    const verbs = this.allVerbs();
+    const legal = AppointmentLifecycleSystem.exitVerbs(
+      status,
+      verbs.map((verb) => verb.rowVerb),
+      this.started(),
+    );
     const out: VisitExit[] = [];
-    for (const verb of this.allVerbs()) {
-      if (
-        verb.rowVerb === ArrivalVerb.Arrived ||
-        verb.rowVerb === BookingStatus.Completed
-      ) {
-        continue;
-      }
-      if (verb.rowVerb === BookingStatus.Cancelled) continue; // last, below
+    for (const verb of verbs) {
+      if (!legal.verbs.includes(verb.rowVerb)) continue;
       if (verb.rowVerb === BookingStatus.Confirmed) {
-        if (vm.bookingStatus === BookingStatus.Pending) continue; // the head's own
         out.push({
           id: 'reinstate',
           label: verb.label,
@@ -3145,15 +3175,13 @@ export class StaffVisitEditor {
         continue;
       }
       if (verb.rowVerb === BookingStatus.NoShow) {
-        if (started) {
-          out.push({
-            id: 'no-show',
-            label: verb.label,
-            icon: 'visit.noShow',
-            destructive: false,
-            act: verb.rowVerb,
-          });
-        }
+        out.push({
+          id: 'no-show',
+          label: verb.label,
+          icon: 'visit.noShow',
+          destructive: false,
+          act: verb.rowVerb,
+        });
         continue;
       }
       out.push({
@@ -3168,7 +3196,7 @@ export class StaffVisitEditor {
     // A FINISHED visit offers the next one here; a visit that is GONE
     // offers it from the dock instead (owner, 2026-09-11), where nothing is
     // due and «Запази» has nothing left to save — one control per act.
-    if (this.settled() && !this.gone()) {
+    if (legal.rebook) {
       out.push({
         id: 'rebook',
         label: this.rawCopy('staff.visit.rebook'),
@@ -3177,10 +3205,7 @@ export class StaffVisitEditor {
         act: null,
       });
     }
-    const cancel = this.allVerbs().find(
-      (verb) => verb.rowVerb === BookingStatus.Cancelled,
-    );
-    if (cancel) {
+    if (legal.cancel) {
       // ON A PARTY'S CHAIR the exit calls off THIS chair's share alone —
       // the shell scopes it to the chair's seats — so it says whose
       // (2026-09-24): «Откажи часа» read as the whole booking.
@@ -3195,7 +3220,7 @@ export class StaffVisitEditor {
             : this.rawCopy('staff.visit.cancelVisit'),
         icon: 'visit.cancelled',
         destructive: true,
-        act: cancel.rowVerb,
+        act: BookingStatus.Cancelled,
       });
       out.push({
         id: 'cancel-block',
@@ -3597,14 +3622,21 @@ export class StaffVisitEditor {
    * snap is what keeps the two pictures identical while the finger is down.
    */
   protected onFrameDraft(draft: GridDraft): void {
-    const span = Math.max(GRAIN_MINUTES, draft.endMinute - draft.startMinute);
+    // Floored at one grain, never snapped: the grid drew on the grain
+    // (`VisitDraftSystem.floorSpan`).
+    const span = VisitDraftSystem.floorSpan(
+      draft.endMinute - draft.startMinute,
+    );
     this.draft.update((current) => {
       // ⚠ There is no `endMinute` FIELD to write. The end is derived from
-      // `durationOverride ?? legSum`, so a resize pins the duration and a
+      // `durationOverride ?? legs`, so a resize pins the duration and a
       // move leaves it alone — writing a phantom field made every resize
-      // snap back to the services' sum and re-emit from the grid.
-      const overrideNow =
-        span === Math.max(this.legSum(), GRAIN_MINUTES) ? null : span;
+      // snap back to the services' sum and re-emit from the grid. Which
+      // span pins is the frame's rule (`VisitDraftSystem.overrideFor`).
+      const overrideNow = VisitDraftSystem.overrideFor(
+        span,
+        legMinutesOf(current.legs),
+      );
 
       // No-op when nothing actually moved. A redundant write is a redundant
       // render, and a redundant render mid-gesture is how a loop starts.
@@ -3680,13 +3712,21 @@ export class StaffVisitEditor {
     if (minute === null) return;
     // The duration is the stored fact, so it is ALWAYS pinned: a client
     // arriving ten minutes late does not get a ten-minute-shorter cut.
-    this.draft.update((draft) => ({ ...draft, startMinute: snap(minute) }));
-  }
-
-  protected setDuration(minutes: number): void {
     this.draft.update((draft) => ({
       ...draft,
-      durationOverride: minutes === this.legSum() ? null : minutes,
+      startMinute: VisitDraftSystem.snap(startMinuteOf(minute)),
+    }));
+  }
+
+  /** A typed length pins itself unless it IS the services' (`VisitDraftSystem.typedOverrideFor`). */
+  protected setDuration(minutes: number): void {
+    const typed = durationOf(minutes);
+    this.draft.update((draft) => ({
+      ...draft,
+      durationOverride: VisitDraftSystem.typedOverrideFor(
+        typed,
+        legMinutesOf(draft.legs),
+      ),
     }));
     this.durationTouched.set(true);
   }
@@ -3726,7 +3766,9 @@ export class StaffVisitEditor {
     const typed = Number.parseInt(raw, 10);
     if (!Number.isFinite(typed) || typed < MIN_TYPED_MINUTES) return;
     if (String(typed) !== raw.trim()) return;
-    this.setDuration(snap(typed));
+    // At or above the typing floor the grain's floor never bites, so this is
+    // the snap alone (`VisitDraftSystem.typedSpan`).
+    this.setDuration(VisitDraftSystem.typedSpan(typed));
   }
 
   /** The minutes as the field's figure. */
@@ -3737,7 +3779,7 @@ export class StaffVisitEditor {
   protected commitDuration(raw: string): void {
     const typed = Number.parseInt(raw, 10);
     if (Number.isFinite(typed)) {
-      this.setDuration(Math.max(GRAIN_MINUTES, snap(typed)));
+      this.setDuration(VisitDraftSystem.typedSpan(typed));
     }
 
     // What the field shows afterwards is `ui-unit-field`'s own business:
@@ -4002,7 +4044,10 @@ export class StaffVisitEditor {
             overridden: false,
             // The person the catalogue opened for; else the first person's,
             // until the leg's own chip says otherwise.
-            clientId: forClientId ?? draft.clients[0]?.id ?? 'primary',
+            clientId:
+              forClientId ??
+              draft.clients[0]?.id ??
+              VisitDraftSystem.PLACEHOLDER_CLIENT_ID,
           },
         ],
       };
@@ -4363,8 +4408,8 @@ export class StaffVisitEditor {
     // maria@mail.bg» opens the form with all three fields filled.
     const parsed = this.parsedQuery();
     // The number in front of the phone field as E.164 by the shop's own
-    // dial code — the field validates for real. Fewer than five digits are
-    // not a number on its way anywhere.
+    // dial code — the field validates for real. Too few digits are not a
+    // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
     const [international] = phoneInternationalDigits(
       parsed,
       PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
@@ -4373,7 +4418,7 @@ export class StaffVisitEditor {
     this.newClient.set({
       name: parsed.name,
       phone:
-        international !== undefined && parsed.phoneDigits.length >= 5
+        international !== undefined && ClientQuerySystem.prefillsPhone(parsed)
           ? `+${international}`
           : null,
       email: parsed.email,
@@ -4406,7 +4451,7 @@ export class StaffVisitEditor {
     // guest the id of one already unticked, and the flow then took the
     // newcomer for served — the seat-id rule, `minted`, applies to people
     // too. The `guest-` prefix is what the shell keys a walk-in on.
-    const id = `guest-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`;
+    const id = `${VisitDraftSystem.GUEST_KEY_PREFIX}${this.clock.nowUtcMs().toString(36)}-${this.minted++}`;
     this.draft.update((draft) => ({
       ...draft,
       clients: [
@@ -4692,6 +4737,11 @@ export class StaffVisitEditor {
    */
   protected readonly shopMapMounted = signal(false);
   protected readonly theme = inject(ThemeService);
+
+  /** Whether there are shops to tell apart — the «Салон» row exists only then (`LocationScopeSystem.isMultiShop`). */
+  protected readonly multiShop = computed(() =>
+    LocationScopeSystem.isMultiShop(this.uiShops().length),
+  );
 
   protected readonly shop = computed<VisitEditorShopOption | null>(() => {
     const id = this.draft().locationId;
@@ -4988,27 +5038,30 @@ export class StaffVisitEditor {
         .discounts.map((discount) => discount.code)
         .filter((code): code is string => code !== null),
     );
-    const held = new Set(this.uiGrants().map((grant) => grant.couponId));
-    return this.uiPromos()
-      .filter((promo) => !held.has(promo.couponId))
-      .map((promo) => {
-        const applied = onBill.has(promo.code);
-        return {
-          offerSource: OfferSource.Promo,
-          id: promo.code,
-          key: `code:${promo.code}`,
-          testId: `staff-visit-discount-promo-${promo.code}`,
-          code: promo.code,
-          label: promo.label,
-          exclusive: promo.exclusive,
-          value: this.couponValue(promo.label, promo.value),
-          line: this.rawCopy(
-            promo.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
-          ),
-          applied,
-          blocked: this.offerBlocked(promo.exclusive, applied),
-        };
-      });
+    // A code whose coupon the client holds is offered once, as theirs
+    // (`DiscountSystem.offerablePromos`); the ids are the store's documents'.
+    return DiscountSystem.offerablePromos(
+      this.uiPromos(),
+      this.uiGrants().map((grant) => CouponId.of(grant.couponId)),
+      (promo) => CouponId.of(promo.couponId),
+    ).map((promo) => {
+      const applied = onBill.has(promo.code);
+      return {
+        offerSource: OfferSource.Promo,
+        id: promo.code,
+        key: `code:${promo.code}`,
+        testId: `staff-visit-discount-promo-${promo.code}`,
+        code: promo.code,
+        label: promo.label,
+        exclusive: promo.exclusive,
+        value: this.couponValue(promo.label, promo.value),
+        line: this.rawCopy(
+          promo.exclusive ? 'staff.visit.alone' : 'staff.visit.stacks',
+        ),
+        applied,
+        blocked: this.offerBlocked(promo.exclusive, applied),
+      };
+    });
   });
 
   /** An offer's spoken name: «Първо посещение, FIRST10, −10 %». */
@@ -5021,14 +5074,17 @@ export class StaffVisitEditor {
   /**
    * Whether an offer can join what is on the bill: an exclusive offer only
    * an empty one, any offer only a bill with no exclusive line. An applied
-   * offer is never blocked — its card carries the way off instead.
+   * offer is never blocked — its card carries the way off instead. The
+   * rule is the coupon's own (`Combinability.canAdd`).
    */
   private offerBlocked(exclusive: boolean, applied: boolean): boolean {
     if (applied) return false;
-    const discounts = this.draft().discounts;
-    return exclusive
-      ? discounts.length > 0
-      : discounts.some((discount) => discount.exclusive);
+    return !Combinability.canAdd(
+      this.draft().discounts.map((discount) =>
+        combinabilityOf(discount.exclusive),
+      ),
+      combinabilityOf(exclusive),
+    );
   }
 
   /** A card's «Използвай» — a coupon of the client's or one of the shop's codes; a blocked card asks nothing. */
@@ -5393,7 +5449,7 @@ export class StaffVisitEditor {
   protected scanned(code: string): void {
     this.returnToDiscountPage('[data-testid="staff-visit-discount-code"]');
     this.discountKindPicked.set('coupon');
-    const normalised = code.trim().toUpperCase();
+    const normalised = VoucherCode.normalize(code);
     this.codeDraft.set(normalised);
     this.commitCode(normalised);
   }
@@ -5417,25 +5473,53 @@ export class StaffVisitEditor {
     this.figureDraft.set(this.cappedFigure(raw));
   }
 
+  /**
+   * The typed run, held to what the bill can take (`BillingSystem.capManual`):
+   * a run within the cap comes back as typed, character for character; one
+   * past it is the cap, written as the field writes it.
+   */
   private cappedFigure(raw: string): string {
     switch (this.discountKind()) {
       case 'percent': {
         const digits = raw.replace(/[^\d]/g, '');
-        return digits.length > 0 && Number(digits) > 100 ? '100' : raw;
+        if (digits.length === 0) return raw;
+        const typed: CouponValue.PercentOff = {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: Number(digits),
+        };
+        const capped = BillingSystem.capManual(typed, this.subtotalMoney());
+        return capped === typed ||
+          capped.discountMethod !== DiscountMethod.PercentOff
+          ? raw
+          : String(capped.discountPercent);
       }
       case 'amount': {
         const minor = parsePriceInput(raw);
-        const subtotal = this.subtotalMoney()?.amountCents ?? null;
-        return minor !== null && subtotal !== null && minor > subtotal
-          ? this.figureOf(subtotal)
-          : raw;
+        const cents = minor === null ? null : PriceCents.of(minor);
+        if (cents === null || !cents.ok) return raw;
+        const typed: CouponValue.FixedAmount = {
+          discountMethod: DiscountMethod.FixedAmount,
+          discountAmountCents: cents.value,
+          discountCurrency: MONEY_CODE,
+        };
+        const capped = BillingSystem.capManual(typed, this.subtotalMoney());
+        return capped === typed ||
+          capped.discountMethod !== DiscountMethod.FixedAmount
+          ? raw
+          : this.figureOf(capped.discountAmountCents);
       }
       default:
         return raw;
     }
   }
 
-  /** The typed figure, read: a whole percent or a sum in minor units; `null` when it is neither. */
+  /**
+   * The typed figure, read: a whole percent or a sum in minor units; `null`
+   * when it is neither. The range is the manual figure's own guard
+   * (`CouponValue.manualPercentOff`, `CouponValue.fixedAmount` — DEP-6, the
+   * callable's rule); the digit strip before it is the field's (a «1.5»
+   * reads 15).
+   */
   private readonly figureRead = computed<
     | {
         readonly discountMethod: typeof DiscountMethod.PercentOff;
@@ -5452,15 +5536,25 @@ export class StaffVisitEditor {
     switch (this.discountKind()) {
       case 'percent': {
         const digits = raw.replace(/[^\d]/g, '');
-        const percent = digits.length === 0 ? NaN : Number(digits);
-        return Number.isInteger(percent) && percent > 0
-          ? { discountMethod: DiscountMethod.PercentOff, percent }
+        if (digits.length === 0) return null;
+        const value = CouponValue.manualPercentOff(Number(digits));
+        return value.ok
+          ? {
+              discountMethod: DiscountMethod.PercentOff,
+              percent: value.value.discountPercent,
+            }
           : null;
       }
       case 'amount': {
         const minor = parsePriceInput(raw);
-        return minor !== null && minor > 0
-          ? { discountMethod: DiscountMethod.FixedAmount, minor }
+        const cents = minor === null ? null : PriceCents.of(minor);
+        if (cents === null || !cents.ok) return null;
+        const value = CouponValue.fixedAmount(cents.value, MONEY_CODE);
+        return value.ok
+          ? {
+              discountMethod: DiscountMethod.FixedAmount,
+              minor: value.value.discountAmountCents,
+            }
           : null;
       }
       default:
@@ -5486,7 +5580,7 @@ export class StaffVisitEditor {
       this.transloco.translate('staff.visit.applyDiscount', { what });
     switch (this.discountKind()) {
       case 'coupon': {
-        const code = this.codeDraft().trim().toUpperCase();
+        const code = VoucherCode.normalize(this.codeDraft());
         if (code.length === 0) return null;
         if (this.codeState() === 'checking') {
           return {
@@ -5523,7 +5617,7 @@ export class StaffVisitEditor {
     if (apply === null || apply.disabled) return;
     switch (this.discountKind()) {
       case 'coupon': {
-        const code = this.codeDraft().trim().toUpperCase();
+        const code = VoucherCode.normalize(this.codeDraft());
         this.codeDraft.set(code);
         this.commitCode(code);
         return;
@@ -5702,16 +5796,12 @@ export class StaffVisitEditor {
   /** The code being checked, normalised; `null` when nothing is in flight. */
   private readonly pendingCode = signal<string | null>(null);
 
-  /** The code field's state: idle, waiting for the owner, or one of the refusals. */
+  /**
+   * The code field's state: idle, waiting for the owner, or one of the
+   * refusals — a voucher's own carried as `VoucherSystem.refusal`'s tag.
+   */
   protected readonly codeState = signal<
-    | 'idle'
-    | 'checking'
-    | 'unknown'
-    | 'already'
-    | 'void'
-    | 'expired'
-    | 'empty'
-    | 'nothingLeft'
+    'idle' | 'checking' | 'unknown' | 'already' | VoucherRefusal | 'nothingLeft'
   >('idle');
 
   /** The copy under the code field for its state; `null` when idle. */
@@ -5725,11 +5815,11 @@ export class StaffVisitEditor {
         return this.rawCopy('staff.visit.discountUnknownCode');
       case 'already':
         return this.rawCopy('staff.visit.codeAlready');
-      case 'void':
+      case VoucherRefusal.Void:
         return this.rawCopy('staff.visit.voucherVoid');
-      case 'expired':
+      case VoucherRefusal.Expired:
         return this.rawCopy('staff.visit.voucherExpired');
-      case 'empty':
+      case VoucherRefusal.Empty:
         return this.rawCopy('staff.visit.voucherEmpty');
       case 'nothingLeft':
         return this.rawCopy('staff.visit.voucherNothingLeft');
@@ -5800,9 +5890,16 @@ export class StaffVisitEditor {
     };
   });
 
-  /** Every discount through the one evaluator, in the order it applies them — see `bill`. */
-  private evaluate(discounts: readonly VisitEditorDiscount[]) {
-    const subtotal = this.subtotalMoney();
+  /**
+   * Every discount and voucher through the drafted bill
+   * (`BillingSystem.draftBill`: the one evaluator, its total order, the
+   * vouchers' in-order cascade) — see `bill`. The sheet's part is the edge:
+   * each line's value parsed back to the domain's (a line that does not
+   * parse takes nothing and is not listed), its key as the line's id, the
+   * order of adding as the evaluator's last tie-break, and what each
+   * voucher may draw as cents.
+   */
+  private evaluate(discounts: readonly VisitEditorDiscount[]): EvaluatedBill {
     const inputs: DiscountInput[] = [];
     const keys = new Map<string, VisitEditorDiscount>();
     discounts.forEach((discount, index) => {
@@ -5818,30 +5915,19 @@ export class StaffVisitEditor {
         ...value,
       });
     });
-    const breakdown =
-      subtotal === null ? null : DiscountSystem.apply(subtotal, inputs, null);
-    const amounts = new Map<string, number>();
-    for (const line of breakdown?.lines ?? []) {
-      amounts.set(line.id, line.amountCents);
-    }
-    // The evaluator's own order — the two keys where the meaning lives.
-    const ordered = [...inputs].sort(
-      (a, b) =>
-        CouponValue.methodRank(a) - CouponValue.methodRank(b) ||
-        CouponValue.magnitude(a) - CouponValue.magnitude(b),
+    const figures = BillingSystem.draftBill(
+      this.subtotalMoney(),
+      inputs,
+      this.draft().vouchers.map((voucher) =>
+        drawableCentsOf(voucher.availableMinorUnits),
+      ),
     );
-    // Plain minor units from here on: the sheet does arithmetic on them.
-    const total: number | null =
-      breakdown?.totalCents ?? subtotal?.amountCents ?? null;
-    const discountTotal: number = breakdown?.discountTotalCents ?? 0;
     return {
-      subtotal: subtotal?.amountCents ?? null,
-      discountTotal,
-      total,
-      lines: ordered.map((input) => ({
-        key: input.id as string,
-        discount: keys.get(input.id) as VisitEditorDiscount,
-        amount: amounts.get(input.id) ?? 0,
+      figures,
+      lines: figures.lines.map((line) => ({
+        key: line.id as string,
+        discount: keys.get(line.id) as VisitEditorDiscount,
+        amount: line.amountCents,
       })),
     };
   }
@@ -5906,22 +5992,20 @@ export class StaffVisitEditor {
 
   /**
    * The receipt's voucher lines, tickets too: each covers what the
-   * discounts and the vouchers before it left, never more than it has —
-   * what it covers is its figure, what it still holds its chip.
+   * discounts and the vouchers before it left, never more than it has
+   * (the drafted bill's cascade) — what it covers is its figure, what it
+   * still holds its chip.
    */
   protected readonly voucherLines = computed(() => {
-    let due = this.bill().total ?? 0;
-    return this.draft().vouchers.map((voucher) => {
-      const cover = Math.max(0, Math.min(voucher.availableMinorUnits, due));
-      due -= cover;
-      const amountLabel = `−${this.moneyLabel(cover)}`;
+    const { covers, left: holds } = this.bill().figures;
+    return this.draft().vouchers.map((voucher, index) => {
+      const amountLabel = `−${this.moneyLabel(covers.at(index) ?? PriceCents.ZERO)}`;
       const left = this.rawCopy('staff.visit.voucherLeft').replace(
         '{{amount}}',
-        this.moneyLabel(voucher.availableMinorUnits - cover),
+        this.moneyLabel(holds.at(index) ?? PriceCents.ZERO),
       );
       return {
         voucher,
-        cover,
         testId: `staff-visit-voucher-${voucher.voucherId}`,
         amountLabel,
         /** What the voucher still holds — the ticket's chip. */
@@ -5935,10 +6019,6 @@ export class StaffVisitEditor {
       };
     });
   });
-
-  private readonly voucherTotal = computed(() =>
-    this.voucherLines().reduce((sum, line) => sum + line.cover, 0),
-  );
 
   /** Minor units → `2,80 €`, or `''` for anything that is not money. */
   private moneyLabel(minor: number): string {
@@ -6093,10 +6173,8 @@ export class StaffVisitEditor {
         applied: false,
       };
     }
-    const took =
-      this.bill().lines.reduce((sum, line) => sum + line.amount, 0) +
-      vouchers.reduce((sum, line) => sum + line.cover, 0);
-    const amount = this.moneyLabel(took);
+    // What came off altogether — the lines and the covers (the drafted bill's).
+    const amount = this.moneyLabel(this.bill().figures.takenCents);
     if (count === 1) {
       const line = lines[0];
       const name =
@@ -6131,16 +6209,10 @@ export class StaffVisitEditor {
     return due === null ? saved : this.moneyLabel(due) || saved;
   });
 
-  /** What is due on the dock's bill: its total, less what the vouchers would cover of it. */
-  private readonly dockDue = computed<number | null>(() => {
-    const total = this.dockBill().total;
-    if (total === null) return null;
-    let due = total;
-    for (const voucher of this.draft().vouchers) {
-      due -= Math.max(0, Math.min(voucher.availableMinorUnits, due));
-    }
-    return Math.max(0, due);
-  });
+  /** What is due on the dock's bill: its total, less what the vouchers would cover of it (the drafted bill's balance). */
+  private readonly dockDue = computed<number | null>(
+    () => this.dockBill().figures.balanceDueCents,
+  );
 
   /**
    * THE PRICE AS IT WAS, struck through beside what is due once something
@@ -6177,22 +6249,15 @@ export class StaffVisitEditor {
    */
   private addDiscount(discount: VisitEditorDiscount): void {
     this.settleCode();
+    // What the set becomes is the discount rules' (`DiscountSystem.withAdded`,
+    // each line's promise read through the sheet's one edge parse).
     this.draft.update((draft) => {
-      if (draft.discounts.some((entry) => samePromise(entry, discount))) {
-        return draft;
-      }
-      const keeps = draft.discounts.filter(
-        (entry) =>
-          !entry.exclusive &&
-          !(
-            entry.discountSource === DiscountSource.Manual &&
-            discount.discountSource === DiscountSource.Manual
-          ),
+      const discounts = DiscountSystem.withAdded(
+        draft.discounts,
+        discount,
+        (entry) => promiseOf(entry, MONEY_CODE),
       );
-      return {
-        ...draft,
-        discounts: discount.exclusive ? [discount] : [...keeps, discount],
-      };
+      return discounts === draft.discounts ? draft : { ...draft, discounts };
     });
   }
 
@@ -6233,7 +6298,7 @@ export class StaffVisitEditor {
    * through `uiPromoCode` and `adoptCode` does the rest.
    */
   protected commitCode(raw: string): void {
-    const code = raw.trim().toUpperCase();
+    const code = VoucherCode.normalize(raw);
     if (code.length === 0) {
       this.settleCode();
       return;
@@ -6264,7 +6329,7 @@ export class StaffVisitEditor {
     untracked(() => {
       const pending = this.pendingCode();
       if (answer === null || pending === null) return;
-      if (answer.code.trim().toUpperCase() !== pending) return;
+      if (VoucherCode.normalize(answer.code) !== pending) return;
       if (answer.promo !== null) {
         this.addDiscount({
           discountSource: DiscountSource.Code,
@@ -6283,7 +6348,7 @@ export class StaffVisitEditor {
           return;
         }
         // Nothing left for it to cover: the bill is already paid.
-        const due = (this.bill().total ?? 0) - this.voucherTotal();
+        const due = this.bill().figures.balanceDueCents ?? 0;
         if (due <= 0) {
           this.codeState.set('nothingLeft');
           return;
@@ -6559,7 +6624,7 @@ export class StaffVisitEditor {
     { offset: 1, label: this.rawCopy('staff.visit.tomorrow') },
   ]);
 
-  protected readonly snapMinutes = GRAIN_MINUTES;
+  protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
 
   /* ── THE CLIENT CARD (client-card-redesign §2, §3) ─────────────────────
    *
@@ -6664,7 +6729,7 @@ export class StaffVisitEditor {
   private cardSubjectOf(client: DraftClient): ClientCardSubject {
     return {
       id: client.id,
-      userId: accountIdOf(client.id),
+      userId: VisitDraftSystem.accountKeyOf(client.id),
       label: client.label,
       phone: client.phone,
       phoneHref: client.phoneHref,
@@ -6675,7 +6740,7 @@ export class StaffVisitEditor {
 
   /** Whether this person booked the visit — the only one its held rewards are for (§3.1.3). */
   private isOwnerOf(client: DraftClient): boolean {
-    const account = accountIdOf(client.id);
+    const account = VisitDraftSystem.accountKeyOf(client.id);
     return account !== null && account === this.uiOwnerUserId();
   }
 
@@ -7216,26 +7281,16 @@ export class StaffVisitEditor {
         ? store.visitRowsInput()
         : null;
     if (rows === null || rows === undefined) return null;
-    const current = this.vm().appointmentId;
-    // The newest by the shop's wall clock — its day, then its minute.
-    let last: {
-      readonly localDate: LocalDate;
-      readonly startMinutes: MinuteOfDay;
-    } | null = null;
-    for (const row of visitsRows(rows)) {
-      if (row.outcome !== VisitRowOutcome.Worked || row.id === current) {
-        continue;
-      }
-      const order =
-        last === null ? 1 : LocalDate.compare(row.localDate, last.localDate);
-      if (
-        order > 0 ||
-        (order === 0 && last !== null && row.startMinutes > last.startMinutes)
-      ) {
-        last = row;
-      }
-    }
-    if (last === null) return null;
+    // The newest WORKED one is the card's own rule (`lastWorkedVisit` →
+    // `VisitStorySystem.lastWorked`); the rows only say each one's outcome.
+    const byId = new Map(visitsRows(rows).map((row) => [row.id, row]));
+    const featured = lastWorkedVisit(
+      rows.appointments.filter((appointment) => byId.has(appointment.id)),
+      (appointment) => byId.get(appointment.id) as VisitRowVm,
+      this.vm().appointmentId,
+    );
+    if (featured === null) return null;
+    const last = featured.appointment;
     const thisYear =
       LocalDate.parts(last.localDate).year ===
       Number(this.vm().todayKey.slice(0, 4));
@@ -7290,9 +7345,6 @@ function shopIsoOf(
   return instant.ok ? ZonedTimeSystem.toIso(instant.value, zone) : '';
 }
 
-/** The shop's one currency (see `project_currency_is_eur`). */
-const MONEY_CODE: Currency = Currency.EUR;
-
 /**
  * The evaluator orders discounts by the instant they were applied, as its
  * last tie-break; a draft has no clock, so the order of ADDING stands in —
@@ -7302,6 +7354,30 @@ function instantAt(index: number): UtcEpochMs {
   const instant = UtcEpochMs.of(index);
   if (!instant.ok) defect('unreachable: the UTC epoch');
   return instant.value;
+}
+
+/**
+ * What a voucher may draw, as the drafted bill reads it — the VM's minor
+ * units as cents; a figure that is no price (never handed today) draws
+ * nothing, which is what it covered before.
+ */
+function drawableCentsOf(minorUnits: number): PriceCents {
+  const cents = PriceCents.of(minorUnits);
+  return cents.ok ? cents.value : PriceCents.ZERO;
+}
+
+/**
+ * The drafted bill as the sheet reads it: the system's figures
+ * (`BillingSystem.draftBill`), and each listed line with the drafted
+ * discount it is — keyed the way the ladder keys it.
+ */
+interface EvaluatedBill {
+  readonly figures: DraftBill;
+  readonly lines: readonly {
+    readonly key: string;
+    readonly discount: VisitEditorDiscount;
+    readonly amount: number;
+  }[];
 }
 
 /**
@@ -7338,15 +7414,6 @@ function discountKey(discount: VisitEditorDiscount): string {
     case DiscountSource.Manual:
       return 'manual';
   }
-}
-
-/** The same promise: source and provenance agree (a manual figure by its value). */
-function samePromise(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
-  if (a.discountSource !== b.discountSource) return false;
-  if (a.discountSource === DiscountSource.Manual) {
-    return JSON.stringify(a.value) === JSON.stringify(b.value);
-  }
-  return a.grantId === b.grantId && a.code === b.code;
 }
 
 /** The tip shares on offer (owner, 2026-09-10) — the till's own trio. */

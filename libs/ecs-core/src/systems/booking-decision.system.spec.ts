@@ -174,7 +174,7 @@ function schedule(
     ],
   };
   return {
-    barberId: BarberId.of(barber),
+    id: BarberId.of(barber),
     versions: [version],
     turnaroundMinutes: minuteCount(options.turnaroundMinutes ?? 0),
   };
@@ -418,7 +418,7 @@ describe('decide — terms come from the catalog, never the client', () => {
 
 describe('decide — availability is re-checked, not trusted', () => {
   const busyDay = (spans: readonly MinuteRange[]) => [
-    { id: BusyKey.of(ivan, AUG_3), spans },
+    { barberId: ivan, localDate: AUG_3, blocks: spans },
   ];
 
   // Copied from decide-waitlist.spec.ts:403 — the commit's decision refuses

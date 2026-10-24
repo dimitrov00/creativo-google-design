@@ -12,7 +12,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-import { minute, unwrapOk, customerOf } from '@core/testing';
+import { deepFreeze, minute, unwrapOk, customerOf } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
@@ -310,6 +310,52 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
         },
       ),
     );
+  });
+});
+
+describe('Seat.isOwnAccount — an account seated as the booker’s SELF', () => {
+  // The staff dashboard's `selfSeat` (`seatSubject === ACCOUNT ∧
+  // subjectRelationship === SELF`), on the seat.
+  const accountSeat = (userId: UserId, relationship: SubjectRelationship) =>
+    seat({
+      occupant: SeatOccupant.account(userId, customerOf(userId), relationship),
+    });
+
+  it('is true for a SELF account seat — whoever the account is', () => {
+    expect(
+      Seat.isOwnAccount(accountSeat(OWNER, SubjectRelationship.Self)),
+    ).toBe(true);
+    expect(
+      Seat.isOwnAccount(accountSeat(OTHER, SubjectRelationship.Self)),
+    ).toBe(true);
+  });
+
+  it('is false for a companion, a client the shop seated and a guest', () => {
+    expect(
+      Seat.isOwnAccount(accountSeat(OWNER, SubjectRelationship.Companion)),
+    ).toBe(false);
+    expect(
+      Seat.isOwnAccount(accountSeat(OWNER, SubjectRelationship.Client)),
+    ).toBe(false);
+    expect(Seat.isOwnAccount(seat())).toBe(false);
+  });
+
+  it('reads the occupant alone — a bare occupant passes as the seat does', () => {
+    const occupant = SeatOccupant.account(
+      OWNER,
+      customerOf(OWNER),
+      SubjectRelationship.Self,
+    );
+    expect(Seat.isOwnAccount(occupant)).toBe(
+      Seat.isOwnAccount(seat({ occupant })),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(accountSeat(OWNER, SubjectRelationship.Self));
+    const once = Seat.isOwnAccount(frozen);
+    expect(Seat.isOwnAccount(frozen)).toBe(once);
+    expect(frozen).toEqual(accountSeat(OWNER, SubjectRelationship.Self));
   });
 });
 

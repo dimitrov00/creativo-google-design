@@ -18,6 +18,8 @@ import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   LocalizedText,
   StreakInterval,
+  StreakIntervalRule,
+  StreakPublishConsent,
   StreakQualifier,
   StreakQualifierRule,
   StreakRuleDirection,
@@ -25,12 +27,14 @@ import {
 import {
   EngagementErrorCode,
   StaffEditError,
+  StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
 import {
-  type RhythmServiceGroup,
-  rhythmServiceGroupsOf,
-} from './rhythm-service-groups';
+  CatalogSystem,
+  StreakPublishSystem,
+  StreakRuleSystem,
+} from '@core/systems';
 import { translateCodedError } from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
@@ -77,12 +81,12 @@ import {
   type AdminRhythmSaveOutcome,
   AdminRhythmStore,
   fixedInterval,
-  isPublishRefusal,
   personalInterval,
 } from '../admin-rhythm.store';
 import {
   AdminRhythmSheet,
   type AdminRhythmSheetKind,
+  type RhythmServiceGroup,
 } from '../admin-rhythm-sheet/admin-rhythm-sheet';
 import {
   type AdminRhythmContext,
@@ -219,8 +223,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** The guard's question, waiting for the admin's answer. */
   private leaving: ((answer: boolean) => void) | null = null;
-  /** Whether the receipt may offer «Отмени»: a stricter or mixed change may not be undone from the toast (§2.6.4). */
-  private undoOffered = true;
+  /**
+   * The direction of the change «Запази» sent last: whether its receipt
+   * offers «Отмени» is `StreakPublishSystem.undoOffered`'s answer — a
+   * stricter or mixed change may not be undone from the toast (§2.6.4).
+   */
+  private sentDirection: StreakRuleDirection = StreakRuleDirection.Neutral;
 
   // ── The words ───────────────────────────────────────────────────────────
 
@@ -297,15 +305,10 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly current = this.store.draft;
   private readonly draft = this.store.draft;
 
-  /** The interval as the ruler holds it, in weeks. */
-  protected readonly weeks = computed(() => {
-    const draft = this.draft();
-    return weeksOf(
-      draft.streakInterval === StreakInterval.Fixed
-        ? draft.intervalDays
-        : draft.intervalFallbackDays,
-    );
-  });
+  /** The interval as the ruler holds it, in weeks: the newcomer's period (`StreakIntervalRule.daysFor`, no habit yet). */
+  protected readonly weeks = computed(() =>
+    weeksOf(StreakIntervalRule.daysFor(this.draft(), null).days),
+  );
 
   /** «6 седмици» — the interval ruler's readout and its value text. */
   protected readonly weeksText = computed(
@@ -492,9 +495,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
       if (context === null || versions.loadState !== LoadState.Ready) {
         return [];
       }
-      return [...versions.data]
-        .sort((a, b) => b.version - a.version)
-        .map((version) => historyRow(context, version));
+      return StreakPublishSystem.historyNewestFirst(versions.data).map(
+        (version) => historyRow(context, version),
+      );
     },
   );
 
@@ -517,7 +520,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
   // ── The catalogue (the services sheet, the rule's named services) ───────
 
   /**
-   * The catalogue's services under their categories (`rhythmServiceGroupsOf`
+   * The catalogue's services under their categories (`CatalogSystem.byCategory`
    * over the two live streams); `null` until both have answered, when
    * either fails, or with no catalogue bound.
    */
@@ -532,7 +535,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
         ]).pipe(
           map(([categories, services]) =>
             categories.ok && services.ok
-              ? rhythmServiceGroupsOf(categories.value, services.value)
+              ? CatalogSystem.byCategory(categories.value, services.value)
               : null,
           ),
         ),
@@ -755,24 +758,21 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const change = this.store.change();
     if (change === null || !this.store.canSave()) return;
     const direction = change.direction;
-    if (direction === StreakRuleDirection.Switch) {
-      this.confirm.set(this.draft().enabled ? 'switchOn' : 'switchOff');
-      return;
+    switch (StreakRuleSystem.publishConsent(direction)) {
+      case StreakPublishConsent.AskSwitch:
+        this.confirm.set(this.draft().enabled ? 'switchOn' : 'switchOff');
+        return;
+      case StreakPublishConsent.Ask:
+        this.confirm.set('stricter');
+        return;
+      case StreakPublishConsent.AtOnce:
+        void this.publish(direction);
+        return;
     }
-    if (
-      direction === StreakRuleDirection.Stricter ||
-      direction === StreakRuleDirection.Mixed
-    ) {
-      this.confirm.set('stricter');
-      return;
-    }
-    void this.publish(direction);
   }
 
   private async publish(direction: StreakRuleDirection): Promise<void> {
-    this.undoOffered =
-      direction === StreakRuleDirection.Looser ||
-      direction === StreakRuleDirection.Neutral;
+    this.sentDirection = direction;
     const outcome = await this.store.save();
     this.told(outcome);
   }
@@ -793,12 +793,15 @@ export class AdminRhythm implements AdminRhythmLeaving {
             context.lang,
           ),
         }),
-        undo: outcome.value.waits && this.undoOffered,
+        undo: StreakPublishSystem.undoOffered(
+          this.sentDirection,
+          outcome.value.waits,
+        ),
       });
       return;
     }
     const refusal = outcome.error;
-    if (!isPublishRefusal(refusal)) {
+    if (!StreakPublishError.guard(refusal)) {
       this.toast.set({
         label: translateCodedError(this.transloco, {
           errorCode: EngagementErrorCode.RepositoryFailure,
@@ -843,7 +846,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   private async withdraw(): Promise<void> {
     const outcome = await this.store.undo();
-    if (!outcome.ok && !isPublishRefusal(outcome.error)) {
+    if (!outcome.ok && !StreakPublishError.guard(outcome.error)) {
       this.toast.set({
         label: translateCodedError(this.transloco, {
           errorCode: EngagementErrorCode.RepositoryFailure,
@@ -902,7 +905,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     refusal: AdminRhythmRefusal,
   ): string | null {
     const t = context.translate;
-    if (!isPublishRefusal(refusal)) {
+    if (!StreakPublishError.guard(refusal)) {
       return translateCodedError(this.transloco, {
         errorCode: EngagementErrorCode.RepositoryFailure,
       });

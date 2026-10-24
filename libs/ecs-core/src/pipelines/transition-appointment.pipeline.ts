@@ -1,5 +1,6 @@
 import {
   type Actor,
+  BookingLifecycle,
   type CancellationReason,
   type Seat,
   type ShopNow,
@@ -10,6 +11,7 @@ import {
   Result,
   type AppointmentId,
   type SeatId,
+  TimeZone,
 } from '@core/primitives';
 import {
   BookingError,
@@ -40,7 +42,6 @@ import {
   appendAuditFacts,
   readAppointment,
   readRedemptionVouchers,
-  UTC_ZONE,
   voucherRestoreWrites,
   zoneOf,
 } from './booking-read-set.pipeline';
@@ -106,12 +107,6 @@ export type TransitionAppointmentPorts = TxPorts &
   AuditAppendPorts &
   TelemetryPorts;
 
-/** The live statuses a reinstated chair can be taken by (index #7). */
-const LIVE_STATUSES: readonly BookingStatus[] = [
-  BookingStatus.Pending,
-  BookingStatus.Confirmed,
-];
-
 type Snapshot = {
   readonly appointment: Appointment | null;
   readonly location: ShopLocation | null;
@@ -124,18 +119,6 @@ type Decided = {
   readonly writes: readonly WriteOp[];
 };
 
-/** Is this the party's reinstatement of a cancelled visit? */
-function reinstates(
-  appointment: Appointment,
-  cmd: TransitionAppointmentCommand,
-): boolean {
-  return (
-    cmd.seatId === null &&
-    cmd.to === BookingStatus.Confirmed &&
-    appointment.bookingStatus === BookingStatus.Cancelled
-  );
-}
-
 /** Every live appointment sharing one of the visit's busy keys — one query per key (#7). */
 async function readCollisions(
   tx: ReadTx,
@@ -147,7 +130,11 @@ async function readCollisions(
       collection: [Collections.Appointments],
       where: [
         { field: 'busyKeys', op: QueryOp.ArrayContains, value: key },
-        { field: 'bookingStatus', op: QueryOp.In, value: LIVE_STATUSES },
+        {
+          field: 'bookingStatus',
+          op: QueryOp.In,
+          value: BookingLifecycle.LIVE_STATUSES,
+        },
       ],
       orderBy: [],
       limit: null,
@@ -201,7 +188,10 @@ export const transitionAppointment =
           cmd.to === BookingStatus.Cancelled
             ? await readRedemptionVouchers(tx, appointment.voucherRedemptions)
             : [];
-        const others = reinstates(appointment, cmd)
+        const others = AppointmentLifecycleSystem.isReinstatement(
+          appointment,
+          cmd,
+        )
           ? await readCollisions(tx, appointment)
           : [];
         return { appointment, location, vouchers, others };
@@ -218,7 +208,10 @@ export const transitionAppointment =
           windowHours,
         };
         const now = shopNowOf(snapshot.location, nowUtcMs);
-        if (now === null && reinstatesOrReopens(appointment, cmd)) {
+        if (
+          now === null &&
+          AppointmentLifecycleSystem.readsShopToday(appointment, cmd)
+        ) {
           // No shop clock, no "same day": the settled visit stays settled.
           return Result.err(
             SchedulingError.appointmentReopenWindowClosed(
@@ -231,11 +224,11 @@ export const transitionAppointment =
         const step = AppointmentLifecycleSystem.transition(
           appointment,
           request,
-          now ?? ZonedTimeSystem.shopNow(nowUtcMs, UTC_ZONE),
+          now ?? ZonedTimeSystem.shopNow(nowUtcMs, TimeZone.UTC),
         );
         if (!step.ok) return step;
         if (
-          reinstates(appointment, cmd) &&
+          AppointmentLifecycleSystem.isReinstatement(appointment, cmd) &&
           AppointmentLifecycleSystem.takenSince(appointment, snapshot.others)
         ) {
           const first = appointment.seats[0] as Seat;
@@ -248,12 +241,12 @@ export const transitionAppointment =
             ),
           );
         }
-        const endsCancelled =
-          step.value.appointment.bookingStatus === BookingStatus.Cancelled &&
-          appointment.bookingStatus !== BookingStatus.Cancelled;
         return Result.ok({
           auditFacts: step.value.auditFacts,
-          writes: endsCancelled
+          writes: AppointmentLifecycleSystem.endsCancelled(
+            appointment,
+            step.value.appointment,
+          )
             ? voucherRestoreWrites(
                 step.value.writes,
                 appointment.voucherRedemptions,
@@ -268,16 +261,3 @@ export const transitionAppointment =
     await appendAuditFacts(ports, committed.value.auditFacts, cmd.actor);
     return Result.ok({ appointmentId: cmd.appointmentId, to: cmd.to });
   };
-
-/** A party reopen of a settled visit — the one verb that reads the shop's "today". */
-function reinstatesOrReopens(
-  appointment: Appointment,
-  cmd: TransitionAppointmentCommand,
-): boolean {
-  return (
-    cmd.seatId === null &&
-    cmd.to === BookingStatus.Confirmed &&
-    (appointment.bookingStatus === BookingStatus.Completed ||
-      appointment.bookingStatus === BookingStatus.Cancelled)
-  );
-}

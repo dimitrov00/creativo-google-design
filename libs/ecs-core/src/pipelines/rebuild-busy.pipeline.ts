@@ -1,9 +1,5 @@
-import {
-  BookingStatus,
-  type BusyKey,
-  type LocalDate,
-  Result,
-} from '@core/primitives';
+import { BookingLifecycle } from '@core/components';
+import { type BusyKey, type LocalDate, Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
 import type {
@@ -60,7 +56,7 @@ export function liveOnBusyDay(key: BusyKey): QuerySpec {
       {
         field: 'bookingStatus',
         op: QueryOp.In,
-        value: [BookingStatus.Pending, BookingStatus.Confirmed],
+        value: BookingLifecycle.LIVE_STATUSES,
       },
     ],
     orderBy: [],

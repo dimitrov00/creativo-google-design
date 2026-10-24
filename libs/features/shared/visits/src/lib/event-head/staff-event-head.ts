@@ -5,7 +5,8 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { BookingStatus } from '@core/primitives';
+import { BookingLifecycle } from '@core/components';
+import type { BookingStatus } from '@core/primitives';
 import { UiIcon } from '@creativo/ui/controls';
 import type { StaffEventLine, StaffEventRun } from './staff-event-line';
 
@@ -16,14 +17,15 @@ export type StaffEventHeadSize = 'compact' | 'regular';
  * An hour that did not happen — a cancellation, a no-show. Both are struck
  * through on the name (owner, 2026-09-10: "the missed event should also
  * appear with strikethrough so it's recognisable"); the glyph in the
- * host's foot still says which.
+ * host's foot still says which. The rule is `BookingLifecycle.didNotHappen`;
+ * this is its frozen feature name (pass C D-9), and no status is no hour
+ * that did not happen.
  */
 export function hollowStatus(
   bookingStatus: BookingStatus | null | undefined,
 ): boolean {
   return (
-    bookingStatus === BookingStatus.Cancelled ||
-    bookingStatus === BookingStatus.NoShow
+    bookingStatus != null && BookingLifecycle.didNotHappen({ bookingStatus })
   );
 }
 

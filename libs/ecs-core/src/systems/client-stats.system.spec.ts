@@ -1,9 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  type AppliedDiscount,
   BarberPreference,
   BookingPolicy,
   ClientStatsPolicy,
+  Combinability,
+  CouponValue,
+  DiscountSource,
   type ClientMoneyStats,
   ClientStats,
   type ClientStatsMeta,
@@ -27,7 +31,9 @@ import {
   TenureState,
 } from '@core/components';
 import {
+  AppliedDiscountId,
   AttendanceState,
+  CouponGrantId,
   Currency,
   AppointmentId,
   BarberId,
@@ -54,6 +60,7 @@ import {
   appointmentFixture,
   seatFixture,
   customerOf,
+  termsFixture,
 } from '@core/testing';
 import {
   type BilledAppointment,
@@ -2035,5 +2042,193 @@ describe('Law 10.2 decisions — purity', () => {
     expect(run()).toEqual(once);
     expect(once.warning).toBe(2);
     expect(stats.last365NoShows).toHaveLength(2);
+  });
+});
+
+describe('ClientStatsSystem.billedHistory — the visits that count toward spend (pass C, P-26)', () => {
+  const billed = (
+    id: string,
+    seats: readonly Seat[],
+    discounts: readonly AppliedDiscount[] = [],
+  ) => appointmentFixture({ id: AppointmentId.of(id), seats, discounts });
+  const eurSeat = (seatId: string, priceCents: number): Seat =>
+    seatFixture({
+      seatId: SeatId.of(seatId),
+      terms: Seat.termsOf(
+        termsFixture(priceCents, 30),
+        termsFixture(priceCents, 30),
+      ),
+    });
+  const levaSeat = (seatId: string): Seat => {
+    const leva = termsFixture(5000, 30, 0, 0, Currency.BGN);
+    return seatFixture({
+      seatId: SeatId.of(seatId),
+      terms: Seat.termsOf(leva, leva),
+    });
+  };
+  const twentyOff: AppliedDiscount = {
+    discountId: AppliedDiscountId.of('grant:grant-1'),
+    discountSource: DiscountSource.Grant,
+    label: 'Рожден ден',
+    discountGrantId: CouponGrantId.of('grant-1'),
+    appliedAtUtcMs: instant(NOW_UTC_MS),
+    combinability: Combinability.Stackable,
+    ...unwrapOk(CouponValue.percentOff(20)),
+  };
+
+  it('bills each visit as BillingSystem does — the seats, less the discounts, in their currency', () => {
+    const plain = billed('a1', [eurSeat('s1', 2000), eurSeat('s2', 800)]);
+    const discounted = billed(
+      'a2',
+      [eurSeat('s1', 2000), eurSeat('s2', 800)],
+      [twentyOff],
+    );
+    const [first, second] = ClientStatsSystem.billedHistory([
+      plain,
+      discounted,
+    ]);
+    expect(first).toEqual({
+      ...plain,
+      bill: { subtotalCents: 2800, totalCents: 2800, currency: Currency.EUR },
+    });
+    expect(second?.bill).toEqual({
+      subtotalCents: 2800,
+      totalCents: 2240,
+      currency: Currency.EUR,
+    });
+  });
+
+  it('leaves out a visit with no bill — no seats, or mixed currencies — never guessed at, the rest in order', () => {
+    const empty = billed('a1', []);
+    const mixed = billed('a2', [eurSeat('s1', 2000), levaSeat('s2')]);
+    const leva = billed('a3', [levaSeat('s1')]);
+    const kept = billed('a4', [eurSeat('s1', 1500)]);
+    expect(
+      ClientStatsSystem.billedHistory([empty, mixed, leva, kept]).map(
+        (visit) => [visit.id, visit.bill],
+      ),
+    ).toEqual([
+      ['a3', { subtotalCents: 5000, totalCents: 5000, currency: Currency.BGN }],
+      ['a4', { subtotalCents: 1500, totalCents: 1500, currency: Currency.EUR }],
+    ]);
+    expect(ClientStatsSystem.billedHistory([])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const history = deepFreeze([
+      billed('a1', [eurSeat('s1', 2000)], [twentyOff]),
+      billed('a2', []),
+    ]);
+    const once = ClientStatsSystem.billedHistory(history);
+    expect(ClientStatsSystem.billedHistory(history)).toEqual(once);
+    expect(history[0]).not.toHaveProperty('bill');
+  });
+});
+
+describe('ClientStatsSystem.previousVisit — what «Ново» is measured from (pass C, K-3)', () => {
+  /** The fixture shop's instant of a fact — the caller's zone-bound reader. */
+  const instantOf = (fact: VisitFact): UtcEpochMs =>
+    unwrapOk(
+      ZonedTimeSystem.toUtc(
+        fact.localDate,
+        fact.startMinutes,
+        FIXTURE_TIME_ZONE,
+      ),
+    );
+  const TODAY_VISIT = AppointmentId.of('today');
+
+  it('is the latest bounded worked visit other than the one on screen', () => {
+    const stats = recordWith({
+      last365VisitsCompleted: [
+        factOn('older', '2026-08-01', 600),
+        factOn('today', '2026-09-28', 600),
+        factOn('before', '2026-09-14', 660),
+      ],
+    });
+    expect(ClientStatsSystem.previousVisit(stats, TODAY_VISIT, instantOf)).toBe(
+      instantOf(factOn('before', '2026-09-14', 660)),
+    );
+    // With no visit on screen, every worked visit counts.
+    expect(ClientStatsSystem.previousVisit(stats, null, instantOf)).toBe(
+      instantOf(factOn('today', '2026-09-28', 600)),
+    );
+  });
+
+  it('orders by the instant the reader gives, never by the wall clock', () => {
+    const stats = recordWith({
+      last365VisitsCompleted: [
+        factOn('wall-later', '2026-09-14', 900),
+        factOn('wall-earlier', '2026-09-14', 600),
+      ],
+    });
+    // A reader whose instants run against the wall clock (a fall-back hour,
+    // two shops): the instant order decides.
+    const inverted = (fact: VisitFact): UtcEpochMs =>
+      instant(NOW_UTC_MS - fact.startMinutes * MINUTE);
+    expect(ClientStatsSystem.previousVisit(stats, null, inverted)).toBe(
+      instant(NOW_UTC_MS - 600 * MINUTE),
+    );
+  });
+
+  it('falls back to the stored last visit when no bounded visit is left — only another, fully stamped one', () => {
+    const lastVisit = {
+      lastVisitAppointmentId: AppointmentId.of('long-ago'),
+      lastVisitLocalDate: localDate('2025-01-10'),
+      lastVisitStartMinutes: minute(540),
+    };
+    expect(
+      ClientStatsSystem.previousVisit(
+        recordWith({
+          ...lastVisit,
+          last365VisitsCompleted: [factOn('today', '2026-09-28', 600)],
+        }),
+        TODAY_VISIT,
+        instantOf,
+      ),
+    ).toBe(instantOf(factOn('long-ago', '2025-01-10', 540)));
+    // The stored last visit IS the one on screen: nothing before it.
+    expect(
+      ClientStatsSystem.previousVisit(
+        recordWith({ ...lastVisit, lastVisitAppointmentId: TODAY_VISIT }),
+        TODAY_VISIT,
+        instantOf,
+      ),
+    ).toBeNull();
+    // A last visit missing its day or its minute is no anchor.
+    expect(
+      ClientStatsSystem.previousVisit(
+        recordWith({ ...lastVisit, lastVisitStartMinutes: null }),
+        TODAY_VISIT,
+        instantOf,
+      ),
+    ).toBeNull();
+    expect(
+      ClientStatsSystem.previousVisit(
+        ClientStats.empty(),
+        TODAY_VISIT,
+        instantOf,
+      ),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const stats = deepFreeze(
+      recordWith({
+        last365VisitsCompleted: [
+          factOn('a', '2026-09-01', 600),
+          factOn('b', '2026-09-10', 600),
+        ],
+      }),
+    );
+    const once = ClientStatsSystem.previousVisit(
+      stats,
+      AppointmentId.of('b'),
+      instantOf,
+    );
+    expect(
+      ClientStatsSystem.previousVisit(stats, AppointmentId.of('b'), instantOf),
+    ).toBe(once);
+    expect(once).toBe(instantOf(factOn('a', '2026-09-01', 600)));
+    expect(stats.last365VisitsCompleted).toHaveLength(2);
   });
 });

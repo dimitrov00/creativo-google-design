@@ -262,6 +262,18 @@ export const BookingPolicy = {
   },
 
   /**
+   * The free time a day must hold to count as bookable in a lead-time
+   * sample (pass C, P-31 — `sample-lead-time`'s threshold, homed here): ONE
+   * slot step of the policy's grid, as a minute count; zero should the step
+   * ever not read as one (it always does — a `DurationMinutes` is a
+   * positive whole count).
+   */
+  freeThreshold(policy: BookingPolicy): MinuteCount {
+    const threshold = MinuteCount.of(policy.slotStepMinutes);
+    return threshold.ok ? threshold.value : MinuteCount.ZERO;
+  },
+
+  /**
    * The last day anyone may book, counting from `today`: the LAST day of the
    * month `horizonMonths` after today's, so a two-month horizon opened on
    * 31 January ends 31 March (never a clamped 28th) and the calendar grid

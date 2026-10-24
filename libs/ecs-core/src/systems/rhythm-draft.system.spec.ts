@@ -707,3 +707,233 @@ describe('RhythmDraftSystem purity', () => {
     expect(run()).toEqual(run());
   });
 });
+
+// ── The draft's memory, a draft carried over, the three days (pass C R-8, R-10) ──
+
+describe('RhythmDraftSystem.remember — the interval the draft held', () => {
+  it('remembers a fixed interval and keeps the personal one it remembered', () => {
+    const personalHeld = StreakIntervalRule.personal(25, 21, 70, 35);
+    expect(
+      RhythmDraftSystem.remember(
+        { fixed: null, personal: personalHeld },
+        RECOMMENDED,
+      ),
+    ).toEqual({
+      fixed: StreakIntervalRule.fixed(42),
+      personal: personalHeld,
+    });
+  });
+
+  it('remembers a personal interval and keeps the fixed one it remembered', () => {
+    const held = patchedRhythmDraft(RECOMMENDED, {
+      interval: personal({ intervalTolerancePct: 25 }),
+    });
+    expect(
+      RhythmDraftSystem.remember(
+        { fixed: StreakIntervalRule.fixed(35), personal: null },
+        held,
+      ),
+    ).toEqual({
+      fixed: StreakIntervalRule.fixed(35),
+      personal: StreakIntervalRule.personal(25, 21, 70, 42),
+    });
+  });
+
+  it('lets the admin try both kinds and lose nothing typed (the store’s patch, step by step)', () => {
+    const step = (
+      held: StreakRule,
+      remembered: RememberedIntervals,
+      patch: AdminRhythmPatch,
+    ) => {
+      const now = RhythmDraftSystem.remember(remembered, held);
+      return {
+        draft: RhythmDraftSystem.clamp(
+          held,
+          strict(patch),
+          now,
+          RISK_LEAD_CHOICES,
+        ),
+        remembered: now,
+      };
+    };
+    const one = step(RECOMMENDED, RhythmDraftSystem.NOTHING_REMEMBERED, {
+      interval: fixed(35),
+    });
+    const two = step(one.draft, one.remembered, {
+      interval: personal({ intervalTolerancePct: 25 }),
+    });
+    expect(intervalOf(two.draft)).toEqual(
+      StreakIntervalRule.personal(25, 21, 70, 35),
+    );
+    const three = step(two.draft, two.remembered, {
+      interval: { streakInterval: StreakInterval.Fixed },
+    });
+    expect(intervalOf(three.draft)).toEqual(StreakIntervalRule.fixed(35));
+    const four = step(three.draft, three.remembered, {
+      interval: personal(),
+    });
+    expect(four.draft).toMatchObject({ intervalTolerancePct: 25 });
+  });
+});
+
+describe('RhythmDraftSystem.carryOver — a draft laid over the rule as it now stands', () => {
+  const versionTwo = (patch: AdminRhythmPatch, day: string): StreakRule => ({
+    ...patchedRhythmDraft(RECOMMENDED, patch),
+    version: 2,
+    effectiveFromLocalDate: localDate(day),
+  });
+
+  it('keeps what the admin changed and takes the rest from the new rule (somebody else published)', () => {
+    const draft = patchedRhythmDraft(RECOMMENDED, { interval: fixed(49) });
+    const now = versionTwo({ riskLeadDays: 3 }, '2026-09-28');
+
+    const carried = RhythmDraftSystem.carryOver(
+      draft,
+      RECOMMENDED,
+      now,
+      RhythmDraftSystem.NOTHING_REMEMBERED,
+      RISK_LEAD_CHOICES,
+    );
+
+    expect(intervalOf(carried)).toEqual(StreakIntervalRule.fixed(49));
+    expect(carried.riskLeadDays).toBe(3);
+    expect(carried.version).toBe(2);
+    expect(carried.effectiveFromLocalDate).toBe('2026-09-28');
+  });
+
+  it('holds what the admin changed to the new rule’s interval (a version came into force overnight)', () => {
+    const draft = patchedRhythmDraft(RECOMMENDED, { graceDays: 21 });
+    const now = versionTwo({ interval: fixed(14) }, '2026-09-29');
+
+    const carried = RhythmDraftSystem.carryOver(
+      draft,
+      RECOMMENDED,
+      now,
+      RhythmDraftSystem.NOTHING_REMEMBERED,
+      RISK_LEAD_CHOICES,
+    );
+
+    expect(intervalOf(carried)).toEqual(StreakIntervalRule.fixed(14));
+    expect(carried.graceDays).toBe(13);
+  });
+
+  it('leaves the draft as it was when the rule it lands on is the one it was made on', () => {
+    const draft = patchedRhythmDraft(RECOMMENDED, { graceDays: 21 });
+
+    expect(
+      RhythmDraftSystem.carryOver(
+        draft,
+        RECOMMENDED,
+        RECOMMENDED,
+        RhythmDraftSystem.NOTHING_REMEMBERED,
+        RISK_LEAD_CHOICES,
+      ),
+    ).toEqual({ ...RECOMMENDED, graceDays: 21 });
+  });
+
+  it('is exactly the clamp of the diff over the new rule', () => {
+    const draft = patchedRhythmDraft(RECOMMENDED, {
+      interval: fixed(35),
+      riskLeadDays: 14,
+    });
+    const now = versionTwo({ interval: fixed(21) }, '2026-10-01');
+    const remembered = {
+      fixed: null,
+      personal: StreakIntervalRule.personal(25, 21, 70, 35),
+    };
+
+    expect(
+      RhythmDraftSystem.carryOver(
+        draft,
+        RECOMMENDED,
+        now,
+        remembered,
+        RISK_LEAD_CHOICES,
+      ),
+    ).toEqual(
+      RhythmDraftSystem.clamp(
+        now,
+        RhythmDraftSystem.diff(draft, RECOMMENDED),
+        remembered,
+        RISK_LEAD_CHOICES,
+      ),
+    );
+  });
+});
+
+describe('RhythmDraftSystem.effectivePresets — the three days «Влизане в сила» names', () => {
+  it('names today, tomorrow and the first of next month', () => {
+    expect(RhythmDraftSystem.effectivePresets(localDate('2026-09-28'))).toEqual(
+      {
+        today: '2026-09-28',
+        tomorrow: '2026-09-29',
+        firstOfMonth: '2026-10-01',
+      },
+    );
+  });
+
+  it('is the same day twice on a month’s last day', () => {
+    expect(RhythmDraftSystem.effectivePresets(localDate('2026-09-30'))).toEqual(
+      {
+        today: '2026-09-30',
+        tomorrow: '2026-10-01',
+        firstOfMonth: '2026-10-01',
+      },
+    );
+  });
+
+  it('crosses a year, and takes the next month from the 1st on the 31st', () => {
+    expect(RhythmDraftSystem.effectivePresets(localDate('2026-12-15'))).toEqual(
+      {
+        today: '2026-12-15',
+        tomorrow: '2026-12-16',
+        firstOfMonth: '2027-01-01',
+      },
+    );
+    expect(RhythmDraftSystem.effectivePresets(localDate('2026-01-31'))).toEqual(
+      {
+        today: '2026-01-31',
+        tomorrow: '2026-02-01',
+        firstOfMonth: '2026-02-01',
+      },
+    );
+  });
+
+  it('counts a leap day', () => {
+    expect(
+      RhythmDraftSystem.effectivePresets(localDate('2028-02-28')).tomorrow,
+    ).toBe('2028-02-29');
+  });
+});
+
+describe('RhythmDraftSystem purity — remember, carryOver, effectivePresets', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const draft = deepFreeze(
+      patchedRhythmDraft(RECOMMENDED, { graceDays: 21 }),
+    );
+    const madeOn = deepFreeze(StreakRule.of(RECOMMENDED));
+    const now = deepFreeze({
+      ...patchedRhythmDraft(RECOMMENDED, { interval: fixed(14) }),
+      version: 2,
+    });
+    const remembered = deepFreeze({
+      fixed: StreakIntervalRule.fixed(35),
+      personal: null,
+    });
+    const today = localDate('2026-09-28');
+    const run = () => [
+      RhythmDraftSystem.remember(remembered, draft),
+      RhythmDraftSystem.carryOver(
+        draft,
+        madeOn,
+        now,
+        remembered,
+        RISK_LEAD_CHOICES,
+      ),
+      RhythmDraftSystem.effectivePresets(today),
+    ];
+    expect(run()).toEqual(run());
+    expect(draft.graceDays).toBe(21);
+    expect(intervalOf(now)).toEqual(StreakIntervalRule.fixed(14));
+  });
+});

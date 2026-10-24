@@ -2188,7 +2188,7 @@ describe('StaffDashboard', () => {
       const line =
         head?.querySelector('[data-testid="staff-visit-resolution-line"]')
           ?.textContent ?? '';
-      expect(line).toContain('staff.visit.resolution.cancelledByStaff');
+      expect(line).toContain('staff.visit.resolution.cancelledByClient');
       expect(line).toContain('10:00');
       expect(
         head
@@ -7030,6 +7030,422 @@ describe('StaffDashboard', () => {
 
       expect(observed).toHaveLength(0);
       expect(frames).toHaveLength(0);
+    });
+  });
+
+  /*
+   * ── PASS C: ONE RULE PER DECISION (the departures, DEP-1…DEP-5) ────────
+   * Where the sheet and the server (or another surface) answered the same
+   * question two ways, one rule survives — the system's. Each case pins the
+   * surviving answer on a fixture where the two used to differ.
+   */
+  describe('the departures — one rule per decision (pass C)', () => {
+    let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
+
+    beforeEach(() => {
+      visits = observeBarberDay.getMockImplementation();
+    });
+
+    afterEach(() => {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    });
+
+    /** The page again, its chairs answering with these visits on whatever day is asked. */
+    async function buildWith(
+      byChair: ReadonlyMap<string, readonly Appointment[]>,
+      nowIso?: string,
+    ): Promise<void> {
+      observeBarberDay.mockImplementation((barberId: string) =>
+        of(PortResult.ok(byChair.get(barberId) ?? [])),
+      );
+      TestBed.resetTestingModule();
+      await build(nowIso);
+    }
+
+    async function openRow(rowId: string): Promise<void> {
+      (host().querySelector(`[data-row-id="${rowId}"]`) as HTMLElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('reads a chair two actors called off by the seat called off LAST, in both orders (DEP-1)', async () => {
+      // A father and son in one chair, both called off with no reason given
+      // — so each seat's side is its actor's — at 08:00 and at 08:30.
+      const calledOff = (iso: string, by: CancelledBy) =>
+        SeatOutcome.cancelled(
+          wall(iso).utcEpochMs,
+          by,
+          CancellationReason.Unspecified,
+          null,
+        );
+      const chair = (id: string, first: CancelledBy, last: CancelledBy) =>
+        visitOf(id, [
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:00:00',
+            occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+            outcome: calledOff('2026-08-05T08:00:00', first),
+          }),
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:30:00',
+            occupant: accountOf(freshId('user'), SubjectRelationship.Companion),
+            outcome: calledOff('2026-08-05T08:30:00', last),
+          }),
+        ]);
+      for (const [first, last, side] of [
+        // The client first, then the shop: the shop's act ended it.
+        [CancelledBy.Client, CancelledBy.Staff, 'cancelledByStaff'],
+        // The shop first, then the client: the client's act ended it — the
+        // card's rows and the statistics read it so, and so does the sheet.
+        [CancelledBy.Staff, CancelledBy.Client, 'cancelledByClient'],
+      ] as const) {
+        await buildWith(
+          new Map([['ivan', [chair('appointment-mixed', first, last)]]]),
+        );
+        await openRow('appointment-mixed#ivan');
+        const line =
+          host().querySelector('[data-testid="staff-visit-resolution-line"]')
+            ?.textContent ?? '';
+        expect(line).toContain(`staff.visit.resolution.${side}`);
+      }
+    });
+
+    it('draws no settled visit around the block, and warns of no overlap with one (DEP-2)', async () => {
+      const self = () => accountOf(freshId('user'), SubjectRelationship.Self);
+      const opened = visitOf(
+        'appointment-open',
+        [
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:00:00',
+            occupant: self(),
+          }),
+        ],
+        { contact: contactOf('Отворен Час', '+359881111111') },
+      );
+      // Finished at 10:45, over the opened visit's last quarter hour.
+      const done = visitOf(
+        'appointment-done',
+        [
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:15:00',
+            occupant: self(),
+            outcome: SeatOutcome.worked(wall('2026-08-05T10:45:00').utcEpochMs),
+          }),
+        ],
+        {
+          contact: contactOf('Свършен Час', '+359882222222'),
+          lifecycle: BookingLifecycle.complete(
+            wall('2026-08-05T10:45:00').utcEpochMs,
+          ),
+        },
+      );
+      // A live visit later on — still drawn, so the absence is not vacuous.
+      const later = visitOf(
+        'appointment-later',
+        [
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T12:00:00',
+            occupant: self(),
+          }),
+        ],
+        { contact: contactOf('Жив Съсед', '+359884444444') },
+      );
+      await buildWith(new Map([['ivan', [opened, done, later]]]));
+      await openRow('appointment-open#ivan');
+      const component = fixture.componentInstance as unknown as {
+        visitEditorVm: () => VisitEditorVm | null;
+      };
+      const names = (component.visitEditorVm()?.neighbours ?? []).map(
+        (neighbour) => neighbour.name,
+      );
+      expect(names).toContain('Жив Съсед');
+      // What occupies the chair is what the server's overlap refusal reads:
+      // a finished visit is a record, not a collision.
+      expect(names).not.toContain('Свършен Час');
+      expect(
+        host().querySelector('[data-testid="staff-visit-frame-note"]'),
+      ).toBeNull();
+    });
+
+    it("reads a split party's chair by the ROOT's status on the shown day, a stepped one, the create frame and the block frame alike (DEP-2)", async () => {
+      const opened = visitOf('appointment-open', [
+        seatAt({
+          chair: 'ivan',
+          startsAt: '2026-08-05T10:00:00',
+          occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+        }),
+      ]);
+      // Ivan's guest of the party called off; Niko's still booked — the
+      // root stays live.
+      const splitOn = (id: string, day: string) =>
+        visitOf(
+          id,
+          [
+            seatAt({
+              chair: 'ivan',
+              startsAt: `${day}T10:00:00`,
+              occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+              outcome: SeatOutcome.cancelled(
+                wall(`${day}T08:00:00`).utcEpochMs,
+                CancelledBy.Client,
+                CancellationReason.ClientUnwell,
+                null,
+              ),
+            }),
+            seatAt({
+              chair: 'niko',
+              startsAt: `${day}T10:00:00`,
+              occupant: accountOf(
+                freshId('user'),
+                SubjectRelationship.Companion,
+              ),
+            }),
+          ],
+          { contact: contactOf('Разделена Група', '+359883333333') },
+        );
+      const today = splitOn('appointment-split-today', '2026-08-05');
+      const tomorrow = splitOn('appointment-split-tomorrow', '2026-08-06');
+      observeBarberDay.mockImplementation((barberId: string, dayKey: string) =>
+        of(
+          PortResult.ok(
+            dayKey === '2026-08-05'
+              ? barberId === 'ivan'
+                ? [opened, today]
+                : barberId === 'niko'
+                  ? [today]
+                  : []
+              : dayKey === '2026-08-06' &&
+                  (barberId === 'ivan' || barberId === 'niko')
+                ? [tomorrow]
+                : [],
+          ),
+        ),
+      );
+      TestBed.resetTestingModule();
+      await build();
+      // The party's chair is drawn, and drawn cancelled…
+      expect(
+        host()
+          .querySelector('[data-row-id="appointment-split-today#ivan"]')
+          ?.getAttribute('data-status'),
+      ).toBe('cancelled');
+      await openRow('appointment-open#ivan');
+      const component = fixture.componentInstance as unknown as {
+        visitEditorVm: () => VisitEditorVm | null;
+        visitFrameDay: () => {
+          readonly neighbours: readonly { readonly name: string }[];
+        } | null;
+        createVisit: { set: (create: unknown) => void };
+        createVm: () => VisitEditorVm | null;
+        blockLaneFor: (
+          barberId: string,
+          frameDay: string,
+          shownDay: string,
+        ) => { readonly neighbours: readonly { readonly name: string }[] };
+      };
+      // …but what occupies the chair is the server's rule — the ROOT's
+      // status (`BusySystem.chairOccupants`): the party is live, so its seat
+      // in this chair is drawn on the shown day too.
+      expect(
+        (component.visitEditorVm()?.neighbours ?? []).map((n) => n.name),
+      ).toContain('Разделена Група');
+      // The create and block frames on the shown day read the same rule.
+      expect(
+        component
+          .blockLaneFor('ivan', '2026-08-05', '2026-08-05')
+          .neighbours.map((n) => n.name),
+      ).toContain('Разделена Група');
+      component.createVisit.set({
+        barberId: 'ivan',
+        startMinute: 600,
+        nonce: 9001,
+      });
+      expect(
+        (component.createVm()?.neighbours ?? []).map((n) => n.name),
+      ).toContain('Разделена Група');
+      component.createVisit.set(null);
+
+      // A stepped day reads the documents, by the ROOT's status: the party
+      // is live, so its seat in this chair is drawn.
+      (
+        host().querySelector(
+          '[data-testid="staff-visit-day-next"]',
+        ) as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(
+        (component.visitFrameDay()?.neighbours ?? []).map((n) => n.name),
+      ).toContain('Разделена Група');
+    });
+
+    it('keeps the way back on a save that adds a seat to a chair worked inside a live party (DEP-3)', async () => {
+      const split = visitOf('appointment-split', [
+        seatAt({
+          chair: 'ivan',
+          startsAt: '2026-08-05T10:00:00',
+          occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+        }),
+        seatAt({
+          chair: 'niko',
+          startsAt: '2026-08-05T10:00:00',
+          occupant: accountOf(freshId('user'), SubjectRelationship.Companion),
+          outcome: SeatOutcome.worked(wall('2026-08-05T10:30:00').utcEpochMs),
+        }),
+      ]);
+      await buildWith(
+        new Map([
+          ['ivan', [split]],
+          ['niko', [split]],
+        ]),
+      );
+      const component = fixture.componentInstance as unknown as {
+        store: { staffEdit: (request: unknown) => Promise<boolean> };
+        visitSheetRow: () => {
+          readonly bookingStatus: BookingStatus;
+          readonly rootBookingStatus: BookingStatus;
+        } | null;
+        visitEditorVm: () => VisitEditorVm | null;
+        saveFromEditor: (
+          appointmentId: string,
+          commit: VisitEditorCommit,
+          row: unknown,
+        ) => Promise<void>;
+        undo: () => { message: string } | null;
+        notice: () => string | null;
+        rowWaitMs: number;
+      };
+      component.rowWaitMs = 0;
+      const edits: SentEdit[] = [];
+      component.store.staffEdit = async (request) => {
+        edits.push(request as SentEdit);
+        return true;
+      };
+      await openRow('appointment-split#niko');
+      const row = component.visitSheetRow();
+      const vm = component.visitEditorVm();
+      if (row === null || vm === null)
+        throw new Error('the sheet did not open');
+      // Niko's chair is worked; the party is not.
+      expect(row.bookingStatus).toBe(BookingStatus.Completed);
+      expect(row.rootBookingStatus).toBe(BookingStatus.Pending);
+
+      const before = snapshotCommitOf(vm);
+      const leg = before.legs[0];
+      if (leg === undefined) throw new Error('the chair has no leg');
+      await component.saveFromEditor(
+        'appointment-split',
+        {
+          ...before,
+          legs: [...before.legs, { ...leg, seatId: 'draft-extra' }],
+        },
+        row,
+      );
+      expect(edits).toHaveLength(1);
+      expect(
+        commandOf(edits[0]?.commands ?? [], EditCommand.AddSeat),
+      ).toBeDefined();
+      // The server marks an added seat worked only on a COMPLETED root, so
+      // this one can still be removed: the receipt carries its «Отмени».
+      expect(component.undo()?.message).toBe('staff.day.undo.saved');
+      expect(component.notice()).toBeNull();
+    });
+
+    it('lifts the WHOLE day of a chair rostered nowhere that still holds bookings, and says so on the row (DEP-4)', async () => {
+      // Niko is rostered nowhere (the fixture) yet holds the party's seat.
+      const party = appointment(
+        'appointment-1',
+        '2026-08-05T10:00:00',
+        undefined,
+        'ivan',
+        true,
+      );
+      await buildWith(
+        new Map([
+          ['ivan', [party]],
+          ['niko', [party]],
+        ]),
+      );
+      const component = fixture.componentInstance as unknown as {
+        blockEdit: { set: (edit: unknown) => void };
+        liftFromEditor: () => Promise<void>;
+        blockLiftArmed: () => boolean;
+      };
+      // A saved range opened on that chair's shown day.
+      component.blockEdit.set({
+        blockId: 'block:niko:0',
+        barberIds: ['niko'],
+        allDay: false,
+        startMinute: 12 * 60,
+        endMinute: 13 * 60,
+      });
+      fixture.detectChanges();
+      const lift = host().querySelector('[data-testid="staff-block-lift"]');
+      expect(lift?.textContent).toContain('staff.block.liftDay');
+      expect(lift?.querySelector('ui-icon')?.getAttribute('data-name')).toBe(
+        'staff.off',
+      );
+
+      // The day's lift — armed first, as every day-wide lift is…
+      await component.liftFromEditor();
+      expect(component.blockLiftArmed()).toBe(true);
+      expect(writeScheduleException).not.toHaveBeenCalled();
+      // …then the whole day, never a range the closed day would refuse.
+      await component.liftFromEditor();
+      expect(writeScheduleException).toHaveBeenCalledTimes(1);
+      expect(component.blockLiftArmed()).toBe(false);
+    });
+
+    it('files a party booked companion-first under its BOOKER in «Скорошни» and in the book (DEP-5)', async () => {
+      TestBed.resetTestingModule();
+      await build('2026-08-05T12:00:00.000+03:00');
+      const son = freshId('user');
+      const father = freshId('user');
+      // The son's seat first; the booking — and its contact — the father's.
+      const family = visitOf(
+        'appointment-family',
+        [
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:00:00',
+            occupant: accountOf(son, SubjectRelationship.Companion),
+          }),
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T10:30:00',
+            occupant: accountOf(father, SubjectRelationship.Self),
+          }),
+        ],
+        { contact: contactOf('Стоян Колев', '+359887000111') },
+      );
+      const component = fixture.componentInstance as unknown as {
+        store: {
+          ensureWindow: () => Promise<void>;
+          window: () => readonly Appointment[];
+        };
+        browseClients: () => Promise<void>;
+        visitClientSections: () => readonly {
+          readonly clients: readonly { id: string; label: string }[];
+        }[];
+        visitClientBook: () => readonly { id: string; label: string }[];
+      };
+      component.store.ensureWindow = async () => undefined;
+      component.store.window = () => [family];
+      await component.browseClients();
+      // The father's name and number are filed under the father's account —
+      // never the son's, which would book the son as the father.
+      expect(
+        component
+          .visitClientSections()[0]
+          ?.clients.map((client) => [client.id, client.label]),
+      ).toEqual([[father, 'Стоян Колев']]);
+      expect(
+        component.visitClientBook().map((client) => [client.id, client.label]),
+      ).toEqual([[father, 'Стоян Колев']]);
     });
   });
 });

@@ -232,6 +232,41 @@ export const PolicyRecomputeJobSystem = {
   },
 
   /**
+   * Does a delivery of the job's write leave the pass alone? No job (the
+   * document was deleted), a finished pass, or a stalled one — the write
+   * that RECORDED the stall fires a delivery too, and the pass rests on it
+   * until the daily sweep nudges it ({@link PolicyRecomputeJobSystem.nudge}).
+   */
+  isIdle(fired: PolicyRecomputeJob | null): boolean {
+    return (
+      fired === null ||
+      fired.finishedAtUtcMs !== null ||
+      fired.stalledAtUtcMs !== null
+    );
+  },
+
+  /**
+   * Is a permanent stall worth recording on the job as it stands now
+   * (`live`)? Only on the step the delivery was fired for — a pass that
+   * moved on ({@link PolicyRecomputeJobSystem.sameStep} fails), or a deleted
+   * job, is never marked — and not when the same stall, by the same
+   * `failureCode`, is already recorded: a stale delivery failing the same
+   * way rewrites nothing.
+   */
+  shouldRecordStall(
+    live: PolicyRecomputeJob | null,
+    fired: PolicyRecomputeJob,
+    failureCode: string,
+  ): boolean {
+    if (live === null || !PolicyRecomputeJobSystem.sameStep(live, fired)) {
+      return false;
+    }
+    return !(
+      live.stalledAtUtcMs !== null && live.lastFailureCode === failureCode
+    );
+  },
+
+  /**
    * The job with the record of a permanent stall. The cursor and counts
    * stay, and so does `updatedAtUtcMs`, which keeps saying when the pass
    * last MOVED: that is what the sweep measures staleness by. Still the

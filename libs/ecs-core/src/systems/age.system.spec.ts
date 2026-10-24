@@ -1,10 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { BirthDate, BirthdayMoment } from '@core/components';
-import { LocalDate } from '@core/primitives';
+import { LocalDate, Result, TimeZone } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
-import { deepFreeze, localDate, unwrapErr, unwrapOk } from '@core/testing';
+import {
+  deepFreeze,
+  localDate,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import { AgeSystem, AgeWindow } from './age.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of BOTH legacy birth-date specs — the accounts and the identity
@@ -517,5 +524,44 @@ describe('AgeSystem.birthdayMoment — which birthday the client card says (glan
     const once = AgeSystem.birthdayMoment(birth, CARD_TODAY);
     expect(AgeSystem.birthdayMoment(birth, CARD_TODAY)).toEqual(once);
     expect(birth).toBe('1992-10-02');
+  });
+});
+
+/*
+ * The age day (pass C, C-32 / P-30) — ported from
+ * `libs/features/client/account-state/src/lib/age-day.spec.ts` (the UTC civil
+ * date of the one clock reading, F2-7) and the two server pipelines that
+ * derived it on the UTC zone (`TimeZone.UTC`). Pinned instants only.
+ */
+describe('AgeSystem.judgedOn — the day a birth date is judged on', () => {
+  it('is the UTC civil date of the instant', () => {
+    expect(AgeSystem.judgedOn(utcMs('2026-09-28T06:00:00Z'))).toBe(
+      '2026-09-28',
+    );
+  });
+
+  it('turns the day at UTC midnight, not at the shop’s', () => {
+    // 23:30 UTC is already the 29th in Sofia (02:30 EEST) — still the 28th here.
+    expect(AgeSystem.judgedOn(utcMs('2026-09-28T23:30:00Z'))).toBe(
+      '2026-09-28',
+    );
+    expect(AgeSystem.judgedOn(utcMs('2026-09-29T00:00:00Z'))).toBe(
+      '2026-09-29',
+    );
+  });
+
+  it('is the day the runtime-checked UTC zone answers (TimeZone.UTC is canonical)', () => {
+    expect(ZonedTimeSystem.checkZone('UTC')).toEqual(Result.ok(TimeZone.UTC));
+    const at = utcMs('2026-03-29T00:59:59Z');
+    expect(AgeSystem.judgedOn(at)).toBe(
+      ZonedTimeSystem.toLocal(at, unwrapOk(ZonedTimeSystem.checkZone('UTC')))
+        .localDate,
+    );
+  });
+
+  it('is pure: same instant → same day', () => {
+    const at = utcMs('2026-09-28T23:59:59Z');
+    expect(AgeSystem.judgedOn(at)).toBe(AgeSystem.judgedOn(at));
+    expect(AgeSystem.judgedOn(at)).toBe('2026-09-28');
   });
 });

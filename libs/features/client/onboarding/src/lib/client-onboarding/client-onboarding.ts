@@ -35,11 +35,10 @@ import {
 import {
   AgeSystem,
   AvatarSystem,
-  OfferingPriceSystem,
-  PERSONALIZE_STEPS,
+  CatalogPricingSystem,
+  OnboardingFlowSystem,
   type PersonalizeStep,
   PhoneSystem,
-  ProfileCompletionKey,
   SettledVerdict,
 } from '@core/systems';
 import { formatCents } from '@creativo/ui/wall-clock';
@@ -421,18 +420,7 @@ export class ClientOnboarding {
         injector: this.injector,
       }).pipe(filter((value) => value !== null)),
     );
-    const open = new Set(
-      progress.items
-        .filter((item) => !item.done)
-        .map((item) => item.profileCompletionKey),
-    );
-    return PERSONALIZE_STEPS.filter(
-      (step) =>
-        (step === OnboardingFlowStep.Birthday &&
-          open.has(ProfileCompletionKey.Birthday)) ||
-        (step === OnboardingFlowStep.Avatar &&
-          open.has(ProfileCompletionKey.Photo)),
-    );
+    return OnboardingFlowSystem.openPersonalizeSteps(progress);
   }
 
   /**
@@ -642,12 +630,14 @@ export class ClientOnboarding {
    * "45 мин · 15,00 €", or "35–50 мин · от 13,00 €" once barbers price the
    * service differently — one pre-formatted line shared by card and sheet.
    *
-   * Reads the terms matrix's folded RANGES (`OfferingPriceSystem`), not
-   * one canonical price: with a
-   * barber × variant matrix there is no single number to show before the
-   * customer has picked either, so the grid quotes the cheapest and says
-   * so. `priceRange().min === max` collapses back to a bare price, which
-   * is what a service nobody prices differently should look like.
+   * Reads the BOOKABLE terms' folded ranges (`CatalogPricingSystem`
+   * `cardPrice` / `durationRange` — the rule the booking grid card, the
+   * landing tile and the service-detail sheet already use), not one
+   * canonical price: with a barber × variant matrix there is no single
+   * number to show before the customer has picked either, so the grid
+   * quotes the cheapest and says so. No `spread` collapses back to a bare
+   * price, which is what a service nobody prices differently should look
+   * like.
    *
    * The SHAPE of the line — which fact leads, where the "from" goes — comes
    * from `formatServiceMeta`, because booking's grid renders the same card
@@ -659,7 +649,7 @@ export class ClientOnboarding {
     const lang = this.transloco.getActiveLang();
     const locale = lang === 'en' ? 'en-GB' : 'bg-BG';
 
-    const duration = OfferingPriceSystem.durationRange(service);
+    const duration = CatalogPricingSystem.durationRange(service);
     const minutes = this.transloco.translate('onboarding.services.minutes', {
       minutes:
         duration.min === duration.max
@@ -672,12 +662,12 @@ export class ClientOnboarding {
     // `maximumFractionDigits: 0`, printing `28 лв.` for a price the rest of
     // the app renders as `28,00 €`. Every price of one service shares its
     // currency (the one-currency invariant of the matrix).
-    const { min, max } = OfferingPriceSystem.priceRange(service);
+    const { cheapestCents, spread } = CatalogPricingSystem.cardPrice(service);
     return formatServiceMeta({
       duration: minutes,
-      price: formatCents(min, service.currency, locale),
+      price: formatCents(cheapestCents, service.currency, locale),
       fromLabel: this.transloco.translate('onboarding.services.from'),
-      spread: min !== max,
+      spread,
     });
   }
 
@@ -721,10 +711,7 @@ export class ClientOnboarding {
     input.value = '';
     if (!file) return;
 
-    const checked = AvatarSystem.check({
-      contentType: file.type,
-      sizeBytes: file.size,
-    });
+    const checked = AvatarSystem.check(file);
     if (!checked.ok) {
       this.avatarErrorCode.set(checked.error.errorCode);
       return;

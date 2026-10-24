@@ -3,7 +3,7 @@ import {
   defect,
   Result,
   type StreakDefinitionId,
-  type LocalDate,
+  LocalDate,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -14,6 +14,7 @@ import {
   HeadRole,
   type LocalizedText,
   StreakPublishCall,
+  StreakPublishConsent,
   StreakRule,
   StreakRuleDirection,
   type StreakRuleInput,
@@ -78,6 +79,36 @@ export type StreakDraftAssessment =
       readonly fields: readonly string[];
       readonly errors: readonly EngagementError.StreakRuleError[];
     };
+
+/** A draft that IS a rule — the assessment's `VALID` variant: what `gate` hands on to be sent. */
+export type ValidStreakDraft = Extract<
+  StreakDraftAssessment,
+  { readonly draftAssessment: typeof DraftAssessment.Valid }
+>;
+
+/**
+ * The earliest day the SERVER allowed a change of one direction, once it
+ * refused an earlier one: the page's floor for every later draft that turns
+ * the same way.
+ */
+export type StreakPublishFloor = {
+  readonly day: LocalDate;
+  readonly direction: StreakRuleDirection;
+};
+
+/** The two days «Влизане в сила» works with: the first a change may start, and the one it is published for. */
+export type StreakEffectiveDay = {
+  /** The day picker's minimum. */
+  readonly earliest: LocalDate;
+  /** The day chosen, never earlier than `earliest`. */
+  readonly effectiveFrom: LocalDate;
+};
+
+/** The head a publish leaves behind, and whether the new version waits for its day. */
+export type StreakHeadAfter = {
+  readonly head: StreakSchedule;
+  readonly waits: boolean;
+};
 
 /** What a publish reads inside its transaction. */
 export type StreakPublishSnapshot = {
@@ -175,6 +206,29 @@ function unique(values: readonly string[]): readonly string[] {
 }
 
 /**
+ * THE notice guard, one for both callers (`decide` on the server, `gate` on
+ * the page): a day earlier than the change may start is refused, naming the
+ * first day it may; `null` when the day may start.
+ */
+function tooEarlyFor(
+  day: LocalDate,
+  earliest: LocalDate,
+): StreakPublishError.TooEarly | null {
+  return day < earliest ? StreakPublishError.tooEarly(day, earliest) : null;
+}
+
+/** The flat fields a refused head names, each once, in the order given. */
+function fieldsOf(
+  errors: readonly { readonly field: string }[],
+): readonly string[] {
+  const fields: string[] = [];
+  for (let i = 0; i < errors.length; i++) {
+    fields.push((errors[i] as { readonly field: string }).field);
+  }
+  return unique(fields);
+}
+
+/**
  * Who a version names as its publisher when nobody published it by hand:
  * the rule the shop opened with (the seed's first version). A reserved
  * uid, branded once here.
@@ -234,7 +288,7 @@ export const StreakPublishSystem = {
     policy: StreakNoticePolicy,
   ): StreakDraftAssessment {
     const inForce = StreakRuleSystem.inForceOn(head, today);
-    const baseVersion = published ? StreakPublishSystem.newestOf(head) : 0;
+    const baseVersion = StreakPublishSystem.baseVersionOf(head, published);
     const built = StreakRule.parse({
       ...draft,
       version: baseVersion + 1,
@@ -309,37 +363,70 @@ export const StreakPublishSystem = {
         ? FIRST_RULE
         : StreakRuleSystem.changeFrom(rule, inForce, false);
     if (inForce !== null) {
-      const earliest = StreakRuleSystem.earliestEffectiveDay(
-        change.direction,
-        today,
-        policy,
+      const early = tooEarlyFor(
+        rule.effectiveFromLocalDate,
+        StreakRuleSystem.earliestEffectiveDay(change.direction, today, policy),
       );
-      if (rule.effectiveFromLocalDate < earliest) {
-        return Result.err(
-          StreakPublishError.tooEarly(rule.effectiveFromLocalDate, earliest),
-        );
-      }
+      if (early !== null) return Result.err(early);
     }
+    const after = StreakPublishSystem.headAfter(
+      head,
+      rule,
+      streakTransition,
+      today,
+    );
+    if (!after.ok) return after;
+    const replaced =
+      head === null ? null : StreakRuleSystem.upcomingOn(head, today);
+    return Result.ok({
+      head: after.value.head,
+      change,
+      inForceVersion: inForce?.version ?? 0,
+      calledOff: replaced === null ? [] : [replaced.version],
+      waits: after.value.waits,
+    });
+  },
+
+  /**
+   * The head a publish of `rule` (parsed and numbered) leaves behind over
+   * `head` on the shop's `today` — `decide`'s, and the page's while it
+   * stands on the answer until the stream says the same: in force at once
+   * when its day has come, and always for a shop's first rule (no head);
+   * else WAITING beside the rule in force by `streakTransition`, in place
+   * of whatever waited. `waits` is its day still to come. A head that would
+   * not stand is `INVALID`, naming its fields once each.
+   */
+  headAfter(
+    head: StreakSchedule | null,
+    rule: StreakRule,
+    streakTransition: StreakTransition,
+    today: LocalDate,
+  ): Result<StreakHeadAfter, StreakPublishError> {
+    const inForce =
+      head === null ? null : StreakRuleSystem.inForceOn(head, today);
     const next =
       inForce === null || rule.effectiveFromLocalDate <= today
         ? StreakRuleSystem.schedule(rule, null)
         : StreakRuleSystem.schedule(inForce, { ...rule, streakTransition });
     if (!next.ok) {
-      const fields: string[] = [];
-      for (let i = 0; i < next.error.length; i++) {
-        fields.push((next.error[i] as { readonly field: string }).field);
-      }
-      return Result.err(StreakPublishError.invalid(unique(fields)));
+      return Result.err(StreakPublishError.invalid(fieldsOf(next.error)));
     }
-    const replaced =
-      head === null ? null : StreakRuleSystem.upcomingOn(head, today);
     return Result.ok({
       head: next.value,
-      change,
-      inForceVersion: inForce?.version ?? 0,
-      calledOff: replaced === null ? [] : [replaced.version],
-      waits: rule.effectiveFromLocalDate > today,
+      waits: StreakPublishSystem.waits(rule, today),
     });
+  },
+
+  /**
+   * Whether a published version waits for its day on the shop's `today`:
+   * its effective day is still to come (a version effective today is in
+   * force at once) — `headAfter`'s `waits`, and the publish receipt's.
+   */
+  waits(
+    version: { readonly effectiveFromLocalDate: LocalDate },
+    today: LocalDate,
+  ): boolean {
+    return version.effectiveFromLocalDate > today;
   },
 
   /**
@@ -354,8 +441,7 @@ export const StreakPublishSystem = {
     head: StreakSchedule | null,
     today: LocalDate,
   ): Result<StreakWithdrawal, StreakPublishError> {
-    const waiting =
-      head === null ? null : StreakRuleSystem.upcomingOn(head, today);
+    const waiting = StreakPublishSystem.waitingOn(head, true, today);
     if (head === null || waiting === null || waiting.version !== version) {
       return Result.err(
         StreakPublishError.stale(version, waiting?.version ?? 0),
@@ -366,6 +452,147 @@ export const StreakPublishSystem = {
       waiting,
       calledOff: [version],
     });
+  },
+
+  /**
+   * The version that waits on `today` and can be called off — `withdraw`'s
+   * subject, and what the page's «Отмени» names by its number: nothing
+   * waits under no head, nor before the shop has published (the head is
+   * then the recommended rule, which waits for nothing).
+   */
+  waitingOn(
+    head: StreakSchedule | null,
+    published: boolean,
+    today: LocalDate,
+  ): StreakHeadRule | null {
+    return head === null || !published
+      ? null
+      : StreakRuleSystem.upcomingOn(head, today);
+  },
+
+  /**
+   * The newest version a draft is based on — what a publish names as its
+   * `baseVersion`, and what a STALE refusal says the draft was made on: the
+   * head's newest ({@link newestOf}) once the shop has published, 0 before.
+   */
+  baseVersionOf(head: StreakSchedule | null, published: boolean): number {
+    return published ? StreakPublishSystem.newestOf(head) : 0;
+  },
+
+  /**
+   * There is something to publish: the draft is a rule and it changes
+   * something — or the shop has published nothing yet, when even the
+   * recommended rule as it stands is published (until it is, there is no
+   * rule). With `published: true` it answers whether the draft CHANGES
+   * anything at all — what the preview waits for.
+   */
+  publishable(assessment: StreakDraftAssessment, published: boolean): boolean {
+    return (
+      assessment.draftAssessment === DraftAssessment.Valid &&
+      (assessment.change.changed.length > 0 || !published)
+    );
+  },
+
+  /**
+   * The page's judgement of a «Запази» before anything is sent — over the
+   * draft assessed for the day it is to be published on: a draft that is
+   * no rule is `INVALID` (its fields); nothing to publish ({@link
+   * publishable}) is `null`; a day earlier than the change may start is
+   * `TOO_EARLY` (the one notice guard `decide` judges by too); else the
+   * valid draft, to be sent.
+   */
+  gate(
+    assessment: StreakDraftAssessment,
+    published: boolean,
+    effectiveFrom: LocalDate,
+  ): Result<ValidStreakDraft | null, StreakPublishError> {
+    if (assessment.draftAssessment === DraftAssessment.Invalid) {
+      return Result.err(StreakPublishError.invalid(assessment.fields));
+    }
+    if (!StreakPublishSystem.publishable(assessment, published)) {
+      return Result.ok(null);
+    }
+    const early = tooEarlyFor(effectiveFrom, assessment.earliest);
+    return early === null ? Result.ok(assessment) : Result.err(early);
+  },
+
+  /**
+   * The day the page offers after the SERVER refused `refusedDay` as too
+   * early, whatever day the server named: the strictest the domain knows
+   * for a change of this direction (the notice owed as if clients saw the
+   * rhythm), and always a later day than the one refused.
+   */
+  refusedEarliest(
+    direction: StreakRuleDirection,
+    refusedDay: LocalDate,
+    today: LocalDate,
+    policy: StreakNoticePolicy,
+  ): LocalDate {
+    return LocalDate.later(
+      StreakRuleSystem.earliestEffectiveDay(direction, today, {
+        ...policy,
+        clientsSeeRhythm: true,
+      }),
+      LocalDate.addDays(refusedDay, 1),
+    );
+  },
+
+  /**
+   * «Влизане в сила»: the first day the draft may start and the day it is
+   * published for. The first is tomorrow for a draft that is no rule (or
+   * not judged yet); else the assessment's own, raised to the server's
+   * floor when the floor was set by a change of the SAME direction. The day
+   * published for is the one chosen (`null`: «От утре»), never earlier than
+   * the first.
+   */
+  effectiveDay(
+    chosen: LocalDate | null,
+    assessment: StreakDraftAssessment | null,
+    floor: StreakPublishFloor | null,
+    tomorrow: LocalDate,
+  ): StreakEffectiveDay {
+    let earliest = tomorrow;
+    if (
+      assessment !== null &&
+      assessment.draftAssessment === DraftAssessment.Valid
+    ) {
+      earliest =
+        floor !== null && floor.direction === assessment.change.direction
+          ? LocalDate.later(floor.day, assessment.earliest)
+          : assessment.earliest;
+    }
+    return {
+      earliest,
+      effectiveFrom: LocalDate.later(chosen ?? tomorrow, earliest),
+    };
+  },
+
+  /** The form differs from the rule in force — a draft that is no rule, or one that changes something: what «Отхвърли промените?» guards. */
+  isDraftDirty(assessment: StreakDraftAssessment): boolean {
+    return (
+      assessment.draftAssessment === DraftAssessment.Invalid ||
+      assessment.change.changed.length > 0
+    );
+  },
+
+  /**
+   * The receipt offers «Отмени» only for a version that WAITS and was saved
+   * without asking first (`StreakRuleSystem.publishConsent` `AT_ONCE`: a
+   * looser or neutral change) — a change the admin confirmed is not taken
+   * back in passing.
+   */
+  undoOffered(direction: StreakRuleDirection, waits: boolean): boolean {
+    return (
+      waits &&
+      StreakRuleSystem.publishConsent(direction) === StreakPublishConsent.AtOnce
+    );
+  },
+
+  /** «История»: the versions newest first (a stable sort of a copy; the list handed in is never written). */
+  historyNewestFirst<V extends { readonly version: number }>(
+    versions: readonly V[],
+  ): readonly V[] {
+    return [...versions].sort((a, b) => b.version - a.version);
   },
 
   /**

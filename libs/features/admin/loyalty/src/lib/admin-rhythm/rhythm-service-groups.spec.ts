@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Service, ServiceCategory } from '@core/entities';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
 import { serviceFixture, textFixture } from '@core/testing';
-import { rhythmServiceGroupsOf } from './rhythm-service-groups';
+import { CatalogSystem } from '@core/systems';
+
+// The grouping moved whole to `CatalogSystem.byCategory` (pass C, R-19).
+const rhythmServiceGroupsOf = CatalogSystem.byCategory;
 
 /*
  * The case of the legacy catalog

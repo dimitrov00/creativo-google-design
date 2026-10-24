@@ -567,6 +567,27 @@ describe('BookingServicesStep', () => {
     );
   });
 
+  // Pass C, DEP-9: "anyone" on the add sheet quotes every performer's terms,
+  // exactly as the bag quotes the same line — an offering of a barber off
+  // the active list included (the fixture publishes no barber VMs, so both
+  // of `beard`'s performers are off it). Before, the CTA took its span from
+  // the ACTIVE performers only and fell back to the cheapest single price.
+  it('quotes "anyone" across every performer on the CTA, as the bag does — even one off the active list', async () => {
+    const fixture = await toServices();
+    click(fixture, 'service-card-beard');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    answer(fixture);
+
+    const price = host(fixture)
+      .querySelector('[data-testid="booking-add-price"]')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+    expect(price).toContain('13,00');
+    expect(price).toContain('14,50');
+    expect(price).toContain('–');
+  });
+
   it('skips the variant select entirely when the service declares none', async () => {
     const fixture = await toServices();
     click(fixture, 'service-card-beard');

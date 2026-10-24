@@ -15,11 +15,11 @@ import {
 import { AppointmentId, type UserId } from '@core/primitives';
 import {
   BookingFlowStep,
-  MoveRefusal,
+  type MoveRefusal,
   MoveRefusalReason,
   Principal,
 } from '@core/components';
-import { ShopReachSystem } from '@core/systems';
+import { MoveSystem, ShopReachSystem } from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
@@ -34,6 +34,7 @@ import { UiEmptyState, UiStepper } from '@creativo/ui/patterns';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { BookingFlowStore } from '../booking-flow.store';
+import { BookingDayStore } from '../schedule-step/booking-day.store';
 import {
   BOOKING_STEP_WORDS,
   MOVE_REFUSAL_WORDS,
@@ -106,7 +107,7 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
   ],
   templateUrl: './client-booking.html',
   styleUrl: './client-booking.css',
-  providers: [BookingFlowStore, BookingChromeService],
+  providers: [BookingFlowStore, BookingDayStore, BookingChromeService],
   host: {
     // The v2 E2E selector contract, preserved verbatim (blueprint §5.3) —
     // this overrides the house `*-page` testid convention on purpose. The
@@ -269,31 +270,28 @@ export class ClientBooking {
    * until it has answered successfully the shop question is not asked, and
    * the barber, service and variant ones still are. A computed rather than a
    * latched refusal: it follows the live catalogue, so a barber put back on
-   * the list reopens the move.
+   * the list reopens the move. `true` — nothing to refuse — for a move that
+   * carries nobody, and until the reads it needs have answered.
    */
-  private readonly carriedRefusal = computed<MoveRefusal | null>(() => {
+  private readonly carriedInReach = computed<boolean>(() => {
     const riders = this.store.moveRiders();
-    if (riders.length === 0) return null;
+    if (riders.length === 0) return true;
     if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
-      return null;
+      return true;
     }
     return carriedSeatsInReach(
       riders,
       this.catalog.services(),
       this.catalog.barbers(),
       this.catalog.locationsKnown() ? this.catalog.locations() : null,
-    )
-      ? null
-      : MoveRefusal.of(
-          MoveRefusalReason.CarriedOutOfReach,
-          this.store.locationId(),
-        );
+    );
   });
 
   /**
    * Why this move cannot happen here, if it cannot: what the landing decided
    * (`BookingFlowStore.moveRefusal`), else what the catalogue says about the
-   * people it carries. The shell shows it INSTEAD of the wizard.
+   * people it carries (`MoveSystem.refusalOf`). The shell shows it INSTEAD of
+   * the wizard.
    *
    * Never once the flow has ended. A move the server accepted is answered,
    * and the live catalogue changing afterwards (the companion's barber taken
@@ -301,7 +299,11 @@ export class ClientBooking {
    */
   protected readonly refusal = computed<MoveRefusal | null>(() => {
     if (this.store.isTerminal()) return null;
-    return this.store.moveRefusal() ?? this.carriedRefusal();
+    return MoveSystem.refusalOf(
+      this.store.moveRefusal(),
+      this.carriedInReach(),
+      this.store.locationId(),
+    );
   });
 
   /**

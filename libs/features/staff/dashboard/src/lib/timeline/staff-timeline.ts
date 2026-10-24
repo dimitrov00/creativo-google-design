@@ -30,13 +30,15 @@ import {
   hourLabel,
   PlacementVerdict,
   type PlacementVerdictSlice,
+  placementSliceOf,
   releasePointer,
   snapTo,
   timeLabel,
 } from '../time-grid/grid-gesture';
+import { closedMinuteRuns, toMinuteRun } from '../time-grid/minute-run';
 import { gridEventWords } from '../tag-words';
 import { EditCommand, ResizeEdge } from '@core/components';
-import { GridEvent as GridEventTag } from '@core/systems';
+import { GridLayoutSystem } from '@core/systems';
 import type {
   GridColumn,
   GridCommit,
@@ -359,19 +361,16 @@ export class StaffTimeline {
       title: column.title,
       avatarSrc: column.avatarSrc,
       isToday: column.isToday,
-      closed: closedRuns(column.open, extent),
+      closed: closedBands(column.open, extent),
       bars: column.events
         .filter((event) => event.id !== bandId)
         .map<TimelineBar>((event) => ({
           ...event,
           from: fraction(event.startMinute, extent),
           span: (event.endMinute - event.startMinute) / extent.minutes,
-          // A gap is the ABSENCE of a booking — landing on one is the point.
-          collides:
-            band !== null &&
-            event.gridEvent !== GridEventTag.Gap &&
-            event.startMinute < band.endMinute &&
-            event.endMinute > band.startMinute,
+          // A gap is the ABSENCE of a booking — landing on one is the point
+          // (`GridLayoutSystem.collides`).
+          collides: band !== null && GridLayoutSystem.collides(event, band),
         })),
     }));
   });
@@ -416,28 +415,9 @@ export class StaffTimeline {
     () => {
       const band = this.band();
       if (band === null) return null;
-      const floor = this.minMinutes();
-      if (band.endMinute - band.startMinute <= floor) {
-        return { placementVerdict: PlacementVerdict.Short, minutes: floor };
-      }
-      for (const row of this.rows()) {
-        const hit = row.bars.find((bar) => bar.collides);
-        if (hit !== undefined) {
-          return {
-            placementVerdict: PlacementVerdict.Overlap,
-            name: hit.title,
-            time: timeLabel(hit.startMinute),
-          };
-        }
-      }
-      const inside = this.columns().every((column) =>
-        column.open.some(
-          (window) =>
-            band.startMinute >= window.startMinute &&
-            band.endMinute <= window.endMinute,
-        ),
-      );
-      return inside ? null : { placementVerdict: PlacementVerdict.Outside };
+      // Every chosen chair at once — the band itself is never its own
+      // neighbour (its id), and a gap never collides (the system's rule).
+      return placementSliceOf(band, this.columns(), this.minMinutes());
     },
   );
 
@@ -1074,11 +1054,13 @@ function fraction(
 }
 
 /**
- * The stretches of the extent OUTSIDE a chair's working windows, as runs.
- * Windows are sorted and merged first, so a split shift in any order still
+ * The stretches of the extent OUTSIDE a chair's working windows, as runs —
+ * `GridLayoutSystem.closedRuns` (pass C, Y-16: the time grid's own call,
+ * through the shared `minute-run.ts` boundary): the windows clamped to the
+ * extent, sorted and merged first, so a split shift in any order still
  * shades exactly the hours between its halves.
  */
-function closedRuns(
+function closedBands(
   open: readonly OpenWindow[],
   extent: {
     readonly start: number;
@@ -1086,27 +1068,9 @@ function closedRuns(
     readonly minutes: number;
   },
 ): readonly TimelineRun[] {
-  const merged: { startMinute: number; endMinute: number }[] = [];
-  for (const window of [...open].sort(
-    (a, b) => a.startMinute - b.startMinute,
-  )) {
-    const last = merged.at(-1);
-    if (last !== undefined && window.startMinute <= last.endMinute) {
-      last.endMinute = Math.max(last.endMinute, window.endMinute);
-    } else {
-      merged.push({ ...window });
-    }
-  }
-  const runs: TimelineRun[] = [];
-  let cursor = extent.start;
-  for (const window of merged) {
-    if (window.startMinute > cursor) {
-      runs.push(run(cursor, Math.min(window.startMinute, extent.end), extent));
-    }
-    cursor = Math.max(cursor, window.endMinute);
-  }
-  if (cursor < extent.end) runs.push(run(cursor, extent.end, extent));
-  return runs.filter((r) => r.span > 0);
+  return closedMinuteRuns(open.map(toMinuteRun), extent.start, extent.end).map(
+    (closed) => run(closed.startMinutes, closed.endMinutes, extent),
+  );
 }
 
 function run(

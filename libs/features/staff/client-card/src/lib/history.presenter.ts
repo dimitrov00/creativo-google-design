@@ -32,15 +32,6 @@ import type { ClientCardWords } from './client-card.words';
  * year sections and its foot went with its body in W4.
  */
 
-/** The page size of a history read (§3.6 HF). */
-export const HISTORY_PAGE_SIZE = 30;
-
-/** Fewer rows than this left by a filter fetches more pages on the same tap (§3.6). */
-export const FILTER_REFILL_ROWS = 10;
-
-/** …up to this many pages at once. */
-export const FILTER_REFILL_PAGES = 3;
-
 /** Weeks, from the stats' mean days between worked visits — at least one (`ClientStatsSystem.cadenceWeeks`). */
 export function cadenceWeeks(avgCadenceDays: number): number {
   return ClientStatsSystem.cadenceWeeks(avgCadenceDays);

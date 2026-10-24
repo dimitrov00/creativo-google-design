@@ -2,7 +2,6 @@ import {
   type BarberId,
   BusyKey,
   type LocalDate,
-  type LocationId,
   NotificationId,
   Result,
   type WaitlistRequestId,
@@ -22,6 +21,7 @@ import {
   Collections,
   type ScheduleException,
   type Service,
+  type ShopLocation,
   type WaitlistRequest,
 } from '@core/entities';
 import type {
@@ -42,7 +42,6 @@ import {
   type CartBarberDay,
   PartyAdmissionSystem,
   RosterSystem,
-  type ShopHours,
   type WaitlistMatch,
   WaitlistSystem,
   ZonedTimeSystem,
@@ -154,15 +153,16 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     if (services.length === 0) return Result.ok(EMPTY_DAY);
 
     // Every LISTED shop's hours for the day, shared by every barber.
-    const shopHours: ShopHours[] = [];
-    const listedShops: LocationId[] = [];
+    const listedLocations: ShopLocation[] = [];
     for (const location of listed.value.locations) {
-      if (!PartyAdmissionSystem.shopListed(location)) continue;
-      const hours = RosterSystem.shopDayHours(location.openingHours, localDate);
-      shopHours.push({ locationId: location.id, hours });
-      listedShops.push(location.id);
+      if (PartyAdmissionSystem.shopListed(location)) {
+        listedLocations.push(location);
+      }
     }
-    if (shopHours.length === 0) return Result.ok({ services, barbers: [] });
+    if (listedLocations.length === 0) {
+      return Result.ok({ services, barbers: [] });
+    }
+    const shopHours = RosterSystem.shopHoursOn(listedLocations, localDate);
 
     // Rosters AND exceptions, every candidate at once — an exception can
     // close the day, so it is known before the windows are built.
@@ -190,18 +190,15 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
       if (!schedule.ok) return schedule;
       if (!exception.ok) return exception;
       if (schedule.value === null) continue;
-      // Only windows at a shop the searched set holds: a shop absent from
-      // `shopHours` reads as "no bound", which is wrong for one hidden since.
-      const windows: RosterWindow[] = [];
-      for (const window of RosterSystem.buildDayWindows({
+      // Only windows at a shop the searched set holds
+      // (`RosterSystem.offeredWindows`); none: not on the day.
+      const windows = RosterSystem.offeredWindows({
         barberId,
         localDate,
         versions: schedule.value.versions,
         exceptions: exception.value === null ? [] : [exception.value],
         shopHours,
-      })) {
-        if (listedShops.includes(window.locationId)) windows.push(window);
-      }
+      });
       if (windows.length > 0) {
         rostered.push({ barberId, schedule: schedule.value, windows });
       }
@@ -223,12 +220,12 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         windows: entry.windows,
         // PADDED by the barber's turnaround — the one rule the grid and the
         // commit both apply; nothing is released (a request is a new booking).
-        busy: AvailabilitySystem.paddedBusy({
-          barberId: entry.barberId,
-          spans: busy.value === null ? [] : busy.value.blocks,
-          turnaroundMinutes: entry.schedule.turnaroundMinutes,
-          release: [],
-        }),
+        busy: AvailabilitySystem.paddedBusy(
+          entry.barberId,
+          busy.value,
+          entry.schedule,
+          [],
+        ),
       });
     }
     return Result.ok({ services, barbers });

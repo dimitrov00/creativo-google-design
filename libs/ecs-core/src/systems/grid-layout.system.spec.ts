@@ -5,10 +5,16 @@ import {
   MinuteRange,
   CancellationReason,
   CancellationReasonSet,
+  PlacementVerdict,
   Seat,
   type ShopNow,
 } from '@core/components';
-import { BarberId, LocalDate } from '@core/primitives';
+import {
+  BarberId,
+  DurationMinutes,
+  LocalDate,
+  MinuteCount,
+} from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -26,6 +32,9 @@ import {
   GridLayoutSystem,
   type MinuteRun,
   type RunEvent,
+  type TrackColumn,
+  type TrackEvent,
+  type TrackSpan,
 } from './grid-layout.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -650,5 +659,642 @@ describe('GridLayoutSystem — purity', () => {
       S.laneGaps(rostered, occupied, now, DAY),
     );
     expect(rostered[0]).toEqual(hours(9, 18));
+  });
+});
+
+/* ── The chair's free time (pass C, S-19) ────────────────────────────── */
+
+/*
+ * Ported from `staff-dashboard.ts` `daySummary`'s minute sum (pinned by
+ * `staff-dashboard.spec.ts` «states only what the list cannot be counted
+ * for»): the plain sum of the day's gaps, sellable and elapsed alike.
+ */
+describe('totalMinutes — the free time a chair states', () => {
+  it('sums every gap, elapsed and sellable alike', () => {
+    // 09:00–18:00 around 11:00–12:00 and 14:00–15:00, read at noon: the
+    // morning's two hours are a record, the afternoon's five inventory.
+    const gaps = laneGaps(
+      [hours(9, 18)],
+      [hours(11, 12), hours(14, 15)],
+      nowAt(12),
+    );
+    expect(gaps.some((gap) => !gap.sellable)).toBe(true);
+    expect(gaps.some((gap) => gap.sellable)).toBe(true);
+    expect(S.totalMinutes(gaps)).toBe(7 * 60);
+  });
+
+  it('is zero for a day with no gap — the caller says nothing', () => {
+    expect(S.totalMinutes([])).toBe(MinuteCount.ZERO);
+    expect(S.totalMinutes(laneGaps([], [], nowAt(12)))).toBe(0);
+  });
+
+  it('adds, never unions: it reads only each gap’s minutes', () => {
+    const count = (n: number): MinuteCount => unwrapOk(MinuteCount.of(n));
+    expect(
+      S.totalMinutes([{ minutes: count(20) }, { minutes: count(45) }]),
+    ).toBe(65);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const gaps = deepFreeze(laneGaps([hours(9, 18)], [], nowAt(8)));
+    const once = S.totalMinutes(gaps);
+    expect(S.totalMinutes(gaps)).toBe(once);
+    expect(once).toBe(9 * 60);
+  });
+});
+
+/* ── A drafted block's verdict (pass C, Y-14 / Y-15 / Y-18) ─────────── */
+
+/*
+ * Ported from the two frames' `draftVerdict` (`time-grid/staff-time-grid.ts`
+ * over its one editable column; `timeline/staff-timeline.ts` over every
+ * chosen chair), the timeline rows' per-bar `collides` and the block sheet's
+ * `collisions`, as value/tag assertions on their specs' fixtures:
+ * - staff-time-grid.spec.ts «goes destructive over a neighbour and names
+ *   it» — a 600–675 draft over Петър's 660–700, floor 10;
+ * - staff-timeline.spec.ts's three-chair shop — Мартин 750–780 under the
+ *   12:00–13:00 band, Георги 600–645 beside it, Стефан open 10:00–19:00:
+ *   «marks the booking under the band in red, and leaves the one beside it
+ *   alone», «moves one edge and leaves the other where it was» (720–795,
+ *   still red over Мартин);
+ * - staff-block-editor.spec.ts «names what the block sits on» (Ivan's noon
+ *   hour on Мартин's 12:30) and the all-day block over the whole axis.
+ * Plus the REQUIRED past-midnight cases on RAW track minutes (pass C §7
+ * R-6) and the system ≡ the two component bodies, verbatim (property).
+ */
+
+const floorOf = (n: number): DurationMinutes => unwrapOk(DurationMinutes.of(n));
+const track = (startMinute: number, endMinute: number): TrackSpan => ({
+  startMinute,
+  endMinute,
+});
+const onTrack = (
+  id: string,
+  startMinute: number,
+  endMinute: number,
+  gridEvent: GridEvent = GridEvent.Visit,
+): TrackEvent => ({ id, gridEvent, startMinute, endMinute });
+const chair = (
+  events: readonly TrackEvent[],
+  open: readonly TrackSpan[],
+): TrackColumn => ({ events, open });
+const draft = (startMinute: number, endMinute: number) => ({
+  id: 'draft-block',
+  startMinute,
+  endMinute,
+});
+
+type Verdict = {
+  readonly placementVerdict: PlacementVerdict | null;
+  readonly hit: { readonly column: number; readonly event: number } | null;
+};
+const STANDS: Verdict = { placementVerdict: null, hit: null };
+const SHORT: Verdict = { placementVerdict: PlacementVerdict.Short, hit: null };
+const OUTSIDE: Verdict = {
+  placementVerdict: PlacementVerdict.Outside,
+  hit: null,
+};
+const overlapAt = (column: number, event: number): Verdict => ({
+  placementVerdict: PlacementVerdict.Overlap,
+  hit: { column, event },
+});
+
+type Draft = { readonly id: string } & TrackSpan;
+
+/** `staff-time-grid.ts` `draftVerdict`, verbatim, on the editable column it found. */
+function gridVerdict(
+  block: Draft,
+  column: TrackColumn | undefined,
+  minMinutes: number,
+): Verdict {
+  if (block.endMinute - block.startMinute <= minMinutes) return SHORT;
+  if (column === undefined) return STANDS;
+  for (const [index, other] of column.events.entries()) {
+    if (other.id === block.id || other.gridEvent === GridEvent.Gap) {
+      continue;
+    }
+    if (
+      other.startMinute < block.endMinute &&
+      other.endMinute > block.startMinute
+    ) {
+      return overlapAt(0, index);
+    }
+  }
+  const inside = column.open.some(
+    (window) =>
+      block.startMinute >= window.startMinute &&
+      block.endMinute <= window.endMinute,
+  );
+  return inside ? STANDS : OUTSIDE;
+}
+
+/** `staff-timeline.ts` `rows`' `collides` + `draftVerdict`, verbatim. */
+function timelineVerdict(
+  band: Draft,
+  columns: readonly TrackColumn[],
+  minMinutes: number,
+): Verdict {
+  if (band.endMinute - band.startMinute <= minMinutes) return SHORT;
+  const rows = columns.map((column) => ({
+    bars: column.events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => event.id !== band.id)
+      .map(({ event, index }) => ({
+        index,
+        collides:
+          event.gridEvent !== GridEvent.Gap &&
+          event.startMinute < band.endMinute &&
+          event.endMinute > band.startMinute,
+      })),
+  }));
+  for (const [c, row] of rows.entries()) {
+    const hit = row.bars.find((bar) => bar.collides);
+    if (hit !== undefined) return overlapAt(c, hit.index);
+  }
+  const inside = columns.every((column) =>
+    column.open.some(
+      (window) =>
+        band.startMinute >= window.startMinute &&
+        band.endMinute <= window.endMinute,
+    ),
+  );
+  return inside ? STANDS : OUTSIDE;
+}
+
+describe('placementVerdict — the frames’ fixtures', () => {
+  it('goes OVERLAP over a neighbour and names it (the grid’s frame)', () => {
+    const column = chair(
+      [onTrack('a', 600, 675), onTrack('b', 660, 700)],
+      [track(0, 1440)],
+    );
+    const verdict = S.placementVerdict(
+      { id: 'a', startMinute: 600, endMinute: 675 },
+      [column],
+      floorOf(10),
+    );
+    expect(verdict).toEqual(overlapAt(0, 1));
+    // The neighbour it names: Петър at 11:00.
+    expect(column.events[1]?.startMinute).toBe(660);
+  });
+
+  /** staff-timeline.spec.ts `shop()`: three chairs, the band on each. */
+  const BAND = onTrack('draft-block', 720, 780, GridEvent.Block);
+  const shop = (band: TrackEvent = BAND): readonly TrackColumn[] => [
+    chair([onTrack('martin', 750, 780), band], [track(540, 1080)]),
+    chair([onTrack('georgi', 600, 645), band], [track(600, 1140)]),
+    chair([band], [track(540, 1080)]),
+  ];
+
+  it('names the booking under the band across every chair, not the one beside it', () => {
+    expect(S.placementVerdict(draft(720, 780), shop(), floorOf(10))).toEqual(
+      overlapAt(0, 0),
+    );
+    // The per-bar marks: Мартин red, Георги not.
+    expect(S.collides(onTrack('martin', 750, 780), track(720, 780))).toBe(true);
+    expect(S.collides(onTrack('georgi', 600, 645), track(720, 780))).toBe(
+      false,
+    );
+  });
+
+  it('stays OVERLAP when one edge moves on to 13:15', () => {
+    const band = onTrack('draft-block', 720, 795, GridEvent.Block);
+    expect(
+      S.placementVerdict(draft(720, 795), shop(band), floorOf(10)),
+    ).toEqual(overlapAt(0, 0));
+  });
+
+  it('names what a block sits on across the chosen chairs (the block sheet)', () => {
+    // Ivan's noon hour on Мартин's 12:30 — and the all-day block, as the
+    // whole axis, sits on every visit of the day.
+    const visits = [
+      { name: 'Мартин Илиев', startMinute: 750, endMinute: 780 },
+      { name: 'Георги Петров', startMinute: 600, endMinute: 645 },
+    ];
+    const noon = track(720, 780);
+    const wholeDay = track(0, 1440);
+    expect(visits.map((visit) => S.spansOverlap(visit, noon))).toEqual([
+      true,
+      false,
+    ]);
+    expect(visits.map((visit) => S.spansOverlap(visit, wholeDay))).toEqual([
+      true,
+      true,
+    ]);
+  });
+});
+
+describe('placementVerdict — precedence', () => {
+  const open = [track(540, 1080)];
+
+  it('is SHORT at the floor, before any overlap, and not one minute over it', () => {
+    const column = chair([onTrack('n', 600, 700)], open);
+    expect(S.placementVerdict(draft(600, 610), [column], floorOf(10))).toEqual(
+      SHORT,
+    );
+    expect(S.placementVerdict(draft(600, 611), [column], floorOf(10))).toEqual(
+      overlapAt(0, 0),
+    );
+  });
+
+  it('is SHORT with no column, and stands with no column once over the floor', () => {
+    expect(S.placementVerdict(draft(600, 605), [], floorOf(10))).toEqual(SHORT);
+    expect(S.placementVerdict(draft(600, 700), [], floorOf(10))).toEqual(
+      STANDS,
+    );
+  });
+
+  it('puts OVERLAP before OUTSIDE', () => {
+    const column = chair([onTrack('n', 1050, 1110)], open);
+    expect(
+      S.placementVerdict(draft(1060, 1120), [column], floorOf(10)),
+    ).toEqual(overlapAt(0, 0));
+  });
+
+  it('names the FIRST collision in column, then event, order — not by start', () => {
+    const columns = [
+      chair([onTrack('late', 650, 700), onTrack('early', 600, 700)], open),
+      chair([onTrack('other', 600, 700)], open),
+    ];
+    expect(S.placementVerdict(draft(600, 660), columns, floorOf(10))).toEqual(
+      overlapAt(0, 0),
+    );
+    expect(
+      S.placementVerdict(
+        draft(600, 640),
+        [chair([onTrack('late', 650, 700)], open), columns[1] as TrackColumn],
+        floorOf(10),
+      ),
+    ).toEqual(overlapAt(1, 0));
+  });
+
+  it('never calls a GAP a collision — landing on one is the point', () => {
+    const column = chair([onTrack('g', 600, 660, GridEvent.Gap)], open);
+    expect(S.placementVerdict(draft(600, 660), [column], floorOf(10))).toEqual(
+      STANDS,
+    );
+    expect(
+      S.collides(onTrack('g', 600, 660, GridEvent.Gap), track(600, 660)),
+    ).toBe(false);
+  });
+
+  it('excludes the block itself by its id, and counts a carve-out as a collision', () => {
+    const own = chair(
+      [onTrack('draft-block', 600, 660, GridEvent.Block)],
+      open,
+    );
+    expect(S.placementVerdict(draft(600, 660), [own], floorOf(10))).toEqual(
+      STANDS,
+    );
+    const lunch = chair([onTrack('lunch', 630, 690, GridEvent.Block)], open);
+    expect(S.placementVerdict(draft(600, 660), [lunch], floorOf(10))).toEqual(
+      overlapAt(0, 0),
+    );
+  });
+
+  it('shares nothing across a touching edge (half-open)', () => {
+    const column = chair(
+      [onTrack('n', 540, 600), onTrack('m', 660, 700)],
+      open,
+    );
+    expect(S.placementVerdict(draft(600, 660), [column], floorOf(10))).toEqual(
+      STANDS,
+    );
+    expect(S.spansOverlap(track(540, 600), track(600, 660))).toBe(false);
+  });
+
+  it('is OUTSIDE when no one window holds the whole block', () => {
+    const verdict = (windows: readonly TrackSpan[]) =>
+      S.placementVerdict(draft(1050, 1110), [chair([], windows)], floorOf(10));
+    // 17:30–18:30 against an 18:00 close.
+    expect(verdict([track(540, 1080)])).toEqual(OUTSIDE);
+    // A chair shut all day: no window at all.
+    expect(verdict([])).toEqual(OUTSIDE);
+    // Two touching windows are still two: neither holds it.
+    expect(verdict([track(540, 1080), track(1080, 1200)])).toEqual(OUTSIDE);
+    // Edges included: a window exactly the block's holds it.
+    expect(verdict([track(1050, 1110)])).toEqual(STANDS);
+    // The second window holds it.
+    expect(verdict([track(540, 600), track(1000, 1200)])).toEqual(STANDS);
+  });
+
+  it('is OUTSIDE when one chosen chair is shut for part of it, among open ones', () => {
+    const columns = [
+      chair([], [track(540, 1080)]),
+      chair([], [track(540, 750)]),
+      chair([], [track(540, 1080)]),
+    ];
+    expect(S.placementVerdict(draft(720, 780), columns, floorOf(10))).toEqual(
+      OUTSIDE,
+    );
+    expect(
+      S.placementVerdict(
+        draft(720, 780),
+        [columns[0] as TrackColumn, columns[2] as TrackColumn],
+        floorOf(10),
+      ),
+    ).toEqual(STANDS);
+  });
+});
+
+/*
+ * REQUIRED (pass C §7 R-6): RAW track minutes. A `MinuteRun` clamps its end
+ * at 1440, which would turn a late cut against a window ending at 1440 from
+ * OUTSIDE to inside, and 1430–1460 over a 15-minute floor into SHORT.
+ */
+describe('placementVerdict — past midnight, on raw minutes', () => {
+  it('keeps today’s verdict for a 23:25–00:15 cut', () => {
+    const cut = draft(1405, 1455);
+    const cases: readonly TrackColumn[] = [
+      // A shift anchored past midnight (18:00–01:00) holds it.
+      chair([], [track(1080, 1500)]),
+      // A day that closes at midnight does not.
+      chair([], [track(540, 1440)]),
+      // A neighbour after midnight is under it.
+      chair([onTrack('n', 1440, 1470)], [track(1080, 1500)]),
+    ];
+    expect(
+      cases.map((column) => S.placementVerdict(cut, [column], floorOf(10))),
+    ).toEqual([STANDS, OUTSIDE, overlapAt(0, 0)]);
+    for (const column of cases) {
+      expect(S.placementVerdict(cut, [column], floorOf(10))).toEqual(
+        gridVerdict(cut, column, 10),
+      );
+      expect(S.placementVerdict(cut, [column], floorOf(10))).toEqual(
+        timelineVerdict(cut, [column], 10),
+      );
+    }
+  });
+
+  it('is OUTSIDE for 1405–1455 against a window ending at 1440', () => {
+    expect(
+      S.placementVerdict(
+        draft(1405, 1455),
+        [chair([], [track(540, 1440)])],
+        floorOf(10),
+      ),
+    ).toEqual(OUTSIDE);
+  });
+
+  it('is not SHORT for 1430–1460 over a 15-minute floor', () => {
+    expect(
+      S.placementVerdict(
+        draft(1430, 1460),
+        [chair([], [track(1380, 1500)])],
+        floorOf(15),
+      ),
+    ).toEqual(STANDS);
+    expect(
+      S.placementVerdict(
+        draft(1430, 1460),
+        [chair([], [track(540, 1440)])],
+        floorOf(15),
+      ).placementVerdict,
+    ).toBe(PlacementVerdict.Outside);
+  });
+
+  it('collides past midnight as drawn', () => {
+    expect(S.collides(onTrack('n', 1430, 1460), track(1450, 1500))).toBe(true);
+    expect(S.collides(onTrack('n', 1430, 1460), track(1460, 1500))).toBe(false);
+  });
+});
+
+describe('placementVerdict ≡ the two frames’ bodies (property)', () => {
+  // Raw track minutes on both sides of midnight, ids that may repeat the
+  // block's, every tag, windows that may be empty or inverted.
+  const minuteArb = fc.integer({ min: 0, max: 1600 });
+  const spanArb = fc
+    .tuple(minuteArb, fc.integer({ min: -30, max: 240 }))
+    .map(([start, length]) => track(start, start + length));
+  const eventArb = fc
+    .tuple(
+      fc.constantFrom('draft-block', 'a', 'b', 'c'),
+      fc.constantFrom(GridEvent.Visit, GridEvent.Gap, GridEvent.Block),
+      spanArb,
+    )
+    .map(([id, gridEvent, span]) => ({ id, gridEvent, ...span }));
+  const columnArb = fc
+    .tuple(
+      fc.array(eventArb, { maxLength: 6 }),
+      fc.array(spanArb, { maxLength: 3 }),
+    )
+    .map(([events, open]) => chair(events, open));
+  const blockArb = spanArb.map((span) => ({ id: 'draft-block', ...span }));
+  const floorArb = fc.integer({ min: 1, max: 60 });
+
+  it('equals the timeline’s every-chair rule', () => {
+    fc.assert(
+      fc.property(
+        blockArb,
+        fc.array(columnArb, { maxLength: 4 }),
+        floorArb,
+        (block, columns, floor) => {
+          expect(S.placementVerdict(block, columns, floorOf(floor))).toEqual(
+            timelineVerdict(block, columns, floor),
+          );
+        },
+      ),
+    );
+  });
+
+  it('equals the grid’s one-column rule (and its "no editable column")', () => {
+    fc.assert(
+      fc.property(
+        blockArb,
+        fc.option(columnArb, { nil: undefined }),
+        floorArb,
+        (block, column, floor) => {
+          expect(
+            S.placementVerdict(
+              block,
+              column === undefined ? [] : [column],
+              floorOf(floor),
+            ),
+          ).toEqual(gridVerdict(block, column, floor));
+        },
+      ),
+    );
+  });
+});
+
+describe('placementVerdict, collides, spansOverlap — purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const columns = deepFreeze([
+      chair(
+        [onTrack('n', 1050, 1110), onTrack('g', 600, 660, GridEvent.Gap)],
+        [track(540, 1080)],
+      ),
+      chair([], [track(540, 750)]),
+    ]);
+    const block = deepFreeze(draft(1060, 1120));
+    const once = S.placementVerdict(block, columns, floorOf(10));
+    expect(S.placementVerdict(block, columns, floorOf(10))).toEqual(once);
+    expect(once).toEqual(overlapAt(0, 0));
+    expect(columns[0]?.events[0]).toEqual(onTrack('n', 1050, 1110));
+    const event = deepFreeze(onTrack('n', 1050, 1110));
+    const band = deepFreeze(track(1060, 1120));
+    expect(S.collides(event, band)).toBe(S.collides(event, band));
+    expect(S.spansOverlap(event, band)).toBe(S.spansOverlap(event, band));
+    expect(band).toEqual(track(1060, 1120));
+  });
+});
+
+/*
+ * The visit sheet's line under its frame (pass C review): the editor's
+ * `frameVerdict` computed it inline over `MinuteRange` with its own
+ * past-midnight reading; the system answers it on the frames' raw track
+ * minutes. The old body, verbatim, is the oracle below — every neighbour the
+ * dashboard hands is one shop day's range (a `MinuteOfDay` start, an
+ * `EndMinute` end), and so is every shift it can read.
+ */
+describe('frameVerdict — the visit sheet’s line under its frame', () => {
+  type Neighbour = TrackSpan & { readonly name: string };
+  const neighbour = (
+    name: string,
+    startMinute: number,
+    endMinute: number,
+  ): Neighbour => ({ name, startMinute, endMinute });
+  const hitAt = (event: number): Verdict => overlapAt(0, event);
+
+  /** One shop day's `[start, end)` — the editor's former `dayRangeOf`, as numbers. */
+  const dayRange = (start: number, end: number): TrackSpan | null =>
+    Number.isInteger(start) &&
+    Number.isInteger(end) &&
+    start >= 0 &&
+    start < 1440 &&
+    end > 0 &&
+    end <= 1440
+      ? { startMinute: start, endMinute: end }
+      : null;
+
+  /** `staff-visit-editor.ts` `frameVerdict` as it read before, verbatim, on numbers. */
+  function editorVerdict(
+    block: TrackSpan,
+    neighbours: readonly TrackSpan[],
+    shift: TrackSpan | null,
+  ): Verdict {
+    const onDay = dayRange(block.startMinute, Math.min(block.endMinute, 1440));
+    if (onDay !== null) {
+      const index = neighbours.findIndex((other) => {
+        const theirs = dayRange(other.startMinute, other.endMinute);
+        return (
+          theirs !== null &&
+          theirs.startMinute < onDay.endMinute &&
+          onDay.startMinute < theirs.endMinute
+        );
+      });
+      if (index >= 0) return hitAt(index);
+    }
+    const shiftRange =
+      shift === null ? null : dayRange(shift.startMinute, shift.endMinute);
+    const whole = dayRange(block.startMinute, block.endMinute);
+    if (
+      shiftRange !== null &&
+      (whole === null ||
+        !(
+          shiftRange.startMinute <= whole.startMinute &&
+          whole.endMinute <= shiftRange.endMinute
+        ))
+    ) {
+      return OUTSIDE;
+    }
+    return STANDS;
+  }
+
+  it('names the FIRST neighbour the visit runs into', () => {
+    const around = [
+      neighbour('Петър', 540, 600),
+      neighbour('Мартин', 630, 690),
+      neighbour('Георги', 650, 700),
+    ];
+    expect(S.frameVerdict(track(600, 660), around, track(540, 1080))).toEqual(
+      hitAt(1),
+    );
+    // Touching edges share nothing (half-open).
+    expect(S.frameVerdict(track(600, 630), around, track(540, 1080))).toEqual(
+      STANDS,
+    );
+  });
+
+  it('says OVERLAP before OUTSIDE', () => {
+    expect(
+      S.frameVerdict(
+        track(1050, 1110),
+        [neighbour('Мартин', 1060, 1090)],
+        track(540, 1080),
+      ),
+    ).toEqual(hitAt(0));
+  });
+
+  it('is OUTSIDE when the shift does not wholly hold the visit, edges included', () => {
+    const shift = track(540, 1080);
+    expect(S.frameVerdict(track(1050, 1110), [], shift)).toEqual(OUTSIDE);
+    expect(S.frameVerdict(track(500, 560), [], shift)).toEqual(OUTSIDE);
+    expect(S.frameVerdict(track(540, 1080), [], shift)).toEqual(STANDS);
+    expect(S.frameVerdict(track(600, 660), [], shift)).toEqual(STANDS);
+  });
+
+  it('never says OUTSIDE against a shift it cannot read', () => {
+    expect(S.frameVerdict(track(1050, 1110), [], null)).toEqual(STANDS);
+    expect(S.frameVerdict(track(1405, 1455), [], null)).toEqual(STANDS);
+  });
+
+  it('never says SHORT — the sheet floors its own span', () => {
+    expect(S.frameVerdict(track(600, 601), [], track(540, 1080))).toEqual(
+      STANDS,
+    );
+  });
+
+  it('past midnight: never inside one day’s shift; meets this day’s neighbours with its part before it', () => {
+    // 23:25–00:15 against a day that closes at midnight.
+    expect(S.frameVerdict(track(1405, 1455), [], track(540, 1440))).toEqual(
+      OUTSIDE,
+    );
+    expect(
+      S.frameVerdict(
+        track(1405, 1455),
+        [neighbour('Късен', 1420, 1440)],
+        track(540, 1440),
+      ),
+    ).toEqual(hitAt(0));
+    // A start snapped to the closing midnight meets nothing of this day.
+    expect(
+      S.frameVerdict(
+        track(1440, 1445),
+        [neighbour('Късен', 1420, 1440)],
+        track(540, 1440),
+      ),
+    ).toEqual(OUTSIDE);
+  });
+
+  it('answers what the editor’s inline verdict answered, for every day-range neighbour and shift (property)', () => {
+    const dayRun = fc
+      .tuple(
+        fc.integer({ min: 0, max: 1439 }),
+        fc.integer({ min: 1, max: 240 }),
+      )
+      .map(([start, length]) => track(start, Math.min(1440, start + length)));
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1440 }),
+        fc.integer({ min: 1, max: 300 }),
+        fc.array(dayRun, { maxLength: 5 }),
+        fc.option(dayRun, { nil: null }),
+        (start, length, neighbours, shift) => {
+          const block = track(start, start + length);
+          expect(S.frameVerdict(block, neighbours, shift)).toEqual(
+            editorVerdict(block, neighbours, shift),
+          );
+        },
+      ),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const neighbours = deepFreeze([neighbour('Мартин', 630, 690)]);
+    const shift = deepFreeze(track(540, 1080));
+    const once = S.frameVerdict(track(600, 660), neighbours, shift);
+    expect(S.frameVerdict(track(600, 660), neighbours, shift)).toEqual(once);
+    expect(neighbours).toEqual([neighbour('Мартин', 630, 690)]);
+    expect(shift).toEqual(track(540, 1080));
   });
 });

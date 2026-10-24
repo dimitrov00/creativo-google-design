@@ -1,5 +1,11 @@
-import { SeatIdPair, StandingSeatPair } from '@core/components';
-import type { SeatId } from '@core/primitives';
+import {
+  type BookingCall,
+  type Seat,
+  SeatIdPair,
+  StandingSeatPair,
+} from '@core/components';
+import { EndMinute, type SeatId } from '@core/primitives';
+import { GuestLabelSystem } from './guest-label.system';
 
 /**
  * A SOLD span, its person, and WHICH SEAT it is — a visit's unit of people
@@ -37,7 +43,41 @@ function pairIs(pair: SeatIdPair, a: SeatId, b: SeatId): boolean {
  * `appointments.stoodSeatPairs.pairs[]` stores. Every function returns a new
  * array; none writes its arguments.
  */
+/** The closing midnight — the most of its shop day a seat can hold. */
+const MIDNIGHT = EndMinute.ofProven(1440);
+
 export const SeatingRuleSystem = {
+  /**
+   * The exclusive end of a seat's SOLD span — its start plus its duration
+   * on its shop day. A seat never runs past its shop day (F-6); one that
+   * would is judged as ending at midnight, which is all of that day it
+   * holds (`booking-decision.system.ts`'s standing spans; never
+   * `Seat.endMinutes`, which refuses past midnight as a defect).
+   */
+  soldEnd(seat: Pick<Seat, 'startMinutes' | 'durationMinutes'>): EndMinute {
+    const end = EndMinute.after(seat.startMinutes, seat.durationMinutes);
+    return end.ok ? end.value : MIDNIGHT;
+  },
+
+  /**
+   * A seat as "one person, one chair" counts it — WHICH seat, whose
+   * person ({@link GuestLabelSystem.personKeyOf} of the seat's subject as
+   * the request names it), and its sold span ({@link soldEnd}). Shared by
+   * the booking decision's standing seats and the staff edit's spans
+   * before and after a save.
+   */
+  spanOf(
+    seat: Pick<Seat, 'seatId' | 'startMinutes' | 'durationMinutes'>,
+    subject: BookingCall.SubjectInput,
+  ): SeatedSpan {
+    return {
+      seatId: seat.seatId,
+      personKey: GuestLabelSystem.personKeyOf(subject),
+      startMinutes: seat.startMinutes,
+      endMinutes: SeatingRuleSystem.soldEnd(seat),
+    };
+  },
+
   /**
    * Would `candidate` put its person in a second chair while they are still
    * in one of `seated`? Same key AND overlapping spans. A linear scan; any

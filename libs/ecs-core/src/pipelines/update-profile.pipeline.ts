@@ -14,8 +14,7 @@ import type {
   HashPorts,
   TelemetryPorts,
 } from '@core/ports';
-import { AuditSystem, ProfileEditSystem, ZonedTimeSystem } from '@core/systems';
-import { UTC_ZONE } from './booking-read-set.pipeline';
+import { AgeSystem, AuditSystem, ProfileEditSystem } from '@core/systems';
 
 /**
  * `updateProfile` — the owner's edit of their names and birth date, as a
@@ -38,8 +37,8 @@ import { UTC_ZONE } from './booking-read-set.pipeline';
  * nothing for the event (`AuditSystem.auditedByCallable`). The same edits
  * twice write once: the second call writes nothing and leaves no row.
  *
- * The age window is judged on the UTC civil date, derived once from the
- * clock (F2-7); the stamp is that same instant.
+ * The age window is judged on the UTC civil date (`AgeSystem.judgedOn`),
+ * derived once from the clock (F2-7); the stamp is that same instant.
  */
 
 export type UpdateProfilePorts = CommitPorts &
@@ -100,7 +99,7 @@ export const updateProfile =
   ): Promise<Result<UpdateProfileAnswer, UpdateProfileError>> => {
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
-    const ageDay = ZonedTimeSystem.toLocal(nowUtcMs, UTC_ZONE).localDate;
+    const ageDay = AgeSystem.judgedOn(nowUtcMs);
     const path = [Collections.Users, cmd.callerUserId];
     const committed = await ports.commit(
       (tx) => tx.get<User>(path),

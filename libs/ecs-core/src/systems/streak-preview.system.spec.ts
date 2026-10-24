@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FreezeReason,
+  StreakIntervalRule,
+  StreakOnBreak,
+  StreakPeriodMark,
+  StreakPhase,
   StreakQualifierRule,
   StreakRule,
   type StreakExcuse,
   type StreakState,
+  type VisitFact,
 } from '@core/components';
 import {
   AppointmentId,
@@ -17,9 +23,12 @@ import {
   FIXTURE_TODAY,
   deepFreeze,
   localDate,
+  minute,
   unwrapOk,
+  utcMs,
 } from '@core/testing';
 import {
+  StreakPreviewOutcome,
   StreakPreviewSystem,
   type StreakPreview,
 } from './streak-preview.system';
@@ -596,5 +605,327 @@ describe('StreakPreviewSystem purity', () => {
     expect(StreakPreviewSystem.movement(before, after)).toEqual(
       StreakPreviewSystem.movement(before, after),
     );
+  });
+});
+
+// ── The preview's facts and the rule card's sample run (pass C R-13, R-14, R-15) ──
+// The cases of `admin-rhythm.preview.spec.ts` (`streakFactsReader`,
+// `rhythmPreviewReadsFacts`, the sample run), restated on branded days and
+// the boundary's day-start reader.
+
+/** The first instant of a Sofia day — the reader the page binds to the shop's zone. */
+const sofiaDayStart = (on: LocalDate): UtcEpochMs =>
+  ZonedTimeSystem.startOfLocalDay(on, FIXTURE_TIME_ZONE);
+
+/** A statistic's visit on the shop's wall clock, read ONCE in the shop's zone. */
+function workedAt(isoWithOffset: string, index: number): VisitFact {
+  const wall = ZonedTimeSystem.toLocal(utcMs(isoWithOffset), FIXTURE_TIME_ZONE);
+  return {
+    appointmentId: AppointmentId.of(`appt-${index}`),
+    localDate: wall.localDate,
+    startMinutes: wall.minute,
+  };
+}
+
+function workedDaysAgo(days: number, index: number): VisitFact {
+  return {
+    appointmentId: AppointmentId.of(`appt-${index}`),
+    localDate: LocalDate.addDays(localDate(TODAY), -days),
+    startMinutes: minute(12 * 60),
+  };
+}
+
+/** The recommended rule, revised from tomorrow — any option figure, the interval or the qualifier whole. */
+function ruleOf(
+  patch: Partial<StreakRule.Options> & {
+    readonly interval?: StreakIntervalRule;
+    readonly qualifier?: StreakQualifierRule;
+  } = {},
+): StreakRule {
+  const { interval, qualifier, ...options } = patch;
+  const rule = StreakRule.parse({
+    ...SIX_WEEKS,
+    ...options,
+    ...(interval ?? StreakIntervalRule.of(SIX_WEEKS)),
+    ...(qualifier ?? StreakQualifierRule.of(SIX_WEEKS)),
+    version: SIX_WEEKS.version + 1,
+    effectiveFromLocalDate: localDate(addDays(TODAY, 1)),
+  });
+  if (!rule.ok) throw new Error('fixture: no such rule');
+  return rule.value;
+}
+
+const fadeOnly = (): StreakQualifierRule =>
+  StreakQualifierRule.services([ServiceId.of('svc-fade')]);
+
+const sampleMarks = (rule: StreakRule): readonly string[] =>
+  StreakPreviewSystem.sampleRun(
+    rule,
+    localDate(TODAY),
+    sofiaDayStart,
+  )?.periods.map((period) => period.streakPeriodMark) ?? [];
+
+describe('StreakPreviewSystem.readsFacts — can visit days alone preview the change', () => {
+  it('reads the statistics while both rules count every visit', () => {
+    expect(
+      StreakPreviewSystem.readsFacts(ruleOf(), ruleOf({ graceDays: 10 })),
+    ).toBe(true);
+  });
+
+  it('reads nothing when either rule counts by a list — services or categories', () => {
+    const listed = ruleOf({ qualifier: fadeOnly() });
+    const byCategory = ruleOf({
+      qualifier: StreakQualifierRule.categories([
+        ServiceCategoryId.of('cat-hair'),
+      ]),
+    });
+
+    expect(StreakPreviewSystem.readsFacts(ruleOf(), listed)).toBe(false);
+    expect(StreakPreviewSystem.readsFacts(listed, ruleOf())).toBe(false);
+    expect(StreakPreviewSystem.readsFacts(byCategory, ruleOf())).toBe(false);
+    expect(StreakPreviewSystem.readsFacts(listed, byCategory)).toBe(false);
+  });
+
+  it('is the check the estimate makes: unavailable exactly where it reads nothing', () => {
+    const listed = ruleOf({ qualifier: fadeOnly() });
+    for (const [inForce, draft] of [
+      [ruleOf(), listed],
+      [listed, ruleOf()],
+      [ruleOf(), ruleOf({ graceDays: 10 })],
+    ] as const) {
+      const preview = StreakPreviewSystem.estimate(
+        inForce,
+        draft,
+        [],
+        localDate(TODAY),
+      );
+      expect(
+        preview.streakPreviewOutcome === StreakPreviewOutcome.Unavailable,
+      ).toBe(!StreakPreviewSystem.readsFacts(inForce, draft));
+    }
+  });
+});
+
+describe('StreakPreviewSystem.factsOfStats — a statistic as the projector’s facts', () => {
+  it('counts every worked visit of the last year, on its day in Sofia', () => {
+    const facts = StreakPreviewSystem.factsOfStats(
+      {
+        last365VisitsCompleted: [
+          workedAt('2026-06-10T09:00:00+00:00', 0),
+          // 01:30 on the 28th in Sofia: the visit's day is the shop's, not UTC's.
+          workedAt('2026-09-27T22:30:00+00:00', 1),
+        ],
+      },
+      sofiaDayStart,
+    );
+
+    expect(facts.visits).toEqual([
+      {
+        localDate: '2026-06-10',
+        counted: true,
+        utcEpochMs: sofiaDayStart(localDate('2026-06-10')),
+      },
+      {
+        localDate: '2026-09-28',
+        counted: true,
+        utcEpochMs: sofiaDayStart(localDate('2026-09-28')),
+      },
+    ]);
+  });
+
+  it('knows nothing the statistics do not hold', () => {
+    const facts = StreakPreviewSystem.factsOfStats(
+      { last365VisitsCompleted: [workedDaysAgo(3, 0)] },
+      sofiaDayStart,
+    );
+
+    expect(facts.excused).toEqual([]);
+    expect(facts.bookings).toEqual([]);
+    expect(facts.pauses).toEqual([]);
+    expect(facts.grants).toEqual([]);
+  });
+
+  it('hands a client who never came no visit', () => {
+    expect(
+      StreakPreviewSystem.factsOfStats(
+        { last365VisitsCompleted: [] },
+        sofiaDayStart,
+      ),
+    ).toEqual(StreakPreviewSystem.NO_FACTS);
+  });
+
+  it('asks the reader once per visit, for the visit’s own day', () => {
+    const asked: LocalDate[] = [];
+    StreakPreviewSystem.factsOfStats(
+      {
+        last365VisitsCompleted: [workedDaysAgo(10, 0), workedDaysAgo(3, 1)],
+      },
+      (on) => {
+        asked.push(on);
+        return sofiaDayStart(on);
+      },
+    );
+    expect(asked).toEqual(['2026-09-18', '2026-09-25']);
+  });
+});
+
+describe('StreakPreviewSystem.sampleFacts / sampleRun — the rule card’s invented client', () => {
+  const today = localDate(TODAY);
+
+  it('ends yesterday, seven visits long', () => {
+    const { visits } = StreakPreviewSystem.sampleFacts(
+      ruleOf(),
+      today,
+      sofiaDayStart,
+    );
+
+    expect(visits).toHaveLength(7);
+    expect(visits.at(-1)).toEqual({
+      localDate: '2026-09-27',
+      counted: true,
+      utcEpochMs: sofiaDayStart(localDate('2026-09-27')),
+    });
+    expect(visits.every((visit) => visit.counted)).toBe(true);
+  });
+
+  it('comes on time six times, then misses one due date by a whole period', () => {
+    const days = StreakPreviewSystem.sampleFacts(
+      ruleOf(),
+      today,
+      sofiaDayStart,
+    ).visits.map((visit) => visit.localDate);
+    const gaps = days
+      .slice(1)
+      .map((on, index) => LocalDate.daysBetween(days.at(index) ?? on, on));
+
+    expect(gaps).toEqual([42, 42, 42, 42, 42, 84]);
+  });
+
+  it('shows the recommended rule covering the miss with a protection', () => {
+    const run = StreakPreviewSystem.sampleRun(ruleOf(), today, sofiaDayStart);
+
+    expect(sampleMarks(ruleOf())).toEqual([
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Protected,
+      StreakPeriodMark.Kept,
+    ]);
+    expect(run?.periods.at(-2)).toEqual({
+      streakPeriodMark: StreakPeriodMark.Protected,
+      on: '2026-08-16',
+      periodReason: FreezeReason.Freeze,
+    });
+    expect(run?.streakPhase).toBe(StreakPhase.Active);
+    expect(run?.current).toBe(7);
+    expect(run?.best).toBe(7);
+    expect(run?.freezesBanked).toBe(0);
+    expect(run?.dueBy).toBe('2026-11-08');
+  });
+
+  it('shows the miss itself where nothing covers it, and the count starting over', () => {
+    const bare = ruleOf({
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
+    });
+    const run = StreakPreviewSystem.sampleRun(bare, today, sofiaDayStart);
+
+    expect(sampleMarks(bare).slice(-5)).toEqual([
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Missed,
+      StreakPeriodMark.Kept,
+    ]);
+    expect(run?.current).toBe(1);
+    expect(run?.best).toBe(6);
+  });
+
+  it('keeps the count across the miss under a rule that holds it', () => {
+    const holding = ruleOf({
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
+      onBreak: StreakOnBreak.Hold,
+    });
+
+    expect(sampleMarks(holding)).toContain(StreakPeriodMark.Missed);
+    expect(
+      StreakPreviewSystem.sampleRun(holding, today, sofiaDayStart)?.current,
+    ).toBe(7);
+  });
+
+  it('is on time under a personal interval too: only the one due date is missed', () => {
+    const personal = ruleOf({
+      interval: StreakIntervalRule.personal(50, 21, 70, 42),
+    });
+
+    expect(
+      sampleMarks(personal).filter((mark) => mark !== StreakPeriodMark.Kept),
+    ).toEqual([StreakPeriodMark.Protected]);
+    expect(
+      StreakPreviewSystem.sampleRun(personal, today, sofiaDayStart)
+        ?.streakPhase,
+    ).toBe(StreakPhase.Active);
+  });
+
+  it.each([14, 28, 42, 91, 182])(
+    'misses exactly one due date under an interval of %i days',
+    (days) => {
+      const marks = sampleMarks(
+        ruleOf({
+          interval: StreakIntervalRule.fixed(days),
+          graceDays: Math.min(7, days - 1),
+          riskLeadDays: Math.min(7, days - 1),
+          minGapDays: Math.min(7, days - 1),
+        }),
+      );
+
+      expect(marks.filter((mark) => mark !== StreakPeriodMark.Kept)).toEqual([
+        StreakPeriodMark.Protected,
+      ]);
+    },
+  );
+
+  it('draws nothing under a rule that is off', () => {
+    expect(
+      StreakPreviewSystem.sampleRun(
+        ruleOf({ enabled: false }),
+        today,
+        sofiaDayStart,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('StreakPreviewSystem purity — readsFacts, factsOfStats, sampleFacts, sampleRun', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rule = deepFreeze(ruleOf());
+    const listed = deepFreeze(ruleOf({ qualifier: fadeOnly() }));
+    const record = deepFreeze({
+      last365VisitsCompleted: [workedDaysAgo(10, 0), workedDaysAgo(3, 1)],
+    });
+    const today = localDate(TODAY);
+    const run = () => [
+      StreakPreviewSystem.readsFacts(rule, listed),
+      StreakPreviewSystem.factsOfStats(record, sofiaDayStart),
+      StreakPreviewSystem.sampleFacts(rule, today, sofiaDayStart),
+      StreakPreviewSystem.sampleRun(rule, today, sofiaDayStart),
+    ];
+    expect(run()).toEqual(run());
+    expect(record.last365VisitsCompleted).toHaveLength(2);
+    expect(StreakPreviewSystem.NO_FACTS).toEqual({
+      visits: [],
+      excused: [],
+      bookings: [],
+      pauses: [],
+      grants: [],
+    });
   });
 });

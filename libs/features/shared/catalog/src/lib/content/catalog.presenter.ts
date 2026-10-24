@@ -1,10 +1,9 @@
 import type { PriceCents } from '@core/primitives';
 import {
-  BarberOffering,
+  type BarberOffering,
   CompositionKind,
   ServiceComposition,
   type ServiceTerms,
-  type ServiceVariant,
 } from '@core/components';
 import { CatalogPricingSystem } from '@core/systems';
 import type { Barber, Service } from '@core/entities';
@@ -67,25 +66,17 @@ export function termsToVm(terms: ServiceTerms): ServiceTermsVm {
   return { price: toMajor(terms.priceCents), minutes: terms.durationMinutes };
 }
 
-function offeringToVm(
-  offering: BarberOffering,
-  /** The service's declared variants — `termsFor` takes the variant's id. */
-  variants: readonly ServiceVariant[],
-): ServiceOfferingVm {
-  const byVariant: Record<string, ServiceTermsVm> = {};
-  for (const variant of variants) {
-    // Ask the offering for every declared variant and let its own sparse
-    // fallback decide. Terms equal to base are still written out: the VM's
-    // helpers read this map directly and have no fallback of their own.
-    byVariant[variant.variantId] = termsToVm(
-      BarberOffering.termsFor(offering, variant.variantId),
-    );
-  }
+/**
+ * An offering → its VM: the barber and the base terms the service sheet
+ * reads. No per-variant map: every variant figure a surface prints is
+ * `CatalogPricingSystem`'s answer on the entity (pass C wave 2 — the map had
+ * no reader).
+ */
+function offeringToVm(offering: BarberOffering): ServiceOfferingVm {
   return {
     barberId: offering.barberId,
     // The offering's own five root fields ARE its base terms (the slice).
     base: termsToVm(offering),
-    ...(variants.length > 0 ? { byVariant } : {}),
   };
 }
 
@@ -102,9 +93,7 @@ export function serviceToVm(
     icon: 'length',
   }));
 
-  const offerings = service.offerings.map((offering) =>
-    offeringToVm(offering, service.variants),
-  );
+  const offerings = service.offerings.map(offeringToVm);
 
   // An unspecified composition (`composition: null` as authored) draws as a
   // single service — the companion's rule, never re-spelled here.
@@ -119,13 +108,11 @@ export function serviceToVm(
     description: localized(service.description),
     ...(coverSrc ? { coverSrc } : {}),
     variants,
-    // A service nobody is priced for yet stands in as a single anonymous
-    // offering at its own terms (the five root fields): the service detail
-    // sheet's bundle saving reads it.
-    offerings:
-      offerings.length > 0
-        ? offerings
-        : [{ barberId: '', base: termsToVm(service) }],
+    // Who performs it, at their base terms — `[]` when nobody does yet. The
+    // service detail sheet asks `CatalogPricingSystem` on the entity for its
+    // performers and its bundle saving (pass C, C-4/C-6), so no surface
+    // needs an anonymous stand-in offering any more.
+    offerings,
     ...(compositionKind === CompositionKind.Bundle
       ? { includes: [...ServiceComposition.parts(service)] }
       : {}),
@@ -175,6 +162,14 @@ export function formatPrice(major: number, locale: string): string {
     style: 'currency',
     currency: 'EUR',
   }).format(major);
+}
+
+/**
+ * Cents → the catalogue's money string: {@link formatPrice} on the major
+ * units, for a figure a system answered in cents (the bundle saving).
+ */
+export function formatPriceCents(cents: PriceCents, locale: string): string {
+  return formatPrice(toMajor(cents), locale);
 }
 
 export function formatDurationRange(

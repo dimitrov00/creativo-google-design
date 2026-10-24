@@ -3,6 +3,7 @@ import {
   BarberPreference,
   BookingLifecycle,
   BookingPolicy,
+  ClientStatsOutcome,
   ClientStatsPolicy,
   type DocBody,
   Placement,
@@ -48,7 +49,6 @@ import {
 import {
   clientHistory,
   clientStatsPaths,
-  ClientStatsOutcome,
   projectClientStats,
   recomputeClientStats,
 } from './project-client-stats.pipeline';

@@ -1,4 +1,4 @@
-import { type BarberId, MinuteCount, Result } from '@core/primitives';
+import { type BarberId, Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
 import type {
@@ -72,7 +72,7 @@ export const sampleLeadTime =
     // The ROSTER is the population, not the catalogue.
     const barbers = await ports.listBarbers();
     if (!barbers.ok) return barbers;
-    const threshold = MinuteCount.of(policy.value.slotStepMinutes);
+    const threshold = BookingPolicy.freeThreshold(policy.value);
     const sampledBarberIds: BarberId[] = [];
     for (const barberId of barbers.value) {
       const sample = LeadTimeSystem.sample(
@@ -80,7 +80,7 @@ export const sampleLeadTime =
         barberId,
         from,
         to,
-        threshold.ok ? threshold.value : MinuteCount.ZERO,
+        threshold,
         sampledAtUtcMs,
       );
       try {

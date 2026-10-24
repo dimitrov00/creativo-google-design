@@ -476,7 +476,8 @@ export type CouponVoucherState = {
 
 /**
  * `COUPON_VOUCHER_PORTS` — an ENABLED coupon by its normalised code, every
- * enabled coupon, a grant by id, a client record's ACTIVE grants, a voucher
+ * enabled coupon that carries a code (a grant-only one is not on offer, as
+ * the adapter answers), a grant by id, a client record's ACTIVE grants, a voucher
  * by code, a record's vouchers (`issuedToCustomerId`), and the coupons of a
  * set of ids WHATEVER their status (`loadCoupons`, no status filter).
  */
@@ -492,8 +493,13 @@ export function memoryCouponVoucherPorts(
           (entry) => entry.code === code && enabled(entry),
         ) ?? null,
       ),
+    // The adapter's contract: a grant-only (code-less) coupon is not on offer.
     listOpenCoupons: async () =>
-      Result.ok((state.coupons ?? []).filter(enabled)),
+      Result.ok(
+        (state.coupons ?? []).filter(
+          (entry) => enabled(entry) && entry.code !== null,
+        ),
+      ),
     loadCouponGrant: async (id) =>
       Result.ok((state.grants ?? []).find((entry) => entry.id === id) ?? null),
     listUsableCouponGrants: async (customerId) =>
@@ -564,25 +570,30 @@ export function memoryInboxPorts(
 
 /**
  * `APPOINTMENT_PHOTO_PORTS` — `appointmentPhotos` in `photos`, written IN
- * PLACE: a visit's photos (every origin), a save (by id), a delete, a
+ * PLACE: a visit's photos (every origin, ascending by `takenAtUtcMs`, stably
+ * — the adapter's order), a save (by id), a delete, a
  * client record's newest `limit` SHOTS (`photoOrigin == SHOT`,
  * `takenAtUtcMs desc`, ties by id desc as Firestore breaks them; nothing
  * for a `limit` under one — index #22's query), the shots per visit — and
  * the upload, which stores nothing and answers today's object path
  * `appointmentPhotos/{appointmentId}/{id}` and a `memory://` URL of it.
  * Library pictures adopted onto a visit are stored like any photo and
- * answered exactly where the adapter answers them, so a fixture never sets
- * them aside by hand.
+ * answered exactly where the adapter answers them
+ * (`PhotoOrigin.countsForClient`), so a fixture never sets them aside by
+ * hand.
  */
 export function memoryAppointmentPhotoPorts(
   photos: AppointmentPhoto[],
 ): AppointmentPhotoPorts {
   const isShot = (entry: AppointmentPhoto): boolean =>
-    entry.photoOrigin === PhotoOrigin.Shot;
+    PhotoOrigin.countsForClient(entry.photoOrigin);
   return {
+    // Ascending by the instant taken, stably — the adapter's `byTaken` order.
     observeAppointmentPhotos: (appointmentId) =>
       stream(() =>
-        photos.filter((entry) => entry.appointmentId === appointmentId),
+        photos
+          .filter((entry) => entry.appointmentId === appointmentId)
+          .sort((a, b) => a.takenAtUtcMs - b.takenAtUtcMs),
       ),
     saveAppointmentPhoto: async (photo) => {
       const at = photos.findIndex((entry) => entry.id === photo.id);

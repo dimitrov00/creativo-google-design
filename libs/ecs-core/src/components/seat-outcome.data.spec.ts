@@ -169,6 +169,35 @@ describe('SeatOutcome.outcomeForStatus — the window in force rides on a cancel
   });
 });
 
+describe('SeatOutcome.hasSeatMeaning — which moves are per-seat verbs', () => {
+  it('is true exactly where outcomeForStatus stamps an outcome, for every status', () => {
+    for (const to of Object.values(BookingStatus)) {
+      expect(SeatOutcome.hasSeatMeaning(to)).toBe(
+        SeatOutcome.outcomeForStatus(
+          to,
+          at(5),
+          CancellationReason.Unspecified,
+          null,
+        ) !== null,
+      );
+    }
+  });
+
+  it('names the three work verbs, never the two booking ones', () => {
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.Completed)).toBe(true);
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.NoShow)).toBe(true);
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.Cancelled)).toBe(true);
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.Confirmed)).toBe(false);
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.Pending)).toBe(false);
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(SeatOutcome.hasSeatMeaning(BookingStatus.NoShow)).toBe(
+      SeatOutcome.hasSeatMeaning(BookingStatus.NoShow),
+    );
+  });
+});
+
 describe('SeatOutcome.summarize — the root is a summary of its seats', () => {
   const cancelled = (reason: CancellationReason, by: CancelledBy) =>
     SeatOutcome.cancelled(at(2), by, reason, null);

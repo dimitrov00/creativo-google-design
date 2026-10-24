@@ -1,28 +1,15 @@
-import {
-  Result,
-  type UserId,
-  type WaitlistRequestId,
-  WaitlistStatus,
-} from '@core/primitives';
-import {
-  type CancelWaitlistRefusal,
-  CancelWaitlistRefusalCode,
-  type RepositoryError,
-} from '@core/errors';
-import { WaitlistLifecycle, WriteOp } from '@core/components';
+import { Result, type UserId, type WaitlistRequestId } from '@core/primitives';
+import type { CancelWaitlistRefusal, RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import type { ClockPorts, CommitPorts } from '@core/ports';
+import { WaitlistSystem } from '@core/systems';
 
 /**
  * `cancelWaitlist` — withdraw a waitlist request (`cancel-waitlist.ts`,
- * blueprint §4.1): one transaction reads the request and plans its
- * `CANCELLED` transition (`WriteOp.transition`, the lifecycle slice has no
- * variant fields to delete). Idempotent on purpose — cancelling a request
- * already cancelled answers success and writes nothing: the caller's intent,
- * "stop watching", is already true. Not-found and not-yours answer
- * identically (an id's existence is no leak); a request the matcher has
- * concluded (`BOOKED`, `EXPIRED`) is refused rather than its history
- * rewritten.
+ * blueprint §4.1): one transaction reads the request, and
+ * `WaitlistSystem.cancel` decides — its `CANCELLED` transition, nothing for
+ * a request already cancelled (idempotent on purpose), not-found and
+ * not-yours alike, and a request the matcher concluded refused.
  *
  * The two input refusals (no caller, no request id) are the edge decoder's
  * (`waitlist.wire.ts`, F1-3): this pipeline only ever sees a verified owner
@@ -53,49 +40,7 @@ export const cancelWaitlist =
     const atUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       (tx) => tx.get<WaitlistRequest>(path),
-      (
-        request,
-      ): Result<
-        { readonly writes: readonly WriteOp[] },
-        CancelWaitlistRefusal
-      > => {
-        if (request === null || request.ownerUserId !== cmd.ownerUserId) {
-          return Result.err({ errorCode: CancelWaitlistRefusalCode.NotFound });
-        }
-        // Already what the caller wants.
-        if (request.waitlistStatus === WaitlistStatus.Cancelled) {
-          return Result.ok({ writes: [] });
-        }
-        // `BOOKED`/`EXPIRED` are the matcher's terminal verdicts.
-        if (!WaitlistLifecycle.isWatching(request)) {
-          return Result.err({
-            errorCode: CancelWaitlistRefusalCode.NotCancellable,
-          });
-        }
-        const cancelled = WaitlistLifecycle.transition(
-          request,
-          WaitlistStatus.Cancelled,
-          atUtcMs,
-        );
-        if (!cancelled.ok) {
-          return Result.err({
-            errorCode: CancelWaitlistRefusalCode.NotCancellable,
-          });
-        }
-        const before = {
-          waitlistStatus: request.waitlistStatus,
-          waitlistStatusAtUtcMs: request.waitlistStatusAtUtcMs,
-        };
-        return Result.ok({
-          writes: [
-            WriteOp.transition(
-              path,
-              cancelled.value,
-              WriteOp.variantFieldsToDelete(before, cancelled.value),
-            ),
-          ],
-        });
-      },
+      (request) => WaitlistSystem.cancel(request, cmd.ownerUserId, atUtcMs),
     );
     return committed.ok ? Result.ok({ requestId: cmd.requestId }) : committed;
   };

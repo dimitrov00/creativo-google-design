@@ -10,7 +10,7 @@ import {
 import { Injectable, type Signal, computed, inject } from '@angular/core';
 import { BarberId } from '@core/primitives';
 import { CompositionKind } from '@core/components';
-import { CatalogPricingSystem } from '@core/systems';
+import { CatalogPricingSystem, CatalogSystem } from '@core/systems';
 import {
   LOCATIONS,
   type LocationVm,
@@ -52,9 +52,9 @@ export class LandingContentService {
   /** Active services, their covers resolved — the catalogue's own view models. */
   readonly allServices: Signal<readonly ServiceVm[]> = this.catalog.serviceVms;
 
-  /** Marketing shelf — upsell-only add-ons belong to /book, not here (v2). */
+  /** Marketing shelf — upsell-only add-ons belong to /book, not here (v2): `CatalogSystem.shelf`. */
   readonly shelfServices = computed<readonly ServiceVm[]>(() =>
-    this.allServices().filter((service) => !service.upsellOnly),
+    CatalogSystem.shelf(this.allServices()),
   );
   readonly singleServices = computed<readonly ServiceVm[]>(() =>
     this.shelfServices().filter(
@@ -71,8 +71,9 @@ export class LandingContentService {
    * Every shelf service a barber performs, with THEIR terms for it — the
    * inverse of the offerings, the only direction the catalogue stores
    * (`CatalogPricingSystem.servicesByBarber`). Asked of the domain services
-   * the shelf holds (same set, same order), so upsell-only add-ons stay out
-   * of it exactly as they do from the shelf itself.
+   * on the shelf (`CatalogSystem.shelf`, the one rule — same set, same
+   * order), so upsell-only add-ons stay out of it exactly as they do from
+   * the shelf itself.
    */
   barberPrices(barberId: string): readonly {
     readonly service: ServiceVm;
@@ -81,11 +82,8 @@ export class LandingContentService {
     const shelf = new Map(
       this.shelfServices().map((service) => [service.id, service]),
     );
-    const services = this.catalog
-      .services()
-      .filter((service) => shelf.has(service.id));
     return CatalogPricingSystem.servicesByBarber(
-      services,
+      CatalogSystem.shelf(this.catalog.services()),
       BarberId.of(barberId),
     ).flatMap((entry) => {
       const service = shelf.get(entry.service.id);

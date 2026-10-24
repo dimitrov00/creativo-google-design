@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { firstValueFrom, of } from 'rxjs';
 import { BlockKind, MinuteBlock, type MinuteRange } from '@core/components';
-import { Result, MinuteCount, BarberId, type TimeZone } from '@core/primitives';
+import { Result, BarberId, type TimeZone } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { type BarberBusyDay, Collections } from '@core/entities';
 import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
@@ -55,12 +55,12 @@ function storeFor(entry: SchedulingBusyCase): MemoryStore {
 
 /** Ivan's `busy` padded first and released after — the order the contract forbids. */
 function releasedLate(entry: SchedulingBusyCase): readonly MinuteRange[] {
-  const padded = AvailabilitySystem.paddedBusy({
-    barberId: ivan,
-    spans: entry.spans,
-    turnaroundMinutes: entry.turnaroundMinutes,
-    release: [],
-  });
+  const padded = AvailabilitySystem.paddedBusy(
+    ivan,
+    { blocks: entry.spans },
+    entry,
+    [],
+  );
   const own = (entry.release ?? []).filter((chair) => chair.barberId === ivan);
   return IntervalSetSystem.subtract(padded, own);
 }
@@ -108,12 +108,7 @@ describe('schedulingPortsContract — the busy cases', () => {
       );
       // Read back: the blocks ARE the spans — no conversion in between.
       expect(
-        AvailabilitySystem.paddedBusy({
-          barberId: ivan,
-          spans: entry.stored.blocks,
-          turnaroundMinutes: MinuteCount.ZERO,
-          release: [],
-        }),
+        AvailabilitySystem.paddedBusy(ivan, entry.stored, null, []),
       ).toEqual(normalized);
     },
   );
@@ -124,12 +119,12 @@ describe('schedulingPortsContract — the busy cases', () => {
     // and the systems cannot drift apart.
     expect(contract.busyOf(entry.stored, entry)).toEqual(entry.busy);
     expect(
-      AvailabilitySystem.paddedBusy({
-        barberId: ivan,
-        spans: entry.spans,
-        turnaroundMinutes: entry.turnaroundMinutes,
-        release: entry.release ?? [],
-      }),
+      AvailabilitySystem.paddedBusy(
+        ivan,
+        { blocks: entry.spans },
+        entry,
+        entry.release ?? [],
+      ),
     ).toEqual(entry.busy);
   });
 
@@ -150,12 +145,12 @@ describe('schedulingPortsContract — the busy cases', () => {
     const blind = CASES.filter(
       (entry) =>
         JSON.stringify(
-          AvailabilitySystem.paddedBusy({
-            barberId: ivan,
-            spans: entry.spans,
-            turnaroundMinutes: entry.turnaroundMinutes,
-            release: [],
-          }),
+          AvailabilitySystem.paddedBusy(
+            ivan,
+            { blocks: entry.spans },
+            entry,
+            [],
+          ),
         ) !== JSON.stringify(entry.busy),
     );
     expect(blind.map((entry) => entry.name)).toContain(

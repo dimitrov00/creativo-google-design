@@ -264,12 +264,7 @@ export function schedulingPortsContract(
     found: BarberBusyDay | null,
     which: SchedulingBusyCase,
   ): readonly MinuteRange[] =>
-    AvailabilitySystem.paddedBusy({
-      barberId,
-      spans: found === null ? [] : found.blocks,
-      turnaroundMinutes: which.turnaroundMinutes,
-      release: which.release ?? [],
-    });
+    AvailabilitySystem.paddedBusy(barberId, found, which, which.release ?? []);
 
   return {
     localDate,

@@ -11,7 +11,7 @@ import {
   ServiceId,
   UserId,
 } from '@core/primitives';
-import { unwrapOk } from '@core/testing';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import { BookingContact } from './booking-contact.data';
 import { BookingDraft, BookingDraftOrigin } from './booking-draft.data';
 import { BookingFlowState } from './booking-flow.data';
@@ -174,5 +174,54 @@ describe('BookingDraft.read — the restore', () => {
       BookingDraft.read({ ...(fresh as object), draftLocalDate: '2026-02-30' }),
     ).toBeNull();
     expect(BookingDraft.read(null)).toBeNull();
+  });
+});
+
+describe('BookingDraft.of — the draft to persist, its origin chosen', () => {
+  const SOURCE_VISIT = AppointmentId.of('appt-source');
+  const moving = (readerUserId: UserId | null): BookingDraft.Moving => ({
+    appointmentId: VISIT,
+    readerUserId,
+    localDate: DAY,
+    riders: [RIDER],
+    release: [CHAIR],
+  });
+  const source = (readerUserId: UserId | null): BookingDraft.Source => ({
+    appointmentId: SOURCE_VISIT,
+    readerUserId,
+  });
+  const of = (
+    move: BookingDraft.Moving | null,
+    from: BookingDraft.Source | null,
+  ) => BookingDraft.of(STATE, BookingContact.NONE, DAY, move, from);
+
+  it('persists a move bound to an account as a RESCHEDULE, whatever the rebooking edge says', () => {
+    expect(of(moving(OWNER), source(OWNER))).toEqual(reschedule());
+    expect(of(moving(OWNER), null)).toEqual(reschedule());
+  });
+
+  it('persists a rebooking edge bound to an account as BOOKED_FROM when no bound move wins', () => {
+    const bookedFrom = BookingDraft.bookedFrom(
+      STATE,
+      BookingContact.NONE,
+      DAY,
+      BookingDraft.bookedFromOrigin(SOURCE_VISIT, OWNER),
+    );
+    expect(of(null, source(OWNER))).toEqual(bookedFrom);
+    // A move bound to nobody lives in memory alone — the next rung answers.
+    expect(of(moving(null), source(OWNER))).toEqual(bookedFrom);
+  });
+
+  it('persists a fresh draft when nothing bound to an account is held', () => {
+    const fresh = BookingDraft.fresh(STATE, BookingContact.NONE, DAY);
+    expect(of(null, null)).toEqual(fresh);
+    expect(of(moving(null), source(null))).toEqual(fresh);
+    expect(of(null, source(null))).toEqual(fresh);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const move = deepFreeze(moving(OWNER));
+    const from = deepFreeze(source(OWNER));
+    expect(of(move, from)).toEqual(of(move, from));
   });
 });

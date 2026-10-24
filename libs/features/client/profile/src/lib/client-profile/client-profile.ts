@@ -17,7 +17,12 @@ import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import type { IdentityError } from '@core/errors';
 import { LocalDate } from '@core/primitives';
-import { AgeSystem, PhoneSystem, ProfileCompletionSystem } from '@core/systems';
+import {
+  AgeSystem,
+  PhoneSystem,
+  ProfileCompletionSystem,
+  ProfileEditSystem,
+} from '@core/systems';
 import { LoadState, loadStateWords } from '@creativo/shared/view-state';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import {
@@ -247,13 +252,13 @@ export class ClientProfile {
       if (refused.firstName !== null || refused.lastName !== null) {
         return false;
       }
-      return first.trim() !== user.firstName || last.trim() !== user.lastName;
+      return ProfileEditSystem.namesChanged(user, first.trim(), last.trim());
     }
     const parts = this.birthDraft();
     if (!parts) return false;
     const result = AgeSystem.fromParts(parts, this.ageDay);
     if (!result.ok) return false;
-    return result.value !== user.birthDate;
+    return ProfileEditSystem.birthChanged(user, result.value);
   });
 
   constructor() {

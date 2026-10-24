@@ -6,6 +6,7 @@ import {
   type CartLine,
   type CartSeatLines,
   LocationStatus,
+  ServiceStatus,
   type ServiceVariant,
 } from '@core/components';
 import type { Service, ShopLocation } from '@core/entities';
@@ -93,6 +94,24 @@ export const PartyAdmissionSystem = {
    */
   shopListed(shop: Pick<ShopLocation, 'locationStatus'> | null): boolean {
     return shop !== null && shop.locationStatus === LocationStatus.Active;
+  },
+
+  /**
+   * THE SERVICES A PARTY MAY BE BOOKED INTO: the catalogue rows read, in
+   * their order, keeping the `ACTIVE` ones. A retired service is ABSENT —
+   * so the commit, the waitlist at request time and every other reader
+   * refuse it as unknown rather than guess at terms nobody authors any more
+   * — and a row that was not there (`null`) is absent too.
+   */
+  bookableServices(services: readonly (Service | null)[]): readonly Service[] {
+    const bookable: Service[] = [];
+    for (let i = 0; i < services.length; i++) {
+      const service = services[i] as Service | null;
+      if (service !== null && service.serviceStatus === ServiceStatus.Active) {
+        bookable.push(service);
+      }
+    }
+    return bookable;
   },
 
   /**

@@ -16,12 +16,15 @@ import { map, switchMap } from 'rxjs/operators';
 import {
   LocalizedText,
   STREAK_EXCUSES,
+  STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakQualifier,
   StreakQualifierRule,
+  StreakRule,
 } from '@core/components';
+import type { Service, ServiceCategory } from '@core/entities';
 import { ServiceId } from '@core/primitives';
-import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
+import type { CategoryGroup } from '@core/systems';
 import { rhythmRuleUnits } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -63,12 +66,28 @@ import {
 export type AdminRhythmSheetKind =
   'services' | 'protections' | 'excuses' | 'afterMiss' | 'day';
 
-/** The three excuses that are the shop's, in P9's order: switching one off is said. */
-const SHOP_EXCUSES: readonly StreakExcuse[] = [
+/**
+ * One category of the catalogue with its services — what the services
+ * sheet lists under a heading, and what the rule's sentence names its
+ * counted services from (`CatalogSystem.byCategory`'s group).
+ */
+export type RhythmServiceGroup = CategoryGroup<ServiceCategory, Service>;
+
+/**
+ * P9's layout of the shop's excuses (§2.6.2): the shop's own cancellation
+ * first, then the barber's absence, then a closure. A display rank only —
+ * WHICH excuses are the shop's is `STREAK_SHOP_EXCUSES`.
+ */
+const P9_SHOP_EXCUSE_RANK: readonly StreakExcuse[] = [
   StreakExcuse.StaffCancelled,
   StreakExcuse.BarberAbsence,
   StreakExcuse.ShopClosure,
 ];
+
+const p9Rank = (excuse: StreakExcuse): number => {
+  const rank = P9_SHOP_EXCUSE_RANK.indexOf(excuse);
+  return rank < 0 ? P9_SHOP_EXCUSE_RANK.length : rank;
+};
 
 /** One service as the services sheet lists it. */
 interface ServiceRow {
@@ -269,15 +288,12 @@ export class AdminRhythmSheet {
     },
   );
 
-  /** A service in or out of the list; the last one chosen stays. */
+  /** A service in or out of the list; the last one chosen stays (`StreakQualifierRule.toggleService`). */
   protected toggleService(raw: string): void {
-    const id = ServiceId.of(raw);
-    const chosen = this.chosen();
-    const next = chosen.includes(id)
-      ? chosen.length === 1
-        ? chosen
-        : chosen.filter((other) => other !== id)
-      : [...chosen, id];
+    const next = StreakQualifierRule.toggleService(
+      this.chosen(),
+      ServiceId.of(raw),
+    );
     this.store.patch({ qualifier: StreakQualifierRule.services(next) });
   }
 
@@ -295,10 +311,10 @@ export class AdminRhythmSheet {
 
   // ── Excuses and the client's pause ──────────────────────────────────────
 
-  /** P9's order (§2.6.2): the shop's three first, then the days off. */
+  /** P9's order (§2.6.2): the shop's excuses first, in P9's rank, then the days off. */
   protected readonly excuses: readonly StreakExcuse[] = [
-    ...SHOP_EXCUSES,
-    ...STREAK_EXCUSES.filter((excuse) => !SHOP_EXCUSES.includes(excuse)),
+    ...[...STREAK_SHOP_EXCUSES].sort((a, b) => p9Rank(a) - p9Rank(b)),
+    ...STREAK_EXCUSES.filter((excuse) => !STREAK_SHOP_EXCUSES.includes(excuse)),
   ];
 
   protected excused(excuse: StreakExcuse): boolean {
@@ -310,9 +326,9 @@ export class AdminRhythmSheet {
     return excuseKey(excuse);
   }
 
-  /** One of the shop's three excuses is off: the client will lose the rhythm through the shop's fault. */
-  protected readonly shopExcuseOff = computed(() =>
-    SHOP_EXCUSES.some((excuse) => !this.draft().excuses.includes(excuse)),
+  /** One of the shop's excuses is off (`StreakRule.coversShopExcuses`): the client will lose the rhythm through the shop's fault. */
+  protected readonly shopExcuseOff = computed(
+    () => !StreakRule.coversShopExcuses(this.draft().excuses),
   );
 
   protected setExcuse(excuse: StreakExcuse, on: boolean): void {

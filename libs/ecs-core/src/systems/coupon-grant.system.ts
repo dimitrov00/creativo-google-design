@@ -1,4 +1,5 @@
 import {
+  Combinability,
   type CouponOccasion,
   CouponValue,
   GrantCapacity,
@@ -9,9 +10,17 @@ import {
   type GrantTerms,
   WriteOp,
 } from '@core/components';
-import { GrantStatus, Result, type UserId, UtcEpochMs } from '@core/primitives';
+import {
+  type CouponGrantId,
+  type CouponId,
+  type CustomerId,
+  GrantStatus,
+  Result,
+  type UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { EngagementError } from '@core/errors';
-import { type CouponGrant, Collections } from '@core/entities';
+import { type Coupon, type CouponGrant, Collections } from '@core/entities';
 
 /**
  * A grant as the card holds it, carrying its coupon's occasion tag. The
@@ -22,6 +31,24 @@ import { type CouponGrant, Collections } from '@core/entities';
 export type OccasionTagged = Partial<{
   readonly couponOccasion: CouponOccasion | null;
 }>;
+
+/** A grant as the resolver found it — whose it is, whether it can still be honoured, and its value. */
+export type ResolvedGrant = {
+  readonly grantId: CouponGrantId;
+  /** The client record the grant rewards (D29) — matched against the visit's `ownerCustomerId`. */
+  readonly customerId: CustomerId;
+  /** The coupon's name — what the receipt calls the promise. */
+  readonly label: string;
+  readonly usable: boolean;
+  /** The coupon's own rule: may it share the bill? */
+  readonly exclusive: boolean;
+} & CouponValue;
+
+/** A held grant and the coupon it was issued from — one row of the visit sheet's «Отстъпка» menu. */
+export type HeldGrant = {
+  readonly grant: CouponGrant;
+  readonly coupon: Coupon;
+};
 
 /** The ONE predicate both occasion cuts share: the grant's coupon was made for `occasion`. */
 function madeFor(grant: OccasionTagged, occasion: CouponOccasion): boolean {
@@ -200,6 +227,73 @@ export const CouponGrantSystem = {
       grant.grantExpiry === GrantExpiry.ExpiresAt &&
       UtcEpochMs.compare(nowUtcMs, grant.grantExpiresAtUtcMs) > 0
     );
+  },
+
+  /**
+   * The instant a held grant lapses (moved here from the staff day store in
+   * pass C, Y-7):
+   * its `grantExpiresAtUtcMs` while it is `ACTIVE` with an `EXPIRES_AT`
+   * expiry, `null` for one that never lapses or is no longer held. The shop
+   * DAY it prints is the caller's zone read (Law 7: a system holds no zone).
+   */
+  expiresAtUtcMs(grant: GrantLifecycle): UtcEpochMs | null {
+    if (grant.grantStatus !== GrantStatus.Active) return null;
+    if (grant.grantExpiry !== GrantExpiry.ExpiresAt) return null;
+    return grant.grantExpiresAtUtcMs;
+  },
+
+  /**
+   * A grant as the staff save's bill settle reads it (moved here from
+   * `edit-appointment.pipeline.ts` in pass C): its coupon's NAME is
+   * the receipt's word, and a grant whose coupon is gone (or nameless) is
+   * labelled by itself — its coupon id, else its own id — and read as
+   * stackable: the promise stands. Usable by {@link isUsable} at
+   * `nowUtcMs`; the value is the grant's own snapshot.
+   */
+  resolved(
+    grant: CouponGrant,
+    coupon: Coupon | null,
+    nowUtcMs: UtcEpochMs,
+  ): ResolvedGrant {
+    return {
+      grantId: grant.id,
+      customerId: grant.customerId,
+      label:
+        coupon !== null && coupon.name.trim().length > 0
+          ? coupon.name
+          : grant.couponId || grant.id,
+      usable: CouponGrantSystem.isUsable(grant, nowUtcMs),
+      exclusive:
+        coupon === null
+          ? false
+          : Combinability.isExclusive(coupon.combinability),
+      ...CouponValue.of(grant),
+    };
+  },
+
+  /**
+   * The grants joined to their coupons by id (`staff-day.store.ts`
+   * `loadGrants`), in the grants' order: a grant whose coupon is absent from
+   * `coupons` — gone altogether — has nothing to say and is left out; a
+   * coupon disabled since still names its grant. Two coupons with one id:
+   * the later one answers.
+   */
+  held(
+    grants: readonly CouponGrant[],
+    coupons: readonly Coupon[],
+  ): readonly HeldGrant[] {
+    const byId = new Map<CouponId, Coupon>();
+    for (let i = 0; i < coupons.length; i++) {
+      const coupon = coupons[i] as Coupon;
+      byId.set(coupon.id, coupon);
+    }
+    const out: HeldGrant[] = [];
+    for (let i = 0; i < grants.length; i++) {
+      const grant = grants[i] as CouponGrant;
+      const coupon = byId.get(grant.couponId);
+      if (coupon !== undefined) out.push({ grant, coupon });
+    }
+    return out;
   },
 
   /**

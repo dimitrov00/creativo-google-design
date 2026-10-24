@@ -1,4 +1,5 @@
 import {
+  ArrivalVerb,
   AuditAction,
   AuditContext,
   type TransitionAction,
@@ -9,6 +10,7 @@ import {
   SeatOutcome,
   Seat,
   type ShopNow,
+  type StaffVerb,
   WriteOp,
 } from '@core/components';
 import {
@@ -61,6 +63,74 @@ export type LifecycleTransitionRequest = {
   readonly reason: CancellationReason | null;
   readonly windowHours: number | null;
 };
+
+/**
+ * A move as the legality predicates read it — its target and its scope (one
+ * seat, or the whole party at `null`). A {@link LifecycleTransitionRequest}
+ * and the transition callable's command both pass straight in.
+ */
+type LifecycleMove = {
+  readonly to: BookingStatus;
+  readonly seatId: SeatId | null;
+};
+
+/**
+ * What the sheet's exits are made of (`exitVerbs`): the lifecycle verbs it
+ * lists, in order; whether it offers the next visit; whether the cancel —
+ * drawn last, apart from the list — is on offer.
+ */
+export type ExitVerbs = {
+  readonly verbs: readonly StaffVerb[];
+  readonly rebook: boolean;
+  readonly cancel: boolean;
+};
+
+/** The verbs a staff sheet OFFERS, in the order a shop reaches for them. */
+const OFFERED_VERBS: readonly BookingStatus[] = [
+  BookingStatus.Confirmed,
+  BookingStatus.Completed,
+  BookingStatus.NoShow,
+  BookingStatus.Cancelled,
+];
+
+/**
+ * May a settled root come back to `CONFIRMED` — the same-day correction
+ * edge (owner ruling 2026-09-08)? A completed or cancelled ROOT, and the
+ * shop still inside the visit's own day (`visitLocalDate` against `today`,
+ * both on the shop's wall clock, T1); `null` is a day the caller could not
+ * resolve, which is never "the same day". The ONE guard: the write path
+ * ({@link reopenSettledSlice}) and the offered verbs (`offeredVerbs`) both
+ * read it.
+ */
+function reopenable(
+  rootStatus: BookingStatus,
+  visitLocalDate: LocalDate | null,
+  today: LocalDate | null,
+): boolean {
+  return (
+    (rootStatus === BookingStatus.Completed ||
+      rootStatus === BookingStatus.Cancelled) &&
+    visitLocalDate !== null &&
+    today !== null &&
+    visitLocalDate === today
+  );
+}
+
+/**
+ * Does this move reopen a settled visit — a PARTY move to `CONFIRMED` from
+ * `COMPLETED` or `CANCELLED`? The one verb that reads the shop's "today".
+ */
+function readsShopToday(
+  appointment: { readonly bookingStatus: BookingStatus },
+  move: LifecycleMove,
+): boolean {
+  return (
+    move.seatId === null &&
+    move.to === BookingStatus.Confirmed &&
+    (appointment.bookingStatus === BookingStatus.Completed ||
+      appointment.bookingStatus === BookingStatus.Cancelled)
+  );
+}
 
 /** The staff verb each target state is audited under. */
 const STAFF_VERB: { readonly [S in BookingStatus]: TransitionAction | null } = {
@@ -320,9 +390,9 @@ function reopenNoShowSlice(
  * The same-day correction edge (owner ruling 2026-09-08): a completed or
  * cancelled visit comes back to `CONFIRMED`, every settled seat to
  * `SCHEDULED` — but only while the shop is inside the visit's own day
- * (`visitLocalDate` against `today`, both on the shop's wall clock, T1).
- * `null` is a day the caller could not resolve, which is never "the same
- * day".
+ * ({@link reopenable}: `visitLocalDate` against `today`, both on the shop's
+ * wall clock, T1). `null` is a day the caller could not resolve, which is
+ * never "the same day".
  */
 function reopenSettledSlice(
   slice: LifecycleSlice,
@@ -339,7 +409,7 @@ function reopenSettledSlice(
       ),
     );
   }
-  if (visitLocalDate === null || today === null || visitLocalDate !== today) {
+  if (!reopenable(from, visitLocalDate, today)) {
     return Result.err(SchedulingError.appointmentReopenWindowClosed(from));
   }
   const outcomes: SeatOutcome[] = [];
@@ -456,10 +526,7 @@ function transitionAt(
     );
   }
 
-  if (
-    to === BookingStatus.Confirmed &&
-    (from === BookingStatus.Completed || from === BookingStatus.Cancelled)
-  ) {
+  if (readsShopToday(appointment, request)) {
     const reopened = reopenSettledAt(appointment, nowUtcMs, today);
     if (!reopened.ok) return reopened;
     return Result.ok(
@@ -811,6 +878,219 @@ export const AppointmentLifecycleSystem = {
           AuditSystem.changeKey.unarrived(stamp),
         ),
       ]),
+    );
+  },
+
+  /* ── read-only legality: what a staff surface may OFFER (pass C) ── */
+
+  /**
+   * May a settled root come back to `CONFIRMED` on `today` — the same-day
+   * correction edge's guard, the ONE copy the write path
+   * ({@link reopenSettled}, {@link transition}) reads too.
+   */
+  reopenable,
+
+  /**
+   * The lifecycle verbs a staff sheet OFFERS for one chair, in the order a
+   * shop reaches for them (`CONFIRMED`, `COMPLETED`, `NO_SHOW`,
+   * `CANCELLED`): each the graph allows from the CHAIR's own lifecycle
+   * (`BookingLifecycle.canTransition` — a chair resolved inside a live party
+   * reads its seats' summary), plus the same-day correction `CONFIRMED`
+   * last when the chair is `COMPLETED`/`CANCELLED`, the ROOT is settled the
+   * same way (a chair resolved inside a party that is still live has no such
+   * edge — the callable reopens the whole appointment or nothing) and
+   * {@link reopenable} holds on `today`. Never wider than the server's graph.
+   */
+  offeredVerbs(
+    chair: BookingLifecycle,
+    root: { readonly bookingStatus: BookingStatus },
+    visitLocalDate: LocalDate,
+    today: LocalDate | null,
+  ): readonly BookingStatus[] {
+    const legal: BookingStatus[] = [];
+    for (let i = 0; i < OFFERED_VERBS.length; i++) {
+      const to = OFFERED_VERBS[i] as BookingStatus;
+      if (BookingLifecycle.canTransition(chair, to)) legal.push(to);
+    }
+    if (
+      root.bookingStatus === chair.bookingStatus &&
+      reopenable(chair.bookingStatus, visitLocalDate, today)
+    ) {
+      legal.push(BookingStatus.Confirmed);
+    }
+    return legal;
+  },
+
+  /**
+   * Which verb a row LEADS with — always drawn from `legal` (the
+   * {@link offeredVerbs}), the arrival stamp aside; nothing here widens the
+   * graph. In order: a `PENDING` chair is accepted first (`CONFIRMED`);
+   * then the desk's act, the party walked in (`ARRIVED`), while live and
+   * not yet stamped; once arrived, finishing (`COMPLETED`) — arrival, not
+   * the clock, gates it; a `NO_SHOW` leads with its correction
+   * (`CONFIRMED`); a `COMPLETED`/`CANCELLED` chair with the same-day way
+   * back (`CONFIRMED`). `null` when none applies.
+   */
+  leadVerb(
+    chair: { readonly bookingStatus: BookingStatus },
+    legal: readonly BookingStatus[],
+    arrived: boolean,
+  ): StaffVerb | null {
+    const status = chair.bookingStatus;
+    if (
+      status === BookingStatus.Pending &&
+      legal.includes(BookingStatus.Confirmed)
+    ) {
+      return BookingStatus.Confirmed;
+    }
+    if (
+      !arrived &&
+      (status === BookingStatus.Pending || status === BookingStatus.Confirmed)
+    ) {
+      return ArrivalVerb.Arrived;
+    }
+    if (arrived && legal.includes(BookingStatus.Completed)) {
+      return BookingStatus.Completed;
+    }
+    if (
+      status === BookingStatus.NoShow &&
+      legal.includes(BookingStatus.Confirmed)
+    ) {
+      return BookingStatus.Confirmed;
+    }
+    if (
+      (status === BookingStatus.Completed ||
+        status === BookingStatus.Cancelled) &&
+      legal.includes(BookingStatus.Confirmed)
+    ) {
+      return BookingStatus.Confirmed;
+    }
+    return null;
+  },
+
+  /**
+   * The seats a staff move to `to` addresses on one chair — `[]` means the
+   * ROOT (the whole party, one call with no seat). A move with no per-seat
+   * meaning (`SeatOutcome.hasSeatMeaning`: `PENDING`, `CONFIRMED`) always
+   * addresses the root, as the server refuses it per seat; so does a chair
+   * holding the whole party (`chairSeatIds.length === partySize`); a
+   * chair's share of a larger party addresses its own seats, one call each.
+   */
+  transitionSeats(
+    to: BookingStatus,
+    chairSeatIds: readonly SeatId[],
+    partySize: number,
+  ): readonly SeatId[] {
+    if (!SeatOutcome.hasSeatMeaning(to)) return [];
+    return chairSeatIds.length === partySize ? [] : chairSeatIds;
+  },
+
+  /**
+   * The undo a staff act offers — the inverse a real second request makes
+   * through the same callables, or `null` for none: the arrival stamp is
+   * taken back (`UNARRIVED`) whatever the scope, as arriving is the party's;
+   * a whole-party `COMPLETED`, `NO_SHOW` or `CANCELLED` comes back to
+   * `CONFIRMED`; a move of one chair's share inside a party has no inverse
+   * the callable offers, and a correction (`CONFIRMED`) or an `UNARRIVED`
+   * is not itself undoable. No reopen-day guard (unlike
+   * {@link reopenSettled}): the undo is offered at once, and the server
+   * still refuses it on another day.
+   */
+  inverseOf(did: StaffVerb, wholeParty: boolean): StaffVerb | null {
+    if (did === ArrivalVerb.Arrived) return ArrivalVerb.Unarrived;
+    if (!wholeParty) return null;
+    if (
+      did === BookingStatus.Completed ||
+      did === BookingStatus.NoShow ||
+      did === BookingStatus.Cancelled
+    ) {
+      return BookingStatus.Confirmed;
+    }
+    return null;
+  },
+
+  /**
+   * The visit sheet's exits — every act that is neither an edit nor a
+   * stamp, from the verbs it was `offered` (lead first, then the rest), in
+   * their order: the stamps the graph still allows (`ARRIVED`, `COMPLETED`)
+   * are never exits; `CONFIRMED` (the way back) only when the chair is not
+   * `PENDING` — there it is the head's own request; `NO_SHOW` only once the
+   * visit has `started` (before it, nobody has failed to come); any other
+   * verb as it is. `CANCELLED` is never listed — `cancel` says it was
+   * offered, and the sheet draws it last. `rebook` — the next visit — on a
+   * chair that settled ({@link BookingLifecycle.isSettled}) and is not gone
+   * ({@link BookingLifecycle.didNotHappen}, the edit lock — a gone one
+   * offers it from the dock): exactly a `COMPLETED` chair.
+   * UI legality only: the server's no-show takes no start input.
+   */
+  exitVerbs(
+    chairStatus: BookingStatus,
+    offered: readonly StaffVerb[],
+    started: boolean,
+  ): ExitVerbs {
+    const verbs: StaffVerb[] = [];
+    let cancel = false;
+    for (let i = 0; i < offered.length; i++) {
+      const verb = offered[i] as StaffVerb;
+      if (verb === ArrivalVerb.Arrived || verb === BookingStatus.Completed) {
+        continue;
+      }
+      if (verb === BookingStatus.Cancelled) {
+        cancel = true;
+        continue;
+      }
+      if (verb === BookingStatus.Confirmed) {
+        if (chairStatus !== BookingStatus.Pending) verbs.push(verb);
+        continue;
+      }
+      if (verb === BookingStatus.NoShow) {
+        if (started) verbs.push(verb);
+        continue;
+      }
+      verbs.push(verb);
+    }
+    const chair = { bookingStatus: chairStatus };
+    const rebook =
+      BookingLifecycle.isSettled(chair) &&
+      !BookingLifecycle.didNotHappen(chair);
+    return { verbs, rebook, cancel };
+  },
+
+  /**
+   * Is this the party's reinstatement of a cancelled visit — a whole-party
+   * move to `CONFIRMED` from `CANCELLED`? The one move whose chair may have
+   * been given away since (`takenSince`).
+   */
+  isReinstatement(
+    appointment: { readonly bookingStatus: BookingStatus },
+    move: LifecycleMove,
+  ): boolean {
+    return (
+      move.seatId === null &&
+      move.to === BookingStatus.Confirmed &&
+      appointment.bookingStatus === BookingStatus.Cancelled
+    );
+  },
+
+  /**
+   * Does this move read the shop's "today" — a party reopen of a settled
+   * visit (`COMPLETED`/`CANCELLED → CONFIRMED`)? Without a shop clock such
+   * a move is refused as out of its window; every other verb reads only
+   * the instant.
+   */
+  readsShopToday,
+
+  /**
+   * Did the move END the visit cancelled — cancelled after, not before?
+   * What releases its voucher draws.
+   */
+  endsCancelled(
+    before: { readonly bookingStatus: BookingStatus },
+    after: { readonly bookingStatus: BookingStatus },
+  ): boolean {
+    return (
+      after.bookingStatus === BookingStatus.Cancelled &&
+      before.bookingStatus !== BookingStatus.Cancelled
     );
   },
 } as const;

@@ -41,6 +41,21 @@ export const TimeCoordinate = {
     return MinuteCount.span(time.startMinutes, time.endMinutes);
   },
 
+  /**
+   * The envelope's END as an instant — the start as stored plus its sold
+   * span ({@link TimeCoordinate.durationMinutes}) of real elapsed time
+   * (T2/T9: what an `.ics` event ends at, `client-appointments.ts`
+   * `addToCalendar`). Exact for every visit that does not straddle a DST
+   * transition, which none can (the shop is closed then).
+   */
+  endUtcMs(time: TimeCoordinate): UtcEpochMs {
+    const span = MinuteDelta.of(TimeCoordinate.durationMinutes(time));
+    // A MinuteCount is a non-negative safe integer, always a MinuteDelta.
+    return span.ok
+      ? UtcEpochMs.plusMinutes(time.utcEpochMs, span.value)
+      : time.utcEpochMs;
+  },
+
   /** Do two bookings overlap on the shop's wall clock? Same day, intersecting minutes. */
   overlaps(a: TimeCoordinate, b: TimeCoordinate): boolean {
     return (

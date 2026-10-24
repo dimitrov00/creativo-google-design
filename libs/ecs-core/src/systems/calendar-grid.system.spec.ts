@@ -165,3 +165,83 @@ describe('the month grid', () => {
     expect(marks).toEqual(['2026-03-05', '2026-02-24']);
   });
 });
+
+describe('CalendarGridSystem.monthSpan — the months a scrolling calendar runs through', () => {
+  const span = (
+    days: readonly string[],
+    anchor = '2026-09-01',
+    back = 6,
+    ahead = 6,
+  ) => S.monthSpan(days.map(key), key(anchor), back, ahead);
+
+  it('runs half a year either side of today’s month with no visit to widen it', () => {
+    expect(span([])).toEqual({
+      from: key('2026-03-01'),
+      to: key('2027-03-01'),
+    });
+  });
+
+  it('widens the run to reach a visit outside the default window, either side', () => {
+    expect(span(['2024-09-14'])).toEqual({
+      from: key('2024-09-01'),
+      to: key('2027-03-01'),
+    });
+    expect(span(['2028-01-31', '2026-05-02'])).toEqual({
+      from: key('2026-03-01'),
+      to: key('2028-01-01'),
+    });
+  });
+
+  it('reads the earliest and the latest day in any order, repeats counted once', () => {
+    expect(
+      span(
+        ['2027-06-30', '2025-02-01', '2026-09-28', '2025-02-01'],
+        '2026-09-01',
+        0,
+        0,
+      ),
+    ).toEqual({ from: key('2025-02-01'), to: key('2027-06-01') });
+  });
+
+  it('anchors on the first of the anchor’s month, whatever day it names', () => {
+    expect(span([], '2026-09-28', 1, 1)).toEqual({
+      from: key('2026-08-01'),
+      to: key('2026-10-01'),
+    });
+  });
+
+  it('crosses a year boundary by civil months', () => {
+    expect(span([], '2026-01-01', 1, 12)).toEqual({
+      from: key('2025-12-01'),
+      to: key('2027-01-01'),
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const days = deepFreeze([key('2027-06-30'), key('2025-02-01')]);
+    expect(S.monthSpan(days, key('2026-09-01'), 6, 6)).toEqual(
+      S.monthSpan(days, key('2026-09-01'), 6, 6),
+    );
+    expect(days).toEqual([key('2027-06-30'), key('2025-02-01')]);
+  });
+});
+
+describe('CalendarGridSystem.inWindow — the bookable run of days', () => {
+  const today = key('2026-09-28');
+  const horizon = key('2026-11-27');
+
+  it('holds today and the horizon’s last day, both ends included', () => {
+    expect(S.inWindow(today, today, horizon)).toBe(true);
+    expect(S.inWindow(horizon, today, horizon)).toBe(true);
+    expect(S.inWindow(key('2026-10-15'), today, horizon)).toBe(true);
+  });
+
+  it('leaves out a day before today and a day past the horizon', () => {
+    expect(S.inWindow(key('2026-09-27'), today, horizon)).toBe(false);
+    expect(S.inWindow(key('2026-11-28'), today, horizon)).toBe(false);
+  });
+
+  it('holds nothing when the horizon ends before today', () => {
+    expect(S.inWindow(today, today, key('2026-09-27'))).toBe(false);
+  });
+});

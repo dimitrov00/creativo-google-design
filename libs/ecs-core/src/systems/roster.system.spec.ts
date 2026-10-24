@@ -6,6 +6,7 @@ import {
   DayHours,
   type RosterWindow,
   ShopDayHours,
+  ShopOpening,
   ScheduleVersion,
   ShiftSegment,
 } from '@core/components';
@@ -24,6 +25,7 @@ import {
   endMinute,
   FIXTURE_TIME_ZONE,
   localDate,
+  locationFixture,
   minute,
   unwrapErr,
   unwrapOk,
@@ -735,6 +737,92 @@ describe('buildDayCarveOuts — the block as a thing, not an absence', () => {
   });
 });
 
+describe('offeredWindows / offeredCarveOuts — the day at the OFFERED shops only', () => {
+  const GHOST = LocationId.of('loc-ghost');
+  // Center mornings, Mladost (hidden: no entry) afternoons, an evening at a
+  // shop nobody authored — lane-geometry.spec.ts:48, the waitlist match's
+  // hidden-shop days and the booking grid's `barberDays`, one rule.
+  const threeShops = rosterOf([
+    { start: '08:00', end: '12:00', locationId: CENTER },
+    { start: '14:00', end: '18:00', locationId: MLADOST },
+    { start: '18:00', end: '20:00', locationId: GHOST },
+  ]);
+  const blocks = [
+    exception(
+      blocked(range('10:00', '10:30'), range('15:00', '15:30')),
+      '2026-07-29',
+    ),
+  ];
+  const centerOnly = input('2026-07-29', threeShops, {
+    exceptions: blocks,
+    shopHours: shopHours([['08:00', '20:00']], CENTER),
+  });
+  const tagged = (windows: readonly RosterWindow[]) =>
+    windows.map((w) => `${asClock([w])[0]} @ ${w.locationId}`);
+
+  it('drops a window at a shop missing from the hours — never its roster unclamped', () => {
+    // `buildDayWindows` alone reads the absent shops as "no bound".
+    expect(tagged(windowsOf(centerOnly))).toEqual([
+      '08:00–10:00 @ loc-center',
+      '10:30–12:00 @ loc-center',
+      '14:00–15:00 @ loc-mladost',
+      '15:30–18:00 @ loc-mladost',
+      '18:00–20:00 @ loc-ghost',
+    ]);
+    expect(tagged(RosterSystem.offeredWindows(centerOnly))).toEqual([
+      '08:00–10:00 @ loc-center',
+      '10:30–12:00 @ loc-center',
+    ]);
+  });
+
+  it('drops a carve-out at a shop that is not offered, with its windows', () => {
+    expect(asClock(carveOutsOf(centerOnly))).toEqual([
+      '10:00–10:30',
+      '15:00–15:30',
+    ]);
+    expect(tagged(RosterSystem.offeredCarveOuts(centerOnly))).toEqual([
+      '10:00–10:30 @ loc-center',
+    ]);
+  });
+
+  it('keeps every window when every shop worked is offered, a closed one closing its own', () => {
+    const both = input('2026-07-29', threeShops, {
+      shopHours: [
+        ...shopHours([['08:00', '20:00']], CENTER),
+        { locationId: MLADOST, hours: [] },
+        { locationId: GHOST, hours: null },
+      ],
+    });
+    expect(tagged(RosterSystem.offeredWindows(both))).toEqual([
+      '08:00–12:00 @ loc-center',
+      '18:00–20:00 @ loc-ghost',
+    ]);
+  });
+
+  it('answers [] — not on the day — when every window is at a shop not offered, or none is offered', () => {
+    const elsewhere = input('2026-07-29', threeShops, {
+      exceptions: blocks,
+      shopHours: shopHours([['08:00', '20:00']], LocationId.of('loc-other')),
+    });
+    expect(RosterSystem.offeredWindows(elsewhere)).toEqual([]);
+    expect(RosterSystem.offeredCarveOuts(elsewhere)).toEqual([]);
+    const noneOffered = input('2026-07-29', threeShops, { exceptions: blocks });
+    expect(windowsOf(noneOffered)).not.toEqual([]);
+    expect(RosterSystem.offeredWindows(noneOffered)).toEqual([]);
+    expect(RosterSystem.offeredCarveOuts(noneOffered)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const fixture = deepFreeze(centerOnly);
+    const once = RosterSystem.offeredWindows(fixture);
+    expect(RosterSystem.offeredWindows(fixture)).toEqual(once);
+    expect(RosterSystem.offeredCarveOuts(fixture)).toEqual(
+      RosterSystem.offeredCarveOuts(fixture),
+    );
+    expect(fixture).toEqual(centerOnly);
+  });
+});
+
 describe('versionFor — the roster in force on a date', () => {
   const history = unwrap(
     ScheduleVersion.amend(
@@ -820,6 +908,272 @@ describe('shopDayHours — a stored week, read for one day', () => {
       }),
     );
     expect(windows).toEqual([]);
+  });
+});
+
+describe('shopHoursOn — every given shop’s hours for one day', () => {
+  /** Mon–Sat 09:00–20:00, Sunday closed — Mon first. */
+  const centerWeek: readonly DayHours[] = [
+    ...Array.from({ length: 6 }, () =>
+      DayHours.open(minute(540), endMinute(1200)),
+    ),
+    DayHours.closed(),
+  ];
+  /** Monday closed, Tue–Sat 10:00–19:00, Sunday closed. */
+  const mladostWeek: readonly DayHours[] = [
+    DayHours.closed(),
+    ...Array.from({ length: 5 }, () =>
+      DayHours.open(minute(600), endMinute(1140)),
+    ),
+    DayHours.closed(),
+  ];
+  const shops = [
+    { id: MLADOST, openingHours: mladostWeek },
+    { id: CENTER, openingHours: centerWeek },
+  ];
+
+  it('reads each shop’s week through shopDayHours, in the given order', () => {
+    const wednesday = key('2026-07-29');
+    expect(RosterSystem.shopHoursOn(shops, wednesday)).toEqual([
+      {
+        locationId: MLADOST,
+        hours: RosterSystem.shopDayHours(mladostWeek, wednesday),
+      },
+      {
+        locationId: CENTER,
+        hours: RosterSystem.shopDayHours(centerWeek, wednesday),
+      },
+    ]);
+    expect(RosterSystem.shopHoursOn([...shops].reverse(), wednesday)).toEqual([
+      {
+        locationId: CENTER,
+        hours: [ShopDayHours.of(minute(540), endMinute(1200))],
+      },
+      {
+        locationId: MLADOST,
+        hours: [ShopDayHours.of(minute(600), endMinute(1140))],
+      },
+    ]);
+  });
+
+  it('keeps a shop closed that day as an empty list, and a week of no seven days as no bound', () => {
+    // 2026-07-27 is a Monday: Mladost is shut, the centre open.
+    expect(
+      RosterSystem.shopHoursOn(
+        [...shops, { id: LocationId.of('loc-unset'), openingHours: [] }],
+        key('2026-07-27'),
+      ),
+    ).toEqual([
+      { locationId: MLADOST, hours: [] },
+      {
+        locationId: CENTER,
+        hours: [ShopDayHours.of(minute(540), endMinute(1200))],
+      },
+      { locationId: LocationId.of('loc-unset'), hours: null },
+    ]);
+  });
+
+  it('filters nothing — which shops a day offers is the caller’s rule — and takes a whole stored location', () => {
+    const stored = locationFixture();
+    expect(RosterSystem.shopHoursOn([stored], key('2026-07-29'))).toEqual([
+      {
+        locationId: stored.id,
+        hours: RosterSystem.shopDayHours(
+          stored.openingHours,
+          key('2026-07-29'),
+        ),
+      },
+    ]);
+    expect(RosterSystem.shopHoursOn([], key('2026-07-29'))).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(shops.map((shop) => ({ ...shop })));
+    const once = RosterSystem.shopHoursOn(frozen, key('2026-07-29'));
+    expect(RosterSystem.shopHoursOn(frozen, key('2026-07-29'))).toEqual(once);
+  });
+});
+
+describe('worksDay — the chairs the staff day draws', () => {
+  it('draws a chair rostered today, or one holding bookings anyway', () => {
+    expect(RosterSystem.worksDay(0, 0)).toBe(false);
+    expect(RosterSystem.worksDay(0, 1)).toBe(true);
+    expect(RosterSystem.worksDay(1, 0)).toBe(true);
+    expect(RosterSystem.worksDay(2, 3)).toBe(true);
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(RosterSystem.worksDay(0, 2)).toBe(RosterSystem.worksDay(0, 2));
+  });
+});
+
+describe('shopOpeningAt — where a shop stands at one wall-clock minute', () => {
+  /** Mon–Thu 09:00–20:00, Fri 09:00–21:00, Sat 10:00–18:00, Sunday closed. */
+  const centerWeek: readonly DayHours[] = [
+    DayHours.open(at('09:00'), until('20:00')),
+    DayHours.open(at('09:00'), until('20:00')),
+    DayHours.open(at('09:00'), until('20:00')),
+    DayHours.open(at('09:00'), until('20:00')),
+    DayHours.open(at('09:00'), until('21:00')),
+    DayHours.open(at('10:00'), until('18:00')),
+    DayHours.closed(),
+  ];
+  /** Monday closed, Tue–Fri 10:00–19:00, Sat 09:00–16:00, Sunday closed. */
+  const mladostWeek: readonly DayHours[] = [
+    DayHours.closed(),
+    DayHours.open(at('10:00'), until('19:00')),
+    DayHours.open(at('10:00'), until('19:00')),
+    DayHours.open(at('10:00'), until('19:00')),
+    DayHours.open(at('10:00'), until('19:00')),
+    DayHours.open(at('09:00'), until('16:00')),
+    DayHours.closed(),
+  ];
+  /** 2026-09-17 is a Thursday; 2026-09-20 a Sunday. */
+  const THURSDAY = key('2026-09-17');
+  const FRIDAY = key('2026-09-18');
+  const SUNDAY = key('2026-09-20');
+
+  it('names Monday for the centre and Tuesday for Mladost on a Sunday', () => {
+    expect(RosterSystem.shopOpeningAt(centerWeek, SUNDAY, at('12:00'))).toEqual(
+      {
+        shopOpening: ShopOpening.OpensOn,
+        atMinutes: at('09:00'),
+        localDate: key('2026-09-21'),
+      },
+    );
+    expect(
+      RosterSystem.shopOpeningAt(mladostWeek, SUNDAY, at('12:00')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('10:00'),
+      localDate: key('2026-09-22'),
+    });
+  });
+
+  it('warns that the centre closes soon at 19:10, while Mladost, shut at 19:00, opens on Friday', () => {
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('19:10')),
+    ).toEqual({
+      shopOpening: ShopOpening.ClosesSoon,
+      atMinutes: until('20:00'),
+      localDate: THURSDAY,
+    });
+    expect(
+      RosterSystem.shopOpeningAt(mladostWeek, THURSDAY, at('19:10')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('10:00'),
+      localDate: FRIDAY,
+    });
+  });
+
+  it('says when today opens at 08:30, before either shop opens', () => {
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('08:30')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensAt,
+      atMinutes: at('09:00'),
+      localDate: THURSDAY,
+    });
+    expect(
+      RosterSystem.shopOpeningAt(mladostWeek, THURSDAY, at('08:30')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensAt,
+      atMinutes: at('10:00'),
+      localDate: THURSDAY,
+    });
+  });
+
+  it('names the next day at 20:30, after closing', () => {
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('20:30')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('09:00'),
+      localDate: FRIDAY,
+    });
+    expect(
+      RosterSystem.shopOpeningAt(mladostWeek, THURSDAY, at('20:30')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('10:00'),
+      localDate: FRIDAY,
+    });
+  });
+
+  it('keeps the open line while open — closes at its own closing minute at noon', () => {
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('12:00')),
+    ).toEqual({
+      shopOpening: ShopOpening.ClosesAt,
+      atMinutes: until('20:00'),
+      localDate: THURSDAY,
+    });
+    expect(
+      RosterSystem.shopOpeningAt(mladostWeek, THURSDAY, at('12:00')),
+    ).toEqual({
+      shopOpening: ShopOpening.ClosesAt,
+      atMinutes: until('19:00'),
+      localDate: THURSDAY,
+    });
+  });
+
+  it('closes soon at exactly sixty minutes left, not at sixty-one; opens on the opening minute and shuts on the closing one', () => {
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('19:00')).shopOpening,
+    ).toBe(ShopOpening.ClosesSoon);
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('18:59')).shopOpening,
+    ).toBe(ShopOpening.ClosesAt);
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('09:00')).shopOpening,
+    ).toBe(ShopOpening.ClosesAt);
+    expect(
+      RosterSystem.shopOpeningAt(centerWeek, THURSDAY, at('20:00')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('09:00'),
+      localDate: FRIDAY,
+    });
+  });
+
+  it('reaches the same weekday next week, and names no minute for a week open on no day', () => {
+    const thursdaysOnly: readonly DayHours[] = [
+      DayHours.closed(),
+      DayHours.closed(),
+      DayHours.closed(),
+      DayHours.open(at('09:00'), until('12:00')),
+      DayHours.closed(),
+      DayHours.closed(),
+      DayHours.closed(),
+    ];
+    expect(
+      RosterSystem.shopOpeningAt(thursdaysOnly, THURSDAY, at('13:00')),
+    ).toEqual({
+      shopOpening: ShopOpening.OpensOn,
+      atMinutes: at('09:00'),
+      localDate: key('2026-09-24'),
+    });
+    const shut = Array.from({ length: 7 }, () => DayHours.closed());
+    expect(RosterSystem.shopOpeningAt(shut, THURSDAY, at('12:00'))).toEqual({
+      shopOpening: ShopOpening.OpensAt,
+      atMinutes: null,
+      localDate: THURSDAY,
+    });
+    // A week with no entry for a weekday reads that day as closed.
+    expect(RosterSystem.shopOpeningAt([], THURSDAY, at('12:00'))).toEqual({
+      shopOpening: ShopOpening.OpensAt,
+      atMinutes: null,
+      localDate: THURSDAY,
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze([...centerWeek]);
+    const once = RosterSystem.shopOpeningAt(frozen, THURSDAY, at('19:10'));
+    expect(RosterSystem.shopOpeningAt(frozen, THURSDAY, at('19:10'))).toEqual(
+      once,
+    );
   });
 });
 

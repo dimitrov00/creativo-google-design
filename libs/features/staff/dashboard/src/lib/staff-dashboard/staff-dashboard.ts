@@ -33,7 +33,6 @@ import {
 } from '@core/entities';
 import {
   AppointmentId,
-  AttendanceState,
   BarberId,
   CartLineId,
   BookingStatus,
@@ -42,6 +41,7 @@ import {
   EndMinute,
   LocalDate,
   LocationId,
+  MinuteCount,
   MinuteOfDay,
   PriceCents,
   Result,
@@ -51,6 +51,7 @@ import {
   UserId,
   UtcEpochMs,
   defect,
+  isBookingStatus,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -63,12 +64,10 @@ import {
   BookingCall,
   BookingLifecycle,
   CancellationReason,
-  CancelledBy,
   Combinability,
   DiscountMethod,
   DiscountProvenance,
   DiscountSource,
-  EditCommand,
   MinuteRange,
   MONEY_ROLES,
   Placement,
@@ -84,17 +83,27 @@ import {
   VoucherRedemption,
 } from '@core/components';
 import {
+  AppointmentEditSystem,
+  AppointmentLifecycleSystem,
   BarberToneSystem,
   BillingSystem,
+  BusySystem,
   ClientQueryShape,
+  ClientQuerySystem,
+  DiscountSystem,
   GridEvent as GridEventTag,
+  GridLayoutSystem,
+  IntervalSetSystem,
+  LocationScopeSystem,
   OfferingPriceSystem,
   PhoneSystem,
+  RosterSystem,
   SearchFieldsSystem,
   type SideWrites,
   VisitDraftSystem,
   type VisitSides,
   VisitSidesSystem,
+  VisitStorySystem,
   type WalkInLabel,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -124,11 +133,15 @@ import {
   type VisitEditorVm,
   VisitEditorCodeResult,
   VisitEditorDiscount,
-  discountValueOf,
   VisitEditorVoucher,
   VisitEditorResolution,
   snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
+import {
+  MONEY_CODE,
+  discountValueOf,
+  promiseOf,
+} from '../visit-editor/visit-editor-discount';
 import {
   CatalogContentService,
   CatalogWording,
@@ -292,21 +305,19 @@ function sidesMovedError(): PipelineError {
 const ROW_WAIT_MS = 5000;
 
 /**
- * Whether a save has a way back through the same callable. A seat added to
- * a FINISHED visit is worked the moment it is written (the after-the-cut
- * flow, owner 2026-09-09) and the server keeps history: its `removeSeat`
- * would be refused every time, so that save's receipt carries no «Отмени»
- * (found in review).
+ * Whether a save has a way back through the same callable — the server's
+ * rule (`AppointmentEditSystem.undoable`), read on the ROOT appointment's
+ * status: a seat added to a FINISHED visit is worked the moment it is
+ * written (the after-the-cut flow, owner 2026-09-09) and the server keeps
+ * history, so its `removeSeat` would be refused every time and that save's
+ * receipt carries no «Отмени» (found in review). The caller hands the root
+ * (`DayRowVm.rootBookingStatus`), never the chair's summary (DEP-3).
  */
 export function reversibleSave(
-  row: { readonly bookingStatus: BookingStatus } | null,
+  root: { readonly bookingStatus: BookingStatus } | null,
   commands: readonly BookingCall.EditCommand[],
 ): boolean {
-  return !(
-    row !== null &&
-    row.bookingStatus === BookingStatus.Completed &&
-    commands.some((command) => command.editCommand === EditCommand.AddSeat)
-  );
+  return AppointmentEditSystem.undoable(root?.bookingStatus ?? null, commands);
 }
 
 /** How long an undone save gives the busy projection before its one retry. */
@@ -364,8 +375,20 @@ function rowShape(row: DayRowVm): string {
   });
 }
 
-function seatScopeOf(row: DayRowVm): readonly string[] {
-  return row.seatsHere === row.partySize ? [] : row.seatIds;
+/**
+ * The seats a move of this row to `to` addresses — `[]` for the ROOT, the
+ * whole party in one call (`AppointmentLifecycleSystem.transitionSeats`):
+ * the row's own seat ids, branded at this edge.
+ */
+function transitionSeatsOf(
+  row: DayRowVm,
+  to: BookingStatus,
+): readonly SeatId[] {
+  return AppointmentLifecycleSystem.transitionSeats(
+    to,
+    row.seatIds.map((seatId) => SeatId.of(seatId)),
+    row.partySize,
+  );
 }
 
 /** One row of a barber's lane, precomputed — the sheet re-renders live. */
@@ -381,6 +404,8 @@ const CLIENT_SEARCH_DEBOUNCE_MS = 220;
 const CLIENT_SEARCH_LIMIT = 20;
 /** How many of the book's matches get their portrait looked up per query. */
 const BOOK_FACES_PER_QUERY = 12;
+/** How many recent visitors «Скорошни» lists — a display cap. */
+const RECENT_CLIENTS_CAP = 8;
 
 /**
  * An account the client search found, as its option names it: the name AS
@@ -606,6 +631,12 @@ interface DayRowVm {
   readonly people: readonly VisitEditorClientOption[];
   /** THIS chair's status — the stored tag (`SeatOutcome.summarize`). */
   readonly bookingStatus: BookingStatus;
+  /**
+   * The ROOT appointment's status, as stored — the party's, which a split
+   * party's chair may not share. What the server's save rules read
+   * (`reversibleSave`, DEP-3).
+   */
+  readonly rootBookingStatus: BookingStatus;
   /** Whether the party has walked in — the gate for offering "Done". */
   readonly arrived: boolean;
   /**
@@ -700,15 +731,20 @@ interface GapRowVm {
 
 type RunEntryVm = DayRowVm | GapRowVm;
 
+/** One neighbour on a sheet's frame — a name, a span on its axis, a tone. */
+interface FrameNeighbour {
+  readonly name: string;
+  readonly startMinute: number;
+  readonly endMinute: number;
+  readonly tone: number;
+}
+
 interface LaneVm {
   readonly barberId: string;
   readonly barberName: string;
   readonly avatarSrc: string | null;
   /** Visits and gaps interleaved in clock order — the COMPLETE run. */
   readonly entries: readonly RunEntryVm[];
-  /** "09:00–18:00 · 6 cuts". Counts only — never a percentage (§8). */
-  readonly extentLabel: string | null;
-  readonly visitCount: number;
   readonly rostered: boolean;
   readonly failed: boolean;
 }
@@ -781,15 +817,6 @@ const ANCHOR_FRAMES = 24;
 /** Close enough, in px — sub-pixel layout must not keep the loop alive. */
 const ANCHOR_TOLERANCE = 2;
 
-/** Settled, whatever became of it — a cancelled seat is never "in the chair". */
-function isTerminalStatus(status: BookingStatus): boolean {
-  return (
-    status === BookingStatus.Completed ||
-    status === BookingStatus.Cancelled ||
-    status === BookingStatus.NoShow
-  );
-}
-
 /**
  * One lifecycle move as the call carries it — the whole party (`seatId`
  * `null`) or one seat; a reason only on a cancellation, and a CODE only
@@ -808,14 +835,6 @@ function transitionOf(
     cancellationReason,
     seatId: seatId === null ? null : SeatId.of(seatId),
   };
-}
-
-/** The stored tag a wire scalar names, or `null` for anything else. */
-function statusOf(raw: unknown): BookingStatus | null {
-  for (const status of Object.values(BookingStatus)) {
-    if (status === raw) return status;
-  }
-  return null;
 }
 
 /** A placement the call cannot carry, refused as the server refuses it (`field` named). */
@@ -838,9 +857,6 @@ function guestSubject(
       })
     : refusedAt('addedSubject');
 }
-
-/** The shortest visit a converted block may draft — the catalogue's grain. */
-const GRAIN_MINUTES_FOR_KIND = 5;
 
 /**
  * A block's span on the shop's wall clock — a start in `[0, 1440)` and a
@@ -878,18 +894,21 @@ interface SearchHitVm {
   readonly matches: readonly MatchVm[];
 }
 
-/** Does this field hold the term — by text, or by bare digits for a phone? */
+/**
+ * Does this field hold the term — by text (the Bulgarian collation, this
+ * page's), or by the term's bare digits for a phone (`digits`, `null` when
+ * the term is no phone number — `SearchFieldsSystem.digitQuery`)?
+ */
 function matches(
   field: { label: string; value: string },
   term: string,
-  digits: string,
-  byDigits: boolean,
+  digits: string | null,
 ): boolean {
   if (field.value.toLocaleLowerCase('bg').includes(term)) return true;
   return (
-    byDigits &&
+    digits !== null &&
     field.label === 'phone' &&
-    field.value.replace(/\D/g, '').includes(digits)
+    SearchFieldsSystem.digitsMatch(field.value, digits)
   );
 }
 
@@ -970,58 +989,6 @@ function abbreviateWeekday(long: string, locale: string): string {
  * and a phone has no tooltip to read the rest from.
  */
 const ALL_DAY_CHIP_CAP = 3;
-
-/** The verbs the sheet OFFERS, in the order a shop reaches for them. */
-const OFFERED: readonly BookingStatus[] = [
-  BookingStatus.Confirmed,
-  BookingStatus.Completed,
-  BookingStatus.NoShow,
-  BookingStatus.Cancelled,
-];
-
-/**
- * Which verb a row LEADS with, given the clock.
- *
- * The sheet used to render every legal transition as an equal-weight sibling,
- * so a confirmed 18:00 booking offered Complete, No-show and Cancel at 10:00
- * — three verbs that are all wrong, one of them terminal, all adjacent to the
- * thumb. `canTransition` says what is LEGAL; only the clock says what is
- * likely. Nothing here widens the graph: the primary is always drawn from the
- * legal set, and everything legal stays reachable through the overflow.
- */
-function primaryVerb(
-  status: BookingStatus,
-  legal: readonly BookingStatus[],
-  arrived: boolean,
-): RowVerb | null {
-  const S = BookingStatus;
-  // A shop that vets its bookings (`autoConfirm: false`) accepts them first.
-  // With the ruling's default this arm is simply never reached.
-  if (status === S.Pending && legal.includes(S.Confirmed)) return S.Confirmed;
-  // Then the desk's act: this person is here. Not a status change — a stamp.
-  if (!arrived && (status === S.Pending || status === S.Confirmed)) {
-    return ArrivalVerb.Arrived;
-  }
-  // ARRIVAL, not the clock, gates finishing. The old rule offered "Done" the
-  // instant a booking's start time passed, whether or not anyone had walked
-  // in; now the row only offers it once the shop has said they did — which is
-  // also what makes the barber's one-handed tap mean something.
-  if (arrived && legal.includes(S.Completed)) return S.Completed;
-  // A no-show is the one settled state that can be walked back, and the row
-  // is where the mis-tap happened — so the correction leads there rather than
-  // hiding behind the sheet. `CONFIRMED` is the graph's word for it; the
-  // LABEL says what it means (see `verbKey`).
-  if (status === S.NoShow && legal.includes(S.Confirmed)) return S.Confirmed;
-  // The same-day corrections lead the same way: the graph put the visit to
-  // bed, the only thing left to offer is the way back.
-  if (
-    (status === S.Completed || status === S.Cancelled) &&
-    legal.includes(S.Confirmed)
-  ) {
-    return S.Confirmed;
-  }
-  return null;
-}
 
 /**
  * `/staff` — the shop's day, one lane per chair.
@@ -1134,7 +1101,7 @@ export class StaffDashboard {
   /**
    * Hold focus through a row's state change.
    *
-   * `primaryVerb()` returns null once a visit settles and `overflow` empties
+   * The lead verb (`leadVerb`) is null once a visit settles and `overflow` empties
    * with it, so the control the user just pressed unmounts underneath them
    * and focus falls to `<body>` — throwing a keyboard or switch user back to
    * the top of a three-lane day on every completed cut (WCAG 2.2 SC 3.2.2).
@@ -1540,21 +1507,18 @@ export class StaffDashboard {
    */
   protected readonly searchResults = computed<readonly SearchHitVm[]>(() => {
     const term = this.store.term().trim().toLocaleLowerCase('bg');
-    if (term.length < 2) return [];
+    if (!SearchFieldsSystem.termSearchable(term)) return [];
     const nowMs = this.nowMs();
 
     // Digits-only alias, so "887778899" finds "+359 88 777 8899". A person
     // searching by phone types the number off a screen or a card, never with
-    // the formatter's spaces in it.
-    const digits = term.replace(/\D/g, '');
-    const byDigits = digits.length >= 4;
+    // the formatter's spaces in it (`digitQuery`: `null` when it is none).
+    const digits = SearchFieldsSystem.digitQuery(term);
 
     const hits: SearchHitVm[] = [];
     for (const appointment of this.store.pool()) {
       const fields = this.searchableFields(appointment);
-      const matched = fields.filter((field) =>
-        matches(field, term, digits, byDigits),
-      );
+      const matched = fields.filter((field) => matches(field, term, digits));
       if (matched.length === 0) continue;
 
       const startMs = appointment.utcEpochMs;
@@ -1586,8 +1550,8 @@ export class StaffDashboard {
               field.value,
               // Highlight the run that actually matched: the digits form when
               // that is what hit, the typed term otherwise.
-              byDigits && field.label === 'phone' ? digits : term,
-              byDigits && field.label === 'phone',
+              digits !== null && field.label === 'phone' ? digits : term,
+              digits !== null && field.label === 'phone',
             ),
           })),
       });
@@ -1656,6 +1620,10 @@ export class StaffDashboard {
    * sheet's own grammar, told to the bar the same way.
    */
   protected readonly searchFieldFocused = signal(false);
+  /** Is the standing term long enough to search (`termSearchable`)? */
+  protected readonly searchTermSearchable = computed(() =>
+    SearchFieldsSystem.termSearchable(this.store.term().trim()),
+  );
   protected readonly searchSheetEngaged = computed(
     () => this.searchFieldFocused() || this.store.term().trim().length > 0,
   );
@@ -2028,8 +1996,11 @@ export class StaffDashboard {
         isToday: cell.dayKey === today,
         avatarSrc: null,
         events: cell.lanes
-          .filter(
-            (lane) => lane.rostered.length > 0 || lane.appointments.length,
+          .filter((lane) =>
+            RosterSystem.worksDay(
+              lane.rostered.length,
+              lane.appointments.length,
+            ),
           )
           .flatMap((lane) =>
             // Gaps are omitted once chairs are merged into one date column:
@@ -2377,6 +2348,29 @@ export class StaffDashboard {
   }
 
   /**
+   * The outer edges of a chair's roster windows on the shop's wall clock —
+   * the earliest start and the latest end (`IntervalSetSystem.hull`) — or
+   * `null` for none, which each caller answers with its own fallback. Each
+   * window is read at its start's minute and its end's, anchored on the
+   * start's day (`minuteOfDay`, as the column's shading reads it), so a
+   * window that closes at midnight ends at 1440; a window no `MinuteRange`
+   * can hold adds nothing.
+   */
+  private rosterHull(
+    windows: readonly { readonly startMs: number; readonly endMs: number }[],
+  ): MinuteRange | null {
+    const ranges: MinuteRange[] = [];
+    for (const window of windows) {
+      const start = MinuteOfDay.of(this.minuteAt(window.startMs));
+      const end = EndMinute.of(this.minuteOfDay(window.endMs, window.startMs));
+      if (start.ok && end.ok) {
+        ranges.push(MinuteRange.of(start.value, end.value));
+      }
+    }
+    return IntervalSetSystem.hull(ranges);
+  }
+
+  /**
    * The first working minute across every visible day — where the grid
    * SCROLLS TO on a day with no now-line to anchor on.
    *
@@ -2649,24 +2643,12 @@ export class StaffDashboard {
           : entry,
       );
 
-      const extent = lane.rostered;
-      const extentLabel =
-        extent.length > 0
-          ? `${this.time(extent[0]?.startMs ?? 0)}–${this.time(
-              extent.at(-1)?.endMs ?? 0,
-            )}`
-          : null;
-
       return {
         barberId: lane.barberId,
         barberName,
         avatarSrc: vm?.avatarSrc ?? null,
         entries,
-        extentLabel,
-        visitCount: visits.filter(
-          (row) => row.bookingStatus !== BookingStatus.Cancelled,
-        ).length,
-        rostered: extent.length > 0,
+        rostered: lane.rostered.length > 0,
         failed: lane.failed,
       };
     });
@@ -2934,12 +2916,17 @@ export class StaffDashboard {
     const lanes = this.lanes();
     if (lanes.length === 0) return null;
 
-    let freeMinutes = 0;
+    // The plain sum of the chair's gaps, sellable and elapsed alike
+    // (`GridLayoutSystem.totalMinutes`).
+    const gaps: { readonly minutes: MinuteCount }[] = [];
     for (const lane of lanes) {
       for (const entry of lane.entries) {
-        if (entry.agendaRow === AgendaRow.Gap) freeMinutes += entry.minutes;
+        if (entry.agendaRow !== AgendaRow.Gap) continue;
+        const minutes = MinuteCount.of(entry.minutes);
+        if (minutes.ok) gaps.push({ minutes: minutes.value });
       }
     }
+    const freeMinutes = GridLayoutSystem.totalMinutes(gaps);
     if (freeMinutes === 0) return null;
     return this.transloco.translate('staff.day.daySummaryFree', {
       span: this.span(freeMinutes),
@@ -2959,30 +2946,22 @@ export class StaffDashboard {
    * than no line, and `0,00 €` would claim every visit had been settled.
    */
   protected readonly dayTips = computed<string | null>(() => {
-    let total: { cents: number; currency: string } | null = null;
+    const seats: Seat[] = [];
     for (const lane of this.store.lanes()) {
       for (const appointment of lane.appointments) {
         for (const seat of appointment.seats) {
-          if (seat.barberId !== lane.barberId) continue;
-          if (seat.tipCents === null) continue;
-          if (total === null) {
-            total = { cents: seat.tipCents, currency: seat.currency };
-            continue;
-          }
-          // A mixed-currency day is a data error, not a feature.
-          if (seat.currency !== total.currency) return null;
-          total = {
-            cents: total.cents + seat.tipCents,
-            currency: total.currency,
-          };
+          if (seat.barberId === lane.barberId) seats.push(seat);
         }
       }
     }
+    // Strict: nothing recorded, or a mixed-currency day — a data error, not
+    // a feature — is no figure (`BillingSystem.recordedTipsTotal`).
+    const total = BillingSystem.recordedTipsTotal(seats);
     return total === null
       ? null
       : this.transloco.translate('staff.day.daySummaryTips', {
           amount: formatCents(
-            total.cents,
+            total.amountCents,
             total.currency,
             this.transloco.getActiveLang(),
           ),
@@ -3354,60 +3333,36 @@ export class StaffDashboard {
    * cancellation reason or no-show is not showing in the event detail
    * sheets").
    *
-   * From the chair's OWN seats, the same way its status is: the stamp that
-   * closed the last of them is the moment; a cancellation is the client's
-   * act only when every seat says so; and the reasons are the DISTINCT
-   * ones — a father and son called off together for one reason read as one
-   * line, not two. A reason nobody gave adds nothing rather than "no
-   * reason", and «Друго» is the barber's own words. `null` on a live chair
-   * and on a finished one.
+   * From the chair's OWN seats, the same way its status is
+   * (`VisitStorySystem.chairResolution`, DEP-1): the stamp that closed the
+   * last of them is the moment; a cancellation's side is the one the card's
+   * rows and the statistics read — the seat called off last, by its reason
+   * first; and the reasons are the DISTINCT ones — a father and son called
+   * off together for one reason read as one line, not two. A reason nobody
+   * gave adds nothing rather than "no reason", and «Друго» is the barber's
+   * own words. `null` on a live chair and on a finished one. The clock and
+   * the reason words are this page's.
    */
   private resolutionOf(
     seats: readonly Seat[],
     status: BookingStatus,
     visitLocalDate: LocalDate,
   ): VisitEditorResolution | null {
-    if (status !== BookingStatus.Cancelled && status !== BookingStatus.NoShow)
-      return null;
-    const stamps: number[] = [];
-    const cancellations: (Seat & SeatOutcome.Cancelled)[] = [];
-    for (const seat of seats) {
-      if (
-        status === BookingStatus.Cancelled &&
-        seat.attendanceState === AttendanceState.Cancelled
-      ) {
-        cancellations.push(seat);
-        stamps.push(seat.cancelledAtUtcMs);
-      } else if (
-        status === BookingStatus.NoShow &&
-        seat.attendanceState === AttendanceState.NoShow
-      ) {
-        stamps.push(seat.noShowAtUtcMs);
-      }
-    }
-    if (stamps.length === 0) return null;
+    const resolution = VisitStorySystem.chairResolution(status, seats);
+    if (resolution === null) return null;
     const details = new Set<string>();
-    for (const { cancellationReason } of cancellations) {
-      if (cancellationReason === CancellationReason.Unspecified) continue;
+    for (const reason of resolution.reasons) {
       details.add(
         this.transloco.translate(
-          'staff.day.cancelReasonCode.' +
-            cancellationReasonWords[cancellationReason],
+          'staff.day.cancelReasonCode.' + cancellationReasonWords[reason],
         ),
       );
     }
     return {
-      // What settled the chair — the stored tag, narrowed above.
-      bookingStatus: status,
-      by:
-        cancellations.length === 0
-          ? null
-          : cancellations.every(
-                (entry) => entry.cancelledBy === CancelledBy.Client,
-              )
-            ? 'client'
-            : 'staff',
-      whenLabel: this.stampLabel(Math.max(...stamps), visitLocalDate),
+      // What settled the chair — the stored tag the system narrowed.
+      bookingStatus: resolution.bookingStatus,
+      by: resolution.cancelledBy,
+      whenLabel: this.stampLabel(resolution.atUtcMs, visitLocalDate),
       detail: details.size > 0 ? [...details].join(' · ') : null,
     };
   }
@@ -3547,7 +3502,7 @@ export class StaffDashboard {
     const personOf = (seat: Seat): VisitEditorClientOption =>
       seat.seatSubject === SeatSubject.Anonymous
         ? {
-            id: `guest-${seat.guestLabel}`,
+            id: `${VisitDraftSystem.GUEST_KEY_PREFIX}${seat.guestLabel}`,
             label: seat.guestLabel,
             phone: null,
             phoneHref: null,
@@ -3572,12 +3527,16 @@ export class StaffDashboard {
               phoneHref: contactPhone,
               meta: null,
             };
-    const people = seats
-      .map(personOf)
-      .filter(
-        (person, index, all) =>
-          all.findIndex((other) => other.id === person.id) === index,
-      );
+    // One entry per PERSON, the first of their seats — the people key of
+    // the server's party check (`VisitStorySystem.seatPersonKey`).
+    const peopleSeen = new Set<string>();
+    const people: VisitEditorClientOption[] = [];
+    for (const seat of seats) {
+      const key = VisitStorySystem.seatPersonKey(seat);
+      if (peopleSeen.has(key)) continue;
+      peopleSeen.add(key);
+      people.push(personOf(seat));
+    }
 
     /*
      * THIS CHAIR'S status, not the party's (found live, 2026-09-11).
@@ -3600,26 +3559,22 @@ export class StaffDashboard {
       utcEpochMsOf(nowMs),
     );
     const status = chairLifecycle.bookingStatus;
-    const legal = OFFERED.filter((to) =>
-      BookingLifecycle.canTransition(chairLifecycle, to),
+    // What the graph allows from the CHAIR, plus the same-day correction
+    // edge (owner ruling 2026-09-08) — the root settled the same way and the
+    // shop still in the visit's day (`offeredVerbs`, over `reopenable`).
+    const legal = AppointmentLifecycleSystem.offeredVerbs(
+      chairLifecycle,
+      appointment,
+      appointment.localDate,
+      this.store.shopNow()?.localDate ?? null,
     );
-    // The same-day correction edges (owner ruling 2026-09-08): the graph
-    // keeps `completed` and `cancelled` terminal, but the callable lets the
-    // ROOT back to `confirmed` while the shop is still in the visit's day.
-    // Offered only on today's book, which is the only day it can succeed —
-    // and only when the ROOT itself is settled: a chair resolved inside a
-    // party that is still live has no such edge, the callable reopens the
-    // whole appointment or nothing.
-    if (
-      (status === BookingStatus.Completed ||
-        status === BookingStatus.Cancelled) &&
-      appointment.bookingStatus === status &&
-      this.store.isToday()
-    ) {
-      legal.push(BookingStatus.Confirmed);
-    }
     const arrived = appointment.arrivedAtUtcMs !== null;
-    const primary = primaryVerb(status, legal, arrived);
+    // Which verb leads, drawn from the legal set (`leadVerb`).
+    const primary = AppointmentLifecycleSystem.leadVerb(
+      chairLifecycle,
+      legal,
+      arrived,
+    );
     const seatCount = appointment.seats.length;
     /*
      * "1 / 2" — this chair's share over the whole party.
@@ -3642,11 +3597,7 @@ export class StaffDashboard {
       locationId: appointment.locationId,
       seatId: first?.seatId ?? '',
       seatIds: seats.map((seat) => seat.seatId),
-      selfSeat: seats.some(
-        (seat) =>
-          seat.seatSubject === SeatSubject.Account &&
-          seat.subjectRelationship === SubjectRelationship.Self,
-      ),
+      selfSeat: seats.some((seat) => Seat.isOwnAccount(seat)),
       ownerUserId: appointment.ownerUserId,
       ownerCustomerId: appointment.ownerCustomerId,
       arrived,
@@ -3669,7 +3620,10 @@ export class StaffDashboard {
       barberAvatarSrc: this.barberAvatarOf(barberId),
       barberTone: this.toneOf(barberId),
       past: endMs <= nowMs,
-      live: startMs <= nowMs && nowMs < endMs && !isTerminalStatus(status),
+      live:
+        startMs <= nowMs &&
+        nowMs < endMs &&
+        !BookingLifecycle.isSettled(chairLifecycle),
       // Set by the lane, which is the only scope that can know which visit is
       // FIRST — a row cannot see its siblings.
       isNext: false,
@@ -3711,13 +3665,14 @@ export class StaffDashboard {
           barberTone: this.toneOf(seatBarberId),
           // The catalogue's terms are kept only when the stored ones DIFFER
           // (`Seat.termsOf`), so their presence is the override mark.
-          overridden: seat.catalogPriceCents !== null,
+          overridden: Seat.overridden(seat),
         };
       }),
       bookingStatus: status,
+      rootBookingStatus: appointment.bookingStatus,
       primary,
       overflow: legal.filter((verb) => verb !== primary),
-      terminal: isTerminalStatus(status),
+      terminal: BookingLifecycle.isSettled(chairLifecycle),
     };
   }
 
@@ -3754,8 +3709,12 @@ export class StaffDashboard {
       // Arriving is the PARTY walking in, not a chair filling: the stamp lives
       // on the appointment, so it takes the aggregate id and no seat.
       const done = await this.store.markArrived(row.appointmentId);
-      if (done) this.offerUndo(row, ArrivalVerb.Arrived);
-      else this.refuse(this.store.errorFor(row.appointmentId));
+      // Arriving is the party's, so its way back is whatever the scope.
+      const inverse = done
+        ? AppointmentLifecycleSystem.inverseOf(ArrivalVerb.Arrived, true)
+        : null;
+      if (inverse !== null) this.offerUndo(row, ArrivalVerb.Arrived, inverse);
+      else if (!done) this.refuse(this.store.errorFor(row.appointmentId));
       this.restoreFocusToRow(row.id);
       return;
     }
@@ -3768,7 +3727,7 @@ export class StaffDashboard {
     }
     if (to === BookingStatus.Cancelled) {
       this.cancelId.set(row.appointmentId);
-      this.cancelSeatIds.set(seatScopeOf(row));
+      this.cancelSeatIds.set(transitionSeatsOf(row, BookingStatus.Cancelled));
       this.cancelReasonCode.set(null);
       this.cancelNote.set('');
       this.cancelNoteFiled.set(false);
@@ -3780,8 +3739,8 @@ export class StaffDashboard {
       to === BookingStatus.NoShow
     ) {
       // `CONFIRMED` is not a per-seat verb — the server rejects it as one, so
-      // it always addresses the root.
-      const seatIds = to === BookingStatus.Confirmed ? [] : seatScopeOf(row);
+      // it always addresses the root (`transitionSeats`).
+      const seatIds = transitionSeatsOf(row, to);
       const move = (seatId: string | null): Promise<boolean> =>
         this.store.transition(
           transitionOf(row.appointmentId, to, null, seatId),
@@ -3796,9 +3755,13 @@ export class StaffDashboard {
       }
       if (!done) this.refuse(this.store.errorFor(row.appointmentId));
       // A correction is not itself undoable — the toast it came from is gone
-      // with it — and a per-seat stamp has no inverse the callable offers.
-      if (done && to !== BookingStatus.Confirmed && seatIds.length === 0) {
-        this.offerUndo(row, to);
+      // with it — and a per-seat stamp has no inverse the callable offers
+      // (`inverseOf`).
+      const inverse = done
+        ? AppointmentLifecycleSystem.inverseOf(to, seatIds.length === 0)
+        : null;
+      if (inverse !== null) {
+        this.offerUndo(row, to, inverse);
       } else if (to === BookingStatus.Confirmed) {
         this.undo.set(null);
       }
@@ -3821,27 +3784,25 @@ export class StaffDashboard {
     readonly inverse: () => Promise<boolean>;
   } | null>(null);
 
-  private offerUndo(row: DayRowVm, did: RowVerb): void {
-    const inverse: (() => Promise<boolean>) | null =
-      did === ArrivalVerb.Arrived
-        ? () => this.store.clearArrival(row.appointmentId)
-        : did === BookingStatus.Completed ||
-            did === BookingStatus.NoShow ||
-            did === BookingStatus.Cancelled
-          ? () =>
-              this.store.transition(
-                transitionOf(
-                  row.appointmentId,
-                  BookingStatus.Confirmed,
-                  null,
-                  null,
-                ),
-              )
-          : null;
-    if (inverse === null) return;
+  /**
+   * The toast for an act `did` whose way back is `inverse` — the verb
+   * `AppointmentLifecycleSystem.inverseOf` answered. Taking the arrival
+   * stamp back clears it; any other way back is the party's own move to
+   * that status, through the same callable.
+   */
+  private offerUndo(row: DayRowVm, did: RowVerb, inverse: RowVerb): void {
+    let write: (() => Promise<boolean>) | null = null;
+    if (inverse === ArrivalVerb.Unarrived) {
+      write = () => this.store.clearArrival(row.appointmentId);
+    } else if (isBookingStatus(inverse)) {
+      const to = inverse;
+      write = () =>
+        this.store.transition(transitionOf(row.appointmentId, to, null, null));
+    }
+    if (write === null) return;
     this.offerUndoOf(
       this.transloco.translate('staff.day.undo.' + ROW_VERB_WORD[did]),
-      inverse,
+      write,
     );
   }
 
@@ -3964,37 +3925,22 @@ export class StaffDashboard {
        * for the day on screen and nothing builds rows for a day nobody is
        * looking at. The frame needs three fields per neighbour, so it takes
        * them off the documents rather than making the whole agenda run twice.
+       * What occupies the chair is what the server's overlap refusal reads —
+       * the chair's seats of every other visit whose ROOT is live
+       * (`BusySystem.chairOccupants`, DEP-2).
        */
-      const neighbours = (draftLane?.appointments ?? [])
-        .filter((appointment) => appointment.id !== row.appointmentId)
-        .flatMap((appointment) => {
-          const name: string =
-            appointment.contactName ??
-            this.transloco.translate<string>('staff.day.unnamedClient');
-          return appointment.seats
-            .filter((seat) => seat.barberId === barberId)
-            .map((seat) => ({
-              name,
-              // The seat's own wall clock — the frame's axis (Law 7.3).
-              startMinute: seat.startMinutes,
-              endMinute: Seat.endMinutes(seat),
-              tone: this.toneOf(barberId),
-            }));
-        });
+      const neighbours = this.occupantNeighbours(
+        draftLane?.appointments ?? [],
+        barberId,
+        row.appointmentId,
+      );
 
-      const rostered = (draftLane?.rostered ?? []).map((window) => ({
-        start: this.minuteAt(window.startMs),
-        end: this.minuteAt(window.endMs),
-      }));
+      const roster = this.rosterHull(draftLane?.rostered ?? []);
 
       return {
         neighbours,
-        rosterStartMinute: rostered.length
-          ? Math.min(...rostered.map((w) => w.start))
-          : 0,
-        rosterEndMinute: rostered.length
-          ? Math.max(...rostered.map((w) => w.end))
-          : 24 * 60,
+        rosterStartMinute: roster?.startMinutes ?? 0,
+        rosterEndMinute: roster?.endMinutes ?? 24 * 60,
         // ⚠ The DRAFTED day against today: the `now` line was staying lit on
         // a frame stepped onto tomorrow.
         nowMinute: draftDay === this.store.todayKey() ? this.nowMinute() : null,
@@ -4063,27 +4009,19 @@ export class StaffDashboard {
         (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
       ),
     );
-
-    const neighbours = (lane?.entries ?? [])
-      .filter(
-        (entry): entry is DayRowVm =>
-          entry.agendaRow === AgendaRow.Visit && entry.id !== row.id,
-      )
-      .map((entry) => ({
-        name: entry.clientLabel,
-        // The visit's own wall clock, as stored (Law 7.3).
-        startMinute: entry.startMinute,
-        endMinute: entry.endMinute,
-        tone: entry.barberTone,
-      }));
-
     const storeLane = this.store
       .lanes()
       .find((entry) => entry.barberId === lane?.barberId);
-    const rostered = (storeLane?.rostered ?? []).map((window) => ({
-      start: this.minuteAt(window.startMs),
-      end: this.minuteAt(window.endMs),
-    }));
+
+    // What occupies the chair: the visits beside this one whose ROOT is
+    // live — the server's overlap rule (`BusySystem.chairOccupants`, DEP-2).
+    const neighbours = this.occupyingRows(
+      lane,
+      storeLane?.appointments ?? [],
+      row.appointmentId,
+    );
+
+    const roster = this.rosterHull(storeLane?.rostered ?? []);
 
     return {
       appointmentId: row.appointmentId,
@@ -4174,16 +4112,12 @@ export class StaffDashboard {
       chairName: row.barberName,
       chairTone: row.barberTone,
       neighbours,
-      rosterStartMinute: rostered.length
-        ? Math.min(...rostered.map((w) => w.start))
-        : 0,
-      rosterEndMinute: rostered.length
-        ? Math.max(...rostered.map((w) => w.end))
-        : 24 * 60,
+      rosterStartMinute: roster?.startMinutes ?? 0,
+      rosterEndMinute: roster?.endMinutes ?? 24 * 60,
       nowMinute: this.store.isToday() ? this.nowMinute() : null,
       todayKey: this.store.todayKey(),
-      // Regime A, carried through unchanged. `canTransition` already decided
-      // what is legal and `primaryVerb` already decided what leads; the editor
+      // Regime A, carried through unchanged. `offeredVerbs` already decided
+      // what is legal and `leadVerb` already decided what leads; the editor
       // renders that decision rather than re-taking it.
       primaryVerb: row.primary ? this.toEditorVerb(row, row.primary) : null,
       overflowVerbs: row.overflow.map((verb) => this.toEditorVerb(row, verb)),
@@ -4485,7 +4419,10 @@ export class StaffDashboard {
      */
     const built = this.commandsFor(commit, row);
     const commands = built.ok ? built.value : [];
-    const reversible = reversibleSave(row, commands);
+    const reversible = reversibleSave(
+      row === null ? null : { bookingStatus: row.rootBookingStatus },
+      commands,
+    );
     const undone = before === null ? null : this.commandsFor(before, row);
     const shapeNeutral =
       !writes.tip &&
@@ -4677,9 +4614,13 @@ export class StaffDashboard {
      * chair, as the target lists them: a seat the batch removes must not be
      * named (the server refuses a stale id rather than widening), and one it
      * adds exists by the time the chair-wide commands run (found in review).
+     * Whether the chair IS a share is the per-seat acts' own rule — a chair
+     * holding the whole party addresses the root (`transitionSeats`, read
+     * for a verb with a per-seat meaning).
      */
     const seatIds =
-      row === null || seatScopeOf(row).length === 0
+      row === null ||
+      transitionSeatsOf(row, BookingStatus.Completed).length === 0
         ? []
         : commit.legs.map((leg) => SeatId.of(leg.seatId));
     const scope = seatIds.length > 0 ? seatIds : null;
@@ -4727,7 +4668,8 @@ export class StaffDashboard {
      * is named after — keeps the chair's subject; a second person added on
      * this visit rides as a guest under their own name (the party grammar).
      */
-    const chairPerson = commit.clients[0]?.id ?? 'primary';
+    const chairPerson =
+      commit.clients[0]?.id ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID;
     // A stranger joining this visit is numbered past every label the VISIT
     // already holds — this chair's walk-in, and every other chair's too,
     // since the server tells guests apart per appointment
@@ -4874,7 +4816,21 @@ export class StaffDashboard {
      */
     // `?? []`: a commit that says nothing about the bill means no change.
     const draftedDiscounts = commit.discounts ?? [];
-    if (!sameDiscounts(draftedDiscounts, row?.discounts ?? [])) {
+    const storedDiscounts = row?.discounts ?? [];
+    // The same set of promises, whatever the order — each line's identity
+    // is `DiscountSystem.samePromise`'s, read through the sheet's one edge
+    // parse (`promiseOf`).
+    const sameBill =
+      draftedDiscounts.length === storedDiscounts.length &&
+      draftedDiscounts.every((drafted) =>
+        storedDiscounts.some((stored) =>
+          DiscountSystem.samePromise(
+            promiseOf(drafted, MONEY_CODE),
+            promiseOf(stored, MONEY_CODE),
+          ),
+        ),
+      );
+    if (!sameBill) {
       const discounts: BookingCall.StaffDiscount[] = [];
       for (const discount of draftedDiscounts) {
         const request = toDiscountRequest(discount);
@@ -4889,7 +4845,7 @@ export class StaffDashboard {
      */
     const draftedVouchers = commit.vouchers ?? [];
     if (
-      !sameCodes(
+      !VoucherCode.sameCover(
         draftedVouchers.map((voucher) => voucher.code),
         (row?.vouchers ?? []).map((voucher) => voucher.code),
       )
@@ -5313,10 +5269,11 @@ export class StaffDashboard {
      * THE CALL CARRIES THE CODE ONLY (D23). What the barber wrote under
      * «Друго…» is the visit's note, saved below once the cancel has landed.
      */
-    const picked = this.cancelReasonCode();
     const note = this.cancelNote().trim();
-    const reasonCode =
-      picked === CancellationReason.Other && note.length === 0 ? null : picked;
+    const reasonCode = BookingCall.staffCancelReason(
+      this.cancelReasonCode(),
+      note,
+    );
     const cancel = (seatId: string | null): Promise<boolean> =>
       this.store.transition(
         transitionOf(
@@ -5358,7 +5315,7 @@ export class StaffDashboard {
     if (done) {
       this.cancelId.set(null);
       // Whole-booking cancellations get the way back; a seat cancelled out
-      // of a party has no inverse the callable offers.
+      // of a party has no inverse the callable offers (`inverseOf`).
       const row = this.lanes()
         .flatMap((lane) => lane.entries)
         .find(
@@ -5366,8 +5323,12 @@ export class StaffDashboard {
             entry.agendaRow === AgendaRow.Visit &&
             entry.appointmentId === appointmentId,
         );
-      if (row && seatIds.length === 0) {
-        this.offerUndo(row, BookingStatus.Cancelled);
+      const inverse = AppointmentLifecycleSystem.inverseOf(
+        BookingStatus.Cancelled,
+        seatIds.length === 0,
+      );
+      if (row && inverse !== null) {
+        this.offerUndo(row, BookingStatus.Cancelled, inverse);
       }
     }
     /*
@@ -5446,29 +5407,25 @@ export class StaffDashboard {
     const storeLane = this.store
       .lanes()
       .find((entry) => entry.barberId === create.barberId);
-    const rostered = (storeLane?.rostered ?? []).map((window) => ({
-      start: this.minuteAt(window.startMs),
-      end: this.minuteAt(window.endMs),
-    }));
-    const neighbours = (lane?.entries ?? [])
-      .filter(
-        (entry): entry is DayRowVm =>
-          entry.agendaRow === AgendaRow.Visit && !entry.terminal,
-      )
-      .map((entry) => ({
-        name: entry.clientLabel,
-        startMinute: entry.startMinute,
-        endMinute: entry.endMinute,
-        tone: entry.barberTone,
-      }));
+    const roster = this.rosterHull(storeLane?.rostered ?? []);
+    // What occupies the chair — the server's rule (DEP-2).
+    const neighbours = this.occupyingRows(
+      lane,
+      storeLane?.appointments ?? [],
+      null,
+    );
     const chair = this.scopeOptions().find(
       (option) => option.id === create.barberId,
     );
     // A new visit starts in the chair's own shop — the first it is
     // rostered at — and the «Салон» row may move it before the save.
+    const chairBarber = this.catalog
+      .barbers()
+      .find((barber) => barber.id === create.barberId);
     const locationId =
-      this.catalog.barbers().find((barber) => barber.id === create.barberId)
-        ?.locationIds[0] ??
+      (chairBarber === undefined
+        ? null
+        : LocationScopeSystem.homeOf(chairBarber)) ??
       this.catalog.locations()[0]?.id ??
       null;
     return {
@@ -5480,7 +5437,9 @@ export class StaffDashboard {
       dayKey: this.store.dayKey(),
       dayLabel: this.dayPillLabel(this.store.dayKey()),
       startMinute: create.startMinute,
-      endMinute: create.startMinute + (create.minutes ?? 30),
+      endMinute:
+        create.startMinute +
+        (create.minutes ?? VisitDraftSystem.DEFAULT_SPAN_MINUTES),
       legs: create.legs ?? [],
       // A walk-in has a name and no account; a booking starts with nobody —
       // unless it is a rebooking, which starts with last time's client.
@@ -5509,12 +5468,8 @@ export class StaffDashboard {
       chairName: chair?.name ?? this.barberNameOf(create.barberId),
       chairTone: chair?.tone ?? this.toneOf(create.barberId),
       neighbours,
-      rosterStartMinute: rostered.length
-        ? Math.min(...rostered.map((w) => w.start))
-        : 0,
-      rosterEndMinute: rostered.length
-        ? Math.max(...rostered.map((w) => w.end))
-        : 24 * 60,
+      rosterStartMinute: roster?.startMinutes ?? 0,
+      rosterEndMinute: roster?.endMinutes ?? 24 * 60,
       nowMinute: this.store.isToday() ? this.nowMinute() : null,
       todayKey: this.store.todayKey(),
       primaryVerb: null,
@@ -5545,9 +5500,9 @@ export class StaffDashboard {
     return this.lanes()[0]?.barberId ?? this.scopeOptions()[0]?.id ?? null;
   }
 
-  /** Now, snapped UP to the five-minute grain — a walk-in starts next tick. */
+  /** Now, snapped UP to the grain — a walk-in starts next tick (`snapUp`). */
   private nowSnapped(): number {
-    return Math.ceil(this.nowMinute() / 5) * 5;
+    return VisitDraftSystem.snapUp(MinuteOfDay.ofProven(this.nowMinute()));
   }
 
   /**
@@ -5611,7 +5566,7 @@ export class StaffDashboard {
     this.createVisit.set({
       barberId: vm.chairId,
       startMinute: vm.startMinute,
-      minutes: Math.max(vm.endMinute - vm.startMinute, 5),
+      minutes: VisitDraftSystem.floorSpan(vm.endMinute - vm.startMinute),
       nonce: ++this.createSeq,
       legs: vm.legs.map((leg, index) => ({
         ...leg,
@@ -5657,11 +5612,11 @@ export class StaffDashboard {
 
   private resolveAvatars(ids: readonly string[]): void {
     for (const id of ids) {
-      if (id.startsWith('guest-') || this.avatarLookups.has(id)) continue;
-      const owner = UserId.parse(id);
-      if (!owner.ok) continue;
+      // A guest has no account and no portrait to look for.
+      const owner = VisitDraftSystem.accountKeyOf(id);
+      if (owner === null || this.avatarLookups.has(id)) continue;
       this.avatarLookups.add(id);
-      void this.avatars.findAvatar(owner.value).then((found) => {
+      void this.avatars.findAvatar(owner).then((found) => {
         const url = found.ok ? (found.value?.url ?? null) : null;
         this.avatarUrls.update((urls) => ({ ...urls, [id]: url }));
       });
@@ -5752,56 +5707,50 @@ export class StaffDashboard {
   protected async browseClients(): Promise<void> {
     await this.store.ensureWindow();
     const now = this.clock.nowUtcMs();
-    const recentSeen = new Set<string>();
-    const recent: VisitEditorClientOption[] = [];
+    // The past visits, newest first — read on the instants (§8 OQ-14); whose
+    // account each one is, once per person, is `recentAccounts`' (the
+    // booker's, never a companion's — DEP-5).
     const past = this.store
       .window()
       .filter((appointment) => appointment.utcEpochMs < now)
       .sort((a, b) => b.utcEpochMs - a.utcEpochMs);
-    for (const appointment of past) {
-      const id = accountOf(appointment);
-      if (id === null || recentSeen.has(id)) continue;
-      recentSeen.add(id);
-      const phone = appointment.contactPhone;
-      recent.push({
-        id,
+    const recent: VisitEditorClientOption[] = ClientQuerySystem.recentAccounts(
+      past,
+      RECENT_CLIENTS_CAP,
+    ).map(({ userId, visit }) => {
+      const phone = visit.contactPhone;
+      return {
+        id: userId,
         label:
-          appointment.contactName ??
+          visit.contactName ??
           this.transloco.translate('staff.day.unnamedClient'),
         phone: phone === null ? null : PhoneSystem.formatInternational(phone),
         phoneHref: phone,
         meta: this.transloco.translate('staff.visit.lastVisit', {
-          date: this.shortDate(appointment.utcEpochMs),
+          date: this.shortDate(visit.utcEpochMs),
         }),
-        email: appointment.contactEmail,
-      });
-      if (recent.length >= 8) break;
-    }
+        email: visit.contactEmail,
+      };
+    });
     /*
      * THE BOOK (2026-09-18): every account in the loaded days, past and to
      * come — the omnibox ranks these on the keystroke, before the index
-     * answers. Newest contact first, so a changed number is the one read.
+     * answers. Newest contact first, so a changed number is the one read
+     * (`bookAccounts` orders them: each named account once, the booker's).
      */
-    const bookSeen = new Set<string>();
-    const book: VisitEditorClientOption[] = [];
-    const newestFirst = [...this.store.window()].sort(
-      (a, b) => b.utcEpochMs - a.utcEpochMs,
-    );
-    for (const appointment of newestFirst) {
-      const id = accountOf(appointment);
-      const name = appointment.contactName;
-      if (id === null || bookSeen.has(id) || name === null) continue;
-      bookSeen.add(id);
-      const phone = appointment.contactPhone;
-      book.push({
-        id,
-        label: name,
+    const book: VisitEditorClientOption[] = ClientQuerySystem.bookAccounts(
+      this.store.window(),
+    ).map(({ userId, visit, contactName }) => {
+      const phone = visit.contactPhone;
+      return {
+        id: userId,
+        label: contactName,
         phone: phone === null ? null : PhoneSystem.formatInternational(phone),
         phoneHref: phone,
         meta: null,
-        email: appointment.contactEmail,
-      });
-    }
+        email: visit.contactEmail,
+      };
+    });
     this.visitClientBook.set(book);
     this.visitClientSections.set([
       {
@@ -5988,16 +5937,27 @@ export class StaffDashboard {
     if (create === null || commit.legs.length === 0) return;
     // The shop the sheet drafted — the «Салон» row's pick — or, where the
     // sheet had none to offer, the chair's own.
+    const chairBarber = this.catalog
+      .barbers()
+      .find((barber) => barber.id === create.barberId);
     const locationId =
       commit.locationId ??
-      this.catalog.barbers().find((barber) => barber.id === create.barberId)
-        ?.locationIds[0];
+      (chairBarber === undefined
+        ? null
+        : LocationScopeSystem.homeOf(chairBarber));
     if (!locationId) return;
-    // `primary` is the seeded placeholder for a walk-in's label and `guest-*`
-    // a client minted on the search page; only a real id is an account.
-    const isAccount = (id: string): boolean =>
-      id !== 'primary' && !id.startsWith('guest-');
-    const owner = commit.clients.find((client) => isAccount(client.id)) ?? null;
+    // The placeholder a walk-in's label sits on and a `guest-*` client
+    // minted on the search page are nobody's account; only a real id is
+    // one (`VisitDraftSystem.accountKeyOf`).
+    let owner: (typeof commit.clients)[number] | null = null;
+    let ownerUserId: UserId | null = null;
+    for (const client of commit.clients) {
+      const account = VisitDraftSystem.accountKeyOf(client.id);
+      if (account === null) continue;
+      owner = client;
+      ownerUserId = account;
+      break;
+    }
     // Two strangers on one visit are two people: the second is numbered,
     // or the server's party check reads them as one
     // (`VisitDraftSystem.walkInLabels`).
@@ -6072,7 +6032,7 @@ export class StaffDashboard {
           }
         : null,
       placement: Placement.Staff,
-      onBehalfOfUserId: owner === null ? null : UserId.of(owner.id),
+      onBehalfOfUserId: ownerUserId,
       bookedFromAppointmentId: bookedFrom ? AppointmentId.of(bookedFrom) : null,
     });
     if (done) this.createVisit.set(null);
@@ -6154,6 +6114,69 @@ export class StaffDashboard {
   });
 
   /**
+   * WHAT OCCUPIES `barberId`'s CHAIR beside the visit `excludeId` names
+   * (`null`: a new one), read off one day's documents —
+   * `BusySystem.chairOccupants`, the server's collision rule (DEP-2): one
+   * neighbour per seat the chair holds, on the seat's own wall clock.
+   */
+  private occupantNeighbours(
+    appointments: readonly Appointment[],
+    barberId: string,
+    excludeId: string | null,
+  ): FrameNeighbour[] {
+    return BusySystem.chairOccupants(
+      appointments,
+      BarberId.of(barberId),
+      excludeId === null ? null : AppointmentId.of(excludeId),
+    ).map(({ appointment, seat }) => ({
+      name:
+        appointment.contactName ??
+        this.transloco.translate<string>('staff.day.unnamedClient'),
+      // The seat's own wall clock — the frame's axis (Law 7.3).
+      startMinute: seat.startMinutes,
+      endMinute: Seat.endMinutes(seat),
+      tone: this.toneOf(barberId),
+    }));
+  }
+
+  /**
+   * The same answer on the shown day, where the agenda already drew each
+   * chair's rows: the lane's visit rows whose appointment occupies the chair
+   * by `BusySystem.chairOccupants` over the store lane's documents (the
+   * ones the rows were drawn from) — one neighbour per row, on the row's
+   * own wall clock. Which rows are drawn is the agenda's; which occupy is
+   * the system's.
+   */
+  private occupyingRows(
+    lane: LaneVm | undefined,
+    appointments: readonly Appointment[],
+    excludeId: string | null,
+  ): FrameNeighbour[] {
+    if (lane === undefined) return [];
+    const occupying = new Set<string>();
+    for (const { appointment } of BusySystem.chairOccupants(
+      appointments,
+      BarberId.of(lane.barberId),
+      excludeId === null ? null : AppointmentId.of(excludeId),
+    )) {
+      occupying.add(appointment.id);
+    }
+    return lane.entries
+      .filter(
+        (entry): entry is DayRowVm =>
+          entry.agendaRow === AgendaRow.Visit &&
+          occupying.has(entry.appointmentId),
+      )
+      .map((entry) => ({
+        name: entry.clientLabel,
+        // The visit's own wall clock, as stored (Law 7.3).
+        startMinute: entry.startMinute,
+        endMinute: entry.endMinute,
+        tone: entry.barberTone,
+      }));
+  }
+
+  /**
    * One chair's real day for the block sheet's frame: the agenda's own rows
    * on the shown day, the probe's documents on any other — the same two
    * sources `visitFrameDay` reads, for the same reason.
@@ -6166,21 +6189,14 @@ export class StaffDashboard {
     const windows = (
       rostered: readonly { startMs: number; endMs: number }[],
     ) => {
-      const spans = rostered.map((window) => ({
-        start: this.minuteAt(window.startMs),
-        end: this.minuteAt(window.endMs),
-      }));
+      const roster = this.rosterHull(rostered);
       // NO ROSTER IS A SHUT DAY, not an open one. This fell back to the
       // civil day, so a chair standing down all day — the case the block
       // sheet now opens on — drew as a chair free from midnight to midnight.
       // An empty window is what the frame shades.
       return {
-        rosterStartMinute: spans.length
-          ? Math.min(...spans.map((w) => w.start))
-          : 0,
-        rosterEndMinute: spans.length
-          ? Math.max(...spans.map((w) => w.end))
-          : 0,
+        rosterStartMinute: roster?.startMinutes ?? 0,
+        rosterEndMinute: roster?.endMinutes ?? 0,
       };
     };
     if (frameDay === shownDay) {
@@ -6190,17 +6206,12 @@ export class StaffDashboard {
         .find((entry) => entry.barberId === barberId);
       return {
         barberId,
-        neighbours: (lane?.entries ?? [])
-          .filter(
-            (entry): entry is DayRowVm =>
-              entry.agendaRow === AgendaRow.Visit && !entry.terminal,
-          )
-          .map((entry) => ({
-            name: entry.clientLabel,
-            startMinute: entry.startMinute,
-            endMinute: entry.endMinute,
-            tone: entry.barberTone,
-          })),
+        // What occupies the chair — the server's rule (DEP-2).
+        neighbours: this.occupyingRows(
+          lane,
+          storeLane?.appointments ?? [],
+          null,
+        ),
         ...windows(storeLane?.rostered ?? []),
       };
     }
@@ -6208,22 +6219,11 @@ export class StaffDashboard {
     const draftLane = cell?.lanes.find((entry) => entry.barberId === barberId);
     return {
       barberId,
-      neighbours: (draftLane?.appointments ?? [])
-        .filter((appointment) => !isTerminalStatus(appointment.bookingStatus))
-        .flatMap((appointment) => {
-          const name: string =
-            appointment.contactName ??
-            this.transloco.translate<string>('staff.day.unnamedClient');
-          return appointment.seats
-            .filter((seat) => seat.barberId === barberId)
-            .map((seat) => ({
-              name,
-              // The seat's own wall clock — the frame's axis (Law 7.3).
-              startMinute: seat.startMinutes,
-              endMinute: Seat.endMinutes(seat),
-              tone: this.toneOf(barberId),
-            }));
-        }),
+      neighbours: this.occupantNeighbours(
+        draftLane?.appointments ?? [],
+        barberId,
+        null,
+      ),
       ...windows(draftLane?.rostered ?? []),
     };
   }
@@ -6258,10 +6258,8 @@ export class StaffDashboard {
     this.createVisit.set({
       barberId: range.barberId,
       startMinute: range.startMinute,
-      minutes: Math.max(
-        GRAIN_MINUTES_FOR_KIND,
-        range.endMinute - range.startMinute,
-      ),
+      // The shortest visit a converted block may draft — the grain.
+      minutes: VisitDraftSystem.floorSpan(range.endMinute - range.startMinute),
       nonce: ++this.createSeq,
     });
   }
@@ -6335,11 +6333,14 @@ export class StaffDashboard {
     this.openRestDay(pick.key, isChair ? this.store.dayKey() : pick.columnId);
   }
 
-  /** Is this chair off for the whole of that day — by that day's own lanes. */
+  /**
+   * Is this chair off for the whole of that day — by that day's own lanes:
+   * rostered nowhere, the shown day included, whatever it still holds
+   * (DEP-4). A chair stood down all day with bookings on it is off, so its
+   * lift is the whole day's — the range lift the store refuses on a closed
+   * day is never offered.
+   */
   private offOn(barberId: string, dayKey: string): boolean {
-    if (dayKey === this.store.dayKey()) {
-      return this.resting().some((barber) => barber.id === barberId);
-    }
     const lane = this.store
       .cellFor(dayKey)
       ?.lanes.find((entry) => entry.barberId === barberId);
@@ -6425,9 +6426,11 @@ export class StaffDashboard {
     const days = commit.days;
     const only = days.length === 1 ? days[0] : undefined;
     for (const barberId of commit.barberIds) {
-      const locationId = this.catalog
+      const barber = this.catalog
         .barbers()
-        .find((barber) => barber.id === barberId)?.locationIds[0];
+        .find((entry) => entry.id === barberId);
+      const locationId =
+        barber === undefined ? null : LocationScopeSystem.homeOf(barber);
       if (!locationId) continue;
       const done =
         only !== undefined
@@ -6659,14 +6662,15 @@ export class StaffDashboard {
     const extra: Record<string, string> = {};
     if (error.serverErrorCode === BookingErrorCode.TransitionNotAllowed) {
       const fromRaw = error.serverParams['fromBookingStatus'];
-      const from = statusOf(fromRaw);
+      const from = isBookingStatus(fromRaw) ? fromRaw : null;
       // A SEAT already resolved names no status it moves from.
       if (typeof fromRaw === 'string' && fromRaw.length > 0 && from === null) {
         return this.transloco.translate(
           `errors.${BookingErrorCode.TransitionSeatResolved}`,
         );
       }
-      const to = statusOf(error.serverParams['toBookingStatus']);
+      const toRaw = error.serverParams['toBookingStatus'];
+      const to = isBookingStatus(toRaw) ? toRaw : null;
       for (const [side, status] of [
         ['from', from],
         ['to', to],
@@ -6706,18 +6710,6 @@ function guestLabelsOf(seats: readonly Seat[]): string[] {
   );
 }
 
-/**
- * The account a visit is booked under — its first account seat's, the way
- * the add-client page has always picked a visit's person — or `null` for a
- * visit of guests only.
- */
-function accountOf(appointment: Appointment): string | null {
-  for (const seat of appointment.seats) {
-    if (seat.seatSubject === SeatSubject.Account) return seat.subjectUserId;
-  }
-  return null;
-}
-
 /** A clock or stored instant as the brand (a safe integer by construction). */
 function utcEpochMsOf(epochMs: number): UtcEpochMs {
   const instant = UtcEpochMs.of(Math.trunc(epochMs));
@@ -6747,41 +6739,8 @@ function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
     .map((redemption) => ({
       voucherId: redemption.voucherId,
       code: redemption.code,
-      availableMinorUnits:
-        redemption.amountCents + redemption.balanceAfterCents,
+      availableMinorUnits: VoucherRedemption.drawableCents(redemption),
     }));
-}
-
-/** Same promise: source, provenance and value agree. */
-function sameDiscount(a: VisitEditorDiscount, b: VisitEditorDiscount): boolean {
-  return (
-    a.discountSource === b.discountSource &&
-    a.grantId === b.grantId &&
-    (a.code ?? null) === (b.code ?? null) &&
-    JSON.stringify(a.value) === JSON.stringify(b.value)
-  );
-}
-
-/** The same set of promises, whatever the order. */
-function sameDiscounts(
-  a: readonly VisitEditorDiscount[],
-  b: readonly VisitEditorDiscount[],
-): boolean {
-  return (
-    a.length === b.length &&
-    a.every((discount) => b.some((other) => sameDiscount(discount, other)))
-  );
-}
-
-/** The same vouchers in the same order — order is cover order, and it matters. */
-function sameCodes(a: readonly string[], b: readonly string[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (code, index) =>
-        VoucherCode.normalize(code) === VoucherCode.normalize(b[index] ?? ''),
-    )
-  );
 }
 
 /**

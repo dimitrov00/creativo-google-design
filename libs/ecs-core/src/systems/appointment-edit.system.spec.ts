@@ -2,9 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   AppliedOperation,
+  AuditAction,
   BarberPreference,
+  BookingCall,
   BookingLifecycle,
-  MinuteRange,
+  DiscountMethod,
+  DiscountSource,
+  RequestedSubjectRole,
   SeatLabel,
   SeatOutcome,
   Seat,
@@ -12,6 +16,8 @@ import {
   SeatSubject,
   SubjectRelationship,
   ServiceTerms,
+  StaffTermsOverride,
+  VoucherCode,
   WallTime,
   EditCommand,
   ResizeEdge,
@@ -21,17 +27,20 @@ import {
   Currency,
   DurationMinutes,
   BarberId,
+  CouponGrantId,
   LocationId,
   OperationId,
   SeatId,
+  SeatKeyText,
   ServiceId,
   LocalDate,
   type EndMinute,
   type MinuteOfDay,
   PriceCents,
+  Result,
   type UtcEpochMs,
 } from '@core/primitives';
-import { StaffEditErrorCode } from '@core/errors';
+import { BookingError, StaffEditErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_IDS,
@@ -55,6 +64,7 @@ import {
   type EditCommandRequest,
   LedgerVerdict,
 } from './appointment-edit.system';
+import { BillPending } from './billing.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
@@ -516,8 +526,11 @@ describe('AppointmentEditSystem.fold — move', () => {
 
 describe('AppointmentEditSystem.guard — what may be corrected at all', () => {
   // staff-edit-appointment.use-case.spec.ts L1559, L1598, L1609.
-  const sold = (start: MinuteOfDay, minutes: number) =>
-    MinuteRange.of(start, endMinute(start + minutes));
+  // The folded seats as they are (P-10, zero inbound mapping): a start and a duration.
+  const sold = (start: MinuteOfDay, minutes: number) => ({
+    startMinutes: start,
+    durationMinutes: unwrapOk(DurationMinutes.of(minutes)),
+  });
   const arrived = (point: MinuteOfDay) => WallTime.of(FIXTURE_TODAY, point);
 
   it('refuses a move that would END the visit before its arrival stamp', () => {
@@ -739,21 +752,6 @@ describe('AppointmentEditSystem.fold — services added and removed', () => {
     ).toThrow(/client record/);
   });
 
-  it('names the accounts a batch adds — distinct, in batch order, guests and other commands aside', () => {
-    expect(
-      AppointmentEditSystem.accountSubjects([
-        move(at(12)),
-        addSeat('seat-2', at(10, 45), 30),
-        addSeat('seat-3', at(11, 15), 30),
-        {
-          ...addSeat('seat-4', at(11, 45), 30),
-          ...SeatOccupant.anonymous(SeatLabel.of('Гост')),
-        } as EditCommandRequest,
-      ]),
-    ).toEqual([FIXTURE_IDS.client]);
-    expect(AppointmentEditSystem.accountSubjects([])).toEqual([]);
-  });
-
   it('marks a seat added to a FINISHED visit as worked, not scheduled', () => {
     const done = stored([seat('seat-1')], {
       lifecycle: BookingLifecycle.complete(utcMs('2026-09-28T11:00:00+03:00')),
@@ -964,5 +962,568 @@ describe('AppointmentEditSystem — purity', () => {
       at(10),
       at(10, 45),
     ]);
+  });
+});
+
+/*
+ * PASS C (P-1…P-16, S-9, E-9): the staff edit's decisions moved out of
+ * `edit-appointment.pipeline.ts` and the dashboard/editor — each restated
+ * here as values on the fixtures above (the pipeline cases they came from
+ * are named per block).
+ */
+
+/** The call's own `ADD_SEAT` on the fixture day — a guest unless it names the owner. */
+const callAddSeat = (
+  seatId: string,
+  startMinutes: MinuteOfDay,
+  minutes: number,
+  addedSubject: BookingCall.AddedSubject = {
+    requestedSubjectRole: RequestedSubjectRole.Guest,
+    label: SeatLabel.of('Гост'),
+  },
+): BookingCall.EditCommand =>
+  BookingCall.editAddSeat(
+    SeatId.of(seatId),
+    FADE,
+    null,
+    IVAN,
+    FIXTURE_TODAY,
+    startMinutes,
+    unwrapOk(DurationMinutes.of(minutes)),
+    addedSubject,
+  );
+const SELF_SUBJECT: BookingCall.AddedSubject = {
+  requestedSubjectRole: RequestedSubjectRole.Self,
+};
+
+describe('AppointmentEditSystem.foldCommands — the call’s batch, resolved on the running clock (P-2)', () => {
+  // edit-appointment.pipeline.spec.ts "a batch is a save — folded in order,
+  // so the resize measures the MOVED seats" and the clock-of-every-chair
+  // cases: the zone-dependent step is the caller's resolver; the fold, the
+  // order and the running day are the system's.
+  const asRequest = (command: EditCommandRequest) => Result.ok(command);
+
+  it('resolves each command on the day the commands before it left, then applies it — the resize sees the move', () => {
+    const days: LocalDate[] = [];
+    const folded = unwrapOk(
+      AppointmentEditSystem.foldCommands(
+        stored(),
+        [move(at(11), null, TOMORROW), resizeEnd(endAt(11, 45))],
+        RESOLVED,
+        (command, runningDay) => {
+          days.push(runningDay);
+          return asRequest(command);
+        },
+      ),
+    );
+    expect(days).toEqual([FIXTURE_TODAY, TOMORROW]);
+    expect(folded.localDate).toBe(TOMORROW);
+    expect(folded.seats[0]).toMatchObject({
+      startMinutes: at(11),
+      durationMinutes: 45,
+    });
+    expect(folded.requests).toEqual([
+      move(at(11), null, TOMORROW),
+      resizeEnd(endAt(11, 45)),
+    ]);
+  });
+
+  it('answers the resolver’s refusal as it is, and stops there', () => {
+    const refusal = { errorCode: 'TEST_REFUSED' } as const;
+    let calls = 0;
+    expect(
+      AppointmentEditSystem.foldCommands(
+        stored(),
+        [move(at(11)), move(at(12))],
+        RESOLVED,
+        () => {
+          calls++;
+          return Result.err(refusal);
+        },
+      ),
+    ).toEqual(Result.err(refusal));
+    expect(calls).toBe(1);
+  });
+
+  it('refuses an empty batch as `commands`, and an empty visit as `seats`, before resolving anything (DEP-14)', () => {
+    const never = () => {
+      throw new Error('resolved an empty batch');
+    };
+    expect(
+      unwrapErr(
+        AppointmentEditSystem.foldCommands(stored(), [], RESOLVED, never),
+      ),
+    ).toEqual(invalid('commands'));
+    expect(
+      unwrapErr(
+        AppointmentEditSystem.foldCommands(
+          stored([]),
+          [move(at(11))],
+          RESOLVED,
+          never,
+        ),
+      ),
+    ).toEqual(invalid('seats'));
+  });
+
+  it('lands the visit at the batch’s LAST relocation, the seats untouched, and names every unheld seat fresh', () => {
+    const elsewhere = LocationId.of('loc-other');
+    const last = LocationId.of('loc-last');
+    const folded = unwrapOk(
+      AppointmentEditSystem.foldCommands(
+        stored(),
+        [
+          { editCommand: EditCommand.Relocate, locationId: elsewhere },
+          addSeat('seat-2', at(10, 45), 30),
+          { editCommand: EditCommand.Relocate, locationId: last },
+        ],
+        RESOLVED,
+        asRequest,
+      ),
+    );
+    expect(folded.locationId).toBe(last);
+    expect(folded.freshSeatIds).toEqual(['seat-2']);
+    expect(folded.requests).toHaveLength(3);
+  });
+
+  it('is what `fold` answers for an already-resolved batch, minus the requests', () => {
+    const batch = [move(at(12)), addSeat('seat-2', at(12, 45), 30)];
+    const folded = unwrapOk(
+      AppointmentEditSystem.foldCommands(stored(), batch, RESOLVED, asRequest),
+    );
+    const { requests, ...outcome } = folded;
+    expect(requests).toEqual(batch);
+    expect(unwrapOk(fold(batch))).toEqual(outcome);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const appointment = deepFreeze(stored());
+    const commands = deepFreeze([move(at(12)), resizeEnd(endAt(13))]);
+    const once = AppointmentEditSystem.foldCommands(
+      appointment,
+      commands,
+      RESOLVED,
+      asRequest,
+    );
+    expect(
+      AppointmentEditSystem.foldCommands(
+        appointment,
+        commands,
+        RESOLVED,
+        asRequest,
+      ),
+    ).toEqual(once);
+    expect(appointment.seats[0]?.startMinutes).toBe(at(10));
+  });
+});
+
+describe('AppointmentEditSystem.resizeEndOf — the bottom handle, from the running day (P-3)', () => {
+  it('reads an end on the running day as it is', () => {
+    expect(
+      unwrapOk(
+        AppointmentEditSystem.resizeEndOf(
+          FIXTURE_TODAY,
+          FIXTURE_TODAY,
+          endAt(11, 30),
+        ),
+      ),
+    ).toBe(690);
+  });
+
+  it('takes an end AT the running day’s closing midnight — 1440, all of the day', () => {
+    expect(
+      unwrapOk(
+        AppointmentEditSystem.resizeEndOf(
+          FIXTURE_TODAY,
+          FIXTURE_TODAY,
+          endAt(24),
+        ),
+      ),
+    ).toBe(1440);
+  });
+
+  it('refuses an end at or before the running day’s start as `minutes`', () => {
+    expect(
+      unwrapErr(
+        AppointmentEditSystem.resizeEndOf(
+          FIXTURE_TODAY,
+          LocalDate.addDays(FIXTURE_TODAY, -1),
+          endAt(24),
+        ),
+      ),
+    ).toEqual(invalid('minutes'));
+    expect(
+      unwrapErr(
+        AppointmentEditSystem.resizeEndOf(
+          TOMORROW,
+          LocalDate.addDays(FIXTURE_TODAY, -1),
+          endAt(12),
+        ),
+      ),
+    ).toEqual(invalid('minutes'));
+  });
+
+  it('refuses an end past the running day’s closing midnight as `atMinutes`', () => {
+    expect(
+      unwrapErr(
+        AppointmentEditSystem.resizeEndOf(
+          FIXTURE_TODAY,
+          TOMORROW,
+          endAt(0, 15),
+        ),
+      ),
+    ).toEqual(invalid('atMinutes'));
+  });
+
+  it('is pure: same input → same output', () => {
+    const run = () =>
+      AppointmentEditSystem.resizeEndOf(FIXTURE_TODAY, TOMORROW, endAt(1));
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('AppointmentEditSystem.addedOccupantOf / addedAccounts — who an added seat is for (P-3, P-5)', () => {
+  // edit-appointment.pipeline.spec.ts "an added SELF seat whose owner has no
+  // client record…" and the fresh-seat cases.
+  const OWNER = FIXTURE_IDS.client;
+  const SEAT = SeatId.of('seat-9');
+
+  it('seats the OWNER by their uid when the call asks for the owner and the visit has one', () => {
+    expect(
+      AppointmentEditSystem.addedOccupantOf(SELF_SUBJECT, OWNER, SEAT),
+    ).toEqual({
+      seatSubject: SeatSubject.Account,
+      subjectUserId: OWNER,
+      subjectRelationship: SubjectRelationship.Self,
+    });
+  });
+
+  it('seats a guest by the label the call names', () => {
+    expect(
+      AppointmentEditSystem.addedOccupantOf(
+        {
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: SeatLabel.of('Мария'),
+        },
+        OWNER,
+        SEAT,
+      ),
+    ).toEqual(SeatOccupant.anonymous(SeatLabel.of('Мария')));
+  });
+
+  it('seats an owner’s seat on an ownerless visit as a guest named by the seat’s id', () => {
+    expect(
+      AppointmentEditSystem.addedOccupantOf(SELF_SUBJECT, null, SEAT),
+    ).toEqual(SeatOccupant.anonymous(SeatLabel.of('seat-9')));
+  });
+
+  it('names the owner once among the accounts a batch adds — guests, other commands and an ownerless visit add none', () => {
+    const batch = [
+      BookingCall.editMove(FIXTURE_TODAY, at(12), null),
+      callAddSeat('seat-2', at(12, 45), 30),
+      callAddSeat('seat-3', at(13, 15), 30, SELF_SUBJECT),
+      callAddSeat('seat-4', at(13, 45), 30, SELF_SUBJECT),
+    ];
+    expect(AppointmentEditSystem.addedAccounts(batch, OWNER)).toEqual([OWNER]);
+    expect(AppointmentEditSystem.addedAccounts(batch, null)).toEqual([]);
+    expect(
+      AppointmentEditSystem.addedAccounts(batch.slice(0, 2), OWNER),
+    ).toEqual([]);
+    expect(AppointmentEditSystem.addedAccounts([], OWNER)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const batch = deepFreeze([callAddSeat('seat-3', at(13), 30, SELF_SUBJECT)]);
+    const once = AppointmentEditSystem.addedAccounts(batch, OWNER);
+    expect(AppointmentEditSystem.addedAccounts(batch, OWNER)).toEqual(once);
+  });
+});
+
+describe('AppointmentEditSystem — the batch’s last word, its verb and its fingerprint (P-6, P-7, P-8)', () => {
+  const grant = (id: string): BookingCall.StaffDiscount => ({
+    discountSource: DiscountSource.Grant,
+    grantId: CouponGrantId.of(id),
+  });
+  const percent: BookingCall.StaffDiscount = {
+    discountSource: DiscountSource.Manual,
+    discountMethod: DiscountMethod.PercentOff,
+    discountPercent: 10,
+  };
+
+  it('reads the LAST discounts the batch names, or nothing (keep the stored set)', () => {
+    expect(
+      AppointmentEditSystem.lastDiscounts([
+        BookingCall.editDiscounts([grant('g-1')]),
+        BookingCall.editMove(FIXTURE_TODAY, at(12), null),
+        BookingCall.editDiscounts([percent]),
+      ]),
+    ).toEqual([percent]);
+    expect(
+      AppointmentEditSystem.lastDiscounts([BookingCall.editDiscounts([])]),
+    ).toEqual([]);
+    expect(
+      AppointmentEditSystem.lastDiscounts([
+        BookingCall.editMove(FIXTURE_TODAY, at(12), null),
+      ]),
+    ).toBeNull();
+  });
+
+  it('reads the LAST vouchers the batch names, else keeps the stored lines', () => {
+    const code = VoucherCode.of('GIFT-1');
+    expect(
+      AppointmentEditSystem.pendingVouchers([
+        BookingCall.editVouchers([VoucherCode.of('OLD')]),
+        BookingCall.editVouchers([code]),
+      ]),
+    ).toEqual({ billPending: BillPending.Set, codes: [code] });
+    expect(
+      AppointmentEditSystem.pendingVouchers([BookingCall.editVouchers([])]),
+    ).toEqual({ billPending: BillPending.Set, codes: [] });
+    expect(AppointmentEditSystem.pendingVouchers([])).toEqual({
+      billPending: BillPending.Keep,
+    });
+  });
+
+  it('reads the LAST relocation of a call’s batch or of a resolved one, or none', () => {
+    const a = LocationId.of('loc-a');
+    const b = LocationId.of('loc-b');
+    expect(
+      AppointmentEditSystem.relocatedTo([
+        BookingCall.editRelocate(a),
+        BookingCall.editRelocate(b),
+      ]),
+    ).toBe(b);
+    expect(AppointmentEditSystem.relocatedTo([move(at(12))])).toBeNull();
+  });
+
+  it('audits a lone command under its own verb and anything else as a save', () => {
+    expect(AppointmentEditSystem.auditVerb([move(at(12))])).toBe(
+      AuditAction.BookingStaffMove,
+    );
+    expect(
+      AppointmentEditSystem.auditVerb([
+        BookingCall.editResizeEnd(FIXTURE_TODAY, endAt(11), null),
+      ]),
+    ).toBe(AuditAction.BookingStaffResize);
+    expect(
+      AppointmentEditSystem.auditVerb([BookingCall.editVouchers([])]),
+    ).toBe(AuditAction.BookingStaffVouchers);
+    expect(
+      AppointmentEditSystem.auditVerb([move(at(12)), resizeEnd(endAt(13))]),
+    ).toBe(AuditAction.BookingStaffSave);
+    expect(AppointmentEditSystem.auditVerb([])).toBe(
+      AuditAction.BookingStaffSave,
+    );
+  });
+
+  it('keeps the first sixteen hex digits of the batch’s hash — the staff edit and the reschedule alike', () => {
+    expect(AppointmentEditSystem.DIGEST_LENGTH).toBe(16);
+    expect(
+      AppointmentEditSystem.digestOf('0123456789abcdef0123456789abcdef'),
+    ).toBe('0123456789abcdef');
+    expect(AppointmentEditSystem.digestOf('abc')).toBe('abc');
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const batch = deepFreeze([
+      BookingCall.editDiscounts([percent]),
+      BookingCall.editVouchers([VoucherCode.of('GIFT-1')]),
+      BookingCall.editRelocate(LocationId.of('loc-a')),
+    ]);
+    const run = () => ({
+      discounts: AppointmentEditSystem.lastDiscounts(batch),
+      vouchers: AppointmentEditSystem.pendingVouchers(batch),
+      place: AppointmentEditSystem.relocatedTo(batch),
+      verb: AppointmentEditSystem.auditVerb(batch),
+    });
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('AppointmentEditSystem — the decision’s inputs and what it hands back (P-13, P-15, P-16)', () => {
+  it('asks only the batch’s FRESH seats for a chair the shop rosters (barberId)', () => {
+    const party = [seat('seat-1'), seat('seat-2', { barberId: PETAR })];
+    expect(
+      AppointmentEditSystem.freshSeatsRostered(
+        party,
+        [SeatId.of('seat-2')],
+        [{ id: PETAR }],
+      ),
+    ).toBe(true);
+    expect(
+      AppointmentEditSystem.freshSeatsRostered(
+        party,
+        [SeatId.of('seat-2')],
+        [{ id: IVAN }],
+      ),
+    ).toBe(false);
+    // A stored seat is never asked — the visit already holds its chair.
+    expect(AppointmentEditSystem.freshSeatsRostered(party, [], [])).toBe(true);
+  });
+
+  it('carries every STORED seat’s terms into the decision, keyed by its id; a fresh seat gets none', () => {
+    const party = [seat('seat-1'), seat('seat-2', { minutes: 30 })];
+    expect(
+      AppointmentEditSystem.termsOverridesOf(party, [SeatId.of('seat-2')]),
+    ).toEqual([
+      StaffTermsOverride.of(SeatKeyText.of('seat-1'), party[0] as Seat),
+    ]);
+    expect(AppointmentEditSystem.termsOverridesOf(party, [])).toHaveLength(2);
+  });
+
+  it('carries the folded outcomes and tips back onto the decided seats, by position', () => {
+    const workedAt = utcMs('2026-09-28T10:30:00+03:00');
+    const folded = [
+      Seat.withTip(
+        seat('seat-1', { outcome: SeatOutcome.worked(workedAt) }),
+        PriceCents.ZERO,
+      ),
+    ];
+    const decided = [seat('seat-1'), seat('seat-2')];
+    const back = AppointmentEditSystem.carryBack(decided, folded);
+    expect(back[0]).toMatchObject({
+      attendanceState: 'WORKED',
+      workedAtUtcMs: workedAt,
+      tipCents: 0,
+    });
+    // A decided seat with no folded twin stays as decided.
+    expect(back[1]).toEqual(decided[1]);
+  });
+
+  it('answers a collision as the acknowledgeable overlap — naming the handle of a LONE resize only', () => {
+    const slot = BookingError.slotUnavailable(IVAN, FIXTURE_TODAY, at(10), 0);
+    expect(
+      AppointmentEditSystem.overlapOf(slot, [
+        BookingCall.editResizeEnd(FIXTURE_TODAY, endAt(10, 45), null),
+      ]),
+    ).toEqual({
+      errorCode: StaffEditErrorCode.Overlaps,
+      barberId: IVAN,
+      localDate: FIXTURE_TODAY,
+      startMinutes: at(10),
+      resizeEdge: ResizeEdge.End,
+    });
+    expect(
+      AppointmentEditSystem.overlapOf(slot, [
+        BookingCall.editResizeEnd(FIXTURE_TODAY, endAt(10, 45), null),
+        BookingCall.editMove(FIXTURE_TODAY, at(11), null),
+      ]).resizeEdge,
+    ).toBeNull();
+    expect(
+      AppointmentEditSystem.overlapOf(slot, [
+        BookingCall.editMove(FIXTURE_TODAY, at(11), null),
+      ]).resizeEdge,
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const party = deepFreeze([seat('seat-1'), seat('seat-2')]);
+    const fresh = deepFreeze([SeatId.of('seat-2')]);
+    const run = () => ({
+      rostered: AppointmentEditSystem.freshSeatsRostered(party, fresh, [
+        { id: IVAN },
+      ]),
+      terms: AppointmentEditSystem.termsOverridesOf(party, fresh),
+      back: AppointmentEditSystem.carryBack(party, party),
+    });
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('AppointmentEditSystem.undoable / locksEdits — the way back and the lock (S-9, E-9)', () => {
+  const added = [callAddSeat('seat-2', at(10, 45), 30)];
+  const moved = [BookingCall.editMove(FIXTURE_TODAY, at(11), null)];
+  const removed = [BookingCall.editRemoveSeat(SeatId.of('seat-2'))];
+
+  it('withholds the way back only from a save that added a seat to a FINISHED visit (the ROOT’s status)', () => {
+    expect(AppointmentEditSystem.undoable(BookingStatus.Completed, added)).toBe(
+      false,
+    );
+    expect(
+      AppointmentEditSystem.undoable(BookingStatus.Completed, [
+        ...moved,
+        ...added,
+      ]),
+    ).toBe(false);
+    expect(AppointmentEditSystem.undoable(BookingStatus.Completed, moved)).toBe(
+      true,
+    );
+    expect(AppointmentEditSystem.undoable(BookingStatus.Confirmed, added)).toBe(
+      true,
+    );
+    expect(AppointmentEditSystem.undoable(null, added)).toBe(true);
+    expect(
+      AppointmentEditSystem.undoable(BookingStatus.Confirmed, removed),
+    ).toBe(true);
+  });
+
+  it('agrees with the fold: a seat added under that root is the worked seat a removal is refused for', () => {
+    const done = stored([seat('seat-1')], {
+      lifecycle: BookingLifecycle.complete(utcMs('2026-09-28T11:00:00+03:00')),
+    });
+    const [, addedSeat] = seats(addSeat('seat-2', at(10, 45), 30), done);
+    expect(addedSeat?.attendanceState).toBe('WORKED');
+    expect(AppointmentEditSystem.undoable(done.bookingStatus, added)).toBe(
+      false,
+    );
+  });
+
+  it('locks the edits of a visit that never happened — cancelled or a no-show — and of nothing else', () => {
+    expect(AppointmentEditSystem.locksEdits(BookingStatus.Cancelled)).toBe(
+      true,
+    );
+    expect(AppointmentEditSystem.locksEdits(BookingStatus.NoShow)).toBe(true);
+    for (const status of [
+      BookingStatus.Completed,
+      BookingStatus.Confirmed,
+      BookingStatus.Pending,
+    ]) {
+      expect(AppointmentEditSystem.locksEdits(status)).toBe(false);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const batch = deepFreeze([...added]);
+    const once = AppointmentEditSystem.undoable(BookingStatus.Completed, batch);
+    expect(AppointmentEditSystem.undoable(BookingStatus.Completed, batch)).toBe(
+      once,
+    );
+  });
+});
+
+describe('AppointmentEditSystem.guard — the folded seats as they are (P-10)', () => {
+  it('ends a seat that would run past its shop day at midnight — never a defect', () => {
+    const late = [
+      {
+        startMinutes: at(23, 30),
+        durationMinutes: unwrapOk(DurationMinutes.of(45)),
+      },
+    ];
+    // Arrived the day after: a visit ending at today's midnight ends before it.
+    expect(
+      AppointmentEditSystem.guard(
+        BookingStatus.Confirmed,
+        FIXTURE_TODAY,
+        late,
+        WallTime.of(TOMORROW, at(9)),
+      ),
+    ).toEqual({
+      errorCode: StaffEditErrorCode.BeforeArrival,
+      localDate: FIXTURE_TODAY,
+      finishMinutes: 1440,
+      arrivalLocalDate: TOMORROW,
+      arrivalMinutes: 540,
+    });
+  });
+
+  it('reads the stored seats straight — no span built first', () => {
+    expect(
+      AppointmentEditSystem.guard(
+        BookingStatus.Confirmed,
+        FIXTURE_TODAY,
+        stored().seats,
+        WallTime.of(FIXTURE_TODAY, at(10, 45)),
+      )?.errorCode,
+    ).toBe(StaffEditErrorCode.BeforeArrival);
   });
 });

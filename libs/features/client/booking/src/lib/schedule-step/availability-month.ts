@@ -1,4 +1,4 @@
-import { LocalDate } from '@core/primitives';
+import { LocalDate, MinuteCount } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
 
 export interface AvailabilityDayCell {
@@ -11,7 +11,7 @@ export interface AvailabilityDayCell {
   /** Outside the bookable horizon, or before today — never tappable. */
   readonly outOfRange: boolean;
   /** Free minutes across every eligible barber. 0 ⇒ nothing to offer. */
-  readonly freeMinutes: number;
+  readonly freeMinutes: MinuteCount;
 }
 
 /**
@@ -86,7 +86,7 @@ export function buildAvailabilityMonth(input: {
   readonly anchor: LocalDate;
   readonly today: LocalDate;
   readonly horizonEnd: LocalDate;
-  readonly capacityByDay: ReadonlyMap<string, number>;
+  readonly capacityByDay: ReadonlyMap<LocalDate, MinuteCount>;
 }): AvailabilityMonth {
   const { today, horizonEnd, capacityByDay } = input;
   const monthStart = LocalDate.startOfMonth(input.anchor);
@@ -101,10 +101,12 @@ export function buildAvailabilityMonth(input: {
         dayOfMonth: cell.dayOfMonth,
         inCurrentMonth: true,
         isToday: cell.localDate === today,
-        outOfRange:
-          LocalDate.compare(cell.localDate, today) < 0 ||
-          LocalDate.compare(cell.localDate, horizonEnd) > 0,
-        freeMinutes: capacityByDay.get(cell.localDate) ?? 0,
+        outOfRange: !CalendarGridSystem.inWindow(
+          cell.localDate,
+          today,
+          horizonEnd,
+        ),
+        freeMinutes: capacityByDay.get(cell.localDate) ?? MinuteCount.ZERO,
       };
     }),
   );
@@ -121,7 +123,7 @@ export function buildAvailabilityMonth(input: {
 export function buildAvailabilityMonths(input: {
   readonly today: LocalDate;
   readonly horizonEnd: LocalDate;
-  readonly capacityByDay: ReadonlyMap<string, number>;
+  readonly capacityByDay: ReadonlyMap<LocalDate, MinuteCount>;
 }): readonly AvailabilityMonth[] {
   const months: AvailabilityMonth[] = [];
   let cursor = LocalDate.startOfMonth(input.today);

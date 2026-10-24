@@ -121,6 +121,48 @@ describe('BookingCall.clientCancel — the code a client’s cancel is filed und
   );
 });
 
+describe('BookingCall.staffCancelReason — the code a staff cancel files (D23)', () => {
+  // The staff dashboard's `confirmCancel` rule: «Друго…» with nothing
+  // written is no reason; any other pick, or none, goes as it is.
+  it('files OTHER only with words beside it', () => {
+    expect(
+      BookingCall.staffCancelReason(CancellationReason.Other, 'flooded'),
+    ).toBe(CancellationReason.Other);
+  });
+
+  it.each(['', '   ', '\n\t'])(
+    'files OTHER with a blank note (%j) as no code',
+    (note) => {
+      expect(
+        BookingCall.staffCancelReason(CancellationReason.Other, note),
+      ).toBeNull();
+    },
+  );
+
+  it('files a picked code as it is, with or without a note', () => {
+    for (const code of [
+      CancellationReason.ClientChangedPlans,
+      CancellationReason.ClientUnwell,
+      CancellationReason.StaffBarberAbsence,
+      CancellationReason.StaffShopClosure,
+    ]) {
+      expect(BookingCall.staffCancelReason(code, '')).toBe(code);
+      expect(BookingCall.staffCancelReason(code, 'words')).toBe(code);
+    }
+  });
+
+  it('files nothing picked as no code — the server files it UNSPECIFIED', () => {
+    expect(BookingCall.staffCancelReason(null, '')).toBeNull();
+    expect(BookingCall.staffCancelReason(null, 'words')).toBeNull();
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(BookingCall.staffCancelReason(CancellationReason.Other, ' ')).toBe(
+      BookingCall.staffCancelReason(CancellationReason.Other, ' '),
+    );
+  });
+});
+
 describe('BookingCall.Transition — a staff cancel is a code, never words (D23)', () => {
   it('carries the code alone: `OTHER` needs no note, and no note rides the call', () => {
     const cancel: BookingCall.Transition = {

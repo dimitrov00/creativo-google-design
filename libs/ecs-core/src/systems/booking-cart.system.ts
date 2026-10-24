@@ -23,6 +23,10 @@ import {
   SeatSubject,
   SubjectRelationship,
   type ServiceTerms,
+  type ShopNow,
+  ShopCoverage,
+  SeatArrangement,
+  type ChairTime,
 } from '@core/components';
 import {
   Result,
@@ -37,7 +41,13 @@ import {
   type MinuteOfDay,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-import type { Service } from '@core/entities';
+import type {
+  BarberBusyDay,
+  BarberSchedule,
+  ScheduleException,
+  Service,
+  ShopLocation,
+} from '@core/entities';
 import {
   type AvailabilityLine,
   type AvailabilityOption,
@@ -49,7 +59,10 @@ import {
 } from './availability.system';
 import { GuestLabelSystem } from './guest-label.system';
 import { LocationScopeSystem } from './location-scope.system';
+import { MoveSystem } from './move.system';
 import { OfferingPriceSystem } from './offering-price.system';
+import { PartyAdmissionSystem } from './party-admission.system';
+import { RosterSystem, type ShopHours } from './roster.system';
 
 /**
  * What the cart math reads off a catalogue service — the terms matrix (the
@@ -164,6 +177,73 @@ export type CartPrefill = {
 export type CartDraft = {
   readonly state: BookingFlowState;
   readonly selectedLocalDate: LocalDate | null;
+};
+
+/**
+ * Can the chosen shop serve the visit, and where else it can be
+ * ({@link BookingCartSystem.shopCoverage}): the verdict, and — for
+ * `ELSEWHERE` — the ONE shop that can serve it, or `null` for "any shop"
+ * (several can). `targetId` is `null` for every other verdict.
+ */
+export type ShopCoverageAnswer = {
+  readonly shopCoverage: ShopCoverage;
+  readonly targetId: LocationId | null;
+};
+
+/** Which documents one shop day is read from. */
+export type DayDocsKey = {
+  readonly localDate: LocalDate;
+  /** Every active barber, in code-unit order — the engine's barber order, stable across reads. */
+  readonly barberIds: readonly BarberId[];
+  /**
+   * The shop a MOVE names, read by id whatever its status — a hidden shop
+   * takes no new booking, but a visit already booked there is still moved
+   * by its client (team decision 2026-09-26). `null` for every other query.
+   */
+  readonly namedLocationId: LocationId | null;
+};
+
+/** One barber's day, as stored: `null` where there is no document. */
+export type BarberDayDocs = {
+  readonly barberId: BarberId;
+  readonly schedule: BarberSchedule | null;
+  readonly busy: BarberBusyDay | null;
+  readonly exception: ScheduleException | null;
+};
+
+/** Everything one shop day's grid reads, and which key it was read for. */
+export type DayDocs = {
+  readonly key: DayDocsKey;
+  readonly barbers: readonly BarberDayDocs[];
+  readonly namedLocation: ShopLocation | null;
+};
+
+/** What one shop day's grid is asked — the bag, the catalogue, the clock and a move's carried facts. */
+export type DayQuery = {
+  /** The bag, as the cart math reads it. */
+  readonly cart: BookingCart;
+  /** The catalogue the bag's service ids resolve against. */
+  readonly services: readonly Service[];
+  /** Every ACTIVE barber — the roster decides who works where, not this list. */
+  readonly barberIds: readonly BarberId[];
+  /** `null` ⇒ "any shop": every shop is a candidate and each option names its own. */
+  readonly locationId: LocationId | null;
+  readonly localDate: LocalDate;
+  readonly policy: BookingPolicy;
+  /** "Now" on the shop's wall clock, read once by the caller. */
+  readonly now: ShopNow;
+  /** Everybody a MOVE carries, pinned to the party's start; `[]` on a new booking. */
+  readonly riders: readonly CartRider[];
+  /**
+   * The chair time of the visit being MOVED, handed back first — minutes of
+   * {@link DayQuery.releaseLocalDate}, the visit's own shop day; `[]` on a
+   * new booking.
+   */
+  readonly release: readonly ChairTime[];
+  /** The shop day the moved visit stands on — `null` on a new booking. */
+  readonly releaseLocalDate: LocalDate | null;
+  /** Every LISTED shop — the grid's whole set of shops, each clamping its own segments. */
+  readonly shops: readonly ShopLocation[];
 };
 
 const SELF_KEY = SeatKeyText.of('self');
@@ -317,6 +397,38 @@ function mergeByStartThenShop(
  * The cart's own operations (add, remove, re-point a line, drop a seat, the
  * accepted barbers) are the {@link BookingCart} component.
  */
+/**
+ * The shops a day may offer, each with its hours that day: every LISTED
+ * shop — and, for a visit being MOVED at a named shop, that shop too,
+ * listed or not, still clamped to its own hours (never offered unbounded),
+ * replacing its listed entry and placed last (`day-availability.ts`
+ * `offeredShopHours`). The hours are {@link RosterSystem.shopHoursOn}'s.
+ */
+function offeredShopHours(
+  query: DayQuery,
+  namedLocation: ShopLocation | null,
+): readonly ShopHours[] {
+  const listed: ShopLocation[] = [];
+  for (let i = 0; i < query.shops.length; i++) {
+    const shop = query.shops[i] as ShopLocation;
+    if (PartyAdmissionSystem.shopListed(shop)) listed.push(shop);
+  }
+  const hours = RosterSystem.shopHoursOn(listed, query.localDate);
+  if (namedLocation === null) return hours;
+  const own = RosterSystem.shopHoursOn(
+    [namedLocation],
+    query.localDate,
+  )[0] as ShopHours;
+  // The move's own shop, by its own hours — replacing the listed entry.
+  const offered: ShopHours[] = [];
+  for (let i = 0; i < hours.length; i++) {
+    const entry = hours[i] as ShopHours;
+    if (entry.locationId !== own.locationId) offered.push(entry);
+  }
+  offered.push(own);
+  return offered;
+}
+
 export const BookingCartSystem = {
   /**
    * A persisted cart read back the forgiving way
@@ -911,5 +1023,240 @@ export const BookingCartSystem = {
           ? null
           : draft.selectedLocalDate,
     };
+  },
+
+  /**
+   * The seat keys with the booker's pinned to the front and every other key
+   * in the order given (`booking-review-step.ts` `groups`: the summary pins
+   * the booker first whatever position the cart gave them) — a stable
+   * partition, the arguments untouched.
+   */
+  bookerFirst(seatKeys: readonly SeatKeyText[]): readonly SeatKeyText[] {
+    const ordered: SeatKeyText[] = [];
+    for (let i = 0; i < seatKeys.length; i++) {
+      if (seatKeys[i] === SELF_KEY) ordered.push(seatKeys[i] as SeatKeyText);
+    }
+    for (let i = 0; i < seatKeys.length; i++) {
+      if (seatKeys[i] !== SELF_KEY) ordered.push(seatKeys[i] as SeatKeyText);
+    }
+    return ordered;
+  },
+
+  /**
+   * The next person with an empty bag AFTER the active seat `after`, wrapping
+   * — or `null` (`booking-services-step.ts` `nextEmptySeat`). The seats are
+   * the services step's row: the booker, then the party's guests in roster
+   * order (a companion has no seat there). Nobody to hand over to with fewer
+   * than two seats. The wrap is INCLUSIVE, so the active seat is the LAST
+   * candidate rather than none: the person on screen can be the empty one
+   * (the caller branches on that). An `after` that names no seat starts from
+   * the booker. No cart holds nothing for anyone.
+   */
+  nextSeatWithoutService(
+    party: Party | null,
+    cart: BookingCart | null,
+    after: SeatKeyText,
+  ): SeatKeyText | null {
+    const seats: SeatKeyText[] = [SELF_KEY];
+    if (party !== null) {
+      const guests = Party.guests(party);
+      for (let i = 0; i < guests.length; i++) {
+        seats.push(
+          SeatKey.text(SeatKey.guest((guests[i] as PartyMember.Guest).guestId)),
+        );
+      }
+    }
+    if (seats.length < 2) return null;
+    let from = -1;
+    for (let i = 0; i < seats.length; i++) {
+      if (seats[i] === after) {
+        from = i;
+        break;
+      }
+    }
+    for (let step = 1; step <= seats.length; step++) {
+      const seat = seats[(from + step) % seats.length] as SeatKeyText;
+      if (cart === null || BookingCart.linesFor(cart, seat).length === 0) {
+        return seat;
+      }
+    }
+    return null;
+  },
+
+  /**
+   * Can the chosen shop serve this visit, and if not, where can it be
+   * (`booking-schedule-step.ts` `shopCoverage`)? `serving` is the shops, in
+   * order, that offer every service on the visit
+   * ({@link BookingCartSystem.shopsServingParty}; `null` while unknown —
+   * served); `chosen` the shop picked (`null` = "any shop");
+   * `chosenListed` whether the picked shop is on the active list.
+   *
+   * - `SERVED`: the grid answers — under "any shop" whenever ONE active shop
+   *   can; a chosen shop that is not on the active list is not this
+   *   question's to answer (it would read as "does not offer your
+   *   services", which is not why), so it counts as served.
+   * - `ELSEWHERE`: the chosen shop does not offer something on the visit and
+   *   another shop does; `targetId` is that shop when it alone can, else
+   *   `null` ("any shop", which runs exactly the ones that can).
+   * - `NOWHERE`: no active shop offers everything on the visit together.
+   */
+  shopCoverage(
+    serving: readonly LocationId[] | null,
+    chosen: LocationId | null,
+    chosenListed: boolean,
+  ): ShopCoverageAnswer {
+    if (serving === null) {
+      return { shopCoverage: ShopCoverage.Served, targetId: null };
+    }
+    if (chosen === null) {
+      return {
+        shopCoverage:
+          serving.length > 0 ? ShopCoverage.Served : ShopCoverage.Nowhere,
+        targetId: null,
+      };
+    }
+    if (!chosenListed || serving.includes(chosen)) {
+      return { shopCoverage: ShopCoverage.Served, targetId: null };
+    }
+    if (serving.length === 0) {
+      return { shopCoverage: ShopCoverage.Nowhere, targetId: null };
+    }
+    return {
+      shopCoverage: ShopCoverage.Elsewhere,
+      targetId: serving.length === 1 ? (serving[0] as LocationId) : null,
+    };
+  },
+
+  /**
+   * Does an arrangement seat the party all at once, or one after another
+   * (`booking-time-sheet.ts` `arrangementKind`)? `PARALLEL` when every
+   * assignment starts at the first one's minute — and for fewer than two
+   * assignments; `SEQUENTIAL` otherwise.
+   */
+  arrangementOf(
+    assignments: readonly Pick<SeatAssignment, 'startMinutes'>[],
+  ): SeatArrangement {
+    if (assignments.length < 2) return SeatArrangement.Parallel;
+    const first = (assignments[0] as Pick<SeatAssignment, 'startMinutes'>)
+      .startMinutes;
+    for (let i = 1; i < assignments.length; i++) {
+      if (
+        (assignments[i] as Pick<SeatAssignment, 'startMinutes'>)
+          .startMinutes !== first
+      ) {
+        return SeatArrangement.Sequential;
+      }
+    }
+    return SeatArrangement.Parallel;
+  },
+
+  /**
+   * The documents a day query reads (`day-availability.ts` `dayDocsKey`).
+   * The barbers are sorted in code-unit order so the engine's barber
+   * iteration — and so the order of the options — is stable across reads; a
+   * moved visit's own shop is read by id only for a move at a named shop (a
+   * release to hand back).
+   */
+  dayDocsKey(
+    query: Pick<DayQuery, 'localDate' | 'barberIds' | 'locationId' | 'release'>,
+  ): DayDocsKey {
+    return {
+      localDate: query.localDate,
+      barberIds: [...query.barberIds].sort(compareIds),
+      namedLocationId:
+        query.locationId !== null && query.release.length > 0
+          ? query.locationId
+          : null,
+    };
+  },
+
+  /** Do two keys read the same documents? Structural — a recompute mints fresh keys. */
+  sameDayDocsKey(a: DayDocsKey | null, b: DayDocsKey | null): boolean {
+    if (a === null || b === null) return a === b;
+    if (
+      a.localDate !== b.localDate ||
+      a.namedLocationId !== b.namedLocationId ||
+      a.barberIds.length !== b.barberIds.length
+    ) {
+      return false;
+    }
+    for (let i = 0; i < a.barberIds.length; i++) {
+      if (a.barberIds[i] !== b.barberIds[i]) return false;
+    }
+    return true;
+  },
+
+  /**
+   * Every barber's shop day as the engine reads it (`day-availability.ts`
+   * `barberDays`): the roster's windows at the offered shops — every LISTED
+   * shop, plus a moved visit's NAMED shop (listed or not, on its own hours,
+   * replacing its listed entry) — narrowed to the chosen shop, if any, and
+   * the busy minutes, the moved visit's chairs handed back
+   * ({@link MoveSystem.releaseOn}) and the rest padded by the barber's
+   * turnaround ({@link AvailabilitySystem.paddedBusy}, on the stored
+   * slices). Busy is location-AGNOSTIC: a barber booked at the other shop is
+   * not free here either. A barber with no roster, or no window left, is not
+   * on the day.
+   */
+  barberDays(query: DayQuery, docs: DayDocs): readonly CartBarberDay[] {
+    const shopHours = offeredShopHours(query, docs.namedLocation);
+    const release = MoveSystem.releaseOn(
+      query.release,
+      query.releaseLocalDate,
+      query.localDate,
+    );
+    const days: CartBarberDay[] = [];
+    for (let b = 0; b < docs.barbers.length; b++) {
+      const barber = docs.barbers[b] as BarberDayDocs;
+      if (barber.schedule === null) continue;
+      // Only at a shop the day may offer (`RosterSystem.offeredWindows`).
+      const all = RosterSystem.offeredWindows({
+        barberId: barber.barberId,
+        localDate: query.localDate,
+        versions: barber.schedule.versions,
+        exceptions: barber.exception === null ? [] : [barber.exception],
+        shopHours,
+      });
+      const windows =
+        query.locationId === null
+          ? all
+          : RosterSystem.windowsAt(all, query.locationId);
+      if (windows.length === 0) continue;
+      days.push({
+        barberId: barber.barberId,
+        windows,
+        busy: AvailabilitySystem.paddedBusy(
+          barber.barberId,
+          barber.busy,
+          barber.schedule,
+          release,
+        ),
+      });
+    }
+    return days;
+  },
+
+  /**
+   * One shop day's arrangements, each at ONE shop, sorted by start then shop
+   * — the grid's offer (`day-availability.ts` `dayOptions`). The lead time
+   * is applied once, as a floor on the starts
+   * ({@link AvailabilitySystem.leadFloor}), never by trimming windows.
+   */
+  dayOptions(query: DayQuery, docs: DayDocs): readonly CartLocatedOption[] {
+    return BookingCartSystem.optionsForDay({
+      cart: query.cart,
+      services: query.services,
+      riders: query.riders,
+      barbers: BookingCartSystem.barberDays(query, docs),
+      localDate: query.localDate,
+      policy: query.policy,
+      notBefore: AvailabilitySystem.leadFloor(
+        query.now,
+        query.policy,
+        query.localDate,
+      ),
+      within: null,
+      budget: AvailabilitySystem.DEFAULT_BUDGET,
+    });
   },
 } as const;

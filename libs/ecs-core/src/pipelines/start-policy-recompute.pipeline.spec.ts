@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BookingPolicy,
   type DocBody,
+  PolicyStartOutcome,
   PreciseInstant,
   WriteOp,
 } from '@core/components';
@@ -16,7 +17,6 @@ import { PolicyRecomputeJobSystem } from '@core/systems';
 import { FIXTURE_NOW_UTC_MS, memoryStore, memoryTxPorts } from '@core/testing';
 import {
   POLICY_RECOMPUTE_JOB_PATH,
-  PolicyStartOutcome,
   policyJobWrite,
   startPolicyRecompute,
 } from './start-policy-recompute.pipeline';

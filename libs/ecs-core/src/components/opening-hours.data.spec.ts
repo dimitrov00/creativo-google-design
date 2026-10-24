@@ -4,6 +4,8 @@ import {
   DayHours,
   type DayHoursInput,
   OpeningState,
+  SHOP_CLOSES_SOON_MINUTES,
+  ShopOpening,
 } from './opening-hours.data';
 import { Weekday } from '@core/primitives';
 
@@ -141,5 +143,28 @@ describe('DayHours.parseWeek', () => {
         { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 4 },
       ],
     });
+  });
+});
+
+describe('ShopOpening', () => {
+  it('pins the opening-line tags and the closes-soon threshold', () => {
+    expect(ShopOpening).toEqual({
+      ClosesAt: 'CLOSES_AT',
+      ClosesSoon: 'CLOSES_SOON',
+      OpensAt: 'OPENS_AT',
+      OpensOn: 'OPENS_ON',
+    });
+    // The type is exactly the dictionary's literals.
+    const tags: readonly ShopOpening[] = [
+      'CLOSES_AT',
+      'CLOSES_SOON',
+      'OPENS_AT',
+      'OPENS_ON',
+    ];
+    expect(Object.values(ShopOpening)).toEqual(tags);
+    // @ts-expect-error — not a shop-opening tag
+    const stray: ShopOpening = 'OPEN';
+    expect(stray).toBe('OPEN');
+    expect(SHOP_CLOSES_SOON_MINUTES).toBe(60);
   });
 });

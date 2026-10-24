@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   AppointmentId,
+  BookingStatus,
   type LocalDate,
   type MinuteOfDay,
 } from '@core/primitives';
+import { WallTime } from '@core/components';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -621,6 +623,48 @@ describe('VisitListSystem.offeredWith — the choice in force is always offered'
   });
 });
 
+describe('VisitListSystem.soonestFirstByStart — the soonest visit, read off the visits as they are', () => {
+  it('orders by the shop day, then the minute, whatever order the page holds them in', () => {
+    const rows = [
+      row('later', '2026-10-20T10:00:00'),
+      row('soonest', '2026-10-02T09:30:00'),
+      row('same-day-later', '2026-10-02T14:00:00'),
+      row('worked', '2026-09-04T10:00:00'),
+    ];
+    expect(ids(S.soonestFirstByStart(rows))).toEqual([
+      'worked',
+      'soonest',
+      'same-day-later',
+      'later',
+    ]);
+  });
+
+  it('keeps the INPUT order on an equal day and minute — no id breaks the tie', () => {
+    const rows = [
+      row('z', '2026-10-02T10:00:00'),
+      row('a', '2026-10-02T10:00:00'),
+    ];
+    expect(ids(S.soonestFirstByStart(rows))).toEqual(['z', 'a']);
+    expect(ids(S.soonestFirstByStart([...rows].reverse()))).toEqual(['a', 'z']);
+  });
+
+  it('answers nothing for nothing', () => {
+    expect(S.soonestFirstByStart([])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rows = deepFreeze([
+      row('b', '2026-10-04T10:00:00'),
+      row('a', '2026-09-04T10:00:00'),
+      row('c', '2026-10-02T10:00:00'),
+    ]);
+    const once = S.soonestFirstByStart(rows);
+    expect(S.soonestFirstByStart(rows)).toEqual(once);
+    expect(ids(once)).toEqual(['a', 'c', 'b']);
+    expect(ids(rows)).toEqual(['b', 'a', 'c']);
+  });
+});
+
 describe('VisitListSystem.upcomingSoonestFirst — the next card', () => {
   type Item = { readonly key: string; readonly row: Row };
   const item = (
@@ -721,5 +765,93 @@ describe('VisitListSystem — the extraction, purity', () => {
     expect(S.rowSectionKey(false, localDate('2026-09-04'), 'YEAR')).toBe(
       S.rowSectionKey(false, localDate('2026-09-04'), 'YEAR'),
     );
+  });
+});
+
+/*
+ * HAS THE VISIT BEGUN, AND THE HISTORY'S ADMISSION (pass C, C-22) — ported
+ * from `appointments.store.ts`'s `history` filter (`isSettled ∨ start ≤ now`
+ * on the shop's wall clock); `appointments.store.spec.ts` pins a visit at
+ * its start minute as begun on purpose.
+ */
+describe('VisitListSystem.hasStarted / isHistory — begun, and the history’s admission', () => {
+  /** "Now" as the fixture shop sees it, at `YYYY-MM-DDTHH:MM`. */
+  const nowAt = (local: string) =>
+    ZonedTimeSystem.shopNow(utcMs(`${local}:00+03:00`), FIXTURE_TIME_ZONE);
+  const NOW_9 = nowAt('2026-09-28T09:00');
+  const wallAt = (day: string, at: number) =>
+    WallTime.of(localDate(day), minute(at));
+  const visitAt = (bookingStatus: BookingStatus, day: string, at: number) => ({
+    bookingStatus,
+    localDate: localDate(day),
+    startMinutes: minute(at),
+  });
+
+  it('has begun at the start minute and after it, on the shop’s wall clock', () => {
+    expect(S.hasStarted(wallAt('2026-09-28', 540), NOW_9)).toBe(true);
+    expect(S.hasStarted(wallAt('2026-09-28', 539), NOW_9)).toBe(true);
+    expect(S.hasStarted(wallAt('2026-09-27', 1439), NOW_9)).toBe(true);
+  });
+
+  it('has not begun a minute before, nor on a later day', () => {
+    expect(S.hasStarted(wallAt('2026-09-28', 541), NOW_9)).toBe(false);
+    expect(S.hasStarted(wallAt('2026-09-29', 0), NOW_9)).toBe(false);
+  });
+
+  it('admits every settled visit, whenever it starts', () => {
+    for (const bookingStatus of [
+      BookingStatus.Completed,
+      BookingStatus.Cancelled,
+      BookingStatus.NoShow,
+    ]) {
+      expect(
+        S.isHistory(visitAt(bookingStatus, '2026-10-05', 600), NOW_9),
+      ).toBe(true);
+    }
+  });
+
+  it('admits an open visit once begun — at 09:00 sharp it is begun', () => {
+    for (const bookingStatus of [
+      BookingStatus.Pending,
+      BookingStatus.Confirmed,
+    ]) {
+      expect(
+        S.isHistory(visitAt(bookingStatus, '2026-09-28', 540), NOW_9),
+      ).toBe(true);
+      expect(
+        S.isHistory(visitAt(bookingStatus, '2026-09-27', 600), NOW_9),
+      ).toBe(true);
+      expect(
+        S.isHistory(visitAt(bookingStatus, '2026-09-28', 541), NOW_9),
+      ).toBe(false);
+      expect(S.isHistory(visitAt(bookingStatus, '2026-09-29', 0), NOW_9)).toBe(
+        false,
+      );
+    }
+  });
+
+  it('composes the one rule — an open visit is history exactly when it has started', () => {
+    for (const [day, at] of [
+      ['2026-09-27', 600],
+      ['2026-09-28', 539],
+      ['2026-09-28', 540],
+      ['2026-09-28', 541],
+      ['2026-09-29', 0],
+    ] as const) {
+      expect(
+        S.isHistory(visitAt(BookingStatus.Confirmed, day, at), NOW_9),
+      ).toBe(S.hasStarted(wallAt(day, at), NOW_9));
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visit = deepFreeze(
+      visitAt(BookingStatus.Confirmed, '2026-09-28', 540),
+    );
+    const now = deepFreeze(NOW_9);
+    const start = deepFreeze(wallAt('2026-09-28', 540));
+    expect(S.isHistory(visit, now)).toBe(S.isHistory(visit, now));
+    expect(S.hasStarted(start, now)).toBe(S.hasStarted(start, now));
+    expect(visit).toEqual(visitAt(BookingStatus.Confirmed, '2026-09-28', 540));
   });
 });

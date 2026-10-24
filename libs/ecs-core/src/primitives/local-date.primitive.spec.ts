@@ -144,6 +144,29 @@ describe('LocalDate civil arithmetic — immune to DST by construction', () => {
     expect(LocalDate.compare(d('2026-10-25'), d('2026-10-25'))).toBe(0);
   });
 
+  it('later answers the later of two days, in either order, and the day itself on the same day', () => {
+    expect(LocalDate.later(d('2026-09-29'), d('2026-10-28'))).toBe(
+      '2026-10-28',
+    );
+    expect(LocalDate.later(d('2026-10-28'), d('2026-09-29'))).toBe(
+      '2026-10-28',
+    );
+    expect(LocalDate.later(d('2026-12-31'), d('2027-01-01'))).toBe(
+      '2027-01-01',
+    );
+    expect(LocalDate.later(d('2026-10-28'), d('2026-10-28'))).toBe(
+      '2026-10-28',
+    );
+  });
+
+  it('later is pure: same input → same output, inputs untouched', () => {
+    const a = deepFreeze(d('2026-09-29'));
+    const b = deepFreeze(d('2026-10-01'));
+    expect(LocalDate.later(a, b)).toBe(LocalDate.later(a, b));
+    expect(a).toBe('2026-09-29');
+    expect(b).toBe('2026-10-01');
+  });
+
   it('daysBetween counts calendar days, signed, across the DST weekends', () => {
     expect(LocalDate.daysBetween(d('2026-09-01'), d('2026-09-28'))).toBe(27);
     expect(LocalDate.daysBetween(d('2026-09-28'), d('2026-09-01'))).toBe(-27);

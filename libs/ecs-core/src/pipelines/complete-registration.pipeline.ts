@@ -36,13 +36,8 @@ import {
   CustomerRecordSystem,
   ProfileEditSystem,
   RegistrationSystem,
-  ZonedTimeSystem,
 } from '@core/systems';
-import {
-  UTC_ZONE,
-  customerPath,
-  parseContactPhone,
-} from './booking-read-set.pipeline';
+import { customerPath, parseContactPhone } from './booking-read-set.pipeline';
 import { runWithCustomerRetry } from './customer-records.pipeline';
 
 /**
@@ -163,7 +158,7 @@ export const completeRegistration =
 
     // The age window's day: the UTC civil date, derived once (F2-7).
     const nowUtcMs = ports.nowUtcMs();
-    const ageDay = ZonedTimeSystem.toLocal(nowUtcMs, UTC_ZONE).localDate;
+    const ageDay = AgeSystem.judgedOn(nowUtcMs);
 
     const birth = submittedBirthDate(
       fields[RegistrationField.BirthDate],

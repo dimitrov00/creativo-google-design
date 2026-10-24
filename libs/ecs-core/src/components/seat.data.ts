@@ -346,6 +346,19 @@ export const Seat = {
   },
 
   /**
+   * Is this an own-account seat — an ACCOUNT subject seated as the booker's
+   * `SELF`? Whose account it is is not asked (a `SELF` seat naming another
+   * account still counts; {@link isMovableByBooker} is the rule that checks
+   * the owner). A companion, a staff `CLIENT` and a guest are not.
+   */
+  isOwnAccount(seat: AccountOccupant): boolean {
+    return (
+      seat.seatSubject === SeatSubject.Account &&
+      seat.subjectRelationship === SubjectRelationship.Self
+    );
+  },
+
+  /**
    * The same seat, resolved — its core, terms and occupant untouched; the
    * old outcome's variant fields are gone, the new outcome's present.
    */

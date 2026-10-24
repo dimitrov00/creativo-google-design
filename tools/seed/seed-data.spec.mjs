@@ -26,8 +26,8 @@ import {
   Seat,
   TimeCoordinate,
 } from '@core/components';
-import { UTC_ZONE, clientStatsOf } from '@core/pipelines';
-import { LocalDate, UserId, Weekday } from '@core/primitives';
+import { clientStatsOf } from '@core/pipelines';
+import { LocalDate, TimeZone, UserId, Weekday } from '@core/primitives';
 import {
   AppointmentIndexSystem,
   ClientStatsSystem,
@@ -554,7 +554,7 @@ describe('the dev seed client book', () => {
     // registration rule on the UTC age day the boundary derives (F2-7) —
     // and to the very body `completeRegistration` writes over the
     // provisioned stub of the client's login phone.
-    const ageDay = ZonedTimeSystem.toLocal(MORNING, UTC_ZONE).localDate;
+    const ageDay = ZonedTimeSystem.toLocal(MORNING, TimeZone.UTC).localDate;
     const uids = book.users.map(({ uid }) => uid);
     expect(book.subjects.every((uid) => uids.includes(uid))).toBe(true);
     expect(uids).toEqual(

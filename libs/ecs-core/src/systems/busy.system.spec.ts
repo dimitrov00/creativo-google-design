@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   BookingLifecycle,
   BlockKind,
+  CancelledBy,
   MinuteBlock,
   MinuteRange,
   CancellationReason,
   CancellationReasonSet,
   Seat,
+  SeatOutcome,
   WriteAction,
   WriteOp,
 } from '@core/components';
@@ -347,5 +349,99 @@ describe('BusySystem.rebuild over the affected keys — a rebuild, not a subtrac
     expect(rebuildPlan(before, before, live)).toEqual(once);
     expect(before).toEqual(morning);
     expect(live).toEqual([morning, noon]);
+  });
+});
+
+describe('BusySystem.chairOccupants — what occupies a chair beside a placement (DEP-2)', () => {
+  const ROOT_AT = utcMs('2026-06-01T07:00:00+03:00');
+  const ids = (occupants: ReturnType<typeof BusySystem.chairOccupants>) =>
+    occupants.map(({ appointment, seat: held }) => [
+      appointment.id,
+      held.seatId,
+    ]);
+
+  it('keeps the barber’s seats of every other appointment whose ROOT is live', () => {
+    const pending = visit('p', [seat('p1', IVAN, at(9))], {
+      lifecycle: BookingLifecycle.pending(ROOT_AT),
+    });
+    const confirmed = visit('c', [
+      seat('c1', IVAN, at(10)),
+      seat('c2', PETAR, at(10)),
+      seat('c3', IVAN, at(11)),
+    ]);
+    expect(
+      ids(BusySystem.chairOccupants([pending, confirmed], IVAN, null)),
+    ).toEqual([
+      ['p', 'p1'],
+      ['c', 'c1'],
+      ['c', 'c3'],
+    ]);
+    expect(
+      ids(BusySystem.chairOccupants([pending, confirmed], PETAR, null)),
+    ).toEqual([['c', 'c2']]);
+  });
+
+  it('drops a settled root — completed, no-show, cancelled — as the busy projection does', () => {
+    const settled = [
+      visit('done', [seat('d1', IVAN, at(9))], {
+        lifecycle: BookingLifecycle.complete(ROOT_AT),
+      }),
+      visit('gone', [seat('g1', IVAN, at(10))], {
+        lifecycle: BookingLifecycle.noShow(ROOT_AT),
+      }),
+      visit('off', [seat('o1', IVAN, at(11))], { lifecycle: cancelledAt8 }),
+    ];
+    expect(BusySystem.chairOccupants(settled, IVAN, null)).toEqual([]);
+  });
+
+  it('keeps a split party’s chair whose seats were all cancelled inside a CONFIRMED root', () => {
+    const cancelledSeat = seatFixture({
+      seatId: SeatId.of('s1'),
+      barberId: IVAN,
+      startMinutes: at(10),
+      outcome: SeatOutcome.cancelled(
+        ROOT_AT,
+        CancelledBy.Client,
+        CancellationReason.ClientChangedPlans,
+        null,
+      ),
+    });
+    const split = visit('split', [cancelledSeat, seat('s2', PETAR, at(10))]);
+    expect(ids(BusySystem.chairOccupants([split], IVAN, null))).toEqual([
+      ['split', 's1'],
+    ]);
+    // The busy projection counts the same chair.
+    expect(
+      BusySystem.rebuild(key(IVAN, '2026-06-01'), [split], dayStart)
+        ?.writeAction,
+    ).toBe(WriteAction.Set);
+  });
+
+  it('leaves out the appointment on the sheet, and only it', () => {
+    const mine = visit('mine', [seat('m1', IVAN, at(10))]);
+    const theirs = visit('theirs', [seat('t1', IVAN, at(10))]);
+    expect(
+      ids(
+        BusySystem.chairOccupants(
+          [mine, theirs],
+          IVAN,
+          AppointmentId.of('mine'),
+        ),
+      ),
+    ).toEqual([['theirs', 't1']]);
+    expect(BusySystem.chairOccupants([], IVAN, null)).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const day = deepFreeze([
+      visit('a', [seat('a1', IVAN, at(10))]),
+      visit('b', [seat('b1', IVAN, at(11))], { lifecycle: cancelledAt8 }),
+    ]);
+    const snapshot = structuredClone(day);
+    const once = BusySystem.chairOccupants(day, IVAN, AppointmentId.of('x'));
+    expect(BusySystem.chairOccupants(day, IVAN, AppointmentId.of('x'))).toEqual(
+      once,
+    );
+    expect(day).toEqual(snapshot);
   });
 });

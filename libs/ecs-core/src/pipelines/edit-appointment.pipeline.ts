@@ -1,24 +1,16 @@
 import {
-  type AccountOccupant,
   type Actor,
-  AuditAction,
   AuditContext,
   type BookingPolicy,
-  Combinability,
-  CouponValue,
   CustomerOrigin,
-  DiscountMethod,
   DiscountSource,
-  type PlacementPolicy,
-  Seat,
-  SeatLabel,
-  SeatOccupant,
-  SeatSubject,
-  StaffTermsOverride,
-  type StaffEditAction,
+  PlacementPolicy,
+  type Seat,
   StoodSeatPairs,
   SubjectRelationship,
+  SeatSubject,
   VoucherCode,
+  VoucherRedemption,
   WriteOp,
   EditCommand,
   RequestedSubjectRole,
@@ -32,16 +24,15 @@ import {
   type BarberId,
   type CouponGrantId,
   type CouponId,
-  type CustomerId,
+  defect,
   type LocationId,
+  MinuteDelta,
   type OperationId,
   type SeatId,
-  SeatKeyText,
   type ServiceId,
   type TimeZone,
   type UserId,
-  EndMinute,
-  LocalDate,
+  type LocalDate,
   MinuteOfDay,
   UtcEpochMs,
 } from '@core/primitives';
@@ -88,14 +79,11 @@ import {
   CustomerRecordSystem,
   type DecideBookingInput,
   type DecisionStandingSeat,
+  DiscountSystem,
   type EditCommandRequest,
   type EditDraft,
-  GuestLabelSystem,
   LedgerVerdict,
   MoveSystem,
-  type PendingDiscount,
-  type PendingDiscounts,
-  type PendingVouchers,
   type ResolvedCode,
   type ResolvedGrant,
   type SeatedSpan,
@@ -117,7 +105,7 @@ import {
   readAppointment,
   readBookingSet,
   readPlacementSet,
-  voucherPath,
+  readRedemptionVouchers,
   zoneOf,
 } from './booking-read-set.pipeline';
 import { frameWallClock } from './book-appointment.pipeline';
@@ -214,64 +202,6 @@ export type EditAppointmentPorts = TxPorts &
   AuditAppendPorts &
   TelemetryPorts;
 
-/** The staff verb each lone command is audited under. */
-const STAFF_VERB: { readonly [C in EditCommand]: StaffEditAction } = {
-  [EditCommand.Move]: AuditAction.BookingStaffMove,
-  [EditCommand.Resize]: AuditAction.BookingStaffResize,
-  [EditCommand.Reprice]: AuditAction.BookingStaffReprice,
-  [EditCommand.Redurate]: AuditAction.BookingStaffRedurate,
-  [EditCommand.Restaff]: AuditAction.BookingStaffRestaff,
-  [EditCommand.AddSeat]: AuditAction.BookingStaffAddSeat,
-  [EditCommand.RemoveSeat]: AuditAction.BookingStaffRemoveSeat,
-  [EditCommand.Relocate]: AuditAction.BookingStaffRelocate,
-  [EditCommand.Discounts]: AuditAction.BookingStaffDiscounts,
-  [EditCommand.Vouchers]: AuditAction.BookingStaffVouchers,
-};
-
-/** A batch's verb: its lone command's, or a save. */
-function verbOf(commands: readonly BookingCall.EditCommand[]): StaffEditAction {
-  const only = commands.length === 1 ? commands[0] : undefined;
-  return only === undefined
-    ? AuditAction.BookingStaffSave
-    : STAFF_VERB[only.editCommand];
-}
-
-/** The batch's LAST word on the discounts, or `null` when it said nothing (keep). */
-function lastDiscounts(
-  commands: readonly BookingCall.EditCommand[],
-): readonly BookingCall.StaffDiscount[] | null {
-  let last: readonly BookingCall.StaffDiscount[] | null = null;
-  for (const command of commands) {
-    if (command.editCommand === EditCommand.Discounts) last = command.discounts;
-  }
-  return last;
-}
-
-/** The batch's last word on the vouchers. */
-function pendingVouchersOf(
-  commands: readonly BookingCall.EditCommand[],
-): PendingVouchers {
-  let codes: readonly VoucherCode[] | null = null;
-  for (const command of commands) {
-    if (command.editCommand === EditCommand.Vouchers) codes = command.codes;
-  }
-  return codes === null
-    ? { billPending: BillPending.Keep }
-    : { billPending: BillPending.Set, codes };
-}
-
-/** The shop the batch moves the visit to — the last `RELOCATE` — or `null`. */
-function relocatedTo(
-  commands: readonly BookingCall.EditCommand[],
-): LocationId | null {
-  let target: LocationId | null = null;
-  for (const command of commands) {
-    if (command.editCommand === EditCommand.Relocate)
-      target = command.locationId;
-  }
-  return target;
-}
-
 type CouponsByCode = ReadonlyMap<VoucherCode, Coupon | null>;
 
 type Operation = { readonly id: OperationId; readonly digest: string };
@@ -334,7 +264,8 @@ export const editAppointment =
 
     // THE TYPED CODES, outside the transaction — a code is a lookup.
     const couponsByCode = new Map<VoucherCode, Coupon | null>();
-    for (const request of lastDiscounts(cmd.commands) ?? []) {
+    for (const request of AppointmentEditSystem.lastDiscounts(cmd.commands) ??
+      []) {
       if (request.discountSource !== DiscountSource.Code) continue;
       if (couponsByCode.has(request.code)) continue;
       const found = await ports.findCouponByCode(request.code);
@@ -346,9 +277,9 @@ export const editAppointment =
         ? null
         : {
             id: cmd.operationId,
-            digest: ports
-              .hash(AppointmentEditSystem.digestBasis(cmd.commands))
-              .slice(0, 16),
+            digest: AppointmentEditSystem.digestOf(
+              ports.hash(AppointmentEditSystem.digestBasis(cmd.commands)),
+            ),
           };
     const nowUtcMs = ports.nowUtcMs();
 
@@ -394,7 +325,10 @@ export const editAppointment =
         committed.value.requests,
       ),
       changeKey: AuditSystem.changeKey.staffEdit(cmd.operationId, revision),
-      context: AuditContext.staffEdit(verbOf(cmd.commands), revision),
+      context: AuditContext.staffEdit(
+        AppointmentEditSystem.auditVerb(cmd.commands),
+        revision,
+      ),
     };
     await appendAuditFacts(ports, [fact], cmd.actor);
     return Result.ok({
@@ -428,13 +362,14 @@ function onTheClock(
 }
 
 /**
- * ONE command on the running draft's clock (the boundary's reading, Law
- * 7.3): a move names the day it lands on; a resize start must stay on the
- * running day (`atMinutes`), a resize end may be its closing midnight (an
- * end at or before the day's start drives the duration to nothing:
- * `minutes`; past the midnight it leaves the day: `atMinutes`); an added
- * seat must start on the running day (`startMinutes`). Every wall clock a
- * command names must be one the shop's zone shows.
+ * ONE command on the running draft's clock — the fold's resolver
+ * (`AppointmentEditSystem.foldCommands`), the boundary's one zone-dependent
+ * step (Law 7.3): every wall clock a command names must be one the shop's
+ * zone shows, and an added seat's end is placed on the absolute timeline
+ * here. The rest is the system's: a resize end measured from the running
+ * day (`resizeEndOf`), the added seat's occupant (`addedOccupantOf`). A
+ * resize start must stay on the running day (`atMinutes`); an added seat
+ * must start on it (`startMinutes`).
  */
 function requestOf(
   command: BookingCall.EditCommand,
@@ -445,26 +380,18 @@ function requestOf(
   switch (command.editCommand) {
     case EditCommand.Move: {
       const shown = onTheClock(command.localDate, command.startMinutes, zone);
-      if (!shown.ok) return shown;
-      return Result.ok({
-        editCommand: EditCommand.Move,
-        localDate: command.localDate,
-        startMinutes: command.startMinutes,
-        seatIds: command.seatIds,
-      });
+      return shown.ok ? Result.ok(command) : shown;
     }
     case EditCommand.Resize: {
       const shown = onTheClock(command.localDate, command.atMinutes, zone);
       if (!shown.ok) return shown;
       if (command.resizeEdge === ResizeEdge.End) {
-        const minutes =
-          LocalDate.daysBetween(day, command.localDate) * 1440 +
-          command.atMinutes;
-        if (minutes <= 0)
-          return Result.err(StaffEditError.invalidCommand('minutes'));
-        const end = EndMinute.of(minutes);
-        if (!end.ok)
-          return Result.err(StaffEditError.invalidCommand('atMinutes'));
+        const end = AppointmentEditSystem.resizeEndOf(
+          day,
+          command.localDate,
+          command.atMinutes,
+        );
+        if (!end.ok) return end;
         return Result.ok({
           editCommand: EditCommand.Resize,
           resizeEdge: ResizeEdge.End,
@@ -492,20 +419,9 @@ function requestOf(
         zone,
       );
       if (!shown.ok) return shown;
-      const occupant: AccountOccupant =
-        command.addedSubject.requestedSubjectRole ===
-          RequestedSubjectRole.Self && owner !== null
-          ? {
-              seatSubject: SeatSubject.Account,
-              subjectUserId: owner,
-              subjectRelationship: SubjectRelationship.Self,
-            }
-          : SeatOccupant.anonymous(
-              command.addedSubject.requestedSubjectRole ===
-                RequestedSubjectRole.Guest
-                ? command.addedSubject.label
-                : SeatLabel.of(command.seatId),
-            );
+      // A DurationMinutes is a positive safe integer, always a MinuteDelta.
+      const span = MinuteDelta.of(command.durationMinutes);
+      if (!span.ok) return defect('a duration that is no minute delta');
       return Result.ok({
         editCommand: EditCommand.AddSeat,
         seatId: command.seatId,
@@ -515,11 +431,12 @@ function requestOf(
         startMinutes: command.startMinutes,
         durationMinutes: command.durationMinutes,
         // The instant the seat ends, on the absolute timeline (its stamp on a finished visit).
-        workedAtUtcMs: UtcEpochMs.plusMs(
-          shown.value,
-          command.durationMinutes * 60_000,
+        workedAtUtcMs: UtcEpochMs.plusMinutes(shown.value, span.value),
+        ...AppointmentEditSystem.addedOccupantOf(
+          command.addedSubject,
+          owner,
+          command.seatId,
         ),
-        ...occupant,
       });
     }
     case EditCommand.Reprice:
@@ -533,93 +450,6 @@ function requestOf(
     case EditCommand.Vouchers:
       return Result.ok({ editCommand: EditCommand.Vouchers });
   }
-}
-
-/**
- * The batch FOLDED over the stored seats in the caller's order, each
- * command read on the clock of the draft the one before it left
- * (`AppointmentEditSystem.applyCommand`, the system's own step): a save
- * that moves the day and then stretches the block resizes the MOVED seats.
- *
- * Then EVERY CHAIR OF THE FOLDED VISIT is read on the target shop's zone,
- * as the booking's frame reads a new party (`frameWallClock`, Law 7.3): a
- * relocated visit lands on another zone's clock, and a seat no command named
- * moves too — the rest of a party shifted as one, the seat that becomes the
- * envelope's start once the first is removed. A start the zone never shows
- * is refused `DST_GAP_INVALID_TIME`, never shifted and never answered with
- * the stored instant; the envelope's instant is computed here, ONCE.
- */
-function foldOnClock(
-  stored: Appointment,
-  commands: readonly BookingCall.EditCommand[],
-  zone: TimeZone,
-  customerIds: ReadonlyMap<UserId, CustomerId>,
-): Result<
-  {
-    readonly draft: EditDraft;
-    readonly startUtcMs: UtcEpochMs;
-    readonly fresh: readonly SeatId[];
-    readonly requests: readonly EditCommandRequest[];
-  },
-  StaffEditInvalidCommand | TimeError
-> {
-  if (commands.length === 0)
-    return Result.err(StaffEditError.invalidCommand('command'));
-  if (stored.seats.length === 0)
-    return Result.err(StaffEditError.invalidCommand('seats'));
-  const context = AppointmentEditSystem.foldContextOf(stored, customerIds);
-  let draft: EditDraft = { localDate: stored.localDate, seats: stored.seats };
-  const requests: EditCommandRequest[] = [];
-  for (const command of commands) {
-    const request = requestOf(
-      command,
-      draft.localDate,
-      zone,
-      stored.ownerUserId,
-    );
-    if (!request.ok) return request;
-    requests.push(request.value);
-    // The place is settled outside the fold — the seats do not change under it.
-    if (command.editCommand === EditCommand.Relocate) continue;
-    const applied = AppointmentEditSystem.applyCommand(
-      draft,
-      request.value,
-      context,
-    );
-    if (!applied.ok) return applied;
-    draft = applied.value;
-  }
-  const framed = frameWallClock(
-    draft.localDate,
-    draft.seats.map((seat) => seat.startMinutes),
-    zone,
-  );
-  if (!framed.ok) return framed;
-  const startUtcMs = framed.value.startUtcMs;
-  if (startUtcMs === null)
-    return Result.err(StaffEditError.invalidCommand('seats'));
-  const fresh: SeatId[] = [];
-  for (const seat of draft.seats) {
-    if (!context.held.includes(seat.seatId)) fresh.push(seat.seatId);
-  }
-  return Result.ok({ draft, startUtcMs, fresh, requests });
-}
-
-/** The accounts the batch adds — an added `SELF` seat names the owner (nobody else can join through an edit). */
-function addedAccountsOf(
-  commands: readonly BookingCall.EditCommand[],
-  owner: UserId | null,
-): readonly UserId[] {
-  if (owner === null) return [];
-  for (const command of commands) {
-    if (
-      command.editCommand === EditCommand.AddSeat &&
-      command.addedSubject.requestedSubjectRole === RequestedSubjectRole.Self
-    ) {
-      return [owner];
-    }
-  }
-  return [];
 }
 
 /** The transaction's read half — see {@link editAppointment}. */
@@ -662,7 +492,8 @@ async function readEdit(
   // The promises the bill names: the grants of the batch and of the stored
   // discounts, then their coupons in ONE getAll.
   const grantIds: CouponGrantId[] = [];
-  for (const request of lastDiscounts(cmd.commands) ?? []) {
+  for (const request of AppointmentEditSystem.lastDiscounts(cmd.commands) ??
+    []) {
     if (
       request.discountSource === DiscountSource.Grant &&
       isReadableId(request.grantId)
@@ -704,23 +535,15 @@ async function readEdit(
   // The vouchers: by id (the live lines), then by code for each code the
   // batch names that the ids did not resolve — every one of them in the
   // conflict set, so two counters drawing on one voucher serialise.
-  const vouchers: GiftVoucher[] = [];
-  const liveIds: GiftVoucher['id'][] = [];
-  for (const line of stored.voucherRedemptions) {
-    if (line.reversedAtUtcMs === null && !liveIds.includes(line.voucherId)) {
-      liveIds.push(line.voucherId);
-    }
-  }
-  if (liveIds.length > 0) {
-    const byId = await tx.getAll<GiftVoucher>(liveIds.map(voucherPath));
-    for (const voucher of byId) if (voucher !== null) vouchers.push(voucher);
-  }
-  const pending = pendingVouchersOf(cmd.commands);
+  const vouchers: GiftVoucher[] = [
+    ...(await readRedemptionVouchers(tx, stored.voucherRedemptions)),
+  ];
+  const pending = AppointmentEditSystem.pendingVouchers(cmd.commands);
   const codes =
     pending.billPending === BillPending.Set
       ? pending.codes
       : stored.voucherRedemptions
-          .filter((line) => line.reversedAtUtcMs === null)
+          .filter(VoucherRedemption.isLive)
           .map((line) => line.code);
   for (const raw of codes) {
     const code = VoucherCode.normalize(raw);
@@ -735,7 +558,8 @@ async function readEdit(
     if (hit !== undefined) vouchers.push(hit);
   }
   // The target shop and its clock.
-  const targetLocationId = relocatedTo(cmd.commands) ?? stored.locationId;
+  const targetLocationId =
+    AppointmentEditSystem.relocatedTo(cmd.commands) ?? stored.locationId;
   const serviceIds: ServiceId[] = stored.seats.map((seat) => seat.serviceId);
   const barberIds: BarberId[] = stored.seats.map((seat) => seat.barberId);
   for (const command of cmd.commands) {
@@ -765,10 +589,45 @@ async function readEdit(
       ),
     };
   }
-  const addedAccounts = addedAccountsOf(cmd.commands, stored.ownerUserId);
+  const addedAccounts = AppointmentEditSystem.addedAccounts(
+    cmd.commands,
+    stored.ownerUserId,
+  );
   const customerIds = customerIdsFor(addedAccounts, hash);
-  const folded = foldOnClock(stored, cmd.commands, zone, customerIds);
+  // THE BATCH FOLDED over the stored seats in the caller's order, each
+  // command resolved on the clock of the draft the one before it left.
+  const folded = AppointmentEditSystem.foldCommands(
+    stored,
+    cmd.commands,
+    customerIds,
+    (command, day) => requestOf(command, day, zone, stored.ownerUserId),
+  );
   if (!folded.ok) return { snapshot: 'REFUSED', error: folded.error };
+  // Then EVERY CHAIR OF THE FOLDED VISIT is read on the target shop's zone,
+  // as the booking's frame reads a new party (Law 7.3): a relocated visit
+  // lands on another zone's clock, and a seat no command named moves too —
+  // the rest of a party shifted as one, the seat that becomes the
+  // envelope's start once the first is removed. A start the zone never
+  // shows is refused `DST_GAP_INVALID_TIME`, never shifted and never
+  // answered with the stored instant; the envelope's instant is computed
+  // here, ONCE.
+  const draft: EditDraft = {
+    localDate: folded.value.localDate,
+    seats: folded.value.seats,
+  };
+  const framed = frameWallClock(
+    draft.localDate,
+    draft.seats.map((seat) => seat.startMinutes),
+    zone,
+  );
+  if (!framed.ok) return { snapshot: 'REFUSED', error: framed.error };
+  const startUtcMs = framed.value.startUtcMs;
+  if (startUtcMs === null) {
+    return {
+      snapshot: 'REFUSED',
+      error: StaffEditError.invalidCommand('seats'),
+    };
+  }
   const freshSubjects = new Map<SeatId, BookingCall.SubjectInput>();
   for (const command of cmd.commands) {
     if (
@@ -782,7 +641,7 @@ async function readEdit(
   }
   const placement = await readPlacementSet(
     tx,
-    placementKeysOf(folded.value.draft.seats, folded.value.draft.localDate),
+    placementKeysOf(draft.seats, draft.localDate),
     customerIdsOf(customerIds),
   );
   return {
@@ -791,11 +650,11 @@ async function readEdit(
     zone,
     set,
     placement,
-    draft: folded.value.draft,
-    startUtcMs: folded.value.startUtcMs,
+    draft,
+    startUtcMs,
     requests: folded.value.requests,
     targetLocationId,
-    freshSeatIds: folded.value.fresh,
+    freshSeatIds: folded.value.freshSeatIds,
     freshSubjects,
     addedAccounts,
     grants,
@@ -824,49 +683,6 @@ function subjectOfSeat(seat: Seat): BookingCall.SubjectInput | null {
     default:
       return null;
   }
-}
-
-/** A seat as the "one person, one chair" rule counts it. */
-function spanOf(seat: Seat, subject: BookingCall.SubjectInput): SeatedSpan {
-  return {
-    seatId: seat.seatId,
-    personKey: GuestLabelSystem.personKeyOf(subject),
-    startMinutes: seat.startMinutes,
-    endMinutes: EndMinute.ofProven(seat.startMinutes + seat.durationMinutes),
-  };
-}
-
-/** A grant as the bill's settle reads it — its coupon's label and combinability. */
-function resolvedGrantOf(
-  grant: CouponGrant,
-  coupon: Coupon | null,
-  nowUtcMs: UtcEpochMs,
-): ResolvedGrant {
-  return {
-    grantId: grant.id,
-    customerId: grant.customerId,
-    // The coupon's NAME is the receipt's word; a grant whose coupon is gone
-    // is labelled by itself and read as stackable — the promise stands.
-    label:
-      coupon !== null && coupon.name.trim().length > 0
-        ? coupon.name
-        : grant.couponId || grant.id,
-    usable: CouponGrantSystem.isUsable(grant, nowUtcMs),
-    exclusive:
-      coupon === null ? false : Combinability.isExclusive(coupon.combinability),
-    ...CouponValue.of(grant),
-  };
-}
-
-/** A coupon a typed code opened, as the settle reads it. */
-function resolvedCodeOf(coupon: Coupon, code: VoucherCode): ResolvedCode {
-  return {
-    couponId: coupon.id,
-    label: coupon.name,
-    code,
-    exclusive: Combinability.isExclusive(coupon.combinability),
-    ...CouponValue.of(coupon),
-  };
 }
 
 type DecideContext = {
@@ -901,95 +717,61 @@ function decideEdit(
   const nowUtcMs = context.nowUtcMs;
   const first = stored.seats[0] as Seat;
 
-  // 1. The bill's discounts after the batch (refused before the placement).
-  const requests = lastDiscounts(cmd.commands);
-  let discounts = stored.discounts;
-  if (requests !== null) {
-    const items: PendingDiscount[] = [];
-    for (const request of requests) {
-      switch (request.discountSource) {
-        case DiscountSource.Grant: {
-          const grant =
-            loaded.grants.find((each) => each.id === request.grantId) ?? null;
-          items.push({
-            discountSource: DiscountSource.Grant,
-            grantId: request.grantId,
-            resolved:
-              grant === null
-                ? null
-                : resolvedGrantOf(
-                    grant,
-                    loaded.coupons.get(grant.couponId) ?? null,
-                    nowUtcMs,
-                  ),
-          });
-          break;
-        }
-        case DiscountSource.Code: {
-          const coupon = context.couponsByCode.get(request.code) ?? null;
-          items.push({
-            discountSource: DiscountSource.Code,
-            code: request.code,
-            resolved:
-              coupon === null ? null : resolvedCodeOf(coupon, request.code),
-          });
-          break;
-        }
-        default:
-          items.push({
-            discountSource: DiscountSource.Manual,
-            value:
-              request.discountMethod === DiscountMethod.PercentOff
-                ? {
-                    discountMethod: DiscountMethod.PercentOff,
-                    discountPercent: request.discountPercent,
-                  }
-                : {
-                    discountMethod: DiscountMethod.FixedAmount,
-                    discountAmountCents: request.discountAmountCents,
-                    discountCurrency: first.currency,
-                  },
-          });
-      }
-    }
-    const pending: PendingDiscounts = { billPending: BillPending.Set, items };
-    const settled = BillingSystem.settleDiscounts(
-      pending,
-      stored.discounts,
-      stored.ownerCustomerId,
-      cmd.actorRoles,
-      first.currency,
-      nowUtcMs,
+  // 1. The bill's discounts after the batch (refused before the placement):
+  //    each grant as its coupon labels it, each typed code as its coupon.
+  const resolvedGrants: ResolvedGrant[] = [];
+  for (const grant of loaded.grants) {
+    resolvedGrants.push(
+      CouponGrantSystem.resolved(
+        grant,
+        loaded.coupons.get(grant.couponId) ?? null,
+        nowUtcMs,
+      ),
     );
-    if (!settled.ok) return settled;
-    discounts = settled.value;
   }
+  const resolvedCodes: ResolvedCode[] = [];
+  for (const [code, coupon] of context.couponsByCode) {
+    if (coupon !== null)
+      resolvedCodes.push(DiscountSystem.resolvedCode(coupon, code));
+  }
+  const settledDiscounts = BillingSystem.settleDiscounts(
+    BillingSystem.pendingDiscounts(
+      AppointmentEditSystem.lastDiscounts(cmd.commands),
+      resolvedGrants,
+      resolvedCodes,
+      first.currency,
+    ),
+    stored.discounts,
+    stored.ownerCustomerId,
+    cmd.actorRoles,
+    first.currency,
+    nowUtcMs,
+  );
+  if (!settledDiscounts.ok) return settledDiscounts;
+  const discounts = settledDiscounts.value;
 
   // 2. May the folded visit be written at all?
   const refusal = AppointmentEditSystem.guard(
     stored.bookingStatus,
     draft.localDate,
-    draft.seats.map((seat) => ({
-      startMinutes: seat.startMinutes,
-      endMinutes: EndMinute.ofProven(seat.startMinutes + seat.durationMinutes),
-    })),
+    draft.seats,
     stored.arrivedAtUtcMs === null ? null : wallOf(stored.arrivedAtUtcMs, zone),
   );
   if (refusal !== null) return Result.err(refusal);
 
   // 3. A fresh seat must name a chair this shop rosters.
-  for (const seat of draft.seats) {
-    if (!loaded.freshSeatIds.includes(seat.seatId)) continue;
-    if (
-      !loaded.set.schedules.some((schedule) => schedule.id === seat.barberId)
-    ) {
-      return Result.err(StaffEditError.invalidCommand('barberId'));
-    }
+  if (
+    !AppointmentEditSystem.freshSeatsRostered(
+      draft.seats,
+      loaded.freshSeatIds,
+      loaded.set.schedules,
+    )
+  ) {
+    return Result.err(StaffEditError.invalidCommand('barberId'));
   }
 
   // 4. The decision, under the shop's rules, with the stored ids and terms.
   const lines: BookingCall.SeatInput[] = [];
-  const overrides: StaffTermsOverride[] = [];
   for (const seat of draft.seats) {
     const subject =
       loaded.freshSubjects.get(seat.seatId) ?? subjectOfSeat(seat);
@@ -1003,11 +785,6 @@ function decideEdit(
       startMinutes: seat.startMinutes,
       subject,
     });
-    // A move is not a re-sale: every stored seat's terms ride forward; a
-    // fresh seat is priced by the catalogue.
-    if (!loaded.freshSeatIds.includes(seat.seatId)) {
-      overrides.push(StaffTermsOverride.of(SeatKeyText.of(seat.seatId), seat));
-    }
   }
   const standing: DecisionStandingSeat[] = [];
   const before: SeatedSpan[] = [];
@@ -1020,17 +797,11 @@ function decideEdit(
       startMinutes: seat.startMinutes,
       durationMinutes: seat.durationMinutes,
     });
-    before.push(spanOf(seat, subject));
+    before.push(SeatingRuleSystem.spanOf(seat, subject));
   }
   const ids = draft.seats.map((seat) => seat.seatId);
   let cursor = 0;
   const owner = stored.ownerUserId;
-  const placementPolicy: PlacementPolicy = {
-    allowOutsideWindow: true,
-    skipMinNotice: true,
-    allowOverlap: cmd.acknowledgedOverlap,
-    allowConflictingServices: true,
-  };
   const input: DecideBookingInput = {
     locationId: loaded.targetLocationId,
     localDate: draft.localDate,
@@ -1044,7 +815,10 @@ function decideEdit(
     input,
     bookingSnapshotOf(loaded.set, loaded.placement),
     context.policy,
-    placementPolicy,
+    PlacementPolicy.withOverlap(
+      PlacementPolicy.staffPlacement(),
+      cmd.acknowledgedOverlap,
+    ),
     MoveSystem.release(stored),
     {
       now: ZonedTimeSystem.shopNow(nowUtcMs, zone),
@@ -1055,7 +829,12 @@ function decideEdit(
         BookingDecisionSystem.accountSubjects(lines, owner),
         context.hash,
       ),
-      termsOverrides: overrides,
+      // A move is not a re-sale: every stored seat's terms ride forward; a
+      // fresh seat is priced by the catalogue.
+      termsOverrides: AppointmentEditSystem.termsOverridesOf(
+        draft.seats,
+        loaded.freshSeatIds,
+      ),
       standing,
       stood: StoodSeatPairs.liveAt(stored, stored.revision),
       parsePhone: parseContactPhone,
@@ -1065,38 +844,23 @@ function decideEdit(
     if (decided.error.errorCode !== BookingErrorCode.SlotUnavailable)
       return decided;
     // With the window off for staff, `slot_unavailable` can mean nothing but
-    // a collision — the acknowledgeable overlap, naming the lone resize's handle.
-    const only = cmd.commands.length === 1 ? cmd.commands[0] : undefined;
+    // a collision — the acknowledgeable overlap.
     return Result.err(
-      StaffEditError.overlaps(
-        decided.error.barberId,
-        decided.error.localDate,
-        decided.error.startMinutes,
-        only?.editCommand === EditCommand.Resize ? only.resizeEdge : null,
-      ),
+      AppointmentEditSystem.overlapOf(decided.error, cmd.commands),
     );
   }
 
   // 5. The decided seats with the stored outcomes and tips carried back.
-  const seats: Seat[] = [];
-  const decidedSeats = decided.value.appointment.seats;
-  for (let i = 0; i < decidedSeats.length; i++) {
-    const seat = decidedSeats[i] as Seat;
-    const folded = draft.seats[i];
-    // The decision rebuilt this seat from the catalogue, which knows
-    // nothing of the guest who was served or of what was left on the counter.
-    seats.push(
-      folded === undefined
-        ? seat
-        : Seat.withTip(Seat.withOutcome(seat, folded), folded.tipCents),
-    );
-  }
+  const seats = AppointmentEditSystem.carryBack(
+    decided.value.appointment.seats,
+    draft.seats,
+  );
 
   // 6. The vouchers, settled LAST against the bill as the batch leaves it.
   const subtotal = BillingSystem.subtotalOf(seats);
   if (!subtotal.ok) return Result.err(StaffEditError.invalidCommand('seats'));
   const paid = BillingSystem.settleVouchers(
-    pendingVouchersOf(cmd.commands),
+    AppointmentEditSystem.pendingVouchers(cmd.commands),
     stored.voucherRedemptions,
     BillingSystem.totalOf(subtotal.value, discounts),
     loaded.vouchers,
@@ -1107,15 +871,11 @@ function decideEdit(
   // 7. The client records of added accounts: a missing one needs its
   //    contact snapshot first (read outside, then the edit runs again).
   const added = customerIdsFor(loaded.addedAccounts, context.hash);
-  const missing: UserId[] = [];
-  for (const [userId, customerId] of added) {
-    if (
-      loaded.placement.customers.get(customerId) === null &&
-      !context.contacts.has(userId)
-    ) {
-      missing.push(userId);
-    }
-  }
+  const missing = CustomerRecordSystem.missingContacts(
+    added,
+    loaded.placement.customers,
+    context.contacts,
+  );
   if (missing.length > 0) {
     return Result.ok({
       stored,
@@ -1157,7 +917,9 @@ function decideEdit(
           draft.seats.flatMap((seat) => {
             const subject =
               loaded.freshSubjects.get(seat.seatId) ?? subjectOfSeat(seat);
-            return subject === null ? [] : [spanOf(seat, subject)];
+            return subject === null
+              ? []
+              : [SeatingRuleSystem.spanOf(seat, subject)];
           }),
         ),
       ),

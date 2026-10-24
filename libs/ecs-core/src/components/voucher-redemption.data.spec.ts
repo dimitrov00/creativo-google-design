@@ -35,4 +35,11 @@ describe('VoucherRedemption', () => {
     expect(VoucherRedemption.restoreDelta(reversed)).toBe(0);
     expect(LIVE.reversedAtUtcMs).toBeNull();
   });
+
+  it('may still draw what it left plus its own amount while live — what it left once reversed', () => {
+    expect(VoucherRedemption.drawableCents(LIVE)).toBe(5000);
+    expect(
+      VoucherRedemption.drawableCents(VoucherRedemption.reversed(LIVE, at(20))),
+    ).toBe(3000);
+  });
 });

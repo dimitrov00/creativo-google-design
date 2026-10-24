@@ -194,6 +194,49 @@ export const BookingDraft = {
   },
 
   /**
+   * THE DRAFT TO PERSIST, its origin chosen (`booking-flow.store.ts`
+   * `persist`): a move ▸ a rebooking edge ▸ fresh. A move wins over a
+   * rebooking edge — a move is never a rebooking. Either one counts only
+   * when it is bound to an account (`readerUserId`): a visit bound to nobody
+   * lives in memory alone — the first claim releases it — so it never
+   * reaches the draft, which is then the next rung down.
+   */
+  of(
+    state: BookingFlowState,
+    contact: BookingContact,
+    draftLocalDate: LocalDate | null,
+    moving: BookingDraft.Moving | null,
+    source: BookingDraft.Source | null,
+  ): BookingDraft {
+    if (moving !== null && moving.readerUserId !== null) {
+      return BookingDraft.reschedule(
+        state,
+        contact,
+        draftLocalDate,
+        BookingDraft.rescheduleOrigin(
+          moving.appointmentId,
+          moving.readerUserId,
+          moving.localDate,
+          moving.riders,
+          moving.release,
+        ),
+      );
+    }
+    if (source !== null && source.readerUserId !== null) {
+      return BookingDraft.bookedFrom(
+        state,
+        contact,
+        draftLocalDate,
+        BookingDraft.bookedFromOrigin(
+          source.appointmentId,
+          source.readerUserId,
+        ),
+      );
+    }
+    return BookingDraft.fresh(state, contact, draftLocalDate);
+  },
+
+  /**
    * THE RESTORE READ — a stored value as the draft it restores to, or
    * `null` when it is none. A draft needs a flow state that passes
    * `BookingFlowState.is`, its contact slice (each key a text or `null`)
@@ -309,5 +352,25 @@ export namespace BookingDraft {
     readonly rescheduleRiders: readonly MoveRider[];
     /** The chairs the visit holds, handed back before it is placed again (1-to-N). */
     readonly rescheduleRelease: readonly ChairTime[];
+  };
+  /**
+   * A visit the flow was started FROM, as the booking store holds it beside
+   * the machine (`HeldVisit`) — {@link BookingDraft.of}'s rebooking input.
+   * `readerUserId` is the account it was read for, `null` while bound to
+   * nobody.
+   */
+  export type Source = {
+    readonly appointmentId: AppointmentId;
+    readonly readerUserId: UserId | null;
+  };
+  /**
+   * The visit being MOVED, as the booking store holds it (`HeldMove`) — its
+   * shop day, the seats the server carries and the chairs it hands back;
+   * {@link BookingDraft.of}'s move input.
+   */
+  export type Moving = Source & {
+    readonly localDate: LocalDate;
+    readonly riders: readonly MoveRider[];
+    readonly release: readonly ChairTime[];
   };
 }

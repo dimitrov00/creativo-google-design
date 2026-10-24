@@ -7,6 +7,7 @@ import { filter } from 'rxjs/operators';
 import {
   AuthFlowStep,
   AuthStrategy,
+  OTP_CODE_DIGITS,
   OtpCode,
   ParsedIdentifier,
   PrincipalKind,
@@ -367,7 +368,8 @@ export class ClientAuth {
     }
   }
 
-  protected readonly otpLength = 6;
+  /** The code's length — the one rule `OtpCode.parse` checks (`OTP_CODE_DIGITS`). */
+  protected readonly otpLength = OTP_CODE_DIGITS;
 
   protected codeErrorMessage(): string | null {
     const raw = this.rawCode();

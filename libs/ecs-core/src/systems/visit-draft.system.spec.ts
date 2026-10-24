@@ -7,7 +7,7 @@ import {
   RecurrencePattern,
   RecurrenceRule,
 } from '@core/components';
-import { Weekday, DurationMinutes, LocalDate } from '@core/primitives';
+import { Weekday, DurationMinutes, LocalDate, UserId } from '@core/primitives';
 import {
   deepFreeze,
   endMinute,
@@ -39,6 +39,22 @@ import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
  * `recurrenceEnd` at its root), the presets SCREAMING, every minute figure a
  * `DurationMinutes` / `MinuteDelta` brand and the draft's frame
  * `MinuteOfDay` → `EndMinute`.
+ *
+ * Pass C, ported as values (S-23, S-24, E-14, E-15, E-18, Y-19):
+ * - the grain and its snaps — the editor's and the block editor's `snap`,
+ *   the dashboard's `nowSnapped` (staff-visit-editor.spec.ts :1903, :5730 —
+ *   47 typed reads 45; staff-time-grid.spec.ts :851, :1582);
+ * - the block editor's typed pair (`commitStart`/`commitEnd`,
+ *   staff-block-editor.spec.ts :183);
+ * - the visit sheet's span and its two override rules — the frame
+ *   (`onFrameDraft`, against the raw leg sum floored at one grain) and the
+ *   typed figure (`setDuration`, against the raw leg sum, `0` with no legs)
+ *   (staff-visit-editor.spec.ts :976 — 75 typed over 45 of legs pins 75;
+ *   :1737 — a drag keeps 45; :5721 — 95 pins 95);
+ * - a typed end (`commitEnd`, staff-visit-editor.spec.ts :6431 — 10:00 to
+ *   11:30 is 90, to 00:15 is the next day's 855);
+ * - whose a person key is (`accountIdOf` / `isAccount`; staff-visit-editor
+ *   .spec.ts :5850, :5987, :7476; staff-dashboard.spec.ts :6149, :6219).
  */
 
 const S = VisitDraftSystem;
@@ -425,6 +441,274 @@ describe("the visit draft's span and placeholder seats", () => {
   });
 });
 
+/* ── pass C: the grain, the typed pair, the span rules, the person keys ── */
+
+describe('the grain', () => {
+  it('is five minutes', () => {
+    expect(S.GRAIN_MINUTES).toBe(5);
+  });
+
+  it('snaps to the nearer mark — a half rounds up, 1439 lands on 1440', () => {
+    expect(S.snap(minute(0))).toBe(0);
+    expect(S.snap(minute(2))).toBe(0);
+    expect(S.snap(minute(4))).toBe(5);
+    expect(S.snap(minute(5))).toBe(5);
+    expect(S.snap(minute(47))).toBe(45);
+    expect(S.snap(minute(48))).toBe(50);
+    // The closing midnight — a track minute no `MinuteOfDay` holds (R-6).
+    expect(S.snap(minute(1437))).toBe(1435);
+    expect(S.snap(minute(1438))).toBe(1440);
+    expect(S.snap(minute(1439))).toBe(1440);
+  });
+
+  it('snaps UP for a start at the next tick', () => {
+    expect(S.snapUp(minute(0))).toBe(0);
+    expect(S.snapUp(minute(1))).toBe(5);
+    expect(S.snapUp(minute(4))).toBe(5);
+    expect(S.snapUp(minute(5))).toBe(5);
+    expect(S.snapUp(minute(601))).toBe(605);
+    expect(S.snapUp(minute(1435))).toBe(1435);
+    expect(S.snapUp(minute(1436))).toBe(1440);
+    expect(S.snapUp(minute(1439))).toBe(1440);
+  });
+
+  it('lands every clock minute on a grain mark within half a grain (property)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 1439 }), (raw) => {
+        const near = S.snap(minute(raw));
+        const up = S.snapUp(minute(raw));
+        expect(near % 5).toBe(0);
+        expect(Math.abs(near - raw)).toBeLessThanOrEqual(2.5);
+        expect(up % 5).toBe(0);
+        expect(up).toBeGreaterThanOrEqual(raw);
+        expect(up - raw).toBeLessThan(5);
+        expect(near).toBeGreaterThanOrEqual(0);
+        expect(near).toBeLessThanOrEqual(1440);
+        expect(up).toBeLessThanOrEqual(1440);
+      }),
+    );
+  });
+});
+
+describe('the grain’s floor', () => {
+  it('floors a drawn span at one grain, never snapping it', () => {
+    expect(S.floorSpan(0)).toBe(5);
+    expect(S.floorSpan(2)).toBe(5);
+    expect(S.floorSpan(3)).toBe(5);
+    expect(S.floorSpan(5)).toBe(5);
+    expect(S.floorSpan(7)).toBe(7);
+    expect(S.floorSpan(-15)).toBe(5);
+    // A frame that crossed midnight on the track axis keeps its length.
+    expect(S.floorSpan(1455 - 1405)).toBe(50);
+  });
+
+  it('believes a typed duration: snapped to the grain, then floored', () => {
+    expect(S.typedSpan(0)).toBe(5);
+    expect(S.typedSpan(2)).toBe(5);
+    expect(S.typedSpan(3)).toBe(5);
+    expect(S.typedSpan(5)).toBe(5);
+    expect(S.typedSpan(7)).toBe(5);
+    expect(S.typedSpan(7.5)).toBe(10);
+    expect(S.typedSpan(8)).toBe(10);
+    expect(S.typedSpan(-7)).toBe(5);
+    expect(S.typedSpan(-30)).toBe(5);
+    expect(S.typedSpan(47)).toBe(45);
+    expect(S.typedSpan(2000)).toBe(2000);
+  });
+
+  it('a typed duration is the snap alone from three minutes up (property)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 3, max: 5000 }), (raw) => {
+        expect(S.typedSpan(raw)).toBe(Math.round(raw / 5) * 5);
+      }),
+    );
+  });
+
+  it('is what the span rules floor with', () => {
+    expect(S.editorSpan(null, [{ durationMinutes: d(3) }])).toBe(
+      S.floorSpan(3),
+    );
+    expect(S.spanToEnd(minute(600), minute(601))).toBe(S.typedSpan(1));
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(S.floorSpan(3)).toBe(S.floorSpan(3));
+    expect(S.typedSpan(7.5)).toBe(S.typedSpan(7.5));
+  });
+});
+
+describe('the block editor’s typed pair', () => {
+  const pair = (startMinute: number, endMinute: number) => ({
+    startMinute,
+    endMinute,
+  });
+
+  it('a typed start is snapped and keeps its later end', () => {
+    expect(S.typedStart(pair(600, 720), minute(632))).toEqual(pair(630, 720));
+  });
+
+  it('a typed start past the end pushes the end one grain out', () => {
+    expect(S.typedStart(pair(600, 660), minute(700))).toEqual(pair(700, 705));
+    expect(S.typedStart(pair(600, 660), minute(659))).toEqual(pair(660, 665));
+  });
+
+  it('a typed start at the day’s close snaps to midnight and pushes the end past it — track minutes, never clamped (R-6)', () => {
+    expect(S.typedStart(pair(600, 660), minute(1439))).toEqual(
+      pair(1440, 1445),
+    );
+    expect(S.typedStart(pair(600, 1440), minute(1438))).toEqual(
+      pair(1440, 1445),
+    );
+    expect(S.typedStart(pair(600, 1440), minute(1430))).toEqual(
+      pair(1430, 1440),
+    );
+  });
+
+  it('a typed end is snapped and keeps its earlier start', () => {
+    expect(S.typedEnd(pair(600, 660), minute(718))).toEqual(pair(600, 720));
+    expect(S.typedEnd(pair(600, 660), minute(1439))).toEqual(pair(600, 1440));
+  });
+
+  it('a typed end before the start pulls the start one grain back, never before 0', () => {
+    expect(S.typedEnd(pair(600, 660), minute(540))).toEqual(pair(535, 540));
+    expect(S.typedEnd(pair(600, 660), minute(2))).toEqual(pair(0, 0));
+    expect(S.typedEnd(pair(30, 60), minute(3))).toEqual(pair(0, 5));
+  });
+
+  it('always leaves at least one grain between the two, the day’s floor aside (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1435 }),
+        fc.integer({ min: 5, max: 1440 }),
+        fc.integer({ min: 0, max: 1439 }),
+        (start, length, typed) => {
+          const range = pair(start, Math.min(1440, start + length));
+          const started = S.typedStart(range, minute(typed));
+          expect(
+            started.endMinute - started.startMinute,
+          ).toBeGreaterThanOrEqual(5);
+          const ended = S.typedEnd(range, minute(typed));
+          expect(ended.startMinute).toBeGreaterThanOrEqual(0);
+          if (ended.endMinute >= 5) {
+            expect(ended.endMinute - ended.startMinute).toBeGreaterThanOrEqual(
+              5,
+            );
+          }
+        },
+      ),
+    );
+  });
+});
+
+describe('the visit sheet’s span and its two override rules', () => {
+  const legs = [{ durationMinutes: d(30) }, { durationMinutes: d(15) }];
+
+  it('draws its override, else its legs, else half an hour — never under one grain', () => {
+    expect(S.editorSpan(null, legs)).toBe(45);
+    expect(S.editorSpan(d(75), legs)).toBe(75);
+    expect(S.editorSpan(null, [])).toBe(30);
+    expect(S.editorSpan(null, [{ durationMinutes: d(3) }])).toBe(5);
+    // An override is drawn as pinned, under the grain or not.
+    expect(S.editorSpan(d(3), legs)).toBe(3);
+  });
+
+  it('a frame pins nothing at the legs’ own span, and pins any other', () => {
+    // :1737 — a drag that keeps the 45 minutes pins nothing.
+    expect(S.overrideFor(d(45), legs)).toBeNull();
+    expect(S.overrideFor(d(60), legs)).toBe(60);
+  });
+
+  it('a frame at the floor pins nothing when the legs are under it', () => {
+    expect(S.overrideFor(d(5), [{ durationMinutes: d(3) }])).toBeNull();
+    expect(S.overrideFor(d(3), [{ durationMinutes: d(3) }])).toBe(3);
+  });
+
+  it('a frame of five on a draft with no legs pins nothing — max(0, 5)', () => {
+    expect(S.overrideFor(d(5), [])).toBeNull();
+    // Half an hour is the DRAWN default with no legs, never the frame's floor.
+    expect(S.overrideFor(d(30), [])).toBe(30);
+  });
+
+  it('a typed figure pins nothing at the legs’ raw sum, and pins any other', () => {
+    expect(S.typedOverrideFor(d(45), legs)).toBeNull();
+    // :976 — 75 typed over 45 of legs; :5721 — 95.
+    expect(S.typedOverrideFor(d(75), legs)).toBe(75);
+    expect(S.typedOverrideFor(d(95), legs)).toBe(95);
+  });
+
+  it('a typed five on a draft with no legs is pinned — the raw sum is 0', () => {
+    expect(S.typedOverrideFor(d(5), [])).toBe(5);
+    expect(S.typedOverrideFor(d(30), [])).toBe(30);
+  });
+
+  it('the two rules part only where the floor or the empty draft does (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 120 }), { maxLength: 4 }),
+        fc.integer({ min: 1, max: 600 }),
+        (minutes, raw) => {
+          const drafted = minutes.map((m) => ({ durationMinutes: d(m) }));
+          const sum = minutes.reduce((total, m) => total + m, 0);
+          const span = d(raw);
+          expect(S.typedOverrideFor(span, drafted)).toBe(
+            raw === sum ? null : raw,
+          );
+          expect(S.overrideFor(span, drafted)).toBe(
+            raw === Math.max(sum, 5) ? null : raw,
+          );
+        },
+      ),
+    );
+  });
+});
+
+describe('a typed end', () => {
+  it('is the span from the start, snapped', () => {
+    // :6431 — start 10:00, end typed 11:30.
+    expect(S.spanToEnd(minute(600), minute(690))).toBe(90);
+    expect(S.spanToEnd(minute(600), minute(692))).toBe(90);
+    expect(S.spanToEnd(minute(600), minute(693))).toBe(95);
+  });
+
+  it('runs into the next day when typed at or before the start', () => {
+    // :6431 — start 10:00, end typed 00:15 → 14 h 15 min.
+    expect(S.spanToEnd(minute(600), minute(15))).toBe(855);
+    expect(S.spanToEnd(minute(1405), minute(15))).toBe(50);
+    // The start's own minute is a whole day, never an empty visit.
+    expect(S.spanToEnd(minute(600), minute(600))).toBe(1440);
+  });
+
+  it('is floored at one grain', () => {
+    expect(S.spanToEnd(minute(600), minute(601))).toBe(5);
+    expect(S.spanToEnd(minute(600), minute(602))).toBe(5);
+    expect(S.spanToEnd(minute(0), minute(1439))).toBe(1440);
+  });
+});
+
+describe('whose a person key is', () => {
+  it('the placeholder is nobody’s account', () => {
+    expect(S.accountKeyOf(S.PLACEHOLDER_CLIENT_ID)).toBeNull();
+    expect(S.accountKeyOf('primary')).toBeNull();
+  });
+
+  it('a stranger’s guest key is nobody’s account — a walk-in or a minted one', () => {
+    expect(S.GUEST_KEY_PREFIX).toBe('guest-');
+    expect(S.accountKeyOf('guest-Случаен клиент')).toBeNull();
+    expect(S.accountKeyOf('guest-mfx1a2-0')).toBeNull();
+  });
+
+  it('every other key is the account’s uid, as the brand', () => {
+    expect(S.accountKeyOf('u-martin')).toBe(UserId.of('u-martin'));
+    expect(S.accountKeyOf('dev-staff-ivan')).toBe('dev-staff-ivan');
+  });
+
+  it('a key the uid’s constructor refuses is no account', () => {
+    expect(S.accountKeyOf('')).toBeNull();
+    expect(S.accountKeyOf('   ')).toBeNull();
+    expect(S.accountKeyOf('users/u-1')).toBeNull();
+  });
+});
+
 describe('VisitDraftSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const weekly = deepFreeze(
@@ -448,6 +732,35 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.walkInLabels(['a', 'b'], taken, word)).toEqual(
       S.walkInLabels(['a', 'b'], taken, word),
     );
+  });
+
+  it('pass C is pure: same input → same output, inputs untouched', () => {
+    const legs = deepFreeze([
+      { durationMinutes: d(30) },
+      { durationMinutes: d(15) },
+    ]);
+    expect(S.editorSpan(null, legs)).toBe(S.editorSpan(null, legs));
+    expect(S.overrideFor(d(60), legs)).toBe(S.overrideFor(d(60), legs));
+    expect(S.typedOverrideFor(d(60), legs)).toBe(
+      S.typedOverrideFor(d(60), legs),
+    );
+    expect(legs).toEqual([{ durationMinutes: 30 }, { durationMinutes: 15 }]);
+
+    const range = deepFreeze({ startMinute: 600, endMinute: 660 });
+    expect(S.typedStart(range, minute(700))).toEqual(
+      S.typedStart(range, minute(700)),
+    );
+    expect(S.typedEnd(range, minute(540))).toEqual(
+      S.typedEnd(range, minute(540)),
+    );
+    expect(range).toEqual({ startMinute: 600, endMinute: 660 });
+
+    expect(S.spanToEnd(minute(600), minute(15))).toBe(
+      S.spanToEnd(minute(600), minute(15)),
+    );
+    expect(S.accountKeyOf('u-anna')).toBe(S.accountKeyOf('u-anna'));
+    expect(S.snap(minute(47))).toBe(S.snap(minute(47)));
+    expect(S.snapUp(minute(47))).toBe(S.snapUp(minute(47)));
   });
 
   it('reads back every shortcut it makes, from any start (property)', () => {

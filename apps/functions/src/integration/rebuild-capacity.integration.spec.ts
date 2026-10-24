@@ -5,6 +5,7 @@ import {
   BlockKind,
   BookingPolicy,
   CapacityEntry,
+  CapacityTrigger,
   MinuteBlock,
   WriteAction,
 } from '@core/components';
@@ -19,7 +20,7 @@ import {
 } from '@core/primitives';
 import { type BarberBusyDay, Collections } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
-import { CapacityTrigger, rebuildCapacity } from '@core/pipelines';
+import { rebuildCapacity } from '@core/pipelines';
 import {
   barberScheduleFixture,
   endMinute,

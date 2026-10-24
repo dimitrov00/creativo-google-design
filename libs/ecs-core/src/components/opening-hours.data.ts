@@ -12,6 +12,31 @@ export const OpeningState = {
 export type OpeningState = (typeof OpeningState)[keyof typeof OpeningState];
 
 /**
+ * Where a shop stands against its week at one wall-clock minute — the field
+ * `shopOpening` (Law 6), the answer of `RosterSystem.shopOpeningAt` (moved
+ * from the landing's locations component, values unchanged). The words are
+ * the reader's.
+ */
+export const ShopOpening = {
+  /** Open, and the door closes at the answered minute. */
+  ClosesAt: 'CLOSES_AT',
+  /** Open, with at most {@link SHOP_CLOSES_SOON_MINUTES} left before it closes. */
+  ClosesSoon: 'CLOSES_SOON',
+  /** Closed now; today's hours start at the answered minute (or none is known). */
+  OpensAt: 'OPENS_AT',
+  /** Closed for today; it opens on the answered later day, at the answered minute. */
+  OpensOn: 'OPENS_ON',
+} as const;
+export type ShopOpening = (typeof ShopOpening)[keyof typeof ShopOpening];
+
+/**
+ * At or below this many minutes before closing, an open shop "closes soon"
+ * (`ShopOpening.ClosesSoon`) — the business-panel convention the landing
+ * follows.
+ */
+export const SHOP_CLOSES_SOON_MINUTES = 60;
+
+/**
  * One weekday of a shop's opening hours (`location.ts:27-40`), on the shop's
  * wall clock: `CLOSED`, or `OPEN` from `openMinutes` to `closeMinutes`
  * (half-open, `openMinutes < closeMinutes`, both authored within

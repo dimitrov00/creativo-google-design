@@ -53,10 +53,5 @@ export function carriedSeatsInReach(
   barbers: readonly Barber[],
   locations: readonly ShopLocation[] | null,
 ): boolean {
-  return MoveSystem.carriedSeatsInReach(
-    riders,
-    barbers.map((barber) => barber.id),
-    services,
-    locations === null ? null : locations.map((location) => location.id),
-  );
+  return MoveSystem.carriedSeatsInReach(riders, barbers, services, locations);
 }

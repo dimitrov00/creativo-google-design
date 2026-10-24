@@ -22,6 +22,31 @@ describe('PlacementPolicy', () => {
     });
   });
 
+  it('lets the shop place or move its own book outside the roster, without notice and with any service mix — never an unacknowledged overlap', () => {
+    expect(PlacementPolicy.staffPlacement()).toEqual({
+      allowOutsideWindow: true,
+      skipMinNotice: true,
+      allowOverlap: false,
+      allowConflictingServices: true,
+    });
+    // The staff edit acknowledges the overlap on top of the same preset.
+    expect(
+      PlacementPolicy.withOverlap(PlacementPolicy.staffPlacement(), true),
+    ).toEqual({
+      allowOutsideWindow: true,
+      skipMinNotice: true,
+      allowOverlap: true,
+      allowConflictingServices: true,
+    });
+    // Not the walk-in preset (D18 keeps conflicting services refused there).
+    expect(
+      PlacementPolicy.equals(
+        PlacementPolicy.staffPlacement(),
+        PlacementPolicy.staffWalkIn(),
+      ),
+    ).toBe(false);
+  });
+
   it('allows an overlap only once it is acknowledged', () => {
     const acknowledged = PlacementPolicy.withOverlap(
       PlacementPolicy.staffWalkIn(),

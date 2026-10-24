@@ -64,4 +64,40 @@ describe('RepositoryError', () => {
       ),
     ).toBe(false);
   });
+
+  it('guard() knows a port’s refusal from a throw — the one guard of the attempt verdict (pass C, P-24)', () => {
+    for (const refusal of [
+      RepositoryError.readFailed('appointments/a1', 'unavailable'),
+      RepositoryError.writeFailed(null, null),
+      RepositoryError.alreadyExists('auditLog/a1'),
+      RepositoryError.malformed('users/u1', 'timeInterval'),
+      RepositoryError.unavailable(),
+    ]) {
+      expect(RepositoryError.guard(refusal)).toBe(true);
+    }
+    // A throw: an SDK error carries a `code`, never this shape.
+    expect(
+      RepositoryError.guard(
+        Object.assign(new Error('14 UNAVAILABLE'), { code: 14 }),
+      ),
+    ).toBe(false);
+    expect(RepositoryError.guard(null)).toBe(false);
+    expect(RepositoryError.guard(undefined)).toBe(false);
+    expect(RepositoryError.guard('REPOSITORY_READ_FAILED')).toBe(false);
+    // Another domain's error, even one naming a path, is not a port refusal.
+    expect(
+      RepositoryError.guard({ errorCode: 'MEDIA_NOT_FOUND', path: 'a/1' }),
+    ).toBe(false);
+    expect(
+      RepositoryError.guard({
+        errorCode: 'GOVERNANCE_AUDIT_ENTRY_EMPTY_ACTION',
+        path: null,
+        reason: null,
+      }),
+    ).toBe(false);
+    // A repository code without the rest of the shape is not one either.
+    expect(
+      RepositoryError.guard({ errorCode: RepositoryErrorCode.ReadFailed }),
+    ).toBe(false);
+  });
 });

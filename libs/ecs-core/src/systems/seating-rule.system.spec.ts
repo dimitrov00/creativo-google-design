@@ -1,8 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { SeatIdPair, StandingSeatPair } from '@core/components';
-import { SeatId, SeatKeyText } from '@core/primitives';
-import { deepFreeze, endMinute, minute } from '@core/testing';
+import {
+  RequestedSubjectRole,
+  SeatIdPair,
+  StandingSeatPair,
+} from '@core/components';
+import { DurationMinutes, SeatId, SeatKeyText } from '@core/primitives';
+import { deepFreeze, endMinute, minute, unwrapOk } from '@core/testing';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 
 /*
@@ -395,6 +399,68 @@ describe('standing double seatings — the pairs an edit broke', () => {
         },
       ),
     );
+  });
+});
+
+describe('SeatingRuleSystem.spanOf / soldEnd — a seat as the rule counts it (P-10)', () => {
+  // edit-appointment.pipeline.ts `spanOf` and booking-decision's standing
+  // spans, one rule.
+  const sold = (seatId: string, from: number, minutes: number) => ({
+    seatId: SeatId.of(seatId),
+    startMinutes: minute(BASE + from),
+    durationMinutes: unwrapOk(DurationMinutes.of(minutes)),
+  });
+  const self = { requestedSubjectRole: RequestedSubjectRole.Self } as const;
+  const guestNamed = (label: string) =>
+    ({
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label,
+      guestKey: null,
+    }) as const;
+
+  it('is WHICH seat, whose person and its sold span', () => {
+    expect(S.spanOf(sold('seat-1', 60, 45), self)).toEqual({
+      seatId: 'seat-1',
+      personKey: 'self',
+      startMinutes: 600,
+      endMinutes: 645,
+    });
+    expect(
+      S.spanOf(sold('seat-2', 60, 30), guestNamed(' Мария ')).personKey,
+    ).toBe('guest:Мария');
+    expect(
+      S.spanOf(sold('seat-3', 60, 30), {
+        requestedSubjectRole: RequestedSubjectRole.Companion,
+        companionUserId: 'son',
+      }).personKey,
+    ).toBe('account:son');
+  });
+
+  it('ends at its start plus its duration — a seat ending AT midnight holds the whole day', () => {
+    expect(S.soldEnd(sold('seat-1', 60, 45))).toBe(645);
+    expect(
+      S.soldEnd({
+        startMinutes: minute(1380),
+        durationMinutes: unwrapOk(DurationMinutes.of(60)),
+      }),
+    ).toBe(1440);
+  });
+
+  it('judges a seat that would run past its shop day as ending at midnight (F-6)', () => {
+    const late = {
+      seatId: SeatId.of('seat-9'),
+      startMinutes: minute(1410),
+      durationMinutes: unwrapOk(DurationMinutes.of(45)),
+    };
+    expect(S.soldEnd(late)).toBe(1440);
+    expect(S.spanOf(late, self).endMinutes).toBe(1440);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const seat = deepFreeze(sold('seat-1', 60, 45));
+    const subject = deepFreeze(guestNamed('Иван'));
+    expect(S.spanOf(seat, subject)).toEqual(S.spanOf(seat, subject));
+    expect(seat.startMinutes).toBe(600);
   });
 });
 

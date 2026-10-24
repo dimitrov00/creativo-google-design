@@ -606,6 +606,19 @@ describe('memoryCouponVoucherPorts — coupons, grants and vouchers', () => {
     expect(unwrapOk(await ports.listOpenCoupons())).toEqual([open]);
   });
 
+  // Pass C (plausible defect 5): the double answers the adapter's contract.
+  it('lists no code-less coupon — a grant-only coupon is not on offer, even ENABLED', async () => {
+    const grantOnly = coupon('c-grant-only', null, CouponStatus.Enabled);
+    const withGrantOnly = memoryCouponVoucherPorts({
+      coupons: [grantOnly, open, closed],
+    });
+    expect(unwrapOk(await withGrantOnly.listOpenCoupons())).toEqual([open]);
+    // Still loaded by id, whatever it carries.
+    expect(unwrapOk(await withGrantOnly.loadCoupons([grantOnly.id]))).toEqual([
+      grantOnly,
+    ]);
+  });
+
   it('loads coupons by id WHATEVER their status — a held grant keeps its retired coupon', async () => {
     expect(
       unwrapOk(await ports.loadCoupons([closed.id, CouponId.of('gone')])),
@@ -778,6 +791,22 @@ describe('memoryAppointmentPhotoPorts — a visit’s photos, in place', () => {
     expect(
       await first(ports.observeAppointmentPhotos(FIXTURE_IDS.appointment)),
     ).toHaveLength(4);
+  });
+
+  // Pass C (Y-9): the double answers the adapter's `byTaken` order, stably.
+  it('answers a visit’s photos ascending by the instant taken, ties in stored order', async () => {
+    const ports = memoryAppointmentPhotoPorts([
+      photo('late', '2026-09-28T12:00:00+03:00'),
+      photo('early', '2026-09-28T09:00:00+03:00'),
+      photo('tie-a', '2026-09-28T10:00:00+03:00'),
+      photo('tie-b', '2026-09-28T10:00:00+03:00'),
+      photo('other', '2026-09-28T08:00:00+03:00', AppointmentId.of('appt-2')),
+    ]);
+    expect(
+      (
+        await first(ports.observeAppointmentPhotos(FIXTURE_IDS.appointment))
+      ).map((entry) => entry.id),
+    ).toEqual(['early', 'tie-a', 'tie-b', 'late']);
   });
 
   it('uploads to today’s object path, derived from the photo’s own facts', async () => {

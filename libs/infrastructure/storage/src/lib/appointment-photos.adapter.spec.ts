@@ -204,8 +204,8 @@ describe('appointmentPhotoPorts', () => {
     });
 
     it('leaves the limits to the caller’s guard: what slips past it goes to Storage, whose refusal is MEDIA_FORBIDDEN', async () => {
-      // Not an image, and over 8 MiB: the store's `photoUploadRefusal` stops
-      // both before this call (`media.port.ts`); the adapter judges nothing.
+      // Not an image, and over 8 MiB: `attachVisitPhoto`'s `MediaSystem.check`
+      // stops both before this call (`media.port.ts`); the adapter judges nothing.
       uploadBytesMock.mockRejectedValue({ code: 'storage/unauthorized' });
       const blob = image('application/pdf', 8 * 1024 * 1024 + 1);
 

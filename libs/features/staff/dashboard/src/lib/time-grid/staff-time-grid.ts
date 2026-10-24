@@ -38,13 +38,20 @@ import {
   hourLabel,
   PlacementVerdict,
   type PlacementVerdictSlice,
+  placementSliceOf,
   releasePointer,
   snapTo,
   timeLabel,
 } from './grid-gesture';
+import {
+  closedMinuteRuns,
+  toMinuteRun,
+  trackEnd,
+  trackStart,
+} from './minute-run';
 import { gridEventWords } from '../tag-words';
 import { EditCommand, ResizeEdge } from '@core/components';
-import { BookingStatus, EndMinute, MinuteOfDay } from '@core/primitives';
+import { BookingStatus } from '@core/primitives';
 import { bookingStatusWords } from '@creativo/infrastructure/i18n';
 import {
   type EventRuns,
@@ -965,7 +972,7 @@ export class StaffTimeGrid {
       return {
         ...column,
         placed,
-        closed: empty ? [] : closedRuns(open, start, end),
+        closed: empty ? [] : closedRows(open, start, end),
         // Only ever non-empty on the opened chair, because the cap collapses
         // to a single drawn column the moment anything is ghosted.
         ghosts: empty ? [] : ghostBlocks(ghosted, start, minutes),
@@ -1401,35 +1408,15 @@ export class StaffTimeGrid {
     () => {
       const block = this.editableBlock();
       if (block === null) return null;
-      const floor = this.minMinutes();
-      if (block.endMinute - block.startMinute <= floor) {
-        return { placementVerdict: PlacementVerdict.Short, minutes: floor };
-      }
+      // The one editable column — none drawn, the draft stands once it is
+      // past the floor. A gap is the ABSENCE of a booking: landing on one is
+      // the point of the gesture, never a collision (the system's rule).
       const column = this.placedColumns().find((c) => c.editable !== null);
-      if (column === undefined) return null;
-      for (const other of column.events) {
-        // A gap is the ABSENCE of a booking — landing on one is the point of
-        // the gesture, not a collision.
-        if (other.id === block.id || other.gridEvent === GridEventTag.Gap) {
-          continue;
-        }
-        if (
-          other.startMinute < block.endMinute &&
-          other.endMinute > block.startMinute
-        ) {
-          return {
-            placementVerdict: PlacementVerdict.Overlap,
-            name: other.title,
-            time: timeLabel(other.startMinute),
-          };
-        }
-      }
-      const inside = column.open.some(
-        (window) =>
-          block.startMinute >= window.startMinute &&
-          block.endMinute <= window.endMinute,
+      return placementSliceOf(
+        block,
+        column === undefined ? [] : [column],
+        this.minMinutes(),
       );
-      return inside ? null : { placementVerdict: PlacementVerdict.Outside };
     },
   );
 
@@ -2294,21 +2281,19 @@ export class StaffTimeGrid {
  * them over in any order, and an unsorted pair would carve a "closed" band
  * through the middle of an open day.
  */
-function closedRuns(
+function closedRows(
   open: readonly MinuteRun[],
   start: number,
   end: number,
 ): readonly ClosedRun[] {
   // CLAMPED to the drawn hours, sorted and merged in
-  // `GridLayoutSystem.closedRuns`: a run is emitted as a `grid-row` against
-  // the extent's own track, so a shift reaching outside it — a lunch break
-  // at 13:00 while the frame draws 09:00–12:00 — must not ask for rows the
-  // column does not have.
-  return GridLayoutSystem.closedRuns(
-    open,
-    trackStart(start),
-    trackEnd(end),
-  ).map((closed) => run(closed.startMinutes, closed.endMinutes, start));
+  // `GridLayoutSystem.closedRuns` (`closedMinuteRuns`): a run is emitted as a
+  // `grid-row` against the extent's own track, so a shift reaching outside
+  // it — a lunch break at 13:00 while the frame draws 09:00–12:00 — must not
+  // ask for rows the column does not have.
+  return closedMinuteRuns(open, start, end).map((closed) =>
+    run(closed.startMinutes, closed.endMinutes, start),
+  );
 }
 
 function run(from: number, to: number, origin: number): ClosedRun {
@@ -2543,35 +2528,10 @@ export function gridStatusWord(event: GridEvent): string | null {
 /* ── The geometry system's boundary (flatten pass) ────────────────────── */
 
 /*
- * `GridLayoutSystem` reads ONE shop day's track as branded minutes
- * (`MinuteOfDay` starts in `[0, 1440)`, `EndMinute` ends in `(0, 1440]`) and
- * tags a block by `gridEvent` (SCREAMING), the same tag this component's
- * `GridEvent` carries. Its public types keep their plain `startMinute` /
- * `endMinute`; the figures it draws are whole minutes of the column's day by construction (a
- * visit never crosses midnight, F-6), so the conversion clamps onto the day
- * rather than inventing a figure the track does not have.
+ * The track conversions (`trackStart`, `trackEnd`, `toMinuteRun`) are shared
+ * with the chair timeline in `./minute-run.ts` (pass C, Y-16), which says
+ * why they clamp onto the day.
  */
-
-/** A minute of the track as a start, clamped onto the day — proven, so no `Result` per drag tick. */
-function trackStart(minute: number): MinuteOfDay {
-  return MinuteOfDay.ofProven(Math.min(1439, Math.max(0, Math.round(minute))));
-}
-
-/** A minute of the track as an exclusive end, clamped onto the day — proven, so no `Result` per drag tick. */
-function trackEnd(minute: number): EndMinute {
-  return EndMinute.ofProven(Math.min(1440, Math.max(1, Math.round(minute))));
-}
-
-/** A stretch of the track — an open window, a laid block — as the system's run. */
-function toMinuteRun(stretch: {
-  readonly startMinute: number;
-  readonly endMinute: number;
-}): MinuteRun {
-  return {
-    startMinutes: trackStart(stretch.startMinute),
-    endMinutes: trackEnd(stretch.endMinute),
-  };
-}
 
 /** A laid block as the sweep reads it: its id, its tag and its stretch — one literal, one allocation. */
 function toRunEvent(event: LaidEvent): RunEvent {

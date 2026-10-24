@@ -10,15 +10,8 @@ import {
   untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import {
-  type Observable,
-  combineLatest,
-  distinctUntilChanged,
-  map,
-  of,
-  switchMap,
-} from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   CLOCK_PORTS,
@@ -29,18 +22,26 @@ import {
   type BarberId,
   LocalDate,
   type LocationId,
-  type Result,
+  type MinuteCount,
   type TimeZone,
 } from '@core/primitives';
-import { type RepositoryError } from '@core/errors';
 import {
   BookingCart,
   BookingPolicy,
   Principal,
   type ScheduleSelection,
+  ShopCoverage,
   type ShopNow,
 } from '@core/components';
-import { BookingCartSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  AvailabilitySystem,
+  BookingCartSystem,
+  CapacitySystem,
+  type DayQuery,
+  LeadTimeSystem,
+  ShopZoneSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
@@ -63,6 +64,7 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { BookingFlowStore } from '../booking-flow.store';
+import { BookingDayStore } from './booking-day.store';
 import { bookingSignInReturnUrl } from '../booking-return-url';
 import {
   formatBookingDay,
@@ -75,17 +77,6 @@ import {
 } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
 import { BookingTimeSheet } from './time-sheet/booking-time-sheet';
-import {
-  type DayDocs,
-  type DayQuery,
-  capacityByDay,
-  capacityMonthsOf,
-  dayDocsKey,
-  dayOptions,
-  observeCapacityEntries,
-  observeDayDocs,
-  sameDayDocsKey,
-} from './day-availability';
 import {
   type AvailabilityDayCell,
   type AvailabilityMonth,
@@ -179,6 +170,7 @@ export class BookingScheduleStep {
   private readonly clock = inject(CLOCK_PORTS);
   private readonly shopZones = inject(ShopZoneService);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
+  private readonly days = inject(BookingDayStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   private readonly router = inject(Router);
@@ -236,11 +228,12 @@ export class BookingScheduleStep {
    */
   private readonly defaultZone = this.shopZones.defaultZone();
 
-  protected readonly timeZone = computed<TimeZone | null>(
-    () =>
-      this.location()?.timeZone ??
-      this.locations().at(0)?.timeZone ??
+  protected readonly timeZone = computed<TimeZone | null>(() =>
+    ShopZoneSystem.zoneOfScope(
+      this.location(),
+      this.locations().at(0) ?? null,
       this.defaultZone(),
+    ),
   );
 
   /**
@@ -324,20 +317,25 @@ export class BookingScheduleStep {
    * why), so it counts as served.
    */
   protected readonly shopCoverage = computed<ShopCoverageVerdict>(() => {
-    const serving = this.servingShops();
-    if (serving === null) return SERVED;
-    const chosen = this.store.locationId();
-    if (chosen === null) {
-      return serving.length > 0 ? SERVED : NOWHERE;
-    }
+    // The verdict is `BookingCartSystem.shopCoverage`'s; this names the shops.
     const chosenShop = this.location();
-    if (!chosenShop || serving.includes(chosen)) return SERVED;
-    if (serving.length === 0) return NOWHERE;
+    const answer = BookingCartSystem.shopCoverage(
+      this.servingShops(),
+      this.store.locationId(),
+      chosenShop !== null,
+    );
+    if (answer.shopCoverage === ShopCoverage.Nowhere) return NOWHERE;
+    // `ELSEWHERE` only ever answers a chosen shop that is listed
+    // (`chosenListed`), so the shop is in hand past this line.
+    if (answer.shopCoverage === ShopCoverage.Served || chosenShop === null) {
+      return SERVED;
+    }
 
-    const only = serving.length === 1 ? serving[0] : undefined;
-    const target = only
-      ? this.locations().find((shop) => shop.id === only)
-      : undefined;
+    const targetId = answer.targetId;
+    const target =
+      targetId === null
+        ? undefined
+        : this.locations().find((shop) => shop.id === targetId);
     return {
       shopCoverage: ShopCoverage.Elsewhere,
       shop: this.shopName(chosenShop),
@@ -524,24 +522,14 @@ export class BookingScheduleStep {
    */
   private readonly capacityMonths = computed(() => {
     const query = this.capacityQuery();
-    return query === null ? null : capacityMonthsOf(query.from, query.to);
+    return query === null
+      ? null
+      : LeadTimeSystem.monthKeysBetween(query.from, query.to);
   });
 
-  private readonly capacityEntries = toSignal(
-    toObservable(this.capacityMonths).pipe(
-      // STRUCTURAL identity, not object identity. The computed above mints a
-      // fresh list per recompute, and `switchMap` on raw identity answered
-      // every no-op recompute by tearing down and re-billing the whole
-      // listener set — the single largest avoidable read cost in the app.
-      // Re-subscribe only when the MONTHS genuinely change.
-      distinctUntilChanged((a, b) => (a ?? []).join() === (b ?? []).join()),
-      switchMap((months) =>
-        months === null
-          ? of(null)
-          : observeCapacityEntries(this.scheduling, months),
-      ),
-    ),
-    { initialValue: null },
+  /** The months' entries, live — re-subscribed only when the MONTHS change (`BookingDayStore`). */
+  private readonly capacityEntries = this.days.capacityEntries(
+    this.capacityMonths,
   );
 
   /**
@@ -549,11 +537,13 @@ export class BookingScheduleStep {
    * (`CapacityEntry.freeMinutesOn` over the month documents): the barbers
    * the bag accepts, at the shop asked about.
    */
-  private readonly capacityByDay = computed<ReadonlyMap<string, number>>(() => {
+  private readonly capacityByDay = computed<
+    ReadonlyMap<LocalDate, MinuteCount>
+  >(() => {
     const query = this.capacityQuery();
     const entries = this.capacityEntries();
     if (query === null || !entries?.ok) return new Map();
-    return capacityByDay(
+    return CapacitySystem.freeMinutesByDay(
       entries.value,
       query.from,
       query.to,
@@ -573,10 +563,12 @@ export class BookingScheduleStep {
    * and back on every load) and every other day keeps the projection.
    */
   private isBookable(cell: AvailabilityDayCell): boolean {
-    if (cell.outOfRange) return false;
-    const exact = this.exactAnswers()?.get(cell.localDate);
-    if (exact !== undefined) return exact;
-    return cell.isToday || cell.freeMinutes > 0;
+    return AvailabilitySystem.dayBookable(
+      !cell.outOfRange,
+      this.exactAnswers()?.get(cell.localDate) ?? null,
+      cell.isToday,
+      cell.freeMinutes,
+    );
   }
 
   /**
@@ -640,36 +632,20 @@ export class BookingScheduleStep {
     }));
   });
 
-  /** Each exact day's raw documents, live — re-subscribed only when WHICH documents changes. */
-  private readonly exactDocs = toSignal(
-    toObservable(
-      computed(
-        () => this.exactQueries()?.map((query) => dayDocsKey(query)) ?? null,
-      ),
-    ).pipe(
-      // The capacity stream's structural guard, one key at a time.
-      distinctUntilChanged((a, b) =>
-        a === null || b === null
-          ? a === b
-          : a.length === b.length &&
-            a.every((key, index) => sameDayDocsKey(key, b.at(index) ?? null)),
-      ),
-      switchMap((keys): Observable<readonly DayDocsResult[] | null> => {
-        if (keys === null) return of(null);
-        // `combineLatest([])` completes without emitting; no day is no answer.
-        if (keys.length === 0) return of([]);
-        return combineLatest(
-          keys.map((key) => observeDayDocs(this.scheduling, key)),
-        );
-      }),
+  /** Each exact day's raw documents, live — re-subscribed only when WHICH documents changes (`BookingDayStore`). */
+  private readonly exactDocs = this.days.daysDocs(
+    computed(
+      () =>
+        this.exactQueries()?.map((query) =>
+          BookingCartSystem.dayDocsKey(query),
+        ) ?? null,
     ),
-    { initialValue: null },
   );
 
   /**
    * Each exact day's answer, by day key, once all of them have answered:
    * the day's arrangements, derived from its documents by the systems
-   * (`dayOptions`). A day whose read failed offers nothing.
+   * (`BookingCartSystem.dayOptions`). A day whose read failed offers nothing.
    */
   private readonly exactAnswers = computed<ReadonlyMap<string, boolean> | null>(
     () => {
@@ -678,9 +654,11 @@ export class BookingScheduleStep {
       if (queries === null || docs === null) return null;
       const answers = new Map<string, boolean>();
       for (const query of queries) {
-        const key = dayDocsKey(query);
+        const key = BookingCartSystem.dayDocsKey(query);
         const read = docs.find((entry) =>
-          entry.ok ? sameDayDocsKey(entry.value.key, key) : false,
+          entry.ok
+            ? BookingCartSystem.sameDayDocsKey(entry.value.key, key)
+            : false,
         );
         const failed = docs.find((entry) => !entry.ok);
         if (read === undefined || !read.ok) {
@@ -689,7 +667,10 @@ export class BookingScheduleStep {
           answers.set(query.localDate, false);
           continue;
         }
-        answers.set(query.localDate, dayOptions(query, read.value).length > 0);
+        answers.set(
+          query.localDate,
+          BookingCartSystem.dayOptions(query, read.value).length > 0,
+        );
       }
       return answers;
     },
@@ -917,22 +898,9 @@ interface CapacityQuery {
   readonly barberIds: readonly BarberId[];
 }
 
-/** One exact day's documents, or why they could not be read. */
-type DayDocsResult = Result<DayDocs, RepositoryError>;
-
-/** Can the chosen shop serve the visit — the field `shopCoverage`, the ONLY
- *  source of these strings (Law 6); see `BookingScheduleStep.shopCoverage`. */
-const ShopCoverage = {
-  /** The grid answers: the chosen shop (or one of "any shop") serves it. */
-  Served: 'SERVED',
-  /** The chosen shop does not, another active shop does. */
-  Elsewhere: 'ELSEWHERE',
-  /** No active shop offers everything on the visit together. */
-  Nowhere: 'NOWHERE',
-} as const;
-type ShopCoverage = (typeof ShopCoverage)[keyof typeof ShopCoverage];
-
-/** The answer to `shopCoverage`, with what the notice names. */
+/** The answer to `shopCoverage` (the `ShopCoverage` dictionary of
+ *  `@core/components`, decided by `BookingCartSystem.shopCoverage`), with
+ *  what the notice names. */
 type ShopCoverageVerdict =
   | { readonly shopCoverage: typeof ShopCoverage.Served }
   | {

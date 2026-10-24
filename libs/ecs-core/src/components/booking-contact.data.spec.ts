@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { deepFreeze } from '@core/testing';
 import { BookingContact } from './booking-contact.data';
 import { E164 } from './phone-number.data';
 
@@ -156,5 +157,53 @@ describe('BookingContact.NONE / isPresent / of', () => {
     expect(BookingContact.isPresent(created.value)).toBe(true);
     const appointment = { ...created.value, bookingStatus: 'CONFIRMED' };
     expect(BookingContact.of(appointment)).toEqual(created.value);
+  });
+});
+
+describe('BookingContact.withNote — the note the client just typed', () => {
+  const present = (): BookingContact.Present => {
+    const created = BookingContact.create(VALID, parsePhone);
+    if (!created.ok) throw new Error('bad fixture');
+    return created.value;
+  };
+
+  it('keeps the note trimmed and the rest of the contact as it is', () => {
+    expect(BookingContact.withNote(present(), '  ring the bell  ')).toEqual({
+      ...present(),
+      contactNote: 'ring the bell',
+    });
+  });
+
+  it('reads a blank note as none', () => {
+    const noted = BookingContact.withNote(present(), 'old');
+    expect(BookingContact.withNote(noted, '   ').contactNote).toBeNull();
+    expect(BookingContact.withNote(noted, '').contactNote).toBeNull();
+  });
+
+  it('cuts an over-long note at the limit — a truncation, where create refuses', () => {
+    const long = 'я'.repeat(BookingContact.MAX_NOTE_LENGTH + 20);
+    const noted = BookingContact.withNote(present(), `  ${long}`);
+    expect(noted.contactNote).toBe('я'.repeat(BookingContact.MAX_NOTE_LENGTH));
+    expect(
+      BookingContact.withNote(
+        present(),
+        'я'.repeat(BookingContact.MAX_NOTE_LENGTH),
+      ).contactNote?.length,
+    ).toBe(BookingContact.MAX_NOTE_LENGTH);
+  });
+
+  it('trims BEFORE the cut — the cut may leave inner spaces it does not trim again', () => {
+    const raw = `${'a'.repeat(BookingContact.MAX_NOTE_LENGTH - 1)}  b`;
+    expect(BookingContact.withNote(present(), raw).contactNote).toBe(
+      `${'a'.repeat(BookingContact.MAX_NOTE_LENGTH - 1)} `,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const contact = deepFreeze(present());
+    expect(BookingContact.withNote(contact, ' x ')).toEqual(
+      BookingContact.withNote(contact, ' x '),
+    );
+    expect(contact.contactNote).toBeNull();
   });
 });

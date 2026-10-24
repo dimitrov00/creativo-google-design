@@ -10,6 +10,7 @@ import {
   STREAK_RULE_PARAMETER_ORDER,
   StreakExcuse,
   StreakOnBreak,
+  StreakPublishConsent,
   StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
@@ -1505,5 +1506,45 @@ describe('StreakRuleSystem purity', () => {
       }),
     ];
     expect(twice).toEqual(once);
+  });
+});
+
+describe('StreakRuleSystem.publishConsent — which change asks first', () => {
+  it.each([
+    [StreakRuleDirection.Looser, StreakPublishConsent.AtOnce],
+    [StreakRuleDirection.Neutral, StreakPublishConsent.AtOnce],
+    [StreakRuleDirection.Stricter, StreakPublishConsent.Ask],
+    [StreakRuleDirection.Mixed, StreakPublishConsent.Ask],
+    [StreakRuleDirection.Switch, StreakPublishConsent.AskSwitch],
+  ])('a %s change: %s', (direction, consent) => {
+    expect(StreakRuleSystem.publishConsent(direction)).toBe(consent);
+  });
+
+  it('answers every direction the vocabulary holds', () => {
+    for (const direction of Object.values(StreakRuleDirection)) {
+      expect(Object.values(StreakPublishConsent)).toContain(
+        StreakRuleSystem.publishConsent(direction),
+      );
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(StreakRuleSystem.publishConsent(StreakRuleDirection.Mixed)).toBe(
+      StreakRuleSystem.publishConsent(StreakRuleDirection.Mixed),
+    );
+  });
+});
+
+describe('StreakRuleSystem.summary — the shop excuses are StreakRule.coversShopExcuses', () => {
+  it.each([
+    [StreakRule.DEFAULT.excuses],
+    [[StreakExcuse.StaffCancelled, StreakExcuse.ShopClosure]],
+    [[StreakExcuse.ClosedDays]],
+    [STREAK_EXCUSES],
+    [[]],
+  ])('says the same as the coverage rule for %j', (excuses) => {
+    expect(StreakRuleSystem.summary(rule({ excuses })).shopExcuses).toBe(
+      StreakRule.coversShopExcuses(excuses),
+    );
   });
 });

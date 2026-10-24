@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { localDate } from '@core/testing';
+import { deepFreeze, localDate } from '@core/testing';
+import { RepositoryError } from './repository.error';
 import {
   StreakPublishError,
   StreakPublishErrorCode,
@@ -69,5 +70,62 @@ describe('StreakPublishError', () => {
     expect(Object.keys(StreakPublishError.callerNotAdmin())).toEqual([
       'errorCode',
     ]);
+  });
+});
+
+describe('StreakPublishError.guard — the publish’s no, as against no answer', () => {
+  /** One struct per code of the dictionary, the two codes outside the union included. */
+  const everyRefusal: readonly { readonly errorCode: string }[] = [
+    StreakPublishError.callerUnauthenticated(),
+    StreakPublishError.callerNotAdmin(),
+    StreakPublishError.stale(1, 2),
+    StreakPublishError.invalid(['graceDays']),
+    StreakPublishError.tooEarly(
+      localDate('2026-09-29'),
+      localDate('2026-10-28'),
+    ),
+    StreakPublishError.recomputeNeedsEngine(),
+    StreakPublishError.previewStale(),
+    StreakPublishError.invalidInput('requestId'),
+    StreakPublishError.storeFailed(),
+  ];
+
+  it('knows every code of the dictionary — never only the callable’s answered subset', () => {
+    expect(everyRefusal.map((error) => error.errorCode).sort()).toEqual(
+      Object.values(StreakPublishErrorCode).sort(),
+    );
+    for (const error of everyRefusal) {
+      expect(StreakPublishError.guard(error)).toBe(true);
+    }
+  });
+
+  it('tells a request that got no answer apart: a RepositoryError is no refusal', () => {
+    expect(StreakPublishError.guard(RepositoryError.unavailable())).toBe(false);
+    expect(
+      StreakPublishError.guard(RepositoryError.writeFailed(null, 'threw')),
+    ).toBe(false);
+    expect(
+      StreakPublishError.guard(RepositoryError.readFailed(null, 'gone')),
+    ).toBe(false);
+  });
+
+  it('knows no code outside the dictionary, nor a lower-case spelling of one', () => {
+    expect(
+      StreakPublishError.guard({ errorCode: 'STAFF_EDIT_FORBIDDEN' }),
+    ).toBe(false);
+    expect(
+      StreakPublishError.guard({
+        errorCode: 'loyalty_streak_publish_too_early',
+      }),
+    ).toBe(false);
+    expect(StreakPublishError.guard({ errorCode: '' })).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const error = deepFreeze(StreakPublishError.stale(1, 2));
+    expect(StreakPublishError.guard(error)).toBe(
+      StreakPublishError.guard(error),
+    );
+    expect(error).toEqual(StreakPublishError.stale(1, 2));
   });
 });

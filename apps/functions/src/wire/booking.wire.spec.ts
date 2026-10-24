@@ -5,6 +5,7 @@ import {
   DiscountSource,
   VoucherCode,
   EditCommand,
+  MarkArrivalAction,
   Placement,
   RequestedSubjectRole,
   ResizeEdge,
@@ -29,7 +30,6 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import {
-  MarkArrivalAction,
   type MarkArrivalCommand,
   type RecordSeatTipCommand,
 } from '@core/pipelines';

@@ -1,6 +1,7 @@
 import { BirthDate, BirthdayMoment } from '@core/components';
-import { Result, LocalDate } from '@core/primitives';
+import { Result, LocalDate, TimeZone, type UtcEpochMs } from '@core/primitives';
 import { IdentityError } from '@core/errors';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /**
  * AgeSystem — a person's age from a birth date and a calendar day (blueprint
@@ -66,6 +67,20 @@ function dayOfBirth(birthDate: BirthDate): LocalDate {
 }
 
 export const AgeSystem = {
+  /**
+   * The day a birth date is judged on — the UTC civil date of the instant
+   * (identity flip (2), F2-7). Every writer of a birth date judges the
+   * 16–120 window on it (the server's `completeRegistration` and
+   * `updateProfile`, the profile page, the onboarding birthday step), so an
+   * owner's age never depends on which clock or shop asked. Read through
+   * `ZonedTimeSystem.toLocal` on {@link TimeZone.UTC} — the one zone this
+   * system names; a shop's zone is never an input here (Law 7.2). The day
+   * turns at UTC midnight, not at the shop's.
+   */
+  judgedOn(nowUtcMs: UtcEpochMs): LocalDate {
+    return ZonedTimeSystem.toLocal(nowUtcMs, TimeZone.UTC).localDate;
+  },
+
   /**
    * Whole calendar years from the birth date to `day` — negative
    * (truncated toward zero) when the birth date lies after it, as the

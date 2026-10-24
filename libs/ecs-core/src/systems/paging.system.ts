@@ -55,9 +55,24 @@ export type PageStepResult<R, K extends PageKey> =
  * queries stay in the adapter.
  */
 export const PagingSystem = {
-  /** A page size the reader honours: a whole number, at least one. */
+  /**
+   * A page size the reader honours: a whole number, at least one. A
+   * non-finite `limit` passes through as `NaN`/`Infinity` on purpose — a
+   * reader that relies on its query refusing one (`appointments.adapter.ts`'s
+   * `limit(NaN)` → `readFailed`) keeps that answer; {@link PagingSystem.pageSizeOf}
+   * is the total form.
+   */
   pageSize(limit: number): number {
     return Math.max(1, Math.floor(limit));
+  },
+
+  /**
+   * A whole page size of at least one, WHATEVER was asked — a non-finite
+   * `raw` (`NaN`, `±Infinity`) reads as one (pass C, P-33: the adapters'
+   * three `Number.isFinite(raw) ? pageSize(raw) : 1` guards, homed here).
+   */
+  pageSizeOf(raw: number): number {
+    return Number.isFinite(raw) ? PagingSystem.pageSize(raw) : 1;
   },
 
   /**

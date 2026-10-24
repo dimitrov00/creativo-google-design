@@ -36,6 +36,15 @@ export const StreakPublishErrorCode = {
 export type StreakPublishErrorCode =
   (typeof StreakPublishErrorCode)[keyof typeof StreakPublishErrorCode];
 
+/**
+ * Every {@link StreakPublishErrorCode}, dictionary order — derived once,
+ * never a second source; {@link StreakPublishError.guard}'s table (scanned;
+ * no `new` in a data file, Law 1).
+ */
+const STREAK_PUBLISH_CODES: readonly string[] = Object.values(
+  StreakPublishErrorCode,
+);
+
 export type StreakPublishError =
   | StreakPublishError.CallerUnauthenticated
   | StreakPublishError.CallerNotAdmin
@@ -79,6 +88,17 @@ export const StreakPublishError = {
   },
   storeFailed(): StreakPublishError.StoreFailed {
     return { errorCode: StreakPublishErrorCode.StoreFailed };
+  },
+
+  /**
+   * The publish's no (the server's, or the page's own judgement before
+   * anything is sent), as against a request that got no answer (a
+   * `RepositoryError`): EVERY code of {@link StreakPublishErrorCode} —
+   * never the callable's answered subset (`StreakPublishCall.AnsweredCode`),
+   * so a refusal the page itself words routes exactly as the server's.
+   */
+  guard(error: { readonly errorCode: string }): error is StreakPublishError {
+    return STREAK_PUBLISH_CODES.includes(error.errorCode);
   },
 } as const;
 

@@ -30,6 +30,8 @@ import {
 } from '@core/primitives';
 import {
   type BookingError,
+  type CancelWaitlistRefusal,
+  CancelWaitlistRefusalCode,
   type SchedulingError,
   SchedulingErrorCode,
   WaitlistError,
@@ -567,6 +569,61 @@ export const WaitlistSystem = {
           waitlistStatus: waitlist.value.waitlistStatus,
           waitlistStatusAtUtcMs: waitlist.value.waitlistStatusAtUtcMs,
         }),
+      ],
+    });
+  },
+
+  /**
+   * The owner's withdrawal of a request (`cancel-waitlist.ts`; pass C, P-22
+   * — the pipeline's verdicts, homed here), in the commit's order:
+   *
+   * 1. no request, or not the caller's — `BOOKING_WAITLIST_NOT_FOUND`, the
+   *    two alike (an id's existence is no leak);
+   * 2. already `CANCELLED` — success with nothing to write: the caller's
+   *    intent, "stop watching", is already true (idempotent on purpose);
+   * 3. a request the matcher concluded (`BOOKED`, `EXPIRED`) —
+   *    `BOOKING_WAITLIST_NOT_CANCELLABLE`, never its history rewritten;
+   * 4. else ONE `CANCELLED` transition stamped `atUtcMs`
+   *    (`WriteOp.transition` — the lifecycle slice has no variant fields to
+   *    delete).
+   */
+  cancel(
+    request: WaitlistRequest | null,
+    ownerUserId: UserId,
+    atUtcMs: UtcEpochMs,
+  ): Result<{ readonly writes: readonly WriteOp[] }, CancelWaitlistRefusal> {
+    if (request === null || request.ownerUserId !== ownerUserId) {
+      return Result.err({ errorCode: CancelWaitlistRefusalCode.NotFound });
+    }
+    if (request.waitlistStatus === WaitlistStatus.Cancelled) {
+      return Result.ok({ writes: [] });
+    }
+    if (!WaitlistLifecycle.isWatching(request)) {
+      return Result.err({
+        errorCode: CancelWaitlistRefusalCode.NotCancellable,
+      });
+    }
+    const cancelled = WaitlistLifecycle.transition(
+      request,
+      WaitlistStatus.Cancelled,
+      atUtcMs,
+    );
+    if (!cancelled.ok) {
+      return Result.err({
+        errorCode: CancelWaitlistRefusalCode.NotCancellable,
+      });
+    }
+    const before: WaitlistLifecycle = {
+      waitlistStatus: request.waitlistStatus,
+      waitlistStatusAtUtcMs: request.waitlistStatusAtUtcMs,
+    };
+    return Result.ok({
+      writes: [
+        WriteOp.transition(
+          [Collections.WaitlistRequests, request.id],
+          cancelled.value,
+          WriteOp.variantFieldsToDelete(before, cancelled.value),
+        ),
       ],
     });
   },

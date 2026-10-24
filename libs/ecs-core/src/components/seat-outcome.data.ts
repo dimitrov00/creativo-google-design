@@ -215,6 +215,20 @@ export const SeatOutcome = {
   },
 
   /**
+   * Does a move to `to` mean anything for ONE seat — is it a per-seat verb?
+   * True exactly where {@link outcomeForStatus} stamps an outcome
+   * (`COMPLETED`, `NO_SHOW`, `CANCELLED`); `PENDING`/`CONFIRMED` are about
+   * the booking, never the work, so they always address the root.
+   */
+  hasSeatMeaning(to: BookingStatus): boolean {
+    return (
+      to === BookingStatus.Completed ||
+      to === BookingStatus.NoShow ||
+      to === BookingStatus.Cancelled
+    );
+  },
+
+  /**
    * The party's seat outcomes rolled up into the root lifecycle — the root
    * is a SUMMARY of its seats. The order of the rules is the design:
    *

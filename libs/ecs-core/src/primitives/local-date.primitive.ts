@@ -152,6 +152,15 @@ export const LocalDate = {
     return a < b ? -1 : a > b ? 1 : 0;
   },
 
+  /**
+   * The later of two days — either one on the same day (string order is day
+   * order). The max of days the rhythm's publish reads: the first day a
+   * change may start against the day chosen, a floor against the earliest.
+   */
+  later(a: LocalDate, b: LocalDate): LocalDate {
+    return a > b ? a : b;
+  },
+
   /** `n` days away (negative moves back) — civil arithmetic, one step per day. */
   addDays(d: LocalDate, n: number): LocalDate {
     return LocalDate.fromEpochDay(LocalDate.toEpochDay(d) + n);

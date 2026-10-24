@@ -1275,6 +1275,23 @@ export const StreakSystem = {
     return inChairDue ?? state.dueBy;
   },
 
+  /**
+   * Which of a shop's rhythms a person's card is judged by (client-card
+   * revision 3 §4.1): the first head, in the catalogue's order, the account
+   * holds a state for (`StreakState.find`), else the catalogue's first;
+   * `null` for a shop without a rhythm. A linear scan of a handful of heads.
+   */
+  headOf<H extends { readonly id: StreakDefinitionId }>(
+    heads: readonly H[],
+    states: readonly Pick<StreakState, 'streakId'>[],
+  ): H | null {
+    for (let i = 0; i < heads.length; i++) {
+      const head = heads[i] as H;
+      if (StreakState.find(states, head.id) !== null) return head;
+    }
+    return heads[0] ?? null;
+  },
+
   /** The best run, said only while the run in progress is shorter; `null` otherwise. */
   record(state: Pick<StreakState, 'best' | 'current'>): number | null {
     return state.best > state.current ? state.best : null;

@@ -463,6 +463,40 @@ export const ZonedTimeSystem = {
   },
 
   /**
+   * The envelope's instant of ONE shop day's request — the ingestion
+   * boundary's frame (Law 7.3, Phase 4a 4A-2 (a)), shared by the commit,
+   * the reschedule and the staff edit through the pipelines' parsing helper
+   * `frameWallClock`: every start that is a minute of `localDate` is placed
+   * on `timeZone` with {@link toUtc} in the order given — the FIRST one the
+   * zone never shows (a spring-forward gap) refuses the whole frame
+   * `DST_GAP_INVALID_TIME`, never shifted; a fall-back repeat reads the
+   * earlier offset — and the instant of the EARLIEST start (the first of
+   * equal ones) is the answer. A `null` start is skipped; a day that is no
+   * day (`null`) places nothing and refuses nothing (the decision refuses
+   * it, as a start); no start at all answers `null`.
+   */
+  frameShopDay(
+    localDate: LocalDate | null,
+    starts: readonly (MinuteOfDay | null)[],
+    timeZone: TimeZone,
+  ): Result<UtcEpochMs | null, TimeError> {
+    if (localDate === null) return Result.ok(null);
+    let earliest: MinuteOfDay | null = null;
+    let startUtcMs: UtcEpochMs | null = null;
+    for (let i = 0; i < starts.length; i++) {
+      const start = starts[i] ?? null;
+      if (start === null) continue;
+      const instant = ZonedTimeSystem.toUtc(localDate, start, timeZone);
+      if (!instant.ok) return instant;
+      if (earliest === null || start < earliest) {
+        earliest = start;
+        startUtcMs = instant.value;
+      }
+    }
+    return Result.ok(startUtcMs);
+  },
+
+  /**
    * The instant → the shop wall clock it reads in `timeZone` — total: every
    * instant has one. Read on the zone's clock, not the runtime's: 22:30 UTC
    * on a summer evening is `{ localDate: next day, minute: 90 }` in Sofia.

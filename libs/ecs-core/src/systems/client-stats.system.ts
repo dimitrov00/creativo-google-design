@@ -44,6 +44,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
+import { BillingSystem } from './billing.system';
 
 /**
  * One client's statistics, from every appointment they have a seat on (the
@@ -1081,6 +1082,78 @@ export const ClientStatsSystem = {
     appointments: readonly BilledAppointment<Seat>[],
   ): ClientMoneyStats {
     return moneyOf(visitsOf(subject, appointments));
+  },
+
+  /**
+   * The visits that count toward SPEND, each with its bill (pass C, P-26 —
+   * the projection's `clientStatsOf` loop, homed here): `BillingSystem`'s
+   * answer — the seats less the discounts (vouchers are a way of paying,
+   * tips never the shop's price). A visit whose seats have no bill (none,
+   * or mixed currencies) is left out, never guessed at. History order kept.
+   */
+  billedHistory(
+    history: readonly Appointment[],
+  ): readonly BilledAppointment<Seat>[] {
+    const billed: BilledAppointment<Seat>[] = [];
+    for (let i = 0; i < history.length; i++) {
+      const appointment = history[i] as Appointment;
+      const subtotal = BillingSystem.subtotalOf(appointment.seats);
+      if (!subtotal.ok) continue;
+      const total = BillingSystem.totalOf(
+        subtotal.value,
+        appointment.discounts,
+      );
+      billed.push({
+        ...appointment,
+        bill: {
+          subtotalCents: subtotal.value.amountCents,
+          totalCents: total.amountCents,
+          currency: subtotal.value.currency,
+        },
+      });
+    }
+    return billed;
+  },
+
+  /**
+   * When the client's last worked visit BEFORE `current` started — what the
+   * card's «Ново» is measured from (pass C, K-3 — the client card store's
+   * `previousVisitAtMs`, homed here): the latest of the bounded worked
+   * visits other than `current`, by the instant `instantOf` reads (the
+   * caller's, zone-bound — the shop's wall clock to an instant, D-6), so the
+   * order is the instant order; with none, the stored last visit when it is
+   * another visit and fully stamped; `null` otherwise.
+   */
+  previousVisit(
+    stats: Pick<
+      ClientStats,
+      | 'last365VisitsCompleted'
+      | 'lastVisitAppointmentId'
+      | 'lastVisitLocalDate'
+      | 'lastVisitStartMinutes'
+    >,
+    current: AppointmentId | null,
+    instantOf: (fact: VisitFact) => UtcEpochMs,
+  ): UtcEpochMs | null {
+    let latest: UtcEpochMs | null = null;
+    const facts = stats.last365VisitsCompleted;
+    for (let i = 0; i < facts.length; i++) {
+      const fact = facts[i] as VisitFact;
+      if (fact.appointmentId === current) continue;
+      const at = instantOf(fact);
+      if (latest === null || UtcEpochMs.compare(at, latest) > 0) latest = at;
+    }
+    if (latest !== null) return latest;
+    return stats.lastVisitAppointmentId !== null &&
+      stats.lastVisitAppointmentId !== current &&
+      stats.lastVisitLocalDate !== null &&
+      stats.lastVisitStartMinutes !== null
+      ? instantOf({
+          appointmentId: stats.lastVisitAppointmentId,
+          localDate: stats.lastVisitLocalDate,
+          startMinutes: stats.lastVisitStartMinutes,
+        })
+      : null;
   },
 
   /**

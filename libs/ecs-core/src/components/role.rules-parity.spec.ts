@@ -5,6 +5,7 @@ import {
   ADMIN_ROLES,
   BOOK_ROLES,
   MONEY_ROLES,
+  SPEND_ROLES,
   STAFF_ROLES,
   USER_ROLES,
 } from './role.data';
@@ -333,6 +334,12 @@ describe('role.data.ts and firestore.rules agree', () => {
   it('MONEY_ROLES is the front desk', () => {
     const twin = moneyTwin(RULES);
     expect(sorted(twin.roles), twin.source).toEqual(sorted(MONEY_ROLES));
+  });
+
+  it('SPEND_ROLES is the read grant of clientStats/{id}/restricted (the spend)', () => {
+    expect(
+      sorted(listRoles(RULES, ownStatements(RULES, '/restricted/{docId}'))),
+    ).toEqual(sorted(SPEND_ROLES));
   });
 
   it('every role the rules name is a Role', () => {

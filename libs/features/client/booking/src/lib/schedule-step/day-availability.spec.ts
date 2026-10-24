@@ -27,7 +27,17 @@ import {
   ServiceId,
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
-import { ZonedTimeSystem } from '@core/systems';
+import {
+  BookingCartSystem,
+  CapacitySystem,
+  type DayDocs,
+  type DayDocsKey,
+  type DayQuery,
+  LeadTimeSystem,
+  MoveSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
+import { observeCapacityEntries, observeDayDocs } from '@core/pipelines';
 import {
   FIXTURE_NOW,
   FIXTURE_TIME_ZONE,
@@ -43,20 +53,14 @@ import {
   unwrapOk,
   until,
 } from '@core/testing';
-import {
-  type DayDocs,
-  type DayDocsKey,
-  type DayQuery,
-  barberDays,
-  capacityByDay,
-  capacityMonthsOf,
-  dayDocsKey,
-  dayOptions,
-  observeCapacityEntries,
-  observeDayDocs,
-  releaseOn,
-  sameDayDocsKey,
-} from './day-availability';
+
+// The grid's halves now live in the systems and the pipeline that own them
+// (pass C, C-19); the cases below read them under their old names.
+const { barberDays, dayDocsKey, dayOptions, sameDayDocsKey } =
+  BookingCartSystem;
+const { releaseOn } = MoveSystem;
+const capacityByDay = CapacitySystem.freeMinutesByDay;
+const { monthKeysBetween } = LeadTimeSystem;
 
 /*
  * ONE SHOP DAY'S GRID, FROM ITS RAW DOCUMENTS — the composition the schedule
@@ -470,7 +474,7 @@ describe('the calendar’s capacity markers', () => {
 
   it('reads each month of the run once', () => {
     expect(
-      capacityMonthsOf(localDate('2026-09-29'), localDate('2026-11-02')),
+      monthKeysBetween(localDate('2026-09-29'), localDate('2026-11-02')),
     ).toEqual([
       CapacityMonthId.of('2026-09'),
       CapacityMonthId.of('2026-10'),

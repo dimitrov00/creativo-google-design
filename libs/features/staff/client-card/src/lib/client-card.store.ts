@@ -28,7 +28,7 @@ import type {
   WaitlistRequest,
 } from '@core/entities';
 import {
-  type AppointmentId,
+  AppointmentId,
   CustomerId,
   Result,
   type TimeZone,
@@ -41,12 +41,15 @@ import {
   JournalFeed,
   Registration,
   type ShopNow,
-  StreakState,
   type VisitFact,
+  readsClientWords,
+  seesClientSpend,
 } from '@core/components';
 import {
+  ClientStatsSystem,
   LoyaltyCatalogSystem,
   StreakRuleSystem,
+  StreakSystem,
   type StreakRuleSummary,
   type ValidLoyaltyCatalog,
   VisitFilter,
@@ -128,9 +131,6 @@ import {
   visitCardsVm,
 } from './glance.presenter';
 import {
-  FILTER_REFILL_PAGES,
-  FILTER_REFILL_ROWS,
-  HISTORY_PAGE_SIZE,
   type HistoryRowsInput,
   historyFacts,
   historyRows,
@@ -161,13 +161,22 @@ export const CLIENT_CARD_READ_TIMEOUT_MS = 10_000;
 /** The past cuts one read asks for; the rail shows six of them (§3.1 I1). */
 const PHOTOS_LIMIT = 12;
 
+/** The page size of a history read (§3.6 HF). */
+const HISTORY_PAGE_SIZE = 30;
+
+/** Fewer rows than this left by a filter fetches more pages on the same tap (§3.6). */
+const FILTER_REFILL_ROWS = 10;
+
+/** …up to this many pages at once. */
+const FILTER_REFILL_PAGES = 3;
+
 /**
  * A worked visit's stored shop day and minute (Law 7.3) as the instant the
  * loyalty presenters (flip 3) still read — once, at this boundary, on the
  * shop's `zone`; a minute inside a spring-forward gap reads as the day's
  * start.
  */
-function factInstant(fact: VisitFact, zone: TimeZone): number {
+function factInstant(fact: VisitFact, zone: TimeZone): UtcEpochMs {
   const at = ZonedTimeSystem.toUtc(fact.localDate, fact.startMinutes, zone);
   return at.ok
     ? at.value
@@ -569,7 +578,7 @@ export class ClientCardStore {
       now: this.visitNow(),
       timeZone: this.zone(),
       photoCounts: history.photoCounts,
-      clientWords: !context.viewer.roles.includes('sysadmin'),
+      clientWords: readsClientWords(context.viewer.roles),
       catalog: context.catalog,
       words,
     };
@@ -726,32 +735,23 @@ export class ClientCardStore {
       });
     });
 
-  /** The start of the client's last worked visit before the one on screen — what «Ново» is measured from. */
+  /**
+   * The start of the client's last worked visit before the one on screen —
+   * what «Ново» is measured from (`ClientStatsSystem.previousVisit`), each
+   * visit read as its instant on the shop's zone here, at the boundary. The
+   * host's raw id of the visit on screen is parsed here (Law 7.4); one that
+   * is no id names no stored visit, so nothing is left out.
+   */
   private readonly previousVisitAtMs = computed(() => {
     const stats = this.stats();
     const zone = this.zone();
-    const current = this._context()?.appointmentId ?? null;
+    const raw = this._context()?.appointmentId ?? null;
     if (stats === null || zone === null) return null;
-    let latest: number | null = null;
-    for (const fact of stats.last365VisitsCompleted) {
-      if (fact.appointmentId === current) continue;
-      const at = factInstant(fact, zone);
-      if (latest === null || at > latest) latest = at;
-    }
-    if (latest !== null) return latest;
-    return stats.lastVisitAppointmentId !== null &&
-      stats.lastVisitAppointmentId !== current &&
-      stats.lastVisitLocalDate !== null &&
-      stats.lastVisitStartMinutes !== null
-      ? factInstant(
-          {
-            appointmentId: stats.lastVisitAppointmentId,
-            localDate: stats.lastVisitLocalDate,
-            startMinutes: stats.lastVisitStartMinutes,
-          },
-          zone,
-        )
-      : null;
+    const parsed = raw === null ? null : AppointmentId.parse(raw);
+    const current = parsed !== null && parsed.ok ? parsed.value : null;
+    return ClientStatsSystem.previousVisit(stats, current, (fact) =>
+      factInstant(fact, zone),
+    );
   });
 
   /** The presenters' context for the achievements pages; `null` until a card is open and worded. */
@@ -971,7 +971,7 @@ export class ClientCardStore {
     ) {
       if (!gate) {
         overview.reward = LOADING;
-      } else if (!this.paused()) {
+      } else if (this.rewardsUsable()) {
         const reward = this.rewardBesideBirthday();
         if (reward !== null) {
           overview.reward = LoadSlice.ready(reward);
@@ -1064,7 +1064,7 @@ export class ClientCardStore {
         waitlist: LoadSlice.dataOf(waitlist),
         paused: this.paused(),
         count: this.stats()?.lifetimeVisitsCompleted ?? 0,
-        clientWords: !context.viewer.roles.includes('sysadmin'),
+        clientWords: readsClientWords(context.viewer.roles),
         now,
         zone,
         words,
@@ -1133,20 +1133,14 @@ export class ClientCardStore {
 
   /**
    * The catalogue's rhythm (§4.1): the first head the account holds a
-   * state for (`StreakState.find`, a linear scan), else the catalogue's
-   * first — the built `defaultStreakOf`'s choice, over the heads in the
-   * catalogue's order. `null` before the catalogue and in a shop without a
-   * rhythm.
+   * state for, else the catalogue's first (`StreakSystem.headOf`). `null`
+   * before the catalogue and in a shop without a rhythm.
    */
   private readonly rhythmHead = computed((): StreakDefinition | null => {
     const catalog = LoadSlice.dataOf(this._catalog());
     if (catalog === null) return null;
     const states = LoadSlice.dataOf(this._account())?.streaks ?? [];
-    for (let i = 0; i < catalog.streaks.length; i++) {
-      const head = catalog.streaks[i] as StreakDefinition;
-      if (StreakState.find(states, head.id) !== null) return head;
-    }
-    return catalog.streaks[0] ?? null;
+    return StreakSystem.headOf(catalog.streaks, states);
   });
 
   /**
@@ -1838,7 +1832,8 @@ export class ClientCardStore {
         () => this._stats.set(LoadSlice.ready(null)),
         () => this._stats.set(FAILED),
       );
-      if (this._context()?.viewer.roles.includes('admin') === true) {
+      const viewer = this._context()?.viewer;
+      if (viewer !== undefined && seesClientSpend(viewer.roles)) {
         void this.withRecord(generation, uid, (customerId) =>
           this.loadMoney(generation, customerId),
         );

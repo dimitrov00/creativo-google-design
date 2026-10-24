@@ -17,3 +17,4 @@ export * from './lib/visit-card/visit-card.vm';
 export * from './lib/visit-card/visit-card';
 export * from './lib/visits-browser/visits-browser';
 export * from './lib/rhythm-rule/rhythm-rule.words';
+export * from './lib/rhythm-rule/rhythm-closed-mark.words';

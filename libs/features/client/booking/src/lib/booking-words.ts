@@ -1,4 +1,8 @@
-import { BookingFlowStep, MoveRefusalReason } from '@core/components';
+import {
+  BookingFlowStep,
+  MoveRefusalReason,
+  SeatArrangement,
+} from '@core/components';
 
 /*
  * THE LOWERCASE WORDS THE BOOKING FLOW SHOWS THE OUTSIDE (Phase 4a 4A-10).
@@ -50,3 +54,13 @@ export const MOVE_REFUSAL_WORDS = {
   [MoveRefusalReason.Unavailable]: 'unavailable',
   [MoveRefusalReason.CarriedOutOfReach]: 'carried_out_of_reach',
 } as const satisfies Record<MoveRefusalReason, string>;
+
+/**
+ * How the picked arrangement seats the party
+ * (`BookingCartSystem.arrangementOf`), as the time sheet's heading key
+ * (`booking.schedule.arrangement.<word>`) spells it.
+ */
+export const SEAT_ARRANGEMENT_WORDS = {
+  [SeatArrangement.Parallel]: 'parallel',
+  [SeatArrangement.Sequential]: 'sequential',
+} as const satisfies Record<SeatArrangement, string>;

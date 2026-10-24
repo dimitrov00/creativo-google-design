@@ -42,10 +42,6 @@ const PHOTOS = Collections.AppointmentPhotos;
 const photoOf = (id: string, data: DocumentData): AppointmentPhoto =>
   ({ id, ...data }) as AppointmentPhoto;
 
-/** Only the visit's own pictures count as its photos — the shop's library pictures never do. */
-const isShot = (photo: AppointmentPhoto): boolean =>
-  photo.photoOrigin === PhotoOrigin.Shot;
-
 /** Ascending by the instant taken — the order a visit's strip reads in. */
 const byTaken = (a: AppointmentPhoto, b: AppointmentPhoto): number =>
   a.takenAtUtcMs - b.takenAtUtcMs;
@@ -174,9 +170,9 @@ export const appointmentPhotoPorts = (
      * A client's newest photos across visits, the visits' own shots only —
      * `clientCustomerId ==`, `photoOrigin == SHOT`, `takenAtUtcMs` desc
      * (index #22; the `orderBy` is what makes `limit` keep the newest). The
-     * origin is a filter of the query, never of the answer: a library
-     * picture adopted onto a visit takes none of the `max` places. No room,
-     * no read.
+     * origin — the one `PhotoOrigin.countsForClient` admits — is a filter of
+     * the query, never of the answer: a library picture adopted onto a visit
+     * takes none of the `max` places. No room, no read.
      */
     listClientPhotos: async (clientCustomerId, max) => {
       if (!(max >= 1)) return Result.ok([]);
@@ -204,7 +200,7 @@ export const appointmentPhotoPorts = (
       for (const read of reads) {
         if (!read.ok) return read;
         for (const photo of read.value) {
-          if (isShot(photo)) {
+          if (PhotoOrigin.countsForClient(photo.photoOrigin)) {
             counts.set(
               photo.appointmentId,
               (counts.get(photo.appointmentId) ?? 0) + 1,

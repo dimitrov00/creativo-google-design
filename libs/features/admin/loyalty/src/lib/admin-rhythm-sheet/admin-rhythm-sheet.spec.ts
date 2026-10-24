@@ -47,10 +47,10 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import { AdminRhythmStore } from '../admin-rhythm.store';
 import { rhythmRecorder } from '../testing/rhythm-recorder';
-import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import {
   AdminRhythmSheet,
   type AdminRhythmSheetKind,
+  type RhythmServiceGroup,
 } from './admin-rhythm-sheet';
 
 // ── The app's own words ──────────────────────────────────────────────────

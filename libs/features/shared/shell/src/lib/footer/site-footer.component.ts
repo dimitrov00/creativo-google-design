@@ -9,8 +9,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { Principal } from '@core/components';
-import { UTC_ZONE } from '@core/pipelines';
-import { LocalDate } from '@core/primitives';
+import { LocalDate, TimeZone } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   AUTH_SESSION_PORTS,
@@ -216,7 +215,7 @@ export class SiteFooterComponent {
   protected readonly year = computed(
     () =>
       LocalDate.parts(
-        ZonedTimeSystem.toLocal(this.nowUtcMs, this.shopZone() ?? UTC_ZONE)
+        ZonedTimeSystem.toLocal(this.nowUtcMs, this.shopZone() ?? TimeZone.UTC)
           .localDate,
       ).year,
   );

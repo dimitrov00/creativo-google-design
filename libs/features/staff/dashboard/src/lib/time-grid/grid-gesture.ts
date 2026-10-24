@@ -10,7 +10,17 @@
  * shares. Stated once, so a ruling on one surface is a ruling on both.
  */
 
-import type { EditCommand, ResizeEdge } from '@core/components';
+import {
+  type EditCommand,
+  PlacementVerdict,
+  type ResizeEdge,
+} from '@core/components';
+import { DurationMinutes, defect } from '@core/primitives';
+import {
+  GridLayoutSystem,
+  type TrackEvent,
+  type TrackSpan,
+} from '@core/systems';
 
 /** How close to an edge the finger has to be before the frame scrolls itself. */
 export const EDGE_SCROLL_MARGIN_PX = 28;
@@ -256,17 +266,14 @@ export type DragGesture = typeof EditCommand.Move | ResizeEdge;
 
 /**
  * Why the drafted interval cannot stand as drawn — the field
- * `placementVerdict`, the ONLY source of these strings. `SHORT`: under the
- * floor. `OVERLAP`: another booking holds the chair. `OUTSIDE`: past the
- * shift. Shared by the grid and the chair timeline.
+ * `placementVerdict`. `SHORT`: under the floor. `OVERLAP`: another booking
+ * holds the chair. `OUTSIDE`: past the shift. Shared by the grid and the
+ * chair timeline. The dictionary is ecs-core's (`grid-placement.data.ts`,
+ * `GridLayoutSystem.placementVerdict`'s answer — pass C, Y-14, values
+ * unchanged); the grid binds it and re-exports it under the name its
+ * readers always imported from here (D-9).
  */
-export const PlacementVerdict = {
-  Short: 'SHORT',
-  Overlap: 'OVERLAP',
-  Outside: 'OUTSIDE',
-} as const;
-export type PlacementVerdict =
-  (typeof PlacementVerdict)[keyof typeof PlacementVerdict];
+export { PlacementVerdict };
 
 /** A verdict with what its readout names — the floor, or the neighbour. */
 export type PlacementVerdictSlice =
@@ -280,6 +287,58 @@ export type PlacementVerdictSlice =
       readonly time: string;
     }
   | { readonly placementVerdict: typeof PlacementVerdict.Outside };
+
+/** A frame column as the verdict reads it: its blocks — each naming itself — and its open windows. */
+type VerdictColumn = {
+  readonly events: readonly (TrackEvent & { readonly title: string })[];
+  readonly open: readonly TrackSpan[];
+};
+
+/**
+ * What a drafted block breaks, worded for the readout — the verdict is
+ * `GridLayoutSystem.placementVerdict`'s (pass C, Y-14/Y-15: `SHORT` at or
+ * under the floor, then the FIRST booking under the block in column and
+ * event order, then a column with no open window holding it), decided on
+ * the frames' RAW track minutes, never a clamped run (R-6). The grid hands
+ * its one editable column, the timeline every chosen chair; `null` when the
+ * draft stands. The slice names the floor, or the neighbour's title and
+ * start. A floor no host feeds (not a positive whole number of minutes)
+ * reads no verdict.
+ */
+export function placementSliceOf(
+  block: TrackSpan & { readonly id: string },
+  columns: readonly VerdictColumn[],
+  floor: number,
+): PlacementVerdictSlice | null {
+  const minutes = DurationMinutes.of(floor);
+  if (!minutes.ok) return null;
+  const placed = GridLayoutSystem.placementVerdict(
+    block,
+    columns,
+    minutes.value,
+  );
+  switch (placed.placementVerdict) {
+    case null:
+      return null;
+    case PlacementVerdict.Short:
+      return { placementVerdict: PlacementVerdict.Short, minutes: floor };
+    case PlacementVerdict.Overlap: {
+      const hit = placed.hit;
+      const other =
+        hit === null ? undefined : columns[hit.column]?.events[hit.event];
+      if (other === undefined) {
+        return defect('placementVerdict: an OVERLAP without its neighbour');
+      }
+      return {
+        placementVerdict: PlacementVerdict.Overlap,
+        name: other.title,
+        time: timeLabel(other.startMinute),
+      };
+    }
+    case PlacementVerdict.Outside:
+      return { placementVerdict: PlacementVerdict.Outside };
+  }
+}
 
 export function clamp(value: number, min: number, max: number): number {
   // `min` last: on a block longer than the extent the two bounds cross, and

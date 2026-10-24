@@ -17,6 +17,12 @@ import {
   RequestedSubjectRole,
   type MoveRider,
   BookingCall,
+  CancellationReason,
+  CancellationReasonSet,
+  ClientMove,
+  MoveRefusal,
+  MoveRefusalReason,
+  type ChairTime,
 } from '@core/components';
 import {
   Weekday,
@@ -36,12 +42,15 @@ import {
   type MinuteOfDay,
   PriceCents,
   CartLineId,
+  Result,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   BookingError,
   SchedulingError,
   CarriedSeatRefusal,
   MoveErrorCode,
+  ShopUnavailableReason,
 } from '@core/errors';
 import type { Appointment, Service } from '@core/entities';
 import {
@@ -60,6 +69,8 @@ import {
   seatFixture,
   resolvedCustomerIds,
   customerOf,
+  FIXTURE_NOW_UTC_MS,
+  until,
 } from '@core/testing';
 import {
   AppointmentEditSystem,
@@ -177,17 +188,26 @@ function rider(
 
 describe('MoveSystem.placeRiders — the server’s shift, restated for the review card', () => {
   it('seats a side-by-side companion at the booker’s new start', () => {
-    const [placed] = MoveSystem.placeRiders([at(14)], [rider(0)]);
+    const [placed] = MoveSystem.placeRiders(
+      [{ startMinutes: at(14) }],
+      [rider(0)],
+    );
     expect(placed?.startMinutes).toBe(at(14));
   });
 
   it('keeps a companion straight after the booker straight after them', () => {
-    const [placed] = MoveSystem.placeRiders([at(14)], [rider(45)]);
+    const [placed] = MoveSystem.placeRiders(
+      [{ startMinutes: at(14) }],
+      [rider(45)],
+    );
     expect(placed?.startMinutes).toBe(at(14, 45));
   });
 
   it('anchors on the EARLIEST seat the cart holds, whatever order it lists them in', () => {
-    const [placed] = MoveSystem.placeRiders([at(15), at(14, 30)], [rider(-30)]);
+    const [placed] = MoveSystem.placeRiders(
+      [{ startMinutes: at(15) }, { startMinutes: at(14, 30) }],
+      [rider(-30)],
+    );
     expect(placed?.startMinutes).toBe(at(14));
   });
 
@@ -208,7 +228,7 @@ describe('MoveSystem.placeRiders — the server’s shift, restated for the revi
         (startMinutes, offsets) => {
           const start = minute(startMinutes);
           const placed = MoveSystem.placeRiders(
-            [start],
+            [{ startMinutes: start }],
             offsets.map((o) => rider(o)),
           );
           expect(
@@ -284,14 +304,15 @@ function beard(
   return offered('svc-beard', locationIds, variants);
 }
 
-const petar = [BarberId.of('petar')];
+const petar = [{ id: BarberId.of('petar') }];
 
 function son(overrides: Partial<MoveRider> = {}): MoveRider {
   return rider(0, overrides);
 }
 describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move carries?', () => {
   const inReach = MoveSystem.carriedSeatsInReach;
-  const shops = (...ids: string[]) => ids.map(LocationId.of);
+  const shops = (...ids: string[]) =>
+    ids.map((id) => ({ id: LocationId.of(id) }));
 
   it('is true when the barber is active and the service (and its variant) still offered', () => {
     expect(inReach([son()], petar, [beard()], null)).toBe(true);
@@ -310,9 +331,9 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
   });
 
   it('is false when the barber is off the active list', () => {
-    expect(inReach([son()], [BarberId.of('ivan')], [beard()], null)).toBe(
-      false,
-    );
+    expect(
+      inReach([son()], [{ id: BarberId.of('ivan') }], [beard()], null),
+    ).toBe(false);
   });
 
   it('is false when the service is retired', () => {
@@ -390,7 +411,7 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
       offered('svc-fade', ['loc-center']),
       offered('svc-braids', ['loc-mladost']),
     ];
-    const barbers = [BarberId.of('petar'), BarberId.of('niko')];
+    const barbers = [{ id: BarberId.of('petar') }, { id: BarberId.of('niko') }];
     const active = shops('loc-center', 'loc-mladost');
     expect(inReach(riders, barbers, services, active)).toBe(false);
     for (const one of riders) {
@@ -408,7 +429,7 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
             barberId: BarberId.of('niko'),
           }),
         ],
-        [BarberId.of('petar'), BarberId.of('niko')],
+        [{ id: BarberId.of('petar') }, { id: BarberId.of('niko') }],
         [
           offered('svc-fade', ['loc-center', 'loc-mladost']),
           offered('svc-braids', ['loc-mladost']),
@@ -451,7 +472,12 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
             carriedServices.every((serviceId) => servesAt(serviceId, shopId)),
           );
           expect(
-            inReach(riders, petar, services, activeShops.map(LocationId.of)),
+            inReach(
+              riders,
+              petar,
+              services,
+              activeShops.map((id) => ({ id: LocationId.of(id) })),
+            ),
           ).toBe(expected);
         },
       ),
@@ -928,7 +954,7 @@ describe('MoveSystem.carriedRefusalOf — what the client is told to phone about
 
 describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
   const MONDAY_09_18 = (barberId: BarberId) => ({
-    barberId,
+    id: barberId,
     versions: ScheduleVersion.startingWith(
       [ShiftSegment.of(Weekday.Mon, CENTER, at(9), endMinute(18 * 60))],
       localDate('2026-01-01'),
@@ -1146,5 +1172,385 @@ describe('MoveSystem — purity', () => {
     const twice = MoveSystem.plan(appointment, OWNER, request);
     expect(twice).toEqual(once);
     expect(appointment.seats[1]?.startMinutes).toBe(at(10, 55));
+  });
+});
+
+/* ── Pass C: the client's move verdicts, the ladder and the read helpers ── */
+
+describe('MoveSystem.releaseOn — a held chair on the shop’s wall clock', () => {
+  const NIKO = BarberId.of('niko');
+  const chair = (
+    start: number,
+    end: number,
+    barberId: BarberId = IVAN,
+  ): ChairTime => ({
+    barberId,
+    startMinutes: minute(start),
+    endMinutes: until(0, end),
+  });
+  const TUESDAY = localDate('2026-09-29');
+
+  it('hands back the chairs of the visit’s own day, as they are, and nothing on another day', () => {
+    const chairs = [chair(600, 645), chair(600, 645, NIKO)];
+    expect(MoveSystem.releaseOn(chairs, TUESDAY, TUESDAY)).toEqual([
+      { barberId: IVAN, startMinutes: 600, endMinutes: 645 },
+      { barberId: NIKO, startMinutes: 600, endMinutes: 645 },
+    ]);
+    expect(
+      MoveSystem.releaseOn(chairs, TUESDAY, localDate('2026-09-30')),
+    ).toEqual([]);
+  });
+
+  it('keeps a chair ending at the closing midnight whole', () => {
+    expect(
+      MoveSystem.releaseOn([chair(23 * 60 + 30, 24 * 60)], TUESDAY, TUESDAY),
+    ).toEqual([
+      { barberId: IVAN, startMinutes: 23 * 60 + 30, endMinutes: 1440 },
+    ]);
+  });
+
+  it('hands back nothing on a new booking — no visit, no day', () => {
+    expect(MoveSystem.releaseOn([], null, TUESDAY)).toEqual([]);
+  });
+});
+
+describe('MoveSystem.refusalOf — the landing’s refusal first, then the carried seats’ reach', () => {
+  const stored = MoveRefusal.of(MoveRefusalReason.CompanionsOnly, CENTER);
+  const MLADOST = LocationId.of('loc-mladost');
+
+  it('answers what the landing decided, whatever the reach says', () => {
+    expect(MoveSystem.refusalOf(stored, false, MLADOST)).toBe(stored);
+    expect(MoveSystem.refusalOf(stored, true, MLADOST)).toBe(stored);
+  });
+
+  it('refuses a move whose carried seats are out of reach, at the flow’s shop', () => {
+    expect(MoveSystem.refusalOf(null, false, MLADOST)).toEqual({
+      moveRefusalReason: MoveRefusalReason.CarriedOutOfReach,
+      locationId: MLADOST,
+    });
+    expect(MoveSystem.refusalOf(null, false, null)).toEqual({
+      moveRefusalReason: MoveRefusalReason.CarriedOutOfReach,
+      locationId: null,
+    });
+  });
+
+  it('refuses nothing when the landing did not and everyone carried is in reach', () => {
+    expect(MoveSystem.refusalOf(null, true, MLADOST)).toBeNull();
+  });
+});
+
+describe('MoveSystem.clientMove — what the client may do about moving a visit', () => {
+  const HOUR = 3_600_000;
+  /** The father-and-son visit, its start `hours` after the pinned now. */
+  const startingIn = (hours: number, visit: Appointment = party()) => ({
+    ...visit,
+    utcEpochMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, hours * HOUR),
+  });
+  const policy = BookingPolicy.DEFAULT; // 24-hour free window
+  const onlySon = (): Appointment => {
+    const visit = party();
+    return { ...visit, seats: [visit.seats[1] as Seat] };
+  };
+
+  it('offers the move while the window allows it and a seat is the booker’s', () => {
+    expect(
+      MoveSystem.clientMove(startingIn(72), policy, FIXTURE_NOW_UTC_MS, OWNER),
+    ).toEqual({ clientMove: ClientMove.Movable, windowClosed: false });
+  });
+
+  it('leaves the move to the shop when nothing on the visit is the booker’s', () => {
+    expect(
+      MoveSystem.clientMove(
+        startingIn(72, onlySon()),
+        policy,
+        FIXTURE_NOW_UTC_MS,
+        OWNER,
+      ),
+    ).toEqual({ clientMove: ClientMove.ShopOnly, windowClosed: false });
+    // Nobody to name the seats for: no owner, no seat of theirs.
+    expect(
+      MoveSystem.clientMove(startingIn(72), policy, FIXTURE_NOW_UTC_MS, null),
+    ).toEqual({ clientMove: ClientMove.ShopOnly, windowClosed: false });
+  });
+
+  it('offers no move once the free window has closed — and says it closed', () => {
+    expect(
+      MoveSystem.clientMove(startingIn(2), policy, FIXTURE_NOW_UTC_MS, OWNER),
+    ).toEqual({ clientMove: ClientMove.None, windowClosed: true });
+  });
+
+  it('holds the deadline itself free, a millisecond past it closed', () => {
+    const atDeadline = startingIn(24);
+    expect(
+      MoveSystem.clientMove(atDeadline, policy, FIXTURE_NOW_UTC_MS, OWNER),
+    ).toEqual({ clientMove: ClientMove.Movable, windowClosed: false });
+    expect(
+      MoveSystem.clientMove(
+        atDeadline,
+        policy,
+        UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 1),
+        OWNER,
+      ),
+    ).toEqual({ clientMove: ClientMove.None, windowClosed: true });
+  });
+
+  it('offers nothing and closes no window on a visit no longer live', () => {
+    const cancelled = startingIn(
+      72,
+      party(
+        0,
+        undefined,
+        BookingLifecycle.cancel(
+          FIXTURE_NOW_UTC_MS,
+          CancellationReasonSet.of([CancellationReason.Other]),
+        ),
+      ),
+    );
+    expect(
+      MoveSystem.clientMove(cancelled, policy, FIXTURE_NOW_UTC_MS, OWNER),
+    ).toEqual({ clientMove: ClientMove.None, windowClosed: false });
+  });
+
+  it('reads a start that is no instant exactly as the sheet did: isLive ∧ ¬mayCancelAt', () => {
+    const noInstant = {
+      ...party(),
+      utcEpochMs: Number.NaN as UtcEpochMs,
+    };
+    // `mayCancel` skips the window on a non-finite start; `mayCancelAt`
+    // compares through `UtcEpochMs.compare`, which reads NaN as "equal".
+    const answer = MoveSystem.clientMove(
+      noInstant,
+      policy,
+      FIXTURE_NOW_UTC_MS,
+      OWNER,
+    );
+    expect(answer.clientMove).toBe(ClientMove.Movable);
+    expect(answer.windowClosed).toBe(
+      BookingLifecycle.isLive(noInstant) &&
+        !BookingPolicy.mayCancelAt(
+          policy,
+          noInstant.utcEpochMs,
+          FIXTURE_NOW_UTC_MS,
+        ),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const visit = deepFreeze(startingIn(72));
+    const frozenPolicy = deepFreeze(policy);
+    const once = MoveSystem.clientMove(
+      visit,
+      frozenPolicy,
+      FIXTURE_NOW_UTC_MS,
+      OWNER,
+    );
+    const twice = MoveSystem.clientMove(
+      visit,
+      frozenPolicy,
+      FIXTURE_NOW_UTC_MS,
+      OWNER,
+    );
+    expect(twice).toEqual(once);
+  });
+});
+
+describe('MoveSystem.plan — a move INTO another shop is asked what a new booking is', () => {
+  const MLADOST = LocationId.of('loc-mladost');
+
+  it('refuses a move to an UNLISTED other shop — never a door to a hidden shop', () => {
+    expect(
+      unwrapErr(
+        MoveSystem.plan(
+          party(),
+          OWNER,
+          {
+            locationId: MLADOST,
+            localDate: FIXTURE_TODAY,
+            seats: [cartSeat(at(14))],
+          },
+          false,
+        ),
+      ),
+    ).toEqual(
+      BookingError.shopUnavailable(MLADOST, ShopUnavailableReason.Unlisted),
+    );
+  });
+
+  it('moves a visit within its own shop, listed or not — a shop hidden since still moves its visits', () => {
+    expect(
+      MoveSystem.plan(
+        party(),
+        OWNER,
+        {
+          locationId: CENTER,
+          localDate: FIXTURE_TODAY,
+          seats: [cartSeat(at(14))],
+        },
+        false,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('admits a listed other shop, and is listed when the caller says nothing', () => {
+    const request = {
+      locationId: MLADOST,
+      localDate: FIXTURE_TODAY,
+      seats: [cartSeat(at(14))],
+    };
+    expect(MoveSystem.plan(party(), OWNER, request, true).ok).toBe(true);
+    expect(MoveSystem.plan(party(), OWNER, request)).toEqual(
+      MoveSystem.plan(party(), OWNER, request, true),
+    );
+  });
+
+  it('refuses a mid-service party before it asks about the shop (the stored order)', () => {
+    const served = {
+      ...party(),
+      seats: [
+        party().seats[0] as Seat,
+        Seat.withOutcome(
+          party().seats[1] as Seat,
+          SeatOutcome.worked(utcMs('2026-09-28T10:30:00+03:00')),
+        ),
+      ],
+    };
+    expect(
+      unwrapErr(
+        MoveSystem.plan(
+          served,
+          OWNER,
+          {
+            locationId: MLADOST,
+            localDate: FIXTURE_TODAY,
+            seats: [cartSeat(at(14))],
+          },
+          false,
+        ),
+      ),
+    ).toEqual(BookingError.invalidInput('seat_resolved'));
+  });
+});
+
+describe('MoveSystem.decideCarried — the whole party, else the cart alone', () => {
+  const OFFERED = [{ id: CUT }, { id: BEARD }];
+  type Calls = (readonly string[])[];
+
+  /** A decision stub: records which carried lines it was handed, answers `answer(carried)`. */
+  function stub(
+    answer: (carried: readonly string[]) => Result<string, BookingError>,
+  ) {
+    const calls: Calls = [];
+    const decide = (carried: readonly { readonly seatId: SeatId }[]) => {
+      const ids = carried.map((line) => line.seatId as string);
+      calls.push(ids);
+      return answer(ids);
+    };
+    return { calls, decide };
+  }
+
+  const planned = (): MovePlan => unwrapOk(plan(party(), [cartSeat(at(14))]));
+
+  it('decides the whole party once and answers it when it fits', () => {
+    const { calls, decide } = stub(() => Result.ok('whole'));
+    expect(MoveSystem.decideCarried(planned(), OFFERED, decide)).toEqual(
+      Result.ok('whole'),
+    );
+    expect(calls).toEqual([['seat-son']]);
+  });
+
+  it('names a carried seat whose service is retired, after the cart alone fits — never deciding the whole party', () => {
+    const { calls, decide } = stub(() => Result.ok('cart'));
+    expect(
+      unwrapErr(MoveSystem.decideCarried(planned(), [{ id: CUT }], decide)),
+    ).toEqual({
+      errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+      refusal: CarriedSeatRefusal.ServiceUnavailable,
+      seatIds: ['seat-son'],
+    });
+    expect(calls).toEqual([[]]);
+  });
+
+  it('answers the cart’s own refusal when the cart alone does not fit', () => {
+    const cartRefusal = BookingError.invalidInput('cart');
+    const { calls, decide } = stub((carried) =>
+      Result.err(
+        carried.length === 0 ? cartRefusal : BookingError.invalidInput('party'),
+      ),
+    );
+    expect(
+      unwrapErr(MoveSystem.decideCarried(planned(), OFFERED, decide)),
+    ).toEqual(cartRefusal);
+    expect(calls).toEqual([['seat-son'], []]);
+  });
+
+  it('makes a carried refusal the client’s call to the shop, naming every carried seat', () => {
+    const { calls, decide } = stub((carried) =>
+      carried.length === 0
+        ? Result.ok('cart')
+        : Result.err(BookingError.invalidInput('subject')),
+    );
+    expect(
+      unwrapErr(MoveSystem.decideCarried(planned(), OFFERED, decide)),
+    ).toEqual({
+      errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+      refusal: MoveSystem.carriedRefusalOf(
+        BookingError.invalidInput('subject'),
+      ),
+      seatIds: ['seat-son'],
+    });
+    expect(calls).toEqual([['seat-son'], []]);
+  });
+
+  it('answers a party with nobody carried as the decision did, without a second try', () => {
+    const alone = { ...planned(), carried: [] };
+    const refusal = BookingError.invalidInput('startMinutes');
+    const { calls, decide } = stub(() => Result.err(refusal));
+    expect(unwrapErr(MoveSystem.decideCarried(alone, [], decide))).toEqual(
+      refusal,
+    );
+    expect(calls).toEqual([[]]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(planned());
+    const offered = deepFreeze([{ id: CUT }]);
+    const decide = () => Result.ok('cart');
+    const once = MoveSystem.decideCarried(frozen, offered, decide);
+    const twice = MoveSystem.decideCarried(frozen, offered, decide);
+    expect(twice).toEqual(once);
+  });
+});
+
+describe('MoveSystem.seatsAfter — the cart as decided, the carried seats as they were but their start', () => {
+  it('keeps the decided cart seat and moves only the carried seat’s start', () => {
+    const planned = unwrapOk(plan(party(), [cartSeat(at(14))]));
+    const newCut = seat('seat-new', {
+      serviceId: CUT,
+      barberId: IVAN,
+      startMinutes: at(14),
+    });
+    const decidedSon = {
+      ...(planned.carried[0]?.seat as Seat),
+      seatId: SeatId.of('seat-decided'),
+      startMinutes: at(14),
+      priceCents: unwrapOk(PriceCents.of(9999)),
+    };
+    const after = MoveSystem.seatsAfter(
+      { appointment: { seats: [newCut, decidedSon] } },
+      planned,
+    );
+    expect(after[0]).toBe(newCut);
+    expect(after[1]).toEqual({
+      ...(planned.carried[0]?.seat as Seat),
+      startMinutes: at(14),
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const planned = deepFreeze(unwrapOk(plan(party(), [cartSeat(at(14))])));
+    const decided = deepFreeze({ appointment: { seats: party().seats } });
+    expect(MoveSystem.seatsAfter(decided, planned)).toEqual(
+      MoveSystem.seatsAfter(decided, planned),
+    );
   });
 });

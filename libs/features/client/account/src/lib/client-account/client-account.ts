@@ -10,11 +10,12 @@ import {
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
-import { Principal, WallTime } from '@core/components';
+import { Principal } from '@core/components';
 import { type LocationId, type UtcEpochMs } from '@core/primitives';
 import { AccountsErrorCode } from '@core/errors';
 import {
   ProfileCompletionKey,
+  VisitListSystem,
   VisitPerspective,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -251,13 +252,9 @@ export class ClientAccount {
       if (result === null) return LoadSlice.empty;
       if (!result.ok) return LoadSlice.failed;
 
-      // The soonest, on the shop's wall clock (`localDate` + `startMinutes`).
-      const next = [...result.value].sort((a, b) =>
-        WallTime.compare(
-          WallTime.of(a.localDate, a.startMinutes),
-          WallTime.of(b.localDate, b.startMinutes),
-        ),
-      )[0];
+      // The soonest, on the shop's wall clock (`localDate` + `startMinutes`):
+      // `VisitListSystem.soonestFirstByStart`'s stable day-then-minute order.
+      const next = VisitListSystem.soonestFirstByStart(result.value)[0];
       return next ? LoadSlice.ready(next) : LoadSlice.empty;
     },
   );

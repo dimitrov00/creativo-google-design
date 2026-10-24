@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { LocalDate } from '@core/primitives';
-import { endMinute, localDate, minute, unwrapOk } from '@core/testing';
+import {
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  unwrapOk,
+} from '@core/testing';
 import { DayWindows } from './day-windows.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { MinuteRange } from './minute-range.data';
@@ -142,5 +148,36 @@ describe('FlexibleWhen.is — the edge guard', () => {
     { days: [] },
   ])('refuses %j', (raw) => {
     expect(FlexibleWhen.is(raw)).toBe(false);
+  });
+});
+
+describe('FlexibleWhen.firstLocalDate — the earliest day named', () => {
+  it('is the earliest day of a declaration, and null for none', () => {
+    let when = FlexibleWhen.empty();
+    for (const raw of ['2026-08-26', '2026-08-24', '2026-08-25']) {
+      when = added(when, raw);
+    }
+    expect(FlexibleWhen.firstLocalDate(when)).toBe('2026-08-24');
+    expect(FlexibleWhen.firstLocalDate(FlexibleWhen.empty())).toBeNull();
+  });
+
+  it('scans for the minimum — a stored declaration is not trusted to be sorted', () => {
+    const unsorted: FlexibleWhen = {
+      flexibleDays: [
+        DayWindows.wholeDay(day('2026-09-03')),
+        DayWindows.wholeDay(day('2026-08-30')),
+        DayWindows.wholeDay(day('2026-09-01')),
+      ],
+    };
+    expect(FlexibleWhen.firstLocalDate(unsorted)).toBe('2026-08-30');
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const when = deepFreeze(
+      added(added(FlexibleWhen.empty(), '2026-08-26'), '2026-08-24'),
+    );
+    expect(FlexibleWhen.firstLocalDate(when)).toBe(
+      FlexibleWhen.firstLocalDate(when),
+    );
   });
 });

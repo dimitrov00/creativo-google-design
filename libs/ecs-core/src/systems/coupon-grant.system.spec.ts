@@ -1,7 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  Combinability,
+  CouponExpiryRule,
   CouponOccasion,
+  CouponStatus,
   CouponValue,
   GrantCapacity,
   GrantCapacityTerms,
@@ -17,7 +20,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { EngagementErrorCode } from '@core/errors';
-import type { CouponGrant } from '@core/entities';
+import type { Coupon, CouponGrant } from '@core/entities';
 import {
   deepFreeze,
   unwrapErr,
@@ -435,5 +438,173 @@ describe('CouponGrantSystem — purity', () => {
     expect(GrantLifecycle.of(grant)).toEqual(
       GrantLifecycle.active(multiUse(2), GrantExpiryTerms.none()),
     );
+  });
+});
+
+/* ── Pass C: the held grant's lapse, the settle's resolver, the menu's join ── */
+
+function couponOf(
+  id: string,
+  name: string,
+  combinability: Combinability = Combinability.Stackable,
+  couponStatus: CouponStatus = CouponStatus.Enabled,
+): Coupon {
+  return {
+    id: CouponId.of(id),
+    name,
+    code: null,
+    combinability,
+    usageLimit: null,
+    couponStatus,
+    couponOccasion: null,
+    ...unwrapOk(CouponValue.percentOff(25)),
+    ...CouponExpiryRule.never(),
+  };
+}
+
+function grantOf(id: string, couponId: string): CouponGrant {
+  return {
+    ...makeActiveGrant(GrantCapacityTerms.singleUse()),
+    id: CouponGrantId.of(id),
+    couponId: CouponId.of(couponId),
+  };
+}
+
+describe('CouponGrantSystem.expiresAtUtcMs — when a held grant lapses', () => {
+  it('names the instant of an ACTIVE grant with an EXPIRES_AT expiry, and nothing for every other lifecycle', () => {
+    const lapsing = makeActiveGrant(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(30)),
+    );
+    expect(CouponGrantSystem.expiresAtUtcMs(lapsing)).toBe(at(30));
+    expect(
+      CouponGrantSystem.expiresAtUtcMs(
+        makeActiveGrant(GrantCapacityTerms.singleUse()),
+      ),
+    ).toBeNull();
+    expect(
+      CouponGrantSystem.expiresAtUtcMs(GrantLifecycle.used(at(2), '')),
+    ).toBeNull();
+    expect(
+      CouponGrantSystem.expiresAtUtcMs(GrantLifecycle.expired(at(31), at(30))),
+    ).toBeNull();
+    expect(
+      CouponGrantSystem.expiresAtUtcMs(
+        GrantLifecycle.revoked(at(3), UserId.of('admin'), 'грешка'),
+      ),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const grant = deepFreeze(
+      makeActiveGrant(multiUse(2), GrantExpiryTerms.at(at(5))),
+    );
+    expect(CouponGrantSystem.expiresAtUtcMs(grant)).toEqual(
+      CouponGrantSystem.expiresAtUtcMs(grant),
+    );
+  });
+});
+
+describe('CouponGrantSystem.resolved — a grant as the bill settle reads it', () => {
+  it("labels it with its coupon's name and reads the coupon's own rule; the value stays the grant's snapshot", () => {
+    const grant = makeActiveGrant(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(10)),
+    );
+    const coupon = couponOf('coupon-1', 'Рожден ден', Combinability.Exclusive);
+    expect(CouponGrantSystem.resolved(grant, coupon, at(1))).toEqual({
+      grantId: 'grant-1',
+      customerId: grant.customerId,
+      label: 'Рожден ден',
+      usable: true,
+      exclusive: true,
+      discountMethod: 'PERCENT_OFF',
+      discountPercent: 10,
+    });
+  });
+
+  it('is usable AT the expiry instant, and not a moment after', () => {
+    const grant = makeActiveGrant(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(10)),
+    );
+    const coupon = couponOf('coupon-1', 'Рожден ден');
+    expect(CouponGrantSystem.resolved(grant, coupon, at(10)).usable).toBe(true);
+    expect(
+      CouponGrantSystem.resolved(grant, coupon, UtcEpochMs.plusMs(at(10), 1))
+        .usable,
+    ).toBe(false);
+  });
+
+  it('labels a grant whose coupon is gone or nameless by its coupon id, else its own id — and reads it as stackable', () => {
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
+    const gone = CouponGrantSystem.resolved(grant, null, at(1));
+    expect(gone.label).toBe('coupon-1');
+    expect(gone.exclusive).toBe(false);
+    const blank = couponOf('coupon-1', '   ', Combinability.Exclusive);
+    expect(CouponGrantSystem.resolved(grant, blank, at(1))).toMatchObject({
+      label: 'coupon-1',
+      exclusive: true,
+    });
+    const orphan: CouponGrant = { ...grant, couponId: CouponId.of('') };
+    expect(CouponGrantSystem.resolved(orphan, null, at(1)).label).toBe(
+      'grant-1',
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const grant = deepFreeze(makeActiveGrant(multiUse(3)));
+    const coupon = deepFreeze(couponOf('coupon-1', 'Постоянен клиент'));
+    expect(CouponGrantSystem.resolved(grant, coupon, at(1))).toEqual(
+      CouponGrantSystem.resolved(grant, coupon, at(1)),
+    );
+  });
+});
+
+describe('CouponGrantSystem.held — the grants joined to their coupons', () => {
+  it("keeps the grants' order, keeps a disabled coupon's grant, and leaves out a grant whose coupon is gone", () => {
+    const loyal = couponOf('coupon-loyal', 'Постоянен клиент');
+    const disabled = couponOf(
+      'coupon-old',
+      'Стара промоция',
+      Combinability.Stackable,
+      CouponStatus.Disabled,
+    );
+    const grants = [
+      grantOf('grant-old', 'coupon-old'),
+      grantOf('grant-gone', 'coupon-gone'),
+      grantOf('grant-loyal', 'coupon-loyal'),
+    ];
+    const held = CouponGrantSystem.held(grants, [loyal, disabled]);
+    expect(held.map((row) => [row.grant.id, row.coupon.id])).toEqual([
+      ['grant-old', 'coupon-old'],
+      ['grant-loyal', 'coupon-loyal'],
+    ]);
+    expect(held[0]?.coupon).toBe(disabled);
+    expect(CouponGrantSystem.held([], [loyal])).toEqual([]);
+    expect(CouponGrantSystem.held(grants, [])).toEqual([]);
+  });
+
+  it('answers two coupons of one id with the later one', () => {
+    const first = couponOf('coupon-1', 'Първо');
+    const later = couponOf('coupon-1', 'Второ');
+    expect(
+      CouponGrantSystem.held(
+        [grantOf('grant-1', 'coupon-1')],
+        [first, later],
+      )[0]?.coupon.name,
+    ).toBe('Второ');
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const grants = deepFreeze([
+      grantOf('grant-a', 'coupon-a'),
+      grantOf('grant-b', 'coupon-b'),
+    ]);
+    const coupons = deepFreeze([couponOf('coupon-b', 'Б')]);
+    expect(CouponGrantSystem.held(grants, coupons)).toEqual(
+      CouponGrantSystem.held(grants, coupons),
+    );
+    expect(grants.map((grant) => grant.id)).toEqual(['grant-a', 'grant-b']);
   });
 });

@@ -9,6 +9,7 @@ import { type RepositoryError } from '@core/errors';
 import {
   BookingPolicy,
   type CapacityEntry,
+  CapacityTrigger,
   LocationStatus,
   WriteOp,
 } from '@core/components';
@@ -33,8 +34,6 @@ import type {
   ReadTx,
 } from '@core/ports';
 import {
-  type CapacityBusyDay,
-  type CapacityShopWeek,
   CapacitySystem,
   LeadTimeSystem,
   PartyAdmissionSystem,
@@ -67,18 +66,6 @@ import { readShopZone } from './shop-zone-read.pipeline';
  * every shop a barber works at, so no one location is in scope), read once
  * per invocation; a zone that cannot be read is the rebuild's store failure.
  */
-
-/** Which write woke the rebuild — the ONLY source of these strings, the field `capacityTrigger`. */
-export const CapacityTrigger = {
-  /** A busy day or an exception: one (barber, day). */
-  Day: 'DAY',
-  /** A roster: one barber's horizon. */
-  Roster: 'ROSTER',
-  /** A shop, the policy or the daily sweep: every rostered barber's horizon. */
-  Sweep: 'SWEEP',
-} as const;
-export type CapacityTrigger =
-  (typeof CapacityTrigger)[keyof typeof CapacityTrigger];
 
 export type RebuildCapacityCommand =
   | {
@@ -189,22 +176,17 @@ function capacityWrites(
   // Each shop counted by the rule every new-booking surface asks
   // (`shopListed`) — the query only narrows what is billed — sorted by id,
   // so adding a shop cannot reorder the walk between two runs.
-  const shops: CapacityShopWeek[] = [];
+  const shops: ShopLocation[] = [];
   const listed = [...snapshot.locations].sort(byId);
   for (const location of listed) {
-    if (!PartyAdmissionSystem.shopListed(location)) continue;
-    shops.push({ locationId: location.id, week: location.openingHours });
-  }
-  const busy: CapacityBusyDay[] = [];
-  for (const day of snapshot.busy) {
-    busy.push({ localDate: day.localDate, spans: day.blocks });
+    if (PartyAdmissionSystem.shopListed(location)) shops.push(location);
   }
   const plan = CapacitySystem.planBarberCapacity({
     barberId,
     localDates,
     schedule: snapshot.schedule,
     shops,
-    busy,
+    busy: snapshot.busy,
     exceptions: snapshot.exceptions,
   });
   const writes: WriteOp[] = [];

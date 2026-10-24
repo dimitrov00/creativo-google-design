@@ -71,6 +71,15 @@ export const MONEY_ROLES = [
  */
 export const ADMIN_ROLES = [Role.Admin, Role.Sysadmin] as const;
 
+/**
+ * The roles that may READ A CLIENT'S SPEND — `clientStats/{customerId}/
+ * restricted/money`, the twin of that block's `hasAnyRole(['admin'])` in
+ * `firestore.rules`: the shop's admin ONLY. Narrower than `ADMIN_ROLES` on
+ * purpose — not the sysadmin (a support role with no business in a client's
+ * spend), not the front desk — so never `isAdmin`, which adds the sysadmin.
+ */
+export const SPEND_ROLES = [Role.Admin] as const;
+
 /** Linear scan of a short constant list — no allocation, no `includes` cast. */
 function listHas(list: readonly string[], value: unknown): boolean {
   for (let i = 0; i < list.length; i++) {
@@ -138,4 +147,24 @@ export function seesMoney(roles: readonly string[]): boolean {
  */
 export function isAdmin(roles: readonly string[]): boolean {
   return anyIn(ADMIN_ROLES, roles);
+}
+
+/**
+ * Whether a role set may read a client's lifetime spend (`SPEND_ROLES` —
+ * the admin alone). Claims-tolerant like `mayBook`: the staff client card
+ * loads the money document only when this holds, so it never asks for a
+ * read the rules refuse.
+ */
+export function seesClientSpend(roles: readonly string[]): boolean {
+  return anyIn(SPEND_ROLES, roles);
+}
+
+/**
+ * Whether a role set reads the CLIENT'S OWN WORDS on their visits — the
+ * note a client left with a booking (R15): every role but the sysadmin, a
+ * support role the client's words are kept from. Claims-tolerant: holding
+ * `sysadmin` beside any other role still keeps them.
+ */
+export function readsClientWords(roles: readonly string[]): boolean {
+  return !listHas(roles, Role.Sysadmin);
 }

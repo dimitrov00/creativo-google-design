@@ -13,6 +13,8 @@ import {
   CancellationReason,
   CancelledBy,
   Placement,
+  PolicyStepOutcome,
+  PolicySweepOutcome,
   PreciseInstant,
   Role,
   type Seat,
@@ -50,8 +52,6 @@ import {
 import type { LoadPolicy } from '@core/ports';
 import {
   continuePolicyRecompute,
-  PolicyStepOutcome,
-  PolicySweepOutcome,
   projectClientStats,
   runBackfill,
   startPolicyRecompute,

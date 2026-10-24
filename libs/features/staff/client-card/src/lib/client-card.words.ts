@@ -5,7 +5,7 @@ import {
   visitWaitlistWordsOf,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
-import { JournalFeed, PersonalRecordKind } from '@core/components';
+import { JournalFeed, Metric, PersonalRecordKind } from '@core/components';
 import { VisitPerspective } from '@core/systems';
 import {
   pluralForm,
@@ -126,26 +126,10 @@ export type AchievementWhoWord =
   'anyBarberAnyShop' | 'anyServiceAnyShop' | 'anyBarberAnyService';
 
 /**
- * A family's metric by its id in the loyalty catalogue: ecs-core's
- * `Metric` is assignable to it, member for member.
+ * A family's metric by its id in the loyalty catalogue — ecs-core's
+ * `Metric` itself, never a copy of its values (pass C, K-7).
  */
-export type AchievementMetricWord =
-  | 'client.visits.completed'
-  | 'client.bookings.selfService'
-  | 'client.spend.major'
-  | 'client.referrals.completed'
-  | 'client.waitlist.booked'
-  | 'client.points.lifetime'
-  | 'shop.bookings.created'
-  | 'client.services.distinct'
-  | 'client.barbers.distinct'
-  | 'client.locations.distinct'
-  | 'client.months.distinct'
-  | 'client.visits.earlyBird'
-  | 'client.visits.weekend'
-  | 'client.visits.onTime'
-  | 'client.visits.party'
-  | 'client.tenure.days';
+export type AchievementMetricWord = Metric;
 
 /**
  * The word a metric is said with: ONE answer for «Как се печели»
@@ -160,37 +144,37 @@ export function achievementMetricWord(
   metric: AchievementMetricWord,
 ): AchievementHowWord {
   switch (metric) {
-    case 'client.visits.completed':
+    case Metric.VisitsCompleted:
       return 'visits';
-    case 'client.bookings.selfService':
+    case Metric.BookingsSelfService:
       return 'selfService';
-    case 'client.spend.major':
+    case Metric.SpendMajor:
       return 'spend';
-    case 'client.referrals.completed':
+    case Metric.ReferralsCompleted:
       return 'referrals';
-    case 'client.waitlist.booked':
+    case Metric.WaitlistBooked:
       return 'waitlist';
-    case 'client.points.lifetime':
+    case Metric.PointsLifetime:
       return 'points';
-    case 'shop.bookings.created':
+    case Metric.ShopBookingsCreated:
       return 'shopBookings';
-    case 'client.services.distinct':
+    case Metric.ServicesDistinct:
       return 'services';
-    case 'client.barbers.distinct':
+    case Metric.BarbersDistinct:
       return 'barbers';
-    case 'client.locations.distinct':
+    case Metric.LocationsDistinct:
       return 'shops';
-    case 'client.months.distinct':
+    case Metric.MonthsDistinct:
       return 'months';
-    case 'client.visits.earlyBird':
+    case Metric.VisitsEarlyBird:
       return 'earlyBird';
-    case 'client.visits.weekend':
+    case Metric.VisitsWeekend:
       return 'weekend';
-    case 'client.visits.onTime':
+    case Metric.VisitsOnTime:
       return 'onTime';
-    case 'client.visits.party':
+    case Metric.VisitsParty:
       return 'party';
-    case 'client.tenure.days':
+    case Metric.TenureDays:
       return 'tenure';
   }
 }

@@ -9,7 +9,7 @@ import {
 } from '@core/components';
 import {
   type DurationMinutes,
-  type MinuteCount,
+  MinuteCount,
   type MinuteDelta,
   type BarberId,
   type CartLineId,
@@ -18,6 +18,7 @@ import {
   EndMinute,
   MinuteOfDay,
 } from '@core/primitives';
+import type { BarberSchedule } from '@core/entities';
 import {
   IntervalSetSystem,
   type NormalizedRanges,
@@ -90,13 +91,14 @@ export type BarberDayAvailability = {
   readonly blocks: readonly MinuteRange[];
 };
 
-/** {@link AvailabilitySystem.paddedBusy}'s input; `release` is `[]` unless a visit is being moved. */
-export type PaddedBusyInput = {
-  readonly barberId: BarberId;
-  /** The spans as the projection stores them: UNPADDED. */
-  readonly spans: readonly MinuteRange[];
-  readonly turnaroundMinutes: MinuteCount;
-  readonly release: readonly ChairTime[];
+/**
+ * The busy slice {@link AvailabilitySystem.paddedBusy} reads: a shop day's
+ * occupied spans as the projection stores them — UNPADDED, under the stored
+ * field name. A whole `BarberBusyDay` passes as it is (its `blocks` ARE
+ * minute ranges, Law 3: zero inbound mapping).
+ */
+export type BusyBlocks = {
+  readonly blocks: readonly MinuteRange[];
 };
 
 /**
@@ -195,6 +197,9 @@ const NO_RESULT: AvailabilityResult = {
   exhausted: false,
   nodesVisited: 0,
 };
+
+/** No busy document: nothing taken. */
+const NO_RANGES: readonly MinuteRange[] = [];
 
 /** The whole shop day, `[00:00, 24:00)`. */
 const WHOLE_DAY: readonly MinuteRange[] = [
@@ -785,30 +790,58 @@ export const AvailabilitySystem = {
    * turnaround (clamped to the shop day). ONE rule for the grid's read and
    * the server's commit check.
    *
+   * Reads the stored slices as they are (Law 3, zero inbound mapping): the
+   * busy day's `blocks` — `null`, no busy document, holds nothing — and the
+   * roster's `turnaroundMinutes` — `null`, no roster, declares no
+   * turnaround: zero.
+   *
    * `release` is chair time handed back FIRST — the visit being MOVED never
    * blocks its own move — and before the padding, never after: the
    * turnaround around a NEIGHBOUR's span belongs to the neighbour and must
    * survive. Entries naming other barbers are ignored, so a whole visit's
    * chair times can be passed for every barber.
    */
-  paddedBusy(input: PaddedBusyInput): NormalizedRanges {
+  paddedBusy(
+    barberId: BarberId,
+    busy: BusyBlocks | null,
+    schedule: Pick<BarberSchedule, 'turnaroundMinutes'> | null,
+    release: readonly ChairTime[],
+  ): NormalizedRanges {
+    const spans = busy === null ? NO_RANGES : busy.blocks;
+    const turnaround =
+      schedule === null ? MinuteCount.ZERO : schedule.turnaroundMinutes;
     const released: ChairTime[] = [];
-    for (let i = 0; i < input.release.length; i++) {
-      const chair = input.release[i] as ChairTime;
-      if (chair.barberId === input.barberId) released.push(chair);
+    for (let i = 0; i < release.length; i++) {
+      const chair = release[i] as ChairTime;
+      if (chair.barberId === barberId) released.push(chair);
     }
-    const taken = IntervalSetSystem.subtract(input.spans, released);
+    const taken = IntervalSetSystem.subtract(spans, released);
     const padded: MinuteRange[] = [];
     for (let i = 0; i < taken.length; i++) {
       padded.push(
-        MinuteRange.pad(
-          taken[i] as MinuteRange,
-          input.turnaroundMinutes,
-          input.turnaroundMinutes,
-        ),
+        MinuteRange.pad(taken[i] as MinuteRange, turnaround, turnaround),
       );
     }
     return IntervalSetSystem.normalize(padded);
+  },
+
+  /**
+   * Can this calendar day still be booked (the booking calendar's cell):
+   * never outside the bookable range; else the EXACT day query's answer when
+   * one exists (`null`: not asked, or not landed yet); else today stays live
+   * — so it never flickers grey and back while its exact answer loads — and
+   * any other day is bookable when the capacity projection holds a free
+   * minute on it.
+   */
+  dayBookable(
+    inRange: boolean,
+    exact: boolean | null,
+    isToday: boolean,
+    freeMinutes: MinuteCount,
+  ): boolean {
+    if (!inRange) return false;
+    if (exact !== null) return exact;
+    return isToday || freeMinutes > MinuteCount.ZERO;
   },
 
   /**

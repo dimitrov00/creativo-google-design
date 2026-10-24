@@ -28,6 +28,7 @@ import {
 import { AuditSystem } from './audit.system';
 import {
   DraftAssessment,
+  type StreakDraftAssessment,
   StreakPublishSystem,
   type StreakPublishRequest,
 } from './streak-publish.system';
@@ -1031,5 +1032,597 @@ describe('StreakPublishSystem — the flip-3 structs are pure', () => {
       ),
     ];
     expect(run()).toEqual(run());
+  });
+});
+
+// ── The page's side of the publish, extracted (pass C R-1…R-7, R-9, R-17, R-18) ──
+// The admin store's and page's cases (`admin-rhythm.store.spec.ts`,
+// `admin-rhythm.spec.ts`), restated as values on the assessment they read.
+
+/** What a draft comes to on the page: `patch` over the rule in force today, for `day`. */
+function draftOn(
+  patch: Partial<StreakRule>,
+  day: string,
+  more: {
+    head?: StreakSchedule;
+    published?: boolean;
+    policy?: typeof QUIET;
+    today?: LocalDate;
+  } = {},
+): StreakDraftAssessment {
+  const head = more.head ?? RECOMMENDED;
+  const today = more.today ?? TODAY;
+  return StreakPublishSystem.assess(
+    head,
+    more.published ?? true,
+    { ...inForceOf(head, today), ...patch } as StreakRule,
+    day,
+    today,
+    more.policy ?? QUIET,
+  );
+}
+
+const LOOSER_DRAFT: Partial<StreakRule> = {
+  intervalDays: 49,
+} as Partial<StreakRule>;
+const STRICTER_DRAFT: Partial<StreakRule> = {
+  intervalDays: 35,
+} as Partial<StreakRule>;
+const NEUTRAL_DRAFT: Partial<StreakRule> = { riskLeadDays: 3 };
+/** A grace past its range: a draft that is no rule. */
+const NO_RULE: Partial<StreakRule> = { graceDays: 99 };
+const FIRST_OF_MONTH = localDate('2026-10-01');
+const NOTICE_DAY = localDate('2026-10-28');
+
+describe('StreakPublishSystem.publishable — is there anything to publish', () => {
+  it('publishes nothing for a form that was not touched', () => {
+    expect(StreakPublishSystem.publishable(draftOn({}, TOMORROW), true)).toBe(
+      false,
+    );
+  });
+
+  it('publishes a shop’s first rule even as recommended: until it is, there is no rule', () => {
+    expect(
+      StreakPublishSystem.publishable(
+        draftOn({}, TOMORROW, { published: false }),
+        false,
+      ),
+    ).toBe(true);
+  });
+
+  it('publishes a change, published or not', () => {
+    expect(
+      StreakPublishSystem.publishable(draftOn(LOOSER_DRAFT, TOMORROW), true),
+    ).toBe(true);
+    expect(
+      StreakPublishSystem.publishable(
+        draftOn(STRICTER_DRAFT, TOMORROW, { published: false }),
+        false,
+      ),
+    ).toBe(true);
+  });
+
+  it('never publishes a draft that is no rule', () => {
+    const invalid = draftOn(NO_RULE, TOMORROW);
+    expect(invalid.draftAssessment).toBe(DraftAssessment.Invalid);
+    expect(StreakPublishSystem.publishable(invalid, true)).toBe(false);
+    expect(StreakPublishSystem.publishable(invalid, false)).toBe(false);
+  });
+
+  it('answers, with `published: true`, whether the draft changes anything — the preview’s gate', () => {
+    expect(
+      StreakPublishSystem.publishable(
+        draftOn({}, TOMORROW, { published: false }),
+        true,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('StreakPublishSystem.gate — the page’s judgement before anything is sent', () => {
+  it('refuses a draft that is no rule, naming its fields', () => {
+    expect(
+      StreakPublishSystem.gate(draftOn(NO_RULE, TOMORROW), true, TOMORROW),
+    ).toEqual({
+      ok: false,
+      error: StreakPublishError.invalid([StreakRuleField.GraceDays]),
+    });
+  });
+
+  it('answers nothing to publish for a form that was not touched', () => {
+    expect(
+      StreakPublishSystem.gate(draftOn({}, TOMORROW), true, TOMORROW),
+    ).toEqual({ ok: true, value: null });
+  });
+
+  it('refuses a day earlier than the change may start, naming the first it may', () => {
+    const assessed = draftOn(STRICTER_DRAFT, TOMORROW, { policy: SEEN });
+    expect(StreakPublishSystem.gate(assessed, true, TOMORROW)).toEqual({
+      ok: false,
+      error: StreakPublishError.tooEarly(TOMORROW, NOTICE_DAY),
+    });
+  });
+
+  it('refuses too early even before the shop has published — where the server owes no notice', () => {
+    const assessed = draftOn(STRICTER_DRAFT, TOMORROW, {
+      policy: SEEN,
+      published: false,
+    });
+    expect(StreakPublishSystem.gate(assessed, false, TOMORROW)).toEqual({
+      ok: false,
+      error: StreakPublishError.tooEarly(TOMORROW, NOTICE_DAY),
+    });
+  });
+
+  it('hands on the valid draft, as assessed, when the day may start', () => {
+    const assessed = draftOn(LOOSER_DRAFT, TOMORROW);
+    const gated = StreakPublishSystem.gate(assessed, true, TOMORROW);
+    expect(gated.ok && gated.value).toBe(assessed);
+    const onTheDay = draftOn(STRICTER_DRAFT, NOTICE_DAY, { policy: SEEN });
+    const gatedOnTheDay = StreakPublishSystem.gate(onTheDay, true, NOTICE_DAY);
+    expect(gatedOnTheDay.ok && gatedOnTheDay.value).toBe(onTheDay);
+  });
+
+  it('judges by the one guard the server decides by: the same refusal for the same day', () => {
+    const assessed = draftOn(STRICTER_DRAFT, TOMORROW, { policy: SEEN });
+    const server = publish(
+      { intervalDays: 35 } as Partial<StreakRule>,
+      TOMORROW,
+      RECOMMENDED,
+      { policy: SEEN },
+    );
+    const page = StreakPublishSystem.gate(assessed, true, TOMORROW);
+    expect(server.ok).toBe(false);
+    expect(page.ok).toBe(false);
+    expect(!page.ok && page.error).toEqual(!server.ok && server.error);
+  });
+});
+
+describe('StreakPublishSystem.refusedEarliest — the day offered after the server said too early', () => {
+  it('offers the strictest day the domain knows for a stricter change, whatever the server named', () => {
+    expect(
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Stricter,
+        TOMORROW,
+        TODAY,
+        QUIET,
+      ),
+    ).toBe(NOTICE_DAY);
+  });
+
+  it('always offers a later day than the one refused', () => {
+    expect(
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Looser,
+        TOMORROW,
+        TODAY,
+        QUIET,
+      ),
+    ).toBe('2026-09-30');
+    expect(
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Neutral,
+        TODAY,
+        TODAY,
+        QUIET,
+      ),
+    ).toBe(TOMORROW);
+    expect(
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Stricter,
+        localDate('2026-11-15'),
+        TODAY,
+        QUIET,
+      ),
+    ).toBe('2026-11-16');
+  });
+
+  it('owes at least one day of notice whatever the policy says', () => {
+    expect(
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Mixed,
+        TODAY,
+        TODAY,
+        { clientsSeeRhythm: false, noticeDays: 0 },
+      ),
+    ).toBe(TOMORROW);
+  });
+});
+
+describe('StreakPublishSystem.effectiveDay — «Влизане в сила»', () => {
+  it('starts tomorrow before the draft is judged, and for a draft that is no rule', () => {
+    expect(
+      StreakPublishSystem.effectiveDay(null, null, null, TOMORROW),
+    ).toEqual({ earliest: TOMORROW, effectiveFrom: TOMORROW });
+    expect(
+      StreakPublishSystem.effectiveDay(
+        FIRST_OF_MONTH,
+        draftOn(NO_RULE, TOMORROW),
+        null,
+        TOMORROW,
+      ),
+    ).toEqual({ earliest: TOMORROW, effectiveFrom: FIRST_OF_MONTH });
+  });
+
+  it('starts what favours the client tomorrow', () => {
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(LOOSER_DRAFT, TOMORROW),
+        null,
+        TOMORROW,
+      ),
+    ).toEqual({ earliest: TOMORROW, effectiveFrom: TOMORROW });
+  });
+
+  it('may start what only moves the team’s cue today, and offers tomorrow', () => {
+    const assessed = draftOn(NEUTRAL_DRAFT, TOMORROW);
+    expect(
+      StreakPublishSystem.effectiveDay(null, assessed, null, TOMORROW),
+    ).toEqual({ earliest: TODAY, effectiveFrom: TOMORROW });
+    expect(
+      StreakPublishSystem.effectiveDay(TODAY, assessed, null, TOMORROW),
+    ).toEqual({ earliest: TODAY, effectiveFrom: TODAY });
+  });
+
+  it('starts a stricter rule tomorrow while no client sees the rhythm, and owes thirty days once they do', () => {
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(STRICTER_DRAFT, TOMORROW),
+        null,
+        TOMORROW,
+      ).earliest,
+    ).toBe(TOMORROW);
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(STRICTER_DRAFT, TOMORROW, { policy: SEEN }),
+        null,
+        TOMORROW,
+      ),
+    ).toEqual({ earliest: NOTICE_DAY, effectiveFrom: NOTICE_DAY });
+  });
+
+  it('takes the day the admin chose, never under the first day the change may start', () => {
+    const assessed = draftOn(LOOSER_DRAFT, TOMORROW);
+    expect(
+      StreakPublishSystem.effectiveDay(FIRST_OF_MONTH, assessed, null, TOMORROW)
+        .effectiveFrom,
+    ).toBe(FIRST_OF_MONTH);
+    expect(
+      StreakPublishSystem.effectiveDay(TODAY, assessed, null, TOMORROW)
+        .effectiveFrom,
+    ).toBe(TOMORROW);
+    expect(
+      StreakPublishSystem.effectiveDay(
+        localDate('2026-01-01'),
+        assessed,
+        null,
+        TOMORROW,
+      ).effectiveFrom,
+    ).toBe(TOMORROW);
+  });
+
+  it('holds the server’s floor only for a change of the same direction', () => {
+    const floor = { day: NOTICE_DAY, direction: StreakRuleDirection.Stricter };
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(STRICTER_DRAFT, TOMORROW),
+        floor,
+        TOMORROW,
+      ),
+    ).toEqual({ earliest: NOTICE_DAY, effectiveFrom: NOTICE_DAY });
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn({ intervalDays: 28 } as Partial<StreakRule>, TOMORROW),
+        floor,
+        TOMORROW,
+      ).earliest,
+    ).toBe(NOTICE_DAY);
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(LOOSER_DRAFT, TOMORROW),
+        floor,
+        TOMORROW,
+      ),
+    ).toEqual({ earliest: TOMORROW, effectiveFrom: TOMORROW });
+  });
+
+  it('never lowers the first day under the assessment’s own for a floor that is earlier', () => {
+    expect(
+      StreakPublishSystem.effectiveDay(
+        null,
+        draftOn(STRICTER_DRAFT, TOMORROW, { policy: SEEN }),
+        {
+          day: localDate('2026-10-05'),
+          direction: StreakRuleDirection.Stricter,
+        },
+        TOMORROW,
+      ).earliest,
+    ).toBe(NOTICE_DAY);
+  });
+});
+
+describe('StreakPublishSystem.headAfter — the head a publish leaves behind', () => {
+  it('lets a later day WAIT beside the rule in force', () => {
+    const next = rule({
+      version: 2,
+      effectiveFromLocalDate: TOMORROW,
+      graceDays: 10,
+    });
+    expect(
+      StreakPublishSystem.headAfter(
+        RECOMMENDED,
+        next,
+        StreakTransition.Grandfather,
+        TODAY,
+      ),
+    ).toEqual({
+      ok: true,
+      value: { head: headOf(rule(), next), waits: true },
+    });
+  });
+
+  it('puts a version whose day has come in force at once', () => {
+    const next = rule({
+      version: 2,
+      effectiveFromLocalDate: TODAY,
+      riskLeadDays: 3,
+    });
+    expect(
+      StreakPublishSystem.headAfter(
+        RECOMMENDED,
+        next,
+        StreakTransition.Grandfather,
+        TODAY,
+      ),
+    ).toEqual({ ok: true, value: { head: headOf(next), waits: false } });
+  });
+
+  it('puts a shop’s first rule in force whatever its day', () => {
+    const first = rule({ effectiveFromLocalDate: NEXT_MONTH });
+    const after = StreakPublishSystem.headAfter(
+      null,
+      first,
+      StreakTransition.Grandfather,
+      TODAY,
+    );
+    expect(after.ok && after.value.head).toEqual(headOf(first));
+    expect(after.ok && after.value.waits).toBe(true);
+  });
+
+  it('replaces what waited, beside the rule in force', () => {
+    const third = rule({
+      version: 3,
+      effectiveFromLocalDate: NEXT_MONTH,
+      graceDays: 14,
+    });
+    const after = StreakPublishSystem.headAfter(
+      WAITING,
+      third,
+      StreakTransition.Grandfather,
+      TODAY,
+    );
+    expect(after.ok && after.value.head).toEqual(headOf(rule(), third));
+  });
+
+  it('refuses a head that would not stand, naming its fields once', () => {
+    expect(
+      StreakPublishSystem.headAfter(
+        RECOMMENDED,
+        rule({ version: 1, effectiveFromLocalDate: NEXT_WEEK }),
+        StreakTransition.Grandfather,
+        TODAY,
+      ),
+    ).toEqual({
+      ok: false,
+      error: StreakPublishError.invalid([StreakRuleField.ScheduledVersion]),
+    });
+  });
+
+  it('is the head the server decides, for the draft the page assessed numbered by the receipt', () => {
+    const assessed = draftOn({ graceDays: 10 }, TOMORROW);
+    if (assessed.draftAssessment !== DraftAssessment.Valid) {
+      throw new Error('a rule');
+    }
+    const server = publish({ graceDays: 10 }, TOMORROW);
+    if (!server.ok) throw new Error(JSON.stringify(server.error));
+    const after = StreakPublishSystem.headAfter(
+      RECOMMENDED,
+      {
+        ...assessed.rule,
+        version: server.value.rule.version,
+        effectiveFromLocalDate: server.value.rule.effectiveFromLocalDate,
+      },
+      StreakTransition.Grandfather,
+      TODAY,
+    );
+    expect(after).toEqual({
+      ok: true,
+      value: { head: server.value.head, waits: server.value.waits },
+    });
+  });
+});
+
+describe('StreakPublishSystem.waits — a version still to come', () => {
+  const YESTERDAY = localDate('2026-09-27');
+
+  it('waits for a day after today, never for today or a day before', () => {
+    expect(
+      StreakPublishSystem.waits({ effectiveFromLocalDate: TOMORROW }, TODAY),
+    ).toBe(true);
+    expect(
+      StreakPublishSystem.waits({ effectiveFromLocalDate: TODAY }, TODAY),
+    ).toBe(false);
+    expect(
+      StreakPublishSystem.waits({ effectiveFromLocalDate: YESTERDAY }, TODAY),
+    ).toBe(false);
+  });
+
+  it('is headAfter’s waits', () => {
+    const draft = rule({ graceDays: 14, version: 3 });
+    const after = StreakPublishSystem.headAfter(
+      WAITING,
+      draft,
+      StreakTransition.Grandfather,
+      TODAY,
+    );
+    expect(after.ok && after.value.waits).toBe(
+      StreakPublishSystem.waits(draft, TODAY),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const version = deepFreeze({ effectiveFromLocalDate: NEXT_WEEK });
+    const once = StreakPublishSystem.waits(version, TODAY);
+    expect(StreakPublishSystem.waits(version, TODAY)).toBe(once);
+    expect(version).toEqual({ effectiveFromLocalDate: NEXT_WEEK });
+  });
+});
+
+describe('StreakPublishSystem.waitingOn — what «Отмени» can call off', () => {
+  it('names the version that waits on a published head', () => {
+    expect(StreakPublishSystem.waitingOn(WAITING, true, TODAY)).toEqual(
+      scheduledOf(WAITING),
+    );
+  });
+
+  it('names nothing when nothing waits, before the shop has published, with no head, or once the day came', () => {
+    expect(StreakPublishSystem.waitingOn(RECOMMENDED, true, TODAY)).toBeNull();
+    expect(StreakPublishSystem.waitingOn(WAITING, false, TODAY)).toBeNull();
+    expect(StreakPublishSystem.waitingOn(null, true, TODAY)).toBeNull();
+    expect(StreakPublishSystem.waitingOn(WAITING, true, NEXT_WEEK)).toBeNull();
+  });
+
+  it('is what the withdrawal calls off', () => {
+    const waiting = StreakPublishSystem.waitingOn(WAITING, true, TODAY);
+    const withdrawn = StreakPublishSystem.withdraw(
+      waiting?.version ?? 0,
+      WAITING,
+      TODAY,
+    );
+    expect(withdrawn.ok && withdrawn.value.waiting).toEqual(waiting);
+  });
+});
+
+describe('StreakPublishSystem.baseVersionOf — what a draft is based on', () => {
+  it('is the head’s newest once the shop has published, 0 before', () => {
+    expect(StreakPublishSystem.baseVersionOf(RECOMMENDED, true)).toBe(1);
+    expect(StreakPublishSystem.baseVersionOf(WAITING, true)).toBe(2);
+    expect(StreakPublishSystem.baseVersionOf(WAITING, false)).toBe(0);
+    expect(StreakPublishSystem.baseVersionOf(null, true)).toBe(0);
+  });
+
+  it('is the base the assessment names', () => {
+    const assessed = draftOn(LOOSER_DRAFT, NEXT_MONTH, { head: WAITING });
+    expect(
+      assessed.draftAssessment === DraftAssessment.Valid &&
+        assessed.baseVersion,
+    ).toBe(StreakPublishSystem.baseVersionOf(WAITING, true));
+  });
+});
+
+describe('StreakPublishSystem.isDraftDirty — what «Отхвърли промените?» guards', () => {
+  it('is clean for a form that was not touched, or was changed back', () => {
+    expect(StreakPublishSystem.isDraftDirty(draftOn({}, TOMORROW))).toBe(false);
+    expect(
+      StreakPublishSystem.isDraftDirty(
+        draftOn({ intervalDays: 42 } as Partial<StreakRule>, TOMORROW),
+      ),
+    ).toBe(false);
+  });
+
+  it('is dirty for a change, and for a draft that is no rule', () => {
+    expect(
+      StreakPublishSystem.isDraftDirty(draftOn(LOOSER_DRAFT, TOMORROW)),
+    ).toBe(true);
+    expect(StreakPublishSystem.isDraftDirty(draftOn(NO_RULE, TOMORROW))).toBe(
+      true,
+    );
+  });
+});
+
+describe('StreakPublishSystem.undoOffered — «Отмени» on the receipt', () => {
+  it.each([
+    [StreakRuleDirection.Looser, true],
+    [StreakRuleDirection.Neutral, true],
+    [StreakRuleDirection.Stricter, false],
+    [StreakRuleDirection.Mixed, false],
+    [StreakRuleDirection.Switch, false],
+  ])('a %s change that waits: %s', (direction, offered) => {
+    expect(StreakPublishSystem.undoOffered(direction, true)).toBe(offered);
+  });
+
+  it('is never offered for a version in force at once', () => {
+    for (const direction of Object.values(StreakRuleDirection)) {
+      expect(StreakPublishSystem.undoOffered(direction, false)).toBe(false);
+    }
+  });
+});
+
+describe('StreakPublishSystem.historyNewestFirst — «История»', () => {
+  it('lists the versions newest first', () => {
+    const versions = [
+      streakDefinitionVersionFixture({ version: 1 }),
+      streakDefinitionVersionFixture({ version: 3 }),
+      streakDefinitionVersionFixture({ version: 2 }),
+    ];
+    expect(
+      StreakPublishSystem.historyNewestFirst(versions).map((v) => v.version),
+    ).toEqual([3, 2, 1]);
+  });
+
+  it('keeps the order of two entries of one number, and lists nothing as nothing', () => {
+    const a = { version: 2, tag: 'a' };
+    const b = { version: 2, tag: 'b' };
+    expect(StreakPublishSystem.historyNewestFirst([a, b])).toEqual([a, b]);
+    expect(StreakPublishSystem.historyNewestFirst([])).toEqual([]);
+  });
+});
+
+describe('StreakPublishSystem — the page’s helpers are pure', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const valid = deepFreeze(
+      draftOn(STRICTER_DRAFT, TOMORROW, { policy: SEEN }),
+    );
+    const invalid = deepFreeze(draftOn(NO_RULE, TOMORROW));
+    const head = deepFreeze(WAITING);
+    const floor = deepFreeze({
+      day: NOTICE_DAY,
+      direction: StreakRuleDirection.Stricter,
+    });
+    const next = deepFreeze(
+      rule({ version: 3, effectiveFromLocalDate: NEXT_MONTH, graceDays: 14 }),
+    );
+    const versions = deepFreeze([{ version: 1 }, { version: 3 }]);
+    const run = () => [
+      StreakPublishSystem.publishable(valid, true),
+      StreakPublishSystem.gate(valid, true, TOMORROW),
+      StreakPublishSystem.gate(invalid, true, TOMORROW),
+      StreakPublishSystem.refusedEarliest(
+        StreakRuleDirection.Stricter,
+        TOMORROW,
+        TODAY,
+        QUIET,
+      ),
+      StreakPublishSystem.effectiveDay(TOMORROW, valid, floor, TOMORROW),
+      StreakPublishSystem.headAfter(
+        head,
+        next,
+        StreakTransition.Grandfather,
+        TODAY,
+      ),
+      StreakPublishSystem.waitingOn(head, true, TODAY),
+      StreakPublishSystem.baseVersionOf(head, true),
+      StreakPublishSystem.isDraftDirty(invalid),
+      StreakPublishSystem.undoOffered(StreakRuleDirection.Looser, true),
+      StreakPublishSystem.historyNewestFirst(versions),
+    ];
+    expect(run()).toEqual(run());
+    expect(versions).toEqual([{ version: 1 }, { version: 3 }]);
   });
 });

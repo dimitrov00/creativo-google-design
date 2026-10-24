@@ -15,7 +15,7 @@ import {
   ElementRef,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocalDate, type Result, Weekday } from '@core/primitives';
+import { LocalDate, MinuteOfDay, type Result, Weekday } from '@core/primitives';
 import { type SchedulingError } from '@core/errors';
 import {
   MonthlyAnchor,
@@ -27,8 +27,10 @@ import {
 } from '@core/components';
 import {
   GridEvent as GridEventTag,
+  GridLayoutSystem,
   RecurrenceSystem,
   RepeatPreset,
+  VisitDraftSystem,
 } from '@core/systems';
 import { pluralForm, translateCodedError } from '@creativo/infrastructure/i18n';
 import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
@@ -197,7 +199,6 @@ interface BlockDraft {
 }
 
 const DAY_MINUTES = 24 * 60;
-const GRAIN_MINUTES = 5;
 
 const FREQUENCIES: readonly RecurrenceFrequency[] = [
   RecurrenceFrequency.Daily,
@@ -248,15 +249,12 @@ function clockLabel(minute: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-function parseClock(value: string): number | null {
+/** A typed clock as the minute it names — `null` for one off the day's clock. */
+function parseClock(value: string): MinuteOfDay | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
   if (!match) return null;
-  const minute = Number(match[1]) * 60 + Number(match[2]);
-  return minute >= 0 && minute < DAY_MINUTES ? minute : null;
-}
-
-function snap(minute: number): number {
-  return Math.round(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
+  const minute = MinuteOfDay.of(Number(match[1]) * 60 + Number(match[2]));
+  return minute.ok ? minute.value : null;
 }
 
 /** A draft day key as the shop day, or `null` for one that names no day. */
@@ -471,21 +469,23 @@ export class StaffBlockEditor {
   protected commitStart(value: string): void {
     const minute = parseClock(value);
     if (minute === null) return;
-    this.draft.update((current) => {
-      const start = snap(minute);
-      const end = Math.max(start + GRAIN_MINUTES, current.endMinute);
-      return { ...current, startMinute: start, endMinute: end };
-    });
+    // Snapped to the grain, the end pushed out to keep one grain of block
+    // (`VisitDraftSystem.typedStart`).
+    this.draft.update((current) => ({
+      ...current,
+      ...VisitDraftSystem.typedStart(current, minute),
+    }));
   }
 
   protected commitEnd(value: string): void {
     const minute = parseClock(value);
     if (minute === null) return;
-    this.draft.update((current) => {
-      const end = snap(minute);
-      const start = Math.min(current.startMinute, end - GRAIN_MINUTES);
-      return { ...current, startMinute: Math.max(0, start), endMinute: end };
-    });
+    // Snapped to the grain, the start pulled back to keep one grain of
+    // block, never before midnight (`VisitDraftSystem.typedEnd`).
+    this.draft.update((current) => ({
+      ...current,
+      ...VisitDraftSystem.typedEnd(current, minute),
+    }));
   }
 
   /* ── The page ──────────────────────────────────────────────────── */
@@ -1126,14 +1126,13 @@ export class StaffBlockEditor {
    */
   protected readonly collisions = computed(() => {
     const draft = this.draft();
+    // An all-day block is the whole day — the span the frame draws it as.
+    const span = draft.allDay
+      ? { startMinute: 0, endMinute: DAY_MINUTES }
+      : draft;
     return this.chosenBarbers().flatMap((barber) =>
       (this.laneOf(barber.id)?.neighbours ?? [])
-        .filter(
-          (visit) =>
-            draft.allDay ||
-            (visit.startMinute < draft.endMinute &&
-              visit.endMinute > draft.startMinute),
-        )
+        .filter((visit) => GridLayoutSystem.spansOverlap(visit, span))
         .map((visit) => ({ ...visit, barber: barber.label })),
     );
   });
@@ -1213,7 +1212,7 @@ export class StaffBlockEditor {
     });
   }
 
-  protected readonly snapMinutes = GRAIN_MINUTES;
+  protected readonly snapMinutes = VisitDraftSystem.GRAIN_MINUTES;
 
   private rawCopy(key: string): string {
     const table = this.transloco.getTranslation(this.transloco.getActiveLang());

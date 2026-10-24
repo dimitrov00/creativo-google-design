@@ -1,6 +1,7 @@
 import {
   Actor,
   BookingPolicy,
+  CapacityTrigger,
   PreciseInstant,
   SystemSource,
 } from '@core/components';
@@ -18,7 +19,6 @@ import {
   type PolicyRecomputeJob,
 } from '@core/entities';
 import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';
-import { CapacityTrigger } from '@core/pipelines';
 import {
   appointmentFixture,
   FIXTURE_TODAY,

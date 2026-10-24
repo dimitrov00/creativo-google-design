@@ -126,6 +126,21 @@ export const FlexibleWhen = {
     return days;
   },
 
+  /**
+   * The earliest day named, or `null` — a MIN scan over the days in
+   * code-unit order (the `LocalDate` order), never `flexibleDays[0]`: a
+   * declaration read off a stored request is not trusted to be sorted
+   * (`booking-flow.store.ts` `restoreFromWaitlist`, which sorted a copy).
+   */
+  firstLocalDate(when: FlexibleWhen): LocalDate | null {
+    let first: LocalDate | null = null;
+    for (let i = 0; i < when.flexibleDays.length; i++) {
+      const day = (when.flexibleDays[i] as DayWindows).localDate;
+      if (first === null || day < first) first = day;
+    }
+    return first;
+  },
+
   /** The last day named — what a request is waiting for — or `null`. */
   lastLocalDate(when: FlexibleWhen): LocalDate | null {
     const last = when.flexibleDays[when.flexibleDays.length - 1];

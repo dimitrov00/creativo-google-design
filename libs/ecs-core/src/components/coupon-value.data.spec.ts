@@ -55,6 +55,35 @@ describe('CouponValue.fixedAmount', () => {
   );
 });
 
+describe('CouponValue.positiveAmount — a fixed amount’s figure, no currency', () => {
+  it.each([1, 1000])('accepts %s cents as they are', (minor) => {
+    expect(CouponValue.positiveAmount(cents(minor))).toEqual({
+      ok: true,
+      value: minor,
+    });
+  });
+
+  it.each([0, -1, -500])('refuses %s cents, as fixedAmount does', (minor) => {
+    const refusal = {
+      ok: false,
+      error: {
+        errorCode: 'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
+        attemptedCents: minor,
+      },
+    };
+    expect(CouponValue.positiveAmount(cents(minor))).toEqual(refusal);
+    expect(CouponValue.fixedAmount(cents(minor), Currency.EUR)).toEqual(
+      refusal,
+    );
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(CouponValue.positiveAmount(cents(250))).toEqual(
+      CouponValue.positiveAmount(cents(250)),
+    );
+  });
+});
+
 describe('CouponValue.freeService', () => {
   it('is the bare marker', () => {
     expect(CouponValue.freeService()).toEqual({
@@ -112,5 +141,34 @@ describe('CouponValue.methodRank / magnitude', () => {
     expect(CouponValue.magnitude(percent)).toBe(15);
     expect(CouponValue.magnitude(fixed)).toBe(2000);
     expect(CouponValue.magnitude(free)).toBe(0);
+  });
+});
+
+describe('CouponValue.manualPercentOff — the percent the counter types (DEP-6)', () => {
+  it.each([1, 15, 100])('accepts %s %', (percent) => {
+    expect(CouponValue.manualPercentOff(percent)).toEqual({
+      ok: true,
+      value: { discountMethod: 'PERCENT_OFF', discountPercent: percent },
+    });
+  });
+
+  it.each([0, 12.5, 101, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses %s % — a zero promises nothing, the counter never types a fraction',
+    (percent) => {
+      expect(CouponValue.manualPercentOff(percent)).toEqual({
+        ok: false,
+        error: {
+          errorCode: 'ENGAGEMENT_COUPON_VALUE_INVALID_PERCENTAGE',
+          attempted: percent,
+        },
+      });
+    },
+  );
+
+  it('is stricter than the stored-coupon guard, which keeps 0 and fractions', () => {
+    expect(CouponValue.percentOff(0).ok).toBe(true);
+    expect(CouponValue.percentOff(12.5).ok).toBe(true);
+    expect(CouponValue.manualPercentOff(0).ok).toBe(false);
+    expect(CouponValue.manualPercentOff(12.5).ok).toBe(false);
   });
 });

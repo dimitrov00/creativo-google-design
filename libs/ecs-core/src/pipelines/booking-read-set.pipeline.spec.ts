@@ -165,11 +165,11 @@ describe('the booking read set', () => {
     expect(snapshot.services.map((service) => service.id)).toEqual([
       FIXTURE_IDS.service,
     ]);
-    expect(snapshot.schedules[0]?.barberId).toBe(FIXTURE_IDS.barber);
+    expect(snapshot.schedules[0]?.id).toBe(FIXTURE_IDS.barber);
     expect(snapshot.busy).toEqual([
       {
-        id: KEY,
-        spans: [MinuteBlock.of(at(10), until(10, 30), BlockKind.Busy)],
+        ...barberBusyDayFixture(),
+        blocks: [MinuteBlock.of(at(10), until(10, 30), BlockKind.Busy)],
       },
     ]);
     expect(snapshot.shopHours).toEqual(locationFixture().openingHours);

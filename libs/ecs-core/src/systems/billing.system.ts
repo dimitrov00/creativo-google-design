@@ -1,5 +1,7 @@
 import {
   type AppliedDiscount,
+  AuditAction,
+  type BookingCall,
   Combinability,
   CouponValue,
   DiscountMethod,
@@ -7,7 +9,8 @@ import {
   DiscountSource,
   type Money,
   seesMoney,
-  type Seat,
+  Seat,
+  type TipAction,
   VoucherCode,
   VoucherRedemption,
 } from '@core/components';
@@ -16,9 +19,9 @@ import {
   type Currency,
   AppliedDiscountId,
   type CouponGrantId,
-  type CouponId,
   type CustomerId,
   PriceCents,
+  type SeatId,
   type UtcEpochMs,
 } from '@core/primitives';
 import {
@@ -28,7 +31,14 @@ import {
   type StaffEditInvalidCommand,
 } from '@core/errors';
 import type { Appointment, GiftVoucher } from '@core/entities';
-import { type DiscountBreakdown, DiscountSystem } from './discount.system';
+import type { ResolvedGrant } from './coupon-grant.system';
+import {
+  type DiscountBreakdown,
+  type DiscountInput,
+  type DiscountLine,
+  DiscountSystem,
+  type ResolvedCode,
+} from './discount.system';
 import { VoucherSystem } from './voucher.system';
 
 /**
@@ -61,27 +71,6 @@ export const BillPending = {
   Set: 'SET',
 } as const;
 export type BillPending = (typeof BillPending)[keyof typeof BillPending];
-
-/** A grant as the resolver found it — whose it is, whether it can still be honoured, and its value. */
-export type ResolvedGrant = {
-  readonly grantId: CouponGrantId;
-  /** The client record the grant rewards (D29) — matched against the visit's `ownerCustomerId`. */
-  readonly customerId: CustomerId;
-  /** The coupon's name — what the receipt calls the promise. */
-  readonly label: string;
-  readonly usable: boolean;
-  /** The coupon's own rule: may it share the bill? */
-  readonly exclusive: boolean;
-} & CouponValue;
-
-/** An enabled coupon a code opens, and its value. */
-export type ResolvedCode = {
-  readonly couponId: CouponId;
-  readonly label: string;
-  /** The code as stored — normalised — so the snapshot records what was matched. */
-  readonly code: VoucherCode;
-  readonly exclusive: boolean;
-} & CouponValue;
 
 /**
  * A typed manual figure — the `CouponValue` slice minus `FREE_SERVICE`: a
@@ -137,6 +126,46 @@ export type VoucherSettlement = {
   readonly touched: readonly GiftVoucher[];
 };
 
+/** One drafted discount and what it took off this bill — zero when it took nothing. */
+export type DraftBillLine = {
+  readonly id: AppliedDiscountId;
+  readonly amountCents: PriceCents;
+};
+
+/**
+ * A bill being DRAFTED (the visit editor's sheet and dock): every figure in
+ * the subtotal's currency, the voucher arrays in the order the vouchers were
+ * given. With no subtotal there is no total and nothing to cover: every line
+ * and cover is zero, and `totalCents` / `balanceDueCents` are `null`.
+ */
+export type DraftBill = {
+  /** EVERY drafted discount in the evaluator's total order, zeros kept. */
+  readonly lines: readonly DraftBillLine[];
+  /** What the discounts took off together. */
+  readonly discountTotalCents: PriceCents;
+  /** What the party owes after the discounts; `null` with no subtotal. */
+  readonly totalCents: PriceCents | null;
+  /** What each voucher covers — what the discounts and the vouchers before it left, never more than it has. */
+  readonly covers: readonly PriceCents[];
+  /** What each voucher still holds after its cover. */
+  readonly left: readonly PriceCents[];
+  /** What the vouchers cover together. */
+  readonly voucherTotalCents: PriceCents;
+  /** What still changes hands: the total less the covers, never below zero; `null` with no subtotal. */
+  readonly balanceDueCents: PriceCents | null;
+  /** What came off altogether: the lines' amounts and the covers. */
+  readonly takenCents: PriceCents;
+};
+
+/** The seat slice a tip sum reads — a whole seat passes (Law 3). */
+export type SeatTip = Pick<Seat, 'tipCents' | 'currency'>;
+
+/** A tip that changes a seat: the seats rewritten with it, and the act's audit verb. */
+export type RecordedTip = {
+  readonly seats: readonly Seat[];
+  readonly auditAction: TipAction;
+};
+
 /** Round-ups offered only while the tip stays within this share of the bill. */
 const TIP_ROUND_UP_MAX_SHARE = 0.4;
 /** A round-up smaller than this is not worth a tile. */
@@ -179,13 +208,18 @@ function invalid(field: string): Result.Err<StaffEditInvalidCommand> {
   return Result.err(StaffEditError.invalidCommand(field));
 }
 
-/** A typed manual figure → a coupon value in the visit's currency, or `null` where its guards refuse it. */
+/**
+ * A typed manual figure → a coupon value in the visit's currency, or `null`
+ * where its guards refuse it: a whole percent 1–100
+ * (`CouponValue.manualPercentOff`, the callable edge's rule — DEP-6), or a
+ * positive whole amount of cents.
+ */
 function manualValue(
   raw: ManualDiscountValue,
   currency: Currency,
 ): CouponValue | null {
   if (raw.discountMethod === DiscountMethod.PercentOff) {
-    const percent = CouponValue.percentOff(raw.discountPercent);
+    const percent = CouponValue.manualPercentOff(raw.discountPercent);
     return percent.ok ? percent.value : null;
   }
   if (
@@ -233,6 +267,13 @@ function setTouched(touched: GiftVoucher[], voucher: GiftVoucher): void {
   }
   touched.push(voucher);
 }
+
+/** A voucher a batch names, with the live line this visit already drew on it (and that draw). */
+type VoucherDrawer = {
+  readonly voucher: GiftVoucher;
+  readonly prior: VoucherRedemption | null;
+  readonly previous: Money;
+};
 
 /** A redemption line's amount as a `Money` in its own currency. */
 function drawOf(redemption: VoucherRedemption): Money {
@@ -361,6 +402,72 @@ export const BillingSystem = {
       tipsCents: tips === null ? null : tips.amountCents,
       currency,
     });
+  },
+
+  /**
+   * A staff batch's discounts as the settle reads them
+   * (`edit-appointment.pipeline.ts`'s pending items): `null` — the batch
+   * said nothing — keeps the stored set; otherwise every request in order,
+   * a grant with the FIRST of `resolvedGrants` naming its id (`null` when
+   * none does), a code with the first of `resolvedCodes` matched on it
+   * (`null` when none), a manual figure as typed — a fixed amount stamped
+   * in `currency`, the visit's (its first seat's).
+   */
+  pendingDiscounts(
+    requests: readonly BookingCall.StaffDiscount[] | null,
+    resolvedGrants: readonly ResolvedGrant[],
+    resolvedCodes: readonly ResolvedCode[],
+    currency: Currency,
+  ): PendingDiscounts {
+    if (requests === null) return { billPending: BillPending.Keep };
+    const items: PendingDiscount[] = [];
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i] as BookingCall.StaffDiscount;
+      switch (request.discountSource) {
+        case DiscountSource.Grant: {
+          let resolved: ResolvedGrant | null = null;
+          for (let k = 0; k < resolvedGrants.length && resolved === null; k++) {
+            const grant = resolvedGrants[k] as ResolvedGrant;
+            if (grant.grantId === request.grantId) resolved = grant;
+          }
+          items.push({
+            discountSource: DiscountSource.Grant,
+            grantId: request.grantId,
+            resolved,
+          });
+          break;
+        }
+        case DiscountSource.Code: {
+          let resolved: ResolvedCode | null = null;
+          for (let k = 0; k < resolvedCodes.length && resolved === null; k++) {
+            const code = resolvedCodes[k] as ResolvedCode;
+            if (code.code === request.code) resolved = code;
+          }
+          items.push({
+            discountSource: DiscountSource.Code,
+            code: request.code,
+            resolved,
+          });
+          break;
+        }
+        default:
+          items.push({
+            discountSource: DiscountSource.Manual,
+            value:
+              request.discountMethod === DiscountMethod.PercentOff
+                ? {
+                    discountMethod: DiscountMethod.PercentOff,
+                    discountPercent: request.discountPercent,
+                  }
+                : {
+                    discountMethod: DiscountMethod.FixedAmount,
+                    discountAmountCents: request.discountAmountCents,
+                    discountCurrency: currency,
+                  },
+          });
+      }
+    }
+    return { billPending: BillPending.Set, items };
   },
 
   /**
@@ -542,9 +649,12 @@ export const BillingSystem = {
       history.push(VoucherRedemption.reversed(prior, nowUtcMs));
     }
 
-    // 2. Cover the bill in order.
-    let due: number = total.amountCents;
-    const next: VoucherRedemption[] = [];
+    // 2. Cover the bill in order: each named voucher found and allowed
+    // first, then the one in-order cascade over what each may draw (its
+    // balance and what this visit already drew on it), then each draw
+    // settled. Every refusal on the way is the same `vouchers` answer.
+    const drawers: VoucherDrawer[] = [];
+    const available: PriceCents[] = [];
     for (let i = 0; i < codes.length; i++) {
       const code = codes[i] as string;
       const voucher = findVoucher(vouchers, (entry) => entry.code === code);
@@ -559,16 +669,18 @@ export const BillingSystem = {
         return invalid('vouchers');
       }
       const previous = prior === null ? zero : drawOf(prior);
-      const available = voucher.balanceCents + previous.amountCents;
-      const cover = Math.max(0, Math.min(available, due));
-      const settled = VoucherSystem.settle(
-        voucher,
-        previous,
-        figure(cover, currency),
-      );
+      drawers.push({ voucher, prior, previous });
+      available.push(cents(voucher.balanceCents + previous.amountCents));
+    }
+    const { covers } = VoucherSystem.cascade(available, total);
+    const next: VoucherRedemption[] = [];
+    for (let i = 0; i < drawers.length; i++) {
+      const { voucher, prior, previous } = drawers[i] as VoucherDrawer;
+      const cover = covers[i] as Money;
+      const settled = VoucherSystem.settle(voucher, previous, cover);
       if (!settled.ok) return invalid('vouchers');
       setTouched(touched, settled.value);
-      if (cover === 0) {
+      if (cover.amountCents === 0) {
         if (prior !== null) {
           history.push(VoucherRedemption.reversed(prior, nowUtcMs));
         }
@@ -577,13 +689,12 @@ export const BillingSystem = {
       next.push({
         voucherId: voucher.id,
         code: voucher.code,
-        amountCents: cents(cover),
+        amountCents: cover.amountCents,
         balanceAfterCents: settled.value.balanceCents,
         currency,
         appliedAtUtcMs: prior === null ? nowUtcMs : prior.appliedAtUtcMs,
         reversedAtUtcMs: null,
       });
-      due -= cover;
     }
     return Result.ok({
       voucherRedemptions: [...history, ...next],
@@ -637,5 +748,163 @@ export const BillingSystem = {
       });
     }
     return [...roundUps, ...coins];
+  },
+
+  /**
+   * A bill being DRAFTED (the visit editor's `evaluate`, voucher lines, dock
+   * figure, «what came off» and «nothing left to cover»): every discount
+   * through the one evaluator ({@link DiscountSystem.apply}, uncapped), each
+   * listed in its total order ({@link DiscountSystem.ordered}) with what it
+   * took off — a line the evaluator dropped (a zero) kept at zero — then the
+   * vouchers' in-order cascade over the total ({@link VoucherSystem.cascade}):
+   * `voucherAvailable` is what each voucher may draw, in the subtotal's
+   * currency. With no subtotal (`null`) there is no total: every line and
+   * cover is zero and nothing is due (`null`).
+   */
+  draftBill(
+    subtotal: Money | null,
+    discounts: readonly DiscountInput[],
+    voucherAvailable: readonly PriceCents[],
+  ): DraftBill {
+    const breakdown =
+      subtotal === null
+        ? null
+        : DiscountSystem.apply(subtotal, discounts, null);
+    const amounts = new Map<AppliedDiscountId, PriceCents>();
+    if (breakdown !== null) {
+      for (let i = 0; i < breakdown.lines.length; i++) {
+        const line = breakdown.lines[i] as DiscountLine;
+        amounts.set(line.id, line.amountCents);
+      }
+    }
+    const ordered = DiscountSystem.ordered(discounts);
+    const lines: DraftBillLine[] = [];
+    let taken = 0;
+    for (let i = 0; i < ordered.length; i++) {
+      const id = (ordered[i] as DiscountInput).id;
+      const amountCents = amounts.get(id) ?? PriceCents.ZERO;
+      lines.push({ id, amountCents });
+      taken += amountCents;
+    }
+    if (subtotal === null || breakdown === null) {
+      const covers: PriceCents[] = [];
+      for (let i = 0; i < voucherAvailable.length; i++) {
+        covers.push(PriceCents.ZERO);
+      }
+      return {
+        lines,
+        discountTotalCents: PriceCents.ZERO,
+        totalCents: null,
+        covers,
+        left: [...voucherAvailable],
+        voucherTotalCents: PriceCents.ZERO,
+        balanceDueCents: null,
+        takenCents: cents(taken),
+      };
+    }
+    const cascade = VoucherSystem.cascade(
+      voucherAvailable,
+      figure(breakdown.totalCents, subtotal.currency),
+    );
+    const covers: PriceCents[] = [];
+    const left: PriceCents[] = [];
+    for (let i = 0; i < cascade.covers.length; i++) {
+      covers.push((cascade.covers[i] as Money).amountCents);
+      left.push((cascade.left[i] as Money).amountCents);
+    }
+    const voucherTotal = PriceCents.sum(covers);
+    return {
+      lines,
+      discountTotalCents: breakdown.discountTotalCents,
+      totalCents: breakdown.totalCents,
+      covers,
+      left,
+      voucherTotalCents: voucherTotal,
+      balanceDueCents: cascade.dueAfter.amountCents,
+      takenCents: cents(taken + voucherTotal),
+    };
+  },
+
+  /**
+   * A typed manual figure held to what the bill can take (the visit
+   * editor's `cappedFigure`): a percent past 100 is 100; an amount past the
+   * subtotal is the subtotal, when there is one (`null` = no amount cap) and
+   * it is in the amount's currency. A figure within the cap comes back as
+   * it is — the same value — so the caller keeps what was typed.
+   */
+  capManual(
+    value: ManualDiscountValue,
+    subtotal: Money | null,
+  ): ManualDiscountValue {
+    if (value.discountMethod === DiscountMethod.PercentOff) {
+      return value.discountPercent > 100
+        ? { discountMethod: DiscountMethod.PercentOff, discountPercent: 100 }
+        : value;
+    }
+    return subtotal !== null &&
+      subtotal.currency === value.discountCurrency &&
+      value.discountAmountCents > subtotal.amountCents
+      ? {
+          discountMethod: DiscountMethod.FixedAmount,
+          discountAmountCents: subtotal.amountCents,
+          discountCurrency: value.discountCurrency,
+        }
+      : value;
+  },
+
+  /**
+   * The seats' recorded tips summed STRICTLY (the staff day's `dayTips`):
+   * `null` when no seat has a tip recorded — "not recorded" is not zero —
+   * and `null` too when a second currency appears (a mixed-currency day is
+   * a data error, not a figure). Not {@link tipsOf}, which sums one given
+   * currency and skips the rest.
+   */
+  recordedTipsTotal(seats: readonly SeatTip[]): Money | null {
+    let currency: Currency | null = null;
+    let total = 0;
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i] as SeatTip;
+      if (seat.tipCents === null) continue;
+      if (currency === null) currency = seat.currency;
+      else if (seat.currency !== currency) return null;
+      total += seat.tipCents;
+    }
+    return currency === null ? null : figure(total, currency);
+  },
+
+  /**
+   * One seat's tip set to `tipCents` (`record-seat-tip.pipeline.ts`; `null`
+   * clears it — "not recorded", never zero): no such seat is refused
+   * (`SCHEDULING_APPOINTMENT_UNKNOWN_SEAT`); the same figure again is no
+   * change (`null` — a retried call writes nothing); otherwise the seats
+   * with that one field changed and the act's verb — recorded, or cleared.
+   */
+  recordTip(
+    appointment: Pick<Appointment, 'seats'>,
+    seatId: SeatId,
+    tipCents: PriceCents | null,
+  ): Result<RecordedTip | null, SchedulingError.AppointmentUnknownSeat> {
+    let index = -1;
+    for (let i = 0; i < appointment.seats.length && index < 0; i++) {
+      if ((appointment.seats[i] as Seat).seatId === seatId) index = i;
+    }
+    if (index < 0) {
+      return Result.err(SchedulingError.appointmentUnknownSeat(seatId));
+    }
+    if ((appointment.seats[index] as Seat).tipCents === tipCents) {
+      return Result.ok(null);
+    }
+    const seats: Seat[] = [];
+    for (let i = 0; i < appointment.seats.length; i++) {
+      const each = appointment.seats[i] as Seat;
+      seats.push(i === index ? Seat.withTip(each, tipCents) : each);
+    }
+    return Result.ok({
+      seats,
+      auditAction:
+        tipCents === null
+          ? AuditAction.BookingTipCleared
+          : AuditAction.BookingTipRecorded,
+    });
   },
 } as const;

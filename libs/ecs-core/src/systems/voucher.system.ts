@@ -217,12 +217,48 @@ export const VoucherSystem = {
    * How much of `due` this voucher can settle — its whole balance or all of
    * what is owed, whichever is smaller; zero across a currency line.
    */
-  coverage(voucher: VoucherBalance, due: Money): Money {
+  coverage(
+    voucher: Pick<VoucherBalance, 'balanceCents' | 'currency'>,
+    due: Money,
+  ): Money {
     if (due.currency !== voucher.currency) return figure(0, voucher.currency);
     return figure(
       Math.min(voucher.balanceCents, due.amountCents),
       voucher.currency,
     );
+  },
+
+  /**
+   * THE in-order voucher cascade (the visit editor's voucher lines and dock
+   * figure; `BillingSystem.settleVouchers`' cover step): each amount in
+   * `available` — what one voucher may draw, in `due`'s currency — covers
+   * what the ones before it left, never more than it has
+   * ({@link coverage}). Per voucher its cover and what it still holds
+   * after; `dueAfter` is what no voucher covered, never below zero.
+   */
+  cascade(
+    available: readonly PriceCents[],
+    due: Money,
+  ): {
+    readonly covers: readonly Money[];
+    readonly left: readonly Money[];
+    readonly dueAfter: Money;
+  } {
+    const currency = due.currency;
+    const covers: Money[] = [];
+    const left: Money[] = [];
+    let remaining = due;
+    for (let i = 0; i < available.length; i++) {
+      const balanceCents = available[i] as PriceCents;
+      const cover = VoucherSystem.coverage(
+        { balanceCents, currency },
+        remaining,
+      );
+      covers.push(cover);
+      left.push(figure(balanceCents - cover.amountCents, currency));
+      remaining = figure(remaining.amountCents - cover.amountCents, currency);
+    }
+    return { covers, left, dueAfter: remaining };
   },
 
   /** `amount` taken off the balance — refused when not redeemable, in another currency, or more than is left. */

@@ -24,6 +24,18 @@ describe('MediaError', () => {
     expect(MediaError.isPermanent(MediaError.transient('a.jpg'))).toBe(false);
   });
 
+  it('carries the photo guard refusals (pass C) — permanent, the limit named', () => {
+    expect(MediaError.photoNotAnImage()).toEqual({
+      errorCode: 'MEDIA_PHOTO_NOT_AN_IMAGE',
+    });
+    expect(MediaError.photoTooLarge(8 * 1024 * 1024)).toEqual({
+      errorCode: 'MEDIA_PHOTO_TOO_LARGE',
+      maxBytes: 8 * 1024 * 1024,
+    });
+    expect(MediaError.isPermanent(MediaError.photoNotAnImage())).toBe(true);
+    expect(MediaError.isPermanent(MediaError.photoTooLarge(1))).toBe(true);
+  });
+
   it('is() narrows by errorCode', () => {
     const error: MediaError = MediaError.forbidden('a.jpg');
     expect(MediaError.is(error, MediaErrorCode.Forbidden)).toBe(true);

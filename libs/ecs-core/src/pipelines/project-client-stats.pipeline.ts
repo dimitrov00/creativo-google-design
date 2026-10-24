@@ -8,10 +8,10 @@ import { type RepositoryError } from '@core/errors';
 import {
   type ClientMoneyStats,
   type ClientStats,
+  ClientStatsOutcome,
   ClientStatsPolicy,
   type PolicyPass,
   PolicyPassStamp,
-  type Seat,
   type ShopNow,
   type WriteOp,
 } from '@core/components';
@@ -36,9 +36,6 @@ import type {
 } from '@core/ports';
 import {
   type AttemptFailure,
-  AttemptOutcome,
-  BillingSystem,
-  type BilledAppointment,
   type ClientStatsPaths,
   ClientStatsSystem,
   PolicyPassVerdict,
@@ -46,6 +43,7 @@ import {
   StatsWriteDecision,
   type StoredClientStats,
   TriggerAttemptSystem,
+  WorkBudgetSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import { readShopZone } from './shop-zone-read.pipeline';
@@ -67,10 +65,9 @@ import { readShopZone } from './shop-zone-read.pipeline';
  * One person's failure never costs the rest of the party their recompute:
  * each failure is collected and the attempt's verdict is the edge's to act
  * on (`attemptFailure`: transient when any one is — the redelivery that one
- * earns re-runs them all, state-based). This file also holds the per-client
- * recompute the policy pass and the backfill walk with
- * ({@link recomputeClients}), and the edge's reading of a port's failure
- * ({@link repositoryFailure}).
+ * earns re-runs them all, state-based — `TriggerAttemptSystem.decisiveFailure`).
+ * This file also holds the per-client recompute the policy pass and the
+ * backfill walk with ({@link recomputeClients}).
  */
 
 /** Which clients an appointment write can have moved — before ∪ after, decoded at the edge. */
@@ -101,18 +98,6 @@ export type ProjectClientStatsPorts = ClientStatsRecomputePorts &
   LocationLoadPorts &
   DefaultLocationPorts &
   LogPorts;
-
-/** How one client's recompute ended — the ONLY source of these strings, the field `statsOutcome`. */
-export const ClientStatsOutcome = {
-  /** The answer changed: both documents written at a new version. */
-  Written: 'WRITTEN',
-  /** The same answer (perhaps with the newer pass's stamp moved onto it). */
-  Unchanged: 'UNCHANGED',
-  /** A NEWER policy pass has judged this client: nothing written. */
-  Superseded: 'SUPERSEDED',
-} as const;
-export type ClientStatsOutcome =
-  (typeof ClientStatsOutcome)[keyof typeof ClientStatsOutcome];
 
 /** One client's read set: every appointment they have a seat on, and the stored pair. */
 export type ClientStatsSnapshot = {
@@ -184,10 +169,7 @@ function storedOf(snapshot: ClientStatsSnapshot): StoredClientStats {
 
 /**
  * Both projections of one history at `now`: the statistics over every visit,
- * the spend over the visits with a bill (`BillingSystem`: the seats less the
- * discounts — vouchers are a way of paying, tips never the shop's price). A
- * visit whose seats have no bill (none, or mixed currencies) is left out of
- * the spend, never guessed at.
+ * the spend over the visits with a bill (`ClientStatsSystem.billedHistory`).
  */
 export function clientStatsOf(
   customerId: CustomerId,
@@ -195,23 +177,12 @@ export function clientStatsOf(
   policy: ClientStatsPolicy,
   now: ShopNow,
 ): { readonly stats: ClientStats; readonly money: ClientMoneyStats } {
-  const billed: BilledAppointment<Seat>[] = [];
-  for (const appointment of history) {
-    const subtotal = BillingSystem.subtotalOf(appointment.seats);
-    if (!subtotal.ok) continue;
-    const total = BillingSystem.totalOf(subtotal.value, appointment.discounts);
-    billed.push({
-      ...appointment,
-      bill: {
-        subtotalCents: subtotal.value.amountCents,
-        totalCents: total.amountCents,
-        currency: subtotal.value.currency,
-      },
-    });
-  }
   return {
     stats: ClientStatsSystem.stats(customerId, history, policy, now),
-    money: ClientStatsSystem.money(customerId, billed),
+    money: ClientStatsSystem.money(
+      customerId,
+      ClientStatsSystem.billedHistory(history),
+    ),
   };
 }
 
@@ -313,51 +284,6 @@ export async function recomputeClientStats(
 }
 
 /**
- * A port's refusal as the retrying edge judges it: by the canonical code the
- * adapter recorded as its `reason` (`unavailable`, `aborted`, …), else
- * `unknown` — a failure no redelivery is known to fix.
- */
-export function repositoryFailure(error: RepositoryError): AttemptFailure {
-  return TriggerAttemptSystem.attemptFailure(
-    error,
-    TriggerAttemptSystem.failureCode({ code: error.reason ?? '' }),
-  );
-}
-
-/** A failure as the attempt verdict reads it — a port's refusal by its reason, a throw as thrown. */
-function failureOf(failure: unknown): AttemptFailure {
-  return isRepositoryError(failure)
-    ? repositoryFailure(failure)
-    : TriggerAttemptSystem.attemptFailure(failure);
-}
-
-function isRepositoryError(value: unknown): value is RepositoryError {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'errorCode' in value &&
-    'path' in value &&
-    'reason' in value
-  );
-}
-
-/**
- * The verdict over several INDEPENDENT failures (`decisiveFailure`):
- * transient when any one is, else the first; `null` when none failed.
- */
-export function decisiveAttemptFailure(
-  failures: readonly unknown[],
-): AttemptFailure | null {
-  let first: AttemptFailure | null = null;
-  for (const failure of failures) {
-    const judged = failureOf(failure);
-    if (judged.attemptOutcome === AttemptOutcome.Transient) return judged;
-    first ??= judged;
-  }
-  return first;
-}
-
-/**
  * Recompute each of `customerIds` ON ITS OWN, `width` at a time (1 for the
  * people of one party, who share the appointment's rows and would only
  * contend), on the shop's clock `timeZone`, and report what was written and
@@ -373,7 +299,7 @@ export async function recomputeClients(
 ): Promise<ClientStatsProjection> {
   const failures: unknown[] = [];
   let written = 0;
-  const size = Math.max(1, Math.floor(width));
+  const size = WorkBudgetSystem.chunkSize(width);
   for (let start = 0; start < customerIds.length; start += size) {
     const outcomes = await Promise.all(
       customerIds.slice(start, start + size).map(async (customerId) => {
@@ -400,7 +326,7 @@ export async function recomputeClients(
   return {
     written,
     failures,
-    attemptFailure: decisiveAttemptFailure(failures),
+    attemptFailure: TriggerAttemptSystem.decisiveFailure(failures),
   };
 }
 

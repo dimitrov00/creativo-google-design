@@ -18,6 +18,12 @@ export type CalendarCell = {
 /** Seven cells, Monday first. */
 export type CalendarWeek = readonly CalendarCell[];
 
+/** A run of months, each named by its first day — `from` through `to`, inclusive. */
+export type MonthSpan = {
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+};
+
 /**
  * CalendarGridSystem — a Monday-first month grid padded to whole weeks
  * (`client/appointments/src/lib/calendar-month.ts`, `client-appointments.ts`
@@ -82,5 +88,57 @@ export const CalendarGridSystem = {
       }
     }
     return weeks;
+  },
+
+  /**
+   * The months a scrolling calendar runs through (`client-appointments.ts`
+   * `months`): a window of `back` months before and `ahead` months after the
+   * anchor's month, widened to hold the month of the earliest and of the
+   * latest of `localDates` (any order, repeats allowed) — a day outside the
+   * window is never unreachable. Months are their first shop day; with no
+   * day at all the window alone. Civil arithmetic only (Law 7.3).
+   */
+  monthSpan(
+    localDates: readonly LocalDate[],
+    anchorMonth: LocalDate,
+    back: number,
+    ahead: number,
+  ): MonthSpan {
+    const anchor = LocalDate.startOfMonth(anchorMonth);
+    const windowStart = LocalDate.addMonths(anchor, -back);
+    const windowEnd = LocalDate.addMonths(anchor, ahead);
+    let earliest: LocalDate | null = null;
+    let latest: LocalDate | null = null;
+    for (let i = 0; i < localDates.length; i++) {
+      const day = localDates[i] as LocalDate;
+      if (earliest === null || LocalDate.compare(day, earliest) < 0) {
+        earliest = day;
+      }
+      if (latest === null || LocalDate.compare(day, latest) > 0) latest = day;
+    }
+    const earliestMonth =
+      earliest === null ? anchor : LocalDate.startOfMonth(earliest);
+    const latestMonth =
+      latest === null ? anchor : LocalDate.startOfMonth(latest);
+    return {
+      from:
+        LocalDate.compare(earliestMonth, windowStart) < 0
+          ? earliestMonth
+          : windowStart,
+      to:
+        LocalDate.compare(latestMonth, windowEnd) > 0 ? latestMonth : windowEnd,
+    };
+  },
+
+  /**
+   * Is `day` inside the bookable run — not before `today` and not past
+   * `horizonEnd`, both ends included (`availability-month.ts`: a cell
+   * outside it is out of range)?
+   */
+  inWindow(day: LocalDate, today: LocalDate, horizonEnd: LocalDate): boolean {
+    return (
+      LocalDate.compare(day, today) >= 0 &&
+      LocalDate.compare(day, horizonEnd) <= 0
+    );
   },
 } as const;

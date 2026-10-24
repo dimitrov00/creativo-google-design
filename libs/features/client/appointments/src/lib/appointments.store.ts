@@ -16,13 +16,8 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { type PipelineError } from '@core/errors';
-import {
-  BookingCall,
-  BookingLifecycle,
-  ShopNow,
-  WallTime,
-} from '@core/components';
-import { ZonedTimeSystem } from '@core/systems';
+import { BookingCall, BookingLifecycle, ShopNow } from '@core/components';
+import { VisitListSystem, ZonedTimeSystem } from '@core/systems';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
 /**
@@ -182,21 +177,16 @@ export class AppointmentsStore {
    * The history: of the newest {@link HISTORY_LIMIT}, every visit that has
    * already begun OR reached a settled status. The read is one bounded
    * query, split here (Firestore cannot express that OR without two
-   * queries); "begun" is the visit's start on the shop's wall clock against
-   * {@link now} (nothing is history until the shop's zone has resolved).
+   * queries) by `VisitListSystem.isHistory`; "begun" is the visit's start on
+   * the shop's wall clock against {@link now} (nothing is history until the
+   * shop's zone has resolved).
    */
   readonly history = computed<readonly Appointment[]>(() => {
     const result = this.historyResult();
     const shopNow = this.now();
     if (!result || !result.ok || shopNow === null) return [];
-    const now = ShopNow.wallTime(shopNow);
-    return result.value.filter(
-      (appointment) =>
-        BookingLifecycle.isSettled(appointment) ||
-        WallTime.compare(
-          WallTime.of(appointment.localDate, appointment.startMinutes),
-          now,
-        ) <= 0,
+    return result.value.filter((appointment) =>
+      VisitListSystem.isHistory(appointment, shopNow),
     );
   });
 

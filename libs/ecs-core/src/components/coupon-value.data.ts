@@ -53,8 +53,46 @@ export const CouponValue = {
   },
 
   /**
-   * The edge guard for a fixed amount: a positive figure — a zero-value
-   * coupon is a modelling error, not a discount.
+   * The guard of a MANUAL percent the counter types: a whole number 1–100
+   * (the callable's edge, `BillingSystem`'s settle and the visit editor all
+   * read this one rule). Stricter than {@link CouponValue.percentOff}, which
+   * keeps 0–100 with fractions for stored coupons: a zero promises nothing
+   * (the slider's floor writes no discount) and the counter never types a
+   * fraction — the editor hands in its digit-stripped integer.
+   */
+  manualPercentOff(
+    raw: number,
+  ): Result<
+    CouponValue.PercentOff,
+    EngagementError.CouponValuePercentageInvalid
+  > {
+    if (!Number.isInteger(raw) || raw <= 0 || raw > 100) {
+      return Result.err(EngagementError.couponValuePercentageInvalid(raw));
+    }
+    return Result.ok({
+      discountMethod: DiscountMethod.PercentOff,
+      discountPercent: raw,
+    });
+  },
+
+  /**
+   * A fixed amount's figure alone: positive — a zero-value coupon is a
+   * modelling error, not a discount. Read with no currency, as a staff
+   * discount's amount travels (`BookingCall.StaffDiscount` carries the
+   * cents; the visit's currency is chosen when the batch is decided), so the
+   * edge guards it without inventing one; {@link fixedAmount} composes it.
+   */
+  positiveAmount(
+    amountCents: PriceCents,
+  ): Result<PriceCents, EngagementError.CouponValueAmountNotPositive> {
+    return amountCents <= 0
+      ? Result.err(EngagementError.couponValueAmountNotPositive(amountCents))
+      : Result.ok(amountCents);
+  },
+
+  /**
+   * The edge guard for a fixed amount: a positive figure
+   * ({@link positiveAmount}) beside its own currency.
    */
   fixedAmount(
     amountCents: PriceCents,
@@ -63,14 +101,11 @@ export const CouponValue = {
     CouponValue.FixedAmount,
     EngagementError.CouponValueAmountNotPositive
   > {
-    if (amountCents <= 0) {
-      return Result.err(
-        EngagementError.couponValueAmountNotPositive(amountCents),
-      );
-    }
+    const amount = CouponValue.positiveAmount(amountCents);
+    if (!amount.ok) return amount;
     return Result.ok({
       discountMethod: DiscountMethod.FixedAmount,
-      discountAmountCents: amountCents,
+      discountAmountCents: amount.value,
       discountCurrency: currency,
     });
   },

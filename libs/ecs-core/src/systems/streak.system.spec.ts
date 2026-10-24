@@ -14,12 +14,18 @@ import {
   StreakState,
   type StreakPeriodFact,
 } from '@core/components';
-import { AppointmentId, LocalDate, UtcEpochMs } from '@core/primitives';
+import {
+  AppointmentId,
+  LocalDate,
+  StreakDefinitionId,
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   localDate,
   loyaltyAccountFixtures,
+  streakDefinitionFixture,
   unwrapOk,
   utcMs,
 } from '@core/testing';
@@ -3335,5 +3341,45 @@ describe('StreakSystem outlook purity', () => {
       StreakSystem.protectionsHeld(state, summary),
     ];
     expect(run()).toEqual(run());
+  });
+});
+
+describe('StreakSystem.headOf — the rhythm a card is judged by', () => {
+  const cadence = streakDefinitionFixture();
+  const other = streakDefinitionFixture({
+    id: StreakDefinitionId.of('weekly'),
+  });
+  const held = (id: StreakDefinitionId) => ({ streakId: id });
+
+  it('takes the first head the account holds a state for, in the catalogue’s order', () => {
+    expect(StreakSystem.headOf([cadence, other], [held(other.id)])).toBe(other);
+    expect(
+      StreakSystem.headOf([other, cadence], [held(cadence.id), held(other.id)]),
+    ).toBe(other);
+  });
+
+  it('falls to the catalogue’s first head when the account holds none', () => {
+    expect(StreakSystem.headOf([cadence, other], [])).toBe(cadence);
+    expect(
+      StreakSystem.headOf(
+        [cadence, other],
+        [held(StreakDefinitionId.of('retired'))],
+      ),
+    ).toBe(cadence);
+  });
+
+  it('answers nothing for a shop without a rhythm', () => {
+    expect(StreakSystem.headOf([], [held(cadence.id)])).toBeNull();
+    expect(StreakSystem.headOf([], [])).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const heads = deepFreeze([cadence, other]);
+    const states = deepFreeze([held(other.id)]);
+    expect(StreakSystem.headOf(heads, states)).toBe(
+      StreakSystem.headOf(heads, states),
+    );
+    expect(heads).toEqual([cadence, other]);
+    expect(states).toEqual([held(other.id)]);
   });
 });

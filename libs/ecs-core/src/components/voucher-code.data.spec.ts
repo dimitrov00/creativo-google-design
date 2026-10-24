@@ -77,3 +77,53 @@ describe('the counter’s reading', () => {
     ).toBe(false);
   });
 });
+
+describe('VoucherCode.sameCover — the same vouchers in the same order', () => {
+  it('compares code by code once normalised, in order', () => {
+    expect(
+      VoucherCode.sameCover([' gift2025 ', 'GIFT99'], ['GIFT2025', 'gift99']),
+    ).toBe(true);
+    expect(VoucherCode.sameCover([], [])).toBe(true);
+  });
+
+  it('tells a different order, a different code or a different count apart', () => {
+    expect(
+      VoucherCode.sameCover(['GIFT2025', 'GIFT99'], ['GIFT99', 'GIFT2025']),
+    ).toBe(false);
+    expect(VoucherCode.sameCover(['GIFT2025'], ['GIFT2026'])).toBe(false);
+    expect(VoucherCode.sameCover(['GIFT2025'], ['GIFT2025', 'GIFT99'])).toBe(
+      false,
+    );
+  });
+});
+
+describe('VoucherCode.distinct — the vouchers a batch names', () => {
+  it('normalises each code and keeps the cover order', () => {
+    expect(VoucherCode.distinct([' gift2025 ', 'GIFT99'])).toEqual({
+      ok: true,
+      value: ['GIFT2025', 'GIFT99'],
+    });
+    expect(VoucherCode.distinct([])).toEqual({ ok: true, value: [] });
+  });
+
+  it('refuses a voucher named twice, however its case and spaces differ', () => {
+    expect(VoucherCode.distinct(['GIFT2025', ' gift2025'])).toEqual({
+      ok: false,
+      error: {
+        errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
+        attempted: ' gift2025',
+      },
+    });
+  });
+
+  it('refuses a blank or a malformed code', () => {
+    expect(VoucherCode.distinct(['GIFT2025', '   '])).toEqual({
+      ok: false,
+      error: { errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID', attempted: '' },
+    });
+    expect(VoucherCode.distinct(['no!'])).toEqual({
+      ok: false,
+      error: { errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID', attempted: 'NO!' },
+    });
+  });
+});

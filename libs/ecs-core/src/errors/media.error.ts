@@ -17,17 +17,29 @@
  *
  * The `MediaRef` shape guard's codes are catalogue codes and live in
  * `catalog.error.ts`.
+ *
+ * The two `MEDIA_PHOTO_*` codes are not Storage's answers: they are the
+ * visit photo's wrapping of the upload guard's neutral `MediaRefusal`
+ * (`MediaSystem.check`, pass C), answered by `attachVisitPhoto` BEFORE any
+ * byte goes up — permanent by nature (the same file is refused again). The
+ * avatar wraps the same refusal in its own `ACCOUNTS_UPLOAD_AVATAR_*` codes.
  */
 export const MediaErrorCode = {
   NotFound: 'MEDIA_NOT_FOUND',
   Forbidden: 'MEDIA_FORBIDDEN',
   Transient: 'MEDIA_TRANSIENT',
+  PhotoNotAnImage: 'MEDIA_PHOTO_NOT_AN_IMAGE',
+  PhotoTooLarge: 'MEDIA_PHOTO_TOO_LARGE',
 } as const;
 export type MediaErrorCode =
   (typeof MediaErrorCode)[keyof typeof MediaErrorCode];
 
 export type MediaError =
-  MediaError.NotFound | MediaError.Forbidden | MediaError.Transient;
+  | MediaError.NotFound
+  | MediaError.Forbidden
+  | MediaError.Transient
+  | MediaError.PhotoNotAnImage
+  | MediaError.PhotoTooLarge;
 
 export const MediaError = {
   notFound(path: string): MediaError.NotFound {
@@ -39,8 +51,17 @@ export const MediaError = {
   transient(path: string): MediaError.Transient {
     return { errorCode: MediaErrorCode.Transient, path };
   },
+  /** A visit photo that is not an image — the guard's `NOT_AN_IMAGE`, before the upload. */
+  photoNotAnImage(): MediaError.PhotoNotAnImage {
+    return { errorCode: MediaErrorCode.PhotoNotAnImage };
+  },
+  /** A visit photo not under the limit — the guard's `TOO_LARGE`, carrying the limit. */
+  photoTooLarge(maxBytes: number): MediaError.PhotoTooLarge {
+    return { errorCode: MediaErrorCode.PhotoTooLarge, maxBytes };
+  },
   /**
-   * The retry decision: `true` for Storage's permanent answers, `false` for
+   * The retry decision: `true` for Storage's permanent answers (and the
+   * photo guard's refusals, which the same file earns again), `false` for
    * the one failure worth asking again — never inferred from a message.
    */
   isPermanent(error: MediaError): boolean {
@@ -68,5 +89,13 @@ export namespace MediaError {
   export type Transient = {
     readonly errorCode: typeof MediaErrorCode.Transient;
     readonly path: string;
+  };
+  export type PhotoNotAnImage = {
+    readonly errorCode: typeof MediaErrorCode.PhotoNotAnImage;
+  };
+  export type PhotoTooLarge = {
+    readonly errorCode: typeof MediaErrorCode.PhotoTooLarge;
+    /** The limit the photo was not under (`MediaSystem.PHOTO_MAX_BYTES`). */
+    readonly maxBytes: number;
   };
 }

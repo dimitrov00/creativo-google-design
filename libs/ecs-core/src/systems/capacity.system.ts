@@ -1,11 +1,13 @@
 import {
   CapacityEntry,
-  type MinuteRange,
-  type DayHours,
   type RosterWindow,
   type ScheduleVersion,
 } from '@core/components';
-import type { CapacityMonth } from '@core/entities';
+import type {
+  BarberBusyDay,
+  CapacityMonth,
+  ShopLocation,
+} from '@core/entities';
 import {
   type MinuteCount,
   type BarberId,
@@ -13,28 +15,24 @@ import {
   type LocationId,
   LocalDate,
 } from '@core/primitives';
-import { AvailabilitySystem } from './availability.system';
+import { AvailabilitySystem, type BusyBlocks } from './availability.system';
 import { IntervalSetSystem } from './interval-set.system';
-import {
-  type DayException,
-  RosterSystem,
-  type ShopHours,
-} from './roster.system';
+import { type DayException, RosterSystem } from './roster.system';
 
 /** The legacy walk's ceiling (`capacity-plan.ts:146`): a longer span is an authoring error. */
 const MAX_SPAN_DAYS = 500;
 
-/** One ACTIVE shop's published week (`ShopLocation.openingHours`, Mon-first). */
-export type CapacityShopWeek = {
-  readonly locationId: LocationId;
-  readonly week: readonly DayHours[];
-};
+/**
+ * One ACTIVE shop's published week, as the location stores it (`id`,
+ * `openingHours` Mon-first) — a whole `ShopLocation` passes.
+ */
+export type CapacityShopWeek = Pick<ShopLocation, 'id' | 'openingHours'>;
 
-/** One shop day of the barber's busy projection, as the UNPADDED minute ranges it stores. */
-export type CapacityBusyDay = {
-  readonly localDate: LocalDate;
-  readonly spans: readonly MinuteRange[];
-};
+/**
+ * One shop day of the barber's busy projection as stored — its `localDate`
+ * and its UNPADDED `blocks` — a whole `BarberBusyDay` passes.
+ */
+export type CapacityBusyDay = Pick<BarberBusyDay, 'localDate'> & BusyBlocks;
 
 /** The barber's roster, or `null` when they have none — every day then empties. */
 export type CapacitySchedule = {
@@ -92,7 +90,6 @@ function byLocalDate(
   return compareStrings(a.localDate, b.localDate);
 }
 
-const NO_SPANS: readonly MinuteRange[] = [];
 const NO_EXCEPTIONS: readonly DayException[] = [];
 
 function isActiveShop(
@@ -100,46 +97,39 @@ function isActiveShop(
   locationId: LocationId,
 ): boolean {
   for (let i = 0; i < shops.length; i++) {
-    if ((shops[i] as CapacityShopWeek).locationId === locationId) return true;
+    if ((shops[i] as CapacityShopWeek).id === locationId) return true;
   }
   return false;
 }
 
 /**
  * One day's entries for the barber, sorted by shop (`capacity-plan.ts:76-131`),
- * from the day's own busy spans and exceptions (the caller's cursors).
+ * from the day's own busy day (`null`: none stored) and exceptions (the
+ * caller's cursors).
  */
 function entriesFor(
   input: CapacityPlanInput,
   schedule: CapacitySchedule,
   localDate: LocalDate,
-  busy: readonly MinuteRange[],
+  busy: CapacityBusyDay | null,
   exceptions: readonly DayException[],
 ): readonly CapacityEntry[] {
-  const shopHours: ShopHours[] = [];
-  for (let i = 0; i < input.shops.length; i++) {
-    const shop = input.shops[i] as CapacityShopWeek;
-    shopHours.push({
-      locationId: shop.locationId,
-      hours: RosterSystem.shopDayHours(shop.week, localDate),
-    });
-  }
   const windows = RosterSystem.buildDayWindows({
     barberId: input.barberId,
     localDate,
     versions: schedule.versions,
     exceptions,
-    shopHours,
+    shopHours: RosterSystem.shopHoursOn(input.shops, localDate),
   });
   if (windows.length === 0) return [];
 
   // The ONE turnaround rule the grid and the commit check by.
-  const padded = AvailabilitySystem.paddedBusy({
-    barberId: input.barberId,
-    spans: busy,
-    turnaroundMinutes: schedule.turnaroundMinutes,
-    release: [],
-  });
+  const padded = AvailabilitySystem.paddedBusy(
+    input.barberId,
+    busy,
+    schedule,
+    [],
+  );
 
   // Windows grouped by shop, in window order. A segment rostered at a shop
   // the ACTIVE set does not know — archived, or a typo — contributes NOTHING:
@@ -229,11 +219,11 @@ export const CapacitySystem = {
           b++;
         }
         // The FIRST entry for the day, as the scan it replaces read it.
-        const spans =
+        const day =
           b < busy.length &&
           (busy[b] as CapacityBusyDay).localDate === localDate
-            ? (busy[b] as CapacityBusyDay).spans
-            : NO_SPANS;
+            ? (busy[b] as CapacityBusyDay)
+            : null;
         while (
           x < exceptions.length &&
           (exceptions[x] as DayException).localDate < localDate
@@ -252,7 +242,7 @@ export const CapacitySystem = {
           input,
           input.schedule,
           localDate,
-          spans,
+          day,
           own,
         );
         for (let k = 0; k < dayEntries.length; k++) {
@@ -378,5 +368,33 @@ export const CapacitySystem = {
       LocalDate.addMonths(LocalDate.startOfMonth(horizonEnd), 2),
       -1,
     );
+  },
+
+  /**
+   * Every day `from … to` inclusive with its free minutes — the booking
+   * calendar's markers (`CapacityEntry.freeMinutesOn`): the barbers asked
+   * about, at the one shop asked about (`null` = every shop). A day with no
+   * entry holds `0`; an inverted run holds no day. Coarse on purpose: a
+   * calendar dot only answers "is there anything here at all". The entries
+   * are sorted once (a copy) into the stored order `freeMinutesOn` walks.
+   */
+  freeMinutesByDay(
+    entries: readonly CapacityEntry[],
+    from: LocalDate,
+    to: LocalDate,
+    barberIds: readonly BarberId[],
+    locationId: LocationId | null,
+  ): ReadonlyMap<LocalDate, MinuteCount> {
+    const sorted = [...entries].sort(CapacityEntry.compare);
+    const byDay = new Map<LocalDate, MinuteCount>();
+    const days = LocalDate.range(from, to);
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i] as LocalDate;
+      byDay.set(
+        day,
+        CapacityEntry.freeMinutesOn(sorted, day, barberIds, locationId),
+      );
+    }
+    return byDay;
   },
 } as const;

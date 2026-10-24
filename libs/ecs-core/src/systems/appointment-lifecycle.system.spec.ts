@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  ArrivalVerb,
   AuditAction,
   BookingContact,
   BookingLifecycle,
@@ -15,6 +16,7 @@ import {
   SubjectRelationship,
   ServiceTerms,
   type ShopNow,
+  type StaffVerb,
 } from '@core/components';
 import {
   BookingStatus,
@@ -981,6 +983,546 @@ describe('AppointmentLifecycleSystem.takenSince — a reinstated chair given awa
       localDate: LocalDate.addDays(FIXTURE_TODAY, 1),
     });
     expect(AppointmentLifecycleSystem.takenSince(mine, [tomorrow])).toBe(false);
+  });
+});
+
+/*
+ * READ-ONLY LEGALITY (pass C) — what a staff surface may OFFER, ported from
+ * the staff dashboard (`OFFERED` + the same-day edge, `primaryVerb`,
+ * `seatScopeOf`, `offerUndo`) and the visit sheet (`exits`). The cases the
+ * dashboard and editor specs pin, restated as values and tags.
+ */
+const CANCELLED = BookingLifecycle.cancel(
+  BOOKING_NOW,
+  CancellationReasonSet.of([CancellationReason.Other]),
+);
+const LIFECYCLES: readonly BookingLifecycle[] = [
+  PENDING,
+  CONFIRMED,
+  COMPLETED,
+  NO_SHOW,
+  CANCELLED,
+];
+const YESTERDAY = LocalDate.addDays(FIXTURE_TODAY, -1);
+const TOMORROW = LocalDate.addDays(FIXTURE_TODAY, 1);
+const S = BookingStatus;
+
+describe('AppointmentLifecycleSystem.reopenable — the same-day edge’s one guard', () => {
+  it('lets a completed or cancelled root back on the visit’s own day', () => {
+    for (const status of [S.Completed, S.Cancelled]) {
+      expect(
+        AppointmentLifecycleSystem.reopenable(
+          status,
+          FIXTURE_TODAY,
+          FIXTURE_TODAY,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('closes on any other day, and on a day nobody could resolve', () => {
+    for (const status of [S.Completed, S.Cancelled]) {
+      const reopenable = (
+        visitDay: LocalDate | null,
+        today: LocalDate | null,
+      ) => AppointmentLifecycleSystem.reopenable(status, visitDay, today);
+      expect(reopenable(FIXTURE_TODAY, TOMORROW)).toBe(false);
+      expect(reopenable(FIXTURE_TODAY, YESTERDAY)).toBe(false);
+      expect(reopenable(null, FIXTURE_TODAY)).toBe(false);
+      expect(reopenable(FIXTURE_TODAY, null)).toBe(false);
+      expect(reopenable(null, null)).toBe(false);
+    }
+  });
+
+  it('never opens a live root or a no-show — those are not this edge', () => {
+    for (const status of [S.Pending, S.Confirmed, S.NoShow]) {
+      expect(
+        AppointmentLifecycleSystem.reopenable(
+          status,
+          FIXTURE_TODAY,
+          FIXTURE_TODAY,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it('is the guard reopenSettled writes through — ok exactly where reopenable holds', () => {
+    // `reopenSettled`'s own refusals: a live root is an invalid move, a
+    // settled one on another day is a closed window.
+    for (const lifecycle of LIFECYCLES) {
+      const appointment = withStatus(lifecycle);
+      for (const instant of [today(12), plus(today(12), 86_400_000)]) {
+        const now = nowAt(instant);
+        expect(
+          AppointmentLifecycleSystem.reopenSettled(appointment, now).ok,
+        ).toBe(
+          AppointmentLifecycleSystem.reopenable(
+            lifecycle.bookingStatus,
+            appointment.localDate,
+            now.localDate,
+          ),
+        );
+      }
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem.offeredVerbs — what a chair’s sheet offers', () => {
+  const offered = (
+    chair: BookingLifecycle,
+    root: BookingStatus,
+    today: LocalDate | null,
+  ) =>
+    AppointmentLifecycleSystem.offeredVerbs(
+      chair,
+      { bookingStatus: root },
+      FIXTURE_TODAY,
+      today,
+    );
+
+  it('offers the graph’s moves from a live or no-showed chair, in the order a shop reaches for them', () => {
+    for (const today of [FIXTURE_TODAY, TOMORROW, null]) {
+      expect(offered(PENDING, S.Pending, today)).toEqual([
+        S.Confirmed,
+        S.Cancelled,
+      ]);
+      expect(offered(CONFIRMED, S.Confirmed, today)).toEqual([
+        S.Completed,
+        S.NoShow,
+        S.Cancelled,
+      ]);
+      expect(offered(NO_SHOW, S.NoShow, today)).toEqual([S.Confirmed]);
+    }
+  });
+
+  it('adds the same-day way back to a settled chair whose root settled the same way', () => {
+    expect(offered(COMPLETED, S.Completed, FIXTURE_TODAY)).toEqual([
+      S.Confirmed,
+    ]);
+    expect(offered(CANCELLED, S.Cancelled, FIXTURE_TODAY)).toEqual([
+      S.Confirmed,
+    ]);
+  });
+
+  it('offers a settled chair nothing off its day, or with no day', () => {
+    for (const today of [TOMORROW, YESTERDAY, null]) {
+      expect(offered(COMPLETED, S.Completed, today)).toEqual([]);
+      expect(offered(CANCELLED, S.Cancelled, today)).toEqual([]);
+    }
+  });
+
+  it('offers no way back to a chair resolved inside a party that is still live, or settled otherwise', () => {
+    // The callable reopens the whole appointment or nothing.
+    for (const root of [S.Pending, S.Confirmed, S.NoShow]) {
+      expect(offered(CANCELLED, root, FIXTURE_TODAY)).toEqual([]);
+      expect(offered(COMPLETED, root, FIXTURE_TODAY)).toEqual([]);
+    }
+    expect(offered(COMPLETED, S.Cancelled, FIXTURE_TODAY)).toEqual([]);
+    expect(offered(CANCELLED, S.Completed, FIXTURE_TODAY)).toEqual([]);
+  });
+
+  it('every chair × root × day: the graph’s moves, plus CONFIRMED exactly where reopenable holds for a matching root', () => {
+    for (const chair of LIFECYCLES) {
+      for (const root of Object.values(S)) {
+        for (const today of [FIXTURE_TODAY, TOMORROW, null]) {
+          const graph = [
+            S.Confirmed,
+            S.Completed,
+            S.NoShow,
+            S.Cancelled,
+          ].filter((to) => BookingLifecycle.canTransition(chair, to));
+          const edge =
+            root === chair.bookingStatus &&
+            AppointmentLifecycleSystem.reopenable(root, FIXTURE_TODAY, today);
+          expect(offered(chair, root, today)).toEqual(
+            edge ? [...graph, S.Confirmed] : graph,
+          );
+        }
+      }
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem.leadVerb — which verb a row leads with', () => {
+  const legalOf = (chair: BookingLifecycle) =>
+    AppointmentLifecycleSystem.offeredVerbs(
+      chair,
+      chair,
+      FIXTURE_TODAY,
+      FIXTURE_TODAY,
+    );
+  const lead = (chair: BookingLifecycle, arrived: boolean) =>
+    AppointmentLifecycleSystem.leadVerb(chair, legalOf(chair), arrived);
+
+  it('arm 1 — a pending chair is accepted first', () => {
+    expect(lead(PENDING, false)).toBe(S.Confirmed);
+    expect(lead(PENDING, true)).toBe(S.Confirmed);
+  });
+
+  it('arm 2 — a live chair nobody has stamped leads with the arrival', () => {
+    expect(lead(CONFIRMED, false)).toBe(ArrivalVerb.Arrived);
+    // A pending chair whose accept is not on offer still leads with it.
+    expect(AppointmentLifecycleSystem.leadVerb(PENDING, [], false)).toBe(
+      ArrivalVerb.Arrived,
+    );
+  });
+
+  it('arm 3 — arrival, not the clock, gates finishing', () => {
+    expect(lead(CONFIRMED, true)).toBe(S.Completed);
+  });
+
+  it('arm 4 — a no-show leads with its correction', () => {
+    expect(lead(NO_SHOW, false)).toBe(S.Confirmed);
+    expect(lead(NO_SHOW, true)).toBe(S.Confirmed);
+  });
+
+  it('arm 5 — a settled chair leads with the same-day way back', () => {
+    expect(lead(COMPLETED, false)).toBe(S.Confirmed);
+    expect(lead(CANCELLED, true)).toBe(S.Confirmed);
+  });
+
+  it('leads with nothing once nothing applies — never wider than the legal set', () => {
+    expect(AppointmentLifecycleSystem.leadVerb(COMPLETED, [], false)).toBe(
+      null,
+    );
+    expect(AppointmentLifecycleSystem.leadVerb(CANCELLED, [], true)).toBe(null);
+    expect(AppointmentLifecycleSystem.leadVerb(NO_SHOW, [], false)).toBe(null);
+    // Arrived on a confirmed chair whose completion is not on offer.
+    expect(
+      AppointmentLifecycleSystem.leadVerb(CONFIRMED, [S.Cancelled], true),
+    ).toBe(null);
+  });
+
+  it('reads the status alone — a bare `{ bookingStatus }` leads as the lifecycle does', () => {
+    for (const chair of LIFECYCLES) {
+      for (const arrived of [false, true]) {
+        expect(
+          AppointmentLifecycleSystem.leadVerb(
+            { bookingStatus: chair.bookingStatus },
+            legalOf(chair),
+            arrived,
+          ),
+        ).toBe(lead(chair, arrived));
+      }
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem.transitionSeats — party or seats', () => {
+  const ids = [SeatId.of('s-1'), SeatId.of('s-2')];
+
+  it('addresses the root for CONFIRMED and PENDING, whatever the chair holds', () => {
+    for (const to of [S.Confirmed, S.Pending]) {
+      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 3)).toEqual(
+        [],
+      );
+      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 2)).toEqual(
+        [],
+      );
+    }
+  });
+
+  it('addresses the root when the chair holds the whole party', () => {
+    for (const to of [S.Completed, S.NoShow, S.Cancelled]) {
+      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 2)).toEqual(
+        [],
+      );
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, [SeatId.of('s-1')], 1),
+      ).toEqual([]);
+    }
+  });
+
+  it('addresses the chair’s own seats when it holds a share of the party', () => {
+    for (const to of [S.Completed, S.NoShow, S.Cancelled]) {
+      expect(AppointmentLifecycleSystem.transitionSeats(to, ids, 3)).toEqual(
+        ids,
+      );
+      expect(
+        AppointmentLifecycleSystem.transitionSeats(to, [SeatId.of('s-2')], 2),
+      ).toEqual([SeatId.of('s-2')]);
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem.inverseOf — the undo an act offers', () => {
+  it('takes the arrival back whatever the scope — arriving is the party’s', () => {
+    expect(
+      AppointmentLifecycleSystem.inverseOf(ArrivalVerb.Arrived, true),
+    ).toBe(ArrivalVerb.Unarrived);
+    expect(
+      AppointmentLifecycleSystem.inverseOf(ArrivalVerb.Arrived, false),
+    ).toBe(ArrivalVerb.Unarrived);
+  });
+
+  it('confirms a whole-party completion, no-show or cancellation back', () => {
+    for (const did of [S.Completed, S.NoShow, S.Cancelled]) {
+      expect(AppointmentLifecycleSystem.inverseOf(did, true)).toBe(S.Confirmed);
+    }
+  });
+
+  it('offers none for a share of a party — the callable has no per-seat inverse', () => {
+    for (const did of [S.Completed, S.NoShow, S.Cancelled]) {
+      expect(AppointmentLifecycleSystem.inverseOf(did, false)).toBeNull();
+    }
+  });
+
+  it('offers none for a correction, an un-arrival or an accept', () => {
+    const none: readonly StaffVerb[] = [
+      S.Confirmed,
+      S.Pending,
+      ArrivalVerb.Unarrived,
+    ];
+    for (const did of none) {
+      expect(AppointmentLifecycleSystem.inverseOf(did, true)).toBeNull();
+      expect(AppointmentLifecycleSystem.inverseOf(did, false)).toBeNull();
+    }
+  });
+
+  it('carries no day guard — the undo is offered whatever day it is', () => {
+    // Unlike `reopenSettled`: the server still refuses it off the visit's day.
+    expect(AppointmentLifecycleSystem.inverseOf(S.Cancelled, true)).toBe(
+      S.Confirmed,
+    );
+  });
+});
+
+describe('AppointmentLifecycleSystem.exitVerbs — the visit sheet’s exits', () => {
+  const offeredFor = (chair: BookingLifecycle, arrived: boolean) => {
+    const legal = AppointmentLifecycleSystem.offeredVerbs(
+      chair,
+      chair,
+      FIXTURE_TODAY,
+      FIXTURE_TODAY,
+    );
+    const primary = AppointmentLifecycleSystem.leadVerb(chair, legal, arrived);
+    const rest = legal.filter((verb) => verb !== primary);
+    return primary === null ? rest : [primary, ...rest];
+  };
+  const exits = (chair: BookingLifecycle, started: boolean, arrived = false) =>
+    AppointmentLifecycleSystem.exitVerbs(
+      chair.bookingStatus,
+      offeredFor(chair, arrived),
+      started,
+    );
+
+  it('a pending chair: its accept is the head’s, never an exit; cancel flagged, not listed', () => {
+    for (const started of [false, true]) {
+      expect(exits(PENDING, started)).toEqual({
+        verbs: [],
+        rebook: false,
+        cancel: true,
+      });
+    }
+  });
+
+  it('a confirmed chair: no-show only once started; the stamps never; cancel flagged', () => {
+    expect(exits(CONFIRMED, false)).toEqual({
+      verbs: [],
+      rebook: false,
+      cancel: true,
+    });
+    expect(exits(CONFIRMED, true)).toEqual({
+      verbs: [S.NoShow],
+      rebook: false,
+      cancel: true,
+    });
+    // Arrived: COMPLETED leads, and is still no exit.
+    expect(exits(CONFIRMED, true, true)).toEqual({
+      verbs: [S.NoShow],
+      rebook: false,
+      cancel: true,
+    });
+  });
+
+  it('a no-show: the way back, whatever the clock; gone, so no rebook here', () => {
+    for (const started of [false, true]) {
+      expect(exits(NO_SHOW, started)).toEqual({
+        verbs: [S.Confirmed],
+        rebook: false,
+        cancel: false,
+      });
+    }
+  });
+
+  it('a completed chair on its day: the way back and the next visit', () => {
+    for (const started of [false, true]) {
+      expect(exits(COMPLETED, started)).toEqual({
+        verbs: [S.Confirmed],
+        rebook: true,
+        cancel: false,
+      });
+    }
+  });
+
+  it('a cancelled chair on its day: the way back; gone, so the rebook is the dock’s', () => {
+    expect(exits(CANCELLED, true)).toEqual({
+      verbs: [S.Confirmed],
+      rebook: false,
+      cancel: false,
+    });
+  });
+
+  it('rebook exactly on a settled chair that is not gone — COMPLETED; offered order kept; any other verb passes through', () => {
+    for (const chairStatus of Object.values(S)) {
+      expect(
+        AppointmentLifecycleSystem.exitVerbs(chairStatus, [], false).rebook,
+      ).toBe(chairStatus === S.Completed);
+    }
+    for (const chairStatus of [S.Cancelled, S.NoShow, S.Confirmed, S.Pending]) {
+      expect(
+        AppointmentLifecycleSystem.exitVerbs(chairStatus, [], true).rebook,
+      ).toBe(false);
+    }
+    expect(
+      AppointmentLifecycleSystem.exitVerbs(
+        S.Confirmed,
+        [
+          S.Cancelled,
+          ArrivalVerb.Unarrived,
+          S.NoShow,
+          S.Completed,
+          ArrivalVerb.Arrived,
+          S.Confirmed,
+        ],
+        true,
+      ),
+    ).toEqual({
+      verbs: [ArrivalVerb.Unarrived, S.NoShow, S.Confirmed],
+      rebook: false,
+      cancel: true,
+    });
+  });
+
+  it('every chair status × started: the four rules, nothing else', () => {
+    const all: readonly StaffVerb[] = [
+      ArrivalVerb.Arrived,
+      S.Confirmed,
+      S.Completed,
+      S.NoShow,
+      S.Cancelled,
+    ];
+    for (const chairStatus of Object.values(S)) {
+      for (const started of [false, true]) {
+        const out = AppointmentLifecycleSystem.exitVerbs(
+          chairStatus,
+          all,
+          started,
+        );
+        const expected: StaffVerb[] = [];
+        if (chairStatus !== S.Pending) expected.push(S.Confirmed);
+        if (started) expected.push(S.NoShow);
+        expect(out).toEqual({
+          verbs: expected,
+          rebook: chairStatus === S.Completed,
+          cancel: true,
+        });
+      }
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem — the transition callable’s three predicates', () => {
+  const move = (to: BookingStatus, seatId: SeatId | null = null) => ({
+    to,
+    seatId,
+  });
+
+  it('isReinstatement: a whole-party CONFIRMED of a cancelled visit, nothing else', () => {
+    for (const status of Object.values(S)) {
+      for (const to of Object.values(S)) {
+        for (const seatId of [null, SeatId.of('s-1')]) {
+          expect(
+            AppointmentLifecycleSystem.isReinstatement(
+              { bookingStatus: status },
+              move(to, seatId),
+            ),
+          ).toBe(
+            seatId === null && to === S.Confirmed && status === S.Cancelled,
+          );
+        }
+      }
+    }
+  });
+
+  it('readsShopToday: a whole-party CONFIRMED of a completed or cancelled visit, nothing else', () => {
+    for (const status of Object.values(S)) {
+      for (const to of Object.values(S)) {
+        for (const seatId of [null, SeatId.of('s-1')]) {
+          expect(
+            AppointmentLifecycleSystem.readsShopToday(
+              { bookingStatus: status },
+              move(to, seatId),
+            ),
+          ).toBe(
+            seatId === null &&
+              to === S.Confirmed &&
+              (status === S.Completed || status === S.Cancelled),
+          );
+        }
+      }
+    }
+  });
+
+  it('accepts the request and the appointment as they are', () => {
+    const cancelled = withStatus(CANCELLED);
+    const req = request(S.Confirmed);
+    expect(AppointmentLifecycleSystem.isReinstatement(cancelled, req)).toBe(
+      true,
+    );
+    expect(AppointmentLifecycleSystem.readsShopToday(cancelled, req)).toBe(
+      true,
+    );
+  });
+
+  it('endsCancelled: cancelled after, and not before', () => {
+    for (const before of Object.values(S)) {
+      for (const after of Object.values(S)) {
+        expect(
+          AppointmentLifecycleSystem.endsCancelled(
+            { bookingStatus: before },
+            { bookingStatus: after },
+          ),
+        ).toBe(after === S.Cancelled && before !== S.Cancelled);
+      }
+    }
+  });
+});
+
+describe('AppointmentLifecycleSystem — the read-only legality is pure', () => {
+  it('same input → same output, inputs untouched', () => {
+    const chair = deepFreeze({ ...COMPLETED });
+    const root = deepFreeze({ bookingStatus: S.Completed });
+    const legal = deepFreeze([S.Confirmed]);
+    const ids = deepFreeze([SeatId.of('s-1'), SeatId.of('s-2')]);
+    const offered = deepFreeze([ArrivalVerb.Arrived, S.NoShow, S.Cancelled]);
+    const calls = () => ({
+      offered: AppointmentLifecycleSystem.offeredVerbs(
+        chair,
+        root,
+        FIXTURE_TODAY,
+        FIXTURE_TODAY,
+      ),
+      lead: AppointmentLifecycleSystem.leadVerb(chair, legal, false),
+      seats: AppointmentLifecycleSystem.transitionSeats(S.Cancelled, ids, 3),
+      inverse: AppointmentLifecycleSystem.inverseOf(S.Cancelled, true),
+      exits: AppointmentLifecycleSystem.exitVerbs(S.Confirmed, offered, true),
+      reopenable: AppointmentLifecycleSystem.reopenable(
+        S.Completed,
+        FIXTURE_TODAY,
+        FIXTURE_TODAY,
+      ),
+      reinstates: AppointmentLifecycleSystem.isReinstatement(
+        root,
+        deepFreeze({ to: S.Confirmed, seatId: null }),
+      ),
+      ends: AppointmentLifecycleSystem.endsCancelled(root, root),
+    });
+    const once = calls();
+    expect(calls()).toEqual(once);
+    expect(chair).toEqual(COMPLETED);
+    expect(ids).toEqual([SeatId.of('s-1'), SeatId.of('s-2')]);
+    expect(offered).toEqual([ArrivalVerb.Arrived, S.NoShow, S.Cancelled]);
   });
 });
 

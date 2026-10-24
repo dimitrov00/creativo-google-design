@@ -40,6 +40,13 @@ const CLIENT_DEFAULT: PlacementPolicy = {
   skipMinNotice: false,
 };
 
+const STAFF_PLACEMENT: PlacementPolicy = {
+  allowOutsideWindow: true,
+  allowOverlap: false,
+  allowConflictingServices: true,
+  skipMinNotice: true,
+};
+
 const STAFF_WALK_IN: PlacementPolicy = {
   allowOutsideWindow: true,
   allowOverlap: false,
@@ -51,6 +58,20 @@ export const PlacementPolicy = {
   /** A client booking online: every rule applies. */
   clientDefault(): PlacementPolicy {
     return CLIENT_DEFAULT;
+  },
+
+  /**
+   * The shop placing or moving its OWN book — the live preset of the staff
+   * booking (`book-appointment.pipeline.ts`) and the staff edit
+   * (`edit-appointment.pipeline.ts`, with the overlap acknowledged through
+   * {@link withOverlap}): outside the roster and before the minimum notice
+   * are fine, and the catalogue's conflicting services are the client's
+   * rule, not the shop's; an overlap still needs its acknowledgement. Not
+   * {@link staffWalkIn} (owner D18, which keeps conflicting services
+   * refused — carried, pass C §8 OQ-3).
+   */
+  staffPlacement(): PlacementPolicy {
+    return STAFF_PLACEMENT;
   },
 
   /**

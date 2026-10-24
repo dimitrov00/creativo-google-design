@@ -78,29 +78,25 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import type { Appointment } from '@core/entities';
-import {
-  type AppointmentId,
-  BookingStatus,
-  LocalDate,
-  UtcEpochMs,
-} from '@core/primitives';
+import { type AppointmentId, BookingStatus, LocalDate } from '@core/primitives';
 import { BookingErrorCode, CancellationRefusalCode } from '@core/errors';
 import {
-  BookingLifecycle,
   BookingPolicy,
-  Money,
+  ClientMove,
   Principal,
-  ServiceTerms,
   ShopReach,
   TimeCoordinate,
 } from '@core/components';
 import {
+  BillingSystem,
   CalendarGridSystem,
   CancellationPolicySystem,
+  type ClientMoveAnswer,
   MoveSystem,
   ShopReachSystem,
   VisitFilter,
   VisitGrain,
+  VisitListSystem,
   VisitPerspective,
 } from '@core/systems';
 import { LoadState } from '@creativo/shared/view-state';
@@ -147,8 +143,6 @@ const STATUS_TONES: Record<BookingStatus, UiBadgeTone> = {
  * explained — in English, on a Bulgarian screen — instead of `unspecified`.
  */
 const DEFAULT_CANCEL_REASON = '';
-
-const MS_PER_MINUTE = 60_000;
 
 /** One day cell of the calendar view. */
 interface VisitDayVm {
@@ -410,19 +404,12 @@ export class ClientAppointments {
    * history holds everything started — and it is one visit, filed by its
    * own start.
    */
-  private readonly appointments = computed<readonly Appointment[]>(() => {
-    const seen = new Set<string>();
-    const appointments: Appointment[] = [];
-    for (const appointment of [
+  private readonly appointments = computed<readonly Appointment[]>(() =>
+    VisitListSystem.distinctById([
       ...this.store.appointments(),
       ...this.store.history(),
-    ]) {
-      if (seen.has(appointment.id)) continue;
-      seen.add(appointment.id);
-      appointments.push(appointment);
-    }
-    return appointments;
-  });
+    ]),
+  );
 
   /**
    * Every visit as the list's row, and the calendar's and the sheet's view
@@ -556,25 +543,14 @@ export class ClientAppointments {
     // The window is around TODAY and grows with the scroll — a month with
     // nothing in it is still a month a person may want to look at. It is
     // then widened to hold every visit, so a booking outside the current
-    // window is never unreachable. Months are their first shop day.
-    const thisMonth = LocalDate.startOfMonth(today);
-    const windowStart = LocalDate.addMonths(thisMonth, -this.monthsBack());
-    const windowEnd = LocalDate.addMonths(thisMonth, this.monthsAhead());
-    const days = [...byDay.keys()].sort(LocalDate.compare);
-    const earliestDay = days.at(0);
-    const latestDay = days.at(-1);
-    const earliestVisit =
-      earliestDay === undefined
-        ? thisMonth
-        : LocalDate.startOfMonth(earliestDay);
-    const latestVisit =
-      latestDay === undefined ? thisMonth : LocalDate.startOfMonth(latestDay);
-    const from =
-      LocalDate.compare(earliestVisit, windowStart) < 0
-        ? earliestVisit
-        : windowStart;
-    const to =
-      LocalDate.compare(latestVisit, windowEnd) > 0 ? latestVisit : windowEnd;
+    // window is never unreachable (`CalendarGridSystem.monthSpan`). Months
+    // are their first shop day.
+    const { from, to } = CalendarGridSystem.monthSpan(
+      [...byDay.keys()],
+      today,
+      this.monthsBack(),
+      this.monthsAhead(),
+    );
 
     const months: VisitMonthVm[] = [];
     // Bounded by construction (the history read is capped), but the guard
@@ -691,14 +667,10 @@ export class ClientAppointments {
   /** What this visit comes to, summed from the seats' own terms. */
   protected readonly openVisitTotal = computed(() => {
     const visit = this.openVisit();
-    const first = visit?.appointment.seats[0];
-    if (!visit || first === undefined) return null;
-    const total = Money.sum(
-      visit.appointment.seats.map((seat) => ServiceTerms.price(seat)),
-      first.currency,
-    );
-    // Mixed currencies are a data error the entity also refuses; a partial
-    // total would be worse than none.
+    if (!visit) return null;
+    const total = BillingSystem.subtotalOf(visit.appointment.seats);
+    // No seat, or mixed currencies (a data error the entity also refuses):
+    // a partial total would be worse than none.
     return total.ok
       ? formatCents(
           total.value.amountCents,
@@ -850,10 +822,7 @@ export class ClientAppointments {
     // The `.ics` is what an instant is FOR (Law 7.3): the start as stored,
     // the end its sold span later.
     const startMs = visit.appointment.utcEpochMs;
-    const endMs = UtcEpochMs.plusMs(
-      startMs,
-      TimeCoordinate.durationMinutes(visit.appointment) * MS_PER_MINUTE,
-    );
+    const endMs = TimeCoordinate.endUtcMs(visit.appointment);
     const ics = buildVisitIcs(
       {
         uid: `${visit.id}@creativo`,
@@ -926,6 +895,19 @@ export class ClientAppointments {
   }
 
   /**
+   * What the client may do about moving this visit — `MoveSystem.clientMove`,
+   * the one answer to the sheet's three questions below.
+   */
+  private moveOf(appointment: Appointment): ClientMoveAnswer {
+    return MoveSystem.clientMove(
+      appointment,
+      this.policy(),
+      this.store.nowUtcMs,
+      this.store.owner(),
+    );
+  }
+
+  /**
    * «Премести» is offered only for a visit the client can actually move: one
    * the window still allows (the same rule a cancellation is refused by) AND
    * one holding a seat that is theirs to move — the domain's rule, the one
@@ -933,10 +915,7 @@ export class ClientAppointments {
    * the shop added would open a move that can only be refused.
    */
   protected canMove(appointment: Appointment): boolean {
-    return (
-      this.canCancel(appointment) &&
-      MoveSystem.hasSeatTheBookerCanMove(appointment, this.store.owner())
-    );
+    return this.moveOf(appointment).clientMove === ClientMove.Movable;
   }
 
   /**
@@ -945,19 +924,12 @@ export class ClientAppointments {
    * shop's number is already one of the verbs when the catalogue knows it.
    */
   protected shopMovesOnly(appointment: Appointment): boolean {
-    return this.canCancel(appointment) && !this.canMove(appointment);
+    return this.moveOf(appointment).clientMove === ClientMove.ShopOnly;
   }
 
   /** Still cancellable by STATUS, but the free window has passed. */
   protected windowClosed(appointment: Appointment): boolean {
-    return (
-      BookingLifecycle.isLive(appointment) &&
-      !BookingPolicy.mayCancelAt(
-        this.policy(),
-        CancellationPolicySystem.startUtcMsOf(appointment),
-        this.store.nowUtcMs,
-      )
-    );
+    return this.moveOf(appointment).windowClosed;
   }
 
   /**

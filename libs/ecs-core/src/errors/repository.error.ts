@@ -26,6 +26,13 @@ export const RepositoryErrorCode = {
 export type RepositoryErrorCode =
   (typeof RepositoryErrorCode)[keyof typeof RepositoryErrorCode];
 
+/**
+ * Every {@link RepositoryErrorCode}, dictionary order — derived once, never
+ * a second source; {@link RepositoryError.guard}'s table (scanned; no `new`
+ * in a data file, Law 1).
+ */
+const REPOSITORY_CODES: readonly string[] = Object.values(RepositoryErrorCode);
+
 /** One shape for every code, so every error shares one hidden class. */
 export type RepositoryError = {
   readonly errorCode: RepositoryErrorCode;
@@ -72,5 +79,25 @@ export const RepositoryError = {
    */
   isAlreadyExists(error: RepositoryError): boolean {
     return error.errorCode === RepositoryErrorCode.AlreadyExists;
+  },
+
+  /**
+   * THE one guard (pass C, P-24): is a failure a port's refusal — a
+   * `RepositoryError` carrying a code of {@link RepositoryErrorCode} beside
+   * its `path` and `reason` — as against a throw (an SDK error, a defect)?
+   * Read without trusting the value's shape: a pipeline's failure list
+   * holds both, and the attempt verdict judges a refusal by its `reason`
+   * (`TriggerAttemptSystem.attemptFailure`) and a throw by its own code.
+   */
+  guard(value: unknown): value is RepositoryError {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      'errorCode' in value &&
+      typeof value.errorCode === 'string' &&
+      REPOSITORY_CODES.includes(value.errorCode) &&
+      'path' in value &&
+      'reason' in value
+    );
   },
 } as const;

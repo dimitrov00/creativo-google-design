@@ -13,6 +13,7 @@ import {
 import {
   ensureSessionReady,
   registerUser,
+  saveOwnProfile,
   uploadAvatar,
 } from '@core/pipelines';
 import { type ServiceId, type UserId } from '@core/primitives';
@@ -25,10 +26,7 @@ import {
   type PersonalizeStep,
   type SettledVerdict,
 } from '@core/systems';
-import {
-  ageDayOf,
-  saveOwnProfile,
-} from '@creativo/features/client/account-state';
+import { ageDayOf } from '@creativo/features/client/account-state';
 import { avatarUploadRefusal } from '@creativo/features/shared/shell';
 import {
   AUTH_DEPLOYMENT_PORTS,
@@ -238,7 +236,7 @@ export class OnboardingFlowStore {
     }
 
     this._pending.set(true);
-    const code = await saveOwnProfile(this.gateway, {
+    const code = await saveOwnProfile(this.gateway)({
       firstName: null,
       lastName: null,
       birthDate: birthDate.value,

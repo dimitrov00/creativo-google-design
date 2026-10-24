@@ -1,4 +1,4 @@
-import type { Actor, WriteOp } from '@core/components';
+import { type Actor, MarkArrivalAction, type WriteOp } from '@core/components';
 import { Result, type AppointmentId } from '@core/primitives';
 import {
   BookingError,
@@ -23,15 +23,8 @@ import { appendAuditFacts, readAppointment } from './booking-read-set.pipeline';
  * act's row AFTER the commit (`arrived:<stamp>` / `unarrived:<stamp>`).
  */
 
-/** The verb — the field `markArrivalAction`, the ONLY source of these strings. */
-export const MarkArrivalAction = {
-  Arrive: 'ARRIVE',
-  Clear: 'CLEAR',
-} as const;
-export type MarkArrivalAction =
-  (typeof MarkArrivalAction)[keyof typeof MarkArrivalAction];
-
 export type MarkArrivalCommand = {
+  /** The verb — `MarkArrivalAction` (`@core/components`). */
   readonly markArrivalAction: MarkArrivalAction;
   readonly appointmentId: AppointmentId;
   /** The verified caller the row names; `null` logs loudly and writes no row. */

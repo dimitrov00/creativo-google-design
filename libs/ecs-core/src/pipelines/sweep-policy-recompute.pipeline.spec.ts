@@ -3,6 +3,7 @@ import {
   BookingPolicy,
   type DocBody,
   type LivePolicyLine,
+  PolicySweepOutcome,
   PreciseInstant,
 } from '@core/components';
 import {
@@ -24,10 +25,7 @@ import {
   POLICY_RECOMPUTE_JOB_PATH,
   policyJobWrite,
 } from './start-policy-recompute.pipeline';
-import {
-  PolicySweepOutcome,
-  sweepPolicyRecompute,
-} from './sweep-policy-recompute.pipeline';
+import { sweepPolicyRecompute } from './sweep-policy-recompute.pipeline';
 
 /*
  * The policy pass's daily sweep (`recompute-on-policy-change.ts`): first the

@@ -18,18 +18,28 @@ import {
 import {
   BookingCart,
   type CartLine,
+  type Money,
   Party,
   SeatKey,
   SeatKeyRole,
 } from '@core/components';
 import type { Service } from '@core/entities';
-import { Selectability, ServiceConflictSystem } from '@core/systems';
+import {
+  BookingCartSystem,
+  CatalogPricingSystem,
+  OfferingPriceSystem,
+  Selectability,
+  ServiceConflictSystem,
+  TermsSpanSystem,
+} from '@core/systems';
+import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   CatalogWording,
   ServiceCardComponent,
   ServiceDetailSheetComponent,
   type ServiceVm,
+  termsToVm,
 } from '@creativo/features/shared/catalog';
 import {
   UiAvatar,
@@ -417,11 +427,12 @@ export class BookingServicesStep {
     // name. The number can skip after removals, which is the honest cost of
     // never showing two "Guest 2"s. A prefilled guest can already hold a
     // placeholder-shaped name the visit stored («Гост 3»), so the number
-    // also steps past every label in use (`unusedGuestLabel`).
+    // also steps past every label in use (`unusedGuestLabel`). Where the
+    // number starts is the party's (`Party.labelNumberAfter`).
     this.store.addGuest(
       this.store.unusedGuestLabel(
         (number) => this.transloco.translate('booking.party.guest', { number }),
-        this.nextGuestNumber(),
+        Party.labelNumberAfter(this.store.party()),
       ),
     );
     // Read the id BACK rather than deriving it from the count: guest ids are
@@ -436,15 +447,6 @@ export class BookingServicesStep {
     // otherwise the press appears to do nothing at all.
     this.activeSeatKey.set(SeatKey.text(SeatKey.guest(added.guestId)));
     this.revealSeatRow();
-  }
-
-  /** One past the highest guest id minted so far — ids encode `guest-<n>`. */
-  private nextGuestNumber(): number {
-    const highest = this.store.guests().reduce((max, guest) => {
-      const seq = Number.parseInt(guest.guestId.replace('guest-', ''), 10);
-      return Number.isFinite(seq) ? Math.max(max, seq) : max;
-    }, -1);
-    return highest + 2;
   }
 
   protected startRename(seat: SeatScopeVm): void {
@@ -553,17 +555,17 @@ export class BookingServicesStep {
    * CTA "handing over" to the seat already selected is a `signal.set` of the
    * value it holds, which notifies nothing and made the button inert), so the
    * active-seat case is handled by BRANCHING in {@link advance} rather than
-   * by pretending nobody is empty.
+   * by pretending nobody is empty. Which seat that is, is
+   * `BookingCartSystem.nextSeatWithoutService`'s; this finds its pill.
    */
   private readonly nextEmptySeat = computed<SeatScopeVm | null>(() => {
-    const seats = this.seats();
-    if (seats.length < 2) return null;
-    const from = seats.findIndex((seat) => seat.key === this.activeSeat().key);
-    for (let step = 1; step <= seats.length; step++) {
-      const seat = seats[(from + step) % seats.length];
-      if (seat && seat.lineCount === 0) return seat;
-    }
-    return null;
+    const key = BookingCartSystem.nextSeatWithoutService(
+      this.store.party(),
+      this.store.cart(),
+      this.activeSeat().key,
+    );
+    if (key === null) return null;
+    return this.seats().find((seat) => seat.key === key) ?? null;
   });
 
   /**
@@ -634,10 +636,15 @@ export class BookingServicesStep {
   /** The service whose sheet is open (null = shut). */
   protected readonly detailsId = signal<string | null>(null);
 
-  protected readonly detailsVm = computed<ServiceVm | null>(() => {
+  /** The open service, as the catalogue stores it — what its terms are asked of. */
+  private readonly detailsService = computed<Service | null>(() => {
     const id = this.detailsId();
     if (!id) return null;
-    const service = this.catalog.findService(id);
+    return this.catalog.findService(id) ?? null;
+  });
+
+  protected readonly detailsVm = computed<ServiceVm | null>(() => {
+    const service = this.detailsService();
     return service ? this.catalog.toServiceVm(service) : null;
   });
 
@@ -646,6 +653,22 @@ export class BookingServicesStep {
 
   protected readonly draftVariantId = signal<string | null>(null);
   protected readonly draftBarberId = signal<string | null>(null);
+
+  /** The draft variant as the catalogue's id — `null` for none (or none it could be). */
+  private readonly draftVariant = computed<ServiceVariantId | null>(() => {
+    const raw = this.draftVariantId();
+    if (raw === null) return null;
+    const parsed = ServiceVariantId.parse(raw);
+    return parsed.ok ? parsed.value : null;
+  });
+
+  /** The draft barber as the catalogue's id — `null` for "anyone" (or nobody it could be). */
+  private readonly draftBarberKey = computed<BarberId | null>(() => {
+    const raw = this.draftBarberId();
+    if (raw === null) return null;
+    const parsed = BarberId.parse(raw);
+    return parsed.ok ? parsed.value : null;
+  });
 
   /**
    * The two selects that sit ON the bar, stacked above the CTA.
@@ -664,32 +687,30 @@ export class BookingServicesStep {
    * select that makes you press one to find out.
    *
    * Cheapest first, on the terms actually shown: a list that claims
-   * cheapest-first has to be one.
+   * cheapest-first has to be one (`CatalogPricingSystem.performersByPrice`);
+   * which of them are on the active list is the catalogue's answer.
    */
   protected readonly performerOptions = computed(() => {
-    const vm = this.detailsVm();
-    if (!vm) return [];
-    const variantId = this.draftVariantId();
-    return vm.offerings
-      .flatMap((offering) => {
-        const barber = this.catalog
-          .barberVms()
-          .find((candidate) => candidate.id === offering.barberId);
-        if (!barber) return [];
-        const terms =
-          (variantId ? offering.byVariant?.[variantId] : undefined) ??
-          offering.base;
-        return [
-          {
-            id: barber.id,
-            name: barber.name,
-            avatarSrc: barber.avatarSrc,
-            price: terms.price,
-            minutes: terms.minutes,
-          },
-        ];
-      })
-      .sort((a, b) => a.price - b.price);
+    const service = this.detailsService();
+    if (!service) return [];
+    const barbers = this.catalog.barberVms();
+    return CatalogPricingSystem.performersByPrice(
+      service,
+      this.draftVariant(),
+    ).flatMap(({ barberId, terms }) => {
+      const barber = barbers.find((candidate) => candidate.id === barberId);
+      if (!barber) return [];
+      const quoted = termsToVm(terms);
+      return [
+        {
+          id: barber.id,
+          name: barber.name,
+          avatarSrc: barber.avatarSrc,
+          price: quoted.price,
+          minutes: quoted.minutes,
+        },
+      ];
+    });
   });
 
   /** The chosen barber, or `null` under "anyone". */
@@ -823,28 +844,34 @@ export class BookingServicesStep {
    */
   protected readonly barberAnswered = signal(false);
 
+  /**
+   * "Anyone"'s quote for the draft variant: the span across EVERY performer's
+   * terms (`TermsSpanSystem.spanFor`) — the bag's quote for the same line, so
+   * the sheet and the bag never disagree (pass C, DEP-9).
+   */
+  private readonly anyoneSpan = computed(() => {
+    const service = this.detailsService();
+    return service
+      ? TermsSpanSystem.spanFor(service, this.draftVariant(), null)
+      : null;
+  });
+
   /** Live price for the current draft — what the CTA is committing to. */
-  protected readonly livePrice = computed(() => {
-    const vm = this.detailsVm();
-    if (!vm) return 0;
-    const barberId = this.draftBarberId();
-    const variantId = this.draftVariantId();
-    const offering = barberId
-      ? vm.offerings.find((candidate) => candidate.barberId === barberId)
-      : undefined;
-    if (!offering) {
-      // "Anyone" quotes the cheapest performer — v2's `price.from` semantics.
-      const prices = vm.offerings.map(
-        (candidate) =>
-          (variantId ? candidate.byVariant?.[variantId] : undefined)?.price ??
-          candidate.base.price,
-      );
-      return prices.length > 0 ? Math.min(...prices) : 0;
+  protected readonly livePrice = computed<Money | null>(() => {
+    const service = this.detailsService();
+    const anyone = this.anyoneSpan();
+    if (!service || !anyone) return null;
+    // A NAMED barber who performs it pins their own price; one who does not
+    // falls to "anyone", never to the service's own terms.
+    const barberId = this.draftBarberKey();
+    if (
+      barberId !== null &&
+      OfferingPriceSystem.isPerformedBy(service, barberId)
+    ) {
+      return OfferingPriceSystem.price(service, barberId, this.draftVariant());
     }
-    return (
-      (variantId ? offering.byVariant?.[variantId] : undefined)?.price ??
-      offering.base.price
-    );
+    // "Anyone" quotes the cheapest performer — v2's `price.from` semantics.
+    return TermsSpanSystem.priceBounds(anyone).min;
   });
 
   /**
@@ -856,20 +883,33 @@ export class BookingServicesStep {
    * selects are answered there is one number and it stops being a range.
    */
   protected readonly priceRangeLabel = computed(() => {
-    const prices = this.performerOptions().map((option) => option.price);
-    if (prices.length === 0) return this.content.price(this.livePrice());
+    const price = this.livePrice();
+    const anyone = this.anyoneSpan();
+    // The sheet renders only while its service is in the catalogue.
+    if (!price || !anyone) return '';
 
     // A NAMED barber pins one number. "Anyone" does not — whoever is free
     // decides, and the price moves with them — so the span is the honest
     // answer even once the choice is made and the CTA is live. Quoting the
     // cheapest there would name a price the booking may not cost.
-    const low = Math.min(...prices);
-    const high = Math.max(...prices);
-    if (this.draftBarberId() === null && low !== high) {
-      return `${this.content.price(low)} – ${this.content.price(high)}`;
+    if (
+      this.draftBarberId() === null &&
+      !TermsSpanSystem.isPricePoint(anyone)
+    ) {
+      const bounds = TermsSpanSystem.priceBounds(anyone);
+      return `${this.money(bounds.min)} – ${this.money(bounds.max)}`;
     }
-    return this.content.price(this.livePrice());
+    return this.money(price);
   });
+
+  /** A struct amount in the locale's words — the bag's one money formatter. */
+  private money(amount: Money): string {
+    return formatCents(
+      amount.amountCents,
+      amount.currency,
+      this.content.locale(),
+    );
+  }
 
   /** Drop this line and leave — the way OUT of a service already chosen. */
   protected removeOpenLine(): void {
@@ -957,18 +997,25 @@ export class BookingServicesStep {
     this.addLine();
   }
 
-  /** Drop every line blocking the open service, then add it. One dispatch each. */
+  /**
+   * Drop every line blocking the open service, then add it. One dispatch
+   * each. Which lines block it is `ServiceConflictSystem.conflictingWith`'s
+   * answer, by id — the same scope (this seat) `blockersFor` names.
+   */
   protected replaceBlockers(): void {
-    const id = this.detailsId();
-    if (!id || !this.canAdd()) return;
-    const blockedNames = new Set(this.blockersFor(id));
-    if (blockedNames.size === 0) return;
+    const candidate = this.detailsService();
+    if (!candidate || !this.canAdd()) return;
+    const blocking = new Set<string>(
+      ServiceConflictSystem.conflictingWith(
+        this.selectedServices(),
+        candidate,
+        this.catalog.services(),
+      ),
+    );
+    if (blocking.size === 0) return;
 
     for (const line of this.linesOf(this.activeSeat())) {
-      const service = this.catalog.findService(line.serviceId);
-      if (!service) continue;
-      const name = this.content.text(this.catalog.toServiceVm(service).name);
-      if (blockedNames.has(name)) {
+      if (blocking.has(line.serviceId)) {
         this.store.removeLine(this.activeSeat().key, line.lineId);
       }
     }

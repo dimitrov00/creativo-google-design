@@ -1709,14 +1709,14 @@
             uiText
             uiFont="footnote"
             [uiForegroundStyle]="
-              verdict.frameVerdict === FrameVerdict.Conflict
+              verdict.placementVerdict === PlacementVerdict.Overlap
                 ? 'destructive'
                 : 'secondary'
             "
-            [attr.data-verdict]="frameVerdictWords[verdict.frameVerdict]"
+            [attr.data-verdict]="placementVerdictWords[verdict.placementVerdict]"
             data-testid="staff-visit-frame-note"
           >
-            @if (verdict.frameVerdict === FrameVerdict.Conflict) { {{
+            @if (verdict.placementVerdict === PlacementVerdict.Overlap) { {{
             t('staff.visit.conflict', { name: verdict.name, start:
             verdict.start, end: verdict.end }) }} } @else { {{
             t('staff.visit.outsideRoster', { time: verdict.time }) }} }
@@ -2056,7 +2056,7 @@
          street level) and a tile per shop beneath; a tile or a pin is the
          answer, the map flies to it, and «Запази» carries it. Only where
          there is a choice: one shop is a fact nobody needs told. -->
-    @if (uiShops().length > 1) { @if (gone()) {
+    @if (multiShop()) { @if (gone()) {
     <!-- Settled: the place is a fact, not a choice — an `li`, nothing to tap. -->
     <ul
       uiListGroup

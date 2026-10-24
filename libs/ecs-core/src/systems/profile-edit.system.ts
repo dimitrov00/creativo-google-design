@@ -82,6 +82,59 @@ export const ProfileEditSystem = {
   },
 
   /**
+   * Whether names would change the stored ones — either differs from the
+   * stored value, compared exactly: case counts («иван» → «Иван» is a
+   * correction worth saving), and the names arrive as the write would
+   * store them (trimmed — {@link decide} trims, the profile page passes its
+   * trimmed drafts, the booking contact sheet the split of
+   * {@link nameFromFull}). A provisioned account's `null` name differs from
+   * every typed one. {@link decide}'s "unchanged" test composes it.
+   */
+  namesChanged(
+    stored: {
+      readonly firstName: string | null;
+      readonly lastName: string | null;
+    },
+    firstName: string,
+    lastName: string,
+  ): boolean {
+    return firstName !== stored.firstName || lastName !== stored.lastName;
+  },
+
+  /**
+   * Whether a birth date would change the stored one — identity of the
+   * branded day (`null` equals only `null`). {@link decide}'s "unchanged"
+   * test composes it.
+   */
+  birthChanged(
+    stored: { readonly birthDate: BirthDate | null },
+    birthDate: BirthDate | null,
+  ): boolean {
+    return birthDate !== stored.birthDate;
+  },
+
+  /**
+   * The profile names one typed full name would be saved as (the booking
+   * contact sheet's single name field): everything up to the first run of
+   * whitespace is the given name, the rest the family name with its spacing
+   * settled to single spaces. A single word keeps `storedLastName` (`''`
+   * when the profile has none) rather than erasing it; case stays. `null`
+   * when nothing but whitespace was typed. The ONE split the sheet's
+   * "would this change the profile" cue and its write both use.
+   */
+  nameFromFull(
+    typed: string,
+    storedLastName: string | null,
+  ): { readonly firstName: string; readonly lastName: string } | null {
+    const [first, ...rest] = typed.trim().split(/\s+/);
+    if (first === undefined || first.length === 0) return null;
+    return {
+      firstName: first,
+      lastName: rest.length > 0 ? rest.join(' ') : (storedLastName ?? ''),
+    };
+  },
+
+  /**
    * The owner's edit of a stored account. `stored` absent or not
    * `REGISTERED` (a contact-only stub) → `ACCOUNTS_UPDATE_PROFILE_NOT_FOUND`.
    * Otherwise the effective names (the edit, else the stored one) go through
@@ -92,7 +145,8 @@ export const ProfileEditSystem = {
    * `UpdateProfileValidationFailure` answers). Else the five owner keys —
    * names trimmed, the search keys from the new names and the STORED phone
    * and e-mail (never a caller's: this write cannot change them) — or
-   * `null` when all five equal the stored values (value-idempotent: an
+   * `null` when all five equal the stored values ({@link namesChanged},
+   * {@link birthChanged} and the search keys; value-idempotent: an
    * unchanged edit writes nothing).
    */
   decide(
@@ -125,9 +179,8 @@ export const ProfileEditSystem = {
       stored.email,
     );
     const unchanged =
-      firstName === stored.firstName &&
-      lastName === stored.lastName &&
-      birthDate === stored.birthDate &&
+      !ProfileEditSystem.namesChanged(stored, firstName, lastName) &&
+      !ProfileEditSystem.birthChanged(stored, birthDate) &&
       searchName === stored.searchName &&
       sameStrings(searchPrefixes, stored.searchPrefixes);
     if (unchanged) return Result.ok(null);

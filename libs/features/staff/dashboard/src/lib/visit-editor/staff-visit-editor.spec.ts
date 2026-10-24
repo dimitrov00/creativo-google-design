@@ -52,8 +52,9 @@ import {
   ServiceId,
   UserId as CoreUserId,
   UtcEpochMs,
+  VoucherRefusal,
 } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { CancelledSide, ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
   type LoyaltyClientFixture,
@@ -2505,7 +2506,7 @@ describe('StaffVisitEditor', () => {
           overflowVerbs: [],
           resolution: {
             bookingStatus: BookingStatus.Cancelled,
-            by: 'staff',
+            by: CancelledSide.Shop,
             whenLabel: '11:51',
             detail: null,
           },
@@ -2813,7 +2814,7 @@ describe('StaffVisitEditor', () => {
           statusLabel: 'Отказан',
           resolution: {
             bookingStatus: BookingStatus.Cancelled,
-            by: 'client',
+            by: CancelledSide.Client,
             whenLabel: '11:51',
             detail: null,
           },
@@ -3084,7 +3085,7 @@ describe('StaffVisitEditor', () => {
           statusLabel: 'Отказан',
           resolution: {
             bookingStatus: BookingStatus.Cancelled,
-            by: 'client',
+            by: CancelledSide.Client,
             whenLabel: '11:51',
             detail: null,
           },
@@ -4009,7 +4010,7 @@ describe('StaffVisitEditor', () => {
           overflowVerbs: [],
           resolution: {
             bookingStatus: BookingStatus.Cancelled,
-            by: 'staff',
+            by: CancelledSide.Shop,
             whenLabel: '11:51',
             detail: null,
           },
@@ -5211,9 +5212,9 @@ describe('StaffVisitEditor', () => {
         availableMinorUnits: 0,
       };
       for (const [refusal, note] of [
-        ['empty', 'Ваучерът е изчерпан.'],
-        ['expired', 'Ваучерът е изтекъл.'],
-        ['void', 'Ваучерът е анулиран.'],
+        [VoucherRefusal.Empty, 'Ваучерът е изчерпан.'],
+        [VoucherRefusal.Expired, 'Ваучерът е изтекъл.'],
+        [VoucherRefusal.Void, 'Ваучерът е анулиран.'],
       ] as const) {
         askCode(host, 'EMPTY001');
         answer({ code: 'EMPTY001', promo: null, voucher, refusal });
@@ -6647,7 +6648,7 @@ describe('StaffVisitEditor', () => {
           statusLabel: 'Отказан',
           resolution: {
             bookingStatus: BookingStatus.Cancelled,
-            by: 'client',
+            by: CancelledSide.Client,
             whenLabel: '24.08, 18:40',
             detail: 'Не вдига телефона',
           },
@@ -6746,6 +6747,54 @@ describe('StaffVisitEditor', () => {
           'data-past',
         ),
       ).toBe(false);
+    });
+
+    it('name a clash or a span outside the shift under the frame — half-open, and silent on an unreadable roster', () => {
+      // Мартин 09:00 – 09:50, the shift 09:00 – 18:00, a 45-minute visit.
+      // Each case is its own row, so the draft seeds from it.
+      const verdict = (partial: Partial<VisitEditorVm>) =>
+        find(render(visit(partial)), 'staff-visit-frame-note')?.getAttribute(
+          'data-verdict',
+        ) ?? null;
+      // 10:00 – 10:45: clear of Мартин, inside the shift — nothing to say.
+      expect(verdict({})).toBeNull();
+      // 09:30 – 10:15 runs into Мартин's hour.
+      expect(
+        verdict({ rowId: 'clash#ivan', startMinute: 570, endMinute: 615 }),
+      ).toBe('conflict');
+      // 09:50 – 10:35 starts the minute he ends: no clash.
+      expect(
+        verdict({ rowId: 'touch#ivan', startMinute: 590, endMinute: 635 }),
+      ).toBeNull();
+      // 17:30 – 18:15 leaves the shift at its close…
+      expect(
+        verdict({ rowId: 'late#ivan', startMinute: 1050, endMinute: 1095 }),
+      ).toBe('outsideRoster');
+      // …and 08:00 – 08:45 before it opens.
+      expect(
+        verdict({ rowId: 'early#ivan', startMinute: 480, endMinute: 525 }),
+      ).toBe('outsideRoster');
+      // A roster read to midnight cannot be left: no verdict.
+      expect(
+        verdict({
+          rowId: 'midnight#ivan',
+          startMinute: 1050,
+          endMinute: 1095,
+          rosterStartMinute: 840,
+          rosterEndMinute: 0,
+        }),
+      ).toBeNull();
+    });
+
+    it('names the clash before the shift (`GridLayoutSystem.frameVerdict`)', () => {
+      const verdict = (partial: Partial<VisitEditorVm>) =>
+        find(render(visit(partial)), 'staff-visit-frame-note')?.getAttribute(
+          'data-verdict',
+        ) ?? null;
+      // 08:30 – 09:15 opens before the shift AND runs into Мартин: the clash.
+      expect(
+        verdict({ rowId: 'both#ivan', startMinute: 510, endMinute: 555 }),
+      ).toBe('conflict');
     });
   });
 });

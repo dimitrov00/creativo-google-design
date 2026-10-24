@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BookingPolicy,
   CapacityEntry,
+  CapacityTrigger,
   type DocBody,
   ExceptionEffectRule,
   WriteAction,
@@ -33,7 +34,7 @@ import {
   recordingTelemetry,
   scheduleExceptionFixture,
 } from '@core/testing';
-import { CapacityTrigger, rebuildCapacity } from './rebuild-capacity.pipeline';
+import { rebuildCapacity } from './rebuild-capacity.pipeline';
 
 /*
  * The capacity rollup's rebuild (`rebuild-capacity.ts`, `capacity-plan.ts`):

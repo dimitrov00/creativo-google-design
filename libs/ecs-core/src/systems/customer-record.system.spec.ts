@@ -178,3 +178,64 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
     expect(resolved.size).toBe(2);
   });
 });
+
+describe('CustomerRecordSystem.missingContacts — whose contact a save must read first (P-16)', () => {
+  // edit-appointment.pipeline.spec.ts "an added SELF seat whose owner has no
+  // client record: the contact is read outside, then the record is created".
+  const DAUGHTER = UserId.of('u-daughter');
+  const DAUGHTER_RECORD = CustomerId.forUser(DAUGHTER, fixtureHash);
+
+  it('names an account whose record was found ABSENT and whose contact was not read yet', () => {
+    expect(
+      CustomerRecordSystem.missingContacts(
+        resolvedFor(FIXTURE_IDS.client),
+        new Map<CustomerId, Customer | null>([[FIXTURE_IDS.customer, null]]),
+        new Map(),
+      ),
+    ).toEqual([FIXTURE_IDS.client]);
+  });
+
+  it('asks nobody whose record exists, whose record was never read, or whose contact is already in hand', () => {
+    expect(
+      CustomerRecordSystem.missingContacts(
+        resolvedFor(FIXTURE_IDS.client, SON, DAUGHTER),
+        new Map<CustomerId, Customer | null>([
+          [FIXTURE_IDS.customer, null],
+          [SON_RECORD, { id: SON_RECORD } as Customer],
+          // DAUGHTER_RECORD never read: `undefined`, not absent.
+        ]),
+        new Map([[FIXTURE_IDS.client, MARIA]]),
+      ),
+    ).toEqual([]);
+    expect(
+      CustomerRecordSystem.missingContacts(
+        resolvedFor(DAUGHTER, FIXTURE_IDS.client),
+        new Map<CustomerId, Customer | null>([
+          [FIXTURE_IDS.customer, null],
+          [DAUGHTER_RECORD, null],
+        ]),
+        new Map(),
+      ),
+    ).toEqual([DAUGHTER, FIXTURE_IDS.client]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const resolved = resolvedFor(FIXTURE_IDS.client, SON);
+    const stored = new Map<CustomerId, Customer | null>([
+      [FIXTURE_IDS.customer, null],
+      [SON_RECORD, null],
+    ]);
+    const contacts = new Map([[SON, deepFreeze({ ...MARIA })]]);
+    const once = CustomerRecordSystem.missingContacts(
+      resolved,
+      stored,
+      contacts,
+    );
+    expect(
+      CustomerRecordSystem.missingContacts(resolved, stored, contacts),
+    ).toEqual(once);
+    expect(once).toEqual([FIXTURE_IDS.client]);
+    expect(stored.size).toBe(2);
+    expect(contacts.size).toBe(1);
+  });
+});

@@ -1485,6 +1485,110 @@ describe('ZonedTimeSystem.toIso — byte-identical to the legacy ZonedDateTime.t
   });
 });
 
+describe('ZonedTimeSystem.frameShopDay — the envelope’s instant of one shop day (P-17)', () => {
+  // book-appointment.pipeline.spec.ts `frameWallClock` and the reschedule's
+  // frame, restated on branded input (the pipeline parses, the system places).
+  it('answers the instant of the EARLIEST start, whatever the order', () => {
+    expect(
+      ZonedTimeSystem.frameShopDay(
+        localDate('2026-07-29'),
+        [minute(630), minute(570), null, minute(600)],
+        SOFIA_TZ,
+      ),
+    ).toEqual({ ok: true, value: SOFIA_0729_0930 });
+    // Equal starts: the first wins — the same instant either way.
+    expect(
+      valueOf(
+        ZonedTimeSystem.frameShopDay(
+          localDate('2026-07-29'),
+          [minute(570), minute(570)],
+          SOFIA_TZ,
+        ),
+      ),
+    ).toBe(SOFIA_0729_0930);
+  });
+
+  it('refuses a start inside the spring-forward gap DST_GAP_INVALID_TIME — never shifted', () => {
+    expect(
+      errorOf(
+        ZonedTimeSystem.frameShopDay(
+          localDate('2026-03-29'),
+          [minute(540), minute(210)],
+          SOFIA_TZ,
+        ),
+      ),
+    ).toEqual({
+      errorCode: TimeErrorCode.DstGap,
+      localDate: '2026-03-29',
+      minute: 210,
+      timeZone: SOFIA_TZ,
+    });
+  });
+
+  it('refuses the FIRST gap start in the order given, even when a later one is earlier', () => {
+    expect(
+      errorOf(
+        ZonedTimeSystem.frameShopDay(
+          localDate('2026-03-29'),
+          [minute(220), minute(190)],
+          SOFIA_TZ,
+        ),
+      ),
+    ).toMatchObject({ errorCode: TimeErrorCode.DstGap, minute: 220 });
+  });
+
+  it('reads a fall-back repeat on the EARLIER offset', () => {
+    expect(
+      valueOf(
+        ZonedTimeSystem.frameShopDay(
+          localDate('2026-10-25'),
+          [minute(210)],
+          SOFIA_TZ,
+        ),
+      ),
+    ).toBe(SOFIA_1025_0330_FIRST);
+  });
+
+  it('places nothing and refuses nothing for a day that is no day', () => {
+    // 03:30 on the spring-forward day would be a gap — but with no day
+    // nothing is placed.
+    expect(
+      ZonedTimeSystem.frameShopDay(null, [minute(210), null], SOFIA_TZ),
+    ).toEqual({ ok: true, value: null });
+  });
+
+  it('skips the null slots, and answers null when no start is left', () => {
+    expect(
+      valueOf(
+        ZonedTimeSystem.frameShopDay(
+          localDate('2026-07-29'),
+          [null, minute(570), null],
+          SOFIA_TZ,
+        ),
+      ),
+    ).toBe(SOFIA_0729_0930);
+    expect(
+      ZonedTimeSystem.frameShopDay(localDate('2026-07-29'), [null], SOFIA_TZ),
+    ).toEqual({ ok: true, value: null });
+    expect(
+      ZonedTimeSystem.frameShopDay(localDate('2026-07-29'), [], SOFIA_TZ),
+    ).toEqual({ ok: true, value: null });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const starts = deepFreeze([minute(630), minute(570), null]);
+    const once = ZonedTimeSystem.frameShopDay(
+      localDate('2026-07-29'),
+      starts,
+      SOFIA_TZ,
+    );
+    expect(
+      ZonedTimeSystem.frameShopDay(localDate('2026-07-29'), starts, SOFIA_TZ),
+    ).toEqual(once);
+    expect(starts).toEqual([630, 570, null]);
+  });
+});
+
 describe('ZonedTimeSystem ingestion API purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const day = deepFreeze(localDate('2026-10-25'));

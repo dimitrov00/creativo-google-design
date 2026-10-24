@@ -4,6 +4,7 @@ import {
   BOOK_ROLES,
   MONEY_ROLES,
   Role,
+  SPEND_ROLES,
   STAFF_ROLES,
   USER_ROLES,
   isAdmin,
@@ -12,6 +13,8 @@ import {
   isStaffRole,
   knownRoles,
   mayBook,
+  readsClientWords,
+  seesClientSpend,
   seesMoney,
 } from './role.data';
 
@@ -126,6 +129,44 @@ describe('mayBook / seesMoney / isAdmin (claims-tolerant)', () => {
     expect(isAdmin(['barber', 'receptionist', 'content_manager'])).toBe(false);
     expect(isAdmin(['client'])).toBe(false);
     expect(isAdmin([])).toBe(false);
+  });
+});
+
+/*
+ * Pass C (K-1, K-2): the staff client card's two role reads —
+ * `roles.includes('admin')` before the money read (`client-card.store.spec.ts`:
+ * the spend is the admin's only, `firestore.rules`' restricted/money) and
+ * `!roles.includes('sysadmin')` for the client's own words (R15,
+ * `visits-page.presenter.spec.ts`).
+ */
+describe('seesClientSpend / readsClientWords (claims-tolerant)', () => {
+  it('seesClientSpend admits the admin ONLY — not the sysadmin, not the front desk', () => {
+    expect(SPEND_ROLES).toEqual([Role.Admin]);
+    expect(seesClientSpend(['admin'])).toBe(true);
+    expect(seesClientSpend(['barber', 'admin'])).toBe(true);
+    expect(seesClientSpend(['sysadmin'])).toBe(false);
+    expect(seesClientSpend(['receptionist'])).toBe(false);
+    expect(seesClientSpend(['barber'])).toBe(false);
+    expect(seesClientSpend([])).toBe(false);
+    expect(seesClientSpend(['owner'])).toBe(false);
+    // Narrower than the admin area on purpose.
+    expect(isAdmin(['sysadmin'])).toBe(true);
+  });
+
+  it('readsClientWords keeps the client’s words from the sysadmin alone', () => {
+    expect(readsClientWords(['admin'])).toBe(true);
+    expect(readsClientWords(['receptionist'])).toBe(true);
+    expect(readsClientWords(['barber'])).toBe(true);
+    expect(readsClientWords([])).toBe(true);
+    expect(readsClientWords(['sysadmin'])).toBe(false);
+    expect(readsClientWords(['admin', 'sysadmin'])).toBe(false);
+  });
+
+  it('is pure: same roles → same answer, roles untouched', () => {
+    const roles = Object.freeze(['receptionist', 'admin']);
+    expect(seesClientSpend(roles)).toBe(seesClientSpend(roles));
+    expect(readsClientWords(roles)).toBe(readsClientWords(roles));
+    expect(roles).toEqual(['receptionist', 'admin']);
   });
 });
 

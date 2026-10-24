@@ -123,6 +123,23 @@ export const BookingCall = {
     };
   },
 
+  /**
+   * The code a STAFF cancel files (D23 — the call carries the code only):
+   * the reason the barber picked, or nothing (`null`, which the server
+   * files as `UNSPECIFIED`). «Друго…» (`OTHER`) counts only with words
+   * beside it — `OTHER` with a blank note is a door opened and not walked
+   * through, so it files no code. The words themselves are the visit's
+   * note, never the call's.
+   */
+  staffCancelReason(
+    picked: CancellationReason | null,
+    note: string,
+  ): CancellationReason | null {
+    return picked === CancellationReason.Other && note.trim().length === 0
+      ? null
+      : picked;
+  },
+
   /** A person with an account of their own (a staff edit's or a carried seat's). */
   companionSubject(companionUserId: UserId): BookingCall.Subject.Companion {
     return {

@@ -6,7 +6,6 @@ import {
   PunchCard,
   RewardGrant,
   StreakCapsule,
-  StreakPeriodMark,
   StreakState,
   WalletAction,
 } from '@core/components';
@@ -32,13 +31,14 @@ import {
   VoucherSystem,
   WalletSystem,
 } from '@core/systems';
-import { rhythmRuleWords } from '@creativo/features/shared/visits';
+import {
+  type RhythmClosedMark,
+  isRhythmClosedMark,
+  rhythmClosedMarkPeriod,
+  rhythmRuleWords,
+} from '@creativo/features/shared/visits';
 import { formatCents } from '@creativo/ui/wall-clock';
-import type {
-  UiMark,
-  UiStreakMark,
-  UiStreakPeriod,
-} from '@creativo/ui/controls';
+import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
   cardLocaleOf,
   dayLong,
@@ -66,10 +66,7 @@ import {
   type WalletVm,
 } from './client-pages.vm';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
-import {
-  streakPeriodMarkWords,
-  streakPeriodReasonWords,
-} from '@creativo/infrastructure/i18n';
+import { streakPeriodReasonWords } from '@creativo/infrastructure/i18n';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
@@ -663,69 +660,34 @@ function standingOf(
   };
 }
 
-/** A closed period as the track draws it; a visit's caption is chosen with its neighbours' (`rhythmMarks`). */
+/**
+ * A closed period as the track draws it (`rhythmClosedMarkPeriod`, the
+ * admin sample's word source too); a visit's caption is chosen with its
+ * neighbours' (`rhythmMarks`).
+ */
 function closedPeriod(
-  mark: StreakTrackMark & {
-    readonly streakTrackMarkKind: StreakPeriodMark;
-  },
+  mark: RhythmClosedMark,
   input: WalletInput,
 ): UiStreakPeriod {
   const { words, today } = input;
   const rhythm = words.rhythm;
-  const month = monthLong(mark.on, words.lang);
-  // A closed period's mark as the DS track draws it — the SAME glyph as
-  // before the flip, from the one table, typed against the DS's own words.
-  const drawn: UiStreakMark = streakPeriodMarkWords[mark.streakTrackMarkKind];
-  const id = `${drawn}-${mark.on}`;
-  switch (mark.streakTrackMarkKind) {
-    case StreakPeriodMark.Kept:
-      return {
-        id,
-        mark: drawn,
-        caption: '',
-        description: rhythm.markKept(
-          month,
-          dayShort(mark.on, today, words.lang),
-        ),
-      };
-    case StreakPeriodMark.Repaired:
-      return {
-        id,
-        mark: drawn,
-        caption: '',
-        description: rhythm.markRepaired(month),
-      };
-    case StreakPeriodMark.Protected: {
+  return rhythmClosedMarkPeriod(
+    mark,
+    {
+      idSuffix: '',
+      month: (on) => monthLong(on, words.lang),
+      day: (on) => dayShort(on, today, words.lang),
+    },
+    {
+      kept: rhythm.markKept,
+      repaired: rhythm.markRepaired,
+      protected: rhythm.markProtected,
+      missed: rhythm.markMissed,
       // A closed period's reason is the projection's own: a protection, a
       // pause or the excuse by name (never the open phase's `EXCUSE`).
-      const reason = mark.reason;
-      return {
-        id,
-        mark: drawn,
-        caption: '',
-        description: rhythm.markProtected(
-          month,
-          reason === null || reason === FreezeReason.Excuse
-            ? rhythm.reasonFreeze
-            : rhythm.reason(streakPeriodReasonWords[reason]),
-        ),
-      };
-    }
-    case StreakPeriodMark.Missed:
-      return {
-        id,
-        mark: drawn,
-        caption: '',
-        description: rhythm.markMissed(month),
-      };
-  }
-}
-
-/** A track mark that closes a period (every mark but the open one). */
-function isClosed(mark: StreakTrackMark): mark is StreakTrackMark & {
-  readonly streakTrackMarkKind: StreakPeriodMark;
-} {
-  return mark.streakTrackMarkKind !== StreakTrackMarkKind.Current;
+      reason: rhythm.reason,
+    },
+  );
 }
 
 /**
@@ -800,7 +762,7 @@ function rhythmMarks(
   });
   return track.marks.map((mark) => {
     const period =
-      mark.open || !isClosed(mark)
+      mark.open || !isRhythmClosedMark(mark)
         ? openPeriod(mark, standing, input)
         : closedPeriod(mark, input);
     return mark.visitDay === null

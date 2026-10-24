@@ -9,23 +9,13 @@ import {
   where,
 } from 'firebase/firestore';
 import { map } from 'rxjs';
-import {
-  BookingStatus,
-  type CustomerId,
-  Result,
-  type UtcEpochMs,
-} from '@core/primitives';
+import { type CustomerId, Result, type UtcEpochMs } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
+import { BookingLifecycle } from '@core/components';
 import { type Appointment, Collections } from '@core/entities';
 import type { AppointmentReadPorts, ClientHistoryPage } from '@core/ports';
 import { PageStep, PagingSystem } from '@core/systems';
 import { observeDoc, observeQuery, readFailed, readQuery } from './observe';
-
-/** The statuses that still hold a chair — the "upcoming" query's filter (index #6). */
-const LIVE_STATUSES: readonly BookingStatus[] = [
-  BookingStatus.Pending,
-  BookingStatus.Confirmed,
-];
 
 /** Ascending by the absolute start — the order a day sheet reads in. */
 const byStart = (a: Appointment, b: Appointment): number =>
@@ -176,7 +166,7 @@ export const appointmentReadPorts = (db: Firestore): AppointmentReadPorts => {
         query(
           appointments,
           where('ownerUserId', '==', ownerUserId),
-          where('bookingStatus', 'in', LIVE_STATUSES),
+          where('bookingStatus', 'in', BookingLifecycle.LIVE_STATUSES),
           orderBy('utcEpochMs'),
         ),
         path,

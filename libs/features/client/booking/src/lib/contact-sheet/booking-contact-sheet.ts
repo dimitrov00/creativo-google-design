@@ -10,14 +10,11 @@ import {
   signal,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  AccountStateService,
-  saveOwnProfile,
-} from '@creativo/features/client/account-state';
-import { GATEWAY_PORTS } from '@creativo/infrastructure/firebase-app';
+import { AccountStateService } from '@creativo/features/client/account-state';
 import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { BookingContact, type CountryIso2, type E164 } from '@core/components';
-import { Profile, type User } from '@core/entities';
+import { Profile } from '@core/entities';
+import { ProfileEditSystem } from '@core/systems';
 import {
   UiButton,
   UiModalSheet,
@@ -35,6 +32,7 @@ import {
   UiListRow,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
+import { BookingContactStore } from './booking-contact.store';
 
 /**
  * Who the shop calls about THIS booking — edited in a sheet, over the review
@@ -89,11 +87,12 @@ import {
     UiTextField,
   ],
   host: { 'data-testid': 'booking-contact-sheet' },
+  providers: [BookingContactStore],
 })
 export class BookingContactSheet {
   private readonly transloco = inject(TranslocoService);
   private readonly accountState = inject(AccountStateService);
-  private readonly gateway = inject(GATEWAY_PORTS);
+  private readonly contactStore = inject(BookingContactStore);
 
   /** What the booking already carries — `BookingContact.NONE` before anything is captured. */
   readonly uiContact = input<BookingContact>(BookingContact.NONE);
@@ -155,17 +154,18 @@ export class BookingContactSheet {
   /**
    * Whether there is a name to save: the switch is offered only while the
    * save would CHANGE the profile — the typed name split exactly as the
-   * write splits it (`profileNameFrom`), compared field by field. A single
-   * word keeps the stored surname, so «Иван» over «Иван Петров» saves
-   * nothing and offers nothing. No profile, nothing to save to.
+   * write splits it (`ProfileEditSystem.nameFromFull`), compared field by
+   * field (`ProfileEditSystem.namesChanged`). A single word keeps the stored
+   * surname, so «Иван» over «Иван Петров» saves nothing and offers nothing.
+   * No profile, nothing to save to.
    */
   protected readonly nameDiffers = computed(() => {
     const user = this.accountState.account();
     if (user === null) return false;
-    const next = profileNameFrom(this.name(), user);
+    const next = ProfileEditSystem.nameFromFull(this.name(), user.lastName);
     return (
       next !== null &&
-      (next.firstName !== user.firstName || next.lastName !== user.lastName)
+      ProfileEditSystem.namesChanged(user, next.firstName, next.lastName)
     );
   });
 
@@ -225,7 +225,7 @@ export class BookingContactSheet {
     // own hides it, and a hidden switch must not still write.
     if (this.saveToProfile() && this.nameDiffers()) {
       this.pending.set(true);
-      const written = await this.writeProfile(contact);
+      const written = await this.contactStore.writeProfileName(contact);
       this.pending.set(false);
       if (!written) {
         // The BOOKING contact is still perfectly usable; only the profile
@@ -240,58 +240,7 @@ export class BookingContactSheet {
 
     this.saved.emit(contact);
   }
-
-  /**
-   * `true` once the profile carries the typed NAME.
-   *
-   * The edit goes through the `updateProfile` callable (`saveOwnProfile`):
-   * the server judges it with `ProfileEditSystem` against the stored profile
-   * inside its transaction, so a value the profile would refuse never
-   * reaches the document, and it writes the audit row in the same breath.
-   * Only the names travel — the birth date is kept (`null`), and the phone
-   * and e-mail are the account's, never the typed ones. No refresh
-   * afterwards: `account` is the live `users/{uid}` listener, so the review
-   * row behind the sheet shows the new name as soon as the write lands.
-   */
-  private async writeProfile(
-    contact: BookingContact.Present,
-  ): Promise<boolean> {
-    const user = this.accountState.account();
-    if (!user) return false;
-    const name = profileNameFrom(contact.contactName, user);
-    if (name === null) return false;
-
-    const code = await saveOwnProfile(this.gateway, {
-      firstName: name.firstName,
-      lastName: name.lastName,
-      birthDate: null,
-    });
-    return code === null;
-  }
 }
 
 /** The phone rules, on first use — see `phone.lazy.ts`. */
 const loadPhoneRules = () => import('./phone.lazy');
-
-/**
- * The profile name a typed name would be saved as — the ONE split both the
- * switch and the write use, so the switch can never promise a change the
- * save does not make.
- *
- * One name field, two domain values: everything up to the first space is the
- * given name, the rest the family name, spacing settled. A single-word name
- * keeps the surname the profile already had rather than erasing it. Case
- * stays — «иван» → «Иван» is exactly the correction someone saves. `null`
- * when nothing was typed.
- */
-function profileNameFrom(
-  typed: string,
-  user: Pick<User, 'lastName'>,
-): { readonly firstName: string; readonly lastName: string } | null {
-  const [first, ...rest] = typed.trim().split(/\s+/);
-  if (first === undefined || first.length === 0) return null;
-  return {
-    firstName: first,
-    lastName: rest.length > 0 ? rest.join(' ') : (user.lastName ?? ''),
-  };
-}

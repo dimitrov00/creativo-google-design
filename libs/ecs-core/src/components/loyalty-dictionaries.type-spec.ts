@@ -92,6 +92,7 @@ import {
   StreakExcuse,
   type StreakHeadRule,
   StreakOnBreak,
+  StreakPublishConsent,
   type StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
@@ -208,6 +209,7 @@ export type LoyaltyDictionariesHold = [
   Expect<Holds<typeof StreakRuleDirection, StreakRuleDirection>>, // streak-rule.data.ts
   Expect<Holds<typeof StreakRuleParameter, StreakRuleParameter>>, // streak-rule.data.ts
   Expect<Holds<typeof HeadRole, HeadRole>>, // streak-rule.data.ts
+  Expect<Holds<typeof StreakPublishConsent, StreakPublishConsent>>, // streak-rule.data.ts
   Expect<Holds<typeof StreakPhase, StreakPhase>>, // streak-state.data.ts
   Expect<Holds<typeof FreezeReason, FreezeReason>>, // streak-state.data.ts
   Expect<Holds<typeof StreakPeriodMark, StreakPeriodMark>>, // streak-state.data.ts
@@ -310,6 +312,7 @@ export type LoyaltyDictionariesScream = [
   Expect<Screaming<StreakRuleDirection>>,
   Expect<Screaming<StreakRuleParameter>>,
   Expect<Screaming<HeadRole>>,
+  Expect<Screaming<StreakPublishConsent>>,
   Expect<Screaming<StreakPhase>>,
   Expect<Screaming<FreezeReason>>,
   Expect<Screaming<StreakPeriodMark>>,

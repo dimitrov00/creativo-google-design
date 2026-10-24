@@ -13,12 +13,8 @@ import {
   Subcollections,
 } from '@core/entities';
 import type { StreakDefinitionPorts } from '@core/ports';
+import { PagingSystem } from '@core/systems';
 import { observeDoc, readQuery } from './observe';
-
-/** A whole count of at least one, whatever was asked. */
-function atLeastOne(raw: number): number {
-  return Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 1;
-}
 
 /**
  * THE RHYTHM'S RULE, read side (flip 3, plan §3.4; client-card-revision-3.md
@@ -54,7 +50,7 @@ export const streakDefinitionPorts = (
       query(
         collection(db, path),
         orderBy('version', 'desc'),
-        limit(atLeastOne(max)),
+        limit(PagingSystem.pageSizeOf(max)),
       ),
       path,
     );

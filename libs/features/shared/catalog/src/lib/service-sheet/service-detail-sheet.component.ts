@@ -12,6 +12,8 @@ import {
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CompositionKind } from '@core/components';
+import type { Service } from '@core/entities';
+import { CatalogPricingSystem } from '@core/systems';
 import {
   UiAvatar,
   UiBadge,
@@ -31,16 +33,17 @@ import {
   UiListRow,
   UiRating,
 } from '@creativo/ui/patterns';
+import { CatalogContentService } from '../content/catalog-content.service';
 import { CatalogWording } from '../content/catalog-wording.service';
 import {
   type BarberVm,
-  type ServiceOfferingVm,
   type ServiceVm,
   type ServiceVariantVm,
 } from '../content/catalog.vm';
 import {
   serviceDurationRange,
   servicePriceFrom,
+  termsToVm,
 } from '../content/catalog.presenter';
 import { ShowcaseGalleryComponent } from '../gallery/showcase-gallery.component';
 import { type CapsuleVm, CapsuleListComponent } from './capsule-list.component';
@@ -127,6 +130,13 @@ export class ServiceDetailSheetComponent {
   readonly barberSelected = output<BarberVm>();
 
   protected readonly content = inject(CatalogWording);
+  /**
+   * The live catalogue the hosts' view models come from: the performer
+   * order and the bundle saving are `CatalogPricingSystem`'s answers on the
+   * stored entities (integer cents), never re-derived from the view model's
+   * major-unit floats.
+   */
+  private readonly catalog = inject(CatalogContentService);
   /** The dictionary, for the template's bundle badge (never a bare literal). */
   protected readonly CompositionKind = CompositionKind;
 
@@ -179,24 +189,24 @@ export class ServiceDetailSheetComponent {
     this.content.price(servicePriceFrom(this.service())),
   );
 
-  /** One card per offering barber, cheapest first. */
+  /**
+   * One card per offering barber, cheapest first — the order is
+   * `CatalogPricingSystem.performersByPrice` on the stored service (a stable
+   * sort on each performer's base price); which of them are on the team is
+   * the host's barber lookup.
+   */
   protected readonly performers = computed<readonly PerformerVm[]>(() => {
-    const service = this.service();
+    const service = this.catalog.findService(this.service().id);
+    if (service === undefined) return [];
     const byId = new Map(this.barbers().map((b) => [b.id, b]));
-    return service.offerings
-      .flatMap((offering) => {
-        const barber = byId.get(offering.barberId);
-        return barber
-          ? [
-              {
-                barber,
-                price: offering.base.price,
-                minutes: offering.base.minutes,
-              },
-            ]
-          : [];
-      })
-      .sort((a, b) => a.price - b.price);
+    return CatalogPricingSystem.performersByPrice(service, null).flatMap(
+      (performer) => {
+        const barber = byId.get(performer.barberId);
+        if (!barber) return [];
+        const terms = termsToVm(performer.terms);
+        return [{ barber, price: terms.price, minutes: terms.minutes }];
+      },
+    );
   });
 
   protected readonly includedServices = computed<readonly ServiceVm[]>(() => {
@@ -218,52 +228,31 @@ export class ServiceDetailSheetComponent {
   );
 
   /**
-   * What a bundle saves against buying its members separately.
-   *
-   * Priced against the SAME barber the sheet's "from" price comes from —
-   * mixing barbers would compare a total nobody can actually book. Null
-   * when that barber doesn't offer every member (the seed already has this
-   * case: Niko has no shave, so he offers no Full-care bundle), or when
+   * What a bundle saves against buying its members separately —
+   * `CatalogPricingSystem.bundleSaving` on the stored bundle and the members
+   * this sheet lists, in integer cents (DEP-10: a bundle priced exactly at
+   * its members' sum says nothing, where a float sum could print a
+   * «спестяваш 0,00 €»). Priced against the barber the "from" price comes
+   * from; null when that barber doesn't offer every member (the seed has
+   * this case: Niko has no shave, so he offers no Full-care bundle), or when
    * the bundle isn't cheaper — an unearned "you save" is worse than none.
    */
   protected readonly savings = computed<{
     price: string;
     minutes: number;
   } | null>(() => {
-    const service = this.service();
-    const members = this.includedServices();
-    if (
-      service.compositionKind !== CompositionKind.Bundle ||
-      members.length === 0
-    ) {
-      return null;
+    const bundle = this.catalog.findService(this.service().id);
+    if (bundle === undefined) return null;
+    const members: Service[] = [];
+    for (const member of this.includedServices()) {
+      const stored = this.catalog.findService(member.id);
+      if (stored !== undefined) members.push(stored);
     }
-
-    const cheapest = service.offerings.reduce<ServiceOfferingVm | null>(
-      (best, offering) =>
-        best === null || offering.base.price < best.base.price
-          ? offering
-          : best,
-      null,
-    );
-    if (!cheapest) return null;
-
-    let price = 0;
-    let minutes = 0;
-    for (const member of members) {
-      const own = member.offerings.find(
-        (offering) => offering.barberId === cheapest.barberId,
-      );
-      if (!own) return null;
-      price += own.base.price;
-      minutes += own.base.minutes;
-    }
-
-    const savedPrice = price - cheapest.base.price;
-    if (savedPrice <= 0) return null;
+    const saving = CatalogPricingSystem.bundleSaving(bundle, members);
+    if (saving === null) return null;
     return {
-      price: this.content.price(savedPrice),
-      minutes: Math.max(0, minutes - cheapest.base.minutes),
+      price: this.content.priceCents(saving.savedCents),
+      minutes: saving.savedMinutes,
     };
   });
 

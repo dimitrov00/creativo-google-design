@@ -6,7 +6,6 @@ import {
   Placement,
   PlacementPolicy,
   RequestedSubjectRole,
-  type Seat,
   SeatSubject,
   StaffTermsOverride,
   WriteOp,
@@ -33,8 +32,6 @@ import {
   type RepositoryError,
   ShopUnavailableReason,
   CancellationRefusalCode,
-  CarriedSeatRefusal,
-  MoveErrorCode,
   type TimeError,
 } from '@core/errors';
 import type { Appointment } from '@core/entities';
@@ -224,15 +221,15 @@ export const rescheduleAppointment =
             // The shop, the day and the seats, as sent — the staff edit's
             // basis over one `{ move }` command, so both kinds of intent
             // share a ledger.
-            digest: ports
-              .hash(
+            digest: AppointmentEditSystem.digestOf(
+              ports.hash(
                 MoveSystem.digestBasis({
                   locationId: cmd.locationId,
                   localDate: cmd.localDate,
                   seats: cmd.seats,
                 }),
-              )
-              .slice(0, 16),
+              ),
+            ),
           };
     const nowUtcMs = ports.nowUtcMs();
 
@@ -406,27 +403,20 @@ async function readMove(
       error: BookingError.invalidInput('startMinutes'),
     };
   }
-  const plan = MoveSystem.plan(stored, owner, {
-    locationId: locationId.value,
-    localDate: frame.localDate,
-    seats: cart,
-  });
+  // A visit moved IN from another shop is asked what a new booking is:
+  // listed (`MoveSystem.plan`'s last refusal).
+  const plan = MoveSystem.plan(
+    stored,
+    owner,
+    {
+      locationId: locationId.value,
+      localDate: frame.localDate,
+      seats: cart,
+    },
+    PartyAdmissionSystem.shopListed(set.location),
+  );
   if (!plan.ok) return { snapshot: 'REFUSED', error: plan.error };
   if (plan.value.unchanged) return { snapshot: 'UNCHANGED', stored };
-  // A visit moved IN from another shop arrives there, and is asked what a
-  // new booking is: listed — a client's move is never a door to a hidden shop.
-  if (
-    locationId.value !== stored.locationId &&
-    !PartyAdmissionSystem.shopListed(set.location)
-  ) {
-    return {
-      snapshot: 'REFUSED',
-      error: BookingError.shopUnavailable(
-        cmd.locationId,
-        ShopUnavailableReason.Unlisted,
-      ),
-    };
-  }
   const keyed: {
     readonly barberId: string;
     readonly startMinutes: (typeof cart)[number]['startMinutes'] | null;
@@ -638,63 +628,26 @@ function decideMove(
     );
   }
   const cartLines = plan.cart.map(cartLine);
-  const offered = bookingSnapshotOf(loaded.set, loaded.placement).services.map(
-    (service) => service.id,
-  );
-  const retired = plan.carried.filter(
-    (line) => !offered.includes(line.seat.serviceId),
-  );
-  const decided =
-    retired.length > 0
-      ? null
-      : decideLines(
-          loaded,
-          [...cartLines, ...plan.carried.map(carriedLine)],
-          plan.carried,
-          owner,
-          policy,
-          nowUtcMs,
-          ports,
-        );
-  if (decided === null || !decided.ok) {
-    if (decided !== null && plan.carried.length === 0) return decided;
-    // The cart alone first: a cart that does not fit is the cart's refusal.
-    const own = decideLines(
-      loaded,
-      cartLines,
-      [],
-      owner,
-      policy,
-      nowUtcMs,
-      ports,
-    );
-    if (!own.ok) return own;
-    return Result.err({
-      errorCode: MoveErrorCode.CarriedSeatUnplaceable,
-      refusal:
-        decided === null
-          ? CarriedSeatRefusal.ServiceUnavailable
-          : MoveSystem.carriedRefusalOf(decided.error),
-      seatIds: (decided === null ? retired : plan.carried).map(
-        (line) => line.seatId,
+  // The whole party, else the cart alone — the ladder is `MoveSystem`'s.
+  const decided = MoveSystem.decideCarried(
+    plan,
+    bookingSnapshotOf(loaded.set, loaded.placement).services,
+    (carried) =>
+      decideLines(
+        loaded,
+        [...cartLines, ...carried.map(carriedLine)],
+        carried,
+        owner,
+        policy,
+        nowUtcMs,
+        ports,
       ),
-    });
-  }
+  );
+  if (!decided.ok) return decided;
 
   // The cart seats are the decided ones; a carried seat keeps everything
   // it was but its start.
-  const seats: Seat[] = [];
-  const decidedSeats = decided.value.appointment.seats;
-  for (let i = 0; i < decidedSeats.length; i++) {
-    const seat = decidedSeats[i] as Seat;
-    const carried =
-      i >= cartLines.length ? plan.carried[i - cartLines.length] : undefined;
-    seats.push(
-      carried === undefined
-        ? seat
-        : { ...carried.seat, startMinutes: seat.startMinutes },
-    );
-  }
+  const seats = MoveSystem.seatsAfter(decided.value, plan);
   const revision = stored.revision + 1;
   const after = AppointmentIndexSystem.withQueryKeys({
     ...stored,

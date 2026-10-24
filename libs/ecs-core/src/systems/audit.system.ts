@@ -1,5 +1,6 @@
 import {
   Actor,
+  type BackfillCall,
   SystemSource,
   AuditAction,
   AuditContext,
@@ -402,6 +403,26 @@ export const AuditSystem = {
     ownProfileEdit(ownerUserId: UserId, editedAtUtcMs: UtcEpochMs): string {
       return `profile-edit:${ownerUserId}:${editedAtUtcMs}`;
     },
+  },
+
+  /**
+   * What makes one RETURNED backfill page ONE logical change for the audit
+   * log (pass C, P-27 — the pipeline's `backfillChangeKey`, homed beside
+   * {@link AuditSystem.changeKey}): the same person walking the same stretch
+   * of the same run to the same end. A replayed call derives the same key
+   * and logs once; anything else is another change.
+   */
+  backfillChangeKey(page: BackfillCall.Page, actor: Actor): string {
+    return JSON.stringify([
+      'ops.backfill/v1',
+      page.backfillJobName,
+      page.runStartedAtUtcMs,
+      page.startedFrom,
+      page.cursor,
+      page.done,
+      actor.actorRole,
+      Actor.apparentUserId(actor),
+    ]);
   },
 
   /**

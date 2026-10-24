@@ -1,5 +1,6 @@
-import { Result } from '@core/primitives';
+import { Result, type UtcEpochMs } from '@core/primitives';
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
+import { ZonedTimeSystem } from '@core/systems';
 import type { EdgeError } from '../edge';
 import type { VerifiedRequest } from '../lib/booking/caller-roles';
 
@@ -54,6 +55,17 @@ export function textOrNull(source: unknown, name: string): string | null {
 export function listOf(source: unknown, name: string): readonly unknown[] {
   const value = field(source, name);
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The instant a trigger delivery's wire time names (RFC 3339, an offset
+ * required — `ZonedTimeSystem.parseOffsetIso`), `null` when it does not
+ * parse. The ONE reading of `event.time`: the triggers' wire and the edge's
+ * attempt line both read it (DEP-13).
+ */
+export function eventInstantOf(time: string): UtcEpochMs | null {
+  const instant = ZonedTimeSystem.parseOffsetIso(time);
+  return instant.ok ? instant.value : null;
 }
 
 /** A number field as sent, or `null` for anything that is not a number. */

@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   BarberPref,
   BarberPreference,
+  BlockKind,
   BookingPolicy,
   DayWindows,
   MinuteRange,
   ShopNow,
   ExceptionDetail,
   ExceptionEffectRule,
+  MinuteBlock,
   ShopDayHours,
   ScheduleVersion,
   ShiftSegment,
@@ -24,6 +26,8 @@ import {
   Weekday,
 } from '@core/primitives';
 import {
+  barberBusyDayFixture,
+  barberScheduleFixture,
   duration,
   minuteCount,
   minuteDelta,
@@ -1412,24 +1416,24 @@ describe('paddedBusy — the busy a placement is checked against', () => {
 
   it('pads every stored span by the barber’s turnaround, merging what then touches', () => {
     expect(
-      AvailabilitySystem.paddedBusy({
-        barberId: IVAN,
-        spans: [iv(10, 11), span(H(11, 30), H(12))],
-        turnaroundMinutes: minuteCount(15),
-        release: [],
-      }),
+      AvailabilitySystem.paddedBusy(
+        IVAN,
+        { blocks: [iv(10, 11), span(H(11, 30), H(12))] },
+        { turnaroundMinutes: minuteCount(15) },
+        [],
+      ),
     ).toEqual([span(H(9, 45), H(12, 15))]);
   });
 
   it('hands a moved visit’s own chair back BEFORE padding, so a neighbour keeps its turnaround', () => {
     // The visit being moved holds Ivan 10:00–11:00; somebody else follows at
     // 11:00. Stored merged, they read as one 10:00–12:00 span.
-    const released = AvailabilitySystem.paddedBusy({
-      barberId: IVAN,
-      spans: [iv(10, 12)],
-      turnaroundMinutes: minuteCount(15),
-      release: [chair(IVAN, iv(10, 11))],
-    });
+    const released = AvailabilitySystem.paddedBusy(
+      IVAN,
+      { blocks: [iv(10, 12)] },
+      { turnaroundMinutes: minuteCount(15) },
+      [chair(IVAN, iv(10, 11))],
+    );
     // The neighbour's own turnaround survives: 10:45, not 11:15. Subtracting
     // the PADDED own span instead would free 10:45–11:15, and the grid would
     // offer a 10:30 half-hour the server refuses.
@@ -1438,12 +1442,9 @@ describe('paddedBusy — the busy a placement is checked against', () => {
 
   it('ignores chair time on other barbers — a whole visit can be released for everyone', () => {
     expect(
-      AvailabilitySystem.paddedBusy({
-        barberId: IVAN,
-        spans: [iv(10, 11)],
-        turnaroundMinutes: MinuteCount.ZERO,
-        release: [chair(NIKO, iv(10, 11))],
-      }),
+      AvailabilitySystem.paddedBusy(IVAN, { blocks: [iv(10, 11)] }, null, [
+        chair(NIKO, iv(10, 11)),
+      ]),
     ).toEqual([iv(10, 11)]);
   });
 
@@ -1453,12 +1454,7 @@ describe('paddedBusy — the busy a placement is checked against', () => {
     // (`MinuteCount.of`) and the rule only ever sees zero or more.
     expect(MinuteCount.of(-15).ok).toBe(false);
     expect(
-      AvailabilitySystem.paddedBusy({
-        barberId: IVAN,
-        spans: [iv(10, 11)],
-        turnaroundMinutes: MinuteCount.ZERO,
-        release: [],
-      }),
+      AvailabilitySystem.paddedBusy(IVAN, { blocks: [iv(10, 11)] }, null, []),
     ).toEqual([iv(10, 11)]);
   });
 
@@ -1490,23 +1486,120 @@ describe('paddedBusy — the busy a placement is checked against', () => {
           // The projection stores the merged union — who is who is gone.
           const stored = IntervalSetSystem.normalize([...own, ...others]);
           expect(
-            AvailabilitySystem.paddedBusy({
-              barberId: IVAN,
-              spans: stored,
-              turnaroundMinutes: minuteCount(turnaround),
-              release: own.map((occupied) => chair(IVAN, occupied)),
-            }),
+            AvailabilitySystem.paddedBusy(
+              IVAN,
+              { blocks: stored },
+              { turnaroundMinutes: minuteCount(turnaround) },
+              own.map((occupied) => chair(IVAN, occupied)),
+            ),
           ).toEqual(
-            AvailabilitySystem.paddedBusy({
-              barberId: IVAN,
-              spans: others,
-              turnaroundMinutes: minuteCount(turnaround),
-              release: [],
-            }),
+            AvailabilitySystem.paddedBusy(
+              IVAN,
+              { blocks: others },
+              { turnaroundMinutes: minuteCount(turnaround) },
+              [],
+            ),
           );
         },
       ),
     );
+  });
+
+  it('reads no busy document as nothing taken, and no roster as no turnaround', () => {
+    expect(
+      AvailabilitySystem.paddedBusy(
+        IVAN,
+        null,
+        { turnaroundMinutes: minuteCount(15) },
+        [chair(IVAN, iv(10, 11))],
+      ),
+    ).toEqual([]);
+    expect(
+      AvailabilitySystem.paddedBusy(IVAN, { blocks: [iv(10, 11)] }, null, []),
+    ).toEqual(
+      AvailabilitySystem.paddedBusy(
+        IVAN,
+        { blocks: [iv(10, 11)] },
+        { turnaroundMinutes: MinuteCount.ZERO },
+        [],
+      ),
+    );
+    expect(AvailabilitySystem.paddedBusy(IVAN, null, null, [])).toEqual([]);
+  });
+
+  it('takes the stored busy day and roster as they are — no renaming before the call', () => {
+    // A whole `barberBusy/{key}` document and a whole `barberSchedules/{id}`.
+    const stored = barberBusyDayFixture({
+      barberId: IVAN,
+      blocks: [MinuteBlock.of(minute(H(10)), endMinute(H(11)), BlockKind.Busy)],
+    });
+    const roster = barberScheduleFixture({
+      id: IVAN,
+      turnaroundMinutes: minuteCount(15),
+    });
+    expect(AvailabilitySystem.paddedBusy(IVAN, stored, roster, [])).toEqual([
+      span(H(9, 45), H(11, 15)),
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched (null busy and roster included)', () => {
+    const release = deepFreeze([chair(IVAN, iv(10, 11))]);
+    const busy = deepFreeze({ blocks: [iv(10, 12)] });
+    const once = AvailabilitySystem.paddedBusy(IVAN, busy, null, release);
+    expect(AvailabilitySystem.paddedBusy(IVAN, busy, null, release)).toEqual(
+      once,
+    );
+    expect(AvailabilitySystem.paddedBusy(IVAN, null, null, release)).toEqual(
+      AvailabilitySystem.paddedBusy(IVAN, null, null, release),
+    );
+  });
+});
+
+describe('dayBookable — can this calendar day still be booked', () => {
+  it('is never bookable outside the range, whatever else holds', () => {
+    for (const exact of [true, false, null]) {
+      for (const isToday of [true, false]) {
+        for (const free of [MinuteCount.ZERO, minuteCount(30)]) {
+          expect(
+            AvailabilitySystem.dayBookable(false, exact, isToday, free),
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('takes the exact day query’s answer when it has one', () => {
+    for (const isToday of [true, false]) {
+      for (const free of [MinuteCount.ZERO, minuteCount(30)]) {
+        expect(AvailabilitySystem.dayBookable(true, true, isToday, free)).toBe(
+          true,
+        );
+        expect(AvailabilitySystem.dayBookable(true, false, isToday, free)).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('keeps today live until its exact answer lands, and reads any other day off the projection', () => {
+    expect(
+      AvailabilitySystem.dayBookable(true, null, true, MinuteCount.ZERO),
+    ).toBe(true);
+    expect(
+      AvailabilitySystem.dayBookable(true, null, true, minuteCount(30)),
+    ).toBe(true);
+    expect(
+      AvailabilitySystem.dayBookable(true, null, false, MinuteCount.ZERO),
+    ).toBe(false);
+    expect(
+      AvailabilitySystem.dayBookable(true, null, false, minuteCount(1)),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(
+      AvailabilitySystem.dayBookable(true, null, false, minuteCount(30)),
+    ).toBe(AvailabilitySystem.dayBookable(true, null, false, minuteCount(30)));
   });
 });
 
@@ -1672,12 +1765,12 @@ function seedCatalogue(lineCount: number): AvailabilityQuery {
   ].map((seed): BarberDayAvailability => ({
     barberId: seed.id,
     windows: seed.windows,
-    busy: AvailabilitySystem.paddedBusy({
-      barberId: seed.id,
-      spans: seed.busy,
-      turnaroundMinutes: minuteCount(seed.turnaround),
-      release: [],
-    }),
+    busy: AvailabilitySystem.paddedBusy(
+      seed.id,
+      { blocks: seed.busy },
+      { turnaroundMinutes: minuteCount(seed.turnaround) },
+      [],
+    ),
     blocks: [],
   }));
   const by = (
@@ -2204,8 +2297,8 @@ describe('AvailabilitySystem — purity', () => {
     );
     const busyInput = deepFreeze({
       barberId: IVAN,
-      spans: [iv(10, 12)],
-      turnaroundMinutes: minuteCount(15),
+      busy: { blocks: [iv(10, 12)] },
+      schedule: { turnaroundMinutes: minuteCount(15) },
       release: [
         {
           barberId: IVAN,
@@ -2214,8 +2307,20 @@ describe('AvailabilitySystem — purity', () => {
         },
       ],
     });
-    expect(AvailabilitySystem.paddedBusy(busyInput)).toEqual(
-      AvailabilitySystem.paddedBusy(busyInput),
+    expect(
+      AvailabilitySystem.paddedBusy(
+        busyInput.barberId,
+        busyInput.busy,
+        busyInput.schedule,
+        busyInput.release,
+      ),
+    ).toEqual(
+      AvailabilitySystem.paddedBusy(
+        busyInput.barberId,
+        busyInput.busy,
+        busyInput.schedule,
+        busyInput.release,
+      ),
     );
   });
 });

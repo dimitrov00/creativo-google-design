@@ -58,4 +58,17 @@ export const VoucherRedemption = {
       ? redemption.amountCents
       : PriceCents.ZERO;
   },
+
+  /**
+   * What THIS visit may draw on the voucher if its bill changes (the staff
+   * dashboard's `vouchersOf`): what the voucher had left after this line
+   * plus what reversing it would put back ({@link restoreDelta}) — the line's
+   * own amount while it is live. The server re-clamps on save.
+   */
+  drawableCents(redemption: VoucherRedemption): PriceCents {
+    return PriceCents.add(
+      redemption.balanceAfterCents,
+      VoucherRedemption.restoreDelta(redemption),
+    );
+  },
 } as const;

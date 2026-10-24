@@ -8,6 +8,7 @@ import {
   ClientStatsPolicy,
   type DocBody,
   PolicyPassStamp,
+  PolicyStepOutcome,
   PreciseInstant,
   SeatOccupant,
   SeatOutcome,
@@ -52,7 +53,6 @@ import {
 } from '@core/testing';
 import {
   continuePolicyRecompute,
-  PolicyStepOutcome,
   type StepBudget,
 } from './continue-policy-recompute.pipeline';
 import {

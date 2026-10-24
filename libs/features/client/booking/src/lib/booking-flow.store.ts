@@ -880,12 +880,7 @@ export class BookingFlowStore {
     const state = this._state();
     // Both terminal states are past claiming: the server already knows who
     // owns what it accepted.
-    if (
-      state.bookingFlowStep === BookingFlowStep.Confirmed ||
-      state.bookingFlowStep === BookingFlowStep.Waitlisted
-    ) {
-      return;
-    }
+    if (!isOpen(state)) return;
     this.releaseSourcesNotReadBy(userId);
     if (state.party.ownerUserId === userId) return;
     this._state.set({ ...state, party: Party.claim(state.party, userId) });
@@ -969,7 +964,7 @@ export class BookingFlowStore {
     });
 
     // The day the link names, else the earliest the request watches.
-    const watched = [...FlexibleWhen.localDates(request)].sort().at(0) ?? null;
+    const watched = FlexibleWhen.firstLocalDate(request);
     const landed = day === null ? watched : localDateOrNull(day);
     if (landed !== null) this.selectDay(landed);
     this._waitlistArrival.set(true);
@@ -1259,47 +1254,23 @@ export class BookingFlowStore {
     // Both terminal states end the draft's life: the receipt lives on the
     // server now, and a resumable draft pointing at a finished flow is how a
     // reload lands someone back inside a booking they already made.
-    if (
-      state.bookingFlowStep === BookingFlowStep.Confirmed ||
-      state.bookingFlowStep === BookingFlowStep.Waitlisted
-    ) {
+    if (BookingFlowSystem.isTerminal(state.bookingFlowStep)) {
       this.drafts.clearBookingDraft();
       return;
     }
 
-    const contact = this._contact();
-    const day = this._selectedLocalDate();
-    // A visit bound to nobody lives in memory alone — the first claim
-    // releases it — so it never reaches the draft. A move wins over a
-    // rebooking edge: a move is never a rebooking.
-    const moving = this._rescheduleOf();
-    const source = this._bookedFrom();
-    const draft =
-      moving !== null && moving.readerUserId !== null
-        ? BookingDraft.reschedule(
-            state,
-            contact,
-            day,
-            BookingDraft.rescheduleOrigin(
-              moving.appointmentId,
-              moving.readerUserId,
-              moving.localDate,
-              moving.riders,
-              moving.release,
-            ),
-          )
-        : source !== null && source.readerUserId !== null
-          ? BookingDraft.bookedFrom(
-              state,
-              contact,
-              day,
-              BookingDraft.bookedFromOrigin(
-                source.appointmentId,
-                source.readerUserId,
-              ),
-            )
-          : BookingDraft.fresh(state, contact, day);
-    this.drafts.saveBookingDraft(draft);
+    // Where the draft came from is `BookingDraft.of`'s: a move ▸ a rebooking
+    // edge ▸ fresh, each counting only once bound to an account — a visit
+    // bound to nobody lives in memory alone (the first claim releases it).
+    this.drafts.saveBookingDraft(
+      BookingDraft.of(
+        state,
+        this._contact(),
+        this._selectedLocalDate(),
+        this._rescheduleOf(),
+        this._bookedFrom(),
+      ),
+    );
   }
 
   /**
@@ -1318,16 +1289,24 @@ export class BookingFlowStore {
  * `readerUserId` is `null` only when nobody could be named — such a source
  * lives in memory alone, and the first claim releases it.
  */
-interface HeldVisit {
-  readonly appointmentId: AppointmentId;
-  readonly readerUserId: UserId | null;
-}
+type HeldVisit = BookingDraft.Source;
 
 /** The visit being moved: its shop day, who the server carries with it, and its chairs. */
-interface HeldMove extends HeldVisit {
-  readonly localDate: LocalDate;
-  readonly riders: readonly MoveRider[];
-  readonly release: readonly ChairTime[];
+type HeldMove = BookingDraft.Moving;
+
+/** A flow state still on the spine — the steps that hold their own party. */
+type OpenFlowState = Exclude<
+  BookingFlowState,
+  BookingFlowState.Confirmed | BookingFlowState.Waitlisted
+>;
+
+/**
+ * Is the flow still open — not confirmed, not waitlisted? The rule is
+ * `BookingFlowSystem.isTerminal`'s; this only tells the compiler which
+ * states that leaves.
+ */
+function isOpen(state: BookingFlowState): state is OpenFlowState {
+  return !BookingFlowSystem.isTerminal(state.bookingFlowStep);
 }
 
 /** A raw day as a shop day — `null` when it is no day at all. */

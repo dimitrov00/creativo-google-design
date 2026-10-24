@@ -184,6 +184,19 @@ function clip(
   return intersectRanges(xs, [bound]);
 }
 
+function hull(xs: readonly MinuteRange[]): MinuteRange | null {
+  const first = xs[0];
+  if (first === undefined) return null;
+  let start = first.startMinutes;
+  let end = first.endMinutes;
+  for (let i = 1; i < xs.length; i++) {
+    const x = xs[i] as MinuteRange;
+    if (x.startMinutes < start) start = x.startMinutes;
+    if (x.endMinutes > end) end = x.endMinutes;
+  }
+  return MinuteRange.of(start, end);
+}
+
 /**
  * Set algebra over half-open `MinuteRange`s of ONE shop day — the arithmetic
  * availability is built from (working windows minus busy blocks, intersected
@@ -212,4 +225,14 @@ export const IntervalSetSystem = {
   clip,
   /** Total minutes covered; overlaps are never counted twice. */
   totalMinutes: totalRangeMinutes,
+  /**
+   * The outer edges of a set — the earliest start and the latest end
+   * (`staff-dashboard.ts`' roster extents: where a chair's frame opens and
+   * closes); `null` for none, and each caller answers that with its own
+   * fallback. Unlike every operation above it reads the ranges AS GIVEN —
+   * nothing is normalized or dropped, so an empty or inverted range still
+   * stretches the hull with its own edges, exactly as `Math.min` over the
+   * starts and `Math.max` over the ends. One linear pass, no sort.
+   */
+  hull,
 } as const;

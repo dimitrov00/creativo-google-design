@@ -1,11 +1,15 @@
 import {
+  ArrivalVerb,
   BarberPreference,
   type BookingCall,
   type BookingContact,
+  BookingLifecycle,
   CancellationReason,
+  CouponValue,
   DiscountMethod,
   DiscountSource,
   EditCommand,
+  MarkArrivalAction,
   Placement,
   RequestedSubjectRole,
   ResizeEdge,
@@ -31,6 +35,7 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
+  isBookingStatus,
 } from '@core/primitives';
 import {
   BookingError,
@@ -50,7 +55,6 @@ import {
   type EditAppointmentAnswer,
   type EditAppointmentCommand,
   type EditAppointmentError,
-  MarkArrivalAction,
   type MarkArrivalAnswer,
   type MarkArrivalCommand,
   type MarkArrivalError,
@@ -119,21 +123,12 @@ export const CallStateWord = {
   /** A seat whose story is over (served, no-show, cancelled). */
   Resolved: 'RESOLVED',
   /** The arrival `markArrived` asks for. */
-  Arrived: 'ARRIVED',
+  Arrived: ArrivalVerb.Arrived,
   /** The arrival `clearArrival` takes back. */
-  Unarrived: 'UNARRIVED',
+  Unarrived: ArrivalVerb.Unarrived,
 } as const;
 export type CallStateWord = (typeof CallStateWord)[keyof typeof CallStateWord];
 
-/** The verbs the shop's pen may name — every status but `PENDING`. */
-const STAFF_TRANSITIONS: readonly BookingStatus[] = [
-  BookingStatus.Confirmed,
-  BookingStatus.Completed,
-  BookingStatus.NoShow,
-  BookingStatus.Cancelled,
-];
-
-const BOOKING_STATUSES: readonly string[] = Object.values(BookingStatus);
 const CANCELLATION_REASONS: readonly string[] =
   Object.values(CancellationReason);
 
@@ -416,7 +411,7 @@ export function decodeTransitionAppointment(
   );
   if (appointmentId === null) return invalid('appointmentId');
   const raw = field(payload, 'toBookingStatus');
-  const to = STAFF_TRANSITIONS.find((status) => status === raw) ?? null;
+  const to = BookingLifecycle.isTransitionTarget(raw) ? raw : null;
   if (to === null) return invalid('toBookingStatus');
   const rawSeat = field(payload, 'seatId');
   const seatId =
@@ -450,9 +445,7 @@ export function encodeTransitionAppointmentAnswer(
 
 /** A state as the refusal names it: a `BookingStatus` value, else the callable's own word. */
 function stateOf(raw: unknown): string {
-  return typeof raw === 'string' && BOOKING_STATUSES.includes(raw)
-    ? raw
-    : String(raw);
+  return isBookingStatus(raw) ? raw : String(raw);
 }
 
 /** The lifecycle's refusals in the transition callable's own codes. */
@@ -709,6 +702,46 @@ function wholeOf<T>(
   return parsed.ok ? parsed.value : null;
 }
 
+/**
+ * A manual discount the counter typed, or `null`: its shape decoded here,
+ * its range the companion's — a whole percent 1–100
+ * (`CouponValue.manualPercentOff`, DEP-6) or a positive whole amount of
+ * cents (`CouponValue.positiveAmount`, the figure `fixedAmount` guards).
+ */
+function manualDiscountOf(entry: unknown): BookingCall.StaffDiscount | null {
+  switch (field(entry, 'discountMethod')) {
+    case DiscountMethod.PercentOff: {
+      const percent = field(entry, 'discountPercent');
+      if (typeof percent !== 'number') return null;
+      const value = CouponValue.manualPercentOff(percent);
+      return value.ok
+        ? {
+            discountSource: DiscountSource.Manual,
+            discountMethod: DiscountMethod.PercentOff,
+            discountPercent: value.value.discountPercent,
+          }
+        : null;
+    }
+    case DiscountMethod.FixedAmount: {
+      const cents = wholeOf(field(entry, 'discountAmountCents'), PriceCents.of);
+      if (cents === null) return null;
+      // Only the cents travel (`BookingCall.StaffDiscount`): the visit's own
+      // currency is chosen when the batch is decided
+      // (`BillingSystem.pendingDiscounts`).
+      const amount = CouponValue.positiveAmount(cents);
+      return amount.ok
+        ? {
+            discountSource: DiscountSource.Manual,
+            discountMethod: DiscountMethod.FixedAmount,
+            discountAmountCents: amount.value,
+          }
+        : null;
+    }
+    default:
+      return null;
+  }
+}
+
 function discountsOf(
   raw: unknown,
 ): readonly BookingCall.StaffDiscount[] | null {
@@ -737,38 +770,9 @@ function discountsOf(
         break;
       }
       case DiscountSource.Manual: {
-        const method = field(entry, 'discountMethod');
-        const percent = field(entry, 'discountPercent');
-        const amount = field(entry, 'discountAmountCents');
-        // Whole numbers only, in the domain's ranges: 1–100 %, or positive cents.
-        if (
-          method === DiscountMethod.PercentOff &&
-          typeof percent === 'number' &&
-          Number.isInteger(percent) &&
-          percent > 0 &&
-          percent <= 100
-        ) {
-          out.push({
-            discountSource: DiscountSource.Manual,
-            discountMethod: DiscountMethod.PercentOff,
-            discountPercent: percent,
-          });
-        } else if (
-          method === DiscountMethod.FixedAmount &&
-          typeof amount === 'number' &&
-          Number.isInteger(amount) &&
-          amount > 0
-        ) {
-          const cents = PriceCents.of(amount);
-          if (!cents.ok) return null;
-          out.push({
-            discountSource: DiscountSource.Manual,
-            discountMethod: DiscountMethod.FixedAmount,
-            discountAmountCents: cents.value,
-          });
-        } else {
-          return null;
-        }
+        const manual = manualDiscountOf(entry);
+        if (manual === null) return null;
+        out.push(manual);
         break;
       }
       default:
@@ -778,17 +782,20 @@ function discountsOf(
   return out;
 }
 
-/** No blanks and no voucher twice — the second draw would be measured against a moved balance. */
+/**
+ * A list of typed codes, decoded here; which vouchers it names is
+ * `VoucherCode.distinct`'s — no blanks and no voucher twice (the second draw
+ * would be measured against a moved balance).
+ */
 function voucherCodesOf(raw: unknown): readonly VoucherCode[] | null {
-  if (!Array.isArray(raw)) return null;
-  const codes: VoucherCode[] = [];
-  for (const entry of raw) {
-    if (typeof entry !== 'string' || entry.trim().length === 0) return null;
-    const code = VoucherCode.parseTyped(entry);
-    if (!code.ok || codes.includes(code.value)) return null;
-    codes.push(code.value);
+  if (
+    !Array.isArray(raw) ||
+    !raw.every((entry): entry is string => typeof entry === 'string')
+  ) {
+    return null;
   }
-  return codes;
+  const codes = VoucherCode.distinct(raw);
+  return codes.ok ? codes.value : null;
 }
 
 /** Who an added seat is for: the owner, or a guest by a label the seat rules accept. */

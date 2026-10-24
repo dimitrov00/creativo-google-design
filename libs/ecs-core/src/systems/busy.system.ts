@@ -14,6 +14,7 @@ import {
 import {
   BusyKey,
   defect,
+  type AppointmentId,
   type BarberId,
   type LocalDate,
   EndMinute,
@@ -37,6 +38,16 @@ export type BusyContribution = {
   readonly barberId: BarberId;
   readonly localDate: LocalDate;
   readonly spans: readonly MinuteRange[];
+};
+
+/**
+ * One seat that holds a chair beside a placement, with the appointment it
+ * belongs to ({@link BusySystem.chairOccupants}) — the appointment and the
+ * seat as they are.
+ */
+export type ChairOccupant = {
+  readonly appointment: Appointment;
+  readonly seat: Seat;
 };
 
 /** The `barberBusy` document body — the entity minus `id`. */
@@ -176,6 +187,36 @@ export const BusySystem = {
       }
     }
     return keys.sort(compareStrings);
+  },
+
+  /**
+   * WHAT OCCUPIES A CHAIR for a placement beside the visit being edited —
+   * the server's collision rule, as {@link rebuild} projects it: every seat
+   * the barber holds on an appointment whose ROOT is live (pending or
+   * confirmed, `BookingLifecycle.isLive`), whatever that seat's own outcome
+   * (a split party's chair whose seats were cancelled inside a live root
+   * still holds it — the busy projection counts it), other than the
+   * appointment `excludeId` names (the one on the sheet; `null` for a new
+   * one). The caller hands ONE shop day's appointments (a lane's, a probed
+   * day's). In appointment order, then seat order.
+   */
+  chairOccupants(
+    appointments: readonly Appointment[],
+    barberId: BarberId,
+    excludeId: AppointmentId | null,
+  ): readonly ChairOccupant[] {
+    const out: ChairOccupant[] = [];
+    for (let i = 0; i < appointments.length; i++) {
+      const appointment = appointments[i] as Appointment;
+      if (appointment.id === excludeId) continue;
+      if (!BookingLifecycle.isLive(appointment)) continue;
+      const seats = appointment.seats;
+      for (let k = 0; k < seats.length; k++) {
+        const seat = seats[k] as Seat;
+        if (seat.barberId === barberId) out.push({ appointment, seat });
+      }
+    }
+    return out;
   },
 
   /**

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ServiceId } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
 import {
+  BirthDate,
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
   OnboardingFlowState,
@@ -15,6 +16,11 @@ import {
   PERSONALIZE_STEPS,
   type PersonalizeStep,
 } from './onboarding-flow.system';
+import {
+  type ProfileCompletion,
+  ProfileCompletionKey,
+  ProfileCompletionSystem,
+} from './profile-completion.system';
 
 /*
  * The cases of the legacy identity application lib's `onboarding-flow.spec.ts`
@@ -375,5 +381,78 @@ describe('OnboardingFlowSystem purity', () => {
     const twice = run();
     expect(twice).toEqual(once);
     expect(state).toEqual(OnboardingFlowState.birthday([SERVICE], null));
+  });
+});
+
+/*
+ * Pass C (C-34): the open completion items → the steps a resume offers —
+ * `client-onboarding.ts` `remainingPersonalizeSteps` and the shell menu's
+ * "continue" hint (`site-menu.component.spec.ts`: birthday first while it is
+ * open, the avatar once only the photo is missing, nothing once complete).
+ */
+describe('OnboardingFlowSystem.openPersonalizeSteps — what a resume offers', () => {
+  const completion = (
+    birthDate: string | null,
+    hasPhoto: boolean,
+  ): ProfileCompletion =>
+    ProfileCompletionSystem.completion(
+      { birthDate: birthDate === null ? null : BirthDate.of(birthDate) },
+      hasPhoto,
+    );
+
+  it('offers the birthday then the avatar while both are open', () => {
+    expect(
+      OnboardingFlowSystem.openPersonalizeSteps(completion(null, false)),
+    ).toEqual([OnboardingFlowStep.Birthday, OnboardingFlowStep.Avatar]);
+  });
+
+  it('offers only the step whose item is still open', () => {
+    expect(
+      OnboardingFlowSystem.openPersonalizeSteps(
+        completion('2000-05-05', false),
+      ),
+    ).toEqual([OnboardingFlowStep.Avatar]);
+    expect(
+      OnboardingFlowSystem.openPersonalizeSteps(completion(null, true)),
+    ).toEqual([OnboardingFlowStep.Birthday]);
+  });
+
+  it('answers [] once nothing is left, and while the completion is not known', () => {
+    expect(
+      OnboardingFlowSystem.openPersonalizeSteps(completion('2000-05-05', true)),
+    ).toEqual([]);
+    expect(OnboardingFlowSystem.openPersonalizeSteps(null)).toEqual([]);
+  });
+
+  it('never offers the services step — no selection is persisted', () => {
+    const open = OnboardingFlowSystem.openPersonalizeSteps(
+      completion(null, false),
+    );
+    expect(open).not.toContain(OnboardingFlowStep.Services);
+  });
+
+  it('keeps flow order whatever order the items arrive in, and ignores NAME/PHONE', () => {
+    const shuffled: ProfileCompletion = {
+      items: [
+        { profileCompletionKey: ProfileCompletionKey.Photo, done: false },
+        { profileCompletionKey: ProfileCompletionKey.Name, done: false },
+        { profileCompletionKey: ProfileCompletionKey.Birthday, done: false },
+        { profileCompletionKey: ProfileCompletionKey.Phone, done: false },
+      ],
+      done: 0,
+      total: 4,
+      complete: false,
+    };
+    expect(OnboardingFlowSystem.openPersonalizeSteps(shuffled)).toEqual([
+      OnboardingFlowStep.Birthday,
+      OnboardingFlowStep.Avatar,
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(completion(null, false));
+    const once = OnboardingFlowSystem.openPersonalizeSteps(frozen);
+    expect(OnboardingFlowSystem.openPersonalizeSteps(frozen)).toEqual(once);
+    expect(frozen).toEqual(completion(null, false));
   });
 });

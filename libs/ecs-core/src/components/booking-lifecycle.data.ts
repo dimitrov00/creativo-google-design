@@ -18,6 +18,36 @@ const TRANSITIONS: { readonly [S in BookingStatus]: readonly BookingStatus[] } =
     [BookingStatus.NoShow]: [BookingStatus.Confirmed],
   };
 
+/** The deduplicated destinations of a lifecycle graph, in first-reached order. */
+function targetsOf(graph: typeof TRANSITIONS): readonly BookingStatus[] {
+  const targets: BookingStatus[] = [];
+  for (const next of Object.values(graph)) {
+    for (const to of next) {
+      if (!targets.includes(to)) targets.push(to);
+    }
+  }
+  return targets;
+}
+
+/**
+ * Every status some legal move lands on — computed from {@link TRANSITIONS},
+ * never hand-listed (today `CONFIRMED`, `CANCELLED`, `COMPLETED`,
+ * `NO_SHOW`). `PENDING` is only ever a booking's first state, never a move's
+ * destination, so a transition request naming it is malformed input.
+ */
+const TRANSITION_TARGETS = targetsOf(TRANSITIONS);
+
+/**
+ * The statuses that still hold a slot, in this order — the one list the
+ * live-occupancy reads filter on (`bookingStatus in [PENDING, CONFIRMED]`,
+ * index #6/#7): the reinstated chair's collision read, the busy rebuild,
+ * the upcoming read.
+ */
+const LIVE_STATUSES: readonly BookingStatus[] = [
+  BookingStatus.Pending,
+  BookingStatus.Confirmed,
+];
+
 /**
  * An appointment's root lifecycle (owner template, flatten-spec §3.2): where
  * the BOOKING is in its life, as a union of FLAT variant slices intersected
@@ -39,6 +69,9 @@ export type BookingLifecycle =
   | BookingLifecycle.Cancelled;
 
 export const BookingLifecycle = {
+  /** The statuses that still hold a slot — `[PENDING, CONFIRMED]`, this order (see {@link isLive}). */
+  LIVE_STATUSES,
+
   pending(atUtcMs: UtcEpochMs): BookingLifecycle.Pending {
     return { bookingStatus: BookingStatus.Pending, pendingAtUtcMs: atUtcMs };
   },
@@ -82,6 +115,19 @@ export const BookingLifecycle = {
   },
 
   /**
+   * The edge guard of a transition request's target: `raw` is a status some
+   * legal move can land on (see {@link TRANSITION_TARGETS}) — every status
+   * but `PENDING`. Whether the move is legal FROM the booking's current state
+   * stays {@link canTransition}'s question.
+   */
+  isTransitionTarget(raw: unknown): raw is BookingStatus {
+    for (let i = 0; i < TRANSITION_TARGETS.length; i++) {
+      if (TRANSITION_TARGETS[i] === raw) return true;
+    }
+    return false;
+  },
+
+  /**
    * No outgoing transition — a GRAPH question. `NO_SHOW` is not terminal (it
    * has its correction edge) although it is settled; see {@link isSettled}.
    */
@@ -93,7 +139,7 @@ export const BookingLifecycle = {
    * The visit is over, whatever became of it — a LIFECYCLE question: what
    * keeps a no-showed booking out of a client's upcoming list.
    */
-  isSettled(lifecycle: BookingLifecycle): boolean {
+  isSettled(lifecycle: { readonly bookingStatus: BookingStatus }): boolean {
     const status = lifecycle.bookingStatus;
     return (
       status === BookingStatus.Completed ||
@@ -102,11 +148,27 @@ export const BookingLifecycle = {
     );
   },
 
-  /** Still holding its slot — pending or confirmed. */
-  isLive(lifecycle: BookingLifecycle): boolean {
+  /**
+   * Still holding its slot — pending or confirmed: exactly the
+   * {@link LIVE_STATUSES}.
+   */
+  isLive(lifecycle: { readonly bookingStatus: BookingStatus }): boolean {
     const status = lifecycle.bookingStatus;
     return (
       status === BookingStatus.Pending || status === BookingStatus.Confirmed
+    );
+  },
+
+  /**
+   * The visit did not happen — called off, or nobody came: what strikes a
+   * staff event head and hollows its tile. A COMPLETED visit happened; a
+   * live one has not settled yet. (The row's own outcome answers the same
+   * question for a person's story — `VisitStorySystem.isVoid`.)
+   */
+  didNotHappen(lifecycle: { readonly bookingStatus: BookingStatus }): boolean {
+    const status = lifecycle.bookingStatus;
+    return (
+      status === BookingStatus.Cancelled || status === BookingStatus.NoShow
     );
   },
 

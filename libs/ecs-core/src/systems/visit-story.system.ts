@@ -3,11 +3,15 @@ import {
   AttendanceState,
   type BarberId,
   type CustomerId,
+  type EndMinute,
+  type MinuteOfDay,
   type UserId,
   LocalDate,
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  type AccountOccupant,
+  CancellationReason,
   type Money,
   type SeatOutcome,
   type Seat,
@@ -22,7 +26,8 @@ import {
 import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
 import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
-import { VisitRowOutcome } from './visit-list.system';
+import { LocationScopeSystem } from './location-scope.system';
+import { VisitListSystem, VisitRowOutcome } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
 
@@ -55,6 +60,31 @@ export type PersonSubject =
       readonly label: string;
     };
 
+/**
+ * What settled ONE CHAIR — a staff sheet's head (`chairResolution`): the
+ * lifecycle tag it ended on, whose act a cancellation was (`null` on a
+ * no-show, which is nobody's), the stamp that closed the last of its seats,
+ * and the distinct reasons given, in seat order. Tags, a stamp and codes —
+ * the clock text and the reason words are the caller's.
+ */
+export type ChairResolution = {
+  readonly bookingStatus:
+    typeof BookingStatus.Cancelled | typeof BookingStatus.NoShow;
+  readonly cancelledBy: CancelledSide | null;
+  readonly atUtcMs: UtcEpochMs;
+  readonly reasons: readonly CancellationReason[];
+};
+
+/**
+ * Where a visit ends on the shop's wall clock — its shop day and its
+ * exclusive end, which may be the closing midnight (`EndMinute` 1440). A
+ * {@link WallTime} passes straight in.
+ */
+type WallEnd = {
+  readonly localDate: LocalDate;
+  readonly minute: MinuteOfDay | EndMinute;
+};
+
 /** A run of consecutive calendar days: indexes of its first and last day. */
 export type DayRun = {
   readonly first: number;
@@ -86,7 +116,7 @@ function ownSeats(
 }
 
 /** Who a seat is for, as people are told apart — the person read off the seat itself. */
-function personSubjectOf(seat: Seat): PersonSubject {
+function personSubjectOf(seat: AccountOccupant): PersonSubject {
   return seat.seatSubject === SeatSubject.Account
     ? { seatSubject: SeatSubject.Account, userId: seat.subjectUserId }
     : { seatSubject: SeatSubject.Anonymous, label: seat.guestLabel };
@@ -231,11 +261,106 @@ export const VisitStorySystem = {
     );
   },
 
+  /**
+   * Has the visit begun — its start on the shop's wall clock at or before
+   * the shop's "now" (T1: `now.localDate` + `now.currentMinute`, never an
+   * instant). THE one "has the visit begun" rule in ecs-core: its one body
+   * is {@link VisitListSystem.hasStarted}, homed there because the list
+   * composes it (`isHistory`) and this file already reads the list's
+   * `VisitRowOutcome` (one-way edge). NOT `!isUpcoming`: at the start minute
+   * a visit has begun AND is still filed upcoming — two questions.
+   */
+  hasStarted(start: WallTime, now: ShopNow): boolean {
+    return VisitListSystem.hasStarted(start, now);
+  },
+
+  /**
+   * Has the visit ended — its exclusive end on the shop's wall clock at or
+   * before the shop's "now": any earlier day, or this day at or past the
+   * end minute. An end at the closing midnight (1440) ends only once the
+   * day has gone.
+   */
+  hasEnded(end: WallEnd, now: ShopNow): boolean {
+    if (end.localDate !== now.localDate) return end.localDate < now.localDate;
+    return end.minute <= now.currentMinute;
+  },
+
   /** One person, one key: an account by its id, a guest by the seat's name. */
   personKeyOf(subject: PersonSubject): string {
     return subject.seatSubject === SeatSubject.Account
       ? `account:${subject.userId}`
       : `guest:${subject.label}`;
+  },
+
+  /**
+   * {@link personKeyOf} read off the seat itself — the occupant as it is
+   * stored (an account by its `subjectUserId`, a guest by its
+   * `guestLabel`), so a caller keying people by seat never renames fields
+   * first. A whole `Seat` passes straight in.
+   */
+  seatPersonKey(seat: AccountOccupant): string {
+    return VisitStorySystem.personKeyOf(personSubjectOf(seat));
+  },
+
+  /**
+   * WHAT SETTLED ONE CHAIR, from its OWN seats (`seats`, the chair's share
+   * of the party; `status` the chair's summarized status): `null` unless it
+   * ended `CANCELLED` or `NO_SHOW` with a stamp on record (a live chair, a
+   * finished one, or a settled one whose seats carry no matching stamp).
+   * The moment is the stamp that closed the LAST of its seats; a
+   * cancellation's side is the {@link rootStory} rule — the side of the
+   * seat called off last ({@link decisiveCancellationIndex}), by the reason
+   * first and the actor only for `UNSPECIFIED`/`OTHER`
+   * ({@link cancelledSide}) — the one the card's rows and the statistics
+   * read; a no-show is nobody's (`null`). The reasons are the {@link distinct}
+   * codes in seat order, `UNSPECIFIED` adding nothing (a reason nobody gave
+   * is no line).
+   */
+  chairResolution(
+    status: BookingStatus,
+    seats: readonly Seat[],
+  ): ChairResolution | null {
+    if (status !== BookingStatus.Cancelled && status !== BookingStatus.NoShow) {
+      return null;
+    }
+    let atUtcMs: UtcEpochMs | null = null;
+    let cancelled = false;
+    const reasons: (CancellationReason | null)[] = [];
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i] as Seat;
+      let stamp: UtcEpochMs;
+      if (
+        status === BookingStatus.Cancelled &&
+        seat.attendanceState === AttendanceState.Cancelled
+      ) {
+        cancelled = true;
+        stamp = seat.cancelledAtUtcMs;
+        reasons.push(
+          seat.cancellationReason === CancellationReason.Unspecified
+            ? null
+            : seat.cancellationReason,
+        );
+      } else if (
+        status === BookingStatus.NoShow &&
+        seat.attendanceState === AttendanceState.NoShow
+      ) {
+        stamp = seat.noShowAtUtcMs;
+      } else {
+        continue;
+      }
+      if (atUtcMs === null || UtcEpochMs.compare(stamp, atUtcMs) > 0) {
+        atUtcMs = stamp;
+      }
+    }
+    if (atUtcMs === null) return null;
+    return {
+      bookingStatus: status,
+      cancelledBy: cancelled
+        ? VisitStorySystem.rootStory(BookingStatus.Cancelled, seats).cancelledBy
+        : null,
+      atUtcMs,
+      reasons: VisitStorySystem.distinct(reasons),
+    };
   },
 
   /**
@@ -408,9 +533,15 @@ export const VisitStorySystem = {
     );
   },
 
-  /** The shop is named only for a WORKED visit, and only where the tenant has more than one. */
+  /**
+   * The shop is named only for a WORKED visit, and only where the tenant
+   * has more than one (composes `LocationScopeSystem.isMultiShop`).
+   */
   namesShop(outcome: VisitRowOutcome, locationCount: number): boolean {
-    return outcome === VisitRowOutcome.Worked && locationCount > 1;
+    return (
+      outcome === VisitRowOutcome.Worked &&
+      LocationScopeSystem.isMultiShop(locationCount)
+    );
   },
 
   /** The barbers of the story's seats, each once, in first-seat order. */

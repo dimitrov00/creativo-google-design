@@ -7,7 +7,7 @@ import {
   type BookingPolicy,
   CustomerOrigin,
   Placement,
-  type PlacementPolicy,
+  PlacementPolicy,
   WriteOp,
 } from '@core/components';
 import {
@@ -20,7 +20,7 @@ import {
   LocationId,
   MinuteOfDay,
   ServiceId,
-  type TimeZone,
+  TimeZone,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -61,7 +61,6 @@ import {
   readBookingSet,
   readPlacementSet,
   type ShopDayFrame,
-  UTC_ZONE,
   zoneOf,
 } from './booking-read-set.pipeline';
 import {
@@ -91,9 +90,10 @@ import {
  *   shop's own placement at any.
  * - **The wall clock, once (Law 7.3):** the call carries the shop day and
  *   each seat's minute (`localDate` + `startMinutes`); having read the
- *   shop, the pipeline places them on ITS zone with `ZonedTimeSystem.toUtc`
- *   ({@link frameWallClock}) — a start the zone never shows (a
- *   spring-forward gap) is refused `DST_GAP_INVALID_TIME`, never shifted.
+ *   shop, the pipeline parses them ({@link frameWallClock}) and
+ *   `ZonedTimeSystem.frameShopDay` places them on ITS zone — a start the
+ *   zone never shows (a spring-forward gap) is refused
+ *   `DST_GAP_INVALID_TIME`, never shifted.
  * - **One plan:** the appointment `Create`, the busy `Set`s merged onto the
  *   exact busy bodies this attempt read, and a `customers` `Create` for
  *   every record found absent (F1-5). A commit that meets a customer record
@@ -166,54 +166,38 @@ type Decided = {
   readonly writes: readonly WriteOp[];
 };
 
-/** The client's placement rules and the shop's (a staff placement combines what it likes). */
-function placementPolicyOf(staffPlacement: boolean): PlacementPolicy {
-  return {
-    allowOutsideWindow: staffPlacement,
-    skipMinNotice: staffPlacement,
-    allowOverlap: false,
-    allowConflictingServices: staffPlacement,
-  };
-}
-
 /**
  * The request's wall clock on the shop's zone — the ingestion boundary (Law
- * 7.3, Phase 4a 4A-2 (a)), shared by the commit and the reschedule: the ONE
- * shop day as sent, each start as its minute of that day (`null` for a
- * start that is no minute — the decision refuses it), and the envelope's
- * instant, the earliest placed start, computed ONCE with
- * `ZonedTimeSystem.toUtc`. A start the zone never shows (a spring-forward
- * gap) is refused `DST_GAP_INVALID_TIME`, never shifted; a fall-back repeat
- * reads the earlier offset. A day that is no day frames nothing (the
- * decision refuses it, as a start).
+ * 7.3, Phase 4a 4A-2 (a)), shared by the commit, the reschedule and the
+ * staff edit: it PARSES the ONE shop day as sent and each start as its
+ * minute of that day (`null` for a start that is no minute — the decision
+ * refuses it; every start `null` when the day is no day), and hands them to
+ * `ZonedTimeSystem.frameShopDay`, which places them on the zone and answers
+ * the envelope's instant, the earliest placed start, computed ONCE. A start
+ * the zone never shows (a spring-forward gap) is refused
+ * `DST_GAP_INVALID_TIME`, never shifted; a fall-back repeat reads the
+ * earlier offset. A day that is no day frames nothing (the decision refuses
+ * it, as a start).
  */
 export function frameWallClock(
   localDate: string,
   starts: readonly (number | null)[],
   zone: TimeZone,
 ): Result<ShopDayFrame, TimeError> {
-  const day = LocalDate.parse(localDate);
+  const parsed = LocalDate.parse(localDate);
+  const day = parsed.ok ? parsed.value : null;
   const minutes: (MinuteOfDay | null)[] = [];
-  let startUtcMs: UtcEpochMs | null = null;
-  let earliest: MinuteOfDay | null = null;
   for (const start of starts) {
-    const minute = start === null ? null : MinuteOfDay.of(start);
-    if (minute === null || !minute.ok || !day.ok) {
-      minutes.push(null);
-      continue;
-    }
-    minutes.push(minute.value);
-    const instant = ZonedTimeSystem.toUtc(day.value, minute.value, zone);
-    if (!instant.ok) return instant;
-    if (earliest === null || minute.value < earliest) {
-      earliest = minute.value;
-      startUtcMs = instant.value;
-    }
+    const minute =
+      start === null || day === null ? null : MinuteOfDay.of(start);
+    minutes.push(minute !== null && minute.ok ? minute.value : null);
   }
+  const startUtcMs = ZonedTimeSystem.frameShopDay(day, minutes, zone);
+  if (!startUtcMs.ok) return startUtcMs;
   return Result.ok({
-    localDate: day.ok ? day.value : null,
+    localDate: day,
     startMinutes: minutes,
-    startUtcMs,
+    startUtcMs: startUtcMs.value,
   });
 }
 
@@ -390,7 +374,7 @@ function decideBooking(
       ),
     );
   }
-  const zone = zoneOf(location) ?? UTC_ZONE;
+  const zone = zoneOf(location) ?? TimeZone.UTC;
   const input: DecideBookingInput = {
     locationId: cmd.locationId,
     localDate: frame.localDate ?? '',
@@ -407,7 +391,10 @@ function decideBooking(
     input,
     bookingSnapshotOf(set, placement),
     policy,
-    placementPolicyOf(cmd.staffPlacement),
+    // The shop placing its own book, or a client booking online.
+    cmd.staffPlacement
+      ? PlacementPolicy.staffPlacement()
+      : PlacementPolicy.clientDefault(),
     [],
     {
       now: ZonedTimeSystem.shopNow(nowUtcMs, zone),

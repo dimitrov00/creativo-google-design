@@ -12,13 +12,11 @@ import { AvatarSystem } from './avatar.system';
  */
 describe('AvatarSystem.check — what may be a profile photo', () => {
   it('takes an image within the limit', () => {
-    expect(
-      AvatarSystem.check({ contentType: 'image/jpeg', sizeBytes: 10 }).ok,
-    ).toBe(true);
+    expect(AvatarSystem.check({ type: 'image/jpeg', size: 10 }).ok).toBe(true);
     expect(
       AvatarSystem.check({
-        contentType: 'image/png',
-        sizeBytes: AvatarSystem.MAX_BYTES,
+        type: 'image/png',
+        size: AvatarSystem.MAX_BYTES - 1,
       }).ok,
     ).toBe(true);
   });
@@ -26,8 +24,8 @@ describe('AvatarSystem.check — what may be a profile photo', () => {
   it('refuses a non-image content type before its size', () => {
     expect(
       AvatarSystem.check({
-        contentType: 'application/pdf',
-        sizeBytes: AvatarSystem.MAX_BYTES + 1,
+        type: 'application/pdf',
+        size: AvatarSystem.MAX_BYTES + 1,
       }),
     ).toEqual({
       ok: false,
@@ -39,8 +37,8 @@ describe('AvatarSystem.check — what may be a profile photo', () => {
     expect(AvatarSystem.MAX_BYTES).toBe(5 * 1024 * 1024);
     expect(
       AvatarSystem.check({
-        contentType: 'image/jpeg',
-        sizeBytes: AvatarSystem.MAX_BYTES + 1,
+        type: 'image/jpeg',
+        size: AvatarSystem.MAX_BYTES + 1,
       }),
     ).toEqual({
       ok: false,
@@ -51,8 +49,22 @@ describe('AvatarSystem.check — what may be a profile photo', () => {
     });
   });
 
+  // Pass C DEP-7: `storage.rules` takes `size < MAX`, so a file of exactly
+  // the limit is refused here too (it used to pass and meet Storage's denial).
+  it('refuses a blob of exactly the limit, as storage.rules does', () => {
+    expect(
+      AvatarSystem.check({ type: 'image/png', size: AvatarSystem.MAX_BYTES }),
+    ).toEqual({
+      ok: false,
+      error: {
+        errorCode: AccountsErrorCode.UploadAvatarTooLarge,
+        maxBytes: AvatarSystem.MAX_BYTES,
+      },
+    });
+  });
+
   it('is pure: same input → same output, inputs untouched', () => {
-    const file = deepFreeze({ contentType: 'image/webp', sizeBytes: 42 });
+    const file = deepFreeze({ type: 'image/webp', size: 42 });
     expect(AvatarSystem.check(file)).toEqual(AvatarSystem.check(file));
   });
 });

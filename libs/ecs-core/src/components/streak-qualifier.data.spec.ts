@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
+import { deepFreeze } from '@core/testing';
 import {
   QualifierComparison,
   StreakQualifier,
@@ -159,4 +160,44 @@ describe('StreakQualifierRule.compare', () => {
       );
     },
   );
+});
+
+describe('StreakQualifierRule.toggleService — the services sheet’s tap', () => {
+  const fade = ServiceId.of('svc-fade');
+  const beard = ServiceId.of('svc-beard');
+  const wash = ServiceId.of('svc-wash');
+
+  it('adds a service not chosen at the end, keeping the order the admin chose', () => {
+    expect(StreakQualifierRule.toggleService([], fade)).toEqual([fade]);
+    expect(StreakQualifierRule.toggleService([fade], beard)).toEqual([
+      fade,
+      beard,
+    ]);
+    expect(StreakQualifierRule.toggleService([beard, fade], wash)).toEqual([
+      beard,
+      fade,
+      wash,
+    ]);
+  });
+
+  it('takes a chosen service out', () => {
+    expect(StreakQualifierRule.toggleService([fade, beard], fade)).toEqual([
+      beard,
+    ]);
+    expect(
+      StreakQualifierRule.toggleService([fade, beard, wash], beard),
+    ).toEqual([fade, wash]);
+  });
+
+  it('keeps the last one chosen: a list of services names at least one', () => {
+    const last = [beard];
+    expect(StreakQualifierRule.toggleService(last, beard)).toBe(last);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const ids = deepFreeze([fade, beard]);
+    const once = StreakQualifierRule.toggleService(ids, fade);
+    expect(StreakQualifierRule.toggleService(ids, fade)).toEqual(once);
+    expect(ids).toEqual([fade, beard]);
+  });
 });

@@ -13,6 +13,7 @@ export * from './identifier-channel.data';
 export * from './ids.primitive';
 export * from './local-date.primitive';
 export * from './locale.data';
+export * from './media-refusal.data';
 export * from './minute-of-day.primitive';
 export * from './precise-instant.primitive';
 export * from './price-cents.primitive';

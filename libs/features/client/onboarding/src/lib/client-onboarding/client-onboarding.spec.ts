@@ -4,6 +4,7 @@ import { EnvironmentProviders, Injectable } from '@angular/core';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { BehaviorSubject, Observable, of } from 'rxjs';
@@ -27,7 +28,13 @@ import {
   type MediaResolvePorts,
   type MediaVariant,
 } from '@core/ports';
-import { MediaRefId, Result, ServiceId, type UserId } from '@core/primitives';
+import {
+  BarberId,
+  MediaRefId,
+  Result,
+  ServiceId,
+  type UserId,
+} from '@core/primitives';
 import {
   AccountsErrorCode,
   IdentityErrorCode,
@@ -724,6 +731,60 @@ describe('ClientOnboarding', () => {
         expect(coverSrc()).toBeNull();
       },
     );
+  });
+
+  describe('service card meta (pass C DEP-8 — the bookable terms, CatalogPricingSystem)', () => {
+    const exampleDigits = exampleDigitsOf(
+      AuthDeployment.DEFAULT.defaultCountry,
+    );
+
+    /**
+     * The service's own terms (17,50 € · 50 min) lie OUTSIDE what a client
+     * can book: its one performer charges 20,00 € for 45 min. The card
+     * quotes the bookable terms only — the booking grid card's, the landing
+     * tile's and the detail sheet's rule — never the service's own.
+     */
+    const PERFORMED: Service = {
+      ...FADE,
+      offerings: [
+        {
+          barberId: BarberId.of('barber-ana'),
+          overrides: [],
+          ...termsFixture(2000, 45),
+        },
+      ],
+    };
+
+    it('quotes the performer’s terms, not the service’s own', async () => {
+      await setup(EMAIL_IDENTIFIER, undefined, {
+        services: [PERFORMED],
+        media: NO_MEDIA,
+      });
+      const translate = vi.spyOn(TestBed.inject(TranslocoService), 'translate');
+      fillInput('onboarding-first-name', 'Ada');
+      fillInput('onboarding-last-name', 'Lovelace');
+      typePhone(exampleDigits);
+      await settle();
+      query<HTMLButtonElement>('onboarding-submit-about')?.click();
+      await settle();
+      query<HTMLButtonElement>('onboarding-personalize')?.click();
+      await settle();
+
+      const card = query(`service-card-${PERFORMED.id}`);
+      if (!card) throw new Error('service card not rendered');
+      const meta = card.textContent ?? '';
+      expect(meta).toContain('20,00');
+      expect(meta).not.toContain('17,50');
+      // One bookable price — no «от» ("from") hedge.
+      expect(meta).not.toContain('onboarding.services.from');
+      expect(translate).toHaveBeenCalledWith('onboarding.services.minutes', {
+        minutes: 45,
+      });
+      expect(translate).not.toHaveBeenCalledWith(
+        'onboarding.services.minutes',
+        { minutes: '45–50' },
+      );
+    });
   });
 
   describe('phone_otp deployment (the identifier channel supplies the phone)', () => {

@@ -1,7 +1,8 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { LocalDate } from '@core/primitives';
-import type { DocBody, DocPath } from '@core/components';
+import { LocalDate, UtcEpochMs } from '@core/primitives';
+import { type DocBody, type DocPath, RetentionAnchor } from '@core/components';
 import { Collections, Subcollections } from '@core/entities';
+import { RetentionSystem } from '@core/systems';
 
 /**
  * THE ONE `purgeAt` STAMP (flip 1, F-1-7; `firestore-layout.md`): the TTL
@@ -9,66 +10,31 @@ import { Collections, Subcollections } from '@core/entities';
  * the adapter beside the entity body and never part of the entity type.
  * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group;
  * the lead-time sample writer, `saveOtp` and the seed call this same
- * function, so the seven formulas live here and nowhere else.
+ * function, so every write stamps through here.
  *
  * The group is matched by the LAST COLLECTION SEGMENT of the path
  * (`users/u1/notifications/n1` → `notifications`); any other group answers
- * `null` — no stamp. The formulas are today's, pinned (runbook §2.1):
+ * `null` — no stamp. This adapter reads and parses the fields the group's
+ * formula reads into a branded {@link RetentionAnchor}; the seven formulas
+ * (runbook §2.1) are `RetentionSystem.purgeAtUtcMs`'s (pass C, P-34), and
+ * the instant it answers becomes the `Timestamp`.
  *
- * | group                   | `purgeAt`                                     |
- * | ----------------------- | --------------------------------------------- |
- * | `barberBusy`            | UTC midnight of `localDate` + 30 d            |
- * | `capacity`              | UTC midnight of the month's last day + 40 d   |
- * | `waitlistRequests`      | UTC midnight of `max(localDates)` + 7 d       |
- * | `notifications`         | `sentAtUtcMs` + 90 d                          |
- * | `barberLeadTimeSamples` | UTC midnight of `localDate` + 400 d           |
- * | `otps`                  | `expiresAtUtcMs` + 24 h                       |
- * | `impersonationSessions` | (`endedAtUtcMs` ?? `expiresAtUtcMs`) + 30 d   |
- *
- * A `LocalDate` stamp is that civil date's UTC midnight — never the shop
- * zone's start of day: TTL is eventual and day-granular (runbook §2.4), and
- * the integer civil math needs no zone and no `Date`. A body missing the
- * field its formula reads is not stamped (`null`) — the adapter never
- * invents a day; a waitlist request watching no day keeps today's epoch
- * floor (`1970-01-01` + 7 d), the legacy writer's own fallback. A consumed
- * challenge holds a destination and a code hash — PII with no purpose past
- * its own expiry, so a day's grace covers debugging (identity flip (2),
- * F2-11, the pre-flip OTP repository's formula); its `Update`s never
- * re-stamp (the expiry does not move). An impersonation session is kept 30
- * days past its window — then past its end, when an end is stamped: the
+ * A body missing the field its formula reads, or holding one that is no
+ * civil date / no instant, is not stamped (`null`, no anchor) — the adapter
+ * never invents a day. A waitlist request's unreadable days are skipped, so
+ * a request watching no readable day keeps the epoch floor (the system's).
+ * An impersonation session is anchored on its end when the body carries a
+ * numeric `endedAtUtcMs` (an unreadable one is no stamp, never a fall-back
+ * to the expiry), on its window's expiry otherwise. A consumed challenge's
+ * `Update`s never re-stamp (the expiry does not move); the
  * `startImpersonation` / `endImpersonation` callables write each body with
  * a `Create` / `Set`, so the end re-stamps (Phase 4a 4A-3 (4), runbook
  * §2.1).
  */
 
-const MS_PER_DAY = 86_400_000;
-
-/** Days each TTL group keeps a document past its anchor instant. */
-const KEEP_DAYS = {
-  busy: 30,
-  capacity: 40,
-  waitlist: 7,
-  notification: 90,
-  leadTime: 400,
-  impersonation: 30,
-} as const;
-
-/** Hours an OTP challenge is kept past its expiry. */
-const OTP_KEEP_HOURS = 24;
-
-const MS_PER_HOUR = 3_600_000;
-
-/** The epoch floor the legacy waitlist writer stamped a dayless request from. */
-const EPOCH_DAY = '1970-01-01';
-
 /** A root field of the body by name — no dynamic index. */
 function fieldOf(body: DocBody, field: string): unknown {
   return Object.getOwnPropertyDescriptor(body, field)?.value;
-}
-
-/** The UTC midnight of a civil date, in epoch ms — integer civil math, no zone. */
-function utcMidnightMs(localDate: LocalDate): number {
-  return LocalDate.toEpochDay(localDate) * MS_PER_DAY;
 }
 
 /** A stored `LocalDate`, or `null` when the field is absent or no civil date. */
@@ -78,27 +44,47 @@ function localDateOf(raw: unknown): LocalDate | null {
   return parsed.ok ? parsed.value : null;
 }
 
-/** `localDate` + `days`, as the TTL `Timestamp`. */
-function stampAfter(localDate: LocalDate, days: number): Timestamp {
-  return Timestamp.fromMillis(utcMidnightMs(localDate) + days * MS_PER_DAY);
+/** A stored instant, or `null` when the field is absent or no instant. */
+function instantOf(raw: unknown): UtcEpochMs | null {
+  if (typeof raw !== 'number') return null;
+  const parsed = UtcEpochMs.of(raw);
+  return parsed.ok ? parsed.value : null;
 }
 
-/** The last civil day of a `YYYY-MM` month, or `null` when it is no month. */
-function lastDayOfMonth(raw: unknown): LocalDate | null {
-  const first = typeof raw === 'string' ? localDateOf(`${raw}-01`) : null;
-  if (first === null) return null;
-  return LocalDate.addDays(LocalDate.addMonths(first, 1), -1);
+/** The first day of a stored `YYYY-MM` month, or `null` when it is no month. */
+function monthFirstDayOf(raw: unknown): LocalDate | null {
+  return typeof raw === 'string' ? localDateOf(`${raw}-01`) : null;
 }
 
-/** The latest of a request's watched days, the epoch floor when it watches none. */
-function latestDay(raw: unknown): LocalDate | null {
-  let latest: LocalDate | null = localDateOf(EPOCH_DAY);
-  if (!Array.isArray(raw)) return latest;
+/** A request's readable watched days — none when the field is no list. */
+function localDatesOf(raw: unknown): readonly LocalDate[] {
+  const days: LocalDate[] = [];
+  if (!Array.isArray(raw)) return days;
   for (const entry of raw) {
     const day = localDateOf(entry);
-    if (day !== null && (latest === null || day > latest)) latest = day;
+    if (day !== null) days.push(day);
   }
-  return latest;
+  return days;
+}
+
+/**
+ * An impersonation session's anchor: its end when the body carries a
+ * numeric one (unreadable → none), else its window's expiry.
+ */
+function impersonationAnchorOf(
+  body: DocBody,
+): RetentionAnchor.ImpersonationSessions | null {
+  const ended = fieldOf(body, 'endedAtUtcMs');
+  const expiresAtUtcMs = instantOf(fieldOf(body, 'expiresAtUtcMs'));
+  if (typeof ended === 'number') {
+    const endedAtUtcMs = instantOf(ended);
+    return endedAtUtcMs === null
+      ? null
+      : RetentionAnchor.impersonationSessions(endedAtUtcMs, expiresAtUtcMs);
+  }
+  return expiresAtUtcMs === null
+    ? null
+    : RetentionAnchor.impersonationSessions(null, expiresAtUtcMs);
 }
 
 /** The collection a document path sits in — its last collection segment. */
@@ -107,50 +93,52 @@ function groupOf(path: DocPath): string | null {
 }
 
 /**
+ * What one document about to be written is anchored on — `null` for a
+ * group with no TTL, or a body missing (or unreadable in) what its formula
+ * reads.
+ */
+function anchorOf(path: DocPath, body: DocBody): RetentionAnchor | null {
+  switch (groupOf(path)) {
+    case Collections.BarberBusy: {
+      const day = localDateOf(fieldOf(body, 'localDate'));
+      return day === null ? null : RetentionAnchor.barberBusy(day);
+    }
+    case Collections.Capacity: {
+      const first = monthFirstDayOf(fieldOf(body, 'month'));
+      return first === null ? null : RetentionAnchor.capacity(first);
+    }
+    case Collections.WaitlistRequests:
+      return RetentionAnchor.waitlistRequests(
+        localDatesOf(fieldOf(body, 'localDates')),
+      );
+    case Subcollections.Notifications: {
+      const sent = instantOf(fieldOf(body, 'sentAtUtcMs'));
+      return sent === null ? null : RetentionAnchor.notifications(sent);
+    }
+    case Collections.BarberLeadTimeSamples: {
+      const day = localDateOf(fieldOf(body, 'localDate'));
+      return day === null ? null : RetentionAnchor.leadTimeSamples(day);
+    }
+    case Collections.Otps: {
+      const expires = instantOf(fieldOf(body, 'expiresAtUtcMs'));
+      return expires === null ? null : RetentionAnchor.otps(expires);
+    }
+    case Collections.ImpersonationSessions:
+      return impersonationAnchorOf(body);
+    default:
+      return null;
+  }
+}
+
+/**
  * The TTL stamp of one document about to be written — `null` for a group
  * with no TTL (or a body missing what its formula reads).
  */
 export function purgeAtFor(path: DocPath, body: DocBody): Timestamp | null {
-  switch (groupOf(path)) {
-    case Collections.BarberBusy: {
-      const day = localDateOf(fieldOf(body, 'localDate'));
-      return day === null ? null : stampAfter(day, KEEP_DAYS.busy);
-    }
-    case Collections.Capacity: {
-      const day = lastDayOfMonth(fieldOf(body, 'month'));
-      return day === null ? null : stampAfter(day, KEEP_DAYS.capacity);
-    }
-    case Collections.WaitlistRequests: {
-      const day = latestDay(fieldOf(body, 'localDates'));
-      return day === null ? null : stampAfter(day, KEEP_DAYS.waitlist);
-    }
-    case Subcollections.Notifications: {
-      const sent = fieldOf(body, 'sentAtUtcMs');
-      return typeof sent === 'number' && Number.isFinite(sent)
-        ? Timestamp.fromMillis(sent + KEEP_DAYS.notification * MS_PER_DAY)
-        : null;
-    }
-    case Collections.BarberLeadTimeSamples: {
-      const day = localDateOf(fieldOf(body, 'localDate'));
-      return day === null ? null : stampAfter(day, KEEP_DAYS.leadTime);
-    }
-    case Collections.Otps: {
-      const expires = fieldOf(body, 'expiresAtUtcMs');
-      return typeof expires === 'number' && Number.isFinite(expires)
-        ? Timestamp.fromMillis(expires + OTP_KEEP_HOURS * MS_PER_HOUR)
-        : null;
-    }
-    case Collections.ImpersonationSessions: {
-      const ended = fieldOf(body, 'endedAtUtcMs');
-      const anchor =
-        typeof ended === 'number' ? ended : fieldOf(body, 'expiresAtUtcMs');
-      return typeof anchor === 'number' && Number.isFinite(anchor)
-        ? Timestamp.fromMillis(anchor + KEEP_DAYS.impersonation * MS_PER_DAY)
-        : null;
-    }
-    default:
-      return null;
-  }
+  const anchor = anchorOf(path, body);
+  if (anchor === null) return null;
+  const purgeAtUtcMs = RetentionSystem.purgeAtUtcMs(anchor);
+  return purgeAtUtcMs === null ? null : Timestamp.fromMillis(purgeAtUtcMs);
 }
 
 /**

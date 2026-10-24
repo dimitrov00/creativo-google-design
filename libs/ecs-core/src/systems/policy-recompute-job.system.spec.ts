@@ -649,6 +649,64 @@ describe('judgePolicyPass — a newer pass has the last word', () => {
   });
 });
 
+describe('isIdle and shouldRecordStall — a delivery that leaves the pass alone (pass C, P-23)', () => {
+  const { isIdle, shouldRecordStall } = PolicyRecomputeJobSystem;
+  const running = advance(start('evt-a', 0), step(), t(1_000));
+
+  it('rests on a deleted job, a finished pass and the write that recorded a stall', () => {
+    expect(isIdle(null)).toBe(true);
+    expect(isIdle(advance(running, step({ exhausted: true }), t(2_000)))).toBe(
+      true,
+    );
+    expect(isIdle(stall(running, 'internal', t(2_000)))).toBe(true);
+    // A running pass, and one the sweep nudged out of its stall, step on.
+    expect(isIdle(running)).toBe(false);
+    expect(
+      isIdle(
+        nudge(stall(running, 'internal', t(2_000)), t(1_000 + STALE_AFTER_MS)),
+      ),
+    ).toBe(false);
+  });
+
+  it('records a stall only on the step it was fired for', () => {
+    expect(shouldRecordStall(running, running, 'internal')).toBe(true);
+    // A deleted job, a pass that moved on, a newer pass: never marked.
+    expect(shouldRecordStall(null, running, 'internal')).toBe(false);
+    const movedOn = advance(
+      running,
+      step({ cursor: CustomerId.of('z') }),
+      t(2_000),
+    );
+    expect(shouldRecordStall(movedOn, running, 'internal')).toBe(false);
+    const superseded = nextStep(running, change('evt-b', 5), t(5));
+    expect(
+      shouldRecordStall(superseded as PolicyRecomputeJob, running, 'internal'),
+    ).toBe(false);
+  });
+
+  it('does not rewrite a stall already recorded with the same code — a stale delivery failing the same way', () => {
+    const recorded = stall(running, 'internal', t(2_000));
+    expect(shouldRecordStall(recorded, running, 'internal')).toBe(false);
+    // Another code is news: it is recorded over the old one.
+    expect(shouldRecordStall(recorded, running, 'unavailable')).toBe(true);
+    // A cleared stall still remembers its code, but records it again.
+    const nudged = nudge(recorded, t(1_000 + 2 * STALE_AFTER_MS));
+    expect(
+      shouldRecordStall(nudged as PolicyRecomputeJob, running, 'internal'),
+    ).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const live = deepFreeze(stall(running, 'internal', t(2_000)));
+    const fired = deepFreeze(running);
+    expect(isIdle(live)).toBe(isIdle(live));
+    expect(shouldRecordStall(live, fired, 'unavailable')).toBe(
+      shouldRecordStall(live, fired, 'unavailable'),
+    );
+    expect(live.lastFailureCode).toBe('internal');
+  });
+});
+
 describe('purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const job = deepFreeze(advance(start('evt-a', 0), step(), t(1)));

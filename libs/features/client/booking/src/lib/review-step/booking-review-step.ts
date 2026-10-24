@@ -8,17 +8,18 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { type CartLineId, LocalDate } from '@core/primitives';
+import { type CartLineId, LocalDate, type SeatKeyText } from '@core/primitives';
 import {
   BookingContact,
   BookingFlowStep,
   type CartLine,
-  Money,
+  type Money,
   Principal,
   SeatKey,
-  ServiceTerms,
 } from '@core/components';
 import {
+  BookingCartSystem,
+  BookingTotalSystem,
   CalendarGridSystem,
   OfferingPriceSystem,
   PhoneSystem,
@@ -439,8 +440,7 @@ export class BookingReviewStep {
   protected saveNote(): void {
     const existing = this.store.contact();
     if (!BookingContact.isPresent(existing)) return;
-    const note = this.noteDraft().trim().slice(0, this.noteLimit);
-    this.store.setContact({ ...existing, contactNote: note || null });
+    this.store.setContact(BookingContact.withNote(existing, this.noteDraft()));
     this.noteSheetOpen.set(false);
   }
 
@@ -475,7 +475,7 @@ export class BookingReviewStep {
 
     const byLineId = new Map<
       CartLineId,
-      { readonly seatKey: string; readonly line: CartLine }
+      { readonly seatKey: SeatKeyText; readonly line: CartLine }
     >();
     for (const seat of cart.cartSeats) {
       for (const line of seat.lines) {
@@ -483,10 +483,7 @@ export class BookingReviewStep {
       }
     }
 
-    const bySeat = new Map<
-      string,
-      { readonly lines: ReviewLineVm[]; total: Money | null; broken: boolean }
-    >();
+    const bySeat = new Map<SeatKeyText, ReviewLineVm[]>();
 
     for (const assignment of selection.assignments) {
       const found = byLineId.get(assignment.lineId);
@@ -499,12 +496,11 @@ export class BookingReviewStep {
       // base while the server charges the barber's rate is a summary that
       // lies.
       const variantId = found.line.variantId;
-      const terms = OfferingPriceSystem.termsFor(
+      const price = OfferingPriceSystem.price(
         service,
         assignment.barberId,
         variantId,
       );
-      const price = ServiceTerms.price(terms);
       const variant =
         variantId === null
           ? null
@@ -513,12 +509,8 @@ export class BookingReviewStep {
             ) ?? null);
       const vm = this.catalog.toServiceVm(service);
 
-      const entry = bySeat.get(found.seatKey) ?? {
-        lines: [],
-        total: null,
-        broken: false,
-      };
-      entry.lines.push({
+      const lines = bySeat.get(found.seatKey) ?? [];
+      lines.push({
         key: assignment.lineId,
         coverSrc: vm.coverSrc ?? null,
         serviceName: this.content.text({
@@ -539,38 +531,34 @@ export class BookingReviewStep {
         ),
         priceLabel: this.money(price),
       });
-      if (!entry.broken) {
-        if (entry.total === null) {
-          entry.total = price;
-        } else {
-          const sum = Money.add(entry.total, price);
-          if (!sum.ok) {
-            entry.broken = true;
-            entry.total = null;
-          } else {
-            entry.total = sum.value;
-          }
-        }
-      }
-      bySeat.set(found.seatKey, entry);
+      bySeat.set(found.seatKey, lines);
+    }
+
+    // Each person's sum, from the same per-barber terms each line shows —
+    // `null` once a currency breaks it (`BookingTotalSystem.seatSubtotals`).
+    const subtotals = new Map<SeatKeyText, Money | null>();
+    for (const subtotal of BookingTotalSystem.seatSubtotals(
+      selection.assignments,
+      cart,
+      this.catalog.services(),
+    )) {
+      subtotals.set(subtotal.seatKey, subtotal.total);
     }
 
     // Booker first, then guests in cart order — `cart.entries()` is already
     // the order seats first held something, with `self` wherever it landed;
-    // the summary pins the booker to the front regardless.
-    const seatKeys = [...bySeat.keys()].sort((a, b) =>
-      a === SELF_SEAT ? -1 : b === SELF_SEAT ? 1 : 0,
-    );
+    // the summary pins the booker to the front regardless
+    // (`BookingCartSystem.bookerFirst`).
+    const seatKeys = BookingCartSystem.bookerFirst([...bySeat.keys()]);
 
     // One line in the whole booking means the window under the calendar
     // already said when — so the card drops the minute and keeps the barber.
-    const lineCount = [...bySeat.values()].reduce(
-      (sum, entry) => sum + entry.lines.length,
-      0,
-    );
+    let lineCount = 0;
+    for (const lines of bySeat.values()) lineCount += lines.length;
 
     return seatKeys.map((seatKey) => {
-      const entry = bySeat.get(seatKey);
+      const seatLines = bySeat.get(seatKey) ?? [];
+      const subtotal = subtotals.get(seatKey) ?? null;
       const known = seatKey === SELF_SEAT ? this.identity.displayName() : null;
       return {
         key: seatKey,
@@ -580,10 +568,10 @@ export class BookingReviewStep {
         monogramName:
           seatKey === SELF_SEAT ? (known ?? '') : this.personLabel(seatKey),
         avatarSrc: seatKey === SELF_SEAT ? this.identity.avatarUrl() : null,
-        lines: (entry?.lines ?? []).map((line) =>
+        lines: seatLines.map((line) =>
           lineCount > 1 ? line : { ...line, timeLabel: null },
         ),
-        subtotalLabel: entry?.total != null ? this.money(entry.total) : null,
+        subtotalLabel: subtotal !== null ? this.money(subtotal) : null,
       };
     });
   });
@@ -655,35 +643,13 @@ export class BookingReviewStep {
     const selection = this.store.selection();
     const cart = this.store.cart();
     if (!selection || !cart) return null;
-
-    const byLineId = new Map<CartLineId, CartLine>();
-    for (const seat of cart.cartSeats) {
-      for (const line of seat.lines) byLineId.set(line.lineId, line);
-    }
-
-    let total: Money | null = null;
-    for (const assignment of selection.assignments) {
-      const line = byLineId.get(assignment.lineId);
-      if (!line) continue;
-      const service = this.catalog.findService(line.serviceId);
-      if (!service) continue;
-      const price = ServiceTerms.price(
-        OfferingPriceSystem.termsFor(
-          service,
-          assignment.barberId,
-          line.variantId,
-        ),
-      );
-      if (total === null) {
-        total = price;
-        continue;
-      }
-      const sum = Money.add(total, price);
-      // Mixed currencies are a data error the entity also refuses; showing
-      // a partial total would be worse than showing none.
-      if (!sum.ok) return null;
-      total = sum.value;
-    }
+    // Mixed currencies are a data error the entity also refuses; showing a
+    // partial total would be worse than showing none — `null` either way.
+    const total = BookingTotalSystem.total(
+      selection.assignments,
+      cart,
+      this.catalog.services(),
+    );
     return total ? this.money(total) : null;
   });
 

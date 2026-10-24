@@ -24,6 +24,12 @@ import {
   type ShopNow,
   RequestedSubjectRole,
   type ChairTime,
+  BlockKind,
+  DayHours,
+  LocationStatus,
+  MinuteBlock,
+  SeatArrangement,
+  ShopCoverage,
 } from '@core/components';
 import {
   AppointmentId,
@@ -53,6 +59,12 @@ import {
   minuteDelta,
   termsFixture,
   customerOf,
+  FIXTURE_NOW,
+  barberBusyDayFixture,
+  barberScheduleFixture,
+  locationFixture,
+  scheduleExceptionFixture,
+  serviceFixture,
 } from '@core/testing';
 import {
   type AvailabilityLine,
@@ -63,6 +75,8 @@ import {
   type CartBarberDay,
   type CartRider,
   type CartService,
+  type DayDocs,
+  type DayQuery,
   type PrefillSeat,
   PrefillCompanions,
 } from './booking-cart.system';
@@ -897,12 +911,12 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
       windows: [
         rosterWindow(entry.id, CENTER, entry.window[0], entry.window[1]),
       ],
-      busy: AvailabilitySystem.paddedBusy({
-        barberId: barber(entry.id),
-        spans: entry.spans,
-        turnaroundMinutes: minuteCount(entry.turnaroundMinutes ?? 0),
+      busy: AvailabilitySystem.paddedBusy(
+        barber(entry.id),
+        { blocks: entry.spans },
+        { turnaroundMinutes: minuteCount(entry.turnaroundMinutes ?? 0) },
         release,
-      }),
+      ),
     }));
   }
 
@@ -1839,5 +1853,473 @@ describe('BookingCartSystem — edges', () => {
         locationId: CENTER,
       });
     }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Pass C (W0-D): the booking feature's decisions, homed here — the review's
+ * booker-first order, the services step's next empty seat, the schedule
+ * step's shop coverage, the time sheet's arrangement and the booking grid's
+ * day (moved from `features/client/booking` `day-availability.ts`; its
+ * spec's cases restated on the system).
+ * ═════════════════════════════════════════════════════════════════════ */
+
+describe('BookingCartSystem.bookerFirst — the review pins the booker to the front', () => {
+  const MARIA = SeatKeyText.of('guest-0');
+  const ANI = SeatKeyText.of('guest-1');
+
+  it('moves the booker to the front and keeps every other seat in cart order', () => {
+    expect(BookingCartSystem.bookerFirst([MARIA, SELF, ANI])).toEqual([
+      SELF,
+      MARIA,
+      ANI,
+    ]);
+    expect(BookingCartSystem.bookerFirst([ANI, MARIA, SELF])).toEqual([
+      SELF,
+      ANI,
+      MARIA,
+    ]);
+  });
+
+  it('leaves an order with the booker first, without the booker, or empty as it is', () => {
+    expect(BookingCartSystem.bookerFirst([SELF, ANI, MARIA])).toEqual([
+      SELF,
+      ANI,
+      MARIA,
+    ]);
+    expect(BookingCartSystem.bookerFirst([ANI, MARIA])).toEqual([ANI, MARIA]);
+    expect(BookingCartSystem.bookerFirst([])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const keys = deepFreeze([MARIA, SELF, ANI]);
+    expect(BookingCartSystem.bookerFirst(keys)).toEqual(
+      BookingCartSystem.bookerFirst(keys),
+    );
+  });
+});
+
+describe('BookingCartSystem.nextSeatWithoutService — the services step’s forward move', () => {
+  const CLIENT = UserId.of('user-client');
+  /** The booker and guests Maria (guest-0) and Ani (guest-1). */
+  const party = (): Party => {
+    let built = Party.owned(CLIENT);
+    built = unwrapOk(Party.addGuest(built, 'Maria'));
+    return unwrapOk(Party.addGuest(built, 'Ani'));
+  };
+  const MARIA = seatOf(GuestId.of('guest-0'));
+  const ANI = seatOf(GuestId.of('guest-1'));
+  const next = BookingCartSystem.nextSeatWithoutService;
+
+  it('hands over to the next empty seat AFTER the active one, wrapping past the end', () => {
+    const selfHolds = added(BookingCart.empty(), SELF, line('svc-cut'));
+    expect(next(party(), selfHolds, SELF)).toBe(MARIA);
+    expect(next(party(), selfHolds, MARIA)).toBe(ANI);
+    // From Ani the walk wraps: the booker holds something, Maria is next.
+    expect(next(party(), selfHolds, ANI)).toBe(MARIA);
+  });
+
+  it('counts the ACTIVE seat as the last candidate — the person on screen can be the empty one', () => {
+    const othersHold = added(
+      added(BookingCart.empty(), SELF, line('svc-cut')),
+      ANI,
+      line('svc-cut'),
+    );
+    expect(next(party(), othersHold, MARIA)).toBe(MARIA);
+  });
+
+  it('is null when everyone holds something, and with fewer than two seats', () => {
+    const everyone = added(
+      added(
+        added(BookingCart.empty(), SELF, line('svc-cut')),
+        MARIA,
+        line('svc-cut'),
+      ),
+      ANI,
+      line('svc-cut'),
+    );
+    expect(next(party(), everyone, SELF)).toBeNull();
+    expect(next(Party.owned(CLIENT), BookingCart.empty(), SELF)).toBeNull();
+    expect(next(null, null, SELF)).toBeNull();
+  });
+
+  it('holds nothing for anyone without a cart, and starts from the booker for an unknown seat', () => {
+    expect(next(party(), null, SELF)).toBe(MARIA);
+    expect(next(party(), BookingCart.empty(), SeatKeyText.of('guest-9'))).toBe(
+      SELF,
+    );
+  });
+
+  it('walks the services step’s row only — a companion has no seat there', () => {
+    const withCompanion: Party = {
+      ...party(),
+      members: [
+        ...party().members,
+        PartyMember.companion(UserId.of('user-son')),
+      ],
+    };
+    const guestsHold = added(
+      added(BookingCart.empty(), MARIA, line('svc-cut')),
+      ANI,
+      line('svc-cut'),
+    );
+    expect(next(withCompanion, guestsHold, MARIA)).toBe(SELF);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozenParty = deepFreeze(party());
+    const cart = deepFreeze(added(BookingCart.empty(), SELF, line('svc-cut')));
+    expect(next(frozenParty, cart, SELF)).toEqual(
+      next(frozenParty, cart, SELF),
+    );
+  });
+});
+
+describe('BookingCartSystem.shopCoverage — can the chosen shop serve the visit?', () => {
+  const coverage = BookingCartSystem.shopCoverage;
+  const SERVED = { shopCoverage: ShopCoverage.Served, targetId: null };
+  const NOWHERE = { shopCoverage: ShopCoverage.Nowhere, targetId: null };
+
+  it('is served while the serving shops are unknown', () => {
+    expect(coverage(null, MLADOST, true)).toEqual(SERVED);
+    expect(coverage(null, null, true)).toEqual(SERVED);
+  });
+
+  it('under “any shop”, is served whenever one active shop can, else nowhere', () => {
+    expect(coverage([CENTER], null, false)).toEqual(SERVED);
+    expect(coverage([], null, false)).toEqual(NOWHERE);
+  });
+
+  it('says nothing at a shop that serves the visit', () => {
+    expect(coverage([CENTER, MLADOST], MLADOST, true)).toEqual(SERVED);
+  });
+
+  it('counts a chosen shop that is not on the active list as served — not this question’s to answer', () => {
+    expect(coverage([CENTER], MLADOST, false)).toEqual(SERVED);
+    expect(coverage([], MLADOST, false)).toEqual(SERVED);
+  });
+
+  it('names the ONE shop that serves the visit when the chosen one does not', () => {
+    expect(coverage([CENTER], MLADOST, true)).toEqual({
+      shopCoverage: ShopCoverage.Elsewhere,
+      targetId: CENTER,
+    });
+  });
+
+  it('points at “any shop” when several others can', () => {
+    const third = shop('loc-third');
+    expect(coverage([CENTER, third], MLADOST, true)).toEqual({
+      shopCoverage: ShopCoverage.Elsewhere,
+      targetId: null,
+    });
+  });
+
+  it('sends the visit back to its services when no active shop offers all of it', () => {
+    expect(coverage([], MLADOST, true)).toEqual(NOWHERE);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const serving = deepFreeze([CENTER]);
+    expect(coverage(serving, MLADOST, true)).toEqual(
+      coverage(serving, MLADOST, true),
+    );
+  });
+});
+
+describe('BookingCartSystem.arrangementOf — all at once, or one after another', () => {
+  const starting = (...minutes: number[]) =>
+    minutes.map((m) => ({ startMinutes: minute(m) }));
+
+  it('reads one seat, and none, as side by side', () => {
+    expect(BookingCartSystem.arrangementOf(starting(600))).toBe(
+      SeatArrangement.Parallel,
+    );
+    expect(BookingCartSystem.arrangementOf([])).toBe(SeatArrangement.Parallel);
+  });
+
+  it('reads every seat at the first one’s minute as parallel', () => {
+    expect(BookingCartSystem.arrangementOf(starting(600, 600, 600))).toBe(
+      SeatArrangement.Parallel,
+    );
+  });
+
+  it('reads any seat at another minute as sequential, wherever it sits', () => {
+    expect(BookingCartSystem.arrangementOf(starting(600, 630))).toBe(
+      SeatArrangement.Sequential,
+    );
+    expect(BookingCartSystem.arrangementOf(starting(600, 600, 540))).toBe(
+      SeatArrangement.Sequential,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const assignments = deepFreeze(starting(600, 630));
+    expect(BookingCartSystem.arrangementOf(assignments)).toBe(
+      BookingCartSystem.arrangementOf(assignments),
+    );
+  });
+});
+
+describe('BookingCartSystem — one shop day’s grid from its raw documents', () => {
+  const IVAN = barberScheduleFixture().id;
+  const NIKO = barber('b-niko');
+  const HOME = locationFixture().id;
+  /** A Tuesday — the fixture roster works it; the day after the pinned "today". */
+  const TUESDAY = localDate('2026-09-29');
+  const CUT_CART = added(
+    BookingCart.empty(),
+    SELF,
+    line(serviceFixture().id as string),
+  );
+
+  function query(change: Partial<DayQuery> = {}): DayQuery {
+    return {
+      cart: CUT_CART,
+      services: [serviceFixture()],
+      barberIds: [IVAN],
+      locationId: null,
+      localDate: TUESDAY,
+      policy: BookingPolicy.DEFAULT,
+      now: FIXTURE_NOW,
+      riders: [],
+      release: [],
+      releaseLocalDate: null,
+      shops: [locationFixture()],
+      ...change,
+    };
+  }
+
+  function docs(
+    day: {
+      readonly schedule?: DayDocs['barbers'][number]['schedule'];
+      readonly busy?: DayDocs['barbers'][number]['busy'];
+      readonly exception?: DayDocs['barbers'][number]['exception'];
+      readonly namedLocation?: DayDocs['namedLocation'];
+    } = {},
+  ): DayDocs {
+    return {
+      key: BookingCartSystem.dayDocsKey(query()),
+      barbers: [
+        {
+          barberId: IVAN,
+          schedule:
+            day.schedule === undefined ? barberScheduleFixture() : day.schedule,
+          busy: day.busy ?? null,
+          exception: day.exception ?? null,
+        },
+      ],
+      namedLocation: day.namedLocation ?? null,
+    };
+  }
+
+  const heldChair = (from: number, to: number): ChairTime => ({
+    barberId: IVAN,
+    startMinutes: minute(from),
+    endMinutes: endMinute(to),
+  });
+  const busyOn = (from: number, to: number) =>
+    barberBusyDayFixture({
+      localDate: TUESDAY,
+      blocks: [MinuteBlock.of(minute(from), endMinute(to), BlockKind.Busy)],
+    });
+  /** The same shop, open 10:00–17:00 every day. */
+  const shortHours = (status: LocationStatus = LocationStatus.Active) =>
+    locationFixture({
+      locationStatus: status,
+      openingHours: Array.from({ length: 7 }, () =>
+        DayHours.open(minute(600), endMinute(1020)),
+      ),
+    });
+  const starts = (q: DayQuery, d: DayDocs) =>
+    BookingCartSystem.dayOptions(q, d).map(
+      (entry) => entry.option.startMinutes,
+    );
+
+  describe('dayDocsKey / sameDayDocsKey — which documents a day reads', () => {
+    it('lists the barbers in code-unit order, whatever order they came in', () => {
+      expect(
+        BookingCartSystem.dayDocsKey(query({ barberIds: [NIKO, IVAN] }))
+          .barberIds,
+      ).toEqual([IVAN, NIKO]);
+    });
+
+    it('reads a shop by id only for a MOVE at a named shop — a chosen shop alone reads nothing more', () => {
+      expect(
+        BookingCartSystem.dayDocsKey(query({ locationId: HOME }))
+          .namedLocationId,
+      ).toBeNull();
+      expect(
+        BookingCartSystem.dayDocsKey(
+          query({
+            locationId: HOME,
+            release: [heldChair(600, 630)],
+            releaseLocalDate: TUESDAY,
+          }),
+        ).namedLocationId,
+      ).toBe(HOME);
+      expect(
+        BookingCartSystem.dayDocsKey(
+          query({ release: [heldChair(600, 630)], releaseLocalDate: TUESDAY }),
+        ).namedLocationId,
+      ).toBeNull();
+    });
+
+    it('holds two fresh keys for the same documents equal, in any barber order, and tells every field apart', () => {
+      const key = (change: Partial<DayQuery> = {}) =>
+        BookingCartSystem.dayDocsKey(query(change));
+      expect(BookingCartSystem.sameDayDocsKey(key(), key())).toBe(true);
+      expect(
+        BookingCartSystem.sameDayDocsKey(
+          key({ barberIds: [IVAN, NIKO] }),
+          key({ barberIds: [NIKO, IVAN] }),
+        ),
+      ).toBe(true);
+      expect(
+        BookingCartSystem.sameDayDocsKey(
+          key(),
+          key({ localDate: localDate('2026-09-30') }),
+        ),
+      ).toBe(false);
+      expect(
+        BookingCartSystem.sameDayDocsKey(
+          key(),
+          key({ barberIds: [IVAN, NIKO] }),
+        ),
+      ).toBe(false);
+      expect(
+        BookingCartSystem.sameDayDocsKey(
+          key(),
+          key({
+            locationId: HOME,
+            release: [heldChair(600, 630)],
+            releaseLocalDate: TUESDAY,
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('equals `null` only to `null`', () => {
+      const key = BookingCartSystem.dayDocsKey(query());
+      expect(BookingCartSystem.sameDayDocsKey(null, null)).toBe(true);
+      expect(BookingCartSystem.sameDayDocsKey(null, key)).toBe(false);
+      expect(BookingCartSystem.sameDayDocsKey(key, null)).toBe(false);
+    });
+  });
+
+  describe('barberDays / dayOptions — the systems over the documents', () => {
+    it('offers every step of a rostered barber’s free day, from the day’s first minute', () => {
+      const offered = starts(query(), docs());
+      expect(offered[0]).toBe(9 * 60);
+      expect(offered.at(-1)).toBe(17 * 60 + 30);
+      expect(offered).toHaveLength(35);
+    });
+
+    it('keeps out what is taken, padded by the turnaround', () => {
+      const padded = barberScheduleFixture({
+        turnaroundMinutes: minuteCount(15),
+      });
+      const offered = starts(
+        query(),
+        docs({ schedule: padded, busy: busyOn(600, 630) }),
+      );
+      expect(offered).toContain(9 * 60 + 15);
+      expect(offered).not.toContain(9 * 60 + 30);
+      expect(offered).not.toContain(10 * 60 + 30);
+      expect(offered).toContain(10 * 60 + 45);
+    });
+
+    it('hands a moved visit’s own chairs back on its own day only', () => {
+      const own = query({
+        release: [heldChair(600, 630)],
+        releaseLocalDate: TUESDAY,
+      });
+      expect(starts(own, docs({ busy: busyOn(600, 630) }))).toContain(10 * 60);
+      const other = query({
+        release: [heldChair(600, 630)],
+        releaseLocalDate: localDate('2026-09-30'),
+      });
+      expect(starts(other, docs({ busy: busyOn(600, 630) }))).not.toContain(
+        10 * 60,
+      );
+    });
+
+    it('offers nothing on a day the exception closes, without a roster, or at no listed shop', () => {
+      expect(
+        starts(
+          query(),
+          docs({ exception: scheduleExceptionFixture({ localDate: TUESDAY }) }),
+        ),
+      ).toEqual([]);
+      expect(starts(query(), docs({ schedule: null }))).toEqual([]);
+      expect(
+        starts(
+          query({
+            shops: [locationFixture({ locationStatus: LocationStatus.Hidden })],
+          }),
+          docs(),
+        ),
+      ).toEqual([]);
+      expect(
+        BookingCartSystem.barberDays(query({ shops: [] }), docs()),
+      ).toEqual([]);
+    });
+
+    it('offers a move’s UNLISTED named shop, clamped to its own hours', () => {
+      const move = query({ locationId: HOME, shops: [] });
+      const days = BookingCartSystem.barberDays(
+        move,
+        docs({ namedLocation: shortHours(LocationStatus.Hidden) }),
+      );
+      expect(days).toHaveLength(1);
+      expect(days[0]?.windows).toEqual([
+        RosterWindow.of(IVAN, HOME, minute(600), endMinute(1020)),
+      ]);
+    });
+
+    it('REPLACES a listed shop by the move’s named copy — its own hours, never doubled', () => {
+      const move = query({ locationId: null, shops: [locationFixture()] });
+      const days = BookingCartSystem.barberDays(
+        move,
+        docs({ namedLocation: shortHours() }),
+      );
+      expect(days[0]?.windows).toEqual([
+        RosterWindow.of(IVAN, HOME, minute(600), endMinute(1020)),
+      ]);
+    });
+
+    it('narrows to the chosen shop — a barber with no window there is not on the day', () => {
+      const elsewhere = shop('loc-mladost');
+      const shops = [locationFixture(), locationFixture({ id: elsewhere })];
+      expect(
+        BookingCartSystem.barberDays(
+          query({ shops, locationId: elsewhere }),
+          docs(),
+        ),
+      ).toEqual([]);
+      expect(
+        BookingCartSystem.barberDays(
+          query({ shops, locationId: HOME }),
+          docs(),
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('floors today at now plus the lead time', () => {
+      const today = query({ localDate: localDate('2026-09-28') });
+      expect(starts(today, docs())[0]).toBe(11 * 60);
+    });
+
+    it('is pure: same input → same output, inputs untouched', () => {
+      const q = deepFreeze(
+        query({ release: [heldChair(600, 630)], releaseLocalDate: TUESDAY }),
+      );
+      const d = deepFreeze(docs({ busy: busyOn(600, 630) }));
+      expect(BookingCartSystem.dayOptions(q, d)).toEqual(
+        BookingCartSystem.dayOptions(q, d),
+      );
+      expect(BookingCartSystem.barberDays(q, d)).toEqual(
+        BookingCartSystem.barberDays(q, d),
+      );
+    });
   });
 });

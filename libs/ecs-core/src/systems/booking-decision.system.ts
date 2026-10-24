@@ -12,7 +12,6 @@ import {
   type Placement,
   type PlacementPolicy,
   StaffTermsOverride,
-  type ScheduleVersion,
   type SeatIdPair,
   SeatLabel,
   SeatOutcome,
@@ -47,9 +46,15 @@ import {
   ShopUnavailableReason,
   SchedulingError,
 } from '@core/errors';
-import type { Appointment, ScheduleException, Service } from '@core/entities';
+import type {
+  Appointment,
+  BarberBusyDay,
+  BarberSchedule,
+  ScheduleException,
+  Service,
+} from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
-import { AvailabilitySystem } from './availability.system';
+import { AvailabilitySystem, type BusyBlocks } from './availability.system';
 import { GuestLabelSystem } from './guest-label.system';
 import { OfferingPriceSystem } from './offering-price.system';
 import {
@@ -78,18 +83,22 @@ export type DecideBookingInput = {
   readonly placement: Placement | null;
 };
 
-/** One barber's roster as loaded from `barberSchedules/{barberId}`. */
-export type DecisionSchedule = {
-  readonly barberId: BarberId;
-  readonly versions: readonly ScheduleVersion[];
-  readonly turnaroundMinutes: MinuteCount;
-};
+/**
+ * One barber's roster as stored at `barberSchedules/{barberId}` — its `id`
+ * IS the barber's — a whole `BarberSchedule` passes as it is.
+ */
+export type DecisionSchedule = Pick<
+  BarberSchedule,
+  'id' | 'versions' | 'turnaroundMinutes'
+>;
 
-/** One busy day as the projection stores it — UNPADDED minute ranges of its shop day. */
-export type DecisionBusyDay = {
-  readonly id: BusyKey;
-  readonly spans: readonly MinuteRange[];
-};
+/**
+ * One busy day as the projection stores it — the barber, the shop day and
+ * its UNPADDED `blocks` — a whole `BarberBusyDay` passes as it is; the
+ * decision finds a barber's day by `barberId` + `localDate`.
+ */
+export type DecisionBusyDay = Pick<BarberBusyDay, 'barberId' | 'localDate'> &
+  BusyBlocks;
 
 /** A published exception, as the commit reads it by `BusyKey` — a whole `ScheduleException` passes. */
 export type DecisionException = Pick<
@@ -189,7 +198,7 @@ function findSchedule(
 ): DecisionSchedule | null {
   for (let i = 0; i < schedules.length; i++) {
     const schedule = schedules[i] as DecisionSchedule;
-    if (schedule.barberId === barberId) return schedule;
+    if (schedule.id === barberId) return schedule;
   }
   return null;
 }
@@ -208,15 +217,17 @@ function findException(
   return null;
 }
 
-function busySpans(
+/** The barber's busy day on `localDate` (the first), or `null` when none was stored. */
+function findBusyDay(
   busy: readonly DecisionBusyDay[],
-  key: BusyKey,
-): readonly MinuteRange[] {
+  barberId: BarberId,
+  localDate: LocalDate,
+): DecisionBusyDay | null {
   for (let i = 0; i < busy.length; i++) {
     const day = busy[i] as DecisionBusyDay;
-    if (day.id === key) return day.spans;
+    if (day.barberId === barberId && day.localDate === localDate) return day;
   }
-  return [];
+  return null;
 }
 
 /** The terms the seat is written with, and the catalogue's when the two differ. */
@@ -514,15 +525,9 @@ export const BookingDecisionSystem = {
     const standingSpans: SeatedSpan[] = [];
     for (let i = 0; i < context.standing.length; i++) {
       const stood = context.standing[i] as DecisionStandingSeat;
-      const end = EndMinute.after(stood.startMinutes, stood.durationMinutes);
       // A stored seat never ran past its shop day (F-6); one that would is
-      // judged as ending at midnight, which is all of that day it holds.
-      standingSpans.push({
-        seatId: stood.seatId,
-        personKey: GuestLabelSystem.personKeyOf(stood.subject),
-        startMinutes: stood.startMinutes,
-        endMinutes: end.ok ? end.value : endOf(1440),
-      });
+      // judged as ending at midnight (`SeatingRuleSystem.soldEnd`).
+      standingSpans.push(SeatingRuleSystem.spanOf(stood, stood.subject));
     }
     const standing = SeatingRuleSystem.union(
       SeatingRuleSystem.standingOf(standingSpans),
@@ -842,12 +847,11 @@ function placementFacts(
         localDate,
         versions: schedule.versions,
         exceptions: exception === null ? [] : [exception],
-        shopHours: [
-          {
-            locationId,
-            hours: RosterSystem.shopDayHours(snapshot.shopHours, localDate),
-          },
-        ],
+        // The ONE shop being booked, by its published week.
+        shopHours: RosterSystem.shopHoursOn(
+          [{ id: locationId, openingHours: snapshot.shopHours }],
+          localDate,
+        ),
       }),
       locationId,
     );
@@ -856,12 +860,11 @@ function placementFacts(
   }
   const taken = placement.allowOverlap
     ? []
-    : AvailabilitySystem.paddedBusy({
+    : AvailabilitySystem.paddedBusy(
         barberId,
-        spans: busySpans(snapshot.busy, BusyKey.of(barberId, localDate)),
-        turnaroundMinutes:
-          schedule === null ? MinuteCount.ZERO : schedule.turnaroundMinutes,
+        findBusyDay(snapshot.busy, barberId, localDate),
+        schedule,
         release,
-      });
+      );
   return { windows, taken };
 }

@@ -60,11 +60,6 @@ export const loyaltyAccountReadPorts = (
 /** The page of no rows: nothing to read, nothing older. */
 const NOTHING: JournalPage = { entries: [], nextBeforeSeq: null };
 
-/** A whole count of at least one, whatever was asked (`PagingSystem.pageSize`; a non-number is one). */
-function pageSizeOf(raw: number): number {
-  return Number.isFinite(raw) ? PagingSystem.pageSize(raw) : 1;
-}
-
 /** A row's place in the feed — its `seq`, unique per client record. */
 const seqOf = (entry: JournalEntry): number => entry.seq;
 
@@ -92,7 +87,7 @@ export const clientJournalPorts = (db: Firestore): ClientJournalPorts => ({
   pageClientJournal: async (customerId, effects, beforeSeq, max) => {
     const [only, ...others] = effects;
     if (only === undefined) return Result.ok(NOTHING);
-    const size = pageSizeOf(max);
+    const size = PagingSystem.pageSizeOf(max);
     const olderThan: QueryConstraint[] =
       beforeSeq === null ? [] : [startAfter(beforeSeq)];
     const read = await readQuery<JournalEntry>(

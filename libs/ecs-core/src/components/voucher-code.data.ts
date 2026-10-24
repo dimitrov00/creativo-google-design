@@ -57,4 +57,45 @@ export const VoucherCode = {
   equals(a: VoucherCode, b: VoucherCode): boolean {
     return a === b;
   },
+
+  /**
+   * The same vouchers in the same order (the staff dashboard's `sameCodes`):
+   * as many codes, each equal to its counterpart once both are
+   * {@link normalize}d — order is cover order, and it matters.
+   */
+  sameCover(a: readonly string[], b: readonly string[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (
+        VoucherCode.normalize(a[i] as string) !==
+        VoucherCode.normalize(b[i] as string)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * The vouchers a batch names, in cover order (the callable's
+   * `voucherCodesOf`): every code {@link parseTyped} — a blank one fails the
+   * shape — and no voucher twice, since a second draw would be measured
+   * against a moved balance. The first refusal answers, a repeat as the
+   * repeated code as typed.
+   */
+  distinct(
+    codes: readonly string[],
+  ): Result<readonly VoucherCode[], EngagementError.VoucherCodeInvalid> {
+    const out: VoucherCode[] = [];
+    for (let i = 0; i < codes.length; i++) {
+      const raw = codes[i] as string;
+      const code = VoucherCode.parseTyped(raw);
+      if (!code.ok) return code;
+      if (out.includes(code.value)) {
+        return Result.err(EngagementError.voucherCodeInvalid(raw));
+      }
+      out.push(code.value);
+    }
+    return Result.ok(out);
+  },
 } as const;

@@ -9,8 +9,8 @@ import {
   HeadRole,
   STREAK_EXCUSES,
   STREAK_RULE_PARAMETER_ORDER,
-  STREAK_SHOP_EXCUSES,
   StreakOnBreak,
+  StreakPublishConsent,
   StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
@@ -457,6 +457,25 @@ export const StreakRuleSystem = {
   },
 
   /**
+   * What «Запази» owes the admin before a change of this direction goes
+   * out (client-card revision 3 §2.6.4): a looser or neutral change is
+   * saved at once; a stricter or mixed one asks first; the rule going on or
+   * off asks first with the switch's own question.
+   */
+  publishConsent(direction: StreakRuleDirection): StreakPublishConsent {
+    switch (direction) {
+      case StreakRuleDirection.Switch:
+        return StreakPublishConsent.AskSwitch;
+      case StreakRuleDirection.Stricter:
+      case StreakRuleDirection.Mixed:
+        return StreakPublishConsent.Ask;
+      case StreakRuleDirection.Looser:
+      case StreakRuleDirection.Neutral:
+        return StreakPublishConsent.AtOnce;
+    }
+  },
+
+  /**
    * What moved from `before` to `after`, and whom it favours. A part is
    * judged by what it DOES: a figure of a part that is off, before and
    * after, is listed as changed and moves nothing (`NEUTRAL`). The name is
@@ -576,12 +595,8 @@ export const StreakRuleSystem = {
 
   /** The rule as structure for its sentences; the interval and the qualifier are fresh slices of their own. */
   summary(rule: StreakRule): StreakRuleSummary {
-    let shopExcuses = true;
-    for (let i = 0; i < STREAK_SHOP_EXCUSES.length; i++) {
-      if (!includes(rule.excuses, STREAK_SHOP_EXCUSES[i] as StreakExcuse)) {
-        shopExcuses = false;
-      }
-    }
+    // The one coverage rule the excuses sheet warns by too.
+    const shopExcuses = StreakRule.coversShopExcuses(rule.excuses);
     return {
       enabled: rule.enabled,
       interval: StreakIntervalRule.of(rule),

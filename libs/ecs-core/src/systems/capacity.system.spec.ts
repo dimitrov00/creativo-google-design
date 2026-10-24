@@ -102,7 +102,7 @@ function input(overrides: Partial<CapacityPlanInput> = {}): CapacityPlanInput {
     barberId: B1,
     localDates: [k('2026-08-03')],
     schedule: schedule([{ start: 540, end: 1020, locationId: LOC_A }]),
-    shops: [{ locationId: LOC_A, week: hours() }],
+    shops: [{ id: LOC_A, openingHours: hours() }],
     busy: [],
     exceptions: [],
     ...overrides,
@@ -132,7 +132,7 @@ describe('planBarberCapacity', () => {
   it('pads busy with the turnaround on both sides before subtracting', () => {
     const planned = plan({
       schedule: schedule([{ start: 540, end: 1020, locationId: LOC_A }], 15),
-      busy: [{ localDate: k('2026-08-03'), spans: [busy(600, 660)] }],
+      busy: [{ localDate: k('2026-08-03'), blocks: [busy(600, 660)] }],
     });
     // 480 − (60 busy + 15 either side) = 390.
     expect(contributionOn(planned, '2026-08-03')).toEqual({ 'loc-a': 390 });
@@ -140,7 +140,7 @@ describe('planBarberCapacity', () => {
 
   it('clamps rostered time to the shop published hours', () => {
     const planned = plan({
-      shops: [{ locationId: LOC_A, week: hours(540, 780) }],
+      shops: [{ id: LOC_A, openingHours: hours(540, 780) }],
     });
     expect(contributionOn(planned, '2026-08-03')).toEqual({ 'loc-a': 240 });
   });
@@ -152,8 +152,8 @@ describe('planBarberCapacity', () => {
         { start: 840, end: 1020, locationId: LOC_B },
       ]),
       shops: [
-        { locationId: LOC_A, week: hours() },
-        { locationId: LOC_B, week: hours() },
+        { id: LOC_A, openingHours: hours() },
+        { id: LOC_B, openingHours: hours() },
       ],
     });
     expect(contributionOn(planned, '2026-08-03')).toEqual({
@@ -209,7 +209,7 @@ describe('planBarberCapacity', () => {
 
   it('deletes the entry for a fully booked day rather than keeping zeros', () => {
     const planned = plan({
-      busy: [{ localDate: k('2026-08-03'), spans: [busy(540, 1020)] }],
+      busy: [{ localDate: k('2026-08-03'), blocks: [busy(540, 1020)] }],
     });
     expect(contributionOn(planned, '2026-08-03')).toBeNull();
   });
@@ -418,7 +418,7 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
     const frozenInput = deepFreeze(
       input({
         localDates: [k('2026-08-04'), k('2026-08-03')],
-        busy: [{ localDate: k('2026-08-03'), spans: [busy(600, 660)] }],
+        busy: [{ localDate: k('2026-08-03'), blocks: [busy(600, 660)] }],
       }),
     );
     const once = CapacitySystem.planBarberCapacity(frozenInput);
@@ -432,5 +432,77 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
     );
     expect(frozenInput.localDates).toEqual(['2026-08-04', '2026-08-03']);
     expect(once.localDates).toEqual(['2026-08-03', '2026-08-04']);
+  });
+});
+
+describe('freeMinutesByDay — the booking calendar’s markers', () => {
+  const IVAN = BarberId.of('b-ivan');
+  const NIKO = BarberId.of('b-niko');
+  const OCTOBER = k('2026-10-01');
+  const SECOND = k('2026-10-02');
+  // Out of the stored order on purpose: the system sorts a copy first.
+  const ENTRIES = [
+    CapacityEntry.of(OCTOBER, IVAN, LOC_B, m(30)),
+    CapacityEntry.of(OCTOBER, NIKO, LOC_A, m(60)),
+    CapacityEntry.of(OCTOBER, IVAN, LOC_A, m(120)),
+  ];
+
+  it('sums the free minutes of the barbers asked about, at the one shop asked about', () => {
+    expect(
+      CapacitySystem.freeMinutesByDay(ENTRIES, OCTOBER, SECOND, [IVAN], LOC_A),
+    ).toEqual(
+      new Map([
+        [OCTOBER, 120],
+        [SECOND, 0],
+      ]),
+    );
+    expect(
+      CapacitySystem.freeMinutesByDay(
+        ENTRIES,
+        OCTOBER,
+        OCTOBER,
+        [IVAN, NIKO],
+        null,
+      ),
+    ).toEqual(new Map([[OCTOBER, 210]]));
+  });
+
+  it('holds every day of the run, in order — none for an inverted run, zero for nobody asked about', () => {
+    expect([
+      ...CapacitySystem.freeMinutesByDay(
+        ENTRIES,
+        k('2026-09-30'),
+        SECOND,
+        [IVAN],
+        null,
+      ),
+    ]).toEqual([
+      [k('2026-09-30'), 0],
+      [OCTOBER, 150],
+      [SECOND, 0],
+    ]);
+    expect(
+      CapacitySystem.freeMinutesByDay(ENTRIES, SECOND, OCTOBER, [IVAN], null)
+        .size,
+    ).toBe(0);
+    expect(
+      CapacitySystem.freeMinutesByDay(ENTRIES, OCTOBER, OCTOBER, [], null),
+    ).toEqual(new Map([[OCTOBER, 0]]));
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze([...ENTRIES]);
+    const barbers = deepFreeze([IVAN, NIKO]);
+    const once = CapacitySystem.freeMinutesByDay(
+      frozen,
+      OCTOBER,
+      SECOND,
+      barbers,
+      LOC_A,
+    );
+    expect(
+      CapacitySystem.freeMinutesByDay(frozen, OCTOBER, SECOND, barbers, LOC_A),
+    ).toEqual(once);
+    expect(frozen).toEqual(ENTRIES);
   });
 });

@@ -2,6 +2,7 @@ import { Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
 import {
   type BookingPolicy,
+  PolicyStartOutcome,
   type PreciseInstant,
   WriteOp,
 } from '@core/components';
@@ -42,18 +43,6 @@ export type StartPolicyRecomputeCommand = {
   /** The write's time, at full precision (§9 D17). */
   readonly changedAt: PreciseInstant;
 };
-
-/** How a settings write left the recompute job — the ONLY source of these strings, the field `policyStartOutcome`. */
-export const PolicyStartOutcome = {
-  /** The write moved no late line: nothing to re-judge. */
-  Unmoved: 'UNMOVED',
-  /** A pass (re)started from the top. */
-  Started: 'STARTED',
-  /** This change's pass, or a newer one's, already owns the job. */
-  Unchanged: 'UNCHANGED',
-} as const;
-export type PolicyStartOutcome =
-  (typeof PolicyStartOutcome)[keyof typeof PolicyStartOutcome];
 
 export type StartPolicyRecomputeAnswer = {
   readonly policyStartOutcome: PolicyStartOutcome;

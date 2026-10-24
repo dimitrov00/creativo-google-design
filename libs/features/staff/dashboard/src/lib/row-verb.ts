@@ -1,22 +1,22 @@
-import type { BookingStatus } from '@core/primitives';
+import { ArrivalVerb, type StaffVerb } from '@core/components';
 import { bookingStatusWords } from '@creativo/infrastructure/i18n';
 
 /**
  * The two row acts that are NOT lifecycle moves — the arrival stamp, set and
  * taken back. Arriving is a stamp beside the status, never an edge in the
- * lifecycle graph (see `Appointment.arrivedAtUtcMs`).
+ * lifecycle graph (see `Appointment.arrivedAtUtcMs`). The dictionary is
+ * ecs-core's (`staff-verb.data.ts`, pass C, Y-23 — values unchanged); the
+ * sheet binds it and re-exports it under the name its readers always
+ * imported from here.
  */
-export const ArrivalVerb = {
-  Arrived: 'ARRIVED',
-  Unarrived: 'UNARRIVED',
-} as const;
-export type ArrivalVerb = (typeof ArrivalVerb)[keyof typeof ArrivalVerb];
+export { ArrivalVerb };
 
 /**
  * What a row can DO: a lifecycle move — the `BookingStatus` the callable is
- * asked for — or one of the arrival stamps.
+ * asked for — or one of the arrival stamps. ecs-core's `StaffVerb`, under
+ * the sheet's own name (D-9).
  */
-export type RowVerb = BookingStatus | ArrivalVerb;
+export type RowVerb = StaffVerb;
 
 /**
  * Each verb's word (Phase 4a 4A-10) — the `staff.day.act.<word>` and

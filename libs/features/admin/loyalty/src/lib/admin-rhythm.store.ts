@@ -22,10 +22,7 @@ import {
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
-import type {
-  StreakDefinitionPorts,
-  StreakPublishGatewayPorts,
-} from '@core/ports';
+import type { StreakDefinitionPorts } from '@core/ports';
 import {
   LocalDate,
   PublishRequestId,
@@ -45,8 +42,6 @@ import {
   HeadRole,
   StreakInterval,
   type StreakHeadRule,
-  StreakIntervalRule,
-  StreakPublishCall,
   StreakRule,
   type StreakRuleInput,
   type StreakState,
@@ -57,17 +52,30 @@ import {
   type RememberedIntervals,
   RhythmDraftSystem,
   type RhythmBounds,
+  type RhythmEffectivePresets,
   type RhythmIntervalPatch,
   type RhythmPatch,
   type StreakDraftAssessment,
+  type StreakEffectiveDay,
   type StreakNoticePolicy,
   type StreakPreview,
+  StreakPreviewSystem,
+  type StreakPublishFloor,
   StreakPublishSystem,
   type StreakRuleChange,
   StreakRuleSystem,
   type StreakSchedule,
   ZonedTimeSystem,
 } from '@core/systems';
+import {
+  type RhythmDraftReceipt,
+  type RhythmPublishOutcome,
+  type RhythmPublishRefusal,
+  type RhythmWithdrawOutcome,
+  publishRhythmDraft,
+  rhythmPreviewSource,
+  withdrawRhythm,
+} from '@core/pipelines';
 import {
   type RhythmRuleWords,
   rhythmRuleWords,
@@ -76,9 +84,6 @@ import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import {
   RHYTHM_PREVIEW_DELAY_MS,
   rhythmPreviewOf,
-  rhythmPreviewReadsFacts,
-  rhythmPreviewSource,
-  sampleRhythmRun,
 } from './admin-rhythm.preview';
 
 // ── What the page reads ────────────────────────────────────────────────────
@@ -174,49 +179,33 @@ export type AdminRhythmHead = {
   readonly published: boolean;
 };
 
-/** A «Запази» that landed: the server's receipt, and whether its day is still to come (it can then be called off). */
-export type AdminRhythmReceipt = StreakPublishCall.Receipt & {
-  readonly waits: boolean;
-};
+/**
+ * A «Запази» that landed: the server's receipt, and whether its day is
+ * still to come (it can then be called off) — `publishRhythmDraft`'s
+ * answer (`@core/pipelines`).
+ */
+export type AdminRhythmReceipt = RhythmDraftReceipt;
 
 /**
  * A «Запази» or an «Отмени» that did not land, worded by its `errorCode`:
  * the server's (or this side's own) `StreakPublishError`, or a request
- * that got no answer (`RepositoryError`, «не можа да се изпрати»).
+ * that got no answer (`RepositoryError`, «не можа да се изпрати»). Which
+ * is which is `StreakPublishError.guard`'s answer.
  */
-export type AdminRhythmRefusal = StreakPublishError | RepositoryError;
+export type AdminRhythmRefusal = RhythmPublishRefusal;
 
 /**
  * What became of a «Запази»: the receipt; `null` when there was nothing to
  * publish (the draft IS the rule in force, figure for figure); or the
  * refusal. Every answer is one the page words; none is thrown.
  */
-export type AdminRhythmSaveOutcome = Result<
-  AdminRhythmReceipt | null,
-  AdminRhythmRefusal
->;
+export type AdminRhythmSaveOutcome = RhythmPublishOutcome;
 
 /** What became of an «Отмени»: the version called off; `null` when nothing waits; or the refusal. */
-export type AdminRhythmUndoOutcome = Result<number | null, AdminRhythmRefusal>;
+export type AdminRhythmUndoOutcome = RhythmWithdrawOutcome;
 
-/** The three days «Влизане в сила» names. */
-export interface AdminRhythmDays {
-  readonly today: LocalDate;
-  readonly tomorrow: LocalDate;
-  /** The first day of the month after this one. */
-  readonly firstOfMonth: LocalDate;
-}
-
-const PUBLISH_REFUSALS: ReadonlySet<string> = new Set(
-  Object.values(StreakPublishErrorCode),
-);
-
-/** The server's no (or this side's own), as against a request that got no answer. */
-export function isPublishRefusal(
-  error: AdminRhythmRefusal,
-): error is StreakPublishError {
-  return PUBLISH_REFUSALS.has(error.errorCode);
-}
+/** The three days «Влизане в сила» names (`RhythmDraftSystem.effectivePresets`). */
+export type AdminRhythmDays = RhythmEffectivePresets;
 
 // ── The draft, clamped ─────────────────────────────────────────────────────
 
@@ -292,9 +281,11 @@ const versionsOf = (head: AdminRhythmHead): string =>
 
 /**
  * The head a publish leaves behind, worked out from its answer: what the
- * page stands on until the stream says the same. In force at once when
- * its day has come (and always for a shop's first rule), else waiting
- * beside the rule in force.
+ * page stands on until the stream says the same — the receipt's version
+ * and day on the assessed rule, placed by `StreakPublishSystem.headAfter`
+ * (the server's own `decide` places it the same way): in force at once
+ * when its day has come (and always for a shop's first rule — an
+ * unpublished shop has no head yet), else waiting beside the rule in force.
  */
 function headAfterPublish(
   base: AdminRhythmHead,
@@ -307,28 +298,30 @@ function headAfterPublish(
     version: receipt.version,
     effectiveFromLocalDate: receipt.effectiveFromLocalDate,
   };
-  const schedule =
-    base.published && receipt.waits
-      ? StreakRuleSystem.schedule(
-          StreakRuleSystem.inForceOn(base.schedule, today),
-          { ...numbered, streakTransition: ADMIN_RHYTHM_TRANSITION },
-        )
-      : StreakRuleSystem.schedule(numbered, null);
-  return schedule.ok ? { schedule: schedule.value, published: true } : null;
+  const after = StreakPublishSystem.headAfter(
+    base.published ? base.schedule : null,
+    numbered,
+    ADMIN_RHYTHM_TRANSITION,
+    today,
+  );
+  return after.ok ? { schedule: after.value.head, published: true } : null;
 }
 
-/** The head a withdrawal leaves behind: the rule in force, nothing waiting. */
-function headAfterWithdrawal(head: AdminRhythmHead): AdminRhythmHead | null {
-  const schedule = StreakRuleSystem.schedule(
-    StreakRuleSystem.current(head.schedule),
-    null,
-  );
-  return schedule.ok
-    ? { schedule: schedule.value, published: head.published }
+/**
+ * The head a withdrawal of `version` leaves behind on `today`
+ * (`StreakPublishSystem.withdraw`, the server's own answer): the rule in
+ * force, nothing waiting.
+ */
+function headAfterWithdrawal(
+  head: AdminRhythmHead,
+  version: number,
+  today: LocalDate,
+): AdminRhythmHead | null {
+  const withdrawn = StreakPublishSystem.withdraw(version, head.schedule, today);
+  return withdrawn.ok
+    ? { schedule: withdrawn.value.head, published: head.published }
     : null;
 }
-
-const laterOf = (a: LocalDate, b: LocalDate): LocalDate => (a > b ? a : b);
 
 /** The rule moved under the draft: what the draft was made on, against what the head now holds. */
 const staleAgainst = (
@@ -336,10 +329,10 @@ const staleAgainst = (
   head: AdminRhythmHead,
 ): StreakPublishError =>
   StreakPublishError.stale(
-    base === null || !base.published
+    base === null
       ? 0
-      : StreakPublishSystem.newestOf(base.schedule),
-    head.published ? StreakPublishSystem.newestOf(head.schedule) : 0,
+      : StreakPublishSystem.baseVersionOf(base.schedule, base.published),
+    StreakPublishSystem.baseVersionOf(head.schedule, head.published),
   );
 
 const sameDraft = (a: StreakRuleInput, b: StreakRuleInput): boolean =>
@@ -367,7 +360,10 @@ const sameDraft = (a: StreakRuleInput, b: StreakRuleInput): boolean =>
  * Every figure is CLAMPED on the way in (`patch`), so the controls cannot
  * reach a rule the domain refuses; the domain's own answer (`validation`,
  * `StreakPublishSystem.assess`) is the second line. A publish is sent as
- * a `StreakPublishCall` through `STREAK_PUBLISH_PORTS`.
+ * a `StreakPublishCall` through `STREAK_PUBLISH_PORTS` by the browser use
+ * cases `publishRhythmDraft` / `withdrawRhythm` (`@core/pipelines`); the
+ * store keeps the intent ids, the generation, the floor, rebase / adopt
+ * and settling the head the stream says.
  *
  * The preview recomputes by itself, a pause after the last change, over
  * facts read ONCE per visit to the page.
@@ -396,6 +392,11 @@ export class AdminRhythmStore {
 
   private readonly facts =
     this.statsReader === null ? null : rhythmPreviewSource(this.statsReader);
+  /** «Запази» and «Отмени», the browser use cases over the gateway (`@core/pipelines`). */
+  private readonly publishRule =
+    this.publishing === null ? null : publishRhythmDraft(this.publishing);
+  private readonly withdrawRule =
+    this.publishing === null ? null : withdrawRhythm(this.publishing);
 
   /** `loyalty.streaks`: off, the page still works (the rule is prepared before the rollout) and says so. */
   readonly streaksOn = this.flags.flagOn(FlagName.LoyaltyStreaks);
@@ -450,10 +451,7 @@ export class AdminRhythmStore {
   /** The day the admin chose; `null` = «От утре». */
   private readonly _picked = signal<LocalDate | null>(null);
   /** The earliest day the SERVER allowed a change of this direction, once it has refused an earlier one. */
-  private readonly _floor = signal<{
-    readonly day: LocalDate;
-    readonly direction: StreakRuleChange['direction'];
-  } | null>(null);
+  private readonly _floor = signal<StreakPublishFloor | null>(null);
   private readonly _preview = signal<LoadSlice<StreakPreview> | null>(null);
   private readonly _previewBusy = signal(false);
   private readonly _previewCapped = signal(false);
@@ -493,12 +491,9 @@ export class AdminRhythmStore {
     () => {
       const zone = this._zone();
       if (zone === null) return null;
-      const today = ZonedTimeSystem.toLocal(this._now(), zone).localDate;
-      return {
-        today,
-        tomorrow: LocalDate.addDays(today, 1),
-        firstOfMonth: LocalDate.addMonths(LocalDate.startOfMonth(today), 1),
-      };
+      return RhythmDraftSystem.effectivePresets(
+        ZonedTimeSystem.toLocal(this._now(), zone).localDate,
+      );
     },
     { equal: (a, b) => a?.today === b?.today },
   );
@@ -566,33 +561,36 @@ export class AdminRhythmStore {
   /** The form differs from the rule in force: what «Отхвърли промените?» guards. */
   readonly dirty = computed(() => {
     const assessment = this.assessment();
-    return (
-      assessment !== null &&
-      (assessment.draftAssessment === DraftAssessment.Invalid ||
-        assessment.change.changed.length > 0)
-    );
+    return assessment !== null && StreakPublishSystem.isDraftDirty(assessment);
+  });
+
+  /**
+   * «Влизане в сила» (`StreakPublishSystem.effectiveDay`): the first day
+   * this change may start, raised to the server's floor for a change of the
+   * same direction, and the day chosen, never earlier; `null` until the
+   * shop's days are known.
+   */
+  private readonly effectiveDays = computed((): StreakEffectiveDay | null => {
+    const days = this.days();
+    return days === null
+      ? null
+      : StreakPublishSystem.effectiveDay(
+          this._picked(),
+          this.assessment(),
+          this._floor(),
+          days.tomorrow,
+        );
   });
 
   /** The first day this change may start: the day picker's minimum; `null` until the shop's days are known. */
-  readonly earliestDay: Signal<LocalDate | null> = computed(() => {
-    const assessment = this.assessment();
-    if (assessment?.draftAssessment !== DraftAssessment.Valid) {
-      return this.days()?.tomorrow ?? null;
-    }
-    const floor = this._floor();
-    return floor !== null && floor.direction === assessment.change.direction
-      ? laterOf(floor.day, assessment.earliest)
-      : assessment.earliest;
-  });
+  readonly earliestDay: Signal<LocalDate | null> = computed(
+    () => this.effectiveDays()?.earliest ?? null,
+  );
 
   /** The day the draft will be published for: the one chosen, never earlier than the change may start; `null` until the shop's days are known. */
-  readonly effectiveFrom: Signal<LocalDate | null> = computed(() => {
-    const chosen = this._picked() ?? this.days()?.tomorrow ?? null;
-    const earliest = this.earliestDay();
-    return chosen === null || earliest === null
-      ? null
-      : laterOf(chosen, earliest);
-  });
+  readonly effectiveFrom: Signal<LocalDate | null> = computed(
+    () => this.effectiveDays()?.effectiveFrom ?? null,
+  );
 
   /** The ranges that move with the draft. */
   readonly bounds = computed(() => rhythmBoundsOf(this._draft()));
@@ -619,8 +617,8 @@ export class AdminRhythmStore {
     const base = this._base();
     return (
       base !== null &&
-      assessment?.draftAssessment === DraftAssessment.Valid &&
-      (assessment.change.changed.length > 0 || !base.published) &&
+      assessment !== null &&
+      StreakPublishSystem.publishable(assessment, base.published) &&
       this._online() &&
       !this._saving() &&
       !this._withdrawing()
@@ -668,7 +666,9 @@ export class AdminRhythmStore {
     const days = this.days();
     return zone === null || days === null
       ? null
-      : sampleRhythmRun(this._worded(), days.today, zone);
+      : StreakPreviewSystem.sampleRun(this._worded(), days.today, (day) =>
+          ZonedTimeSystem.startOfLocalDay(day, zone),
+        );
   });
 
   // ── The preview ──────────────────────────────────────────────────────────
@@ -767,21 +767,7 @@ export class AdminRhythmStore {
     return untracked(() => {
       const held = this._draft();
       if (this._base() === null) return held;
-      this.remembered =
-        held.streakInterval === StreakInterval.Fixed
-          ? {
-              ...this.remembered,
-              fixed: StreakIntervalRule.fixed(held.intervalDays),
-            }
-          : {
-              ...this.remembered,
-              personal: StreakIntervalRule.personal(
-                held.intervalTolerancePct,
-                held.intervalMinDays,
-                held.intervalMaxDays,
-                held.intervalFallbackDays,
-              ),
-            };
+      this.remembered = RhythmDraftSystem.remember(this.remembered, held);
       const next = patchedRhythmDraft(held, partial, this.remembered);
       if (sameDraft(held, next)) return held;
       this._draft.set(next);
@@ -954,12 +940,10 @@ export class AdminRhythmStore {
     const { today } = this.shopDays();
     if (base !== null) {
       this._draft.set(
-        RhythmDraftSystem.clamp(
+        RhythmDraftSystem.carryOver(
+          this._draft(),
+          StreakRuleSystem.inForceOn(base.schedule, today),
           StreakRuleSystem.inForceOn(head.schedule, today),
-          RhythmDraftSystem.diff(
-            this._draft(),
-            StreakRuleSystem.inForceOn(base.schedule, today),
-          ),
           this.remembered,
           ADMIN_RHYTHM_CHOICES.riskLeadDays,
         ),
@@ -1008,9 +992,10 @@ export class AdminRhythmStore {
     const is = StreakRuleSystem.inForceOn(base.schedule, today);
     if (was === is) return false;
     this._draft.set(
-      RhythmDraftSystem.clamp(
+      RhythmDraftSystem.carryOver(
+        this._draft(),
+        was,
         is,
-        RhythmDraftSystem.diff(this._draft(), was),
         this.remembered,
         ADMIN_RHYTHM_CHOICES.riskLeadDays,
       ),
@@ -1047,8 +1032,8 @@ export class AdminRhythmStore {
 
   private async publishDraft(): Promise<AdminRhythmSaveOutcome> {
     const base = this._base();
-    const publishing = this.publishing;
-    if (base === null || publishing === null) {
+    const publish = this.publishRule;
+    if (base === null || publish === null) {
       return Result.err(RepositoryError.unavailable());
     }
     if (this.tick() && this.dirty()) {
@@ -1074,18 +1059,23 @@ export class AdminRhythmStore {
     const generation = this.generation;
     this._refusal.set(null);
     this._saving.set(true);
-    const sent = await this.send(
-      publishing,
-      assessed,
-      base,
+    // The draft judged here first (no rule, nothing to publish, a day too
+    // early — nothing is sent), else the call and its answer in the page's
+    // terms; never throws (`publishRhythmDraft`).
+    const sent = await publish({
+      assessment: assessed,
+      published: base.published,
       requestId,
+      streakId: ADMIN_RHYTHM_STREAK_ID,
+      streakTransition: ADMIN_RHYTHM_TRANSITION,
       effectiveFrom,
       today,
-    );
+      policy: this.policy,
+    });
     if (generation !== this.generation) return sent;
     this._saving.set(false);
     // A save that got no answer keeps its id: the retry is the same intent.
-    if (sent.ok || isPublishRefusal(sent.error)) this.intent = null;
+    if (sent.ok || StreakPublishError.guard(sent.error)) this.intent = null;
 
     if (sent.ok) {
       const receipt = sent.value;
@@ -1139,74 +1129,10 @@ export class AdminRhythmStore {
     return sent;
   }
 
-  /**
-   * What a «Запази» comes to: the draft judged here first (no rule, nothing
-   * to publish, a day too early — nothing is sent), else the call and its
-   * answer in the page's terms. Never throws.
-   */
-  private async send(
-    publishing: StreakPublishGatewayPorts,
-    assessed: StreakDraftAssessment,
-    base: AdminRhythmHead,
-    requestId: PublishRequestId,
-    effectiveFrom: LocalDate,
-    today: LocalDate,
-  ): Promise<AdminRhythmSaveOutcome> {
-    if (assessed.draftAssessment === DraftAssessment.Invalid) {
-      return Result.err(StreakPublishError.invalid(assessed.fields));
-    }
-    // An unpublished rule is published even as recommended: until it is,
-    // there is no rule.
-    if (base.published && assessed.change.changed.length === 0) {
-      return Result.ok(null);
-    }
-    if (effectiveFrom < assessed.earliest) {
-      return Result.err(
-        StreakPublishError.tooEarly(effectiveFrom, assessed.earliest),
-      );
-    }
-    let sent: Result<StreakPublishCall.Receipt, AdminRhythmRefusal>;
-    try {
-      sent = await publishing.publishStreakRule({
-        requestId,
-        streakId: ADMIN_RHYTHM_STREAK_ID,
-        baseVersion: assessed.baseVersion,
-        rule: assessed.rule,
-        streakTransition: ADMIN_RHYTHM_TRANSITION,
-        previewHash: null,
-      });
-    } catch {
-      sent = Result.err(RepositoryError.writeFailed(null, 'threw'));
-    }
-    if (sent.ok) {
-      return Result.ok({
-        ...sent.value,
-        waits: sent.value.effectiveFromLocalDate > today,
-      });
-    }
-    if (sent.error.errorCode !== StreakPublishErrorCode.TooEarly) return sent;
-    // The server holds the change to a stricter day than this side worked
-    // out. The day offered is the strictest the domain knows for this
-    // change, and always a later one than the day just refused.
-    return Result.err(
-      StreakPublishError.tooEarly(
-        effectiveFrom,
-        laterOf(
-          StreakRuleSystem.earliestEffectiveDay(
-            assessed.change.direction,
-            today,
-            { ...this.policy, clientsSeeRhythm: true },
-          ),
-          LocalDate.addDays(effectiveFrom, 1),
-        ),
-      ),
-    );
-  }
-
   private async withdrawWaiting(): Promise<AdminRhythmUndoOutcome> {
     const head = this._live();
-    const publishing = this.publishing;
-    if (head === null || publishing === null) {
+    const withdraw = this.withdrawRule;
+    if (head === null || withdraw === null) {
       return Result.err(RepositoryError.unavailable());
     }
     this.tick();
@@ -1214,10 +1140,18 @@ export class AdminRhythmStore {
     const requestId = (this.withdrawIntent ??= this.nextId());
     const generation = this.generation;
     this._withdrawing.set(true);
-    const outcome = await this.callOff(publishing, head, requestId, today);
+    // The version that waits on `today`, called off by its own number;
+    // nothing is sent when nothing waits; never throws (`withdrawRhythm`).
+    const outcome = await withdraw({
+      head: head.schedule,
+      published: head.published,
+      requestId,
+      streakId: ADMIN_RHYTHM_STREAK_ID,
+      today,
+    });
     if (generation !== this.generation) return outcome;
     this._withdrawing.set(false);
-    if (outcome.ok || isPublishRefusal(outcome.error)) {
+    if (outcome.ok || StreakPublishError.guard(outcome.error)) {
       this.withdrawIntent = null;
     }
 
@@ -1230,7 +1164,9 @@ export class AdminRhythmStore {
     const told =
       live !== null &&
       StreakRuleSystem.scheduled(live.schedule)?.version !== version;
-    const next = (told ? live : (headAfterWithdrawal(head) ?? live)) ?? head;
+    const next =
+      (told ? live : (headAfterWithdrawal(head, version, today) ?? live)) ??
+      head;
     this._live.set(next);
     // The admin's own act is no news to them: the draft, if there is
     // one, is kept without a word.
@@ -1238,29 +1174,6 @@ export class AdminRhythmStore {
     else this.adopt(next);
     if (!told) void this.loadVersions();
     return outcome;
-  }
-
-  /** Calls off the version that waits on `today`, by its own number; nothing is sent when nothing waits. Never throws. */
-  private async callOff(
-    publishing: StreakPublishGatewayPorts,
-    head: AdminRhythmHead,
-    requestId: PublishRequestId,
-    today: LocalDate,
-  ): Promise<AdminRhythmUndoOutcome> {
-    const waiting = head.published
-      ? StreakRuleSystem.upcomingOn(head.schedule, today)
-      : null;
-    if (waiting === null) return Result.ok(null);
-    const { version } = waiting;
-    let sent: Result<void, AdminRhythmRefusal>;
-    try {
-      sent = await publishing.withdrawStreakRule(
-        StreakPublishCall.withdraw(requestId, ADMIN_RHYTHM_STREAK_ID, version),
-      );
-    } catch {
-      sent = Result.err(RepositoryError.writeFailed(null, 'threw'));
-    }
-    return sent.ok ? Result.ok(version) : sent;
   }
 
   /** The heads heard while a write was in flight are read now. */
@@ -1285,11 +1198,13 @@ export class AdminRhythmStore {
     const facts = this.facts;
     const base = this._base();
     const assessment = this.assessment();
+    // Nothing to preview unless the draft is a rule that CHANGES something
+    // (`publishable` as against a published rule).
     if (
       facts === null ||
       base === null ||
       assessment?.draftAssessment !== DraftAssessment.Valid ||
-      assessment.change.changed.length === 0
+      !StreakPublishSystem.publishable(assessment, true)
     ) {
       this._preview.set(null);
       this._previewBusy.set(false);
@@ -1297,7 +1212,7 @@ export class AdminRhythmStore {
     }
     const { today } = this.shopDays();
     const inForce = StreakRuleSystem.inForceOn(base.schedule, today);
-    const reads = rhythmPreviewReadsFacts(inForce, assessment.rule);
+    const reads = StreakPreviewSystem.readsFacts(inForce, assessment.rule);
     if (reads && facts.failed()) {
       // The walk failed and nobody asked for it again: the notice stays,
       // with no skeleton in between, until «Опитай пак».
@@ -1330,7 +1245,7 @@ export class AdminRhythmStore {
     const draft = assessment.rule;
     const zone = this.shopZone();
 
-    if (!rhythmPreviewReadsFacts(inForce, draft)) {
+    if (!StreakPreviewSystem.readsFacts(inForce, draft)) {
       this._preview.set(
         LoadSlice.ready(
           rhythmPreviewOf({

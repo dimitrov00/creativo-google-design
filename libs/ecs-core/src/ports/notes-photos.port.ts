@@ -16,7 +16,12 @@ import type { PhotoUploadPorts } from './media.port';
 
 // ── Photos ────────────────────────────────────────────────────────────────
 
-/** A visit's photos, live — `appointmentId ==`, single-field. */
+/**
+ * A visit's photos, live — `appointmentId ==`, single-field — every origin
+ * (an adopted library picture included), ascending by `takenAtUtcMs`
+ * (stably; the adapter's `byTaken` sort stands in for an `orderBy`, which
+ * would need a composite index): the order the visit's strip reads in.
+ */
 export type ObserveAppointmentPhotos = (
   appointmentId: AppointmentId,
 ) => Observable<Result<readonly AppointmentPhoto[], RepositoryError>>;

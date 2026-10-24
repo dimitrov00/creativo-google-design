@@ -2,6 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   Actor,
+  type BackfillCall,
+  BackfillJobName,
   SystemSource,
   AuditAction,
   AuditContext,
@@ -762,6 +764,82 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
   it('keys each landed edit by its owner and instant', () => {
     expect(AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT)).toBe(
       `profile-edit:maria:${EDITED_AT}`,
+    );
+  });
+});
+
+describe('AuditSystem.backfillChangeKey — one returned backfill page, one logical change (pass C, P-27)', () => {
+  const sysadmin = Actor.admin(UserId.of('ops-1'));
+  const page = (
+    overrides: Partial<BackfillCall.Page> = {},
+  ): BackfillCall.Page => ({
+    backfillJobName: BackfillJobName.ClientStats,
+    cursor: 'a1',
+    done: false,
+    processed: 1,
+    storedClients: 0,
+    stamped: 1,
+    recomputed: 2,
+    total: 1,
+    runStartedAtUtcMs: AT,
+    startedFrom: null,
+    sampleChecked: null,
+    sampleMismatched: [],
+    budgetSpent: true,
+    ...overrides,
+  });
+
+  it('is the run, the stretch walked, its end and who walked it — carried over verbatim', () => {
+    expect(AuditSystem.backfillChangeKey(page(), sysadmin)).toBe(
+      JSON.stringify([
+        'ops.backfill/v1',
+        'CLIENT_STATS',
+        AT,
+        null,
+        'a1',
+        false,
+        'ADMIN',
+        'ops-1',
+      ]),
+    );
+  });
+
+  it('is the same for a replayed call — the counts of the page are not the change', () => {
+    expect(
+      AuditSystem.backfillChangeKey(
+        page({ processed: 9, stamped: 0, budgetSpent: false }),
+        sysadmin,
+      ),
+    ).toBe(AuditSystem.backfillChangeKey(page(), sysadmin));
+  });
+
+  it('separates every part: another job, run, start, cursor, end or person is another change', () => {
+    const key = AuditSystem.backfillChangeKey(page(), sysadmin);
+    for (const other of [
+      page({ backfillJobName: BackfillJobName.SubjectMirror }),
+      page({ runStartedAtUtcMs: at(AT + 1) }),
+      page({ startedFrom: 'a0' }),
+      page({ cursor: 'a2' }),
+      page({ cursor: null, done: true }),
+    ]) {
+      expect(AuditSystem.backfillChangeKey(other, sysadmin)).not.toBe(key);
+    }
+    expect(
+      AuditSystem.backfillChangeKey(page(), Actor.admin(UserId.of('ops-2'))),
+    ).not.toBe(key);
+    expect(
+      AuditSystem.backfillChangeKey(
+        page(),
+        Actor.staff(UserId.of('ops-1'), [Role.Sysadmin]),
+      ),
+    ).not.toBe(key);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(page());
+    const actor = deepFreeze(sysadmin);
+    expect(AuditSystem.backfillChangeKey(frozen, actor)).toBe(
+      AuditSystem.backfillChangeKey(frozen, actor),
     );
   });
 });

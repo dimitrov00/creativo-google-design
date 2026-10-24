@@ -59,7 +59,11 @@ export type FindCouponByCode = (
   code: VoucherCode,
 ) => Promise<Result<Coupon | null, RepositoryError>>;
 
-/** Every enabled coupon — `couponStatus ==` (`coupon-reader.adapter.ts:59`). */
+/**
+ * Every enabled coupon that carries a code — `couponStatus ==`, the
+ * code-less ones dropped after the read: a grant-only coupon is not on offer
+ * (`coupons-vouchers.adapter.ts`).
+ */
 export type ListOpenCoupons = () => Promise<
   Result<readonly Coupon[], RepositoryError>
 >;

@@ -2,13 +2,11 @@ import type { StreakDefinitionVersion } from '@core/entities';
 import { LocalDate, type TimeZone, defect } from '@core/primitives';
 import { StreakRuleField } from '@core/errors';
 import {
-  FreezeReason,
   RhythmEffectiveChoice,
   type StreakExcuse,
   StreakInterval,
   type StreakIntervalRule,
   StreakOnBreak,
-  StreakPeriodMark,
   StreakQualifier,
   StreakRuleParameter,
   type StreakRuleInput,
@@ -27,13 +25,15 @@ import {
   StreakTrackMarkKind,
   ZonedTimeSystem,
 } from '@core/systems';
-import type {
-  RhythmRuleWords,
-  VisitTranslate,
+import {
+  type RhythmClosedMark,
+  type RhythmRuleWords,
+  type VisitTranslate,
+  isRhythmClosedMark,
+  rhythmClosedMarkPeriod,
 } from '@creativo/features/shared/visits';
 import {
   pluralForm,
-  streakPeriodMarkWords,
   streakPeriodReasonWords,
 } from '@creativo/infrastructure/i18n';
 import { formatWallClock } from '@creativo/ui/wall-clock';
@@ -818,76 +818,31 @@ export function previewWords(
 
 // ── The sample track ─────────────────────────────────────────────────────
 
-/** A track mark that closes a period: every mark but the open one's `CURRENT`. */
-type ClosedMark = StreakTrackMark & {
-  readonly streakTrackMarkKind: StreakPeriodMark;
-};
-
-function isClosed(mark: StreakTrackMark): mark is ClosedMark {
-  return mark.streakTrackMarkKind !== StreakTrackMarkKind.Current;
-}
-
-/**
- * A covering reason as its `clientCard.rhythm.reason.*` word: one the
- * projection did not name — and the open phase's `EXCUSE`, which a closed
- * period never holds — is a protection's.
- */
-function reasonWord(mark: StreakTrackMark): string {
-  return mark.reason === null || mark.reason === FreezeReason.Excuse
-    ? streakPeriodReasonWords[FreezeReason.Freeze]
-    : streakPeriodReasonWords[mark.reason];
-}
-
-/** A closed period of the sample, worded; its id is its mark, its day and its place in the run. */
+/** A closed period of the sample, worded (`rhythmClosedMarkPeriod`, the card's word source too); its id is its mark, its day and its place in the run. */
 function sampleClosed(
   context: AdminRhythmContext,
-  mark: ClosedMark,
+  mark: RhythmClosedMark,
   index: number,
 ): UiStreakPeriod {
   const t = context.translate;
   const { today, lang } = context;
-  const period = monthWord(mark.on, lang);
-  // The track's mark (`@creativo/infrastructure/i18n`'s one table), typed
-  // against the DS's own words so a drifted word fails here.
-  const drawn: UiStreakPeriod['mark'] =
-    streakPeriodMarkWords[mark.streakTrackMarkKind];
-  const id = `${drawn}-${mark.on}-${index}`;
-  switch (mark.streakTrackMarkKind) {
-    case StreakPeriodMark.Kept:
-      return {
-        id,
-        mark: 'kept',
-        caption: '',
-        description: t('clientCard.rhythm.mark.kept', {
-          period,
-          date: shortDay(mark.on, today, lang),
-        }),
-      };
-    case StreakPeriodMark.Repaired:
-      return {
-        id,
-        mark: 'repaired',
-        caption: '',
-        description: t('clientCard.rhythm.mark.repaired', { period }),
-      };
-    case StreakPeriodMark.Protected:
-      return {
-        id,
-        mark: 'protected',
-        caption: '',
-        description: t('clientCard.rhythm.mark.protected', {
-          period,
-          reason: t(`clientCard.rhythm.reason.${reasonWord(mark)}`),
-        }),
-      };
-    case StreakPeriodMark.Missed:
-      return {
-        id,
-        mark: 'missed',
-        caption: '',
-        description: t('clientCard.rhythm.mark.missed', { period }),
-      };
-  }
+  return rhythmClosedMarkPeriod(
+    mark,
+    {
+      idSuffix: `-${index}`,
+      month: (on) => monthWord(on, lang),
+      day: (on) => shortDay(on, today, lang),
+    },
+    {
+      kept: (period, date) =>
+        t('clientCard.rhythm.mark.kept', { period, date }),
+      repaired: (period) => t('clientCard.rhythm.mark.repaired', { period }),
+      protected: (period, reason) =>
+        t('clientCard.rhythm.mark.protected', { period, reason }),
+      missed: (period) => t('clientCard.rhythm.mark.missed', { period }),
+      reason: (word) => t(`clientCard.rhythm.reason.${word}`),
+    },
+  );
 }
 
 /** The sample's open period: covered while a protection carries it, else the due date. */
@@ -929,7 +884,7 @@ export function samplePeriods(
     limit: state.periods.length + 1,
   });
   return track.marks.map((mark, index) =>
-    mark.open || !isClosed(mark)
+    mark.open || !isRhythmClosedMark(mark)
       ? sampleOpen(context, mark)
       : sampleClosed(context, mark, index),
   );

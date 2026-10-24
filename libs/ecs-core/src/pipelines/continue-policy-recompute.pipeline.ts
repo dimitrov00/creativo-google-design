@@ -1,5 +1,10 @@
 import { type CustomerId, Result, type TimeZone } from '@core/primitives';
-import { ClientStatsPolicy, PolicyPass, type WriteOp } from '@core/components';
+import {
+  ClientStatsPolicy,
+  PolicyPass,
+  PolicyStepOutcome,
+  type WriteOp,
+} from '@core/components';
 import type { PolicyRecomputeJob } from '@core/entities';
 import type {
   AdminBatchPorts,
@@ -18,9 +23,7 @@ import {
 } from '@core/systems';
 import {
   type ClientStatsRecomputePorts,
-  decisiveAttemptFailure,
   recomputeClients,
-  repositoryFailure,
 } from './project-client-stats.pipeline';
 import { readShopZone } from './shop-zone-read.pipeline';
 import {
@@ -57,22 +60,6 @@ import {
 export type ContinuePolicyRecomputeCommand = {
   readonly fired: PolicyRecomputeJob | null;
 };
-
-/** How one delivery left the job — the ONLY source of these strings, the field `policyStepOutcome`. */
-export const PolicyStepOutcome = {
-  /** No job, its pass is finished, or it is stalled and waits for the sweep. */
-  Idle: 'IDLE',
-  /** The job moved on without this delivery. */
-  Superseded: 'SUPERSEDED',
-  /** A step taken; its write of the job fires the next. */
-  Advanced: 'ADVANCED',
-  /** The last step: every stored client is on the new line. */
-  Finished: 'FINISHED',
-  /** The step could not move the pass. */
-  Stalled: 'STALLED',
-} as const;
-export type PolicyStepOutcome =
-  (typeof PolicyStepOutcome)[keyof typeof PolicyStepOutcome];
 
 export type PolicyStepReport = {
   readonly policyStepOutcome: PolicyStepOutcome;
@@ -211,7 +198,7 @@ export const continuePolicyRecompute = (
     return {
       step:
         pages === 0 ? null : { cursor, exhausted, visited, recomputed, failed },
-      failure: decisiveAttemptFailure(errors),
+      failure: TriggerAttemptSystem.decisiveFailure(errors),
       superseded,
     };
   }
@@ -230,35 +217,30 @@ export const continuePolicyRecompute = (
     try {
       const committed = await ports.commit(
         (tx) => tx.get<PolicyRecomputeJob>(POLICY_RECOMPUTE_JOB_PATH),
-        (live): Result<{ readonly writes: readonly WriteOp[] }, never> => {
-          if (
-            live === null ||
-            !PolicyRecomputeJobSystem.sameStep(live, fired)
-          ) {
-            return Result.ok({ writes: [] });
-          }
-          if (
-            live.stalledAtUtcMs !== null &&
-            live.lastFailureCode === failure.failureCode
-          ) {
-            return Result.ok({ writes: [] });
-          }
-          return Result.ok({
-            writes: [
-              policyJobWrite(
-                PolicyRecomputeJobSystem.stall(
-                  live,
-                  failure.failureCode,
-                  nowUtcMs,
-                ),
-              ),
-            ],
-          });
-        },
+        (live): Result<{ readonly writes: readonly WriteOp[] }, never> =>
+          live !== null &&
+          PolicyRecomputeJobSystem.shouldRecordStall(
+            live,
+            fired,
+            failure.failureCode,
+          )
+            ? Result.ok({
+                writes: [
+                  policyJobWrite(
+                    PolicyRecomputeJobSystem.stall(
+                      live,
+                      failure.failureCode,
+                      nowUtcMs,
+                    ),
+                  ),
+                ],
+              })
+            : Result.ok({ writes: [] }),
       );
       if (!committed.ok) {
         ports.log('warn', 'policy recompute stall not recorded', {
-          code: repositoryFailure(committed.error).failureCode,
+          code: TriggerAttemptSystem.repositoryFailure(committed.error)
+            .failureCode,
         });
       }
     } catch (error) {
@@ -289,11 +271,11 @@ export const continuePolicyRecompute = (
     budget: StepBudget,
   ): Promise<Result<PolicyStepReport, never>> => {
     const fired = cmd.fired;
-    if (fired === null || fired.finishedAtUtcMs !== null) {
+    // No job, a finished pass, or the write that recorded a stall (the pass
+    // rests until the sweep). The null test narrows; `isIdle` reads it too.
+    if (fired === null || PolicyRecomputeJobSystem.isIdle(fired)) {
       return Result.ok(IDLE);
     }
-    // The write that recorded a stall: the pass rests until the sweep.
-    if (fired.stalledAtUtcMs !== null) return Result.ok(IDLE);
 
     const walk = await walkStoredClients(fired, budget);
     if (walk.step === null && !walk.superseded) {
@@ -349,7 +331,7 @@ export const continuePolicyRecompute = (
         return Result.ok(
           await stalled(
             fired,
-            repositoryFailure(advanced.error),
+            TriggerAttemptSystem.repositoryFailure(advanced.error),
             survivedFailure,
           ),
         );

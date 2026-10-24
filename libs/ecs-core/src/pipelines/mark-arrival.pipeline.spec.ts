@@ -3,6 +3,7 @@ import {
   AuditAction,
   BookingLifecycle,
   type DocBody,
+  MarkArrivalAction,
   WriteOp,
 } from '@core/components';
 import { AppointmentId, UserId, UtcEpochMs } from '@core/primitives';
@@ -18,7 +19,7 @@ import {
   memoryTxPorts,
   recordingTelemetry,
 } from '@core/testing';
-import { MarkArrivalAction, markArrival } from './mark-arrival.pipeline';
+import { markArrival } from './mark-arrival.pipeline';
 
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 

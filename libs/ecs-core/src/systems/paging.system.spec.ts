@@ -202,3 +202,32 @@ describe('PagingSystem — the steps', () => {
     expect(tied.map((row) => row.id)).toEqual(['a', 'b']);
   });
 });
+
+describe('PagingSystem.pageSizeOf — the total page size (pass C, P-33)', () => {
+  it('reads anything non-finite as one, and a finite size as pageSize does', () => {
+    expect(S.pageSizeOf(Number.NaN)).toBe(1);
+    expect(S.pageSizeOf(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(S.pageSizeOf(Number.NEGATIVE_INFINITY)).toBe(1);
+    expect(S.pageSizeOf(25)).toBe(25);
+    expect(S.pageSizeOf(3.7)).toBe(3);
+    expect(S.pageSizeOf(0)).toBe(1);
+    expect(S.pageSizeOf(-4)).toBe(1);
+  });
+
+  it('leaves pageSize passing a non-finite size through — a reader relies on its query refusing it', () => {
+    expect(S.pageSize(Number.NaN)).toBeNaN();
+    expect(S.pageSize(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('agrees with pageSize on every finite size, and is pure', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ noNaN: true, noDefaultInfinity: true }),
+        (raw) => {
+          expect(S.pageSizeOf(raw)).toBe(S.pageSize(raw));
+          expect(S.pageSizeOf(raw)).toBe(S.pageSizeOf(raw));
+        },
+      ),
+    );
+  });
+});

@@ -15,6 +15,7 @@ import {
   type ShopNow,
   WaitlistLifecycle,
   WriteAction,
+  WriteOp,
   type WaitlistCall,
 } from '@core/components';
 import {
@@ -31,10 +32,11 @@ import {
 } from '@core/primitives';
 import {
   BookingError,
+  CancelWaitlistRefusalCode,
   SchedulingErrorCode,
   WaitlistErrorCode,
 } from '@core/errors';
-import type { WaitlistRequest } from '@core/entities';
+import { Collections, type WaitlistRequest } from '@core/entities';
 import {
   deepFreeze,
   endMinute,
@@ -636,12 +638,12 @@ function snapshot(
     out.push({
       barberId: id,
       windows,
-      busy: AvailabilitySystem.paddedBusy({
-        barberId: id,
-        spans: (seed.busy ?? []).map(([from, to]) => window(from, to)),
-        turnaroundMinutes: minuteCount(seed.turnaroundMinutes ?? 0),
-        release: [],
-      }),
+      busy: AvailabilitySystem.paddedBusy(
+        id,
+        { blocks: (seed.busy ?? []).map(([from, to]) => window(from, to)) },
+        { turnaroundMinutes: minuteCount(seed.turnaroundMinutes ?? 0) },
+        [],
+      ),
     });
   }
   return out;
@@ -1479,5 +1481,95 @@ describe('WaitlistSystem — the extraction, purity', () => {
       WaitlistSystem.glancePick(requests, upcoming, TODAY, false),
     );
     expect(JSON.stringify([days, requests, upcoming])).toBe(before);
+  });
+});
+
+describe('WaitlistSystem.cancel — the owner withdraws a request (pass C, P-22)', () => {
+  const EARLIER = UtcEpochMs.plusMs(NOW_UTC_MS, -3_600_000);
+  const PATH = [Collections.WaitlistRequests, WaitlistRequestId.of('wl-1')];
+  const mine = UserId.of(OWNER);
+  const requestWith = (status: WaitlistStatus): WaitlistRequest => ({
+    ...requestFor({
+      locationId: null,
+      seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
+      windows: [{ from: '10:00', to: '12:00' }],
+    }),
+    waitlistStatus: status,
+    waitlistStatusAtUtcMs: EARLIER,
+  });
+
+  it.each([WaitlistStatus.Open, WaitlistStatus.Matched])(
+    'withdraws a %s request: ONE transition to CANCELLED, stamped now, nothing to delete',
+    (status) => {
+      expect(
+        WaitlistSystem.cancel(requestWith(status), mine, NOW_UTC_MS),
+      ).toEqual({
+        ok: true,
+        value: {
+          writes: [
+            WriteOp.transition(
+              PATH,
+              {
+                waitlistStatus: WaitlistStatus.Cancelled,
+                waitlistStatusAtUtcMs: NOW_UTC_MS,
+              },
+              [],
+            ),
+          ],
+        },
+      });
+    },
+  );
+
+  it('answers success for a request already cancelled, and writes nothing', () => {
+    expect(
+      WaitlistSystem.cancel(
+        requestWith(WaitlistStatus.Cancelled),
+        mine,
+        NOW_UTC_MS,
+      ),
+    ).toEqual({ ok: true, value: { writes: [] } });
+  });
+
+  it('answers not-found for a request that is not there, and for one that is not the caller’s — alike', () => {
+    const notFound = {
+      ok: false,
+      error: { errorCode: CancelWaitlistRefusalCode.NotFound },
+    };
+    expect(WaitlistSystem.cancel(null, mine, NOW_UTC_MS)).toEqual(notFound);
+    expect(
+      WaitlistSystem.cancel(
+        requestWith(WaitlistStatus.Open),
+        UserId.of('u-someone-else'),
+        NOW_UTC_MS,
+      ),
+    ).toEqual(notFound);
+    // Not-yours wins over every state: a stranger learns nothing.
+    expect(
+      WaitlistSystem.cancel(
+        requestWith(WaitlistStatus.Cancelled),
+        UserId.of('u-someone-else'),
+        NOW_UTC_MS,
+      ),
+    ).toEqual(notFound);
+  });
+
+  it.each([WaitlistStatus.Booked, WaitlistStatus.Expired])(
+    'refuses to rewrite a %s request — the matcher’s terminal verdict stands',
+    (status) => {
+      expect(
+        WaitlistSystem.cancel(requestWith(status), mine, NOW_UTC_MS),
+      ).toEqual({
+        ok: false,
+        error: { errorCode: CancelWaitlistRefusalCode.NotCancellable },
+      });
+    },
+  );
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const request = deepFreeze(requestWith(WaitlistStatus.Open));
+    const once = WaitlistSystem.cancel(request, mine, NOW_UTC_MS);
+    expect(WaitlistSystem.cancel(request, mine, NOW_UTC_MS)).toEqual(once);
+    expect(request.waitlistStatus).toBe(WaitlistStatus.Open);
   });
 });

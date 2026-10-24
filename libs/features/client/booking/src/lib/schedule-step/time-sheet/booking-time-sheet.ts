@@ -7,13 +7,8 @@ import {
   input,
   output,
 } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { distinctUntilChanged, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  CLOCK_PORTS,
-  SCHEDULING_READ_PORTS,
-} from '@creativo/infrastructure/firebase-app';
+import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { type DaypartWord, daypartWords } from '@creativo/infrastructure/i18n';
 import type {
   BarberId,
@@ -31,7 +26,12 @@ import {
   SeatKey,
   type ShopNow,
 } from '@core/components';
-import { type CartLocatedOption, ZonedTimeSystem } from '@core/systems';
+import {
+  BookingCartSystem,
+  type CartLocatedOption,
+  type DayQuery,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   CatalogContentService,
   CatalogWording,
@@ -50,14 +50,9 @@ import {
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../../booking-flow.store';
+import { BookingDayStore } from '../booking-day.store';
 import { formatBookingDay, formatBookingTime } from '../../booking-wall-clock';
-import {
-  type DayQuery,
-  dayDocsKey,
-  dayOptions,
-  observeDayDocs,
-  sameDayDocsKey,
-} from '../day-availability';
+import { SEAT_ARRANGEMENT_WORDS } from '../../booking-words';
 
 /** A run of start times sharing a part of the day (`Daypart.of`). */
 interface DaypartVm {
@@ -158,8 +153,9 @@ export class BookingTimeSheet {
   private readonly clock = inject(CLOCK_PORTS);
   // The policy arrives as an INPUT now: the step already observes it for the
   // horizon its calendar runs to, and a sheet re-subscribing to the same port
-  // could render one horizon while the grid behind it renders another.
-  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
+  // could render one horizon while the grid behind it renders another. The
+  // day's documents come through the flow's shop-day reads.
+  private readonly days = inject(BookingDayStore);
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogWording);
@@ -224,27 +220,17 @@ export class BookingTimeSheet {
     };
   });
 
-  /** The day's raw documents, live (`SCHEDULING_READ_PORTS`). */
-  private readonly dayDocs = toSignal(
-    toObservable(
-      computed(() => {
-        const query = this.dayQuery();
-        return query === null ? null : dayDocsKey(query);
-      }),
-    ).pipe(
-      // Structural identity, the schedule step's own: re-subscribing on a
-      // no-op recompute re-bills this day's whole read.
-      distinctUntilChanged(sameDayDocsKey),
-      switchMap((key) =>
-        key === null ? of(null) : observeDayDocs(this.scheduling, key),
-      ),
-    ),
-    { initialValue: null },
+  /** The day's raw documents, live — re-subscribed only when WHICH documents changes (`BookingDayStore`). */
+  private readonly dayDocs = this.days.dayDocs(
+    computed(() => {
+      const query = this.dayQuery();
+      return query === null ? null : BookingCartSystem.dayDocsKey(query);
+    }),
   );
 
   /**
    * The day's arrangements — derived from its documents by the systems
-   * (`dayOptions`), each with the instant its party starts on the shop's
+   * (`BookingCartSystem.dayOptions`), each with the instant its party starts on the shop's
    * clock. A start inside a spring-forward gap names no instant and is not
    * offered — the commit would refuse it (`DST_GAP_INVALID_TIME`). `null`
    * while the documents for THIS question are on their way; a read that
@@ -256,9 +242,16 @@ export class BookingTimeSheet {
       const docs = this.dayDocs();
       if (query === null || docs === null) return null;
       if (!docs.ok) return [];
-      if (!sameDayDocsKey(docs.value.key, dayDocsKey(query))) return null;
+      if (
+        !BookingCartSystem.sameDayDocsKey(
+          docs.value.key,
+          BookingCartSystem.dayDocsKey(query),
+        )
+      ) {
+        return null;
+      }
       const timed: TimedOption[] = [];
-      for (const located of dayOptions(query, docs.value)) {
+      for (const located of BookingCartSystem.dayOptions(query, docs.value)) {
         const startMs = this.instantAt(located.option.startMinutes);
         if (startMs !== null) timed.push({ located, startMs });
       }
@@ -369,21 +362,19 @@ export class BookingTimeSheet {
   );
 
   /**
-   * Are the party's seats all at once, or one after another? Drives which
-   * sentence heads the arrangement — the engine returns both kinds and the
-   * user is told which one they picked.
+   * Are the party's seats all at once, or one after another
+   * (`BookingCartSystem.arrangementOf`)? Drives which sentence heads the
+   * arrangement — the engine returns both kinds and the user is told which
+   * one they picked. The catalogue key's word, from the one table
+   * (`SEAT_ARRANGEMENT_WORDS`).
    */
-  protected readonly arrangementKind = computed<'parallel' | 'sequential'>(
-    () => {
-      const option = this.selectedOption()?.option;
-      if (!option || option.assignments.length < 2) return 'parallel';
-      const first = option.assignments[0]?.startMinutes;
-      return option.assignments.every(
-        (assignment) => assignment.startMinutes === first,
-      )
-        ? 'parallel'
-        : 'sequential';
-    },
+  protected readonly arrangementKind = computed(
+    () =>
+      SEAT_ARRANGEMENT_WORDS[
+        BookingCartSystem.arrangementOf(
+          this.selectedOption()?.option.assignments ?? [],
+        )
+      ],
   );
 
   // ── Commands ────────────────────────────────────────────────────────

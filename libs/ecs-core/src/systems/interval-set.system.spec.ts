@@ -380,3 +380,64 @@ describe('IntervalSetSystem purity', () => {
     );
   });
 });
+
+/*
+ * Pass C, S-13 — the roster extents of `staff-dashboard.ts` (the visit
+ * sheet's frame, the create sheet's, the block sheet's lane): `Math.min`
+ * over the windows' starts and `Math.max` over their ends, read AS GIVEN;
+ * none → null, which each caller answers with its own fallback (0–1440, or
+ * the block sheet's shut 0–0).
+ */
+describe('IntervalSetSystem.hull — the outer edges', () => {
+  it('is null for no range', () => {
+    expect(IntervalSetSystem.hull([])).toBeNull();
+  });
+
+  it('is the one range itself', () => {
+    expect(IntervalSetSystem.hull([iv(540, 1080)])).toEqual(iv(540, 1080));
+  });
+
+  it('spans disjoint windows, the gap between them included', () => {
+    // 09:00–13:00 and 14:00–18:00: the frame opens at nine, closes at six.
+    expect(IntervalSetSystem.hull([iv(840, 1080), iv(540, 780)])).toEqual(
+      iv(540, 1080),
+    );
+  });
+
+  it('takes the earliest start and the latest end from different ranges', () => {
+    expect(
+      IntervalSetSystem.hull([iv(600, 1200), iv(540, 700), iv(900, 1000)]),
+    ).toEqual(iv(540, 1200));
+  });
+
+  it('reads every range as given — an empty one still stretches it', () => {
+    expect(IntervalSetSystem.hull([iv(600, 700), iv(1300, 1300)])).toEqual(
+      iv(600, 1300),
+    );
+  });
+
+  it('equals Math.min over the starts and Math.max over the ends (property)', () => {
+    fc.assert(
+      fc.property(anyRawIntervals, (xs) => {
+        const hull = IntervalSetSystem.hull(xs);
+        if (xs.length === 0) {
+          expect(hull).toBeNull();
+          return;
+        }
+        expect(hull).toEqual(
+          iv(
+            Math.min(...xs.map((x) => x.startMinutes)),
+            Math.max(...xs.map((x) => x.endMinutes)),
+          ),
+        );
+      }),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const xs = deepFreeze([iv(840, 1080), iv(540, 780)]);
+    const once = IntervalSetSystem.hull(xs);
+    expect(IntervalSetSystem.hull(xs)).toEqual(once);
+    expect(xs).toEqual([iv(840, 1080), iv(540, 780)]);
+  });
+});

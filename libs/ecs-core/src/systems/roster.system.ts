@@ -5,19 +5,22 @@ import {
   type LocationId,
   LocalDate,
   EndMinute,
+  MinuteCount,
   MinuteOfDay,
 } from '@core/primitives';
 import {
   type ExceptionEffectRule,
   MinuteRange,
-  type DayHours,
+  DayHours,
   OpeningState,
   RosterWindow,
+  SHOP_CLOSES_SOON_MINUTES,
   ShopDayHours,
+  ShopOpening,
   ScheduleVersion,
   ShiftSegment,
 } from '@core/components';
-import type { ScheduleException } from '@core/entities';
+import type { ScheduleException, ShopLocation } from '@core/entities';
 import { IntervalSetSystem } from './interval-set.system';
 
 /**
@@ -68,6 +71,22 @@ export type BuildDayWindowsInput = {
   readonly exceptions: readonly DayException[];
   readonly shopHours: readonly ShopHours[];
 };
+
+/**
+ * Where a shop stands against its week at one wall-clock minute
+ * ({@link RosterSystem.shopOpeningAt}): the tag, the minute it names — the
+ * closing minute while open, the opening minute otherwise, `null` when the
+ * week opens on no day at all — and the shop day that minute falls on (today,
+ * or the later day an `OPENS_ON` names).
+ */
+export type ShopOpeningAt = {
+  readonly shopOpening: ShopOpening;
+  readonly atMinutes: MinuteOfDay | EndMinute | null;
+  readonly localDate: LocalDate;
+};
+
+/** The forward scan's reach: the same weekday next week included. */
+const DAYS_IN_WEEK = 7;
 
 /** A set-algebra start back under its brand — the algebra never leaves `[0, 1440)`. */
 function startOf(minutes: number): MinuteOfDay {
@@ -165,6 +184,30 @@ function hoursAt(
   return null;
 }
 
+/** Is `locationId` one of the offered shops — an entry of `shopHours`? */
+function offersShop(
+  shopHours: readonly ShopHours[],
+  locationId: LocationId,
+): boolean {
+  for (let i = 0; i < shopHours.length; i++) {
+    if ((shopHours[i] as ShopHours).locationId === locationId) return true;
+  }
+  return false;
+}
+
+/** Only the windows at a shop `shopHours` names — {@link offersShop}. */
+function atOfferedShops(
+  windows: readonly RosterWindow[],
+  shopHours: readonly ShopHours[],
+): readonly RosterWindow[] {
+  const kept: RosterWindow[] = [];
+  for (let i = 0; i < windows.length; i++) {
+    const window = windows[i] as RosterWindow;
+    if (offersShop(shopHours, window.locationId)) kept.push(window);
+  }
+  return kept;
+}
+
 /** `ShopDayHours` spans as minute ranges (the two shapes name one thing). */
 function hoursAsRanges(hours: readonly ShopDayHours[]): readonly MinuteRange[] {
   const ranges: MinuteRange[] = [];
@@ -240,6 +283,98 @@ export const RosterSystem = {
     if (entry === undefined) return null;
     if (entry.openingState === OpeningState.Closed) return [];
     return [ShopDayHours.of(entry.openMinutes, entry.closeMinutes)];
+  },
+
+  /**
+   * Every given shop's hours for one day, in the given order — the
+   * {@link ShopHours} list {@link buildDayWindows} clamps against, read from
+   * the stored `ShopLocation` slice as it is (a whole location passes). One
+   * {@link shopDayHours} per shop (composed, never restated). No filter:
+   * which shops a day may offer — listed ones, a moved visit's own — is the
+   * caller's rule (`PartyAdmissionSystem.shopListed`).
+   */
+  shopHoursOn(
+    locations: readonly Pick<ShopLocation, 'id' | 'openingHours'>[],
+    localDate: LocalDate,
+  ): readonly ShopHours[] {
+    const hours: ShopHours[] = [];
+    for (let i = 0; i < locations.length; i++) {
+      const location = locations[i] as Pick<
+        ShopLocation,
+        'id' | 'openingHours'
+      >;
+      hours.push({
+        locationId: location.id,
+        hours: RosterSystem.shopDayHours(location.openingHours, localDate),
+      });
+    }
+    return hours;
+  },
+
+  /**
+   * Is this chair worth drawing on the staff day: rostered somewhere today,
+   * OR holding bookings anyway. The second arm is not padding — a barber
+   * deactivated mid-month leaves the active roster while their booked
+   * clients still walk through the door. Its negation is "off today".
+   */
+  worksDay(rosteredCount: number, appointmentCount: number): boolean {
+    return rosteredCount > 0 || appointmentCount > 0;
+  },
+
+  /**
+   * Where the shop stands at `minute` of `localDate` against its Mon-first
+   * week (`DayHours`, the closed day kept), on the shop's wall clock:
+   *
+   * - open (`openMinutes ≤ minute < closeMinutes`, {@link DayHours.isOpenAt})
+   *   → `CLOSES_SOON` with at most {@link SHOP_CLOSES_SOON_MINUTES} left,
+   *   else `CLOSES_AT` — both at today's closing minute;
+   * - before today's opening → `OPENS_AT` today's opening minute;
+   * - closed today, or past closing → `OPENS_ON` the first open day of the
+   *   next seven (the same weekday next week included), at its opening
+   *   minute;
+   * - a week open on no day → `OPENS_AT` with no minute (`null`).
+   *
+   * A weekday the week holds no entry for reads as closed.
+   */
+  shopOpeningAt(
+    week: readonly DayHours[],
+    localDate: LocalDate,
+    minute: MinuteOfDay,
+  ): ShopOpeningAt {
+    const weekday = LocalDate.weekday(localDate);
+    const today = DayHours.forWeekday(week, weekday);
+    if (today !== null && today.openingState === OpeningState.Open) {
+      if (DayHours.isOpenAt(week, weekday, minute)) {
+        return {
+          shopOpening:
+            MinuteCount.span(minute, today.closeMinutes) <=
+            SHOP_CLOSES_SOON_MINUTES
+              ? ShopOpening.ClosesSoon
+              : ShopOpening.ClosesAt,
+          atMinutes: today.closeMinutes,
+          localDate,
+        };
+      }
+      if (minute < today.openMinutes) {
+        return {
+          shopOpening: ShopOpening.OpensAt,
+          atMinutes: today.openMinutes,
+          localDate,
+        };
+      }
+    }
+    for (let offset = 1; offset <= DAYS_IN_WEEK; offset++) {
+      const day = LocalDate.addDays(localDate, offset);
+      const hours = DayHours.forWeekday(week, LocalDate.weekday(day));
+      if (hours !== null && hours.openingState === OpeningState.Open) {
+        return {
+          shopOpening: ShopOpening.OpensOn,
+          atMinutes: hours.openMinutes,
+          localDate: day,
+        };
+      }
+    }
+    return { shopOpening: ShopOpening.OpensAt, atMinutes: null, localDate };
   },
 
   /**
@@ -373,6 +508,34 @@ export const RosterSystem = {
       }
     }
     return blocks.sort(byStart);
+  },
+
+  /**
+   * One barber's day at the OFFERED shops — {@link buildDayWindows} kept to
+   * the shops `input.shopHours` names (the ones the day may offer: the
+   * listed shops, a moved visit's own). A shop ABSENT from `shopHours` reads
+   * as "no bound" to the roster, which is wrong for one hidden since: a
+   * segment worked at a shop that left the list, or at one with no document,
+   * must offer nothing — never its roster unclamped. So here `[]` offers
+   * nothing at all. Empty: the barber is not on the day at those shops —
+   * the booking grid's `barberDays`, the waitlist match and the staff
+   * lane read it the same way.
+   */
+  offeredWindows(input: BuildDayWindowsInput): readonly RosterWindow[] {
+    return atOfferedShops(RosterSystem.buildDayWindows(input), input.shopHours);
+  },
+
+  /**
+   * The carve-outs at the OFFERED shops — {@link buildDayCarveOuts} kept to
+   * the shops `input.shopHours` names, as {@link offeredWindows} keeps the
+   * windows: a block over a window that is not there would be a rectangle
+   * over nothing.
+   */
+  offeredCarveOuts(input: BuildDayWindowsInput): readonly RosterWindow[] {
+    return atOfferedShops(
+      RosterSystem.buildDayCarveOuts(input),
+      input.shopHours,
+    );
   },
 
   /** Only the windows worked at one shop — what a booking at that shop may use. */

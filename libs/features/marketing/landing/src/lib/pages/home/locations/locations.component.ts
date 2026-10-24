@@ -35,8 +35,21 @@ import {
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-import { LocalDate, type TimeZone, type UtcEpochMs } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import {
+  LocalDate,
+  type TimeZone,
+  type UtcEpochMs,
+  Weekday,
+  defect,
+} from '@core/primitives';
+import {
+  DayHours,
+  type DayHoursInput,
+  E164,
+  OpeningState,
+  ShopOpening,
+} from '@core/components';
+import { RosterSystem, ShopReachSystem, ZonedTimeSystem } from '@core/systems';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { ThemeService } from '@creativo/features/shared/shell';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
@@ -57,19 +70,21 @@ const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 /** Display order for the week list — starts Monday, ends Sunday. */
 const WEEK_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
-interface DayHours {
+/** One day's hours as the week list prints them: «09:00» – «20:00». */
+interface HoursLine {
   readonly open: string;
   readonly close: string;
 }
 
+/** The week as the list prints it, Sunday first (the `WEEKDAY_KEYS` index); `null` a closed day. */
 type WeekSchedule = readonly [
-  DayHours | null,
-  DayHours | null,
-  DayHours | null,
-  DayHours | null,
-  DayHours | null,
-  DayHours | null,
-  DayHours | null,
+  HoursLine | null,
+  HoursLine | null,
+  HoursLine | null,
+  HoursLine | null,
+  HoursLine | null,
+  HoursLine | null,
+  HoursLine | null,
 ];
 
 interface LocationItem {
@@ -80,25 +95,21 @@ interface LocationItem {
   readonly nameKey: string;
   readonly addressKey: string;
   readonly phoneKey?: string;
+  /** The shop's week, Monday first, in minutes — what its open/closed line is judged on (`RosterSystem.shopOpeningAt`). */
+  readonly week: readonly DayHours[];
+  /** The same week as the list prints it (`displayWeek`). */
   readonly schedule: WeekSchedule;
   readonly gallery: readonly string[];
   readonly lat: number;
   readonly lng: number;
 }
 
-/** What a shop's status line says — the field `shopOpening` (Law 6). */
-const ShopOpening = {
-  /** Open: «Closes at 20:00». */
-  ClosesAt: 'CLOSES_AT',
-  /** Open, within the closing-soon threshold: the warning tone. */
-  ClosesSoon: 'CLOSES_SOON',
-  /** Closed, today's hours not started yet: «Opens at 10:00». */
-  OpensAt: 'OPENS_AT',
-  /** Closed for today: «Opens Tuesday at 10:00». */
-  OpensOn: 'OPENS_ON',
-} as const;
-type ShopOpening = (typeof ShopOpening)[keyof typeof ShopOpening];
-
+/**
+ * What a shop's status line says: `RosterSystem.shopOpeningAt`'s tag
+ * (`ShopOpening`, the field `shopOpening` — «Closes at 20:00», the
+ * closing-soon warning, «Opens at 10:00», «Opens Tuesday at 10:00») and the
+ * words it is printed with.
+ */
 interface ShopOpeningLine {
   readonly isOpen: boolean;
   readonly shopOpening: ShopOpening;
@@ -106,32 +117,70 @@ interface ShopOpeningLine {
   readonly dayIndex: number;
 }
 
-/** Below this many minutes-to-close, the status flips to the "closing soon" warning — mirrors Google's business panel convention. */
-const CLOSES_SOON_THRESHOLD_MINUTES = 60;
+/** A minute of the day as the page prints a time — zero-padded `HH:MM`, never a locale's «8:00 PM». */
+function clockOf(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes - hours * 60).padStart(2, '0')}`;
+}
 
-const CENTER_SCHEDULE: WeekSchedule = [
-  null,
-  { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '20:00' },
-  { open: '09:00', close: '21:00' },
-  { open: '10:00', close: '18:00' },
-];
+/** An open day as authored here: from one whole hour to another. */
+const open = (from: number, to: number): DayHoursInput => ({
+  openingState: OpeningState.Open,
+  openMinutes: from * 60,
+  closeMinutes: to * 60,
+});
+const CLOSED: DayHoursInput = DayHours.closed();
+
+/** A shop's week (Monday first, the closed day kept), checked ONCE at module load with `DayHours.parseWeek`. */
+function weekOf(raw: readonly DayHoursInput[]): readonly DayHours[] {
+  const week = DayHours.parseWeek(raw);
+  return week.ok ? week.value : defect('a landing shop’s week is no week');
+}
+
+/** The week as the list prints it, Sunday first: each open day's `HH:MM` pair, `null` a closed one. */
+function displayWeek(week: readonly DayHours[]): WeekSchedule {
+  const at = (weekday: Weekday): HoursLine | null => {
+    const day = DayHours.forWeekday(week, weekday);
+    return day !== null && day.openingState === OpeningState.Open
+      ? { open: clockOf(day.openMinutes), close: clockOf(day.closeMinutes) }
+      : null;
+  };
+  return [
+    at(Weekday.Sun),
+    at(Weekday.Mon),
+    at(Weekday.Tue),
+    at(Weekday.Wed),
+    at(Weekday.Thu),
+    at(Weekday.Fri),
+    at(Weekday.Sat),
+  ];
+}
+
+/** Center's week — the seed's `openingHours` for the shop (`tools/seed/fixtures/catalog.fixtures.ts`). */
+const CENTER_WEEK = weekOf([
+  open(9, 20),
+  open(9, 20),
+  open(9, 20),
+  open(9, 20),
+  open(9, 21),
+  open(10, 18),
+  CLOSED,
+]);
 
 /** Each shop's zone, checked ONCE at module load (no zone literal here). */
 const CENTER_ZONE = landingLocationZone('center');
 const MLADOST_ZONE = landingLocationZone('mladost');
 
-const MLADOST_SCHEDULE: WeekSchedule = [
-  null,
-  null,
-  { open: '10:00', close: '19:00' },
-  { open: '10:00', close: '19:00' },
-  { open: '10:00', close: '19:00' },
-  { open: '10:00', close: '19:00' },
-  { open: '09:00', close: '16:00' },
-];
+/** Mladost's week — the seed's `openingHours` for the shop. */
+const MLADOST_WEEK = weekOf([
+  CLOSED,
+  open(10, 19),
+  open(10, 19),
+  open(10, 19),
+  open(10, 19),
+  open(9, 16),
+  CLOSED,
+]);
 
 @Component({
   selector: 'cr-locations',
@@ -213,7 +262,8 @@ export class LocationsComponent implements AfterViewInit {
       nameKey: 'landing.location.center.name',
       addressKey: 'landing.location.center.address',
       phoneKey: 'landing.location.center.phone',
-      schedule: CENTER_SCHEDULE,
+      week: CENTER_WEEK,
+      schedule: displayWeek(CENTER_WEEK),
       gallery: [
         '/work/scissors-trim.jpg',
         '/work/modern-cut.jpg',
@@ -228,7 +278,8 @@ export class LocationsComponent implements AfterViewInit {
       nameKey: 'landing.location.mladost.name',
       addressKey: 'landing.location.mladost.address',
       phoneKey: 'landing.location.mladost.phone',
-      schedule: MLADOST_SCHEDULE,
+      week: MLADOST_WEEK,
+      schedule: displayWeek(MLADOST_WEEK),
       gallery: [
         '/work/fade-styling.jpg',
         '/work/classic-clippers.jpg',
@@ -496,56 +547,28 @@ export class LocationsComponent implements AfterViewInit {
    * Whether `location` is open right now, plus what to say about it — "Closes
    * at 20:00" while open, "Opens at 10:00" if today's hours haven't started
    * yet, or "Opens Tuesday at 10:00" scanning forward when today's closed
-   * (or already past closing). Read on the SHOP's wall clock — the
-   * location's zone, never the visitor's device (Law 7.2).
+   * (or already past closing): `RosterSystem.shopOpeningAt`'s answer, read
+   * on the SHOP's wall clock — the location's zone, never the visitor's
+   * device (Law 7.2).
    */
   protected statusFor(location: LocationItem): ShopOpeningLine {
-    const { day, minute: minutesNow } = this.wallAt(location.timeZone);
-    const today = location.schedule[day];
-
-    if (today) {
-      const openMinutes = this.toMinutes(today.open);
-      const closeMinutes = this.toMinutes(today.close);
-      if (minutesNow >= openMinutes && minutesNow < closeMinutes) {
-        const closingSoon =
-          closeMinutes - minutesNow <= CLOSES_SOON_THRESHOLD_MINUTES;
-        return {
-          isOpen: true,
-          shopOpening: closingSoon
-            ? ShopOpening.ClosesSoon
-            : ShopOpening.ClosesAt,
-          time: today.close,
-          dayIndex: day,
-        };
-      }
-      if (minutesNow < openMinutes) {
-        return {
-          isOpen: false,
-          shopOpening: ShopOpening.OpensAt,
-          time: today.open,
-          dayIndex: day,
-        };
-      }
-    }
-
-    for (let offset = 1; offset <= 7; offset++) {
-      const dayIndex = (day + offset) % 7;
-      const hours = location.schedule[dayIndex];
-      if (hours) {
-        return {
-          isOpen: false,
-          shopOpening: ShopOpening.OpensOn,
-          time: hours.open,
-          dayIndex,
-        };
-      }
-    }
-
+    const { localDate, minute } = ZonedTimeSystem.toLocal(
+      this.now(),
+      location.timeZone,
+    );
+    const opening = RosterSystem.shopOpeningAt(
+      location.week,
+      localDate,
+      minute,
+    );
     return {
-      isOpen: false,
-      shopOpening: ShopOpening.OpensAt,
-      time: '',
-      dayIndex: day,
+      isOpen:
+        opening.shopOpening === ShopOpening.ClosesAt ||
+        opening.shopOpening === ShopOpening.ClosesSoon,
+      shopOpening: opening.shopOpening,
+      time: opening.atMinutes === null ? '' : clockOf(opening.atMinutes),
+      // The `WEEKDAY_KEYS` index (Sunday = 0 — the ISO weekday mod 7).
+      dayIndex: LocalDate.weekday(opening.localDate) % 7,
     };
   }
 
@@ -562,13 +585,15 @@ export class LocationsComponent implements AfterViewInit {
     return { day: LocalDate.weekday(localDate) % 7, minute };
   }
 
+  /**
+   * `tel:` for a shop's DISPLAY number («+359 88 123 4567»): parsed once to
+   * its E.164 at this edge (the punctuation, there for reading, dropped),
+   * then the one `tel:` form every surface dials (`ShopReachSystem.callHref`).
+   */
   protected phoneHref(phone: string): string {
-    return `tel:${phone.replace(/[^+\d]/g, '')}`;
-  }
-
-  private toMinutes(time: string): number {
-    const [hours, minutes] = time.split(':').map(Number);
-    return (hours ?? 0) * 60 + (minutes ?? 0);
+    return ShopReachSystem.callHref({
+      phoneE164: E164.of(phone.replace(/[^+\d]/g, '')),
+    });
   }
 
   /** Completes the close on the shell's exit-transition callback. */

@@ -1,6 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ExceptionEffect, BarberId, LocationId } from '@core/primitives';
+import {
+  ExceptionEffect,
+  BarberId,
+  BusyKey,
+  LocationId,
+  ScheduleExceptionId,
+} from '@core/primitives';
+import type { ScheduleException, ScheduleExceptionMeta } from '@core/entities';
 import { SchedulingErrorCode } from '@core/errors';
 import {
   ExceptionEffectRule,
@@ -11,9 +18,11 @@ import {
 import {
   deepFreeze,
   endMinute,
+  localDate,
   minute,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '@core/testing';
 import { ScheduleExceptionSystem } from './schedule-exception.system';
 
@@ -351,6 +360,222 @@ describe('ScheduleExceptionSystem — purity and properties', () => {
           expect(ScheduleExceptionSystem.merge(merged, merged)).toEqual(merged);
           expect(ScheduleExceptionSystem.merge(merged, [])).toEqual(merged);
         },
+      ),
+    );
+  });
+});
+
+/*
+ * Pass C, Y-3 / Y-4 — the per-day decisions of `staff-day.store.ts`
+ * `writeBlocks` and `clearBlock`, moved out of the store's transaction
+ * closures. Restated from `staff-dashboard.spec.ts` «blocks a range through
+ * the exception writer, sanitized», «merges a range into the blocks the day
+ * already holds — never replacing them», «stands the whole day down when the
+ * switch is on» and «arms the day-wide lift before it deletes anything»,
+ * plus the boundary cases the closures held unpinned.
+ */
+const IVAN = BarberId.of('ivan');
+const DAY = localDate('2026-08-05');
+const META: ScheduleExceptionMeta = {
+  id: ScheduleExceptionId.of(BusyKey.of(IVAN, DAY)),
+  barberId: IVAN,
+  localDate: DAY,
+  utcEpochMs: utcMs('2026-08-05T00:00:00+03:00'),
+  locationId: LocationId.of('loc-center'),
+};
+/** A day stored under an OLDER identity slice — the lift keeps it, the block replaces it. */
+const STORED_META: ScheduleExceptionMeta = {
+  ...META,
+  utcEpochMs: utcMs('2026-08-04T23:00:00+02:00'),
+  locationId: LocationId.of('loc-sea'),
+};
+const storedDay = (
+  effect: ExceptionEffectRule,
+  meta: ScheduleExceptionMeta = STORED_META,
+): ScheduleException => ({ ...meta, ...effect });
+const blockedEffect = (...ranges: MinuteRange[]): ExceptionEffectRule =>
+  unwrapOk(ExceptionEffectRule.blocked(ranges));
+const hoursEffect = (...ranges: MinuteRange[]): ExceptionEffectRule =>
+  unwrapOk(ExceptionEffectRule.hours(ranges));
+
+describe('ScheduleExceptionSystem.block — what a barber-day becomes', () => {
+  it('blocks a range on an empty day, sanitized, under the given identity', () => {
+    const next = unwrapOk(
+      ScheduleExceptionSystem.block(null, [range('12:00', '13:00')], META),
+    );
+    expect(next).toEqual({
+      ...META,
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('12:00', '13:00')],
+    });
+    expect(next).not.toHaveProperty('reason');
+  });
+
+  it('merges a range into the blocks the day already holds — never replacing them', () => {
+    const lunch = storedDay(blockedEffect(range('15:00', '16:00')));
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.block(lunch, [range('12:00', '13:00')], META),
+      ),
+    ).toEqual({
+      ...META,
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('12:00', '13:00'), range('15:00', '16:00')],
+    });
+  });
+
+  it('merges touching and overlapping ranges, a stored HOURS day’s too, as BLOCKED', () => {
+    const shortDay = storedDay(hoursEffect(range('10:00', '14:00')));
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.block(
+          shortDay,
+          [range('14:00', '15:00'), range('09:00', '10:30')],
+          META,
+        ),
+      ),
+    ).toEqual({
+      ...META,
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('09:00', '15:00')],
+    });
+  });
+
+  it('stands the whole day down on no range — CLOSED replaces whatever the day held', () => {
+    for (const existing of [
+      null,
+      storedDay(blockedEffect(range('15:00', '16:00'))),
+      storedDay(hoursEffect(range('10:00', '14:00'))),
+      storedDay(ExceptionEffectRule.closed()),
+    ]) {
+      const next = unwrapOk(ScheduleExceptionSystem.block(existing, [], META));
+      expect(next).toEqual({
+        ...META,
+        exceptionEffect: ExceptionEffect.Closed,
+      });
+      expect(next).not.toHaveProperty('exceptionRanges');
+    }
+  });
+
+  it('keeps a day already off whole — null, never demoted to a partial block', () => {
+    const off = storedDay(ExceptionEffectRule.closed());
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.block(off, [range('12:00', '13:00')], META),
+      ),
+    ).toBeNull();
+  });
+
+  it('refuses ranges that hold no minute — nothing is written', () => {
+    const empty = MinuteRange.of(minute(720), endMinute(720));
+    expect(
+      unwrapErr(ScheduleExceptionSystem.block(null, [empty], META)).errorCode,
+    ).toBe(SchedulingErrorCode.ScheduleExceptionEmptyRanges);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const existing = deepFreeze(
+      storedDay(blockedEffect(range('15:00', '16:00'))),
+    );
+    const ranges = deepFreeze([range('12:00', '13:00')]);
+    const meta = deepFreeze(META);
+    const once = ScheduleExceptionSystem.block(existing, ranges, meta);
+    expect(ScheduleExceptionSystem.block(existing, ranges, meta)).toEqual(once);
+    expect(existing.exceptionEffect).toBe(ExceptionEffect.Blocked);
+    expect(ranges).toEqual([range('12:00', '13:00')]);
+  });
+});
+
+describe('ScheduleExceptionSystem.unblock — lifting a block', () => {
+  it('deletes the day on the day-wide lift, whatever it held', () => {
+    for (const existing of [
+      storedDay(blockedEffect(range('12:00', '13:00'))),
+      storedDay(ExceptionEffectRule.closed()),
+      null,
+    ]) {
+      expect(
+        unwrapOk(ScheduleExceptionSystem.unblock(existing, null)),
+      ).toBeNull();
+    }
+  });
+
+  it('deletes on a day with nothing stored', () => {
+    expect(
+      unwrapOk(ScheduleExceptionSystem.unblock(null, range('12:00', '13:00'))),
+    ).toBeNull();
+  });
+
+  it('refuses one range from a day off whole — the day-wide lift is the honest path', () => {
+    const error = unwrapErr(
+      ScheduleExceptionSystem.unblock(
+        storedDay(ExceptionEffectRule.closed()),
+        range('12:00', '13:00'),
+      ),
+    );
+    expect(error).toEqual({
+      errorCode: SchedulingErrorCode.ScheduleExceptionEmptyRanges,
+      exceptionKind: ExceptionEffect.Closed,
+    });
+  });
+
+  it('deletes the day when the last range goes', () => {
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.unblock(
+          storedDay(blockedEffect(range('12:00', '13:00'))),
+          range('12:00', '13:00'),
+        ),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps BLOCKED as BLOCKED and HOURS as HOURS, under the stored identity', () => {
+    const two = [range('09:00', '10:00'), range('12:00', '13:00')];
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.unblock(
+          storedDay(blockedEffect(...two)),
+          range('12:00', '13:00'),
+        ),
+      ),
+    ).toEqual({
+      ...STORED_META,
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('09:00', '10:00')],
+    });
+    expect(
+      unwrapOk(
+        ScheduleExceptionSystem.unblock(
+          storedDay(hoursEffect(...two)),
+          range('09:00', '10:00'),
+        ),
+      ),
+    ).toEqual({
+      ...STORED_META,
+      exceptionEffect: ExceptionEffect.Hours,
+      exceptionRanges: [range('12:00', '13:00')],
+    });
+  });
+
+  it('matches the range on its edges — a range not stored leaves the day as it was', () => {
+    const day = storedDay(blockedEffect(range('12:00', '13:00')));
+    expect(
+      unwrapOk(ScheduleExceptionSystem.unblock(day, range('12:00', '12:30'))),
+    ).toEqual(day);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const existing = deepFreeze(
+      storedDay(
+        blockedEffect(range('09:00', '10:00'), range('12:00', '13:00')),
+      ),
+    );
+    const gone = deepFreeze(range('12:00', '13:00'));
+    const once = ScheduleExceptionSystem.unblock(existing, gone);
+    expect(ScheduleExceptionSystem.unblock(existing, gone)).toEqual(once);
+    expect(existing).toEqual(
+      storedDay(
+        blockedEffect(range('09:00', '10:00'), range('12:00', '13:00')),
       ),
     );
   });

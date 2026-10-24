@@ -1,8 +1,10 @@
 import {
   type AppointmentId,
+  type BookingStatus,
   LocalDate,
   type MinuteOfDay,
 } from '@core/primitives';
+import { BookingLifecycle, ShopNow, WallTime } from '@core/components';
 
 /** The grain a visit list is sectioned by — the ONLY source of these strings. */
 export const VisitGrain = {
@@ -93,8 +95,14 @@ function byId(a: SectionRow, b: SectionRow): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/** Where an item starts on the shop's wall clock — what {@link byStart} reads. */
+type WallClockStart = {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+};
+
 /** Wall-clock order: the shop day, then the minute inside it. */
-function byStart(a: SectionRow, b: SectionRow): number {
+function byStart(a: WallClockStart, b: WallClockStart): number {
   return (
     LocalDate.compare(a.localDate, b.localDate) ||
     a.startMinutes - b.startMinutes
@@ -320,6 +328,19 @@ export const VisitListSystem = {
   },
 
   /**
+   * The items soonest first on the shop's wall clock — the day, then the
+   * minute (the private `byStart`) — read straight off the items' own
+   * `localDate` + `startMinutes` (a whole `Appointment` passes in as it
+   * is). A STABLE sort on the start alone: two items at the same day and
+   * minute keep the input's order. A sorted copy; the input is untouched.
+   */
+  soonestFirstByStart<T extends WallClockStart>(
+    items: readonly T[],
+  ): readonly T[] {
+    return [...items].sort(byStart);
+  },
+
+  /**
    * The items whose row is upcoming, soonest first on the shop's wall clock
    * — the day, then the minute — each row read once (`rowOf`). A STABLE
    * sort on the start alone (the private `byStart`): two items at the same
@@ -345,5 +366,43 @@ export const VisitListSystem = {
       out.push((kept[i] as { readonly item: T }).item);
     }
     return out;
+  },
+
+  /**
+   * Has the visit begun: its start on the shop's wall clock at or before
+   * the shop's "now" (`WallTime.compare ≤ 0` against `ShopNow.wallTime`,
+   * T1 — never an instant). The ONE body of the rule in ecs-core;
+   * `VisitStorySystem.hasStarted` is the story's name for it (homed here
+   * because this file is the lower of the two: the story reads the list's
+   * `VisitRowOutcome`, so the list may not read the story).
+   */
+  hasStarted(start: WallTime, now: ShopNow): boolean {
+    return WallTime.compare(start, ShopNow.wallTime(now)) <= 0;
+  },
+
+  /**
+   * Does a visit of the history READ enter the history — settled
+   * (`BookingLifecycle.isSettled`: completed, cancelled, no-show), or
+   * begun ({@link hasStarted}: its start at or before the shop's "now", the
+   * start minute included)? Admission, not filing: the page still files
+   * each admitted row by its own start (`VisitStorySystem.isUpcoming`), so
+   * a visit at its start minute is admitted here and shown upcoming there.
+   * The whole appointment passes straight in.
+   */
+  isHistory(
+    appointment: {
+      readonly bookingStatus: BookingStatus;
+      readonly localDate: LocalDate;
+      readonly startMinutes: MinuteOfDay;
+    },
+    now: ShopNow,
+  ): boolean {
+    return (
+      BookingLifecycle.isSettled(appointment) ||
+      VisitListSystem.hasStarted(
+        WallTime.of(appointment.localDate, appointment.startMinutes),
+        now,
+      )
+    );
   },
 } as const;
