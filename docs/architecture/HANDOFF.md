@@ -1020,8 +1020,9 @@ This record's port count and §6 owner flags were corrected too.
   pass B); the type-level variants `CancellationAttribution.Shop` and
   `StreakTrackMarkKind.Kept` / `Repaired` / `Missed`; the matchMedia and
   ResizeObserver test polyfills (live consumers).
-- **Owner flags:** (a) `CLAUDE.md` + `AGENTS.md` (byte for byte, owner text,
-  not edited): §4's "D1–D28" twice → "D1–D29" (D29, the customer record,
+- **Owner flags:** (a) `CLAUDE.md` + `AGENTS.md` — APPLIED 2026-10-24 on the
+  owner's go-ahead (byte for byte; Law 2's illustrative example left as is):
+  §4's "D1–D28" twice → "D1–D29" (D29, the customer record,
   decided 2026-10-10); Law 5's `/appointments/{id}` example stores no
   `tenantId`, `paymentMethod` or root `priceCents`/`currency` — the docs
   package's proposed body names `locationId, ownerUserId, ownerCustomerId,
@@ -1155,7 +1156,8 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 - **Pass B owner flags (2026-10-24)** — the end of §3.3 lists them: the
   `CLAUDE.md`/`AGENTS.md` corrections the docs package proposed (D1–D29,
-  Law 5's appointment example, Law 10.1's `formatCents`), the walk-in client
+  Law 5's appointment example, Law 10.1's `formatCents` — applied on the
+  owner's go-ahead the same day), the walk-in client
   path, the client write grants, the TTL declarations, the catalogue
   edge-guard family, the impersonation banner slot, the deploy order of the
   three deleted composite indexes, the waitlist request ids, which now hash

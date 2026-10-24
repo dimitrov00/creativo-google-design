@@ -120,9 +120,10 @@ async (cmd) => …`, where `BookAppointmentPorts` is an intersection of
 ### Law 5 — Firestore mirrors the archetypes (zero-mapper layout)
 
 - A document body **is** the flat entity minus `id`: `/appointments/{id}` →
-  `{ tenantId, locationId, barberIds, localDate, startMinutes, endMinutes,
-utcEpochMs, bookingStatus: 'CONFIRMED', confirmedAtUtcMs, paymentMethod:
-'CASH', priceCents, currency, seats: [ … ] }` — every value a branded
+  `{ locationId, ownerUserId, ownerCustomerId, subjectCustomerIds, barberIds,
+busyKeys, localDate, startMinutes, endMinutes, utcEpochMs, bookingStatus:
+'CONFIRMED', confirmedAtUtcMs, contactName, bookedAtUtcMs, seats: [ { …,
+priceCents, currency } ], … }` (the money lives on the seats) — every value a branded
   primitive (Law 7), and no time-zone field: the zone belongs to the location. Firestore documents, wire JSON and
   TypeScript structs share the identical flat layout. There is no
   `fromFirestore`/`toFirestore`/`reconstitute` layer. A read port returns the
@@ -373,7 +374,7 @@ nothing.
    results, branded primitives, SCREAMING tags, `ShopNow` — plus a words
    table and the locale; a display struct out (`passVm(input): PassVm`):
    the strings, figures, flags and test ids a template prints. Formatting
-   goes through the shared helpers (`formatMoney`, the cached `Intl`
+   goes through the shared helpers (`formatCents` for money, the cached `Intl`
    formatters of `@creativo/infrastructure/i18n` and
    `@creativo/ui/wall-clock`).
 2. **It decides nothing.** Every domain decision — a state, what is owed or
@@ -448,7 +449,7 @@ The ECS migration ran bottom-up in four phases (foundation, systems,
 pipelines and adapters, client integration and legacy deletion). All four
 phases are complete (Phase 4b, 2026-10). On
 2026-10-10 the owner adopted every recommendation of
-`docs/architecture/ecs-migration.md` §9 (D1–D28), with two amendments: time
+`docs/architecture/ecs-migration.md` §9 (D1–D29), with two amendments: time
 is native `Intl`, no Luxon (D5); money is a plain integer struct, no
 dinero.js (D4). The conditional ones resolved as D12(b) (contact change is not
 shipped; its adapter goes), D16(b) (the public exception effect is the only
@@ -456,7 +457,7 @@ record) and D27(b) (server pipelines in `apps/functions/src/pipelines/` —
 **superseded 2026-10-11 by Law 8**: all pipelines live in `@core/pipelines`;
 D2's single root barrel is superseded by Law 8's tier barrels too).
 **The migration record (what landed, the gate, the baselines, what is
-carried forward) is `docs/architecture/HANDOFF.md`.** The decisions D1–D28
+carried forward) is `docs/architecture/HANDOFF.md`.** The decisions D1–D29
 and the owner rulings stand; do not reopen a decided question in code.
 
 ## 5. Verification (run through Nx, never the raw tool)
