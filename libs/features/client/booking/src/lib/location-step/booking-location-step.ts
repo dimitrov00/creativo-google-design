@@ -3,7 +3,7 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import type { LocationId } from '@core/primitives';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import { UiButton, UiIcon, UiMap, type UiMapPin } from '@creativo/ui/controls';
@@ -86,7 +86,7 @@ export class BookingLocationStep {
   private readonly theme = inject(ThemeService);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   /**

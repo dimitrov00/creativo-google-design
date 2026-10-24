@@ -1,23 +1,21 @@
 import {
+  type BarberVm,
   CatalogContentService,
+  CatalogWording,
+  type Localized,
+  type ServiceTermsVm,
+  type ServiceVm,
   termsToVm,
 } from '@creativo/features/shared/catalog';
 import { Injectable, type Signal, computed, inject } from '@angular/core';
 import { BarberId } from '@core/primitives';
 import { CompositionKind } from '@core/components';
 import { CatalogPricingSystem } from '@core/systems';
-import { LanguageService } from '@creativo/features/shared/shell';
 import {
-  type BarberVm,
   LOCATIONS,
-  type Localized,
   type LocationVm,
-  type ServiceTermsVm,
-  type ServiceVm,
   WORK_SHOTS,
   type WorkShotVm,
-  formatDurationRange,
-  formatPrice,
 } from './landing-content';
 
 /**
@@ -34,17 +32,16 @@ import {
  *
  * Still hand-authored: locations and work shots (no seeded counterpart
  * yet), and the editorial art direction merged in by `catalog.presenter.ts`.
+ * The words its templates print — a localized pair, a price — are
+ * `CatalogWording`'s, the locale-bound reads every catalog surface shares.
  *
  * Collections are SIGNALS, not plain arrays — Firestore answers
  * asynchronously, and templates re-read them as the catalog arrives.
  */
 @Injectable({ providedIn: 'root' })
 export class LandingContentService {
-  private readonly language = inject(LanguageService);
   private readonly catalog = inject(CatalogContentService);
-
-  /** Intl locale for money/durations — tracks the active language. */
-  readonly locale = computed(() => this.language.activeLang());
+  private readonly words = inject(CatalogWording);
 
   readonly workShots: readonly WorkShotVm[] = WORK_SHOTS;
   readonly locations: readonly LocationVm[] = LOCATIONS;
@@ -96,16 +93,13 @@ export class LandingContentService {
     });
   }
 
-  /** Resolve a localized pair against the active language. */
+  /** Resolve a localized pair against the active language (`CatalogWording.text`). */
   text(localized: Localized): string {
-    return localized[this.language.activeLang()] ?? localized.en;
+    return this.words.text(localized);
   }
 
+  /** A price in EUR major units, in the active language (`CatalogWording.price`). */
   price(major: number): string {
-    return formatPrice(major, this.locale());
-  }
-
-  durationRange(from: number, to: number): string {
-    return formatDurationRange(from, to, this.locale());
+    return this.words.price(major);
   }
 }

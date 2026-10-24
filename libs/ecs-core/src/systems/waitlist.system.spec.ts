@@ -29,7 +29,11 @@ import {
   UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
-import { SchedulingErrorCode, WaitlistErrorCode } from '@core/errors';
+import {
+  BookingError,
+  SchedulingErrorCode,
+  WaitlistErrorCode,
+} from '@core/errors';
 import type { WaitlistRequest } from '@core/entities';
 import {
   deepFreeze,
@@ -156,7 +160,8 @@ function answer(
     : decided.error.errorCode;
 }
 
-const refusedBy = (errorCode: string) => ({ admission: { errorCode } });
+/** The commit's own refusal of the bag, as the door is handed it. */
+const refusedBy = (refusal: BookingError) => ({ admission: refusal });
 
 describe('WaitlistSystem.decide — refuses now what the commit refuses at every time', () => {
   it('accepts a party the commit would admit', () => {
@@ -171,16 +176,16 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       [{ serviceId: 'svc-cut' }],
       [{ serviceId: 'svc-cut' }],
     ]);
-    expect(answer(three, refusedBy('BOOKING_PARTY_TOO_LARGE'))).toBe(
-      'BOOKING_PARTY_TOO_LARGE',
-    );
+    expect(
+      answer(three, refusedBy(BookingError.partyTooLarge(POLICY.maxPartySize))),
+    ).toBe('BOOKING_PARTY_TOO_LARGE');
   });
 
   it('refuses a service the catalogue does not offer — unknown or retired', () => {
     const retired = ask([[{ serviceId: 'svc-retired' }]]);
-    expect(answer(retired, refusedBy('BOOKING_UNKNOWN_SERVICE'))).toBe(
-      'BOOKING_UNKNOWN_SERVICE',
-    );
+    expect(
+      answer(retired, refusedBy(BookingError.unknownService('svc-retired'))),
+    ).toBe('BOOKING_UNKNOWN_SERVICE');
   });
 
   it('refuses a service with variants and none chosen, or one it does not declare', () => {
@@ -188,12 +193,12 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
     const undeclared = ask([[{ serviceId: 'svc-color', variantId: 'medium' }]]);
     const chosen = ask([[{ serviceId: 'svc-color', variantId: 'long' }]]);
 
-    expect(answer(none, refusedBy('BOOKING_INVALID_INPUT'))).toBe(
-      'BOOKING_INVALID_INPUT',
-    );
-    expect(answer(undeclared, refusedBy('BOOKING_INVALID_INPUT'))).toBe(
-      'BOOKING_INVALID_INPUT',
-    );
+    expect(
+      answer(none, refusedBy(BookingError.invalidInput('variantId'))),
+    ).toBe('BOOKING_INVALID_INPUT');
+    expect(
+      answer(undeclared, refusedBy(BookingError.invalidInput('variantId'))),
+    ).toBe('BOOKING_INVALID_INPUT');
     expect(answer(chosen)).toBe('accepted');
   });
 
@@ -205,16 +210,27 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       [{ serviceId: 'svc-beard' }],
       [{ serviceId: 'svc-shave' }],
     ]);
-    expect(answer(onePerson, refusedBy('BOOKING_CONFLICTING_SERVICES'))).toBe(
-      'BOOKING_CONFLICTING_SERVICES',
-    );
+    expect(
+      answer(
+        onePerson,
+        refusedBy(
+          BookingError.conflictingServices(
+            ServiceId.of('svc-beard'),
+            ServiceId.of('svc-shave'),
+          ),
+        ),
+      ),
+    ).toBe('BOOKING_CONFLICTING_SERVICES');
     expect(answer(twoPeople)).toBe('accepted');
   });
 
   it('refuses a service the named shop does not offer — and watches any shop for it', () => {
     const atMladost = ask([[{ serviceId: 'svc-royal' }]], MLADOST);
     expect(
-      answer(atMladost, refusedBy('BOOKING_SERVICE_NOT_AT_LOCATION')),
+      answer(
+        atMladost,
+        refusedBy(BookingError.serviceNotAtLocation('svc-royal', MLADOST)),
+      ),
     ).toBe('BOOKING_SERVICE_NOT_AT_LOCATION');
     expect(answer(ask([[{ serviceId: 'svc-royal' }]], null))).toBe('accepted');
   });
@@ -234,7 +250,7 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       ask([[{ serviceId: 'svc-retired' }]]),
       door({
         ownerUserId: null,
-        ...refusedBy('BOOKING_UNKNOWN_SERVICE'),
+        ...refusedBy(BookingError.unknownService('svc-retired')),
       }),
     );
     expect(!decided.ok && decided.error.errorCode).toBe(
@@ -272,7 +288,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
     expect(
       answer(ask([[{ serviceId: 'svc-retired' }]]), {
         shopListed: false,
-        ...refusedBy('BOOKING_UNKNOWN_SERVICE'),
+        ...refusedBy(BookingError.unknownService('svc-retired')),
       }),
     ).toBe('locationId');
   });
@@ -422,15 +438,14 @@ describe('WaitlistSystem.idBasis — a request is named by what it means', () =>
   });
 });
 
-describe('WaitlistSystem.idBasis — the stored ids do not move', () => {
-  // The basis the P0 callable hashed (`request-waitlist.ts`
-  // `deterministicRequestId`): `JSON.stringify({ owner, locationId, when,
-  // cart })` over the request's LEGACY props — windows as `'HH:mm'` faces,
-  // lines as `{ id, serviceId, variantId, barberId }`. Every request stored
-  // before the migration is named by it; a different string would give a
-  // re-sent ask a new `wl_` id, slip past the duplicate refusal and notify
-  // twice.
-  it('is byte for byte the legacy wire basis', () => {
+describe('WaitlistSystem.idBasis — the flat stored body, key for key', () => {
+  // The basis is the stored body's own fields in a fixed order — each day's
+  // `localDate` and its windows as `MinuteRange` integers, each line's ids
+  // (greenfield, 2026-10-24: the pre-flatten wire projection it replaced —
+  // `dayKey` days, `'HH:mm'` faces, `{ id, … }` lines — renamed every id
+  // once). A re-sent ask derives the same string, so the duplicate refusal
+  // holds.
+  it('is the normalized days and the bag, as stored', () => {
     const body = unwrapOk(
       WaitlistSystem.decide(
         {
@@ -452,48 +467,44 @@ describe('WaitlistSystem.idBasis — the stored ids do not move', () => {
     );
     expect(WaitlistSystem.idBasis(body)).toBe(
       JSON.stringify({
-        owner: 'user-waiting',
+        ownerUserId: 'user-waiting',
         locationId: 'loc-center',
-        when: {
-          days: [
-            { dayKey: '2030-01-14', windows: [] },
-            {
-              dayKey: '2030-01-15',
-              windows: [{ from: '09:05', to: '12:00' }],
-            },
-          ],
-        },
-        cart: {
-          seats: [
-            {
-              seatKey: 'self',
-              lines: [
-                {
-                  id: 'line-0',
-                  serviceId: 'svc-cut',
-                  variantId: null,
-                  barberId: 'ivan',
-                },
-              ],
-            },
-            {
-              seatKey: 'guest-1',
-              lines: [
-                {
-                  id: 'line-1',
-                  serviceId: 'svc-beard',
-                  variantId: 'long',
-                  barberId: null,
-                },
-              ],
-            },
-          ],
-          nextSequence: 2,
-        },
+        flexibleDays: [
+          { localDate: '2030-01-14', windows: [] },
+          {
+            localDate: '2030-01-15',
+            windows: [{ startMinutes: 545, endMinutes: 720 }],
+          },
+        ],
+        cartSeats: [
+          {
+            seatKey: 'self',
+            lines: [
+              {
+                lineId: 'line-0',
+                serviceId: 'svc-cut',
+                variantId: null,
+                barberId: 'ivan',
+              },
+            ],
+          },
+          {
+            seatKey: 'guest-1',
+            lines: [
+              {
+                lineId: 'line-1',
+                serviceId: 'svc-beard',
+                variantId: 'long',
+                barberId: null,
+              },
+            ],
+          },
+        ],
+        cartNextSequence: 2,
       }),
     );
     expect(WaitlistSystem.idBasis(body)).toBe(
-      '{"owner":"user-waiting","locationId":"loc-center","when":{"days":[{"dayKey":"2030-01-14","windows":[]},{"dayKey":"2030-01-15","windows":[{"from":"09:05","to":"12:00"}]}]},"cart":{"seats":[{"seatKey":"self","lines":[{"id":"line-0","serviceId":"svc-cut","variantId":null,"barberId":"ivan"}]},{"seatKey":"guest-1","lines":[{"id":"line-1","serviceId":"svc-beard","variantId":"long","barberId":null}]}],"nextSequence":2}}',
+      '{"ownerUserId":"user-waiting","locationId":"loc-center","flexibleDays":[{"localDate":"2030-01-14","windows":[]},{"localDate":"2030-01-15","windows":[{"startMinutes":545,"endMinutes":720}]}],"cartSeats":[{"seatKey":"self","lines":[{"lineId":"line-0","serviceId":"svc-cut","variantId":null,"barberId":"ivan"}]},{"seatKey":"guest-1","lines":[{"lineId":"line-1","serviceId":"svc-beard","variantId":"long","barberId":null}]}],"cartNextSequence":2}',
     );
   });
 });

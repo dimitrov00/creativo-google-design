@@ -109,8 +109,6 @@ export const GEORGI_UID = 'dev-client-1';
 export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(UserId.of(GEORGI_UID));
 /** Иво, the companion on Георги's December party. */
 export const IVO_UID = 'dev-client-10';
-/** Иво's client record. */
-export const IVO_CUSTOMER_ID: CustomerId = customerOf(UserId.of(IVO_UID));
 /** The appointment the staff sheet is open on: today, 10:00, with Иван. */
 export const CURRENT_APPOINTMENT_ID = 'appt-today';
 

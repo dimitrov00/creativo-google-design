@@ -1,22 +1,11 @@
-import type { Observable } from 'rxjs';
-import type {
-  Result,
-  AppointmentId,
-  BackfillJobId,
-  UserId,
-} from '@core/primitives';
+import type { Result, AppointmentId, BackfillJobId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
-import type {
-  Appointment,
-  AuditEntry,
-  BackfillJob,
-  ImpersonationSession,
-} from '@core/entities';
+import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
 
 /**
  * The governance context's ports (blueprint §4, §4.1, §4.2): the audit
- * trail, the impersonation reader and the operator backfill's reads and
- * progress write. Impersonation starts and ends, and every backfill row
+ * trail and the operator backfill's reads and progress write. Impersonation
+ * starts and ends, and every backfill row
  * stamp, are `CommitPlan` transactions (`tx.port.ts`) — the backfill's
  * `writePage` re-reads each row inside its own plan, so a staff edit since
  * the page was read is never clobbered (`run-backfill.ts:214-233`).
@@ -51,20 +40,6 @@ export type CreateAuditRows = (
 export type AuditActionsFor = (
   appointmentIds: readonly AppointmentId[],
 ) => Promise<Result<readonly AuditEntry[], RepositoryError>>;
-
-// ── Impersonation ─────────────────────────────────────────────────────────
-
-/**
- * The admin's live session, if any — `adminUserId ==`,
- * `impersonationStatus == 'ACTIVE'`, limit 1 (index #9: `adminUserId,
- * impersonationStatus`; `impersonation.adapter.ts`'s
- * `impersonationReadPorts`); the flat body as stored, `null` when none.
- * A lapsed session still reads `ACTIVE` — `ImpersonationSystem.isExpired`
- * is the rule an authorization reads, never this stream alone.
- */
-export type ObserveActiveImpersonation = (
-  adminUserId: UserId,
-) => Observable<Result<ImpersonationSession | null, RepositoryError>>;
 
 // ── The operator backfill ─────────────────────────────────────────────────
 
@@ -108,11 +83,6 @@ export type AuditQueryPorts = {
 /** The audit trail — `firestore-audit.adapter.ts`. */
 export type AuditPorts = AuditAppendPorts & AuditRowsPorts & AuditQueryPorts;
 
-/** The admin's live impersonation session (web, `IMPERSONATION_READ_PORTS`). */
-export type ImpersonationReadPorts = {
-  readonly observeActiveImpersonation: ObserveActiveImpersonation;
-};
-
 /** The operator backfill's job progress and appointment pages — `firestore-jobs.adapter.ts`. */
 export type BackfillJobPorts = {
   readonly loadBackfillJob: LoadBackfillJob;
@@ -121,6 +91,4 @@ export type BackfillJobPorts = {
 };
 
 /** The governance context's whole port suite — an intersection of its bundles. */
-export type GovernancePorts = AuditPorts &
-  ImpersonationReadPorts &
-  BackfillJobPorts;
+export type GovernancePorts = AuditPorts & BackfillJobPorts;

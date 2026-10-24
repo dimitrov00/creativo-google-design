@@ -67,7 +67,7 @@ The store calls it inside a `computed()`; the template prints `pass().figure`.
   `@angular/*`), no I/O or streams (`@core/ports`, `@core/pipelines`,
   `@creativo/infrastructure/*` but `i18n`, Firebase, `rxjs`), no `async`, no
   clock, no randomness — `now` arrives as an input (`ShopNow` / `UtcEpochMs`).
-- **Formatting through the shared helpers** — `formatMoney`, the cached `Intl`
+- **Formatting through the shared helpers** — `formatCents` (money), the cached `Intl`
   formatters of `@creativo/infrastructure/i18n` and `@creativo/ui/wall-clock`
   (never a formatter built per row), the location's zone for any date or time.
 - **A display model (`*.vm.ts`)** holds display-struct types (readonly

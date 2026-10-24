@@ -27,9 +27,8 @@ import {
 /**
  * What the balance algebra reads of a voucher — its money, its expiry and
  * its lifecycle, never whose it is (D29): a whole `GiftVoucher` passes
- * straight in (Law 3), and so does a voucher a legacy shim read, which
- * cannot know its client record. A balance change hands the same value back
- * with `balanceCents` replaced, whatever else it carries.
+ * straight in (Law 3). A balance change hands the same value back with
+ * `balanceCents` replaced, whatever else it carries.
  */
 export type VoucherBalance = Pick<
   GiftVoucherMeta,
@@ -214,10 +213,6 @@ export const VoucherSystem = {
   /** Why it cannot be used at `nowUtcMs` — void, expired (AT the instant still is not), empty — or `null`. */
   refusal,
 
-  isRedeemable(voucher: VoucherBalance, nowUtcMs: UtcEpochMs): boolean {
-    return refusal(voucher, nowUtcMs) === null;
-  },
-
   /**
    * How much of `due` this voucher can settle — its whole balance or all of
    * what is owed, whichever is smaller; zero across a currency line.
@@ -312,27 +307,6 @@ export const VoucherSystem = {
       return Result.err(EngagementError.giftVoucherOverRestore());
     }
     return Result.ok(withBalance(voucher, balance));
-  },
-
-  /** The shop voids a voucher — the balance stays as history. */
-  void(
-    voucher: GiftVoucher,
-    nowUtcMs: UtcEpochMs,
-    reason: string,
-  ): GiftVoucher {
-    return {
-      id: voucher.id,
-      code: voucher.code,
-      initialValueCents: voucher.initialValueCents,
-      balanceCents: voucher.balanceCents,
-      currency: voucher.currency,
-      issuedAtUtcMs: voucher.issuedAtUtcMs,
-      expiresAtUtcMs: voucher.expiresAtUtcMs,
-      expiresLocalDate: voucher.expiresLocalDate,
-      issuedToCustomerId: voucher.issuedToCustomerId,
-      holderUserId: voucher.holderUserId,
-      ...VoucherLifecycle.voided(nowUtcMs, reason),
-    };
   },
 
   /**

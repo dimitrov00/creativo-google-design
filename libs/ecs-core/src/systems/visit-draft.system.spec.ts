@@ -25,12 +25,11 @@ import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
  *   class → the `RecurrenceRule` struct (`with` → `RecurrenceRule.create`,
  *   weekday names → ISO numbers, `{ frequency }` → `{ kind }`), the series
  *   → `RecurrenceSystem.series`;
- * - every case of libs/features/staff/dashboard/src/lib/shared/
- *   walk-in-labels.spec.ts (5, one a property) — the legacy map → the
- *   first-seen list of `{ personId, label }`;
- * - every case of libs/features/staff/dashboard/src/lib/shared/
- *   catalog-delta.spec.ts (3) — accessors → structs; the `−5 мин` wording
- *   stays in the presenter, so the label assertions read the signed delta.
+ * - the walk-in labels (5, one a property; from the dashboard spec deleted
+ *   in pass B) — the first-seen list of `{ personId, label }`;
+ * - the catalogue delta (from the dashboard spec deleted in pass B) — the
+ *   `−5 мин` wording is the dashboard's `shared/catalog-tag.words.ts`, so
+ *   these cases read the signed delta.
  * Plus the span and placeholder rules of the visit editor's draft
  * (`staff-visit-editor.ts` `spanOf`/`seedDraft`/`adoptPlaceholderLegs`),
  * properties and the purity case.
@@ -284,7 +283,7 @@ describe('the repeat page policy — identities and fallbacks', () => {
   });
 });
 
-/* ── walk-in-labels.spec.ts ───────────────────────────────────────────── */
+/* ── the walk-in labels ───────────────────────────────────────────────── */
 
 const word = (number: number | null): string =>
   number === null ? 'Случаен клиент' : `Случаен клиент ${number}`;
@@ -366,7 +365,7 @@ describe('walkInLabels — no two strangers on one visit share a name', () => {
   });
 });
 
-/* ── catalog-delta.spec.ts ────────────────────────────────────────────── */
+/* ── the catalogue delta ──────────────────────────────────────────────── */
 
 describe('the catalogue delta', () => {
   it('sums the catalogue, and lets a retired service stand at its booked length', () => {
@@ -383,12 +382,6 @@ describe('the catalogue delta', () => {
       ),
     ).toBe(65);
     expect(S.catalogMinutesOf([])).toBeNull();
-  });
-
-  it('writes the distance with a true minus, never a hyphen', () => {
-    // The wording is the presenter's; the system hands it the signed figure.
-    expect(S.minutesDelta(d(45), d(50))).toBe(-5);
-    expect(S.minutesDelta(d(60), d(45))).toBe(15);
   });
 
   it('tags only a visit that runs off the catalogue, and only when the catalogue can say', () => {

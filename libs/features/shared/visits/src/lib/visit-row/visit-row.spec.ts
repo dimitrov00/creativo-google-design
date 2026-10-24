@@ -37,7 +37,7 @@ const STAFF_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Staff);
 const CLIENT_WORDS = visitWordsOf(BG, 'bg', VisitPerspective.Client);
 const NOW = visitsNow(FIXTURE_TODAY);
 
-/** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
+/** `formatCents`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', '\u00a0€');
 
 @Component({

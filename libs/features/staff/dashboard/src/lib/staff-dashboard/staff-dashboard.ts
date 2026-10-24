@@ -84,12 +84,18 @@ import {
   VoucherRedemption,
 } from '@core/components';
 import {
+  BarberToneSystem,
   BillingSystem,
   ClientQueryShape,
   GridEvent as GridEventTag,
   OfferingPriceSystem,
   PhoneSystem,
   SearchFieldsSystem,
+  type SideWrites,
+  VisitDraftSystem,
+  type VisitSides,
+  VisitSidesSystem,
+  type WalkInLabel,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -124,19 +130,11 @@ import {
   snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
 import {
-  type SideWrites,
-  type VisitSides,
-  sideWritesOf,
-  sidesMovedUnder,
-} from '../visit-editor/visit-sides';
-import { assignBarberTones } from '../barber-tone';
-import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
   termsToVm,
 } from '@creativo/features/shared/catalog';
-import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
-import { walkInLabels } from '../shared/walk-in-labels';
+import { catalogTagWords } from '../shared/catalog-tag.words';
 import {
   firstNameOf,
   hollowStatus,
@@ -154,7 +152,7 @@ import {
   cancellationReasonWords,
   pluralForm,
   relativeTime,
-  translateDomainError,
+  translateCodedError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import {
@@ -262,7 +260,7 @@ type SaveWrites = SideWrites;
  * What one write of the sheet came to: the batch (`true` when there was
  * none to send), the side documents (`true` when none was due), and whether
  * it was refused before anything went out because a side field it carries
- * was changed by somebody else (`sidesMovedUnder`).
+ * was changed by somebody else (`VisitSidesSystem.movedUnder`).
  */
 interface EditorWrite {
   readonly batch: boolean;
@@ -362,7 +360,7 @@ function rowShape(row: DayRowVm): string {
       )
       .sort(),
     vouchers: row.vouchers.map((voucher) => voucher.code),
-    tip: row.tipMinorUnits,
+    tip: row.tipCents,
   });
 }
 
@@ -525,7 +523,7 @@ interface DayRowVm {
   readonly priceCents: number | null;
   readonly barberName: string;
   readonly barberAvatarSrc: string | null;
-  /** Which of the five identity tones this chair wears — see `barber-tone`. */
+  /** Which of the five identity tones this chair wears — `BarberToneSystem`. */
   readonly barberTone: number;
   /** Set only when the seat runs past midnight — "00:15⁺¹". */
   readonly crossesMidnight: boolean;
@@ -571,7 +569,7 @@ interface DayRowVm {
    * and the reading is per chair, which is the unit a barber counts in.
    */
   readonly tipLabel: string | null;
-  readonly tipMinorUnits: number | null;
+  readonly tipCents: PriceCents | null;
   /**
    * WHAT WAS TAKEN OFF the bill, as the server snapshotted it — every
    * discount on the visit, empty at full price. The whole appointment's,
@@ -1286,7 +1284,7 @@ export class StaffDashboard {
   }
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
 
   /**
    * WHO IS AT THE BOOK — the settled principal the route guard already
@@ -1868,7 +1866,7 @@ export class StaffDashboard {
    * replaced fell back to the FIRST barber's offering and quoted another
    * chair's price and minutes for a seat the server would charge
    * differently. `serviceVms()` still names the services and variants, and
-   * `CatalogPresenter.price` words the figure as the client's catalogue
+   * `CatalogWording.price` words the figure as the client's catalogue
    * does.
    */
   protected readonly visitServiceOptions = computed<
@@ -2454,7 +2452,7 @@ export class StaffDashboard {
   }
 
   /**
-   * What this chair's seats were tipped, as a figure and as minor units.
+   * What this chair's seats were tipped, as a figure and in cents.
    *
    * `null` on both when NOT ONE seat carries a recording — which is not the
    * same as a chair that was tipped nothing, and is why an unrecorded row
@@ -2462,21 +2460,21 @@ export class StaffDashboard {
    */
   private seatsTip(seats: readonly Seat[]): {
     tipLabel: string | null;
-    tipMinorUnits: number | null;
+    tipCents: PriceCents | null;
   } {
     const first = seats[0];
     // Mixed currencies within one chair is a data error, not a feature;
     // the tips are read in the chair's own currency (`BillingSystem.tipsOf`).
     const total =
       first === undefined ? null : BillingSystem.tipsOf(seats, first.currency);
-    if (total === null) return { tipLabel: null, tipMinorUnits: null };
+    if (total === null) return { tipLabel: null, tipCents: null };
     return {
       tipLabel: formatCents(
         total.amountCents,
         total.currency,
         this.transloco.getActiveLang(),
       ),
-      tipMinorUnits: total.amountCents,
+      tipCents: total.amountCents,
     };
   }
 
@@ -2587,12 +2585,19 @@ export class StaffDashboard {
    * barber's colour must not change because they happen to be off on
    * Tuesday, and the calendar views read the same map.
    */
-  protected readonly barberTones = computed(() =>
-    assignBarberTones(this.catalog.barberVms().map((vm) => vm.id)),
+  protected readonly barberTones = computed<ReadonlyMap<BarberId, number>>(
+    () => {
+      // The catalogue's ids are document ids, so brands by construction.
+      const ids = this.catalog.barberVms().map((vm) => BarberId.of(vm.id));
+      // The system answers parallel to the roster; the views look a chair
+      // up by its id.
+      const tones = BarberToneSystem.assignBarberTones(ids);
+      return new Map(ids.map((id, index) => [id, tones.at(index) ?? 0]));
+    },
   );
 
   protected toneOf(barberId: string): number {
-    return this.barberTones().get(barberId) ?? 0;
+    return this.barberTones().get(BarberId.of(barberId)) ?? 0;
   }
 
   protected readonly lanes = computed<readonly LaneVm[]>(() => {
@@ -3418,7 +3423,7 @@ export class StaffDashboard {
    * nothing when the catalogue no longer knows the service — the seat's own
    * booked terms then stand in, exactly as they do on the sheet.
    */
-  private chairMinutesOf(seat: Seat, barberId: string): number | null {
+  private chairMinutesOf(seat: Seat, barberId: string): DurationMinutes | null {
     const service = this.catalog.findService(seat.serviceId);
     if (service === undefined) return null;
     // The server's resolution (`OfferingPriceSystem.termsFor`): a chair
@@ -3448,13 +3453,23 @@ export class StaffDashboard {
   ): string | null {
     const pattern = this.copyOf('staff.visit.minutes');
     if (pattern === null) return null;
-    const span = Math.max(0, Math.round((endMs - startMs) / 60_000));
-    const sold = catalogMinutesOf(
-      seats,
-      (seat) => this.chairMinutesOf(seat, barberId),
-      (seat) => seat.durationMinutes,
+    // A visit lasts a positive whole number of minutes by construction, so
+    // a span that is not one is a broken invariant, never an input.
+    const span = DurationMinutes.of(
+      Math.max(0, Math.round((endMs - startMs) / 60_000)),
     );
-    return catalogTagOf(span, sold, (minutes) => fill(pattern, { minutes }));
+    if (!span.ok) return defect(`not a visit's span: ${endMs - startMs} ms`);
+    // A seat the catalogue no longer knows stands at its booked length.
+    const sold = VisitDraftSystem.catalogMinutesOf(
+      seats.map((seat) => ({
+        catalogMinutes: this.chairMinutesOf(seat, barberId),
+        bookedMinutes: seat.durationMinutes,
+      })),
+    );
+    return catalogTagWords(
+      VisitDraftSystem.minutesDelta(span.value, sold),
+      (minutes) => fill(pattern, { minutes }),
+    );
   }
 
   private toRow(
@@ -4144,7 +4159,7 @@ export class StaffDashboard {
       priceLabel: row.priceLabel,
       priceCents: row.priceCents,
       tipLabel: row.tipLabel,
-      tipMinorUnits: row.tipMinorUnits,
+      tipCents: row.tipCents,
       discounts: row.discounts,
       vouchers: row.vouchers,
       resolution: row.resolution,
@@ -4447,17 +4462,18 @@ export class StaffDashboard {
     /*
      * THE SIDE FIELDS this save writes (round 5): the ones the barber
      * CHANGED from what the draft drew them from — never one they left
-     * alone, however long the sheet has been open (`sideWritesOf`). The
-     * sheet follows the stored note and tip while they are untouched, so a
-     * colleague's tip recorded after it opened is shown, not written over.
+     * alone, however long the sheet has been open
+     * (`VisitSidesSystem.writesOf`). The sheet follows the stored note and
+     * tip while they are untouched, so a colleague's tip recorded after it
+     * opened is shown, not written over.
      * A commit that does not say what it drew is measured against what is
      * stored now.
      */
     const drawn: VisitSides = commit.drawn ?? {
       note: this.store.teamNote(),
-      tipMinorUnits: row?.tipMinorUnits ?? null,
+      tipCents: row?.tipCents ?? null,
     };
-    const touched = sideWritesOf(commit, drawn);
+    const touched = VisitSidesSystem.writesOf(commit, drawn);
     const writes: SaveWrites = {
       note: touched.note,
       tip: touched.tip && row !== null && row.seatIds[0] !== undefined,
@@ -4512,7 +4528,7 @@ export class StaffDashboard {
       this.notice.set(null);
       this.offerSaveUndo(appointmentId, row, before, writes, shapeNeutral, {
         note: commit.note,
-        tipMinorUnits: commit.tipMinorUnits,
+        tipCents: commit.tipCents,
       });
       return;
     }
@@ -4538,8 +4554,9 @@ export class StaffDashboard {
    * refused as stale had already put the old screen's note and tip over a
    * colleague's — the very overwrite the claim exists to stop. And a side
    * field somebody else changed under the draft refuses the write before
-   * anything goes out (`sidesMovedUnder`): the note and the tip do not move
-   * the revision, so this device's own view is the only guard they have.
+   * anything goes out (`VisitSidesSystem.movedUnder`): the note and the tip
+   * do not move the revision, so this device's own view is the only guard
+   * they have.
    */
   private async writeFromEditor(
     appointmentId: string,
@@ -4548,10 +4565,16 @@ export class StaffDashboard {
     writes: SaveWrites,
     drawn: VisitSides,
   ): Promise<EditorWrite> {
+    // What this device hears now: the note's own listener, which may not
+    // answer (`undefined`), and the row's tip, unheard without a row. A
+    // field this device does not hear is not judged.
+    const liveNote = this.store.teamNoteOf(appointmentId);
     if (
-      sidesMovedUnder(writes, drawn, target, {
-        note: this.store.teamNoteOf(appointmentId),
-        tipMinorUnits: row === null ? undefined : row.tipMinorUnits,
+      VisitSidesSystem.movedUnder(writes, drawn, target, {
+        note: liveNote ?? null,
+        noteHeard: liveNote !== undefined,
+        tipCents: row === null ? null : row.tipCents,
+        tipHeard: row !== null,
       })
     ) {
       return { batch: false, sides: false, stale: true };
@@ -4605,11 +4628,7 @@ export class StaffDashboard {
       ) ?? row?.seatIds[0];
     const tipWritten =
       writes.tip && tipSeat !== undefined
-        ? await this.recordTip(
-            appointmentId,
-            tipSeat,
-            target.tipMinorUnits ?? null,
-          )
+        ? await this.recordTip(appointmentId, tipSeat, target.tipCents)
         : true;
 
     return { batch: true, sides: noteWritten && tipWritten, stale: false };
@@ -4617,31 +4636,19 @@ export class StaffDashboard {
 
   /**
    * One chair's tip as the call carries it (`amountCents`, `null` clears).
-   * A figure no price can be is refused here as the server refuses it —
-   * nothing goes out.
+   * The figure is already a price: the sheet's entry made it one at the
+   * field (`PriceCents.of`), and a stored or preset tip is one by
+   * construction.
    */
   private recordTip(
     appointmentId: string,
     seatId: string,
-    amount: number | null,
+    amountCents: PriceCents | null,
   ): Promise<boolean> {
-    const cents = amount === null ? null : PriceCents.of(amount);
-    if (cents !== null && !cents.ok) {
-      this.store.refuse(
-        appointmentId,
-        PipelineError.of(
-          PipelineErrorCode.InvalidRequest,
-          BookingErrorCode.TipInvalidInput,
-          null,
-          'amountCents',
-        ),
-      );
-      return Promise.resolve(false);
-    }
     return this.store.recordTip({
       appointmentId: AppointmentId.of(appointmentId),
       seatId: SeatId.of(seatId),
-      amountCents: cents === null ? null : cents.value,
+      amountCents,
     });
   }
 
@@ -4723,8 +4730,8 @@ export class StaffDashboard {
     const chairPerson = commit.clients[0]?.id ?? 'primary';
     // A stranger joining this visit is numbered past every label the VISIT
     // already holds — this chair's walk-in, and every other chair's too,
-    // since the server tells guests apart per appointment (`walkInLabels`,
-    // `visitGuestLabels`).
+    // since the server tells guests apart per appointment
+    // (`VisitDraftSystem.walkInLabels`, `visitGuestLabels`).
     const strangers = this.walkInNames(
       commit,
       row === null
@@ -4745,7 +4752,7 @@ export class StaffDashboard {
       }
       const label: string =
         commit.clients.find((client) => client.id === clientId)?.label ??
-        strangers.get(clientId) ??
+        strangers.find((stranger) => stranger.personId === clientId)?.label ??
         this.transloco.translate('staff.visit.walkIn');
       return guestSubject(label);
     };
@@ -5487,7 +5494,7 @@ export class StaffDashboard {
       priceLabel: null,
       priceCents: null,
       tipLabel: null,
-      tipMinorUnits: null,
+      tipCents: null,
       // A visit the server has not seen cannot be discounted or paid yet:
       // the rows wait for the first save, like the tip's.
       discounts: [],
@@ -5935,6 +5942,8 @@ export class StaffDashboard {
    * «Случаен клиент», then «Случаен клиент 2»… past the drafted clients'
    * labels and `taken`, the ones the stored visit already holds. One
    * catalogue word each (`staff.visit.walkIn`, `staff.visit.walkInNumbered`).
+   * The rule is `VisitDraftSystem.walkInLabels`: one entry per person, in
+   * first-seen order.
    */
   private walkInNames(
     commit: {
@@ -5946,9 +5955,9 @@ export class StaffDashboard {
     },
     taken: readonly string[],
     except: string | null = null,
-  ): ReadonlyMap<string, string> {
+  ): readonly WalkInLabel[] {
     const named = new Set(commit.clients.map((client) => client.id));
-    return walkInLabels(
+    return VisitDraftSystem.walkInLabels(
       commit.legs
         .map((leg) => leg.clientId)
         .filter((id) => !named.has(id) && id !== except),
@@ -5990,12 +5999,13 @@ export class StaffDashboard {
       id !== 'primary' && !id.startsWith('guest-');
     const owner = commit.clients.find((client) => isAccount(client.id)) ?? null;
     // Two strangers on one visit are two people: the second is numbered,
-    // or the server's party check reads them as one (`walkInLabels`).
+    // or the server's party check reads them as one
+    // (`VisitDraftSystem.walkInLabels`).
     const strangers = this.walkInNames(commit, []);
     const walkIn: string = this.transloco.translate('staff.visit.walkIn');
     const labelOf = (clientId: string): string =>
       commit.clients.find((client) => client.id === clientId)?.label ??
-      strangers.get(clientId) ??
+      strangers.find((stranger) => stranger.personId === clientId)?.label ??
       walkIn;
 
     // ONE shop day for the whole visit (F-6): each seat's start is a
@@ -6678,7 +6688,7 @@ export class StaffDashboard {
     return wordPipelineError(
       error,
       (code, params) =>
-        translateDomainError(this.transloco, { ...params, errorCode: code }),
+        translateCodedError(this.transloco, { ...params, errorCode: code }),
       BookingErrorCode.CallFailed,
       extra,
     );

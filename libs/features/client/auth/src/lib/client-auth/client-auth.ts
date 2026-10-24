@@ -46,7 +46,7 @@ import {
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { AuthFlowStore } from '../auth-flow.store';
 
 /**
@@ -277,7 +277,7 @@ export class ClientAuth {
 
   protected translateError(code: string | undefined | null): string | null {
     if (!code) return null;
-    return translateDomainError(this.transloco, { errorCode: code });
+    return translateCodedError(this.transloco, { errorCode: code });
   }
 
   /**
@@ -373,9 +373,7 @@ export class ClientAuth {
     const raw = this.rawCode();
     if (raw.length < this.otpLength) return null;
     const result = OtpCode.parse(raw);
-    return result.ok
-      ? null
-      : translateDomainError(this.transloco, result.error);
+    return result.ok ? null : translateCodedError(this.transloco, result.error);
   }
 
   protected submitCode(): void {

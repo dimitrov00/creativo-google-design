@@ -275,11 +275,6 @@ export type CallableClient = <N extends CallableName>(
  */
 export type LoadPolicy = () => Promise<Result<BookingPolicy, RepositoryError>>;
 
-/** `appointments/{id}` — `null` when absent. */
-export type LoadAppointment = (
-  id: AppointmentId,
-) => Promise<Result<Appointment | null, RepositoryError>>;
-
 /** `barberBusy/{BusyKey}` — `null` when the day holds nothing. */
 export type LoadBusyDay = (
   key: BusyKey,
@@ -451,11 +446,6 @@ export type PolicyReadPorts = {
   readonly loadPolicy: LoadPolicy;
 };
 
-/** One appointment by id. */
-export type AppointmentLoadPorts = {
-  readonly loadAppointment: LoadAppointment;
-};
-
 /** A barber's roster, busy day and schedule exception for a shop day. */
 export type ShopDayReadPorts = {
   readonly loadBusyDay: LoadBusyDay;
@@ -490,7 +480,6 @@ export type LeadTimeWritePorts = {
 
 /** The server and background pipelines' scheduling reads. */
 export type ServerSchedulingReadPorts = PolicyReadPorts &
-  AppointmentLoadPorts &
   ShopDayReadPorts &
   BarberListPorts &
   WaitlistRequestReadPorts &

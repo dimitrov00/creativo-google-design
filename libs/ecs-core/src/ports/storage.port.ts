@@ -4,8 +4,8 @@ import type { RepositoryError } from '@core/errors';
 
 /**
  * The browser's device storage (blueprint §4.2) — web-only, synchronous
- * like the API under it. Successor of `BOOKING_DRAFT_STORE` and
- * `KEY_VALUE_STORE`.
+ * like the API under it: the `/book` draft in `sessionStorage`. Successor of
+ * `BOOKING_DRAFT_STORE`.
  *
  * The booking draft is the flat `BookingDraft` component (Phase 4a 4A-9):
  * the flow state, the contact slice, the day looked at and where the draft
@@ -35,16 +35,6 @@ export type SaveBookingDraft = (
 
 export type ClearBookingDraft = () => Result<void, RepositoryError>;
 
-/** A stored string; `null` when the key holds nothing. */
-export type KvGet = (key: string) => Result<string | null, RepositoryError>;
-
-export type KvSet = (
-  key: string,
-  value: string,
-) => Result<void, RepositoryError>;
-
-export type KvRemove = (key: string) => Result<void, RepositoryError>;
-
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The `/book` flow's draft — `sessionStorage`; `BOOKING_DRAFT_PORTS`. */
@@ -54,12 +44,5 @@ export type BookingDraftPorts = {
   readonly clearBookingDraft: ClearBookingDraft;
 };
 
-/** Per-device preferences — `localStorage`; `KEY_VALUE_PORTS`. */
-export type KeyValuePorts = {
-  readonly kvGet: KvGet;
-  readonly kvSet: KvSet;
-  readonly kvRemove: KvRemove;
-};
-
-/** The device-storage suite — an intersection of its bundles. */
-export type StoragePorts = BookingDraftPorts & KeyValuePorts;
+/** The device-storage suite — today its one bundle. */
+export type StoragePorts = BookingDraftPorts;

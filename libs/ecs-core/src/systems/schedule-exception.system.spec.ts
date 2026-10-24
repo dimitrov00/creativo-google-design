@@ -189,46 +189,16 @@ describe('ScheduleExceptionSystem — reasons and refusals', () => {
       exceptionRanges: [range('09:00', '11:00'), range('14:00', '15:00')],
     });
   });
-
-  it('knows which reasons take the whole day', () => {
-    expect(
-      ScheduleExceptionSystem.isWholeDay({
-        exceptionReason: ExceptionReason.Sick,
-        sickPaid: false,
-      }),
-    ).toBe(true);
-    expect(
-      ScheduleExceptionSystem.isWholeDay({
-        exceptionReason: ExceptionReason.Closed,
-      }),
-    ).toBe(true);
-    expect(
-      ScheduleExceptionSystem.isWholeDay({
-        exceptionReason: ExceptionReason.Hours,
-        exceptionRanges: [range('10:00', '12:00')],
-      }),
-    ).toBe(false);
-    expect(
-      ScheduleExceptionSystem.isWholeDay({
-        exceptionReason: ExceptionReason.Break,
-        exceptionRanges: [range('10:00', '12:00')],
-        breakPaid: false,
-      }),
-    ).toBe(false);
-  });
 });
 
 describe('ScheduleExceptionSystem — a location-wide closure fans out to every barber', () => {
-  // Copied from roster-window.spec.ts:259 ('a location-wide closure removes
-  // the day for every barber'): its `isLocationWide()` and
-  // `appliesTo(anyone)` assertions. The day's removal itself is
+  // From roster-window.spec.ts:259 ('a location-wide closure removes the
+  // day for every barber'). Under D16(b) the applicability is the WRITE-time
+  // fan-out — one `closed` exception per barber; the day's removal itself is
   // roster.system.spec.ts ('a closed effect on the day removes it…').
   it('applies a shop-wide closure to any barber, as the same closed effect', () => {
     const anyone = BarberId.of('anyone');
     const ivan = BarberId.of('ivan');
-    expect(ScheduleExceptionSystem.isLocationWide(null)).toBe(true);
-    expect(ScheduleExceptionSystem.appliesTo(null, anyone)).toBe(true);
-    expect(ScheduleExceptionSystem.appliesTo(null, ivan)).toBe(true);
     // Fanned out, every barber's own exception publishes the one effect.
     const fanned = [anyone, ivan].map((barberId) => ({
       barberId,
@@ -240,15 +210,6 @@ describe('ScheduleExceptionSystem — a location-wide closure fans out to every 
       { barberId: anyone, effect: ExceptionEffectRule.closed() },
       { barberId: ivan, effect: ExceptionEffectRule.closed() },
     ]);
-  });
-
-  it('applies one barber’s exception to that barber only', () => {
-    const ivan = BarberId.of('ivan');
-    expect(ScheduleExceptionSystem.isLocationWide(ivan)).toBe(false);
-    expect(ScheduleExceptionSystem.appliesTo(ivan, ivan)).toBe(true);
-    expect(ScheduleExceptionSystem.appliesTo(ivan, BarberId.of('stefan'))).toBe(
-      false,
-    );
   });
 });
 

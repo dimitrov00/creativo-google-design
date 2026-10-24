@@ -379,9 +379,9 @@ export function rescheduleAppointmentRefusal(
 /**
  * A cancel's reason: one of the dictionary's values, `UNSPECIFIED` when the
  * shop names none — `null` when refused. CODE-ONLY (D23): `OTHER` stands on
- * its own, as `SeatOutcome.reasonOf` reads it; the words a barber types
- * beside it are the visit's note (`appointmentNotes`), written by the staff
- * day after the cancel lands, never carried here.
+ * its own; the words a barber types beside it are the visit's note
+ * (`appointmentNotes`), written by the staff day after the cancel lands,
+ * never carried here.
  */
 function transitionReasonOf(raw: unknown): CancellationReason | null {
   if (raw === undefined || raw === null) return CancellationReason.Unspecified;

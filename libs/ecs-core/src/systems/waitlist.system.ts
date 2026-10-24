@@ -19,6 +19,7 @@ import {
   WaitlistStatus,
   type BarberId,
   LocationId,
+  type SeatKeyText,
   NotificationId,
   type UserId,
   type WaitlistRequestId,
@@ -28,6 +29,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  type BookingError,
   type SchedulingError,
   SchedulingErrorCode,
   WaitlistError,
@@ -72,8 +74,8 @@ const LOCAL_DATE_FIELD = 'localDate';
  * - `shopListed` — the named shop is there and listed (`shopListed`, the
  *   waitlist's shop rule); ignored for an any-shop request;
  * - `admission` — the commit's own time-independent admission of the bag at
- *   that shop (`cartAdmissible`): `null` admitted, else the commit's refusal
- *   code.
+ *   that shop (`PartyAdmissionSystem.admitCart`): `null` admitted, else the
+ *   commit's refusal as it gave it.
  */
 export type WaitlistDoor = {
   readonly ownerUserId: UserId | null;
@@ -81,7 +83,7 @@ export type WaitlistDoor = {
   readonly horizonEndLocalDate: LocalDate;
   readonly maxFlexibleDays: number;
   readonly shopListed: boolean;
-  readonly admission: { readonly errorCode: string } | null;
+  readonly admission: BookingError | null;
 };
 
 /**
@@ -184,6 +186,12 @@ function windowOf(
     : null;
 }
 
+/** What a request's id basis keeps of a cart line: its ids, in this order. */
+type BasisLine = Pick<
+  CartLine,
+  'lineId' | 'serviceId' | 'variantId' | 'barberId'
+>;
+
 /** A line every id of which is readable — the stored cart's own reading. */
 function lineReadable(line: CartLine): boolean {
   return (
@@ -192,13 +200,6 @@ function lineReadable(line: CartLine): boolean {
     (line.variantId === null || line.variantId.trim().length > 0) &&
     (line.barberId === null || line.barberId.trim().length > 0)
   );
-}
-
-/** Minutes of the day → the zero-padded `'HH:mm'` face a stored window was written as. */
-function clockFace(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes - hours * 60;
-  return `${hours < 10 ? '0' : ''}${hours}:${rest < 10 ? '0' : ''}${rest}`;
 }
 
 /**
@@ -232,7 +233,8 @@ export const WaitlistSystem = {
    *    `SCHEDULING_WAITLIST_EMPTY_CART`;
    * 7. a line that does not read, or a corrupt line counter — `cart`: a
    *    promise for part of the party is a broken one;
-   * 8. the commit's own admission of the bag — its refusal code.
+   * 8. the commit's own admission of the bag — its refusal, carried typed
+   *    (`WaitlistError.cartRefused`).
    */
   decide(
     ask: WaitlistCall.Input,
@@ -300,7 +302,7 @@ export const WaitlistSystem = {
       }
     }
     if (door.admission !== null) {
-      return Result.err(WaitlistError.invalidRequest(door.admission.errorCode));
+      return Result.err(WaitlistError.cartRefused(door.admission));
     }
 
     return Result.ok({
@@ -320,7 +322,9 @@ export const WaitlistSystem = {
    * The string a request's id is the hash of (`deterministicRequestId`,
    * `request-waitlist.ts:290-299`): what the request MEANS — owner, shop, the
    * normalized days, the bag — so two phrasings of one ask collapse to one
-   * id and a duplicate is one atomic create refusal. The pipeline mints
+   * id and a duplicate is one atomic create refusal. The stored body's own
+   * fields, key for key in a fixed order: each day's `localDate` and its
+   * windows as `MinuteRange` integers, each line's ids. The pipeline mints
    * `wl_` + the first 40 hex of `hash(basis)`.
    */
   idBasis(
@@ -333,64 +337,52 @@ export const WaitlistSystem = {
       | 'cartNextSequence'
     >,
   ): string {
-    // THE WIRE SHAPE THE ID WAS ALWAYS HASHED FROM, key for key and in that
-    // order (`request-waitlist.ts` at P0: the request's legacy props) —
-    // `dayKey` days, windows as `'HH:mm'` faces, lines as `{ id, serviceId,
-    // variantId, barberId }`. Serialising the structs instead would rename
-    // every stored request: a re-sent ask would get a new `wl_` id, slip
-    // past the duplicate refusal and be notified twice.
-    const days: {
-      readonly dayKey: string;
+    const flexibleDays: {
+      readonly localDate: LocalDate;
       readonly windows: readonly {
-        readonly from: string;
-        readonly to: string;
+        readonly startMinutes: MinuteOfDay;
+        readonly endMinutes: EndMinute;
       }[];
     }[] = [];
     for (let d = 0; d < body.flexibleDays.length; d++) {
       const day = body.flexibleDays[d] as DayWindows;
-      const windows: { readonly from: string; readonly to: string }[] = [];
+      const windows: {
+        readonly startMinutes: MinuteOfDay;
+        readonly endMinutes: EndMinute;
+      }[] = [];
       for (let w = 0; w < day.windows.length; w++) {
         const window = day.windows[w] as MinuteRange;
         windows.push({
-          from: clockFace(window.startMinutes),
-          to: clockFace(window.endMinutes),
+          startMinutes: window.startMinutes,
+          endMinutes: window.endMinutes,
         });
       }
-      days.push({ dayKey: day.localDate, windows });
+      flexibleDays.push({ localDate: day.localDate, windows });
     }
-    const seats: {
-      readonly seatKey: string;
-      readonly lines: readonly {
-        readonly id: string;
-        readonly serviceId: string;
-        readonly variantId: string | null;
-        readonly barberId: string | null;
-      }[];
+    const cartSeats: {
+      readonly seatKey: SeatKeyText;
+      readonly lines: readonly BasisLine[];
     }[] = [];
     for (let s = 0; s < body.cartSeats.length; s++) {
       const seat = body.cartSeats[s] as CartSeatLines;
-      const lines: {
-        readonly id: string;
-        readonly serviceId: string;
-        readonly variantId: string | null;
-        readonly barberId: string | null;
-      }[] = [];
+      const lines: BasisLine[] = [];
       for (let l = 0; l < seat.lines.length; l++) {
         const line = seat.lines[l] as CartLine;
         lines.push({
-          id: line.lineId,
+          lineId: line.lineId,
           serviceId: line.serviceId,
           variantId: line.variantId,
           barberId: line.barberId,
         });
       }
-      seats.push({ seatKey: seat.seatKey, lines });
+      cartSeats.push({ seatKey: seat.seatKey, lines });
     }
     return JSON.stringify({
-      owner: body.ownerUserId,
+      ownerUserId: body.ownerUserId,
       locationId: body.locationId,
-      when: { days },
-      cart: { seats, nextSequence: body.cartNextSequence },
+      flexibleDays,
+      cartSeats,
+      cartNextSequence: body.cartNextSequence,
     });
   },
 

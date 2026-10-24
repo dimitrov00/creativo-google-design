@@ -53,14 +53,15 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1) and
  * apps/functions/src/lib/booking/cancellation-window-stamp.spec.ts, copied
  * while the originals still ran against their shims: the window is whole
- * hours (`windowOf`), the deadline its one formula on `UtcEpochMs` (a T2
- * lifecycle comparison), and every path that cancels a seat stamps the
- * window in force on it — the stamp spec's callables re-targeted to the
- * lifecycle verbs they decide with.
+ * hours (`BookingPolicy.isValidCancellationWindowHours`), the deadline its
+ * one formula on `UtcEpochMs` (`BookingPolicy.cancellationDeadlineUtcMs`, a
+ * T2 lifecycle comparison) that `mayCancel` judges by, and every path that
+ * cancels a seat stamps the window in force on it — the stamp spec's
+ * callables re-targeted to the lifecycle verbs they decide with.
  */
 
 const HOUR = 3_600_000;
-const MAX = CancellationPolicySystem.MAX_WINDOW_HOURS;
+const MAX = BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS;
 
 /** The instants `UtcEpochMs` holds: the years 0001–9999 (UTC). */
 const MIN_UTC_EPOCH_MS = -62_135_596_800_000;
@@ -69,10 +70,6 @@ const MAX_UTC_EPOCH_MS = 253_402_300_800_000 - 1;
 const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 const plus = (base: UtcEpochMs, ms: number): UtcEpochMs =>
   UtcEpochMs.plusMs(base, ms);
-
-function windowOf(hours: number): number {
-  return unwrapOk(CancellationPolicySystem.windowOf(hours));
-}
 
 function policyWithWindow(cancellationWindowHours: number): BookingPolicy {
   return unwrapOk(
@@ -126,26 +123,13 @@ const anyVisitStart = fc
   )
   .map(instant);
 
-describe('CancellationPolicySystem.windowOf — the window as whole hours', () => {
-  it('accepts every whole, non-negative number of hours, as given', () => {
+describe('the window as whole hours (`BookingPolicy.isValidCancellationWindowHours`)', () => {
+  const valid = BookingPolicy.isValidCancellationWindowHours;
+
+  it('accepts every whole, non-negative number of hours', () => {
     fc.assert(
       fc.property(anyValidHours, (hours) => {
-        const result = CancellationPolicySystem.windowOf(hours);
-        expect(result.ok).toBe(true);
-        expect(result.ok && result.value).toBe(hours);
-      }),
-    );
-  });
-
-  it('refuses a negative window with its stable code', () => {
-    fc.assert(
-      fc.property(fc.integer({ max: -1 }), (hours) => {
-        const error = unwrapErr(CancellationPolicySystem.windowOf(hours));
-        expect(error.errorCode).toBe('SCHEDULING_CANCELLATION_WINDOW_INVALID');
-        expect(error.errorCode).toBe(
-          SchedulingErrorCode.CancellationWindowInvalid,
-        );
-        expect(error.rawValue).toBe(hours);
+        expect(valid(hours)).toBe(true);
       }),
     );
   });
@@ -155,7 +139,7 @@ describe('CancellationPolicySystem.windowOf — the window as whole hours', () =
       fc.property(
         fc.double().filter((value) => !Number.isInteger(value)),
         (hours) => {
-          expect(CancellationPolicySystem.windowOf(hours).ok).toBe(false);
+          expect(valid(hours)).toBe(false);
         },
       ),
     );
@@ -166,20 +150,20 @@ describe('CancellationPolicySystem.windowOf — the window as whole hours', () =
       0.5,
       23.999,
     ]) {
-      expect(CancellationPolicySystem.windowOf(bad).ok).toBe(false);
+      expect(valid(bad)).toBe(false);
     }
   });
 
   it('refuses a window too long for its deadline to stay a safe integer', () => {
     expect(MAX).toBe(2_400_000_000);
-    expect(CancellationPolicySystem.windowOf(MAX).ok).toBe(true);
+    expect(valid(MAX)).toBe(true);
     for (const tooLong of [
       MAX + 1,
       Math.floor(Number.MAX_SAFE_INTEGER / HOUR),
       Number.MAX_SAFE_INTEGER,
       1e300,
     ]) {
-      expect(CancellationPolicySystem.windowOf(tooLong).ok).toBe(false);
+      expect(valid(tooLong)).toBe(false);
     }
   });
 
@@ -187,30 +171,17 @@ describe('CancellationPolicySystem.windowOf — the window as whole hours', () =
     fc.assert(
       fc.property(anyNumber, (hours) => {
         const expected = Number.isInteger(hours) && hours >= 0 && hours <= MAX;
-        expect(CancellationPolicySystem.windowOf(hours).ok).toBe(expected);
-      }),
-    );
-  });
-
-  it('stores negative zero as the zero every reader compares against', () => {
-    expect(Object.is(windowOf(-0), 0)).toBe(true);
-    expect(windowOf(-0) === windowOf(0)).toBe(true);
-  });
-
-  it('is equal by its hours, and only by them', () => {
-    fc.assert(
-      fc.property(anyValidHours, anyValidHours, (a, b) => {
-        expect(windowOf(a) === windowOf(b)).toBe(a === b);
+        expect(valid(hours)).toBe(expected);
       }),
     );
   });
 });
 
-describe('CancellationPolicySystem — the deadline', () => {
+describe('the deadline (`BookingPolicy.cancellationDeadlineUtcMs`)', () => {
   it('draws it exactly `hours` before any visit’s start — exact and safe (property)', () => {
     fc.assert(
       fc.property(anyValidHours, anyVisitStart, (hours, start) => {
-        const deadline = CancellationPolicySystem.deadlineUtcMs(hours, start);
+        const deadline = BookingPolicy.cancellationDeadlineUtcMs(hours, start);
         expect(BigInt(deadline)).toBe(
           BigInt(start) - BigInt(hours) * BigInt(HOUR),
         );
@@ -220,7 +191,7 @@ describe('CancellationPolicySystem — the deadline', () => {
   });
 
   it('meets the edge of the time range exactly at the longest window, from the epoch', () => {
-    const deadline = CancellationPolicySystem.deadlineUtcMs(MAX, instant(0));
+    const deadline = BookingPolicy.cancellationDeadlineUtcMs(MAX, instant(0));
     expect(deadline).toBe(-TIME_RANGE_MS);
     expect(Number.isSafeInteger(deadline)).toBe(true);
     expect(MIN_UTC_EPOCH_MS).toBeGreaterThan(-TIME_RANGE_MS);
@@ -230,7 +201,9 @@ describe('CancellationPolicySystem — the deadline', () => {
     fc.assert(
       fc.property(anyValidHours, anyStart, (hours, start) => {
         expect(
-          Number.isFinite(CancellationPolicySystem.deadlineUtcMs(hours, start)),
+          Number.isFinite(
+            BookingPolicy.cancellationDeadlineUtcMs(hours, start),
+          ),
         ).toBe(true);
       }),
     );
@@ -242,19 +215,15 @@ describe('CancellationPolicySystem — the deadline', () => {
         fc.integer({ min: 0, max: 8_760 }),
         anyStart,
         (hours, start) => {
-          const deadline = CancellationPolicySystem.deadlineUtcMs(hours, start);
+          const deadline = BookingPolicy.cancellationDeadlineUtcMs(
+            hours,
+            start,
+          );
           const free = (at: UtcEpochMs) =>
-            CancellationPolicySystem.allowsFreeCancelAt(hours, start, at);
+            BookingPolicy.allowsFreeCancelAt(hours, start, at);
           expect(free(deadline)).toBe(true);
           expect(free(plus(deadline, -1))).toBe(true);
           expect(free(plus(deadline, 1))).toBe(false);
-          expect(
-            CancellationPolicySystem.isLateCancellation(
-              hours,
-              start,
-              plus(deadline, 1),
-            ),
-          ).toBe(true);
         },
       ),
     );
@@ -270,12 +239,10 @@ describe('CancellationPolicySystem — the deadline', () => {
         (a, b, start, offsetMs) => {
           const [shorter, longer] = a <= b ? [a, b] : [b, a];
           const at = plus(start, offsetMs);
-          if (
-            !CancellationPolicySystem.allowsFreeCancelAt(shorter, start, at)
-          ) {
-            expect(
-              CancellationPolicySystem.allowsFreeCancelAt(longer, start, at),
-            ).toBe(false);
+          if (!BookingPolicy.allowsFreeCancelAt(shorter, start, at)) {
+            expect(BookingPolicy.allowsFreeCancelAt(longer, start, at)).toBe(
+              false,
+            );
           }
         },
       ),
@@ -291,7 +258,9 @@ describe('CancellationPolicySystem — the booking policy’s own rule', () => {
           ...BookingPolicy.DEFAULT,
           cancellationWindowHours: hours,
         });
-        expect(policy.ok).toBe(CancellationPolicySystem.windowOf(hours).ok);
+        expect(policy.ok).toBe(
+          BookingPolicy.isValidCancellationWindowHours(hours),
+        );
         if (!policy.ok) {
           expect(
             policy.error.map((error) =>
@@ -313,17 +282,13 @@ describe('CancellationPolicySystem — the booking policy’s own rule', () => {
         (hours, start) => {
           const policy = policyWithWindow(hours);
           expect(policy.cancellationWindowHours).toBe(hours);
-          expect(CancellationPolicySystem.stampOf(policy)).toBe(
-            windowOf(hours),
-          );
+          expect(CancellationPolicySystem.stampOf(policy)).toBe(hours);
           expect(
-            CancellationPolicySystem.deadlineUtcMs(
+            BookingPolicy.cancellationDeadlineUtcMs(
               policy.cancellationWindowHours,
               start,
             ),
-          ).toBe(
-            CancellationPolicySystem.deadlineUtcMs(windowOf(hours), start),
-          );
+          ).toBe(BookingPolicy.cancellationDeadlineUtcMs(hours, start));
         },
       ),
     );
@@ -704,8 +669,5 @@ describe('CancellationPolicySystem — purity', () => {
     const once = CancellationPolicySystem.mayCancel(party, policy, NOW);
     const twice = CancellationPolicySystem.mayCancel(party, policy, NOW);
     expect(twice).toEqual(once);
-    expect(CancellationPolicySystem.windowOf(-0)).toEqual(
-      CancellationPolicySystem.windowOf(-0),
-    );
   });
 });

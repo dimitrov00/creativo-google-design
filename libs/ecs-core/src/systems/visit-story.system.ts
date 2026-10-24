@@ -1,23 +1,16 @@
 import {
   BookingStatus,
-  Result,
   AttendanceState,
-  type Currency,
   type BarberId,
-  type ServiceId,
   type CustomerId,
   type UserId,
   LocalDate,
-  type EndMinute,
-  type MinuteOfDay,
-  type PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import { type SchedulingError } from '@core/errors';
 import {
   type Money,
   type SeatOutcome,
-  Seat,
+  type Seat,
   SeatSubject,
   ShopNow,
   VisitMark,
@@ -39,28 +32,6 @@ export const CancelledSide = {
   Shop: 'SHOP',
 } as const;
 export type CancelledSide = (typeof CancelledSide)[keyof typeof CancelledSide];
-
-/**
- * The computed facts of one appointment — never words, and never a mirror
- * of an entity field a template can read itself (`bookingStatus`, the seats,
- * the visit's `localDate`). The span is the seats' own, first start to last
- * end, on the visit's shop day (Law 7.3: wall-clock coordinates, never an
- * instant); the money is the bill's, in cents of its one currency.
- */
-export type VisitStory = {
-  readonly localDate: LocalDate;
-  /** The first seat's start. */
-  readonly startMinutes: MinuteOfDay;
-  /** The last seat's end (exclusive). */
-  readonly endMinutes: EndMinute;
-  /** What the party owes after its discounts (`BillingSystem`). */
-  readonly totalCents: PriceCents;
-  readonly currency: Currency;
-  /** The barbers, each once, in first-seat order. */
-  readonly barberIds: readonly BarberId[];
-  /** The services, each once, in first-seat order. */
-  readonly serviceIds: readonly ServiceId[];
-};
 
 /**
  * One person's own story of an appointment, as a row tells it: the seats
@@ -126,51 +97,12 @@ function personSubjectOf(seat: Seat): PersonSubject {
  * (`libs/features/shared/visits/src/lib/visit-row.presenter.ts`): whose
  * seats, what became of them, who called it off, how many others came, the
  * runs of days a waiting request watches. Numbers, ids, indexes and tags —
- * `formatMoney`, `Intl.ListFormat` and every word stay in the presenter.
+ * `formatCents`, `Intl.ListFormat` and every word stay in the presenter.
  * Time is the shop's wall clock (Law 7.3): a visit is upcoming by its
  * `WallTime` against the shop's `ShopNow`, a day by its `LocalDate`; only the
  * order of two cancellations reads their `*UtcMs` stamps (T2).
  */
 export const VisitStorySystem = {
-  /** The computed facts of an appointment; refused only for a bill it cannot have. */
-  story(
-    appointment: Pick<
-      Appointment,
-      'localDate' | 'seats' | 'discounts' | 'voucherRedemptions'
-    >,
-  ): Result<
-    VisitStory,
-    | SchedulingError.AppointmentEmptySeats
-    | SchedulingError.AppointmentMixedCurrency
-  > {
-    const bill = BillingSystem.evaluate(appointment);
-    if (!bill.ok) return bill;
-    // The bill refuses a visit with no seat, so there is a first one.
-    const seats = appointment.seats;
-    const first = seats[0] as Seat;
-    let startMinutes = first.startMinutes;
-    let endMinutes = Seat.endMinutes(first);
-    const barbers: BarberId[] = [];
-    const services: ServiceId[] = [];
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as Seat;
-      if (seat.startMinutes < startMinutes) startMinutes = seat.startMinutes;
-      const end = Seat.endMinutes(seat);
-      if (end > endMinutes) endMinutes = end;
-      barbers.push(seat.barberId);
-      services.push(seat.serviceId);
-    }
-    return Result.ok({
-      localDate: appointment.localDate,
-      startMinutes,
-      endMinutes,
-      totalCents: bill.value.totalCents,
-      currency: bill.value.currency,
-      barberIds: VisitStorySystem.distinct(barbers),
-      serviceIds: VisitStorySystem.distinct(services),
-    });
-  },
-
   /**
    * The story a row tells. The staff row tells the SUBJECT's — the client
    * record the card is about (D29), its seats alone, so a companion's

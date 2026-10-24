@@ -13,16 +13,21 @@
  */
 import {
   AccountStatus,
+  BarberPreference,
   BookingLifecycle,
   BookingPolicy,
+  CancellationReason,
+  CancelledBy,
   ClientStatsPolicy,
   CustomerOrigin,
   ParsedIdentifier,
+  Placement,
   RegistrationState,
   Seat,
+  TimeCoordinate,
 } from '@core/components';
 import { UTC_ZONE, clientStatsOf } from '@core/pipelines';
-import { UserId } from '@core/primitives';
+import { LocalDate, UserId, Weekday } from '@core/primitives';
 import {
   AppointmentIndexSystem,
   ClientStatsSystem,
@@ -31,12 +36,7 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import fc from 'fast-check';
-import {
-  CANCELLATION_WINDOW_HOURS,
-  account,
-  appointmentDocumentOf,
-  seatStartMsOf,
-} from './appointments.mjs';
+import { appointmentDocumentOf } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import {
   BARBERS,
@@ -48,13 +48,22 @@ import {
   segmentsOn,
   turnaroundMinutesOf,
 } from './catalog.mjs';
-import { CLIENTS, buildClientBook } from './fixtures.mjs';
+import { buildClientBook } from './fixtures.mjs';
+import {
+  SCHEDULED_SEAT,
+  accountSeat,
+  calledOffAt,
+} from './fixtures/appointments.fixtures.ts';
+import { CLIENTS } from './fixtures/book.fixtures.ts';
 import { customerIdOf } from './fixtures/customers.fixtures.ts';
+import {
+  BOOKING_POLICY,
+  CANCELLATION_WINDOW_HOURS,
+} from './fixtures/settings.fixtures.ts';
 import { createChairBook, placeVisit } from './history.mjs';
 
 const ZONE = 'Europe/Sofia';
 const DAY_MS = 86_400_000;
-const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 
 /** Before every one of today's fixtures (the first arrival is 09:56). */
 const MORNING = Date.parse('2026-09-25T07:30:00+03:00');
@@ -182,8 +191,8 @@ const authoredMinutesOf = (book) =>
   new Map(
     book.fixtures.flatMap((fixture) =>
       fixture.seats
-        .filter((seat) => seat.minutes !== undefined)
-        .map((seat) => [seat.id, seat.minutes]),
+        .filter((seat) => seat.durationMinutes !== null)
+        .map((seat) => [seat.seatId, seat.durationMinutes]),
     ),
   );
 
@@ -196,8 +205,10 @@ const WEEK = Array.from(
   { length: 7 },
   (_, i) => Date.parse('2026-09-21T07:30:00+03:00') + i * DAY_MS,
 );
-const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const weekdayName = (ms) => WEEKDAY_NAMES[createShopCalendar(ms).weekdayAt(0)];
+/** `Weekday` order: 1 = Monday … 7 = Sunday. */
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const weekdayName = (ms) =>
+  WEEKDAY_NAMES[createShopCalendar(ms).weekdayAt(0) - 1];
 
 describe('the dev seed client book', () => {
   it('writes the same documents on every run of a day', () => {
@@ -325,8 +336,22 @@ describe('the dev seed client book', () => {
     },
   );
 
+  it('writes the booking policy every reader falls back to, every field present', () => {
+    const { body } = BOOKING_POLICY;
+    // `autoConfirm` too: a field a reader defaults is still written.
+    expect(Object.keys(body).sort()).toEqual(
+      Object.keys(BookingPolicy.DEFAULT).sort(),
+    );
+    expect(BookingPolicy.equals(body, BookingPolicy.DEFAULT)).toBe(true);
+    expect(BookingPolicy.withDefaults(body)).toEqual(body);
+    expect(JSON.parse(JSON.stringify(body))).toEqual(body);
+  });
+
   it('stamps every cancellation with the window the seeded policy sets, as the cancel paths do', () => {
     // The seeded `settings/bookingPolicy` and the stamp are one number.
+    expect(BOOKING_POLICY.body.cancellationWindowHours).toBe(
+      CANCELLATION_WINDOW_HOURS,
+    );
     expect(CANCELLATION_WINDOW_HOURS).toBe(
       BookingPolicy.DEFAULT.cancellationWindowHours,
     );
@@ -378,8 +403,10 @@ describe('the dev seed client book', () => {
     // Eighteen months of him, give or take a haircut.
     expect(stats.firstVisitLocalDate).not.toBeNull();
     expect(
-      dayNumber(book.calendar.dayKeyAt(0)) -
-        dayNumber(stats.firstVisitLocalDate),
+      LocalDate.daysBetween(
+        stats.firstVisitLocalDate,
+        book.calendar.dayKeyAt(0),
+      ),
     ).toBeGreaterThan(540);
     // Today's 10:00 is still to come — and it was booked from his last visit.
     expect(stats.nextVisitAppointmentId).toBe('appt-dev-1');
@@ -725,7 +752,9 @@ describe('the dev seed client book', () => {
       expect(book.appointmentDays).toBe(1 + Math.max(...offsets));
       expect(book.appointmentDays).toBeLessThanOrEqual(4);
       // The shop is closed on Sundays: nothing is booked for a closed day.
-      if (book.calendar.weekdayAt(0) === 0) expect(offsets).not.toContain(0);
+      if (book.calendar.weekdayAt(0) === Weekday.Sun) {
+        expect(offsets).not.toContain(0);
+      }
       // No day fixture lands on a published exception. Live only once an
       // exception moves into the fixtures' days (today's sits at +5 or
       // later, past them); that placement honours one at all is proven by
@@ -826,7 +855,9 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
         for (const { id, doc, own } of visits) {
           expect(doc.bookedAtUtcMs, id).not.toBeNull();
           const day = shopDayOf(
-            Math.min(...own.map((seat) => seatStartMsOf(doc, seat))),
+            Math.min(
+              ...own.map((seat) => TimeCoordinate.seatStartUtcMs(doc, seat)),
+            ),
           );
           expect(day, id).toBe(doc.localDate);
           expect(shopDayOf(doc.bookedAtUtcMs) <= day, id).toBe(true);
@@ -920,22 +951,26 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
 describe('the seed’s booking guards', () => {
   const calendar = createShopCalendar(MORNING);
 
-  /** A hand-authored day fixture of one seat, today, booked last week. */
+  /** A hand-authored visit of one seat, today at the Center, booked last week. */
   const fixtureWith = (seat) => ({
     id: 'appt-guard',
     dayOffset: 0,
-    status: { kind: 'confirmed' },
-    placement: 'self',
-    booked: { dayOffset: -7, hour: 12, minute: 0 },
+    locationId: 'loc-center',
+    placement: Placement.Self,
+    bookedOn: { dayOffset: -7, minutes: 12 * 60 },
+    arrivedMinutes: null,
+    bookedFromAppointmentId: null,
     contact: null,
     seats: [
       {
-        id: 'seat-guard',
-        hour: 14,
-        minute: 0,
-        subject: account('dev-client-3'),
-        pref: 'specific',
-        outcome: { kind: 'scheduled' },
+        seatId: 'seat-guard',
+        variantId: null,
+        startMinutes: 14 * 60,
+        durationMinutes: null,
+        ...accountSeat('dev-client-3'),
+        barberPreference: BarberPreference.Specific,
+        ...SCHEDULED_SEAT,
+        tipCents: null,
         ...seat,
       },
     ],
@@ -969,8 +1004,11 @@ describe('the seed’s booking guards', () => {
                 ...service.body.variants.map((variant) => variant.variantId),
               ),
         barberId: fc.constantFrom(...BARBERS.map((barber) => barber.id)),
-        hour: fc.integer({ min: 9, max: 17 }),
-        minute: fc.constantFrom(0, 15, 30, 45),
+        startMinutes: fc
+          .integer({ min: 9, max: 17 })
+          .chain((hour) =>
+            fc.constantFrom(0, 15, 30, 45).map((minute) => hour * 60 + minute),
+          ),
       }),
     );
     fc.assert(
@@ -998,39 +1036,43 @@ describe('the seed’s booking guards', () => {
     expect(() =>
       appointmentDocumentOf(
         {
-          ...fixtureWith({ barberId: 'stefan', serviceId: 'svc-beard' }),
+          ...fixtureWith({
+            barberId: 'stefan',
+            serviceId: 'svc-beard',
+            ...calledOffAt(
+              CancelledBy.Client,
+              CancellationReason.ClientChangedPlans,
+              { dayOffset: -1, minutes: 14 * 60 + 10 },
+            ),
+          }),
           dayOffset: -1,
-          status: { kind: 'cancelled', reason: 'client_changed_plans' },
-          seats: [
-            {
-              id: 'seat-guard',
-              barberId: 'stefan',
-              serviceId: 'svc-beard',
-              hour: 14,
-              minute: 0,
-              subject: account('dev-client-3'),
-              pref: 'specific',
-              outcome: {
-                kind: 'cancelled',
-                by: 'client',
-                reason: { kind: 'client_changed_plans' },
-                at: { dayOffset: -1, hour: 14, minute: 10 },
-              },
-            },
-          ],
         },
         calendar,
       ),
     ).toThrow('seed: appt-guard/seat-guard is cancelled after it started');
   });
 
+  it('refuses a visit placed in no shop', () => {
+    expect(() =>
+      appointmentDocumentOf(
+        {
+          ...fixtureWith({ barberId: 'stefan', serviceId: 'svc-beard' }),
+          locationId: null,
+        },
+        calendar,
+      ),
+    ).toThrow('seed: appt-guard was never placed in a shop');
+  });
+
   it('reads a barber’s window as the roster clamped to the shop’s hours', () => {
     // Стефан's Saturday roster starts 09:00; the Center opens at 10:00.
-    expect(segmentsOn('stefan', 6)).toEqual([
+    expect(segmentsOn('stefan', Weekday.Sat)).toEqual([
       { startMinute: 600, endMinute: 900, locationId: 'loc-center' },
     ]);
     // Nobody works a closed shop, whatever a roster says.
-    expect(BARBERS.flatMap((barber) => segmentsOn(barber.id, 0))).toEqual([]);
+    expect(
+      BARBERS.flatMap((barber) => segmentsOn(barber.id, Weekday.Sun)),
+    ).toEqual([]);
   });
 
   it.each(WEEK.map((ms) => [weekdayName(ms), ms]))(
@@ -1078,7 +1120,7 @@ describe('the seed’s booking guards', () => {
     // From a Monday, the first worked day from +5 is +5 itself, a Saturday.
     const monday = createShopCalendar(Date.parse('2026-09-21T07:30:00+03:00'));
     const [closed] = scheduleExceptionsFor(monday);
-    const SATURDAY = 6;
+    const SATURDAY = Weekday.Sat;
 
     it('closes that barber’s window that day, and nothing else', () => {
       expect(monday.weekdayAt(closed.dayOffset)).toBe(SATURDAY);

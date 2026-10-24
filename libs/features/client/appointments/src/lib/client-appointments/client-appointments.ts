@@ -22,7 +22,7 @@ import {
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import {
   VisitFilterMenu,
@@ -106,7 +106,7 @@ import {
 import { LoadState } from '@creativo/shared/view-state';
 import {
   bookingStatusWords,
-  translateDomainError,
+  translateCodedError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import {
@@ -264,7 +264,7 @@ export class ClientAppointments {
   private readonly injector = inject(Injector);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
-  private readonly content = inject(CatalogPresenter);
+  private readonly content = inject(CatalogWording);
 
   protected readonly store = inject(AppointmentsStore);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
@@ -1043,7 +1043,7 @@ export class ClientAppointments {
     return wordPipelineError(
       error,
       (code, params) =>
-        translateDomainError(this.transloco, { ...params, errorCode: code }),
+        translateCodedError(this.transloco, { ...params, errorCode: code }),
       BookingErrorCode.CallFailed,
       { reach },
     );

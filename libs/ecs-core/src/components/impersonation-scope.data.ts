@@ -18,13 +18,10 @@ export type ImpersonationScope =
   (typeof ImpersonationScope)[keyof typeof ImpersonationScope];
 
 /** Every scope, dictionary order — derived, never a second source. */
-export const IMPERSONATION_SCOPES: readonly ImpersonationScope[] =
+const IMPERSONATION_SCOPES: readonly ImpersonationScope[] =
   Object.values(ImpersonationScope);
 
-/** The edge guard for an untrusted value (a stored field, a callable payload). */
-export function isImpersonationScope(
-  value: unknown,
-): value is ImpersonationScope {
+function isImpersonationScope(value: string): value is ImpersonationScope {
   for (let i = 0; i < IMPERSONATION_SCOPES.length; i++) {
     if (IMPERSONATION_SCOPES[i] === value) return true;
   }

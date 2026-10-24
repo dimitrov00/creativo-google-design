@@ -10,17 +10,3 @@ export const OtpDestinationType = {
 } as const;
 export type OtpDestinationType =
   (typeof OtpDestinationType)[keyof typeof OtpDestinationType];
-
-/** Every destination type, dictionary order — derived, never a second source. */
-export const OTP_DESTINATION_TYPES: readonly OtpDestinationType[] =
-  Object.values(OtpDestinationType);
-
-/** The edge guard for an untrusted value (a stored field read back). */
-export function isOtpDestinationType(
-  value: unknown,
-): value is OtpDestinationType {
-  for (let i = 0; i < OTP_DESTINATION_TYPES.length; i++) {
-    if (OTP_DESTINATION_TYPES[i] === value) return true;
-  }
-  return false;
-}

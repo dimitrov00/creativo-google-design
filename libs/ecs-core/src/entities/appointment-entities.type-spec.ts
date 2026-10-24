@@ -32,7 +32,6 @@ import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AppointmentNote } from './appointment-note.entity';
 import type { AppointmentPhoto } from './appointment-photo.entity';
 import type {
-  AccountAppointment,
   Appointment,
   AppointmentClientRefs,
   AppointmentMeta,
@@ -115,27 +114,6 @@ void apt.subjectCustomerIds;
 void apt.zone;
 // @ts-expect-error — the nested lifecycle object is gone (Law 6)
 void apt.bookingStatus.kind;
-
-/* ── AccountAppointment — the account-rules view (D29) ─────────────────── */
-
-export const accountAppointmentNotNever: IsNever<AccountAppointment> = false;
-export const accountAppointmentFlat: EveryVariantFlat<AccountAppointment> = true;
-/** A whole appointment IS an account-rules view: `true` when it is assignable. */
-export const appointmentIsAccountView: Appointment extends AccountAppointment
-  ? true
-  : false = true;
-declare const view: AccountAppointment;
-if (view.bookingStatus === BookingStatus.Cancelled)
-  void view.cancellationReason;
-// @ts-expect-error — the view carries no client-record mirror
-void view.subjectCustomerIds;
-for (const viewSeat of view.seats) {
-  if (viewSeat.seatSubject === SeatSubject.Account) {
-    void viewSeat.subjectUserId;
-    // @ts-expect-error — an account-rules seat carries no client record
-    void viewSeat.subjectCustomerId;
-  }
-}
 
 /* ── Seat = Core & Terms & CatalogTerms & Occupant & Outcome (array element) ── */
 

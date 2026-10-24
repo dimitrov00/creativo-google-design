@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsErrorCode } from '@core/errors';
 import {
   ADMIN_ROLES,
   BOOK_ROLES,
@@ -13,7 +12,6 @@ import {
   isStaffRole,
   knownRoles,
   mayBook,
-  parseRole,
   seesMoney,
 } from './role.data';
 
@@ -131,21 +129,7 @@ describe('mayBook / seesMoney / isAdmin (claims-tolerant)', () => {
   });
 });
 
-describe('parseRole / knownRoles', () => {
-  it('parseRole accepts a known role', () => {
-    expect(parseRole('admin')).toEqual({ ok: true, value: 'admin' });
-  });
-
-  it('parseRole refuses a stranger with the accounts code', () => {
-    expect(parseRole('customer')).toEqual({
-      ok: false,
-      error: {
-        errorCode: AccountsErrorCode.UserRoleInvalid,
-        attempted: 'customer',
-      },
-    });
-  });
-
+describe('knownRoles', () => {
   it('knownRoles keeps known roles in order, once each, and drops the rest', () => {
     expect(
       knownRoles(['barber', 'owner', 7, null, 'admin', 'barber', '']),

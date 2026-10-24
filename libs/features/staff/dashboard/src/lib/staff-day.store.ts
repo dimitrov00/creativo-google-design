@@ -85,6 +85,7 @@ import {
   ScheduleExceptionSystem,
   StaffIntentSystem,
   type UnsettledName,
+  VisitSidesSystem,
   VoucherSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -107,7 +108,6 @@ import {
   type VisitEditorPromoOption,
   discountValueOf,
 } from './visit-editor/staff-visit-editor';
-import { appendedNote, storedNote } from './visit-editor/visit-sides';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 
 /**
@@ -1412,9 +1412,9 @@ export class StaffDayStore {
    * The stored note of `appointmentId` as this device hears it now, or
    * `undefined` when it cannot say — nobody is listening to that visit's
    * note, it has not answered yet, or it failed. What a save measures a
-   * colleague's note against (`sidesMovedUnder`): a note this device does
-   * not hear is not judged, never guessed. A stored note of blanks is no
-   * note (the write never leaves one).
+   * colleague's note against (`VisitSidesSystem.movedUnder`): a note this
+   * device does not hear is not judged, never guessed. A stored note of
+   * blanks is no note (the write never leaves one).
    */
   teamNoteOf(appointmentId: string): string | null | undefined {
     const read = this.noteRead();
@@ -1760,7 +1760,7 @@ export class StaffDayStore {
    * failure; blank text writes nothing and is none.
    */
   async appendTeamNote(appointmentId: string, line: string): Promise<boolean> {
-    if (storedNote(line) === null) return true;
+    if (VisitSidesSystem.storedNote(line) === null) return true;
     const read = await firstValueFrom(
       this.notes.observeAppointmentNote(AppointmentId.of(appointmentId)),
       { defaultValue: null },
@@ -1771,7 +1771,7 @@ export class StaffDayStore {
     }
     return this.saveTeamNote(
       appointmentId,
-      appendedNote(read.value?.text, line),
+      VisitSidesSystem.appendedNote(read.value?.text ?? null, line),
     );
   }
 

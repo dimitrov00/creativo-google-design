@@ -20,22 +20,41 @@ rows of root fields — not a serialized object graph.
 
 ```
 /appointments/{appointmentId}
-  tenantId:          'creativo'
-  locationId:        'loc_center'
-  barberIds:         ['b_ivan']                 // 1-to-N: array
-  subjectUserIds:    ['u_42']                   // 1-to-N: array (query key); D29: flip (1) adds subjectCustomerIds beside it
-  localDate:         '2026-10-07'               // TimeCoordinate, flat at the root
-  startMinutes:      600
-  endMinutes:        645
-  utcEpochMs:        1759820400000
-  bookingStatus:     'CONFIRMED'                // BookingLifecycle, flat at the root
-  confirmedAtUtcMs:  1759780000000
-  paymentMethod:     'UNPAID'                   // PaymentRecord, flat at the root
-  priceCents:        2800
-  currency:          'EUR'
-  seats:             [{ seatId, barberId, serviceId, startMinutes, durationMinutes, priceCents }]  // 1-to-N
-  busyKeys:          ['b_ivan__2026-10-07']
+  locationId:              'loc_center'             // AppointmentMeta — no tenantId is stored
+  ownerUserId:             'u_42'                   // the SELF seat's account (query key); null for a walk-in
+  subjectUserIds:          ['u_42']                 // 1-to-N: array, never queried
+  ownerCustomerId:         'cus_3f9a…'              // AppointmentClientRefs (D29), beside the account keys
+  subjectCustomerIds:      ['cus_3f9a…']            // 1-to-N: array (query key)
+  placement:               'SELF'
+  inferredPlacement:       null
+  barberIds:               ['b_ivan']               // 1-to-N: array
+  busyKeys:                ['b_ivan__2026-10-07']   // 1-to-N: array (query key)
+  localDate:               '2026-10-07'             // TimeCoordinate, flat at the root
+  startMinutes:            600
+  endMinutes:              645
+  utcEpochMs:              1759820400000
+  bookingStatus:           'CONFIRMED'              // BookingLifecycle, flat at the root
+  confirmedAtUtcMs:        1759780000000
+  contactName:             'Георги'                 // BookingContact, flat at the root
+  contactPhone:            '+359888123456'
+  contactEmail:            null
+  contactNote:             null
+  bookedAtUtcMs:           1759780000000            // AppointmentStamps
+  arrivedAtUtcMs:          null
+  stoodSeatPairsRevision:  null                     // StoodSeatPairs
+  stoodSeatPairs:          []
+  bookedFromAppointmentId: null
+  revision:                0
+  seats:                   [{ seatId, serviceId, variantId, barberId, startMinutes, priceCents, currency, durationMinutes, …, attendanceState: 'SCHEDULED' }]  // 1-to-N: the money lives on the seats
+  discounts:               []                       // 1-to-N
+  voucherRedemptions:      []                       // 1-to-N
+  appliedOperations:       []                       // 1-to-N, never queried
 ```
+
+The body is `Appointment` minus `id` (`appointment.entity.ts`), the
+intersection of seven flat slices: `AppointmentMeta & AppointmentClientRefs
+& TimeCoordinate & BookingLifecycle & BookingContact & AppointmentStamps &
+StoodSeatPairs`. No payment slice is stored yet.
 
 - Every 1-to-1 field is a root key; the document, the wire JSON and the
   TypeScript entity are the same flat layout. `snap.data()` is the entity
@@ -58,7 +77,7 @@ rows of root fields — not a serialized object graph.
   `startMinutes`, `utcEpochMs`, `localDate`).
 - Store what systems compute on: instants as `*UtcMs` epoch milliseconds,
   shop days as `localDate` (`YYYY-MM-DD`), times of day as `*Minutes`, money
-  as integer `*Cents` with a `currency` (`'EUR' | 'BGN'`), tags as
+  as integer `*Cents` with a `currency` (a `Currency` code, `'EUR'` today), tags as
   SCREAMING_SNAKE strings. Never ISO strings for arithmetic fields, never
   `Timestamp` objects in the entity (the TTL `purgeAt` Timestamp is the one
   adapter-stamped root field outside the entity type).
@@ -92,7 +111,7 @@ staff }`, a component bag itself).
 - Projections (`barberBusy`, `capacity/{YYYY-MM}`) are rebuilt by triggers
   from the source collection; they are caches with a TTL, not truth.
 - Invariants that must not regress (2026-08 audit): appointments are
-  callable-only in rules for everyone including staff; `capacity/{YYYY-MM}` is a month document holding a sorted `entries[]` array of `{ dayKey, barberId, locationId, freeMinutes }` (D7) — rebuilt inside one transaction by dropping every entry in the plan's scope and writing the full sorted array, never `arrayUnion`, never `set({ merge: true })`, never one barber's plan alone; TTL on `purgeAt` for `otps`, `notifications`,
+  callable-only in rules for everyone including staff; `capacity/{YYYY-MM}` is a month document holding a sorted `entries[]` array of `{ localDate, barberId, locationId, freeMinutes }` (`CapacityEntry`, D7) — rebuilt inside one transaction by dropping every entry in the plan's scope and writing the full sorted array, never `arrayUnion`, never `set({ merge: true })`, never one barber's plan alone; TTL on `purgeAt` for `otps`, `notifications`,
   `waitlistRequests`, `barberBusy`, `capacity`, `impersonationSessions`,
   `barberLeadTimeSamples`. `purgeAt` is the one Firestore `Timestamp` in a
   document (the TTL service requires it): an adapter-stamped root field

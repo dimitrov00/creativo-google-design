@@ -114,7 +114,7 @@ describe('SeatOccupant', () => {
     });
   });
 
-  it('copies exactly one variant — the client record kept by `of`, left behind by `accountOf` (D29)', () => {
+  it('copies exactly one variant, the client record kept (D29)', () => {
     const account = SeatOccupant.account(
       OWNER,
       customerOf(OWNER),
@@ -122,14 +122,8 @@ describe('SeatOccupant', () => {
     );
     const whole = seat({ occupant: account });
     expect(SeatOccupant.of(whole)).toEqual(account);
-    expect(SeatOccupant.accountOf(whole)).toEqual({
-      seatSubject: SeatSubject.Account,
-      subjectUserId: OWNER,
-      subjectRelationship: SubjectRelationship.Self,
-    });
     const guest = SeatOccupant.anonymous(SeatLabel.of('Гост'));
     expect(SeatOccupant.of(seat({ occupant: guest }))).toEqual(guest);
-    expect(SeatOccupant.accountOf(seat({ occupant: guest }))).toEqual(guest);
   });
 
   it('is flat at the seat element’s root', () => {
@@ -142,38 +136,6 @@ describe('SeatOccupant', () => {
       currency: 'EUR',
       durationMinutes: 30,
     });
-  });
-});
-
-describe('Seat.composeAccount — the account-rules view (D29)', () => {
-  it('is compose’s seat in compose’s field order, the client record left out', () => {
-    const occupant = SeatOccupant.account(
-      OWNER,
-      customerOf(OWNER),
-      SubjectRelationship.Self,
-    );
-    const whole = seat({ occupant });
-    const view = Seat.composeAccount(
-      whole,
-      whole,
-      {
-        seatSubject: SeatSubject.Account,
-        subjectUserId: OWNER,
-        subjectRelationship: SubjectRelationship.Self,
-      },
-      whole,
-    );
-    const recordless: Record<string, unknown> = { ...whole };
-    delete recordless['subjectCustomerId'];
-    expect(view).toEqual(recordless);
-    expect(Object.keys(view)).toEqual(Object.keys(recordless));
-    // A whole seat passed as the occupant leaves its record behind too.
-    expect(Seat.composeAccount(whole, whole, whole, whole)).toEqual(recordless);
-  });
-
-  it('keeps an anonymous guest as it is', () => {
-    const guest = seat();
-    expect(Seat.composeAccount(guest, guest, guest, guest)).toEqual(guest);
   });
 });
 

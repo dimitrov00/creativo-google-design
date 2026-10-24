@@ -1,15 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AccountLifecycle,
-  BirthDate,
-  BlockReason,
-  E164,
-} from '@core/components';
+import { BirthDate, E164 } from '@core/components';
 import { AppointmentId, AppointmentPhotoId, UserId } from '@core/primitives';
 import { registeredUserFixture } from '@core/testing';
 import {
   capsulesRun,
-  clientHeadVm,
   clientPhotoVm,
   displayNameOf,
   isBirthdayToday,
@@ -33,7 +27,6 @@ import {
   achievementsContextOf,
   achievementsDataOf,
   georgiContext,
-  georgiHistory,
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
@@ -49,127 +42,18 @@ import {
 } from '../testing/client-card.fixtures';
 
 const WORDS = wordsOf('bg');
-const GEORGI_BOOK = georgiHistory();
-const GEORGI_STATS = statsOf(GEORGI, GEORGI_BOOK);
 const MARTIN_BOOK = martinHistory();
 const MARTIN_STATS = statsOf(MARTIN, MARTIN_BOOK);
 const LOYALTY = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 
-function headOf(overrides: Partial<Parameters<typeof clientHeadVm>[0]> = {}) {
-  return clientHeadVm({
-    subject: subjectOf(GEORGI),
-    user: georgiUser(),
-    settled: true,
-    stats: GEORGI_STATS,
-    statsKnown: true,
-    avatarSrc: null,
-    nowMs: NOW_MS,
-    zone: SHOP_TIME_ZONE,
-    words: WORDS,
-    ...overrides,
-  });
-}
-
-describe('the head (A)', () => {
-  it('names the account and says the tenure in the one state line — the cadence is the history band’s', () => {
-    expect(
-      headOf({ avatarSrc: 'https://example.test/avatars/georgi.jpg' }),
-    ).toEqual({
-      name: 'Георги Петров',
-      stateLine: 'Клиент от март 2025 г.',
-      avatarSrc: 'https://example.test/avatars/georgi.jpg',
-      initialsFrom: 'Георги Петров',
-      paused: false,
-    });
-  });
-
-  it('renders from the seat at once, the state line held until the profile and the stats answer (D-9)', () => {
-    expect(headOf({ user: null, settled: false, stats: null })).toEqual({
-      name: 'Георги П.',
-      stateLine: null,
-      avatarSrc: null,
-      initialsFrom: 'Георги П.',
-      paused: false,
-    });
-  });
-
-  it('renders from the seat before the card’s words have loaded, the line waiting for them', () => {
-    expect(
-      headOf({ user: null, settled: false, stats: null, words: null }),
-    ).toEqual({
-      name: 'Георги П.',
-      stateLine: null,
-      avatarSrc: null,
-      initialsFrom: 'Георги П.',
-      paused: false,
-    });
-    expect(headOf({ words: null }).stateLine).toBeNull();
-    expect(headOf({ subject: GUEST, user: null, words: null })).toMatchObject({
-      name: 'Иво',
-      stateLine: null,
-    });
-  });
-
-  it('prefers the seat’s own picture', () => {
-    const subject = subjectOf(GEORGI, {
-      avatarSrc: 'https://example.test/seat.jpg',
-    });
-    expect(
-      headOf({ subject, avatarSrc: 'https://example.test/avatars/georgi.jpg' })
-        .avatarSrc,
-    ).toBe('https://example.test/seat.jpg');
-  });
-
-  it('says a pause and nothing else, rings the head, and says when it ends', () => {
-    expect(headOf({ user: georgiUser(pausedUntilOctober()) })).toMatchObject({
-      stateLine: 'Онлайн записването е спряно до 12.10',
-      paused: true,
-    });
-    const permanent = AccountLifecycle.block(BlockReason.Manual, null);
-    expect(headOf({ user: georgiUser(permanent) }).stateLine).toBe(
-      'Онлайн записването е спряно за постоянно',
-    );
-  });
-
-  it('treats a pause that has run out as none', () => {
-    const lapsed = AccountLifecycle.block(
-      BlockReason.Manual,
-      sofia('2026-09-01T00:00:00'),
-    );
-    expect(headOf({ user: georgiUser(lapsed) })).toMatchObject({
-      paused: false,
-      stateLine: 'Клиент от март 2025 г.',
-    });
-  });
-
-  it('says «Първо посещение» before the first worked visit, «Клиент от …» with or without a cadence, and «Гост» for a walk-in', () => {
-    expect(headOf({ stats: null }).stateLine).toBe('Първо посещение');
-    expect(
-      headOf({ stats: { ...GEORGI_STATS, avgCadenceDays: null } }).stateLine,
-    ).toBe('Клиент от март 2025 г.');
-    // A one-week regular reads the same: the head never words a cadence.
-    expect(
-      headOf({ stats: { ...GEORGI_STATS, avgCadenceDays: 7 } }).stateLine,
-    ).toBe('Клиент от март 2025 г.');
-    expect(
-      headOf({ subject: GUEST, user: null, stats: null, settled: false })
-        .stateLine,
-    ).toBe('Гост · без профил');
-  });
-
-  it('claims no tenure when the stats were never read', () => {
-    expect(headOf({ stats: null, statsKnown: false }).stateLine).toBeNull();
-  });
-
+describe('displayNameOf, pauseOf, isBirthdayToday, isInChairToday', () => {
   it('keeps the seat’s label until a profile names the person', () => {
     expect(displayNameOf(subjectOf(GEORGI), null)).toBe('Георги П.');
     expect(displayNameOf(subjectOf(GEORGI), georgiUser())).toBe(
       'Георги Петров',
     );
   });
-});
 
-describe('pauseOf, isBirthdayToday, isInChairToday', () => {
   it('reads a pause on the shop’s calendar', () => {
     expect(
       pauseOf(georgiUser(pausedUntilOctober()), NOW_MS, SHOP_TIME_ZONE),

@@ -5,7 +5,7 @@ import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 /**
  * An ISO-4217 currency code, upper-case — `'EUR'` for every new amount;
  * stored legacy amounts may read `'BGN'` (BGN was retired in 2026,
- * `formatMoney` renders `28,00 €`). Always beside a `…Cents` amount.
+ * `formatCents` renders `28,00 €`). Always beside a `…Cents` amount.
  */
 export type Currency = Brand<string, 'Currency'>;
 

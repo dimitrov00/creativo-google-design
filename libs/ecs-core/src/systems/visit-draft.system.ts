@@ -167,9 +167,10 @@ function fitted(
  * - the visit's span and the placeholder seats
  *   (`visit-editor/staff-visit-editor.ts` `spanOf`/`seedDraft`/
  *   `adoptPlaceholderLegs`);
- * - names for the strangers on one visit (`shared/walk-in-labels.ts`);
- * - the catalogue tag's arithmetic (`shared/catalog-delta.ts` — the
- *   `−10 мин` wording stays in the presenter);
+ * - names for the strangers on one visit (the staff dashboard's
+ *   `walkInNames`);
+ * - the catalogue tag's arithmetic (the `−10 мин` wording is the dashboard's
+ *   `shared/catalog-tag.words.ts`);
  * - the repeat page's policy over a `RecurrenceRule`
  *   (`block-editor/block-repeat.ts`), on `RecurrenceSystem`'s walk.
  */

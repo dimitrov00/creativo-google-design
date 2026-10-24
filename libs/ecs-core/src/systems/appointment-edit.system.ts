@@ -333,9 +333,6 @@ function reshapeSeat(
  * `crypto` — the pipeline calls `hash(digestBasis(commands))`.
  */
 export const AppointmentEditSystem = {
-  /** The ledger's cap — at most this many applied operations are remembered. */
-  LEDGER_CAP: AppliedOperation.CAP,
-
   /**
    * The canonical basis of one intent's fingerprint:
    * `JSON.stringify(['staff-operation/v1', commands])` — the validated
@@ -689,7 +686,7 @@ export const AppointmentEditSystem = {
     return { ledgerVerdict: LedgerVerdict.Replay, applied };
   },
 
-  /** The ledger with this intent recorded last — at most {@link LEDGER_CAP}, the newest, never one name twice. */
+  /** The ledger with this intent recorded last — at most `AppliedOperation.CAP`, the newest, never one name twice. */
   record(
     ledger: readonly AppliedOperation[],
     operationId: OperationId,

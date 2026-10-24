@@ -216,9 +216,6 @@ export const LabelCode = {
 } as const;
 export type LabelCode = (typeof LabelCode)[keyof typeof LabelCode];
 
-/** Every label code, dictionary order — derived, never a second source. */
-export const LABEL_CODES: readonly LabelCode[] = Object.values(LabelCode);
-
 /**
  * A reward a client holds, as flat fields beside the one discriminator
  * `rewardRef` — each variant declares only its own id (the REWARD effect,

@@ -69,7 +69,6 @@ import {
   sampleUnit,
   servicesCount,
   shortDay,
-  signedDelta,
   toleranceExample,
   toleranceMarks,
   toleranceReadout,
@@ -216,13 +215,6 @@ describe('the dates', () => {
 // ── Figures ──────────────────────────────────────────────────────────────
 
 describe('the figures', () => {
-  it('sign a delta with the typographic minus, and say nothing for none', () => {
-    const context = contextOf();
-    expect(signedDelta(context, 131, 148)).toBe('+17');
-    expect(signedDelta(context, 71, 57)).toBe('−14');
-    expect(signedDelta(context, 12, 12)).toBeNull();
-  });
-
   it('turn days into weeks and back', () => {
     expect(weeksOf(42)).toBe(6);
     expect(weeksOf(39)).toBe(6);
@@ -585,6 +577,18 @@ describe('previewWords', () => {
     expect(words.summary).toBe(
       '17 се връщат в ритъм\u00a0· никой не излиза от ритъм',
     );
+  });
+
+  it('signs a delta with the typographic minus, and says nothing for a standing that does not move', () => {
+    const words = previewWords(
+      context,
+      { ...estimate, after: { inRhythm: 148, inGrace: 12, broken: 57 } },
+      false,
+      1000,
+    );
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
+    expect(words.metrics.map((m) => m.delta)).toEqual(['+17', null, '−14']);
   });
 
   it('agrees at one, and says who leaves', () => {

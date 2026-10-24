@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
 import { firstValueFrom } from 'rxjs';
-import { LocationId, Result, ServiceCategoryId } from '@core/primitives';
+import { LocationId, Result } from '@core/primitives';
 import {
   createEmulatorTestEnv,
   modularFirestore,
@@ -80,7 +80,7 @@ describe('catalogReadPorts (emulator)', () => {
   });
 
   it('lets an anonymous (unauthenticated) visitor read the catalogue, the body as stored', async () => {
-    const services = await firstValueFrom(anonymous().observeServices(null));
+    const services = await firstValueFrom(anonymous().observeServices());
 
     expect(services.ok && services.value[0]).toEqual({
       id: 'svc-active-cat2',
@@ -88,34 +88,22 @@ describe('catalogReadPorts (emulator)', () => {
     });
   });
 
-  it('excludes archived services and filters by category — indexes #1 and #2', async () => {
-    const ports = anonymous();
-
-    const everything = await firstValueFrom(ports.observeServices(null));
-    const cat1 = await firstValueFrom(
-      ports.observeServices(ServiceCategoryId.of('cat-1')),
-    );
+  it('lists the active services of every category, the archived one left out — index #2', async () => {
+    const everything = await firstValueFrom(anonymous().observeServices());
 
     expect(everything.ok && everything.value.map((s) => s.id)).toEqual([
       'svc-active-cat2',
       'svc-active-cat1',
     ]);
-    expect(cat1.ok && cat1.value.map((s) => s.id)).toEqual(['svc-active-cat1']);
   });
 
-  it('lists the active barbers, of one shop when asked — indexes #3 and #4', async () => {
-    const ports = anonymous();
-
-    const everyone = await firstValueFrom(ports.observeBarbers(null));
-    const center = await firstValueFrom(
-      ports.observeBarbers(LocationId.of('loc-center')),
-    );
+  it('lists the active barbers of every shop — index #4', async () => {
+    const everyone = await firstValueFrom(anonymous().observeBarbers());
 
     expect(everyone.ok && everyone.value.map((b) => b.id)).toEqual([
       'ivan',
       'niko',
     ]);
-    expect(center.ok && center.value.map((b) => b.id)).toEqual(['ivan']);
   });
 
   it('lists the categories by sortOrder and the listed shops only — index #5', async () => {

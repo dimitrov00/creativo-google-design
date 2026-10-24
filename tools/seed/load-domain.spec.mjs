@@ -38,6 +38,7 @@ import {
 import { purgeAtFor } from '../../apps/functions/src/adapters/firestore-ttl.adapter';
 import { busyDayBody, busyKeyOf } from './catalog.mjs';
 import { buildClientBook } from './fixtures.mjs';
+import { BOOKING_POLICY } from './fixtures/settings.fixtures.ts';
 import { staffAccountBody } from './fixtures/users.fixtures.ts';
 import {
   SEED_PLAN_MODULES,
@@ -188,6 +189,7 @@ describe('loadSeedDomain', () => {
       'customers',
       'loyalty',
       'promotions',
+      'settings',
       'users',
       'waitlist',
     ]);
@@ -238,6 +240,10 @@ describe('loadSeedDomain', () => {
     // from the bundle is the body the ordinary import builds.
     expect(plain(domain.users.staffAccountBody)).toEqual(
       plain(staffAccountBody),
+    );
+    // So is the booking policy it writes.
+    expect(plain(domain.settings.BOOKING_POLICY)).toEqual(
+      plain(BOOKING_POLICY),
     );
   });
 

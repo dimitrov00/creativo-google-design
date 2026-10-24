@@ -19,7 +19,7 @@ import { LandingContentService } from '../../content/landing-content.service';
 import {
   type ServiceVm,
   servicePriceFrom,
-} from '../../content/landing-content';
+} from '@creativo/features/shared/catalog';
 
 /**
  * One portrait service tile — the carousel card shared by the singles and

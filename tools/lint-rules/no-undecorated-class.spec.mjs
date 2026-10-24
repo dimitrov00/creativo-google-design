@@ -58,9 +58,9 @@ tester.run('creativo/no-undecorated-class', noUndecoratedClass, {
       filename: feature,
       options,
     },
-    // Outside `include`: Node tooling keeps its classes (UR-8, §10 OQ-6).
+    // Outside `include`: the rule never reads Node tooling (UR-8).
     {
-      code: 'export class ExecutionTally {}',
+      code: 'export class SeedHelper {}',
       filename: tool,
       options,
     },

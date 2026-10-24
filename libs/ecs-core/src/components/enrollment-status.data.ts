@@ -17,13 +17,6 @@ export type EnrollmentStatus =
 export const ENROLLMENT_STATUSES: readonly EnrollmentStatus[] =
   Object.values(EnrollmentStatus);
 
-export function isEnrollmentStatus(raw: unknown): raw is EnrollmentStatus {
-  for (let i = 0; i < ENROLLMENT_STATUSES.length; i++) {
-    if (ENROLLMENT_STATUSES[i] === raw) return true;
-  }
-  return false;
-}
-
 /**
  * Shown on the public page: open now, or opening — `MarketingCourses`'
  * `LISTED_STATUSES`, the values of index #11's `in` filter.

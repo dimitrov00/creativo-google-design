@@ -20,7 +20,6 @@ export * from './catalog.adapter';
 export * from './client-stats.adapter';
 export * from './coupons-vouchers.adapter';
 export * from './customers.adapter';
-export * from './impersonation.adapter';
 export * from './loyalty.adapter';
 export * from './loyalty-catalog.adapter';
 export * from './notifications.adapter';

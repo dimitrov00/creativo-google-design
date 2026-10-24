@@ -52,7 +52,7 @@ import {
   EndMinute,
   MinuteOfDay,
   type TimeZone,
-  UtcEpochMs,
+  type UtcEpochMs,
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import type {
@@ -192,19 +192,6 @@ export function pinnedNowUtcMs(
   return () => utcEpochMs;
 }
 
-/**
- * A {@link NowUtcMs} that advances by `stepMs` on every read — for a pipeline
- * that stamps "started" and "finished" separately. The first read answers
- * `startUtcMs`.
- */
-export function steppingNowUtcMs(
-  startUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS,
-  stepMs = 1_000,
-): NowUtcMs {
-  let reads = 0;
-  return () => UtcEpochMs.plusMs(startUtcMs, stepMs * reads++);
-}
-
 /** A {@link NextId} answering `prefix-1`, `prefix-2`, … in call order. */
 export function sequentialIds(prefix = 'id'): NextId {
   let issued = 0;
@@ -293,23 +280,13 @@ function own(map: object, name: string): unknown {
 }
 
 /**
- * A `where`/`orderBy` field read off a body. A field is a ROOT key of the
- * flat document (`bookingStatus`, `utcEpochMs` — Laws 5 and 6), read first
- * and as is. A dotted path (`status.kind`) is walked only when the body has
- * no root key of that exact name: the legacy bridge for a collection whose
- * 3b flip has not landed yet (`tx.port.ts`), deleted with the last flip —
- * as the fake projection store's `valueAt` already says. On a flattened
- * collection a pre-flatten dotted query walks into a root SCALAR and finds
- * nothing, so query the root key there.
+ * A `where`/`orderBy` field read off a body: a ROOT key of the flat document
+ * (`bookingStatus`, `utcEpochMs` — Laws 5 and 6, `QueryFilter`), read as is.
+ * A dotted path is no walk: it names a root key no document has, so it
+ * matches nothing.
  */
 function fieldAt(body: DocBody, field: string): unknown {
-  if (Object.hasOwn(body, field)) return own(body, field);
-  let current: unknown = body;
-  for (const part of field.split('.')) {
-    if (typeof current !== 'object' || current === null) return undefined;
-    current = own(current, part);
-  }
-  return current;
+  return own(body, field);
 }
 
 /** Firestore value equality: deep, key-order independent for maps. */

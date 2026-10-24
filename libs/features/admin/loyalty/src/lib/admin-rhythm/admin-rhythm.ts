@@ -31,7 +31,7 @@ import {
   type RhythmServiceGroup,
   rhythmServiceGroupsOf,
 } from './rhythm-service-groups';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
   rhythmRuleUnits,
@@ -528,7 +528,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       ? of(null)
       : combineLatest([
           this.catalog.observeCategories(),
-          this.catalog.observeServices(null),
+          this.catalog.observeServices(),
         ]).pipe(
           map(([categories, services]) =>
             categories.ok && services.ok
@@ -800,7 +800,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const refusal = outcome.error;
     if (!isPublishRefusal(refusal)) {
       this.toast.set({
-        label: translateDomainError(this.transloco, {
+        label: translateCodedError(this.transloco, {
           errorCode: EngagementErrorCode.RepositoryFailure,
         }),
         undo: false,
@@ -813,7 +813,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
         this.toast.set({
           // The staff edit's «not allowed» words — the same copy the
           // retired dotted `booking.staffEdit.forbidden` key held.
-          label: translateDomainError(
+          label: translateCodedError(
             this.transloco,
             StaffEditError.forbidden(),
           ),
@@ -845,7 +845,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const outcome = await this.store.undo();
     if (!outcome.ok && !isPublishRefusal(outcome.error)) {
       this.toast.set({
-        label: translateDomainError(this.transloco, {
+        label: translateCodedError(this.transloco, {
           errorCode: EngagementErrorCode.RepositoryFailure,
         }),
         undo: false,
@@ -903,7 +903,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
   ): string | null {
     const t = context.translate;
     if (!isPublishRefusal(refusal)) {
-      return translateDomainError(this.transloco, {
+      return translateCodedError(this.transloco, {
         errorCode: EngagementErrorCode.RepositoryFailure,
       });
     }

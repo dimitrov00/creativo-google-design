@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { LocationId, Result, ServiceCategoryId } from '@core/primitives';
+import { LocationId, Result } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { locationFixture } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
@@ -71,12 +71,10 @@ const catalog = () =>
   });
 
 describe('catalogReadPorts — what /book may list, live', () => {
-  it('lists every ACTIVE service by sortOrder — index #2', () => {
+  it('lists every ACTIVE service of every category by sortOrder, the archived one left out — index #2', () => {
     const fake = catalog();
 
-    const services = recorded(
-      catalogReadPorts(asDb(fake)).observeServices(null),
-    );
+    const services = recorded(catalogReadPorts(asDb(fake)).observeServices());
 
     expect(services.seen.map(idsOf)).toEqual([['classic', 'fade', 'shave']]);
     expect(fake.reads[0]?.constraints).toEqual([
@@ -85,32 +83,25 @@ describe('catalogReadPorts — what /book may list, live', () => {
     ]);
   });
 
-  it('narrows the services to one category — index #1, the archived one left out', () => {
-    const fake = catalog();
-
-    const services = recorded(
-      catalogReadPorts(asDb(fake)).observeServices(
-        ServiceCategoryId.of('hair'),
-      ),
-    );
-
-    expect(services.seen.map(idsOf)).toEqual([['classic', 'fade']]);
-    expect(fake.reads[0]?.constraints).toEqual([
-      'categoryId == "hair"',
-      'serviceStatus == "ACTIVE"',
-      'orderBy sortOrder asc',
-    ]);
-  });
-
   it('answers a service as its whole stored body beside its id', () => {
     const services = recorded(
-      catalogReadPorts(asDb(catalog())).observeServices(
-        ServiceCategoryId.of('beard'),
-      ),
+      catalogReadPorts(asDb(catalog())).observeServices(),
     );
 
     expect(services.seen).toEqual([
       Result.ok([
+        {
+          id: 'classic',
+          categoryId: 'hair',
+          serviceStatus: 'ACTIVE',
+          sortOrder: 1,
+        },
+        {
+          id: 'fade',
+          categoryId: 'hair',
+          serviceStatus: 'ACTIVE',
+          sortOrder: 2,
+        },
         {
           id: 'shave',
           categoryId: 'beard',
@@ -121,22 +112,14 @@ describe('catalogReadPorts — what /book may list, live', () => {
     ]);
   });
 
-  it('lists the ACTIVE barbers, of one shop when asked — indexes #3 and #4', () => {
+  it('lists the ACTIVE barbers of every shop, the inactive one left out — index #4', () => {
     const fake = catalog();
-    const ports = catalogReadPorts(asDb(fake));
 
-    const everyone = recorded(ports.observeBarbers(null));
-    const center = recorded(ports.observeBarbers(LocationId.of('loc-center')));
+    const everyone = recorded(catalogReadPorts(asDb(fake)).observeBarbers());
 
     expect(everyone.seen.map(idsOf)).toEqual([['ivan', 'niko']]);
-    expect(center.seen.map(idsOf)).toEqual([['ivan']]);
     expect(fake.reads.map((read) => read.constraints)).toEqual([
       ['barberStatus == "ACTIVE"', 'orderBy sortOrder asc'],
-      [
-        'locationIds array-contains "loc-center"',
-        'barberStatus == "ACTIVE"',
-        'orderBy sortOrder asc',
-      ],
     ]);
   });
 
@@ -173,9 +156,7 @@ describe('catalogReadPorts — what /book may list, live', () => {
   it('answers a refused listen as the port’s RepositoryError', () => {
     const fake = catalog().failWith({ code: 'unavailable-forever' });
 
-    const services = recorded(
-      catalogReadPorts(asDb(fake)).observeServices(null),
-    );
+    const services = recorded(catalogReadPorts(asDb(fake)).observeServices());
 
     expect(services.seen).toEqual([
       Result.err({

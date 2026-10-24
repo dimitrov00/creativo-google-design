@@ -6,28 +6,24 @@ import {
   type Money,
 } from '@core/components';
 import {
-  Result,
   type Currency,
   type AppliedDiscountId,
-  type CouponGrantId,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import { EngagementError } from '@core/errors';
-import type { CouponGrant } from '@core/entities';
-import { CouponGrantSystem } from './coupon-grant.system';
 
 /**
- * One discount to apply — a selected grant, a validated code, or a discount
- * on the visit (`DiscountInput`, `discount-application.ts:14-23`), every
- * field present, its `CouponValue` slice flat beside them.
+ * One discount to apply — a discount on the visit, or one the visit editor
+ * drafts (a selected grant, a validated code) under its visit discount id
+ * (`DiscountInput`, `discount-application.ts:14-23`), every field present,
+ * its `CouponValue` slice flat beside them.
  * `grantedAtUtcMs` is the third key of the total order; `minSpendCents`
  * gates it on the subtotal, in the subtotal's currency (`null` = no gate) —
  * a discount whose gate fails is dropped silently.
  */
 export type DiscountInput = {
-  /** The visit's discount id, or the grant's when evaluating a client's grants. */
-  readonly id: AppliedDiscountId | CouponGrantId;
+  /** The visit's discount id. */
+  readonly id: AppliedDiscountId;
   readonly label: string;
   readonly grantedAtUtcMs: UtcEpochMs;
   readonly minSpendCents: PriceCents | null;
@@ -35,7 +31,7 @@ export type DiscountInput = {
 
 /** One applied discount line — always a positive amount, in the breakdown's currency. */
 export type DiscountLine = {
-  readonly id: AppliedDiscountId | CouponGrantId;
+  readonly id: AppliedDiscountId;
   readonly label: string;
   readonly amountCents: PriceCents;
 };
@@ -51,12 +47,6 @@ export type DiscountBreakdown = {
   readonly discountTotalCents: PriceCents;
   readonly totalCents: PriceCents;
   readonly currency: Currency;
-};
-
-/** A grant the client holds, with the coupon's name the receipt prints. */
-export type LabelledGrant = {
-  readonly grant: CouponGrant;
-  readonly label: string;
 };
 
 /**
@@ -164,14 +154,6 @@ function applyCap(
  * same breakdown (legacy bug 7.4). Money never goes below zero.
  */
 export const DiscountSystem = {
-  /** The edge guard for a cap: a finite percentage, 0–100. */
-  capPercent(raw: number): Result<number, EngagementError.DiscountCapInvalid> {
-    if (!Number.isFinite(raw) || raw < 0 || raw > 100) {
-      return Result.err(EngagementError.discountCapInvalid(raw));
-    }
-    return Result.ok(raw);
-  },
-
   /** What one value takes off `amount` — positive, never more than `amount`. */
   amountOf,
 
@@ -235,30 +217,6 @@ export const DiscountSystem = {
     const inputs: DiscountInput[] = [];
     for (let i = 0; i < discounts.length; i++) {
       inputs.push(DiscountSystem.inputOf(discounts[i] as AppliedDiscount));
-    }
-    return inputs;
-  },
-
-  /**
-   * The client's usable grants as discounts (`ApplyDiscountsUseCase`): a
-   * grant no longer usable at `nowUtcMs` is left out (T2), each kept one
-   * carries the coupon's name and the instant it was granted.
-   */
-  inputsFromGrants(
-    grants: readonly LabelledGrant[],
-    nowUtcMs: UtcEpochMs,
-  ): readonly DiscountInput[] {
-    const inputs: DiscountInput[] = [];
-    for (let i = 0; i < grants.length; i++) {
-      const { grant, label } = grants[i] as LabelledGrant;
-      if (!CouponGrantSystem.isUsable(grant, nowUtcMs)) continue;
-      inputs.push({
-        id: grant.id,
-        label,
-        grantedAtUtcMs: grant.grantedAtUtcMs,
-        minSpendCents: null,
-        ...CouponValue.of(grant),
-      });
     }
     return inputs;
   },

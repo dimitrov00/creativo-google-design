@@ -290,7 +290,7 @@ export function wordsOf(lang: 'bg' | 'en' = 'bg'): ClientCardWords {
   return clientCardWordsOf(translatorOf(lang), lang);
 }
 
-/** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
+/** `formatCents`'s bg form keeps the sign on the figure's line: a no-break space. */
 export const NBSP_EURO = (text: string): string => text.replaceAll(' €', ' €');
 
 // ── The shop ────────────────────────────────────────────────────────────
@@ -1169,9 +1169,8 @@ export function loyaltyCatalogWith(
 /** The rhythm's head as the published catalogue holds it (`cadence`): one rule in force since 1.03.2025. */
 export function rhythmHead(): StreakDefinition {
   return must(
-    LoyaltyCatalogSystem.streak(
-      loyaltyCatalog(),
-      StreakRule.DEFAULT_DEFINITION_ID,
+    loyaltyCatalog().streaks.find(
+      (head) => head.id === StreakRule.DEFAULT_DEFINITION_ID,
     ),
     'the rhythm’s head',
   );

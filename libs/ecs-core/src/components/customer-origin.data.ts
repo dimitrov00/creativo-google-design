@@ -19,15 +19,3 @@ export const CustomerOrigin = {
 } as const;
 export type CustomerOrigin =
   (typeof CustomerOrigin)[keyof typeof CustomerOrigin];
-
-/** Every origin, dictionary order — derived, never a second source. */
-export const CUSTOMER_ORIGINS: readonly CustomerOrigin[] =
-  Object.values(CustomerOrigin);
-
-/** The edge guard for an untrusted value (a stored field read back, a seed row). */
-export function isCustomerOrigin(value: unknown): value is CustomerOrigin {
-  for (let i = 0; i < CUSTOMER_ORIGINS.length; i++) {
-    if (CUSTOMER_ORIGINS[i] === value) return true;
-  }
-  return false;
-}

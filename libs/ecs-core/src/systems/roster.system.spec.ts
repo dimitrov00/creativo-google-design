@@ -17,6 +17,7 @@ import {
   RosterSystem,
   type ShopHours,
 } from './roster.system';
+import { IntervalSetSystem } from './interval-set.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 import {
   deepFreeze,
@@ -176,7 +177,7 @@ describe('buildDayWindows — the bookable window', () => {
       input('2026-07-29', scheduleFrom([['09:00', '18:00']])),
     );
     expect(asClock(windows)).toEqual(['09:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(9 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(9 * 60);
   });
 
   it('keeps a split shift split', () => {
@@ -190,7 +191,7 @@ describe('buildDayWindows — the bookable window', () => {
       ),
     );
     expect(asClock(windows)).toEqual(['09:00–13:00', '14:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(8 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(8 * 60);
   });
 
   it('returns nothing before the schedule began, or on an unworked weekday', () => {
@@ -322,13 +323,11 @@ describe('buildDayWindows — exceptions', () => {
 
   it('a closed effect on the day removes it, whoever it was fanned out to', () => {
     // The legacy case ('a location-wide closure removes the day for every
-    // barber', roster-window.spec.ts:259) also asserted `isLocationWide()`
-    // and `appliesTo(anyone)`. Under D16(b) that applicability moved to the
-    // WRITE-time fan-out: a shop-wide closure is written as one `closed`
-    // exception per barber, so a `DayException` carries no barber and this
-    // system never filters by one. The two applicability assertions are
-    // schedule-exception.system.spec.ts 'applies a shop-wide closure to any
-    // barber, as the same closed effect'.
+    // barber', roster-window.spec.ts:259). Under D16(b) the applicability
+    // moved to the WRITE-time fan-out: a shop-wide closure is written as one
+    // `closed` exception per barber, so a `DayException` carries no barber
+    // and this system never filters by one — schedule-exception.system.spec.ts
+    // 'applies a shop-wide closure to any barber, as the same closed effect'.
     expect(
       windowsOf(
         input('2026-07-29', scheduleFrom([['09:00', '18:00']]), {
@@ -392,7 +391,7 @@ describe('buildDayWindows — exceptions', () => {
       }),
     );
     expect(asClock(windows)).toEqual(['09:00–13:00', '14:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(8 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(8 * 60);
   });
 
   it('an admin block is carved out the same way', () => {
@@ -439,7 +438,7 @@ describe('buildDayWindows — DST days are ordinary on the wall clock (T1)', () 
       input('2026-03-29', scheduleFrom([['09:00', '18:00']])),
     );
     // 09:00–18:00 is entirely after the 03:00 transition: nine hours.
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(9 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(9 * 60);
     expect(asClock(windows)).toEqual(['09:00–18:00']);
   });
 
@@ -449,7 +448,7 @@ describe('buildDayWindows — DST days are ordinary on the wall clock (T1)', () 
     const windows = windowsOf(
       input('2026-03-29', scheduleFrom([['02:00', '06:00']])),
     );
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(4 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(4 * 60);
     expect(asClock(windows)).toEqual(['02:00–06:00']);
   });
 
@@ -457,7 +456,7 @@ describe('buildDayWindows — DST days are ordinary on the wall clock (T1)', () 
     const windows = windowsOf(
       input('2026-10-25', scheduleFrom([['02:00', '06:00']])),
     );
-    expect(RosterSystem.rosteredMinutes(windows)).toBe(4 * 60);
+    expect(IntervalSetSystem.totalMinutes(windows)).toBe(4 * 60);
     expect(asClock(windows)).toEqual(['02:00–06:00']);
   });
 
@@ -1009,7 +1008,7 @@ describe('RosterSystem — the minute-set model (property)', () => {
               );
             }
           }
-          expect(RosterSystem.rosteredMinutes(windows)).toBe(
+          expect(IntervalSetSystem.totalMinutes(windows)).toBe(
             expectedWindows.filter(Boolean).length,
           );
         },

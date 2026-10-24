@@ -4,7 +4,6 @@ import {
   type BadgeSeriesId,
   type BarberId,
   type SeasonId,
-  type StreakDefinitionId,
   type TierId,
   type LocalDate,
 } from '@core/primitives';
@@ -14,7 +13,6 @@ import {
   type BadgeSubjectSlot,
   SeasonKind,
   SeasonPhase,
-  type StreakRule,
 } from '@core/components';
 import type {
   BadgeCategory,
@@ -342,30 +340,6 @@ export const LoyaltyCatalogSystem = {
     id: TierId,
   ): T | null {
     return find(catalog.tiers, id);
-  },
-
-  /** A rhythm's head by id, or `null`. */
-  streak<H extends CatalogStreakRef>(
-    catalog: { readonly streaks: readonly H[] },
-    id: StreakDefinitionId,
-  ): H | null {
-    return find(catalog.streaks, id);
-  },
-
-  /**
-   * The rule a shop day is judged by, or `null` when the catalogue holds no
-   * such rhythm. A rule that is switched off is still the rule in force:
-   * whoever draws the rhythm asks it whether it is `enabled`.
-   */
-  streakInForce(
-    catalog: {
-      readonly streaks: readonly Pick<StreakDefinition, 'id' | 'rules'>[];
-    },
-    id: StreakDefinitionId,
-    today: LocalDate,
-  ): StreakRule | null {
-    const head = find(catalog.streaks, id);
-    return head === null ? null : StreakRuleSystem.inForceOn(head, today);
   },
 
   /**

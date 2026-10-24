@@ -1411,22 +1411,24 @@ describe('StreakRuleSystem.changeFrom', () => {
   });
 });
 
-describe('StreakRuleSystem.equals, a rule as a value', () => {
-  it('equals the same version of the same rule', () => {
-    expect(StreakRuleSystem.equals(rule(), rule())).toBe(true);
+describe('StreakRuleSystem.changeFrom, a rule as a value', () => {
+  /** The figures that differ between two rules — the name is the head's and not compared. */
+  const changed = (a: StreakRule, b: StreakRule) =>
+    StreakRuleSystem.changeFrom(a, b, false).changed;
+
+  it('finds nothing changed in the same rule, whatever order its excuses are in', () => {
+    expect(changed(rule(), rule())).toEqual([]);
     expect(
-      StreakRuleSystem.equals(
+      changed(
         rule({
           excuses: ['STAFF_CANCELLED', 'BARBER_ABSENCE', 'SHOP_CLOSURE'],
         }),
         rule(),
       ),
-    ).toBe(true);
+    ).toEqual([]);
   });
 
   it.each<[string, Patch]>([
-    ['another version', { version: 4 }],
-    ['another day', { effectiveFrom: '2026-09-02' }],
     ['a rule that is off', { enabled: false }],
     [
       'another qualifier',
@@ -1443,8 +1445,8 @@ describe('StreakRuleSystem.equals, a rule as a value', () => {
     ['another way back', repair({ perYear: 2 })],
     ['another miss', { onBreak: 'HOLD' }],
   ])('differs from %s', (_, patch) => {
-    expect(StreakRuleSystem.equals(rule(patch), rule())).toBe(false);
-    expect(StreakRuleSystem.equals(rule(), rule(patch))).toBe(false);
+    expect(changed(rule(patch), rule())).not.toEqual([]);
+    expect(changed(rule(), rule(patch))).not.toEqual([]);
   });
 });
 

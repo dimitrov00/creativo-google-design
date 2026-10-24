@@ -289,11 +289,11 @@ describe('AppointmentEditSystem — the intents a visit has applied', () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.string({ minLength: 1, maxLength: 12 }), {
-          maxLength: AppointmentEditSystem.LEDGER_CAP * 3,
+          maxLength: AppliedOperation.CAP * 3,
         }),
         (names) => {
           const ledger = recorded(names);
-          const kept = names.slice(-AppointmentEditSystem.LEDGER_CAP);
+          const kept = names.slice(-AppliedOperation.CAP);
           expect(ledger.map((known) => known.operationId)).toEqual(kept);
           for (const [index, id] of names.entries()) {
             const found = AppliedOperation.find(ledger, OperationId.of(id));

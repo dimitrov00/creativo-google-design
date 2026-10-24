@@ -37,8 +37,9 @@ export type QueryOperator = (typeof QueryOp)[keyof typeof QueryOp];
 
 /**
  * One `where` clause. `field` is a ROOT field of the flat document
- * (`bookingStatus`, `utcEpochMs` — Law 5); a dotted component path survives
- * only on a collection its 3b flip has not reached yet.
+ * (`bookingStatus`, `utcEpochMs` — Laws 5 and 6), never a dotted component
+ * path: every collection is flat, and the in-memory doubles read the root
+ * key and nothing deeper.
  */
 export type QueryFilter = {
   readonly field: string;
@@ -47,7 +48,7 @@ export type QueryFilter = {
   readonly value: unknown;
 };
 
-/** One `orderBy` clause; `descending: false` is ascending. */
+/** One `orderBy` clause on a ROOT field, as {@link QueryFilter}; `descending: false` is ascending. */
 export type QueryOrder = {
   readonly field: string;
   readonly descending: boolean;

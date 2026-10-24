@@ -38,9 +38,7 @@ import {
   type FactoryPicker,
   GATEWAY_PORTS,
   ID_PORTS,
-  IMPERSONATION_READ_PORTS,
   INBOX_PORTS,
-  KEY_VALUE_PORTS,
   LOCATION_LOAD_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_MEMO,
@@ -89,10 +87,7 @@ import {
 } from '@creativo/infrastructure/firebase-auth';
 import { loadFirestoreAdapters } from '@creativo/infrastructure/firestore';
 import { loadStorageAdapters } from '@creativo/infrastructure/storage';
-import {
-  localStorageKeyValuePorts,
-  sessionStorageBookingDraftPorts,
-} from '@creativo/infrastructure/web-storage';
+import { sessionStorageBookingDraftPorts } from '@creativo/infrastructure/web-storage';
 import {
   browserClockPorts,
   browserIdPorts,
@@ -321,12 +316,11 @@ export const appConfig: ApplicationConfig = {
           inject(DOCUMENT),
         ),
     },
-    // The device's storage: the `/book` draft per tab, preferences per device.
+    // The device's storage: the `/book` draft per tab.
     {
       provide: BOOKING_DRAFT_PORTS,
       useFactory: sessionStorageBookingDraftPorts,
     },
-    { provide: KEY_VALUE_PORTS, useFactory: localStorageKeyValuePorts },
 
     // ── Lazy ports: Firestore and Storage adapters (see `firebaseData`) ──
     // Each binding classifies every method of its port; the compiler
@@ -422,7 +416,6 @@ export const appConfig: ApplicationConfig = {
       methods: {
         observeInbox: 'observable',
         markNotificationRead: 'promise',
-        markAllNotificationsRead: 'promise',
       },
       onLoadError: dataUnavailable,
     }),
@@ -469,8 +462,8 @@ export const appConfig: ApplicationConfig = {
 
     // Identity and accounts (flip 2): an account's own profile — the stored
     // `users/{uid}` body, live and once (every write is the `updateProfile`
-    // callable's, Phase 4a 4A-3 (2)) — the staff client search over index
-    // #8, and an admin's live impersonation session (index #9).
+    // callable's, Phase 4a 4A-3 (2)) — and the staff client search over
+    // index #8.
     provideLazyPort(PROFILE_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.profilePorts(inj.get(FIREBASE_FIRESTORE)),
@@ -484,12 +477,6 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.userSearchPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { searchUsers: 'promise' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(IMPERSONATION_READ_PORTS, firebaseData, {
-      factory: (m) => (inj) =>
-        m.firestore.impersonationReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observeActiveImpersonation: 'observable' },
       onLoadError: dataUnavailable,
     }),
 

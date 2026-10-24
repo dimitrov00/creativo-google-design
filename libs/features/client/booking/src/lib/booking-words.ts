@@ -21,10 +21,6 @@ export const BOOKING_STEP_WORDS = {
   [BookingFlowStep.Waitlisted]: 'waitlisted',
 } as const satisfies Record<BookingFlowStep, string>;
 
-/** One step's word — the URL's and the DOM's spelling of it. */
-export type BookingStepWord =
-  (typeof BOOKING_STEP_WORDS)[keyof typeof BOOKING_STEP_WORDS];
-
 const STEP_BY_WORD: ReadonlyMap<string, BookingFlowStep> = new Map(
   Object.values(BookingFlowStep).map((step) => [
     // eslint-disable-next-line security/detect-object-injection -- `step` is a member of the closed dictionary the table is total over.

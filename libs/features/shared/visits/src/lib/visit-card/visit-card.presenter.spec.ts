@@ -73,7 +73,7 @@ const CLIENT_WORDS = wordsOf(BG, 'bg', VisitPerspective.Client);
 const CARD_WORDS = cardWordsOf(BG);
 const NOW = visitsNow(FIXTURE_TODAY);
 
-/** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
+/** `formatCents`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', ' €');
 
 function visit(id: string): Appointment {

@@ -204,15 +204,6 @@ function signedMovement(
     : `${MINUS}${figure(context, -delta)}`;
 }
 
-/** «+17» · «−3»; `null` for no change. */
-export function signedDelta(
-  context: AdminRhythmContext,
-  from: number,
-  to: number,
-): string | null {
-  return signedMovement(context, to - from);
-}
-
 /** Days ↔ weeks, as the interval is edited in weeks and held in days: `RhythmDraftSystem`'s unit arithmetic. */
 export const weeksOf = (days: number): number =>
   RhythmDraftSystem.weeksOf(days);

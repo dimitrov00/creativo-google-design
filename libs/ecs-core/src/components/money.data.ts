@@ -40,7 +40,7 @@ export type RoundingMode = (typeof RoundingMode)[keyof typeof RoundingMode];
  * The system ARITHMETIC value (flatten-spec §1.4, F-14): an integer count of
  * the currency's minor units (cents, stotinki) beside its ISO 4217 code —
  * never a float, never a formatted string (formatting is the template
- * layer's `formatMoney`, `libs/infrastructure/i18n`). Never a field of an
+ * layer's `formatCents`, `@creativo/ui/wall-clock`). Never a field of an
  * entity, document or stored struct: those flatten to `…Cents: PriceCents`
  * beside one `currency: Currency` (N6).
  *

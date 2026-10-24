@@ -5,12 +5,11 @@ import { deepFreeze } from '@core/testing';
 import { BarberToneSystem } from './barber-tone.system';
 
 /*
- * The five cases of `assignBarberTones`
- * (libs/features/staff/dashboard/src/lib/barber-tone.spec.ts), COPIED and
- * re-targeted: the legacy map keyed by id becomes the array parallel to the
- * roster, so `tones.get(id)` reads `tones[ids.indexOf(id)]`. Plus the purity
- * case and properties over the probe. Ids are `BarberId` brands (Law 7);
- * the text the hash reads is unchanged.
+ * The five cases of `assignBarberTones` (from the dashboard spec deleted in
+ * pass B): the answer is an array parallel to the roster, so a chair's tone
+ * reads `tones[ids.indexOf(id)]`. Plus the purity case and properties over
+ * the probe. Ids are `BarberId` brands (Law 7); the text the hash reads is
+ * the id itself.
  */
 
 const S = BarberToneSystem;

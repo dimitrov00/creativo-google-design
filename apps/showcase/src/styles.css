@@ -5,12 +5,12 @@
  * follows it). So every @import lives in this one leading block, and their
  * RELATIVE ORDER is what fixes cascade-layer priority: a layer name is
  * registered the first time it's encountered, and later-registered layers
- * always beat earlier ones regardless of selector specificity. The legacy
- * `cr-*` system (imported first below) still powers the not-yet-migrated
- * gallery/cursor-playground pages and shell nav; it's registered first so
- * the new `sys-*` system (imported second) — what every control demo
- * actually renders with — always wins wherever the two would otherwise
- * collide (e.g. a bare `:focus-visible` fallback vs. `.ui-button:focus-visible`).
+ * always beat earlier ones regardless of selector specificity. The baseline
+ * reset and the reduced-motion kill-switch (libs/ui/tokens, `cr-reset` and
+ * `cr-base`) are imported first, so every `sys-*` layer below — what every
+ * control demo renders with — wins wherever they would otherwise collide
+ * (e.g. the bare `:focus-visible` fallback vs. `.ui-button:focus-visible`).
+ * The same leading order as apps/web/src/styles.css.
  */
 @import '@fontsource-variable/onest';
 @import '@fontsource/dm-sans/400.css';
@@ -18,15 +18,8 @@
 @import '@fontsource/geist-mono/400.css';
 @import '@fontsource/geist-mono/700.css';
 
-@import '../../../libs/shared/design-tokens/css/tokens.css';
-@import '../../../libs/shared/design-tokens/css/light.css';
-@import '../../../libs/shared/design-tokens/css/dark.css';
-@import '../../../libs/shared/ui/src/lib/reset/reset.css';
-@import '../../../libs/shared/ui/src/lib/motion/reduced-motion.css';
-@import '../../../libs/shared/ui/src/lib/typography/typography.css';
-@import '../../../libs/shared/cursor/src/lib/cursor-target.css';
-@import '../../../libs/shared/ui/src/lib/material/material.css';
-@import '../../../libs/shared/ui/src/lib/shape/shape.css';
+@import '../../../libs/ui/tokens/reset.css';
+@import '../../../libs/ui/tokens/reduced-motion.css';
 
 @import '../../../libs/ui/tokens/tokens.css';
 @import '../../../libs/ui/tokens/theme-light.css';
@@ -52,21 +45,21 @@
   unicode-range: U+0030-0039;
 }
 
-/* Fallback chrome for the old pages/shell only — everything under the new
-   libs/ui/* system styles its own link/focus states via [data-*] selectors
-   in its own co-located CSS and doesn't depend on this. */
+/* THE FALLBACK FOCUS RING — for every focusable element that is not a DS
+   control (each libs/ui control draws its own ring or glow in
+   `sys-components`). Ink, not a hue: `--sys-color-ring`. It stays in
+   `cr-base`, registered BEFORE `sys-components`, so the fields' own
+   `outline: none` keeps winning and no hard outline lands on top of their
+   glow (mirrors apps/web/src/styles.css).
+
+   There is no anchor colour here: bare content links take the `sys-base`
+   rule below, and every DS host anchor (uiButton, uiCard, uiListRow,
+   uiQuickAction, a uiForegroundStyle stamp) sets its ink in
+   `sys-components`, which out-ranks this layer. */
 @layer cr-base {
-  a {
-    color: var(--cr-color-link);
-  }
-
-  a:hover {
-    color: var(--cr-color-link-hover);
-  }
-
   :focus-visible {
-    outline: var(--cr-focus-ring-width) solid var(--cr-color-focus-ring);
-    outline-offset: var(--cr-focus-ring-offset);
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
   }
 }
 
@@ -137,8 +130,10 @@
    app.config.ts's withViewTransitions() call is the JS half of this pair. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: var(--cr-motion-duration-slow);
-  animation-timing-function: var(--cr-motion-easing-standard);
+  /* Control motion, not a cinematic reveal — the deliberate tier, as in
+     apps/web/src/styles.css. */
+  animation-duration: var(--sys-motion-duration-deliberate);
+  animation-timing-function: var(--sys-motion-ease-standard);
 }
 
 /* Defense in depth alongside app.config.ts's onViewTransitionCreated check

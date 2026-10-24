@@ -26,10 +26,10 @@ import type { StreakDefinition } from '@core/entities';
  * THE RHYTHM'S RULE, OVER TIME (client-card revision 3 §4.1, §4.4) — the
  * math of `streak-schedule.ts` (the head: which version a day is judged by,
  * what waits, the earliest day a change may start) and of the rule's own
- * comparisons in `streak-definition.ts` (`changeFrom`, `summary`,
- * `equals`). The edge guard of one version is the component's
- * (`StreakRule.parse`); everything here takes rules already parsed — flat
- * (Law 6), the qualifier and the interval variant slices of the rule.
+ * comparisons in `streak-definition.ts` (`changeFrom`, `summary`). The
+ * edge guard of one version is the component's (`StreakRule.parse`);
+ * everything here takes rules already parsed — flat (Law 6), the qualifier
+ * and the interval variant slices of the rule.
  *
  * The head is the 1-to-N `rules` list (F-9): one `CURRENT` element, at most
  * one `SCHEDULED`, sorted by `effectiveFromLocalDate`. The head's id is not
@@ -605,15 +605,6 @@ export const StreakRuleSystem = {
       holdsCount: rule.onBreak === StreakOnBreak.Hold,
       qualifier: StreakQualifierRule.of(rule),
     };
-  },
-
-  /** The same version (number and day) with the same figures; the name is the head's and not compared. */
-  equals(a: StreakRule, b: StreakRule): boolean {
-    return (
-      a.version === b.version &&
-      a.effectiveFromLocalDate === b.effectiveFromLocalDate &&
-      StreakRuleSystem.changeFrom(a, b, false).changed.length === 0
-    );
   },
 
   /**

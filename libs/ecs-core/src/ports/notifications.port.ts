@@ -31,16 +31,6 @@ export type MarkNotificationRead = (
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * Stamp every unread notification read at `readAtUtcMs` — the unread ones
- * (`readAtUtcMs == null`), `limit 400` per batch
- * (`notification-reader.adapter.ts:121`).
- */
-export type MarkAllNotificationsRead = (
-  userId: UserId,
-  readAtUtcMs: UtcEpochMs,
-) => Promise<Result<void, RepositoryError>>;
-
-/**
  * The waitlist matcher's cross-day cooldown probe (§4.1 `matchWaitlist`):
  * has this person already been told about this request since
  * `sinceUtcMs`? `notificationTopic ==`, `waitlistRequestId ==`,
@@ -62,7 +52,6 @@ export type HasRecentNotification = (
 export type InboxPorts = {
   readonly observeInbox: ObserveInbox;
   readonly markNotificationRead: MarkNotificationRead;
-  readonly markAllNotificationsRead: MarkAllNotificationsRead;
 };
 
 /** The notification cooldown check — the waitlist matcher (server). */

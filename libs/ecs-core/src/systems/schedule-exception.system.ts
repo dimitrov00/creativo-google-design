@@ -1,4 +1,4 @@
-import { ExceptionEffect, Result, type BarberId } from '@core/primitives';
+import { ExceptionEffect, Result } from '@core/primitives';
 import { type SchedulingError } from '@core/errors';
 import {
   ExceptionEffectRule,
@@ -41,39 +41,6 @@ export const ScheduleExceptionSystem = {
       case ExceptionReason.Break:
       case ExceptionReason.Admin:
         return ExceptionEffectRule.blocked(detail.exceptionRanges);
-    }
-  },
-
-  /**
-   * Is the exception shop-wide (`schedule-exception.ts:107-112`)? A closure
-   * with no barber applies to every chair at the location; under D16(b) it
-   * reaches storage fanned out, one `CLOSED` effect per barber, so every
-   * reader below the writer sees a barber's own exception.
-   */
-  isLocationWide(barberId: BarberId | null): boolean {
-    return barberId === null;
-  },
-
-  /** Does an exception scoped to `scope` (`null`: shop-wide) apply to this barber? */
-  appliesTo(scope: BarberId | null, barberId: BarberId): boolean {
-    return scope === null || scope === barberId;
-  },
-
-  /**
-   * Does the detail remove the whole day rather than carve pieces out of it
-   * (`schedule-exception.ts:110-121`)? The five whole-day reasons do;
-   * `HOURS`, `BREAK` and `ADMIN` operate within a day that is still worked.
-   */
-  isWholeDay(detail: ExceptionDetail): boolean {
-    switch (detail.exceptionReason) {
-      case ExceptionReason.Closed:
-      case ExceptionReason.TimeOff:
-      case ExceptionReason.Sick:
-      case ExceptionReason.Training:
-      case ExceptionReason.Travel:
-        return true;
-      default:
-        return false;
     }
   },
 

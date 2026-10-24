@@ -7,11 +7,9 @@ import {
   dayRange,
   dayShort,
   dayWithYear,
-  daysBetweenDays,
   figure,
   monogramOf,
   monthYearLong,
-  signedFigure,
 } from './client-card.format';
 import {
   type AchievementHowWord,
@@ -1597,15 +1595,8 @@ describe('the card’s dates and figures (R59)', () => {
     );
   });
 
-  it('counts calendar days across a clock change', () => {
-    expect(daysBetweenDays('2026-10-20', '2026-10-27')).toBe(7);
-    expect(daysBetweenDays('2026-10-27', '2026-10-20')).toBe(-7);
-  });
-
-  it('groups figures the locale’s way and signs a movement', () => {
+  it('groups figures the locale’s way', () => {
     expect(figure(12450, 'bg')).toBe('12 450');
-    expect(signedFigure(17, 'bg')).toBe('+17');
-    expect(signedFigure(0, 'bg')).toBe('0');
   });
 
   it('draws a monogram from the first letter', () => {

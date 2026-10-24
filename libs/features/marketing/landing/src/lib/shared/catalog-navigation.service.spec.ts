@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { CatalogNavigationService } from './catalog-navigation.service';
-import { SERVICES, type ServiceVm } from '../content/landing-content';
+import type { ServiceVm } from '@creativo/features/shared/catalog';
+import { SERVICES } from '../../testing/landing-catalog';
 
 const service = (id: string): ServiceVm => {
   const found = SERVICES.find((candidate) => candidate.id === id);

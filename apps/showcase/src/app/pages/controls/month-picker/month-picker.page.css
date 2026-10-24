@@ -20,8 +20,8 @@
   padding-block-end: var(--sys-space-tight);
 }
 
-/* The key, as the picker writes it. */
+/* The key, as the picker writes it (its 0.02em is the caption tracking). */
 .month-picker__weekday {
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--sys-tracking-caption);
 }

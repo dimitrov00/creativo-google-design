@@ -94,8 +94,9 @@ function blocksFrom(spans: readonly MinuteRange[]): readonly MinuteBlock[] {
  *
  * Why a rebuild, not a subtraction: merged geometry is lossy on purpose and
  * cannot be subtracted from, so a change RECOMPUTES each affected
- * (barber, day) from every live appointment that touches it ({@link plan}) —
- * idempotent, and it repairs any drift, whatever wrote it.
+ * (barber, day) from every live appointment that touches it
+ * ({@link affectedKeys}, then {@link rebuild} per key) — idempotent, and it
+ * repairs any drift, whatever wrote it.
  *
  * Time-zone-blind (Law 7.3): a seat is placed by the appointment's
  * `localDate` and its own `startMinutes` (one shop day per appointment,
@@ -224,26 +225,5 @@ export const BusySystem = {
       blocks: blocksFrom(spans),
     };
     return WriteOp.set(path, body);
-  },
-
-  /**
-   * The write plan of one appointment write: every busy document either
-   * side touches, rebuilt from `live` — the appointments the pipeline loaded
-   * for those keys (the `busyKeys array-contains` read, in the same
-   * transaction). Sorted by key; a key that does not parse is left alone.
-   */
-  plan(
-    before: Appointment | null,
-    after: Appointment | null,
-    live: readonly Appointment[],
-    dayStartUtcMs: DayStartUtcMs,
-  ): readonly WriteOp[] {
-    const writes: WriteOp[] = [];
-    const keys = BusySystem.affectedKeys(before, after);
-    for (let i = 0; i < keys.length; i++) {
-      const write = BusySystem.rebuild(keys[i] as BusyKey, live, dayStartUtcMs);
-      if (write !== null) writes.push(write);
-    }
-    return writes;
   },
 } as const;

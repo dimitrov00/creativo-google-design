@@ -103,58 +103,6 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
   });
 });
 
-describe('AgeSystem.ageAtInstant — the legacy instant reader (accounts BirthDate)', () => {
-  // `yearsUntil` truncated the fractional years from the birth day's
-  // midnight to an INSTANT of today. Found by a side-by-side run of the
-  // legacy class: only a future birth on today's own month-day differs
-  // from whole calendar years.
-  it('is ageOn for a birth on or before today, whatever the hour', () => {
-    for (const raw of [
-      '2000-01-01',
-      '2010-07-22',
-      '2010-07-23',
-      '1906-07-22',
-    ]) {
-      for (const pastMidnight of [true, false]) {
-        expect(
-          AgeSystem.ageAtInstant(bd(raw), ACCOUNTS_TODAY, pastMidnight),
-        ).toBe(AgeSystem.ageOn(bd(raw), ACCOUNTS_TODAY));
-      }
-    }
-  });
-
-  it('reads a birth exactly N years ahead as −(N−1) once today is past midnight', () => {
-    expect(AgeSystem.ageAtInstant(bd('2027-07-22'), ACCOUNTS_TODAY, true)).toBe(
-      -0,
-    );
-    expect(AgeSystem.ageAtInstant(bd('2029-07-22'), ACCOUNTS_TODAY, true)).toBe(
-      -2,
-    );
-    // …and as −N at midnight exactly, when "now" IS the anniversary.
-    expect(
-      AgeSystem.ageAtInstant(bd('2027-07-22'), ACCOUNTS_TODAY, false),
-    ).toBe(-1);
-    expect(
-      AgeSystem.ageAtInstant(bd('2029-07-22'), ACCOUNTS_TODAY, false),
-    ).toBe(-3);
-    // Off the anniversary the hour changes nothing.
-    for (const pastMidnight of [true, false]) {
-      expect(
-        AgeSystem.ageAtInstant(bd('2030-01-01'), ACCOUNTS_TODAY, pastMidnight),
-      ).toBe(-3);
-      expect(
-        AgeSystem.ageAtInstant(bd('2026-07-23'), ACCOUNTS_TODAY, pastMidnight),
-      ).toBe(-0);
-    }
-  });
-
-  it('keeps a 29 February "now" on 28 February in a common year', () => {
-    const leapToday = day('2028-02-29');
-    expect(AgeSystem.ageAtInstant(bd('2029-02-28'), leapToday, true)).toBe(-0);
-    expect(AgeSystem.ageAtInstant(bd('2029-02-28'), leapToday, false)).toBe(-1);
-  });
-});
-
 describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () => {
   describe('fromParts (create from segments)', () => {
     it('accepts a real past date inside the age window and canonicalizes to ISO', () => {

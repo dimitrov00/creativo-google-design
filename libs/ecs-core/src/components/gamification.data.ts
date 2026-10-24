@@ -191,13 +191,6 @@ export const SeasonPhase = {
 } as const;
 export type SeasonPhase = (typeof SeasonPhase)[keyof typeof SeasonPhase];
 
-/** Every value of each vocabulary, dictionary order — derived, never a second source. */
-export const BADGE_CATEGORY_KINDS: readonly BadgeCategoryKind[] =
-  Object.values(BadgeCategoryKind);
-export const BADGE_EMBLEMS: readonly BadgeEmblem[] = Object.values(BadgeEmblem);
-export const METRICS: readonly Metric[] = Object.values(Metric);
-export const PERK_IDS: readonly PerkId[] = Object.values(PerkId);
-
 /**
  * What a family counts — a FLAT slice at the root of a family (and, as
  * `qualify*`, of a tier): the metric, its rolling window in whole days back
@@ -311,7 +304,7 @@ export type SeasonWindow = {
   readonly windowUntil: LocalDate;
 };
 
-/** Is `raw` one of `values`? The one guard every vocabulary shares. */
+/** Is `raw` one of `values`? The one scan every metric list shares. */
 function oneOf<T extends string>(values: readonly T[], raw: unknown): raw is T {
   for (let i = 0; i < values.length; i++) {
     if (values[i] === raw) return true;
@@ -320,9 +313,8 @@ function oneOf<T extends string>(values: readonly T[], raw: unknown): raw is T {
 }
 
 /**
- * The vocabularies' edge guards and the catalogue's constants — what a
- * reader checks untrusted text against, from the very dictionaries the
- * types are made of.
+ * The catalogue's constants and the metric predicates its rules read, over
+ * the very dictionaries the types are made of.
  */
 export const Gamification = {
   /**
@@ -332,18 +324,6 @@ export const Gamification = {
    */
   SEASON_NOTICE_DAYS: 30,
 
-  isBadgeCategoryKind(raw: unknown): raw is BadgeCategoryKind {
-    return oneOf(BADGE_CATEGORY_KINDS, raw);
-  },
-  isBadgeEmblem(raw: unknown): raw is BadgeEmblem {
-    return oneOf(BADGE_EMBLEMS, raw);
-  },
-  isMetric(raw: unknown): raw is Metric {
-    return oneOf(METRICS, raw);
-  },
-  isPerkId(raw: unknown): raw is PerkId {
-    return oneOf(PERK_IDS, raw);
-  },
   /** One worked visit moves this count by exactly one. */
   isPerVisitMetric(metric: Metric): boolean {
     return oneOf(PER_VISIT_METRICS, metric);

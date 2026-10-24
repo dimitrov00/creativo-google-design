@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BookingError, BookingErrorCode } from './booking.error';
 import { WaitlistError, WaitlistErrorCode } from './waitlist.error';
 
 describe('WaitlistError', () => {
@@ -29,5 +30,16 @@ describe('WaitlistError', () => {
       errorCode: 'BOOKING_WAITLIST_TOO_MANY_DAYS',
       max: 7,
     });
+  });
+
+  it('carries the commit’s refusal of the bag as the invalid request’s field — one wire shape', () => {
+    const refused = WaitlistError.cartRefused(BookingError.partyTooLarge(5));
+    expect(refused).toEqual({
+      errorCode: 'BOOKING_WAITLIST_INVALID_REQUEST',
+      field: BookingErrorCode.PartyTooLarge,
+    });
+    expect(refused).toEqual(
+      WaitlistError.invalidRequest(BookingErrorCode.PartyTooLarge),
+    );
   });
 });

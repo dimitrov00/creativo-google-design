@@ -39,7 +39,7 @@ function budgetOn(
   return () => isSpent(startedAtUtcMs, clockUtcMs(), limitMs);
 }
 
-/** The walk the shim's `walkWithin` runs, synchronously, over the system's steps. */
+/** The walk `run-backfill.pipeline.ts`'s `walkWithin` runs, synchronously, over the system's steps. */
 function walk<T, R>(
   items: readonly T[],
   chunkSize: number,

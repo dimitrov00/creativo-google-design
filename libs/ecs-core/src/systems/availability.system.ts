@@ -753,14 +753,6 @@ export const AvailabilitySystem = {
   },
 
   /**
-   * A line's terms with barber `barberIndex` — its dense entry, or the line's
-   * defaults when the array is short (`termsForBarber`, `availability.ts:56`).
-   */
-  termsAt(line: AvailabilityLine, barberIndex: number): LineTerms {
-    return termsAt(line, barberIndex);
-  },
-
-  /**
    * The dense `termsByBarber` for a line: one entry per barber of the pool, in
    * the pool's order — the barber's catalogue override (the first naming
    * them), else `defaults`. Built once per query, so the search never looks a
@@ -820,36 +812,6 @@ export const AvailabilitySystem = {
   },
 
   /**
-   * Candidate starts for one footprint in some free time (`availability.ts:
-   * 218-249`): every step of the grid measured from each GAP's start (not
-   * midnight), from the lead-time floor on, while the footprint still fits.
-   * The search walks the same grid inline; this materialised form is for
-   * callers that want the list. A `null` floor (the day is too soon) offers
-   * nothing.
-   */
-  candidateStarts(
-    free: readonly MinuteRange[],
-    duration: DurationMinutes,
-    step: DurationMinutes,
-    notBefore: MinuteOfDay | null,
-  ): readonly MinuteOfDay[] {
-    const starts: MinuteOfDay[] = [];
-    if (notBefore === null || !(step > 0)) return starts;
-    const gaps = IntervalSetSystem.normalize(free);
-    for (let g = 0; g < gaps.length; g++) {
-      const gap = gaps[g] as MinuteRange;
-      for (
-        let start = firstStart(gap.startMinutes, notBefore, step);
-        start + duration <= gap.endMinutes;
-        start += step
-      ) {
-        starts.push(startOf(start));
-      }
-    }
-    return starts;
-  },
-
-  /**
    * Every way the party can be served, ranked (`availability.ts:359-397`) —
    * up to `budget.maxOptions`, within `budget.nodeBudget` placements. Each
    * line is tried, in a constraint-first order, at every (barber, start) that
@@ -875,30 +837,6 @@ export const AvailabilitySystem = {
     budget: SearchBudget,
   ): AvailabilityResult {
     return search(query, budget, true);
-  },
-
-  /** Is there ANY way to serve this party? The search with a cap of one. */
-  hasAnyOption(query: AvailabilityQuery, budget: SearchBudget): boolean {
-    return (
-      search(query, { nodeBudget: budget.nodeBudget, maxOptions: 1 }, false)
-        .options.length > 0
-    );
-  },
-
-  /** Distinct party starts, in the options' order — the grid's times. */
-  distinctStarts(
-    options: readonly Pick<AvailabilityOption, 'startMinutes'>[],
-  ): readonly MinuteOfDay[] {
-    const seen = new Set<number>();
-    const starts: MinuteOfDay[] = [];
-    for (let i = 0; i < options.length; i++) {
-      const start = (options[i] as Pick<AvailabilityOption, 'startMinutes'>)
-        .startMinutes;
-      if (seen.has(start)) continue;
-      seen.add(start);
-      starts.push(start);
-    }
-    return starts;
   },
 
   /**

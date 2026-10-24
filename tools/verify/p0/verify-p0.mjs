@@ -58,7 +58,7 @@ import { fileURLToPath } from 'node:url';
 import admin from 'firebase-admin';
 import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import { settleTriggers } from '../../seed/settle.mjs';
-import { readCallableAnswer } from './callable-answer.mjs';
+import { CallableAnswer, readCallableAnswer } from './callable-answer.mjs';
 import { checkFunctionsDeps } from './functions-deps.mjs';
 
 const WORKSPACE_ROOT = resolve(
@@ -140,14 +140,14 @@ function without(data, ...keys) {
 
 /** Wait for `read` to yield at least `count` items, and a moment longer for strays. */
 async function waitFor(read, count, label, timeoutMs = 30_000) {
-  const start = Date.now();
+  const start = performance.now();
   for (;;) {
     const items = await read();
     if (items.length >= count) {
       await sleep(1_500);
       return read();
     }
-    if (Date.now() - start > timeoutMs) {
+    if (performance.now() - start > timeoutMs) {
       throw new Error(
         `${label}: ${items.length} of ${count} after ${timeoutMs} ms`,
       );
@@ -195,12 +195,6 @@ async function idTokenFor(uid, claims) {
   return body.idToken;
 }
 
-/**
- * A callable's answer never properly came: the wait ran out, the connection
- * dropped, or what arrived was cut off or unreadable (`readCallableAnswer`).
- */
-class LostAnswer extends Error {}
-
 /** How long `callable` waits for an answer unless told otherwise. */
 const CALL_TIMEOUT_MS = 120_000;
 
@@ -209,15 +203,19 @@ const CALL_TIMEOUT_MS = 120_000;
  * up to `timeoutMs` for the answer. On `node:http`, not `fetch`: fetch
  * (undici) gives up on a response after 300 s (`headersTimeout`) whatever
  * the caller wants, and a runner must be able to outwait a callable's own
- * platform timeout. Rejects with `LostAnswer` when no answer came — or none
+ * platform timeout.
+ *
+ * Never rejects: answers what came back as `readCallableAnswer` reads it —
+ * a `RESULT`, a `REFUSAL` (a well-formed `{error}`), or `LOST` with `why`
+ * when no answer came (the wait ran out, the connection dropped) or none
  * that could be read: a truncated, empty or unparseable body, or a 5xx with
- * no `error` object, is a LOST answer, not a refusal (round 3) — and with a
- * plain error only when the callable answered with a well-formed `{error}`.
+ * no `error` object, is a LOST answer, not a refusal (round 3).
  */
-function callable(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
+function callableAnswer(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
   const payload = JSON.stringify({ data });
-  return new Promise((resolveCall, rejectCall) => {
-    const lost = (why) => rejectCall(new LostAnswer(`${name}: ${why}`));
+  return new Promise((resolveCall) => {
+    const lost = (why) =>
+      resolveCall({ callableAnswer: CallableAnswer.Lost, why });
     const request = http.request(
       `http://${FUNCTIONS}/${PROJECT_ID}/${REGION}/${name}`,
       {
@@ -237,17 +235,13 @@ function callable(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
         });
         response.on('error', (error) => lost(error.message));
         response.on('end', () => {
-          const answer = readCallableAnswer({
-            statusCode: response.statusCode,
-            complete: response.complete,
-            text,
-          });
-          if (answer.kind === 'result') resolveCall(answer.result);
-          else if (answer.kind === 'refusal') {
-            rejectCall(
-              new Error(`${name} refused: ${JSON.stringify(answer.error)}`),
-            );
-          } else lost(answer.why);
+          resolveCall(
+            readCallableAnswer({
+              statusCode: response.statusCode,
+              complete: response.complete,
+              text,
+            }),
+          );
         });
       },
     );
@@ -257,6 +251,25 @@ function callable(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
     request.on('error', (error) => lost(error.message));
     request.end(payload);
   });
+}
+
+/** What a step that takes no lost answer is told: the answer's reason, named by the callable. */
+const unanswered = (name, answer) =>
+  answer.callableAnswer === CallableAnswer.Refusal
+    ? `${name} refused: ${JSON.stringify(answer.error)}`
+    : `${name}: ${answer.why}`;
+
+/**
+ * {@link callableAnswer} for a step that cannot go on without the result:
+ * the result, or the step fails naming the refusal or the loss.
+ */
+async function callable(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
+  const answer = await callableAnswer(name, idToken, data, timeoutMs);
+  assert(
+    answer.callableAnswer === CallableAnswer.Result,
+    unanswered(name, answer),
+  );
+  return answer.result;
 }
 
 /**
@@ -396,25 +409,29 @@ async function backfillRun(idToken) {
   let request = FROM_THE_TOP;
   let lost = 0;
   for (;;) {
-    let page;
-    try {
-      page = await callable(
-        'runBackfill',
-        idToken,
-        request,
-        BACKFILL_CALL_TIMEOUT_MS,
-      );
-    } catch (error) {
-      if (!(error instanceof LostAnswer) || ++lost > BACKFILL_LOST_ANSWERS) {
-        throw error;
-      }
+    const answer = await callableAnswer(
+      'runBackfill',
+      idToken,
+      request,
+      BACKFILL_CALL_TIMEOUT_MS,
+    );
+    if (
+      answer.callableAnswer === CallableAnswer.Lost &&
+      lost < BACKFILL_LOST_ANSWERS
+    ) {
+      lost += 1;
       console.warn(
-        `      ${error.message}; resuming from the progress document`,
+        `      ${unanswered('runBackfill', answer)}; resuming from the progress document`,
       );
       request = { ...FROM_THE_TOP, backfillResume: true };
       continue;
     }
+    assert(
+      answer.callableAnswer === CallableAnswer.Result,
+      unanswered('runBackfill', answer),
+    );
     lost = 0;
+    const page = answer.result;
     if (page.done) break;
     request = { ...FROM_THE_TOP, cursor: page.cursor };
   }

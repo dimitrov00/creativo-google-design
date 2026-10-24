@@ -47,8 +47,9 @@ const staff = P.fromClaims({
 });
 
 /**
- * The legacy use case's loop, with the decisions taken from the system: the
- * gateway answers `principals[min(i, last)]` after `i` refreshes.
+ * The session-ready loop (observe → refresh on the backoff → observe), each
+ * step decided by `SessionAccessSystem.readiness`: the gateway answers
+ * `principals[min(i, last)]` after `i` refreshes.
  */
 function runLoop(principals: readonly Principal[]): {
   principal: Principal;

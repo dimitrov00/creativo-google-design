@@ -31,7 +31,7 @@ import {
   UiListRow,
   UiRating,
 } from '@creativo/ui/patterns';
-import { CatalogPresenter } from '../content/catalog-presenter.service';
+import { CatalogWording } from '../content/catalog-wording.service';
 import {
   type BarberVm,
   type ServiceOfferingVm,
@@ -126,7 +126,7 @@ export class ServiceDetailSheetComponent {
    *  leaving, so the barber's own sheet takes an empty screen. */
   readonly barberSelected = output<BarberVm>();
 
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   /** The dictionary, for the template's bundle badge (never a bare literal). */
   protected readonly CompositionKind = CompositionKind;
 

@@ -4,15 +4,15 @@ Explicit rejections from the [design system modernization proposal](./design-sys
 
 ## No `@angular/animations`
 
-`@angular/animations` has been deprecated since Angular v20.2 in favor of native `animate.enter`/`animate.leave` template syntax and CSS-driven transitions. Do not add it as a dependency, even if a tutorial or Stack Overflow answer suggests it — use `animate.enter`/`animate.leave` (see `apps/showcase`'s gallery card filter transition for the reference pattern) or plain CSS `transition`/`@keyframes` instead.
+`@angular/animations` has been deprecated since Angular v20.2 in favor of native `animate.enter`/`animate.leave` template syntax and CSS-driven transitions. Do not add it as a dependency, even if a tutorial or Stack Overflow answer suggests it — use `animate.enter`/`animate.leave` or plain CSS `transition`/`@keyframes` instead.
 
 ## No CSS-in-JS (vanilla-extract, StyleX, etc.)
 
-Neither vanilla-extract nor StyleX has a supported esbuild-plugin path into `@angular/build:application`, the executor `apps/showcase` actually uses — and this repo doesn't want CSS-rule-authoring-in-TypeScript in the first place. Styling stays in per-component `.css` files. Do not add a CSS-in-JS dependency to chase typed-token ergonomics; the token source of truth is plain CSS (see the next decision), and the few TypeScript call sites that need token _values_ (WAAPI durations/easings) get a small hand-maintained mirror in `libs/shared/design-tokens`, not a codegen dependency.
+Neither vanilla-extract nor StyleX has a supported esbuild-plugin path into `@angular/build:application`, the executor `apps/showcase` actually uses — and this repo doesn't want CSS-rule-authoring-in-TypeScript in the first place. Styling stays in per-component `.css` files. Do not add a CSS-in-JS dependency to chase typed-token ergonomics; the token source of truth is plain CSS (see the next decision), and the few TypeScript call sites that need token _values_ (WAAPI durations/easings) read the `--sys-motion-*` custom properties at run time with `getComputedStyle` (the reveal directive in `libs/ui/modifiers` is the pattern), not a codegen dependency.
 
 ## Tokens are plain hand-edited CSS — no build pipeline
 
-The original Style Dictionary pipeline (`build.mjs`, `tokens/core/*.json`, `tokens/semantic/*.json`, `generated/{css,ts}/*`) was removed in July 2026. The token source of truth is now the three hand-edited files in `libs/shared/design-tokens/css/` (`tokens.css`, `light.css`, `dark.css`), with their invariants (theme key parity, elevation contrast) enforced by `src/lib/tokens.spec.ts` instead of build-time generation. Do not reintroduce a token build step, JSON token sources, or generated TS exports — edit the CSS directly and extend the spec when a new invariant appears. References to `build.mjs`/`generated/*` in older sections below are historical.
+The original Style Dictionary pipeline (`build.mjs`, `tokens/core/*.json`, `tokens/semantic/*.json`, `generated/{css,ts}/*`) was removed in July 2026. The token source of truth is now the three hand-edited files in `libs/ui/tokens/` (`tokens.css`, `theme-light.css`, `theme-dark.css`), with their invariants (contrast, the accent law, the pre-paint theme) enforced by the specs in `libs/ui/tokens/src/lib/` instead of build-time generation. (The first hand-edited set, the `--cr-*` files in `libs/shared/design-tokens`, was deleted in pass B, 2026-10-24.) Do not reintroduce a token build step, JSON token sources, or generated TS exports — edit the CSS directly and extend the spec when a new invariant appears. References to `build.mjs`/`generated/*` in older sections below are historical.
 
 ## Light-mode elevation is shadow-only; dark-mode keeps the tint stack
 
@@ -49,29 +49,9 @@ elevation) and equal to `surface` in dark theme (keeps the validated lifted-off-
 not `surface`. Card's `1px solid border` was also dropped entirely — it was a second competing edge
 signal alongside the (previously too-subtle) shadow.
 
-## No `hostDirectives` for the cursor-target composition
+## Retired with the legacy design system (pass B, 2026-10-24)
 
-`hostDirectives`' inputs are only settable by the consuming template or a static default — never by the host component's own internal class logic. Button needs to feed the shared cursor-target behavior an internally-`computed()` value (`cursorStyle`, derived from Button's own `variant` input), which `hostDirectives` structurally cannot express. Keep the plain composable pattern (`useCursorTarget`, called from an injection context) for this specific case. `hostDirectives` remains a good fit for purely consumer-driven inputs — e.g. `MaterialDirective`'s `crMaterial` tier — just not for this one.
-
-## `window`/`document` feature-detect for SSR, don't just null-check
-
-Discovered building `apps/marketing` (the first SSR consumer of `libs/shared/ui`/`libs/shared/cursor`): Angular's SSR/prerender DOM shim provides a truthy `document.defaultView` that does **not** implement `matchMedia`/`localStorage` the way a real browser does, and a `document.documentElement` whose `.dataset` property is `undefined` even though `setAttribute` works fine. `ThemeService`/`CursorService`'s original `this.window?.matchMedia(...)` guards only protect against `window` being nullish — they don't protect against `window` existing but lacking the method, which is exactly the SSR shim's shape, and threw `TypeError: ... is not a function` during prerender.
-
-Fixed in both services: feature-detect with `typeof this.window?.matchMedia === 'function'` (not just `?.`) before calling it, wrap `localStorage` access in try/catch (some real-browser privacy modes throw on access too, not just SSR), and use `setAttribute('data-theme', ...)` instead of `.dataset['theme'] = ...` for the one DOM write that has to survive SSR. Apply the same pattern to any future shared service that touches `window`/`document` APIs beyond basic presence — a component/service only being exercised by CSR apps so far doesn't mean it's actually SSR-safe, it means it's untested against SSR.
-
-## Unprefixed `[text]` directive selector — deliberate style-guide deviation
-
-The typography directive's selector is bare `[text]` (owner decision, 2026-07-21), not the
-`cr`-prefixed form the [Angular style guide](https://angular.dev/style-guide) and this repo's own
-`@angular-eslint/directive-selector` rule mandate — SwiftUI fidelity (`<h2 text font="title">` ≈
-`Text().font(.title)`) outweighed the prefix convention for this one directive. The deviation is
-sound HERE because: (1) this greenfield workspace pulls in no third-party Angular UI libraries whose
-components could carry a colliding `text` attribute/input; (2) an accidental `[text]="expr"`
-property binding fails LOUDLY at compile time (NG8002 — the directive deliberately exposes no input
-named `text`), so the classic silent-double-binding hazard doesn't apply; (3) the rule stays ON for
-everything else — the directive carries a single documented inline eslint-disable. Every OTHER
-directive keeps the `cr` prefix; revisit this one only if a dependency ever ships a `text`
-attribute/input.
+Three earlier decisions governed code that no longer exists — `libs/shared/ui`, `libs/shared/cursor` and `libs/shared/design-tokens` were deleted in pass B: the cursor-target composition's refusal of `hostDirectives`, the SSR feature-detect fix in the old `ThemeService`/`CursorService`, and the bare `[text]` typography selector (the design system's typography modifier is `[uiText]`, prefixed like every other directive). The lesson that still applies: a service that touches `window`/`document` APIs feature-detects the method (`typeof window?.matchMedia === 'function'`) and wraps `localStorage` in try/catch, rather than only null-checking the global.
 
 ## Icons are inline SVG path data from a pinned Material Symbols revision — the ligature font is gone (2026-09-24)
 

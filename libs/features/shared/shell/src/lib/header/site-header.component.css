@@ -27,13 +27,13 @@
    gutters align with the hero card's inner padding, not the viewport edge
    or the --sys-space ladder (44/60px, deliberate). */
 .cr-header {
-  --cr-header-float-pad-top: 1.25rem;
-  --cr-header-float-gutter: 2.75rem;
-  --cr-header-float-gutter-wide: 3.75rem;
+  --site-header-float-pad-top: 1.25rem;
+  --site-header-float-gutter: 2.75rem;
+  --site-header-float-gutter-wide: 3.75rem;
 }
 
 .cr-header[data-view='float'] {
-  padding-block: var(--cr-header-float-pad-top) 0;
+  padding-block: var(--site-header-float-pad-top) 0;
   border-bottom: 1px solid transparent;
   background: transparent;
 }
@@ -62,11 +62,11 @@
 
 /* Float — the art-directed gutters (see the var block up top). */
 .cr-header[data-view='float'] .cr-header__inner {
-  padding-inline: var(--cr-header-float-gutter);
+  padding-inline: var(--site-header-float-gutter);
 }
 @media (min-width: 640px) {
   .cr-header[data-view='float'] .cr-header__inner {
-    padding-inline: var(--cr-header-float-gutter-wide);
+    padding-inline: var(--site-header-float-gutter-wide);
   }
 }
 

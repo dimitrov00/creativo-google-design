@@ -212,7 +212,7 @@ describe('lib-client-history — the head', () => {
     expect(spend.closest('[data-testid="history-facts"]')).toBe(facts);
     expect(spend.getAttribute('data-foreground-style')).toBe('primary');
     expect(spend.getAttribute('data-weight')).toBe('medium');
-    // `formatMoney` keeps the sign on the figure's line (a no-break space).
+    // `formatCents` keeps the sign on the figure's line (a no-break space).
     expect(spend.textContent?.trim()).toBe(NBSP_EURO('462,50 €'));
   });
 

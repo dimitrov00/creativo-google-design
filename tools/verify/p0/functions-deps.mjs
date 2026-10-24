@@ -51,6 +51,9 @@ export const FORBIDDEN_FUNCTIONS_DEPS = [
   'dinero.js',
 ];
 
+/** The UTC calendar day of an epoch-ms instant, `YYYY-MM-DD` — no `Date` object. */
+const UTC_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' });
+
 const isForbidden = (key) =>
   FORBIDDEN_FUNCTIONS_DEPS.some((rule) =>
     typeof rule === 'string' ? key === rule : rule.test(key),
@@ -136,13 +139,14 @@ export function checkFunctionsDeps({
 }
 
 /**
- * Writes the build's current dependency keys as the new baseline. Refuses
- * (throws, writing nothing) when the build lists a forbidden key.
+ * Writes the build's current dependency keys as the new baseline, stamped
+ * with the day it was recorded (today, UTC, unless `recordedAt` is given).
+ * Refuses (throws, writing nothing) when the build lists a forbidden key.
  */
 export function recordFunctionsDeps({
   packageJsonPath = FUNCTIONS_PACKAGE_JSON,
   baselinePath = FUNCTIONS_DEPS_BASELINE,
-  recordedAt = new Date().toISOString().slice(0, 10),
+  recordedAt = UTC_DAY.format(Date.now()),
 } = {}) {
   const keys = permittedDependencyKeys(packageJsonPath);
   const baseline = {

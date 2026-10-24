@@ -1,5 +1,12 @@
 # Design System Modernization Proposal — creativo-google-design
 
+> **Historical (2026-07).** The libraries this proposal extends —
+> `libs/shared/ui`, `libs/shared/cursor` and `libs/shared/design-tokens` —
+> were deleted in pass B (2026-10-24). Today's design system is `libs/ui`
+> (`ui-*` elements, `ui*` modifiers, `--sys-*` tokens), described in
+> `docs/styling-conventions.md`; the standing decisions are in
+> `decisions.md`.
+
 **Scope:** Angular 22 idiom alignment, CSS token architecture extension, type-safe token authoring, surface/materials layering, ARIA conventions, and SwiftUI-style modifier directives — synthesized from a full-repo audit plus six research tracks. This is a proposal to implement, not a survey; every recommendation is additive to the existing Style Dictionary pipeline (`libs/shared/design-tokens`) and the existing component conventions (`libs/shared/ui`, `libs/shared/cursor`) unless explicitly marked as a fix.
 
 ---

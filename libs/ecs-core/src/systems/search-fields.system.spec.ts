@@ -162,12 +162,6 @@ describe('SearchFieldsSystem — the query side (user-search.port.ts)', () => {
     expect(SearchFieldsSystem.normalizeQuery('A@B.bg')).toBe('a@b.bg');
   });
 
-  it('reads a query as a phone number only with the shape and five digits', () => {
-    expect(SearchFieldsSystem.looksLikePhone('+359 88')).toBe(true);
-    expect(SearchFieldsSystem.looksLikePhone('0888')).toBe(false);
-    expect(SearchFieldsSystem.looksLikePhone('ivan 08881')).toBe(false);
-  });
-
   it('a normalized query finds the prefix the index holds', () => {
     const { searchPrefixes } = SearchFieldsSystem.searchFields(
       'Ivan',

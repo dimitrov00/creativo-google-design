@@ -1,8 +1,9 @@
 /*
  * Global (unscoped) styles for `ui-map` — same rationale as
- * shape.css/material.css: the pin and indicator DOM is built imperatively
- * (map.ts hands elements to MapLibre markers), so it never receives Angular's
- * `_ngcontent-*` scope attribute and component-scoped CSS cannot reach it.
+ * libs/ui/modifiers/modifiers.css: the pin and indicator DOM is built
+ * imperatively (map.ts hands elements to MapLibre markers), so it never
+ * receives Angular's `_ngcontent-*` scope attribute and component-scoped CSS
+ * cannot reach it.
  *
  * Imported once, globally, from each app's styles.css. Promoted here from
  * `features/marketing/landing` when `/book`'s location step became the second

@@ -4,7 +4,7 @@ import { UiRevealDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { UiScrollRow, UiStack } from '@creativo/ui/layout';
 import { UiSectionHeader } from '@creativo/ui/patterns';
 import { LandingContentService } from '../../content/landing-content.service';
-import { type ServiceVm } from '../../content/landing-content';
+import { type ServiceVm } from '@creativo/features/shared/catalog';
 
 import { ServiceTileComponent } from './service-tile.component';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';

@@ -14,29 +14,29 @@ paths:
 Law 4 of `CLAUDE.md`. A pipeline is a use case: impure read, pure compute,
 impure write. Nothing else lives in it.
 
-## Ports are function types (`storage.port.ts`, `telemetry.port.ts`)
+## Ports are function types (`scheduling.port.ts`, `tx.port.ts`, `telemetry.port.ts`)
 
 ```ts
-import type { Appointment } from '@core/entities';
-import type { MinuteRange } from '@core/components';
-import type { AppointmentId, BarberId, LocalDate } from '@core/primitives';
+import type { BarberBusyDay } from '@core/entities';
+import type { BookingPolicy, WriteOp } from '@core/components';
+import type { RepositoryError } from '@core/errors';
+import type { BusyKey, Result } from '@core/primitives';
 
-export type LoadAppointment = (
-  id: AppointmentId,
-) => Promise<Appointment | null>;
-export type LoadBusyForDay = (
-  barberId: BarberId,
-  localDate: LocalDate,
-) => Promise<readonly MinuteRange[]>;
+export type LoadPolicy = () => Promise<Result<BookingPolicy, RepositoryError>>;
+export type LoadBusyDay = (
+  key: BusyKey,
+) => Promise<Result<BarberBusyDay | null, RepositoryError>>;
 
 /** The transactional sandwich: reads → pure decide → writes, atomically. */
-export type CommitBooking = <D>(
-  read: (tx: ReadTx) => Promise<BookingSnapshot>,
+export type CommitPlan = <S, D, E>(
+  read: (tx: ReadTx) => Promise<S>,
   decide: (
-    snapshot: BookingSnapshot,
-  ) => Result<D & { writes: readonly WriteOp[] }, BookingError>,
-) => Promise<Result<D, BookingError>>;
+    snapshot: S,
+  ) => Result<D & { readonly writes: readonly WriteOp[] }, E>,
+) => Promise<Result<D, E | RepositoryError>>;
 
+// Illustrative: Law 4's task port — none exists yet; today's follow-up work
+// rides the Firestore triggers on the committed write.
 export type EnqueueTask = (task: BackgroundTask) => Promise<void>;
 
 export type Log = (
@@ -94,6 +94,12 @@ export const bookAppointment =
   };
 ```
 
+- The example is schematic: `BookingSystem.decide` and `ports.enqueue` stand
+  for the real system calls and the future task port. The real
+  `book-appointment.pipeline.ts` reads through `readBookingSet` inside
+  `ports.commit` and files its audit rows after the commit
+  (`appendAuditFacts`); the follow-up work rides the triggers on the written
+  document (`rebuildBusyOnAppointmentChange`, `dispatchClientProjections`).
 - No business math inside the pipeline; if you are comparing intervals or
   summing money here, move it to a system.
 - No SDK import (`firebase-admin`, `pino`, `@sentry/*`) inside a pipeline.
@@ -112,17 +118,30 @@ derives `ShopNow = { localDate, currentMinute, utcEpochMs }` from
 lifecycle instants (`confirmedAtUtcMs`, `cancelledAtUtcMs`). No entity stores a zone; no system
 converts zones.
 
-## Adapters (`firestore.adapter.ts`, `pino.adapter.ts`, `sentry.adapter.ts`)
+## Adapters (`firestore-schedules.adapter.ts`, `console-telemetry.adapter.ts`)
 
 ```ts
-export const firestoreLoadAppointment =
-  (db: Firestore): LoadAppointment =>
-  async (id) => {
-    const snap = await db.collection('appointments').doc(id).get();
-    return snap.exists
-      ? { id, ...(snap.data() as Omit<Appointment, 'id'>) }
-      : null;
-  };
+// condensed: loadSchedule, loadScheduleException and listBarbers have the same shape
+export const firestoreSchedulePorts = (
+  db: Firestore,
+): BarberListPorts & ShopDayReadPorts => ({
+  loadBusyDay: async (key) => {
+    const path = `${Collections.BarberBusy}/${key}`;
+    try {
+      const snap = await db.collection(Collections.BarberBusy).doc(key).get();
+      return Result.ok(
+        snap.exists ? ({ id: snap.id, ...snap.data() } as BarberBusyDay) : null,
+      );
+    } catch (error) {
+      return Result.err(
+        RepositoryError.readFailed(
+          path,
+          TriggerAttemptSystem.failureCode(error),
+        ),
+      );
+    }
+  },
+});
 ```
 
 The document body is the entity minus `id` — spread, do not map. An adapter
@@ -132,10 +151,14 @@ the route/handler edge, with a pure guard from the component's companion.
 
 ## Composition root
 
-`apps/functions/src/main.ts` today: build the adapters from the Admin SDK,
-Pino and Sentry once per cold start, assemble the port bundles, call the
-pipeline factories, wrap each use-case function in `onCall`/`onDocument*`
-and map `Result.err` → `HttpsError` at that edge only. If the Hono-on-Cloud-Run
+`apps/functions/src/main.ts` today: build the adapters once per cold start
+— the Admin SDK ones on first use, and the console telemetry
+(`console-telemetry.adapter.ts`, over `firebase-functions/logger`; Pino and
+Sentry are not installed, and their adapters would replace it with the same
+two ports) — assemble the port bundles, call the pipeline factories, wrap
+each use-case function in `onCall`/`onDocument*`/`onSchedule` through the
+edge (`edge.ts`) and the wire (`wire/*.wire.ts`), and map `Result.err` →
+`HttpsError` at that edge only. If the Hono-on-Cloud-Run
 `apps/api` move is confirmed, the same wiring moves into its
 `routes/*.router.ts` with typed Hono RPC endpoints — the pipelines do not
 change.
@@ -145,5 +168,5 @@ change.
 Pipelines are tested with in-memory port implementations (plain functions
 over arrays/maps) and a pinned `nowUtcMs`/`nextId` (`pinnedNowUtcMs`,
 `FIXTURE_NOW` from `@core/testing`). Assert the write plan that
-reached `commit` and the tasks that reached `enqueue`; never assert on
-Firestore mocks' internals.
+reached `commit` (and, once a task port exists, the tasks that reached it);
+never assert on Firestore mocks' internals.

@@ -281,9 +281,6 @@ describe('LoyaltyCatalogSystem.validate', () => {
     expect(
       LoyaltyCatalogSystem.tier(catalog, TierId.of('platinum')),
     ).toBeNull();
-    expect(
-      LoyaltyCatalogSystem.streak(catalog, StreakDefinitionId.of('cadence')),
-    ).toBeNull();
   });
 
   it('lists a shelf’s families by order', () => {
@@ -394,34 +391,25 @@ describe('LoyaltyCatalogSystem, the rhythm', () => {
     streaks: [schedule('comeback'), schedule('cadence')],
   });
 
+  /** A schedule of the validated catalogue, by id. */
+  const head = (
+    catalog: { readonly streaks: readonly StreakDefinition[] },
+    id: string,
+  ): StreakDefinition | null =>
+    catalog.streaks.find((s) => s.id === StreakDefinitionId.of(id)) ?? null;
+
   it('is a catalogue without one: the schedules are none by default', () => {
     const catalog = must(parts());
     expect(catalog.streaks).toEqual([]);
-    expect(
-      LoyaltyCatalogSystem.streak(catalog, StreakDefinitionId.of('cadence')),
-    ).toBeNull();
-    expect(
-      LoyaltyCatalogSystem.streakInForce(
-        catalog,
-        StreakDefinitionId.of('cadence'),
-        localDate('2026-09-29'),
-      ),
-    ).toBeNull();
   });
 
-  it('hands the schedules back by id', () => {
+  it('hands the schedules back sorted by id, their rules intact', () => {
     const catalog = must(withRhythm());
     expect(catalog.streaks.map((s) => s.id)).toEqual(['cadence', 'comeback']);
-    const comeback = LoyaltyCatalogSystem.streak(
-      catalog,
-      StreakDefinitionId.of('comeback'),
-    );
+    const comeback = head(catalog, 'comeback');
     expect(
       comeback === null ? null : StreakRuleSystem.current(comeback).version,
     ).toBe(3);
-    expect(
-      LoyaltyCatalogSystem.streak(catalog, StreakDefinitionId.of('nope')),
-    ).toBeNull();
   });
 
   it.each([
@@ -432,25 +420,17 @@ describe('LoyaltyCatalogSystem, the rhythm', () => {
   ])(
     'resolves the rule in force by date: version $version on $today',
     ({ today, version, days }) => {
-      const catalog = must(withRhythm());
-      const inForce = LoyaltyCatalogSystem.streakInForce(
-        catalog,
-        StreakDefinitionId.of('cadence'),
-        localDate(today),
-      );
+      const cadence = head(must(withRhythm()), 'cadence');
+      const inForce =
+        cadence === null
+          ? null
+          : StreakRuleSystem.inForceOn(cadence, localDate(today));
       expect(inForce?.version).toBe(version);
       expect(
         inForce === null
           ? null
           : StreakIntervalRule.daysFor(inForce, null).days,
       ).toBe(days);
-      expect(
-        LoyaltyCatalogSystem.streakInForce(
-          catalog,
-          StreakDefinitionId.of('nope'),
-          localDate(today),
-        ),
-      ).toBeNull();
     },
   );
 
@@ -465,13 +445,11 @@ describe('LoyaltyCatalogSystem, the rhythm', () => {
         },
       ],
     };
-    const catalog = must({ ...parts(), streaks: [off] });
+    const cadence = head(must({ ...parts(), streaks: [off] }), 'cadence');
     expect(
-      LoyaltyCatalogSystem.streakInForce(
-        catalog,
-        StreakDefinitionId.of('cadence'),
-        localDate('2026-09-29'),
-      )?.enabled,
+      cadence === null
+        ? null
+        : StreakRuleSystem.inForceOn(cadence, localDate('2026-09-29')).enabled,
     ).toBe(false);
   });
 

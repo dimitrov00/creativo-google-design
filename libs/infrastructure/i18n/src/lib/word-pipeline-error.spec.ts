@@ -33,7 +33,7 @@ function catalogue(copy: Readonly<Record<string, string>>) {
   };
 }
 
-/** The real catalogue's `errors.<code>`, interpolated — `translateDomainError`'s contract. */
+/** The real catalogue's `errors.<code>`, interpolated — `translateCodedError`'s contract. */
 function errorsOf(errors: Readonly<Record<string, unknown>>) {
   return (code: string, params: Readonly<Record<string, unknown>>): string => {
     const template = Object.getOwnPropertyDescriptor(errors, code)?.value;

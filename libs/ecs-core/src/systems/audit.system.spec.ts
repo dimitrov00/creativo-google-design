@@ -13,7 +13,6 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
-  RequestedSubjectRole,
 } from '@core/components';
 import {
   DurationMinutes,
@@ -269,43 +268,6 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
     expect(
       AuditSystem.subjectsOfSeats(visit.seats, SeatId.of('missing')),
     ).toEqual([]);
-  });
-});
-
-describe('AuditSystem.requestedSubjects — the people on a requested cart', () => {
-  const self = {
-    requestedSubjectRole: RequestedSubjectRole.Self,
-    customerId: null,
-  };
-  const son = {
-    requestedSubjectRole: RequestedSubjectRole.Guest,
-    customerId: null,
-  };
-
-  it("binds every self seat to the owner's record and every guest to nobody", () => {
-    expect(AuditSystem.requestedSubjects([self, son], cus('maria'))).toEqual([
-      account('maria'),
-      guest,
-    ]);
-  });
-
-  it('names a carried companion by their own record', () => {
-    expect(
-      AuditSystem.requestedSubjects(
-        [
-          self,
-          {
-            requestedSubjectRole: RequestedSubjectRole.Companion,
-            customerId: cus('son'),
-          },
-        ],
-        cus('maria'),
-      ),
-    ).toEqual([account('maria'), account('son')]);
-  });
-
-  it('names nobody on an owner-less walk-in', () => {
-    expect(AuditSystem.requestedSubjects([self], null)).toEqual([guest]);
   });
 });
 

@@ -1,107 +1,42 @@
-# New Nx Repository
+# Creativo
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A barbershop booking app on Firebase: an Angular SPA, Cloud Functions and
+Firestore in one Nx workspace (pnpm). The code is pure ECS / data-oriented —
+plain data, pure systems, impure-pure-impure pipelines, zero-mapper Firestore.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## Read first
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/docs/technologies/typescript/introduction?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-🚀 If you haven't connected to Nx Cloud yet, [complete your setup here](https://cloud.nx.app/get-started). Get faster builds with remote caching, distributed task execution, and self-healing CI. [See how your workspace can benefit](#nx-cloud).
-## Generate a library
+- `CLAUDE.md` (mirrored byte for byte by `AGENTS.md`) — the repository
+  constitution, Laws 1–10, for people and agents alike. The path-scoped
+  templates per file kind are `.claude/rules/*.md`.
+- `docs/architecture/HANDOFF.md` — the ECS migration record: what landed,
+  the gate every change passes and its known baselines (§4), the open
+  questions for the owner (§6) and the work carried forward.
 
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+## Apps
+
+- `apps/web` — the Angular 22 SPA, served from Firebase Hosting.
+- `apps/functions` — Firebase Cloud Functions (gen 2, Node 22), the backend
+  composition root.
+- `apps/showcase` — the design-system workbench.
+
+The domain is `libs/ecs-core`, exported only through its `@core/*` tier
+barrels (Law 8); the design system is `libs/ui/*`, the screens
+`libs/features/*`, the SDK adapters `libs/infrastructure/*`.
+
+## Verify
+
+Always through Nx, never the raw tool (`CLAUDE.md` §5):
+
+```bash
+pnpm nx run-many -t typecheck
+pnpm nx run-many -t test
+pnpm nx run-many -t lint
+pnpm nx run verify-tools:layering   # Law 8 — never cached, not part of run-many
+pnpm nx build web
+pnpm nx build functions
 ```
 
-## Run tasks
-
-To build the library use:
-
-```sh
-npx nx run pkg1:build
-```
-
-To run any task with Nx use:
-
-```sh
-npx nx run <project-name>:<target>
-```
-
-These targets are either [inferred automatically](https://nx.dev/docs/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/docs/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Versioning and releasing
-
-To version and release the library use
-
-```
-npx nx release
-```
-
-Pass `--dry-run` to see what would happen without actually releasing the library.
-
-[Learn more about Nx release &raquo;](https://nx.dev/docs/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Keep TypeScript project references up to date
-
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
-
-```sh
-npx nx sync
-```
-
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
-
-```sh
-npx nx sync:check
-```
-
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
-
-## Nx Cloud
-
-Nx Cloud ensures a [fast and scalable CI](https://nx.dev/nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
-
-- [Remote caching](https://nx.dev/docs/features/ci-features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/docs/features/ci-features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/docs/features/ci-features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/docs/features/ci-features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Set up CI (non-Github Actions CI)
-
-**Note:** This is only required if your CI provider is not GitHub Actions.
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
-```
-
-[Learn more about Nx on CI](https://nx.dev/docs/features/ci-features?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/docs/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## 🔗 Learn More
-
-- [Nx Documentation](https://nx.dev/docs)
-- [Crafting Your Workspace Tutorial](https://nx.dev/docs/getting-started/tutorials/crafting-your-workspace)
-- [Module Boundaries](https://nx.dev/docs/features/enforce-module-boundaries)
-- [Releasing Packages](https://nx.dev/docs/features/manage-releases)
-- [Nx Plugins](https://nx.dev/docs/concepts/nx-plugins)
-- [Nx Cloud](https://nx.dev/nx-cloud)
-
-## 💬 Community
-
-Join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [X (Twitter)](https://twitter.com/nxdevtools)
-- [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [YouTube](https://www.youtube.com/@nxdevtools)
-- [Blog](https://nx.dev/blog)
+`typecheck` is plain `tsc` and does not see Angular templates — a template
+error only surfaces in `pnpm nx build web`. The full gate, the emulator
+journeys included, is `docs/architecture/HANDOFF.md` §4.

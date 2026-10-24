@@ -39,7 +39,7 @@ import {
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import {
   UiAsyncImage,
@@ -199,7 +199,7 @@ export class BookingReviewStep {
   private readonly shopZones = inject(ShopZoneService);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   /** The booker has an account. Until then Confirm asks them to sign in. */

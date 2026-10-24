@@ -13,6 +13,7 @@
  * Plain values in, a plain `{ path, data }` out; nothing here touches
  * Firebase.
  */
+import { Weekday } from '@core/primitives';
 import { waitlistRequestBody } from './fixtures/waitlist.fixtures.ts';
 
 /** `Collections.WaitlistRequests` of `@core/entities` (the spec holds them equal). */
@@ -34,7 +35,7 @@ const AFTERNOON = Object.freeze([14 * 60, 17 * 60]);
  */
 export function waitlistRequestWriteOf({ appointments, calendar }) {
   const { id, ownerUserId } = SEEDED_WAITLIST_REQUEST;
-  const createdAtUtcMs = calendar.msAt(-1, 21, 10);
+  const createdAtUtcMs = calendar.msAt(-1, 21 * 60 + 10);
   const lastBookedMs = Math.max(
     ...appointments
       .filter(
@@ -48,7 +49,7 @@ export function waitlistRequestWriteOf({ appointments, calendar }) {
     throw new Error(`seed: ${ownerUserId} booked after his waitlist request`);
   }
   const nextMonday = [1, 2, 3, 4, 5, 6, 7].find(
-    (offset) => calendar.weekdayAt(offset) === 1,
+    (offset) => calendar.weekdayAt(offset) === Weekday.Mon,
   );
   return {
     path: `${WAITLIST_REQUESTS_COLLECTION}/${id}`,

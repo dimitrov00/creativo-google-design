@@ -42,9 +42,8 @@ const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
  * Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED,
  * never moved, while it still ran against the projector's shim. Every case body
  * is the legacy one; only this header changed, so the subject is
- * `StreakSystem.trace`. A version of the rule is the plain `StreakRule` struct
- * now (the legacy `StreakDefinition` class and its props were the same
- * figures), the facts are written as the legacy spec wrote them and made strict
+ * `StreakSystem.trace`. A version of the rule is the plain `StreakRule`
+ * struct, the facts are written as the legacy spec wrote them and made strict
  * by `strict` (absent is `null`), and an instant is epoch ms (`lastQualifiedAt:
  * Date` → `lastQualifiedAtUtcMs`). After the copy: the purity case of the
  * system contract, and the cases of the two presenter functions the system took
@@ -63,10 +62,6 @@ const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 const STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
 const STREAK_PERIODS_KEPT = StreakState.PERIODS_KEPT;
-
-/** The legacy spec's names: a version of the rule, and its props, are one struct now. */
-type StreakDefinition = StreakRule;
-type StreakDefinitionProps = StreakRule;
 
 /** The facts as the legacy spec writes them: days as text, the instant and the visit's id left out where nobody has one. */
 type StreakFacts = {
@@ -148,7 +143,7 @@ function strict(facts: StreakFacts): SystemFacts {
 
 /** The legacy `traceStreak`, re-targeted. */
 function traceStreak(
-  definition: StreakDefinition,
+  definition: StreakRule,
   facts: StreakFacts,
   today: string,
 ): StreakTrace {
@@ -162,7 +157,7 @@ function traceStreak(
 
 /** The legacy `projectStreak`, re-targeted. */
 function projectStreak(
-  definition: StreakDefinition,
+  definition: StreakRule,
   facts: StreakFacts,
   today: string,
 ): StreakState | null {
@@ -216,7 +211,7 @@ const TODAY = '2026-09-28';
 const day = (offset: number): string => addDays(TODAY, offset);
 
 /** The recommended rule with `patch` over it: a part in the patch replaces the whole part. */
-function rule(patch: Partial<StreakDefinitionProps> = {}): StreakDefinition {
+function rule(patch: Partial<StreakRule> = {}): StreakRule {
   const result = StreakRule.parse({
     ...StreakRule.DEFAULT,
     ...patch,
@@ -259,7 +254,7 @@ const soonAfter = (offsets: readonly number[]): string =>
   day(Math.max(...offsets) + 5);
 
 function stateOf(
-  definition: StreakDefinition,
+  definition: StreakRule,
   patch: Partial<StreakFacts>,
   today = TODAY,
 ) {
@@ -1661,10 +1656,7 @@ const START = '2024-01-08';
 interface Loosening {
   readonly name: string;
   /** The looser rule, or `null` where this rule has no room to loosen. */
-  readonly of: (
-    props: StreakDefinitionProps,
-    by: number,
-  ) => StreakDefinitionProps | null;
+  readonly of: (props: StreakRule, by: number) => StreakRule | null;
   /**
    * It moves the HABIT under a personal interval, so there it bounds
    * nothing: a fix-up that counts is a short gap, a short gap is a
@@ -1677,7 +1669,7 @@ interface Loosening {
 const between = (min: number, max: number, by: number): number =>
   min + Math.floor(by * (max - min + 1));
 
-const shortestOf = (p: StreakDefinitionProps): number =>
+const shortestOf = (p: StreakRule): number =>
   p.streakInterval === 'FIXED' ? p.intervalDays : p.intervalMinDays;
 
 /** The clock: what decides whether a period was kept. */
@@ -1859,7 +1851,7 @@ const CUSHION: readonly Loosening[] = [
 ];
 
 /** Any rule the editor can publish. */
-const anyRule: fc.Arbitrary<StreakDefinitionProps> = fc
+const anyRule: fc.Arbitrary<StreakRule> = fc
   .record({
     personal: fc.boolean(),
     floor: fc.integer({ min: 14, max: 60 }),
@@ -1892,7 +1884,7 @@ const anyRule: fc.Arbitrary<StreakDefinitionProps> = fc
     }),
     onBreak: fc.constantFrom('RESTART' as const, 'HOLD' as const),
   })
-  .map((drawn): StreakDefinitionProps => {
+  .map((drawn): StreakRule => {
     // The draw is the one it always was (same record, same seeds); only
     // the rule it makes is flat.
     const interval: StreakIntervalRule = drawn.personal
@@ -1931,7 +1923,7 @@ const anyRule: fc.Arbitrary<StreakDefinitionProps> = fc
   });
 
 /** The clock alone: no reserve and no earn-back, so a miss is a miss. */
-const plainClock = anyRule.map((props): StreakDefinitionProps => ({
+const plainClock = anyRule.map((props): StreakRule => ({
   ...props,
   protectionsEnabled: false,
   repairEnabled: false,
@@ -2056,7 +2048,7 @@ const anyFacts: fc.Arbitrary<{
 
 const by = fc.double({ min: 0, max: 0.999, noNaN: true });
 
-function made(props: StreakDefinitionProps): StreakDefinition {
+function made(props: StreakRule): StreakRule {
   const result = StreakRule.parse(props);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.value;

@@ -9,7 +9,6 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
-  RequestedSubjectRole,
 } from '@core/components';
 import {
   Result,
@@ -95,17 +94,6 @@ export type AuditRow = Omit<AuditEntryMeta, 'id'> &
 export type AuditRowPlan = {
   readonly row: AuditRow;
   readonly idBasis: string | null;
-};
-
-/**
- * A requested seat's subject, every field present (`customerId` only for a
- * companion — the client record the pipeline resolved for the companion's
- * account, D29) — who a seat of the cart a commit or a move decides is for
- * (`decide-booking.ts` `RequestedSeat['subject']`).
- */
-export type AuditRequestedSubject = {
-  readonly requestedSubjectRole: RequestedSubjectRole;
-  readonly customerId: CustomerId | null;
 };
 
 /**
@@ -323,36 +311,6 @@ export const AuditSystem = {
   /** Every person on a stored visit — {@link subjectsOfSeats} over all of its seats. */
   subjectsOf(appointment: Pick<Appointment, 'seats'>): readonly AuditSubject[] {
     return AuditSystem.subjectsOfSeats(appointment.seats, null);
-  },
-
-  /**
-   * The people on a REQUESTED cart: every `SELF` seat binds to the owner's
-   * client record, a carried companion keeps their own record, every guest
-   * is anonymous — and a `SELF` seat on an owner-less walk-in names nobody.
-   */
-  requestedSubjects(
-    subjects: readonly AuditRequestedSubject[],
-    ownerCustomerId: CustomerId | null,
-  ): readonly AuditSubject[] {
-    const out: AuditSubject[] = [];
-    for (let i = 0; i < subjects.length; i++) {
-      const subject = subjects[i] as AuditRequestedSubject;
-      if (
-        subject.requestedSubjectRole === RequestedSubjectRole.Companion &&
-        subject.customerId !== null
-      ) {
-        out.push(account(subject.customerId));
-      } else if (
-        subject.requestedSubjectRole === RequestedSubjectRole.Self &&
-        ownerCustomerId !== null &&
-        ownerCustomerId.length > 0
-      ) {
-        out.push(account(ownerCustomerId));
-      } else {
-        out.push(ANONYMOUS);
-      }
-    }
-    return out;
   },
 
   /**

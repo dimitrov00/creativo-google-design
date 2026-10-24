@@ -70,7 +70,7 @@ export interface ClientCardCatalog {
   /** The shop names a location in a fact line only when it has more than one. */
   readonly locationCount: number;
   /**
-   * Owner art for a medal family (`BadgeSeries.art.path`, a Storage path)
+   * Owner art for a medal family (`BadgeSeries.artPath`, a Storage path)
    * as a URL the page can draw, resolved by the dashboard's media reader —
    * the card holds no storage reader of its own. Optional: without it (or
    * with `null`), a family draws its subject's art, its monogram or its

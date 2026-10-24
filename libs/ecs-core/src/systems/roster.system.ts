@@ -1,7 +1,6 @@
 import {
   ExceptionEffect,
   type Weekday,
-  type MinuteCount,
   type BarberId,
   type LocationId,
   LocalDate,
@@ -387,15 +386,5 @@ export const RosterSystem = {
       if (window.locationId === locationId) at.push(window);
     }
     return at;
-  },
-
-  /**
-   * Total rostered minutes on the shop's wall clock — the raw figure
-   * `scheduledMinutes` starts from; overlaps never count twice. A
-   * `RosterWindow` is a `MinuteRange` structurally, so the windows pass as
-   * they are.
-   */
-  rosteredMinutes(windows: readonly RosterWindow[]): MinuteCount {
-    return IntervalSetSystem.totalMinutes(windows);
   },
 } as const;

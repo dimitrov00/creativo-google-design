@@ -26,7 +26,7 @@ import type { Service } from '@core/entities';
 import { Selectability, ServiceConflictSystem } from '@core/systems';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
   ServiceCardComponent,
   ServiceDetailSheetComponent,
   type ServiceVm,
@@ -53,7 +53,7 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { BookingBagSheet } from '../bag-sheet/booking-bag-sheet';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
@@ -141,7 +141,7 @@ export class BookingServicesStep {
   private readonly injector = inject(Injector);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   /** The seat role the template asks about — the booker has no second meaning. */
@@ -498,7 +498,7 @@ export class BookingServicesStep {
     // every blur would be one nobody could leave.
     const error = this.store.error();
     this.renameRefusal.set(
-      error ? translateDomainError(this.transloco, error) : null,
+      error ? translateCodedError(this.transloco, error) : null,
     );
   }
 

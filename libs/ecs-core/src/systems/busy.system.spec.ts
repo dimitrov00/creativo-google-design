@@ -261,13 +261,29 @@ describe('BusySystem.mergeBusy and the stored blocks', () => {
   });
 });
 
-describe('BusySystem.plan — a rebuild, not a subtraction', () => {
+/**
+ * What the rebuild pipeline writes for one appointment write: `rebuild` of
+ * every busy document either side touches (`affectedKeys`), from `live`.
+ */
+function rebuildPlan(
+  before: Appointment | null,
+  after: Appointment | null,
+  live: readonly Appointment[],
+): readonly WriteOp[] {
+  const writes: WriteOp[] = [];
+  for (const busyKey of BusySystem.affectedKeys(before, after)) {
+    const write = BusySystem.rebuild(busyKey, live, dayStart);
+    if (write !== null) writes.push(write);
+  }
+  return writes;
+}
+
+describe('BusySystem.rebuild over the affected keys — a rebuild, not a subtraction', () => {
   const morning = visit('a', [seat('s1', IVAN, at(10))]);
   const noon = visit('b', [seat('s2', IVAN, at(10, 30))]);
 
   it('recomputes the document from every live visit on it', () => {
-    const plan = BusySystem.plan(null, morning, [morning, noon], dayStart);
-    expect(plan).toEqual([
+    expect(rebuildPlan(null, morning, [morning, noon])).toEqual([
       WriteOp.set(['barberBusy', key(IVAN, '2026-06-01')], {
         barberId: IVAN,
         localDate: '2026-06-01',
@@ -279,13 +295,7 @@ describe('BusySystem.plan — a rebuild, not a subtraction', () => {
 
   it('frees a cancelled visit’s slot — the event the waitlist listens for', () => {
     const cancelled = visit('a', morning.seats, { lifecycle: cancelledAt8 });
-    const plan = BusySystem.plan(
-      morning,
-      cancelled,
-      [cancelled, noon],
-      dayStart,
-    );
-    expect(plan).toEqual([
+    expect(rebuildPlan(morning, cancelled, [cancelled, noon])).toEqual([
       WriteOp.set(['barberBusy', key(IVAN, '2026-06-01')], {
         barberId: IVAN,
         localDate: '2026-06-01',
@@ -297,7 +307,7 @@ describe('BusySystem.plan — a rebuild, not a subtraction', () => {
 
   it('deletes a document nothing live occupies, rather than writing it empty', () => {
     const cancelled = visit('a', morning.seats, { lifecycle: cancelledAt8 });
-    const plan = BusySystem.plan(morning, cancelled, [cancelled], dayStart);
+    const plan = rebuildPlan(morning, cancelled, [cancelled]);
     expect(plan).toEqual([
       WriteOp.remove(['barberBusy', key(IVAN, '2026-06-01')]),
     ]);
@@ -310,7 +320,7 @@ describe('BusySystem.plan — a rebuild, not a subtraction', () => {
     const moved = visit('a', [seat('s1', IVAN, at(10))], {
       localDate: JUNE_2,
     });
-    const plan = BusySystem.plan(morning, moved, [moved], dayStart);
+    const plan = rebuildPlan(morning, moved, [moved]);
     expect(plan.map((op) => [op.writeAction, op.path[1]])).toEqual([
       [WriteAction.Delete, key(IVAN, '2026-06-01')],
       [WriteAction.Set, key(IVAN, '2026-06-02')],
@@ -333,8 +343,8 @@ describe('BusySystem.plan — a rebuild, not a subtraction', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const before = deepFreeze(morning);
     const live = deepFreeze([morning, noon]);
-    const once = BusySystem.plan(before, before, live, dayStart);
-    expect(BusySystem.plan(before, before, live, dayStart)).toEqual(once);
+    const once = rebuildPlan(before, before, live);
+    expect(rebuildPlan(before, before, live)).toEqual(once);
     expect(before).toEqual(morning);
     expect(live).toEqual([morning, noon]);
   });

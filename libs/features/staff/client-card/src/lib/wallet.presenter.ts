@@ -874,6 +874,11 @@ export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
 
 // ── WE · The status ─────────────────────────────────────────────────────
 
+/**
+ * WE — «Статус»: what remains in a ring, the tiers as steps; `null` while
+ * the catalogue names no tier the account stands on (the section is then
+ * absent, as it is with `loyalty.tiers` off — `walletVm`).
+ */
 function tierOf(
   input: WalletInput,
   catalog: ValidLoyaltyCatalog,
@@ -954,15 +959,6 @@ function tierOf(
   };
 }
 
-/**
- * WE — «Статус»: what remains in a ring, the tiers as steps; `null` with
- * `loyalty.tiers` off and until the catalogue names its tiers.
- */
-export function walletTierVm(input: WalletInput): WalletTierVm | null {
-  const catalog = catalogOf(input);
-  return !input.flags.tiers || catalog === null ? null : tierOf(input, catalog);
-}
-
 // ── WF · What the points buy ────────────────────────────────────────────
 
 /**
@@ -1012,14 +1008,6 @@ function tilesOf(
       ),
     };
   });
-}
-
-/** WF — the reward tiles; empty with `loyalty.points` off and until the catalogue is read. */
-export function rewardTiles(input: WalletInput): readonly RewardTileVm[] {
-  const catalog = catalogOf(input);
-  return !input.flags.points || catalog === null
-    ? []
-    : tilesOf(input, rewardTilesOf(input, catalog));
 }
 
 function rewardGrid(

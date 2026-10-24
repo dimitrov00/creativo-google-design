@@ -47,6 +47,7 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
+  PriceCents,
   SeatId,
   ServiceId,
   UserId as CoreUserId,
@@ -308,6 +309,9 @@ function provideTestI18n(): EnvironmentProviders[] {
   });
 }
 
+/** A tip literal in cents. */
+const cents = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
+
 /** One 10:00–10:45 visit in Иван's chair: a 30-minute cut and a 15-minute beard. */
 function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
   return {
@@ -381,7 +385,7 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     // Nothing recorded — NOT zero, which is why the sheet offers an add-row
     // rather than a field reading `0,00 €`.
     tipLabel: null,
-    tipMinorUnits: null,
+    tipCents: null,
     // Full price, nothing paid ahead — the bill's ladder holds only the seats.
     discounts: [],
     vouchers: [],
@@ -1805,10 +1809,10 @@ describe('StaffVisitEditor', () => {
           note: null,
           discounts: [],
           vouchers: [],
-          tipMinorUnits: null,
+          tipCents: null,
           // What the note and the tip were drawn from — what the owner
           // measures their writes against (round 5).
-          drawn: { note: null, tipMinorUnits: null },
+          drawn: { note: null, tipCents: null },
           clients: [
             {
               id: 'user-martin',
@@ -2186,7 +2190,7 @@ describe('StaffVisitEditor', () => {
       const commits: unknown[] = [];
       fixture.componentInstance.committed.subscribe((c) => commits.push(c));
       click(host, 'staff-visit-save');
-      expect(commits[0]).toMatchObject({ tipMinorUnits: 200 });
+      expect(commits[0]).toMatchObject({ tipCents: 200 });
 
       // «Друга сума» is a NEW choice: the preset is let go, the entry opens
       // on its muted zero, and the plus waits for a sum.
@@ -2257,7 +2261,7 @@ describe('StaffVisitEditor', () => {
     it('reads a recorded tip back as its amount, and draws the round-ups a hand actually holds', () => {
       // 3,50 € on 28,00 €: the amount on the row, and no preset says it, so
       // «Друга сума» is the tile that is on, its field beneath holding the sum.
-      let host = render(visit({ tipLabel: '3,50 €', tipMinorUnits: 350 }));
+      let host = render(visit({ tipLabel: '3,50 €', tipCents: cents(350) }));
       expect(text(host, 'staff-visit-tip-value')).toBe('3,50 €');
       expect(text(host, 'staff-visit-dock-tip')).toBe('+3,50 € бакшиш');
       expect(host.hasAttribute('data-dirty')).toBe(false);
@@ -2387,7 +2391,7 @@ describe('StaffVisitEditor', () => {
 
       fixture.componentRef.setInput(
         'vm',
-        visit({ tipLabel: '3,00 €', tipMinorUnits: 300 }),
+        visit({ tipLabel: '3,00 €', tipCents: cents(300) }),
       );
       fixture.detectChanges();
       // Shown as it is stored, and nothing for «Запази» to do about it.
@@ -2399,8 +2403,8 @@ describe('StaffVisitEditor', () => {
       find(host, 'staff-visit-save')?.click();
       fixture.detectChanges();
       expect(commits[0]).toMatchObject({
-        tipMinorUnits: 300,
-        drawn: { tipMinorUnits: 300 },
+        tipCents: 300,
+        drawn: { tipCents: 300 },
       });
     });
 
@@ -2413,7 +2417,7 @@ describe('StaffVisitEditor', () => {
 
       fixture.componentRef.setInput(
         'vm',
-        visit({ tipLabel: '3,00 €', tipMinorUnits: 300 }),
+        visit({ tipLabel: '3,00 €', tipCents: cents(300) }),
       );
       fixture.detectChanges();
       expect(text(host, 'staff-visit-tip-value')).toBe('2,00 €');
@@ -2423,8 +2427,8 @@ describe('StaffVisitEditor', () => {
       // The owner sees the barber's 2,00 € drawn over «none» — and so that
       // the stored 3,00 € is a colleague's it never showed.
       expect(commits[0]).toMatchObject({
-        tipMinorUnits: 200,
-        drawn: { tipMinorUnits: null },
+        tipCents: 200,
+        drawn: { tipCents: null },
       });
     });
 
@@ -2463,7 +2467,7 @@ describe('StaffVisitEditor', () => {
           appointmentId: 'appointment-2',
           rowId: 'appointment-2#ivan',
           tipLabel: '5,00 €',
-          tipMinorUnits: 500,
+          tipCents: cents(500),
         }),
       );
       expect(text(host, 'staff-visit-tip-value')).toBe('5,00 €');
@@ -4755,7 +4759,7 @@ describe('StaffVisitEditor', () => {
           },
         ],
         vouchers: [],
-        tipMinorUnits: null,
+        tipCents: null,
       });
 
       // «Премахни» on the card takes it off — the offer is on offer again

@@ -99,14 +99,6 @@ export function streakFactsReader(
   };
 }
 
-/** One client's statistics as the projector's facts (`streakFactsReader`, for one). */
-export function streakFactsOf(
-  record: ClientStatsRecord,
-  zone: TimeZone,
-): StreakFacts {
-  return streakFactsReader(zone)(record);
-}
-
 /**
  * The walk: `clientStats` in the order of its ids (client records, D29), a
  * page after a page, until nobody is left or the fifth page is read. A page

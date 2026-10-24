@@ -1,6 +1,5 @@
 import type { CatalogError } from './catalog.error';
 import {
-  type AwardKind,
   type BadgeCategoryId,
   type BadgeSeriesId,
   type CourseId,
@@ -100,12 +99,8 @@ export const EngagementErrorCode = {
   IdEmpty: 'ENGAGEMENT_ID_EMPTY',
 
   // ── Coupons ───────────────────────────────────────────────────────────
-  CouponNameEmpty: 'ENGAGEMENT_COUPON_EMPTY_NAME',
   /** `CouponExpiry.days`: not a positive whole number of days. */
   CouponExpiryDaysInvalid: 'ENGAGEMENT_COUPON_INVALID_EXPIRY_DAYS',
-  CouponUsageLimitInvalid: 'ENGAGEMENT_COUPON_INVALID_USAGE_LIMIT',
-  /** A stored occasion outside the `CouponOccasion` dictionary. */
-  CouponOccasionUnknown: 'ENGAGEMENT_COUPON_OCCASION_UNKNOWN',
   /** `percent_off` outside 0–100. */
   CouponValuePercentageInvalid: 'ENGAGEMENT_COUPON_VALUE_INVALID_PERCENTAGE',
   /** `fixed_amount` of zero or less — the legacy string is kept. */
@@ -114,8 +109,6 @@ export const EngagementErrorCode = {
   CouponGrantNotActive: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
   CouponGrantNotExpiring: 'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
   CouponGrantReasonEmpty: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
-  /** A discount cap outside 0–100 percent. */
-  DiscountCapInvalid: 'ENGAGEMENT_DISCOUNT_APPLICATION_INVALID_CAP',
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
   VoucherCodeInvalid: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
@@ -132,7 +125,6 @@ export const EngagementErrorCode = {
   PointsInsufficient: 'ENGAGEMENT_POINTS_INSUFFICIENT',
 
   // ── Invitations ───────────────────────────────────────────────────────
-  InvitationInviterNameEmpty: 'ENGAGEMENT_INVITATION_EMPTY_INVITER_NAME',
   InvitationRedemptionCountInvalid:
     'ENGAGEMENT_INVITATION_INVALID_REDEMPTION_COUNT',
   InvitationSelfRedemption: 'ENGAGEMENT_INVITATION_SELF_REDEMPTION',
@@ -145,21 +137,6 @@ export const EngagementErrorCode = {
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
   BadgeCategoryOrderNegative: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
-  BadgeSeriesNoLevels: 'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
-  BadgeSeriesLevelGap: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP',
-  BadgeSeriesTargetsNotRising: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
-  BadgeSeriesHomeless: 'ENGAGEMENT_BADGE_SERIES_HOMELESS',
-  BadgeSeriesOneOffWithSeveralLevels:
-    'ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS',
-  BadgeSeriesRepeatableWithSeveralLevels:
-    'ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS',
-  BadgeSeriesLevelWithoutRule: 'ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE',
-  BadgeSeriesAwardNotPositive: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
-  SeasonWindowMalformed: 'ENGAGEMENT_SEASON_WINDOW_MALFORMED',
-  SeasonWindowInverted: 'ENGAGEMENT_SEASON_WINDOW_INVERTED',
-  SeasonEventWithTrack: 'ENGAGEMENT_SEASON_EVENT_WITH_TRACK',
-  SeasonWithoutTrack: 'ENGAGEMENT_SEASON_WITHOUT_TRACK',
-  SeasonAnnouncedLate: 'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
   LoyaltyCatalogDanglingCategory:
     'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_CATEGORY',
   LoyaltyCatalogDanglingSeason: 'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_SEASON',
@@ -237,23 +214,15 @@ export const EngagementErrorCode = {
 export type EngagementErrorCode =
   (typeof EngagementErrorCode)[keyof typeof EngagementErrorCode];
 
-/** Every engagement code, dictionary order — derived, never a second source. */
-export const ENGAGEMENT_ERROR_CODES: readonly EngagementErrorCode[] =
-  Object.values(EngagementErrorCode);
-
 export type EngagementError =
   | EngagementError.IdEmpty
-  | EngagementError.CouponNameEmpty
   | EngagementError.CouponExpiryDaysInvalid
-  | EngagementError.CouponUsageLimitInvalid
-  | EngagementError.CouponOccasionUnknown
   | EngagementError.CouponValuePercentageInvalid
   | EngagementError.CouponValueAmountNotPositive
   | EngagementError.CouponGrantCapacityInvalid
   | EngagementError.CouponGrantNotActive
   | EngagementError.CouponGrantNotExpiring
   | EngagementError.CouponGrantReasonEmpty
-  | EngagementError.DiscountCapInvalid
   | EngagementError.VoucherCodeInvalid
   | EngagementError.GiftVoucherValueInvalid
   | EngagementError.GiftVoucherNotRedeemable
@@ -262,26 +231,12 @@ export type EngagementError =
   | EngagementError.GiftVoucherCurrencyMismatch
   | EngagementError.PointsInvalid
   | EngagementError.PointsInsufficient
-  | EngagementError.InvitationInviterNameEmpty
   | EngagementError.InvitationRedemptionCountInvalid
   | EngagementError.InvitationSelfRedemption
   | EngagementError.InvitationNotFound
   | EngagementError.InvitationAlreadyRedeemed
   | EngagementError.InvitationUnauthenticated
   | EngagementError.BadgeCategoryOrderNegative
-  | EngagementError.BadgeSeriesNoLevels
-  | EngagementError.BadgeSeriesLevelGap
-  | EngagementError.BadgeSeriesTargetsNotRising
-  | EngagementError.BadgeSeriesHomeless
-  | EngagementError.BadgeSeriesOneOffWithSeveralLevels
-  | EngagementError.BadgeSeriesRepeatableWithSeveralLevels
-  | EngagementError.BadgeSeriesLevelWithoutRule
-  | EngagementError.BadgeSeriesAwardNotPositive
-  | EngagementError.SeasonWindowMalformed
-  | EngagementError.SeasonWindowInverted
-  | EngagementError.SeasonEventWithTrack
-  | EngagementError.SeasonWithoutTrack
-  | EngagementError.SeasonAnnouncedLate
   | EngagementError.LoyaltyCatalogDanglingCategory
   | EngagementError.LoyaltyCatalogDanglingSeason
   | EngagementError.LoyaltyCatalogDuplicateId
@@ -345,31 +300,12 @@ export const EngagementError = {
   },
 
   // ── Coupons ───────────────────────────────────────────────────────────
-  couponNameEmpty(): EngagementError.CouponNameEmpty {
-    return { errorCode: EngagementErrorCode.CouponNameEmpty };
-  },
   couponExpiryDaysInvalid(
     attempted: number,
   ): EngagementError.CouponExpiryDaysInvalid {
     return {
       errorCode: EngagementErrorCode.CouponExpiryDaysInvalid,
       attempted,
-    };
-  },
-  couponUsageLimitInvalid(
-    attempted: number,
-  ): EngagementError.CouponUsageLimitInvalid {
-    return {
-      errorCode: EngagementErrorCode.CouponUsageLimitInvalid,
-      attempted,
-    };
-  },
-  couponOccasionUnknown(
-    attempted: unknown,
-  ): EngagementError.CouponOccasionUnknown {
-    return {
-      errorCode: EngagementErrorCode.CouponOccasionUnknown,
-      attempted: scalarOf(attempted),
     };
   },
   couponValuePercentageInvalid(
@@ -409,9 +345,6 @@ export const EngagementError = {
   },
   couponGrantReasonEmpty(): EngagementError.CouponGrantReasonEmpty {
     return { errorCode: EngagementErrorCode.CouponGrantReasonEmpty };
-  },
-  discountCapInvalid(attempted: number): EngagementError.DiscountCapInvalid {
-    return { errorCode: EngagementErrorCode.DiscountCapInvalid, attempted };
   },
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
@@ -466,9 +399,6 @@ export const EngagementError = {
   },
 
   // ── Invitations ───────────────────────────────────────────────────────
-  invitationInviterNameEmpty(): EngagementError.InvitationInviterNameEmpty {
-    return { errorCode: EngagementErrorCode.InvitationInviterNameEmpty };
-  },
   invitationRedemptionCountInvalid(
     attempted: number,
   ): EngagementError.InvitationRedemptionCountInvalid {
@@ -504,90 +434,6 @@ export const EngagementError = {
     return {
       errorCode: EngagementErrorCode.BadgeCategoryOrderNegative,
       rawValue,
-    };
-  },
-  badgeSeriesNoLevels(): EngagementError.BadgeSeriesNoLevels {
-    return { errorCode: EngagementErrorCode.BadgeSeriesNoLevels };
-  },
-  badgeSeriesLevelGap(
-    levels: readonly number[],
-  ): EngagementError.BadgeSeriesLevelGap {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesLevelGap,
-      levels: listOf(levels),
-    };
-  },
-  badgeSeriesTargetsNotRising(
-    targets: readonly number[],
-  ): EngagementError.BadgeSeriesTargetsNotRising {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesTargetsNotRising,
-      targets: listOf(targets),
-    };
-  },
-  badgeSeriesHomeless(): EngagementError.BadgeSeriesHomeless {
-    return { errorCode: EngagementErrorCode.BadgeSeriesHomeless };
-  },
-  badgeSeriesOneOffWithSeveralLevels(): EngagementError.BadgeSeriesOneOffWithSeveralLevels {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels,
-    };
-  },
-  badgeSeriesRepeatableWithSeveralLevels(): EngagementError.BadgeSeriesRepeatableWithSeveralLevels {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels,
-    };
-  },
-  badgeSeriesLevelWithoutRule(
-    level: number,
-  ): EngagementError.BadgeSeriesLevelWithoutRule {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesLevelWithoutRule,
-      level,
-    };
-  },
-  badgeSeriesAwardNotPositive(
-    level: number,
-    awardKind: AwardKind,
-  ): EngagementError.BadgeSeriesAwardNotPositive {
-    return {
-      errorCode: EngagementErrorCode.BadgeSeriesAwardNotPositive,
-      level,
-      awardKind,
-    };
-  },
-  seasonWindowMalformed(
-    from: string,
-    until: string,
-  ): EngagementError.SeasonWindowMalformed {
-    return {
-      errorCode: EngagementErrorCode.SeasonWindowMalformed,
-      from,
-      until,
-    };
-  },
-  seasonWindowInverted(
-    from: LocalDate,
-    until: LocalDate,
-  ): EngagementError.SeasonWindowInverted {
-    return { errorCode: EngagementErrorCode.SeasonWindowInverted, from, until };
-  },
-  seasonEventWithTrack(): EngagementError.SeasonEventWithTrack {
-    return { errorCode: EngagementErrorCode.SeasonEventWithTrack };
-  },
-  seasonWithoutTrack(): EngagementError.SeasonWithoutTrack {
-    return { errorCode: EngagementErrorCode.SeasonWithoutTrack };
-  },
-  seasonAnnouncedLate(
-    announcedOn: LocalDate,
-    from: LocalDate,
-    noticeDays: number,
-  ): EngagementError.SeasonAnnouncedLate {
-    return {
-      errorCode: EngagementErrorCode.SeasonAnnouncedLate,
-      announcedOn,
-      from,
-      noticeDays,
     };
   },
   loyaltyCatalogDanglingCategory(
@@ -814,20 +660,9 @@ export namespace EngagementError {
     readonly idType: string;
   };
 
-  export type CouponNameEmpty = Bare<
-    typeof EngagementErrorCode.CouponNameEmpty
-  >;
   export type CouponExpiryDaysInvalid = {
     readonly errorCode: typeof EngagementErrorCode.CouponExpiryDaysInvalid;
     readonly attempted: number;
-  };
-  export type CouponUsageLimitInvalid = {
-    readonly errorCode: typeof EngagementErrorCode.CouponUsageLimitInvalid;
-    readonly attempted: number;
-  };
-  export type CouponOccasionUnknown = {
-    readonly errorCode: typeof EngagementErrorCode.CouponOccasionUnknown;
-    readonly attempted: Scalar;
   };
   export type CouponValuePercentageInvalid = {
     readonly errorCode: typeof EngagementErrorCode.CouponValuePercentageInvalid;
@@ -851,10 +686,6 @@ export namespace EngagementError {
   export type CouponGrantReasonEmpty = Bare<
     typeof EngagementErrorCode.CouponGrantReasonEmpty
   >;
-  export type DiscountCapInvalid = {
-    readonly errorCode: typeof EngagementErrorCode.DiscountCapInvalid;
-    readonly attempted: number;
-  };
 
   export type VoucherCodeInvalid = {
     readonly errorCode: typeof EngagementErrorCode.VoucherCodeInvalid;
@@ -892,9 +723,6 @@ export namespace EngagementError {
     readonly balance: number;
   };
 
-  export type InvitationInviterNameEmpty = Bare<
-    typeof EngagementErrorCode.InvitationInviterNameEmpty
-  >;
   export type InvitationRedemptionCountInvalid = {
     readonly errorCode: typeof EngagementErrorCode.InvitationRedemptionCountInvalid;
     readonly attempted: number;
@@ -906,59 +734,6 @@ export namespace EngagementError {
   export type BadgeCategoryOrderNegative = {
     readonly errorCode: typeof EngagementErrorCode.BadgeCategoryOrderNegative;
     readonly rawValue: number;
-  };
-  export type BadgeSeriesNoLevels = Bare<
-    typeof EngagementErrorCode.BadgeSeriesNoLevels
-  >;
-  export type BadgeSeriesLevelGap = {
-    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesLevelGap;
-    /** The levels as written, comma-separated. */
-    readonly levels: string;
-  };
-  export type BadgeSeriesTargetsNotRising = {
-    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesTargetsNotRising;
-    /** The targets as written, comma-separated. */
-    readonly targets: string;
-  };
-  export type BadgeSeriesHomeless = Bare<
-    typeof EngagementErrorCode.BadgeSeriesHomeless
-  >;
-  export type BadgeSeriesOneOffWithSeveralLevels = Bare<
-    typeof EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels
-  >;
-  export type BadgeSeriesRepeatableWithSeveralLevels = Bare<
-    typeof EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels
-  >;
-  export type BadgeSeriesLevelWithoutRule = {
-    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesLevelWithoutRule;
-    readonly level: number;
-  };
-  export type BadgeSeriesAwardNotPositive = {
-    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesAwardNotPositive;
-    readonly level: number;
-    readonly awardKind: AwardKind;
-  };
-  export type SeasonWindowMalformed = {
-    readonly errorCode: typeof EngagementErrorCode.SeasonWindowMalformed;
-    readonly from: string;
-    readonly until: string;
-  };
-  export type SeasonWindowInverted = {
-    readonly errorCode: typeof EngagementErrorCode.SeasonWindowInverted;
-    readonly from: LocalDate;
-    readonly until: LocalDate;
-  };
-  export type SeasonEventWithTrack = Bare<
-    typeof EngagementErrorCode.SeasonEventWithTrack
-  >;
-  export type SeasonWithoutTrack = Bare<
-    typeof EngagementErrorCode.SeasonWithoutTrack
-  >;
-  export type SeasonAnnouncedLate = {
-    readonly errorCode: typeof EngagementErrorCode.SeasonAnnouncedLate;
-    readonly announcedOn: LocalDate;
-    readonly from: LocalDate;
-    readonly noticeDays: number;
   };
   export type LoyaltyCatalogDanglingCategory = {
     readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogDanglingCategory;

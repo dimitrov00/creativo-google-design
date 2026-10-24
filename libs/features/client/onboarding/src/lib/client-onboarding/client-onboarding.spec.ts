@@ -389,7 +389,7 @@ describe('ClientOnboarding', () => {
 
       const error = host().querySelector('.ui-phone-field__error');
       expect(error).not.toBeNull();
-      // Empty test catalog → translateDomainError falls back to the raw
+      // Empty test catalog → translateCodedError falls back to the raw
       // `<errorCode>.<reason>` key — proving the reason reached the copy
       // lookup, unmapped.
       expect(error?.textContent).toContain('PHONE_INVALID.too-short');

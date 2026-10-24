@@ -11,14 +11,12 @@ import {
 } from './visit-sides.system';
 
 /*
- * Every case of libs/features/staff/dashboard/src/lib/visit-editor/
- * visit-sides.spec.ts (10, two of them properties), COPIED and re-targeted:
- * the legacy free functions are local adapters over `VisitSidesSystem`. The
- * one shape change is the live reading — the legacy `undefined` for a field
- * this device does not hear is `heard: false` (system I/O never carries
- * `undefined`), so `live(...)` builds it. Plus the purity case. Flatten
- * pass: the tip is `tipCents: PriceCents | null` (N6, Law 7), `c(300)` the
- * legacy `300` minor units.
+ * The side fields' cases (10, two of them properties; from the dashboard
+ * spec deleted in pass B), through local adapters over `VisitSidesSystem`.
+ * A field this device does not hear is `heard: false` (system I/O never
+ * carries `undefined`), so `live(...)` builds the reading. Plus the purity
+ * case. The tip is `tipCents: PriceCents | null` (N6, Law 7), `c(300)` a
+ * tip of 300 cents.
  */
 
 const S = VisitSidesSystem;

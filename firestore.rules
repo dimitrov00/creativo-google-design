@@ -1,14 +1,20 @@
 rules_version = '2';
 
-// Fresh, greenfield schema (migration-blueprint.md §0.4/§6, Goal 04). This
-// REPLACES the earlier generic tenant-scoped draft (`tenants/{tenantId}/...`)
-// that predates the bounded-context domain model — that shape has no
-// relationship to the schema below (see docs/architecture/domain-deviations.md).
+// Every document below is the flat archetype of its `@core/entities` entity
+// minus `id` (Law 5), its collection spelled once in `Collections`
+// (`libs/ecs-core/src/entities/collections.ts`), and every rule tests root
+// keys only.
 //
-// Philosophy (ported from v2, `v2/firestore.rules`): default-deny root, every
-// collection opts in explicitly. `otps`/`rateLimits`/`blocklist` stay fully
-// closed — Cloud Functions write them via the Admin SDK, which bypasses rules
-// entirely. Roles come from a `roles: string[]` custom claim on the ID token
+// Default-deny root: every collection opts in explicitly, so a path no match
+// names stays closed. A collection no client writes (`allow write: if false`,
+// `otps` closed both ways) is written by Cloud Functions through the Admin
+// SDK, which bypasses rules entirely — the callables, triggers and scheduled
+// jobs of `apps/functions`, through its server adapters
+// (`apps/functions/src/adapters`). The browser reads and writes through the
+// `(db) => bundle` adapters of `libs/infrastructure/firestore` and
+// `libs/infrastructure/storage`, bound in `apps/web/src/app/app.config.ts`.
+//
+// Roles come from a `roles: string[]` custom claim on the ID token
 // (`AuthClaims.active`, `@core/components`) — minted by Cloud Functions
 // (`verifyOtpChallenge`, `completeRegistration`), never self-assigned by a
 // client write.
@@ -118,13 +124,6 @@ service cloud.firestore {
       // allows are OR'd).
       allow create, update, delete: if false;
 
-      match /rewardProgress/{programId} {
-        // Materialized by Cloud Functions only (reward-progress sweep,
-        // Phase 7) — matches v2's owner-read/server-write split exactly.
-        allow read: if isOwner(uid);
-        allow write: if false;
-      }
-
       match /notifications/{notificationId} {
         // The recipient's own inbox (`InboxNotification`). Delivered
         // server-side only (the waitlist matcher writes here via the Admin
@@ -132,7 +131,8 @@ service cloud.firestore {
         // own notifications could forge a "your slot is free" message.
         allow read: if isOwner(uid);
         // The ONE thing a recipient may change is their own read stamp,
-        // `readAtUtcMs` (flip 1: the flat root field the inbox writes).
+        // `readAtUtcMs` (the flat root field `inboxPorts.markNotificationRead`
+        // stamps).
         // Everything else — the topic, what it is about, when it was sent —
         // is the sender's, and a client that could rewrite the payload
         // could turn its own inbox into a phishing surface.
@@ -158,8 +158,8 @@ service cloud.firestore {
         && (resource.data.holderUserId == request.auth.uid || worksTheBook());
       allow list: if isSignedIn()
         && (resource.data.holderUserId == request.auth.uid || worksTheBook());
-      // Grants are minted, used and revoked server-side only (flip 1,
-      // blueprint §3.2: TIGHTENED). The owner's exclusion-list update that
+      // Grants are minted, used and revoked server-side only (the commit
+      // plans' writes). The owner's exclusion-list update that
       // stood here let a client flip its own grant's lifecycle — a used
       // grant back to active included — and nothing a client sanctioned
       // ever needed it: a grant's `grantStatus` moves inside the server
@@ -188,8 +188,8 @@ service cloud.firestore {
       // race.
       //
       // A booking is now committed by the `commitBooking` callable, which runs
-      // a transaction that resolves terms server-side via
-      // `Service.termsFor(barberId, variantId)` and re-checks the barber-day
+      // a transaction that resolves terms server-side
+      // (`OfferingPriceSystem.termsFor`) and re-checks the barber-day
       // projection before writing. The Admin SDK bypasses these rules, so no
       // allowance for it is needed (or wanted) here.
       //
@@ -198,13 +198,15 @@ service cloud.firestore {
       // availability engine never saw: the commit transaction conflict-checks
       // `barberBusy` only, and a direct doc write updates no projection, so
       // the sanctioned walk-in path was a guaranteed double-booking. The
-      // owner direct-cancel grant was equally dead — the browser repository
-      // refuses `save()`, and a rules-level status flip would have left the
-      // slot phantom-blocked in `barberBusy` forever. Every lifecycle write
-      // goes through a callable (`commitBooking`, `cancelAppointment`,
-      // `rescheduleAppointment`, `transitionAppointment`, `markArrived`,
-      // `staffEditAppointment`), and the `rebuildBusy` trigger keeps the
-      // projection equal to what the appointments say.
+      // owner direct-cancel grant was equally dead — the web's appointment
+      // ports (`appointmentReadPorts`) only read, and a rules-level status
+      // flip would have left the slot phantom-blocked in `barberBusy`
+      // forever. Every lifecycle write goes through a callable
+      // (`commitBooking`, `cancelAppointment`, `rescheduleAppointment`,
+      // `transitionAppointment`, `markArrived`, `clearArrival`,
+      // `recordSeatTip`, `staffEditAppointment`), and the
+      // `rebuildBusyOnAppointmentChange` trigger keeps the projection equal
+      // to what the appointments say.
       //
       // `staffEditAppointment` — the staff move/resize/re-price path — adds
       // NOTHING here on purpose. It is the callable that finally lets a barber
@@ -229,12 +231,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── catalog (public browse, staff/content-manager write) ──────────────
     // ── the team's note on a visit ─────────────────────────────────────
     // Staff-only in BOTH directions, and a sibling of the appointment on
     // purpose: the appointment document is readable by its owner, so a note
     // the shop writes about a client can never live on it. `worksTheBook()`,
-    // not `isStaff()` — a marketing role has no business reading these.
+    // not `isStaff()` — a marketing role has no business reading these. The
+    // visit editor reads and saves it through `appointmentNotePorts`.
     match /appointmentNotes/{appointmentId} {
       allow read, write: if worksTheBook();
     }
@@ -244,21 +246,23 @@ service cloud.firestore {
     // the note's reason: the appointment document is the client's to read,
     // the shop's pictures of them are not. One document per photo, pointing
     // at the visit; the bytes sit in Storage under the same rule
-    // (`storage.rules`, `/appointmentPhotos`).
+    // (`storage.rules`, `/appointmentPhotos`), and `appointmentPhotoPorts`
+    // (`libs/infrastructure/storage`) writes both halves.
     match /appointmentPhotos/{photoId} {
       allow read, write: if worksTheBook();
     }
 
-    // ── the shop's client records (D29, flip 1) ──────────────────────────
+    // ── the shop's client records (D29) ──────────────────────────────────
     // `customers/{customerId}` — whom the shop serves, bills and rewards,
     // with or without an account (`Customer`). The book reads and keeps
     // them; the account a record names (`userId`) reads its own and nothing
-    // else — a client may never see the desk's copy of another person, and
-    // no anonymous visitor any. The booking transaction creates an account
-    // holder's record with the Admin SDK (`FIRST_BOOKING`); the desk's
-    // `create`/`update` is the walk-in path's (flatten-spec §5.5). Records
-    // are never deleted from a client: a visit, a grant or a voucher may
-    // name one.
+    // else (`customerPorts.loadCustomerForUser`) — a client may never see
+    // the desk's copy of another person, and no anonymous visitor any. The
+    // booking transaction (`FIRST_BOOKING`) and `completeRegistration`
+    // (`REGISTRATION`) create an account holder's record with the Admin
+    // SDK; the desk's `create`/`update` is the walk-in path's
+    // (flatten-spec §5.5). Records are never deleted from a client: a
+    // visit, a grant or a voucher may name one.
     match /customers/{customerId} {
       allow read: if worksTheBook()
         || (isSignedIn() && resource.data.userId == request.auth.uid);
@@ -372,6 +376,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── catalog (public browse, staff/content-manager write) ──────────────
+    // `/book` lists the catalogue anonymously (`catalogReadPorts`: the
+    // active services, barbers and shops, every category); the content
+    // roles keep it.
     match /serviceCategories/{categoryId} {
       allow read: if true;
       allow write: if isCatalogManager();
@@ -492,10 +500,11 @@ service cloud.firestore {
     }
 
     // ── engagement ──────────────────────────────────────────────────────
-    // Deviation from v2 (which left `coupons` closed entirely): a
-    // `CouponGrant` here only embeds its own `CouponValue` snapshot, not the
-    // coupon's display name/policy, so the client-side repository joins
-    // against the `Coupon` definition doc — see domain-deviations.md.
+    // Readable by every signed-in account: a `CouponGrant` carries its own
+    // value snapshot but not the coupon's name and terms, so the browser
+    // joins a grant to its `Coupon` definition (`couponVoucherPorts`:
+    // `loadCoupons` by the grants' ids, `findCouponByCode` for a typed
+    // code, `listOpenCoupons`). Only the admin writes one.
     match /coupons/{couponId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -513,11 +522,6 @@ service cloud.firestore {
       allow get, list: if isSignedIn()
         && (resource.data.holderUserId == request.auth.uid || worksTheBook());
       allow write: if false;
-    }
-
-    match /rewardPrograms/{programId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
     }
 
     match /invitations/{invitationId} {
@@ -548,9 +552,9 @@ service cloud.firestore {
     // ── governance (admin-tier only) ───────────────────────────────────
     match /impersonationSessions/{sessionId} {
       // The flat `ImpersonationSession` body (`impersonationStatus`,
-      // `*UtcMs` stamps at the root); read by `impersonationReadPorts`
-      // (index #9: `adminUserId`, `impersonationStatus`). Written only by
-      // the `startImpersonation`/`endImpersonation` callables (Admin SDK,
+      // `*UtcMs` stamps at the root); the admin pair may read it, and no
+      // web adapter does today. Written only by the
+      // `startImpersonation`/`endImpersonation` callables (Admin SDK,
       // Phase 4a 4A-3 (4)) — which stamp the TTL's `purgeAt` a browser
       // write never could.
       allow read: if isAdmin();
@@ -568,7 +572,8 @@ service cloud.firestore {
     }
 
     // ── tenant settings ─────────────────────────────────────────────────
-    // `settings/bookingPolicy` and siblings. Public-read because the booking
+    // `settings/bookingPolicy` — the flat `BookingPolicySettings`, read live
+    // by `schedulingReadPorts.observePolicy`. Public-read because the booking
     // horizon is literally how far an anonymous visitor's calendar scrolls —
     // and the doc holds tuning numbers, nothing secret. The missing match
     // here once default-denied every `/book` session into a silent

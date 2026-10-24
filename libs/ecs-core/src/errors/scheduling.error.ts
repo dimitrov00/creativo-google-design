@@ -66,14 +66,9 @@ export const SchedulingErrorCode = {
   CartDuplicateService: 'SCHEDULING_BOOKING_CART_DUPLICATE_SERVICE',
   CartInvalidLineSequence: 'SCHEDULING_BOOKING_CART_INVALID_LINE_SEQUENCE',
   PartyGuestNotFound: 'SCHEDULING_BOOKING_PARTY_GUEST_NOT_FOUND',
-  PartyInvalidGuestSequence: 'SCHEDULING_BOOKING_PARTY_INVALID_GUEST_SEQUENCE',
-  PartyUnclaimed: 'SCHEDULING_BOOKING_PARTY_UNCLAIMED',
   PartyDuplicateLabel: 'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
   BookingPolicyInvalid: 'SCHEDULING_BOOKING_POLICY_INVALID',
-  CancellationWindowInvalid: 'SCHEDULING_CANCELLATION_WINDOW_INVALID',
   ClientStatsPolicyInvalid: 'SCHEDULING_CLIENT_STATS_POLICY_INVALID',
-  CalendarDayInvalid: 'SCHEDULING_CALENDAR_DAY_INVALID',
-  DateRangeInvalid: 'SCHEDULING_DATE_RANGE_INVALID',
   TimeRangeInvalid: 'SCHEDULING_TIME_RANGE_INVALID',
   IdEmpty: 'SCHEDULING_ID_EMPTY',
   FlexibleWhenFull: 'SCHEDULING_FLEXIBLE_WHEN_FULL',
@@ -91,7 +86,6 @@ export const SchedulingErrorCode = {
     'SCHEDULING_STAFF_SCHEDULE_OVERLAPPING_VERSIONS',
   StaffScheduleRetroactiveAmendment:
     'SCHEDULING_STAFF_SCHEDULE_RETROACTIVE_AMENDMENT',
-  WaitlistInvalid: 'SCHEDULING_WAITLIST_INVALID',
   WaitlistNoDays: 'SCHEDULING_WAITLIST_NO_DAYS',
   WaitlistEmptyCart: 'SCHEDULING_WAITLIST_EMPTY_CART',
   WaitlistInvalidTransition: 'SCHEDULING_WAITLIST_INVALID_TRANSITION',
@@ -122,14 +116,9 @@ export type SchedulingError =
   | SchedulingError.CartDuplicateService
   | SchedulingError.CartInvalidLineSequence
   | SchedulingError.PartyGuestNotFound
-  | SchedulingError.PartyInvalidGuestSequence
-  | SchedulingError.PartyUnclaimed
   | SchedulingError.PartyDuplicateLabel
   | SchedulingError.BookingPolicyInvalid
-  | SchedulingError.CancellationWindowInvalid
   | SchedulingError.ClientStatsPolicyInvalid
-  | SchedulingError.CalendarDayInvalid
-  | SchedulingError.DateRangeInvalid
   | SchedulingError.TimeRangeInvalid
   | SchedulingError.IdEmpty
   | SchedulingError.FlexibleWhenFull
@@ -144,7 +133,6 @@ export type SchedulingError =
   | SchedulingError.ShiftSegmentImpossibleTransfer
   | SchedulingError.StaffScheduleOverlappingVersions
   | SchedulingError.StaffScheduleRetroactiveAmendment
-  | SchedulingError.WaitlistInvalid
   | SchedulingError.WaitlistNoDays
   | SchedulingError.WaitlistEmptyCart
   | SchedulingError.WaitlistInvalidTransition
@@ -260,15 +248,6 @@ export const SchedulingError = {
   partyGuestNotFound(guestId: GuestId): SchedulingError.PartyGuestNotFound {
     return { errorCode: C.PartyGuestNotFound, guestId };
   },
-  partyInvalidGuestSequence(
-    value: number,
-  ): SchedulingError.PartyInvalidGuestSequence {
-    return { errorCode: C.PartyInvalidGuestSequence, value };
-  },
-  /** The party has no owner yet — sign in to confirm. */
-  partyUnclaimed(): SchedulingError.PartyUnclaimed {
-    return { errorCode: C.PartyUnclaimed };
-  },
   /** Another guest already answers to this label — one label, one guest. */
   partyDuplicateLabel(label: string): SchedulingError.PartyDuplicateLabel {
     return { errorCode: C.PartyDuplicateLabel, label };
@@ -279,22 +258,11 @@ export const SchedulingError = {
   ): SchedulingError.BookingPolicyInvalid {
     return { errorCode: C.BookingPolicyInvalid, field, rawValue };
   },
-  cancellationWindowInvalid(
-    rawValue: number,
-  ): SchedulingError.CancellationWindowInvalid {
-    return { errorCode: C.CancellationWindowInvalid, rawValue };
-  },
   clientStatsPolicyInvalid(
     field: string,
     rawValue: number,
   ): SchedulingError.ClientStatsPolicyInvalid {
     return { errorCode: C.ClientStatsPolicyInvalid, field, rawValue };
-  },
-  calendarDayInvalid(rawValue: string): SchedulingError.CalendarDayInvalid {
-    return { errorCode: C.CalendarDayInvalid, rawValue };
-  },
-  dateRangeInvalid(from: string, to: string): SchedulingError.DateRangeInvalid {
-    return { errorCode: C.DateRangeInvalid, from, to };
   },
   /** A wall-clock span that is empty, backwards or overlapping its neighbour. */
   timeRangeInvalid(
@@ -393,9 +361,6 @@ export const SchedulingError = {
       attemptedFrom,
       currentFrom,
     };
-  },
-  waitlistInvalid(field: string): SchedulingError.WaitlistInvalid {
-    return { errorCode: C.WaitlistInvalid, field };
   },
   waitlistNoDays(): SchedulingError.WaitlistNoDays {
     return { errorCode: C.WaitlistNoDays };
@@ -509,13 +474,6 @@ export namespace SchedulingError {
     readonly errorCode: typeof SchedulingErrorCode.PartyGuestNotFound;
     readonly guestId: GuestId;
   };
-  export type PartyInvalidGuestSequence = {
-    readonly errorCode: typeof SchedulingErrorCode.PartyInvalidGuestSequence;
-    readonly value: number;
-  };
-  export type PartyUnclaimed = {
-    readonly errorCode: typeof SchedulingErrorCode.PartyUnclaimed;
-  };
   export type PartyDuplicateLabel = {
     readonly errorCode: typeof SchedulingErrorCode.PartyDuplicateLabel;
     readonly label: string;
@@ -525,23 +483,10 @@ export namespace SchedulingError {
     readonly field: string;
     readonly rawValue: number;
   };
-  export type CancellationWindowInvalid = {
-    readonly errorCode: typeof SchedulingErrorCode.CancellationWindowInvalid;
-    readonly rawValue: number;
-  };
   export type ClientStatsPolicyInvalid = {
     readonly errorCode: typeof SchedulingErrorCode.ClientStatsPolicyInvalid;
     readonly field: string;
     readonly rawValue: number;
-  };
-  export type CalendarDayInvalid = {
-    readonly errorCode: typeof SchedulingErrorCode.CalendarDayInvalid;
-    readonly rawValue: string;
-  };
-  export type DateRangeInvalid = {
-    readonly errorCode: typeof SchedulingErrorCode.DateRangeInvalid;
-    readonly from: string;
-    readonly to: string;
   };
   export type TimeRangeInvalid = {
     readonly errorCode: typeof SchedulingErrorCode.TimeRangeInvalid;
@@ -608,10 +553,6 @@ export namespace SchedulingError {
     readonly errorCode: typeof SchedulingErrorCode.StaffScheduleRetroactiveAmendment;
     readonly attemptedFrom: LocalDate;
     readonly currentFrom: LocalDate;
-  };
-  export type WaitlistInvalid = {
-    readonly errorCode: typeof SchedulingErrorCode.WaitlistInvalid;
-    readonly field: string;
   };
   export type WaitlistNoDays = {
     readonly errorCode: typeof SchedulingErrorCode.WaitlistNoDays;

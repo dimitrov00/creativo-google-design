@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { localDate } from '@core/testing';
-import {
-  PERSONAL_RECORD_KINDS,
-  PersonalRecord,
-  PersonalRecordKind,
-} from './personal-record.data';
+import { PersonalRecord, PersonalRecordKind } from './personal-record.data';
 
 describe('PersonalRecord', () => {
   it('declares the kinds SCREAMING, in the rail order', () => {
-    expect(PERSONAL_RECORD_KINDS).toEqual([
+    expect(Object.values(PersonalRecordKind)).toEqual([
       'LONGEST_RHYTHM',
       'MOST_VISITS_IN_YEAR',
       'FAVOURITE_SERVICE',

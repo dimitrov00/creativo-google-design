@@ -381,18 +381,12 @@ describe('ClientCardStore — a guest', () => {
 });
 
 describe('ClientCardStore — Георги, settled', () => {
-  it('keeps the deprecated head for the editor’s photo page: the face and the line the hero says', async () => {
+  it('gives the editor’s photo page the face the hero shows', async () => {
     const { store } = rig();
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(store.head()).toEqual({
-      name: 'Георги Петров',
-      stateLine: 'Клиент от март 2025 г.',
-      avatarSrc: 'https://example.test/avatars/georgi.jpg',
-      initialsFrom: 'Георги Петров',
-      paused: false,
-    });
-    expect(store.head().avatarSrc).toBe(store.hero().avatarSrc);
+    expect(store.avatarSrc()).toBe('https://example.test/avatars/georgi.jpg');
+    expect(store.avatarSrc()).toBe(store.hero().avatarSrc);
   });
 
   it('keeps F1’s sentence through «Използвай» and «Премахни»: a grant on the draft bill is still in hand (wave D r6)', async () => {

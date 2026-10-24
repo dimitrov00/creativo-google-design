@@ -1,10 +1,5 @@
 import type { Observable } from 'rxjs';
-import type {
-  Result,
-  LocationId,
-  ServiceCategoryId,
-  ServiceId,
-} from '@core/primitives';
+import type { Result, LocationId, ServiceId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type {
   Barber,
@@ -17,34 +12,28 @@ import type {
  * The catalogue's read ports (blueprint §4.2) — one function per query
  * shape, the entities straight from `snap.data()` (no mapper), every one
  * naming its error: `Result<X, RepositoryError>`. Successor of the
- * application layer's `CatalogReader` (`catalog-reader.port.ts`, the
- * queries of `catalog-reader.adapter.ts:252-367` on indexes #1-#5) and the
- * functions' own catalogue reads (`request-waitlist.ts:130-170`).
+ * application layer's `CatalogReader` (`catalog-reader.port.ts`) and the
+ * functions' own catalogue reads (`request-waitlist.ts:130-170`). The web
+ * streams list the WHOLE active catalogue — every reader wants all of it —
+ * so no query filters on `categoryId` or `locationIds`.
  */
 
-/**
- * Live ACTIVE services, `orderBy sortOrder` — the active status, plus
- * `categoryId ==` when a category is given. `null` lists every category.
- */
-export type ObserveServices = (
-  categoryId: ServiceCategoryId | null,
-) => Observable<Result<readonly Service[], RepositoryError>>;
+/** Live ACTIVE services of every category, `orderBy sortOrder` (index #2). */
+export type ObserveServices = () => Observable<
+  Result<readonly Service[], RepositoryError>
+>;
 
-/**
- * Live ACTIVE barbers, `orderBy sortOrder` — the active status, plus
- * `locationIds array-contains` when a shop is given. `null` lists every
- * shop's barbers.
- */
-export type ObserveBarbers = (
-  locationId: LocationId | null,
-) => Observable<Result<readonly Barber[], RepositoryError>>;
+/** Live ACTIVE barbers of every shop, `orderBy sortOrder` (index #4). */
+export type ObserveBarbers = () => Observable<
+  Result<readonly Barber[], RepositoryError>
+>;
 
 /** Live service categories, `orderBy sortOrder` (no status is stored). */
 export type ObserveCategories = () => Observable<
   Result<readonly ServiceCategory[], RepositoryError>
 >;
 
-/** Live ACTIVE shops, the active status, `orderBy sortOrder`. */
+/** Live ACTIVE shops, the active status, `orderBy sortOrder` (index #5). */
 export type ObserveLocations = () => Observable<
   Result<readonly ShopLocation[], RepositoryError>
 >;

@@ -125,7 +125,7 @@ import {
   type SchedulingReadPorts,
 } from '@core/ports';
 import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
-import { CatalogPresenter } from '@creativo/features/shared/catalog';
+import { CatalogWording } from '@creativo/features/shared/catalog';
 import {
   FIXTURE_TIME_ZONE,
   appointmentFixture,
@@ -2375,7 +2375,7 @@ describe('StaffDashboard', () => {
         chairMinutesOf: (seat: Seat, barberId: string) => number | null;
       };
       const price = (major: number) =>
-        TestBed.inject(CatalogPresenter).price(major);
+        TestBed.inject(CatalogWording).price(major);
       const quoted = (id: string) =>
         page.visitServiceOptions().find((option) => option.id === id);
 
@@ -4180,7 +4180,7 @@ describe('StaffDashboard', () => {
         note: null,
         discounts: [],
         vouchers: [],
-        tipMinorUnits: null,
+        tipCents: null,
         clients: [],
         legs: [],
       });
@@ -4223,7 +4223,7 @@ describe('StaffDashboard', () => {
       note: null,
       discounts: [],
       vouchers: [],
-      tipMinorUnits: null,
+      tipCents: null,
       clients: [],
       legs: [],
     });
@@ -4284,7 +4284,7 @@ describe('StaffDashboard', () => {
       note: null,
       discounts: [],
       vouchers: [],
-      tipMinorUnits: null,
+      tipCents: null,
       clients: [],
       legs: [],
     });
@@ -5995,7 +5995,7 @@ describe('StaffDashboard', () => {
       note: null,
       discounts: [],
       vouchers: [],
-      tipMinorUnits: null,
+      tipCents: null,
       clients: [],
       legs: [
         {
@@ -6065,7 +6065,7 @@ describe('StaffDashboard', () => {
       note: null,
       discounts: [],
       vouchers: [],
-      tipMinorUnits: null,
+      tipCents: null,
       clients: [],
       legs: [
         {

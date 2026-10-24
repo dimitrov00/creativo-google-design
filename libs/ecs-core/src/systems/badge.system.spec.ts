@@ -4,7 +4,6 @@ import {
   MedalState,
   type BadgeLevel,
   type EarnedLevel,
-  AwardSummary,
   BadgeEmblem,
   BadgeSubjectSlot,
   LadderRung,
@@ -26,7 +25,6 @@ import {
   BadgeCategoryId,
   BadgeSeriesId,
   type LocalDate,
-  SeasonId,
   ServiceId,
 } from '@core/primitives';
 import {
@@ -47,12 +45,7 @@ import { SeasonSystem } from './season.system';
  * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED while
  * it still ran against `BadgeSeries`' shim, and re-targeted to the flat
  * `BadgeSeries` (the `MetricRef` and `BadgeSubjectSlot` slices at its root):
- * `standing`, the family's own questions, and the rows of
- * `BadgeSeries.create`'s refusal table that are the family's rules
- * (`BadgeSystem.validate`). Not copied: the rows of an empty subject, narrowing
- * or category id and a one-locale title, and the case that types every id —
- * those are the edge guards' (`XId.of` after a guard, `LocalizedText.parse`),
- * not the family's.
+ * `standing` and the family's own questions.
  */
 
 const text = (bg: string, en = bg) => ({ bg, en });
@@ -99,19 +92,6 @@ const counting = (metric: Metric) => ({
   ...MetricRef.of(metric),
 });
 
-function build(series: BadgeSeries): BadgeSeries {
-  const result = BadgeSystem.validate(series);
-  if (!result.ok) {
-    throw new Error(result.error.map((e) => e.errorCode).join(', '));
-  }
-  return result.value;
-}
-
-function codes(series: BadgeSeries): string[] {
-  const result = BadgeSystem.validate(series);
-  return result.ok ? [] : result.error.map((e) => e.errorCode).sort();
-}
-
 const progress = (
   value: number,
   earned: readonly number[] = [],
@@ -127,142 +107,8 @@ const progress = (
   })),
 });
 
-describe('BadgeSystem.validate', () => {
-  it('takes the rhythm family: no metric, rising targets', () => {
-    expect(
-      codes({
-        ...fade,
-        id: BadgeSeriesId.of('series-rhythm'),
-        ...UNCOUNTED,
-        levels: levels([3, 6, 12, 24]),
-      }),
-    ).toEqual([]);
-  });
-
-  it('takes a one-off act and a yearly family, each with one level', () => {
-    expect(codes({ ...fade, ...UNCOUNTED, levels: levels([null]) })).toEqual(
-      [],
-    );
-    expect(
-      codes({
-        ...fade,
-        ...UNCOUNTED,
-        repeatable: true,
-        levels: levels([null]),
-      }),
-    ).toEqual([]);
-  });
-
-  it('lives in a season instead of a category', () => {
-    expect(
-      codes({
-        ...fade,
-        categoryId: null,
-        seasonId: SeasonId.of('season-2026-autumn'),
-      }),
-    ).toEqual([]);
-  });
-
-  it.each<[string, Partial<BadgeSeries>, string[]]>([
-    ['no levels', { levels: [] }, ['ENGAGEMENT_BADGE_SERIES_NO_LEVELS']],
-    [
-      'a gap in the levels',
-      {
-        levels: levels([3, 10, 25]).map((l, i) =>
-          i === 2 ? { ...l, level: 4 } : l,
-        ),
-      },
-      ['ENGAGEMENT_BADGE_SERIES_LEVEL_GAP'],
-    ],
-    [
-      'targets that fall',
-      { levels: levels([3, 10, 10]) },
-      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
-    ],
-    [
-      'a zero target',
-      { levels: levels([0, 10]) },
-      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
-    ],
-    [
-      'a fractional target',
-      { levels: levels([2.5, 10]) },
-      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
-    ],
-    [
-      'no home',
-      { categoryId: null, seasonId: null },
-      ['ENGAGEMENT_BADGE_SERIES_HOMELESS'],
-    ],
-    [
-      'a one-off act among several levels',
-      { levels: levels([null, 5]) },
-      ['ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS'],
-    ],
-    [
-      'a yearly family with several levels',
-      { repeatable: true },
-      ['ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS'],
-    ],
-    [
-      'a level without its rule',
-      {
-        levels: levels([3]).map((l) => ({
-          ...l,
-          ruleId: AchievementRuleId.of(' '),
-        })),
-      },
-      ['ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE'],
-    ],
-    [
-      'a level paying nothing',
-      {
-        levels: levels([3]).map((l) => ({
-          ...l,
-          awards: [AwardSummary.points(0)],
-        })),
-      },
-      ['ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE'],
-    ],
-  ])('refuses %s', (_case, override, expected) => {
-    expect(codes({ ...fade, ...override } as BadgeSeries)).toEqual(expected);
-  });
-
-  it('reports every problem at once', () => {
-    expect(codes({ ...fade, categoryId: null, levels: [] })).toEqual([
-      'ENGAGEMENT_BADGE_SERIES_HOMELESS',
-      'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
-    ]);
-  });
-
-  it('names what it refused: the levels, the targets, the level and what it paid', () => {
-    const result = BadgeSystem.validate({
-      ...fade,
-      levels: [
-        {
-          ...(levels([3])[0] as BadgeLevel),
-          awards: [AwardSummary.freeze(0)],
-        },
-        { ...(levels([3, 2])[1] as BadgeLevel), level: 3 },
-      ],
-    });
-    expect(!result.ok && result.error).toEqual([
-      {
-        errorCode: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
-        level: 1,
-        awardKind: 'FREEZE',
-      },
-      { errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP', levels: '1, 3' },
-      {
-        errorCode: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
-        targets: '3, 2',
-      },
-    ]);
-  });
-});
-
 describe('BadgeSystem.standing', () => {
-  const series = build(fade);
+  const series = fade;
 
   it('is not started without a progress document', () => {
     expect(BadgeSystem.standing(series, null)).toEqual({
@@ -303,13 +149,13 @@ describe('BadgeSystem.standing', () => {
   });
 
   it('completes a yearly family once earned', () => {
-    const birthday = build({
+    const birthday: BadgeSeries = {
       ...fade,
       id: BadgeSeriesId.of('series-birthday'),
       ...UNCOUNTED,
       repeatable: true,
       levels: levels([null]),
-    });
+    };
     expect(BadgeSystem.standing(birthday, progress(0, [1])).next).toBeNull();
     expect(BadgeSystem.standing(birthday, null).target).toBeNull();
   });
@@ -317,34 +163,28 @@ describe('BadgeSystem.standing', () => {
 
 describe('BadgeSystem — the family’s own questions', () => {
   it('is retired once it has a retirement date', () => {
-    expect(BadgeSystem.isRetired(build(fade))).toBe(false);
-    expect(
-      BadgeSystem.isRetired(
-        build({
-          ...fade,
-          retiredAtUtcMs: utcMs('2026-01-01T00:00:00.000Z'),
-          retiredLocalDate: localDate('2026-01-01'),
-        }),
-      ),
-    ).toBe(true);
+    expect(BadgeSystem.isRetired(fade)).toBe(false);
+    const retired: BadgeSeries = {
+      ...fade,
+      retiredAtUtcMs: utcMs('2026-01-01T00:00:00.000Z'),
+      retiredLocalDate: localDate('2026-01-01'),
+    };
+    expect(BadgeSystem.isRetired(retired)).toBe(true);
   });
 
   it('is calendar-driven on tenure alone', () => {
-    expect(BadgeSystem.isCalendarDriven(build(fade))).toBe(false);
-    expect(
-      BadgeSystem.isCalendarDriven(
-        build({
-          ...fade,
-          id: BadgeSeriesId.of('series-tenure'),
-          ...counting(Metric.TenureDays),
-          levels: levels([365, 730]),
-        }),
-      ),
-    ).toBe(true);
+    expect(BadgeSystem.isCalendarDriven(fade)).toBe(false);
+    const tenure: BadgeSeries = {
+      ...fade,
+      id: BadgeSeriesId.of('series-tenure'),
+      ...counting(Metric.TenureDays),
+      levels: levels([365, 730]),
+    };
+    expect(BadgeSystem.isCalendarDriven(tenure)).toBe(true);
   });
 
   it('finds a level by number', () => {
-    const series = build(fade);
+    const series = fade;
     expect(BadgeSystem.levelAt(series, 3)?.target).toBe(25);
     expect(BadgeSystem.levelAt(series, 6)).toBeNull();
     expect(BadgeSystem.levelAt(series, 0)).toBeNull();
@@ -356,12 +196,10 @@ describe('BadgeSystem purity', () => {
     const series = deepFreeze({ ...fade, levels: levels([3, 10, 10]) });
     const held = deepFreeze(progress(24, [1, 2]));
     const once = [
-      BadgeSystem.validate(series),
       BadgeSystem.standing(series, held),
       BadgeSystem.levelAt(series, 2),
     ];
     const twice = [
-      BadgeSystem.validate(series),
       BadgeSystem.standing(series, held),
       BadgeSystem.levelAt(series, 2),
     ];

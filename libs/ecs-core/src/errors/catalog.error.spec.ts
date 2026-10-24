@@ -177,10 +177,10 @@ describe('CatalogError factories', () => {
         { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH', rawLength: 6 },
       ],
       [
-        CatalogError.locationInvalidTimeOfDay('25:00'),
+        CatalogError.locationInvalidTimeOfDay('1440'),
         {
           errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
-          rawValue: '25:00',
+          rawValue: '1440',
         },
       ],
       [

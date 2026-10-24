@@ -82,16 +82,44 @@ describe('FakeProjectionFirestore', () => {
     });
   });
 
-  describe('the Admin SDK surface the legacy specs use, unchanged', () => {
-    it('keeps the object-form update a lenient shallow merge', async () => {
+  describe('the Admin SDK surface the adapters use', () => {
+    it('refuses the object-form update, which no adapter writes, and writes nothing', async () => {
       const fake = createProjectionFirestore({ 'giftVouchers/v1': { a: 1 } });
-      await fake.db.runTransaction(async (tx) => {
-        tx.update(fake.db.collection('giftVouchers').doc('v1'), { b: 2 });
-        tx.update(fake.db.collection('giftVouchers').doc('v2'), { c: 3 });
+      await expect(
+        fake.db.runTransaction(async (tx) => {
+          tx.update(fake.db.collection('giftVouchers').doc('v1'), { b: 2 });
+        }),
+      ).rejects.toThrow(/object form/);
+      expect(fake.docs.get('giftVouchers/v1')).toEqual({ a: 1 });
+      expect(fake.writes).toEqual([]);
+    });
+
+    it('updates an absent document with NOT_FOUND, as the SDK does', async () => {
+      const fake = createProjectionFirestore();
+      await expect(
+        fake.db.runTransaction(async (tx) => {
+          tx.update(fake.db.doc('giftVouchers/v2'), new FieldPath('c'), 3);
+        }),
+      ).rejects.toMatchObject({ code: 5 });
+      expect(fake.docs.has('giftVouchers/v2')).toBe(false);
+    });
+
+    it('queries ROOT fields only — a dotted path is refused (Law 5)', async () => {
+      const fake = createProjectionFirestore({
+        'settings/x': { a: { b: 1 }, 'a.b': 2 },
+        'settings/y': { a: { b: 2 } },
       });
-      expect(fake.docs.get('giftVouchers/v1')).toEqual({ a: 1, b: 2 });
-      expect(fake.docs.get('giftVouchers/v2')).toEqual({ c: 3 });
-      expect(fake.writes).toEqual(['giftVouchers/v1', 'giftVouchers/v2']);
+      const page = await fake.db
+        .collection('settings')
+        .where(new FieldPath('a.b'), '==', 2)
+        .get();
+      expect(page.docs.map((doc) => doc.id)).toEqual(['x']);
+      await expect(
+        fake.db.collection('settings').where('a.b', '==', 1).get(),
+      ).rejects.toThrow(/never dot paths/);
+      await expect(
+        fake.db.collection('settings').orderBy(new FieldPath('a', 'b')).get(),
+      ).rejects.toThrow(/never dot paths/);
     });
 
     it('writes a FieldPath update at the root, and refuses a nested path (Law 5)', async () => {

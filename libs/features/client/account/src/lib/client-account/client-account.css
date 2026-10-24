@@ -1,6 +1,6 @@
-/* Layout, the adaptive tile grid, the content column, and the inert tiles
-   all ride the DS (ui-stack/ui-grid adaptive/uiFrame/uiDisabled); only the
-   host's block display remains (Angular hosts default inline). */
+/* Layout, the adaptive tile grid and the content column all ride the DS
+   (ui-stack/ui-grid adaptive/uiFrame); only the host's block display
+   remains (Angular hosts default inline). */
 :host {
   display: block;
 }

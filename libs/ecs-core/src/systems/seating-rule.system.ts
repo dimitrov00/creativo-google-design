@@ -54,11 +54,6 @@ export const SeatingRuleSystem = {
     return false;
   },
 
-  /** A new booking: nothing stands, and every seat is judged. */
-  none(): readonly SeatIdPair[] {
-    return [];
-  },
-
   /**
    * Every pair of `visit`'s seats whose one person sits in both at once —
    * the double seatings the visit already holds, normalized.

@@ -105,7 +105,7 @@ describe('VoucherSystem — the balance algebra', () => {
     expect(voucher.voucherStatus).toBe('ACTIVE');
     expect(voucher.issuedToCustomerId).toBeNull();
     expect(voucher.holderUserId).toBeNull();
-    expect(VoucherSystem.isRedeemable(voucher, NOW)).toBe(true);
+    expect(VoucherSystem.refusal(voucher, NOW)).toBeNull();
   });
 
   it('refuses to be issued worthless or with an illegal code', () => {
@@ -178,12 +178,9 @@ describe('VoucherSystem — the balance algebra', () => {
       EngagementErrorCode.GiftVoucherOverRestore,
     );
     // Money goes back even to a void voucher.
-    const voided = VoucherSystem.void(drawn, NOW, 'lost');
-    expect(voided).toMatchObject({
-      voucherStatus: 'VOID',
-      voidedAtUtcMs: NOW,
-      voidReason: 'lost',
-      balanceCents: 1500,
+    const voided = issued({
+      balance: 1500,
+      lifecycle: VoucherLifecycle.voided(NOW, 'lost'),
     });
     expect(VoucherSystem.restore(voided, eur(1000)).ok).toBe(true);
     expect(unwrapErr(VoucherSystem.redeem(voided, eur(1), NOW))).toEqual({
@@ -201,10 +198,10 @@ describe('VoucherSystem — the balance algebra', () => {
     const grown = unwrapOk(VoucherSystem.settle(held, eur(1000), eur(2000)));
     expect(grown.balanceCents).toBe(500);
     expect(VoucherSystem.settle(held, eur(1000), eur(2600)).ok).toBe(false);
-    const voided = VoucherSystem.void(held, NOW, 'lost');
-    // Whose it is rides the void: the record and the reading account (D29).
-    expect(voided.issuedToCustomerId).toBe(held.issuedToCustomerId);
-    expect(voided.holderUserId).toBe(held.holderUserId);
+    const voided = issued({
+      balance: 1500,
+      lifecycle: VoucherLifecycle.voided(NOW, 'lost'),
+    });
     expect(VoucherSystem.settle(voided, eur(1000), eur(500)).ok).toBe(true);
     expect(VoucherSystem.settle(voided, eur(1000), eur(1500)).ok).toBe(false);
     const returned = unwrapOk(VoucherSystem.settle(held, eur(1000), eur(0)));

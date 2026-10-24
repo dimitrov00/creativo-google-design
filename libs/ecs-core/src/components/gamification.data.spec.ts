@@ -2,16 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { BarberId, LocationId, ServiceId, AwardKind } from '@core/primitives';
 import {
   AwardSummary,
+  BadgeCategoryKind,
+  BadgeEmblem,
   BadgeSubject,
   BadgeSubjectSlot,
-  BADGE_CATEGORY_KINDS,
-  BADGE_EMBLEMS,
   Gamification,
-  METRICS,
   Metric,
   MetricRef,
   PER_VISIT_METRICS,
-  PERK_IDS,
   SeasonKind,
   SeasonPhase,
   PerkId,
@@ -19,9 +17,11 @@ import {
   VISIT_KIND_METRICS,
 } from './gamification.data';
 
+const METRICS = Object.values(Metric);
+
 describe('the loyalty catalogue vocabularies', () => {
   it('declare the tags SCREAMING and keep the catalogue ids, in their order', () => {
-    expect(BADGE_CATEGORY_KINDS).toEqual([
+    expect(Object.values(BadgeCategoryKind)).toEqual([
       'MILESTONES',
       'MASTERY',
       'BARBERS',
@@ -30,14 +30,16 @@ describe('the loyalty catalogue vocabularies', () => {
       'RECORDS',
     ]);
     // Art asset names and catalogue ids are external keys (flatten-spec §0.4).
-    expect(BADGE_EMBLEMS).toHaveLength(31);
-    expect(BADGE_EMBLEMS.slice(0, 3)).toEqual(['visits', 'streak', 'referral']);
-    expect(BADGE_EMBLEMS.at(-1)).toBe('spa');
-    expect(new Set(BADGE_EMBLEMS).size).toBe(BADGE_EMBLEMS.length);
+    const emblems = Object.values(BadgeEmblem);
+    expect(emblems).toHaveLength(31);
+    expect(emblems.slice(0, 3)).toEqual(['visits', 'streak', 'referral']);
+    expect(emblems.at(-1)).toBe('spa');
+    expect(new Set(emblems).size).toBe(emblems.length);
+    expect(emblems).not.toContain('season'); // retired, wave D r6
     expect(METRICS).toHaveLength(16);
     expect(METRICS[0]).toBe('client.visits.completed');
     expect(METRICS.at(-1)).toBe('client.tenure.days');
-    expect(PERK_IDS).toEqual([
+    expect(Object.values(PerkId)).toEqual([
       'perk.priorityWaitlist',
       'perk.bookFurtherAhead',
       'perk.freeReschedule',
@@ -63,18 +65,7 @@ describe('the loyalty catalogue vocabularies', () => {
   });
 });
 
-describe('Gamification guards', () => {
-  it('check untrusted text against the very dictionaries', () => {
-    expect(Gamification.isBadgeCategoryKind('RHYTHM')).toBe(true);
-    expect(Gamification.isBadgeCategoryKind('Rhythm')).toBe(false);
-    expect(Gamification.isBadgeEmblem('beardOil')).toBe(true);
-    expect(Gamification.isBadgeEmblem('season')).toBe(false); // retired, wave D r6
-    expect(Gamification.isMetric('client.months.distinct')).toBe(true);
-    expect(Gamification.isMetric('client.months')).toBe(false);
-    expect(Gamification.isPerkId('perk.freeReschedule')).toBe(true);
-    expect(Gamification.isPerkId(42)).toBe(false);
-  });
-
+describe('Gamification predicates', () => {
   it('knows the per-visit metrics and the one driven by the calendar', () => {
     expect(Gamification.isPerVisitMetric(Metric.VisitsOnTime)).toBe(true);
     expect(Gamification.isPerVisitMetric(Metric.VisitsWeekend)).toBe(false);

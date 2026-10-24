@@ -5,7 +5,7 @@ import { type BookingConfirmation, Party, SeatKey } from '@core/components';
 import type { BarberId, CartLineId } from '@core/primitives';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import { UiButton } from '@creativo/ui/controls';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
@@ -74,7 +74,7 @@ export class BookingConfirmedStep {
   private readonly identity = inject(SessionIdentityService);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   /** "Monday, 3 August · 09:00" — the one line a person will re-read. */

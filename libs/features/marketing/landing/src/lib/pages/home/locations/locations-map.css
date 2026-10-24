@@ -1,9 +1,9 @@
 /*
  * Global (unscoped) styles for the MapLibre-created pin/indicator elements —
- * same rationale as shape.css/material.css: this DOM is built imperatively
- * (locations.component.ts hands elements to MapLibre markers), so it never
- * receives Angular's `_ngcontent-*` scope attribute and component-scoped
- * CSS can't reach it. Previously worked around by copying the scope
+ * same rationale as libs/ui/modifiers/modifiers.css: this DOM is built
+ * imperatively (locations.component.ts hands elements to MapLibre markers),
+ * so it never receives Angular's `_ngcontent-*` scope attribute and
+ * component-scoped CSS can't reach it. Previously worked around by copying the scope
  * attribute off a template-rendered sibling onto every imperative element
  * (`applyNgContentAttr`) — a coupling to a framework private this file
  * replaces. Imported once, globally, from apps/web/src/styles.css.

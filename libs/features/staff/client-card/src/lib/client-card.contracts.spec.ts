@@ -107,7 +107,7 @@ describe('the built helpers the new presenters import (§7.3)', () => {
     [
       'loyalty.presenter',
       loyalty,
-      ['groupedGrants', 'ticketOf', 'offered', 'sliceMap', 'glanceReward'],
+      ['groupedGrants', 'ticketOf', 'sliceMap', 'glanceReward'],
     ],
     [
       'client-card.presenter',
@@ -115,7 +115,6 @@ describe('the built helpers the new presenters import (§7.3)', () => {
       [
         'phoneOf',
         'sameLegs',
-        'cueOrder',
         'pauseOf',
         'isBirthdayToday',
         'displayNameOf',

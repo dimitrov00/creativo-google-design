@@ -696,9 +696,11 @@ function optionsFor(input: {
 function startsOf(
   options: ReturnType<typeof BookingCartSystem.optionsForDay>,
 ): readonly MinuteOfDay[] {
-  return AvailabilitySystem.distinctStarts(
-    options.map((entry) => entry.option),
-  );
+  const starts: MinuteOfDay[] = [];
+  for (const { option } of options) {
+    if (!starts.includes(option.startMinutes)) starts.push(option.startMinutes);
+  }
+  return starts;
 }
 
 describe('BookingCartSystem.toAvailabilityLines', () => {

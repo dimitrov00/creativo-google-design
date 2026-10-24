@@ -1,11 +1,13 @@
 rules_version = '2';
 
-// Fresh policy for Goal 04's `libs/infrastructure/storage` adapters
-// (`FirebaseStorageAvatarUploader`) — replaces the earlier Foundation-pass
-// placeholder deny-all. Media library assets (catalog/location photos,
-// resolved by `StorageMediaReader` via `MediaRef.path`) are managed
-// server-side/by staff tooling, not uploaded by clients, so only the
-// avatar path is opened up here.
+// The Cloud Storage rules for the `libs/infrastructure/storage` adapters,
+// bound in `apps/web/src/app/app.config.ts`: a person's avatar
+// (`avatarPorts`, `avatar.adapter.ts`), the catalogue's media library
+// (`mediaResolvePorts`, `media-resolve.adapter.ts`, read only) and the
+// shop's photos of a visit (`appointmentPhotoPorts`,
+// `appointment-photos.adapter.ts`). Default-deny root: a path no match names
+// stays closed. Media library assets are put in place by staff tooling with
+// admin credentials (which bypass rules), never uploaded by a client.
 service firebase.storage {
   match /b/{bucket}/o {
     function isSignedIn() {
@@ -24,17 +26,18 @@ service firebase.storage {
         && request.auth.token.roles.hasAny(['barber', 'receptionist', 'admin', 'sysadmin']);
     }
 
-    // One object per user, overwritten on re-upload. Publicly readable
-    // (avatars are shown across staff dashboards and to other booking
-    // parties, and carry no sensitive data) — writes restricted to the
-    // owner, capped at 5 MiB, image content-types only.
+    // One object per user (`avatars/{userId}/original`, `avatarPorts`),
+    // overwritten on re-upload. Publicly readable (avatars are shown across
+    // staff dashboards and to other booking parties, and carry no sensitive
+    // data) — writes restricted to the owner, capped at 5 MiB, image
+    // content-types only.
     //
     // `create`/`update` and `delete` are split deliberately: `write` covers
     // all three, but on a DELETE `request.resource` is null, so the size and
     // content-type checks below can never pass — a single `allow write` rule
     // silently makes deletion impossible. Owners may drop their own avatar
-    // (the profile screen's "Remove photo"); the size/type guards only make
-    // sense where there IS an incoming object.
+    // (the profile screen's "Remove photo", `removeAvatar`); the size/type
+    // guards only make sense where there IS an incoming object.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
       allow create, update: if isOwner(userId)
@@ -44,8 +47,8 @@ service firebase.storage {
     }
 
     // Catalog media library (service covers, location photos — the assets
-    // `MediaRef.path` points at, resolved client-side by
-    // `StorageMediaReader`): public marketing/catalog content, readable by
+    // a stored `MediaRef`'s `mediaPath` points at, resolved client-side by
+    // `mediaResolvePorts`): public marketing/catalog content, readable by
     // anyone; written only by staff tooling with admin credentials (which
     // bypass rules), never by clients.
     match /media/{allPaths=**} {
@@ -53,7 +56,7 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // The shop's photos of a visit (`FirebaseAppointmentPhotos`, one object
+    // The shop's photos of a visit (`appointmentPhotoPorts`, one object
     // per photo under its visit): staff-only both ways, like the Firestore
     // document beside each — a client never reads the shop's pictures of
     // them here. Create/update and delete are split as for avatars: on a

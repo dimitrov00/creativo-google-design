@@ -358,16 +358,18 @@
     outline-offset: var(--sys-focus-ring-offset);
   }
 
-  /* ── Disabled (uiDisabled → data-disabled) ──
-     ≙ SwiftUI .disabled(_:): dimmed, inert. For non-form surfaces only —
-     native controls keep the native `disabled` attribute and their own
-     `:disabled` rules (same recipe, same token).
+  /* ── Disabled (data-disabled) ──
+     ≙ SwiftUI .disabled(_:): dimmed, inert. Written by the DS controls'
+     own disabled inputs (ui-otp-field, ui-slider, ui-date-field,
+     ui-phone-field) on hosts that are not native form controls — native
+     controls keep the native `disabled` attribute and their own `:disabled`
+     rules (same recipe, same token).
 
      The SUBTREE goes inert rather than the host, so the host itself stays
      hit-testable and can show the disabled cursor below. A host that is
      itself activatable (`<button>`, `<a>`) must use the native `disabled`
-     attribute instead — this modifier carries no semantics that would stop a
-     click, which is exactly what its docblock already says. */
+     attribute instead — this attribute carries no semantics that would stop
+     a click. */
   [data-disabled] {
     opacity: var(--sys-opacity-disabled);
   }

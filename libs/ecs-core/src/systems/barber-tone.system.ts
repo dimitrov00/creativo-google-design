@@ -1,6 +1,6 @@
 import type { BarberId } from '@core/primitives';
 
-/** How many identity tones a shop's chairs are drawn in (`barber-tone.ts:35`). */
+/** How many identity tones a shop's chairs are drawn in. */
 const TONE_COUNT = 5;
 
 /** FNV-1a's 32-bit offset basis and prime. */
@@ -8,10 +8,9 @@ const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
 /**
- * BarberToneSystem — WHOSE CHAIR, as one of five identity tones
- * (`libs/features/staff/dashboard/src/lib/barber-tone.ts`). Numbers only: a
- * tone is an index `0…TONE_COUNT − 1`, and the CSS token it names is picked
- * in the template.
+ * BarberToneSystem — WHOSE CHAIR, as one of five identity tones. Numbers
+ * only: a tone is an index `0…TONE_COUNT − 1`, and the CSS token it names is
+ * picked in the template.
  *
  * A bare hash collides most of the time at five slots and four barbers, so
  * the hash picks a PREFERENCE and a deterministic probe settles the rest. The
@@ -47,8 +46,8 @@ export const BarberToneSystem = {
    * i-th id's). Ids are visited in ascending code-unit order; each takes its
    * preferred slot, or the next free one round the ring, or — when every
    * slot is taken — its preference again. An id listed twice is visited
-   * twice, and both of its positions read the slot its LAST visit took (the
-   * legacy map's last write).
+   * twice, and both of its positions read the slot its LAST visit took (a
+   * lookup keyed by id reads that one slot).
    */
   assignBarberTones(barberIds: readonly BarberId[]): readonly number[] {
     const sorted = [...barberIds].sort();

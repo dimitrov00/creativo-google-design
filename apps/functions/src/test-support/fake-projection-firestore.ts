@@ -13,9 +13,10 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * An in-memory double for the slice of the Admin Firestore SDK the client
  * projections, the backfill and the transaction adapter use: documents by
  * PATH (subcollections included), `db.doc(path)`, queries with the whole
- * `QueryOp` vocabulary over top-level or dotted fields, `orderBy` (a field,
- * either direction, or the document id), `limit` / `startAfter` / `select`,
- * batched reads by reference (`getAll`), transactions and batches.
+ * `QueryOp` vocabulary over ROOT fields (a dotted path is refused, Law 5),
+ * `orderBy` (a root field, either direction, or the document id), `limit` /
+ * `startAfter` / `select`, batched reads by reference (`getAll`),
+ * transactions and batches.
  *
  * Every transaction runs once — contention and retries are the emulator
  * suite's business — and is ATOMIC like the SDK's: its writes are staged
@@ -28,12 +29,11 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * multi-segment path is refused (Law 5: never dot paths), a
  * `FieldValue.delete()` value removes that root field (how a variant
  * transition's `deleteFields` reach the store, Law 6) — and of an absent
- * document fails with NOT_FOUND (gRPC 5), as the SDK's does; the object form
- * (`update(ref, patch)`) keeps this double's historical leniency — a
- * shallow merge that creates an absent document — for the legacy specs
- * written against it. `failHistoryOf` makes the history read of one
- * subject reject, which is how a spec gets one person's recompute to fail
- * while everybody else's succeeds.
+ * document fails with NOT_FOUND (gRPC 5), as the SDK's does. It is the one
+ * update form the transaction adapter writes, so the object form
+ * (`update(ref, patch)`) is not modelled: it is refused. `failHistoryOf`
+ * makes the history read of one subject reject, which is how a spec gets
+ * one person's recompute to fail while everybody else's succeeds.
  *
  * It is also the `CommitPlan` double of the pipeline specs (blueprint §7):
  * `commit` is the production transaction adapter (`firestore-tx.adapter.ts`)
@@ -62,7 +62,6 @@ interface DocRef {
   set(data: Data): Promise<void>;
   /** Refuses with ALREADY_EXISTS when the document is already there. */
   create(data: Data): Promise<void>;
-  update(patch: Data): Promise<void>;
 }
 
 interface Ordering {
@@ -103,12 +102,6 @@ type Staged =
       readonly stagedWrite: 'CREATE';
       readonly path: string;
       readonly data: Data;
-    }
-  /** The legacy object-form `update(ref, patch)`: a lenient shallow merge. */
-  | {
-      readonly stagedWrite: 'MERGE';
-      readonly path: string;
-      readonly patch: Data;
     }
   /** The SDK's `update(ref, fieldPath, value, …)`: the document must exist. */
   | {
@@ -178,20 +171,20 @@ function segmentsOfField(field: unknown): readonly string[] {
 }
 
 /**
- * The value a filter or an ordering reads: the literal key when the
- * document has one (the legacy specs' flat keys), else the dotted path.
+ * The value a filter or an ordering reads: a ROOT field of the document
+ * (Law 5, `QueryFilter`). A dotted path — a string the SDK would walk into a
+ * nested map, or a multi-segment `FieldPath` — is refused loudly, as a
+ * nested write is, rather than modelled.
  */
 function valueAt(data: Data, field: unknown): unknown {
-  const entries = new Map<string, unknown>(Object.entries(data));
-  if (typeof field === 'string' && entries.has(field)) {
-    return entries.get(field);
+  const segments = segmentsOfField(field);
+  const [name, ...nested] = segments;
+  if (name === undefined || nested.length > 0) {
+    throw new Error(
+      `FakeProjectionFirestore: a query on '${segments.join('.')}' — queries read root fields, never dot paths (Law 5)`,
+    );
   }
-  let current: unknown = data;
-  for (const segment of segmentsOfField(field)) {
-    if (current === null || typeof current !== 'object') return undefined;
-    current = new Map<string, unknown>(Object.entries(current)).get(segment);
-  }
-  return current;
+  return new Map<string, unknown>(Object.entries(data)).get(name);
 }
 
 /** Firestore's ordering for the scalars a spec stores: numbers, then strings. */
@@ -342,7 +335,6 @@ export function createProjectionFirestore(seed: Record<string, Data> = {}) {
         if (docs.has(path)) throw alreadyExists(path);
         write(path, data);
       },
-      update: async (patch) => write(path, { ...docs.get(path), ...patch }),
     };
   }
 
@@ -444,9 +436,6 @@ export function createProjectionFirestore(seed: Record<string, Data> = {}) {
           if (current(op.path) !== null) throw alreadyExists(op.path);
           next.set(op.path, op.data);
           break;
-        case 'MERGE':
-          next.set(op.path, { ...(current(op.path) ?? {}), ...op.patch });
-          break;
         case 'UPDATE': {
           const base = current(op.path);
           if (base === null) throw notFound(op.path);
@@ -484,20 +473,18 @@ export function createProjectionFirestore(seed: Record<string, Data> = {}) {
       create(ref: DocRef, data: Data) {
         staged.push({ stagedWrite: 'CREATE', path: ref.path, data });
       },
-      update(ref: DocRef, patchOrField: unknown, ...rest: unknown[]) {
-        if (rest.length === 0 && typeof patchOrField === 'object') {
-          staged.push({
-            stagedWrite: 'MERGE',
-            path: ref.path,
-            patch: (patchOrField ?? {}) as Data,
-          });
-        } else {
-          staged.push({
-            stagedWrite: 'UPDATE',
-            path: ref.path,
-            fields: fieldPairs([patchOrField, ...rest]),
-          });
+      /** `update(ref, fieldPath, value, …)` only — the form the transaction adapter writes. */
+      update(ref: DocRef, field: unknown, ...rest: unknown[]) {
+        if (rest.length === 0) {
+          throw new Error(
+            'FakeProjectionFirestore: the object form update(ref, patch) is not modelled — write FieldPath/value pairs',
+          );
         }
+        staged.push({
+          stagedWrite: 'UPDATE',
+          path: ref.path,
+          fields: fieldPairs([field, ...rest]),
+        });
       },
       delete(ref: DocRef) {
         staged.push({ stagedWrite: 'DELETE', path: ref.path });

@@ -923,29 +923,6 @@ describe('money', () => {
     ]);
     expect(result.lifetimeSpendCents).toBe(1200);
   });
-
-  it('is what compute returns beside the stats, from one read of the history', () => {
-    const history = [
-      build(solo('a1', daysAgo(30), WORKED, { price: 2500 })),
-      build(solo('a2', daysAgo(5), NO_SHOW)),
-    ];
-    expect(
-      ClientStatsSystem.compute(
-        RECORDS.ana,
-        history,
-        ClientStatsPolicy.DEFAULT,
-        NOW,
-      ),
-    ).toEqual({
-      stats: ClientStatsSystem.stats(
-        RECORDS.ana,
-        history,
-        ClientStatsPolicy.DEFAULT,
-        NOW,
-      ),
-      money: ClientStatsSystem.money(RECORDS.ana, history),
-    });
-  });
 });
 
 describe('ClientStatsPolicy', () => {
@@ -1310,72 +1287,6 @@ describe('stats — properties', () => {
         expect(ana(changed)).toEqual(ana(history));
       }),
     );
-  });
-});
-
-describe('the account’s own reading — accountVisitOf, statsOfVisits, moneyOfVisits (D29)', () => {
-  const history = [
-    solo('a1', daysAgo(90), WORKED, { price: 2500 }),
-    {
-      id: 'a2',
-      startMs: daysAgo(40),
-      seats: [
-        { who: 'ana' as const, outcome: WORKED },
-        { who: 'bob' as const, outcome: NO_SHOW },
-      ],
-    },
-    solo('a3', daysAgo(5), NO_SHOW),
-  ].map(build);
-  /** The same visits as a seat with no client record reads them (a legacy shim's). */
-  const recordless = history.map((visit) => ({
-    ...visit,
-    seats: visit.seats.map((seat) =>
-      Seat.composeAccount(seat, seat, seat, seat),
-    ),
-  }));
-
-  it('picks the account’s seats as the record reading picks the record’s — the same visit', () => {
-    for (const appointment of history) {
-      expect(ClientStatsSystem.accountVisitOf(PEOPLE.ana, appointment)).toEqual(
-        ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment),
-      );
-    }
-    for (const appointment of history) {
-      expect(
-        ClientStatsSystem.accountVisitOf(UserId.of('stranger'), appointment),
-      ).toBeNull();
-    }
-  });
-
-  it('counts the same stats and spend from an account’s visits as from its record’s', () => {
-    const visits = ClientStatsSystem.accountVisitsOf(PEOPLE.ana, recordless);
-    expect(visits.map((visit) => visit.appointment.id)).toEqual([
-      'a1',
-      'a2',
-      'a3',
-    ]);
-    expect(
-      ClientStatsSystem.statsOfVisits(visits, ClientStatsPolicy.DEFAULT, NOW),
-    ).toEqual(
-      ClientStatsSystem.stats(
-        RECORDS.ana,
-        history,
-        ClientStatsPolicy.DEFAULT,
-        NOW,
-      ),
-    );
-    expect(ClientStatsSystem.moneyOfVisits(visits)).toEqual(
-      ClientStatsSystem.money(RECORDS.ana, history),
-    );
-  });
-
-  it('counts an appointment listed twice once', () => {
-    expect(
-      ClientStatsSystem.accountVisitsOf(PEOPLE.ana, [
-        ...recordless,
-        ...recordless,
-      ]),
-    ).toHaveLength(3);
   });
 });
 
@@ -1824,51 +1735,6 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
   });
 });
 
-describe('placementsFrom', () => {
-  const rows = (
-    raw: readonly {
-      id: string;
-      placement?: unknown;
-      inferredPlacement?: unknown;
-    }[],
-  ) =>
-    raw.map((row) => ({
-      id: AppointmentId.of(row.id),
-      placement: Placement.parse(row.placement ?? null),
-    }));
-
-  it('names each stored placement and leaves a legacy row out', () => {
-    expect([
-      ...ClientStatsSystem.placementsFrom(
-        rows([
-          { id: 'a1', placement: 'SELF' },
-          { id: 'a2', placement: 'STAFF' },
-          { id: 'a3', placement: null },
-          { id: 'a4' },
-          { id: 'a5', placement: 'guessed' },
-        ]),
-      ),
-    ]).toEqual([
-      ['a1', 'SELF'],
-      ['a2', 'STAFF'],
-    ]);
-  });
-
-  // legacyPref: a pre-P0 row's seats carry the old defaulted `SPECIFIC`, so
-  // what the audit trail says about who placed it is no evidence of a request.
-  it('never passes an inferred placement on as evidence', () => {
-    expect([
-      ...ClientStatsSystem.placementsFrom(
-        rows([
-          { id: 'p1', inferredPlacement: 'STAFF' },
-          { id: 'p2', placement: null, inferredPlacement: 'SELF' },
-          { id: 'n1', placement: 'STAFF', inferredPlacement: 'SELF' },
-        ]),
-      ),
-    ]).toEqual([['n1', 'STAFF']]);
-  });
-});
-
 describe('purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const history = deepFreeze([
@@ -1891,8 +1757,12 @@ describe('purity', () => {
     ]);
     const policy = deepFreeze(policyWithWindow(12));
     const now = deepFreeze(NOW);
-    const once = ClientStatsSystem.compute(RECORDS.ana, history, policy, now);
-    const twice = ClientStatsSystem.compute(RECORDS.ana, history, policy, now);
+    const compute = () => ({
+      stats: ClientStatsSystem.stats(RECORDS.ana, history, policy, now),
+      money: ClientStatsSystem.money(RECORDS.ana, history),
+    });
+    const once = compute();
+    const twice = compute();
     expect(twice).toEqual(once);
     expect(once.stats.preferredBarberId).toBe('ivan');
     expect(ClientStatsSystem.statWindows(deepFreeze(once.stats), now)).toEqual(
@@ -1909,10 +1779,9 @@ describe('purity', () => {
  * Law 10.2 — the decisions the client card's presenters made, ported as
  * values and tags (`history.presenter.ts` `cadenceWeeks`/`historyFacts`,
  * `visits-page.presenter.ts` `headOf`, `glance.presenter.ts`
- * `heroLine`/`overviewCapsulesVm`, `client-card.presenter.ts`
- * `clientHeadVm`, `records.presenter.ts` `endOfDay`). The words stay with
- * the presenters' specs; each case below re-states one of theirs on the
- * same numbers. The fixture day is the cards' 2026-09-28 (09:00 in Sofia).
+ * `heroLine`/`overviewCapsulesVm`, `records.presenter.ts` `endOfDay`). The
+ * words stay with the presenters' specs; each case below re-states one of
+ * theirs on the same numbers. The fixture day is the cards' 2026-09-28 (09:00 in Sofia).
  */
 
 /** A stored record: nothing on it but what a case names. */

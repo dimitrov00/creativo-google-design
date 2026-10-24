@@ -153,17 +153,17 @@ function seat(startIso: string, spec: SeatSpec = {}): Seat {
 const seatWorked = (at: UtcEpochMs): SeatOutcome => SeatOutcome.worked(at);
 const seatNoShow = (at: UtcEpochMs): SeatOutcome => SeatOutcome.noShow(at);
 
-/** A seat called off — by whom, for which stored reason. */
+/** A seat called off — by whom, for which reason. */
 function seatCancelled(
   at: UtcEpochMs,
   by: 'client' | 'staff',
-  reason: { readonly kind: string },
+  reason: CancellationReason,
   window: null,
 ): SeatOutcome {
   return SeatOutcome.cancelled(
     at,
     by === 'client' ? CancelledBy.Client : CancelledBy.Staff,
-    SeatOutcome.reasonOf(reason.kind) ?? CancellationReason.Unspecified,
+    reason,
     window,
   );
 }
@@ -228,7 +228,7 @@ function staffOptions(
   };
 }
 
-/** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
+/** `formatCents`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', ' €');
 
 describe('visitRowOf · the staff card', () => {
@@ -299,7 +299,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatCancelled(
             sofia('2026-07-15T18:00:00'),
             'client',
-            { kind: 'client_changed_plans' },
+            CancellationReason.ClientChangedPlans,
             null,
           ),
         }),
@@ -337,7 +337,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatCancelled(
             sofia('2026-07-17T09:00:00'),
             'staff',
-            { kind: 'staff_shop_closure' },
+            CancellationReason.StaffShopClosure,
             null,
           ),
         }),
@@ -359,7 +359,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatCancelled(
             sofia('2026-07-15T18:00:00'),
             'client',
-            { kind: 'client_changed_plans' },
+            CancellationReason.ClientChangedPlans,
             null,
           ),
         }),
@@ -372,7 +372,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatCancelled(
             sofia('2026-07-15T18:00:00'),
             'client',
-            { kind: 'client_changed_plans' },
+            CancellationReason.ClientChangedPlans,
             null,
           ),
         }),
@@ -900,7 +900,7 @@ describe('visitRowOf · the client’s own list', () => {
           outcome: seatCancelled(
             sofia('2026-07-15T18:00:00'),
             'client',
-            { kind: 'unspecified' },
+            CancellationReason.Unspecified,
             null,
           ),
         }),

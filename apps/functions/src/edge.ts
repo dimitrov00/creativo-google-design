@@ -154,11 +154,6 @@ export type EdgeError = { readonly errorCode: EdgeCode } & {
   readonly [field: string]: unknown;
 };
 
-/** The code a refusal names. */
-export function errorCodeOf(error: EdgeError): string {
-  return error.errorCode;
-}
-
 // ── The wire rules ─────────────────────────────────────────────────────────
 
 /** Which `details` a refusal leaves with. */
@@ -533,7 +528,6 @@ const SCHEDULING_WIRE = uniform(
     ),
     [SchedulingErrorCode.AppointmentNotArrivable]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.BookingPolicyInvalid]: fields(S.Internal),
-    [SchedulingErrorCode.CancellationWindowInvalid]: fields(S.Internal),
     [SchedulingErrorCode.ClientStatsPolicyInvalid]: fields(S.Internal),
     [SchedulingErrorCode.FlexibleWhenFull]: fields(S.FailedPrecondition),
     [SchedulingErrorCode.StaffScheduleRetroactiveAmendment]: fields(

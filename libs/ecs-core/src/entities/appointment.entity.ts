@@ -6,7 +6,6 @@ import type {
   BookingLifecycle,
   Placement,
   StoodSeatPairs,
-  AccountSeat,
   Seat,
   VoucherRedemption,
 } from '@core/components';
@@ -115,23 +114,6 @@ export type AppointmentStamps = {
 export type Appointment = AppointmentMeta &
   AppointmentClientRefs &
   TimeCoordinate &
-  BookingLifecycle &
-  BookingContact &
-  AppointmentStamps &
-  StoodSeatPairs;
-
-/**
- * A visit as the ACCOUNT rules read it (D29) — every slice of
- * {@link Appointment} but the client-record mirrors, its seats
- * {@link AccountSeat}s. What a system that reads no client record takes
- * (Law 3: the slice it reads): a whole `Appointment` passes straight in,
- * and so did a visit a legacy shim read off a stored document (until Phase
- * 4b), which could not know a `CustomerId` — no placeholder value, no
- * uid→customer cast (flatten L7).
- */
-export type AccountAppointment = Omit<AppointmentMeta, 'seats'> & {
-  readonly seats: readonly AccountSeat[];
-} & TimeCoordinate &
   BookingLifecycle &
   BookingContact &
   AppointmentStamps &

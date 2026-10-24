@@ -3,24 +3,34 @@ import { BackfillJobName } from './backfill-job-name.data';
 import { CustomerId, LocationId, SeatId, UserId } from '@core/primitives';
 import { localDate } from '@core/testing';
 import {
-  ARRIVAL_ACTIONS,
+  type ArrivalAction,
   AUDIT_ACTIONS,
   AuditAction,
   AuditContext,
   AuditTarget,
   AuditTargetRef,
   BackfillOutcome,
-  PLACEMENT_ACTIONS,
-  PROFILE_ACTIONS,
-  STAFF_EDIT_ACTIONS,
-  TIP_ACTIONS,
-  TRANSITION_ACTIONS,
+  type PlacementAction,
+  type ProfileAction,
+  type StaffEditAction,
+  type TipAction,
+  type TransitionAction,
 } from './audit-context.data';
 import {
   StreakRuleDirection,
   StreakRuleParameter,
   StreakTransition,
 } from './streak-rule.data';
+
+/** `true` when no group shares a verb with any group before it. */
+type Apart<G extends readonly unknown[], Seen = never> = G extends readonly [
+  infer Head,
+  ...infer Rest,
+]
+  ? [Extract<Head, Seen>] extends [never]
+    ? Apart<Rest, Seen | Head>
+    : false
+  : true;
 
 describe('AuditAction', () => {
   it('keeps every audited verb, SCREAMING_SNAKE and domain-prefixed, each once', () => {
@@ -34,43 +44,28 @@ describe('AuditAction', () => {
     expect(AuditAction.OpsBackfill).toBe('OPS_BACKFILL');
   });
 
-  it('every grouped verb is in the dictionary, and no verb is in two groups', () => {
-    const groups = [
-      PLACEMENT_ACTIONS,
-      TRANSITION_ACTIONS,
-      ARRIVAL_ACTIONS,
-      TIP_ACTIONS,
-      STAFF_EDIT_ACTIONS,
-      PROFILE_ACTIONS,
+  it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
+    type Singles =
+      | typeof AuditAction.BookingRescheduled
+      | typeof AuditAction.BookingCancelled
+      | typeof AuditAction.LoyaltyStreakDefinitionPublished
+      | typeof AuditAction.LoyaltyStreakDefinitionWithdrawn
+      | typeof AuditAction.OpsBackfill;
+    type Groups = [
+      PlacementAction,
+      TransitionAction,
+      ArrivalAction,
+      TipAction,
+      StaffEditAction,
+      ProfileAction,
+      Singles,
     ];
-    const seen = new Set<string>();
-    for (const group of groups) {
-      for (const action of group) {
-        expect(AUDIT_ACTIONS).toContain(action);
-        expect(seen.has(action)).toBe(false);
-        seen.add(action);
-      }
-    }
-  });
-
-  it('the groups plus the single-verb variants partition the dictionary — no list drops a verb', () => {
-    const singles: readonly AuditAction[] = [
-      AuditAction.BookingRescheduled,
-      AuditAction.BookingCancelled,
-      AuditAction.LoyaltyStreakDefinitionPublished,
-      AuditAction.LoyaltyStreakDefinitionWithdrawn,
-      AuditAction.OpsBackfill,
-    ];
-    const covered: AuditAction[] = [
-      ...PLACEMENT_ACTIONS,
-      ...TRANSITION_ACTIONS,
-      ...ARRIVAL_ACTIONS,
-      ...TIP_ACTIONS,
-      ...STAFF_EDIT_ACTIONS,
-      ...PROFILE_ACTIONS,
-      ...singles,
-    ];
-    expect([...covered].sort()).toEqual([...AUDIT_ACTIONS].sort());
+    // `tsc` failing on either constant IS the failure.
+    const apart: Apart<Groups> = true;
+    const covers: [Exclude<AuditAction, Groups[number]>] extends [never]
+      ? true
+      : false = true;
+    expect([apart, covers]).toEqual([true, true]);
   });
 
   it('isAuditAction narrows known verbs and rejects strangers', () => {

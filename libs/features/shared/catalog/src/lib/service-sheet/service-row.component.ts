@@ -17,7 +17,7 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { UiListRow } from '@creativo/ui/patterns';
-import { CatalogPresenter } from '../content/catalog-presenter.service';
+import { CatalogWording } from '../content/catalog-wording.service';
 import type { ServiceVm } from '../content/catalog.vm';
 
 /**
@@ -206,7 +206,7 @@ export class ServiceRowComponent {
 
   readonly pressed = output<void>();
 
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   /** The dictionary, for the template's bundle mark (never a bare literal). */
   protected readonly CompositionKind = CompositionKind;
 }

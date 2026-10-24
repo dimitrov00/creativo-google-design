@@ -1,3 +1,5 @@
+import type { BookingError } from './booking.error';
+
 /**
  * What the waitlist's door can refuse — the ONLY source of these strings,
  * SCREAMING_SNAKE and prefixed `BOOKING_WAITLIST_` (Law 7.5, flatten-spec
@@ -11,7 +13,7 @@
 export const WaitlistErrorCode = {
   /** Nobody to notify — the normal path for an anonymous visitor (a sign-in prompt, not a banner). */
   Unauthenticated: 'BOOKING_WAITLIST_UNAUTHENTICATED',
-  /** `field` names what is wrong: a payload field or the refusal underneath. */
+  /** `field` names what is wrong: a payload field, or the commit's refusal underneath ({@link WaitlistError.CartRefused}). */
   InvalidRequest: 'BOOKING_WAITLIST_INVALID_REQUEST',
   TooManyDays: 'BOOKING_WAITLIST_TOO_MANY_DAYS',
   /** The same days are already watched for the same bag. */
@@ -34,6 +36,13 @@ export const WaitlistError = {
   invalidRequest(field: string): WaitlistError.InvalidRequest {
     return { errorCode: WaitlistErrorCode.InvalidRequest, field };
   },
+  /** The commit refuses the bag at that shop — its own code carried as the `field`. */
+  cartRefused(refusal: BookingError): WaitlistError.CartRefused {
+    return {
+      errorCode: WaitlistErrorCode.InvalidRequest,
+      field: refusal.errorCode,
+    };
+  },
   tooManyDays(max: number): WaitlistError.TooManyDays {
     return { errorCode: WaitlistErrorCode.TooManyDays, max };
   },
@@ -49,6 +58,15 @@ export namespace WaitlistError {
   export type InvalidRequest = {
     readonly errorCode: typeof WaitlistErrorCode.InvalidRequest;
     readonly field: string;
+  };
+  /**
+   * The commit refusing the bag at that shop (`PartyAdmissionSystem.admitCart`):
+   * an invalid request whose `field` is the commit's own refusal code, typed
+   * — only a code of the commit's error union stands there. One wire shape
+   * with every other invalid request.
+   */
+  export type CartRefused = InvalidRequest & {
+    readonly field: BookingError['errorCode'];
   };
   export type TooManyDays = {
     readonly errorCode: typeof WaitlistErrorCode.TooManyDays;

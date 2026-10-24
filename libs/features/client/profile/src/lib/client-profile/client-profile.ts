@@ -25,7 +25,7 @@ import {
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import {
   UiAvatar,
   UiButton,
@@ -343,12 +343,12 @@ export class ClientProfile {
    *  as the params (`errors.IDENTITY_BIRTH_DATE_TOO_YOUNG` names `minAge`). */
   protected birthError(): string | null {
     const error = this.birthErrorState();
-    return error === null ? null : translateDomainError(this.transloco, error);
+    return error === null ? null : translateCodedError(this.transloco, error);
   }
 
   protected translateError(code: string | null): string | null {
     return code
-      ? translateDomainError(this.transloco, { errorCode: code })
+      ? translateCodedError(this.transloco, { errorCode: code })
       : null;
   }
 

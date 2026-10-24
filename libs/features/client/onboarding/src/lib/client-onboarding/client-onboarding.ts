@@ -81,7 +81,7 @@ import {
   nameRefusalCodes,
 } from '@creativo/features/client/account-state';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { OnboardingFlowStore } from '../onboarding-flow.store';
 import { ONBOARDING_SERVICES_CAP } from '../services-cap';
 
@@ -460,7 +460,7 @@ export class ClientOnboarding {
 
   protected translateError(code: string | undefined | null): string | null {
     if (!code) return null;
-    return translateDomainError(this.transloco, { errorCode: code });
+    return translateCodedError(this.transloco, { errorCode: code });
   }
 
   protected currentError(): string | null {
@@ -482,7 +482,7 @@ export class ClientOnboarding {
     if (!reason) return null;
     const example =
       PhoneSystem.example(this.phoneCountry() ?? this.defaultCountry) ?? '';
-    return translateDomainError(
+    return translateCodedError(
       this.transloco,
       { errorCode: PhoneErrorCode.Invalid, example },
       reason,
@@ -525,11 +525,11 @@ export class ClientOnboarding {
     const state = this.birthErrorState();
     if (state === null) return null;
     if (state === 'partial') {
-      return translateDomainError(this.transloco, {
+      return translateCodedError(this.transloco, {
         errorCode: IdentityErrorCode.BirthDateInvalid,
       });
     }
-    return translateDomainError(this.transloco, state);
+    return translateCodedError(this.transloco, state);
   }
 
   /** `ui-date-field` validate-on-blur — never on keystroke; an untouched (empty) optional field stays silent. */
@@ -570,7 +570,7 @@ export class ClientOnboarding {
     void this.store.submitAbout(fields);
   }
 
-  /** Quiet inline copy for a failed birthday SAVE (a refused or failed `updateProfile` call) — the flow state carries the stable code, `translateDomainError` words it. */
+  /** Quiet inline copy for a failed birthday SAVE (a refused or failed `updateProfile` call) — the flow state carries the stable code, `translateCodedError` words it. */
   protected birthdaySaveError(): string | null {
     const state = this.store.state();
     return state.onboardingFlowStep === OnboardingFlowStep.Birthday

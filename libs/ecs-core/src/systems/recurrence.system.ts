@@ -392,9 +392,4 @@ export const RecurrenceSystem = {
       localDates: toLocalDates(found),
     });
   },
-
-  /** Is the day the series was started from one of its days (its first)? */
-  startsOnStart(series: RecurrenceSeries): boolean {
-    return series.localDates[0] === series.startLocalDate;
-  },
 } as const;

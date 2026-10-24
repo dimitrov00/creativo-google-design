@@ -126,11 +126,6 @@ export function monthLong(day: string, lang: string): string {
  */
 export { dayRange } from '@creativo/features/shared/visits';
 
-/** Whole calendar days from one shop day to another (negative when `to` comes first). */
-export function daysBetweenDays(from: string, to: string): number {
-  return LocalDate.daysBetween(localDateOf(from), localDateOf(to));
-}
-
 /** «12 450» — a count or a figure, grouped the locale's way. */
 export function figure(value: number, lang: string): string {
   return new Intl.NumberFormat(lang).format(value);
@@ -169,13 +164,6 @@ export function levelNumeral(level: number): string {
     }
   }
   return out;
-}
-
-/** «+17» · «−250» — a signed movement; zero carries no sign. */
-export function signedFigure(value: number, lang: string): string {
-  return new Intl.NumberFormat(lang, { signDisplay: 'exceptZero' }).format(
-    value,
-  );
 }
 
 /**

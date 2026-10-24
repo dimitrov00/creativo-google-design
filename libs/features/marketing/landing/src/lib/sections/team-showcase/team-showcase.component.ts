@@ -21,11 +21,13 @@ import {
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { UiModalSheet } from '@creativo/ui/controls';
-import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
+import {
+  ServiceRowComponent,
+  type ServiceVm,
+  ShowcaseGalleryComponent,
+} from '@creativo/features/shared/catalog';
 import { LandingContentService } from '../../content/landing-content.service';
-import { type ServiceVm } from '../../content/landing-content';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
-import { ServiceRowComponent } from '@creativo/features/shared/catalog';
 
 interface BarberItem {
   /** Matches the catalog's barber id — the key the price list derives from. */

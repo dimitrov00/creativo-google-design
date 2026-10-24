@@ -34,7 +34,7 @@ import {
 import { type CartLocatedOption, ZonedTimeSystem } from '@core/systems';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import { UiButton, UiIcon, UiModalSheet } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
@@ -162,7 +162,7 @@ export class BookingTimeSheet {
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   /** The shop day this sheet is about. */

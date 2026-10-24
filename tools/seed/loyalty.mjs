@@ -55,11 +55,36 @@
  * nothing here imports a system: the fold and the read-back are HANDED the
  * domain (`loadSeedDomain()`'s bundle in the seed, the ordinary imports in
  * a spec) — `StreakSystem`, `StreakRuleSystem`, `StreakRule`,
- * `LoyaltyCatalogSystem`.
+ * `LoyaltyCatalogSystem`. The tags it reads and writes are the ecs-core
+ * dictionaries', and every day and instant is the shop calendar's
+ * (`calendar.mjs`: `ZonedTimeSystem` on the default shop's zone, `LocalDate`
+ * for whole days).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SHOP_ZONE, createShopCalendar } from './calendar.mjs';
+import {
+  CancellationReason,
+  CancelledBy,
+  CompositionKind,
+  HeadRole,
+  JournalSource,
+  LabelCode,
+  Metric,
+  Placement,
+  RewardGrant,
+  SeatSubject,
+  StreakExcuse,
+  TimeCoordinate,
+} from '@core/components';
+import {
+  AttendanceState,
+  AwardKind,
+  Currency,
+  LocalDate,
+  UtcEpochMs,
+  Weekday,
+} from '@core/primitives';
+import { shopMidnightOf, shopWallAt } from './calendar.mjs';
 import { CATEGORY, HAIRCUTS, SERVICES } from './catalog.mjs';
 import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import {
@@ -132,10 +157,6 @@ const CATALOG_BODY = Object.freeze({
   streakDefinitions: streakDefinitionBody,
 });
 
-/** `HeadRole` tags, as a head's `rules` store them. */
-const CURRENT = 'CURRENT';
-const SCHEDULED = 'SCHEDULED';
-
 // ── The engine's own rules (not catalogue data) ────────────────────────────
 
 /** A worked seat pays a point per whole euro of its sold price. */
@@ -154,14 +175,6 @@ export const PUNCH_CARD = Object.freeze({
 
 /** The streak the «В ритъм» family counts and a `FREEZE` award banks into. */
 const RHYTHM_STREAK_ID = 'cadence';
-
-/** `AwardKind` tags, as a level's `awards` store them. */
-const POINTS_AWARD = 'POINTS';
-const FREEZE_AWARD = 'FREEZE';
-/** `RewardGrant` tag of a reward that mints a coupon. */
-const COUPON_GRANT = 'COUPON';
-/** `JournalSource` tag of a row a redemption wrote. */
-const REDEMPTION_SOURCE = 'REDEMPTION';
 
 /**
  * What ties the rows of one event together (client-card-revision-3.md
@@ -236,54 +249,18 @@ export const LOYALTY_HOLDERS = Object.freeze([
 
 // ── Days ───────────────────────────────────────────────────────────────────
 
-const DAY_MS = 86_400_000;
-const MINUTE_MS = 60_000;
 /** «Ранобудник»: a visit starting at 10:00 or before. */
 const EARLY_BIRD_LAST_MINUTE = 10 * 60;
 /** «Преди отпуска»: two visits this close. */
 const BEFORE_LEAVE_DAYS = 21;
+/** A reward is bought at the counter two minutes after the chair freed. */
+const AT_THE_COUNTER_MINUTES = 2;
 
-const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
-const addDays = (day, days) =>
-  new Date((dayNumber(day) + days) * DAY_MS).toISOString().slice(0, 10);
-const daysBetween = (from, to) => dayNumber(to) - dayNumber(from);
-const weekdayOf = (day) => new Date(`${day}T12:00:00Z`).getUTCDay();
+/** The shop day of an instant. */
+const shopDayOf = (ms) => shopWallAt(ms).localDate;
 
-const SOFIA_WALL = new Intl.DateTimeFormat('en-CA', {
-  timeZone: SHOP_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-/** The shop's day and minute of day at an instant. */
-function sofiaWallOf(ms) {
-  const part = Object.fromEntries(
-    SOFIA_WALL.formatToParts(new Date(ms)).map(({ type, value }) => [
-      type,
-      value,
-    ]),
-  );
-  return {
-    day: `${part.year}-${part.month}-${part.day}`,
-    minute: Number(part.hour) * 60 + Number(part.minute),
-  };
-}
-
-const jobInstants = new Map();
-/** 00:00 in Sofia on `day`, when the engine's daily job runs. */
-function jobInstantOn(day) {
-  let ms = jobInstants.get(day);
-  if (ms === undefined) {
-    // Noon UTC is the same Sofia day, whatever the season.
-    ms = createShopCalendar(Date.parse(`${day}T12:00:00Z`)).msAt(0, 0, 0);
-    jobInstants.set(day, ms);
-  }
-  return ms;
-}
+/** 00:00 on the shop's clock on `day`, when the engine's daily job runs. */
+const jobInstantOn = (day) => shopMidnightOf(day);
 
 // ── The catalogue ──────────────────────────────────────────────────────────
 
@@ -303,7 +280,7 @@ export const LOYALTY_CATALOG_TODAY = '2026-09-28';
  */
 export function loyaltyCatalogFor(today) {
   const stored = JSON.parse(readFileSync(CATALOG_FILE, 'utf8'));
-  const shift = daysBetween(LOYALTY_CATALOG_TODAY, today);
+  const shift = LocalDate.daysBetween(LOYALTY_CATALOG_TODAY, today);
   const bodyOf = (collection, body) =>
     collection === 'seasons'
       ? seasonBody(body, shift)
@@ -368,12 +345,12 @@ const ruleInRole = (head, role) =>
  * the shop schedules one.
  */
 export function seedRuleVersionWriteOf(streakId, head) {
-  if (ruleInRole(head, SCHEDULED) !== undefined) {
+  if (ruleInRole(head, HeadRole.Scheduled) !== undefined) {
     throw new Error(
       `seed: the ${streakId} rhythm holds a scheduled version, which only a publish writes`,
     );
   }
-  const current = ruleInRole(head, CURRENT);
+  const current = ruleInRole(head, HeadRole.Current);
   if (current === undefined) {
     throw new Error(`seed: the ${streakId} rhythm holds no rule in force`);
   }
@@ -385,9 +362,9 @@ export function seedRuleVersionWriteOf(streakId, head) {
 
 /** The newest version a stored head names — the one that waits, else the one in force — or `null`. */
 function newestVersionOf(held) {
-  const current = ruleInRole(held, CURRENT);
+  const current = ruleInRole(held, HeadRole.Current);
   if (current === undefined) return null;
-  const { version } = ruleInRole(held, SCHEDULED) ?? current;
+  const { version } = ruleInRole(held, HeadRole.Scheduled) ?? current;
   return Number.isInteger(version) ? version : null;
 }
 
@@ -417,7 +394,7 @@ export function rulesPublishedOver(writes, stored) {
       continue;
     }
     const newest = newestVersionOf(stored.get(path));
-    const seeded = ruleInRole(data, CURRENT).version;
+    const seeded = ruleInRole(data, HeadRole.Current).version;
     if (newest === null || newest < seeded) continue;
     const first = stored.get(ruleVersionPath(streakId, seeded));
     const othersIntent =
@@ -539,15 +516,8 @@ export function loyaltyCatalogDriftOf(writes, stored) {
 
 // ── Reading the book ───────────────────────────────────────────────────────
 
-/** `AttendanceState` / `SeatSubject` / `CancelledBy` / `Placement` tags, as the flat seat stores them. */
-const WORKED = 'WORKED';
-const CANCELLED = 'CANCELLED';
-const ACCOUNT = 'ACCOUNT';
-const BY_CLIENT = 'CLIENT';
-const SELF_PLACED = 'SELF';
-
 const isOwnSeat = (seat, uid) =>
-  seat.seatSubject === ACCOUNT && seat.subjectUserId === uid;
+  seat.seatSubject === SeatSubject.Account && seat.subjectUserId === uid;
 const distinct = (values) => [...new Set(values)];
 
 /**
@@ -556,8 +526,7 @@ const distinct = (values) => [...new Set(values)];
  * (`TimeCoordinate.seatStartUtcMs`, T9 — exact: no visit straddles a DST
  * switch, the shop is closed then).
  */
-const seatStartMs = (doc, seat) =>
-  doc.utcEpochMs + (seat.startMinutes - doc.startMinutes) * MINUTE_MS;
+const seatStartMs = (doc, seat) => TimeCoordinate.seatStartUtcMs(doc, seat);
 
 /**
  * Every visit `uid` was worked on, oldest first: an appointment with a
@@ -576,7 +545,8 @@ export function workedVisitsOf(uid, appointments) {
     if (seen.has(id)) continue;
     seen.add(id);
     const worked = doc.seats.filter(
-      (seat) => isOwnSeat(seat, uid) && seat.attendanceState === WORKED,
+      (seat) =>
+        isOwnSeat(seat, uid) && seat.attendanceState === AttendanceState.Worked,
     );
     if (worked.length === 0) continue;
     if (doc.discounts.length > 0 || doc.voucherRedemptions.length > 0) {
@@ -586,7 +556,7 @@ export function workedVisitsOf(uid, appointments) {
     const last = worked.reduce((a, b) =>
       b.workedAtUtcMs > a.workedAtUtcMs ? b : a,
     );
-    const wall = sofiaWallOf(startMs);
+    const wall = shopWallAt(startMs);
     const arrivedMs = doc.arrivedAtUtcMs;
     visits.push({
       appointmentId: id,
@@ -594,10 +564,10 @@ export function workedVisitsOf(uid, appointments) {
       startMs,
       doneMs: last.workedAtUtcMs,
       lastSeatId: last.seatId,
-      day: wall.day,
+      day: wall.localDate,
       startMinute: wall.minute,
       seats: worked.map((seat) => {
-        if (seat.currency !== 'EUR') {
+        if (seat.currency !== Currency.EUR) {
           throw new Error(`seed: ${id}/${seat.seatId} is not sold in EUR`);
         }
         return {
@@ -624,7 +594,7 @@ function selfBookingsOf(uid, appointments) {
     .filter(
       ({ doc }) =>
         doc.ownerUserId === uid &&
-        doc.placement === SELF_PLACED &&
+        doc.placement === Placement.Self &&
         doc.bookedAtUtcMs !== null,
     )
     .map(({ id, doc }) => ({
@@ -649,13 +619,15 @@ function firstBookingMsOf(uid, appointments) {
  */
 function excuseOf(seat) {
   switch (seat.cancellationReason) {
-    case 'STAFF_BARBER_ABSENCE':
-      return 'BARBER_ABSENCE';
-    case 'STAFF_SHOP_CLOSURE':
-      return 'SHOP_CLOSURE';
-    case 'UNSPECIFIED':
-    case 'OTHER':
-      return seat.cancelledBy === BY_CLIENT ? null : 'STAFF_CANCELLED';
+    case CancellationReason.StaffBarberAbsence:
+      return StreakExcuse.BarberAbsence;
+    case CancellationReason.StaffShopClosure:
+      return StreakExcuse.ShopClosure;
+    case CancellationReason.Unspecified:
+    case CancellationReason.Other:
+      return seat.cancelledBy === CancelledBy.Client
+        ? null
+        : StreakExcuse.StaffCancelled;
     default:
       return null;
   }
@@ -675,14 +647,18 @@ function calledOffVisitsOf(uid, appointments) {
     seen.add(id);
     const own = doc.seats.filter((seat) => isOwnSeat(seat, uid));
     if (own.length === 0) continue;
-    if (!own.every((seat) => seat.attendanceState === CANCELLED)) continue;
+    if (
+      !own.every((seat) => seat.attendanceState === AttendanceState.Cancelled)
+    ) {
+      continue;
+    }
     const decisive = own.reduce((a, b) =>
       b.cancelledAtUtcMs > a.cancelledAtUtcMs ? b : a,
     );
     const reason = excuseOf(decisive);
     if (reason === null) continue;
     const startMs = Math.min(...own.map((seat) => seatStartMs(doc, seat)));
-    calledOff.push({ atMs: startMs, day: sofiaWallOf(startMs).day, reason });
+    calledOff.push({ atMs: startMs, day: shopDayOf(startMs), reason });
   }
   return calledOff;
 }
@@ -704,16 +680,16 @@ function bookingsOf(uid, appointments) {
     if (own.length === 0) continue;
     const released = own.every(
       (seat) =>
-        seat.attendanceState === CANCELLED && seat.cancelledBy === BY_CLIENT,
+        seat.attendanceState === AttendanceState.Cancelled &&
+        seat.cancelledBy === CancelledBy.Client,
     );
     if (released) continue;
     const startMs = Math.min(...own.map((seat) => seatStartMs(doc, seat)));
-    const day = sofiaWallOf(startMs).day;
+    const day = shopDayOf(startMs);
     bookings.push({
       appointmentId: id,
       // A visit nobody booked ahead was placed as it began.
-      placedOn:
-        doc.bookedAtUtcMs === null ? day : sofiaWallOf(doc.bookedAtUtcMs).day,
+      placedOn: doc.bookedAtUtcMs === null ? day : shopDayOf(doc.bookedAtUtcMs),
       day,
     });
   }
@@ -740,7 +716,7 @@ function headProblemsOf(domain, head) {
     return ['it holds no rules list'];
   }
   const problems =
-    ruleInRole(head, CURRENT) === undefined
+    ruleInRole(head, HeadRole.Current) === undefined
       ? ['it holds no rule in force']
       : [];
   for (const rule of head.rules) {
@@ -834,13 +810,11 @@ function rhythmOf(domain, streakId, rule, { visits, calledOff, bookings }) {
 // ── What a family counts ───────────────────────────────────────────────────
 
 const HAIR_SERVICE_IDS = new Set(HAIRCUTS);
-/** `CompositionKind` of a service that bundles others. */
-const BUNDLE = 'BUNDLE';
 /** A bundle's members count as its services: «Пълна грижа» is a cut and a beard. */
 const servicesOf = (serviceIds) =>
   serviceIds.flatMap((serviceId) => {
     const service = SERVICES.find((entry) => entry.id === serviceId);
-    return service?.body.compositionKind === BUNDLE
+    return service?.body.compositionKind === CompositionKind.Bundle
       ? service.body.bundleServiceIds
       : [serviceId];
   });
@@ -885,51 +859,63 @@ function metricValue(series, season, folded, day) {
     (visit) =>
       inSeason(season, visit.day) &&
       (series.metricWindowDays === null ||
-        daysBetween(visit.day, day) < series.metricWindowDays) &&
+        LocalDate.daysBetween(visit.day, day) < series.metricWindowDays) &&
       inScope(visit, series),
   );
   switch (series.metric) {
-    case 'client.visits.completed':
+    case Metric.VisitsCompleted:
       return visits.length;
-    case 'client.bookings.selfService':
+    case Metric.BookingsSelfService:
       return folded.bookings.filter((booking) => inSeason(season, booking.day))
         .length;
-    case 'client.referrals.completed':
-    case 'client.waitlist.booked':
+    case Metric.ReferralsCompleted:
+    case Metric.WaitlistBooked:
       return 0;
-    case 'client.services.distinct':
+    case Metric.ServicesDistinct:
       return new Set(visits.flatMap((visit) => visit.serviceIds)).size;
-    case 'client.barbers.distinct':
+    case Metric.BarbersDistinct:
       return new Set(visits.flatMap((visit) => visit.barberIds)).size;
-    case 'client.locations.distinct':
+    case Metric.LocationsDistinct:
       return new Set(visits.map((visit) => visit.locationId)).size;
-    case 'client.months.distinct':
+    case Metric.MonthsDistinct:
       return new Set(visits.map((visit) => visit.day.slice(0, 7))).size;
-    case 'client.visits.earlyBird':
+    case Metric.VisitsEarlyBird:
       return visits.filter(
         (visit) => visit.startMinute <= EARLY_BIRD_LAST_MINUTE,
       ).length;
-    case 'client.visits.weekend':
-      return visits.filter((visit) => [0, 6].includes(weekdayOf(visit.day)))
-        .length;
-    case 'client.visits.onTime':
+    case Metric.VisitsWeekend:
+      return visits.filter((visit) =>
+        Weekday.isWeekend(LocalDate.weekday(visit.day)),
+      ).length;
+    case Metric.VisitsOnTime:
       return visits.filter((visit) => visit.onTime).length;
-    case 'client.visits.party':
+    case Metric.VisitsParty:
       return visits.filter((visit) => visit.withCompany).length;
-    case 'client.tenure.days':
+    case Metric.TenureDays:
       return folded.visits.length === 0
         ? 0
-        : daysBetween(folded.visits[0].day, day);
+        : LocalDate.daysBetween(folded.visits[0].day, day);
     default:
       throw new Error(`seed: the ${series.metric} metric is not projected`);
   }
 }
 
+/** What a fact on the fold's timeline is — the field `loyaltyFact`. */
+const LoyaltyFact = Object.freeze({
+  Booking: 'BOOKING',
+  Profile: 'PROFILE',
+  Calendar: 'CALENDAR',
+  TierJob: 'TIER_JOB',
+  Excuse: 'EXCUSE',
+  Seat: 'SEAT',
+  Visit: 'VISIT',
+  Redemption: 'REDEMPTION',
+});
+
 /** A 29 February birthday falls on the 28th in a common year. */
 function isBirthday(day, birthDate) {
   if (birthDate == null) return false;
-  const year = Number(day.slice(0, 4));
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const leap = LocalDate.isLeapYear(Number(day.slice(0, 4)));
   const monthDay =
     birthDate.slice(5) === '02-29' && !leap ? '02-28' : birthDate.slice(5);
   return day.slice(5) === monthDay;
@@ -946,28 +932,33 @@ const ACTS = {
     count: (folded) => folded.rhythms.get(RHYTHM_STREAK_ID)?.best ?? 0,
   },
   'series-comeback': {
-    met: (folded, fact) => fact.kind === 'visit' && fact.cameBack,
+    met: (folded, fact) =>
+      fact.loyaltyFact === LoyaltyFact.Visit && fact.cameBack,
   },
   'series-welcome': {
-    met: (folded, fact) => fact.kind === 'visit' && folded.visits.length === 1,
+    met: (folded, fact) =>
+      fact.loyaltyFact === LoyaltyFact.Visit && folded.visits.length === 1,
   },
   'series-birthday': {
     met: (folded, fact) =>
-      fact.kind === 'visit' &&
+      fact.loyaltyFact === LoyaltyFact.Visit &&
       isBirthday(fact.visit.day, folded.profile?.birthDate),
   },
   'series-profile': {
-    met: (folded, fact) => fact.kind === 'profile',
+    met: (folded, fact) => fact.loyaltyFact === LoyaltyFact.Profile,
   },
   'series-2026-beard-week-full': {
     met: (folded, fact, season) =>
-      fact.kind === 'visit' &&
+      fact.loyaltyFact === LoyaltyFact.Visit &&
       inSeason(season, fact.visit.day) &&
       hairAndBeard(fact.visit),
   },
   'series-2026-summer-before-leave': {
     met: (folded, fact, season) => {
-      if (fact.kind !== 'visit' || !inSeason(season, fact.visit.day))
+      if (
+        fact.loyaltyFact !== LoyaltyFact.Visit ||
+        !inSeason(season, fact.visit.day)
+      )
         return false;
       const before = folded.visits
         .slice(0, -1)
@@ -975,7 +966,7 @@ const ACTS = {
         .at(-1);
       return (
         before !== undefined &&
-        daysBetween(before.day, fact.visit.day) <= BEFORE_LEAVE_DAYS
+        LocalDate.daysBetween(before.day, fact.visit.day) <= BEFORE_LEAVE_DAYS
       );
     },
   },
@@ -984,16 +975,16 @@ const ACTS = {
 // ── The fold ───────────────────────────────────────────────────────────────
 
 /** Facts on one instant: bookings first, the day's job, then the chair, then the counter. */
-const RANK = {
-  booking: 0,
-  profile: 0,
-  calendar: 1,
-  tierJob: 1,
-  excuse: 2,
-  seat: 3,
-  visit: 4,
-  redemption: 5,
-};
+const FACT_RANK = Object.freeze({
+  [LoyaltyFact.Booking]: 0,
+  [LoyaltyFact.Profile]: 0,
+  [LoyaltyFact.Calendar]: 1,
+  [LoyaltyFact.TierJob]: 1,
+  [LoyaltyFact.Excuse]: 2,
+  [LoyaltyFact.Seat]: 3,
+  [LoyaltyFact.Visit]: 4,
+  [LoyaltyFact.Redemption]: 5,
+});
 
 /**
  * `uid`'s loyalty documents as the engine would hold them on the shop's
@@ -1032,7 +1023,7 @@ export function projectLoyaltyFor(
   );
   const bookings = selfBookingsOf(uid, appointments).map((booking) => ({
     ...booking,
-    day: sofiaWallOf(booking.atMs).day,
+    day: shopDayOf(booking.atMs),
   }));
   const firstBookingMs = firstBookingMsOf(uid, appointments);
   const families = Object.entries(catalog.badgeSeries);
@@ -1046,12 +1037,12 @@ export function projectLoyaltyFor(
   // ── The facts, in time order ──
   const timeline = [];
   const add = (fact) => {
-    const day = fact.day ?? sofiaWallOf(fact.atMs).day;
+    const day = fact.day ?? shopDayOf(fact.atMs);
     if (day <= today) timeline.push({ ...fact, day });
   };
   for (const booking of bookings) {
     add({
-      kind: 'booking',
+      loyaltyFact: LoyaltyFact.Booking,
       atMs: booking.atMs,
       day: booking.day,
       eventId: `booking:${booking.appointmentId}`,
@@ -1064,20 +1055,26 @@ export function projectLoyaltyFor(
     profile.hasAvatar === true;
   const profileAtMs = firstBookingMs ?? visits[0]?.startMs ?? null;
   if (profileComplete && profileAtMs !== null) {
-    add({ kind: 'profile', atMs: profileAtMs, eventId: `profile:${uid}` });
+    add({
+      loyaltyFact: LoyaltyFact.Profile,
+      atMs: profileAtMs,
+      eventId: `profile:${uid}`,
+    });
   }
   if (visits.length > 0) {
     const firstDay = visits[0].day;
     const anniversaries = new Set(
       families.flatMap(([, series]) =>
-        series.metric === 'client.tenure.days'
-          ? series.levels.map((level) => addDays(firstDay, level.target))
+        series.metric === Metric.TenureDays
+          ? series.levels.map((level) =>
+              LocalDate.addDays(firstDay, level.target),
+            )
           : [],
       ),
     );
     for (const day of [...anniversaries].sort()) {
       add({
-        kind: 'calendar',
+        loyaltyFact: LoyaltyFact.Calendar,
         atMs: jobInstantOn(day),
         day,
         eventId: `cal:${day}:${uid}`,
@@ -1085,18 +1082,32 @@ export function projectLoyaltyFor(
     }
   }
   for (const visit of visits) {
-    const leaves = addDays(visit.day, tiers.lastDays);
-    add({ kind: 'tierJob', atMs: jobInstantOn(leaves), day: leaves });
+    const leaves = LocalDate.addDays(visit.day, tiers.lastDays);
+    add({
+      loyaltyFact: LoyaltyFact.TierJob,
+      atMs: jobInstantOn(leaves),
+      day: leaves,
+    });
   }
   for (const visit of calledOff) {
-    add({ kind: 'excuse', atMs: visit.atMs, day: visit.day, calledOff: visit });
+    add({
+      loyaltyFact: LoyaltyFact.Excuse,
+      atMs: visit.atMs,
+      day: visit.day,
+      calledOff: visit,
+    });
   }
   for (const visit of visits) {
     for (const seat of visit.seats) {
-      add({ kind: 'seat', atMs: seat.workedAtMs, visit, seat });
+      add({
+        loyaltyFact: LoyaltyFact.Seat,
+        atMs: seat.workedAtMs,
+        visit,
+        seat,
+      });
     }
     add({
-      kind: 'visit',
+      loyaltyFact: LoyaltyFact.Visit,
       atMs: visit.doneMs,
       visit,
       eventId: seatEventId(visit.appointmentId, visit.lastSeatId),
@@ -1109,10 +1120,17 @@ export function projectLoyaltyFor(
         `seed: ${uid} has no worked visit ${redemption.afterVisit} to redeem ${redemption.id} after`,
       );
     }
-    add({ kind: 'redemption', atMs: visit.doneMs + 2 * MINUTE_MS, redemption });
+    add({
+      loyaltyFact: LoyaltyFact.Redemption,
+      atMs: UtcEpochMs.plusMinutes(visit.doneMs, AT_THE_COUNTER_MINUTES),
+      redemption,
+    });
   }
   if (timeline.length === 0) return null;
-  timeline.sort((a, b) => a.atMs - b.atMs || RANK[a.kind] - RANK[b.kind]);
+  timeline.sort(
+    (a, b) =>
+      a.atMs - b.atMs || FACT_RANK[a.loyaltyFact] - FACT_RANK[b.loyaltyFact],
+  );
 
   // ── The state the facts fold into ──
   const writes = new Set();
@@ -1170,8 +1188,9 @@ export function projectLoyaltyFor(
   /** A row that moves the balance: the only effect that does. */
   const pay = (fact, delta, entry) => {
     balance += delta;
-    if (entry.source.journalSource === REDEMPTION_SOURCE) spentPoints -= delta;
-    else earnedPoints += delta;
+    if (entry.source.journalSource === JournalSource.Redemption) {
+      spentPoints -= delta;
+    } else earnedPoints += delta;
     append(fact, { ...entry, effect: pointsEffect(delta) });
   };
 
@@ -1197,16 +1216,16 @@ export function projectLoyaltyFor(
       actor: ENGINE_ACTOR,
       correlationId: CORRELATION.award(awardKey),
       idempotencyKey: `award:${awardKey}#badge`,
-      labelCode: 'achievement.earned',
+      labelCode: LabelCode.AchievementEarned,
       labelParams: { rule: level.ruleId, seriesId, level: level.level },
     });
     let paid = 0;
     for (const award of level.awards) {
-      if (award.awardKind === FREEZE_AWARD) {
+      if (award.awardKind === AwardKind.Freeze) {
         rhythms.get(RHYTHM_STREAK_ID)?.grant(fact.day, award.awardFreezeCount);
         continue;
       }
-      if (award.awardKind !== POINTS_AWARD) {
+      if (award.awardKind !== AwardKind.Points) {
         throw new Error(
           `seed: ${seriesId} ${level.level} pays a ${award.awardKind}, which is not projected`,
         );
@@ -1216,7 +1235,7 @@ export function projectLoyaltyFor(
         actor: ENGINE_ACTOR,
         correlationId: CORRELATION.award(awardKey),
         idempotencyKey: `award:${awardKey}#${paid}`,
-        labelCode: 'points.rule',
+        labelCode: LabelCode.PointsRule,
         labelParams: {
           rule: level.ruleId,
           points: award.awardPoints,
@@ -1247,8 +1266,7 @@ export function projectLoyaltyFor(
         const [level] = series.levels;
         const earnedThisYear = entry?.earned.some(
           (earned) =>
-            sofiaWallOf(earned.atUtcMs).day.slice(0, 4) ===
-            fact.day.slice(0, 4),
+            shopDayOf(earned.atUtcMs).slice(0, 4) === fact.day.slice(0, 4),
         );
         if (entry && (!series.repeatable || earnedThisYear)) continue;
         earn(seriesId, series, level, fact);
@@ -1287,7 +1305,7 @@ export function projectLoyaltyFor(
       actor: ENGINE_ACTOR,
       correlationId: CORRELATION.award(awardKey),
       idempotencyKey: `award:${awardKey}#0`,
-      labelCode: 'reward.granted',
+      labelCode: LabelCode.RewardGranted,
       labelParams: {
         rule: PUNCH_CARD.ruleId,
         reward: stampReward.id,
@@ -1312,30 +1330,30 @@ export function projectLoyaltyFor(
       actor: ENGINE_ACTOR,
       correlationId: CORRELATION.tier(uid, reached.id, fact.day),
       idempotencyKey: `tier:${uid}:${reached.id}:${fact.day}`,
-      labelCode: 'tier.changed',
+      labelCode: LabelCode.TierChanged,
       labelParams: { from, to: reached.id },
     });
   };
 
   for (const fact of timeline) {
-    switch (fact.kind) {
-      case 'booking':
+    switch (fact.loyaltyFact) {
+      case LoyaltyFact.Booking:
         folded.bookings.push(fact);
         evaluateFamilies(fact);
         break;
-      case 'profile':
-      case 'calendar':
+      case LoyaltyFact.Profile:
+      case LoyaltyFact.Calendar:
         evaluateFamilies(fact);
         break;
-      case 'tierJob':
+      case LoyaltyFact.TierJob:
         evaluateTier(fact);
         break;
-      case 'excuse':
+      case LoyaltyFact.Excuse:
         for (const rhythm of rhythms.values()) {
           if (rhythm.movedBy(fact.calledOff)) writes.add(fact.atMs);
         }
         break;
-      case 'seat': {
+      case LoyaltyFact.Seat: {
         const points = Math.floor(fact.seat.priceMinor / 100);
         if (points > 0) {
           const factKey = seatFactId(
@@ -1353,7 +1371,7 @@ export function projectLoyaltyFor(
             actor: ENGINE_ACTOR,
             correlationId: CORRELATION.visit(fact.visit.appointmentId),
             idempotencyKey: `award:${awardKey}#0`,
-            labelCode: 'points.rule',
+            labelCode: LabelCode.PointsRule,
             labelParams: {
               rule: EARN_RULE.ruleId,
               points,
@@ -1367,7 +1385,7 @@ export function projectLoyaltyFor(
         evaluateTier(fact);
         break;
       }
-      case 'visit': {
+      case LoyaltyFact.Visit: {
         folded.visits.push(fact.visit);
         let cameBack = false;
         for (const [streakId, rhythm] of rhythms) {
@@ -1383,7 +1401,7 @@ export function projectLoyaltyFor(
         evaluateTier(fact);
         break;
       }
-      case 'redemption': {
+      case LoyaltyFact.Redemption: {
         const { redemption } = fact;
         const reward = catalog.rewardsCatalog[redemption.rewardId];
         const refusal = redeemRefusal(reward, balance, fact.day);
@@ -1398,7 +1416,7 @@ export function projectLoyaltyFor(
           actor: redemption.actor,
           correlationId: redemption.id,
           idempotencyKey: `rdm:${redemption.id}#0`,
-          labelCode: 'points.redeemed',
+          labelCode: LabelCode.PointsRedeemed,
           labelParams: { reward: redemption.rewardId, points: reward.cost },
         });
         append(fact, {
@@ -1412,7 +1430,7 @@ export function projectLoyaltyFor(
           actor: redemption.actor,
           correlationId: redemption.id,
           idempotencyKey: `rdm:${redemption.id}#1`,
-          labelCode: 'redemption.changed',
+          labelCode: LabelCode.RedemptionChanged,
           labelParams: { op: 'redeemed', reward: redemption.rewardId },
         });
         break;
@@ -1503,7 +1521,8 @@ const seatEventId = (appointmentId, seatId) =>
 
 /** Worked visits inside the window that ends on `day`. */
 const qualifyingOn = (visits, day, lastDays) =>
-  visits.filter((visit) => daysBetween(visit.day, day) < lastDays).length;
+  visits.filter((visit) => LocalDate.daysBetween(visit.day, day) < lastDays)
+    .length;
 
 /**
  * The tiers by rank. They qualify on visits in one rolling window — the
@@ -1517,7 +1536,7 @@ function tierLadderOf(catalog) {
   const lastDays = ladder[0].definition.qualifyWindowDays;
   for (const { id, definition } of ladder) {
     if (
-      definition.qualifyMetric !== 'client.visits.completed' ||
+      definition.qualifyMetric !== Metric.VisitsCompleted ||
       definition.qualifyWindowDays !== lastDays
     ) {
       throw new Error(`seed: the ${id} tier's qualification is not projected`);
@@ -1537,7 +1556,7 @@ function tierLadderOf(catalog) {
 function redeemRefusal(reward, balance, day) {
   if (reward === undefined) return 'no such reward';
   if (!reward.enabled) return 'the reward is off';
-  if (reward.rewardGrant !== COUPON_GRANT) {
+  if (reward.rewardGrant !== RewardGrant.Coupon) {
     return `a reward that grants a ${reward.rewardGrant} is not projected`;
   }
   const { availableFrom: from, availableUntil: until } = reward;
@@ -1556,7 +1575,7 @@ function redeemRefusal(reward, balance, day) {
 function punchRewardOf(catalog) {
   const found = Object.entries(catalog.rewardsCatalog).find(
     ([, item]) =>
-      item.rewardGrant === COUPON_GRANT &&
+      item.rewardGrant === RewardGrant.Coupon &&
       item.grantCouponId === PUNCH_CARD.couponId,
   );
   if (!found) {
@@ -1675,13 +1694,18 @@ export function redemptionGrantsOf(
     const index = redemption.afterVisit - 1;
     const visit = visits[index];
     const reward = catalog.rewardsCatalog[redemption.rewardId];
-    if (visit === undefined || reward?.rewardGrant !== COUPON_GRANT) return [];
+    if (visit === undefined || reward?.rewardGrant !== RewardGrant.Coupon) {
+      return [];
+    }
     return [
       {
         redemptionId: redemption.id,
         grantId: redemptionGrantIdOf(redemption.id),
         couponId: reward.grantCouponId,
-        grantedAtUtcMs: visit.doneMs + 2 * MINUTE_MS,
+        grantedAtUtcMs: UtcEpochMs.plusMinutes(
+          visit.doneMs,
+          AT_THE_COUNTER_MINUTES,
+        ),
         usedAtUtcMs: usedAfter(visits, index),
       },
     ];

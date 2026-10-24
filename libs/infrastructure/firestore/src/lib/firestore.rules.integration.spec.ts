@@ -698,8 +698,10 @@ describe('firestore.rules', () => {
     );
   });
 
-  describe('server-only collections', () => {
-    it.each(['otps', 'rateLimits', 'blocklist'])(
+  describe('server-only collections and unmatched paths', () => {
+    // `otps` is closed by its own match; the retired `rewardPrograms` and a
+    // collection no rule names fall through to the default deny.
+    it.each(['otps', 'rewardPrograms', 'noSuchCollection'])(
       'denies every client read/write on %s',
       async (collectionName) => {
         await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -720,6 +722,16 @@ describe('firestore.rules', () => {
         );
       },
     );
+
+    it('closes the retired users/{uid}/rewardProgress to its owner too', async () => {
+      await seed('users/u-1/rewardProgress/p-1', { any: 'value' });
+      const owner = signedIn('u-1').firestore();
+
+      await assertFails(getDoc(doc(owner, 'users/u-1/rewardProgress/p-1')));
+      await assertFails(
+        setDoc(doc(owner, 'users/u-1/rewardProgress/p-2'), { any: 'value' }),
+      );
+    });
   });
 
   describe('barberLeadTimeSamples — staff read, server-only write', () => {

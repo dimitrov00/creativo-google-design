@@ -12,7 +12,6 @@ import {
   DialSource,
   MedalCue,
   type ShopNow,
-  TenureState,
   type VisitLeg,
   type WallTime,
 } from '@core/components';
@@ -20,7 +19,6 @@ import {
   AgeSystem,
   BadgeSystem,
   ClientGlanceSystem,
-  ClientStatsSystem,
   type GlanceLeg,
   LoyaltyCatalogSystem,
   PhoneSystem,
@@ -59,7 +57,6 @@ import {
   dayLong,
   dayShort,
   levelNumeral,
-  monthYearLong,
   shopDayOf,
 } from './client-card.format';
 import { type LoyaltyFlags } from './loyalty.presenter';
@@ -67,7 +64,6 @@ import type {
   AchievementsData,
   ClientCapsuleVm,
   ClientCapsulesVm,
-  ClientHeadVm,
   ClientPhotoVm,
   MedalStripVm,
   QuickActionVm,
@@ -77,7 +73,7 @@ import type { ClientCardWords } from './client-card.words';
 /*
  * THE GLANCE'S SHARED HELPERS (client-card-redesign §3.1; revision 3 §2.1
  * reads them through `glance.presenter.ts`), as pure functions — the
- * head's words (`clientHeadVm`, kept for the visit editor's photo page),
+ * head's input (`HeadInput`, which the hero's `HeroInput` extends),
  * the capsules' run, the quick actions, the photo rail, and the medal
  * picks the glance's medals card draws (`medalStripVm`). The built glance
  * page's own modules went with its body in W4. The store decides what has
@@ -152,54 +148,6 @@ export interface HeadInput {
   readonly zone: TimeZone | null;
   /** `null` while the catalogue is loading: the head is the snapshot, without its line. */
   readonly words: ClientCardWords | null;
-}
-
-/**
- * A — the head. It renders from the seat's snapshot at once — before the
- * card's words have loaded, too; the state line waits for the profile and
- * the stats (a pause never pushes painted content), then is the ONE place
- * for tenure, a first visit, a guest or a pause. The cadence is not here:
- * its one place is the history's band (§3.6 HC, one fact, once), so the
- * line is the one short fact the head has room for on every phone.
- */
-export function clientHeadVm(input: HeadInput): ClientHeadVm {
-  const { subject, user, stats, words } = input;
-  const name = displayNameOf(subject, user);
-  const zone = input.zone;
-  const pause = zone === null ? null : pauseOf(user, input.nowMs, zone);
-  let stateLine: string | null = null;
-  if (words === null) {
-    stateLine = null;
-  } else if (subject.userId === null) {
-    stateLine = words.head.guest;
-  } else if (input.settled && zone !== null) {
-    if (pause !== null) {
-      stateLine =
-        pause.until === null
-          ? words.head.pausedPermanent
-          : words.head.pausedUntil(
-              dayShort(pause.until, shopDayOf(input.nowMs, zone), words.lang),
-            );
-    } else if (!input.statsKnown) {
-      stateLine = null;
-    } else {
-      // How long the client has come is `ClientStatsSystem.tenureOf`'s; the
-      // head words SINCE and SINCE_CADENCE alike — the cadence is the
-      // history's to say.
-      const tenure = ClientStatsSystem.tenureOf(stats);
-      stateLine =
-        tenure.tenureState === TenureState.FirstVisit || tenure.since === null
-          ? words.head.firstVisit
-          : words.head.since(monthYearLong(tenure.since, words.lang));
-    }
-  }
-  return {
-    name,
-    stateLine,
-    avatarSrc: subject.avatarSrc ?? input.avatarSrc,
-    initialsFrom: name,
-    paused: pause !== null,
-  };
 }
 
 export interface CapsulesInput {
@@ -481,25 +429,6 @@ export interface LoyaltyTilesInput {
    * when the owner holds none (or the subject is not the owner).
    */
   readonly heldRewards?: readonly string[];
-}
-
-/**
- * Shelves before seasons, then the catalogue's order — which family a cue
- * names first, as a comparator over two families. The order is
- * `LoyaltyCatalogSystem.cueOrdered`'s (a stable sort): `a` before `b` when
- * the system puts it first either way round, a tie (0) when each keeps its
- * place.
- */
-export function cueOrder(data: AchievementsData) {
-  return (a: BadgeSeries, b: BadgeSeries): number => {
-    if (a === b) return 0;
-    if (LoyaltyCatalogSystem.cueOrdered(data.catalog, [b, a])[0] === a) {
-      return -1;
-    }
-    return LoyaltyCatalogSystem.cueOrdered(data.catalog, [a, b])[0] === b
-      ? 1
-      : 0;
-  };
 }
 
 /**

@@ -1,7 +1,5 @@
 import {
-  type AccountOccupant,
   type ChairGeometry,
-  type Placement,
   Seat,
   type SeatOccupant,
   SeatSubject,
@@ -44,9 +42,6 @@ export type AppointmentQueryKeys = AppointmentAccountKeys & {
   readonly subjectCustomerIds: readonly CustomerId[];
 };
 
-/** What the account mirrors read of a seat — whose account it is and whose chair. */
-export type AccountIndexedSeat = Pick<Seat, 'barberId'> & AccountOccupant;
-
 /** What every mirror reads of a seat — whose account and record it is, and whose chair. */
 export type IndexedSeat = Pick<Seat, 'barberId'> & SeatOccupant;
 
@@ -57,12 +52,6 @@ export type IndexedSeat = Pick<Seat, 'barberId'> & SeatOccupant;
 export type AppointmentEnvelope = {
   readonly startMinutes: MinuteOfDay;
   readonly endMinutes: EndMinute;
-};
-
-/** What the account mirrors read of an appointment — its shop day and its seats. */
-export type AccountIndexedAppointment = {
-  readonly localDate: LocalDate;
-  readonly seats: readonly AccountIndexedSeat[];
 };
 
 /** What every mirror reads of an appointment — its shop day and its seats. */
@@ -93,6 +82,48 @@ function spanOf(
 }
 
 /**
+ * The four ACCOUNT mirrors, read off the seats' accounts alone:
+ *
+ * - `ownerUserId` — the first `SELF` seat's account (the booker); `null`
+ *   for a walk-in the shop entered itself;
+ * - `subjectUserIds` — every ACCOUNT on the visit, distinct, sorted (the
+ *   `busyKeys` precedent: one array mirror); guests have no account;
+ * - `barberIds` — distinct, in seat order;
+ * - `busyKeys` — `BusyKey.of(barber, the appointment's shop day)` per
+ *   seat, distinct, sorted: two seats with one barber are one projection
+ *   document.
+ */
+function accountKeysOf(
+  appointment: IndexedAppointment,
+): AppointmentAccountKeys {
+  let ownerUserId: UserId | null = null;
+  const subjects: UserId[] = [];
+  const barberIds: BarberId[] = [];
+  const busyKeys: BusyKey[] = [];
+  const seats = appointment.seats;
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i] as IndexedSeat;
+    if (seat.seatSubject === SeatSubject.Account) {
+      if (
+        ownerUserId === null &&
+        seat.subjectRelationship === SubjectRelationship.Self
+      ) {
+        ownerUserId = seat.subjectUserId;
+      }
+      if (!subjects.includes(seat.subjectUserId)) {
+        subjects.push(seat.subjectUserId);
+      }
+    }
+    if (!barberIds.includes(seat.barberId)) barberIds.push(seat.barberId);
+    const key = BusyKey.of(seat.barberId, appointment.localDate);
+    if (!busyKeys.includes(key)) busyKeys.push(key);
+  }
+  subjects.sort(compareStrings);
+  busyKeys.sort(compareStrings);
+  return { ownerUserId, subjectUserIds: subjects, barberIds, busyKeys };
+}
+
+/**
  * AppointmentIndexSystem — the mirrors every write plan recomputes, and the
  * placement rule that rides beside them (R33). Used by every write plan and
  * by the seed. Zone-blind (Law 7.3): a busy key names the appointment's own
@@ -101,48 +132,8 @@ function spanOf(
  */
 export const AppointmentIndexSystem = {
   /**
-   * The four ACCOUNT mirrors — what a reader that knows no client record
-   * (a legacy shim, flatten L7) can derive:
-   *
-   * - `ownerUserId` — the first `SELF` seat's account (the booker); `null`
-   *   for a walk-in the shop entered itself;
-   * - `subjectUserIds` — every ACCOUNT on the visit, distinct, sorted (the
-   *   `busyKeys` precedent: one array mirror); guests have no account;
-   * - `barberIds` — distinct, in seat order;
-   * - `busyKeys` — `BusyKey.of(barber, the appointment's shop day)` per
-   *   seat, distinct, sorted: two seats with one barber are one projection
-   *   document.
-   */
-  accountKeys(appointment: AccountIndexedAppointment): AppointmentAccountKeys {
-    let ownerUserId: UserId | null = null;
-    const subjects: UserId[] = [];
-    const barberIds: BarberId[] = [];
-    const busyKeys: BusyKey[] = [];
-    const seats = appointment.seats;
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as AccountIndexedSeat;
-      if (seat.seatSubject === SeatSubject.Account) {
-        if (
-          ownerUserId === null &&
-          seat.subjectRelationship === SubjectRelationship.Self
-        ) {
-          ownerUserId = seat.subjectUserId;
-        }
-        if (!subjects.includes(seat.subjectUserId)) {
-          subjects.push(seat.subjectUserId);
-        }
-      }
-      if (!barberIds.includes(seat.barberId)) barberIds.push(seat.barberId);
-      const key = BusyKey.of(seat.barberId, appointment.localDate);
-      if (!busyKeys.includes(key)) busyKeys.push(key);
-    }
-    subjects.sort(compareStrings);
-    busyKeys.sort(compareStrings);
-    return { ownerUserId, subjectUserIds: subjects, barberIds, busyKeys };
-  },
-
-  /**
-   * Every mirror: the {@link accountKeys} and, derived beside them from the
+   * Every mirror: the account keys (`ownerUserId`, `subjectUserIds`,
+   * `barberIds`, `busyKeys`) and, derived beside them from the
    * same seats (D29, F1-4),
    *
    * - `ownerCustomerId` — the first `SELF` seat's client record; `null`
@@ -169,7 +160,7 @@ export const AppointmentIndexSystem = {
     }
     customers.sort(compareStrings);
     return {
-      ...AppointmentIndexSystem.accountKeys(appointment),
+      ...accountKeysOf(appointment),
       ownerCustomerId,
       subjectCustomerIds: customers,
     };
@@ -212,29 +203,5 @@ export const AppointmentIndexSystem = {
       startMinutes: span === null ? appointment.startMinutes : span.start,
       endMinutes: span === null ? appointment.endMinutes : span.end,
     };
-  },
-
-  /**
-   * Who placed the booking, as the COMMIT stamped it — `null` for a row it
-   * did not stamp (written before the field), whatever the backfill has
-   * since inferred. The evidence that the row's seat preferences were
-   * recorded, not defaulted.
-   */
-  stampedPlacement(
-    appointment: Pick<Appointment, 'placement'>,
-  ): Placement | null {
-    return appointment.placement;
-  },
-
-  /**
-   * Who most likely placed the booking, as the backfill reconstructed it
-   * from the commit's audit row (§12.5.1) — read on its own, NEVER as the
-   * stamp and never evidence about the seats (the old commit stored an
-   * omitted preference as `SPECIFIC`). `null` when nothing was inferred.
-   */
-  inferPlacement(
-    appointment: Pick<Appointment, 'inferredPlacement'>,
-  ): Placement | null {
-    return appointment.inferredPlacement;
   },
 } as const;

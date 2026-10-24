@@ -4,9 +4,8 @@ title = "creativo-google-design gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Generated, non-secret build output"
+description = "Non-secret test fixtures and the lockfile"
 paths = [
-  '''libs/shared/design-tokens/generated/.*''',
   '''.*\.spec\.ts''',
   '''pnpm-lock\.yaml''',
 ]

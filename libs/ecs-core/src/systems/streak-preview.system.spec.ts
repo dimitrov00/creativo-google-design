@@ -35,8 +35,8 @@ const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
  * its use case; this file is their one home), COPIED in Phase 2 and
  * re-targeted: the rules are `StreakRule` structs (`revised` is the
  * recommended rule's next version, parsed), the facts are written as the
- * legacy spec wrote them and made strict by `strict`, and `preview.execute`
- * / `projectStreak` are thin helpers over `StreakPreviewSystem.estimate` /
+ * legacy spec wrote them and made strict by `strict`, the preview is
+ * `StreakPreviewSystem.estimate` and `projectStreak` a thin helper over
  * `StreakSystem.project`. Every case body is the legacy one but the
  * `changeFrom` call in one assertion message. Plus the system purity case.
  *
@@ -72,9 +72,6 @@ function startOf(raw: string): UtcEpochMs {
     ? ZonedTimeSystem.startOfLocalDay(parsed.value, FIXTURE_TIME_ZONE)
     : instant(0);
 }
-
-type StreakDefinition = StreakRule;
-type StreakDefinitionProps = StreakRule;
 
 /** The facts as the legacy spec writes them. */
 type StreakFacts = {
@@ -134,7 +131,7 @@ const addDays = (on: string, days: number): string =>
   LocalDate.addDays(localDate(on), days);
 
 function projectStreak(
-  rule: StreakDefinition,
+  rule: StreakRule,
   facts: StreakFacts,
   today: string,
 ): StreakState | null {
@@ -146,28 +143,11 @@ function projectStreak(
   );
 }
 
-/** The legacy use case's one method, over the system. */
-const preview = {
-  execute(input: {
-    readonly inForce: StreakDefinition;
-    readonly draft: StreakDefinition;
-    readonly clients: readonly StreakFacts[];
-    readonly today: string;
-  }): StreakPreview {
-    return StreakPreviewSystem.estimate(
-      input.inForce,
-      input.draft,
-      input.clients.map(strict),
-      todayOf(input.today),
-    );
-  },
-};
-
 /** The recommended rule: a visit every 42 days, 7 of grace, the cue 7 days ahead. */
 const SIX_WEEKS = StreakRule.DEFAULT;
 
 /** The next version of the recommended rule, `patch` over it. */
-function revised(patch: Partial<StreakDefinitionProps>): StreakDefinition {
+function revised(patch: Partial<StreakRule>): StreakRule {
   const rule = StreakRule.parse({
     ...SIX_WEEKS,
     ...patch,
@@ -208,11 +188,16 @@ const REGULAR = visited(10, 45, 80, 115, 150); // five visits, five weeks apart
 const SHOP = [ON_TIME, NEAR_DUE, LATE, LAPSED, LONG_GONE, REGULAR];
 
 function estimate(
-  draft: StreakDefinition,
+  draft: StreakRule,
   clients: readonly StreakFacts[] = SHOP,
-  inForce: StreakDefinition = SIX_WEEKS,
+  inForce: StreakRule = SIX_WEEKS,
 ): Extract<StreakPreview, { streakPreviewOutcome: 'ESTIMATE' }> {
-  const result = preview.execute({ inForce, draft, clients, today: TODAY });
+  const result = StreakPreviewSystem.estimate(
+    inForce,
+    draft,
+    clients.map(strict),
+    todayOf(TODAY),
+  );
   if (result.streakPreviewOutcome !== 'ESTIMATE') {
     throw new Error('expected an estimate');
   }
@@ -392,7 +377,7 @@ describe('StreakPreviewSystem.estimate — the admin preview', () => {
   });
 
   it('agrees with the projector, person by person', () => {
-    const standingOf = (rule: StreakDefinition, facts: StreakFacts) => {
+    const standingOf = (rule: StreakRule, facts: StreakFacts) => {
       const phase = projectStreak(rule, facts, TODAY)?.streakPhase;
       if (phase === 'IN_GRACE') return 'inGrace';
       if (phase === 'BROKEN') return 'broken';
@@ -457,12 +442,12 @@ describe('StreakPreviewSystem.estimate — the admin preview', () => {
     });
 
     it('judges nobody on a day that is no day', () => {
-      const result = preview.execute({
-        inForce: SIX_WEEKS,
-        draft: EIGHT_WEEKS,
-        clients: SHOP,
-        today: 'tomorrow',
-      });
+      const result = StreakPreviewSystem.estimate(
+        SIX_WEEKS,
+        EIGHT_WEEKS,
+        SHOP.map(strict),
+        todayOf('tomorrow'),
+      );
       expect(result).toMatchObject({
         streakPreviewOutcome: 'ESTIMATE',
         clients: 0,
@@ -509,7 +494,12 @@ describe('StreakPreviewSystem.estimate — the admin preview', () => {
       ['both do', BY_SERVICE, BY_CATEGORY],
     ])('is not estimated when %s', (_when, inForce, draft) => {
       expect(
-        preview.execute({ inForce, draft, clients: SHOP, today: TODAY }),
+        StreakPreviewSystem.estimate(
+          inForce,
+          draft,
+          SHOP.map(strict),
+          todayOf(TODAY),
+        ),
       ).toEqual({ streakPreviewOutcome: 'UNAVAILABLE', reason: 'QUALIFIER' });
     });
   });
@@ -546,7 +536,7 @@ describe('StreakPreviewSystem.estimate — the admin preview', () => {
 });
 
 /*
- * `admin-rhythm.words.spec.ts` `signedDelta` / `previewWords`, ported (Law
+ * `admin-rhythm.words.spec.ts` `previewWords`, ported (Law
  * 10.2 — law-10-decision-extraction.md R-6): each standing's movement is the
  * system's figure; the page signs and words it.
  */

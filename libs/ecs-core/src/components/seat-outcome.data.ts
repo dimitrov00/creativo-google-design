@@ -85,10 +85,8 @@ function isReason(raw: string): raw is CancellationReason {
 
 export const CancellationReasonSet = {
   /**
-   * The set of `reasons` — de-duplicated, sorted, `+`-joined. Sorting the
-   * SCREAMING codes orders them exactly as their lower-case stored forms
-   * sort (no two codes differ first at an `_`), so a set read back from a
-   * legacy document and re-joined here keeps its bytes.
+   * The set of `reasons` — de-duplicated, sorted, `+`-joined, so one set
+   * of codes is always stored as the same string.
    */
   of(reasons: readonly CancellationReason[]): CancellationReasonSet {
     const distinct: CancellationReason[] = [];
@@ -98,16 +96,6 @@ export const CancellationReasonSet = {
     }
     distinct.sort();
     return distinct.join(SET_SEPARATOR) as CancellationReasonSet;
-  },
-
-  /**
-   * A stored set read back as it is — a value that is one by construction
-   * (a document the adapter just read). A legacy root may hold text that is
-   * no code at all (a pre-D23 free-text reason); it is carried verbatim so
-   * it round-trips, and {@link codes} skips what is not a code.
-   */
-  fromStored(raw: string): CancellationReasonSet {
-    return raw as CancellationReasonSet;
   },
 
   /** The codes the set holds, in stored order — text that is no code is skipped. */
@@ -195,23 +183,6 @@ export const SeatOutcome = {
   /** Anything but `SCHEDULED` — a seat whose story is over. */
   isResolved(outcome: SeatOutcome): boolean {
     return outcome.attendanceState !== AttendanceState.Scheduled;
-  },
-
-  /**
-   * A reason from an untrusted code, or `null` for an unknown one. NO code
-   * is not an unknown code: it is the shop declining to say, filed
-   * `UNSPECIFIED`. Code-only (§9 D23): `OTHER` needs no note. The legacy
-   * lower-case code (`client_unwell`, the wire's and every stored seat's
-   * until the appointment flip) is read as its SCREAMING value.
-   */
-  reasonOf(code: string): CancellationReason | null {
-    const trimmed = code.trim();
-    if (trimmed.length === 0) return CancellationReason.Unspecified;
-    for (let i = 0; i < REASONS.length; i++) {
-      const reason = REASONS[i] as CancellationReason;
-      if (reason === trimmed || reason.toLowerCase() === trimmed) return reason;
-    }
-    return null;
   },
 
   /**

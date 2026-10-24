@@ -21,7 +21,7 @@ tester.run('creativo/presenter-purity', presenterPurity, {
       code: [
         "import type { LoyaltyAccount } from '@core/entities';",
         "import { LoyaltyStandingSystem } from '@core/systems';",
-        "import { formatMoney } from '@creativo/infrastructure/i18n';",
+        "import { relativeTime } from '@creativo/infrastructure/i18n';",
         "import type { UiBadgeTone } from '@creativo/ui/controls';",
         "import type { PassVm } from './client-pages.vm';",
         'export function passVm(account: LoyaltyAccount, words: { unit: string }): PassVm {',

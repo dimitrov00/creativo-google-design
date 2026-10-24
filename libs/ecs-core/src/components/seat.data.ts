@@ -74,9 +74,8 @@ export type SeatOccupant = SeatOccupant.Account | SeatOccupant.Anonymous;
  * The `ACCOUNT` variant as the ACCOUNT rules read it — who signed in, never
  * whom the shop serves (D29): the booker's own seat, one person in two
  * chairs, the uid mirrors. A {@link SeatOccupant.Account} passes straight in
- * (Law 3); so did an occupant a legacy shim built (until Phase 4b), which
- * could not know a `CustomerId` — no placeholder value, no uid→customer cast
- * (flatten L7).
+ * (Law 3), and a rule that reads no client record never asks for one — no
+ * placeholder value, no uid→customer cast (flatten L7).
  */
 export type AccountRef = Omit<SeatOccupant.Account, 'subjectCustomerId'>;
 
@@ -114,21 +113,6 @@ export const SeatOccupant = {
           occupant.subjectCustomerId,
           occupant.subjectRelationship,
         )
-      : SeatOccupant.anonymous(occupant.guestLabel);
-  },
-
-  /**
-   * The account-rules occupant of a value that carries one (a whole seat,
-   * either view), copied to exactly its fields — the client record left
-   * behind.
-   */
-  accountOf(occupant: AccountOccupant): AccountOccupant {
-    return occupant.seatSubject === SeatSubject.Account
-      ? {
-          seatSubject: SeatSubject.Account,
-          subjectUserId: occupant.subjectUserId,
-          subjectRelationship: occupant.subjectRelationship,
-        }
       : SeatOccupant.anonymous(occupant.guestLabel);
   },
 } as const;
@@ -199,7 +183,7 @@ export type Seat = SeatCore &
  * A seat as the ACCOUNT rules read it — every slice of {@link Seat}, its
  * occupant an {@link AccountOccupant} (D29). What a system that reads no
  * client record takes (Law 3: the slice it reads), so a whole `Seat` passes
- * straight in and a legacy seat that cannot know its `CustomerId` does too.
+ * straight in.
  */
 export type AccountSeat = SeatCore &
   ServiceTerms &
@@ -265,38 +249,6 @@ export const Seat = {
       catalogPriceCents: terms.catalogPriceCents,
       catalogDurationMinutes: terms.catalogDurationMinutes,
       ...SeatOccupant.of(occupant),
-      ...outcomeOf(outcome),
-    };
-  },
-
-  /**
-   * An {@link AccountSeat} from its slices — {@link compose} for the
-   * account-rules view, with the same field order, the client record left
-   * out (a seat read without one — as the legacy shims read a stored visit
-   * until Phase 4b — has none to give).
-   */
-  composeAccount(
-    core: SeatCore,
-    terms: ServiceTerms & SeatCatalogTerms,
-    occupant: AccountOccupant,
-    outcome: SeatOutcome,
-  ): AccountSeat {
-    return {
-      seatId: core.seatId,
-      serviceId: core.serviceId,
-      variantId: core.variantId,
-      barberId: core.barberId,
-      barberPreference: core.barberPreference,
-      startMinutes: core.startMinutes,
-      tipCents: core.tipCents,
-      priceCents: terms.priceCents,
-      currency: terms.currency,
-      durationMinutes: terms.durationMinutes,
-      setupMinutes: terms.setupMinutes,
-      cleanupMinutes: terms.cleanupMinutes,
-      catalogPriceCents: terms.catalogPriceCents,
-      catalogDurationMinutes: terms.catalogDurationMinutes,
-      ...SeatOccupant.accountOf(occupant),
       ...outcomeOf(outcome),
     };
   },

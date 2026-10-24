@@ -56,9 +56,9 @@ import { ZonedTimeSystem } from './zoned-time.system';
 /*
  * The lifecycle cases of the legacy scheduling `appointment.spec.ts` (deleted
  * in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
- * copied while the class spec still ran against its shim: admission and the
- * party's invariants, the transition matrix, cancel, the write-time captures,
- * seat outcomes, the correction edges and arrival — over plain flat entities.
+ * copied while the class spec still ran against its shim: the party's
+ * invariants, the transition matrix, cancel, seat outcomes, the correction
+ * edges and arrival — over plain flat entities.
  * `isSuccess(r)` → `r.ok`; the verbs' instant is a parameter, and "today" is
  * the shop's `ShopNow`.
  */
@@ -169,13 +169,6 @@ function codes(errors: readonly SchedulingError[]): readonly string[] {
   return errors.map((error) => error.errorCode);
 }
 
-function admit(seats: readonly Seat[], instant: UtcEpochMs) {
-  return AppointmentLifecycleSystem.admit(
-    { localDate: FIXTURE_TODAY, seats },
-    nowAt(instant),
-  );
-}
-
 function party(): Appointment {
   return visit([seat(), seat({ relationship: 'companion' })]);
 }
@@ -199,40 +192,13 @@ function request(
   return { to, seatId: null, reason: null, windowHours: null, ...overrides };
 }
 
-describe('AppointmentLifecycleSystem.admit — a new visit', () => {
-  it('admits a visit in the future', () => {
-    expect(admit([seat()], BOOKING_NOW)).toEqual([]);
-  });
-
-  it('rejects scheduling into the past', () => {
-    expect(codes(admit([seat()], today(23)))).toEqual([
-      SchedulingErrorCode.AppointmentPastStartTime,
-    ]);
-  });
-
-  it('judges the past on the shop’s wall clock — an earlier day is past whatever its minute', () => {
-    const tomorrowMorning = nowAt(plus(today(8), 86_400_000));
-    expect(
-      codes(
-        AppointmentLifecycleSystem.admit(
-          { localDate: FIXTURE_TODAY, seats: [seat({ startMinute: 1380 })] },
-          tomorrowMorning,
-        ),
-      ),
-    ).toEqual([SchedulingErrorCode.AppointmentPastStartTime]);
-    expect(
-      AppointmentLifecycleSystem.admit(
-        {
-          localDate: LocalDate.addDays(FIXTURE_TODAY, 2),
-          seats: [seat({ startMinute: 60 })],
-        },
-        tomorrowMorning,
-      ),
-    ).toEqual([]);
-  });
-
+/*
+ * A NEW VISIT'S SEATS — the invariants the commit admits a party by
+ * (`Seat.violations`, which `BookingDecisionSystem.decide` runs).
+ */
+describe('A new visit — the invariants of its seats', () => {
   it('rejects an empty seats array', () => {
-    expect(codes(admit([], BOOKING_NOW))).toEqual([
+    expect(codes(Seat.violations([]))).toEqual([
       SchedulingErrorCode.AppointmentEmptySeats,
     ]);
   });
@@ -241,16 +207,13 @@ describe('AppointmentLifecycleSystem.admit — a new visit', () => {
     const booker = nextUser();
     expect(
       codes(
-        admit(
-          [seat({ userId: booker }), seat({ userId: booker })],
-          BOOKING_NOW,
-        ),
+        Seat.violations([seat({ userId: booker }), seat({ userId: booker })]),
       ),
     ).toContain('SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS');
   });
 
   it('seats two `SELF` accounts side by side — the person is the account, not the relationship', () => {
-    expect(admit([seat(), seat()], BOOKING_NOW)).toEqual([]);
+    expect(Seat.violations([seat(), seat()])).toEqual([]);
   });
 
   it('refuses overlapping `SELF` seats exactly when ONE account holds both (property)', () => {
@@ -282,10 +245,7 @@ describe('AppointmentLifecycleSystem.admit — a new visit', () => {
             ),
           );
           const refused = codes(
-            admit(
-              seats.map((entry) => entry.seat),
-              BOOKING_NOW,
-            ),
+            Seat.violations(seats.map((entry) => entry.seat)),
           ).includes('SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS');
           expect(refused).toBe(onePersonTwoChairs);
         },
@@ -303,7 +263,7 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
       seat({ barberId: IVAN, startMinute: 600, durationMinutes: 45 }),
       seat({ relationship: 'companion', barberId: NIKO, startMinute: 600 }),
     ];
-    expect(admit(seats, BOOKING_NOW)).toEqual([]);
+    expect(Seat.violations(seats)).toEqual([]);
     // The envelope is the LONGEST seat, not the sum — served at once.
     expect(AppointmentIndexSystem.envelope({ seats })).toEqual({
       startMinutes: 600,
@@ -321,58 +281,39 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
         startMinute: 645,
       }),
     ];
-    expect(admit(seats, BOOKING_NOW)).toEqual([]);
+    expect(Seat.violations(seats)).toEqual([]);
     expect(AppointmentIndexSystem.envelope({ seats })?.endMinutes).toBe(675);
   });
 
   it('rejects one barber in two chairs at once', () => {
     expect(
       codes(
-        admit(
-          [
-            seat({ barberId: IVAN, startMinute: 600, durationMinutes: 45 }),
-            seat({
-              relationship: 'companion',
-              barberId: IVAN,
-              startMinute: 630,
-            }),
-          ],
-          BOOKING_NOW,
-        ),
+        Seat.violations([
+          seat({ barberId: IVAN, startMinute: 600, durationMinutes: 45 }),
+          seat({
+            relationship: 'companion',
+            barberId: IVAN,
+            startMinute: 630,
+          }),
+        ]),
       ),
     ).toContain('SCHEDULING_APPOINTMENT_BARBER_DOUBLE_BOOKED');
   });
 
   it('names each double-booked barber once, not once per colliding pair', () => {
-    const errors = admit(
-      [
-        seat({ barberId: IVAN, startMinute: 600, durationMinutes: 60 }),
-        seat({ relationship: 'companion', barberId: IVAN, startMinute: 610 }),
-        seat({ relationship: 'companion', barberId: IVAN, startMinute: 620 }),
-      ],
-      BOOKING_NOW,
-    );
+    const errors = Seat.violations([
+      seat({ barberId: IVAN, startMinute: 600, durationMinutes: 60 }),
+      seat({ relationship: 'companion', barberId: IVAN, startMinute: 610 }),
+      seat({ relationship: 'companion', barberId: IVAN, startMinute: 620 }),
+    ]);
     expect(errors).toEqual([
       SchedulingError.appointmentBarberDoubleBooked(IVAN),
     ]);
   });
 
-  it('takes the future-start check from the EARLIEST seat', () => {
-    const errors = admit(
-      [
-        seat({ startMinute: 600, durationMinutes: 30 }),
-        seat({ relationship: 'companion', startMinute: 840 }),
-      ],
-      today(12),
-    );
-    expect(codes(errors)).toEqual([
-      SchedulingErrorCode.AppointmentPastStartTime,
-    ]);
-  });
-
   it('rejects seats priced in two currencies', () => {
     expect(
-      AppointmentLifecycleSystem.seatViolations([
+      Seat.violations([
         seat({ currency: Currency.EUR }),
         seat({
           relationship: 'companion',
@@ -425,27 +366,20 @@ describe('Appointment status transition matrix (goal condition item)', () => {
     COMPLETED,
     CANCELLED: BookingLifecycle.cancel(
       BOOKING_NOW,
-      CancellationReasonSet.fromStored('customer request'),
+      CancellationReasonSet.of([CancellationReason.Other]),
     ),
     NO_SHOW,
   };
 
   /*
-   * The class's own verbs — `confirm` on a no-show is the graph's correction
-   * edge, decided by `partyVerb` exactly as the class's `confirm()` did.
+   * The party verbs — `confirm` on a no-show is the graph's correction
+   * edge; with no shop clock a settled visit is never reopened.
    */
   const VERBS: Record<
     string,
     (appointment: Appointment) => { readonly ok: boolean }
   > = {
-    CONFIRMED: (a) =>
-      AppointmentLifecycleSystem.partyVerb(
-        { lifecycle: a, outcomes: a.seats },
-        BookingStatus.Confirmed,
-        null,
-        RESOLVED_AT,
-        CancellationReasonSet.of([]),
-      ),
+    CONFIRMED: (a) => AppointmentLifecycleSystem.confirm(a, RESOLVED_AT),
     COMPLETED: (a) => AppointmentLifecycleSystem.complete(a, RESOLVED_AT),
     CANCELLED: (a) =>
       AppointmentLifecycleSystem.cancel(
@@ -544,42 +478,6 @@ describe('AppointmentLifecycleSystem.cancel', () => {
   });
 });
 
-describe('AppointmentLifecycleSystem — the write-time captures', () => {
-  it('reports booking lead time in minutes', () => {
-    const one = visit([seat({ startMinute: 600 })], PENDING, {
-      bookedAtUtcMs: today(9),
-    });
-    expect(AppointmentLifecycleSystem.bookingLeadTimeMinutes(one)).toBe(60);
-  });
-
-  it('has no lead time for an appointment written before bookedAt existed', () => {
-    expect(
-      AppointmentLifecycleSystem.bookingLeadTimeMinutes(
-        visit([seat()], PENDING, { bookedAtUtcMs: null }),
-      ),
-    ).toBeNull();
-  });
-
-  it('measures lateness from the start — negative when early, null before arrival', () => {
-    const one = visit([seat({ startMinute: 600 })], CONFIRMED, {
-      arrivedAtUtcMs: today(10, 7),
-    });
-    expect(AppointmentLifecycleSystem.latenessMinutes(one)).toBe(7);
-    expect(
-      AppointmentLifecycleSystem.latenessMinutes({
-        ...one,
-        arrivedAtUtcMs: today(9, 55),
-      }),
-    ).toBe(-5);
-    expect(
-      AppointmentLifecycleSystem.latenessMinutes({
-        ...one,
-        arrivedAtUtcMs: null,
-      }),
-    ).toBeNull();
-  });
-});
-
 describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('starts every seat scheduled', () => {
     expect(
@@ -587,7 +485,6 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         (s) => s.attendanceState === AttendanceState.Scheduled,
       ),
     ).toBe(true);
-    expect(AppointmentLifecycleSystem.openSeats(party())).toHaveLength(2);
   });
 
   it('keeps the root unchanged while any seat is still open', () => {
@@ -601,7 +498,9 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       ),
     );
     expect(marked.bookingStatus).toBe('CONFIRMED');
-    expect(AppointmentLifecycleSystem.openSeats(marked)).toHaveLength(1);
+    expect(
+      marked.seats.map((s) => s.attendanceState === AttendanceState.Scheduled),
+    ).toEqual([false, true]);
   });
 
   it('summarises a mixed party as completed while keeping the no-show visible', () => {
@@ -648,7 +547,10 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
     expect(BookingLifecycle.sliceOf(second)).toEqual(
       BookingLifecycle.cancel(
         RESOLVED_AT,
-        CancellationReasonSet.fromStored('CLIENT_CHANGED_PLANS+CLIENT_UNWELL'),
+        CancellationReasonSet.of([
+          CancellationReason.ClientChangedPlans,
+          CancellationReason.ClientUnwell,
+        ]),
       ),
     );
   });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AwardKind,
   BadgeCategoryId,
   BadgeSeriesId,
   CourseId,
@@ -17,13 +16,16 @@ import {
 } from '@core/primitives';
 import { localDate, unwrapOk, utcMs } from '@core/testing';
 import {
-  ENGAGEMENT_ERROR_CODES,
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
 } from './engagement.error';
 
 const cents = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
+
+/** Every engagement code, dictionary order. */
+const ENGAGEMENT_ERROR_CODES: readonly EngagementErrorCode[] =
+  Object.values(EngagementErrorCode);
 
 describe('EngagementErrorCode', () => {
   it('keeps every code SCREAMING under the ENGAGEMENT_ prefix, each once (Law 7.5)', () => {
@@ -83,13 +85,6 @@ describe('EngagementError factories', () => {
       errorCode: 'ENGAGEMENT_ID_EMPTY',
       idType: 'CouponId',
     });
-    expect(EngagementError.couponNameEmpty()).toEqual({
-      errorCode: 'ENGAGEMENT_COUPON_EMPTY_NAME',
-    });
-    expect(EngagementError.couponUsageLimitInvalid(0)).toEqual({
-      errorCode: 'ENGAGEMENT_COUPON_INVALID_USAGE_LIMIT',
-      attempted: 0,
-    });
     expect(EngagementError.couponGrantNotActive(GrantStatus.Used)).toEqual({
       errorCode: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
       currentState: 'USED',
@@ -99,10 +94,6 @@ describe('EngagementError factories', () => {
     });
     expect(EngagementError.couponGrantReasonEmpty()).toEqual({
       errorCode: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
-    });
-    expect(EngagementError.discountCapInvalid(120)).toEqual({
-      errorCode: 'ENGAGEMENT_DISCOUNT_APPLICATION_INVALID_CAP',
-      attempted: 120,
     });
     expect(EngagementError.giftVoucherValueInvalid()).toEqual({
       errorCode: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
@@ -130,9 +121,6 @@ describe('EngagementError factories', () => {
       expected: 'EUR',
       found: 'BGN',
     });
-    expect(EngagementError.invitationInviterNameEmpty()).toEqual({
-      errorCode: 'ENGAGEMENT_INVITATION_EMPTY_INVITER_NAME',
-    });
     expect(EngagementError.invitationSelfRedemption()).toEqual({
       errorCode: 'ENGAGEMENT_INVITATION_SELF_REDEMPTION',
     });
@@ -142,72 +130,10 @@ describe('EngagementError factories', () => {
     });
   });
 
-  it('build the catalogue faults, a list of figures as one comma-separated param and a list of ids as brands', () => {
+  it('build the catalogue faults, a list of ids as brands', () => {
     expect(EngagementError.badgeCategoryOrderNegative(-1)).toEqual({
       errorCode: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
       rawValue: -1,
-    });
-    expect(EngagementError.badgeSeriesNoLevels()).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
-    });
-    expect(EngagementError.badgeSeriesLevelGap([1, 2, 4])).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP',
-      levels: '1, 2, 4',
-    });
-    expect(EngagementError.badgeSeriesTargetsNotRising([5, 5])).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
-      targets: '5, 5',
-    });
-    expect(EngagementError.badgeSeriesHomeless().errorCode).toBe(
-      'ENGAGEMENT_BADGE_SERIES_HOMELESS',
-    );
-    expect(EngagementError.badgeSeriesOneOffWithSeveralLevels().errorCode).toBe(
-      'ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS',
-    );
-    expect(
-      EngagementError.badgeSeriesRepeatableWithSeveralLevels().errorCode,
-    ).toBe('ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS');
-    expect(EngagementError.badgeSeriesLevelWithoutRule(2)).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE',
-      level: 2,
-    });
-    expect(
-      EngagementError.badgeSeriesAwardNotPositive(3, AwardKind.Points),
-    ).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
-      level: 3,
-      awardKind: 'POINTS',
-    });
-    expect(
-      EngagementError.seasonWindowMalformed('2026-13-01', '2026-11-30'),
-    ).toEqual({
-      errorCode: 'ENGAGEMENT_SEASON_WINDOW_MALFORMED',
-      from: '2026-13-01',
-      until: '2026-11-30',
-    });
-    expect(
-      EngagementError.seasonWindowInverted(
-        localDate('2026-12-01'),
-        localDate('2026-11-30'),
-      ).errorCode,
-    ).toBe('ENGAGEMENT_SEASON_WINDOW_INVERTED');
-    expect(EngagementError.seasonEventWithTrack().errorCode).toBe(
-      'ENGAGEMENT_SEASON_EVENT_WITH_TRACK',
-    );
-    expect(EngagementError.seasonWithoutTrack().errorCode).toBe(
-      'ENGAGEMENT_SEASON_WITHOUT_TRACK',
-    );
-    expect(
-      EngagementError.seasonAnnouncedLate(
-        localDate('2026-10-20'),
-        localDate('2026-11-01'),
-        30,
-      ),
-    ).toEqual({
-      errorCode: 'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
-      announcedOn: '2026-10-20',
-      from: '2026-11-01',
-      noticeDays: 30,
     });
     expect(
       EngagementError.loyaltyCatalogDanglingCategory(

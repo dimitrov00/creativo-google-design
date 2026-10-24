@@ -202,7 +202,16 @@ function starts(
   return AvailabilitySystem.availableStarts(q, budget(maxOptions)).options;
 }
 
-const distinctStarts = AvailabilitySystem.distinctStarts;
+/** Distinct party starts, in the options' order — the grid's times. */
+function distinctStarts(
+  options: readonly Pick<AvailabilityOption, 'startMinutes'>[],
+): readonly MinuteOfDay[] {
+  const starts: MinuteOfDay[] = [];
+  for (const option of options) {
+    if (!starts.includes(option.startMinutes)) starts.push(option.startMinutes);
+  }
+  return starts;
+}
 
 /** An option as `HH:mm barber` strings, for readable assertions. */
 function describeOption(option: AvailabilityOption): readonly string[] {
@@ -214,64 +223,45 @@ function describeOption(option: AvailabilityOption): readonly string[] {
   });
 }
 
-describe('candidateStarts', () => {
+/*
+ * The search's grid — every step measured from each GAP's start (not
+ * midnight), from the lead-time floor on, while the footprint still fits.
+ */
+describe('availableOptions — the grid of starts', () => {
   it('steps through a gap, stopping where the duration no longer fits', () => {
     // 09:00–10:30 with a 45-minute service on a 15-minute grid: the last
     // start that still fits is 09:45.
-    const found = AvailabilitySystem.candidateStarts(
-      [iv(9, 10.5)],
-      duration(45),
-      duration(15),
-      minute(0),
+    const found = distinctStarts(
+      solve([line('l1', 45)], [barber(IVAN, { windows: [iv(9, 10.5)] })]),
     );
     expect(found.map((ms) => ms / 60)).toEqual([9, 9.25, 9.5, 9.75]);
   });
 
   it('offers nothing when the gap is shorter than the service', () => {
     expect(
-      AvailabilitySystem.candidateStarts(
-        [iv(9, 9.5)],
-        duration(45),
-        duration(15),
-        minute(0),
-      ),
+      solve([line('l1', 45)], [barber(IVAN, { windows: [iv(9, 9.5)] })]),
     ).toEqual([]);
   });
 
   it('keeps the WINDOW’s phase rather than snapping to midnight', () => {
     // A shift starting 09:30 must offer 09:30, not 09:45. A midnight-anchored
     // grid would silently discard the first half-step of every odd shift.
-    const found = AvailabilitySystem.candidateStarts(
-      [span(H(9, 30), H(11))],
-      duration(30),
-      duration(15),
-      minute(0),
+    const found = distinctStarts(
+      solve(
+        [line('l1', 30)],
+        [barber(IVAN, { windows: [span(H(9, 30), H(11))] })],
+      ),
     );
     expect(found[0]).toBe(H(9, 30));
   });
 
   it('respects the lead-time floor, staying on the grid', () => {
-    const found = AvailabilitySystem.candidateStarts(
-      [iv(9, 12)],
-      duration(30),
-      duration(15),
-      minute(H(10, 5)),
+    const found = distinctStarts(
+      solve([line('l1', 30)], [barber(IVAN, { windows: [iv(9, 12)] })], {
+        notBefore: minute(H(10, 5)),
+      }),
     );
     expect(found[0]).toBe(H(10, 15));
-  });
-
-  it('offers nothing on a grid that never advances, rather than hanging', () => {
-    // A step of 0 no `DurationMinutes` admits — a corrupt stored policy
-    // reaching the system unparsed.
-    const frozenStep = 0 as DurationMinutes;
-    expect(
-      AvailabilitySystem.candidateStarts(
-        [iv(9, 12)],
-        duration(30),
-        frozenStep,
-        minute(0),
-      ),
-    ).toEqual([]);
   });
 });
 
@@ -322,20 +312,15 @@ describe('availableOptions — a single seat', () => {
     );
     expect(options).toEqual([]);
     expect(
-      AvailabilitySystem.hasAnyOption(
-        query(
-          [line('l1', 60, BarberPref.specific(IVAN))],
-          [barber(IVAN, { windows: [iv(9, 10)], busy: [iv(9, 10)] })],
-        ),
-        BUDGET,
+      solve(
+        [line('l1', 60, BarberPref.specific(IVAN))],
+        [barber(IVAN, { windows: [iv(9, 10)], busy: [iv(9, 10)] })],
+        { maxOptions: 1 },
       ),
-    ).toBe(false);
+    ).toHaveLength(0);
     expect(
-      AvailabilitySystem.hasAnyOption(
-        query([line('l1', 60)], [barber(NIKO)]),
-        BUDGET,
-      ),
-    ).toBe(true);
+      solve([line('l1', 60)], [barber(NIKO)], { maxOptions: 1 }),
+    ).toHaveLength(1);
   });
 });
 
@@ -957,18 +942,13 @@ describe('availableOptions — per-barber terms', () => {
     ).toBe(60);
   });
 
-  it('denseTerms lays the overrides out parallel to the pool; termsAt reads it', () => {
+  it('denseTerms lays the overrides out parallel to the pool', () => {
     const pool = [barber(NIKO), barber(IVAN), barber(PETAR)];
     const dense = AvailabilitySystem.denseTerms(terms(60), pool, [
       { barberId: IVAN, terms: terms(30) },
       { barberId: IVAN, terms: terms(99) },
     ]);
     expect(dense.map((t) => t.durationMinutes)).toEqual([60, 30, 60]);
-    const drafted = line('l', 60).line;
-    const withDense = { ...drafted, termsByBarber: dense };
-    expect(AvailabilitySystem.termsAt(withDense, 1).durationMinutes).toBe(30);
-    // A short array falls back to the line's own defaults.
-    expect(AvailabilitySystem.termsAt(drafted, 2).durationMinutes).toBe(60);
   });
 });
 
@@ -1129,19 +1109,13 @@ describe('within — null is unconstrained, [] is nothing', () => {
     expect(starts(query([line('a', 60)], pool, { within: [] }))).toEqual([]);
   });
 
-  it('hasAnyOption: null finds the day, [] finds nothing', () => {
+  it('availableOptions: null finds the day, [] finds nothing', () => {
     expect(
-      AvailabilitySystem.hasAnyOption(
-        query([line('a', 60)], pool, { within: null }),
-        BUDGET,
-      ),
-    ).toBe(true);
-    expect(
-      AvailabilitySystem.hasAnyOption(
-        query([line('a', 60)], pool, { within: [] }),
-        BUDGET,
-      ),
-    ).toBe(false);
+      solve([line('a', 60)], pool, { within: null, maxOptions: 1 }),
+    ).toHaveLength(1);
+    expect(solve([line('a', 60)], pool, { within: [], maxOptions: 1 })).toEqual(
+      [],
+    );
   });
 
   it('withinOf never turns an unnarrowed day into [] — it is the whole day', () => {
@@ -1816,6 +1790,30 @@ describe('the seed catalogue — hot path #1 against the legacy engine', () => {
 /* ── Equivalence against a naive reference search (property) ────────────── */
 
 /**
+ * Every grid start in some free time, materialised: each step measured from
+ * a GAP's start, from the floor on, while `occupied` minutes still fit; a
+ * `null` floor or a grid that never advances offers nothing.
+ */
+function gridStarts(
+  free: readonly MinuteRange[],
+  occupied: number,
+  step: number,
+  notBefore: MinuteOfDay | null,
+): readonly number[] {
+  const out: number[] = [];
+  if (notBefore === null || !(step > 0)) return out;
+  for (const gap of IntervalSetSystem.normalize(free)) {
+    let start =
+      gap.startMinutes >= notBefore
+        ? gap.startMinutes
+        : gap.startMinutes +
+          Math.ceil((notBefore - gap.startMinutes) / step) * step;
+    for (; start + occupied <= gap.endMinutes; start += step) out.push(start);
+  }
+  return out;
+}
+
+/**
  * The legacy algorithm (`availability.ts:422-612`) written the naive way —
  * `filter`/`map`/`some` per branch, a materialised candidate list per (line,
  * barber) — over the same types and the same ranking (barber INDEX
@@ -1950,12 +1948,12 @@ function referenceSearch(
         free.at(b) as readonly MinuteRange[],
         chosen.filter((p) => p.barberIndex === b).map((p) => p.occupied),
       );
-      const t = AvailabilitySystem.termsAt(l, b);
+      const t = l.termsByBarber.at(b) ?? l;
       const occupiedMinutes =
         t.padBeforeMinutes + t.durationMinutes + t.padAfterMinutes;
-      for (const start of AvailabilitySystem.candidateStarts(
+      for (const start of gridStarts(
         remaining,
-        duration(occupiedMinutes),
+        occupiedMinutes,
         q.policy.slotStepMinutes,
         notBefore,
       )) {

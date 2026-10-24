@@ -150,10 +150,10 @@ export type AppointmentMeta = {
   readonly id: AppointmentId;
   readonly tenantId: TenantId;
   readonly locationId: LocationId;
-  readonly currency: Currency; // 'EUR' | 'BGN'
+  readonly currency: Currency; // 'EUR' | 'BGN' | 'USD' | 'GBP'
   readonly priceCents: PriceCents;
   readonly barberIds: readonly BarberId[]; // 1-to-N: an array is allowed
-  readonly subjectUserIds: readonly UserId[]; // 1-to-N; D29: flip (1) adds subjectCustomerIds beside it
+  readonly subjectUserIds: readonly UserId[]; // 1-to-N; the D29 subjectCustomerIds sit beside it (AppointmentClientRefs)
   readonly seats: readonly Seat[]; // 1-to-N: an array of flat structs
 };
 
@@ -167,9 +167,14 @@ export type Appointment = AppointmentMeta &
 **`PaymentRecord` is the owner's illustrative payment slice** (`paymentMethod:
 'UNPAID' | 'CASH' | 'CARD'`, variant fields such as `paidCents` and
 `stripePaymentIntentId`). No payment data is stored yet, so today's stored
-`Appointment` in `libs/ecs-core` is `AppointmentMeta & TimeCoordinate &
-BookingLifecycle`; `PaymentRecord` joins the intersection — unchanged in shape —
-the day payments are recorded.
+`Appointment` in `libs/ecs-core` intersects seven slices and no payment slice:
+`AppointmentMeta & AppointmentClientRefs & TimeCoordinate & BookingLifecycle &
+BookingContact & AppointmentStamps & StoodSeatPairs`. Its `AppointmentMeta`
+stores no `tenantId` and no root price — the money lives on each seat
+(`priceCents` + `currency`) — and holds the query mirrors, the placement, the
+discount and voucher lines and the staff-edit ledger beside the seats.
+`PaymentRecord` joins the intersection — unchanged in shape — the day payments
+are recorded.
 
 Ids are `Brand<string, '…'>` primitives (Law 7) — nominal per tag, zero
 runtime cost. Do **not** add `assemble()`, `create()` that only spreads, or

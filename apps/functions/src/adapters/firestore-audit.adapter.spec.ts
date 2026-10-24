@@ -19,7 +19,7 @@ import {
 import type { AuditEntry } from '@core/entities';
 import { recordingTelemetry, unwrapOk } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
-import { auditRowCreate, firestoreAuditPorts } from './firestore-audit.adapter';
+import { firestoreAuditPorts } from './firestore-audit.adapter';
 
 const AT = unwrapOk(UtcEpochMs.of(1_790_000_000_000));
 
@@ -228,18 +228,6 @@ describe('firestoreAuditPorts', () => {
       expect(result.ok && result.value.map((entry) => entry.id).sort()).toEqual(
         ids.map((_, i) => `r${i}`).sort(),
       );
-    });
-  });
-
-  describe('auditRowCreate — the one row inside a transaction (F1-8)', () => {
-    it('stages the same reference and body appendAudit would write', () => {
-      const fake = createProjectionFirestore();
-      const staged = auditRowCreate(
-        fake.db as unknown as Firestore,
-        row('r9', null),
-      );
-      expect(staged.ref.path).toBe('auditLog/r9');
-      expect(staged.body).toEqual(body(row('r9', null)));
     });
   });
 });

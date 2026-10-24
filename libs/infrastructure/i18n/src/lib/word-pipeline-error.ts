@@ -2,7 +2,7 @@ import type { PipelineError } from '@core/errors';
 
 /**
  * Looks one i18n code up with its parameters — answering the code ITSELF
- * when the catalogue has no copy for it (`translateDomainError`'s contract).
+ * when the catalogue has no copy for it (`translateCodedError`'s contract).
  */
 export type TranslateCode = (
   code: string,

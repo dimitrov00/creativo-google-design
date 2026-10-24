@@ -99,23 +99,21 @@ describe('the month grid', () => {
   });
 
   it('spans the grid from the Monday on or before the 1st to the Sunday on or after the last', () => {
-    expect(S.gridRange(key('2026-03-17'))).toEqual({
-      fromLocalDate: '2026-02-23',
-      toLocalDate: '2026-04-05',
-    });
-    expect(S.gridRange(key('2027-02-01'))).toEqual({
-      fromLocalDate: '2027-02-01',
-      toLocalDate: '2027-02-28',
-    });
+    const ends = (monthDay: string) => {
+      const cells = S.monthGrid(key(monthDay), []).flat();
+      return [cells[0]?.localDate, cells.at(-1)?.localDate];
+    };
+    expect(ends('2026-03-17')).toEqual(['2026-02-23', '2026-04-05']);
+    expect(ends('2027-02-01')).toEqual(['2027-02-01', '2027-02-28']);
   });
 
   it('finds the Monday of a week', () => {
     expect(LocalDate.startOfWeek(key('2026-09-24'))).toBe('2026-09-21');
     expect(LocalDate.startOfWeek(key('2026-09-21'))).toBe('2026-09-21');
     expect(LocalDate.startOfWeek(key('2026-09-27'))).toBe('2026-09-21');
-    // The week of a grid's first row is the range's first day.
-    const range = S.gridRange(key('2026-09-24'));
-    expect(LocalDate.startOfWeek(key('2026-09-01'))).toBe(range.fromLocalDate);
+    // The week of a grid's first row is the grid's first day.
+    const first = S.monthGrid(key('2026-09-24'), []).flat()[0];
+    expect(LocalDate.startOfWeek(key('2026-09-01'))).toBe(first?.localDate);
   });
 
   it('lays out every month as whole Monday-first weeks covering it exactly once (property)', () => {
@@ -150,10 +148,6 @@ describe('the month grid', () => {
             expect(cell.weekday).toBe(LocalDate.weekday(cell.localDate));
             expect(cell.dayOfMonth).toBe(LocalDate.parts(cell.localDate).day);
           }
-          // The grid range is exactly the cells.
-          const range = S.gridRange(anchor);
-          expect(cells[0]?.localDate).toBe(range.fromLocalDate);
-          expect(cells.at(-1)?.localDate).toBe(range.toLocalDate);
         },
       ),
     );
@@ -165,7 +159,6 @@ describe('the month grid', () => {
     const once = S.monthGrid(anchor, marks);
     const twice = S.monthGrid(anchor, marks);
     expect(twice).toEqual(once);
-    expect(S.gridRange(anchor)).toEqual(S.gridRange(anchor));
     expect(
       once.flat().find((cell) => cell.localDate === '2026-02-24')?.marks,
     ).toBe(1);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { minute, until } from '@core/testing';
 import {
-  type ClockDayHours,
   DayHours,
   type DayHoursInput,
   OpeningState,
@@ -33,24 +32,6 @@ function week(): DayHours[] {
 /** The same week as raw input. */
 function rawWeek(): DayHoursInput[] {
   return [...week()];
-}
-
-const clock = (opens: string, closes: string): ClockDayHours => ({
-  openingState: OpeningState.Open,
-  opens,
-  closes,
-});
-
-function clockWeek(): ClockDayHours[] {
-  return [
-    clock('09:00', '18:00'),
-    clock('09:00', '18:00'),
-    clock('09:00', '18:00'),
-    clock('09:00', '18:00'),
-    clock('09:00', '18:00'),
-    clock('10:00', '18:00'),
-    { openingState: OpeningState.Closed },
-  ];
 }
 
 describe('DayHours', () => {
@@ -92,34 +73,6 @@ describe('DayHours.isOpenAt', () => {
     expect(DayHours.isOpenAt([NINE_TO_SIX], Weekday.Tue, minute(720))).toBe(
       false,
     );
-  });
-});
-
-describe('DayHours.parseClock', () => {
-  it('reads zero-padded HH:mm as minutes of the day', () => {
-    expect(DayHours.parseClock('00:00')).toEqual({ ok: true, value: 0 });
-    expect(DayHours.parseClock('09:30')).toEqual({ ok: true, value: 570 });
-    expect(DayHours.parseClock('23:59')).toEqual({ ok: true, value: 1439 });
-  });
-
-  it('rejects anything else, carrying the text', () => {
-    for (const raw of [
-      '9:00',
-      '24:00',
-      '12:60',
-      '',
-      '12:00:00',
-      ' 12:00',
-      '1200',
-    ]) {
-      expect(DayHours.parseClock(raw)).toEqual({
-        ok: false,
-        error: {
-          errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
-          rawValue: raw,
-        },
-      });
-    }
   });
 });
 
@@ -186,70 +139,6 @@ describe('DayHours.parseWeek', () => {
       error: [
         { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 2 },
         { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 4 },
-      ],
-    });
-  });
-});
-
-// catalog location.spec.ts hours cases, on the legacy clock-text shape.
-describe('DayHours.parseClockWeek', () => {
-  it('converts the stored HH:mm week to minutes', () => {
-    expect(DayHours.parseClockWeek(clockWeek())).toEqual({
-      ok: true,
-      value: week(),
-    });
-  });
-
-  it('converts the seed’s Center week (tools/seed/catalog.mjs)', () => {
-    const result = DayHours.parseClockWeek([
-      clock('09:00', '20:00'),
-      clock('09:00', '20:00'),
-      clock('09:00', '20:00'),
-      clock('09:00', '20:00'),
-      clock('09:00', '21:00'),
-      clock('10:00', '18:00'),
-      { openingState: OpeningState.Closed },
-    ]);
-    expect(result.ok && result.value[4]).toEqual(
-      DayHours.open(minute(540), until(21)),
-    );
-    expect(result.ok && result.value[6]).toEqual(CLOSED);
-  });
-
-  it('rejects hours that are not exactly 7 entries', () => {
-    expect(DayHours.parseClockWeek(clockWeek().slice(0, 6))).toEqual({
-      ok: false,
-      error: [
-        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH', rawLength: 6 },
-      ],
-    });
-  });
-
-  it('rejects a malformed time-of-day string — the opening time first', () => {
-    const raw = clockWeek();
-    raw[0] = clock('9:00', '18:00');
-    raw[1] = clock('09:00', '25:00');
-    raw[2] = clock('nope', 'also nope');
-    expect(DayHours.parseClockWeek(raw)).toEqual({
-      ok: false,
-      error: [
-        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: '9:00' },
-        {
-          errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
-          rawValue: '25:00',
-        },
-        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: 'nope' },
-      ],
-    });
-  });
-
-  it('rejects an open day where closes is not after opens', () => {
-    const raw = clockWeek();
-    raw[3] = clock('18:00', '09:00');
-    expect(DayHours.parseClockWeek(raw)).toEqual({
-      ok: false,
-      error: [
-        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 3 },
       ],
     });
   });

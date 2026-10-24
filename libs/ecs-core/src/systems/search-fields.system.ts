@@ -9,9 +9,8 @@ import { PhoneSystem } from './phone.system';
  * registered body), `ProfileEditSystem.decide` (an owner's edit, from the
  * STORED contact channels), `CustomerRecordSystem.createsFor` (a client
  * record) — the two hand-kept copies of `computeSearchFields` it replaced
- * are gone — and the query side of the same index (`normalizeQuery`,
- * `looksLikePhone`), which the staff client search calls before
- * `searchUsers`.
+ * are gone — and the query side of the same index (`normalizeQuery`),
+ * which the staff client search calls before `searchUsers`.
  *
  * `searchName` is the trimmed, lower-cased full name (the list's order
  * key). `searchPrefixes` is every prefix of every whitespace-split name
@@ -29,8 +28,6 @@ const NON_DIGITS = /\D/g;
 /** A query that reads as a phone number: a `+` or digit, then digits and dialling punctuation. */
 const PHONE_SHAPE = /^[+\d][\d\s().-]*$/;
 const INTERNATIONAL_PREFIX = /^00/;
-/** The digits a phone-shaped query needs before it is searched as one. */
-const MIN_PHONE_QUERY_DIGITS = 5;
 
 /**
  * The keys as computed — a name always present (a computed full name is a
@@ -101,14 +98,5 @@ export const SearchFieldsSystem = {
       return trimmed.replace(NON_DIGITS, '').replace(INTERNATIONAL_PREFIX, '');
     }
     return trimmed.toLowerCase();
-  },
-
-  /** A query that is a phone number by shape, with enough digits to search. */
-  looksLikePhone(raw: string): boolean {
-    const trimmed = raw.trim();
-    return (
-      PHONE_SHAPE.test(trimmed) &&
-      trimmed.replace(NON_DIGITS, '').length >= MIN_PHONE_QUERY_DIGITS
-    );
   },
 } as const;

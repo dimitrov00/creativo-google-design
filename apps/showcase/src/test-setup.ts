@@ -1,5 +1,6 @@
-// jsdom does not implement matchMedia — ThemeService/CursorService rely on
-// it to read prefers-color-scheme / prefers-reduced-motion / pointer type.
+// jsdom does not implement matchMedia — DesignSystemPreferences reads
+// prefers-color-scheme through it, app.config.ts prefers-reduced-motion, and
+// the medal and client-card pages their width probes.
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
@@ -14,8 +15,8 @@ if (!window.matchMedia) {
     }) as MediaQueryList;
 }
 
-// jsdom does not implement ResizeObserver — CursorDotComponent uses it to
-// re-measure a "fill" target if its size changes while hovered.
+// jsdom does not implement ResizeObserver — the gap visualiser (sc-gap-viz)
+// and the DS scroll row, menu and modal sheet observe their boxes with it.
 if (!window.ResizeObserver) {
   window.ResizeObserver = class {
     observe(): void {

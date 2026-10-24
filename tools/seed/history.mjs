@@ -1,7 +1,10 @@
 /**
  * Past visits for the dev seed: eighteen months of a small shop's book,
- * generated from per-client PLANS into the same fixtures the day's
- * hand-authored appointments use.
+ * generated from per-client PLANS (`HISTORY_PLANS`,
+ * `fixtures/book.fixtures.ts`) into the same `VisitIntent`s the day's
+ * hand-authored appointments are — the seats' stored fields, the occupant
+ * slices, the `attendanceState` and the tags from the ecs-core
+ * dictionaries.
  *
  * Deterministic by construction — a seeded PRNG per client, day offsets
  * relative to the shop's today — so every run writes the same ids with the
@@ -12,11 +15,13 @@
  * at that barber's catalogue price, with the booking made before
  * the visit and the rebooking edge pointing at the visit it was made from.
  */
+import { BarberPreference, Placement } from '@core/components';
+import { AttendanceState } from '@core/primitives';
 import { chairTerms, segmentsAt, turnaroundMinutesOf } from './catalog.mjs';
-import { account, guest } from './appointments.mjs';
+import { accountSeat } from './fixtures/appointments.fixtures.ts';
 
 /** mulberry32 — small, fast, and the same sequence on every machine. */
-export function prng(seed) {
+function prng(seed) {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;
@@ -28,7 +33,7 @@ export function prng(seed) {
 }
 
 /** FNV-1a, so a client's sequence depends on its id and nothing else. */
-export function seedOf(text) {
+function seedOf(text) {
   let hash = 0x811c9dc5;
   for (const char of text) {
     hash ^= char.codePointAt(0);
@@ -42,9 +47,9 @@ const pick = (rng, items) => items[Math.floor(rng() * items.length)];
 
 /**
  * `count` day offsets walking BACK from `from`, each gap drawn from
- * `[minGap, maxGap]` days — a client's rhythm, oldest last.
+ * `[minGap, maxGap]` days — a client's rhythm, oldest last (`Cadence`).
  */
-export function cadence(rng, { from, count, gap: [minGap, maxGap] }) {
+function cadence(rng, { from, count, gap: [minGap, maxGap] }) {
   const offsets = [];
   let offset = from;
   for (let i = 0; i < count; i += 1) {
@@ -172,38 +177,6 @@ export function placeBlock(
 
 const TIP_AMOUNTS = [100, 150, 200, 200, 300, 500];
 
-/** Seat outcomes per visit outcome; companions share the visit's fate. */
-function seatOutcome(visit) {
-  switch (visit.outcome.kind) {
-    case 'worked':
-      return { kind: 'worked' };
-    case 'no_show':
-      return { kind: 'no_show' };
-    case 'cancelled':
-      return {
-        kind: 'cancelled',
-        by: visit.outcome.by,
-        reason: { kind: visit.outcome.reason },
-        hoursBefore: visit.outcome.hoursBefore,
-      };
-    default:
-      throw new Error(`seed: unknown history outcome ${visit.outcome.kind}`);
-  }
-}
-
-function rootStatus(visit) {
-  switch (visit.outcome.kind) {
-    case 'worked':
-      return { kind: 'completed' };
-    case 'no_show':
-      return { kind: 'no_show' };
-    default:
-      // The root keeps the code the seats were stamped with, as the cancel
-      // paths write it (`rootCancellationReason`).
-      return { kind: 'cancelled', reason: visit.outcome.reason };
-  }
-}
-
 /** A barber from the plan who sells every service of the chosen menu. */
 function barberFor(rng, plan, menu) {
   const able = plan.barbers.filter((barberId) =>
@@ -220,14 +193,17 @@ function barberFor(rng, plan, menu) {
     throw new Error(`seed: nobody in ${plan.uid}'s plan sells that menu`);
   }
   // A client who names their barber keeps them; "anyone" takes who is free.
-  return plan.pref === 'specific' ? able[0] : pick(rng, able);
+  return plan.barberPreference === BarberPreference.Specific
+    ? able[0]
+    : pick(rng, able);
 }
 
 const minutesOf = (item, barberId) =>
   chairTerms(item.serviceId, barberId, item.variantId ?? null).durationMinutes;
 
 /**
- * One client's history as appointment fixtures, oldest first.
+ * One client's history as visit intents, oldest first. Every seat of a
+ * visit shares its fate (`HistoryVisit.outcome`), companions included.
  *
  * Booking provenance is drawn per visit: the client booked it themselves
  * (sometimes as «Запиши пак» from the last visit), or the shop did — on the
@@ -237,7 +213,7 @@ const minutesOf = (item, barberId) =>
 export function historyForPlan(plan, profile, calendar, book) {
   const rng = prng(seedOf(plan.uid));
   const visits = plan
-    .visits(rng)
+    .visits((rhythm) => cadence(rng, rhythm))
     .slice()
     .sort((a, b) => a.offset - b.offset);
   const fixtures = [];
@@ -247,17 +223,9 @@ export function historyForPlan(plan, profile, calendar, book) {
     const id = `${plan.idPrefix}-${String(index + 1).padStart(2, '0')}`;
     const menu = pick(rng, plan.menus);
     const barberId = barberFor(rng, plan, menu);
-    const companions = visit.companions ?? [];
     const items = [
-      ...menu.map((item) => ({ ...item, subject: account(plan.uid, 'self') })),
-      ...companions.map((companion) => ({
-        serviceId: companion.serviceId,
-        variantId: companion.variantId ?? null,
-        subject:
-          companion.userId === undefined
-            ? guest(companion.label)
-            : account(companion.userId, 'companion'),
-      })),
+      ...menu.map((item) => ({ ...item, ...accountSeat(plan.uid) })),
+      ...visit.companions,
     ];
     const minutes = items.reduce(
       (sum, item) => sum + minutesOf(item, barberId),
@@ -266,73 +234,69 @@ export function historyForPlan(plan, profile, calendar, book) {
     const placed = placeBlock(calendar, book, {
       barberId,
       plannedOffset: visit.offset,
-      preferredMinute: plan.hour * 60 + (plan.minute ?? 0),
+      preferredMinute: plan.habitualStartMinutes,
       minutes,
     });
     if (!placed) throw new Error(`seed: no chair for ${id}`);
     book.take(barberId, placed.offset, placed.start, placed.start + minutes);
 
-    const outcome = seatOutcome(visit);
-    const worked = outcome.kind === 'worked';
+    const worked = visit.outcome.attendanceState === AttendanceState.Worked;
     let cursor = placed.start;
     const seats = items.map((item, seatIndex) => {
       const start = cursor;
       cursor += minutesOf(item, barberId);
       return {
-        id: `${id}-s${seatIndex + 1}`,
+        ...item,
+        seatId: `${id}-s${seatIndex + 1}`,
         barberId,
-        serviceId: item.serviceId,
-        variantId: item.variantId ?? null,
-        hour: Math.floor(start / 60),
-        minute: start % 60,
-        subject: item.subject,
         // Only the booker names a barber; a companion goes where they go.
-        pref: seatIndex === 0 ? plan.pref : 'any',
-        outcome,
+        barberPreference:
+          seatIndex === 0 ? plan.barberPreference : BarberPreference.Any,
+        startMinutes: start,
+        durationMinutes: null,
+        ...visit.outcome,
         tipCents:
           worked && rng() < plan.tipRate ? pick(rng, TIP_AMOUNTS) : null,
       };
     });
 
     // Who put it in the book, and when.
-    let placement = 'self';
-    let booked;
+    let placement = Placement.Self;
+    let bookedOn;
     let bookedFrom = null;
     if (rng() < plan.selfRate) {
-      booked = {
+      bookedOn = {
         dayOffset: placed.offset - between(rng, 2, 10),
-        hour: between(rng, 19, 22),
-        minute: pick(rng, [5, 20, 35, 50]),
+        minutes: between(rng, 19, 22) * 60 + pick(rng, [5, 20, 35, 50]),
       };
       // «Запиши пак» from the last visit's card (`/book?repeat`).
       if (lastWorked && rng() < 0.35) bookedFrom = lastWorked.id;
     } else if (lastWorked && rng() < 0.6) {
-      placement = 'staff';
+      placement = Placement.Staff;
       // Rebooked at the chair as the last visit ended.
-      booked = { ...lastWorked.endsAt, minute: lastWorked.endsAt.minute + 3 };
+      bookedOn = {
+        dayOffset: lastWorked.endsAt.dayOffset,
+        minutes: lastWorked.endsAt.minutes + 3,
+      };
       bookedFrom = lastWorked.id;
     } else {
-      placement = 'staff';
-      booked = {
+      placement = Placement.Staff;
+      bookedOn = {
         dayOffset: placed.offset - between(rng, 1, 6),
-        hour: between(rng, 10, 16),
-        minute: pick(rng, [0, 10, 25, 40]),
+        minutes: between(rng, 10, 16) * 60 + pick(rng, [0, 10, 25, 40]),
       };
     }
 
     // Walked in a few minutes early — only a worked visit was walked into.
-    const arrivedMinute = placed.start - between(rng, 2, 9);
+    const arrivedMinutes = placed.start - between(rng, 2, 9);
     fixtures.push({
       id,
       dayOffset: placed.offset,
       locationId: placed.locationId,
-      status: rootStatus(visit),
       placement,
-      booked,
+      bookedOn,
+      arrivedMinutes: worked ? arrivedMinutes : null,
       bookedFromAppointmentId: bookedFrom,
-      arrived: worked
-        ? { hour: Math.floor(arrivedMinute / 60), minute: arrivedMinute % 60 }
-        : null,
       contact: profile.contact,
       seats,
     });
@@ -340,11 +304,7 @@ export function historyForPlan(plan, profile, calendar, book) {
     if (worked) {
       lastWorked = {
         id,
-        endsAt: {
-          dayOffset: placed.offset,
-          hour: Math.floor(cursor / 60),
-          minute: cursor % 60,
-        },
+        endsAt: { dayOffset: placed.offset, minutes: cursor },
       };
     }
   });

@@ -44,52 +44,12 @@ export const BarberPref = {
     return barberId === null ? ANY : BarberPref.specific(barberId);
   },
 
-  /** The stored cart-line form — `null` is the `ANY` arm. */
-  toBarberIdOrNull(pref: BarberPref): BarberId | null {
-    return pref.barberPreference === BarberPreference.Any
-      ? null
-      : pref.preferredBarberId;
-  },
-
-  /**
-   * A seat's stored tag → the preference it was resolved from, with the
-   * seat's own barber as the specific one; an unknown tag is `null`
-   * ("we do not know"), never `ANY`.
-   */
-  fromSeat(
-    barberPreference: BarberPreference | null,
-    barberId: BarberId,
-  ): BarberPref | null {
-    if (barberPreference === BarberPreference.Any) return ANY;
-    if (barberPreference === BarberPreference.Specific) {
-      return BarberPref.specific(barberId);
-    }
-    return null;
-  },
-
-  /** The edge guard for a tag: one of the two, else `null`. */
-  parsePreference(raw: unknown): BarberPreference | null {
-    return raw === BarberPreference.Any || raw === BarberPreference.Specific
-      ? raw
-      : null;
-  },
-
   /** Would `barberId` satisfy this preference? `ANY` is satisfied by everyone. */
   matches(pref: BarberPref, barberId: BarberId): boolean {
     return (
       pref.barberPreference === BarberPreference.Any ||
       pref.preferredBarberId === barberId
     );
-  },
-
-  equals(a: BarberPref, b: BarberPref): boolean {
-    if (
-      a.barberPreference === BarberPreference.Any ||
-      b.barberPreference === BarberPreference.Any
-    ) {
-      return a.barberPreference === b.barberPreference;
-    }
-    return a.preferredBarberId === b.preferredBarberId;
   },
 } as const;
 

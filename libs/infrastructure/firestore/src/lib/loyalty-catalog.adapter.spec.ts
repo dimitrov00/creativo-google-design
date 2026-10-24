@@ -24,7 +24,7 @@ import {
   RepositoryErrorCode,
   StreakPublishError,
 } from '@core/errors';
-import { LoyaltyCatalogSystem } from '@core/systems';
+import { LoyaltyCatalogSystem, StreakRuleSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,
   type GatewayScript,
@@ -166,12 +166,13 @@ async function untilReads(db: FakeFirestore, count: number): Promise<void> {
 const read = async (ports: ReturnType<typeof setUp>['ports']) =>
   unwrapOk(await ports.loadLoyaltyCatalog());
 
-const inForce = (catalog: LoyaltyCatalog, day: LocalDate) =>
-  LoyaltyCatalogSystem.streakInForce(
-    catalog,
-    StreakRule.DEFAULT_DEFINITION_ID,
-    day,
+/** The rhythm's rule in force on `day`, or `null` without the head. */
+const inForce = (catalog: LoyaltyCatalog, day: LocalDate) => {
+  const head = catalog.streaks.find(
+    (entry) => entry.id === StreakRule.DEFAULT_DEFINITION_ID,
   );
+  return head === undefined ? null : StreakRuleSystem.inForceOn(head, day);
+};
 
 describe('loyaltyCatalogReadPorts — the read', () => {
   beforeEach(() => {

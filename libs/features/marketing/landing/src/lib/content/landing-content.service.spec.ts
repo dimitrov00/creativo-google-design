@@ -21,6 +21,7 @@ import {
 } from '@core/testing';
 import {
   CatalogContentService,
+  CatalogWording,
   DEFAULT_MEDIA_RETRY_POLICY,
 } from '@creativo/features/shared/catalog';
 import { LanguageService } from '@creativo/features/shared/shell';
@@ -243,6 +244,13 @@ describe('LandingContentService — media', () => {
     // The very view models, not a second mapping of the same data.
     expect(landing.allServices()).toBe(booking.serviceVms());
     expect(landing.barbers()).toBe(booking.barberVms());
+  });
+
+  it('words a localized pair and a price as the catalogue’s presenter does', () => {
+    const content = setUp(scriptedMedia({}));
+    const words = TestBed.inject(CatalogWording);
+    expect(content.text({ en: 'Skin fade', bg: 'Фейд' })).toBe('Фейд');
+    expect(content.price(14.5)).toBe(words.price(14.5));
   });
 
   it('stops retrying when its injector is destroyed', async () => {

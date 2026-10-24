@@ -19,11 +19,15 @@
  * flip 1 of the ECS migration): `tools/seed/fixtures/*.fixtures.ts` builds
  * each one and holds it to its `@core/entities` type with
  * `satisfies Omit<X, 'id'>`, so a stale shape fails
- * `pnpm nx typecheck seed-tools` before it could fail a query. Beside them,
- * `tools/seed/` holds the plan logic — the catalogue's hours and terms
- * (`catalog.mjs`), the shop calendar (`calendar.mjs`), the clients and
- * their fixtures (`fixtures.mjs`, which names each state), the history
- * generator (`history.mjs`), the appointment plans (`appointments.mjs`), the
+ * `pnpm nx typecheck seed-tools` before it could fail a query. The client
+ * book is authored there too, in the entity's own vocabulary
+ * (`book.fixtures.ts`: the clients, one history plan each, the visits
+ * written by hand — one fixture per client-details state), and so is the
+ * booking policy (`settings.fixtures.ts`). Beside them, `tools/seed/` holds
+ * the plan logic — the catalogue's hours and terms (`catalog.mjs`), the
+ * shop calendar (`calendar.mjs`, `ZonedTimeSystem` on the default shop's
+ * zone), the book's assembly (`fixtures.mjs`), the history generator
+ * (`history.mjs`), the placing of each visit (`appointments.mjs`), the
  * loyalty engine's output (`loyalty.mjs`), the promotions (`promotions.mjs`)
  * and Мартин's waitlist request (`waitlist.mjs`). This file only writes.
  *
@@ -152,9 +156,10 @@ const {
   closedDayBody,
   scheduleExceptionsFor,
 } = seed.catalog;
-const { CANCELLATION_WINDOW_HOURS, appointmentPhotoBody } = seed.appointments;
+const { appointmentPhotoBody } = seed.appointments;
 const { buildClientBook } = seed.book;
 const { staffAccountBody } = seed.users;
+const { BOOKING_POLICY } = seed.settings;
 const { customerIdOf } = seed.customers;
 const {
   BADGE_PROGRESS_COLLECTION,
@@ -417,27 +422,15 @@ for (const service of SERVICES) {
 }
 
 /*
- * The tenant policy document, at its shipping defaults.
- *
- * Seeded EXPLICITLY even though every reader falls back to the same numbers,
- * because a missing doc and a read defaults are indistinguishable on screen —
- * which is precisely how the client's broken policy parse went unnoticed.
- * With a real doc in the emulator, changing a number here must visibly move
- * the calendar horizon; if it doesn't, the wiring broke again.
- *
- * Field values mirror `BookingPolicy.withDefaults` (`@core/components`);
- * the body keeps its shape in flip 1 (blueprint §2.6).
+ * The tenant policy document, at its shipping defaults, every field written
+ * (`autoConfirm` too): the flat `BookingPolicySettings` body of
+ * `tools/seed/fixtures/settings.fixtures.ts`. A missing document and a read
+ * default are indistinguishable on screen, so it is seeded explicitly; its
+ * free-cancellation window is the one the seeded cancellations are stamped
+ * with — one number.
  */
-await db.collection('settings').doc('bookingPolicy').set({
-  maxPartySize: 5,
-  slotStepMinutes: 15,
-  minLeadMinutes: 120,
-  horizonMonths: 2,
-  // The window the seeded cancellations are stamped with — one number.
-  cancellationWindowHours: CANCELLATION_WINDOW_HOURS,
-  maxFlexibleDays: 7,
-});
-console.log('seeded settings/bookingPolicy');
+await db.doc(`settings/${BOOKING_POLICY.id}`).set(BOOKING_POLICY.body);
+console.log(`seeded settings/${BOOKING_POLICY.id}`);
 
 /*
  * THE LOYALTY CATALOGUE (client-card-redesign.md §4.6): the achievement
@@ -639,16 +632,18 @@ console.log(`seeded ${clientBook.customers.length} client records`);
  * ### The past (design §12.4 P0 «Seed»)
  * With no visit before today, every client-details state — a regular, a
  * pause suggestion, a late cancel, a companion's history — was untestable in
- * preview. `tools/seed/fixtures.mjs` names one fixture per state and
- * `tools/seed/history.mjs` generates the months behind them: real shifts,
- * catalogue prices in EUR, tips, both placements and the rebooking edge.
+ * preview. `tools/seed/fixtures/book.fixtures.ts` names one fixture per
+ * state and `tools/seed/history.mjs` generates the months behind them: real
+ * shifts, catalogue prices in EUR, tips, both placements and the rebooking
+ * edge.
  *
  * ### The document IS the flat `Appointment` body
  * Built by `appointmentBody` (`tools/seed/fixtures/appointments.fixtures.ts`,
- * `satisfies Omit<Appointment, 'id'>`), its query mirrors recomputed from
- * the seats by `AppointmentIndexSystem` as every write plan recomputes them:
- * the account keys (`ownerUserId`, `subjectUserIds`) beside the client
- * records (`ownerCustomerId`, `subjectCustomerIds`), `placement` included.
+ * `satisfies Omit<Appointment, 'id'>`), its root lifecycle summarised from
+ * its seats (`SeatOutcome.summarize`) and its query mirrors recomputed from
+ * them by `AppointmentIndexSystem`, as every write plan derives both: the
+ * account keys (`ownerUserId`, `subjectUserIds`) beside the client records
+ * (`ownerCustomerId`, `subjectCustomerIds`), `placement` included.
  */
 const WRITE_BATCH = 200;
 for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {

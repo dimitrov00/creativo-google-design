@@ -1,8 +1,4 @@
-import type {
-  LoyaltyAccount,
-  RewardCatalogItem,
-  StreakDefinition,
-} from '@core/entities';
+import type { LoyaltyAccount, StreakDefinition } from '@core/entities';
 import {
   CouponGrantId,
   LocalDate,
@@ -33,10 +29,9 @@ import type { ClientCardWords } from './client-card.words';
 /*
  * «ЛОЯЛНОСТ» — what the wallet (`wallet.presenter.ts`) and the glance
  * (`glance.presenter.ts`) share of the built page's helpers, as pure
- * functions: the held rewards as tickets, what is offered today, the
- * rhythm's words and state line, one slice mapped. The built page's own
- * sections went with its body in W4. A paused client's values are never
- * zeroed, only frozen.
+ * functions: the held rewards as tickets, the rhythm's words and state
+ * line, one slice mapped. The built page's own sections went with its
+ * body in W4. A paused client's values are never zeroed, only frozen.
  */
 
 /** The four loyalty flags as the store read them (`config/feature-flags.json`). */
@@ -278,14 +273,6 @@ export function rhythmLineOf(
     case StreakOutlook.InGrace:
       return naming(rhythm.stateInGrace);
   }
-}
-
-/** The rewards a catalogue offers today: enabled, not ended — in the catalogue's order. */
-export function offered(
-  catalog: ValidLoyaltyCatalog,
-  today: string,
-): readonly RewardCatalogItem[] {
-  return RewardSystem.offered(catalog.rewards, dayOf(today));
 }
 
 export interface LoyaltyPageInput {

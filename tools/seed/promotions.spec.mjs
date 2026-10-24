@@ -28,7 +28,6 @@ import { GrantStatus, LocalDate } from '@core/primitives';
 import { StreakRuleSystem, StreakSystem, ZonedTimeSystem } from '@core/systems';
 import { FIXTURE_TODAY, giftVouchersJson } from '@core/testing';
 import { describe, expect, it } from 'vitest';
-import { SHOP_ZONE, createShopCalendar, wallTimeMovedBy } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
 import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import {
@@ -49,6 +48,8 @@ import {
   readPromotionWrites,
 } from './promotions.mjs';
 
+/** The shops' zone, spelled here so the spec reads instants independently of the seed. */
+const SHOP_ZONE = 'Europe/Sofia';
 const DAY_MS = 86_400_000;
 const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 const SHOP_TIME = new Intl.DateTimeFormat('en-GB', {
@@ -467,50 +468,6 @@ describe('the gift vouchers', () => {
       expect(voided.voidedAtUtcMs - voided.issuedAtUtcMs).toBe(4 * 60_000);
     },
   );
-});
-
-describe('wallTimeMovedBy', () => {
-  it('keeps the reading of the clock and takes the offset of the day it lands on', () => {
-    const end = '2026-12-31T23:59:59.999+02:00';
-    expect(wallTimeMovedBy(end, 0)).toBe(end);
-    expect(wallTimeMovedBy(end, 1)).toBe('2027-01-01T23:59:59.999+02:00');
-    // Across the spring change, and back across the autumn one.
-    expect(wallTimeMovedBy(end, 200)).toBe('2027-07-19T23:59:59.999+03:00');
-    expect(wallTimeMovedBy('2026-06-13T10:45:00.000+03:00', -200)).toBe(
-      '2025-11-25T10:45:00.000+02:00',
-    );
-    // The night the clocks go forward in Sofia, either side of 03:00.
-    expect(wallTimeMovedBy('2026-03-28T02:30:00.000+02:00', 1)).toBe(
-      '2026-03-29T02:30:00.000+02:00',
-    );
-    expect(wallTimeMovedBy('2026-03-28T04:30:00.000+02:00', 1)).toBe(
-      '2026-03-29T04:30:00.000+03:00',
-    );
-    // A leap day is a day.
-    expect(wallTimeMovedBy('2028-02-28T12:00:00.000+02:00', 1)).toBe(
-      '2028-02-29T12:00:00.000+02:00',
-    );
-  });
-
-  it('moves by the shop’s days whatever the calendar it is asked from', () => {
-    const calendar = createShopCalendar(NOW);
-    expect(wallTimeMovedBy(calendar.isoAt(0, 12, 0), -3)).toBe(
-      calendar.isoAt(-3, 12, 0),
-    );
-    expect(wallTimeMovedBy(calendar.isoAt(0, 9, 30), 40)).toBe(
-      calendar.isoAt(40, 9, 30),
-    );
-  });
-
-  it('refuses what is not a wall time of the zone', () => {
-    expect(() => wallTimeMovedBy('2026-12-31T21:59:59.999Z', 1)).toThrow(
-      /not a wall time of Europe\/Sofia/,
-    );
-    expect(() => wallTimeMovedBy('2026-12-31T23:59:59.999+03:00', 1)).toThrow(
-      /not a wall time of Europe\/Sofia/,
-    );
-    expect(() => wallTimeMovedBy('31.12.2026', 1)).toThrow(/no wall time/);
-  });
 });
 
 describe('readPromotionWrites', () => {

@@ -26,6 +26,7 @@ import {
   ServiceComposition,
   ServiceStatus,
   ServiceTerms,
+  TenantConfig,
   type BarberOffering,
   type ServiceVariant,
   type VariantTerms,
@@ -110,12 +111,9 @@ export const endAt = (minutes: number): EndMinute =>
 /** A shop day, `YYYY-MM-DD`. */
 export const day = (raw: string): LocalDate =>
   sure(LocalDate.parse(raw), `day ${raw}`);
-/** The shop's zone — configuration of the location only (Law 7.2). */
-export const zone = (raw: string): TimeZone =>
+/** A shop's zone — configuration of the location only (Law 7.2). */
+const zone = (raw: string): TimeZone =>
   sure(ZonedTimeSystem.checkZone(raw), `zone ${raw}`);
-
-/** Both shops keep Sofia's clock. */
-export const SHOP_TIME_ZONE: TimeZone = zone('Europe/Sofia');
 
 /** 28,00 € for 30 minutes, no pads — the seed's terms from euros and minutes. */
 export function terms(euros: number, minutes: number): ServiceTerms {
@@ -153,6 +151,12 @@ function phone(e164: string, display: string): VenuePhone {
   const parsed = sure(PhoneSystem.parse(e164, null), `phone ${e164}`);
   return sure(VenuePhone.of(parsed.e164, display), `phone display ${display}`);
 }
+
+/**
+ * Both shops keep Sofia's clock — the zone's one literal. Every other
+ * reader takes it off a location's body ({@link timeZoneOf}).
+ */
+const SOFIA: TimeZone = zone('Europe/Sofia');
 
 /** No cover picture: all seven fields `null` together. */
 const NO_COVER = {
@@ -195,7 +199,7 @@ export const LOCATIONS: readonly Seeded<LocationId, ShopLocation>[] = [
         open(10, 18),
         CLOSED,
       ],
-      timeZone: SHOP_TIME_ZONE,
+      timeZone: SOFIA,
       locationStatus: LocationStatus.Active,
       sortOrder: 1,
       ...sure(GeoPoint.parse(42.4271, 25.6366), 'geo loc-center'),
@@ -223,7 +227,7 @@ export const LOCATIONS: readonly Seeded<LocationId, ShopLocation>[] = [
         open(9, 16),
         CLOSED,
       ],
-      timeZone: SHOP_TIME_ZONE,
+      timeZone: SOFIA,
       locationStatus: LocationStatus.Active,
       sortOrder: 2,
       ...sure(GeoPoint.parse(42.46, 25.685), 'geo loc-mladost'),
@@ -233,7 +237,27 @@ export const LOCATIONS: readonly Seeded<LocationId, ShopLocation>[] = [
   },
 ];
 
-export const BOTH_LOCATIONS: readonly LocationId[] = [CENTER, MLADOST];
+const BOTH_LOCATIONS: readonly LocationId[] = [CENTER, MLADOST];
+
+/** The zone a shop keeps, read off its seeded body — the zone's one home (Law 7.2). */
+export function timeZoneOf(locationId: string): TimeZone {
+  return present(
+    LOCATIONS.find(({ id }) => id === locationId)?.body.timeZone ?? null,
+    `no location ${locationId}`,
+  );
+}
+
+/**
+ * The clock of the tenant's default shop (`TenantConfig.DEFAULT`), off its
+ * seeded body: what the server reads a day on when no chair names a shop
+ * (the client stats, the loyalty job), and so what the seed reads its
+ * calendar, its busy days, its vouchers and its loyalty rows on. A visit,
+ * an exception or a request that names its shop is read on that shop's
+ * ({@link timeZoneOf}).
+ */
+export const SHOP_TIME_ZONE: TimeZone = timeZoneOf(
+  TenantConfig.DEFAULT.defaultLocationId,
+);
 
 // ── The barbers ────────────────────────────────────────────────────────────
 
@@ -331,7 +355,7 @@ const SHORT = ServiceVariantId.of('short');
 const LONG = ServiceVariantId.of('long');
 
 /** Short vs long hair — the axis that actually moves a cut's price. */
-export const LENGTH_VARIANTS: readonly ServiceVariant[] = [
+const LENGTH_VARIANTS: readonly ServiceVariant[] = [
   { variantId: SHORT, name: { bg: 'Къса коса', en: 'Short hair' } },
   { variantId: LONG, name: { bg: 'Дълга коса', en: 'Long hair' } },
 ];

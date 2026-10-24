@@ -5,9 +5,6 @@ import {
   Combinability,
   CouponValue,
   DiscountSource,
-  GrantCapacityTerms,
-  GrantExpiryTerms,
-  GrantLifecycle,
   type Money,
   VoucherCode,
 } from '@core/components';
@@ -15,23 +12,17 @@ import {
   Currency,
   AppliedDiscountId,
   CouponGrantId,
-  CouponId,
-  UserId,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import { EngagementErrorCode } from '@core/errors';
-import type { CouponGrant } from '@core/entities';
-import { deepFreeze, unwrapOk, utcMs, customerOf } from '@core/testing';
+import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';
 
 /*
- * The cases of the legacy engagement `discount-application.spec.ts` and of the
- * engagement application lib's `apply-discounts.use-case.spec.ts` (the
- * anti-abuse cap over a client's grants; both deleted in Phase 4b, ledger
- * `docs/architecture/flips/phase-4b-delete.md` §11.1), copied —
- * `grantedAtUtcMs` is an instant, `minSpendCents` is `null` when ungated, the
- * cap is `null` when none.
+ * The cases of the legacy engagement `discount-application.spec.ts` (deleted
+ * in Phase 4b, ledger `docs/architecture/flips/phase-4b-delete.md` §11.1),
+ * copied — `grantedAtUtcMs` is an instant, `minSpendCents` is `null` when
+ * ungated, the cap is `null` when none.
  */
 
 const BASE = utcMs('2026-01-01T00:00:00+02:00');
@@ -176,19 +167,6 @@ describe('DiscountSystem.apply — anti-abuse cap', () => {
     const out = DiscountSystem.apply(eur(100), [input('a', pct(10))], 50);
     expect(out.discountTotalCents).toBe(1000);
   });
-
-  it('capPercent rejects an out-of-range value', () => {
-    expect(DiscountSystem.capPercent(-1).ok).toBe(false);
-    expect(DiscountSystem.capPercent(101).ok).toBe(false);
-    expect(DiscountSystem.capPercent(Number.NaN)).toEqual({
-      ok: false,
-      error: {
-        errorCode: EngagementErrorCode.DiscountCapInvalid,
-        attempted: Number.NaN,
-      },
-    });
-    expect(DiscountSystem.capPercent(50).ok).toBe(true);
-  });
 });
 
 /* ── Property-based tests (blueprint §7.4) ────────────────────────────── */
@@ -304,62 +282,6 @@ describe('DiscountSystem.apply — property tests', () => {
       ),
       { numRuns: 200 },
     );
-  });
-});
-
-/* ── The client's grants (ApplyDiscountsUseCase) ──────────────────────── */
-
-const NOW = utcMs('2026-01-01T00:00:00Z');
-const USER = UserId.of('user_1');
-
-function grant(
-  id: string,
-  value: CouponValue,
-  lifecycle: GrantLifecycle = GrantLifecycle.active(
-    GrantCapacityTerms.singleUse(),
-    GrantExpiryTerms.none(),
-  ),
-): CouponGrant {
-  return {
-    id: CouponGrantId.of(id),
-    customerId: customerOf(USER),
-    holderUserId: USER,
-    couponId: CouponId.of(`coupon_${id}`),
-    grantedAtUtcMs: NOW,
-    ...value,
-    ...lifecycle,
-  };
-}
-
-describe('DiscountSystem.inputsFromGrants — the client’s usable grants', () => {
-  it('applies a fixed-amount grant against the cart subtotal', () => {
-    const inputs = DiscountSystem.inputsFromGrants(
-      [{ grant: grant('grant_1', fixed(5)), label: '5 EUR off' }],
-      NOW,
-    );
-    const out = DiscountSystem.apply(eur(20), inputs, null);
-    expect(out.lines).toHaveLength(1);
-    expect(out.lines[0]?.label).toBe('5 EUR off');
-    expect(out.totalCents).toBe(1500);
-  });
-
-  it('respects the anti-abuse cap across multiple grants', () => {
-    const inputs = DiscountSystem.inputsFromGrants(
-      [
-        { grant: grant('grant_1', pct(50)), label: '50% off' },
-        { grant: grant('grant_2', pct(20)), label: '20% off' },
-      ],
-      NOW,
-    );
-    const out = DiscountSystem.apply(eur(100), inputs, 30);
-    expect(out.discountTotalCents).toBeLessThanOrEqual(3000);
-  });
-
-  it('leaves out a grant that is no longer usable', () => {
-    const spent = grant('grant_3', pct(10), GrantLifecycle.used(NOW, ''));
-    expect(
-      DiscountSystem.inputsFromGrants([{ grant: spent, label: 'x' }], NOW),
-    ).toEqual([]);
   });
 });
 

@@ -2516,7 +2516,7 @@
             <span uiTrailing class="staff-visit__row-value">
               <span
                 class="staff-visit__figures"
-                [uiForegroundStyle]="tipMinor() === null ? 'secondary' : 'success'"
+                [uiForegroundStyle]="tipCents() === null ? 'secondary' : 'success'"
                 data-testid="staff-visit-tip-value"
                 >{{ tipReadout() }}</span
               >
@@ -2558,7 +2558,7 @@
                    and on the row. -->
                 <ui-amount-field
                   uiId="staff-visit-tip"
-                  [uiValue]="tipCustomMinor()"
+                  [uiValue]="tipCustomCents()"
                   [uiUnit]="t('staff.visit.currencySymbol')"
                   uiReserve="00,00"
                   [uiStep]="50"

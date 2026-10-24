@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import fc from 'fast-check';
 import {
-  ExecutionTally,
+  createExecutionTally,
   NO_LOGGING_EMULATOR,
   lostExecutions,
   optionsFromArgv,
@@ -280,46 +280,46 @@ describe('triggerFingerprint', () => {
   });
 });
 
-describe('ExecutionTally', () => {
+describe('createExecutionTally', () => {
   const SINCE = 1_000;
 
   it('counts each start and finish, and holds what has not finished', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(begin('us-central1-b', SINCE));
     tally.record(begin('us-central1-a', SINCE));
     tally.record(begin('us-central1-a', SINCE));
     tally.record(finish('us-central1-a', SINCE));
-    expect(tally.events).toBe(4);
+    expect(tally.events()).toBe(4);
     expect(tally.running()).toEqual(['us-central1-a', 'us-central1-b']);
     tally.record(finish('us-central1-a', SINCE));
     tally.record(finish('us-central1-b', SINCE));
     expect(tally.running()).toEqual([]);
-    expect(tally.events).toBe(6);
+    expect(tally.events()).toBe(6);
   });
 
   it('holds an execution begun before it started watching, without counting it as a change', () => {
     // The Logging emulator replays its whole history to a new connection.
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(begin('us-central1-a', SINCE - 500));
     tally.record(begin('us-central1-b', SINCE - 400));
     tally.record(finish('us-central1-b', SINCE - 300));
-    expect(tally.events).toBe(0);
+    expect(tally.events()).toBe(0);
     expect(tally.running()).toEqual(['us-central1-a']);
     tally.record(finish('us-central1-a', SINCE + 1));
-    expect(tally.events).toBe(1);
+    expect(tally.events()).toBe(1);
     expect(tally.running()).toEqual([]);
   });
 
   it('counts a finish it never saw begin, and never goes below none', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(finish('us-central1-a', SINCE));
     tally.record(begin('us-central1-a', SINCE));
-    expect(tally.events).toBe(2);
+    expect(tally.events()).toBe(2);
     expect(tally.running()).toEqual(['us-central1-a']);
   });
 
   it('ignores every other log line', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     for (const message of [
       'i  functions: Loaded environment variables from .env.local.',
       'Callable request verification passed',
@@ -329,17 +329,17 @@ describe('ExecutionTally', () => {
     }
     tally.record(null);
     tally.record({ message: 'Beginning execution of "no-timestamp"' });
-    expect(tally.events).toBe(0);
+    expect(tally.events()).toBe(0);
     expect(tally.running()).toEqual([]);
     expect(tally.failures()).toEqual([]);
   });
 
   it('a failed request ends the execution it names, and is reported', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(begin('us-central1-a', SINCE));
     tally.record(requestFailed('us-central1-a', SINCE + 10));
     expect(tally.running()).toEqual([]);
-    expect(tally.events).toBe(2);
+    expect(tally.events()).toBe(2);
     expect(tally.failures()).toEqual([
       {
         trigger: 'us-central1-a',
@@ -350,7 +350,7 @@ describe('ExecutionTally', () => {
   });
 
   it('a timeout or a kill says why, and only the line after it ends the execution', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(begin('us-central1-a', SINCE));
     tally.record(begin('us-central1-a', SINCE + 1));
     tally.record(timedOut('us-central1-a', SINCE + 2));
@@ -366,16 +366,16 @@ describe('ExecutionTally', () => {
   });
 
   it('a failure before it started watching is history: it ends the execution, it is not reported', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record(begin('us-central1-a', SINCE - 20));
     tally.record(requestFailed('us-central1-a', SINCE - 10));
     expect(tally.running()).toEqual([]);
     expect(tally.failures()).toEqual([]);
-    expect(tally.events).toBe(0);
+    expect(tally.events()).toBe(0);
   });
 
   it('a failure that names no function is still reported', () => {
-    const tally = new ExecutionTally(SINCE);
+    const tally = createExecutionTally(SINCE);
     tally.record({
       timestamp: SINCE,
       message: 'Request to function failed: Error: read ECONNRESET',
@@ -390,7 +390,7 @@ describe('ExecutionTally', () => {
   });
 
   it('reads each trigger in flight by its oldest start, sorted by trigger', () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-b', 0));
     tally.record(begin('us-central1-a', 1_000));
     tally.record(begin('us-central1-a', 7_000));
@@ -403,7 +403,7 @@ describe('ExecutionTally', () => {
   });
 
   it('retires the OLDEST execution of a trigger on a finish, so an age is never overstated', () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-a', 0));
     tally.record(begin('us-central1-a', 8_000));
     tally.record(finish('us-central1-a', 9_000));
@@ -473,7 +473,7 @@ describe('timeoutsFromBackends', () => {
 
 describe('lostExecutions', () => {
   it('names an execution only once it is in flight past its own timeout and the grace', () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-short', 0));
     tally.record(begin('us-central1-long', 0));
     tally.record(begin('us-central1-unlisted', 0));
@@ -524,7 +524,7 @@ describe('settleTriggers', () => {
   }
 
   it('settles once the data and the executions have both held still', async () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-a', 0));
     tally.record(finish('us-central1-a', 0));
     const watch = watching(tally);
@@ -537,7 +537,7 @@ describe('settleTriggers', () => {
 
   it('never reads a trigger in flight as quiet, and names it when it refuses', async () => {
     // Data-only, this settles at 2 s: nothing is written.
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-dispatchClientProjections', 0));
     const watch = watching(
       tally,
@@ -554,7 +554,7 @@ describe('settleTriggers', () => {
   });
 
   it('restarts the window on an execution even while the data holds still', async () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     // One execution begins and ends between the 1 s and the 2 s reads.
     const clock = scriptedClock((now) => {
       if (now === 2_000) {
@@ -579,14 +579,14 @@ describe('settleTriggers', () => {
       settleTriggers(db, {
         ...OPTIONS,
         clock: scriptedClock(),
-        watch: watching(new ExecutionTally(0)),
+        watch: watching(createExecutionTally(0)),
       }),
     ).resolves.toBe(3_000);
   });
 
   it('waits for an execution that began before the watch connected', async () => {
     // Replayed history: begun at -3 s, before `sinceMs`; it finishes at 3 s.
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-rebuildCapacity', -3_000));
     const clock = scriptedClock((now) => {
       if (now === 3_000)
@@ -604,7 +604,7 @@ describe('settleTriggers', () => {
   it('goes on past an execution the emulator killed, and names it when it ends', async () => {
     // Timed out at 2 s: the emulator's own lines end it. Waiting for a
     // 'Finished' that never comes would hold the window to the timeout.
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-dispatchClientProjections', 0));
     const clock = scriptedClock((now) => {
       if (now === 2_000) {
@@ -631,7 +631,7 @@ describe('settleTriggers', () => {
   });
 
   it('names a trigger that died even when the wait then refuses', async () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(killed('us-central1-rebuildBusy', 0));
     tally.record(begin('us-central1-rebuildCapacity', 0));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -659,7 +659,7 @@ describe('settleTriggers', () => {
       await settleTriggers(fakeDb(QUIET), {
         ...OPTIONS,
         clock: scriptedClock(),
-        watch: watching(new ExecutionTally(0)),
+        watch: watching(createExecutionTally(0)),
       });
       expect(warn).not.toHaveBeenCalled();
     } finally {
@@ -668,7 +668,7 @@ describe('settleTriggers', () => {
   });
 
   it('refuses an execution in flight past its own timeout and the grace as lost, naming it', async () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-rebuildCapacity', 0));
     const watch = watching(
       tally,
@@ -695,7 +695,7 @@ describe('settleTriggers', () => {
     // The policy recompute's step declares 540 s. A flat limit near the
     // emulator's 60 s default would call it lost at 90 s.
     const trigger = 'us-central1-continueClientStatsPolicyRecompute';
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin(trigger, 0));
     const clock = scriptedClock();
     const outcome = settleTriggers(fakeDb(QUIET), {
@@ -711,7 +711,7 @@ describe('settleTriggers', () => {
   });
 
   it('never calls lost a trigger the listing does not name', async () => {
-    const tally = new ExecutionTally(0);
+    const tally = createExecutionTally(0);
     tally.record(begin('us-central1-unlisted', 0));
     const outcome = settleTriggers(fakeDb(QUIET), {
       ...OPTIONS,
@@ -868,7 +868,7 @@ describe('watchExecutions, against a stand-in hub', () => {
         ]),
       );
       // Only the line logged from `sinceMs` on counts as a change.
-      expect(watch.tally.events).toBe(1);
+      expect(watch.tally.events()).toBe(1);
     } finally {
       watch.close();
     }

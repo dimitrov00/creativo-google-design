@@ -33,7 +33,6 @@ import {
   ServiceId,
   UserId,
   LocalDate,
-  type MinuteOfDay,
   UtcEpochMs,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
@@ -230,7 +229,7 @@ describe('visitRowOf · the staff card — the story', () => {
       cancelledBy: 'CLIENT',
     });
     // What was booked: the struck figure.
-    expect(unwrapOk(S.story(called)).totalCents).toBe(1750);
+    expect(S.subjectFigure(called, staffStory(called))?.amountCents).toBe(1750);
 
     // The shop's own cancellation is the shop's.
     const byShop = visit(
@@ -419,12 +418,15 @@ describe('visitRowOf · the staff card — the story', () => {
       ],
       BookingLifecycle.complete(WORKED_AT),
     );
-    const story = unwrapOk(S.story(two));
-    expect(story.serviceIds).toEqual([FADE, BEARD]);
-    expect(story.barberIds).toEqual([IVAN, PETAR]);
+    const story = staffStory(two);
+    expect(S.distinct(two.seats.map((entry) => entry.serviceId))).toEqual([
+      FADE,
+      BEARD,
+    ]);
+    expect(S.subjectBarberIds(two, story)).toEqual([IVAN, PETAR]);
     // Both seats are his: the figure is the bill.
-    expect(staffStory(two).seatIndexes).toEqual([0, 1]);
-    expect(story.totalCents).toBe(3950);
+    expect(story.seatIndexes).toEqual([0, 1]);
+    expect(S.subjectFigure(two, story)?.amountCents).toBe(3950);
   });
 
   it('tells a guest’s visit as the appointment’s own, and quotes nobody', () => {
@@ -517,32 +519,6 @@ describe('waitlistRowOf — the days it watches', () => {
 });
 
 describe('VisitStorySystem — the facts and the rules', () => {
-  it('takes the envelope from the seats and the total from the bill', () => {
-    const two = visit(
-      [
-        seat('2026-09-04T10:30:00', {
-          service: BEARD,
-          barber: PETAR,
-          priceCents: 1200,
-        }),
-        seat('2026-09-04T10:00:00'),
-      ],
-      BookingLifecycle.confirm(at('2026-09-01T10:00:00')),
-    );
-    const story = unwrapOk(S.story(two));
-    const from: MinuteOfDay = wall('2026-09-04T10:00:00').minute;
-    expect(story).toMatchObject({
-      localDate: '2026-09-04',
-      startMinutes: from,
-      endMinutes: from + 60,
-    });
-    expect(story.currency).toBe('EUR');
-    expect(story.barberIds).toEqual([PETAR, IVAN]);
-    expect(S.story(visit([], BookingLifecycle.confirm(stamp(0)))).ok).toBe(
-      false,
-    );
-  });
-
   it('decides a cancelled visit by the seat called off last, the first of equal instants', () => {
     expect(
       S.decisiveCancellationIndex([null, stamp(5), stamp(9), stamp(9), null]),
@@ -627,7 +603,6 @@ describe('VisitStorySystem — the facts and the rules', () => {
         BookingLifecycle.complete(WORKED_AT),
       ),
     );
-    expect(S.story(party)).toEqual(S.story(party));
     expect(S.subjectStory(party, customerOf(IVO), true)).toEqual(
       S.subjectStory(party, customerOf(IVO), true),
     );

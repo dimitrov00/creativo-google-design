@@ -11,9 +11,6 @@ export const OpeningState = {
 } as const;
 export type OpeningState = (typeof OpeningState)[keyof typeof OpeningState];
 
-/** `HH:mm`, 00:00–23:59 — the legacy `TIME_REGEX` (`location.ts:62`). */
-const CLOCK_SHAPE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
 /**
  * One weekday of a shop's opening hours (`location.ts:27-40`), on the shop's
  * wall clock: `CLOSED`, or `OPEN` from `openMinutes` to `closeMinutes`
@@ -38,15 +35,6 @@ export type DayHoursInput =
       readonly openingState: typeof OpeningState.Open;
       readonly openMinutes: number;
       readonly closeMinutes: number;
-    };
-
-/** An open day as authored in clock text — the legacy stored shape, re-tagged. */
-export type ClockDayHours =
-  | DayHours.Closed
-  | {
-      readonly openingState: typeof OpeningState.Open;
-      readonly opens: string;
-      readonly closes: string;
     };
 
 const CLOSED: DayHours.Closed = { openingState: OpeningState.Closed };
@@ -89,23 +77,6 @@ export const DayHours = {
   },
 
   /**
-   * `'HH:mm'` (00:00–23:59, zero-padded) → a minute of the day, or
-   * `CATALOG_LOCATION_INVALID_TIME_OF_DAY` carrying the text.
-   */
-  parseClock(
-    raw: string,
-  ): Result<MinuteOfDay, CatalogError.LocationInvalidTimeOfDay> {
-    const match = CLOCK_SHAPE.exec(raw);
-    const minute =
-      match === null
-        ? null
-        : MinuteOfDay.of(Number(match[1]) * 60 + Number(match[2]));
-    return minute !== null && minute.ok
-      ? Result.ok(minute.value)
-      : Result.err(CatalogError.locationInvalidTimeOfDay(raw));
-  },
-
-  /**
    * The edge guard for a week in minutes (an admin write, a stored
    * document): exactly seven entries, Monday first
    * (`CATALOG_LOCATION_INVALID_HOURS_LENGTH`, reported alone); on each open
@@ -143,45 +114,6 @@ export const DayHours = {
         errors.push(
           CatalogError.locationInvalidTimeOfDay(String(day.closeMinutes)),
         );
-        continue;
-      }
-      const opened = openDay(i, opens.value, closes.value);
-      if (opened.ok) week.push(opened.value);
-      else errors.push(opened.error);
-    }
-    return errors.length > 0 ? Result.err(errors) : Result.ok(week);
-  },
-
-  /**
-   * The legacy `validateHours` (`location.ts:251-292`) on the clock-text
-   * shape locations stored before the booking-core flip (`hours: [{ kind:
-   * 'open', opens: '09:00', closes: '20:00' }, …]`, which the legacy shim
-   * re-tagged), converting to minutes: the same codes, in the same order, as
-   * {@link parseWeek} — the one guard the `hours` → `openingHours` reshaping
-   * and the seed ran their seven days through.
-   */
-  parseClockWeek(
-    raw: readonly ClockDayHours[],
-  ): Result<readonly DayHours[], readonly CatalogError[]> {
-    if (raw.length !== 7) {
-      return Result.err([CatalogError.locationInvalidHoursLength(raw.length)]);
-    }
-    const errors: CatalogError[] = [];
-    const week: DayHours[] = [];
-    for (let i = 0; i < raw.length; i++) {
-      const day = raw[i] as ClockDayHours;
-      if (day.openingState === OpeningState.Closed) {
-        week.push(DayHours.closed());
-        continue;
-      }
-      const opens = DayHours.parseClock(day.opens);
-      if (!opens.ok) {
-        errors.push(opens.error);
-        continue;
-      }
-      const closes = DayHours.parseClock(day.closes);
-      if (!closes.ok) {
-        errors.push(closes.error);
         continue;
       }
       const opened = openDay(i, opens.value, closes.value);

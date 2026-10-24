@@ -1054,44 +1054,6 @@ export const ClientStatsSystem = {
   },
 
   /**
-   * One appointment as this ACCOUNT's own visit — the signed-in person's
-   * view of their seats (`subjectUserId`, who may read; D29), `null` when
-   * the account holds no seat on it. The same reading as
-   * {@link subjectVisitOf}, keyed by the account the seats keep beside their
-   * record, so it needs no client record at all.
-   */
-  accountVisitOf<A extends StatsAppointment>(
-    account: UserId,
-    appointment: A,
-  ): SubjectVisit<A> | null {
-    const seats: AccountSeat[] = [];
-    for (let i = 0; i < appointment.seats.length; i++) {
-      const seat = appointment.seats[i] as AccountSeat;
-      if (
-        seat.seatSubject === SeatSubject.Account &&
-        seat.subjectUserId === account
-      ) {
-        seats.push(seat);
-      }
-    }
-    return visitOfSeats(appointment, seats);
-  },
-
-  /**
-   * Every appointment the account holds a seat on, as its visits, oldest
-   * first — {@link accountVisitOf} over the list, an appointment listed
-   * twice counted once.
-   */
-  accountVisitsOf<A extends StatsAppointment>(
-    account: UserId,
-    appointments: readonly A[],
-  ): readonly SubjectVisit<A>[] {
-    return collectVisits(appointments, (appointment) =>
-      ClientStatsSystem.accountVisitOf(account, appointment),
-    );
-  },
-
-  /**
    * One client's stats as of `now`. A late cancel is judged by the window
    * stamped on the deciding seat — the rule in force when the client
    * cancelled — so a later policy change re-judges nothing; only a
@@ -1108,19 +1070,6 @@ export const ClientStatsSystem = {
   },
 
   /**
-   * The stats of visits already read — {@link stats} after the pick: the
-   * same counts whichever reading picked them (a record's seats, an
-   * account's own).
-   */
-  statsOfVisits(
-    visits: readonly SubjectVisit[],
-    policy: ClientStatsPolicy,
-    now: ShopNow,
-  ): ClientStats {
-    return statsOf(visits, policy, now);
-  },
-
-  /**
    * Lifetime spend over worked visits (R33, §12.5.2): the person's own
    * worked seats, less their pro-rata share of the visit's discounts.
    * Vouchers are a way of PAYING and tips were never the shop's price, so
@@ -1132,27 +1081,6 @@ export const ClientStatsSystem = {
     appointments: readonly BilledAppointment<Seat>[],
   ): ClientMoneyStats {
     return moneyOf(visitsOf(subject, appointments));
-  },
-
-  /** The spend of visits already read — {@link money} after the pick. */
-  moneyOfVisits(
-    visits: readonly SubjectVisit<BilledAppointment>[],
-  ): ClientMoneyStats {
-    return moneyOf(visits);
-  },
-
-  /** Both projections of one history, read once. */
-  compute(
-    subject: CustomerId,
-    appointments: readonly BilledAppointment<Seat>[],
-    policy: ClientStatsPolicy,
-    now: ShopNow,
-  ): { readonly stats: ClientStats; readonly money: ClientMoneyStats } {
-    const visits = visitsOf(subject, appointments);
-    return {
-      stats: statsOf(visits, policy, now),
-      money: moneyOf(visits),
-    };
   },
 
   /**
@@ -1364,22 +1292,6 @@ export const ClientStatsSystem = {
     const all = new Set<K>(before);
     for (let i = 0; i < after.length; i++) all.add(after[i] as K);
     return [...all].sort();
-  },
-
-  /**
-   * Who placed each stored appointment, as its COMMIT stamped it. A row the
-   * commit did not stamp is left out, which the preferred barber reads as
-   * no evidence (§12.5.1) — an inferred placement never reaches here.
-   */
-  placementsFrom(
-    rows: readonly Pick<Appointment, 'id' | 'placement'>[],
-  ): ReadonlyMap<AppointmentId, Placement> {
-    const placements = new Map<AppointmentId, Placement>();
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] as Pick<Appointment, 'id' | 'placement'>;
-      if (row.placement !== null) placements.set(row.id, row.placement);
-    }
-    return placements;
   },
 
   /**

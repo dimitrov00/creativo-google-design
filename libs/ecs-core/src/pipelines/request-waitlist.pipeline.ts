@@ -176,7 +176,7 @@ export const requestWaitlist =
       ),
       maxFlexibleDays: policy.value.maxFlexibleDays,
       shopListed: PartyAdmissionSystem.shopListed(location),
-      admission: admitted.ok ? null : { errorCode: admitted.error.errorCode },
+      admission: admitted.ok ? null : admitted.error,
     });
     if (!decided.ok) return decided;
 

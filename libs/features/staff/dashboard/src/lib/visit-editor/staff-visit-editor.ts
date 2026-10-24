@@ -10,7 +10,6 @@ import {
   phoneSegments,
   rankClients,
 } from './client-query';
-import { type VisitSides, adoptSides } from './visit-sides';
 import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
@@ -20,6 +19,7 @@ import {
   DurationMinutes,
   EndMinute,
   LocalDate,
+  type MinuteDelta,
   MinuteOfDay,
   PriceCents,
   type TimeZone,
@@ -49,6 +49,8 @@ import {
   TipPreset,
   VisitDraftSystem,
   VisitRowOutcome,
+  type VisitSides,
+  VisitSidesSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -129,7 +131,10 @@ import {
   UiTimeField,
   UiUnitField,
 } from '@creativo/ui/controls';
-import { catalogMinutesOf, minutesDeltaLabel } from '../shared/catalog-delta';
+import {
+  catalogTagWords,
+  minutesDeltaWords,
+} from '../shared/catalog-tag.words';
 import {
   StaffEventHead,
   type StaffEventLine,
@@ -283,14 +288,14 @@ export type VisitEditorCommit = {
   /** The vouchers paying the bill, in cover order. */
   readonly vouchers: readonly VisitEditorVoucher[];
   /**
-   * What the client left this chair, in minor units — drafted like every
-   * other line since 2026-09-15; `null` when none, or cleared. The owner
-   * writes it beside the batch when it differs from what it was drawn from.
+   * What the client left this chair, in cents — drafted like every other
+   * line since 2026-09-15; `null` when none, or cleared. The owner writes
+   * it beside the batch when it differs from what it was drawn from.
    */
-  readonly tipMinorUnits: number | null;
+  readonly tipCents: PriceCents | null;
   /**
    * The note and the tip as the draft last READ them from the server
-   * (`visit-sides.ts`, round 5). The owner writes a side field only when
+   * (`VisitSidesSystem`, round 5). The owner writes a side field only when
    * the draft changed it from this, and refuses the save as stale when the
    * stored value moved under a changed one. Absent: measured against what
    * is stored now.
@@ -409,7 +414,7 @@ export interface VisitEditorVm {
    */
   readonly photos?: readonly VisitEditorPhoto[];
   readonly photoBusy?: boolean;
-  /** The visit subtotal, already through `formatMoney`. */
+  /** The visit subtotal, already through `formatCents`. */
   readonly priceLabel: string | null;
   /**
    * The same total in cents — what a tip preset is a share of. `null` when
@@ -426,10 +431,10 @@ export interface VisitEditorVm {
    */
   readonly tipLabel: string | null;
   /**
-   * The tip in minor units, so the field can be edited rather than re-typed
-   * from a formatted string.
+   * The tip in cents, so the field can be edited rather than re-typed from
+   * a formatted string.
    */
-  readonly tipMinorUnits: number | null;
+  readonly tipCents: PriceCents | null;
   /**
    * What the server has taken off the bill — every discount, empty at full
    * price. The ladder's baseline: the draft seeds from it, `dirty` compares
@@ -860,12 +865,12 @@ interface VisitDraft {
   /** The vouchers as drafted, in cover order. */
   readonly vouchers: readonly VisitEditorVoucher[];
   /** The tip as drafted — `null` for none. Seeded from the recording. */
-  readonly tipMinorUnits: number | null;
+  readonly tipCents: PriceCents | null;
   /**
    * The note and the tip as the server last said them, which `note` and
-   * `tipMinorUnits` started from — followed while the barber leaves a field
-   * alone (`adoptSides`), kept while they have changed it. Not part of the
-   * saved shape: it is what the save is measured against.
+   * `tipCents` started from — followed while the barber leaves a field
+   * alone (`VisitSidesSystem.adopt`), kept while they have changed it. Not
+   * part of the saved shape: it is what the save is measured against.
    */
   readonly drawn: VisitSides;
 }
@@ -1321,8 +1326,8 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     note: vm.teamNote,
     discounts: vm.discounts,
     vouchers: vm.vouchers,
-    tipMinorUnits: vm.tipMinorUnits,
-    drawn: { note: vm.teamNote, tipMinorUnits: vm.tipMinorUnits },
+    tipCents: vm.tipCents,
+    drawn: { note: vm.teamNote, tipCents: vm.tipCents },
   };
 }
 
@@ -1341,7 +1346,7 @@ function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
     note: draft.note?.trim() ? draft.note.trim() : null,
     discounts: draft.discounts,
     vouchers: draft.vouchers,
-    tipMinorUnits: draft.tipMinorUnits,
+    tipCents: draft.tipCents,
     drawn: draft.drawn,
     clients: draft.clients.map((client) => ({
       id: client.id,
@@ -1900,15 +1905,14 @@ export class StaffVisitEditor {
    * stored value, so the sheet never shows — and a save never writes — an
    * older one. A field they changed keeps their words, and the draft still
    * remembers what it was drawn from, so a save can tell a colleague's
-   * change under it (`visit-sides.ts`).
+   * change under it (`VisitSidesSystem`).
    */
   protected readonly adoptStoredSides = effect(() => {
     const vm = this.vm();
-    const incoming: VisitSides = {
-      note: vm.teamNote,
-      tipMinorUnits: vm.tipMinorUnits,
-    };
-    untracked(() => this.draft.update((draft) => adoptSides(draft, incoming)));
+    const incoming: VisitSides = { note: vm.teamNote, tipCents: vm.tipCents };
+    untracked(() =>
+      this.draft.update((draft) => VisitSidesSystem.adopt(draft, incoming)),
+    );
   });
 
   /**
@@ -1960,7 +1964,7 @@ export class StaffVisitEditor {
       vouchers: draft.vouchers.map((voucher) => voucher.code),
       // The tip drafts with the rest (2026-09-15): a changed tip is a
       // change worth a «Запази».
-      tip: draft.tipMinorUnits,
+      tip: draft.tipCents,
     });
   }
 
@@ -2047,29 +2051,42 @@ export class StaffVisitEditor {
     return new Set([seatId]);
   }
 
-  /** What the services need, by the catalogue — `null` with no legs. */
-  protected readonly catalogSum = computed<number | null>(() => {
-    return catalogMinutesOf(
-      this.draft().legs,
-      (leg) => this.catalogTermsOf(leg)?.minutes ?? leg.catalogMinutes ?? null,
-      (leg) => leg.minutes,
-    );
-  });
+  /**
+   * What the services need, by the catalogue — `null` with no legs
+   * (`VisitDraftSystem.catalogMinutesOf`). A leg the catalogue no longer
+   * knows stands at its own booked minutes.
+   */
+  protected readonly catalogSum = computed<DurationMinutes | null>(() =>
+    VisitDraftSystem.catalogMinutesOf(
+      this.draft().legs.map((leg) => {
+        const catalog =
+          this.catalogTermsOf(leg)?.minutes ?? leg.catalogMinutes ?? null;
+        return {
+          catalogMinutes: catalog === null ? null : durationOf(catalog),
+          bookedMinutes: durationOf(leg.minutes),
+        };
+      }),
+    ),
+  );
 
   /**
    * The VISIT's distance from that — the one number the tag, the readout
-   * and the frame's surplus stretch all read.
+   * and the frame's surplus stretch all read. `null` when the visit runs
+   * exactly as the catalogue says, and when the catalogue cannot say
+   * (`VisitDraftSystem.minutesDelta`).
    */
-  protected readonly catalogDelta = computed<number | null>(() => {
-    const sum = this.catalogSum();
-    return sum === null ? null : this.durationMinutes() - sum;
-  });
+  protected readonly catalogDelta = computed<MinuteDelta | null>(() =>
+    VisitDraftSystem.minutesDelta(
+      durationOf(this.durationMinutes()),
+      this.catalogSum(),
+    ),
+  );
 
   /** The VISIT's readout: the catalogue's total and the distance from it. */
   protected readonly visitCatalogNote = computed<string | null>(() => {
     const sum = this.catalogSum();
     const delta = this.catalogDelta();
-    if (sum === null || delta === null || delta === 0) return null;
+    if (sum === null || delta === null) return null;
     return `${this.transloco.translate('staff.visit.catalogMinutes', { minutes: sum })} · ${this.minutesDelta(delta)}`;
   });
   private readonly frameGrid = viewChild(StaffTimeGrid);
@@ -2265,15 +2282,14 @@ export class StaffVisitEditor {
   }
 
   /** `−10 мин` / `+15 мин` — a signed distance from a catalogue length. */
-  protected minutesDelta(minutes: number): string {
-    return minutesDeltaLabel(minutes, (count) => this.minutesLabel(count));
+  protected minutesDelta(delta: MinuteDelta): string {
+    return minutesDeltaWords(delta, (count) => this.minutesLabel(count));
   }
 
   /** The VISIT's distance from the catalogue's total, for the frame's tag. */
-  protected readonly frameTag = computed<string | null>(() => {
-    const delta = this.catalogDelta();
-    return delta === null || delta === 0 ? null : this.minutesDelta(delta);
-  });
+  protected readonly frameTag = computed<string | null>(() =>
+    catalogTagWords(this.catalogDelta(), (count) => this.minutesLabel(count)),
+  );
 
   /* ── The variant row ─────────────────────────────────────────────────── */
 
@@ -3763,7 +3779,7 @@ export class StaffVisitEditor {
 
   /**
    * Minor units as a bare figure in the shop's locale — `18,00` — for a
-   * unit field, whose unit is its own word. `formatMoney` stays the one way
+   * unit field, whose unit is its own word. `formatCents` stays the one way
    * a Money becomes a LABEL; this is a figure beside a label.
    */
   private figureOf(minor: number): string {
@@ -4466,7 +4482,7 @@ export class StaffVisitEditor {
   protected readonly tipPresets = computed<
     readonly {
       id: string;
-      amount: number;
+      amount: PriceCents;
       label: string;
       detail: string;
       size: UiChoiceTileSize;
@@ -4510,14 +4526,14 @@ export class StaffVisitEditor {
   private readonly tipOtherOpen = signal(false);
 
   /** The drafted tip — the row's one fact. */
-  protected readonly tipMinor = computed(() => this.draft().tipMinorUnits);
+  protected readonly tipCents = computed(() => this.draft().tipCents);
 
   /** The drafted sum is one a preset tile says. */
   private readonly tipMatchesPreset = computed(() => {
-    const minor = this.tipMinor();
+    const cents = this.tipCents();
     return (
-      minor !== null &&
-      this.tipPresets().some((preset) => preset.amount === minor)
+      cents !== null &&
+      this.tipPresets().some((preset) => preset.amount === cents)
     );
   });
 
@@ -4527,15 +4543,15 @@ export class StaffVisitEditor {
    * else «Без».
    */
   protected readonly tipTileId = computed<string>(() => {
-    const minor = this.tipMinor();
+    const cents = this.tipCents();
     if (this.tipOtherOpen()) return 'other';
-    if (minor === null) return 'none';
-    return this.tipMatchesPreset() ? `amt:${minor}` : 'other';
+    if (cents === null) return 'none';
+    return this.tipMatchesPreset() ? `amt:${cents}` : 'other';
   });
 
   /** «Друга сума» is the tile that is on AND a sum is drafted: the entry holds it. */
   private readonly tipIsCustom = computed(
-    () => this.tipTileId() === 'other' && this.tipMinor() !== null,
+    () => this.tipTileId() === 'other' && this.tipCents() !== null,
   );
 
   /**
@@ -4588,10 +4604,10 @@ export class StaffVisitEditor {
 
   /** The row's readout: «Без», or the amount — never a share it inferred. */
   protected readonly tipReadout = computed(() => {
-    const minor = this.tipMinor();
-    return minor === null
+    const cents = this.tipCents();
+    return cents === null
       ? this.rawCopy('staff.visit.tipNone')
-      : this.moneyLabel(minor);
+      : this.moneyLabel(cents);
   });
 
   /** The trigger's spoken value: «Бакшиш: 2,00 €». */
@@ -4605,7 +4621,7 @@ export class StaffVisitEditor {
   protected toggleTip(): void {
     const open = !this.tipOpen();
     this.tipOtherOpen.set(
-      open && this.tipMinor() !== null && !this.tipMatchesPreset(),
+      open && this.tipCents() !== null && !this.tipMatchesPreset(),
     );
     this.tipOpen.set(open);
   }
@@ -4643,11 +4659,9 @@ export class StaffVisitEditor {
     }
   }
 
-  private setTip(minor: number | null): void {
+  private setTip(cents: PriceCents | null): void {
     this.draft.update((draft) =>
-      draft.tipMinorUnits === minor
-        ? draft
-        : { ...draft, tipMinorUnits: minor },
+      draft.tipCents === cents ? draft : { ...draft, tipCents: cents },
     );
   }
 
@@ -4756,25 +4770,27 @@ export class StaffVisitEditor {
     this.draft.update((draft) => ({ ...draft, locationId: id }));
   }
 
-  /** The entry's sum in minor units: the custom sum, or nothing while it waits for one. */
-  protected readonly tipCustomMinor = computed<number | null>(() =>
-    this.tipIsCustom() ? this.tipMinor() : null,
+  /** The entry's sum in cents: the custom sum, or nothing while it waits for one. */
+  protected readonly tipCustomCents = computed<PriceCents | null>(() =>
+    this.tipIsCustom() ? this.tipCents() : null,
   );
 
   /**
    * The entry's answer, in minor units — a step of the −/+ pair or a typed
    * sum. Zero and an emptied field both mean no tip: the two are one fact
    * at the till, and «Без» is the tile that says it — the entry stays open
-   * for the next figure.
+   * for the next figure. Any other figure becomes the brand here, at the
+   * field's edge (`PriceCents.of`).
    */
   protected setTipFromEntry(minor: number | null): void {
-    this.setTip(minor === null || minor <= 0 ? null : minor);
+    const cents = minor === null || minor <= 0 ? null : PriceCents.of(minor);
+    this.setTip(cents !== null && cents.ok ? cents.value : null);
   }
 
   /** The dock's green plus — the drafted tip, formatted, or nothing. */
   protected readonly tipDockLabel = computed(() => {
-    const minor = this.tipMinor();
-    return minor === null || minor <= 0 ? null : this.moneyLabel(minor);
+    const cents = this.tipCents();
+    return cents === null || cents <= 0 ? null : this.moneyLabel(cents);
   });
 
   /* ── THE BILL'S LADDER (2026-09-10) ──────────────────────────────────
@@ -5077,7 +5093,7 @@ export class StaffVisitEditor {
       clientLabel: store.displayName() ?? this.clientOfStack()?.label ?? '',
       // The face the card's head just showed, so the push keeps the person.
       clientAvatarSrc:
-        store.head().avatarSrc ??
+        store.avatarSrc() ??
         this.faceOfPicked(this.clientOfStack()?.id ?? null),
       width: cut.width,
       height: cut.height,

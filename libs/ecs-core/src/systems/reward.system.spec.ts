@@ -20,7 +20,7 @@ import {
  *   legacy engagement `standing.spec.ts` (deleted in Phase 4b; ledger
  *   `docs/architecture/flips/phase-4b-delete.md` §11.1) (→
  *   `RewardSystem.problem`/`bestAffordable`/`nextAffordable`);
- * - the reach math of `rewardTiles` in
+ * - the reach math of `walletVm`'s «what the points buy» (WF) in
  *   libs/features/staff/client-card/src/lib/wallet.presenter.spec.ts
  *   (→ `RewardSystem.affordable`: the verdict, what is missing, the meter;
  *   the words, the covers and the halves' order stay with the presenter);
@@ -191,7 +191,7 @@ describe('RewardSystem.offered (loyalty.presenter.ts `offered`)', () => {
   });
 });
 
-describe('RewardSystem.affordable (wallet.presenter.spec.ts `rewardTiles`)', () => {
+describe('RewardSystem.affordable (wallet.presenter.spec.ts `walletVm` WF)', () => {
   const seed = [
     reward('reward-beard', 120, 1),
     reward('reward-cut', 250, 2),
@@ -254,7 +254,7 @@ describe('RewardSystem.affordable (wallet.presenter.spec.ts `rewardTiles`)', () 
   });
 });
 
-describe('RewardSystem.tiles (wallet.presenter.spec.ts `rewardTiles`, `walletVm`)', () => {
+describe('RewardSystem.tiles (wallet.presenter.spec.ts `walletVm` WF)', () => {
   const beard = reward('reward-beard', 120, 1);
   const cut = reward('reward-cut', 250, 2);
   const product = reward('reward-product', 400, 3);
@@ -321,7 +321,7 @@ describe('RewardSystem.tiles (wallet.presenter.spec.ts `rewardTiles`, `walletVm`
   });
 
   it('judges reach by the points alone: there is no pause to read', () => {
-    // A paused client's tiles are the points' (`rewardTiles` paused case).
+    // A paused client's tiles are the points' (`walletVm` WF paused case).
     expect(order(seed, 358).map(([, affordable]) => affordable)).toEqual([
       true,
       true,

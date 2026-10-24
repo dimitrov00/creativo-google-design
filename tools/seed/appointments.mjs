@@ -1,53 +1,37 @@
 /**
- * Seed appointment FIXTURES → `appointments/{id}` documents (flip 1: the
- * flat `Appointment` body of `fixtures/appointments.fixtures.ts`).
+ * Seed visit INTENTS → `appointments/{id}` documents (flip 1: the flat
+ * `Appointment` body of `fixtures/appointments.fixtures.ts`).
  *
- * A fixture names wall-clock times on a day offset and SYMBOLIC outcomes
- * («worked», «cancelled 3 h before»); this module resolves them against one
- * shop calendar into the builder's plan — the shop day, minutes past
- * midnight, epoch-ms instants and the entity's own tags — and refuses what
- * the book could never hold. Every instant is derived from the slot, never
- * from `Date.now()`, so a second run on the same day writes the same bytes
- * and the stats trigger sees nothing to recompute.
+ * An intent is authored in the entity's own vocabulary on a day offset and
+ * at minutes of that day (`VisitIntent`: the seats' stored fields, their
+ * occupant slices, an `attendanceState` per seat). This module places it
+ * on one shop calendar and the catalogue — the shop day, each seat's sold
+ * terms, the instant each outcome was stamped, the booking and arrival
+ * instants — and refuses what the book could never hold. Every instant is
+ * derived from the slot, never from `Date.now()`, so a second run on the
+ * same day writes the same bytes and the stats trigger sees nothing to
+ * recompute.
  *
  * The body is typed (`satisfies Omit<Appointment, 'id'>` in the builder),
  * so a field the archetype gains and the seed lacks fails
  * `pnpm nx typecheck seed-tools`, and `seed-data.spec.mjs` holds every
  * document to the mirrors `AppointmentIndexSystem` derives.
  */
+import { AttendanceState, UtcEpochMs } from '@core/primitives';
 import { chairTerms } from './catalog.mjs';
 import {
   appointmentBody,
   appointmentPhotoBody,
+  SCHEDULED_SEAT,
 } from './fixtures/appointments.fixtures.ts';
 
 export { appointmentPhotoBody };
 
-export const SCHEDULED = { kind: 'scheduled' };
+/** A no-show is stamped a quarter of an hour in, when the shop gives up waiting. */
+const NO_SHOW_AFTER_MINUTES = 15;
 
 /**
- * The free-cancellation window the seeded `settings/bookingPolicy` sets, and
- * so the window every seeded cancellation was made under: stamped on its
- * seats as the cancel paths stamp it (2026-09-25), which keeps the seed's
- * late cancels where they are whatever the window is moved to later.
- */
-export const CANCELLATION_WINDOW_HOURS = 24;
-
-/** An account seat. `self` is the booker; `companion` rides on their booking. */
-export const account = (userId, relationship = 'self') => ({
-  kind: 'account',
-  userId,
-  relationship,
-});
-
-/** An anonymous seat: no account, no PII beyond the handle staff typed. */
-export const guest = (label) => ({ kind: 'anonymous', label });
-
-const MINUTE_MS = 60_000;
-const HOUR_MS = 3_600_000;
-
-/**
- * A seat's sold terms: the chair's catalogue price, and the fixture's own
+ * A seat's sold terms: the chair's catalogue price, and the seat's own
  * minutes, else the catalogue's — with the catalogue's minutes beside them
  * (`catalogMinutes`), which a re-timed seat records. A seat its barber does
  * not sell has no price at all — the refusal names the seat, so the fixture
@@ -56,15 +40,16 @@ const HOUR_MS = 3_600_000;
 export function soldTerms(seat) {
   let sold;
   try {
-    sold = chairTerms(seat.serviceId, seat.barberId, seat.variantId ?? null);
+    sold = chairTerms(seat.serviceId, seat.barberId, seat.variantId);
   } catch (cause) {
-    throw new Error(`seed: seat ${seat.id} cannot be sold (${cause.message})`, {
-      cause,
-    });
+    throw new Error(
+      `seed: seat ${seat.seatId} cannot be sold (${cause.message})`,
+      { cause },
+    );
   }
   return {
     priceCents: sold.priceCents,
-    minutes: seat.minutes ?? sold.durationMinutes,
+    minutes: seat.durationMinutes ?? sold.durationMinutes,
     catalogMinutes: sold.durationMinutes,
   };
 }
@@ -72,10 +57,15 @@ export function soldTerms(seat) {
 function seatWindowMs(calendar, dayOffset, seat) {
   const { minutes } = soldTerms(seat);
   return {
-    startMs: calendar.msAt(dayOffset, seat.hour, seat.minute),
-    endMs: calendar.msAt(dayOffset, seat.hour, seat.minute + minutes),
+    startMs: calendar.msAt(dayOffset, seat.startMinutes),
+    endMs: calendar.msAt(dayOffset, seat.startMinutes + minutes),
   };
 }
+
+/** A seat already worked or given up on — the story of a visit that has happened. */
+const isSettled = (seat) =>
+  seat.attendanceState === AttendanceState.Worked ||
+  seat.attendanceState === AttendanceState.NoShow;
 
 /**
  * A settled visit on TODAY is settled only once its time has passed (owner,
@@ -85,141 +75,100 @@ function seatWindowMs(calendar, dayOffset, seat) {
  * its history settles as authored; a future day never does.
  *
  * Cancellations are left alone: a visit can be called off before its slot,
- * and the builder refuses one stamped after `now`.
+ * and `appointmentDocumentOf` refuses one stamped after `now`.
  */
-export function settledOnlyIfPast(appointment, calendar) {
-  const kind = appointment.status.kind;
-  if (kind !== 'completed' && kind !== 'no_show') return appointment;
-  const ends = appointment.seats.map(
-    (seat) => seatWindowMs(calendar, appointment.dayOffset, seat).endMs,
+export function settledOnlyIfPast(visit, calendar) {
+  if (!visit.seats.some(isSettled)) return visit;
+  const ends = visit.seats.map(
+    (seat) => seatWindowMs(calendar, visit.dayOffset, seat).endMs,
   );
-  if (calendar.nowMs >= Math.max(...ends)) return appointment;
-  const arrival = appointment.arrived;
+  if (calendar.nowMs >= Math.max(...ends)) return visit;
   const arrived =
-    arrival != null &&
-    calendar.msAt(appointment.dayOffset, arrival.hour, arrival.minute) <=
-      calendar.nowMs;
+    visit.arrivedMinutes !== null &&
+    calendar.msAt(visit.dayOffset, visit.arrivedMinutes) <= calendar.nowMs;
   return {
-    ...appointment,
-    status: { kind: 'confirmed' },
+    ...visit,
     // An arrival the clock has not reached yet has not happened either.
-    arrived: arrived ? arrival : null,
-    seats: appointment.seats.map((seat) => ({
+    arrivedMinutes: arrived ? visit.arrivedMinutes : null,
+    seats: visit.seats.map((seat) => ({
       ...seat,
-      outcome: SCHEDULED,
+      ...SCHEDULED_SEAT,
       tipCents: null,
     })),
   };
 }
 
-/** A symbolic `self`/`companion` → the entity's `SubjectRelationship`. */
-const RELATIONSHIP = { self: 'SELF', companion: 'COMPANION', client: 'CLIENT' };
-/** A symbolic preference → the entity's `BarberPreference`. */
-const PREFERENCE = { any: 'ANY', specific: 'SPECIFIC' };
-/** A symbolic root status → the entity's `BookingStatus`. */
-const BOOKING_STATUS = {
-  confirmed: 'CONFIRMED',
-  completed: 'COMPLETED',
-  no_show: 'NO_SHOW',
-  cancelled: 'CANCELLED',
-};
-/** A symbolic placement → the entity's `Placement`. */
-const PLACEMENT = { self: 'SELF', staff: 'STAFF' };
-
-/** A symbolic code (`client_changed_plans`) → the entity's (`CLIENT_CHANGED_PLANS`). */
-const screaming = (code) => code.toUpperCase();
-
-function subjectPlanOf(subject) {
-  return subject.kind === 'account'
-    ? {
-        userId: subject.userId,
-        relationship: RELATIONSHIP[subject.relationship],
-      }
-    : { guestLabel: subject.label };
-}
-
 /**
- * Symbolic outcome → the seat's outcome plan, its instant from the slot —
- * or, for a cancellation, from `at` when the fixture names the moment
- * itself («called off last night»), which holds wherever its slot is placed.
+ * The instant a seat's outcome was stamped: as the chair frees up for a
+ * worked seat, a quarter of an hour in for a no-show, and for a
+ * cancellation at the moment the intent names, else so many hours before
+ * the slot — or `null` while it is scheduled.
  */
-function outcomePlanOf(outcome, window, calendar) {
-  switch (outcome.kind) {
-    case 'scheduled':
-      return { attendanceState: 'SCHEDULED' };
-    case 'worked':
-      // Stamped as the chair frees up.
-      return { attendanceState: 'WORKED', atUtcMs: window.endMs };
-    case 'no_show':
-      // Stamped a quarter of an hour in, when the shop gives up waiting.
-      return {
-        attendanceState: 'NO_SHOW',
-        atUtcMs: window.startMs + 15 * MINUTE_MS,
-      };
-    case 'cancelled':
-      return {
-        attendanceState: 'CANCELLED',
-        atUtcMs: outcome.at
-          ? calendar.msAt(
-              outcome.at.dayOffset,
-              outcome.at.hour,
-              outcome.at.minute,
-            )
-          : window.startMs - outcome.hoursBefore * HOUR_MS,
-        cancelledBy: screaming(outcome.by),
-        cancellationReason: screaming(outcome.reason.kind),
-        windowHours: CANCELLATION_WINDOW_HOURS,
-      };
+function resolvedAtOf(seat, window, calendar) {
+  switch (seat.attendanceState) {
+    case AttendanceState.Scheduled:
+      return null;
+    case AttendanceState.Worked:
+      return window.endMs;
+    case AttendanceState.NoShow:
+      return UtcEpochMs.plusMinutes(window.startMs, NO_SHOW_AFTER_MINUTES);
+    case AttendanceState.Cancelled:
+      return seat.cancelledOn === null
+        ? UtcEpochMs.plusHours(window.startMs, -seat.cancelledHoursBefore)
+        : calendar.msAt(seat.cancelledOn.dayOffset, seat.cancelledOn.minutes);
     default:
-      throw new Error(`seed: unknown outcome ${outcome.kind}`);
+      throw new Error(
+        `seed: seat ${seat.seatId} has no attendance state the seed stamps (${seat.attendanceState})`,
+      );
   }
 }
 
-const atOf = (calendar, at) => calendar.msAt(at.dayOffset, at.hour, at.minute);
+/** An instant of the calendar, or `null` for no moment. */
+const msOf = (calendar, moment) =>
+  moment === null ? null : calendar.msAt(moment.dayOffset, moment.minutes);
 
 /**
- * One fixture → `{ id, doc }`, `doc` the flat body.
+ * One visit intent → `{ id, doc }`, `doc` the flat body.
  *
- * Refuses what the book could never hold: a fact stamped after `now` (a
- * no-show that has not happened), a cancellation after the visit began, a
- * booking made after its own slot, a tip on a seat that was not worked. The
- * seed writes past the callables, so it has to keep their promises itself.
+ * Refuses what the book could never hold: a visit placed in no shop, a fact
+ * stamped after `now` (a no-show that has not happened), a cancellation
+ * after the visit began, a booking made after its own slot, a tip on a seat
+ * that was not worked. The seed writes past the callables, so it has to
+ * keep their promises itself.
  */
-export function appointmentDocumentOf(fixture, calendar) {
-  const seats = fixture.seats.map((seat) => {
+export function appointmentDocumentOf(visit, calendar) {
+  if (visit.locationId === null) {
+    throw new Error(`seed: ${visit.id} was never placed in a shop`);
+  }
+  const seats = visit.seats.map((seat) => {
     const { priceCents, minutes, catalogMinutes } = soldTerms(seat);
-    const window = seatWindowMs(calendar, fixture.dayOffset, seat);
-    const outcome = outcomePlanOf(seat.outcome, window, calendar);
-    if (outcome.attendanceState !== 'SCHEDULED' && outcome.atUtcMs > calendar.nowMs) {
+    const window = seatWindowMs(calendar, visit.dayOffset, seat);
+    const resolvedAtUtcMs = resolvedAtOf(seat, window, calendar);
+    if (resolvedAtUtcMs !== null && resolvedAtUtcMs > calendar.nowMs) {
       throw new Error(
-        `seed: ${fixture.id}/${seat.id} is ${seat.outcome.kind} after now`,
+        `seed: ${visit.id}/${seat.seatId} is ${seat.attendanceState} after now`,
       );
     }
     if (
-      outcome.attendanceState === 'CANCELLED' &&
-      outcome.atUtcMs >= window.startMs
+      seat.attendanceState === AttendanceState.Cancelled &&
+      resolvedAtUtcMs >= window.startMs
     ) {
       throw new Error(
-        `seed: ${fixture.id}/${seat.id} is cancelled after it started`,
+        `seed: ${visit.id}/${seat.seatId} is cancelled after it started`,
       );
     }
-    const tip = seat.tipCents ?? null;
-    if (tip !== null && outcome.attendanceState !== 'WORKED') {
-      throw new Error(`seed: ${fixture.id}/${seat.id} tips an unworked seat`);
+    if (
+      seat.tipCents !== null &&
+      seat.attendanceState !== AttendanceState.Worked
+    ) {
+      throw new Error(`seed: ${visit.id}/${seat.seatId} tips an unworked seat`);
     }
     return {
       window,
       plan: {
-        seatId: seat.id,
-        serviceId: seat.serviceId,
-        variantId: seat.variantId ?? null,
-        barberId: seat.barberId,
-        // What the client ASKED for, beside what they got — the flag that
-        // tells staff on a sick day which bookings can move chairs.
-        barberPreference: PREFERENCE[seat.pref],
-        startMinutes: seat.hour * 60 + seat.minute,
+        seat,
         priceCents,
-        // The fixture's own minutes when it names them: a visit booked
+        // The seat's own minutes when it names them: a visit booked
         // shorter or longer than the catalogue is what the frame's tag
         // exists to show. The catalogue's minutes ride beside a re-timing
         // exactly as a staff override keeps them, so the visit sheet marks
@@ -227,49 +176,32 @@ export function appointmentDocumentOf(fixture, calendar) {
         // nothing.
         durationMinutes: minutes,
         catalogDurationMinutes: catalogMinutes,
-        subject: subjectPlanOf(seat.subject),
-        outcome,
-        tipCents: tip,
+        resolvedAtUtcMs,
       },
     };
   });
 
   const firstStartMs = Math.min(...seats.map(({ window }) => window.startMs));
-  const bookedMs = fixture.booked ? atOf(calendar, fixture.booked) : null;
+  const bookedAtUtcMs = msOf(calendar, visit.bookedOn);
   if (
-    bookedMs !== null &&
-    (bookedMs >= firstStartMs || bookedMs > calendar.nowMs)
+    bookedAtUtcMs !== null &&
+    (bookedAtUtcMs >= firstStartMs || bookedAtUtcMs > calendar.nowMs)
   ) {
-    throw new Error(`seed: ${fixture.id} is booked after it starts`);
+    throw new Error(`seed: ${visit.id} is booked after it starts`);
   }
-  const status = fixture.status;
 
   return {
-    id: fixture.id,
+    id: visit.id,
     doc: appointmentBody({
-      locationId: fixture.locationId ?? 'loc-center',
-      localDate: calendar.dayKeyAt(fixture.dayOffset),
-      placement: PLACEMENT[fixture.placement],
-      bookingStatus: BOOKING_STATUS[status.kind],
-      cancellationReasons:
-        status.kind === 'cancelled' ? [screaming(status.reason)] : [],
-      bookedAtUtcMs: bookedMs,
-      arrivedAtUtcMs: fixture.arrived
-        ? atOf(calendar, { dayOffset: fixture.dayOffset, ...fixture.arrived })
-        : null,
-      bookedFromAppointmentId: fixture.bookedFromAppointmentId ?? null,
-      contact: fixture.contact ?? null,
+      visit,
+      locationId: visit.locationId,
+      localDate: calendar.dayKeyAt(visit.dayOffset),
+      bookedAtUtcMs,
+      arrivedAtUtcMs:
+        visit.arrivedMinutes === null
+          ? null
+          : calendar.msAt(visit.dayOffset, visit.arrivedMinutes),
       seats: seats.map(({ plan }) => plan),
     }),
   };
-}
-
-/**
- * The instant a seat of a stored body starts — the envelope's instant plus
- * the seat's wall-clock distance from the envelope start
- * (`TimeCoordinate.seatStartUtcMs`, T9: exact, no visit straddles a DST
- * switch, the shop is closed then).
- */
-export function seatStartMsOf(doc, seat) {
-  return doc.utcEpochMs + (seat.startMinutes - doc.startMinutes) * MINUTE_MS;
 }

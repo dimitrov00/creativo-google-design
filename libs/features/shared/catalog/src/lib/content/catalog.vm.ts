@@ -58,8 +58,9 @@ export interface ServiceVariantVm {
 }
 
 /**
- * A service as AUTHORED — the hand-written landing list (`landing-content.ts`
- * `SERVICES`, read only by the test catalogue that turns it into entities).
+ * A service as AUTHORED — the landing's demo shelf (`SERVICES` in its
+ * `src/testing/landing-catalog.ts`, which the test catalogue turns into
+ * entities).
  * It carries no figures: the figures are `CatalogPricingSystem`'s answers on
  * the `Service` entity, and only {@link ServiceVm} — built from that entity —
  * holds them.

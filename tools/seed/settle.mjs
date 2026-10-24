@@ -198,83 +198,87 @@ const FAILURES = Object.freeze([
  * The functions emulator's executions, from the Logging emulator's stream:
  * which are in flight (from everything it is fed, the replayed history
  * included), and how many have begun, finished or failed since `sinceMs`,
- * and which failed. Pure; {@link watchExecutions} feeds it.
+ * and which failed. Pure; {@link watchExecutions} feeds it. A closure over
+ * its counters, read through its functions.
  */
-export class ExecutionTally {
+export function createExecutionTally(sinceMs) {
   /** Log entries about an execution, begun, finished or failed, since `sinceMs`. */
-  events = 0;
+  let events = 0;
   /** triggerKey → when each of its executions in flight began, oldest first. */
-  #running = new Map();
+  const running = new Map();
   /** Executions the emulator ended without a 'Finished' since `sinceMs`. */
-  #failures = [];
-
-  constructor(sinceMs) {
-    this.sinceMs = sinceMs;
-  }
-
-  /** One Logging-emulator bundle (`{ timestamp, message, data }`). */
-  record(bundle) {
-    if (typeof bundle?.timestamp !== 'number') return;
-    const at = bundle.timestamp;
-    const recent = at >= this.sinceMs;
-    const message = String(bundle.message ?? '');
-    const begun = BEGUN.exec(message);
-    if (begun) {
-      if (recent) this.events += 1;
-      this.#running.set(begun[1], [...(this.#running.get(begun[1]) ?? []), at]);
-      return;
-    }
-    const finished = FINISHED.exec(message);
-    if (finished) {
-      if (recent) this.events += 1;
-      this.#end(finished[1]);
-      return;
-    }
-    const failure = FAILURES.find(({ pattern }) => pattern.test(message));
-    if (failure === undefined) return;
-    // The emulator's per-function logger names the function in the metadata.
-    const name = bundle.data?.metadata?.function?.name;
-    const trigger = typeof name === 'string' && name !== '' ? name : null;
-    if (failure.ends && trigger !== null) this.#end(trigger);
-    if (!recent) return;
-    if (failure.ends) this.events += 1;
-    this.#failures.push({ trigger, atMs: at, cause: message.split('\n')[0] });
-  }
+  const failures = [];
 
   /**
    * The log does not say WHICH of a trigger's executions ended, so the
    * oldest is retired: an age is then never overstated, and one execution
    * that hangs among busy siblings is still caught once they stop.
    */
-  #end(trigger) {
-    const [, ...left] = this.#running.get(trigger) ?? [];
-    if (left.length > 0) this.#running.set(trigger, left);
-    else this.#running.delete(trigger);
-  }
+  const end = (trigger) => {
+    const [, ...left] = running.get(trigger) ?? [];
+    if (left.length > 0) running.set(trigger, left);
+    else running.delete(trigger);
+  };
 
-  /** The triggers with an execution in flight, sorted. */
-  running() {
-    return [...this.#running.keys()].sort();
-  }
+  return {
+    /** One Logging-emulator bundle (`{ timestamp, message, data }`). */
+    record(bundle) {
+      if (typeof bundle?.timestamp !== 'number') return;
+      const at = bundle.timestamp;
+      const recent = at >= sinceMs;
+      const message = String(bundle.message ?? '');
+      const begun = BEGUN.exec(message);
+      if (begun) {
+        if (recent) events += 1;
+        running.set(begun[1], [...(running.get(begun[1]) ?? []), at]);
+        return;
+      }
+      const finished = FINISHED.exec(message);
+      if (finished) {
+        if (recent) events += 1;
+        end(finished[1]);
+        return;
+      }
+      const failure = FAILURES.find(({ pattern }) => pattern.test(message));
+      if (failure === undefined) return;
+      // The emulator's per-function logger names the function in the metadata.
+      const name = bundle.data?.metadata?.function?.name;
+      const trigger = typeof name === 'string' && name !== '' ? name : null;
+      if (failure.ends && trigger !== null) end(trigger);
+      if (!recent) return;
+      if (failure.ends) events += 1;
+      failures.push({ trigger, atMs: at, cause: message.split('\n')[0] });
+    },
 
-  /**
-   * Each trigger with an execution in flight at `nowMs`, and how long its
-   * oldest has been, sorted by trigger.
-   */
-  inFlight(nowMs) {
-    return [...this.#running.entries()]
-      .map(([trigger, [oldest]]) => ({ trigger, forMs: nowMs - oldest }))
-      .sort((a, b) => (a.trigger < b.trigger ? -1 : 1));
-  }
+    /** Log entries about an execution, begun, finished or failed, since `sinceMs`. */
+    events() {
+      return events;
+    },
 
-  /**
-   * What the emulator logged, since `sinceMs`, about an execution it ended
-   * without finishing: `{ trigger, atMs, cause }`, `trigger` `null` when the
-   * line named none; in the order logged.
-   */
-  failures() {
-    return [...this.#failures];
-  }
+    /** The triggers with an execution in flight, sorted. */
+    running() {
+      return [...running.keys()].sort();
+    },
+
+    /**
+     * Each trigger with an execution in flight at `nowMs`, and how long its
+     * oldest has been, sorted by trigger.
+     */
+    inFlight(nowMs) {
+      return [...running.entries()]
+        .map(([trigger, [oldest]]) => ({ trigger, forMs: nowMs - oldest }))
+        .sort((a, b) => (a.trigger < b.trigger ? -1 : 1));
+    },
+
+    /**
+     * What the emulator logged, since `sinceMs`, about an execution it ended
+     * without finishing: `{ trigger, atMs, cause }`, `trigger` `null` when the
+     * line named none; in the order logged.
+     */
+    failures() {
+      return [...failures];
+    },
+  };
 }
 
 /**
@@ -364,9 +368,9 @@ function describeRunning({ tally, timeouts }, nowMs) {
 }
 
 /**
- * Streams the functions emulator's executions into an {@link ExecutionTally}
- * — the Logging emulator's replayed history first, so what is already in
- * flight is seen — with each trigger's declared timeout
+ * Streams the functions emulator's executions into a tally
+ * ({@link createExecutionTally}) — the Logging emulator's replayed history
+ * first, so what is already in flight is seen — with each trigger's declared timeout
  * ({@link timeoutsFromBackends}; none known when the listing cannot be
  * read); or answers `null` when no Logging emulator can be reached (the hub
  * named by FIREBASE_EMULATOR_HUB, 127.0.0.1:4400 by default, lists where
@@ -375,7 +379,7 @@ function describeRunning({ tally, timeouts }, nowMs) {
  */
 export async function watchExecutions({ sinceMs = Date.now() } = {}) {
   const hub = local(process.env.FIREBASE_EMULATOR_HUB ?? '127.0.0.1:4400');
-  const tally = new ExecutionTally(sinceMs);
+  const tally = createExecutionTally(sinceMs);
   let socket;
   let emulators;
   try {
@@ -463,7 +467,7 @@ export async function settleTriggers(db, options = {}) {
         if (watch === null) return fingerprint;
         refuseLostExecutions(watch, clock.now(), settings.graceMs);
         if (watch.tally.running().length > 0) return null;
-        return `${fingerprint}|executions=${watch.tally.events}`;
+        return `${fingerprint}|executions=${watch.tally.events()}`;
       },
       {
         ...settings,

@@ -56,7 +56,7 @@ import {
   UiPaddingDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 
 /**
  * The checklist item keys as the copy and the DOM spell them — lowercase,
@@ -436,7 +436,7 @@ export class ClientAccount {
    * integrator ruling).
    */
   protected translateRepositoryError(): string {
-    return translateDomainError(this.transloco, {
+    return translateCodedError(this.transloco, {
       errorCode: AccountsErrorCode.RepositoryFailure,
     });
   }

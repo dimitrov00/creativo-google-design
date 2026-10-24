@@ -198,8 +198,9 @@ describe('requestOf (toBackfillRequest)', () => {
       start: resume,
     });
     expect(requestOf('CLIENT_STATS')).toBeNull();
-    expect(BackfillPlanSystem.isDocId('appt_42')).toBe(true);
-    expect(BackfillPlanSystem.isDocId('a/b')).toBe(false);
+    expect(
+      requestOf({ backfillJobName: 'SUBJECT_MIRROR', cursor: 'a/b' }),
+    ).toBeNull();
   });
 });
 

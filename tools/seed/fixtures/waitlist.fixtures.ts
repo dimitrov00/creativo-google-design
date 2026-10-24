@@ -5,8 +5,9 @@
  * `localDates` query mirror beside the declaration itself
  * (`flexibleDays`), the cart in the one cart serialisation, and the
  * lifecycle at the root. `utcEpochMs` is the first instant of the first
- * watched day on the shop's clock, computed once at ingestion (F-28); no
- * zone is stored (Law 7.2). The TTL `purgeAt` is the writer's
+ * watched day on the clock of the shop it names (the default shop's for a
+ * request of any shop), computed once at ingestion (F-28); no zone is
+ * stored (Law 7.2). The TTL `purgeAt` is the writer's
  * (`purgeAtFor`), never part of the body.
  */
 import {
@@ -35,6 +36,7 @@ import {
   SHOP_TIME_ZONE,
   startAt,
   sure,
+  timeZoneOf,
 } from './catalog.fixtures';
 
 /** One service the request's own seat asks for — with whoever is free when `barberId` is `null`. */
@@ -92,7 +94,10 @@ export function waitlistRequestBody(plan: WaitlistPlan): Body<WaitlistRequest> {
     locationId:
       plan.locationId === null ? null : LocationId.of(plan.locationId),
     localDates,
-    utcEpochMs: ZonedTimeSystem.startOfLocalDay(first, SHOP_TIME_ZONE),
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(
+      first,
+      plan.locationId === null ? SHOP_TIME_ZONE : timeZoneOf(plan.locationId),
+    ),
     createdAtUtcMs,
     ...cart,
     flexibleDays,

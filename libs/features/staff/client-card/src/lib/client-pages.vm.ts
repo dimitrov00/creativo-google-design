@@ -80,26 +80,6 @@ export interface GaugeVm {
 
 // ── The glance page «client» (§3.1) ─────────────────────────────────────
 
-/** A — the head: the name, the state line and the trailing avatar in `ui-sheet-headline`. */
-export interface ClientHeadVm {
-  /** A1 — `users/{uid}`'s name once read, the seat's label until then. Wraps; never truncated on the page. */
-  readonly name: string;
-  /**
-   * A2 — the ONE place for tenure, a first visit, a guest, a pause:
-   * «Клиент от март 2025 г.», «Първо посещение», «Гост · без профил»,
-   * «Онлайн записването е спряно до 12.10» (the cadence lives in the
-   * history's band). Wraps, never truncated. `null` until `users/{uid}`
-   * answers: a pause never pushes painted content (the D-9 gate).
-   */
-  readonly stateLine: string | null;
-  /** A3 — the seat's picture first, then `AVATAR_PORTS.findAvatar(uid)`. */
-  readonly avatarSrc: string | null;
-  /** The name the avatar's initials come from (`ui-avatar [uiName]`). */
-  readonly initialsFrom: string;
-  /** Online booking is paused: the headline's warning ring. */
-  readonly paused: boolean;
-}
-
 /** B — which capsule a `client-capsule-{id}` test id names (R17). */
 export type ClientCapsuleId = 'tier' | 'birthday' | 'noShows';
 
@@ -417,7 +397,7 @@ export interface HistoryCellVm {
 
 /** HD — the ‹admin› spend: never probed for anyone else. */
 export interface HistorySpendVm {
-  /** «462,50 €» (`formatMoney`): the figure, where the band gives spend a cell of its own (≥761 px). */
+  /** «462,50 €» (`formatCents`): the figure, where the band gives spend a cell of its own (≥761 px). */
   readonly value: string;
   /** «Похарчени общо 462,50 €»: the footnote. */
   readonly sentence: string;
@@ -637,7 +617,7 @@ export interface VoucherVm {
   readonly voucherId: string;
   /** «Ваучер за подарък». */
   readonly title: string;
-  /** «25,00 €» (`formatMoney`): the ticket's accent figure. */
+  /** «25,00 €» (`formatCents`): the ticket's accent figure. */
   readonly balance: string;
   /** The ONE chip: «от 50,00 € · до 31.12»; `null` for an untouched voucher that never expires. */
   readonly detail: string | null;

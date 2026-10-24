@@ -24,9 +24,9 @@ export type DrawnSides = VisitSides & {
 
 /**
  * The stored side fields as this device hears them. A field this device is
- * not listening to is NOT judged: `noteHeard` / `tipHeard` false (the legacy
- * `undefined`), the value beside it then meaningless and conventionally
- * `null`.
+ * not listening to is NOT judged: `noteHeard` / `tipHeard` false (the
+ * store's `undefined`, `StaffDayStore.teamNoteOf`), the value beside it then
+ * meaningless and conventionally `null`.
  */
 export type LiveSides = {
   readonly note: string | null;
@@ -36,10 +36,10 @@ export type LiveSides = {
 };
 
 /**
- * VisitSidesSystem — THE SIDE FIELDS OF A VISIT, the team note and the tip
- * (`visit-editor/visit-sides.ts`). Both are written BESIDE the staff-edit
- * batch, each in a document of its own, so neither moves the visit's
- * revision and the stale-screen guard cannot see them. These rules hold
+ * VisitSidesSystem — THE SIDE FIELDS OF A VISIT, the team note and the tip.
+ * Both are written BESIDE the staff-edit batch, each in a document of its
+ * own, so neither moves the visit's revision and the stale-screen guard
+ * cannot see them. These rules hold
  * them to the same promise as far as one device can see: a save never
  * writes over a colleague's change it did not show the barber.
  *

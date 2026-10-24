@@ -44,6 +44,7 @@ import {
   SHOP_TIME_ZONE,
   startAt,
   STEFAN,
+  timeZoneOf,
   until,
 } from './catalog.fixtures';
 
@@ -141,9 +142,12 @@ export const SCHEDULES: readonly Seeded<BarberId, BarberSchedule>[] = [
 
 // ── Exceptions and busy days ───────────────────────────────────────────────
 
-/** The shop day's first instant — the one instant a day document stores. */
-const firstInstantOf = (localDate: string) =>
-  ZonedTimeSystem.startOfLocalDay(day(localDate), SHOP_TIME_ZONE);
+/**
+ * The shop day's first instant — the one instant a day document stores —
+ * on the clock of the shop it names, else the default shop's.
+ */
+const firstInstantOf = (localDate: string, timeZone = SHOP_TIME_ZONE) =>
+  ZonedTimeSystem.startOfLocalDay(day(localDate), timeZone);
 
 /** `{barberId}__{localDate}` — the busy day's AND the exception's id. */
 export function busyKeyOf(barberId: string, localDate: string): BusyKey {
@@ -163,7 +167,7 @@ export function closedDayBody(
   return {
     barberId: BarberId.of(barberId),
     localDate: day(localDate),
-    utcEpochMs: firstInstantOf(localDate),
+    utcEpochMs: firstInstantOf(localDate, timeZoneOf(locationId)),
     locationId: LocationId.of(locationId),
     ...ExceptionEffectRule.closed(),
   } satisfies Omit<ScheduleException, 'id'>;

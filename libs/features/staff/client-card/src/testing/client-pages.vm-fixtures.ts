@@ -2479,15 +2479,6 @@ const CANCELLED_ROW = visitRowOf('apt-2026-06-20', {
   accessibleName: 'Фейд, 20 юни, Иван Колев, Отказан от клиента, 17,50 €',
 });
 
-export const VISIT_ROWS = {
-  current: COUNTED_VISITS[0] as VisitRowVm,
-  worked: COUNTED_VISITS[1] as VisitRowVm,
-  upcoming: UPCOMING_ROW,
-  several: SEVERAL_ROW,
-  noShow: NO_SHOW_ROW,
-  cancelled: CANCELLED_ROW,
-} satisfies Record<string, VisitRowVm>;
-
 export const VISIT_SECTIONS = [
   {
     key: 'upcoming',

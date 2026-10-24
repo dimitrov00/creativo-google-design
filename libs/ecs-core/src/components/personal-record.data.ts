@@ -2,7 +2,7 @@ import type { ServiceId, LocalDate } from '@core/primitives';
 
 /**
  * A personal best of the «Рекорди» rail — the element's field
- * `personalRecordKind` (today the tuple `PERSONAL_RECORD_KINDS`).
+ * `personalRecordKind`.
  */
 export const PersonalRecordKind = {
   /** The longest run, dated by the run's last visit (`on`). */
@@ -16,10 +16,6 @@ export const PersonalRecordKind = {
 } as const;
 export type PersonalRecordKind =
   (typeof PersonalRecordKind)[keyof typeof PersonalRecordKind];
-
-/** Every record kind, dictionary order — derived, never a second source. */
-export const PERSONAL_RECORD_KINDS: readonly PersonalRecordKind[] =
-  Object.values(PersonalRecordKind);
 
 /**
  * A personal best — an element of `loyaltyAccounts/{customerId}.records[]`

@@ -4,6 +4,7 @@ import { RepositoryError } from '@core/errors';
 import { BookingPolicy, PreciseInstant } from '@core/components';
 import {
   BOOKING_POLICY_DOC,
+  type BookingPolicySettings,
   Collections,
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
@@ -23,10 +24,10 @@ import { TriggerAttemptSystem } from '@core/systems';
  *   job as stored, `null` before the first pass (each step re-reads it
  *   before every page);
  * - `loadPolicyLine` — the policy's late line as the daily sweep compares it
- *   with the job: `cancellationWindowHours` through the component's own
- *   edge guard (`BookingPolicy.withDefaults` — no document is the defaults)
- *   and the document's own `updateTime` at full precision (§9 D17), `null`
- *   with no document.
+ *   with the job: the stored `BookingPolicySettings`' `cancellationWindowHours`
+ *   through the component's own edge guard (`BookingPolicy.withDefaults` —
+ *   no document is the defaults) and the document's own `updateTime` at full
+ *   precision (§9 D17), `null` with no document.
  *
  * Bodies spread as stored; a read that throws answers a `RepositoryError`
  * value whose `reason` is the failure's canonical code — what the retrying
@@ -77,13 +78,15 @@ export const firestoreClientStatsPorts = (
     try {
       const snap = await db.doc(POLICY_PATH).get();
       const stamp = snap.exists ? snap.updateTime : undefined;
+      const stored = snap.exists
+        ? ({ id: snap.id, ...snap.data() } as BookingPolicySettings)
+        : null;
       return Result.ok({
         updatedAt:
           stamp === undefined
             ? null
             : PreciseInstant.of(stamp.seconds, stamp.nanoseconds),
-        windowHours: BookingPolicy.withDefaults(snap.data() ?? null)
-          .cancellationWindowHours,
+        windowHours: BookingPolicy.withDefaults(stored).cancellationWindowHours,
       });
     } catch (error) {
       return Result.err(readFailed(POLICY_PATH, error));

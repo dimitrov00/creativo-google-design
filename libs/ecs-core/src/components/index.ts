@@ -54,7 +54,6 @@ export * from './identity-call.data';
 export * from './impersonation-scope.data';
 export * from './impersonation-status.data';
 export * from './invitation-call.data';
-export * from './journal-actor.data';
 export * from './journal-effect.data';
 export * from './journal-source.data';
 export * from './ledger-line.data';

@@ -31,9 +31,9 @@ import { TriggerAttemptSystem } from '@core/systems';
  *   can deliver the row.
  * - `auditActionsFor` — every row filed against the given appointment ids
  *   (`resourceId in`, chunks of 30, single-field): the backfill's read.
- * - {@link auditRowCreate} — the ONE row written INSIDE a transaction, the
- *   streak publish's (F1-8): the reference and body the store's own
- *   transaction stages with `tx.create`.
+ *
+ * A row that must commit together with its act (the streak publish's) is
+ * not written here: it is a `WriteOp` of that act's own `CommitPlan`.
  */
 
 /** Firestore's `in` takes at most 30 values per query. */
@@ -52,22 +52,8 @@ function bodyOf(row: AuditEntry): DocumentData {
 }
 
 /** Where a row lives, by the id its planner derived. */
-export const auditRowRef = (
-  db: Firestore,
-  id: AuditEntryId,
-): DocumentReference => db.collection(Collections.AuditLog).doc(id);
-
-/**
- * One row as a transaction stages it — `tx.create(staged.ref, staged.body)`
- * — for the store whose act and row commit together (the streak publish,
- * F1-8): the same id and body `appendAudit` would write.
- */
-export function auditRowCreate(
-  db: Firestore,
-  row: AuditEntry,
-): { readonly ref: DocumentReference; readonly body: DocumentData } {
-  return { ref: auditRowRef(db, row.id), body: bodyOf(row) };
-}
+const auditRowRef = (db: Firestore, id: AuditEntryId): DocumentReference =>
+  db.collection(Collections.AuditLog).doc(id);
 
 /** Creates each row on its own, ALREADY_EXISTS being "already there". */
 async function createEach(

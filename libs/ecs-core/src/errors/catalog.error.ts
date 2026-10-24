@@ -71,7 +71,7 @@ export const CatalogErrorCode = {
   LocationInvalidMapUrl: 'CATALOG_LOCATION_INVALID_MAP_URL',
   /** Opening hours that are not exactly seven days, Monday first. */
   LocationInvalidHoursLength: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
-  /** A time of day that is not `HH:mm` (00:00–23:59) — or not a minute of the day. */
+  /** An opening-hours figure that is not a minute of the day (00:00–23:59). */
   LocationInvalidTimeOfDay: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
   /** An open day whose closing time is not after its opening time. */
   LocationInvalidHoursRange: 'CATALOG_LOCATION_INVALID_HOURS_RANGE',
@@ -399,7 +399,7 @@ export namespace CatalogError {
   };
   export type LocationInvalidTimeOfDay = {
     readonly errorCode: typeof CatalogErrorCode.LocationInvalidTimeOfDay;
-    /** The text as given; a minute figure that is not a minute of the day is its decimal string. */
+    /** The offending figure as its decimal string. */
     readonly rawValue: string;
   };
   export type LocationInvalidHoursRange = {

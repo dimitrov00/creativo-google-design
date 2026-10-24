@@ -19,9 +19,7 @@ import type {
   FlagsPorts,
   GatewayPorts,
   IdPorts,
-  ImpersonationReadPorts,
   InboxPorts,
-  KeyValuePorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
@@ -110,10 +108,6 @@ export const USER_SEARCH_PORTS = new InjectionToken<UserSearchPorts>(
   'USER_SEARCH_PORTS',
 );
 
-/** The admin's live impersonation session (`ImpersonationReadPorts`). */
-export const IMPERSONATION_READ_PORTS =
-  new InjectionToken<ImpersonationReadPorts>('IMPERSONATION_READ_PORTS');
-
 /** A client record's loyalty account, badge and season progress (`LoyaltyAccountReadPorts`). */
 export const LOYALTY_ACCOUNT_READ_PORTS =
   new InjectionToken<LoyaltyAccountReadPorts>('LOYALTY_ACCOUNT_READ_PORTS');
@@ -199,11 +193,6 @@ export const GATEWAY_PORTS = new InjectionToken<GatewayPorts>('GATEWAY_PORTS');
 /** The `/book` flow's draft in `sessionStorage` (`BookingDraftPorts`). */
 export const BOOKING_DRAFT_PORTS = new InjectionToken<BookingDraftPorts>(
   'BOOKING_DRAFT_PORTS',
-);
-
-/** Per-device preferences in `localStorage` (`KeyValuePorts`). */
-export const KEY_VALUE_PORTS = new InjectionToken<KeyValuePorts>(
-  'KEY_VALUE_PORTS',
 );
 
 /**

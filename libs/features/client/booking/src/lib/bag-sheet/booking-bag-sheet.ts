@@ -26,7 +26,7 @@ import { type TermsSpan, TermsSpanSystem } from '@core/systems';
 import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
   type ServiceVm,
 } from '@creativo/features/shared/catalog';
 import {
@@ -205,7 +205,7 @@ interface BagGroupVm {
 export class BookingBagSheet {
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
-  private readonly content = inject(CatalogPresenter);
+  private readonly content = inject(CatalogWording);
   private readonly store = inject(BookingFlowStore);
 
   /** The party, in scope order — the same people the catalog step scopes by. */

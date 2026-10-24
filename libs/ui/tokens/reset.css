@@ -1,0 +1,86 @@
+/**
+ * Shared modern baseline reset — the single source for the `cr-reset` layer
+ * every app declares in its styles.css. Modern practice (Bell/Comeau-style):
+ * a small set of sensible defaults layered so any component or utility rule
+ * wins without specificity fights — NOT an old-school "zero everything"
+ * Meyer reset, which fights the UA stylesheet instead of correcting it.
+ *
+ * Each app's styles.css imports this file FIRST, so `cr-reset` registers as
+ * the lowest cascade layer, then `cr-base` (reduced-motion.css beside it),
+ * then the `sys-*` layers. The two names predate the `--sys-*` system and
+ * stay: `apps/web/src/styles.css` writes its fallback focus ring into
+ * `cr-base` too, so a rename has to move every declaration of the layer at
+ * once or it re-orders the cascade.
+ *
+ * App styles.css files must not re-declare any of these rules; app-specific
+ * base styling (body ink and font, links) belongs in the app's `sys-base`
+ * layer, the fallback focus ring in `cr-base` — not here.
+ */
+
+@layer cr-reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Components own their spacing explicitly; UA default margins (h1-h6, p,
+     ul, figure, …) never leak into layouts. */
+  * {
+    margin: 0;
+  }
+
+  html {
+    /* Stop iOS Safari inflating text after an orientation change. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Stop the OS's own gray tap-flash from painting over every button/
+       row/card's authored :active state — without this, mobile taps show
+       a generic system highlight ON TOP of (and inconsistent with) the
+       app's tuned press feedback, which is why the same control can look
+       "right" on desktop hover and "wrong" on a phone tap. Every
+       interactive surface owns its own press treatment now (state layer,
+       fill tint, elevation, scale) — the UA highlight has nothing left
+       to add. */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    /* svh, not vh — vh overshoots behind mobile Safari's collapsing URL bar. */
+    min-block-size: 100svh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Media are layout objects, not inline text: block display kills the
+     baseline-gap artifact, and the inline-size cap stops any image from
+     forcing horizontal overflow. */
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  /* Form controls never inherit typography from the page by default —
+     opt them all in so <button>/<input> match surrounding text. */
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    overflow-wrap: break-word;
+  }
+}

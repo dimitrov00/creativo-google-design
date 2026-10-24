@@ -77,31 +77,7 @@ describe('SeatOutcome factories', () => {
  * THE REASON IS OPTIONAL (owner, 2026-09-11): what nobody explained is filed
  * `UNSPECIFIED`, a bucket of its own. Code-only since §9 D23.
  */
-describe('SeatOutcome.reasonOf', () => {
-  it('files no code as unspecified — declining to say is not an unknown code', () => {
-    expect(SeatOutcome.reasonOf('')).toBe('UNSPECIFIED');
-    expect(SeatOutcome.reasonOf('  ')).toBe('UNSPECIFIED');
-    expect(SeatOutcome.reasonOf('UNSPECIFIED')).toBe('UNSPECIFIED');
-  });
-
-  it('still refuses an unknown code', () => {
-    expect(SeatOutcome.reasonOf('bogus')).toBeNull();
-    expect(SeatOutcome.reasonOf('Client_Unwell')).toBeNull();
-  });
-
-  it('keeps the closed vocabulary, `OTHER` included without a note', () => {
-    expect(SeatOutcome.reasonOf(' CLIENT_UNWELL ')).toBe('CLIENT_UNWELL');
-    expect(SeatOutcome.reasonOf('OTHER')).toBe('OTHER');
-    expect(SeatOutcome.reasonOf('NO_SHOW_CONVERTED')).toBe('NO_SHOW_CONVERTED');
-  });
-
-  it('reads the legacy lower-case code as its SCREAMING value (wire, stored seats)', () => {
-    expect(SeatOutcome.reasonOf(' client_unwell ')).toBe('CLIENT_UNWELL');
-    expect(SeatOutcome.reasonOf('other')).toBe('OTHER');
-    expect(SeatOutcome.reasonOf('unspecified')).toBe('UNSPECIFIED');
-    expect(SeatOutcome.reasonOf('no_show_converted')).toBe('NO_SHOW_CONVERTED');
-  });
-
+describe('SeatOutcome.OFFERED_REASONS', () => {
   it('never offers unspecified or no_show_converted as a chip', () => {
     expect(SeatOutcome.OFFERED_REASONS).not.toContain('UNSPECIFIED');
     expect(SeatOutcome.OFFERED_REASONS).not.toContain('NO_SHOW_CONVERTED');
@@ -133,7 +109,7 @@ describe('CancellationReasonSet — a party’s reasons as one stored string', (
     );
   });
 
-  it('splits back into its codes, skipping text that is no code', () => {
+  it('splits back into its codes', () => {
     expect(
       CancellationReasonSet.codes(
         CancellationReasonSet.of([
@@ -142,11 +118,6 @@ describe('CancellationReasonSet — a party’s reasons as one stored string', (
         ]),
       ),
     ).toEqual(['CLIENT_UNWELL', 'STAFF_SHOP_CLOSURE']);
-    expect(
-      CancellationReasonSet.codes(
-        CancellationReasonSet.fromStored('cancelled_by_client'),
-      ),
-    ).toEqual([]);
     expect(CancellationReasonSet.codes(CancellationReasonSet.of([]))).toEqual(
       [],
     );

@@ -42,7 +42,7 @@ const BANNED_PHRASES: readonly RegExp[] = [
   /\blast chance\b/iu,
 ];
 
-/** Where the refusal copy lives — `translateDomainError` reads `errors.<errorCode>`. */
+/** Where the refusal copy lives — `translateCodedError` reads `errors.<errorCode>`. */
 const ERRORS_PREFIX = 'errors.';
 const SCREAMING_CHARS = /^[A-Z][A-Z0-9_]*$/;
 

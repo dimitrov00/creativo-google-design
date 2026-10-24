@@ -39,12 +39,10 @@ import {
   WALLET_RHYTHM_PERIODS_NARROW,
   type WalletInput,
   passVm,
-  rewardTiles,
   voucherVms,
   walletActions,
   walletHoldings,
   walletRhythmVm,
-  walletTierVm,
   walletVm,
 } from './wallet.presenter';
 import {
@@ -70,7 +68,11 @@ import {
   wordsOf,
 } from '../testing/client-card.fixtures';
 import { LoadState } from '@creativo/shared/view-state';
-import { WalletHolding } from './client-pages.vm';
+import {
+  type RewardTileVm,
+  WalletHolding,
+  type WalletTierVm,
+} from './client-pages.vm';
 
 /*
  * «ЛОЯЛНОСТ» AS A WALLET (client-card-revision-3 §2.2). Every model here
@@ -108,7 +110,7 @@ const ALL_FLAGS: LoyaltyFlags = {
 
 const NBSP = String.fromCharCode(0xa0);
 const MINUS = String.fromCharCode(0x2212);
-/** `formatMoney` keeps the sign on the figure's line. */
+/** `formatCents` keeps the sign on the figure's line. */
 const euro = (amount: string) => `${amount}${NBSP}€`;
 
 /** The vouchers issued to one person, as the reader answers them. */
@@ -193,6 +195,18 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
     activity: { loadState: LoadState.Ready, data: journalOf('martin') },
     ...overrides,
   });
+}
+
+/** WE as the page draws it: the «Статус» section once read, `null` while there is none. */
+function tierSection(input: WalletInput): WalletTierVm | null {
+  const tier = walletVm(input).tier;
+  return tier?.loadState === LoadState.Ready ? tier.data : null;
+}
+
+/** WF as the page draws it: the catalogue section's tiles once read, none while there is no section. */
+function catalogTiles(input: WalletInput): readonly RewardTileVm[] {
+  const catalog = walletVm(input).catalog;
+  return catalog?.loadState === LoadState.Ready ? catalog.data.tiles : [];
 }
 
 /** What a spec changes on an account: any of its fields but the override's (`TierOverride` is a slice of its own). */
@@ -1311,11 +1325,11 @@ describe('walletRhythmVm', () => {
   });
 });
 
-describe('walletTierVm', () => {
+describe('walletVm — the status (WE)', () => {
   const TIERS = ['Бронз', 'Сребро', 'Злато', 'Платина'];
 
   it('holds what remains in the ring, from the tier the account stands on to the next', () => {
-    expect(walletTierVm(walletInput())).toEqual({
+    expect(tierSection(walletInput())).toEqual({
       ring: {
         value: 2,
         min: 0,
@@ -1347,7 +1361,7 @@ describe('walletTierVm', () => {
 
   it('fills the ring at the top, and says how the status is kept', () => {
     const top = must(
-      walletTierVm(
+      tierSection(
         walletInput({
           account: account({
             tierId: TierId.of('platinum'),
@@ -1372,7 +1386,7 @@ describe('walletTierVm', () => {
 
   it('starts the ring empty on the first tier, and agrees a count of one', () => {
     expect(
-      walletTierVm(
+      tierSection(
         walletInput({
           account: account({
             tierId: TierId.of('bronze'),
@@ -1393,7 +1407,7 @@ describe('walletTierVm', () => {
 
   it('never runs the arc backwards under an override that stands above the visits', () => {
     const tier = must(
-      walletTierVm(
+      tierSection(
         walletInput({
           account: account(
             {
@@ -1416,32 +1430,34 @@ describe('walletTierVm', () => {
     expect(tier.steps.value).toBe(7);
   });
 
-  it('is absent with the flag off and until the catalogue names the tiers', () => {
+  it('is absent with the flag off and with a catalogue that names no tiers, and waits for the catalogue', () => {
     expect(
-      walletTierVm(walletInput({ flags: { ...ALL_FLAGS, tiers: false } })),
-    ).toBeNull();
+      'tier' in
+        walletVm(walletInput({ flags: { ...ALL_FLAGS, tiers: false } })),
+    ).toBe(false);
     expect(
-      walletTierVm(walletInput({ catalog: { loadState: LoadState.Loading } })),
-    ).toBeNull();
+      walletVm(walletInput({ catalog: { loadState: LoadState.Loading } })).tier,
+    ).toEqual({ loadState: LoadState.Loading });
     expect(
-      walletTierVm(
-        walletInput({
-          catalog: {
-            loadState: LoadState.Ready,
-            data: loyaltyCatalogWith((catalog) => ({
-              ...catalog,
-              tiers: [],
-            })),
-          },
-        }),
-      ),
-    ).toBeNull();
+      'tier' in
+        walletVm(
+          walletInput({
+            catalog: {
+              loadState: LoadState.Ready,
+              data: loyaltyCatalogWith((catalog) => ({
+                ...catalog,
+                tiers: [],
+              })),
+            },
+          }),
+        ),
+    ).toBe(false);
   });
 });
 
-describe('rewardTiles', () => {
+describe('walletVm — what the points buy (WF)', () => {
   it('puts the rewards the points cover first, and meters the ones they do not', () => {
-    expect(rewardTiles(walletInput())).toEqual([
+    expect(catalogTiles(walletInput())).toEqual([
       {
         rewardId: 'reward-beard',
         title: 'Безплатно оформяне на брада',
@@ -1477,7 +1493,7 @@ describe('rewardTiles', () => {
 
   it('keeps the catalogue’s order inside each half', () => {
     expect(
-      rewardTiles(walletInput({ account: account({ balance: 300 }) })).map(
+      catalogTiles(walletInput({ account: account({ balance: 300 }) })).map(
         (tile) => [tile.rewardId, tile.affordable],
       ),
     ).toEqual([
@@ -1486,7 +1502,7 @@ describe('rewardTiles', () => {
       ['reward-product', false],
     ]);
     expect(
-      rewardTiles(walletInput({ account: account({ balance: 130 }) })).map(
+      catalogTiles(walletInput({ account: account({ balance: 130 }) })).map(
         (tile) => [tile.rewardId, tile.missing],
       ),
     ).toEqual([
@@ -1497,7 +1513,7 @@ describe('rewardTiles', () => {
   });
 
   it('meters from nothing for an account that owes, and never to the full', () => {
-    const owing = rewardTiles(
+    const owing = catalogTiles(
       walletInput({ account: account({ balance: -40 }) }),
     );
     expect(owing.map((tile) => [tile.missing, tile.progress])).toEqual([
@@ -1506,7 +1522,7 @@ describe('rewardTiles', () => {
       ['още 440 т.', 0],
     ]);
     for (const balance of [0, 119, 399, 400, 5000]) {
-      for (const tile of rewardTiles(
+      for (const tile of catalogTiles(
         walletInput({ account: account({ balance }) }),
       )) {
         expect(tile.missing === null).toBe(tile.affordable);
@@ -1521,12 +1537,14 @@ describe('rewardTiles', () => {
 
   it('judges a paused client’s reach by the points: nothing is zeroed', () => {
     expect(
-      rewardTiles(walletInput({ paused: true })).map((tile) => tile.affordable),
+      catalogTiles(walletInput({ paused: true })).map(
+        (tile) => tile.affordable,
+      ),
     ).toEqual([true, true, false]);
   });
 
   it('draws a reward’s picture where the host holds one, by the reward or by its coupon', () => {
-    const tiles = rewardTiles(
+    const tiles = catalogTiles(
       walletInput({
         covers: new Map([
           ['reward-beard', 'https://example.test/covers/beard.jpg'],
@@ -1563,7 +1581,7 @@ describe('rewardTiles', () => {
       ),
     }));
     expect(
-      rewardTiles(
+      catalogTiles(
         walletInput({
           catalog: { loadState: LoadState.Ready, data: catalog },
         }),
@@ -1571,14 +1589,16 @@ describe('rewardTiles', () => {
     ).toEqual([]);
   });
 
-  it('is empty with the points off and until the catalogue is read', () => {
+  it('is absent with the points off and while no reader answers, and waits for the catalogue', () => {
     expect(
-      rewardTiles(walletInput({ flags: { ...ALL_FLAGS, points: false } })),
-    ).toEqual([]);
+      'catalog' in
+        walletVm(walletInput({ flags: { ...ALL_FLAGS, points: false } })),
+    ).toBe(false);
     expect(
-      rewardTiles(walletInput({ catalog: { loadState: LoadState.Loading } })),
-    ).toEqual([]);
-    expect(rewardTiles(walletInput({ catalog: null }))).toEqual([]);
+      walletVm(walletInput({ catalog: { loadState: LoadState.Loading } }))
+        .catalog,
+    ).toEqual({ loadState: LoadState.Loading });
+    expect('catalog' in walletVm(walletInput({ catalog: null }))).toBe(false);
   });
 });
 
@@ -1601,15 +1621,19 @@ describe('walletVm', () => {
     // nothing the tickets under it do not (review 3, round 4).
     expect(wallet.holdingsDetail).toBeNull();
     expect(wallet.rhythm).toEqual(walletRhythmVm(walletInput()));
-    expect(wallet.tier).toEqual({
+    expect(wallet.tier).toMatchObject({
       loadState: LoadState.Ready,
-      data: walletTierVm(walletInput()),
+      data: { remaining: '6', line1: 'до Платина' },
     });
-    expect(wallet.catalog).toEqual({
+    expect(wallet.catalog).toMatchObject({
       loadState: LoadState.Ready,
       data: {
         name: 'Награди за точки: 358 точки, стигат за 2 от 3 награди',
-        tiles: rewardTiles(walletInput()),
+        tiles: [
+          { rewardId: 'reward-beard' },
+          { rewardId: 'reward-cut' },
+          { rewardId: 'reward-product' },
+        ],
       },
     });
   });

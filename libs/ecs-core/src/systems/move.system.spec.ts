@@ -491,7 +491,9 @@ describe('MoveSystem — which seats the booker can move', () => {
       guest('Мария'),
     );
     expect(
-      MoveSystem.seatsTheBookerCanMove(visit, OWNER).map((s) => s.seatSubject),
+      visit.seats
+        .filter((seat) => Seat.isMovableByBooker(seat, OWNER))
+        .map((seat) => seat.seatSubject),
     ).toEqual(['ACCOUNT', 'ANONYMOUS']);
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(true);
   });
@@ -500,7 +502,6 @@ describe('MoveSystem — which seats the booker can move', () => {
     const visit = visitOf(
       SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
     );
-    expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([]);
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(false);
   });
 
@@ -525,19 +526,6 @@ describe('MoveSystem — which seats the booker can move', () => {
       SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
     );
     expect(MoveSystem.moveAnchor(visit, OWNER)).toBeNull();
-  });
-
-  it('agrees with the per-seat rule, seat for seat', () => {
-    const visit = visitOf(
-      SeatOccupant.account(OWNER, customerOf(OWNER), SubjectRelationship.Self),
-      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Self),
-      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
-      guest('Гост 1'),
-    );
-    expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([
-      visit.seats[0],
-      visit.seats[3],
-    ]);
   });
 });
 

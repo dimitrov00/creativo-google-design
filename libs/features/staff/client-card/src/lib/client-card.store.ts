@@ -90,7 +90,6 @@ import {
 } from './client-card.contracts';
 import { cardLocaleOf, dayShort, shopDayOf } from './client-card.format';
 import {
-  clientHeadVm,
   clientPhotoVm,
   displayNameOf,
   isBirthdayToday,
@@ -103,7 +102,6 @@ import {
 import {
   type AchievementsData,
   type BirthdayVm,
-  type ClientHeadVm,
   type ClientHeroVm,
   type ClientOverviewVm,
   type ClientPhotoVm,
@@ -203,14 +201,6 @@ const LOADING_HISTORY: HistoryState = {
   cursor: null,
   pagingState: PagingState.More,
   photoCounts: new Map(),
-};
-
-const EMPTY_HEAD: ClientHeadVm = {
-  name: '',
-  stateLine: null,
-  avatarSrc: null,
-  initialsFrom: '',
-  paused: false,
 };
 
 /**
@@ -540,32 +530,6 @@ export class ClientCardStore {
   });
 
   /**
-   * A — renders from the seat's snapshot at once, before the words have
-   * loaded too (S1).
-   *
-   * @deprecated The hero (`hero`) is the head since revision 3; this one
-   * stays only because the visit editor still reads `head().avatarSrc` for
-   * the photo page (`staff-visit-editor.ts`, `pastCut`). It goes with that
-   * line.
-   */
-  readonly head: Signal<ClientHeadVm> = computed(() => {
-    const subject = this._subject();
-    const words = this.words();
-    if (subject === null) return EMPTY_HEAD;
-    return clientHeadVm({
-      subject,
-      user: this.user(),
-      settled: this.gateOpen(),
-      stats: this.stats(),
-      statsKnown: this._stats() !== null,
-      avatarSrc: this._avatar(),
-      nowMs: this._nowMs(),
-      zone: this.zone(),
-      words,
-    });
-  });
-
-  /**
    * "Now" on the shop's wall clock for the visit rows and cards (Law 7.3),
    * derived ONCE from the open's clock reading in the shop's zone; `null`
    * until the zone resolves (the rows wait for it, the page stays loading).
@@ -828,7 +792,7 @@ export class ClientCardStore {
   //
   // Each page's model is composed from the presenter files over the slices
   // above. The built `glance`, `loyalty` and `history` went with their
-  // bodies in W4; `head` stays until the visit editor reads `hero` instead.
+  // bodies in W4.
 
   /**
    * A — the centred hero: the face and the name from the seat at once; the
@@ -854,6 +818,16 @@ export class ClientCardStore {
       tier: LoadSlice.dataOf(tier),
     });
   });
+
+  /**
+   * The face the hero shows (the seat's own picture, else the account's),
+   * `null` with neither — what the visit editor's photo page gives a past
+   * cut's person (`staff-visit-editor.ts`, `pastCut`), so the push keeps
+   * the face the card just showed.
+   */
+  readonly avatarSrc: Signal<string | null> = computed(
+    () => this.hero().avatarSrc,
+  );
 
   /**
    * A held reward can be spent on THIS visit now: the subject owns it, the

@@ -61,7 +61,7 @@ export type VisitRowEntry = (typeof VisitRowEntry)[keyof typeof VisitRowEntry];
 
 /** Which fact ends a staff row's second line — the field `trailingFactFace`. */
 export const TrailingFactFace = {
-  /** Money, `formatMoney`'s «27,50 €». */
+  /** Money, `formatCents`'s «27,50 €». */
   Amount: 'AMOUNT',
   /** A state in words beside its glyph — «Заявен», «Не дойде». */
   Status: 'STATUS',
@@ -107,7 +107,7 @@ export type VisitTrailing = {
  */
 export type VisitTrailingFact =
   /**
-   * Money, always `formatMoney` («27,50 €»): charged and primary on a worked
+   * Money, always `formatCents` («27,50 €»): charged and primary on a worked
    * visit, booked, secondary and struck on a cancelled one.
    */
   | {

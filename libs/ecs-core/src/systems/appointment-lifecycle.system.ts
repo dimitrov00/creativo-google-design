@@ -7,11 +7,8 @@ import {
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-  type AccountSeat,
-  type ChairGeometry,
   Seat,
   type ShopNow,
-  type TimeCoordinate,
   WriteOp,
 } from '@core/components';
 import {
@@ -21,15 +18,11 @@ import {
   AuditResourceId,
   type SeatId,
   type LocalDate,
-  UtcEpochMs,
+  type UtcEpochMs,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
-import { AppointmentIndexSystem } from './appointment-index.system';
 import { type AuditFact, AuditSystem } from './audit.system';
-import { CancellationPolicySystem } from './cancellation-policy.system';
-
-const MS_PER_MINUTE = 60_000;
 
 /**
  * What a lifecycle verb hands its pipeline: the appointment as the verb
@@ -46,12 +39,12 @@ export type LifecycleStep = {
 };
 
 /**
- * The slice every lifecycle verb reads and writes: the root lifecycle and
- * the seats' outcomes, index-aligned with the seats. The verbs below are
- * total on this slice alone, so a caller holding no entity (a legacy shim)
- * asks the same questions and gets the same answers.
+ * The slice every lifecycle verb decides on: the root lifecycle and the
+ * seats' outcomes, index-aligned with the seats. The slice verbs below are
+ * total on it; the entity verbs of {@link AppointmentLifecycleSystem} read
+ * it off the appointment and write the answer back.
  */
-export type LifecycleSlice = {
+type LifecycleSlice = {
   readonly lifecycle: BookingLifecycle;
   readonly outcomes: readonly SeatOutcome[];
 };
@@ -252,6 +245,165 @@ function arrivalFact(
 }
 
 /**
+ * A party-level move `lifecycle → to`, stamping `stamp` on every seat
+ * still open; a seat already resolved — the guest who no-showed while the
+ * other two were cut — keeps what it was given. `stamp` is `null` for a
+ * verb that says nothing about the work (confirm). `cancelReasons` is the
+ * root's reason set, read only when `to` is `CANCELLED`.
+ */
+function partyVerb(
+  slice: LifecycleSlice,
+  to: BookingStatus,
+  stamp: SeatOutcome | null,
+  atUtcMs: UtcEpochMs,
+  cancelReasons: CancellationReasonSet,
+): Result<LifecycleSlice, SchedulingError> {
+  if (!BookingLifecycle.canTransition(slice.lifecycle, to)) {
+    return Result.err(
+      SchedulingError.appointmentInvalidTransition(
+        slice.lifecycle.bookingStatus,
+        to,
+      ),
+    );
+  }
+  let outcomes = slice.outcomes;
+  if (stamp !== null) {
+    const next: SeatOutcome[] = [];
+    for (let i = 0; i < slice.outcomes.length; i++) {
+      const outcome = slice.outcomes[i] as SeatOutcome;
+      next.push(SeatOutcome.isResolved(outcome) ? outcome : stamp);
+    }
+    outcomes = next;
+  }
+  return Result.ok({
+    lifecycle: lifecycleFor(to, atUtcMs, cancelReasons),
+    outcomes,
+  });
+}
+
+/**
+ * The ONE correction edge of the graph: a no-show taken back. Only the
+ * stamp the edge put there is lifted — `NO_SHOW` seats return to
+ * `SCHEDULED`; a seat resolved on its own before the party mark keeps what
+ * it was given. Exactly one legal starting point: `NO_SHOW` (the graph
+ * alone would also let `PENDING` through).
+ */
+function reopenNoShowSlice(
+  slice: LifecycleSlice,
+  atUtcMs: UtcEpochMs,
+): Result<LifecycleSlice, SchedulingError> {
+  const from = slice.lifecycle.bookingStatus;
+  if (from !== BookingStatus.NoShow) {
+    return Result.err(
+      SchedulingError.appointmentInvalidTransition(
+        from,
+        BookingStatus.Confirmed,
+      ),
+    );
+  }
+  const outcomes: SeatOutcome[] = [];
+  for (let i = 0; i < slice.outcomes.length; i++) {
+    const outcome = slice.outcomes[i] as SeatOutcome;
+    outcomes.push(
+      outcome.attendanceState === AttendanceState.NoShow
+        ? SeatOutcome.scheduled()
+        : outcome,
+    );
+  }
+  return Result.ok({
+    lifecycle: BookingLifecycle.confirm(atUtcMs),
+    outcomes,
+  });
+}
+
+/**
+ * The same-day correction edge (owner ruling 2026-09-08): a completed or
+ * cancelled visit comes back to `CONFIRMED`, every settled seat to
+ * `SCHEDULED` — but only while the shop is inside the visit's own day
+ * (`visitLocalDate` against `today`, both on the shop's wall clock, T1).
+ * `null` is a day the caller could not resolve, which is never "the same
+ * day".
+ */
+function reopenSettledSlice(
+  slice: LifecycleSlice,
+  visitLocalDate: LocalDate | null,
+  today: LocalDate | null,
+  atUtcMs: UtcEpochMs,
+): Result<LifecycleSlice, SchedulingError> {
+  const from = slice.lifecycle.bookingStatus;
+  if (from !== BookingStatus.Completed && from !== BookingStatus.Cancelled) {
+    return Result.err(
+      SchedulingError.appointmentInvalidTransition(
+        from,
+        BookingStatus.Confirmed,
+      ),
+    );
+  }
+  if (visitLocalDate === null || today === null || visitLocalDate !== today) {
+    return Result.err(SchedulingError.appointmentReopenWindowClosed(from));
+  }
+  const outcomes: SeatOutcome[] = [];
+  for (let i = 0; i < slice.outcomes.length; i++) {
+    const outcome = slice.outcomes[i] as SeatOutcome;
+    outcomes.push(
+      outcome.attendanceState === AttendanceState.Scheduled
+        ? outcome
+        : SeatOutcome.scheduled(),
+    );
+  }
+  return Result.ok({
+    lifecycle: BookingLifecycle.confirm(atUtcMs),
+    outcomes,
+  });
+}
+
+/**
+ * ONE person's seat resolved, and the root following as a SUMMARY of the
+ * seats (`SeatOutcome.summarize`) — the write path of the mixed party: two
+ * served, one absent, all three facts true at once. The graph is not
+ * consulted (a seat outcome is a new fact, the root a derivation); what
+ * guards it is that a resolved seat is never re-resolved and a terminal
+ * visit takes no further facts. `index` is the seat's position, `seatId`
+ * names it in a refusal.
+ */
+function seatOutcomeSlice(
+  slice: LifecycleSlice,
+  index: number,
+  seatId: SeatId,
+  outcome: SeatOutcome,
+  atUtcMs: UtcEpochMs,
+): Result<LifecycleSlice, SchedulingError> {
+  if (index < 0 || index >= slice.outcomes.length) {
+    return Result.err(SchedulingError.appointmentUnknownSeat(seatId));
+  }
+  const current = slice.outcomes[index] as SeatOutcome;
+  if (SeatOutcome.isResolved(current)) {
+    return Result.err(
+      SchedulingError.appointmentSeatAlreadyResolved(
+        seatId,
+        current.attendanceState,
+      ),
+    );
+  }
+  if (BookingLifecycle.isTerminal(slice.lifecycle)) {
+    return Result.err(
+      SchedulingError.appointmentInvalidTransition(
+        slice.lifecycle.bookingStatus,
+        stateOfOutcome(outcome.attendanceState),
+      ),
+    );
+  }
+  const outcomes: SeatOutcome[] = [];
+  for (let i = 0; i < slice.outcomes.length; i++) {
+    outcomes.push(i === index ? outcome : (slice.outcomes[i] as SeatOutcome));
+  }
+  return Result.ok({
+    lifecycle: SeatOutcome.summarize(outcomes, slice.lifecycle, atUtcMs),
+    outcomes,
+  });
+}
+
+/**
  * The staff transition at `nowUtcMs` with `today` the shop's day — `null` is
  * a day the caller could not resolve (a party verb with no shop clock),
  * which is never "the visit's own day", so a settled visit stays settled.
@@ -289,7 +441,7 @@ function transitionAt(
       // Confirming says nothing about the work: no per-seat meaning.
       return Result.err(SchedulingError.appointmentInvalidTransition(from, to));
     }
-    const resolved = AppointmentLifecycleSystem.seatOutcomeSlice(
+    const resolved = seatOutcomeSlice(
       slice,
       index,
       request.seatId,
@@ -325,10 +477,7 @@ function transitionAt(
     );
   }
   if (to === BookingStatus.Confirmed && from === BookingStatus.NoShow) {
-    const reopened = AppointmentLifecycleSystem.reopenNoShowSlice(
-      slice,
-      nowUtcMs,
-    );
+    const reopened = reopenNoShowSlice(slice, nowUtcMs);
     if (!reopened.ok) return reopened;
     return Result.ok(
       step(appointment, applySlice(appointment, reopened.value), [
@@ -342,7 +491,7 @@ function transitionAt(
       ]),
     );
   }
-  const moved = AppointmentLifecycleSystem.partyVerb(
+  const moved = partyVerb(
     slice,
     to,
     stamp,
@@ -358,7 +507,7 @@ function transitionAt(
 }
 
 /**
- * {@link AppointmentLifecycleSystem.reopenSettledSlice} over the entity —
+ * {@link reopenSettledSlice} over the entity —
  * the visit's day is its `localDate` (one shop day per appointment, F-6; a
  * visit with no seat has no day), today the caller's.
  */
@@ -367,7 +516,7 @@ function reopenSettledAt(
   nowUtcMs: UtcEpochMs,
   today: LocalDate | null,
 ): Result<Appointment, SchedulingError> {
-  const reopened = AppointmentLifecycleSystem.reopenSettledSlice(
+  const reopened = reopenSettledSlice(
     sliceOf(appointment),
     appointment.seats.length === 0 ? null : appointment.localDate,
     today,
@@ -392,169 +541,6 @@ function reopenSettledAt(
  * one (§4.1).
  */
 export const AppointmentLifecycleSystem = {
-  /* ── The slice verbs ───────────────────────────────────────────────── */
-
-  /**
-   * A party-level move `lifecycle → to`, stamping `stamp` on every seat
-   * still open; a seat already resolved — the guest who no-showed while the
-   * other two were cut — keeps what it was given. `stamp` is `null` for a
-   * verb that says nothing about the work (confirm). `cancelReasons` is the
-   * root's reason set, read only when `to` is `CANCELLED`.
-   */
-  partyVerb(
-    slice: LifecycleSlice,
-    to: BookingStatus,
-    stamp: SeatOutcome | null,
-    atUtcMs: UtcEpochMs,
-    cancelReasons: CancellationReasonSet,
-  ): Result<LifecycleSlice, SchedulingError> {
-    if (!BookingLifecycle.canTransition(slice.lifecycle, to)) {
-      return Result.err(
-        SchedulingError.appointmentInvalidTransition(
-          slice.lifecycle.bookingStatus,
-          to,
-        ),
-      );
-    }
-    let outcomes = slice.outcomes;
-    if (stamp !== null) {
-      const next: SeatOutcome[] = [];
-      for (let i = 0; i < slice.outcomes.length; i++) {
-        const outcome = slice.outcomes[i] as SeatOutcome;
-        next.push(SeatOutcome.isResolved(outcome) ? outcome : stamp);
-      }
-      outcomes = next;
-    }
-    return Result.ok({
-      lifecycle: lifecycleFor(to, atUtcMs, cancelReasons),
-      outcomes,
-    });
-  },
-
-  /**
-   * The ONE correction edge of the graph: a no-show taken back. Only the
-   * stamp the edge put there is lifted — `NO_SHOW` seats return to
-   * `SCHEDULED`; a seat resolved on its own before the party mark keeps what
-   * it was given. Exactly one legal starting point: `NO_SHOW` (the graph
-   * alone would also let `PENDING` through).
-   */
-  reopenNoShowSlice(
-    slice: LifecycleSlice,
-    atUtcMs: UtcEpochMs,
-  ): Result<LifecycleSlice, SchedulingError> {
-    const from = slice.lifecycle.bookingStatus;
-    if (from !== BookingStatus.NoShow) {
-      return Result.err(
-        SchedulingError.appointmentInvalidTransition(
-          from,
-          BookingStatus.Confirmed,
-        ),
-      );
-    }
-    const outcomes: SeatOutcome[] = [];
-    for (let i = 0; i < slice.outcomes.length; i++) {
-      const outcome = slice.outcomes[i] as SeatOutcome;
-      outcomes.push(
-        outcome.attendanceState === AttendanceState.NoShow
-          ? SeatOutcome.scheduled()
-          : outcome,
-      );
-    }
-    return Result.ok({
-      lifecycle: BookingLifecycle.confirm(atUtcMs),
-      outcomes,
-    });
-  },
-
-  /**
-   * The same-day correction edge (owner ruling 2026-09-08): a completed or
-   * cancelled visit comes back to `CONFIRMED`, every settled seat to
-   * `SCHEDULED` — but only while the shop is inside the visit's own day
-   * (`visitLocalDate` against `today`, both on the shop's wall clock, T1).
-   * `null` is a day the caller could not resolve, which is never "the same
-   * day".
-   */
-  reopenSettledSlice(
-    slice: LifecycleSlice,
-    visitLocalDate: LocalDate | null,
-    today: LocalDate | null,
-    atUtcMs: UtcEpochMs,
-  ): Result<LifecycleSlice, SchedulingError> {
-    const from = slice.lifecycle.bookingStatus;
-    if (from !== BookingStatus.Completed && from !== BookingStatus.Cancelled) {
-      return Result.err(
-        SchedulingError.appointmentInvalidTransition(
-          from,
-          BookingStatus.Confirmed,
-        ),
-      );
-    }
-    if (visitLocalDate === null || today === null || visitLocalDate !== today) {
-      return Result.err(SchedulingError.appointmentReopenWindowClosed(from));
-    }
-    const outcomes: SeatOutcome[] = [];
-    for (let i = 0; i < slice.outcomes.length; i++) {
-      const outcome = slice.outcomes[i] as SeatOutcome;
-      outcomes.push(
-        outcome.attendanceState === AttendanceState.Scheduled
-          ? outcome
-          : SeatOutcome.scheduled(),
-      );
-    }
-    return Result.ok({
-      lifecycle: BookingLifecycle.confirm(atUtcMs),
-      outcomes,
-    });
-  },
-
-  /**
-   * ONE person's seat resolved, and the root following as a SUMMARY of the
-   * seats (`SeatOutcome.summarize`) — the write path of the mixed party: two
-   * served, one absent, all three facts true at once. The graph is not
-   * consulted (a seat outcome is a new fact, the root a derivation); what
-   * guards it is that a resolved seat is never re-resolved and a terminal
-   * visit takes no further facts. `index` is the seat's position, `seatId`
-   * names it in a refusal.
-   */
-  seatOutcomeSlice(
-    slice: LifecycleSlice,
-    index: number,
-    seatId: SeatId,
-    outcome: SeatOutcome,
-    atUtcMs: UtcEpochMs,
-  ): Result<LifecycleSlice, SchedulingError> {
-    if (index < 0 || index >= slice.outcomes.length) {
-      return Result.err(SchedulingError.appointmentUnknownSeat(seatId));
-    }
-    const current = slice.outcomes[index] as SeatOutcome;
-    if (SeatOutcome.isResolved(current)) {
-      return Result.err(
-        SchedulingError.appointmentSeatAlreadyResolved(
-          seatId,
-          current.attendanceState,
-        ),
-      );
-    }
-    if (BookingLifecycle.isTerminal(slice.lifecycle)) {
-      return Result.err(
-        SchedulingError.appointmentInvalidTransition(
-          slice.lifecycle.bookingStatus,
-          stateOfOutcome(outcome.attendanceState),
-        ),
-      );
-    }
-    const outcomes: SeatOutcome[] = [];
-    for (let i = 0; i < slice.outcomes.length; i++) {
-      outcomes.push(i === index ? outcome : (slice.outcomes[i] as SeatOutcome));
-    }
-    return Result.ok({
-      lifecycle: SeatOutcome.summarize(outcomes, slice.lifecycle, atUtcMs),
-      outcomes,
-    });
-  },
-
-  /* ── The entity verbs ──────────────────────────────────────────────── */
-
   /**
    * Confirming is about the BOOKING, not the work — no seat is resolved. A
    * settled visit is not reopened here (no shop clock: never "today").
@@ -650,7 +636,7 @@ export const AppointmentLifecycleSystem = {
       reason,
       windowHours,
     );
-    const moved = AppointmentLifecycleSystem.partyVerb(
+    const moved = partyVerb(
       sliceOf(appointment),
       BookingStatus.Cancelled,
       stamp,
@@ -692,10 +678,7 @@ export const AppointmentLifecycleSystem = {
     appointment: Appointment,
     nowUtcMs: UtcEpochMs,
   ): Result<Appointment, SchedulingError> {
-    const reopened = AppointmentLifecycleSystem.reopenNoShowSlice(
-      sliceOf(appointment),
-      nowUtcMs,
-    );
+    const reopened = reopenNoShowSlice(sliceOf(appointment), nowUtcMs);
     return reopened.ok
       ? Result.ok(applySlice(appointment, reopened.value))
       : reopened;
@@ -719,7 +702,7 @@ export const AppointmentLifecycleSystem = {
     outcome: SeatOutcome,
     nowUtcMs: UtcEpochMs,
   ): Result<Appointment, SchedulingError> {
-    const resolved = AppointmentLifecycleSystem.seatOutcomeSlice(
+    const resolved = seatOutcomeSlice(
       sliceOf(appointment),
       indexOfSeat(appointment.seats, seatId),
       seatId,
@@ -828,98 +811,6 @@ export const AppointmentLifecycleSystem = {
           AuditSystem.changeKey.unarrived(stamp),
         ),
       ]),
-    );
-  },
-
-  /** The write plan of moving `before` to `after` — see {@link LifecycleStep}. */
-  transitionWrite,
-
-  /* ── The party's invariants ────────────────────────────────────────── */
-
-  /**
-   * What is wrong with a set of seats, every violation (`validateSeats`):
-   * none at all; ONE PERSON IN TWO CHAIRS (overlapping `SELF` seats of one
-   * ACCOUNT — sequential self seats are one visit with two services, and a
-   * `SELF` seat bound to another account is somebody else); a barber in two
-   * chairs at once, named ONCE per barber in discovery order; seats priced
-   * in two currencies (the first mismatch).
-   */
-  seatViolations(seats: readonly AccountSeat[]): readonly SchedulingError[] {
-    return Seat.violations(seats);
-  },
-
-  /**
-   * A NEW visit's admission (`Appointment.create`): it must begin in the
-   * future — judged on the EARLIEST seat on the shop's wall clock, a start at
-   * or before `(now.localDate, now.currentMinute)` refused alone (T1) — and
-   * then its seats must hold every invariant of {@link seatViolations}.
-   */
-  admit(
-    visit: {
-      readonly localDate: LocalDate;
-      readonly seats: readonly AccountSeat[];
-    },
-    now: ShopNow,
-  ): readonly SchedulingError[] {
-    const envelope = AppointmentIndexSystem.envelope(visit);
-    if (
-      envelope !== null &&
-      (visit.localDate < now.localDate ||
-        (visit.localDate === now.localDate &&
-          envelope.startMinutes <= now.currentMinute))
-    ) {
-      return [SchedulingError.appointmentPastStartTime()];
-    }
-    return AppointmentLifecycleSystem.seatViolations(visit.seats);
-  },
-
-  /* ── Derived facts ─────────────────────────────────────────────────── */
-
-  /** Every seat whose story the shop has not told yet, in seat order. */
-  openSeats(appointment: Pick<Appointment, 'seats'>): readonly Seat[] {
-    const open: Seat[] = [];
-    for (let i = 0; i < appointment.seats.length; i++) {
-      const seat = appointment.seats[i] as Seat;
-      if (!SeatOutcome.isResolved(seat)) open.push(seat);
-    }
-    return open;
-  },
-
-  /**
-   * How late the party was, in minutes — negative when early. `null` when
-   * they have not arrived, which is NOT zero and never averaged as punctual.
-   * Elapsed time between two instants (a T2 statistic, G-1).
-   */
-  latenessMinutes(
-    appointment: Pick<Appointment, 'arrivedAtUtcMs'> &
-      TimeCoordinate & { readonly seats: readonly ChairGeometry[] },
-  ): number | null {
-    if (appointment.arrivedAtUtcMs === null || appointment.seats.length === 0) {
-      return null;
-    }
-    const startUtcMs = CancellationPolicySystem.startUtcMsOf(appointment);
-    return (
-      UtcEpochMs.elapsedMs(startUtcMs, appointment.arrivedAtUtcMs) /
-      MS_PER_MINUTE
-    );
-  },
-
-  /**
-   * How far ahead the booking was made, in minutes — `null` for a visit
-   * written before the stamp, excluded from lead-time statistics (a T2
-   * statistic, G-1).
-   */
-  bookingLeadTimeMinutes(
-    appointment: Pick<Appointment, 'bookedAtUtcMs'> &
-      TimeCoordinate & { readonly seats: readonly ChairGeometry[] },
-  ): number | null {
-    if (appointment.bookedAtUtcMs === null || appointment.seats.length === 0) {
-      return null;
-    }
-    const startUtcMs = CancellationPolicySystem.startUtcMsOf(appointment);
-    return (
-      UtcEpochMs.elapsedMs(appointment.bookedAtUtcMs, startUtcMs) /
-      MS_PER_MINUTE
     );
   },
 } as const;

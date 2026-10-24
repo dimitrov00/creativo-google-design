@@ -24,10 +24,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  BarberPreference,
+  CancellationReason,
+  CancelledBy,
   ClientStatsPolicy,
   HeadRole,
   JournalFeed,
-  LABEL_CODES,
+  LabelCode,
+  Placement,
   PublicLabel,
   SeasonPhase,
   StreakRule,
@@ -54,9 +58,14 @@ import {
   streakDefinitionVersionFixture,
 } from '@core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { account, appointmentDocumentOf } from './appointments.mjs';
+import { appointmentDocumentOf } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
+import {
+  WORKED_SEAT,
+  accountSeat,
+  calledOffBefore,
+} from './fixtures/appointments.fixtures.ts';
 import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import { loadSeedDomain } from './load-domain.mjs';
 import {
@@ -134,6 +143,9 @@ const DOMAIN = {
   StreakRule,
   LoyaltyCatalogSystem,
 };
+
+/** Every label code a row may carry — the dictionary's values. */
+const LABEL_CODES = Object.values(LabelCode);
 
 /** The feed's pills, all of them: the effects a row the feed shows may have (`JournalFeed`). */
 const FEED = JournalFeed.effectsOf(JournalFeed.All);
@@ -797,12 +809,14 @@ describe('the rhythm’s rule, as the seed writes it (revision 3 §4.3)', () => 
     expect(path.split('/').at(-1)).toBe(ruleVersionIdOf(data.version));
     const version = StreakRule.parse(data);
     expect(version.ok).toBe(true);
+    const inForce = StreakRuleSystem.inForceOn(head(), LOYALTY_CATALOG_TODAY);
+    expect(version.value.version).toBe(inForce.version);
+    expect(version.value.effectiveFromLocalDate).toBe(
+      inForce.effectiveFromLocalDate,
+    );
     expect(
-      StreakRuleSystem.equals(
-        version.value,
-        StreakRuleSystem.inForceOn(head(), LOYALTY_CATALOG_TODAY),
-      ),
-    ).toBe(true);
+      StreakRuleSystem.changeFrom(version.value, inForce, false).changed,
+    ).toEqual([]);
     // The name is the head's: a version holds the rule alone.
     expect(data).not.toHaveProperty('name');
     expect(head().name.bg).toBe('Посещения в ритъм');
@@ -1207,16 +1221,19 @@ describe('read back by the client card’s readers', () => {
 
   it('reads the rhythm as a rule in force, and its first version beside the head that names it', () => {
     const { today, catalogue } = onFixturesDay;
-    const rule = LoyaltyCatalogSystem.streakInForce(
-      catalogue.catalog,
-      'cadence',
+    const rule = StreakRuleSystem.inForceOn(
+      catalogue.catalog.streaks.find((head) => head.id === 'cadence'),
       today,
     );
     expect(rule).toMatchObject({ version: 1, enabled: true });
     expect(catalogue.heads.map((head) => head.id)).toEqual(['cadence']);
     expect(catalogue.ruleVersions).toHaveLength(1);
     const [version] = catalogue.ruleVersions;
-    expect(StreakRuleSystem.equals(version, rule)).toBe(true);
+    expect(version.version).toBe(rule.version);
+    expect(version.effectiveFromLocalDate).toBe(rule.effectiveFromLocalDate);
+    expect(StreakRuleSystem.changeFrom(version, rule, false).changed).toEqual(
+      [],
+    );
     expect(version).toMatchObject({
       id: '000001',
       publishedByUserId: SEED_RULE_PUBLISHER,
@@ -1370,11 +1387,13 @@ describe('read back by the client card’s readers', () => {
           LoyaltyCatalogSystem.tier(catalog, acc.nextTierId) !== null,
       ).toBe(true);
       for (const state of acc.streaks) {
-        const rule = LoyaltyCatalogSystem.streakInForce(
-          catalog,
-          state.streakId,
-          onFixturesDay.today,
+        const head = catalog.streaks.find(
+          (entry) => entry.id === state.streakId,
         );
+        const rule =
+          head === undefined
+            ? null
+            : StreakRuleSystem.inForceOn(head, onFixturesDay.today);
         expect(rule, state.streakId).not.toBeNull();
         expect(state.definitionVersion).toBe(rule.version);
       }
@@ -1466,7 +1485,7 @@ describe('read back by the client card’s readers', () => {
       );
       const rebooked = {
         id: `${mine.id}-again`,
-        doc: { ...mine.doc, bookedAtUtcMs: book.calendar.msAt(0, 8) },
+        doc: { ...mine.doc, bookedAtUtcMs: book.calendar.msAt(0, 8 * 60) },
       };
       expect(() =>
         waitlistRequestWriteOf({
@@ -1633,69 +1652,60 @@ const UID = 'dev-client-test';
 const CAL = createShopCalendar(NOW);
 const TODAY = CAL.dayKeyAt(0);
 
-/** A worked fade with Иван at 10:00, `dayOffset` days from the fixtures' today. */
-function worked(id, dayOffset, overrides = {}) {
+/** A fade with Иван at 10:00 at the Center, `dayOffset` days from the fixtures' today, booked by the desk. */
+function fadeWithIvan(
+  id,
+  dayOffset,
+  { bookedDaysAhead, arrivedMinutes, outcome },
+) {
   return appointmentDocumentOf(
     {
       id,
       dayOffset,
       locationId: 'loc-center',
-      status: { kind: 'completed' },
-      placement: 'staff',
-      booked: { dayOffset: dayOffset - 3, hour: 12, minute: 0 },
-      arrived: { hour: 9, minute: 55 },
+      placement: Placement.Staff,
+      bookedOn: { dayOffset: dayOffset - bookedDaysAhead, minutes: 12 * 60 },
+      arrivedMinutes,
+      bookedFromAppointmentId: null,
       contact: null,
       seats: [
         {
-          id: `${id}-s1`,
+          seatId: `${id}-s1`,
           barberId: 'ivan',
           serviceId: 'svc-fade',
-          hour: 10,
-          minute: 0,
-          subject: account(UID),
-          pref: 'any',
-          outcome: { kind: 'worked' },
+          variantId: null,
+          startMinutes: 10 * 60,
+          durationMinutes: null,
+          ...accountSeat(UID),
+          barberPreference: BarberPreference.Any,
+          ...outcome,
+          tipCents: null,
         },
       ],
-      ...overrides,
     },
     CAL,
   );
 }
 
+/** A worked fade with Иван at 10:00, `dayOffset` days from the fixtures' today. */
+const worked = (id, dayOffset) =>
+  fadeWithIvan(id, dayOffset, {
+    bookedDaysAhead: 3,
+    arrivedMinutes: 9 * 60 + 55,
+    outcome: WORKED_SEAT,
+  });
+
 /** A visit the shop called off the evening before (Иван off sick). */
-function calledOffByShop(id, dayOffset) {
-  return appointmentDocumentOf(
-    {
-      id,
-      dayOffset,
-      locationId: 'loc-center',
-      status: { kind: 'cancelled', reason: 'staff_barber_absence' },
-      placement: 'staff',
-      booked: { dayOffset: dayOffset - 5, hour: 12, minute: 0 },
-      arrived: null,
-      contact: null,
-      seats: [
-        {
-          id: `${id}-s1`,
-          barberId: 'ivan',
-          serviceId: 'svc-fade',
-          hour: 10,
-          minute: 0,
-          subject: account(UID),
-          pref: 'any',
-          outcome: {
-            kind: 'cancelled',
-            by: 'staff',
-            reason: { kind: 'staff_barber_absence' },
-            hoursBefore: 16,
-          },
-        },
-      ],
-    },
-    CAL,
-  );
-}
+const calledOffByShop = (id, dayOffset) =>
+  fadeWithIvan(id, dayOffset, {
+    bookedDaysAhead: 5,
+    arrivedMinutes: null,
+    outcome: calledOffBefore(
+      CancelledBy.Staff,
+      CancellationReason.StaffBarberAbsence,
+      16,
+    ),
+  });
 
 const visitsAt = (offsets) =>
   offsets.map((offset, i) => worked(`appt-test-${i + 1}`, offset));
@@ -2071,7 +2081,7 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     ]);
     const [up, down] = changes;
     expect(up.localDate).toBe(CAL.dayKeyAt(-410));
-    expect(down.utcEpochMs).toBe(CAL.msAt(-460 + 365, 0, 0));
+    expect(down.utcEpochMs).toBe(CAL.msAt(-460 + 365, 0));
     expect(down.localDate).toBe(CAL.dayKeyAt(-460 + 365));
     expect(down.correlationId).toBe(
       `tier:${UID}:bronze:${CAL.dayKeyAt(-460 + 365)}`,
@@ -2551,7 +2561,7 @@ describe('projectLoyaltyFor — the tier', () => {
       tierRemaining: 6,
     });
     const demoted = CAL.dayKeyAt(-460 + 365);
-    expect(projection.account.tierSinceUtcMs).toBe(CAL.msAt(-460 + 365, 0, 0));
+    expect(projection.account.tierSinceUtcMs).toBe(CAL.msAt(-460 + 365, 0));
     expect(sofiaDay(projection.account.tierSinceUtcMs)).toBe(demoted);
   });
 

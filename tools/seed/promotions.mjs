@@ -35,6 +35,7 @@
  * show; Мартин holds `GIFT2025`; `GIFT5` is paper, nobody's. `EMPTY001`,
  * the seed's own, was spent: the sheet must say so, not "no such code".
  */
+import { LocalDate } from '@core/primitives';
 import {
   COUPONS,
   couponGrantBody,
@@ -54,9 +55,6 @@ export { COUPONS };
 export const COUPONS_COLLECTION = 'coupons';
 export const COUPON_GRANTS_COLLECTION = 'couponGrants';
 export const GIFT_VOUCHERS_COLLECTION = 'giftVouchers';
-
-const DAY_MS = 86_400_000;
-const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 
 // ── Coupons ────────────────────────────────────────────────────────────────
 
@@ -84,7 +82,7 @@ const grant = (id, uid, couponId, grantedAtUtcMs, usedAtUtcMs) => ({
  */
 export function couponGrantWritesOf(book, catalog, today) {
   const { calendar, appointments } = book;
-  const deskMs = calendar.msAt(-3, 12, 0);
+  const deskMs = calendar.msAt(-3, 12 * 60);
   const engine = LOYALTY_HOLDERS.flatMap((holder) =>
     [
       ...punchCardGrantsOf(holder.uid, appointments, today, holder.stampGrants),
@@ -140,10 +138,15 @@ export function couponGrantWritesOf(book, catalog, today) {
  * days ago at noon on the shop's calendar.
  */
 export function giftVoucherWritesOf(calendar) {
-  const shiftDays =
-    dayNumber(calendar.dayKeyAt(0)) - dayNumber(LOYALTY_CATALOG_TODAY);
-  return giftVoucherBodies(shiftDays, calendar.msAt(-3, 12, 0)).map(
-    ({ id, body }) => ({ path: `${GIFT_VOUCHERS_COLLECTION}/${id}`, data: body }),
+  const shiftDays = LocalDate.daysBetween(
+    LOYALTY_CATALOG_TODAY,
+    calendar.dayKeyAt(0),
+  );
+  return giftVoucherBodies(shiftDays, calendar.msAt(-3, 12 * 60)).map(
+    ({ id, body }) => ({
+      path: `${GIFT_VOUCHERS_COLLECTION}/${id}`,
+      data: body,
+    }),
   );
 }
 

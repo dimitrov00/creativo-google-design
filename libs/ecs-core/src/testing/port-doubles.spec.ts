@@ -22,8 +22,6 @@ import {
   Email,
   E164,
   AuthClaims,
-  EndReasonFields,
-  ImpersonationLifecycle,
   JournalEffect,
   JournalFeed,
   JournalVisibility,
@@ -31,13 +29,9 @@ import {
   StreakRule,
   TierOp,
   WriteOp,
-  BookingContact,
-  BookingDraft,
-  BookingFlowState,
   FLAG_NAMES,
   type FlagName,
   OtpCode,
-  Party,
   type Principal,
   SessionKind,
 } from '@core/components';
@@ -128,7 +122,6 @@ import {
 import {
   fixedOtpCryptoPorts,
   fixedTenantPorts,
-  memoryAppointmentNotePorts,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
   memoryAuthAdminPorts,
@@ -144,7 +137,6 @@ import {
   memoryDefaultLocationPorts,
   memoryIdPorts,
   memoryIdentityWorld,
-  memoryImpersonationReadPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
   memoryLoyaltyAccountReadPorts,
@@ -171,9 +163,7 @@ import {
   immediateTimerPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
-  memoryBookingDraftPorts,
   memoryFlagsPorts,
-  memoryKeyValuePorts,
   memoryMediaResolvePorts,
   memoryOtpChallengePorts,
   scriptedGatewayPorts,
@@ -182,7 +172,6 @@ import {
   FIXTURE_OTP_CODE,
   FIXTURE_OTP_SALT,
   FIXTURE_TENANT_ID,
-  impersonationSessionFixture,
   otpFixture,
   principalFixture,
   provisionedUserFixture,
@@ -503,7 +492,7 @@ describe('memoryClientStatsReadPorts — keyed by the client record (D29)', () =
 });
 
 describe('memoryCatalogReadPorts — the four live streams', () => {
-  it('lists the active ones by sortOrder, narrowed by category or shop', async () => {
+  it('lists the active ones by sortOrder, every category and every shop', async () => {
     const cut = serviceFixture({ sortOrder: 2 });
     const shave = serviceFixture({
       id: ServiceId.of('svc-shave'),
@@ -542,23 +531,15 @@ describe('memoryCatalogReadPorts — the four live streams', () => {
       categories,
       locations: [locationFixture(), hidden],
     });
-    expect((await first(ports.observeServices(null))).map((s) => s.id)).toEqual(
-      ['svc-kid', 'svc-shave', 'svc-classic-cut'],
-    );
-    expect(
-      (await first(ports.observeServices(FIXTURE_IDS.category))).map(
-        (s) => s.id,
-      ),
-    ).toEqual(['svc-shave', 'svc-classic-cut']);
-    expect((await first(ports.observeBarbers(null))).map((b) => b.id)).toEqual([
+    expect((await first(ports.observeServices())).map((s) => s.id)).toEqual([
+      'svc-kid',
+      'svc-shave',
+      'svc-classic-cut',
+    ]);
+    expect((await first(ports.observeBarbers())).map((b) => b.id)).toEqual([
       'b-petar',
       'b-ivan',
     ]);
-    expect(
-      (await first(ports.observeBarbers(LocationId.of('loc-other')))).map(
-        (b) => b.id,
-      ),
-    ).toEqual(['b-petar']);
     expect((await first(ports.observeCategories())).map((c) => c.id)).toEqual([
       'a',
       'b',
@@ -682,7 +663,7 @@ describe('memoryInboxPorts — an account’s inbox, in place', () => {
     );
   });
 
-  it('stamps one read, then every unread one — a stamped one keeps its stamp', async () => {
+  it('stamps one read — the others keep theirs', async () => {
     const inboxes = new Map([
       [ANA, [notification('a', 1), notification('b', 2)]],
     ]);
@@ -692,35 +673,6 @@ describe('memoryInboxPorts — an account’s inbox, in place', () => {
       READ_AT,
       null,
     ]);
-    const LATER = UtcEpochMs.plusMs(READ_AT, 60_000);
-    await ports.markAllNotificationsRead(ANA, LATER);
-    expect(inboxes.get(ANA)?.map((entry) => entry.readAtUtcMs)).toEqual([
-      READ_AT,
-      LATER,
-    ]);
-    await ports.markAllNotificationsRead(BOB, LATER);
-    expect(inboxes.get(BOB)).toEqual([]);
-  });
-});
-
-describe('memoryAppointmentNotePorts — a visit’s note, in place', () => {
-  it('saves a note and deletes it with null', async () => {
-    const notes = new Map();
-    const ports = memoryAppointmentNotePorts(notes);
-    const note = {
-      id: FIXTURE_IDS.appointment,
-      text: 'Без машинка',
-      authorUserId: ANA,
-      writtenAtUtcMs: utcMs('2026-09-28T09:00:00+03:00'),
-    };
-    await ports.saveAppointmentNote(FIXTURE_IDS.appointment, note);
-    expect(
-      await first(ports.observeAppointmentNote(FIXTURE_IDS.appointment)),
-    ).toBe(note);
-    await ports.saveAppointmentNote(FIXTURE_IDS.appointment, null);
-    expect(
-      await first(ports.observeAppointmentNote(FIXTURE_IDS.appointment)),
-    ).toBeNull();
   });
 });
 
@@ -895,28 +847,6 @@ describe('memoryUserSearchPorts — the staff client search', () => {
     expect(unwrapOk(await ports.searchUsers('pe', 20))).toEqual([anna, zara]);
     expect(unwrapOk(await ports.searchUsers('pe', 1))).toEqual([anna]);
     expect(unwrapOk(await ports.searchUsers('x', 20))).toEqual([]);
-  });
-});
-
-describe('memoryImpersonationReadPorts — the admin’s live session', () => {
-  it('answers the admin’s ACTIVE session, null when it ended or is another admin’s', async () => {
-    const active = impersonationSessionFixture();
-    const ended = impersonationSessionFixture({
-      id: impersonationSessionFixture().id,
-      adminUserId: UserId.of('u-other-admin'),
-      ...ImpersonationLifecycle.end(
-        ImpersonationLifecycle.active(),
-        active.expiresAtUtcMs,
-        EndReasonFields.expired(),
-      ),
-    });
-    const ports = memoryImpersonationReadPorts([ended, active]);
-    expect(
-      await first(ports.observeActiveImpersonation(active.adminUserId)),
-    ).toBe(active);
-    expect(
-      await first(ports.observeActiveImpersonation(UserId.of('u-other-admin'))),
-    ).toBeNull();
   });
 });
 
@@ -1592,32 +1522,6 @@ describe('memoryOtpChallengePorts — the three OTP callables, scripted', () => 
       await ports.verifyOtpChallenge(OtpId.of('otp-1'), OtpCode.of('123456')),
     ).toEqual(R.ok(SessionKind.Returning));
     expect(calls.map((call) => call.otpCall)).toEqual(['REQUEST', 'VERIFY']);
-  });
-});
-
-describe('memoryBookingDraftPorts and memoryKeyValuePorts — device storage', () => {
-  it('holds one draft: load, save over, clear', () => {
-    const ports = memoryBookingDraftPorts();
-    expect(ports.loadBookingDraft()).toEqual(R.ok(null));
-    const draft = BookingDraft.fresh(
-      BookingFlowState.initial(Party.anonymous()),
-      BookingContact.NONE,
-      null,
-    );
-    ports.saveBookingDraft(draft);
-    expect(ports.loadBookingDraft()).toEqual(R.ok(draft));
-    ports.clearBookingDraft();
-    expect(ports.loadBookingDraft()).toEqual(R.ok(null));
-  });
-
-  it('reads and writes the spec’s map in place', () => {
-    const values = new Map([['ui-lang', 'bg']]);
-    const ports = memoryKeyValuePorts(values);
-    expect(ports.kvGet('ui-lang')).toEqual(R.ok('bg'));
-    ports.kvSet('ui-lang', 'en');
-    expect(values.get('ui-lang')).toBe('en');
-    ports.kvRemove('ui-lang');
-    expect(ports.kvGet('ui-lang')).toEqual(R.ok(null));
   });
 });
 

@@ -5,43 +5,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "categoryId",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "serviceStatus",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "sortOrder",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "services",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "serviceStatus",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "sortOrder",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "barbers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "locationIds",
-          "arrayConfig": "CONTAINS"
-        },
-        {
-          "fieldPath": "barberStatus",
           "order": "ASCENDING"
         },
         {
@@ -120,20 +84,6 @@
         },
         {
           "fieldPath": "searchName",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "impersonationSessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "adminUserId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "impersonationStatus",
           "order": "ASCENDING"
         }
       ]
@@ -351,6 +301,11 @@
     {
       "collectionGroup": "services",
       "fieldPath": "bundleServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "barbers",
+      "fieldPath": "locationIds",
       "indexes": []
     },
     {

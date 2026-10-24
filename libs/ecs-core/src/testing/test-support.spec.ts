@@ -15,7 +15,6 @@ import {
   localDate,
   minute,
   pinnedNowUtcMs,
-  steppingNowUtcMs,
   utcMs,
   applyWrites,
   fixtureHash,
@@ -249,7 +248,7 @@ describe('memoryReadTx', () => {
     ).toEqual([]);
   });
 
-  it('reads a flattened ROOT key first — a discriminator at the root matches, a pre-flatten dotted path does not', async () => {
+  it('reads ROOT keys only — a discriminator at the root matches, a dotted path names no root key', async () => {
     const store = memoryStore([
       {
         path: ['appointments', 'f1'],
@@ -283,12 +282,12 @@ describe('memoryReadTx', () => {
     ).toEqual([]);
   });
 
-  it('reads dotted component paths and compares maps by value', async () => {
+  it('walks no dotted path and compares maps by value', async () => {
     expect(
       await ids({
         where: [{ field: 'status.kind', op: QueryOp.Eq, value: 'confirmed' }],
       }),
-    ).toEqual(['a1', 'a3']);
+    ).toEqual([]);
     expect(
       await ids({
         where: [
@@ -382,11 +381,8 @@ describe('the flatten-pass time fixtures (flatten-spec §2.2)', () => {
     expect(() => utcMs('2026-09-28T09:00:00')).toThrow(/broken fixture/);
   });
 
-  it('pinnedNowUtcMs and steppingNowUtcMs are deterministic', () => {
+  it('pinnedNowUtcMs is deterministic', () => {
     expect(pinnedNowUtcMs()()).toBe(FIXTURE_NOW_UTC_MS);
-    const clock = steppingNowUtcMs(unwrapOk(UtcEpochMs.of(100)), 10);
-    expect([clock(), clock(), clock()]).toEqual([100, 110, 120]);
-    expect(steppingNowUtcMs()()).toBe(FIXTURE_NOW_UTC_MS);
   });
 });
 

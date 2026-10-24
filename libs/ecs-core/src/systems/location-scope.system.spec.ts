@@ -26,24 +26,12 @@ describe('LocationScopeSystem.serves', () => {
   });
 });
 
-describe('LocationScopeSystem — services and parties', () => {
+describe('LocationScopeSystem — catalogue entries', () => {
   it('reads a service entity straight from the catalogue', () => {
     const everywhere = serviceFixture({ locationIds: [] });
     const centreOnly = serviceFixture({ locationIds: [CENTER] });
     expect(LocationScopeSystem.servesLocation(everywhere, MLADOST)).toBe(true);
     expect(LocationScopeSystem.servesLocation(centreOnly, MLADOST)).toBe(false);
-  });
-
-  it('keeps only the shops that serve every entry, in the given order', () => {
-    const party = [
-      { locationIds: [MLADOST, CENTER] },
-      { locationIds: [] },
-      { locationIds: [CENTER] },
-    ];
-    expect(
-      LocationScopeSystem.shopsServingAll([MLADOST, CENTER], party),
-    ).toEqual([CENTER]);
-    expect(LocationScopeSystem.allServe([], MLADOST)).toBe(true);
   });
 
   it('agrees with "empty or listed" for any scope (property)', () => {
@@ -58,11 +46,12 @@ describe('LocationScopeSystem — services and parties', () => {
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
-    const shops = deepFreeze([MLADOST, CENTER]);
-    const party = deepFreeze([{ locationIds: [CENTER] }, { locationIds: [] }]);
-    const once = LocationScopeSystem.shopsServingAll(shops, party);
-    expect(LocationScopeSystem.shopsServingAll(shops, party)).toEqual(once);
-    expect(shops).toEqual([MLADOST, CENTER]);
-    expect(party).toEqual([{ locationIds: [CENTER] }, { locationIds: [] }]);
+    const scope = deepFreeze([MLADOST, CENTER]);
+    const entry = deepFreeze({ locationIds: [CENTER] });
+    const once = LocationScopeSystem.servesLocation(entry, MLADOST);
+    expect(LocationScopeSystem.servesLocation(entry, MLADOST)).toBe(once);
+    expect(LocationScopeSystem.serves(scope, CENTER)).toBe(true);
+    expect(scope).toEqual([MLADOST, CENTER]);
+    expect(entry).toEqual({ locationIds: [CENTER] });
   });
 });

@@ -18,11 +18,4 @@ export const PointsExpiry = {
   none(): PointsExpiry {
     return { pointsExpireOn: null, pointsExpiryNoticeFrom: null };
   },
-
-  of(
-    pointsExpireOn: LocalDate,
-    pointsExpiryNoticeFrom: LocalDate,
-  ): PointsExpiry {
-    return { pointsExpireOn, pointsExpiryNoticeFrom };
-  },
 } as const;

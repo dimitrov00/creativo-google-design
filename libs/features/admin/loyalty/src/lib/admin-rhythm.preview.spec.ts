@@ -44,7 +44,7 @@ import {
   rhythmPreviewSource,
   sampleRhythmFacts,
   sampleRhythmRun,
-  streakFactsOf,
+  streakFactsReader,
 } from './admin-rhythm.preview';
 
 // ── The shop's day, and its clients ──────────────────────────────────────
@@ -184,15 +184,16 @@ describe('the preview’s figures', () => {
   });
 });
 
-describe('streakFactsOf', () => {
+describe('streakFactsReader', () => {
+  const factsOf = streakFactsReader(FIXTURE_TIME_ZONE);
+
   it('counts every worked visit of the last year, on its day in Sofia', () => {
-    const facts = streakFactsOf(
+    const facts = factsOf(
       statsOf('client-1', [
         instant('2026-06-10T09:00:00+00:00'),
         // 01:30 on the 28th in Sofia: the visit's day is the shop's, not UTC's.
         instant('2026-09-27T22:30:00+00:00'),
       ]),
-      FIXTURE_TIME_ZONE,
     );
 
     expect(facts.visits).toEqual([
@@ -210,10 +211,7 @@ describe('streakFactsOf', () => {
   });
 
   it('knows nothing the statistics do not hold', () => {
-    const facts = streakFactsOf(
-      statsOf('client-1', [daysAgo(3)]),
-      FIXTURE_TIME_ZONE,
-    );
+    const facts = factsOf(statsOf('client-1', [daysAgo(3)]));
 
     expect(facts.excused).toEqual([]);
     expect(facts.bookings).toEqual([]);
@@ -222,9 +220,7 @@ describe('streakFactsOf', () => {
   });
 
   it('hands a client who never came no visit', () => {
-    expect(
-      streakFactsOf(statsOf('client-1'), FIXTURE_TIME_ZONE).visits,
-    ).toEqual([]);
+    expect(factsOf(statsOf('client-1')).visits).toEqual([]);
   });
 });
 
@@ -433,8 +429,8 @@ describe('rhythmPreviewOf', () => {
   const gone = statsOf('client-gone', [daysAgo(200)]);
   const never = statsOf('client-never');
   const facts = {
-    clients: [steady, sixWeeks, gone, never].map((record) =>
-      streakFactsOf(record, FIXTURE_TIME_ZONE),
+    clients: [steady, sixWeeks, gone, never].map(
+      streakFactsReader(FIXTURE_TIME_ZONE),
     ),
     capped: false,
   };

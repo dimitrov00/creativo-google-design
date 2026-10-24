@@ -11,7 +11,7 @@ import { CatalogPricingSystem } from './catalog-pricing.system';
 
 /*
  * The catalogue views' numbers (features/shared/catalog `catalog.vm.ts`,
- * `catalog-presenter.service.ts`): the tile's "from" price is the cheapest
+ * `catalog-wording.service.ts`): the tile's "from" price is the cheapest
  * BASE offering; the card's tag folds EVERY bookable terms and says «от»
  * only when prices differ; the duration range spans offerings × variants;
  * a service nobody performs quotes its base.

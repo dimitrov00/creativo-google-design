@@ -49,13 +49,12 @@ export class CatalogContentService {
    */
   private readonly media = mediaUrlCache(inject(MEDIA_RESOLVE_PORTS));
 
-  // `null` = every category / every shop: the whole active catalogue.
-  private readonly servicesResult = toSignal(
-    this.catalog.observeServices(null),
-    { initialValue: null },
-  );
+  // The whole active catalogue: every category, every shop.
+  private readonly servicesResult = toSignal(this.catalog.observeServices(), {
+    initialValue: null,
+  });
 
-  private readonly barbersResult = toSignal(this.catalog.observeBarbers(null), {
+  private readonly barbersResult = toSignal(this.catalog.observeBarbers(), {
     initialValue: null,
   });
 

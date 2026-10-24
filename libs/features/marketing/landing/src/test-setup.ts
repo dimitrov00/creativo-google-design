@@ -4,9 +4,10 @@ import { setupTestBed } from '@analogjs/vitest-angular/setup-testbed';
 
 setupTestBed();
 
-// jsdom does not implement matchMedia — CursorService/gsap's ScrollTrigger
-// rely on it to read prefers-color-scheme / prefers-reduced-motion / pointer
-// type. Tests override it per-case.
+// jsdom does not implement matchMedia — the hiring, work-gallery and
+// locations sections read prefers-reduced-motion through it, as do the DS
+// reveal directive and ambient video the sections compose. Tests override it
+// per-case.
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
@@ -46,8 +47,9 @@ if (!window.IntersectionObserver) {
   } as unknown as typeof IntersectionObserver;
 }
 
-// jsdom does not implement ResizeObserver — CursorDotComponent uses it to
-// re-measure a "fill" target if its size changes while hovered.
+// jsdom does not implement ResizeObserver — the work gallery re-measures
+// itself with it, and the DS scroll row, menu and modal sheet observe their
+// boxes the same way.
 if (!window.ResizeObserver) {
   window.ResizeObserver = class {
     observe(): void {

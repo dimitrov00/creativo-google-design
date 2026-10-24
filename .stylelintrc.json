@@ -1,15 +1,15 @@
 {
-  "//": "Token-enforcement lint (docs/styling-conventions.md). Design values may only come from --cr-* tokens: typography via text roles, stacking via the layer scale, motion via the motion tokens. The token sources themselves (design-tokens/css, typography.css) are exempt via overrides. Deliberate one-offs (the three art-directed heroes, icon glyph sizes) carry inline stylelint-disable comments naming their case-study rationale.",
+  "//": "Token-enforcement lint (docs/styling-conventions.md). Design values come from the --sys-* tokens of libs/ui/tokens: typography via the --sys-font-* text roles (the role carries its weight; a literal 400-700 is the one sanctioned override), tracking via --sys-tracking-*, stacking via the --sys-layer-* scale, motion via the --sys-motion-* tokens. The @font-face weight range of a variable face (`100 900`) is a descriptor, not a design value. Deliberate one-offs carry inline stylelint-disable comments naming their rationale.",
   "ignoreFiles": ["tools/icons/__fixtures__/**"],
   "rules": {
     "declaration-property-value-allowed-list": {
-      "font": ["/^var\\(--cr-text-/", "inherit"],
-      "font-size": ["/^var\\(--cr-/", "/^[0-9.]+em$/", "inherit"],
-      "font-weight": ["/^var\\(--cr-font-weight-/", "inherit"],
-      "letter-spacing": ["/^var\\(--cr-/", "normal", "inherit"],
-      "line-height": ["/^var\\(--cr-/", "1", "normal", "inherit"],
+      "font": ["/^var\\(--sys-font-/", "inherit"],
+      "font-size": ["/^var\\(--sys-/", "/^[0-9.]+em$/", "inherit"],
+      "font-weight": ["/^[4-7]00$/", "/^[1-9]00 [1-9]00$/", "inherit"],
+      "letter-spacing": ["/^var\\(--sys-/", "normal", "inherit"],
+      "line-height": ["/^var\\(--sys-/", "1", "normal", "inherit"],
       "text-transform": ["uppercase", "none"],
-      "z-index": ["/^var\\(--cr-layer-/", "/^-?[0-9]$/", "auto"]
+      "z-index": ["/^var\\(--sys-layer-/", "/^-?[0-9]$/", "auto"]
     },
     "declaration-property-value-disallowed-list": {
       "/^(transition|animation)$/": ["/(^|[^-\\w])[0-9]+m?s/"],
@@ -28,24 +28,8 @@
   },
   "overrides": [
     {
-      "files": [
-        "libs/shared/design-tokens/css/**/*.css",
-        "libs/shared/ui/src/lib/typography/typography.css",
-        "libs/shared/ui/src/lib/reset/reset.css"
-      ],
-      "rules": {
-        "declaration-property-value-allowed-list": null,
-        "declaration-property-value-disallowed-list": null
-      }
-    },
-    {
-      "//": "The new --sys-* design system (blueprint docs/migration-blueprint.md §3) is its own self-contained, newly-introduced token-governed subsystem — every design value already traces to a --sys-* custom property (or a small set of deliberate literal font-weight numbers, matching the blueprint's own §3.1 example code) enforced by the co-located CSS itself rather than this cr-*-specific allow-list. Exempted the same way the cr-* token sources above are. Extends to libs/features/**: every Phase 6 feature slice (blueprint §8) styles itself the same way — this isn't landing-specific, just the first slice's CSS to hit the stale cr-*-only allow-list. The icon-font ban (font-family) is re-declared here because this override replaces the whole rule: no stylesheet may summon Material Symbols — icons are inline SVG from libs/ui/icons.",
-      "files": [
-        "libs/ui/**/*.css",
-        "libs/features/**/*.css",
-        "apps/showcase/src/**/*.css",
-        "apps/web/src/styles.css"
-      ],
+      "//": "The token sources themselves (tokens.css, the two theme files, reset.css, reduced-motion.css) and every DS and feature stylesheet are exempt from the two value lists. The token files define the values; the DS and feature sheets still carry ~70 literal metrics this list would refuse (icon glyph sizes through component custom properties, a few rem font sizes and line heights, keyframe shorthands with literal durations) — they are governed by their co-located CSS and the accent specs of libs/ui/tokens until those move onto tokens, and then the trees leave this override. The two app stylesheets and the showcase are governed by the lists above. The icon-font ban (font-family) is re-declared here because this override replaces the whole rule: no stylesheet may summon Material Symbols — icons are inline SVG from libs/ui/icons.",
+      "files": ["libs/ui/**/*.css", "libs/features/**/*.css"],
       "rules": {
         "declaration-property-value-allowed-list": null,
         "declaration-property-value-disallowed-list": {

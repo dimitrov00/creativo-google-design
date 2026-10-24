@@ -153,11 +153,7 @@ describe('standing double seatings — a visit is never made worse, and never fr
 
   it('stands nothing for a new booking', () => {
     expect(
-      S.seatsTwiceAnew(
-        S.none(),
-        [legacy[0] as SeatedSpan],
-        legacy[1] as SeatedSpan,
-      ),
+      S.seatsTwiceAnew([], [legacy[0] as SeatedSpan], legacy[1] as SeatedSpan),
     ).toBe(true);
   });
 

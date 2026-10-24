@@ -44,8 +44,8 @@ const CARRIED_LINE = 'carried-';
 /**
  * What a move plan refuses with: the commit's `BOOKING_INVALID_INPUT`
  * (`status`, `seats`, `subject`, `seat_resolved`), or a carried seat it
- * cannot place. A system-tier union of primitives structs naming
- * `MoveSystem`'s API (Phase 4a 4A-6).
+ * cannot place — both members declared in `@core/errors`; this alias only
+ * names the union `MoveSystem.plan` answers.
  */
 export type MoveError = BookingError.InvalidInput | MoveCarriedSeatUnplaceable;
 
@@ -200,7 +200,7 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
 /**
  * A CLIENT's move of a visit — the shift, the carried seats and the plan
  * (`move-shift.ts`, `carried-reach.ts`, `rider-placement.ts`,
- * `Appointment.moveAnchor/seatsTheBookerCanMove/chairTimes`, the plan of
+ * `Appointment.moveAnchor/chairTimes`, the plan of
  * `reschedule-booking.use-case.ts`). The cart stands in for the seats the
  * booker can name (their own seat and anonymous guests); everybody else is
  * CARRIED, keeping their distance from the move anchor — side by side stays
@@ -221,23 +221,6 @@ export const MoveSystem = {
    * `cartEarliest` — `null` when its kept distance would leave the shop day.
    */
   carriedStartMinutes,
-
-  /**
-   * The seats the booker's own cart can name, in seat order
-   * (`Seat.isMovableByBooker`) — an account rule, so it reads the seats'
-   * accounts alone (D29) and hands back the input's own structs.
-   */
-  seatsTheBookerCanMove<S extends AccountSeat>(
-    appointment: { readonly seats: readonly S[] },
-    ownerUserId: UserId | null,
-  ): readonly S[] {
-    const movable: S[] = [];
-    for (let i = 0; i < appointment.seats.length; i++) {
-      const seat = appointment.seats[i] as S;
-      if (Seat.isMovableByBooker(seat, ownerUserId)) movable.push(seat);
-    }
-    return movable;
-  },
 
   /** Can the booker move this visit at all? `false` when nothing on it is theirs to name. */
   hasSeatTheBookerCanMove(

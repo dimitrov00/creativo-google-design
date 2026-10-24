@@ -80,16 +80,16 @@ through `src/edge.ts` and `src/wire/*`. It gets a scope of its own rather than
 
 ## `type:*` — architectural layer
 
-| Tag                   | Meaning                                                                                                                                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type:app`            | A deployable application (`apps/web`, `apps/showcase`, `apps/functions`)                                                                                                                                                  |
-| `type:feature`        | A routed presentation slice: Angular components, stores and their templates, reading `@core/*` data and calling `@core/systems` directly (`libs/features/*`)                                                              |
-| `type:ui`             | The design system: presentational components and modifiers, no business logic or data access (`libs/ui/*`, `libs/shared/ui`)                                                                                              |
-| `type:infrastructure` | Adapters implementing `@core/ports` bundles over one SDK each, the web's `InjectionToken` wiring and the SDK providers (`libs/infrastructure/*`)                                                                          |
-| `type:domain`         | `libs/ecs-core` **only** (D10(a)): primitives, components, entities, ports, systems and pipelines — pure TypeScript, zero Angular, zero Firebase                                                                          |
-| `type:util`           | Pure helpers with no framework opinions (`libs/shared/cursor`), and the `scope:tooling` projects `tools/lint-rules`, `tools/icons`, `tools/flags`, `tools/verify` (Node scripts, `.mjs` — outside the `.ts` rules, below) |
-| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/shared/design-tokens`, `libs/ui/tokens`)                                                                                                                               |
-| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed`, the `seed-tools` project)                                                                                                                    |
+| Tag                   | Meaning                                                                                                                                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type:app`            | A deployable application (`apps/web`, `apps/showcase`, `apps/functions`)                                                                                                                                                      |
+| `type:feature`        | A routed presentation slice: Angular components, stores and their templates, reading `@core/*` data and calling `@core/systems` directly (`libs/features/*`)                                                                  |
+| `type:ui`             | The design system: presentational components and modifiers, no business logic or data access (`libs/ui/*`)                                                                                                                    |
+| `type:infrastructure` | Adapters implementing `@core/ports` bundles over one SDK each, the web's `InjectionToken` wiring and the SDK providers (`libs/infrastructure/*`)                                                                              |
+| `type:domain`         | `libs/ecs-core` **only** (D10(a)): primitives, components, entities, ports, systems and pipelines — pure TypeScript, zero Angular, zero Firebase                                                                              |
+| `type:util`           | Pure helpers with no framework opinions (`libs/shared/view-state`), and the `scope:tooling` projects `tools/lint-rules`, `tools/icons`, `tools/flags`, `tools/verify` (Node scripts, `.mjs` — outside the `.ts` rules, below) |
+| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/ui/tokens`: the `--sys-*` CSS, the baseline reset and reduced-motion sheets, the theme vocabulary)                                                                         |
+| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed`, the `seed-tools` project)                                                                                                                        |
 
 **Rule** (the root `depConstraints`, layer half):
 
@@ -211,7 +211,7 @@ and the lint-rule specs therefore name `@core/*` aliases freely (the deep
 relative-import half of Law 8 still covers them through the layering
 verifier).
 
-## Today's projects (46)
+## Today's projects (43)
 
 | Project                | Root                                 | Tags                                  |
 | ---------------------- | ------------------------------------ | ------------------------------------- |
@@ -252,10 +252,7 @@ verifier).
 | `patterns`             | `libs/ui/patterns`                   | `scope:shared`, `type:ui`             |
 | `ui-wall-clock`        | `libs/ui/wall-clock`                 | `scope:shared`, `type:ui`             |
 | `tokens`               | `libs/ui/tokens`                     | `scope:shared`, `type:tokens`         |
-| `ui` (shared)          | `libs/shared/ui`                     | `scope:shared`, `type:ui`             |
-| `cursor`               | `libs/shared/cursor`                 | `scope:shared`, `type:util`           |
 | `view-state`           | `libs/shared/view-state`             | `scope:shared`, `type:util`           |
-| `design-tokens`        | `libs/shared/design-tokens`          | `scope:shared`, `type:tokens`         |
 | `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
 | `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
 | `lint-rules`           | `tools/lint-rules`                   | `scope:tooling`, `type:util`          |
@@ -263,7 +260,7 @@ verifier).
 | `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:util`          |
 
 Read off every `project.json` (`git ls-files '**/project.json'`); check it at
-any time with `pnpm nx show projects` (46) and `pnpm nx graph`.
+any time with `pnpm nx show projects` (43) and `pnpm nx graph`.
 
 Two of them exist for the UI residue cleanup
 (`docs/architecture/flips/ui-residue-cleanup.md` UR-2, UR-9) and carry a
@@ -346,3 +343,17 @@ no dependencies — the shared read-state dictionaries) and
 moved verbatim out of `libs/features/shared/visits`, which no longer
 re-exports it). No `depConstraints` row changed. The plan is
 `docs/architecture/flips/ui-residue-cleanup.md`.
+
+**2026-10-24 — the `cr` design system's libraries deleted.** `libs/shared/ui`
+(`ui`, `type:ui`: the `cr-*` Button, Input, Card, Badge, ThemeToggle and the
+`crText`/`crMaterial`/`crShape` directives), `libs/shared/cursor` (`cursor`,
+`type:util`: an Angular cursor-dot component, directive and service, reachable
+only from `libs/shared/ui`) and `libs/shared/design-tokens` (`design-tokens`,
+`type:tokens`: the retired `--cr-*` token CSS and its TS motion mirror) had no
+importer left outside their own family once the web app and the showcase
+moved onto `libs/ui` (46 → 43 projects). The two sheets still live —
+`reset.css` and `reduced-motion.css` — moved into `libs/ui/tokens` at the
+same `@import` position, so the web's built global stylesheet is
+byte-identical; the showcase loses only the two retired layers
+(`cr-tokens`, `cr-components`). No `depConstraints` row changed:
+`type:util` and `type:tokens` keep their other members.

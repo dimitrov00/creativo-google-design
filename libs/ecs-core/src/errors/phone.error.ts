@@ -18,7 +18,7 @@ export type PhoneErrorCode =
 /**
  * Why a raw string failed to parse — each value IS the reason segment of its
  * i18n key, `errors.PHONE_INVALID.<reason>` (`PHONE_INVALID.too-short`,
- * nothing mapped; `translateDomainError`'s `reason` argument builds it), so
+ * nothing mapped; `translateCodedError`'s `reason` argument builds it), so
  * the UI says "too short, for example 088 123 4567" instead of one generic
  * "invalid". `Invalid` is the fallback for a number that parses but fails
  * validation without a more specific diagnosis. The strings are the legacy

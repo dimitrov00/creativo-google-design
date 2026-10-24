@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import type { ServiceVm } from '../content/landing-content';
+import type { ServiceVm } from '@creativo/features/shared/catalog';
 
 /**
  * Which service the landing's detail sheet is showing, if any.

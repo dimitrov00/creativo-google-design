@@ -79,7 +79,8 @@ a `.js-cursor-target`-equivalent element, the dot itself resizes/repositions
 (continuously re-measured) to exactly overlay the target's bounding box —
 `mix-blend-mode: exclusion` does the contrast work with no color logic
 needed. Separately, the target gets a `filter: invert(1)`-style treatment.
-Our reimplementation (`libs/shared/cursor`): `CursorService.activeTarget`
-signal + `CursorTargetDirective` ([crCursorTarget]) + `CursorDotComponent`
-follow the same model, simplified (no perpetual rAF loop — re-measure on
+Our reimplementation (`libs/shared/cursor`, deleted in pass B, 2026-10-24,
+with no consumer left): `CursorService.activeTarget` signal +
+`CursorTargetDirective` ([crCursorTarget]) + `CursorDotComponent` followed
+the same model, simplified (no perpetual rAF loop — re-measure on
 enter/scroll/ResizeObserver instead).

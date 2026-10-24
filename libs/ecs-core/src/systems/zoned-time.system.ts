@@ -407,7 +407,8 @@ export const ZonedTimeSystem = {
   checkZone(raw: string): Result<TimeZone, TimeError> {
     // Fast path: the cache is keyed by CANONICAL ids only, so a hit is a
     // zone already checked and canonical — no `resolvedOptions()` per call
-    // (the shims check a zone per row, per seat).
+    // (a boundary checks the zone of every location it reads, the same few
+    // zones again and again).
     if (formatters.has(raw)) return Result.ok(raw as TimeZone);
     const formatter = formatterFor(raw);
     return formatter === null
@@ -511,8 +512,9 @@ export const ZonedTimeSystem = {
 
   /**
    * ISO-8601 WITH an explicit offset (`Z`, `±HH:mm`, `±HHmm`, `±HH`) → the
-   * instant — legacy stored and wire strings in the shims, and specs. The
-   * string names an instant on its own, so no zone is consulted. No offset →
+   * instant — a delivered event's RFC 3339 time (`triggers.wire.ts`), the
+   * seed's and the specs' fixtures. The string names an instant on its own,
+   * so no zone is consulted. No offset →
    * `TIME_INVALID_DATE_TIME` (`UNPARSABLE`): a bare wall clock is ingested
    * with {@link toUtc} and the location's zone, never guessed here. Accepts
    * the forms the legacy `ZonedDateTime.fromISO` read (1–9 fraction digits
@@ -550,7 +552,7 @@ export const ZonedTimeSystem = {
   /**
    * An ISO-8601 start → its instant, on the shop's terms (flatten-spec
    * §2.4) — for an ISO text a boundary still meets (a seed, a fixture, a
-   * legacy stored `*Iso` field); a callable's start arrives as `localDate` +
+   * host's raw ISO input); a callable's start arrives as `localDate` +
    * `*Minutes` and goes straight to {@link toUtc}. A string WITH an offset
    * names its instant ({@link parseOffsetIso});
    * a bare wall clock (`2026-03-29T10:00`, a date alone is its midnight) is
@@ -585,7 +587,9 @@ export const ZonedTimeSystem = {
    * The instant as ISO-8601 on the zone's wall clock WITH the offset in force
    * — `2026-10-10T14:00:00.000+03:00` in Sofia — byte-identical to the legacy
    * `ZonedDateTime.toISO()` (milliseconds always, `±HH:MM` always; a zero
-   * offset prints `+00:00`). For `.ics` and the edge's legacy wire params.
+   * offset prints `+00:00`). For a reader that needs the instant as text on
+   * the shop's clock — the visit editor's leg start (`shopIsoOf`) — and the
+   * specs' fixtures.
    */
   toIso(utcEpochMs: UtcEpochMs, timeZone: TimeZone): string {
     const formatter = formatterFor(timeZone);

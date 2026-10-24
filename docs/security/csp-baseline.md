@@ -1,5 +1,15 @@
 # CSP baseline
 
+> **Status (2026-10-24, pass B).** This is the Phase-0 record and most of
+> its setting is gone: `apps/marketing`, `apps/client` and `apps/staff`
+> were collapsed into the one CSR app `apps/web` (Firebase Hosting), there
+> is no per-request server (`@angular/ssr`, `@angular/platform-server` and
+> `express` were removed in pass B), and no app loads Google Fonts any more
+> — the faces are self-hosted through `@fontsource` — so the
+> `fonts.googleapis.com` / `fonts.gstatic.com` allowances below can go.
+> `firebase.json` declares no `headers` block yet; the target policy below
+> is still the intent for it.
+
 `apps/marketing` is the first app in this workspace with a real per-request
 server (`apps/marketing/src/server.ts`) and ships the target policy below for
 real, verified end-to-end against the built SSR server (see "Verified"

@@ -2,7 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { DayWindows } from '@core/components';
-import { CatalogPresenter } from '@creativo/features/shared/catalog';
+import { CatalogWording } from '@creativo/features/shared/catalog';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
@@ -70,7 +70,7 @@ interface WatchedDayVm {
   host: { 'data-testid': 'booking-waitlisted-step' },
 })
 export class BookingWaitlistedStep {
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
 
   protected readonly days = computed<readonly WatchedDayVm[]>(() =>

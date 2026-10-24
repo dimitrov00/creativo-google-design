@@ -15,7 +15,7 @@ import {
   saveOwnProfile,
 } from '@creativo/features/client/account-state';
 import { GATEWAY_PORTS } from '@creativo/infrastructure/firebase-app';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { BookingContact, type CountryIso2, type E164 } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import {
@@ -216,7 +216,7 @@ export class BookingContactSheet {
       },
     );
     if (!result.ok) {
-      this.error.set(translateDomainError(this.transloco, result.error));
+      this.error.set(translateCodedError(this.transloco, result.error));
       return;
     }
     const contact = result.value;

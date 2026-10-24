@@ -1,7 +1,6 @@
 import { BehaviorSubject, defer, map, of, type Observable } from 'rxjs';
 import {
   type AuthClaims,
-  type BookingDraft,
   BookingLifecycle,
   type FlagName,
   type OtpCode,
@@ -11,7 +10,6 @@ import {
   BookingPolicy,
   CouponStatus,
   BarberStatus,
-  ImpersonationStatus,
   JournalVisibility,
   LocationStatus,
   ParsedIdentifier,
@@ -26,7 +24,6 @@ import {
   IdentifierChannel,
   OtpId,
   Result,
-  type AppointmentId,
   type CourseId,
   type CustomerId,
   type EventId,
@@ -47,7 +44,6 @@ import {
   Collections,
   Subcollections,
   type Appointment,
-  type AppointmentNote,
   type AppointmentPhoto,
   type AuditEntry,
   type BadgeProgress,
@@ -62,7 +58,6 @@ import {
   type CouponGrant,
   type Customer,
   type GiftVoucher,
-  type ImpersonationSession,
   type InboxNotification,
   type JournalEntry,
   type LoyaltyAccount,
@@ -80,14 +75,12 @@ import {
   type WaitlistRequest,
 } from '@core/entities';
 import type {
-  AppointmentNotePorts,
   AppointmentPhotoPorts,
   AppointmentReadPorts,
   AuthAdminPorts,
   AuthSessionPorts,
   AuthUserLookupPorts,
   AvatarPorts,
-  BookingDraftPorts,
   CallableClient,
   CallableName,
   CallableWire,
@@ -103,9 +96,7 @@ import type {
   FlagsPorts,
   GatewayPorts,
   IdPorts,
-  ImpersonationReadPorts,
   InboxPorts,
-  KeyValuePorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalog,
@@ -444,32 +435,23 @@ export type CatalogReadState = {
 };
 
 /**
- * `CATALOG_PORTS` — the four live streams: ACTIVE services (in a category
- * when named), ACTIVE barbers (`locationIds` contains a named shop), every
- * category, ACTIVE shops — each by `sortOrder`.
+ * `CATALOG_PORTS` — the four live streams: ACTIVE services, ACTIVE barbers,
+ * every category, ACTIVE shops — each by `sortOrder`.
  */
 export function memoryCatalogReadPorts(
   state: Partial<CatalogReadState> = {},
 ): CatalogReadPorts {
   return {
-    observeServices: (categoryId) =>
+    observeServices: () =>
       stream(() =>
         (state.services ?? [])
-          .filter(
-            (entry) =>
-              entry.serviceStatus === ServiceStatus.Active &&
-              (categoryId === null || entry.categoryId === categoryId),
-          )
+          .filter((entry) => entry.serviceStatus === ServiceStatus.Active)
           .sort(bySortOrder),
       ),
-    observeBarbers: (locationId) =>
+    observeBarbers: () =>
       stream(() =>
         (state.barbers ?? [])
-          .filter(
-            (entry) =>
-              entry.barberStatus === BarberStatus.Active &&
-              (locationId === null || entry.locationIds.includes(locationId)),
-          )
+          .filter((entry) => entry.barberStatus === BarberStatus.Active)
           .sort(bySortOrder),
       ),
     observeCategories: () =>
@@ -575,34 +557,10 @@ export function memoryInboxPorts(
       }
       return Result.ok(undefined);
     },
-    markAllNotificationsRead: async (userId, readAtUtcMs) => {
-      const inbox = inboxOf(userId);
-      inbox.forEach((entry, i) => {
-        if (entry.readAtUtcMs === null) {
-          inbox.splice(i, 1, { ...entry, readAtUtcMs });
-        }
-      });
-      return Result.ok(undefined);
-    },
   };
 }
 
-// ── Notes and photos ─────────────────────────────────────────────────────
-
-/** `APPOINTMENT_NOTE_PORTS` — `appointmentNotes/{appointmentId}` in `notes`, written IN PLACE (`null` deletes). */
-export function memoryAppointmentNotePorts(
-  notes: Map<AppointmentId, AppointmentNote>,
-): AppointmentNotePorts {
-  return {
-    observeAppointmentNote: (appointmentId) =>
-      stream(() => notes.get(appointmentId) ?? null),
-    saveAppointmentNote: async (appointmentId, note) => {
-      if (note === null) notes.delete(appointmentId);
-      else notes.set(appointmentId, note);
-      return Result.ok(undefined);
-    },
-  };
-}
+// ── Photos ───────────────────────────────────────────────────────────────
 
 /**
  * `APPOINTMENT_PHOTO_PORTS` — `appointmentPhotos` in `photos`, written IN
@@ -712,23 +670,6 @@ export function memoryUserSearchPorts(users: readonly User[]): UserSearchPorts {
               byString(a.id, b.id),
           )
           .slice(0, limit),
-      ),
-  };
-}
-
-/** `IMPERSONATION_READ_PORTS` — the admin's `ACTIVE` session in `sessions` (the first one), or `null`. */
-export function memoryImpersonationReadPorts(
-  sessions: readonly ImpersonationSession[],
-): ImpersonationReadPorts {
-  return {
-    observeActiveImpersonation: (adminUserId) =>
-      stream(
-        () =>
-          sessions.find(
-            (entry) =>
-              entry.adminUserId === adminUserId &&
-              entry.impersonationStatus === ImpersonationStatus.Active,
-          ) ?? null,
       ),
   };
 }
@@ -1453,44 +1394,6 @@ export function memoryOtpChallengePorts(
     completeRegistration: async (identifier, fields) => {
       calls.push({ otpCall: 'COMPLETE', identifier, fields });
       return script.complete ?? Result.ok(undefined);
-    },
-  };
-}
-
-/**
- * `BOOKING_DRAFT_PORTS` — one draft held in memory (`initial` unless saved
- * over); a save stores the draft as given, a clear empties it.
- */
-export function memoryBookingDraftPorts(
-  initial: BookingDraft | null = null,
-): BookingDraftPorts {
-  let held = initial;
-  return {
-    loadBookingDraft: () => Result.ok(held),
-    saveBookingDraft: (draft) => {
-      held = draft;
-      return Result.ok(undefined);
-    },
-    clearBookingDraft: () => {
-      held = null;
-      return Result.ok(undefined);
-    },
-  };
-}
-
-/** `KEY_VALUE_PORTS` — the spec's map, read and written in place. */
-export function memoryKeyValuePorts(
-  values: Map<string, string> = new Map(),
-): KeyValuePorts {
-  return {
-    kvGet: (key) => Result.ok(values.get(key) ?? null),
-    kvSet: (key, value) => {
-      values.set(key, value);
-      return Result.ok(undefined);
-    },
-    kvRemove: (key) => {
-      values.delete(key);
-      return Result.ok(undefined);
     },
   };
 }

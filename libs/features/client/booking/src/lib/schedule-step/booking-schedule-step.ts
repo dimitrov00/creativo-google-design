@@ -45,7 +45,7 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 import { formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
-  CatalogPresenter,
+  CatalogWording,
 } from '@creativo/features/shared/catalog';
 import { NgTemplateOutlet } from '@angular/common';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
@@ -185,7 +185,7 @@ export class BookingScheduleStep {
   private readonly accountState = inject(AccountStateService);
 
   protected readonly catalog = inject(CatalogContentService);
-  protected readonly content = inject(CatalogPresenter);
+  protected readonly content = inject(CatalogWording);
   protected readonly store = inject(BookingFlowStore);
   /** The shop-coverage answers, for the template. */
   protected readonly ShopCoverage = ShopCoverage;

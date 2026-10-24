@@ -44,6 +44,137 @@ function withLifecycle(
   };
 }
 
+/*
+ * The four verbs on the LIFECYCLE SLICE (`*Slice`) — the grant's state
+ * machine, total on `GrantLifecycle`; each entity verb of
+ * {@link CouponGrantSystem} is its slice verb with the grant's meta and
+ * value carried through untouched.
+ */
+
+/**
+ * One redemption (`markUsed`): a single-use grant goes straight to
+ * `USED`; a multi-use one counts down, and is `USED` at zero. `note` is
+ * the caller's account of the channel («appointment abc123»), `''` when
+ * none was given.
+ */
+function burnSlice(
+  grant: GrantLifecycle,
+  atUtcMs: UtcEpochMs,
+  note: string,
+): Result<GrantLifecycle, EngagementError.CouponGrantNotActive> {
+  if (grant.grantStatus !== GrantStatus.Active) {
+    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
+  }
+  if (grant.grantCapacity === GrantCapacity.SingleUse) {
+    return Result.ok(GrantLifecycle.used(atUtcMs, note));
+  }
+  const remaining = grant.usesRemaining - 1;
+  if (remaining <= 0) {
+    return Result.ok(GrantLifecycle.used(atUtcMs, note));
+  }
+  return Result.ok(
+    GrantLifecycle.active(
+      {
+        grantCapacity: GrantCapacity.MultiUse,
+        usesRemaining: remaining,
+        usesGranted: grant.usesGranted,
+      },
+      grant,
+    ),
+  );
+}
+
+/**
+ * The exact inverse of {@link burn} — a grant discount a save removed, or
+ * a cancel released, goes back to the client: a `USED` grant returns to
+ * `ACTIVE` with one use (single-use, or a multi-use with one of its
+ * `issued` total), a multi-use `ACTIVE` one gains a use back. Refused for
+ * an expired or revoked grant (`NOT_ACTIVE`), and for a grant with no use
+ * spent to give back (`INVALID_CAPACITY`, naming the count it would reach).
+ */
+function restoreSlice(
+  grant: GrantLifecycle,
+  issued: GrantTerms,
+): Result<
+  GrantLifecycle,
+  | EngagementError.CouponGrantNotActive
+  | EngagementError.CouponGrantCapacityInvalid
+> {
+  if (grant.grantStatus === GrantStatus.Used) {
+    const capacity: GrantCapacityTerms =
+      issued.grantCapacity === GrantCapacity.SingleUse
+        ? GrantCapacityTerms.singleUse()
+        : {
+            grantCapacity: GrantCapacity.MultiUse,
+            usesRemaining: 1,
+            usesGranted: issued.usesGranted,
+          };
+    return Result.ok(GrantLifecycle.active(capacity, issued));
+  }
+  if (grant.grantStatus !== GrantStatus.Active) {
+    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
+  }
+  if (
+    grant.grantCapacity === GrantCapacity.SingleUse ||
+    grant.usesRemaining >= grant.usesGranted
+  ) {
+    return Result.err(
+      EngagementError.couponGrantCapacityInvalid(
+        grant.grantCapacity === GrantCapacity.SingleUse
+          ? 2
+          : grant.usesRemaining + 1,
+      ),
+    );
+  }
+  return Result.ok(
+    GrantLifecycle.active(
+      {
+        grantCapacity: GrantCapacity.MultiUse,
+        usesRemaining: grant.usesRemaining + 1,
+        usesGranted: grant.usesGranted,
+      },
+      grant,
+    ),
+  );
+}
+
+/** The expiry job's act — only an `ACTIVE` grant that HAS an `EXPIRES_AT`. */
+function expireSlice(
+  grant: GrantLifecycle,
+  atUtcMs: UtcEpochMs,
+): Result<
+  GrantLifecycle,
+  EngagementError.CouponGrantNotActive | EngagementError.CouponGrantNotExpiring
+> {
+  if (grant.grantStatus !== GrantStatus.Active) {
+    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
+  }
+  if (grant.grantExpiry !== GrantExpiry.ExpiresAt) {
+    return Result.err(EngagementError.couponGrantNotExpiring());
+  }
+  return Result.ok(GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs));
+}
+
+/** An admin takes a grant back — a reason is required, stored trimmed. */
+function revokeSlice(
+  grant: GrantLifecycle,
+  atUtcMs: UtcEpochMs,
+  revokedBy: UserId,
+  reason: string,
+): Result<
+  GrantLifecycle,
+  EngagementError.CouponGrantNotActive | EngagementError.CouponGrantReasonEmpty
+> {
+  if (grant.grantStatus !== GrantStatus.Active) {
+    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
+  }
+  const trimmed = reason.trim();
+  if (trimmed.length === 0) {
+    return Result.err(EngagementError.couponGrantReasonEmpty());
+  }
+  return Result.ok(GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed));
+}
+
 /**
  * A client's coupon grant through its life (`coupon-grant.ts:134-299`):
  *
@@ -71,150 +202,6 @@ export const CouponGrantSystem = {
     );
   },
 
-  /*
-   * The four verbs on the LIFECYCLE SLICE alone (`*Slice`) — the grant's
-   * state machine, total on `GrantLifecycle`, so a caller holding no
-   * entity (a legacy shim that cannot know the grant's client record, D29)
-   * asks the same question — and the entity verbs below, each its slice
-   * verb with the grant's meta and value carried through untouched.
-   */
-
-  /**
-   * One redemption (`markUsed`): a single-use grant goes straight to
-   * `USED`; a multi-use one counts down, and is `USED` at zero. `note` is
-   * the caller's account of the channel («appointment abc123»), `''` when
-   * none was given.
-   */
-  burnSlice(
-    grant: GrantLifecycle,
-    atUtcMs: UtcEpochMs,
-    note: string,
-  ): Result<GrantLifecycle, EngagementError.CouponGrantNotActive> {
-    if (grant.grantStatus !== GrantStatus.Active) {
-      return Result.err(
-        EngagementError.couponGrantNotActive(grant.grantStatus),
-      );
-    }
-    if (grant.grantCapacity === GrantCapacity.SingleUse) {
-      return Result.ok(GrantLifecycle.used(atUtcMs, note));
-    }
-    const remaining = grant.usesRemaining - 1;
-    if (remaining <= 0) {
-      return Result.ok(GrantLifecycle.used(atUtcMs, note));
-    }
-    return Result.ok(
-      GrantLifecycle.active(
-        {
-          grantCapacity: GrantCapacity.MultiUse,
-          usesRemaining: remaining,
-          usesGranted: grant.usesGranted,
-        },
-        grant,
-      ),
-    );
-  },
-
-  /**
-   * The exact inverse of {@link burn} — a grant discount a save removed, or
-   * a cancel released, goes back to the client: a `USED` grant returns to
-   * `ACTIVE` with one use (single-use, or a multi-use with one of its
-   * `issued` total), a multi-use `ACTIVE` one gains a use back. Refused for
-   * an expired or revoked grant (`NOT_ACTIVE`), and for a grant with no use
-   * spent to give back (`INVALID_CAPACITY`, naming the count it would reach).
-   */
-  restoreSlice(
-    grant: GrantLifecycle,
-    issued: GrantTerms,
-  ): Result<
-    GrantLifecycle,
-    | EngagementError.CouponGrantNotActive
-    | EngagementError.CouponGrantCapacityInvalid
-  > {
-    if (grant.grantStatus === GrantStatus.Used) {
-      const capacity: GrantCapacityTerms =
-        issued.grantCapacity === GrantCapacity.SingleUse
-          ? GrantCapacityTerms.singleUse()
-          : {
-              grantCapacity: GrantCapacity.MultiUse,
-              usesRemaining: 1,
-              usesGranted: issued.usesGranted,
-            };
-      return Result.ok(GrantLifecycle.active(capacity, issued));
-    }
-    if (grant.grantStatus !== GrantStatus.Active) {
-      return Result.err(
-        EngagementError.couponGrantNotActive(grant.grantStatus),
-      );
-    }
-    if (
-      grant.grantCapacity === GrantCapacity.SingleUse ||
-      grant.usesRemaining >= grant.usesGranted
-    ) {
-      return Result.err(
-        EngagementError.couponGrantCapacityInvalid(
-          grant.grantCapacity === GrantCapacity.SingleUse
-            ? 2
-            : grant.usesRemaining + 1,
-        ),
-      );
-    }
-    return Result.ok(
-      GrantLifecycle.active(
-        {
-          grantCapacity: GrantCapacity.MultiUse,
-          usesRemaining: grant.usesRemaining + 1,
-          usesGranted: grant.usesGranted,
-        },
-        grant,
-      ),
-    );
-  },
-
-  /** The expiry job's act — only an `ACTIVE` grant that HAS an `EXPIRES_AT`. */
-  expireSlice(
-    grant: GrantLifecycle,
-    atUtcMs: UtcEpochMs,
-  ): Result<
-    GrantLifecycle,
-    | EngagementError.CouponGrantNotActive
-    | EngagementError.CouponGrantNotExpiring
-  > {
-    if (grant.grantStatus !== GrantStatus.Active) {
-      return Result.err(
-        EngagementError.couponGrantNotActive(grant.grantStatus),
-      );
-    }
-    if (grant.grantExpiry !== GrantExpiry.ExpiresAt) {
-      return Result.err(EngagementError.couponGrantNotExpiring());
-    }
-    return Result.ok(
-      GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs),
-    );
-  },
-
-  /** An admin takes a grant back — a reason is required, stored trimmed. */
-  revokeSlice(
-    grant: GrantLifecycle,
-    atUtcMs: UtcEpochMs,
-    revokedBy: UserId,
-    reason: string,
-  ): Result<
-    GrantLifecycle,
-    | EngagementError.CouponGrantNotActive
-    | EngagementError.CouponGrantReasonEmpty
-  > {
-    if (grant.grantStatus !== GrantStatus.Active) {
-      return Result.err(
-        EngagementError.couponGrantNotActive(grant.grantStatus),
-      );
-    }
-    const trimmed = reason.trim();
-    if (trimmed.length === 0) {
-      return Result.err(EngagementError.couponGrantReasonEmpty());
-    }
-    return Result.ok(GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed));
-  },
-
   /**
    * One redemption (`markUsed`) of a whole grant — {@link burnSlice}, the
    * meta and value carried through.
@@ -224,7 +211,7 @@ export const CouponGrantSystem = {
     atUtcMs: UtcEpochMs,
     note: string,
   ): Result<CouponGrant, EngagementError.CouponGrantNotActive> {
-    const next = CouponGrantSystem.burnSlice(grant, atUtcMs, note);
+    const next = burnSlice(grant, atUtcMs, note);
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
@@ -237,7 +224,7 @@ export const CouponGrantSystem = {
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantCapacityInvalid
   > {
-    const next = CouponGrantSystem.restoreSlice(grant, issued);
+    const next = restoreSlice(grant, issued);
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
@@ -250,7 +237,7 @@ export const CouponGrantSystem = {
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantNotExpiring
   > {
-    const next = CouponGrantSystem.expireSlice(grant, atUtcMs);
+    const next = expireSlice(grant, atUtcMs);
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
@@ -265,12 +252,7 @@ export const CouponGrantSystem = {
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantReasonEmpty
   > {
-    const next = CouponGrantSystem.revokeSlice(
-      grant,
-      atUtcMs,
-      revokedBy,
-      reason,
-    );
+    const next = revokeSlice(grant, atUtcMs, revokedBy, reason);
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 

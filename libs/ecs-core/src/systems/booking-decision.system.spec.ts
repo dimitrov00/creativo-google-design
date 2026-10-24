@@ -1577,7 +1577,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
    * A CORRUPT carry — figures no brand admits, reaching the decision
    * unparsed. The override is carried server-side from stored seats; the
    * decision keeps its own guards, so a corrupt one is refused where it
-   * always was (the legacy shim hands its raw carry straight through).
+   * always was.
    */
   const corruptCents = (raw: number) => raw as PriceCents;
   const corruptCurrency = (raw: string) => raw as Currency;

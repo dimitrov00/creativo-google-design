@@ -35,11 +35,7 @@ import {
   ServiceStatus,
 } from './catalog-status.data';
 import { BlockKind, type MinuteBlock } from './minute-block.data';
-import {
-  type ClockDayHours,
-  type DayHours,
-  OpeningState,
-} from './opening-hours.data';
+import { type DayHours, OpeningState } from './opening-hours.data';
 import { Placement } from './placement-kind.data';
 import {
   CompositionKind,
@@ -144,7 +140,6 @@ export type BookingCoreDictionaryFields = [
   Expect<Equals<ShopLocation['locationStatus'], LocationStatus>>, // entities/shop-location.entity.ts
   Expect<Equals<MinuteBlock['blockKind'], BlockKind>>, // components/minute-block.data.ts
   Expect<Equals<DayHours['openingState'], OpeningState>>, // components/opening-hours.data.ts
-  Expect<Equals<ClockDayHours['openingState'], OpeningState>>, // components/opening-hours.data.ts
   Expect<Equals<ServiceComposition['compositionKind'], CompositionKind>>, // components/service-composition.data.ts
   Expect<Equals<Service['compositionKind'], CompositionKind>>, // entities/service.entity.ts
   Expect<

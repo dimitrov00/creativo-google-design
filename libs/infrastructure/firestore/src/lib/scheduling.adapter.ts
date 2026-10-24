@@ -4,6 +4,7 @@ import { BookingPolicy } from '@core/components';
 import { Result, defect } from '@core/primitives';
 import {
   BOOKING_POLICY_DOC,
+  type BookingPolicySettings,
   Collections,
   type ScheduleException,
 } from '@core/entities';
@@ -37,16 +38,20 @@ export const schedulingReadPorts = (db: Firestore): SchedulingReadPorts => ({
   observeCapacityMonth: (month) =>
     observeDoc(doc(db, Collections.Capacity, month)),
   /**
-   * `settings/bookingPolicy`, live, never `null`: an absent or partial body
-   * reads as `BookingPolicy.withDefaults` (a tenant with no policy document
-   * is the normal case). As today's reader: the stream STARTS on the
+   * `settings/bookingPolicy`, live, never `null`: the document IS the flat
+   * `BookingPolicySettings` (Law 5), and it reaches the store through the
+   * component's edge guard, `BookingPolicy.withDefaults` (§9 D28) — an
+   * absent or partial body reads as the defaults (a tenant with no policy
+   * document is the normal case). As today's reader: the stream STARTS on the
    * defaults, so the calendar is never briefly empty while the first
    * snapshot is a round trip away, and emits only when the policy CHANGES
    * (field-wise), so a seeded document saying the defaults re-bills nothing
    * downstream. A refused read is the port's `RepositoryError`.
    */
   observePolicy: () =>
-    observeDoc<object>(doc(db, Collections.Settings, BOOKING_POLICY_DOC)).pipe(
+    observeDoc<BookingPolicySettings>(
+      doc(db, Collections.Settings, BOOKING_POLICY_DOC),
+    ).pipe(
       map((answer) =>
         answer.ok
           ? Result.ok(BookingPolicy.withDefaults(answer.value))

@@ -254,7 +254,7 @@ describe('RecurrenceSystem.series — which days', () => {
       '2026-09-30',
       '2026-10-05',
     ]);
-    expect(RecurrenceSystem.startsOnStart(series)).toBe(false);
+    expect(series.localDates[0]).not.toBe(series.startLocalDate);
     expect(series.localDates[0]).toBe('2026-09-28');
     expect(series.localDates[series.localDates.length - 1]).toBe('2026-10-05');
     expect(series.localDates).toHaveLength(3);

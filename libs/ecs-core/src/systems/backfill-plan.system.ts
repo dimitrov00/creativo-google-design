@@ -173,11 +173,6 @@ export const BackfillPlanSystem = {
   CHUNK_SIZE,
   STORED_CLIENTS_MARK,
 
-  /** Is this a Firestore document id a cursor may name? */
-  isDocId(raw: string): boolean {
-    return DOC_ID.test(raw);
-  },
-
   /**
    * The wire cursor for a position: an appointment id as before, `~customerId`
    * after (a stored client record, D29).

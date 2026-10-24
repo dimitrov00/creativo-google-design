@@ -75,25 +75,6 @@ export const AgeSystem = {
     return LocalDate.wholeYearsBetween(dayOfBirth(birthDate), day);
   },
 
-  /**
-   * The age as the legacy instant reader counted it (`yearsUntil`: the
-   * fractional years from the birth day's midnight to an INSTANT of
-   * `today`, truncated toward zero). For a birth on or before `today` that
-   * is {@link ageOn}. For a birth after it, the anniversary of "now" that
-   * falls ON the birth day is only reached at midnight: once `today` is past
-   * its midnight, a birth exactly N years ahead reads −(N−1), not −N.
-   */
-  ageAtInstant(
-    birthDate: BirthDate,
-    today: LocalDate,
-    pastMidnight: boolean,
-  ): number {
-    const birthDay = dayOfBirth(birthDate);
-    if (birthDay <= today) return AgeSystem.ageOn(birthDate, today);
-    const until = pastMidnight ? LocalDate.addDays(birthDay, -1) : birthDay;
-    return -LocalDate.wholeYearsBetween(today, until);
-  },
-
   /** The refusal an age earns against the window — `TOO_YOUNG` below 16, `TOO_OLD` above 120, else `null`. */
   windowRefusal(age: number): IdentityError | null {
     if (age < AgeWindow.MinAge) {

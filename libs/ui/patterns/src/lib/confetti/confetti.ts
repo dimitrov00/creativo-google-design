@@ -50,7 +50,7 @@ const MAX_PARTICLES = 240;
  *   empty, `aria-hidden`, pointer-transparent overlay. Consumers own the
  *   calm alternative (e.g. the reward screen's gentle check fade).
  * - SSR-safe: everything runs in `afterNextRender` behind
- *   `isPlatformBrowser` (the house gsap guard, cf. `CursorDotComponent`).
+ *   `isPlatformBrowser` (the house gsap guard).
  *   Zoneless-safe: gsap's ticker lives outside Angular's reactive graph and
  *   never touches signals, so it schedules no change detection.
  * - `pointer-events: none` + `overflow: visible` on an inset-0 overlay —

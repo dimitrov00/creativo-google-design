@@ -1,4 +1,3 @@
-import { DateRange } from '@core/components';
 import { Weekday, LocalDate } from '@core/primitives';
 
 const DAYS_PER_WEEK = 7;
@@ -31,22 +30,6 @@ export type CalendarWeek = readonly CalendarCell[];
  * template, not a grid fact.
  */
 export const CalendarGridSystem = {
-  /**
-   * The days a month's grid shows: the Monday on or before its 1st through
-   * the Sunday on or after its last day. `monthDay` is any day of the month.
-   */
-  gridRange(monthDay: LocalDate): DateRange {
-    const { year, month } = LocalDate.parts(monthDay);
-    const first = LocalDate.epochDayOf(year, month, 1);
-    const last = first + LocalDate.daysInMonth(year, month) - 1;
-    const lead = LocalDate.weekday(LocalDate.fromEpochDay(first)) - Weekday.Mon;
-    const trail = Weekday.Sun - LocalDate.weekday(LocalDate.fromEpochDay(last));
-    return DateRange.of(
-      LocalDate.fromEpochDay(first - lead),
-      LocalDate.fromEpochDay(last + trail),
-    );
-  },
-
   /**
    * The month of `monthDay` as whole weeks, Monday first: the leading days
    * of the month before, every day of the month, the trailing days of the

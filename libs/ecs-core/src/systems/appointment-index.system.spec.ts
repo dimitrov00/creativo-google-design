@@ -153,34 +153,9 @@ describe('queryKeys — the client-record mirrors beside the accounts (D29, F1-4
     expect(stale.ownerCustomerId).toBe(cus('ana'));
     expect(stale.subjectCustomerIds).toEqual([cus('ana'), cus('zora')].sort());
   });
-
-  it('accountKeys is the account half alone — what a seat with no client record yields', () => {
-    const keys = S.queryKeys(party());
-    const accountOnly = S.accountKeys({
-      localDate: JUNE_1,
-      seats: party().seats.map((entry) => ({
-        barberId: entry.barberId,
-        ...SeatOccupant.accountOf(entry),
-      })),
-    });
-    expect(accountOnly).toEqual({
-      ownerUserId: keys.ownerUserId,
-      subjectUserIds: keys.subjectUserIds,
-      barberIds: keys.barberIds,
-      busyKeys: keys.busyKeys,
-    });
-    expect(accountOnly).not.toHaveProperty('subjectCustomerIds');
-  });
 });
 
 describe('the inferred placement (§12.5.1, legacyPref)', () => {
-  it('is read on its own, and never as the commit’s stamp', () => {
-    const backfilled = party({ inferredPlacement: Placement.Staff });
-    expect(S.inferPlacement(backfilled)).toBe('STAFF');
-    expect(S.stampedPlacement(backfilled)).toBeNull();
-    expect(S.inferPlacement(party({ placement: Placement.Self }))).toBeNull();
-  });
-
   it('is never written by the mirrors, whatever they are given', () => {
     const written = S.withQueryKeys(party({ placement: Placement.Self }));
     expect(written.inferredPlacement).toBeNull();
@@ -195,8 +170,7 @@ describe('the inferred placement (§12.5.1, legacyPref)', () => {
       revision: 2,
     });
     const rewritten = S.withQueryKeys(current);
-    expect(S.inferPlacement(rewritten)).toBe('STAFF');
-    expect(S.stampedPlacement(rewritten)).toBeNull();
+    expect(rewritten.inferredPlacement).toBe('STAFF');
     expect(rewritten.placement).toBeNull();
   });
 });

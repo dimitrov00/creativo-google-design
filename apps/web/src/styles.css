@@ -5,11 +5,10 @@
  * follows it). So every @import lives in this one leading block, and their
  * RELATIVE ORDER is what fixes cascade-layer priority: a layer name is
  * registered the first time it's encountered, and later-registered layers
- * always beat earlier ones regardless of selector specificity. The legacy
- * `cr-*` system (imported first below) still powers the not-yet-migrated
- * marketing donor screens carried over from Phase 0; it's registered first
- * so the new `sys-*` system (imported second) — what Phase 6 feature
- * slices build with — always wins wherever the two would otherwise collide.
+ * always beat earlier ones regardless of selector specificity. The baseline
+ * reset and the reduced-motion kill-switch (libs/ui/tokens, `cr-reset` and
+ * `cr-base`) are imported first, so every `sys-*` layer below wins wherever
+ * they would otherwise collide.
  */
 @import '@fontsource-variable/onest';
 @import '@fontsource/dm-sans/400.css';
@@ -43,8 +42,8 @@
  *
  * `reset.css` and `reduced-motion.css` STAY — both are live, and neither
  * reads a legacy token. */
-@import '../../../libs/shared/ui/src/lib/reset/reset.css';
-@import '../../../libs/shared/ui/src/lib/motion/reduced-motion.css';
+@import '../../../libs/ui/tokens/reset.css';
+@import '../../../libs/ui/tokens/reduced-motion.css';
 /* `material.css` and `shape.css` are GONE from the bundle.
  *
  * Both were global sheets backing the legacy `crMaterial` / `crShape`

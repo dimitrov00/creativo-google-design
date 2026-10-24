@@ -15,7 +15,7 @@ import { TierSystem } from './tier.system';
  * - the `tierSteps` cases of the legacy engagement `standing.spec.ts` (deleted
  *   in Phase 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1)
  *   (→ `TierSystem.steps`);
- * - the ring and gauge math of the `walletTierVm` cases of
+ * - the ring and gauge math of the `walletVm` «Статус» (WE) cases of
  *   libs/features/staff/client-card/src/lib/wallet.presenter.spec.ts
  *   (→ `TierSystem.progress`): the numbers each case asserts, the words
  *   staying with the presenter's spec. The flag/catalogue absence case is
@@ -94,7 +94,7 @@ describe('TierSystem.steps (standing.spec.ts `tierSteps`)', () => {
   });
 });
 
-describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => {
+describe('TierSystem.progress (wallet.presenter.spec.ts `walletVm` WE)', () => {
   it('holds what remains in the ring, from the tier the account stands on to the next', () => {
     expect(TierSystem.progress(state, TIERS)).toEqual({
       currentTierId: 'gold',
@@ -201,7 +201,7 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
 const adjusted = (tierId: string) =>
   TierOverride.adjustment(TierId.of(tierId), null, AdjustmentId.of('adj-1'));
 
-describe('TierSystem.standingTier (wallet.presenter.spec.ts `passVm` plate, `walletTierVm`)', () => {
+describe('TierSystem.standingTier (wallet.presenter.spec.ts `passVm` plate, `walletVm` WE)', () => {
   it('stands on the computed tier, or the one an override grants', () => {
     expect(TierSystem.standingTier(state, TIERS)).toBe('gold');
     expect(
@@ -217,7 +217,7 @@ describe('TierSystem.standingTier (wallet.presenter.spec.ts `passVm` plate, `wal
   });
 });
 
-describe('TierSystem.keptAt (wallet.presenter.spec.ts `walletTierVm` at the top)', () => {
+describe('TierSystem.keptAt (wallet.presenter.spec.ts `walletVm` WE at the top)', () => {
   it('keeps the status with the threshold of the tier the account stands on', () => {
     const top = TierSystem.progress(
       {

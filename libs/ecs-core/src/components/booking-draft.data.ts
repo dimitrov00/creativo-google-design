@@ -136,11 +136,6 @@ const FRESH: BookingDraft.Fresh = {
 };
 
 export const BookingDraft = {
-  /** The origin of a draft that starts from nothing. */
-  freshOrigin(): BookingDraft.Fresh {
-    return FRESH;
-  },
-
   bookedFromOrigin(
     bookedFromAppointmentId: AppointmentId,
     bookedFromOwnerUserId: UserId,

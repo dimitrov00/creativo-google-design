@@ -30,10 +30,7 @@ import {
   RecurrenceSystem,
   RepeatPreset,
 } from '@core/systems';
-import {
-  pluralForm,
-  translateDomainError,
-} from '@creativo/infrastructure/i18n';
+import { pluralForm, translateCodedError } from '@creativo/infrastructure/i18n';
 import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import {
   UiChoiceMenu,
@@ -550,10 +547,10 @@ export class StaffBlockEditor {
   /** What is wrong with the repeat, in words — the typed refusal first, then the series'. */
   protected readonly repeatError = computed<string | null>(() => {
     const typed = this.typedError();
-    if (typed !== null) return translateDomainError(this.transloco, typed);
+    if (typed !== null) return translateCodedError(this.transloco, typed);
     const series = this.series();
     return series !== null && !series.ok
-      ? translateDomainError(this.transloco, series.error)
+      ? translateCodedError(this.transloco, series.error)
       : null;
   });
 

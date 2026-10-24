@@ -1,6 +1,3 @@
-import { Result } from '@core/primitives';
-import { AccountsError } from '@core/errors';
-
 /**
  * The roles a user account may hold — the ONLY source of these strings
  * (`users.roles`, the ID token's `roles` claim, `firestore.rules`'
@@ -93,16 +90,6 @@ function anyIn(granting: readonly string[], held: readonly string[]): boolean {
 /** The edge guard for an untrusted value — a stored array entry, a token claim. */
 export function isRole(value: unknown): value is Role {
   return listHas(USER_ROLES, value);
-}
-
-/**
- * The edge guard with a refusal: a known role, or `ACCOUNTS_USER_ROLE_INVALID`
- * carrying the raw text (an admin's pick, a callable payload).
- */
-export function parseRole(raw: string): Result<Role, AccountsError> {
-  return isRole(raw)
-    ? Result.ok(raw)
-    : Result.err(AccountsError.userRoleInvalid(raw));
 }
 
 /**

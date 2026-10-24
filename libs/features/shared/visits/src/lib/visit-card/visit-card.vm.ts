@@ -67,7 +67,7 @@ export interface VisitCardVm {
    * time of a next one.
    */
   readonly facts: readonly VisitLinePart[];
-  /** «27,50 €» (`formatMoney`): staff, a worked visit; else `null`. */
+  /** «27,50 €» (`formatCents`): staff, a worked visit; else `null`. */
   readonly figure: string | null;
   /**
    * The client's own words, already in the locale's quotation marks

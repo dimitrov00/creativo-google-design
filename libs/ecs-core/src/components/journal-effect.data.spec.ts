@@ -9,7 +9,6 @@ import {
   JournalEffectRecord,
   JournalFeed,
   JournalVisibility,
-  LABEL_CODES,
   LabelCode,
   PauseScope,
   PauseTerm,
@@ -42,10 +41,11 @@ describe('the journal vocabularies', () => {
       'COSMETIC',
     ]);
     // i18n message keys: an external contract, unchanged (flatten-spec §0.4).
-    expect(LABEL_CODES).toHaveLength(26);
-    expect(new Set(LABEL_CODES).size).toBe(26);
-    expect(LABEL_CODES[0]).toBe('points.opening');
-    expect(LABEL_CODES.at(-1)).toBe('choice.upcomingBooking');
+    const labelCodes = Object.values(LabelCode);
+    expect(labelCodes).toHaveLength(26);
+    expect(new Set(labelCodes).size).toBe(26);
+    expect(labelCodes[0]).toBe('points.opening');
+    expect(labelCodes.at(-1)).toBe('choice.upcomingBooking');
   });
 });
 

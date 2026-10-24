@@ -68,18 +68,13 @@ export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 export const AUDIT_ACTIONS: readonly AuditAction[] = Object.values(AuditAction);
 
 /*
- * The verb subsets each variant accepts. Each subset TYPE is read from the
- * `AuditAction` dictionary; each list is typed against its subset — a derived
- * list, never the source of the type.
+ * The verb subsets each variant accepts, each read from the `AuditAction`
+ * dictionary.
  */
 
 /** The two verbs that put an appointment in the book. */
 export type PlacementAction =
   typeof AuditAction.BookingCommitted | typeof AuditAction.BookingStaffCreated;
-export const PLACEMENT_ACTIONS: readonly PlacementAction[] = [
-  AuditAction.BookingCommitted,
-  AuditAction.BookingStaffCreated,
-];
 
 /** The staff lifecycle verbs of the transition callable. */
 export type TransitionAction =
@@ -90,30 +85,13 @@ export type TransitionAction =
   | typeof AuditAction.BookingStaffReopenNoShow
   | typeof AuditAction.BookingStaffReopenCompleted
   | typeof AuditAction.BookingStaffReinstate;
-export const TRANSITION_ACTIONS: readonly TransitionAction[] = [
-  AuditAction.BookingStaffConfirmed,
-  AuditAction.BookingStaffCompleted,
-  AuditAction.BookingStaffNoShow,
-  AuditAction.BookingStaffCancelled,
-  AuditAction.BookingStaffReopenNoShow,
-  AuditAction.BookingStaffReopenCompleted,
-  AuditAction.BookingStaffReinstate,
-];
 
 export type ArrivalAction =
   | typeof AuditAction.BookingStaffArrived
   | typeof AuditAction.BookingStaffUnarrived;
-export const ARRIVAL_ACTIONS: readonly ArrivalAction[] = [
-  AuditAction.BookingStaffArrived,
-  AuditAction.BookingStaffUnarrived,
-];
 
 export type TipAction =
   typeof AuditAction.BookingTipRecorded | typeof AuditAction.BookingTipCleared;
-export const TIP_ACTIONS: readonly TipAction[] = [
-  AuditAction.BookingTipRecorded,
-  AuditAction.BookingTipCleared,
-];
 
 /** The staff edit verbs — one per edit command, plus `EDIT` and `SAVE`. */
 export type StaffEditAction =
@@ -129,30 +107,11 @@ export type StaffEditAction =
   | typeof AuditAction.BookingStaffVouchers
   | typeof AuditAction.BookingStaffEdit
   | typeof AuditAction.BookingStaffSave;
-export const STAFF_EDIT_ACTIONS: readonly StaffEditAction[] = [
-  AuditAction.BookingStaffMove,
-  AuditAction.BookingStaffResize,
-  AuditAction.BookingStaffReprice,
-  AuditAction.BookingStaffRedurate,
-  AuditAction.BookingStaffRestaff,
-  AuditAction.BookingStaffRelocate,
-  AuditAction.BookingStaffAddSeat,
-  AuditAction.BookingStaffRemoveSeat,
-  AuditAction.BookingStaffDiscounts,
-  AuditAction.BookingStaffVouchers,
-  AuditAction.BookingStaffEdit,
-  AuditAction.BookingStaffSave,
-];
 
 export type ProfileAction =
   | typeof AuditAction.ProfileCreated
   | typeof AuditAction.ProfileUpdated
   | typeof AuditAction.ProfileDeleted;
-export const PROFILE_ACTIONS: readonly ProfileAction[] = [
-  AuditAction.ProfileCreated,
-  AuditAction.ProfileUpdated,
-  AuditAction.ProfileDeleted,
-];
 
 /** How an ops backfill call ended — the field `backfillOutcome`. */
 export const BackfillOutcome = {

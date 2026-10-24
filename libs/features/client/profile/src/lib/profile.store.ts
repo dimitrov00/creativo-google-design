@@ -23,7 +23,7 @@ import {
  *
  * Every method answers with an ERROR CODE or `null`, never a thrown error
  * or a raw domain object: the screen's single job on failure is to render
- * `translateDomainError(code)` and leave the sheet open with the draft
+ * `translateCodedError(code)` and leave the sheet open with the draft
  * intact (same contract as onboarding's steps — a user's typing must never
  * silently vanish). A refused edit answers its ecs-core `errorCode`
  * (`ACCOUNTS_UPDATE_PROFILE_*`); every other failure answers

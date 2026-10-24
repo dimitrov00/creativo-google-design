@@ -4,7 +4,6 @@ paths:
   - 'apps/showcase/**'
   - 'libs/features/**'
   - 'libs/ui/**'
-  - 'libs/shared/ui/**'
 ---
 
 # Angular UI — the only place `class` is allowed
@@ -42,10 +41,13 @@ injectables. That permission ends at the framework boundary.
   straight off the entity. Display "today" and the clock in the LOCATION's
   `timeZone`, never the browser's.
 - Formatting (money, dates, durations) happens in the template layer — a
-  template's pipes, or a presenter (Law 10) — via existing helpers
-  (`formatMoney`, native `Intl.DateTimeFormat` / `Intl.NumberFormat`
-  formatting in the i18n lib, formatters cached per locale+zone, never
-  constructed per row) — systems return numbers, presenters return words.
+  template's pipes, or a presenter (Law 10) — via existing helpers: the
+  wall clock, instants and money in `@creativo/ui/wall-clock`
+  (`formatWallClock`, `formatMinute`, `formatInstant`, `formatCents` — native
+  `Intl.DateTimeFormat` / `Intl.NumberFormat`), relative times and plural
+  forms in the i18n lib (`relativeTime`, `pluralForm`); formatters cached per
+  locale+zone, never constructed per row — systems return numbers, presenters
+  return words.
 - A store may be an `@Injectable` class because Angular DI needs an injectable;
   it carries signals and calls systems and read ports. It never contains
   domain math and never mutates an entity in place — replace the signal value

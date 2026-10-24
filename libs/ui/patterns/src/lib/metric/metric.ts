@@ -49,7 +49,7 @@ const GLYPH_SCALES = {
  * unit · delta, on one baseline), the visible caption under it, and an
  * accessory slot for a meter that belongs to the figure.
  *
- * The value arrives FORMATTED (`formatMoney`, the locale's grouping): the
+ * The value arrives FORMATTED (`formatCents`, the locale's grouping): the
  * DS never formats a number, except the in-between frames of a count-up.
  * `null` draws «—», never a fabricated 0 — and a dash reads as "dash", so
  * the owner then names it in words (`uiLabel`; a dev warning says so).

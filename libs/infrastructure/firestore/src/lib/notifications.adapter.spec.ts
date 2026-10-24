@@ -62,7 +62,7 @@ describe('inboxPorts.observeInbox', () => {
   });
 });
 
-describe('inboxPorts.markNotificationRead and markAllNotificationsRead — the read stamp only', () => {
+describe('inboxPorts.markNotificationRead — the read stamp only', () => {
   it('stamps one notification with readAtUtcMs and nothing else', async () => {
     const fake = new FakeFirestore({ [`${INBOX}/n1`]: note(100) });
 
@@ -89,70 +89,6 @@ describe('inboxPorts.markNotificationRead and markAllNotificationsRead — the r
         errorCode: RepositoryErrorCode.WriteFailed,
         path: `${INBOX}/gone`,
         reason: 'not-found',
-      }),
-    );
-  });
-
-  it('stamps every UNREAD notification at once, leaving a read one’s stamp alone', async () => {
-    const fake = new FakeFirestore({
-      [`${INBOX}/n1`]: note(100),
-      [`${INBOX}/n2`]: note(200, 250),
-      [`${INBOX}/n3`]: note(300),
-    });
-
-    const answer = await inboxPorts(asDb(fake)).markAllNotificationsRead(
-      GEORGI,
-      READ_AT,
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
-    expect(fake.reads[0]?.constraints).toEqual([
-      'readAtUtcMs == null',
-      'limit 400',
-    ]);
-    expect(fake.writes.map((write) => write.path)).toEqual([
-      `${INBOX}/n1`,
-      `${INBOX}/n3`,
-    ]);
-    expect(fake.documentAt(`${INBOX}/n2`)).toEqual(note(200, 250));
-  });
-
-  it('works through a backlog in batches of 400 until a short batch says nothing is left', async () => {
-    const backlog: Record<string, object> = {};
-    for (let i = 0; i < 401; i++) backlog[`${INBOX}/n${i}`] = note(i);
-    const fake = new FakeFirestore(backlog);
-
-    const answer = await inboxPorts(asDb(fake)).markAllNotificationsRead(
-      GEORGI,
-      READ_AT,
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
-    expect(fake.reads).toHaveLength(2);
-    expect(fake.writes).toHaveLength(401);
-  });
-
-  it('answers nothing to receipt with no write at all', async () => {
-    const fake = new FakeFirestore({ [`${INBOX}/n1`]: note(100, 150) });
-
-    await inboxPorts(asDb(fake)).markAllNotificationsRead(GEORGI, READ_AT);
-
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('turns a refused receipt into REPOSITORY_WRITE_FAILED', async () => {
-    const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
-
-    const answer = await inboxPorts(asDb(fake)).markAllNotificationsRead(
-      GEORGI,
-      READ_AT,
-    );
-
-    expect(answer).toEqual(
-      Result.err({
-        errorCode: RepositoryErrorCode.WriteFailed,
-        path: INBOX,
-        reason: 'permission-denied',
       }),
     );
   });

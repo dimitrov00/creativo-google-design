@@ -91,7 +91,6 @@ export const Collections = {
   /** `BackfillJob` / `PolicyRecomputeJob`, keyed by the job. */
   BackfillJobs: 'backfillJobs',
 } as const;
-export type CollectionName = (typeof Collections)[keyof typeof Collections];
 
 /** Subcollections — `/{parent}/{parentId}/{name}/{id}`. */
 export const Subcollections = {
@@ -108,27 +107,6 @@ export const Subcollections = {
   /** `loyaltyAccounts/{customerId}/seasonProgress/{seasonId}`. */
   SeasonProgress: 'seasonProgress',
 } as const;
-export type SubcollectionName =
-  (typeof Subcollections)[keyof typeof Subcollections];
-
-/**
- * Dormant paths §3.1 removes — spelled once so the sweep that deletes their
- * documents (and the rules that still match them) can name them. No reader
- * or writer may use these.
- */
-export const RetiredCollections = {
-  /** `rewardPrograms/{id}` — removed. */
-  RewardPrograms: 'rewardPrograms',
-} as const;
-export type RetiredCollectionName =
-  (typeof RetiredCollections)[keyof typeof RetiredCollections];
-
-export const RetiredSubcollections = {
-  /** `users/{uid}/rewardProgress/{programId}` — removed after the sweep. */
-  RewardProgress: 'rewardProgress',
-} as const;
-export type RetiredSubcollectionName =
-  (typeof RetiredSubcollections)[keyof typeof RetiredSubcollections];
 
 /** `settings/bookingPolicy` — the one settings document (`BookingPolicySettings`). */
 export const BOOKING_POLICY_DOC = BookingPolicySettingsId.FIXED;

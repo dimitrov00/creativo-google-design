@@ -15,15 +15,13 @@
  * Loaded by the specs (vitest resolves the `.ts` imports) and, at run time,
  * inside the seed's bundle (`load-domain.mjs`), never by plain Node.
  */
+import { OpeningState } from '@core/components';
+import { ExceptionEffect } from '@core/primitives';
 import {
   BARBERS,
-  BOTH_LOCATIONS,
   CATEGORY,
-  CENTER,
   HAIRCUTS,
-  LENGTH_VARIANTS,
   LOCATIONS,
-  MLADOST,
   SERVICES,
 } from './fixtures/catalog.fixtures.ts';
 import {
@@ -35,13 +33,9 @@ import {
 
 export {
   BARBERS,
-  BOTH_LOCATIONS,
   CATEGORY,
-  CENTER,
   HAIRCUTS,
-  LENGTH_VARIANTS,
   LOCATIONS,
-  MLADOST,
   SCHEDULES,
   SERVICES,
   busyDayBody,
@@ -49,36 +43,32 @@ export {
   closedDayBody,
 };
 
-/** `DayHours.openingState` of an open day (`opening-hours.data.ts`). */
-const OPEN = 'OPEN';
-
-/** A roster's segments for an ISO weekday (1 = Monday … 7 = Sunday), in week order. */
-function rosteredOn(barberId, isoWeekday) {
+/** A roster's segments for a `Weekday` (1 = Monday … 7 = Sunday), in week order. */
+function rosteredOn(barberId, weekday) {
   const schedule = SCHEDULES.find((entry) => entry.id === barberId);
   // One open-ended version per roster: the seed's history is placed by the
   // pattern, as the roster has read since the shop opened.
   const [version] = schedule?.body.versions ?? [];
   return (version?.segments ?? []).filter(
-    (segment) => segment.weekday === isoWeekday,
+    (segment) => segment.weekday === weekday,
   );
 }
 
 /**
- * A barber's BOOKABLE segments on a weekday (0 = Sunday, as
- * `calendar.weekdayAt` counts), as minutes of the day: the roster's
+ * A barber's BOOKABLE segments on a `Weekday` (1 = Monday … 7 = Sunday, as
+ * `calendar.weekdayAt` answers), as minutes of the day: the roster's
  * segments clamped to their shop's `openingHours` that day, the outer
  * envelope the booking flow clamps every window to. Stefan's Saturday
  * 09:00 start meets a Center that opens at 10:00, so his Saturday is sold
  * from 10:00, and so is it seeded.
  */
 export function segmentsOn(barberId, weekday) {
-  const isoWeekday = weekday === 0 ? 7 : weekday;
-  return rosteredOn(barberId, isoWeekday).flatMap(
+  return rosteredOn(barberId, weekday).flatMap(
     ({ startMinutes, endMinutes, locationId }) => {
       const location = LOCATIONS.find((entry) => entry.id === locationId);
-      // `openingHours` is Monday-first: index `isoWeekday - 1`.
-      const hours = location?.body.openingHours[isoWeekday - 1];
-      if (!hours || hours.openingState !== OPEN) return [];
+      // `openingHours` is Monday-first: index `weekday - 1`.
+      const hours = location?.body.openingHours[weekday - 1];
+      if (!hours || hours.openingState !== OpeningState.Open) return [];
       const startMinute = Math.max(startMinutes, hours.openMinutes);
       const endMinute = Math.min(endMinutes, hours.closeMinutes);
       return endMinute > startMinute
@@ -130,8 +120,8 @@ export function scheduleExceptionsFor(calendar) {
       Object.freeze({
         barberId: 'stefan',
         ...firstWorkedDay('stefan', calendar, EXCEPTION_EARLIEST_OFFSET),
-        // A whole day off: `ExceptionEffect.Closed`.
-        exceptionEffect: 'CLOSED',
+        // A whole day off.
+        exceptionEffect: ExceptionEffect.Closed,
       }),
     ]);
     exceptionsByCalendar.set(calendar, exceptions);
@@ -148,7 +138,7 @@ export function segmentsAt(barberId, calendar, dayOffset) {
     (exception) =>
       exception.barberId === barberId &&
       exception.dayOffset === dayOffset &&
-      exception.exceptionEffect === 'CLOSED',
+      exception.exceptionEffect === ExceptionEffect.Closed,
   );
   return closed ? [] : segmentsOn(barberId, calendar.weekdayAt(dayOffset));
 }
@@ -205,7 +195,9 @@ export function chairTerms(serviceId, barberId, variantId) {
   }
   const terms =
     (variantId &&
-      offering.overrides.find((override) => override.variantId === variantId)) ||
+      offering.overrides.find(
+        (override) => override.variantId === variantId,
+      )) ||
     offering;
   return {
     priceCents: terms.priceCents,

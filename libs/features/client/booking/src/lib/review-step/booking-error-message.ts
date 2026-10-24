@@ -2,7 +2,7 @@ import type { TranslocoService } from '@jsverse/transloco';
 import { ShopReach } from '@core/components';
 import { BookingErrorCode, MoveErrorCode, PipelineError } from '@core/errors';
 import {
-  translateDomainError,
+  translateCodedError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
 import type { BookingFlowFailure } from '../booking-flow.store';
@@ -33,11 +33,11 @@ export function bookingErrorMessage(
   callHref: string | null = null,
 ): string {
   if (!PipelineError.isPipelineError(error))
-    return translateDomainError(transloco, error);
+    return translateCodedError(transloco, error);
   return wordPipelineError(
     error,
     (code, params) =>
-      translateDomainError(transloco, { ...params, errorCode: code }),
+      translateCodedError(transloco, { ...params, errorCode: code }),
     BookingErrorCode.CallFailed,
     { reach: transloco.translate(ShopReach.forCallHref(callHref)) },
   );
