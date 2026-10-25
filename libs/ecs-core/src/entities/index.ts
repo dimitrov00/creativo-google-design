@@ -26,6 +26,7 @@ export * from './invitation-redemption.entity';
 export * from './invitation.entity';
 export * from './journal-entry.entity';
 export * from './loyalty-account.entity';
+export * from './loyalty-catalog';
 export * from './notification.entity';
 export * from './otp.entity';
 export * from './policy-recompute-job.entity';

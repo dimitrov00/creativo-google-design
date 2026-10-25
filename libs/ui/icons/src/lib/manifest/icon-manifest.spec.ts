@@ -1,12 +1,16 @@
 import * as fc from 'fast-check';
 import {
   UI_ICON_MANIFEST_SCHEMA_VERSION,
-  isAllowedImageHref,
-  isSafePathData,
+  UiIconAsset,
+  UiIconIssueCode,
   mergeUiIconManifests,
-  parseUiIconManifest,
   type UiIconManifest,
 } from './icon-manifest';
+import {
+  isAllowedImageHref,
+  isSafePathData,
+  parseUiIconManifest,
+} from './icon-manifest-parser';
 
 const options = {
   knownKeys: new Set(['sheet.close', 'nav.back', 'visit.noShow']),
@@ -16,20 +20,20 @@ const options = {
 };
 
 const sample = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   icons: {
     'sheet.close': 'cancel',
-    'nav.back': { kind: 'material', glyph: 'chevron_left' },
+    'nav.back': { iconAsset: 'MATERIAL', glyph: 'chevron_left' },
     'visit.noShow': { alias: 'sheet.close' },
   },
   logo: {
     light: {
-      kind: 'vector',
+      iconAsset: 'VECTOR',
       viewBox: '0 0 10 10',
       paths: [{ d: 'M0 0h10v10H0z' }],
     },
     dark: {
-      kind: 'image',
+      iconAsset: 'IMAGE',
       href: 'https://firebasestorage.googleapis.com/v0/b/x/o/logo.png',
       width: 200,
       height: 40,
@@ -43,11 +47,15 @@ describe('parseUiIconManifest', () => {
     expect(issues).toEqual([]);
     expect(manifest?.schemaVersion).toBe(UI_ICON_MANIFEST_SCHEMA_VERSION);
     expect(manifest?.icons['sheet.close']).toEqual({
-      kind: 'material',
+      iconAsset: UiIconAsset.Material,
       glyph: 'cancel',
     });
+    expect(manifest?.icons['nav.back']).toEqual({
+      iconAsset: UiIconAsset.Material,
+      glyph: 'chevron_left',
+    });
     expect(manifest?.icons['visit.noShow']).toEqual({ alias: 'sheet.close' });
-    expect(manifest?.logo?.dark?.kind).toBe('image');
+    expect(manifest?.logo?.dark?.iconAsset).toBe(UiIconAsset.Image);
   });
 
   it('treats an absent document as "no remote manifest", not an error', () => {
@@ -63,17 +71,54 @@ describe('parseUiIconManifest', () => {
 
   it('rejects the whole document on an unsupported schema version', () => {
     const { manifest, issues } = parseUiIconManifest(
-      { ...sample, schemaVersion: 2 },
+      { ...sample, schemaVersion: 3 },
       options,
     );
     expect(manifest).toBeNull();
-    expect(issues.map((issue) => issue.code)).toEqual(['manifest-rejected']);
+    expect(issues.map((issue) => issue.iconIssue)).toEqual([
+      UiIconIssueCode.ManifestRejected,
+    ]);
+  });
+
+  // DEP-16: schema 2 renamed the asset discriminator `kind` to `iconAsset`.
+  // A version 1 document (here as the JSON it arrives as) is refused whole,
+  // by its version — never read as a half-understood shape.
+  it('rejects a version 1 document, whose assets said `kind`, whole (DEP-16)', () => {
+    const v1 = JSON.parse(
+      '{"schemaVersion":1,"icons":{"nav.back":{"kind":"material","glyph":"chevron_left"}}}',
+    );
+    expect(parseUiIconManifest(v1, options)).toEqual({
+      manifest: null,
+      issues: [
+        {
+          iconIssue: UiIconIssueCode.ManifestRejected,
+          detail: 'schemaVersion 1 is not supported (this build reads 2)',
+        },
+      ],
+    });
+  });
+
+  it('refuses an old `kind` asset inside a version 2 document as an entry (DEP-16)', () => {
+    const { manifest, issues } = parseUiIconManifest(
+      JSON.parse(
+        '{"schemaVersion":2,"icons":{"sheet.close":"close","nav.back":{"kind":"material","glyph":"chevron_left"}}}',
+      ),
+      options,
+    );
+    expect(Object.keys(manifest?.icons ?? {})).toEqual(['sheet.close']);
+    expect(issues).toEqual([
+      {
+        iconIssue: UiIconIssueCode.EntryRejected,
+        key: 'nav.back',
+        detail: 'not a vector asset',
+      },
+    ]);
   });
 
   it('drops a bad entry and keeps the good ones (per-entry fallback)', () => {
     const { manifest, issues } = parseUiIconManifest(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         icons: {
           'sheet.close': 'cancel',
           'nav.back': 'not_a_glyph_this_build_ships',
@@ -83,7 +128,7 @@ describe('parseUiIconManifest', () => {
       options,
     );
     expect(Object.keys(manifest?.icons ?? {})).toEqual(['sheet.close']);
-    expect(issues.map((issue) => [issue.code, issue.key])).toEqual([
+    expect(issues.map((issue) => [issue.iconIssue, issue.key])).toEqual([
       ['entry-rejected', 'nav.back'],
       ['entry-rejected', 'visit.noShow'],
     ]);
@@ -92,7 +137,7 @@ describe('parseUiIconManifest', () => {
   it('skips keys this build does not know (forward compatibility) with an issue', () => {
     const { manifest, issues } = parseUiIconManifest(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         icons: { 'future.key': 'close', 'sheet.close': 'close' },
       },
       options,
@@ -100,24 +145,28 @@ describe('parseUiIconManifest', () => {
     expect(manifest?.icons['future.key']).toBeUndefined();
     expect(manifest?.icons['sheet.close']).toBeDefined();
     expect(issues).toEqual([
-      { code: 'key-unknown', key: 'future.key', detail: expect.any(String) },
+      {
+        iconIssue: 'key-unknown',
+        key: 'future.key',
+        detail: expect.any(String),
+      },
     ]);
   });
 
   it('ignores unknown fields (tolerant reader)', () => {
     const { manifest, issues } = parseUiIconManifest(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         updatedBy: 'admin',
         icons: {
-          'sheet.close': { kind: 'material', glyph: 'close', note: 'x' },
+          'sheet.close': { iconAsset: 'MATERIAL', glyph: 'close', note: 'x' },
         },
       },
       options,
     );
     expect(issues).toEqual([]);
     expect(manifest?.icons['sheet.close']).toEqual({
-      kind: 'material',
+      iconAsset: UiIconAsset.Material,
       glyph: 'close',
     });
   });
@@ -132,10 +181,10 @@ describe('parseUiIconManifest', () => {
     ]) {
       const { manifest, issues } = parseUiIconManifest(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           icons: {
             'sheet.close': {
-              kind: 'vector',
+              iconAsset: 'VECTOR',
               viewBox: '0 0 24 24',
               paths: [{ d }],
             },
@@ -144,17 +193,17 @@ describe('parseUiIconManifest', () => {
         options,
       );
       expect(manifest?.icons['sheet.close'], d).toBeUndefined();
-      expect(issues[0]?.code, d).toBe('entry-rejected');
+      expect(issues[0]?.iconIssue, d).toBe('entry-rejected');
     }
   });
 
   it('refuses presentation attributes outside the closed set', () => {
     const { manifest } = parseUiIconManifest(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         icons: {
           'sheet.close': {
-            kind: 'vector',
+            iconAsset: 'VECTOR',
             viewBox: '0 0 24 24',
             paths: [{ d: 'M0 0h1', fill: 'url(#evil)' }],
           },
@@ -167,31 +216,41 @@ describe('parseUiIconManifest', () => {
 
   it('keeps the logo only when its assets are safe', () => {
     const bad = [
-      { kind: 'image', href: 'javascript:alert(1)', width: 1, height: 1 },
-      { kind: 'image', href: 'data:image/svg+xml,<svg/>', width: 1, height: 1 },
-      { kind: 'image', href: '//evil.example/logo.svg', width: 1, height: 1 },
+      { iconAsset: 'IMAGE', href: 'javascript:alert(1)', width: 1, height: 1 },
       {
-        kind: 'image',
+        iconAsset: 'IMAGE',
+        href: 'data:image/svg+xml,<svg/>',
+        width: 1,
+        height: 1,
+      },
+      {
+        iconAsset: 'IMAGE',
+        href: '//evil.example/logo.svg',
+        width: 1,
+        height: 1,
+      },
+      {
+        iconAsset: 'IMAGE',
         href: 'https://evil.example/logo.svg',
         width: 1,
         height: 1,
       },
-      { kind: 'image', href: '/logo.svg', width: 0, height: 10 },
+      { iconAsset: 'IMAGE', href: '/logo.svg', width: 0, height: 10 },
     ];
     for (const light of bad) {
       const { manifest, issues } = parseUiIconManifest(
-        { schemaVersion: 1, logo: { light } },
+        { schemaVersion: 2, logo: { light } },
         options,
       );
       expect(manifest?.logo, light.href).toBeUndefined();
-      expect(issues[0]?.code, light.href).toBe('logo-rejected');
+      expect(issues[0]?.iconIssue, light.href).toBe('logo-rejected');
     }
     const ok = parseUiIconManifest(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         logo: {
           light: {
-            kind: 'image',
+            iconAsset: 'IMAGE',
             href: '/brand/logo.png',
             width: 10,
             height: 2,
@@ -200,14 +259,14 @@ describe('parseUiIconManifest', () => {
       },
       options,
     );
-    expect(ok.manifest?.logo?.light.kind).toBe('image');
+    expect(ok.manifest?.logo?.light.iconAsset).toBe(UiIconAsset.Image);
   });
 
   it('never throws on arbitrary JSON (property)', () => {
     fc.assert(
       fc.property(fc.jsonValue(), (value) => {
         const result = parseUiIconManifest(value, options);
-        return result.manifest === null || result.manifest.schemaVersion === 1;
+        return result.manifest === null || result.manifest.schemaVersion === 2;
       }),
     );
   });
@@ -238,23 +297,33 @@ describe('isAllowedImageHref', () => {
 
 describe('mergeUiIconManifests', () => {
   const base: UiIconManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     icons: {
-      a: { kind: 'material', glyph: 'x' },
-      b: { kind: 'material', glyph: 'y' },
+      a: { iconAsset: UiIconAsset.Material, glyph: 'x' },
+      b: { iconAsset: UiIconAsset.Material, glyph: 'y' },
     },
     logo: {
-      light: { kind: 'vector', viewBox: '0 0 1 1', paths: [{ d: 'M0 0' }] },
+      light: {
+        iconAsset: UiIconAsset.Vector,
+        viewBox: '0 0 1 1',
+        paths: [{ d: 'M0 0' }],
+      },
     },
   };
 
   it('lets the patch win per key and keeps the base logo when the patch has none', () => {
     const merged = mergeUiIconManifests(base, {
-      schemaVersion: 1,
-      icons: { b: { kind: 'material', glyph: 'z' } },
+      schemaVersion: 2,
+      icons: { b: { iconAsset: UiIconAsset.Material, glyph: 'z' } },
     });
-    expect(merged.icons['a']).toEqual({ kind: 'material', glyph: 'x' });
-    expect(merged.icons['b']).toEqual({ kind: 'material', glyph: 'z' });
+    expect(merged.icons['a']).toEqual({
+      iconAsset: UiIconAsset.Material,
+      glyph: 'x',
+    });
+    expect(merged.icons['b']).toEqual({
+      iconAsset: UiIconAsset.Material,
+      glyph: 'z',
+    });
     expect(merged.logo).toBe(base.logo);
   });
 

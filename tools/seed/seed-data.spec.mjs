@@ -856,7 +856,9 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
           expect(doc.bookedAtUtcMs, id).not.toBeNull();
           const day = shopDayOf(
             Math.min(
-              ...own.map((seat) => TimeCoordinate.seatStartUtcMs(doc, seat)),
+              ...own.map((seat) =>
+                TimeCoordinate.instantAt(doc, seat.startMinutes),
+              ),
             ),
           );
           expect(day, id).toBe(doc.localDate);

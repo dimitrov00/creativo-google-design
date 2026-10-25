@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { termsFixture } from '@core/testing';
 import { Currency, BarberId, ServiceVariantId } from '@core/primitives';
-import {
-  BarberOffering,
-  type BarberOfferingInput,
-} from './barber-offering.data';
-import type { ServiceTermsInput, ServiceVariant } from './service-terms.data';
+import { BarberOffering } from './barber-offering.data';
+import type { ServiceTermsInput } from './service-terms-input.data';
+import type { ServiceVariant } from './service-variant.data';
 
 const SHORT = ServiceVariantId.of('short');
 const LONG = ServiceVariantId.of('long');
@@ -46,8 +44,8 @@ function rawTerms(
 }
 
 function input(
-  overrides: Partial<BarberOfferingInput> = {},
-): BarberOfferingInput {
+  overrides: Partial<BarberOffering.Input> = {},
+): BarberOffering.Input {
   return {
     barberId: 'ivan',
     ...rawTerms(1450, 35),

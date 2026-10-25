@@ -1,5 +1,6 @@
 import {
   Actor,
+  AttemptOutcome,
   BookingPolicy,
   CapacityTrigger,
   PreciseInstant,
@@ -18,7 +19,7 @@ import {
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
 } from '@core/entities';
-import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';
+import { TriggerAttemptSystem } from '@core/systems';
 import {
   appointmentFixture,
   FIXTURE_TODAY,

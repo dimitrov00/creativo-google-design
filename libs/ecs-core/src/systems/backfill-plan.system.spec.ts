@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AuditAction,
   BackfillOutcome,
+  BackfillPhase,
+  BackfillStart,
   Placement,
   BackfillJobName,
   SeatOccupant,
@@ -25,11 +27,9 @@ import {
   utcMs,
 } from '@core/testing';
 import {
-  BackfillPhase,
   type BackfillPageWalk,
   BackfillPlanSystem,
   type BackfillPosition,
-  BackfillStart,
   type MirrorPatch,
   type MirrorRow,
 } from './backfill-plan.system';

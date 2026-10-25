@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, effect, inject, signal } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
+import { Locale, Tag } from '@core/primitives';
 import {
   DEFAULT_DENSITY,
   DEFAULT_LANG,
@@ -8,6 +9,8 @@ import {
   DENSITY_STORAGE_KEY,
   LANG_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  UI_DENSITIES,
+  UI_THEMES,
   UiDensity,
   UiTheme,
 } from '@creativo/ui/tokens';
@@ -45,9 +48,7 @@ export class AppChromeService {
     });
 
     const storedLang = this.readStored(LANG_STORAGE_KEY);
-    this.transloco.setActiveLang(
-      storedLang === 'bg' || storedLang === 'en' ? storedLang : DEFAULT_LANG,
-    );
+    this.transloco.setActiveLang(Tag.or(Locale, storedLang, DEFAULT_LANG));
     this.document.documentElement.lang = this.transloco.getActiveLang();
     this.transloco.langChanges$.subscribe((lang) => {
       this.document.documentElement.lang = lang;
@@ -65,7 +66,8 @@ export class AppChromeService {
 
   private readTheme(): UiTheme {
     const stored = this.readStored(THEME_STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
+    const theme = UI_THEMES.find((candidate) => candidate === stored);
+    if (theme !== undefined) return theme;
     const prefersLight = this.matchMediaSafe(
       '(prefers-color-scheme: light)',
     )?.matches;
@@ -74,9 +76,9 @@ export class AppChromeService {
 
   private readDensity(): UiDensity {
     const stored = this.readStored(DENSITY_STORAGE_KEY);
-    return stored === 'compact' || stored === 'regular' || stored === 'spacious'
-      ? stored
-      : DEFAULT_DENSITY;
+    return (
+      UI_DENSITIES.find((candidate) => candidate === stored) ?? DEFAULT_DENSITY
+    );
   }
 
   private matchMediaSafe(query: string): MediaQueryList | undefined {

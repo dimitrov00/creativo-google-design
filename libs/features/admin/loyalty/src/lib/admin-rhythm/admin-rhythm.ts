@@ -13,10 +13,11 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { combineLatest, of } from 'rxjs';
-import { map, switchMap } from 'rxjs/operators';
+import { map } from 'rxjs/operators';
 import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   LocalizedText,
+  RhythmEffectiveChoice,
   StreakInterval,
   StreakIntervalRule,
   StreakPublishConsent,
@@ -26,16 +27,20 @@ import {
 } from '@core/components';
 import {
   EngagementErrorCode,
-  StaffEditError,
+  type RhythmPublishRefusal,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
+import { Locale, type ServiceId, Tag } from '@core/primitives';
 import {
   CatalogSystem,
   StreakPublishSystem,
   StreakRuleSystem,
 } from '@core/systems';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  translateCodedError,
+  loadedLanguage,
+} from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
   rhythmRuleUnits,
@@ -77,7 +82,6 @@ import type { AdminRhythmLeaving } from '../admin-rhythm.guard';
 import { RHYTHM_PREVIEW_CAP } from '../admin-rhythm.preview';
 import {
   type AdminRhythmPatch,
-  type AdminRhythmRefusal,
   type AdminRhythmSaveOutcome,
   AdminRhythmStore,
   fixedInterval,
@@ -85,7 +89,7 @@ import {
 } from '../admin-rhythm.store';
 import {
   AdminRhythmSheet,
-  type AdminRhythmSheetKind,
+  RhythmSheet,
   type RhythmServiceGroup,
 } from '../admin-rhythm-sheet/admin-rhythm-sheet';
 import {
@@ -102,10 +106,10 @@ import {
   historyRow,
   inForceCapsule,
   intervalOptions,
-  invalidNotice,
   previewWords,
   protectionsRow,
   qualifierOptions,
+  refusedFields,
   riskLeadOptions,
   ruleDigest,
   samplePeriods,
@@ -124,8 +128,38 @@ import {
 /** A word the page prints that is not a bare key: built once the catalogue has loaded. */
 type Translate = AdminRhythmContext['translate'];
 
-/** What «Запази» or a leave asks first, as `ui-alert`. */
-type Confirmation = 'stricter' | 'switchOff' | 'switchOn' | 'discard';
+/**
+ * What «Запази» or a leave asks first, as `ui-alert` — the field `confirm`,
+ * the ONLY source of these strings (Law 1). Values: external contract —
+ * each is the i18n key segment of the alert's title
+ * (`admin.rhythm.confirm.<value>`), so the spelling stays.
+ */
+const RhythmConfirmation = {
+  /** A stricter or mixed change: «Запази» asks first. */
+  Stricter: 'stricter',
+  /** The rhythm switched off. */
+  SwitchOff: 'switchOff',
+  /** The rhythm switched on. */
+  SwitchOn: 'switchOn',
+  /** A leave with a draft: «Отхвърли промените?». */
+  Discard: 'discard',
+} as const;
+type RhythmConfirmation =
+  (typeof RhythmConfirmation)[keyof typeof RhythmConfirmation];
+
+/**
+ * The alert's answers — the id of each `UiAlertAction`, handed back by
+ * `ui-alert` (`uiPicked`). Internal: the buttons are found by their test
+ * ids (`admin-rhythm-confirm-<answer>`), never by the id.
+ */
+const RhythmAlertAnswer = {
+  /** The safe answer: the draft stays. */
+  Keep: 'KEEP',
+  /** The draft goes, and the page lets go. */
+  Discard: 'DISCARD',
+  /** «Запази» after all. */
+  Save: 'SAVE',
+} as const;
 
 /** The receipt, or a refusal said in passing: ONE toast; a new one replaces the last. */
 interface Toast {
@@ -208,10 +242,14 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   // ── The sheets, the alert, the toast ────────────────────────────────────
 
+  /** The sheets, for the template's rows (never bare literals). */
+  protected readonly RhythmSheet = RhythmSheet;
+  /** The qualifier's menu ids, for the template. */
+  protected readonly StreakQualifier = StreakQualifier;
   /** The sheet that is open; `null` for none. */
-  protected readonly sheetKind = signal<AdminRhythmSheetKind | null>(null);
+  protected readonly sheet = signal<RhythmSheet | null>(null);
   /** The question on screen; `null` for none. */
-  protected readonly confirm = signal<Confirmation | null>(null);
+  protected readonly confirm = signal<RhythmConfirmation | null>(null);
   protected readonly toast = signal<Toast | null>(null);
   /** «Отмени предстоящата промяна»: armed by the first tap, done by the second. */
   protected readonly withdrawArmed = signal(false);
@@ -237,16 +275,11 @@ export class AdminRhythm implements AdminRhythmLeaving {
    * is built with `translate(…, lang)`, so no lookup inside a `computed`
    * starts a load.
    */
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
-  protected readonly lang = computed(() => this.loadedLang() ?? 'bg');
+  protected readonly lang = computed(() => this.loadedLang() ?? Locale.Bg);
 
   private readonly translate: Signal<Translate | null> = computed(() => {
     const lang = this.loadedLang();
@@ -353,11 +386,11 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly qualifierOptions = computed(() =>
     this.withContext((context) => qualifierOptions(context), []),
   );
-  /** P2's menu id for what the draft counts: every visit, or a list. */
+  /** P2's menu id for what the draft counts: every visit, or a list (services or categories alike). */
   protected readonly qualifierChoice = computed(() =>
     this.draft().streakQualifier === StreakQualifier.AnyVisit
-      ? 'anyVisit'
-      : 'services',
+      ? StreakQualifier.AnyVisit
+      : StreakQualifier.Services,
   );
   protected readonly qualifierLabel = computed(
     () =>
@@ -381,10 +414,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
     this.withContext((context) => intervalOptions(context), []),
   );
   /** P5's menu id for the draft's interval. */
-  protected readonly intervalChoice = computed(() =>
-    this.draft().streakInterval === StreakInterval.Personal
-      ? 'personal'
-      : 'fixed',
+  protected readonly intervalChoice = computed(
+    () => this.draft().streakInterval,
   );
   protected readonly intervalLabel = computed(
     () =>
@@ -421,7 +452,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     this.withContext((context) => effectiveOptions(context), []),
   );
   protected readonly effective = computed(() => {
-    const blank = { choice: 'tomorrow' as const, label: '' };
+    const blank = { choice: RhythmEffectiveChoice.Tomorrow, label: '' };
     const day = this.store.effectiveFrom();
     const days = this.store.days();
     return day === null || days === null
@@ -556,18 +587,18 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const confirm = this.confirm();
     if (translate === null || confirm === null) return null;
     switch (confirm) {
-      case 'switchOff':
+      case RhythmConfirmation.SwitchOff:
         return translate('admin.rhythm.confirm.switchOffMessage');
-      case 'switchOn':
+      case RhythmConfirmation.SwitchOn:
         return this.store.rule()?.sentence ?? null;
-      case 'stricter': {
+      case RhythmConfirmation.Stricter: {
         const preview = this.preview();
         return preview !== null &&
           preview.rhythmEstimate === RhythmEstimate.Estimate
           ? `${preview.clients} · ${preview.summary}`
           : null;
       }
-      case 'discard':
+      case RhythmConfirmation.Discard:
         return null;
     }
   });
@@ -578,16 +609,16 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const confirm = this.confirm();
     if (translate === null || confirm === null) return [];
     const keep: UiAlertAction = {
-      id: 'keep',
+      id: RhythmAlertAnswer.Keep,
       label: translate('admin.rhythm.confirm.discardKeep'),
       role: 'cancel',
-      preferred: confirm === 'discard',
+      preferred: confirm === RhythmConfirmation.Discard,
       testId: 'admin-rhythm-confirm-keep',
     };
-    if (confirm === 'discard') {
+    if (confirm === RhythmConfirmation.Discard) {
       return [
         {
-          id: 'discard',
+          id: RhythmAlertAnswer.Discard,
           label: translate('admin.rhythm.confirm.discardYes'),
           role: 'destructive',
           testId: 'admin-rhythm-confirm-discard',
@@ -597,7 +628,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     }
     return [
       {
-        id: 'save',
+        id: RhythmAlertAnswer.Save,
         label: translate('admin.rhythm.save'),
         role: 'default',
         testId: 'admin-rhythm-confirm-save',
@@ -615,12 +646,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
       const groups = this.serviceGroups();
       const lang = this.lang();
       if (groups === null) return;
-      const names = new Map<string, string>();
+      const names = new Map<ServiceId, string>();
       for (const group of groups) {
         for (const service of group.services) {
           names.set(
             service.id,
-            LocalizedText.pick(service.name, lang === 'en' ? 'en' : 'bg'),
+            LocalizedText.pick(service.name, Tag.or(Locale, lang, Locale.Bg)),
           );
         }
       }
@@ -640,7 +671,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     return new Promise((resolve) => {
       this.leaving?.(false);
       this.leaving = resolve;
-      this.confirm.set('discard');
+      this.confirm.set(RhythmConfirmation.Discard);
     });
   }
 
@@ -661,8 +692,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
 
+  /** P2's answer — `ui-choice-menu`'s untyped id, a `StreakQualifier` member: the list, or every visit. */
   protected pickQualifier(id: string): void {
-    if (id === 'services') {
+    if (id === StreakQualifier.Services) {
       const draft = this.draft();
       this.patch({
         qualifier:
@@ -671,15 +703,17 @@ export class AdminRhythm implements AdminRhythmLeaving {
             : StreakQualifierRule.services([]),
       });
       // A list with nothing chosen is no rule: the sheet opens on the choice.
-      this.openSheet('services');
+      this.openSheet(RhythmSheet.Services);
       return;
     }
     this.patch({ qualifier: StreakQualifierRule.anyVisit() });
   }
 
+  /** P5's answer — a `StreakInterval` member: by the client's habit, else the same for everyone. */
   protected pickInterval(id: string): void {
     this.patch({
-      interval: id === 'personal' ? personalInterval() : fixedInterval(),
+      interval:
+        id === StreakInterval.Personal ? personalInterval() : fixedInterval(),
     });
   }
 
@@ -716,25 +750,28 @@ export class AdminRhythm implements AdminRhythmLeaving {
     this.patch({ riskLeadDays: Number(id) });
   }
 
+  /** P13's answer — a `RhythmEffectiveChoice` member: a day of the admin's own opens the picker. */
   protected pickEffective(id: string): void {
     const days = this.store.days();
-    if (id === 'pick') {
-      this.openSheet('day');
+    if (id === RhythmEffectiveChoice.Picked) {
+      this.openSheet(RhythmSheet.Day);
       return;
     }
     if (days === null) return;
     this.store.setEffectiveFrom(
-      id === 'firstOfMonth' ? days.firstOfMonth : days.tomorrow,
+      id === RhythmEffectiveChoice.FirstOfMonth
+        ? days.firstOfMonth
+        : days.tomorrow,
     );
   }
 
-  protected openSheet(kind: AdminRhythmSheetKind): void {
+  protected openSheet(sheet: RhythmSheet): void {
     this.withdrawArmed.set(false);
-    this.sheetKind.set(kind);
+    this.sheet.set(sheet);
   }
 
   protected closeSheet(): void {
-    this.sheetKind.set(null);
+    this.sheet.set(null);
   }
 
   /** The value a unit field shows: the draft's figure, as text. */
@@ -760,10 +797,14 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const direction = change.direction;
     switch (StreakRuleSystem.publishConsent(direction)) {
       case StreakPublishConsent.AskSwitch:
-        this.confirm.set(this.draft().enabled ? 'switchOn' : 'switchOff');
+        this.confirm.set(
+          this.draft().enabled
+            ? RhythmConfirmation.SwitchOn
+            : RhythmConfirmation.SwitchOff,
+        );
         return;
       case StreakPublishConsent.Ask:
-        this.confirm.set('stricter');
+        this.confirm.set(RhythmConfirmation.Stricter);
         return;
       case StreakPublishConsent.AtOnce:
         void this.publish(direction);
@@ -813,13 +854,10 @@ export class AdminRhythm implements AdminRhythmLeaving {
     switch (refusal.errorCode) {
       case StreakPublishErrorCode.CallerNotAdmin:
       case StreakPublishErrorCode.CallerUnauthenticated:
+        // «Нямаш право за тази промяна.» — the code's own line
+        // (`errors.LOYALTY_STREAK_PUBLISH_CALLER_*`, today's words).
         this.toast.set({
-          // The staff edit's «not allowed» words — the same copy the
-          // retired dotted `booking.staffEdit.forbidden` key held.
-          label: translateCodedError(
-            this.transloco,
-            StaffEditError.forbidden(),
-          ),
+          label: translateCodedError(this.transloco, refusal),
           undo: false,
         });
         return;
@@ -865,16 +903,16 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected onConfirmPick(id: string): void {
     const confirm = this.confirm();
     this.confirm.set(null);
-    if (confirm === 'discard') {
-      const answer = id === 'discard';
+    if (confirm === RhythmConfirmation.Discard) {
+      const answer = id === RhythmAlertAnswer.Discard;
       if (answer) this.store.discard();
       this.leaving?.(answer);
       this.leaving = null;
       return;
     }
-    if (confirm === null || id !== 'save') return;
+    if (confirm === null || id !== RhythmAlertAnswer.Save) return;
     void this.publish(
-      confirm === 'stricter'
+      confirm === RhythmConfirmation.Stricter
         ? StreakRuleDirection.Stricter
         : StreakRuleDirection.Switch,
     );
@@ -883,7 +921,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected onConfirmDismiss(): void {
     const confirm = this.confirm();
     this.confirm.set(null);
-    if (confirm === 'discard') {
+    if (confirm === RhythmConfirmation.Discard) {
       this.leaving?.(false);
       this.leaving = null;
     }
@@ -899,12 +937,17 @@ export class AdminRhythm implements AdminRhythmLeaving {
     return context === null ? fallback : read(context);
   }
 
-  /** A refusal, worded by its `errorCode`; the ones said in passing (the toast) or by nothing are `null` here. */
+  /**
+   * A refusal, worded by its `errorCode` (Law 7.5): `errors.<errorCode>`
+   * with the struct as its params, the display params the page formats
+   * (`{{date}}`, `{{field}}`) spread over it. A request that got no answer
+   * keeps the shop's "our side" words; the ones said in passing (the toast)
+   * or by nothing are `null` here.
+   */
   private wordRefusal(
     context: AdminRhythmContext,
-    refusal: AdminRhythmRefusal,
+    refusal: RhythmPublishRefusal,
   ): string | null {
-    const t = context.translate;
     if (!StreakPublishError.guard(refusal)) {
       return translateCodedError(this.transloco, {
         errorCode: EngagementErrorCode.RepositoryFailure,
@@ -912,11 +955,15 @@ export class AdminRhythm implements AdminRhythmLeaving {
     }
     switch (refusal.errorCode) {
       case StreakPublishErrorCode.Stale:
-        return t('admin.rhythm.refused.stale');
+        return translateCodedError(this.transloco, refusal);
       case StreakPublishErrorCode.Invalid:
-        return invalidNotice(context, refusal.fields);
+        return translateCodedError(this.transloco, {
+          ...refusal,
+          field: refusedFields(context, refusal.fields),
+        });
       case StreakPublishErrorCode.TooEarly:
-        return t('admin.rhythm.refused.tooEarly', {
+        return translateCodedError(this.transloco, {
+          ...refusal,
           date: shortDay(refusal.earliest, context.today, context.lang),
         });
       default:

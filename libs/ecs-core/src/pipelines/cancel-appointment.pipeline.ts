@@ -2,9 +2,7 @@ import type { Actor, CancellationReason, WriteOp } from '@core/components';
 import { Result, type AppointmentId, type UserId } from '@core/primitives';
 import {
   BookingError,
-  type RepositoryError,
-  type SchedulingError,
-  type CancellationRefusal,
+  type CancelAppointmentError,
   CancellationRefusalCode,
 } from '@core/errors';
 import type { Appointment, GiftVoucher } from '@core/entities';
@@ -59,17 +57,6 @@ export type CancelAppointmentCommand = {
 export type CancelAppointmentAnswer = {
   readonly appointmentId: AppointmentId;
 };
-
-/**
- * No such visit — or not the caller's, indistinguishable on purpose
- * (`BOOKING_INVALID_INPUT`, field `appointmentId`; the edge answers the
- * callable's not-found) — a cancellation refusal, or the store.
- */
-export type CancelAppointmentError =
-  | BookingError.InvalidInput
-  | CancellationRefusal
-  | SchedulingError
-  | RepositoryError;
 
 export type CancelAppointmentPorts = TxPorts &
   PolicyReadPorts &

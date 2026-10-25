@@ -1,6 +1,6 @@
 import { firstNameOf } from '@creativo/features/shared/visits';
 import type { Appointment, ClientStatsRecord } from '@core/entities';
-import { LocalDate, defect } from '@core/primitives';
+import type { LocalDate } from '@core/primitives';
 import {
   PersonalRecord,
   PersonalRecordKind,
@@ -21,16 +21,20 @@ import {
   monthYearLong,
   runningCase,
 } from './client-card.format';
-import type {
-  AchievementsData,
-  FeaturedRecordVm,
-  RecordGroupVm,
-  RecordRowVm,
+import {
+  type AchievementsData,
+  type FeaturedRecordVm,
+  type RecordGroupVm,
+  type RecordRowVm,
   RecordTheme,
-  RecordYearVm,
-  RecordsPageVm,
+  type RecordYearVm,
+  type RecordsPageVm,
 } from './client-pages.vm';
-import { RECORD_KIND_WORDS, type RecordRowWord } from './client-card.words';
+import {
+  RECORD_KIND_WORDS,
+  RecordKindWord,
+  RecordRowWord,
+} from './client-card.words';
 import { rhythmStateOf } from './loyalty.presenter';
 import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
 
@@ -66,19 +70,34 @@ export interface RecordsPageInput {
   readonly historyComplete: boolean;
 }
 
+/** A row of «Рекорди»: a record of the account's, or a fact the card already reads. */
+type RecordRowId = RecordKindWord | RecordRowWord;
+
 /** The themes in the page's order, and the rows of each in theirs (§2.3.4). */
 const THEMES: readonly {
   readonly theme: RecordTheme;
-  readonly rows: readonly string[];
+  readonly rows: readonly RecordRowId[];
 }[] = [
-  { theme: 'rhythm', rows: ['longestRhythm', 'currentRhythm'] },
   {
-    theme: 'visits',
-    rows: ['totalVisits', 'last12Months', 'mostVisitsInYear', 'firstVisit'],
+    theme: RecordTheme.Rhythm,
+    rows: [RecordKindWord.LongestRhythm, RecordRowWord.CurrentRhythm],
   },
   {
-    theme: 'favourites',
-    rows: ['favouriteService', 'preferredBarber', 'usualServices'],
+    theme: RecordTheme.Visits,
+    rows: [
+      RecordRowWord.TotalVisits,
+      RecordRowWord.Last12Months,
+      RecordKindWord.MostVisitsInYear,
+      RecordKindWord.FirstVisit,
+    ],
+  },
+  {
+    theme: RecordTheme.Favourites,
+    rows: [
+      RecordKindWord.FavouriteService,
+      RecordRowWord.PreferredBarber,
+      RecordRowWord.UsualServices,
+    ],
   },
 ];
 
@@ -88,19 +107,24 @@ const THEMES: readonly {
  * picture, as a barber is drawn everywhere.
  */
 const ROW_ICONS: Readonly<
-  Record<Exclude<RecordRowWord, 'preferredBarber'>, UiIconName>
+  Record<
+    Exclude<RecordRowWord, typeof RecordRowWord.PreferredBarber>,
+    UiIconName
+  >
 > = {
-  currentRhythm: 'loyalty.record.currentRhythm',
-  totalVisits: 'loyalty.record.totalVisits',
-  last12Months: 'loyalty.record.last12Months',
-  usualServices: 'loyalty.record.usualServices',
+  [RecordRowWord.CurrentRhythm]: 'loyalty.record.currentRhythm',
+  [RecordRowWord.TotalVisits]: 'loyalty.record.totalVisits',
+  [RecordRowWord.Last12Months]: 'loyalty.record.last12Months',
+  [RecordRowWord.UsualServices]: 'loyalty.record.usualServices',
 };
 
 /** «По години» says something from the second year on: one bar is «Общо посещения» again. */
 export const YEARS_MIN = RecordsSystem.YEARS_MIN;
 
-function themeOf(id: string): RecordTheme {
-  return THEMES.find((group) => group.rows.includes(id))?.theme ?? 'visits';
+function themeOf(id: RecordRowId): RecordTheme {
+  return (
+    THEMES.find((group) => group.rows.includes(id))?.theme ?? RecordTheme.Visits
+  );
 }
 
 /**
@@ -111,7 +135,7 @@ function themeOf(id: string): RecordTheme {
 function rhythmOn(input: RecordsPageInput): boolean {
   return (
     input.rhythm !== null &&
-    StreakRuleSystem.isOnOn(input.rhythm, dayOf(input.data.today), true)
+    StreakRuleSystem.isOnOn(input.rhythm, input.data.today, true)
   );
 }
 
@@ -147,7 +171,7 @@ function featuredOf(
   // breaking a tie.
   const index = RecordsSystem.newest(
     shown.map(({ record }) => record),
-    dayOf(data.today),
+    data.today,
   );
   const newest = index === null ? undefined : shown.at(index);
   if (newest === undefined) return null;
@@ -165,7 +189,7 @@ function featuredOf(
       );
       break;
     case PersonalRecordKind.FirstVisit:
-      sentence = words.records.sentence('firstVisit');
+      sentence = words.records.sentence(RecordKindWord.FirstVisit);
       break;
     case PersonalRecordKind.LongestRhythm:
     case PersonalRecordKind.MostVisitsInYear:
@@ -203,9 +227,10 @@ function recordRow(
   const words = ctx.words;
   const card = recordCardVm(record, data, ctx);
   if (card === null) return null;
+  const kind = RECORD_KIND_WORDS[record.personalRecordKind];
   const base = {
     id: card.id,
-    theme: themeOf(card.id),
+    theme: themeOf(kind),
     title: card.label,
     faceName: null,
   };
@@ -246,16 +271,16 @@ function recordRow(
 }
 
 /** «Първо посещение · 1.03.2025 г.»: the whole date is the figure, always with its year. */
-function firstVisitRow(day: string, input: RecordsPageInput): RecordRowVm {
+function firstVisitRow(day: LocalDate, input: RecordsPageInput): RecordRowVm {
   const words = input.ctx.words;
-  const title = words.records.label('firstVisit');
+  const title = words.records.label(RecordKindWord.FirstVisit);
   return {
-    id: 'firstVisit',
-    theme: themeOf('firstVisit'),
+    id: RecordKindWord.FirstVisit,
+    theme: themeOf(RecordKindWord.FirstVisit),
     title,
     figure: dayWithYear(day, words.lang),
     line: null,
-    icon: RECORD_ICONS.firstVisit,
+    icon: RECORD_ICONS[RecordKindWord.FirstVisit],
     src: null,
     faceName: null,
     accessibleName: words.achievements.recordName(
@@ -269,7 +294,10 @@ function firstVisitRow(day: string, input: RecordsPageInput): RecordRowVm {
 
 /** A row that is not a record of the account's: a count the card already holds. */
 function countRow(
-  id: Extract<RecordRowWord, 'currentRhythm' | 'totalVisits' | 'last12Months'>,
+  id:
+    | typeof RecordRowWord.CurrentRhythm
+    | typeof RecordRowWord.TotalVisits
+    | typeof RecordRowWord.Last12Months,
   icon: UiIconName,
   count: number,
   line: string | null,
@@ -290,7 +318,9 @@ function countRow(
     accessibleName: words.achievements.recordName(
       title,
       // «Общо посещения: 23» names its own unit; the others are heard with it.
-      id === 'totalVisits' ? value : words.visitsModule.sectionVisits(count),
+      id === RecordRowWord.TotalVisits
+        ? value
+        : words.visitsModule.sectionVisits(count),
       line,
       false,
     ),
@@ -319,8 +349,8 @@ function rowsOf(
   if (rhythm !== null && rhythm.current > 0) {
     add(
       countRow(
-        'currentRhythm',
-        ROW_ICONS.currentRhythm,
+        RecordRowWord.CurrentRhythm,
+        ROW_ICONS[RecordRowWord.CurrentRhythm],
         rhythm.current,
         rhythm.runStartedOn === null
           ? null
@@ -333,8 +363,8 @@ function rowsOf(
   if (stats !== null && stats.lifetimeVisitsCompleted > 0) {
     add(
       countRow(
-        'totalVisits',
-        ROW_ICONS.totalVisits,
+        RecordRowWord.TotalVisits,
+        ROW_ICONS[RecordRowWord.TotalVisits],
         stats.lifetimeVisitsCompleted,
         null,
         input,
@@ -342,39 +372,35 @@ function rowsOf(
     );
     // The window is read over the shop's whole today, as every counter's
     // is (`ClientStatsSystem.statWindowsOnDay`): a visit of thirteen months
-    // ago has left it without anything being rewritten. A today that is no
-    // shop day reads no window: no row.
-    const today = LocalDate.parse(data.today);
-    if (today.ok) {
-      add(
-        countRow(
-          'last12Months',
-          ROW_ICONS.last12Months,
-          ClientStatsSystem.statWindowsOnDay(stats, today.value).visitsCompleted
-            .last12m,
-          null,
-          input,
-        ),
-      );
-    }
+    // ago has left it without anything being rewritten.
+    add(
+      countRow(
+        RecordRowWord.Last12Months,
+        ROW_ICONS[RecordRowWord.Last12Months],
+        ClientStatsSystem.statWindowsOnDay(stats, data.today).visitsCompleted
+          .last12m,
+        null,
+        input,
+      ),
+    );
   }
 
   // The book knows the first visit before the account stamps its record.
   if (
-    !rows.has('firstVisit') &&
+    !rows.has(RecordKindWord.FirstVisit) &&
     stats !== null &&
     stats.firstVisitLocalDate !== null
   ) {
     add(firstVisitRow(stats.firstVisitLocalDate, input));
   }
 
-  const barberId: string | null = stats?.preferredBarberId ?? null;
+  const barberId = stats?.preferredBarberId ?? null;
   const barber = barberId === null ? null : ctx.catalog.barberName(barberId);
   if (barberId !== null && barber !== null) {
-    const title = words.records.row('preferredBarber');
+    const title = words.records.row(RecordRowWord.PreferredBarber);
     add({
-      id: 'preferredBarber',
-      theme: themeOf('preferredBarber'),
+      id: RecordRowWord.PreferredBarber,
+      theme: themeOf(RecordRowWord.PreferredBarber),
       title,
       // The figure is his FIRST name, as every line of the card names him
       // (§2.3.4 «Иван»; the glance's «12.09 · Иван»): the whole name is
@@ -405,14 +431,14 @@ function rowsOf(
       favourite,
     )
   ) {
-    const title = words.records.row('usualServices');
+    const title = words.records.row(RecordRowWord.UsualServices);
     add({
-      id: 'usualServices',
-      theme: themeOf('usualServices'),
+      id: RecordRowWord.UsualServices,
+      theme: themeOf(RecordRowWord.UsualServices),
       title,
       figure: usual.map((service) => service.name).join(' · '),
       line: null,
-      icon: ROW_ICONS.usualServices,
+      icon: ROW_ICONS[RecordRowWord.UsualServices],
       src: null,
       faceName: null,
       accessibleName: words.achievements.recordName(
@@ -490,7 +516,7 @@ export function recordsPageVm(input: RecordsPageInput): RecordsPageVm {
   const featured = featuredOf(records, input);
   const rows = rowsOf(records, input);
   const groups: RecordGroupVm[] = THEMES.flatMap(({ theme, rows: ids }) => {
-    if (theme === 'rhythm' && !rhythm) return [];
+    if (theme === RecordTheme.Rhythm && !rhythm) return [];
     const drawn = ids.flatMap((id) => {
       const row = rows.get(id);
       return row === undefined || id === featured?.id ? [] : [row];
@@ -505,12 +531,4 @@ export function recordsPageVm(input: RecordsPageInput): RecordsPageVm {
     groups,
     years: yearsOf(records, input),
   };
-}
-
-// ── The card's own values → ecs-core structs ──────────────────────────────
-
-/** A shop day the card holds: a clock's «today». */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
 }

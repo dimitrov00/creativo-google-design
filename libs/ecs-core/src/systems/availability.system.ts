@@ -5,6 +5,7 @@ import {
   type ChairTime,
   DayWindows,
   MinuteRange,
+  type NormalizedRanges,
   type ShopNow,
 } from '@core/components';
 import {
@@ -19,10 +20,7 @@ import {
   MinuteOfDay,
 } from '@core/primitives';
 import type { BarberSchedule } from '@core/entities';
-import {
-  IntervalSetSystem,
-  type NormalizedRanges,
-} from './interval-set.system';
+import { IntervalSetSystem } from './interval-set.system';
 
 /** Minutes in one shop day on its wall clock. */
 const MINUTES_PER_DAY = 1440;

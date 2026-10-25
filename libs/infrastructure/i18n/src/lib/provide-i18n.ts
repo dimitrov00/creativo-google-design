@@ -1,25 +1,22 @@
 import { EnvironmentProviders } from '@angular/core';
 import { provideTransloco } from '@jsverse/transloco';
+import { Locale, Tag } from '@core/primitives';
 import { TranslationHttpLoader } from './translation-loader';
-
-export const SUPPORTED_LANGS = ['bg', 'en'] as const;
-export type SupportedLang = (typeof SUPPORTED_LANGS)[number];
-
-export function isSupportedLang(lang: string): lang is SupportedLang {
-  return (SUPPORTED_LANGS as readonly string[]).includes(lang);
-}
 
 /**
  * `assets/i18n/{lang}.json` must be reachable at runtime — each consuming
  * app's build config needs an assets glob copying this lib's
- * `src/assets/i18n` into its own `assets/i18n` output.
+ * `src/assets/i18n` into its own `assets/i18n` output. The languages are
+ * the `Locale` dictionary's, in its order (`bg`, `en`); an untrusted
+ * language reads through `Tag.has(Locale, raw)` / `Tag.or(Locale, raw,
+ * Locale.Bg)`.
  */
 export function provideI18n(): EnvironmentProviders[] {
   return provideTransloco({
     config: {
-      availableLangs: [...SUPPORTED_LANGS],
-      defaultLang: 'bg',
-      fallbackLang: 'bg',
+      availableLangs: [...Tag.values(Locale)],
+      defaultLang: Locale.Bg,
+      fallbackLang: Locale.Bg,
       reRenderOnLangChange: true,
       prodMode: true,
       // translateCodedError() owns the missing-key fallback (the raw errorCode) —

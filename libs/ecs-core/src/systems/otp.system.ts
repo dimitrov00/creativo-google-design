@@ -40,8 +40,8 @@ export const OtpLimits = {
   /**
    * The resend throttle: one open challenge per destination per minute.
    * Server-side abuse throttling, deliberately NOT part of the deployment's
-   * `OtpPolicy` (`request-otp.use-case.ts:25-28`), so a config edit can never
-   * widen it by accident.
+   * `AuthStrategy.OtpPolicy` (`request-otp.use-case.ts:25-28`), so a config
+   * edit can never widen it by accident.
    */
   ResendWindowMinutes: 1,
 } as const;

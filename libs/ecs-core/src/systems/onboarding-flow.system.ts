@@ -5,11 +5,10 @@ import {
   OnboardingFlowEventKind,
   OnboardingFlowState,
   OnboardingFlowStep,
-} from '@core/components';
-import {
-  type ProfileCompletion,
+  PersonalizeStep,
   ProfileCompletionKey,
-} from './profile-completion.system';
+} from '@core/components';
+import type { ProfileCompletion } from './profile-completion.system';
 
 /**
  * OnboardingFlowSystem — the onboarding flow's transition function
@@ -25,14 +24,6 @@ import {
  * Total over the tagged unions: an event a step does not accept answers
  * `IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION` with the two tags.
  */
-
-/** The optional phase's steps, in the order the machine walks them. */
-export const PERSONALIZE_STEPS = [
-  OnboardingFlowStep.Services,
-  OnboardingFlowStep.Birthday,
-  OnboardingFlowStep.Avatar,
-] as const;
-export type PersonalizeStep = (typeof PERSONALIZE_STEPS)[number];
 
 /** The event that leaves each personalization step untouched — how a step outside the plan is stepped over. */
 function skipEventOf(step: PersonalizeStep): OnboardingFlowEvent {
@@ -115,7 +106,7 @@ export const OnboardingFlowSystem = {
           case OnboardingFlowEventKind.Registered:
             return Result.ok(OnboardingFlowState.reward());
           case OnboardingFlowEventKind.RegistrationFailed:
-            return Result.ok(OnboardingFlowState.about(event.message));
+            return Result.ok(OnboardingFlowState.about(event.error));
           default:
             return invalid(state, event);
         }
@@ -154,7 +145,7 @@ export const OnboardingFlowSystem = {
             return Result.ok(OnboardingFlowState.avatar(state.selected));
           case OnboardingFlowEventKind.BirthdayFailed:
             return Result.ok(
-              OnboardingFlowState.birthday(state.selected, event.message),
+              OnboardingFlowState.birthday(state.selected, event.error),
             );
           case OnboardingFlowEventKind.Back:
             return Result.ok(OnboardingFlowState.services(state.selected));
@@ -183,7 +174,7 @@ export const OnboardingFlowSystem = {
 
   /** A personalization step (services, birthday, avatar) — the ones a plan may leave out. */
   isPersonalizeStep(step: string): step is PersonalizeStep {
-    return planHas(PERSONALIZE_STEPS, step);
+    return PersonalizeStep.is(step);
   },
 
   /**
@@ -201,7 +192,7 @@ export const OnboardingFlowSystem = {
     const first = OnboardingFlowSystem.next(state, event);
     if (!first.ok) return first;
     let current = first.value;
-    for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
+    for (let guard = 0; guard < PersonalizeStep.ALL.length; guard++) {
       const step = current.onboardingFlowStep;
       if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
         break;
@@ -225,7 +216,7 @@ export const OnboardingFlowSystem = {
     const first = OnboardingFlowSystem.next(state, back);
     if (!first.ok) return first;
     let current = first.value;
-    for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
+    for (let guard = 0; guard < PersonalizeStep.ALL.length; guard++) {
       const step = current.onboardingFlowStep;
       if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
         break;
@@ -250,8 +241,7 @@ export const OnboardingFlowSystem = {
   ): readonly PersonalizeStep[] {
     if (completion === null) return [];
     const open: PersonalizeStep[] = [];
-    for (let i = 0; i < PERSONALIZE_STEPS.length; i++) {
-      const step = PERSONALIZE_STEPS[i] as PersonalizeStep;
+    for (const step of PersonalizeStep.ALL) {
       const key = completionKeyOf(step);
       if (key !== null && isOpen(completion, key)) open.push(step);
     }

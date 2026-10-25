@@ -103,7 +103,7 @@ export const ClientStatsPolicy = {
    */
   isLateCancellation(
     policy: ClientStatsPolicy,
-    seatStartUtcMs: UtcEpochMs,
+    startUtcMs: UtcEpochMs,
     cancelledAtUtcMs: UtcEpochMs,
     stampedWindowHours: number | null,
   ): boolean {
@@ -111,7 +111,7 @@ export const ClientStatsPolicy = {
       stampedWindowHours ?? policy.booking.cancellationWindowHours;
     return !BookingPolicy.allowsFreeCancelAt(
       windowHours,
-      seatStartUtcMs,
+      startUtcMs,
       cancelledAtUtcMs,
     );
   },

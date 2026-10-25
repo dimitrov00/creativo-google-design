@@ -1,4 +1,9 @@
-import { CompositionKind, type ServiceComposition } from '@core/components';
+import {
+  CompositionKind,
+  Selectability,
+  type ServiceComposition,
+  type ServiceSelectability,
+} from '@core/components';
 import type { Service } from '@core/entities';
 import type { ServiceId } from '@core/primitives';
 
@@ -9,29 +14,6 @@ import type { ServiceId } from '@core/primitives';
  */
 export type ConflictService = Pick<Service, 'id' | 'conflictsWith'> &
   ServiceComposition;
-
-/**
- * The selectability tags — the ONLY source of these strings, named after the
- * field they type (`selectability`; was `ServiceSelectabilityKind`).
- */
-export const Selectability = {
-  Selectable: 'SELECTABLE',
-  Blocked: 'BLOCKED',
-} as const;
-export type Selectability = (typeof Selectability)[keyof typeof Selectability];
-
-/**
- * Whether a candidate service can join one seat's selection, and if not, what
- * stands in the way (`service-conflicts.ts:9-11`). `BLOCKED` always names the
- * blockers — an unexplained lock is the failure mode this rule exists to
- * prevent.
- */
-export type ServiceSelectability =
-  | { readonly selectability: typeof Selectability.Selectable }
-  | {
-      readonly selectability: typeof Selectability.Blocked;
-      readonly by: readonly ServiceId[];
-    };
 
 const SELECTABLE: ServiceSelectability = {
   selectability: Selectability.Selectable,

@@ -44,13 +44,13 @@ export const AuthFlowSystem = {
             return Result.ok(
               event.blocked
                 ? AuthFlowState.blocked()
-                : AuthFlowState.identify(event.message),
+                : AuthFlowState.identify(event.error),
             );
           case AuthFlowEventKind.VerifyFailed:
             return Result.ok(
               event.blocked
                 ? AuthFlowState.blocked()
-                : AuthFlowState.otp(state.identifier, event.message),
+                : AuthFlowState.otp(state.identifier, event.error),
             );
           case AuthFlowEventKind.Verified:
             return Result.ok(

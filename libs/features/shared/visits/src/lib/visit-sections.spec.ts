@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BookingStatus, LocalDate, type UtcEpochMs } from '@core/primitives';
+import {
+  AppointmentId,
+  BookingStatus,
+  LocalDate,
+  type UtcEpochMs,
+} from '@core/primitives';
 import type { WallTime } from '@core/components';
 import { ZonedTimeSystem } from '@core/systems';
 import { unwrapOk } from '@core/testing';
@@ -38,7 +43,7 @@ function row(
   const start = at(iso);
   const upcoming = options.upcoming ?? false;
   return {
-    id,
+    id: AppointmentId.of(id),
     visitRowEntry: VisitRowEntry.Visit,
     localDate: start.localDate,
     startMinutes: start.minute,

@@ -13,6 +13,8 @@ import { memoryClockPorts, utcMs } from '@core/testing';
 import {
   appendTeamNote,
   type AppendTeamNoteCommand,
+  saveTeamNote,
+  type SaveTeamNoteCommand,
 } from './append-team-note.pipeline';
 
 /*
@@ -211,5 +213,97 @@ describe('appendTeamNote — a line below the visit’s note', () => {
     expect(second.saved.map((note) => note?.text)).toEqual([
       'по-късна бележка\nнаводнение',
     ]);
+  });
+});
+
+/*
+ * `saveTeamNote` — the note the visit sheet's «Запази» writes straight
+ * through, moved from `staff-day.store.ts` `saveTeamNote` (pass D, D-10.2):
+ * the record is the one `appendTeamNote` writes (`{ id, text, authorUserId,
+ * writtenAtUtcMs }`, key order unchanged), built by the one shared builder.
+ */
+const saved = (text: string | null): SaveTeamNoteCommand => ({
+  appointmentId: VISIT,
+  text,
+  authorUserId: IVAN,
+});
+
+describe('saveTeamNote — the visit’s note, written straight through', () => {
+  it('writes the note in its stored form, stamped with the author and the clock — no read', async () => {
+    const world = noteWorld('алергия към ментол');
+    const save = saveTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    const result = await save(saved('  къса отстрани  '));
+
+    const note: AppointmentNote = {
+      id: VISIT,
+      text: 'къса отстрани',
+      authorUserId: IVAN,
+      writtenAtUtcMs: NOW,
+    };
+    expect(result).toEqual(Result.ok(note));
+    expect(world.saved).toEqual([note]);
+    // Written over, never appended: nothing is read; the clock, then the write.
+    expect(world.timeline).toEqual(['clock', 'write']);
+  });
+
+  it('keeps the record’s key order — the one builder appendTeamNote writes through', async () => {
+    const world = noteWorld(null);
+    const save = saveTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    await save(saved('къса отстрани'));
+
+    expect(Object.keys(world.saved[0] ?? {})).toEqual([
+      'id',
+      'text',
+      'authorUserId',
+      'writtenAtUtcMs',
+    ]);
+  });
+
+  it('deletes the stored note for a blank or absent text — the port is handed null, the clock never read', async () => {
+    const world = noteWorld('алергия към ментол');
+    const save = saveTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    expect(await save(saved('   '))).toEqual(Result.ok(null));
+    expect(await save(saved(null))).toEqual(Result.ok(null));
+    expect(world.saved).toEqual([null, null]);
+    expect(world.timeline).toEqual(['write', 'write']);
+  });
+
+  it('answers the write’s failure when the note did not save', async () => {
+    const failure = RepositoryError.writeFailed(
+      'appointmentNotes/appointment-1',
+      null,
+    );
+    const world = noteWorld(null, { save: Result.err(failure) });
+    const save = saveTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    expect(await save(saved('къса отстрани'))).toEqual(Result.err(failure));
+    expect(await save(saved(null))).toEqual(Result.err(failure));
+  });
+
+  it('names no author before the session is an onboarded one', async () => {
+    const world = noteWorld(null);
+    const save = saveTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    await save({ ...saved('къса отстрани'), authorUserId: null });
+
+    expect(world.saved[0]?.authorUserId).toBeNull();
   });
 });

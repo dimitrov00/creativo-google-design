@@ -1,6 +1,11 @@
 import type { Appointment, WaitlistRequest } from '@core/entities';
-import { VisitStatusMark } from '@core/components';
-import { VisitGrain, VisitPerspective, VisitStorySystem } from '@core/systems';
+import {
+  VisitGrain,
+  VisitPerspective,
+  VisitStatusMark,
+} from '@core/components';
+import type { BarberId } from '@core/primitives';
+import { VisitStorySystem } from '@core/systems';
 import { firstNameOf } from '../first-name';
 import {
   subjectStoryOf,
@@ -9,17 +14,15 @@ import {
   visitZoneOf,
   waitlistRowOf,
 } from '../visit-row.presenter';
+import type { VisitLookup } from '../visit-lookup.contracts';
+import { TrailingFactFace, type VisitRowVm } from '../visit-row.vm';
 import {
-  TrailingFactFace,
-  type VisitLookup,
-  type VisitRowVm,
-} from '../visit-row.vm';
-import {
+  type AppointmentCardVm,
   type VisitCardOptions,
   VisitCardSlot,
-  type VisitCardVm,
   type VisitLinePart,
   type WaitlistCardOptions,
+  type WaitlistCardVm,
 } from './visit-card.vm';
 
 /*
@@ -54,7 +57,7 @@ export function visitCardOf(
   appointment: Appointment,
   options: VisitCardOptions,
   lookup: VisitLookup,
-): VisitCardVm {
+): AppointmentCardVm {
   const words = options.words;
   const staff = options.perspective === VisitPerspective.Staff;
   const last = options.visitCardSlot === VisitCardSlot.Last;
@@ -95,16 +98,21 @@ export function visitCardOf(
   // The story is the row's own (the same subject, the same perspective).
   const story = subjectStoryOf(appointment, options);
   const barberIds = VisitStorySystem.subjectBarberIds(appointment, story);
-  const nameOf = (barberId: string) =>
+  const nameOf = (barberId: BarberId) =>
     lookup.barberName(barberId) ?? words.barberRole;
   const showBarber = options.barber !== false && barberIds.length > 0;
   const several = barberIds.length > 1;
+  const single = several ? null : (barberIds[0] ?? null);
+  // `showBarber` holds a barber, so a lone one is `single`; the guarded
+  // read words the role where (never) none is named, as an unknown barber.
   const whoShort = !showBarber
     ? null
     : !staff
       ? several
         ? words.severalBarbers(barberIds.length)
-        : nameOf(barberIds[0] ?? '')
+        : single === null
+          ? words.barberRole
+          : nameOf(single)
       : at.list(
           barberIds.map((barberId) => {
             const name = lookup.barberName(barberId);
@@ -116,7 +124,6 @@ export function visitCardOf(
     : !staff && several
       ? words.severalBarbers(barberIds.length)
       : at.list(barberIds.map(nameOf));
-  const single = several ? null : (barberIds[0] ?? null);
 
   // WHERE — a worked visit's shop, by its short name, and only where the
   // tenant has more than one: the row's rule (`VisitStorySystem.namesShop`),
@@ -227,7 +234,7 @@ export function waitlistCardOf(
   request: WaitlistRequest,
   options: WaitlistCardOptions,
   lookup: VisitLookup,
-): VisitCardVm {
+): WaitlistCardVm {
   const words = options.words;
   const row = waitlistRowOf(
     request,

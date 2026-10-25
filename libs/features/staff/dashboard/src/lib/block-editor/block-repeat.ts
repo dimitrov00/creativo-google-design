@@ -6,8 +6,9 @@ import {
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
+  RepeatPreset,
 } from '@core/components';
-import { RepeatPreset, VisitDraftSystem } from '@core/systems';
+import { VisitDraftSystem } from '@core/systems';
 
 /* ────────────────────────────────────────────────────────────────────────
  * THE REPEAT PAGE'S POLICY — what the sheet does to a rule when a person

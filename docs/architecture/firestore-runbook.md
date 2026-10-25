@@ -676,13 +676,15 @@ STORE=(apps/functions/src libs/infrastructure tools/seed tools/seed-dev-catalog.
        libs/ecs-core/src/pipelines libs/ecs-core/src/ports libs/ecs-core/src/testing)
 REVIEW=(libs/features apps/web/src/app)
 NOT_FS=(':(exclude)libs/infrastructure/web-storage/**' ':(exclude)*.md')
-# The flip's own files: the programs adapter, the four features, the system, the pipeline.
+# The flip's own files: the programs adapter, the four features, the system, the pipeline, and the
+# input component (its three form structs live in their own files since pass D's L-1 split).
 FLIPPED4=(libs/features/admin/programs libs/features/marketing/careers
           libs/features/marketing/courses libs/features/marketing/events
           ':(glob)libs/infrastructure/**/*program*' ':(glob)libs/infrastructure/**/*position*'
           ':(glob)libs/infrastructure/**/*course*' ':(glob)libs/infrastructure/**/*event*'
           libs/ecs-core/src/systems/programs.system.ts libs/ecs-core/src/pipelines/program-content.pipeline.ts
-          libs/ecs-core/src/components/program-input.data.ts)
+          libs/ecs-core/src/components/program-input.data.ts libs/ecs-core/src/components/position-input.data.ts
+          libs/ecs-core/src/components/course-input.data.ts libs/ecs-core/src/components/shop-event-input.data.ts)
 
 # Removed document fields (whole words; runbook W4). `timezone` is scoped to the flip's files:
 # `edge.ts`, `tenant-zone.ts` and the shop location's docs spell it for other reasons.
@@ -1128,11 +1130,11 @@ gate 'ui · zone literal' -F "'Europe/Sofia'" -- 'libs/features/**/*.ts' ':!**/*
 # 4. No kind/status key in a production object literal of features/ui (the rule covers type
 #    signatures; this covers untyped literals and a bare-literal PARAMETER such as the retired
 #    `openCreate(kind: 'booking' | 'block')`). client-loyalty.ts: PLACEHOLDER_HEIGHTS.status is a
-#    CSS height key, not a discriminator; libs/ui/icons: the manifest wire format and its
-#    README/vocabulary (UR-13 a).
+#    CSS height key, not a discriminator. libs/ui/icons is no longer exempt: the manifest's asset
+#    discriminator is `iconAsset` since schema 2 (pass D, DEP-16; its README is prose, outside
+#    PROD49).
 gate 'ui · kind/status literal keys' -E "(^|[^A-Za-z_.])(kind|status)[[:space:]]*:[[:space:]]*'" -- \
   libs/features libs/ui apps/web/src "${PROD49[@]}" \
-  ':!libs/ui/icons/**' \
   ':!libs/features/staff/client-card/src/lib/client-loyalty/client-loyalty.ts'
 # 5. The four rules, on under BOTH basePaths. The `@nx/eslint:lint` executor chdirs to the
 #    workspace root and hands ESLint the project's config as `overrideConfigFile` (base = the
@@ -1143,7 +1145,8 @@ gate 'ui · kind/status literal keys' -E "(^|[^A-Za-z_.])(kind|status)[[:space:]
 ROOT49="$PWD"
 RULES49='creativo/no-undecorated-class creativo/no-ambient-clock creativo/no-generic-discriminator creativo/no-hand-built-load-slice'
 # 5a. --print-config: each rule at severity 2 with its `include` option, both ways; the icons
-#     MANIFEST probe shows no-generic-discriminator at 2 with the manifest allowed by `allowIn`.
+#     MANIFEST probe shows no-generic-discriminator at 2 with NO `allowIn` naming the manifest
+#     (pass D, DEP-16: schema 2's `iconAsset` — the manifest is checked like every UI file).
 #     A probe is `<project dir>|<file relative to it>`; the file need not exist.
 for probe in 'libs/features/shared/visits|src/lib/probe.ts' 'libs/ui/controls|src/lib/probe.ts' \
   'apps/showcase|src/app/probe.ts' 'apps/web|src/app/probe.ts' 'libs/ui/icons|src/lib/manifest/icon-manifest.ts'; do
@@ -1166,13 +1169,14 @@ for probe in 'libs/features/shared/visits|src/lib/probe.ts' 'libs/ui/controls|sr
           const entry = rules[id] ?? [];
           return (entry[0] === 2 || entry[0] === "error") && Array.isArray(entry[1]?.include);
         });
-        const allowed = !manifest || JSON.stringify(rules["creativo/no-generic-discriminator"]?.[1]?.allowIn ?? [])
+        const checked = !manifest || !JSON.stringify(rules["creativo/no-generic-discriminator"]?.[1]?.allowIn ?? [])
           .includes("/libs/ui/icons/src/lib/manifest/");
-        process.exit(on && allowed ? 0 : 1);
+        process.exit(on && checked ? 0 : 1);
       });' "$file" "$RULES49"; then echo "ok    ui · the four rules on $dir/$file ($base)"; else echo "FAIL  ui · the four rules on $dir/$file ($base)"; FAILED=1; fi
   done
 done
-# 5b. The manifest's own `kind` signatures are NOT reported, from the root and from libs/ui/icons.
+# 5b. The icon manifest carries no generic discriminator (DEP-16: `iconAsset`, schema 2) — the rule,
+#     ON there since pass D, reports nothing in it, from the root and from libs/ui/icons.
 for base in executor lookup; do
   if [ "$base" = executor ]; then
     hits=$(node --input-type=module -e '
@@ -1184,7 +1188,7 @@ for base in executor lookup; do
     hits=$(cd libs/ui/icons && node "$ROOT49/node_modules/eslint/bin/eslint.js" -f json src/lib/manifest/icon-manifest.ts 2>/dev/null \
       | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>console.log(JSON.parse(s)[0].messages.filter((m)=>m.ruleId==="creativo/no-generic-discriminator").length))')
   fi
-  [ "$hits" = 0 ] && echo "ok    ui · the icon manifest's kind is allowed ($base)" || { echo "FAIL  ui · the icon manifest's kind is allowed ($base)"; FAILED=1; }
+  [ "$hits" = 0 ] && echo "ok    ui · the icon manifest carries no generic discriminator ($base)" || { echo "FAIL  ui · the icon manifest carries no generic discriminator ($base)"; FAILED=1; }
 done
 # 5c. The canary: one class, one Date.now(), one `kind:` signature and one hand-built load slice in
 #     a temporary file, flagged EXACTLY four times by `pnpm nx lint <project>` (the executor) and by eslint run

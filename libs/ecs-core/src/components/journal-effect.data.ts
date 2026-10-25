@@ -1,7 +1,5 @@
 import type {
   AchievementRuleId,
-  CouponGrantId,
-  GiftVoucherId,
   PauseId,
   RedemptionId,
   RewardId,
@@ -11,7 +9,8 @@ import type {
   LocalDate,
   AttendanceState,
 } from '@core/primitives';
-import type { PerkId } from './gamification.data';
+import type { GrantRefFields } from './grant-ref-fields.data';
+import type { RewardRefFields } from './reward-ref-fields.data';
 
 /**
  * What a journal entry changed — the entry's discriminator `journalEffect`,
@@ -30,52 +29,6 @@ export const JournalEffect = {
   VisitOutcome: 'VISIT_OUTCOME',
 } as const;
 export type JournalEffect = (typeof JournalEffect)[keyof typeof JournalEffect];
-
-/** The pills' values — the ONLY source of these strings (the companion below spreads them). */
-const JOURNAL_FEED_VALUES = {
-  All: 'ALL',
-  Points: 'POINTS',
-  Rewards: 'REWARDS',
-  Status: 'STATUS',
-} as const;
-
-/**
- * The activity feed's pills — «Всички», «Точки», «Награди», «Статус».
- * The words on screen (and their lowercase test ids and i18n keys) are the
- * feature's, keyed by this dictionary.
- */
-export type JournalFeed =
-  (typeof JOURNAL_FEED_VALUES)[keyof typeof JOURNAL_FEED_VALUES];
-
-/**
- * The pills (`JournalFeed.All` …) and the journal effects each one reads:
- * `JournalFeed.effectsOf(feed)` is the `journalEffect in […]` filter of a
- * feed page (`PageClientJournal`). The feed shows five effects; a streak,
- * freeze, pause or visit-outcome row is never one of its rows.
- */
-export const JournalFeed = {
-  ...JOURNAL_FEED_VALUES,
-
-  /** The effects a pill reads, in the feed's order — a fresh array each call. */
-  effectsOf(feed: JournalFeed): readonly JournalEffect[] {
-    switch (feed) {
-      case JOURNAL_FEED_VALUES.All:
-        return [
-          JournalEffect.Points,
-          JournalEffect.Achievement,
-          JournalEffect.Tier,
-          JournalEffect.Reward,
-          JournalEffect.Redemption,
-        ];
-      case JOURNAL_FEED_VALUES.Points:
-        return [JournalEffect.Points];
-      case JOURNAL_FEED_VALUES.Rewards:
-        return [JournalEffect.Reward, JournalEffect.Redemption];
-      case JOURNAL_FEED_VALUES.Status:
-        return [JournalEffect.Tier];
-    }
-  },
-} as const;
 
 /** What happened to a run — the STREAK effect's field `streakOp`. */
 export const StreakOp = {
@@ -139,24 +92,6 @@ export const PauseOp = {
 } as const;
 export type PauseOp = (typeof PauseOp)[keyof typeof PauseOp];
 
-/**
- * A reward a client holds — the discriminator `rewardRef` of
- * {@link RewardRefFields} (and, as `grantRef`, of {@link GrantRefFields}).
- */
-export const RewardRef = {
-  CouponGrant: 'COUPON_GRANT',
-  GiftVoucher: 'GIFT_VOUCHER',
-  Perk: 'PERK',
-  Cosmetic: 'COSMETIC',
-} as const;
-export type RewardRef = (typeof RewardRef)[keyof typeof RewardRef];
-
-/** The cosmetics a reward can be — one today. Stable catalogue ids (flatten-spec §0.4). */
-export const CosmeticId = {
-  FrameWelcome: 'frame.welcome',
-} as const;
-export type CosmeticId = (typeof CosmeticId)[keyof typeof CosmeticId];
-
 /** How long a pause lasts — the PAUSE effect's field `pauseTerm`. */
 export const PauseTerm = {
   /** Through `pauseUntil`, inclusive. */
@@ -172,143 +107,6 @@ export const PauseScope = {
   AllBookings: 'ALL_BOOKINGS',
 } as const;
 export type PauseScope = (typeof PauseScope)[keyof typeof PauseScope];
-
-/** Who may read an entry — the entry's field `journalVisibility`; the ledger reads `CLIENT` rows only. */
-export const JournalVisibility = {
-  Client: 'CLIENT',
-  Staff: 'STAFF',
-} as const;
-export type JournalVisibility =
-  (typeof JournalVisibility)[keyof typeof JournalVisibility];
-
-/**
- * The client-visible copy keys of a journal row (the row's `labelCode`);
- * i18n resolves each with the row's `labelParams`. i18n message keys, so
- * the stored strings stay dotted lower camel case (flatten-spec §0.4).
- */
-export const LabelCode = {
-  PointsOpening: 'points.opening',
-  PointsRule: 'points.rule',
-  PointsGoodwill: 'points.goodwill',
-  PointsServiceIssue: 'points.serviceIssue',
-  PointsCorrection: 'points.correction',
-  PointsAccountMerge: 'points.accountMerge',
-  PointsRedeemed: 'points.redeemed',
-  PointsRedemptionReversed: 'points.redemptionReversed',
-  PointsExpired: 'points.expired',
-  PointsDebtCleared: 'points.debtCleared',
-  PointsReversed: 'points.reversed',
-  AchievementEarned: 'achievement.earned',
-  AchievementRevoked: 'achievement.revoked',
-  StreakChanged: 'streak.changed',
-  FreezeChanged: 'freeze.changed',
-  TierChanged: 'tier.changed',
-  RewardGranted: 'reward.granted',
-  RewardReinstated: 'reward.reinstated',
-  RewardRevoked: 'reward.revoked',
-  RedemptionChanged: 'redemption.changed',
-  PauseChanged: 'pause.changed',
-  VisitOutcomeCorrected: 'visit.outcomeCorrected',
-  PreviewStat: 'preview.stat',
-  ChoiceAwardNoLongerMet: 'choice.awardNoLongerMet',
-  ChoiceManualPause: 'choice.manualPause',
-  ChoiceUpcomingBooking: 'choice.upcomingBooking',
-} as const;
-export type LabelCode = (typeof LabelCode)[keyof typeof LabelCode];
-
-/**
- * A reward a client holds, as flat fields beside the one discriminator
- * `rewardRef` — each variant declares only its own id (the REWARD effect,
- * the REWARD_GRANTED notification).
- */
-export type RewardRefFields =
-  | RewardRefFields.CouponGrant
-  | RewardRefFields.GiftVoucher
-  | RewardRefFields.Perk
-  | RewardRefFields.Cosmetic;
-
-export const RewardRefFields = {
-  couponGrant(rewardCouponGrantId: CouponGrantId): RewardRefFields.CouponGrant {
-    return { rewardRef: RewardRef.CouponGrant, rewardCouponGrantId };
-  },
-  giftVoucher(rewardGiftVoucherId: GiftVoucherId): RewardRefFields.GiftVoucher {
-    return { rewardRef: RewardRef.GiftVoucher, rewardGiftVoucherId };
-  },
-  perk(rewardPerkId: PerkId): RewardRefFields.Perk {
-    return { rewardRef: RewardRef.Perk, rewardPerkId };
-  },
-  cosmetic(rewardCosmeticId: CosmeticId): RewardRefFields.Cosmetic {
-    return { rewardRef: RewardRef.Cosmetic, rewardCosmeticId };
-  },
-} as const;
-
-/**
- * What a redemption minted — today's nullable `grant` ref as a variant
- * SLICE (F-26) on `grantRef` (`null` = nothing minted yet): every variant
- * narrows, never four independent nullable ids.
- */
-export type GrantRefFields =
-  | GrantRefFields.None
-  | GrantRefFields.CouponGrant
-  | GrantRefFields.GiftVoucher
-  | GrantRefFields.Perk
-  | GrantRefFields.Cosmetic;
-
-export const GrantRefFields = {
-  none(): GrantRefFields.None {
-    return { grantRef: null };
-  },
-  couponGrant(grantCouponGrantId: CouponGrantId): GrantRefFields.CouponGrant {
-    return { grantRef: RewardRef.CouponGrant, grantCouponGrantId };
-  },
-  giftVoucher(grantGiftVoucherId: GiftVoucherId): GrantRefFields.GiftVoucher {
-    return { grantRef: RewardRef.GiftVoucher, grantGiftVoucherId };
-  },
-  perk(grantPerkId: PerkId): GrantRefFields.Perk {
-    return { grantRef: RewardRef.Perk, grantPerkId };
-  },
-  cosmetic(grantCosmeticId: CosmeticId): GrantRefFields.Cosmetic {
-    return { grantRef: RewardRef.Cosmetic, grantCosmeticId };
-  },
-} as const;
-
-/**
- * One named i18n parameter of a row's label — non-personal, never a note
- * or a name. Declared change (§3.2): today's open `params` map
- * (`Record<string, string | number>`, a dynamic field path per key across
- * the collection) is an array of these.
- */
-export type LabelParam = {
-  readonly name: string;
-  readonly value: string | number;
-};
-
-/**
- * A row's client-visible copy, flat at the entry's root (Law 6.1): a key
- * and its parameters — two root fields, never a nested label object.
- */
-export type PublicLabel = {
-  readonly labelCode: LabelCode;
-  readonly labelParams: readonly LabelParam[];
-};
-
-export const PublicLabel = {
-  of(labelCode: LabelCode, labelParams: readonly LabelParam[]): PublicLabel {
-    return { labelCode, labelParams };
-  },
-
-  /** A parameter's value by name, or `null` — what i18n interpolation reads. */
-  param(
-    label: Pick<PublicLabel, 'labelParams'>,
-    name: string,
-  ): string | number | null {
-    for (let i = 0; i < label.labelParams.length; i++) {
-      const param = label.labelParams[i] as LabelParam;
-      if (param.name === name) return param.value;
-    }
-    return null;
-  },
-} as const;
 
 /**
  * What a journal entry changed — a union of FLAT variant slices at the
@@ -352,45 +150,6 @@ export const JournalEffectRecord = {
       : 0;
   },
 } as const;
-
-export namespace RewardRefFields {
-  export type CouponGrant = {
-    readonly rewardRef: typeof RewardRef.CouponGrant;
-    readonly rewardCouponGrantId: CouponGrantId;
-  };
-  export type GiftVoucher = {
-    readonly rewardRef: typeof RewardRef.GiftVoucher;
-    readonly rewardGiftVoucherId: GiftVoucherId;
-  };
-  export type Perk = {
-    readonly rewardRef: typeof RewardRef.Perk;
-    readonly rewardPerkId: PerkId;
-  };
-  export type Cosmetic = {
-    readonly rewardRef: typeof RewardRef.Cosmetic;
-    readonly rewardCosmeticId: CosmeticId;
-  };
-}
-
-export namespace GrantRefFields {
-  export type None = { readonly grantRef: null };
-  export type CouponGrant = {
-    readonly grantRef: typeof RewardRef.CouponGrant;
-    readonly grantCouponGrantId: CouponGrantId;
-  };
-  export type GiftVoucher = {
-    readonly grantRef: typeof RewardRef.GiftVoucher;
-    readonly grantGiftVoucherId: GiftVoucherId;
-  };
-  export type Perk = {
-    readonly grantRef: typeof RewardRef.Perk;
-    readonly grantPerkId: PerkId;
-  };
-  export type Cosmetic = {
-    readonly grantRef: typeof RewardRef.Cosmetic;
-    readonly grantCosmeticId: CosmeticId;
-  };
-}
 
 export namespace JournalEffectRecord {
   export type Points = {

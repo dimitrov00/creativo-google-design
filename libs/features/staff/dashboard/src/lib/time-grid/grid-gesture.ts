@@ -15,12 +15,18 @@ import {
   PlacementVerdict,
   type ResizeEdge,
 } from '@core/components';
-import { DurationMinutes, defect } from '@core/primitives';
+import {
+  DurationMinutes,
+  type TrackMinute,
+  type Tag,
+  defect,
+} from '@core/primitives';
 import {
   GridLayoutSystem,
   type TrackEvent,
   type TrackSpan,
 } from '@core/systems';
+import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 
 /** How close to an edge the finger has to be before the frame scrolls itself. */
 export const EDGE_SCROLL_MARGIN_PX = 28;
@@ -75,28 +81,17 @@ export const HOLD_MS = 250;
 export const HOLD_SLOP_PX = 6;
 
 /**
- * `540` → `"09:00"`.
- *
- * 24-hour, always: Bulgaria writes times that way, and a grid graded on being
- * scannable cannot spend two characters on am/pm. No `Intl` call — the input
- * is already a wall-clock offset, so formatting it through a timezone would
- * be converting a number that was never an instant.
+ * Which edge of the frame a block it has scrolled past went out by — the
+ * recenter chip's `data-edge` and the arrow it draws. Values: external
+ * contract (the `data-edge` hook the grid's and the timeline's stylesheets
+ * select on, `[data-edge='before']`).
  */
-export function hourLabel(minute: number): string {
-  const hour = Math.floor(minute / 60) % 24;
-  return `${String(hour).padStart(2, '0')}:00`;
-}
+export const OffscreenEdge = { Before: 'before', After: 'after' } as const;
+export type OffscreenEdge = Tag<typeof OffscreenEdge>;
 
-/**
- * `635` → `"10:35"`.
- *
- * `% 24` for the same reason the axis grows rather than wraps: a cut that
- * ends at minute 1455 ends at 00:15, not at 24:15.
- */
-export function timeLabel(minute: number): string {
-  const hour = Math.floor(minute / 60) % 24;
-  return `${String(hour).padStart(2, '0')}:${String(Math.abs(minute % 60)).padStart(2, '0')}`;
-}
+/** The axis a frame scrolls itself along — down the grid, across the timeline. Internal. */
+export const ScrollAxis = { X: 'X', Y: 'Y' } as const;
+export type ScrollAxis = Tag<typeof ScrollAxis>;
 
 /**
  * `{{name}}` holes, filled.
@@ -187,7 +182,7 @@ export type EdgeScroller = {
 };
 
 export function edgeScrollerOf(
-  axis: 'x' | 'y',
+  axis: ScrollAxis,
   scroller: () => HTMLElement | null | undefined,
   scrolled: () => void,
 ): EdgeScroller {
@@ -225,7 +220,7 @@ export function edgeScrollerOf(
     const frame = scroller();
     if (!frame) return;
     const box = frame.getBoundingClientRect();
-    const vertical = axis === 'y';
+    const vertical = axis === ScrollAxis.Y;
     const velocity = vertical
       ? edgeScrollVelocity(at, box.top, box.bottom)
       : edgeScrollVelocity(at, box.left, box.right);
@@ -279,7 +274,7 @@ export { PlacementVerdict };
 export type PlacementVerdictSlice =
   | {
       readonly placementVerdict: typeof PlacementVerdict.Short;
-      readonly minutes: number;
+      readonly minutes: DurationMinutes;
     }
   | {
       readonly placementVerdict: typeof PlacementVerdict.Overlap;
@@ -290,7 +285,10 @@ export type PlacementVerdictSlice =
 
 /** A frame column as the verdict reads it: its blocks — each naming itself — and its open windows. */
 type VerdictColumn = {
-  readonly events: readonly (TrackEvent & { readonly title: string })[];
+  readonly events: readonly (TrackEvent & {
+    readonly title: string;
+    readonly startMinute: TrackMinute;
+  })[];
   readonly open: readonly TrackSpan[];
 };
 
@@ -321,7 +319,10 @@ export function placementSliceOf(
     case null:
       return null;
     case PlacementVerdict.Short:
-      return { placementVerdict: PlacementVerdict.Short, minutes: floor };
+      return {
+        placementVerdict: PlacementVerdict.Short,
+        minutes: minutes.value,
+      };
     case PlacementVerdict.Overlap: {
       const hit = placed.hit;
       const other =
@@ -332,7 +333,8 @@ export function placementSliceOf(
       return {
         placementVerdict: PlacementVerdict.Overlap,
         name: other.title,
-        time: timeLabel(other.startMinute),
+        // The 24-hour face, WRAPPING: a cut ending at 1455 ends at 00:15.
+        time: formatClock(other.startMinute, ClockClosing.Wrap),
       };
     }
     case PlacementVerdict.Outside:

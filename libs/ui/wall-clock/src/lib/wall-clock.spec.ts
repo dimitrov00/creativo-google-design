@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { LocalDate } from '@core/primitives';
+import { Currency, LocalDate, MinuteOfDay } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { unwrapOk } from '@core/testing';
+import { cents, minute, trackMinute, unwrapOk, utcMs } from '@core/testing';
 import {
+  ClockClosing,
+  formatClock,
   formatCents,
+  formatCentsFigure,
   formatInstant,
+  formatZoneName,
   formatWallClockParts,
   formatWallClockRange,
   formatWeekdayLabels,
@@ -52,7 +56,7 @@ describe('formatInstant', () => {
   it('formats an instant with the given locale and options, on the shop’s calendar', () => {
     const utc = unwrapOk(ZonedTimeSystem.checkZone('UTC'));
     expect(
-      formatInstant(Date.UTC(2026, 5, 15, 10), utc, 'en', {
+      formatInstant(utcMs('2026-06-15T10:00:00Z'), utc, 'en', {
         weekday: 'short',
       }),
     ).toBe('Mon');
@@ -75,29 +79,116 @@ const normalise = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ');
  * integer minor units beside their currency.
  */
 describe('formatCents', () => {
+  const eur = Currency.EUR;
+
   it('keeps the currency’s own fraction digits on a whole amount', () => {
     // The bug this guards: a hand-tuned `maximumFractionDigits: 0` printed
     // `15 €`, which breaks tabular alignment against `17,50 €`.
-    expect(normalise(formatCents(1500, 'EUR', 'bg-BG'))).toBe('15,00 €');
+    expect(normalise(formatCents(cents(1500), eur, 'bg-BG'))).toBe('15,00 €');
   });
 
   it('formats a fractional amount with the same shape', () => {
-    expect(normalise(formatCents(1750, 'EUR', 'bg-BG'))).toBe('17,50 €');
+    expect(normalise(formatCents(cents(1750), eur, 'bg-BG'))).toBe('17,50 €');
   });
 
   it('follows the locale’s separator and symbol placement', () => {
-    expect(normalise(formatCents(1750, 'EUR', 'en-GB'))).toBe('€17.50');
+    expect(normalise(formatCents(cents(1750), eur, 'en-GB'))).toBe('€17.50');
   });
 
   it('reads the currency it is handed rather than assuming one', () => {
-    expect(normalise(formatCents(1750, 'USD', 'en-US'))).toBe('$17.50');
+    const usd = unwrapOk(Currency.parse('USD'));
+    expect(normalise(formatCents(cents(1750), usd, 'en-US'))).toBe('$17.50');
   });
 
-  it('uses the currency’s exponent, not a hardcoded /100', () => {
-    // JPY has exponent 0 — `1500` minor units IS ¥1,500, not ¥15. The
-    // stored `Currency` never holds JPY; proving the exponent is read is
-    // not a reason to widen that list, so the face takes the code as text.
-    expect(normalise(formatCents(1500, 'JPY', 'en-US'))).toBe('¥1,500');
+  // Pass D (W2-U, §4.2 class 4 — unrepresentable on purpose): the JPY case
+  // ("`1500` minor units IS ¥1,500") is dropped. The face now takes a
+  // `Currency`, and `Currency.parse('JPY')` refuses — no stored amount can
+  // reach it. The exponent is still read from the currency's own `Intl`
+  // formatter (`exponentOf`), never a hard-coded `/100`.
+});
+
+/*
+ * The zone's short name (pass D, X-1): the staff day's corner label,
+ * moved off a per-read `new Intl.DateTimeFormat('en-GB', { timeZone,
+ * timeZoneName: 'short' })` onto the shared cache — pinned against that
+ * reference on both sides of Sofia's changeovers.
+ */
+describe('formatZoneName', () => {
+  const sofia = unwrapOk(ZonedTimeSystem.checkZone('Europe/Sofia'));
+  const london = unwrapOk(ZonedTimeSystem.checkZone('Europe/London'));
+  const reference = (at: number, zone: string): string =>
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone, timeZoneName: 'short' })
+      .formatToParts(at)
+      .find((part) => part.type === 'timeZoneName')?.value ?? zone;
+
+  it('names the zone as it reads at the instant — summer and winter', () => {
+    expect(
+      formatZoneName(utcMs('2026-08-05T09:00:00+03:00'), sofia, 'en-GB'),
+    ).toBe('EEST');
+    expect(
+      formatZoneName(utcMs('2026-01-05T09:00:00+02:00'), sofia, 'en-GB'),
+    ).toBe('EET');
+    expect(
+      formatZoneName(utcMs('2026-08-05T09:00:00+01:00'), london, 'en-GB'),
+    ).toBe('BST');
+  });
+
+  it('is byte-identical to the per-read formatter it replaces, across the changeovers', () => {
+    for (const iso of [
+      '2026-03-29T00:59:00Z',
+      '2026-03-29T01:00:00Z',
+      '2026-10-25T00:59:00Z',
+      '2026-10-25T01:00:00Z',
+      '2026-10-25T01:10:00Z',
+    ]) {
+      const at = utcMs(iso);
+      expect(formatZoneName(at, sofia, 'en-GB')).toBe(reference(at, sofia));
+      expect(formatZoneName(at, london, 'en-GB')).toBe(reference(at, london));
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    const at = utcMs('2026-08-05T09:00:00+03:00');
+    expect(formatZoneName(at, sofia, 'en-GB')).toBe(
+      formatZoneName(at, sofia, 'en-GB'),
+    );
+  });
+});
+
+/*
+ * The bare money figure (pass D, X-1): the visit sheet's typed-money face,
+ * `formatCents`' digits without its symbol — pinned against the sheet's
+ * per-call `Intl.NumberFormat(lang, { 2 fraction digits }).format(c / 100)`
+ * for EUR, the shop's currency, in both languages.
+ */
+describe('formatCentsFigure', () => {
+  const eur = Currency.EUR;
+  const reference = (cents: number, lang: string): string =>
+    new Intl.NumberFormat(lang, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+
+  it('prints the figure with the currency’s own fraction digits, no symbol', () => {
+    expect(formatCentsFigure(cents(1800), eur, 'bg')).toBe('18,00');
+    expect(formatCentsFigure(cents(1750), eur, 'en')).toBe('17.50');
+    expect(formatCentsFigure(cents(0), eur, 'bg')).toBe('0,00');
+  });
+
+  it('is byte-identical to the sheet’s figure for EUR in bg and en', () => {
+    for (const lang of ['bg', 'en']) {
+      for (const amount of [0, 5, 99, 100, 1750, 2800, 123_456, 9_999_999]) {
+        expect(formatCentsFigure(cents(amount), eur, lang)).toBe(
+          reference(amount, lang),
+        );
+      }
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(formatCentsFigure(cents(2800), eur, 'bg')).toBe(
+      formatCentsFigure(cents(2800), eur, 'bg'),
+    );
   });
 });
 
@@ -216,9 +307,125 @@ describe('wallClockParts', () => {
   });
 
   it('reads the shop day as stored, on the UTC axis — no zone moves it', () => {
-    const parts = wallClockParts(sept9, 23 * 60 + 59, 'en', {
+    const parts = wallClockParts(sept9, minute(23 * 60 + 59), 'en', {
       day: 'numeric',
     });
     expect(parts.find((part) => part.type === 'day')?.value).toBe('9');
+  });
+});
+
+/*
+ * The 24-hour face (pass D, D-5): the seven hand-written faces it replaces,
+ * copied here verbatim from their files on `cf91b43` as the reference
+ * (a `type:ui` spec may not import the features), byte-compared on every
+ * minute 0…1455 they can be handed.
+ */
+const HAND_FACES = {
+  /** `visit-editor/staff-visit-editor.ts` `clockLabel` (wraps, % 1440). */
+  editorClockLabel(minute: number): string {
+    const wrapped = ((minute % 1440) + 1440) % 1440;
+    const hour = Math.floor(wrapped / 60);
+    return `${String(hour).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
+  },
+  /** `block-editor/staff-block-editor.ts` `clockLabel` (% 24 h). */
+  blockClockLabel(minute: number): string {
+    const hours = Math.floor(minute / 60) % 24;
+    const minutes = minute % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  },
+  /** `time-grid/grid-gesture.ts` `timeLabel` (% 24 h). */
+  gridTimeLabel(minute: number): string {
+    const hour = Math.floor(minute / 60) % 24;
+    return `${String(hour).padStart(2, '0')}:${String(Math.abs(minute % 60)).padStart(2, '0')}`;
+  },
+  /** `time-grid/staff-time-grid.ts` `nowLabel`'s face (% 24 h). */
+  gridNowLabel(minute: number): string {
+    const hour = Math.floor(minute / 60) % 24;
+    return `${String(hour).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+  },
+  /** `waitlisted-step/booking-waitlisted-step.ts` `clockFace` (no wrap). */
+  waitlistedClockFace(minutes: number): string {
+    const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+    return `${hours}:${String(minutes % 60).padStart(2, '0')}`;
+  },
+  /** `pages/home/locations/locations.component.ts` `clockOf` (no wrap). */
+  landingClockOf(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    return `${String(hours).padStart(2, '0')}:${String(minutes - hours * 60).padStart(2, '0')}`;
+  },
+} as const;
+
+/** `time-grid/grid-gesture.ts` `hourLabel` — the axis's whole-hour ticks (`HH:00`). */
+function gridHourLabel(minute: number): string {
+  const hour = Math.floor(minute / 60) % 24;
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+/** Every minute 0…1455 — the day, its closing midnight, and a late cut's tail. */
+const AXIS: readonly number[] = Array.from({ length: 1456 }, (_, i) => i);
+
+describe('formatClock — the one 24-hour HH:MM face', () => {
+  it('prints a minute of the day zero-padded, whatever the closing', () => {
+    for (const closing of [ClockClosing.Wrap, ClockClosing.EndOfDay]) {
+      expect(formatClock(trackMinute(0), closing)).toBe('00:00');
+      expect(formatClock(trackMinute(545), closing)).toBe('09:05');
+      expect(formatClock(trackMinute(1439), closing)).toBe('23:59');
+    }
+  });
+
+  it('WRAP prints the closing midnight and the minutes past it on the next day’s clock', () => {
+    expect(formatClock(trackMinute(1440), ClockClosing.Wrap)).toBe('00:00');
+    expect(formatClock(trackMinute(1455), ClockClosing.Wrap)).toBe('00:15');
+    expect(formatClock(trackMinute(2880), ClockClosing.Wrap)).toBe('00:00');
+  });
+
+  it('END_OF_DAY prints the closing midnight as 24:00', () => {
+    expect(formatClock(trackMinute(1440), ClockClosing.EndOfDay)).toBe('24:00');
+  });
+
+  it('is byte-identical to each WRAP hand face on every minute 0…1455', () => {
+    for (const minute of AXIS) {
+      const printed = formatClock(trackMinute(minute), ClockClosing.Wrap);
+      expect(printed).toBe(HAND_FACES.editorClockLabel(minute));
+      expect(printed).toBe(HAND_FACES.blockClockLabel(minute));
+      expect(printed).toBe(HAND_FACES.gridTimeLabel(minute));
+      expect(printed).toBe(HAND_FACES.gridNowLabel(minute));
+    }
+  });
+
+  it('is byte-identical to the grid axis’s hour ticks on every whole hour 0…1440', () => {
+    for (let minute = 0; minute <= 1440; minute += 60) {
+      expect(formatClock(trackMinute(minute), ClockClosing.Wrap)).toBe(
+        gridHourLabel(minute),
+      );
+    }
+  });
+
+  it('is byte-identical to each END_OF_DAY hand face on every minute 0…1455', () => {
+    for (const minute of AXIS) {
+      const printed = formatClock(trackMinute(minute), ClockClosing.EndOfDay);
+      expect(printed).toBe(HAND_FACES.waitlistedClockFace(minute));
+      expect(printed).toBe(HAND_FACES.landingClockOf(minute));
+    }
+  });
+
+  it('reads back to itself through MinuteOfDay.parseClock for every minute of the day', () => {
+    for (let minute = 0; minute < 1440; minute++) {
+      const printed = formatClock(trackMinute(minute), ClockClosing.Wrap);
+      expect(MinuteOfDay.parseClock(printed)).toEqual({
+        ok: true,
+        value: minute,
+      });
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    const t = trackMinute(1455);
+    expect(formatClock(t, ClockClosing.Wrap)).toBe(
+      formatClock(t, ClockClosing.Wrap),
+    );
+    expect(formatClock(t, ClockClosing.EndOfDay)).toBe(
+      formatClock(t, ClockClosing.EndOfDay),
+    );
   });
 });

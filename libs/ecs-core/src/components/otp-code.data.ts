@@ -1,15 +1,7 @@
 import { type Brand, Result } from '@core/primitives';
 import { IdentityError } from '@core/errors';
 
-/**
- * How many digits a one-time code has — the ONE source of the OTP's length
- * policy. The `OtpCrypto` adapter draws codes of this length and
- * {@link OtpCode.parse} accepts exactly this length, so the two can never
- * drift apart.
- */
-export const OTP_CODE_DIGITS = 6;
-
-/** ASCII digits only; the length is checked against {@link OTP_CODE_DIGITS}. */
+/** ASCII digits only; the length is checked against {@link OtpCode.DIGITS}. */
 const ASCII_DIGITS = /^\d+$/;
 
 /**
@@ -21,6 +13,14 @@ const ASCII_DIGITS = /^\d+$/;
 export type OtpCode = Brand<string, 'OtpCode'>;
 
 export const OtpCode = {
+  /**
+   * How many digits a one-time code has — the ONE source of the OTP's length
+   * policy. The `OtpCrypto` adapter draws codes of this length and
+   * {@link OtpCode.parse} accepts exactly this length, so the two can never
+   * drift apart.
+   */
+  DIGITS: 6,
+
   /** The only cast site — for a value known to be six digits (a generator's output). */
   of: (raw: string): OtpCode => raw as OtpCode,
 
@@ -30,7 +30,7 @@ export const OtpCode = {
    */
   parse(raw: string): Result<OtpCode, IdentityError> {
     const trimmed = raw.trim();
-    return trimmed.length === OTP_CODE_DIGITS && ASCII_DIGITS.test(trimmed)
+    return trimmed.length === OtpCode.DIGITS && ASCII_DIGITS.test(trimmed)
       ? Result.ok(OtpCode.of(trimmed))
       : Result.err(IdentityError.otpCodeInvalid(raw));
   },

@@ -117,7 +117,7 @@
           {{ t('account.profile.photo.add') }}
         </span>
       </label>
-      } @if (translateError(photoErrorCode()); as error) {
+      } @if (translateError(photoError()); as error) {
       <p
         uiText
         uiFont="footnote"
@@ -278,15 +278,15 @@
                 autocomplete="given-name"
                 data-testid="profile-first-name"
                 [readonly]="store.pending()"
-                [attr.aria-invalid]="firstNameErrorCode() ? true : null"
-                [uiInvalid]="!!firstNameErrorCode()"
+                [attr.aria-invalid]="firstNameError() ? true : null"
+                [uiInvalid]="!!firstNameError()"
                 [value]="firstNameDraft()"
                 (input)="onFirstNameInput($any($event.target).value)"
                 (blur)="onFirstNameBlur()"
               />
             </ui-stack>
           </label>
-          @if (translateError(firstNameErrorCode()); as error) {
+          @if (translateError(firstNameError()); as error) {
           <p
             uiText
             uiFont="footnote"
@@ -312,15 +312,15 @@
                 autocomplete="family-name"
                 data-testid="profile-last-name"
                 [readonly]="store.pending()"
-                [attr.aria-invalid]="lastNameErrorCode() ? true : null"
-                [uiInvalid]="!!lastNameErrorCode()"
+                [attr.aria-invalid]="lastNameError() ? true : null"
+                [uiInvalid]="!!lastNameError()"
                 [value]="lastNameDraft()"
                 (input)="onLastNameInput($any($event.target).value)"
                 (blur)="onLastNameBlur()"
               />
             </ui-stack>
           </label>
-          @if (translateError(lastNameErrorCode()); as error) {
+          @if (translateError(lastNameError()); as error) {
           <p
             uiText
             uiFont="footnote"
@@ -350,7 +350,7 @@
         [(value)]="birthDraft"
         (uiBlurred)="onBirthBlur($event)"
       />
-      } } @if (translateError(saveErrorCode()); as error) {
+      } } @if (translateError(saveError()); as error) {
       <p
         uiText
         uiFont="footnote"

@@ -1,9 +1,13 @@
 import {
   type Actor,
   AuditContext,
+  BillPending,
   type BookingPolicy,
+  BookingReadSnapshot,
   CustomerOrigin,
   DiscountSource,
+  EditCallOutcome,
+  LedgerVerdict,
   PlacementPolicy,
   type Seat,
   StoodSeatPairs,
@@ -24,7 +28,6 @@ import {
   type BarberId,
   type CouponGrantId,
   type CouponId,
-  defect,
   type LocationId,
   MinuteDelta,
   type OperationId,
@@ -39,15 +42,11 @@ import {
 import {
   BookingError,
   BookingErrorCode,
-  type RepositoryError,
+  type EditAppointmentError,
   ShopUnavailableReason,
   type TimeError,
   StaffEditError,
-  type StaffEditBeforeArrival,
-  type StaffEditForbidden,
   type StaffEditInvalidCommand,
-  type StaffEditStale,
-  type StaffEditOverlaps,
 } from '@core/errors';
 import {
   type AccountContact,
@@ -73,7 +72,6 @@ import {
   type AuditFact,
   AuditSystem,
   BillingSystem,
-  BillPending,
   BookingDecisionSystem,
   CouponGrantSystem,
   CustomerRecordSystem,
@@ -82,7 +80,6 @@ import {
   DiscountSystem,
   type EditCommandRequest,
   type EditDraft,
-  LedgerVerdict,
   MoveSystem,
   type ResolvedCode,
   type ResolvedGrant,
@@ -185,16 +182,6 @@ export type EditAppointmentAnswer = {
   readonly replayed: boolean;
 };
 
-export type EditAppointmentError =
-  | StaffEditInvalidCommand
-  | StaffEditForbidden
-  | StaffEditStale
-  | StaffEditBeforeArrival
-  | StaffEditOverlaps
-  | BookingError
-  | TimeError
-  | RepositoryError;
-
 export type EditAppointmentPorts = TxPorts &
   PolicyReadPorts &
   CouponLookupPorts &
@@ -207,7 +194,7 @@ type CouponsByCode = ReadonlyMap<VoucherCode, Coupon | null>;
 type Operation = { readonly id: OperationId; readonly digest: string };
 
 type Loaded = {
-  readonly snapshot: 'LOADED';
+  readonly bookingReadSnapshot: typeof BookingReadSnapshot.Loaded;
   readonly stored: Appointment;
   readonly zone: TimeZone;
   readonly set: BookingReadSet;
@@ -227,26 +214,21 @@ type Loaded = {
 };
 
 type Snapshot =
-  | { readonly snapshot: 'REFUSED'; readonly error: EditAppointmentError }
   | {
-      readonly snapshot: 'REPLAY';
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Refused;
+      readonly error: EditAppointmentError;
+    }
+  | {
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Replay;
       readonly stored: Appointment;
       readonly revision: number;
     }
   | Loaded;
 
-/** How a call ended. */
-const EditOutcome = {
-  Edited: 'EDITED',
-  Replayed: 'REPLAYED',
-  /** An added account has no client record and no contact was read for it yet. */
-  NeedsContacts: 'NEEDS_CONTACTS',
-} as const;
-type EditOutcome = (typeof EditOutcome)[keyof typeof EditOutcome];
-
 type Decided = {
   readonly stored: Appointment;
-  readonly editOutcome: EditOutcome;
+  /** How the call ended (`EditCallOutcome`, a component). */
+  readonly editCallOutcome: EditCallOutcome;
   readonly revision: number;
   readonly needsContacts: readonly UserId[];
   /** The batch as the fold applied it (none on a replay) — what the audit planner reads. */
@@ -302,7 +284,7 @@ export const editAppointment =
     let committed = await run(new Map());
     if (
       committed.ok &&
-      committed.value.editOutcome === EditOutcome.NeedsContacts
+      committed.value.editCallOutcome === EditCallOutcome.NeedsContacts
     ) {
       // An account the batch adds has no client record: its contact
       // snapshot is read OUTSIDE any transaction, then the edit runs again.
@@ -313,7 +295,7 @@ export const editAppointment =
       committed = await run(contacts.value);
     }
     if (!committed.ok) return committed;
-    const { stored, editOutcome, revision } = committed.value;
+    const { stored, editCallOutcome, revision } = committed.value;
 
     const fact: AuditFact = {
       resourceId: AuditResourceId.forAppointment(stored.id),
@@ -334,7 +316,7 @@ export const editAppointment =
     return Result.ok({
       appointmentId: cmd.appointmentId,
       revision,
-      replayed: editOutcome === EditOutcome.Replayed,
+      replayed: editCallOutcome === EditCallOutcome.Replayed,
     });
   };
 
@@ -419,9 +401,6 @@ function requestOf(
         zone,
       );
       if (!shown.ok) return shown;
-      // A DurationMinutes is a positive safe integer, always a MinuteDelta.
-      const span = MinuteDelta.of(command.durationMinutes);
-      if (!span.ok) return defect('a duration that is no minute delta');
       return Result.ok({
         editCommand: EditCommand.AddSeat,
         seatId: command.seatId,
@@ -431,7 +410,10 @@ function requestOf(
         startMinutes: command.startMinutes,
         durationMinutes: command.durationMinutes,
         // The instant the seat ends, on the absolute timeline (its stamp on a finished visit).
-        workedAtUtcMs: UtcEpochMs.plusMinutes(shown.value, span.value),
+        workedAtUtcMs: UtcEpochMs.plusMinutes(
+          shown.value,
+          MinuteDelta.fromDuration(command.durationMinutes),
+        ),
         ...AppointmentEditSystem.addedOccupantOf(
           command.addedSubject,
           owner,
@@ -462,7 +444,7 @@ async function readEdit(
   const stored = await readAppointment(tx, cmd.appointmentId);
   if (stored === null) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.invalidInput('appointmentId'),
     };
   }
@@ -475,19 +457,28 @@ async function readEdit(
     );
     if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
       return {
-        snapshot: 'REFUSED',
+        bookingReadSnapshot: BookingReadSnapshot.Refused,
         error: StaffEditError.invalidCommand('operationId'),
       };
     }
     if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
-      return { snapshot: 'REPLAY', stored, revision: verdict.applied.revision };
+      return {
+        bookingReadSnapshot: BookingReadSnapshot.Replay,
+        stored,
+        revision: verdict.applied.revision,
+      };
     }
   }
   const fresh = AppointmentEditSystem.checkRevision(
     stored,
     cmd.expectedVersion,
   );
-  if (!fresh.ok) return { snapshot: 'REFUSED', error: fresh.error };
+  if (!fresh.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: fresh.error,
+    };
+  }
 
   // The promises the bill names: the grants of the batch and of the stored
   // discounts, then their coupons in ONE getAll.
@@ -582,7 +573,7 @@ async function readEdit(
     set === null || set.location === null ? null : zoneOf(set.location);
   if (set === null || zone === null) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.shopUnavailable(
         targetLocationId,
         ShopUnavailableReason.NotFound,
@@ -602,7 +593,12 @@ async function readEdit(
     customerIds,
     (command, day) => requestOf(command, day, zone, stored.ownerUserId),
   );
-  if (!folded.ok) return { snapshot: 'REFUSED', error: folded.error };
+  if (!folded.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: folded.error,
+    };
+  }
   // Then EVERY CHAIR OF THE FOLDED VISIT is read on the target shop's zone,
   // as the booking's frame reads a new party (Law 7.3): a relocated visit
   // lands on another zone's clock, and a seat no command named moves too —
@@ -620,11 +616,16 @@ async function readEdit(
     draft.seats.map((seat) => seat.startMinutes),
     zone,
   );
-  if (!framed.ok) return { snapshot: 'REFUSED', error: framed.error };
+  if (!framed.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: framed.error,
+    };
+  }
   const startUtcMs = framed.value.startUtcMs;
   if (startUtcMs === null) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: StaffEditError.invalidCommand('seats'),
     };
   }
@@ -645,7 +646,7 @@ async function readEdit(
     customerIdsOf(customerIds),
   );
   return {
-    snapshot: 'LOADED',
+    bookingReadSnapshot: BookingReadSnapshot.Loaded,
     stored,
     zone,
     set,
@@ -700,11 +701,13 @@ function decideEdit(
   snapshot: Snapshot,
   context: DecideContext,
 ): Result<Decided, EditAppointmentError> {
-  if (snapshot.snapshot === 'REFUSED') return Result.err(snapshot.error);
-  if (snapshot.snapshot === 'REPLAY') {
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
+    return Result.err(snapshot.error);
+  }
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
       stored: snapshot.stored,
-      editOutcome: EditOutcome.Replayed,
+      editCallOutcome: EditCallOutcome.Replayed,
       revision: snapshot.revision,
       needsContacts: [],
       requests: [],
@@ -879,7 +882,7 @@ function decideEdit(
   if (missing.length > 0) {
     return Result.ok({
       stored,
-      editOutcome: EditOutcome.NeedsContacts,
+      editCallOutcome: EditCallOutcome.NeedsContacts,
       revision: stored.revision,
       needsContacts: missing,
       requests: loaded.requests,
@@ -933,7 +936,7 @@ function decideEdit(
   }
   return Result.ok({
     stored,
-    editOutcome: EditOutcome.Edited,
+    editCallOutcome: EditCallOutcome.Edited,
     revision,
     needsContacts: [],
     requests: loaded.requests,

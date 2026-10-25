@@ -1,7 +1,7 @@
 import { InjectionToken } from '@angular/core';
 import type { LocalDate, Result } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
-import type { LoyaltyCatalog } from '@core/ports';
+import type { LoyaltyCatalog } from '@core/entities';
 
 /** One read of the loyalty catalogue, as `LoadLoyaltyCatalog` answers it. */
 export type LoyaltyCatalogRead = Promise<

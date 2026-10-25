@@ -11,12 +11,10 @@ import {
   Email,
   ParsedIdentifier,
   E164,
-  REGISTRATION_FIELDS,
   Registration,
   RegistrationField,
   type RegistrationFields,
   RegistrationState,
-  isRegistrationField,
   Role,
 } from '@core/components';
 import { IdentifierChannel, TenantId, UserId } from '@core/primitives';
@@ -558,16 +556,16 @@ describe('RegistrationField vocabulary (registration-field.spec.ts)', () => {
       'lastName',
       'birthDate',
     ]) {
-      expect(isRegistrationField(field)).toBe(true);
+      expect(Registration.isField(field)).toBe(true);
     }
     expect(RegistrationSystem.fieldOf(IdentifierChannel.Phone)).toBe('phone');
     expect(RegistrationSystem.fieldOf(IdentifierChannel.Email)).toBe('email');
   });
 
   it('rejects an unknown value', () => {
-    expect(isRegistrationField('middleName')).toBe(false);
-    expect(isRegistrationField(123)).toBe(false);
-    expect(isRegistrationField(undefined)).toBe(false);
+    expect(Registration.isField('middleName')).toBe(false);
+    expect(Registration.isField(123)).toBe(false);
+    expect(Registration.isField(undefined)).toBe(false);
   });
 });
 
@@ -608,7 +606,7 @@ describe('RegistrationSystem properties', () => {
           'a@b.cd',
           given,
         );
-        for (const field of REGISTRATION_FIELDS) {
+        for (const field of Registration.FIELDS) {
           if (field === RegistrationField.Email) {
             expect(out.email).toBe(given.email ?? 'a@b.cd');
           } else {

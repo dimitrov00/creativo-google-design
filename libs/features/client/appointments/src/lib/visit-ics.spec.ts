@@ -6,8 +6,8 @@ import { buildVisitIcs } from './visit-ics';
 const EVENT = {
   uid: 'appt_1',
   title: 'Фейд',
-  startMs: utcMs('2026-08-21T11:30:00Z'),
-  endMs: utcMs('2026-08-21T12:00:00Z'),
+  startUtcMs: utcMs('2026-08-21T11:30:00Z'),
+  endUtcMs: utcMs('2026-08-21T12:00:00Z'),
   location: 'бул. „Цар Симеон Велики“ 120, Стара Загора',
   description: 'с Иван Колев',
 } as const;
@@ -72,8 +72,8 @@ describe('buildVisitIcs', () => {
     const ics = buildVisitIcs(
       {
         ...EVENT,
-        startMs: utcMs('2026-12-31T23:05:09+00:00'),
-        endMs: utcMs('2027-01-01T00:00:00+00:00'),
+        startUtcMs: utcMs('2026-12-31T23:05:09+00:00'),
+        endUtcMs: utcMs('2027-01-01T00:00:00+00:00'),
       },
       utcMs('2026-01-02T03:04:05.006+00:00'),
     );

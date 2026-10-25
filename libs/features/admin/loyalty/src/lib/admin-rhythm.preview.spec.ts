@@ -8,6 +8,8 @@ import {
   StreakPeriodMark,
   StreakPhase,
   FreezeReason,
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
   StreakQualifierRule,
   StreakRule,
 } from '@core/components';
@@ -19,15 +21,13 @@ import {
   type MinuteOfDay,
   Result,
   ServiceId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
-import {
-  StreakPreviewOutcome,
-  StreakPreviewUnavailable,
-  ZonedTimeSystem,
-} from '@core/systems';
+import { StreakPreviewSystem, ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  localDate,
   memoryClientStatsReadPorts,
   minute,
   unwrapOk,
@@ -42,15 +42,13 @@ import {
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
   rhythmPreviewSource,
-  sampleRhythmFacts,
-  sampleRhythmRun,
   streakFactsReader,
 } from './admin-rhythm.preview';
 
 // ── The shop's day, and its clients ──────────────────────────────────────
 
 /** Monday 28 September 2026 in Sofia: the fixtures' day. */
-const TODAY = '2026-09-28';
+const TODAY = localDate('2026-09-28');
 
 /** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
 interface Reading {
@@ -170,10 +168,21 @@ const dayStart = (day: string): number =>
     FIXTURE_TIME_ZONE,
   );
 
+/**
+ * The rule card's sample run, as the store asks for it: the projector's
+ * `StreakPreviewSystem.sampleFacts` / `sampleRun` (pass D: the page's
+ * spec-only delegates retired, their cases restated on the system) with
+ * the shop's day-start reader bound to its zone.
+ */
+const sofiaDayStart = (on: LocalDate): UtcEpochMs =>
+  ZonedTimeSystem.startOfLocalDay(on, FIXTURE_TIME_ZONE);
+const sampleFactsOf = (rule: StreakRule) =>
+  StreakPreviewSystem.sampleFacts(rule, TODAY, sofiaDayStart);
+const sampleRunOf = (rule: StreakRule) =>
+  StreakPreviewSystem.sampleRun(rule, TODAY, sofiaDayStart);
+
 const marksOf = (rule: StreakRule): readonly string[] =>
-  sampleRhythmRun(rule, TODAY, FIXTURE_TIME_ZONE)?.periods.map(
-    (period) => period.streakPeriodMark,
-  ) ?? [];
+  sampleRunOf(rule)?.periods.map((period) => period.streakPeriodMark) ?? [];
 
 describe('the preview’s figures', () => {
   it('walks five pages of 200, and recomputes 600 ms after the last change', () => {
@@ -503,7 +512,7 @@ describe('rhythmPreviewOf', () => {
 
 describe('the sample run', () => {
   it('ends yesterday, seven visits long', () => {
-    const { visits } = sampleRhythmFacts(ruleOf(), TODAY, FIXTURE_TIME_ZONE);
+    const { visits } = sampleFactsOf(ruleOf());
 
     expect(visits).toHaveLength(7);
     expect(visits.at(-1)).toEqual({
@@ -515,11 +524,7 @@ describe('the sample run', () => {
   });
 
   it('comes on time six times, then misses one due date by a whole period', () => {
-    const days = sampleRhythmFacts(
-      ruleOf(),
-      TODAY,
-      FIXTURE_TIME_ZONE,
-    ).visits.map((visit) => visit.localDate);
+    const days = sampleFactsOf(ruleOf()).visits.map((visit) => visit.localDate);
     const gaps = days
       .slice(1)
       .map((day, index) => LocalDate.daysBetween(days.at(index) ?? day, day));
@@ -528,7 +533,7 @@ describe('the sample run', () => {
   });
 
   it('shows the recommended rule covering the miss with a protection', () => {
-    const run = sampleRhythmRun(ruleOf(), TODAY, FIXTURE_TIME_ZONE);
+    const run = sampleRunOf(ruleOf());
 
     // A mark per visit, and one for the due date nobody met.
     expect(marksOf(ruleOf())).toEqual([
@@ -570,7 +575,7 @@ describe('the sample run', () => {
       protectionsEarnEvery: 5,
       protectionsStartWith: 0,
     });
-    const run = sampleRhythmRun(bare, TODAY, FIXTURE_TIME_ZONE);
+    const run = sampleRunOf(bare);
 
     expect(marksOf(bare).slice(-5)).toEqual([
       StreakPeriodMark.Kept,
@@ -593,7 +598,7 @@ describe('the sample run', () => {
     });
 
     expect(marksOf(holding)).toContain(StreakPeriodMark.Missed);
-    expect(sampleRhythmRun(holding, TODAY, FIXTURE_TIME_ZONE)?.current).toBe(7);
+    expect(sampleRunOf(holding)?.current).toBe(7);
   });
 
   it('is on time under a personal interval too: only the one due date is missed', () => {
@@ -605,9 +610,7 @@ describe('the sample run', () => {
     expect(marks.filter((mark) => mark !== StreakPeriodMark.Kept)).toEqual([
       StreakPeriodMark.Protected,
     ]);
-    expect(
-      sampleRhythmRun(personal, TODAY, FIXTURE_TIME_ZONE)?.streakPhase,
-    ).toBe(StreakPhase.Active);
+    expect(sampleRunOf(personal)?.streakPhase).toBe(StreakPhase.Active);
   });
 
   it.each([14, 28, 42, 91, 182])(
@@ -629,15 +632,11 @@ describe('the sample run', () => {
   );
 
   it('draws nothing under a rule that is off', () => {
-    expect(
-      sampleRhythmRun(ruleOf({ enabled: false }), TODAY, FIXTURE_TIME_ZONE),
-    ).toBeNull();
+    expect(sampleRunOf(ruleOf({ enabled: false }))).toBeNull();
   });
 
-  it('draws nothing on a day that is no day', () => {
-    expect(
-      sampleRhythmFacts(ruleOf(), 'someday', FIXTURE_TIME_ZONE).visits,
-    ).toEqual([]);
-    expect(sampleRhythmRun(ruleOf(), 'someday', FIXTURE_TIME_ZONE)).toBeNull();
-  });
+  // «draws nothing on a day that is no day» is retired on purpose (pass D
+  // §4.2 class 4): the shop's today reaches the sample as a `LocalDate`
+  // read at the store's edge, so a day that is no day can no longer be
+  // handed in.
 });

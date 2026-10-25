@@ -7,17 +7,21 @@ import {
   type MinuteOfDay,
   type UserId,
   LocalDate,
+  SeatKeyText,
   UtcEpochMs,
 } from '@core/primitives';
 import {
   type AccountOccupant,
   CancellationReason,
+  CancelledSide,
   type Money,
-  type SeatOutcome,
   type Seat,
+  type SeatOutcome,
   SeatSubject,
   ShopNow,
+  SubjectVisitOutcome,
   VisitMark,
+  VisitRowOutcome,
   VisitStatusMark,
   VisitTone,
   VoucherRedemption,
@@ -25,18 +29,14 @@ import {
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
-import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
+import { ClientStatsSystem } from './client-stats.system';
 import { LocationScopeSystem } from './location-scope.system';
-import { VisitListSystem, VisitRowOutcome } from './visit-list.system';
+import { VisitListSystem } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
-
-/** Who called a visit off, as the row says it — the ONLY source of these strings. */
-export const CancelledSide = {
-  Client: 'CLIENT',
-  Shop: 'SHOP',
-} as const;
-export type CancelledSide = (typeof CancelledSide)[keyof typeof CancelledSide];
+/** The person-key prefixes (`GuestLabelSystem`'s spelling of the family). */
+const ACCOUNT_KEY_PREFIX = 'account:';
+const GUEST_KEY_PREFIX = 'guest:';
 
 /**
  * One person's own story of an appointment, as a row tells it: the seats
@@ -48,17 +48,6 @@ export type SubjectStory = {
   readonly outcome: VisitRowOutcome;
   readonly cancelledBy: CancelledSide | null;
 };
-
-/** Who a seat is for, as people are told apart on a visit — discriminated by `seatSubject`. */
-export type PersonSubject =
-  | {
-      readonly seatSubject: typeof SeatSubject.Account;
-      readonly userId: UserId;
-    }
-  | {
-      readonly seatSubject: typeof SeatSubject.Anonymous;
-      readonly label: string;
-    };
 
 /**
  * What settled ONE CHAIR — a staff sheet's head (`chairResolution`): the
@@ -113,13 +102,6 @@ function ownSeats(
     out.push(appointment.seats[story.seatIndexes[i] as number] as Seat);
   }
   return out;
-}
-
-/** Who a seat is for, as people are told apart — the person read off the seat itself. */
-function personSubjectOf(seat: AccountOccupant): PersonSubject {
-  return seat.seatSubject === SeatSubject.Account
-    ? { seatSubject: SeatSubject.Account, userId: seat.subjectUserId }
-    : { seatSubject: SeatSubject.Anonymous, label: seat.guestLabel };
 }
 
 /**
@@ -285,21 +267,27 @@ export const VisitStorySystem = {
     return end.minute <= now.currentMinute;
   },
 
-  /** One person, one key: an account by its id, a guest by the seat's name. */
-  personKeyOf(subject: PersonSubject): string {
-    return subject.seatSubject === SeatSubject.Account
-      ? `account:${subject.userId}`
-      : `guest:${subject.label}`;
+  /**
+   * One person, one key: an account by its id (`account:<uid>`), a guest by
+   * the seat's name (`guest:<label>`) — the `SeatKeyText` person-key family,
+   * spelled as `GuestLabelSystem.personKeyOf` spells it. Read off the
+   * occupant AS IT IS STORED (an account by its `subjectUserId`, a guest by
+   * its `guestLabel` — zero inbound mapping): a whole `Seat` passes straight
+   * in.
+   */
+  personKeyOf(occupant: AccountOccupant): SeatKeyText {
+    return occupant.seatSubject === SeatSubject.Account
+      ? SeatKeyText.of(`${ACCOUNT_KEY_PREFIX}${occupant.subjectUserId}`)
+      : SeatKeyText.of(`${GUEST_KEY_PREFIX}${occupant.guestLabel}`);
   },
 
   /**
-   * {@link personKeyOf} read off the seat itself — the occupant as it is
-   * stored (an account by its `subjectUserId`, a guest by its
-   * `guestLabel`), so a caller keying people by seat never renames fields
-   * first. A whole `Seat` passes straight in.
+   * {@link personKeyOf} under the name a caller keying people BY SEAT reads
+   * it by (the staff dashboard's party check) — the same key, off the same
+   * stored occupant.
    */
-  seatPersonKey(seat: AccountOccupant): string {
-    return VisitStorySystem.personKeyOf(personSubjectOf(seat));
+  seatPersonKey(seat: AccountOccupant): SeatKeyText {
+    return VisitStorySystem.personKeyOf(seat);
   },
 
   /**
@@ -368,13 +356,13 @@ export const VisitStorySystem = {
    * counted once per person however many services they had.
    */
   peerCount(
-    subjects: readonly PersonSubject[],
+    occupants: readonly AccountOccupant[],
     own: readonly boolean[],
   ): number {
-    const people = new Set<string>();
-    for (let i = 0; i < subjects.length; i++) {
+    const people = new Set<SeatKeyText>();
+    for (let i = 0; i < occupants.length; i++) {
       if (own[i] === true) continue;
-      people.add(VisitStorySystem.personKeyOf(subjects[i] as PersonSubject));
+      people.add(VisitStorySystem.personKeyOf(occupants[i] as AccountOccupant));
     }
     return people.size;
   },
@@ -594,16 +582,12 @@ export const VisitStorySystem = {
   peerCountOf(appointment: Appointment, story: SubjectStory): number {
     if (VisitStorySystem.isWholeParty(appointment, story)) return 0;
     const seats = appointment.seats;
-    const subjects: PersonSubject[] = [];
     const own: boolean[] = [];
-    for (let i = 0; i < seats.length; i++) {
-      subjects.push(personSubjectOf(seats[i] as Seat));
-      own.push(false);
-    }
+    for (let i = 0; i < seats.length; i++) own.push(false);
     for (let i = 0; i < story.seatIndexes.length; i++) {
       own[story.seatIndexes[i] as number] = true;
     }
-    return VisitStorySystem.peerCount(subjects, own);
+    return VisitStorySystem.peerCount(seats, own);
   },
 
   /**

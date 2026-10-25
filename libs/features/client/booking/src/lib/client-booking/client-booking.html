@@ -156,12 +156,12 @@
         [uiTitle]="
           t(
             'booking.moveRefused.' +
-              refusalWords[refused.moveRefusalReason] +
+              refusalWords[refused.errorCode] +
               '.title'
           )
         "
         data-testid="booking-move-refused"
-        [attr.data-reason]="refusalWords[refused.moveRefusalReason]"
+        [attr.data-reason]="refusalWords[refused.errorCode]"
       >
         <!-- "Call" only when the call button below is there to press; with
              no number to dial it says to get in touch (`shopReachKey`). -->
@@ -171,8 +171,8 @@
           uiForegroundStyle="secondary"
           data-testid="booking-move-refused-body"
         >
-          {{ t('booking.moveRefused.' + refusalWords[refused.moveRefusalReason]
-          + '.body', { reach: t(reachKey()) }) }}
+          {{ t('booking.moveRefused.' + refusalWords[refused.errorCode] +
+          '.body', { reach: t(reachKey()) }) }}
         </p>
         <ui-stack uiActions uiSpacing="compact">
           @if (refusalCallHref(); as href) {

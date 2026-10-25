@@ -53,17 +53,6 @@ export type BookingPolicy = {
   readonly autoConfirm: boolean;
 };
 
-/** A policy as authored or stored, before its edge guard — raw figures. */
-export type BookingPolicyInput = {
-  readonly maxPartySize: number;
-  readonly slotStepMinutes: number;
-  readonly minLeadMinutes: number;
-  readonly horizonMonths: number;
-  readonly cancellationWindowHours: number;
-  readonly maxFlexibleDays: number;
-  readonly autoConfirm: boolean;
-};
-
 /** A brand the module builds from a literal it knows is valid. */
 function known<T>(result: Result<T, unknown>): T {
   return result.ok ? result.value : defect('BookingPolicy: a broken default');
@@ -125,7 +114,7 @@ export const BookingPolicy = {
    * divide the hour: a 25-minute grid drifts against every readable time.
    */
   create(
-    raw: BookingPolicyInput,
+    raw: BookingPolicy.Input,
   ): Result<BookingPolicy, readonly SchedulingError[]> {
     const errors: SchedulingError[] = [];
     const check = (ok: boolean, field: string, value: number): void => {
@@ -175,7 +164,7 @@ export const BookingPolicy = {
   withDefaults(raw: unknown): BookingPolicy {
     if (raw === null || typeof raw !== 'object') return DEFAULT;
     const data = raw as Readonly<Record<string, unknown>>;
-    const candidate: BookingPolicyInput = {
+    const candidate: BookingPolicy.Input = {
       maxPartySize: numberOr(data['maxPartySize'], DEFAULT.maxPartySize),
       slotStepMinutes: numberOr(
         data['slotStepMinutes'],
@@ -293,3 +282,16 @@ export const BookingPolicy = {
     );
   },
 } as const;
+
+export namespace BookingPolicy {
+  /** A policy as authored or stored, before its edge guard — raw figures. */
+  export type Input = {
+    readonly maxPartySize: number;
+    readonly slotStepMinutes: number;
+    readonly minLeadMinutes: number;
+    readonly horizonMonths: number;
+    readonly cancellationWindowHours: number;
+    readonly maxFlexibleDays: number;
+    readonly autoConfirm: boolean;
+  };
+}

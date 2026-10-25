@@ -9,7 +9,7 @@ import {
   startAfter,
   where,
 } from 'firebase/firestore';
-import { JournalVisibility } from '@core/components';
+import { JournalVisibility, PageStep } from '@core/components';
 import { Result } from '@core/primitives';
 import {
   type BadgeProgress,
@@ -24,7 +24,7 @@ import type {
   JournalPage,
   LoyaltyAccountReadPorts,
 } from '@core/ports';
-import { PageStep, PagingSystem } from '@core/systems';
+import { PagingSystem } from '@core/systems';
 import { readDoc, readQuery } from './observe';
 
 /**

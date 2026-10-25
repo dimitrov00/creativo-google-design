@@ -18,6 +18,7 @@ import type {
   BadgeCategory,
   BadgeProgress,
   BadgeSeries,
+  LoyaltyCatalogParts,
   Season,
   TierDefinition,
 } from '@core/entities';
@@ -45,10 +46,7 @@ import {
 } from '@core/testing';
 import { BadgeSystem } from './badge.system';
 import { ZonedTimeSystem } from './zoned-time.system';
-import {
-  LoyaltyCatalogSystem,
-  type LoyaltyCatalogParts,
-} from './loyalty-catalog.system';
+import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
 import { StandingSystem } from './standing.system';
 
 /*

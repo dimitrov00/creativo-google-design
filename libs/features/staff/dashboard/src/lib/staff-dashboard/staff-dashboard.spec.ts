@@ -10,7 +10,15 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 import {
   APPOINTMENT_NOTE_PORTS,
@@ -89,7 +97,9 @@ import {
   ClientOperationId,
   CouponGrantId,
   CouponId,
+  Currency,
   CustomerId,
+  type EndMinute,
   ExceptionEffect,
   LocalDate,
   LocationId,
@@ -124,8 +134,13 @@ import {
   type MediaResolvePorts,
   type SchedulingReadPorts,
 } from '@core/ports';
-import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  AppointmentIndexSystem,
+  type StaffEditRowFacts,
+  ZonedTimeSystem,
+} from '@core/systems';
 import { CatalogWording } from '@creativo/features/shared/catalog';
+import { relativeTime } from '@creativo/infrastructure/i18n';
 import {
   FIXTURE_TIME_ZONE,
   appointmentFixture,
@@ -160,10 +175,17 @@ import {
   unwrapOk,
   until,
   utcMs,
+  cents,
+  draftPersonKey,
+  duration,
+  trackMinute,
 } from '@core/testing';
 import {
   AgendaRow,
   CreateIntent,
+  DayPicker,
+  type DayRowVm,
+  DiscardTarget,
   StaffDashboard,
   reversibleSave,
 } from './staff-dashboard';
@@ -174,6 +196,7 @@ import {
   type VisitEditorLeg,
   type VisitEditorVm,
 } from '../visit-editor/staff-visit-editor';
+import { StaffView } from '../staff-day.store';
 
 /** The shop the fixture's chairs work at — the one the catalogue lists. */
 const SHOP = LocationId.of('loc-center');
@@ -606,6 +629,8 @@ describe('StaffDashboard', () => {
 
   /** The changed days, as stored: the exception command writes them here, the stream reads them back. */
   const exceptions: ScheduleException[] = [];
+  /** The days a case has stored changes on before the page comes up — `build()` lays them in. */
+  let seededExceptions: readonly ScheduleException[] = [];
   const writeScheduleException = vi.fn(
     memoryScheduleExceptionPorts(exceptions).writeScheduleException,
   );
@@ -660,6 +685,11 @@ describe('StaffDashboard', () => {
   > | null = null;
   /** The catalogue's services, when a case prices its own; `null` is the one timed fade. */
   let catalogServices: readonly Service[] | null = null;
+  /**
+   * The search window's visits (what the day search and «Скорошни» read),
+   * when a case pools its own; `null` is the one Георги visit.
+   */
+  let searchPool: readonly Appointment[] | null = null;
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -681,6 +711,7 @@ describe('StaffDashboard', () => {
     observeBusyDay.mockClear();
     writeScheduleException.mockClear();
     exceptions.length = 0;
+    exceptions.push(...seededExceptions);
     transition.mockClear();
     gateway = { [Callables.TransitionAppointment]: transition };
     gatewayCalls = [];
@@ -730,12 +761,14 @@ describe('StaffDashboard', () => {
             pageClientHistory: async () =>
               PortResult.ok({ appointments: [], nextBeforeUtcMs: null }),
             searchAppointmentWindow: async () =>
-              PortResult.ok([
-                appointment('appointment-1', '2026-08-05T10:00:00', {
-                  name: 'Георги Петров',
-                  phone: '+359 88 123 4567',
-                }),
-              ]),
+              PortResult.ok(
+                searchPool ?? [
+                  appointment('appointment-1', '2026-08-05T10:00:00', {
+                    name: 'Георги Петров',
+                    phone: '+359 88 123 4567',
+                  }),
+                ],
+              ),
           } satisfies AppointmentReadPorts,
         },
         {
@@ -1667,25 +1700,29 @@ describe('StaffDashboard', () => {
     const component = fixture.componentInstance as unknown as {
       whenLabel: (entry: {
         live: boolean;
-        startMs: number;
-        endMs: number;
+        startUtcMs: UtcEpochMs;
+        endUtcMs: UtcEpochMs;
       }) => string;
     };
-    const now: number = wall('2026-08-05T09:00:00').utcEpochMs;
+    const now = wall('2026-08-05T09:00:00').utcEpochMs;
     // A running cut reaches for the REMAINING-time phrase. (The suite's
     // loader returns no translations, so this asserts the key it reaches
     // for, not the rendered words.)
     expect(
       component.whenLabel({
         live: true,
-        startMs: now - 10 * 60_000,
-        endMs: now + 12 * 60_000,
+        startUtcMs: UtcEpochMs.plusMs(now, -10 * 60_000),
+        endUtcMs: UtcEpochMs.plusMs(now, 12 * 60_000),
       }),
     ).toBe('staff.day.agendaRemaining');
     // Anything else counts to its START, through `Intl` rather than
     // transloco — so that one IS real text, in the active language.
     expect(
-      component.whenLabel({ live: false, startMs: now + 3_600_000, endMs: 0 }),
+      component.whenLabel({
+        live: false,
+        startUtcMs: UtcEpochMs.plusMs(now, 3_600_000),
+        endUtcMs: UtcEpochMs.EPOCH,
+      }),
     ).toMatch(/\d/);
     for (const row of host().querySelectorAll(
       '[data-testid="staff-visit-row"]',
@@ -2375,7 +2412,10 @@ describe('StaffDashboard', () => {
         chairMinutesOf: (seat: Seat, barberId: string) => number | null;
       };
       const price = (major: number) =>
-        TestBed.inject(CatalogWording).price(major);
+        TestBed.inject(CatalogWording).price({
+          amountCents: cents(major * 100),
+          currency: Currency.EUR,
+        });
       const quoted = (id: string) =>
         page.visitServiceOptions().find((option) => option.id === id);
 
@@ -3033,13 +3073,13 @@ describe('StaffDashboard', () => {
 
   it('keeps only ONE transient surface open at a time', () => {
     const component = fixture.componentInstance as unknown as {
-      togglePicker: (which: 'view' | 'scope') => void;
+      togglePicker: (which: DayPicker) => void;
       toggleDatePicker: () => void;
       openPicker: () => string | null;
       datePickerOpen: () => boolean;
     };
-    component.togglePicker('scope');
-    expect(component.openPicker()).toBe('scope');
+    component.togglePicker(DayPicker.Scope);
+    expect(component.openPicker()).toBe(DayPicker.Scope);
     // Each opener used to own its own flag and know nothing about the others,
     // so surfaces stacked — the date popover over a still-open picker, over a
     // scrim that was swallowing outside taps for all of them.
@@ -4174,13 +4214,16 @@ describe('StaffDashboard', () => {
       if (row === null) throw new Error('the sheet did not open');
 
       await component.commitFromEditor(row.appointmentId, {
+        revision: null,
         dayKey: '2026-08-05',
         startMinute: 600,
         endMinute: 630,
+        locationId: null,
         note: null,
         discounts: [],
         vouchers: [],
         tipCents: null,
+        drawn: null,
         clients: [],
         legs: [],
       });
@@ -4217,13 +4260,16 @@ describe('StaffDashboard', () => {
 
     // Every seat dropped: a batch with something in it, refused.
     await component.commitFromEditor(row.appointmentId, {
+      revision: null,
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
+      locationId: null,
       note: null,
       discounts: [],
       vouchers: [],
       tipCents: null,
+      drawn: null,
       clients: [],
       legs: [],
     });
@@ -4278,13 +4324,16 @@ describe('StaffDashboard', () => {
     if (row === null) throw new Error('the sheet did not open');
 
     await component.commitFromEditor(row.appointmentId, {
+      revision: null,
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
+      locationId: null,
       note: null,
       discounts: [],
       vouchers: [],
       tipCents: null,
+      drawn: null,
       clients: [],
       legs: [],
     });
@@ -5567,13 +5616,19 @@ describe('StaffDashboard', () => {
     expect(component.notice()).toBe('staff.day.undo.refused');
   });
 
+  it('hands the save plan its row AS IS — a row is the plan’s row facts (pass D D-10.1, type-level)', () => {
+    // Zero inbound mapping (Law 3): `StaffEditPlanSystem.commandsFor` and
+    // `tipSeat` take the row the sheet was opened on, unmapped.
+    expectTypeOf<DayRowVm>().toExtend<StaffEditRowFacts>();
+  });
+
   it('pins every surviving leg to its ladder slot before the chair-wide move, and restaffs a moved chair back', () => {
     const component = fixture.componentInstance as unknown as {
       visitSheetRow: () =>
         | (Record<string, unknown> & {
             id: string;
-            startMs: number;
-            endMs: number;
+            startMinute: number;
+            endMinute: number;
             legs: readonly VisitEditorLeg[];
           })
         | null;
@@ -5604,25 +5659,27 @@ describe('StaffDashboard', () => {
     // delta cannot swap them.
     const twoLegs: VisitEditorCommit = {
       ...before,
-      endMinute: before.startMinute + cut.minutes + 20,
+      endMinute: trackMinute(before.startMinute + cut.minutes + 20),
       legs: [
         ...before.legs,
         {
-          seatId: 'seat-beard',
-          serviceId: 'beard',
+          seatId: SeatId.of('seat-beard'),
+          serviceId: ServiceId.of('beard'),
           variantId: null,
-          minutes: 20,
-          priceLabel: '10,00 €',
+          minutes: duration(20),
+          priceCents: cents(1000),
+          currency: Currency.EUR,
+          typedPriceCents: null,
           barberId: cut.barberId,
           clientId: cut.clientId,
         },
       ],
     };
-    const hour = 60 * 60_000;
+    const hour = 60;
     const later = {
       ...row,
-      startMs: row.startMs + hour,
-      endMs: row.endMs + hour,
+      startMinute: row.startMinute + hour,
+      endMinute: row.endMinute + hour,
     };
     const back = unwrapOk(component.commandsFor(twoLegs, later));
     const moves = back.filter(
@@ -5651,7 +5708,10 @@ describe('StaffDashboard', () => {
     // another name, and is found by its seat. The way back restaffs it.
     const onStefan: VisitEditorCommit = {
       ...before,
-      legs: before.legs.map((leg) => ({ ...leg, barberId: 'stefan' })),
+      legs: before.legs.map((leg) => ({
+        ...leg,
+        barberId: BarberId.of('stefan'),
+      })),
     };
     expect(component.rowFor('appointment-1#stefan')).toBeNull();
     expect(component.rowFor('appointment-1#stefan', [cut.seatId])?.id).toBe(
@@ -5704,8 +5764,8 @@ describe('StaffDashboard', () => {
       ) => PortResult<readonly BookingCall.EditCommand[], PipelineError>;
     };
     type DayRowShape = {
-      startMs: number;
-      endMs: number;
+      startMinute: number;
+      endMinute: number;
       legs: readonly VisitEditorLeg[];
       discounts: readonly unknown[];
     };
@@ -5722,11 +5782,11 @@ describe('StaffDashboard', () => {
 
     // The visit as a save left it: an hour later, the cut gone, a beard in
     // its place, a code on the bill.
-    const hour = 60 * 60_000;
+    const hour = 60;
     const after = {
       ...row,
-      startMs: row.startMs + hour,
-      endMs: row.endMs + hour,
+      startMinute: row.startMinute + hour,
+      endMinute: row.endMinute + hour,
       legs: [
         {
           seatId: 'seat-beard',
@@ -5828,7 +5888,7 @@ describe('StaffDashboard', () => {
     expect(editor.dirty()).toBe(true);
     component.dismissVisitSheet();
     fixture.detectChanges();
-    expect(component.discardPending()).toBe('visit');
+    expect(component.discardPending()).toBe(DiscardTarget.Visit);
     expect(component.visitSheetRow()).not.toBeNull();
     const sheet = host().querySelector('[data-testid="staff-discard-sheet"]');
     expect(sheet).not.toBeNull();
@@ -5968,7 +6028,8 @@ describe('StaffDashboard', () => {
           seatId: string;
           minutes: number;
           barberId: string;
-          priceLabel: string | null;
+          priceCents: number | null;
+          currency: string;
         }[];
       } | null;
     };
@@ -5988,6 +6049,7 @@ describe('StaffDashboard', () => {
     // The row knows its shop — the appointment's own.
     expect(row.locationId.length).toBeGreaterThan(0);
     const save = (locationId: string) => ({
+      revision: null,
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
@@ -5996,6 +6058,7 @@ describe('StaffDashboard', () => {
       discounts: [],
       vouchers: [],
       tipCents: null,
+      drawn: null,
       clients: [],
       legs: [
         {
@@ -6003,7 +6066,9 @@ describe('StaffDashboard', () => {
           serviceId: 'cut',
           variantId: null,
           minutes: leg.minutes,
-          priceLabel: leg.priceLabel,
+          priceCents: leg.priceCents,
+          currency: leg.currency,
+          typedPriceCents: null,
           barberId: leg.barberId,
           clientId: 'user-martin',
         },
@@ -6059,13 +6124,16 @@ describe('StaffDashboard', () => {
     const [leg] = row.legs;
     if (leg === undefined) throw new Error('no seat on the row');
     await component.commitFromEditor(row.appointmentId, {
+      revision: null,
       dayKey: '2026-08-05',
       startMinute: 600,
       endMinute: 630,
+      locationId: null,
       note: null,
       discounts: [],
       vouchers: [],
       tipCents: null,
+      drawn: null,
       clients: [],
       legs: [
         {
@@ -6073,8 +6141,9 @@ describe('StaffDashboard', () => {
           serviceId: 'cut',
           variantId: null,
           minutes: leg.minutes,
-          priceLabel: '18,00 €',
           priceCents: 1800,
+          currency: Currency.EUR,
+          typedPriceCents: 1800,
           barberId: leg.barberId,
           clientId: 'user-martin',
         },
@@ -6085,8 +6154,9 @@ describe('StaffDashboard', () => {
           serviceId: 'wash',
           variantId: null,
           minutes: 10,
-          priceLabel: '9,00 €',
           priceCents: 900,
+          currency: Currency.EUR,
+          typedPriceCents: 900,
           barberId: leg.barberId,
           clientId: 'user-martin',
         },
@@ -6340,10 +6410,14 @@ describe('StaffDashboard', () => {
       // walk-in placeholder beside the chair's own client.
       const withStranger: VisitEditorCommit = {
         ...before,
-        endMinute: before.endMinute + cut.minutes,
+        endMinute: trackMinute(before.endMinute + cut.minutes),
         legs: [
           ...before.legs,
-          { ...cut, seatId: 'draft-stranger', clientId: 'primary' },
+          {
+            ...cut,
+            seatId: SeatId.of('draft-stranger'),
+            clientId: draftPersonKey('primary'),
+          },
         ],
       };
       await component.commitFromEditor('appointment-split', withStranger);
@@ -6684,22 +6758,22 @@ describe('StaffDashboard', () => {
         .componentInstance as StaffVisitEditor;
       expect(editor.uiOwnerUserId()).toBe(owner);
       expect(editor.uiViewer()).toEqual({
-        uid: 'dev-staff-ivan',
+        userId: 'dev-staff-ivan',
         roles: ['barber', 'admin'],
       });
 
       const catalog = editor.uiClientCardCatalog();
       expect(catalog).not.toBeNull();
-      expect(catalog?.barberName('ivan')).toBe('Иван');
-      expect(catalog?.barberName('nobody')).toBeNull();
-      expect(catalog?.serviceName('fade')).toBe('fade');
-      expect(catalog?.serviceName('retired')).toBeNull();
+      expect(catalog?.barberName(BarberId.of('ivan'))).toBe('Иван');
+      expect(catalog?.barberName(BarberId.of('nobody'))).toBeNull();
+      expect(catalog?.serviceName(ServiceId.of('fade'))).toBe('fade');
+      expect(catalog?.serviceName(ServiceId.of('retired'))).toBeNull();
       // No category is listed in this fixture; ONE shop is — the one the
       // chairs work at, which the day's windows are kept at (F1-10) — and
       // the card names it, and nothing it does not list.
-      expect(catalog?.serviceCategory('fade')).toBeNull();
-      expect(catalog?.locationName('loc-center')).toBe('Център');
-      expect(catalog?.locationName('loc-gone')).toBeNull();
+      expect(catalog?.serviceCategory(ServiceId.of('fade'))).toBeNull();
+      expect(catalog?.locationName(LocationId.of('loc-center'))).toBe('Център');
+      expect(catalog?.locationName(LocationId.of('loc-gone'))).toBeNull();
       expect(catalog?.locationCount).toBe(1);
       // One object: a new one each pass would re-open an open card.
       fixture.detectChanges();
@@ -6796,7 +6870,10 @@ describe('StaffDashboard', () => {
           grantId: 'grant-birthday',
           couponId: 'coupon-birthday',
           label: 'Рожден ден',
-          value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
+          value: {
+            discountMethod: DiscountMethod.PercentOff,
+            discountPercent: 20,
+          },
           exclusive: true,
           couponOccasion: CouponOccasion.Birthday,
           // The shop's day, not the UTC instant's (review 2, POLISH-editor).
@@ -6806,7 +6883,10 @@ describe('StaffDashboard', () => {
           grantId: 'grant-loyal',
           couponId: 'coupon-loyal',
           label: 'Постоянен клиент',
-          value: { discountMethod: DiscountMethod.PercentOff, percent: 5 },
+          value: {
+            discountMethod: DiscountMethod.PercentOff,
+            discountPercent: 5,
+          },
           exclusive: false,
           couponOccasion: null,
           expiresOn: null,
@@ -6877,6 +6957,7 @@ describe('StaffDashboard', () => {
         phone: null,
         phoneHref: null,
         meta: null,
+        email: null,
       });
 
       // The father's chair keeps the booking's contact: it is his.
@@ -6955,6 +7036,7 @@ describe('StaffDashboard', () => {
         phone: null,
         phoneHref: null,
         meta: null,
+        email: null,
       });
     } finally {
       if (visits) observeBarberDay.mockImplementation(visits);
@@ -7341,7 +7423,7 @@ describe('StaffDashboard', () => {
         'appointment-split',
         {
           ...before,
-          legs: [...before.legs, { ...leg, seatId: 'draft-extra' }],
+          legs: [...before.legs, { ...leg, seatId: SeatId.of('draft-extra') }],
         },
         row,
       );
@@ -7446,6 +7528,643 @@ describe('StaffDashboard', () => {
       expect(
         component.visitClientBook().map((client) => [client.id, client.label]),
       ).toEqual([[father, 'Стоян Колев']]);
+    });
+
+    /*
+     * ── PASS D: THE STAFF DAY ON THE WALL CLOCK (OQ-14) ─────────────────
+     *
+     * Every visit-vs-now answer of the day — live, next, past, the agenda's
+     * headings, the pooled search and «Скорошни» — reads the shop's wall
+     * clock (`localDate` + minutes against `ShopNow`), and changes only
+     * inside Sofia's fall-back repeat hour (2026-10-25, 04:00 EEST → 03:00
+     * EET: a stored visit holds the EARLIER offset), its spring-forward gap
+     * (2026-03-29, 03:00–03:59 does not exist), across zones, or at a
+     * minute's millisecond 0. Each case says what the instant reading
+     * answered before. Clocks are pinned; nothing reads the wall clock.
+     */
+    describe('the staff day on the wall clock (pass D, OQ-14)', () => {
+      const FALL_BACK = '2026-10-25';
+      const SPRING_FORWARD = '2026-03-29';
+      const LONDON = LocationId.of('loc-london');
+      const londonZone = unwrapOk(ZonedTimeSystem.checkZone('Europe/London'));
+      const LONDON_LOCATION = locationFixture({
+        id: LONDON,
+        timeZone: londonZone,
+      });
+
+      afterEach(() => {
+        catalogShops = null;
+        defaultShop = null;
+        searchPool = null;
+        seededExceptions = [];
+      });
+
+      /** One self-booked visit in Ivan's chair at `startsAt` (a wall-clock reading) for `minutes`. */
+      function ivanVisit(
+        id: string,
+        startsAt: string,
+        minutes = 30,
+        contactName: string | null = null,
+      ): Appointment {
+        return visitOf(
+          id,
+          [
+            seatAt({
+              chair: 'ivan',
+              startsAt,
+              minutes,
+              occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+            }),
+          ],
+          contactName === null
+            ? {}
+            : { contact: contactOf(contactName, '+359880000000') },
+        );
+      }
+
+      /** The same visit at the London shop — its instant read in London's zone, as ingestion stores it. */
+      function inLondon(visit: Appointment): Appointment {
+        return {
+          ...visit,
+          locationId: LONDON,
+          utcEpochMs: unwrapOk(
+            ZonedTimeSystem.toUtc(
+              visit.localDate,
+              visit.startMinutes,
+              londonZone,
+            ),
+          ),
+        };
+      }
+
+      function row(appointmentId: string): Element | null {
+        return host().querySelector(`[data-row-id="${appointmentId}#ivan"]`);
+      }
+
+      /** A stored block on Ivan's day, laid in before the page comes up. */
+      function blockOn(day: string, from: MinuteOfDay, to: EndMinute): void {
+        const localDate = unwrapOk(LocalDate.parse(day));
+        seededExceptions = [
+          ...seededExceptions,
+          {
+            id: ScheduleExceptionId.of(
+              BusyKey.of(BarberId.of('ivan'), localDate),
+            ),
+            barberId: BarberId.of('ivan'),
+            localDate,
+            utcEpochMs: ZonedTimeSystem.startOfLocalDay(
+              localDate,
+              FIXTURE_TIME_ZONE,
+            ),
+            locationId: SHOP,
+            ...unwrapOk(
+              ExceptionEffectRule.blocked([MinuteRange.of(from, to)]),
+            ),
+          },
+        ];
+      }
+
+      /**
+       * The shop open round the clock and Ivan rostered from `from` to the
+       * closing midnight every day — so a chair can work through 03:00 —
+       * for the length of `run`.
+       */
+      async function roundTheClock(
+        from: MinuteOfDay,
+        run: () => Promise<void>,
+      ): Promise<void> {
+        const roster = observeSchedule.getMockImplementation();
+        catalogShops = of(
+          PortResult.ok([
+            locationFixture({
+              id: SHOP,
+              openingHours: Array.from({ length: 7 }, () =>
+                DayHours.open(wallAt(0), until(24)),
+              ),
+            }),
+          ]),
+        );
+        const days: readonly Weekday[] = [
+          Weekday.Mon,
+          Weekday.Tue,
+          Weekday.Wed,
+          Weekday.Thu,
+          Weekday.Fri,
+          Weekday.Sat,
+          Weekday.Sun,
+        ];
+        observeSchedule.mockImplementation((barberId: BarberId) =>
+          of(
+            PortResult.ok(
+              barberId === 'ivan'
+                ? barberScheduleFixture({
+                    id: BarberId.of('ivan'),
+                    turnaroundMinutes: MinuteCount.ZERO,
+                    versions: [
+                      {
+                        seq: 1,
+                        effectiveFromLocalDate: unwrapOk(
+                          LocalDate.parse('2026-01-01'),
+                        ),
+                        effectiveToLocalDate: null,
+                        segments: days.map((day) =>
+                          ShiftSegment.of(day, SHOP, from, until(24)),
+                        ),
+                      },
+                    ],
+                  })
+                : null,
+            ),
+          ),
+        );
+        try {
+          await run();
+        } finally {
+          if (roster) observeSchedule.mockImplementation(roster);
+        }
+      }
+
+      type WallClockPage = {
+        store: {
+          openSearch: () => Promise<void>;
+          setTerm: (term: string) => void;
+          setView: (view: StaffView) => void;
+        };
+        searchResults: () => readonly {
+          readonly id: string;
+          readonly past: boolean;
+          readonly whenLabel: string;
+        }[];
+        browseClients: () => Promise<void>;
+        visitClientSections: () => readonly {
+          readonly clients: readonly {
+            readonly label: string;
+            readonly meta: string | null;
+          }[];
+        }[];
+        lanes: () => readonly {
+          readonly entries: readonly (Record<string, unknown> & {
+            readonly id: string;
+          })[];
+        }[];
+        gridColumns: () => readonly {
+          readonly id: string;
+          readonly open: readonly { readonly startMinute: number }[];
+          readonly events: readonly {
+            readonly id: string;
+            readonly past: boolean;
+          }[];
+        }[];
+        rosterExtent: () => { readonly start: number | null };
+        openBlock: (blockId: string) => void;
+        blockEdit: () => {
+          readonly startMinute: number;
+          readonly endMinute: number;
+        } | null;
+        whenLabel: (entry: unknown) => string;
+      };
+
+      const page = () => fixture.componentInstance as unknown as WallClockPage;
+
+      it('keeps a visit LIVE in the second pass of the fall-back hour (DEP-1)', async () => {
+        const visit = ivanVisit('appointment-repeat', `${FALL_BACK}T03:00:00`);
+        // The FIRST 03:10 (EEST): in the chair — before and after.
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          `${FALL_BACK}T03:10:00.000+03:00`,
+        );
+        expect(row('appointment-repeat')?.hasAttribute('data-live')).toBe(true);
+        // The SECOND 03:10 (EET): the stored end (03:30 EEST) has passed as
+        // an instant, but the shop's wall clock reads 03:10 — still in the
+        // chair (was: not live).
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          `${FALL_BACK}T03:10:00.000+02:00`,
+        );
+        expect(row('appointment-repeat')?.hasAttribute('data-live')).toBe(true);
+      });
+
+      it('names the next visit by the wall clock in the second pass (DEP-2)', async () => {
+        const visit = ivanVisit('appointment-later', `${FALL_BACK}T03:45:00`);
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          `${FALL_BACK}T03:10:00.000+02:00`,
+        );
+        // 03:45 has not come round again on the wall clock (its first pass
+        // did, as an instant): the chair's next (was: started, not next).
+        expect(row('appointment-later')?.hasAttribute('data-next')).toBe(true);
+      });
+
+      it("keeps the lane's own order for the next visit on an ordinary day: a sequential second leg before a later party (DEP-2)", async () => {
+        // Party A's envelope starts at 10:00 with Niko; Ivan's leg follows
+        // at 11:00. Party B is Ivan's 10:30. The lane delivers them in
+        // envelope order — A, then B — and the next is the FIRST of them
+        // not begun at 10:15: A, before and after (never re-sorted by the
+        // chair's seat start).
+        const a = visitOf('appointment-a', [
+          seatAt({
+            chair: 'niko',
+            startsAt: '2026-08-05T10:00:00',
+            minutes: 60,
+            occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+          }),
+          seatAt({
+            chair: 'ivan',
+            startsAt: '2026-08-05T11:00:00',
+            occupant: accountOf(freshId('user'), SubjectRelationship.Companion),
+          }),
+        ]);
+        const b = ivanVisit('appointment-b', '2026-08-05T10:30:00');
+        await buildWith(
+          new Map([['ivan', [a, b]]]),
+          '2026-08-05T10:15:00.000+03:00',
+        );
+        expect(row('appointment-a')?.hasAttribute('data-next')).toBe(true);
+        expect(row('appointment-b')?.hasAttribute('data-next')).toBe(false);
+      });
+
+      it('reads a visit past by the wall clock — it un-ends in the second pass, and ends again at 03:40 (DEP-3)', async () => {
+        const visit = ivanVisit('appointment-early', `${FALL_BACK}T03:00:00`);
+        // The second 03:10: ended in the first pass, not on the wall clock
+        // (was: past).
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          `${FALL_BACK}T03:10:00.000+02:00`,
+        );
+        expect(row('appointment-early')?.hasAttribute('data-past')).toBe(false);
+        // The second 03:40: its end (03:30) is behind the wall clock.
+        await buildWith(
+          new Map([['ivan', [visit]]]),
+          `${FALL_BACK}T03:40:00.000+02:00`,
+        );
+        expect(row('appointment-early')?.hasAttribute('data-past')).toBe(true);
+      });
+
+      it('reads a block past by the wall clock the same way, in the day view (DEP-3)', async () => {
+        await roundTheClock(wallAt(0), async () => {
+          blockOn(FALL_BACK, wallAt(3), until(3, 30));
+          const blockOf = () =>
+            page()
+              .gridColumns()
+              .flatMap((column) => column.events)
+              .find((event) => event.id === `block:ivan:${FALL_BACK}:180`);
+          await buildWith(new Map(), `${FALL_BACK}T03:10:00.000+02:00`);
+          page().store.setView(StaffView.Day);
+          fixture.detectChanges();
+          expect(blockOf()?.past).toBe(false);
+          await buildWith(new Map(), `${FALL_BACK}T03:40:00.000+02:00`);
+          page().store.setView(StaffView.Day);
+          fixture.detectChanges();
+          expect(blockOf()?.past).toBe(true);
+        });
+      });
+
+      it("reads the agenda heading at the clock's own minute as begun, and opens the run after it (DEP-4)", async () => {
+        const group = (minute: number) =>
+          host()
+            .querySelector(`#agenda-time-${minute}`)
+            ?.closest('[data-testid="staff-agenda-group"]') ?? null;
+        // Exactly 09:00:00.000 — the fixture's free hour heads the run at
+        // 09:00, Ivan's visit at 10:00. The 09:00 heading has begun (was:
+        // not past at millisecond 0), and the run opens on the next one.
+        TestBed.resetTestingModule();
+        await build('2026-08-05T09:00:00.000+03:00');
+        showFreeTime();
+        expect(group(540)?.hasAttribute('data-past')).toBe(true);
+        expect(group(540)?.hasAttribute('data-now-anchor')).toBe(false);
+        expect(group(600)?.hasAttribute('data-now-anchor')).toBe(true);
+        // Half a minute on — what production's minute tick reads: the same
+        // answer before and after.
+        TestBed.resetTestingModule();
+        await build('2026-08-05T09:00:30.000+03:00');
+        showFreeTime();
+        expect(group(540)?.hasAttribute('data-past')).toBe(true);
+        expect(group(600)?.hasAttribute('data-now-anchor')).toBe(true);
+      });
+
+      it('names each agenda heading by its minute of the day (DEP-5)', () => {
+        // The fixture's 10:00 visit: `agenda-time-600` (was the instant's
+        // milliseconds), and the run below it is labelled by it.
+        expect(host().querySelector('#agenda-time-600')?.tagName).toBe('H2');
+        expect(
+          host().querySelector('ul[aria-labelledby="agenda-time-600"]'),
+        ).not.toBeNull();
+      });
+
+      it("judges, orders and words a pooled hit on its own shop's clock (DEP-6)", async () => {
+        // Sofia 09:00 is London 07:00. A London cut at 08:30 on ITS clock
+        // has not begun there: not past, and the soonest future hit — ahead
+        // of Sofia's 10:00, printed 08:30 (was: past by the Sofia reading of
+        // its end, ordered after Sofia's by instant, printed 10:30).
+        const sofia = ivanVisit(
+          'appointment-sofia',
+          '2026-08-05T10:00:00',
+          30,
+          'Мира Софийска',
+        );
+        const london = inLondon(
+          ivanVisit(
+            'appointment-london',
+            '2026-08-05T08:30:00',
+            30,
+            'Мира Лондонска',
+          ),
+        );
+        catalogShops = of(PortResult.ok([SHOP_LOCATION, LONDON_LOCATION]));
+        searchPool = [sofia, london];
+        TestBed.resetTestingModule();
+        await build('2026-08-05T09:00:00.000+03:00');
+        await page().store.openSearch();
+        page().store.setTerm('мира');
+        const hits = page().searchResults();
+        expect(hits.map((hit) => hit.id)).toEqual([
+          'appointment-london',
+          'appointment-sofia',
+        ]);
+        expect(hits.map((hit) => hit.past)).toEqual([false, false]);
+        expect(hits[0]?.whenLabel).toContain('08:30');
+        expect(hits[1]?.whenLabel).toContain('10:00');
+      });
+
+      it('calls no hit past and words none before any zone is known (DEP-6, pre-zone pin)', async () => {
+        catalogShops = new ReplaySubject<
+          PortResult<readonly ShopLocation[], RepositoryError>
+        >(1);
+        defaultShop = new Promise(() => undefined);
+        // Ended at 08:30 — past, once a zone says so; nothing is, before.
+        searchPool = [
+          ivanVisit('appointment-gone', '2026-08-05T08:00:00', 30, 'Мира'),
+        ];
+        TestBed.resetTestingModule();
+        await build('2026-08-05T09:00:00.000+03:00');
+        await page().store.openSearch();
+        page().store.setTerm('мира');
+        expect(page().searchResults()).toEqual([
+          expect.objectContaining({
+            id: 'appointment-gone',
+            past: false,
+            whenLabel: '',
+          }),
+        ]);
+      });
+
+      describe('«Скорошни» (DEP-7)', () => {
+        /** The section's people, by name, with the date their line carries. */
+        async function recent(): Promise<
+          readonly (readonly [string, string | null])[]
+        > {
+          TestBed.inject(TranslocoService).setTranslation(
+            { 'staff.visit.lastVisit': '{{date}}' },
+            'bg',
+            { merge: true },
+          );
+          await page().browseClients();
+          return (page().visitClientSections()[0]?.clients ?? []).map(
+            (client) => [client.label, client.meta] as const,
+          );
+        }
+
+        it('leaves out a visit that has not begun on the wall clock in the second pass', async () => {
+          searchPool = [
+            ivanVisit(
+              'appointment-begun',
+              `${FALL_BACK}T03:00:00`,
+              30,
+              'Ранен',
+            ),
+            ivanVisit(
+              'appointment-ahead',
+              `${FALL_BACK}T03:40:00`,
+              30,
+              'Късен',
+            ),
+          ];
+          TestBed.resetTestingModule();
+          await build(`${FALL_BACK}T03:10:00.000+02:00`);
+          // 03:40 has come round once as an instant, not yet on the wall
+          // clock (was: listed).
+          expect((await recent()).map(([name]) => name)).toEqual(['Ранен']);
+        });
+
+        it('orders and dates a London visit by its own wall clock', async () => {
+          // London's 23:30 on the 4th is Sofia's 01:30 on the 5th; Sofia's
+          // own visit is at 23:45 on the 4th. Newest first on each shop's
+          // clock — Sofia's, then London's, both on the 4th (was: London
+          // first by instant, dated the 5th).
+          searchPool = [
+            ivanVisit(
+              'appointment-sofia',
+              '2026-08-04T23:45:00',
+              15,
+              'Софийски',
+            ),
+            inLondon(
+              ivanVisit(
+                'appointment-london',
+                '2026-08-04T23:30:00',
+                15,
+                'Лондонски',
+              ),
+            ),
+          ];
+          catalogShops = of(PortResult.ok([SHOP_LOCATION, LONDON_LOCATION]));
+          TestBed.resetTestingModule();
+          await build('2026-08-05T09:00:00.000+03:00');
+          const people = await recent();
+          expect(people.map(([name]) => name)).toEqual([
+            'Софийски',
+            'Лондонски',
+          ]);
+          expect(people[0]?.[1]).toBe(people[1]?.[1]);
+          expect(people[1]?.[1]).toContain('4');
+        });
+
+        it("lists a visit that begins at the tick's very millisecond", async () => {
+          searchPool = [
+            ivanVisit('appointment-now', '2026-08-05T09:00:00', 30, 'Точен'),
+          ];
+          TestBed.resetTestingModule();
+          await build('2026-08-05T09:00:00.000+03:00');
+          // Begun: its start IS the shop's minute (was: left out, its
+          // instant not before the fresh clock's).
+          expect((await recent()).map(([name]) => name)).toEqual(['Точен']);
+        });
+
+        it("reads the store's tick, not a fresh clock", async () => {
+          searchPool = [
+            ivanVisit('appointment-ten', '2026-08-05T10:00:00', 30, 'Десет'),
+          ];
+          TestBed.resetTestingModule();
+          await build('2026-08-05T09:59:30.000+03:00');
+          // The clock moves on to 10:00:10 before the page opens; the tick
+          // has not: the 10:00 visit waits for the next tick (was: listed
+          // by the fresh read).
+          const clock = TestBed.inject(CLOCK_PORTS) as unknown as {
+            nowUtcMs: () => UtcEpochMs;
+          };
+          clock.nowUtcMs = () => utcMs('2026-08-05T10:00:10.000+03:00');
+          expect(await recent()).toEqual([]);
+        });
+
+        it('keeps the stamp rule and prints no date while no zone is known (pre-zone pin)', async () => {
+          catalogShops = new ReplaySubject<
+            PortResult<readonly ShopLocation[], RepositoryError>
+          >(1);
+          defaultShop = new Promise(() => undefined);
+          searchPool = [
+            ivanVisit(
+              'appointment-morning',
+              '2026-08-05T08:00:00',
+              30,
+              'Сутрин',
+            ),
+            ivanVisit('appointment-noon', '2026-08-05T12:00:00', 30, 'Обед'),
+          ];
+          TestBed.resetTestingModule();
+          await build('2026-08-05T09:00:00.000+03:00');
+          // Its stored instant is before now: listed, as today; the date
+          // waits for the zone.
+          expect(await recent()).toEqual([['Сутрин', '']]);
+        });
+      });
+
+      it('measures the catalogue tag on the wall clock across both changeovers (DEP-8)', async () => {
+        const tagOf = (id: string) =>
+          row(id)?.querySelector('[data-testid="staff-visit-tag"]') ?? null;
+        const words = () => {
+          TestBed.inject(TranslocoService).setTranslation(
+            { 'staff.visit.minutes': '{{minutes}} мин' },
+            'bg',
+            { merge: true },
+          );
+          fixture.detectChanges();
+        };
+        // A fade sold for 30 against the catalogue's 45 — the tag shows
+        // where it is due, so its absence below is a verdict.
+        const fadeOn = (day: string) =>
+          visitOf(`appointment-fade-${day}`, [
+            seatAt({
+              chair: 'ivan',
+              startsAt: `${day}T14:00:00`,
+              serviceId: 'fade',
+              occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+            }),
+          ]);
+        // Spring forward: 02:30–04:30 booked for 120 runs 120 on the wall
+        // clock — no tag (was «−60 мин»: 60 elapsed minutes).
+        const spring = ivanVisit(
+          'appointment-spring',
+          `${SPRING_FORWARD}T02:30:00`,
+          120,
+        );
+        await buildWith(
+          new Map([['ivan', [spring, fadeOn(SPRING_FORWARD)]]]),
+          `${SPRING_FORWARD}T12:00:00.000+03:00`,
+        );
+        words();
+        expect(row('appointment-spring')).not.toBeNull();
+        expect(tagOf('appointment-spring')).toBeNull();
+        expect(
+          tagOf(`appointment-fade-${SPRING_FORWARD}`)?.textContent?.trim(),
+        ).toBe('−15 мин');
+        // Fall back: 03:30–04:30 booked for 60 — no tag (was «+60 мин»).
+        const fall = ivanVisit('appointment-fall', `${FALL_BACK}T03:30:00`, 60);
+        await buildWith(
+          new Map([['ivan', [fall, fadeOn(FALL_BACK)]]]),
+          `${FALL_BACK}T12:00:00.000+02:00`,
+        );
+        words();
+        expect(row('appointment-fall')).not.toBeNull();
+        expect(tagOf('appointment-fall')).toBeNull();
+        expect(
+          tagOf(`appointment-fade-${FALL_BACK}`)?.textContent?.trim(),
+        ).toBe('−15 мин');
+      });
+
+      it("seeds the block sheet with the block's own end across both changeovers (DEP-9)", async () => {
+        await roundTheClock(wallAt(0), async () => {
+          for (const day of [FALL_BACK, SPRING_FORWARD]) {
+            seededExceptions = [];
+            blockOn(day, wallAt(2), until(5));
+            await buildWith(new Map(), `${day}T12:00:00.000+03:00`);
+            page().openBlock(`block:ivan:${day}:120`);
+            // 02:00–05:00, as stored (was 06:00 on the 25th of October and
+            // 04:00 on the 29th of March — the start plus elapsed time).
+            expect(page().blockEdit()).toEqual(
+              expect.objectContaining({ startMinute: 120, endMinute: 300 }),
+            );
+          }
+        });
+      });
+
+      it('draws and labels a roster window from inside the spring-forward gap at its own minute (DEP-10)', async () => {
+        await roundTheClock(wallAt(3, 30), async () => {
+          await buildWith(new Map(), `${SPRING_FORWARD}T12:00:00.000+03:00`);
+          page().store.setView(StaffView.Day);
+          fixture.detectChanges();
+          // 03:30, as rostered (was 04:00 — the gap's end the instant walk
+          // landed on).
+          expect(page().gridColumns()[0]?.open[0]?.startMinute).toBe(210);
+          expect(page().rosterExtent().start).toBe(210);
+          const hole = page()
+            .lanes()
+            .flatMap((lane) => lane.entries)
+            .find((entry) => entry['startMinutes'] === 210);
+          expect(hole?.['startLabel']).toBe('03:30');
+        });
+      });
+
+      it("keys a block by its chair, day and minute, and opens only the shown day's (DEP-11)", async () => {
+        blockOn('2026-08-05', wallAt(12), until(13));
+        blockOn('2026-08-06', wallAt(12), until(13));
+        await buildWith(new Map(), '2026-08-05T09:00:00.000+03:00');
+        page().store.setView(StaffView.Week);
+        fixture.detectChanges();
+        const ids = page()
+          .gridColumns()
+          .flatMap((column) => column.events.map((event) => event.id));
+        expect(ids).toContain('block:ivan:2026-08-05:720');
+        expect(ids).toContain('block:ivan:2026-08-06:720');
+        // A block of ANOTHER day of the week, at the same chair and minute
+        // as one on the shown day, opens nothing — as before.
+        page().openBlock('block:ivan:2026-08-06:720');
+        expect(page().blockEdit()).toBeNull();
+        // The shown day's opens, found by its minutes.
+        page().openBlock('block:ivan:2026-08-05:720');
+        expect(page().blockEdit()).toEqual(
+          expect.objectContaining({ startMinute: 720, endMinute: 780 }),
+        );
+      });
+
+      it('counts down to a chair at a shop of another zone from its STORED instant (DEP-12)', async () => {
+        const now = utcMs('2026-08-05T09:00:00.000+03:00');
+        // London's 10:00 is 09:00 UTC — three hours out (was one: the
+        // Sofia reading of 10:00).
+        const london = inLondon(
+          ivanVisit('appointment-london', '2026-08-05T10:00:00'),
+        );
+        catalogShops = of(PortResult.ok([SHOP_LOCATION, LONDON_LOCATION]));
+        await buildWith(
+          new Map([['ivan', [london]]]),
+          '2026-08-05T09:00:00.000+03:00',
+        );
+        const entry = page()
+          .lanes()
+          .flatMap((lane) => lane.entries)
+          .find((candidate) => candidate.id === 'appointment-london#ivan');
+        expect(entry?.['startUtcMs']).toBe(london.utcEpochMs);
+        expect(page().whenLabel(entry)).toBe(
+          relativeTime(london.utcEpochMs, now, 'bg', 'short'),
+        );
+        expect(page().whenLabel(entry)).not.toBe(
+          relativeTime(
+            wall('2026-08-05T10:00:00').utcEpochMs,
+            now,
+            'bg',
+            'short',
+          ),
+        );
+      });
     });
   });
 });

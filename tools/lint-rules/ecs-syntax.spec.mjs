@@ -24,9 +24,16 @@ import {
   ECS_SYSTEM_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
+  RAW_BRAND_FIELD_SUFFIXES,
+  UI_OPAQUE_KEY_NAMES,
+  UI_RAW_BRAND_FIELD_KEYS,
+  UI_RAW_BRAND_FIELD_SUFFIXES,
+  UI_RAW_PRIMITIVE_FILES,
+  UI_RAW_PRIMITIVE_RESTRICTIONS,
   ecsProjectBlocks,
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
+  uiRawPrimitiveBlock,
 } from './ecs-syntax.mjs';
 
 /** The workspace root and its eslint.config.mjs, which installs the suffix blocks. */
@@ -158,6 +165,14 @@ const CASES = {
     'export const M = { set total(v: number) { void v; } };',
   ],
   MethodDefinition: ['const M = class { total() { return 1; } };'],
+  // D-13.2 — no exported free function in a data file
+  ':matches(ExportNamedDeclaration, ExportDefaultDeclaration) > :matches(FunctionDeclaration, TSDeclareFunction)':
+    [
+      'export function isTerminal(step: string): boolean { return step === "DONE"; }',
+      'export default function of(raw: string) { return raw; }',
+      'export declare function of(raw: string): string;',
+      'export async function load() { return 1; }',
+    ],
   // token guard
   'NewExpression[callee.name="InjectionToken"]': [
     `const T = new InjectionToken<string>('x');`,
@@ -188,6 +203,23 @@ const CASES = {
     'type A = { readonly localDate: string };',
     'type A = { readonly timeZone: string };',
     'type A = { readonly seatKey: string };',
+  ],
+  // L3 for the features and the design system (Law 7.4, pass D D-13.1)
+  [UI_RAW_PRIMITIVE_RESTRICTIONS[0].selector]: [
+    'interface V { readonly barberId: string }',
+    'interface V { readonly clientId: string | null }',
+    'interface V { readonly barberIds: readonly string[] }',
+    'type V = { readonly appointmentId: string };',
+    'interface V { readonly startUtcMs: number }',
+    'interface V { readonly arrivedMs: number | null }',
+    'interface V { readonly priceCents: number }',
+    'interface V { readonly today: string }',
+    'interface V { readonly dayKey: string }',
+    'interface V { readonly todayKey: string | null }',
+    'interface V { readonly localDate: string }',
+    'interface V { readonly timeZone: string }',
+    'interface V { readonly personKey: string }',
+    'interface V { readonly chip: { readonly chipId: string } }',
   ],
   // L4 — no Date (Law 7.1)
   "TSTypeReference[typeName.name='Date']": ['let at: Date | null = null;'],
@@ -252,6 +284,10 @@ const VALID_CASES = {
     'const c = CustomerId.forUser(u, hash);',
   'TSTypeAssertion > TSUnionType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
     'const b = <BarberId | null>raw;',
+  ':matches(ExportNamedDeclaration, ExportDefaultDeclaration) > :matches(FunctionDeclaration, TSDeclareFunction)':
+    'function isUnit(n: number): boolean { return n === 1; } export const Unit = { isUnit, of: (n: number) => n } as const; export type Unit = number; export namespace Unit { export type Whole = number; }',
+  [UI_RAW_PRIMITIVE_RESTRICTIONS[0].selector]:
+    'interface V { readonly barberId: BarberId; readonly startUtcMs: UtcEpochMs | null; readonly today: LocalDate; readonly id: string; readonly label: string; readonly nextId: () => string }',
 };
 
 const ARRAYS = {
@@ -270,6 +306,7 @@ const ARRAYS = {
   ECS_PORT_RESTRICTIONS,
   ECS_ADAPTER_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
+  UI_RAW_PRIMITIVE_RESTRICTIONS,
 };
 
 describe('ecs syntax restrictions — one case per selector', () => {
@@ -300,7 +337,7 @@ describe('ecs syntax restrictions — one case per selector', () => {
     });
   }
 
-  it('every flatten-pass selector has a valid case it lets through', async () => {
+  it('every flatten-pass and pass-D selector has a valid case it lets through', async () => {
     const flat = [
       ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
       ...ECS_NESTED_TYPE_RESTRICTIONS,
@@ -308,6 +345,10 @@ describe('ecs syntax restrictions — one case per selector', () => {
       ...ECS_DATE_RESTRICTIONS,
       ECS_THROW_RESTRICTION,
       ...ECS_ID_CAST_RESTRICTIONS,
+      ...UI_RAW_PRIMITIVE_RESTRICTIONS,
+      ECS_DATA_RESTRICTIONS.find((restriction) =>
+        restriction.selector.startsWith(':matches(ExportNamedDeclaration'),
+      ),
     ];
     for (const restriction of flat) {
       const code = VALID_CASES[restriction.selector];
@@ -938,4 +979,198 @@ describe('ecsProjectBlocks (libs/ecs-core, apps/functions)', () => {
       ),
     ).toEqual([ECS_TOKEN_RESTRICTIONS[0].message]);
   });
+});
+
+describe('the exported free-function ban (pass D, D-13.2)', () => {
+  const ban = ECS_DATA_RESTRICTIONS.find((restriction) =>
+    restriction.selector.startsWith(':matches(ExportNamedDeclaration'),
+  );
+
+  it('rides on every data-like kind through the one shape guard', () => {
+    expect(ban).toBeDefined();
+    for (const list of [
+      ECS_DATA_RESTRICTIONS,
+      ECS_ENTITY_RESTRICTIONS,
+      ECS_PRIMITIVE_RESTRICTIONS,
+    ]) {
+      expect(list).toContain(ban);
+    }
+    for (const list of [
+      ECS_SYSTEM_RESTRICTIONS,
+      ECS_PIPELINE_RESTRICTIONS,
+      ECS_PORT_RESTRICTIONS,
+      ECS_ADAPTER_RESTRICTIONS,
+    ]) {
+      expect(list).not.toContain(ban);
+    }
+  });
+
+  it('lets a private helper, the companion, the type and the namespace through', async () => {
+    const data = [...ICON_SYNTAX_RESTRICTIONS, ...ECS_DATA_RESTRICTIONS];
+    expect(
+      await lint(
+        `
+        function isUnit(n: number): boolean { return n === 1; }
+        export const Unit = { isUnit, of: (n: number): Unit => n } as const;
+        export type Unit = number;
+        export namespace Unit { export type Whole = number; }
+        export { isUnit as unitGuard };
+      `,
+        data,
+      ),
+    ).toEqual([]);
+  });
+
+  it('reports a guard exported beside the companion', async () => {
+    const data = [...ICON_SYNTAX_RESTRICTIONS, ...ECS_DATA_RESTRICTIONS];
+    expect(
+      await lint(
+        `
+        export const BookingFlowState = { idle: () => ({ bookingFlowStep: 'IDLE' }) } as const;
+        export function isTerminal(step: string): boolean { return step === 'DONE'; }
+      `,
+        data,
+      ),
+    ).toEqual([ban.message]);
+  });
+});
+
+describe('the features/UI raw-brand guard (pass D, D-13.1)', () => {
+  const [guard] = UI_RAW_PRIMITIVE_RESTRICTIONS;
+  const flags = async (code) => lint(code, UI_RAW_PRIMITIVE_RESTRICTIONS);
+
+  it('is built from the one L3 name list — no second regex', () => {
+    expect(ECS_RAW_PRIMITIVE_RESTRICTIONS[0].selector).toContain(
+      `[key.name=/(${RAW_BRAND_FIELD_SUFFIXES.join('|')})$/]`,
+    );
+    expect(UI_RAW_BRAND_FIELD_SUFFIXES).toEqual([
+      ...RAW_BRAND_FIELD_SUFFIXES,
+      'Ms',
+    ]);
+    expect(guard.selector).toContain(
+      `(${UI_RAW_BRAND_FIELD_SUFFIXES.join('|')})$|^(${UI_RAW_BRAND_FIELD_KEYS.join('|')})$`,
+    );
+    expect(guard.selector).toContain(
+      `:not([key.name=/^(${UI_OPAQUE_KEY_NAMES.join('|')})$/])`,
+    );
+  });
+
+  it('reaches interface members as well as type-alias members', async () => {
+    expect(
+      await flags(
+        'interface V { readonly barberId: string } type W = { readonly barberId: string };',
+      ),
+    ).toEqual([guard.message, guard.message]);
+    // The core's L3 still reads type aliases only.
+    expect(
+      await lint(
+        'interface V { readonly barberId: string }',
+        ECS_RAW_PRIMITIVE_RESTRICTIONS,
+      ),
+    ).toEqual([]);
+  });
+
+  it('lets every D-3 opaque UI key through by name', async () => {
+    const names = UI_OPAQUE_KEY_NAMES.map((name) =>
+      name === '[a-z]+TestId' ? 'chipTestId' : name,
+    );
+    const members = names
+      .map((name) => `readonly ${name}: string | number;`)
+      .join(' ');
+    expect(await flags(`interface V { ${members} }`)).toEqual([]);
+    // Exact names only: a stored id that merely CONTAINS a key word is caught.
+    expect(
+      await flags(
+        'interface V { readonly appointmentRowId: string; readonly TestId: string }',
+      ),
+    ).toEqual([guard.message, guard.message]);
+  });
+
+  it('lets `…Input` shapes, `…Words` tables and function members through', async () => {
+    expect(
+      await flags(
+        `
+        interface ShopEventInput { readonly startUtcMs: number; readonly locationId: string }
+        type VisitWords = { readonly today: string; readonly dayKey: string };
+        interface ClientCardWords { readonly birthday: { readonly today: string } }
+        interface Ports { readonly nextId: () => string; readonly formatMs: (ms: number) => string }
+      `,
+      ),
+    ).toEqual([]);
+  });
+
+  it('catches a raw `*Minutes` member and leaves `id` and a singular `*Minute` alone', async () => {
+    expect(
+      await flags(
+        'interface GridEvent { readonly id: string; readonly surplusMinutes: number | null; readonly startMinute: number }',
+      ),
+    ).toEqual([guard.message]);
+    expect(
+      await flags(
+        'interface GridEvent { readonly surplusMinutes: MinuteCount | null }',
+      ),
+    ).toEqual([]);
+  });
+
+  it('uiRawPrimitiveBlock scopes one block to the features and the design system, restating the every-file guards', () => {
+    const ignores = ['**/*.spec.ts', '**/testing/**'];
+    const block = uiRawPrimitiveBlock({ basePath: WORKSPACE_ROOT, ignores });
+    expect(block.basePath).toBe(WORKSPACE_ROOT);
+    expect(block.files).toEqual(UI_RAW_PRIMITIVE_FILES);
+    expect(UI_RAW_PRIMITIVE_FILES).toEqual([
+      'libs/features/**/*.ts',
+      'libs/ui/**/*.ts',
+    ]);
+    expect(block.ignores).toBe(ignores);
+    expect(block.rules['no-restricted-syntax']).toEqual([
+      'error',
+      ...ICON_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
+      ...UI_RAW_PRIMITIVE_RESTRICTIONS,
+    ]);
+  });
+
+  it('uiRawPrimitiveBlock refuses a relative base path (silent under one ESLint base)', () => {
+    expect(() =>
+      uiRawPrimitiveBlock({ basePath: 'libs', ignores: [] }),
+    ).toThrow(/absolute workspace root/);
+    expect(() => uiRawPrimitiveBlock({ ignores: [] })).toThrow(
+      /absolute workspace root/,
+    );
+  });
+
+  it('the root config resolves it on feature and UI production files only, before the suffix blocks', async () => {
+    const eslint = new ESLint({
+      cwd: WORKSPACE_ROOT,
+      overrideConfigFile: ROOT_CONFIG,
+    });
+    const resolved = async (file) =>
+      (await eslint.calculateConfigForFile(file)).rules['no-restricted-syntax'];
+    const guarded = [
+      2,
+      ...ICON_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
+      ...UI_RAW_PRIMITIVE_RESTRICTIONS,
+    ];
+    for (const file of [
+      'libs/features/probe/src/lib/probe.vm.ts',
+      'libs/features/probe/src/lib/probe.store.ts',
+      'libs/ui/probe/src/lib/probe.ts',
+    ]) {
+      expect(await resolved(file), file).toEqual(guarded);
+    }
+    // Specs, test support and every other library keep the every-file lists.
+    for (const file of [
+      'libs/features/probe/src/lib/probe.spec.ts',
+      'libs/ui/probe/src/lib/probe.type-spec.ts',
+      'libs/features/probe/src/testing/fixtures.ts',
+      'libs/shared/view-state/src/lib/probe.ts',
+      'libs/infrastructure/clock/src/lib/probe.ts',
+      'apps/web/src/app/probe.ts',
+    ]) {
+      expect(await resolved(file), file).not.toEqual(
+        expect.arrayContaining(UI_RAW_PRIMITIVE_RESTRICTIONS),
+      );
+    }
+  }, 30_000);
 });

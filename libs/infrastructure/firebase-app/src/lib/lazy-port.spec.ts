@@ -19,6 +19,8 @@ import {
   type FactoryPicker,
   LAZY_PORT_LOAD_ERROR,
   type LazyAdapterModule,
+  LazyMethod,
+  isLazyPort,
   lazyAdapterScope,
   provideLazyPort,
 } from './lazy-port';
@@ -188,12 +190,12 @@ function setUp(load: Loader) {
       { provide: ErrorHandler, useValue: errorHandler },
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
-        methods: { greet: 'promise', watch: 'observable' },
+        methods: { greet: LazyMethod.Promise, watch: LazyMethod.Observable },
         onLoadError: unavailable,
       }),
       provideLazyPort(COUNTER, scope, {
         factory: counterFactory,
-        methods: { count: 'promise' },
+        methods: { count: LazyMethod.Promise },
         onLoadError: unavailable,
       }),
     ],
@@ -245,6 +247,16 @@ describe('provideLazyPort', () => {
     const { scope } = setUp(gatedLoader().load);
 
     expect(TestBed.inject(scope.ports)).toEqual([GREETER, COUNTER]);
+  });
+
+  it('binds a plain, unfrozen record it can tell from an adapter’s bundle', () => {
+    const { greeter, counter } = setUp(gatedLoader().load);
+
+    expect(Object.getPrototypeOf(greeter)).toBe(Object.prototype);
+    expect(Object.isFrozen(greeter)).toBe(false);
+    expect([isLazyPort(greeter), isLazyPort(counter)]).toEqual([true, true]);
+    expect(isLazyPort(counterPorts({ id: 0 }))).toBe(false);
+    expect([isLazyPort(null), isLazyPort('greeter')]).toEqual([false, false]);
   });
 
   it('is a plain record, its loader read at call time — a spec may watch it', async () => {
@@ -503,25 +515,25 @@ describe('provideLazyPort', () => {
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
         // @ts-expect-error — a method left unclassified
-        methods: { greet: 'promise' },
+        methods: { greet: LazyMethod.Promise },
         onLoadError: unavailable,
       });
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
         // @ts-expect-error — a stream classified as a promise
-        methods: { greet: 'promise', watch: 'promise' },
+        methods: { greet: LazyMethod.Promise, watch: LazyMethod.Promise },
         onLoadError: unavailable,
       });
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
         // @ts-expect-error — a failure answer the port cannot give
-        methods: { greet: 'promise', watch: 'observable' },
+        methods: { greet: LazyMethod.Promise, watch: LazyMethod.Observable },
         onLoadError: () => 'offline',
       });
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
         // @ts-expect-error — a handler that throws is the rejection again
-        methods: { greet: 'promise', watch: 'observable' },
+        methods: { greet: LazyMethod.Promise, watch: LazyMethod.Observable },
         onLoadError: () => {
           throw new Error('offline');
         },
@@ -529,14 +541,14 @@ describe('provideLazyPort', () => {
       provideLazyPort(GREETER, scope, {
         // @ts-expect-error — the bundle does not implement the port
         factory: counterFactory,
-        methods: { greet: 'promise', watch: 'observable' },
+        methods: { greet: LazyMethod.Promise, watch: LazyMethod.Observable },
         onLoadError: unavailable,
       });
       const SYNC = new InjectionToken<{ readonly now: () => number }>('Sync');
       provideLazyPort(SYNC, scope, {
         factory: (m) => () => m.syncPorts(),
         // @ts-expect-error — a synchronous method cannot be deferred
-        methods: { now: 'promise' },
+        methods: { now: LazyMethod.Promise },
         onLoadError: unavailable,
       });
     };

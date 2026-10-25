@@ -1,3 +1,4 @@
+import { Tag } from '@core/primitives';
 import { BookingErrorCode } from './booking.error';
 import { CancellationRefusalCode } from './cancellation.error';
 import { CarriedSeatRefusal, MoveErrorCode } from './move.error';
@@ -23,6 +24,36 @@ import { WaitlistErrorCode } from './waitlist.error';
  * ({@link PipelineError.isBlocked}).
  */
 
+/**
+ * The `HttpsError` statuses a callable can fail with — Firebase's
+ * `FunctionsErrorCode` vocabulary (the web SDK's `FunctionsErrorCodeCore`,
+ * the server's `https.FunctionsErrorCode`), all seventeen, verbatim. Values:
+ * external contract (the Firebase callable protocol's status strings —
+ * read off the wire here, answered by the functions edge), never
+ * SCREAMING. The ONLY source of these strings: `PipelineError.wireStatus`
+ * holds one, parsed once off the SDK's `functions/<status>` spelling.
+ */
+export const HttpsStatus = {
+  InvalidArgument: 'invalid-argument',
+  FailedPrecondition: 'failed-precondition',
+  NotFound: 'not-found',
+  AlreadyExists: 'already-exists',
+  PermissionDenied: 'permission-denied',
+  Unauthenticated: 'unauthenticated',
+  ResourceExhausted: 'resource-exhausted',
+  DeadlineExceeded: 'deadline-exceeded',
+  Aborted: 'aborted',
+  Unavailable: 'unavailable',
+  Internal: 'internal',
+  Ok: 'ok',
+  Cancelled: 'cancelled',
+  Unknown: 'unknown',
+  OutOfRange: 'out-of-range',
+  Unimplemented: 'unimplemented',
+  DataLoss: 'data-loss',
+} as const;
+export type HttpsStatus = (typeof HttpsStatus)[keyof typeof HttpsStatus];
+
 /** Error codes — the ONLY source of these strings; the UI translates them. */
 export const PipelineErrorCode = {
   /** Nobody (or not this person) is signed in — the next step is sign-in. */
@@ -40,13 +71,6 @@ export const PipelineErrorCode = {
 } as const;
 export type PipelineErrorCode =
   (typeof PipelineErrorCode)[keyof typeof PipelineErrorCode];
-
-/**
- * Every {@link PipelineErrorCode}, dictionary order — derived once, never a
- * second source; {@link PipelineError.isPipelineError}'s table (six codes,
- * scanned; no `new` in a data file, Law 1).
- */
-const PIPELINE_CODES: readonly string[] = Object.values(PipelineErrorCode);
 
 /**
  * A refusal's scalar context as the wire carried it — for interpolation
@@ -67,8 +91,13 @@ export type PipelineError = {
   readonly refusal: string | null;
   /** The input field an invalid request names, if any. */
   readonly field: string | null;
-  /** The `HttpsError` status the call failed with (`permission-denied`); `null` off the wire. */
-  readonly wireStatus: string | null;
+  /**
+   * The `HttpsError` status the call failed with (`permission-denied`);
+   * `null` off the wire — or for a status outside Firebase's vocabulary,
+   * which the SDK never hands (its `FunctionsError.code` is typed
+   * `functions/<one of the seventeen>`).
+   */
+  readonly wireStatus: HttpsStatus | null;
   /** The refusal's allowlisted scalar context; `{}` when none. */
   readonly serverParams: WireParams;
 };
@@ -141,21 +170,21 @@ export const WIRE_PARAM_ALLOWLIST: {
  * The `HttpsError` status → what the caller does next, when the server's
  * code has no row of its own in {@link CODE_OVERRIDES}.
  */
-function codeOfStatus(status: string | null): PipelineErrorCode {
+function codeOfStatus(status: HttpsStatus | null): PipelineErrorCode {
   switch (status) {
-    case 'unauthenticated':
+    case HttpsStatus.Unauthenticated:
       return PipelineErrorCode.Unauthenticated;
-    case 'invalid-argument':
-    case 'failed-precondition':
-    case 'not-found':
-    case 'permission-denied':
-    case 'already-exists':
-    case 'out-of-range':
+    case HttpsStatus.InvalidArgument:
+    case HttpsStatus.FailedPrecondition:
+    case HttpsStatus.NotFound:
+    case HttpsStatus.PermissionDenied:
+    case HttpsStatus.AlreadyExists:
+    case HttpsStatus.OutOfRange:
       return PipelineErrorCode.InvalidRequest;
-    case 'unavailable':
-    case 'internal':
-    case 'deadline-exceeded':
-    case 'resource-exhausted':
+    case HttpsStatus.Unavailable:
+    case HttpsStatus.Internal:
+    case HttpsStatus.DeadlineExceeded:
+    case HttpsStatus.ResourceExhausted:
       return PipelineErrorCode.Unavailable;
     default:
       return PipelineErrorCode.Unknown;
@@ -286,11 +315,21 @@ function paramsOf(
   return params;
 }
 
-/** `functions/permission-denied` (the SDK's spelling) and `permission-denied` alike. */
-function bareStatus(status: string): string {
-  return status.startsWith('functions/')
-    ? status.slice('functions/'.length)
+/** The SDK's prefix on a callable's status (`functions/permission-denied`). */
+const SDK_STATUS_PREFIX = 'functions/';
+
+/**
+ * THE ONE PARSE of a wire status: `functions/permission-denied` (the SDK's
+ * spelling) and `permission-denied` alike read as
+ * `HttpsStatus.PermissionDenied`; a string outside Firebase's seventeen —
+ * which the SDK never hands — reads as `null`, classified exactly as before
+ * (`PIPELINE_UNKNOWN`, {@link codeOfStatus}'s default).
+ */
+function bareStatus(status: string): HttpsStatus | null {
+  const bare = status.startsWith(SDK_STATUS_PREFIX)
+    ? status.slice(SDK_STATUS_PREFIX.length)
     : status;
+  return Tag.has(HttpsStatus, bare) ? bare : null;
 }
 
 export const PipelineError = {
@@ -354,7 +393,7 @@ export const PipelineError = {
    * the lockout (`IDENTITY_OTP_LOCKED_OUT` is `resource-exhausted`).
    */
   isBlocked(error: PipelineError): boolean {
-    return error.wireStatus === 'permission-denied';
+    return error.wireStatus === HttpsStatus.PermissionDenied;
   },
 
   is(error: PipelineError, code: PipelineErrorCode): boolean {
@@ -371,6 +410,6 @@ export const PipelineError = {
   isPipelineError(error: {
     readonly errorCode: string;
   }): error is PipelineError {
-    return PIPELINE_CODES.includes(error.errorCode);
+    return Tag.has(PipelineErrorCode, error.errorCode);
   },
 } as const;

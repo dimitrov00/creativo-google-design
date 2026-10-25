@@ -2,15 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { PhoneSystem } from '@core/systems';
 import { CountryIso2 } from './country-iso2.data';
 import { Email } from './email.data';
-import {
-  Identifier,
-  ParsedIdentifier,
-  type ReadPhone,
-} from './identifier.data';
+import { Identifier } from './identifier.data';
+import { ParsedIdentifier } from './parsed-identifier.data';
 import { IdentifierChannel } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
 import { OtpDestinationType } from './otp-destination-type.data';
-import { E164 } from './phone-number.data';
+import { E164 } from './e164.data';
 
 /*
  * The cases of the legacy identity `identifier.spec.ts` (deleted in Phase 4b;
@@ -18,7 +15,7 @@ import { E164 } from './phone-number.data';
  * brand: the phone reader is the real PhoneSystem bound to Bulgaria, as an edge
  * would wire it.
  */
-const readPhone: ReadPhone = (raw) => {
+const readPhone: ParsedIdentifier.ReadPhone = (raw) => {
   const result = PhoneSystem.parse(raw, CountryIso2.of('BG'));
   return result.ok ? result.value.e164 : null;
 };

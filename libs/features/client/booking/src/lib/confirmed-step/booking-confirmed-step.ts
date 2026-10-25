@@ -1,8 +1,8 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { type BookingConfirmation, Party, SeatKey } from '@core/components';
-import type { BarberId, CartLineId } from '@core/primitives';
+import { Party } from '@core/components';
+import type { BarberId, CartLineId, SeatKeyText } from '@core/primitives';
 import {
   CatalogContentService,
   CatalogWording,
@@ -23,6 +23,11 @@ import {
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
+import {
+  barberNameOf,
+  bookerLabelOf,
+  personLabelOf,
+} from '../booking-people.words';
 import { formatBookingDay, formatBookingTime } from '../booking-wall-clock';
 
 interface ConfirmedLineVm {
@@ -108,7 +113,7 @@ export class BookingConfirmedStep {
       return [];
     }
 
-    const seatByLineId = new Map<CartLineId, string>();
+    const seatByLineId = new Map<CartLineId, SeatKeyText>();
     for (const seat of confirmation.cart.cartSeats) {
       for (const line of seat.lines) {
         seatByLineId.set(line.lineId, seat.seatKey);
@@ -117,44 +122,33 @@ export class BookingConfirmedStep {
 
     const { localDate } = confirmation.selection;
     const locale = this.content.locale();
-    return confirmation.selection.assignments.map((assignment) => ({
-      key: assignment.lineId,
-      personLabel: this.personLabel(
-        seatByLineId.get(assignment.lineId) ?? '',
-        confirmation,
-      ),
-      barberName: this.barberName(assignment.barberId),
-      timeLabel: formatBookingTime(localDate, assignment.startMinutes, locale),
-    }));
+    // The party the server accepted — the confirmation's own, not the flow's.
+    const guests = Party.guests(confirmation.party);
+    const booker = bookerLabelOf(
+      this.identity.displayName(),
+      this.transloco.translate('booking.party.you'),
+    );
+    return confirmation.selection.assignments.map((assignment) => {
+      const seatKey = seatByLineId.get(assignment.lineId);
+      return {
+        key: assignment.lineId,
+        // A line the cart no longer holds names nobody.
+        personLabel:
+          seatKey === undefined ? '' : personLabelOf(seatKey, guests, booker),
+        barberName: this.barberName(assignment.barberId),
+        timeLabel: formatBookingTime(
+          localDate,
+          assignment.startMinutes,
+          locale,
+        ),
+      };
+    });
   });
 
+  /** A barber as the steps name them (`barberNameOf`, the one copy). */
   private barberName(barberId: BarberId): string {
-    const barber = this.catalog
-      .barbers()
-      .find((candidate) => candidate.id === barberId);
-    return barber
-      ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId;
-  }
-
-  private personLabel(
-    seatKey: string,
-    confirmation: BookingConfirmation,
-  ): string {
-    // The booker by NAME once we know it — three steps said "You" to a
-    // signed-in user whose name was sitting in the session the whole time
-    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === SELF_SEAT)
-      return (
-        this.identity.displayName() ||
-        this.transloco.translate('booking.party.you')
-      );
-    const guest = Party.guests(confirmation.party).find(
-      (candidate) => candidate.guestId === seatKey,
+    return barberNameOf(this.catalog.barbers(), barberId, (name) =>
+      this.content.text(name),
     );
-    return guest?.guestLabel ?? seatKey;
   }
 }
-
-/** The booker's own cart seat key. */
-const SELF_SEAT: string = SeatKey.text(SeatKey.self());

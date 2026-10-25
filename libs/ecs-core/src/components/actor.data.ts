@@ -1,6 +1,7 @@
 import type { ImpersonationSessionId, UserId } from '@core/primitives';
 import { ImpersonationScope } from './impersonation-scope.data';
-import { Role, isStaffRole, knownRoles } from './role.data';
+import { Role } from './role.data';
+import { Roles } from './roles.data';
 
 /**
  * Actor tags — the ONLY source of these strings, the discriminator
@@ -92,12 +93,12 @@ export const Actor = {
    * unrecognised string grants nothing and is not written into the snapshot.
    */
   forCaller(userId: UserId, roles: readonly unknown[]): Actor {
-    const known = knownRoles(roles);
+    const known = Roles.known(roles);
     const staffRoles: Role[] = [];
     for (let i = 0; i < known.length; i++) {
       const role = known[i] as Role;
       if (role === Role.Admin) return Actor.admin(userId);
-      if (isStaffRole(role)) staffRoles.push(role);
+      if (Roles.isStaffRole(role)) staffRoles.push(role);
     }
     return staffRoles.length > 0
       ? {

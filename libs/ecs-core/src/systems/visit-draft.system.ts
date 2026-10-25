@@ -4,35 +4,21 @@ import {
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
+  RepeatPreset,
 } from '@core/components';
 import {
   Weekday,
   defect,
+  DraftPersonKey,
   DurationMinutes,
   MinuteDelta,
   LocalDate,
-  UserId,
+  TrackMinute,
   type EndMinute,
   type MinuteOfDay,
 } from '@core/primitives';
 import type { TrackSpan } from './grid-layout.system';
 import { RecurrenceSystem } from './recurrence.system';
-
-/**
- * The repeat page's shortcuts — Apple's Repeat list with Google's and
- * Outlook's «every weekday» (a shop's lunch break). The ONLY source of these
- * strings. A preset is never STORED: the draft holds the rule, and which row
- * wears the check is read back off it ({@link VisitDraftSystem.presetOf}).
- */
-export const RepeatPreset = {
-  Never: 'NEVER',
-  Daily: 'DAILY',
-  Weekdays: 'WEEKDAYS',
-  Weekly: 'WEEKLY',
-  Monthly: 'MONTHLY',
-  Yearly: 'YEARLY',
-} as const;
-export type RepeatPreset = (typeof RepeatPreset)[keyof typeof RepeatPreset];
 
 /** The shortcuts, in the page's order. */
 const REPEAT_PRESETS: readonly RepeatPreset[] = [
@@ -62,14 +48,8 @@ const DEFAULT_MONTHS_YEARLY = 48;
 /** The count a series takes when its end turns into «after N times» with nothing to keep. */
 const DEFAULT_COUNT = 10;
 
-/** The id a service picked before anyone was named sits on. */
-const PLACEHOLDER_CLIENT_ID = 'primary';
-/**
- * The prefix of a stranger's key on a staff sheet — a walk-in by label
- * (`guest-<label>`) or a person minted on the add-client page
- * (`guest-<instant>-<n>`). Never an account's.
- */
-const GUEST_KEY_PREFIX = 'guest-';
+/** The key a service picked before anyone was named sits on — `DraftPersonKey.PLACEHOLDER` (`primary`). */
+const PLACEHOLDER_CLIENT_ID = DraftPersonKey.PLACEHOLDER;
 /** A visit with no service yet still needs a shape to draw: half an hour. */
 const DEFAULT_SPAN_MINUTES = durationOf(30);
 /**
@@ -108,13 +88,13 @@ function legSum(legs: readonly DraftLegMinutes[]): DurationMinutes | null {
 export type DraftLegMinutes = { readonly durationMinutes: DurationMinutes };
 
 /**
- * A leg as the placeholder rule reads it — whose it is. The person key is
- * OPAQUE to the system (the editor's own key: an account's uid, a guest's
- * key or {@link PLACEHOLDER_CLIENT_ID}), so it stays the caller's type `K`;
- * the rule only compares it with the placeholder and hands a new one over.
+ * A leg as the placeholder rule reads it — whose it is: the editor's own
+ * person key (a `DraftPersonKey` — an account's uid, a guest's key or
+ * {@link PLACEHOLDER_CLIENT_ID}). The rule only compares it with the
+ * placeholder and hands a new one over.
  */
-export type DraftLegClient<K extends string = string> = {
-  readonly clientId: K;
+export type DraftLegClient = {
+  readonly clientId: DraftPersonKey;
 };
 
 /**
@@ -127,9 +107,9 @@ export type CatalogLegMinutes = {
   readonly bookedMinutes: DurationMinutes;
 };
 
-/** One stranger's name on a visit — the person by the caller's own opaque key `K`. */
-export type WalkInLabel<K extends string = string> = {
-  readonly personId: K;
+/** One stranger's name on a visit — the person by the editor's own key. */
+export type WalkInLabel = {
+  readonly personId: DraftPersonKey;
   readonly label: string;
 };
 
@@ -205,9 +185,6 @@ function fitted(
  *   `adoptPlaceholderLegs`), the frame's and the typed figure's two
  *   override rules and a typed end (`onFrameDraft`/`setDuration`/
  *   `commitEnd`) — pass C;
- * - whose a person key is: the placeholder, a stranger's `guest-…` key, or
- *   an account (`accountKeyOf`, the editor's `accountIdOf` and the
- *   dashboard's `isAccount`) — pass C;
  * - names for the strangers on one visit (the staff dashboard's
  *   `walkInNames`);
  * - the catalogue tag's arithmetic (the `−10 мин` wording is the dashboard's
@@ -217,7 +194,6 @@ function fitted(
  */
 export const VisitDraftSystem = {
   PLACEHOLDER_CLIENT_ID,
-  GUEST_KEY_PREFIX,
   DEFAULT_SPAN_MINUTES,
   GRAIN_MINUTES,
   REPEAT_PRESETS,
@@ -226,14 +202,14 @@ export const VisitDraftSystem = {
   /* ── The grain ───────────────────────────────────────────────────────── */
 
   /*
-   * THE TRACK-MINUTE EXCEPTION (R-6, as `TrackSpan` documents it). A clock
-   * minute goes in branded (`MinuteOfDay`); a snapped mark comes out as a
-   * TRACK minute — a plain number on the sheets' anchored axis — because a
-   * half rounds up, so `1439` lands on the closing midnight `1440`, which no
-   * `MinuteOfDay` holds, while `0` stays `0`, which no `EndMinute` holds.
-   * The block sheet's typed pair is a `TrackSpan` for the same reason: a
-   * start typed at 23:58 snaps to `1440` and pushes its end one grain past
-   * it, to `1445`; clamping either at 1440 would change what the sheet does.
+   * THE TRACK AXIS (R-5). A clock minute goes in branded (`MinuteOfDay`); a
+   * snapped mark comes out as a `TrackMinute` — a minute on the sheets'
+   * anchored axis — because a half rounds up, so `1439` lands on the
+   * closing midnight `1440`, which no `MinuteOfDay` holds, while `0` stays
+   * `0`, which no `EndMinute` holds. The block sheet's typed pair is a
+   * `TrackSpan` for the same reason: a start typed at 23:58 snaps to `1440`
+   * and pushes its end one grain past it, to `1445`; clamping either at 1440
+   * would change what the sheet does.
    */
 
   /**
@@ -241,8 +217,10 @@ export const VisitDraftSystem = {
    * `1439` lands on `1440` (the staff sheets' `snap`). A track minute out,
    * in `[0, 1440]`; the caller's own bounds apply after.
    */
-  snap(minute: MinuteOfDay): number {
-    return snapToGrain(minute);
+  snap(minute: MinuteOfDay): TrackMinute {
+    // A whole minute in [0, 1440) rounded to the 5-minute grain: a whole
+    // number in [0, 1440] — on the track by construction.
+    return TrackMinute.ofProven(snapToGrain(minute));
   },
 
   /**
@@ -250,8 +228,12 @@ export const VisitDraftSystem = {
    * the next tick. A track minute out, in `[0, 1440]` (`1436`–`1439` land
    * on `1440`).
    */
-  snapUp(minute: MinuteOfDay): number {
-    return Math.ceil(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
+  snapUp(minute: MinuteOfDay): TrackMinute {
+    // A whole minute in [0, 1440) raised to the 5-minute grain: a whole
+    // number in [0, 1440] — on the track by construction.
+    return TrackMinute.ofProven(
+      Math.ceil(minute / GRAIN_MINUTES) * GRAIN_MINUTES,
+    );
   },
 
   /**
@@ -261,9 +243,14 @@ export const VisitDraftSystem = {
    */
   typedStart(range: TrackSpan, minute: MinuteOfDay): TrackSpan {
     const start = snapToGrain(minute);
+    // A whole minute of [0, 1440) snapped: a whole number in [0, 1440]; the
+    // end is the larger of it plus a grain and the range's own track
+    // minute — both whole and non-negative, on the track by construction.
     return {
-      startMinute: start,
-      endMinute: Math.max(start + GRAIN_MINUTES, range.endMinute),
+      startMinute: TrackMinute.ofProven(start),
+      endMinute: TrackMinute.ofProven(
+        Math.max(start + GRAIN_MINUTES, range.endMinute),
+      ),
     };
   },
 
@@ -275,7 +262,12 @@ export const VisitDraftSystem = {
   typedEnd(range: TrackSpan, minute: MinuteOfDay): TrackSpan {
     const end = snapToGrain(minute);
     const start = Math.min(range.startMinute, end - GRAIN_MINUTES);
-    return { startMinute: Math.max(0, start), endMinute: end };
+    // The snapped end is a whole number in [0, 1440]; the start is whole and
+    // floored at 0 — both on the track by construction.
+    return {
+      startMinute: TrackMinute.ofProven(Math.max(0, start)),
+      endMinute: TrackMinute.ofProven(end),
+    };
   },
 
   /**
@@ -298,27 +290,6 @@ export const VisitDraftSystem = {
    */
   typedSpan(typed: number): DurationMinutes {
     return VisitDraftSystem.floorSpan(snapToGrain(typed));
-  },
-
-  /* ── Whose a person key is ───────────────────────────────────────────── */
-
-  /**
-   * The ACCOUNT a staff sheet's person key names — `null` for the
-   * placeholder a service sits on before anyone is named, and for a
-   * stranger's `guest-…` key. Every other key is an account's uid, through
-   * `UserId.parse` (a refused key — blank, or one that would name a nested
-   * document — is no account). The key's spelling is the sheet's, until the
-   * draft carries an origin tag (pass D).
-   */
-  accountKeyOf(clientId: string): UserId | null {
-    if (
-      clientId === PLACEHOLDER_CLIENT_ID ||
-      clientId.startsWith(GUEST_KEY_PREFIX)
-    ) {
-      return null;
-    }
-    const account = UserId.parse(clientId);
-    return account.ok ? account.value : null;
   },
 
   /* ── The span and the placeholder seats ─────────────────────────────── */
@@ -415,7 +386,7 @@ export const VisitDraftSystem = {
   adoptPlaceholderLegs<L extends DraftLegClient>(
     clientCount: number,
     legs: readonly L[],
-    personId: L['clientId'],
+    personId: DraftPersonKey,
   ): readonly L[] {
     if (clientCount > 0) return legs;
     const out: L[] = [];
@@ -440,24 +411,24 @@ export const VisitDraftSystem = {
    * the plain label, `word(n)` the numbered one; the search is bounded, so a
    * catalogue that words every number alike still ends.
    */
-  walkInLabels<K extends string>(
-    unlabelled: readonly K[],
+  walkInLabels(
+    unlabelled: readonly DraftPersonKey[],
     taken: readonly string[],
     word: (number: number | null) => string,
-  ): readonly WalkInLabel<K>[] {
+  ): readonly WalkInLabel[] {
     const used = new Set<string>(taken);
-    const seen = new Set<K>();
-    const people: K[] = [];
+    const seen = new Set<DraftPersonKey>();
+    const people: DraftPersonKey[] = [];
     for (let i = 0; i < unlabelled.length; i++) {
-      const id = unlabelled[i] as K;
+      const id = unlabelled[i] as DraftPersonKey;
       if (seen.has(id)) continue;
       seen.add(id);
       people.push(id);
     }
     const limit = used.size + people.length + 2;
-    const out: WalkInLabel<K>[] = [];
+    const out: WalkInLabel[] = [];
     for (let i = 0; i < people.length; i++) {
-      const personId = people[i] as K;
+      const personId = people[i] as DraftPersonKey;
       let label = word(null);
       for (let number = 2; used.has(label) && number <= limit; number += 1) {
         label = word(number);

@@ -1,3 +1,5 @@
+import type { RepositoryError } from './repository.error';
+
 /**
  * The accounts context's error codes — the codes of the legacy accounts
  * domain's `*.errors.ts` and of the accounts use cases
@@ -211,4 +213,21 @@ export namespace AccountsError {
   export type RepositoryFailure = {
     readonly errorCode: typeof AccountsErrorCode.RepositoryFailure;
   };
+  /**
+   * What a failed owner's own-profile save answers (`saveOwnProfile`, pass D
+   * §2.11 — W1-A moves the pipeline onto it): the edit's own refusal as the
+   * server named it (`NOT_FOUND`, `VALIDATION_FAILED`), or the ONE
+   * failed-write copy for every other failure (a store, transport or session
+   * failure).
+   */
+  export type OwnProfileSave =
+    | UpdateProfileNotFound
+    | UpdateProfileValidationFailed
+    | UpdateProfileRepositoryFailure;
 }
+
+/**
+ * What `updateProfile` answers with: an accounts refusal or the store's
+ * failure — homed here in pass D (E-20; Law 7.5: never in a pipeline file).
+ */
+export type UpdateProfileError = AccountsError | RepositoryError;

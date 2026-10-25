@@ -6,7 +6,7 @@ import {
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import { type AccountsError, type RepositoryError } from '@core/errors';
+import { type AccountsError, type UpdateProfileError } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import type {
   ClockPorts,
@@ -56,8 +56,6 @@ export type UpdateProfileAnswer = {
   /** Whether anything was written — `false` for an edit equal to the stored values. */
   readonly changed: boolean;
 };
-
-export type UpdateProfileError = AccountsError | RepositoryError;
 
 /** The transaction's decision: whether it writes, and its plan. */
 type ProfileDecision = {

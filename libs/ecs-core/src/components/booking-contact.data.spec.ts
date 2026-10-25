@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '@core/testing';
 import { BookingContact } from './booking-contact.data';
-import { E164 } from './phone-number.data';
+import { E164 } from './e164.data';
 
 /**
  * A stand-in for the edge's `PhoneSystem.parse`: E.164-shaped input only.

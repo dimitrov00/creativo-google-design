@@ -18,18 +18,18 @@
           <button
             type="button"
             uiChip
-            [uiSelected]="tab() === 'upcoming'"
+            [uiSelected]="tab() === EventsTab.Upcoming"
             data-testid="events-tab-upcoming"
-            (click)="setTab('upcoming')"
+            (click)="setTab(EventsTab.Upcoming)"
           >
             {{ t('programs.events.tabUpcoming') }}
           </button>
           <button
             type="button"
             uiChip
-            [uiSelected]="tab() === 'past'"
+            [uiSelected]="tab() === EventsTab.Past"
             data-testid="events-tab-past"
-            (click)="setTab('past')"
+            (click)="setTab(EventsTab.Past)"
           >
             {{ t('programs.events.tabPast') }}
           </button>
@@ -49,7 +49,7 @@
         } @case (LoadState.Ready) { @if (current.data.length === 0) {
         <ui-card data-testid="events-empty">
           <ui-stack uiSpacing="tight">
-            @if (tab() === 'upcoming') {
+            @if (tab() === EventsTab.Upcoming) {
             <p uiText uiFont="headline">
               {{ t('programs.events.empty.title') }}
             </p>

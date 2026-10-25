@@ -53,6 +53,27 @@ const INSTAGRAM = 'https://instagram.com/creativo.barbershop';
 const blankEn = CatalogError.localizedTextFieldEmpty(Locale.En);
 const blankBg = CatalogError.localizedTextFieldEmpty(Locale.Bg);
 
+describe('ProgramsSystem.isEnrollmentOpenOrUpcoming', () => {
+  // Moved with the rule from `enrollment-status.data.spec.ts` (pass D).
+  it('shows an open or an upcoming course, never a closed one', () => {
+    expect(
+      ProgramsSystem.isEnrollmentOpenOrUpcoming(EnrollmentStatus.Open),
+    ).toBe(true);
+    expect(
+      ProgramsSystem.isEnrollmentOpenOrUpcoming(EnrollmentStatus.Upcoming),
+    ).toBe(true);
+    expect(
+      ProgramsSystem.isEnrollmentOpenOrUpcoming(EnrollmentStatus.Closed),
+    ).toBe(false);
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(
+      ProgramsSystem.isEnrollmentOpenOrUpcoming(EnrollmentStatus.Open),
+    ).toBe(ProgramsSystem.isEnrollmentOpenOrUpcoming(EnrollmentStatus.Open));
+  });
+});
+
 describe('ProgramsSystem.position', () => {
   it('accepts a fully valid role', () => {
     const position = unwrapOk(

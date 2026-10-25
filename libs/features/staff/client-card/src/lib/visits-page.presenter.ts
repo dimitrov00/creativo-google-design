@@ -1,12 +1,11 @@
-import { HistoryNote } from '@core/components';
-import type { ClientStatsRecord } from '@core/entities';
 import {
-  ClientStatsSystem,
+  HistoryNote,
   VisitFilter,
   VisitGrain,
-  VisitListSystem,
   VisitPerspective,
-} from '@core/systems';
+} from '@core/components';
+import type { ClientStatsRecord } from '@core/entities';
+import { ClientStatsSystem, VisitListSystem } from '@core/systems';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type VisitRowVm,
@@ -29,12 +28,13 @@ import {
   runsOf,
   unbroken,
 } from './client-card.format';
-import type {
-  HistoryCellVm,
-  HistoryPagingVm,
-  HistorySpendVm,
-  LinePart,
-  VisitsPageVm,
+import {
+  HistoryCellId,
+  type HistoryCellVm,
+  type HistoryPagingVm,
+  type HistorySpendVm,
+  type LinePart,
+  type VisitsPageVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 import {
@@ -170,10 +170,11 @@ function headOf(
   const weeks =
     stats?.avgCadenceDays == null ? null : cadenceWeeks(stats.avgCadenceDays);
   const cells = historyCells(stats, words).filter(
-    (cell) => visits > 0 || cell.id !== 'visits',
+    (cell) => visits > 0 || cell.id !== HistoryCellId.Visits,
   );
   const risks = cells.filter(
-    (cell) => cell.id === 'noShows' || cell.id === 'cancelled',
+    (cell) =>
+      cell.id === HistoryCellId.NoShows || cell.id === HistoryCellId.Cancelled,
   );
   const spoken = risks
     .map((cell) => `, ${cell.value} ${cell.caption}`)

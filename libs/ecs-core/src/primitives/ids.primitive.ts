@@ -434,9 +434,16 @@ export const AuditResourceId = {
 } as const;
 
 /**
- * The text of a cart seat key — `self`, `guest-…` or `companion-<uid>`,
- * unchanged — built by `SeatKey.text(key)` in `cart-line.data.ts`. A key
- * brand, not an entity id.
+ * The text a party seat is told apart by — a key brand, not an entity id.
+ * It carries TWO spelling families on purpose (pass D, D-3), never mixed in
+ * one collection:
+ * - a cart seat key — `self`, `guest-…` or `companion-<uid>`, unchanged —
+ *   built by `SeatKey.text(key)` in `cart-line.data.ts`;
+ * - a party person key — `account:<uid>` or `guest:<label>` — built by
+ *   `GuestLabelSystem.personKeyOf` (and the visit story's
+ *   `personKeyOf`/`seatPersonKey`).
+ * A separate `PersonKey` brand for the second family is an owner question
+ * (pass D OQ-17).
  */
 export type SeatKeyText = Brand<string, 'SeatKeyText'>;
 export const SeatKeyText = {
@@ -455,5 +462,91 @@ export const SeatKeyText = {
   /** A key text that is one by construction. */
   of(raw: string): SeatKeyText {
     return raw as SeatKeyText;
+  },
+} as const;
+
+/** The key a service picked before anyone was named sits on (a staff sheet's draft). */
+const DRAFT_PLACEHOLDER = 'primary';
+/**
+ * The prefix of a stranger's draft key — a walk-in by label
+ * (`guest-<label>`) or a person minted on the add-client page
+ * (`guest-<base36>-<n>`). Never an account's.
+ */
+const DRAFT_GUEST_PREFIX = 'guest-';
+
+/**
+ * A person's key in a staff sheet's DRAFT (the visit editor and the
+ * dashboard's rows) — UI draft read-state minted only inside the editor,
+ * never sent on the wire as itself. Three spellings, byte-identical to the
+ * sheet's: an account's uid AS IS, `guest-<label>` (a walk-in by its label,
+ * Cyrillic included — `guest-Мария`) or `guest-<base36>-<n>` (minted on the
+ * add-client page), and {@link DraftPersonKey.PLACEHOLDER} (`primary`).
+ * Why none of the other key brands: not a `GuestId` (a draft key may be a
+ * bare uid or `primary`), not a `GuestKey` (its typed label fails the wire
+ * charset), not a {@link SeatKeyText} (never `self`/`companion-…`/
+ * `account:…`).
+ */
+export type DraftPersonKey = Brand<string, 'DraftPersonKey'>;
+export const DraftPersonKey = {
+  /** The placeholder a service picked before anyone was named sits on — `primary`. */
+  PLACEHOLDER: DRAFT_PLACEHOLDER as DraftPersonKey,
+
+  /** An account's key — its uid, as is. */
+  account(id: UserId): DraftPersonKey {
+    return id as string as DraftPersonKey;
+  },
+
+  /** A walk-in by its label — `guest-<label>`. */
+  guest(label: string): DraftPersonKey {
+    return `${DRAFT_GUEST_PREFIX}${label}` as DraftPersonKey;
+  },
+
+  /** A person minted on the add-client page — `guest-<base36>-<n>`. */
+  minted(base36: string, n: number): DraftPersonKey {
+    return `${DRAFT_GUEST_PREFIX}${base36}-${n}` as DraftPersonKey;
+  },
+
+  /**
+   * Foreign input (a design-system option id handed back as a plain string):
+   * exactly the three spellings the sheet mints, byte for byte —
+   * {@link DraftPersonKey.PLACEHOLDER} (`primary`), `guest-<rest>` with a
+   * non-empty rest (a typed label as is, Cyrillic, spaces or `/` included),
+   * or an account's uid as `UserId.parse` takes it (non-blank, no `/`).
+   * Anything else is that refusal (`PRIMITIVE_ID_EMPTY` /
+   * `PRIMITIVE_ID_HAS_SLASH`), named for this brand.
+   */
+  parse(raw: string): Result<DraftPersonKey, PrimitiveError> {
+    if (
+      raw === DRAFT_PLACEHOLDER ||
+      (raw.startsWith(DRAFT_GUEST_PREFIX) &&
+        raw.length > DRAFT_GUEST_PREFIX.length)
+    ) {
+      return Result.ok(raw as DraftPersonKey);
+    }
+    const account = UserId.parse(raw);
+    return account.ok
+      ? Result.ok(raw as DraftPersonKey)
+      : Result.err(
+          PrimitiveError.of(account.error.errorCode, raw, 'DraftPersonKey'),
+        );
+  },
+
+  /** A key that is one by construction (a key the sheet minted, a fixture literal). */
+  of(raw: string): DraftPersonKey {
+    return raw as DraftPersonKey;
+  },
+
+  /**
+   * The ACCOUNT a draft key names — `null` for the placeholder and for a
+   * stranger's `guest-…` key. Every other key is an account's uid, through
+   * `UserId.parse` (a refused key — blank, or one that would name a nested
+   * document — is no account).
+   */
+  accountOf(key: DraftPersonKey): UserId | null {
+    if (key === DRAFT_PLACEHOLDER || key.startsWith(DRAFT_GUEST_PREFIX)) {
+      return null;
+    }
+    const account = UserId.parse(key);
+    return account.ok ? account.value : null;
   },
 } as const;

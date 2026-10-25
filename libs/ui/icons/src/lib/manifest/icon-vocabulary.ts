@@ -1,9 +1,11 @@
-import type {
-  UiIconManifest,
-  UiLogoEntry,
-  UiVectorAsset,
+import {
+  UI_ICON_MANIFEST_SCHEMA_VERSION,
+  UiIconAsset,
+  normalizeIconEntry,
+  type UiIconManifest,
+  type UiLogoEntry,
+  type UiVectorAsset,
 } from './icon-manifest';
-import { normalizeIconEntry } from './icon-manifest';
 
 /**
  * Semantic icon vocabulary — the BUNDLED manifest's icon table.
@@ -633,7 +635,7 @@ export const UI_ICON_VECTORS = {
   /** Instagram — Material carries no brand glyphs. The v2 stroke mark:
    *  rounded square, lens, dot; 2-unit strokes on a 24-unit box. */
   'social.instagram': {
-    kind: 'vector',
+    iconAsset: UiIconAsset.Vector,
     viewBox: '0 0 24 24',
     paths: [
       {
@@ -717,13 +719,13 @@ export function isUiIconName(value: unknown): value is UiIconName {
  * 1920×419.82 artboard the files were drawn on; the two polygons became
  * closed paths.
  *
- * A future logo may be an `image` asset (raster, multi-colour) with a
+ * A future logo may be an `IMAGE` asset (raster, multi-colour) with a
  * separate `dark` variant — the manifest's logo shape carries both, and
  * `ui-logo` shows the one the active theme asks for.
  */
 export const UI_LOGO: UiLogoEntry = {
   light: {
-    kind: 'vector',
+    iconAsset: UiIconAsset.Vector,
     viewBox: '0 0 1920 419.82',
     paths: [
       {
@@ -759,7 +761,7 @@ export const UI_LOGO: UiLogoEntry = {
  * one resolver for both.
  */
 export const UI_BUNDLED_ICON_MANIFEST: UiIconManifest = {
-  schemaVersion: 1,
+  schemaVersion: UI_ICON_MANIFEST_SCHEMA_VERSION,
   icons: {
     ...Object.fromEntries(
       Object.entries(UI_ICON_REGISTRY).map(([key, glyph]) => [

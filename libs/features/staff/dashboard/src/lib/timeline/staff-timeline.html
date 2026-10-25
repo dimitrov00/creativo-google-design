@@ -231,7 +231,7 @@
   (click)="recenter()"
 >
   <ui-icon
-    [uiName]="edge === 'before' ? 'calendar.previous' : 'calendar.next'"
+    [uiName]="edge === OffscreenEdge.Before ? 'calendar.previous' : 'calendar.next'"
     uiScale="small"
   />
   <span class="staff-timeline__recenter-time">{{ editableTimeLabel() }}</span>

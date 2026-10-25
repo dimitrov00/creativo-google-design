@@ -2,6 +2,7 @@ import {
   BookingPolicy,
   type LivePolicyLine,
   type PolicyPass,
+  PolicyPassJudgement,
   PreciseInstant,
 } from '@core/components';
 import { RecomputeJobName, type PolicyRecomputeJob } from '@core/entities';
@@ -61,31 +62,6 @@ export type PolicyStep = {
   readonly recomputed: number;
   readonly failed: number;
 };
-
-/** The pass-guard verdict tags — the ONLY source of these strings, the field `policyPassVerdict`. */
-export const PolicyPassVerdict = {
-  /** A newer pass has judged this client: write nothing. */
-  Superseded: 'SUPERSEDED',
-  /** Judge the client. */
-  Judge: 'JUDGE',
-} as const;
-export type PolicyPassVerdict =
-  (typeof PolicyPassVerdict)[keyof typeof PolicyPassVerdict];
-
-/**
- * What a client's recompute may do, given its own pass and the stamp it
- * found. On `JUDGE`, `stamp` is what the written document carries (one of
- * the two inputs, by reference), and `restamp` says the stored one must
- * move to it even when the answer itself is unchanged — a newer pass must
- * leave its mark on every client it reaches.
- */
-export type PolicyPassJudgement =
-  | { readonly policyPassVerdict: typeof PolicyPassVerdict.Superseded }
-  | {
-      readonly policyPassVerdict: typeof PolicyPassVerdict.Judge;
-      readonly stamp: PolicyPass | null;
-      readonly restamp: boolean;
-    };
 
 function isInstant(instant: PreciseInstant): boolean {
   return (
@@ -369,37 +345,21 @@ export const PolicyRecomputeJobSystem = {
     stored: PolicyPass | null,
   ): PolicyPassJudgement {
     if (mine === null) {
-      return {
-        policyPassVerdict: PolicyPassVerdict.Judge,
-        stamp: stored,
-        restamp: false,
-      };
+      return PolicyPassJudgement.judge(stored, false);
     }
     if (stored === null) {
-      return {
-        policyPassVerdict: PolicyPassVerdict.Judge,
-        stamp: mine,
-        restamp: true,
-      };
+      return PolicyPassJudgement.judge(mine, true);
     }
     if (stored.generation === mine.generation) {
-      return {
-        policyPassVerdict: PolicyPassVerdict.Judge,
-        stamp: stored,
-        restamp: false,
-      };
+      return PolicyPassJudgement.judge(stored, false);
     }
     const order = PolicyRecomputeJobSystem.compareInstants(
       mine.changedAt,
       stored.changedAt,
     );
     if (order !== null && order < 0) {
-      return { policyPassVerdict: PolicyPassVerdict.Superseded };
+      return PolicyPassJudgement.superseded();
     }
-    return {
-      policyPassVerdict: PolicyPassVerdict.Judge,
-      stamp: mine,
-      restamp: true,
-    };
+    return PolicyPassJudgement.judge(mine, true);
   },
 } as const;

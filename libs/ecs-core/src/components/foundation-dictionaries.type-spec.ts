@@ -26,7 +26,7 @@ import {
   TimeErrorCode,
   type TimeError,
 } from '@core/errors';
-import { RoundingMode } from './money.data';
+import { RoundingMode } from './rounding-mode.data';
 import { WriteAction, type WriteOp } from './write-op.data';
 
 /** A tag dictionary whose every value is a `T`. */
@@ -63,7 +63,7 @@ dictionary(PrimitiveErrorCode satisfies Dictionary<PrimitiveErrorCode>);
 // (2) Holds — exactly the dictionary's values, one key per value.
 export type FoundationDictionariesHold = [
   Expect<Holds<typeof WriteAction, WriteAction>>, // write-op.data.ts
-  Expect<Holds<typeof RoundingMode, RoundingMode>>, // money.data.ts
+  Expect<Holds<typeof RoundingMode, RoundingMode>>, // rounding-mode.data.ts
   Expect<Holds<typeof MoneyErrorCode, MoneyErrorCode>>, // money.error.ts
   Expect<Holds<typeof PipelineErrorCode, PipelineErrorCode>>, // pipeline.error.ts
   Expect<Holds<typeof RepositoryErrorCode, RepositoryErrorCode>>, // repository.error.ts

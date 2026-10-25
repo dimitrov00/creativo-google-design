@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   FreezeReason,
+  type StreakExcuse,
   StreakIntervalRule,
   StreakOnBreak,
   StreakPeriodMark,
   StreakPhase,
+  type StreakPreview,
+  StreakPreviewOutcome,
   StreakQualifierRule,
   StreakRule,
-  type StreakExcuse,
   type StreakState,
   type VisitFact,
 } from '@core/components';
@@ -27,11 +29,7 @@ import {
   unwrapOk,
   utcMs,
 } from '@core/testing';
-import {
-  StreakPreviewOutcome,
-  StreakPreviewSystem,
-  type StreakPreview,
-} from './streak-preview.system';
+import { StreakPreviewSystem } from './streak-preview.system';
 import { StreakRuleSystem } from './streak-rule.system';
 import { StreakSystem, type StreakFacts as SystemFacts } from './streak.system';
 import { ZonedTimeSystem } from './zoned-time.system';

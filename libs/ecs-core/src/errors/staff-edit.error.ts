@@ -4,14 +4,19 @@ import type {
   LocalDate,
   MinuteOfDay,
 } from '@core/primitives';
+import type { BookingError } from './booking.error';
+import type { RepositoryError } from './repository.error';
+import type { TimeError } from './time.error';
 
 /**
  * The staff edit's refusal codes (`staff-edit-appointment.errors.ts`) — the
  * ONLY source of these strings, the field `errorCode`. Moved here from
  * `appointment-edit.system.ts` (Law 7.5, Phase 4a 4A-6), with
- * `StaffEditOverlaps` from `edit-appointment.pipeline.ts`. Every field
- * beside `errorCode` is a scalar or a brand — the errors tier imports only
- * primitives.
+ * `StaffEditOverlaps` from `edit-appointment.pipeline.ts`; the named unions
+ * {@link StaffEditGuardRefusal} (from `appointment-edit.system.ts`) and
+ * {@link EditAppointmentError} (from `edit-appointment.pipeline.ts`) joined
+ * them in pass D (E-23). Every field beside `errorCode` is a scalar or a
+ * brand — the errors tier imports only primitives.
  */
 export const StaffEditErrorCode = {
   Unauthenticated: 'BOOKING_STAFF_EDIT_UNAUTHENTICATED',
@@ -75,6 +80,30 @@ export type StaffEditError =
   | StaffEditForbidden
   | StaffEditStale
   | StaffEditBeforeArrival;
+
+/**
+ * What `AppointmentEditSystem.guard` refuses: a visit that never happened
+ * (`BOOKING_INVALID_INPUT`, field `bookingStatus`), or one ending before its
+ * arrival.
+ */
+export type StaffEditGuardRefusal =
+  BookingError.InvalidInput | StaffEditBeforeArrival;
+
+/**
+ * What `editAppointment` answers with: the staff edit's own refusals, the
+ * acknowledgeable overlap, the commit's `BookingError` (the re-decision
+ * under the shop's rules), a wall clock the shop's zone never shows
+ * (`TimeError`), or the store.
+ */
+export type EditAppointmentError =
+  | StaffEditInvalidCommand
+  | StaffEditForbidden
+  | StaffEditStale
+  | StaffEditBeforeArrival
+  | StaffEditOverlaps
+  | BookingError
+  | TimeError
+  | RepositoryError;
 
 export const StaffEditError = {
   invalidCommand(field: string): StaffEditInvalidCommand {

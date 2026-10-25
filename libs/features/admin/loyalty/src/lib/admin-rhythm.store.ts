@@ -11,7 +11,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
 import type { Subscription } from 'rxjs';
-import { map, switchMap } from 'rxjs/operators';
+import { loadedLanguage } from '@creativo/infrastructure/i18n';
 import {
   CLIENT_STATS_READ_PORTS,
   CLOCK_PORTS,
@@ -24,9 +24,11 @@ import {
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
 import type { StreakDefinitionPorts } from '@core/ports';
 import {
-  LocalDate,
+  type LocalDate,
   PublishRequestId,
   Result,
+  type ServiceCategoryId,
+  type ServiceId,
   type TimeZone,
   type UtcEpochMs,
   defect,
@@ -34,21 +36,23 @@ import {
 import {
   type EngagementError,
   RepositoryError,
+  type RhythmPublishRefusal,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
 import {
+  DraftAssessment,
   FlagName,
   HeadRole,
   StreakInterval,
   type StreakHeadRule,
+  type StreakPreview,
   StreakRule,
   type StreakRuleInput,
   type StreakState,
   StreakTransition,
 } from '@core/components';
 import {
-  DraftAssessment,
   type RememberedIntervals,
   RhythmDraftSystem,
   type RhythmBounds,
@@ -58,7 +62,6 @@ import {
   type StreakDraftAssessment,
   type StreakEffectiveDay,
   type StreakNoticePolicy,
-  type StreakPreview,
   StreakPreviewSystem,
   type StreakPublishFloor,
   StreakPublishSystem,
@@ -70,7 +73,6 @@ import {
 import {
   type RhythmDraftReceipt,
   type RhythmPublishOutcome,
-  type RhythmPublishRefusal,
   type RhythmWithdrawOutcome,
   publishRhythmDraft,
   rhythmPreviewSource,
@@ -80,7 +82,7 @@ import {
   type RhythmRuleWords,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
-import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { LoadSlice, LoadState, timedRead } from '@creativo/shared/view-state';
 import {
   RHYTHM_PREVIEW_DELAY_MS,
   rhythmPreviewOf,
@@ -100,6 +102,16 @@ export const ADMIN_RHYTHM_STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
 
 /** A read that has not answered by then counts as failed. */
 export const ADMIN_RHYTHM_READ_TIMEOUT_MS = 10_000;
+
+/**
+ * A read that did not answer within `ADMIN_RHYTHM_READ_TIMEOUT_MS`, and one
+ * that threw instead of answering — `timedRead`'s two failure answers (the
+ * client card's, word for word).
+ */
+const READ_FAILURES = {
+  timedOut: Result.err(RepositoryError.readFailed(null, 'timeout')),
+  threw: Result.err(RepositoryError.readFailed(null, 'threw')),
+} as const;
 
 /** How much of the history «История» lists. */
 export const ADMIN_RHYTHM_HISTORY_LIMIT = 20;
@@ -185,14 +197,6 @@ export type AdminRhythmHead = {
  * answer (`@core/pipelines`).
  */
 export type AdminRhythmReceipt = RhythmDraftReceipt;
-
-/**
- * A «Запази» or an «Отмени» that did not land, worded by its `errorCode`:
- * the server's (or this side's own) `StreakPublishError`, or a request
- * that got no answer (`RepositoryError`, «не можа да се изпрати»). Which
- * is which is `StreakPublishError.guard`'s answer.
- */
-export type AdminRhythmRefusal = RhythmPublishRefusal;
 
 /**
  * What became of a «Запази»: the receipt; `null` when there was nothing to
@@ -460,8 +464,16 @@ export class AdminRhythmStore {
   >(LoadSlice.loading);
   private readonly _saving = signal(false);
   private readonly _withdrawing = signal(false);
-  private readonly _refusal = signal<AdminRhythmRefusal | null>(null);
-  private readonly _names = signal<ReadonlyMap<string, string>>(new Map());
+  /**
+   * A «Запази» or an «Отмени» that did not land, worded by its `errorCode`:
+   * the server's (or this side's own) `StreakPublishError`, or a request
+   * that got no answer (`RepositoryError`). Which is which is
+   * `StreakPublishError.guard`'s answer.
+   */
+  private readonly _refusal = signal<RhythmPublishRefusal | null>(null);
+  private readonly _names = signal<
+    ReadonlyMap<ServiceId | ServiceCategoryId, string>
+  >(new Map());
   private readonly _online = signal(this.window?.navigator.onLine ?? true);
 
   // ── The rule as published ────────────────────────────────────────────────
@@ -640,14 +652,9 @@ export class AdminRhythmStore {
    * only ever asked of a loaded language, so no lookup here can start a
    * load (a write) from inside a `computed`.
    */
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
   /** The DRAFT's sentences, exactly as the client's card prints a rule; `null` until the catalogue has loaded. */
   readonly rule: Signal<RhythmRuleWords | null> = computed(() =>
@@ -777,15 +784,15 @@ export class AdminRhythmStore {
   }
 
   /**
-   * «От»: the day the draft is to start on. Answers the day that will be
-   * used, which is never earlier than the change may start (`null` until
-   * the shop's days are known). What is no day changes nothing.
+   * «От»: the day the draft is to start on — a day the page's menu or the
+   * month picker built (`LocalDate`, parsed at the picker's edge). Answers
+   * the day that will be used, which is never earlier than the change may
+   * start (`null` until the shop's days are known).
    */
-  setEffectiveFrom(raw: string): LocalDate | null {
+  setEffectiveFrom(day: LocalDate): LocalDate | null {
     return untracked(() => {
-      const day = LocalDate.parse(raw);
-      if (day.ok && day.value !== this._picked()) {
-        this._picked.set(day.value);
+      if (day !== this._picked()) {
+        this._picked.set(day);
         this.intent = null;
         this._refusal.set(null);
       }
@@ -794,7 +801,9 @@ export class AdminRhythmStore {
   }
 
   /** The services' names by id, for «Броят се посещения с: …». The page hands them over once its catalogue has answered. */
-  nameServices(names: ReadonlyMap<string, string>): void {
+  nameServices(
+    names: ReadonlyMap<ServiceId | ServiceCategoryId, string>,
+  ): void {
     untracked(() => this._names.set(new Map(names)));
   }
 
@@ -1321,30 +1330,17 @@ export class AdminRhythmStore {
 
   /**
    * The read, or a failure after `ADMIN_RHYTHM_READ_TIMEOUT_MS`; a thrown
-   * error is a failure too.
+   * error is a failure too — each a `RepositoryError` struct (Law 7.5),
+   * never a bare tag.
    */
-  private timed<T>(
-    read: () => Promise<Result<T, unknown>>,
-  ): Promise<Result<T, unknown>> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.timers.delete(timer);
-        resolve(Result.err('timeout'));
-      }, ADMIN_RHYTHM_READ_TIMEOUT_MS);
-      this.timers.add(timer);
-      const settle = (result: Result<T, unknown>) => {
-        clearTimeout(timer);
-        this.timers.delete(timer);
-        resolve(result);
-      };
-      let pending: Promise<Result<T, unknown>>;
-      try {
-        pending = read();
-      } catch {
-        settle(Result.err('threw'));
-        return;
-      }
-      pending.then(settle, () => settle(Result.err('threw')));
-    });
+  private timed<T, E>(
+    read: () => Promise<Result<T, E>>,
+  ): Promise<Result<T, E | RepositoryError>> {
+    return timedRead(
+      read,
+      ADMIN_RHYTHM_READ_TIMEOUT_MS,
+      this.timers,
+      READ_FAILURES,
+    );
   }
 }

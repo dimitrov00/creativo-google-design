@@ -211,7 +211,7 @@
             class="account-completion__item"
             data-done="false"
             routerLink="/onboarding"
-            [queryParams]="{ phase: 'personalize', step: personalizeStep(item.profileCompletionKey) }"
+            [queryParams]="{ phase: OnboardingPhase.Personalize, step: personalizeStep(item.profileCompletionKey) }"
             [attr.data-testid]="'account-completion-' + keyWord(item.profileCompletionKey)"
           >
             <ui-icon uiLeading uiScale="medium" uiName="checklist.pending" />

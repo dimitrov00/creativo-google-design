@@ -32,6 +32,18 @@ describe('CallAnswer — reading an answer', () => {
     expect(CallAnswer.read([1, 2])).toBeNull();
     expect(CallAnswer.read('x')).toBeNull();
   });
+
+  it('reads a dictionary field through its members, exact match only', () => {
+    const Answered = { Yes: 'YES', No: 'NO' } as const;
+    const answer = CallAnswer.read({ a: 'NO', b: 'no', c: 1, d: 'YES ' });
+    expect(answer).not.toBeNull();
+    if (answer === null) return;
+    expect(CallAnswer.tag(answer, 'a', Answered)).toBe(Answered.No);
+    expect(CallAnswer.tag(answer, 'b', Answered)).toBeNull();
+    expect(CallAnswer.tag(answer, 'c', Answered)).toBeNull();
+    expect(CallAnswer.tag(answer, 'd', Answered)).toBeNull();
+    expect(CallAnswer.tag(answer, 'missing', Answered)).toBeNull();
+  });
 });
 
 describe('WaitlistCall', () => {

@@ -14,7 +14,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { map, switchMap } from 'rxjs';
+import { map } from 'rxjs';
 import {
   CLOCK_PORTS,
   SCHEDULING_READ_PORTS,
@@ -25,9 +25,9 @@ import {
   CatalogWording,
 } from '@creativo/features/shared/catalog';
 import {
+  type AppointmentRowVm,
   VisitFilterMenu,
   type VisitLookup,
-  type VisitRowVm,
   type VisitSectionVm,
   type VisitWords,
   VisitsBrowser,
@@ -78,7 +78,7 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import type { Appointment } from '@core/entities';
-import { type AppointmentId, BookingStatus, LocalDate } from '@core/primitives';
+import { AppointmentId, BookingStatus, LocalDate } from '@core/primitives';
 import { BookingErrorCode, CancellationRefusalCode } from '@core/errors';
 import {
   BookingPolicy,
@@ -86,6 +86,9 @@ import {
   Principal,
   ShopReach,
   TimeCoordinate,
+  VisitFilter,
+  VisitGrain,
+  VisitPerspective,
 } from '@core/components';
 import {
   BillingSystem,
@@ -94,16 +97,14 @@ import {
   type ClientMoveAnswer,
   MoveSystem,
   ShopReachSystem,
-  VisitFilter,
-  VisitGrain,
   VisitListSystem,
-  VisitPerspective,
 } from '@core/systems';
 import { LoadState } from '@creativo/shared/view-state';
 import {
   bookingStatusWords,
   translateCodedError,
   wordPipelineError,
+  loadedLanguage,
 } from '@creativo/infrastructure/i18n';
 import {
   AppointmentsStore,
@@ -112,7 +113,25 @@ import {
 import type { ClientVisitVm } from '../visit.vm';
 import { buildVisitIcs } from '../visit-ics';
 
-type AppointmentsView = 'list' | 'calendar';
+/**
+ * The page's two readings: the list or the calendar. Values: external
+ * contract — the host's `data-view` attribute, which the page's stylesheet
+ * selects on (`:host([data-view='calendar'])`), so the dictionary keeps
+ * that spelling (pass D, D-8.2).
+ */
+const AppointmentsView = {
+  List: 'list',
+  Calendar: 'calendar',
+} as const;
+type AppointmentsView =
+  (typeof AppointmentsView)[keyof typeof AppointmentsView];
+
+/** Which end of the calendar's run a growth adds months to (internal). */
+const ScrollSide = {
+  Past: 'PAST',
+  Future: 'FUTURE',
+} as const;
+type ScrollSide = (typeof ScrollSide)[keyof typeof ScrollSide];
 
 /**
  * How far the calendar reaches on first paint, and how much more it takes
@@ -146,7 +165,8 @@ const DEFAULT_CANCEL_REASON = '';
 
 /** One day cell of the calendar view. */
 interface VisitDayVm {
-  readonly dayKey: string;
+  /** The shop day (`data-day-key`); `null` on a blank of the grid's padding. */
+  readonly dayKey: LocalDate | null;
   readonly dayOfMonth: number | null;
   readonly isToday: boolean;
   readonly visits: readonly ClientVisitVm[];
@@ -154,7 +174,7 @@ interface VisitDayVm {
 
 /** One visit, both ways the page draws it: a row of the list, and the calendar's and the sheet's view model. */
 interface PageVisit {
-  readonly row: VisitRowVm;
+  readonly row: AppointmentRowVm;
   readonly visit: ClientVisitVm;
 }
 
@@ -290,7 +310,10 @@ export class ClientAppointments {
     { initialValue: BookingPolicy.DEFAULT },
   );
 
-  protected readonly view = signal<AppointmentsView>('list');
+  protected readonly view = signal<AppointmentsView>(AppointmentsView.List);
+
+  /** The template's dictionary, for the view toggle's compares. */
+  protected readonly AppointmentsView = AppointmentsView;
 
   /**
    * What the funnel narrows to (`lib-visit-filter`, which draws the
@@ -320,11 +343,17 @@ export class ClientAppointments {
   /**
    * The visit whose sheet is open: the one the route asked for, until a row
    * or a day opens another or the sheet is dismissed. The sheet itself waits
-   * for the visit to be among the loaded ones (`openVisit`).
+   * for the visit to be among the loaded ones (`openVisit`). The query's
+   * text becomes an id ONCE, here at its edge (`AppointmentId.parse`): a
+   * blank value, or one with a `/`, names no stored visit — no sheet, as
+   * such a value matched no loaded visit before.
    */
-  protected readonly openVisitId = linkedSignal<string | null>(
-    () => this.visit() ?? null,
-  );
+  protected readonly openVisitId = linkedSignal<AppointmentId | null>(() => {
+    const raw = this.visit();
+    if (raw === undefined) return null;
+    const id = AppointmentId.parse(raw);
+    return id.ok ? id.value : null;
+  });
   protected readonly confirmingId = signal<AppointmentId | null>(null);
   protected readonly cancelReason = signal(DEFAULT_CANCEL_REASON);
 
@@ -347,14 +376,9 @@ export class ClientAppointments {
    * `computed` can start a load — a write the computed would read back and
    * never settle on (the staff card's store reads its words the same way).
    */
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
   /** The rows' words in the client's perspective — «Пропуснат», «Отказан». */
   private readonly words = computed<VisitWords | null>(() => {
@@ -719,7 +743,7 @@ export class ClientAppointments {
     // A calendar opens on NOW. Without this the run starts six months ago
     // and the first thing a person sees is a screen of empty squares from
     // last winter.
-    if (next === 'calendar') this.scrollToToday();
+    if (next === AppointmentsView.Calendar) this.scrollToToday();
   }
 
   /**
@@ -737,23 +761,23 @@ export class ClientAppointments {
 
     const viewport = scroller.clientHeight;
     if (scroller.scrollTop < viewport && this.monthsBack() < MAX_MONTH_SPAN) {
-      this.grow('past');
+      this.grow(ScrollSide.Past);
     } else if (
       scroller.scrollHeight - (scroller.scrollTop + viewport) < viewport &&
       this.monthsAhead() < MAX_MONTH_SPAN
     ) {
-      this.grow('future');
+      this.grow(ScrollSide.Future);
     }
   }
 
-  private grow(side: 'past' | 'future'): void {
+  private grow(side: ScrollSide): void {
     const scroller = this.calendarScroller()?.nativeElement;
     if (!scroller) return;
 
     this.growing = true;
     const heightBefore = scroller.scrollHeight;
 
-    if (side === 'past') {
+    if (side === ScrollSide.Past) {
       this.monthsBack.update((value) => value + MONTH_SPAN_STEP);
     } else {
       this.monthsAhead.update((value) => value + MONTH_SPAN_STEP);
@@ -761,7 +785,7 @@ export class ClientAppointments {
 
     afterNextRender(
       () => {
-        if (side === 'past') {
+        if (side === ScrollSide.Past) {
           scroller.scrollTop += scroller.scrollHeight - heightBefore;
         }
         this.growing = false;
@@ -821,14 +845,14 @@ export class ClientAppointments {
 
     // The `.ics` is what an instant is FOR (Law 7.3): the start as stored,
     // the end its sold span later.
-    const startMs = visit.appointment.utcEpochMs;
-    const endMs = TimeCoordinate.endUtcMs(visit.appointment);
+    const startUtcMs = visit.appointment.utcEpochMs;
+    const endUtcMs = TimeCoordinate.endUtcMs(visit.appointment);
     const ics = buildVisitIcs(
       {
         uid: `${visit.id}@creativo`,
         title: visit.title,
-        startMs,
-        endMs,
+        startUtcMs,
+        endUtcMs,
         location: [shopName, address].filter(Boolean).join(', '),
         description: [
           `${this.transloco.translate('appointments.visit.barberRole')}: ${
@@ -854,7 +878,7 @@ export class ClientAppointments {
   }
 
   /** Open a visit's sheet — by id, from a row (`openRow`) or a calendar day. */
-  protected showVisit(id: string): void {
+  protected showVisit(id: AppointmentId): void {
     this.openVisitId.set(id);
   }
 
@@ -1041,7 +1065,7 @@ export class ClientAppointments {
    */
   private toVisit(
     appointment: Appointment,
-    row: VisitRowVm,
+    row: AppointmentRowVm,
     lookup: VisitLookup,
     locale: string,
   ): ClientVisitVm {
@@ -1081,7 +1105,7 @@ export class ClientAppointments {
                 visits: byDay.get(cell.localDate) ?? [],
               }
             : {
-                dayKey: '',
+                dayKey: null,
                 dayOfMonth: null,
                 isToday: false,
                 visits: [] as readonly ClientVisitVm[],

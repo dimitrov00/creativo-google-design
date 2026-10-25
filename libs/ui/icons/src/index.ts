@@ -1,4 +1,5 @@
 export * from './lib/manifest/icon-manifest';
+export * from './lib/manifest/icon-manifest-parser';
 export * from './lib/manifest/icon-vocabulary';
 export {
   MATERIAL_GLYPHS_SOURCE,

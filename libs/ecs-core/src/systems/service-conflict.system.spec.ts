@@ -1,11 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ServiceComposition } from '@core/components';
+import { Selectability, ServiceComposition } from '@core/components';
 import { ServiceId } from '@core/primitives';
 import { deepFreeze } from '@core/testing';
 import {
   type ConflictService,
-  Selectability,
   ServiceConflictSystem,
 } from './service-conflict.system';
 

@@ -9,24 +9,29 @@ import {
   where,
 } from 'firebase/firestore';
 import { map } from 'rxjs';
-import { type CustomerId, Result, type UtcEpochMs } from '@core/primitives';
+import {
+  type AppointmentId,
+  type CustomerId,
+  Result,
+  UtcEpochMs,
+} from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
-import { BookingLifecycle } from '@core/components';
+import { BookingLifecycle, PageStep } from '@core/components';
 import { type Appointment, Collections } from '@core/entities';
 import type { AppointmentReadPorts, ClientHistoryPage } from '@core/ports';
-import { PageStep, PagingSystem } from '@core/systems';
+import { PagingSystem } from '@core/systems';
 import { observeDoc, observeQuery, readFailed, readQuery } from './observe';
 
 /** Ascending by the absolute start — the order a day sheet reads in. */
 const byStart = (a: Appointment, b: Appointment): number =>
-  a.utcEpochMs - b.utcEpochMs;
+  UtcEpochMs.compare(a.utcEpochMs, b.utcEpochMs);
 
 /** The start instant a newest-first page is ordered and resumed by. */
 const startOf = (appointment: Appointment): UtcEpochMs =>
   appointment.utcEpochMs;
 
 /** A document's id — what orders a tied instant. */
-const idOf = (appointment: Appointment): string => appointment.id;
+const idOf = (appointment: Appointment): AppointmentId => appointment.id;
 
 /**
  * `appointments/*`, read side (flip 1, plan §3.4) — the successor of

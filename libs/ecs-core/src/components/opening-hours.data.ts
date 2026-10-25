@@ -1,5 +1,6 @@
 import { EndMinute, MinuteOfDay, Result, type Weekday } from '@core/primitives';
 import { CatalogError } from '@core/errors';
+import type { DayHoursInput } from './day-hours-input.data';
 
 /**
  * The day tags — the ONLY source of these strings, named after the field they
@@ -10,31 +11,6 @@ export const OpeningState = {
   Open: 'OPEN',
 } as const;
 export type OpeningState = (typeof OpeningState)[keyof typeof OpeningState];
-
-/**
- * Where a shop stands against its week at one wall-clock minute — the field
- * `shopOpening` (Law 6), the answer of `RosterSystem.shopOpeningAt` (moved
- * from the landing's locations component, values unchanged). The words are
- * the reader's.
- */
-export const ShopOpening = {
-  /** Open, and the door closes at the answered minute. */
-  ClosesAt: 'CLOSES_AT',
-  /** Open, with at most {@link SHOP_CLOSES_SOON_MINUTES} left before it closes. */
-  ClosesSoon: 'CLOSES_SOON',
-  /** Closed now; today's hours start at the answered minute (or none is known). */
-  OpensAt: 'OPENS_AT',
-  /** Closed for today; it opens on the answered later day, at the answered minute. */
-  OpensOn: 'OPENS_ON',
-} as const;
-export type ShopOpening = (typeof ShopOpening)[keyof typeof ShopOpening];
-
-/**
- * At or below this many minutes before closing, an open shop "closes soon"
- * (`ShopOpening.ClosesSoon`) — the business-panel convention the landing
- * follows.
- */
-export const SHOP_CLOSES_SOON_MINUTES = 60;
 
 /**
  * One weekday of a shop's opening hours (`location.ts:27-40`), on the shop's
@@ -53,18 +29,16 @@ export const SHOP_CLOSES_SOON_MINUTES = 60;
  */
 export type DayHours = DayHours.Closed | DayHours.Open;
 
-/** A week day in minutes as authored or stored, before its edge guard. */
-export type DayHoursInput =
-  | DayHours.Closed
-  | {
-      readonly openingState: typeof OpeningState.Open;
-      readonly openMinutes: number;
-      readonly closeMinutes: number;
-    };
-
 const CLOSED: DayHours.Closed = { openingState: OpeningState.Closed };
 
 export const DayHours = {
+  /**
+   * At or below this many minutes before closing, an open shop "closes soon"
+   * (`ShopOpening.ClosesSoon`) — the business-panel convention the landing
+   * follows (was the free constant `SHOP_CLOSES_SOON_MINUTES`, pass D D-7).
+   */
+  CLOSES_SOON_MINUTES: 60,
+
   closed(): DayHours.Closed {
     return CLOSED;
   },

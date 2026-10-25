@@ -1,4 +1,6 @@
 import type { ImpersonationSessionId, UserId } from '@core/primitives';
+import type { EngagementError } from './engagement.error';
+import type { RepositoryError } from './repository.error';
 
 /**
  * The governance context's error codes — the codes of the legacy
@@ -42,7 +44,7 @@ export const GovernanceErrorCode = {
   /** `startImpersonation` / `endImpersonation` called without a signed-in session. */
   ImpersonationUnauthenticated: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
   /**
-   * The caller holds no admin role (`ADMIN_ROLES`) — today's rule
+   * The caller holds no admin role (`Roles.ADMIN`) — today's rule
    * `isAdmin()` on `impersonationSessions`; checked before any read.
    */
   ImpersonationForbidden: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
@@ -213,3 +215,17 @@ export type RunBackfillRefusalCode =
   (typeof RunBackfillRefusalCode)[keyof typeof RunBackfillRefusalCode];
 
 export type RunBackfillRefusal = { readonly errorCode: RunBackfillRefusalCode };
+
+/*
+ * The governance pipelines' named unions — homed here in pass D (E-20;
+ * Law 7.5: never in a pipeline file).
+ */
+
+/** What `startImpersonation` answers with: a governance refusal or the store's failure. */
+export type StartImpersonationError = GovernanceError | RepositoryError;
+
+/** What `endImpersonation` answers with: a governance refusal or the store's failure. */
+export type EndImpersonationError = GovernanceError | RepositoryError;
+
+/** What `redeemInvitation` answers with: the referral's refusal (`EngagementError`) or the store's failure. */
+export type RedeemInvitationError = EngagementError | RepositoryError;

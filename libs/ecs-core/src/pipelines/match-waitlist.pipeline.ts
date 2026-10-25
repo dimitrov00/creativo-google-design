@@ -13,6 +13,7 @@ import {
   NotificationTopic,
   type RosterWindow,
   type ShopNow,
+  WaitlistDeliveryOutcome,
   WaitlistLifecycle,
   WriteOp,
 } from '@core/components';
@@ -124,17 +125,9 @@ export function waitlistMatchNotificationId(
   return NotificationId.of(hash(`wl_match${requestId}${localDate}`));
 }
 
-/** How one watching request ended this delivery — the ONLY source of these strings. */
-const RequestOutcome = {
-  Notified: 'NOTIFIED',
-  Expired: 'EXPIRED',
-  None: 'NONE',
-} as const;
-type RequestOutcome = (typeof RequestOutcome)[keyof typeof RequestOutcome];
-
-/** One request's plan and how it would leave the request. */
+/** One request's plan and how it would leave the request (`WaitlistDeliveryOutcome`, a component). */
 type OutcomePlan = {
-  readonly outcome: RequestOutcome;
+  readonly waitlistDeliveryOutcome: WaitlistDeliveryOutcome;
   readonly writes: readonly WriteOp[];
 };
 
@@ -235,7 +228,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
   async function expire(
     request: WaitlistRequest,
     now: ShopNow,
-  ): Promise<Result<RequestOutcome, RepositoryError>> {
+  ): Promise<Result<WaitlistDeliveryOutcome, RepositoryError>> {
     const path = [Collections.WaitlistRequests, request.id];
     const committed = await ports.commit(
       (tx) => tx.get<WaitlistRequest>(path),
@@ -249,14 +242,19 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
                 now.utcEpochMs,
               );
         return expired === null || !expired.ok
-          ? Result.ok({ outcome: RequestOutcome.None, writes: [] })
+          ? Result.ok({
+              waitlistDeliveryOutcome: WaitlistDeliveryOutcome.None,
+              writes: [],
+            })
           : Result.ok({
-              outcome: RequestOutcome.Expired,
+              waitlistDeliveryOutcome: WaitlistDeliveryOutcome.Expired,
               writes: [WriteOp.update(path, expired.value)],
             });
       },
     );
-    return committed.ok ? Result.ok(committed.value.outcome) : committed;
+    return committed.ok
+      ? Result.ok(committed.value.waitlistDeliveryOutcome)
+      : committed;
   }
 
   /**
@@ -269,7 +267,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     request: WaitlistRequest,
     found: WaitlistMatch,
     now: ShopNow,
-  ): Promise<Result<RequestOutcome, RepositoryError>> {
+  ): Promise<Result<WaitlistDeliveryOutcome, RepositoryError>> {
     const path = [Collections.WaitlistRequests, request.id];
     const notificationId = waitlistMatchNotificationId(
       request.id,
@@ -280,7 +278,10 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
       (tx) => tx.get<WaitlistRequest>(path),
       (stored): Result<OutcomePlan, never> => {
         if (stored === null || stored.waitlistStatus !== WaitlistStatus.Open) {
-          return Result.ok({ outcome: RequestOutcome.None, writes: [] });
+          return Result.ok({
+            waitlistDeliveryOutcome: WaitlistDeliveryOutcome.None,
+            writes: [],
+          });
         }
         const plan = WaitlistSystem.planMatch(
           stored,
@@ -290,15 +291,18 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         );
         return plan.ok
           ? Result.ok({
-              outcome: RequestOutcome.Notified,
+              waitlistDeliveryOutcome: WaitlistDeliveryOutcome.Notified,
               writes: plan.value.writes,
             })
-          : Result.ok({ outcome: RequestOutcome.None, writes: [] });
+          : Result.ok({
+              waitlistDeliveryOutcome: WaitlistDeliveryOutcome.None,
+              writes: [],
+            });
       },
     );
-    if (committed.ok) return Result.ok(committed.value.outcome);
+    if (committed.ok) return Result.ok(committed.value.waitlistDeliveryOutcome);
     return committed.error.errorCode === RepositoryErrorCode.AlreadyExists
-      ? Result.ok(RequestOutcome.None)
+      ? Result.ok(WaitlistDeliveryOutcome.None)
       : committed;
   }
 
@@ -308,7 +312,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     localDate: LocalDate,
     now: ShopNow,
     policy: BookingPolicy,
-  ): Promise<Result<RequestOutcome, RepositoryError>> {
+  ): Promise<Result<WaitlistDeliveryOutcome, RepositoryError>> {
     // A request whose days have all passed is retired, not re-evaluated forever.
     if (WaitlistSystem.hasLapsed(request, now.localDate)) {
       return expire(request, now);
@@ -324,7 +328,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         request.locationId,
       ).ok,
     });
-    if (found === null) return Result.ok(RequestOutcome.None);
+    if (found === null) return Result.ok(WaitlistDeliveryOutcome.None);
     // The cross-day cooldown: one afternoon of rescheduling must not send
     // the same person a dozen identical messages.
     const recent = await ports.hasRecentNotification(
@@ -334,7 +338,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
       WaitlistSystem.cooldownSinceUtcMs(now.utcEpochMs),
     );
     if (!recent.ok) return recent;
-    if (recent.value) return Result.ok(RequestOutcome.None);
+    if (recent.value) return Result.ok(WaitlistDeliveryOutcome.None);
     return notify(request, found, now);
   }
 
@@ -353,7 +357,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     const expiredRequestIds: WaitlistRequestId[] = [];
     for (const request of watching.value) {
       if (!WaitlistSystem.hasLapsed(request, now.localDate)) continue;
-      let expired: Result<RequestOutcome, RepositoryError>;
+      let expired: Result<WaitlistDeliveryOutcome, RepositoryError>;
       try {
         expired = await expire(request, now);
       } catch (error) {
@@ -370,7 +374,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         });
         continue;
       }
-      if (expired.value === RequestOutcome.Expired) {
+      if (expired.value === WaitlistDeliveryOutcome.Expired) {
         expiredRequestIds.push(request.id);
       }
     }
@@ -403,7 +407,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     for (const request of watching.value) {
       // Independent promises to different people: one request's failure is
       // logged and never costs the others their notification.
-      let settled: Result<RequestOutcome, RepositoryError>;
+      let settled: Result<WaitlistDeliveryOutcome, RepositoryError>;
       try {
         settled = await settle(
           request,
@@ -426,10 +430,10 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         });
         continue;
       }
-      if (settled.value === RequestOutcome.Notified) {
+      if (settled.value === WaitlistDeliveryOutcome.Notified) {
         notifiedRequestIds.push(request.id);
       }
-      if (settled.value === RequestOutcome.Expired) {
+      if (settled.value === WaitlistDeliveryOutcome.Expired) {
         expiredRequestIds.push(request.id);
       }
     }

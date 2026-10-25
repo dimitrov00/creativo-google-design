@@ -1,4 +1,4 @@
-import { OTP_CODE_DIGITS } from '@core/components';
+import { OtpCode } from '@core/components';
 import type { OtpCrypto, OtpCryptoPorts } from '@core/ports';
 import {
   hexEqualInConstantTime,
@@ -20,10 +20,10 @@ import {
 
 /**
  * The code's length is the `OtpCode` component's policy, never restated
- * here: `randomInt(0, 10 ** OTP_CODE_DIGITS)` zero-padded to that width —
+ * here: `randomInt(0, 10 ** OtpCode.DIGITS)` zero-padded to that width —
  * today's `randomInt(0, 1_000_000)` for six digits.
  */
-const CODE_SPACE = 10 ** OTP_CODE_DIGITS;
+const CODE_SPACE = 10 ** OtpCode.DIGITS;
 /** 16 random bytes → 32 hex characters of salt. */
 const SALT_BYTES = 16;
 /** scrypt key length in bytes → 128 hex characters of hash. */
@@ -42,7 +42,7 @@ const hashCode = (code: string, salt: string): string =>
 /** The production crypto — the one value both factories hand out. */
 const NODE_OTP_CRYPTO: OtpCrypto = {
   nextCode: () =>
-    String(randomIntBelow(CODE_SPACE)).padStart(OTP_CODE_DIGITS, '0'),
+    String(randomIntBelow(CODE_SPACE)).padStart(OtpCode.DIGITS, '0'),
   nextSalt: () => randomHex(SALT_BYTES),
   hashCode,
   codeMatches: (code, salt, expectedHash) =>

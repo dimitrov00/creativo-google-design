@@ -5,7 +5,6 @@ import {
   inject,
   input,
 } from '@angular/core';
-import { VisitFilter, VisitPerspective } from '@core/systems';
 import {
   VisitFilterMenu,
   VisitsBrowser,
@@ -24,9 +23,11 @@ import {
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import { ClientCardRegion } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import type { LinePart } from '../client-pages.vm';
 import { partedAtJoints } from '../client-card.format';
+import { VisitFilter, VisitPerspective } from '@core/components';
 
 /**
  * One run of a quiet line as the template draws it: its words, its ink,
@@ -198,6 +199,6 @@ export class ClientHistoryPage {
 
   /** The whole list again, after its first page failed. */
   protected retry(): void {
-    this.store.retry('history');
+    this.store.retry(ClientCardRegion.History);
   }
 }

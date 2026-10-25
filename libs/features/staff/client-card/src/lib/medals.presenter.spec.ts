@@ -11,6 +11,7 @@ import {
   AchievementRuleId,
   BadgeCategoryId,
   BadgeSeriesId,
+  SeasonId,
   ServiceId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -116,7 +117,7 @@ function withProgress(
   };
   return {
     ...GEORGI,
-    progress: new Map([...GEORGI.progress, [seriesId, progress]]),
+    progress: new Map([...GEORGI.progress, [progress.id, progress]]),
   };
 }
 
@@ -220,7 +221,7 @@ describe('ringValueOf', () => {
         fade,
         BadgeSystem.standing(
           fade,
-          GEORGI.progress.get('series-svc-fade') ?? null,
+          GEORGI.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
         ),
       ),
     ).toBeCloseTo(14 / 15);
@@ -234,7 +235,7 @@ describe('ringValueOf', () => {
         fade,
         BadgeSystem.standing(
           fade,
-          at23.progress.get('series-svc-fade') ?? null,
+          at23.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
         ),
       ),
     ).toBeCloseTo(13 / 15);
@@ -247,7 +248,7 @@ describe('ringValueOf', () => {
         weekend,
         BadgeSystem.standing(
           weekend,
-          GEORGI.progress.get('series-weekend') ?? null,
+          GEORGI.progress.get(BadgeSeriesId.of('series-weekend')) ?? null,
         ),
       ),
     ).toBeCloseTo(2 / 3);
@@ -261,7 +262,7 @@ describe('ringValueOf', () => {
         explorer,
         BadgeSystem.standing(
           explorer,
-          GEORGI.progress.get('series-explorer') ?? null,
+          GEORGI.progress.get(BadgeSeriesId.of('series-explorer')) ?? null,
         ),
       ),
     ).toBe(0);
@@ -276,7 +277,7 @@ describe('ringValueOf', () => {
         year,
         BadgeSystem.standing(
           year,
-          fallen.progress.get('series-twelve-months') ?? null,
+          fallen.progress.get(BadgeSeriesId.of('series-twelve-months')) ?? null,
         ),
       ),
     ).toBe(0);
@@ -294,7 +295,7 @@ describe('ringValueOf', () => {
         fade,
         BadgeSystem.standing(
           fade,
-          over.progress.get('series-svc-fade') ?? null,
+          over.progress.get(BadgeSeriesId.of('series-svc-fade')) ?? null,
         ),
       ),
     ).toBe(1);
@@ -307,7 +308,7 @@ describe('ringValueOf', () => {
         rhythm,
         BadgeSystem.standing(
           rhythm,
-          GEORGI.progress.get('series-rhythm') ?? null,
+          GEORGI.progress.get(BadgeSeriesId.of('series-rhythm')) ?? null,
         ),
       ),
     ).toBeNull();
@@ -468,7 +469,7 @@ describe('medalRingVm', () => {
       progress: new Map([
         ...MARTIN.progress,
         [
-          'series-birthday',
+          BadgeSeriesId.of('series-birthday'),
           {
             id: BadgeSeriesId.of('series-birthday'),
             value: 1,
@@ -745,24 +746,32 @@ describe('records', () => {
 
   describe('recordSetOn', () => {
     it('is the run’s last visit, the first visit’s day, the record year’s last day', () => {
-      expect(recordSetOn(record('longestRhythm'), '2026-09-28')).toBe(
-        '2026-09-28',
-      );
-      expect(recordSetOn(record('firstVisit'), '2026-09-28')).toBe(
+      expect(
+        recordSetOn(record('longestRhythm'), localDate('2026-09-28')),
+      ).toBe('2026-09-28');
+      expect(recordSetOn(record('firstVisit'), localDate('2026-09-28'))).toBe(
         '2025-03-06',
       );
-      expect(recordSetOn(record('mostVisitsInYear'), '2026-09-28')).toBe(
-        '2025-12-31',
-      );
+      expect(
+        recordSetOn(record('mostVisitsInYear'), localDate('2026-09-28')),
+      ).toBe('2025-12-31');
     });
 
     it('is today while the record year still runs, and no day for a favourite', () => {
       expect(
-        recordSetOn(record('mostVisitsInYear', { year: 2026 }), '2026-09-28'),
+        recordSetOn(
+          record('mostVisitsInYear', { year: 2026 }),
+          localDate('2026-09-28'),
+        ),
       ).toBe('2026-09-28');
-      expect(recordSetOn(record('favouriteService'), '2026-09-28')).toBeNull();
       expect(
-        recordSetOn(record('mostVisitsInYear', { year: null }), '2026-09-28'),
+        recordSetOn(record('favouriteService'), localDate('2026-09-28')),
+      ).toBeNull();
+      expect(
+        recordSetOn(
+          record('mostVisitsInYear', { year: null }),
+          localDate('2026-09-28'),
+        ),
       ).toBeNull();
     });
   });
@@ -771,28 +780,41 @@ describe('records', () => {
     it('is a run set within the last thirty days of the shop’s today', () => {
       const run = (on: string) => record('longestRhythm', { on });
       expect(NEW_RECORD_DAYS).toBe(30);
-      expect(isNewRecord(run('2026-09-28'), '2026-09-28')).toBe(true);
-      expect(isNewRecord(run('2026-08-29'), '2026-09-28')).toBe(true);
-      expect(isNewRecord(run('2026-08-28'), '2026-09-28')).toBe(false);
+      expect(isNewRecord(run('2026-09-28'), localDate('2026-09-28'))).toBe(
+        true,
+      );
+      expect(isNewRecord(run('2026-08-29'), localDate('2026-09-28'))).toBe(
+        true,
+      );
+      expect(isNewRecord(run('2026-08-28'), localDate('2026-09-28'))).toBe(
+        false,
+      );
       // A day ahead of today is no record yet.
-      expect(isNewRecord(run('2026-09-29'), '2026-09-28')).toBe(false);
+      expect(isNewRecord(run('2026-09-29'), localDate('2026-09-28'))).toBe(
+        false,
+      );
     });
 
     it('is a best year for the thirty days after it closed, never the year still running', () => {
       const year = (value: number) =>
         record('mostVisitsInYear', { year: value });
-      expect(isNewRecord(year(2025), '2026-01-01')).toBe(true);
-      expect(isNewRecord(year(2025), '2026-01-30')).toBe(true);
-      expect(isNewRecord(year(2025), '2026-01-31')).toBe(false);
-      expect(isNewRecord(year(2026), '2026-09-28')).toBe(false);
-      expect(isNewRecord(year(2026), '2026-12-31')).toBe(false);
+      expect(isNewRecord(year(2025), localDate('2026-01-01'))).toBe(true);
+      expect(isNewRecord(year(2025), localDate('2026-01-30'))).toBe(true);
+      expect(isNewRecord(year(2025), localDate('2026-01-31'))).toBe(false);
+      expect(isNewRecord(year(2026), localDate('2026-09-28'))).toBe(false);
+      expect(isNewRecord(year(2026), localDate('2026-12-31'))).toBe(false);
     });
 
     it('is never a first visit, never a favourite', () => {
       expect(
-        isNewRecord(record('firstVisit', { on: '2026-09-28' }), '2026-09-28'),
+        isNewRecord(
+          record('firstVisit', { on: '2026-09-28' }),
+          localDate('2026-09-28'),
+        ),
       ).toBe(false);
-      expect(isNewRecord(record('favouriteService'), '2026-09-28')).toBe(false);
+      expect(
+        isNewRecord(record('favouriteService'), localDate('2026-09-28')),
+      ).toBe(false);
     });
   });
 
@@ -1154,7 +1176,10 @@ describe('medalsPageVm', () => {
     });
 
     it('never hides an announced event, and counts nothing in it yet', () => {
-      const before: AchievementsData = { ...GEORGI, today: '2026-09-10' };
+      const before: AchievementsData = {
+        ...GEORGI,
+        today: localDate('2026-09-10'),
+      };
       const vm = medalsPageVm(before, SETTLED, CHIP_ALL);
       expect(vm.events[0]).toMatchObject({
         title: 'Седмица на брадата',
@@ -1321,7 +1346,7 @@ describe('medalsPageVm', () => {
       // Earned before the previous visit began: not new.
       const before: AchievementsData = {
         ...GEORGI,
-        previousVisitAtMs: sofia('2026-09-28T11:30:00'),
+        previousVisitUtcMs: sofia('2026-09-28T11:30:00'),
       };
       expect(
         medalsPageVm(before, SETTLED, CHIP_ALL).sections.some((s) =>
@@ -1448,7 +1473,10 @@ describe('medalsPageVm', () => {
       const begun: AchievementsData = {
         ...GEORGI,
         progress: new Map([
-          ['series-weekend', must(GEORGI.progress.get('series-weekend'))],
+          [
+            BadgeSeriesId.of('series-weekend'),
+            must(GEORGI.progress.get(BadgeSeriesId.of('series-weekend'))),
+          ],
         ]),
       };
       expect(medalsPageVm(begun, SETTLED, CHIP_ALL).emptyHint).toBeNull();
@@ -1619,7 +1647,7 @@ describe('medalScopeVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-mastery',
+        categoryId: BadgeCategoryId.of('cat-mastery'),
       },
       SETTLED,
     );
@@ -1668,7 +1696,7 @@ describe('medalScopeVm', () => {
         GEORGI,
         {
           achievementScope: AchievementScope.Category,
-          categoryId: 'cat-barbers',
+          categoryId: BadgeCategoryId.of('cat-barbers'),
         },
         SETTLED,
       )?.subline,
@@ -1678,7 +1706,7 @@ describe('medalScopeVm', () => {
   it('cuts the rhythm’s shelf as the overview does while the shop runs none', () => {
     const scope = {
       achievementScope: AchievementScope.Category,
-      categoryId: 'cat-rhythm',
+      categoryId: BadgeCategoryId.of('cat-rhythm'),
     } as const;
     const vm = medalScopeVm(rhythmOff(), scope, SETTLED);
     expect(vm?.subline).toBe('Ритъм · 2 от 2 спечелени');
@@ -1702,7 +1730,7 @@ describe('medalScopeVm', () => {
         rhythmOff(),
         {
           achievementScope: AchievementScope.Category,
-          categoryId: 'cat-mastery',
+          categoryId: BadgeCategoryId.of('cat-mastery'),
         },
         SETTLED,
       )?.sections,
@@ -1711,7 +1739,7 @@ describe('medalScopeVm', () => {
         GEORGI,
         {
           achievementScope: AchievementScope.Category,
-          categoryId: 'cat-mastery',
+          categoryId: BadgeCategoryId.of('cat-mastery'),
         },
         SETTLED,
       )?.sections,
@@ -1723,7 +1751,7 @@ describe('medalScopeVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Season,
-        seasonId: 'season-2026-autumn',
+        seasonId: SeasonId.of('season-2026-autumn'),
       },
       SETTLED,
     );
@@ -1768,7 +1796,7 @@ describe('medalScopeVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Season,
-        seasonId: 'season-2026-summer',
+        seasonId: SeasonId.of('season-2026-summer'),
       },
       SETTLED,
     );
@@ -1834,7 +1862,7 @@ describe('medalScopeVm', () => {
   it('draws a day’s levels in rings, and marks none new: the day is the past', () => {
     const vm = medalScopeVm(
       GEORGI,
-      { achievementScope: AchievementScope.Day, day: '2026-09-28' },
+      { achievementScope: AchievementScope.Day, day: localDate('2026-09-28') },
       SETTLED,
     );
     expect(vm?.title).toBe('Спечелени на 28.09');
@@ -1851,14 +1879,20 @@ describe('medalScopeVm', () => {
     expect(
       medalScopeVm(
         GEORGI,
-        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: BadgeCategoryId.of('cat-gone'),
+        },
         SETTLED,
       ),
     ).toBeNull();
     expect(
       medalScopeVm(
         GEORGI,
-        { achievementScope: AchievementScope.Season, seasonId: 'season-gone' },
+        {
+          achievementScope: AchievementScope.Season,
+          seasonId: SeasonId.of('season-gone'),
+        },
         SETTLED,
       ),
     ).toBeNull();

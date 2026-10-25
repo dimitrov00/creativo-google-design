@@ -193,7 +193,7 @@
               ) {
                 <cr-service-row
                   [service]="offering.service"
-                  [price]="content.price(offering.terms.price)"
+                  [price]="content.price(termsPrice(offering.terms))"
                   [minutes]="offering.terms.minutes"
                   (pressed)="openService(offering.service)"
                 />

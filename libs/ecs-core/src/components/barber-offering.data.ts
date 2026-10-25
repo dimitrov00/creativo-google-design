@@ -1,22 +1,9 @@
 import { BarberId, ServiceVariantId, Result } from '@core/primitives';
 import { CatalogError } from '@core/errors';
-import {
-  ServiceTerms,
-  type ServiceTermsError,
-  type ServiceTermsInput,
-  type ServiceVariant,
-} from './service-terms.data';
-
-/**
- * One per-variant override of a barber's terms — an element of
- * `BarberOffering.overrides`, the array that replaces the legacy
- * `byVariant: Record<variantId, terms>` (blueprint §2.6: a map keyed by ids
- * is a distinct indexed field path per key). Flat (Law 6): the variant's id
- * beside the five `ServiceTerms` fields.
- */
-export type VariantTerms = {
-  readonly variantId: ServiceVariantId;
-} & ServiceTerms;
+import { ServiceTerms } from './service-terms.data';
+import type { ServiceTermsInput } from './service-terms-input.data';
+import type { ServiceVariant } from './service-variant.data';
+import type { VariantTerms } from './variant-terms.data';
 
 /**
  * One barber's terms for one service (`service-terms.ts:189`) — an element
@@ -33,17 +20,6 @@ export type BarberOffering = {
   readonly barberId: BarberId;
   readonly overrides: readonly VariantTerms[];
 } & ServiceTerms;
-
-/** An override as authored, before its edge guard. */
-export type VariantTermsInput = {
-  readonly variantId: string;
-} & ServiceTermsInput;
-
-/** An offering as authored, before its edge guard. */
-export type BarberOfferingInput = {
-  readonly barberId: string;
-  readonly overrides: readonly VariantTermsInput[];
-} & ServiceTermsInput;
 
 /** The five terms fields of anything that carries them — a fresh `ServiceTerms`. */
 function termsOf(raw: ServiceTermsInput): ServiceTermsInput {
@@ -96,10 +72,10 @@ export const BarberOffering = {
    * (`CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS`), or invalid terms.
    */
   parse(
-    raw: BarberOfferingInput,
+    raw: BarberOffering.Input,
     declaredVariants: readonly ServiceVariant[],
-  ): Result<BarberOffering, readonly ServiceTermsError[]> {
-    const errors: ServiceTermsError[] = [];
+  ): Result<BarberOffering, readonly CatalogError.Terms[]> {
+    const errors: CatalogError.Terms[] = [];
     if (raw.barberId.trim().length === 0) {
       errors.push(CatalogError.idEmpty('BarberId'));
     }
@@ -108,7 +84,7 @@ export const BarberOffering = {
 
     const overrides: VariantTerms[] = [];
     for (let i = 0; i < raw.overrides.length; i++) {
-      const override = raw.overrides[i] as VariantTermsInput;
+      const override = raw.overrides[i] as VariantTerms.Input;
       if (!isDeclared(declaredVariants, override.variantId)) {
         errors.push(
           CatalogError.serviceUnknownVariantTerms(
@@ -152,13 +128,13 @@ export const BarberOffering = {
    * parsed), and every offering's own violations are reported too.
    */
   parseAll(
-    raws: readonly BarberOfferingInput[],
+    raws: readonly BarberOffering.Input[],
     declaredVariants: readonly ServiceVariant[],
-  ): Result<readonly BarberOffering[], readonly ServiceTermsError[]> {
-    const errors: ServiceTermsError[] = [];
+  ): Result<readonly BarberOffering[], readonly CatalogError.Terms[]> {
+    const errors: CatalogError.Terms[] = [];
     const offerings: BarberOffering[] = [];
     for (let i = 0; i < raws.length; i++) {
-      const raw = raws[i] as BarberOfferingInput;
+      const raw = raws[i] as BarberOffering.Input;
       if (listedBefore(raws, i)) {
         errors.push(CatalogError.serviceDuplicateOffering(raw.barberId));
         continue;
@@ -223,12 +199,20 @@ function isOverridden(
 
 /** An earlier entry lists the same raw barber id. */
 function listedBefore(
-  raws: readonly BarberOfferingInput[],
+  raws: readonly BarberOffering.Input[],
   index: number,
 ): boolean {
-  const barberId = (raws[index] as BarberOfferingInput).barberId;
+  const barberId = (raws[index] as BarberOffering.Input).barberId;
   for (let j = 0; j < index; j++) {
-    if ((raws[j] as BarberOfferingInput).barberId === barberId) return true;
+    if ((raws[j] as BarberOffering.Input).barberId === barberId) return true;
   }
   return false;
+}
+
+export namespace BarberOffering {
+  /** An offering as authored, before its edge guard. */
+  export type Input = {
+    readonly barberId: string;
+    readonly overrides: readonly VariantTerms.Input[];
+  } & ServiceTermsInput;
 }

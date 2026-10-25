@@ -25,19 +25,24 @@ import {
   AppointmentId,
   AppointmentPhotoId,
   AttendanceState,
+  type BadgeSeriesId,
   BarberId,
   BusyKey,
   CartLineId,
   ClientMoneyStatsId,
+  CouponGrantId,
   Currency,
   type CustomerId,
+  DraftPersonKey,
   EndMinute,
   LocalDate,
   LocationId,
   MinuteOfDay,
   Result as CoreResult,
+  type SeasonId,
   SeatId,
   SeatKeyText,
+  ServiceCategoryId,
   ServiceId,
   ServiceVariantId,
   type TimeZone,
@@ -67,6 +72,7 @@ import {
   Placement,
   PolicyPassStamp,
   PublicLabel,
+  Role,
   type ScheduledStreakRule,
   type ShopNow,
   StreakRule,
@@ -88,6 +94,7 @@ import type {
   GiftVoucher,
   GiftVoucherMeta,
   JournalEntry,
+  LoyaltyCatalog,
   SeasonProgress,
   StreakDefinition,
   User,
@@ -104,7 +111,6 @@ import type {
   DefaultLocationPorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
-  LoyaltyCatalog,
   LoyaltyCatalogReadPorts,
   ProfilePorts,
   WaitlistReadPorts,
@@ -124,6 +130,7 @@ import {
   appointmentFixture,
   cents,
   customerOf,
+  duration,
   giftVoucherFixtures,
   loyaltyAccountFixtures,
   locationFixture,
@@ -153,7 +160,9 @@ import type {
   ClientCardCatalog,
   ClientCardContext,
   ClientCardGrant,
+  ClientCardStart,
   ClientCardSubject,
+  ClientCardViewer,
 } from '../lib/client-card.contracts';
 import type { AchievementsContext } from '../lib/achievements.presenter';
 import type { AchievementsData } from '../lib/client-pages.vm';
@@ -165,7 +174,7 @@ import {
 
 export const GEORGI = 'dev-client-1';
 export const MARTIN = 'dev-client-2';
-export const TODAY: string = FIXTURE_TODAY;
+export const TODAY: LocalDate = FIXTURE_TODAY;
 
 /** A value a fixture guarantees; a spec that finds it missing has a broken fixture. */
 export function must<T>(
@@ -189,12 +198,12 @@ export function sofia(iso: string): UtcEpochMs {
 }
 
 /**
- * A Sofia wall-clock reading as the ISO text WITH its offset
- * (`2026-09-28T10:00:00.000+03:00`, `ZonedTimeSystem.toIso`) — what the
- * card's contracts take (`ClientCardLeg.startsAtIso`).
+ * A Sofia wall-clock reading as the visit's drafted start the card's
+ * contract takes (`ClientCardContext.start`): its shop day and minute.
  */
-export function sofiaIso(iso: string): string {
-  return ZonedTimeSystem.toIso(sofia(iso), SHOP_TIME_ZONE);
+export function startOf(iso: string): ClientCardStart {
+  const wall = wallOf(iso);
+  return { localDate: wall.localDate, startMinutes: wall.minute };
 }
 
 /** A Sofia wall-clock reading as the shop day and minute it is stored as (Law 7.3). */
@@ -363,7 +372,7 @@ export const SHOP_CATALOG: ClientCardCatalog = {
       category === undefined ? undefined : SERVICE_CATEGORIES.get(category);
     return category === undefined || name === undefined
       ? null
-      : { id: category, name };
+      : { id: ServiceCategoryId.of(category), name };
   },
   barberName: (id) => BARBERS.get(id)?.name ?? null,
   barberAvatarSrc: (id) => BARBERS.get(id)?.avatar ?? null,
@@ -617,7 +626,9 @@ function workedHistory(
 export const GEORGI_NOTE = 'Къса отстрани, по-дълго отгоре';
 
 /** Георги's next booking: Friday 2 October, 10:00, a fade with Иван, rebooked in the chair today. */
-export const GEORGI_NEXT_ID = 'appt-dev-georgi-next';
+export const GEORGI_NEXT_ID: AppointmentId = AppointmentId.of(
+  'appt-dev-georgi-next',
+);
 
 /**
  * Георги Петров's book: 24 worked visits since 6.03.2025, every one a fade
@@ -655,7 +666,7 @@ export function georgiHistory(): readonly Appointment[] {
 }
 
 /** Мартин's cut in the chair today: 12:30, a short classic cut with Иван, in his own words. */
-export const MARTIN_TODAY_ID = 'appt-dev-2';
+export const MARTIN_TODAY_ID: AppointmentId = AppointmentId.of('appt-dev-2');
 
 /**
  * Мартин Илиев's book: 13 classic cuts since 8.05.2025 with Иван or Нико,
@@ -1010,8 +1021,8 @@ export function subjectOf(
 ): ClientCardSubject {
   const georgi = uid === GEORGI;
   return {
-    id: uid,
-    userId: uid,
+    id: DraftPersonKey.of(uid),
+    userId: UserId.of(uid),
     label: georgi ? 'Георги П.' : 'Мартин И.',
     phone: georgi ? '+359 88 123 4567' : '+359 88 765 4321',
     phoneHref: georgi ? '+359881234567' : '+359887654321',
@@ -1023,7 +1034,7 @@ export function subjectOf(
 
 /** A walk-in without a profile: the card reads nothing. */
 export const GUEST: ClientCardSubject = {
-  id: 'guest-1',
+  id: DraftPersonKey.of('guest-1'),
   userId: null,
   label: 'Иво',
   phone: '+359 89 000 1111',
@@ -1034,38 +1045,38 @@ export const GUEST: ClientCardSubject = {
 
 /** Георги's held punch-card reward (his twentieth stamp). */
 export const GEORGI_GRANT: ClientCardGrant = {
-  grantId: 'grant-dev-georgi-punch',
+  grantId: CouponGrantId.of('grant-dev-georgi-punch'),
   title: 'Безплатно подстригване',
   valueLabel: 'Безплатна услуга',
-  expiresOn: '2026-10-28',
+  expiresOn: unwrapOk(LocalDate.parse('2026-10-28')),
 };
 
-export const BARBER_VIEWER = {
-  uid: 'dev-staff-ivan',
-  roles: ['barber'],
-} as const;
+export const BARBER_VIEWER: ClientCardViewer = {
+  userId: UserId.of('dev-staff-ivan'),
+  roles: [Role.Barber],
+};
 
 /** Георги's card, opened from today's settled 10:00 fade (he owns it). */
 export function georgiContext(
   overrides: Partial<ClientCardContext> = {},
 ): ClientCardContext {
   return {
-    appointmentId: 'appt-dev-1',
+    appointmentId: AppointmentId.of('appt-dev-1'),
     viewer: BARBER_VIEWER,
     isOwner: true,
     settled: true,
     gone: false,
     partyOfOne: true,
+    start: startOf('2026-09-28T10:00:00'),
     legs: [
       {
-        serviceId: 'svc-fade',
+        serviceId: ServiceId.of('svc-fade'),
         variantId: null,
-        minutes: 45,
-        barberId: 'ivan',
-        startsAtIso: sofiaIso('2026-09-28T10:00:00'),
+        minutes: duration(45),
+        barberId: BarberId.of('ivan'),
       },
     ],
-    locationId: 'loc-center',
+    locationId: LocationId.of('loc-center'),
     grants: [GEORGI_GRANT],
     grantsOnBill: [],
     catalog: SHOP_CATALOG,
@@ -1078,13 +1089,13 @@ export function georgiOpenContext(): ClientCardContext {
   return georgiContext({
     appointmentId: GEORGI_NEXT_ID,
     settled: false,
+    start: startOf('2026-10-02T10:00:00'),
     legs: [
       {
-        serviceId: 'svc-fade',
+        serviceId: ServiceId.of('svc-fade'),
         variantId: null,
-        minutes: 45,
-        barberId: 'ivan',
-        startsAtIso: sofiaIso('2026-10-02T10:00:00'),
+        minutes: duration(45),
+        barberId: BarberId.of('ivan'),
       },
     ],
   });
@@ -1101,16 +1112,16 @@ export function martinContext(
     settled: false,
     gone: false,
     partyOfOne: true,
+    start: startOf('2026-09-28T12:30:00'),
     legs: [
       {
-        serviceId: 'svc-classic-cut',
-        variantId: 'short',
-        minutes: 30,
-        barberId: 'ivan',
-        startsAtIso: sofiaIso('2026-09-28T12:30:00'),
+        serviceId: ServiceId.of('svc-classic-cut'),
+        variantId: ServiceVariantId.of('short'),
+        minutes: duration(30),
+        barberId: BarberId.of('ivan'),
       },
     ],
-    locationId: 'loc-center',
+    locationId: LocationId.of('loc-center'),
     grants: [],
     grantsOnBill: [],
     catalog: SHOP_CATALOG,
@@ -1196,28 +1207,28 @@ export function rhythmHeadWith(
 /** One holder's `AchievementsData`, as the store assembles it. */
 export function achievementsDataOf(
   who: 'georgi' | 'martin',
-  previousVisitAtMs: number | null,
+  previousVisitUtcMs: UtcEpochMs | null,
 ): AchievementsData {
   const holder = loyaltyOf(who);
   return {
     catalog: loyaltyCatalog(),
     account: holder.account,
-    progress: new Map<string, BadgeProgress>(
+    progress: new Map<BadgeSeriesId, BadgeProgress>(
       holder.badgeProgress.map((progress) => [progress.id, progress]),
     ),
-    seasonProgress: new Map<string, SeasonProgress>(
+    seasonProgress: new Map<SeasonId, SeasonProgress>(
       holder.seasonProgress.map((progress) => [progress.id, progress]),
     ),
     today: TODAY,
-    previousVisitAtMs,
+    previousVisitUtcMs,
   };
 }
 
 /** Георги's previous worked visit before today's: Thursday 3 September, 10:00. */
-export const GEORGI_PREVIOUS_MS: number = sofia('2026-09-03T10:00:00');
+export const GEORGI_PREVIOUS_MS: UtcEpochMs = sofia('2026-09-03T10:00:00');
 
 /** Мартин's previous worked visit: Wednesday 19 August, 12:30. */
-export const MARTIN_PREVIOUS_MS: number = sofia('2026-08-19T12:30:00');
+export const MARTIN_PREVIOUS_MS: UtcEpochMs = sofia('2026-08-19T12:30:00');
 
 export function achievementsContextOf(
   context: ClientCardContext,
@@ -1231,7 +1242,12 @@ export function achievementsContextOf(
     catalog: context.catalog,
     subjectName,
     visit: open
-      ? { legs: context.legs, locationId: context.locationId, birthdayToday }
+      ? {
+          legs: context.legs,
+          start: context.start,
+          locationId: context.locationId,
+          birthdayToday,
+        }
       : null,
     zone: SHOP_TIME_ZONE,
   };

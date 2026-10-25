@@ -35,20 +35,3 @@ export const RosterWindow = {
     return MinuteCount.span(window.startMinutes, window.endMinutes);
   },
 } as const;
-
-/**
- * The shop's own opening hours for one day, on its wall clock — the
- * in-memory envelope a roster window is clamped to (`roster-window.ts:39`).
- * A shop that publishes no hours, or is closed that day, is the caller's
- * `null` / empty list, never a zero-length struct.
- */
-export type ShopDayHours = {
-  readonly openMinutes: MinuteOfDay;
-  readonly closeMinutes: EndMinute;
-};
-
-export const ShopDayHours = {
-  of(openMinutes: MinuteOfDay, closeMinutes: EndMinute): ShopDayHours {
-    return { openMinutes, closeMinutes };
-  },
-} as const;

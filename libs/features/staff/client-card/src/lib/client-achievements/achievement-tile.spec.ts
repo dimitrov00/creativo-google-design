@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { localDate } from '@core/testing';
 import { describe, expect, it } from 'vitest';
 import { cssRule } from '../../testing/css-rule';
 import { MEDALS, tileOf } from '../../testing/client-pages.vm-fixtures';
@@ -21,7 +22,10 @@ const NEW_FADE: AchievementTileVm = tileOf({ ...MEDALS.fade, isNew: true });
 const DAY: AchievementTileVm = {
   key: '2026-09-28',
   medal: { ...MEDALS.welcome, title: 'В ритъм +2', caption: '28.09' },
-  opens: { achievementScope: AchievementScope.Day, day: '2026-09-28' },
+  opens: {
+    achievementScope: AchievementScope.Day,
+    day: localDate('2026-09-28'),
+  },
 };
 
 @Component({

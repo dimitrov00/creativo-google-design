@@ -1,7 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { GuestId, UserId } from '@core/primitives';
-import { Party, PartyMember, PartyRole } from './party.data';
+import { Party } from './party.data';
+import { PartyMember, PartyRole } from './party-member.data';
 import { SeatLabel } from './seat-label.data';
 
 const OWNER = UserId.of('u-owner');
@@ -333,23 +334,6 @@ describe('Party.is — the edge guard', () => {
     },
   ])('refuses %j', (raw) => {
     expect(Party.is(raw)).toBe(false);
-  });
-});
-
-describe('PartyMember — each member built from its tag', () => {
-  it('builds the owner, a companion and a guest', () => {
-    expect(PartyMember.owner()).toEqual({ partyRole: PartyRole.Owner });
-    expect(PartyMember.companion(UserId.of('u-2'))).toEqual({
-      partyRole: PartyRole.Companion,
-      companionUserId: 'u-2',
-    });
-    expect(
-      PartyMember.guest(GuestId.of('guest-0'), SeatLabel.of('Мария')),
-    ).toEqual({
-      partyRole: PartyRole.Guest,
-      guestId: 'guest-0',
-      guestLabel: 'Мария',
-    });
   });
 });
 

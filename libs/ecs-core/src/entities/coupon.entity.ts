@@ -35,3 +35,12 @@ export type CouponMeta = {
  * slice (was the nested `expiry`).
  */
 export type Coupon = CouponMeta & CouponValue & CouponExpiryRule;
+
+/**
+ * A coupon ON OFFER at the counter — enabled, and carrying a shareable
+ * code (a grant-only coupon reaches people as grants, never as a code to
+ * type): what `DiscountSystem.isOffered` narrows a `Coupon` to, the one
+ * offer rule the adapter, the memory double and the staff day's promo list
+ * share.
+ */
+export type OfferedCoupon = Coupon & { readonly code: VoucherCode };

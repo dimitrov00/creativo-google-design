@@ -5,7 +5,11 @@ import {
   type LocalDate,
   type MinuteOfDay,
 } from '@core/primitives';
-import { WallTime } from '@core/components';
+import {
+  type VisitFilter,
+  type VisitRowOutcome,
+  WallTime,
+} from '@core/components';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -16,9 +20,7 @@ import {
 import {
   type FilterRow,
   type SectionRow,
-  type VisitFilter,
   VisitListSystem,
-  type VisitRowOutcome,
   type VisitSection,
 } from './visit-list.system';
 import { ZonedTimeSystem } from './zoned-time.system';

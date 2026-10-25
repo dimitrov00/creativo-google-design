@@ -51,6 +51,18 @@ describe('MinuteCount — a non-negative whole number of minutes', () => {
     expect(MinuteCount.span(m(600), e(500))).toBe(0);
     expect(MinuteCount.fromDuration(unwrapOk(DurationMinutes.of(5)))).toBe(5);
   });
+
+  it('fromDelta keeps the minutes beyond and reads a shortfall as none, never -0 (pass D)', () => {
+    const d = (raw: number) => unwrapOk(MinuteDelta.of(raw));
+    expect(MinuteCount.fromDelta(d(15))).toBe(15);
+    expect(MinuteCount.fromDelta(d(-15))).toBe(0);
+    expect(Object.is(MinuteCount.fromDelta(d(-0)), 0)).toBe(true);
+    expect(Object.is(MinuteCount.fromDelta(d(0)), 0)).toBe(true);
+    // Pure: the same delta, the same count, the input untouched.
+    const fifteen = d(15);
+    expect(MinuteCount.fromDelta(fifteen)).toBe(MinuteCount.fromDelta(fifteen));
+    expect(fifteen).toBe(15);
+  });
 });
 
 describe('MinuteDelta — a signed whole number of minutes', () => {
@@ -66,5 +78,25 @@ describe('MinuteDelta — a signed whole number of minutes', () => {
   it('between two wall-clock points is signed', () => {
     expect(MinuteDelta.between(m(600), m(645))).toBe(45);
     expect(MinuteDelta.between(m(645), m(600))).toBe(-45);
+  });
+
+  it('between takes an exclusive end on either side, the closing midnight included (pass D)', () => {
+    expect(MinuteDelta.between(m(1410), e(1440))).toBe(30);
+    expect(MinuteDelta.between(e(1440), m(1410))).toBe(-30);
+    expect(MinuteDelta.between(e(600), e(1440))).toBe(840);
+    expect(MinuteDelta.between(m(0), e(1440))).toBe(1440);
+  });
+
+  it('fromDuration reads a positive duration as a delta', () => {
+    const ninety = unwrapOk(DurationMinutes.of(90));
+    expect(MinuteDelta.fromDuration(ninety)).toBe(90);
+  });
+
+  it('is pure: same input → same output', () => {
+    const d = unwrapOk(DurationMinutes.of(15));
+    expect(MinuteDelta.fromDuration(d)).toBe(MinuteDelta.fromDuration(d));
+    expect(MinuteDelta.between(m(5), e(1440))).toBe(
+      MinuteDelta.between(m(5), e(1440)),
+    );
   });
 });

@@ -12,11 +12,12 @@ import {
   type AppointmentId,
   type SeatId,
   TimeZone,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
   BookingError,
-  type RepositoryError,
   SchedulingError,
+  type TransitionAppointmentError,
 } from '@core/errors';
 import {
   type Appointment,
@@ -90,18 +91,6 @@ export type TransitionAppointmentAnswer = {
   readonly to: BookingStatus;
 };
 
-/**
- * No such visit (`BOOKING_INVALID_INPUT`, field `appointmentId`), the
- * reinstated chair taken since (`BOOKING_SLOT_UNAVAILABLE`), any lifecycle
- * refusal (`SchedulingError`), or the store. The edge answers each in the
- * callable's own frozen words.
- */
-export type TransitionAppointmentError =
-  | BookingError.InvalidInput
-  | BookingError.SlotUnavailable
-  | SchedulingError
-  | RepositoryError;
-
 export type TransitionAppointmentPorts = TxPorts &
   PolicyReadPorts &
   AuditAppendPorts &
@@ -147,7 +136,7 @@ async function readCollisions(
 /** A visit whose shop cannot be read keeps no shop clock: never "today" (the settled stay settled). */
 function shopNowOf(
   location: ShopLocation | null,
-  nowUtcMs: ShopNow['utcEpochMs'],
+  nowUtcMs: UtcEpochMs,
 ): ShopNow | null {
   const zone = location === null ? null : zoneOf(location);
   return zone === null ? null : ZonedTimeSystem.shopNow(nowUtcMs, zone);

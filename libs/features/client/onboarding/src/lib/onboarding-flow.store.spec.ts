@@ -12,8 +12,8 @@ import {
 import { Callables, type OtpChallengePorts } from '@core/ports';
 import { Result, UserId } from '@core/primitives';
 import {
-  AccountsErrorCode,
-  IdentityErrorCode,
+  AccountsError,
+  IdentityError,
   PipelineError,
   PipelineErrorCode,
 } from '@core/errors';
@@ -227,7 +227,7 @@ describe('OnboardingFlowStore — birthday step', () => {
     const state = store.state();
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
     if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe(IdentityErrorCode.BirthDateInvalid);
+      expect(state.error).toEqual(IdentityError.birthDateInvalid('1990-02-30'));
     }
   });
 
@@ -240,9 +240,42 @@ describe('OnboardingFlowStore — birthday step', () => {
     const state = store.state();
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
     if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe(
-        AccountsErrorCode.UpdateProfileRepositoryFailure,
+      expect(state.error).toEqual(
+        AccountsError.updateProfileRepositoryFailure(),
       );
+    }
+  });
+
+  /*
+   * DEP-17 (pass D): a save the store re-judges outside the age window keeps
+   * the refusal's WHOLE struct on the flow state — its `maxAge` / `minAge`
+   * reach the words (`client-onboarding.spec.ts` pins the bg and en lines);
+   * before, the state held the bare code and the line printed an empty
+   * `{{maxAge}}` / `{{minAge}}`. The clock is pinned (2026-07-25).
+   */
+  it('DEP-17: a save re-judged too old stays on the birthday step carrying maxAge 120, without calling', async () => {
+    await walkToBirthday();
+
+    await store.submitBirthday({ day: 25, month: 7, year: 1905 });
+
+    expect(gatewayCalls).toEqual([]);
+    const state = store.state();
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
+      expect(state.error).toEqual(IdentityError.birthDateTooOld(121, 120));
+    }
+  });
+
+  it('DEP-17: a save re-judged too young stays on the birthday step carrying minAge 16, without calling', async () => {
+    await walkToBirthday();
+
+    await store.submitBirthday({ day: 26, month: 7, year: 2010 });
+
+    expect(gatewayCalls).toEqual([]);
+    const state = store.state();
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
+      expect(state.error).toEqual(IdentityError.birthDateTooYoung(15, 16));
     }
   });
 
@@ -256,11 +289,11 @@ describe('OnboardingFlowStore — birthday step', () => {
     const state = store.state();
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
     if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe(IdentityErrorCode.IdentifierMissing);
+      expect(state.error).toEqual(IdentityError.identifierMissing());
     }
     // The avatar step answers the same code for the same missing owner.
-    expect(await store.uploadAvatar(new Blob(['x']))).toBe(
-      IdentityErrorCode.IdentifierMissing,
+    expect(await store.uploadAvatar(new Blob(['x']))).toEqual(
+      Result.err(IdentityError.identifierMissing()),
     );
   });
 
@@ -270,9 +303,11 @@ describe('OnboardingFlowStore — birthday step', () => {
     await store.submitAbout(ABOUT_FIELDS);
 
     expect(otpCalls).toHaveLength(1);
+    // The failed call as its struct — no server code, so the screen words it
+    // as the generic `IDENTITY_CALL_FAILED` (`wordFlowFailure`'s spec).
     expect(store.state()).toEqual({
       onboardingFlowStep: OnboardingFlowStep.About,
-      error: IdentityErrorCode.CallFailed,
+      error: PipelineError.bare(PipelineErrorCode.Unavailable),
     });
   });
 

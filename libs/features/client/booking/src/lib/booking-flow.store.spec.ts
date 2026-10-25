@@ -21,7 +21,6 @@ import {
   BookingFlowStep,
   DayWindows,
   FlexibleWhen,
-  MoveRefusalReason,
   Party,
   PartyRole,
   Placement,
@@ -50,6 +49,7 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import {
+  MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
@@ -1041,10 +1041,10 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
       guestLabel,
     );
 
-    expect(!result.ok && result.error).toBe(MoveRefusalReason.CompanionsOnly);
-    expect(store.moveRefusal()?.moveRefusalReason).toBe(
-      MoveRefusalReason.CompanionsOnly,
+    expect(!result.ok && result.error.errorCode).toBe(
+      MoveErrorCode.CompanionsOnly,
     );
+    expect(store.moveRefusal()?.errorCode).toBe(MoveErrorCode.CompanionsOnly);
     // The shop it is at — what the refusal's call button dials.
     expect(store.moveRefusal()?.locationId).toBe('loc-center');
     expect(store.isRescheduling()).toBe(false);
@@ -1764,9 +1764,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
 
     await store.rereadMove();
 
-    expect(store.moveRefusal()?.moveRefusalReason).toBe(
-      MoveRefusalReason.Unavailable,
-    );
+    expect(store.moveRefusal()?.errorCode).toBe(MoveErrorCode.Unavailable);
   });
 
   it('refuses the move as the shop’s once only a companion is left on it', async () => {
@@ -1774,9 +1772,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
 
     await store.rereadMove();
 
-    expect(store.moveRefusal()?.moveRefusalReason).toBe(
-      MoveRefusalReason.CompanionsOnly,
-    );
+    expect(store.moveRefusal()?.errorCode).toBe(MoveErrorCode.CompanionsOnly);
   });
 
   it('ignores an answer about a move the flow let go of while the read was out', async () => {
@@ -1844,13 +1840,17 @@ describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => 
 
   it('names the guests as the catalogue numbers them', () => {
     const store = createStore(server());
-    expect(store.restoreFromWaitlist(request, null, guestLabel)).toBe(true);
+    expect(store.restoreFromWaitlist(request, undefined, guestLabel)).toBe(
+      true,
+    );
     expect(guestLabels(store)).toEqual(['Guest 1', 'Guest 2']);
   });
 
   it('never hands two guests one placeholder, even from copy that drops the number', () => {
     const store = createStore(server());
-    expect(store.restoreFromWaitlist(request, null, () => 'Гост')).toBe(true);
+    expect(store.restoreFromWaitlist(request, undefined, () => 'Гост')).toBe(
+      true,
+    );
     expect(store.step()).toBe(BookingFlowStep.Schedule);
     const party = store.party();
     expect(party === null ? null : Party.sharedLabel(party)).toBeNull();
@@ -1858,14 +1858,25 @@ describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => 
 
   it('lands on the day the link names, else the first day the request watches', () => {
     const store = createStore(server());
-    store.restoreFromWaitlist(request, '2026-08-27', guestLabel);
+    store.restoreFromWaitlist(request, localDate('2026-08-27'), guestLabel);
     expect(store.selectedLocalDate()).toBe('2026-08-27');
     expect(store.consumeWaitlistArrival()).toBe(true);
     expect(store.consumeWaitlistArrival()).toBe(false);
 
     TestBed.resetTestingModule();
     const fallback = createStore(server());
-    fallback.restoreFromWaitlist(request, null, guestLabel);
+    fallback.restoreFromWaitlist(request, undefined, guestLabel);
     expect(fallback.selectedLocalDate()).toBe('2026-08-25');
+  });
+
+  // The shell parses `?day=` once at its edge (pass D, D-4): a link naming
+  // something that is no day hands `null`, and no day lands — the flow is
+  // rebuilt all the same, as it always was.
+  it('lands on no day when the link names something that is no day', () => {
+    const store = createStore(server());
+    expect(store.restoreFromWaitlist(request, null, guestLabel)).toBe(true);
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
+    expect(store.selectedLocalDate()).toBeNull();
+    expect(store.consumeWaitlistArrival()).toBe(true);
   });
 });

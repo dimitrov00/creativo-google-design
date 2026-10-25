@@ -1,11 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BirthDate } from '@core/components';
+import { BirthDate, ProfileCompletionKey } from '@core/components';
 import { deepFreeze } from '@core/testing';
-import {
-  ProfileCompletionKey,
-  ProfileCompletionSystem,
-} from './profile-completion.system';
+import { ProfileCompletionSystem } from './profile-completion.system';
 
 /*
  * The cases of the legacy accounts application lib's read-model

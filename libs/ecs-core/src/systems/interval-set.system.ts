@@ -1,69 +1,13 @@
-import { MinuteRange } from '@core/components';
-import {
-  type Brand,
-  MinuteCount,
-  EndMinute,
-  MinuteOfDay,
-} from '@core/primitives';
+import { MinuteRange, NormalizedRanges } from '@core/components';
+import { MinuteCount, EndMinute, MinuteOfDay } from '@core/primitives';
 
 /**
- * A canonical range set: sorted by `startMinutes`, non-empty, pairwise
- * disjoint AND non-touching (touching runs are merged). Every operation of
- * {@link IntervalSetSystem} returns one; the brand flags it so a hot caller
- * can hold its sets normalized and hand them back in.
+ * The canonical form — the brand's one constructor,
+ * `NormalizedRanges.normalize`. Every sweep below builds its output
+ * canonical by construction (sorted, disjoint, non-touching, non-empty), so
+ * handing it through here costs one linear check and returns the same array.
  */
-export type NormalizedRanges = Brand<
-  readonly MinuteRange[],
-  'NormalizedRanges'
->;
-
-function byStart(a: MinuteRange, b: MinuteRange): number {
-  return a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes;
-}
-
-/** The one cast site of the brand: `xs` is already in canonical form. */
-function asNormalized(xs: readonly MinuteRange[]): NormalizedRanges {
-  return xs as NormalizedRanges;
-}
-
-/** One linear pass: is `xs` canonical already? (No allocation.) */
-function isNormalized(xs: readonly MinuteRange[]): boolean {
-  let lastEnd = Number.NEGATIVE_INFINITY;
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i] as MinuteRange;
-    if (!(x.startMinutes < x.endMinutes) || x.startMinutes <= lastEnd) {
-      return false;
-    }
-    lastEnd = x.endMinutes;
-  }
-  return true;
-}
-
-function normalizeRanges(xs: readonly MinuteRange[]): NormalizedRanges {
-  if (isNormalized(xs)) return asNormalized(xs);
-  const sorted: MinuteRange[] = [];
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i] as MinuteRange;
-    if (x.startMinutes < x.endMinutes) sorted.push(x);
-  }
-  sorted.sort(byStart);
-  const merged: MinuteRange[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const next = sorted[i] as MinuteRange;
-    const last = merged[merged.length - 1];
-    if (last !== undefined && next.startMinutes <= last.endMinutes) {
-      if (next.endMinutes > last.endMinutes) {
-        merged[merged.length - 1] = MinuteRange.of(
-          last.startMinutes,
-          next.endMinutes,
-        );
-      }
-    } else {
-      merged.push(next);
-    }
-  }
-  return asNormalized(merged);
-}
+const normalizeRanges = NormalizedRanges.normalize;
 
 function subtractRanges(
   base: readonly MinuteRange[],
@@ -106,7 +50,7 @@ function subtractRanges(
     // Not consumed: `cursor` is the window's start or a cut's end inside it.
     if (!consumed) out.push(MinuteRange.of(cursor, window.endMinutes));
   }
-  return asNormalized(out);
+  return normalizeRanges(out);
 }
 
 function intersectRanges(
@@ -128,7 +72,7 @@ function intersectRanges(
     if (x.endMinutes < y.endMinutes) i++;
     else j++;
   }
-  return asNormalized(out);
+  return normalizeRanges(out);
 }
 
 function unionRanges(
@@ -161,7 +105,7 @@ function unionRanges(
       out.push(next);
     }
   }
-  return asNormalized(out);
+  return normalizeRanges(out);
 }
 
 function totalRangeMinutes(xs: readonly MinuteRange[]): MinuteCount {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AdjustmentId, TierId } from '@core/primitives';
 import { localDate } from '@core/testing';
-import { TierOverride, TierOverrideSource } from './tier-state.data';
+import { TierOverride, TierOverrideSource } from './tier-override.data';
 
 describe('TierOverride', () => {
   it('declares the sources SCREAMING and builds each variant of the slice, "none" too', () => {

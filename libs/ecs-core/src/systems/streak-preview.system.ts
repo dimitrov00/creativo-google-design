@@ -1,10 +1,14 @@
 import {
   type ClientStats,
   StreakIntervalRule,
+  StreakPreview,
+  StreakPreviewUnavailable,
   StreakQualifier,
   type StreakQualifierRule,
   StreakRule,
   StreakPhase,
+  StreakStanding,
+  type StreakStandingCounts,
   type StreakState,
   type VisitFact,
 } from '@core/components';
@@ -28,64 +32,6 @@ import {
  * by hand, and silent about services, so a rule that counts by a list
  * cannot be previewed at all. The exact preview is the engine's.
  */
-
-/** Where a person stands under one rule, as the preview counts them. */
-export const StreakStanding = {
-  /** The period is open and its due date ahead: on time, close to it, or held by a protection or a pause. */
-  InRhythm: 'IN_RHYTHM',
-  /** Past the due date, inside the grace: a visit still keeps the run. */
-  InGrace: 'IN_GRACE',
-  /** A period was missed and none is open. */
-  Broken: 'BROKEN',
-} as const;
-export type StreakStanding =
-  (typeof StreakStanding)[keyof typeof StreakStanding];
-
-/** What the preview answers — the discriminator `streakPreviewOutcome`. */
-export const StreakPreviewOutcome = {
-  Estimate: 'ESTIMATE',
-  /** One of the two rules counts by a list, and the facts cannot say what a visit held. */
-  Unavailable: 'UNAVAILABLE',
-} as const;
-export type StreakPreviewOutcome =
-  (typeof StreakPreviewOutcome)[keyof typeof StreakPreviewOutcome];
-
-/** Why a preview cannot be made. */
-export const StreakPreviewUnavailable = {
-  Qualifier: 'QUALIFIER',
-} as const;
-export type StreakPreviewUnavailable =
-  (typeof StreakPreviewUnavailable)[keyof typeof StreakPreviewUnavailable];
-
-/** How many people stand where, under one rule. */
-export type StreakStandingCounts = {
-  readonly inRhythm: number;
-  readonly inGrace: number;
-  readonly broken: number;
-};
-
-/**
- * What a change of the rule does to the people it judges, in counts.
- * `before`/`after` are `null` under a rule that is OFF: an off rule judges
- * nobody, which is not "nobody is in rhythm". `back` and `out` count the
- * people a change moves INTO `inRhythm` and out of it, so
- * `after.inRhythm − before.inRhythm` is `back − out`; both are 0 while
- * either rule is off, because then it is the rule that comes or goes.
- */
-export type StreakPreview =
-  | {
-      readonly streakPreviewOutcome: typeof StreakPreviewOutcome.Estimate;
-      /** The people with a visit to judge: each is in exactly one count of a rule that is on. */
-      readonly clients: number;
-      readonly before: StreakStandingCounts | null;
-      readonly after: StreakStandingCounts | null;
-      readonly back: number;
-      readonly out: number;
-    }
-  | {
-      readonly streakPreviewOutcome: typeof StreakPreviewOutcome.Unavailable;
-      readonly reason: StreakPreviewUnavailable;
-    };
 
 /**
  * The first instant of a shop day — the boundary's reader, handed in
@@ -277,10 +223,7 @@ export const StreakPreviewSystem = {
     today: LocalDate | null,
   ): StreakPreview {
     if (!StreakPreviewSystem.readsFacts(inForce, draft)) {
-      return {
-        streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
-        reason: StreakPreviewUnavailable.Qualifier,
-      };
+      return StreakPreview.unavailable(StreakPreviewUnavailable.Qualifier);
     }
     const before = emptyCounts();
     const after = emptyCounts();
@@ -306,14 +249,13 @@ export const StreakPreviewSystem = {
         out += 1;
       }
     }
-    return {
-      streakPreviewOutcome: StreakPreviewOutcome.Estimate,
-      clients: judged,
-      before: inForce.enabled ? before : null,
-      after: draft.enabled ? after : null,
+    return StreakPreview.estimate(
+      judged,
+      inForce.enabled ? before : null,
+      draft.enabled ? after : null,
       back,
       out,
-    };
+    );
   },
 
   /**

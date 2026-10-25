@@ -3,6 +3,12 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 import { GATEWAY_PORTS } from '@creativo/infrastructure/firebase-app';
 import type { BookingContact } from '@core/components';
 import { saveOwnProfile } from '@core/pipelines';
+import { Result } from '@core/primitives';
+import {
+  AccountsError,
+  IdentityError,
+  type OwnProfileWriteFailure,
+} from '@core/errors';
 import { ProfileEditSystem } from '@core/systems';
 
 /**
@@ -16,7 +22,13 @@ export class BookingContactStore {
   private readonly saveProfile = saveOwnProfile(inject(GATEWAY_PORTS));
 
   /**
-   * `true` once the profile carries the typed NAME.
+   * `Result.ok` once the profile carries the typed NAME; else the refusal as
+   * its struct (pass D E-12) — no profile to save to
+   * (`IDENTITY_IDENTIFIER_MISSING`), a name with nothing to save
+   * (`ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED` — unreachable: the contact's
+   * name is never blank), or the write's own `AccountsError.OwnProfileSave`.
+   * The sheet words every one of them as its one `booking.contact.profileFailed`
+   * line.
    *
    * The edit goes through the `updateProfile` callable (`saveOwnProfile`):
    * the server judges it with `ProfileEditSystem` against the stored profile
@@ -27,20 +39,23 @@ export class BookingContactStore {
    * afterwards: `account` is the live `users/{uid}` listener, so the review
    * row behind the sheet shows the new name as soon as the write lands.
    */
-  async writeProfileName(contact: BookingContact.Present): Promise<boolean> {
+  async writeProfileName(
+    contact: BookingContact.Present,
+  ): Promise<Result<void, OwnProfileWriteFailure>> {
     const user = this.accountState.account();
-    if (!user) return false;
+    if (!user) return Result.err(IdentityError.identifierMissing());
     const name = ProfileEditSystem.nameFromFull(
       contact.contactName,
       user.lastName,
     );
-    if (name === null) return false;
+    if (name === null) {
+      return Result.err(AccountsError.updateProfileValidationFailed());
+    }
 
-    const code = await this.saveProfile({
+    return this.saveProfile({
       firstName: name.firstName,
       lastName: name.lastName,
       birthDate: null,
     });
-    return code === null;
   }
 }

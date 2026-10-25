@@ -1,3 +1,5 @@
+import type { RepositoryError } from './repository.error';
+
 /**
  * The media context's error codes — the `E` of the media port's `resolve`
  * (`ports/media.port.ts`). The application layer's `MediaUnavailableError`
@@ -99,3 +101,11 @@ export namespace MediaError {
     readonly maxBytes: number;
   };
 }
+
+/**
+ * What a refused or failed visit-photo shot (`attachVisitPhoto`) answers:
+ * the upload guard's refusal or Storage's answer (`MediaError`), or the
+ * photo document's save (`RepositoryError`) — homed here in pass D (E-23;
+ * Law 7.5: never in a pipeline file).
+ */
+export type AttachVisitPhotoError = MediaError | RepositoryError;

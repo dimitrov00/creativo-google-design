@@ -62,7 +62,7 @@
               [uiInteractive]="true"
               [uiSelected]="isSelectedStart(start)"
               data-testid="booking-time"
-              [attr.data-start]="start.startMs"
+              [attr.data-start]="start.startUtcMs"
               [attr.data-shop]="start.locationId"
               (click)="selectStart(start)"
             >

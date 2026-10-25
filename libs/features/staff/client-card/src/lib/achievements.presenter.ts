@@ -19,16 +19,15 @@ import {
 import type { BadgeProgress, BadgeSeries, Season } from '@core/entities';
 import {
   BadgeCategoryId,
-  BadgeSeriesId,
-  BarberId,
+  type BadgeSeriesId,
   LocalDate,
-  LocationId,
+  type LocationId,
   type MinuteOfDay,
   SeasonId,
-  ServiceCategoryId,
-  ServiceId,
+  type ServiceCategoryId,
+  type ServiceId,
   type TimeZone,
-  UtcEpochMs,
+  type UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
@@ -47,6 +46,7 @@ import {
   AchievementScope,
   type ClientCardCatalog,
   type ClientCardLeg,
+  type ClientCardStart,
 } from './client-card.contracts';
 import {
   cardLocaleOf,
@@ -167,48 +167,79 @@ export interface AchievementsContext {
    */
   readonly visit: {
     readonly legs: readonly ClientCardLeg[];
-    readonly locationId: string | null;
+    /** When the visit starts on the shop's wall clock (`ClientCardContext.start`). */
+    readonly start: ClientCardStart | null;
+    readonly locationId: LocationId | null;
     readonly birthdayToday: boolean;
   } | null;
   /**
    * The shop's zone (Law 7.2: the location's — the default location's, as
-   * the card's store resolved it): where a leg's start and the end of today
-   * are read on the shop's clock.
+   * the card's store resolved it): where the visit's start is read as an
+   * instant, for the one rule that needs one.
    */
   readonly zone: TimeZone;
 }
 
 // ── Scope keys (the editor's `achievementCategory` subject id, §2.1) ────
 
+/**
+ * The scope key's prefixes and its one bare key. Values: external contract
+ * — the editor's page key (`EditorStackPage.subjectId`), so they keep
+ * their spelling.
+ */
+const SCOPE_PREFIX = {
+  Category: 'category',
+  Season: 'season',
+  Day: 'day',
+} as const;
+const SCOPE_ARCHIVE = 'archive';
+
 /** `category:{id}` · `season:{id}` · `archive` · `day:{YYYY-MM-DD}`. */
 export function achievementScopeKey(scope: AchievementScope): string {
   switch (scope.achievementScope) {
     case AchievementScope.Category:
-      return `category:${scope.categoryId}`;
+      return `${SCOPE_PREFIX.Category}:${scope.categoryId}`;
     case AchievementScope.Season:
-      return `season:${scope.seasonId}`;
+      return `${SCOPE_PREFIX.Season}:${scope.seasonId}`;
     case AchievementScope.Archive:
-      return 'archive';
+      return SCOPE_ARCHIVE;
     case AchievementScope.Day:
-      return `day:${scope.day}`;
+      return `${SCOPE_PREFIX.Day}:${scope.day}`;
   }
 }
 
-/** The scope a key names, or `null` for a key that names none. */
+/**
+ * The scope a key names, or `null` for a key that names none. The key is
+ * an opaque page key (pass D, D-8.9) minted only by `achievementScopeKey`
+ * from a branded scope, so its id half is that id by construction
+ * (`BadgeCategoryId.of`, `SeasonId.of`); its day half is read through
+ * `LocalDate.parse` — the key was minted from a `LocalDate`, so a key this
+ * card made never refuses, and a key that names no shop day names no scope.
+ */
 export function achievementScopeOf(key: string): AchievementScope | null {
-  if (key === 'archive') return { achievementScope: AchievementScope.Archive };
+  if (key === SCOPE_ARCHIVE) {
+    return { achievementScope: AchievementScope.Archive };
+  }
   const [prefix, ...rest] = key.split(':');
   const id = rest.join(':');
   if (id.length === 0) return null;
   switch (prefix) {
-    case 'category':
-      return { achievementScope: AchievementScope.Category, categoryId: id };
-    case 'season':
-      return { achievementScope: AchievementScope.Season, seasonId: id };
-    case 'day':
-      return /^\d{4}-\d{2}-\d{2}$/.test(id)
-        ? { achievementScope: AchievementScope.Day, day: id }
+    case SCOPE_PREFIX.Category:
+      return {
+        achievementScope: AchievementScope.Category,
+        categoryId: BadgeCategoryId.of(id),
+      };
+    case SCOPE_PREFIX.Season:
+      return {
+        achievementScope: AchievementScope.Season,
+        seasonId: SeasonId.of(id),
+      };
+    case SCOPE_PREFIX.Day: {
+      const day = LocalDate.parse(id);
+      return day.ok
+        ? { achievementScope: AchievementScope.Day, day: day.value }
         : null;
+    }
     default:
       return null;
   }
@@ -255,20 +286,6 @@ export function progressList(data: AchievementsData): readonly BadgeProgress[] {
   return [...data.progress.values()];
 }
 
-/** A shop day the card holds — the clock's «today», a scope's day: always a day. */
-export function cardDayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
-/** The card's «Ново» mark: the start of the previous visit, as the stamp it is; `null` before a first one. */
-export function previousVisitOf(data: AchievementsData): UtcEpochMs | null {
-  const at = data.previousVisitAtMs;
-  if (at === null) return null;
-  const utc = UtcEpochMs.of(at);
-  return utc.ok ? utc.value : defect(`${at} is not an instant`);
-}
-
 /** The shop day a level was earned on (a yearly one keeps its latest) — the stored day (T5), never re-bucketed (`BadgeSystem.earnedOn`). */
 export function earnedOnOf(
   progress: BadgeProgress | null,
@@ -299,7 +316,7 @@ export function seasonPhaseOf(
   season: Season,
   data: AchievementsData,
 ): SeasonPhase {
-  return SeasonSystem.phaseOn(season, cardDayOf(data.today));
+  return SeasonSystem.phaseOn(season, data.today);
 }
 
 /** Where a family's season or event stands today; `null` for a family of no season, or of one the catalogue lacks. */
@@ -311,12 +328,32 @@ export function seasonPhaseOfSeries(
   return season === null ? null : seasonPhaseOf(season, data);
 }
 
-/** A family by its id (a VM's `seriesId`, a route's), or `null`. */
+/**
+ * A family by its id, or `null` — an id already branded: a system's answer,
+ * a family's slot, or a page key its reader brands once (D-8.9). A drawn
+ * medal's id may be a season's: read it through {@link familyOfMedal}.
+ */
 export function seriesById(
   data: AchievementsData,
-  seriesId: string,
+  seriesId: BadgeSeriesId,
 ): BadgeSeries | null {
-  return LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(seriesId));
+  return LoyaltyCatalogSystem.series(data.catalog, seriesId);
+}
+
+/**
+ * The family a drawn medal shows, or `null`. `MedalVm.seriesId` names a
+ * family — or, on an archived season's OWN medal (a season without a track
+ * family), the season — so the family is the catalogue's family whose id
+ * EQUALS the medal's, found without re-branding a season's id as a
+ * family's (Law 7.4); a season's id finds none.
+ */
+export function familyOfMedal(
+  data: AchievementsData,
+  medal: MedalVm,
+): BadgeSeries | null {
+  return (
+    data.catalog.families.find((family) => family.id === medal.seriesId) ?? null
+  );
 }
 
 /** Where a family stands for this client. */
@@ -331,13 +368,13 @@ export function standingOf(
 export function familyScopeOf(scope: AchievementScope): FamilyScopeFilter {
   switch (scope.achievementScope) {
     case AchievementScope.Category:
-      return FamilyScopeFilter.category(BadgeCategoryId.of(scope.categoryId));
+      return FamilyScopeFilter.category(scope.categoryId);
     case AchievementScope.Season:
-      return FamilyScopeFilter.season(SeasonId.of(scope.seasonId));
+      return FamilyScopeFilter.season(scope.seasonId);
     case AchievementScope.Archive:
       return FamilyScopeFilter.archive();
     case AchievementScope.Day:
-      return FamilyScopeFilter.day(cardDayOf(scope.day));
+      return FamilyScopeFilter.day(scope.day);
   }
 }
 
@@ -350,7 +387,7 @@ export function familiesOf(
     data.catalog,
     progressList(data),
     scope,
-    cardDayOf(data.today),
+    data.today,
   );
 }
 
@@ -367,7 +404,7 @@ export function familyCountsOf(
     data.catalog,
     progressList(data),
     scope,
-    cardDayOf(data.today),
+    data.today,
   );
 }
 
@@ -405,11 +442,7 @@ export function inEndedSeason(
   series: BadgeSeries,
   data: AchievementsData,
 ): boolean {
-  return LoyaltyCatalogSystem.inEndedSeason(
-    data.catalog,
-    series,
-    cardDayOf(data.today),
-  );
+  return LoyaltyCatalogSystem.inEndedSeason(data.catalog, series, data.today);
 }
 
 /**
@@ -425,30 +458,38 @@ export function landsOn(
   series: BadgeSeries,
   standing: SeriesStanding,
   data: AchievementsData,
-): string | null {
-  return landsOnDay(series, standing, data);
-}
-
-/** {@link landsOn} as the shop day it is — what the medal systems read. */
-export function landsOnDay(
-  series: BadgeSeries,
-  standing: SeriesStanding,
-  data: AchievementsData,
 ): LocalDate | null {
   return BadgeSystem.landsOn(
     series,
     standing,
     PersonalRecord.find(data.account.records, PersonalRecordKind.FirstVisit)
       ?.on ?? null,
-    cardDayOf(data.today),
+    data.today,
   );
 }
 
 /**
- * The visit on screen, as its draft holds it: when its first service
- * starts — the shop day and the minute of the shop's wall clock on `zone`,
- * and the instant. The legs' starts are read at the edge (Law 7); which one
- * is first is `AchievementsSystem.firstStart`'s. `null` with no start yet.
+ * The visit on screen's start as the shop's wall clock holds it — every
+ * leg starts at the drafted start (`ClientCardContext.start`); `null` with
+ * no leg, no start, or a start that is no minute of the day.
+ */
+function draftWallStart(
+  visit: NonNullable<AchievementsContext['visit']>,
+): { readonly localDate: LocalDate; readonly minute: MinuteOfDay } | null {
+  const start = visit.start;
+  return visit.legs.length === 0 ||
+    start === null ||
+    start.startMinutes === null
+    ? null
+    : { localDate: start.localDate, minute: start.startMinutes };
+}
+
+/**
+ * The visit on screen, as its draft holds it: when its services start —
+ * the shop day and the minute of the shop's wall clock, and the instant
+ * they name on `zone`, read once here at the edge (Law 7). `null` with no
+ * start yet, and for a wall-clock start that names no instant (a
+ * spring-forward gap's minute, `ZonedTimeSystem.toUtc`'s refusal).
  */
 export function draftStart(
   visit: NonNullable<AchievementsContext['visit']>,
@@ -458,48 +499,41 @@ export function draftStart(
   readonly minute: MinuteOfDay;
   readonly utcMs: UtcEpochMs;
 } | null {
-  const starts: UtcEpochMs[] = [];
-  for (const leg of visit.legs) {
-    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
-    if (start.ok) starts.push(start.value);
-  }
-  const first = AchievementsSystem.firstStart(starts);
-  if (first === null) return null;
-  const wall = ZonedTimeSystem.toLocal(first, zone);
-  return { localDate: wall.localDate, minute: wall.minute, utcMs: first };
+  const wall = draftWallStart(visit);
+  if (wall === null) return null;
+  const utcMs = ZonedTimeSystem.toUtc(wall.localDate, wall.minute, zone);
+  return utcMs.ok ? { ...wall, utcMs: utcMs.value } : null;
 }
 
-/** The drafts already read, per visit on screen and the zone they were read on (`draftVisitOf`). */
+/** The drafts already read, per visit on screen (`draftVisitOf`). */
 const DRAFTS = new WeakMap<
   NonNullable<AchievementsContext['visit']>,
-  { readonly zone: TimeZone; readonly draft: DraftVisit }
+  DraftVisit
 >();
 
 /**
  * The visit on screen as the medal systems read it (`DraftVisit`): its
  * legs' services and barbers and its shop as the ids they are, the minute
- * its first leg starts on the shop's clock, and whether it is the
- * client's birthday visit — built once per visit at the edge (D-2.8).
- * `null` with no visit on screen.
+ * its services start on the shop's wall clock, read as it is (Law 7.3 —
+ * no instant, so no zone: pass D DEP-15), and whether it is the client's
+ * birthday visit — built once per visit at the edge (D-2.8). `null` with
+ * no visit on screen.
  */
 export function draftVisitOf(ctx: AchievementsContext): DraftVisit | null {
   const visit = ctx.visit;
   if (visit === null) return null;
   const known = DRAFTS.get(visit);
-  if (known !== undefined && known.zone === ctx.zone) return known.draft;
+  if (known !== undefined) return known;
   const draft: DraftVisit = {
-    serviceIds: visit.legs.flatMap((leg) =>
-      leg.serviceId === null ? [] : [ServiceId.of(leg.serviceId)],
-    ),
+    serviceIds: visit.legs.map((leg) => leg.serviceId),
     barberIds: visit.legs.flatMap((leg) =>
-      leg.barberId === null ? [] : [BarberId.of(leg.barberId)],
+      leg.barberId === null ? [] : [leg.barberId],
     ),
-    locationId:
-      visit.locationId === null ? null : LocationId.of(visit.locationId),
-    startMinutes: draftStart(visit, ctx.zone)?.minute ?? null,
+    locationId: visit.locationId,
+    startMinutes: draftWallStart(visit)?.minute ?? null,
     birthdayToday: visit.birthdayToday,
   };
-  DRAFTS.set(visit, { zone: ctx.zone, draft });
+  DRAFTS.set(visit, draft);
   return draft;
 }
 
@@ -526,7 +560,7 @@ export function completesWithThisVisit(
     BadgeSystem.latestEarned(progress),
     draft,
     seasonPhaseOfSeries(series, data),
-    cardDayOf(data.today),
+    data.today,
   );
 }
 
@@ -679,7 +713,7 @@ function captionOf(
   const last = latestEarned(progress);
   // The caption reads the UNGATED day a calendar-driven level lands (the
   // meter alone reads it only towards a next level it draws).
-  const on = landsOnDay(series, standing, data);
+  const on = landsOn(series, standing, data);
   switch (
     BadgeSystem.captionOf(
       series,
@@ -794,7 +828,7 @@ export function medalVm(
     StandingSystem.isFamilyNew(
       standing,
       latestEarned(progress),
-      previousVisitOf(data),
+      data.previousVisitUtcMs,
     );
   // An ended season's family has no next level to be drawn towards (CF).
   const reach = BadgeSystem.toNext(standing, inEndedSeason(series, data));
@@ -817,7 +851,7 @@ export function medalVm(
   const nextLevel = levelNumeral(BadgeSystem.nextLevelNumber(standing));
   // A calendar-driven family (tenure) is worded by the day its next level
   // lands, not by days counted (`landsOn`); its meter keeps the fraction.
-  const on = toNext === null ? null : landsOnDay(series, standing, data);
+  const on = toNext === null ? null : landsOn(series, standing, data);
   const meter =
     (options.meter ?? true)
       ? meterWords(
@@ -980,11 +1014,11 @@ export function soonSeriesIds(
   data: AchievementsData,
   ctx: AchievementsContext,
   limit: number,
-): readonly string[] {
+): readonly BadgeSeriesId[] {
   return StandingSystem.soonIds(
     data.catalog,
     progressList(data),
-    cardDayOf(data.today),
+    data.today,
     completingOf(data, ctx),
     limit,
   );
@@ -1090,7 +1124,7 @@ export function latestTiles(
     });
     const isNew = StandingSystem.isNewSince(
       newest.earnedAtUtcMs,
-      previousVisitOf(data),
+      data.previousVisitUtcMs,
     );
     push({
       key: day.localDate,
@@ -1136,7 +1170,7 @@ export function newestFaceLevel(
   if (day === undefined) return null;
   const season = LoyaltyCatalogSystem.windowsOn(
     data.catalog,
-    cardDayOf(data.today),
+    data.today,
   ).season;
   const card = season === null ? null : seasonCardVm(season, data, ctx);
   const lead = latestTiles(data, ctx, facesBesideCard(card))[0];
@@ -1342,9 +1376,9 @@ export function eventCardVm(
 function archivedSeasons(data: AchievementsData): readonly Season[] {
   return LoyaltyCatalogSystem.archivedFor(
     data.catalog,
-    cardDayOf(data.today),
-    new Set([...data.progress.keys()].map((id) => BadgeSeriesId.of(id))),
-    new Set([...data.seasonProgress.keys()].map((id) => SeasonId.of(id))),
+    data.today,
+    new Set(data.progress.keys()),
+    new Set(data.seasonProgress.keys()),
   );
 }
 
@@ -1373,15 +1407,15 @@ export function scopeTitleOf(
   switch (scope.achievementScope) {
     case AchievementScope.Category:
       return (
-        LoyaltyCatalogSystem.category(
-          data.catalog,
-          BadgeCategoryId.of(scope.categoryId),
-        )?.title[locale] ?? null
+        LoyaltyCatalogSystem.category(data.catalog, scope.categoryId)?.title[
+          locale
+        ] ?? null
       );
     case AchievementScope.Season:
       return (
-        LoyaltyCatalogSystem.season(data.catalog, SeasonId.of(scope.seasonId))
-          ?.title[locale] ?? null
+        LoyaltyCatalogSystem.season(data.catalog, scope.seasonId)?.title[
+          locale
+        ] ?? null
       );
     case AchievementScope.Archive:
       return words.achievements.archive;
@@ -1424,7 +1458,7 @@ function sectionOf(
  */
 function categorySections(
   kind: BadgeCategoryKind,
-  categoryId: string,
+  categoryId: BadgeCategoryId,
   families: readonly BadgeSeries[],
   data: AchievementsData,
   ctx: AchievementsContext,
@@ -1436,7 +1470,7 @@ function categorySections(
     if (series.badgeSubject !== BadgeSubject.Service) continue;
     const category = ctx.catalog.serviceCategory(series.subjectServiceId);
     if (category === null) continue;
-    categoryOf.set(series.subjectServiceId, ServiceCategoryId.of(category.id));
+    categoryOf.set(series.subjectServiceId, category.id);
     if (!names.has(category.id)) names.set(category.id, category.name);
   }
   return StandingSystem.sectionsOf(kind, families, categoryOf).map(
@@ -1567,7 +1601,7 @@ export function scopePageVm(
     case AchievementScope.Category: {
       const category = LoyaltyCatalogSystem.category(
         data.catalog,
-        BadgeCategoryId.of(scope.categoryId),
+        scope.categoryId,
       );
       if (category === null) return null;
       const filter = familyScopeOf(scope);
@@ -1592,17 +1626,14 @@ export function scopePageVm(
       };
     }
     case AchievementScope.Season: {
-      const season = LoyaltyCatalogSystem.season(
-        data.catalog,
-        SeasonId.of(scope.seasonId),
-      );
+      const season = LoyaltyCatalogSystem.season(data.catalog, scope.seasonId);
       if (season === null) return null;
       // An ended season lists only what was earned (CF) — StandingSystem's.
       const families = StandingSystem.seasonListed(
         season,
         familiesOf(data, familyScopeOf(scope)),
         progressList(data),
-        cardDayOf(data.today),
+        data.today,
       );
       const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
       return {
@@ -1693,7 +1724,7 @@ export function relatedOf(
     data.catalog,
     progressList(data),
     series,
-    cardDayOf(data.today),
+    data.today,
   )
     .slice(0, RAIL_LIMIT)
     .map((s) => familyTile(s, data, ctx));

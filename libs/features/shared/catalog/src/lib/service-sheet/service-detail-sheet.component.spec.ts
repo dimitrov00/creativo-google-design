@@ -15,8 +15,10 @@ import {
 import { ServiceDetailSheetComponent } from './service-detail-sheet.component';
 import { CompositionKind, ServiceComposition } from '@core/components';
 import type { Service } from '@core/entities';
-import { BarberId, ServiceId } from '@core/primitives';
+import { BarberId, Currency, ServiceId } from '@core/primitives';
 import {
+  cents,
+  duration,
   memoryCatalogReadPorts,
   memoryMediaResolvePorts,
   serviceFixture,
@@ -61,22 +63,32 @@ class Loader implements TranslocoLoader {
 }
 
 const SERVICE: ServiceVm = {
-  id: 'svc-classic-cut',
+  id: ServiceId.of('svc-classic-cut'),
   compositionKind: CompositionKind.Single,
   name: { en: 'Classic cut', bg: 'Класическа подстрижка' },
   description: { en: 'A precise cut.', bg: 'Прецизна подстрижка.' },
   variants: [],
-  offerings: [{ barberId: 'ivan', base: { price: 14.5, minutes: 35 } }],
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(1450),
+        currency: Currency.EUR,
+        minutes: duration(35),
+      },
+    },
+  ],
   upsellOnly: false,
   gallery: [],
-  priceFrom: 14.5,
-  cardPrice: { cheapest: 14.5, spread: false },
-  minutesRange: { from: 35, to: 35 },
+  currency: Currency.EUR,
+  priceFromCents: cents(1450),
+  cardPrice: { cheapestCents: cents(1450), spread: false },
+  minutesRange: { min: duration(35), max: duration(35) },
 };
 
 const BARBERS: readonly BarberVm[] = [
   {
-    id: 'ivan',
+    id: BarberId.of('ivan'),
     name: { en: 'Ivan Kolev', bg: 'Иван Колев' },
     title: { en: 'Chief barber', bg: 'Главен бръснар' },
     bio: { en: 'Twelve years.', bg: 'Дванадесет години.' },
@@ -217,24 +229,42 @@ describe('ServiceDetailSheetComponent — the [sheet-actions] contract', () => {
  */
 const SHAVE: ServiceVm = {
   ...SERVICE,
-  id: 'svc-shave',
+  id: ServiceId.of('svc-shave'),
   name: { en: 'Shave', bg: 'Бръснене' },
-  offerings: [{ barberId: 'ivan', base: { price: 12, minutes: 25 } }],
-  priceFrom: 12,
-  cardPrice: { cheapest: 12, spread: false },
-  minutesRange: { from: 25, to: 25 },
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(1200),
+        currency: Currency.EUR,
+        minutes: duration(25),
+      },
+    },
+  ],
+  priceFromCents: cents(1200),
+  cardPrice: { cheapestCents: cents(1200), spread: false },
+  minutesRange: { min: duration(25), max: duration(25) },
 };
 
 const BUNDLE: ServiceVm = {
   ...SERVICE,
-  id: 'svc-full-care',
+  id: ServiceId.of('svc-full-care'),
   compositionKind: CompositionKind.Bundle,
   name: { en: 'Full care', bg: 'Пълна грижа' },
-  includes: ['svc-classic-cut', 'svc-shave'],
-  offerings: [{ barberId: 'ivan', base: { price: 21.5, minutes: 55 } }],
-  priceFrom: 21.5,
-  cardPrice: { cheapest: 21.5, spread: false },
-  minutesRange: { from: 55, to: 55 },
+  includes: [ServiceId.of('svc-classic-cut'), ServiceId.of('svc-shave')],
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(2150),
+        currency: Currency.EUR,
+        minutes: duration(55),
+      },
+    },
+  ],
+  priceFromCents: cents(2150),
+  cardPrice: { cheapestCents: cents(2150), spread: false },
+  minutesRange: { min: duration(55), max: duration(55) },
 };
 
 @Component({
@@ -253,34 +283,61 @@ class BundleHost {
 
 const WASH: ServiceVm = {
   ...SERVICE,
-  id: 'svc-wash',
+  id: ServiceId.of('svc-wash'),
   name: { en: 'Wash', bg: 'Измиване' },
-  offerings: [{ barberId: 'ivan', base: { price: 1.1, minutes: 10 } }],
-  priceFrom: 1.1,
-  cardPrice: { cheapest: 1.1, spread: false },
-  minutesRange: { from: 10, to: 10 },
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(110),
+        currency: Currency.EUR,
+        minutes: duration(10),
+      },
+    },
+  ],
+  priceFromCents: cents(110),
+  cardPrice: { cheapestCents: cents(110), spread: false },
+  minutesRange: { min: duration(10), max: duration(10) },
 };
 
 const TRIM: ServiceVm = {
   ...SERVICE,
-  id: 'svc-trim',
+  id: ServiceId.of('svc-trim'),
   name: { en: 'Trim', bg: 'Оформяне' },
-  offerings: [{ barberId: 'ivan', base: { price: 2.2, minutes: 15 } }],
-  priceFrom: 2.2,
-  cardPrice: { cheapest: 2.2, spread: false },
-  minutesRange: { from: 15, to: 15 },
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(220),
+        currency: Currency.EUR,
+        minutes: duration(15),
+      },
+    },
+  ],
+  priceFromCents: cents(220),
+  cardPrice: { cheapestCents: cents(220), spread: false },
+  minutesRange: { min: duration(15), max: duration(15) },
 };
 
 const WASH_TRIM: ServiceVm = {
   ...SERVICE,
-  id: 'svc-wash-trim',
+  id: ServiceId.of('svc-wash-trim'),
   compositionKind: CompositionKind.Bundle,
   name: { en: 'Wash and trim', bg: 'Измиване и оформяне' },
-  includes: ['svc-wash', 'svc-trim'],
-  offerings: [{ barberId: 'ivan', base: { price: 3.3, minutes: 25 } }],
-  priceFrom: 3.3,
-  cardPrice: { cheapest: 3.3, spread: false },
-  minutesRange: { from: 25, to: 25 },
+  includes: [ServiceId.of('svc-wash'), ServiceId.of('svc-trim')],
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(330),
+        currency: Currency.EUR,
+        minutes: duration(25),
+      },
+    },
+  ],
+  priceFromCents: cents(330),
+  cardPrice: { cheapestCents: cents(330), spread: false },
+  minutesRange: { min: duration(25), max: duration(25) },
 };
 
 @Component({
@@ -364,5 +421,41 @@ describe('ServiceDetailSheetComponent — a bundle under the accent law', () => 
     const host = await render(ExactSumBundleHost);
     expect(byId(host, 'catalog-sheet-bundle')).not.toBeNull();
     expect(byId(host, 'catalog-sheet-savings')).toBeNull();
+  });
+});
+
+/*
+ * PASS D, DEP-19: the sheet words a price in the service's STORED currency.
+ * The retired formatter hard-coded EUR, so an EUR service reads exactly as
+ * before and a BGN-priced one now prints its own «лв.» (was «€»).
+ */
+@Component({
+  imports: [ServiceDetailSheetComponent],
+  template: `<cr-service-detail-sheet
+    [service]="service()"
+    [barbers]="barbers()"
+  />`,
+})
+class BgnHost {
+  readonly service = signal<ServiceVm>({ ...SERVICE, currency: Currency.BGN });
+  readonly barbers = signal(BARBERS);
+}
+
+describe('ServiceDetailSheetComponent — prices in the stored currency (DEP-19)', () => {
+  const fromPrice = (host: HTMLElement): string | undefined =>
+    host
+      .querySelector('.service-sheet__summary-price')
+      ?.textContent?.replace(/[\u202f\u00a0]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  it('words an EUR service’s "from" price exactly as before', async () => {
+    const host = await render(DefaultHost);
+    expect(fromPrice(host)).toBe('от 14,50 €');
+  });
+
+  it('words a BGN-priced service in its own currency', async () => {
+    const host = await render(BgnHost);
+    expect(fromPrice(host)).toBe('от 14,50 лв.');
   });
 });

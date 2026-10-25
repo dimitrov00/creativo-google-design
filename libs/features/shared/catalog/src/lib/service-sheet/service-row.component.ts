@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { CompositionKind } from '@core/components';
+import type { DurationMinutes } from '@core/primitives';
 import { UiAsyncImage, UiIcon } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -202,7 +203,7 @@ export class ServiceRowComponent {
    *  (a bundle member, cheapest across barbers) or one barber's own. */
   readonly price = input.required<string>();
   /** Duration subtitle; omitted where the row's context already states it. */
-  readonly minutes = input<number | undefined>(undefined);
+  readonly minutes = input<DurationMinutes | undefined>(undefined);
 
   readonly pressed = output<void>();
 

@@ -2,25 +2,14 @@ import {
   type BookingPolicy,
   BookingFlowState,
   BookingFlowStep,
-  type ScheduleSelection,
+  type BookingFlowEvent,
+  BookingFlowEventKind,
   BookingCart,
   SeatKey,
-  type DayWindows,
   FlexibleWhen,
   Party,
 } from '@core/components';
-import {
-  Result,
-  type AppointmentId,
-  type BarberId,
-  type CartLineId,
-  type GuestId,
-  type LocationId,
-  type SeatKeyText,
-  type ServiceVariantId,
-  type WaitlistRequestId,
-  type LocalDate,
-} from '@core/primitives';
+import { Result } from '@core/primitives';
 import {
   BookingFlowError,
   SchedulingError,
@@ -28,105 +17,7 @@ import {
 } from '@core/errors';
 import { BookingCartSystem } from './booking-cart.system';
 
-/**
- * What the booking wizard can be told — the ONLY source of these strings.
- * The union is `BookingFlowEvent`, so the field takes the dictionary's name
- * (`bookingFlowEventKind`, N15).
- */
-export const BookingFlowEventKind = {
-  AddGuest: 'ADD_GUEST',
-  RemoveGuest: 'REMOVE_GUEST',
-  RenameGuest: 'RENAME_GUEST',
-  AddLine: 'ADD_LINE',
-  RemoveLine: 'REMOVE_LINE',
-  SetLineVariant: 'SET_LINE_VARIANT',
-  SetLineBarber: 'SET_LINE_BARBER',
-  /** `null` is the "any shop" answer — a choice, not the absence of one. */
-  SelectLocation: 'SELECT_LOCATION',
-  SelectSchedule: 'SELECT_SCHEDULE',
-  /** Select or deselect a day of the flexible declaration — one tap, one event. */
-  ToggleFlexibleDay: 'TOGGLE_FLEXIBLE_DAY',
-  /** Replace one day's spans — what the per-day window sheet commits. */
-  SetDayWindows: 'SET_DAY_WINDOWS',
-  /** Back to a single-day pick — drops the whole declaration deliberately. */
-  ClearFlexible: 'CLEAR_FLEXIBLE',
-  Confirmed: 'CONFIRMED',
-  /** The server accepted a standing request. Terminal, like `CONFIRMED`. */
-  Waitlisted: 'WAITLISTED',
-  Next: 'NEXT',
-  Back: 'BACK',
-} as const;
-export type BookingFlowEventKind =
-  (typeof BookingFlowEventKind)[keyof typeof BookingFlowEventKind];
-
 const E = BookingFlowEventKind;
-
-/**
- * One event of the booking wizard (`booking-flow.ts:203-260`), discriminated
- * by `bookingFlowEventKind`. Seats are named by their cart seat key
- * (`'self'`, `'guest-3'`), lines by their `lineId`; a line's barber is `null`
- * for "anyone".
- */
-export type BookingFlowEvent =
-  | { readonly bookingFlowEventKind: typeof E.AddGuest; readonly label: string }
-  | {
-      readonly bookingFlowEventKind: typeof E.RemoveGuest;
-      readonly guestId: GuestId;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.RenameGuest;
-      readonly guestId: GuestId;
-      readonly label: string;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.AddLine;
-      readonly seatKey: SeatKeyText;
-      readonly line: BookingCart.NewLine;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.RemoveLine;
-      readonly seatKey: SeatKeyText;
-      readonly lineId: CartLineId;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.SetLineVariant;
-      readonly seatKey: SeatKeyText;
-      readonly lineId: CartLineId;
-      readonly variantId: ServiceVariantId | null;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.SetLineBarber;
-      readonly seatKey: SeatKeyText;
-      readonly lineId: CartLineId;
-      readonly barberId: BarberId | null;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.SelectLocation;
-      readonly locationId: LocationId | null;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.SelectSchedule;
-      readonly selection: ScheduleSelection;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.ToggleFlexibleDay;
-      readonly localDate: LocalDate;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.SetDayWindows;
-      readonly dayWindows: DayWindows;
-    }
-  | { readonly bookingFlowEventKind: typeof E.ClearFlexible }
-  | {
-      readonly bookingFlowEventKind: typeof E.Confirmed;
-      readonly appointmentId: AppointmentId;
-    }
-  | {
-      readonly bookingFlowEventKind: typeof E.Waitlisted;
-      readonly requestId: WaitlistRequestId;
-    }
-  | { readonly bookingFlowEventKind: typeof E.Next }
-  | { readonly bookingFlowEventKind: typeof E.Back };
 
 /** The two policy numbers the wizard enforces — a whole `BookingPolicy` passes straight in. */
 export type BookingFlowLimits = Pick<
@@ -450,9 +341,12 @@ export const BookingFlowSystem = {
    * The flow is OVER at this step — confirmed or waitlisted, the states off
    * the spine (the shell drops its navigation chrome there). Takes the step
    * (`state.bookingFlowStep`), so a view can ask without the whole state.
+   * Delegates to the component's ONE terminal rule
+   * ({@link BookingFlowState.isTerminalStep}, the step half of the
+   * `BookingFlowState.isTerminal` guard — pass D, D-10.8).
    */
   isTerminal(step: BookingFlowStep): boolean {
-    return BookingFlowState.spineIndex(step) === -1;
+    return BookingFlowState.isTerminalStep(step);
   },
 
   /** 1-based position on the wizard spine; terminal steps report the end. */

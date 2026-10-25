@@ -3,6 +3,9 @@ import {
   AuditContext,
   BookingCall,
   type BookingPolicy,
+  BookingReadSnapshot,
+  LedgerVerdict,
+  MoveOutcome,
   Placement,
   PlacementPolicy,
   RequestedSubjectRole,
@@ -19,6 +22,7 @@ import {
   type ClientOperationId,
   type LocalDate,
   LocationId,
+  type MinuteOfDay,
   OperationId,
   SeatKeyText,
   ServiceId,
@@ -29,10 +33,9 @@ import {
 } from '@core/primitives';
 import {
   BookingError,
-  type RepositoryError,
   ShopUnavailableReason,
   CancellationRefusalCode,
-  type TimeError,
+  type RescheduleAppointmentError,
 } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import type {
@@ -55,8 +58,6 @@ import {
   type CarriedLine,
   type DecideBookingInput,
   type DecisionStandingSeat,
-  LedgerVerdict,
-  type MoveError,
   type MovedCartLine,
   type MovePlan,
   MoveSystem,
@@ -150,9 +151,6 @@ export type RescheduleAppointmentAnswer = {
   readonly replayed: boolean;
 };
 
-export type RescheduleAppointmentError =
-  BookingError | MoveError | TimeError | RepositoryError;
-
 export type RescheduleAppointmentPorts = TxPorts &
   PolicyReadPorts &
   AuditAppendPorts &
@@ -164,7 +162,7 @@ const MOVE_OPERATION = 'move:';
 type Operation = { readonly id: OperationId; readonly digest: string };
 
 type Loaded = {
-  readonly snapshot: 'LOADED';
+  readonly bookingReadSnapshot: typeof BookingReadSnapshot.Loaded;
   readonly stored: Appointment;
   readonly locationId: LocationId;
   readonly localDate: LocalDate;
@@ -177,26 +175,25 @@ type Loaded = {
 };
 
 type Snapshot =
-  | { readonly snapshot: 'REFUSED'; readonly error: RescheduleAppointmentError }
   | {
-      readonly snapshot: 'REPLAY';
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Refused;
+      readonly error: RescheduleAppointmentError;
+    }
+  | {
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Replay;
       readonly stored: Appointment;
       readonly revision: number;
     }
-  | { readonly snapshot: 'UNCHANGED'; readonly stored: Appointment }
+  | {
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Unchanged;
+      readonly stored: Appointment;
+    }
   | Loaded;
-
-/** How a call ended: written, a named move replayed, or nothing to do. */
-const MoveOutcome = {
-  Moved: 'MOVED',
-  Replayed: 'REPLAYED',
-  Unchanged: 'UNCHANGED',
-} as const;
-type MoveOutcome = (typeof MoveOutcome)[keyof typeof MoveOutcome];
 
 type Decided = {
   readonly stored: Appointment;
   readonly after: Appointment | null;
+  /** How the call ended: written, a named move replayed, or nothing to do (`MoveOutcome`, a component). */
   readonly moveOutcome: MoveOutcome;
   readonly revision: number;
   readonly writes: readonly WriteOp[];
@@ -325,7 +322,7 @@ async function readMove(
   const stored = await readAppointment(tx, cmd.appointmentId);
   if (stored === null || stored.ownerUserId !== owner) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.invalidInput('appointmentId'),
     };
   }
@@ -337,20 +334,20 @@ async function readMove(
     );
     if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
       return {
-        snapshot: 'REFUSED',
+        bookingReadSnapshot: BookingReadSnapshot.Refused,
         error: BookingError.invalidInput('attemptId'),
       };
     }
     if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
       return {
-        snapshot: 'REPLAY',
+        bookingReadSnapshot: BookingReadSnapshot.Replay,
         stored,
         revision: verdict.applied.revision,
       };
     }
   }
   const notFound: Snapshot = {
-    snapshot: 'REFUSED',
+    bookingReadSnapshot: BookingReadSnapshot.Refused,
     error: BookingError.shopUnavailable(
       cmd.locationId,
       ShopUnavailableReason.NotFound,
@@ -387,7 +384,10 @@ async function readMove(
           zone,
         );
   if (framed !== null && !framed.ok) {
-    return { snapshot: 'REFUSED', error: framed.error };
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: framed.error,
+    };
   }
   const frame = framed === null ? null : framed.value;
   const cart = frame === null ? null : cartOf(cmd, frame);
@@ -399,7 +399,7 @@ async function readMove(
     cart === null
   ) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.invalidInput('startMinutes'),
     };
   }
@@ -415,11 +415,18 @@ async function readMove(
     },
     PartyAdmissionSystem.shopListed(set.location),
   );
-  if (!plan.ok) return { snapshot: 'REFUSED', error: plan.error };
-  if (plan.value.unchanged) return { snapshot: 'UNCHANGED', stored };
+  if (!plan.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: plan.error,
+    };
+  }
+  if (plan.value.unchanged) {
+    return { bookingReadSnapshot: BookingReadSnapshot.Unchanged, stored };
+  }
   const keyed: {
     readonly barberId: string;
-    readonly startMinutes: (typeof cart)[number]['startMinutes'] | null;
+    readonly startMinutes: MinuteOfDay | null;
   }[] = [];
   for (const seat of cart) {
     keyed.push({ barberId: seat.barberId, startMinutes: seat.startMinutes });
@@ -438,10 +445,15 @@ async function readMove(
     keyed.map((seat) => seat.startMinutes),
     zone,
   );
-  if (!party.ok) return { snapshot: 'REFUSED', error: party.error };
+  if (!party.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: party.error,
+    };
+  }
   if (party.value.startUtcMs === null) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.invalidInput('startMinutes'),
     };
   }
@@ -450,7 +462,7 @@ async function readMove(
     placementKeysOf(keyed, frame.localDate),
   );
   return {
-    snapshot: 'LOADED',
+    bookingReadSnapshot: BookingReadSnapshot.Loaded,
     stored,
     locationId: locationId.value,
     localDate: frame.localDate,
@@ -594,8 +606,10 @@ function decideMove(
   nowUtcMs: UtcEpochMs,
   ports: DecidePorts,
 ): Result<Decided, RescheduleAppointmentError> {
-  if (snapshot.snapshot === 'REFUSED') return Result.err(snapshot.error);
-  if (snapshot.snapshot === 'REPLAY') {
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
+    return Result.err(snapshot.error);
+  }
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
       stored: snapshot.stored,
       after: null,
@@ -604,7 +618,7 @@ function decideMove(
       writes: [],
     });
   }
-  if (snapshot.snapshot === 'UNCHANGED') {
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Unchanged) {
     return Result.ok({
       stored: snapshot.stored,
       after: null,

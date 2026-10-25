@@ -28,7 +28,11 @@ import {
 } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { achievementScopeKey } from '../achievements.presenter';
-import type { AchievementScope } from '../client-card.contracts';
+import {
+  type AchievementScope,
+  ClientCardPage,
+  ClientCardRegion,
+} from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import type {
   AchievementTileVm,
@@ -144,7 +148,7 @@ export class AchievementCategoryPage {
     () =>
       this.ready()?.vm.title ??
       this.store.barTitle(
-        'achievementCategory',
+        ClientCardPage.AchievementCategory,
         achievementScopeKey(this.scope()),
       ) ??
       this.words()?.achievements.title ??
@@ -181,6 +185,6 @@ export class AchievementCategoryPage {
   }
 
   protected retry(): void {
-    this.store.retry('achievements');
+    this.store.retry(ClientCardRegion.Achievements);
   }
 }

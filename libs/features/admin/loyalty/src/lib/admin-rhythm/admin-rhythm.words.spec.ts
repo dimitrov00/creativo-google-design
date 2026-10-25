@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 import type { StreakDefinitionVersion } from '@core/entities';
 import {
   FreezeReason,
+  RhythmEffectiveChoice,
   StreakExcuse,
   StreakIntervalRule,
   StreakOnBreak,
   StreakPeriodMark,
   StreakPhaseState,
+  type StreakPreview,
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
+  StreakQualifier,
   StreakQualifierRule,
   StreakRule,
   type StreakRuleInput,
@@ -22,21 +27,20 @@ import {
   PublishRequestId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
+  type UtcEpochMs,
   UserId,
 } from '@core/primitives';
-import { StreakRuleField } from '@core/errors';
+import { StreakPublishErrorCode, StreakRuleField } from '@core/errors';
 import {
-  type StreakPreview,
-  StreakPreviewOutcome,
-  StreakPreviewUnavailable,
+  StreakPreviewSystem,
   StreakRuleSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
-import { FIXTURE_TIME_ZONE, unwrapOk, utcMs } from '@core/testing';
+import { FIXTURE_TIME_ZONE, localDate, unwrapOk, utcMs } from '@core/testing';
 import {
   type VisitTranslate,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
-import { sampleRhythmRun } from '../admin-rhythm.preview';
 import {
   type AdminRhythmContext,
   afterMissRow,
@@ -51,7 +55,6 @@ import {
   historyRow,
   inForceCapsule,
   intervalOptions,
-  invalidNotice,
   longDay,
   monthWord,
   onBreakOptions,
@@ -59,6 +62,7 @@ import {
   previewWords,
   protectionsRow,
   qualifierOptions,
+  refusedFields,
   repairPerYearOptions,
   repairWindowOptions,
   RhythmEstimate,
@@ -132,7 +136,7 @@ function translateOf(lang: Lang): VisitTranslate {
   };
 }
 
-const TODAY = '2026-09-28';
+const TODAY = localDate('2026-09-28');
 
 function contextOf(lang: Lang = 'bg'): AdminRhythmContext {
   const translate = translateOf(lang);
@@ -196,19 +200,21 @@ function versionOf(
 
 describe('the dates', () => {
   it('say the day and the month, and the year only outside today’s', () => {
-    expect(shortDay('2026-09-01', TODAY, 'bg')).toBe('1.09');
-    expect(shortDay('2025-03-01', TODAY, 'bg')).toBe('1.03.2025 г.');
+    expect(shortDay(localDate('2026-09-01'), TODAY, 'bg')).toBe('1.09');
+    expect(shortDay(localDate('2025-03-01'), TODAY, 'bg')).toBe('1.03.2025 г.');
   });
 
   it('say a date someone hears in words', () => {
-    expect(longDay('2026-09-04', TODAY, 'bg')).toBe('4 септември');
-    expect(longDay('2025-03-06', TODAY, 'bg')).toBe('6 март 2025 г.');
-    expect(monthWord('2026-09-04', 'bg')).toBe('септември');
+    expect(longDay(localDate('2026-09-04'), TODAY, 'bg')).toBe('4 септември');
+    expect(longDay(localDate('2025-03-06'), TODAY, 'bg')).toBe(
+      '6 март 2025 г.',
+    );
+    expect(monthWord(localDate('2026-09-04'), 'bg')).toBe('септември');
   });
 
   it('never move a day across a zone', () => {
-    expect(shortDay('2026-12-31', TODAY, 'bg')).toBe('31.12');
-    expect(shortDay('2026-01-01', TODAY, 'bg')).toBe('1.01');
+    expect(shortDay(localDate('2026-12-31'), TODAY, 'bg')).toBe('31.12');
+    expect(shortDay(localDate('2026-01-01'), TODAY, 'bg')).toBe('1.01');
   });
 });
 
@@ -229,8 +235,8 @@ describe('the menus', () => {
 
   it('offer what counts, by kind', () => {
     expect(qualifierOptions(context).map((o) => [o.id, o.label])).toEqual([
-      ['anyVisit', 'Всяко завършено посещение'],
-      ['services', 'Посещение с избрани услуги'],
+      [StreakQualifier.AnyVisit, 'Всяко завършено посещение'],
+      [StreakQualifier.Services, 'Посещение с избрани услуги'],
     ]);
     expect(intervalOptions(context).map((o) => o.label)).toEqual([
       'Еднакъв за всички',
@@ -293,28 +299,31 @@ describe('the menus', () => {
 
 describe('effectiveReading', () => {
   const context = contextOf();
-  const days = { tomorrow: '2026-09-29', firstOfMonth: '2026-10-01' };
+  const days = {
+    tomorrow: localDate('2026-09-29'),
+    firstOfMonth: localDate('2026-10-01'),
+  };
 
   it('reads tomorrow, the first of the month, or the day itself', () => {
-    expect(effectiveReading(context, '2026-09-29', days)).toEqual({
-      choice: 'tomorrow',
+    expect(effectiveReading(context, localDate('2026-09-29'), days)).toEqual({
+      choice: RhythmEffectiveChoice.Tomorrow,
       label: 'От утре',
     });
-    expect(effectiveReading(context, '2026-10-01', days)).toEqual({
-      choice: 'firstOfMonth',
+    expect(effectiveReading(context, localDate('2026-10-01'), days)).toEqual({
+      choice: RhythmEffectiveChoice.FirstOfMonth,
       label: 'От 1-во число',
     });
-    expect(effectiveReading(context, '2026-10-12', days)).toEqual({
-      choice: 'pick',
+    expect(effectiveReading(context, localDate('2026-10-12'), days)).toEqual({
+      choice: RhythmEffectiveChoice.Picked,
       label: 'от 12.10',
     });
   });
 
   it('offers the three days in order', () => {
     expect(effectiveOptions(context).map((o) => o.id)).toEqual([
-      'tomorrow',
-      'firstOfMonth',
-      'pick',
+      RhythmEffectiveChoice.Tomorrow,
+      RhythmEffectiveChoice.FirstOfMonth,
+      RhythmEffectiveChoice.Picked,
     ]);
   });
 });
@@ -421,11 +430,15 @@ describe('the rule card’s digest', () => {
   });
 
   it('word the capsule and the waiting version’s line', () => {
-    expect(inForceCapsule(context, '2026-09-01', false)).toBe('В сила от 1.09');
-    expect(inForceCapsule(context, '2026-10-01', true)).toBe('От 1.10');
-    expect(upcomingLine(context, '2026-10-01', 'На всеки 5 седмици')).toBe(
-      'От 1.10: На всеки 5 седмици',
+    expect(inForceCapsule(context, localDate('2026-09-01'), false)).toBe(
+      'В сила от 1.09',
     );
+    expect(inForceCapsule(context, localDate('2026-10-01'), true)).toBe(
+      'От 1.10',
+    );
+    expect(
+      upcomingLine(context, localDate('2026-10-01'), 'На всеки 5 седмици'),
+    ).toBe('От 1.10: На всеки 5 седмици');
   });
 });
 
@@ -658,7 +671,14 @@ describe('samplePeriods', () => {
   const context = contextOf();
 
   it('draws the projector’s run: kept visits, the miss, the visit after it and the open period', () => {
-    const state = sampleRhythmRun(StreakRule.DEFAULT, TODAY, FIXTURE_TIME_ZONE);
+    // The rule card's sample run, as the store asks for it (pass D: the
+    // page's spec-only `sampleRhythmRun` retired — the system itself).
+    const state = StreakPreviewSystem.sampleRun(
+      StreakRule.DEFAULT,
+      TODAY,
+      (on): UtcEpochMs =>
+        ZonedTimeSystem.startOfLocalDay(on, FIXTURE_TIME_ZONE),
+    );
     if (state === null) throw new Error('the sample has no run');
     const periods = samplePeriods(context, state);
     const marks = periods.map((p) => p.mark);
@@ -751,12 +771,86 @@ describe('a refused field', () => {
 
   it('is said once per field, as a list', () => {
     expect(
-      invalidNotice(context, [
+      refusedFields(context, [
         StreakRuleField.GraceDays,
         StreakRuleField.IntervalDays,
         StreakRuleField.GraceDays,
       ]),
+    ).toBe('Гратисен период и Срок');
+  });
+});
+
+// ── The publish refusals, by errorCode (pass D, D-9.6) ──────────────────
+
+/*
+ * The page words a refused «Запази» as `errors.<errorCode>` with the
+ * struct's params (`translateCodedError`), the `{{date}}` / `{{field}}` it
+ * formats spread over it. Pinned here on the real catalogue, in both
+ * languages: today's words, byte for byte, now under the codes.
+ */
+describe('the publish refusals, worded by their errorCode', () => {
+  const lineOf = (
+    lang: Lang,
+    errorCode: string,
+    params: Readonly<Record<string, string | number>> = {},
+  ): string => translateOf(lang)(`errors.${errorCode}`, params);
+
+  it('say the rule moved under the draft', () => {
+    expect(lineOf('bg', StreakPublishErrorCode.Stale)).toBe(
+      'Правилото беше променено от друг. Виж новото.',
+    );
+    expect(lineOf('en', StreakPublishErrorCode.Stale)).toBe(
+      'Someone else changed the rule. See the new one.',
+    );
+  });
+
+  it('say the earliest day a change may start', () => {
+    expect(
+      lineOf('bg', StreakPublishErrorCode.TooEarly, {
+        date: shortDay(localDate('2026-10-12'), TODAY, 'bg'),
+      }),
+    ).toBe('Най-ранният възможен ден е 12.10.');
+    expect(
+      lineOf('en', StreakPublishErrorCode.TooEarly, {
+        date: shortDay(localDate('2026-10-12'), TODAY, 'en'),
+      }),
+    ).toBe('The earliest possible day is 10/12.');
+  });
+
+  it('name the refused fields, each once', () => {
+    const fields = [
+      StreakRuleField.GraceDays,
+      StreakRuleField.IntervalDays,
+      StreakRuleField.GraceDays,
+    ];
+    expect(
+      lineOf('bg', StreakPublishErrorCode.Invalid, {
+        field: refusedFields(contextOf('bg'), fields),
+      }),
     ).toBe('Поправи: Гратисен период и Срок.');
+    expect(
+      lineOf('en', StreakPublishErrorCode.Invalid, {
+        field: refusedFields(contextOf('en'), fields),
+      }),
+    ).toBe('Fix: Grace and Due.');
+  });
+
+  it('say a caller who may not publish is not allowed — the staff edit’s words', () => {
+    for (const errorCode of [
+      StreakPublishErrorCode.CallerNotAdmin,
+      StreakPublishErrorCode.CallerUnauthenticated,
+    ]) {
+      expect(lineOf('bg', errorCode)).toBe('Нямаш право за тази промяна.');
+      expect(lineOf('en', errorCode)).toBe(
+        "You aren't allowed to make that change.",
+      );
+      expect(lineOf('bg', errorCode)).toBe(
+        lineOf('bg', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
+      );
+      expect(lineOf('en', errorCode)).toBe(
+        lineOf('en', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
+      );
+    }
   });
 });
 
@@ -772,9 +866,9 @@ describe('in English', () => {
     );
     expect(servicesCount(context, 1)).toBe('1 service');
     expect(
-      effectiveReading(context, '2026-09-29', {
-        tomorrow: '2026-09-29',
-        firstOfMonth: '2026-10-01',
+      effectiveReading(context, localDate('2026-09-29'), {
+        tomorrow: localDate('2026-09-29'),
+        firstOfMonth: localDate('2026-10-01'),
       }).label,
     ).toBe('From tomorrow');
   });

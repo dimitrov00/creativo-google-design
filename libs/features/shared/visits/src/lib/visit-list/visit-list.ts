@@ -25,10 +25,13 @@ import {
   UiRadiusDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
+import type { AppointmentId } from '@core/primitives';
 import { VisitRow } from '../visit-row/visit-row';
 import {
-  type VisitListStyle,
+  VisitListStyle,
   VisitPerspective,
+  VisitRowEntry,
+  type VisitRowVm,
   type VisitSectionVm,
 } from '../visit-row.vm';
 
@@ -99,7 +102,7 @@ export interface VisitListPaging {
 export class VisitList {
   readonly sections = input.required<readonly VisitSectionVm[]>();
   readonly perspective = input.required<VisitPerspective>();
-  readonly listStyle = input<VisitListStyle>('insetGrouped');
+  readonly listStyle = input<VisitListStyle>(VisitListStyle.InsetGrouped);
   /**
    * Where the list stands: its rows (`READY`), their placeholders
    * (`LOADING`), or the reason there are none (`FAILED`). `EMPTY` is never
@@ -130,8 +133,8 @@ export class VisitList {
    * client's list.
    */
   readonly testIdPrefix = input<string | null>(null);
-  /** A row was tapped: the appointment's id (a row that is a control only). */
-  readonly openRow = output<string>();
+  /** A row was tapped: the appointment's id (a visit's row that is a control only). */
+  readonly openRow = output<AppointmentId>();
   /** The next page, or the failed one again. */
   readonly loadMore = output<void>();
   /** The whole list, again, after it failed. */
@@ -154,7 +157,18 @@ export class VisitList {
         : 'appointments'),
   );
 
-  protected readonly plain = computed(() => this.listStyle() === 'plain');
+  protected readonly plain = computed(
+    () => this.listStyle() === VisitListStyle.Plain,
+  );
+
+  /**
+   * A row was tapped: a visit's row opens its appointment. A waiting
+   * request's row names no appointment (no list holds one — the request is
+   * a card), so it opens nothing.
+   */
+  protected opened(row: VisitRowVm): void {
+    if (row.visitRowEntry === VisitRowEntry.Visit) this.openRow.emit(row.id);
+  }
 
   /**
    * The foot, when it has something to say: an end with no words draws

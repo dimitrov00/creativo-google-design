@@ -1,11 +1,6 @@
-import { LocalDate, type TimeZone, type UtcEpochMs } from '@core/primitives';
-import type { StreakRule, StreakState } from '@core/components';
-import {
-  type StreakFacts,
-  type StreakPreview,
-  StreakPreviewSystem,
-  ZonedTimeSystem,
-} from '@core/systems';
+import type { LocalDate } from '@core/primitives';
+import type { StreakPreview, StreakRule } from '@core/components';
+import { StreakPreviewSystem } from '@core/systems';
 import type { RhythmPreviewFacts } from '@core/pipelines';
 
 /*
@@ -20,16 +15,15 @@ import type { RhythmPreviewFacts } from '@core/pipelines';
  * this file's: how long the preview waits after the last change, and the
  * fold over what the walk read.
  *
- * Beside it, the rule card's sample run: one invented client under the
- * draft, through the same projector (`StreakPreviewSystem.sampleRun`), so
- * the track on the card is what the rule really does and never a drawing
- * of it.
+ * The rule card's sample run — one invented client under the draft,
+ * through the same projector — is `StreakPreviewSystem.sampleRun`, which
+ * the store calls itself with the shop's day-start reader, so the track on
+ * the card is what the rule really does and never a drawing of it.
  *
  * The walk's names (`readRhythmPreviewFacts`, `rhythmPreviewSource`,
  * `streakFactsReader`, `RHYTHM_PREVIEW_*`) are re-exported here from their
- * one home, and `rhythmPreviewReadsFacts`, `sampleRhythmFacts` and
- * `sampleRhythmRun` are thin delegates of the system — never a second copy
- * of a rule.
+ * one home, and `rhythmPreviewReadsFacts` is a thin delegate of the system —
+ * never a second copy of a rule.
  */
 
 export {
@@ -63,54 +57,13 @@ export function rhythmPreviewOf(input: {
   readonly inForce: StreakRule;
   readonly draft: StreakRule;
   readonly facts: RhythmPreviewFacts;
-  /** The shop's today, as written: on a day that is no day nobody is judged. */
-  readonly today: string;
+  /** The shop's today, read in its zone at the store's edge. */
+  readonly today: LocalDate;
 }): StreakPreview {
-  const today = LocalDate.parse(input.today);
   return StreakPreviewSystem.estimate(
     input.inForce,
     input.draft,
     input.facts.clients,
-    today.ok ? today.value : null,
+    input.today,
   );
-}
-
-// ── The rule card's sample run ─────────────────────────────────────────────
-
-/** Each sample visit stamped with the first instant of its shop day on `zone` (the boundary's reader). */
-const dayStartOn =
-  (zone: TimeZone) =>
-  (day: LocalDate): UtcEpochMs =>
-    ZonedTimeSystem.startOfLocalDay(day, zone);
-
-/**
- * One invented client's visits under a rule, ending yesterday
- * (`StreakPreviewSystem.sampleFacts`), each stamped with the first instant
- * of its shop day on `zone`. On a day that is no day, no visit.
- */
-export function sampleRhythmFacts(
-  rule: StreakRule,
-  today: string,
-  zone: TimeZone,
-): StreakFacts {
-  const day = LocalDate.parse(today);
-  return day.ok
-    ? StreakPreviewSystem.sampleFacts(rule, day.value, dayStartOn(zone))
-    : StreakPreviewSystem.NO_FACTS;
-}
-
-/**
- * The sample client's rhythm under a rule (`StreakPreviewSystem.sampleRun`):
- * what the rule card's track draws. `null` under a rule that is off (it
- * judges nobody), and on a day that is no day.
- */
-export function sampleRhythmRun(
-  rule: StreakRule,
-  today: string,
-  zone: TimeZone,
-): StreakState | null {
-  const day = LocalDate.parse(today);
-  return day.ok
-    ? StreakPreviewSystem.sampleRun(rule, day.value, dayStartOn(zone))
-    : null;
 }

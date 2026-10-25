@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { StreakDefinitionId } from '@core/primitives';
 import { localDate } from '@core/testing';
-import { StreakIntervalSource } from './streak-interval.data';
+import { StreakIntervalSource } from './streak-interval-source.data';
+import { StreakPeriodMark } from './streak-period-fact.data';
 import {
   FreezeReason,
-  StreakPeriodMark,
   StreakPhase,
   StreakPhaseState,
-  StreakState,
-} from './streak-state.data';
+} from './streak-phase-state.data';
+import { StreakState } from './streak-state.data';
 
 const day = localDate;
 

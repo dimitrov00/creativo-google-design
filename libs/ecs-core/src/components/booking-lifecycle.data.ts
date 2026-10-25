@@ -1,5 +1,5 @@
 import { type UtcEpochMs, BookingStatus } from '@core/primitives';
-import type { CancellationReasonSet } from './seat-outcome.data';
+import type { CancellationReasonSet } from './cancellation-reason-set.data';
 
 /**
  * The legal moves, one source of truth for the lifecycle graph. Terminal

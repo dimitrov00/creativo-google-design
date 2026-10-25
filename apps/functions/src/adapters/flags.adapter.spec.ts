@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FLAG_NAMES, FlagName } from '@core/components';
+import { FeatureFlags, FlagName } from '@core/components';
 import type { FlagsPorts } from '@core/ports';
 import { FLAG_PARAMS } from '../lib/flags';
 import { paramFlagsPorts } from './flags.adapter';
@@ -10,10 +10,12 @@ describe('paramFlagsPorts — the functions’ build-time flags', () => {
   });
 
   // dead: the two-vocabulary pin (`FeatureFlagKey` ↔ `FlagName`) — Phase 4a
-  // leaves ONE flag vocabulary, `FLAG_NAMES`; re-pinned below as the params'
+  // leaves ONE flag vocabulary, `FeatureFlags.NAMES`; re-pinned below as the params'
   // keys.
-  it('keys one param per flag of the one vocabulary — `Object.keys(FLAG_PARAMS)` is `FLAG_NAMES`', () => {
-    expect(Object.keys(FLAG_PARAMS).sort()).toEqual([...FLAG_NAMES].sort());
+  it('keys one param per flag of the one vocabulary — `Object.keys(FLAG_PARAMS)` is `FeatureFlags.NAMES`', () => {
+    expect(Object.keys(FLAG_PARAMS).sort()).toEqual(
+      [...FeatureFlags.NAMES].sort(),
+    );
   });
 
   it('is the FlagsPorts bundle, off while the param holds no value', () => {

@@ -4,22 +4,74 @@
  * (`test-catalog.providers.ts`) turns each entry into a `Barber` or
  * `Service` entity behind the catalogue's ports, and the figures a surface
  * prints are `CatalogPricingSystem`'s answers on those. Prices are EUR
- * major units and durations minutes, as the authored shelf was written.
+ * cents and durations minutes.
+ *
+ * The shelf is written in its OWN raw input types (below), not the
+ * catalogue's view models: its ids stay the literals they were authored as,
+ * and the providers brand each once, by construction, as they build the
+ * entities (`BarberId.of`, `ServiceId.of`, the catalogue's parse guards).
  */
 
 import { CompositionKind } from '@core/components';
-import type {
-  BarberVm,
-  Localized,
-  ServiceSourceVm,
-  ServiceTermsVm,
-  ServiceVariantVm,
+import {
+  type Localized,
+  type ServiceSourceVm,
+  VariantIcon,
 } from '@creativo/features/shared/catalog';
 
 const lt = (en: string, bg: string): Localized => ({ en, bg });
 
+/** A barber as authored — the catalogue's `Barber` fields, its id a literal. */
+export interface AuthoredBarber {
+  readonly id: string;
+  readonly name: Localized;
+  readonly title: Localized;
+  readonly bio: Localized;
+  readonly avatarSrc: string;
+  readonly objectPosition: string;
+  readonly rating?: number;
+  readonly specialty: Localized;
+  readonly gallery: readonly string[];
+}
+
+/** One terms figure as authored — EUR cents and minutes, raw. */
+export interface AuthoredTerms {
+  readonly priceCents: number;
+  readonly minutes: number;
+}
+
+/** Who performs a service as authored, with their per-variant figures. */
+export interface AuthoredOffering {
+  readonly barberId: string;
+  readonly base: AuthoredTerms;
+  /** Per-variant terms, by the variant's authored id. */
+  readonly byVariant?: Readonly<Record<string, AuthoredTerms>>;
+}
+
+/** A variant as authored. */
+export interface AuthoredVariant {
+  readonly id: string;
+  readonly name: Localized;
+  readonly icon: VariantIcon;
+}
+
+/** A service as authored — the catalogue's authored fields, its ids literals. */
+export interface AuthoredService {
+  readonly id: string;
+  readonly compositionKind: ServiceSourceVm['compositionKind'];
+  readonly name: Localized;
+  readonly description: Localized;
+  readonly coverSrc?: string;
+  readonly variants: readonly AuthoredVariant[];
+  readonly offerings: readonly AuthoredOffering[];
+  /** Bundle members, by authored service id. */
+  readonly includes?: readonly string[];
+  readonly upsellOnly: boolean;
+  readonly gallery: readonly string[];
+}
+
 /** The demo barbers as AUTHORED: `provideTestCatalog` turns each into a `Barber` entity. */
-export const BARBERS: readonly BarberVm[] = [
+export const BARBERS: readonly AuthoredBarber[] = [
   {
     id: 'ivan',
     name: lt('Ivan Kolev', 'Иван Колев'),
@@ -87,13 +139,17 @@ export const BARBERS: readonly BarberVm[] = [
   },
 ];
 
-const LENGTH_VARIANTS: readonly ServiceVariantVm[] = [
-  { id: 'short', name: lt('Short hair', 'Къса коса'), icon: 'length' },
-  { id: 'long', name: lt('Long hair', 'Дълга коса'), icon: 'length' },
+const LENGTH_VARIANTS: readonly AuthoredVariant[] = [
+  {
+    id: 'short',
+    name: lt('Short hair', 'Къса коса'),
+    icon: VariantIcon.Length,
+  },
+  { id: 'long', name: lt('Long hair', 'Дълга коса'), icon: VariantIcon.Length },
 ];
 
-const t = (price: number, minutes: number): ServiceTermsVm => ({
-  price,
+const t = (priceCents: number, minutes: number): AuthoredTerms => ({
+  priceCents,
   minutes,
 });
 
@@ -102,7 +158,7 @@ const t = (price: number, minutes: number): ServiceTermsVm => ({
  * (`test-catalog.providers.ts`) turns each into a `Service` entity, and the
  * figures a surface prints are `CatalogPricingSystem`'s answers on it.
  */
-export const SERVICES: readonly ServiceSourceVm[] = [
+export const SERVICES: readonly AuthoredService[] = [
   {
     id: 'haircut',
     compositionKind: CompositionKind.Single,
@@ -123,18 +179,18 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     offerings: [
       {
         barberId: 'ivan',
-        base: t(14.5, 35),
-        byVariant: { short: t(14.5, 35), long: t(18.5, 50) },
+        base: t(1450, 35),
+        byVariant: { short: t(1450, 35), long: t(1850, 50) },
       },
       {
         barberId: 'niko',
-        base: t(13, 30),
-        byVariant: { short: t(13, 30), long: t(16.5, 45) },
+        base: t(1300, 30),
+        byVariant: { short: t(1300, 30), long: t(1650, 45) },
       },
       {
         barberId: 'stefan',
-        base: t(15.5, 40),
-        byVariant: { short: t(15.5, 40), long: t(19.5, 55) },
+        base: t(1550, 40),
+        byVariant: { short: t(1550, 40), long: t(1950, 55) },
       },
     ],
   },
@@ -148,7 +204,11 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     ),
     coverSrc: '/work/fade-styling.jpg',
     variants: [
-      { id: 'skin', name: lt('Skin fade', 'Skin фейд'), icon: 'skin' },
+      {
+        id: 'skin',
+        name: lt('Skin fade', 'Skin фейд'),
+        icon: VariantIcon.Skin,
+      },
       ...LENGTH_VARIANTS,
     ],
     upsellOnly: false,
@@ -160,13 +220,13 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     offerings: [
       {
         barberId: 'niko',
-        base: t(15.5, 40),
-        byVariant: { skin: t(18.5, 50), short: t(15.5, 40), long: t(18, 50) },
+        base: t(1550, 40),
+        byVariant: { skin: t(1850, 50), short: t(1550, 40), long: t(1800, 50) },
       },
       {
         barberId: 'ivan',
-        base: t(16.5, 45),
-        byVariant: { skin: t(19.5, 55), short: t(16.5, 45), long: t(19.5, 55) },
+        base: t(1650, 45),
+        byVariant: { skin: t(1950, 55), short: t(1650, 45), long: t(1950, 55) },
       },
     ],
   },
@@ -183,9 +243,9 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: false,
     gallery: [],
     offerings: [
-      { barberId: 'ivan', base: t(7.5, 15) },
-      { barberId: 'niko', base: t(7.5, 15) },
-      { barberId: 'stefan', base: t(9, 20) },
+      { barberId: 'ivan', base: t(750, 15) },
+      { barberId: 'niko', base: t(750, 15) },
+      { barberId: 'stefan', base: t(900, 20) },
     ],
   },
   {
@@ -205,8 +265,8 @@ export const SERVICES: readonly ServiceSourceVm[] = [
       '/work/finishing-touch.jpg',
     ],
     offerings: [
-      { barberId: 'stefan', base: t(11.5, 30) },
-      { barberId: 'ivan', base: t(10, 25) },
+      { barberId: 'stefan', base: t(1150, 30) },
+      { barberId: 'ivan', base: t(1000, 25) },
     ],
   },
   {
@@ -227,8 +287,8 @@ export const SERVICES: readonly ServiceSourceVm[] = [
       '/work/modern-cut.jpg',
     ],
     offerings: [
-      { barberId: 'ivan', base: t(28, 70) },
-      { barberId: 'stefan', base: t(30.5, 80) },
+      { barberId: 'ivan', base: t(2800, 70) },
+      { barberId: 'stefan', base: t(3050, 80) },
     ],
   },
   {
@@ -245,8 +305,8 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: false,
     gallery: [],
     offerings: [
-      { barberId: 'niko', base: t(23, 60) },
-      { barberId: 'ivan', base: t(25.5, 65) },
+      { barberId: 'niko', base: t(2300, 60) },
+      { barberId: 'ivan', base: t(2550, 65) },
     ],
   },
   // Upsell-only add-ons exist in the seed but never reach the marketing
@@ -264,9 +324,9 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: true,
     gallery: [],
     offerings: [
-      { barberId: 'ivan', base: t(4, 10) },
-      { barberId: 'niko', base: t(4, 10) },
-      { barberId: 'stefan', base: t(4, 10) },
+      { barberId: 'ivan', base: t(400, 10) },
+      { barberId: 'niko', base: t(400, 10) },
+      { barberId: 'stefan', base: t(400, 10) },
     ],
   },
   {
@@ -281,9 +341,9 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: true,
     gallery: [],
     offerings: [
-      { barberId: 'ivan', base: t(3, 10) },
-      { barberId: 'niko', base: t(3, 10) },
-      { barberId: 'stefan', base: t(3, 10) },
+      { barberId: 'ivan', base: t(300, 10) },
+      { barberId: 'niko', base: t(300, 10) },
+      { barberId: 'stefan', base: t(300, 10) },
     ],
   },
   {
@@ -298,9 +358,9 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: true,
     gallery: [],
     offerings: [
-      { barberId: 'ivan', base: t(2.5, 5) },
-      { barberId: 'niko', base: t(2.5, 5) },
-      { barberId: 'stefan', base: t(2.5, 5) },
+      { barberId: 'ivan', base: t(250, 5) },
+      { barberId: 'niko', base: t(250, 5) },
+      { barberId: 'stefan', base: t(250, 5) },
     ],
   },
   {
@@ -315,9 +375,9 @@ export const SERVICES: readonly ServiceSourceVm[] = [
     upsellOnly: true,
     gallery: [],
     offerings: [
-      { barberId: 'ivan', base: t(3, 5) },
-      { barberId: 'niko', base: t(3, 5) },
-      { barberId: 'stefan', base: t(3, 5) },
+      { barberId: 'ivan', base: t(300, 5) },
+      { barberId: 'niko', base: t(300, 5) },
+      { barberId: 'stefan', base: t(300, 5) },
     ],
   },
 ];

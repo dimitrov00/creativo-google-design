@@ -758,6 +758,22 @@ describe('ClientBooking — the sign-in round trip keeps the booking source', ()
     expect(guestIds(entered)).toEqual([]);
   });
 
+  // pass D, D-4: `?repeat=` is parsed ONCE, at the shell's edge. Text that
+  // is no appointment id reads no visit — the silent fall-through to the
+  // ordinary entry it always was.
+  it('falls through to the ordinary entry for a ?repeat whose text is no appointment id', async () => {
+    const fixture = await renderShell(
+      { repeat: 'appt/source' },
+      { principal: signedIn('client-1'), visit: pastVisit('appt-source') },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.bookedFrom()).toBeNull();
+    expect(store.lineCount()).toBe(0);
+    expect(host(fixture).getAttribute('data-state')).toBe('location');
+  });
+
   it('attaches the repeated visit once signed in, without replacing the bag the person built', async () => {
     const fixture = await render();
     click(fixture, 'booking-add-guest');
@@ -870,6 +886,30 @@ describe('ClientBooking — a move link that cannot move', () => {
       host(fixture).querySelector('[data-testid="booking-location-continue"]'),
     ).toBeNull();
   });
+
+  // pass D, D-4: the shell parses `?reschedule=` ONCE, at its edge
+  // (`AppointmentId.parse`). Text that is no appointment id — a `/` in it,
+  // or nothing but blanks — is refused exactly as a visit that cannot be
+  // read always was: the refusal panel, never a bookable flow.
+  it.each(['appt/moving', ' '])(
+    'refuses a move link whose text is no appointment id (%j), as a visit that cannot be read',
+    async (link) => {
+      const fixture = await renderShell(
+        { reschedule: link },
+        { principal: signedIn('client-1'), visit: pastVisit('appt-moving') },
+      );
+      await settle(fixture);
+
+      expect(refusal(fixture)?.getAttribute('data-reason')).toBe('unavailable');
+      expect(
+        host(fixture).querySelector(
+          '[data-testid="booking-location-continue"]',
+        ),
+      ).toBeNull();
+      const store = fixture.debugElement.injector.get(BookingFlowStore);
+      expect(store.isRescheduling()).toBe(false);
+    },
+  );
 
   it('never reuses a restored move another account read — it is re-read, and refused for this one', async () => {
     // client-1 lands the move; the tab then comes back signed in as client-2.
@@ -1582,6 +1622,48 @@ describe('ClientBooking — a waitlist match’s deep link', () => {
     expect(store.selectedLocalDate()).toBe('2026-08-25');
     expect(store.locationId()).toBe('loc-center');
     expect(store.lineCount()).toBe(1);
+  });
+
+  // pass D, D-4: `?day=` is parsed ONCE, at the shell's edge — three
+  // answers, as the landing always read the link.
+  it('lands on the earliest day the request watches when the link names no day', async () => {
+    const fixture = await renderShell(
+      { waitlist: 'wl-1' },
+      { principal: signedIn('client-1'), waitlists: [request] },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+    expect(store.selectedLocalDate()).toBe('2026-08-25');
+  });
+
+  it.each(['2026-02-30', 'someday'])(
+    'lands on no day when the link’s day (%j) is no day, the flow rebuilt all the same',
+    async (day) => {
+      const fixture = await renderShell(
+        { waitlist: 'wl-1', day },
+        { principal: signedIn('client-1'), waitlists: [request] },
+      );
+      await settle(fixture);
+
+      const store = fixture.debugElement.injector.get(BookingFlowStore);
+      expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+      expect(store.selectedLocalDate()).toBeNull();
+      expect(store.lineCount()).toBe(1);
+    },
+  );
+
+  // `?waitlist=` is parsed ONCE too: text that is no request id names none
+  // of the caller's requests — the silent fall-through it always was.
+  it('falls through to the ordinary entry for a request id that is no id at all', async () => {
+    const fixture = await renderShell(
+      { waitlist: 'wl/1', day: '2026-08-25' },
+      { principal: signedIn('client-1'), waitlists: [request] },
+    );
+    await settle(fixture);
+
+    expect(host(fixture).getAttribute('data-state')).toBe('location');
   });
 
   it('falls through to the ordinary entry for a request that is not the caller’s', async () => {

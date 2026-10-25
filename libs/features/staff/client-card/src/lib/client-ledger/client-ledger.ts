@@ -24,6 +24,7 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import { ActivityList } from '../activity-list/activity-list';
+import { ClientCardRegion } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import { LEDGER_FILTER_WORDS } from '../client-card.words';
@@ -116,6 +117,6 @@ export class ClientLedgerPage {
 
   /** «Опитай пак»: the failed page — the first, or the next — again. */
   protected retry(): void {
-    this.store.retry('activity');
+    this.store.retry(ClientCardRegion.Activity);
   }
 }

@@ -6,21 +6,18 @@ const tester = new RuleTester({
   languageOptions: { parser: tsParser },
 });
 
-// The options the root config passes (ui-residue-cleanup §3.3).
+// The options the root config passes (ui-residue-cleanup §3.3) — no
+// `allowIn` since the icon manifest's schema 2 (pass D, DEP-16).
 const manifest = '/libs/ui/icons/src/lib/manifest/';
-const options = [
-  {
-    include: [
-      '/libs/features/',
-      '/libs/ui/',
-      '/libs/shared/',
-      '/libs/infrastructure/',
-      '/apps/web/src/',
-      '/apps/showcase/src/',
-    ],
-    allowIn: [manifest],
-  },
+const include = [
+  '/libs/features/',
+  '/libs/ui/',
+  '/libs/shared/',
+  '/libs/infrastructure/',
+  '/apps/web/src/',
+  '/apps/showcase/src/',
 ];
+const options = [{ include }];
 
 const repo = '/repo';
 const feature = `${repo}/libs/features/marketing/careers/src/lib/marketing-careers.ts`;
@@ -66,11 +63,17 @@ tester.run('creativo/no-generic-discriminator', noGenericDiscriminator, {
       filename: web,
       options,
     },
-    // The icon manifest's wire format is allow-listed by path (UR-13 a).
+    // The icon manifest's schema-2 discriminator is domain-prefixed (DEP-16).
     {
-      code: "export interface VectorEntry { readonly kind: 'vector'; readonly path: string }",
+      code: 'export interface UiVectorAsset { readonly iconAsset: typeof UiIconAsset.Vector; readonly viewBox: string }',
       filename: `${repo}${manifest}icon-manifest.ts`,
       options,
+    },
+    // `allowIn` still skips a listed path (the shared path-scope option).
+    {
+      code: "export interface Entry { readonly kind: 'more' }",
+      filename: `${repo}/libs/ui/legacy/src/lib/entry.ts`,
+      options: [{ include, allowIn: ['/libs/ui/legacy/'] }],
     },
     // Outside `include`: ecs-core has its own guards, tooling is out.
     {
@@ -129,7 +132,14 @@ tester.run('creativo/no-generic-discriminator', noGenericDiscriminator, {
       errors: named('status'),
     },
     {
-      // The manifest fragment covers the manifest only — not the rest of icons.
+      // The icon MANIFEST is no longer allow-listed (DEP-16): a `kind` wire
+      // field there is reported like anywhere else.
+      code: "export interface VectorEntry { readonly kind: 'vector'; readonly path: string }",
+      filename: `${repo}${manifest}icon-manifest.ts`,
+      options,
+      errors: named('kind'),
+    },
+    {
       code: "export interface Reporter { readonly kind: 'missing' }",
       filename: `${repo}/libs/ui/icons/src/lib/registry/icon-registry.service.ts`,
       options,

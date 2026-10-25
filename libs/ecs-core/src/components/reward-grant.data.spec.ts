@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Currency, CouponId, PriceCents } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
-import { PerkId } from './gamification.data';
+import { PerkId } from './award-summary.data';
 import { RewardGrant, RewardGrantRule } from './reward-grant.data';
 
 describe('RewardGrantRule', () => {

@@ -1,3 +1,4 @@
+import { CouponGrantId } from '@core/primitives';
 import { describe, expect, it } from 'vitest';
 import type { ClientCardGrant } from './client-card.contracts';
 import { glanceReward } from './loyalty.presenter';
@@ -7,7 +8,7 @@ const WORDS = wordsOf('bg');
 
 describe('ready rewards', () => {
   const beard: ClientCardGrant = {
-    grantId: 'grant-beard',
+    grantId: CouponGrantId.of('grant-beard'),
     title: 'Безплатно оформяне на брада',
     valueLabel: 'Безплатна услуга',
     expiresOn: null,

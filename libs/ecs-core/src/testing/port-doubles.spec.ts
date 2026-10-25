@@ -29,7 +29,7 @@ import {
   StreakRule,
   TierOp,
   WriteOp,
-  FLAG_NAMES,
+  FeatureFlags,
   type FlagName,
   OtpCode,
   type Principal,
@@ -1624,12 +1624,14 @@ describe('memoryAvatarPorts and memoryMediaResolvePorts — Storage', () => {
 
 describe('memoryFlagsPorts and immediateTimerPorts', () => {
   it('turns on exactly the named flags', () => {
-    const ports = memoryFlagsPorts([FLAG_NAMES[0] as FlagName]);
-    expect(ports.flagOn(FLAG_NAMES[0] as FlagName)).toBe(true);
-    for (const flag of FLAG_NAMES.slice(1)) {
+    const ports = memoryFlagsPorts([FeatureFlags.NAMES[0] as FlagName]);
+    expect(ports.flagOn(FeatureFlags.NAMES[0] as FlagName)).toBe(true);
+    for (const flag of FeatureFlags.NAMES.slice(1)) {
       expect(ports.flagOn(flag)).toBe(false);
     }
-    expect(memoryFlagsPorts().flagOn(FLAG_NAMES[0] as FlagName)).toBe(false);
+    expect(memoryFlagsPorts().flagOn(FeatureFlags.NAMES[0] as FlagName)).toBe(
+      false,
+    );
   });
 
   it('waits for nothing and records each delay', async () => {

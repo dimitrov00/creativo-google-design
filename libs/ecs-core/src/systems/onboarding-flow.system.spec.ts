@@ -1,24 +1,26 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ServiceId } from '@core/primitives';
-import { IdentityErrorCode } from '@core/errors';
+import {
+  AccountsError,
+  IdentityError,
+  IdentityErrorCode,
+  PipelineError,
+} from '@core/errors';
 import {
   BirthDate,
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
   OnboardingFlowState,
   OnboardingFlowStep,
+  PersonalizeStep,
+  ProfileCompletionKey,
   Registration,
 } from '@core/components';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
-import {
-  OnboardingFlowSystem,
-  PERSONALIZE_STEPS,
-  type PersonalizeStep,
-} from './onboarding-flow.system';
+import { OnboardingFlowSystem } from './onboarding-flow.system';
 import {
   type ProfileCompletion,
-  ProfileCompletionKey,
   ProfileCompletionSystem,
 } from './profile-completion.system';
 
@@ -36,6 +38,11 @@ import {
  */
 
 const SERVICE = ServiceId.of('service_1');
+
+/** A registration the callable refused — a struct since pass D (§2.11), the legacy string's stand-in. */
+const ALREADY_REGISTERED = PipelineError.fromWire('already-exists', {
+  errorCode: IdentityErrorCode.OtpAccountConflict,
+});
 
 function advance(
   state: OnboardingFlowState,
@@ -101,23 +108,25 @@ describe('OnboardingFlowSystem.next', () => {
     state = advance(
       state,
       OnboardingFlowEvent.birthdayFailed(
-        'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+        AccountsError.updateProfileRepositoryFailure(),
       ),
     );
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
     if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe('ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE');
+      expect(state.error).toEqual({
+        errorCode: 'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+      });
     }
   });
 
   it('keeps a failed registration on the about step, carrying the error', () => {
     const state = advance(
       OnboardingFlowSystem.initial(),
-      OnboardingFlowEvent.registrationFailed('destination already registered'),
+      OnboardingFlowEvent.registrationFailed(ALREADY_REGISTERED),
     );
     expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.About);
     if (state.onboardingFlowStep === OnboardingFlowStep.About) {
-      expect(state.error).toBe('destination already registered');
+      expect(state.error).toBe(ALREADY_REGISTERED);
     }
   });
 
@@ -203,7 +212,7 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
     unwrapOk(OnboardingFlowSystem.nextWithinPlan(state, event, plan));
 
   it('beginPersonalization enters the services step directly — the returning-active-account path (no About form, no network)', () => {
-    expect(begin(PERSONALIZE_STEPS).onboardingFlowStep).toBe(
+    expect(begin(PersonalizeStep.ALL).onboardingFlowStep).toBe(
       OnboardingFlowStep.Services,
     );
   });
@@ -273,20 +282,20 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
       OnboardingFlowSystem.nextWithinPlan(
         OnboardingFlowSystem.initial(),
         OnboardingFlowEvent.personalize(),
-        PERSONALIZE_STEPS,
+        PersonalizeStep.ALL,
       ).ok,
     ).toBe(false);
     expect(
       OnboardingFlowSystem.backWithinPlan(
         OnboardingFlowState.entering(),
-        PERSONALIZE_STEPS,
+        PersonalizeStep.ALL,
       ).ok,
     ).toBe(false);
   });
 
   it('plan position is 0 outside the personalization phase and outside the plan', () => {
     expect(
-      OnboardingFlowSystem.planPosition(registered(), PERSONALIZE_STEPS),
+      OnboardingFlowSystem.planPosition(registered(), PersonalizeStep.ALL),
     ).toBe(0);
     expect(
       OnboardingFlowSystem.planPosition(OnboardingFlowState.services([]), [
@@ -297,11 +306,11 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
 });
 
 describe('OnboardingFlowSystem properties', () => {
-  const anyPlan = fc.subarray([...PERSONALIZE_STEPS]);
+  const anyPlan = fc.subarray([...PersonalizeStep.ALL]);
 
   const states: readonly OnboardingFlowState[] = [
     OnboardingFlowState.initial(),
-    OnboardingFlowState.about('x'),
+    OnboardingFlowState.about(IdentityError.identifierMissing()),
     OnboardingFlowState.reward(),
     OnboardingFlowState.services([SERVICE]),
     OnboardingFlowState.birthday([SERVICE], null),
@@ -311,14 +320,14 @@ describe('OnboardingFlowSystem properties', () => {
   const events: readonly OnboardingFlowEvent[] = [
     OnboardingFlowEvent.submitAbout(Registration.emptyFields()),
     OnboardingFlowEvent.registered(),
-    OnboardingFlowEvent.registrationFailed('x'),
+    OnboardingFlowEvent.registrationFailed(ALREADY_REGISTERED),
     OnboardingFlowEvent.personalize(),
     OnboardingFlowEvent.enterApp(),
     OnboardingFlowEvent.submitServices([SERVICE]),
     OnboardingFlowEvent.skipServices(),
     OnboardingFlowEvent.submitBirthday(),
     OnboardingFlowEvent.skipBirthday(),
-    OnboardingFlowEvent.birthdayFailed('x'),
+    OnboardingFlowEvent.birthdayFailed(IdentityError.identifierMissing()),
     OnboardingFlowEvent.skipAvatar(),
     OnboardingFlowEvent.back(),
   ];

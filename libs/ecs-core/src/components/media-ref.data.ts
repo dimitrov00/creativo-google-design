@@ -30,17 +30,6 @@ export type MediaRef = {
   readonly mediaFocalY: number | null;
 };
 
-/** A ref as authored (the catalogue seed, an upload's metadata), before its edge guard. */
-export type MediaRefInput = {
-  readonly mediaId: string;
-  readonly mediaPath: string;
-  readonly mediaWidth: number;
-  readonly mediaHeight: number;
-  readonly mediaBlurhash: string | null;
-  readonly mediaFocalX: number | null;
-  readonly mediaFocalY: number | null;
-};
-
 const CENTER: Pick<MediaRef, 'mediaFocalX' | 'mediaFocalY'> = {
   mediaFocalX: 0.5,
   mediaFocalY: 0.5,
@@ -77,7 +66,7 @@ export const MediaRef = {
    * is trimmed; a blank or whitespace-only blurhash becomes `null`; the id is
    * kept exactly as given.
    */
-  parse(raw: MediaRefInput): Result<MediaRef, readonly CatalogError[]> {
+  parse(raw: MediaRef.Input): Result<MediaRef, readonly CatalogError[]> {
     const errors: CatalogError[] = [];
     if (raw.mediaId.trim().length === 0) {
       errors.push(CatalogError.idEmpty('MediaRefId'));
@@ -134,4 +123,17 @@ function isUnit(n: number): boolean {
 
 function isPositiveInteger(n: number): boolean {
   return Number.isInteger(n) && n > 0;
+}
+
+export namespace MediaRef {
+  /** A ref as authored (the catalogue seed, an upload's metadata), before its edge guard. */
+  export type Input = {
+    readonly mediaId: string;
+    readonly mediaPath: string;
+    readonly mediaWidth: number;
+    readonly mediaHeight: number;
+    readonly mediaBlurhash: string | null;
+    readonly mediaFocalX: number | null;
+    readonly mediaFocalY: number | null;
+  };
 }

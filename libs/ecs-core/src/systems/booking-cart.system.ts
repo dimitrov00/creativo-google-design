@@ -15,6 +15,7 @@ import {
   Party,
   PartyMember,
   PartyRole,
+  PrefillCompanions,
   type RosterWindow,
   SeatLabel,
   Seat,
@@ -142,16 +143,6 @@ export type CartLocatedOption = {
   readonly locationId: LocationId;
   readonly option: AvailabilityOption;
 };
-
-/** What becomes of a seat the booker cannot name — the ONLY source of these strings. */
-export const PrefillCompanions = {
-  /** A new booking: a companion account comes back as a guest seat. */
-  AsGuests: 'AS_GUESTS',
-  /** A move: the server carries them, so they stay out of the cart. */
-  CarriedByServer: 'CARRIED_BY_SERVER',
-} as const;
-export type PrefillCompanions =
-  (typeof PrefillCompanions)[keyof typeof PrefillCompanions];
 
 /**
  * What a prefill reads off a stored seat — its service, variant and barber

@@ -42,12 +42,12 @@
             type="button"
             role="tab"
             class="appointments-views__option"
-            [attr.aria-selected]="view() === 'list'"
-            [attr.data-selected]="view() === 'list' ? '' : null"
+            [attr.aria-selected]="view() === AppointmentsView.List"
+            [attr.data-selected]="view() === AppointmentsView.List ? '' : null"
             [attr.aria-label]="t('appointments.view.list')"
             [title]="t('appointments.view.list')"
             data-testid="appointments-view-list"
-            (click)="setView('list')"
+            (click)="setView(AppointmentsView.List)"
           >
             <ui-icon uiName="view.list" uiScale="small" />
           </button>
@@ -55,12 +55,12 @@
             type="button"
             role="tab"
             class="appointments-views__option"
-            [attr.aria-selected]="view() === 'calendar'"
-            [attr.data-selected]="view() === 'calendar' ? '' : null"
+            [attr.aria-selected]="view() === AppointmentsView.Calendar"
+            [attr.data-selected]="view() === AppointmentsView.Calendar ? '' : null"
             [attr.aria-label]="t('appointments.view.calendar')"
             [title]="t('appointments.view.calendar')"
             data-testid="appointments-view-calendar"
-            (click)="setView('calendar')"
+            (click)="setView(AppointmentsView.Calendar)"
           >
             <ui-icon uiName="view.calendar" uiScale="small" />
           </button>
@@ -110,7 +110,7 @@
          every month would be seven unlabelled columns. Same
          `ui-calendar-grid uiSize="large"` as every month, on the same
          measure, so each letter sits over the dates it names. -->
-      @if (view() === 'calendar') {
+      @if (view() === AppointmentsView.Calendar) {
       <div
         class="appointments__weekdays"
         data-testid="appointments-chrome-weekdays"
@@ -135,7 +135,7 @@
     class="appointments"
   >
     <!-- ── LIST ──────────────────────────────────────────────────────── -->
-    @if (view() === 'list') {
+    @if (view() === AppointmentsView.List) {
     <ui-stack uiSpacing="none" class="appointments__head">
       <h1 uiText uiFont="largeTitle">{{ t('appointments.header.title') }}</h1>
       @if (totalVisits() > 0) {

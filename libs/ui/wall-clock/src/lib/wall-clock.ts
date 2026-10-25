@@ -1,9 +1,11 @@
 import {
   type Currency,
+  type EndMinute,
   LocalDate,
   type MinuteOfDay,
   type PriceCents,
   type TimeZone,
+  type TrackMinute,
   type UtcEpochMs,
 } from '@core/primitives';
 
@@ -28,6 +30,8 @@ import {
 
 const MS_PER_DAY = 86_400_000;
 const MS_PER_MINUTE = 60_000;
+const MINUTES_PER_HOUR = 60;
+const MINUTES_PER_DAY = 1440;
 
 const DATE_FORMATS = new Map<string, Intl.DateTimeFormat>();
 const MONEY_FORMATS = new Map<string, Intl.NumberFormat>();
@@ -75,10 +79,17 @@ export function formatWeekdayLabels(locale: string): readonly string[] {
 
 /**
  * A shop wall-clock reading as a number on the UTC axis — its civil fields,
- * not an instant. Only ever handed to a `timeZone: 'UTC'` formatter.
+ * not an instant (so no brand: it is never stored, compared or stamped).
+ * Module-private: only ever handed to this file's `timeZone: 'UTC'`
+ * formatters. No minute reads as the day's midnight.
  */
-export function civilMs(localDate: LocalDate, minute = 0): number {
-  return LocalDate.toEpochDay(localDate) * MS_PER_DAY + minute * MS_PER_MINUTE;
+function civilMs(
+  localDate: LocalDate,
+  minute: MinuteOfDay | EndMinute | null = null,
+): number {
+  return (
+    LocalDate.toEpochDay(localDate) * MS_PER_DAY + (minute ?? 0) * MS_PER_MINUTE
+  );
 }
 
 /**
@@ -88,13 +99,11 @@ export function civilMs(localDate: LocalDate, minute = 0): number {
  */
 export function formatWallClock(
   localDate: LocalDate,
-  minute: MinuteOfDay | number | null,
+  minute: MinuteOfDay | EndMinute | null,
   locale: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return dateFormat(locale, 'UTC', options).format(
-    civilMs(localDate, minute ?? 0),
-  );
+  return dateFormat(locale, 'UTC', options).format(civilMs(localDate, minute));
 }
 
 /**
@@ -106,12 +115,12 @@ export function formatWallClock(
  */
 export function wallClockParts(
   localDate: LocalDate,
-  minute: MinuteOfDay | number | null,
+  minute: MinuteOfDay | EndMinute | null,
   locale: string,
   options: Intl.DateTimeFormatOptions,
 ): Intl.DateTimeFormatPart[] {
   return dateFormat(locale, 'UTC', options).formatToParts(
-    civilMs(localDate, minute ?? 0),
+    civilMs(localDate, minute),
   );
 }
 
@@ -124,7 +133,7 @@ export function wallClockParts(
  */
 export function formatWallClockParts(
   localDate: LocalDate,
-  minute: MinuteOfDay | number | null,
+  minute: MinuteOfDay | EndMinute | null,
   locale: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
@@ -152,9 +161,12 @@ export function formatWallClockRange(
   );
 }
 
-/** «10:00» — a minute of the shop's day. */
+/**
+ * «10:00» — a minute of the shop's day, or its exclusive end (1440 reads as
+ * the closing midnight, «00:00»).
+ */
 export function formatMinute(
-  minute: MinuteOfDay | number,
+  minute: MinuteOfDay | EndMinute,
   locale: string,
 ): string {
   return dateFormat(locale, 'UTC', {
@@ -163,9 +175,66 @@ export function formatMinute(
   }).format(minute * MS_PER_MINUTE);
 }
 
+/**
+ * How the 24-hour clock face prints the closing midnight (1440) and an
+ * anchored minute past it — a UI dictionary homed with its one function
+ * ({@link formatClock}); internal values, printed nowhere.
+ */
+export const ClockClosing = {
+  /**
+   * `00:00` — the minute wraps onto the next day's clock (`t mod 1440`):
+   * a late cut on the anchored axis that ends at 1455 ends at «00:15». The
+   * editors', the block editor's and the time grid's face.
+   */
+  Wrap: 'WRAP',
+  /**
+   * `24:00` — the hours run on past 23 (no wrap): a window closing at
+   * midnight closes at «24:00». The waitlisted step's and the landing's
+   * face (neither hands a minute past 1440).
+   */
+  EndOfDay: 'END_OF_DAY',
+} as const;
+export type ClockClosing = (typeof ClockClosing)[keyof typeof ClockClosing];
+
+/**
+ * «09:05» — a minute of the shop's day (or of a frame's anchored axis) as
+ * the zero-padded 24-hour `HH:MM` face, whatever the locale: Bulgaria
+ * writes times that way, and a grid read at arm's length cannot spend two
+ * characters on am/pm. No `Intl` call — the input is already a wall-clock
+ * offset, never an instant. `closing` says how 1440 and the minutes past it
+ * print ({@link ClockClosing}); a locale-worded time stays
+ * {@link formatMinute}/{@link formatWallClock}. Reads back to itself
+ * through `MinuteOfDay.parseClock` for every minute of the day.
+ */
+export function formatClock(t: TrackMinute, closing: ClockClosing): string {
+  const minute = closing === ClockClosing.Wrap ? t % MINUTES_PER_DAY : t;
+  const hours = Math.floor(minute / MINUTES_PER_HOUR);
+  const minutes = minute - hours * MINUTES_PER_HOUR;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+/**
+ * The zone's short name at an instant, in the locale's form — «EEST» in a
+ * Sofia summer, «EET» in its winter («GMT+9» where the locale names none):
+ * resolved at the instant rather than hard-coded, so it stays true across
+ * the changeover. Cached per locale + zone (never a fresh `Intl` per read);
+ * the zone itself when the platform answers no name.
+ */
+export function formatZoneName(
+  utcEpochMs: UtcEpochMs,
+  timeZone: TimeZone,
+  locale: string,
+): string {
+  return (
+    dateFormat(locale, timeZone, { timeZoneName: 'short' })
+      .formatToParts(utcEpochMs)
+      .find((part) => part.type === 'timeZoneName')?.value ?? timeZone
+  );
+}
+
 /** An instant in the locale's form, on the SHOP's calendar (`timeZone` is the location's). */
 export function formatInstant(
-  utcEpochMs: UtcEpochMs | number,
+  utcEpochMs: UtcEpochMs,
   timeZone: TimeZone,
   locale: string,
   options: Intl.DateTimeFormatOptions,
@@ -180,16 +249,56 @@ export function formatInstant(
  * by the currency's own exponent.
  */
 export function formatCents(
-  amountCents: PriceCents | number,
-  currency: Currency | string,
+  amountCents: PriceCents,
+  currency: Currency,
   locale: string,
 ): string {
+  const format = moneyFormat(locale, currency);
+  return format.format(amountCents / 10 ** exponentOf(format));
+}
+
+/** The ONE cached currency formatter per locale + currency. */
+function moneyFormat(locale: string, currency: Currency): Intl.NumberFormat {
   const key = `${locale}|${currency}`;
   let format = MONEY_FORMATS.get(key);
   if (format === undefined) {
     format = new Intl.NumberFormat(locale, { style: 'currency', currency });
     MONEY_FORMATS.set(key, format);
   }
-  const exponent = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format;
+}
+
+/**
+ * A currency's own exponent — its minor-unit digits, read from `Intl`
+ * (`2` for EUR and every other stored `Currency`), never a hard-coded `/100`.
+ */
+function exponentOf(format: Intl.NumberFormat): number {
+  return format.resolvedOptions().maximumFractionDigits ?? 2;
+}
+
+const FIGURE_FORMATS = new Map<string, Intl.NumberFormat>();
+
+/**
+ * An amount as a bare FIGURE, without its symbol — «18,00» — for a unit
+ * field whose unit is its own word (the staff sheet's typed money). The
+ * figure is {@link formatCents}' in every other respect: the currency's own
+ * fraction digits (its exponent, never a hard-coded `/100`), the locale's
+ * separators. Cached per locale + exponent.
+ */
+export function formatCentsFigure(
+  amountCents: PriceCents,
+  currency: Currency,
+  locale: string,
+): string {
+  const exponent = exponentOf(moneyFormat(locale, currency));
+  const key = `${locale}|${exponent}`;
+  let format = FIGURE_FORMATS.get(key);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: exponent,
+      maximumFractionDigits: exponent,
+    });
+    FIGURE_FORMATS.set(key, format);
+  }
   return format.format(amountCents / 10 ** exponent);
 }

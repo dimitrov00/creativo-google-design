@@ -15,6 +15,3 @@ export const SessionKind = {
   Returning: 'RETURNING',
 } as const;
 export type SessionKind = (typeof SessionKind)[keyof typeof SessionKind];
-
-/** Every session kind, dictionary order — derived, never a second source. */
-export const SESSION_KINDS: readonly SessionKind[] = Object.values(SessionKind);

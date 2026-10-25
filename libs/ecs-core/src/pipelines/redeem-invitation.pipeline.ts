@@ -2,7 +2,7 @@ import { type InvitationCall, WriteOp } from '@core/components';
 import { type InvitationId, Result, type UserId } from '@core/primitives';
 import {
   EngagementError,
-  type RepositoryError,
+  type RedeemInvitationError,
   RepositoryErrorCode,
 } from '@core/errors';
 import {
@@ -40,8 +40,6 @@ export type RedeemInvitationCommand = InvitationCall & {
   /** The verified session's uid; `null` without one. */
   readonly refereeUserId: UserId | null;
 };
-
-export type RedeemInvitationError = EngagementError | RepositoryError;
 
 /** What the transaction read. */
 type Snapshot = {

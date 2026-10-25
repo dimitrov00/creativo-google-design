@@ -1,23 +1,15 @@
-import { type Principal, PrincipalKind } from '@core/components';
+import {
+  type Principal,
+  PrincipalKind,
+  SettledVerdict,
+} from '@core/components';
 
 /**
- * GuestGuardSystem — the settled account verdict `/auth` and `/onboarding`
- * branch on (blueprint §2.8), the pure port of the legacy identity application
- * lib's `flow/guest-guard.ts` (`classify`, `latchSettledPrincipal`).
- *
- * - `LOADING`    — no principal observed yet → render a splash.
- * - `ANONYMOUS`  — not signed in → allow the auth flow.
- * - `ONBOARDING` — signed in, not yet active → resume onboarding.
- * - `ACTIVE`     — a finished account (client or staff) → bounce away.
+ * GuestGuardSystem — the settled account verdict (`SettledVerdict`) `/auth`
+ * and `/onboarding` branch on (blueprint §2.8), the pure port of the legacy
+ * identity application lib's `flow/guest-guard.ts` (`classify`,
+ * `latchSettledPrincipal`).
  */
-export const SettledVerdict = {
-  Loading: 'LOADING',
-  Anonymous: 'ANONYMOUS',
-  Onboarding: 'ONBOARDING',
-  Active: 'ACTIVE',
-} as const;
-export type SettledVerdict =
-  (typeof SettledVerdict)[keyof typeof SettledVerdict];
 
 /** A verdict that has settled — everything but `LOADING`. */
 export type LatchedVerdict = Exclude<

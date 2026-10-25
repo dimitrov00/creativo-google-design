@@ -7,19 +7,18 @@ import { filter } from 'rxjs/operators';
 import {
   AuthFlowStep,
   AuthStrategy,
-  OTP_CODE_DIGITS,
   OtpCode,
   ParsedIdentifier,
   PrincipalKind,
   SessionKind,
+  SettledVerdict,
 } from '@core/components';
 import { IdentifierChannel, RedirectPath, type Result } from '@core/primitives';
-import { type IdentityError, IdentityErrorCode } from '@core/errors';
+import { type AuthFailure, IdentityError } from '@core/errors';
 import {
   GuestGuardSystem,
   type LatchedVerdict,
   PhoneSystem,
-  SettledVerdict,
 } from '@core/systems';
 import {
   UiButton,
@@ -47,7 +46,10 @@ import {
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  translateCodedError,
+  wordFlowFailure,
+} from '@creativo/infrastructure/i18n';
 import { AuthFlowStore } from '../auth-flow.store';
 
 /**
@@ -197,8 +199,8 @@ export class ClientAuth {
   protected readonly rawIdentifier = signal('');
   /** Canonical E.164 from `ui-phone-field` — null while the draft is invalid (phone deployments). */
   protected readonly phoneValue = signal<string | null>(null);
-  /** Domain-error code shown under the field — set on blur/submit, cleared live once the input turns valid (reward early, punish late). */
-  protected readonly identifierErrorCode = signal<string | null>(null);
+  /** The identifier's refusal shown under the field, as its struct — set on blur/submit, cleared live once the input turns valid (reward early, punish late). */
+  protected readonly identifierError = signal<IdentityError | null>(null);
 
   protected readonly identifierResult = computed(
     (): Result<ParsedIdentifier, IdentityError> | null => {
@@ -271,14 +273,14 @@ export class ClientAuth {
     // copy goes away (errors themselves only ever appear on blur/submit).
     effect(() => {
       if (this.identifierResult()?.ok) {
-        this.identifierErrorCode.set(null);
+        this.identifierError.set(null);
       }
     });
   }
 
-  protected translateError(code: string | undefined | null): string | null {
-    if (!code) return null;
-    return translateCodedError(this.transloco, { errorCode: code });
+  /** A refusal's words — the identity flows' ONE rule (`wordFlowFailure`: a failed call by the server's code, else `IDENTITY_CALL_FAILED`; a refusal as itself). */
+  protected translateError(error: AuthFailure | null): string | null {
+    return error === null ? null : wordFlowFailure(this.transloco, error);
   }
 
   /**
@@ -300,13 +302,13 @@ export class ClientAuth {
       });
   }
 
-  protected currentError(): string | null {
+  protected currentError(): AuthFailure | null {
     const state = this.store.state();
     return state.authFlowStep === AuthFlowStep.Identify ? state.error : null;
   }
 
   /** The otp step's error line — verify failures render only until the user edits (`otpErrorVisible`). */
-  protected otpError(): string | null {
+  protected otpError(): AuthFailure | null {
     const state = this.store.state();
     return state.authFlowStep === AuthFlowStep.Otp && this.otpErrorVisible()
       ? state.error
@@ -324,14 +326,16 @@ export class ClientAuth {
     if (!raw) return;
     const result = this.parseIdentifier(raw);
     if (!result.ok) {
-      this.identifierErrorCode.set(result.error.errorCode);
+      this.identifierError.set(result.error);
     }
   }
 
   /** `ui-phone-field` validate-on-blur — its `value` model is already null whenever the draft is invalid. */
   protected onPhoneBlur(fieldText: string): void {
     if (fieldText.trim() !== '' && this.phoneValue() === null) {
-      this.identifierErrorCode.set(IdentityErrorCode.IdentifierInvalid);
+      this.identifierError.set(
+        IdentityError.identifierInvalid(this.identifierChannel, fieldText),
+      );
     }
   }
 
@@ -339,12 +343,14 @@ export class ClientAuth {
     const result = this.identifierResult();
     if (!result || !result.ok) {
       // Validate on submit (not per keystroke — design §2.1 trust note).
-      this.identifierErrorCode.set(
-        result ? result.error.errorCode : IdentityErrorCode.IdentifierInvalid,
+      this.identifierError.set(
+        result
+          ? result.error
+          : IdentityError.identifierInvalid(this.identifierChannel, ''),
       );
       return;
     }
-    this.identifierErrorCode.set(null);
+    this.identifierError.set(null);
     void this.store.submitIdentifier(result.value);
   }
 
@@ -368,8 +374,8 @@ export class ClientAuth {
     }
   }
 
-  /** The code's length — the one rule `OtpCode.parse` checks (`OTP_CODE_DIGITS`). */
-  protected readonly otpLength = OTP_CODE_DIGITS;
+  /** The code's length — the one rule `OtpCode.parse` checks (`OtpCode.DIGITS`). */
+  protected readonly otpLength = OtpCode.DIGITS;
 
   protected codeErrorMessage(): string | null {
     const raw = this.rawCode();
@@ -447,7 +453,7 @@ export class ClientAuth {
     if (!session) {
       this.checking.set(false);
       const state = this.store.state();
-      if (state.authFlowStep === AuthFlowStep.Otp && state.error) {
+      if (state.authFlowStep === AuthFlowStep.Otp && state.error !== null) {
         this.otpErrorVisible.set(true);
         // Every failed verify CLEARS the field (owner ruling 2026-07-25):
         // with auto-verify and no button, retyping a fresh code beats

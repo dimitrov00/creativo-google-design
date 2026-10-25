@@ -15,17 +15,18 @@ import {
   BookingContact,
   BookingDraft,
   BookingDraftOrigin,
+  type BookingFlowEvent,
+  BookingFlowEventKind,
   BookingFlowState,
   BookingFlowStep,
   BookingPolicy,
   type ChairTime,
   FlexibleWhen,
   type MoveRider,
-  MoveRefusal,
-  MoveRefusalReason,
   Party,
   type PartyMember,
   Placement,
+  PrefillCompanions,
   type ScheduleSelection,
   type WaitlistedSummary,
 } from '@core/components';
@@ -46,30 +47,32 @@ import {
 } from '@core/primitives';
 import {
   type BookingFlowError,
+  MoveRefusal,
   PipelineError,
   PipelineErrorCode,
 } from '@core/errors';
 import {
   BookingCartSystem,
-  type BookingFlowEvent,
-  BookingFlowEventKind,
   type BookingFlowLimits,
   BookingFlowSystem,
   type CartRider,
   GuestLabelSystem,
   MoveSystem,
-  PrefillCompanions,
 } from '@core/systems';
-
-/** What the flow can be refused with: the machine's own word, or a call's. */
-export type BookingFlowFailure = BookingFlowError | PipelineError;
 
 /** The wizard's two policy numbers — the booking policy's own defaults. */
 const FLOW_LIMITS: BookingFlowLimits = BookingPolicy.DEFAULT;
 
-/** Before every day a draft can name — prunes nothing. */
-const EARLIEST_DAY: LocalDate =
-  localDateOrNull('0001-01-01') ?? defect('unreachable: the earliest day');
+/** The earliest day there is, as the parser reads it. */
+const EARLIEST_DAY_PARSED = LocalDate.parse('0001-01-01');
+
+/**
+ * Before every day a draft can name — prunes nothing. A literal day the
+ * parser takes; a refusal would be a defect in this file.
+ */
+const EARLIEST_DAY: LocalDate = EARLIEST_DAY_PARSED.ok
+  ? EARLIEST_DAY_PARSED.value
+  : defect('unreachable: the earliest day');
 
 const NO_RIDERS: readonly MoveRider[] = [];
 const NO_CHAIRS: readonly ChairTime[] = [];
@@ -108,7 +111,7 @@ export class BookingFlowStore {
    * an error that outlives the thing it was about is noise, and this is the
    * only place that can know the difference.
    */
-  private readonly _error = signal<BookingFlowFailure | null>(null);
+  private readonly _error = signal<BookingFlowError.Failure | null>(null);
   readonly error = this._error.asReadonly();
 
   /**
@@ -450,12 +453,12 @@ export class BookingFlowStore {
    * `null` for an id no line holds — an assignment naming a line that has
    * since been removed must not reach the machine.
    */
-  cartLineId(raw: string): CartLineId | null {
+  cartLineId(lineId: CartLineId): CartLineId | null {
     const cart = this.cart();
     if (!cart) return null;
     for (const seat of cart.cartSeats) {
       for (const line of seat.lines) {
-        if (line.lineId === raw) return line.lineId;
+        if (line.lineId === lineId) return line.lineId;
       }
     }
     return null;
@@ -596,6 +599,13 @@ export class BookingFlowStore {
    * The visit a `?reschedule=` link asked to move — held from the moment the
    * link arrives, before (and whether or not) that visit can be read. See
    * {@link expectMove}.
+   *
+   * The link's RAW text, on purpose — the one raw-text twin of an id this
+   * store keeps (pass D, D-4): it is the refusal path's latch. A link whose
+   * text is no appointment id (`AppointmentId.parse` refuses it) must block
+   * the commit exactly as an unreadable visit does, and no `AppointmentId`
+   * can stand for text that is not one; a held move whose id differs from it
+   * — every one, for such text — keeps {@link commit} refusing.
    */
   private readonly _moveAsked = signal<string | null>(null);
 
@@ -613,16 +623,13 @@ export class BookingFlowStore {
    * rescheduleFrom}) — and for good once it is refused ({@link refuseMove})
    * — {@link commit} refuses rather than writing a new booking.
    */
-  expectMove(appointmentId: string): void {
-    this._moveAsked.set(appointmentId);
+  expectMove(linkText: string): void {
+    this._moveAsked.set(linkText);
   }
 
   /** The move cannot be made here — see {@link moveRefusal}. */
-  refuseMove(
-    reason: MoveRefusalReason,
-    locationId: LocationId | null = null,
-  ): void {
-    this._moveRefusal.set(MoveRefusal.of(reason, locationId));
+  refuseMove(refusal: MoveRefusal): void {
+    this._moveRefusal.set(refusal);
   }
 
   /**
@@ -632,15 +639,16 @@ export class BookingFlowStore {
   rescheduleFrom(
     appointment: Appointment,
     guestLabel: (ordinal: number) => string,
-  ): Result<void, MoveRefusalReason> {
+  ): Result<void, MoveRefusal> {
     const facts = MoveSystem.facts(appointment, this.readerOf(appointment));
     if (facts === null) {
       // Nobody is left for the cart to stand in for (staff removed the
       // booker's own seat): only the shop can move the rest, and the server
       // refuses the same visit as `shop_only`. Said here, before a single
       // step is shown.
-      this.refuseMove(MoveRefusalReason.CompanionsOnly, appointment.locationId);
-      return Result.err(MoveRefusalReason.CompanionsOnly);
+      const refusal = MoveRefusal.companionsOnly(appointment.locationId);
+      this.refuseMove(refusal);
+      return Result.err(refusal);
     }
     if (
       !this.prefillFrom(
@@ -649,8 +657,9 @@ export class BookingFlowStore {
         PrefillCompanions.CarriedByServer,
       )
     ) {
-      this.refuseMove(MoveRefusalReason.Unavailable, appointment.locationId);
-      return Result.err(MoveRefusalReason.Unavailable);
+      const refusal = MoveRefusal.unavailable(appointment.locationId);
+      this.refuseMove(refusal);
+      return Result.err(refusal);
     }
 
     this._moveRefusal.set(null);
@@ -698,13 +707,13 @@ export class BookingFlowStore {
     if (this._rescheduleOf()?.appointmentId !== held.appointmentId) return;
     if (!found.ok) return;
     if (found.value === null) {
-      this.refuseMove(MoveRefusalReason.Unavailable);
+      this.refuseMove(MoveRefusal.unavailable(null));
       return;
     }
 
     const facts = MoveSystem.facts(found.value, this.readerOf(found.value));
     if (facts === null) {
-      this.refuseMove(MoveRefusalReason.CompanionsOnly, found.value.locationId);
+      this.refuseMove(MoveRefusal.companionsOnly(found.value.locationId));
       return;
     }
     this._rescheduleOf.set({
@@ -880,7 +889,7 @@ export class BookingFlowStore {
     const state = this._state();
     // Both terminal states are past claiming: the server already knows who
     // owns what it accepted.
-    if (!isOpen(state)) return;
+    if (BookingFlowState.isTerminal(state)) return;
     this.releaseSourcesNotReadBy(userId);
     if (state.party.ownerUserId === userId) return;
     this._state.set({ ...state, party: Party.claim(state.party, userId) });
@@ -917,7 +926,10 @@ export class BookingFlowStore {
 
   /**
    * Rebuild the flow around a waitlist request — the landing for
-   * `/book?waitlist={id}&day={YYYY-MM-DD}`.
+   * `/book?waitlist={id}&day={YYYY-MM-DD}`. `day` is the link's day as the
+   * shell's edge parsed it (`LocalDate.parse`, once): `undefined` when the
+   * link names none (the earliest day the request watches lands), `null`
+   * when it names something that is no day (no day lands).
    *
    * The request froze the BAG and the SHOP at the moment it was made; the
    * party's guest LABELS were never persisted (a guest is only a label until
@@ -934,7 +946,7 @@ export class BookingFlowStore {
    */
   restoreFromWaitlist(
     request: WaitlistRequest,
-    day: string | null,
+    day: LocalDate | null | undefined,
     guestLabel: (ordinal: number) => string,
   ): boolean {
     // The stored bag, read back the forgiving way: a line with a blank id is
@@ -964,8 +976,8 @@ export class BookingFlowStore {
     });
 
     // The day the link names, else the earliest the request watches.
-    const watched = FlexibleWhen.firstLocalDate(request);
-    const landed = day === null ? watched : localDateOrNull(day);
+    const landed =
+      day === undefined ? FlexibleWhen.firstLocalDate(request) : day;
     if (landed !== null) this.selectDay(landed);
     this._waitlistArrival.set(true);
     this.persist();
@@ -1293,24 +1305,3 @@ type HeldVisit = BookingDraft.Source;
 
 /** The visit being moved: its shop day, who the server carries with it, and its chairs. */
 type HeldMove = BookingDraft.Moving;
-
-/** A flow state still on the spine — the steps that hold their own party. */
-type OpenFlowState = Exclude<
-  BookingFlowState,
-  BookingFlowState.Confirmed | BookingFlowState.Waitlisted
->;
-
-/**
- * Is the flow still open — not confirmed, not waitlisted? The rule is
- * `BookingFlowSystem.isTerminal`'s; this only tells the compiler which
- * states that leaves.
- */
-function isOpen(state: BookingFlowState): state is OpenFlowState {
-  return !BookingFlowSystem.isTerminal(state.bookingFlowStep);
-}
-
-/** A raw day as a shop day — `null` when it is no day at all. */
-function localDateOrNull(raw: string): LocalDate | null {
-  const parsed = LocalDate.parse(raw);
-  return parsed.ok ? parsed.value : null;
-}

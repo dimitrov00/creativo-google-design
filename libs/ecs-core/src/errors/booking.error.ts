@@ -7,7 +7,11 @@ import {
   type MinuteOfDay,
   ServiceId,
 } from '@core/primitives';
+import type { CancellationRefusal } from './cancellation.error';
+import type { MoveError } from './move.error';
+import type { RepositoryError } from './repository.error';
 import type { SchedulingError } from './scheduling.error';
+import type { TimeError } from './time.error';
 
 /**
  * The booking commit's refusals — the codes of the retired
@@ -387,3 +391,67 @@ export namespace BookingError {
     readonly toBookingStatus: string;
   };
 }
+
+/*
+ * The booking write side's answers — each pipeline's named error union,
+ * homed here with the codes they carry (pass D, E-23; Law 7.5: never in a
+ * pipeline file). The callable edge (`booking.wire.ts`) words each in the
+ * callable's own frozen answer.
+ */
+
+/** What `bookAppointment` answers with: a commit refusal, a wall clock the shop's zone never shows, or the store. */
+export type BookAppointmentError = BookingError | TimeError | RepositoryError;
+
+/**
+ * What `rescheduleAppointment` answers with: a commit refusal, a move
+ * plan's refusal (`MoveError` — its `BOOKING_INVALID_INPUT`, or somebody the
+ * move carries who cannot be placed), a wall clock the shop's zone never
+ * shows, or the store.
+ */
+export type RescheduleAppointmentError =
+  BookingError | MoveError | TimeError | RepositoryError;
+
+/**
+ * What `cancelAppointment` answers with: no such visit — or not the
+ * caller's, indistinguishable on purpose (`BOOKING_INVALID_INPUT`, field
+ * `appointmentId`; the edge answers the callable's not-found) — a
+ * cancellation refusal, a lifecycle refusal, or the store.
+ */
+export type CancelAppointmentError =
+  | BookingError.InvalidInput
+  | CancellationRefusal
+  | SchedulingError
+  | RepositoryError;
+
+/**
+ * What `transitionAppointment` answers with: no such visit
+ * (`BOOKING_INVALID_INPUT`, field `appointmentId`), the reinstated chair
+ * taken since (`BOOKING_SLOT_UNAVAILABLE`), any lifecycle refusal
+ * (`SchedulingError`), or the store. The edge answers each in the
+ * callable's own frozen words.
+ */
+export type TransitionAppointmentError =
+  | BookingError.InvalidInput
+  | BookingError.SlotUnavailable
+  | SchedulingError
+  | RepositoryError;
+
+/**
+ * What `markArrival` answers with: no such visit (`BOOKING_INVALID_INPUT`,
+ * field `appointmentId` — the edge answers it as the callable's own
+ * not-found), a settled visit (the lifecycle's
+ * `SCHEDULING_APPOINTMENT_NOT_ARRIVABLE`), or the store.
+ */
+export type MarkArrivalError =
+  BookingError.InvalidInput | SchedulingError | RepositoryError;
+
+/**
+ * What `recordSeatTip` answers with: no such visit (`BOOKING_INVALID_INPUT`,
+ * field `appointmentId`), no such seat on it
+ * (`SCHEDULING_APPOINTMENT_UNKNOWN_SEAT`) — the edge answers both as the
+ * callable's not-found — or the store.
+ */
+export type RecordSeatTipError =
+  | BookingError.InvalidInput
+  | SchedulingError.AppointmentUnknownSeat
+  | RepositoryError;

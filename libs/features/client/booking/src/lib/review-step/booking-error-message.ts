@@ -1,11 +1,15 @@
 import type { TranslocoService } from '@jsverse/transloco';
 import { ShopReach } from '@core/components';
-import { BookingErrorCode, MoveErrorCode, PipelineError } from '@core/errors';
+import {
+  BookingErrorCode,
+  type BookingFlowError,
+  MoveErrorCode,
+  PipelineError,
+} from '@core/errors';
 import {
   translateCodedError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
-import type { BookingFlowFailure } from '../booking-flow.store';
 
 /**
  * What the review step says about a failed commit or move.
@@ -29,7 +33,7 @@ import type { BookingFlowFailure } from '../booking-flow.store';
  */
 export function bookingErrorMessage(
   transloco: TranslocoService,
-  error: BookingFlowFailure,
+  error: BookingFlowError.Failure,
   callHref: string | null = null,
 ): string {
   if (!PipelineError.isPipelineError(error))
@@ -50,7 +54,9 @@ export function bookingErrorMessage(
  * every one of them ends at the shop. What the review step reads to decide
  * whether a call is the answer.
  */
-export function carriedRefusalOf(error: BookingFlowFailure): string | null {
+export function carriedRefusalOf(
+  error: BookingFlowError.Failure,
+): string | null {
   if (!PipelineError.isPipelineError(error)) return null;
   return error.serverErrorCode === MoveErrorCode.CarriedSeatUnplaceable
     ? error.refusal
@@ -66,7 +72,7 @@ export function carriedRefusalOf(error: BookingFlowFailure): string | null {
  * the page never shows a call it cannot place.
  */
 export function callHrefForRefusal(
-  error: BookingFlowFailure | null,
+  error: BookingFlowError.Failure | null,
   shopPhoneE164: string | null,
 ): string | null {
   if (error === null || shopPhoneE164 === null) return null;

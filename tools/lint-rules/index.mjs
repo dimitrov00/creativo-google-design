@@ -39,6 +39,7 @@ export {
   ecsProjectBlocks,
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
+  uiRawPrimitiveBlock,
 } from './ecs-syntax.mjs';
 export { PARENT_SEGMENT_REGEX } from './restricted-import-expressions.mjs';
 

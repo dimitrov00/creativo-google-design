@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EDGE_SCROLL_MARGIN_PX,
   EDGE_SCROLL_MAX_PX_PER_FRAME,
+  ScrollAxis,
   edgeScrollerOf,
   edgeScrollVelocity,
 } from './grid-gesture';
@@ -62,7 +63,7 @@ describe('edge auto-scroll', () => {
       const box = frame();
       const told: number[] = [];
       const edge = edgeScrollerOf(
-        'y',
+        ScrollAxis.Y,
         () => box,
         () => told.push(box.scrollTop),
       );
@@ -96,7 +97,7 @@ describe('edge auto-scroll', () => {
       const box = frame();
       box.scrollTop = 800;
       const edge = edgeScrollerOf(
-        'y',
+        ScrollAxis.Y,
         () => box,
         () => undefined,
       );

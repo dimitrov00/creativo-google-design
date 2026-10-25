@@ -3,6 +3,7 @@ import { ProfileEdits } from '@core/components';
 import { Callables } from '@core/ports';
 import { Result } from '@core/primitives';
 import {
+  AccountsError,
   AccountsErrorCode,
   PipelineError,
   PipelineErrorCode,
@@ -14,11 +15,13 @@ import { saveOwnProfile } from './save-own-profile.pipeline';
  * MOVED with the use case (pass C, C-31) from
  * `libs/features/client/account-state/src/lib/own-profile.spec.ts`, cases
  * byte-identical: the owner's profile write through `updateProfile`
- * (Phase 4a 4A-3 (2)): `null` on success; the edit's own refusals worded by
- * their codes; EVERY other failure today's one copy,
+ * (Phase 4a 4A-3 (2)): `Result.ok` on success; the edit's own refusals
+ * worded by their codes; EVERY other failure today's one copy,
  * `AccountsErrorCode.UpdateProfileRepositoryFailure` — a store
  * failure, a transport failure, an expired session, an unavailable or an
- * unknown one (§3.9). Each branch pinned over the scripted gateway.
+ * unknown one (§3.9). Each branch pinned over the scripted gateway. Pass D
+ * (§2.11): the same refusals, now `AccountsError.OwnProfileSave` structs
+ * inside a `Result`.
  */
 const EDITS = { ...ProfileEdits.keep(), firstName: 'Mila' };
 
@@ -32,13 +35,13 @@ const fromWire = (status: string, errorCode: string | null) =>
   );
 
 describe('saveOwnProfile', () => {
-  it('sends the edits to updateProfile and answers null on success', async () => {
+  it('sends the edits to updateProfile and answers ok on success', async () => {
     const calls: GatewayCall[] = [];
     const gateway = scriptedGatewayPorts(
       { [Callables.UpdateProfile]: () => Result.ok({ changed: true }) },
       calls,
     );
-    expect(await saveOwnProfile(gateway)(EDITS)).toBeNull();
+    expect(await saveOwnProfile(gateway)(EDITS)).toEqual(Result.ok(undefined));
     expect(calls).toEqual([{ callable: 'updateProfile', input: EDITS }]);
   });
 
@@ -46,7 +49,7 @@ describe('saveOwnProfile', () => {
     const gateway = scriptedGatewayPorts({
       [Callables.UpdateProfile]: () => Result.ok({ changed: false }),
     });
-    expect(await saveOwnProfile(gateway)(EDITS)).toBeNull();
+    expect(await saveOwnProfile(gateway)(EDITS)).toEqual(Result.ok(undefined));
   });
 
   it.each([
@@ -59,7 +62,7 @@ describe('saveOwnProfile', () => {
         : 'invalid-argument';
     expect(
       await saveOwnProfile(failingWith(fromWire(status, code)))(EDITS),
-    ).toBe(code);
+    ).toEqual(Result.err({ errorCode: code }));
   });
 
   it.each([
@@ -82,8 +85,8 @@ describe('saveOwnProfile', () => {
     ],
     ['an unknown failure', PipelineError.bare(PipelineErrorCode.Unknown)],
   ])('words %s as today’s one failed-write copy', async (_what, error) => {
-    expect(await saveOwnProfile(failingWith(error))(EDITS)).toBe(
-      AccountsErrorCode.UpdateProfileRepositoryFailure,
+    expect(await saveOwnProfile(failingWith(error))(EDITS)).toEqual(
+      Result.err(AccountsError.updateProfileRepositoryFailure()),
     );
     expect(AccountsErrorCode.UpdateProfileRepositoryFailure).toBe(
       'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',

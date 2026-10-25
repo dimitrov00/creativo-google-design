@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AttemptOutcome,
   BookingPolicy,
   type DocBody,
   type LivePolicyLine,
@@ -14,7 +15,7 @@ import {
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
-import { AttemptOutcome, PolicyRecomputeJobSystem } from '@core/systems';
+import { PolicyRecomputeJobSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   memoryStore,

@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  FreezeReason,
-  STREAK_EXCUSES,
-  StreakPeriodMark,
-} from '@core/components';
+import { FreezeReason, StreakPeriodMark, StreakRule } from '@core/components';
 import bg from '../assets/i18n/bg.json';
 import en from '../assets/i18n/en.json';
 import {
@@ -32,7 +28,7 @@ describe('streakPeriodReasonWords', () => {
         FreezeReason.Freeze,
         FreezeReason.Pause,
         FreezeReason.ClientPause,
-        ...STREAK_EXCUSES,
+        ...StreakRule.EXCUSES,
       ].sort(),
     );
   });

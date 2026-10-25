@@ -5,27 +5,27 @@ import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
   CancellationReason,
   CancelledBy,
+  CancelledSide,
   Daypart,
   type Seat,
   SeatOutcome,
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
   VoucherCode,
   type VoucherRedemption,
 } from '@core/components';
 import {
+  AppointmentId,
   BookingStatus,
   GiftVoucherId,
   type LocalDate,
   type MinuteOfDay,
+  UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import {
-  CancelledSide,
-  VisitGrain,
-  VisitPerspective,
-  VisitRowOutcome,
-  ZonedTimeSystem,
-} from '@core/systems';
-import { EUR, cents } from '@core/testing';
+import { ZonedTimeSystem } from '@core/systems';
+import { EUR, cents, localDate } from '@core/testing';
 import { dayRange } from './day-range';
 import {
   type SeatSpec,
@@ -47,11 +47,8 @@ import {
   visitWordsOf,
   waitlistRowOf,
 } from './visit-row.presenter';
-import {
-  TrailingFactFace,
-  type VisitLookup,
-  VisitRowEntry,
-} from './visit-row.vm';
+import type { VisitLookup } from './visit-lookup.contracts';
+import { TrailingFactFace, VisitRowEntry } from './visit-row.vm';
 import { sectionVisits } from './visit-sections';
 
 // ── The app's own words ──────────────────────────────────────────────────
@@ -101,8 +98,8 @@ const WAITLIST_WORDS = visitWaitlistWordsOf(BG);
 
 // ── The shop ─────────────────────────────────────────────────────────────
 
-const GEORGI = 'client-georgi';
-const IVO = 'client-ivo';
+const GEORGI = UserId.of('client-georgi');
+const IVO = UserId.of('client-ivo');
 
 const SERVICES = new Map([
   ['svc-fade', 'Фейд'],
@@ -450,7 +447,7 @@ describe('visitRowOf · the staff card', () => {
     });
     const row = visitRowOf(
       today,
-      staffOptions({ currentAppointmentId: 'appt-today' }),
+      staffOptions({ currentAppointmentId: AppointmentId.of('appt-today') }),
       LOOKUP,
     );
     expect(row.upcoming).toBe(true);
@@ -473,7 +470,7 @@ describe('visitRowOf · the staff card', () => {
     );
     const worked = visitRowOf(
       settled,
-      staffOptions({ currentAppointmentId: 'appt-today' }),
+      staffOptions({ currentAppointmentId: AppointmentId.of('appt-today') }),
       LOOKUP,
     );
     expect(worked.upcoming).toBe(false);
@@ -1110,7 +1107,11 @@ describe('waitlistRowOf', () => {
   }
 
   const AFTERNOON = [{ from: '13:00', to: '17:00' }];
-  const options = { words: WAITLIST_WORDS, today: '2026-09-28', locale: 'bg' };
+  const options = {
+    words: WAITLIST_WORDS,
+    today: localDate('2026-09-28'),
+    locale: 'bg',
+  };
 
   it('leads with the watching glyph and folds the days it still watches into one line', () => {
     const row = waitlistRowOf(
@@ -1184,7 +1185,12 @@ describe('waitlistRowOf', () => {
     // prints «1.09 – 30.11» — `Intl`'s spaced dash, never a hand-built one.
     expect(range(['2026-10-08', '2026-10-09'])).toBe('8.10 – 9.10, следобед');
     expect(range(['2026-10-08', '2026-10-09'])).toBe(
-      dayRange('2026-10-08', '2026-10-09', options.today, 'bg') + ', следобед',
+      dayRange(
+        localDate('2026-10-08'),
+        localDate('2026-10-09'),
+        options.today,
+        'bg',
+      ) + ', следобед',
     );
     // A run that leaves the week is dated at both ends, never «сб – 6.10».
     expect(

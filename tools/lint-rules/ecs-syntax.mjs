@@ -17,7 +17,11 @@
  *    workspace carries its kind's guards wherever it lives;
  *  - libs/ecs-core and apps/functions eslint.config.mjs — the same eight,
  *    restated through `ecsProjectBlocks` beside the `InjectionToken` guard on
- *    every file (no Angular lives in either project).
+ *    every file (no Angular lives in either project);
+ *  - root eslint.config.mjs — `uiRawPrimitiveBlock`: L3 widened to the
+ *    features and the design system (pass D, D-13.1), one block on the
+ *    production files of `libs/features/**` and `libs/ui/**`, scoped by an
+ *    absolute `basePath` so it holds under both ESLint base paths.
  * Phase 1 kept the port and adapter blocks and the token guard
  * project-scoped while the legacy port files and class adapters existed;
  * Phase 4b deleted those and widened them to the root.
@@ -35,6 +39,7 @@
  * exemption (`phone.system.ts`) a selector could not honour.
  */
 
+import { isAbsolute } from 'node:path';
 import {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
@@ -136,6 +141,16 @@ const DATA_SHAPE_GUARD = [
     selector: 'MethodDefinition',
     message: 'No methods on data (Law 1): data is a plain struct.',
   },
+  {
+    // Pass D (D-13.2). A private helper `function` stays legal; exporting
+    // one gives the file a second name beside its component. It rides on
+    // every data-like kind (data, error, entity, primitive) through this one
+    // shape guard — zero hits on the pass-D tree in all four.
+    selector:
+      ':matches(ExportNamedDeclaration, ExportDefaultDeclaration) > :matches(FunctionDeclaration, TSDeclareFunction)',
+    message:
+      'No exported free function in a data file (Law 1): the file exports ONE name — a guard or helper is a member of its `as const` companion (`Name.isX`, `Name.of`).',
+  },
 ];
 
 // ── flatten-pass guards (Laws 6 and 7 — flatten-spec §7, L1–L7) ──────────
@@ -170,19 +185,117 @@ export const ECS_NESTED_TYPE_RESTRICTIONS = [
 ];
 
 /**
+ * L3's field names — the ONE list both raw-brand guards are built from (the
+ * core's L3 below and the features/UI guard, pass D D-13.1): a property
+ * whose name ends in one of these alternatives holds an id, an instant, a
+ * wall-clock minute, money, a shop day, a zone, a coordinate or a person
+ * key. Regex source fragments, joined into one `/(…)$/` per selector.
+ */
+export const RAW_BRAND_FIELD_SUFFIXES = [
+  'Id',
+  'Ids',
+  'UtcMs',
+  'Minutes',
+  'Cents',
+  '[lL]ocalDate',
+  '[tT]imeZone',
+  'Latitude',
+  'Longitude',
+  '[sS]eatKey',
+  '[pP]ersonKey',
+];
+
+/**
+ * The tail every raw-brand selector shares: a `number`/`string` keyword in
+ * the member's annotation (bare, nullable, in an array), but never inside a
+ * function type — `nextId: () => string` is the id-minting port a pipeline
+ * hands a system (ecs-systems.md), not an id field.
+ */
+const RAW_KEYWORD_TAIL =
+  '> TSTypeAnnotation :matches(TSNumberKeyword, TSStringKeyword):not(TSFunctionType *)';
+
+/** `/(A|B|…)$/` over the given suffix alternatives. */
+const suffixRegex = (suffixes) => `/(${suffixes.join('|')})$/`;
+
+/**
  * L3 — a coordinate, money or id property is a brand, never a raw
  * number/string (Law 7.4). The `…Input` structs (foreign input before
- * `parse`) are the escape, and so is a function-typed member: `nextId: () =>
- * string` is the id-minting port the pipeline hands a system (ecs-systems.md),
- * not an id field.
+ * `parse`) are the escape, and so is a function-typed member.
  */
 export const ECS_RAW_PRIMITIVE_RESTRICTIONS = [
   {
-    selector:
-      'TSTypeAliasDeclaration:not([id.name=/Input$/]) TSPropertySignature[key.name=/(Id|Ids|UtcMs|Minutes|Cents|[lL]ocalDate|[tT]imeZone|Latitude|Longitude|[sS]eatKey|[pP]ersonKey)$/] > TSTypeAnnotation :matches(TSNumberKeyword, TSStringKeyword):not(TSFunctionType *)',
+    selector: `TSTypeAliasDeclaration:not([id.name=/Input$/]) TSPropertySignature[key.name=${suffixRegex(RAW_BRAND_FIELD_SUFFIXES)}] ${RAW_KEYWORD_TAIL}`,
     message:
       'A coordinate, amount or id is a branded primitive (Law 7.4): `UtcEpochMs`, `LocalDate`, `MinuteOfDay`/`EndMinute`/`DurationMinutes`, `PriceCents`, `TimeZone`, `XId` — never a raw `number`/`string` (foreign input is an `…Input` struct, parsed at the edge).',
   },
+];
+
+/**
+ * The features/UI field names: L3's whole list, plus `Ms` — an instant in a
+ * view model is `*UtcMs: UtcEpochMs`; the pass-D tree has no other `*Ms`
+ * member in a feature or UI type (a millisecond budget is a parameter
+ * there). `Minutes` is in (D-13.1): its one hit on the wave-3 tree,
+ * `GridEvent.surplusMinutes`, is a `MinuteCount` since the integrator's
+ * pass — a time of day is `MinuteOfDay`/`EndMinute`/`TrackMinute`, a length
+ * `DurationMinutes`/`MinuteCount`.
+ */
+export const UI_RAW_BRAND_FIELD_SUFFIXES = [...RAW_BRAND_FIELD_SUFFIXES, 'Ms'];
+
+/** Exact field names that hold a shop day (D-3: a `LocalDate`). */
+export const UI_RAW_BRAND_FIELD_KEYS = ['today', 'dayKey', 'todayKey'];
+
+/**
+ * D-3's opaque UI keys — strings that are NOT the id of a stored thing, so
+ * no brand applies — allowed by exact name: the chair-row key (`rowId`,
+ * `appointmentId#barberId` / `new-<nonce>`), the sheet stack's `subjectId`
+ * (D-8.9), track, option (`service:variant`) and column keys (a chair OR a
+ * day), the DOM ids an aria attribute points at (`titleId`, `labelId`), test
+ * ids (`testId`, `…TestId`), the grid's block key (`blockId`,
+ * `block:<chair>:<day>:<minute>` / `day:<chair>` — documented as a D-3 key on
+ * `BlockEditorVm`, never a `ScheduleExceptionId`) and the DOM
+ * `PointerEvent.pointerId` a gesture holds (a number the browser mints). The
+ * DS option ids (`UiChoiceOption.id`, `UiMapPin.id`) are named `id`, which
+ * no suffix matches — they need no entry. A new entry is a plan decision.
+ */
+export const UI_OPAQUE_KEY_NAMES = [
+  'rowId',
+  'subjectId',
+  'trackId',
+  'optionId',
+  'columnId',
+  'titleId',
+  'labelId',
+  'testId',
+  '[a-z]+TestId',
+  'blockId',
+  'pointerId',
+];
+
+/**
+ * L3 for the features and the design system (Law 7.4, pass D D-13.1): a
+ * member of a type alias OR an interface (feature view models are mostly
+ * interfaces) named as an id, an instant, money, a shop day, a zone or a
+ * coordinate is its brand. Escapes: `…Input` shapes (foreign input before
+ * its parse), `…Words` tables (their `string` members are translated words —
+ * «днес» is `VisitWords.today`), function-typed members, and the opaque UI
+ * keys above.
+ */
+export const UI_RAW_PRIMITIVE_RESTRICTIONS = [
+  {
+    selector: `:matches(TSTypeAliasDeclaration, TSInterfaceDeclaration):not([id.name=/(Input|Words)$/]) TSPropertySignature[key.name=/(${UI_RAW_BRAND_FIELD_SUFFIXES.join('|')})$|^(${UI_RAW_BRAND_FIELD_KEYS.join('|')})$/]:not([key.name=/^(${UI_OPAQUE_KEY_NAMES.join('|')})$/]) ${RAW_KEYWORD_TAIL}`,
+    message:
+      'A field holding an id, an instant, money, a shop day or minutes is its brand (Law 7.4, D-3): `XId` (`CustomerId` ≠ `UserId`), `*UtcMs: UtcEpochMs`, `today`/`dayKey`: `LocalDate`, `*Cents: PriceCents` beside a `Currency`, `*Minutes`: `MinuteOfDay`/`DurationMinutes`/`MinuteCount`, `TimeZone` — never a raw `number`/`string`; foreign input is parsed once at its edge (`X.parse(raw)`). An opaque UI key that is no stored id is allowed by name (`UI_OPAQUE_KEY_NAMES`, tools/lint-rules/ecs-syntax.mjs).',
+  },
+];
+
+/**
+ * Where the features/UI guard applies, as globs relative to the WORKSPACE
+ * root — `uiRawPrimitiveBlock` pins that root as the block's absolute
+ * `basePath`, so the globs hold under both ESLint base paths.
+ */
+export const UI_RAW_PRIMITIVE_FILES = [
+  'libs/features/**/*.ts',
+  'libs/ui/**/*.ts',
 ];
 
 /** L4 — no `Date` anywhere in the core (Law 7.1). */
@@ -572,6 +685,43 @@ export function ecsRootEveryFileBlocks() {
       },
     },
   ];
+}
+
+/**
+ * The features/UI half of the root config (pass D, D-13.1): ONE block that
+ * puts `UI_RAW_PRIMITIVE_RESTRICTIONS` on the production files of
+ * `libs/features/**` and `libs/ui/**`, restating the every-file icon guards
+ * and L7 because `no-restricted-syntax` options replace, never merge.
+ *
+ * `basePath` MUST be the absolute workspace root (the root config passes its
+ * own `import.meta.dirname`): ESLint resolves a block's `files` against its
+ * own `basePath` when it has one, so the repo-root globs hold under the
+ * `@nx/eslint:lint` executor (base = the workspace root) AND under directory
+ * lookup (base = the project dir), where a bare `libs/features/**` glob
+ * matches nothing. `ignores` is the root's production-only list (specs,
+ * `testing/`, `test-setup.ts`, e2e, `.d.ts`), whose files keep the
+ * every-file blocks. The root installs it before the suffix blocks, so an
+ * ECS-suffix file keeps its own kind's list.
+ */
+export function uiRawPrimitiveBlock({ basePath, ignores }) {
+  if (typeof basePath !== 'string' || !isAbsolute(basePath)) {
+    throw new Error(
+      `uiRawPrimitiveBlock needs the absolute workspace root, got ${basePath}`,
+    );
+  }
+  return {
+    basePath,
+    files: UI_RAW_PRIMITIVE_FILES,
+    ignores,
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...ICON_SYNTAX_RESTRICTIONS,
+        ...ECS_ID_CAST_RESTRICTIONS,
+        ...UI_RAW_PRIMITIVE_RESTRICTIONS,
+      ],
+    },
+  };
 }
 
 /**

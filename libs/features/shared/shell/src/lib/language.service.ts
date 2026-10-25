@@ -1,9 +1,9 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
-import { SupportedLang, isSupportedLang } from '@creativo/infrastructure/i18n';
+import { Locale, Tag } from '@core/primitives';
 
 export interface LanguageOption {
-  readonly code: SupportedLang;
+  readonly code: Locale;
   /** Each language's own name for itself — deliberately not translated. */
   readonly label: string;
 }
@@ -26,18 +26,17 @@ export interface LanguageOption {
 export class LanguageService {
   private readonly transloco = inject(TranslocoService);
 
-  readonly activeLang = computed<SupportedLang>(() => {
-    const lang = this.transloco.activeLang();
-    return isSupportedLang(lang) ? lang : 'bg';
-  });
+  readonly activeLang = computed<Locale>(() =>
+    Tag.or(Locale, this.transloco.activeLang(), Locale.Bg),
+  );
 
   /** One entry per locale — adding a language is a single line here. */
   readonly languages: readonly LanguageOption[] = [
-    { code: 'bg', label: 'Български' },
-    { code: 'en', label: 'English' },
+    { code: Locale.Bg, label: 'Български' },
+    { code: Locale.En, label: 'English' },
   ];
 
-  set(lang: SupportedLang): void {
+  set(lang: Locale): void {
     this.transloco.setActiveLang(lang);
   }
 }

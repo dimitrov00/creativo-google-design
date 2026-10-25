@@ -8,7 +8,11 @@ import {
   Result,
   type UserId,
 } from '@core/primitives';
-import { MediaError, type RepositoryError } from '@core/errors';
+import {
+  type AttachVisitPhotoError,
+  MediaError,
+  type RepositoryError,
+} from '@core/errors';
 import type {
   AppointmentPhoto,
   AppointmentPhotoFacts,
@@ -57,9 +61,6 @@ export type AdoptVisitPhotoCommand = VisitPhotoSubject &
   PhotoObject & {
     readonly label: string | null;
   };
-
-/** What a refused or failed shot answers. */
-export type AttachVisitPhotoError = MediaError | RepositoryError;
 
 /** How the picture looks and where it came from — the record's non-stamp facts. */
 type PhotoLook = {

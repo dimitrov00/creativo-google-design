@@ -9,6 +9,7 @@ import {
   AuditContext,
   AuditTarget,
   AuditTargetRef,
+  RegistrationField,
   Role,
   SeatLabel,
   SeatOccupant,
@@ -572,7 +573,7 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     writer: Actor.system(SystemSource.AdminSdk),
     beforeExists: true,
     afterExists: true,
-    fields: ['firstName', 'lastName'],
+    fields: [RegistrationField.FirstName, RegistrationField.LastName],
     beforeProfileEditedAtUtcMs: null,
     afterProfileEditedAtUtcMs: null,
   };

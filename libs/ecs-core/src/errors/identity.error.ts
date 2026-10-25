@@ -1,6 +1,8 @@
 import type { AccountsError } from './accounts.error';
 import type { IdentifierChannel } from '@core/primitives';
 import type { PhoneError } from './phone.error';
+import type { PipelineError } from './pipeline.error';
+import type { RepositoryError } from './repository.error';
 
 /**
  * The identity context's error codes — the codes of the legacy identity
@@ -200,6 +202,16 @@ export const IdentityError = {
   },
   birthDateInvalid(attempted: string): IdentityError.BirthDateInvalid {
     return { errorCode: IdentityErrorCode.BirthDateInvalid, attempted };
+  },
+  /**
+   * A birth date typed only in part — the onboarding birthday step's
+   * `'partial'` state (pass D §2.11): the existing
+   * `IDENTITY_BIRTH_DATE_INVALID` code with an empty `attempted`, so its
+   * `{{attempted}}` placeholder prints nothing, exactly as the param-less
+   * struct the step words today.
+   */
+  birthDatePartial(): IdentityError.BirthDateInvalid {
+    return { errorCode: IdentityErrorCode.BirthDateInvalid, attempted: '' };
   },
   birthDateInFuture(attempted: string): IdentityError.BirthDateInFuture {
     return { errorCode: IdentityErrorCode.BirthDateInFuture, attempted };
@@ -510,3 +522,51 @@ export type CompleteRegistrationRefusal = {
   readonly errorCode: typeof CompleteRegistrationRefusalCode.ProfileInvalid;
   readonly errors: readonly RegistrationProfileError[];
 };
+
+/*
+ * The identity pipelines' and flows' named unions — homed here in pass D
+ * (E-20, E-21; Law 7.5: never in a pipeline or component file).
+ */
+
+/** What `requestOtp` answers with: a refusal (`IdentityError`), a store failure, or a failed delivery. */
+export type RequestOtpError = IdentityError | RepositoryError | PipelineError;
+
+/** What `verifyOtp` answers with: a refusal (`IdentityError`), a store failure, or an Admin-Auth failure. */
+export type VerifyOtpError = IdentityError | RepositoryError | PipelineError;
+
+/** What `completeRegistration` answers with: a refusal, a store failure, or the Admin-Auth mint failing. */
+export type CompleteRegistrationError =
+  IdentityError | CompleteRegistrationRefusal | RepositoryError | PipelineError;
+
+/**
+ * The refusal the auth flow shows on its identify and code steps (pass D
+ * §2.11, declared for W1-A's retype of `AuthFlowState.error` and the
+ * `AuthFlowEvent` failures): an identity refusal, or the callable's failure
+ * as the gateway answered it — worded `errors.<serverErrorCode>`, else
+ * `IDENTITY_CALL_FAILED`.
+ */
+export type AuthFailure = IdentityError | PipelineError;
+
+/**
+ * The refusal the onboarding flow shows on its about and birthday steps
+ * (pass D §2.11, declared for W1-A's retype of `OnboardingFlowState.error`
+ * and the `OnboardingFlowEvent` failures): an identity refusal (the birth
+ * date's age window among them), no signed-in account to write for
+ * (`IDENTITY_IDENTIFIER_MISSING`, the web's own failure word — outside the
+ * {@link IdentityError} union), the owner's profile save refused or failed
+ * (`AccountsError.OwnProfileSave`), or the registration callable's failure.
+ */
+export type OnboardingFailure =
+  | IdentityError
+  | IdentityError.IdentifierMissing
+  | AccountsError.OwnProfileSave
+  | PipelineError;
+
+/**
+ * What a web surface's own-profile write answers (the profile page, the
+ * booking contact sheet's «save to profile»): the save refused or failed
+ * (`AccountsError.OwnProfileSave`), or no signed-in account to write for
+ * (`IDENTITY_IDENTIFIER_MISSING`).
+ */
+export type OwnProfileWriteFailure =
+  AccountsError.OwnProfileSave | IdentityError.IdentifierMissing;

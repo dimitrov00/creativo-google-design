@@ -4,7 +4,7 @@ import {
   Injector,
   createEnvironmentInjector,
 } from '@angular/core';
-import { FLAG_NAMES, FlagName } from '@core/components';
+import { FeatureFlags, FlagName } from '@core/components';
 import { TestBed } from '@angular/core/testing';
 import type { FlagsPorts } from '@core/ports';
 import { provideFlags } from './flags.provider';
@@ -62,6 +62,7 @@ describe('provideFlags', () => {
   it('defaults every flag OFF where no root binds the manifest', () => {
     TestBed.resetTestingModule();
     const flags = TestBed.inject(FLAGS_PORTS);
-    for (const flag of FLAG_NAMES) expect(flags.flagOn(flag)).toBe(false);
+    for (const flag of FeatureFlags.NAMES)
+      expect(flags.flagOn(flag)).toBe(false);
   });
 });

@@ -29,8 +29,8 @@ import { LocalDate } from '@core/primitives';
  * in Bulgarian by CLDR (`9.09`) and a word in English (`Sep 9`); neither is
  * touched afterwards — no capitaliser, no padding.
  */
-export function formatDayPill(dayKey: string, locale: string): string {
-  return formatWallClock(localDateOfKey(dayKey), null, locale, {
+export function formatDayPill(day: LocalDate, locale: string): string {
+  return formatWallClock(day, null, locale, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -55,14 +55,14 @@ export function formatDayPill(dayKey: string, locale: string): string {
  * invents a separator the locale would not.
  */
 export function formatDayPillRange(
-  firstKey: string,
-  lastKey: string,
+  first: LocalDate,
+  last: LocalDate,
   locale: string,
 ): string {
-  const first = localDateOfKey(firstKey);
-  const last = localDateOfKey(lastKey);
-  const sameYear = firstKey.slice(0, 4) === lastKey.slice(0, 4);
-  const sameMonth = sameYear && firstKey.slice(5, 7) === lastKey.slice(5, 7);
+  const from = LocalDate.parts(first);
+  const to = LocalDate.parts(last);
+  const sameYear = from.year === to.year;
+  const sameMonth = sameYear && from.month === to.month;
   const dayMonth: Intl.DateTimeFormatOptions = {
     day: 'numeric',
     month: 'short',
@@ -86,18 +86,13 @@ export function formatDayPillRange(
 }
 
 /**
- * A `YYYY-MM-DD` key as the shop day it names, FOR FORMATTING — its own
- * fields by civil arithmetic (`LocalDate`), no `Date`. The
- * `@creativo/ui/wall-clock` faces lay it on the UTC axis and read it on
- * `timeZone: 'UTC'` (one cached formatter per locale and option set), so
- * the day is immune to any zone's midnight. Not a validation:
- * the keys are the store's own, and an out-of-range day rolls over exactly
- * as `Date.UTC` rolled it.
+ * The face a pill with NO day has always printed: before the shop's zone
+ * is known the store's day key was `''`, which the old key reader rolled
+ * to `0000-01-01`. Kept so a day-less pill prints what it printed; never
+ * seen in practice — the page draws its pill only once the zone (and so a
+ * day) is known (`StaffDayStore.ready`), and every sheet has its own day.
  */
-export function localDateOfKey(dayKey: string): LocalDate {
-  const [year = 1970, month = 1, day = 1] = dayKey.split('-').map(Number);
-  return LocalDate.fromEpochDay(LocalDate.epochDayOf(year, month, day));
-}
+const NO_DAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(0, 1, 1));
 
 /**
  * THE DAY PILL — a tinted capsule that names a day and opens the month.
@@ -172,15 +167,16 @@ export function localDateOfKey(dayKey: string): LocalDate {
   },
 })
 export class StaffDayPill {
-  readonly uiDayKey = input.required<string>();
-  readonly uiTodayKey = input<string | null>(null);
+  /** The day the pill names — `null` only while the owner has no day yet. */
+  readonly uiDayKey = input.required<LocalDate | null>();
+  readonly uiTodayKey = input<LocalDate | null>(null);
   readonly uiLocale = input('bg');
   /** The visit's own days, marked on the month. */
   readonly uiRelatives = input<readonly UiMonthPickerRelative[]>([]);
   /** Days with something on them — a series' own, on its end's calendar. */
-  readonly uiMarked = input<readonly string[]>([]);
+  readonly uiMarked = input<readonly LocalDate[]>([]);
   /** The earliest day the month offers. */
-  readonly uiMin = input<string | null>(null);
+  readonly uiMin = input<LocalDate | null>(null);
   /**
    * `regular` in a frame's head, beside the 44px step arrows; `small` as a
    * FORM ROW's value, the 36px tier every other pill in a row wears.
@@ -194,14 +190,21 @@ export class StaffDayPill {
   readonly uiTestId = input('staff-day-pill');
   readonly uiCalendarTestId = input<string | null>(null);
   readonly uiPresented = model(false);
-  readonly uiPicked = output<string>();
+  /** The day picked in the month — always a real calendar day. */
+  readonly uiPicked = output<LocalDate>();
 
   protected readonly label = computed(
-    () => this.uiLabel() ?? formatDayPill(this.uiDayKey(), this.uiLocale()),
+    () =>
+      this.uiLabel() ??
+      formatDayPill(this.uiDayKey() ?? NO_DAY, this.uiLocale()),
   );
 
-  protected pick(dayKey: string): void {
+  /**
+   * A day picked in the month. The month emits a cell's own `LocalDate` (or
+   * a relative day walked from one), so the pill hands it on as it is.
+   */
+  protected pick(day: LocalDate): void {
     this.uiPresented.set(false);
-    this.uiPicked.emit(dayKey);
+    this.uiPicked.emit(day);
   }
 }

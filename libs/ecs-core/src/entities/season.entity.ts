@@ -35,7 +35,7 @@ export type SeasonMeta = {
  * inclusive. A season has a track — the family its gauge draws, «Есен 2026»
  * I…V — and families of its own; an event is a short window with families
  * and no track («Седмица на брадата»). Announced at least
- * `Gamification.SEASON_NOTICE_DAYS` before it opens; SeasonSystem `phaseOn`
+ * `SeasonWindow.NOTICE_DAYS` before it opens; SeasonSystem `phaseOn`
  * says where it stands on a day. Nothing counts down: the page shows real
  * dates. The archetype (Law 6): the identity slice and the `SeasonWindow`
  * slice (`windowFrom`, `windowUntil`, was `window`).

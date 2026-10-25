@@ -106,11 +106,11 @@ describe('VoucherCode.distinct — the vouchers a batch names', () => {
     expect(VoucherCode.distinct([])).toEqual({ ok: true, value: [] });
   });
 
-  it('refuses a voucher named twice, however its case and spaces differ', () => {
+  it('refuses a voucher named twice, however its case and spaces differ — as a DUPLICATE (pass D, DEP-18)', () => {
     expect(VoucherCode.distinct(['GIFT2025', ' gift2025'])).toEqual({
       ok: false,
       error: {
-        errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
+        errorCode: 'ENGAGEMENT_VOUCHER_CODE_DUPLICATE',
         attempted: ' gift2025',
       },
     });

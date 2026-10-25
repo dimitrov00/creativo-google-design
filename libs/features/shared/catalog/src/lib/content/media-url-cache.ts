@@ -1,6 +1,10 @@
 import { signal } from '@angular/core';
 import type { MediaRef } from '@core/components';
-import type { MediaResolvePorts, MediaVariant } from '@core/ports';
+import type {
+  MediaResolvePorts,
+  MediaVariant,
+  ResolveMedia,
+} from '@core/ports';
 import { MediaError, MediaErrorCode } from '@core/errors';
 
 /**
@@ -170,7 +174,7 @@ export function mediaUrlCache(
   function attempt(ref: MediaRef, failures: number): void {
     entries.set(ref.mediaPath, { mediaFetchState: MediaFetchState.InFlight });
     const askedAs = viewer;
-    let answer: ReturnType<MediaResolvePorts['resolveMedia']>;
+    let answer: ReturnType<ResolveMedia>;
     try {
       answer = resolver.resolveMedia(ref);
     } catch (error) {

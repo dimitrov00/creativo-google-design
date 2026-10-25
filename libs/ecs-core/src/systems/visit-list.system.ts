@@ -4,42 +4,15 @@ import {
   LocalDate,
   type MinuteOfDay,
 } from '@core/primitives';
-import { BookingLifecycle, ShopNow, WallTime } from '@core/components';
-
-/** The grain a visit list is sectioned by — the ONLY source of these strings. */
-export const VisitGrain = {
-  Month: 'MONTH',
-  Year: 'YEAR',
-} as const;
-export type VisitGrain = (typeof VisitGrain)[keyof typeof VisitGrain];
-
-/** A row's own outcome, as a list narrows by it — the ONLY source of these strings. */
-export const VisitRowOutcome = {
-  Open: 'OPEN',
-  Worked: 'WORKED',
-  NoShow: 'NO_SHOW',
-  Cancelled: 'CANCELLED',
-} as const;
-export type VisitRowOutcome =
-  (typeof VisitRowOutcome)[keyof typeof VisitRowOutcome];
-
-/** The funnel's options — the ONLY source of these strings. */
-export const VisitFilter = {
-  All: 'ALL',
-  Upcoming: 'UPCOMING',
-  Completed: 'COMPLETED',
-  Cancelled: 'CANCELLED',
-  NoShow: 'NO_SHOW',
-} as const;
-export type VisitFilter = (typeof VisitFilter)[keyof typeof VisitFilter];
-
-/** Who reads the list — the ONLY source of these strings. */
-export const VisitPerspective = {
-  Client: 'CLIENT',
-  Staff: 'STAFF',
-} as const;
-export type VisitPerspective =
-  (typeof VisitPerspective)[keyof typeof VisitPerspective];
+import {
+  BookingLifecycle,
+  ShopNow,
+  VisitFilter,
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
+  WallTime,
+} from '@core/components';
 
 /** The upcoming run's key — not a date, so it can never collide with one (a key, not a tag). */
 const UPCOMING_SECTION_KEY = 'upcoming';

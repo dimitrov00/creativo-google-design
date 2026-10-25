@@ -44,6 +44,7 @@ import {
   LOYALTY_CATALOG_MEMO,
   LOYALTY_CATALOG_READ_PORTS,
   type LazyAdapterScope,
+  LazyMethod,
   MEDIA_RESOLVE_PORTS,
   OTP_CHALLENGE_PORTS,
   POSITION_READ_PORTS,
@@ -333,38 +334,38 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.schedulingReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeBusyDay: 'observable',
-        observeExceptions: 'observable',
-        observeSchedule: 'observable',
-        observeLocation: 'observable',
-        observePolicy: 'observable',
-        observeCapacityMonth: 'observable',
+        observeBusyDay: LazyMethod.Observable,
+        observeExceptions: LazyMethod.Observable,
+        observeSchedule: LazyMethod.Observable,
+        observeLocation: LazyMethod.Observable,
+        observePolicy: LazyMethod.Observable,
+        observeCapacityMonth: LazyMethod.Observable,
       },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(SCHEDULE_EXCEPTION_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.scheduleExceptionPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { writeScheduleException: 'promise' },
+      methods: { writeScheduleException: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.appointmentReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeAppointment: 'observable',
-        observeBarberDay: 'observable',
-        observeUpcoming: 'observable',
-        observeHistory: 'observable',
-        pageClientHistory: 'promise',
-        searchAppointmentWindow: 'promise',
+        observeAppointment: LazyMethod.Observable,
+        observeBarberDay: LazyMethod.Observable,
+        observeUpcoming: LazyMethod.Observable,
+        observeHistory: LazyMethod.Observable,
+        pageClientHistory: LazyMethod.Promise,
+        searchAppointmentWindow: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(WAITLIST_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.waitlistReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observeMyWaitlistRequests: 'observable' },
+      methods: { observeMyWaitlistRequests: LazyMethod.Observable },
       onLoadError: dataUnavailable,
     }),
     // The staff client card (client-card-redesign §6.2) and the admin page's
@@ -374,9 +375,9 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.clientStatsReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        loadClientStats: 'promise',
-        loadClientMoney: 'promise',
-        pageClientStats: 'promise',
+        loadClientStats: LazyMethod.Promise,
+        loadClientMoney: LazyMethod.Promise,
+        pageClientStats: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -384,10 +385,10 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.catalogReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeServices: 'observable',
-        observeBarbers: 'observable',
-        observeCategories: 'observable',
-        observeLocations: 'observable',
+        observeServices: LazyMethod.Observable,
+        observeBarbers: LazyMethod.Observable,
+        observeCategories: LazyMethod.Observable,
+        observeLocations: LazyMethod.Observable,
       },
       onLoadError: dataUnavailable,
     }),
@@ -398,13 +399,13 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.couponVoucherPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        findCouponByCode: 'promise',
-        listOpenCoupons: 'promise',
-        loadCouponGrant: 'promise',
-        listUsableCouponGrants: 'promise',
-        findGiftVoucherByCode: 'promise',
-        listGiftVouchersForHolder: 'promise',
-        loadCoupons: 'promise',
+        findCouponByCode: LazyMethod.Promise,
+        listOpenCoupons: LazyMethod.Promise,
+        loadCouponGrant: LazyMethod.Promise,
+        listUsableCouponGrants: LazyMethod.Promise,
+        findGiftVoucherByCode: LazyMethod.Promise,
+        listGiftVouchersForHolder: LazyMethod.Promise,
+        loadCoupons: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -414,8 +415,8 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.inboxPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeInbox: 'observable',
-        markNotificationRead: 'promise',
+        observeInbox: LazyMethod.Observable,
+        markNotificationRead: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -423,8 +424,8 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.appointmentNotePorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeAppointmentNote: 'observable',
-        saveAppointmentNote: 'promise',
+        observeAppointmentNote: LazyMethod.Observable,
+        saveAppointmentNote: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -433,17 +434,17 @@ export const appConfig: ApplicationConfig = {
     provideLazyPort(APPOINTMENT_PHOTO_DOCUMENTS, firebaseData, {
       factory: appointmentPhotoBundle,
       methods: {
-        observeAppointmentPhotos: 'observable',
-        saveAppointmentPhoto: 'promise',
-        deleteAppointmentPhoto: 'promise',
-        listClientPhotos: 'promise',
-        countPhotosByAppointment: 'promise',
+        observeAppointmentPhotos: LazyMethod.Observable,
+        saveAppointmentPhoto: LazyMethod.Promise,
+        deleteAppointmentPhoto: LazyMethod.Promise,
+        listClientPhotos: LazyMethod.Promise,
+        countPhotosByAppointment: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_PHOTO_BYTES, firebaseData, {
       factory: appointmentPhotoBundle,
-      methods: { uploadPhotoBytes: 'promise' },
+      methods: { uploadPhotoBytes: LazyMethod.Promise },
       onLoadError: photoBytesUnavailable,
     }),
     {
@@ -456,7 +457,7 @@ export const appConfig: ApplicationConfig = {
     provideLazyPort(CUSTOMER_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.customerPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { loadCustomerForUser: 'promise' },
+      methods: { loadCustomerForUser: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
 
@@ -468,15 +469,15 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.profilePorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeProfile: 'observable',
-        loadProfile: 'promise',
+        observeProfile: LazyMethod.Observable,
+        loadProfile: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(USER_SEARCH_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.userSearchPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { searchUsers: 'promise' },
+      methods: { searchUsers: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
 
@@ -494,9 +495,9 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.loyaltyAccountReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        loadLoyaltyAccount: 'promise',
-        listBadgeProgress: 'promise',
-        listSeasonProgress: 'promise',
+        loadLoyaltyAccount: LazyMethod.Promise,
+        listBadgeProgress: LazyMethod.Promise,
+        listSeasonProgress: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -513,21 +514,21 @@ export const appConfig: ApplicationConfig = {
           }),
         );
       },
-      methods: { loadLoyaltyCatalog: 'promise' },
+      methods: { loadLoyaltyCatalog: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(CLIENT_JOURNAL_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.clientJournalPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { pageClientJournal: 'promise' },
+      methods: { pageClientJournal: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(STREAK_DEFINITION_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.streakDefinitionPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observeStreakDefinitionHead: 'observable',
-        listStreakDefinitionVersions: 'promise',
+        observeStreakDefinitionHead: LazyMethod.Observable,
+        listStreakDefinitionVersions: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -537,7 +538,10 @@ export const appConfig: ApplicationConfig = {
           inj.get(GATEWAY_PORTS),
           inj.get(LOYALTY_CATALOG_MEMO),
         ),
-      methods: { publishStreakRule: 'promise', withdrawStreakRule: 'promise' },
+      methods: {
+        publishStreakRule: LazyMethod.Promise,
+        withdrawStreakRule: LazyMethod.Promise,
+      },
       onLoadError: dataUnavailable,
     }),
 
@@ -549,40 +553,40 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.programsPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observePositions: 'observable',
-        loadPosition: 'promise',
-        savePosition: 'promise',
-        observeCourses: 'observable',
-        loadCourse: 'promise',
-        saveCourse: 'promise',
-        observeEvents: 'observable',
-        loadEvent: 'promise',
-        saveEvent: 'promise',
+        observePositions: LazyMethod.Observable,
+        loadPosition: LazyMethod.Promise,
+        savePosition: LazyMethod.Promise,
+        observeCourses: LazyMethod.Observable,
+        loadCourse: LazyMethod.Promise,
+        saveCourse: LazyMethod.Promise,
+        observeEvents: LazyMethod.Observable,
+        loadEvent: LazyMethod.Promise,
+        saveEvent: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(POSITION_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.positionReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observePositions: 'observable' },
+      methods: { observePositions: LazyMethod.Observable },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(COURSE_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.courseReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observeCourses: 'observable' },
+      methods: { observeCourses: LazyMethod.Observable },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(SHOP_EVENT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.shopEventReadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { observeEvents: 'observable' },
+      methods: { observeEvents: LazyMethod.Observable },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(LOCATION_LOAD_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.locationLoadPorts(inj.get(FIREBASE_FIRESTORE)),
-      methods: { loadLocation: 'promise' },
+      methods: { loadLocation: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
 
@@ -592,16 +596,16 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.storage.avatarPorts(inj.get(m.storage.FIREBASE_STORAGE)),
       methods: {
-        uploadAvatar: 'promise',
-        findAvatar: 'promise',
-        removeAvatar: 'promise',
+        uploadAvatar: LazyMethod.Promise,
+        findAvatar: LazyMethod.Promise,
+        removeAvatar: LazyMethod.Promise,
       },
       onLoadError: avatarsUnavailable,
     }),
     provideLazyPort(MEDIA_RESOLVE_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.storage.mediaResolvePorts(inj.get(m.storage.FIREBASE_STORAGE)),
-      methods: { resolveMedia: 'promise' },
+      methods: { resolveMedia: LazyMethod.Promise },
       onLoadError: mediaUnavailable,
     }),
 

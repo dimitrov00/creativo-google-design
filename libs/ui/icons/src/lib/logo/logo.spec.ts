@@ -3,8 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { Result } from '@core/primitives';
 import { UiLogo, UiLogoScheme } from './logo';
+import { UiIconAsset } from '../manifest/icon-manifest';
 import { UI_LOGO } from '../manifest/icon-vocabulary';
-import { UI_ICON_MANIFEST_SOURCE } from '../registry/icon-registry.service';
+import {
+  UI_ICON_MANIFEST_SOURCE,
+  type UiIconSourceFailure,
+} from '../registry/icon-registry.service';
 
 @Component({
   imports: [UiLogo],
@@ -16,7 +20,7 @@ class HostComponent {
 }
 
 describe('UiLogo', () => {
-  const changes = new Subject<Result<unknown, Error>>();
+  const changes = new Subject<Result<unknown, UiIconSourceFailure>>();
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -34,7 +38,9 @@ describe('UiLogo', () => {
     expect(marks[0]?.tagName.toLowerCase()).toBe('svg');
     expect(marks[0]?.getAttribute('data-scheme')).toBe('any');
     expect(marks[0]?.getAttribute('viewBox')).toBe(
-      UI_LOGO.light.kind === 'vector' ? UI_LOGO.light.viewBox : '',
+      UI_LOGO.light.iconAsset === UiIconAsset.Vector
+        ? UI_LOGO.light.viewBox
+        : '',
     );
     expect(marks[0]?.querySelectorAll('path').length).toBe(8);
     expect(host.getAttribute('role')).toBe('img');
@@ -55,16 +61,16 @@ describe('UiLogo', () => {
     fixture.detectChanges();
     changes.next(
       Result.ok({
-        schemaVersion: 1,
+        schemaVersion: 2,
         logo: {
           light: {
-            kind: 'image',
+            iconAsset: 'IMAGE',
             href: '/brand/light.png',
             width: 400,
             height: 88,
           },
           dark: {
-            kind: 'image',
+            iconAsset: 'IMAGE',
             href: '/brand/dark.png',
             width: 400,
             height: 88,

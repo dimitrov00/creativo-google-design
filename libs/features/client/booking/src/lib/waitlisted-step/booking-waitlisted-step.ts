@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { DayWindows } from '@core/components';
 import { CatalogWording } from '@creativo/features/shared/catalog';
+import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
@@ -81,17 +82,13 @@ export class BookingWaitlistedStep {
       windowsLabel: DayWindows.isWholeDay(dayWindows)
         ? ''
         : dayWindows.windows
+            // «09:30 – 24:00» — the 24-hour face the watched windows have
+            // always read, a window closing at midnight closing at «24:00».
             .map(
               (window) =>
-                `${clockFace(window.startMinutes)} – ${clockFace(window.endMinutes)}`,
+                `${formatClock(window.startMinutes, ClockClosing.EndOfDay)} – ${formatClock(window.endMinutes, ClockClosing.EndOfDay)}`,
             )
             .join(' · '),
     })),
   );
-}
-
-/** «09:30» — a minute of the shop day, as the watched windows have always read. */
-function clockFace(minutes: number): string {
-  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-  return `${hours}:${String(minutes % 60).padStart(2, '0')}`;
 }

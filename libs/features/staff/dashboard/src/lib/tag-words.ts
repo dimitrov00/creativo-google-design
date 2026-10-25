@@ -1,4 +1,4 @@
-import { ClientQueryShape, GridEvent } from '@core/systems';
+import { ClientQueryShape, GridEvent } from '@core/components';
 
 /*
  * The staff day's lowercase words for two ecs-core tag families (UI residue

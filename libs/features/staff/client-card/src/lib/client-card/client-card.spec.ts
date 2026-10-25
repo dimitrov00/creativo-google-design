@@ -1,3 +1,4 @@
+import { CouponGrantId } from '@core/primitives';
 import { CouponOccasion, type VisitLeg } from '@core/components';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
@@ -120,7 +121,7 @@ function martinWithGift(overrides: Parameters<typeof martinContext>[0] = {}) {
     grants: [
       {
         ...GEORGI_GRANT,
-        grantId: 'grant-birthday',
+        grantId: CouponGrantId.of('grant-birthday'),
         title: 'Рожден ден',
         valueLabel: '−20 %',
         couponOccasion: CouponOccasion.Birthday,
@@ -741,7 +742,7 @@ describe('lib-client-card — Мартин, in the chair on his birthday', () =>
         grantsOnBill: [
           {
             ...GEORGI_GRANT,
-            grantId: 'grant-birthday',
+            grantId: CouponGrantId.of('grant-birthday'),
             title: 'Рожден ден',
             valueLabel: '−20 %',
             couponOccasion: CouponOccasion.Birthday,

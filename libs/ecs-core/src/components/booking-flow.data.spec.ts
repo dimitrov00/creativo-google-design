@@ -8,18 +8,13 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import { endMinute, localDate, minute, unwrapOk } from '@core/testing';
-import {
-  BookingFlowState,
-  BookingFlowStep,
-  MoveRefusal,
-  MoveRefusalReason,
-  ScheduleSelection,
-  ShopReach,
-  type SeatAssignment,
-} from './booking-flow.data';
-import { BookingCart, SeatKey } from './cart-line.data';
+import { BookingCart } from './booking-cart.data';
+import { BookingFlowState, BookingFlowStep } from './booking-flow.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { Party } from './party.data';
+import { ScheduleSelection } from './schedule-selection.data';
+import type { SeatAssignment } from './seat-assignment.data';
+import { SeatKey } from './seat-key.data';
 
 /** 09:00 — every assignment below is measured from it, on the one shop day. */
 const T0 = 9 * 60;
@@ -58,7 +53,7 @@ function selection(): ScheduleSelection {
   return built;
 }
 
-describe('BookingFlowStep / MoveRefusalReason', () => {
+describe('BookingFlowStep', () => {
   it('are SCREAMING tags', () => {
     expect(Object.values(BookingFlowStep)).toEqual([
       'LOCATION',
@@ -68,48 +63,6 @@ describe('BookingFlowStep / MoveRefusalReason', () => {
       'CONFIRMED',
       'WAITLISTED',
     ]);
-    expect(Object.values(MoveRefusalReason)).toEqual([
-      'COMPANIONS_ONLY',
-      'UNAVAILABLE',
-      'CARRIED_OUT_OF_REACH',
-    ]);
-    expect(MoveRefusal.of(MoveRefusalReason.Unavailable, null)).toEqual({
-      moveRefusalReason: 'UNAVAILABLE',
-      locationId: null,
-    });
-  });
-});
-
-describe('ShopReach — the shopReachKey values', () => {
-  it('calls when there is a number to press, and says get in touch otherwise', () => {
-    expect(ShopReach.forCallHref('tel:+359888000000')).toBe(
-      'booking.reach.call',
-    );
-    expect(ShopReach.forCallHref(null)).toBe('booking.reach.contact');
-    expect([ShopReach.Call, ShopReach.Contact]).toEqual([
-      'booking.reach.call',
-      'booking.reach.contact',
-    ]);
-  });
-});
-
-describe('ScheduleSelection', () => {
-  it('derives the envelope from the assignments — first start to last end, on the shop day', () => {
-    const built = selection();
-    expect(built.localDate).toBe('2026-10-07');
-    expect([built.startMinutes, built.endMinutes]).toEqual([T0, T0 + 75]);
-    const parallel = ScheduleSelection.of(CENTER, DAY, [
-      assignment('line-0', 0, 30),
-      assignment('line-1', 0, 60),
-    ]);
-    expect([parallel?.startMinutes, parallel?.endMinutes]).toEqual([
-      T0,
-      T0 + 60,
-    ]);
-  });
-
-  it('describes no appointment without an assignment', () => {
-    expect(ScheduleSelection.of(CENTER, DAY, [])).toBeNull();
   });
 });
 
@@ -147,6 +100,45 @@ describe('BookingFlowState', () => {
       },
     };
     expect(BookingFlowState.isTerminal(confirmed)).toBe(true);
+  });
+
+  it('isTerminal narrows to the two terminal states — their bags are readable', () => {
+    const party = Party.anonymous();
+    const states: readonly BookingFlowState[] = [
+      BookingFlowState.initial(party),
+      {
+        bookingFlowStep: BookingFlowStep.Confirmed,
+        confirmation: {
+          appointmentId: AppointmentId.of('appt-1'),
+          party,
+          cart: cartWithACut(),
+          selection: selection(),
+        },
+      },
+    ];
+    const receipts: string[] = [];
+    for (const state of states) {
+      if (!BookingFlowState.isTerminal(state)) continue;
+      receipts.push(
+        state.bookingFlowStep === BookingFlowStep.Confirmed
+          ? state.confirmation.appointmentId
+          : state.summary.requestId,
+      );
+    }
+    expect(receipts).toEqual(['appt-1']);
+  });
+
+  it('isTerminalStep is the one rule: the two steps off the spine, and only them', () => {
+    for (const step of Object.values(BookingFlowStep)) {
+      expect(BookingFlowState.isTerminalStep(step)).toBe(
+        BookingFlowState.spineIndex(step) === -1,
+      );
+    }
+    expect(
+      Object.values(BookingFlowStep).filter((step) =>
+        BookingFlowState.isTerminalStep(step),
+      ),
+    ).toEqual(['CONFIRMED', 'WAITLISTED']);
   });
 });
 

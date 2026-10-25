@@ -1,7 +1,7 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
-import { knownRoles } from '@core/components';
+import { Roles } from '@core/components';
 import {
   type Appointment,
   type BackfillJob,
@@ -24,7 +24,7 @@ import { TriggerAttemptSystem } from '@core/systems';
  * - `loadCallerRoles` — the STORED roles of `users/{uid}`, the server's
  *   second check behind the token's `sysadmin` claim (a demoted sysadmin
  *   keeps the claim until the token refreshes); `[]` for an unknown uid, an
- *   unknown string granting nothing (`knownRoles`).
+ *   unknown string granting nothing (`Roles.known`).
  *
  * Bodies spread as stored; a read or write that throws answers a
  * `RepositoryError` value whose `reason` is the failure's canonical code.
@@ -82,7 +82,7 @@ export const firestoreJobPorts = (
     const path = `${Collections.Users}/${userId}`;
     try {
       const roles: unknown = (await db.doc(path).get()).get('roles');
-      return Result.ok(Array.isArray(roles) ? knownRoles(roles) : []);
+      return Result.ok(Array.isArray(roles) ? Roles.known(roles) : []);
     } catch (error) {
       return Result.err(RepositoryError.readFailed(path, code(error)));
     }

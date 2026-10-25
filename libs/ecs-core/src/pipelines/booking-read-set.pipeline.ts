@@ -19,7 +19,7 @@ import {
   type GiftVoucherId,
   type LocationId,
   type ServiceId,
-  LocalDate,
+  type LocalDate,
   type MinuteOfDay,
   TimeZone,
   UtcEpochMs,
@@ -373,12 +373,6 @@ export function parseContactPhone(raw: string): E164 | null {
 export function zoneOf(location: ShopLocation): TimeZone | null {
   const zone = ZonedTimeSystem.checkZone(location.timeZone);
   return zone.ok ? zone.value : null;
-}
-
-/** A civil day as its `LocalDate`, or `null` — for a stored day read back. */
-export function localDateOrNull(raw: string): LocalDate | null {
-  const parsed = LocalDate.parse(raw);
-  return parsed.ok ? parsed.value : null;
 }
 
 /** What the after-commit audit write needs: the write port, the id mints, the clock and the log. */

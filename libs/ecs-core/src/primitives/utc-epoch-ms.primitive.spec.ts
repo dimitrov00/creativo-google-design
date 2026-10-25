@@ -45,6 +45,12 @@ describe('UtcEpochMs — an absolute instant', () => {
     expect(UtcEpochMs.elapsedMs(first, first)).toBe(0);
   });
 
+  it('EPOCH is the Unix epoch, 0, as a proven brand (pass D)', () => {
+    expect(UtcEpochMs.EPOCH).toBe(0);
+    expect(UtcEpochMs.of(0)).toEqual({ ok: true, value: UtcEpochMs.EPOCH });
+    expect(UtcEpochMs.compare(UtcEpochMs.EPOCH, at(1))).toBe(-1);
+  });
+
   it('plus* is exact elapsed arithmetic (T2 only, G-1)', () => {
     const t = at(1_000);
     expect(UtcEpochMs.plusMs(t, 500)).toBe(1_500);

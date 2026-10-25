@@ -5,6 +5,7 @@ import {
   type LocationId,
   ServiceVariantId,
 } from '@core/primitives';
+import type { MoneyError } from './money.error';
 
 /**
  * The catalog context's error codes — the 25 codes of the legacy catalog
@@ -411,4 +412,11 @@ export namespace CatalogError {
     readonly errorCode: typeof CatalogErrorCode.LocationZoneUnknown;
     readonly locationId: LocationId;
   };
+  /**
+   * Every way a raw terms struct can fail its edge guard
+   * (`ServiceTerms.parse`, `BarberOffering.parse`) — a catalogue refusal or
+   * the price's own (`MONEY_*`). Homed here by pass D (D-9.1; was
+   * `ServiceTermsError` in `service-terms.data.ts`).
+   */
+  export type Terms = CatalogError | MoneyError;
 }

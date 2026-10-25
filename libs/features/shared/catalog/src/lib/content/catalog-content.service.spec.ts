@@ -150,7 +150,7 @@ describe('CatalogContentService — media', () => {
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(content.coverUrl('svc-fade')).toBe(urlOf(cover));
+    expect(content.coverUrl(ServiceId.of('svc-fade'))).toBe(urlOf(cover));
     expect(content.serviceVms()[0]?.coverSrc).toBe(urlOf(cover));
     expect(content.barberVms()[0]?.avatarSrc).toBe(urlOf(avatar));
 
@@ -165,7 +165,7 @@ describe('CatalogContentService — media', () => {
     const reader = flakyResolver(1);
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
-    expect(content.coverUrl('svc-fade')).toBeUndefined();
+    expect(content.coverUrl(ServiceId.of('svc-fade'))).toBeUndefined();
     expect(content.serviceVms()[0]?.coverSrc).toBeUndefined();
 
     // The catalogue re-emits while the retry waits.
@@ -176,7 +176,7 @@ describe('CatalogContentService — media', () => {
 
     await vi.advanceTimersByTimeAsync(longestBackoff(1));
     expect(reader.callsFor(cover)).toBe(2);
-    expect(content.coverUrl('svc-fade')).toBe(urlOf(cover));
+    expect(content.coverUrl(ServiceId.of('svc-fade'))).toBe(urlOf(cover));
     expect(content.serviceVms()[0]?.coverSrc).toBe(urlOf(cover));
     expect(content.barberVms()[0]?.avatarSrc).toBe(urlOf(avatar));
   });
@@ -187,7 +187,7 @@ describe('CatalogContentService — media', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000);
 
     expect(reader.callsFor(cover)).toBe(DEFAULT_MEDIA_RETRY_POLICY.maxAttempts);
-    expect(content.coverUrl('svc-fade')).toBeUndefined();
+    expect(content.coverUrl(ServiceId.of('svc-fade'))).toBeUndefined();
     expect(content.serviceVms()[0]?.coverSrc).toBeUndefined();
   });
 
@@ -199,8 +199,8 @@ describe('CatalogContentService — media', () => {
     expect(content.coverUrlOf(fade)).toBe(urlOf(cover));
     expect(search).not.toHaveBeenCalled();
     // By id it still answers the same, through the one search.
-    expect(content.coverUrl('svc-fade')).toBe(urlOf(cover));
-    expect(content.coverUrl('svc-retired')).toBeUndefined();
+    expect(content.coverUrl(ServiceId.of('svc-fade'))).toBe(urlOf(cover));
+    expect(content.coverUrl(ServiceId.of('svc-retired'))).toBeUndefined();
   });
 
   it('stops retrying when its injector is destroyed', async () => {

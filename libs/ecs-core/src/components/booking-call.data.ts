@@ -27,8 +27,8 @@ import type { DiscountSource } from './discount-provenance.data';
 import { EditCommand as EditCommandTag, ResizeEdge } from './edit-command.data';
 import type { Placement } from './placement-kind.data';
 import type { SeatLabel } from './seat-label.data';
-import { CancellationReason } from './seat-outcome.data';
 import type { VoucherCode } from './voucher-code.data';
+import { CancellationReason } from './cancellation-reason.data';
 
 /**
  * Who a requested seat is for — the ONLY source of these strings, named after
@@ -47,9 +47,6 @@ export const RequestedSubjectRole = {
 } as const;
 export type RequestedSubjectRole =
   (typeof RequestedSubjectRole)[keyof typeof RequestedSubjectRole];
-
-/** Every status a transition answer may name — derived, never a second source. */
-const BOOKING_STATUSES: readonly BookingStatus[] = Object.values(BookingStatus);
 
 /**
  * THE BOOKING WIRE (Phase 4a 4A-4) — the request the booking callables take
@@ -311,10 +308,10 @@ export const BookingCall = {
       'appointmentId',
       AppointmentId.parse,
     );
-    const toBookingStatus = CallAnswer.oneOf(
+    const toBookingStatus = CallAnswer.tag(
       answer,
       'toBookingStatus',
-      BOOKING_STATUSES,
+      BookingStatus,
     );
     return appointmentId === null || toBookingStatus === null
       ? CallAnswer.unusable()

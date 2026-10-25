@@ -29,13 +29,6 @@ import type { QueryOp } from '@core/entities';
 export type CollectionPath = readonly string[];
 
 /**
- * Firestore's own filter vocabulary, verbatim (`WhereFilterOp`), read from
- * the `QueryOp` dictionary (`entities/collections.ts`): the adapter passes it
- * straight to the SDK, so no second spelling exists to drift.
- */
-export type QueryOperator = (typeof QueryOp)[keyof typeof QueryOp];
-
-/**
  * One `where` clause. `field` is a ROOT field of the flat document
  * (`bookingStatus`, `utcEpochMs` — Laws 5 and 6), never a dotted component
  * path: every collection is flat, and the in-memory doubles read the root
@@ -43,7 +36,8 @@ export type QueryOperator = (typeof QueryOp)[keyof typeof QueryOp];
  */
 export type QueryFilter = {
   readonly field: string;
-  readonly op: QueryOperator;
+  /** Firestore's own filter vocabulary, verbatim — the `QueryOp` dictionary (`entities/collections.ts`). */
+  readonly op: QueryOp;
   /** A scalar, or an array for `in` / `not-in` / `array-contains-any`. */
   readonly value: unknown;
 };

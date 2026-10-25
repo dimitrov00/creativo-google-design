@@ -28,20 +28,19 @@ import { UiButton } from '../button/button';
 import { UiChip } from '../chip/chip';
 import { UiIcon } from '@creativo/ui/icons';
 
-/** `YYYY-MM-DD`. The one shape every date on this surface travels as. */
-export type UiDayKey = string;
+/**
+ * A shop day — the `LocalDate` brand itself (`YYYY-MM-DD`), the one shape
+ * every date on this surface travels as. The picker hands back only days it
+ * built (a cell's own `LocalDate`, or a relative day walked from `uiToday`),
+ * so a consumer never re-parses what it is handed.
+ */
+export type UiDayKey = LocalDate;
 
 /** One relative shortcut offered above the grid. */
 export interface UiMonthPickerRelative {
   /** `0` is today, `1` tomorrow. Resolved against `uiToday`. */
   readonly offset: number;
   readonly label: string;
-}
-
-/** The 1st of a `YYYY-MM` month as a shop day, or `null` when it is not one. */
-function firstOfMonth(month: string): LocalDate | null {
-  const first = LocalDate.parse(`${month}-01`);
-  return first.ok ? first.value : null;
 }
 
 /**
@@ -109,8 +108,12 @@ function firstOfMonth(month: string): LocalDate | null {
   host: { class: 'ui-month-picker' },
 })
 export class UiMonthPicker {
-  /** The chosen day, `YYYY-MM-DD`. Opening lands on its month. */
-  readonly uiSelected = input.required<UiDayKey>();
+  /**
+   * The chosen day. Opening lands on its month. `null` while there is no
+   * day to choose from yet — the grid then draws no month (the head reads
+   * empty and the steps page nothing) until one arrives.
+   */
+  readonly uiSelected = input.required<UiDayKey | null>();
   /** Today, so a selected today still says it is today. */
   readonly uiToday = input<UiDayKey | null>(null);
   /**
@@ -148,15 +151,21 @@ export class UiMonthPicker {
   readonly uiPicked = output<UiDayKey>();
 
   /**
-   * The month on screen, `YYYY-MM`.
+   * The month on screen, as its 1st — `null` while there is no selection.
    *
    * ⚠ `linkedSignal`, and it carries `previous` forward. Re-deriving on every
    * recompute rather than on a genuine change of source is how a paged month
    * snaps back to the selection under the reader — the same trap the visit
    * editor's draft fell into.
    */
-  protected readonly shownMonth = linkedSignal<string, string>({
-    source: () => this.uiSelected().slice(0, 7),
+  protected readonly shownMonth = linkedSignal<
+    LocalDate | null,
+    LocalDate | null
+  >({
+    source: () => {
+      const selected = this.uiSelected();
+      return selected === null ? null : LocalDate.startOfMonth(selected);
+    },
     computation: (month, previous) =>
       previous !== undefined && previous.source === month
         ? previous.value
@@ -170,7 +179,7 @@ export class UiMonthPicker {
    * a stand-alone month is title case, and Apple's picker follows it.
    */
   protected readonly monthLabel = computed(() => {
-    const first = firstOfMonth(this.shownMonth());
+    const first = this.shownMonth();
     if (first === null) return '';
     const locale = this.uiLocale();
     // The shared wall-clock face of `@creativo/ui/wall-clock` (cached per
@@ -200,7 +209,7 @@ export class UiMonthPicker {
   protected readonly weeks = computed(() => {
     // Monday-first, padded to whole weeks (`CalendarGridSystem.monthGrid`);
     // a weekday is civil arithmetic on the `LocalDate`, so no zone is read.
-    const first = firstOfMonth(this.shownMonth());
+    const first = this.shownMonth();
     if (first === null) return [];
     return CalendarGridSystem.monthGrid(first, []).map((week) =>
       week.map((cell): { day: number; dayKey: UiDayKey } | null =>
@@ -212,29 +221,28 @@ export class UiMonthPicker {
   /** A set, read once per month drawn rather than scanned per cell. */
   protected readonly marked = computed(() => new Set(this.uiMarked()));
 
-  /** Before the floor — keys sort as dates, so a string compare is the compare. */
+  /** Before the floor — on the calendar's own day order. */
   protected isBeforeMin(dayKey: UiDayKey): boolean {
     const min = this.uiMin();
-    return min !== null && dayKey < min;
+    return min !== null && LocalDate.compare(dayKey, min) < 0;
   }
 
   /**
    * Resolved against `uiToday`, so a relative shortcut cannot drift from
-   * the shop's own today. Without a valid `uiToday` there is nothing to
+   * the shop's own today. Without a `uiToday` there is nothing to
    * resolve against and the shortcut is inert (`null`) — this lib never
    * reads a device clock (Law 7; ui-residue-cleanup DEP-3).
    */
   protected relativeDay(offset: number): UiDayKey | null {
     const today = this.uiToday();
-    if (today === null) return null;
-    const from = LocalDate.parse(today);
-    return from.ok ? LocalDate.addDays(from.value, offset) : null;
+    return today === null ? null : LocalDate.addDays(today, offset);
   }
 
+  /** A 1st plus whole months is a 1st (`addMonths` clamps the day to 1). */
   protected page(delta: number): void {
-    const first = firstOfMonth(this.shownMonth());
+    const first = this.shownMonth();
     if (first === null) return;
-    this.shownMonth.set(LocalDate.addMonths(first, delta).slice(0, 7));
+    this.shownMonth.set(LocalDate.addMonths(first, delta));
   }
 
   /** An inert shortcut (`null`) picks nothing. */

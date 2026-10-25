@@ -9,7 +9,7 @@ import {
   IdentityError,
   PipelineError,
   PipelineErrorCode,
-  type RepositoryError,
+  type VerifyOtpError,
 } from '@core/errors';
 import { Collections, type Otp, type User } from '@core/entities';
 import type {
@@ -83,9 +83,6 @@ export type VerifyOtpAnswer = {
   /** `NEW` when no account held the destination, else `RETURNING`. */
   readonly sessionKind: SessionKind;
 };
-
-/** A refusal (`IdentityError`), a store failure, or an Admin-Auth failure. */
-export type VerifyOtpError = IdentityError | RepositoryError | PipelineError;
 
 /** What tx 1 read: the challenge, and whether the typed code matches its hash. */
 type AttemptRead = {

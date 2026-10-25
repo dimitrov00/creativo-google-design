@@ -1,22 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { CouponGrantId, GiftVoucherId, TierId } from '@core/primitives';
 import { localDate } from '@core/testing';
-import { PerkId } from './gamification.data';
+import { PerkId } from './award-summary.data';
+import { GrantRefFields } from './grant-ref-fields.data';
 import {
-  CosmeticId,
-  GrantRefFields,
   JournalEffect,
   JournalEffectRecord,
-  JournalFeed,
-  JournalVisibility,
-  LabelCode,
   PauseScope,
   PauseTerm,
-  PublicLabel,
-  RewardRef,
-  RewardRefFields,
   TierOp,
 } from './journal-effect.data';
+import { JournalVisibility } from './journal-visibility.data';
+import { JournalFeed } from './journal-feed.data';
+import { LabelCode, PublicLabel } from './public-label.data';
+import {
+  CosmeticId,
+  RewardRef,
+  RewardRefFields,
+} from './reward-ref-fields.data';
 
 describe('the journal vocabularies', () => {
   it('declare the tags SCREAMING (the discriminator `journalEffect` and its peers) and keep the label keys', () => {

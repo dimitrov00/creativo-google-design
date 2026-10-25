@@ -1,20 +1,21 @@
 import { BehaviorSubject, defer, map, of, type Observable } from 'rxjs';
 import {
   type AuthClaims,
+  BarberStatus,
   BookingLifecycle,
-  type FlagName,
-  type OtpCode,
-  Principal,
-  type RegistrationFields,
-  SessionKind,
   BookingPolicy,
   CouponStatus,
-  BarberStatus,
+  type FlagName,
   JournalVisibility,
   LocationStatus,
+  type OtpCode,
+  PageStep,
   ParsedIdentifier,
   PhotoOrigin,
+  Principal,
+  type RegistrationFields,
   ServiceStatus,
+  SessionKind,
   TenantConfig,
   type VoucherCode,
 } from '@core/components';
@@ -32,7 +33,7 @@ import {
   type StreakDefinitionId,
   type TenantId,
   UserId,
-  type UtcEpochMs,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   MediaError,
@@ -61,6 +62,7 @@ import {
   type InboxNotification,
   type JournalEntry,
   type LoyaltyAccount,
+  type LoyaltyCatalog,
   type Otp,
   type Position,
   type ScheduleException,
@@ -99,7 +101,6 @@ import type {
   InboxPorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
-  LoyaltyCatalog,
   LoyaltyCatalogReadPorts,
   MediaResolvePorts,
   OtpChallengePorts,
@@ -122,7 +123,7 @@ import type {
   UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
-import { PageStep, PagingSystem } from '@core/systems';
+import { DiscountSystem, PagingSystem } from '@core/systems';
 import {
   FIXTURE_OTP_CODE,
   FIXTURE_OTP_SALT,
@@ -275,7 +276,7 @@ export function memoryScheduleExceptionPorts(
 
 /** A visit's start instant, oldest first. */
 function earliestFirst(a: Appointment, b: Appointment): number {
-  return a.utcEpochMs - b.utcEpochMs || byString(a.id, b.id);
+  return UtcEpochMs.compare(a.utcEpochMs, b.utcEpochMs) || byString(a.id, b.id);
 }
 
 /**
@@ -371,7 +372,8 @@ export function memoryWaitlistReadPorts(
           .filter((entry) => entry.ownerUserId === ownerUserId)
           .sort(
             (a, b) =>
-              b.createdAtUtcMs - a.createdAtUtcMs || byString(b.id, a.id),
+              UtcEpochMs.compare(b.createdAtUtcMs, a.createdAtUtcMs) ||
+              byString(b.id, a.id),
           ),
       ),
   };
@@ -493,13 +495,10 @@ export function memoryCouponVoucherPorts(
           (entry) => entry.code === code && enabled(entry),
         ) ?? null,
       ),
-    // The adapter's contract: a grant-only (code-less) coupon is not on offer.
+    // The offer rule, said once (`DiscountSystem.isOffered`): enabled and
+    // carrying a code — a grant-only (code-less) coupon is not on offer.
     listOpenCoupons: async () =>
-      Result.ok(
-        (state.coupons ?? []).filter(
-          (entry) => enabled(entry) && entry.code !== null,
-        ),
-      ),
+      Result.ok((state.coupons ?? []).filter(DiscountSystem.isOffered)),
     loadCouponGrant: async (id) =>
       Result.ok((state.grants ?? []).find((entry) => entry.id === id) ?? null),
     listUsableCouponGrants: async (customerId) =>
@@ -551,7 +550,11 @@ export function memoryInboxPorts(
     observeInbox: (userId) =>
       stream(() =>
         [...(inboxes.get(userId) ?? [])]
-          .sort((a, b) => b.sentAtUtcMs - a.sentAtUtcMs || byString(b.id, a.id))
+          .sort(
+            (a, b) =>
+              UtcEpochMs.compare(b.sentAtUtcMs, a.sentAtUtcMs) ||
+              byString(b.id, a.id),
+          )
           .slice(0, INBOX_LIMIT),
       ),
     markNotificationRead: async (userId, id, readAtUtcMs) => {
@@ -593,7 +596,7 @@ export function memoryAppointmentPhotoPorts(
       stream(() =>
         photos
           .filter((entry) => entry.appointmentId === appointmentId)
-          .sort((a, b) => a.takenAtUtcMs - b.takenAtUtcMs),
+          .sort((a, b) => UtcEpochMs.compare(a.takenAtUtcMs, b.takenAtUtcMs)),
       ),
     saveAppointmentPhoto: async (photo) => {
       const at = photos.findIndex((entry) => entry.id === photo.id);
@@ -616,7 +619,8 @@ export function memoryAppointmentPhotoPorts(
               )
               .sort(
                 (a, b) =>
-                  b.takenAtUtcMs - a.takenAtUtcMs || byString(b.id, a.id),
+                  UtcEpochMs.compare(b.takenAtUtcMs, a.takenAtUtcMs) ||
+                  byString(b.id, a.id),
               )
               .slice(0, PagingSystem.pageSize(limit))
           : [],
@@ -773,7 +777,9 @@ export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
               otp.consumedAtUtcMs === null &&
               otp.createdAtUtcMs >= sinceUtcMs,
           )
-          .sort((a, b) => a.createdAtUtcMs - b.createdAtUtcMs),
+          .sort((a, b) =>
+            UtcEpochMs.compare(a.createdAtUtcMs, b.createdAtUtcMs),
+          ),
       ),
     saveOtp: async ({ id, ...body }) => {
       world.store.set(`${Collections.Otps}/${id}`, body);

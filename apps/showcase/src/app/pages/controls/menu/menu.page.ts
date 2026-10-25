@@ -28,17 +28,18 @@ import {
 import { ScDemo } from '@showcase/shared/demo';
 import { ScPage } from '@showcase/shared/page';
 
-/** A fixed today, so the page draws the same month on every visit. */
-const TODAY = '2026-10-06';
+/**
+ * A fixed today, so the page draws the same month on every visit — a real
+ * day by construction (civil arithmetic on 2026-10-06, nothing to refuse).
+ */
+const TODAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 10, 6));
 
 /**
  * `вт, 6.10` — the day pill's grammar, as Intl writes it for Bulgarian,
  * through the shared wall-clock face (no `Date`, a cached formatter).
  */
-function dayPill(dayKey: string): string {
-  const day = LocalDate.parse(dayKey);
-  if (!day.ok) return '';
-  return formatWallClock(day.value, null, 'bg', {
+function dayPill(day: LocalDate): string {
+  return formatWallClock(day, null, 'bg', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -92,12 +93,12 @@ export class MenuPage {
     this.lastAction.set(action);
   }
 
-  protected pickDay(dayKey: string): void {
+  protected pickDay(dayKey: LocalDate): void {
     this.day.set(dayKey);
     this.monthOpen.set(false);
   }
 
-  protected pickDockedDay(dayKey: string): void {
+  protected pickDockedDay(dayKey: LocalDate): void {
     this.day.set(dayKey);
     this.dockedMonthOpen.set(false);
   }

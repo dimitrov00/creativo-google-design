@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CouponOccasion, CouponStatus } from './coupon-occasion.data';
+import { CouponOccasion } from './coupon-occasion.data';
+import { CouponStatus } from './coupon-status.data';
 
 // The occasion cases of `coupon.spec.ts`.
 

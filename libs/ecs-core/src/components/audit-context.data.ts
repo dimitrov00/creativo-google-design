@@ -1,16 +1,21 @@
-import type {
-  StreakRuleDirection,
-  StreakRuleParameter,
-  StreakTransition,
-} from './streak-rule.data';
+import type { StreakRuleDirection } from './streak-rule-direction.data';
+import type { StreakRuleParameter } from './streak-rule-parameter.data';
+import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
-import type {
-  LocalDate,
-  CustomerId,
-  LocationId,
-  SeatId,
-  UserId,
+import {
+  type LocalDate,
+  type LocationId,
+  type SeatId,
+  Tag,
 } from '@core/primitives';
+import type { ArrivalAction } from './arrival-action.data';
+import type { PlacementAction } from './placement-action.data';
+import type { CancellationReason } from './cancellation-reason.data';
+import type { ProfileAction } from './profile-action.data';
+import type { RegistrationField } from './registration.data';
+import type { StaffEditAction } from './staff-edit-action.data';
+import type { TipAction } from './tip-action.data';
+import type { TransitionAction } from './transition-action.data';
 
 /**
  * The audited verbs — the ONLY source of these strings, the discriminator
@@ -64,55 +69,6 @@ export const AuditAction = {
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
-/** Every audited verb, dictionary order — derived, never a second source. */
-export const AUDIT_ACTIONS: readonly AuditAction[] = Object.values(AuditAction);
-
-/*
- * The verb subsets each variant accepts, each read from the `AuditAction`
- * dictionary.
- */
-
-/** The two verbs that put an appointment in the book. */
-export type PlacementAction =
-  typeof AuditAction.BookingCommitted | typeof AuditAction.BookingStaffCreated;
-
-/** The staff lifecycle verbs of the transition callable. */
-export type TransitionAction =
-  | typeof AuditAction.BookingStaffConfirmed
-  | typeof AuditAction.BookingStaffCompleted
-  | typeof AuditAction.BookingStaffNoShow
-  | typeof AuditAction.BookingStaffCancelled
-  | typeof AuditAction.BookingStaffReopenNoShow
-  | typeof AuditAction.BookingStaffReopenCompleted
-  | typeof AuditAction.BookingStaffReinstate;
-
-export type ArrivalAction =
-  | typeof AuditAction.BookingStaffArrived
-  | typeof AuditAction.BookingStaffUnarrived;
-
-export type TipAction =
-  typeof AuditAction.BookingTipRecorded | typeof AuditAction.BookingTipCleared;
-
-/** The staff edit verbs — one per edit command, plus `EDIT` and `SAVE`. */
-export type StaffEditAction =
-  | typeof AuditAction.BookingStaffMove
-  | typeof AuditAction.BookingStaffResize
-  | typeof AuditAction.BookingStaffReprice
-  | typeof AuditAction.BookingStaffRedurate
-  | typeof AuditAction.BookingStaffRestaff
-  | typeof AuditAction.BookingStaffRelocate
-  | typeof AuditAction.BookingStaffAddSeat
-  | typeof AuditAction.BookingStaffRemoveSeat
-  | typeof AuditAction.BookingStaffDiscounts
-  | typeof AuditAction.BookingStaffVouchers
-  | typeof AuditAction.BookingStaffEdit
-  | typeof AuditAction.BookingStaffSave;
-
-export type ProfileAction =
-  | typeof AuditAction.ProfileCreated
-  | typeof AuditAction.ProfileUpdated
-  | typeof AuditAction.ProfileDeleted;
-
 /** How an ops backfill call ended — the field `backfillOutcome`. */
 export const BackfillOutcome = {
   /** The call threw; `backfillFailureCode` says why. */
@@ -150,6 +106,9 @@ export type AuditContext =
   | AuditContext.Profile;
 
 export const AuditContext = {
+  /** Every audited verb, dictionary order — derived, never a second source. */
+  ACTIONS: Tag.values(AuditAction),
+
   placement(
     auditAction: PlacementAction,
     placementLocationId: LocationId,
@@ -172,12 +131,12 @@ export const AuditContext = {
       loggedOnRetry,
     };
   },
-  cancelled(cancellationReason: string): AuditContext.Cancelled {
+  cancelled(cancellationReason: CancellationReason): AuditContext.Cancelled {
     return { auditAction: AuditAction.BookingCancelled, cancellationReason };
   },
   transition(
     auditAction: TransitionAction,
-    transitionReason: string | null,
+    transitionReason: CancellationReason | null,
     transitionSeatId: SeatId | null,
   ): AuditContext.Transition {
     return { auditAction, transitionReason, transitionSeatId };
@@ -231,17 +190,14 @@ export const AuditContext = {
   /** Copies the field list, so a caller's later mutation cannot rewrite the row. */
   profile(
     auditAction: ProfileAction,
-    profileFields: readonly string[],
+    profileFields: readonly RegistrationField[],
   ): AuditContext.Profile {
     return { auditAction, profileFields: [...profileFields] };
   },
 
   /** The edge guard for a stored or submitted verb. */
   isAuditAction(value: unknown): value is AuditAction {
-    for (let i = 0; i < AUDIT_ACTIONS.length; i++) {
-      if (AUDIT_ACTIONS[i] === value) return true;
-    }
-    return false;
+    return Tag.has(AuditAction, value);
   },
 } as const;
 
@@ -265,12 +221,12 @@ export namespace AuditContext {
   /** A client cancellation; `cancellationReason` is the cancellation reason CODE. */
   export type Cancelled = {
     readonly auditAction: typeof AuditAction.BookingCancelled;
-    readonly cancellationReason: string;
+    readonly cancellationReason: CancellationReason;
   };
   /** A staff lifecycle verb; the reason for a cancel, the seat for a per-seat act. */
   export type Transition = {
     readonly auditAction: TransitionAction;
-    readonly transitionReason: string | null;
+    readonly transitionReason: CancellationReason | null;
     readonly transitionSeatId: SeatId | null;
   };
   /** Arrival stamped or cleared — the verb is the whole fact. */
@@ -318,67 +274,6 @@ export namespace AuditContext {
   /** A `users/{uid}` write; `profileFields` are the changed field names. */
   export type Profile = {
     readonly auditAction: ProfileAction;
-    readonly profileFields: readonly string[];
-  };
-}
-
-/**
- * Whom an audited act touched — the target slice of `AuditEntry`, the
- * discriminator `auditTarget` (flatten-spec §3.7, F-26: a variant slice,
- * never a nullable id guarded by a comment). `NONE` when the act touched no
- * person, `USER` for an account act (a profile write, an account change),
- * `CUSTOMER` for a client record — written by the booking acts from the
- * booking flip (1) on (D29, §5.5). In this pass a row's target is `NONE`
- * when today's stored `targetUserId` is `null` and `USER` otherwise
- * (booking acts included); the stored bytes are unchanged.
- */
-export const AuditTarget = {
-  None: 'NONE',
-  User: 'USER',
-  Customer: 'CUSTOMER',
-} as const;
-export type AuditTarget = (typeof AuditTarget)[keyof typeof AuditTarget];
-
-export type AuditTargetRef =
-  AuditTargetRef.None | AuditTargetRef.User | AuditTargetRef.Customer;
-
-/** The one no-target slice — every untargeted row shares this struct. */
-const NO_TARGET: AuditTargetRef.None = { auditTarget: AuditTarget.None };
-
-export const AuditTargetRef = {
-  none(): AuditTargetRef.None {
-    return NO_TARGET;
-  },
-  user(targetUserId: UserId): AuditTargetRef.User {
-    return { auditTarget: AuditTarget.User, targetUserId };
-  },
-  customer(targetCustomerId: CustomerId): AuditTargetRef.Customer {
-    return { auditTarget: AuditTarget.Customer, targetCustomerId };
-  },
-  /** The account an act touched as its target slice: `USER`, or `NONE` for no account. */
-  forUser(
-    targetUserId: UserId | null,
-  ): AuditTargetRef.None | AuditTargetRef.User {
-    return targetUserId === null
-      ? NO_TARGET
-      : AuditTargetRef.user(targetUserId);
-  },
-  /** The account a target names — `null` for `NONE` and for a client record (D29: never a `UserId`). */
-  targetUserIdOf(ref: AuditTargetRef): UserId | null {
-    return ref.auditTarget === AuditTarget.User ? ref.targetUserId : null;
-  },
-} as const;
-
-export namespace AuditTargetRef {
-  export type None = {
-    readonly auditTarget: typeof AuditTarget.None;
-  };
-  export type User = {
-    readonly auditTarget: typeof AuditTarget.User;
-    readonly targetUserId: UserId;
-  };
-  export type Customer = {
-    readonly auditTarget: typeof AuditTarget.Customer;
-    readonly targetCustomerId: CustomerId;
+    readonly profileFields: readonly RegistrationField[];
   };
 }

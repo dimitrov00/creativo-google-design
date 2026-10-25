@@ -8,6 +8,7 @@ import {
   output,
 } from '@angular/core';
 import type { VisitLeg } from '@core/components';
+import type { CouponGrantId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -38,10 +39,14 @@ import {
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
 import { BirthdayCard } from '../birthday-card/birthday-card';
-import type { ClientCardRegion, WalletAnchor } from '../client-card.contracts';
+import { ClientCardRegion, type WalletAnchor } from '../client-card.contracts';
 import { figure, partedAtJoints } from '../client-card.format';
 import { ClientCardStore } from '../client-card.store';
-import { type ClientPhotoVm, type LinePart } from '../client-pages.vm';
+import {
+  type ClientPhotoVm,
+  type LinePart,
+  QuickActionId,
+} from '../client-pages.vm';
 import { LoadState } from '@creativo/shared/view-state';
 import { LoyaltyGlance } from '../loyalty-glance/loyalty-glance';
 import { MedalsGlance } from '../medals-glance/medals-glance';
@@ -50,7 +55,10 @@ import { regularSheetWidth } from '../sheet-width';
 /** A module of the glance that reads data of its own, and can fail on its own. */
 type GlanceModule = Exclude<
   ClientCardRegion,
-  'profile' | 'history' | 'vouchers' | 'activity'
+  | typeof ClientCardRegion.Profile
+  | typeof ClientCardRegion.History
+  | typeof ClientCardRegion.Vouchers
+  | typeof ClientCardRegion.Activity
 >;
 
 /** The photo grid: ONE row of three on a phone, two rows of five in the ≥ 761 dialog (§2.1.3 I1). */
@@ -160,6 +168,10 @@ export class ClientCard {
 
   /** Where each module's read stands, for the template's switches. */
   protected readonly LoadState = LoadState;
+  /** The glance's regions, for the template's headings and retries. */
+  protected readonly ClientCardRegion = ClientCardRegion;
+  /** The quick actions' ids, for the template's «Повтори» switch. */
+  protected readonly QuickActionId = QuickActionId;
 
   /** The loyalty card and «Всички»: the wallet at its top (`null`). The anchors stay for the editor's binding. */
   readonly openLoyalty = output<WalletAnchor | null>();
@@ -174,9 +186,9 @@ export class ClientCard {
   /** A past cut, from the grid or the last visit's thumbs (the photo id). */
   readonly openPhoto = output<string>();
   /** A ticket's «Използвай» (the reward's, the birthday gift's): the sheet puts that grant on the bill and opens the discount page on it. */
-  readonly openReward = output<string>();
+  readonly openReward = output<CouponGrantId>();
   /** An applied ticket's «Премахни»: the sheet takes that grant off the bill, as the discount page's card does. */
-  readonly removeReward = output<string>();
+  readonly removeReward = output<CouponGrantId>();
   /** «Повтори»: the last visit's services, for the draft. */
   readonly repeatLast = output<readonly VisitLeg[]>();
   /** «Махни от посещението». */
@@ -227,17 +239,17 @@ export class ClientCard {
 
   /** S7: `users/{uid}` did not load — the head, one notice, the verbs and the exits. */
   protected readonly profileFailed = computed(() =>
-    this.overview().failed.includes('profile'),
+    this.overview().failed.includes(ClientCardRegion.Profile),
   );
 
   /** The modules whose read failed. */
   private readonly failedModules = computed(() =>
     this.overview().failed.filter(
       (region): region is GlanceModule =>
-        region !== 'profile' &&
-        region !== 'history' &&
-        region !== 'vouchers' &&
-        region !== 'activity',
+        region !== ClientCardRegion.Profile &&
+        region !== ClientCardRegion.History &&
+        region !== ClientCardRegion.Vouchers &&
+        region !== ClientCardRegion.Activity,
     ),
   );
 
@@ -310,7 +322,7 @@ export class ClientCard {
   /** «Опитай пак» under the head: every failed module again — or the whole card. */
   protected retryAll(): void {
     if (this.profileFailed()) {
-      this.store.retry('profile');
+      this.store.retry(ClientCardRegion.Profile);
       return;
     }
     for (const region of this.failedModules()) this.store.retry(region);

@@ -7,6 +7,8 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { CompositionKind } from '@core/components';
+import { BarberId, Currency, ServiceId } from '@core/primitives';
+import { cents, duration } from '@core/testing';
 import type { ServiceVm } from '../content/catalog.vm';
 import { ServiceRowComponent } from './service-row.component';
 
@@ -28,25 +30,35 @@ class Loader implements TranslocoLoader {
 }
 
 const CUT: ServiceVm = {
-  id: 'svc-classic-cut',
+  id: ServiceId.of('svc-classic-cut'),
   compositionKind: CompositionKind.Single,
   name: { en: 'Classic cut', bg: 'Класическа подстрижка' },
   description: { en: 'A precise cut.', bg: 'Прецизна подстрижка.' },
   variants: [],
-  offerings: [{ barberId: 'ivan', base: { price: 14.5, minutes: 35 } }],
+  offerings: [
+    {
+      barberId: BarberId.of('ivan'),
+      base: {
+        priceCents: cents(1450),
+        currency: Currency.EUR,
+        minutes: duration(35),
+      },
+    },
+  ],
   upsellOnly: false,
   gallery: [],
-  priceFrom: 14.5,
-  cardPrice: { cheapest: 14.5, spread: false },
-  minutesRange: { from: 35, to: 35 },
+  currency: Currency.EUR,
+  priceFromCents: cents(1450),
+  cardPrice: { cheapestCents: cents(1450), spread: false },
+  minutesRange: { min: duration(35), max: duration(35) },
 };
 
 const BUNDLE: ServiceVm = {
   ...CUT,
-  id: 'svc-full-care',
+  id: ServiceId.of('svc-full-care'),
   compositionKind: CompositionKind.Bundle,
   name: { en: 'Full care', bg: 'Пълна грижа' },
-  includes: ['svc-classic-cut'],
+  includes: [ServiceId.of('svc-classic-cut')],
 };
 
 @Component({

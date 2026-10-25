@@ -15,25 +15,38 @@ import {
   ElementRef,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocalDate, MinuteOfDay, type Result, Weekday } from '@core/primitives';
+import {
+  BarberId,
+  LocalDate,
+  MinuteOfDay,
+  type Result,
+  TrackMinute,
+  Weekday,
+} from '@core/primitives';
 import { type SchedulingError } from '@core/errors';
 import {
+  GridEvent as GridEventTag,
   MonthlyAnchor,
   RecurrenceEnd,
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
+  RepeatPreset,
+  type ShopNow,
   WeekOfMonth,
 } from '@core/components';
 import {
-  GridEvent as GridEventTag,
   GridLayoutSystem,
   RecurrenceSystem,
-  RepeatPreset,
   VisitDraftSystem,
 } from '@core/systems';
 import { pluralForm, translateCodedError } from '@creativo/infrastructure/i18n';
-import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
+import {
+  ClockClosing,
+  formatClock,
+  formatWallClock,
+  formatWeekdayLabels,
+} from '@creativo/ui/wall-clock';
 import {
   UiChoiceMenu,
   type UiChoiceOption,
@@ -66,7 +79,7 @@ import {
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { StaffTimeline } from '../timeline/staff-timeline';
-import { addDays } from '../staff-day.store';
+import { trackMinuteOf } from '../time-grid/minute-run';
 import {
   MONDAY_TO_FRIDAY,
   RECURRENCE_END_WORD,
@@ -119,34 +132,49 @@ import {
  * alone. This component drafts and draws; it never writes.
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** One chair's real day, for the frame: what the block would sit on. */
+/**
+ * One chair's real day, for the frame: what the block would sit on. Its
+ * minutes are the shop day's (a seat's start and end, the roster hull), on
+ * the frame's anchored axis.
+ */
 export interface BlockEditorLane {
-  readonly barberId: string;
+  readonly barberId: BarberId;
   readonly neighbours: readonly {
     readonly name: string;
-    readonly startMinute: number;
-    readonly endMinute: number;
+    readonly startMinute: TrackMinute;
+    readonly endMinute: TrackMinute;
     readonly tone: number;
   }[];
-  readonly rosterStartMinute: number;
-  readonly rosterEndMinute: number;
+  readonly rosterStartMinute: TrackMinute;
+  readonly rosterEndMinute: TrackMinute;
 }
 
 export interface BlockEditorVm {
-  /** `null` while creating; otherwise the grid's own block id. */
+  /**
+   * `null` while creating; otherwise the grid's own block id
+   * (`block:<chair>:<day>:<minute>`, or `day:<chair>` for a day off) — an
+   * opaque UI key (D-3), what the draft reseeds on, never a stored id.
+   */
   readonly blockId: string | null;
   /** The chairs the draft starts with — one, for a saved block. */
-  readonly barberIds: readonly string[];
-  /** The day the sheet was opened on, `YYYY-MM-DD`; the draft may step off it. */
-  readonly dayKey: string;
-  readonly todayKey: string;
+  readonly barberIds: readonly BarberId[];
+  /** The day the sheet was opened on; the draft may step off it. */
+  readonly dayKey: LocalDate;
+  /**
+   * "Now" on the shop's clock (`StaffDayStore.shopNow`), or `null` before
+   * the zone is known — today's day for the calendars, and the now-line
+   * whenever the frame draws today.
+   */
+  readonly now: ShopNow | null;
   readonly allDay: boolean;
-  /** Minutes from midnight, shop time. */
-  readonly startMinute: number;
-  readonly endMinute: number;
+  /**
+   * Minutes from midnight, shop time, on the frame's anchored axis (a
+   * stored block's range, a tapped stretch, the noon default).
+   */
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   /** Every chair of the shop, for the DRAFT's day — the frame draws the chosen ones. */
   readonly lanes: readonly BlockEditorLane[];
-  readonly nowMinute: number | null;
   /** Whether the whole day is already off — the lift then lifts the day. */
   readonly dayIsOff: boolean;
   /**
@@ -159,7 +187,8 @@ export interface BlockEditorVm {
 }
 
 export interface BlockEditorBarberOption {
-  readonly id: string;
+  /** The catalogue chair's id (`BarberVm.id`). */
+  readonly id: BarberId;
   readonly label: string;
   readonly tone: number;
   readonly avatarSrc: string | null;
@@ -167,38 +196,41 @@ export interface BlockEditorBarberOption {
 
 /** A block's range, handed over when it becomes a visit. */
 export interface BlockEditorRange {
-  readonly barberId: string;
-  readonly dayKey: string;
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly barberId: BarberId;
+  readonly dayKey: LocalDate;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }
 
 export interface BlockEditorCommit {
-  readonly barberIds: readonly string[];
+  readonly barberIds: readonly BarberId[];
   /** The day the frame drew — the series' start. */
-  readonly dayKey: string;
+  readonly dayKey: LocalDate;
   /**
    * EVERY day the block is written on, in order: the one day, or the
    * series' — expanded here, by the same `RecurrenceSeries` the sheet
    * counted, so the write and the sentence cannot disagree.
    */
-  readonly days: readonly string[];
+  readonly days: readonly LocalDate[];
   readonly allDay: boolean;
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }
 
 interface BlockDraft {
-  readonly barberIds: readonly string[];
-  readonly dayKey: string;
+  readonly barberIds: readonly BarberId[];
+  readonly dayKey: LocalDate;
   readonly allDay: boolean;
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   /** `null` — the block happens once. */
   readonly repeat: RecurrenceRule | null;
 }
 
-const DAY_MINUTES = 24 * 60;
+/** The day's opening midnight on the frame's axis — where an all-day block starts. */
+const DAY_START = trackMinuteOf(0);
+/** The day's closing midnight on the frame's axis — where an all-day block ends. */
+const DAY_END = trackMinuteOf(24 * 60);
 
 const FREQUENCIES: readonly RecurrenceFrequency[] = [
   RecurrenceFrequency.Daily,
@@ -243,24 +275,20 @@ interface RepeatRow {
  * time on a phone, three carry neither.
  */
 const TIMELINE_FROM_CHAIRS = 2;
-function clockLabel(minute: number): string {
-  const hours = Math.floor(minute / 60) % 24;
-  const minutes = minute % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+/** A minute of the frame's axis on the 24-hour face — the typed pair's and the readout's. */
+function clockLabel(minute: TrackMinute): string {
+  return formatClock(minute, ClockClosing.Wrap);
 }
 
-/** A typed clock as the minute it names — `null` for one off the day's clock. */
+/**
+ * A typed clock (`ui-time-field`'s `HH:mm`) as the minute it names — read
+ * once at the field's edge (`MinuteOfDay.parseClock`); `null` for text
+ * that names no minute of the day, and the field keeps its value.
+ */
 function parseClock(value: string): MinuteOfDay | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const minute = MinuteOfDay.of(Number(match[1]) * 60 + Number(match[2]));
+  const minute = MinuteOfDay.parseClock(value);
   return minute.ok ? minute.value : null;
-}
-
-/** A draft day key as the shop day, or `null` for one that names no day. */
-function dayOf(dayKey: string): LocalDate | null {
-  const day = LocalDate.parse(dayKey);
-  return day.ok ? day.value : null;
 }
 
 /** A monthly reading's stable id, for the menu that picks it. */
@@ -275,13 +303,6 @@ function monthlyOf(rule: RecurrencePattern.Monthly): RecurrencePattern.Monthly {
   return rule.monthlyAnchor === MonthlyAnchor.Date
     ? RecurrencePattern.monthlyByDate(rule.monthlyDate)
     : RecurrencePattern.monthlyByWeekday(rule.monthlyWeek, rule.monthlyWeekday);
-}
-
-/** An ISO weekday number the picker handed back, or `null` for none. */
-function weekdayOf(iso: number): Weekday | null {
-  return Number.isInteger(iso) && iso >= Weekday.Mon && iso <= Weekday.Sun
-    ? (iso as Weekday)
-    : null;
 }
 
 /** First letter up, for a phrase that stands alone as a menu row. */
@@ -363,7 +384,7 @@ export class StaffBlockEditor {
   /** «Превърни в час» on a saved block: lift it and book the range. */
   readonly converted = output<BlockEditorRange>();
   /** The day the DRAFT is on, whenever the frame steps — the owner draws that day. */
-  readonly dayChanged = output<string>();
+  readonly dayChanged = output<LocalDate>();
 
   constructor() {
     afterNextRender(
@@ -408,15 +429,18 @@ export class StaffBlockEditor {
 
   /** The chosen chairs, in roster order. */
   protected readonly chosenBarbers = computed(() =>
-    this.uiBarbers().filter((barber) =>
-      this.draft().barberIds.includes(barber.id),
-    ),
+    this.uiBarbers().filter((barber) => this.chosen(barber.id)),
   );
+
+  /** Is this chair one of the draft's? */
+  private chosen(barberId: BarberId): boolean {
+    return this.draft().barberIds.some((id) => id === barberId);
+  }
 
   /** The chairs still to be added — what «Добави бръснар» offers, as THE choice menu's rows. */
   protected readonly chairChoices = computed<readonly UiChoiceOption[]>(() =>
     this.uiBarbers()
-      .filter((barber) => !this.draft().barberIds.includes(barber.id))
+      .filter((barber) => !this.chosen(barber.id))
       .map((barber) => ({
         id: barber.id,
         label: barber.label,
@@ -425,8 +449,14 @@ export class StaffBlockEditor {
       })),
   );
 
-  protected addBarber(barberId: string): void {
+  /**
+   * A chair picked from the menu. The menu hands its option id back as a
+   * string; every option was built from a catalogue chair's id
+   * (`chairChoices`), so it IS one — `BarberId.of`, by construction (D-4).
+   */
+  protected addBarber(optionId: string): void {
     this.chairMenu.set(false);
+    const barberId = BarberId.of(optionId);
     this.draft.update((current) =>
       current.barberIds.includes(barberId)
         ? current
@@ -435,7 +465,7 @@ export class StaffBlockEditor {
   }
 
   /** Off — and never nobody: the last chair's row does not offer this. */
-  protected removeBarber(barberId: string): void {
+  protected removeBarber(barberId: BarberId): void {
     this.draft.update((current) =>
       current.barberIds.length === 1
         ? current
@@ -446,7 +476,7 @@ export class StaffBlockEditor {
     );
   }
 
-  private laneOf(barberId: string): BlockEditorLane | null {
+  private laneOf(barberId: BarberId): BlockEditorLane | null {
     return this.vm().lanes.find((lane) => lane.barberId === barberId) ?? null;
   }
 
@@ -498,18 +528,19 @@ export class StaffBlockEditor {
    * trap, one «Запази». The shell draws `‹` from `depth()` and names the
    * bar from `pageTitle()`, exactly as it does for the visit sheet.
    */
-  private readonly page = signal<'repeat' | null>(null);
-  protected readonly currentPage = this.page.asReadonly();
+  private readonly repeatPage = signal(false);
+  /** The repeat page is pushed — the sheet has one page, so a flag says it. */
+  protected readonly repeatPageOpen = this.repeatPage.asReadonly();
   /** PUBLIC: the sheet shell draws the way back in its header bar. */
-  readonly depth = computed(() => (this.page() === null ? 0 : 1));
+  readonly depth = computed(() => (this.repeatPage() ? 1 : 0));
   /** PUBLIC: the pushed page's own name for the bar; `null` at the root. */
   readonly pageTitle = computed(() =>
-    this.page() === 'repeat' ? this.rawCopy('staff.block.repeat') : null,
+    this.repeatPage() ? this.rawCopy('staff.block.repeat') : null,
   );
 
   protected openRepeatPage(): void {
     this.customOpen.set(false);
-    this.page.set('repeat');
+    this.repeatPage.set(true);
     this.focusLater('[data-testid="staff-block-page"]');
   }
 
@@ -519,22 +550,21 @@ export class StaffBlockEditor {
     // still holds the last rule that made sense.
     this.typedError.set(null);
     this.customOpen.set(false);
-    this.page.set(null);
+    this.repeatPage.set(false);
     this.focusLater('[data-testid="staff-block-repeat"]');
   }
 
   /* ── The repeat ────────────────────────────────────────────────── */
 
   /** The series' start as the shop day — the frame's day. */
-  protected readonly startDay = computed(() => dayOf(this.draft().dayKey));
+  protected readonly startDay = computed(() => this.draft().dayKey);
 
   /** The days the draft would write, or the domain's refusal; `null` when nothing repeats. */
   private readonly series = computed(() => {
     const rule = this.draft().repeat;
-    const start = this.startDay();
-    return rule === null || start === null
+    return rule === null
       ? null
-      : RecurrenceSystem.series(start, rule);
+      : RecurrenceSystem.series(this.startDay(), rule);
   });
 
   /**
@@ -555,14 +585,14 @@ export class StaffBlockEditor {
   });
 
   /** Every day the block is written on — the one day, or the series'. */
-  private readonly writeDays = computed<readonly string[]>(() => {
+  private readonly writeDays = computed<readonly LocalDate[]>(() => {
     const series = this.series();
     if (series === null) return [this.draft().dayKey];
     return series.ok ? series.value.localDates : [];
   });
 
   /** The series' days, for the dots on its end's calendar. */
-  protected readonly seriesDays = computed<readonly string[]>(() => {
+  protected readonly seriesDays = computed<readonly LocalDate[]>(() => {
     const series = this.series();
     return series !== null && series.ok ? series.value.localDates : [];
   });
@@ -572,10 +602,9 @@ export class StaffBlockEditor {
   );
 
   /** The shortcut the rule IS, read back off it — `null` for a rule of the user's own. */
-  private readonly preset = computed(() => {
-    const start = this.startDay();
-    return start === null ? null : presetOf(this.draft().repeat, start);
-  });
+  private readonly preset = computed(() =>
+    presetOf(this.draft().repeat, this.startDay()),
+  );
 
   /**
    * «Персонализирано» shows its controls once tapped, and whenever the rule
@@ -598,7 +627,7 @@ export class StaffBlockEditor {
         id,
         testId: `staff-block-repeat-${REPEAT_PRESET_WORD[id]}`,
         label: this.rawCopy(PRESET_LABEL[id]),
-        detail: start === null ? null : this.presetDetail(id, start),
+        detail: this.presetDetail(id, start),
         checked: id === checked,
       })),
       {
@@ -613,7 +642,6 @@ export class StaffBlockEditor {
 
   protected pickRepeat(id: RepeatRowId): void {
     const start = this.startDay();
-    if (start === null) return;
     this.typedError.set(null);
     this.customOpen.set(id === CUSTOM_REPEAT);
     this.setRule(
@@ -659,7 +687,7 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const start = this.startDay();
     const frequency = FREQUENCIES.find((entry) => entry === id);
-    if (rule === null || start === null || frequency === undefined) return;
+    if (rule === null || frequency === undefined) return;
     this.typedError.set(null);
     this.setRule(ruleForFrequency(rule, frequency, start));
   }
@@ -677,25 +705,22 @@ export class StaffBlockEditor {
     this.typed(withInterval(rule, Number(value)));
   }
 
-  /** The weekly rule's days as ISO numbers, for the picker. */
-  protected readonly weekdayIsos = computed<readonly number[]>(() => {
+  /** The weekly rule's days (ISO, Monday first), for the picker. */
+  protected readonly weekdayIsos = computed<readonly Weekday[]>(() => {
     const rule = this.draft().repeat;
     return rule?.recurrenceFrequency === RecurrenceFrequency.Weekly
       ? rule.recurrenceWeekdays
       : [];
   });
 
-  protected setWeekdays(isos: readonly number[]): void {
+  /** The picker's days — its ISO numbers ARE the `Weekday` dictionary's members. */
+  protected setWeekdays(weekdays: readonly Weekday[]): void {
     const rule = this.draft().repeat;
     if (
       rule === null ||
       rule.recurrenceFrequency !== RecurrenceFrequency.Weekly
     )
       return;
-    const weekdays = isos.flatMap((iso) => {
-      const weekday = weekdayOf(iso);
-      return weekday === null ? [] : [weekday];
-    });
     const next = withWeekdays(rule, weekdays);
     if (next.ok) this.setRule(next.value);
   }
@@ -711,10 +736,7 @@ export class StaffBlockEditor {
     () => {
       const start = this.startDay();
       const rule = this.draft().repeat;
-      if (
-        start === null ||
-        rule?.recurrenceFrequency !== RecurrenceFrequency.Monthly
-      ) {
+      if (rule?.recurrenceFrequency !== RecurrenceFrequency.Monthly) {
         return [];
       }
       const own = monthlyOf(rule);
@@ -785,7 +807,7 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const start = this.startDay();
     const kind = END_KINDS.find((entry) => entry === id);
-    if (rule === null || start === null || kind === undefined) return;
+    if (rule === null || kind === undefined) return;
     this.typedError.set(null);
     this.setRule(ruleForEndKind(rule, kind, start));
   }
@@ -797,11 +819,10 @@ export class StaffBlockEditor {
       : null;
   });
 
-  protected setUntil(dayKey: string): void {
+  protected setUntil(day: LocalDate): void {
     this.untilOpen.set(false);
     const rule = this.draft().repeat;
-    const day = dayOf(dayKey);
-    if (rule === null || day === null) return;
+    if (rule === null) return;
     this.typed(withUntil(rule, day));
   }
 
@@ -997,31 +1018,46 @@ export class StaffBlockEditor {
   protected readonly dayOpen = signal(false);
   protected readonly locale = computed(() => this.transloco.getActiveLang());
 
+  /** Today on the shop's calendar, for the pills' months — `null` before the zone. */
+  protected readonly todayKey = computed(
+    () => this.vm().now?.localDate ?? null,
+  );
+
+  /**
+   * The now-line's minute when the frame draws TODAY — the draft's day, on
+   * the shop's clock (`ShopNow`); `null` on any other day.
+   */
+  protected readonly frameNowMinute = computed(() => {
+    const now = this.vm().now;
+    return now !== null && now.localDate === this.draft().dayKey
+      ? now.currentMinute
+      : null;
+  });
+
   protected stepDay(offset: number): void {
-    this.pickDay(addDays(this.draft().dayKey, offset));
+    this.pickDay(LocalDate.addDays(this.draft().dayKey, offset));
   }
 
-  protected pickDay(dayKey: string): void {
+  protected pickDay(day: LocalDate): void {
     this.dayOpen.set(false);
-    if (dayKey === this.draft().dayKey) return;
-    const from = dayOf(this.draft().dayKey);
-    const to = dayOf(dayKey);
+    const from = this.draft().dayKey;
+    if (day === from) return;
     this.draft.update((current) => ({
       ...current,
-      dayKey,
+      dayKey: day,
       // The series starts where the frame is: its start's own weekday or
       // date follows along, and an end the new start overtook moves on.
       repeat:
-        current.repeat !== null && from !== null && to !== null
-          ? ruleForStart(current.repeat, from, to)
+        current.repeat !== null
+          ? ruleForStart(current.repeat, from, day)
           : current.repeat,
     }));
-    this.dayChanged.emit(dayKey);
+    this.dayChanged.emit(day);
   }
 
   protected readonly frameWindow = computed<GridWindow>(() => ({
-    startMinute: 0,
-    endMinute: DAY_MINUTES,
+    startMinute: DAY_START,
+    endMinute: DAY_END,
   }));
 
   /** Rows and hours across, once the chairs outnumber the grid's columns. */
@@ -1045,23 +1081,23 @@ export class StaffBlockEditor {
   );
 
   /** The earliest roster start among the chosen chairs — where the frame opens. */
-  protected readonly frameRosterStart = computed(() => {
+  protected readonly frameRosterStart = computed<TrackMinute>(() => {
     const starts = this.chosenBarbers()
       .map((barber) => this.laneOf(barber.id)?.rosterStartMinute)
-      .filter((value): value is number => value !== undefined);
-    return starts.length ? Math.min(...starts) : 0;
+      .filter((value): value is TrackMinute => value !== undefined);
+    // The least of non-negative whole track minutes is one itself (proven).
+    return starts.length ? trackMinuteOf(Math.min(...starts)) : DAY_START;
   });
 
   /** ONE COLUMN PER CHOSEN CHAIR: the block drawn over each real day. */
   protected readonly frameColumns = computed<readonly GridColumn[]>(() => {
-    const vm = this.vm();
     const draft = this.draft();
     const label = this.rawCopy('staff.block.title');
     const allDayLabel = this.rawCopy('staff.block.allDay');
     return this.chosenBarbers().map((barber) => {
       const lane = this.laneOf(barber.id);
-      const rosterStart = lane?.rosterStartMinute ?? 0;
-      const rosterEnd = lane?.rosterEndMinute ?? 0;
+      const rosterStart = lane?.rosterStartMinute ?? DAY_START;
+      const rosterEnd = lane?.rosterEndMinute ?? DAY_START;
       // ALL DAY IS THE WHOLE ROW (owner, 2026-09-09: "all-day blockers
       // should span full width for the barber row"). It used to cover the
       // roster, which read as a timed block that happened to fit the shift;
@@ -1070,8 +1106,8 @@ export class StaffBlockEditor {
         id: 'draft-block',
         gridEvent: GridEventTag.Block,
         barberTone: null,
-        startMinute: draft.allDay ? 0 : draft.startMinute,
-        endMinute: draft.allDay ? DAY_MINUTES : draft.endMinute,
+        startMinute: draft.allDay ? DAY_START : draft.startMinute,
+        endMinute: draft.allDay ? DAY_END : draft.endMinute,
         title: label,
         detail: null,
         attribution: null,
@@ -1107,7 +1143,7 @@ export class StaffBlockEditor {
         title: barber.label,
         detail: null,
         dayNumber: null,
-        isToday: vm.nowMinute !== null,
+        isToday: this.frameNowMinute() !== null,
         avatarSrc: barber.avatarSrc,
         events: [...neighbours, block],
         // An empty window is a chair SHUT all day — the frame shades it.
@@ -1128,7 +1164,7 @@ export class StaffBlockEditor {
     const draft = this.draft();
     // An all-day block is the whole day — the span the frame draws it as.
     const span = draft.allDay
-      ? { startMinute: 0, endMinute: DAY_MINUTES }
+      ? { startMinute: DAY_START, endMinute: DAY_END }
       : draft;
     return this.chosenBarbers().flatMap((barber) =>
       (this.laneOf(barber.id)?.neighbours ?? [])
@@ -1185,18 +1221,27 @@ export class StaffBlockEditor {
 
   /* ── The acts ──────────────────────────────────────────────────── */
 
-  private range(): BlockEditorRange {
+  /**
+   * The draft's range in its first chair — `null` with no chair, which the
+   * sheet never holds: it opens on one chair and its last chair's row
+   * offers no removal.
+   */
+  private range(): BlockEditorRange | null {
     const draft = this.draft();
-    return {
-      barberId: draft.barberIds[0] ?? '',
-      dayKey: draft.dayKey,
-      startMinute: draft.startMinute,
-      endMinute: draft.endMinute,
-    };
+    const barberId = draft.barberIds[0];
+    return barberId === undefined
+      ? null
+      : {
+          barberId,
+          dayKey: draft.dayKey,
+          startMinute: draft.startMinute,
+          endMinute: draft.endMinute,
+        };
   }
 
   protected convert(): void {
-    this.converted.emit(this.range());
+    const range = this.range();
+    if (range !== null) this.converted.emit(range);
   }
 
   protected save(): void {

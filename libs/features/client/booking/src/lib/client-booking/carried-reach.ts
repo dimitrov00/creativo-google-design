@@ -35,7 +35,7 @@ import { MoveSystem } from '@core/systems';
  * does.
  *
  * The honest answer is then the phone, not an empty grid to scroll through
- * (`MoveRefusalReason.CarriedOutOfReach`). WHICH shop the move goes to is
+ * (`MoveErrorCode.CarriedOutOfReach`). WHICH shop the move goes to is
  * still the client's choice: a shop that cannot serve the party, while
  * another one can, is the schedule step's to say, with the way to that one.
  *

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  StreakInterval,
-  StreakIntervalRule,
-  StreakIntervalSource,
-} from './streak-interval.data';
+import { StreakInterval, StreakIntervalRule } from './streak-interval.data';
+import { StreakIntervalSource } from './streak-interval-source.data';
 
 // The cases of `streak-interval.spec.ts`, on the flat slice.
 

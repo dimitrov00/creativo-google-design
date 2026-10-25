@@ -30,6 +30,8 @@ import {
   StreakOnBreak,
   StreakPeriodMark,
   StreakPhase,
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
   StreakPublishCall,
   StreakQualifier,
   StreakQualifierRule,
@@ -64,8 +66,6 @@ import {
 } from '@core/errors';
 import {
   type StreakNoticePolicy,
-  StreakPreviewOutcome,
-  StreakPreviewUnavailable,
   StreakRuleSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -1167,7 +1167,7 @@ describe('AdminRhythmStore: the draft', () => {
   it('goes back to the rule in force on «Отхвърли»', async () => {
     const { store } = await loaded();
     store.patch(STRICTER);
-    store.setEffectiveFrom('2026-10-12');
+    store.setEffectiveFrom(day('2026-10-12'));
 
     store.discard();
 
@@ -1208,7 +1208,7 @@ describe('AdminRhythmStore: the day a change starts', () => {
 
     expect(store.earliestDay()).toBe(TODAY);
     expect(store.effectiveFrom()).toBe(TOMORROW);
-    expect(store.setEffectiveFrom(TODAY)).toBe(TODAY);
+    expect(store.setEffectiveFrom(day(TODAY))).toBe(TODAY);
   });
 
   it('starts a stricter rule tomorrow while no client sees the rhythm', async () => {
@@ -1236,7 +1236,7 @@ describe('AdminRhythmStore: the day a change starts', () => {
     const { store } = await loaded();
     store.patch(LOOSER);
 
-    expect(store.setEffectiveFrom(FIRST_OF_MONTH)).toBe(FIRST_OF_MONTH);
+    expect(store.setEffectiveFrom(day(FIRST_OF_MONTH))).toBe(FIRST_OF_MONTH);
     expect(store.effectiveFrom()).toBe(FIRST_OF_MONTH);
     expect(store.change()?.direction).toBe(StreakRuleDirection.Looser);
   });
@@ -1245,21 +1245,15 @@ describe('AdminRhythmStore: the day a change starts', () => {
     const { store } = await loaded();
     store.patch(LOOSER);
 
-    expect(store.setEffectiveFrom(TODAY)).toBe(TOMORROW);
-    expect(store.setEffectiveFrom('2026-01-01')).toBe(TOMORROW);
+    expect(store.setEffectiveFrom(day(TODAY))).toBe(TOMORROW);
+    expect(store.setEffectiveFrom(day('2026-01-01'))).toBe(TOMORROW);
   });
 
-  it.each(['', 'утре', '2026-13-40', '28.09.2026'])(
-    'takes «%s» for no day',
-    async (day) => {
-      const { store } = await loaded();
-      store.patch(LOOSER);
-      store.setEffectiveFrom(FIRST_OF_MONTH);
-
-      expect(store.setEffectiveFrom(day)).toBe(FIRST_OF_MONTH);
-      expect(store.validation()).toEqual([]);
-    },
-  );
+  // «takes «%s» for no day» (`''`, `'утре'`, `'2026-13-40'`, `'28.09.2026'`)
+  // is retired on purpose (pass D §4.2 class 4): `setEffectiveFrom` takes a
+  // `LocalDate`, so a text that is no day can no longer reach the store —
+  // the refusal is the month picker's edge's (`admin-rhythm-sheet.spec.ts`,
+  // «a key that is no day changes nothing»).
 });
 
 describe('AdminRhythmStore: «Запази»', () => {
@@ -1312,7 +1306,7 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('publishes for today what may start today, and the form stands on it', async () => {
     const { store } = await loaded();
     store.patch(NEUTRAL);
-    store.setEffectiveFrom(TODAY);
+    store.setEffectiveFrom(day(TODAY));
 
     const outcome = await store.save();
     await settle();
@@ -1350,7 +1344,7 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('publishes for the day the admin chose', async () => {
     const { store } = await loaded();
     store.patch(STRICTER);
-    store.setEffectiveFrom('2026-10-12');
+    store.setEffectiveFrom(day('2026-10-12'));
 
     const outcome = await store.save();
 
@@ -1441,7 +1435,7 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('stands on the answer for a version in force at once, too', async () => {
     const { store, rules } = await loaded();
     store.patch(NEUTRAL);
-    store.setEffectiveFrom(TODAY);
+    store.setEffectiveFrom(day(TODAY));
     rules.holdHeads();
 
     await store.save();
@@ -1575,7 +1569,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     await store.save();
     rules.recover();
 
-    store.setEffectiveFrom(FIRST_OF_MONTH);
+    store.setEffectiveFrom(day(FIRST_OF_MONTH));
     expect(store.refusal()).toBeNull();
     await store.save();
 
@@ -2351,8 +2345,8 @@ describe('AdminRhythmStore: the rule, worded', () => {
 
     store.nameServices(
       new Map([
-        ['svc-fade', 'Фейд'],
-        ['svc-beard', 'Оформяне на брада'],
+        [ServiceId.of('svc-fade'), 'Фейд'],
+        [ServiceId.of('svc-beard'), 'Оформяне на брада'],
       ]),
     );
 

@@ -15,7 +15,7 @@ export type CancellationAllowance = { readonly windowHours: number };
 /**
  * The visit's start as an instant — the earliest seat, the truth, placed on
  * the absolute timeline by its distance from the envelope
- * (`TimeCoordinate.seatStartUtcMs`, T9); the envelope's own instant when the
+ * (`TimeCoordinate.instantAt`, T9); the envelope's own instant when the
  * visit holds no seat.
  */
 function startUtcMsOf(
@@ -24,7 +24,7 @@ function startUtcMsOf(
   const envelope = AppointmentIndexSystem.envelope(appointment);
   return envelope === null
     ? appointment.utcEpochMs
-    : TimeCoordinate.seatStartUtcMs(appointment, envelope);
+    : TimeCoordinate.instantAt(appointment, envelope.startMinutes);
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { LocalDate } from '@core/primitives';
+import type { RepositoryError } from './repository.error';
 
 /**
  * The refusal codes of the rhythm rule's publish callable
@@ -37,13 +38,41 @@ export type StreakPublishErrorCode =
   (typeof StreakPublishErrorCode)[keyof typeof StreakPublishErrorCode];
 
 /**
- * Every {@link StreakPublishErrorCode}, dictionary order — derived once,
- * never a second source; {@link StreakPublishError.guard}'s table (scanned;
- * no `new` in a data file, Law 1).
+ * The refusals the callable ANSWERS rather than throws — spelled ONCE here
+ * and read by the call's codec (`StreakPublishCall`), the edge's wire and
+ * its spec: the five rule refusals and `CALLER_NOT_ADMIN`. A missing caller
+ * (`CALLER_UNAUTHENTICATED`), an envelope the callable cannot read
+ * (`INVALID_INPUT`) and a write that fell over (`STORE_FAILED`) are thrown.
  */
-const STREAK_PUBLISH_CODES: readonly string[] = Object.values(
-  StreakPublishErrorCode,
-);
+export type StreakPublishAnsweredCode =
+  | typeof StreakPublishErrorCode.CallerNotAdmin
+  | typeof StreakPublishErrorCode.Stale
+  | typeof StreakPublishErrorCode.Invalid
+  | typeof StreakPublishErrorCode.TooEarly
+  | typeof StreakPublishErrorCode.RecomputeNeedsEngine
+  | typeof StreakPublishErrorCode.PreviewStale;
+
+/** {@link StreakPublishAnsweredCode}, in dictionary order — the one list. */
+const ANSWERED_CODES: readonly StreakPublishAnsweredCode[] = [
+  StreakPublishErrorCode.CallerNotAdmin,
+  StreakPublishErrorCode.Stale,
+  StreakPublishErrorCode.Invalid,
+  StreakPublishErrorCode.TooEarly,
+  StreakPublishErrorCode.RecomputeNeedsEngine,
+  StreakPublishErrorCode.PreviewStale,
+];
+
+/**
+ * The codes of the {@link StreakPublishError} union, dictionary order — the
+ * answered ones and the missing caller; never `INVALID_INPUT` or
+ * `STORE_FAILED`, which the union does not hold (they are the edge's
+ * {@link StreakPublishError.Failure}). {@link StreakPublishError.guard}'s
+ * table (scanned; no `new` in a data file, Law 1).
+ */
+const REFUSAL_CODES: readonly StreakPublishError['errorCode'][] = [
+  StreakPublishErrorCode.CallerUnauthenticated,
+  ...ANSWERED_CODES,
+];
 
 export type StreakPublishError =
   | StreakPublishError.CallerUnauthenticated
@@ -90,19 +119,56 @@ export const StreakPublishError = {
     return { errorCode: StreakPublishErrorCode.StoreFailed };
   },
 
+  /** The refusals the callable answers ({@link StreakPublishAnsweredCode}), dictionary order. */
+  ANSWERED_CODES,
+
+  /** A refusal the callable answers rather than throws. */
+  isAnswered(
+    failure: StreakPublishError.Failure,
+  ): failure is StreakPublishError.Answered {
+    return (ANSWERED_CODES as readonly string[]).includes(failure.errorCode);
+  },
+
   /**
    * The publish's no (the server's, or the page's own judgement before
    * anything is sent), as against a request that got no answer (a
-   * `RepositoryError`): EVERY code of {@link StreakPublishErrorCode} —
-   * never the callable's answered subset (`StreakPublishCall.AnsweredCode`),
-   * so a refusal the page itself words routes exactly as the server's.
+   * `RepositoryError`): every code of the {@link StreakPublishError} union —
+   * never only the callable's answered subset
+   * ({@link StreakPublishAnsweredCode}), so a refusal the page itself words
+   * routes exactly as the server's — and nothing outside it: the edge's
+   * thrown `INVALID_INPUT` and `STORE_FAILED` are no refusal of the rule
+   * (pass D: the guard narrows to exactly the union it names).
    */
   guard(error: { readonly errorCode: string }): error is StreakPublishError {
-    return STREAK_PUBLISH_CODES.includes(error.errorCode);
+    return (REFUSAL_CODES as readonly string[]).includes(error.errorCode);
   },
 } as const;
 
+/**
+ * Why the server's publish pipeline (`publishStreakDefinition`) wrote
+ * nothing: a refusal of the rule or the caller, or a store that failed.
+ */
+export type PublishStreakDefinitionError = StreakPublishError | RepositoryError;
+
+/**
+ * Why the admin page's publish or withdrawal (`rhythm-publish.pipeline.ts`)
+ * landed nothing — the same set as the server pipeline's: a refusal the
+ * page words, or a request that got no answer (`RepositoryError`), told
+ * apart by {@link StreakPublishError.guard}.
+ */
+export type RhythmPublishRefusal = PublishStreakDefinitionError;
+
 export namespace StreakPublishError {
+  /** A refusal the callable answers rather than throws. */
+  export type Answered = Extract<
+    StreakPublishError,
+    { readonly errorCode: StreakPublishAnsweredCode }
+  >;
+  /**
+   * Every way a publish request is not written, as the edge meets it: a
+   * refusal, an envelope it cannot read, or a store failure.
+   */
+  export type Failure = StreakPublishError | InvalidInput | RepositoryError;
   export type CallerUnauthenticated = {
     readonly errorCode: typeof StreakPublishErrorCode.CallerUnauthenticated;
   };

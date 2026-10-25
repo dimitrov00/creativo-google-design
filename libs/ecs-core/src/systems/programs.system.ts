@@ -1,4 +1,5 @@
 import {
+  EnrollmentStatus,
   LocalizedText,
   type CourseInput,
   type PositionInput,
@@ -163,6 +164,16 @@ function wallStartOf(raw: string): FieldResult<WallStart> {
 }
 
 export const ProgramsSystem = {
+  /**
+   * Shown on the public page: a course open now, or opening — never a
+   * closed one (`MarketingCourses`' `LISTED_STATUSES`, the values of index
+   * #11's `in` filter). The rule's one home (pass D: was the components'
+   * free function `isEnrollmentOpenOrUpcoming`).
+   */
+  isEnrollmentOpenOrUpcoming(status: EnrollmentStatus): boolean {
+    return status !== EnrollmentStatus.Closed;
+  },
+
   /**
    * A role from the admin form — sortOrder, title, summary, each location
    * id, apply URL, every refusal at once in that order. The status is the

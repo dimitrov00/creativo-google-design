@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EditCommand } from '@core/components';
-import { GridEvent as GridEventTag } from '@core/systems';
+import { EditCommand, GridEvent as GridEventTag } from '@core/components';
+import { trackMinute } from '@core/testing';
 import type {
   GridColumn,
   GridCommit,
@@ -18,8 +18,8 @@ import { StaffTimeline } from './staff-timeline';
 function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
   return {
     gridEvent: GridEventTag.Visit,
-    startMinute: 600,
-    endMinute: 645,
+    startMinute: trackMinute(600),
+    endMinute: trackMinute(645),
     title: 'Георги Петров',
     detail: null,
     attribution: null,
@@ -37,8 +37,8 @@ function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
 const BLOCK = event({
   id: 'draft-block',
   gridEvent: GridEventTag.Block,
-  startMinute: 720,
-  endMinute: 780,
+  startMinute: trackMinute(720),
+  endMinute: trackMinute(780),
   title: 'Блок',
   accessibleName: 'Блок, 12:00–13:00',
 });
@@ -52,7 +52,7 @@ function column(partial: Partial<GridColumn> = {}): GridColumn {
     isToday: false,
     avatarSrc: null,
     events: [BLOCK],
-    open: [{ startMinute: 540, endMinute: 1080 }],
+    open: [{ startMinute: trackMinute(540), endMinute: trackMinute(1080) }],
     ...partial,
   };
 }
@@ -64,8 +64,8 @@ function shop(): readonly GridColumn[] {
       events: [
         event({
           id: 'martin',
-          startMinute: 750,
-          endMinute: 780,
+          startMinute: trackMinute(750),
+          endMinute: trackMinute(780),
           title: 'Мартин Илиев',
         }),
         BLOCK,
@@ -75,10 +75,14 @@ function shop(): readonly GridColumn[] {
       id: 'stefan',
       title: 'Стефан Петров',
       events: [
-        event({ id: 'georgi', startMinute: 600, endMinute: 645 }),
+        event({
+          id: 'georgi',
+          startMinute: trackMinute(600),
+          endMinute: trackMinute(645),
+        }),
         BLOCK,
       ],
-      open: [{ startMinute: 600, endMinute: 1140 }],
+      open: [{ startMinute: trackMinute(600), endMinute: trackMinute(1140) }],
     }),
     column({ id: 'niko', title: 'Нико Димов' }),
   ];
@@ -298,7 +302,11 @@ describe('StaffTimeline', () => {
   });
 
   it('hatches a band that covers the whole axis — an all-day block', () => {
-    const whole = event({ ...BLOCK, startMinute: 0, endMinute: 1440 });
+    const whole = event({
+      ...BLOCK,
+      startMinute: trackMinute(0),
+      endMinute: trackMinute(1440),
+    });
     const host = render(
       shop().map((c) => ({
         ...c,

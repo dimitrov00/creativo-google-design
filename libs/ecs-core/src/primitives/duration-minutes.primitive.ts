@@ -79,6 +79,14 @@ export const MinuteCount = {
   fromDuration(d: DurationMinutes): MinuteCount {
     return d as number as MinuteCount;
   },
+
+  /**
+   * A signed delta's non-negative part, `max(0, d)` — the minutes beyond
+   * (a drafted length past the catalogue's), `0` when short; never `-0`.
+   */
+  fromDelta(d: MinuteDelta): MinuteCount {
+    return (d > 0 ? d : 0) as MinuteCount;
+  },
 } as const;
 
 export const MinuteDelta = {
@@ -95,8 +103,22 @@ export const MinuteDelta = {
         );
   },
 
-  /** `to − from` on one day's wall clock — negative when `to` comes first. */
-  between(from: MinuteOfDay, to: MinuteOfDay): MinuteDelta {
+  /**
+   * `to − from` on one day's wall clock — negative when `to` comes first.
+   * Either side may be a start (`MinuteOfDay`) or an exclusive end
+   * (`EndMinute`, up to the closing midnight 1440): the distance from a
+   * visit's start to its own end is as total as the distance between two
+   * starts.
+   */
+  between(
+    from: MinuteOfDay | EndMinute,
+    to: MinuteOfDay | EndMinute,
+  ): MinuteDelta {
     return (to - from) as MinuteDelta;
+  },
+
+  /** A positive duration as a signed delta — total: every `DurationMinutes` is a `MinuteDelta`. */
+  fromDuration(d: DurationMinutes): MinuteDelta {
+    return d as number as MinuteDelta;
   },
 } as const;

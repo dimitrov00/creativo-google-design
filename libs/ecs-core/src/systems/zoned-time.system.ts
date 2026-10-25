@@ -152,12 +152,16 @@ function isSupportedInstant(ms: number): boolean {
   return Number.isFinite(ms) && ms >= MIN_INSTANT_MS && ms <= MAX_INSTANT_MS;
 }
 
-/** How a local wall clock maps to instants. */
-const LocalFit = { Exact: 'exact', Gap: 'gap', Overlap: 'overlap' } as const;
+/**
+ * How a local wall clock maps to instants — the ONLY source of these
+ * strings, the field `localFit`. Private and internal: never returned, never
+ * stored (pass D, S-21: SCREAMING values, Law 1).
+ */
+const LocalFit = { Exact: 'EXACT', Gap: 'GAP', Overlap: 'OVERLAP' } as const;
 type LocalFit = (typeof LocalFit)[keyof typeof LocalFit];
 
 type LocalResolution = {
-  readonly fit: LocalFit;
+  readonly localFit: LocalFit;
   /** Exact: the instant. Overlap: the first occurrence. Gap: the instant read with the offset AFTER the gap (before the transition). */
   readonly earlierMs: number;
   /** Exact: the instant. Overlap: the second occurrence. Gap: the instant read with the offset BEFORE the gap (one offset later — "shift forward"). */
@@ -185,18 +189,26 @@ function resolveLocal(
       : offsetMsAt(withAfter, formatter) === offsetAfter;
   if (beforeFits && afterFits && withBefore !== withAfter) {
     return {
-      fit: LocalFit.Overlap,
+      localFit: LocalFit.Overlap,
       earlierMs: Math.min(withBefore, withAfter),
       laterMs: Math.max(withBefore, withAfter),
     };
   }
   if (beforeFits) {
-    return { fit: LocalFit.Exact, earlierMs: withBefore, laterMs: withBefore };
+    return {
+      localFit: LocalFit.Exact,
+      earlierMs: withBefore,
+      laterMs: withBefore,
+    };
   }
   if (afterFits) {
-    return { fit: LocalFit.Exact, earlierMs: withAfter, laterMs: withAfter };
+    return {
+      localFit: LocalFit.Exact,
+      earlierMs: withAfter,
+      laterMs: withAfter,
+    };
   }
-  return { fit: LocalFit.Gap, earlierMs: withAfter, laterMs: withBefore };
+  return { localFit: LocalFit.Gap, earlierMs: withAfter, laterMs: withBefore };
 }
 
 /**
@@ -231,7 +243,7 @@ function firstInstantOfLocalDay(
   formatter: Intl.DateTimeFormat,
 ): number {
   const resolution = resolveLocal(epochDay * MS_PER_DAY, formatter);
-  return resolution.fit === LocalFit.Gap
+  return resolution.localFit === LocalFit.Gap
     ? firstOffsetChangeMs(resolution.earlierMs, resolution.laterMs, formatter)
     : resolution.earlierMs;
 }
@@ -455,7 +467,7 @@ export const ZonedTimeSystem = {
       );
     }
     const local = resolveLocal(localMs, formatter);
-    if (local.fit === LocalFit.Gap) {
+    if (local.localFit === LocalFit.Gap) {
       return Result.err(TimeError.dstGap(localDate, minute, timeZone));
     }
     // Exact: the one instant. Overlap: the first occurrence — the earlier offset.
@@ -621,9 +633,9 @@ export const ZonedTimeSystem = {
    * The instant as ISO-8601 on the zone's wall clock WITH the offset in force
    * — `2026-10-10T14:00:00.000+03:00` in Sofia — byte-identical to the legacy
    * `ZonedDateTime.toISO()` (milliseconds always, `±HH:MM` always; a zero
-   * offset prints `+00:00`). For a reader that needs the instant as text on
-   * the shop's clock — the visit editor's leg start (`shopIsoOf`) — and the
-   * specs' fixtures.
+   * offset prints `+00:00`). For the e2e support and the specs' fixtures
+   * (pass D OQ-4: no production reader is left — the visit editor's leg
+   * start is a `WallTime` since pass D).
    */
   toIso(utcEpochMs: UtcEpochMs, timeZone: TimeZone): string {
     const formatter = formatterFor(timeZone);

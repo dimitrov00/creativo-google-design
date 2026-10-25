@@ -57,7 +57,7 @@
           [attr.aria-label]="column.fullTitle ?? column.title"
           [attr.aria-current]="column.isToday ? 'date' : null"
           data-testid="staff-grid-head-day"
-          (click)="dayPicked.emit(column.id)"
+          (click)="pickDay(column)"
         >
           <ng-container
             *ngTemplateOutlet="columnName; context: { $implicit: column }"
@@ -455,7 +455,7 @@
   (click)="recenter()"
 >
   <ui-icon
-    [uiName]="edge === 'before' ? 'frame.handleStart' : 'frame.handleEnd'"
+    [uiName]="edge === OffscreenEdge.Before ? 'frame.handleStart' : 'frame.handleEnd'"
     uiScale="small"
   />
   <span class="staff-grid__recenter-time">{{ editableTimeLabel() }}</span>

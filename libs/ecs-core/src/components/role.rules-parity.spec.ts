@@ -1,17 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  ADMIN_ROLES,
-  BOOK_ROLES,
-  MONEY_ROLES,
-  SPEND_ROLES,
-  STAFF_ROLES,
-  USER_ROLES,
-} from './role.data';
+import { Roles } from './roles.data';
 
 /**
- * The role groupings of `role.data.ts` and the helpers in `firestore.rules` are
+ * The role groupings of `roles.data.ts` (`Roles`) and the helpers in `firestore.rules` are
  * "two dialects of one rule", and the rules file cannot import this one. This
  * spec reads the rules text and holds them equal. Copied (not moved) from the
  * legacy accounts `user-role.rules-parity.spec.ts`, which guarded the legacy
@@ -318,28 +311,28 @@ describe('the rules reader', () => {
 
 describe('role.data.ts and firestore.rules agree', () => {
   it('STAFF_ROLES is isStaff()', () => {
-    expect(sorted(helperRoles(RULES, 'isStaff'))).toEqual(sorted(STAFF_ROLES));
+    expect(sorted(helperRoles(RULES, 'isStaff'))).toEqual(sorted(Roles.STAFF));
   });
 
   it('BOOK_ROLES is worksTheBook()', () => {
     expect(sorted(helperRoles(RULES, 'worksTheBook'))).toEqual(
-      sorted(BOOK_ROLES),
+      sorted(Roles.BOOK),
     );
   });
 
   it('ADMIN_ROLES is isAdmin() (Phase 4a §3.2: the impersonation callables’ caller gate)', () => {
-    expect(sorted(helperRoles(RULES, 'isAdmin'))).toEqual(sorted(ADMIN_ROLES));
+    expect(sorted(helperRoles(RULES, 'isAdmin'))).toEqual(sorted(Roles.ADMIN));
   });
 
   it('MONEY_ROLES is the front desk', () => {
     const twin = moneyTwin(RULES);
-    expect(sorted(twin.roles), twin.source).toEqual(sorted(MONEY_ROLES));
+    expect(sorted(twin.roles), twin.source).toEqual(sorted(Roles.MONEY));
   });
 
   it('SPEND_ROLES is the read grant of clientStats/{id}/restricted (the spend)', () => {
     expect(
       sorted(listRoles(RULES, ownStatements(RULES, '/restricted/{docId}'))),
-    ).toEqual(sorted(SPEND_ROLES));
+    ).toEqual(sorted(Roles.SPEND));
   });
 
   it('every role the rules name is a Role', () => {
@@ -351,7 +344,7 @@ describe('role.data.ts and firestore.rules agree', () => {
     }
     expect(named.size).toBeGreaterThan(0);
     const strangers = [...named].filter(
-      (role) => !(USER_ROLES as readonly string[]).includes(role),
+      (role) => !(Roles.ALL as readonly string[]).includes(role),
     );
     expect(strangers).toEqual([]);
   });

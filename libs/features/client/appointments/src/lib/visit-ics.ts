@@ -18,8 +18,8 @@ export interface VisitCalendarEvent {
   /** Stable per appointment — re-import updates rather than duplicates. */
   readonly uid: string;
   readonly title: string;
-  readonly startMs: UtcEpochMs;
-  readonly endMs: UtcEpochMs;
+  readonly startUtcMs: UtcEpochMs;
+  readonly endUtcMs: UtcEpochMs;
   readonly location: string;
   readonly description: string;
 }
@@ -106,8 +106,8 @@ export function buildVisitIcs(
     'BEGIN:VEVENT',
     `UID:${event.uid}`,
     `DTSTAMP:${toIcsUtc(stampMs)}`,
-    `DTSTART:${toIcsUtc(event.startMs)}`,
-    `DTEND:${toIcsUtc(event.endMs)}`,
+    `DTSTART:${toIcsUtc(event.startUtcMs)}`,
+    `DTEND:${toIcsUtc(event.endUtcMs)}`,
     `SUMMARY:${escapeIcsText(event.title)}`,
     `LOCATION:${escapeIcsText(event.location)}`,
     `DESCRIPTION:${escapeIcsText(event.description)}`,

@@ -4,6 +4,8 @@ import { utcMs } from '@core/testing';
 import {
   EndReasonFields,
   ImpersonationEndReason,
+} from './end-reason-fields.data';
+import {
   ImpersonationLifecycle,
   ImpersonationStatus,
 } from './impersonation-status.data';

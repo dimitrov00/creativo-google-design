@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cssRule } from '../../testing/css-rule';
 import { PersonalRecordKind } from '@core/components';
-import type { LoyaltyAccountReadPorts, LoyaltyCatalog } from '@core/ports';
+import type { LoyaltyAccountReadPorts } from '@core/ports';
 import { BadgeSeriesId, Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { loyaltyCatalogFixture, localDate } from '@core/testing';
@@ -32,6 +32,7 @@ import {
   stubResizeObserver,
 } from '../../testing/achievements-pages.rig';
 import { ClientAchievementsPage } from './client-achievements';
+import type { LoyaltyCatalog } from '@core/entities';
 
 /*
  * «ПОСТИЖЕНИЯ», revision 3 (§2.3; R2-G, F9, F11): the page is mounted

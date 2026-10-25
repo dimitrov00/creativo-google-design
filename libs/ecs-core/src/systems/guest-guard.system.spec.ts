@@ -1,13 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AuthClaims, Principal, Role } from '@core/components';
+import { AuthClaims, Principal, Role, SettledVerdict } from '@core/components';
 import { TenantId, UserId } from '@core/primitives';
 import { deepFreeze, unwrapOk } from '@core/testing';
-import {
-  GuestGuardSystem,
-  type LatchedVerdict,
-  SettledVerdict,
-} from './guest-guard.system';
+import { GuestGuardSystem, type LatchedVerdict } from './guest-guard.system';
 
 /*
  * The cases of the legacy identity application lib's `guest-guard.spec.ts`

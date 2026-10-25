@@ -1,4 +1,4 @@
-import { LocalDate, defect } from '@core/primitives';
+import { LocalDate } from '@core/primitives';
 import { formatWallClockRange } from '@creativo/ui/wall-clock';
 
 /*
@@ -9,18 +9,23 @@ import { formatWallClockRange } from '@creativo/ui/wall-clock';
  * `Intl`'s `formatRange` owns the separator (the spaced en dash) and the
  * pieces the two ends share; its output is never post-processed, so no
  * list writes a hand-built «8.10–9.10» beside a card's «1.09 – 30.11»
- * (wave D r6). A day is a `YYYY-MM-DD` key on the shop's calendar, laid on
- * the civil axis and read back in UTC (`formatWallClockRange`, the one
- * cached formatter), so no device zone can move it and no `Date` is built.
+ * (wave D r6). A day is the shop's `LocalDate` (Law 7.3), laid on the civil
+ * axis and read back in UTC (`formatWallClockRange`, the one cached
+ * formatter), so no device zone can move it and no `Date` is built.
  */
 
 /**
  * How the range names its days: the date, the house fact-line form (R59,
  * «8.10»), or the short weekday («чт») a list uses inside the coming week.
  * Both ends always take the same face — `Intl` formats a range with one
- * set of options.
+ * set of options. Values kept as the face's own spelling (pass D, D-8.8:
+ * a face parameter whose compare reads the dictionary).
  */
-export type DayRangeFace = 'date' | 'weekday';
+export const DayRangeFace = {
+  Date: 'date',
+  Weekday: 'weekday',
+} as const;
+export type DayRangeFace = (typeof DayRangeFace)[keyof typeof DayRangeFace];
 
 /**
  * «1.09 – 30.11» · «8.10 – 9.10» · «чт – пт» — the house range. A date
@@ -30,14 +35,14 @@ export type DayRangeFace = 'date' | 'weekday';
  * call («30.12.2026 г. – 2.01.2027 г.»).
  */
 export function dayRange(
-  from: string,
-  until: string,
-  today: string | null,
+  from: LocalDate,
+  until: LocalDate,
+  today: LocalDate | null,
   lang: string,
-  face: DayRangeFace = 'date',
+  face: DayRangeFace = DayRangeFace.Date,
 ): string {
   const options: Intl.DateTimeFormatOptions =
-    face === 'weekday'
+    face === DayRangeFace.Weekday
       ? { weekday: 'short' }
       : {
           day: 'numeric',
@@ -47,15 +52,10 @@ export function dayRange(
             ? {}
             : { year: 'numeric' }),
         };
-  return formatWallClockRange(dayOf(from), dayOf(until), lang, options);
+  return formatWallClockRange(from, until, lang, options);
 }
 
-/** A `YYYY-MM-DD` shop day as the brand; anything else is a caller's defect. */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`not a shop day: ${raw}`);
-}
-
-function yearOf(day: string): string {
-  return day.slice(0, 4);
+/** A shop day's calendar year (`LocalDate.parts`). */
+function yearOf(day: LocalDate): number {
+  return LocalDate.parts(day).year;
 }

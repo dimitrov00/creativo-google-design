@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AppointmentId,
   AwardKind,
   BadgeSeriesId,
+  BarberId,
+  CustomerId,
   LocationId,
+  ServiceId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -13,6 +17,7 @@ import {
   type MetricRef,
   PerkId,
   SeatOutcome,
+  VisitRowOutcome,
 } from '@core/components';
 import type {
   Appointment,
@@ -20,17 +25,14 @@ import type {
   BadgeSeries,
   BadgeSeriesMeta,
 } from '@core/entities';
-import {
-  LoyaltyCatalogSystem,
-  VisitRowOutcome,
-  ZonedTimeSystem,
-} from '@core/systems';
-import { customerOf, localDate, utcMs } from '@core/testing';
+import { LoyaltyCatalogSystem, ZonedTimeSystem } from '@core/systems';
+import { customerOf, duration, localDate, minute, utcMs } from '@core/testing';
 import {
   type RhythmRuleWords,
   TrailingFactFace,
 } from '@creativo/features/shared/visits';
 import type { AchievementsContext } from './achievements.presenter';
+import type { ClientCardStart } from './client-card.contracts';
 import type {
   AchievementsData,
   DetailPictureVm,
@@ -60,7 +62,7 @@ import {
   SHOP_TIME_ZONE,
   achievementsContextOf,
   achievementsDataOf,
-  sofiaIso,
+  startOf,
   contactOf,
   visitOf as flatVisitOf,
   georgiContext,
@@ -137,9 +139,12 @@ function rowsOf(
 ): HistoryRowsInput {
   return {
     appointments,
-    subjectUserId,
-    subjectCustomerId: recordOf(subjectUserId),
-    currentAppointmentId,
+    subjectUserId: UserId.of(subjectUserId),
+    subjectCustomerId: CustomerId.of(recordOf(subjectUserId)),
+    currentAppointmentId:
+      currentAppointmentId === null
+        ? null
+        : AppointmentId.of(currentAppointmentId),
     now: NOW,
     timeZone: SHOP_TIME_ZONE,
     photoCounts: new Map(),
@@ -182,7 +187,7 @@ function georgiPage(
   extra: MedalDetailExtra = georgiExtra(),
   data: AchievementsData = GEORGI_DATA,
 ): MedalDetailVm {
-  return must(medalDetailVm(id, data, ctx, extra), id);
+  return must(medalDetailVm(BadgeSeriesId.of(id), data, ctx, extra), id);
 }
 
 /** Мартин's page for a family, from the chair. */
@@ -191,7 +196,7 @@ function martinPage(
   extra: MedalDetailExtra = martinExtra(),
   data: AchievementsData = MARTIN_DATA,
 ): MedalDetailVm {
-  return must(medalDetailVm(id, data, IN_CHAIR, extra), id);
+  return must(medalDetailVm(BadgeSeriesId.of(id), data, IN_CHAIR, extra), id);
 }
 
 const joined = (line: readonly LinePart[]): string =>
@@ -206,8 +211,9 @@ function withProgress(
   progress: Omit<BadgeProgress, 'id'> | null,
 ): AchievementsData {
   const all = new Map(data.progress);
-  if (progress === null) all.delete(seriesId);
-  else all.set(seriesId, { ...progress, id: BadgeSeriesId.of(seriesId) });
+  const id = BadgeSeriesId.of(seriesId);
+  if (progress === null) all.delete(id);
+  else all.set(id, { ...progress, id });
   return { ...data, progress: all };
 }
 
@@ -297,7 +303,12 @@ describe('countsToward', () => {
   ) =>
     book
       .filter((visit) =>
-        countsToward(family(data, id), visit, recordOf(who), SHOP_TIME_ZONE),
+        countsToward(
+          family(data, id),
+          visit,
+          CustomerId.of(recordOf(who)),
+          SHOP_TIME_ZONE,
+        ),
       )
       .map((visit) => visit.id);
 
@@ -341,7 +352,7 @@ describe('countsToward', () => {
       for (const id of ids) {
         expect([id, counted(data, id, book, who).length]).toEqual([
           id,
-          must(data.progress.get(id), id).value,
+          must(data.progress.get(BadgeSeriesId.of(id)), id).value,
         ]);
       }
     }
@@ -590,11 +601,10 @@ describe('detailActionOf', () => {
         legs: [
           ...martinContext().legs,
           {
-            serviceId: 'svc-fade',
+            serviceId: ServiceId.of('svc-fade'),
             variantId: null,
-            minutes: 45,
-            barberId: 'ivan',
-            startsAtIso: sofiaIso('2026-09-28T13:00:00'),
+            minutes: duration(45),
+            barberId: BarberId.of('ivan'),
           },
         ],
       }),
@@ -677,7 +687,7 @@ describe('detailActionOf', () => {
     expect(
       detailActionOf(beard, IN_CHAIR, EDITABLE, {
         ...MARTIN_DATA,
-        today: '2026-12-01',
+        today: localDate('2026-12-01'),
       }),
     ).toBeNull();
   });
@@ -747,7 +757,12 @@ describe('detailCovers', () => {
 describe('medalDetailVm', () => {
   it('answers null for a family the catalogue lacks', () => {
     expect(
-      medalDetailVm('series-nowhere', GEORGI_DATA, SETTLED, georgiExtra()),
+      medalDetailVm(
+        BadgeSeriesId.of('series-nowhere'),
+        GEORGI_DATA,
+        SETTLED,
+        georgiExtra(),
+      ),
     ).toBeNull();
   });
 
@@ -1047,13 +1062,13 @@ describe('medalDetailVm', () => {
         georgiContext({
           appointmentId: GEORGI_NEXT_ID,
           settled: false,
+          start: startOf('2026-10-03T11:00:00'),
           legs: [
             {
-              serviceId: 'svc-fade',
+              serviceId: ServiceId.of('svc-fade'),
               variantId: null,
-              minutes: 45,
-              barberId: 'ivan',
-              startsAtIso: sofiaIso('2026-10-03T11:00:00'),
+              minutes: duration(45),
+              barberId: BarberId.of('ivan'),
             },
           ],
         }),
@@ -1065,6 +1080,54 @@ describe('medalDetailVm', () => {
       expect(
         georgiPage('series-early-bird', saturday).progress.thisVisit,
       ).toBeNull();
+    });
+
+    // DEP-15 (pass D): the drafted start reaches the card as the shop's
+    // wall clock — no zone of the editor's rides it — and the card reads
+    // the instant this count needs on its own zone. Before, an editor whose
+    // zone was not known yet handed over an empty start, and the draft
+    // counted nothing; a start no instant names is still skipped.
+    it('reads the drafted start on the card’s own zone, and skips one no instant names (DEP-15)', () => {
+      const drafted = (start: ClientCardStart) =>
+        achievementsContextOf(
+          georgiContext({
+            appointmentId: GEORGI_NEXT_ID,
+            settled: false,
+            start,
+            legs: [
+              {
+                serviceId: ServiceId.of('svc-fade'),
+                variantId: null,
+                minutes: duration(45),
+                barberId: BarberId.of('ivan'),
+              },
+            ],
+          }),
+          'Георги Петров',
+        );
+      // A Saturday start counts by its day, whatever zone the editor knew.
+      expect(
+        georgiPage('series-weekend', drafted(startOf('2026-10-03T11:00:00')))
+          .progress.thisVisit,
+      ).toBe('С това посещение: 3 от 3');
+      // Inside the spring-forward gap (Sofia, Sunday 28 March 2027, 03:30)
+      // no instant names the start: the counted draft holds no day, as
+      // before — unchanged.
+      expect(
+        georgiPage(
+          'series-weekend',
+          drafted({
+            localDate: localDate('2027-03-28'),
+            startMinutes: minute(210),
+          }),
+        ).progress.thisVisit,
+      ).toBeNull();
+      // The fall-back repeat (Sunday 25 October 2026, 03:30 twice) resolves
+      // to the earlier offset: it counts, as before — unchanged.
+      expect(
+        georgiPage('series-weekend', drafted(startOf('2026-10-25T03:30:00')))
+          .progress.thisVisit,
+      ).toBe('С това посещение: 3 от 3');
     });
 
     it('never promises what only the day decides: a punctual arrival, company, a new service', () => {
@@ -1093,7 +1156,9 @@ describe('medalDetailVm', () => {
       });
       // Past the top the figure is still the threshold.
       const past = withProgress(GEORGI_DATA, 'series-twelve-months', {
-        ...must(GEORGI_DATA.progress.get('series-twelve-months')),
+        ...must(
+          GEORGI_DATA.progress.get(BadgeSeriesId.of('series-twelve-months')),
+        ),
         value: 17,
       });
       expect(
@@ -1198,7 +1263,7 @@ describe('medalDetailVm', () => {
 
     it('says nothing is left once a level is due and not yet stamped', () => {
       const due = withProgress(GEORGI_DATA, 'series-svc-fade', {
-        ...must(GEORGI_DATA.progress.get('series-svc-fade')),
+        ...must(GEORGI_DATA.progress.get(BadgeSeriesId.of('series-svc-fade'))),
         value: 25,
       });
       expect(
@@ -1908,7 +1973,7 @@ describe('medalDetailVm', () => {
 
   describe('the verb', () => {
     const action = {
-      serviceId: 'svc-fade',
+      serviceId: ServiceId.of('svc-fade'),
       label: 'Добави фейд',
       accessibleName: 'Добави Фейд към посещението',
     };

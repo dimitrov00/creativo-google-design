@@ -203,9 +203,9 @@ const telemetry = consoleTelemetry();
  */
 const nowUtcMs: NowUtcMs = () => {
   const now = UtcEpochMs.of(Date.now());
-  if (!now.ok)
-    throw new Error(`the host clock is unreadable: ${now.error.raw}`);
-  return now.value;
+  return now.ok
+    ? now.value
+    : defect(`the host clock is unreadable: ${now.error.raw}`);
 };
 
 /** The clock and the two digests every pipeline hands its systems. */

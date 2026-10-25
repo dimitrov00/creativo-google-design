@@ -5,6 +5,7 @@ import type {
   MigrationBatchId,
   RedemptionId,
 } from '@core/primitives';
+import type { RuleRef } from './rule-ref.data';
 
 /** Why a journal entry was written — the entry's discriminator `journalSource`. */
 export const JournalSource = {
@@ -33,12 +34,6 @@ export const JournalSystemJob = {
 } as const;
 export type JournalSystemJob =
   (typeof JournalSystemJob)[keyof typeof JournalSystemJob];
-
-/** A rule version an entry cites (`ruleId@version`) — a value type for system I/O. */
-export type RuleRef = {
-  readonly ruleId: AchievementRuleId;
-  readonly version: number;
-};
 
 /**
  * Why an entry was written: a rule paid, a person asked, a job ran, a

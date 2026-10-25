@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { AuthDeployment } from './auth-deployment.data';
 import {
-  AuthDeployment,
   AuthProvider,
   AuthProviderKind,
-  AuthStrategy,
-  AuthStrategyKind,
   OAuthProvider,
-} from './auth-strategy.data';
+} from './auth-provider.data';
+import { AuthStrategy, AuthStrategyKind } from './auth-strategy.data';
 import { IdentifierChannel } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
 import { RegistrationField } from './registration.data';

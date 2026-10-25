@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { LocalDate, MinuteOfDay } from '@core/primitives';
+import {
+  AppointmentId,
+  LocalDate,
+  MinuteOfDay,
+  WaitlistRequestId,
+} from '@core/primitives';
 import { describe, expect, it } from 'vitest';
 import {
   matchesVisitFilter,
@@ -12,6 +17,7 @@ import {
   VisitFilter,
   VisitPerspective,
   VisitRowEntry,
+  type VisitRowFields,
   VisitRowOutcome,
   type VisitRowVm,
 } from './visit-row.vm';
@@ -24,9 +30,7 @@ function row(
   visitRowEntry: VisitRowEntry = VisitRowEntry.Visit,
 ): VisitRowVm {
   const waiting = visitRowEntry === VisitRowEntry.Waitlist;
-  return {
-    id,
-    visitRowEntry,
+  const fields: VisitRowFields = {
     localDate: LocalDate.fromEpochDay(0),
     startMinutes: MinuteOfDay.ofProven(0),
     sectionKey: upcoming ? 'upcoming' : '2026-09',
@@ -47,6 +51,17 @@ function row(
     accessibleName: id,
     testId: id,
   };
+  return waiting
+    ? {
+        ...fields,
+        id: WaitlistRequestId.of(id),
+        visitRowEntry: VisitRowEntry.Waitlist,
+      }
+    : {
+        ...fields,
+        id: AppointmentId.of(id),
+        visitRowEntry: VisitRowEntry.Visit,
+      };
 }
 
 const ROWS: readonly VisitRowVm[] = [

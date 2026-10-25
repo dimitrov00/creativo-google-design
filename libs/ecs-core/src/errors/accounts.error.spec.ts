@@ -89,4 +89,21 @@ describe('AccountsError', () => {
       expect(error.minLength).toBe(2);
     }
   });
+
+  it('OwnProfileSave names exactly the three answers of an own-profile save (pass D §2.11)', () => {
+    const answers: readonly AccountsError.OwnProfileSave[] = [
+      AccountsError.updateProfileNotFound(),
+      AccountsError.updateProfileValidationFailed(),
+      AccountsError.updateProfileRepositoryFailure(),
+    ];
+    expect(answers.map((answer) => answer.errorCode)).toEqual([
+      'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND',
+      'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED',
+      'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
+    ]);
+    // @ts-expect-error — an invalid e-mail is no own-profile save answer.
+    const stranger: AccountsError.OwnProfileSave =
+      AccountsError.emailInvalid('x');
+    expect(stranger.errorCode).toBe('ACCOUNTS_EMAIL_INVALID');
+  });
 });

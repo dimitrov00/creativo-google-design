@@ -1,3 +1,4 @@
+import type { AppointmentId } from '@core/primitives';
 import {
   type InputSignal,
   type InputSignalWithTransform,
@@ -91,7 +92,7 @@ describe('lib-visits-browser, the public API', () => {
       InputSignal<boolean | null>
     >();
     expectTypeOf<VisitsBrowser['openRow']>().toEqualTypeOf<
-      OutputEmitterRef<string>
+      OutputEmitterRef<AppointmentId>
     >();
     expectTypeOf<VisitsBrowser['loadMore']>().toEqualTypeOf<
       OutputEmitterRef<void>

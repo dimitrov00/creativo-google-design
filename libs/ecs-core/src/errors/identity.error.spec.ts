@@ -181,4 +181,18 @@ describe('IdentityError', () => {
     expect(IdentityError.isOtp(IdentityError.otpWrongCode())).toBe(true);
     expect(IdentityError.isOtp(error)).toBe(false);
   });
+
+  it('birthDatePartial() is the birth-date refusal with nothing attempted — the onboarding step’s partial date (pass D §2.11)', () => {
+    const partial = IdentityError.birthDatePartial();
+    expect(partial).toEqual({
+      errorCode: 'IDENTITY_BIRTH_DATE_INVALID',
+      attempted: '',
+    });
+    expect(partial).toEqual(IdentityError.birthDateInvalid(''));
+    expect(IdentityError.is(partial, IdentityErrorCode.BirthDateInvalid)).toBe(
+      true,
+    );
+    // Pure: the same struct on every call, nothing held between them.
+    expect(IdentityError.birthDatePartial()).toEqual(partial);
+  });
 });

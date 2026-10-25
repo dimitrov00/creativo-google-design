@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { EditCommand } from '@core/components';
+import { EditCommand, GridEvent as GridEventTag } from '@core/components';
 import { BookingStatus } from '@core/primitives';
-import { GridEvent as GridEventTag } from '@core/systems';
+import { minuteCount, trackMinute } from '@core/testing';
 import {
   type GridColumn,
   type GridCommit,
@@ -24,8 +24,8 @@ import {
 function event(partial: Partial<GridEvent> & Pick<GridEvent, 'id'>): GridEvent {
   return {
     gridEvent: GridEventTag.Visit,
-    startMinute: 600,
-    endMinute: 645,
+    startMinute: trackMinute(600),
+    endMinute: trackMinute(645),
     title: 'Георги Петров',
     detail: 'Фейд',
     attribution: null,
@@ -53,7 +53,7 @@ function column(partial: Partial<GridColumn> = {}): GridColumn {
     isToday: false,
     avatarSrc: null,
     events: [],
-    open: [{ startMinute: 540, endMinute: 1080 }],
+    open: [{ startMinute: trackMinute(540), endMinute: trackMinute(1080) }],
     ...partial,
   };
 }
@@ -97,7 +97,11 @@ describe('StaffTimeGrid', () => {
      */
     it('runs midnight to midnight whatever the roster says', () => {
       const host = render([
-        column({ open: [{ startMinute: 540, endMinute: 1080 }] }),
+        column({
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+        }),
       ]);
       const labels = hours(host);
       // Twenty-four OPENING labels and no closing midnight (2026-09-23): a
@@ -116,7 +120,13 @@ describe('StaffTimeGrid', () => {
     it('grows for a booking that runs past midnight', () => {
       const host = render([
         column({
-          events: [event({ id: 'late', startMinute: 1410, endMinute: 1455 })],
+          events: [
+            event({
+              id: 'late',
+              startMinute: trackMinute(1410),
+              endMinute: trackMinute(1455),
+            }),
+          ],
         }),
       ]);
       const labels = hours(host);
@@ -137,7 +147,11 @@ describe('StaffTimeGrid', () => {
     // line 73. Two runs — the shut morning and the shut evening.
     it('shades the hours outside a single working window', () => {
       const host = render([
-        column({ open: [{ startMinute: 540, endMinute: 1080 }] }),
+        column({
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+        }),
       ]);
       expect(closedRows(host)).toEqual(['1 / 37', '73 / 97']);
     });
@@ -146,8 +160,8 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           open: [
-            { startMinute: 540, endMinute: 780 },
-            { startMinute: 840, endMinute: 1080 },
+            { startMinute: trackMinute(540), endMinute: trackMinute(780) },
+            { startMinute: trackMinute(840), endMinute: trackMinute(1080) },
           ],
         }),
       ]);
@@ -170,8 +184,8 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           open: [
-            { startMinute: 720, endMinute: 1080 },
-            { startMinute: 540, endMinute: 780 },
+            { startMinute: trackMinute(720), endMinute: trackMinute(1080) },
+            { startMinute: trackMinute(540), endMinute: trackMinute(780) },
           ],
         }),
       ]);
@@ -180,8 +194,18 @@ describe('StaffTimeGrid', () => {
 
     it('shades each column against its OWN hours', () => {
       const host = render([
-        column({ id: 'ivan', open: [{ startMinute: 540, endMinute: 1080 }] }),
-        column({ id: 'niko', open: [{ startMinute: 720, endMinute: 1200 }] }),
+        column({
+          id: 'ivan',
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+        }),
+        column({
+          id: 'niko',
+          open: [
+            { startMinute: trackMinute(720), endMinute: trackMinute(1200) },
+          ],
+        }),
       ]);
       expect(closedRows(host, 0)).toEqual(['1 / 37', '73 / 97']);
       expect(closedRows(host, 1)).toEqual(['1 / 49', '81 / 97']);
@@ -198,7 +222,13 @@ describe('StaffTimeGrid', () => {
     it('keeps the service on its own line at half an hour', () => {
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 630 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(630),
+            }),
+          ],
         }),
       ]);
       const block = host.querySelector('[data-testid="staff-grid-event"]');
@@ -213,7 +243,13 @@ describe('StaffTimeGrid', () => {
     it('puts the service beside the name on a quarter-hour block', () => {
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 615 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(615),
+            }),
+          ],
         }),
       ]);
       const block = host.querySelector('[data-testid="staff-grid-event"]');
@@ -233,8 +269,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 660 }),
-            event({ id: 'b', startMinute: 615, endMinute: 675 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+            event({
+              id: 'b',
+              startMinute: trackMinute(615),
+              endMinute: trackMinute(675),
+            }),
           ],
         }),
       ]);
@@ -259,9 +303,21 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 660 }),
-            event({ id: 'b', startMinute: 615, endMinute: 675 }),
-            event({ id: 'c', startMinute: 900, endMinute: 960 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+            event({
+              id: 'b',
+              startMinute: trackMinute(615),
+              endMinute: trackMinute(675),
+            }),
+            event({
+              id: 'c',
+              startMinute: trackMinute(900),
+              endMinute: trackMinute(960),
+            }),
           ],
         }),
       ]);
@@ -288,8 +344,8 @@ describe('StaffTimeGrid', () => {
             event({
               id: 'block:ivan:1',
               gridEvent: GridEventTag.Block,
-              startMinute: 900,
-              endMinute: 960,
+              startMinute: trackMinute(900),
+              endMinute: trackMinute(960),
               title: 'Blocked',
               detail: null,
               accessibleName: 'Blocked, 15:00–16:00',
@@ -356,7 +412,13 @@ describe('StaffTimeGrid', () => {
     it('rounds a block outward to the slot track by default', () => {
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 605, endMinute: 650 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(605),
+              endMinute: trackMinute(650),
+            }),
+          ],
         }),
       ]);
       const block = firstBlock(host);
@@ -379,7 +441,13 @@ describe('StaffTimeGrid', () => {
       });
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 605, endMinute: 650 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(605),
+              endMinute: trackMinute(650),
+            }),
+          ],
         }),
       ]);
       const block = firstBlock(host);
@@ -402,7 +470,13 @@ describe('StaffTimeGrid', () => {
       });
       const host = render([
         column({
-          events: [event({ id: 'early', startMinute: 480, endMinute: 570 })],
+          events: [
+            event({
+              id: 'early',
+              startMinute: trackMinute(480),
+              endMinute: trackMinute(570),
+            }),
+          ],
         }),
       ]);
       const block = firstBlock(host);
@@ -424,8 +498,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'in', startMinute: 600, endMinute: 660 }),
-            event({ id: 'far', startMinute: 900, endMinute: 960 }),
+            event({
+              id: 'in',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+            event({
+              id: 'far',
+              startMinute: trackMinute(900),
+              endMinute: trackMinute(960),
+            }),
           ],
         }),
       ]);
@@ -440,8 +522,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 630 }),
-            event({ id: 'b', startMinute: 660, endMinute: 690 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(630),
+            }),
+            event({
+              id: 'b',
+              startMinute: trackMinute(660),
+              endMinute: trackMinute(690),
+            }),
           ],
         }),
       ]);
@@ -478,7 +568,11 @@ describe('StaffTimeGrid', () => {
         endMinute: 720,
       });
       const host = render([
-        column({ open: [{ startMinute: 540, endMinute: 660 }] }),
+        column({
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(660) },
+          ],
+        }),
       ]);
       expect(closedRows(host)).toEqual(['9 / 13']);
     });
@@ -498,8 +592,8 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           open: [
-            { startMinute: 540, endMinute: 780 },
-            { startMinute: 840, endMinute: 1080 },
+            { startMinute: trackMinute(540), endMinute: trackMinute(780) },
+            { startMinute: trackMinute(840), endMinute: trackMinute(1080) },
           ],
         }),
       ]);
@@ -921,7 +1015,13 @@ describe('StaffTimeGrid', () => {
     it('leaves every block a control on the page grid', () => {
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+          ],
         }),
       ]);
       const block = host.querySelector('[data-testid="staff-grid-event"]');
@@ -935,8 +1035,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 660 }),
-            event({ id: 'neighbour-0', startMinute: 700, endMinute: 730 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+            event({
+              id: 'neighbour-0',
+              startMinute: trackMinute(700),
+              endMinute: trackMinute(730),
+            }),
           ],
         }),
       ]);
@@ -970,8 +1078,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           isToday: true,
-          open: [{ startMinute: 540, endMinute: 1080 }],
-          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+          ],
         }),
       ]);
       // 15 of 60 minutes gone — a quarter of the block, not all of it.
@@ -983,8 +1099,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           isToday: true,
-          open: [{ startMinute: 540, endMinute: 1080 }],
-          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+          ],
         }),
       ]);
       expect(masksOf(host)).toEqual([{ kind: 'elapsed', from: 0, to: 1 }]);
@@ -995,8 +1119,16 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           isToday: false,
-          open: [{ startMinute: 540, endMinute: 1080 }],
-          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+          ],
         }),
       ]);
       expect(masksOf(host)).toEqual([]);
@@ -1005,14 +1137,16 @@ describe('StaffTimeGrid', () => {
     it('marks the minutes beyond what the services need, from their end', () => {
       const host = render([
         column({
-          open: [{ startMinute: 540, endMinute: 1080 }],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
           // An hour drawn for forty-five minutes of services.
           events: [
             event({
               id: 'a',
-              startMinute: 600,
-              endMinute: 660,
-              surplusMinutes: 15,
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+              surplusMinutes: minuteCount(15),
             }),
           ],
         }),
@@ -1028,9 +1162,17 @@ describe('StaffTimeGrid', () => {
     it('hatches only the minutes past closing, and warns', () => {
       const host = render([
         column({
-          open: [{ startMinute: 540, endMinute: 1080 }],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
           // 17:30–18:30: half of it past an 18:00 close.
-          events: [event({ id: 'a', startMinute: 1050, endMinute: 1110 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(1050),
+              endMinute: trackMinute(1110),
+            }),
+          ],
         }),
       ]);
       expect(masksOf(host)).toEqual([{ kind: 'closed', from: 0.5, to: 1 }]);
@@ -1042,8 +1184,16 @@ describe('StaffTimeGrid', () => {
     it('leaves a booking inside the shift unmarked', () => {
       const host = render([
         column({
-          open: [{ startMinute: 540, endMinute: 1080 }],
-          events: [event({ id: 'a', startMinute: 600, endMinute: 660 })],
+          open: [
+            { startMinute: trackMinute(540), endMinute: trackMinute(1080) },
+          ],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+          ],
         }),
       ]);
       expect(masksOf(host)).toEqual([]);
@@ -1055,10 +1205,18 @@ describe('StaffTimeGrid', () => {
     it('hatches the overlapping stretch on BOTH blocks', () => {
       const host = render([
         column({
-          open: [{ startMinute: 0, endMinute: 1440 }],
+          open: [{ startMinute: trackMinute(0), endMinute: trackMinute(1440) }],
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 660 }),
-            event({ id: 'b', startMinute: 630, endMinute: 690 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
+            event({
+              id: 'b',
+              startMinute: trackMinute(630),
+              endMinute: trackMinute(690),
+            }),
           ],
         }),
       ]);
@@ -1070,11 +1228,19 @@ describe('StaffTimeGrid', () => {
     it('does not call a gap a collision — landing on one is the point', () => {
       const host = render([
         column({
-          open: [{ startMinute: 0, endMinute: 1440 }],
+          open: [{ startMinute: trackMinute(0), endMinute: trackMinute(1440) }],
           events: [
-            event({ id: 'a', startMinute: 600, endMinute: 660 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(660),
+            }),
             {
-              ...event({ id: 'g', startMinute: 600, endMinute: 660 }),
+              ...event({
+                id: 'g',
+                startMinute: trackMinute(600),
+                endMinute: trackMinute(660),
+              }),
               gridEvent: GridEventTag.Gap,
             },
           ],
@@ -1123,7 +1289,11 @@ describe('StaffTimeGrid', () => {
       return render([
         column({
           events: events ?? [
-            event({ id: 'a', startMinute: 600, endMinute: 645 }),
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
+            }),
           ],
         }),
       ]);
@@ -1301,8 +1471,16 @@ describe('StaffTimeGrid', () => {
 
       it("keeps the dragged block's node where it was, behind the neighbour it passed", () => {
         const host = frame([
-          event({ id: 'n', startMinute: 600, endMinute: 645 }),
-          event({ id: 'a', startMinute: 700, endMinute: 745 }),
+          event({
+            id: 'n',
+            startMinute: trackMinute(600),
+            endMinute: trackMinute(645),
+          }),
+          event({
+            id: 'a',
+            startMinute: trackMinute(700),
+            endMinute: trackMinute(745),
+          }),
         ]);
         const blocks = () => [
           ...host.querySelectorAll<HTMLElement>(
@@ -1548,7 +1726,13 @@ describe('StaffTimeGrid', () => {
       // The caller answers with something else — it also shortened the span.
       fixture.componentRef.setInput('columns', [
         column({
-          events: [event({ id: 'a', startMinute: 605, endMinute: 645 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(605),
+              endMinute: trackMinute(645),
+            }),
+          ],
         }),
       ]);
       fixture.detectChanges();
@@ -1562,7 +1746,13 @@ describe('StaffTimeGrid', () => {
       // not the proposal it answered long ago.
       fixture.componentRef.setInput('columns', [
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
+            }),
+          ],
         }),
       ]);
       fixture.detectChanges();
@@ -1648,8 +1838,17 @@ describe('StaffTimeGrid', () => {
        knows something the model does not; the readout says so and lets him. */
     it('goes destructive over a neighbour and names it', () => {
       const host = frame([
-        event({ id: 'a', startMinute: 600, endMinute: 645 }),
-        event({ id: 'b', startMinute: 660, endMinute: 700, title: 'Петър' }),
+        event({
+          id: 'a',
+          startMinute: trackMinute(600),
+          endMinute: trackMinute(645),
+        }),
+        event({
+          id: 'b',
+          startMinute: trackMinute(660),
+          endMinute: trackMinute(700),
+          title: 'Петър',
+        }),
       ]);
       fixture.componentRef.setInput('uiDragCopy', {
         handleStart: 'Начало',
@@ -1694,7 +1893,11 @@ describe('StaffTimeGrid', () => {
         id,
         title,
         events: [
-          event({ id: `${id}-1`, startMinute, endMinute: startMinute + 45 }),
+          event({
+            id: `${id}-1`,
+            startMinute: trackMinute(startMinute),
+            endMinute: trackMinute(startMinute + 45),
+          }),
         ],
       });
 
@@ -1781,7 +1984,13 @@ describe('StaffTimeGrid', () => {
       });
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
+            }),
+          ],
         }),
       ]);
       const box = host.querySelector<HTMLElement>('.staff-grid__frame');
@@ -1844,17 +2053,21 @@ describe('StaffTimeGrid', () => {
       const host = render([
         column({
           events: [
-            event({ id: 'kept', startMinute: 540, endMinute: 585 }),
+            event({
+              id: 'kept',
+              startMinute: trackMinute(540),
+              endMinute: trackMinute(585),
+            }),
             event({
               id: 'missed',
-              startMinute: 600,
-              endMinute: 645,
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
               bookingStatus: BookingStatus.NoShow,
             }),
             event({
               id: 'off',
-              startMinute: 660,
-              endMinute: 705,
+              startMinute: trackMinute(660),
+              endMinute: trackMinute(705),
               bookingStatus: BookingStatus.Cancelled,
             }),
           ],
@@ -1898,13 +2111,13 @@ describe('StaffTimeGrid', () => {
       ] as const;
       const host = render([
         column({
-          open: [{ startMinute: 0, endMinute: 1440 }],
+          open: [{ startMinute: trackMinute(0), endMinute: trackMinute(1440) }],
           events: [
             ...statuses.map(([bookingStatus], index) =>
               event({
                 id: `visit-${index}`,
-                startMinute: 60 * index,
-                endMinute: 60 * index + 45,
+                startMinute: trackMinute(60 * index),
+                endMinute: trackMinute(60 * index + 45),
                 bookingStatus,
               }),
             ),
@@ -1912,28 +2125,28 @@ describe('StaffTimeGrid', () => {
               id: 'gap',
               gridEvent: GridEventTag.Gap,
               bookingStatus: null,
-              startMinute: 600,
-              endMinute: 645,
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
             }),
             event({
               id: 'block',
               gridEvent: GridEventTag.Block,
               bookingStatus: null,
-              startMinute: 700,
-              endMinute: 745,
+              startMinute: trackMinute(700),
+              endMinute: trackMinute(745),
             }),
             event({
               id: 'draft',
               bookingStatus: null,
               draftNew: true,
-              startMinute: 800,
-              endMinute: 845,
+              startMinute: trackMinute(800),
+              endMinute: trackMinute(845),
             }),
             event({
               id: 'bare',
               bookingStatus: null,
-              startMinute: 900,
-              endMinute: 945,
+              startMinute: trackMinute(900),
+              endMinute: trackMinute(945),
             }),
           ],
         }),
@@ -1972,7 +2185,13 @@ describe('StaffTimeGrid', () => {
       fixture.componentRef.setInput('uiEditableEventId', 'a');
       const host = render([
         column({
-          events: [event({ id: 'a', startMinute: 600, endMinute: 645 })],
+          events: [
+            event({
+              id: 'a',
+              startMinute: trackMinute(600),
+              endMinute: trackMinute(645),
+            }),
+          ],
         }),
       ]);
       const box = host.querySelector<HTMLElement>('.staff-grid__frame');

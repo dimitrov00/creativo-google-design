@@ -12,6 +12,7 @@ import {
   UiGauge,
   UiIcon,
 } from '@creativo/ui/controls';
+import type { CouponGrantId } from '@core/primitives';
 import { UiTextDirective } from '@creativo/ui/modifiers';
 import { WalletHolding, type WalletHoldingVm } from '../client-pages.vm';
 
@@ -78,7 +79,7 @@ export class WalletHoldings {
   /** One column on a phone; two in the centred dialog. */
   readonly columns = input<WalletHoldingsColumns>(1);
   /** An applied ticket's «Премахни»: the grant to take off the bill. */
-  readonly removeReward = output<string>();
+  readonly removeReward = output<CouponGrantId>();
 
   /** What each holding is, for the template's switch. */
   protected readonly WalletHolding = WalletHolding;

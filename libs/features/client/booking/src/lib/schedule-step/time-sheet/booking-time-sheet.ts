@@ -16,14 +16,15 @@ import type {
   LocalDate,
   LocationId,
   MinuteOfDay,
+  SeatKeyText,
   TimeZone,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   type BookingPolicy,
   Daypart,
   ScheduleSelection,
   type SeatAssignment,
-  SeatKey,
   type ShopNow,
 } from '@core/components';
 import {
@@ -51,6 +52,11 @@ import {
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../../booking-flow.store';
 import { BookingDayStore } from '../booking-day.store';
+import {
+  barberNameOf,
+  bookerLabelOf,
+  personLabelOf,
+} from '../../booking-people.words';
 import { formatBookingDay, formatBookingTime } from '../../booking-wall-clock';
 import { SEAT_ARRANGEMENT_WORDS } from '../../booking-words';
 
@@ -67,7 +73,7 @@ interface DaypartVm {
  */
 interface TimedOption {
   readonly located: CartLocatedOption;
-  readonly startMs: number;
+  readonly startUtcMs: UtcEpochMs;
 }
 
 interface StartVm {
@@ -75,7 +81,7 @@ interface StartVm {
   /** The party's start, a minute of the shop day — what the pick holds. */
   readonly startMinutes: MinuteOfDay;
   /** The same start as an instant — the DOM's `data-start`, nothing else. */
-  readonly startMs: number;
+  readonly startUtcMs: UtcEpochMs;
   readonly locationId: LocationId;
   readonly label: string;
   /**
@@ -252,8 +258,8 @@ export class BookingTimeSheet {
       }
       const timed: TimedOption[] = [];
       for (const located of BookingCartSystem.dayOptions(query, docs.value)) {
-        const startMs = this.instantAt(located.option.startMinutes);
-        if (startMs !== null) timed.push({ located, startMs });
+        const startUtcMs = this.instantAt(located.option.startMinutes);
+        if (startUtcMs !== null) timed.push({ located, startUtcMs });
       }
       return timed;
     },
@@ -274,14 +280,14 @@ export class BookingTimeSheet {
       Daypart.ALL.map((part) => [part, []]),
     );
 
-    for (const { located, startMs } of this.options()) {
+    for (const { located, startUtcMs } of this.options()) {
       const { locationId, option } = located;
       // The shop's clock face, not the device's: «сутрин» is the shop's
       // morning — the option's own minute of the shop day.
       groups.get(Daypart.of(option.startMinutes))?.push({
-        key: `${locationId}|${startMs}`,
+        key: `${locationId}|${startUtcMs}`,
         startMinutes: option.startMinutes,
-        startMs,
+        startUtcMs,
         locationId,
         label: formatBookingTime(
           this.day(),
@@ -340,24 +346,32 @@ export class BookingTimeSheet {
       const cart = this.store.cart();
       if (!cart) return [];
 
-      const seatByLineId = new Map<CartLineId, string>();
+      const seatByLineId = new Map<CartLineId, SeatKeyText>();
       for (const seat of cart.cartSeats) {
         for (const line of seat.lines) {
           seatByLineId.set(line.lineId, seat.seatKey);
         }
       }
 
-      return option.option.assignments.map((assignment) => ({
-        barberName: this.barberName(assignment.barberId),
-        personLabel: this.personLabel(
-          seatByLineId.get(assignment.lineId) ?? '',
-        ),
-        timeLabel: formatBookingTime(
-          this.day(),
-          assignment.startMinutes,
-          this.content.locale(),
-        ),
-      }));
+      const guests = this.store.guests();
+      const booker = bookerLabelOf(
+        this.identity.displayName(),
+        this.transloco.translate('booking.party.you'),
+      );
+      return option.option.assignments.map((assignment) => {
+        const seatKey = seatByLineId.get(assignment.lineId);
+        return {
+          barberName: this.barberName(assignment.barberId),
+          // A line the cart no longer holds names nobody.
+          personLabel:
+            seatKey === undefined ? '' : personLabelOf(seatKey, guests, booker),
+          timeLabel: formatBookingTime(
+            this.day(),
+            assignment.startMinutes,
+            this.content.locale(),
+          ),
+        };
+      });
     },
   );
 
@@ -400,8 +414,8 @@ export class BookingTimeSheet {
   protected confirm(): void {
     const located = this.selectedOption();
     if (!located) return;
-    const selection = toScheduleSelection(located, this.day(), (raw) =>
-      this.store.cartLineId(raw),
+    const selection = toScheduleSelection(located, this.day(), (lineId) =>
+      this.store.cartLineId(lineId),
     );
     if (!selection) return;
     this.confirmed.emit(selection);
@@ -411,7 +425,7 @@ export class BookingTimeSheet {
    * A minute of this sheet's shop day as an instant, in the shop's zone —
    * `null` in a spring-forward gap. Only the DOM's `data-start` reads it.
    */
-  private instantAt(minute: MinuteOfDay): number | null {
+  private instantAt(minute: MinuteOfDay): UtcEpochMs | null {
     const instant = ZonedTimeSystem.toUtc(this.day(), minute, this.zone());
     return instant.ok ? instant.value : null;
   }
@@ -427,34 +441,13 @@ export class BookingTimeSheet {
       : locationId;
   }
 
+  /** A barber as the steps name them (`barberNameOf`, the one copy). */
   private barberName(barberId: BarberId): string {
-    const barber = this.catalog
-      .barbers()
-      .find((candidate) => candidate.id === barberId);
-    return barber
-      ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId;
-  }
-
-  /** A cart seat key (`SeatKey.text`) — `'self'`, or the bare guest id. */
-  private personLabel(seatKey: string): string {
-    // The booker by NAME once we know it — three steps said "You" to a
-    // signed-in user whose name was sitting in the session the whole time
-    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === SELF_SEAT)
-      return (
-        this.identity.displayName() ||
-        this.transloco.translate('booking.party.you')
-      );
-    const guest = this.store
-      .guests()
-      .find((candidate) => candidate.guestId === seatKey);
-    return guest?.guestLabel ?? seatKey;
+    return barberNameOf(this.catalog.barbers(), barberId, (name) =>
+      this.content.text(name),
+    );
   }
 }
-
-/** The booker's own cart seat key. */
-const SELF_SEAT: string = SeatKey.text(SeatKey.self());
 
 /**
  * A located option → the event the machine takes.
@@ -473,7 +466,7 @@ const SELF_SEAT: string = SeatKey.text(SeatKey.self());
 export function toScheduleSelection(
   located: CartLocatedOption,
   localDate: LocalDate,
-  resolveLineId: (raw: string) => CartLineId | null,
+  resolveLineId: (lineId: CartLineId) => CartLineId | null,
 ): ScheduleSelection | null {
   const assignments: SeatAssignment[] = [];
   for (const assignment of located.option.assignments) {

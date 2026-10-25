@@ -1,5 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import type { LocalDate } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { UiMonthPicker } from './month-picker';
 
 @Component({
@@ -17,15 +19,15 @@ import { UiMonthPicker } from './month-picker';
   `,
 })
 class Host {
-  readonly selected = signal('2026-08-26');
-  readonly today = signal<string | null>('2026-08-24');
-  readonly marked = signal<readonly string[]>([]);
-  readonly min = signal<string | null>(null);
+  readonly selected = signal<LocalDate | null>(localDate('2026-08-26'));
+  readonly today = signal<LocalDate | null>(localDate('2026-08-24'));
+  readonly marked = signal<readonly LocalDate[]>([]);
+  readonly min = signal<LocalDate | null>(null);
   readonly relatives = [
     { offset: 0, label: 'Днес' },
     { offset: 1, label: 'Утре' },
   ];
-  picked: string[] = [];
+  picked: LocalDate[] = [];
 }
 
 async function render() {
@@ -102,7 +104,7 @@ describe('UiMonthPicker', () => {
     const { fixture, host } = await render();
     const title = () =>
       host.querySelector('.ui-month-picker__title')?.textContent?.trim();
-    fixture.componentInstance.selected.set('2026-12-10');
+    fixture.componentInstance.selected.set(localDate('2026-12-10'));
     fixture.detectChanges();
     expect(title()).toBe('Декември 2026 г.');
 
@@ -131,7 +133,7 @@ describe('UiMonthPicker', () => {
     fixture.detectChanges();
     expect(day(host, '2026-09-15')).not.toBeNull();
 
-    fixture.componentInstance.today.set('2026-08-25');
+    fixture.componentInstance.today.set(localDate('2026-08-25'));
     fixture.detectChanges();
 
     expect(day(host, '2026-09-15')).not.toBeNull();
@@ -142,10 +144,31 @@ describe('UiMonthPicker', () => {
 
     host.querySelector<HTMLElement>('[data-testid="ui-month-next"]')?.click();
     fixture.detectChanges();
-    fixture.componentInstance.selected.set('2026-11-04');
+    fixture.componentInstance.selected.set(localDate('2026-11-04'));
     fixture.detectChanges();
 
     expect(day(host, '2026-11-04')?.getAttribute('aria-current')).toBe('date');
+  });
+
+  /* Pass D (W2-U): no day chosen yet is `null` (the day pill's former
+     `''` "none") — the head reads empty, no cell is drawn and the steps
+     page nothing, exactly as the empty key drew before. */
+  it('draws no month while there is no selection', async () => {
+    const { fixture, host } = await render();
+    fixture.componentInstance.selected.set(null);
+    fixture.detectChanges();
+
+    expect(
+      host.querySelector('.ui-month-picker__title')?.textContent?.trim(),
+    ).toBe('');
+    expect(
+      host.querySelectorAll('[data-testid^="ui-month-day-"]'),
+    ).toHaveLength(0);
+    host.querySelector<HTMLElement>('[data-testid="ui-month-next"]')?.click();
+    fixture.detectChanges();
+    expect(
+      host.querySelectorAll('[data-testid^="ui-month-day-"]'),
+    ).toHaveLength(0);
   });
 
   it('emits the day a cell names', async () => {
@@ -204,8 +227,11 @@ describe('UiMonthPicker', () => {
      the badge's event dot, and nothing before the start answers. */
   it('dots the marked days, and holds back the ones before the minimum', async () => {
     const { fixture, host } = await render();
-    fixture.componentInstance.marked.set(['2026-08-20', '2026-08-27']);
-    fixture.componentInstance.min.set('2026-08-20');
+    fixture.componentInstance.marked.set([
+      localDate('2026-08-20'),
+      localDate('2026-08-27'),
+    ]);
+    fixture.componentInstance.min.set(localDate('2026-08-20'));
     fixture.detectChanges();
 
     const marked = day(host, '2026-08-27');

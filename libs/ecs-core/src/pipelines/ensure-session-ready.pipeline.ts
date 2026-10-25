@@ -1,9 +1,9 @@
 import { firstValueFrom } from 'rxjs';
-import type { Principal } from '@core/components';
+import { type Principal, SessionReadiness } from '@core/components';
 import { Result } from '@core/primitives';
 import { type PipelineError } from '@core/errors';
 import type { AuthSessionPorts, TimerPorts } from '@core/ports';
-import { SessionAccessSystem, SessionReadiness } from '@core/systems';
+import { SessionAccessSystem } from '@core/systems';
 
 export type EnsureSessionReadyPorts = AuthSessionPorts & TimerPorts;
 

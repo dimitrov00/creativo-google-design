@@ -6,6 +6,7 @@ import {
 } from '@core/primitives';
 import {
   RepositoryError,
+  type RhythmPublishRefusal,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
@@ -55,13 +56,6 @@ export type PublishRhythmDraftCommand = {
 export type RhythmDraftReceipt = StreakPublishCall.Receipt & {
   readonly waits: boolean;
 };
-
-/**
- * A «Запази» or an «Отмени» that did not land: the server's (or the page's
- * own) `StreakPublishError`, or a request that got no answer
- * (`RepositoryError`).
- */
-export type RhythmPublishRefusal = StreakPublishError | RepositoryError;
 
 /** What became of a «Запази»: the receipt; `null` when there was nothing to publish; or the refusal. */
 export type RhythmPublishOutcome = Result<

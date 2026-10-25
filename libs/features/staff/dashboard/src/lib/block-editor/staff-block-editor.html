@@ -1,5 +1,5 @@
 <ng-container *transloco="let t">
-  @if (currentPage() === 'repeat') {
+  @if (repeatPageOpen()) {
   <!-- ─────────────────────────── DEPTH 1 ───────────────────────────
        THE REPEAT PAGE (2026-09-24: "like Apple Calendar, MS Calendar,
        Google Calendar — defining which days it occurs, from, to").
@@ -239,7 +239,7 @@
             uiAlignment="trailing"
             uiControlSize="small"
             [uiDayKey]="until"
-            [uiTodayKey]="vm().todayKey"
+            [uiTodayKey]="todayKey()"
             [uiLocale]="locale()"
             [uiMarked]="seriesDays()"
             [uiMin]="draft().dayKey"
@@ -545,7 +545,7 @@
           <lib-staff-day-pill
             uiAlignment="trailing"
             [uiDayKey]="draft().dayKey"
-            [uiTodayKey]="vm().todayKey"
+            [uiTodayKey]="todayKey()"
             [uiLocale]="locale()"
             [uiPreviousLabel]="t('staff.visit.monthPrevious')"
             [uiNextLabel]="t('staff.visit.monthNext')"
@@ -617,7 +617,7 @@
         uiEditableEventId="draft-block"
         [uiEditable]="!draft().allDay"
         [uiMinMinutes]="snapMinutes"
-        [nowMinute]="vm().nowMinute"
+        [nowMinute]="frameNowMinute()"
         (draftChanged)="onFrameDraft($event)"
         (draftCommitted)="onFrameCommit($event)"
       />
@@ -634,7 +634,7 @@
         [uiPickable]="false"
         [uiMinMinutes]="snapMinutes"
         [rosterStartMinute]="frameRosterStart()"
-        [nowMinute]="vm().nowMinute"
+        [nowMinute]="frameNowMinute()"
         (draftChanged)="onFrameDraft($event)"
         (draftCommitted)="onFrameCommit($event)"
       />
@@ -732,11 +732,11 @@
        does: the button says why and takes you there, never a disabled
        dress on a control that answers a tap. -->
   <ui-sheet-action-bar
-    [uiVisible]="dirty() || currentPage() !== null"
+    [uiVisible]="dirty() || repeatPageOpen()"
     uiAnchor="scroll"
     class="staff-visit__dock"
   >
-    @if (currentPage() !== null) {
+    @if (repeatPageOpen()) {
     <button
       type="button"
       uiButton

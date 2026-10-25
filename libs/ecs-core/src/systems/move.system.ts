@@ -6,8 +6,6 @@ import {
   BookingPolicy,
   type ChairTime,
   ClientMove,
-  MoveRefusal,
-  MoveRefusalReason,
   type MoveRider,
   RequestedSubjectRole,
   type SeatAssignment,
@@ -36,6 +34,8 @@ import {
   BookingErrorCode,
   CarriedSeatRefusal,
   MoveCarriedSeatUnplaceable,
+  type MoveError,
+  MoveRefusal,
   SchedulingErrorCode,
   ShopUnavailableReason,
 } from '@core/errors';
@@ -53,14 +53,6 @@ import { LocationScopeSystem } from './location-scope.system';
 const CART_LINE = 'cart-';
 /** The prefix the carried seats' line ids live under — never a cart line's. */
 const CARRIED_LINE = 'carried-';
-
-/**
- * What a move plan refuses with: the commit's `BOOKING_INVALID_INPUT`
- * (`status`, `seats`, `subject`, `seat_resolved`), or a carried seat it
- * cannot place — both members declared in `@core/errors`; this alias only
- * names the union `MoveSystem.plan` answers.
- */
-export type MoveError = BookingError.InvalidInput | MoveCarriedSeatUnplaceable;
 
 /**
  * The client's move: the shop it goes to, the ONE shop day it lands on, and
@@ -529,9 +521,7 @@ export const MoveSystem = {
     locationId: LocationId | null,
   ): MoveRefusal | null {
     if (stored !== null) return stored;
-    return carriedInReach
-      ? null
-      : MoveRefusal.of(MoveRefusalReason.CarriedOutOfReach, locationId);
+    return carriedInReach ? null : MoveRefusal.carriedOutOfReach(locationId);
   },
 
   /**

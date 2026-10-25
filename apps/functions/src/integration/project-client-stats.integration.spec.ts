@@ -7,6 +7,7 @@ import {
   AuditContext,
   AuditTargetRef,
   BackfillJobName,
+  BackfillStart,
   BarberPreference,
   BookingLifecycle,
   BookingPolicy,
@@ -45,7 +46,6 @@ import {
 } from '@core/entities';
 import {
   AppointmentIndexSystem,
-  BackfillStart,
   type BackfillRequest,
   ZonedTimeSystem,
 } from '@core/systems';

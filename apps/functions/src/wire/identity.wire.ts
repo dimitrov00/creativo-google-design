@@ -8,6 +8,7 @@ import {
 import { IdentifierChannel, OtpId, Result } from '@core/primitives';
 import {
   AccountsError,
+  type CompleteRegistrationError,
   CompleteRegistrationRefusalCode,
   IdentityError,
   IdentityErrorCode,
@@ -16,20 +17,19 @@ import {
   PhoneInvalidReason,
   PipelineError,
   type RegistrationProfileError,
+  type RequestOtpError,
+  type UpdateProfileError,
+  type VerifyOtpError,
 } from '@core/errors';
 import type {
   CompleteRegistrationAnswer,
   CompleteRegistrationCommand,
-  CompleteRegistrationError,
   RequestOtpAnswer,
   RequestOtpCommand,
-  RequestOtpError,
   UpdateProfileAnswer,
   UpdateProfileCommand,
-  UpdateProfileError,
   VerifyOtpAnswer,
   VerifyOtpCommand,
-  VerifyOtpError,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BirthDate, E164 } from '@core/components';
 import { AppointmentId, AppointmentPhotoId, UserId } from '@core/primitives';
-import { registeredUserFixture } from '@core/testing';
+import { localDate, minute, registeredUserFixture } from '@core/testing';
 import {
   capsulesRun,
   clientPhotoVm,
@@ -20,6 +20,7 @@ import {
   GUEST,
   MARTIN,
   MARTIN_PREVIOUS_MS,
+  NOW,
   NOW_MS,
   SHOP_CATALOG,
   SHOP_TIME_ZONE,
@@ -35,7 +36,9 @@ import {
   martinUser,
   must,
   pausedUntilOctober,
+  shopNowAt,
   sofia,
+  startOf,
   statsOf,
   subjectOf,
   wordsOf,
@@ -74,17 +77,44 @@ describe('displayNameOf, pauseOf, isBirthdayToday, isInChairToday', () => {
       lastName: 'Високосна',
       birthDate: BirthDate.of('2000-02-29'),
     });
-    expect(isBirthdayToday(leapling, '2027-02-28')).toBe(true);
-    expect(isBirthdayToday(leapling, '2028-02-28')).toBe(false);
-    expect(isBirthdayToday(leapling, '2028-02-29')).toBe(true);
+    expect(isBirthdayToday(leapling, localDate('2027-02-28'))).toBe(true);
+    expect(isBirthdayToday(leapling, localDate('2028-02-28'))).toBe(false);
+    expect(isBirthdayToday(leapling, localDate('2028-02-29'))).toBe(true);
   });
 
   it('puts the client in the chair only on an open visit today', () => {
-    expect(isInChairToday(martinContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(true);
-    expect(isInChairToday(georgiContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(false);
-    expect(isInChairToday(georgiOpenContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(
-      false,
-    );
+    expect(isInChairToday(martinContext(), NOW)).toBe(true);
+    expect(isInChairToday(georgiContext(), NOW)).toBe(false);
+    expect(isInChairToday(georgiOpenContext(), NOW)).toBe(false);
+  });
+
+  // DEP-15 (pass D): the card reads the drafted start on the shop's wall
+  // clock as it is. Before, the editor handed it over as an instant's ISO
+  // (`shopIsoOf`), which a spring-forward gap's minute — or an editor with
+  // no zone yet — left empty, and the card dropped every leg.
+  it('reads a drafted start inside the spring-forward gap as the day it is on (DEP-15)', () => {
+    // Sofia, Sunday 28 March 2027: 03:00 → 04:00, so 03:30 names no instant.
+    const gapDay = localDate('2027-03-28');
+    const inGap = martinContext({
+      start: { localDate: gapDay, startMinutes: minute(210) },
+    });
+    const thatMorning = shopNowAt(sofia('2027-03-28T09:00:00'));
+    // After: in the chair (before: not — the leg's empty ISO was dropped).
+    // The context names no zone at all, so an editor whose zone was not
+    // known yet hands over the same start (before: dropped as well).
+    expect(isInChairToday(inGap, thatMorning)).toBe(true);
+    // The fall-back repeat (25 October 2026, 03:30 twice) reads the same
+    // minute both ways: unchanged.
+    const repeat = martinContext({ start: startOf('2026-10-25T03:30:00') });
+    expect(
+      isInChairToday(repeat, shopNowAt(sofia('2026-10-25T09:00:00'))),
+    ).toBe(true);
+    // A start that is no minute of the day (an anchored track minute past
+    // midnight) starts on no day, as an empty ISO did.
+    const pastMidnight = martinContext({
+      start: { localDate: gapDay, startMinutes: null },
+    });
+    expect(isInChairToday(pastMidnight, thatMorning)).toBe(false);
   });
 });
 
@@ -117,7 +147,7 @@ describe('the quick actions (D)', () => {
       stats: MARTIN_STATS,
       context: martinContext(),
       online: true,
-      nowMs: NOW_MS,
+      nowUtcMs: NOW_MS,
       zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
@@ -176,7 +206,9 @@ describe('the quick actions (D)', () => {
     expect(
       actions({ context: martinContext({ settled: true }) }).map((a) => a.id),
     ).toContain('same');
-    const onLast = martinContext({ appointmentId: 'appt-hist-c2-14' });
+    const onLast = martinContext({
+      appointmentId: AppointmentId.of('appt-hist-c2-14'),
+    });
     expect(actions({ context: onLast }).map((a) => a.id)).not.toContain('same');
     const alreadyThere = martinContext({
       legs: [{ ...must(martinContext().legs[0]), variantId: null }],
@@ -202,7 +234,7 @@ describe('the quick actions (D)', () => {
         stats: null,
         context: martinContext({ isOwner: false }),
         online: true,
-        nowMs: NOW_MS,
+        nowUtcMs: NOW_MS,
         zone: SHOP_TIME_ZONE,
         words: WORDS,
       }).map((a) => [a.id, a.href]),
@@ -219,7 +251,7 @@ describe('the quick actions (D)', () => {
         stats: null,
         context: martinContext(),
         online: true,
-        nowMs: NOW_MS,
+        nowUtcMs: NOW_MS,
         zone: SHOP_TIME_ZONE,
         words: WORDS,
       }),
@@ -232,7 +264,7 @@ describe('the photo rail (I)', () => {
     expect(
       photoRailVm(
         georgiPhotos(),
-        ['appt-hist-c1-23', 'appt-dev-1'],
+        [AppointmentId.of('appt-hist-c1-23'), AppointmentId.of('appt-dev-1')],
         NOW_MS,
         SHOP_TIME_ZONE,
         WORDS,
@@ -283,7 +315,7 @@ describe('the medal strip (G)', () => {
     // A previous visit before 22.09.2025: the fade's II is new too.
     const since = {
       ...LOYALTY,
-      previousVisitAtMs: sofia('2025-09-01T12:00:00'),
+      previousVisitUtcMs: sofia('2025-09-01T12:00:00'),
     };
     const strip = medalStripVm(since, ctx);
     expect(strip.medals.map((m) => [m.seriesId, m.isNew])).toEqual([
@@ -332,7 +364,7 @@ describe('the medal strip (G)', () => {
   it('cues the closest level when nothing is new and nothing completes', () => {
     const since = {
       ...LOYALTY,
-      previousVisitAtMs: sofia('2026-09-28T11:00:00'),
+      previousVisitUtcMs: sofia('2026-09-28T11:00:00'),
     };
     expect(
       medalStripVm(

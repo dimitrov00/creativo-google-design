@@ -5,7 +5,7 @@ import {
   WriteOp,
 } from '@core/components';
 import { defect, Result, type UserId } from '@core/primitives';
-import { GovernanceError, type RepositoryError } from '@core/errors';
+import { type EndImpersonationError, GovernanceError } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
 import type { ClockPorts, CommitPorts, TelemetryPorts } from '@core/ports';
 import { ImpersonationSystem } from '@core/systems';
@@ -41,8 +41,6 @@ export type EndImpersonationCommand = GovernanceCall.End & {
   /** The verified token's roles. */
   readonly adminRoles: readonly Role[];
 };
-
-export type EndImpersonationError = GovernanceError | RepositoryError;
 
 /** The answer and its one write. */
 type Ended = GovernanceCall.Ended & { readonly writes: readonly WriteOp[] };

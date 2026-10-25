@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BookingFlowStep,
-  MoveRefusalReason,
-  SeatArrangement,
-} from '@core/components';
+import { BookingFlowStep, SeatArrangement } from '@core/components';
+import { MoveErrorCode } from '@core/errors';
 import {
   BOOKING_STEP_WORDS,
   MOVE_REFUSAL_WORDS,
@@ -43,9 +40,9 @@ describe('the booking flow’s lowercase words', () => {
 
   it('spells every move refusal as its i18n keys and `data-reason` always have', () => {
     expect(MOVE_REFUSAL_WORDS).toEqual({
-      [MoveRefusalReason.CompanionsOnly]: 'companions_only',
-      [MoveRefusalReason.Unavailable]: 'unavailable',
-      [MoveRefusalReason.CarriedOutOfReach]: 'carried_out_of_reach',
+      [MoveErrorCode.CompanionsOnly]: 'companions_only',
+      [MoveErrorCode.Unavailable]: 'unavailable',
+      [MoveErrorCode.CarriedOutOfReach]: 'carried_out_of_reach',
     });
   });
 

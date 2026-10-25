@@ -4,7 +4,7 @@ import type {
   LocalDate,
   MinuteOfDay,
 } from '@core/primitives';
-import type { RewardRefFields } from './journal-effect.data';
+import type { RewardRefFields } from './reward-ref-fields.data';
 import type { LocalizedText } from './localized-text.data';
 
 /**

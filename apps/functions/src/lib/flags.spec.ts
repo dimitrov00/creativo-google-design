@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FLAG_NAMES, FlagName } from '@core/components';
+import { FeatureFlags, FlagName } from '@core/components';
 import { FLAG_PARAMS, flagOn } from './flags';
 
 // The §12.1 table, spelled out: the env writer (tools/flags) pins the same
@@ -22,7 +22,9 @@ const PARAM_NAMES = {
 
 describe('FLAG_PARAMS', () => {
   it('names one param per flag key, as §12.1 spells it', () => {
-    expect(Object.keys(FLAG_PARAMS).sort()).toEqual([...FLAG_NAMES].sort());
+    expect(Object.keys(FLAG_PARAMS).sort()).toEqual(
+      [...FeatureFlags.NAMES].sort(),
+    );
     expect(
       Object.fromEntries(
         Object.entries(FLAG_PARAMS).map(([key, param]) => [key, param.name]),

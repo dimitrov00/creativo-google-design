@@ -6,7 +6,7 @@ import {
   inject,
   input,
 } from '@angular/core';
-import type { UiLogoAsset } from '../manifest/icon-manifest';
+import { UiIconAsset, type UiLogoAsset } from '../manifest/icon-manifest';
 import { UiIconRegistry } from '../registry/icon-registry.service';
 
 export type UiLogoScheme = 'light' | 'dark';
@@ -29,7 +29,7 @@ interface LogoVariant {
  * pre-paint script's choice is honoured from the first frame. `uiScheme`
  * forces a variant regardless of theme (a light header over a dark video).
  *
- * `image` assets go through `<img>`, where the platform disables scripting
+ * `IMAGE` assets go through `<img>`, where the platform disables scripting
  * and external loads for SVG; width/height are set so the box is reserved.
  *
  *   <ui-logo uiLabel="Creativo" />                  <!-- announced as the brand -->
@@ -40,7 +40,7 @@ interface LogoVariant {
   selector: 'ui-logo',
   template: `
     @for (variant of variants(); track variant.scheme) {
-      @if (variant.asset.kind === 'vector') {
+      @if (variant.asset.iconAsset === UiIconAsset.Vector) {
         <svg
           class="ui-logo__mark"
           [attr.data-scheme]="variant.scheme"
@@ -92,6 +92,8 @@ export class UiLogo {
   readonly uiScheme = input<UiLogoScheme | null>(null);
 
   private readonly registry = inject(UiIconRegistry);
+  /** The asset dictionary, for the template's compare (D-8.7). */
+  protected readonly UiIconAsset = UiIconAsset;
 
   protected readonly variants = computed<readonly LogoVariant[]>(() => {
     const logo = this.registry.logo();

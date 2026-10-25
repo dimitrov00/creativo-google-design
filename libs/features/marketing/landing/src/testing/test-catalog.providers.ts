@@ -25,8 +25,12 @@ import {
   ServiceCategoryId,
   ServiceId,
 } from '@core/primitives';
-import type { ServiceSourceVm } from '@creativo/features/shared/catalog';
-import { BARBERS, SERVICES } from './landing-catalog';
+import {
+  type AuthoredService,
+  type AuthoredTerms,
+  BARBERS,
+  SERVICES,
+} from './landing-catalog';
 
 /**
  * Serves the authored demo catalogue (`landing-catalog.ts`) as real
@@ -47,15 +51,12 @@ const sure = <T, E>(result: Result<T, E>): T => {
   return result.value;
 };
 
-/** `14.5` major EUR → `1450` cents. */
-const cents = (major: number) => Math.round(major * 100);
-
 /** One figure of the shelf fixture as the terms guard reads it — EUR, no pads. */
-function termsInput(price: number, minutes: number): ServiceTermsInput {
+function termsInput(terms: AuthoredTerms): ServiceTermsInput {
   return {
-    priceCents: cents(price),
+    priceCents: terms.priceCents,
     currency: Currency.EUR,
-    durationMinutes: minutes,
+    durationMinutes: terms.minutes,
     setupMinutes: 0,
     cleanupMinutes: 0,
   };
@@ -63,7 +64,7 @@ function termsInput(price: number, minutes: number): ServiceTermsInput {
 
 /** The flat cover fields of a fixture path — all seven `null` together when there is none (N9). */
 function coverOf(
-  service: ServiceSourceVm,
+  service: AuthoredService,
 ): Pick<
   Service,
   | 'coverMediaId'
@@ -87,7 +88,7 @@ function coverOf(
   };
 }
 
-function serviceFromVm(vm: ServiceSourceVm): Service {
+function serviceFromVm(vm: AuthoredService): Service {
   // The shelf fixture prices everything through `offerings`; the cheapest
   // one doubles as the service's own terms so a service is never priceless.
   const [first, ...rest] = vm.offerings;
@@ -96,7 +97,7 @@ function serviceFromVm(vm: ServiceSourceVm): Service {
   }
   const cheapest = rest.reduce(
     (best, offering) =>
-      offering.base.price < best.base.price ? offering : best,
+      offering.base.priceCents < best.base.priceCents ? offering : best,
     first,
   );
   const variants = sure(
@@ -111,11 +112,11 @@ function serviceFromVm(vm: ServiceSourceVm): Service {
     BarberOffering.parseAll(
       vm.offerings.map((offering) => ({
         barberId: offering.barberId,
-        ...termsInput(offering.base.price, offering.base.minutes),
+        ...termsInput(offering.base),
         overrides: Object.entries(offering.byVariant ?? {}).map(
           ([variantId, terms]) => ({
             variantId,
-            ...termsInput(terms.price, terms.minutes),
+            ...termsInput(terms),
           }),
         ),
       })),
@@ -133,11 +134,7 @@ function serviceFromVm(vm: ServiceSourceVm): Service {
     name: sure(LocalizedText.parse(vm.name)),
     description: sure(LocalizedText.parse(vm.description)),
     categoryId: ServiceCategoryId.of('cat-hair'),
-    ...sure(
-      ServiceTerms.parse(
-        termsInput(cheapest.base.price, cheapest.base.minutes),
-      ),
-    ),
+    ...sure(ServiceTerms.parse(termsInput(cheapest.base))),
     variants,
     offerings,
     locationIds: [],

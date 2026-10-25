@@ -12,12 +12,7 @@ import {
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
 import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
-import {
-  LocalDate,
-  type ServiceId,
-  UtcEpochMs,
-  defect,
-} from '@core/primitives';
+import { type LocalDate, type ServiceId, defect } from '@core/primitives';
 import {
   BirthdayMoment,
   CouponOccasion,
@@ -26,6 +21,8 @@ import {
   PointsReach,
   TenureState,
   TierPlateState,
+  VisitGrain,
+  VisitPerspective,
 } from '@core/components';
 import {
   AgeSystem,
@@ -40,17 +37,14 @@ import {
   StreakRuleSystem,
   TierSystem,
   type ValidLoyaltyCatalog,
-  VisitGrain,
   VisitListSystem,
-  VisitPerspective,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   type AchievementsContext,
-  cardDayOf,
+  familyOfMedal,
   progressList,
-  seriesById,
 } from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
 import {
@@ -82,6 +76,7 @@ import {
   type AchievementTileVm,
   type AchievementsData,
   type BirthdayVm,
+  ClientCapsuleId,
   type ClientCapsulesVm,
   type ClientHeroVm,
   type HeroTierVm,
@@ -92,7 +87,11 @@ import {
   type RecordFactVm,
   type VisitCardsVm,
 } from './client-pages.vm';
-import { type ClientCardWords, RECORD_KIND_WORDS } from './client-card.words';
+import {
+  type ClientCardWords,
+  LoyaltyHoldingWord,
+  RECORD_KIND_WORDS,
+} from './client-card.words';
 import { glanceReward, rhythmStateOf } from './loyalty.presenter';
 import { medalRingVm } from './medals.presenter';
 
@@ -176,7 +175,7 @@ function heroLine(
     if (pause.until === null) return plainLine(words.head.pausedPermanent);
     const until = dayShort(
       pause.until,
-      shopDayOf(input.nowMs, zone),
+      shopDayOf(input.nowUtcMs, zone),
       words.lang,
     );
     return lineParts(words.head.pausedUntil(until), [until]);
@@ -266,7 +265,7 @@ export function clientHeroVm(input: HeroInput): ClientHeroVm {
   const { subject, user, words } = input;
   const name = displayNameOf(subject, user);
   const pause =
-    input.zone === null ? null : pauseOf(user, input.nowMs, input.zone);
+    input.zone === null ? null : pauseOf(user, input.nowUtcMs, input.zone);
   return {
     name,
     line: words === null ? null : heroLine(input, pause, words),
@@ -296,18 +295,17 @@ export function overviewCapsulesVm(
   input: Omit<CapsulesInput, 'tier'>,
 ): ClientCapsulesVm {
   const capsules: ClientCapsulesVm['shown'][number][] = [];
-  const now = UtcEpochMs.of(input.nowMs);
-  if (input.stats !== null && now.ok) {
+  if (input.stats !== null) {
     // Whether the no-shows warn is `ClientStatsSystem.noShowWarning`'s.
     const noShows = ClientStatsSystem.noShowWarning(
       ClientStatsSystem.statWindows(
         input.stats,
-        ZonedTimeSystem.shopNow(now.value, input.zone),
+        ZonedTimeSystem.shopNow(input.nowUtcMs, input.zone),
       ),
     );
     if (noShows !== null) {
       capsules.push({
-        id: 'noShows',
+        id: ClientCapsuleId.NoShows,
         text: input.words.capsules.noShows(noShows),
         tone: 'warning',
         icon: 'visit.noShow',
@@ -321,8 +319,8 @@ export function overviewCapsulesVm(
 
 export interface BirthdayInput {
   readonly user: User | null;
-  /** The shop calendar's today (`YYYY-MM-DD`, the shop's zone). */
-  readonly today: string;
+  /** The shop calendar's today, on the shop's zone. */
+  readonly today: LocalDate;
   /**
    * The owner's usable grants and the ones on this visit's bill, as the
    * reward ticket takes them. EMPTY wherever a reward cannot be spent on
@@ -353,10 +351,8 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
   const birth = input.user?.birthDate ?? null;
   if (birth === null) return null;
   // Which birthday, if any, is `AgeSystem.birthdayMoment`'s: today's, or
-  // one within the week to come; a today that is no shop day says none.
-  const shopToday = LocalDate.parse(today);
-  if (!shopToday.ok) return null;
-  const moment = AgeSystem.birthdayMoment(birth, shopToday.value);
+  // one within the week to come.
+  const moment = AgeSystem.birthdayMoment(birth, today);
   if (moment === null) return null;
 
   if (moment.birthdayMoment === BirthdayMoment.Today) {
@@ -579,8 +575,8 @@ function voucherHolding(
     words.lang,
   );
   return {
-    id: 'voucher',
-    label: words.loyalty.holding('voucher'),
+    id: LoyaltyHoldingWord.Voucher,
+    label: words.loyalty.holding(LoyaltyHoldingWord.Voucher),
     value,
     spoken: value,
   };
@@ -597,25 +593,19 @@ function voucherHolding(
 function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   const { account, flags, words } = input;
   const state = rhythmStateOf(account, input.rhythm);
-  const today = LocalDate.parse(input.today);
   // The rhythm counts under `loyalty.streaks` and its rule in force, on
   // (`StreakRuleSystem.isOnOn`); a rhythm is read on a shop day, ever.
   const rhythmOn =
     input.rhythm !== null &&
-    StreakRuleSystem.isOnOn(
-      input.rhythm,
-      cardDayOf(input.today),
-      flags.streaks,
-    );
+    StreakRuleSystem.isOnOn(input.rhythm, input.today, flags.streaks);
   const held = ClientGlanceSystem.holdings({
-    // A today that is no shop day reads no voucher's last day: no voucher fact.
-    vouchers: input.vouchers === null || !today.ok ? null : input.vouchers,
+    vouchers: input.vouchers,
     punchCards: account.punchCards,
     achievements: flags.achievements,
     rhythmOn,
     rhythm: state,
     paused: input.paused,
-    today: today.ok ? today.value : LocalDate.fromEpochDay(0),
+    today: input.today,
   });
   const holdings: Holding[] = [];
 
@@ -625,8 +615,8 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   if (held.stamps !== null) {
     const value = words.loyalty.stampsOf(held.stamps.filled, held.stamps.size);
     holdings.push({
-      id: 'stamps',
-      label: words.loyalty.holding('stamps'),
+      id: LoyaltyHoldingWord.Stamps,
+      label: words.loyalty.holding(LoyaltyHoldingWord.Stamps),
       value,
       spoken: value,
     });
@@ -635,8 +625,8 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   if (held.rhythm !== null) {
     const value = figure(held.rhythm, words.lang);
     holdings.push({
-      id: 'rhythm',
-      label: words.loyalty.holding('rhythm'),
+      id: LoyaltyHoldingWord.Rhythm,
+      label: words.loyalty.holding(LoyaltyHoldingWord.Rhythm),
       value,
       spoken: `${value} ${words.loyalty.rhythmUnit(held.rhythm)}`,
     });
@@ -685,7 +675,7 @@ function pointsSentence(
     input.heldRewards ?? [],
     locale,
     account.balance,
-    cardDayOf(today),
+    today,
   );
   const reward = reach.reward;
   if (reward === null) return null;
@@ -812,7 +802,7 @@ export function medalsGlanceVm(
 
   const strip = medalStripVm(data, ctx);
   const tiles = strip.medals.flatMap((slot): AchievementTileVm[] => {
-    const series = seriesById(data, slot.seriesId);
+    const series = familyOfMedal(data, slot);
     return series === null
       ? []
       : [

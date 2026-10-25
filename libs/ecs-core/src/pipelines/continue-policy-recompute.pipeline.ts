@@ -1,5 +1,6 @@
 import { type CustomerId, Result, type TimeZone } from '@core/primitives';
 import {
+  AttemptOutcome,
   ClientStatsPolicy,
   PolicyPass,
   PolicyStepOutcome,
@@ -15,7 +16,6 @@ import type {
 } from '@core/ports';
 import {
   type AttemptFailure,
-  AttemptOutcome,
   type PolicyStep,
   PolicyRecomputeJobSystem,
   TriggerAttemptSystem,

@@ -1,4 +1,6 @@
 import { Daypart, type Metric } from '@core/components';
+import { StreakPublishErrorCode } from '@core/errors';
+import { localDate } from '@core/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { describe, expect, it } from 'vitest';
 import {
@@ -320,11 +322,16 @@ const KEYS_OTHER_FEATURES_READ: Readonly<Record<string, readonly string[]>> = {
     'empty',
     'flagOff',
     'failed',
-    'refused.stale',
-    'refused.tooEarly',
-    'refused.invalid',
-    'refused.notAdmin',
     'offline',
+  ],
+  // The admin page words the publish refusals by their codes (pass D,
+  // D-9.6): `errors.<errorCode>`, today's words.
+  errors: [
+    StreakPublishErrorCode.Stale,
+    StreakPublishErrorCode.TooEarly,
+    StreakPublishErrorCode.Invalid,
+    StreakPublishErrorCode.CallerNotAdmin,
+    StreakPublishErrorCode.CallerUnauthenticated,
   ],
 };
 
@@ -578,7 +585,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
       const keys = Object.entries(KEYS_OTHER_FEATURES_READ).flatMap(
         ([root, tails]) => tails.map((tail) => `${root}.${tail}`),
       );
-      expect(keys).toHaveLength(157);
+      expect(keys).toHaveLength(158);
       expect(
         keys.filter((key) => (sentences.get(key) ?? '').trim() === ''),
       ).toEqual([]);
@@ -1577,22 +1584,37 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
 
 describe('the card’s dates and figures (R59)', () => {
   it('prints a fact line’s date short, with the year only outside today’s', () => {
-    expect(dayShort('2026-08-12', '2026-09-28', 'bg')).toBe('12.08');
-    expect(dayShort('2025-03-06', '2026-09-28', 'bg')).toBe('6.03.2025 г.');
-    expect(dayWithYear('2026-03-06', 'bg')).toBe('6.03.2026 г.');
+    expect(
+      dayShort(localDate('2026-08-12'), localDate('2026-09-28'), 'bg'),
+    ).toBe('12.08');
+    expect(
+      dayShort(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
+    ).toBe('6.03.2025 г.');
+    expect(dayWithYear(localDate('2026-03-06'), 'bg')).toBe('6.03.2026 г.');
   });
 
   it('spells a date someone hears, the month in words', () => {
-    expect(dayLong('2026-09-04', '2026-09-28', 'bg')).toBe('4 септември');
-    expect(dayLong('2025-03-06', '2026-09-28', 'bg')).toBe('6 март 2025 г.');
-    expect(dayLong('2026-09-04', '2026-09-28', 'en')).toBe('September 4');
-    expect(monthYearLong('2025-03-06', 'bg')).toBe('март 2025 г.');
+    expect(
+      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'bg'),
+    ).toBe('4 септември');
+    expect(
+      dayLong(localDate('2025-03-06'), localDate('2026-09-28'), 'bg'),
+    ).toBe('6 март 2025 г.');
+    expect(
+      dayLong(localDate('2026-09-04'), localDate('2026-09-28'), 'en'),
+    ).toBe('September 4');
+    expect(monthYearLong(localDate('2025-03-06'), 'bg')).toBe('март 2025 г.');
   });
 
   it('prints a window as the locale’s own range', () => {
-    expect(dayRange('2026-09-01', '2026-11-30', '2026-09-28', 'bg')).toBe(
-      '1.09 – 30.11',
-    );
+    expect(
+      dayRange(
+        localDate('2026-09-01'),
+        localDate('2026-11-30'),
+        localDate('2026-09-28'),
+        'bg',
+      ),
+    ).toBe('1.09 – 30.11');
   });
 
   it('groups figures the locale’s way', () => {

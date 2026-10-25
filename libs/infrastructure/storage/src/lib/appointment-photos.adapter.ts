@@ -22,9 +22,9 @@ import {
 } from 'firebase/storage';
 import type { Observable } from 'rxjs';
 import { subscribeWithRetry } from '@creativo/infrastructure/firestore';
-import { PhotoOrigin } from '@core/components';
-import { type AppointmentId, Result } from '@core/primitives';
+import { type AppointmentId, Result, UtcEpochMs } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
+import { PhotoOrigin } from '@core/components';
 import { type AppointmentPhoto, Collections } from '@core/entities';
 import type { AppointmentPhotoPorts } from '@core/ports';
 import {
@@ -44,7 +44,7 @@ const photoOf = (id: string, data: DocumentData): AppointmentPhoto =>
 
 /** Ascending by the instant taken — the order a visit's strip reads in. */
 const byTaken = (a: AppointmentPhoto, b: AppointmentPhoto): number =>
-  a.takenAtUtcMs - b.takenAtUtcMs;
+  UtcEpochMs.compare(a.takenAtUtcMs, b.takenAtUtcMs);
 
 /** The store's own reason for a failure: the SDK's `code`, else the message. */
 function reasonOf(cause: unknown): string | null {
@@ -196,7 +196,7 @@ export const appointmentPhotoPorts = (
           readPhotos(where('appointmentId', 'in', batch)),
         ),
       );
-      const counts = new Map<string, number>();
+      const counts = new Map<AppointmentId, number>();
       for (const read of reads) {
         if (!read.ok) return read;
         for (const photo of read.value) {

@@ -6,7 +6,7 @@ working on this codebase after the ECS / data-oriented migration. It is the
 migration record: what landed in which order and how each step was proved
 (§2, §3), the gate every change still passes and its baselines (§4), the
 operating rules (§5), the owner's rulings and open questions (§6), and what
-was carried forward as follow-up work (end of §3.3). Last updated 2026-10-24
+was carried forward as follow-up work (end of §3.3). Last updated 2026-10-25
 (flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
 Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
 `libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
@@ -22,7 +22,11 @@ signatures identical to `fd5f2a6` but the agenda's relative minutes, end of
 §3.3; pass A — the audit's four defects — and pass B — the dead code, the
 old-style leftovers and the stale docs — integrated on the static gate, end
 of §3.3; pass C — the decisions out of components, stores, pipelines,
-adapters and the edge — integrated, the FULL §4 gate green, end of §3.3).
+adapters and the edge — integrated, the FULL §4 gate green, end of §3.3;
+pass D — brands, shapes, discriminators and error homes across the whole
+codebase, the staff day on the wall clock — integrated, the FULL §4 gate
+green, the DOM differential and the dev smoke showing only its DEPARTURES,
+end of §3.3).
 
 ## 1. Read these, in this order
 
@@ -44,33 +48,38 @@ adapters and the edge — integrated, the FULL §4 gate green, end of §3.3).
 8. `docs/architecture/flips/law-10-decision-extraction.md` — what a decision
    is and what is wording (§0 D-1/D-2/D-3), the decision inventory and the
    system that now answers each row (§1, §9.1).
+9. `docs/architecture/flips/pass-d-brands-shapes.md` — the type-level laws
+   as built: the brand per concept and the parse/`ofProven` policy (§0
+   D-3/D-4), one name per data file (D-7), the tag rules incl. external
+   contracts (D-8), the error homes (D-9), the 23 DEPARTURES and the ledger.
 
 ## 2. Where the work stands
 
-| Step                                                                                                                | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Commit(s)                                                    |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 81ac087                                                      |
-| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | defb4da                                                      |
-| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 056ae43                                                      |
-| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 0416587                                                      |
-| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | a6c7253                                                      |
-| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 291d3f9                                                      |
-| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 268aa0e, dbd39d4                                             |
-| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 3458349, ab6d266, c0e5d73                                    |
-| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
-| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | the "Law 9" commit                                           |
-| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | the "flip 2 commit"                                          |
-| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | the "flip 3 commit"                                          |
-| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | the "flip 4 commit"                                          |
-| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "Phase 4a" commit                                        |
-| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 applied the same day on the owner's go-ahead                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | the "Phase 4b" commit                                        |
-| **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | the "UI residue cleanup" commit                              |
-| **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | the "@core/errors tier" commit                               |
-| **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | the "Law 10" commit                                          |
-| **Law 10.2 — the decision-extraction pass (presenters word, systems decide)**                                       | **done** — integrated 2026-10-23 (`flips/law-10-decision-extraction.md` §9): every MOVE/DUP row answered by an ecs-core system with a purity + boundary spec (2 new systems — `LoyaltyPassSystem`, `WalletSystem` — and 23 extended, 4 component companions, 23 new tag dictionaries plus `BirthdayMoment` moved down from the vm; 428 new ecs-core cases), every presenter spec unchanged; the FULL gate of §4 green (baseline reds only — `verify:p0`, `test:emulator` 65 + 255, `e2e:web` 41 + the 19), runbook §4.2–§4.5, §4.7–§4.9 PASS, the §5 review checklist clean, a DOM differential of 2,611 specs and the §6.3 dev-stack smoke (90 signatures) identical to `fd5f2a6` but the agenda's relative minutes                                                                                                                 | the "decision-extraction" commit                             |
-| **Pass A — the audit's defects**                                                                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: the four defects of the read-only audit fixed (end of §3.3): the client photo strip's post-`limit` origin filter (index #22 gains `photoOrigin`), the client profile's age-window words missing their figure, the edit and reschedule pipelines' DST-gap fallback to a stale instant, and three staff-day defects (a cancel's words on the call, `periodLabel` on an empty day list, another chair's terms quoted)                                                                                                                                                                                                                                                                                                                             | the "Pass A" commit                                          |
-| **Pass B — dead code, old-style leftovers, stale docs**                                                             | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: eight packages, one integrator and the review's fixer (end of §3.3): three dead Nx projects (`ui`, `cursor`, `design-tokens`) and `generated/**`, the four staff-dashboard shims, ~135 callerless ecs-core members (50 system members, ~45 component, entity and error members, four unused port families — six port types — with their tokens and adapters, 23 producer-less error codes, the `Retired*` registry) and three composite indexes, ~40 dead feature exports, the seed's symbolic mappers and private zone engines, ten unused packages; `translateCodedError`, `CatalogWording`; the docs re-derived                                                                                                                             | the "Pass B" commit                                          |
-| **Pass C — components, stores, pipelines, adapters and the edge decide nothing**                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24 (`flips/pass-c-ui-decisions.md` §9): ten wave-0 ecs-core packages, eight wave-1 re-point packages, the integrator's two rounds and the review's fixer (twelve findings, DEP-2 amended to one rule — §9.7); 3 new systems (`CatalogSystem`, `MediaSystem`, `RetentionSystem`) and ~40 extended, 8 new browser/server pipelines, fifteen tag dictionaries new or moved down out of features and the pipelines tier, ~685 new ecs-core cases; every KEEP-FOR-C system wired or re-ruled KEEP-PARKED; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (59 spec files, 1,197 captured tests) and the §6.4 dev-stack smoke against `2bd2354` show only DEP differences (end of §3.3) | the "Pass C" commit                                          |
+| Step                                                                                                                | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Commit(s)                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 81ac087                                                      |
+| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | defb4da                                                      |
+| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 056ae43                                                      |
+| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 0416587                                                      |
+| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | a6c7253                                                      |
+| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 291d3f9                                                      |
+| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 268aa0e, dbd39d4                                             |
+| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3458349, ab6d266, c0e5d73                                    |
+| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | the "Law 9" commit                                           |
+| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "flip 2 commit"                                          |
+| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | the "flip 3 commit"                                          |
+| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | the "flip 4 commit"                                          |
+| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | the "Phase 4a" commit                                        |
+| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 applied the same day on the owner's go-ahead                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "Phase 4b" commit                                        |
+| **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "UI residue cleanup" commit                              |
+| **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "@core/errors tier" commit                               |
+| **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "Law 10" commit                                          |
+| **Law 10.2 — the decision-extraction pass (presenters word, systems decide)**                                       | **done** — integrated 2026-10-23 (`flips/law-10-decision-extraction.md` §9): every MOVE/DUP row answered by an ecs-core system with a purity + boundary spec (2 new systems — `LoyaltyPassSystem`, `WalletSystem` — and 23 extended, 4 component companions, 23 new tag dictionaries plus `BirthdayMoment` moved down from the vm; 428 new ecs-core cases), every presenter spec unchanged; the FULL gate of §4 green (baseline reds only — `verify:p0`, `test:emulator` 65 + 255, `e2e:web` 41 + the 19), runbook §4.2–§4.5, §4.7–§4.9 PASS, the §5 review checklist clean, a DOM differential of 2,611 specs and the §6.3 dev-stack smoke (90 signatures) identical to `fd5f2a6` but the agenda's relative minutes                                                                                                                                                                                                                            | the "decision-extraction" commit                             |
+| **Pass A — the audit's defects**                                                                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: the four defects of the read-only audit fixed (end of §3.3): the client photo strip's post-`limit` origin filter (index #22 gains `photoOrigin`), the client profile's age-window words missing their figure, the edit and reschedule pipelines' DST-gap fallback to a stale instant, and three staff-day defects (a cancel's words on the call, `periodLabel` on an empty day list, another chair's terms quoted)                                                                                                                                                                                                                                                                                                                                                                                                                                        | the "Pass A" commit                                          |
+| **Pass B — dead code, old-style leftovers, stale docs**                                                             | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: eight packages, one integrator and the review's fixer (end of §3.3): three dead Nx projects (`ui`, `cursor`, `design-tokens`) and `generated/**`, the four staff-dashboard shims, ~135 callerless ecs-core members (50 system members, ~45 component, entity and error members, four unused port families — six port types — with their tokens and adapters, 23 producer-less error codes, the `Retired*` registry) and three composite indexes, ~40 dead feature exports, the seed's symbolic mappers and private zone engines, ten unused packages; `translateCodedError`, `CatalogWording`; the docs re-derived                                                                                                                                                                                                                                        | the "Pass B" commit                                          |
+| **Pass C — components, stores, pipelines, adapters and the edge decide nothing**                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24 (`flips/pass-c-ui-decisions.md` §9): ten wave-0 ecs-core packages, eight wave-1 re-point packages, the integrator's two rounds and the review's fixer (twelve findings, DEP-2 amended to one rule — §9.7); 3 new systems (`CatalogSystem`, `MediaSystem`, `RetentionSystem`) and ~40 extended, 8 new browser/server pipelines, fifteen tag dictionaries new or moved down out of features and the pipelines tier, ~685 new ecs-core cases; every KEEP-FOR-C system wired or re-ruled KEEP-PARKED; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (59 spec files, 1,197 captured tests) and the §6.4 dev-stack smoke against `2bd2354` show only DEP differences (end of §3.3)                                                                                                            | the "Pass C" commit                                          |
+| **Pass D — brands, shapes, discriminators, error homes**                                                            | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-d-brands-shapes.md` §9): seven wave-0 ecs-core packages, nine wave-1, three wave-2 and two wave-3 packages, the integrator's two rounds, the review's six fixes and a second review's eight (type level, the FULL gate re-run green after each); Law 7.4 brands across every type boundary (new `TrackMinute`, `MinuteOfDay.parseClock`, `DraftPersonKey`, `Tag`, `formatClock`), Law 7.3 for the staff day (OQ-14, one zone engine), Law 1 shapes (~180 new component files, one name per `*.data.ts`), Law 1/6.2 tags (~110 UI unions, the icon manifest's `iconAsset`), Law 7.5 error homes; 23 DEPARTURES (DEP-1…DEP-23); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (94 spec files, 1,470 captured tests) and the §6.4 dev-stack smoke against `cf91b43` show only DEP differences (end of §3.3) | the "Pass D" commit                                          |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it (baseline reds only). All
@@ -87,8 +96,8 @@ stays, 4A-2 (d), 4a §10.1). The last fully green commit is the
 tree, the emulator journeys and the dev-stack smoke included (§2 row, end of
 §3.3; before it, the "UI residue cleanup" commit, `474e771`, and the
 "Phase 4b" commit, `f9cef52`); check `git log` for anything newer — pass A
-(`99a60fa`), pass B (the "Pass B" commit) and pass C (the "Pass C" commit)
-each passed the FULL gate too,
+(`99a60fa`), pass B (the "Pass B" commit), pass C (the "Pass C" commit) and
+pass D (the "Pass D" commit) each passed the FULL gate too,
 the runbook grep gates, `verify:p0`, `test:emulator` and `e2e:web` included
 (§2 rows, end of §3.3). (On 2026-10-23 the full §4 gate — `verify:p0`,
 `test:emulator` and `e2e:web` included — every grep gate and the dev smoke
@@ -632,17 +641,10 @@ wallet's `localeCompare` and the glance's input-order ties should follow the
 visit list's code-unit / id tie-breaks (OQ-7, owner), `CouponGrantSystem`'s `Partial<{ couponOccasion }>`
 constraint (tighten it once the owner makes `ClientCardGrant.couponOccasion`
 required — `client-card.contracts.spec.ts` pins it optional today); the
-Law 7.4 branding/T1 pass (UR-13 c) — the staff day's instant-based
-agenda/grid fields (`startMs: number` threads in `staff-day.store.ts`,
-`staff-dashboard.ts`, the booking time sheet), the client card's raw
-`nowMs: number` threads into its non-visit presenters (pause, photos,
-capsules), and the raw ids the cleanup's contracts leave raw
-(`VisitRowVm.id`, `VisitRowOptions.subjectUserId`/`subjectCustomerId`/
-`currentAppointmentId`, `PlacementVerdictSlice` `minutes`) and the raw
-`today`/`nowMs` strings the presenters still parse at their edge, incl. the
-glance's raw `context.appointmentId` (decision-extraction plan D-2.8, D-3); the icon
-manifest's `kind` wire field, allowlisted in `no-generic-discriminator` until
-an icons pass bumps its `schemaVersion` (UR-13 a, OQ-5);
+Law 7.4 branding/T1 pass (UR-13 c) and the icon manifest's `kind` wire
+field (UR-13 a, OQ-5) are CLOSED by pass D (end of §3.3: brands across
+every type boundary, the staff day on the wall clock, the manifest's
+`iconAsset` at schema 2, the allowlist entry gone);
 the flip-1 ports parked with no caller
 (`markNotificationRead`, `loadWaitlistRequest`, `loadCouponGrant`,
 `readCustomers`) and `CouponGrantSystem`'s whole grant verb set — `burn`,
@@ -654,13 +656,11 @@ voucher issuing, and flip 1's other deferred behaviours (reopen busy write,
 trigger `retry: true`); the owner's confirmation of the 4a plan's §11.4 (a)
 time-sheet re-pin; the programs rules tightenings, a location picker, i18n of
 the programs status words and a programs e2e journey (flip 4); from the UI
-residue cleanup (plan §8.1 "Left as found"): the lower-case unions compared as
-bare literals that are neither a `kind`/`type`/`status` field nor a load state
-(the dashboard's `StaffView` and `discardPending`, the grid's `Placement`,
-`readoutTone`, marketing-events' `EventsTab`, admin-programs' `ProgramsTab`,
-the rhythm page's `confirm` switch, the editor's `discountKind()`/`by`/
-`refusal`, the bare `'en'` language checks — the menu's `lang() === 'en'`
-and six more production sites). (The `StaffDashboard.periodLabel` throw the
+residue cleanup (plan §8.1 "Left as found"): the lower-case unions
+compared as bare literals are CLOSED by pass D (every one an `as const`
+dictionary compared through its members, contract spellings kept where a
+URL, a CSS hook, a test id or a DS input fixes them; the `Locale` checks
+through `Tag`). (The `StaffDashboard.periodLabel` throw the
 smoke surfaced is fixed by pass A, below; the `angular-ui.md` sentence that
 named the i18n lib as the formatting home, UR plan OQ-7, and the Node tooling
 classes, OQ-6, are closed by pass B, below.)
@@ -813,10 +813,8 @@ exactly the 6 baseline reds, layering OK, ecs-core 275 files 5,002 tests
 orchestrator's full gate, green: runbook §4.2–§4.9 28/22/17/6/24/27/25 ok,
 `verify:p0` (a)–(f), `test:emulator` 65 + 255, `e2e:web` 41 passed + exactly
 the 19 baseline failures (the glance's 12 still at `:384`/`:765`). **Carried from pass A** (none blocks anything):
-the onboarding birthday SAVE path still dispatches a bare code into the flow
-state's `error: string`, so a 120 → 121 refusal re-judged across a UTC
-midnight reads without `{{maxAge}}` (the struct would have to ride
-`OnboardingFlowEvent.birthdayFailed`); `appendTeamNote` reads the note once,
+the onboarding birthday SAVE path's bare code (CLOSED by pass D,
+DEP-17: the struct rides `OnboardingFlowEvent.birthdayFailed`); `appendTeamNote` reads the note once,
 so offline with the note document never cached it could write over the
 server's copy (the editor's guard has the same limit); the client time sheet
 cannot see where a carried companion lands, so such a reschedule is now
@@ -1040,12 +1038,10 @@ bookedAtUtcMs, seats: [{ …, priceCents, currency }]`; Law 10.1's
   `docs/styling-conventions.md`); the showcase's
   `phone-field.page.css` `::ng-deep`; the showcase Playwright snapshots (the
   fallback focus ring and the view-transition timing changed; a refresh is
-  unlikely to be needed); the e2e support's own shop zone and clock
-  (`appointment-seed-document.ts` `SHOP_ZONE`, `booking-days.ts`
-  `new Date()` — `ZonedTimeSystem.shopNow` on the seeded location's zone);
-  the staff dashboard's raw `priceCents: number | null` (`DayRowVm`,
-  `VisitEditorVm`, the editor's legs — the boundary the tip had);
-  `client-query.ts` `toRankable`; the visit-row presenter spec's legacy
+  unlikely to be needed); the e2e support's own shop zone and clock, the staff dashboard's
+  raw `priceCents` and `client-query.ts` `toRankable` (CLOSED by pass
+  D: `apps/web/e2e/support/shop-clock.ts`, `PriceCents` on the legs, the
+  client option's required `email`); the visit-row presenter spec's legacy
   whole-visit `{ kind }` fixture words; and the CSP `headers` block of
   `firebase.json` (`csp-baseline.md`).
 
@@ -1156,10 +1152,11 @@ FULL gate green against the baselines (§4 numbers below); nothing
 DOM-visible, so the §6.3 differential and §6.4 smoke were not re-run.
 
 **Carried from pass C — for pass D and the owner** (none blocks anything;
-the plan's §9.6 has each with its reason):
+the plan's §9.6 has each with its reason; every pass-D item below is
+CLOSED by pass D — end of §3.3 — and only the owner calls remain):
 the KEEP-PARKED lifecycle write verbs (`AppointmentLifecycleSystem.confirm`
 … `markSeatOutcome`), `VoucherSystem.redeem` and `IntervalSetSystem.clip`
-— owner call to delete; the system-file dictionary family (`CancelledSide`,
+— owner call to delete (OPEN); the system-file dictionary family (`CancelledSide`,
 `VisitRowOutcome`, `VisitTone`, …) → components; the team note's record
 built twice (`appendTeamNote` and the store's `saveTeamNote` — one builder
 once the save use case moves); a dedicated duplicate-voucher-code error
@@ -1176,7 +1173,188 @@ draft-id rules and VM reshapes, prices from labels, the client option's
 optional `email?`, `actorRoles`); `actFromSheet`'s dismissal set
 (= `BookingLifecycle.didNotHappen`); the plan's §8 open questions OQ-1…OQ-14
 with their defaults as applied (OQ-3 `staffWalkIn` vs D18, OQ-4 the
-account's next visit, OQ-5 the OTP cooldown among them).
+account's next visit, OQ-5 the OTP cooldown among them — OPEN, owner).
+
+**Pass D — brands, shapes, discriminators, error homes (2026-10-25,
+integrated, the FULL gate green).** The last pass of the post-migration
+cleanup finishes the type-level laws across the WHOLE codebase. The plan,
+its inventory (§1), the contracts (§2), the 23 DEPARTURES and the ledger
+are `docs/architecture/flips/pass-d-brands-shapes.md`. Seven wave-0
+ecs-core packages, nine wave-1 packages, three wave-2 and two wave-3
+packages, then the integrator (two rounds). What changed:
+
+- **Law 7.4 brands** — no raw `string`/`number` for an id, an instant, a
+  shop day, a minute or money where a value crosses a type boundary: view
+  models, contracts, stores, presenters, components, adapters, the edge.
+  New primitive members (each with JSDoc, spec and purity case):
+  `TrackMinute` (a brand, OQ-1: the frames' `[0, 1440]` minute;
+  `of`/`ofProven`/`plus`/`span`/`toStart`/`toEnd`), `MinuteOfDay.parseClock`
+  (ONE strict clock parser, DEP-22), `DraftPersonKey`, `UtcEpochMs.EPOCH`,
+  `MinuteDelta.fromDuration`, `MinuteCount.fromDelta`, `Tag`
+  (`values`/`has`/`or`); `formatClock(t, ClockClosing)` in
+  `@creativo/ui/wall-clock` replaces seven hand clock faces. Foreign input
+  becomes a brand ONCE at its edge (`X.parse` → `Result`: the route edges
+  `?day=`/`?barber=`/`?visit=`/`?waitlist=`/`?repeat=`/`?reschedule=`, typed
+  clock text, opaque UI keys minted from a brand); every `ofProven` sits
+  beside a comment naming its range; no `as Brand` cast outside a
+  primitive's own file; the shared formatters (`formatWallClock`,
+  `formatMinute`, `formatInstant`, `formatCents`, `ui-month-picker`,
+  `ui-weekday-picker`) take brands. W3-G's guard
+  (`uiRawPrimitiveBlock`, `tools/lint-rules/ecs-syntax.mjs`) keeps a raw
+  id/instant/money/day/minute member out of every feature and UI type.
+- **Law 7.3 (OQ-14)** — the staff day and agenda answer visit-vs-now,
+  durations and buckets on the wall clock (`LocalDate` + `MinuteOfDay` with
+  the store's `ShopNow`, `VisitStorySystem.hasStarted`/`hasEnded`);
+  `zoned-time.system.ts` is the ONLY zone engine (the store's `DAY_FRAMES`
+  cache, the spring-forward walk and the feature-local clock parsers are
+  gone); the e2e support reads ONE shop clock (`apps/web/e2e/support/shop-clock.ts`).
+- **Law 1 shapes** — every `*.data.ts` exports one component plus the
+  dictionaries of its own fields (~180 new component files: the splits of
+  `client-stats`, `seat`, `cart-line`, `catalog-status`, `medal-outlook`,
+  `gamification`, `page-step`, …); pass C's "system-file dictionary family"
+  (`CancelledSide`, `VisitRowOutcome`, `VisitGrain`, `GridEvent`,
+  `TipPreset`, …) and the pipelines' local dictionaries
+  (`BookingReadSnapshot`, `EditCallOutcome`, `MoveOutcome`,
+  `BackfillCallEnd`, `WaitlistDeliveryOutcome`) are components;
+  `LoyaltyCatalog` is declared once (`entities/loyalty-catalog.ts`);
+  `Roles` is a companion (`components/roles.data.ts`); no getter, no
+  `Object.freeze` on data (`isLazyPort` replaces the frozen-proxy check).
+- **Law 1 / 6.2 tags** — every state and closed set is an `as const`
+  dictionary compared through its members: the booking pipelines' read
+  tags, ~110 lower-case UI unions (the "Left as found" ones: `StaffView`,
+  `DiscardTarget`, `Placement`, `readoutTone`, `EventsTab`, `ProgramsTab`,
+  the rhythm's confirmations, the editor's discount kinds, the `Locale`
+  checks), the onboarding link's `?phase=`/`?step=` words; an external
+  contract keeps its spelling and says so (URL values, `data-*`/CSS hooks,
+  test ids, i18n key segments, DS inputs, stored and wire values); no
+  boolean discriminated union but `Result.ok` (`LazyMethod`, the icon
+  resolver's `Result`); the icon manifest's `kind` is `iconAsset`
+  (schema 2, DEP-16; the `no-generic-discriminator` allowlist entry gone).
+- **Law 7.5 errors** — every error dictionary and struct union lives in
+  `libs/ecs-core/src/errors/*.error.ts` (the booking pipelines' unions,
+  `HttpsStatus`, `MoveErrorCode` with the folded move refusals,
+  `StaffBlockFailure`, `OwnProfileWriteFailure`, `AuthFailure`,
+  `OnboardingFailure`); feature error state holds the STRUCT, so its i18n
+  params survive (the onboarding birthday save, DEP-17); refusal lines word
+  reactively (DEP-23); ONE server-code helper (`wordFlowFailure`) and ONE
+  loaded-language stream (`loadedLanguage`, `@creativo/infrastructure/i18n`).
+- **Pass C's D-11 list** landed on the branded contracts:
+  `StaffEditPlanSystem` (the editor save's write plan and undo snapshot,
+  REPRICE on cents — DEP-20), the editor's VM reshapes (`now: ShopNow`,
+  `currency` — DEP-21, nullable brands instead of `''`), the client
+  option's `email: string | null`, the viewer
+  `{ userId: UserId; roles: readonly Role[] } | null`, `StaffVerb.didNotHappen`,
+  ONE booking-flow terminal rule (`BookingFlowState.isTerminalStep`), ONE
+  team-note builder (`saveTeamNote`), `ENGAGEMENT_VOUCHER_CODE_DUPLICATE`
+  (DEP-18).
+
+**The DEPARTURES** (plan "DEPARTURES", each spec-pinned at its boundary):
+DEP-1…DEP-12 — the staff day on the wall clock (in-the-chair, next, past,
+the agenda's past groups and now line incl. a minute's millisecond 0, the
+agenda group key `agenda-time-<minutes>`, search's past/order/label and
+«Скорошни» on each visit's own shop clock, the catalogue tag «±N мин», the
+block sheet's seeded end, boundary minutes in a spring-forward gap, the
+block event id `block:<chair>:<day>:<minute>`, the countdown) — answers
+change ONLY inside a DST repeat hour, a spring-forward gap, across zones or
+on a minute's millisecond 0; DEP-13 `?day=` takes calendar days only;
+DEP-14 a refused `?barber=` is `null` at once; DEP-15 the client card reads
+the draft's wall-clock start; DEP-16 the icon manifest schema 2; DEP-17 the
+birthday save keeps `{{maxAge}}`/`{{minAge}}`; DEP-18 the duplicate voucher
+code; DEP-19 catalogue prices in the stored currency; DEP-20 REPRICE on
+cents; DEP-21 the editor's bill in the seats' currency; DEP-22 one strict
+clock parser; DEP-23 two refusal lines re-word on a language switch. For
+every EUR shop on a normal day nothing a user sees changes.
+
+**Gate (2026-10-25, the integrator's second round):** `nx sync:check` up
+to date; layering OK (895 files, 3,972 import edges); typecheck after
+`rm -rf dist/out-tsc` — 39 projects, only `patterns` (baseline); lint 43
+projects, 0 errors (239 warnings, as before); `run-many -t test` 43 runs,
+**12,283 passed** + exactly the 6 baseline reds; ecs-core 314 files, 5,802
+tests, **98.27 %** statements (13,938/14,183); `seed-tools` typecheck;
+`lint-rules` 13 files, 315 tests; `lint:styles`; `build web` initial
+**574.76 kB** (−25.39 kB: the L-1 splits let the initial closure import
+small dictionary files instead of whole multi-name files — e.g. the
+`StreakRuleDirection` a publish answer names no longer pulls
+`streak-rule.data.ts` and the `engagement.error.ts`, `streak-interval`
+and `streak-qualifier` behind it; per-file diff in the plan's §9.3) +
+`verify:bundle`; `build functions` + the four runtime dependencies; runbook
+§4.2 28, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 25 `ok`, 0 FAIL
+(also with `git grep --untracked`, so the ~220 new files are covered);
+`verify:p0` (a)–(f); `test:emulator` 65 + 253; `e2e:web` 41 passed +
+exactly the 19 baseline failures (the glance's 12 at `:377`/`:758` — the
+same assertions as `:384`/`:765`, seven import lines fewer).
+
+The §6.3 DOM differential (94 spec files, 1,470 captured tests, compared
+strictly against a `git archive cf91b43` copy) differs only by DEP-4 (7),
+DEP-4 with the never-matching row-error stub (3), the block editor's
+isolated-spec now label (2) and one fast-check random sample — no
+whitespace difference left; the §6.4 dev-stack smoke against the same copy on the same emulators (pass C's harness, bg + en): today (a closed Sunday) 26 signatures per side, 14 identical, 10 differing only by the clock between the runs, 2 by DEP-13; the next open day 106 per side — every view, the agenda, all nine visit sheets, both client cards with their wallet, ledger, medals, records, details, season and history, the admin rhythm — 102 identical, 2 the create sheet's drafted start (the clock), 2 DEP-13.
+
+**The review's six fixes (the fixer, 2026-10-25, plan §9.1 Fixer — type
+level, no runtime value changes, no new DEP):** the client card's grant
+outputs (`openReward`/`removeReward`/`useGift`/`removeGift`) are
+`output<CouponGrantId>()` and the editor's `openReward`/`removeReward`/
+`rewardTicket`/`addCountedService` take `CouponGrantId`/`ServiceId`; ONE
+membership scan — NEW `CallAnswer.tag(answer, name, dictionary)` over
+`Tag.has` replaces the call decoders' `Object.values` lists, and
+`isPipelineError`, `RepositoryError.guard`, the recurrence rule's week
+check, the wire's `isStoreFailure` and `loyalty.wire.ts`'s `wordOf` read
+`Tag.has` (`CallAnswer.oneOf` stays for the one subset list,
+`StreakPublishError.ANSWERED_CODES`); the discount summary compares
+`discountSource`, not the icon name; the staff day's barber-id members take
+`BarberId` and the grid's `rosterStartMinute` is `TrackMinute | null`
+(the block editor's frame start `trackMinuteOf(min)`, a proven `ofProven`);
+the functions edge's own `HttpsStatus` copy is gone (`@core/errors`' one,
+`satisfies` the SDK's `FunctionsErrorCode`); NEW `DraftPersonKey.parse`
+(the three minted spellings; `setLegClient` keeps `of`, the edge table's
+DS-menu row). The FULL gate re-ran green against the baselines (§4's
+pass-D numbers below; plan §9.3 Fixer round).
+
+**The second review's eight fixes (the fixer, 2026-10-25, plan §9.1
+Fixer, second round — type level, no runtime value changes, no new DEP):**
+the waitlist callable's cart keeps its pre-door `X.of` brands as a recorded
+D-4.1 row (the door judges the ids, in its own order — a wire `parse` would
+reorder or add refusals); `seriesById`/`medalDetailVm`/`detailAction` take
+a `BadgeSeriesId` (the page keys brand once at their readers, D-8.9) and a
+drawn medal's `BadgeSeriesId | SeasonId` is read through NEW
+`familyOfMedal` — today's equality lookup, never a cross-brand re-brand;
+`soonSeriesIds` returns `BadgeSeriesId[]`; the visit row's status fact
+tone is the `StatusFactTone` dictionary (`data-tone` spellings kept); the
+landing's `LandingLocationId` is an as-const dictionary (the `LOCATIONS`
+ids kept); `roles.data.ts` lost a stale transitional comment; the
+onboarding phone field holds the `PhoneError` struct and words it by its
+own `errorCode` (the `example` param added only at wording time, every
+word the same); the root ESLint config's comment says `*Minutes` is in
+the raw-brand guard. +2 spec cases (`familyOfMedal`, the onboarding's
+unsupported-country line); the FULL gate re-ran green (§4's pass-D
+numbers; plan §9.3 Fixer, second round).
+
+**Carried from pass D** (none blocks anything; the plan's §9.6 has each
+with its reason): the dashboard's row-error line never matches
+(`rowError` receives the row key `appointmentId#barberId`; production
+printed no row error before or after pass D — a later fix is a DEP); the
+editor's `seedDraft` turns a VM start of 1440 into a defect (a walk-in
+create opened at 23:56–23:59, as on `cf91b43`); `subjectCustomerId` stays
+optional on the visit row/card options; the icons lib's config turns
+`no-restricted-syntax` off on its non-suffix files, so the raw-brand guard
+is off there too (zero hits today); the spec-only survivors
+(`AchievementsSystem.firstStart`, `ZonedTimeSystem.parseIsoIn`/`toIso` —
+OQ-4 —, `rhythmPreviewReadsFacts`); the per-surface avatar-upload unions;
+`client-profile.ts`'s `LocalDate.parse` of the stored `BirthDate`; the
+`UiDayKey` alias; the plan's §8 open questions OQ-1…OQ-19 with their
+defaults as applied (OQ-1 `TrackMinute` a brand, OQ-3 pooled answers on
+each visit's own shop clock, OQ-6 `windowHours` raw, OQ-7 `cadenceOf` on
+instants, OQ-9 the editor save's orchestration in the component, OQ-13
+claims-tolerant role predicates, OQ-14 `E164` a component brand, OQ-15/16
+the stored currency, OQ-19 the photo titles in `'bg-BG'` among them); from
+the second fixer round: the waitlist cart's pre-door brands (its cleaner
+home is raw strings in `WaitlistCall.Input`, parsed inside the door — an
+ecs-core reshape), `familyOfMedal`'s by-string lookup (a trackless season
+whose id equals a family's would still draw that family — catalogue ids are
+unique per collection only; a fix is a behaviour change), and the visit
+row's DS-input-valued tile tone and amount emphasis unions. Still
+owner calls from pass C: the KEEP-PARKED lifecycle write verbs,
+`VoucherSystem.redeem` and `IntervalSetSystem.clip`.
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -1212,13 +1390,34 @@ unit tests `gauge.spec.ts` (4), `visit-pills.spec.ts` (1),
 `visits-page.presenter.spec.ts` "strikes an hour that did not happen" (1);
 e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:121`
 (MapLibre; `:120` before Phase 4a), 12 `client-card-glance.spec.ts` runs of
-the two tests at `:343`/`:686` (`:341`/`:684` before flip 3), failing at
-`:384`/`:765`; and
+the two tests at `:336`/`:679` (`:343`/`:686` before pass D, `:341`/`:684`
+before flip 3), failing at `:377`/`:758` (`:384`/`:765` before pass D — the
+same assertions; pass D's `shop-clock.ts` import took seven lines off the
+spec); and
 `appointments.spec.ts:152` flakes under load (passes alone with
 `--repeat-each=3`). Anything else red is a regression. Under
 `run-many -t test --parallel=3` the heavy `staff-dashboard`,
 `staff-client-card` and `marketing-landing` specs can time out — re-run
 the project alone before calling it a regression.
+
+**Reference numbers on the pass-D tree (2026-10-25, the FULL gate, after
+the review's six fixes and the second review's eight — plan §9.3 Fixer,
+second round)** — a drop without a reason
+is a lost case: 43 projects lint, 0 errors (239 warnings); typecheck 39
+projects, only `patterns`; `run-many -t test` 43 test targets, **12,289
+passed** + the 6 baseline reds (`web:test` 18 and `verify-tools` 79
+included; 12,283 on the integrator's second round, + 4 ecs-core cases in
+the first fixer round, + 1 `staff-client-card` and + 1 `client-onboarding`
+in the second);
+`lint-rules` 13 files and 315 tests; ecs-core 314 files, **5,806 tests,
+98.27 % statements** (13,937/14,182); `verify:p0` (a)–(f); `test:emulator`
+**65 + 253**; `e2e:web` 41 passed + the 19 baseline failures; `build web`
+initial **574.83 kB** (156.97 kB transfer; −25.32 kB against pass C, the
+L-1 splits — pass D plan §9.3); the functions dist's four runtime
+dependencies; layering **895 files and 3,973 import edges**; runbook §4.2
+28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 25 (the same with
+`git grep --untracked`); pass D's plan §5 items 2(a)/2(b)/2(c) = 15/17/0
+reviewed hits (2(a) was 18 before the second fixer round).
 
 **Reference numbers on the pass-C tree after its second review round
 (2026-10-24, the FULL gate)** — a drop without a reason is a lost case: 43

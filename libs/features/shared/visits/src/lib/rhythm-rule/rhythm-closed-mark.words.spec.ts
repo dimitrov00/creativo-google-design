@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { FreezeReason, StreakExcuse, StreakPeriodMark } from '@core/components';
+import {
+  FreezeReason,
+  StreakExcuse,
+  StreakPeriodMark,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
+} from '@core/components';
 import { LocalDate } from '@core/primitives';
-import { type StreakTrackMark, StreakTrackMarkKind } from '@core/systems';
 import { deepFreeze, unwrapOk } from '@core/testing';
 import {
   type RhythmClosedMark,

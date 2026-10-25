@@ -96,15 +96,15 @@
                   autocomplete="given-name"
                   data-testid="onboarding-first-name"
                   [readonly]="store.pending()"
-                  [attr.aria-invalid]="firstNameErrorCode() ? true : null"
-                  [uiInvalid]="!!firstNameErrorCode()"
+                  [attr.aria-invalid]="firstNameError() ? true : null"
+                  [uiInvalid]="!!firstNameError()"
                   [value]="firstName()"
                   (input)="firstName.set($any($event.target).value)"
                   (blur)="onFirstNameBlur()"
                 />
               </ui-stack>
             </label>
-            @if (translateError(firstNameErrorCode()); as error) {
+            @if (translateError(firstNameError()); as error) {
             <p
               uiText
               uiFont="footnote"
@@ -131,15 +131,15 @@
                   autocomplete="family-name"
                   data-testid="onboarding-last-name"
                   [readonly]="store.pending()"
-                  [attr.aria-invalid]="lastNameErrorCode() ? true : null"
-                  [uiInvalid]="!!lastNameErrorCode()"
+                  [attr.aria-invalid]="lastNameError() ? true : null"
+                  [uiInvalid]="!!lastNameError()"
                   [value]="lastName()"
                   (input)="lastName.set($any($event.target).value)"
                   (blur)="onLastNameBlur()"
                 />
               </ui-stack>
             </label>
-            @if (translateError(lastNameErrorCode()); as error) {
+            @if (translateError(lastNameError()); as error) {
             <p
               uiText
               uiFont="footnote"
@@ -174,7 +174,7 @@
             (uiBlurred)="onPhoneBlur($event)"
             data-testid="onboarding-phone"
           />
-          } @if (translateError(currentError()); as error) {
+          } @if (flowError(currentError()); as error) {
           <p
             uiText
             uiFont="footnote"
@@ -414,7 +414,7 @@
               [uiDetailsLabel]="t('onboarding.services.details', { name:
               serviceName(service) })"
               (uiPressed)="toggleService(service.id)"
-              (uiDetailsPressed)="openDetails(service)"
+              (uiDetailsPressed)="openDetails(service.id)"
             />
             }
           </ui-grid>
@@ -433,7 +433,7 @@
       [service]="details"
       [barbers]="barberVms()"
       [catalogServices]="serviceVms()"
-      (serviceSelected)="openDetailsById($event.id)"
+      (serviceSelected)="openDetails($event.id)"
       (closed)="closeDetails()"
     >
       <button
@@ -441,16 +441,16 @@
         type="button"
         uiButton
         [uiButtonStyle]="
-          isServiceSelectedById(details.id) ? 'bordered' : 'borderedProminent'
+          isServiceSelected(details.id) ? 'bordered' : 'borderedProminent'
         "
-        [uiTint]="isServiceSelectedById(details.id) ? 'neutral' : undefined"
+        [uiTint]="isServiceSelected(details.id) ? 'neutral' : undefined"
         [uiSpread]="true"
         uiControlSize="large"
         data-testid="onboarding-service-sheet-toggle"
-        [disabled]="capReached() && !isServiceSelectedById(details.id)"
+        [disabled]="capReached() && !isServiceSelected(details.id)"
         (click)="toggleDetailsService(); serviceSheet.close()"
       >
-        {{ t(isServiceSelectedById(details.id) ? 'onboarding.services.remove' :
+        {{ t(isServiceSelected(details.id) ? 'onboarding.services.remove' :
         'onboarding.services.select') }}
       </button>
     </cr-service-detail-sheet>
@@ -598,7 +598,7 @@
             (uiBlurred)="onBirthBlur($event)"
             data-testid="onboarding-birthday"
           />
-          @if (translateError(birthdaySaveError()); as error) {
+          @if (flowError(birthdaySaveError()); as error) {
           <p
             uiText
             uiFont="footnote"
@@ -771,7 +771,7 @@
             </span>
           </label>
 
-          @if (translateError(avatarErrorCode()); as error) {
+          @if (translateError(avatarError()); as error) {
           <p
             uiText
             uiFont="footnote"

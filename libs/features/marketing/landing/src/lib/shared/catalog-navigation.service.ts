@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import type { BarberId } from '@core/primitives';
 import type { ServiceVm } from '@creativo/features/shared/catalog';
 
 /**
@@ -34,12 +35,12 @@ export class CatalogNavigationService {
   }
 
   // ── The barber sheet (the team section renders it) ─────────────────
-  private readonly barber = signal<string | null>(null);
+  private readonly barber = signal<BarberId | null>(null);
 
   /** Which barber the team section's sheet is showing, by id. */
   readonly barberId = this.barber.asReadonly();
 
-  openBarber(barberId: string): void {
+  openBarber(barberId: BarberId): void {
     this.barber.set(barberId);
   }
 

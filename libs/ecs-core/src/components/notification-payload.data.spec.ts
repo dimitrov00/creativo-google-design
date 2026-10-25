@@ -6,7 +6,7 @@ import {
 } from '@core/primitives';
 import { FIXTURE_TIME_ZONE, localDate, minute, utcMs } from '@core/testing';
 import { ZonedTimeSystem } from '@core/systems';
-import { RewardRefFields } from './journal-effect.data';
+import { RewardRefFields } from './reward-ref-fields.data';
 import {
   NotificationPayload,
   NotificationTopic,

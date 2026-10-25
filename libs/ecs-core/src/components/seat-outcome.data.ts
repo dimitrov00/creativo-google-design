@@ -1,32 +1,12 @@
 import {
-  type Brand,
   type UtcEpochMs,
   BookingStatus,
   AttendanceState,
 } from '@core/primitives';
 import { BookingPolicy } from './booking-policy.data';
 import { BookingLifecycle } from './booking-lifecycle.data';
-
-/**
- * Why a seat was called off — a CLOSED vocabulary, because prose cannot be
- * aggregated. `CLIENT_*` and `STAFF_*` must never share a bucket (a reminder
- * problem vs a rostering problem). Code-only (§9 D23): free text a staff
- * member types is an appointment note, never a reason.
- */
-export const CancellationReason = {
-  ClientChangedPlans: 'CLIENT_CHANGED_PLANS',
-  ClientUnwell: 'CLIENT_UNWELL',
-  StaffBarberAbsence: 'STAFF_BARBER_ABSENCE',
-  StaffShopClosure: 'STAFF_SHOP_CLOSURE',
-  /** A no-show the shop later reclassified — stamped, never picked. */
-  NoShowConverted: 'NO_SHOW_CONVERTED',
-  /** Nobody said why — what picking nothing is filed as, its own countable bucket. */
-  Unspecified: 'UNSPECIFIED',
-  /** A reason outside the list. */
-  Other: 'OTHER',
-} as const;
-export type CancellationReason =
-  (typeof CancellationReason)[keyof typeof CancellationReason];
+import { CancellationReason } from './cancellation-reason.data';
+import { CancellationReasonSet } from './cancellation-reason-set.data';
 
 /** Which side called a seat off — the field `cancelledBy`. */
 export const CancelledBy = {
@@ -34,16 +14,6 @@ export const CancelledBy = {
   Staff: 'STAFF',
 } as const;
 export type CancelledBy = (typeof CancelledBy)[keyof typeof CancelledBy];
-
-const REASONS: readonly CancellationReason[] = [
-  CancellationReason.ClientChangedPlans,
-  CancellationReason.ClientUnwell,
-  CancellationReason.StaffBarberAbsence,
-  CancellationReason.StaffShopClosure,
-  CancellationReason.NoShowConverted,
-  CancellationReason.Unspecified,
-  CancellationReason.Other,
-];
 
 /**
  * The codes a HUMAN may pick, in the order a shop reaches for them.
@@ -57,59 +27,6 @@ const OFFERED_REASONS: readonly CancellationReason[] = [
   CancellationReason.StaffShopClosure,
   CancellationReason.Other,
 ];
-
-/** The one separator of a reason set's stored text. */
-const SET_SEPARATOR = '+';
-
-/**
- * A party's cancellation reasons as ONE stored string — the root
- * `cancellationReason` of a cancelled appointment (flatten-spec §3.2, F-24):
- * the distinct {@link CancellationReason} codes of the party, sorted and
- * `+`-joined (`'CLIENT_UNWELL+STAFF_SHOP_CLOSURE'`), so the field stays one
- * groupable string while a party cancelled seat by seat can hold several.
- * A staff cancel of the whole party files its one code (`'STAFF_SHOP_CLOSURE'`).
- *
- * Built only through its companion — {@link CancellationReasonSet.of} joins,
- * {@link CancellationReasonSet.codes} splits — so no system ever joins or
- * splits the text itself. A domain-value brand (F-15): it lives beside the
- * dictionary it joins, and its cast lives here.
- */
-export type CancellationReasonSet = Brand<string, 'CancellationReasonSet'>;
-
-function isReason(raw: string): raw is CancellationReason {
-  for (let i = 0; i < REASONS.length; i++) {
-    if (REASONS[i] === raw) return true;
-  }
-  return false;
-}
-
-export const CancellationReasonSet = {
-  /**
-   * The set of `reasons` — de-duplicated, sorted, `+`-joined, so one set
-   * of codes is always stored as the same string.
-   */
-  of(reasons: readonly CancellationReason[]): CancellationReasonSet {
-    const distinct: CancellationReason[] = [];
-    for (let i = 0; i < reasons.length; i++) {
-      const reason = reasons[i] as CancellationReason;
-      if (!distinct.includes(reason)) distinct.push(reason);
-    }
-    distinct.sort();
-    return distinct.join(SET_SEPARATOR) as CancellationReasonSet;
-  },
-
-  /** The codes the set holds, in stored order — text that is no code is skipped. */
-  codes(set: CancellationReasonSet): readonly CancellationReason[] {
-    const out: CancellationReason[] = [];
-    if (set.length === 0) return out;
-    const parts = set.split(SET_SEPARATOR);
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i] as string;
-      if (isReason(part)) out.push(part);
-    }
-    return out;
-  },
-} as const;
 
 /**
  * What became of ONE person's seat (`seat-outcome.ts:30-194`) — a flat

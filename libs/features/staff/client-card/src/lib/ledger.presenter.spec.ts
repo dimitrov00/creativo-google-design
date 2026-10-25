@@ -28,13 +28,14 @@ import {
   TierId,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { utcMs } from '@core/testing';
+import { localDate, utcMs } from '@core/testing';
 import { type ActivityRowVm, type LinePart } from './client-pages.vm';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type ActivityInput,
   LEDGER_PAGE_READ,
   type LedgerPageInput,
+  NO_VISIT_NAMES,
   activityGroups,
   foldByEvent,
   ledgerPageVm,
@@ -323,14 +324,19 @@ const JOURNAL: readonly JournalEntry[] = [
 
 function activityInput(overrides: Partial<ActivityInput> = {}): ActivityInput {
   return {
-    visitTitles: new Map([
-      ['appt-a', 'Фейд · Оформяне на брада'],
-      ['2026-04-04', 'Фейд'],
-    ]),
-    visitBarbers: new Map([
-      ['appt-a', 'Иван'],
-      ['appt-b', 'Иван'],
-    ]),
+    visitTitles: {
+      byAppointment: new Map([
+        [AppointmentId.of('appt-a'), 'Фейд · Оформяне на брада'],
+      ]),
+      byDay: new Map([[localDate('2026-04-04'), 'Фейд']]),
+    },
+    visitBarbers: {
+      byAppointment: new Map([
+        [AppointmentId.of('appt-a'), 'Иван'],
+        [AppointmentId.of('appt-b'), 'Иван'],
+      ]),
+      byDay: new Map(),
+    },
     catalog: CATALOG,
     today: TODAY,
     wholeMonths: wholeMonthsOf(JOURNAL, true),
@@ -561,7 +567,7 @@ describe('activityGroups: a row by its kind (§2.2.5)', () => {
     expect(byDay).toMatchObject({ title: 'Фейд', struck: false });
     expect(
       rowsOf([VISIT_FADE], {
-        visitTitles: new Map(),
+        visitTitles: NO_VISIT_NAMES,
         visitBarbers: undefined,
       }).get('e-50'),
     ).toMatchObject({
@@ -880,7 +886,12 @@ describe('Георги’s own journal', () => {
     const groups = activityGroups(
       foldByEvent(journal, true),
       activityInput({
-        visitTitles: new Map([['2026-07-13', 'Фейд · Оформяне на брада']]),
+        visitTitles: {
+          byAppointment: new Map(),
+          byDay: new Map([
+            [localDate('2026-07-13'), 'Фейд · Оформяне на брада'],
+          ]),
+        },
         visitBarbers: undefined,
         wholeMonths: wholeMonthsOf(journal, true),
       }),

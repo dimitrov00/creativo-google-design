@@ -1,3 +1,5 @@
+import { BadgeCategoryId, SeasonId } from '@core/primitives';
+import { localDate } from '@core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AchievementScope } from '../client-card.contracts';
 import {
@@ -71,7 +73,7 @@ async function mount(
 
 const MASTERY: AchievementScope = {
   achievementScope: AchievementScope.Category,
-  categoryId: 'cat-mastery',
+  categoryId: BadgeCategoryId.of('cat-mastery'),
 };
 
 /** The ≥ 761 px dialog, as the sheet measures its presentation. */
@@ -196,7 +198,7 @@ describe('AchievementCategoryPage — a category, pushed', () => {
   it('sections the barbers’ shelf into barbers, shops and the rest', async () => {
     const { sections, byId, text } = await mount({
       achievementScope: AchievementScope.Category,
-      categoryId: 'cat-barbers',
+      categoryId: BadgeCategoryId.of('cat-barbers'),
     });
     expect(text(byId('achievements-scope-subline'))).toBe(
       'Бръснари и салони · 2 от 7 спечелени',
@@ -213,7 +215,7 @@ describe('AchievementCategoryPage — a category, pushed', () => {
   it('draws a shelf with nothing to split as one grid named by the page’s title', async () => {
     const { byId, sections } = await mount({
       achievementScope: AchievementScope.Category,
-      categoryId: 'cat-special',
+      categoryId: BadgeCategoryId.of('cat-special'),
     });
     const [only] = sections();
     expect(sections()).toHaveLength(1);
@@ -366,7 +368,7 @@ describe('AchievementCategoryPage — a season', () => {
   it('puts the running season’s medal in its ring and its step track above its families on a white card: the ladder is drawn HERE', async () => {
     const { byId, text, sections } = await mount({
       achievementScope: AchievementScope.Season,
-      seasonId: 'season-2026-autumn',
+      seasonId: SeasonId.of('season-2026-autumn'),
     });
     expect(text(byId('achievements-scope-title'))).toBe('Есен 2026');
     expect(text(byId('achievements-scope-subline'))).toBe('1.09 – 30.11');
@@ -406,7 +408,7 @@ describe('AchievementCategoryPage — a season', () => {
   it('lists only what was earned in an ended season, its track the levels reached; the level it closed on is drawn, not written', async () => {
     const { byId, text, sections } = await mount({
       achievementScope: AchievementScope.Season,
-      seasonId: 'season-2026-summer',
+      seasonId: SeasonId.of('season-2026-summer'),
     });
     expect(text(byId('achievements-scope-title'))).toBe('Лято 2026');
     expect(text(byId('achievements-scope-subline'))).toBe('1.06 – 31.08');
@@ -470,7 +472,7 @@ describe('AchievementCategoryPage — the archive and a day', () => {
   it('lists the families a day moved', async () => {
     const { byId, text, sections } = await mount({
       achievementScope: AchievementScope.Day,
-      day: '2026-09-28',
+      day: localDate('2026-09-28'),
     });
     expect(text(byId('achievements-scope-title'))).toBe('Спечелени на 28.09');
     expect(sections()[0]?.tiles).toEqual([
@@ -483,7 +485,7 @@ describe('AchievementCategoryPage — the archive and a day', () => {
   it('never marks a scope’s medal «Ново»: the overview is where a level is new', async () => {
     const today = await mount({
       achievementScope: AchievementScope.Day,
-      day: '2026-09-28',
+      day: localDate('2026-09-28'),
     });
     const grids = today.all('.achievement-category__grid');
     expect(grids.length).toBeGreaterThan(0);
@@ -542,7 +544,7 @@ describe('AchievementCategoryPage — states', () => {
   it('draws nothing false for a scope the catalogue does not hold', async () => {
     const { byId, text, sections } = await mount({
       achievementScope: AchievementScope.Category,
-      categoryId: 'cat-gone',
+      categoryId: BadgeCategoryId.of('cat-gone'),
     });
     expect(byId('achievements-error')).not.toBeNull();
     expect(sections()).toEqual([]);

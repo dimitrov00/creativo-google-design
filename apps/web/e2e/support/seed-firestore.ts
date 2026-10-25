@@ -42,15 +42,12 @@ import {
 import {
   AppointmentId,
   BarberId,
+  BusyKey,
   CouponId,
   CustomerId,
   JournalEntryId,
-  LocalDate,
-  MinuteOfDay,
-  type Result,
-  type TimeZone,
+  type LocalDate,
   UserId,
-  type UtcEpochMs,
 } from '@core/primitives';
 import {
   PhoneSystem,
@@ -61,10 +58,10 @@ import {
 // spec contracts — is not Playwright's to load.
 import type { LoyaltyClientJson } from '@core/testing';
 import {
-  SHOP_ZONE,
   upcomingAppointmentBody,
   workedAppointmentBody,
 } from './appointment-seed-document';
+import { shopInstant, sure } from './shop-clock';
 
 const PROJECT_ID = 'demo-creativo-test';
 /** `environment.ts`'s bucket, and the dev seed's. */
@@ -145,29 +142,6 @@ export async function seedProfilePhoto(uid: string): Promise<void> {
     .bucket(BUCKET)
     .file(`avatars/${uid}/original`)
     .save(PHOTO_PNG, { contentType: 'image/png' });
-}
-
-/** A smart constructor's answer for a seed value that is one by construction. */
-function sure<T, E>(result: Result<T, E>, what: string): T {
-  if (!result.ok) throw new Error(`e2e seed: ${what} is not valid`);
-  return result.value;
-}
-
-const SHOP_TIME_ZONE: TimeZone = sure(
-  ZonedTimeSystem.checkZone(SHOP_ZONE),
-  SHOP_ZONE,
-);
-
-/** An instant on the shop's wall clock — `day` at `hour:minute`, read in its zone. */
-function shopInstant(day: string, hour: number, minute = 0): UtcEpochMs {
-  return sure(
-    ZonedTimeSystem.toUtc(
-      sure(LocalDate.parse(day), day),
-      sure(MinuteOfDay.of(hour * 60 + minute), `${hour}:${minute}`),
-      SHOP_TIME_ZONE,
-    ),
-    `${day} ${hour}:${minute}`,
-  );
 }
 
 /**
@@ -588,33 +562,34 @@ export async function seedAppointmentPhoto(
 // ── The booking core's projections and the inbox (flip 1) ────────────────
 
 /**
- * `barberBusy/{barberId}__{localDate}` raw, or `null` while it is absent —
- * the busy day the `rebuildBusyOnAppointmentChange` trigger projects from
- * the appointments: what the SERVER filed, which no client screen shows
- * as such.
+ * `barberBusy/{barberId}__{localDate}` (its id is `BusyKey.of`) raw, or
+ * `null` while it is absent — the busy day the
+ * `rebuildBusyOnAppointmentChange` trigger projects from the appointments:
+ * what the SERVER filed, which no client screen shows as such.
  */
 export async function readBarberBusyDay(
-  barberId: string,
-  localDate: string,
+  barberId: BarberId,
+  localDate: LocalDate,
 ): Promise<Record<string, unknown> | null> {
   const snapshot = await getFirestore(adminApp())
     .collection(Collections.BarberBusy)
-    .doc(`${barberId}__${localDate}`)
+    .doc(BusyKey.of(barberId, localDate))
     .get();
   return snapshot.data() ?? null;
 }
 
 /**
- * `scheduleExceptions/{barberId}__{localDate}` raw, or `null` while it is
- * absent — the sanitized public effect a staff block writes.
+ * `scheduleExceptions/{barberId}__{localDate}` (its id is `BusyKey.of`)
+ * raw, or `null` while it is absent — the sanitized public effect a staff
+ * block writes.
  */
 export async function readScheduleException(
-  barberId: string,
-  localDate: string,
+  barberId: BarberId,
+  localDate: LocalDate,
 ): Promise<Record<string, unknown> | null> {
   const snapshot = await getFirestore(adminApp())
     .collection(Collections.ScheduleExceptions)
-    .doc(`${barberId}__${localDate}`)
+    .doc(BusyKey.of(barberId, localDate))
     .get();
   return snapshot.data() ?? null;
 }

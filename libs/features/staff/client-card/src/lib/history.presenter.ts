@@ -1,24 +1,30 @@
-import { HistoryNote, type ShopNow } from '@core/components';
+import {
+  HistoryNote,
+  type ShopNow,
+  VisitGrain,
+  VisitPerspective,
+} from '@core/components';
 import type {
   Appointment,
   ClientMoneyRecord,
   ClientStatsRecord,
 } from '@core/entities';
-import type { TimeZone } from '@core/primitives';
-import {
-  ClientStatsSystem,
-  VisitGrain,
-  VisitListSystem,
-  VisitPerspective,
-} from '@core/systems';
+import type {
+  AppointmentId,
+  CustomerId,
+  TimeZone,
+  UserId,
+} from '@core/primitives';
+import { ClientStatsSystem, VisitListSystem } from '@core/systems';
 import { type VisitRowVm, visitRowOf } from '@creativo/features/shared/visits';
 import { formatCents } from '@creativo/ui/wall-clock';
 import type { ClientCardCatalog } from './client-card.contracts';
 import { figure } from './client-card.format';
-import type {
-  HistoryCellVm,
-  HistoryFactsVm,
-  HistorySpendVm,
+import {
+  HistoryCellId,
+  type HistoryCellVm,
+  type HistoryFactsVm,
+  type HistorySpendVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 
@@ -47,14 +53,14 @@ export function historyCells(
   const visits = stats?.lifetimeVisitsCompleted ?? 0;
   const cells: HistoryCellVm[] = [
     {
-      id: 'visits',
+      id: HistoryCellId.Visits,
       value: figure(visits, lang),
       caption: history.visits(visits),
     },
   ];
   if (stats?.avgCadenceDays != null) {
     cells.push({
-      id: 'cadence',
+      id: HistoryCellId.Cadence,
       value: history.intervalValue(cadenceWeeks(stats.avgCadenceDays)),
       unit: history.intervalUnit,
       caption: history.interval,
@@ -63,7 +69,7 @@ export function historyCells(
   const noShows = stats?.lifetimeNoShows ?? 0;
   if (noShows > 0) {
     cells.push({
-      id: 'noShows',
+      id: HistoryCellId.NoShows,
       value: figure(noShows, lang),
       caption: history.noShows(noShows),
     });
@@ -71,7 +77,7 @@ export function historyCells(
   const cancelled = stats?.lifetimeClientCancels ?? 0;
   if (cancelled > 0) {
     cells.push({
-      id: 'cancelled',
+      id: HistoryCellId.Cancelled,
       value: figure(cancelled, lang),
       caption: history.cancelled(cancelled),
     });
@@ -127,13 +133,13 @@ export function historyNoteWords(
 export interface HistoryRowsInput {
   readonly appointments: readonly Appointment[];
   /** The account the card is open on — whose own words a row quotes. */
-  readonly subjectUserId: string;
+  readonly subjectUserId: UserId;
   /**
    * Its client RECORD (D29) — whose seats, outcome and share a row tells;
    * `null` when the account has no record yet (then no visit is theirs).
    */
-  readonly subjectCustomerId: string | null;
-  readonly currentAppointmentId: string | null;
+  readonly subjectCustomerId: CustomerId | null;
+  readonly currentAppointmentId: AppointmentId | null;
   /**
    * "Now" on the shop's wall clock (Law 7.3), derived ONCE by the store;
    * `null` while the shop's zone is pending — then there are no rows yet.
@@ -142,7 +148,7 @@ export interface HistoryRowsInput {
   /** The zone `now` was read in (a photo's day falls back to it); `null` as `now` is. */
   readonly timeZone: TimeZone | null;
   /** Each visit's own photos, counted (`countByAppointment`); a visit it does not name has none. */
-  readonly photoCounts: ReadonlyMap<string, number>;
+  readonly photoCounts: ReadonlyMap<AppointmentId, number>;
   /** False for a sysadmin viewer: the client's own words stay off the rows (R15). */
   readonly clientWords: boolean;
   readonly catalog: ClientCardCatalog;

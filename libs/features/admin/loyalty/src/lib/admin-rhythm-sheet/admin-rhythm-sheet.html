@@ -9,14 +9,14 @@
     [open]="open()"
     [closing]="closing()"
     uiPresentationSizing="automatic"
-    [fitted]="shown() !== 'services'"
+    [fitted]="shown() !== RhythmSheet.Services"
     (dismissed)="requestClose()"
     (closeFinished)="finishClose()"
   >
     <span sheet-title>{{ title() }}</span>
 
-    @if (shown(); as kind) { @let draft = current(); @switch (kind) { @case
-    ('services') {
+    @if (shown(); as sheet) { @let draft = current(); @switch (sheet) { @case
+    (RhythmSheet.Services) {
     <!-- The house sheet-search grammar: the headline folds while the
                search is engaged, the field stays pinned under the bar. -->
     <div class="admin-rhythm-sheet__head">
@@ -86,7 +86,7 @@
       </ui-notice>
       }
     </div>
-    } @case ('protections') {
+    } @case (RhythmSheet.Protections) {
     <div
       class="admin-rhythm-sheet__body"
       data-testid="admin-rhythm-sheet-protections"
@@ -188,7 +188,7 @@
         </ui-stack>
       </ui-stack>
     </div>
-    } @case ('excuses') {
+    } @case (RhythmSheet.Excuses) {
     <div
       class="admin-rhythm-sheet__body"
       data-testid="admin-rhythm-sheet-excuses"
@@ -274,7 +274,7 @@
         </ul>
       </ui-stack>
     </div>
-    } @case ('afterMiss') {
+    } @case (RhythmSheet.AfterMiss) {
     <div
       class="admin-rhythm-sheet__body"
       data-testid="admin-rhythm-sheet-afterMiss"
@@ -390,7 +390,7 @@
         </ul>
       </ui-stack>
     </div>
-    } @case ('day') {
+    } @case (RhythmSheet.Day) {
     <!-- The day IS the answer: a tap chooses and closes; no dock. -->
     <div class="admin-rhythm-sheet__body" data-testid="admin-rhythm-sheet-day">
       <ui-stack uiSpacing="comfortable">
@@ -410,7 +410,7 @@
         }
       </ui-stack>
     </div>
-    } } @if (kind !== 'day') {
+    } } @if (sheet !== RhythmSheet.Day) {
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
       <button
         type="button"

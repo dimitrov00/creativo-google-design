@@ -1,11 +1,5 @@
-import {
-  Actor,
-  isAdmin,
-  knownRoles,
-  mayBook,
-  type Role,
-} from '@core/components';
 import { UserId } from '@core/primitives';
+import { Actor, type Role, Roles } from '@core/components';
 
 /**
  * THE CALLER, off the VERIFIED ID token — the ONE home of every reading a
@@ -64,24 +58,24 @@ export function callerRoles(request: VerifiedRequest): readonly string[] {
  * list inside the list is no role.
  */
 export function callerKnownRoles(request: VerifiedRequest): readonly Role[] {
-  return knownRoles(claimedRoles(request));
+  return Roles.known(claimedRoles(request));
 }
 
 /**
  * May this caller work the book? The ONE gate every appointment callable
- * uses, and deliberately not `STAFF_ROLES`: a `content_manager` that
+ * uses, and deliberately not `Roles.STAFF`: a `content_manager` that
  * `firestore.rules` refuses every appointment READ must not be handed the
- * writes (`mayBook`, `BOOK_ROLES`).
+ * writes (`Roles.mayBook`, `Roles.BOOK`).
  */
 export function callerWorksTheBook(request: VerifiedRequest): boolean {
-  return mayBook(callerRoles(request));
+  return Roles.mayBook(callerRoles(request));
 }
 
 /**
  * May this caller change how the shop runs: publish the rhythm's rule,
  * open or end an impersonation, and whatever else only the owner's pair
  * decides? The same two roles `firestore.rules` admits with `isAdmin()`
- * (`isAdmin`, `ADMIN_ROLES`; `caller-roles.spec.ts` reads the rules and
+ * (`Roles.isAdmin`, `Roles.ADMIN`; `caller-roles.spec.ts` reads the rules and
  * holds them equal). Never a second read of `users/{uid}`: a document read can
  * disagree with the token the rules just judged by.
  *
@@ -91,7 +85,7 @@ export function callerWorksTheBook(request: VerifiedRequest): boolean {
  * reads the entries as they are.
  */
 export function callerIsAdmin(request: VerifiedRequest): boolean {
-  return isAdmin(callerKnownRoles(request));
+  return Roles.isAdmin(callerKnownRoles(request));
 }
 
 /**

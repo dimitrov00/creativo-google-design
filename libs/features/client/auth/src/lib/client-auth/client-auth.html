@@ -94,7 +94,7 @@
             [locale]="activeLang()"
             [defaultCountry]="defaultCountry"
             [disabled]="store.pending()"
-            [error]="translateError(identifierErrorCode())"
+            [error]="translateError(identifierError())"
             [pickerTitle]="t('auth.identify.countryPicker')"
             [searchLabel]="t('auth.identify.countrySearch')"
             [closeLabel]="t('auth.identify.countryClose')"
@@ -119,8 +119,8 @@
                   data-testid="auth-identifier-input"
                   aria-describedby="auth-identifier-hint"
                   [readonly]="store.pending()"
-                  [attr.aria-invalid]="identifierErrorCode() ? true : null"
-                  [uiInvalid]="!!identifierErrorCode()"
+                  [attr.aria-invalid]="identifierError() ? true : null"
+                  [uiInvalid]="!!identifierError()"
                   [value]="rawIdentifier()"
                   (input)="onEmailInput($any($event.target).value)"
                   (blur)="onEmailBlur()"
@@ -139,7 +139,7 @@
               {{ t('auth.identify.emailHint') }}
             </p>
           </ui-stack>
-          @if (translateError(identifierErrorCode()); as error) {
+          @if (translateError(identifierError()); as error) {
           <p
             uiText
             uiFont="footnote"

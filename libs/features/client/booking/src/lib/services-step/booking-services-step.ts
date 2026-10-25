@@ -7,39 +7,40 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
+import type {
   BarberId,
-  type CartLineId,
-  type SeatKeyText,
+  CartLineId,
+  DurationMinutes,
+  SeatKeyText,
   ServiceId,
   ServiceVariantId,
 } from '@core/primitives';
 import {
   BookingCart,
   type CartLine,
-  type Money,
+  Money,
   Party,
   SeatKey,
   SeatKeyRole,
+  Selectability,
 } from '@core/components';
 import type { Service } from '@core/entities';
+import type { BookingFlowError } from '@core/errors';
 import {
   BookingCartSystem,
   CatalogPricingSystem,
   OfferingPriceSystem,
-  Selectability,
   ServiceConflictSystem,
   TermsSpanSystem,
 } from '@core/systems';
-import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   CatalogWording,
   ServiceCardComponent,
   ServiceDetailSheetComponent,
   type ServiceVm,
-  termsToVm,
 } from '@creativo/features/shared/catalog';
 import {
   UiAvatar,
@@ -63,9 +64,13 @@ import {
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  translateCodedError,
+  loadedLanguage,
+} from '@creativo/infrastructure/i18n';
 import { BookingBagSheet } from '../bag-sheet/booking-bag-sheet';
 import { BookingFlowStore } from '../booking-flow.store';
+import { BOOKER_SEAT, bookerLabelOf } from '../booking-people.words';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
 import type { SeatScopeVm } from '../seat-scope.vm';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
@@ -158,7 +163,7 @@ export class BookingServicesStep {
   protected readonly SeatKeyRole = SeatKeyRole;
 
   /** Whose lines the catalog is currently adding to. */
-  private readonly activeSeatKey = signal<SeatKeyText>(SELF_SEAT);
+  private readonly activeSeatKey = signal<SeatKeyText>(BOOKER_SEAT);
 
   protected readonly seats = computed<readonly SeatScopeVm[]>(() => {
     const cart = this.store.cart();
@@ -169,14 +174,20 @@ export class BookingServicesStep {
     // "You" produced a "Т" that stands for nothing (owner ruling 2026-07-31).
     const known = this.identity.displayName();
     const self: SeatScopeVm = {
-      key: SELF_SEAT,
+      key: BOOKER_SEAT,
       seatKey: SeatKey.self(),
-      label: known || this.transloco.translate('booking.party.you'),
+      label: bookerLabelOf(
+        known,
+        this.transloco.translate('booking.party.you'),
+      ),
       // A real name reads the same in either position; only the pronoun we
       // fall back to has a case to get wrong.
-      objectLabel: known || this.transloco.translate('booking.party.youObject'),
+      objectLabel: bookerLabelOf(
+        known,
+        this.transloco.translate('booking.party.youObject'),
+      ),
       monogramName: known,
-      lineCount: lineCountFor(SELF_SEAT),
+      lineCount: lineCountFor(BOOKER_SEAT),
       avatarSrc: this.identity.avatarUrl(),
     };
     return [
@@ -220,14 +231,14 @@ export class BookingServicesStep {
   );
 
   /** How many lines of `serviceId` the active seat holds. */
-  protected selectedCountFor(serviceId: string): number {
+  protected selectedCountFor(serviceId: ServiceId): number {
     return this.linesOf(this.activeSeat()).filter(
       (line) => line.serviceId === serviceId,
     ).length;
   }
 
   /** Localized names of everything blocking `serviceId`, empty when free. */
-  protected blockersFor(serviceId: string): readonly string[] {
+  protected blockersFor(serviceId: ServiceId): readonly string[] {
     const candidate = this.catalog.findService(serviceId);
     if (!candidate) return [];
     // The full catalog is passed so a bundle's members resolve and their
@@ -254,11 +265,11 @@ export class BookingServicesStep {
    * `blockersFor` searched the catalogue and built the blockers' view models
    * each time.
    */
-  private readonly blockedIds = computed<ReadonlySet<string>>(() => {
+  private readonly blockedIds = computed<ReadonlySet<ServiceId>>(() => {
     const all = this.catalog.services();
-    const known = new Set<string>(all.map((service) => service.id));
+    const known = new Set<ServiceId>(all.map((service) => service.id));
     const selected = this.selectedServices();
-    return new Set<string>(
+    return new Set<ServiceId>(
       all
         .filter((candidate) => {
           const selectability = ServiceConflictSystem.selectabilityFor(
@@ -276,7 +287,7 @@ export class BookingServicesStep {
     );
   });
 
-  protected isBlocked(serviceId: string): boolean {
+  protected isBlocked(serviceId: ServiceId): boolean {
     return this.blockedIds().has(serviceId);
   }
 
@@ -459,11 +470,37 @@ export class BookingServicesStep {
 
   /**
    * Why the name just typed was not taken — another guest already answers
-   * to it (`DuplicateGuestLabelError`). Said under the row while the field
-   * stays open with what was typed, so the fix is one edit, not a retype;
-   * cleared by the next keystroke.
+   * to it (`SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL`). Said under the row
+   * while the field stays open with what was typed, so the fix is one edit,
+   * not a retype; cleared by the next keystroke. The refusal STRUCT, never
+   * its words (Law 7.5): its params survive, and {@link renameRefusalLine}
+   * words it in the language on screen.
    */
-  protected readonly renameRefusal = signal<string | null>(null);
+  private readonly renameRefusal = signal<BookingFlowError.Failure | null>(
+    null,
+  );
+
+  /**
+   * The language the catalogue has loaded, once it has — read by
+   * {@link renameRefusalLine} so a refusal on screen re-words when the
+   * language switches, and only once the new language's words are there.
+   */
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
+
+  /**
+   * {@link renameRefusal}, worded (`errors.<errorCode>` with the struct's
+   * own params) — in the language on screen, re-worded on a switch while it
+   * shows (pass D, DEP-23: it was worded once, when it was set).
+   */
+  protected readonly renameRefusalLine = computed<string | null>(() => {
+    const refusal = this.renameRefusal();
+    this.loadedLang();
+    return refusal === null
+      ? null
+      : translateCodedError(this.transloco, refusal);
+  });
 
   /**
    * A label two guests already share, or `null`. Only a draft restored from
@@ -498,10 +535,7 @@ export class BookingServicesStep {
     // Refused: the field stays open on what was typed, and the reason is
     // said beside it. Never refocused — a field that grabbed focus back on
     // every blur would be one nobody could leave.
-    const error = this.store.error();
-    this.renameRefusal.set(
-      error ? translateCodedError(this.transloco, error) : null,
-    );
+    this.renameRefusal.set(this.store.error());
   }
 
   /** Bring the scope row into view — it is above the fold only at the top. */
@@ -536,7 +570,7 @@ export class BookingServicesStep {
     if (seat.seatKey.seatKeyRole !== SeatKeyRole.Guest) return;
     // Whoever is left takes the scope — pointing at a person who is gone
     // would leave the catalog adding to nobody.
-    if (this.activeSeat().key === seat.key) this.activeSeatKey.set(SELF_SEAT);
+    if (this.activeSeat().key === seat.key) this.activeSeatKey.set(BOOKER_SEAT);
     this.store.removeGuest(seat.seatKey.guestId);
   }
 
@@ -634,12 +668,12 @@ export class BookingServicesStep {
   // ── The detail sheet, in "add to bag" mode ──────────────────────────
 
   /** The service whose sheet is open (null = shut). */
-  protected readonly detailsId = signal<string | null>(null);
+  protected readonly detailsId = signal<ServiceId | null>(null);
 
   /** The open service, as the catalogue stores it — what its terms are asked of. */
   private readonly detailsService = computed<Service | null>(() => {
     const id = this.detailsId();
-    if (!id) return null;
+    if (id === null) return null;
     return this.catalog.findService(id) ?? null;
   });
 
@@ -651,24 +685,14 @@ export class BookingServicesStep {
   /** The line being edited, when the sheet was opened from the bag. */
   protected readonly editingLineId = signal<CartLineId | null>(null);
 
-  protected readonly draftVariantId = signal<string | null>(null);
-  protected readonly draftBarberId = signal<string | null>(null);
-
-  /** The draft variant as the catalogue's id — `null` for none (or none it could be). */
-  private readonly draftVariant = computed<ServiceVariantId | null>(() => {
-    const raw = this.draftVariantId();
-    if (raw === null) return null;
-    const parsed = ServiceVariantId.parse(raw);
-    return parsed.ok ? parsed.value : null;
-  });
-
-  /** The draft barber as the catalogue's id — `null` for "anyone" (or nobody it could be). */
-  private readonly draftBarberKey = computed<BarberId | null>(() => {
-    const raw = this.draftBarberId();
-    if (raw === null) return null;
-    const parsed = BarberId.parse(raw);
-    return parsed.ok ? parsed.value : null;
-  });
+  /**
+   * The draft's variant and barber, as the catalogue's own ids — every value
+   * is one the catalogue handed this step (a variant of the open service, a
+   * performer of it, or a saved cart line's), so a brand by construction;
+   * `null` is "none chosen" (the barber's: "anyone").
+   */
+  protected readonly draftVariantId = signal<ServiceVariantId | null>(null);
+  protected readonly draftBarberId = signal<BarberId | null>(null);
 
   /**
    * The two selects that sit ON the bar, stacked above the CTA.
@@ -696,18 +720,17 @@ export class BookingServicesStep {
     const barbers = this.catalog.barberVms();
     return CatalogPricingSystem.performersByPrice(
       service,
-      this.draftVariant(),
+      this.draftVariantId(),
     ).flatMap(({ barberId, terms }) => {
       const barber = barbers.find((candidate) => candidate.id === barberId);
       if (!barber) return [];
-      const quoted = termsToVm(terms);
       return [
         {
           id: barber.id,
           name: barber.name,
           avatarSrc: barber.avatarSrc,
-          price: quoted.price,
-          minutes: quoted.minutes,
+          price: Money.fromCents(terms.priceCents, terms.currency),
+          minutes: terms.durationMinutes,
         },
       ];
     });
@@ -745,16 +768,19 @@ export class BookingServicesStep {
   });
 
   /** One line per option: "35 мин · 15,50 €". */
-  protected optionTerms(option: { minutes: number; price: number }): string {
+  protected optionTerms(option: {
+    minutes: DurationMinutes;
+    price: Money;
+  }): string {
     return `${this.content.durationRange(option.minutes, option.minutes)} · ${this.content.price(option.price)}`;
   }
 
-  protected pickVariant(variantId: string): void {
+  protected pickVariant(variantId: ServiceVariantId): void {
     this.draftVariantId.set(variantId);
     this.variantMenuOpen.set(false);
   }
 
-  protected pickBarber(barberId: string | null): void {
+  protected pickBarber(barberId: BarberId | null): void {
     // "Anyone" is `null`, which is also "not asked yet" — so the ANSWER is
     // tracked separately rather than inferred from the value. Without it a
     // user who deliberately chose "anyone" would look identical to one who
@@ -773,7 +799,7 @@ export class BookingServicesStep {
    */
   protected readonly primaryLabel = computed(() => {
     const id = this.detailsId();
-    if (id && this.isBlocked(id)) {
+    if (id !== null && this.isBlocked(id)) {
       return this.transloco.translate('booking.services.replace');
     }
     return this.transloco.translate(
@@ -798,7 +824,7 @@ export class BookingServicesStep {
       person: this.activeSeat().objectLabel,
     };
     const id = this.detailsId();
-    if (id && this.isBlocked(id)) {
+    if (id !== null && this.isBlocked(id)) {
       return this.transloco.translate('booking.services.replaceAria', params);
     }
     return this.transloco.translate(
@@ -852,7 +878,7 @@ export class BookingServicesStep {
   private readonly anyoneSpan = computed(() => {
     const service = this.detailsService();
     return service
-      ? TermsSpanSystem.spanFor(service, this.draftVariant(), null)
+      ? TermsSpanSystem.spanFor(service, this.draftVariantId(), null)
       : null;
   });
 
@@ -863,12 +889,16 @@ export class BookingServicesStep {
     if (!service || !anyone) return null;
     // A NAMED barber who performs it pins their own price; one who does not
     // falls to "anyone", never to the service's own terms.
-    const barberId = this.draftBarberKey();
+    const barberId = this.draftBarberId();
     if (
       barberId !== null &&
       OfferingPriceSystem.isPerformedBy(service, barberId)
     ) {
-      return OfferingPriceSystem.price(service, barberId, this.draftVariant());
+      return OfferingPriceSystem.price(
+        service,
+        barberId,
+        this.draftVariantId(),
+      );
     }
     // "Anyone" quotes the cheapest performer — v2's `price.from` semantics.
     return TermsSpanSystem.priceBounds(anyone).min;
@@ -897,19 +927,10 @@ export class BookingServicesStep {
       !TermsSpanSystem.isPricePoint(anyone)
     ) {
       const bounds = TermsSpanSystem.priceBounds(anyone);
-      return `${this.money(bounds.min)} – ${this.money(bounds.max)}`;
+      return `${this.content.price(bounds.min)} – ${this.content.price(bounds.max)}`;
     }
-    return this.money(price);
+    return this.content.price(price);
   });
-
-  /** A struct amount in the locale's words — the bag's one money formatter. */
-  private money(amount: Money): string {
-    return formatCents(
-      amount.amountCents,
-      amount.currency,
-      this.content.locale(),
-    );
-  }
 
   /** Drop this line and leave — the way OUT of a service already chosen. */
   protected removeOpenLine(): void {
@@ -919,7 +940,7 @@ export class BookingServicesStep {
     this.closeDetails();
   }
 
-  protected openDetails(serviceId: string): void {
+  protected openDetails(serviceId: ServiceId): void {
     // A service this person ALREADY has opens for editing, not for a second
     // add. One person cannot have two of the same service, so "add again" is
     // not a thing the sheet could do — and a press that silently changed
@@ -990,7 +1011,7 @@ export class BookingServicesStep {
   protected confirm(): void {
     if (!this.canAdd()) return;
     const id = this.detailsId();
-    if (id && this.isBlocked(id)) {
+    if (id !== null && this.isBlocked(id)) {
       this.replaceBlockers();
       return;
     }
@@ -1005,7 +1026,7 @@ export class BookingServicesStep {
   protected replaceBlockers(): void {
     const candidate = this.detailsService();
     if (!candidate || !this.canAdd()) return;
-    const blocking = new Set<string>(
+    const blocking = new Set<ServiceId>(
       ServiceConflictSystem.conflictingWith(
         this.selectedServices(),
         candidate,
@@ -1023,28 +1044,12 @@ export class BookingServicesStep {
   }
 
   protected addLine(): void {
-    const id = this.detailsId();
-    if (!id || !this.canAdd()) return;
+    const serviceId = this.detailsId();
+    if (serviceId === null || !this.canAdd()) return;
 
-    const serviceId = ServiceId.parse(id);
-    if (!serviceId.ok) return;
-
-    const rawVariantId = this.draftVariantId();
-    let variantId: ServiceVariantId | null = null;
-    if (rawVariantId !== null) {
-      const parsed = ServiceVariantId.parse(rawVariantId);
-      if (!parsed.ok) return;
-      variantId = parsed.value;
-    }
-
+    const variantId = this.draftVariantId();
     // `null` is "anyone" — a barber pinned by name is a SPECIFIC preference.
-    let barberId: BarberId | null = null;
-    const rawBarberId = this.draftBarberId();
-    if (rawBarberId !== null) {
-      const parsed = BarberId.parse(rawBarberId);
-      if (!parsed.ok) return;
-      barberId = parsed.value;
-    }
+    const barberId = this.draftBarberId();
 
     const seatKey = this.activeSeat().key;
     const editing = this.editingLineId();
@@ -1055,7 +1060,7 @@ export class BookingServicesStep {
       this.store.setLineBarber(seatKey, editing, barberId);
     } else {
       this.store.addLine(seatKey, {
-        serviceId: serviceId.value,
+        serviceId,
         variantId,
         barberId,
         // Searched wherever the flow's own shop says, never pinned per line.
@@ -1090,6 +1095,3 @@ export class BookingServicesStep {
     this.bagOpen.set(false);
   }
 }
-
-/** The booker's own cart seat key — the scope a step opens on. */
-const SELF_SEAT: SeatKeyText = SeatKey.text(SeatKey.self());

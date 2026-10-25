@@ -1,14 +1,14 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { LocalDate, MinuteOfDay } from '@core/primitives';
 import type {
   CancelledSide,
   VisitRowOutcome as EcsVisitRowOutcome,
-} from '@core/systems';
+} from '@core/components';
+import { LocalDate, MinuteOfDay, WaitlistRequestId } from '@core/primitives';
 import { visitFilterWords } from '@creativo/infrastructure/i18n';
+import type { VisitLookup } from './visit-lookup.contracts';
 import {
   TrailingFactFace,
   VisitFilter,
-  type VisitLookup,
   VisitRowEntry,
   type VisitRowNameParts,
   type VisitRowVm,
@@ -117,7 +117,7 @@ describe('visit row view model', () => {
 
   it('draws a waitlist row with a glyph in place of the tile', () => {
     const waiting = {
-      id: 'waitlist-1',
+      id: WaitlistRequestId.of('waitlist-1'),
       visitRowEntry: VisitRowEntry.Waitlist,
       localDate: LocalDate.fromEpochDay(20_727),
       startMinutes: MinuteOfDay.ofProven(0),

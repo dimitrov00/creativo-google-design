@@ -6,11 +6,7 @@ import {
   ParsedIdentifier,
 } from '@core/components';
 import { type OtpId, Result } from '@core/primitives';
-import {
-  IdentityError,
-  type PipelineError,
-  type RepositoryError,
-} from '@core/errors';
+import { IdentityError, type RequestOtpError } from '@core/errors';
 import type {
   AuthDeploymentPorts,
   ClockPorts,
@@ -77,9 +73,6 @@ export type RequestOtpAnswer = {
   /** The code drawn for this challenge — for the emulator's `devCode` only. */
   readonly rawCode: string;
 };
-
-/** A refusal (`IdentityError`), a store failure, or a failed delivery. */
-export type RequestOtpError = IdentityError | RepositoryError | PipelineError;
 
 export const requestOtp =
   (ports: RequestOtpPorts) =>

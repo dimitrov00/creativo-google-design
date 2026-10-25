@@ -39,6 +39,8 @@ import type {
   WaitlistStatus,
   Weekday,
 } from '@core/primitives';
+import type { CatalogError } from './catalog.error';
+import type { RepositoryError } from './repository.error';
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */
 export const SchedulingErrorCode = {
@@ -570,3 +572,13 @@ export namespace SchedulingError {
     readonly exceptionKind: ExceptionEffect;
   };
 }
+
+/**
+ * Why a staff block write did not land (`StaffDayStore.absenceError`, pass D
+ * §2.3/§2.9): the block pipelines' own answers as they answer
+ * (`writeScheduleBlocks` / `clearScheduleBlock` — a scheduling refusal or a
+ * repository failure), or `CATALOG_LOCATION_ZONE_UNKNOWN` when neither the
+ * shop nor the day names a zone to read the block's day in.
+ */
+export type StaffBlockFailure =
+  SchedulingError | RepositoryError | CatalogError.LocationZoneUnknown;

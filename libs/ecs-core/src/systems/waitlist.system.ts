@@ -188,6 +188,21 @@ function windowOf(
     : null;
 }
 
+/**
+ * What a request's id is the hash of, read off its body — the owner, the
+ * shop, the normalized days and the bag ({@link WaitlistSystem.idBasis}). A
+ * whole stored body passes straight in. Named once (pass D): the pipeline's
+ * `waitlistRequestIdOf` takes the same shape.
+ */
+export type WaitlistIdBasis = Pick<
+  WaitlistRequest,
+  | 'ownerUserId'
+  | 'locationId'
+  | 'flexibleDays'
+  | 'cartSeats'
+  | 'cartNextSequence'
+>;
+
 /** What a request's id basis keeps of a cart line: its ids, in this order. */
 type BasisLine = Pick<
   CartLine,
@@ -329,16 +344,7 @@ export const WaitlistSystem = {
    * windows as `MinuteRange` integers, each line's ids. The pipeline mints
    * `wl_` + the first 40 hex of `hash(basis)`.
    */
-  idBasis(
-    body: Pick<
-      WaitlistRequest,
-      | 'ownerUserId'
-      | 'locationId'
-      | 'flexibleDays'
-      | 'cartSeats'
-      | 'cartNextSequence'
-    >,
-  ): string {
+  idBasis(body: WaitlistIdBasis): string {
     const flexibleDays: {
       readonly localDate: LocalDate;
       readonly windows: readonly {

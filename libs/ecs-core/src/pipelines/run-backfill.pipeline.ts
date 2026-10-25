@@ -18,8 +18,10 @@ import {
   type AuditAction,
   AuditContext,
   type BackfillCall,
+  BackfillCallEnd,
   BackfillJobName,
   BackfillOutcome,
+  BackfillPhase,
   ClientStatsPolicy,
   Role,
   WriteOp,
@@ -47,7 +49,6 @@ import {
   AuditSystem,
   type BackfillCounts,
   type BackfillPageWalk,
-  BackfillPhase,
   BackfillPlanSystem,
   type BackfillRequest,
   ClientStatsSystem,
@@ -156,26 +157,23 @@ type SampleDiff = {
   readonly mismatched: readonly CustomerId[];
 };
 
-/** How a call ended — the ONLY source of these strings, the field `callEnd`. */
-const CallEnd = {
-  Returned: 'RETURNED',
-  Failed: 'FAILED',
-} as const;
-
-/** How a call ended, for its audit row. */
+/** How a call ended, for its audit row — tagged by `BackfillCallEnd` (a component). */
 type Ended =
   | {
-      readonly callEnd: typeof CallEnd.Returned;
+      readonly backfillCallEnd: typeof BackfillCallEnd.Returned;
       readonly result: BackfillCall.Page;
     }
-  | { readonly callEnd: typeof CallEnd.Failed; readonly failureCode: string };
+  | {
+      readonly backfillCallEnd: typeof BackfillCallEnd.Failed;
+      readonly failureCode: string;
+    };
 
 /** The audit context of how a call ended — ids, counts and codes only (T5). */
 function backfillContext(
   backfillJobName: BackfillJobName,
   ended: Ended,
 ): AuditContext {
-  if (ended.callEnd === CallEnd.Failed) {
+  if (ended.backfillCallEnd === BackfillCallEnd.Failed) {
     return AuditContext.backfill({
       backfillJobName,
       backfillOutcome: BackfillOutcome.Failed,
@@ -639,7 +637,7 @@ export const runBackfill = (
           resourceId: resourceId.value,
           subjects: [],
           changeKey:
-            ended.callEnd === CallEnd.Returned
+            ended.backfillCallEnd === BackfillCallEnd.Returned
               ? AuditSystem.backfillChangeKey(ended.result, cmd.actor)
               : null,
           context: backfillContext(backfillJobName, ended),
@@ -690,11 +688,14 @@ export const runBackfill = (
     try {
       const paged = await page(request, budget);
       if (paged.ok) {
-        ended = { callEnd: CallEnd.Returned, result: paged.value };
+        ended = {
+          backfillCallEnd: BackfillCallEnd.Returned,
+          result: paged.value,
+        };
         return paged;
       }
       ended = {
-        callEnd: CallEnd.Failed,
+        backfillCallEnd: BackfillCallEnd.Failed,
         failureCode: failureCodeOf(paged.error),
       };
       if (RepositoryError.guard(paged.error)) return Result.err(paged.error);
@@ -702,14 +703,17 @@ export const runBackfill = (
       // on to the edge, as it was thrown.
       throw paged.error;
     } catch (error) {
-      ended ??= { callEnd: CallEnd.Failed, failureCode: failureCodeOf(error) };
+      ended ??= {
+        backfillCallEnd: BackfillCallEnd.Failed,
+        failureCode: failureCodeOf(error),
+      };
       throw error;
     } finally {
       await auditCall(
         cmd,
         request.backfillJobName,
         ended ?? {
-          callEnd: CallEnd.Failed,
+          backfillCallEnd: BackfillCallEnd.Failed,
           failureCode: TriggerAttemptSystem.UNKNOWN_CODE,
         },
       );

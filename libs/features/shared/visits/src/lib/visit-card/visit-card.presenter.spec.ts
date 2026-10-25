@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Appointment } from '@core/entities';
-import { type Seat, SeatOutcome } from '@core/components';
-import { VisitGrain, VisitPerspective } from '@core/systems';
+import {
+  type Seat,
+  SeatOutcome,
+  VisitGrain,
+  VisitPerspective,
+} from '@core/components';
+import { AppointmentPhotoId } from '@core/primitives';
 import { FIXTURE_TODAY } from '@core/testing';
 import { appCatalogue } from '../testing/app-catalogue';
 import {
@@ -25,11 +30,8 @@ import {
   visitWordsOf,
   waitlistRowOf,
 } from '../visit-row.presenter';
-import {
-  TrailingFactFace,
-  type VisitLookup,
-  type VisitWords,
-} from '../visit-row.vm';
+import type { VisitLookup } from '../visit-lookup.contracts';
+import { TrailingFactFace, type VisitWords } from '../visit-row.vm';
 import { visitCardOf, waitlistCardOf } from './visit-card.presenter';
 import {
   type VisitCardOptions,
@@ -244,7 +246,7 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
     const photos = GEORGI_PHOTOS.filter(
       (photo) => photo.appointmentId === 'appt-aug',
     ).map((photo) => ({
-      id: photo.id as string,
+      id: photo.id,
       url: photo.url,
       takenAtUtcMs: photo.takenAtUtcMs,
     }));
@@ -268,7 +270,7 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
     ]);
     const many = [...photos, ...photos].map((photo, index) => ({
       ...photo,
-      id: `photo-${index}`,
+      id: AppointmentPhotoId.of(`photo-${index}`),
     }));
     expect(
       staffCard(visit('appt-aug'), VisitCardSlot.Last, {

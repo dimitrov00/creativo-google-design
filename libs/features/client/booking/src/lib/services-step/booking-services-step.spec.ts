@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { Translation } from '@jsverse/transloco';
+import { type Translation, TranslocoService } from '@jsverse/transloco';
+import { firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CATALOG_PORTS,
@@ -440,6 +441,56 @@ describe('BookingServicesStep', () => {
       'Guest 1',
       'Maria',
     ]);
+  });
+
+  // pass D, DEP-23: the refusal is held as its struct and worded where it
+  // shows, so a language switch while it is on screen re-words it (it was
+  // worded once, when it was set, and stayed in the language it was raised
+  // in until the next one). In that language the line is unchanged.
+  it('re-words a rename refusal on screen in the language switched to', async () => {
+    const fixture = await toServices();
+    const transloco = TestBed.inject(TranslocoService);
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    click(fixture, 'booking-add-guest');
+    await settle();
+    click(fixture, 'booking-add-guest');
+    await settle();
+    click(fixture, 'booking-seat-guest-1');
+    await settle();
+    click(fixture, 'booking-seat-rename-open-guest-1');
+    await settle();
+    const field = () =>
+      host(fixture).querySelector<HTMLInputElement>(
+        '[data-testid="booking-seat-rename-guest-1"]',
+      );
+    const refusal = () =>
+      host(fixture).querySelector('[data-testid="booking-seat-rename-error"]');
+    const input = field();
+    if (!input) throw new Error('the rename field is not open');
+    input.value = 'Guest 1';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    input.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    // Raised in bg: the bg line, with the struct's own `label`.
+    expect(refusal()?.textContent?.trim()).toBe('TAKEN:Guest 1');
+
+    // The en catalogue loaded, with its own line; then the switch.
+    await firstValueFrom(transloco.load('en'));
+    transloco.setTranslationKey(
+      'errors.SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
+      'EN-TAKEN:{{label}}',
+      { lang: 'en' },
+    );
+    transloco.setActiveLang('en');
+    await settle();
+
+    expect(refusal()?.textContent?.trim()).toBe('EN-TAKEN:Guest 1');
+    expect(field()?.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('holds Continue and names the label when a restored draft brings two guests back under one name', async () => {

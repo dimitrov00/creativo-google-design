@@ -4,6 +4,7 @@ import { CancellationRefusalCode } from './cancellation.error';
 import { IdentityErrorCode } from './identity.error';
 import { MoveErrorCode } from './move.error';
 import {
+  HttpsStatus,
   PipelineError,
   PipelineErrorCode,
   WIRE_PARAM_ALLOWLIST,
@@ -558,5 +559,67 @@ describe('PipelineError.serverParams — bounded by the per-code allowlist (§10
         reason: 'boom',
       }).serverParams,
     ).toEqual({});
+  });
+});
+
+describe('HttpsStatus — the wire status, parsed once', () => {
+  /** Firebase's `FunctionsErrorCodeCore`, verbatim (`@firebase/functions`). */
+  const FIREBASE_STATUSES = [
+    'ok',
+    'cancelled',
+    'unknown',
+    'invalid-argument',
+    'deadline-exceeded',
+    'not-found',
+    'already-exists',
+    'permission-denied',
+    'resource-exhausted',
+    'failed-precondition',
+    'aborted',
+    'out-of-range',
+    'unimplemented',
+    'internal',
+    'unavailable',
+    'data-loss',
+    'unauthenticated',
+  ];
+
+  it('spells exactly Firebase’s seventeen statuses — an external contract, not SCREAMING', () => {
+    expect([...Object.values(HttpsStatus)].sort()).toEqual(
+      [...FIREBASE_STATUSES].sort(),
+    );
+    expect(new Set(Object.values(HttpsStatus)).size).toBe(17);
+  });
+
+  it.each(FIREBASE_STATUSES)(
+    'reads %s, bare or in the SDK’s functions/ spelling, as that status',
+    (status) => {
+      expect(PipelineError.fromWire(status, {}).wireStatus).toBe(status);
+      expect(PipelineError.fromWire(`functions/${status}`, {}).wireStatus).toBe(
+        status,
+      );
+    },
+  );
+
+  it('classifies a status outside the vocabulary (never handed by the SDK) as before — unknown, no status', () => {
+    for (const raw of [
+      '',
+      'functions/',
+      'teapot',
+      'functions/teapot',
+      'INTERNAL',
+    ]) {
+      const error = PipelineError.fromWire(raw, {});
+      expect(error.errorCode).toBe(P.Unknown);
+      expect(error.wireStatus).toBeNull();
+    }
+  });
+
+  it('is pure — the same status, the same answer', () => {
+    const details = { errorCode: 'SOME_OTHER_CODE' };
+    expect(PipelineError.fromWire('functions/internal', details)).toEqual(
+      PipelineError.fromWire('functions/internal', details),
+    );
+    expect(details).toEqual({ errorCode: 'SOME_OTHER_CODE' });
   });
 });

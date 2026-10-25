@@ -20,6 +20,7 @@ export * from './price-cents.primitive';
 export * from './primitive.error';
 export * from './redirect-path.primitive';
 export * from './result.data';
+export * from './tag.data';
 export * from './time-zone.primitive';
 export * from './utc-epoch-ms.primitive';
 export * from './voucher-refusal.data';

@@ -30,6 +30,8 @@ import {
   MinuteBlock,
   SeatArrangement,
   ShopCoverage,
+  BookingFlowEventKind,
+  PrefillCompanions,
 } from '@core/components';
 import {
   AppointmentId,
@@ -78,9 +80,8 @@ import {
   type DayDocs,
   type DayQuery,
   type PrefillSeat,
-  PrefillCompanions,
 } from './booking-cart.system';
-import { BookingFlowEventKind, BookingFlowSystem } from './booking-flow.system';
+import { BookingFlowSystem } from './booking-flow.system';
 import { RosterSystem } from './roster.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 import cartSystemSource from './booking-cart.system.ts?raw';

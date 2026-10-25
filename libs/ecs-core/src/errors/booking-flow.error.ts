@@ -1,5 +1,6 @@
 import type { GuestId, SeatKeyText } from '@core/primitives';
-import type { SchedulingError } from './scheduling.error';
+import type { PipelineError } from './pipeline.error';
+import type { SchedulingError, SchedulingErrorCode } from './scheduling.error';
 
 /**
  * What the booking wizard (`BookingFlowSystem.next`) can refuse — the
@@ -60,7 +61,7 @@ export const BookingFlowError = {
     return { errorCode: BookingFlowErrorCode.InvalidTransition, from, event };
   },
   /** `reasonCode` is the code of the label refusal underneath. */
-  invalidGuest(reasonCode: string): BookingFlowError.InvalidGuest {
+  invalidGuest(reasonCode: SchedulingErrorCode): BookingFlowError.InvalidGuest {
     return { errorCode: BookingFlowErrorCode.InvalidGuest, reasonCode };
   },
   guestNotFound(guestId: GuestId): BookingFlowError.GuestNotFound {
@@ -85,7 +86,7 @@ export const BookingFlowError = {
   },
   /** `reasonCode` is the cart refusal's code (`SCHEDULING_BOOKING_CART_*`). */
   invalidCartOperation(
-    reasonCode: string,
+    reasonCode: SchedulingErrorCode,
   ): BookingFlowError.InvalidCartOperation {
     return {
       errorCode: BookingFlowErrorCode.InvalidCartOperation,
@@ -110,7 +111,7 @@ export namespace BookingFlowError {
   };
   export type InvalidGuest = {
     readonly errorCode: typeof BookingFlowErrorCode.InvalidGuest;
-    readonly reasonCode: string;
+    readonly reasonCode: SchedulingErrorCode;
   };
   export type GuestNotFound = {
     readonly errorCode: typeof BookingFlowErrorCode.GuestNotFound;
@@ -136,6 +137,11 @@ export namespace BookingFlowError {
   };
   export type InvalidCartOperation = {
     readonly errorCode: typeof BookingFlowErrorCode.InvalidCartOperation;
-    readonly reasonCode: string;
+    readonly reasonCode: SchedulingErrorCode;
   };
+  /**
+   * What the booking flow can be refused with (pass D, D-9.1 — was the
+   * store's `BookingFlowFailure`): the machine's own word, or a call's.
+   */
+  export type Failure = BookingFlowError | PipelineError;
 }

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import type { LocationId } from '@core/primitives';
+import { LocationId } from '@core/primitives';
 import {
   CatalogContentService,
   CatalogWording,
@@ -174,9 +174,12 @@ export class BookingLocationStep {
 
   /** A pin tap selects its row — the map and the list are one selection. */
   protected selectPin(pinId: string): void {
+    // The DS map hands back its pin's generic id; every pin was built from a
+    // catalogue shop's id (`pins`), so it IS a `LocationId` by construction.
+    const locationId = LocationId.of(pinId);
     const shop = this.catalog
       .locations()
-      .find((candidate) => candidate.id === pinId);
+      .find((candidate) => candidate.id === locationId);
     if (!shop) return;
     this.store.selectLocation(shop.id);
     this.detent.set('medium');

@@ -4,6 +4,7 @@ import {
   AuditAction,
   AuditContext,
   AuditTargetRef,
+  type RegistrationField,
   SystemSource,
 } from '@core/components';
 import {
@@ -71,7 +72,10 @@ function rig(
 }
 
 /** The row a profile update by its owner writes, built by hand. */
-function rowOf(eventId: string, fields: readonly string[]): AuditEntry {
+function rowOf(
+  eventId: string,
+  fields: readonly RegistrationField[],
+): AuditEntry {
   const resourceId = AuditResourceId.forUser(OWNER);
   return {
     id: AuditEntryId.of(

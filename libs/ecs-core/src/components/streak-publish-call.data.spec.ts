@@ -3,11 +3,9 @@ import { PublishRequestId, StreakDefinitionId } from '@core/primitives';
 import { StreakPublishError } from '@core/errors';
 import { localDate } from '@core/testing';
 import { StreakPublishCall } from './streak-publish-call.data';
-import {
-  StreakRule,
-  StreakRuleDirection,
-  StreakTransition,
-} from './streak-rule.data';
+import { StreakRuleDirection } from './streak-rule-direction.data';
+import { StreakRule } from './streak-rule.data';
+import { StreakTransition } from './streak-transition.data';
 
 const REQUEST = PublishRequestId.of('req-1');
 const CADENCE = StreakDefinitionId.of('cadence');

@@ -32,6 +32,7 @@ import {
   EngagementError,
   EngagementErrorCode,
   GovernanceError,
+  HttpsStatus,
   IdentityError,
   IdentityErrorCode,
   type MoveCarriedSeatUnplaceable,
@@ -50,11 +51,10 @@ import {
   WaitlistError,
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
-import { ResizeEdge } from '@core/components';
+import { AttemptOutcome, ResizeEdge } from '@core/components';
 import { Callables, type TelemetryPorts } from '@core/ports';
 import {
   type AttemptLine,
-  AttemptOutcome,
   WorkBudgetSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -63,7 +63,6 @@ import {
   EDGE_DICTIONARIES,
   EDGE_WIRE,
   type EdgeError,
-  HttpsStatus,
   NamedField,
   PLATFORM_TIMEOUT_SECONDS,
   WireShape,
@@ -297,17 +296,13 @@ function ecsErrorDictionaryNames(): readonly string[] {
 
 /**
  * Codes the callables RETURN — never thrown: the streak publish's rule
- * refusals and its caller who is no admin. A caller without a session is
- * THROWN `unauthenticated` (`CallerUnauthenticated` is not here).
+ * refusals and its caller who is no admin, read from their ONE spelling
+ * (`StreakPublishError.ANSWERED_CODES`, `@core/errors`). A caller without a
+ * session is THROWN `unauthenticated` (`CallerUnauthenticated` is not there).
  */
-const ANSWERED: ReadonlySet<string> = new Set([
-  StreakPublishErrorCode.Stale,
-  StreakPublishErrorCode.Invalid,
-  StreakPublishErrorCode.TooEarly,
-  StreakPublishErrorCode.RecomputeNeedsEngine,
-  StreakPublishErrorCode.PreviewStale,
-  StreakPublishErrorCode.CallerNotAdmin,
-]);
+const ANSWERED: ReadonlySet<string> = new Set(
+  StreakPublishError.ANSWERED_CODES,
+);
 
 /** What must stay on the server unless a code's own allowlist names it (R14). */
 const SERVER_ONLY = ['detail', 'reason', 'path', 'violations', 'junk'] as const;
@@ -1177,7 +1172,7 @@ describe('edge — the wrappers', () => {
   it('workBudget starts on the clock it is given and is spent at its limit', () => {
     let now = 10;
     const budget = workBudget(() => utc(now), 100);
-    expect(budget).toMatchObject({ startedMs: 10, limitMs: 100 });
+    expect(budget).toMatchObject({ startedAtUtcMs: 10, limitMs: 100 });
     now = 109;
     expect(budget.spent()).toBe(false);
     now = 110;

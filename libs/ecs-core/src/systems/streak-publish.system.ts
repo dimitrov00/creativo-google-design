@@ -11,6 +11,7 @@ import { type EngagementError, StreakPublishError } from '@core/errors';
 import {
   type Actor,
   AuditContext,
+  DraftAssessment,
   HeadRole,
   type LocalizedText,
   StreakPublishCall,
@@ -52,15 +53,7 @@ import {
  * document is never written twice.
  */
 
-/** What a draft comes to — the assessment's discriminator `draftAssessment`, the ONLY source of these strings. */
-export const DraftAssessment = {
-  Valid: 'VALID',
-  Invalid: 'INVALID',
-} as const;
-export type DraftAssessment =
-  (typeof DraftAssessment)[keyof typeof DraftAssessment];
-
-/** What a draft comes to, before anything is sent. */
+/** What a draft comes to, before anything is sent (system I/O: the valid variant names a {@link StreakRuleChange}). */
 export type StreakDraftAssessment =
   | {
       readonly draftAssessment: typeof DraftAssessment.Valid;

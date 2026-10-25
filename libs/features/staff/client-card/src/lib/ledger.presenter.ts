@@ -1,5 +1,11 @@
 import type { JournalEntry } from '@core/entities';
-import { type JournalEntryId, type TierId, defect } from '@core/primitives';
+import {
+  type AppointmentId,
+  type JournalEntryId,
+  type LocalDate,
+  type TierId,
+  defect,
+} from '@core/primitives';
 import {
   JournalEffectRecord,
   type JournalFeed,
@@ -27,11 +33,12 @@ import {
 import {
   type ActivityGroupVm,
   type ActivityRowVm,
+  ActivityTone,
   type LedgerPageVm,
   type LedgerPagingVm,
 } from './client-pages.vm';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
-import type { ClientCardWords } from './client-card.words';
+import { type ClientCardWords, LedgerVerbWord } from './client-card.words';
 
 /*
  * «ДВИЖЕНИЕ» — the journal as a feed (client-card-revision-3 §2.2.5,
@@ -103,26 +110,43 @@ export function wholeMonthsOf(
 
 // ── 2 · Rows ────────────────────────────────────────────────────────────
 
+/**
+ * What the history's rows say of each worked visit, by its APPOINTMENT and
+ * by its shop day — two key spaces, two maps: a row asks for its
+ * appointment first, then for its day.
+ */
+export interface VisitNames {
+  readonly byAppointment: ReadonlyMap<AppointmentId, string>;
+  readonly byDay: ReadonlyMap<LocalDate, string>;
+}
+
+/** No visit named at all: every visit row reads «Посещение». */
+export const NO_VISIT_NAMES: VisitNames = {
+  byAppointment: new Map(),
+  byDay: new Map(),
+};
+
 export interface ActivityInput {
   /**
    * What a worked visit was, as the history's rows title it («Фейд ·
-   * Оформяне на брада»), by the APPOINTMENT's id or by the visit's shop day
-   * (`YYYY-MM-DD`): a row asks for its appointment first, then for its
-   * day. A visit the map does not know reads «Посещение».
+   * Оформяне на брада»), by the APPOINTMENT's id or by the visit's shop
+   * day: a row asks for its appointment first, then for its day. A visit
+   * the maps do not know reads «Посещение».
    */
-  readonly visitTitles: ReadonlyMap<string, string>;
+  readonly visitTitles: VisitNames;
   /**
    * Who did it («Иван», «Иван и Никола»), under the same keys. Absent, or
    * without the visit, the row's line is its date alone.
    */
-  readonly visitBarbers?: ReadonlyMap<string, string>;
+  readonly visitBarbers?: VisitNames;
   /**
    * The loyalty catalogue, which names a family, a reward and a tier;
    * `null` until it is read: a row whose subject cannot be named is
    * titled by what happened («Бонус», «Използвани», «Нов статус»).
    */
   readonly catalog: ValidLoyaltyCatalog | null;
-  readonly today: string;
+  /** The shop calendar's today, on the shop's zone. */
+  readonly today: LocalDate;
   /** The months that are wholly loaded (`wholeMonthsOf`): only they print a net. */
   readonly wholeMonths: ReadonlySet<string>;
   /**
@@ -226,19 +250,19 @@ function levelDraft(
   // A level that paid nothing is no «Бонус»: its source is the sentence,
   // and a family nobody can name is titled by what it is.
   const verb = paid
-    ? ledger.verb('bonus')
+    ? ledger.verb(LedgerVerbWord.Bonus)
     : spoken === null
       ? capitalised(ledger.achievement, words.lang)
       : null;
   return {
     ...DRAFT,
     icon: 'loyalty.activity.level',
-    tone: 'accent',
+    tone: ActivityTone.Accent,
     verb,
     named,
     spoken,
     after: revoked
-      ? runningCase(ledger.verb('voided'), words.lang)
+      ? runningCase(ledger.verb(LedgerVerbWord.Voided), words.lang)
       : named === null && !paid
         ? null
         : ledger.achievement,
@@ -248,7 +272,7 @@ function levelDraft(
 /** A row that compensates another: «Анулирано», and the row it takes back. */
 function reversalDraft(
   entry: JournalEntry,
-  originals: ReadonlyMap<string, JournalEntry>,
+  originals: ReadonlyMap<JournalEntryId, JournalEntry>,
   input: ActivityInput,
 ): RowDraft {
   const { words, today } = input;
@@ -259,8 +283,8 @@ function reversalDraft(
   return {
     ...DRAFT,
     icon: 'loyalty.activity.reversed',
-    tone: 'neutral',
-    verb: words.ledger.verb('reversed'),
+    tone: ActivityTone.Neutral,
+    verb: words.ledger.verb(LedgerVerbWord.Reversed),
     before:
       day === null
         ? null
@@ -281,20 +305,23 @@ function visitDraft(
 ): RowDraft {
   const ledger = input.words.ledger;
   // The visit is the entry's own (`appointmentId`), then its event's day.
-  const keys = [entry.appointmentId, event.localDate].filter(
-    (key): key is NonNullable<typeof key> => key !== null,
-  );
-  const found = (names: ReadonlyMap<string, string> | undefined) =>
-    keys
-      .map((key) => names?.get(key)?.trim() ?? '')
+  const appointmentId = entry.appointmentId;
+  const found = (names: VisitNames | undefined) =>
+    [
+      appointmentId === null
+        ? ''
+        : (names?.byAppointment.get(appointmentId) ?? ''),
+      names?.byDay.get(event.localDate) ?? '',
+    ]
+      .map((name) => name.trim())
       .find((name) => name !== '') ?? null;
   const services = found(input.visitTitles);
   const barbers = found(input.visitBarbers);
   return {
     ...DRAFT,
     icon: 'loyalty.activity.visit',
-    tone: 'accent',
-    verb: ledger.verb('earned'),
+    tone: ActivityTone.Accent,
+    verb: ledger.verb(LedgerVerbWord.Earned),
     named: services ?? ledger.visit,
     spoken: services === null ? ledger.visit : ledger.visitOf(services),
     after: barbers,
@@ -307,8 +334,8 @@ function adjustedDraft(source: string, input: ActivityInput): RowDraft {
   return {
     ...DRAFT,
     icon: 'loyalty.activity.adjusted',
-    tone: 'neutral',
-    verb: input.words.ledger.verb('adjusted'),
+    tone: ActivityTone.Neutral,
+    verb: input.words.ledger.verb(LedgerVerbWord.Adjusted),
     named: source,
     spoken: source,
   };
@@ -321,8 +348,8 @@ function spentDraft(entry: JournalEntry, input: ActivityInput): RowDraft {
   return {
     ...DRAFT,
     icon: 'loyalty.activity.redeemed',
-    tone: 'neutral',
-    verb: ledger.verb('spent'),
+    tone: ActivityTone.Neutral,
+    verb: ledger.verb(LedgerVerbWord.Spent),
     named: reward,
     spoken: reward === null ? null : ledger.redemption(reward),
     after: ledger.redeemed,
@@ -337,12 +364,14 @@ function lapsedDraft(entry: JournalEntry, input: ActivityInput): RowDraft {
   return {
     ...DRAFT,
     icon: 'loyalty.activity.expired',
-    tone: 'neutral',
-    verb: ledger.verb('expired'),
+    tone: ActivityTone.Neutral,
+    verb: ledger.verb(LedgerVerbWord.Expired),
     named: reward,
     spoken: reward,
     after:
-      reward === null ? null : runningCase(ledger.verb('expired'), words.lang),
+      reward === null
+        ? null
+        : runningCase(ledger.verb(LedgerVerbWord.Expired), words.lang),
   };
 }
 
@@ -359,8 +388,10 @@ function rewardDraft(
   return {
     ...DRAFT,
     icon: 'loyalty.activity.granted',
-    tone: 'accent',
-    verb: revoked ? capitalised(happened, words.lang) : ledger.verb('received'),
+    tone: ActivityTone.Accent,
+    verb: revoked
+      ? capitalised(happened, words.lang)
+      : ledger.verb(LedgerVerbWord.Received),
     named: reward,
     spoken: reward,
     // The verb titles a reward nobody can name: its line is the date.
@@ -381,8 +412,8 @@ function tierDraft(
   return {
     ...DRAFT,
     icon: 'loyalty.activity.tier',
-    tone: 'accent',
-    verb: ledger.verb('status'),
+    tone: ActivityTone.Accent,
+    verb: ledger.verb(LedgerVerbWord.Status),
     named: title,
     spoken: title,
     after: origin,
@@ -397,7 +428,7 @@ function tierDraft(
 function draftOf(
   event: ActivityEvent,
   leading: JournalEntry,
-  originals: ReadonlyMap<string, JournalEntry>,
+  originals: ReadonlyMap<JournalEntryId, JournalEntry>,
   input: ActivityInput,
 ): RowDraft {
   const ledger = input.words.ledger;
@@ -430,15 +461,15 @@ function draftOf(
       return {
         ...DRAFT,
         icon: 'loyalty.activity.expired',
-        tone: 'neutral',
-        verb: ledger.verb('expired'),
+        tone: ActivityTone.Neutral,
+        verb: ledger.verb(LedgerVerbWord.Expired),
       };
     case LedgerLine.DebtCleared:
       return {
         ...DRAFT,
         icon: 'loyalty.activity.adjusted',
-        tone: 'neutral',
-        verb: ledger.verb('debtCleared'),
+        tone: ActivityTone.Neutral,
+        verb: ledger.verb(LedgerVerbWord.DebtCleared),
       };
     case LedgerLine.Correction:
       return adjustedDraft(ledger.correction, input);
@@ -447,7 +478,7 @@ function draftOf(
 
 function rowOf(
   event: ActivityEvent,
-  originals: ReadonlyMap<string, JournalEntry>,
+  originals: ReadonlyMap<JournalEntryId, JournalEntry>,
   voided: ReadonlySet<JournalEntryId>,
   input: ActivityInput,
 ): ActivityRowVm | null {
@@ -460,7 +491,7 @@ function rowOf(
   const day = event.localDate;
   const struck = LedgerSystem.isStruck(event, voided);
   const cancelled = struck
-    ? runningCase(words.ledger.verb('voided'), lang)
+    ? runningCase(words.ledger.verb(LedgerVerbWord.Voided), lang)
     : null;
   // The row's day says no year: the month heading over it owns one (a
   // reversed entry's day, another month's, keeps its own).
@@ -478,7 +509,8 @@ function rowOf(
     entryId: event.id,
     icon: draft.icon,
     tone: draft.tone,
-    title: draft.named ?? draft.verb ?? words.ledger.verb('adjusted'),
+    title:
+      draft.named ?? draft.verb ?? words.ledger.verb(LedgerVerbWord.Adjusted),
     lines: [hold !== null && text.endsWith(hold) ? { text, hold } : { text }],
     struck,
     amount,
@@ -512,7 +544,7 @@ export function activityGroups(
 ): readonly ActivityGroupVm[] {
   const { words } = input;
   const loaded = events.flatMap((event) => event.entries);
-  const originals = new Map<string, JournalEntry>(
+  const originals = new Map<JournalEntryId, JournalEntry>(
     loaded.map((entry) => [entry.id, entry]),
   );
   const voided = LedgerSystem.voided(loaded);

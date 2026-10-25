@@ -7,8 +7,9 @@ import {
   type RecurrenceEndRule,
   RecurrenceFrequency,
   type RecurrenceRule,
+  RepeatPreset,
 } from '@core/components';
-import { RecurrenceSystem, RepeatPreset } from '@core/systems';
+import { RecurrenceSystem } from '@core/systems';
 import { unwrapOk } from '@core/testing';
 import {
   RECURRENCE_END_WORD,

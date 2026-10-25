@@ -3,9 +3,6 @@ import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import { BackfillJobName } from './backfill-job-name.data';
 
-/** Every job name — derived, never a second source. */
-const JOB_NAMES: readonly BackfillJobName[] = Object.values(BackfillJobName);
-
 /**
  * THE OPS WIRE (Phase 4a 4A-4) — `runBackfill`, one page of an operator's
  * backfill job. `backfillResume` continues wherever the job's progress
@@ -23,10 +20,10 @@ export const BackfillCall = {
   decodePage(raw: unknown): Result<BackfillCall.Page, PipelineError> {
     const answer = CallAnswer.read(raw);
     if (answer === null) return CallAnswer.unusable();
-    const backfillJobName = CallAnswer.oneOf(
+    const backfillJobName = CallAnswer.tag(
       answer,
       'backfillJobName',
-      JOB_NAMES,
+      BackfillJobName,
     );
     const cursor = CallAnswer.field(answer, 'cursor');
     const startedFrom = CallAnswer.field(answer, 'startedFrom');

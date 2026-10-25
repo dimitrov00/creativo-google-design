@@ -39,8 +39,8 @@ import {
 import {
   type BookingFlowEvent,
   BookingFlowEventKind as E,
-  BookingFlowSystem,
-} from './booking-flow.system';
+} from '@core/components';
+import { BookingFlowSystem } from './booking-flow.system';
 
 const LIMITS = BookingPolicy.DEFAULT;
 /** How many people one booking can seat (the legacy `MAX_PARTY_SIZE`). */
@@ -733,6 +733,28 @@ describe('BookingFlowSystem — the spine', () => {
     expect(
       BookingFlowSystem.rewindTo(schedule, BookingFlowStep.Schedule, LIMITS),
     ).toBe(schedule);
+  });
+
+  it('asks the ONE terminal rule — the state’s — and agrees with the spine on all six steps', () => {
+    for (const step of Object.values(BookingFlowStep)) {
+      const terminal = BookingFlowSystem.isTerminal(step);
+      expect(terminal).toBe(BookingFlowState.isTerminalStep(step));
+      // The spelling it delegated away from: off the spine is terminal.
+      expect(terminal).toBe(BookingFlowState.spineIndex(step) === -1);
+    }
+    expect(
+      Object.values(BookingFlowStep).filter((step) =>
+        BookingFlowSystem.isTerminal(step),
+      ),
+    ).toEqual([BookingFlowStep.Confirmed, BookingFlowStep.Waitlisted]);
+    const location = BookingFlowState.initial(newParty());
+    expect(BookingFlowState.isTerminal(location)).toBe(
+      BookingFlowSystem.isTerminal(location.bookingFlowStep),
+    );
+    const schedule = scheduleState();
+    expect(BookingFlowState.isTerminal(schedule)).toBe(
+      BookingFlowSystem.isTerminal(schedule.bookingFlowStep),
+    );
   });
 
   it('counts the party’s free seats against the policy', () => {

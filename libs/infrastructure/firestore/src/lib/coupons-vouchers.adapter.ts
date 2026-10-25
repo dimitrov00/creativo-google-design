@@ -7,16 +7,18 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { CouponStatus } from '@core/components';
 import { type CouponId, GrantStatus, Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
+import { CouponStatus } from '@core/components';
 import {
   Collections,
   type Coupon,
   type CouponGrant,
   type GiftVoucher,
+  type OfferedCoupon,
 } from '@core/entities';
 import type { CouponVoucherPorts } from '@core/ports';
+import { DiscountSystem } from '@core/systems';
 import { readDoc, readQuery } from './observe';
 
 /** Firestore's cap on the values of one `in` filter. */
@@ -71,18 +73,22 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
       ),
 
     /**
-     * Every ENABLED coupon that carries a code — the counter's offer list.
-     * One equality on `couponStatus`; the code's presence is read off each
-     * document, because an absent code is what "grant-only" looks like in
-     * the store and an inequality on it would ask for an index.
+     * Every coupon on offer — the counter's offer list. One equality on
+     * `couponStatus`; which of the answered coupons is on offer (`ENABLED`
+     * and carrying a code) is `DiscountSystem.isOffered`, the ONE rule the
+     * memory double and the staff day's promo list share — an absent code
+     * is what "grant-only" looks like in the store, and an inequality on it
+     * would ask for an index.
      */
-    listOpenCoupons: async () => {
+    listOpenCoupons: async (): Promise<
+      Result<readonly OfferedCoupon[], RepositoryError>
+    > => {
       const open = await readQuery<Coupon>(
         query(coupons, where('couponStatus', '==', CouponStatus.Enabled)),
         Collections.Coupons,
       );
       return open.ok
-        ? Result.ok(open.value.filter((coupon) => coupon.code !== null))
+        ? Result.ok(open.value.filter(DiscountSystem.isOffered))
         : open;
     },
 

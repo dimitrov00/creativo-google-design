@@ -15,20 +15,27 @@ import { TranslocoService, TranslocoDirective } from '@jsverse/transloco';
 import {
   AuthStrategy,
   type CountryIso2,
+  LocalizedText,
   OnboardingFlowStep,
+  type PersonalizeStep,
   Principal,
   RegistrationField,
   type RegistrationFields,
+  SettledVerdict,
 } from '@core/components';
 import type { Service } from '@core/entities';
 import {
   IdentifierChannel,
+  Locale,
   RedirectPath,
   type ServiceId,
+  Tag,
 } from '@core/primitives';
 import {
-  type IdentityError,
-  IdentityErrorCode,
+  type AccountsError,
+  IdentityError,
+  type OnboardingFailure,
+  PhoneError,
   PhoneErrorCode,
   PhoneInvalidReason,
 } from '@core/errors';
@@ -37,9 +44,7 @@ import {
   AvatarSystem,
   CatalogPricingSystem,
   OnboardingFlowSystem,
-  type PersonalizeStep,
   PhoneSystem,
-  SettledVerdict,
 } from '@core/systems';
 import { formatCents } from '@creativo/ui/wall-clock';
 import {
@@ -74,13 +79,20 @@ import {
   UiRevealDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { SessionIdentityService } from '@creativo/features/shared/shell';
+import {
+  OnboardingPhase,
+  SessionIdentityService,
+} from '@creativo/features/shared/shell';
 import {
   ageDayOf,
-  nameRefusalCodes,
+  nameRefusalsOf,
 } from '@creativo/features/client/account-state';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  intlLocaleOf,
+  translateCodedError,
+  wordFlowFailure,
+} from '@creativo/infrastructure/i18n';
 import { OnboardingFlowStore } from '../onboarding-flow.store';
 import { ONBOARDING_SERVICES_CAP } from '../services-cap';
 
@@ -213,15 +225,17 @@ export class ClientOnboarding {
 
   protected readonly firstName = signal('');
   protected readonly lastName = signal('');
-  /** Name-rule error codes (`ProfileEditSystem.nameRefusals`, through `nameRefusalCodes`) — set on blur/submit, cleared live once the draft turns valid (reward early, punish late; the SAME rule the server's registration applies, so a submit can never be rejected for a reason the form didn't already show). */
-  protected readonly firstNameErrorCode = signal<string | null>(null);
-  protected readonly lastNameErrorCode = signal<string | null>(null);
+  /** Name-rule refusals, as their structs (`ProfileEditSystem.nameRefusals`, through `nameRefusalsOf`) — set on blur/submit, cleared live once the draft turns valid (reward early, punish late; the SAME rule the server's registration applies, so a submit can never be rejected for a reason the form didn't already show). */
+  protected readonly firstNameError =
+    signal<AccountsError.FirstNameTooShort | null>(null);
+  protected readonly lastNameError =
+    signal<AccountsError.LastNameTooShort | null>(null);
   /** Selected picker country (two-way with `ui-phone-field`). */
   protected readonly phoneCountry = signal<CountryIso2 | null>(null);
   /** Canonical E.164 from `ui-phone-field` — null while the draft is invalid. */
   protected readonly phoneValue = signal<string | null>(null);
-  /** Reason from `PhoneSystem.parse` — set on blur/submit, cleared live once the draft turns valid (reward early, punish late). */
-  protected readonly phoneErrorReason = signal<PhoneInvalidReason | null>(null);
+  /** The refusal `PhoneSystem.parse` answered, as its struct (Law 7.5) — set on blur/submit, cleared live once the draft turns valid (reward early, punish late). */
+  protected readonly phoneErrorState = signal<PhoneError | null>(null);
 
   /* ── Optional birthday step (personalization phase — rewards may offer
         birthday presents) ────────────────────────────────────────────── */
@@ -231,10 +245,8 @@ export class ClientOnboarding {
 
   /** Complete segments from `ui-date-field` — null while empty/unfinished. */
   protected readonly birthValue = signal<UiDateFieldParts | null>(null);
-  /** The refusal from `AgeSystem.fromParts` — set on blur/submit, cleared live once the date turns valid (same reward-early grammar as the phone). `'partial'` marks an unfinished group left behind. */
-  private readonly birthErrorState = signal<IdentityError | 'partial' | null>(
-    null,
-  );
+  /** The refusal from `AgeSystem.fromParts` — set on blur/submit, cleared live once the date turns valid (same reward-early grammar as the phone). An unfinished group left behind is `IdentityError.birthDatePartial()` (the generic invalid-date line). */
+  private readonly birthErrorState = signal<IdentityError | null>(null);
 
   /** Save gates on a complete, VO-valid date — an empty group's exit is the Skip affordance, never a dead primary. */
   protected readonly canSubmitBirthday = computed(() => {
@@ -244,7 +256,7 @@ export class ClientOnboarding {
 
   /** The two name drafts through the ONE name rule the write enforces. */
   private readonly nameRefusals = computed(() =>
-    nameRefusalCodes(this.firstName(), this.lastName()),
+    nameRefusalsOf(this.firstName(), this.lastName()),
   );
 
   protected readonly canSubmitAbout = computed(() => {
@@ -292,17 +304,6 @@ export class ClientOnboarding {
     return service ? this.catalog.toServiceVm(service) : null;
   });
 
-  /** Id-keyed twins of the entity helpers — the sheet hands back view models, not entities. */
-  protected isServiceSelectedById(id: string): boolean {
-    return this.selectedServiceIds().some((existing) => existing === id);
-  }
-
-  /** Following a reference inside the sheet reopens it on that service (one surface, one subject). */
-  protected openDetailsById(id: string): void {
-    const service = this.services().find((s) => s.id === id);
-    if (service) this.detailsService.set(service);
-  }
-
   protected readonly enteringFailed = signal(false);
 
   /* ── Optional avatar step ───────────────────────────────────────────
@@ -316,8 +317,13 @@ export class ClientOnboarding {
   protected readonly avatarFile = signal<File | null>(null);
   /** Local preview object URL for the staged file (revoked on replace/destroy). */
   protected readonly avatarPreviewUrl = signal<string | null>(null);
-  /** Stable error code under the avatar — picker rejections and upload failures share the line. */
-  protected readonly avatarErrorCode = signal<string | null>(null);
+  /** The refusal under the avatar, as its struct — picker rejections and upload failures share the line. */
+  protected readonly avatarError = signal<
+    | AccountsError
+    | AccountsError.UploadAvatarUploadFailed
+    | IdentityError.IdentifierMissing
+    | null
+  >(null);
   /** Monogram source — the names collected two steps ago (same component instance). */
   protected readonly fullName = computed(() =>
     `${this.firstName()} ${this.lastName()}`.trim(),
@@ -328,18 +334,18 @@ export class ClientOnboarding {
     // draft turns valid (errors themselves only ever appear on blur/submit).
     effect(() => {
       if (this.phoneValue() !== null) {
-        this.phoneErrorReason.set(null);
+        this.phoneErrorState.set(null);
       }
     });
     // Same grammar for the names — one effect per field, keyed on its rule.
     effect(() => {
       if (this.nameRefusals().firstName === null) {
-        this.firstNameErrorCode.set(null);
+        this.firstNameError.set(null);
       }
     });
     effect(() => {
       if (this.nameRefusals().lastName === null) {
-        this.lastNameErrorCode.set(null);
+        this.lastNameError.set(null);
       }
     });
     // Same grammar for the birthday: the moment the completed segments form
@@ -383,7 +389,10 @@ export class ClientOnboarding {
     // shows is COMPUTED from the profile, not taken from the URL: someone
     // who set their birthday from the profile screen must never be asked
     // for it again just because a link said so.
-    if (this.route.snapshot.queryParamMap.get('phase') === 'personalize') {
+    if (
+      this.route.snapshot.queryParamMap.get('phase') ===
+      OnboardingPhase.Personalize
+    ) {
       const remaining = await this.remainingPersonalizeSteps();
       if (remaining.length === 0) {
         // Nothing left — the profile was finished elsewhere (or between
@@ -446,12 +455,23 @@ export class ClientOnboarding {
     this.enteringFailed.set(true);
   }
 
-  protected translateError(code: string | undefined | null): string | null {
-    if (!code) return null;
-    return translateCodedError(this.transloco, { errorCode: code });
+  /** A field's refusal (a name, the avatar) in words — `errors.<errorCode>`, its own fields the params. */
+  protected translateError(
+    error:
+      | AccountsError
+      | AccountsError.UploadAvatarUploadFailed
+      | IdentityError.IdentifierMissing
+      | null,
+  ): string | null {
+    return error === null ? null : translateCodedError(this.transloco, error);
   }
 
-  protected currentError(): string | null {
+  /** A flow step's refusal in words — the identity flows' ONE rule (`wordFlowFailure`: a failed call by the server's code, else `IDENTITY_CALL_FAILED`; a refusal as itself, its own fields the params). */
+  protected flowError(error: OnboardingFailure | null): string | null {
+    return error === null ? null : wordFlowFailure(this.transloco, error);
+  }
+
+  protected currentError(): OnboardingFailure | null {
     const state = this.store.state();
     return state.onboardingFlowStep === OnboardingFlowStep.About
       ? state.error
@@ -459,33 +479,51 @@ export class ClientOnboarding {
   }
 
   /**
-   * Reason-worded, example-bearing phone copy (design §2.5): the stable
+   * Reason-worded, example-bearing phone copy (design §2.5), worded from the
+   * held struct by its own `errorCode`: an invalid number's stable
    * `PhoneInvalidReason` IS the reason segment of its
-   * `errors.PHONE_INVALID.<reason>` key (nothing mapped), each
-   * interpolating a REAL example number for the effective country so the
-   * fix is shown, not described.
+   * `errors.PHONE_INVALID.<reason>` key (nothing mapped); a country the
+   * phone metadata lacks reads as the `invalid-country` line. Each
+   * interpolates a REAL example number for the effective country, added to
+   * the struct's params only here, at wording time, so the fix is shown,
+   * not described.
    */
   protected phoneError(): string | null {
-    const reason = this.phoneErrorReason();
-    if (!reason) return null;
+    const error = this.phoneErrorState();
+    if (error === null) return null;
     const example =
       PhoneSystem.example(this.phoneCountry() ?? this.defaultCountry) ?? '';
-    return translateCodedError(
-      this.transloco,
-      { errorCode: PhoneErrorCode.Invalid, example },
-      reason,
-    );
+    switch (error.errorCode) {
+      case PhoneErrorCode.Invalid:
+        return translateCodedError(
+          this.transloco,
+          { ...error, example },
+          error.reason,
+        );
+      case PhoneErrorCode.CountryUnsupported:
+        return translateCodedError(
+          this.transloco,
+          {
+            ...PhoneError.invalid(
+              error.attempted,
+              PhoneInvalidReason.InvalidCountry,
+            ),
+            example,
+          },
+          PhoneInvalidReason.InvalidCountry,
+        );
+    }
   }
 
   /** Name validate-on-blur — an untouched (empty) field stays silent; the disabled CTA already says "not done", a red line would say "wrong" (punish late). */
   protected onFirstNameBlur(): void {
     if (this.firstName().trim() === '') return;
-    this.firstNameErrorCode.set(this.nameRefusals().firstName);
+    this.firstNameError.set(this.nameRefusals().firstName);
   }
 
   protected onLastNameBlur(): void {
     if (this.lastName().trim() === '') return;
-    this.lastNameErrorCode.set(this.nameRefusals().lastName);
+    this.lastNameError.set(this.nameRefusals().lastName);
   }
 
   /** `ui-phone-field` validate-on-blur — never on keystroke (design §2.5). */
@@ -495,29 +533,18 @@ export class ClientOnboarding {
       fieldText,
       this.phoneCountry() ?? this.defaultCountry,
     );
-    this.phoneErrorReason.set(
-      result.ok
-        ? null
-        : result.error.errorCode === PhoneErrorCode.Invalid
-          ? result.error.reason
-          : PhoneInvalidReason.InvalidCountry,
-    );
+    this.phoneErrorState.set(result.ok ? null : result.error);
   }
 
   /**
    * Quiet, reason-mapped birthday copy — `AgeSystem`'s stable error structs
    * (`IDENTITY_BIRTH_DATE_*`, their own fields the params) map straight onto
-   * the error catalog; an unfinished group reads as the generic `invalid`.
+   * the error catalog; an unfinished group reads as the generic `invalid`
+   * (`IdentityError.birthDatePartial()`).
    */
   protected birthError(): string | null {
     const state = this.birthErrorState();
-    if (state === null) return null;
-    if (state === 'partial') {
-      return translateCodedError(this.transloco, {
-        errorCode: IdentityErrorCode.BirthDateInvalid,
-      });
-    }
-    return translateCodedError(this.transloco, state);
+    return state === null ? null : translateCodedError(this.transloco, state);
   }
 
   /** `ui-date-field` validate-on-blur — never on keystroke; an untouched (empty) optional field stays silent. */
@@ -527,7 +554,7 @@ export class ClientOnboarding {
       return;
     }
     if (event.uiDateFieldFill === UiDateFieldFill.Partial) {
-      this.birthErrorState.set('partial');
+      this.birthErrorState.set(IdentityError.birthDatePartial());
       return;
     }
     const result = AgeSystem.fromParts(event.parts, this.ageDay);
@@ -541,7 +568,9 @@ export class ClientOnboarding {
       if (phone === null) {
         // Unreachable through the UI (the CTA gates on `canSubmitAbout`),
         // kept as the honest validate-on-submit backstop.
-        this.phoneErrorReason.set(PhoneInvalidReason.Invalid);
+        this.phoneErrorState.set(
+          PhoneError.invalid('', PhoneInvalidReason.Invalid),
+        );
         return;
       }
     }
@@ -558,8 +587,8 @@ export class ClientOnboarding {
     void this.store.submitAbout(fields);
   }
 
-  /** Quiet inline copy for a failed birthday SAVE (a refused or failed `updateProfile` call) — the flow state carries the stable code, `translateCodedError` words it. */
-  protected birthdaySaveError(): string | null {
+  /** Quiet inline copy for a failed birthday SAVE (a refused or failed `updateProfile` call, or a save re-judged outside the age window) — the flow state carries the refusal's struct, `flowError` words it with its params (DEP-17). */
+  protected birthdaySaveError(): OnboardingFailure | null {
     const state = this.store.state();
     return state.onboardingFlowStep === OnboardingFlowStep.Birthday
       ? state.error
@@ -615,15 +644,16 @@ export class ClientOnboarding {
   }
 
   protected serviceName(service: Service): string {
-    return this.transloco.getActiveLang() === 'en'
-      ? service.name.en
-      : service.name.bg;
+    return LocalizedText.pick(service.name, this.contentLocale());
   }
 
   protected serviceDescription(service: Service): string {
-    return this.transloco.getActiveLang() === 'en'
-      ? service.description.en
-      : service.description.bg;
+    return LocalizedText.pick(service.description, this.contentLocale());
+  }
+
+  /** The catalogue's language for the active one — a `Locale`, anything else Bulgarian. */
+  private contentLocale(): Locale {
+    return Tag.or(Locale, this.transloco.getActiveLang(), Locale.Bg);
   }
 
   /**
@@ -646,8 +676,7 @@ export class ClientOnboarding {
    * formats the cents with the currency's own exponent (`formatCents`).
    */
   protected serviceMeta(service: Service): string {
-    const lang = this.transloco.getActiveLang();
-    const locale = lang === 'en' ? 'en-GB' : 'bg-BG';
+    const locale = intlLocaleOf(this.transloco.getActiveLang());
 
     const duration = CatalogPricingSystem.durationRange(service);
     const minutes = this.transloco.translate('onboarding.services.minutes', {
@@ -681,8 +710,15 @@ export class ClientOnboarding {
     return this.catalog.coverUrlOf(service) ?? null;
   }
 
-  protected openDetails(service: Service): void {
-    this.detailsService.set(service);
+  /**
+   * Open the details sheet on a service, by its id — a card's info button,
+   * or a reference followed inside the sheet, which reopens it on that
+   * service (one surface, one subject). The sheet hands back view models,
+   * whose ids are the entities' own.
+   */
+  protected openDetails(id: ServiceId): void {
+    const service = this.catalog.findService(id);
+    if (service) this.detailsService.set(service);
   }
 
   protected closeDetails(): void {
@@ -713,12 +749,12 @@ export class ClientOnboarding {
 
     const checked = AvatarSystem.check(file);
     if (!checked.ok) {
-      this.avatarErrorCode.set(checked.error.errorCode);
+      this.avatarError.set(checked.error);
       return;
     }
 
     this.revokeAvatarPreview();
-    this.avatarErrorCode.set(null);
+    this.avatarError.set(null);
     this.avatarFile.set(file);
     this.avatarPreviewUrl.set(URL.createObjectURL(file));
   }
@@ -738,9 +774,9 @@ export class ClientOnboarding {
   protected async enterAppNow(): Promise<void> {
     const file = this.avatarFile();
     if (file) {
-      const errorCode = await this.store.uploadAvatar(file);
-      if (errorCode) {
-        this.avatarErrorCode.set(errorCode);
+      const uploaded = await this.store.uploadAvatar(file);
+      if (!uploaded.ok) {
+        this.avatarError.set(uploaded.error);
         return;
       }
       // The header portrait and /account read ONE shared lookup; the uploader

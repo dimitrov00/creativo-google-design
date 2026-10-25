@@ -5,6 +5,7 @@ import {
   input,
 } from '@angular/core';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { Locale } from '@core/primitives';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { LanguageService } from '../language.service';
 import { ThemeService } from './theme.service';
@@ -83,6 +84,8 @@ export class LocaleThemeToggleComponent {
   protected readonly theme = inject(ThemeService);
 
   protected toggleLocale(): void {
-    this.language.set(this.language.activeLang() === 'bg' ? 'en' : 'bg');
+    this.language.set(
+      this.language.activeLang() === Locale.Bg ? Locale.En : Locale.Bg,
+    );
   }
 }

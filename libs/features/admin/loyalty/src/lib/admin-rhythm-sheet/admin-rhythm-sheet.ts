@@ -12,18 +12,21 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { map, switchMap } from 'rxjs/operators';
 import {
   LocalizedText,
-  STREAK_EXCUSES,
-  STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakQualifier,
   StreakQualifierRule,
   StreakRule,
 } from '@core/components';
 import type { Service, ServiceCategory } from '@core/entities';
-import { ServiceId } from '@core/primitives';
+import {
+  LocalDate,
+  Locale,
+  type ServiceCategoryId,
+  type ServiceId,
+  Tag,
+} from '@core/primitives';
 import type { CategoryGroup } from '@core/systems';
 import { rhythmRuleUnits } from '@creativo/features/shared/visits';
 import {
@@ -54,17 +57,33 @@ import {
   type AdminRhythmContext,
   earnEveryOptions,
   excuseKey,
-  onBreakKey,
   onBreakOf,
   onBreakOptions,
   pauseDaysOptions,
   repairPerYearOptions,
   repairWindowOptions,
 } from '../admin-rhythm/admin-rhythm.words';
+import { loadedLanguage } from '@creativo/infrastructure/i18n';
 
-/** The five secondary editors (§2.6.1a). */
-export type AdminRhythmSheetKind =
-  'services' | 'protections' | 'excuses' | 'afterMiss' | 'day';
+/**
+ * The five secondary editors (§2.6.1a) — the sheet's input `sheet`, the
+ * ONLY source of these strings (Law 1). Values: external contract — the
+ * host's `data-kind` attribute prints the sheet on screen, so the spelling
+ * stays. (Named `RhythmSheet`: `AdminRhythmSheet` is this component.)
+ */
+export const RhythmSheet = {
+  /** P2a: the services that count. */
+  Services: 'services',
+  /** P8: the protections. */
+  Protections: 'protections',
+  /** P9, P10: the excuses and the client's pause. */
+  Excuses: 'excuses',
+  /** P11, P12: after a miss. */
+  AfterMiss: 'afterMiss',
+  /** P13: a day of the admin's own. */
+  Day: 'day',
+} as const;
+export type RhythmSheet = (typeof RhythmSheet)[keyof typeof RhythmSheet];
 
 /**
  * One category of the catalogue with its services — what the services
@@ -76,7 +95,7 @@ export type RhythmServiceGroup = CategoryGroup<ServiceCategory, Service>;
 /**
  * P9's layout of the shop's excuses (§2.6.2): the shop's own cancellation
  * first, then the barber's absence, then a closure. A display rank only —
- * WHICH excuses are the shop's is `STREAK_SHOP_EXCUSES`.
+ * WHICH excuses are the shop's is `StreakRule.SHOP_EXCUSES`.
  */
 const P9_SHOP_EXCUSE_RANK: readonly StreakExcuse[] = [
   StreakExcuse.StaffCancelled,
@@ -91,12 +110,12 @@ const p9Rank = (excuse: StreakExcuse): number => {
 
 /** One service as the services sheet lists it. */
 interface ServiceRow {
-  readonly id: string;
+  readonly id: ServiceId;
   readonly name: string;
 }
 
 interface ServiceGroupVm {
-  readonly id: string;
+  readonly id: ServiceCategoryId;
   readonly name: string;
   readonly services: readonly ServiceRow[];
 }
@@ -149,10 +168,10 @@ let sequence = 0;
 })
 export class AdminRhythmSheet {
   /** The sheet to show; `null` closes it. */
-  readonly kind = input<AdminRhythmSheetKind | null>(null);
+  readonly sheet = input<RhythmSheet | null>(null);
   /** The catalogue's services under their categories; `null` while unread. */
   readonly services = input<readonly RhythmServiceGroup[] | null>(null);
-  /** The sheet has closed (its exit finished): the owner clears `kind`. */
+  /** The sheet has closed (its exit finished): the owner clears `sheet`. */
   readonly closed = output<void>();
 
   protected readonly store = inject(AdminRhythmStore);
@@ -161,16 +180,19 @@ export class AdminRhythmSheet {
   protected readonly titleId = `admin-rhythm-sheet-${this.seq}-title`;
 
   protected readonly closing = signal(false);
-  /** The kind on screen: kept through the exit, so the body does not vanish mid-animation. */
+  /** The sheets, for the template's `@case`s (never bare literals). */
+  protected readonly RhythmSheet = RhythmSheet;
+
+  /** The sheet on screen: kept through the exit, so the body does not vanish mid-animation. */
   protected readonly shown = linkedSignal<
-    AdminRhythmSheetKind | null,
-    AdminRhythmSheetKind | null
+    RhythmSheet | null,
+    RhythmSheet | null
   >({
-    source: this.kind,
-    computation: (kind, previous) => kind ?? previous?.value ?? null,
+    source: this.sheet,
+    computation: (sheet, previous) => sheet ?? previous?.value ?? null,
   });
   protected readonly open = computed(
-    () => this.kind() !== null && !this.closing(),
+    () => this.sheet() !== null && !this.closing(),
   );
 
   /** The services sheet's search. */
@@ -187,16 +209,11 @@ export class AdminRhythmSheet {
   protected readonly repairWindowMenu = signal(false);
   protected readonly repairPerYearMenu = signal(false);
 
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
-  protected readonly lang = computed(() => this.loadedLang() ?? 'bg');
+  protected readonly lang = computed(() => this.loadedLang() ?? Locale.Bg);
 
   protected readonly context: Signal<AdminRhythmContext | null> = computed(
     () => {
@@ -231,19 +248,19 @@ export class AdminRhythmSheet {
   /** The compact title in the bar, and the large one in the body. */
   protected readonly title = computed(() => {
     const context = this.context();
-    const kind = this.shown();
-    if (context === null || kind === null) return '';
+    const sheet = this.shown();
+    if (context === null || sheet === null) return '';
     const t = context.translate;
-    switch (kind) {
-      case 'services':
+    switch (sheet) {
+      case RhythmSheet.Services:
         return t('admin.rhythm.sheet.services');
-      case 'protections':
+      case RhythmSheet.Protections:
         return t('admin.rhythm.protections.title');
-      case 'excuses':
+      case RhythmSheet.Excuses:
         return t('admin.rhythm.excuses.title');
-      case 'afterMiss':
+      case RhythmSheet.AfterMiss:
         return t('admin.rhythm.afterMiss.title');
-      case 'day':
+      case RhythmSheet.Day:
         return t('admin.rhythm.effective.title');
     }
   });
@@ -259,7 +276,7 @@ export class AdminRhythmSheet {
   });
 
   protected readonly chosenServices = computed(
-    (): ReadonlySet<string> => new Set(this.chosen()),
+    (): ReadonlySet<ServiceId> => new Set(this.chosen()),
   );
 
   /** The catalogue's groups in the language, the search applied; a group with no match is left out. */
@@ -267,15 +284,15 @@ export class AdminRhythmSheet {
     (): readonly ServiceGroupVm[] | null => {
       const groups = this.services();
       if (groups === null) return null;
-      const locale = this.lang() === 'en' ? 'en' : 'bg';
+      const locale = Tag.or(Locale, this.lang(), Locale.Bg);
       const query = this.query().trim().toLocaleLowerCase(locale);
       return groups
         .map((group) => ({
-          id: group.category.id as string,
+          id: group.category.id,
           name: LocalizedText.pick(group.category.name, locale),
           services: group.services
             .map((service) => ({
-              id: service.id as string,
+              id: service.id,
               name: LocalizedText.pick(service.name, locale),
             }))
             .filter(
@@ -289,11 +306,8 @@ export class AdminRhythmSheet {
   );
 
   /** A service in or out of the list; the last one chosen stays (`StreakQualifierRule.toggleService`). */
-  protected toggleService(raw: string): void {
-    const next = StreakQualifierRule.toggleService(
-      this.chosen(),
-      ServiceId.of(raw),
-    );
+  protected toggleService(id: ServiceId): void {
+    const next = StreakQualifierRule.toggleService(this.chosen(), id);
     this.store.patch({ qualifier: StreakQualifierRule.services(next) });
   }
 
@@ -313,8 +327,10 @@ export class AdminRhythmSheet {
 
   /** P9's order (§2.6.2): the shop's excuses first, in P9's rank, then the days off. */
   protected readonly excuses: readonly StreakExcuse[] = [
-    ...[...STREAK_SHOP_EXCUSES].sort((a, b) => p9Rank(a) - p9Rank(b)),
-    ...STREAK_EXCUSES.filter((excuse) => !STREAK_SHOP_EXCUSES.includes(excuse)),
+    ...[...StreakRule.SHOP_EXCUSES].sort((a, b) => p9Rank(a) - p9Rank(b)),
+    ...StreakRule.EXCUSES.filter(
+      (excuse) => !StreakRule.SHOP_EXCUSES.includes(excuse),
+    ),
   ];
 
   protected excused(excuse: StreakExcuse): boolean {
@@ -353,10 +369,8 @@ export class AdminRhythmSheet {
   protected readonly onBreakOptions = computed(() =>
     this.withContext((context) => onBreakOptions(context), []),
   );
-  /** The menu's id for what a miss does. */
-  protected readonly onBreakChoice = computed(() =>
-    onBreakKey(this.draft().onBreak),
-  );
+  /** The menu's id for what a miss does: the `StreakOnBreak` member itself. */
+  protected readonly onBreakChoice = computed(() => this.draft().onBreak);
   protected readonly onBreakLabel = computed(
     () =>
       this.onBreakOptions().find((option) => option.id === this.onBreakChoice())
@@ -384,7 +398,11 @@ export class AdminRhythmSheet {
 
   // ── The day ─────────────────────────────────────────────────────────────
 
-  protected pickDay(day: string): void {
+  /**
+   * A day the month picker handed back — a `LocalDate` of a cell it built
+   * from the calendar; the sheet closes once it lands.
+   */
+  protected pickDay(day: LocalDate): void {
     this.store.setEffectiveFrom(day);
     this.requestClose();
   }
@@ -397,7 +415,7 @@ export class AdminRhythmSheet {
     this.closing.set(true);
   }
 
-  /** The exit finished: the owner is told and clears `kind`. */
+  /** The exit finished: the owner is told and clears `sheet`. */
   protected finishClose(): void {
     if (!this.closing()) return;
     this.closing.set(false);

@@ -10,7 +10,7 @@ import {
   EndReasonFields,
   ImpersonationLifecycle,
   type Role,
-  isStaff,
+  Roles,
 } from '@core/components';
 import type {
   ImpersonationSession,
@@ -103,7 +103,7 @@ export const ImpersonationSystem = {
   ): Result<ImpersonationSession, readonly GovernanceError[]> {
     const faults = ImpersonationSystem.faults(request);
     if (faults.length > 0) return Result.err(faults);
-    if (!isStaff(request.adminRoles)) {
+    if (!Roles.isStaff(request.adminRoles)) {
       return Result.err([
         GovernanceError.impersonationAdminNotStaff(request.adminUserId),
       ]);

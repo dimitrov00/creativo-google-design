@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject } from 'rxjs';
-import type { IdentityCall, Principal } from '@core/components';
+import { BirthDate, type IdentityCall, type Principal } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables } from '@core/ports';
 import { Result, UserId } from '@core/primitives';
 import {
+  AccountsError,
   AccountsErrorCode,
-  IdentityErrorCode,
+  IdentityError,
   MediaError,
   PipelineError,
 } from '@core/errors';
@@ -116,13 +117,16 @@ function refused(status: string, errorCode: string): UpdateProfileAnswer {
 
 const NAME = { first: 'Ана', last: 'Иванова' };
 
+/** A write's refusal as the store answers it since pass D (E-7): the struct inside a `Result`. */
+const refusedAs = (errorCode: string) => Result.err({ errorCode });
+
 describe('ProfileStore', () => {
-  it('sends a new name through updateProfile and answers null', async () => {
+  it('sends a new name through updateProfile and answers ok', async () => {
     const { store, calls } = configure();
 
-    const code = await store.saveName(NAME.first, NAME.last);
+    const written = await store.saveName(NAME.first, NAME.last);
 
-    expect(code).toBeNull();
+    expect(written).toEqual(Result.ok(undefined));
     // The server derives the search keys and judges the names (its
     // `update-profile.pipeline.spec.ts`); the web sends the edit as typed.
     expect(calls).toEqual([
@@ -136,9 +140,9 @@ describe('ProfileStore', () => {
   it('forwards a birth date unchanged and leaves the names alone', async () => {
     const { store, calls } = configure();
 
-    const code = await store.saveBirthDate('2000-05-05');
+    const written = await store.saveBirthDate(BirthDate.of('2000-05-05'));
 
-    expect(code).toBeNull();
+    expect(written).toEqual(Result.ok(undefined));
     expect(calls).toEqual([
       {
         callable: Callables.UpdateProfile,
@@ -152,8 +156,8 @@ describe('ProfileStore', () => {
       answer: Result.err(PipelineError.fromWire('internal', null)),
     });
 
-    expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      AccountsErrorCode.UpdateProfileRepositoryFailure,
+    expect(await store.saveName(NAME.first, NAME.last)).toEqual(
+      Result.err(AccountsError.updateProfileRepositoryFailure()),
     );
   });
 
@@ -165,8 +169,8 @@ describe('ProfileStore', () => {
       ),
     });
 
-    expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      AccountsErrorCode.UpdateProfileRepositoryFailure,
+    expect(await store.saveName(NAME.first, NAME.last)).toEqual(
+      Result.err(AccountsError.updateProfileRepositoryFailure()),
     );
   });
 
@@ -175,8 +179,8 @@ describe('ProfileStore', () => {
       answer: refused('not-found', AccountsErrorCode.UpdateProfileNotFound),
     });
 
-    expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      AccountsErrorCode.UpdateProfileNotFound,
+    expect(await store.saveName(NAME.first, NAME.last)).toEqual(
+      refusedAs(AccountsErrorCode.UpdateProfileNotFound),
     );
   });
 
@@ -188,8 +192,8 @@ describe('ProfileStore', () => {
       ),
     });
 
-    expect(await store.saveName('A', NAME.last)).toBe(
-      AccountsErrorCode.UpdateProfileValidationFailed,
+    expect(await store.saveName('A', NAME.last)).toEqual(
+      refusedAs(AccountsErrorCode.UpdateProfileValidationFailed),
     );
   });
 
@@ -198,8 +202,8 @@ describe('ProfileStore', () => {
       principal: principalFixture.anonymous(),
     });
 
-    expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      IdentityErrorCode.IdentifierMissing,
+    expect(await store.saveName(NAME.first, NAME.last)).toEqual(
+      Result.err(IdentityError.identifierMissing()),
     );
     expect(calls).toEqual([]);
   });
@@ -208,8 +212,8 @@ describe('ProfileStore', () => {
     const { store, uploads } = configure();
 
     const notAnImage = new File(['x'], 'notes.txt', { type: 'text/plain' });
-    expect(await store.uploadPhoto(notAnImage)).toBe(
-      AccountsErrorCode.UploadAvatarNotAnImage,
+    expect(await store.uploadPhoto(notAnImage)).toEqual(
+      refusedAs(AccountsErrorCode.UploadAvatarNotAnImage),
     );
 
     const huge = new File(
@@ -217,8 +221,8 @@ describe('ProfileStore', () => {
       'big.jpg',
       { type: 'image/jpeg' },
     );
-    expect(await store.uploadPhoto(huge)).toBe(
-      AccountsErrorCode.UploadAvatarTooLarge,
+    expect(await store.uploadPhoto(huge)).toEqual(
+      Result.err(AccountsError.uploadAvatarTooLarge(AvatarSystem.MAX_BYTES)),
     );
     expect(uploads.length).toBe(0);
   });
@@ -227,7 +231,7 @@ describe('ProfileStore', () => {
     const { store, uploads } = configure();
     const photo = new File(['bytes'], 'me.jpg', { type: 'image/jpeg' });
 
-    expect(await store.uploadPhoto(photo)).toBeNull();
+    expect(await store.uploadPhoto(photo)).toEqual(Result.ok(undefined));
     expect(uploads.length).toBe(1);
   });
 
@@ -244,7 +248,7 @@ describe('ProfileStore', () => {
   it('removes the photo without touching the profile document', async () => {
     const { store, removals, calls } = configure();
 
-    expect(await store.removePhoto()).toBeNull();
+    expect(await store.removePhoto()).toEqual(Result.ok(undefined));
     expect(removals).toEqual(['user_1']);
     // The avatar is a storage object, not a User field.
     expect(calls).toEqual([]);
@@ -255,8 +259,8 @@ describe('ProfileStore', () => {
       removeResult: Result.err(MediaError.transient('avatars/user_1/original')),
     });
 
-    expect(await store.removePhoto()).toBe(
-      AccountsErrorCode.RemoveAvatarRemoveFailed,
+    expect(await store.removePhoto()).toEqual(
+      refusedAs(AccountsErrorCode.RemoveAvatarRemoveFailed),
     );
   });
 });

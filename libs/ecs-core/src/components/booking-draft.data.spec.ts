@@ -16,6 +16,8 @@ import { BookingContact } from './booking-contact.data';
 import { BookingDraft, BookingDraftOrigin } from './booking-draft.data';
 import { BookingFlowState } from './booking-flow.data';
 import type { ChairTime } from './chair-time.data';
+import { E164 } from './e164.data';
+import { Email } from './email.data';
 import type { MoveRider } from './move-rider.data';
 import { Party } from './party.data';
 
@@ -114,6 +116,37 @@ describe('BookingDraft.read — the restore', () => {
       BookingDraft.bookedFromOrigin(VISIT, OWNER),
     );
     expect(BookingDraft.read(stored(rebook))).toEqual(rebook);
+  });
+
+  it('restores a present contact exactly as the app wrote it — through the brands', () => {
+    const contact: BookingContact = {
+      contactName: 'Мария Петрова',
+      contactPhone: E164.of('+359888123456'),
+      contactEmail: Email.of('maria@example.com'),
+      contactNote: 'Ще закъснея 5 мин.',
+    };
+    const draft = BookingDraft.fresh(STATE, contact, DAY);
+    const restored = BookingDraft.read(stored(draft));
+    expect(restored).toEqual(draft);
+    expect(JSON.stringify(restored)).toBe(JSON.stringify(draft));
+  });
+
+  it('restores a contact e-mail that does not parse as none — the rest of the contact kept', () => {
+    const draft = BookingDraft.fresh(
+      STATE,
+      {
+        contactName: 'Мария Петрова',
+        contactPhone: E164.of('+359888123456'),
+        contactEmail: null,
+        contactNote: null,
+      },
+      DAY,
+    );
+    const corrupted = {
+      ...(stored(draft) as object),
+      contactEmail: 'not an e-mail',
+    };
+    expect(BookingDraft.read(corrupted)).toEqual(draft);
   });
 
   it('drops a rebooking edge that does not parse — the draft restores FRESH', () => {

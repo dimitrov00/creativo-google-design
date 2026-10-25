@@ -2,7 +2,8 @@ import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { Currency, PriceCents, type Result } from '@core/primitives';
 import { MoneyErrorCode } from '@core/errors';
-import { Money, RoundingMode } from './money.data';
+import { Money } from './money.data';
+import { RoundingMode } from './rounding-mode.data';
 
 function value<T, E>(result: Result<T, E>): T {
   if (!result.ok)

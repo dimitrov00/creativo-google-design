@@ -1,4 +1,8 @@
-import type { UiIconAsset, UiVectorAsset } from '../manifest/icon-manifest';
+import {
+  UiIconAsset,
+  type UiIconArtwork,
+  type UiVectorAsset,
+} from '../manifest/icon-manifest';
 import {
   UI_ICON_ALIAS_DEPTH,
   resolveIconEntry,
@@ -6,12 +10,12 @@ import {
 } from './icon-resolver';
 
 const vector = (d: string): UiVectorAsset => ({
-  kind: 'vector',
+  iconAsset: UiIconAsset.Vector,
   viewBox: '0 0 1 1',
   paths: [{ d }],
 });
-const toVector = (asset: UiIconAsset): UiVectorAsset | null =>
-  asset.kind === 'material'
+const toVector = (asset: UiIconArtwork): UiVectorAsset | null =>
+  asset.iconAsset === UiIconAsset.Material
     ? asset.glyph === 'ghost'
       ? null
       : vector(`M${asset.glyph}`)
@@ -20,10 +24,10 @@ const toVector = (asset: UiIconAsset): UiVectorAsset | null =>
 const bundled: UiIconLayer = {
   name: 'bundled',
   icons: {
-    'sheet.close': { kind: 'material', glyph: 'close' },
-    'nav.back': { kind: 'material', glyph: 'chevron_left' },
+    'sheet.close': { iconAsset: UiIconAsset.Material, glyph: 'close' },
+    'nav.back': { iconAsset: UiIconAsset.Material, glyph: 'chevron_left' },
     'gallery.grid': { alias: 'layout.grid' },
-    'layout.grid': { kind: 'material', glyph: 'grid_view' },
+    'layout.grid': { iconAsset: UiIconAsset.Material, glyph: 'grid_view' },
   },
 };
 
@@ -32,15 +36,16 @@ describe('resolveIconEntry', () => {
     const result = resolveIconEntry([bundled], 'sheet.close', toVector);
     expect(result).toMatchObject({
       ok: true,
-      layer: 'bundled',
-      via: ['sheet.close'],
+      value: { layer: 'bundled', via: ['sheet.close'] },
     });
   });
 
   it('lets the most specific layer win', () => {
     const remote: UiIconLayer = {
       name: 'remote',
-      icons: { 'sheet.close': { kind: 'material', glyph: 'cancel' } },
+      icons: {
+        'sheet.close': { iconAsset: UiIconAsset.Material, glyph: 'cancel' },
+      },
     };
     const override: UiIconLayer = {
       name: 'override',
@@ -50,15 +55,13 @@ describe('resolveIconEntry', () => {
       resolveIconEntry([remote, bundled], 'sheet.close', toVector),
     ).toMatchObject({
       ok: true,
-      layer: 'remote',
-      asset: vector('Mcancel'),
+      value: { layer: 'remote', asset: vector('Mcancel') },
     });
     expect(
       resolveIconEntry([override, remote, bundled], 'sheet.close', toVector),
     ).toMatchObject({
       ok: true,
-      layer: 'override',
-      asset: vector('Mo'),
+      value: { layer: 'override', asset: vector('Mo') },
     });
   });
 
@@ -66,8 +69,10 @@ describe('resolveIconEntry', () => {
     expect(resolveIconEntry([bundled], 'gallery.grid', toVector)).toMatchObject(
       {
         ok: true,
-        asset: vector('Mgrid_view'),
-        via: ['gallery.grid', 'layout.grid'],
+        value: {
+          asset: vector('Mgrid_view'),
+          via: ['gallery.grid', 'layout.grid'],
+        },
       },
     );
   });
@@ -76,14 +81,15 @@ describe('resolveIconEntry', () => {
     // A remote override of the TARGET reaches through the bundled alias.
     const remote: UiIconLayer = {
       name: 'remote',
-      icons: { 'layout.grid': { kind: 'material', glyph: 'apps' } },
+      icons: {
+        'layout.grid': { iconAsset: UiIconAsset.Material, glyph: 'apps' },
+      },
     };
     expect(
       resolveIconEntry([remote, bundled], 'gallery.grid', toVector),
     ).toMatchObject({
       ok: true,
-      layer: 'remote',
-      asset: vector('Mapps'),
+      value: { layer: 'remote', asset: vector('Mapps') },
     });
   });
 
@@ -96,7 +102,7 @@ describe('resolveIconEntry', () => {
       resolveIconEntry([remote, bundled], 'nav.back', toVector),
     ).toMatchObject({
       ok: true,
-      via: ['nav.back', 'gallery.grid', 'layout.grid'],
+      value: { via: ['nav.back', 'gallery.grid', 'layout.grid'] },
     });
   });
 
@@ -107,8 +113,7 @@ describe('resolveIconEntry', () => {
     };
     expect(resolveIconEntry([cycle], 'a', toVector)).toMatchObject({
       ok: false,
-      reason: 'alias-cycle',
-      via: ['a', 'b', 'c', 'a'],
+      error: { reason: 'alias-cycle', via: ['a', 'b', 'c', 'a'] },
     });
 
     const dangling: UiIconLayer = {
@@ -117,7 +122,7 @@ describe('resolveIconEntry', () => {
     };
     expect(resolveIconEntry([dangling], 'a', toVector)).toMatchObject({
       ok: false,
-      reason: 'alias-dangling',
+      error: { reason: 'alias-dangling' },
     });
 
     const icons: Record<string, { alias: string }> = {};
@@ -127,24 +132,26 @@ describe('resolveIconEntry', () => {
       resolveIconEntry([{ name: 'remote', icons }], 'k0', toVector),
     ).toMatchObject({
       ok: false,
-      reason: 'alias-depth',
+      error: { reason: 'alias-depth' },
     });
   });
 
   it('distinguishes a missing key from a missing glyph', () => {
     expect(resolveIconEntry([bundled], 'no.such', toVector)).toMatchObject({
       ok: false,
-      reason: 'icon-missing',
+      error: { reason: 'icon-missing' },
     });
     const ghost: UiIconLayer = {
       name: 'override',
-      icons: { 'nav.back': { kind: 'material', glyph: 'ghost' } },
+      icons: {
+        'nav.back': { iconAsset: UiIconAsset.Material, glyph: 'ghost' },
+      },
     };
     expect(
       resolveIconEntry([ghost, bundled], 'nav.back', toVector),
     ).toMatchObject({
       ok: false,
-      reason: 'glyph-missing',
+      error: { reason: 'glyph-missing' },
     });
   });
 });

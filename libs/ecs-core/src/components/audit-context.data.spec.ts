@@ -2,25 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { BackfillJobName } from './backfill-job-name.data';
 import { CustomerId, LocationId, SeatId, UserId } from '@core/primitives';
 import { localDate } from '@core/testing';
+import type { ArrivalAction } from './arrival-action.data';
 import {
-  type ArrivalAction,
-  AUDIT_ACTIONS,
   AuditAction,
   AuditContext,
-  AuditTarget,
-  AuditTargetRef,
   BackfillOutcome,
-  type PlacementAction,
-  type ProfileAction,
-  type StaffEditAction,
-  type TipAction,
-  type TransitionAction,
 } from './audit-context.data';
-import {
-  StreakRuleDirection,
-  StreakRuleParameter,
-  StreakTransition,
-} from './streak-rule.data';
+import { AuditTarget, AuditTargetRef } from './audit-target-ref.data';
+import { CancellationReason } from './cancellation-reason.data';
+import type { PlacementAction } from './placement-action.data';
+import type { ProfileAction } from './profile-action.data';
+import { RegistrationField } from './registration.data';
+import type { StaffEditAction } from './staff-edit-action.data';
+import type { TipAction } from './tip-action.data';
+import type { TransitionAction } from './transition-action.data';
+import { StreakRuleDirection } from './streak-rule-direction.data';
+import { StreakRuleParameter } from './streak-rule-parameter.data';
+import { StreakTransition } from './streak-transition.data';
 
 /** `true` when no group shares a verb with any group before it. */
 type Apart<G extends readonly unknown[], Seen = never> = G extends readonly [
@@ -34,8 +32,10 @@ type Apart<G extends readonly unknown[], Seen = never> = G extends readonly [
 
 describe('AuditAction', () => {
   it('keeps every audited verb, SCREAMING_SNAKE and domain-prefixed, each once', () => {
-    expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length);
-    for (const action of AUDIT_ACTIONS) {
+    expect(new Set(AuditContext.ACTIONS).size).toBe(
+      AuditContext.ACTIONS.length,
+    );
+    for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(/^(BOOKING|LOYALTY|OPS|PROFILE)_[A-Z_]+$/);
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -98,9 +98,11 @@ describe('AuditContext — one flat variant per verb family, every field present
       rescheduleRevision: 3,
       loggedOnRetry: true,
     });
-    expect(AuditContext.cancelled('schedule_conflict')).toEqual({
+    expect(
+      AuditContext.cancelled(CancellationReason.ClientChangedPlans),
+    ).toEqual({
       auditAction: 'BOOKING_CANCELLED',
-      cancellationReason: 'schedule_conflict',
+      cancellationReason: 'CLIENT_CHANGED_PLANS',
     });
   });
 
@@ -191,9 +193,9 @@ describe('AuditContext — one flat variant per verb family, every field present
   });
 
   it('profile copies the changed field names', () => {
-    const fields = ['firstName'];
+    const fields: RegistrationField[] = [RegistrationField.FirstName];
     const context = AuditContext.profile(AuditAction.ProfileUpdated, fields);
-    fields.push('phone');
+    fields.push(RegistrationField.Phone);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName'],

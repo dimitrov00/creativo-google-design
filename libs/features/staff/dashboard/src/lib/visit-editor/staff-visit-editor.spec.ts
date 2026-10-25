@@ -16,19 +16,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BirthDate,
   BookingLifecycle,
+  CancelledSide,
   CouponOccasion,
   CustomerOrigin,
   DiscountMethod,
   DiscountSource,
-  EditCommand,
   E164,
+  EditCommand,
   FlagName,
   PhotoOrigin,
+  Role,
   Seat,
   SeatOccupant,
   SeatOutcome,
+  ShopNow,
   SubjectRelationship,
   type VisitLeg,
+  VoucherCode,
 } from '@core/components';
 import type {
   Appointment,
@@ -43,23 +47,31 @@ import {
   BarberId,
   BookingStatus,
   BusyKey,
+  CouponGrantId,
+  Currency,
+  DurationMinutes,
   EndMinute,
+  GiftVoucherId,
   LocalDate,
   LocationId,
   MinuteOfDay,
   PriceCents,
+  SeasonId,
   SeatId,
   ServiceId,
+  ServiceVariantId,
   UserId as CoreUserId,
   UtcEpochMs,
   VoucherRefusal,
 } from '@core/primitives';
-import { CancelledSide, ZonedTimeSystem } from '@core/systems';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
   type LoyaltyClientFixture,
   appointmentFixture,
   customerOf,
+  draftPersonKey,
+  localDate,
   locationFixture,
   loyaltyAccountFixtures,
   memoryAppointmentPhotoPorts,
@@ -77,9 +89,11 @@ import {
   memoryLoyaltyWorld,
   memoryProfilePorts,
   memoryProgramsWorld,
+  minute,
   registeredUserFixture,
   seatFixture,
   termsFixture,
+  trackMinute,
   unwrapOk,
   utcMs,
 } from '@core/testing';
@@ -313,13 +327,25 @@ function provideTestI18n(): EnvironmentProviders[] {
 /** A tip literal in cents. */
 const cents = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
 
+/** A service's length literal. */
+const mins = (raw: number): DurationMinutes =>
+  unwrapOk(DurationMinutes.of(raw));
+
+/**
+ * The shop's "now" on a day at a minute — the VM's `now` (pass D, D-10.5:
+ * it replaced the `todayKey` + `nowMinute` pair). Its instant is pinned and
+ * never read by the sheet's wall-clock rules.
+ */
+const nowOn = (day: string, at: number): ShopNow =>
+  ShopNow.of(localDate(day), minute(at), utcMs('2026-08-26T10:00:00+03:00'));
+
 /** One 10:00–10:45 visit in Иван's chair: a 30-minute cut and a 15-minute beard. */
 function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
   return {
-    appointmentId: 'appointment-1',
+    appointmentId: AppointmentId.of('appointment-1'),
     rowId: 'appointment-1#ivan',
     // The Center's — the seed's first shop; the shop test hands the sheet two.
-    locationId: 'loc-center',
+    locationId: LocationId.of('loc-center'),
     // …and its zone, every instant on the sheet is read in.
     timeZone: FIXTURE_TIME_ZONE,
     // An ordinary one-person visit: nobody else is in this booking, so the
@@ -334,8 +360,13 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     },
     overflowVerbs: [],
     acting: false,
-    dayKey: '2026-08-26',
-    todayKey: '2026-08-26',
+    dayKey: localDate('2026-08-26'),
+    // The shop's "now" is the EVE of the visit (a reader's clock that says
+    // nothing on the visit's own day — what the old fixture's `todayKey` on
+    // the day with no `nowMinute` said): nothing on it has started, no
+    // neighbour has ended, and the year is the visit's. A case that needs
+    // the clock on the day hands its own (`nowOn`).
+    now: nowOn('2026-08-25', 600),
     /*
      * ⚠ EXACTLY what `dayLabelFor` produces for `dayKey`, and it was not.
      *
@@ -346,43 +377,49 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
      * that is a Wednesday, which no formatter would ever have written.
      */
     dayLabel: 'ср, 26.08',
-    startMinute: 600,
-    endMinute: 645,
+    startMinute: trackMinute(600),
+    endMinute: trackMinute(645),
     legs: [
       {
-        seatId: 'seat-cut',
-        serviceId: 'cut',
+        seatId: SeatId.of('seat-cut'),
+        serviceId: ServiceId.of('cut'),
         variantId: null,
         serviceLabel: 'Класическо подстригване',
-        minutes: 30,
+        minutes: mins(30),
+        priceCents: cents(2000),
+        currency: Currency.EUR,
         priceLabel: '20,00 €',
-        barberId: 'ivan',
+        barberId: BarberId.of('ivan'),
         barberName: 'Иван',
         barberTone: 0,
         overridden: false,
       },
       {
-        seatId: 'seat-beard',
-        serviceId: 'beard',
+        seatId: SeatId.of('seat-beard'),
+        serviceId: ServiceId.of('beard'),
         variantId: null,
         serviceLabel: 'Оформяне на брада',
-        minutes: 15,
+        minutes: mins(15),
+        priceCents: cents(800),
+        currency: Currency.EUR,
         priceLabel: '8,00 €',
-        barberId: 'niko',
+        barberId: BarberId.of('niko'),
         barberName: 'Нико',
         barberTone: 1,
         overridden: false,
       },
     ],
     clientLabel: 'Мартин Илиев',
-    clientUserId: 'user-martin',
+    clientUserId: CoreUserId.of('user-martin'),
+    clientCustomerId: null,
     phone: '+359 88 123 4567',
     phoneHref: '+359881234567',
     clientMeta: 'Нов',
     note: 'Закъснявам 5 минути.',
     teamNote: null,
     priceLabel: '28,00 €',
-    priceCents: 2800,
+    priceCents: cents(2800),
+    currency: Currency.EUR,
     // Nothing recorded — NOT zero, which is why the sheet offers an add-row
     // rather than a field reading `0,00 €`.
     tipLabel: null,
@@ -395,13 +432,19 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     bookingStatus: BookingStatus.Confirmed,
     statusLabel: 'Потвърден',
     arrivedMinute: null,
-    chairId: 'ivan',
+    chairId: BarberId.of('ivan'),
     chairName: 'Иван',
     chairTone: 0,
-    neighbours: [{ name: 'Мартин', startMinute: 540, endMinute: 590, tone: 2 }],
-    rosterStartMinute: 540,
-    rosterEndMinute: 1080,
-    nowMinute: null,
+    neighbours: [
+      {
+        name: 'Мартин',
+        startMinute: trackMinute(540),
+        endMinute: trackMinute(590),
+        tone: 2,
+      },
+    ],
+    rosterStartMinute: trackMinute(540),
+    rosterEndMinute: trackMinute(1080),
     ...partial,
   };
 }
@@ -415,47 +458,57 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
 const CATALOGUE: readonly VisitEditorServiceOption[] = [
   {
     id: 'cut:short',
-    serviceId: 'cut',
-    variantId: 'short',
+    serviceId: ServiceId.of('cut'),
+    variantId: ServiceVariantId.of('short'),
     variantLabel: 'Къса коса',
     label: 'Подстригване · Къса коса',
     serviceLabel: 'Подстригване',
-    minutes: 30,
+    minutes: mins(30),
     priceLabel: '20,00 €',
+    priceCents: cents(2000),
+    currency: Currency.EUR,
   },
   {
     id: 'cut:long',
-    serviceId: 'cut',
-    variantId: 'long',
+    serviceId: ServiceId.of('cut'),
+    variantId: ServiceVariantId.of('long'),
     variantLabel: 'Дълга коса',
     label: 'Подстригване · Дълга коса',
     serviceLabel: 'Подстригване',
-    minutes: 45,
+    minutes: mins(45),
     priceLabel: '24,00 €',
+    priceCents: cents(2400),
+    currency: Currency.EUR,
   },
   {
     id: 'wash',
-    serviceId: 'wash',
+    serviceId: ServiceId.of('wash'),
     variantId: null,
     label: 'Измиване',
-    minutes: 10,
+    minutes: mins(10),
     priceLabel: '5,00 €',
+    priceCents: cents(500),
+    currency: Currency.EUR,
   },
   {
     id: 'fade',
-    serviceId: 'fade',
+    serviceId: ServiceId.of('fade'),
     variantId: null,
     label: 'Фейд',
-    minutes: 45,
+    minutes: mins(45),
     priceLabel: '28,00 €',
+    priceCents: cents(2800),
+    currency: Currency.EUR,
   },
   {
     id: 'beard',
-    serviceId: 'beard',
+    serviceId: ServiceId.of('beard'),
     variantId: null,
     label: 'Оформяне на брада',
-    minutes: 15,
+    minutes: mins(15),
     priceLabel: '8,00 €',
+    priceCents: cents(800),
+    currency: Currency.EUR,
   },
 ];
 
@@ -579,11 +632,18 @@ describe('StaffVisitEditor', () => {
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
 
     // The roster is 09:00–18:00 in the fixture and does not narrow it…
-    render(visit({ rosterStartMinute: 540, rosterEndMinute: 1080 }));
+    render(
+      visit({
+        rosterStartMinute: trackMinute(540),
+        rosterEndMinute: trackMinute(1080),
+      }),
+    );
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
 
     // …nor does a visit that starts before the shift, nor an unreadable one.
-    render(visit({ startMinute: 60, endMinute: 105 }));
+    render(
+      visit({ startMinute: trackMinute(60), endMinute: trackMinute(105) }),
+    );
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
   });
 
@@ -595,10 +655,10 @@ describe('StaffVisitEditor', () => {
     // squarely inside the shift.
     render(
       visit({
-        rosterStartMinute: 840,
-        rosterEndMinute: 0,
-        startMinute: 900,
-        endMinute: 945,
+        rosterStartMinute: trackMinute(840),
+        rosterEndMinute: trackMinute(0),
+        startMinute: trackMinute(900),
+        endMinute: trackMinute(945),
       }),
     );
 
@@ -617,25 +677,29 @@ describe('StaffVisitEditor', () => {
       visit({
         legs: [
           {
-            seatId: 'a',
-            serviceId: 'svc-cut',
+            seatId: SeatId.of('a'),
+            serviceId: ServiceId.of('svc-cut'),
             variantId: null,
             serviceLabel: 'Подстригване',
-            minutes: 30,
+            minutes: mins(30),
             priceLabel: '20,00 €',
-            barberId: 'ivan',
+            priceCents: cents(2000),
+            currency: Currency.EUR,
+            barberId: BarberId.of('ivan'),
             barberName: 'Иван',
             barberTone: 0,
             overridden: false,
           },
           {
-            seatId: 'b',
-            serviceId: 'svc-beard',
+            seatId: SeatId.of('b'),
+            serviceId: ServiceId.of('svc-beard'),
             variantId: null,
             serviceLabel: 'Брада',
-            minutes: 15,
+            minutes: mins(15),
             priceLabel: '8,00 €',
-            barberId: 'ivan',
+            priceCents: cents(800),
+            currency: Currency.EUR,
+            barberId: BarberId.of('ivan'),
             barberName: 'Иван',
             barberTone: 0,
             overridden: false,
@@ -718,11 +782,18 @@ describe('StaffVisitEditor', () => {
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
 
     // The roster is 09:00–18:00 in the fixture and does not narrow it…
-    render(visit({ rosterStartMinute: 540, rosterEndMinute: 1080 }));
+    render(
+      visit({
+        rosterStartMinute: trackMinute(540),
+        rosterEndMinute: trackMinute(1080),
+      }),
+    );
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
 
     // …nor does a visit that starts before the shift, nor an unreadable one.
-    render(visit({ startMinute: 60, endMinute: 105 }));
+    render(
+      visit({ startMinute: trackMinute(60), endMinute: trackMinute(105) }),
+    );
     expect(frameGrid().uiWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
   });
 
@@ -734,10 +805,10 @@ describe('StaffVisitEditor', () => {
     // squarely inside the shift.
     render(
       visit({
-        rosterStartMinute: 840,
-        rosterEndMinute: 0,
-        startMinute: 900,
-        endMinute: 945,
+        rosterStartMinute: trackMinute(840),
+        rosterEndMinute: trackMinute(0),
+        startMinute: trackMinute(900),
+        endMinute: trackMinute(945),
       }),
     );
 
@@ -1299,7 +1370,10 @@ describe('StaffVisitEditor', () => {
       expect(host.hasAttribute('data-dirty')).toBe(true);
 
       // The clock ticks: same appointment, new object, one volatile field.
-      fixture.componentRef.setInput('vm', visit({ nowMinute: 601 }));
+      fixture.componentRef.setInput(
+        'vm',
+        visit({ now: nowOn('2026-08-26', 601) }),
+      );
       fixture.detectChanges();
 
       expect(host.getAttribute('data-draft-day')).toBe('2026-08-27');
@@ -1315,7 +1389,7 @@ describe('StaffVisitEditor', () => {
 
       fixture.componentRef.setInput(
         'vm',
-        visit({ appointmentId: 'appointment-2' }),
+        visit({ appointmentId: AppointmentId.of('appointment-2') }),
       );
       fixture.detectChanges();
 
@@ -1451,12 +1525,20 @@ describe('StaffVisitEditor', () => {
       // …nor once the party is in, nor once the time has gone.
       expect(
         find(
-          render(visit({ arrivedMinute: 590, nowMinute: 596 })),
+          render(
+            visit({
+              arrivedMinute: minute(590),
+              now: nowOn('2026-08-26', 596),
+            }),
+          ),
           'staff-visit-state',
         ),
       ).toBeNull();
       expect(
-        find(render(visit({ nowMinute: 700 })), 'staff-visit-state'),
+        find(
+          render(visit({ now: nowOn('2026-08-26', 700) })),
+          'staff-visit-state',
+        ),
       ).toBeNull();
     });
 
@@ -1503,7 +1585,7 @@ describe('StaffVisitEditor', () => {
       // or types the start; the head does not guess by how much.
       let host: HTMLElement | null = null;
       for (const nowMinute of [590, 606, 650]) {
-        host = render(visit({ nowMinute }));
+        host = render(visit({ now: nowOn('2026-08-26', nowMinute) }));
         expect(find(host, 'staff-visit-state')).toBeNull();
       }
       expect(
@@ -1522,7 +1604,7 @@ describe('StaffVisitEditor', () => {
   describe('the exits', () => {
     const cancellable = (nowMinute: number) =>
       visit({
-        nowMinute,
+        now: nowOn('2026-08-26', nowMinute),
         primaryVerb: {
           rowVerb: ArrivalVerb.Arrived,
           label: 'Дойде',
@@ -1648,6 +1730,22 @@ describe('StaffVisitEditor', () => {
    * does from here that is not an edit.
    */
   describe('the dock', () => {
+    /*
+     * DEP-21 (pass D): the sheet words the bill in the BILL's currency —
+     * the seats' (`VisitEditorVm.currency`) — where it used the constant
+     * EUR. Identical for every EUR visit; a non-EUR seat's bill follows it.
+     */
+    it('words the bill in its own currency — an EUR bill as it always read, a BGN one in leva', () => {
+      expect(text(render(), 'staff-visit-total-figure')).toBe('28,00 €');
+      const bgn = render(
+        visit({
+          currency: Currency.BGN,
+          legs: visit().legs.map((leg) => ({ ...leg, currency: Currency.BGN })),
+        }),
+      );
+      expect(text(bgn, 'staff-visit-total-figure')).toBe('28,00 лв.');
+    });
+
     it('carries no `⋯` and no verb button', () => {
       const host = render(
         visit({
@@ -1827,7 +1925,11 @@ describe('StaffVisitEditor', () => {
               serviceId: 'cut',
               variantId: null,
               minutes: 30,
-              priceLabel: '20,00 €',
+              // The leg's price as cents beside its currency, and no typed
+              // price (the commit is `StaffEditDraft`, pass D §2.12).
+              priceCents: 2000,
+              currency: Currency.EUR,
+              typedPriceCents: null,
               barberId: 'ivan',
               clientId: 'user-martin',
             },
@@ -1836,7 +1938,9 @@ describe('StaffVisitEditor', () => {
               serviceId: 'beard',
               variantId: null,
               minutes: 15,
-              priceLabel: '8,00 €',
+              priceCents: 800,
+              currency: Currency.EUR,
+              typedPriceCents: null,
               barberId: 'niko',
               clientId: 'user-martin',
             },
@@ -1936,7 +2040,10 @@ describe('StaffVisitEditor', () => {
       expect(find(host, 'staff-visit-save')).not.toBeNull();
 
       // The write lands: the owner reports it and pushes the stored visit.
-      fixture.componentRef.setInput('vm', visit({ dayKey: '2026-08-27' }));
+      fixture.componentRef.setInput(
+        'vm',
+        visit({ dayKey: localDate('2026-08-27') }),
+      );
       fixture.componentRef.setInput('uiSavedMark', 1);
       fixture.detectChanges();
 
@@ -1984,7 +2091,7 @@ describe('StaffVisitEditor', () => {
       // The stored visit arrives, saying what was sent.
       fixture.componentRef.setInput(
         'vm',
-        visit({ startMinute: 605, endMinute: 645 }),
+        visit({ startMinute: trackMinute(605), endMinute: trackMinute(645) }),
       );
       fixture.detectChanges();
       expect(find(host, 'staff-visit-save')).toBeNull();
@@ -2307,10 +2414,10 @@ describe('StaffVisitEditor', () => {
       // and 5 € fill a row of four, and «Друга сума» takes the last row.
       host = render(
         visit({
-          appointmentId: 'appointment-2',
+          appointmentId: AppointmentId.of('appointment-2'),
           rowId: 'appointment-2#ivan',
           priceLabel: '14,50 €',
-          priceCents: 1450,
+          priceCents: cents(1450),
         }),
       );
       if (find(host, 'staff-visit-tip-section')?.hasAttribute('inert'))
@@ -2352,10 +2459,10 @@ describe('StaffVisitEditor', () => {
       // and 20 € take the cells beside and beneath it.
       host = render(
         visit({
-          appointmentId: 'appointment-3',
+          appointmentId: AppointmentId.of('appointment-3'),
           rowId: 'appointment-3#ivan',
           priceLabel: '45,00 €',
-          priceCents: 4500,
+          priceCents: cents(4500),
         }),
       );
       if (find(host, 'staff-visit-tip-section')?.hasAttribute('inert'))
@@ -2437,14 +2544,16 @@ describe('StaffVisitEditor', () => {
       // Tomorrow's booking has the row — it just reads «Без».
       expect(
         find(
-          render(visit({ dayKey: '2026-08-27', dayLabel: 'чт, 27.08' })),
+          render(
+            visit({ dayKey: localDate('2026-08-27'), dayLabel: 'чт, 27.08' }),
+          ),
           'staff-visit-tip',
         ),
       ).not.toBeNull();
       // A visit the server has not seen has nothing to attach a tip to.
       expect(
         find(
-          render(visit({ appointmentId: '', rowId: 'new-1' })),
+          render(visit({ appointmentId: null, rowId: 'new-1' })),
           'staff-visit-tip',
         ),
       ).toBeNull();
@@ -2465,7 +2574,7 @@ describe('StaffVisitEditor', () => {
       // visit, and the renders above were all appointment-1.)
       const host = render(
         visit({
-          appointmentId: 'appointment-2',
+          appointmentId: AppointmentId.of('appointment-2'),
           rowId: 'appointment-2#ivan',
           tipLabel: '5,00 €',
           tipCents: cents(500),
@@ -2586,14 +2695,14 @@ describe('StaffVisitEditor', () => {
   describe('the shop of the visit', () => {
     const SHOPS: readonly VisitEditorShopOption[] = [
       {
-        id: 'loc-center',
+        id: LocationId.of('loc-center'),
         label: 'Креативо · Център',
         address: 'бул. „Цар Симеон Велики“ 120',
         lat: 42.4271,
         lng: 25.6366,
       },
       {
-        id: 'loc-mladost',
+        id: LocationId.of('loc-mladost'),
         label: 'Креативо · Младост',
         address: 'ул. „Армейска“ 14',
         lat: 42.46,
@@ -2870,18 +2979,20 @@ describe('StaffVisitEditor', () => {
         visit({
           people: [
             {
-              id: 'user-martin',
+              id: draftPersonKey('user-martin'),
               label: 'Мартин Илиев',
               phone: '+359 88 1',
               phoneHref: 'tel:+359881',
               meta: null,
+              email: null,
             },
             {
-              id: 'guest-1',
+              id: draftPersonKey('guest-1'),
               label: 'Иван',
               phone: null,
               phoneHref: null,
               meta: null,
+              email: null,
             },
           ],
         }),
@@ -2902,7 +3013,7 @@ describe('StaffVisitEditor', () => {
       );
       const fresh = mount(
         visit({
-          appointmentId: '',
+          appointmentId: null,
           rowId: 'new-1',
           bookingStatus: null,
           primaryVerb: null,
@@ -2963,33 +3074,37 @@ describe('StaffVisitEditor', () => {
         visit({
           people: [
             {
-              id: 'user-martin',
+              id: draftPersonKey('user-martin'),
               label: 'Мартин Илиев',
               phone: '+359 88 1',
               phoneHref: 'tel:+359881',
               meta: null,
+              email: null,
             },
             {
-              id: 'guest-1',
+              id: draftPersonKey('guest-1'),
               label: 'Иван',
               phone: null,
               phoneHref: null,
               meta: null,
+              email: null,
             },
           ],
           legs: [
             {
-              seatId: 'seat-cut',
-              serviceId: 'cut',
+              seatId: SeatId.of('seat-cut'),
+              serviceId: ServiceId.of('cut'),
               variantId: null,
               serviceLabel: 'Класическо подстригване',
-              minutes: 30,
+              minutes: mins(30),
               priceLabel: '20,00 €',
-              barberId: 'ivan',
+              priceCents: cents(2000),
+              currency: Currency.EUR,
+              barberId: BarberId.of('ivan'),
               barberName: 'Иван',
               barberTone: 0,
               overridden: false,
-              clientId: 'user-martin',
+              clientId: draftPersonKey('user-martin'),
             },
           ],
         }),
@@ -3034,11 +3149,12 @@ describe('StaffVisitEditor', () => {
         visit({
           people: [
             {
-              id: 'user-martin',
+              id: draftPersonKey('user-martin'),
               label: 'Мартин Илиев',
               phone: '+359 88 1',
               phoneHref: 'tel:+359881',
               meta: 'посл. 3 авг',
+              email: null,
             },
           ],
         }),
@@ -3063,7 +3179,7 @@ describe('StaffVisitEditor', () => {
     it("quotes a new visit's catalogue sum in the dock, «По каталог», and draws no bill group and no photos for it", () => {
       const host = render(
         visit({
-          appointmentId: '',
+          appointmentId: null,
           rowId: 'new-1',
           bookingStatus: null,
           primaryVerb: null,
@@ -3114,11 +3230,12 @@ describe('StaffVisitEditor', () => {
         title: 'Чести',
         clients: [
           {
-            id: 'user-petar',
+            id: draftPersonKey('user-petar'),
             label: 'Петър Ганев',
             phone: '+359 88 2',
             phoneHref: 'tel:+359882',
             meta: '11 посещения',
+            email: null,
           },
         ],
       },
@@ -3127,18 +3244,20 @@ describe('StaffVisitEditor', () => {
         title: 'Скорошни',
         clients: [
           {
-            id: 'user-martin',
+            id: draftPersonKey('user-martin'),
             label: 'Мартин Илиев',
             phone: '+359 88 1',
             phoneHref: 'tel:+359881',
             meta: 'посл. 3 авг',
+            email: null,
           },
           {
-            id: 'user-anna',
+            id: draftPersonKey('user-anna'),
             label: 'Анна Костова',
             phone: null,
             phoneHref: null,
             meta: null,
+            email: null,
           },
         ],
       },
@@ -3815,8 +3934,8 @@ describe('StaffVisitEditor', () => {
     // meta on them: who — barber, client, appointment".
     const PHOTOS: readonly VisitEditorPhoto[] = [
       {
-        photoId: 'p-1',
-        barberId: 'ivan',
+        photoId: AppointmentPhotoId.of('p-1'),
+        barberId: BarberId.of('ivan'),
         url: 'https://cdn/p1.jpg',
         takenAtUtcMs: utcMs('2026-08-26T09:05:00.000Z'),
         barberName: 'Иван Колев',
@@ -3827,8 +3946,8 @@ describe('StaffVisitEditor', () => {
         label: null,
       },
       {
-        photoId: 'p-2',
-        barberId: 'gone',
+        photoId: AppointmentPhotoId.of('p-2'),
+        barberId: BarberId.of('gone'),
         url: 'https://cdn/p2.jpg',
         takenAtUtcMs: utcMs('2026-08-26T09:40:00.000Z'),
         barberName: null,
@@ -3841,8 +3960,8 @@ describe('StaffVisitEditor', () => {
     ];
     /** One of the shop's own pictures, pointed at from the gallery page. */
     const ADOPTED: VisitEditorPhoto = {
-      photoId: 'p-3',
-      barberId: 'ivan',
+      photoId: AppointmentPhotoId.of('p-3'),
+      barberId: BarberId.of('ivan'),
       url: '/work/modern-cut.jpg',
       takenAtUtcMs: utcMs('2026-08-26T10:00:00.000Z'),
       barberName: 'Иван Колев',
@@ -3986,7 +4105,10 @@ describe('StaffVisitEditor', () => {
       fixture.detectChanges();
       // Nothing taken yet: the add row alone.
       const bare = render(
-        visit({ appointmentId: 'appointment-2', rowId: 'appointment-2#ivan' }),
+        visit({
+          appointmentId: AppointmentId.of('appointment-2'),
+          rowId: 'appointment-2#ivan',
+        }),
       );
       expect(find(bare, 'staff-visit-photo-grid')).toBeNull();
       expect(find(bare, 'staff-visit-add-photo')).not.toBeNull();
@@ -4001,7 +4123,7 @@ describe('StaffVisitEditor', () => {
 
       const gone = render(
         visit({
-          appointmentId: 'appointment-3',
+          appointmentId: AppointmentId.of('appointment-3'),
           rowId: 'appointment-3#ivan',
           photos: PHOTOS,
           bookingStatus: BookingStatus.Cancelled,
@@ -4019,7 +4141,9 @@ describe('StaffVisitEditor', () => {
       expect(find(gone, 'staff-visit-photo-grid')).not.toBeNull();
       expect(find(gone, 'staff-visit-add-photo')).toBeNull();
 
-      const draft = render(visit({ appointmentId: '', rowId: '', photos: [] }));
+      const draft = render(
+        visit({ appointmentId: null, rowId: '', photos: [] }),
+      );
       expect(find(draft, 'staff-visit-photos')).toBeNull();
     });
 
@@ -4121,7 +4245,7 @@ describe('StaffVisitEditor', () => {
         visit({
           photos: PHOTOS,
           clientLabel: 'Георги Петров',
-          clientUserId: 'user-georgi',
+          clientUserId: CoreUserId.of('user-georgi'),
         }),
       );
       fixture.componentRef.setInput('uiClientBook', [
@@ -4311,14 +4435,20 @@ describe('StaffVisitEditor', () => {
         grantId: 'grant-birthday',
         couponId: 'coupon-birthday',
         label: 'Рожден ден',
-        value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
+        value: {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: 20,
+        },
         exclusive: true,
       },
       {
         grantId: 'grant-loyal',
         couponId: 'coupon-loyal',
         label: 'Постоянен клиент',
-        value: { discountMethod: DiscountMethod.PercentOff, percent: 5 },
+        value: {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: 5,
+        },
         exclusive: false,
       },
     ];
@@ -4329,21 +4459,31 @@ describe('StaffVisitEditor', () => {
         code: 'FIRST10',
         couponId: 'coupon-first10',
         label: 'Първо посещение',
-        value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
+        value: {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: 10,
+        },
         exclusive: false,
       },
       {
         code: 'BEARD5',
         couponId: 'coupon-beard5',
         label: 'Брада −5 €',
-        value: { discountMethod: DiscountMethod.FixedAmount, amountCents: 500 },
+        value: {
+          discountMethod: DiscountMethod.FixedAmount,
+          discountAmountCents: cents(500),
+          discountCurrency: Currency.EUR,
+        },
         exclusive: false,
       },
       {
         code: 'ALONE20',
         couponId: 'coupon-alone20',
         label: 'Само за нови',
-        value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
+        value: {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: 20,
+        },
         exclusive: true,
       },
     ];
@@ -4752,9 +4892,11 @@ describe('StaffVisitEditor', () => {
         discounts: [
           {
             discountSource: DiscountSource.Grant,
+            discountGrantId: 'grant-birthday',
             grantId: 'grant-birthday',
             label: 'Рожден ден',
-            value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
+            discountMethod: DiscountMethod.PercentOff,
+            discountPercent: 20,
             code: null,
             exclusive: true,
           },
@@ -5067,7 +5209,7 @@ describe('StaffVisitEditor', () => {
       answer(
         promo('FIRST10', 'Първо посещение', {
           discountMethod: DiscountMethod.PercentOff,
-          percent: 10,
+          discountPercent: 10,
         }),
       );
       expect(onPage(host)).toBe(true);
@@ -5109,7 +5251,7 @@ describe('StaffVisitEditor', () => {
       answer(
         promo('FIRST10', 'Първо посещение', {
           discountMethod: DiscountMethod.PercentOff,
-          percent: 10,
+          discountPercent: 10,
         }),
       );
       expect(text(host, 'staff-visit-total-figure')).toBe('25,20 €');
@@ -5121,7 +5263,7 @@ describe('StaffVisitEditor', () => {
         voucher: {
           voucherId: 'v1',
           code: 'GIFT2025',
-          availableMinorUnits: 1000,
+          availableCents: cents(1000),
         },
         refusal: null,
       });
@@ -5158,7 +5300,11 @@ describe('StaffVisitEditor', () => {
       answer({
         code: 'GIFT99',
         promo: null,
-        voucher: { voucherId: 'v2', code: 'GIFT99', availableMinorUnits: 5000 },
+        voucher: {
+          voucherId: 'v2',
+          code: 'GIFT99',
+          availableCents: cents(5000),
+        },
         refusal: null,
       });
       expect(valueOf(host, 'staff-visit-voucher-v2')).toBe('−15,20 €');
@@ -5172,7 +5318,7 @@ describe('StaffVisitEditor', () => {
       answer({
         code: 'GIFT5',
         promo: null,
-        voucher: { voucherId: 'v3', code: 'GIFT5', availableMinorUnits: 500 },
+        voucher: { voucherId: 'v3', code: 'GIFT5', availableCents: cents(500) },
         refusal: null,
       });
       expect(text(host, 'staff-visit-discount-code-note')).toBe(
@@ -5209,7 +5355,7 @@ describe('StaffVisitEditor', () => {
       const voucher = {
         voucherId: 'v',
         code: 'EMPTY001',
-        availableMinorUnits: 0,
+        availableCents: cents(0),
       };
       for (const [refusal, note] of [
         [VoucherRefusal.Empty, 'Ваучерът е изчерпан.'],
@@ -5291,7 +5437,7 @@ describe('StaffVisitEditor', () => {
         voucher: {
           voucherId: 'v1',
           code: 'GIFT2025',
-          availableMinorUnits: 1000,
+          availableCents: cents(1000),
         },
         refusal: null,
       });
@@ -5496,7 +5642,8 @@ describe('StaffVisitEditor', () => {
         discounts: [
           {
             discountSource: DiscountSource.Manual,
-            value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
+            discountMethod: DiscountMethod.PercentOff,
+            discountPercent: 10,
             grantId: null,
             code: null,
           },
@@ -5510,15 +5657,21 @@ describe('StaffVisitEditor', () => {
           discounts: [
             {
               discountSource: DiscountSource.Code,
+              discountCode: VoucherCode.of('FIRST10'),
               label: 'Първо посещение',
-              value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
+              discountMethod: DiscountMethod.PercentOff,
+              discountPercent: 10,
               grantId: null,
-              code: 'FIRST10',
+              code: VoucherCode.of('FIRST10'),
               exclusive: false,
             },
           ],
           vouchers: [
-            { voucherId: 'v1', code: 'GIFT2025', availableMinorUnits: 1000 },
+            {
+              voucherId: GiftVoucherId.of('v1'),
+              code: VoucherCode.of('GIFT2025'),
+              availableCents: cents(1000),
+            },
           ],
         }),
       );
@@ -5542,7 +5695,7 @@ describe('StaffVisitEditor', () => {
 
       expect(
         find(
-          renderWith(visit({ appointmentId: '', rowId: 'new-1' })),
+          renderWith(visit({ appointmentId: null, rowId: 'new-1' })),
           'staff-visit-discount-row',
         ),
       ).toBeNull();
@@ -5782,10 +5935,10 @@ describe('StaffVisitEditor', () => {
   describe('a new visit', () => {
     const fresh = () =>
       visit({
-        appointmentId: '',
+        appointmentId: null,
         rowId: 'new-1',
         // The dashboard hands a new visit a 30-minute span to draw.
-        endMinute: 630,
+        endMinute: trackMinute(630),
         legs: [],
         clientLabel: '',
         clientUserId: null,
@@ -6205,43 +6358,49 @@ describe('StaffVisitEditor', () => {
           visit({
             people: [
               {
-                id: 'user-martin',
+                id: draftPersonKey('user-martin'),
                 label: 'Мартин Илиев',
                 phone: '+359 88 1',
                 phoneHref: 'tel:+359881',
                 meta: null,
+                email: null,
               },
               {
-                id: 'guest-Петър Гост',
+                id: draftPersonKey('guest-Петър Гост'),
                 label: 'Петър Гост',
                 phone: null,
                 phoneHref: null,
                 meta: null,
+                email: null,
               },
             ],
             legs: [
               {
-                seatId: 'seat-cut',
-                serviceId: 'cut',
+                seatId: SeatId.of('seat-cut'),
+                serviceId: ServiceId.of('cut'),
                 variantId: null,
-                clientId: 'user-martin',
+                clientId: draftPersonKey('user-martin'),
                 serviceLabel: 'Подстригване',
-                minutes: 30,
+                minutes: mins(30),
                 priceLabel: '20,00 €',
-                barberId: 'ivan',
+                priceCents: cents(2000),
+                currency: Currency.EUR,
+                barberId: BarberId.of('ivan'),
                 barberName: 'Иван',
                 barberTone: 1,
                 overridden: false,
               },
               {
-                seatId: 'seat-beard',
-                serviceId: 'beard',
+                seatId: SeatId.of('seat-beard'),
+                serviceId: ServiceId.of('beard'),
                 variantId: null,
-                clientId: 'guest-Петър Гост',
+                clientId: draftPersonKey('guest-Петър Гост'),
                 serviceLabel: 'Оформяне на брада',
-                minutes: 15,
+                minutes: mins(15),
                 priceLabel: '8,00 €',
-                barberId: 'ivan',
+                priceCents: cents(800),
+                currency: Currency.EUR,
+                barberId: BarberId.of('ivan'),
                 barberName: 'Иван',
                 barberTone: 1,
                 overridden: false,
@@ -6296,46 +6455,52 @@ describe('StaffVisitEditor', () => {
           visit({
             people: [
               {
-                id: 'user-martin',
+                id: draftPersonKey('user-martin'),
                 label: 'Мартин Илиев',
                 phone: '+359 88 1',
                 phoneHref: 'tel:+359881',
                 meta: null,
+                email: null,
               },
               {
-                id: 'guest-son',
+                id: draftPersonKey('guest-son'),
                 label: 'Синът',
                 phone: null,
                 phoneHref: null,
                 meta: null,
+                email: null,
               },
             ],
             legs: [
               {
-                seatId: 'seat-cut',
-                serviceId: 'cut',
+                seatId: SeatId.of('seat-cut'),
+                serviceId: ServiceId.of('cut'),
                 variantId: null,
                 serviceLabel: 'Класическо подстригване',
-                minutes: 30,
+                minutes: mins(30),
                 priceLabel: '20,00 €',
-                barberId: 'ivan',
+                priceCents: cents(2000),
+                currency: Currency.EUR,
+                barberId: BarberId.of('ivan'),
                 barberName: 'Иван',
                 barberTone: 0,
                 overridden: false,
-                clientId: 'user-martin',
+                clientId: draftPersonKey('user-martin'),
               },
               {
-                seatId: 'seat-kid',
-                serviceId: 'cut',
+                seatId: SeatId.of('seat-kid'),
+                serviceId: ServiceId.of('cut'),
                 variantId: null,
                 serviceLabel: 'Класическо подстригване',
-                minutes: 30,
+                minutes: mins(30),
                 priceLabel: '20,00 €',
-                barberId: 'ivan',
+                priceCents: cents(2000),
+                currency: Currency.EUR,
+                barberId: BarberId.of('ivan'),
                 barberName: 'Иван',
                 barberTone: 0,
                 overridden: false,
-                clientId: 'guest-son',
+                clientId: draftPersonKey('guest-son'),
               },
             ],
           }),
@@ -6715,7 +6880,7 @@ describe('StaffVisitEditor', () => {
       // (`.staff-grid__event[data-editable][data-status]`).
       const fresh = render(
         visit({
-          appointmentId: '',
+          appointmentId: null,
           rowId: 'new-1',
           bookingStatus: null,
           primaryVerb: null,
@@ -6736,16 +6901,18 @@ describe('StaffVisitEditor', () => {
     it('are marked past only once their hour has gone', () => {
       // Мартин 09:00 – 09:50; the clock decides.
       expect(
-        neighbour(render(visit({ nowMinute: 560 })))?.hasAttribute('data-past'),
+        neighbour(
+          render(visit({ now: nowOn('2026-08-26', 560) })),
+        )?.hasAttribute('data-past'),
       ).toBe(false);
       expect(
-        neighbour(render(visit({ nowMinute: 600 })))?.hasAttribute('data-past'),
+        neighbour(
+          render(visit({ now: nowOn('2026-08-26', 600) })),
+        )?.hasAttribute('data-past'),
       ).toBe(true);
       // On another day there is no clock, and nothing has gone.
       expect(
-        neighbour(render(visit({ nowMinute: null })))?.hasAttribute(
-          'data-past',
-        ),
+        neighbour(render(visit({ now: null })))?.hasAttribute('data-past'),
       ).toBe(false);
     });
 
@@ -6760,28 +6927,44 @@ describe('StaffVisitEditor', () => {
       expect(verdict({})).toBeNull();
       // 09:30 – 10:15 runs into Мартин's hour.
       expect(
-        verdict({ rowId: 'clash#ivan', startMinute: 570, endMinute: 615 }),
+        verdict({
+          rowId: 'clash#ivan',
+          startMinute: trackMinute(570),
+          endMinute: trackMinute(615),
+        }),
       ).toBe('conflict');
       // 09:50 – 10:35 starts the minute he ends: no clash.
       expect(
-        verdict({ rowId: 'touch#ivan', startMinute: 590, endMinute: 635 }),
+        verdict({
+          rowId: 'touch#ivan',
+          startMinute: trackMinute(590),
+          endMinute: trackMinute(635),
+        }),
       ).toBeNull();
       // 17:30 – 18:15 leaves the shift at its close…
       expect(
-        verdict({ rowId: 'late#ivan', startMinute: 1050, endMinute: 1095 }),
+        verdict({
+          rowId: 'late#ivan',
+          startMinute: trackMinute(1050),
+          endMinute: trackMinute(1095),
+        }),
       ).toBe('outsideRoster');
       // …and 08:00 – 08:45 before it opens.
       expect(
-        verdict({ rowId: 'early#ivan', startMinute: 480, endMinute: 525 }),
+        verdict({
+          rowId: 'early#ivan',
+          startMinute: trackMinute(480),
+          endMinute: trackMinute(525),
+        }),
       ).toBe('outsideRoster');
       // A roster read to midnight cannot be left: no verdict.
       expect(
         verdict({
           rowId: 'midnight#ivan',
-          startMinute: 1050,
-          endMinute: 1095,
-          rosterStartMinute: 840,
-          rosterEndMinute: 0,
+          startMinute: trackMinute(1050),
+          endMinute: trackMinute(1095),
+          rosterStartMinute: trackMinute(840),
+          rosterEndMinute: trackMinute(0),
         }),
       ).toBeNull();
     });
@@ -6793,7 +6976,11 @@ describe('StaffVisitEditor', () => {
         ) ?? null;
       // 08:30 – 09:15 opens before the shift AND runs into Мартин: the clash.
       expect(
-        verdict({ rowId: 'both#ivan', startMinute: 510, endMinute: 555 }),
+        verdict({
+          rowId: 'both#ivan',
+          startMinute: trackMinute(510),
+          endMinute: trackMinute(555),
+        }),
       ).toBe('conflict');
     });
   });
@@ -6936,7 +7123,7 @@ const PAST_CUT: AppointmentPhoto = {
 
 /** Георги's held reward — the discount page's own coupon, and the card's ready ticket. */
 const GEORGI_GRANT = {
-  grantId: 'grant-georgi-punch',
+  grantId: CouponGrantId.of('grant-georgi-punch'),
   couponId: 'coupon-punch-free-cut',
   label: 'Безплатно подстригване',
   value: { discountMethod: DiscountMethod.FreeService },
@@ -6951,7 +7138,7 @@ const GEORGI_BIRTHDAY_GRANT = {
   grantId: 'grant-georgi-birthday',
   couponId: 'coupon-birthday',
   label: 'Рожден ден',
-  value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
+  value: { discountMethod: DiscountMethod.PercentOff, discountPercent: 20 },
   exclusive: true,
   couponOccasion: CouponOccasion.Birthday,
   expiresOn: '2026-10-28',
@@ -6980,11 +7167,13 @@ const GEORGI_FACE = 'https://example.test/avatars/georgi.jpg';
  */
 const FADE_OPTION: VisitEditorServiceOption = {
   id: 'svc-fade',
-  serviceId: 'svc-fade',
+  serviceId: ServiceId.of('svc-fade'),
   variantId: null,
   label: 'Фейд',
-  minutes: 45,
+  minutes: mins(45),
   priceLabel: '28,00 €',
+  priceCents: cents(2800),
+  currency: Currency.EUR,
 };
 
 const CARD_ROSTER = [
@@ -7116,28 +7305,30 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
   function georgiVisit(party = false): VisitEditorVm {
     return visit({
       clientLabel: 'Георги Петров',
-      clientUserId: GEORGI,
+      clientUserId: CoreUserId.of(GEORGI),
       ...(party
         ? {
             people: [
               {
-                id: GEORGI,
+                id: draftPersonKey(GEORGI),
                 label: 'Георги Петров',
                 phone: '+359 88 123 4567',
                 phoneHref: '+359881234567',
                 meta: null,
+                email: null,
               },
               {
-                id: MARTIN,
+                id: draftPersonKey(MARTIN),
                 label: 'Мартин Илиев',
                 phone: null,
                 phoneHref: null,
                 meta: null,
+                email: null,
               },
             ],
             legs: visit().legs.map((leg, index) => ({
               ...leg,
-              clientId: index === 0 ? GEORGI : MARTIN,
+              clientId: draftPersonKey(index === 0 ? GEORGI : MARTIN),
             })),
           }
         : {}),
@@ -7149,9 +7340,12 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     ref.setInput('vm', vm);
     ref.setInput('uiServices', CATALOGUE);
     ref.setInput('uiBarbers', CARD_ROSTER);
-    ref.setInput('uiOwnerUserId', GEORGI);
+    ref.setInput('uiOwnerUserId', CoreUserId.of(GEORGI));
     ref.setInput('uiGrants', [GEORGI_GRANT]);
-    ref.setInput('uiViewer', { uid: 'dev-staff-ivan', roles: ['barber'] });
+    ref.setInput('uiViewer', {
+      userId: CoreUserId.of('dev-staff-ivan'),
+      roles: [Role.Barber],
+    });
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -7237,7 +7431,7 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
 
     child(AchievementCategoryPage).openScope.emit({
       achievementScope: AchievementScope.Season,
-      seasonId: 'season-2026-summer',
+      seasonId: SeasonId.of('season-2026-summer'),
     });
     await settle();
     expect(editor().depth()).toBe(4);

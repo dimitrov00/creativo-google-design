@@ -13,8 +13,8 @@ import {
   CouponOccasion,
   JournalEffect,
   JournalFeed,
+  VisitFilter,
 } from '@core/components';
-import { VisitFilter } from '@core/systems';
 import type { Appointment, JournalEntry } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
@@ -32,7 +32,13 @@ import type {
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
-import { type CustomerId, Result as CoreResult } from '@core/primitives';
+import {
+  AppointmentId,
+  BadgeSeriesId,
+  type CustomerId,
+  Result as CoreResult,
+  UserId,
+} from '@core/primitives';
 import { RepositoryError as CoreRepositoryError } from '@core/errors';
 import {
   loyaltyCatalogFixture,
@@ -52,9 +58,10 @@ import {
   WAITLIST_READ_PORTS,
   provideFlags,
 } from '@creativo/infrastructure/firebase-app';
-import type {
-  ClientCardContext,
-  ClientCardSubject,
+import {
+  type ClientCardContext,
+  ClientCardPage,
+  type ClientCardSubject,
 } from './client-card.contracts';
 import { dayWithYear } from './client-card.format';
 import {
@@ -356,7 +363,10 @@ describe('ClientCardStore — a guest', () => {
     open(
       store,
       GUEST,
-      martinContext({ isOwner: false, appointmentId: 'appt-walk-in' }),
+      martinContext({
+        isOwner: false,
+        appointmentId: AppointmentId.of('appt-walk-in'),
+      }),
     );
     await settle();
     expect(store.hero()).toMatchObject({ name: 'Иво', paused: false });
@@ -431,7 +441,7 @@ describe('ClientCardStore — Георги, settled', () => {
     await settle();
     const data = store.achievementsData();
     expect(
-      data?.loadState === LoadState.Ready && data.data.previousVisitAtMs,
+      data?.loadState === LoadState.Ready && data.data.previousVisitUtcMs,
     ).toBe(GEORGI_PREVIOUS_MS);
     expect(store.achievementsContext()).toMatchObject({
       subjectName: 'Георги Петров',
@@ -443,26 +453,43 @@ describe('ClientCardStore — Георги, settled', () => {
     const { store } = rig();
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(store.barTitle('client', GEORGI)).toBe('Георги Петров');
-    expect(store.barTitle('clientLoyalty', GEORGI)).toBe('Лоялност');
-    expect(store.barTitle('clientAchievements', GEORGI)).toBe('Постижения');
-    expect(store.barTitle('clientHistory', GEORGI)).toBe('Посещения');
-    expect(store.barTitle('achievementCategory', 'category:cat-mastery')).toBe(
-      'Майсторство',
+    expect(store.barTitle(ClientCardPage.Client, GEORGI)).toBe('Георги Петров');
+    expect(store.barTitle(ClientCardPage.ClientLoyalty, GEORGI)).toBe(
+      'Лоялност',
+    );
+    expect(store.barTitle(ClientCardPage.ClientAchievements, GEORGI)).toBe(
+      'Постижения',
+    );
+    expect(store.barTitle(ClientCardPage.ClientHistory, GEORGI)).toBe(
+      'Посещения',
     );
     expect(
-      store.barTitle('achievementCategory', 'season:season-2026-autumn'),
+      store.barTitle(
+        ClientCardPage.AchievementCategory,
+        'category:cat-mastery',
+      ),
+    ).toBe('Майсторство');
+    expect(
+      store.barTitle(
+        ClientCardPage.AchievementCategory,
+        'season:season-2026-autumn',
+      ),
     ).toBe('Есен 2026');
-    expect(store.barTitle('achievementCategory', 'archive')).toBe(
+    expect(store.barTitle(ClientCardPage.AchievementCategory, 'archive')).toBe(
       'Минали сезони и събития',
     );
-    expect(store.barTitle('achievementCategory', 'day:2026-09-04')).toBe(
-      'Спечелени на 4.09',
+    expect(
+      store.barTitle(ClientCardPage.AchievementCategory, 'day:2026-09-04'),
+    ).toBe('Спечелени на 4.09');
+    expect(
+      store.barTitle(ClientCardPage.AchievementCategory, 'shelf:x'),
+    ).toBeNull();
+    expect(
+      store.barTitle(ClientCardPage.AchievementDetail, 'series-svc-fade'),
+    ).toBe('Фейд');
+    expect(store.barTitle(ClientCardPage.Photo, 'photo-dev-georgi-2')).toBe(
+      '3.09',
     );
-    expect(store.barTitle('achievementCategory', 'shelf:x')).toBeNull();
-    expect(store.barTitle('achievementDetail', 'series-svc-fade')).toBe('Фейд');
-    expect(store.barTitle('photo', 'photo-dev-georgi-2')).toBe('3.09');
-    expect(store.barTitle('discount', null)).toBeNull();
     expect(store.photoById('photo-dev-georgi-1')).toMatchObject({
       appointmentId: 'appt-dev-1',
       dateLabel: '28.09',
@@ -484,7 +511,9 @@ describe('ClientCardStore — Георги, settled', () => {
     open(
       admin.store,
       subjectOf(GEORGI),
-      georgiContext({ viewer: { uid: 'dev-admin', roles: ['admin'] } }),
+      georgiContext({
+        viewer: { userId: UserId.of('dev-admin'), roles: ['admin'] },
+      }),
     );
     await settle();
     expect(admin.stats?.callsTo('loadClientMoney')).toEqual([
@@ -1268,7 +1297,9 @@ describe('ClientCardStore — words', () => {
     expect(textOf(store.hero().line ?? [])).toMatch(
       /^Client since March\u00a02025/u,
     );
-    expect(store.barTitle('clientLoyalty', GEORGI)).toBe('Loyalty');
+    expect(store.barTitle(ClientCardPage.ClientLoyalty, GEORGI)).toBe(
+      'Loyalty',
+    );
   });
 });
 
@@ -1505,8 +1536,12 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
       currentAppointmentId: 'appt-dev-1',
     });
 
-    expect(store.barTitle('clientLedger', GEORGI)).toBe('Движение');
-    expect(store.barTitle('clientRecords', GEORGI)).toBe('Рекорди');
+    expect(store.barTitle(ClientCardPage.ClientLedger, GEORGI)).toBe(
+      'Движение',
+    );
+    expect(store.barTitle(ClientCardPage.ClientRecords, GEORGI)).toBe(
+      'Рекорди',
+    );
   });
 });
 
@@ -1782,24 +1817,32 @@ describe('ClientCardStore — revision 3: Мартин, in the chair', () => {
     const { store } = rig();
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
-    expect(store.detailAction('series-svc-fade')).toMatchObject({
+    expect(
+      store.detailAction(BadgeSeriesId.of('series-svc-fade')),
+    ).toMatchObject({
       serviceId: 'svc-fade',
     });
-    expect(store.detailAction('series-nope')).toBeNull();
+    expect(store.detailAction(BadgeSeriesId.of('series-nope'))).toBeNull();
 
     window.dispatchEvent(new Event('offline'));
-    expect(store.detailAction('series-svc-fade')).toBeNull();
+    expect(store.detailAction(BadgeSeriesId.of('series-svc-fade'))).toBeNull();
     window.dispatchEvent(new Event('online'));
-    expect(store.detailAction('series-svc-fade')).not.toBeNull();
+    expect(
+      store.detailAction(BadgeSeriesId.of('series-svc-fade')),
+    ).not.toBeNull();
 
     // The service already on his seat: nothing to add.
-    expect(store.detailAction('series-svc-classic-cut')).toBeNull();
+    expect(
+      store.detailAction(BadgeSeriesId.of('series-svc-classic-cut')),
+    ).toBeNull();
     TestBed.resetTestingModule();
 
     const gone = rig();
     open(gone.store, subjectOf(MARTIN), martinContext({ gone: true }));
     await settle();
-    expect(gone.store.detailAction('series-svc-fade')).toBeNull();
+    expect(
+      gone.store.detailAction(BadgeSeriesId.of('series-svc-fade')),
+    ).toBeNull();
     // Offline and gone, the wallet keeps its tickets on show but takes the verbs.
     const wallet = gone.store.wallet();
     expect(
@@ -1825,7 +1868,7 @@ describe('ClientCardStore — revision 3: a paused client', () => {
       expect(wallet.data.pass.state).toBe(WORDS.loyaltyPage.passFrozen);
       expect(wallet.data.actions.map((a) => a.id)).not.toContain('use');
     }
-    expect(store.detailAction('series-svc-beard')).toBeNull();
+    expect(store.detailAction(BadgeSeriesId.of('series-svc-beard'))).toBeNull();
     expect('reward' in store.overview()).toBe(false);
   });
 });
@@ -1836,7 +1879,10 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     open(
       store,
       GUEST,
-      martinContext({ isOwner: false, appointmentId: 'appt-walk-in' }),
+      martinContext({
+        isOwner: false,
+        appointmentId: AppointmentId.of('appt-walk-in'),
+      }),
     );
     await settle();
     expect(store.hero()).toEqual({
@@ -1911,10 +1957,10 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     await settle();
     TestBed.inject(TranslocoService).setActiveLang('en');
     await settle();
-    expect(store.barTitle('clientLedger', GEORGI)).toBe(
+    expect(store.barTitle(ClientCardPage.ClientLedger, GEORGI)).toBe(
       wordsOf('en').ledgerPage.title,
     );
-    expect(store.barTitle('clientRecords', GEORGI)).toBe(
+    expect(store.barTitle(ClientCardPage.ClientRecords, GEORGI)).toBe(
       wordsOf('en').achievements.records,
     );
     expect(store.hero().tier?.name).toBe('Gold');

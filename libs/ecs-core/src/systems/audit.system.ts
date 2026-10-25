@@ -6,6 +6,8 @@ import {
   AuditContext,
   AuditTargetRef,
   type ProfileAction,
+  ProfileAuthType,
+  RegistrationField,
   type Seat,
   SeatSubject,
   SubjectRelationship,
@@ -20,6 +22,7 @@ import {
   type PublishRequestId,
   type SeatId,
   type TriggerEventId,
+  Tag,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -97,33 +100,12 @@ export type AuditRowPlan = {
   readonly idBasis: string | null;
 };
 
-/**
- * The Firestore trigger's `authType` — who the platform says wrote a
- * document (`audit-profile-changes.ts`). The ONLY source of these tags; the
- * platform delivers them lower-case (`service_account`), and
- * {@link AuditSystem.profileWriter} reads either spelling. Any other value is
- * a writer the event cannot attribute.
- */
-export const ProfileAuthType = {
-  ServiceAccount: 'SERVICE_ACCOUNT',
-  System: 'SYSTEM',
-  ApiKey: 'API_KEY',
-  Unauthenticated: 'UNAUTHENTICATED',
-} as const;
-export type ProfileAuthType =
-  (typeof ProfileAuthType)[keyof typeof ProfileAuthType];
-
-const PROFILE_AUTH_TYPES: readonly ProfileAuthType[] = [
-  ProfileAuthType.ServiceAccount,
-  ProfileAuthType.System,
-  ProfileAuthType.ApiKey,
-  ProfileAuthType.Unauthenticated,
-];
+/** Every `authType` tag, dictionary order — the scan order of {@link authTypeOf}. */
+const PROFILE_AUTH_TYPES = Tag.values(ProfileAuthType);
 
 /** The platform's `authType` (lower-case) or the tag itself → the tag, or `null`. */
 function authTypeOf(raw: string): ProfileAuthType | null {
-  for (let i = 0; i < PROFILE_AUTH_TYPES.length; i++) {
-    const tag = PROFILE_AUTH_TYPES[i] as ProfileAuthType;
+  for (const tag of PROFILE_AUTH_TYPES) {
     if (tag === raw || tag.toLowerCase() === raw) return tag;
   }
   return null;
@@ -144,7 +126,10 @@ export type ProfileChange = {
   readonly writer: Actor;
   readonly beforeExists: boolean;
   readonly afterExists: boolean;
-  readonly fields: readonly string[];
+  /**
+   * The audited fields that changed (`changedProfileFields`).
+   */
+  readonly fields: readonly RegistrationField[];
   /**
    * The two sides' raw `profileEditedAtUtcMs` stamps (4A-16) — `null` for an
    * absent side or an absent key. The decoder only decodes; whether the
@@ -155,16 +140,19 @@ export type ProfileChange = {
 };
 
 /**
- * The profile fields whose change is worth a row (`AUDITED_PROFILE_FIELDS`).
- * `roles` and `status` are absent on purpose: their writers audit
- * themselves, inside their own transactions.
+ * The profile fields whose change is worth a row (`AUDITED_PROFILE_FIELDS`),
+ * in TODAY's order — an explicit list, never `Registration.FIELDS` or
+ * `Tag.values(RegistrationField)` (their order differs): the order is the
+ * order of the stored `profileFields` arrays. `roles` and `status` are
+ * absent on purpose: their writers audit themselves, inside their own
+ * transactions.
  */
-const AUDITED_PROFILE_FIELDS: readonly string[] = [
-  'firstName',
-  'lastName',
-  'phone',
-  'email',
-  'birthDate',
+const AUDITED_PROFILE_FIELDS: readonly RegistrationField[] = [
+  RegistrationField.FirstName,
+  RegistrationField.LastName,
+  RegistrationField.Phone,
+  RegistrationField.Email,
+  RegistrationField.BirthDate,
 ];
 
 /** A Firebase uid as this app mints and accepts them (the commit path's shape). */
@@ -432,10 +420,9 @@ export const AuditSystem = {
   changedProfileFields(
     before: Readonly<Record<string, unknown>>,
     after: Readonly<Record<string, unknown>>,
-  ): readonly string[] {
-    const changed: string[] = [];
-    for (let i = 0; i < AUDITED_PROFILE_FIELDS.length; i++) {
-      const field = AUDITED_PROFILE_FIELDS[i] as string;
+  ): readonly RegistrationField[] {
+    const changed: RegistrationField[] = [];
+    for (const field of AUDITED_PROFILE_FIELDS) {
       if (comparable(before[field]) !== comparable(after[field])) {
         changed.push(field);
       }
@@ -550,7 +537,7 @@ export const AuditSystem = {
    */
   planOwnProfileEdit(
     ownerUserId: UserId,
-    fields: readonly string[],
+    fields: readonly RegistrationField[],
     nowUtcMs: UtcEpochMs,
   ): AuditRowPlan | null {
     if (fields.length === 0) return null;

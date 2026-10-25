@@ -1,7 +1,7 @@
 import {
   ClientQuerySystem,
   type ParsedClientQuery,
-  type RankableClient as EcsRankableClient,
+  type RankableClient,
   type TextSegment as EcsTextSegment,
 } from '@core/systems';
 
@@ -22,15 +22,10 @@ import {
  * (`ClientQueryShape`), compared against the dictionary's member. This file
  * keeps only what its callers add over the system: the shop's default
  * calling code and the generic ranking over the caller's own objects. No
- * conversion: a reading goes to the system as it came out of it.
+ * conversion: a reading goes to the system as it came out of it, and the
+ * caller's options are the system's `RankableClient` as they are (every
+ * field present, an absent mail `null` — pass D, D-10.4).
  */
-
-/** A client as the ranking reads them — the option's own fields. */
-export interface RankableClient {
-  readonly label: string;
-  readonly phone: string | null;
-  readonly email?: string | null;
-}
 
 export interface RankedClient<T extends RankableClient> {
   readonly client: T;
@@ -81,11 +76,10 @@ export function rankClients<T extends RankableClient>(
   parsed: ParsedClientQuery,
   callingCode = DEFAULT_CALLING_CODE,
 ): readonly RankedClient<T>[] {
-  return ClientQuerySystem.rank(
-    clients.map(toRankable),
-    parsed,
-    callingCode,
-  ).map((hit) => ({ client: clients[hit.index] as T, exact: hit.exact }));
+  return ClientQuerySystem.rank(clients, parsed, callingCode).map((hit) => ({
+    client: clients[hit.index] as T,
+    exact: hit.exact,
+  }));
 }
 
 /** A name with the typed beginnings of its words marked. */
@@ -111,13 +105,4 @@ export function emailSegments(
   parsed: ParsedClientQuery,
 ): readonly TextSegment[] {
   return ClientQuerySystem.emailSegments(email, parsed);
-}
-
-/** The caller's option → the system's struct (an absent mail is `null`). */
-function toRankable(client: RankableClient): EcsRankableClient {
-  return {
-    label: client.label,
-    phone: client.phone,
-    email: client.email ?? null,
-  };
 }

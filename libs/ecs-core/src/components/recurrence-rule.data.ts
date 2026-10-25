@@ -1,55 +1,12 @@
-import { LocalDate, Result, Weekday } from '@core/primitives';
+import { LocalDate, Result, Tag, Weekday } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-
-/**
- * How often a rule repeats — the ONLY source of these strings, named after
- * the field it types (`recurrenceFrequency`, N15; was `Frequency`).
- */
-export const RecurrenceFrequency = {
-  Daily: 'DAILY',
-  Weekly: 'WEEKLY',
-  Monthly: 'MONTHLY',
-  Yearly: 'YEARLY',
-} as const;
-export type RecurrenceFrequency =
-  (typeof RecurrenceFrequency)[keyof typeof RecurrenceFrequency];
-
-/**
- * Which week of its month a day is in: the first … the fourth, or the LAST.
- * There is no fifth — a fifth weekday is always the last one, and «last» is
- * the reading that still means something in a four-week month. Numbers, not
- * tags: they are ordinals the walk computes with.
- */
-export const WeekOfMonth = {
-  First: 1,
-  Second: 2,
-  Third: 3,
-  Fourth: 4,
-  Last: -1,
-} as const;
-export type WeekOfMonth = (typeof WeekOfMonth)[keyof typeof WeekOfMonth];
-
-/**
- * How a monthly rule finds its day — iCalendar's `BYMONTHDAY` or ordinal
- * `BYDAY`; named after the field it types (`monthlyAnchor`).
- */
-export const MonthlyAnchor = {
-  /** «on the 24th». */
-  Date: 'DATE',
-  /** «on the fourth Thursday», «on the last Thursday». */
-  Weekday: 'WEEKDAY',
-} as const;
-export type MonthlyAnchor = (typeof MonthlyAnchor)[keyof typeof MonthlyAnchor];
-
-/**
- * How a series stops — iCalendar's `UNTIL` (inclusive) or `COUNT`; named
- * after the field it types (`recurrenceEnd`).
- */
-export const RecurrenceEnd = {
-  Until: 'UNTIL',
-  Count: 'COUNT',
-} as const;
-export type RecurrenceEnd = (typeof RecurrenceEnd)[keyof typeof RecurrenceEnd];
+import { RecurrenceEnd, RecurrenceEndRule } from './recurrence-end-rule.data';
+import {
+  MonthlyAnchor,
+  RecurrenceFrequency,
+  RecurrencePattern,
+  WeekOfMonth,
+} from './recurrence-pattern.data';
 
 const MAX_INTERVAL = 99;
 const MAX_OCCURRENCES = 366;
@@ -64,175 +21,8 @@ const ISO_WEEK: readonly Weekday[] = [
   Weekday.Sun,
 ];
 
-const WEEKS_OF_MONTH: readonly number[] = Object.values(WeekOfMonth);
-
 /** A leap year, for judging a yearly date that exists only in leap years. */
 const LEAP_YEAR = 2000;
-
-/**
- * WHICH days of a period a rule selects, per frequency — a flat variant
- * slice of {@link RecurrenceRule}; each variant carries only what it needs,
- * every variant field prefixed by its frequency or anchor
- * (`recurrenceWeekdays`, `monthlyDate`, `yearlyMonth`). Weekdays are kept
- * unique and in ISO order by {@link RecurrenceRule.create}.
- */
-export type RecurrencePattern =
-  | RecurrencePattern.Daily
-  | RecurrencePattern.Weekly
-  | RecurrencePattern.MonthlyByDate
-  | RecurrencePattern.MonthlyByWeekday
-  | RecurrencePattern.Yearly;
-
-const DAILY: RecurrencePattern.Daily = {
-  recurrenceFrequency: RecurrenceFrequency.Daily,
-};
-
-export const RecurrencePattern = {
-  daily(): RecurrencePattern.Daily {
-    return DAILY;
-  },
-  weekly(recurrenceWeekdays: readonly Weekday[]): RecurrencePattern.Weekly {
-    return {
-      recurrenceFrequency: RecurrenceFrequency.Weekly,
-      recurrenceWeekdays,
-    };
-  },
-  /** «every month on the 24th». */
-  monthlyByDate(monthlyDate: number): RecurrencePattern.MonthlyByDate {
-    return {
-      recurrenceFrequency: RecurrenceFrequency.Monthly,
-      monthlyAnchor: MonthlyAnchor.Date,
-      monthlyDate,
-    };
-  },
-  /** «every month on the fourth (or last) Thursday». */
-  monthlyByWeekday(
-    monthlyWeek: WeekOfMonth,
-    monthlyWeekday: Weekday,
-  ): RecurrencePattern.MonthlyByWeekday {
-    return {
-      recurrenceFrequency: RecurrenceFrequency.Monthly,
-      monthlyAnchor: MonthlyAnchor.Weekday,
-      monthlyWeek,
-      monthlyWeekday,
-    };
-  },
-  yearly(yearlyMonth: number, yearlyDate: number): RecurrencePattern.Yearly {
-    return {
-      recurrenceFrequency: RecurrenceFrequency.Yearly,
-      yearlyMonth,
-      yearlyDate,
-    };
-  },
-
-  /** Same days selected: same frequency, same anchor, same fields. */
-  equals(a: RecurrencePattern, b: RecurrencePattern): boolean {
-    switch (a.recurrenceFrequency) {
-      case RecurrenceFrequency.Daily:
-        return b.recurrenceFrequency === RecurrenceFrequency.Daily;
-      case RecurrenceFrequency.Weekly: {
-        if (b.recurrenceFrequency !== RecurrenceFrequency.Weekly) return false;
-        if (a.recurrenceWeekdays.length !== b.recurrenceWeekdays.length) {
-          return false;
-        }
-        for (let i = 0; i < a.recurrenceWeekdays.length; i++) {
-          if (a.recurrenceWeekdays[i] !== b.recurrenceWeekdays[i]) return false;
-        }
-        return true;
-      }
-      case RecurrenceFrequency.Monthly: {
-        if (b.recurrenceFrequency !== RecurrenceFrequency.Monthly) return false;
-        if (a.monthlyAnchor === MonthlyAnchor.Date) {
-          return (
-            b.monthlyAnchor === MonthlyAnchor.Date &&
-            a.monthlyDate === b.monthlyDate
-          );
-        }
-        return (
-          b.monthlyAnchor === MonthlyAnchor.Weekday &&
-          a.monthlyWeek === b.monthlyWeek &&
-          a.monthlyWeekday === b.monthlyWeekday
-        );
-      }
-      case RecurrenceFrequency.Yearly:
-        return (
-          b.recurrenceFrequency === RecurrenceFrequency.Yearly &&
-          a.yearlyMonth === b.yearlyMonth &&
-          a.yearlyDate === b.yearlyDate
-        );
-    }
-  },
-} as const;
-
-export namespace RecurrencePattern {
-  export type Daily = {
-    readonly recurrenceFrequency: typeof RecurrenceFrequency.Daily;
-  };
-  export type Weekly = {
-    readonly recurrenceFrequency: typeof RecurrenceFrequency.Weekly;
-    readonly recurrenceWeekdays: readonly Weekday[];
-  };
-  export type MonthlyByDate = {
-    readonly recurrenceFrequency: typeof RecurrenceFrequency.Monthly;
-    readonly monthlyAnchor: typeof MonthlyAnchor.Date;
-    /** `1…31` — a month without it is skipped, never moved. */
-    readonly monthlyDate: number;
-  };
-  export type MonthlyByWeekday = {
-    readonly recurrenceFrequency: typeof RecurrenceFrequency.Monthly;
-    readonly monthlyAnchor: typeof MonthlyAnchor.Weekday;
-    readonly monthlyWeek: WeekOfMonth;
-    readonly monthlyWeekday: Weekday;
-  };
-  export type Yearly = {
-    readonly recurrenceFrequency: typeof RecurrenceFrequency.Yearly;
-    readonly yearlyMonth: number;
-    readonly yearlyDate: number;
-  };
-  /** The two monthly readings — what `RecurrenceSystem.monthlyDaysFor` offers. */
-  export type Monthly = MonthlyByDate | MonthlyByWeekday;
-}
-
-/**
- * How a series stops — a flat variant slice of {@link RecurrenceRule}:
- * inclusively on a shop day (`untilLocalDate`), or after `occurrenceCount`
- * days.
- */
-export type RecurrenceEndRule =
-  RecurrenceEndRule.Until | RecurrenceEndRule.Count;
-
-export const RecurrenceEndRule = {
-  until(untilLocalDate: LocalDate): RecurrenceEndRule.Until {
-    return { recurrenceEnd: RecurrenceEnd.Until, untilLocalDate };
-  },
-  count(occurrenceCount: number): RecurrenceEndRule.Count {
-    return { recurrenceEnd: RecurrenceEnd.Count, occurrenceCount };
-  },
-
-  equals(a: RecurrenceEndRule, b: RecurrenceEndRule): boolean {
-    if (a.recurrenceEnd === RecurrenceEnd.Until) {
-      return (
-        b.recurrenceEnd === RecurrenceEnd.Until &&
-        a.untilLocalDate === b.untilLocalDate
-      );
-    }
-    return (
-      b.recurrenceEnd === RecurrenceEnd.Count &&
-      a.occurrenceCount === b.occurrenceCount
-    );
-  },
-} as const;
-
-export namespace RecurrenceEndRule {
-  export type Until = {
-    readonly recurrenceEnd: typeof RecurrenceEnd.Until;
-    readonly untilLocalDate: LocalDate;
-  };
-  export type Count = {
-    readonly recurrenceEnd: typeof RecurrenceEnd.Count;
-    readonly occurrenceCount: number;
-  };
-}
 
 /**
  * A RECURRENCE RULE — which days a thing repeats on, and when it stops: the
@@ -268,7 +58,7 @@ function normalize(
 ): Result<RecurrencePattern, SchedulingError> {
   switch (pattern.recurrenceFrequency) {
     case RecurrenceFrequency.Daily:
-      return Result.ok(DAILY);
+      return Result.ok(RecurrencePattern.daily());
     case RecurrenceFrequency.Weekly: {
       const weekdays: Weekday[] = [];
       for (let i = 0; i < ISO_WEEK.length; i++) {
@@ -287,7 +77,7 @@ function normalize(
           ? Result.ok(RecurrencePattern.monthlyByDate(date))
           : Result.err(SchedulingError.recurrenceInvalidDay(null, date));
       }
-      return WEEKS_OF_MONTH.includes(pattern.monthlyWeek) &&
+      return Tag.has(WeekOfMonth, pattern.monthlyWeek) &&
         isIsoWeekday(pattern.monthlyWeekday)
         ? Result.ok(
             RecurrencePattern.monthlyByWeekday(
@@ -316,13 +106,6 @@ function normalize(
         : Result.err(SchedulingError.recurrenceInvalidDay(month, date));
     }
   }
-}
-
-/** The end slice as a fresh struct (no pattern field rides along). */
-function endOf(end: RecurrenceEndRule): RecurrenceEndRule {
-  return end.recurrenceEnd === RecurrenceEnd.Until
-    ? RecurrenceEndRule.until(end.untilLocalDate)
-    : RecurrenceEndRule.count(end.occurrenceCount);
 }
 
 export const RecurrenceRule = {
@@ -369,7 +152,9 @@ export const RecurrenceRule = {
     }
     const normalized = normalize(pattern);
     if (!normalized.ok) return normalized;
-    return Result.ok(RecurrenceRule.of(normalized.value, interval, endOf(end)));
+    return Result.ok(
+      RecurrenceRule.of(normalized.value, interval, RecurrenceEndRule.of(end)),
+    );
   },
 
   /**
@@ -389,7 +174,7 @@ export const RecurrenceRule = {
   patternOf(rule: RecurrenceRule): RecurrencePattern {
     switch (rule.recurrenceFrequency) {
       case RecurrenceFrequency.Daily:
-        return DAILY;
+        return RecurrencePattern.daily();
       case RecurrenceFrequency.Weekly:
         return RecurrencePattern.weekly(rule.recurrenceWeekdays);
       case RecurrenceFrequency.Monthly:
@@ -406,7 +191,7 @@ export const RecurrenceRule = {
 
   /** The rule's end slice, as a fresh struct. */
   endOf(rule: RecurrenceRule): RecurrenceEndRule {
-    return endOf(rule);
+    return RecurrenceEndRule.of(rule);
   },
 
   frequency(rule: RecurrenceRule): RecurrenceFrequency {

@@ -1,6 +1,7 @@
 import type { TenantId, UserId } from '@core/primitives';
 import { type AuthClaims, AuthStage } from './auth-claims.data';
-import { type Role, isStaff } from './role.data';
+import type { Role } from './role.data';
+import { Roles } from './roles.data';
 
 /**
  * Principal tags — the ONLY source of these strings, the discriminator
@@ -16,7 +17,7 @@ export const PrincipalKind = {
   Onboarding: 'ONBOARDING',
   /** Active, holding no staff role. */
   Client: 'CLIENT',
-  /** Active, holding at least one staff role (`isStaff`). */
+  /** Active, holding at least one staff role (`Roles.isStaff`). */
   Staff: 'STAFF',
 } as const;
 export type PrincipalKind = (typeof PrincipalKind)[keyof typeof PrincipalKind];
@@ -38,14 +39,6 @@ export type Principal =
 const ANONYMOUS: Principal.Anonymous = {
   principalKind: PrincipalKind.Anonymous,
 };
-
-/** Linear scan of a short list — no allocation. */
-function hasEntry(values: readonly Role[], value: Role): boolean {
-  for (let i = 0; i < values.length; i++) {
-    if (values[i] === value) return true;
-  }
-  return false;
-}
 
 export const Principal = {
   anonymous(): Principal.Anonymous {
@@ -69,7 +62,7 @@ export const Principal = {
       claims.tenantId !== null
     ) {
       return {
-        principalKind: isStaff(claims.roles)
+        principalKind: Roles.isStaff(claims.roles)
           ? PrincipalKind.Staff
           : PrincipalKind.Client,
         userId,
@@ -96,14 +89,14 @@ export const Principal = {
 
   /** Onboarded AND holding `role`. */
   hasRole(principal: Principal, role: Role): boolean {
-    return Principal.isActive(principal) && hasEntry(principal.roles, role);
+    return Principal.isActive(principal) && principal.roles.includes(role);
   },
 
   /** Onboarded AND holding any of `roles` — the roles guard. */
   hasAnyRole(principal: Principal, roles: readonly Role[]): boolean {
     if (!Principal.isActive(principal)) return false;
     for (let i = 0; i < roles.length; i++) {
-      if (hasEntry(principal.roles, roles[i] as Role)) return true;
+      if (principal.roles.includes(roles[i] as Role)) return true;
     }
     return false;
   },

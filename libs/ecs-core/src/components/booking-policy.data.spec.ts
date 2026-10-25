@@ -9,9 +9,9 @@ import {
 } from '@core/testing';
 import { UtcEpochMs } from '@core/primitives';
 import { type SchedulingError, SchedulingErrorCode } from '@core/errors';
-import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
+import { BookingPolicy } from './booking-policy.data';
 
-const VALID_INPUT: BookingPolicyInput = {
+const VALID_INPUT: BookingPolicy.Input = {
   maxPartySize: 5,
   slotStepMinutes: 15,
   minLeadMinutes: 120,

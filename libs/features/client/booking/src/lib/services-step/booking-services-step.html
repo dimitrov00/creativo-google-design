@@ -56,9 +56,9 @@
                     t('booking.party.rename', { name: seat.label })
                   "
               [attr.data-testid]="'booking-seat-rename-' + seat.key"
-              [attr.aria-invalid]="renameRefusal() ? 'true' : null"
+              [attr.aria-invalid]="renameRefusalLine() ? 'true' : null"
               [attr.aria-describedby]="
-                renameRefusal() ? 'booking-seat-rename-error' : null
+                renameRefusalLine() ? 'booking-seat-rename-error' : null
               "
               (input)="typeRename($any($event.target).value)"
               (blur)="commitRename(seat, $any($event.target).value)"
@@ -116,7 +116,7 @@
            scroller for the same reason the menu is. Two guests a restored
            draft brought back under one name are said the same way, and
            Continue waits for the rename. -->
-      @if (renameRefusal(); as message) {
+      @if (renameRefusalLine(); as message) {
       <p
         uiText
         uiFont="footnote"

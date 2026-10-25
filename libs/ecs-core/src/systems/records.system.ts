@@ -1,4 +1,8 @@
-import { PersonalRecord, PersonalRecordKind } from '@core/components';
+import {
+  PersonalRecord,
+  PersonalRecordKind,
+  SubjectVisitOutcome,
+} from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
@@ -6,7 +10,7 @@ import {
   LocalDate,
   type ServiceId,
 } from '@core/primitives';
-import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
+import { ClientStatsSystem } from './client-stats.system';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8; `records.presenter.ts`

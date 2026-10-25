@@ -22,15 +22,35 @@
  *
  * Plain data, no imports but types, the dictionaries a field is spelled
  * with (`JournalFeed`, `LoadState`, `BookingStatus`, …) and the brands a
- * day and a minute are made of: a spec may spread a fixture and
+ * day, a minute, an instant and an id are made of: a spec may spread a fixture and
  * change one field to reach a state (`{ ...PASS.georgi, frozen: true }`),
  * and the builders at the top do the same for the shapes that repeat.
  */
-import { JournalFeed, PersonalRecordKind } from '@core/components';
-import { BookingStatus } from '@core/primitives';
-import { VisitFilter, VisitRowOutcome } from '@core/systems';
-import { localDate, minute } from '@core/testing';
 import {
+  AchievementRuleId,
+  AppointmentId,
+  AppointmentPhotoId,
+  BadgeCategoryId,
+  BadgeSeriesId,
+  BarberId,
+  BookingStatus,
+  CouponGrantId,
+  GiftVoucherId,
+  JournalEntryId,
+  RewardId,
+  SeasonId,
+  ServiceId,
+  WaitlistRequestId,
+} from '@core/primitives';
+import {
+  JournalFeed,
+  PersonalRecordKind,
+  VisitFilter,
+  VisitRowOutcome,
+} from '@core/components';
+import { localDate, minute, utcMs } from '@core/testing';
+import {
+  type AppointmentRowVm,
   TrailingFactFace,
   VisitCardSlot,
   type VisitCardVm,
@@ -108,7 +128,7 @@ export function medalOf(
   overrides: Partial<MedalVm> = {},
 ): MedalVm {
   return {
-    seriesId,
+    seriesId: BadgeSeriesId.of(seriesId),
     state: 'notStarted',
     icon: 'loyalty.badge',
     src: null,
@@ -132,10 +152,10 @@ export function tileOf(medal: MedalVm): AchievementTileVm {
 /** A staff row of the shared visits list: a worked visit with Иван, unless the spec says otherwise. */
 export function visitRowOf(
   id: string,
-  overrides: Partial<VisitRowVm> = {},
-): VisitRowVm {
+  overrides: Partial<AppointmentRowVm> = {},
+): AppointmentRowVm {
   return {
-    id,
+    id: AppointmentId.of(id),
     visitRowEntry: VisitRowEntry.Visit,
     // Saturday 5 September 2026, 10:00 on the shop's wall clock (Sofia).
     localDate: localDate('2026-09-05'),
@@ -368,7 +388,7 @@ export const HERO = {
 // ── The glance: the birthday card ───────────────────────────────────────
 
 const BIRTHDAY_GIFT: RewardReadyVm = {
-  grantId: 'grant-birthday-2026',
+  grantId: CouponGrantId.of('grant-birthday-2026'),
   title: 'Рожден ден',
   value: '−20 %',
   detail: 'до 28.10',
@@ -432,7 +452,7 @@ export const BIRTHDAY = {
 export const VISIT_CARD = {
   /** H1 — everything a last visit can carry: the figure, the quote, two thumbs. */
   last: {
-    id: 'apt-2026-09-05',
+    id: AppointmentId.of('apt-2026-09-05'),
     visitCardSlot: VisitCardSlot.Last,
     label: 'Последно посещение',
     services: 'Фейд · Оформяне на брада',
@@ -446,12 +466,12 @@ export const VISIT_CARD = {
     barber: { name: 'Иван Колев', avatarSrc: null },
     photos: [
       {
-        id: 'photo-0905-1',
+        id: AppointmentPhotoId.of('photo-0905-1'),
         url: 'media/photos/0905-1.jpg',
         alt: 'Снимка от 5 септември',
       },
       {
-        id: 'photo-0905-2',
+        id: AppointmentPhotoId.of('photo-0905-2'),
         url: 'media/photos/0905-2.jpg',
         alt: 'Снимка от 5 септември',
       },
@@ -462,7 +482,7 @@ export const VISIT_CARD = {
   },
   /** H1 at its least: the services and the facts. */
   lastBare: {
-    id: 'apt-2026-08-08',
+    id: AppointmentId.of('apt-2026-08-08'),
     visitCardSlot: VisitCardSlot.Last,
     label: 'Последно посещение',
     services: 'Фейд',
@@ -480,7 +500,7 @@ export const VISIT_CARD = {
   },
   /** H2 — the time is the fact; the status is news. */
   next: {
-    id: 'apt-2026-10-23',
+    id: AppointmentId.of('apt-2026-10-23'),
     visitCardSlot: VisitCardSlot.Next,
     label: 'Следващ час',
     services: 'Фейд',
@@ -500,7 +520,7 @@ export const VISIT_CARD = {
   },
   /** H2, asked for and not yet confirmed; cut by two, so no face. */
   nextPending: {
-    id: 'apt-2026-11-06',
+    id: AppointmentId.of('apt-2026-11-06'),
     visitCardSlot: VisitCardSlot.Next,
     label: 'Следващ час',
     services: 'Фейд · Оформяне на брада',
@@ -520,7 +540,7 @@ export const VISIT_CARD = {
   },
   /** H3 — a request waiting for a free slot: no capsule, no face, no figure. */
   waitlist: {
-    id: 'waitlist-1',
+    id: WaitlistRequestId.of('waitlist-1'),
     visitCardSlot: VisitCardSlot.Waitlist,
     label: 'Чака свободен час',
     services: 'Класическа подстрижка',
@@ -536,7 +556,7 @@ export const VISIT_CARD = {
   },
   /** `/account`'s «Предстоящ час»: `increased`, no services line, no face. */
   accountUpcoming: {
-    id: 'apt-2026-10-23',
+    id: AppointmentId.of('apt-2026-10-23'),
     visitCardSlot: VisitCardSlot.Next,
     label: 'Предстоящ час',
     services: 'Фейд',
@@ -692,7 +712,7 @@ export const QUICK_ACTIONS = [
 export const REWARD_READY = {
   /** E — the name says it: the ticket is the name alone. */
   haircut: {
-    grantId: 'grant-haircut',
+    grantId: CouponGrantId.of('grant-haircut'),
     title: 'Безплатно подстригване',
     value: null,
     detail: 'до 28.10',
@@ -703,7 +723,7 @@ export const REWARD_READY = {
   },
   /** A value of its own, two identical grants, another kind held too. */
   percent: {
-    grantId: 'grant-percent',
+    grantId: CouponGrantId.of('grant-percent'),
     title: 'Отстъпка за редовен клиент',
     value: '−10 %',
     detail: 'до 31.12 · още 1',
@@ -714,7 +734,7 @@ export const REWARD_READY = {
   },
   /** On this visit's bill: stamped where it stood. */
   applied: {
-    grantId: 'grant-haircut',
+    grantId: CouponGrantId.of('grant-haircut'),
     title: 'Безплатно подстригване',
     value: null,
     detail: 'до 28.10',
@@ -727,35 +747,35 @@ export const REWARD_READY = {
 
 export const PHOTOS = [
   {
-    photoId: 'photo-0808',
-    appointmentId: 'apt-2026-08-08',
+    photoId: AppointmentPhotoId.of('photo-0808'),
+    appointmentId: AppointmentId.of('apt-2026-08-08'),
     url: 'media/photos/0808.jpg',
-    takenAtUtcMs: 1_786_176_300_000, // 2026-08-08T11:05:00+03:00
+    takenAtUtcMs: utcMs('2026-08-08T11:05:00+03:00'),
     dateLabel: '8.08',
     accessibleName: 'Снимка от 8 август',
-    barberId: 'barber-ivan',
+    barberId: BarberId.of('barber-ivan'),
     width: 1080,
     height: 1350,
   },
   {
-    photoId: 'photo-0711',
-    appointmentId: 'apt-2026-07-11',
+    photoId: AppointmentPhotoId.of('photo-0711'),
+    appointmentId: AppointmentId.of('apt-2026-07-11'),
     url: 'media/photos/0711.jpg',
-    takenAtUtcMs: 1_783_756_200_000, // 2026-07-11T10:50:00+03:00
+    takenAtUtcMs: utcMs('2026-07-11T10:50:00+03:00'),
     dateLabel: '11.07',
     accessibleName: 'Снимка от 11 юли',
-    barberId: 'barber-ivan',
+    barberId: BarberId.of('barber-ivan'),
     width: 1080,
     height: 1350,
   },
   {
-    photoId: 'photo-0613',
-    appointmentId: 'apt-2026-06-13',
+    photoId: AppointmentPhotoId.of('photo-0613'),
+    appointmentId: AppointmentId.of('apt-2026-06-13'),
     url: 'media/photos/0613.jpg',
-    takenAtUtcMs: 1_781_336_700_000, // 2026-06-13T10:45:00+03:00
+    takenAtUtcMs: utcMs('2026-06-13T10:45:00+03:00'),
     dateLabel: '13.06',
     accessibleName: 'Снимка от 13 юни',
-    barberId: 'barber-ivan',
+    barberId: BarberId.of('barber-ivan'),
     width: null,
     height: null,
   },
@@ -918,7 +938,7 @@ export const PASS = {
 export const VOUCHER = {
   /** Drawn from: what it was issued for and its validity are the ONE chip. */
   partial: {
-    voucherId: 'voucher-1',
+    voucherId: GiftVoucherId.of('voucher-1'),
     title: 'Ваучер за подарък',
     balance: '25,00 €',
     detail: 'от 50,00 € · до 31.12',
@@ -927,7 +947,7 @@ export const VOUCHER = {
   },
   /** Never expires. */
   open: {
-    voucherId: 'voucher-2',
+    voucherId: GiftVoucherId.of('voucher-2'),
     title: 'Ваучер за подарък',
     balance: '30,00 €',
     detail: 'от 30,00 €',
@@ -942,7 +962,7 @@ const WALLET_ACTION = {
     label: 'Използвай',
     prominence: 'accent',
     accessibleName: 'Използвай награда на това посещение',
-    grantId: 'grant-haircut',
+    grantId: CouponGrantId.of('grant-haircut'),
     count: null,
   },
   useSeveral: {
@@ -1005,7 +1025,7 @@ export const WALLET_ACTIONS = {
 } satisfies Record<string, readonly WalletActionVm[]>;
 
 export const STAMP_CARD: StampCardVm = {
-  ruleId: 'punch-haircut',
+  ruleId: AchievementRuleId.of('punch-haircut'),
   title: 'Безплатно подстригване',
   figure: '3 от 10',
   gauge: gaugeOf(3, 10, '3 от 10 печата, още 7 до безплатно подстригване', {
@@ -1210,7 +1230,7 @@ export const WALLET_TIER = {
 
 export const REWARD_TILES = [
   {
-    rewardId: 'reward-beard',
+    rewardId: RewardId.of('reward-beard'),
     title: 'Безплатно оформяне на брада',
     cost: '120 т.',
     affordable: true,
@@ -1220,7 +1240,7 @@ export const REWARD_TILES = [
     accessibleName: 'Безплатно оформяне на брада, 120 точки',
   },
   {
-    rewardId: 'reward-haircut',
+    rewardId: RewardId.of('reward-haircut'),
     title: 'Безплатно подстригване',
     cost: '250 т.',
     affordable: true,
@@ -1230,7 +1250,7 @@ export const REWARD_TILES = [
     accessibleName: 'Безплатно подстригване, 250 точки',
   },
   {
-    rewardId: 'reward-product',
+    rewardId: RewardId.of('reward-product'),
     title: 'Продукт по избор',
     cost: '400 т.',
     affordable: false,
@@ -1244,7 +1264,7 @@ export const REWARD_TILES = [
 /** One row per kind of §2.2.5, for the list's glyphs, inks and trailing edge. */
 export const ACTIVITY_ROW = {
   visit: {
-    entryId: 'entry-0905-visit',
+    entryId: JournalEntryId.of('entry-0905-visit'),
     icon: 'loyalty.activity.visit',
     tone: 'accent',
     title: 'Фейд · Оформяне на брада',
@@ -1256,7 +1276,7 @@ export const ACTIVITY_ROW = {
       'Спечелени, Посещение: Фейд · Оформяне на брада, 5 септември, +27 т.',
   },
   level: {
-    entryId: 'entry-0301-level',
+    entryId: JournalEntryId.of('entry-0301-level'),
     icon: 'loyalty.activity.level',
     tone: 'accent',
     title: 'Години с нас I',
@@ -1268,7 +1288,7 @@ export const ACTIVITY_ROW = {
   },
   /** A level that paid no points: no amount, no balance. */
   levelBare: {
-    entryId: 'entry-0924-level',
+    entryId: JournalEntryId.of('entry-0924-level'),
     icon: 'loyalty.activity.level',
     tone: 'accent',
     title: 'Фейд II',
@@ -1279,7 +1299,7 @@ export const ACTIVITY_ROW = {
     accessibleName: 'Постижение: Фейд II, 24 септември 2025 г.',
   },
   redeemed: {
-    entryId: 'entry-0620-redeemed',
+    entryId: JournalEntryId.of('entry-0620-redeemed'),
     icon: 'loyalty.activity.redeemed',
     tone: 'neutral',
     title: 'Безплатно подстригване',
@@ -1291,7 +1311,7 @@ export const ACTIVITY_ROW = {
       'Използвани, Размяна: Безплатно подстригване, 20 юни, −250 т.',
   },
   granted: {
-    entryId: 'entry-0516-granted',
+    entryId: JournalEntryId.of('entry-0516-granted'),
     icon: 'loyalty.activity.granted',
     tone: 'accent',
     title: 'Отстъпка за редовен клиент',
@@ -1302,7 +1322,7 @@ export const ACTIVITY_ROW = {
     accessibleName: 'Получена награда, Отстъпка за редовен клиент, 16 май',
   },
   tier: {
-    entryId: 'entry-0902-tier',
+    entryId: JournalEntryId.of('entry-0902-tier'),
     icon: 'loyalty.activity.tier',
     tone: 'accent',
     title: 'Статус: Злато',
@@ -1313,7 +1333,7 @@ export const ACTIVITY_ROW = {
     accessibleName: 'Нов статус, Статус: Злато, 2 септември, от Сребро',
   },
   adjusted: {
-    entryId: 'entry-0418-goodwill',
+    entryId: JournalEntryId.of('entry-0418-goodwill'),
     icon: 'loyalty.activity.adjusted',
     tone: 'neutral',
     title: 'Бонус от салона',
@@ -1324,7 +1344,7 @@ export const ACTIVITY_ROW = {
     accessibleName: 'Бонус, Бонус от салона, 18 април, +30 т.',
   },
   expired: {
-    entryId: 'entry-1231-expired',
+    entryId: JournalEntryId.of('entry-1231-expired'),
     icon: 'loyalty.activity.expired',
     tone: 'neutral',
     title: 'Изтекли',
@@ -1335,7 +1355,7 @@ export const ACTIVITY_ROW = {
     accessibleName: 'Изтекли, 31 декември 2025 г., −40 т.',
   },
   reversal: {
-    entryId: 'entry-0405-reversal',
+    entryId: JournalEntryId.of('entry-0405-reversal'),
     icon: 'loyalty.activity.reversed',
     tone: 'neutral',
     title: 'Анулирано',
@@ -1347,7 +1367,7 @@ export const ACTIVITY_ROW = {
   },
   /** The row a later entry reversed: struck. */
   reversed: {
-    entryId: 'entry-0404-visit',
+    entryId: JournalEntryId.of('entry-0404-visit'),
     icon: 'loyalty.activity.visit',
     tone: 'accent',
     title: 'Фейд',
@@ -1360,7 +1380,7 @@ export const ACTIVITY_ROW = {
 } satisfies Record<string, ActivityRowVm>;
 
 const ACTIVITY_AUGUST: ActivityRowVm = {
-  entryId: 'entry-0808-visit',
+  entryId: JournalEntryId.of('entry-0808-visit'),
   icon: 'loyalty.activity.visit',
   tone: 'accent',
   title: 'Фейд',
@@ -1372,7 +1392,7 @@ const ACTIVITY_AUGUST: ActivityRowVm = {
 };
 
 const ACTIVITY_JULY: ActivityRowVm = {
-  entryId: 'entry-0711-visit',
+  entryId: JournalEntryId.of('entry-0711-visit'),
   icon: 'loyalty.activity.visit',
   tone: 'accent',
   title: 'Фейд · Оформяне на брада',
@@ -1723,7 +1743,7 @@ function silhouettes(
 export const MEDAL_SECTIONS = {
   /** Five families: earned → in progress → not started; shown whole. */
   milestones: {
-    categoryId: 'milestones',
+    categoryId: BadgeCategoryId.of('milestones'),
     title: 'Етапи',
     count: '3 от 5',
     tiles: [
@@ -1737,7 +1757,7 @@ export const MEDAL_SECTIONS = {
   },
   /** Exactly nine: three whole rows, still no fold. */
   mastery: {
-    categoryId: 'mastery',
+    categoryId: BadgeCategoryId.of('mastery'),
     title: 'Майсторство',
     count: '3 от 9',
     tiles: [
@@ -1750,7 +1770,7 @@ export const MEDAL_SECTIONS = {
   },
   /** Twelve: two rows show, then «Покажи всички 12». */
   special: {
-    categoryId: 'special',
+    categoryId: BadgeCategoryId.of('special'),
     title: 'Специални',
     count: '4 от 12',
     tiles: [
@@ -1763,7 +1783,7 @@ export const MEDAL_SECTIONS = {
 } satisfies Record<string, MedalSectionVm>;
 
 export const SEASON_CARD: SeasonCardVm = {
-  seasonId: 'autumn-2026',
+  seasonId: SeasonId.of('autumn-2026'),
   medal: { ...MEDALS.autumn, title: null, caption: null },
   gauge: gaugeOf(4, 10, 'Ниво II, още 2 посещения до III', {
     label: 'Есен 2026',
@@ -1817,7 +1837,7 @@ export const SEASON_CARD: SeasonCardVm = {
 };
 
 export const EVENT_CARD: EventCardVm = {
-  seasonId: 'beard-week-2026',
+  seasonId: SeasonId.of('beard-week-2026'),
   title: 'Седмица на брадата',
   when: 'до 6.10',
   medals: [
@@ -1875,7 +1895,7 @@ export const MEDALS_PAGE = {
     },
     sections: [
       {
-        categoryId: 'milestones',
+        categoryId: BadgeCategoryId.of('milestones'),
         title: 'Етапи',
         count: '0 от 5',
         tiles: silhouettes('milestones', 5),
@@ -2230,8 +2250,8 @@ const COUNTED_VISITS: readonly VisitRowVm[] = [
 export const MEDAL_DETAIL = {
   /** «Фейд»: 23 of 25 to level III; the visit does not hold a fade yet, so the dock offers it. */
   fade: {
-    seriesId: 'service-fade',
-    categoryId: 'mastery',
+    seriesId: BadgeSeriesId.of('service-fade'),
+    categoryId: BadgeCategoryId.of('mastery'),
     title: 'Фейд',
     medal: { ...MEDALS.fade, title: null, caption: null },
     stateLine: [
@@ -2258,15 +2278,15 @@ export const MEDAL_DETAIL = {
       ],
     },
     action: {
-      serviceId: 'service-fade',
+      serviceId: ServiceId.of('service-fade'),
       label: 'Добави фейд',
       accessibleName: 'Добави Фейд към посещението',
     },
   },
   /** This visit already holds what counts: the third line, and no verb. */
   countsThisVisit: {
-    seriesId: 'service-fade',
-    categoryId: 'mastery',
+    seriesId: BadgeSeriesId.of('service-fade'),
+    categoryId: BadgeCategoryId.of('mastery'),
     title: 'Фейд',
     medal: { ...MEDALS.fade, title: null, caption: null },
     stateLine: [
@@ -2288,8 +2308,8 @@ export const MEDAL_DETAIL = {
   },
   /** Not started: the whole page, the requirement never hidden. */
   notStarted: {
-    seriesId: 'service-classic',
-    categoryId: 'mastery',
+    seriesId: BadgeSeriesId.of('service-classic'),
+    categoryId: BadgeCategoryId.of('mastery'),
     title: 'Класическа подстрижка',
     medal: { ...MEDALS.classicCut, title: null, caption: null },
     stateLine: [{ text: 'Майсторство · още не е започнато', fact: false }],
@@ -2325,15 +2345,15 @@ export const MEDAL_DETAIL = {
     visits: [],
     related: null,
     action: {
-      serviceId: 'service-classic',
+      serviceId: ServiceId.of('service-classic'),
       label: 'Добави класическа подстрижка',
       accessibleName: 'Добави Класическа подстрижка към посещението',
     },
   },
   /** A one-off family, earned: the state is the figure, one «Награда» row. */
   oneOff: {
-    seriesId: 'welcome',
-    categoryId: 'milestones',
+    seriesId: BadgeSeriesId.of('welcome'),
+    categoryId: BadgeCategoryId.of('milestones'),
     title: 'Добре дошъл',
     medal: { ...MEDALS.welcome, title: null, caption: null },
     stateLine: [
@@ -2379,7 +2399,7 @@ export const MEDAL_DETAIL = {
   },
   /** Retired: «Как се печели» and the verb are absent. */
   retired: {
-    seriesId: 'retired-family',
+    seriesId: BadgeSeriesId.of('retired-family'),
     categoryId: null,
     title: 'Лятна събота',
     medal: medalOf('retired-family', {

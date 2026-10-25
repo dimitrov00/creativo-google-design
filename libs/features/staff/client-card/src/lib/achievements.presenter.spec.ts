@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { BadgeCategoryKind, BadgeEmblem, EarnedVia } from '@core/components';
-import { BadgeCategoryId, BadgeSeriesId } from '@core/primitives';
+import {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  BarberId,
+  LocationId,
+  SeasonId,
+  ServiceId,
+} from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
-import { localDate, utcMs } from '@core/testing';
+import { duration, localDate, minute, utcMs } from '@core/testing';
 import { isUiIconName } from '@creativo/ui/controls';
 import {
   BADGE_CATEGORY_ICONS,
@@ -10,6 +17,7 @@ import {
   achievementScopeKey,
   achievementScopeOf,
   completesWithThisVisit,
+  familyOfMedal,
   medalVm,
   scopePageVm,
   scopeTitleOf,
@@ -22,13 +30,16 @@ import {
   achievementsContextOf,
   achievementsDataOf,
   sofia,
-  sofiaIso,
+  startOf,
   georgiContext,
   georgiOpenContext,
   martinContext,
   must,
 } from '../testing/client-card.fixtures';
-import { AchievementScope } from './client-card.contracts';
+import {
+  AchievementScope,
+  type ClientCardStart,
+} from './client-card.contracts';
 
 const GEORGI = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const MARTIN = achievementsDataOf('martin', MARTIN_PREVIOUS_MS);
@@ -74,14 +85,14 @@ describe('scope keys', () => {
     const scopes = [
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-mastery',
+        categoryId: BadgeCategoryId.of('cat-mastery'),
       },
       {
         achievementScope: AchievementScope.Season,
-        seasonId: 'season-2026-autumn',
+        seasonId: SeasonId.of('season-2026-autumn'),
       },
       { achievementScope: AchievementScope.Archive },
-      { achievementScope: AchievementScope.Day, day: '2026-09-04' },
+      { achievementScope: AchievementScope.Day, day: localDate('2026-09-04') },
     ] as const;
     expect(scopes.map(achievementScopeKey)).toEqual([
       'category:cat-mastery',
@@ -206,7 +217,7 @@ describe('medalVm', () => {
     });
     const before = {
       ...GEORGI,
-      previousVisitAtMs: sofia('2026-09-28T11:00:00'),
+      previousVisitUtcMs: sofia('2026-09-28T11:00:00'),
     };
     expect(medalVm(rhythm, before, SETTLED, { markNew: true }).isNew).toBe(
       false,
@@ -465,14 +476,14 @@ describe('completesWithThisVisit («с това посещение»)', () => {
       visit: {
         legs: [
           {
-            serviceId: 'svc-beard',
+            serviceId: ServiceId.of('svc-beard'),
             variantId: null,
-            minutes: 20,
-            barberId: 'niko',
-            startsAtIso: sofiaIso('2026-10-02T12:00:00'),
+            minutes: duration(20),
+            barberId: BarberId.of('niko'),
           },
         ],
-        locationId: 'loc-mladost',
+        start: startOf('2026-10-02T12:00:00'),
+        locationId: LocationId.of('loc-mladost'),
         birthdayToday: false,
       },
     };
@@ -499,6 +510,54 @@ describe('completesWithThisVisit («с това посещение»)', () => {
         visit: { ...must(BIRTHDAY.visit), birthdayToday: false },
       }),
     ).toEqual(['series-2026-autumn-track']);
+  });
+
+  // DEP-15 (pass D): the draft's start minute is read on the shop's wall
+  // clock as it is. Before, the editor handed the start over as an
+  // instant's ISO, which a spring-forward gap's minute (or an editor whose
+  // zone was not known yet) left empty: no minute counted, no early bird.
+  it('counts a drafted start inside the spring-forward gap by its own minute (DEP-15)', () => {
+    const startingAt = (start: ClientCardStart) => ({
+      ...OPEN,
+      visit: { ...must(OPEN.visit), start },
+    });
+    // Sofia, 28 March 2027, 03:30 — no instant names it; it is still 03:30,
+    // an early start (before: no minute, so no early bird).
+    expect(
+      completes(
+        GEORGI,
+        startingAt({
+          localDate: localDate('2027-03-28'),
+          startMinutes: minute(210),
+        }),
+      ),
+    ).toEqual(completes(GEORGI));
+    // The fall-back repeat (25 October 2026, 03:30 twice) reads the same
+    // minute both ways: unchanged.
+    expect(
+      completes(GEORGI, startingAt(startOf('2026-10-25T03:30:00'))),
+    ).toContain('series-early-bird');
+    // A start that is no minute of the day counts no minute, as before.
+    expect(
+      completes(
+        GEORGI,
+        startingAt({ localDate: localDate('2027-03-28'), startMinutes: null }),
+      ),
+    ).not.toContain('series-early-bird');
+  });
+});
+
+describe('familyOfMedal', () => {
+  it("finds the family a family's medal names, and none for a season's own medal", () => {
+    const fade = medalVm(series(GEORGI, 'series-svc-fade'), GEORGI, SETTLED);
+    expect(familyOfMedal(GEORGI, fade)?.id).toBe('series-svc-fade');
+    // An archived event without a track family draws its OWN medal, named
+    // by the season's id — which no family answers (never re-branded).
+    const own: MedalVm = {
+      ...fade,
+      seriesId: SeasonId.of('event-2026-beard-week'),
+    };
+    expect(familyOfMedal(GEORGI, own)).toBeNull();
   });
 });
 
@@ -528,7 +587,7 @@ describe('scopePageVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-mastery',
+        categoryId: BadgeCategoryId.of('cat-mastery'),
       },
       SETTLED,
     );
@@ -566,7 +625,7 @@ describe('scopePageVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-barbers',
+        categoryId: BadgeCategoryId.of('cat-barbers'),
       },
       SETTLED,
     );
@@ -592,7 +651,7 @@ describe('scopePageVm', () => {
       MARTIN,
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-mastery',
+        categoryId: BadgeCategoryId.of('cat-mastery'),
       },
       BIRTHDAY,
     );
@@ -608,7 +667,7 @@ describe('scopePageVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Category,
-        categoryId: 'cat-special',
+        categoryId: BadgeCategoryId.of('cat-special'),
       },
       SETTLED,
     );
@@ -625,7 +684,7 @@ describe('scopePageVm', () => {
       GEORGI,
       {
         achievementScope: AchievementScope.Season,
-        seasonId: 'season-2026-summer',
+        seasonId: SeasonId.of('season-2026-summer'),
       },
       SETTLED,
     );
@@ -685,7 +744,10 @@ describe('scopePageVm', () => {
   });
 
   it('draws an archived event without a track by its emblem and its count, and leaves out windows he never joined', () => {
-    const later: AchievementsData = { ...GEORGI, today: '2027-01-15' };
+    const later: AchievementsData = {
+      ...GEORGI,
+      today: localDate('2027-01-15'),
+    };
     const keys = (data: AchievementsData) =>
       scopePageVm(
         data,
@@ -695,7 +757,7 @@ describe('scopePageVm', () => {
     expect(keys(later)).toEqual(['season-2026-autumn', 'season-2026-summer']);
 
     const progress = new Map(later.progress);
-    progress.set('series-2026-beard-week-beard', {
+    progress.set(BadgeSeriesId.of('series-2026-beard-week-beard'), {
       id: BadgeSeriesId.of('series-2026-beard-week-beard'),
       value: 1,
       earned: [
@@ -741,7 +803,7 @@ describe('scopePageVm', () => {
   it('lists the families earned on one day', () => {
     const page = scopePageVm(
       GEORGI,
-      { achievementScope: AchievementScope.Day, day: '2026-09-28' },
+      { achievementScope: AchievementScope.Day, day: localDate('2026-09-28') },
       SETTLED,
     );
     expect(page?.title).toBe('Спечелени на 28.09');
@@ -756,21 +818,30 @@ describe('scopePageVm', () => {
     expect(
       scopePageVm(
         GEORGI,
-        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: BadgeCategoryId.of('cat-gone'),
+        },
         SETTLED,
       ),
     ).toBeNull();
     expect(
       scopePageVm(
         GEORGI,
-        { achievementScope: AchievementScope.Season, seasonId: 'season-gone' },
+        {
+          achievementScope: AchievementScope.Season,
+          seasonId: SeasonId.of('season-gone'),
+        },
         SETTLED,
       ),
     ).toBeNull();
     expect(
       scopeTitleOf(
         GEORGI,
-        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: BadgeCategoryId.of('cat-gone'),
+        },
         SETTLED.words,
       ),
     ).toBeNull();

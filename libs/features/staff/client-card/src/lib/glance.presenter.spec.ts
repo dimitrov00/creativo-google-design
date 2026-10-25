@@ -24,6 +24,7 @@ import {
   AppointmentId,
   AppointmentPhotoId,
   BadgeSeriesId,
+  CouponGrantId,
   RewardId,
   ServiceId,
   StreakDefinitionId,
@@ -31,7 +32,7 @@ import {
   UserId,
 } from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
-import { registeredUserFixture } from '@core/testing';
+import { localDate, registeredUserFixture } from '@core/testing';
 import { VisitCardSlot } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
@@ -221,7 +222,7 @@ function heroOf(overrides: Partial<Parameters<typeof clientHeroVm>[0]> = {}) {
     stats: GEORGI_STATS,
     statsKnown: true,
     avatarSrc: null,
-    nowMs: NOW_MS,
+    nowUtcMs: NOW_MS,
     zone: SHOP_TIME_ZONE,
     words: WORDS,
     tier: { account: LOYALTY.account, catalog: LOYALTY.catalog },
@@ -517,7 +518,7 @@ describe('the capsules (B)', () => {
     overviewCapsulesVm({
       user: martinUser(),
       stats,
-      nowMs: NOW_MS,
+      nowUtcMs: NOW_MS,
       zone: SHOP_TIME_ZONE,
       words: WORDS,
     });
@@ -551,10 +552,10 @@ describe('the capsules (B)', () => {
 // ── BD · the birthday card ──────────────────────────────────────────────
 
 const BIRTHDAY_GRANT: ClientCardGrant = {
-  grantId: 'grant-dev-martin-birthday',
+  grantId: CouponGrantId.of('grant-dev-martin-birthday'),
   title: 'Рожден ден',
   valueLabel: '−20 %',
-  expiresOn: '2026-10-28',
+  expiresOn: localDate('2026-10-28'),
   couponOccasion: CouponOccasion.Birthday,
 };
 
@@ -706,7 +707,7 @@ describe('the birthday card (BD)', () => {
     expect(
       birthdayOf({
         user: born('1990-01-02'),
-        today: '2026-12-29',
+        today: localDate('2026-12-29'),
       }),
     ).toMatchObject({
       birthdayMoment: BirthdayMoment.Upcoming,
@@ -716,18 +717,22 @@ describe('the birthday card (BD)', () => {
 
   it('keeps a 29 February birthday on the 28th outside a leap year', () => {
     const leapling = born('2000-02-29');
-    expect(birthdayOf({ user: leapling, today: '2027-02-25' })?.title).toBe(
-      'Рожден ден · неделя, 28.02 · 27 г.',
-    );
-    expect(birthdayOf({ user: leapling, today: '2027-02-28' })).toMatchObject({
+    expect(
+      birthdayOf({ user: leapling, today: localDate('2027-02-25') })?.title,
+    ).toBe('Рожден ден · неделя, 28.02 · 27 г.');
+    expect(
+      birthdayOf({ user: leapling, today: localDate('2027-02-28') }),
+    ).toMatchObject({
       birthdayMoment: BirthdayMoment.Today,
       title: 'Рожден ден · 27 г.',
     });
-    expect(birthdayOf({ user: leapling, today: '2028-02-25' })?.title).toBe(
-      'Рожден ден · вторник, 29.02 · 28 г.',
-    );
+    expect(
+      birthdayOf({ user: leapling, today: localDate('2028-02-25') })?.title,
+    ).toBe('Рожден ден · вторник, 29.02 · 28 г.');
     // In a leap year the 28th is the day before, not the day.
-    expect(birthdayOf({ user: leapling, today: '2028-02-28' })).toMatchObject({
+    expect(
+      birthdayOf({ user: leapling, today: localDate('2028-02-28') }),
+    ).toMatchObject({
       birthdayMoment: BirthdayMoment.Upcoming,
       title: 'Рожден ден · вторник, 29.02 · 28 г.',
     });
@@ -797,7 +802,7 @@ describe('«Посещения» (H)', () => {
   ) =>
     visitCardsVm({
       appointments: GEORGI_BOOK,
-      subjectUserId: GEORGI,
+      subjectUserId: UserId.of(GEORGI),
       subjectCustomerId: GEORGI_CUSTOMER_ID,
       context: georgiContext(),
       photos: georgiPhotos(),
@@ -943,7 +948,7 @@ describe('«Посещения» (H)', () => {
   ) =>
     visitCardsVm({
       appointments: MARTIN_BOOK,
-      subjectUserId: MARTIN,
+      subjectUserId: UserId.of(MARTIN),
       subjectCustomerId: MARTIN_CUSTOMER_ID,
       context: martinContext(),
       photos: [],
@@ -1441,10 +1446,15 @@ describe('«Постижения» (G)', () => {
   });
 
   it('draws a single act done in a full ring with no numeral', () => {
-    const welcome = must(LOYALTY.progress.get('series-welcome'));
+    const welcome = must(
+      LOYALTY.progress.get(BadgeSeriesId.of('series-welcome')),
+    );
     const vm = must(
       medalsGlanceVm(
-        { ...LOYALTY, progress: new Map([['series-welcome', welcome]]) },
+        {
+          ...LOYALTY,
+          progress: new Map([[BadgeSeriesId.of('series-welcome'), welcome]]),
+        },
         settled,
       ),
     );
@@ -1460,15 +1470,19 @@ describe('«Постижения» (G)', () => {
   });
 
   it('draws the way to the first level from nought, and a family not started without an arc', () => {
-    const weekend = must(LOYALTY.progress.get('series-weekend'));
-    const welcome = must(LOYALTY.progress.get('series-welcome'));
+    const weekend = must(
+      LOYALTY.progress.get(BadgeSeriesId.of('series-weekend')),
+    );
+    const welcome = must(
+      LOYALTY.progress.get(BadgeSeriesId.of('series-welcome')),
+    );
     const vm = must(
       medalsGlanceVm(
         {
           ...LOYALTY,
           progress: new Map([
-            ['series-welcome', welcome],
-            ['series-weekend', weekend],
+            [BadgeSeriesId.of('series-welcome'), welcome],
+            [BadgeSeriesId.of('series-weekend'), weekend],
           ]),
         },
         settled,

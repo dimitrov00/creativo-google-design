@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { Tag } from '@core/primitives';
 
 /**
  * Which facts an agenda card shows.
@@ -58,36 +59,31 @@ import { Injectable, computed, signal } from '@angular/core';
  * whichever way the reader sets it they are wrong half the time. The
  * component decides per row now: a countdown on the running cut and on the
  * next one, nothing anywhere else.
+ *
+ * Declared in display order — the picker's order, the order the card
+ * itself stacks them. Values: external contract (the keys of the stored
+ * `staff-agenda-fields` JSON on every device, the picker rows'
+ * `staff.day.field.<id>` i18n key segments and their `staff-field-<id>`
+ * test ids).
  */
-export type AgendaFieldId =
-  | 'avatar'
-  | 'barberAvatar'
-  | 'email'
-  | 'phone'
-  | 'service'
-  | 'note'
-  | 'timeStart'
-  | 'timeEnd'
-  | 'timeRelative'
-  | 'price'
-  | 'party'
-  | 'freeTime';
+export const AgendaField = {
+  Avatar: 'avatar',
+  BarberAvatar: 'barberAvatar',
+  Email: 'email',
+  Phone: 'phone',
+  Service: 'service',
+  Note: 'note',
+  TimeStart: 'timeStart',
+  TimeEnd: 'timeEnd',
+  TimeRelative: 'timeRelative',
+  Price: 'price',
+  Party: 'party',
+  FreeTime: 'freeTime',
+} as const;
+export type AgendaField = Tag<typeof AgendaField>;
 
-/** Display order in the picker — the order the card itself stacks them. */
-export const AGENDA_FIELDS: readonly AgendaFieldId[] = [
-  'avatar',
-  'barberAvatar',
-  'email',
-  'phone',
-  'service',
-  'note',
-  'timeStart',
-  'timeEnd',
-  'timeRelative',
-  'price',
-  'party',
-  'freeTime',
-];
+/** Display order in the picker — the dictionary's own order. */
+export const AGENDA_FIELDS: readonly AgendaField[] = Tag.values(AgendaField);
 
 /**
  * The default card: who, with whom, for what, and in what state.
@@ -98,13 +94,13 @@ export const AGENDA_FIELDS: readonly AgendaFieldId[] = [
  * card that embarrasses a shop when the screen is turned around. It is one
  * toggle away for whoever wants it.
  */
-const DEFAULTS: Readonly<Record<AgendaFieldId, boolean>> = {
+const DEFAULTS: Readonly<Record<AgendaField, boolean>> = {
   /** The client's disc, leading the body row, carrying `+N` when the
    *  booking is for more than one chair. */
-  avatar: true,
+  [AgendaField.Avatar]: true,
   /** The barber's, at the far end of the same row — full size now, filled
    *  with their tone and carrying their initials. */
-  barberAvatar: true,
+  [AgendaField.BarberAvatar]: true,
   /**
    * THE CLIENT'S ADDRESS AND NUMBER, on the card.
    *
@@ -117,12 +113,12 @@ const DEFAULTS: Readonly<Record<AgendaFieldId, boolean>> = {
    * They stay FIELDS rather than becoming fixtures, so a shop that shares the
    * counter with its clients can put them back behind the sheet with one tap.
    */
-  email: true,
-  phone: true,
+  [AgendaField.Email]: true,
+  [AgendaField.Phone]: true,
   /** What the visit actually is. */
-  service: true,
+  [AgendaField.Service]: true,
   /** Clamped to one line here; the sheet has it in full. */
-  note: true,
+  [AgendaField.Note]: true,
   /**
    * THE INTERVAL, in three switches rather than one.
    *
@@ -135,13 +131,13 @@ const DEFAULTS: Readonly<Record<AgendaFieldId, boolean>> = {
    * The start stays on by default because it is the only one of the three
    * that cannot be inferred from anything else on the card.
    */
-  timeStart: true,
-  timeEnd: true,
-  timeRelative: true,
+  [AgendaField.TimeStart]: true,
+  [AgendaField.TimeEnd]: true,
+  [AgendaField.TimeRelative]: true,
   /** This screen is turned around in front of clients. */
-  price: false,
+  [AgendaField.Price]: false,
   /** `+N` on the client's disc, not a row. */
-  party: true,
+  [AgendaField.Party]: true,
   /**
    * FREE TIME — off.
    *
@@ -152,17 +148,17 @@ const DEFAULTS: Readonly<Record<AgendaFieldId, boolean>> = {
    * above the run, so turning this off never hides the FACT that the day was
    * quiet — only the row-by-row inventory of it.
    */
-  freeTime: false,
+  [AgendaField.FreeTime]: false,
 };
 
 const STORAGE_KEY = 'staff-agenda-fields';
 
-function load(): Record<AgendaFieldId, boolean> {
+function load(): Record<AgendaField, boolean> {
   if (typeof localStorage === 'undefined') return { ...DEFAULTS };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
-    const parsed = JSON.parse(raw) as Partial<Record<AgendaFieldId, boolean>>;
+    const parsed = JSON.parse(raw) as Partial<Record<AgendaField, boolean>>;
     // Merged over the defaults, never trusted wholesale: a stored blob from
     // an older build is missing whatever shipped since, and a card that hid
     // a field because it had not been invented yet reads as a bug.
@@ -186,7 +182,7 @@ function load(): Record<AgendaFieldId, boolean> {
  */
 @Injectable({ providedIn: 'root' })
 export class AgendaFields {
-  private readonly state = signal<Record<AgendaFieldId, boolean>>(load());
+  private readonly state = signal<Record<AgendaField, boolean>>(load());
 
   readonly visible = this.state.asReadonly();
 
@@ -206,11 +202,11 @@ export class AgendaFields {
     AGENDA_FIELDS.every((id) => this.state()[id] === DEFAULTS[id]),
   );
 
-  isOn(id: AgendaFieldId): boolean {
+  isOn(id: AgendaField): boolean {
     return this.state()[id];
   }
 
-  toggle(id: AgendaFieldId): void {
+  toggle(id: AgendaField): void {
     this.state.update((current) => {
       const next = { ...current, [id]: !current[id] };
       this.persist(next);
@@ -223,7 +219,7 @@ export class AgendaFields {
     this.persist(DEFAULTS);
   }
 
-  private persist(value: Readonly<Record<AgendaFieldId, boolean>>): void {
+  private persist(value: Readonly<Record<AgendaField, boolean>>): void {
     if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(value));

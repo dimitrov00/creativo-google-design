@@ -1,8 +1,10 @@
 /**
  * Compile-time-only checks of the staff-ui group's `as const` tag
- * dictionaries (flatten-spec §7, §8.8: the group owns no component file, so
- * its dictionaries all live in its systems) — no runtime `expect()`/`it()`;
- * `nx typecheck` runs it through `tsconfig.spec.json`.
+ * dictionaries (flatten-spec §7, §8.8) — no runtime `expect()`/`it()`;
+ * `nx typecheck` runs it through `tsconfig.spec.json`. Since pass D (D-7.4)
+ * the group's dictionaries are components, one file each (they lived in its
+ * systems while the group owned no component file); `PageStep` is read
+ * where its own package homes it.
  *
  * 1. **`satisfies`** — each dictionary's values are of its type.
  * 2. **Holds** — the type is EXACTLY the dictionary's values, and no two
@@ -16,23 +18,19 @@
  *    `FilterRow.outcome`, the role `cancelledBy`), and the rest are
  *    parameters, not fields.
  */
-import { SeatSubject } from './seat.data';
-import {
-  ClientQueryShape,
-  type ParsedClientQuery,
-  GridEvent,
-  type RunEvent,
-  type PageKey,
-  PageStep,
-  type PageStepResult,
-  RepeatPreset,
-  VisitFilter,
-  VisitGrain,
-  VisitPerspective,
-  VisitRowOutcome,
-  CancelledSide,
-  type PersonSubject,
-} from '@core/systems';
+import { SeatOccupant, SeatSubject } from './seat-occupant.data';
+import { CancelledSide } from './cancelled-side.data';
+import { ClientQueryShape } from './client-query-shape.data';
+import { GridEvent } from './grid-event.data';
+import { RepeatPreset } from './repeat-preset.data';
+import { VisitFilter } from './visit-filter.data';
+import { VisitGrain } from './visit-grain.data';
+import { VisitPerspective } from './visit-perspective.data';
+import { VisitRowOutcome } from './visit-row-outcome.data';
+import { VisitEditWriteOutcome } from './visit-edit-write-outcome.data';
+import { type ParsedClientQuery, type RunEvent } from '@core/systems';
+import type { PageKey } from './page-key.data';
+import { PageStep, type PageStepResult } from './page-step.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -68,18 +66,20 @@ dictionary(VisitRowOutcome satisfies Dictionary<VisitRowOutcome>);
 dictionary(VisitFilter satisfies Dictionary<VisitFilter>);
 dictionary(VisitPerspective satisfies Dictionary<VisitPerspective>);
 dictionary(CancelledSide satisfies Dictionary<CancelledSide>);
+dictionary(VisitEditWriteOutcome satisfies Dictionary<VisitEditWriteOutcome>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type StaffUiDictionariesHold = [
-  Expect<Holds<typeof PageStep, PageStep>>, // systems/paging.system.ts
-  Expect<Holds<typeof ClientQueryShape, ClientQueryShape>>, // systems/client-query.system.ts
-  Expect<Holds<typeof GridEvent, GridEvent>>, // systems/grid-layout.system.ts
-  Expect<Holds<typeof RepeatPreset, RepeatPreset>>, // systems/visit-draft.system.ts
-  Expect<Holds<typeof VisitGrain, VisitGrain>>, // systems/visit-list.system.ts
-  Expect<Holds<typeof VisitRowOutcome, VisitRowOutcome>>, // systems/visit-list.system.ts
-  Expect<Holds<typeof VisitFilter, VisitFilter>>, // systems/visit-list.system.ts
-  Expect<Holds<typeof VisitPerspective, VisitPerspective>>, // systems/visit-list.system.ts
-  Expect<Holds<typeof CancelledSide, CancelledSide>>, // systems/visit-story.system.ts
+  Expect<Holds<typeof PageStep, PageStep>>, // components/page-step.data.ts
+  Expect<Holds<typeof ClientQueryShape, ClientQueryShape>>, // components/client-query-shape.data.ts
+  Expect<Holds<typeof GridEvent, GridEvent>>, // components/grid-event.data.ts
+  Expect<Holds<typeof RepeatPreset, RepeatPreset>>, // components/repeat-preset.data.ts
+  Expect<Holds<typeof VisitGrain, VisitGrain>>, // components/visit-grain.data.ts
+  Expect<Holds<typeof VisitRowOutcome, VisitRowOutcome>>, // components/visit-row-outcome.data.ts
+  Expect<Holds<typeof VisitFilter, VisitFilter>>, // components/visit-filter.data.ts
+  Expect<Holds<typeof VisitPerspective, VisitPerspective>>, // components/visit-perspective.data.ts
+  Expect<Holds<typeof CancelledSide, CancelledSide>>, // components/cancelled-side.data.ts
+  Expect<Holds<typeof VisitEditWriteOutcome, VisitEditWriteOutcome>>, // components/visit-edit-write-outcome.data.ts
 ];
 
 // (3) SCREAMING values — no exemption in this group.
@@ -93,14 +93,15 @@ export type StaffUiScreamingChecks = [
   Expect<Screaming<VisitFilter>>,
   Expect<Screaming<VisitPerspective>>,
   Expect<Screaming<CancelledSide>>,
+  Expect<Screaming<VisitEditWriteOutcome>>,
 ];
 
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.
 export type StaffUiDictionaryFields = [
-  Expect<Equals<AnyPageStep['pageStep'], PageStep>>, // systems/paging.system.ts (`PageStepResult` is the union)
+  Expect<Equals<AnyPageStep['pageStep'], PageStep>>, // components/page-step.data.ts (`PageStepResult` is the union)
   Expect<Equals<ParsedClientQuery['clientQueryShape'], ClientQueryShape>>, // systems/client-query.system.ts
   Expect<Equals<RunEvent['gridEvent'], GridEvent>>, // systems/grid-layout.system.ts
-  Expect<Equals<PersonSubject['seatSubject'], SeatSubject>>, // systems/visit-story.system.ts
+  Expect<Equals<SeatOccupant['seatSubject'], SeatSubject>>, // components/seat-occupant.data.ts (the folded PersonSubject)
 ];
 
 // The checks are not vacuous.

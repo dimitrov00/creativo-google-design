@@ -5,17 +5,24 @@ import {
   CATALOG_PORTS,
   MEDIA_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { MediaRef } from '@core/components';
+import { type MediaRef, Money } from '@core/components';
 import type {
   CatalogReadPorts,
   MediaResolvePorts,
   MediaVariant,
 } from '@core/ports';
 import type { Barber, Service } from '@core/entities';
-import { BarberId, MediaRefId, Result, ServiceId } from '@core/primitives';
+import {
+  BarberId,
+  Currency,
+  MediaRefId,
+  Result,
+  ServiceId,
+} from '@core/primitives';
 import { MediaError, type RepositoryError } from '@core/errors';
 import {
   barberFixture,
+  cents,
   memoryCatalogReadPorts,
   serviceFixture,
 } from '@core/testing';
@@ -236,7 +243,7 @@ describe('LandingContentService — media', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000);
 
     expect(booking.serviceVms()[0]?.coverSrc).toBe(urlOf(cover));
-    expect(booking.coverUrl('svc-fade')).toBe(urlOf(cover));
+    expect(booking.coverUrl(ServiceId.of('svc-fade'))).toBe(urlOf(cover));
     expect(coverSrc(landing)).toBe(urlOf(cover));
     expect(reader.callsFor(cover)).toBe(1);
     expect(reader.callsFor(avatar)).toBe(1);
@@ -250,7 +257,8 @@ describe('LandingContentService — media', () => {
     const content = setUp(scriptedMedia({}));
     const words = TestBed.inject(CatalogWording);
     expect(content.text({ en: 'Skin fade', bg: 'Фейд' })).toBe('Фейд');
-    expect(content.price(14.5)).toBe(words.price(14.5));
+    const price = Money.fromCents(cents(1450), Currency.EUR);
+    expect(content.price(price)).toBe(words.price(price));
   });
 
   it('stops retrying when its injector is destroyed', async () => {

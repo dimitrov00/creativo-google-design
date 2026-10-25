@@ -3,7 +3,10 @@
  * without a bundler: each file is transpiled with the workspace's own
  * `typescript`, relative specifiers get an explicit `.mjs` extension, and
  * the result is loaded from a temp directory. Enough for the pure-data
- * modules under `libs/ui/icons/src/lib/manifest/`; not a general loader.
+ * modules it is handed — `icon-vocabulary.ts` (with the `icon-manifest.ts`
+ * it imports, which imports nothing) and the generated glyph table; not a
+ * general loader (the manifest folder's `icon-manifest-parser.ts` imports
+ * `@core/primitives` and is never loaded here).
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

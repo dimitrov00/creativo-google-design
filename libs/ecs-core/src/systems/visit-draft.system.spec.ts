@@ -6,17 +6,26 @@ import {
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
+  RepeatPreset,
 } from '@core/components';
-import { Weekday, DurationMinutes, LocalDate, UserId } from '@core/primitives';
+import {
+  DraftPersonKey,
+  DurationMinutes,
+  LocalDate,
+  TrackMinute,
+  Weekday,
+} from '@core/primitives';
 import {
   deepFreeze,
+  draftPersonKey,
   endMinute,
   localDate,
   minute,
+  trackMinute,
   unwrapOk,
 } from '@core/testing';
 import { RecurrenceSystem } from './recurrence.system';
-import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
+import { VisitDraftSystem } from './visit-draft.system';
 
 /*
  * COPIED and re-targeted:
@@ -311,9 +320,11 @@ function walkInLabels(
   words: (number: number | null) => string,
 ): ReadonlyMap<string, string> {
   return new Map(
-    S.walkInLabels(unlabelled, taken, words).map(
-      (entry) => [entry.personId, entry.label] as const,
-    ),
+    S.walkInLabels(
+      unlabelled.map((raw) => draftPersonKey(raw)),
+      taken,
+      words,
+    ).map((entry) => [entry.personId, entry.label] as const),
   );
 }
 
@@ -429,15 +440,19 @@ describe("the visit draft's span and placeholder seats", () => {
 
   it('hands the placeholder seats to the first person to join, and no one else', () => {
     const drafted = [
-      { clientId: 'primary', durationMinutes: d(30) },
-      { clientId: 'u-anna', durationMinutes: d(15) },
+      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
+      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
     ];
-    expect(S.adoptPlaceholderLegs(0, drafted, 'u-ivan')).toEqual([
+    expect(
+      S.adoptPlaceholderLegs(0, drafted, draftPersonKey('u-ivan')),
+    ).toEqual([
       { clientId: 'u-ivan', durationMinutes: 30 },
       { clientId: 'u-anna', durationMinutes: 15 },
     ]);
     // Somebody is already seated: the legs come back as given.
-    expect(S.adoptPlaceholderLegs(1, drafted, 'u-ivan')).toBe(drafted);
+    expect(S.adoptPlaceholderLegs(1, drafted, draftPersonKey('u-ivan'))).toBe(
+      drafted,
+    );
   });
 });
 
@@ -490,6 +505,21 @@ describe('the grain', () => {
   });
 });
 
+describe('the grain and the person key, branded (pass D)', () => {
+  it('answers a snapped mark as a TrackMinute — the closing midnight included, never refused', () => {
+    const near: TrackMinute = S.snap(minute(1439));
+    const up: TrackMinute = S.snapUp(minute(1436));
+    expect(near).toBe(1440);
+    expect(up).toBe(1440);
+    expect(TrackMinute.toStart(near).ok).toBe(false);
+    expect(TrackMinute.toEnd(near).ok).toBe(true);
+  });
+
+  it('names the placeholder by its draft key (whose a key is: `DraftPersonKey.accountOf`, ids.primitive.spec.ts)', () => {
+    expect(S.PLACEHOLDER_CLIENT_ID).toBe(DraftPersonKey.PLACEHOLDER);
+  });
+});
+
 describe('the grain’s floor', () => {
   it('floors a drawn span at one grain, never snapping it', () => {
     expect(S.floorSpan(0)).toBe(5);
@@ -539,8 +569,8 @@ describe('the grain’s floor', () => {
 
 describe('the block editor’s typed pair', () => {
   const pair = (startMinute: number, endMinute: number) => ({
-    startMinute,
-    endMinute,
+    startMinute: trackMinute(startMinute),
+    endMinute: trackMinute(endMinute),
   });
 
   it('a typed start is snapped and keeps its later end', () => {
@@ -685,30 +715,6 @@ describe('a typed end', () => {
   });
 });
 
-describe('whose a person key is', () => {
-  it('the placeholder is nobody’s account', () => {
-    expect(S.accountKeyOf(S.PLACEHOLDER_CLIENT_ID)).toBeNull();
-    expect(S.accountKeyOf('primary')).toBeNull();
-  });
-
-  it('a stranger’s guest key is nobody’s account — a walk-in or a minted one', () => {
-    expect(S.GUEST_KEY_PREFIX).toBe('guest-');
-    expect(S.accountKeyOf('guest-Случаен клиент')).toBeNull();
-    expect(S.accountKeyOf('guest-mfx1a2-0')).toBeNull();
-  });
-
-  it('every other key is the account’s uid, as the brand', () => {
-    expect(S.accountKeyOf('u-martin')).toBe(UserId.of('u-martin'));
-    expect(S.accountKeyOf('dev-staff-ivan')).toBe('dev-staff-ivan');
-  });
-
-  it('a key the uid’s constructor refuses is no account', () => {
-    expect(S.accountKeyOf('')).toBeNull();
-    expect(S.accountKeyOf('   ')).toBeNull();
-    expect(S.accountKeyOf('users/u-1')).toBeNull();
-  });
-});
-
 describe('VisitDraftSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const weekly = deepFreeze(
@@ -720,17 +726,18 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.presetOf(weekly, thursday)).toBe(RepeatPreset.Weekly);
 
     const legs = deepFreeze([
-      { clientId: 'primary', durationMinutes: d(30) },
-      { clientId: 'u-anna', durationMinutes: d(15) },
+      { clientId: draftPersonKey('primary'), durationMinutes: d(30) },
+      { clientId: draftPersonKey('u-anna'), durationMinutes: d(15) },
     ]);
-    expect(S.adoptPlaceholderLegs(0, legs, 'u-ivan')).toEqual(
-      S.adoptPlaceholderLegs(0, legs, 'u-ivan'),
+    expect(S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan'))).toEqual(
+      S.adoptPlaceholderLegs(0, legs, draftPersonKey('u-ivan')),
     );
     expect(legs[0]?.clientId).toBe('primary');
 
     const taken = deepFreeze(['Случаен клиент']);
-    expect(S.walkInLabels(['a', 'b'], taken, word)).toEqual(
-      S.walkInLabels(['a', 'b'], taken, word),
+    const people = [draftPersonKey('a'), draftPersonKey('b')];
+    expect(S.walkInLabels(people, taken, word)).toEqual(
+      S.walkInLabels(people, taken, word),
     );
   });
 
@@ -746,7 +753,10 @@ describe('VisitDraftSystem — purity', () => {
     );
     expect(legs).toEqual([{ durationMinutes: 30 }, { durationMinutes: 15 }]);
 
-    const range = deepFreeze({ startMinute: 600, endMinute: 660 });
+    const range = deepFreeze({
+      startMinute: trackMinute(600),
+      endMinute: trackMinute(660),
+    });
     expect(S.typedStart(range, minute(700))).toEqual(
       S.typedStart(range, minute(700)),
     );
@@ -758,7 +768,6 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.spanToEnd(minute(600), minute(15))).toBe(
       S.spanToEnd(minute(600), minute(15)),
     );
-    expect(S.accountKeyOf('u-anna')).toBe(S.accountKeyOf('u-anna'));
     expect(S.snap(minute(47))).toBe(S.snap(minute(47)));
     expect(S.snapUp(minute(47))).toBe(S.snapUp(minute(47)));
   });

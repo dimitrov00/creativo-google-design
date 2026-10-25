@@ -1,4 +1,13 @@
-import { CompositionKind } from '@core/components';
+import type { CompositionKind } from '@core/components';
+import type {
+  BarberId,
+  Currency,
+  DurationMinutes,
+  PriceCents,
+  ServiceId,
+  ServiceVariantId,
+} from '@core/primitives';
+import type { CardPrice, OfferingRange } from '@core/systems';
 
 /**
  * The catalog view models every surface renders — landing shelf, onboarding
@@ -8,7 +17,9 @@ import { CompositionKind } from '@core/components';
  * depend on marketing to show a service.
  *
  * Presentational by design: localized strings stay `{ en, bg }` pairs
- * resolved at render time, money is EUR major units, durations are minutes.
+ * resolved at render time; money is integer `…Cents: PriceCents` beside its
+ * `currency` (worded by `CatalogWording.price` through `formatCents`),
+ * durations are `DurationMinutes`, ids are the catalogue's brands.
  * `catalog.presenter.ts` maps the domain aggregates onto these and words them
  * (Law 10: a display model holds types only).
  */
@@ -21,7 +32,7 @@ export interface Localized {
 // ─── Barbers ────────────────────────────────────────────────────────────
 
 export interface BarberVm {
-  readonly id: string;
+  readonly id: BarberId;
   readonly name: Localized;
   readonly title: Localized;
   readonly bio: Localized;
@@ -39,34 +50,46 @@ export interface BarberVm {
 
 // ─── Services ───────────────────────────────────────────────────────────
 
+/** One terms quote — the cents beside their currency, and the sold minutes. */
 export interface ServiceTermsVm {
-  /** EUR, major units (may carry .5). */
-  readonly price: number;
-  readonly minutes: number;
+  readonly priceCents: PriceCents;
+  readonly currency: Currency;
+  readonly minutes: DurationMinutes;
 }
 
+/** Who performs a service, at their base terms. */
 export interface ServiceOfferingVm {
-  readonly barberId: string;
+  readonly barberId: BarberId;
   readonly base: ServiceTermsVm;
-  readonly byVariant?: Readonly<Record<string, ServiceTermsVm>>;
-}
-
-export interface ServiceVariantVm {
-  readonly id: string;
-  readonly name: Localized;
-  readonly icon: 'length' | 'skin';
 }
 
 /**
- * A service as AUTHORED — the landing's demo shelf (`SERVICES` in its
- * `src/testing/landing-catalog.ts`, which the test catalogue turns into
- * entities).
+ * The mark a variant wears — a rendering choice, never catalogue data
+ * (internal: the detail sheet maps it to a registry key, nothing prints the
+ * value).
+ */
+export const VariantIcon = {
+  Length: 'LENGTH',
+  Skin: 'SKIN',
+} as const;
+export type VariantIcon = (typeof VariantIcon)[keyof typeof VariantIcon];
+
+export interface ServiceVariantVm {
+  readonly id: ServiceVariantId;
+  readonly name: Localized;
+  readonly icon: VariantIcon;
+}
+
+/**
+ * A service's authored fields, as the `Service` entity carries them (the
+ * landing's demo shelf authors its own raw input type and builds entities
+ * from it — `src/testing/landing-catalog.ts`).
  * It carries no figures: the figures are `CatalogPricingSystem`'s answers on
  * the `Service` entity, and only {@link ServiceVm} — built from that entity —
  * holds them.
  */
 export interface ServiceSourceVm {
-  readonly id: string;
+  readonly id: ServiceId;
   /**
    * Single or bundle — the catalogue's own `CompositionKind` (reused, never
    * re-spelled); an unspecified composition draws as a single service, so
@@ -82,7 +105,7 @@ export interface ServiceSourceVm {
   readonly variants: readonly ServiceVariantVm[];
   readonly offerings: readonly ServiceOfferingVm[];
   /** Bundle members, by service id. */
-  readonly includes?: readonly string[];
+  readonly includes?: readonly ServiceId[];
   readonly upsellOnly: boolean;
   /** Gallery frames for the detail sheet (v2 serviceLinks order). */
   readonly gallery: readonly string[];
@@ -91,23 +114,19 @@ export interface ServiceSourceVm {
 /**
  * A service ready to render: the authored fields plus the catalogue's own
  * figures, each `CatalogPricingSystem`'s answer on the `Service` entity
- * (`catalog.presenter.ts` `serviceToVm` asks it once). EUR major units,
- * minutes.
+ * (`catalog.presenter.ts` `serviceToVm` asks it once). Integer cents in the
+ * service's stored `currency`, branded minutes.
  */
 export interface ServiceVm extends ServiceSourceVm {
+  /** The service's stored currency — every figure below is in it. */
+  readonly currency: Currency;
   /** The cheapest BASE offering — the "from" price on a marketing tile. */
-  readonly priceFrom: number;
+  readonly priceFromCents: PriceCents;
   /**
    * The card's price tag over every bookable terms: the cheapest, and
    * whether some terms cost more (the tag then reads «от …»).
    */
-  readonly cardPrice: {
-    readonly cheapest: number;
-    readonly spread: boolean;
-  };
+  readonly cardPrice: CardPrice;
   /** Shortest and longest bookable duration, across offerings × variants. */
-  readonly minutesRange: {
-    readonly from: number;
-    readonly to: number;
-  };
+  readonly minutesRange: OfferingRange<DurationMinutes>;
 }

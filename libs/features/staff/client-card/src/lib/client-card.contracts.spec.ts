@@ -4,6 +4,7 @@ import type {
   VisitWords,
 } from '@creativo/features/shared/visits';
 import type { CouponOccasion } from '@core/components';
+import type { LocalDate } from '@core/primitives';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import * as achievements from './achievements.presenter';
 import * as card from './client-card.presenter';
@@ -156,7 +157,9 @@ describe('the built helpers the new presenters import (§7.3)', () => {
     >();
     expectTypeOf(achievements.isOneOff).returns.toEqualTypeOf<boolean>();
     expectTypeOf(achievements.isSingleLevel).returns.toEqualTypeOf<boolean>();
-    expectTypeOf(achievements.landsOn).returns.toEqualTypeOf<string | null>();
+    expectTypeOf(
+      achievements.landsOn,
+    ).returns.toEqualTypeOf<LocalDate | null>();
     expectTypeOf(card.sameLegs).returns.toEqualTypeOf<boolean>();
   });
 });

@@ -634,3 +634,64 @@ describe('DiscountSystem.resolvedCode — a coupon a typed code opened', () => {
     ).toEqual(DiscountSystem.resolvedCode(frozen, VoucherCode.of('FIRST10')));
   });
 });
+
+describe('DiscountSystem.isOffered — the counter’s offer rule, said once (pass D)', () => {
+  const coupon = (
+    code: VoucherCode | null,
+    couponStatus: CouponStatus,
+  ): Coupon => ({
+    id: CouponId.of('coupon-first10'),
+    name: 'Първо посещение',
+    code,
+    combinability: Combinability.Stackable,
+    usageLimit: null,
+    couponStatus,
+    couponOccasion: null,
+    ...pct(10),
+    ...CouponExpiryRule.never(),
+  });
+
+  it('offers an enabled coupon that carries a code', () => {
+    expect(
+      DiscountSystem.isOffered(
+        coupon(VoucherCode.of('FIRST10'), CouponStatus.Enabled),
+      ),
+    ).toBe(true);
+  });
+
+  it('never offers a grant-only (code-less) coupon, nor a disabled one', () => {
+    expect(DiscountSystem.isOffered(coupon(null, CouponStatus.Enabled))).toBe(
+      false,
+    );
+    expect(
+      DiscountSystem.isOffered(
+        coupon(VoucherCode.of('FIRST10'), CouponStatus.Disabled),
+      ),
+    ).toBe(false);
+    expect(DiscountSystem.isOffered(coupon(null, CouponStatus.Disabled))).toBe(
+      false,
+    );
+  });
+
+  it('narrows to a coupon whose code is a VoucherCode', () => {
+    const offered: readonly Coupon[] = [
+      coupon(VoucherCode.of('FIRST10'), CouponStatus.Enabled),
+      coupon(null, CouponStatus.Enabled),
+    ];
+    const codes: VoucherCode[] = [];
+    for (const entry of offered.filter(DiscountSystem.isOffered)) {
+      codes.push(entry.code);
+    }
+    expect(codes).toEqual(['FIRST10']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze(
+      coupon(VoucherCode.of('FIRST10'), CouponStatus.Enabled),
+    );
+    expect(DiscountSystem.isOffered(frozen)).toBe(
+      DiscountSystem.isOffered(frozen),
+    );
+    expect(frozen.code).toBe('FIRST10');
+  });
+});

@@ -34,7 +34,8 @@ import {
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { AchievementCategoryPage } from '../achievement-category/achievement-category';
 import { AchievementChips } from '../achievement-chips/achievement-chips';
-import { AchievementScope } from '../client-card.contracts';
+import { BadgeCategoryId, type SeasonId } from '@core/primitives';
+import { AchievementScope, ClientCardRegion } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import type {
   AchievementTileVm,
@@ -178,12 +179,20 @@ export class ClientAchievementsPage {
   /** The chip «Всички»: the overview under the band. */
   protected readonly overview = computed(() => this.chosen() === CHIP_ALL);
 
-  /** A category chosen: the scope its body is mounted on, in place; `null` on the overview and under «Сезони». */
+  /**
+   * A category chosen: the scope its body is mounted on, in place; `null`
+   * on the overview and under «Сезони». Every other chip is a category's,
+   * minted from the catalogue category's id (`medalsPageVm`'s chips), so
+   * its key IS that id by construction (`BadgeCategoryId.of`).
+   */
   protected readonly categoryScope = computed((): AchievementScope | null => {
     const chosen = this.chosen();
     return chosen === CHIP_ALL || chosen === CHIP_SEASONS
       ? null
-      : { achievementScope: AchievementScope.Category, categoryId: chosen };
+      : {
+          achievementScope: AchievementScope.Category,
+          categoryId: BadgeCategoryId.of(chosen),
+        };
   });
 
   /** Ids of the headings the grids are named by, unique per mounted page. */
@@ -244,7 +253,7 @@ export class ClientAchievementsPage {
     else this.openScope.emit(tile.opens);
   }
 
-  protected openSeason(seasonId: string): void {
+  protected openSeason(seasonId: SeasonId): void {
     this.openScope.emit({
       achievementScope: AchievementScope.Season,
       seasonId,
@@ -256,13 +265,13 @@ export class ClientAchievementsPage {
   }
 
   /** AM — «Покажи всички N»: the category's chip is chosen, and the band scrolls under the bar. */
-  protected showAll(categoryId: string): void {
+  protected showAll(categoryId: BadgeCategoryId): void {
     this.store.setMedalsChip(categoryId);
     this.scrollBandUnderBar();
   }
 
   protected retry(): void {
-    this.store.retry('achievements');
+    this.store.retry(ClientCardRegion.Achievements);
   }
 
   /**

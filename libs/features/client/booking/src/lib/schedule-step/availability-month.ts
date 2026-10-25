@@ -1,5 +1,6 @@
-import { LocalDate, MinuteCount } from '@core/primitives';
+import { type CapacityMonthId, LocalDate, MinuteCount } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
+import type { UiDateBadgeState } from '@creativo/ui/patterns';
 
 export interface AvailabilityDayCell {
   /** The shop day — also the cell's `data-day-key`. */
@@ -41,15 +42,19 @@ export interface ScheduleDayVm {
   readonly dayOfMonth: number;
   readonly isToday: boolean;
   readonly bookable: boolean;
-  /** The badge's resting state — never `selected`, which the template adds. */
-  readonly state: 'plain' | 'outside' | 'unavailable';
+  /**
+   * The badge's resting state — the date badge's own input values (a
+   * design-system contract), never `selected`, which the template adds.
+   */
+  readonly state: Exclude<UiDateBadgeState, 'selected'>;
   readonly aria: string;
 }
 
 export interface ScheduleMonthVm {
   /** The month's 1st. */
   readonly anchor: LocalDate;
-  readonly key: string;
+  /** `YYYY-MM` — the month's own key (`LocalDate.monthKey`). */
+  readonly key: CapacityMonthId;
   readonly weeks: readonly (readonly (ScheduleDayVm | null)[])[];
 }
 
@@ -57,7 +62,7 @@ export interface AvailabilityMonth {
   /** The month's 1st. */
   readonly anchor: LocalDate;
   /** `YYYY-MM` — stable across rebuilds, so `@for` never re-creates a month. */
-  readonly key: string;
+  readonly key: CapacityMonthId;
   readonly weeks: readonly (readonly AvailabilityGridCell[])[];
 }
 

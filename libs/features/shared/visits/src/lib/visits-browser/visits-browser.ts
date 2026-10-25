@@ -14,9 +14,10 @@ import {
 import { visitPerspectiveWords } from '@creativo/infrastructure/i18n';
 import { LoadState } from '@creativo/shared/view-state';
 import { nearestScroller } from '@creativo/ui/controls';
+import type { AppointmentId } from '@core/primitives';
 import { VisitList, type VisitListPaging } from '../visit-list/visit-list';
 import {
-  type VisitListStyle,
+  VisitListStyle,
   VisitPerspective,
   type VisitSectionVm,
 } from '../visit-row.vm';
@@ -107,7 +108,7 @@ export class VisitsBrowser {
   readonly sections = input.required<readonly VisitSectionVm[]>();
   readonly perspective = input.required<VisitPerspective>();
   /** ≙ `.listStyle`: both perspectives run their rows as inset groups. */
-  readonly listStyle = input<VisitListStyle>('insetGrouped');
+  readonly listStyle = input<VisitListStyle>(VisitListStyle.InsetGrouped);
   readonly state = input<LoadState>(LoadState.Ready);
   readonly paging = input<VisitListPaging | null>(null);
   /**
@@ -126,7 +127,7 @@ export class VisitsBrowser {
    */
   readonly interactive = input<boolean | null>(null);
   /** A row was tapped: the appointment's id. */
-  readonly openRow = output<string>();
+  readonly openRow = output<AppointmentId>();
   /** The next page, or the failed one again. */
   readonly loadMore = output<void>();
   /** The whole list, again, after it failed. */

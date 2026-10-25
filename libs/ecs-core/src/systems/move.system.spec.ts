@@ -2,27 +2,26 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BarberPreference,
+  BookingCall,
   BookingLifecycle,
   BookingPolicy,
-  PlacementPolicy,
-  StaffTermsOverride,
-  ScheduleVersion,
-  ShiftSegment,
-  SeatLabel,
-  SeatOutcome,
-  Seat,
-  SeatOccupant,
-  SubjectRelationship,
-  ServiceTerms,
-  RequestedSubjectRole,
-  type MoveRider,
-  BookingCall,
   CancellationReason,
   CancellationReasonSet,
-  ClientMove,
-  MoveRefusal,
-  MoveRefusalReason,
   type ChairTime,
+  ClientMove,
+  LedgerVerdict,
+  type MoveRider,
+  PlacementPolicy,
+  RequestedSubjectRole,
+  ScheduleVersion,
+  Seat,
+  SeatLabel,
+  SeatOccupant,
+  SeatOutcome,
+  ServiceTerms,
+  ShiftSegment,
+  StaffTermsOverride,
+  SubjectRelationship,
 } from '@core/components';
 import {
   Weekday,
@@ -50,6 +49,7 @@ import {
   SchedulingError,
   CarriedSeatRefusal,
   MoveErrorCode,
+  MoveRefusal,
   ShopUnavailableReason,
 } from '@core/errors';
 import type { Appointment, Service } from '@core/entities';
@@ -72,10 +72,7 @@ import {
   FIXTURE_NOW_UTC_MS,
   until,
 } from '@core/testing';
-import {
-  AppointmentEditSystem,
-  LedgerVerdict,
-} from './appointment-edit.system';
+import { AppointmentEditSystem } from './appointment-edit.system';
 import { BookingDecisionSystem } from './booking-decision.system';
 import { type MovePlan, MoveSystem } from './move.system';
 
@@ -1215,7 +1212,7 @@ describe('MoveSystem.releaseOn — a held chair on the shop’s wall clock', () 
 });
 
 describe('MoveSystem.refusalOf — the landing’s refusal first, then the carried seats’ reach', () => {
-  const stored = MoveRefusal.of(MoveRefusalReason.CompanionsOnly, CENTER);
+  const stored = MoveRefusal.companionsOnly(CENTER);
   const MLADOST = LocationId.of('loc-mladost');
 
   it('answers what the landing decided, whatever the reach says', () => {
@@ -1225,11 +1222,11 @@ describe('MoveSystem.refusalOf — the landing’s refusal first, then the carri
 
   it('refuses a move whose carried seats are out of reach, at the flow’s shop', () => {
     expect(MoveSystem.refusalOf(null, false, MLADOST)).toEqual({
-      moveRefusalReason: MoveRefusalReason.CarriedOutOfReach,
+      errorCode: MoveErrorCode.CarriedOutOfReach,
       locationId: MLADOST,
     });
     expect(MoveSystem.refusalOf(null, false, null)).toEqual({
-      moveRefusalReason: MoveRefusalReason.CarriedOutOfReach,
+      errorCode: MoveErrorCode.CarriedOutOfReach,
       locationId: null,
     });
   });

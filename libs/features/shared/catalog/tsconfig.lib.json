@@ -40,10 +40,13 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
     },
     {
       "path": "../shell/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"

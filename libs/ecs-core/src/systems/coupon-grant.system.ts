@@ -7,7 +7,6 @@ import {
   GrantExpiry,
   GrantExpiryTerms,
   GrantLifecycle,
-  type GrantTerms,
   WriteOp,
 } from '@core/components';
 import {
@@ -121,7 +120,7 @@ function burnSlice(
  */
 function restoreSlice(
   grant: GrantLifecycle,
-  issued: GrantTerms,
+  issued: GrantLifecycle.Terms,
 ): Result<
   GrantLifecycle,
   | EngagementError.CouponGrantNotActive
@@ -312,7 +311,7 @@ export const CouponGrantSystem = {
   /** {@link restoreSlice} on a whole grant. */
   restore(
     grant: CouponGrant,
-    issued: GrantTerms,
+    issued: GrantLifecycle.Terms,
   ): Result<
     CouponGrant,
     | EngagementError.CouponGrantNotActive
@@ -351,7 +350,7 @@ export const CouponGrantSystem = {
   },
 
   /** The terms an active grant holds — what {@link restore} needs back once it is spent. */
-  termsOf(grant: GrantLifecycle.Active): GrantTerms {
+  termsOf(grant: GrantLifecycle.Active): GrantLifecycle.Terms {
     return {
       ...GrantCapacityTerms.of(grant),
       ...GrantExpiryTerms.of(grant),

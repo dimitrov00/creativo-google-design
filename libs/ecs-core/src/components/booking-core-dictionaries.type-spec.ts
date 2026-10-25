@@ -16,7 +16,6 @@
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
 import type { Barber, Service, ShopLocation } from '@core/entities';
-import { Selectability, type ServiceSelectability } from '@core/systems';
 import { type BookingCall, RequestedSubjectRole } from './booking-call.data';
 import { type BarberPref, BarberPreference } from './barber-pref.data';
 import { Locale } from '@core/primitives';
@@ -29,11 +28,8 @@ import {
   GeoAxis,
   MediaDimension,
 } from '@core/errors';
-import {
-  BarberStatus,
-  LocationStatus,
-  ServiceStatus,
-} from './catalog-status.data';
+import { BarberStatus } from './barber-status.data';
+import { LocationStatus } from './location-status.data';
 import { BlockKind, type MinuteBlock } from './minute-block.data';
 import { type DayHours, OpeningState } from './opening-hours.data';
 import { Placement } from './placement-kind.data';
@@ -41,6 +37,11 @@ import {
   CompositionKind,
   type ServiceComposition,
 } from './service-composition.data';
+import {
+  Selectability,
+  type ServiceSelectability,
+} from './service-selectability.data';
+import { ServiceStatus } from './service-status.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -91,16 +92,16 @@ export type BookingCoreDictionariesHold = [
   Expect<Holds<typeof CatalogErrorCode, CatalogErrorCode>>, // errors/catalog.error.ts
   Expect<Holds<typeof MediaDimension, MediaDimension>>, // errors/catalog.error.ts
   Expect<Holds<typeof GeoAxis, GeoAxis>>, // errors/catalog.error.ts
-  Expect<Holds<typeof ServiceStatus, ServiceStatus>>, // components/catalog-status.data.ts
-  Expect<Holds<typeof BarberStatus, BarberStatus>>, // components/catalog-status.data.ts
-  Expect<Holds<typeof LocationStatus, LocationStatus>>, // components/catalog-status.data.ts
+  Expect<Holds<typeof ServiceStatus, ServiceStatus>>, // components/service-status.data.ts
+  Expect<Holds<typeof BarberStatus, BarberStatus>>, // components/barber-status.data.ts
+  Expect<Holds<typeof LocationStatus, LocationStatus>>, // components/location-status.data.ts
   Expect<Holds<typeof Locale, Locale>>, // primitives/locale.data.ts
   Expect<Holds<typeof BlockKind, BlockKind>>, // components/minute-block.data.ts
   Expect<Holds<typeof OpeningState, OpeningState>>, // components/opening-hours.data.ts
   Expect<Holds<Pick<typeof Placement, 'Self' | 'Staff'>, Placement>>, // components/placement-kind.data.ts
   Expect<Holds<typeof CompositionKind, CompositionKind>>, // components/service-composition.data.ts
   Expect<Holds<typeof RequestedSubjectRole, RequestedSubjectRole>>, // components/booking-call.data.ts
-  Expect<Holds<typeof Selectability, Selectability>>, // systems/service-conflict.system.ts
+  Expect<Holds<typeof Selectability, Selectability>>, // components/service-selectability.data.ts
 ];
 
 // (3) SCREAMING values (`Locale`, `BookingErrorField` and
@@ -148,7 +149,7 @@ export type BookingCoreDictionaryFields = [
       RequestedSubjectRole
     >
   >, // systems/guest-label.system.ts
-  Expect<Equals<ServiceSelectability['selectability'], Selectability>>, // systems/service-conflict.system.ts
+  Expect<Equals<ServiceSelectability['selectability'], Selectability>>, // components/service-selectability.data.ts
   Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // errors/catalog.error.ts
   Expect<
     Equals<

@@ -8,14 +8,18 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { type CartLineId, LocalDate, type SeatKeyText } from '@core/primitives';
+import {
+  type BarberId,
+  type CartLineId,
+  LocalDate,
+  type SeatKeyText,
+} from '@core/primitives';
 import {
   BookingContact,
   BookingFlowStep,
   type CartLine,
   type Money,
   Principal,
-  SeatKey,
 } from '@core/components';
 import {
   BookingCartSystem,
@@ -32,11 +36,7 @@ import {
   CLOCK_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  formatCents,
-  formatMinute,
-  formatWeekdayLabels,
-} from '@creativo/ui/wall-clock';
+import { formatMinute, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
@@ -73,6 +73,12 @@ import {
   ThemeService,
 } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
+import {
+  BOOKER_SEAT,
+  barberNameOf,
+  bookerLabelOf,
+  personLabelOf,
+} from '../booking-people.words';
 import { bookingSignInReturnUrl } from '../booking-return-url';
 import {
   formatBookingDay,
@@ -338,10 +344,11 @@ export class BookingReviewStep {
 
   protected readonly avatarUrl = computed(() => this.identity.avatarUrl());
 
-  protected readonly bookerName = computed(
-    () =>
-      this.identity.displayName() ||
+  protected readonly bookerName = computed(() =>
+    bookerLabelOf(
+      this.identity.displayName(),
       this.transloco.translate('booking.party.you'),
+    ),
   );
 
   /**
@@ -556,18 +563,20 @@ export class BookingReviewStep {
     let lineCount = 0;
     for (const lines of bySeat.values()) lineCount += lines.length;
 
+    const guests = this.store.guests();
+    const booker = this.bookerName();
     return seatKeys.map((seatKey) => {
       const seatLines = bySeat.get(seatKey) ?? [];
       const subtotal = subtotals.get(seatKey) ?? null;
-      const known = seatKey === SELF_SEAT ? this.identity.displayName() : null;
+      const isBooker = seatKey === BOOKER_SEAT;
+      const personLabel = personLabelOf(seatKey, guests, booker);
       return {
         key: seatKey,
-        personLabel: this.personLabel(seatKey),
+        personLabel,
         // Initials of the fallback "You" spell nothing — the avatar falls
         // back to its silhouette, the same rule the seat scope applies.
-        monogramName:
-          seatKey === SELF_SEAT ? (known ?? '') : this.personLabel(seatKey),
-        avatarSrc: seatKey === SELF_SEAT ? this.identity.avatarUrl() : null,
+        monogramName: isBooker ? this.identity.displayName() : personLabel,
+        avatarSrc: isBooker ? this.identity.avatarUrl() : null,
         lines: seatLines.map((line) =>
           lineCount > 1 ? line : { ...line, timeLabel: null },
         ),
@@ -693,48 +702,23 @@ export class BookingReviewStep {
     await this.store.commit();
   }
 
-  /** «28,00 €» — the currency's own exponent and fraction digits. */
+  /** «28,00 €» — the catalogue's one money wording (`CatalogWording.price`). */
   private money(money: Money): string {
-    return formatCents(
-      money.amountCents,
-      money.currency,
-      this.content.locale(),
-    );
-  }
-
-  private barberName(barberId: string): string {
-    const barber = this.catalog
-      .barbers()
-      .find((candidate) => candidate.id === barberId);
-    return barber
-      ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId;
+    return this.content.price(money);
   }
 
   /** The portrait the team cards already show — one source, not a second copy. */
-  private barberAvatarSrc(barberId: string): string | null {
+  private barberAvatarSrc(barberId: BarberId): string | null {
     return (
       this.catalog.barberVms().find((vm) => vm.id === barberId)?.avatarSrc ??
       null
     );
   }
 
-  /** A cart seat key (`SeatKey.text`) — `'self'`, or the bare guest id. */
-  private personLabel(seatKey: string): string {
-    // The booker by NAME once we know it — three steps said "You" to a
-    // signed-in user whose name was sitting in the session the whole time
-    // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === SELF_SEAT)
-      return (
-        this.identity.displayName() ||
-        this.transloco.translate('booking.party.you')
-      );
-    const guest = this.store
-      .guests()
-      .find((candidate) => candidate.guestId === seatKey);
-    return guest?.guestLabel ?? seatKey;
+  /** A barber as the steps name them (`barberNameOf`, the one copy). */
+  private barberName(barberId: BarberId): string {
+    return barberNameOf(this.catalog.barbers(), barberId, (name) =>
+      this.content.text(name),
+    );
   }
 }
-
-/** The booker's own cart seat key. */
-const SELF_SEAT: string = SeatKey.text(SeatKey.self());

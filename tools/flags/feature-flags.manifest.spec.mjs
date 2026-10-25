@@ -7,7 +7,7 @@
  * here, not at bootstrap or in a deploy.
  */
 import { readFileSync } from 'node:fs';
-import { FLAG_NAMES, FeatureFlags } from '@core/components';
+import { FeatureFlags } from '@core/components';
 import {
   ENVIRONMENTS,
   MANIFEST_PATH,
@@ -26,7 +26,9 @@ describe('config/feature-flags.json', () => {
   it.each(ENVIRONMENTS)(
     '%s: every key is a FlagName and every FlagName is there',
     (env) => {
-      expect(Object.keys(manifest[env]).sort()).toEqual([...FLAG_NAMES].sort());
+      expect(Object.keys(manifest[env]).sort()).toEqual(
+        [...FeatureFlags.NAMES].sort(),
+      );
     },
   );
 
@@ -41,7 +43,7 @@ describe('functions param names', () => {
   // names on the `defineBoolean` side.
   it('derive from each key exactly as flags.ts declares them', () => {
     expect(
-      Object.fromEntries(FLAG_NAMES.map((k) => [k, paramNameOf(k)])),
+      Object.fromEntries(FeatureFlags.NAMES.map((k) => [k, paramNameOf(k)])),
     ).toEqual({
       'client.profile': 'CLIENT_PROFILE',
       'client.pause': 'CLIENT_PAUSE',

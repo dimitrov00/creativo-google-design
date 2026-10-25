@@ -18,31 +18,39 @@ import {
   type PolicyRecomputeJob,
   RecomputeJobName,
 } from '@core/entities';
+import {
+  type AttemptFailure,
+  type AttemptLine,
+  type BackfillPosition,
+  type BackfillRequest,
+} from '@core/systems';
+import { AttemptOutcome } from './attempt-outcome.data';
+import { BackfillCallEnd } from './backfill-call-end.data';
 import { BackfillJobName } from './backfill-job-name.data';
+import { BackfillPhase } from './backfill-phase.data';
+import {
+  BackfillStart,
+  type BackfillStartRequest,
+} from './backfill-start.data';
+import { CancellationAttribution } from './cancellation-attribution.data';
 import { CapacityTrigger } from './capacity-trigger.data';
 import { ClientStatsOutcome } from './client-stats-outcome.data';
 import {
-  PolicyStartOutcome,
-  PolicyStepOutcome,
-  PolicySweepOutcome,
-} from './policy-recompute-outcome.data';
-import {
-  BackfillPhase,
-  type BackfillPosition,
-  type BackfillRequest,
-  BackfillStart,
-  type BackfillStartRequest,
-  CancellationAttribution,
-  type ClientStatsWritePlan,
-  StatsWriteDecision,
-  SubjectVisitOutcome,
-  type SubjectVisitOutcomeState,
   type PolicyPassJudgement,
   PolicyPassVerdict,
-  type AttemptFailure,
-  type AttemptLine,
-  AttemptOutcome,
-} from '@core/systems';
+} from './policy-pass-verdict.data';
+import { PolicyStartOutcome } from './policy-start-outcome.data';
+import { PolicyStepOutcome } from './policy-step-outcome.data';
+import { PolicySweepOutcome } from './policy-sweep-outcome.data';
+import {
+  type ClientStatsWritePlan,
+  StatsWriteDecision,
+} from './stats-write-decision.data';
+import {
+  SubjectVisitOutcome,
+  type SubjectVisitOutcomeState,
+} from './subject-visit-outcome.data';
+import { WaitlistDeliveryOutcome } from './waitlist-delivery-outcome.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -82,23 +90,29 @@ dictionary(PolicyStepOutcome satisfies Dictionary<PolicyStepOutcome>);
 dictionary(PolicySweepOutcome satisfies Dictionary<PolicySweepOutcome>);
 dictionary(ClientStatsOutcome satisfies Dictionary<ClientStatsOutcome>);
 dictionary(CapacityTrigger satisfies Dictionary<CapacityTrigger>);
+dictionary(BackfillCallEnd satisfies Dictionary<BackfillCallEnd>);
+dictionary(
+  WaitlistDeliveryOutcome satisfies Dictionary<WaitlistDeliveryOutcome>,
+);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type StatsOpsDictionariesHold = [
   Expect<Holds<typeof BackfillJobName, BackfillJobName>>, // components/backfill-job-name.data.ts
   Expect<Holds<typeof RecomputeJobName, RecomputeJobName>>, // entities/policy-recompute-job.entity.ts
-  Expect<Holds<typeof BackfillPhase, BackfillPhase>>, // systems/backfill-plan.system.ts
-  Expect<Holds<typeof BackfillStart, BackfillStart>>, // systems/backfill-plan.system.ts
-  Expect<Holds<typeof SubjectVisitOutcome, SubjectVisitOutcome>>, // systems/client-stats.system.ts
-  Expect<Holds<typeof CancellationAttribution, CancellationAttribution>>, // systems/client-stats.system.ts
-  Expect<Holds<typeof StatsWriteDecision, StatsWriteDecision>>, // systems/client-stats.system.ts
-  Expect<Holds<typeof PolicyPassVerdict, PolicyPassVerdict>>, // systems/policy-recompute-job.system.ts
-  Expect<Holds<typeof AttemptOutcome, AttemptOutcome>>, // systems/trigger-attempt.system.ts
-  Expect<Holds<typeof PolicyStartOutcome, PolicyStartOutcome>>, // components/policy-recompute-outcome.data.ts
-  Expect<Holds<typeof PolicyStepOutcome, PolicyStepOutcome>>, // components/policy-recompute-outcome.data.ts
-  Expect<Holds<typeof PolicySweepOutcome, PolicySweepOutcome>>, // components/policy-recompute-outcome.data.ts
+  Expect<Holds<typeof BackfillPhase, BackfillPhase>>, // components/backfill-phase.data.ts
+  Expect<Holds<typeof BackfillStart, BackfillStart>>, // components/backfill-start.data.ts
+  Expect<Holds<typeof SubjectVisitOutcome, SubjectVisitOutcome>>, // components/subject-visit-outcome.data.ts
+  Expect<Holds<typeof CancellationAttribution, CancellationAttribution>>, // components/cancellation-attribution.data.ts
+  Expect<Holds<typeof StatsWriteDecision, StatsWriteDecision>>, // components/stats-write-decision.data.ts
+  Expect<Holds<typeof PolicyPassVerdict, PolicyPassVerdict>>, // components/policy-pass-verdict.data.ts
+  Expect<Holds<typeof AttemptOutcome, AttemptOutcome>>, // components/attempt-outcome.data.ts
+  Expect<Holds<typeof PolicyStartOutcome, PolicyStartOutcome>>, // components/policy-start-outcome.data.ts
+  Expect<Holds<typeof PolicyStepOutcome, PolicyStepOutcome>>, // components/policy-step-outcome.data.ts
+  Expect<Holds<typeof PolicySweepOutcome, PolicySweepOutcome>>, // components/policy-sweep-outcome.data.ts
   Expect<Holds<typeof ClientStatsOutcome, ClientStatsOutcome>>, // components/client-stats-outcome.data.ts
   Expect<Holds<typeof CapacityTrigger, CapacityTrigger>>, // components/capacity-trigger.data.ts
+  Expect<Holds<typeof BackfillCallEnd, BackfillCallEnd>>, // components/backfill-call-end.data.ts
+  Expect<Holds<typeof WaitlistDeliveryOutcome, WaitlistDeliveryOutcome>>, // components/waitlist-delivery-outcome.data.ts
 ];
 
 // (3) SCREAMING values.
@@ -117,6 +131,8 @@ export type StatsOpsScreamingChecks = [
   Expect<Screaming<PolicySweepOutcome>>,
   Expect<Screaming<ClientStatsOutcome>>,
   Expect<Screaming<CapacityTrigger>>,
+  Expect<Screaming<BackfillCallEnd>>,
+  Expect<Screaming<WaitlistDeliveryOutcome>>,
 ];
 
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.
@@ -125,14 +141,14 @@ export type StatsOpsDictionaryFields = [
   Expect<Equals<BackfillRequest['backfillJobName'], BackfillJobName>>, // systems/backfill-plan.system.ts
   Expect<Equals<PolicyRecomputeJob['recomputeJobName'], RecomputeJobName>>, // entities/policy-recompute-job.entity.ts
   Expect<Equals<BackfillPosition['backfillPhase'], BackfillPhase>>, // systems/backfill-plan.system.ts
-  Expect<Equals<BackfillStartRequest['backfillStart'], BackfillStart>>, // systems/backfill-plan.system.ts
+  Expect<Equals<BackfillStartRequest['backfillStart'], BackfillStart>>, // components/backfill-start.data.ts
   Expect<
     Equals<SubjectVisitOutcomeState['subjectVisitOutcome'], SubjectVisitOutcome>
-  >, // systems/client-stats.system.ts
+  >, // components/subject-visit-outcome.data.ts
   Expect<
     Equals<ClientStatsWritePlan['statsWriteDecision'], StatsWriteDecision>
-  >, // systems/client-stats.system.ts
-  Expect<Equals<PolicyPassJudgement['policyPassVerdict'], PolicyPassVerdict>>, // systems/policy-recompute-job.system.ts
+  >, // components/stats-write-decision.data.ts
+  Expect<Equals<PolicyPassJudgement['policyPassVerdict'], PolicyPassVerdict>>, // components/policy-pass-verdict.data.ts
   Expect<Equals<AttemptFailure['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
   Expect<Equals<AttemptLine['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
 ];

@@ -1,5 +1,5 @@
 import type { Currency, CouponId, PriceCents } from '@core/primitives';
-import type { PerkId } from './gamification.data';
+import type { PerkId } from './award-summary.data';
 
 /** What a redeemed reward mints — the reward's discriminator `rewardGrant`. */
 export const RewardGrant = {

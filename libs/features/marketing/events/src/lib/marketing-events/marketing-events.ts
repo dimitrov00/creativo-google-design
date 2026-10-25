@@ -32,7 +32,19 @@ import {
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 
-type EventsTab = 'upcoming' | 'past';
+/**
+ * Which events `/events` lists — the page's field `tab`, the ONLY source of
+ * these strings (Law 1). Internal: the chips' test ids (`events-tab-upcoming`,
+ * `events-tab-past`) are written out in the template, never built from a
+ * value.
+ */
+const EventsTab = {
+  /** The events still to come (`observeEvents({ upcoming: true })`). */
+  Upcoming: 'UPCOMING',
+  /** The events that have happened. */
+  Past: 'PAST',
+} as const;
+type EventsTab = (typeof EventsTab)[keyof typeof EventsTab];
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
@@ -86,14 +98,16 @@ export class MarketingEvents {
   protected readonly instagramUrl = INSTAGRAM_URL;
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
-  protected readonly tab = signal<EventsTab>('upcoming');
+  /** The tabs, for the template's chips (never bare literals). */
+  protected readonly EventsTab = EventsTab;
+  protected readonly tab = signal<EventsTab>(EventsTab.Upcoming);
 
   private readonly result = toSignal(
     toObservable(this.tab).pipe(
       switchMap((tab) =>
         this.events.observeEvents({
           nowUtcMs: this.clock.nowUtcMs(),
-          upcoming: tab === 'upcoming',
+          upcoming: tab === EventsTab.Upcoming,
         }),
       ),
     ),

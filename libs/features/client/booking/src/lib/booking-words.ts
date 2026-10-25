@@ -1,14 +1,11 @@
-import {
-  BookingFlowStep,
-  MoveRefusalReason,
-  SeatArrangement,
-} from '@core/components';
+import { BookingFlowStep, SeatArrangement } from '@core/components';
+import { MoveErrorCode, type MoveRefusal } from '@core/errors';
 
 /*
  * THE LOWERCASE WORDS THE BOOKING FLOW SHOWS THE OUTSIDE (Phase 4a 4A-10).
  *
- * The flow decides on SCREAMING dictionaries (`bookingFlowStep`,
- * `moveRefusalReason`); the URL (`?step=`), the DOM (`data-state`,
+ * The flow decides on SCREAMING dictionaries (`bookingFlowStep`, a move
+ * refusal's `errorCode`); the URL (`?step=`), the DOM (`data-state`,
  * `data-reason`) and the i18n keys (`booking.moveRefused.<word>.…`) keep the
  * lowercase spelling deep links, the e2e suite and the catalogue have always
  * read. ONE table per dictionary, `satisfies` its whole dictionary, and never
@@ -50,10 +47,10 @@ export function bookingStepOfWord(
  * (`booking.moveRefused.<word>.title|body`) and its `data-reason` spell it.
  */
 export const MOVE_REFUSAL_WORDS = {
-  [MoveRefusalReason.CompanionsOnly]: 'companions_only',
-  [MoveRefusalReason.Unavailable]: 'unavailable',
-  [MoveRefusalReason.CarriedOutOfReach]: 'carried_out_of_reach',
-} as const satisfies Record<MoveRefusalReason, string>;
+  [MoveErrorCode.CompanionsOnly]: 'companions_only',
+  [MoveErrorCode.Unavailable]: 'unavailable',
+  [MoveErrorCode.CarriedOutOfReach]: 'carried_out_of_reach',
+} as const satisfies Record<MoveRefusal['errorCode'], string>;
 
 /**
  * How the picked arrangement seats the party

@@ -7,16 +7,20 @@ import {
   type TierId,
   type LocalDate,
 } from '@core/primitives';
-import { EngagementError } from '@core/errors';
-import {
-  BadgeSubject,
-  type BadgeSubjectSlot,
-  SeasonKind,
-  SeasonPhase,
-} from '@core/components';
+import { EngagementError, type LoyaltyCatalogError } from '@core/errors';
+import { BadgeSubject, SeasonKind, SeasonPhase } from '@core/components';
 import type {
   BadgeCategory,
   BadgeSeries,
+  CatalogCategoryRef,
+  CatalogRewardRef,
+  CatalogSeasonRef,
+  CatalogSeriesRef,
+  CatalogStreakRef,
+  CatalogSubjectRef,
+  CatalogTierRef,
+  CatalogWindowRef,
+  LoyaltyCatalogParts,
   RewardCatalogItem,
   Season,
   StreakDefinition,
@@ -37,53 +41,12 @@ import { StreakRuleSystem, type StreakSchedule } from './streak-rule.system';
  * catalogue is a few dozen rows).
  *
  * Generic over the rows: each list is read through the few fields its
- * rules name, and handed back as the very rows it was given, sorted.
+ * rules name, and handed back as the very rows it was given, sorted. The
+ * input — the generic `LoyaltyCatalogParts` and its `Catalog*Ref` bounds —
+ * is ONE declaration in the entities tier (`loyalty-catalog.ts`), below
+ * both the ports that read it and this system that validates it (pass D,
+ * D-7.5); the validated OUTPUT, `ValidLoyaltyCatalog`, is this system's.
  */
-
-/** What a catalogue reads of a shelf. */
-export type CatalogCategoryRef = Pick<BadgeCategory, 'id' | 'order'>;
-/** What a catalogue reads of a family. */
-export type CatalogSeriesRef = Pick<
-  BadgeSeries,
-  'id' | 'categoryId' | 'seasonId' | 'order'
->;
-/** What a catalogue reads of a season. */
-export type CatalogSeasonRef = Pick<
-  Season,
-  'id' | 'windowFrom' | 'windowUntil' | 'trackSeriesId' | 'seriesIds'
->;
-/** What a catalogue reads of a tier. */
-export type CatalogTierRef = Pick<
-  TierDefinition,
-  'id' | 'rank' | 'qualifyAtLeast'
->;
-/** What a catalogue reads of a reward. */
-export type CatalogRewardRef = Pick<RewardCatalogItem, 'id' | 'cost' | 'order'>;
-/** What a catalogue reads of a rhythm's head. */
-export type CatalogStreakRef = Pick<StreakDefinition, 'id'>;
-/** What the windows a page shows read of a season: its catalogue ref, and whether it is a season or an event. */
-export type CatalogWindowRef = CatalogSeasonRef & Pick<Season, 'seasonKind'>;
-/** What the barbers' faces read of a family: its subject, and whether it was withdrawn. */
-export type CatalogSubjectRef = BadgeSubjectSlot &
-  Pick<BadgeSeries, 'retiredAtUtcMs'>;
-
-/** The lists a catalogue is built of, in any order. */
-export type LoyaltyCatalogParts<
-  C extends CatalogCategoryRef = BadgeCategory,
-  S extends CatalogSeriesRef = BadgeSeries,
-  N extends CatalogSeasonRef = Season,
-  T extends CatalogTierRef = TierDefinition,
-  R extends CatalogRewardRef = RewardCatalogItem,
-  H extends CatalogStreakRef = StreakDefinition,
-> = {
-  readonly categories: readonly C[];
-  readonly series: readonly S[];
-  readonly seasons: readonly N[];
-  readonly tiers: readonly T[];
-  readonly rewards: readonly R[];
-  /** The rhythm's heads: the version in force and the one that waits. `[]` for a catalogue without a rhythm. */
-  readonly streaks: readonly H[];
-};
 
 /** The catalogue, validated, every list in display order. */
 export type ValidLoyaltyCatalog<
@@ -107,14 +70,6 @@ export type ValidLoyaltyCatalog<
   /** The rhythm's heads, by id. */
   readonly streaks: readonly H[];
 };
-
-/** What the catalogue as a whole refuses. */
-export type LoyaltyCatalogError =
-  | EngagementError.LoyaltyCatalogDuplicateId
-  | EngagementError.LoyaltyCatalogDanglingCategory
-  | EngagementError.LoyaltyCatalogDanglingSeason
-  | EngagementError.LoyaltyCatalogTiersNotRising
-  | EngagementError.LoyaltyCatalogCostNotPositive;
 
 /** The collections a duplicate id is named by — the stored collection names. */
 const COLLECTION = {

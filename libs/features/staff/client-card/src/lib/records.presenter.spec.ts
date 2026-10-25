@@ -557,8 +557,10 @@ describe('recordsPageVm', () => {
     it('reads the twelve months at the shop’s today: a visit leaves the window without anything being rewritten', () => {
       const stats = statsOf(GEORGI, georgiHistory());
       const inWindow = (today: string) =>
-        row(georgi({ data: { ...DATA, today }, stats }), 'last12Months')
-          ?.figure;
+        row(
+          georgi({ data: { ...DATA, today: localDate(today) }, stats }),
+          'last12Months',
+        )?.figure;
       expect(inWindow('2026-09-28')).toBe('14');
       // Three months on, the same document: the autumn of 2025 has left.
       expect(Number(inWindow('2026-12-28'))).toBeLessThan(14);

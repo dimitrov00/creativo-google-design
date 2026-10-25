@@ -1,4 +1,4 @@
-import { OTP_CODE_DIGITS, OtpCode } from '@core/components';
+import { OtpCode } from '@core/components';
 import type { OtpCryptoPorts } from '@core/ports';
 import {
   OTP_FIXED_CODE,
@@ -49,10 +49,10 @@ describe('otp-crypto adapter', () => {
     });
 
     it('draws codes of the OtpCode component’s length — every one parses at the edge', () => {
-      expect(OTP_CODE_DIGITS).toBe(6);
+      expect(OtpCode.DIGITS).toBe(6);
       for (let i = 0; i < 200; i++) {
         const code = crypto.nextCode();
-        expect(code).toHaveLength(OTP_CODE_DIGITS);
+        expect(code).toHaveLength(OtpCode.DIGITS);
         expect(OtpCode.parse(code).ok).toBe(true);
       }
       expect(OtpCode.parse(OTP_FIXED_CODE).ok).toBe(true);

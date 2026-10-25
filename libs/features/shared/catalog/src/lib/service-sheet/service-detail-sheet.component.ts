@@ -11,8 +11,9 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { CompositionKind } from '@core/components';
+import { CompositionKind, Money } from '@core/components';
 import type { Service } from '@core/entities';
+import type { DurationMinutes, MinuteCount } from '@core/primitives';
 import { CatalogPricingSystem } from '@core/systems';
 import {
   UiAvatar,
@@ -38,11 +39,12 @@ import { CatalogWording } from '../content/catalog-wording.service';
 import {
   type BarberVm,
   type ServiceVm,
-  type ServiceVariantVm,
+  VariantIcon,
 } from '../content/catalog.vm';
 import {
   serviceDurationRange,
   servicePriceFrom,
+  termsPrice,
   termsToVm,
 } from '../content/catalog.presenter';
 import { ShowcaseGalleryComponent } from '../gallery/showcase-gallery.component';
@@ -50,16 +52,16 @@ import { type CapsuleVm, CapsuleListComponent } from './capsule-list.component';
 import { ServiceRowComponent } from './service-row.component';
 
 /** The mark each variant kind wears — keyed on the view model's own union. */
-const VARIANT_ICONS: Record<ServiceVariantVm['icon'], UiIconName> = {
-  length: 'service.variant.length',
-  skin: 'service.variant.skin',
+const VARIANT_ICONS: Record<VariantIcon, UiIconName> = {
+  [VariantIcon.Length]: 'service.variant.length',
+  [VariantIcon.Skin]: 'service.variant.skin',
 };
 
 /** One performer card — a barber with their own terms for this service. */
 interface PerformerVm {
   readonly barber: BarberVm;
-  readonly price: number;
-  readonly minutes: number;
+  readonly price: Money;
+  readonly minutes: DurationMinutes;
 }
 
 /**
@@ -133,8 +135,7 @@ export class ServiceDetailSheetComponent {
   /**
    * The live catalogue the hosts' view models come from: the performer
    * order and the bundle saving are `CatalogPricingSystem`'s answers on the
-   * stored entities (integer cents), never re-derived from the view model's
-   * major-unit floats.
+   * stored entities (integer cents), never re-derived from the view model.
    */
   private readonly catalog = inject(CatalogContentService);
   /** The dictionary, for the template's bundle badge (never a bare literal). */
@@ -178,12 +179,10 @@ export class ServiceDetailSheetComponent {
    *  2026-07-24); the toggle still offers the list for a denser scan. */
   protected readonly performersGrid = signal(true);
 
-  protected readonly duration = computed(() =>
-    this.content.durationRange(
-      serviceDurationRange(this.service()).from,
-      serviceDurationRange(this.service()).to,
-    ),
-  );
+  protected readonly duration = computed(() => {
+    const range = serviceDurationRange(this.service());
+    return this.content.durationRange(range.min, range.max);
+  });
 
   protected readonly fromPrice = computed(() =>
     this.content.price(servicePriceFrom(this.service())),
@@ -204,7 +203,7 @@ export class ServiceDetailSheetComponent {
         const barber = byId.get(performer.barberId);
         if (!barber) return [];
         const terms = termsToVm(performer.terms);
-        return [{ barber, price: terms.price, minutes: terms.minutes }];
+        return [{ barber, price: termsPrice(terms), minutes: terms.minutes }];
       },
     );
   });
@@ -239,7 +238,7 @@ export class ServiceDetailSheetComponent {
    */
   protected readonly savings = computed<{
     price: string;
-    minutes: number;
+    minutes: MinuteCount;
   } | null>(() => {
     const bundle = this.catalog.findService(this.service().id);
     if (bundle === undefined) return null;
@@ -251,7 +250,11 @@ export class ServiceDetailSheetComponent {
     const saving = CatalogPricingSystem.bundleSaving(bundle, members);
     if (saving === null) return null;
     return {
-      price: this.content.priceCents(saving.savedCents),
+      // The saving is in the bundle's own currency (`bundleSaving` sums the
+      // members' cents as they are — the catalogue is single-currency).
+      price: this.content.price(
+        Money.fromCents(saving.savedCents, bundle.currency),
+      ),
       minutes: saving.savedMinutes,
     };
   });

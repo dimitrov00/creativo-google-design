@@ -13,20 +13,17 @@ import type {
 } from '@core/primitives';
 import type { RepositoryError, StreakPublishError } from '@core/errors';
 import type {
-  BadgeCategory,
   BadgeProgress,
-  BadgeSeries,
   CouponGrant,
   Coupon,
   GiftVoucher,
   JournalEntry,
   LoyaltyAccount,
-  RewardCatalogItem,
+  LoyaltyCatalog,
+  OfferedCoupon,
   SeasonProgress,
-  Season,
   StreakDefinition,
   StreakDefinitionVersion,
-  TierDefinition,
 } from '@core/entities';
 
 /**
@@ -60,12 +57,13 @@ export type FindCouponByCode = (
 ) => Promise<Result<Coupon | null, RepositoryError>>;
 
 /**
- * Every enabled coupon that carries a code — `couponStatus ==`, the
- * code-less ones dropped after the read: a grant-only coupon is not on offer
- * (`coupons-vouchers.adapter.ts`).
+ * Every coupon on offer — `couponStatus ==`, the code-less ones dropped
+ * after the read: a grant-only coupon is not on offer. Which coupon is on
+ * offer is ONE rule, `DiscountSystem.isOffered` (enabled and carrying a
+ * code), applied by the adapter and the memory double alike.
  */
 export type ListOpenCoupons = () => Promise<
-  Result<readonly Coupon[], RepositoryError>
+  Result<readonly OfferedCoupon[], RepositoryError>
 >;
 
 /**
@@ -129,24 +127,6 @@ export type ListBadgeProgress = (
 export type ListSeasonProgress = (
   customerId: CustomerId,
 ) => Promise<Result<readonly SeasonProgress[], RepositoryError>>;
-
-/**
- * The loyalty catalogue, under `LoyaltyCatalogSystem`'s part names
- * (`LoyaltyCatalogParts`), so the answer passes to its `validate` UNMAPPED
- * (Law 3): the shelves, the medal families, the seasons, the tiers, the
- * rewards and the rhythm's heads (`streaks`). The ports tier may not import
- * the systems tier, so the record is declared here and
- * `engagement-entities.type-spec.ts` pins it assignable to
- * `LoyaltyCatalogParts`.
- */
-export type LoyaltyCatalog = {
-  readonly categories: readonly BadgeCategory[];
-  readonly series: readonly BadgeSeries[];
-  readonly seasons: readonly Season[];
-  readonly tiers: readonly TierDefinition[];
-  readonly rewards: readonly RewardCatalogItem[];
-  readonly streaks: readonly StreakDefinition[];
-};
 
 /**
  * `badgeCategories`, `badgeSeries`, `seasons`, `tierDefinitions`,

@@ -18,9 +18,11 @@
  * `PropertyDefinition`, not a signature, and is not reported either.
  *
  * Options (path fragments, see `pathScope` in `path-scope.mjs`):
- * `include` / `allowIn` — `allowIn` carries the icon MANIFEST, a
- * `schemaVersion`'d JSON input format whose `kind` is a wire field until its
- * own pass (ui-residue-cleanup UR-13 a).
+ * `include` / `allowIn`. The root config passes no `allowIn`: the one file
+ * it ever carried, the icon MANIFEST (a `schemaVersion`'d JSON input format
+ * whose asset discriminator was the wire field `kind`, ui-residue-cleanup
+ * UR-13 a), renamed that field `iconAsset` in schema 2 (pass D, DEP-16) and
+ * is checked like every other UI file.
  */
 import { PATH_FRAGMENTS, pathScope } from './path-scope.mjs';
 

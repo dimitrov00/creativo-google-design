@@ -17,9 +17,11 @@ import {
 } from '@angular/core';
 import { UiAvatar, UiIcon, type UiIconName } from '@creativo/ui/controls';
 import {
+  type UiForegroundStyle,
   UiTextDirective,
   UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
+import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import {
   hollowStatus,
   StaffEventHead,
@@ -35,27 +37,38 @@ import {
   clamp,
   edgeScrollerOf,
   fill,
-  hourLabel,
+  OffscreenEdge,
   PlacementVerdict,
   type PlacementVerdictSlice,
   placementSliceOf,
   releasePointer,
+  ScrollAxis,
   snapTo,
-  timeLabel,
 } from './grid-gesture';
 import {
   closedMinuteRuns,
   toMinuteRun,
   trackEnd,
+  trackMinuteOf,
   trackStart,
 } from './minute-run';
 import { gridEventWords } from '../tag-words';
-import { EditCommand, ResizeEdge } from '@core/components';
-import { BookingStatus } from '@core/primitives';
+import {
+  EditCommand,
+  GridEvent as GridEventTag,
+  ResizeEdge,
+} from '@core/components';
+import {
+  BookingStatus,
+  LocalDate,
+  type MinuteCount,
+  type MinuteOfDay,
+  type Tag,
+  type TrackMinute,
+} from '@core/primitives';
 import { bookingStatusWords } from '@creativo/infrastructure/i18n';
 import {
   type EventRuns,
-  GridEvent as GridEventTag,
   GridLayoutSystem,
   type LaneSlot,
   type MinuteRun,
@@ -96,10 +109,12 @@ export interface GridEvent {
    * apart in absolute time. Normalising at the boundary is what lets one
    * renderer serve a chair-columned day and a date-columned week; it also
    * takes the timezone out of the grid entirely, which is why a 23- or
-   * 25-hour DST day needs no special case here.
+   * 25-hour DST day needs no special case here. Minutes of the anchored
+   * track axis (`TrackMinute`): a late cut that runs past midnight ends past
+   * 1440 on the day it started.
    */
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   /** The line the eye lands on — a client's name, or "40 min free". */
   readonly title: string;
   /** Secondary line, dropped as the block shrinks. */
@@ -116,7 +131,7 @@ export interface GridEvent {
    * "when the event has surplus time, some indication"). Optional; the
    * page's own blocks carry none.
    */
-  readonly surplusMinutes?: number | null;
+  readonly surplusMinutes?: MinuteCount | null;
   /**
    * Whose chair, when the column is a DAY rather than a chair. Absent in the
    * day view, where the column header already says it.
@@ -234,10 +249,10 @@ export interface GridColumn {
   readonly open: readonly OpenWindow[];
 }
 
-/** A stretch of a column's working day. */
+/** A stretch of a column's working day, on the track axis. */
 export interface OpenWindow {
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }
 
 /**
@@ -249,8 +264,8 @@ export interface OpenWindow {
  * gets a ruler it can aim a five-minute drag on.
  */
 export interface GridWindow {
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }
 
 /**
@@ -262,8 +277,8 @@ export interface GridWindow {
  */
 export interface GridDraft {
   readonly id: string;
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }
 
 /**
@@ -420,8 +435,21 @@ interface GhostBlock {
   readonly label: string;
 }
 
-/** Which arithmetic places a block. See `uiPlacement`. */
-type Placement = 'slots' | 'proportional';
+/**
+ * Which arithmetic places a block — the field `uiPlacement`. Values:
+ * external contract (the input's static template attribute,
+ * `uiPlacement="proportional"`, and the block's `data-placement` hook).
+ */
+const Placement = { Slots: 'slots', Proportional: 'proportional' } as const;
+type Placement = Tag<typeof Placement>;
+
+/**
+ * What the grid is — the field `uiViewport`. Values: external contract (the
+ * input's static template attribute, `uiViewport="framed"`, and the host's
+ * `data-viewport` hook).
+ */
+const GridViewport = { Page: 'page', Framed: 'framed' } as const;
+type GridViewport = Tag<typeof GridViewport>;
 
 /** One live pointer gesture. Plain mutable state: nothing here is drawn. */
 interface DragState {
@@ -434,8 +462,8 @@ interface DragState {
   /** Where the pointer last was — what the edge loop measures against. */
   y: number;
   /** The interval the gesture STARTED from — what a revert goes back to. */
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   readonly pxPerMinute: number;
   readonly target: HTMLElement;
   /** Where the finger landed across the axis nothing is dragged along. */
@@ -457,6 +485,8 @@ interface DragState {
 const MINUTES_PER_SLOT = 15;
 /** A civil day. The axis is this long unless something runs past midnight. */
 const DAY_MINUTES = 1440;
+/** The opening midnight — where the derived axis starts. */
+const AXIS_ORIGIN = trackMinuteOf(0);
 
 /**
  * Minutes either side of "now" within which an hour label is withheld so the
@@ -588,7 +618,7 @@ export class StaffTimeGrid {
    * being the roster — the component needs to know where the day starts so it
    * can scroll there, and has no use at all for where it ends.
    */
-  readonly rosterStartMinute = input<number | null>(null);
+  readonly rosterStartMinute = input<TrackMinute | null>(null);
 
   /**
    * Are the blocks TARGETS, or just drawn?
@@ -619,8 +649,11 @@ export class StaffTimeGrid {
     return !this.uiPickable() && event.id !== this.editableId();
   }
 
-  /** Minutes from midnight; draws the now-line when it lands in the extent. */
-  readonly nowMinute = input<number | null>(null);
+  /**
+   * Now on the shop's wall clock (`ShopNow.currentMinute`); draws the
+   * now-line when it lands in the extent.
+   */
+  readonly nowMinute = input<MinuteOfDay | null>(null);
   /**
    * The exact time the line marks, e.g. "15:48".
    *
@@ -630,9 +663,7 @@ export class StaffTimeGrid {
    */
   protected readonly nowLabel = computed(() => {
     const minute = this.nowMinute();
-    if (minute === null) return '';
-    const hour = Math.floor(minute / 60) % 24;
-    return `${String(hour).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+    return minute === null ? '' : formatClock(minute, ClockClosing.Wrap);
   });
 
   /**
@@ -712,7 +743,7 @@ export class StaffTimeGrid {
    * gradient and the reveal scroll on the surface four people use all day,
    * and that is its own change with its own screenshots.
    */
-  readonly uiPlacement = input<Placement>('slots');
+  readonly uiPlacement = input<Placement>(Placement.Slots);
 
   /**
    * `page` — the calendar IS the screen: full viewport height, sticky column
@@ -725,7 +756,7 @@ export class StaffTimeGrid {
    * keys on the column signature and would fight a window that moves under a
    * drag.
    */
-  readonly uiViewport = input<'page' | 'framed'>('page');
+  readonly uiViewport = input<GridViewport>(GridViewport.Page);
 
   /**
    * Draw only this stretch of the clock, instead of deriving the axis from
@@ -789,10 +820,11 @@ export class StaffTimeGrid {
   readonly blockPicked = output<string>();
   /**
    * A DATE column's head was tapped — Apple's own week-head gesture: the
-   * week is read for its shape and a day is opened for its words. The id
-   * is the column's day key; the page opens that day in the day view.
+   * week is read for its shape and a day is opened for its words. The day
+   * is the column's own (a date column's id is its day key, read once in
+   * {@link pickDay}); the page opens that day in the day view.
    */
-  readonly dayPicked = output<string>();
+  readonly dayPicked = output<LocalDate>();
   /**
    * An all-day CELL was tapped — the empty band above a column (owner,
    * 2026-09-23): the page opens the block sheet for that column's chair or
@@ -851,10 +883,15 @@ export class StaffTimeGrid {
    * A day with columns always has an axis; whether anything is on it is a
    * different question, and the muted shading answers it.
    */
-  protected readonly extent = computed(() => {
+  protected readonly extent = computed<{
+    readonly start: TrackMinute;
+    readonly end: TrackMinute;
+    readonly minutes: number;
+    readonly empty: boolean;
+  }>(() => {
     const columns = this.columns();
     if (columns.length === 0) {
-      return { start: 0, end: 0, minutes: 0, empty: true };
+      return { start: AXIS_ORIGIN, end: AXIS_ORIGIN, minutes: 0, empty: true };
     }
     // An asked-for window replaces the derived axis outright — the frame is
     // showing a neighbourhood, and the hours either side of it are not
@@ -881,10 +918,21 @@ export class StaffTimeGrid {
         .map((event) => event.endMinute);
       const tail = Math.max(window.endMinute, ...overflow);
       const end = Math.max(start + 60, Math.ceil(tail / 60) * 60);
-      return { start, end, minutes: end - start, empty: false };
+      // Whole hours of the track, the first one ≥ 0: track minutes.
+      return {
+        start: trackMinuteOf(start),
+        end: trackMinuteOf(end),
+        minutes: end - start,
+        empty: false,
+      };
     }
     const end = Math.ceil(Math.max(DAY_MINUTES, ...ends) / 60) * 60;
-    return { start: 0, end, minutes: end, empty: false };
+    return {
+      start: AXIS_ORIGIN,
+      end: trackMinuteOf(end),
+      minutes: end,
+      empty: false,
+    };
   });
 
   /** The hour labels down the leading edge. */
@@ -913,10 +961,11 @@ export class StaffTimeGrid {
       readonly label: string;
       readonly nearNow: boolean;
     }[] = [];
-    for (let at = start; at <= last; at += 60) {
+    for (let at: number = start; at <= last; at += 60) {
       out.push({
         key: at,
-        label: hourLabel(at),
+        // A whole hour of the axis, from its first (≥ 0): a track minute.
+        label: formatClock(trackMinuteOf(at), ClockClosing.Wrap),
         nearNow: now !== null && Math.abs(at - now) < NOW_LABEL_CLEARANCE,
       });
     }
@@ -1042,7 +1091,9 @@ export class StaffTimeGrid {
   private readonly wideFrame = signal(false);
 
   /** The frame is a control inside a sheet rather than the page itself. */
-  protected readonly framed = computed(() => this.uiViewport() === 'framed');
+  protected readonly framed = computed(
+    () => this.uiViewport() === GridViewport.Framed,
+  );
 
   /**
    * The column head band — names, dates, the zone.
@@ -1125,6 +1176,16 @@ export class StaffTimeGrid {
     return [column.fullTitle ?? column.title, this.uiAllDayAction()]
       .filter((part) => part.length > 0)
       .join(', ');
+  }
+
+  /**
+   * A date column's head — its id is the day it is (the page builds a date
+   * column from a shown `LocalDate`), read once here; a column whose id
+   * names no day emits nothing.
+   */
+  protected pickDay(column: GridColumn): void {
+    const day = LocalDate.parse(column.id);
+    if (day.ok) this.dayPicked.emit(day.value);
   }
 
   protected pick(event: GridEvent): void {
@@ -1249,7 +1310,9 @@ export class StaffTimeGrid {
    * is whether one still holds the other. Only a block wholly outside
    * counts; one clipped at the edge is still in the picture.
    */
-  protected readonly offscreen = signal<'before' | 'after' | null>(null);
+  protected readonly offscreen = signal<OffscreenEdge | null>(null);
+  /** The edges, for the template's arrow. */
+  protected readonly OffscreenEdge = OffscreenEdge;
 
   protected onFrameScroll(): void {
     this.refreshOffscreen();
@@ -1259,14 +1322,14 @@ export class StaffTimeGrid {
     const id = this.uiEditableEventId();
     const frame = this.frame()?.nativeElement;
     const block = id === null ? null : this.blockElement(id);
-    let next: 'before' | 'after' | null = null;
+    let next: OffscreenEdge | null = null;
     if (this.framed() && frame && block) {
       const box = frame.getBoundingClientRect();
       const rect = block.getBoundingClientRect();
       // A box with no height has no inside; nothing is out of it.
       if (box.height > 0) {
-        if (rect.bottom <= box.top) next = 'before';
-        else if (rect.top >= box.bottom) next = 'after';
+        if (rect.bottom <= box.top) next = OffscreenEdge.Before;
+        else if (rect.top >= box.bottom) next = OffscreenEdge.After;
       }
     }
     if (this.offscreen() !== next) this.offscreen.set(next);
@@ -1333,7 +1396,9 @@ export class StaffTimeGrid {
   /** The chip's words: the block's start, and the way back to it. */
   protected readonly editableTimeLabel = computed(() => {
     const block = this.subjectBlock();
-    return block === null ? '' : timeLabel(block.startMinute);
+    return block === null
+      ? ''
+      : formatClock(block.startMinute, ClockClosing.Wrap);
   });
 
   protected readonly backToLabel = computed(() => {
@@ -1400,8 +1465,8 @@ export class StaffTimeGrid {
     return lines;
   }
 
-  protected timeOf(minute: number): string {
-    return timeLabel(minute);
+  protected timeOf(minute: TrackMinute): string {
+    return formatClock(minute, ClockClosing.Wrap);
   }
 
   protected readonly draftVerdict = computed<PlacementVerdictSlice | null>(
@@ -1420,15 +1485,14 @@ export class StaffTimeGrid {
     },
   );
 
-  protected readonly readoutTone = computed<'destructive' | 'warning' | null>(
-    () => {
-      const verdict = this.draftVerdict();
-      if (verdict === null) return null;
-      return verdict.placementVerdict === PlacementVerdict.Outside
-        ? 'warning'
-        : 'destructive';
-    },
-  );
+  /** The readout's ink — the design system's foreground tone, printed as `data-tone`. */
+  protected readonly readoutTone = computed<UiForegroundStyle | null>(() => {
+    const verdict = this.draftVerdict();
+    if (verdict === null) return null;
+    return verdict.placementVerdict === PlacementVerdict.Outside
+      ? 'warning'
+      : 'destructive';
+  });
 
   /**
    * Where the readout hangs, and on which side.
@@ -1457,11 +1521,11 @@ export class StaffTimeGrid {
     if (gesture === EditCommand.Move) {
       // BOTH boundaries, always: a move changed both and kept the duration,
       // so naming one edge would hide the other.
-      return `${timeLabel(block.startMinute)} – ${timeLabel(block.endMinute)} · ${length}`;
+      return `${formatClock(block.startMinute, ClockClosing.Wrap)} – ${formatClock(block.endMinute, ClockClosing.Wrap)} · ${length}`;
     }
     const edge =
       gesture === ResizeEdge.Start ? block.startMinute : block.endMinute;
-    return `${timeLabel(edge)} · ${length}`;
+    return `${formatClock(edge, ClockClosing.Wrap)} · ${length}`;
   });
 
   /** The words: the neighbour, the shift, the floor. Silent when legal. */
@@ -1488,9 +1552,8 @@ export class StaffTimeGrid {
     const at = edge === ResizeEdge.Start ? block.startMinute : block.endMinute;
     const length = this.lengthText(block.endMinute - block.startMinute);
     const note = this.readoutNote();
-    return note === ''
-      ? `${timeLabel(at)} · ${length}`
-      : `${timeLabel(at)} · ${length}. ${note}`;
+    const time = formatClock(at, ClockClosing.Wrap);
+    return note === '' ? `${time} · ${length}` : `${time} · ${length}. ${note}`;
   }
 
   private lengthText(minutes: number): string {
@@ -1674,7 +1737,7 @@ export class StaffTimeGrid {
   }
 
   private readonly edge = edgeScrollerOf(
-    'y',
+    ScrollAxis.Y,
     () => this.frame()?.nativeElement,
     () => this.followFinger(),
   );
@@ -1894,9 +1957,15 @@ export class StaffTimeGrid {
     const { start, end } = this.extent();
     const duration = origin.endMinute - origin.startMinute;
     // Only the DRAWN extent clamps a move: a collision and a shift boundary
-    // are both permitted, and both are named instead.
-    const at = clamp(startMinute, start, end - duration);
-    return { id: origin.id, startMinute: at, endMinute: at + duration };
+    // are both permitted, and both are named instead. The landing is whole
+    // (a snapped or stepped minute, whole bounds) and never before the
+    // axis's first minute (≥ 0); the end keeps the block's length.
+    const at = trackMinuteOf(clamp(startMinute, start, end - duration));
+    return {
+      id: origin.id,
+      startMinute: at,
+      endMinute: trackMinuteOf(at + duration),
+    };
   }
 
   private resizeStartTo(origin: GridDraft, startMinute: number): GridDraft {
@@ -1904,8 +1973,11 @@ export class StaffTimeGrid {
     const floor = this.minMinutes();
     return {
       id: origin.id,
-      // A start dragged past the end CLAMPS; it never inverts.
-      startMinute: clamp(startMinute, start, origin.endMinute - floor),
+      // A start dragged past the end CLAMPS; it never inverts. Whole, and
+      // never before the axis's first minute (≥ 0).
+      startMinute: trackMinuteOf(
+        clamp(startMinute, start, origin.endMinute - floor),
+      ),
       endMinute: origin.endMinute,
     };
   }
@@ -1916,7 +1988,10 @@ export class StaffTimeGrid {
     return {
       id: origin.id,
       startMinute: origin.startMinute,
-      endMinute: clamp(endMinute, origin.startMinute + floor, end),
+      // Whole, and never before the start plus the floor (≥ 1).
+      endMinute: trackMinuteOf(
+        clamp(endMinute, origin.startMinute + floor, end),
+      ),
     };
   }
 
@@ -2283,8 +2358,8 @@ export class StaffTimeGrid {
  */
 function closedRows(
   open: readonly MinuteRun[],
-  start: number,
-  end: number,
+  start: TrackMinute,
+  end: TrackMinute,
 ): readonly ClosedRun[] {
   // CLAMPED to the drawn hours, sorted and merged in
   // `GridLayoutSystem.closedRuns` (`closedMinuteRuns`): a run is emitted as a
@@ -2335,7 +2410,7 @@ function ghostBlocks(
         top: box.top ?? 0,
         height: box.height ?? 0,
         tone: event.barberTone ?? null,
-        label: `${column.title} · ${timeLabel(event.startMinute)}`,
+        label: `${column.title} · ${formatClock(event.startMinute, ClockClosing.Wrap)}`,
       });
     }
   }
@@ -2411,7 +2486,7 @@ function place(
   extentMinutes: number,
   placement: Placement,
 ): readonly LaidEvent[] {
-  const proportional = placement === 'proportional';
+  const proportional = placement === Placement.Proportional;
   // Under a clamped window a block can sit entirely outside the drawn hours.
   // Dropped rather than clamped to a sliver: a zero-height box still takes
   // the minimum height and would advertise a booking at the edge that is not

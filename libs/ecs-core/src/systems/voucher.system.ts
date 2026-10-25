@@ -9,7 +9,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import { EngagementError } from '@core/errors';
+import { EngagementError, type VoucherBalanceError } from '@core/errors';
 import {
   type Money,
   VoucherCode,
@@ -56,13 +56,6 @@ export type IssueVoucher = {
    */
   readonly holderUserId: UserId | null;
 };
-
-/** The errors a voucher's balance algebra can refuse with. */
-export type VoucherBalanceError =
-  | EngagementError.GiftVoucherNotRedeemable
-  | EngagementError.GiftVoucherInsufficientBalance
-  | EngagementError.GiftVoucherCurrencyMismatch
-  | EngagementError.GiftVoucherOverRestore;
 
 /**
  * What a cancellation gives back (`voucher-restore.ts`): every voucher the

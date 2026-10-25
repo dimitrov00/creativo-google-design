@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
 import { deepFreeze } from '@core/testing';
-import {
-  QualifierComparison,
-  StreakQualifier,
-  StreakQualifierRule,
-} from './streak-qualifier.data';
+import { QualifierComparison } from './qualifier-comparison.data';
+import { StreakQualifier, StreakQualifierRule } from './streak-qualifier.data';
 
 // The cases of `streak-qualifier.spec.ts` (create / comparedTo / equals),
 // on the flat slice. `counts` — which visit keeps the rhythm — moves with

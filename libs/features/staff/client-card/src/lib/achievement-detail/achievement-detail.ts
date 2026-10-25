@@ -1,3 +1,5 @@
+import { VisitPerspective } from '@core/components';
+import { BadgeSeriesId } from '@core/primitives';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -7,7 +9,6 @@ import {
   output,
 } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
-import { VisitPerspective } from '@core/systems';
 import {
   type RhythmRuleWords,
   VisitRow,
@@ -44,14 +45,16 @@ import {
   achievementsIdPrefix,
   achievementsPageState,
 } from '../client-achievements/achievements-page-state';
+import { ClientCardPage, ClientCardRegion } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
-import type {
-  AchievementTileVm,
-  DetailFaceVm,
-  DetailHowVm,
-  DetailPictureVm,
-  MedalDetailVm,
-  MedalProgressVm,
+import {
+  type AchievementTileVm,
+  type DetailFaceVm,
+  type DetailHowVm,
+  DetailLevelTone,
+  type DetailPictureVm,
+  type MedalDetailVm,
+  type MedalProgressVm,
 } from '../client-pages.vm';
 import { medalDetailVm } from '../medal-detail.presenter';
 
@@ -150,7 +153,9 @@ export class AchievementDetailPage {
   });
 
   protected readonly state = computed(() => {
-    const seriesId = this.seriesId();
+    // The editor's page key (`EditorStackPage.subjectId`, opaque — D-8.9),
+    // branded once here, its reader: the family's id it was minted from.
+    const seriesId = BadgeSeriesId.of(this.seriesId());
     return achievementsPageState<MedalDetailVm>(
       this.store.achievementsData(),
       this.store.achievementsContext(),
@@ -171,6 +176,8 @@ export class AchievementDetailPage {
   protected readonly LoadState = LoadState;
   /** Whose rows the counted visits are: the staff's. */
   protected readonly VisitPerspective = VisitPerspective;
+  /** A ladder row's ink, for the template's switch. */
+  protected readonly DetailLevelTone = DetailLevelTone;
 
   /**
    * The hero head with its stage: while the family is on its way and once
@@ -190,7 +197,7 @@ export class AchievementDetailPage {
   protected readonly title = computed(
     () =>
       this.ready()?.vm.title ??
-      this.store.barTitle('achievementDetail', this.seriesId()) ??
+      this.store.barTitle(ClientCardPage.AchievementDetail, this.seriesId()) ??
       this.words()?.achievements.title ??
       '',
   );
@@ -245,6 +252,6 @@ export class AchievementDetailPage {
   }
 
   protected retry(): void {
-    this.store.retry('achievements');
+    this.store.retry(ClientCardRegion.Achievements);
   }
 }

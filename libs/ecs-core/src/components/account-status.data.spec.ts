@@ -5,7 +5,6 @@ import { utcMs } from '@core/testing';
 import {
   AccountLifecycle,
   AccountStatus,
-  BLOCK_REASONS,
   BlockReason,
 } from './account-status.data';
 
@@ -88,7 +87,7 @@ describe('AccountLifecycle', () => {
 
 describe('BlockReason', () => {
   it('is v2’s vocabulary, upper-snaked, each once', () => {
-    expect([...BLOCK_REASONS].sort()).toEqual(
+    expect([...AccountLifecycle.BLOCK_REASONS].sort()).toEqual(
       [
         'EXCESSIVE_FAILED_ATTEMPTS',
         'FRAUD_SUSPECT',
@@ -96,7 +95,9 @@ describe('BlockReason', () => {
         'TERMS_VIOLATION',
       ].sort(),
     );
-    expect(new Set(BLOCK_REASONS).size).toBe(BLOCK_REASONS.length);
+    expect(new Set(AccountLifecycle.BLOCK_REASONS).size).toBe(
+      AccountLifecycle.BLOCK_REASONS.length,
+    );
   });
 
   it('isBlockReason narrows known reasons and rejects strangers', () => {

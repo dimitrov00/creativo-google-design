@@ -1,5 +1,6 @@
+import type { VisitGrain } from '@core/components';
 import { LocalDate } from '@core/primitives';
-import { type VisitGrain, VisitListSystem } from '@core/systems';
+import { VisitListSystem } from '@core/systems';
 import { visitGrainWords } from '@creativo/infrastructure/i18n';
 import { formatWallClockParts } from '@creativo/ui/wall-clock';
 import type { VisitRowVm, VisitSectionVm } from './visit-row.vm';

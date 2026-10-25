@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RewardId } from '@core/primitives';
 import { localDate } from '@core/testing';
-import { RedeemProblem, RedemptionRecord } from './reward-redemption.data';
+import { RedeemProblem } from './redeem-problem.data';
+import { RedemptionRecord } from './reward-redemption.data';
 
 describe('RedeemProblem / RedemptionRecord', () => {
   it('names the seven reasons a reward stays locked, SCREAMING', () => {

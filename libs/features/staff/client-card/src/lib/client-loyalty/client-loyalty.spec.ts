@@ -1,3 +1,4 @@
+import { CouponGrantId } from '@core/primitives';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CouponVoucherPorts } from '@core/ports';
@@ -280,7 +281,7 @@ describe('lib-client-loyalty — Георги, every flag on, his next visit ope
           GEORGI_GRANT,
           {
             ...GEORGI_GRANT,
-            grantId: 'grant-dev-georgi-beard',
+            grantId: CouponGrantId.of('grant-dev-georgi-beard'),
             title: 'Безплатно оформяне на брада',
           },
         ],

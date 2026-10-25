@@ -11,12 +11,16 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   AccountStateService,
   ageDayOf,
-  nameRefusalCodes,
+  nameRefusalsOf,
 } from '@creativo/features/client/account-state';
 import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
-import type { IdentityError } from '@core/errors';
-import { LocalDate } from '@core/primitives';
+import type {
+  AccountsError,
+  IdentityError,
+  OwnProfileWriteFailure,
+} from '@core/errors';
+import { LocalDate, type Result } from '@core/primitives';
 import {
   AgeSystem,
   PhoneSystem,
@@ -161,7 +165,14 @@ export class ClientProfile {
    *  lookup so the face changes the instant the upload succeeds, without
    *  waiting for `find()` to re-resolve. */
   private readonly photoPreviewUrl = signal<string | null>(null);
-  protected readonly photoErrorCode = signal<string | null>(null);
+  /** The photo's refusal, as its struct — a picker rejection, an upload or a removal failure. */
+  protected readonly photoError = signal<
+    | AccountsError
+    | AccountsError.UploadAvatarUploadFailed
+    | AccountsError.RemoveAvatarRemoveFailed
+    | IdentityError.IdentifierMissing
+    | null
+  >(null);
   protected readonly photoMenuOpen = signal(false);
 
   /** Set the moment a photo is removed, so the portrait falls back to the
@@ -215,13 +226,16 @@ export class ClientProfile {
   protected readonly firstNameDraft = signal('');
   protected readonly lastNameDraft = signal('');
   protected readonly birthDraft = signal<UiDateFieldParts | null>(null);
-  protected readonly firstNameErrorCode = signal<string | null>(null);
-  protected readonly lastNameErrorCode = signal<string | null>(null);
+  protected readonly firstNameError =
+    signal<AccountsError.FirstNameTooShort | null>(null);
+  protected readonly lastNameError =
+    signal<AccountsError.LastNameTooShort | null>(null);
   /** The refusal `AgeSystem.fromParts` answered — the whole struct, never
    *  its bare code, so the age window's own figure (`minAge`, `maxAge`)
    *  reaches the words (onboarding's birthday grammar). */
   private readonly birthErrorState = signal<IdentityError | null>(null);
-  protected readonly saveErrorCode = signal<string | null>(null);
+  /** The failed save's refusal, as its struct (pass D E-7). */
+  protected readonly saveError = signal<OwnProfileWriteFailure | null>(null);
 
   protected readonly sheetTitleKey = computed(() => {
     const edit = this._editing();
@@ -248,7 +262,7 @@ export class ClientProfile {
     if (edit.profileEditField === ProfileEditField.Name) {
       const first = this.firstNameDraft();
       const last = this.lastNameDraft();
-      const refused = nameRefusalCodes(first, last);
+      const refused = nameRefusalsOf(first, last);
       if (refused.firstName !== null || refused.lastName !== null) {
         return false;
       }
@@ -278,10 +292,10 @@ export class ClientProfile {
     this.firstNameDraft.set(user.firstName ?? '');
     this.lastNameDraft.set(user.lastName ?? '');
     this.birthDraft.set(toDateFieldParts(user));
-    this.firstNameErrorCode.set(null);
-    this.lastNameErrorCode.set(null);
+    this.firstNameError.set(null);
+    this.lastNameError.set(null);
     this.birthErrorState.set(null);
-    this.saveErrorCode.set(null);
+    this.saveError.set(null);
     this._editing.set(edit);
     this._sheetClosing.set(false);
   }
@@ -307,30 +321,30 @@ export class ClientProfile {
   /* ── Validation (reward early, punish late — onboarding's grammar) ─── */
 
   protected onFirstNameBlur(): void {
-    this.firstNameErrorCode.set(this.nameRefusals().firstName);
+    this.firstNameError.set(this.nameRefusals().firstName);
   }
 
   protected onLastNameBlur(): void {
-    this.lastNameErrorCode.set(this.nameRefusals().lastName);
+    this.lastNameError.set(this.nameRefusals().lastName);
   }
 
   protected onFirstNameInput(value: string): void {
     this.firstNameDraft.set(value);
-    if (this.firstNameErrorCode() && this.nameRefusals().firstName === null) {
-      this.firstNameErrorCode.set(null);
+    if (this.firstNameError() && this.nameRefusals().firstName === null) {
+      this.firstNameError.set(null);
     }
   }
 
   protected onLastNameInput(value: string): void {
     this.lastNameDraft.set(value);
-    if (this.lastNameErrorCode() && this.nameRefusals().lastName === null) {
-      this.lastNameErrorCode.set(null);
+    if (this.lastNameError() && this.nameRefusals().lastName === null) {
+      this.lastNameError.set(null);
     }
   }
 
   /** The two drafts through the ONE name rule the write enforces. */
   private nameRefusals() {
-    return nameRefusalCodes(this.firstNameDraft(), this.lastNameDraft());
+    return nameRefusalsOf(this.firstNameDraft(), this.lastNameDraft());
   }
 
   protected onBirthBlur(event: UiDateFieldBlurEvent): void {
@@ -351,10 +365,17 @@ export class ClientProfile {
     return error === null ? null : translateCodedError(this.transloco, error);
   }
 
-  protected translateError(code: string | null): string | null {
-    return code
-      ? translateCodedError(this.transloco, { errorCode: code })
-      : null;
+  /** A refusal in words — `errors.<errorCode>`, its own fields the params. */
+  protected translateError(
+    error:
+      | AccountsError
+      | AccountsError.OwnProfileSave
+      | AccountsError.UploadAvatarUploadFailed
+      | AccountsError.RemoveAvatarRemoveFailed
+      | IdentityError.IdentifierMissing
+      | null,
+  ): string | null {
+    return error === null ? null : translateCodedError(this.transloco, error);
   }
 
   /* ── Commits ──────────────────────────────────────────────────────── */
@@ -362,13 +383,13 @@ export class ClientProfile {
   protected async save(): Promise<void> {
     const edit = this._editing();
     if (!edit || !this.canSave()) return;
-    this.saveErrorCode.set(null);
+    this.saveError.set(null);
 
-    let code: string | null;
+    let written: Result<void, OwnProfileWriteFailure>;
     if (edit.profileEditField === ProfileEditField.Name) {
       const refused = this.nameRefusals();
       if (refused.firstName !== null || refused.lastName !== null) return;
-      code = await this.store.saveName(
+      written = await this.store.saveName(
         this.firstNameDraft().trim(),
         this.lastNameDraft().trim(),
       );
@@ -380,13 +401,13 @@ export class ClientProfile {
         this.birthErrorState.set(birthDate.error);
         return;
       }
-      code = await this.store.saveBirthDate(birthDate.value);
+      written = await this.store.saveBirthDate(birthDate.value);
     }
 
-    if (code) {
+    if (!written.ok) {
       // The sheet stays open with the draft intact — a failed write must
       // never cost the user their typing.
-      this.saveErrorCode.set(code);
+      this.saveError.set(written.error);
       return;
     }
     this.requestClose();
@@ -398,10 +419,10 @@ export class ClientProfile {
     input.value = '';
     if (!file) return;
 
-    this.photoErrorCode.set(null);
-    const code = await this.store.uploadPhoto(file);
-    if (code) {
-      this.photoErrorCode.set(code);
+    this.photoError.set(null);
+    const uploaded = await this.store.uploadPhoto(file);
+    if (!uploaded.ok) {
+      this.photoError.set(uploaded.error);
       return;
     }
     const previous = this.photoPreviewUrl();
@@ -411,10 +432,10 @@ export class ClientProfile {
   }
 
   protected async removePhoto(): Promise<void> {
-    this.photoErrorCode.set(null);
-    const code = await this.store.removePhoto();
-    if (code) {
-      this.photoErrorCode.set(code);
+    this.photoError.set(null);
+    const removed = await this.store.removePhoto();
+    if (!removed.ok) {
+      this.photoError.set(removed.error);
       return;
     }
     const previous = this.photoPreviewUrl();

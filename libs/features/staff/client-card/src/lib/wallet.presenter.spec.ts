@@ -22,6 +22,7 @@ import {
 import {
   AdjustmentId,
   AppointmentId,
+  CouponGrantId,
   GiftVoucherId,
   type LocalDate,
   RewardId,
@@ -31,6 +32,7 @@ import {
 import { StreakRuleSystem } from '@core/systems';
 import { cents, localDate } from '@core/testing';
 import type { ClientCardGrant } from './client-card.contracts';
+import { NO_VISIT_NAMES } from './ledger.presenter';
 import type { LoyaltyFlags } from './loyalty.presenter';
 import {
   WALLET_ACTIVITY_READ,
@@ -159,8 +161,14 @@ function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
     usableGrantsOnBill: [],
     visitsMs: GEORGI_STATS.last365VisitsCompleted.map(factMs),
     lifetimeVisits: GEORGI_STATS.lifetimeVisitsCompleted,
-    visitTitles: new Map([['appt-dev-1', 'Фейд']]),
-    visitBarbers: new Map([['appt-dev-1', 'Иван']]),
+    visitTitles: {
+      byAppointment: new Map([[AppointmentId.of('appt-dev-1'), 'Фейд']]),
+      byDay: new Map(),
+    },
+    visitBarbers: {
+      byAppointment: new Map([[AppointmentId.of('appt-dev-1'), 'Иван']]),
+      byDay: new Map(),
+    },
     inChairToday: false,
     today: TODAY,
     zone: SHOP_TIME_ZONE,
@@ -186,7 +194,7 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
     usableGrants: [],
     visitsMs: MARTIN_STATS.last365VisitsCompleted.map(factMs),
     lifetimeVisits: MARTIN_STATS.lifetimeVisitsCompleted,
-    visitTitles: new Map(),
+    visitTitles: NO_VISIT_NAMES,
     visitBarbers: undefined,
     inChairToday: true,
     holder: 'Мартин Илиев',
@@ -332,7 +340,7 @@ describe('passVm', () => {
     const expiring = (today: string) =>
       passVm(
         walletInput({
-          today,
+          today: localDate(today),
           account: account({
             pointsExpireOn: day('2026-12-31'),
             pointsExpiryNoticeFrom: day('2026-09-15'),
@@ -499,8 +507,8 @@ describe('voucherVms', () => {
   it('keeps a voucher to its last day and drops it after', () => {
     const [georgi] = vouchersOf(GEORGI);
     const held = [must(georgi)];
-    expect(voucherVms(held, '2026-12-31', WORDS)).toHaveLength(1);
-    expect(voucherVms(held, '2027-01-01', WORDS)).toEqual([]);
+    expect(voucherVms(held, localDate('2026-12-31'), WORDS)).toHaveLength(1);
+    expect(voucherVms(held, localDate('2027-01-01'), WORDS)).toEqual([]);
     // Next year's day names its year.
     const next = voucherWith(
       'voucher-next',
@@ -577,7 +585,7 @@ describe('walletHoldings', () => {
 
   it('keeps a ticket on the bill where it stood, under its own name, the soonest to expire first', () => {
     const beard: ClientCardGrant = {
-      grantId: 'grant-beard',
+      grantId: CouponGrantId.of('grant-beard'),
       title: 'Безплатно оформяне на брада',
       valueLabel: null,
       expiresOn: null,
@@ -724,12 +732,15 @@ describe('walletActions', () => {
 
   it('counts the tickets on the disc when several are ready, and names none', () => {
     const beard: ClientCardGrant = {
-      grantId: 'grant-beard',
+      grantId: CouponGrantId.of('grant-beard'),
       title: 'Безплатно оформяне на брада',
       valueLabel: null,
       expiresOn: null,
     };
-    const twin: ClientCardGrant = { ...GEORGI_GRANT, grantId: 'grant-twin' };
+    const twin: ClientCardGrant = {
+      ...GEORGI_GRANT,
+      grantId: CouponGrantId.of('grant-twin'),
+    };
     const [use] = walletActions(
       walletInput({ usableGrants: [GEORGI_GRANT, beard] }),
     );
@@ -1302,8 +1313,11 @@ describe('walletRhythmVm', () => {
     ).toBe('От 1.10: на всеки 5 седмици · 7 дни гратис');
     // Its day has come: it is the rule in force, and nothing waits.
     expect(
-      must(walletRhythmVm(walletInput({ rhythm: next, today: '2026-10-01' })))
-        .ruleUpcoming,
+      must(
+        walletRhythmVm(
+          walletInput({ rhythm: next, today: localDate('2026-10-01') }),
+        ),
+      ).ruleUpcoming,
     ).toBeNull();
   });
 

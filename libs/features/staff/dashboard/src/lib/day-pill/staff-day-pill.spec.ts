@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { LocalDate } from '@core/primitives';
+import { localDate } from '@core/testing';
 import {
   StaffDayPill,
   formatDayPill,
@@ -24,8 +26,8 @@ describe('StaffDayPill', () => {
     host().querySelector<HTMLButtonElement>('[data-testid="staff-day-pill"]');
 
   it("names the day the one way: the locale's own compact date, weekday first", () => {
-    expect(formatDayPill('2026-09-09', 'bg')).toBe('ср, 9.09');
-    expect(formatDayPill('2026-09-09', 'en')).toBe('Wed, Sep 9');
+    expect(formatDayPill(localDate('2026-09-09'), 'bg')).toBe('ср, 9.09');
+    expect(formatDayPill(localDate('2026-09-09'), 'en')).toBe('Wed, Sep 9');
     expect(trigger()?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
       'ср, 9.09',
     );
@@ -36,26 +38,52 @@ describe('StaffDayPill', () => {
     // puts it (2026-09-23): «21 – 27.09» in Bulgarian, «Sep 21 – 27» in
     // English — the long-month range («21 – 27 Септември») pushed the
     // toolbar's cluster off a 390px bar.
-    expect(formatDayPillRange('2026-09-21', '2026-09-27', 'bg')).toBe(
-      '21 – 27.09',
-    );
-    expect(formatDayPillRange('2026-09-21', '2026-09-27', 'en')).toBe(
-      'Sep 21 – 27',
-    );
+    expect(
+      formatDayPillRange(
+        localDate('2026-09-21'),
+        localDate('2026-09-27'),
+        'bg',
+      ),
+    ).toBe('21 – 27.09');
+    expect(
+      formatDayPillRange(
+        localDate('2026-09-21'),
+        localDate('2026-09-27'),
+        'en',
+      ),
+    ).toBe('Sep 21 – 27');
     // Across a month both dates carry theirs, in Intl's own range form —
     // which sets the dash in thin spaces in English; the words are what is
     // pinned, not the whitespace.
     const plain = (text: string) => text.replace(/\s/g, ' ');
-    expect(plain(formatDayPillRange('2026-09-30', '2026-10-02', 'bg'))).toBe(
-      '30.09 – 2.10',
-    );
-    expect(plain(formatDayPillRange('2026-09-30', '2026-10-02', 'en'))).toBe(
-      'Sep 30 – Oct 2',
-    );
+    expect(
+      plain(
+        formatDayPillRange(
+          localDate('2026-09-30'),
+          localDate('2026-10-02'),
+          'bg',
+        ),
+      ),
+    ).toBe('30.09 – 2.10');
+    expect(
+      plain(
+        formatDayPillRange(
+          localDate('2026-09-30'),
+          localDate('2026-10-02'),
+          'en',
+        ),
+      ),
+    ).toBe('Sep 30 – Oct 2');
     // Across a year the years come along — the one time they are news.
-    expect(plain(formatDayPillRange('2026-12-28', '2027-01-03', 'en'))).toBe(
-      'Dec 28, 2026 – Jan 3, 2027',
-    );
+    expect(
+      plain(
+        formatDayPillRange(
+          localDate('2026-12-28'),
+          localDate('2027-01-03'),
+          'en',
+        ),
+      ),
+    ).toBe('Dec 28, 2026 – Jan 3, 2027');
   });
 
   it('opens the month on press and closes it on a pick, reporting both', () => {
@@ -82,6 +110,26 @@ describe('StaffDayPill', () => {
     expect(
       host().querySelector('[data-testid="staff-day-pill-calendar"]'),
     ).toBeNull();
+  });
+
+  /*
+   * THE PRE-ZONE PILL (pass D, R-3): before the shop's zone is known the
+   * page's day was `''`, which the old key reader rolled to 0000-01-01 —
+   * the store now says `null`. The page draws its pill only once the zone
+   * is known, but a day-less pill still prints exactly what it printed.
+   */
+  it('prints a day-less pill as it always printed the empty key', () => {
+    // The old reader, verbatim, as the reference: `''` → [0] → 0000-01-01.
+    const [year = 1970, month = 1, day = 1] = ''.split('-').map(Number);
+    const before = formatDayPill(
+      LocalDate.fromEpochDay(LocalDate.epochDayOf(year, month, day)),
+      'bg',
+    );
+    fixture.componentRef.setInput('uiDayKey', null);
+    fixture.detectChanges();
+    expect(trigger()?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      before,
+    );
   });
 
   it("takes an owner label over the day's own — the toolbar's week range", () => {

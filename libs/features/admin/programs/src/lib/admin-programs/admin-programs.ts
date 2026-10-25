@@ -13,9 +13,9 @@ import {
   PositionStatus,
   ProgramInput,
   type ShopEventInput,
+  WallTime,
 } from '@core/components';
 import type { Course, Position, ShopEvent } from '@core/entities';
-import type { LocalDate, MinuteOfDay } from '@core/primitives';
 import { UiButton, UiChip, UiTextField } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -56,21 +56,6 @@ type EventEditing = {
   readonly source: ShopEvent | null;
 };
 type Editing = PositionEditing | CourseEditing | EventEditing | null;
-
-const twoDigits = (value: number): string => String(value).padStart(2, '0');
-
-/**
- * An event's shop wall clock as `<input type="datetime-local">` reads it
- * (`YYYY-MM-DDTHH:mm`, zero-padded) — the edit form's prefill (F4-11).
- * Formatting is the page's (Law 5); parsing it back is `ProgramsSystem`'s.
- */
-function datetimeLocalOf(
-  localDate: LocalDate,
-  startMinutes: MinuteOfDay,
-): string {
-  const hours = Math.floor(startMinutes / 60);
-  return `${localDate}T${twoDigits(hours)}:${twoDigits(startMinutes % 60)}`;
-}
 
 /**
  * `/admin/programs` — the one place staff manage Positions/Courses/Events.
@@ -114,8 +99,10 @@ export class AdminPrograms {
   protected readonly enrollmentStatusWords = enrollmentStatusWords;
   /** The edit form's program kinds, for the template. */
   protected readonly ProgramEditing = ProgramEditing;
+  /** The tabs, for the template's chips and `@case`s (never bare literals). */
+  protected readonly ProgramsTab = ProgramsTab;
 
-  protected readonly tab = signal<ProgramsTab>('positions');
+  protected readonly tab = signal<ProgramsTab>(ProgramsTab.Positions);
   protected readonly editing = signal<Editing>(null);
   protected readonly saving = signal(false);
   protected readonly saveFailed = signal(false);
@@ -166,13 +153,13 @@ export class AdminPrograms {
 
   protected startCreate(): void {
     const tab = this.tab();
-    if (tab === 'positions') {
+    if (tab === ProgramsTab.Positions) {
       this.fillPosition(ProgramInput.blankPosition());
       this.editing.set({
         programEditing: ProgramEditing.Position,
         source: null,
       });
-    } else if (tab === 'courses') {
+    } else if (tab === ProgramsTab.Courses) {
       this.fillCourse(ProgramInput.blankCourse());
       this.editing.set({ programEditing: ProgramEditing.Course, source: null });
     } else {
@@ -204,7 +191,12 @@ export class AdminPrograms {
   protected startEditEvent(event: ShopEvent): void {
     this.fillEvent({
       ...event,
-      startsAt: datetimeLocalOf(event.localDate, event.startMinutes),
+      // The shop wall clock as `<input type="datetime-local">` reads it
+      // (`YYYY-MM-DDTHH:mm`) — the edit form's prefill (F4-11); parsing it
+      // back is `ProgramsSystem`'s.
+      startsAt: WallTime.toLocalIso(
+        WallTime.of(event.localDate, event.startMinutes),
+      ),
       locationId: event.locationId ?? '',
       applyUrl: event.applyUrl ?? '',
     });

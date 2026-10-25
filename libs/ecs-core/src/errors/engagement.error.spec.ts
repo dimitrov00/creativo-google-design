@@ -130,6 +130,20 @@ describe('EngagementError factories', () => {
     });
   });
 
+  it('names a voucher a batch repeats apart from a malformed code (pass D, DEP-18)', () => {
+    expect(EngagementErrorCode.VoucherCodeDuplicate).toBe(
+      'ENGAGEMENT_VOUCHER_CODE_DUPLICATE',
+    );
+    expect(EngagementError.voucherCodeDuplicate(' gift2025')).toEqual({
+      errorCode: 'ENGAGEMENT_VOUCHER_CODE_DUPLICATE',
+      attempted: ' gift2025',
+    });
+    expect(Object.keys(EngagementError.voucherCodeDuplicate('X'))).toEqual([
+      'errorCode',
+      'attempted',
+    ]);
+  });
+
   it('build the catalogue faults, a list of ids as brands', () => {
     expect(EngagementError.badgeCategoryOrderNegative(-1)).toEqual({
       errorCode: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',

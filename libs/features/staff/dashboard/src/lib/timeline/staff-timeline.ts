@@ -16,7 +16,11 @@ import {
   afterRenderEffect,
 } from '@angular/core';
 import { UiAvatar, UiIcon } from '@creativo/ui/controls';
-import { UiTextDirective } from '@creativo/ui/modifiers';
+import {
+  type UiForegroundStyle,
+  UiTextDirective,
+} from '@creativo/ui/modifiers';
+import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import {
   DRAG_THRESHOLD_PX,
   type DragGesture,
@@ -27,17 +31,22 @@ import {
   clamp,
   edgeScrollerOf,
   fill,
-  hourLabel,
+  OffscreenEdge,
   PlacementVerdict,
   type PlacementVerdictSlice,
   placementSliceOf,
   releasePointer,
+  ScrollAxis,
   snapTo,
-  timeLabel,
 } from '../time-grid/grid-gesture';
-import { closedMinuteRuns, toMinuteRun } from '../time-grid/minute-run';
+import {
+  closedMinuteRuns,
+  toMinuteRun,
+  trackMinuteOf,
+} from '../time-grid/minute-run';
 import { gridEventWords } from '../tag-words';
 import { EditCommand, ResizeEdge } from '@core/components';
+import type { MinuteOfDay, TrackMinute } from '@core/primitives';
 import { GridLayoutSystem } from '@core/systems';
 import type {
   GridColumn,
@@ -51,6 +60,8 @@ import type {
 
 /** A civil day. */
 const DAY_MINUTES = 1440;
+/** The opening midnight — the axis's first minute when nothing draws earlier. */
+const AXIS_ORIGIN = trackMinuteOf(0);
 
 /**
  * The minutes around "now" within which an hour label stands down so the now
@@ -142,8 +153,8 @@ interface DragState {
   /** Where the pointer last was — what the edge loop measures against. */
   x: number;
   /** The interval the gesture STARTED from — what a revert goes back to. */
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   readonly pxPerMinute: number;
   readonly target: HTMLElement;
   /** A finger, which cannot be told from a scroll until it commits. */
@@ -199,7 +210,8 @@ export class StaffTimeline {
   readonly uiEditable = input(false);
   readonly uiMinMinutes = input(10);
   readonly uiDragCopy = input<GridDragCopy>(NO_DRAG_COPY);
-  readonly nowMinute = input<number | null>(null);
+  /** Now on the shop's wall clock (`ShopNow.currentMinute`), or `null` off today. */
+  readonly nowMinute = input<MinuteOfDay | null>(null);
 
   readonly draftChanged = output<GridDraft>();
   readonly draftCommitted = output<GridCommit>();
@@ -207,23 +219,35 @@ export class StaffTimeline {
   /* ── The axis ─────────────────────────────────────────────────── */
 
   /** The drawn stretch, snapped to whole hours and grown to hold every bar. */
-  protected readonly extent = computed(() => {
+  protected readonly extent = computed<{
+    readonly start: TrackMinute;
+    readonly end: TrackMinute;
+    readonly minutes: number;
+    readonly empty: boolean;
+  }>(() => {
     const columns = this.columns();
     if (columns.length === 0) {
-      return { start: 0, end: 0, minutes: 0, empty: true };
+      return { start: AXIS_ORIGIN, end: AXIS_ORIGIN, minutes: 0, empty: true };
     }
     const window = this.uiWindow();
-    let start = window?.startMinute ?? 0;
-    let end = window?.endMinute ?? DAY_MINUTES;
+    let start: number = window?.startMinute ?? 0;
+    let end: number = window?.endMinute ?? DAY_MINUTES;
     for (const column of columns) {
       for (const event of column.events) {
         start = Math.min(start, event.startMinute);
         end = Math.max(end, event.endMinute);
       }
     }
-    start = Math.floor(start / 60) * 60;
-    end = Math.ceil(end / 60) * 60;
-    return { start, end, minutes: end - start, empty: end <= start };
+    // Whole hours of the track, the first one ≥ 0 (every bound read is a
+    // track minute): track minutes.
+    const first = trackMinuteOf(Math.floor(start / 60) * 60);
+    const last = trackMinuteOf(Math.ceil(end / 60) * 60);
+    return {
+      start: first,
+      end: last,
+      minutes: last - first,
+      empty: last <= first,
+    };
   });
 
   protected readonly hourCount = computed(() => this.extent().minutes / 60);
@@ -239,11 +263,16 @@ export class StaffTimeline {
       label: string;
       nearNow: boolean;
     }[] = [];
-    for (let minute = start, index = 0; minute < end; minute += 60, index++) {
+    for (
+      let minute: number = start, index = 0;
+      minute < end;
+      minute += 60, index++
+    ) {
       out.push({
         key: String(minute),
         index,
-        label: hourLabel(minute),
+        // A whole hour of the axis, from its first (≥ 0): a track minute.
+        label: formatClock(trackMinuteOf(minute), ClockClosing.Wrap),
         nearNow: now !== null && coveredByNow(minute, now),
       });
     }
@@ -267,7 +296,7 @@ export class StaffTimeline {
   );
 
   protected readonly nowLabel = computed(() =>
-    timeLabel(this.nowMinute() ?? 0),
+    formatClock(this.nowMinute() ?? AXIS_ORIGIN, ClockClosing.Wrap),
   );
 
   /**
@@ -421,15 +450,14 @@ export class StaffTimeline {
     },
   );
 
-  protected readonly readoutTone = computed<'destructive' | 'warning' | null>(
-    () => {
-      const verdict = this.draftVerdict();
-      if (verdict === null) return null;
-      return verdict.placementVerdict === PlacementVerdict.Outside
-        ? 'warning'
-        : 'destructive';
-    },
-  );
+  /** The readout's ink — the design system's foreground tone, printed as `data-tone`. */
+  protected readonly readoutTone = computed<UiForegroundStyle | null>(() => {
+    const verdict = this.draftVerdict();
+    if (verdict === null) return null;
+    return verdict.placementVerdict === PlacementVerdict.Outside
+      ? 'warning'
+      : 'destructive';
+  });
 
   /**
    * Where the readout hangs along the ruler: the edge OPPOSITE the handle
@@ -449,11 +477,11 @@ export class StaffTimeline {
     if (gesture === null || band === null) return '';
     const length = this.lengthText(band.endMinute - band.startMinute);
     if (gesture === EditCommand.Move) {
-      return `${timeLabel(band.startMinute)} – ${timeLabel(band.endMinute)} · ${length}`;
+      return `${formatClock(band.startMinute, ClockClosing.Wrap)} – ${formatClock(band.endMinute, ClockClosing.Wrap)} · ${length}`;
     }
     const edge =
       gesture === ResizeEdge.Start ? band.startMinute : band.endMinute;
-    return `${timeLabel(edge)} · ${length}`;
+    return `${formatClock(edge, ClockClosing.Wrap)} · ${length}`;
   });
 
   protected readonly readoutNote = computed(() => {
@@ -479,9 +507,8 @@ export class StaffTimeline {
     const at = edge === ResizeEdge.Start ? band.startMinute : band.endMinute;
     const length = this.lengthText(band.endMinute - band.startMinute);
     const note = this.readoutNote();
-    return note === ''
-      ? `${timeLabel(at)} · ${length}`
-      : `${timeLabel(at)} · ${length}. ${note}`;
+    const time = formatClock(at, ClockClosing.Wrap);
+    return note === '' ? `${time} · ${length}` : `${time} · ${length}. ${note}`;
   }
 
   private lengthText(minutes: number): string {
@@ -600,7 +627,7 @@ export class StaffTimeline {
   }
 
   private readonly edge = edgeScrollerOf(
-    'x',
+    ScrollAxis.X,
     () => this.frame()?.nativeElement,
     () => this.followFinger(),
   );
@@ -785,8 +812,14 @@ export class StaffTimeline {
   private moveTo(origin: GridDraft, startMinute: number): GridDraft {
     const { start, end } = this.extent();
     const duration = origin.endMinute - origin.startMinute;
-    const at = clamp(startMinute, start, end - duration);
-    return { id: origin.id, startMinute: at, endMinute: at + duration };
+    // The grid's rule: whole (a snapped or stepped minute, whole bounds),
+    // never before the axis's first minute (≥ 0); the length kept.
+    const at = trackMinuteOf(clamp(startMinute, start, end - duration));
+    return {
+      id: origin.id,
+      startMinute: at,
+      endMinute: trackMinuteOf(at + duration),
+    };
   }
 
   private resizeStartTo(origin: GridDraft, startMinute: number): GridDraft {
@@ -794,7 +827,9 @@ export class StaffTimeline {
     const floor = this.minMinutes();
     return {
       id: origin.id,
-      startMinute: clamp(startMinute, start, origin.endMinute - floor),
+      startMinute: trackMinuteOf(
+        clamp(startMinute, start, origin.endMinute - floor),
+      ),
       endMinute: origin.endMinute,
     };
   }
@@ -805,7 +840,9 @@ export class StaffTimeline {
     return {
       id: origin.id,
       startMinute: origin.startMinute,
-      endMinute: clamp(endMinute, origin.startMinute + floor, end),
+      endMinute: trackMinuteOf(
+        clamp(endMinute, origin.startMinute + floor, end),
+      ),
     };
   }
 
@@ -857,7 +894,9 @@ export class StaffTimeline {
   /* ── The way back ─────────────────────────────────────────────────── */
 
   /** The grid's rule, on this axis: which edge the band has gone past. */
-  protected readonly offscreen = signal<'before' | 'after' | null>(null);
+  protected readonly offscreen = signal<OffscreenEdge | null>(null);
+  /** The edges, for the template's arrow. */
+  protected readonly OffscreenEdge = OffscreenEdge;
 
   protected onFrameScroll(): void {
     this.refreshOffscreen();
@@ -866,7 +905,7 @@ export class StaffTimeline {
   private refreshOffscreen(): void {
     const frame = this.frame()?.nativeElement;
     const band = this.uiEditableEventId() === null ? null : this.bandElement();
-    let next: 'before' | 'after' | null = null;
+    let next: OffscreenEdge | null = null;
     if (frame && band) {
       const box = frame.getBoundingClientRect();
       const rect = band.getBoundingClientRect();
@@ -875,8 +914,8 @@ export class StaffTimeline {
         frame.querySelector<HTMLElement>('.staff-timeline__rail')
           ?.offsetWidth ?? 0;
       if (box.width > 0) {
-        if (rect.right <= box.left + rail) next = 'before';
-        else if (rect.left >= box.right) next = 'after';
+        if (rect.right <= box.left + rail) next = OffscreenEdge.Before;
+        else if (rect.left >= box.right) next = OffscreenEdge.After;
       }
     }
     if (this.offscreen() !== next) this.offscreen.set(next);
@@ -892,7 +931,9 @@ export class StaffTimeline {
 
   protected readonly editableTimeLabel = computed(() => {
     const band = this.band();
-    return band === null ? '' : timeLabel(band.startMinute);
+    return band === null
+      ? ''
+      : formatClock(band.startMinute, ClockClosing.Wrap);
   });
 
   protected readonly backToLabel = computed(() => {
@@ -1063,8 +1104,8 @@ function fraction(
 function closedBands(
   open: readonly OpenWindow[],
   extent: {
-    readonly start: number;
-    readonly end: number;
+    readonly start: TrackMinute;
+    readonly end: TrackMinute;
     readonly minutes: number;
   },
 ): readonly TimelineRun[] {

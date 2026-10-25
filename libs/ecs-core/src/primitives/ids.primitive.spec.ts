@@ -8,7 +8,8 @@ import {
   Collections,
   POLICY_RECOMPUTE_DOC,
 } from '@core/entities';
-import { fixtureHash, unwrapErr, unwrapOk } from '@core/testing';
+import { VisitDraftSystem } from '@core/systems';
+import { deepFreeze, fixtureHash, unwrapErr, unwrapOk } from '@core/testing';
 import * as Ids from './ids.primitive';
 import {
   AppointmentId,
@@ -17,6 +18,7 @@ import {
   CartLineId,
   ClientMoneyStatsId,
   ClientOperationId,
+  DraftPersonKey,
   GuestKey,
   CustomerId,
   JournalEntryId,
@@ -167,6 +169,126 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
         brand: 'AuditResourceId',
       });
     }
+  });
+});
+
+describe('DraftPersonKey — a person’s key in a staff sheet’s draft (pass D, D-5)', () => {
+  it('spells every key byte-identically to the sheet', () => {
+    expect(DraftPersonKey.PLACEHOLDER).toBe('primary');
+    expect(DraftPersonKey.account(UserId.of('u-martin'))).toBe('u-martin');
+    expect(DraftPersonKey.guest('Мария')).toBe('guest-Мария');
+    expect(DraftPersonKey.guest('Случаен клиент')).toBe('guest-Случаен клиент');
+    expect(DraftPersonKey.minted('mfx1a2', 0)).toBe('guest-mfx1a2-0');
+    expect(DraftPersonKey.minted('mfx1a2', 12)).toBe('guest-mfx1a2-12');
+    expect(DraftPersonKey.of('u-anna')).toBe('u-anna');
+  });
+
+  it('parses exactly the three spellings the sheet mints, byte for byte', () => {
+    for (const raw of [
+      'primary',
+      'guest-Мария',
+      'guest-Случаен клиент',
+      'guest-mfx1a2-0',
+      'guest-А/Б',
+      'u-martin',
+      'dev-staff-ivan',
+      'guest-',
+    ]) {
+      expect(unwrapOk(DraftPersonKey.parse(raw))).toBe(raw);
+    }
+    expect(unwrapOk(DraftPersonKey.parse('guest-Мария'))).toBe(
+      DraftPersonKey.guest('Мария'),
+    );
+    expect(unwrapOk(DraftPersonKey.parse('guest-mfx1a2-12'))).toBe(
+      DraftPersonKey.minted('mfx1a2', 12),
+    );
+    expect(unwrapOk(DraftPersonKey.parse('u-anna'))).toBe(
+      DraftPersonKey.account(UserId.of('u-anna')),
+    );
+  });
+
+  it('refuses a blank key and one that would name a nested document', () => {
+    expect(unwrapErr(DraftPersonKey.parse(''))).toEqual({
+      errorCode: 'PRIMITIVE_ID_EMPTY',
+      raw: '',
+      brand: 'DraftPersonKey',
+    });
+    expect(unwrapErr(DraftPersonKey.parse('   ')).errorCode).toBe(
+      'PRIMITIVE_ID_EMPTY',
+    );
+    expect(unwrapErr(DraftPersonKey.parse('users/u-1'))).toEqual({
+      errorCode: 'PRIMITIVE_ID_HAS_SLASH',
+      raw: 'users/u-1',
+      brand: 'DraftPersonKey',
+    });
+  });
+
+  it('is pinned to the spellings VisitDraftSystem keys a draft on', () => {
+    // The stranger keys' prefix is `DraftPersonKey`'s own spelling now
+    // (`VisitDraftSystem.GUEST_KEY_PREFIX` retired, pass D); the placeholder
+    // is still the system's constant.
+    expect(DraftPersonKey.PLACEHOLDER).toBe(
+      VisitDraftSystem.PLACEHOLDER_CLIENT_ID,
+    );
+    expect(DraftPersonKey.guest('x').startsWith('guest-')).toBe(true);
+    expect(DraftPersonKey.minted('m', 1).startsWith('guest-')).toBe(true);
+  });
+
+  // `accountOf` — the cases of `visit-draft.system.spec.ts`'s `accountKeyOf`
+  // block, case for case.
+  it('the placeholder is nobody’s account', () => {
+    expect(DraftPersonKey.accountOf(DraftPersonKey.PLACEHOLDER)).toBeNull();
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('primary'))).toBeNull();
+  });
+
+  it('a stranger’s guest key is nobody’s account — a walk-in or a minted one', () => {
+    expect(
+      DraftPersonKey.accountOf(DraftPersonKey.of('guest-Случаен клиент')),
+    ).toBeNull();
+    expect(
+      DraftPersonKey.accountOf(DraftPersonKey.of('guest-mfx1a2-0')),
+    ).toBeNull();
+    expect(
+      DraftPersonKey.accountOf(DraftPersonKey.guest('Случаен клиент')),
+    ).toBeNull();
+    expect(
+      DraftPersonKey.accountOf(DraftPersonKey.minted('mfx1a2', 0)),
+    ).toBeNull();
+  });
+
+  it('every other key is the account’s uid, as the brand', () => {
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('u-martin'))).toBe(
+      UserId.of('u-martin'),
+    );
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('dev-staff-ivan'))).toBe(
+      'dev-staff-ivan',
+    );
+    expect(
+      DraftPersonKey.accountOf(DraftPersonKey.account(UserId.of('u-anna'))),
+    ).toBe('u-anna');
+  });
+
+  it('a key the uid’s constructor refuses is no account', () => {
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of(''))).toBeNull();
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('   '))).toBeNull();
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('users/u-1'))).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const keys = deepFreeze(['u-anna', 'guest-Мария', 'primary']);
+    const once = keys.map((raw) =>
+      DraftPersonKey.accountOf(DraftPersonKey.of(raw)),
+    );
+    const twice = keys.map((raw) =>
+      DraftPersonKey.accountOf(DraftPersonKey.of(raw)),
+    );
+    expect(twice).toEqual(once);
+    expect(keys).toEqual(['u-anna', 'guest-Мария', 'primary']);
+    expect(DraftPersonKey.guest('Мария')).toBe(DraftPersonKey.guest('Мария'));
+    expect(DraftPersonKey.minted('a', 1)).toBe(DraftPersonKey.minted('a', 1));
+    expect(DraftPersonKey.account(UserId.of('u'))).toBe(
+      DraftPersonKey.account(UserId.of('u')),
+    );
   });
 });
 

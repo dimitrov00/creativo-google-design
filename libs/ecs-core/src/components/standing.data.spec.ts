@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BadgeCategoryId, BadgeSeriesId, SeasonId } from '@core/primitives';
 import { localDate, utcMs } from '@core/testing';
-import { EarnedDay, FamilyScope, FamilyScopeFilter } from './standing.data';
+import { FamilyScope, FamilyScopeFilter } from './family-scope-filter.data';
+import { EarnedDay } from './standing.data';
 
 describe('FamilyScopeFilter', () => {
   it('declares the four scopes a page draws, SCREAMING (the discriminator `familyScope`)', () => {

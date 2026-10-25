@@ -126,6 +126,11 @@
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "Предоставената информация е невалидна.",
     "IDENTITY_CALL_FAILED": "Възникна грешка — моля, опитайте отново.",
     "ENGAGEMENT_REPOSITORY_FAILURE": "Възникна проблем от наша страна — моля, опитайте отново.",
+    "LOYALTY_STREAK_PUBLISH_STALE": "Правилото беше променено от друг. Виж новото.",
+    "LOYALTY_STREAK_PUBLISH_TOO_EARLY": "Най-ранният възможен ден е {{date}}.",
+    "LOYALTY_STREAK_PUBLISH_INVALID": "Поправи: {{field}}.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "Нямаш право за тази промяна.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Нямаш право за тази промяна.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Пробвай пак.",
     "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Пробвай пак.",
     "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Пробвай пак.",
@@ -1009,10 +1014,8 @@
         "open": "Добави",
         "close": "Затвори",
         "booking": "Нов час",
-        "block": "Блокирай време",
-        "waitlist": "Добави в списъка на чакащите"
+        "block": "Блокирай време"
       },
-      "notBuiltYet": "Още не е готово — това изисква запис от сървъра (фаза B4).",
       "searchLabel": "Търсене",
       "searchPlaceholder": "Име, телефон, имейл, услуга…",
       "searchClear": "Изчисти търсенето",
@@ -2317,12 +2320,6 @@
       "empty": "Още няма правило. Това са препоръчаните стойности.",
       "flagOff": "Ритъмът още не е включен за приложението.",
       "failed": "Правилото не се зареди.",
-      "refused": {
-        "stale": "Правилото беше променено от друг. Виж новото.",
-        "tooEarly": "Най-ранният възможен ден е {{date}}.",
-        "invalid": "Поправи: {{field}}.",
-        "notAdmin": "Само администратор може да променя правилото."
-      },
       "offline": "Без връзка · правилото не може да се запази."
     }
   }

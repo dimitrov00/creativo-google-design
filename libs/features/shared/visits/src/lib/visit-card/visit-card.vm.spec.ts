@@ -1,3 +1,8 @@
+import {
+  AppointmentId,
+  AppointmentPhotoId,
+  WaitlistRequestId,
+} from '@core/primitives';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { VisitRowPhotoSource } from '../visit-row.presenter';
 import type {
@@ -26,7 +31,7 @@ import {
  */
 
 const last = {
-  id: 'apt-1',
+  id: AppointmentId.of('apt-1'),
   visitCardSlot: VisitCardSlot.Last,
   label: 'Последно посещение',
   services: 'Фейд · Оформяне на брада',
@@ -38,14 +43,20 @@ const last = {
   quote: '„Къса отстрани, по-дълго отгоре“',
   capsule: null,
   barber: { name: 'Иван Колев', avatarSrc: null },
-  photos: [{ id: 'p1', url: 'p1.jpg', alt: 'Снимка от 5 септември' }],
+  photos: [
+    {
+      id: AppointmentPhotoId.of('p1'),
+      url: 'p1.jpg',
+      alt: 'Снимка от 5 септември',
+    },
+  ],
   accessibleName:
     'Последно посещение: Фейд · Оформяне на брада, 5 септември, Иван Колев, Център, 27,50 €',
   testId: 'client-visit-last',
 } as const satisfies VisitCardVm;
 
 const next = {
-  id: 'apt-2',
+  id: AppointmentId.of('apt-2'),
   visitCardSlot: VisitCardSlot.Next,
   label: 'Следващ час',
   services: 'Фейд',
@@ -64,7 +75,7 @@ const next = {
 } as const satisfies VisitCardVm;
 
 const waitlist = {
-  id: 'waitlist-1',
+  id: WaitlistRequestId.of('waitlist-1'),
   visitCardSlot: VisitCardSlot.Waitlist,
   label: 'Чака свободен час',
   services: 'Класическа подстрижка',

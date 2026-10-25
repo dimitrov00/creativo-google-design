@@ -2,7 +2,6 @@ import {
   StaffDayPill,
   formatDayPill,
   formatDayPillRange,
-  localDateOfKey,
 } from '../day-pill/staff-day-pill';
 import { runViewTransition } from '../shared/view-transition';
 import { fill } from '../time-grid/grid-gesture';
@@ -32,26 +31,30 @@ import {
   type User,
 } from '@core/entities';
 import {
-  AppointmentId,
+  type AppointmentId,
+  type AppointmentPhotoId,
   BarberId,
-  CartLineId,
   BookingStatus,
-  CouponGrantId,
+  Currency,
+  type CustomerId,
+  DraftPersonKey,
   DurationMinutes,
   EndMinute,
   LocalDate,
-  LocationId,
+  type LocationId,
   MinuteCount,
   MinuteOfDay,
-  PriceCents,
-  Result,
+  type PriceCents,
+  type Result,
   SeatId,
-  ServiceId,
+  type SeatKeyText,
+  type ServiceId,
   ServiceVariantId,
-  UserId,
+  Tag,
+  TrackMinute,
+  type UserId,
   UtcEpochMs,
   defect,
-  isBookingStatus,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -64,23 +67,29 @@ import {
   BookingCall,
   BookingLifecycle,
   CancellationReason,
+  ClientQueryShape,
   Combinability,
-  DiscountMethod,
+  CouponValue,
   DiscountProvenance,
   DiscountSource,
+  type Email,
+  GridEvent as GridEventTag,
   MinuteRange,
-  MONEY_ROLES,
-  Placement,
   Principal,
   Registration,
-  RequestedSubjectRole,
+  type Role,
+  Roles,
   Seat,
-  SeatLabel,
   SeatOutcome,
   SeatSubject,
+  type ShopNow,
+  StaffVerb,
   SubjectRelationship,
-  VoucherCode,
+  TimeCoordinate,
+  VisitEditWriteOutcome,
+  type VisitSides,
   VoucherRedemption,
+  WallTime,
 } from '@core/components';
 import {
   AppointmentEditSystem,
@@ -88,10 +97,7 @@ import {
   BarberToneSystem,
   BillingSystem,
   BusySystem,
-  ClientQueryShape,
   ClientQuerySystem,
-  DiscountSystem,
-  GridEvent as GridEventTag,
   GridLayoutSystem,
   IntervalSetSystem,
   LocationScopeSystem,
@@ -100,11 +106,11 @@ import {
   RosterSystem,
   SearchFieldsSystem,
   type SideWrites,
+  type StaffEditWords,
+  StaffEditPlanSystem,
   VisitDraftSystem,
-  type VisitSides,
   VisitSidesSystem,
   VisitStorySystem,
-  type WalkInLabel,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -116,12 +122,13 @@ import {
   PROFILE_PORTS,
   USER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { AGENDA_FIELDS, AgendaFields } from '../agenda-fields';
+import { AGENDA_FIELDS, AgendaField, AgendaFields } from '../agenda-fields';
 import {
   StaffVisitEditor,
   type VisitEditorBarberOption,
   type VisitEditorClientOption,
   type VisitEditorClientSection,
+  VisitEditorClientSectionId,
   type VisitEditorFrameDay,
   type VisitEditorLibraryImage,
   type VisitEditorPhoto,
@@ -131,21 +138,15 @@ import {
   type VisitEditorLeg,
   type VisitEditorVerb,
   type VisitEditorVm,
-  VisitEditorCodeResult,
-  VisitEditorDiscount,
-  VisitEditorVoucher,
-  VisitEditorResolution,
+  type VisitEditorCodeResult,
+  type VisitEditorDiscount,
+  type VisitEditorVoucher,
+  type VisitEditorResolution,
   snapshotCommitOf,
 } from '../visit-editor/staff-visit-editor';
 import {
-  MONEY_CODE,
-  discountValueOf,
-  promiseOf,
-} from '../visit-editor/visit-editor-discount';
-import {
   CatalogContentService,
   CatalogWording,
-  termsToVm,
 } from '@creativo/features/shared/catalog';
 import { catalogTagWords } from '../shared/catalog-tag.words';
 import {
@@ -158,6 +159,7 @@ import {
   formatCents,
   formatInstant,
   formatWallClock,
+  formatZoneName,
   wallClockParts,
 } from '@creativo/ui/wall-clock';
 import {
@@ -216,12 +218,8 @@ import {
 } from '@creativo/ui/patterns';
 import {
   StaffDayStore,
-  addDays,
-  invalidCommand,
-  startOfWeek,
   type BarberDayLane,
-  type StaffView,
-  wallClockInstant,
+  StaffView,
 } from '../staff-day.store';
 import {
   type AllDayEntry,
@@ -253,33 +251,112 @@ import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
  * is opaque — nothing parses it back apart, because everything that needs the
  * appointment reads `DayRowVm.appointmentId` instead.
  */
-function rowKey(appointmentId: string, barberId: string): string {
+function rowKey(appointmentId: AppointmentId, barberId: BarberId): string {
   return `${appointmentId}#${barberId}`;
 }
 
-/**
- * WHICH SEATS a verb on this row resolves — `[]` meaning "the whole booking".
- *
- * A row that already holds every seat of its party IS the booking, and saying
- * so lets the server resolve the root in one write instead of walking seats
- * and re-deriving the same answer. A row holding only part of one names its
- * own seats and leaves the rest of the party booked — which is the entire
- * point of a seat-scoped verb.
- */
 /** What a save wrote BESIDE the batch — and so what its undo writes back. */
 type SaveWrites = SideWrites;
 
 /**
- * What one write of the sheet came to: the batch (`true` when there was
- * none to send), the side documents (`true` when none was due), and whether
- * it was refused before anything went out because a side field it carries
- * was changed by somebody else (`VisitSidesSystem.movedUnder`).
+ * What one write of the sheet came to (`VisitEditWriteOutcome`): refused
+ * before anything went out because a side field it carries was changed by
+ * somebody else (`STALE`, `VisitSidesSystem.movedUnder`), the batch refused
+ * (`BATCH_REFUSED`), or the batch landed — or there was none to send
+ * (`WRITTEN`); and, beside it, whether the side documents due (the team
+ * note, the tip) landed too (`sidesWritten` — `true` when none was due).
  */
 interface EditorWrite {
-  readonly batch: boolean;
-  readonly sides: boolean;
-  readonly stale: boolean;
+  readonly visitEditWriteOutcome: VisitEditWriteOutcome;
+  readonly sidesWritten: boolean;
 }
+
+/** Did the batch land (or was there none to send)? */
+function batchLanded(write: EditorWrite): boolean {
+  return write.visitEditWriteOutcome === VisitEditWriteOutcome.Written;
+}
+
+/** Did the whole write land — the batch and every side document it was due? */
+function writeLanded(write: EditorWrite): boolean {
+  return batchLanded(write) && write.sidesWritten;
+}
+
+/**
+ * Which DS options the scope switcher's «Всички» answers by — the menu's
+ * option id for "every chair", never a `BarberId` (a DS option id: the
+ * value the `ui-choice-menu` hands back and is handed as its selection).
+ */
+const SCOPE_ALL = 'all';
+
+/**
+ * The key of the all-day band's «+N» chip — every other chip is keyed by
+ * its chair's id; this one opens the date itself (an opaque grid key).
+ */
+const ALL_DAY_MORE_KEY = 'more';
+
+/**
+ * Which sheet's ✕ is waiting on «Отхвърли промените?» — the visit sheet's
+ * or the create sheet's (the field `discardPending`). Internal: compared
+ * here only, printed nowhere.
+ */
+export const DiscardTarget = {
+  Visit: 'VISIT',
+  Create: 'CREATE',
+} as const;
+export type DiscardTarget = Tag<typeof DiscardTarget>;
+
+/**
+ * Which toolbar menu is open — the view picker or the chair picker (the
+ * field `openPicker`); one at a time. Internal: compared here and in the
+ * template, printed nowhere.
+ */
+export const DayPicker = {
+  View: 'VIEW',
+  Scope: 'SCOPE',
+} as const;
+export type DayPicker = Tag<typeof DayPicker>;
+
+/**
+ * The page's transient surfaces `presentOnly` keeps while it closes the
+ * rest — the date popover, a toolbar picker, a row's overflow. Internal.
+ */
+const DaySurface = {
+  Date: 'DATE',
+  Picker: 'PICKER',
+  Row: 'ROW',
+} as const;
+type DaySurface = Tag<typeof DaySurface>;
+
+/**
+ * What a search field of an appointment holds — the field `label` of a
+ * searchable field and of a matched line. Internal: the matched lines print
+ * their parts, never this tag.
+ */
+const SearchField = {
+  Client: 'CLIENT',
+  Service: 'SERVICE',
+  Phone: 'PHONE',
+  Email: 'EMAIL',
+  Note: 'NOTE',
+} as const;
+type SearchField = Tag<typeof SearchField>;
+
+/**
+ * The discard alert's two answers — values: external contract (the
+ * `ui-alert` action ids the alert is handed and hands back on a pick).
+ */
+const DiscardAnswer = {
+  Discard: 'discard',
+  Keep: 'keep',
+} as const;
+
+/** The opening midnight — where a minute that nobody could read falls back to (`0`, a minute of every day). */
+const MIDNIGHT = MinuteOfDay.ofProven(0);
+/** The closing midnight as an exclusive end (`1440`, `(0, 1440]`). */
+const CLOSING = EndMinute.ofProven(24 * 60);
+/** The block sheet's default range, 12:00–13:00 — two minutes of every day. */
+const NOON = MinuteOfDay.ofProven(12 * 60);
+const ONE_PM = EndMinute.ofProven(13 * 60);
 
 /**
  * The stale refusal a write earns on THIS device, before anything is sent:
@@ -350,15 +427,20 @@ function isStaleRefusal(error: PipelineError | null): boolean {
 function rowShape(row: DayRowVm): string {
   return JSON.stringify({
     location: row.locationId,
-    start: row.startMs,
-    end: row.endMs,
+    // The chair's span on the shop's wall clock (Law 7.3) — its day, its
+    // start and its end, as stored.
+    day: row.localDate,
+    start: row.startMinute,
+    end: row.endMinute,
     legs: row.legs.map((leg) => [
       leg.seatId,
       leg.serviceId,
       leg.variantId,
       leg.minutes,
       leg.barberId,
-      leg.priceLabel,
+      // The price as cents in its currency, never re-read off a label (D-10.3).
+      leg.priceCents,
+      leg.currency,
     ]),
     discounts: row.discounts
       .map((discount) =>
@@ -366,7 +448,8 @@ function rowShape(row: DayRowVm): string {
           discount.discountSource,
           discount.grantId,
           discount.code,
-          discount.value,
+          // The value as stored — exactly its variant's fields.
+          CouponValue.of(discount),
         ]),
       )
       .sort(),
@@ -378,7 +461,7 @@ function rowShape(row: DayRowVm): string {
 /**
  * The seats a move of this row to `to` addresses — `[]` for the ROOT, the
  * whole party in one call (`AppointmentLifecycleSystem.transitionSeats`):
- * the row's own seat ids, branded at this edge.
+ * the row's own seat ids.
  */
 function transitionSeatsOf(
   row: DayRowVm,
@@ -386,12 +469,11 @@ function transitionSeatsOf(
 ): readonly SeatId[] {
   return AppointmentLifecycleSystem.transitionSeats(
     to,
-    row.seatIds.map((seatId) => SeatId.of(seatId)),
+    row.seatIds,
     row.partySize,
   );
 }
 
-/** One row of a barber's lane, precomputed — the sheet re-renders live. */
 /** The street line of a postal address — everything before its first comma. */
 function streetOf(address: string): string {
   const street = address.split(',')[0]?.trim() ?? '';
@@ -437,7 +519,7 @@ export const CreateIntent = {
 } as const;
 export type CreateIntent = (typeof CreateIntent)[keyof typeof CreateIntent];
 
-interface DayRowVm {
+export interface DayRowVm {
   readonly agendaRow: typeof AgendaRow.Visit;
   /**
    * THE ROW'S OWN IDENTITY — `appointmentId#barberId`, never the bare
@@ -458,7 +540,7 @@ interface DayRowVm {
    */
   readonly id: string;
   /** The aggregate this row is a share of. What the server is told about. */
-  readonly appointmentId: string;
+  readonly appointmentId: AppointmentId;
   /**
    * The stored revision the visit was read at (`Appointment.revision`), or
    * `null` where the reader did not say. What a sheet drawn from this row
@@ -466,12 +548,13 @@ interface DayRowVm {
    */
   readonly revision: number | null;
   /** WHERE the visit is — the root's own fact, one place for every chair. */
-  readonly locationId: string;
+  readonly locationId: LocationId;
   /**
    * THIS lane's seat. A row is one barber's share of a party, so resolving it
    * must name the seat — the root can hold one answer and a party has several.
+   * `null` for a chair holding none of the visit's seats.
    */
-  readonly seatId: string;
+  readonly seatId: SeatId | null;
   /**
    * EVERY seat of this row's own chair, in order.
    *
@@ -480,7 +563,7 @@ interface DayRowVm {
    * two seats to resolve, and naming one of them calls off half a row while
    * reporting success.
    */
-  readonly seatIds: readonly string[];
+  readonly seatIds: readonly SeatId[];
   /**
    * Whether the person in this chair is the BOOKER (an account `self` seat)
    * rather than a guest. A service added from the sheet joins the visit as
@@ -488,12 +571,12 @@ interface DayRowVm {
    */
   readonly selfSeat: boolean;
   /** The account the booking belongs to, or `null` for a walk-in. */
-  readonly ownerUserId: string | null;
+  readonly ownerUserId: UserId | null;
   /**
    * The booker's client RECORD (D29) — what their held coupons, the photos
    * of the visit and the client card are keyed by; `null` for a walk-in.
    */
-  readonly ownerCustomerId: string | null;
+  readonly ownerCustomerId: CustomerId | null;
   /** Seats in the whole party, across every lane. `1` is the ordinary case. */
   readonly partySize: number;
   /**
@@ -509,24 +592,19 @@ interface DayRowVm {
   /** The visit's shop day — what its wall-clock minutes are on (Law 7.3). */
   readonly localDate: LocalDate;
   /** This chair's start on the shop's wall clock, as stored (`startMinutes`). */
-  readonly startMinute: number;
+  readonly startMinute: MinuteOfDay;
   /** This chair's end on the same axis — `1440` is the closing midnight. */
-  readonly endMinute: number;
-  /** The start as an instant — what "now" and "past" are judged against. */
-  readonly startMs: number;
-  /** The end as an instant. */
-  readonly endMs: number;
+  readonly endMinute: EndMinute;
+  /**
+   * The chair's start and end as INSTANTS — for the countdown and the live
+   * remaining only (an elapsed-time phrase, T2: pass D D-6.4), read off the
+   * stored start (`TimeCoordinate.instantAt`). Every "has it begun / ended"
+   * answer is the wall clock's (`VisitStorySystem.hasStarted`/`hasEnded`).
+   */
+  readonly startUtcMs: UtcEpochMs;
+  readonly endUtcMs: UtcEpochMs;
   readonly startLabel: string;
   readonly endLabel: string;
-  /**
-   * How long the seat runs, in minutes.
-   *
-   * The subtitle used to print the clock a SECOND time — "12:30" led the row
-   * and "12:30–13:00" repeated underneath it — which is the redundancy that
-   * pushed the client's name onto two lines and made every row a different
-   * height. Duration is the fact the repeat was hiding.
-   */
-  readonly durationMinutes: number;
   /**
    * THE TAG — how far this chair's run is from the catalogue's length,
    * «−5 мин»: exactly the frame's own mark (owner, 2026-09-10: "the events
@@ -544,8 +622,10 @@ interface DayRowVm {
    * than a feature.
    */
   readonly priceLabel: string | null;
-  /** The same, in cents — for the tip presets. */
-  readonly priceCents: number | null;
+  /** The same, in cents — for the tip presets — beside its currency. */
+  readonly priceCents: PriceCents | null;
+  /** The chair's currency — its seats' (the shop's one where it holds none). */
+  readonly currency: Currency;
   readonly barberName: string;
   readonly barberAvatarSrc: string | null;
   /** Which of the five identity tones this chair wears — `BarberToneSystem`. */
@@ -565,7 +645,7 @@ interface DayRowVm {
    */
   readonly phoneHref: string | null;
   /** The client's address, when they left one. */
-  readonly email: string | null;
+  readonly email: Email | null;
   /**
    * Whether this visit was rebooked from a previous one.
    *
@@ -640,10 +720,11 @@ interface DayRowVm {
   /** Whether the party has walked in — the gate for offering "Done". */
   readonly arrived: boolean;
   /**
-   * WHEN they walked in, epoch ms, or `null`. The sheet's state header reads
-   * the waiting time off it; `arrived` alone could only say that it exists.
+   * WHEN they walked in — the stored stamp — or `null`. The sheet's state
+   * header reads the waiting time off it; `arrived` alone could only say
+   * that it exists.
    */
-  readonly arrivedMs: number | null;
+  readonly arrivedAtUtcMs: UtcEpochMs | null;
   /** The ONE verb this row leads with, or `null` on a settled row. */
   readonly primary: RowVerb | null;
   /** Everything else `canTransition` allows — the overflow menu. */
@@ -692,10 +773,12 @@ interface DayRowVm {
  * card's width is free for the fields the viewer actually chose.
  */
 interface AgendaGroupVm {
+  /** `String(startMinutes)` — the heading's DOM id segment and its track key. */
   readonly key: string;
   readonly timeLabel: string;
-  readonly startMs: number;
-  /** `true` once the clock has passed this heading. */
+  /** The minute of the shop's day everything in the group begins at. */
+  readonly startMinutes: MinuteOfDay;
+  /** `true` once the clock has reached this heading (`VisitStorySystem.hasStarted`). */
   readonly past: boolean;
   readonly items: readonly RunEntryVm[];
 }
@@ -706,8 +789,9 @@ interface GapRowVm {
   readonly id: string;
   readonly startLabel: string;
   readonly endLabel: string;
-  readonly minutes: number;
-  readonly startMs: number;
+  readonly minutes: MinuteCount;
+  /** Where the hole begins on the shop's wall clock — the run's order. */
+  readonly startMinutes: MinuteOfDay;
   /**
    * Already elapsed — the run's one definition of past, shared with visits.
    *
@@ -731,16 +815,23 @@ interface GapRowVm {
 
 type RunEntryVm = DayRowVm | GapRowVm;
 
+/** Where an entry of the run begins on the shop's wall clock — a visit's chair start, a hole's start. */
+function startMinuteOf(entry: RunEntryVm): MinuteOfDay {
+  return entry.agendaRow === AgendaRow.Visit
+    ? entry.startMinute
+    : entry.startMinutes;
+}
+
 /** One neighbour on a sheet's frame — a name, a span on its axis, a tone. */
 interface FrameNeighbour {
   readonly name: string;
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: MinuteOfDay;
+  readonly endMinute: EndMinute;
   readonly tone: number;
 }
 
 interface LaneVm {
-  readonly barberId: string;
+  readonly barberId: BarberId;
   readonly barberName: string;
   readonly avatarSrc: string | null;
   /** Visits and gaps interleaved in clock order — the COMPLETE run. */
@@ -824,67 +915,46 @@ const ANCHOR_TOLERANCE = 2;
  * once the cancel has landed (`confirmCancel`), never the call's.
  */
 function transitionOf(
-  appointmentId: string,
+  appointmentId: AppointmentId,
   toBookingStatus: BookingStatus,
   cancellationReason: CancellationReason | null,
-  seatId: string | null,
+  seatId: SeatId | null,
 ): BookingCall.Transition {
-  return {
-    appointmentId: AppointmentId.of(appointmentId),
-    toBookingStatus,
-    cancellationReason,
-    seatId: seatId === null ? null : SeatId.of(seatId),
-  };
-}
-
-/** A placement the call cannot carry, refused as the server refuses it (`field` named). */
-function refusedAt(field: string): Result.Err<PipelineError> {
-  return Result.err(invalidCommand(field));
-}
-
-/**
- * A guest an added seat is for — by label, the guest's only identity: trimmed
- * and bounded as the server reads it, refused as it refuses a bad one.
- */
-function guestSubject(
-  label: string,
-): Result<BookingCall.AddedSubject, PipelineError> {
-  const parsed = SeatLabel.parse(label);
-  return parsed.ok
-    ? Result.ok({
-        requestedSubjectRole: RequestedSubjectRole.Guest,
-        label: parsed.value,
-      })
-    : refusedAt('addedSubject');
+  return { appointmentId, toBookingStatus, cancellationReason, seatId };
 }
 
 /**
  * A block's span on the shop's wall clock — a start in `[0, 1440)` and a
- * later end in `(0, 1440]` — or `null` for anything that is not one.
+ * later end in `(0, 1440]` — or `null` for anything that is not one: the
+ * block sheet's draft runs on the frame's anchored axis (`TrackMinute`).
  */
 function minuteRangeOf(
-  startMinute: number,
-  endMinute: number,
+  startMinute: TrackMinute,
+  endMinute: TrackMinute,
 ): MinuteRange | null {
-  const start = MinuteOfDay.of(startMinute);
-  const end = EndMinute.of(endMinute);
+  const start = TrackMinute.toStart(startMinute);
+  const end = TrackMinute.toEnd(endMinute);
   if (!start.ok || !end.ok || end.value <= start.value) return null;
   return MinuteRange.of(start.value, end.value);
 }
 
 /** One field that matched, split so the matching run can be marked. */
 interface MatchVm {
-  readonly label: string;
+  readonly label: SearchField;
   readonly parts: readonly { readonly text: string; readonly hit: boolean }[];
+}
+
+/** One searchable field of an appointment — what it holds, and its text. */
+interface SearchableField {
+  readonly label: SearchField;
+  readonly value: string;
 }
 
 /** One appointment the search found. */
 interface SearchHitVm {
-  readonly id: string;
-  readonly dayKey: string;
+  readonly id: AppointmentId;
+  readonly dayKey: LocalDate;
   readonly whenLabel: string;
-  /** The party's start, for ordering the two halves outward from now. */
-  readonly whenMs: number;
   readonly past: boolean;
   readonly bookingStatus: BookingStatus;
   readonly titleParts: readonly {
@@ -900,14 +970,14 @@ interface SearchHitVm {
  * the term is no phone number — `SearchFieldsSystem.digitQuery`)?
  */
 function matches(
-  field: { label: string; value: string },
+  field: SearchableField,
   term: string,
   digits: string | null,
 ): boolean {
   if (field.value.toLocaleLowerCase('bg').includes(term)) return true;
   return (
     digits !== null &&
-    field.label === 'phone' &&
+    field.label === SearchField.Phone &&
     SearchFieldsSystem.digitsMatch(field.value, digits)
   );
 }
@@ -1068,6 +1138,14 @@ export class StaffDashboard {
   protected readonly AgendaRow = AgendaRow;
   /** The ＋ menu's two doors, for the template's calls. */
   protected readonly CreateIntent = CreateIntent;
+  /** The four readings, for the template's comparisons. */
+  protected readonly StaffView = StaffView;
+  /** The toolbar's two menus, for the template's latch. */
+  protected readonly DayPicker = DayPicker;
+  /** The scope switcher's «Всички» option id, for the template. */
+  protected readonly SCOPE_ALL = SCOPE_ALL;
+  /** The card's switchable facts, for the template's `fields.isOn`. */
+  protected readonly AgendaField = AgendaField;
   private readonly transloco = inject(TranslocoService);
   /**
    * THE LOADED TABLE, AS A SIGNAL (review r4, 2026-10-06: the agenda's
@@ -1125,7 +1203,7 @@ export class StaffDashboard {
    * in over several frames, and claiming early meant claiming a day that was
    * never actually anchored.
    */
-  private readonly anchoredDay = signal<string | null>(null);
+  private readonly anchoredDay = signal<LocalDate | null>(null);
 
   /**
    * The toolbar's REAL height, published as a custom property.
@@ -1265,14 +1343,14 @@ export class StaffDashboard {
   /**
    * A barber may stretch his own time; he may not discount the shop's money
    * (design record, §3.8) — the same front-desk-and-admin list the rules
-   * use for the clientele (`MONEY_ROLES`, the domain's own list — the server
+   * use for the clientele (`Roles.MONEY`, the domain's own list — the server
    * gates the manual discount arm on it too). `content_manager` edits the
    * catalogue, not prices on a booking.
    */
   protected readonly mayReprice = computed(() => {
     const principal = this.principal();
     if (principal === undefined) return false;
-    return Principal.hasAnyRole(principal, MONEY_ROLES);
+    return Principal.hasAnyRole(principal, Roles.MONEY);
   });
 
   /**
@@ -1281,12 +1359,12 @@ export class StaffDashboard {
    * money read. Nobody while the principal is not an onboarded one.
    */
   protected readonly cardViewer = computed<{
-    readonly uid: string;
-    readonly roles: readonly string[];
+    readonly userId: UserId;
+    readonly roles: readonly Role[];
   } | null>(() => {
     const principal = this.principal();
     return principal !== undefined && Principal.isActive(principal)
-      ? { uid: principal.userId, roles: [...principal.roles] }
+      ? { userId: principal.userId, roles: [...principal.roles] }
       : null;
   });
 
@@ -1297,27 +1375,38 @@ export class StaffDashboard {
   );
 
   /**
-   * THE CATALOGUE AS THE CLIENT CARD NAMES THINGS (§5.2.1) — built ONCE:
-   * each lookup reads the catalogue's live signals, so the card's
-   * computeds follow a late catalogue on their own and the object never
-   * changes (a new object would re-open the card). Services, barbers and
-   * shops in the reader's language; covers and portraits as the catalogue
-   * resolved them. A shop's cover is not resolved by the catalogue's media
-   * cache today (it asks for services' and barbers' only, and no seeded
-   * shop carries one), so a shop family draws the first letter of the
-   * shop's `shortName` given below («Център» → «Ц»), as §3.3.3 orders it.
+   * THE CATALOGUE AS THE CLIENT CARD NAMES THINGS (§5.2.1): each lookup
+   * reads the catalogue's live signals when it is ASKED — outside this
+   * computed — so the card's computeds follow a late catalogue on their
+   * own, and the object is rebuilt only when the shop count it carries as
+   * a plain number changes (no getter on data, pass D D-7.6). Services,
+   * barbers and shops in the reader's language; covers and portraits as the
+   * catalogue resolved them. A shop's cover is not resolved by the
+   * catalogue's media cache today (it asks for services' and barbers' only,
+   * and no seeded shop carries one), so a shop family draws the first
+   * letter of the shop's `shortName` given below («Център» → «Ц»), as
+   * §3.3.3 orders it.
    */
-  protected readonly clientCardCatalog: ClientCardCatalog = (() => {
+  /**
+   * How many shops the catalogue lists — its own computed, so the lookup
+   * below is rebuilt only when the NUMBER changes, never on a re-emission
+   * of the same shops (a new object re-opens the card).
+   */
+  private readonly locationCount = computed(
+    () => this.catalog.locations().length,
+  );
+
+  protected readonly clientCardCatalog = computed<ClientCardCatalog>(() => {
     const catalog = this.catalog;
     const content = this.content;
     const categories = this.serviceCategories;
     return {
-      serviceName: (id: string) => {
+      serviceName: (id: ServiceId) => {
         const service = catalog.findService(id);
         return service === undefined ? null : content.text(service.name);
       },
-      serviceCoverSrc: (id: string) => catalog.coverUrl(id) ?? null,
-      serviceCategory: (id: string) => {
+      serviceCoverSrc: (id: ServiceId) => catalog.coverUrl(id) ?? null,
+      serviceCategory: (id: ServiceId) => {
         const service = catalog.findService(id);
         const listed = categories();
         if (service === undefined || listed === null || !listed.ok) {
@@ -1328,31 +1417,29 @@ export class StaffDashboard {
         );
         return category === undefined
           ? null
-          : { id: category.id as string, name: content.text(category.name) };
+          : { id: category.id, name: content.text(category.name) };
       },
-      barberName: (id: string) => {
+      barberName: (id: BarberId) => {
         const barber = catalog.barbers().find((entry) => entry.id === id);
         return barber === undefined ? null : content.text(barber.name);
       },
-      barberAvatarSrc: (id: string) =>
+      barberAvatarSrc: (id: BarberId) =>
         catalog.barberVms().find((vm) => vm.id === id)?.avatarSrc ?? null,
       // A row's fact line names the shop without the brand every shop
       // carries: `Location.shortName` (its name when the catalogue has none).
-      locationName: (id: string) => {
+      locationName: (id: LocationId) => {
         const location = catalog.locations().find((entry) => entry.id === id);
         return location === undefined
           ? null
           : content.text(location.shortName ?? location.name);
       },
       locationCoverSrc: () => null,
-      get locationCount() {
-        return catalog.locations().length;
-      },
+      locationCount: this.locationCount(),
       // The shop's own zone: what a visit row reads "today" in (Law 7.2).
-      locationTimeZone: (id: string) =>
+      locationTimeZone: (id: LocationId) =>
         catalog.locations().find((entry) => entry.id === id)?.timeZone ?? null,
     };
-  })();
+  });
   protected readonly store = inject(StaffDayStore);
 
   /**
@@ -1379,11 +1466,13 @@ export class StaffDashboard {
     // changes: the first load, and the back button.
     effect(() => {
       const requested = this.day() ?? null;
-      // `published` is read UNTRACKED: it changes as a RESULT of goToDay, so
-      // tracking it re-fires this effect with a stale `day()` and undoes the
-      // navigation that just happened. Only `day()` may wake this.
+      // `published` is read UNTRACKED: it changes as a RESULT of the day's
+      // navigation, so tracking it re-fires this effect with a stale `day()`
+      // and undoes the navigation that just happened. Only `day()` may wake
+      // this. The text is the URL's: the store parses it ONCE, at its edge
+      // (`applyRouteDay` → `LocalDate.parse`).
       if (requested !== untracked(() => this.store.published().day)) {
-        untracked(() => this.store.goToDay(requested));
+        untracked(() => this.store.applyRouteDay(requested));
       }
     });
     // The same guard for the view and the chair. An ABSENT parameter reaches
@@ -1430,69 +1519,45 @@ export class StaffDashboard {
    * port. This component used to own a second one seeded from `Date.now()`,
    * so the gaps and the verb gates were reading different times.
    */
-  protected readonly nowMs = this.store.nowMs;
+  protected readonly nowUtcMs = this.store.nowUtcMs;
 
-  /** The clock port itself — for a read that must be "now", not the minute tick's. */
+  /** The clock port itself — for the nonce a re-booking's draft seats are minted with. */
   private readonly clock = inject(CLOCK_PORTS);
 
   /**
-   * An instant on the SHOP's wall clock — its day and minute, read in the
-   * shop's zone through `ZonedTimeSystem` (Law 7: the one home of zone math).
-   * `null` before the zone is known, when the page shows nothing anyway.
+   * A STAMP read onto the shop's wall clock — its day and minute in the
+   * day's zone through `ZonedTimeSystem` (Law 7: the one home of zone math;
+   * the lawful reading of a stored instant, pass D D-6.6). `null` before
+   * the zone is known, when the page shows nothing anyway.
    */
-  private wallAt(ms: number) {
+  private stampWall(atUtcMs: UtcEpochMs) {
     const zone = this.store.zone();
-    return zone === null
-      ? null
-      : ZonedTimeSystem.toLocal(utcEpochMsOf(ms), zone);
-  }
-
-  /**
-   * When a visit's envelope ends, on the absolute timeline — what "past" is
-   * judged by (`+∞` before the zone is known: nothing is past yet).
-   */
-  private endInstantOf(appointment: Appointment): number {
-    const zone = this.store.zone();
-    return zone === null
-      ? Number.POSITIVE_INFINITY
-      : wallClockInstant(appointment.localDate, appointment.endMinutes, zone);
-  }
-
-  /**
-   * The zone of the shop in scope (4A-11): the named shop's own
-   * `timeZone`, else the day's (`StaffDayStore.zone`) — `null` only before
-   * either is known.
-   */
-  private zoneOfShop(locationId: string | null) {
-    return (
-      this.catalog.locations().find((shop) => shop.id === locationId)
-        ?.timeZone ?? this.store.zone()
-    );
-  }
-
-  /** An instant's minute of the shop's day (`0` before the zone is known). */
-  private minuteAt(ms: number): number {
-    return this.wallAt(ms)?.minute ?? 0;
-  }
-
-  /**
-   * THE END of a span as a minute on the START's day — `start + length`,
-   * never the end's own minute-of-day. A span that runs to midnight ends at
-   * 1440 on this axis, not at 0: the grid and the frame both GROW to 24:00
-   * rather than wrap.
-   */
-  private minuteAfter(startMs: number, endMs: number): number {
-    return this.minuteAt(startMs) + Math.round((endMs - startMs) / 60_000);
+    return zone === null ? null : ZonedTimeSystem.toLocal(atUtcMs, zone);
   }
 
   /** An instant in the reader's locale, on the SHOP's calendar — `''` before the zone is known. */
   private instantLabel(
-    ms: number,
+    atUtcMs: UtcEpochMs,
     options: Intl.DateTimeFormatOptions,
     locale: string = this.content.locale(),
   ): string {
     const zone = this.store.zone();
-    return zone === null ? '' : formatInstant(ms, zone, locale, options);
+    return zone === null ? '' : formatInstant(atUtcMs, zone, locale, options);
+  }
+
+  /**
+   * A stored wall-clock reading in the reader's locale — `''` while the
+   * day's zone is not known, exactly as {@link instantLabel} answers then
+   * (the pooled search and «Скорошни» print nothing before it, D-6.2).
+   */
+  private wallLabel(
+    localDate: LocalDate,
+    minute: MinuteOfDay | null,
+    options: Intl.DateTimeFormatOptions,
+  ): string {
+    return this.store.zone() === null
+      ? ''
+      : formatWallClock(localDate, minute, this.content.locale(), options);
   }
 
   // ── Search ──────────────────────────────────────────────────────────
@@ -1508,104 +1573,127 @@ export class StaffDashboard {
   protected readonly searchResults = computed<readonly SearchHitVm[]>(() => {
     const term = this.store.term().trim().toLocaleLowerCase('bg');
     if (!SearchFieldsSystem.termSearchable(term)) return [];
-    const nowMs = this.nowMs();
+    // Each visit is judged on ITS shop's wall clock (the physical chair
+    // invariant, Law 7.2): one `ShopNow` per zone per tick, read at the
+    // store's edge (`shopNowAt`, pass D D-6.2).
+    const shopNowAt = this.store.shopNowAt();
 
     // Digits-only alias, so "887778899" finds "+359 88 777 8899". A person
     // searching by phone types the number off a screen or a card, never with
     // the formatter's spaces in it (`digitQuery`: `null` when it is none).
     const digits = SearchFieldsSystem.digitQuery(term);
 
-    const hits: SearchHitVm[] = [];
+    const found: { readonly hit: SearchHitVm; readonly when: WallTime }[] = [];
     for (const appointment of this.store.pool()) {
       const fields = this.searchableFields(appointment);
       const matched = fields.filter((field) => matches(field, term, digits));
       if (matched.length === 0) continue;
 
-      const startMs = appointment.utcEpochMs;
       // The client is the title, highlighted when it is what matched. Every
       // OTHER matched field lists beneath — so a phone search shows the
       // number it hit, and a name search does not print the name twice.
       const titleField = fields[0];
-      hits.push({
-        id: appointment.id,
-        dayKey: appointment.localDate,
-        whenLabel: this.searchWhenLabel(startMs),
-        whenMs: startMs,
-        // ONE definition of past, shared with the grid (see `eventsFor`): a
-        // visit is past once it has ENDED. This read `startMs < nowMs`, so a
-        // cut that began ten minutes ago and is still in the chair sorted into
-        // history here and rendered live there — the same appointment, two
-        // answers, on two surfaces a person moves between. Whatever is
-        // happening right now belongs with what is coming.
-        past: this.endInstantOf(appointment) <= nowMs,
-        bookingStatus: appointment.bookingStatus,
-        titleParts: titleField
-          ? splitOnTerm(titleField.value, term)
-          : [{ text: '', hit: false }],
-        matches: matched
-          .filter((field) => field !== titleField)
-          .map((field) => ({
-            label: field.label,
-            parts: splitOnTerm(
-              field.value,
-              // Highlight the run that actually matched: the digits form when
-              // that is what hit, the typed term otherwise.
-              digits !== null && field.label === 'phone' ? digits : term,
-              digits !== null && field.label === 'phone',
+      const shopNow = shopNowAt(appointment.locationId);
+      found.push({
+        // The party's start on its shop's wall clock — the order outward
+        // from now.
+        when: WallTime.of(appointment.localDate, appointment.startMinutes),
+        hit: {
+          id: appointment.id,
+          dayKey: appointment.localDate,
+          whenLabel: this.wallLabel(
+            appointment.localDate,
+            appointment.startMinutes,
+            {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            },
+          ),
+          // ONE definition of past, shared with the grid (see `eventsFor`): a
+          // visit is past once it has ENDED — a cut that began ten minutes
+          // ago and is still in the chair is not history. Whatever is
+          // happening right now belongs with what is coming. Not past while
+          // no zone is known for its shop (nothing is past yet).
+          past:
+            shopNow !== null &&
+            VisitStorySystem.hasEnded(
+              {
+                localDate: appointment.localDate,
+                minute: appointment.endMinutes,
+              },
+              shopNow,
             ),
-          })),
+          bookingStatus: appointment.bookingStatus,
+          titleParts: titleField
+            ? splitOnTerm(titleField.value, term)
+            : [{ text: '', hit: false }],
+          matches: matched
+            .filter((field) => field !== titleField)
+            .map((field) => ({
+              label: field.label,
+              parts: splitOnTerm(
+                field.value,
+                // Highlight the run that actually matched: the digits form
+                // when that is what hit, the typed term otherwise.
+                digits !== null && field.label === SearchField.Phone
+                  ? digits
+                  : term,
+                digits !== null && field.label === SearchField.Phone,
+              ),
+            })),
+        },
       });
     }
 
     // Soonest first among the future; most recent first among the past —
     // the two things a person searching a book is actually looking for.
-    return hits.sort((a, b) => {
-      if (a.past !== b.past) return a.past ? 1 : -1;
-      return a.past ? b.whenMs - a.whenMs : a.whenMs - b.whenMs;
-    });
+    return found
+      .sort((a, b) => {
+        if (a.hit.past !== b.hit.past) return a.hit.past ? 1 : -1;
+        return a.hit.past
+          ? WallTime.compare(b.when, a.when)
+          : WallTime.compare(a.when, b.when);
+      })
+      .map(({ hit }) => hit);
   });
 
   /** Every field a search is allowed to look at, in display priority. */
   private searchableFields(
     appointment: Appointment,
-  ): readonly { label: string; value: string }[] {
-    const out: { label: string; value: string }[] = [];
+  ): readonly SearchableField[] {
+    const out: SearchableField[] = [];
     if (appointment.contactName) {
-      out.push({ label: 'client', value: appointment.contactName });
+      out.push({ label: SearchField.Client, value: appointment.contactName });
     }
     for (const seat of appointment.seats) {
       if (seat.seatSubject === SeatSubject.Anonymous) {
-        out.push({ label: 'client', value: seat.guestLabel });
+        out.push({ label: SearchField.Client, value: seat.guestLabel });
       }
       const service = this.catalog.findService(seat.serviceId);
       if (service) {
-        out.push({ label: 'service', value: this.content.text(service.name) });
+        out.push({
+          label: SearchField.Service,
+          value: this.content.text(service.name),
+        });
       }
     }
     if (appointment.contactPhone !== null) {
       out.push({
-        label: 'phone',
+        label: SearchField.Phone,
         value: PhoneSystem.formatInternational(appointment.contactPhone),
       });
     }
     if (appointment.contactEmail !== null) {
-      out.push({ label: 'email', value: appointment.contactEmail });
+      out.push({ label: SearchField.Email, value: appointment.contactEmail });
     }
     if (appointment.contactNote) {
-      out.push({ label: 'note', value: appointment.contactNote });
+      out.push({ label: SearchField.Note, value: appointment.contactNote });
     }
     return out;
-  }
-
-  private searchWhenLabel(ms: number): string {
-    return this.instantLabel(ms, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
   }
 
   /** Jump the sheet to the day a hit lives on, and close the search. */
@@ -1708,7 +1796,7 @@ export class StaffDashboard {
    * day is swiped. The agenda has no such distinction: it anchors to now on
    * every change of day, as it always has.
    */
-  protected pickDay(dayKey: string, jump = false): void {
+  protected pickDay(dayKey: LocalDate, jump = false): void {
     if (jump) this.store.jumpToDay(dayKey);
     else this.store.goToDay(dayKey);
     this.datePickerOpen.set(false);
@@ -1739,10 +1827,10 @@ export class StaffDashboard {
    * have to be distinguishable at a glance rather than by reading.
    */
   protected readonly views = [
-    { id: 'agenda', icon: 'calendar.viewAgenda' },
-    { id: 'day', icon: 'calendar.viewDay' },
-    { id: 'three-day', icon: 'calendar.viewThreeDay' },
-    { id: 'week', icon: 'calendar.viewWeek' },
+    { id: StaffView.Agenda, icon: 'calendar.viewAgenda' },
+    { id: StaffView.Day, icon: 'calendar.viewDay' },
+    { id: StaffView.ThreeDay, icon: 'calendar.viewThreeDay' },
+    { id: StaffView.Week, icon: 'calendar.viewWeek' },
   ] as const satisfies readonly {
     readonly id: StaffView;
     readonly icon: UiIconName;
@@ -1755,7 +1843,7 @@ export class StaffDashboard {
   );
 
   /** One menu at a time — the view picker and the chair picker share a latch. */
-  protected readonly openPicker = signal<'view' | 'scope' | null>(null);
+  protected readonly openPicker = signal<DayPicker | null>(null);
 
   protected readonly scopeLabel = computed(() => {
     const scope = this.store.scope();
@@ -1770,7 +1858,9 @@ export class StaffDashboard {
     return this.scopeOptions().find((option) => option.id === scope) ?? null;
   });
 
-  protected readonly isGrid = computed(() => this.store.view() !== 'agenda');
+  protected readonly isGrid = computed(
+    () => this.store.view() !== StaffView.Agenda,
+  );
 
   /**
    * The chairs the visit sheet's barber picker offers.
@@ -1802,7 +1892,7 @@ export class StaffDashboard {
   protected readonly shopOptions = computed<readonly VisitEditorShopOption[]>(
     () =>
       this.catalog.locations().map((location) => ({
-        id: location.id as string,
+        id: location.id,
         label: this.content.text(location.name),
         address: streetOf(this.content.text(location.address)),
         lat: location.latitude,
@@ -1853,13 +1943,12 @@ export class StaffDashboard {
           );
     // The DRAFT's chair first (2026-09-09): the catalogue and its terms are
     // per chair, so a switched barber offers his own services.
-    const barberId =
+    const barberId: BarberId | null =
       this.visitDraftChair() ??
       lane?.barberId ??
       this.createVisit()?.barberId ??
       null;
     if (barberId === null) return [];
-    const chair = BarberId.of(barberId);
     return this.catalog
       .serviceVms()
       .flatMap((vm): VisitEditorServiceOption[] => {
@@ -1867,8 +1956,12 @@ export class StaffDashboard {
         // The VM is the entity's own (`serviceVms` maps `services`); one
         // the list no longer holds has no terms to quote.
         if (service === undefined) return [];
+        // The chair's terms as the server resolves them: the cents, the
+        // currency and the minutes straight off `ServiceTerms` (D-10.3);
+        // the LABEL is those cents in their own currency, worded as the
+        // client's catalogue words them (`CatalogWording.price`).
         const termsOf = (variantId: ServiceVariantId | null) =>
-          termsToVm(OfferingPriceSystem.termsFor(service, chair, variantId));
+          OfferingPriceSystem.termsFor(service, barberId, variantId);
         const name = this.content.text(vm.name);
         // A service WITH variants is offered per variant — `Класическа
         // подстрижка · Дълга коса` — and never bare: the server refuses a
@@ -1877,16 +1970,21 @@ export class StaffDashboard {
         // not priced separately (`termsFor`).
         if (vm.variants.length > 0) {
           return vm.variants.map((variant) => {
-            const terms = termsOf(ServiceVariantId.of(variant.id));
+            const terms = termsOf(variant.id);
             return {
               id: `${vm.id}:${variant.id}`,
-              serviceId: vm.id,
+              serviceId: service.id,
               variantId: variant.id,
               label: `${name} · ${this.content.text(variant.name)}`,
               serviceLabel: name,
               variantLabel: this.content.text(variant.name),
-              minutes: terms.minutes,
-              priceLabel: this.content.price(terms.price),
+              minutes: terms.durationMinutes,
+              priceCents: terms.priceCents,
+              currency: terms.currency,
+              priceLabel: this.content.price({
+                amountCents: terms.priceCents,
+                currency: terms.currency,
+              }),
             };
           });
         }
@@ -1894,12 +1992,17 @@ export class StaffDashboard {
         return [
           {
             id: vm.id,
-            serviceId: vm.id,
+            serviceId: service.id,
             variantId: null,
             label: name,
             serviceLabel: name,
-            minutes: terms.minutes,
-            priceLabel: this.content.price(terms.price),
+            minutes: terms.durationMinutes,
+            priceCents: terms.priceCents,
+            currency: terms.currency,
+            priceLabel: this.content.price({
+              amountCents: terms.priceCents,
+              currency: terms.currency,
+            }),
           },
         ];
       });
@@ -1930,11 +2033,11 @@ export class StaffDashboard {
    * attribute each block instead.
    */
   protected readonly gridColumns = computed<readonly GridColumn[]>(() => {
-    const nowMs = this.nowMs();
+    const shopNow = this.store.shopNow();
     const cells = this.store.dayCells();
     const today = this.store.todayKey();
 
-    if (this.store.view() === 'day') {
+    if (this.store.view() === StaffView.Day) {
       const cell = cells.find((entry) => entry.dayKey === this.store.dayKey());
       // EVERY barber in scope gets a column, including one who is off.
       //
@@ -1964,7 +2067,10 @@ export class StaffDashboard {
         avatarSrc:
           this.scopeOptions().find((option) => option.id === lane.barberId)
             ?.avatarSrc ?? null,
-        events: this.eventsFor(lane, nowMs, false),
+        events:
+          cell === undefined
+            ? []
+            : this.eventsFor(lane, cell.dayKey, shopNow, false),
         // THIS chair's hours, not the shop's. Two barbers on different
         // shifts is the normal case, and shading both columns to the widest
         // of the two would say the early one is working at 20:00.
@@ -1986,13 +2092,13 @@ export class StaffDashboard {
         // long date is the accessible name at every width.
         shortTitle: this.weekdayLabel(cell.dayKey),
         initial: this.weekdayInitial(cell.dayKey),
-        fullTitle: this.formatDay(cell.dayKey, {
+        fullTitle: this.formatTitled(cell.dayKey, {
           weekday: 'long',
           day: 'numeric',
           month: 'long',
         }),
         detail: null,
-        dayNumber: Number(cell.dayKey.slice(8, 10)),
+        dayNumber: LocalDate.parts(cell.dayKey).day,
         isToday: cell.dayKey === today,
         avatarSrc: null,
         events: cell.lanes
@@ -2006,7 +2112,12 @@ export class StaffDashboard {
             // Gaps are omitted once chairs are merged into one date column:
             // Ivan's free 14:00 is not the shop's free 14:00, and drawing both
             // as holes in the same column would state something untrue.
-            this.eventsFor(lane, nowMs, this.store.scope() === null),
+            this.eventsFor(
+              lane,
+              cell.dayKey,
+              shopNow,
+              this.store.scope() === null,
+            ),
           )
           .sort((a, b) => a.startMinute - b.startMinute),
         // Chairs are merged into a date here, so the column is open whenever
@@ -2020,14 +2131,16 @@ export class StaffDashboard {
   /**
    * The working windows of these lanes, merged, as minutes from midnight.
    *
-   * Merged rather than concatenated: overlapping shifts would otherwise carve
-   * a phantom "closed" sliver between two barbers who are both at work, and
-   * the runs are computed by walking the list in order.
+   * Merged rather than concatenated (`IntervalSetSystem.normalize`: sorted,
+   * touching and overlapping windows joined): overlapping shifts would
+   * otherwise carve a phantom "closed" sliver between two barbers who are
+   * both at work. The lanes carry the store's own wall-clock minutes, so a
+   * shift that closes at midnight ends at 1440 rather than wrapping to 0.
    */
   private openWindowsOf(
     lanes: readonly BarberDayLane[],
   ): readonly OpenWindow[] {
-    const raw = lanes
+    return IntervalSetSystem.normalize(
       // Rostered time AND the time carved out of it — together they are the
       // day the barber is AT WORK, which is what the shading is answering.
       //
@@ -2035,38 +2148,20 @@ export class StaffDashboard {
       // AND drawn as a block on top of it: the same span said twice, in two
       // vocabularies, one of which meant "the shop is shut". Shading now says
       // only "not working"; a block says "working, but taken".
-      .flatMap((lane) => [...lane.rostered, ...lane.blocks])
-      .map((interval) => ({
-        startMinute: this.minuteAt(interval.startMs),
-        // Anchored, so a shift that closes at midnight reads 1440 rather than
-        // wrapping to 0 and inverting the window.
-        endMinute: this.minuteOfDay(interval.endMs, interval.startMs),
-      }))
-      .filter((window) => window.endMinute > window.startMinute)
-      .sort((a, b) => a.startMinute - b.startMinute);
-
-    const merged: OpenWindow[] = [];
-    for (const window of raw) {
-      const last = merged[merged.length - 1];
-      if (last && window.startMinute <= last.endMinute) {
-        merged[merged.length - 1] = {
-          startMinute: last.startMinute,
-          endMinute: Math.max(last.endMinute, window.endMinute),
-        };
-      } else {
-        merged.push(window);
-      }
-    }
-    return merged;
+      lanes.flatMap((lane) => [...lane.rostered, ...lane.blocks]),
+    ).map((window) => ({
+      startMinute: window.startMinutes,
+      endMinute: window.endMinutes,
+    }));
   }
 
   /** Tapping a block in the grid opens the row it stands for. */
-  protected openVisit(appointmentId: string): void {
+  protected openVisit(rowId: string): void {
     const row = this.lanes()
       .flatMap((lane) => lane.entries)
       .find(
         (entry): entry is DayRowVm =>
-          entry.agendaRow === AgendaRow.Visit && entry.id === appointmentId,
+          entry.agendaRow === AgendaRow.Visit && entry.id === rowId,
       );
     // The visit SHEET, not the row popover this used to open — that surface
     // was removed with the row's overflow, so a tap on a calendar block had
@@ -2075,35 +2170,15 @@ export class StaffDashboard {
   }
 
   /**
-   * Tapping a hole is the walk-in entry point (plan item C4).
-   *
-   * The notice stays here even though the FAB's version of it went, and the
-   * two cases are not the same: a FAB ADVERTISES creation as the surface's
-   * primary act, while a tap into empty space is someone probing for what is
-   * there. Answering the probe honestly is information; advertising an act
-   * the app cannot perform is a promise it breaks.
-   */
-  /** Which not-yet-built action was asked for — drives the honest notice. */
-  protected readonly pendingAction = signal<'booking' | 'waitlist' | null>(
-    null,
-  );
-
-  /**
    * The zone abbreviation every time on this surface is stated in — "EEST"
    * in summer, "EET" in winter, resolved rather than hardcoded so it stays
-   * true across the changeover.
+   * true across the changeover (`formatZoneName`, the shared cached face; the
+   * `en-GB` abbreviation whatever the reader's language).
    */
   protected readonly zoneLabel = computed(() => {
     const zone = this.store.zone();
     if (zone === null) return '';
-    return (
-      new Intl.DateTimeFormat('en-GB', {
-        timeZone: zone,
-        timeZoneName: 'short',
-      })
-        .formatToParts(this.nowMs())
-        .find((part) => part.type === 'timeZoneName')?.value ?? zone
-    );
+    return formatZoneName(this.nowUtcMs(), zone, 'en-GB');
   });
 
   /** The zone the device's clock is set to, as the platform resolves it. */
@@ -2139,7 +2214,7 @@ export class StaffDashboard {
       // than the person — the column head above it is already the name. The
       // shading says "nothing can happen here"; this says WHY, which shading
       // alone cannot, and which is the only form a screen reader can read.
-      if (this.store.view() === 'day') {
+      if (this.store.view() === StaffView.Day) {
         const cell = this.store
           .dayCells()
           .find((entry) => entry.dayKey === this.store.dayKey());
@@ -2201,7 +2276,7 @@ export class StaffDashboard {
         out[cell.dayKey] = [
           ...off.slice(0, ALL_DAY_CHIP_CAP),
           {
-            key: 'more',
+            key: ALL_DAY_MORE_KEY,
             label: `+${rest}`,
             shortLabel: `+${rest}`,
             initial: `+${rest}`,
@@ -2227,16 +2302,18 @@ export class StaffDashboard {
 
   /** The now-line belongs to one column in the date-columned views. */
   protected readonly nowColumnId = computed(() =>
-    this.store.view() === 'day' ? null : this.store.todayKey(),
+    this.store.view() === StaffView.Day ? null : this.store.todayKey(),
   );
 
   private eventsFor(
     lane: BarberDayLane,
-    nowMs: number,
+    localDate: LocalDate,
+    shopNow: ShopNow | null,
     attribute: boolean,
   ): readonly GridEvent[] {
+    const nowUtcMs = this.nowUtcMs();
     const visits = lane.appointments.flatMap((appointment) => {
-      const row = this.toRow(appointment, lane.barberId, nowMs);
+      const row = this.toRow(appointment, lane.barberId, nowUtcMs, shopNow);
       return [
         {
           id: row.id,
@@ -2255,8 +2332,9 @@ export class StaffDashboard {
           terminal: row.terminal,
           barberTone: this.toneOf(lane.barberId),
           // The hour, not the outcome: whatever became of it, a 10:00 slot is
-          // behind us by noon. Same rule the search sheet sorts by.
-          past: row.endMs <= nowMs,
+          // behind us by noon. Same rule the search sheet sorts by — the
+          // row's own (`VisitStorySystem.hasEnded`, on the wall clock).
+          past: row.past,
           accessibleName: this.blockName(row, lane.barberId),
           // One vocabulary across the three surfaces (owner review
           // 2026-09-08): the sheet's arrived glyph is the block's too, for as
@@ -2281,28 +2359,33 @@ export class StaffDashboard {
     // A CARVE-OUT is the opposite case and does get drawn. It is not empty
     // space — it is time somebody took, and the only non-visit thing on this
     // surface a person is meant to be able to move or lift.
-    return [...visits, ...this.blocksFor(lane, nowMs, attribute)];
+    return [...visits, ...this.blocksFor(lane, localDate, shopNow, attribute)];
   }
 
   /** A lane's breaks and admin hours, as blocks the grid can draw. */
   private blocksFor(
     lane: BarberDayLane,
-    nowMs: number,
+    localDate: LocalDate,
+    shopNow: ShopNow | null,
     attribute: boolean,
   ): readonly GridEvent[] {
     const label = this.transloco.translate('staff.day.blockedLabel');
     return lane.blocks.map((interval) => {
-      const from = this.nameClock(interval.startMs);
-      const to = this.nameClock(interval.endMs);
+      const from = this.nameClock(localDate, interval.startMinutes);
+      const to = this.nameClock(localDate, interval.endMinutes);
       return {
-        // Stable across a re-render, and unique per lane: a barber's day
-        // holds at most one exception document, so start plus chair names
-        // this block uniquely without inventing an id the store cannot
-        // resolve back to anything.
-        id: `block:${lane.barberId}:${interval.startMs}`,
+        // Stable across a re-render, and unique per lane and DAY: a
+        // barber's day holds at most one exception document, so the chair,
+        // the day and the start name this block uniquely without inventing
+        // an id the store cannot resolve back to anything — and the day
+        // keeps a block of another visible date from answering for the
+        // shown day's (`openBlock`, DEP-11).
+        id: `block:${lane.barberId}:${localDate}:${interval.startMinutes}`,
         gridEvent: GridEventTag.Block,
-        startMinute: this.minuteOfDay(interval.startMs),
-        endMinute: this.minuteOfDay(interval.endMs, interval.startMs),
+        // The store's own wall-clock minutes — a block that closes at
+        // midnight ends at 1440, anchored on its day.
+        startMinute: interval.startMinutes,
+        endMinute: interval.endMinutes,
         title: label,
         detail: null,
         // A carve-out is the opposite of a booking; identity is not its
@@ -2311,7 +2394,12 @@ export class StaffDashboard {
         attribution: attribute ? this.barberNameOf(lane.barberId) : null,
         bookingStatus: null,
         terminal: false,
-        past: interval.endMs <= nowMs,
+        past:
+          shopNow !== null &&
+          VisitStorySystem.hasEnded(
+            { localDate, minute: interval.endMinutes },
+            shopNow,
+          ),
         // Says WHAT it is and WHEN — the channel the shading never had.
         accessibleName: `${label}, ${from}–${to}`,
         statusIcon: 'booking.blocked' as const,
@@ -2322,52 +2410,24 @@ export class StaffDashboard {
   }
 
   /**
-   * Wall-clock minutes from midnight, in SHOP time.
-   *
-   * `anchorMs` lets an end that crossed midnight keep growing past 1440
-   * instead of wrapping to a start-of-day value and inverting the block —
-   * a shift that closes at midnight is 1440, not 0.
+   * A wall-clock minute of a shop day as an accessible name reads it —
+   * «13:00» in `en-GB`, whatever the reader's locale (a fixed 24-hour face,
+   * not a language): a laptop left in UTC must not put a barber's lunch two
+   * hours out. The closing midnight reads «00:00».
    */
-  private minuteOfDay(ms: number, anchorMs?: number): number {
-    const minute = this.minuteAt(ms);
-    if (anchorMs === undefined) return minute;
-    const anchor = this.minuteAt(anchorMs);
-    return minute < anchor ? minute + 1440 : minute;
-  }
-
-  /**
-   * An instant's wall clock as an accessible name reads it — «13:00» in
-   * `en-GB`, whatever the reader's locale: a laptop left in UTC must not put
-   * a barber's lunch two hours out.
-   */
-  private nameClock(ms: number): string {
-    const wall = this.wallAt(ms);
-    return wall === null
-      ? ''
-      : formatWallClock(wall.localDate, wall.minute, 'en-GB', CLOCK_FACE);
+  private nameClock(localDate: LocalDate, minute: MinuteOfDay | EndMinute) {
+    return formatWallClock(localDate, minute, 'en-GB', CLOCK_FACE);
   }
 
   /**
    * The outer edges of a chair's roster windows on the shop's wall clock —
    * the earliest start and the latest end (`IntervalSetSystem.hull`) — or
-   * `null` for none, which each caller answers with its own fallback. Each
-   * window is read at its start's minute and its end's, anchored on the
-   * start's day (`minuteOfDay`, as the column's shading reads it), so a
-   * window that closes at midnight ends at 1440; a window no `MinuteRange`
-   * can hold adds nothing.
+   * `null` for none, which each caller answers with its own fallback. The
+   * windows are the store's own minutes, so one that closes at midnight
+   * ends at 1440.
    */
-  private rosterHull(
-    windows: readonly { readonly startMs: number; readonly endMs: number }[],
-  ): MinuteRange | null {
-    const ranges: MinuteRange[] = [];
-    for (const window of windows) {
-      const start = MinuteOfDay.of(this.minuteAt(window.startMs));
-      const end = EndMinute.of(this.minuteOfDay(window.endMs, window.startMs));
-      if (start.ok && end.ok) {
-        ranges.push(MinuteRange.of(start.value, end.value));
-      }
-    }
-    return IntervalSetSystem.hull(ranges);
+  private rosterHull(windows: readonly MinuteRange[]): MinuteRange | null {
+    return IntervalSetSystem.hull(windows);
   }
 
   /**
@@ -2378,20 +2438,29 @@ export class StaffDashboard {
    * `openWindowsOf`) and the axis is the whole day regardless. Only the start
    * survives, because only the start answers "where should this open".
    */
-  protected readonly rosterExtent = computed(() => {
-    const windows = this.store
-      .dayCells()
-      .flatMap((cell) => cell.lanes)
-      .flatMap((lane) => lane.rostered);
-    if (windows.length === 0) return { start: null };
-    return {
-      start: Math.min(...windows.map((w) => this.minuteAt(w.startMs))),
-    };
+  protected readonly rosterExtent = computed<{
+    readonly start: MinuteOfDay | null;
+  }>(() => {
+    let start: MinuteOfDay | null = null;
+    for (const cell of this.store.dayCells()) {
+      for (const lane of cell.lanes) {
+        for (const window of lane.rostered) {
+          if (start === null || window.startMinutes < start) {
+            start = window.startMinutes;
+          }
+        }
+      }
+    }
+    return { start };
   });
 
-  /** Now, as minutes from midnight — the grid's own axis (the store's `ShopNow`). */
-  protected readonly nowMinute = computed(
-    () => this.store.shopNow()?.currentMinute ?? 0,
+  /**
+   * Now, as minutes from midnight — the grid's own axis (the store's
+   * `ShopNow`); the opening midnight while no zone is known, as the page
+   * always drew it then.
+   */
+  protected readonly nowMinute = computed<MinuteOfDay>(
+    () => this.store.shopNow()?.currentMinute ?? MIDNIGHT,
   );
 
   /**
@@ -2401,7 +2470,7 @@ export class StaffDashboard {
    * state only in form and a glyph; none of that reaches a screen reader, so
    * the whole fact is composed here.
    */
-  private blockName(row: DayRowVm, barberId: string): string {
+  private blockName(row: DayRowVm, barberId: BarberId): string {
     return [
       row.clientLabel,
       row.serviceLabel,
@@ -2421,16 +2490,6 @@ export class StaffDashboard {
           ]
         : []),
     ].join(', ');
-  }
-
-  /**
-   * What this lane's seats come to, in cents — what a tip preset is a share
-   * of. `BillingSystem.subtotalOf` refuses two currencies: a party
-   * mixed-currency has no number at all rather than a wrong one.
-   */
-  private seatsPriceCents(seats: readonly Seat[]): number | null {
-    const sum = BillingSystem.subtotalOf(seats);
-    return sum.ok ? sum.value.amountCents : null;
   }
 
   /** The same sum, formatted («27,50 €»). */
@@ -2472,16 +2531,16 @@ export class StaffDashboard {
     };
   }
 
-  private barberNameOf(barberId: string): string {
+  private barberNameOf(barberId: BarberId): string {
     const barber = this.catalog
       .barbers()
       .find((entry) => entry.id === barberId);
     return barber ? this.content.text(barber.name) : barberId;
   }
 
-  private weekdayLabel(dayKey: string): string {
+  private weekdayLabel(dayKey: LocalDate): string {
     return abbreviateWeekday(
-      this.formatDay(dayKey, { weekday: 'long' }),
+      this.formatTitled(dayKey, { weekday: 'long' }),
       this.content.locale(),
     );
   }
@@ -2492,15 +2551,9 @@ export class StaffDashboard {
    * its day the way the strip above it does (never a second formatter: the
    * pickers may not differ in facts, 2026-09-04).
    */
-  private weekdayInitial(dayKey: string): string {
+  private weekdayInitial(dayKey: LocalDate): string {
     const locale = this.content.locale();
-    return formatWallClock(localDateOfKey(dayKey), null, locale, {
-      weekday: 'narrow',
-    });
-  }
-
-  private formatDay(dayKey: string, options: Intl.DateTimeFormatOptions) {
-    return this.formatTitled(localDateOfKey(dayKey), options);
+    return formatWallClock(dayKey, null, locale, { weekday: 'narrow' });
   }
 
   /**
@@ -2557,7 +2610,7 @@ export class StaffDashboard {
       // The pill's own grammar — one formatter for both pickers.
       return formatDayPill(first, this.content.locale());
     }
-    const last = days[days.length - 1] as string;
+    const last = days.at(-1) ?? first;
     return formatDayPillRange(first, last, this.content.locale());
   });
 
@@ -2579,32 +2632,38 @@ export class StaffDashboard {
    * barber's colour must not change because they happen to be off on
    * Tuesday, and the calendar views read the same map.
    */
-  protected readonly barberTones = computed<ReadonlyMap<BarberId, number>>(
-    () => {
-      // The catalogue's ids are document ids, so brands by construction.
-      const ids = this.catalog.barberVms().map((vm) => BarberId.of(vm.id));
-      // The system answers parallel to the roster; the views look a chair
-      // up by its id.
-      const tones = BarberToneSystem.assignBarberTones(ids);
-      return new Map(ids.map((id, index) => [id, tones.at(index) ?? 0]));
-    },
-  );
+  protected readonly barberTones = computed<ReadonlyMap<string, number>>(() => {
+    const ids = this.catalog.barberVms().map((vm) => vm.id);
+    // The system answers parallel to the roster; the views look a chair
+    // up by its id.
+    const tones = BarberToneSystem.assignBarberTones(ids);
+    return new Map<string, number>(
+      ids.map((id, index) => [id, tones.at(index) ?? 0]),
+    );
+  });
 
+  /**
+   * A chair's tone by its id — a `BarberId`, or a menu option's id that
+   * names one (the scope switcher's rows; `'all'` names none and reads 0).
+   */
   protected toneOf(barberId: string): number {
-    return this.barberTones().get(BarberId.of(barberId)) ?? 0;
+    return this.barberTones().get(barberId) ?? 0;
   }
 
   protected readonly lanes = computed<readonly LaneVm[]>(() => {
     const vmById = new Map(
       this.catalog.barberVms().map((vm) => [vm.id, vm] as const),
     );
-    const nowMs = this.nowMs();
+    const nowUtcMs = this.nowUtcMs();
+    const shopNow = this.store.shopNow();
+    // The lanes are the shown day's (`workingLanes`).
+    const localDate = this.store.dayKey();
 
     return this.store.workingLanes().map((lane) => {
       const vm = vmById.get(lane.barberId);
 
       const visits = lane.appointments.map((appointment) =>
-        this.toRow(appointment, lane.barberId, nowMs),
+        this.toRow(appointment, lane.barberId, nowUtcMs, shopNow),
       );
       const barberName = vm ? this.content.text(vm.name) : lane.barberId;
       const gaps: GapRowVm[] = lane.gaps.map((gap) => ({
@@ -2612,11 +2671,13 @@ export class StaffDashboard {
         // The BARBER in the id: two chairs free from 14:00 are two different
         // holes, and a shared key would collapse them in the agenda's track.
         // The START too, since one hole now splits into two at the clock.
-        id: `gap-${lane.barberId}-${gap.startMs}`,
-        startLabel: this.time(gap.startMs),
-        endLabel: this.time(gap.endMs),
+        id: `gap-${lane.barberId}-${gap.startMinutes}`,
+        startLabel:
+          localDate === null ? '' : this.wallTime(localDate, gap.startMinutes),
+        endLabel:
+          localDate === null ? '' : this.wallTime(localDate, gap.endMinutes),
         minutes: gap.minutes,
-        startMs: gap.startMs,
+        startMinutes: gap.startMinutes,
         past: !gap.sellable,
         sellable: gap.sellable,
         barberName,
@@ -2624,10 +2685,11 @@ export class StaffDashboard {
         barberTone: this.toneOf(lane.barberId),
       }));
 
-      // One run in clock order. A gap and a visit never share a start, so the
-      // sort is total without a tiebreak.
+      // One run in clock order, on the shop's wall clock (one shop day per
+      // lane). A gap and a visit never share a start minute — a hole holds
+      // no visit's start — so the stable sort is total without a tiebreak.
       const clockOrder: RunEntryVm[] = [...visits, ...gaps].sort(
-        (a, b) => a.startMs - b.startMs,
+        (a, b) => startMinuteOf(a) - startMinuteOf(b),
       );
 
       // ── The present tense ──────────────────────────────────────────────
@@ -2636,7 +2698,20 @@ export class StaffDashboard {
       // three hours out, and the screen opened at 09:00 on a day already
       // half over. The chair's next unstarted visit is the row the eye
       // should find first; the NOW hairline is where the day actually is.
-      const next = visits.find((row) => !row.terminal && row.startMs > nowMs);
+      // The FIRST in the lane's own order (the envelope order the day's
+      // reader delivers) that has not begun on the shop's wall clock
+      // (`VisitStorySystem.hasStarted`).
+      const next =
+        shopNow === null
+          ? undefined
+          : visits.find(
+              (row) =>
+                !row.terminal &&
+                !VisitStorySystem.hasStarted(
+                  WallTime.of(row.localDate, row.startMinute),
+                  shopNow,
+                ),
+            );
       const entries: RunEntryVm[] = clockOrder.map((entry) =>
         entry.agendaRow === AgendaRow.Visit && entry.id === next?.id
           ? { ...entry, isNext: true }
@@ -2670,7 +2745,9 @@ export class StaffDashboard {
    * list was three schedules rather than one.
    */
   protected readonly agenda = computed<readonly AgendaGroupVm[]>(() => {
-    const nowMs = this.nowMs();
+    const shopNow = this.store.shopNow();
+    // The run is the shown day's — every group begins on it.
+    const localDate = this.store.dayKey();
 
     /**
      * ELAPSED HOLES, at the whole shop's scope, are not rows.
@@ -2692,7 +2769,7 @@ export class StaffDashboard {
      * where a total belongs anyway.
      */
     const wholeShop = this.store.scope() === null;
-    const freeTime = this.fields.isOn('freeTime');
+    const freeTime = this.fields.isOn(AgendaField.FreeTime);
     const items = this.lanes()
       .flatMap((lane) => lane.entries)
       .filter((entry) => {
@@ -2702,11 +2779,12 @@ export class StaffDashboard {
         return !(wholeShop && !entry.sellable);
       });
 
-    const byStart = new Map<number, RunEntryVm[]>();
+    if (localDate === null) return [];
+    const byStart = new Map<MinuteOfDay, RunEntryVm[]>();
     for (const item of items) {
-      // Minute resolution: two seats that begin 20 seconds apart begin at the
-      // same time as far as a person reading a schedule is concerned.
-      const minute = Math.floor(item.startMs / 60_000) * 60_000;
+      // Minute resolution — the wall clock's own grain: every entry begins
+      // on a stored minute of the shown day.
+      const minute = startMinuteOf(item);
       const bucket = byStart.get(minute);
       if (bucket) bucket.push(item);
       else byStart.set(minute, [item]);
@@ -2714,11 +2792,18 @@ export class StaffDashboard {
 
     return [...byStart.entries()]
       .sort(([a], [b]) => a - b)
-      .map(([startMs, group]) => ({
-        key: String(startMs),
-        timeLabel: this.time(startMs),
-        startMs,
-        past: startMs < nowMs,
+      .map(([startMinutes, group]) => ({
+        key: String(startMinutes),
+        timeLabel: this.wallTime(localDate, startMinutes),
+        startMinutes,
+        // The heading is past once the shop's clock has reached it — its
+        // minute begun (`VisitStorySystem.hasStarted`, DEP-4).
+        past:
+          shopNow !== null &&
+          VisitStorySystem.hasStarted(
+            WallTime.of(localDate, startMinutes),
+            shopNow,
+          ),
         // Visits before gaps at the same minute — what is booked outranks
         // what is merely available, and a stable order stops cards jumping
         // as the store ticks.
@@ -2742,7 +2827,9 @@ export class StaffDashboard {
     if (!this.store.isToday()) return null;
     const groups = this.agenda();
     if (groups.length === 0) return null;
-    const at = groups.findIndex((group) => group.startMs >= this.nowMs());
+    // The first heading the shop's clock has not reached (`past` is
+    // `hasStarted`, DEP-4).
+    const at = groups.findIndex((group) => !group.past);
     return at === -1 ? groups.length : at;
   });
 
@@ -2784,25 +2871,27 @@ export class StaffDashboard {
   private readonly weekCalendar = computed(() => {
     const today = this.store.todayKey();
     // No today before the shop's zone is known: no strip to build.
-    if (today === '') return [];
+    if (today === null) return [];
     const locale = this.content.locale();
-    const first = addDays(startOfWeek(today), -StaffDashboard.WEEKS_BACK * 7);
+    const first = LocalDate.addDays(
+      LocalDate.startOfWeek(today),
+      -StaffDashboard.WEEKS_BACK * 7,
+    );
     const weeks = StaffDashboard.WEEKS_BACK + StaffDashboard.WEEKS_AHEAD + 1;
 
     return Array.from({ length: weeks }, (_, w) => {
-      const weekStart = addDays(first, w * 7);
+      const weekStart = LocalDate.addDays(first, w * 7);
       return {
         key: weekStart,
         days: Array.from({ length: 7 }, (_, d) => {
-          const key = addDays(weekStart, d);
-          const at = localDateOfKey(key);
+          const key = LocalDate.addDays(weekStart, d);
           return {
             key,
             // The weekday INITIAL, Apple's own strip: the column position
             // already says which day it is, so the letter is a reminder and
             // not a label.
-            initial: formatWallClock(at, null, locale, { weekday: 'narrow' }),
-            number: formatWallClock(at, null, locale, { day: 'numeric' }),
+            initial: formatWallClock(key, null, locale, { weekday: 'narrow' }),
+            number: formatWallClock(key, null, locale, { day: 'numeric' }),
             today: key === today,
           };
         }),
@@ -2831,9 +2920,10 @@ export class StaffDashboard {
   });
 
   /** Which week holds the shown day — the one the strip scrolls to. */
-  protected readonly selectedWeek = computed(() =>
-    startOfWeek(this.store.dayKey()),
-  );
+  protected readonly selectedWeek = computed(() => {
+    const day = this.store.dayKey();
+    return day === null ? null : LocalDate.startOfWeek(day);
+  });
 
   /**
    * Keep the strip on the shown day's week.
@@ -2843,24 +2933,22 @@ export class StaffDashboard {
    * `scrollIntoView` on the week element rather than a computed offset: the
    * browser already knows where its own snap points are.
    */
-  private readonly strippedWeek = signal<string | null>(null);
+  private readonly strippedWeek = signal<LocalDate | null>(null);
 
   protected readonly followWeek = effect(() => {
     const week = this.selectedWeek();
     // No day yet (the shop's zone is resolving): nothing to follow.
-    if (week === '') return;
+    if (week === null) return;
     if (untracked(() => this.strippedWeek()) === week) return;
     this.strippedWeek.set(week);
     const first = untracked(() => this.weekCalendar())[0]?.key ?? week;
-    const index = Math.round(
-      LocalDate.daysBetween(localDateOfKey(first), localDateOfKey(week)) / 7,
-    );
+    const index = Math.round(LocalDate.daysBetween(first, week) / 7);
     afterNextRender(() => this.settleOnWeek(index, ANCHOR_FRAMES), {
       injector: this.injector,
     });
   });
 
-  protected readonly nowLabel = computed(() => this.time(this.nowMs()));
+  protected readonly nowLabel = computed(() => this.time(this.nowUtcMs()));
 
   /**
    * Which group the run should OPEN on.
@@ -2918,12 +3006,10 @@ export class StaffDashboard {
 
     // The plain sum of the chair's gaps, sellable and elapsed alike
     // (`GridLayoutSystem.totalMinutes`).
-    const gaps: { readonly minutes: MinuteCount }[] = [];
+    const gaps: GapRowVm[] = [];
     for (const lane of lanes) {
       for (const entry of lane.entries) {
-        if (entry.agendaRow !== AgendaRow.Gap) continue;
-        const minutes = MinuteCount.of(entry.minutes);
-        if (minutes.ok) gaps.push({ minutes: minutes.value });
+        if (entry.agendaRow === AgendaRow.Gap) gaps.push(entry);
       }
     }
     const freeMinutes = GridLayoutSystem.totalMinutes(gaps);
@@ -2971,7 +3057,7 @@ export class StaffDashboard {
   /**
    * "in 20 minutes" / "tomorrow", for the relative-time field.
    *
-   * Reads `nowMs` so it re-renders with the store's clock rather than going
+   * Reads `nowUtcMs` so it re-renders with the store's clock rather than going
    * stale — the whole value of this field is that it is true right now.
    */
   /**
@@ -3033,21 +3119,22 @@ export class StaffDashboard {
    */
   protected factLines(entry: DayRowVm): readonly StaffEventLine[] {
     const lines: StaffEventLine[] = [];
-    if (this.fields.isOn('email') && entry.email) {
+    if (this.fields.isOn(AgendaField.Email) && entry.email) {
       lines.push({
         text: entry.email,
         icon: 'contact.email',
         testId: 'staff-visit-email',
       });
     }
-    if (this.fields.isOn('phone') && entry.phone) {
+    if (this.fields.isOn(AgendaField.Phone) && entry.phone) {
       lines.push({
         text: entry.phone,
         icon: 'contact.phone',
         testId: 'staff-visit-phone',
       });
     }
-    if (this.fields.isOn('service')) lines.push({ text: entry.serviceLabel });
+    if (this.fields.isOn(AgendaField.Service))
+      lines.push({ text: entry.serviceLabel });
     return lines;
   }
 
@@ -3096,9 +3183,13 @@ export class StaffDashboard {
   protected whenLabel(entry: DayRowVm): string {
     const lang = this.transloco.getActiveLang();
     if (entry.live) {
+      // The time LEFT is real elapsed time to the chair's end — an
+      // elapsed-time phrase on instants (T2, D-6.4).
       const minutes = Math.max(
         0,
-        Math.round((entry.endMs - this.nowMs()) / 60_000),
+        Math.round(
+          UtcEpochMs.elapsedMs(this.nowUtcMs(), entry.endUtcMs) / 60_000,
+        ),
       );
       return this.transloco.translate('staff.day.agendaRemaining', {
         span: this.span(minutes),
@@ -3115,7 +3206,7 @@ export class StaffDashboard {
     if (entry.arrived && !entry.terminal) {
       return this.transloco.translate('staff.day.statusArrived');
     }
-    return relativeTime(entry.startMs, this.nowMs(), lang, 'short');
+    return relativeTime(entry.startUtcMs, this.nowUtcMs(), lang, 'short');
   }
 
   /** "45 мин" / "1 ч" / "6 ч 30 мин" — never a bare minute count. */
@@ -3243,13 +3334,15 @@ export class StaffDashboard {
     // …and since 2026-09-24 they ride the client's FACE (`stateIcon`), where
     // scanning starts: the foot keeps them only when faces are switched off.
     const state = this.stateIcon(entry);
-    if (state !== null && !this.fields.isOn('avatar')) icons.push(state);
+    if (state !== null && !this.fields.isOn(AgendaField.Avatar))
+      icons.push(state);
     if (entry.rebooked) icons.push('visit.repeat');
     // The note is a MARK, not a row. Its text was a clamped line in the fact
     // column — the one fact there that could not be read in full, sitting in
     // a column whose whole premise is that everything gets its place. A mark
     // says "there is one" honestly; the sheet says what it is.
-    if (this.fields.isOn('note') && entry.hasNote) icons.push('visit.note');
+    if (this.fields.isOn(AgendaField.Note) && entry.hasNote)
+      icons.push('visit.note');
     return icons;
   }
 
@@ -3267,14 +3360,14 @@ export class StaffDashboard {
    */
   protected hasFoot(entry: DayRowVm): boolean {
     return (
-      (this.fields.isOn('price') && !!entry.priceLabel) ||
+      (this.fields.isOn(AgendaField.Price) && !!entry.priceLabel) ||
       // The frame's tag is a mark, never a field: it shows whenever it is.
       entry.tag !== null ||
       // ⚠ The party share joined the foot (owner ruling 2026-09-04); a card
       // whose only mark is `1 / 2` must still get a row to put it on.
-      (this.fields.isOn('party') && !!entry.partyLabel) ||
+      (this.fields.isOn(AgendaField.Party) && !!entry.partyLabel) ||
       this.rowIcons(entry).length > 0 ||
-      this.fields.isOn('barberAvatar')
+      this.fields.isOn(AgendaField.BarberAvatar)
     );
   }
 
@@ -3290,7 +3383,7 @@ export class StaffDashboard {
   }
 
   /** The barber's headshot, or nothing if HR never uploaded one. */
-  private barberAvatarOf(barberId: string): string | null {
+  private barberAvatarOf(barberId: BarberId): string | null {
     return (
       this.catalog.barberVms().find((vm) => vm.id === barberId)?.avatarSrc ??
       null
@@ -3298,12 +3391,12 @@ export class StaffDashboard {
   }
 
   /** An instant's wall clock, in SHOP time — never the reader's device zone. */
-  private time(millis: number): string {
-    return this.instantLabel(millis, CLOCK_FACE);
+  private time(atUtcMs: UtcEpochMs): string {
+    return this.instantLabel(atUtcMs, CLOCK_FACE);
   }
 
   /** A stored wall-clock reading — the visit's own day and minute — as the page's clock. */
-  private wallTime(localDate: LocalDate, minute: number): string {
+  private wallTime(localDate: LocalDate, minute: MinuteOfDay | EndMinute) {
     return formatWallClock(
       localDate,
       minute,
@@ -3317,9 +3410,11 @@ export class StaffDashboard {
    * day, the day before it otherwise — in the day pill's short form, so a
    * cancellation the evening before reads `24.08, 18:40`.
    */
-  private stampLabel(atMs: number, visitLocalDate: LocalDate): string {
-    if (this.wallAt(atMs)?.localDate === visitLocalDate) return this.time(atMs);
-    return this.instantLabel(atMs, {
+  private stampLabel(atUtcMs: UtcEpochMs, visitLocalDate: LocalDate): string {
+    if (this.stampWall(atUtcMs)?.localDate === visitLocalDate) {
+      return this.time(atUtcMs);
+    }
+    return this.instantLabel(atUtcMs, {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
@@ -3378,17 +3473,17 @@ export class StaffDashboard {
    * nothing when the catalogue no longer knows the service — the seat's own
    * booked terms then stand in, exactly as they do on the sheet.
    */
-  private chairMinutesOf(seat: Seat, barberId: string): DurationMinutes | null {
+  private chairMinutesOf(
+    seat: Seat,
+    barberId: BarberId,
+  ): DurationMinutes | null {
     const service = this.catalog.findService(seat.serviceId);
     if (service === undefined) return null;
     // The server's resolution (`OfferingPriceSystem.termsFor`): a chair
     // that does not perform the service is measured against the service's
     // own minutes — never against another chair's offering.
-    return OfferingPriceSystem.termsFor(
-      service,
-      BarberId.of(barberId),
-      seat.variantId,
-    ).durationMinutes;
+    return OfferingPriceSystem.termsFor(service, barberId, seat.variantId)
+      .durationMinutes;
   }
 
   /**
@@ -3402,18 +3497,19 @@ export class StaffDashboard {
    */
   private catalogTag(
     seats: readonly Seat[],
-    barberId: string,
-    startMs: number,
-    endMs: number,
+    barberId: BarberId,
+    startMinute: MinuteOfDay,
+    endMinute: EndMinute,
   ): string | null {
     const pattern = this.copyOf('staff.visit.minutes');
     if (pattern === null) return null;
-    // A visit lasts a positive whole number of minutes by construction, so
-    // a span that is not one is a broken invariant, never an input.
-    const span = DurationMinutes.of(
-      Math.max(0, Math.round((endMs - startMs) / 60_000)),
-    );
-    if (!span.ok) return defect(`not a visit's span: ${endMs - startMs} ms`);
+    // The chair's run on the shop's wall clock (DEP-8). A visit lasts a
+    // positive whole number of minutes by construction, so a span that is
+    // not one is a broken invariant, never an input.
+    const span = DurationMinutes.of(MinuteCount.span(startMinute, endMinute));
+    if (!span.ok) {
+      return defect(`not a visit's span: ${startMinute}–${endMinute}`);
+    }
     // A seat the catalogue no longer knows stands at its booked length.
     const sold = VisitDraftSystem.catalogMinutesOf(
       seats.map((seat) => ({
@@ -3429,8 +3525,9 @@ export class StaffDashboard {
 
   private toRow(
     appointment: Appointment,
-    barberId: string,
-    nowMs: number,
+    barberId: BarberId,
+    nowUtcMs: UtcEpochMs,
+    shopNow: ShopNow | null,
   ): DayRowVm {
     const seats = appointment.seats.filter(
       (seat) => seat.barberId === barberId,
@@ -3442,12 +3539,18 @@ export class StaffDashboard {
     const startMinute = first?.startMinutes ?? appointment.startMinutes;
     const endMinute =
       last === undefined ? appointment.endMinutes : Seat.endMinutes(last);
-    // The instants "now" is judged against — read once, in the shop's zone,
-    // through the lanes' own day frame. Rows are built only once the store
-    // has a zone (its lanes are empty before), so `zone` is always known.
-    const zone = this.store.zone() ?? defect('a row before the shop zone');
-    const startMs = wallClockInstant(appointment.localDate, startMinute, zone);
-    const endMs = wallClockInstant(appointment.localDate, endMinute, zone);
+    // HAS IT BEGUN, HAS IT ENDED — on the shop's wall clock, against the
+    // store's `ShopNow` (Law 7.3 T1, pass D D-6): the visit's day and the
+    // chair's minutes, never an instant. Neither before a zone is known.
+    const start = WallTime.of(appointment.localDate, startMinute);
+    const started =
+      shopNow !== null && VisitStorySystem.hasStarted(start, shopNow);
+    const ended =
+      shopNow !== null &&
+      VisitStorySystem.hasEnded(
+        { localDate: appointment.localDate, minute: endMinute },
+        shopNow,
+      );
 
     const serviceLabel = seats
       .map((seat) => {
@@ -3499,37 +3602,43 @@ export class StaffDashboard {
      * booking's.
      */
     const companionNames = this.companionNames();
+    // Each person by the sheet's draft key (`DraftPersonKey`): a guest by
+    // `guest-<label>`, an account by its uid — no address is known for any
+    // of them here (`email: null`, what the client search reads as none).
     const personOf = (seat: Seat): VisitEditorClientOption =>
       seat.seatSubject === SeatSubject.Anonymous
         ? {
-            id: `${VisitDraftSystem.GUEST_KEY_PREFIX}${seat.guestLabel}`,
+            id: DraftPersonKey.guest(seat.guestLabel),
             label: seat.guestLabel,
             phone: null,
             phoneHref: null,
             meta: null,
+            email: null,
           }
         : seat.subjectRelationship === SubjectRelationship.Companion
           ? {
-              id: seat.subjectUserId,
+              id: DraftPersonKey.account(seat.subjectUserId),
               label:
                 companionNames[seat.subjectUserId] ??
                 this.transloco.translate('staff.day.unnamedClient'),
               phone: null,
               phoneHref: null,
               meta: null,
+              email: null,
             }
           : {
-              id: seat.subjectUserId,
+              id: DraftPersonKey.account(seat.subjectUserId),
               label:
                 contactName ??
                 this.transloco.translate('staff.day.unnamedClient'),
               phone: phoneLabel,
               phoneHref: contactPhone,
               meta: null,
+              email: null,
             };
     // One entry per PERSON, the first of their seats — the people key of
     // the server's party check (`VisitStorySystem.seatPersonKey`).
-    const peopleSeen = new Set<string>();
+    const peopleSeen = new Set<SeatKeyText>();
     const people: VisitEditorClientOption[] = [];
     for (const seat of seats) {
       const key = VisitStorySystem.seatPersonKey(seat);
@@ -3553,11 +3662,7 @@ export class StaffDashboard {
      * the root's word, as before; a one-chair visit is unchanged, because
      * the root was folded from the same seats when it was written.
      */
-    const chairLifecycle = SeatOutcome.summarize(
-      seats,
-      appointment,
-      utcEpochMsOf(nowMs),
-    );
+    const chairLifecycle = SeatOutcome.summarize(seats, appointment, nowUtcMs);
     const status = chairLifecycle.bookingStatus;
     // What the graph allows from the CHAIR, plus the same-day correction
     // edge (owner ruling 2026-09-08) — the root settled the same way and the
@@ -3588,6 +3693,9 @@ export class StaffDashboard {
     // «1/2», set tight (owner, 2026-09-16): a share, not a sum.
     const partyLabel = seatCount > 1 ? `${seats.length}/${seatCount}` : null;
     const note = appointment.contactNote?.trim() || null;
+    // What the chair's seats come to, in the seats' own currency — the
+    // shop's one for a chair holding none, or a mixed one (no figure then).
+    const subtotal = BillingSystem.subtotalOf(seats);
 
     return {
       agendaRow: AgendaRow.Visit,
@@ -3595,35 +3703,39 @@ export class StaffDashboard {
       appointmentId: appointment.id,
       revision: appointment.revision,
       locationId: appointment.locationId,
-      seatId: first?.seatId ?? '',
+      seatId: first?.seatId ?? null,
       seatIds: seats.map((seat) => seat.seatId),
       selfSeat: seats.some((seat) => Seat.isOwnAccount(seat)),
       ownerUserId: appointment.ownerUserId,
       ownerCustomerId: appointment.ownerCustomerId,
       arrived,
-      arrivedMs: appointment.arrivedAtUtcMs,
+      arrivedAtUtcMs: appointment.arrivedAtUtcMs,
       localDate: appointment.localDate,
       startMinute,
       endMinute,
-      endMs,
+      // The chair's instants off the STORED start (`TimeCoordinate.instantAt`,
+      // D-6.5) — the countdown's and the live remaining's only.
+      startUtcMs: TimeCoordinate.instantAt(appointment, startMinute),
+      endUtcMs: TimeCoordinate.instantAt(appointment, endMinute),
       partySize: seatCount,
       seatsHere: seats.length,
-      startMs,
       // The stored wall clock, printed as stored (Law 7.3).
       startLabel: this.wallTime(appointment.localDate, startMinute),
       endLabel: this.wallTime(appointment.localDate, endMinute),
-      durationMinutes: Math.max(0, Math.round((endMs - startMs) / 60_000)),
-      tag: this.catalogTag(seats, barberId, startMs, endMs),
+      tag: this.catalogTag(seats, barberId, startMinute, endMinute),
       priceLabel: this.seatsPrice(seats),
-      priceCents: this.seatsPriceCents(seats),
+      // In cents — what a tip preset is a share of. `subtotalOf` refuses
+      // two currencies: a party mixed-currency has no number at all rather
+      // than a wrong one.
+      priceCents: subtotal.ok ? subtotal.value.amountCents : null,
+      currency: subtotal.ok
+        ? subtotal.value.currency
+        : (first?.currency ?? Currency.EUR),
       barberName: this.barberNameOf(barberId),
       barberAvatarSrc: this.barberAvatarOf(barberId),
       barberTone: this.toneOf(barberId),
-      past: endMs <= nowMs,
-      live:
-        startMs <= nowMs &&
-        nowMs < endMs &&
-        !BookingLifecycle.isSettled(chairLifecycle),
+      past: ended,
+      live: started && !ended && !BookingLifecycle.isSettled(chairLifecycle),
       // Set by the lane, which is the only scope that can know which visit is
       // FIRST — a row cannot see its siblings.
       isNext: false,
@@ -3659,6 +3771,10 @@ export class StaffDashboard {
           minutes: seat.durationMinutes,
           // The same resolver the card's tag reads, so the frame agrees.
           catalogMinutes: this.chairMinutesOf(seat, seatBarberId),
+          // The seat's own price in its currency; the label is printed from
+          // it (D-10.3).
+          priceCents: seat.priceCents,
+          currency: seat.currency,
           priceLabel: this.seatsPrice([seat]),
           barberId: seatBarberId,
           barberName: this.barberNameOf(seatBarberId),
@@ -3741,7 +3857,7 @@ export class StaffDashboard {
       // `CONFIRMED` is not a per-seat verb — the server rejects it as one, so
       // it always addresses the root (`transitionSeats`).
       const seatIds = transitionSeatsOf(row, to);
-      const move = (seatId: string | null): Promise<boolean> =>
+      const move = (seatId: SeatId | null): Promise<boolean> =>
         this.store.transition(
           transitionOf(row.appointmentId, to, null, seatId),
         );
@@ -3794,7 +3910,7 @@ export class StaffDashboard {
     let write: (() => Promise<boolean>) | null = null;
     if (inverse === ArrivalVerb.Unarrived) {
       write = () => this.store.clearArrival(row.appointmentId);
-    } else if (isBookingStatus(inverse)) {
+    } else if (Tag.has(BookingStatus, inverse)) {
       const to = inverse;
       write = () =>
         this.store.transition(transitionOf(row.appointmentId, to, null, null));
@@ -3879,9 +3995,9 @@ export class StaffDashboard {
    * from the editor's `dayChanged` and released on close, which is also what
    * drops the store's probe subscription.
    */
-  private readonly visitDraftDay = signal<string | null>(null);
+  private readonly visitDraftDay = signal<LocalDate | null>(null);
   /** The chair the sheet's draft has moved the visit to, or `null` (the row's). */
-  private readonly visitDraftChair = signal<string | null>(null);
+  private readonly visitDraftChair = signal<BarberId | null>(null);
 
   /** Bumped when a save lands, so the sheet can rebaseline. See `saveFromEditor`. */
   protected readonly visitSavedMark = signal(0);
@@ -3909,13 +4025,13 @@ export class StaffDashboard {
           (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
         ),
       );
-      const rowChair = lane?.barberId ?? '';
+      const rowChair = lane?.barberId ?? null;
       // THE DRAFT'S CHAIR, not the row's (owner, 2026-09-09): switching the
       // barber in the sheet must show that barber's day — his bookings, his
       // hours — the same way stepping the day shows another day.
       const barberId = this.visitDraftChair() ?? rowChair;
       if (draftDay === shownDay && barberId === rowChair) return null;
-      const cell = this.store.cellFor(draftDay);
+      const cell = draftDay === null ? null : this.store.cellFor(draftDay);
       const draftLane = cell?.lanes.find(
         (entry) => entry.barberId === barberId,
       );
@@ -3929,18 +4045,22 @@ export class StaffDashboard {
        * the chair's seats of every other visit whose ROOT is live
        * (`BusySystem.chairOccupants`, DEP-2).
        */
-      const neighbours = this.occupantNeighbours(
-        draftLane?.appointments ?? [],
-        barberId,
-        row.appointmentId,
-      );
+      // No chair (a row on no lane) has nobody beside it.
+      const neighbours =
+        barberId === null
+          ? []
+          : this.occupantNeighbours(
+              draftLane?.appointments ?? [],
+              barberId,
+              row.appointmentId,
+            );
 
       const roster = this.rosterHull(draftLane?.rostered ?? []);
 
       return {
         neighbours,
-        rosterStartMinute: roster?.startMinutes ?? 0,
-        rosterEndMinute: roster?.endMinutes ?? 24 * 60,
+        rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
+        rosterEndMinute: roster?.endMinutes ?? CLOSING,
         // ⚠ The DRAFTED day against today: the `now` line was staying lit on
         // a frame stepped onto tomorrow.
         nowMinute: draftDay === this.store.todayKey() ? this.nowMinute() : null,
@@ -3948,12 +4068,12 @@ export class StaffDashboard {
     },
   );
 
-  protected onVisitDayChanged(dayKey: string): void {
+  protected onVisitDayChanged(dayKey: LocalDate): void {
     this.visitDraftDay.set(dayKey);
     this.store.probeDay(dayKey);
   }
 
-  protected onVisitChairChanged(barberId: string): void {
+  protected onVisitChairChanged(barberId: BarberId): void {
     this.visitDraftChair.set(barberId);
   }
 
@@ -3962,7 +4082,7 @@ export class StaffDashboard {
    * new barber (name, tone, neighbours, roster) under the SAME nonce, so the
    * draft — services picked, people seated — survives the switch.
    */
-  protected onCreateChairChanged(barberId: string): void {
+  protected onCreateChairChanged(barberId: BarberId): void {
     this.createVisit.update((create) =>
       create === null || create.barberId === barberId
         ? create
@@ -4000,6 +4120,9 @@ export class StaffDashboard {
   protected readonly visitEditorVm = computed<VisitEditorVm | null>(() => {
     const row = this.visitSheetRow();
     if (row === null) return null;
+    // A row is drawn only on a shown day, so the day is known here.
+    const dayKey = this.store.dayKey();
+    if (dayKey === null) return null;
 
     // The agenda lane holds the neighbours; the STORE lane holds the roster
     // windows. `LaneVm.rostered` is a boolean — "does this chair work today" —
@@ -4029,7 +4152,8 @@ export class StaffDashboard {
       // The revision the sheet's draft is drawn from — what «Запази» claims.
       revision: row.revision,
       locationId: row.locationId,
-      timeZone: this.zoneOfShop(row.locationId),
+      // The shop's own zone, else the day's (`StaffDayStore.zoneAt`).
+      timeZone: this.store.zoneAt()(row.locationId),
       /*
        * THE REST OF THE BOOKING.
        *
@@ -4070,8 +4194,8 @@ export class StaffDashboard {
        * The frame still follows the pill — through `visitFrameDay`, a
        * SEPARATE input carrying only what is drawn and never seeded.
        */
-      dayKey: this.store.dayKey(),
-      dayLabel: this.dayPillLabel(this.store.dayKey()),
+      dayKey,
+      dayLabel: this.dayPillLabel(dayKey),
       // The chair's own wall clock, as stored (Law 7.3).
       startMinute: row.startMinute,
       endMinute: row.endMinute,
@@ -4096,6 +4220,7 @@ export class StaffDashboard {
       photoBusy: this.store.photoBusy(),
       priceLabel: row.priceLabel,
       priceCents: row.priceCents,
+      currency: row.currency,
       tipLabel: row.tipLabel,
       tipCents: row.tipCents,
       discounts: row.discounts,
@@ -4106,16 +4231,21 @@ export class StaffDashboard {
       statusLabel: this.transloco.translate(
         'appointments.status.' + bookingStatusWords[row.bookingStatus],
       ),
+      // The arrival STAMP read onto the shop's wall clock (the opening
+      // midnight while no zone is known, as it always read then).
       arrivedMinute:
-        row.arrivedMs === null ? null : this.minuteAt(row.arrivedMs),
-      chairId: lane?.barberId ?? '',
+        row.arrivedAtUtcMs === null
+          ? null
+          : (this.stampWall(row.arrivedAtUtcMs)?.minute ?? MIDNIGHT),
+      chairId: lane?.barberId ?? null,
       chairName: row.barberName,
       chairTone: row.barberTone,
       neighbours,
-      rosterStartMinute: roster?.startMinutes ?? 0,
-      rosterEndMinute: roster?.endMinutes ?? 24 * 60,
-      nowMinute: this.store.isToday() ? this.nowMinute() : null,
-      todayKey: this.store.todayKey(),
+      rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
+      rosterEndMinute: roster?.endMinutes ?? CLOSING,
+      // The store's `ShopNow` — the sheet reads "today" and "now" off it
+      // (pass D D-10.5).
+      now: this.store.shopNow(),
       // Regime A, carried through unchanged. `offeredVerbs` already decided
       // what is legal and `leadVerb` already decided what leads; the editor
       // renders that decision rather than re-taking it.
@@ -4152,7 +4282,7 @@ export class StaffDashboard {
    * left the sheet still rendering `пт, 4 септември` until this changed
    * too. Both now call `formatDayPill`, so they cannot drift again.
    */
-  private dayPillLabel(dayKey: string): string {
+  private dayPillLabel(dayKey: LocalDate): string {
     // The pill's own formatter — `weekday: 'short'`, `day: 'numeric'`,
     // `month: 'short'` on UTC — which the editor's twin already calls, so
     // the two can no longer drift. ⚠ `short`, reversing the `long` this
@@ -4186,11 +4316,11 @@ export class StaffDashboard {
   private readonly createEditorRef =
     viewChild<StaffVisitEditor>('createEditor');
   /** Which sheet's ✕ is waiting on «Отхвърли промените?», or none. */
-  protected readonly discardPending = signal<'visit' | 'create' | null>(null);
+  protected readonly discardPending = signal<DiscardTarget | null>(null);
 
   protected dismissVisitSheet(): void {
     if (this.visitEditorRef()?.dirty()) {
-      this.discardPending.set('visit');
+      this.discardPending.set(DiscardTarget.Visit);
       return;
     }
     this.closeVisitSheet();
@@ -4198,7 +4328,7 @@ export class StaffDashboard {
 
   protected dismissCreateSheet(): void {
     if (this.createEditorRef()?.dirty()) {
-      this.discardPending.set('create');
+      this.discardPending.set(DiscardTarget.Create);
       return;
     }
     this.closeCreateSheet();
@@ -4207,8 +4337,8 @@ export class StaffDashboard {
   protected confirmDiscard(): void {
     const which = this.discardPending();
     this.discardPending.set(null);
-    if (which === 'visit') this.closeVisitSheet();
-    if (which === 'create') this.closeCreateSheet();
+    if (which === DiscardTarget.Visit) this.closeVisitSheet();
+    if (which === DiscardTarget.Create) this.closeCreateSheet();
   }
 
   /**
@@ -4217,13 +4347,13 @@ export class StaffDashboard {
    */
   protected readonly discardActions = computed<readonly UiAlertAction[]>(() => [
     {
-      id: 'discard',
+      id: DiscardAnswer.Discard,
       label: this.rawCopy('staff.visit.discard'),
       role: 'destructive',
       testId: 'staff-discard-confirm',
     },
     {
-      id: 'keep',
+      id: DiscardAnswer.Keep,
       label: this.rawCopy('staff.visit.keepEditing'),
       role: 'cancel',
       preferred: true,
@@ -4232,7 +4362,7 @@ export class StaffDashboard {
   ]);
 
   protected onDiscardPick(id: string): void {
-    if (id === 'discard') this.confirmDiscard();
+    if (id === DiscardAnswer.Discard) this.confirmDiscard();
     else this.discardPending.set(null);
   }
 
@@ -4283,7 +4413,8 @@ export class StaffDashboard {
         code,
         promo: {
           label: coupon.name,
-          value: discountValueOf(coupon),
+          // The coupon's value slice, exactly its variant's fields.
+          value: CouponValue.of(coupon),
           exclusive: Combinability.isExclusive(coupon.combinability),
         },
         voucher: null,
@@ -4303,7 +4434,7 @@ export class StaffDashboard {
           : {
               voucherId: found.voucher.id,
               code: found.voucher.code,
-              availableMinorUnits: found.voucher.balanceCents,
+              availableCents: found.voucher.balanceCents,
             },
       refusal: found?.refusal ?? null,
     });
@@ -4317,9 +4448,8 @@ export class StaffDashboard {
    * keeps it open, so "arrived" then "done" is two taps in one place.
    */
   protected async actFromSheet(row: DayRowVm, to: RowVerb): Promise<void> {
-    if (to === BookingStatus.Cancelled || to === BookingStatus.NoShow) {
-      this.visitSheetId.set(null);
-    }
+    // An hour that did not happen — cancelled, or nobody came.
+    if (StaffVerb.didNotHappen(to)) this.visitSheetId.set(null);
     await this.act(row, to);
   }
 
@@ -4332,7 +4462,7 @@ export class StaffDashboard {
    * already knows it.
    */
   protected async actFromEditor(
-    appointmentId: string,
+    appointmentId: AppointmentId | null,
     verb: RowVerb,
   ): Promise<void> {
     const row = this.visitSheetRow();
@@ -4382,7 +4512,7 @@ export class StaffDashboard {
    * added to an EXISTING visit, which is the party grammar's job.
    */
   private async saveFromEditor(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     commit: VisitEditorCommit,
     row: DayRowVm | null,
   ): Promise<void> {
@@ -4400,8 +4530,8 @@ export class StaffDashboard {
      * (`VisitSidesSystem.writesOf`). The sheet follows the stored note and
      * tip while they are untouched, so a colleague's tip recorded after it
      * opened is shown, not written over.
-     * A commit that does not say what it drew is measured against what is
-     * stored now.
+     * A commit that does not say what it drew (`drawn: null`) is measured
+     * against what is stored now.
      */
     const drawn: VisitSides = commit.drawn ?? {
       note: this.store.teamNote(),
@@ -4445,18 +4575,19 @@ export class StaffDashboard {
      * draft holds an override on an unchanged leg. Two encodings of one
      * visit; the stored one wins.
      */
-    if (landed.batch) this.visitSavedMark.update((mark) => mark + 1);
+    if (batchLanded(landed)) this.visitSavedMark.update((mark) => mark + 1);
     // The sheet stays, the toast says why (owner, 2026-09-17) — and a
     // save that lands takes a stale refusal down with it.
-    if (!landed.batch || !landed.sides) {
-      const error = landed.stale
-        ? sidesMovedError()
-        : this.store.errorFor(appointmentId);
+    if (!writeLanded(landed)) {
+      const error =
+        landed.visitEditWriteOutcome === VisitEditWriteOutcome.Stale
+          ? sidesMovedError()
+          : this.store.errorFor(appointmentId);
       this.refuse(error);
       // SOMEBODY ELSE SAVED IT FIRST: the toast says so in one line, and
       // the sheet reloads the visit as it now stands — the draft drawn
       // from the older screen is never written over theirs.
-      if (!landed.batch && isStaleRefusal(error)) {
+      if (!batchLanded(landed) && isStaleRefusal(error)) {
         void this.reloadStale(appointmentId, row, error);
       }
       return;
@@ -4496,7 +4627,7 @@ export class StaffDashboard {
    * they have.
    */
   private async writeFromEditor(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     target: VisitEditorCommit,
     row: DayRowVm | null,
     writes: SaveWrites,
@@ -4514,7 +4645,10 @@ export class StaffDashboard {
         tipHeard: row !== null,
       })
     ) {
-      return { batch: false, sides: false, stale: true };
+      return {
+        visitEditWriteOutcome: VisitEditWriteOutcome.Stale,
+        sidesWritten: false,
+      };
     }
 
     // The batch claims the revision the draft was drawn from (round 5): a
@@ -4525,18 +4659,26 @@ export class StaffDashboard {
       // A placement the call cannot carry (a minute off the shop's day) is
       // refused here as the server refuses it — nothing goes out.
       this.store.refuse(appointmentId, built.error);
-      return { batch: false, sides: true, stale: false };
+      return {
+        visitEditWriteOutcome: VisitEditWriteOutcome.BatchRefused,
+        sidesWritten: false,
+      };
     }
     const commands = built.value;
     if (commands.length > 0) {
       const batch = await this.store.staffEdit({
-        appointmentId: AppointmentId.of(appointmentId),
+        appointmentId,
         commands,
         acknowledgedOverlap: false,
-        expectedVersion: target.revision ?? null,
+        expectedVersion: target.revision,
         operationId: null,
       });
-      if (!batch) return { batch: false, sides: true, stale: false };
+      if (!batch) {
+        return {
+          visitEditWriteOutcome: VisitEditWriteOutcome.BatchRefused,
+          sidesWritten: false,
+        };
+      }
     }
 
     /*
@@ -4554,21 +4696,20 @@ export class StaffDashboard {
      * the chair's seats, not a `staffEdit` command (the port says why), and
      * drafted with the rest of the sheet so «Запази» is the receipt's one
      * verb. Unchanged writes nothing; a new visit carries none. The seat is
-     * the row's first that the batch KEPT — the batch has already run, and
-     * a seat it removed takes a stamp with it. Every seat in a row is the
-     * same barber's, so which carries the number changes nothing about
-     * whose tip it is.
+     * the row's first that the batch KEPT (`StaffEditPlanSystem.tipSeat`) —
+     * the batch has already run, and a seat it removed takes a stamp with
+     * it.
      */
-    const tipSeat =
-      row?.seatIds.find((seatId) =>
-        target.legs.some((leg) => leg.seatId === seatId),
-      ) ?? row?.seatIds[0];
+    const tipSeat = StaffEditPlanSystem.tipSeat(row, target);
     const tipWritten =
-      writes.tip && tipSeat !== undefined
+      writes.tip && tipSeat !== null
         ? await this.recordTip(appointmentId, tipSeat, target.tipCents)
         : true;
 
-    return { batch: true, sides: noteWritten && tipWritten, stale: false };
+    return {
+      visitEditWriteOutcome: VisitEditWriteOutcome.Written,
+      sidesWritten: noteWritten && tipWritten,
+    };
   }
 
   /**
@@ -4578,288 +4719,46 @@ export class StaffDashboard {
    * construction.
    */
   private recordTip(
-    appointmentId: string,
-    seatId: string,
+    appointmentId: AppointmentId,
+    seatId: SeatId,
     amountCents: PriceCents | null,
   ): Promise<boolean> {
-    return this.store.recordTip({
-      appointmentId: AppointmentId.of(appointmentId),
-      seatId: SeatId.of(seatId),
-      amountCents,
-    });
+    return this.store.recordTip({ appointmentId, seatId, amountCents });
   }
 
   /**
    * THE BATCH from a row to a target — the save's arithmetic, and the
-   * undo's, since both are "make the stored visit say this". Every command
-   * is decided by the server in one fold (see `saveFromEditor`).
+   * undo's, since both are "make the stored visit say this"
+   * (`StaffEditPlanSystem.commandsFor`, pass D D-10.1; every command is
+   * decided by the server in one fold — see `saveFromEditor`). The row
+   * passes AS IS (Law 3). This page adds only what it alone holds: every
+   * guest label the VISIT holds on any loaded day — a stranger joining
+   * this chair is numbered past the other chairs' walk-ins too
+   * (`visitGuestLabels`) — and the catalogue's walk-in words.
    */
   private commandsFor(
     commit: VisitEditorCommit,
     row: DayRowVm | null,
-  ): Result<BookingCall.EditCommand[], PipelineError> {
-    // The visit's ONE shop day, as the sheet drafted it (Law 7.3: the call
-    // carries the wall clock; the server reads it in the shop's zone once).
-    const day = LocalDate.parse(commit.dayKey);
-    if (!day.ok) return Result.ok([]);
-    const localDate = day.value;
-    const start = MinuteOfDay.of(commit.startMinute);
-    if (!start.ok) return refusedAt('startMinutes');
-    const end = EndMinute.of(commit.endMinute);
-    if (!end.ok) return refusedAt('atMinutes');
-
-    /*
-     * THE SCOPE NAMES THE TARGET'S SEATS. A chair's share of a party is
-     * scoped to its own seats — but to the seats the batch LEAVES on the
-     * chair, as the target lists them: a seat the batch removes must not be
-     * named (the server refuses a stale id rather than widening), and one it
-     * adds exists by the time the chair-wide commands run (found in review).
-     * Whether the chair IS a share is the per-seat acts' own rule — a chair
-     * holding the whole party addresses the root (`transitionSeats`, read
-     * for a verb with a per-seat meaning).
-     */
-    const seatIds =
-      row === null ||
-      transitionSeatsOf(row, BookingStatus.Completed).length === 0
-        ? []
-        : commit.legs.map((leg) => SeatId.of(leg.seatId));
-    const scope = seatIds.length > 0 ? seatIds : null;
-
-    /*
-     * ORDER IS THE POINT. The move puts the block on the right day at the
-     * right start; the resize then measures the END from where the move left
-     * it. Reversed, the resize would stretch from a start that is about to
-     * change and the block would land the wrong length.
-     */
-    const commands: BookingCall.EditCommand[] = [];
-
-    /*
-     * THE SHOP, before everything: a visit moved to the other location is
-     * decided against that shop's hours and catalogue, so it leads the
-     * batch. Only when it differs — the row is a fact until somebody picks
-     * the other tile.
-     */
-    if (
-      typeof commit.locationId === 'string' &&
-      row !== null &&
-      commit.locationId !== row.locationId
-    ) {
-      commands.push(BookingCall.editRelocate(LocationId.of(commit.locationId)));
-    }
-
-    /*
-     * SERVICES ADDED AND REMOVED go first, so the move and the resize that
-     * follow see the visit the barber drafted, new seat included. A removed
-     * leg is one the row had and the draft no longer has; an added one is
-     * the reverse, and it is placed where the ladder draws it — after the
-     * legs before it, in the draft's order — for the person the leg names.
-     * Terms come from
-     * the catalogue on the server; `durationMinutes` only keeps this batch
-     * honest.
-     */
-    const before = row?.legs ?? [];
-    for (const leg of before) {
-      if (!commit.legs.some((entry) => entry.seatId === leg.seatId)) {
-        commands.push(BookingCall.editRemoveSeat(SeatId.of(leg.seatId)));
-      }
-    }
-    /*
-     * WHOSE SEAT. The chair's own person — the booker, or the guest the chair
-     * is named after — keeps the chair's subject; a second person added on
-     * this visit rides as a guest under their own name (the party grammar).
-     */
-    const chairPerson =
-      commit.clients[0]?.id ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID;
-    // A stranger joining this visit is numbered past every label the VISIT
-    // already holds — this chair's walk-in, and every other chair's too,
-    // since the server tells guests apart per appointment
-    // (`VisitDraftSystem.walkInLabels`, `visitGuestLabels`).
-    const strangers = this.walkInNames(
+  ): Result<readonly BookingCall.EditCommand[], PipelineError> {
+    return StaffEditPlanSystem.commandsFor(
       commit,
-      row === null
-        ? []
-        : [
-            ...row.people.map((person) => person.label),
-            ...this.visitGuestLabels(row.appointmentId),
-          ],
-      chairPerson,
+      row,
+      row === null ? [] : this.visitGuestLabels(row.appointmentId),
+      this.walkInWords(),
     );
-    const subjectFor = (
-      clientId: string,
-    ): Result<BookingCall.AddedSubject, PipelineError> => {
-      if (clientId === chairPerson) {
-        return row?.selfSeat === false
-          ? guestSubject(commit.clients[0]?.label ?? row.clientLabel)
-          : Result.ok({ requestedSubjectRole: RequestedSubjectRole.Self });
-      }
-      const label: string =
-        commit.clients.find((client) => client.id === clientId)?.label ??
-        strangers.find((stranger) => stranger.personId === clientId)?.label ??
-        this.transloco.translate('staff.visit.walkIn');
-      return guestSubject(label);
+  }
+
+  /**
+   * The catalogue words a save names its unnamed people by —
+   * «Случаен клиент», then «Случаен клиент 2»… (`staff.visit.walkIn`,
+   * `staff.visit.walkInNumbered`).
+   */
+  private walkInWords(): StaffEditWords {
+    return {
+      walkIn: this.transloco.translate('staff.visit.walkIn'),
+      walkInNumbered: (number) =>
+        this.transloco.translate('staff.visit.walkInNumbered', { number }),
     };
-    let offset = 0;
-    for (const leg of commit.legs) {
-      if (!before.some((entry) => entry.seatId === leg.seatId)) {
-        const at = MinuteOfDay.of(commit.startMinute + offset);
-        if (!at.ok) return refusedAt('startMinutes');
-        const minutes = DurationMinutes.of(leg.minutes);
-        if (!minutes.ok) return refusedAt('durationMinutes');
-        const subject = subjectFor(leg.clientId);
-        if (!subject.ok) return subject;
-        commands.push(
-          BookingCall.editAddSeat(
-            SeatId.of(leg.seatId),
-            ServiceId.of(leg.serviceId),
-            leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
-            BarberId.of(leg.barberId),
-            localDate,
-            at.value,
-            minutes.value,
-            subject.value,
-          ),
-        );
-        // A price typed on a seat that does not exist yet: the id was
-        // minted here, so the reprice can name it in the same batch, and
-        // the fold applies the two in order (owner, 2026-09-10).
-        if (leg.priceCents !== null && leg.priceCents !== undefined) {
-          const price = PriceCents.of(leg.priceCents);
-          if (!price.ok) return refusedAt('priceCents');
-          commands.push(
-            BookingCall.editReprice(SeatId.of(leg.seatId), price.value),
-          );
-        }
-      }
-      offset += leg.minutes;
-    }
-
-    /*
-     * THE LADDER, PINNED (found in review, 2026-09-23). The chair-wide move
-     * below shifts every seat by ONE delta measured from the earliest, and
-     * the resize stretches whichever ends last — one delta cannot put two
-     * seats where the ladder draws them once the stored seats no longer sit
-     * in that order: a seat re-added by an undo beside a survivor the save
-     * had moved landed the chair swapped and a seat cut short, and a
-     * lengthened non-last leg lands on top of the next. Each leg the row
-     * already holds is moved on its own first — a one-seat scope's delta is
-     * its own — so the chair-wide commands that follow land as no-ops. A
-     * lone leg needs no pin: the chair-wide move lands it exactly.
-     */
-    if (commit.legs.length > 1) {
-      let slot = 0;
-      for (const leg of commit.legs) {
-        if (before.some((entry) => entry.seatId === leg.seatId)) {
-          const at = MinuteOfDay.of(commit.startMinute + slot);
-          if (!at.ok) return refusedAt('startMinutes');
-          commands.push(
-            BookingCall.editMove(localDate, at.value, [SeatId.of(leg.seatId)]),
-          );
-        }
-        slot += leg.minutes;
-      }
-    }
-
-    commands.push(
-      BookingCall.editMove(localDate, start.value, scope),
-      BookingCall.editResizeEnd(localDate, end.value, scope),
-    );
-
-    /*
-     * A leg only earns a command when it actually differs. Sending
-     * `REDURATE` for every seat on every save would re-write terms nobody
-     * touched and bury the one change that matters in an audit row that
-     * claims five.
-     */
-    for (const leg of commit.legs) {
-      const before = row?.legs.find((entry) => entry.seatId === leg.seatId);
-      if (before === undefined) continue;
-      if (leg.minutes !== before.minutes) {
-        const minutes = DurationMinutes.of(leg.minutes);
-        if (!minutes.ok) return refusedAt('durationMinutes');
-        commands.push(
-          BookingCall.editRedurate(SeatId.of(leg.seatId), minutes.value),
-        );
-      }
-      if (leg.barberId !== before.barberId) {
-        commands.push(
-          BookingCall.editRestaff(
-            SeatId.of(leg.seatId),
-            BarberId.of(leg.barberId),
-          ),
-        );
-      }
-      /*
-       * A REPRICED SEAT — the pill on the ladder, for the roles that may
-       * (owner, 2026-09-10). Typed money reaches the server as the seat's
-       * new terms. The page this replaces edited a label the save never
-       * sent, which is the quiet kind of broken.
-       */
-      if (
-        leg.priceCents !== null &&
-        leg.priceCents !== undefined &&
-        leg.priceLabel !== before.priceLabel
-      ) {
-        const price = PriceCents.of(leg.priceCents);
-        if (!price.ok) return refusedAt('priceCents');
-        commands.push(
-          BookingCall.editReprice(SeatId.of(leg.seatId), price.value),
-        );
-      }
-    }
-
-    /*
-     * THE DISCOUNT — the bill's, not a seat's — travels only when it changed,
-     * as a REFERENCE the server resolves (a grant, a code) or a figure the
-     * server checks the caller may author. Cleared with an empty set. Last in
-     * the batch by convention; the fold settles it outside the seat commands
-     * either way.
-     */
-    // `?? []`: a commit that says nothing about the bill means no change.
-    const draftedDiscounts = commit.discounts ?? [];
-    const storedDiscounts = row?.discounts ?? [];
-    // The same set of promises, whatever the order — each line's identity
-    // is `DiscountSystem.samePromise`'s, read through the sheet's one edge
-    // parse (`promiseOf`).
-    const sameBill =
-      draftedDiscounts.length === storedDiscounts.length &&
-      draftedDiscounts.every((drafted) =>
-        storedDiscounts.some((stored) =>
-          DiscountSystem.samePromise(
-            promiseOf(drafted, MONEY_CODE),
-            promiseOf(stored, MONEY_CODE),
-          ),
-        ),
-      );
-    if (!sameBill) {
-      const discounts: BookingCall.StaffDiscount[] = [];
-      for (const discount of draftedDiscounts) {
-        const request = toDiscountRequest(discount);
-        if (!request.ok) return request;
-        if (request.value !== null) discounts.push(request.value);
-      }
-      commands.push(BookingCall.editDiscounts(discounts));
-    }
-    /*
-     * THE VOUCHERS paying the bill, by code, in cover order — re-settled by
-     * the server against the balances it reads in the same transaction.
-     */
-    const draftedVouchers = commit.vouchers ?? [];
-    if (
-      !VoucherCode.sameCover(
-        draftedVouchers.map((voucher) => voucher.code),
-        (row?.vouchers ?? []).map((voucher) => voucher.code),
-      )
-    ) {
-      commands.push(
-        BookingCall.editVouchers(
-          draftedVouchers.map((voucher) =>
-            VoucherCode.of(VoucherCode.normalize(voucher.code)),
-          ),
-        ),
-      );
-    }
-
-    return Result.ok(commands);
   }
 
   /**
@@ -4876,7 +4775,7 @@ export class StaffDashboard {
    * show.
    */
   private offerSaveUndo(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     rowBefore: DayRowVm,
     before: VisitEditorCommit,
     writes: SaveWrites,
@@ -4924,22 +4823,22 @@ export class StaffDashboard {
          * says so.
          */
         if (
-          !landed.batch &&
-          !landed.stale &&
+          landed.visitEditWriteOutcome === VisitEditWriteOutcome.BatchRefused &&
           isOverlapOffer(this.store.errorFor(appointmentId))
         ) {
           await new Promise((resolve) => setTimeout(resolve, BUSY_SETTLE_MS));
           landed = await write();
         }
-        if (!landed.batch || !landed.sides) {
+        if (!writeLanded(landed)) {
           /*
            * A REFUSED UNDO is not "try again": the receipt is spent and the
            * sheet is clean on the SAVED visit. The toast says the save
            * stands, and why (found in review).
            */
-          const error = landed.stale
-            ? sidesMovedError()
-            : this.store.errorFor(appointmentId);
+          const error =
+            landed.visitEditWriteOutcome === VisitEditWriteOutcome.Stale
+              ? sidesMovedError()
+              : this.store.errorFor(appointmentId);
           this.undo.set(null);
           this.notice.set(
             this.transloco.translate('staff.day.undo.refused', {
@@ -4948,7 +4847,7 @@ export class StaffDashboard {
           );
           // Somebody else saved the visit after this save: the undo is not
           // written over them, and the sheet shows what they left.
-          if (!landed.batch && isStaleRefusal(error)) {
+          if (!batchLanded(landed) && isStaleRefusal(error)) {
             void this.reloadStale(appointmentId, find(), error);
           }
           return false;
@@ -4967,7 +4866,7 @@ export class StaffDashboard {
    * the meantime keeps what was typed there (found in review).
    */
   private async reseedWhenBack(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     find: () => DayRowVm | null,
     shape: string,
   ): Promise<void> {
@@ -4985,7 +4884,7 @@ export class StaffDashboard {
    * may no longer make sense over what their colleague did.
    */
   private async reloadStale(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     row: DayRowVm | null,
     error: PipelineError | null,
   ): Promise<void> {
@@ -5009,12 +4908,12 @@ export class StaffDashboard {
    */
   private rowFor(
     rowId: string,
-    seatIds: readonly string[] = [],
+    seatIds: readonly SeatId[] = [],
   ): DayRowVm | null {
     const hash = rowId.lastIndexOf('#');
     const appointmentId = hash < 0 ? rowId : rowId.slice(0, hash);
     const barberId = hash < 0 ? '' : rowId.slice(hash + 1);
-    const holds = (ids: readonly string[]) =>
+    const holds = (ids: readonly SeatId[]) =>
       ids.some((id) => seatIds.includes(id));
     const shown = this.lanes().flatMap((lane) =>
       lane.entries.filter(
@@ -5028,20 +4927,20 @@ export class StaffDashboard {
     );
     if (bySeat !== undefined) return bySeat;
 
-    const nowMs = this.nowMs();
+    const nowUtcMs = this.nowUtcMs();
+    const shopNow = this.store.shopNow();
     for (const cell of this.store.dayCells()) {
       for (const lane of cell.lanes) {
         const appointment = lane.appointments.find(
           (entry) => entry.id === appointmentId,
         );
         if (appointment === undefined) continue;
-        if (lane.barberId === barberId) {
-          return this.toRow(appointment, barberId, nowMs);
-        }
         const here = appointment.seats
           .filter((seat) => seat.barberId === lane.barberId)
           .map((seat) => seat.seatId);
-        if (holds(here)) return this.toRow(appointment, lane.barberId, nowMs);
+        if (lane.barberId === barberId || holds(here)) {
+          return this.toRow(appointment, lane.barberId, nowUtcMs, shopNow);
+        }
       }
     }
     return null;
@@ -5055,9 +4954,9 @@ export class StaffDashboard {
    * subject.
    */
   protected readonly visitReseedMark = signal<{
-    readonly appointmentId: string;
+    readonly appointmentId: AppointmentId | null;
     readonly n: number;
-  }>({ appointmentId: '', n: 0 });
+  }>({ appointmentId: null, n: 0 });
 
   /**
    * How long an undone save waits on the listener, each way, before going
@@ -5102,7 +5001,7 @@ export class StaffDashboard {
   });
 
   /** The visit whose save from the editor is in flight — «Запази» turns its ring on it. */
-  private readonly savingVisitId = signal<string | null>(null);
+  private readonly savingVisitId = signal<AppointmentId | null>(null);
 
   /* ── The shop's photos of the visit ─────────────────────────────────── */
 
@@ -5150,10 +5049,12 @@ export class StaffDashboard {
     vm: VisitEditorVm,
     image: VisitEditorLibraryImage,
   ): Promise<void> {
+    // A saved visit in a chair — the only sheet a photo can be put on.
+    if (vm.appointmentId === null || vm.chairId === null) return;
     const done = await this.store.adoptPhoto({
       appointmentId: vm.appointmentId,
       barberId: vm.chairId,
-      clientCustomerId: vm.clientCustomerId ?? null,
+      clientCustomerId: vm.clientCustomerId,
       clientLabel: vm.clientLabel,
       path: image.path,
       url: image.url,
@@ -5172,17 +5073,21 @@ export class StaffDashboard {
     vm: VisitEditorVm,
     file: File,
   ): Promise<void> {
+    // A saved visit in a chair — the only sheet a photo can be put on.
+    if (vm.appointmentId === null || vm.chairId === null) return;
     const done = await this.store.attachPhoto({
       appointmentId: vm.appointmentId,
       barberId: vm.chairId,
-      clientCustomerId: vm.clientCustomerId ?? null,
+      clientCustomerId: vm.clientCustomerId,
       clientLabel: vm.clientLabel,
       file,
     });
     if (!done) this.refuse(null, 'staff.visit.photoFailed');
   }
 
-  protected async removePhotoFromEditor(photoId: string): Promise<void> {
+  protected async removePhotoFromEditor(
+    photoId: AppointmentPhotoId,
+  ): Promise<void> {
     const photo = this.store
       .visitPhotos()
       .find((entry) => entry.id === photoId);
@@ -5207,9 +5112,12 @@ export class StaffDashboard {
    * left to be wrong about.
    */
   protected async commitFromEditor(
-    appointmentId: string,
+    appointmentId: AppointmentId | null,
     commit: VisitEditorCommit,
   ): Promise<void> {
+    // The visit sheet edits a saved visit; a create commits through
+    // `createFromEditor`.
+    if (appointmentId === null) return;
     const row = this.visitSheetRow();
     this.savingVisitId.set(appointmentId);
     try {
@@ -5219,7 +5127,7 @@ export class StaffDashboard {
     }
   }
 
-  protected readonly cancelId = signal<string | null>(null);
+  protected readonly cancelId = signal<AppointmentId | null>(null);
   /**
    * WHICH SEATS this cancellation resolves — empty means the whole booking.
    *
@@ -5227,7 +5135,7 @@ export class StaffDashboard {
    * hold two seats (a father and son booked together). Naming only the first
    * called off half a row and reported success for all of it.
    */
-  protected readonly cancelSeatIds = signal<readonly string[]>([]);
+  protected readonly cancelSeatIds = signal<readonly SeatId[]>([]);
   protected readonly cancelReasonCode = signal<CancellationReason | null>(null);
   protected readonly cancelNote = signal('');
   /**
@@ -5256,7 +5164,7 @@ export class StaffDashboard {
 
   protected async confirmCancel(): Promise<void> {
     const appointmentId = this.cancelId();
-    if (!appointmentId) return;
+    if (appointmentId === null) return;
     const seatIds = this.cancelSeatIds();
     /*
      * THE REASON IS OPTIONAL (owner, 2026-09-11: "barbers may not have time
@@ -5274,7 +5182,7 @@ export class StaffDashboard {
       this.cancelReasonCode(),
       note,
     );
-    const cancel = (seatId: string | null): Promise<boolean> =>
+    const cancel = (seatId: SeatId | null): Promise<boolean> =>
       this.store.transition(
         transitionOf(
           appointmentId,
@@ -5298,7 +5206,7 @@ export class StaffDashboard {
       done = await cancel(null);
       landed = done;
     } else {
-      const refused: string[] = [];
+      const refused: SeatId[] = [];
       for (const seatId of seatIds) {
         if (!(await cancel(seatId))) refused.push(seatId);
       }
@@ -5369,10 +5277,11 @@ export class StaffDashboard {
   private createSeq = 0;
 
   protected readonly createVisit = signal<{
-    readonly barberId: string;
-    readonly startMinute: number;
+    readonly barberId: BarberId;
+    /** Where the draft starts on the frame's anchored axis. */
+    readonly startMinute: TrackMinute;
     /** A span to draw, when the caller knows one (a block turned visit). */
-    readonly minutes?: number;
+    readonly minutes?: DurationMinutes;
     /**
      * Fresh per create — the editor keys its draft on it (`new-<nonce>`).
      * A counter (`createSeq`), so two creates are strictly distinct even
@@ -5382,12 +5291,13 @@ export class StaffDashboard {
     /** Prefilled from a finished visit (`Запиши пак`). */
     readonly legs?: readonly VisitEditorLeg[];
     readonly client?: {
-      readonly id: string | null;
+      /** The person's account, or `null` for a walk-in. */
+      readonly id: UserId | null;
       readonly label: string;
       readonly phone: string | null;
     };
     /** The visit a `Запиши пак` came from — the rebooking edge. */
-    readonly bookedFrom?: string;
+    readonly bookedFrom?: AppointmentId;
   } | null>(null);
 
   /** Which create door the ＋ is showing: the kind menu. */
@@ -5401,6 +5311,9 @@ export class StaffDashboard {
   protected readonly createVm = computed<VisitEditorVm | null>(() => {
     const create = this.createVisit();
     if (create === null) return null;
+    // A create opens only once the day is known (`openCreate`'s `ready`).
+    const dayKey = this.store.dayKey();
+    if (dayKey === null) return null;
     const lane = this.lanes().find(
       (entry) => entry.barberId === create.barberId,
     );
@@ -5429,22 +5342,27 @@ export class StaffDashboard {
       this.catalog.locations()[0]?.id ??
       null;
     return {
-      appointmentId: '',
+      // Not saved yet: no id (the sheet's «new» visit).
+      appointmentId: null,
       rowId: `new-${create.nonce}`,
       locationId,
-      timeZone: this.zoneOfShop(locationId),
+      // The shop's own zone, else the day's (`StaffDayStore.zoneAt`).
+      timeZone: this.store.zoneAt()(locationId),
       peers: [],
-      dayKey: this.store.dayKey(),
-      dayLabel: this.dayPillLabel(this.store.dayKey()),
+      dayKey,
+      dayLabel: this.dayPillLabel(dayKey),
       startMinute: create.startMinute,
-      endMinute:
-        create.startMinute +
-        (create.minutes ?? VisitDraftSystem.DEFAULT_SPAN_MINUTES),
+      endMinute: TrackMinute.plus(
+        create.startMinute,
+        create.minutes ?? VisitDraftSystem.DEFAULT_SPAN_MINUTES,
+      ),
       legs: create.legs ?? [],
       // A walk-in has a name and no account; a booking starts with nobody —
       // unless it is a rebooking, which starts with last time's client.
       clientLabel: create.client?.label ?? '',
       clientUserId: create.client?.id ?? null,
+      // No client record yet: it is the save that names one.
+      clientCustomerId: null,
       phone: create.client?.phone ?? null,
       phoneHref: create.client?.phone ?? null,
       clientMeta: null,
@@ -5452,6 +5370,8 @@ export class StaffDashboard {
       teamNote: null,
       priceLabel: null,
       priceCents: null,
+      // Nothing is priced yet: the shop's one currency.
+      currency: Currency.EUR,
       tipLabel: null,
       tipCents: null,
       // A visit the server has not seen cannot be discounted or paid yet:
@@ -5468,10 +5388,9 @@ export class StaffDashboard {
       chairName: chair?.name ?? this.barberNameOf(create.barberId),
       chairTone: chair?.tone ?? this.toneOf(create.barberId),
       neighbours,
-      rosterStartMinute: roster?.startMinutes ?? 0,
-      rosterEndMinute: roster?.endMinutes ?? 24 * 60,
-      nowMinute: this.store.isToday() ? this.nowMinute() : null,
-      todayKey: this.store.todayKey(),
+      rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
+      rosterEndMinute: roster?.endMinutes ?? CLOSING,
+      now: this.store.shopNow(),
       primaryVerb: null,
       overflowVerbs: [],
       acting: this.store.creating(),
@@ -5489,7 +5408,7 @@ export class StaffDashboard {
    * what one adds to — or lifts from — such a day, and a booking on it is
    * the sheet's to warn about, not the button's to refuse.
    */
-  private createChair(): string | null {
+  private createChair(): BarberId | null {
     const scope = this.store.scope();
     if (
       scope !== null &&
@@ -5501,8 +5420,8 @@ export class StaffDashboard {
   }
 
   /** Now, snapped UP to the grain — a walk-in starts next tick (`snapUp`). */
-  private nowSnapped(): number {
-    return VisitDraftSystem.snapUp(MinuteOfDay.ofProven(this.nowMinute()));
+  private nowSnapped(): TrackMinute {
+    return VisitDraftSystem.snapUp(this.nowMinute());
   }
 
   /**
@@ -5532,21 +5451,6 @@ export class StaffDashboard {
     });
   }
 
-  /** A free gap was tapped: a booking, prefilled with that hole. */
-  protected openGap(gapId: string): void {
-    const match = /^gap-(.+)-(\d+)$/.exec(gapId);
-    if (!match) return;
-    const barberId = match[1] ?? '';
-    const startMs = Number(match[2]);
-    this.presentOnly();
-    this.visitClientOptions.set([]);
-    this.createVisit.set({
-      barberId,
-      startMinute: this.minuteAt(startMs),
-      nonce: ++this.createSeq,
-    });
-  }
-
   protected closeCreateSheet(): void {
     this.createVisit.set(null);
   }
@@ -5558,19 +5462,27 @@ export class StaffDashboard {
    * and the finished visit rides along as `bookedFromAppointmentId`.
    */
   protected rebookFromEditor(vm: VisitEditorVm): void {
+    // A visit sheet is always on a chair (its row's lane).
+    const chair = vm.chairId;
+    if (chair === null) return;
     this.closeVisitSheet();
     this.presentOnly();
     this.visitClientOptions.set([]);
     // The finished visit's own start and span (2026-09-18): the day is the
     // desk's to pick, the hour is what the client already comes at.
     this.createVisit.set({
-      barberId: vm.chairId,
+      barberId: chair,
       startMinute: vm.startMinute,
-      minutes: VisitDraftSystem.floorSpan(vm.endMinute - vm.startMinute),
+      minutes: VisitDraftSystem.floorSpan(
+        TrackMinute.span(vm.startMinute, vm.endMinute),
+      ),
       nonce: ++this.createSeq,
       legs: vm.legs.map((leg, index) => ({
         ...leg,
-        seatId: `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
+        // A fresh draft seat — a `SeatId` by construction (`draft-…`).
+        seatId: SeatId.of(
+          `draft-${leg.serviceId}-${index}-${this.clock.nowUtcMs().toString(36)}`,
+        ),
         overridden: false,
       })),
       client: {
@@ -5578,7 +5490,7 @@ export class StaffDashboard {
         label: vm.clientLabel,
         phone: vm.phone,
       },
-      ...(vm.appointmentId ? { bookedFrom: vm.appointmentId } : {}),
+      ...(vm.appointmentId === null ? {} : { bookedFrom: vm.appointmentId }),
     });
   }
 
@@ -5610,10 +5522,10 @@ export class StaffDashboard {
   );
   private readonly avatarLookups = new Set<string>();
 
-  private resolveAvatars(ids: readonly string[]): void {
+  private resolveAvatars(ids: readonly DraftPersonKey[]): void {
     for (const id of ids) {
       // A guest has no account and no portrait to look for.
-      const owner = VisitDraftSystem.accountKeyOf(id);
+      const owner = DraftPersonKey.accountOf(id);
       if (owner === null || this.avatarLookups.has(id)) continue;
       this.avatarLookups.add(id);
       void this.avatars.findAvatar(owner).then((found) => {
@@ -5641,7 +5553,7 @@ export class StaffDashboard {
   private readonly companionLookups = new Set<string>();
 
   protected readonly lookUpCompanions = effect(() => {
-    const ids = new Set<string>();
+    const ids = new Set<UserId>();
     const lanes = [
       ...this.store.lanes(),
       ...this.store.dayCells().flatMap((cell) => cell.lanes),
@@ -5661,15 +5573,13 @@ export class StaffDashboard {
     untracked(() => this.resolveCompanionNames([...ids]));
   });
 
-  private resolveCompanionNames(ids: readonly string[]): void {
+  private resolveCompanionNames(ids: readonly UserId[]): void {
     const profiles = this.profiles;
     if (profiles === null) return;
     for (const id of ids) {
       if (this.companionLookups.has(id)) continue;
-      const userId = UserId.parse(id);
-      if (!userId.ok) continue;
       this.companionLookups.add(id);
-      void profiles.loadProfile(userId.value).then((found) => {
+      void profiles.loadProfile(id).then((found) => {
         // A failed read is asked again when the book next changes.
         if (!found.ok) this.companionLookups.delete(id);
         const user = found.ok ? found.value : null;
@@ -5706,28 +5616,44 @@ export class StaffDashboard {
 
   protected async browseClients(): Promise<void> {
     await this.store.ensureWindow();
-    const now = this.clock.nowUtcMs();
-    // The past visits, newest first — read on the instants (§8 OQ-14); whose
-    // account each one is, once per person, is `recentAccounts`' (the
-    // booker's, never a companion's — DEP-5).
+    // The visits that have BEGUN, newest first — each on its own shop's
+    // wall clock, at the store's tick (`shopNowAt`, Law 7.3 T1, pass D
+    // D-6.2): a visit begun is one whose start is at or before its shop's
+    // "now". A shop whose zone is not known yet keeps the stamp rule (the
+    // stored instant against the tick — stamp ordering, no zone needed).
+    // Whose account each one is, once per person, is `recentAccounts`'
+    // (the booker's, never a companion's — DEP-5).
+    const nowUtcMs = this.store.nowUtcMs();
+    const shopNowAt = this.store.shopNowAt();
+    const startOf = (visit: Appointment): WallTime =>
+      WallTime.of(visit.localDate, visit.startMinutes);
     const past = this.store
       .window()
-      .filter((appointment) => appointment.utcEpochMs < now)
-      .sort((a, b) => b.utcEpochMs - a.utcEpochMs);
+      .filter((visit) => {
+        const shopNow = shopNowAt(visit.locationId);
+        return shopNow === null
+          ? UtcEpochMs.compare(visit.utcEpochMs, nowUtcMs) < 0
+          : VisitStorySystem.hasStarted(startOf(visit), shopNow);
+      })
+      .sort((a, b) => WallTime.compare(startOf(b), startOf(a)));
     const recent: VisitEditorClientOption[] = ClientQuerySystem.recentAccounts(
       past,
       RECENT_CLIENTS_CAP,
     ).map(({ userId, visit }) => {
       const phone = visit.contactPhone;
       return {
-        id: userId,
+        id: DraftPersonKey.account(userId),
         label:
           visit.contactName ??
           this.transloco.translate('staff.day.unnamedClient'),
         phone: phone === null ? null : PhoneSystem.formatInternational(phone),
         phoneHref: phone,
         meta: this.transloco.translate('staff.visit.lastVisit', {
-          date: this.shortDate(visit.utcEpochMs),
+          // `3 авг` — the day a person was last here, as stored.
+          date: this.wallLabel(visit.localDate, null, {
+            day: 'numeric',
+            month: 'short',
+          }),
         }),
         email: visit.contactEmail,
       };
@@ -5743,7 +5669,7 @@ export class StaffDashboard {
     ).map(({ userId, visit, contactName }) => {
       const phone = visit.contactPhone;
       return {
-        id: userId,
+        id: DraftPersonKey.account(userId),
         label: contactName,
         phone: phone === null ? null : PhoneSystem.formatInternational(phone),
         phoneHref: phone,
@@ -5754,7 +5680,7 @@ export class StaffDashboard {
     this.visitClientBook.set(book);
     this.visitClientSections.set([
       {
-        id: 'recent',
+        id: VisitEditorClientSectionId.Recent,
         title: this.transloco.translate('staff.visit.clientsRecent'),
         clients: recent,
       },
@@ -5770,11 +5696,6 @@ export class StaffDashboard {
   protected readonly visitClientBookWithFaces = computed(() =>
     this.withFaces(this.visitClientBook()),
   );
-
-  /** `3 авг` — the day a person was last here. */
-  private shortDate(millis: number): string {
-    return this.instantLabel(millis, { day: 'numeric', month: 'short' });
-  }
 
   /**
    * THE LOOKUP BEHIND THE OMNIBOX (2026-09-18). What was typed is parsed
@@ -5845,7 +5766,7 @@ export class StaffDashboard {
         if (seen.has(hit.id)) continue;
         seen.add(hit.id);
         options.push({
-          id: hit.id,
+          id: DraftPersonKey.account(hit.id),
           label: searchLabelOf(hit),
           // Read as the profile prints it — «+359 88 765 4321», not the E.164.
           phone:
@@ -5872,7 +5793,7 @@ export class StaffDashboard {
    * aggregate on any loaded day (the fallback `rowFor` uses too), so the
    * other chair counts whether or not its row is drawn.
    */
-  private visitGuestLabels(appointmentId: string): readonly string[] {
+  private visitGuestLabels(appointmentId: AppointmentId): readonly string[] {
     for (const cell of this.store.dayCells()) {
       for (const lane of cell.lanes) {
         const appointment = lane.appointments.find(
@@ -5885,41 +5806,8 @@ export class StaffDashboard {
   }
 
   /**
-   * The labels the visit's UNNAMED people ride under (round 3,
-   * 2026-09-25): every leg whose person is not a drafted client — and is not
-   * `except`, the chair's own person, who keeps the chair's subject — named
-   * «Случаен клиент», then «Случаен клиент 2»… past the drafted clients'
-   * labels and `taken`, the ones the stored visit already holds. One
-   * catalogue word each (`staff.visit.walkIn`, `staff.visit.walkInNumbered`).
-   * The rule is `VisitDraftSystem.walkInLabels`: one entry per person, in
-   * first-seen order.
-   */
-  private walkInNames(
-    commit: {
-      readonly legs: readonly { readonly clientId: string }[];
-      readonly clients: readonly {
-        readonly id: string;
-        readonly label: string;
-      }[];
-    },
-    taken: readonly string[],
-    except: string | null = null,
-  ): readonly WalkInLabel[] {
-    const named = new Set(commit.clients.map((client) => client.id));
-    return VisitDraftSystem.walkInLabels(
-      commit.legs
-        .map((leg) => leg.clientId)
-        .filter((id) => !named.has(id) && id !== except),
-      [...commit.clients.map((client) => client.label), ...taken],
-      (number): string =>
-        number === null
-          ? this.transloco.translate('staff.visit.walkIn')
-          : this.transloco.translate('staff.visit.walkInNumbered', { number }),
-    );
-  }
-
-  /**
-   * The create sheet's `Запази` — a booking placed by staff.
+   * The create sheet's `Запази` — a booking placed by staff
+   * (`StaffEditPlanSystem.bookingRequest`, pass D D-10.1).
    *
    * THE PARTY GRAMMAR (2026-09-08): every leg names its person, so a visit
    * for two is two people with a service each, never one person with a
@@ -5931,110 +5819,39 @@ export class StaffDashboard {
    *
    * Legs run serially from the chosen minute, in ladder order, whatever
    * chair each sits on; a party across two chairs at once is not drawn yet.
+   * The request is the system's; the page hands it the chair's home shop
+   * (where the sheet offered no «Салон» pick), the person the sheet opened
+   * for, and the visit a «Запиши пак» came from — and sends what comes back.
    */
   protected async createFromEditor(commit: VisitEditorCommit): Promise<void> {
     const create = this.createVisit();
-    if (create === null || commit.legs.length === 0) return;
-    // The shop the sheet drafted — the «Салон» row's pick — or, where the
-    // sheet had none to offer, the chair's own.
+    if (create === null) return;
     const chairBarber = this.catalog
       .barbers()
       .find((barber) => barber.id === create.barberId);
-    const locationId =
-      commit.locationId ??
-      (chairBarber === undefined
-        ? null
-        : LocationScopeSystem.homeOf(chairBarber));
-    if (!locationId) return;
-    // The placeholder a walk-in's label sits on and a `guest-*` client
-    // minted on the search page are nobody's account; only a real id is
-    // one (`VisitDraftSystem.accountKeyOf`).
-    let owner: (typeof commit.clients)[number] | null = null;
-    let ownerUserId: UserId | null = null;
-    for (const client of commit.clients) {
-      const account = VisitDraftSystem.accountKeyOf(client.id);
-      if (account === null) continue;
-      owner = client;
-      ownerUserId = account;
-      break;
+    const clientUserId = create.client?.id ?? null;
+    const request = StaffEditPlanSystem.bookingRequest(
+      commit,
+      {
+        homeLocationId:
+          chairBarber === undefined
+            ? null
+            : LocationScopeSystem.homeOf(chairBarber),
+        clientId:
+          clientUserId === null ? null : DraftPersonKey.account(clientUserId),
+        bookedFrom: create.bookedFrom ?? null,
+      },
+      this.walkInWords(),
+    );
+    // No leg, or no shop to place it at: nothing to send.
+    if (request === null) return;
+    if (!request.ok) {
+      // A seat past the shop's midnight cannot be placed on its day: the
+      // server's refusal of such a start, said before anything goes out.
+      this.refuse(request.error, 'staff.visit.createFailed');
+      return;
     }
-    // Two strangers on one visit are two people: the second is numbered,
-    // or the server's party check reads them as one
-    // (`VisitDraftSystem.walkInLabels`).
-    const strangers = this.walkInNames(commit, []);
-    const walkIn: string = this.transloco.translate('staff.visit.walkIn');
-    const labelOf = (clientId: string): string =>
-      commit.clients.find((client) => client.id === clientId)?.label ??
-      strangers.find((stranger) => stranger.personId === clientId)?.label ??
-      walkIn;
-
-    // ONE shop day for the whole visit (F-6): each seat's start is a
-    // minute of it, on the wall clock — the server reads it in the shop's
-    // zone once (Law 7.3).
-    const day = LocalDate.parse(commit.dayKey);
-    if (!day.ok) return;
-    const seats: BookingCall.Seat[] = [];
-    let offset = 0;
-    for (const leg of commit.legs) {
-      const start = MinuteOfDay.of(commit.startMinute + offset);
-      if (!start.ok) {
-        // A seat past the shop's midnight cannot be placed on its day: the
-        // server's refusal of such a start, said before anything goes out.
-        this.refuse(
-          PipelineError.of(
-            PipelineErrorCode.InvalidRequest,
-            BookingErrorCode.InvalidInput,
-            null,
-            'startMinutes',
-          ),
-          'staff.visit.createFailed',
-        );
-        return;
-      }
-      seats.push(
-        BookingCall.seat(
-          CartLineId.of(leg.seatId),
-          ServiceId.of(leg.serviceId),
-          leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
-          BarberId.of(leg.barberId),
-          null,
-          start.value,
-          owner !== null && leg.clientId === owner.id
-            ? BookingCall.selfSubject()
-            : BookingCall.guestSubject(labelOf(leg.clientId), null),
-        ),
-      );
-      offset += leg.minutes;
-    }
-
-    // The contact is the owner's, or the first named person's; it needs a
-    // number the domain can parse, so a bare walk-in rides on its guest
-    // label instead.
-    const contactPerson = owner ?? commit.clients[0] ?? null;
-    // THE REBOOKING EDGE (defect §2.3 #6): a `Запиши пак` names the visit it
-    // came from, unless the desk swapped the person on the way. Then the
-    // visit is somebody else's booking, not this client coming back.
-    const bookedFrom =
-      create.bookedFrom !== undefined &&
-      (owner?.id ?? null) === (create.client?.id ?? null)
-        ? create.bookedFrom
-        : null;
-    const done = await this.store.createBooking({
-      locationId: LocationId.of(locationId),
-      localDate: day.value,
-      seats,
-      contact: contactPerson?.phone
-        ? {
-            name: contactPerson.label,
-            phone: contactPerson.phone,
-            email: null,
-            note: null,
-          }
-        : null,
-      placement: Placement.Staff,
-      onBehalfOfUserId: ownerUserId,
-      bookedFromAppointmentId: bookedFrom ? AppointmentId.of(bookedFrom) : null,
-    });
+    const done = await this.store.createBooking(request.value);
     if (done) this.createVisit.set(null);
     else this.refuse(this.store.createError(), 'staff.visit.createFailed');
   }
@@ -6049,14 +5866,20 @@ export class StaffDashboard {
 
   /** The block being drafted or edited, or `null`. */
   protected readonly blockEdit = signal<{
+    /**
+     * The block's key — the grid event's (`block:<chair>:<day>:<minute>`)
+     * or a day off's (`day:<chair>`), an opaque UI key — or `null` for a
+     * new block.
+     */
     readonly blockId: string | null;
     /** The chairs the sheet opens with — one, unless the sheet adds more. */
-    readonly barberIds: readonly string[];
+    readonly barberIds: readonly BarberId[];
     /** The day the sheet opens ON, when it is not the shown one — a date column's band. */
-    readonly dayKey?: string;
+    readonly dayKey?: LocalDate;
     readonly allDay: boolean;
-    readonly startMinute: number;
-    readonly endMinute: number;
+    /** The range on the frame's anchored axis. */
+    readonly startMinute: TrackMinute;
+    readonly endMinute: TrackMinute;
   } | null>(null);
 
   /** The chair the block sheet is aimed at. */
@@ -6070,9 +5893,9 @@ export class StaffDashboard {
    * store's probe keeps that day's lanes live for the frame, exactly as the
    * visit sheet's `visitDraftDay` does.
    */
-  private readonly blockDraftDay = signal<string | null>(null);
+  private readonly blockDraftDay = signal<LocalDate | null>(null);
 
-  protected onBlockDayChanged(dayKey: string): void {
+  protected onBlockDayChanged(dayKey: LocalDate): void {
     this.blockDraftDay.set(dayKey);
     this.store.probeDay(dayKey);
   }
@@ -6087,7 +5910,10 @@ export class StaffDashboard {
   protected readonly blockEditorVm = computed<BlockEditorVm | null>(() => {
     const edit = this.blockEdit();
     if (edit === null) return null;
+    // The sheet opens only on a known day (a shown day exists once the
+    // shop's zone is read).
     const shownDay = this.store.dayKey();
+    if (shownDay === null) return null;
     const openedDay = edit.dayKey ?? shownDay;
     const frameDay = this.blockDraftDay() ?? openedDay;
     return {
@@ -6097,17 +5923,17 @@ export class StaffDashboard {
       // date whose all-day band was tapped; the frame follows the draft's
       // own day through `lanes`.
       dayKey: openedDay,
-      todayKey: this.store.todayKey(),
       allDay: edit.allDay,
       startMinute: edit.startMinute,
       endMinute: edit.endMinute,
       lanes: this.scopeOptions().map((option) =>
         this.blockLaneFor(option.id, frameDay, shownDay),
       ),
-      nowMinute: frameDay === this.store.todayKey() ? this.nowMinute() : null,
+      // The store's `ShopNow` — the sheet reads "today" and "now" off it.
+      now: this.store.shopNow(),
       // By the OPENED day's own lanes — a date column's band may open a
       // day that is not the shown one.
-      dayIsOff: this.offOn(edit.barberIds[0] ?? '', openedDay),
+      dayIsOff: this.offOn(edit.barberIds[0], openedDay),
       liftArmed: this.blockLiftArmed(),
       acting: this.store.absencePending(),
     };
@@ -6121,22 +5947,20 @@ export class StaffDashboard {
    */
   private occupantNeighbours(
     appointments: readonly Appointment[],
-    barberId: string,
-    excludeId: string | null,
+    barberId: BarberId,
+    excludeId: AppointmentId | null,
   ): FrameNeighbour[] {
-    return BusySystem.chairOccupants(
-      appointments,
-      BarberId.of(barberId),
-      excludeId === null ? null : AppointmentId.of(excludeId),
-    ).map(({ appointment, seat }) => ({
-      name:
-        appointment.contactName ??
-        this.transloco.translate<string>('staff.day.unnamedClient'),
-      // The seat's own wall clock — the frame's axis (Law 7.3).
-      startMinute: seat.startMinutes,
-      endMinute: Seat.endMinutes(seat),
-      tone: this.toneOf(barberId),
-    }));
+    return BusySystem.chairOccupants(appointments, barberId, excludeId).map(
+      ({ appointment, seat }) => ({
+        name:
+          appointment.contactName ??
+          this.transloco.translate<string>('staff.day.unnamedClient'),
+        // The seat's own wall clock — the frame's axis (Law 7.3).
+        startMinute: seat.startMinutes,
+        endMinute: Seat.endMinutes(seat),
+        tone: this.toneOf(barberId),
+      }),
+    );
   }
 
   /**
@@ -6150,14 +5974,14 @@ export class StaffDashboard {
   private occupyingRows(
     lane: LaneVm | undefined,
     appointments: readonly Appointment[],
-    excludeId: string | null,
+    excludeId: AppointmentId | null,
   ): FrameNeighbour[] {
     if (lane === undefined) return [];
-    const occupying = new Set<string>();
+    const occupying = new Set<AppointmentId>();
     for (const { appointment } of BusySystem.chairOccupants(
       appointments,
-      BarberId.of(lane.barberId),
-      excludeId === null ? null : AppointmentId.of(excludeId),
+      lane.barberId,
+      excludeId,
     )) {
       occupying.add(appointment.id);
     }
@@ -6182,21 +6006,19 @@ export class StaffDashboard {
    * sources `visitFrameDay` reads, for the same reason.
    */
   private blockLaneFor(
-    barberId: string,
-    frameDay: string,
-    shownDay: string,
+    barberId: BarberId,
+    frameDay: LocalDate,
+    shownDay: LocalDate,
   ): BlockEditorLane {
-    const windows = (
-      rostered: readonly { startMs: number; endMs: number }[],
-    ) => {
+    const windows = (rostered: readonly MinuteRange[]) => {
       const roster = this.rosterHull(rostered);
       // NO ROSTER IS A SHUT DAY, not an open one. This fell back to the
       // civil day, so a chair standing down all day — the case the block
       // sheet now opens on — drew as a chair free from midnight to midnight.
-      // An empty window is what the frame shades.
+      // An empty window (midnight to midnight) is what the frame shades.
       return {
-        rosterStartMinute: roster?.startMinutes ?? 0,
-        rosterEndMinute: roster?.endMinutes ?? 0,
+        rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
+        rosterEndMinute: roster?.endMinutes ?? MIDNIGHT,
       };
     };
     if (frameDay === shownDay) {
@@ -6229,8 +6051,11 @@ export class StaffDashboard {
   }
 
   protected openBlockSheet(
-    barberId: string,
-    range?: { readonly startMinute: number; readonly endMinute: number },
+    barberId: BarberId,
+    range?: {
+      readonly startMinute: TrackMinute;
+      readonly endMinute: TrackMinute;
+    },
   ): void {
     this.presentOnly();
     this.blockLiftArmed.set(false);
@@ -6238,8 +6063,8 @@ export class StaffDashboard {
       blockId: null,
       barberIds: [barberId],
       allDay: false,
-      startMinute: range?.startMinute ?? 12 * 60,
-      endMinute: range?.endMinute ?? 13 * 60,
+      startMinute: range?.startMinute ?? NOON,
+      endMinute: range?.endMinute ?? ONE_PM,
     });
   }
 
@@ -6259,7 +6084,9 @@ export class StaffDashboard {
       barberId: range.barberId,
       startMinute: range.startMinute,
       // The shortest visit a converted block may draft — the grain.
-      minutes: VisitDraftSystem.floorSpan(range.endMinute - range.startMinute),
+      minutes: VisitDraftSystem.floorSpan(
+        TrackMinute.span(range.startMinute, range.endMinute),
+      ),
       nonce: ++this.createSeq,
     });
   }
@@ -6303,9 +6130,11 @@ export class StaffDashboard {
    * barber IS off all day and the sheet should show that rather than ask.
    */
   protected openRestDay(
-    barberId: string,
-    dayKey: string = this.store.dayKey(),
+    barberId: BarberId,
+    dayKey: LocalDate | null = this.store.dayKey(),
   ): void {
+    // No day before the shop's zone is known: nothing to open on.
+    if (dayKey === null) return;
     this.openBlockSheet(barberId);
     this.blockEdit.update((edit) =>
       edit === null
@@ -6325,12 +6154,22 @@ export class StaffDashboard {
     readonly columnId: string;
     readonly key: string;
   }): void {
-    if (pick.key === 'more') {
-      this.openDay(pick.columnId);
+    // «+N» only rides a DATE column, whose id is its day — minted from the
+    // cell's `LocalDate`, so the parse never refuses.
+    if (pick.key === ALL_DAY_MORE_KEY) {
+      const day = LocalDate.parse(pick.columnId);
+      if (day.ok) this.openDay(day.value);
       return;
     }
-    const isChair = this.store.view() === 'day';
-    this.openRestDay(pick.key, isChair ? this.store.dayKey() : pick.columnId);
+    // Every other chip is keyed by its chair's id — minted from the lane's
+    // `BarberId`.
+    const barberId = BarberId.of(pick.key);
+    if (this.store.view() === StaffView.Day) {
+      this.openRestDay(barberId, this.store.dayKey());
+      return;
+    }
+    const day = LocalDate.parse(pick.columnId);
+    if (day.ok) this.openRestDay(barberId, day.value);
   }
 
   /**
@@ -6340,7 +6179,8 @@ export class StaffDashboard {
    * lift is the whole day's — the range lift the store refuses on a closed
    * day is never offered.
    */
-  private offOn(barberId: string, dayKey: string): boolean {
+  private offOn(barberId: BarberId | undefined, dayKey: LocalDate): boolean {
+    if (barberId === undefined) return false;
     const lane = this.store
       .cellFor(dayKey)
       ?.lanes.find((entry) => entry.barberId === barberId);
@@ -6356,10 +6196,18 @@ export class StaffDashboard {
    */
   protected openAllDay(columnId: string): void {
     const shownDay = this.store.dayKey();
-    const isChair = this.store.view() === 'day';
-    const barberId = isChair ? columnId : this.createChair();
+    if (shownDay === null) return;
+    const isChair = this.store.view() === StaffView.Day;
+    // A chair column's id is its chair's `BarberId`; a date column's is its
+    // day — each minted from the brand, so neither read refuses.
+    const barberId = isChair ? BarberId.of(columnId) : this.createChair();
     if (barberId === null) return;
-    const dayKey = isChair ? shownDay : columnId;
+    let dayKey = shownDay;
+    if (!isChair) {
+      const day = LocalDate.parse(columnId);
+      if (!day.ok) return;
+      dayKey = day.value;
+    }
     this.openBlockSheet(barberId);
     this.blockEdit.update((edit) =>
       edit === null ? null : { ...edit, allDay: true, dayKey },
@@ -6367,23 +6215,37 @@ export class StaffDashboard {
     if (dayKey !== shownDay) this.onBlockDayChanged(dayKey);
   }
 
-  /** A block on the grid was tapped: edit THAT range. */
+  /**
+   * A block on the grid was tapped: edit THAT range — the shown day's
+   * (`block:<chair>:<day>:<start minute>`, read from its end so the chair's
+   * id is taken whole). A block of ANOTHER day — a date column of the
+   * three-day and week views — opens nothing: the sheet lifts and rewrites
+   * the shown day's blocks, and the anchor day's block at the same chair
+   * and minute is not the one tapped (DEP-11).
+   */
   protected openBlock(blockId: string): void {
-    const [, barberId, startRaw] = blockId.split(':');
-    const startMs = Number(startRaw);
+    const parts = blockId.split(':');
+    const dayRaw = parts.at(-2);
+    const barberRaw = parts.slice(1, -2).join(':');
+    if (dayRaw === undefined || dayRaw !== this.store.dayKey()) return;
+    const start = MinuteOfDay.of(Number(parts.at(-1)));
+    if (!start.ok) return;
     const lane = this.store
       .lanes()
-      .find((entry) => entry.barberId === barberId);
-    const interval = lane?.blocks.find((block) => block.startMs === startMs);
-    if (!barberId || !interval) return;
+      .find((entry) => entry.barberId === barberRaw);
+    const interval = lane?.blocks.find(
+      (block) => block.startMinutes === start.value,
+    );
+    if (lane === undefined || interval === undefined) return;
     this.presentOnly();
     this.blockLiftArmed.set(false);
     this.blockEdit.set({
       blockId,
-      barberIds: [barberId],
+      barberIds: [lane.barberId],
       allDay: false,
-      startMinute: this.minuteAt(interval.startMs),
-      endMinute: this.minuteAfter(interval.startMs, interval.endMs),
+      // The block's own wall-clock minutes (DEP-9).
+      startMinute: interval.startMinutes,
+      endMinute: interval.endMinutes,
     });
   }
 
@@ -6409,6 +6271,7 @@ export class StaffDashboard {
     const edit = this.blockEdit();
     if (edit === null) return;
     const shownDay = this.store.dayKey();
+    if (shownDay === null) return;
     if (edit.blockId !== null && !edit.allDay) {
       const old = minuteRangeOf(edit.startMinute, edit.endMinute);
       const from = edit.barberIds[0];
@@ -6431,7 +6294,7 @@ export class StaffDashboard {
         .find((entry) => entry.id === barberId);
       const locationId =
         barber === undefined ? null : LocationScopeSystem.homeOf(barber);
-      if (!locationId) continue;
+      if (locationId === null) continue;
       const done =
         only !== undefined
           ? await this.store.blockTime(barberId, locationId, ranges, only)
@@ -6447,7 +6310,9 @@ export class StaffDashboard {
     // The day the sheet OPENED on — a date column's band may have opened a
     // day that is not the shown one, and the lift must take THAT day.
     const dayKey = edit.dayKey ?? this.store.dayKey();
-    const barberId = edit.barberIds[0] ?? '';
+    const barberId = edit.barberIds[0];
+    // The sheet always opens on a chair, on a known day.
+    if (barberId === undefined || dayKey === null) return;
     const wholeDay = edit.allDay || this.offOn(barberId, dayKey);
     if (wholeDay) {
       if (!this.blockLiftArmed()) {
@@ -6482,15 +6347,15 @@ export class StaffDashboard {
    * nothing closes them all, which is what an act, a navigation or a sheet
    * presentation wants.
    */
-  private presentOnly(keep?: 'date' | 'picker' | 'row'): void {
-    if (keep !== 'date') this.datePickerOpen.set(false);
-    if (keep !== 'picker') this.openPicker.set(null);
-    if (keep !== 'row') this.openMenuId.set(null);
+  private presentOnly(keep?: DaySurface): void {
+    if (keep !== DaySurface.Date) this.datePickerOpen.set(false);
+    if (keep !== DaySurface.Picker) this.openPicker.set(null);
+    if (keep !== DaySurface.Row) this.openMenuId.set(null);
   }
 
   protected toggleMenu(rowId: string): void {
     const opening = this.openMenuId() !== rowId;
-    this.presentOnly(opening ? 'row' : undefined);
+    this.presentOnly(opening ? DaySurface.Row : undefined);
     this.openMenuId.set(opening ? rowId : null);
   }
 
@@ -6501,7 +6366,7 @@ export class StaffDashboard {
   /** The shared day pill reports its own open/close; the page keeps the
    *  one-popover-at-a-time rule. */
   protected setDatePicker(open: boolean): void {
-    this.presentOnly(open ? 'date' : undefined);
+    this.presentOnly(open ? DaySurface.Date : undefined);
     this.datePickerOpen.set(open);
   }
 
@@ -6546,10 +6411,10 @@ export class StaffDashboard {
   );
 
   /** A DATE column's head, tapped: that day, in the day view (§4). */
-  protected openDay(dayKey: string): void {
+  protected openDay(dayKey: LocalDate): void {
     runViewTransition(() => {
       this.store.goToDay(dayKey);
-      this.store.setView('day');
+      this.store.setView(StaffView.Day);
     }, this.injector);
   }
 
@@ -6579,7 +6444,7 @@ export class StaffDashboard {
   /** Everyone, then each chair — the scope switcher's options. */
   protected readonly scopeChoices = computed<readonly UiChoiceOption[]>(() => [
     {
-      id: 'all',
+      id: SCOPE_ALL,
       label: this.rawCopy('staff.day.scopeAll'),
       testId: 'staff-scope-all',
     },
@@ -6591,8 +6456,12 @@ export class StaffDashboard {
     })),
   ]);
 
+  /**
+   * The menu hands back an option id: «Всички», or a chair's — each option
+   * built from a catalogue `BarberId` (a brand by construction, D-8.6).
+   */
   protected pickScope(id: string): void {
-    this.store.setScope(id === 'all' ? null : id);
+    this.store.setScope(id === SCOPE_ALL ? null : BarberId.of(id));
   }
 
   /**
@@ -6617,9 +6486,9 @@ export class StaffDashboard {
     return this.copyOf(key) ?? this.transloco.translate(key);
   }
 
-  protected togglePicker(which: 'view' | 'scope'): void {
+  protected togglePicker(which: DayPicker): void {
     const opening = this.openPicker() !== which;
-    this.presentOnly(opening ? 'picker' : undefined);
+    this.presentOnly(opening ? DaySurface.Picker : undefined);
     this.openPicker.set(opening ? which : null);
   }
 
@@ -6630,9 +6499,15 @@ export class StaffDashboard {
    * caused it on a forty-row day, which is how staff conclude the button is
    * broken rather than learning what the server actually said.
    */
-  protected rowError(appointmentId: string): string | null {
-    const error = this.store.errorFor(appointmentId);
-    return error ? this.describeError(error) : null;
+  protected rowError(rowKey: string): string | null {
+    // ⚠ The template hands the ROW's key (`entry.id`, `appointment#chair`)
+    // while the store keeps errors by APPOINTMENT id, so this answers
+    // nothing today (carried as found, pass D — see the package note). The
+    // lookup is by text so the answer stays exactly today's.
+    for (const [appointmentId, error] of this.store.errors()) {
+      if (appointmentId === rowKey) return this.describeError(error);
+    }
+    return null;
   }
 
   /** The cancel sheet's own error, which has no row to live in. */
@@ -6662,7 +6537,7 @@ export class StaffDashboard {
     const extra: Record<string, string> = {};
     if (error.serverErrorCode === BookingErrorCode.TransitionNotAllowed) {
       const fromRaw = error.serverParams['fromBookingStatus'];
-      const from = isBookingStatus(fromRaw) ? fromRaw : null;
+      const from = Tag.has(BookingStatus, fromRaw) ? fromRaw : null;
       // A SEAT already resolved names no status it moves from.
       if (typeof fromRaw === 'string' && fromRaw.length > 0 && from === null) {
         return this.transloco.translate(
@@ -6670,7 +6545,7 @@ export class StaffDashboard {
         );
       }
       const toRaw = error.serverParams['toBookingStatus'];
-      const to = isBookingStatus(toRaw) ? toRaw : null;
+      const to = Tag.has(BookingStatus, toRaw) ? toRaw : null;
       for (const [side, status] of [
         ['from', from],
         ['to', to],
@@ -6710,28 +6585,39 @@ function guestLabelsOf(seats: readonly Seat[]): string[] {
   );
 }
 
-/** A clock or stored instant as the brand (a safe integer by construction). */
-function utcEpochMsOf(epochMs: number): UtcEpochMs {
-  const instant = UtcEpochMs.of(Math.trunc(epochMs));
-  return instant.ok ? instant.value : defect(`not an instant ${epochMs}`);
-}
-
-/** The bill's discounts as the sheet reads them — every snapshot, in stored order. */
+/**
+ * The bill's discounts as the sheet reads them — every snapshot, in stored
+ * order: its provenance and its value as the domain stored them (exactly
+ * their variants' fields), with the coupon's name, the grant it honoured,
+ * the code it was opened with and whether it must be alone on the bill.
+ */
 function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
   return appointment.discounts.map((applied) => ({
-    discountSource: applied.discountSource,
+    ...provenanceOf(applied),
+    ...CouponValue.of(applied),
     label: applied.label,
-    value: discountValueOf(applied),
     grantId: DiscountProvenance.grantIdOf(applied),
     code: DiscountProvenance.codeOf(applied),
     exclusive: AppliedDiscount.isExclusive(applied),
   }));
 }
 
+/** The provenance slice of a stored discount — exactly its variant's fields. */
+function provenanceOf(applied: DiscountProvenance): DiscountProvenance {
+  switch (applied.discountSource) {
+    case DiscountSource.Grant:
+      return DiscountProvenance.grant(applied.discountGrantId);
+    case DiscountSource.Code:
+      return DiscountProvenance.code(applied.discountCode);
+    case DiscountSource.Manual:
+      return DiscountProvenance.manual();
+  }
+}
+
 /**
- * The vouchers still paying the bill. `availableMinorUnits` is what THIS
- * visit may draw on that voucher if the bill changes: its own amount plus
- * what the voucher had left after it — the server re-clamps on save.
+ * The vouchers still paying the bill. `availableCents` is what THIS visit
+ * may draw on that voucher if the bill changes: its own amount plus what
+ * the voucher had left after it — the server re-clamps on save.
  */
 function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
   return appointment.voucherRedemptions
@@ -6739,61 +6625,6 @@ function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
     .map((redemption) => ({
       voucherId: redemption.voucherId,
       code: redemption.code,
-      availableMinorUnits: VoucherRedemption.drawableCents(redemption),
+      availableCents: VoucherRedemption.drawableCents(redemption),
     }));
-}
-
-/**
- * A drafted discount → what the server is asked for. A grant and a code
- * are sent as REFERENCES — the server resolves and snapshots them — and only
- * a manual figure carries its value. `null` asks for nothing (a reference
- * with nothing to name); a figure no price can be is refused as the server
- * refuses it.
- */
-function toDiscountRequest(
-  discount: VisitEditorDiscount,
-): Result<BookingCall.StaffDiscount | null, PipelineError> {
-  switch (discount.discountSource) {
-    case DiscountSource.Grant:
-      return Result.ok(
-        discount.grantId === null
-          ? null
-          : {
-              discountSource: DiscountSource.Grant,
-              grantId: CouponGrantId.of(discount.grantId),
-            },
-      );
-    case DiscountSource.Code:
-      return Result.ok(
-        discount.code === null
-          ? null
-          : {
-              discountSource: DiscountSource.Code,
-              code: VoucherCode.of(VoucherCode.normalize(discount.code)),
-            },
-      );
-    case DiscountSource.Manual: {
-      // A manual discount is a percent or an amount; `FREE_SERVICE` is a
-      // coupon's word, not the counter's, and cannot be typed here.
-      const value = discount.value;
-      if (value.discountMethod === DiscountMethod.PercentOff) {
-        return Result.ok({
-          discountSource: DiscountSource.Manual,
-          discountMethod: DiscountMethod.PercentOff,
-          discountPercent: value.percent,
-        });
-      }
-      if (value.discountMethod === DiscountMethod.FixedAmount) {
-        const amount = PriceCents.of(value.amountCents);
-        return amount.ok
-          ? Result.ok({
-              discountSource: DiscountSource.Manual,
-              discountMethod: DiscountMethod.FixedAmount,
-              discountAmountCents: amount.value,
-            })
-          : refusedAt('discounts');
-      }
-      return Result.ok(null);
-    }
-  }
 }

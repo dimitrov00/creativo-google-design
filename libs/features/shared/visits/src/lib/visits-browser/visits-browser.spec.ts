@@ -11,6 +11,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { VisitGrain } from '@core/components';
 import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
@@ -32,7 +33,6 @@ import {
   visitsNow,
 } from '../testing/visit-fixtures';
 import { VisitFilterMenu } from '../visit-filter-menu/visit-filter-menu';
-import { VisitGrain } from '@core/systems';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import type { VisitListPaging } from '../visit-list/visit-list';
 import { visitRowOf, visitWordsOf } from '../visit-row.presenter';

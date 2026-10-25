@@ -19,6 +19,8 @@
  * line. `'short'` gives "след 40 мин" from the same locale data rather than
  * from an abbreviation table we would have to keep per language.
  */
+import { UtcEpochMs } from '@core/primitives';
+
 const FORMATTERS = new Map<string, Intl.RelativeTimeFormat>();
 
 const MINUTE = 60_000;
@@ -28,9 +30,15 @@ const WEEK = 7 * DAY;
 /** The average Gregorian month, which is what `Intl` means by "month" too. */
 const MONTH = 30.436_875 * DAY;
 
+/**
+ * How far `target` is from `now`, said relatively — real ELAPSED time
+ * between two instants (an elapsed-time phrase, T2: the staff day's
+ * countdown to a chair's start), its delta read through
+ * `UtcEpochMs.elapsedMs`, the one place a difference of instants is taken.
+ */
 export function relativeTime(
-  targetMs: number,
-  nowMs: number,
+  target: UtcEpochMs,
+  now: UtcEpochMs,
   lang: string,
   style: Intl.RelativeTimeFormatStyle = 'long',
 ): string {
@@ -40,7 +48,7 @@ export function relativeTime(
     formatter = new Intl.RelativeTimeFormat(lang, { numeric: 'auto', style });
     FORMATTERS.set(key, formatter);
   }
-  const delta = targetMs - nowMs;
+  const delta = UtcEpochMs.elapsedMs(now, target);
   const magnitude = Math.abs(delta);
 
   // `Math.round` on the way out, `Math.trunc`-like thresholds on the way in:

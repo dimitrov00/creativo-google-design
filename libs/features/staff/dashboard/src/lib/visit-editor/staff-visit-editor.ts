@@ -14,33 +14,58 @@ import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
   AppliedDiscountId,
+  type AppointmentId,
+  type AppointmentPhotoId,
+  BadgeSeriesId,
+  type BarberId,
   BookingStatus,
-  CouponId,
-  DurationMinutes,
-  EndMinute,
+  type CouponGrantId,
+  type CouponId,
+  type Currency,
+  type CustomerId,
+  DraftPersonKey,
+  type DurationMinutes,
+  type EndMinute,
+  type GiftVoucherId,
   LocalDate,
+  type LocationId,
+  MinuteCount,
   type MinuteDelta,
   MinuteOfDay,
   PriceCents,
+  SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  Tag,
   type TimeZone,
+  TrackMinute,
+  type UserId,
   UtcEpochMs,
   VoucherRefusal,
   defect,
 } from '@core/primitives';
 import {
   BookingLifecycle,
+  CancelledSide,
+  ClientQueryShape,
   Combinability,
   type CountryIso2,
   type CouponOccasion,
   CouponValue,
   DiscountMethod,
+  DiscountProvenance,
   DiscountSource,
+  type Email,
   FlagName,
+  GridEvent as GridEventTag,
   type Money,
   PhotoOrigin,
   PlacementVerdict,
-  ShopNow,
+  type ShopNow,
+  type StaffEditDraft,
+  TipPreset,
   type VisitLeg,
+  type VisitSides,
   VoucherCode,
   WallTime,
 } from '@core/components';
@@ -48,27 +73,21 @@ import {
   AppointmentEditSystem,
   AppointmentLifecycleSystem,
   BillingSystem,
-  CancelledSide,
-  ClientQueryShape,
   ClientQuerySystem,
   type DiscountInput,
   DiscountSystem,
   type DraftBill,
   type DraftLegMinutes,
-  GridEvent as GridEventTag,
   GridLayoutSystem,
   LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
-  TipPreset,
   VisitDraftSystem,
-  type VisitSides,
   VisitSidesSystem,
   VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  MONEY_CODE,
   combinabilityOf,
   promiseOf,
   toCouponValue,
@@ -110,14 +129,16 @@ import {
   type ClientCardContext,
   type ClientCardGrant,
   type ClientCardLeg,
+  ClientCardPage,
   ClientCardStore,
   type ClientCardSubject,
+  type ClientCardViewer,
   ClientHistoryPage,
   ClientLedgerPage,
   ClientLoyaltyPage,
   ClientRecordsPage,
   type DetailActionVm,
-  type WalletAnchor,
+  WalletAnchor,
   achievementScopeKey,
   achievementScopeOf,
   lastWorkedVisit,
@@ -163,13 +184,17 @@ import {
   type VisitRowVm,
 } from '@creativo/features/shared/visits';
 import {
+  ClockClosing,
   formatCents,
+  formatCentsFigure,
+  formatClock,
   formatInstant,
   formatWallClock,
 } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
 import {
+  type UiForegroundStyle,
   UiMaterialDirective,
   UiForegroundStyleDirective,
   UiInteractiveDirective,
@@ -213,22 +238,24 @@ import {
 
 /** One sold service inside the visit — a seat, in the domain's vocabulary. */
 export interface VisitEditorLeg {
-  readonly seatId: string;
+  /** The seat — a stored one, or one the sheet minted (`draft-…`, a seat id by construction). */
+  readonly seatId: SeatId;
   /** The catalogue's id — what an ADDED leg is priced and timed by. */
-  readonly serviceId: string;
+  readonly serviceId: ServiceId;
   /**
    * The variant chosen, or `null` for a service that declares none. A
    * service WITH variants is only ever offered per variant — the server
    * refuses a bare seat on it, because the price moves with the choice.
    */
-  readonly variantId: string | null;
+  readonly variantId: ServiceVariantId | null;
   /**
-   * WHOSE seat, as the owner of this sheet keys people (`vm.people`). Absent
-   * on a leg the sheet minted itself; the draft seeds it to the first person.
+   * WHOSE seat, as the owner of this sheet keys people (`vm.people`, the
+   * sheet's own draft key). Absent on a leg the sheet minted itself; the
+   * draft seeds it to the first person.
    */
-  readonly clientId?: string;
+  readonly clientId?: DraftPersonKey;
   readonly serviceLabel: string;
-  readonly minutes: number;
+  readonly minutes: DurationMinutes;
   /**
    * The chair's CATALOGUE minutes for this seat, as the dashboard resolved
    * them — the base terms for a seat booked without a variant on a service
@@ -237,9 +264,23 @@ export interface VisitEditorLeg {
    * that seat (owner, 2026-09-10: "if it's subtracted the expected should
    * also show"). `null` when the catalogue no longer knows the service.
    */
-  readonly catalogMinutes?: number | null;
+  readonly catalogMinutes?: DurationMinutes | null;
+  /**
+   * The leg's PRICE — the seat's stored one, or the catalogue's for a leg
+   * the sheet added — in its currency; `null` when unknown («по договорка»).
+   * Every sum the sheet makes is made of these (pass D, D-10.3); the label
+   * beside it is only ever printed.
+   */
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  /** The price as the owner worded it — display only, never parsed back. */
   readonly priceLabel: string | null;
-  readonly barberId: string;
+  /**
+   * The seat's chair. A VM leg is a stored seat (or a rebooked one), so it
+   * always names one; only a leg the DRAFT adds before the sheet knows its
+   * chair has none (`DraftLeg`, was `''`).
+   */
+  readonly barberId: BarberId;
   readonly barberName: string;
   readonly barberTone: number;
   /**
@@ -271,65 +312,16 @@ export interface VisitEditorVerb {
  * on their own (2026-09-03 to 2026-09-18: an immediate write with a toast);
  * since 2026-09-23 they are draft edits like «Начало» — see the component's
  * "regimes of writing".
+ *
+ * The shape is ecs-core's `StaffEditDraft` (pass D, D-10.1): every value
+ * branded and every property present — the revision it was drawn from
+ * (`null` for none), the track start and end, the legs with their price in
+ * cents beside a TYPED price (`typedPriceCents`, `null` when nobody touched
+ * the money), the note and tip as last read (`drawn`, `null` to measure
+ * against what is stored now), and each person by the sheet's draft key.
+ * The owner hands it to `StaffEditPlanSystem.commandsFor` as it is.
  */
-export type VisitEditorCommit = {
-  /**
-   * The stored revision the draft was DRAWN from (`VisitEditorVm.revision`
-   * at seed time), or `null`/absent for none — what the owner claims as the
-   * save's `expectedVersion`, so a colleague's save since is refused as
-   * stale instead of overwritten (round 5).
-   */
-  readonly revision?: number | null;
-  readonly dayKey: string;
-  readonly startMinute: number;
-  readonly endMinute: number;
-  /**
-   * The shop the visit is at, as drafted — the «Салон» row's pick. The
-   * owner sends a `relocate` only when it differs from the row's.
-   */
-  readonly locationId: string | null;
-  readonly legs: readonly {
-    readonly seatId: string;
-    readonly serviceId: string;
-    readonly variantId: string | null;
-    readonly minutes: number;
-    readonly priceLabel: string | null;
-    /**
-     * A price typed on the ladder, in cents — the owner sends it as a
-     * `REPRICE`. Absent or `null` when nobody touched the money.
-     */
-    readonly priceCents?: number | null;
-    readonly barberId: string;
-    /** Whose seat — one of `clients[].id`. */
-    readonly clientId: string;
-  }[];
-  /** The team note as drafted — `null` when cleared. */
-  readonly note: string | null;
-  /** The bill's discounts as drafted — empty for full price. */
-  readonly discounts: readonly VisitEditorDiscount[];
-  /** The vouchers paying the bill, in cover order. */
-  readonly vouchers: readonly VisitEditorVoucher[];
-  /**
-   * What the client left this chair, in cents — drafted like every other
-   * line since 2026-09-15; `null` when none, or cleared. The owner writes
-   * it beside the batch when it differs from what it was drawn from.
-   */
-  readonly tipCents: PriceCents | null;
-  /**
-   * The note and the tip as the draft last READ them from the server
-   * (`VisitSidesSystem`, round 5). The owner writes a side field only when
-   * the draft changed it from this, and refuses the save as stale when the
-   * stored value moved under a changed one. Absent: measured against what
-   * is stored now.
-   */
-  readonly drawn?: VisitSides;
-  /** Who the visit is for — an account id, or a guest's label. */
-  readonly clients: readonly {
-    readonly id: string;
-    readonly label: string;
-    readonly phone: string | null;
-  }[];
-};
+export type VisitEditorCommit = StaffEditDraft;
 
 /**
  * ANOTHER CHAIR'S SHARE of the same booking.
@@ -376,8 +368,8 @@ export interface VisitEditorPeer {
 }
 
 export interface VisitEditorVm {
-  /** Empty while CREATING: the sheet drafts a visit that does not exist yet. */
-  readonly appointmentId: string;
+  /** `null` while CREATING: the sheet drafts a visit that does not exist yet (was `''`). */
+  readonly appointmentId: AppointmentId | null;
   /**
    * The stored revision this visit was read at (`Appointment.revision`).
    * Seeded into the draft, never compared: the draft keeps the revision it
@@ -398,12 +390,16 @@ export interface VisitEditorVm {
    * The OTHER chairs of this booking, empty on an ordinary one-person visit.
    */
   readonly peers: readonly VisitEditorPeer[];
-  readonly dayKey: string;
+  /** The shop day the owner is SHOWING — the appointment's own, never the drafted one. */
+  readonly dayKey: LocalDate;
   /** Already localized — `вт, 26 авг`. */
   readonly dayLabel: string;
-  /** Minutes from midnight. */
-  readonly startMinute: number;
-  readonly endMinute: number;
+  /**
+   * Minutes from the shop day's midnight, on the frame's anchored axis — a
+   * drafted start may be the closing midnight (1440), an end may pass it.
+   */
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
   readonly legs: readonly VisitEditorLeg[];
   readonly clientLabel: string;
   /**
@@ -413,13 +409,13 @@ export interface VisitEditorVm {
    */
   readonly people?: readonly VisitEditorClientOption[];
   /** The client's account, when they have one — what a booking is placed FOR. */
-  readonly clientUserId: string | null;
+  readonly clientUserId: UserId | null;
   /**
    * The booker's client RECORD (D29) — what a photo of the visit is filed
-   * under (`clientCustomerId`). Absent or `null` for a walk-in, and for a
-   * host that does not know it.
+   * under (`clientCustomerId`). `null` for a walk-in, and for a host that
+   * does not know it. Never the account's id (`CustomerId` ≠ `UserId`).
    */
-  readonly clientCustomerId?: string | null;
+  readonly clientCustomerId: CustomerId | null;
   readonly phone: string | null;
   readonly phoneHref: string | null;
   /** `Нов` · `посл. 3 авг` — the shop's one fact about this person. */
@@ -446,7 +442,13 @@ export interface VisitEditorVm {
    * The same total in cents — what a tip preset is a share of. `null` when
    * the seats disagree on currency, or on a draft with none.
    */
-  readonly priceCents: number | null;
+  readonly priceCents: PriceCents | null;
+  /**
+   * The BILL's currency — the seats' — what every sum on the sheet is
+   * worded in (pass D, DEP-21: it was the constant EUR; identical for every
+   * EUR visit).
+   */
+  readonly currency: Currency;
   /**
    * What the client left THIS chair's barber, already formatted, or `null`
    * when nothing has been recorded.
@@ -487,39 +489,41 @@ export interface VisitEditorVm {
    * rides beside `bookingStatus` rather than inside it. The state header
    * reads the waiting time off it; nothing else on the sheet does.
    */
-  readonly arrivedMinute: number | null;
+  readonly arrivedMinute: MinuteOfDay | null;
   /**
    * WHERE the visit is — `Appointment.locationId`, the root's own fact: one
    * visit is one physical place, whatever chairs it spans. `null` on a
    * visit the sheet cannot place, which the row reads as unknown rather
    * than inventing a shop.
    */
-  readonly locationId: string | null;
+  readonly locationId: LocationId | null;
   /**
    * THE VISIT'S SHOP's zone — its location's `timeZone` (Law 7.2), what
    * every instant on the sheet (a photo's moment, the card's start) is read
    * in. `null` only before the host knows it, when nothing is drawn.
    */
   readonly timeZone: TimeZone | null;
-  /** The chair the frame draws — its id, for a leg added from this sheet. */
-  readonly chairId: string;
+  /**
+   * The chair the frame draws — its id, for a leg added from this sheet;
+   * `null` when the owner cannot name one (was `''`).
+   */
+  readonly chairId: BarberId | null;
   /** The chair the frame draws. */
   readonly chairName: string;
   readonly chairTone: number;
-  readonly neighbours: readonly {
-    name: string;
-    startMinute: number;
-    endMinute: number;
-    tone: number;
-  }[];
-  readonly rosterStartMinute: number;
-  readonly rosterEndMinute: number;
-  readonly nowMinute: number | null;
+  readonly neighbours: readonly VisitEditorNeighbour[];
+  readonly rosterStartMinute: TrackMinute;
+  readonly rosterEndMinute: TrackMinute;
   /**
-   * Today, `YYYY-MM-DD` — so the month picker can mark it and the relative
-   * shortcuts can resolve against the SHOP's today rather than the device's.
+   * THE SHOP'S "NOW" — the owner's tick on the shop's wall clock (its
+   * `ShopNow`), or `null` before the shop's zone is known. It replaces the
+   * old `nowMinute` + `todayKey` pair (pass D, D-10.5): today is
+   * `now.localDate`, and the clock reads on this sheet's day only when that
+   * day IS today. The month picker marks it, the relative shortcuts resolve
+   * against it, and the story's wall-clock rules
+   * (`VisitStorySystem.hasStarted`/`hasEnded`) read it — never its instant.
    */
-  readonly todayKey: string;
+  readonly now: ShopNow | null;
   /**
    * The ONE verb the dock leads with, or `null` on a settled visit.
    *
@@ -543,16 +547,19 @@ export interface VisitEditorVm {
  * into the draft or compared against it.
  */
 export interface VisitEditorFrameDay {
-  readonly neighbours: readonly {
-    name: string;
-    startMinute: number;
-    endMinute: number;
-    tone: number;
-  }[];
-  readonly rosterStartMinute: number;
-  readonly rosterEndMinute: number;
+  readonly neighbours: readonly VisitEditorNeighbour[];
+  readonly rosterStartMinute: TrackMinute;
+  readonly rosterEndMinute: TrackMinute;
   /** `null` on any day that is not today — there is no "now" to draw. */
-  readonly nowMinute: number | null;
+  readonly nowMinute: MinuteOfDay | null;
+}
+
+/** Another booking in the frame's chair that day — drawn around the block, on the frame's axis. */
+export interface VisitEditorNeighbour {
+  readonly name: string;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
+  readonly tone: number;
 }
 
 /**
@@ -564,27 +571,31 @@ export interface VisitEditorFrameDay {
  * test, and the owner of the store already holds the catalogue.
  */
 export interface VisitEditorServiceOption {
-  /** The option's own key — the service id, or `service:variant`. */
+  /** The option's own key — the service id, or `service:variant` (an opaque UI key, D-3). */
   readonly id: string;
-  readonly serviceId: string;
-  readonly variantId: string | null;
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
   readonly label: string;
   /** The service's own name, bare — `Класическа подстрижка` — the row's title. */
   readonly serviceLabel?: string;
   /** The variant's own name — `Дълга коса` — for a row that changes it. */
   readonly variantLabel?: string | null;
-  readonly minutes: number;
+  readonly minutes: DurationMinutes;
+  /** The catalogue's price for this chair, in its currency — `null` when it names none. */
+  readonly priceCents: PriceCents | null;
+  readonly currency: Currency;
+  /** The price as the owner worded it — display only, never parsed back. */
   readonly priceLabel: string | null;
 }
 
 /** One of the shop's photos of the visit, as the sheet shows it. */
 export interface VisitEditorPhoto {
-  readonly photoId: string;
+  readonly photoId: AppointmentPhotoId;
   readonly url: string;
   /** When it was taken — read on the shop's calendar for its label. */
-  readonly takenAtUtcMs: number;
+  readonly takenAtUtcMs: UtcEpochMs;
   /** The chair, and its name when the catalogue still knows it. */
-  readonly barberId: string;
+  readonly barberId: BarberId;
   readonly barberName: string | null;
   readonly clientLabel: string;
   /**
@@ -610,15 +621,21 @@ export interface VisitEditorLibraryImage {
 
 /** One person for the pushed add-client page. */
 export interface VisitEditorClientOption {
-  readonly id: string;
+  /**
+   * The person by the sheet's own draft key — an account's uid, a walk-in's
+   * `guest-<label>`, a person minted here (`guest-<base36>-<n>`) or the
+   * placeholder (`primary`). Its spelling is load-bearing: the server tells
+   * guests apart by it, and the person rows print it in their test ids.
+   */
+  readonly id: DraftPersonKey;
   readonly label: string;
   readonly phone: string | null;
   readonly phoneHref: string | null;
   readonly meta: string | null;
   /** The person's own portrait, when they have one; initials otherwise. */
   readonly avatarSrc?: string | null;
-  /** Their mail, when the owner knows it — what a typed mail is matched by. */
-  readonly email?: string | null;
+  /** Their mail — what a typed mail is matched by; `null` when the owner does not know it. */
+  readonly email: Email | null;
 }
 
 /** A person row as the add-client page draws it: ticked, matched, marked. */
@@ -658,65 +675,57 @@ function markedRuns(
  * page redesign.
  */
 export interface VisitEditorClientSection {
+  /**
+   * The section's key — an opaque UI key (D-3): the `@for` track key and
+   * the `staff-visit-clients-<id>` test-id segment. The sections the
+   * dashboard supplies spell theirs from {@link VisitEditorClientSectionId}.
+   */
   readonly id: string;
   readonly title: string;
   readonly clients: readonly VisitEditorClientOption[];
 }
 
 /**
- * What a discount does to the bill, as plain data — the sheet's own draft
- * vocabulary for a `CouponValue`, so a draft can hold it, a `savedShape`
- * can compare it and a VM can carry it across the sheet's edge.
+ * The add-client page's sections the staff dashboard supplies, by key —
+ * values: external contract (the `staff-visit-clients-<id>` test id), so
+ * they keep their spelling.
  */
-export type VisitEditorDiscountValue =
-  | {
-      readonly discountMethod: typeof DiscountMethod.PercentOff;
-      readonly percent: number;
-    }
-  | {
-      readonly discountMethod: typeof DiscountMethod.FixedAmount;
-      readonly amountCents: number;
-    }
-  | { readonly discountMethod: typeof DiscountMethod.FreeService };
+export const VisitEditorClientSectionId = {
+  /** «Скорошни» — the shop's last visitors. */
+  Recent: 'recent',
+} as const;
+export type VisitEditorClientSectionId = Tag<typeof VisitEditorClientSectionId>;
 
 /**
- * A discount ON the visit — saved (on the VM) or drafted (in the draft).
- * `discountSource` (the stored ecs-core tag, carried as it is) says where
- * it came from and what the save sends: a grant and a
- * code travel as references the server re-resolves; a manual figure travels
- * as its value. `label` is the coupon's name; a manual discount has none and
- * the line names it by its value. `exclusive` is the coupon's own rule: such
- * a discount must be alone on the bill.
+ * A discount ON the visit — saved (on the VM) or drafted (in the draft) —
+ * as the domain stores one (pass C's D-11 reshape, landed in pass D): its
+ * provenance (`discountSource` and the evidence its variant names) and its
+ * value (`discountMethod` and the figure), flat at the root, with the
+ * coupon's name (`label` — a manual discount has none and the line names it
+ * by its value), the grant it honours and the code it was opened with as
+ * the sheet carries them (`null` for none), and the coupon's own rule that
+ * it must be alone on the bill (`exclusive`). A grant and a code travel as
+ * references the server re-resolves; a manual figure travels as its value.
  */
-export interface VisitEditorDiscount {
-  readonly discountSource: DiscountSource;
-  readonly label: string;
-  readonly value: VisitEditorDiscountValue;
-  readonly grantId: string | null;
-  readonly code: string | null;
-  readonly exclusive: boolean;
-}
+export type VisitEditorDiscount = StaffEditDraft.Discount;
 
 /**
- * A gift voucher PAYING for the visit. `availableMinorUnits` is what this
- * visit may draw on it: the balance it had, plus whatever this visit had
- * already drawn (a saved redemption re-settles rather than double-draws).
- * What it actually covers is computed live, in cover order, against what
- * the discounts leave.
+ * A gift voucher PAYING for the visit. `availableCents` is what this visit
+ * may draw on it: the balance it had, plus whatever this visit had already
+ * drawn (a saved redemption re-settles rather than double-draws). What it
+ * actually covers is computed live, in cover order, against what the
+ * discounts leave.
  */
-export interface VisitEditorVoucher {
-  readonly voucherId: string;
-  readonly code: string;
-  readonly availableMinorUnits: number;
-}
+export type VisitEditorVoucher = StaffEditDraft.Voucher;
 
 /** A coupon THIS client already holds — one option in the discount menu. */
 export interface VisitEditorGrantOption {
-  readonly grantId: string;
+  readonly grantId: CouponGrantId;
   /** The coupon behind the grant — the same one may be published as a code. */
-  readonly couponId: string;
+  readonly couponId: CouponId;
   readonly label: string;
-  readonly value: VisitEditorDiscountValue;
+  /** What the coupon takes off — its stored value, as the domain keeps it. */
+  readonly value: CouponValue;
   readonly exclusive: boolean;
   /**
    * The moment the coupon was made for (`Coupon.couponOccasion`, revision
@@ -736,15 +745,15 @@ export interface VisitEditorGrantOption {
    * 2: the editor handed `null` for every grant, so no ticket ever said
    * when it ends).
    */
-  readonly expiresOn?: string | null;
+  readonly expiresOn?: LocalDate | null;
 }
 
 /** One of the shop's live promo codes — offered as a row, never typed. */
 export interface VisitEditorPromoOption {
-  readonly code: string;
-  readonly couponId: string;
+  readonly code: VoucherCode;
+  readonly couponId: CouponId;
   readonly label: string;
-  readonly value: VisitEditorDiscountValue;
+  readonly value: CouponValue;
   readonly exclusive: boolean;
 }
 
@@ -755,10 +764,11 @@ export interface VisitEditorPromoOption {
  * says why it will not take), or nothing at all.
  */
 export interface VisitEditorCodeResult {
+  /** The code as it was asked (`promoCodeEntered`) — typed text, matched normalised. */
   readonly code: string;
   readonly promo: {
     readonly label: string;
-    readonly value: VisitEditorDiscountValue;
+    readonly value: CouponValue;
     readonly exclusive: boolean;
   } | null;
   readonly voucher: VisitEditorVoucher | null;
@@ -790,30 +800,37 @@ function percentOffLabel(percent: number): string {
  * draft is the thing being edited and the VM is the thing that arrived, and
  * collapsing the two is how an edit starts leaking back into its own source.
  */
-type DraftLeg = VisitEditorLeg & {
+type DraftLeg = Omit<VisitEditorLeg, 'barberId'> & {
   /**
-   * WHOSE seat this is — a client id from the draft's client list. Every
+   * The seat's chair — `null` for a leg added while the draft's chair is
+   * unknown (was `''`); such a draft is not saveable until it has one.
+   */
+  readonly barberId: BarberId | null;
+  /**
+   * WHOSE seat this is — a client key from the draft's client list. Every
    * service on a visit belongs to a person; a party is people with services,
    * never services with a crowd beside them. Seeded to the first client.
    */
-  readonly clientId: string;
+  readonly clientId: DraftPersonKey;
   /**
    * A price TYPED on the ladder's pill, in cents — what the save sends as
-   * the seat's new terms. Absent until someone who may reprice does; the
-   * label beside it is the same number, formatted.
+   * the seat's new terms (`StaffEditDraft.Leg.typedPriceCents`). `null`
+   * until someone who may reprice does; `priceCents` beside it stays the
+   * seat's stored price.
    */
-  readonly priceCents?: number | null;
+  readonly typedPriceCents: PriceCents | null;
 };
 
 interface DraftClient {
-  readonly id: string;
+  readonly id: DraftPersonKey;
   readonly label: string;
   readonly phone: string | null;
   readonly phoneHref: string | null;
   readonly meta: string | null;
-  /** The face and the mail the pick came with, when it came with them (2026-09-22). */
+  /** The face the pick came with, when it came with one (2026-09-22). */
   readonly avatarSrc?: string | null;
-  readonly email?: string | null;
+  /** The mail the pick came with; `null` when it came with none. */
+  readonly email: Email | null;
 }
 
 interface VisitDraft {
@@ -823,23 +840,23 @@ interface VisitDraft {
    * saved shape: it is what the save claims, never something it changes.
    */
   readonly revision: number | null;
-  readonly dayKey: string;
+  readonly dayKey: LocalDate;
   readonly dayLabel: string;
-  readonly startMinute: number;
+  readonly startMinute: TrackMinute;
   /**
    * `null` means "the duration is the services' summed span" — the invariant
    * that makes a leg's duration edit move the end for free. A menu pick or a
    * span that never matched the catalogue pins a number here instead.
    */
-  readonly durationOverride: number | null;
+  readonly durationOverride: DurationMinutes | null;
   /**
    * THE CHAIR the visit is drafted on — where a new leg lands, what the
    * frame draws. Seeded from the row's; moved by the chair row's menu even
    * while there is no leg yet to re-chair (a new visit, owner 2026-09-09).
    */
-  readonly chairId: string;
+  readonly chairId: BarberId | null;
   /** THE SHOP the visit is at, as drafted — the «Салон» row's pick. */
-  readonly locationId: string | null;
+  readonly locationId: LocationId | null;
   readonly legs: readonly DraftLeg[];
   readonly clients: readonly DraftClient[];
   /** The STAFF note. The client's is on the VM and is never merged with it. */
@@ -892,9 +909,8 @@ const EditorPage = {
 type EditorPage = (typeof EditorPage)[keyof typeof EditorPage];
 
 /**
- * Each page as the DOM and the client card's store spell it — the
- * section's `data-page` (the CSS and the specs select on it) and the word
- * `ClientCardStore.barTitle` names a card page by.
+ * Each page as the DOM spells it — the section's `data-page` (the CSS and
+ * the specs select on it).
  */
 const editorPageWords = {
   [EditorPage.Client]: 'client',
@@ -915,15 +931,49 @@ const editorPageWords = {
   [EditorPage.ClientHistory]: 'clientHistory',
 } as const satisfies Record<EditorPage, string>;
 
+/**
+ * The card's own pages, as the client card's store titles them
+ * (`ClientCardStore.barTitle`) — the editor's page kinds the card names.
+ */
+const editorCardPages = {
+  [EditorPage.Client]: ClientCardPage.Client,
+  [EditorPage.Photo]: ClientCardPage.Photo,
+  [EditorPage.ClientLoyalty]: ClientCardPage.ClientLoyalty,
+  [EditorPage.ClientLedger]: ClientCardPage.ClientLedger,
+  [EditorPage.ClientAchievements]: ClientCardPage.ClientAchievements,
+  [EditorPage.ClientRecords]: ClientCardPage.ClientRecords,
+  [EditorPage.AchievementCategory]: ClientCardPage.AchievementCategory,
+  [EditorPage.AchievementDetail]: ClientCardPage.AchievementDetail,
+  [EditorPage.ClientHistory]: ClientCardPage.ClientHistory,
+} as const satisfies Partial<Record<EditorPage, ClientCardPage>>;
+
+/**
+ * Each wallet section's tile on the glance, as its test id names it
+ * (`client-loyalty-<word>`, the push's origin): the catalogue's section is
+ * the points tile's.
+ */
+const WALLET_TILE_WORDS = {
+  [WalletAnchor.Catalog]: 'points',
+  [WalletAnchor.Stamps]: 'stamps',
+  [WalletAnchor.Rhythm]: 'rhythm',
+  [WalletAnchor.Wallet]: 'wallet',
+  [WalletAnchor.Status]: 'status',
+} as const satisfies Record<WalletAnchor, string>;
+
 /** How deep the client stack goes; a push past it replaces the top page (§2.2). */
 const MAX_PAGE_DEPTH = 4;
 
 /**
- * Where a pushed page's focus arrives (§2.3): its `container`; or, for
- * «Лоялност» opened from a tile, the `section` heading the page itself
+ * Where a pushed page's focus arrives (§2.3): its container; or, for
+ * «Лоялност» opened from a tile, the section heading the page itself
  * focuses once it has painted — the container only while it has not.
+ * Internal values, printed nowhere.
  */
-type PageArrival = 'container' | 'section';
+const PageArrival = {
+  Container: 'CONTAINER',
+  Section: 'SECTION',
+} as const;
+type PageArrival = Tag<typeof PageArrival>;
 
 /**
  * Whether a landing may focus this element: a control, a link, or a box
@@ -938,9 +988,104 @@ function canTakeFocus(element: HTMLElement): boolean {
   );
 }
 
-/** What the discount page adds: a code, the client's coupon, or — for money roles — a figure. */
-/** What the «Вид» pop-up offers: the shop's codes, a voucher or coupon, a percent, a sum. */
-type DiscountKind = 'promo' | 'coupon' | 'percent' | 'amount';
+/**
+ * What the «Вид» pop-up offers: the shop's codes, a voucher or coupon, and —
+ * for money roles — a percent or a sum. The pop-up's option ids; internal
+ * values, printed nowhere (the options' test ids spell their own words).
+ */
+const DiscountKind = {
+  Promo: 'PROMO',
+  Coupon: 'COUPON',
+  Percent: 'PERCENT',
+  Amount: 'AMOUNT',
+} as const;
+type DiscountKind = Tag<typeof DiscountKind>;
+
+/**
+ * Where the code field stands: at rest, asking the owner, or one of its
+ * refusals — beside a voucher's own (`VoucherRefusal`, whose values no
+ * member here shares). Internal values, printed nowhere.
+ */
+const DiscountCodeState = {
+  Idle: 'IDLE',
+  Checking: 'CHECKING',
+  Unknown: 'UNKNOWN',
+  Already: 'ALREADY',
+  NothingLeft: 'NOTHING_LEFT',
+} as const;
+type DiscountCodeState = Tag<typeof DiscountCodeState> | VoucherRefusal;
+
+/**
+ * How the end is entered — as a duration, or as a clock time (owner,
+ * 2026-09-09). The «Времетраене / Край» pop-up's option ids; internal
+ * values, printed nowhere.
+ */
+const TimingMode = {
+  Duration: 'DURATION',
+  End: 'END',
+} as const;
+type TimingMode = Tag<typeof TimingMode>;
+
+/**
+ * The «Салон» fold's view — values: external contract (the segmented
+ * control's `data-segment-id` and the fold's `data-view`), so they keep
+ * their spelling.
+ */
+const ShopView = {
+  Map: 'map',
+  List: 'list',
+} as const;
+type ShopView = Tag<typeof ShopView>;
+
+/**
+ * «Добави снимка»'s doors — the camera, the phone's own pictures, the
+ * shop's. The pop-up's option ids; internal values, printed nowhere.
+ */
+const PhotoDoor = {
+  Camera: 'CAMERA',
+  Upload: 'UPLOAD',
+  System: 'SYSTEM',
+} as const;
+type PhotoDoor = Tag<typeof PhotoDoor>;
+
+/**
+ * The tip section's two tiles that are not amounts — values: external
+ * contract (the DS tiles' `data-tile-id`), so they keep their spelling.
+ * An amount's tile is {@link TIP_AMOUNT_PREFIX} and its cents.
+ */
+const TipTile = {
+  None: 'none',
+  Other: 'other',
+} as const;
+type TipTile = Tag<typeof TipTile>;
+
+/** An amount tile's id: `amt:<cents>` (the same `data-tile-id` contract). */
+const TIP_AMOUNT_PREFIX = 'amt:';
+
+/**
+ * Which line the head of a settled chair reads — values: external
+ * contract (the `staff.visit.resolution.<word>` i18n key segment).
+ */
+const ResolutionWord = {
+  CancelledByStaff: 'cancelledByStaff',
+  CancelledByClient: 'cancelledByClient',
+  NoShow: 'noShow',
+} as const;
+type ResolutionWord = Tag<typeof ResolutionWord>;
+
+/**
+ * The exits the sheet names itself — values: external contract (the
+ * `staff-visit-<id>` test id). Any other exit is a lifecycle verb, named by
+ * its word (`ROW_VERB_WORD`).
+ */
+const VisitExitId = {
+  Reinstate: 'reinstate',
+  NoShow: 'no-show',
+  Rebook: 'rebook',
+  Cancel: 'cancel',
+  CancelBlock: 'cancel-block',
+} as const;
+type VisitExitId = Tag<typeof VisitExitId>;
 /** The sum's ruler steps by half a euro, a euro a tick, five the taller. */
 const AMOUNT_SLIDER_STEP_MINOR = 50;
 const AMOUNT_SLIDER_TICK_MINOR = 100;
@@ -963,12 +1108,13 @@ type OfferSource = (typeof OfferSource)[keyof typeof OfferSource];
 interface OfferChoice {
   /** Where the offer comes from — a shop code or the client's own coupon. */
   readonly offerSource: OfferSource;
-  /** The code, or the grant id. */
-  readonly id: string;
-  /** The bill line's key, for the way off. */
+  /** The bill line's key, for the way off — and the card's `@for` track key. */
   readonly key: string;
   readonly testId: string;
-  readonly code: string | null;
+  /** The shop code a promo card offers; `null` on the client's own coupon. */
+  readonly code: VoucherCode | null;
+  /** The grant a coupon card honours; `null` on a shop code. */
+  readonly grantId: CouponGrantId | null;
   readonly label: string;
   readonly exclusive: boolean;
   /**
@@ -1012,7 +1158,7 @@ type LegMenuFace = (typeof LegMenuFace)[keyof typeof LegMenuFace];
 
 /** The one open leg menu: whose seat, and which chip. */
 type LegMenu = {
-  readonly seatId: string;
+  readonly seatId: SeatId;
   readonly legMenuFace: LegMenuFace;
 };
 
@@ -1059,7 +1205,8 @@ type FrameVerdictSlice =
  * are the sheet's own (the next visit, the block instead).
  */
 interface VisitExit {
-  readonly id: string;
+  /** The exit's own name, or the lifecycle verb's word — the `staff-visit-<id>` test id. */
+  readonly id: VisitExitId | (typeof ROW_VERB_WORD)[RowVerb];
   readonly label: string;
   readonly icon: UiIconName;
   readonly destructive: boolean;
@@ -1067,7 +1214,7 @@ interface VisitExit {
 }
 /** A chair the picker offers — the shop's roster, not this visit's. */
 export interface VisitEditorBarberOption {
-  readonly id: string;
+  readonly id: BarberId;
   readonly label: string;
   readonly tone: number;
   /**
@@ -1086,7 +1233,7 @@ export interface VisitEditorBarberOption {
  * read, the address as the row's own line, the pin on the map.
  */
 export interface VisitEditorShopOption {
-  readonly id: string;
+  readonly id: LocationId;
   readonly label: string;
   readonly address: string;
   readonly lat: number;
@@ -1098,11 +1245,26 @@ export interface VisitEditorShopOption {
  *
  * Derived, never stored: a visit has no barber of its own, it has legs, and
  * each leg is worked by someone. Two legs worked by one barber are one
- * participant with two services named on the line under him.
+ * participant with two services named on the line under him. `null` is a
+ * chair the sheet cannot name (was `''`).
  */
 interface EditorBarberRow {
-  readonly id: string;
+  readonly id: BarberId | null;
   readonly label: string;
+  readonly tone: number;
+  readonly avatarSrc: string | null;
+}
+
+/**
+ * A chair as the chair row's menu offers it. `key` is the DS option's id —
+ * the chair's id, or, on the roster-less fallback's chair, its name, which
+ * the menu has always keyed it by; `id` is what a pick writes into the
+ * draft.
+ */
+interface EditorChairOption {
+  readonly key: string;
+  readonly id: BarberId | null;
+  readonly name: string;
   readonly tone: number;
   readonly avatarSrc: string | null;
 }
@@ -1118,8 +1280,8 @@ interface EditorBarberRow {
  * wall-clock minute without being anchored to the day.
  */
 function shiftOf(
-  day: VisitEditorFrameDay,
-): { startMinute: number; endMinute: number } | null {
+  day: Pick<VisitEditorFrameDay, 'rosterStartMinute' | 'rosterEndMinute'>,
+): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
   return day.rosterEndMinute > day.rosterStartMinute
     ? { startMinute: day.rosterStartMinute, endMinute: day.rosterEndMinute }
     : null;
@@ -1132,12 +1294,12 @@ function shiftOf(
  * no roster a visit can be OUTSIDE of.
  */
 function readableShiftOf(
-  day: VisitEditorFrameDay,
-): { startMinute: number; endMinute: number } | null {
+  day: Pick<VisitEditorFrameDay, 'rosterStartMinute' | 'rosterEndMinute'>,
+): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
   const shift = shiftOf(day);
   return shift !== null &&
-    MinuteOfDay.of(shift.startMinute).ok &&
-    EndMinute.of(shift.endMinute).ok
+    TrackMinute.toStart(shift.startMinute).ok &&
+    TrackMinute.toEnd(shift.endMinute).ok
     ? shift
     : null;
 }
@@ -1151,86 +1313,60 @@ function readableShiftOf(
  */
 const MIN_TYPED_MINUTES = 10;
 const DAY_MINUTES = 1440;
+/** The frame's axis from the shop day's midnight to the closing one — literals on the track. */
+const TRACK_DAY_START: TrackMinute = TrackMinute.ofProven(0);
+const TRACK_DAY_END: TrackMinute = TrackMinute.ofProven(DAY_MINUTES);
 
-function clockLabel(minute: number): string {
-  const wrapped = ((minute % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
-  const hour = Math.floor(wrapped / 60);
-  return `${String(hour).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
-}
-
-function parseClock(value: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return null;
-  return hours * 60 + minutes;
+/** The 24-hour face every time on the sheet is written in — a late minute wraps onto the next day's clock. */
+function clockLabel(minute: TrackMinute): string {
+  return formatClock(minute, ClockClosing.Wrap);
 }
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
-function spanOf(draft: VisitDraft): number {
+function spanOf(draft: VisitDraft): DurationMinutes {
   return VisitDraftSystem.span(
-    draft.durationOverride === null ? null : durationOf(draft.durationOverride),
+    draft.durationOverride,
     legMinutesOf(draft.legs),
   );
 }
 
-/*
- * Flatten-pass converters (Law 7): `VisitDraftSystem` takes branded minute
- * figures — a leg's `DurationMinutes`, the frame's `MinuteOfDay` start and
- * `EndMinute` end on its shop day, the bill's `PriceCents`. The editor's
- * figures are those by construction (a service lasts a positive whole
- * number of minutes, a frame sits inside its one shop day, F-6), so one
- * that is not is a broken invariant, never an input.
- */
-
-/** A whole positive number of minutes as the brand. */
-function durationOf(minutes: number): DurationMinutes {
-  const duration = DurationMinutes.of(minutes);
-  return duration.ok
-    ? duration.value
-    : defect(`not a positive whole duration: ${minutes}`);
-}
-
 /** The legs as the span reads them — their minutes. */
 function legMinutesOf(
-  legs: readonly { readonly minutes: number }[],
+  legs: readonly { readonly minutes: DurationMinutes }[],
 ): readonly DraftLegMinutes[] {
-  return legs.map((leg) => ({ durationMinutes: durationOf(leg.minutes) }));
+  return legs.map((leg) => ({ durationMinutes: leg.minutes }));
 }
 
-/** A frame's start on its shop day's clock. */
-function startMinuteOf(minute: number): MinuteOfDay {
-  const start = MinuteOfDay.of(minute);
+/**
+ * A seeded frame's start and end read back onto its shop day's clock, for
+ * the seed's override rule (`VisitDraftSystem.durationOverrideOf`). A start
+ * at the closing midnight, or an end off the day, was refused here before
+ * the track minutes were branded (the seed's own converters), and still is:
+ * a broken invariant, never input.
+ */
+function seededStartOf(minute: TrackMinute): MinuteOfDay {
+  const start = TrackMinute.toStart(minute);
   return start.ok
     ? start.value
     : defect(`a start off the shop's clock: ${minute}`);
 }
 
-/** A frame's exclusive end on its shop day's clock. */
-function endMinuteOf(minute: number): EndMinute {
-  const end = EndMinute.of(minute);
+function seededEndOf(minute: TrackMinute): EndMinute {
+  const end = TrackMinute.toEnd(minute);
   return end.ok ? end.value : defect(`an end off the shop's clock: ${minute}`);
-}
-
-/** The bill in minor units as the system's cents (`null`: no bill to round). */
-function billCentsOf(minorUnits: number | null): PriceCents | null {
-  if (minorUnits === null) return null;
-  const cents = PriceCents.of(minorUnits);
-  return cents.ok ? cents.value : null;
 }
 
 /**
  * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS. A service picked before
- * anyone was named sits on the placeholder
- * (`VisitDraftSystem.PLACEHOLDER_CLIENT_ID`); when the first person joins an
- * empty draft those seats become theirs — the mirror of the heir rule in
- * `toggleClient` — so the catalogue is not asked for them again and the
- * save does not file their cut under a walk-in (found in review).
+ * anyone was named sits on the placeholder (`DraftPersonKey.PLACEHOLDER`);
+ * when the first person joins an empty draft those seats become theirs —
+ * the mirror of the heir rule in `toggleClient` — so the catalogue is not
+ * asked for them again and the save does not file their cut under a
+ * walk-in (found in review).
  */
 function adoptPlaceholderLegs(
   draft: VisitDraft,
-  id: string,
+  id: DraftPersonKey,
 ): readonly DraftLeg[] {
   return VisitDraftSystem.adoptPlaceholderLegs(
     draft.clients.length,
@@ -1248,7 +1384,10 @@ function adoptPlaceholderLegs(
  * replaces). The last person is the visit's own: their services stay, as
  * the walk-in's — "nobody seated is the walk-in".
  */
-function withoutClient(draft: VisitDraft, clientId: string): VisitDraft {
+function withoutClient(
+  draft: VisitDraft,
+  clientId: DraftPersonKey,
+): VisitDraft {
   const clients = draft.clients.filter((client) => client.id !== clientId);
   if (clients.length === draft.clients.length) return draft;
   if (clients.length === 0) {
@@ -1257,7 +1396,7 @@ function withoutClient(draft: VisitDraft, clientId: string): VisitDraft {
       clients,
       legs: draft.legs.map((leg) =>
         leg.clientId === clientId
-          ? { ...leg, clientId: VisitDraftSystem.PLACEHOLDER_CLIENT_ID }
+          ? { ...leg, clientId: DraftPersonKey.PLACEHOLDER }
           : leg,
       ),
     };
@@ -1273,26 +1412,51 @@ function withoutClient(draft: VisitDraft, clientId: string): VisitDraft {
   };
 }
 
-function seedDraft(vm: VisitEditorVm): VisitDraft {
+/** The people a VM seeds — its party, else its one named client, else nobody. */
+function seedClientsOf(vm: VisitEditorVm): readonly DraftClient[] {
   // A NEW visit starts with nobody in the chair; the add row invites one.
-  const clients: VisitDraft['clients'] = vm.people?.length
-    ? vm.people
-    : vm.clientLabel
-      ? [
-          {
-            id: vm.clientUserId ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID,
-            label: vm.clientLabel,
-            phone: vm.phone,
-            phoneHref: vm.phoneHref,
-            meta: vm.clientMeta,
-          },
-        ]
-      : [];
-  const firstClient = clients[0]?.id ?? VisitDraftSystem.PLACEHOLDER_CLIENT_ID;
-  const legs = vm.legs.map<DraftLeg>((leg) => ({
+  if (vm.people?.length) return vm.people;
+  if (!vm.clientLabel) return [];
+  return [
+    {
+      // The account's key is its uid, as is; nobody's account sits on the placeholder.
+      id:
+        vm.clientUserId === null
+          ? DraftPersonKey.PLACEHOLDER
+          : DraftPersonKey.account(vm.clientUserId),
+      label: vm.clientLabel,
+      phone: vm.phone,
+      phoneHref: vm.phoneHref,
+      meta: vm.clientMeta,
+      // The VM's one client comes with no mail (what an absent one always read as).
+      email: null,
+    },
+  ];
+}
+
+/**
+ * The VM's seats as the draft holds them: each for its person (else the
+ * first), nobody's price typed. A VM leg is a stored seat or a rebooked
+ * one, so its chair is always known — the snapshot reads these as they are.
+ */
+function seedLegsOf(
+  vm: VisitEditorVm,
+  clients: readonly DraftClient[],
+): readonly (VisitEditorLeg & {
+  readonly clientId: DraftPersonKey;
+  readonly typedPriceCents: null;
+})[] {
+  const firstClient = clients[0]?.id ?? DraftPersonKey.PLACEHOLDER;
+  return vm.legs.map((leg) => ({
     ...leg,
     clientId: leg.clientId ?? firstClient,
+    typedPriceCents: null,
   }));
+}
+
+function seedDraft(vm: VisitEditorVm): VisitDraft {
+  const clients = seedClientsOf(vm);
+  const legs = seedLegsOf(vm, clients);
   return {
     revision: vm.revision ?? null,
     dayKey: vm.dayKey,
@@ -1300,8 +1464,8 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     startMinute: vm.startMinute,
     // Only pin a number when the booked span never was the catalogue's.
     durationOverride: VisitDraftSystem.durationOverrideOf(
-      startMinuteOf(vm.startMinute),
-      endMinuteOf(vm.endMinute),
+      seededStartOf(vm.startMinute),
+      seededEndOf(vm.endMinute),
       legMinutesOf(legs),
     ),
     chairId: vm.chairId,
@@ -1316,12 +1480,37 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
   };
 }
 
+/** One leg as «Запази» publishes it — the chair known, the typed price as given. */
+function commitLegOf(
+  leg: DraftLeg,
+  barberId: BarberId,
+  typedPriceCents: PriceCents | null,
+): StaffEditDraft.Leg {
+  return {
+    seatId: leg.seatId,
+    serviceId: leg.serviceId,
+    variantId: leg.variantId,
+    minutes: leg.minutes,
+    priceCents: leg.priceCents,
+    currency: leg.currency,
+    typedPriceCents,
+    barberId,
+    clientId: leg.clientId,
+  };
+}
+
 /**
  * The draft as «Запази» publishes it — ONE function for the live draft and
  * for a snapshot (`snapshotCommitOf`), so a save and its undo speak the
- * same shape and the shell's arithmetic (its `commandsFor`) serves both.
+ * same shape and the owner's plan (`StaffEditPlanSystem.commandsFor`)
+ * serves both. Every property is present: a draft that claims no revision
+ * says `null`, and so does a leg nobody repriced (`typedPriceCents`).
  */
-function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
+function commitOf(
+  draft: VisitDraft,
+  endMinute: TrackMinute,
+  legs: readonly StaffEditDraft.Leg[],
+): VisitEditorCommit {
   return {
     revision: draft.revision,
     dayKey: draft.dayKey,
@@ -1338,39 +1527,41 @@ function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
       label: client.label,
       phone: client.phone,
     })),
-    legs: draft.legs.map((leg) => ({
-      seatId: leg.seatId,
-      serviceId: leg.serviceId,
-      variantId: leg.variantId,
-      minutes: leg.minutes,
-      priceLabel: leg.priceLabel,
-      // Only a TYPED price travels; an untouched leg's payload is what it
-      // always was.
-      ...(leg.priceCents != null ? { priceCents: leg.priceCents } : {}),
-      barberId: leg.barberId,
-      clientId: leg.clientId,
-    })),
+    legs,
   };
+}
+
+/**
+ * The live draft's legs as published — or `null` while one has no chair
+ * yet (a leg drafted before the sheet knew one, `barberId` `null`: the
+ * save has no barber to seat it with, so it waits, `saveable`). Only a
+ * TYPED price travels; an untouched leg's typed price is `null`.
+ */
+function draftCommitLegsOf(
+  draft: VisitDraft,
+): readonly StaffEditDraft.Leg[] | null {
+  const legs: StaffEditDraft.Leg[] = [];
+  for (const leg of draft.legs) {
+    if (leg.barberId === null) return null;
+    legs.push(commitLegOf(leg, leg.barberId, leg.typedPriceCents));
+  }
+  return legs;
 }
 
 /**
  * THE SNAPSHOT a save's undo aims at (owner, 2026-09-23: "the save receipt
  * with whole-save undo"): the sheet's seed, published as if «Запази» had
- * been pressed on it untouched. Every leg carries its STORED price as a
- * figure, so a seat the save repriced can be priced back — the live draft
- * only carries a price somebody typed.
+ * been pressed on it untouched. Every leg carries its STORED price as its
+ * typed figure, so a seat the save repriced can be priced back — the live
+ * draft only carries a price somebody typed. The price is the seat's cents
+ * (pass D, D-10.3), never its label read back.
  */
 export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
   const seed = seedDraft(vm);
-  const priced: VisitDraft = {
-    ...seed,
-    legs: seed.legs.map((leg) => ({
-      ...leg,
-      priceCents:
-        leg.priceLabel === null ? null : parsePriceInput(leg.priceLabel),
-    })),
-  };
-  return commitOf(priced, seed.startMinute + spanOf(seed));
+  const legs = seedLegsOf(vm, seed.clients).map((leg) =>
+    commitLegOf(leg, leg.barberId, leg.priceCents),
+  );
+  return commitOf(seed, TrackMinute.plus(seed.startMinute, spanOf(seed)), legs);
 }
 
 /**
@@ -1568,7 +1759,7 @@ export class StaffVisitEditor {
    * save go with it, because «Отмени» means "as it was before I saved".
    */
   readonly uiReseedMark = input<{
-    readonly appointmentId: string;
+    readonly appointmentId: AppointmentId | null;
     readonly n: number;
   } | null>(null);
   /** The last reseed mark this sheet has answered. */
@@ -1648,7 +1839,7 @@ export class StaffVisitEditor {
    */
   readonly photoPicked = output<File>();
   /** «Изтрий снимката» on a photo's page — by id; the page pops at once. */
-  readonly photoRemoved = output<string>();
+  readonly photoRemoved = output<AppointmentPhotoId>();
   /** One of the shop's own pictures, assigned from the gallery page. */
   readonly libraryPicked = output<VisitEditorLibraryImage>();
   /** The shop's own pictures on offer — the catalogue's covers and work, from the dashboard. */
@@ -1664,16 +1855,13 @@ export class StaffVisitEditor {
    * (client-card-redesign §3.1.3). A companion's card shows no ticket.
    * `null` for a visit nobody booked for themselves, and while creating.
    */
-  readonly uiOwnerUserId = input<string | null>(null);
+  readonly uiOwnerUserId = input<UserId | null>(null);
   /**
-   * WHO IS LOOKING — the signed-in principal's uid and roles: the card's
-   * ‹role› gates and its admin-only money read. `null` gates everything
-   * role-bound shut.
+   * WHO IS LOOKING — the signed-in principal's account and roles (the
+   * client card's viewer, pass D D-10.6): the card's ‹role› gates and its
+   * admin-only money read. `null` gates everything role-bound shut.
    */
-  readonly uiViewer = input<{
-    readonly uid: string;
-    readonly roles: readonly string[];
-  } | null>(null);
+  readonly uiViewer = input<ClientCardViewer | null>(null);
   /**
    * The catalogue as the client card names things — services, barbers,
    * shops, covers — resolved by the dashboard's catalogue. `null` falls
@@ -1697,14 +1885,14 @@ export class StaffVisitEditor {
    * The parent keeps the day live and hands back its lane; this component
    * stays the thing that draws, not the thing that fetches.
    */
-  readonly dayChanged = output<string>();
+  readonly dayChanged = output<LocalDate>();
   /**
    * The chair the FRAME is for — the draft's, once a barber has been
    * switched (owner, 2026-09-09: "switching the barber doesn't switch to the
    * selected barber's availability"). The owner builds the frame's day —
    * neighbours, roster, shading — for this chair, as it does for the day.
    */
-  readonly chairChanged = output<string>();
+  readonly chairChanged = output<BarberId>();
   /** What the barber typed into the client search — the owner searches. */
   readonly clientQuery = output<string>();
   /** `Запиши пак` on a settled visit: a new visit, prefilled from this one. */
@@ -1775,7 +1963,7 @@ export class StaffVisitEditor {
       if (saved === null) return;
       if (
         seed.startMinute !== saved.startMinute ||
-        seed.startMinute + spanOf(seed) !== saved.endMinute
+        TrackMinute.plus(seed.startMinute, spanOf(seed)) !== saved.endMinute
       ) {
         return;
       }
@@ -1807,17 +1995,28 @@ export class StaffVisitEditor {
 
     effect(() => {
       const chair = this.frameChairId();
+      // A chair the sheet cannot name has no day to draw: nothing to report.
+      if (chair === null) return;
       untracked(() => this.chairChanged.emit(chair));
     });
   }
 
-  /** The chair the frame draws: the draft's first leg's, else the draft's. */
-  protected readonly frameChairId = computed(
-    () => this.draft().legs[0]?.barberId ?? this.draft().chairId,
-  );
+  /**
+   * The chair the frame draws: the draft's first leg's (even one drafted
+   * before its chair was known), else the draft's.
+   */
+  protected readonly frameChairId = computed<BarberId | null>(() => {
+    const draft = this.draft();
+    const first = draft.legs[0];
+    return first === undefined ? draft.chairId : first.barberId;
+  });
 
   /** A chair by id — from the roster, falling back to the row's own. */
-  protected chairOf(id: string): { id: string; name: string; tone: number } {
+  protected chairOf(id: BarberId | null): {
+    id: BarberId | null;
+    name: string;
+    tone: number;
+  } {
     const vm = this.vm();
     const known = this.barberOptions().find((barber) => barber.id === id);
     return known
@@ -1847,7 +2046,7 @@ export class StaffVisitEditor {
    * though the id was identical.
    *
    * That was not theoretical even before the frame started following the
-   * pill. `nowMinute` is on the VM and ticks every sixty seconds, so a draft
+   * pill. "Now" is on the VM (`now`) and ticks every sixty seconds, so a draft
    * left open across a minute boundary was silently reset — the exact
    * failure the old docblock promised could not happen. Re-dating the sheet
    * made it obvious rather than causing it: the day moved, the probe moved
@@ -1865,7 +2064,7 @@ export class StaffVisitEditor {
     // The ROW's name, not the appointment's: an existing visit's row id is
     // stable, and a NEW visit (empty appointment id) gets a fresh row id per
     // create, so opening a second create does not inherit the first draft.
-    source: () => `${this.vm().appointmentId}|${this.vm().rowId}`,
+    source: () => `${this.vm().appointmentId ?? ''}|${this.vm().rowId}`,
     /*
      * ⚠ `previous` IS THE FIX. Without it this computation ran on every VM
      * recompute — `linkedSignal` re-derives when its source's DEPENDENCIES
@@ -1933,7 +2132,7 @@ export class StaffVisitEditor {
         barberId: leg.barberId,
         // A typed price travels with the save (owner, 2026-09-10), so it
         // is part of the shape; the seed never carries one.
-        price: leg.priceCents ?? null,
+        price: leg.typedPriceCents,
       })),
       // The team note saves now (its own staff-only document), so a typed
       // note is a change worth a `Запази`.
@@ -1944,7 +2143,9 @@ export class StaffVisitEditor {
         discountSource: discount.discountSource,
         grantId: discount.grantId,
         code: discount.code,
-        value: discount.value,
+        // What it takes off: the method and its figure (the percent, the
+        // cents) — the promise, whatever currency word rides beside it.
+        value: [discount.discountMethod, CouponValue.magnitude(discount)],
       })),
       vouchers: draft.vouchers.map((voucher) => voucher.code),
       // The tip drafts with the rest (2026-09-15): a changed tip is a
@@ -1972,7 +2173,7 @@ export class StaffVisitEditor {
   protected readonly legMenu = signal<LegMenu | null>(null);
   protected readonly LegMenuFace = LegMenuFace;
 
-  protected isLegMenu(seatId: string, legMenuFace: LegMenuFace): boolean {
+  protected isLegMenu(seatId: SeatId, legMenuFace: LegMenuFace): boolean {
     const open = this.legMenu();
     return (
       open !== null &&
@@ -1982,7 +2183,7 @@ export class StaffVisitEditor {
   }
 
   protected setLegMenu(
-    seatId: string,
+    seatId: SeatId,
     legMenuFace: LegMenuFace,
     open: boolean,
   ): void {
@@ -2032,7 +2233,7 @@ export class StaffVisitEditor {
    * the one place a mutator names its seats, so the day a row folds again
    * is a one-line change here.
    */
-  private seatsOf(seatId: string): ReadonlySet<string> {
+  private seatsOf(seatId: SeatId): ReadonlySet<SeatId> {
     return new Set([seatId]);
   }
 
@@ -2046,10 +2247,7 @@ export class StaffVisitEditor {
       this.draft().legs.map((leg) => {
         const catalog =
           this.catalogTermsOf(leg)?.minutes ?? leg.catalogMinutes ?? null;
-        return {
-          catalogMinutes: catalog === null ? null : durationOf(catalog),
-          bookedMinutes: durationOf(leg.minutes),
-        };
+        return { catalogMinutes: catalog, bookedMinutes: leg.minutes };
       }),
     ),
   );
@@ -2061,10 +2259,7 @@ export class StaffVisitEditor {
    * (`VisitDraftSystem.minutesDelta`).
    */
   protected readonly catalogDelta = computed<MinuteDelta | null>(() =>
-    VisitDraftSystem.minutesDelta(
-      durationOf(this.durationMinutes()),
-      this.catalogSum(),
-    ),
+    VisitDraftSystem.minutesDelta(this.durationMinutes(), this.catalogSum()),
   );
 
   /** The VISIT's readout: the catalogue's total and the distance from it. */
@@ -2204,31 +2399,31 @@ export class StaffVisitEditor {
         return this.rawCopy('staff.visit.photoSystem');
       case EditorPage.ClientLoyalty:
         return (
-          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
+          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.loyalty.title')
         );
       // Revision 3's two leaves: the wallet's ledger and the records page
       // (§5.3), named by the store's `barTitle` as the module pages are.
       case EditorPage.ClientLedger:
         return (
-          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
+          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.ledgerPage.title')
         );
       case EditorPage.ClientRecords:
         return (
-          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
+          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.achievements.records')
         );
       case EditorPage.ClientHistory:
         return (
-          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
+          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.visits.title')
         );
       case EditorPage.ClientAchievements:
       case EditorPage.AchievementCategory:
       case EditorPage.AchievementDetail:
         return (
-          store?.barTitle(editorPageWords[page.editorPage], page.subjectId) ??
+          store?.barTitle(editorCardPages[page.editorPage], page.subjectId) ??
           this.rawCopy('clientCard.achievements.title')
         );
     }
@@ -2255,7 +2450,7 @@ export class StaffVisitEditor {
   /** The catalogue's terms for a leg, by service and variant — or none. */
   protected catalogTermsOf(
     leg: DraftLeg,
-  ): { minutes: number; priceLabel: string | null } | null {
+  ): { minutes: DurationMinutes; priceLabel: string | null } | null {
     const option = this.uiServices().find(
       (entry) =>
         entry.serviceId === leg.serviceId &&
@@ -2315,7 +2510,7 @@ export class StaffVisitEditor {
    * would be nice when you open the service itself"): the leg takes the
    * variant's catalogue minutes and price along with its name.
    */
-  protected pickLegVariant(seatId: string, optionId: string): void {
+  protected pickLegVariant(seatId: SeatId, optionId: string): void {
     this.legMenu.set(null);
     const option = this.uiServices().find((entry) => entry.id === optionId);
     if (!option) return;
@@ -2330,6 +2525,9 @@ export class StaffVisitEditor {
               variantId: option.variantId,
               serviceLabel: option.label,
               minutes: option.minutes,
+              // The price travels as cents, the label beside it only printed.
+              priceCents: option.priceCents,
+              currency: option.currency,
               priceLabel: option.priceLabel,
             }
           : leg,
@@ -2343,16 +2541,14 @@ export class StaffVisitEditor {
   protected readonly durationMinutes = computed(() => {
     const draft = this.draft();
     return VisitDraftSystem.editorSpan(
-      draft.durationOverride === null
-        ? null
-        : durationOf(draft.durationOverride),
+      draft.durationOverride,
       legMinutesOf(draft.legs),
     );
   });
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
-  protected readonly endMinute = computed(
-    () => this.draft().startMinute + this.durationMinutes(),
+  protected readonly endMinute = computed(() =>
+    TrackMinute.plus(this.draft().startMinute, this.durationMinutes()),
   );
 
   protected readonly startLabel = computed(() =>
@@ -2368,25 +2564,27 @@ export class StaffVisitEditor {
    * the switch. Per sheet, not per visit — it is how the barber thinks,
    * not a fact about the appointment.
    */
-  protected readonly timingMode = signal<'duration' | 'end'>('duration');
+  protected readonly timingMode = signal<TimingMode>(TimingMode.Duration);
   protected readonly timingMenu = signal(false);
+  protected readonly TimingMode = TimingMode;
 
   /** The row title's two words, as choice-menu options. */
   protected readonly timingOptions = computed<readonly UiChoiceOption[]>(() => [
     {
-      id: 'duration',
+      id: TimingMode.Duration,
       label: this.rawCopy('staff.visit.duration'),
       testId: 'staff-visit-timing-duration',
     },
     {
-      id: 'end',
+      id: TimingMode.End,
       label: this.rawCopy('staff.visit.end'),
       testId: 'staff-visit-timing-end',
     },
   ]);
 
+  /** The pop-up's pick — one of its own two ids, else nothing (`Tag.has`). */
   protected setTimingMode(mode: string): void {
-    if (mode !== 'duration' && mode !== 'end') return;
+    if (!Tag.has(TimingMode, mode)) return;
     this.timingMenu.set(false);
     this.timingMode.set(mode);
   }
@@ -2394,28 +2592,39 @@ export class StaffVisitEditor {
   /**
    * An end typed as a clock. Before the start means the NEXT day — a 23:25
    * cut that ends at 00:15 — never a negative visit. Snapped to the grain
-   * and floored like a typed duration (`VisitDraftSystem.spanToEnd`).
+   * and floored like a typed duration (`VisitDraftSystem.spanToEnd`). The
+   * field's text becomes a minute here, once (`MinuteOfDay.parseClock`).
    */
   protected commitEnd(value: string): void {
-    const minute = parseClock(value);
-    if (minute === null) return;
-    // The start's minute on the clock — a start snapped onto midnight reads 00:00.
-    const start = startMinuteOf(this.draft().startMinute % DAY_MINUTES);
-    this.setDuration(VisitDraftSystem.spanToEnd(start, startMinuteOf(minute)));
+    const minute = MinuteOfDay.parseClock(value);
+    if (!minute.ok) return;
+    // The start's minute on the clock — a start snapped onto midnight reads
+    // 00:00. A track minute is a non-negative whole number, so its remainder
+    // by a day is a minute of the day.
+    const start = MinuteOfDay.ofProven(this.draft().startMinute % DAY_MINUTES);
+    this.setDuration(VisitDraftSystem.spanToEnd(start, minute.value));
   }
   /** `input[type=time]` speaks `HH:MM` and nothing else. */
   protected readonly startValue = this.startLabel;
 
   // Bounded by the SHIFT when there is one; by the civil day when there is
-  // not, so an unreadable roster never narrows what can be typed.
+  // not, so an unreadable roster never narrows what can be typed. Each bound
+  // is a whole minute held on the axis by its own clamp (`ofProven`).
   protected readonly startMinAttr = computed(() => {
     const shift = shiftOf(this.frameDay());
-    return clockLabel(shift ? Math.max(0, shift.startMinute - 60) : 0);
+    return clockLabel(
+      TrackMinute.ofProven(shift ? Math.max(0, shift.startMinute - 60) : 0),
+    );
   });
   protected readonly startMaxAttr = computed(() => {
     const shift = shiftOf(this.frameDay());
     return clockLabel(
-      Math.min(DAY_MINUTES - 1, shift ? shift.endMinute + 60 : DAY_MINUTES - 1),
+      TrackMinute.ofProven(
+        Math.min(
+          DAY_MINUTES - 1,
+          shift ? shift.endMinute + 60 : DAY_MINUTES - 1,
+        ),
+      ),
     );
   });
 
@@ -2436,7 +2645,7 @@ export class StaffVisitEditor {
    */
   protected readonly barbers = computed<readonly EditorBarberRow[]>(() => {
     const roster = this.uiBarbers();
-    const portrait = (id: string) =>
+    const portrait = (id: BarberId | null) =>
       roster.find((barber) => barber.id === id)?.avatarSrc ?? null;
     const gathered: EditorBarberRow[] = [];
     for (const leg of this.draft().legs) {
@@ -2478,7 +2687,7 @@ export class StaffVisitEditor {
    * the whole visit had to guess whose legs a pick meant, and the guess it
    * settled on ("the primary barber's") was a rule the surface never stated.
    */
-  protected readonly barberMenu = signal<string | null>(null);
+  protected readonly barberMenu = signal<BarberId | null>(null);
 
   /**
    * Press to open, press again to close — the same `togglePicker` contract
@@ -2487,15 +2696,15 @@ export class StaffVisitEditor {
    * trigger reached the click handler with the menu still open and reopened
    * what it should have shut.
    */
-  protected toggleBarberMenu(id: string): void {
+  protected toggleBarberMenu(id: BarberId | null): void {
     this.barberMenu.update((open) => (open === id ? null : id));
   }
 
   protected pickBarberFor(
-    fromId: string,
+    fromId: BarberId | null,
     // The MENU's own shape (`name`), the one `setLegBarber` already takes —
     // not the input's (`label`). One vocabulary per boundary.
-    option: { id: string; name: string; tone: number },
+    option: { id: BarberId | null; name: string; tone: number },
   ): void {
     this.barberMenu.set(null);
     if (option.id === fromId) return;
@@ -2553,8 +2762,20 @@ export class StaffVisitEditor {
     // a window the barber has to fight — the grid drops what falls outside
     // it, so every earlier attempt at "the useful part of the day" made some
     // other part unreachable. There is nothing to fall outside of now.
-    () => ({ startMinute: 0, endMinute: DAY_MINUTES }),
+    () => ({ startMinute: TRACK_DAY_START, endMinute: TRACK_DAY_END }),
   );
+
+  /**
+   * THE CLOCK ON THE VM'S OWN DAY — the owner's minute when the day the
+   * sheet was opened on IS today (`vm.now`), else none: any other day has
+   * no "now" to draw or to judge against.
+   */
+  private readonly vmNowMinute = computed<MinuteOfDay | null>(() => {
+    const vm = this.vm();
+    return vm.now !== null && vm.now.localDate === vm.dayKey
+      ? vm.now.currentMinute
+      : null;
+  });
 
   /**
    * The day the frame draws — the dedicated input, or the appointment's own
@@ -2568,7 +2789,7 @@ export class StaffVisitEditor {
       neighbours: vm.neighbours,
       rosterStartMinute: vm.rosterStartMinute,
       rosterEndMinute: vm.rosterEndMinute,
-      nowMinute: vm.nowMinute,
+      nowMinute: this.vmNowMinute(),
     };
   });
 
@@ -2578,14 +2799,20 @@ export class StaffVisitEditor {
     const day = this.frameDay();
     const draft = this.draft();
     const chair = this.frameChair();
+    const catalogDelta = this.catalogDelta();
     const edited: GridEvent = {
-      id: vm.appointmentId,
+      // The grid's event key — an opaque UI key (D-3); a visit not booked
+      // yet has none and is keyed `''`, as `uiEditableEventId` names it.
+      id: vm.appointmentId ?? '',
       gridEvent: GridEventTag.Visit,
       barberTone: chair.tone,
       tag: this.frameTag(),
       // The minutes beyond what the services need, drawn as their own
       // stretch at the block's end (owner, 2026-09-09).
-      surplusMinutes: Math.max(0, this.catalogDelta() ?? 0),
+      surplusMinutes:
+        catalogDelta === null
+          ? MinuteCount.ZERO
+          : MinuteCount.fromDelta(catalogDelta),
       startMinute: draft.startMinute,
       endMinute: this.endMinute(),
       title: draft.clients[0]?.label ?? vm.clientLabel,
@@ -2616,12 +2843,15 @@ export class StaffVisitEditor {
     // that day is today (§8 OQ-9: after a re-date the frame still reads the
     // day it was seeded with) — so a neighbour is measured on today's date,
     // never on the draft's. With no clock (any day but today) only a gone
-    // day has ended.
-    const dayGone = draft.dayKey < vm.todayKey;
-    const now = this.shopNowAt(day.nowMinute);
-    const ended = (endMinute: number): boolean => {
+    // day has ended. "Now" is the owner's (`vm.now`), read only while the
+    // frame carries a clock.
+    const today = vm.now;
+    const dayGone =
+      today !== null && LocalDate.compare(draft.dayKey, today.localDate) < 0;
+    const now = day.nowMinute === null ? null : today;
+    const ended = (endMinute: TrackMinute): boolean => {
       if (dayGone) return true;
-      const end = EndMinute.of(endMinute);
+      const end = TrackMinute.toEnd(endMinute);
       return (
         now !== null &&
         end.ok &&
@@ -2665,7 +2895,12 @@ export class StaffVisitEditor {
         // Handing the grid an inverted window makes `closedRuns` drop it and
         // paint the WHOLE frame as shut hours, so a chair rostered to
         // midnight had every minute of its day drawn closed.
-        open: [shiftOf(day) ?? { startMinute: 0, endMinute: DAY_MINUTES }],
+        open: [
+          shiftOf(day) ?? {
+            startMinute: TRACK_DAY_START,
+            endMinute: TRACK_DAY_END,
+          },
+        ],
       },
     ];
   });
@@ -2769,43 +3004,46 @@ export class StaffVisitEditor {
   });
 
   /** Every barber this visit already knows about, the chair included. */
-  protected readonly barberOptions = computed(() => {
-    // THE ROSTER when it is bound — real ids, real portraits. The derived
-    // fallback below keys a synthesized chair by its NAME, which is not an
-    // id and never matched anything; it survives only for the case where no
-    // roster is supplied.
-    const roster = this.uiBarbers();
-    if (roster.length > 0) {
-      return roster.map((barber) => ({
-        id: barber.id,
-        name: barber.label,
-        tone: barber.tone,
-        avatarSrc: barber.avatarSrc,
-      }));
-    }
-    const vm = this.vm();
-    const seen = new Map<
-      string,
-      { id: string; name: string; tone: number; avatarSrc: string | null }
-    >();
-    for (const leg of this.draft().legs) {
-      seen.set(leg.barberId, {
-        id: leg.barberId,
-        name: leg.barberName,
-        tone: leg.barberTone,
-        avatarSrc: null,
-      });
-    }
-    if (!seen.has('chair')) {
-      seen.set(vm.chairName, {
-        id: vm.chairName,
-        name: vm.chairName,
-        tone: vm.chairTone,
-        avatarSrc: null,
-      });
-    }
-    return [...seen.values()];
-  });
+  protected readonly barberOptions = computed<readonly EditorChairOption[]>(
+    () => {
+      // THE ROSTER when it is bound — real ids, real portraits. The derived
+      // fallback below keys a synthesized chair by its NAME, which is not an
+      // id and never matched anything; it survives only for the case where
+      // no roster is supplied, and a pick of it writes the row's own chair.
+      const roster = this.uiBarbers();
+      if (roster.length > 0) {
+        return roster.map((barber) => ({
+          key: barber.id,
+          id: barber.id,
+          name: barber.label,
+          tone: barber.tone,
+          avatarSrc: barber.avatarSrc,
+        }));
+      }
+      const vm = this.vm();
+      const seen = new Map<string, EditorChairOption>();
+      for (const leg of this.draft().legs) {
+        const key = leg.barberId ?? '';
+        seen.set(key, {
+          key,
+          id: leg.barberId,
+          name: leg.barberName,
+          tone: leg.barberTone,
+          avatarSrc: null,
+        });
+      }
+      if (!seen.has('chair')) {
+        seen.set(vm.chairName, {
+          key: vm.chairName,
+          id: vm.chairId,
+          name: vm.chairName,
+          tone: vm.chairTone,
+          avatarSrc: null,
+        });
+      }
+      return [...seen.values()];
+    },
+  );
 
   /** The consequence strip under a service page's large title — live. */
 
@@ -2848,7 +3086,7 @@ export class StaffVisitEditor {
   private toRowVm(
     client: VisitEditorClientOption,
     parsed: ParsedClientQuery,
-    chosen: ReadonlySet<string>,
+    chosen: ReadonlySet<DraftPersonKey>,
     exact: boolean,
   ): ClientRowVm {
     const code = this.callingCode();
@@ -2925,7 +3163,7 @@ export class StaffVisitEditor {
   private readonly searchPool = computed<readonly VisitEditorClientOption[]>(
     () => {
       if (!this.searchActive()) return this.uiClients();
-      const pool = new Map<string, VisitEditorClientOption>();
+      const pool = new Map<DraftPersonKey, VisitEditorClientOption>();
       const held = [
         ...this.uiClientSections().flatMap((section) => section.clients),
         ...this.uiClientBook(),
@@ -3062,23 +3300,26 @@ export class StaffVisitEditor {
    */
 
   /** Which line the head reads — the act, and whose it was. */
-  protected readonly resolutionKey = computed<
-    'cancelledByStaff' | 'cancelledByClient' | 'noShow' | null
-  >(() => {
+  protected readonly resolutionKey = computed<ResolutionWord | null>(() => {
     const resolution = this.vm().resolution;
     if (resolution === null) return null;
-    if (resolution.bookingStatus === BookingStatus.NoShow) return 'noShow';
+    if (resolution.bookingStatus === BookingStatus.NoShow) {
+      return ResolutionWord.NoShow;
+    }
     return resolution.by === CancelledSide.Client
-      ? 'cancelledByClient'
-      : 'cancelledByStaff';
+      ? ResolutionWord.CancelledByClient
+      : ResolutionWord.CancelledByStaff;
   });
 
   /**
-   * The glyph's ink. Cancelling keeps the sheet's one red — it is the
+   * The glyph's ink — the design system's own foreground tones (its
+   * `data-tone`). Cancelling keeps the sheet's one red — it is the
    * destructive act everywhere else on it — and a no-show is a warning, the
    * client's fact rather than the shop's.
    */
-  protected readonly resolutionTone = computed<'destructive' | 'warning'>(() =>
+  protected readonly resolutionTone = computed<
+    Extract<UiForegroundStyle, 'destructive' | 'warning'>
+  >(() =>
     this.vm().resolution?.bookingStatus === BookingStatus.NoShow
       ? 'warning'
       : 'destructive',
@@ -3108,34 +3349,20 @@ export class StaffVisitEditor {
   }
 
   /**
-   * "Now" as the story's wall-clock rules read it — today's key and the
-   * clock's minute on it — or `null` when the VM carries no clock (any day
-   * but today, `nowMinute: null`). The instant rides along as `ShopNow`
-   * asks; the placement rules never read it (Law 7.3).
-   */
-  private shopNowAt(minute: number | null): ShopNow | null {
-    if (minute === null) return null;
-    const today = LocalDate.parse(this.vm().todayKey);
-    const at = MinuteOfDay.of(minute);
-    return today.ok && at.ok
-      ? ShopNow.of(today.value, at.value, this.clock.nowUtcMs())
-      : null;
-  }
-
-  /**
    * Has the visit begun — its start at or before the shop's "now" on the
-   * wall clock (`VisitStorySystem.hasStarted`, the start minute included).
-   * With no clock on the VM only a gone day has begun: today without a
-   * clock stays "not started".
+   * wall clock (`VisitStorySystem.hasStarted`, the start minute included),
+   * "now" being the owner's (`vm.now`, pass D D-10.5 — never built here).
+   * Without a "now" nothing has begun; a start the day's clock cannot hold
+   * (the closing midnight) has begun only on a day already gone.
    */
   private readonly started = computed(() => {
     const vm = this.vm();
-    const now = this.shopNowAt(vm.nowMinute);
-    const day = LocalDate.parse(vm.dayKey);
-    const start = MinuteOfDay.of(vm.startMinute);
-    return now !== null && day.ok && start.ok
-      ? VisitStorySystem.hasStarted(WallTime.of(day.value, start.value), now)
-      : vm.dayKey < vm.todayKey;
+    const now = vm.now;
+    if (now === null) return false;
+    const start = TrackMinute.toStart(vm.startMinute);
+    return start.ok
+      ? VisitStorySystem.hasStarted(WallTime.of(vm.dayKey, start.value), now)
+      : LocalDate.compare(vm.dayKey, now.localDate) < 0;
   });
 
   /**
@@ -3166,7 +3393,7 @@ export class StaffVisitEditor {
       if (!legal.verbs.includes(verb.rowVerb)) continue;
       if (verb.rowVerb === BookingStatus.Confirmed) {
         out.push({
-          id: 'reinstate',
+          id: VisitExitId.Reinstate,
           label: verb.label,
           icon: 'visit.confirmed',
           destructive: false,
@@ -3176,7 +3403,7 @@ export class StaffVisitEditor {
       }
       if (verb.rowVerb === BookingStatus.NoShow) {
         out.push({
-          id: 'no-show',
+          id: VisitExitId.NoShow,
           label: verb.label,
           icon: 'visit.noShow',
           destructive: false,
@@ -3198,7 +3425,7 @@ export class StaffVisitEditor {
     // due and «Запази» has nothing left to save — one control per act.
     if (legal.rebook) {
       out.push({
-        id: 'rebook',
+        id: VisitExitId.Rebook,
         label: this.rawCopy('staff.visit.rebook'),
         icon: 'appointment.book',
         destructive: false,
@@ -3213,7 +3440,7 @@ export class StaffVisitEditor {
         .clients.map((client) => client.label)
         .join(', ');
       out.push({
-        id: 'cancel',
+        id: VisitExitId.Cancel,
         label:
           vm.peers.length > 0 && names.length > 0
             ? this.transloco.translate('staff.visit.cancelFor', { names })
@@ -3223,7 +3450,7 @@ export class StaffVisitEditor {
         act: BookingStatus.Cancelled,
       });
       out.push({
-        id: 'cancel-block',
+        id: VisitExitId.CancelBlock,
         label: this.rawCopy('staff.visit.cancelAndBlock'),
         icon: 'booking.blocked',
         destructive: true,
@@ -3234,11 +3461,11 @@ export class StaffVisitEditor {
   });
 
   protected runExit(exit: VisitExit): void {
-    if (exit.id === 'rebook') {
+    if (exit.id === VisitExitId.Rebook) {
       this.rebooked.emit();
       return;
     }
-    if (exit.id === 'cancel-block') {
+    if (exit.id === VisitExitId.CancelBlock) {
       this.blockedInstead.emit();
       return;
     }
@@ -3275,7 +3502,7 @@ export class StaffVisitEditor {
     editorPage: EditorPage,
     subjectId: string | null,
     originTestId: string | null,
-    arrival: PageArrival = 'container',
+    arrival: PageArrival = PageArrival.Container,
   ): void {
     const under = this.page();
     if (under !== null && this.depth() >= MAX_PAGE_DEPTH) {
@@ -3311,7 +3538,7 @@ export class StaffVisitEditor {
    * the loyalty still loading, or the section left out by its flag — and
    * the page moves it on once it paints.
    */
-  private openAtTop(arrival: PageArrival = 'container'): void {
+  private openAtTop(arrival: PageArrival = PageArrival.Container): void {
     this.scrollPageToTop();
     afterNextRender(
       () => {
@@ -3322,7 +3549,7 @@ export class StaffVisitEditor {
         if (container === null) return;
         const active = container.ownerDocument.activeElement;
         const landed =
-          arrival === 'section' &&
+          arrival === PageArrival.Section &&
           active !== container &&
           container.contains(active);
         if (!landed) container.focus({ preventScroll: true });
@@ -3674,7 +3901,7 @@ export class StaffVisitEditor {
     this.onFrameDraft(commit);
   }
 
-  protected pickDay(dayKey: string): void {
+  protected pickDay(dayKey: LocalDate): void {
     // Moving the day HOLDS the duration and slides the whole block — the
     // same invariant `Начало` holds.
     this.draft.update((draft) => ({
@@ -3703,28 +3930,28 @@ export class StaffVisitEditor {
    */
   /** The shared pill's grammar — `ср, 26 август` — so the frame's summary
    *  and the pill never disagree. */
-  private dayLabelFor(dayKey: string): string {
+  private dayLabelFor(dayKey: LocalDate): string {
     return formatDayPill(dayKey, this.transloco.getActiveLang());
   }
 
+  /** A start typed as a clock — read once at the field's edge (`MinuteOfDay.parseClock`), then snapped. */
   protected commitStart(value: string): void {
-    const minute = parseClock(value);
-    if (minute === null) return;
+    const minute = MinuteOfDay.parseClock(value);
+    if (!minute.ok) return;
     // The duration is the stored fact, so it is ALWAYS pinned: a client
     // arriving ten minutes late does not get a ten-minute-shorter cut.
     this.draft.update((draft) => ({
       ...draft,
-      startMinute: VisitDraftSystem.snap(startMinuteOf(minute)),
+      startMinute: VisitDraftSystem.snap(minute.value),
     }));
   }
 
   /** A typed length pins itself unless it IS the services' (`VisitDraftSystem.typedOverrideFor`). */
-  protected setDuration(minutes: number): void {
-    const typed = durationOf(minutes);
+  protected setDuration(minutes: DurationMinutes): void {
     this.draft.update((draft) => ({
       ...draft,
       durationOverride: VisitDraftSystem.typedOverrideFor(
-        typed,
+        minutes,
         legMinutesOf(draft.legs),
       ),
     }));
@@ -3787,7 +4014,7 @@ export class StaffVisitEditor {
     // entry visibly springs back rather than sitting there looking saved.
   }
 
-  protected setLegDuration(seatId: string, minutes: number): void {
+  protected setLegDuration(seatId: SeatId, minutes: DurationMinutes): void {
     this.draft.update((draft) => ({
       ...draft,
       legs: draft.legs.map((leg) =>
@@ -3799,8 +4026,8 @@ export class StaffVisitEditor {
   }
 
   protected setLegBarber(
-    seatId: string,
-    barber: { id: string; name: string; tone: number },
+    seatId: SeatId,
+    barber: { id: BarberId | null; name: string; tone: number },
   ): void {
     const seats = this.seatsOf(seatId);
     this.draft.update((draft) => ({
@@ -3820,19 +4047,21 @@ export class StaffVisitEditor {
   }
 
   /**
-   * Minor units as a bare figure in the shop's locale — `18,00` — for a
-   * unit field, whose unit is its own word. `formatCents` stays the one way
-   * a Money becomes a LABEL; this is a figure beside a label.
+   * Cents as a bare figure in the bill's currency and the shop's locale —
+   * `18,00` — for a unit field, whose unit is its own word
+   * (`formatCentsFigure`, the cached shared formatter). `formatCents` stays
+   * the one way a Money becomes a LABEL; this is a figure beside a label.
    */
-  private figureOf(minor: number): string {
-    return new Intl.NumberFormat(this.transloco.getActiveLang(), {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(minor / 100);
+  private figureOf(cents: PriceCents): string {
+    return formatCentsFigure(
+      cents,
+      this.vm().currency,
+      this.transloco.getActiveLang(),
+    );
   }
 
   /** The swipe's act: the whole row — every seat it holds. */
-  protected removeLeg(seatId: string): void {
+  protected removeLeg(seatId: SeatId): void {
     this.legMenu.set(null);
     const seats = this.seatsOf(seatId);
     this.draft.update((draft) => ({
@@ -3920,8 +4149,11 @@ export class StaffVisitEditor {
     const options = new Map(
       this.serviceOptions().map((option) => [option.id, option] as const),
     );
-    // Seated for the person the page opened for, else for the first.
-    const forClientId = this.page()?.subjectId ?? null;
+    // Seated for the person the page opened for, else for the first. The
+    // page's subject is a draft key this sheet minted (`openServicePage`).
+    const subjectId = this.page()?.subjectId ?? null;
+    const forClientId =
+      subjectId === null ? null : DraftPersonKey.of(subjectId);
     for (const [id, count] of this.servicePicks()) {
       const option = options.get(id);
       if (!option) continue;
@@ -3939,13 +4171,26 @@ export class StaffVisitEditor {
   private minted = 0;
 
   /**
+   * A seat this sheet MINTS for a pick — `draft-<option>-<instant>-<n>` —
+   * so a later command in the same batch can address the seat; the server
+   * keeps the id. Unique per pick: a barber may add the same service twice,
+   * and two taps in one millisecond must still be two seats, so a counter
+   * joins the clock. A seat id by construction (the sheet spells it).
+   */
+  private mintSeatId(option: VisitEditorServiceOption): SeatId {
+    return SeatId.of(
+      `draft-${option.id}-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`,
+    );
+  }
+
+  /**
    * THE ONE DOOR to the catalogue (owner, 2026-09-10; a pushed page again
    * since 2026-09-17: "adding a service → push sheet / page"): the add row
    * pushes the page. Opens on the whole list every time, nothing picked —
    * a query typed the last time must not shorten this one before a letter
    * is typed.
    */
-  protected openServicePage(forClientId: string | null = null): void {
+  protected openServicePage(forClientId: DraftPersonKey | null = null): void {
     this.servicePicks.set(new Map());
     this.push(EditorPage.Service, forClientId, 'staff-visit-add-service');
   }
@@ -4013,7 +4258,7 @@ export class StaffVisitEditor {
    */
   private addServiceLeg(
     option: VisitEditorServiceOption,
-    forClientId: string | null = null,
+    forClientId: DraftPersonKey | null = null,
   ): void {
     this.draft.update((draft) => {
       const chair = this.chairOf(draft.chairId);
@@ -4023,17 +4268,17 @@ export class StaffVisitEditor {
         legs: [
           ...draft.legs,
           {
-            // Minted here so a later command in the same batch can address
-            // the seat; the server keeps the id. Unique per pick — a barber
-            // may add the same service twice, and two taps in one
-            // millisecond must still be two seats, so a counter joins the
-            // clock.
-            seatId: `draft-${option.id}-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`,
+            seatId: this.mintSeatId(option),
             serviceId: option.serviceId,
             variantId: option.variantId,
             serviceLabel: option.serviceLabel ?? option.label,
             minutes: option.minutes,
+            // The catalogue's price, as cents beside its label.
+            priceCents: option.priceCents,
+            currency: option.currency,
             priceLabel: option.priceLabel,
+            // Nobody has typed a price for a leg just picked.
+            typedPriceCents: null,
             // ⚠ The chair's ID, and the DRAFT's chair (2026-09-09): a new
             // visit whose barber was switched before any service was picked
             // seats the service on the switched chair, not the row's.
@@ -4045,9 +4290,7 @@ export class StaffVisitEditor {
             // The person the catalogue opened for; else the first person's,
             // until the leg's own chip says otherwise.
             clientId:
-              forClientId ??
-              draft.clients[0]?.id ??
-              VisitDraftSystem.PLACEHOLDER_CLIENT_ID,
+              forClientId ?? draft.clients[0]?.id ?? DraftPersonKey.PLACEHOLDER,
           },
         ],
       };
@@ -4363,7 +4606,7 @@ export class StaffVisitEditor {
    * its swipe, the service rows' own grammar. See `withoutClient` for what
    * leaves with them.
    */
-  protected removeClient(clientId: string): void {
+  protected removeClient(clientId: DraftPersonKey): void {
     this.draft.update((draft) => withoutClient(draft, clientId));
   }
 
@@ -4450,13 +4693,26 @@ export class StaffVisitEditor {
     // NEVER A REUSED ID (found in review): `guest-${length}` handed a third
     // guest the id of one already unticked, and the flow then took the
     // newcomer for served — the seat-id rule, `minted`, applies to people
-    // too. The `guest-` prefix is what the shell keys a walk-in on.
-    const id = `${VisitDraftSystem.GUEST_KEY_PREFIX}${this.clock.nowUtcMs().toString(36)}-${this.minted++}`;
+    // too. The `guest-` prefix is what the shell keys a walk-in on
+    // (`DraftPersonKey.minted`: `guest-<instant>-<n>`).
+    const id = DraftPersonKey.minted(
+      this.clock.nowUtcMs().toString(36),
+      this.minted++,
+    );
     this.draft.update((draft) => ({
       ...draft,
       clients: [
         ...draft.clients,
-        { id, label, phone, phoneHref: phone, meta: email.trim() || null },
+        {
+          id,
+          label,
+          phone,
+          phoneHref: phone,
+          meta: email.trim() || null,
+          // The form's mail rides as the person's line (`meta`), never as a
+          // matched mail — what the person always carried.
+          email: null,
+        },
       ],
       legs: adoptPlaceholderLegs(draft, id),
     }));
@@ -4539,21 +4795,19 @@ export class StaffVisitEditor {
     // общо 15,00 €» (owner, 2026-09-16: «до 15,00 €» as the headline read
     // as "anything up to 15"). No share beneath a coin: the barber counts
     // money, not percentages, and a coin says all it means by itself.
-    BillingSystem.tipPresets(billCentsOf(this.vm().priceCents)).map(
-      (preset) => ({
-        id: `amt:${preset.amountCents}`,
-        amount: preset.amountCents,
-        label: this.moneyLabel(preset.amountCents),
-        detail:
-          preset.targetCents === null
-            ? ''
-            : this.rawCopy('staff.visit.tipRoundUp').replace(
-                '{{total}}',
-                this.moneyLabel(preset.targetCents),
-              ),
-        size: preset.tipPreset === TipPreset.RoundUp ? 'large' : 'regular',
-      }),
-    ),
+    BillingSystem.tipPresets(this.vm().priceCents).map((preset) => ({
+      id: `${TIP_AMOUNT_PREFIX}${preset.amountCents}`,
+      amount: preset.amountCents,
+      label: this.moneyLabel(preset.amountCents),
+      detail:
+        preset.targetCents === null
+          ? ''
+          : this.rawCopy('staff.visit.tipRoundUp').replace(
+              '{{total}}',
+              this.moneyLabel(preset.targetCents),
+            ),
+      size: preset.tipPreset === TipPreset.RoundUp ? 'large' : 'regular',
+    })),
   );
 
   /* ── THE TIP, A DISCLOSURE ON THE LADDER (owner, 2026-09-17: "adding a
@@ -4589,14 +4843,16 @@ export class StaffVisitEditor {
    */
   protected readonly tipTileId = computed<string>(() => {
     const cents = this.tipCents();
-    if (this.tipOtherOpen()) return 'other';
-    if (cents === null) return 'none';
-    return this.tipMatchesPreset() ? `amt:${cents}` : 'other';
+    if (this.tipOtherOpen()) return TipTile.Other;
+    if (cents === null) return TipTile.None;
+    return this.tipMatchesPreset()
+      ? `${TIP_AMOUNT_PREFIX}${cents}`
+      : TipTile.Other;
   });
 
   /** «Друга сума» is the tile that is on AND a sum is drafted: the entry holds it. */
   private readonly tipIsCustom = computed(
-    () => this.tipTileId() === 'other' && this.tipCents() !== null,
+    () => this.tipTileId() === TipTile.Other && this.tipCents() !== null,
   );
 
   /**
@@ -4622,12 +4878,12 @@ export class StaffVisitEditor {
       ...presets.filter((preset) => preset.size === 'large').map(tile),
       ...presets.filter((preset) => preset.size === 'regular').map(tile),
       {
-        id: 'none',
+        id: TipTile.None,
         label: this.rawCopy('staff.visit.tipNone'),
         testId: 'staff-visit-tip-tile-none',
       },
       {
-        id: 'other',
+        id: TipTile.Other,
         // The tile is the CHOICE, not the readout: its name stays whatever
         // sum the entry beneath holds (owner, 2026-09-16: "adding the
         // custom tip should not change the label"). The sum is read on
@@ -4644,7 +4900,7 @@ export class StaffVisitEditor {
 
   /** The field under the grid shows only while «Друга сума» is the choice. */
   protected readonly tipCustomShown = computed(
-    () => this.tipTileId() === 'other',
+    () => this.tipTileId() === TipTile.Other,
   );
 
   /** The row's readout: «Без», or the amount — never a share it inferred. */
@@ -4686,12 +4942,12 @@ export class StaffVisitEditor {
    * stays, the tile was already on.
    */
   protected pickTip(id: string): void {
-    if (id === 'none') {
+    if (id === TipTile.None) {
       this.tipOtherOpen.set(false);
       this.setTip(null);
       return;
     }
-    if (id === 'other') {
+    if (id === TipTile.Other) {
       if (this.tipMatchesPreset()) this.setTip(null);
       this.tipOtherOpen.set(true);
       this.focusLater('#staff-visit-tip');
@@ -4766,18 +5022,19 @@ export class StaffVisitEditor {
    * location step's grammar, the chosen one checked. A row or a pin drafts
    * the shop; the pill never does.
    */
-  protected readonly shopView = signal<'map' | 'list'>('map');
+  protected readonly shopView = signal<ShopView>(ShopView.Map);
+  protected readonly ShopView = ShopView;
 
   protected readonly shopViews = computed<readonly UiSegment[]>(() => [
     {
-      id: 'map',
+      id: ShopView.Map,
       label: this.rawCopy('staff.visit.shopMap'),
       icon: 'view.map',
       iconOnly: true,
       testId: 'staff-visit-shop-view-map',
     },
     {
-      id: 'list',
+      id: ShopView.List,
       label: this.rawCopy('staff.visit.shopList'),
       icon: 'view.list',
       iconOnly: true,
@@ -4785,8 +5042,9 @@ export class StaffVisitEditor {
     },
   ]);
 
+  /** The pill's pick — one of its own two views, else nothing (`Tag.has`). */
   protected setShopView(id: string): void {
-    if (id === 'map' || id === 'list') this.shopView.set(id);
+    if (Tag.has(ShopView, id)) this.shopView.set(id);
   }
 
   /**
@@ -4816,8 +5074,10 @@ export class StaffVisitEditor {
    * a shop is a request to SEE it, and the flight is the point of the map.
    */
   protected pickShop(id: string): void {
-    if (!this.uiShops().some((shop) => shop.id === id)) return;
-    this.draft.update((draft) => ({ ...draft, locationId: id }));
+    // The pin or the tile names one of the shops on offer — by its id.
+    const shop = this.uiShops().find((entry) => entry.id === id);
+    if (shop === undefined) return;
+    this.draft.update((draft) => ({ ...draft, locationId: shop.id }));
   }
 
   /** The entry's sum in cents: the custom sum, or nothing while it waits for one. */
@@ -4928,27 +5188,27 @@ export class StaffVisitEditor {
     const kinds: UiChoiceOption[] = [];
     if (this.promoChoices().length > 0) {
       kinds.push({
-        id: 'promo',
+        id: DiscountKind.Promo,
         label: this.rawCopy('staff.visit.kindPromo'),
         description: this.rawCopy('staff.visit.kindPromoDetail'),
         testId: 'staff-visit-discount-kind-promo',
       });
     }
     kinds.push({
-      id: 'coupon',
+      id: DiscountKind.Coupon,
       label: this.rawCopy('staff.visit.kindCoupon'),
       description: this.rawCopy('staff.visit.kindCouponDetail'),
       testId: 'staff-visit-discount-kind-coupon',
     });
     if (this.uiMayDiscount()) {
       kinds.push({
-        id: 'percent',
+        id: DiscountKind.Percent,
         label: this.rawCopy('staff.visit.discountPercent'),
         description: this.rawCopy('staff.visit.discountScope'),
         testId: 'staff-visit-discount-kind-percent',
       });
       kinds.push({
-        id: 'amount',
+        id: DiscountKind.Amount,
         label: this.rawCopy('staff.visit.discountAmount'),
         description: this.rawCopy('staff.visit.discountScope'),
         testId: 'staff-visit-discount-kind-amount',
@@ -4960,11 +5220,16 @@ export class StaffVisitEditor {
   /** The kind in force: the one picked while offered; else the client's coupon when they hold one; else the first on offer. */
   protected readonly discountKind = computed<DiscountKind>(() => {
     const picked = this.discountKindPicked();
-    const offered = this.discountKinds().map((kind) => kind.id as DiscountKind);
+    // The pop-up's options were minted from the dictionary just above, so
+    // every id reads back as a kind (`Tag.has`).
+    const offered = this.discountKinds()
+      .map((kind) => kind.id)
+      .filter((id): id is DiscountKind => Tag.has(DiscountKind, id));
     if (picked !== null && offered.includes(picked)) return picked;
-    if (this.grantChoices().length > 0) return 'coupon';
-    return offered[0] ?? 'coupon';
+    if (this.grantChoices().length > 0) return DiscountKind.Coupon;
+    return offered[0] ?? DiscountKind.Coupon;
   });
+  protected readonly DiscountKind = DiscountKind;
 
   protected readonly discountKindLabel = computed(
     () =>
@@ -4972,9 +5237,13 @@ export class StaffVisitEditor {
         ?.label ?? '',
   );
 
-  /** A new kind is a new entry: what was typed for the last one goes. */
+  /**
+   * A new kind is a new entry: what was typed for the last one goes. An id
+   * the pop-up never offered picks nothing (the kind in force falls back as
+   * it did for a pick no longer on offer).
+   */
   protected pickDiscountKind(id: string): void {
-    this.discountKindPicked.set(id as DiscountKind);
+    this.discountKindPicked.set(Tag.has(DiscountKind, id) ? id : null);
     this.settleCode();
     this.codeDraft.set('');
     this.figureDraft.set('');
@@ -5036,22 +5305,22 @@ export class StaffVisitEditor {
     const onBill = new Set(
       this.draft()
         .discounts.map((discount) => discount.code)
-        .filter((code): code is string => code !== null),
+        .filter((code): code is VoucherCode => code !== null),
     );
     // A code whose coupon the client holds is offered once, as theirs
     // (`DiscountSystem.offerablePromos`); the ids are the store's documents'.
     return DiscountSystem.offerablePromos(
       this.uiPromos(),
-      this.uiGrants().map((grant) => CouponId.of(grant.couponId)),
-      (promo) => CouponId.of(promo.couponId),
+      this.uiGrants().map((grant) => grant.couponId),
+      (promo) => promo.couponId,
     ).map((promo) => {
       const applied = onBill.has(promo.code);
       return {
         offerSource: OfferSource.Promo,
-        id: promo.code,
         key: `code:${promo.code}`,
         testId: `staff-visit-discount-promo-${promo.code}`,
         code: promo.code,
+        grantId: null,
         label: promo.label,
         exclusive: promo.exclusive,
         value: this.couponValue(promo.label, promo.value),
@@ -5091,21 +5360,16 @@ export class StaffVisitEditor {
   protected applyOffer(offer: OfferChoice): void {
     if (offer.applied || offer.blocked) return;
     if (offer.offerSource === OfferSource.Grant) {
-      this.applyGrant(offer.id);
+      if (offer.grantId !== null) this.applyGrant(offer.grantId);
       return;
     }
     // Known live, it joins the bill as the owner's answer to a typed code
     // would have — no round trip; the save re-resolves the code regardless.
-    const promo = this.uiPromos().find((entry) => entry.code === offer.id);
+    const promo = this.uiPromos().find((entry) => entry.code === offer.code);
     if (promo === undefined) return;
-    this.addDiscount({
-      discountSource: DiscountSource.Code,
-      label: promo.label,
-      value: promo.value,
-      grantId: null,
-      code: promo.code,
-      exclusive: promo.exclusive,
-    });
+    this.addDiscount(
+      codeDiscountOf(promo.code, promo.label, promo.value, promo.exclusive),
+    );
   }
 
   /**
@@ -5182,14 +5446,14 @@ export class StaffVisitEditor {
   protected photoTitle(photo: VisitEditorPhoto): string {
     return this.photoReadOnly()
       ? (this.cardStoreRef()?.barTitle(
-          editorPageWords[EditorPage.Photo],
+          editorCardPages[EditorPage.Photo],
           photo.photoId,
         ) ?? this.photoDay(photo))
       : this.photoDay(photo);
   }
 
   /** A thumbnail's tap: the picture as a page, the facts in rows under it, «Изтрий» in the dock. */
-  protected openPhoto(photoId: string): void {
+  protected openPhoto(photoId: AppointmentPhotoId): void {
     this.push(EditorPage.Photo, photoId, `staff-visit-photo-${photoId}`);
   }
 
@@ -5253,7 +5517,7 @@ export class StaffVisitEditor {
     const doors: UiChoiceOption[] = [];
     if (this.uiCamera() ?? isCameraSupported()) {
       doors.push({
-        id: 'camera',
+        id: PhotoDoor.Camera,
         label: this.rawCopy('staff.visit.photoTake'),
         icon: 'media.camera',
         testId: 'staff-visit-photo-take',
@@ -5261,13 +5525,13 @@ export class StaffVisitEditor {
     }
     doors.push(
       {
-        id: 'upload',
+        id: PhotoDoor.Upload,
         label: this.rawCopy('staff.visit.photoUpload'),
         icon: 'media.library',
         testId: 'staff-visit-photo-upload',
       },
       {
-        id: 'system',
+        id: PhotoDoor.System,
         label: this.rawCopy('staff.visit.photoSystem'),
         icon: 'media.gallery',
         testId: 'staff-visit-photo-system',
@@ -5279,20 +5543,22 @@ export class StaffVisitEditor {
   private readonly libraryInput =
     viewChild<ElementRef<HTMLInputElement>>('photoLibrary');
 
+  protected readonly PhotoDoor = PhotoDoor;
+
   /** A door picked: the camera as a page, the phone's picker, or the shop's pictures as a page. */
   protected openPhotoDoor(id: string): void {
     this.photoMenuOpen.set(false);
     switch (id) {
-      case 'camera':
+      case PhotoDoor.Camera:
         this.cameraState.set('starting');
         this.push(EditorPage.Camera, null, 'staff-visit-add-photo');
         return;
-      case 'upload':
+      case PhotoDoor.Upload:
         // Inside the tap that picked the door, so the engine lets the
         // picker open — a hidden input's own click, the profile photo's way.
         this.libraryInput()?.nativeElement.click();
         return;
-      case 'system':
+      case PhotoDoor.System:
         this.librarySelection.set(new Set());
         this.push(EditorPage.Library, null, 'staff-visit-add-photo');
         return;
@@ -5384,7 +5650,7 @@ export class StaffVisitEditor {
   // Every word about a picture's moment reads the shop's own clock, so the
   // bar's day and the row's time can never straddle two midnights.
   private shopMoment(
-    atMs: number,
+    atMs: UtcEpochMs,
     locale: string,
     options: Intl.DateTimeFormatOptions,
   ): string {
@@ -5402,14 +5668,25 @@ export class StaffVisitEditor {
     });
   }
 
-  /** «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar title. */
+  /**
+   * «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar
+   * title. The picture's year is its stamp read onto the shop's calendar
+   * (`ZonedTimeSystem.toLocal`, the one zone engine); this year is the
+   * owner's today (`vm.now`). The words stay `bg-BG` whatever the language
+   * (D-14, as they always were).
+   */
   protected photoDay(photo: VisitEditorPhoto): string {
     const at = photo.takenAtUtcMs;
-    const year = this.shopMoment(at, 'en-CA', { year: 'numeric' });
+    const vm = this.vm();
+    const thisYear =
+      vm.timeZone !== null &&
+      vm.now !== null &&
+      LocalDate.parts(ZonedTimeSystem.toLocal(at, vm.timeZone).localDate)
+        .year === LocalDate.parts(vm.now.localDate).year;
     return this.shopMoment(at, 'bg-BG', {
       day: 'numeric',
       month: '2-digit',
-      ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
+      ...(thisYear ? {} : { year: 'numeric' }),
     });
   }
 
@@ -5448,7 +5725,7 @@ export class StaffVisitEditor {
   /** A code the camera read: back to the field with it, asked at once. */
   protected scanned(code: string): void {
     this.returnToDiscountPage('[data-testid="staff-visit-discount-code"]');
-    this.discountKindPicked.set('coupon');
+    this.discountKindPicked.set(DiscountKind.Coupon);
     const normalised = VoucherCode.normalize(code);
     this.codeDraft.set(normalised);
     this.commitCode(normalised);
@@ -5460,7 +5737,7 @@ export class StaffVisitEditor {
   /** A keystroke in the code field: a new code is a new question, so the last verdict goes. */
   protected typeCode(raw: string): void {
     this.codeDraft.set(raw);
-    if (this.codeState() !== 'idle') this.settleCode();
+    if (this.codeState() !== DiscountCodeState.Idle) this.settleCode();
   }
 
   /**
@@ -5480,7 +5757,7 @@ export class StaffVisitEditor {
    */
   private cappedFigure(raw: string): string {
     switch (this.discountKind()) {
-      case 'percent': {
+      case DiscountKind.Percent: {
         const digits = raw.replace(/[^\d]/g, '');
         if (digits.length === 0) return raw;
         const typed: CouponValue.PercentOff = {
@@ -5493,14 +5770,17 @@ export class StaffVisitEditor {
           ? raw
           : String(capped.discountPercent);
       }
-      case 'amount': {
+      case DiscountKind.Amount: {
+        // Typed money read once at the field's edge: `parsePriceInput`
+        // answers a safe whole number ≥ 0, which `PriceCents.of` never
+        // refuses.
         const minor = parsePriceInput(raw);
         const cents = minor === null ? null : PriceCents.of(minor);
         if (cents === null || !cents.ok) return raw;
         const typed: CouponValue.FixedAmount = {
           discountMethod: DiscountMethod.FixedAmount,
           discountAmountCents: cents.value,
-          discountCurrency: MONEY_CODE,
+          discountCurrency: this.vm().currency,
         };
         const capped = BillingSystem.capManual(typed, this.subtotalMoney());
         return capped === typed ||
@@ -5514,48 +5794,32 @@ export class StaffVisitEditor {
   }
 
   /**
-   * The typed figure, read: a whole percent or a sum in minor units; `null`
-   * when it is neither. The range is the manual figure's own guard
+   * The typed figure, read: a whole percent or a sum in cents, as the value
+   * it would put on the bill (in the bill's currency); `null` when it is
+   * neither. The range is the manual figure's own guard
    * (`CouponValue.manualPercentOff`, `CouponValue.fixedAmount` — DEP-6, the
    * callable's rule); the digit strip before it is the field's (a «1.5»
    * reads 15).
    */
   private readonly figureRead = computed<
-    | {
-        readonly discountMethod: typeof DiscountMethod.PercentOff;
-        readonly percent: number;
-      }
-    | {
-        readonly discountMethod: typeof DiscountMethod.FixedAmount;
-        readonly minor: number;
-      }
-    | null
+    CouponValue.PercentOff | CouponValue.FixedAmount | null
   >(() => {
     const raw = this.figureDraft().trim();
     if (raw.length === 0) return null;
     switch (this.discountKind()) {
-      case 'percent': {
+      case DiscountKind.Percent: {
         const digits = raw.replace(/[^\d]/g, '');
         if (digits.length === 0) return null;
         const value = CouponValue.manualPercentOff(Number(digits));
-        return value.ok
-          ? {
-              discountMethod: DiscountMethod.PercentOff,
-              percent: value.value.discountPercent,
-            }
-          : null;
+        return value.ok ? value.value : null;
       }
-      case 'amount': {
+      case DiscountKind.Amount: {
+        // Typed money, read once at the field's edge (see `cappedFigure`).
         const minor = parsePriceInput(raw);
         const cents = minor === null ? null : PriceCents.of(minor);
         if (cents === null || !cents.ok) return null;
-        const value = CouponValue.fixedAmount(cents.value, MONEY_CODE);
-        return value.ok
-          ? {
-              discountMethod: DiscountMethod.FixedAmount,
-              minor: value.value.discountAmountCents,
-            }
-          : null;
+        const value = CouponValue.fixedAmount(cents.value, this.vm().currency);
+        return value.ok ? value.value : null;
       }
       default:
         return null;
@@ -5579,10 +5843,10 @@ export class StaffVisitEditor {
     const apply = (what: string) =>
       this.transloco.translate('staff.visit.applyDiscount', { what });
     switch (this.discountKind()) {
-      case 'coupon': {
+      case DiscountKind.Coupon: {
         const code = VoucherCode.normalize(this.codeDraft());
         if (code.length === 0) return null;
-        if (this.codeState() === 'checking') {
+        if (this.codeState() === DiscountCodeState.Checking) {
           return {
             label: this.rawCopy('staff.visit.discountChecking'),
             disabled: true,
@@ -5590,14 +5854,14 @@ export class StaffVisitEditor {
         }
         return { label: apply(code), disabled: false };
       }
-      case 'percent':
-      case 'amount': {
+      case DiscountKind.Percent:
+      case DiscountKind.Amount: {
         const read = this.figureRead();
         if (read === null) return null;
         const what =
           read.discountMethod === DiscountMethod.PercentOff
-            ? percentOffLabel(read.percent)
-            : `−${this.moneyLabel(read.minor)}`;
+            ? percentOffLabel(read.discountPercent)
+            : `−${this.moneyLabel(read.discountAmountCents)}`;
         return { label: apply(what), disabled: false };
       }
       default:
@@ -5616,33 +5880,17 @@ export class StaffVisitEditor {
     const apply = this.discountApply();
     if (apply === null || apply.disabled) return;
     switch (this.discountKind()) {
-      case 'coupon': {
+      case DiscountKind.Coupon: {
         const code = VoucherCode.normalize(this.codeDraft());
         this.codeDraft.set(code);
         this.commitCode(code);
         return;
       }
-      case 'percent':
-      case 'amount': {
+      case DiscountKind.Percent:
+      case DiscountKind.Amount: {
         const read = this.figureRead();
         if (read === null) return;
-        this.addDiscount({
-          discountSource: DiscountSource.Manual,
-          label: 'manual',
-          value:
-            read.discountMethod === DiscountMethod.PercentOff
-              ? {
-                  discountMethod: DiscountMethod.PercentOff,
-                  percent: read.percent,
-                }
-              : {
-                  discountMethod: DiscountMethod.FixedAmount,
-                  amountCents: read.minor,
-                },
-          grantId: null,
-          code: null,
-          exclusive: false,
-        });
+        this.addDiscount(manualDiscountOf(read));
         this.figureDraft.set('');
         return;
       }
@@ -5663,16 +5911,16 @@ export class StaffVisitEditor {
     if (manual === undefined) return '';
     const kind = this.discountKind();
     if (
-      kind === 'percent' &&
-      manual.value.discountMethod === DiscountMethod.PercentOff
+      kind === DiscountKind.Percent &&
+      manual.discountMethod === DiscountMethod.PercentOff
     ) {
-      return String(manual.value.percent);
+      return String(manual.discountPercent);
     }
     if (
-      kind === 'amount' &&
-      manual.value.discountMethod === DiscountMethod.FixedAmount
+      kind === DiscountKind.Amount &&
+      manual.discountMethod === DiscountMethod.FixedAmount
     ) {
-      return this.figureOf(manual.value.amountCents);
+      return this.figureOf(manual.discountAmountCents);
     }
     return '';
   });
@@ -5726,7 +5974,7 @@ export class StaffVisitEditor {
    * percent read as cents («1,40») is not what anybody typed.
    */
   protected setPercentFromEntry(percent: number | null): void {
-    if (this.discountKind() !== 'percent') return;
+    if (this.discountKind() !== DiscountKind.Percent) return;
     const figure = percent === null ? '' : this.cappedFigure(String(percent));
     // A leave event that repeats what the field already shows is not
     // typing — Return's own `change`, a beat after the ask, must not redraft
@@ -5735,43 +5983,68 @@ export class StaffVisitEditor {
     this.figureDraft.set(figure);
   }
 
-  /** The sum entry's answer, in minor units, as the figure the promise reads — guarded the same way. */
+  /**
+   * The sum entry's answer, in minor units, as the figure the promise
+   * reads — guarded the same way. The field's figure becomes cents here, at
+   * its edge: the amount field answers whole minor units, clamped to `0` and
+   * the bill, which `PriceCents.of` never refuses (a figure it did refuse
+   * would leave the field as it was).
+   */
   protected setAmountFromEntry(minor: number | null): void {
-    if (this.discountKind() !== 'amount') return;
-    const figure =
-      minor === null ? '' : this.cappedFigure(this.figureOf(minor));
+    if (this.discountKind() !== DiscountKind.Amount) return;
+    let figure = '';
+    if (minor !== null) {
+      const cents = PriceCents.of(minor);
+      if (!cents.ok) return;
+      figure = this.cappedFigure(this.figureOf(cents.value));
+    }
     if (figure === this.figureField()) return;
     this.figureDraft.set(figure);
   }
 
   /** The bill, exactly — the sum's ceiling for the field; the ruler's is the last half-euro step under it. */
-  protected readonly amountCap = computed<number | null>(
+  protected readonly amountCap = computed<PriceCents | null>(
     () => this.subtotalMoney()?.amountCents ?? null,
   );
 
-  /** The sum in hand, in minor units: what is being typed, else the manual sum a new one would replace. */
-  protected readonly amountValue = computed<number | null>(() => {
+  /**
+   * The sum in hand, in cents: what is being typed, else the manual sum a
+   * new one would replace — typed money read once at the field's edge
+   * (`parsePriceInput` answers a safe whole number ≥ 0, which
+   * `PriceCents.of` never refuses).
+   */
+  protected readonly amountValue = computed<PriceCents | null>(() => {
     const raw = this.figureField().trim();
-    return raw.length === 0 ? null : parsePriceInput(raw);
+    const minor = raw.length === 0 ? null : parsePriceInput(raw);
+    if (minor === null) return null;
+    const cents = PriceCents.of(minor);
+    return cents.ok ? cents.value : null;
   });
 
-  /** The ruler runs to the bill — the last half-euro step that fits it; none without a bill. */
-  protected readonly amountSliderMax = computed<number | null>(() => {
+  /**
+   * The ruler runs to the bill — the last half-euro step that fits it; none
+   * without a bill. A whole step count of a bill in cents is cents itself.
+   */
+  protected readonly amountSliderMax = computed<PriceCents | null>(() => {
     const subtotal = this.subtotalMoney()?.amountCents ?? null;
     if (subtotal === null) return null;
-    const max =
+    const max = PriceCents.of(
       Math.floor(subtotal / AMOUNT_SLIDER_STEP_MINOR) *
-      AMOUNT_SLIDER_STEP_MINOR;
-    return max > 0 ? max : null;
+        AMOUNT_SLIDER_STEP_MINOR,
+    );
+    return max.ok && max.value > 0 ? max.value : null;
   });
 
   protected readonly amountSliderStep = AMOUNT_SLIDER_STEP_MINOR;
   protected readonly amountSliderTick = AMOUNT_SLIDER_TICK_MINOR;
   protected readonly amountSliderMajor = AMOUNT_SLIDER_MAJOR_MINOR;
 
-  protected readonly amountSliderValue = computed(() =>
-    Math.min(this.amountSliderMax() ?? 0, Math.max(0, this.amountValue() ?? 0)),
-  );
+  /** The thumb: the sum in hand, held to the ruler's end (none drafted is the ruler's start). */
+  protected readonly amountSliderValue = computed<PriceCents>(() => {
+    const max = this.amountSliderMax() ?? PriceCents.ZERO;
+    const value = this.amountValue() ?? PriceCents.ZERO;
+    return value < max ? value : max;
+  });
 
   /** The ends, named: «0,00 €» and the bill. */
   protected readonly amountMarks = computed<readonly UiSliderMark[]>(() => {
@@ -5779,7 +6052,7 @@ export class StaffVisitEditor {
     return max === null
       ? []
       : [
-          { value: 0, label: this.moneyLabel(0) },
+          { value: 0, label: this.moneyLabel(PriceCents.ZERO) },
           { value: max, label: this.moneyLabel(max) },
         ];
   });
@@ -5789,8 +6062,14 @@ export class StaffVisitEditor {
       `−${this.moneyLabel(this.amountSliderValue())} · ${this.dockTotalLabel()}`,
   );
 
+  /**
+   * A move of the ruler's thumb writes the figure. The ruler answers a step
+   * of half a euro between `0` and its end — whole cents, which
+   * `PriceCents.of` never refuses.
+   */
   protected slideAmount(minor: number): void {
-    this.figureDraft.set(this.figureOf(minor));
+    const cents = PriceCents.of(minor);
+    if (cents.ok) this.figureDraft.set(this.figureOf(cents.value));
   }
 
   /** The code being checked, normalised; `null` when nothing is in flight. */
@@ -5800,20 +6079,20 @@ export class StaffVisitEditor {
    * The code field's state: idle, waiting for the owner, or one of the
    * refusals — a voucher's own carried as `VoucherSystem.refusal`'s tag.
    */
-  protected readonly codeState = signal<
-    'idle' | 'checking' | 'unknown' | 'already' | VoucherRefusal | 'nothingLeft'
-  >('idle');
+  protected readonly codeState = signal<DiscountCodeState>(
+    DiscountCodeState.Idle,
+  );
 
   /** The copy under the code field for its state; `null` when idle. */
   protected readonly codeNote = computed<string | null>(() => {
     switch (this.codeState()) {
-      case 'idle':
+      case DiscountCodeState.Idle:
         return null;
-      case 'checking':
+      case DiscountCodeState.Checking:
         return this.rawCopy('staff.visit.discountChecking');
-      case 'unknown':
+      case DiscountCodeState.Unknown:
         return this.rawCopy('staff.visit.discountUnknownCode');
-      case 'already':
+      case DiscountCodeState.Already:
         return this.rawCopy('staff.visit.codeAlready');
       case VoucherRefusal.Void:
         return this.rawCopy('staff.visit.voucherVoid');
@@ -5821,22 +6100,29 @@ export class StaffVisitEditor {
         return this.rawCopy('staff.visit.voucherExpired');
       case VoucherRefusal.Empty:
         return this.rawCopy('staff.visit.voucherEmpty');
-      case 'nothingLeft':
+      case DiscountCodeState.NothingLeft:
         return this.rawCopy('staff.visit.voucherNothingLeft');
     }
   });
 
   /** A refusal reads red; a wait reads quiet. */
   protected readonly codeRefused = computed(
-    () => this.codeState() !== 'idle' && this.codeState() !== 'checking',
+    () =>
+      this.codeState() !== DiscountCodeState.Idle &&
+      this.codeState() !== DiscountCodeState.Checking,
   );
+  protected readonly DiscountCodeState = DiscountCodeState;
 
-  /** The saved subtotal as money — what every discount here is a share of. */
+  /**
+   * The saved subtotal as money in the bill's currency — what every
+   * discount here is a share of (DEP-21: the bill's currency, was the
+   * constant EUR).
+   */
   private readonly subtotalMoney = computed<Money | null>(() => {
-    const minor = this.vm().priceCents;
-    if (minor === null || minor <= 0) return null;
-    const cents = PriceCents.of(minor);
-    return cents.ok ? { amountCents: cents.value, currency: MONEY_CODE } : null;
+    const vm = this.vm();
+    const cents = vm.priceCents;
+    if (cents === null || cents <= 0) return null;
+    return { amountCents: cents, currency: vm.currency };
   });
 
   /**
@@ -5870,40 +6156,24 @@ export class StaffVisitEditor {
   private readonly draftedManual = computed<VisitEditorDiscount | null>(() => {
     if (this.page()?.editorPage !== EditorPage.Discount) return null;
     const read = this.figureRead();
-    if (read === null) return null;
-    return {
-      discountSource: DiscountSource.Manual,
-      label: 'manual',
-      value:
-        read.discountMethod === DiscountMethod.PercentOff
-          ? {
-              discountMethod: DiscountMethod.PercentOff,
-              percent: read.percent,
-            }
-          : {
-              discountMethod: DiscountMethod.FixedAmount,
-              amountCents: read.minor,
-            },
-      grantId: null,
-      code: null,
-      exclusive: false,
-    };
+    return read === null ? null : manualDiscountOf(read);
   });
 
   /**
    * Every discount and voucher through the drafted bill
    * (`BillingSystem.draftBill`: the one evaluator, its total order, the
    * vouchers' in-order cascade) — see `bill`. The sheet's part is the edge:
-   * each line's value parsed back to the domain's (a line that does not
-   * parse takes nothing and is not listed), its key as the line's id, the
-   * order of adding as the evaluator's last tie-break, and what each
-   * voucher may draw as cents.
+   * each line's value read back through its guards in the bill's currency
+   * (a line that does not read takes nothing and is not listed), its key as
+   * the line's id, the order of adding as the evaluator's last tie-break,
+   * and what each voucher may draw.
    */
   private evaluate(discounts: readonly VisitEditorDiscount[]): EvaluatedBill {
     const inputs: DiscountInput[] = [];
     const keys = new Map<string, VisitEditorDiscount>();
+    const currency = this.vm().currency;
     discounts.forEach((discount, index) => {
-      const value = toCouponValue(discount.value, MONEY_CODE);
+      const value = toCouponValue(discount, currency);
       if (value === null) return;
       const key = discountKey(discount);
       keys.set(key, discount);
@@ -5918,14 +6188,12 @@ export class StaffVisitEditor {
     const figures = BillingSystem.draftBill(
       this.subtotalMoney(),
       inputs,
-      this.draft().vouchers.map((voucher) =>
-        drawableCentsOf(voucher.availableMinorUnits),
-      ),
+      this.draft().vouchers.map((voucher) => voucher.availableCents),
     );
     return {
       figures,
       lines: figures.lines.map((line) => ({
-        key: line.id as string,
+        key: line.id,
         discount: keys.get(line.id) as VisitEditorDiscount,
         amount: line.amountCents,
       })),
@@ -5945,11 +6213,11 @@ export class StaffVisitEditor {
   protected readonly discountLines = computed(() =>
     this.bill().lines.map((line) => {
       const title = this.discountTitle(line.discount);
-      const value = this.couponValue(title, line.discount.value);
+      const value = this.couponValue(title, line.discount);
       const took = `−${this.moneyLabel(line.amount)}`;
       const glyph: UiIconName =
         line.discount.discountSource === DiscountSource.Manual
-          ? line.discount.value.discountMethod === DiscountMethod.PercentOff
+          ? line.discount.discountMethod === DiscountMethod.PercentOff
             ? 'promo.percent'
             : 'promo.sum'
           : 'promo.coupon';
@@ -6020,12 +6288,17 @@ export class StaffVisitEditor {
     });
   });
 
-  /** Minor units → `2,80 €`, or `''` for anything that is not money. */
-  private moneyLabel(minor: number): string {
-    const cents = PriceCents.of(Math.max(0, minor));
-    return cents.ok
-      ? formatCents(cents.value, MONEY_CODE, this.transloco.getActiveLang())
-      : '';
+  /**
+   * Cents → `2,80 €`, in the BILL's currency (`vm.currency` — DEP-21: it
+   * was the constant EUR; identical for every EUR visit). Every figure the
+   * sheet words is cents already, so there is no `''` path any more.
+   */
+  private moneyLabel(cents: PriceCents): string {
+    return formatCents(
+      cents,
+      this.vm().currency,
+      this.transloco.getActiveLang(),
+    );
   }
 
   /**
@@ -6033,12 +6306,12 @@ export class StaffVisitEditor {
    * The rule, never an echo of the coupon's name above it: «Безплатно
    * подстригване» over «Безплатно» said one word twice (WP7 review).
    */
-  private valueLabel(value: VisitEditorDiscountValue): string {
+  private valueLabel(value: CouponValue): string {
     switch (value.discountMethod) {
       case DiscountMethod.PercentOff:
-        return percentOffLabel(value.percent);
+        return percentOffLabel(value.discountPercent);
       case DiscountMethod.FixedAmount:
-        return `−${this.moneyLabel(value.amountCents)}`;
+        return `−${this.moneyLabel(value.discountAmountCents)}`;
       case DiscountMethod.FreeService:
         return this.rawCopy('staff.visit.discountFree');
     }
@@ -6058,10 +6331,7 @@ export class StaffVisitEditor {
    * подстригване») keeps «Безплатна услуга»; an applied line's chip still
    * says what it took («−17,50 €»).
    */
-  private couponValue(
-    name: string,
-    value: VisitEditorDiscountValue,
-  ): string | null {
+  private couponValue(name: string, value: CouponValue): string | null {
     const rule = this.valueLabel(value);
     return value.discountMethod === DiscountMethod.FreeService &&
       nameSaysRule(name, rule, this.transloco.getActiveLang())
@@ -6089,10 +6359,10 @@ export class StaffVisitEditor {
       const applied = onBill.has(grant.grantId);
       return {
         offerSource: OfferSource.Grant,
-        id: grant.grantId,
         key: `grant:${grant.grantId}`,
         testId: `staff-visit-discount-grant-${grant.grantId}`,
         code: null,
+        grantId: grant.grantId,
         label: grant.label,
         exclusive: grant.exclusive,
         value: this.couponValue(grant.label, grant.value),
@@ -6180,7 +6450,7 @@ export class StaffVisitEditor {
       const name =
         line !== undefined
           ? (line.code ??
-            (line.glyph === 'promo.coupon'
+            (line.discountSource !== DiscountSource.Manual
               ? line.title
               : (line.value ?? line.title)))
           : (vouchers[0]?.voucher.code ?? '');
@@ -6206,11 +6476,11 @@ export class StaffVisitEditor {
     if (this.isNew()) return this.catalogueTotalLabel() ?? '—';
     const saved = this.vm().priceLabel ?? '—';
     const due = this.dockDue();
-    return due === null ? saved : this.moneyLabel(due) || saved;
+    return due === null ? saved : this.moneyLabel(due);
   });
 
   /** What is due on the dock's bill: its total, less what the vouchers would cover of it (the drafted bill's balance). */
-  private readonly dockDue = computed<number | null>(
+  private readonly dockDue = computed<PriceCents | null>(
     () => this.dockBill().figures.balanceDueCents,
   );
 
@@ -6227,17 +6497,12 @@ export class StaffVisitEditor {
     return this.moneyLabel(subtotal);
   });
 
-  protected applyGrant(grantId: string): void {
+  protected applyGrant(grantId: CouponGrantId): void {
     const grant = this.uiGrants().find((entry) => entry.grantId === grantId);
     if (grant === undefined) return;
-    this.addDiscount({
-      discountSource: DiscountSource.Grant,
-      label: grant.label,
-      value: grant.value,
-      grantId: grant.grantId,
-      code: null,
-      exclusive: grant.exclusive,
-    });
+    this.addDiscount(
+      grantDiscountOf(grant.grantId, grant.label, grant.value, grant.exclusive),
+    );
   }
 
   /**
@@ -6255,7 +6520,7 @@ export class StaffVisitEditor {
       const discounts = DiscountSystem.withAdded(
         draft.discounts,
         discount,
-        (entry) => promiseOf(entry, MONEY_CODE),
+        (entry) => promiseOf(entry, this.vm().currency),
       );
       return discounts === draft.discounts ? draft : { ...draft, discounts };
     });
@@ -6280,7 +6545,7 @@ export class StaffVisitEditor {
     }));
   }
 
-  protected removeVoucher(voucherId: string): void {
+  protected removeVoucher(voucherId: GiftVoucherId): void {
     this.draft.update((draft) => ({
       ...draft,
       vouchers: draft.vouchers.filter(
@@ -6309,11 +6574,11 @@ export class StaffVisitEditor {
       draft.vouchers.some((voucher) => voucher.code === code);
     if (onBill) {
       this.pendingCode.set(code);
-      this.codeState.set('already');
+      this.codeState.set(DiscountCodeState.Already);
       return;
     }
     this.pendingCode.set(code);
-    this.codeState.set('checking');
+    this.codeState.set(DiscountCodeState.Checking);
     this.promoCodeEntered.emit(code);
   }
 
@@ -6331,14 +6596,16 @@ export class StaffVisitEditor {
       if (answer === null || pending === null) return;
       if (VoucherCode.normalize(answer.code) !== pending) return;
       if (answer.promo !== null) {
-        this.addDiscount({
-          discountSource: DiscountSource.Code,
-          label: answer.promo.label,
-          value: answer.promo.value,
-          grantId: null,
-          code: pending,
-          exclusive: answer.promo.exclusive,
-        });
+        // The owner opened a coupon for exactly this code — a stored
+        // coupon's code, so a voucher code by construction.
+        this.addDiscount(
+          codeDiscountOf(
+            VoucherCode.of(pending),
+            answer.promo.label,
+            answer.promo.value,
+            answer.promo.exclusive,
+          ),
+        );
         this.codeDraft.set('');
         return;
       }
@@ -6350,21 +6617,21 @@ export class StaffVisitEditor {
         // Nothing left for it to cover: the bill is already paid.
         const due = this.bill().figures.balanceDueCents ?? 0;
         if (due <= 0) {
-          this.codeState.set('nothingLeft');
+          this.codeState.set(DiscountCodeState.NothingLeft);
           return;
         }
         this.addVoucher(answer.voucher);
         this.codeDraft.set('');
         return;
       }
-      this.codeState.set('unknown');
+      this.codeState.set(DiscountCodeState.Unknown);
     });
   });
 
   /** The code field, at rest: nothing pending, nothing said. */
   private settleCode(): void {
     this.pendingCode.set(null);
-    this.codeState.set('idle');
+    this.codeState.set(DiscountCodeState.Idle);
   }
 
   protected openNote(): void {
@@ -6387,7 +6654,7 @@ export class StaffVisitEditor {
    * the server has actually agreed.
    */
   /** Creating, rather than editing something that exists. */
-  protected readonly isNew = computed(() => this.vm().appointmentId === '');
+  protected readonly isNew = computed(() => this.vm().appointmentId === null);
 
   protected legClientLabel(leg: DraftLeg): string {
     return (
@@ -6414,29 +6681,37 @@ export class StaffVisitEditor {
    */
   protected readonly barberChoices = computed<readonly UiChoiceOption[]>(() =>
     this.barberOptions().map((barber) => ({
-      id: barber.id,
+      id: barber.key,
       label: barber.name,
       avatarSrc: barber.avatarSrc ?? null,
-      testId: `staff-visit-barber-pick-${barber.id}`,
+      testId: `staff-visit-barber-pick-${barber.key}`,
     })),
   );
 
-  protected barberToneOf(id: string): number {
-    return this.barberOptions().find((barber) => barber.id === id)?.tone ?? 0;
+  /** A menu option's legend tone, by the option's key. */
+  protected barberToneOf(key: string): number {
+    return this.barberOptions().find((barber) => barber.key === key)?.tone ?? 0;
   }
 
-  protected pickChairBarber(fromId: string, id: string): void {
-    const barber = this.barberOptions().find((option) => option.id === id);
+  /** The chair row's pick — the option by its key, the chair it names written to the row's legs. */
+  protected pickChairBarber(fromId: BarberId | null, key: string): void {
+    const barber = this.barberOptions().find((option) => option.key === key);
     if (barber) this.pickBarberFor(fromId, barber);
   }
 
-  protected setLegClient(seatId: string, clientId: string): void {
+  /**
+   * A leg's «За кого» pick. The menu's options were minted from the
+   * draft's own person keys (`legClientOptions`), so the id handed back is
+   * one by construction.
+   */
+  protected setLegClient(seatId: SeatId, clientId: string): void {
     this.legMenu.set(null);
     const seats = this.seatsOf(seatId);
+    const person = DraftPersonKey.of(clientId);
     this.draft.update((draft) => ({
       ...draft,
       legs: draft.legs.map((leg) =>
-        seats.has(leg.seatId) ? { ...leg, clientId } : leg,
+        seats.has(leg.seatId) ? { ...leg, clientId: person } : leg,
       ),
     }));
   }
@@ -6473,6 +6748,9 @@ export class StaffVisitEditor {
       // A visit is its seats: with none left there is nothing to write —
       // the dock asks for a service, and calling it off is an exit's.
       this.draft().legs.length > 0 &&
+      // Every service on a chair: a leg drafted before the sheet knew its
+      // chair has nobody to be seated with yet (was sent as `''`).
+      this.draft().legs.every((leg) => leg.barberId !== null) &&
       (this.isNew() || this.dirty()),
   );
 
@@ -6537,15 +6815,15 @@ export class StaffVisitEditor {
     if (!this.isNew()) return null;
     const legs = this.draft().legs;
     if (legs.length === 0) return null;
-    let sum = 0;
+    // Each leg's price as cents — a typed one first, else the catalogue's it
+    // was picked at (pass D, D-10.3: never a label read back).
+    const prices: PriceCents[] = [];
     for (const leg of legs) {
-      const minor =
-        leg.priceCents ??
-        (leg.priceLabel === null ? null : parsePriceInput(leg.priceLabel));
-      if (minor === null) return null;
-      sum += minor;
+      const cents = leg.typedPriceCents ?? leg.priceCents;
+      if (cents === null) return null;
+      prices.push(cents);
     }
-    return this.moneyLabel(sum) || null;
+    return this.moneyLabel(PriceCents.sum(prices));
   });
 
   /** What «Запази» last published — what the saved mark's adoption waits for. */
@@ -6553,7 +6831,10 @@ export class StaffVisitEditor {
 
   protected save(): void {
     if (!this.saveable()) return;
-    const commit = commitOf(this.draft(), this.endMinute());
+    const draft = this.draft();
+    const legs = draftCommitLegsOf(draft);
+    if (legs === null) return;
+    const commit = commitOf(draft, this.endMinute(), legs);
     this.savedCommit = commit;
     this.committed.emit(commit);
   }
@@ -6580,11 +6861,7 @@ export class StaffVisitEditor {
    * steps from wherever the draft already is instead of snapping back.
    */
   protected stepDay(offset: number): void {
-    const day = LocalDate.parse(this.draft().dayKey);
-    if (!day.ok) {
-      defect(`a drafted day off the calendar: ${this.draft().dayKey}`);
-    }
-    this.pickDay(LocalDate.addDays(day.value, offset));
+    this.pickDay(LocalDate.addDays(this.draft().dayKey, offset));
   }
 
   /**
@@ -6593,10 +6870,12 @@ export class StaffVisitEditor {
    * ⚠ The SHOP's today off the VM, not the device's. `new Date()` here read
    * the browser's clock, which is a different day from the shop's for any
    * counter open across midnight in another zone — the same trap
-   * `StaffDayStore` documents for its own `todayKey`.
+   * `StaffDayStore` documents for its own `todayKey`. Before the shop's
+   * zone is known there is no today to go to.
    */
   protected goToday(): void {
-    this.pickDay(this.vm().todayKey);
+    const now = this.vm().now;
+    if (now !== null) this.pickDay(now.localDate);
   }
 
   protected onQuery(value: string): void {
@@ -6680,9 +6959,13 @@ export class StaffVisitEditor {
    * fallback while the owner binds none: every name the catalogue, the
    * roster and the shops give, no art (the card then draws monograms and
    * emblems). Its lookups read the inputs, so a late catalogue re-words
-   * the card without a re-open.
+   * the card without a re-open; its shop count is a plain number, the
+   * lookup rebuilt when the count moves (no getter on data, pass D D-7.6).
+   * The lookups take any text id — a catalogue keyed on branded ids reads
+   * them as they are.
    */
-  private readonly heldCatalog: ClientCardCatalog = (() => {
+  private readonly heldShopCount = computed(() => this.uiShops().length);
+  private readonly heldCatalog = computed<ClientCardCatalog>(() => {
     const services = this.uiServices;
     const barbers = this.uiBarbers;
     const shops = this.uiShops;
@@ -6702,15 +6985,13 @@ export class StaffVisitEditor {
       locationName: (id: string) =>
         shops().find((shop) => shop.id === id)?.label ?? null,
       locationCoverSrc: () => null,
-      get locationCount() {
-        return shops().length;
-      },
+      locationCount: this.heldShopCount(),
     };
-  })();
+  });
 
   /** The catalogue the card is handed: the owner's, else the one this sheet holds. */
   protected readonly cardCatalog = computed<ClientCardCatalog>(
-    () => this.uiClientCardCatalog() ?? this.heldCatalog,
+    () => this.uiClientCardCatalog() ?? this.heldCatalog(),
   );
 
   /** A catalogue object's identity, for the opening's key. */
@@ -6729,49 +7010,51 @@ export class StaffVisitEditor {
   private cardSubjectOf(client: DraftClient): ClientCardSubject {
     return {
       id: client.id,
-      userId: VisitDraftSystem.accountKeyOf(client.id),
+      userId: DraftPersonKey.accountOf(client.id),
       label: client.label,
       phone: client.phone,
       phoneHref: client.phoneHref,
-      email: client.email ?? null,
+      email: client.email,
       avatarSrc: client.avatarSrc ?? null,
     };
   }
 
   /** Whether this person booked the visit — the only one its held rewards are for (§3.1.3). */
   private isOwnerOf(client: DraftClient): boolean {
-    const account = VisitDraftSystem.accountKeyOf(client.id);
+    const account = DraftPersonKey.accountOf(client.id);
     return account !== null && account === this.uiOwnerUserId();
   }
 
   /**
    * THE VISIT ON SCREEN as the card reads it (§5.2.1): the draft's legs
-   * for THIS person (the whole visit for a party of one), each starting at
-   * the drafted start in the shop's zone; the drafted shop; the owner's
-   * held rewards, those not yet on this bill apart from those already on
-   * it, worded by this sheet's own discount formatter, and none for
-   * anybody else.
+   * for THIS person (the whole visit for a party of one), all starting at
+   * the drafted start on the shop's wall clock (its day and minute — the
+   * card reads them as they are, Law 7.3; a track minute past midnight is
+   * no minute of the day, `null`); the drafted shop; the owner's held
+   * rewards, those not yet on this bill apart from those already on it,
+   * worded by this sheet's own discount formatter, and none for anybody
+   * else.
    */
   private cardContextOf(client: DraftClient): ClientCardContext {
     const vm = this.vm();
     const draft = this.draft();
     const partyOfOne = draft.clients.length <= 1;
-    const startsAtIso = shopIsoOf(draft.dayKey, draft.startMinute, vm.timeZone);
+    const startMinutes = TrackMinute.toStart(draft.startMinute);
     const legs: ClientCardLeg[] = draft.legs
       .filter((leg) => partyOfOne || leg.clientId === client.id)
       .map((leg) => ({
         serviceId: leg.serviceId,
         variantId: leg.variantId,
         minutes: leg.minutes,
-        barberId: leg.barberId === '' ? null : leg.barberId,
-        startsAtIso,
+        // A leg with no chair yet names none (was `''`).
+        barberId: leg.barberId,
       }));
     const isOwner = this.isOwnerOf(client);
     // A reward READY TO USE is one not on this bill yet (`grants`); once
     // the ticket's «Използвай» (or the discount page) has put it there it
     // is `grantsOnBill`, which the card draws STAMPED where the ticket
     // stood, «Премахни» where «Използвай» stood (WP7 review r6).
-    const onBill = new Set(
+    const onBill = new Set<CouponGrantId | null>(
       draft.discounts
         .filter((discount) => discount.discountSource === DiscountSource.Grant)
         .map((discount) => discount.grantId),
@@ -6794,14 +7077,19 @@ export class StaffVisitEditor {
     // names one as what the points are «enough for» (DV5, wave D r6).
     const grantsOnBill = held.filter((grant) => onBill.has(grant.grantId));
     return {
-      appointmentId: vm.appointmentId === '' ? null : vm.appointmentId,
-      viewer: this.uiViewer() ?? { uid: '', roles: [] },
+      appointmentId: vm.appointmentId,
+      // Handed over as it is: nobody signed in reads as no roles (D-10.6).
+      viewer: this.uiViewer(),
       isOwner,
       settled: this.settled(),
       // Only a gone visit locks what the card offers (the reward, the
       // person's removal, «Повтори»): a finished one stays correctable.
       gone: this.gone(),
       partyOfOne,
+      start: {
+        localDate: draft.dayKey,
+        startMinutes: startMinutes.ok ? startMinutes.value : null,
+      },
       legs,
       locationId: draft.locationId,
       grants,
@@ -6918,13 +7206,14 @@ export class StaffVisitEditor {
     const tile =
       anchor === null
         ? 'client-loyalty-all'
-        : `client-loyalty-${anchor === 'catalog' ? 'points' : anchor}`;
+        : // eslint-disable-next-line security/detect-object-injection -- `anchor` is a member of the closed dictionary the table is total over.
+          `client-loyalty-${WALLET_TILE_WORDS[anchor]}`;
     // A tile's push lands on its section: the page focuses the heading.
     this.push(
       EditorPage.ClientLoyalty,
       client.id,
       this.originOf(tile),
-      anchor === null ? 'container' : 'section',
+      anchor === null ? PageArrival.Container : PageArrival.Section,
     );
   }
 
@@ -7077,12 +7366,14 @@ export class StaffVisitEditor {
    * «Приложени · Няма» (WP7 review r5). Only ever the booker's card: a
    * companion's rewards cannot be spent on this visit.
    */
-  protected openReward(grantId: string): void {
+  protected openReward(grantId: CouponGrantId): void {
     const client = this.clientOfStack();
     if (client === null || !this.isOwnerOf(client)) return;
     const fallback = this.rewardTicket(grantId);
     this.resetDiscountEntry();
-    const offer = this.grantChoices().find((choice) => choice.id === grantId);
+    const offer = this.grantChoices().find(
+      (choice) => choice.grantId === grantId,
+    );
     if (offer !== undefined) this.applyOffer(offer);
     // On the wallet the press is the «Използвай» DISC (revision 3 §2.2.3),
     // which gives way once the ticket is on the bill: ‹ lands on the
@@ -7099,7 +7390,7 @@ export class StaffVisitEditor {
    * the focus — the button the press was on is gone with the stamp. Only
    * ever the booker's card.
    */
-  protected removeReward(grantId: string): void {
+  protected removeReward(grantId: CouponGrantId): void {
     const client = this.clientOfStack();
     if (client === null || !this.isOwnerOf(client)) return;
     // The press was the act, not a push: no origin to remember.
@@ -7124,7 +7415,7 @@ export class StaffVisitEditor {
   }
 
   /** The ticket a held reward stands on, on the page up: «Лоялност»'s own, else the glance's one. */
-  private rewardTicket(grantId: string): string {
+  private rewardTicket(grantId: CouponGrantId): string {
     return this.page()?.editorPage === EditorPage.ClientLoyalty
       ? `rewards-ready-${grantId}`
       : 'client-reward-ready';
@@ -7144,7 +7435,12 @@ export class StaffVisitEditor {
     ) {
       return null;
     }
-    return this.cardStoreRef()?.detailAction(page.subjectId) ?? null;
+    // The page key (opaque, D-8.9) branded once here, its reader: the
+    // family's id the medal page was opened with.
+    return (
+      this.cardStoreRef()?.detailAction(BadgeSeriesId.of(page.subjectId)) ??
+      null
+    );
   });
 
   /**
@@ -7156,7 +7452,7 @@ export class StaffVisitEditor {
    * the progress card gains «Това посещение се брои…». The polite region
    * says so once. Nothing is written: «Запази» appears by the dirty rule.
    */
-  protected addCountedService(serviceId: string): void {
+  protected addCountedService(serviceId: ServiceId): void {
     const client = this.clientOfStack();
     if (client === null) return;
     // The service's plain option, else its first variant — the catalogue's
@@ -7200,17 +7496,20 @@ export class StaffVisitEditor {
           (entry.variantId ?? null) === leg.variantId,
       );
       if (option === undefined) return [];
-      const chair = this.chairOf(
-        draft.chairId === '' ? leg.barberId : draft.chairId,
-      );
+      // The last visit's barber only while the sheet has no chair of its own.
+      const chair = this.chairOf(draft.chairId ?? leg.barberId);
       return [
         {
-          seatId: `draft-${option.id}-${this.clock.nowUtcMs().toString(36)}-${this.minted++}`,
+          seatId: this.mintSeatId(option),
           serviceId: option.serviceId,
           variantId: option.variantId,
           serviceLabel: option.serviceLabel ?? option.label,
           minutes: leg.durationMinutes,
+          // The catalogue's price today, as cents beside its label.
+          priceCents: option.priceCents,
+          currency: option.currency,
           priceLabel: option.priceLabel,
+          typedPriceCents: null,
           barberId: chair.id,
           barberName: chair.name,
           barberTone: chair.tone,
@@ -7291,9 +7590,12 @@ export class StaffVisitEditor {
     );
     if (featured === null) return null;
     const last = featured.appointment;
+    // This year is the owner's today's; before it is known, no year is.
+    const now = this.vm().now;
     const thisYear =
+      now !== null &&
       LocalDate.parts(last.localDate).year ===
-      Number(this.vm().todayKey.slice(0, 4));
+        LocalDate.parts(now.localDate).year;
     return formatWallClock(
       last.localDate,
       null,
@@ -7328,42 +7630,67 @@ export class StaffVisitEditor {
 const ANNOUNCE_DELAY_MS = 150;
 
 /**
- * A drafted start — its shop day and minute — as the instant's ISO in the
- * shop's zone (`2026-10-10T14:00:00.000+03:00`): the card's leg reads its
- * start in that form. `''` for a day or a minute that names no instant (a
- * spring-forward gap's minute included), or before the zone is known.
- */
-function shopIsoOf(
-  dayKey: string,
-  minute: number,
-  zone: TimeZone | null,
-): string {
-  const day = LocalDate.parse(dayKey);
-  const start = MinuteOfDay.of(minute);
-  if (zone === null || !day.ok || !start.ok) return '';
-  const instant = ZonedTimeSystem.toUtc(day.value, start.value, zone);
-  return instant.ok ? ZonedTimeSystem.toIso(instant.value, zone) : '';
-}
-
-/**
  * The evaluator orders discounts by the instant they were applied, as its
  * last tie-break; a draft has no clock, so the order of ADDING stands in —
  * one millisecond apart from the epoch, deterministic and never read back.
  */
 function instantAt(index: number): UtcEpochMs {
-  const instant = UtcEpochMs.of(index);
-  if (!instant.ok) defect('unreachable: the UTC epoch');
-  return instant.value;
+  return UtcEpochMs.plusMs(UtcEpochMs.EPOCH, index);
 }
 
 /**
- * What a voucher may draw, as the drafted bill reads it — the VM's minor
- * units as cents; a figure that is no price (never handed today) draws
- * nothing, which is what it covered before.
+ * A shop code on the bill — opened with `code`: its provenance, the
+ * coupon's value as the domain keeps it, its name and its own rule.
  */
-function drawableCentsOf(minorUnits: number): PriceCents {
-  const cents = PriceCents.of(minorUnits);
-  return cents.ok ? cents.value : PriceCents.ZERO;
+function codeDiscountOf(
+  code: VoucherCode,
+  label: string,
+  value: CouponValue,
+  exclusive: boolean,
+): VisitEditorDiscount {
+  return {
+    ...DiscountProvenance.code(code),
+    ...CouponValue.of(value),
+    label,
+    grantId: null,
+    code,
+    exclusive,
+  };
+}
+
+/** A coupon the client holds, on the bill — the grant it honours, its value, name and rule. */
+function grantDiscountOf(
+  grantId: CouponGrantId,
+  label: string,
+  value: CouponValue,
+  exclusive: boolean,
+): VisitEditorDiscount {
+  return {
+    ...DiscountProvenance.grant(grantId),
+    ...CouponValue.of(value),
+    label,
+    grantId,
+    code: null,
+    exclusive,
+  };
+}
+
+/**
+ * The counter's own figure on the bill — a percent or a sum, as the manual
+ * guards read it; it has no name (the line names it by its value) and it
+ * stacks.
+ */
+function manualDiscountOf(
+  value: CouponValue.PercentOff | CouponValue.FixedAmount,
+): VisitEditorDiscount {
+  return {
+    ...DiscountProvenance.manual(),
+    ...CouponValue.of(value),
+    label: 'manual',
+    grantId: null,
+    code: null,
+    exclusive: false,
+  };
 }
 
 /**
@@ -7376,7 +7703,7 @@ interface EvaluatedBill {
   readonly lines: readonly {
     readonly key: string;
     readonly discount: VisitEditorDiscount;
-    readonly amount: number;
+    readonly amount: PriceCents;
   }[];
 }
 

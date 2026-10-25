@@ -7,19 +7,12 @@ import {
   type StreakIntervalRule,
 } from './streak-interval.data';
 import { StreakQualifier } from './streak-qualifier.data';
-import {
-  HeadRole,
-  STREAK_EXCUSES,
-  STREAK_SHOP_EXCUSES,
-  StreakExcuse,
-  StreakOnBreak,
-  StreakPublishConsent,
-  StreakRule,
-  StreakRuleDirection,
-  StreakRuleParameter,
-  StreakTransition,
-  isStreakExcuse,
-} from './streak-rule.data';
+import { HeadRole } from './streak-head-rule.data';
+import { StreakPublishConsent } from './streak-publish-consent.data';
+import { StreakRuleDirection } from './streak-rule-direction.data';
+import { StreakRuleParameter } from './streak-rule-parameter.data';
+import { StreakExcuse, StreakOnBreak, StreakRule } from './streak-rule.data';
+import { StreakTransition } from './streak-transition.data';
 
 // The cases of `streak-definition.spec.ts` (StreakDefinition.create /
 // default / isExcused), on the FLAT rule body. The head's id and name are
@@ -110,13 +103,13 @@ function faults(patch: Patch): string[] {
 
 describe('the rule vocabularies', () => {
   it('declares the tags SCREAMING, in their order', () => {
-    expect(STREAK_EXCUSES).toEqual([
+    expect(StreakRule.EXCUSES).toEqual([
       'SHOP_CLOSURE',
       'BARBER_ABSENCE',
       'STAFF_CANCELLED',
       'CLOSED_DAYS',
     ]);
-    expect(STREAK_SHOP_EXCUSES).toEqual([
+    expect(StreakRule.SHOP_EXCUSES).toEqual([
       'SHOP_CLOSURE',
       'BARBER_ABSENCE',
       'STAFF_CANCELLED',
@@ -152,10 +145,10 @@ describe('the rule vocabularies', () => {
   });
 
   it('guards an excuse', () => {
-    expect(isStreakExcuse('CLOSED_DAYS')).toBe(true);
-    expect(isStreakExcuse('closedDays')).toBe(false);
-    expect(isStreakExcuse('weather')).toBe(false);
-    expect(isStreakExcuse(7)).toBe(false);
+    expect(StreakRule.isExcuse('CLOSED_DAYS')).toBe(true);
+    expect(StreakRule.isExcuse('closedDays')).toBe(false);
+    expect(StreakRule.isExcuse('weather')).toBe(false);
+    expect(StreakRule.isExcuse(7)).toBe(false);
   });
 });
 
@@ -211,7 +204,7 @@ describe('StreakRule.parse', () => {
       ['a protection with every visit', { protectionsEarnEvery: 1 }],
       ['a protection every 24 visits', { protectionsEarnEvery: 24 }],
       ['no excuse', { excuses: [] }],
-      ['every excuse', { excuses: [...STREAK_EXCUSES] }],
+      ['every excuse', { excuses: [...StreakRule.EXCUSES] }],
       [
         'a pause of no day',
         { clientPauseEnabled: true, clientPauseMaxDaysPerYear: 0 },
@@ -639,7 +632,7 @@ describe('StreakRule.parse', () => {
   it('answers for one cause', () => {
     const shop = rule();
     expect(
-      STREAK_EXCUSES.map((cause) => StreakRule.isExcused(shop, cause)),
+      StreakRule.EXCUSES.map((cause) => StreakRule.isExcused(shop, cause)),
     ).toEqual([true, true, true, false]);
   });
 });
@@ -781,7 +774,7 @@ describe('StreakPublishConsent — what «Запази» owes the admin first', 
 describe('StreakRule.coversShopExcuses — every visit the shop calls off is excused', () => {
   it('covers the recommended rule’s excuses, and the whole vocabulary', () => {
     expect(StreakRule.coversShopExcuses(StreakRule.DEFAULT.excuses)).toBe(true);
-    expect(StreakRule.coversShopExcuses(STREAK_EXCUSES)).toBe(true);
+    expect(StreakRule.coversShopExcuses(StreakRule.EXCUSES)).toBe(true);
   });
 
   it('covers the three in any order — the excuses sheet lists them in P9’s', () => {
@@ -795,10 +788,10 @@ describe('StreakRule.coversShopExcuses — every visit the shop calls off is exc
   });
 
   it('covers nothing once one of the shop’s three is off', () => {
-    for (const off of STREAK_SHOP_EXCUSES) {
+    for (const off of StreakRule.SHOP_EXCUSES) {
       expect(
         StreakRule.coversShopExcuses(
-          STREAK_EXCUSES.filter((excuse) => excuse !== off),
+          StreakRule.EXCUSES.filter((excuse) => excuse !== off),
         ),
       ).toBe(false);
     }
@@ -807,11 +800,11 @@ describe('StreakRule.coversShopExcuses — every visit the shop calls off is exc
 
   it('is not moved by the days off: closed days alone are not the shop calling a visit off', () => {
     expect(StreakRule.coversShopExcuses([StreakExcuse.ClosedDays])).toBe(false);
-    expect(StreakRule.coversShopExcuses(STREAK_SHOP_EXCUSES)).toBe(true);
+    expect(StreakRule.coversShopExcuses(StreakRule.SHOP_EXCUSES)).toBe(true);
     expect(
       StreakRule.coversShopExcuses([
         StreakExcuse.ClosedDays,
-        ...STREAK_SHOP_EXCUSES,
+        ...StreakRule.SHOP_EXCUSES,
       ]),
     ).toBe(true);
   });

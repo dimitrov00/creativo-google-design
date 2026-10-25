@@ -17,13 +17,13 @@ import { BarberPreference } from './barber-pref.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
+import { Seat } from './seat.data';
+import type { SeatCore } from './seat-core.data';
 import {
-  Seat,
-  type SeatCore,
   SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from './seat.data';
+} from './seat-occupant.data';
 
 const T0 = minute(600); // 10:00 on the shop's wall clock
 const STAMP = unwrapOk(UtcEpochMs.of(1_791_356_400_000));

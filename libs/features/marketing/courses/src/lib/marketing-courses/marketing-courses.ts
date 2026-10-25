@@ -9,14 +9,10 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  ENROLLMENT_STATUSES,
-  EnrollmentStatus,
-  LocalizedText,
-  isEnrollmentOpenOrUpcoming,
-} from '@core/components';
+import { EnrollmentStatus, LocalizedText } from '@core/components';
 import type { Course } from '@core/entities';
-import { Locale } from '@core/primitives';
+import { Locale, Tag } from '@core/primitives';
+import { ProgramsSystem } from '@core/systems';
 import { COURSE_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   SiteFooterComponent,
@@ -43,10 +39,14 @@ import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 type CoursesTab =
   typeof EnrollmentStatus.Open | typeof EnrollmentStatus.Upcoming;
 
-/** What the page lists — every course but a closed one (index #11's `in` filter). */
-const LISTED_STATUSES: readonly EnrollmentStatus[] = ENROLLMENT_STATUSES.filter(
-  isEnrollmentOpenOrUpcoming,
-);
+/**
+ * What the page lists — every course but a closed one (index #11's `in`
+ * filter): the statuses in dictionary order, kept by the rule's one home
+ * (`ProgramsSystem.isEnrollmentOpenOrUpcoming`).
+ */
+const LISTED_STATUSES: readonly EnrollmentStatus[] = Tag.values(
+  EnrollmentStatus,
+).filter((status) => ProgramsSystem.isEnrollmentOpenOrUpcoming(status));
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 

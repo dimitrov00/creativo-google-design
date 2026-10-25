@@ -49,7 +49,7 @@ import { AdminRhythmStore } from '../admin-rhythm.store';
 import { rhythmRecorder } from '../testing/rhythm-recorder';
 import {
   AdminRhythmSheet,
-  type AdminRhythmSheetKind,
+  type RhythmSheet,
   type RhythmServiceGroup,
 } from './admin-rhythm-sheet';
 
@@ -147,7 +147,7 @@ const GROUPS: readonly RhythmServiceGroup[] = [
 
 // ── The rig ──────────────────────────────────────────────────────────────
 
-async function rig(kind: AdminRhythmSheetKind | null, groups = GROUPS) {
+async function rig(kind: RhythmSheet | null, groups = GROUPS) {
   const rules = seededRules();
   TestBed.configureTestingModule({
     imports: [AdminRhythmSheet],
@@ -190,7 +190,7 @@ async function rig(kind: AdminRhythmSheetKind | null, groups = GROUPS) {
   store.load();
   const fixture = TestBed.createComponent(AdminRhythmSheet);
   fixture.componentRef.setInput('services', groups);
-  fixture.componentRef.setInput('kind', kind);
+  fixture.componentRef.setInput('sheet', kind);
   const closed: number[] = [];
   fixture.componentInstance.closed.subscribe(() => closed.push(1));
   await settle(fixture);
@@ -257,7 +257,7 @@ describe('lib-admin-rhythm-sheet', () => {
     await settle(fixture, 2);
     expect(closed).toHaveLength(1);
     // The kind on screen is kept through the exit; the owner clears it.
-    fixture.componentRef.setInput('kind', null);
+    fixture.componentRef.setInput('sheet', null);
     await settle(fixture, 2);
     expect(sheetOpen(host)).toBe('closed');
   });
@@ -511,4 +511,10 @@ describe('«Влизане в сила»', () => {
     expect(store.effectiveFrom()).toBe('2026-09-30');
     expect(sheetOpen(host)).toBe('closing');
   });
+
+  // «takes a picked key that is no day for no day» is retired on purpose
+  // (pass D §4.2 class 4): the month picker's `uiPicked` is
+  // `output<LocalDate>`, so it can only hand back a day it built — a text
+  // that is no day can no longer reach the sheet (nor the store,
+  // `admin-rhythm.store.spec.ts`).
 });

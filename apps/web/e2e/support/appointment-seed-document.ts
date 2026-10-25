@@ -41,27 +41,12 @@ import {
   MinuteCount,
   MinuteOfDay,
   PriceCents,
-  type Result,
   SeatId,
   ServiceId,
-  type TimeZone,
   UserId,
-  type UtcEpochMs,
 } from '@core/primitives';
 import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
-
-/** A smart constructor's answer for a fixture value that is one by construction. */
-function sure<T, E>(result: Result<T, E>, what: string): T {
-  if (!result.ok) throw new Error(`e2e seed: ${what} is not valid`);
-  return result.value;
-}
-
-/** The shop's zone: every seeded slot is shop time. */
-export const SHOP_ZONE = 'Europe/Sofia';
-const SHOP_TIME_ZONE: TimeZone = sure(
-  ZonedTimeSystem.checkZone(SHOP_ZONE),
-  SHOP_ZONE,
-);
+import { SHOP_TIME_ZONE, shopInstant, sure } from './shop-clock';
 
 /** The dev catalogue's chair every seeded visit books: Ivan's beard trim at
  *  the Center, at the price and length the catalogue sells it for. */
@@ -73,18 +58,6 @@ export const DEV_CHAIR = {
   currency: 'EUR',
   durationMinutes: 30,
 } as const;
-
-/** An instant on the shop's wall clock — `day` at `hour:minute`, read in its zone. */
-function shopInstant(day: string, hour: number, minute = 0): UtcEpochMs {
-  return sure(
-    ZonedTimeSystem.toUtc(
-      sure(LocalDate.parse(day), day),
-      sure(MinuteOfDay.of(hour * 60 + minute), `${hour}:${minute}`),
-      SHOP_TIME_ZONE,
-    ),
-    `${day} ${hour}:${minute}`,
-  );
-}
 
 /** A fixed instant, so a seeded row is the same bytes on every run. */
 const BOOKED_AT_UTC_MS = shopInstant('2026-09-01', 12);

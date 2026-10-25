@@ -17,6 +17,7 @@ import {
 import type {
   BadgeCategory,
   BadgeSeries,
+  LoyaltyCatalogParts,
   RewardCatalogItem,
   Season,
   StreakDefinition,
@@ -44,7 +45,6 @@ import {
 import {
   LoyaltyCatalogSystem,
   type ValidLoyaltyCatalog,
-  type LoyaltyCatalogParts,
 } from './loyalty-catalog.system';
 import { StreakRuleSystem } from './streak-rule.system';
 

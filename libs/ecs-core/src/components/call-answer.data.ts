@@ -1,4 +1,4 @@
-import { Result } from '@core/primitives';
+import { Result, Tag } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 
 /**
@@ -71,7 +71,24 @@ export const CallAnswer = {
     return parsed.ok ? parsed.value : null;
   },
 
-  /** A field that must be one of a dictionary's values. */
+  /**
+   * A field that must be one of a dictionary's members — read through
+   * {@link Tag.has}, the one membership scan; `null` otherwise.
+   */
+  tag<D extends Readonly<Record<string, string | number>>>(
+    answer: CallAnswer,
+    name: string,
+    d: D,
+  ): Tag<D> | null {
+    const value = fieldOf(answer, name);
+    return Tag.has(d, value) ? value : null;
+  },
+
+  /**
+   * A field that must be one of a SUBSET list's values (a closed list that
+   * is not a whole dictionary, `StreakPublishError.ANSWERED_CODES`); a whole
+   * dictionary is read with {@link CallAnswer.tag}.
+   */
   oneOf<T extends string>(
     answer: CallAnswer,
     name: string,

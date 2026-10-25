@@ -1,5 +1,5 @@
 import type { StreakDefinitionVersion } from '@core/entities';
-import { LocalDate, type TimeZone, defect } from '@core/primitives';
+import { type LocalDate, Tag, type TimeZone } from '@core/primitives';
 import { StreakRuleField } from '@core/errors';
 import {
   RhythmEffectiveChoice,
@@ -7,22 +7,22 @@ import {
   StreakInterval,
   type StreakIntervalRule,
   StreakOnBreak,
+  type StreakPreview,
+  StreakPreviewOutcome,
   StreakQualifier,
   StreakRuleParameter,
   type StreakRuleInput,
+  type StreakStandingCounts,
   type StreakState,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
 } from '@core/components';
 import {
   RhythmDraftSystem,
-  type StreakPreview,
-  StreakPreviewOutcome,
   StreakPreviewSystem,
   StreakPublishSystem,
   StreakRuleSystem,
-  type StreakStandingCounts,
   StreakSystem,
-  type StreakTrackMark,
-  StreakTrackMarkKind,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -59,17 +59,21 @@ import { ADMIN_RHYTHM_CHOICES } from '../admin-rhythm.store';
  * words) and the track's descriptions (`clientCard.rhythm.*`, read by key).
  *
  * The rule is the FLAT `StreakRule` (a draft: `StreakRuleInput`), its tags
- * SCREAMING (`@core/components`); the keys, the menus' ids and the test ids
- * keep their lowercase spelling through the words tables below, each
- * `satisfies Record<Dictionary, …>`, so the text on screen is unchanged.
+ * SCREAMING (`@core/components`); the keys and the test ids keep their
+ * lowercase spelling through the words tables below, each
+ * `satisfies Record<Dictionary, …>`, so the text on screen is unchanged. A
+ * menu's option id is the domain tag itself (`StreakQualifier`,
+ * `StreakInterval`, `StreakOnBreak`, `RhythmEffectiveChoice` — one
+ * dictionary per tag family, never a copy): `ui-choice-menu` only tracks,
+ * compares and hands back an id, so no id reaches the page.
  */
 
 /** What every function below reads: the catalogue, the day and the rule's units. */
 export interface AdminRhythmContext {
   readonly translate: VisitTranslate;
   readonly lang: string;
-  /** The shop's today (`YYYY-MM-DD`): a date in another year says its year. */
-  readonly today: string;
+  /** The shop's today, read in its zone at the store's edge: a date in another year says its year. */
+  readonly today: LocalDate;
   /** The shop's zone (Law 7.2): the day a version was published on is read in it. */
   readonly zone: TimeZone;
   /** «7 дни» · «6 седмици» — the rule's own units (`rhythmRuleWords(...).days / .weeks`). */
@@ -98,22 +102,25 @@ export function excuseKey(excuse: StreakExcuse): string {
   return streakPeriodReasonWords[excuse];
 }
 
-/** The menu's id and key for a miss that holds the count. */
-const HOLD = 'hold';
+/** What a miss does, as its key (`admin.rhythm.onBreak.*`, `admin.rhythm.history.change.onBreak.*`). */
+const ON_BREAK_KEY = {
+  [StreakOnBreak.Restart]: 'restart',
+  [StreakOnBreak.Hold]: 'hold',
+} as const satisfies Record<StreakOnBreak, string>;
 
-/** «restart» · «hold» — what a miss does, as its key and its menu's id (`admin.rhythm.onBreak.*`). */
+/** «restart» · «hold» — what a miss does, as its key (`admin.rhythm.onBreak.*`). */
 export function onBreakKey(onBreak: StreakOnBreak): string {
-  switch (onBreak) {
-    case StreakOnBreak.Restart:
-      return 'restart';
-    case StreakOnBreak.Hold:
-      return HOLD;
-  }
+  // eslint-disable-next-line security/detect-object-injection -- `onBreak` is a member of the closed dictionary the table is total over.
+  return ON_BREAK_KEY[onBreak];
 }
 
-/** The menu's id back to what a miss does: «hold» holds the count, anything else starts it over. */
+/**
+ * The menu's id (a `StreakOnBreak` member, `ui-choice-menu`'s untyped
+ * answer) back to what a miss does: `HOLD` holds the count, anything else
+ * starts it over.
+ */
 export function onBreakOf(id: string): StreakOnBreak {
-  return id === HOLD ? StreakOnBreak.Hold : StreakOnBreak.Restart;
+  return Tag.or(StreakOnBreak, id, StreakOnBreak.Restart);
 }
 
 /** The typographic minus, as the spec draws a signed figure. */
@@ -121,34 +128,27 @@ const MINUS = '−';
 
 // ── Dates (the house form, R59; the shared wall-clock face) ────────────────
 
-/**
- * A `YYYY-MM-DD` shop day as the branded day it is (Law 7.4). Every day the
- * page formats is a stored or computed `LocalDate`: one that is not is a
- * defect, never a guess.
- */
-function localDateOf(day: string): LocalDate {
-  const parsed = LocalDate.parse(day);
-  if (!parsed.ok) defect(`${day} is not a shop day`);
-  return parsed.value;
-}
-
 /** A shop day in the locale's form, on the cached wall-clock formatter (read back in UTC, no `Date` built). */
 function formatDay(
-  day: string,
+  day: LocalDate,
   lang: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return formatWallClock(localDateOf(day), null, lang, options);
+  return formatWallClock(day, null, lang, options);
 }
 
 const yearUnlessCurrent = (
-  day: string,
-  today: string,
+  day: LocalDate,
+  today: LocalDate,
 ): Pick<Intl.DateTimeFormatOptions, 'year'> =>
   day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' };
 
 /** «1.09» · «1.03.2025 г.» — a capsule's or a row's date, the year only outside today's. */
-export function shortDay(day: string, today: string, lang: string): string {
+export function shortDay(
+  day: LocalDate,
+  today: LocalDate,
+  lang: string,
+): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: '2-digit',
@@ -157,7 +157,11 @@ export function shortDay(day: string, today: string, lang: string): string {
 }
 
 /** «4 септември» — a date someone hears. */
-export function longDay(day: string, today: string, lang: string): string {
+export function longDay(
+  day: LocalDate,
+  today: LocalDate,
+  lang: string,
+): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: 'long',
@@ -166,7 +170,7 @@ export function longDay(day: string, today: string, lang: string): string {
 }
 
 /** «септември» — the month in words (a track mark's description). */
-export function monthWord(day: string, lang: string): string {
+export function monthWord(day: LocalDate, lang: string): string {
   return formatDay(day, lang, { month: 'long' });
 }
 
@@ -224,8 +228,16 @@ export function qualifierOptions(
 ): readonly UiChoiceOption[] {
   const t = context.translate;
   return [
-    option('anyVisit', t('admin.rhythm.counts.any'), 'qualifier-anyVisit'),
-    option('services', t('admin.rhythm.counts.services'), 'qualifier-services'),
+    option(
+      StreakQualifier.AnyVisit,
+      t('admin.rhythm.counts.any'),
+      'qualifier-anyVisit',
+    ),
+    option(
+      StreakQualifier.Services,
+      t('admin.rhythm.counts.services'),
+      'qualifier-services',
+    ),
   ];
 }
 
@@ -235,9 +247,13 @@ export function intervalOptions(
 ): readonly UiChoiceOption[] {
   const t = context.translate;
   return [
-    option('fixed', t('admin.rhythm.interval.fixed'), 'interval-fixed'),
     option(
-      'personal',
+      StreakInterval.Fixed,
+      t('admin.rhythm.interval.fixed'),
+      'interval-fixed',
+    ),
+    option(
+      StreakInterval.Personal,
       t('admin.rhythm.interval.personal'),
       'interval-personal',
     ),
@@ -312,30 +328,36 @@ export function onBreakOptions(
 ): readonly UiChoiceOption[] {
   const t = context.translate;
   return [
-    option('restart', t('admin.rhythm.onBreak.restart'), 'on-break-restart'),
-    option('hold', t('admin.rhythm.onBreak.hold'), 'on-break-hold'),
+    option(
+      StreakOnBreak.Restart,
+      t('admin.rhythm.onBreak.restart'),
+      'on-break-restart',
+    ),
+    option(StreakOnBreak.Hold, t('admin.rhythm.onBreak.hold'), 'on-break-hold'),
   ];
 }
 
-/** P13 «От»: tomorrow, the first of next month, a day of the admin's own. */
-export type EffectiveChoice = 'tomorrow' | 'firstOfMonth' | 'pick';
-
+/** P13 «От»: tomorrow, the first of next month, a day of the admin's own (`RhythmEffectiveChoice`). */
 export function effectiveOptions(
   context: AdminRhythmContext,
 ): readonly UiChoiceOption[] {
   const t = context.translate;
   return [
     option(
-      'tomorrow',
+      RhythmEffectiveChoice.Tomorrow,
       t('admin.rhythm.effective.tomorrow'),
       'effective-tomorrow',
     ),
     option(
-      'firstOfMonth',
+      RhythmEffectiveChoice.FirstOfMonth,
       t('admin.rhythm.effective.firstOfMonth'),
       'effective-first-of-month',
     ),
-    option('pick', t('admin.rhythm.effective.pick'), 'effective-pick'),
+    option(
+      RhythmEffectiveChoice.Picked,
+      t('admin.rhythm.effective.pick'),
+      'effective-pick',
+    ),
   ];
 }
 
@@ -346,28 +368,19 @@ export function effectiveOptions(
  */
 export function effectiveReading(
   context: AdminRhythmContext,
-  day: string,
-  days: { readonly tomorrow: string; readonly firstOfMonth: string },
-): { readonly choice: EffectiveChoice; readonly label: string } {
+  day: LocalDate,
+  days: { readonly tomorrow: LocalDate; readonly firstOfMonth: LocalDate },
+): { readonly choice: RhythmEffectiveChoice; readonly label: string } {
   const t = context.translate;
-  const choice = RhythmDraftSystem.effectiveChoiceOf(localDateOf(day), {
-    tomorrow: localDateOf(days.tomorrow),
-    firstOfMonth: localDateOf(days.firstOfMonth),
-  });
+  const choice = RhythmDraftSystem.effectiveChoiceOf(day, days);
   switch (choice) {
     case RhythmEffectiveChoice.Tomorrow:
-      return {
-        choice: 'tomorrow',
-        label: t('admin.rhythm.effective.tomorrow'),
-      };
+      return { choice, label: t('admin.rhythm.effective.tomorrow') };
     case RhythmEffectiveChoice.FirstOfMonth:
-      return {
-        choice: 'firstOfMonth',
-        label: t('admin.rhythm.effective.firstOfMonth'),
-      };
+      return { choice, label: t('admin.rhythm.effective.firstOfMonth') };
     case RhythmEffectiveChoice.Picked:
       return {
-        choice: 'pick',
+        choice,
         label: t('admin.rhythm.effective.picked', {
           date: shortDay(day, context.today, context.lang),
         }),
@@ -524,7 +537,7 @@ export function toleranceExample(
 /** «В сила от 1.09» · «От 1.10» — the rule card's capsule. */
 export function inForceCapsule(
   context: AdminRhythmContext,
-  day: string,
+  day: LocalDate,
   scheduled: boolean,
 ): string {
   return context.translate(
@@ -536,7 +549,7 @@ export function inForceCapsule(
 /** «От 1.10: на всеки 5 седмици» — the waiting version's line under the rule. */
 export function upcomingLine(
   context: AdminRhythmContext,
-  day: string,
+  day: LocalDate,
   short: string,
 ): string {
   return context.translate('rhythmRule.upcoming', {
@@ -697,9 +710,26 @@ export function historyRow(
 
 // ── The preview ──────────────────────────────────────────────────────────
 
+/**
+ * The preview's three figures — the field `id` of a metric, the ONLY source
+ * of these strings (Law 1). Values: external contract — each is the
+ * figure's test-id segment (`admin-rhythm-preview-<id>`), so the spelling
+ * stays as the page prints it.
+ */
+export const RhythmPreviewMetric = {
+  /** Clients in their rhythm. */
+  InRhythm: 'inRhythm',
+  /** Clients past their due date, inside the grace. */
+  InGrace: 'inGrace',
+  /** Clients whose rhythm is broken. */
+  Broken: 'broken',
+} as const;
+export type RhythmPreviewMetric =
+  (typeof RhythmPreviewMetric)[keyof typeof RhythmPreviewMetric];
+
 /** One of the preview's three figures. */
 export interface AdminRhythmPreviewMetric {
-  readonly id: 'inRhythm' | 'inGrace' | 'broken';
+  readonly id: RhythmPreviewMetric;
   /** «В ритъм». */
   readonly caption: string;
   /** The count under the new rule, «148». */
@@ -744,22 +774,22 @@ export type RhythmEstimateLine =
 /** One standing's count, read by name (no dynamic index). */
 function standingOf(
   counts: StreakStandingCounts,
-  id: (typeof STANDINGS)[number][0],
+  id: RhythmPreviewMetric,
 ): number {
   switch (id) {
-    case 'inRhythm':
+    case RhythmPreviewMetric.InRhythm:
       return counts.inRhythm;
-    case 'inGrace':
+    case RhythmPreviewMetric.InGrace:
       return counts.inGrace;
-    case 'broken':
+    case RhythmPreviewMetric.Broken:
       return counts.broken;
   }
 }
 
 const STANDINGS = [
-  ['inRhythm', 'admin.rhythm.preview.inRhythm'],
-  ['inGrace', 'admin.rhythm.preview.inGrace'],
-  ['broken', 'admin.rhythm.preview.broken'],
+  [RhythmPreviewMetric.InRhythm, 'admin.rhythm.preview.inRhythm'],
+  [RhythmPreviewMetric.InGrace, 'admin.rhythm.preview.inGrace'],
+  [RhythmPreviewMetric.Broken, 'admin.rhythm.preview.broken'],
 ] as const;
 
 export function previewWords(
@@ -878,7 +908,7 @@ export function samplePeriods(
   state: StreakState,
 ): readonly UiStreakPeriod[] {
   const track = StreakSystem.track(state, {
-    today: localDateOf(context.today),
+    today: context.today,
     inChairToday: false,
     paused: false,
     limit: state.periods.length + 1,
@@ -965,17 +995,19 @@ export function fieldName(context: AdminRhythmContext, field: string): string {
   }
 }
 
-/** «Поправи: Гратисен период, Срок.» — the refusal naming its fields, each once. */
-export function invalidNotice(
+/**
+ * «Гратисен период и Срок» — the fields an `INVALID` refusal names, each
+ * once, as a list: the `{{field}}` the page spreads over the struct when it
+ * words `errors.LOYALTY_STREAK_PUBLISH_INVALID` («Поправи: {{field}}.»).
+ */
+export function refusedFields(
   context: AdminRhythmContext,
   fields: readonly string[],
 ): string {
   const names = fields
     .map((field) => fieldName(context, field))
     .filter((name, index, all) => all.indexOf(name) === index);
-  return context.translate('admin.rhythm.refused.invalid', {
-    field: new Intl.ListFormat(context.lang, { type: 'conjunction' }).format(
-      names,
-    ),
-  });
+  return new Intl.ListFormat(context.lang, { type: 'conjunction' }).format(
+    names,
+  );
 }

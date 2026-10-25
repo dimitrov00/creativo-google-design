@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AttemptOutcome,
   BarberPreference,
   BookingLifecycle,
   BookingPolicy,
@@ -26,7 +27,6 @@ import {
 import { RepositoryError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
-import { AttemptOutcome } from '@core/systems';
 import {
   appointmentFixture,
   customerOf,

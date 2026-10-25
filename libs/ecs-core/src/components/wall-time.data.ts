@@ -24,4 +24,19 @@ export const WallTime = {
     if (a.localDate !== b.localDate) return a.localDate < b.localDate ? -1 : 1;
     return a.minute < b.minute ? -1 : a.minute > b.minute ? 1 : 0;
   },
+
+  /**
+   * The point as the `datetime-local` WIRE text — `2026-03-29T03:30`: the
+   * shop day, a `T`, and the minute's zero-padded 24-hour `HH:MM`. A pure
+   * TEXT join (no zone, no instant — not a zone engine): the value a native
+   * `<input type="datetime-local">` holds, and the `wallClock` param a
+   * `DST_GAP_INVALID_TIME` refusal names the refused time by. A struct
+   * carrying `localDate` and `minute` (the refusal itself) passes straight
+   * in. Formatting for a READER stays the UI's (`@creativo/ui/wall-clock`).
+   */
+  toLocalIso(time: WallTime): string {
+    const hours = String(Math.floor(time.minute / 60)).padStart(2, '0');
+    const minutes = String(time.minute % 60).padStart(2, '0');
+    return `${time.localDate}T${hours}:${minutes}`;
+  },
 } as const;

@@ -2,9 +2,11 @@ import {
   type AccountOccupant,
   AppliedOperation,
   AuditAction,
+  BillPending,
   type BookingCall,
   BookingLifecycle,
   EditCommand,
+  LedgerVerdict,
   RequestedSubjectRole,
   ResizeEdge,
   SeatLabel,
@@ -39,14 +41,14 @@ import {
 } from '@core/primitives';
 import {
   BookingError,
-  type StaffEditBeforeArrival,
   StaffEditError,
+  type StaffEditGuardRefusal,
   type StaffEditInvalidCommand,
   type StaffEditOverlaps,
   type StaffEditStale,
 } from '@core/errors';
 import type { Appointment } from '@core/entities';
-import { BillPending, type PendingVouchers } from './billing.system';
+import type { PendingVouchers } from './billing.system';
 import { SeatingRuleSystem } from './seating-rule.system';
 
 /** The digest basis version — the server's fingerprint of one intent's batch. */
@@ -68,10 +70,6 @@ const STAFF_VERB: { readonly [C in EditCommand]: StaffEditAction } = {
   [EditCommand.Discounts]: AuditAction.BookingStaffDiscounts,
   [EditCommand.Vouchers]: AuditAction.BookingStaffVouchers,
 };
-
-/** What {@link AppointmentEditSystem.guard} refuses: a visit that never happened, or one ending before its arrival. */
-export type StaffEditGuardRefusal =
-  BookingError.InvalidInput | StaffEditBeforeArrival;
 
 /**
  * One staff edit, as the fold applies it — the call's `BookingCall.EditCommand`
@@ -166,17 +164,10 @@ export type EditOutcome = {
   readonly locationId: LocationId;
 };
 
-/** What a ledger says about a named intent — the field `ledgerVerdict`. */
-export const LedgerVerdict = {
-  /** No name, or a name the ledger has not seen: apply it. */
-  New: 'NEW',
-  /** The ledger applied this name with this digest: answer it, write nothing. */
-  Replay: 'REPLAY',
-  /** The name is known but the batch differs: a client bug, refused by name. */
-  Mismatch: 'MISMATCH',
-} as const;
-export type LedgerVerdict = (typeof LedgerVerdict)[keyof typeof LedgerVerdict];
-
+/**
+ * {@link AppointmentEditSystem.ledgerVerdict}'s answer — the ledger's verdict
+ * (`LedgerVerdict`, a component) and, on a replay, the entry it applied.
+ */
 export type LedgerVerdictResult =
   | { readonly ledgerVerdict: typeof LedgerVerdict.New }
   | {

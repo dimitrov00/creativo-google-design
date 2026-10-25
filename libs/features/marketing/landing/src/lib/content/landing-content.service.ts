@@ -8,8 +8,8 @@ import {
   termsToVm,
 } from '@creativo/features/shared/catalog';
 import { Injectable, type Signal, computed, inject } from '@angular/core';
-import { BarberId } from '@core/primitives';
-import { CompositionKind } from '@core/components';
+import type { BarberId } from '@core/primitives';
+import { CompositionKind, type Money } from '@core/components';
 import { CatalogPricingSystem, CatalogSystem } from '@core/systems';
 import {
   LOCATIONS,
@@ -75,7 +75,7 @@ export class LandingContentService {
    * order), so upsell-only add-ons stay out of it exactly as they do from
    * the shelf itself.
    */
-  barberPrices(barberId: string): readonly {
+  barberPrices(barberId: BarberId): readonly {
     readonly service: ServiceVm;
     readonly terms: ServiceTermsVm;
   }[] {
@@ -84,7 +84,7 @@ export class LandingContentService {
     );
     return CatalogPricingSystem.servicesByBarber(
       CatalogSystem.shelf(this.catalog.services()),
-      BarberId.of(barberId),
+      barberId,
     ).flatMap((entry) => {
       const service = shelf.get(entry.service.id);
       return service ? [{ service, terms: termsToVm(entry.terms) }] : [];
@@ -96,8 +96,8 @@ export class LandingContentService {
     return this.words.text(localized);
   }
 
-  /** A price in EUR major units, in the active language (`CatalogWording.price`). */
-  price(major: number): string {
-    return this.words.price(major);
+  /** An amount in the active language, in its own currency (`CatalogWording.price`). */
+  price(money: Money): string {
+    return this.words.price(money);
   }
 }

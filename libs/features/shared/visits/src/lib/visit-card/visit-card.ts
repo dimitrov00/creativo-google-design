@@ -24,6 +24,7 @@ import {
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import type { AppointmentPhotoId } from '@core/primitives';
 import {
   type VisitCardVm,
   type VisitLinePart,
@@ -41,6 +42,15 @@ export * from './visit-card.presenter';
  * the card (`/account`), so the label is the heading.
  */
 export type VisitCardHeaderProminence = UiSectionHeaderProminence;
+/**
+ * The two steps by name. Values: external contract — the DS section
+ * header's own (`UiSectionHeaderProminence`), which hosts set as a static
+ * template attribute (`headerProminence="increased"`) (pass D, D-8.8).
+ */
+export const VisitCardHeaderProminence = {
+  Standard: 'standard',
+  Increased: 'increased',
+} as const satisfies Record<string, UiSectionHeaderProminence>;
 
 /** The static card's sentence needs an id to be named by; one per card on the page. */
 let nextCard = 0;
@@ -123,7 +133,9 @@ function hung(text: string): string {
 export class VisitCard {
   readonly vm = input.required<VisitCardVm>();
   /** ≙ `.headerProminence`: the label as a quiet caption, or as the card's heading. */
-  readonly headerProminence = input<VisitCardHeaderProminence>('standard');
+  readonly headerProminence = input<VisitCardHeaderProminence>(
+    VisitCardHeaderProminence.Standard,
+  );
   /** The card's surface; the client stack's cards are all `elevated` (R2-E). */
   readonly tone = input<UiCardTone>('elevated');
   readonly padding = input<UiCardPadding>('comfortable');
@@ -134,7 +146,7 @@ export class VisitCard {
   /** The card was tapped (`interactive` only): the host opens the visit. */
   readonly open = output<void>();
   /** A thumb was tapped: the photo's id. */
-  readonly openPhoto = output<string>();
+  readonly openPhoto = output<AppointmentPhotoId>();
 
   /** The slot as the host prints it — `last` · `next` · `waitlist` (`visitCardSlotWords`). */
   protected readonly slotWord = computed(
@@ -158,7 +170,7 @@ export class VisitCard {
 
   /** The label is the card's heading: no module heading stands above it. */
   protected readonly heading = computed(
-    () => this.headerProminence() === 'increased',
+    () => this.headerProminence() === VisitCardHeaderProminence.Increased,
   );
 
   /**

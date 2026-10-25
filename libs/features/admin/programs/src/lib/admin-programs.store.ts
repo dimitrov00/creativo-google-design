@@ -22,7 +22,21 @@ import {
   PROGRAMS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 
-export type ProgramsTab = 'positions' | 'courses' | 'events';
+/**
+ * Which list `/admin/programs` shows — the page's field `tab`, the ONLY
+ * source of these strings (Law 1). Internal: the tab chips' test ids
+ * (`admin-tab-positions` …) are written out in the template, never built
+ * from a value, so nothing outside this lib observes the spelling.
+ */
+export const ProgramsTab = {
+  /** The careers positions. */
+  Positions: 'POSITIONS',
+  /** The courses. */
+  Courses: 'COURSES',
+  /** The shop events. */
+  Events: 'EVENTS',
+} as const;
+export type ProgramsTab = (typeof ProgramsTab)[keyof typeof ProgramsTab];
 
 /**
  * Page-scoped store for `/admin/programs` — the three live lists and one

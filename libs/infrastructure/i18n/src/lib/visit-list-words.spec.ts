@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { VisitFilter, VisitGrain, VisitPerspective } from '@core/systems';
 import bg from '../assets/i18n/bg.json';
 import en from '../assets/i18n/en.json';
 import {
@@ -7,6 +6,7 @@ import {
   visitGrainWords,
   visitPerspectiveWords,
 } from './visit-list-words';
+import { VisitFilter, VisitGrain, VisitPerspective } from '@core/components';
 
 /*
  * ONE table per visit-list dictionary (UI residue cleanup §2.2): total over

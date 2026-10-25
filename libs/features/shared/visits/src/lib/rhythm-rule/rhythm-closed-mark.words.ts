@@ -1,6 +1,10 @@
-import { FreezeReason, StreakPeriodMark } from '@core/components';
+import {
+  FreezeReason,
+  StreakPeriodMark,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
+} from '@core/components';
 import type { LocalDate } from '@core/primitives';
-import { type StreakTrackMark, StreakTrackMarkKind } from '@core/systems';
 import {
   type StreakPeriodReasonWord,
   streakPeriodMarkWords,

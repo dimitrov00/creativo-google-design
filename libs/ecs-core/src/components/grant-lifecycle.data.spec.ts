@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { UserId, UtcEpochMs, GrantStatus } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
-import {
-  GrantCapacity,
-  GrantCapacityTerms,
-  GrantExpiry,
-  GrantExpiryTerms,
-  GrantLifecycle,
-} from './grant-lifecycle.data';
+import { GrantCapacity, GrantCapacityTerms } from './grant-capacity-terms.data';
+import { GrantExpiry, GrantExpiryTerms } from './grant-expiry-terms.data';
+import { GrantLifecycle } from './grant-lifecycle.data';
 
 // The capacity / expiry factory cases of `coupon-grant.spec.ts`; the
 // lifecycle (`burn`, `restore`, `expire`, `revoke`, `isUsable`) is

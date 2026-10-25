@@ -3,6 +3,7 @@ import {
   LocalDate,
   Locale,
   Result,
+  Tag,
 } from '@core/primitives';
 import {
   EngagementError,
@@ -10,15 +11,16 @@ import {
   StreakRuleField,
 } from '@core/errors';
 import type { LocalizedText } from './localized-text.data';
+import type { StreakRuleInput } from './streak-rule-input.data';
 import { StreakInterval, StreakIntervalRule } from './streak-interval.data';
 import { StreakQualifier, StreakQualifierRule } from './streak-qualifier.data';
+import { StreakRuleParameter } from './streak-rule-parameter.data';
 
 /**
  * What never counts against the client's rhythm — the rule's `excuses`
  * (1-to-N). The first three are the shop calling a visit off;
  * `CLOSED_DAYS` is the due date falling on days the shop was closed, with
- * no booking involved. Today the tuple `STREAK_EXCUSES`
- * (`streak-definition.ts:34`).
+ * no booking involved. Every excuse in key order is `StreakRule.EXCUSES`.
  */
 export const StreakExcuse = {
   ShopClosure: 'SHOP_CLOSURE',
@@ -28,12 +30,11 @@ export const StreakExcuse = {
 } as const;
 export type StreakExcuse = (typeof StreakExcuse)[keyof typeof StreakExcuse];
 
-/** Every excuse, dictionary order — the order a rule's `excuses` are kept in. */
-export const STREAK_EXCUSES: readonly StreakExcuse[] =
-  Object.values(StreakExcuse);
+/** Every excuse, dictionary order — the order a rule's `excuses` are kept in ({@link StreakRule.EXCUSES}). */
+const EXCUSES: readonly StreakExcuse[] = Tag.values(StreakExcuse);
 
-/** The excuses that are a visit the SHOP called off: the rule's sentence promises them together. Derived. */
-export const STREAK_SHOP_EXCUSES: readonly StreakExcuse[] = [
+/** The excuses that are a visit the SHOP called off: the rule's sentence promises them together ({@link StreakRule.SHOP_EXCUSES}). */
+const SHOP_EXCUSES: readonly StreakExcuse[] = [
   StreakExcuse.ShopClosure,
   StreakExcuse.BarberAbsence,
   StreakExcuse.StaffCancelled,
@@ -46,86 +47,17 @@ export const StreakOnBreak = {
 } as const;
 export type StreakOnBreak = (typeof StreakOnBreak)[keyof typeof StreakOnBreak];
 
-const STREAK_ON_BREAK: readonly StreakOnBreak[] = Object.values(StreakOnBreak);
-
-/**
- * What a new rule does to the runs that exist — the field
- * `streakTransition`: `GRANDFATHER` keeps every count, best and banked
- * protection and never moves an open due date earlier; `RECOMPUTE` replays
- * the history under the new rule.
- */
-export const StreakTransition = {
-  Grandfather: 'GRANDFATHER',
-  Recompute: 'RECOMPUTE',
-} as const;
-export type StreakTransition =
-  (typeof StreakTransition)[keyof typeof StreakTransition];
-
-/**
- * A change, by whom it favours — the field `streakRuleDirection`. `LOOSER`
- * and `STRICTER` are the client's view; `MIXED` is both at once; `NEUTRAL`
- * moves nothing for the client (the staff's cue, the name, a figure of a
- * part that is off); `SWITCH` is the rule going on or off, whatever else
- * moved with it.
- */
-export const StreakRuleDirection = {
-  Looser: 'LOOSER',
-  Stricter: 'STRICTER',
-  Mixed: 'MIXED',
-  Neutral: 'NEUTRAL',
-  Switch: 'SWITCH',
-} as const;
-export type StreakRuleDirection =
-  (typeof StreakRuleDirection)[keyof typeof StreakRuleDirection];
-
-/**
- * What «Запази» owes the admin before a change goes out, by its direction
- * (client-card revision 3 §2.6.4) — the field `streakPublishConsent`,
- * answered by `StreakRuleSystem.publishConsent`: `AT_ONCE` for a looser or
- * neutral change (saved straight away), `ASK` for a stricter or mixed one,
- * `ASK_SWITCH` for the rule going on or off. Which words the question
- * prints is the page's.
- */
-export const StreakPublishConsent = {
-  AtOnce: 'AT_ONCE',
-  Ask: 'ASK',
-  AskSwitch: 'ASK_SWITCH',
-} as const;
-export type StreakPublishConsent =
-  (typeof StreakPublishConsent)[keyof typeof StreakPublishConsent];
-
-/**
- * A parameter of the rule a change can list, in the rule's own order —
- * every one of them, and the head's name. A version's identity (`version`,
- * `effectiveFromLocalDate`) is never listed: it is what every revision
- * changes. They name rule PARTS in the UI: consumers map by this dictionary.
- */
-export const StreakRuleParameter = {
-  Name: 'NAME',
-  Enabled: 'ENABLED',
-  Qualifier: 'QUALIFIER',
-  MinGapDays: 'MIN_GAP_DAYS',
-  BookingHold: 'BOOKING_HOLD',
-  Interval: 'INTERVAL',
-  GraceDays: 'GRACE_DAYS',
-  RiskLeadDays: 'RISK_LEAD_DAYS',
-  Protections: 'PROTECTIONS',
-  Excuses: 'EXCUSES',
-  ClientPause: 'CLIENT_PAUSE',
-  Repair: 'REPAIR',
-  OnBreak: 'ON_BREAK',
-} as const;
-export type StreakRuleParameter =
-  (typeof StreakRuleParameter)[keyof typeof StreakRuleParameter];
+const STREAK_ON_BREAK: readonly StreakOnBreak[] = Tag.values(StreakOnBreak);
 
 /**
  * The order a version's history names what it changed
  * (`StreakRuleSystem.changesInRuleOrder`): the rule's own parts, then the
  * name — the head's, not the rule's — LAST. Every parameter once. Not the
  * dictionary's order, and not the order `StreakRuleSystem.changeFrom`
- * lists them in (which leads with the name).
+ * lists them in (which leads with the name) — an explicit list on purpose
+ * ({@link StreakRule.PARAMETER_ORDER}).
  */
-export const STREAK_RULE_PARAMETER_ORDER: readonly StreakRuleParameter[] = [
+const PARAMETER_ORDER: readonly StreakRuleParameter[] = [
   StreakRuleParameter.Enabled,
   StreakRuleParameter.Qualifier,
   StreakRuleParameter.MinGapDays,
@@ -140,15 +72,6 @@ export const STREAK_RULE_PARAMETER_ORDER: readonly StreakRuleParameter[] = [
   StreakRuleParameter.OnBreak,
   StreakRuleParameter.Name,
 ];
-
-/** Where a rule stands in its head's `rules` list — the field `headRole`. */
-export const HeadRole = {
-  /** In force since its day — exactly one per head. */
-  Current: 'CURRENT',
-  /** Waiting for its day — at most one per head. */
-  Scheduled: 'SCHEDULED',
-} as const;
-export type HeadRole = (typeof HeadRole)[keyof typeof HeadRole];
 
 /**
  * ONE VERSION of the rhythm's rule, «Посещения в ритъм», as the admin
@@ -166,36 +89,6 @@ export type HeadRole = (typeof HeadRole)[keyof typeof HeadRole];
 export type StreakRule = StreakRule.Options &
   StreakQualifierRule &
   StreakIntervalRule;
-
-/**
- * A rule as FOREIGN input (the L3 escape, F-22): every figure as a draft or
- * an admin callable holds it, and its first day AS WRITTEN — the editor's
- * day is no brand until {@link StreakRule.parse}, the only way it becomes a
- * `LocalDate` (Law 7.4). Every `StreakRule` is one.
- */
-export type StreakRuleInput = Omit<
-  StreakRule.Options,
-  'effectiveFromLocalDate'
-> & {
-  /** The first day the version would judge by, as written — `parse` checks it is a real calendar day. */
-  readonly effectiveFromLocalDate: string;
-} & StreakQualifierRule &
-  StreakIntervalRule;
-
-/** The version that waits for its day, and what it will do to the runs that exist — a system value. */
-export type ScheduledStreakRule = StreakRule & {
-  readonly streakTransition: StreakTransition;
-};
-
-/**
- * One element of the head's 1-to-N `rules` list (F-9): a whole flat rule
- * and its role — the `CURRENT` one in force (no transition), or the
- * `SCHEDULED` one waiting with what it will do to the runs.
- */
-export type StreakHeadRule = StreakRule & {
-  readonly headRole: HeadRole;
-  readonly streakTransition: StreakTransition | null;
-};
 
 type Whole = { readonly min: number; readonly max: number };
 
@@ -247,7 +140,7 @@ const DEFAULT_RULE: StreakRule = {
   protectionsMaxBanked: 2,
   protectionsEarnEvery: 5,
   protectionsStartWith: 0,
-  excuses: STREAK_SHOP_EXCUSES,
+  excuses: SHOP_EXCUSES,
   clientPauseEnabled: false,
   clientPauseMaxDaysPerYear: 90,
   repairEnabled: true,
@@ -273,6 +166,23 @@ function wholeWithin(value: unknown, range: Whole): value is number {
 
 export const StreakRule = {
   LIMITS,
+
+  /** Every excuse, dictionary order — the order a rule's `excuses` are kept in. */
+  EXCUSES,
+
+  /** The excuses that are a visit the SHOP called off: the rule's sentence promises them together. */
+  SHOP_EXCUSES,
+
+  /**
+   * The order a version's history names what it changed: the rule's own
+   * parts, then the head's name LAST (see the module constant).
+   */
+  PARAMETER_ORDER,
+
+  /** The edge guard of one excuse: a member of {@link StreakExcuse}, exactly. */
+  isExcuse(raw: unknown): raw is StreakExcuse {
+    return Tag.has(StreakExcuse, raw);
+  },
 
   /**
    * The notice, in whole days, a stricter rule owes the clients who can see
@@ -445,7 +355,7 @@ export const StreakRule = {
 
     for (let i = 0; i < raw.excuses.length; i++) {
       const excuse: unknown = raw.excuses[i];
-      if (!isStreakExcuse(excuse)) {
+      if (!StreakRule.isExcuse(excuse)) {
         errors.push(
           EngagementError.streakRule(
             EngagementErrorCode.StreakUnknownExcuse,
@@ -487,7 +397,7 @@ export const StreakRule = {
         ),
       );
     }
-    if (!isOneOf(STREAK_ON_BREAK, raw.onBreak)) {
+    if (!Tag.has(StreakOnBreak, raw.onBreak)) {
       errors.push(
         EngagementError.streakUnknownOption(
           StreakRuleField.OnBreak,
@@ -600,37 +510,25 @@ export const StreakRule = {
 
   /** Is this cause one the rule never counts against the client? */
   isExcused(rule: Pick<StreakRule, 'excuses'>, cause: StreakExcuse): boolean {
-    return isOneOf(rule.excuses, cause);
+    return rule.excuses.includes(cause);
   },
 
   /**
    * Every visit the SHOP calls off is excused — all of
-   * {@link STREAK_SHOP_EXCUSES}, in any order: what the rule's sentence
+   * {@link StreakRule.SHOP_EXCUSES}, in any order: what the rule's sentence
    * promises together (`StreakRuleSystem.summary`'s `shopExcuses`), and
    * what the admin's excuses sheet warns about when one of the three is
    * off. A list without any of them, or without one, covers nothing.
    */
   coversShopExcuses(excuses: readonly StreakExcuse[]): boolean {
-    for (let i = 0; i < STREAK_SHOP_EXCUSES.length; i++) {
-      if (!isOneOf(excuses, STREAK_SHOP_EXCUSES[i] as StreakExcuse)) {
+    for (let i = 0; i < SHOP_EXCUSES.length; i++) {
+      if (!excuses.includes(SHOP_EXCUSES[i] as StreakExcuse)) {
         return false;
       }
     }
     return true;
   },
 } as const;
-
-export function isStreakExcuse(raw: unknown): raw is StreakExcuse {
-  return isOneOf(STREAK_EXCUSES, raw);
-}
-
-function isOneOf<T extends string>(
-  values: readonly T[],
-  raw: unknown,
-): raw is T {
-  for (let i = 0; i < values.length; i++) if (values[i] === raw) return true;
-  return false;
-}
 
 function pushAll<T>(into: T[], from: readonly T[]): void {
   for (let i = 0; i < from.length; i++) into.push(from[i] as T);
@@ -656,9 +554,9 @@ function inVocabularyOrder(
   excuses: readonly StreakExcuse[],
 ): readonly StreakExcuse[] {
   const out: StreakExcuse[] = [];
-  for (let i = 0; i < STREAK_EXCUSES.length; i++) {
-    const excuse = STREAK_EXCUSES[i] as StreakExcuse;
-    if (isOneOf(excuses, excuse)) out.push(excuse);
+  for (let i = 0; i < EXCUSES.length; i++) {
+    const excuse = EXCUSES[i] as StreakExcuse;
+    if (excuses.includes(excuse)) out.push(excuse);
   }
   return out;
 }

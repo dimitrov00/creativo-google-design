@@ -3,8 +3,8 @@ import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { OtpCode } from './otp-code.data';
 import type { ProfileEdits } from './profile-edits.data';
-import type { RegistrationFields } from './registration.data';
-import { SESSION_KINDS, type SessionKind } from './session-kind.data';
+import { SessionKind } from './session-kind.data';
+import type { RegistrationFields } from './registration-fields.data';
 
 /**
  * THE IDENTITY WIRE (Phase 4a 4A-4) — the three OTP callables and
@@ -39,7 +39,7 @@ export const IdentityCall = {
   ): Result<IdentityCall.VerifyOtpAnswer, PipelineError> {
     const answer = CallAnswer.read(raw);
     if (answer === null) return CallAnswer.unusable();
-    const sessionKind = CallAnswer.oneOf(answer, 'sessionKind', SESSION_KINDS);
+    const sessionKind = CallAnswer.tag(answer, 'sessionKind', SessionKind);
     const customToken = CallAnswer.text(answer, 'customToken');
     return sessionKind === null || customToken === null || customToken === ''
       ? CallAnswer.unusable()

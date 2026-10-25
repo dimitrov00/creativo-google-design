@@ -9,11 +9,16 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  translateCodedError,
+  loadedLanguage,
+} from '@creativo/infrastructure/i18n';
 import { BookingContact, type CountryIso2, type E164 } from '@core/components';
 import { Profile } from '@core/entities';
+import type { OwnProfileWriteFailure, SchedulingError } from '@core/errors';
 import { ProfileEditSystem } from '@core/systems';
 import {
   UiButton,
@@ -108,7 +113,37 @@ export class BookingContactSheet {
   protected readonly phoneCountry = signal<CountryIso2 | null>(null);
   protected readonly saveToProfile = signal(false);
   protected readonly pending = signal(false);
-  protected readonly error = signal<string | null>(null);
+
+  /** The contact the domain refused (`BookingContact.create`), as its struct (pass D E-12). */
+  private readonly contactRefusal = signal<SchedulingError | null>(null);
+  /** The «save to profile» write that failed, as its struct (pass D E-12). */
+  private readonly profileFailure = signal<OwnProfileWriteFailure | null>(null);
+
+  /**
+   * The language the catalogue has LOADED, once it has: the error line is
+   * worded from it, so no lookup inside the `computed` can start a load
+   * (the visits pages read their words the same way).
+   */
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
+
+  /**
+   * The error line, worded from the struct held (pass D DEP-23) — so a line
+   * shown re-words when the language changes: a refused contact in its own
+   * words (`errors.<errorCode>`, its fields the params), a failed profile
+   * write as the sheet's own `booking.contact.profileFailed` (the booking
+   * contact itself is still usable — only the profile write failed).
+   */
+  protected readonly error = computed((): string | null => {
+    const lang = this.loadedLang();
+    if (lang === null) return null;
+    const refused = this.contactRefusal();
+    if (refused !== null) return translateCodedError(this.transloco, refused);
+    return this.profileFailure() === null
+      ? null
+      : this.transloco.translate('booking.contact.profileFailed', {}, lang);
+  });
 
   constructor() {
     // Seed from what the booking carries, falling back to the account. The
@@ -198,7 +233,8 @@ export class BookingContactSheet {
   }
 
   private async saveContact(): Promise<void> {
-    this.error.set(null);
+    this.contactRefusal.set(null);
+    this.profileFailure.set(null);
 
     const { PhoneSystem } = await loadPhoneRules();
     const result = BookingContact.create(
@@ -216,7 +252,7 @@ export class BookingContactSheet {
       },
     );
     if (!result.ok) {
-      this.error.set(translateCodedError(this.transloco, result.error));
+      this.contactRefusal.set(result.error);
       return;
     }
     const contact = result.value;
@@ -227,13 +263,11 @@ export class BookingContactSheet {
       this.pending.set(true);
       const written = await this.contactStore.writeProfileName(contact);
       this.pending.set(false);
-      if (!written) {
+      if (!written.ok) {
         // The BOOKING contact is still perfectly usable; only the profile
         // write failed. Saying so and staying put beats silently keeping
         // half of what was asked for.
-        this.error.set(
-          this.transloco.translate('booking.contact.profileFailed'),
-        );
+        this.profileFailure.set(written.error);
         return;
       }
     }

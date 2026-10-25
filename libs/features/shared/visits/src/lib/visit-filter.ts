@@ -1,9 +1,5 @@
-import {
-  type FilterRow,
-  VisitFilter,
-  VisitListSystem,
-  VisitPerspective,
-} from '@core/systems';
+import { VisitFilter, VisitPerspective } from '@core/components';
+import { type FilterRow, VisitListSystem } from '@core/systems';
 import { visitFilterWords } from '@creativo/infrastructure/i18n';
 
 /*

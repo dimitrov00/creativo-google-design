@@ -14,6 +14,7 @@ import {
   UiNotice,
   UiOccasionBand,
 } from '@creativo/ui/controls';
+import type { CouponGrantId } from '@core/primitives';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
 import { ClientCardStore } from '../client-card.store';
 import {
@@ -75,9 +76,9 @@ export class BirthdayCard {
   /** The day, and the gift when one can be used on this visit. */
   readonly vm = input.required<BirthdayVm>();
   /** «Използвай»: the sheet puts the gift's grant on the bill and opens the discount page on it. */
-  readonly useGift = output<string>();
+  readonly useGift = output<CouponGrantId>();
   /** The applied gift's «Премахни»: the sheet takes its grant off the bill. */
-  readonly removeGift = output<string>();
+  readonly removeGift = output<CouponGrantId>();
 
   protected readonly words = inject(ClientCardStore).words;
 

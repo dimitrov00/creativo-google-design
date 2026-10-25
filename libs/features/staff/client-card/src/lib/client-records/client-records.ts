@@ -30,6 +30,7 @@ import {
   UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
 import { achievementsIdPrefix } from '../client-achievements/achievements-page-state';
+import { ClientCardRegion } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import {
   type RecordRowVm,
@@ -194,6 +195,6 @@ export class ClientRecordsPage {
 
   protected retry(): void {
     // The records ride the account's read (§2.3.4): region `loyalty`.
-    this.store.retry('loyalty');
+    this.store.retry(ClientCardRegion.Loyalty);
   }
 }

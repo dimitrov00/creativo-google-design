@@ -1,19 +1,21 @@
-import type { PriceCents } from '@core/primitives';
+import type { DurationMinutes } from '@core/primitives';
 import {
   type BarberOffering,
   CompositionKind,
+  Money,
   ServiceComposition,
   type ServiceTerms,
 } from '@core/components';
-import { CatalogPricingSystem } from '@core/systems';
+import { CatalogPricingSystem, type OfferingRange } from '@core/systems';
 import type { Barber, Service } from '@core/entities';
-import type {
-  BarberVm,
-  Localized,
-  ServiceOfferingVm,
-  ServiceTermsVm,
-  ServiceVm,
-  ServiceVariantVm,
+import {
+  type BarberVm,
+  type Localized,
+  type ServiceOfferingVm,
+  type ServiceTermsVm,
+  type ServiceVm,
+  type ServiceVariantVm,
+  VariantIcon,
 } from './catalog.vm';
 
 /**
@@ -50,20 +52,22 @@ function localized(text: { en: string; bg: string }): Localized {
 }
 
 /**
- * Cents → the VM's major-unit number (`1450` → `14.5`). The VM is EUR major
- * units by contract (`catalog.vm.ts`); EUR's exponent is 2.
- */
-function toMajor(cents: PriceCents): number {
-  return cents / 100;
-}
-
-/**
- * The flat terms → the VM's terms, in major units — an offering's base, a
- * variant's terms, or a barber's terms for a service (the landing's
+ * The flat terms → the VM's terms: the cents beside their currency and the
+ * sold minutes, as stored — an offering's base, a variant's terms, or a
+ * barber's terms for a service (the landing's
  * `LandingContentService.barberPrices`).
  */
 export function termsToVm(terms: ServiceTerms): ServiceTermsVm {
-  return { price: toMajor(terms.priceCents), minutes: terms.durationMinutes };
+  return {
+    priceCents: terms.priceCents,
+    currency: terms.currency,
+    minutes: terms.durationMinutes,
+  };
+}
+
+/** A terms quote's price, as the money `CatalogWording.price` words. */
+export function termsPrice(terms: ServiceTermsVm): Money {
+  return Money.fromCents(terms.priceCents, terms.currency);
 }
 
 /**
@@ -90,7 +94,7 @@ export function serviceToVm(
     name: localized(variant.name),
     // The icon is a rendering choice, not catalog data; length is the only
     // axis the seed declares, and `skin` was never wired to anything.
-    icon: 'length',
+    icon: VariantIcon.Length,
   }));
 
   const offerings = service.offerings.map(offeringToVm);
@@ -98,9 +102,8 @@ export function serviceToVm(
   // An unspecified composition (`composition: null` as authored) draws as a
   // single service — the companion's rule, never re-spelled here.
   const compositionKind = ServiceComposition.drawnKind(service.compositionKind);
-  // The catalogue's figures, asked ONCE of the system, on the entity itself.
-  const card = CatalogPricingSystem.cardPrice(service);
-  const minutes = CatalogPricingSystem.durationRange(service);
+  // The catalogue's figures are asked ONCE of the system, on the entity
+  // itself (below), and carried as the system answered them.
   return {
     id: service.id,
     compositionKind,
@@ -118,9 +121,10 @@ export function serviceToVm(
       : {}),
     upsellOnly: service.upsellOnly,
     gallery: art?.gallery ?? [],
-    priceFrom: toMajor(CatalogPricingSystem.priceFrom(service)),
-    cardPrice: { cheapest: toMajor(card.cheapestCents), spread: card.spread },
-    minutesRange: { from: minutes.min, to: minutes.max },
+    currency: service.currency,
+    priceFromCents: CatalogPricingSystem.priceFrom(service),
+    cardPrice: CatalogPricingSystem.cardPrice(service),
+    minutesRange: CatalogPricingSystem.durationRange(service),
   };
 }
 
@@ -142,39 +146,16 @@ export function barberToVm(
   };
 }
 
-// ─── Formatting (v2 lib/format-money + format-duration semantics) ────────
-
-/** Whole amounts drop the zeros (5 €), fractional keep two (14,50 €). */
-/**
- * Money strings come out of `Intl.NumberFormat` with the CURRENCY's own
- * fraction digits — two for EUR — rather than a hand-tuned digit count.
- *
- * The old rule dropped decimals on whole amounts, which read fine in
- * isolation but broke the one thing every price in this app is styled for:
- * `font-variant-numeric: tabular-nums` only aligns a COLUMN when the
- * strings share a shape, and `28 €` next to `25,50 €` puts the separators
- * at different offsets. Letting the formatter decide restores the
- * alignment we were already paying for, and matches the platform
- * convention (NumberFormatter.currency never drops a currency's decimals).
- */
-export function formatPrice(major: number, locale: string): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(major);
-}
-
-/**
- * Cents → the catalogue's money string: {@link formatPrice} on the major
- * units, for a figure a system answered in cents (the bundle saving).
- */
-export function formatPriceCents(cents: PriceCents, locale: string): string {
-  return formatPrice(toMajor(cents), locale);
-}
+// ─── Formatting (v2 lib/format-duration semantics) ──────────────────────
+//
+// Money is NOT formatted here: a price is `formatCents`
+// (`@creativo/ui/wall-clock`, the ONE money formatter — the currency's own
+// fraction digits, so «28,00 €» lines up beside «17,50 €» in a tabular
+// column), reached through `CatalogWording.price`.
 
 export function formatDurationRange(
-  min: number,
-  max: number,
+  min: DurationMinutes,
+  max: DurationMinutes,
   locale: string,
 ): string {
   const formatter = new Intl.NumberFormat(locale, {
@@ -195,10 +176,19 @@ export function formatDurationRange(
 
 /**
  * Cheapest base offering — the "from" price on a marketing tile: the
- * `CatalogPricingSystem.priceFrom` answer the view model carries.
+ * `CatalogPricingSystem.priceFrom` answer the view model carries, in the
+ * service's stored currency.
  */
-export function servicePriceFrom(service: ServiceVm): number {
-  return service.priceFrom;
+export function servicePriceFrom(service: ServiceVm): Money {
+  return Money.fromCents(service.priceFromCents, service.currency);
+}
+
+/**
+ * The card's price tag — `CatalogPricingSystem.cardPrice`'s cheapest
+ * bookable terms the view model carries, in the service's stored currency.
+ */
+export function serviceCardPrice(service: ServiceVm): Money {
+  return Money.fromCents(service.cardPrice.cheapestCents, service.currency);
 }
 
 /**
@@ -234,9 +224,8 @@ export function formatServiceMeta(parts: {
  * Global duration range across offerings × variants: the
  * `CatalogPricingSystem.durationRange` answer the view model carries.
  */
-export function serviceDurationRange(service: ServiceVm): {
-  from: number;
-  to: number;
-} {
-  return { from: service.minutesRange.from, to: service.minutesRange.to };
+export function serviceDurationRange(
+  service: ServiceVm,
+): OfferingRange<DurationMinutes> {
+  return service.minutesRange;
 }

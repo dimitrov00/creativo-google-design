@@ -1,4 +1,4 @@
-import { UtcEpochMs, Result } from '@core/primitives';
+import { UtcEpochMs, Result, Tag } from '@core/primitives';
 import { AccountsError } from '@core/errors';
 
 /**
@@ -26,9 +26,6 @@ export const BlockReason = {
 } as const;
 export type BlockReason = (typeof BlockReason)[keyof typeof BlockReason];
 
-/** Every block reason, dictionary order — derived, never a second source. */
-export const BLOCK_REASONS: readonly BlockReason[] = Object.values(BlockReason);
-
 /**
  * The live, REVOCABLE authorization status of an account — a union of flat
  * variant slices (Law 6), not an `isBlocked` boolean, so "blocked but no
@@ -44,6 +41,9 @@ export type AccountLifecycle =
 const ACTIVE: AccountLifecycle.Active = { accountStatus: AccountStatus.Active };
 
 export const AccountLifecycle = {
+  /** Every block reason, dictionary order — derived, never a second source. */
+  BLOCK_REASONS: Tag.values(BlockReason),
+
   active(): AccountLifecycle.Active {
     return ACTIVE;
   },
@@ -80,10 +80,7 @@ export const AccountLifecycle = {
 
   /** The edge guard for an untrusted reason (an admin's dropdown pick, a stored string). */
   isBlockReason(value: unknown): value is BlockReason {
-    for (let i = 0; i < BLOCK_REASONS.length; i++) {
-      if (BLOCK_REASONS[i] === value) return true;
-    }
-    return false;
+    return Tag.has(BlockReason, value);
   },
 
   /** The edge guard with a refusal: a known reason, or `ACCOUNTS_BLOCK_REASON_INVALID`. */

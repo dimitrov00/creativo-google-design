@@ -1,5 +1,5 @@
 import { RetentionGroup, type RetentionAnchor } from '@core/components';
-import { defect, LocalDate, type Result, UtcEpochMs } from '@core/primitives';
+import { LocalDate, UtcEpochMs } from '@core/primitives';
 
 /**
  * THE RETENTION POLICY (pass C, P-34 — the seven formulas of
@@ -49,17 +49,13 @@ const IMPERSONATION_KEEP_DAYS = 30;
 /** The floor a waitlist request watching no day is anchored on — epoch day 0. */
 const EPOCH_FLOOR_DAY: LocalDate = LocalDate.fromEpochDay(0);
 
-/** A brand the module builds from a literal it knows is valid. */
-function known<T>(result: Result<T, unknown>): T {
-  return result.ok ? result.value : defect('RetentionSystem: a broken epoch');
-}
-
-/** The Unix epoch — the instant the civil-day count starts from. */
-const EPOCH: UtcEpochMs = known(UtcEpochMs.of(0));
-
 /** `localDate`'s UTC midnight, then `keepDays` × 24 h — integer civil math, no zone. */
 function daysAfter(localDate: LocalDate, keepDays: number): UtcEpochMs {
-  const midnight = UtcEpochMs.plusDays(EPOCH, LocalDate.toEpochDay(localDate));
+  // The Unix epoch (`UtcEpochMs.EPOCH`) — the instant the civil-day count starts from.
+  const midnight = UtcEpochMs.plusDays(
+    UtcEpochMs.EPOCH,
+    LocalDate.toEpochDay(localDate),
+  );
   return UtcEpochMs.plusDays(midnight, keepDays);
 }
 

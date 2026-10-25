@@ -120,8 +120,8 @@
               [uiOptions]="viewChoices()"
               [uiSelectedId]="store.view()"
               [uiLabel]="t('staff.day.viewLabel')"
-              [uiPresented]="openPicker() === 'view'"
-              (uiPresentedChange)="openPicker.set($event ? 'view' : null)"
+              [uiPresented]="openPicker() === DayPicker.View"
+              (uiPresentedChange)="openPicker.set($event ? DayPicker.View : null)"
               (uiPicked)="pickView($event)"
             >
               <button
@@ -133,14 +133,14 @@
                 [uiIconOnly]="true"
                 uiMenuTrigger
                 class="staff-cluster__item"
-                [attr.aria-expanded]="openPicker() === 'view'"
+                [attr.aria-expanded]="openPicker() === DayPicker.View"
                 [attr.aria-label]="
                 t('staff.day.viewLabel') +
                 ': ' +
                 t('staff.day.view.' + store.view())
               "
                 data-testid="staff-view-trigger"
-                (click)="togglePicker('view')"
+                (click)="togglePicker(DayPicker.View)"
               >
                 <ui-icon [uiName]="currentViewIcon()" />
               </button>
@@ -178,10 +178,10 @@
             <ui-choice-menu
               uiAlignment="trailing"
               [uiOptions]="scopeChoices()"
-              [uiSelectedId]="store.scope() ?? 'all'"
+              [uiSelectedId]="store.scope() ?? SCOPE_ALL"
               [uiLabel]="t('staff.day.scopeLabel')"
-              [uiPresented]="openPicker() === 'scope'"
-              (uiPresentedChange)="openPicker.set($event ? 'scope' : null)"
+              [uiPresented]="openPicker() === DayPicker.Scope"
+              (uiPresentedChange)="openPicker.set($event ? DayPicker.Scope : null)"
               (uiPicked)="pickScope($event)"
             >
               <button
@@ -193,12 +193,12 @@
                 [uiIconOnly]="true"
                 uiMenuTrigger
                 class="staff-cluster__item staff-scope__trigger"
-                [attr.aria-expanded]="openPicker() === 'scope'"
+                [attr.aria-expanded]="openPicker() === DayPicker.Scope"
                 [attr.aria-label]="
                 t('staff.day.scopeLabel') + ': ' + scopeLabel()
               "
                 data-testid="staff-scope-trigger"
-                (click)="togglePicker('scope')"
+                (click)="togglePicker(DayPicker.Scope)"
               >
                 @if (scopeAvatar(); as barber) {
                 <ui-avatar
@@ -216,7 +216,7 @@
                 }
               </button>
               <ng-template uiChoiceLeading let-option>
-                @if (option.id === 'all') {
+                @if (option.id === SCOPE_ALL) {
                 <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
                 } @else {
                 <span class="staff-scope__face">
@@ -433,7 +433,7 @@
       <lib-staff-time-grid
         #grid
         [columns]="gridColumns()"
-        [uiColumnKind]="store.view() === 'day' ? 'chairs' : 'dates'"
+        [uiColumnKind]="store.view() === StaffView.Day ? 'chairs' : 'dates'"
         [uiRevealKey]="store.revealKey()"
         [uiRegionLabel]="regionLabel()"
         [rosterStartMinute]="rosterExtent().start"
@@ -445,7 +445,6 @@
         (zonePicked)="explainZone()"
         data-testid="staff-grid"
         (eventPicked)="openVisit($event)"
-        (gapPicked)="openGap($event)"
         (blockPicked)="openBlock($event)"
         (dayPicked)="openDay($event)"
         (allDayPicked)="openAllDay($event)"
@@ -706,14 +705,14 @@
                      and the times for an hour (owner, 2026-09-16) and put
                      back the same day: "it doesn't work" — a disc in the
                      middle of the card split it into two half-cards. -->
-                @if (fields.isOn('avatar')) {
+                @if (fields.isOn(AgendaField.Avatar)) {
                 <div class="agenda-card__face">
                   <ui-avatar
                     class="agenda-card__avatar"
                     [uiName]="entry.clientLabel"
                     uiControlSize="regular"
                   />
-                  @if (fields.isOn('party') && entry.seatsHere > 1) {
+                  @if (fields.isOn(AgendaField.Party) && entry.seatsHere > 1) {
                   <!-- THIS CHAIR'S seats — the badge annotates the FACE, and
                        one face standing for two people is what it says. The
                        cross-chair case is not this mark's job: it is a
@@ -764,11 +763,11 @@
                   [struck]="hollowStatus(entry.bookingStatus)"
                   [receded]="entry.past"
                   [lines]="factLines(entry)"
-                  [start]="fields.isOn('timeStart') ? entry.startLabel : null"
-                  [end]="fields.isOn('timeEnd') ? endLabel(entry) : null"
+                  [start]="fields.isOn(AgendaField.TimeStart) ? entry.startLabel : null"
+                  [end]="fields.isOn(AgendaField.TimeEnd) ? endLabel(entry) : null"
                   [gloss]="
                     stateLabel(entry) ??
-                    (fields.isOn('timeRelative') ? whenLabel(entry) : null)
+                    (fields.isOn(AgendaField.TimeRelative) ? whenLabel(entry) : null)
                   "
                   [glossState]="stateLabel(entry) !== null"
                   timesTestId="staff-visit-time"
@@ -799,7 +798,7 @@
                    whether or not anything is in it.) -->
               @if (hasFoot(entry)) {
               <div class="agenda-card__foot">
-                @if (fields.isOn('price') && entry.priceLabel) {
+                @if (fields.isOn(AgendaField.Price) && entry.priceLabel) {
                 <span
                   class="agenda-card__price"
                   uiText
@@ -807,7 +806,7 @@
                   uiForegroundStyle="secondary"
                   >{{ entry.priceLabel }}</span
                 >
-                } @if (fields.isOn('party') && entry.partyLabel) {
+                } @if (fields.isOn(AgendaField.Party) && entry.partyLabel) {
                 <!-- ⚠ THE CARD MUST SAY IT IS HALF OF SOMETHING.
                      (owner ruling 2026-09-03; moved here 2026-09-04)
 
@@ -865,7 +864,7 @@
                 >
                 } @for (icon of rowIcons(entry); track icon) {
                 <ui-icon [uiName]="icon" class="agenda-card__mark" />
-                } @if (fields.isOn('barberAvatar')) {
+                } @if (fields.isOn(AgendaField.BarberAvatar)) {
                 <ui-avatar
                   class="agenda-card__barber-face"
                   [uiName]="entry.barberName"
@@ -1212,7 +1211,7 @@
       (promoCodeEntered)="resolveCodeFromEditor($event)"
       [uiOwnerUserId]="editorVm.clientUserId"
       [uiViewer]="cardViewer()"
-      [uiClientCardCatalog]="clientCardCatalog"
+      [uiClientCardCatalog]="clientCardCatalog()"
       (dismissed)="closeVisitSheet()"
       (dayChanged)="onVisitDayChanged($event)"
       (chairChanged)="onVisitChairChanged($event)"
@@ -1286,7 +1285,7 @@
       [uiClientBook]="visitClientBookWithFaces()"
       [uiClientSearching]="visitClientSearching()"
       [uiViewer]="cardViewer()"
-      [uiClientCardCatalog]="clientCardCatalog"
+      [uiClientCardCatalog]="clientCardCatalog()"
       (clientsBrowsed)="browseClients()"
       (dismissed)="closeCreateSheet()"
       (clientQuery)="searchClients($event)"
@@ -1299,38 +1298,6 @@
     <span sheet-title id="staff-create-title"
       >{{ createEditor.sheetTitle() }}</span
     >
-  </ui-modal-sheet>
-  }
-
-  <!-- The two write actions that need a server path that does not exist yet
-       say so. A control that appears to work and silently does nothing is the
-       exact trust failure this surface is graded on avoiding. -->
-  @if (pendingAction(); as pending) {
-  <ui-modal-sheet
-    sheetId="staff-pending-sheet"
-    [fitted]="true"
-    labelledBy="staff-pending-title"
-    [closeLabel]="t('staff.day.cancelDismiss')"
-    [open]="true"
-    data-testid="staff-pending-sheet"
-    (dismissed)="pendingAction.set(null)"
-  >
-    <span sheet-title>{{ t('staff.day.fab.' + pending) }}</span>
-    <ui-stack uiSpacing="loose" class="staff-cancel__body">
-      <ui-sheet-headline class="staff-sheet__headline">
-        <h2
-          id="staff-pending-title"
-          uiSheetLargeTitle
-          uiText
-          uiFont="largeTitle"
-        >
-          {{ t('staff.day.fab.' + pending) }}
-        </h2>
-        <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-          {{ t('staff.day.notBuiltYet') }}
-        </p>
-      </ui-sheet-headline>
-    </ui-stack>
   </ui-modal-sheet>
   }
 

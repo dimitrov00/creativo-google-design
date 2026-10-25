@@ -120,9 +120,11 @@ export const POLICY_RECOMPUTE_DOC = PolicyRecomputeJobId.FIXED;
 /**
  * Firestore's own filter vocabulary (`WhereFilterOp`), verbatim — the ONE
  * spelling of a `QueryFilter.op` (`tx.port.ts`). The values are the SDK's
- * own strings, so the adapter passes them straight through and no second
+ * own strings (values: external contract — the Firestore SDK's filter
+ * operators), so the adapter passes them straight through and no second
  * spelling exists to drift; a pipeline writes `op: QueryOp.ArrayContains`,
- * never `'array-contains'`.
+ * never `'array-contains'`. Its type is `QueryOp` beside it (pass D, S-21:
+ * one name — the ports tier's `QueryOperator` alias is gone).
  */
 export const QueryOp = {
   Eq: '==',
@@ -136,3 +138,4 @@ export const QueryOp = {
   In: 'in',
   NotIn: 'not-in',
 } as const;
+export type QueryOp = (typeof QueryOp)[keyof typeof QueryOp];

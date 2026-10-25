@@ -2,6 +2,9 @@ import {
   AuditAction,
   type BackfillCall,
   BackfillOutcome,
+  BackfillPhase,
+  BackfillStart,
+  BackfillStartRequest,
   Placement,
   BackfillJobName,
 } from '@core/components';
@@ -45,43 +48,12 @@ const STORED_CLIENTS_MARK = '~';
 
 const DOC_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-/**
- * The two walks a run makes — the ONLY source of these strings, the field
- * `backfillPhase`. Every job pages the appointments; `CLIENT_STATS` then
- * pages the stored `clientStats` documents themselves, because a person no
- * appointment names any more is reachable only from their own document
- * (§12.4 P0).
- */
-export const BackfillPhase = {
-  Appointments: 'APPOINTMENTS',
-  StoredClients: 'STORED_CLIENTS',
-} as const;
-export type BackfillPhase = (typeof BackfillPhase)[keyof typeof BackfillPhase];
-
+/** Where a walk stands: its phase (`BackfillPhase`, a component) and the row it continues after. */
 export type BackfillPosition = {
   readonly backfillPhase: BackfillPhase;
   /** The document id to continue after, `null` at the phase's start. */
   readonly after: string | null;
 };
-
-/** Where a call asks to start — the ONLY source of these strings, the field `backfillStart`. */
-export const BackfillStart = {
-  /** No cursor sent: continue wherever the job's progress document says. */
-  Resume: 'RESUME',
-  /** `cursor: null` sent: start over from the top. */
-  Top: 'TOP',
-  /** A wire cursor a previous call returned. */
-  After: 'AFTER',
-} as const;
-export type BackfillStart = (typeof BackfillStart)[keyof typeof BackfillStart];
-
-export type BackfillStartRequest =
-  | { readonly backfillStart: typeof BackfillStart.Resume }
-  | { readonly backfillStart: typeof BackfillStart.Top }
-  | {
-      readonly backfillStart: typeof BackfillStart.After;
-      readonly cursor: string;
-    };
 
 /** A validated `runBackfill({ backfillJobName, cursor? })` payload. */
 export type BackfillRequest = {
@@ -216,14 +188,11 @@ export const BackfillPlanSystem = {
       'backfillJobName' in raw ? raw.backfillJobName : undefined;
     if (!isJob(backfillJobName)) return null;
     if (!('cursor' in raw) || raw.cursor === undefined) {
-      return {
-        backfillJobName,
-        start: { backfillStart: BackfillStart.Resume },
-      };
+      return { backfillJobName, start: BackfillStartRequest.resume() };
     }
     const cursor = raw.cursor;
     if (cursor === null) {
-      return { backfillJobName, start: { backfillStart: BackfillStart.Top } };
+      return { backfillJobName, start: BackfillStartRequest.top() };
     }
     if (typeof cursor !== 'string') return null;
     const position = BackfillPlanSystem.positionOf(cursor);
@@ -233,10 +202,7 @@ export const BackfillPlanSystem = {
           (position.after === null || DOC_ID.test(position.after))
         : DOC_ID.test(cursor);
     return valid
-      ? {
-          backfillJobName,
-          start: { backfillStart: BackfillStart.After, cursor },
-        }
+      ? { backfillJobName, start: BackfillStartRequest.after(cursor) }
       : null;
   },
 

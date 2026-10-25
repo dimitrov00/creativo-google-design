@@ -14,7 +14,6 @@ import {
   DayHours,
   OpeningState,
   RosterWindow,
-  SHOP_CLOSES_SOON_MINUTES,
   ShopDayHours,
   ShopOpening,
   ScheduleVersion,
@@ -326,7 +325,7 @@ export const RosterSystem = {
    * week (`DayHours`, the closed day kept), on the shop's wall clock:
    *
    * - open (`openMinutes ≤ minute < closeMinutes`, {@link DayHours.isOpenAt})
-   *   → `CLOSES_SOON` with at most {@link SHOP_CLOSES_SOON_MINUTES} left,
+   *   → `CLOSES_SOON` with at most `DayHours.CLOSES_SOON_MINUTES` left,
    *   else `CLOSES_AT` — both at today's closing minute;
    * - before today's opening → `OPENS_AT` today's opening minute;
    * - closed today, or past closing → `OPENS_ON` the first open day of the
@@ -348,7 +347,7 @@ export const RosterSystem = {
         return {
           shopOpening:
             MinuteCount.span(minute, today.closeMinutes) <=
-            SHOP_CLOSES_SOON_MINUTES
+            DayHours.CLOSES_SOON_MINUTES
               ? ShopOpening.ClosesSoon
               : ShopOpening.ClosesAt,
           atMinutes: today.closeMinutes,

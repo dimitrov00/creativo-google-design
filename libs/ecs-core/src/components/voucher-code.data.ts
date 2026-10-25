@@ -80,19 +80,24 @@ export const VoucherCode = {
    * The vouchers a batch names, in cover order (the callable's
    * `voucherCodesOf`): every code {@link parseTyped} — a blank one fails the
    * shape — and no voucher twice, since a second draw would be measured
-   * against a moved balance. The first refusal answers, a repeat as the
-   * repeated code as typed.
+   * against a moved balance. The first refusal answers: a malformed code
+   * as `ENGAGEMENT_VOUCHER_CODE_INVALID`, a repeat as
+   * `ENGAGEMENT_VOUCHER_CODE_DUPLICATE` naming the repeated code as typed
+   * (pass D, DEP-18 — its one caller collapses every refusal to `null`).
    */
   distinct(
     codes: readonly string[],
-  ): Result<readonly VoucherCode[], EngagementError.VoucherCodeInvalid> {
+  ): Result<
+    readonly VoucherCode[],
+    EngagementError.VoucherCodeInvalid | EngagementError.VoucherCodeDuplicate
+  > {
     const out: VoucherCode[] = [];
     for (let i = 0; i < codes.length; i++) {
       const raw = codes[i] as string;
       const code = VoucherCode.parseTyped(raw);
       if (!code.ok) return code;
       if (out.includes(code.value)) {
-        return Result.err(EngagementError.voucherCodeInvalid(raw));
+        return Result.err(EngagementError.voucherCodeDuplicate(raw));
       }
       out.push(code.value);
     }

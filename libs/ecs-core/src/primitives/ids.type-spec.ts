@@ -71,6 +71,7 @@ import {
   type TriggerEventId,
   type AuditResourceId,
   type SeatKeyText,
+  type DraftPersonKey,
   AppointmentId as AppointmentIdOf,
   BadgeSeriesId as BadgeSeriesIdOf,
   BarberId as BarberIdOf,
@@ -79,11 +80,16 @@ import {
   ServiceId as ServiceIdOf,
   TenantId as TenantIdOf,
   UserId as UserIdOf,
+  DraftPersonKey as DraftPersonKeyOf,
 } from './ids.primitive';
 import type { BusyKey } from './busy-key.primitive';
 import type { Currency } from './currency.primitive';
 import type { LocalDate } from './local-date.primitive';
-import type { MinuteOfDay, EndMinute } from './minute-of-day.primitive';
+import type {
+  MinuteOfDay,
+  EndMinute,
+  TrackMinute,
+} from './minute-of-day.primitive';
 import type {
   DurationMinutes,
   MinuteCount,
@@ -164,6 +170,7 @@ type Brands = {
   readonly TriggerEventId: TriggerEventId;
   readonly AuditResourceId: AuditResourceId;
   readonly SeatKeyText: SeatKeyText;
+  readonly DraftPersonKey: DraftPersonKey;
   readonly BusyKey: BusyKey;
   readonly Currency: Currency;
   readonly LocalDate: LocalDate;
@@ -279,3 +286,27 @@ expectBrand<SeatLabel>(SeatLabel.of('seat-label-1'));
 expectBrand<VoucherCode>(VoucherCode.of('WELCOME10'));
 // @ts-expect-error — a SeatLabel is not a VoucherCode, though both are strings.
 expectBrand<VoucherCode>(SeatLabel.of('seat-label-1'));
+expectBrand<DraftPersonKey>(DraftPersonKeyOf.of('guest-Мария'));
+expectBrand<DraftPersonKey>(DraftPersonKeyOf.account(UserIdOf.of('u-anna')));
+// @ts-expect-error — a UserId is not a draft key until `DraftPersonKey.account` makes one.
+expectBrand<DraftPersonKey>(UserIdOf.of('u-anna'));
+
+// (5) The track axis (pass D, D-5): `TrackMinute` is the union of a start,
+// an end and its own anchored minute — a start and an end ARE track
+// minutes; the way back onto the day's clock is `toStart`/`toEnd`, never
+// an assignment. (Kept out of {@link Brands}: a supertype of two brands
+// crosses them by design.)
+declare const track: TrackMinute;
+declare const span: DurationMinutes;
+export const startOnTrack: TrackMinute = minute;
+export const endOnTrack: TrackMinute = end;
+// @ts-expect-error — an axis minute may be 1440 or past it: never a start by assignment.
+export const trackAsStart: MinuteOfDay = track;
+// @ts-expect-error — an axis minute may be 0 or past 1440: never an end by assignment.
+export const trackAsEnd: EndMinute = track;
+// @ts-expect-error — a bare number is never a track minute.
+export const rawTrack: TrackMinute = 1455;
+// @ts-expect-error — a duration is not a point on the axis.
+export const durationOnTrack: TrackMinute = span;
+// A track minute reads as its base type.
+export const trackAsNumber: number = track;

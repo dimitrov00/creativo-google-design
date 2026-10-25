@@ -7,11 +7,7 @@ import {
   SessionKind,
 } from '@core/components';
 import { OtpId, Result } from '@core/primitives';
-import {
-  IdentityErrorCode,
-  PipelineError,
-  PipelineErrorCode,
-} from '@core/errors';
+import { IdentityError, PipelineError, PipelineErrorCode } from '@core/errors';
 import { memoryOtpChallengePorts } from '@core/testing';
 import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 import { AuthFlowStore, RESEND_COOLDOWN_SECONDS } from './auth-flow.store';
@@ -159,23 +155,23 @@ describe('AuthFlowStore', () => {
   });
 
   it('keeps the server code of a refused verify as the error on the otp step', async () => {
-    verifyChallenge.mockResolvedValue(
-      Result.err(
-        PipelineError.fromWire('invalid-argument', {
-          errorCode: 'IDENTITY_OTP_WRONG_CODE',
-        }),
-      ),
-    );
+    const refused = PipelineError.fromWire('invalid-argument', {
+      errorCode: 'IDENTITY_OTP_WRONG_CODE',
+    });
+    verifyChallenge.mockResolvedValue(Result.err(refused));
     await store.submitIdentifier(requiredIdentifier());
 
     const session = await store.submitCode('123456');
 
     expect(session).toBeNull();
+    // The failed call itself, as its struct (pass D §2.11) — its server code
+    // is what the otp line words (`wordFlowFailure`).
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Otp,
       identifier: requiredIdentifier(),
-      error: 'IDENTITY_OTP_WRONG_CODE',
+      error: refused,
     });
+    expect(refused.serverErrorCode).toBe('IDENTITY_OTP_WRONG_CODE');
   });
 
   it('refuses a code that is not six digits as a wrong code, without dialling the server', async () => {
@@ -187,7 +183,7 @@ describe('AuthFlowStore', () => {
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Otp,
       identifier: requiredIdentifier(),
-      error: 'IDENTITY_OTP_WRONG_CODE',
+      error: IdentityError.otpWrongCode(),
     });
   });
 
@@ -203,13 +199,10 @@ describe('AuthFlowStore', () => {
   });
 
   it('is not blocked by the lockout code on its own status (resource-exhausted)', async () => {
-    verifyChallenge.mockResolvedValue(
-      Result.err(
-        PipelineError.fromWire('resource-exhausted', {
-          errorCode: 'IDENTITY_OTP_LOCKED_OUT',
-        }),
-      ),
-    );
+    const lockedOut = PipelineError.fromWire('resource-exhausted', {
+      errorCode: 'IDENTITY_OTP_LOCKED_OUT',
+    });
+    verifyChallenge.mockResolvedValue(Result.err(lockedOut));
     await store.submitIdentifier(requiredIdentifier());
 
     await store.submitCode('123456');
@@ -217,33 +210,34 @@ describe('AuthFlowStore', () => {
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Otp,
       identifier: requiredIdentifier(),
-      error: 'IDENTITY_OTP_LOCKED_OUT',
+      error: lockedOut,
     });
+    expect(lockedOut.serverErrorCode).toBe('IDENTITY_OTP_LOCKED_OUT');
   });
 
   it('returns to identify with the server code when the send fails, and the generic code when the server named none', async () => {
-    requestChallenge.mockResolvedValue(
-      Result.err(
-        PipelineError.fromWire('resource-exhausted', {
-          errorCode: 'IDENTITY_OTP_RATE_LIMITED',
-        }),
-      ),
-    );
+    const rateLimited = PipelineError.fromWire('resource-exhausted', {
+      errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+    });
+    requestChallenge.mockResolvedValue(Result.err(rateLimited));
     await store.submitIdentifier(requiredIdentifier());
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Identify,
-      error: 'IDENTITY_OTP_RATE_LIMITED',
+      error: rateLimited,
     });
+    expect(rateLimited.serverErrorCode).toBe('IDENTITY_OTP_RATE_LIMITED');
     expect(store.sendCount()).toBe(0);
 
-    requestChallenge.mockResolvedValue(
-      Result.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
-    );
+    // No server code: the failed call is kept as it is — `wordFlowFailure`
+    // words it as the generic `IDENTITY_CALL_FAILED` (its spec pins that).
+    const unavailable = PipelineError.bare(PipelineErrorCode.Unavailable);
+    requestChallenge.mockResolvedValue(Result.err(unavailable));
     await store.submitIdentifier(emailIdentifier('other@example.com'));
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Identify,
-      error: IdentityErrorCode.CallFailed,
+      error: unavailable,
     });
+    expect(unavailable.serverErrorCode).toBeNull();
   });
 
   it('never verifies outside the otp step', async () => {

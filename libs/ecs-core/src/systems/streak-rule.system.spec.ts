@@ -6,8 +6,6 @@ import {
   StreakIntervalSource,
   StreakQualifierRule,
   HeadRole,
-  STREAK_EXCUSES,
-  STREAK_RULE_PARAMETER_ORDER,
   StreakExcuse,
   StreakOnBreak,
   StreakPublishConsent,
@@ -579,7 +577,7 @@ describe('StreakRuleSystem.changesInRuleOrder — what the history names', () =>
   const P = StreakRuleParameter;
 
   it('holds every parameter once, in the rule’s order, the name last', () => {
-    expect(STREAK_RULE_PARAMETER_ORDER).toEqual([
+    expect(StreakRule.PARAMETER_ORDER).toEqual([
       'ENABLED',
       'QUALIFIER',
       'MIN_GAP_DAYS',
@@ -594,7 +592,7 @@ describe('StreakRuleSystem.changesInRuleOrder — what the history names', () =>
       'ON_BREAK',
       'NAME',
     ]);
-    expect(new Set(STREAK_RULE_PARAMETER_ORDER)).toEqual(
+    expect(new Set(StreakRule.PARAMETER_ORDER)).toEqual(
       new Set(Object.values(StreakRuleParameter)),
     );
   });
@@ -645,7 +643,7 @@ describe('StreakRuleSystem.changesInRuleOrder — what the history names', () =>
       StreakRuleSystem.changesInRuleOrder(
         [...Object.values(StreakRuleParameter)].reverse(),
       ),
-    ).toEqual(STREAK_RULE_PARAMETER_ORDER);
+    ).toEqual(StreakRule.PARAMETER_ORDER);
   });
 });
 
@@ -657,9 +655,9 @@ describe('StreakRuleSystem.excuseCount — «3 от 4»', () => {
       all: 4,
     });
     expect(
-      StreakRuleSystem.excuseCount(rule({ excuses: STREAK_EXCUSES })),
+      StreakRuleSystem.excuseCount(rule({ excuses: StreakRule.EXCUSES })),
     ).toEqual({ on: 4, all: 4 });
-    expect(STREAK_EXCUSES).toHaveLength(4);
+    expect(StreakRule.EXCUSES).toHaveLength(4);
   });
 });
 
@@ -864,7 +862,7 @@ describe('StreakRuleSystem.summary', () => {
       ['SHOP_CLOSURE', 'BARBER_ABSENCE', 'STAFF_CANCELLED'],
       true,
     ],
-    ['those and the closed days', [...STREAK_EXCUSES], true],
+    ['those and the closed days', [...StreakRule.EXCUSES], true],
     [
       'all but the staff’s own cancel',
       ['SHOP_CLOSURE', 'BARBER_ABSENCE'],
@@ -1170,7 +1168,7 @@ describe('StreakRuleSystem.changeFrom', () => {
     [
       'an excuse added',
       {},
-      { excuses: [...STREAK_EXCUSES] },
+      { excuses: [...StreakRule.EXCUSES] },
       'LOOSER',
       ['EXCUSES'],
     ],
@@ -1540,7 +1538,7 @@ describe('StreakRuleSystem.summary — the shop excuses are StreakRule.coversSho
     [StreakRule.DEFAULT.excuses],
     [[StreakExcuse.StaffCancelled, StreakExcuse.ShopClosure]],
     [[StreakExcuse.ClosedDays]],
-    [STREAK_EXCUSES],
+    [StreakRule.EXCUSES],
     [[]],
   ])('says the same as the coverage rule for %j', (excuses) => {
     expect(StreakRuleSystem.summary(rule({ excuses })).shopExcuses).toBe(

@@ -13,10 +13,10 @@ import {
   SeatLabel,
   Seat,
   SeatOccupant,
-  SeatSubject,
   SubjectRelationship,
   ShopNow,
   VisitMark,
+  VisitRowOutcome,
   VisitStatusMark,
   VisitTone,
   VoucherCode,
@@ -52,12 +52,7 @@ import {
   customerOf,
 } from '@core/testing';
 import { LocationScopeSystem } from './location-scope.system';
-import { VisitRowOutcome } from './visit-list.system';
-import {
-  type PersonSubject,
-  type SubjectStory,
-  VisitStorySystem,
-} from './visit-story.system';
+import { type SubjectStory, VisitStorySystem } from './visit-story.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
@@ -185,13 +180,6 @@ const staffStory = (
     true,
   );
 
-/** Who a seat is for, as people are counted. */
-function personOf(entry: Seat): PersonSubject {
-  return entry.seatSubject === SeatSubject.Account
-    ? { seatSubject: SeatSubject.Account, userId: entry.subjectUserId }
-    : { seatSubject: SeatSubject.Anonymous, label: entry.guestLabel };
-}
-
 /** The OTHER people on the visit, as the row counts them. */
 function peersOf(
   appointment: Appointment,
@@ -199,7 +187,7 @@ function peersOf(
 ): number {
   const story = staffStory(appointment, subject);
   return S.peerCount(
-    appointment.seats.map(personOf),
+    appointment.seats,
     appointment.seats.map((_, i) => story.seatIndexes.includes(i)),
   );
 }
@@ -1556,7 +1544,7 @@ describe('VisitStorySystem.seatPersonKey — one person, one key, off the seat',
     expect(S.seatPersonKey(account)).toBe('account:ivo');
     expect(S.seatPersonKey(guest)).toBe('guest:Мария');
     for (const entry of [account, guest]) {
-      expect(S.seatPersonKey(entry)).toBe(S.personKeyOf(personOf(entry)));
+      expect(S.seatPersonKey(entry)).toBe(S.personKeyOf(entry));
     }
   });
 

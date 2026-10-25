@@ -11,9 +11,11 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
+  draftPersonKey,
   endMinute,
   localDate,
   minute,
+  trackMinute,
   pinnedNowUtcMs,
   utcMs,
   applyWrites,
@@ -379,6 +381,15 @@ describe('the flatten-pass time fixtures (flatten-spec §2.2)', () => {
     expect(() => minute(1440)).toThrow(/broken fixture/);
     expect(() => endMinute(0)).toThrow(/broken fixture/);
     expect(() => utcMs('2026-09-28T09:00:00')).toThrow(/broken fixture/);
+  });
+
+  it('builds the pass D literals: a track minute past midnight and a draft key as spelled', () => {
+    expect(trackMinute(0)).toBe(0);
+    expect(trackMinute(1455)).toBe(1455);
+    expect(() => trackMinute(-1)).toThrow(/broken fixture/);
+    expect(() => trackMinute(1.5)).toThrow(/broken fixture/);
+    expect(draftPersonKey('guest-Мария')).toBe('guest-Мария');
+    expect(draftPersonKey('primary')).toBe('primary');
   });
 
   it('pinnedNowUtcMs is deterministic', () => {

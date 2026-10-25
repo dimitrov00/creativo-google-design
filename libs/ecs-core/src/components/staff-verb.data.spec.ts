@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BookingStatus } from '@core/primitives';
-import type { MarkArrivalCommand } from '@core/pipelines';
-import {
-  ArrivalVerb,
-  MarkArrivalAction,
-  type StaffVerb,
-} from './staff-verb.data';
+import { deepFreeze } from '@core/testing';
+import { ArrivalVerb } from './arrival-verb.data';
+import { StaffVerb } from './staff-verb.data';
 
 type Expect<T extends true> = T;
 /** Exact type equality (not mere mutual assignability). */
@@ -14,29 +11,39 @@ type Equals<X, Y> =
     ? true
     : false;
 
-/** Compile-time only: each dictionary's type is exactly its values; the field is named after it. */
+/** Compile-time only: a staff verb is a lifecycle move or an arrival stamp. */
 export type StaffVerbTypes = [
-  Expect<Equals<ArrivalVerb, 'ARRIVED' | 'UNARRIVED'>>,
-  Expect<Equals<MarkArrivalAction, 'ARRIVE' | 'CLEAR'>>,
   Expect<Equals<StaffVerb, BookingStatus | ArrivalVerb>>,
-  Expect<Equals<MarkArrivalCommand['markArrivalAction'], MarkArrivalAction>>,
 ];
 
-describe('ArrivalVerb', () => {
-  it('holds the two arrival stamps — values unchanged from the feature’s `row-verb.ts`', () => {
-    expect(ArrivalVerb).toEqual({ Arrived: 'ARRIVED', Unarrived: 'UNARRIVED' });
+/** Every verb a staff row can act with, lifecycle moves first. */
+const EVERY_VERB: readonly StaffVerb[] = [
+  ...Object.values(BookingStatus),
+  ...Object.values(ArrivalVerb),
+];
+
+describe('StaffVerb.didNotHappen — the acts that settle a visit as one that did not happen', () => {
+  it('is true for a cancel and a no-show, false for every other verb (each pinned)', () => {
+    expect(StaffVerb.didNotHappen(BookingStatus.Cancelled)).toBe(true);
+    expect(StaffVerb.didNotHappen(BookingStatus.NoShow)).toBe(true);
+    expect(StaffVerb.didNotHappen(BookingStatus.Pending)).toBe(false);
+    expect(StaffVerb.didNotHappen(BookingStatus.Confirmed)).toBe(false);
+    expect(StaffVerb.didNotHappen(BookingStatus.Completed)).toBe(false);
+    expect(StaffVerb.didNotHappen(ArrivalVerb.Arrived)).toBe(false);
+    expect(StaffVerb.didNotHappen(ArrivalVerb.Unarrived)).toBe(false);
   });
 
-  it('never shares a value with a lifecycle status — a StaffVerb is one or the other', () => {
-    const statuses: readonly string[] = Object.values(BookingStatus);
-    for (const verb of Object.values(ArrivalVerb)) {
-      expect(statuses.includes(verb)).toBe(false);
+  it('answers as the dashboard’s dismissal set did — `to === CANCELLED || to === NO_SHOW` — on every verb', () => {
+    for (const verb of EVERY_VERB) {
+      expect(StaffVerb.didNotHappen(verb)).toBe(
+        verb === BookingStatus.Cancelled || verb === BookingStatus.NoShow,
+      );
     }
   });
-});
 
-describe('MarkArrivalAction', () => {
-  it('holds the arrival callable’s two verbs — values unchanged from the pipeline', () => {
-    expect(MarkArrivalAction).toEqual({ Arrive: 'ARRIVE', Clear: 'CLEAR' });
+  it('is pure: same input → same output, the verbs untouched', () => {
+    const verbs = deepFreeze([...EVERY_VERB]);
+    const once = verbs.map((verb) => StaffVerb.didNotHappen(verb));
+    expect(verbs.map((verb) => StaffVerb.didNotHappen(verb))).toEqual(once);
   });
 });

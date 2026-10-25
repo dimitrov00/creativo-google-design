@@ -10,6 +10,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import type { CouponGrantId } from '@core/primitives';
 import {
   UiAvatar,
   UiBadge,
@@ -36,9 +37,9 @@ import {
   UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
 import { ActivityList } from '../activity-list/activity-list';
-import type { ClientCardRegion, WalletAnchor } from '../client-card.contracts';
+import { ClientCardRegion, WalletAnchor } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
-import { type WalletActionVm } from '../client-pages.vm';
+import { WalletActionId, type WalletActionVm } from '../client-pages.vm';
 import { LoadState } from '@creativo/shared/view-state';
 import { RhythmCard } from '../rhythm-card/rhythm-card';
 import { regularSheetWidth } from '../sheet-width';
@@ -47,8 +48,14 @@ import {
   type WalletHoldingsWords,
 } from '../wallet-holdings/wallet-holdings';
 
-/** A section of the page that is headed, anchored or failed by id. */
-type WalletSection = 'wallet' | 'rhythm' | 'status' | 'catalog' | 'ledger';
+/**
+ * A section of the page that is headed, anchored or failed by id: a
+ * wallet anchor's section (`WalletAnchor`, one tag family — pass D, D-11)
+ * and the ledger's. Values: external contract (the heading ids
+ * `<titleId>-<section>`).
+ */
+const WalletSection = { ...WalletAnchor, Ledger: 'ledger' } as const;
+type WalletSection = (typeof WalletSection)[keyof typeof WalletSection];
 
 /**
  * The placeholders' heights (§2.2.4 «Loading»): a heading row at the
@@ -149,9 +156,9 @@ export class ClientLoyaltyPage {
   /** The section the pushing card names; `null` = the page top. */
   readonly anchor = input<WalletAnchor | null>(null);
   /** «Използвай» with ONE ready ticket: the sheet puts that grant on the bill and opens the discount page on it. */
-  readonly openReward = output<string>();
+  readonly openReward = output<CouponGrantId>();
   /** An applied ticket's «Премахни»: the sheet takes that grant off the bill, as the discount page's card does. */
-  readonly removeReward = output<string>();
+  readonly removeReward = output<CouponGrantId>();
   /** «Код» (and «Използвай» with several tickets): the sheet pushes the discount page. */
   readonly openCode = output<void>();
   /** «История» and «Всички ›»: the sheet pushes the ledger page «Движение». */
@@ -161,6 +168,9 @@ export class ClientLoyaltyPage {
   protected readonly words = this.store.words;
   /** Where each section's read stands, for the template's switches. */
   protected readonly LoadState = LoadState;
+  /** The sections and the regions they retry, for the template's headings. */
+  protected readonly WalletSection = WalletSection;
+  protected readonly ClientCardRegion = ClientCardRegion;
   protected readonly online = this.store.online;
   protected readonly wallet = this.store.wallet;
 
@@ -172,9 +182,9 @@ export class ClientLoyaltyPage {
   protected readonly placeholderTickets = [0, 1] as const;
   /** The later sections every flagged page is likely to show. */
   protected readonly placeholderSections = [
-    'rhythm',
-    'status',
-    'catalog',
+    WalletSection.Rhythm,
+    WalletSection.Status,
+    WalletSection.Catalog,
   ] as const;
   protected readonly placeholderRows = [0, 1, 2] as const;
 
@@ -213,13 +223,16 @@ export class ClientLoyaltyPage {
       // holdings before every section under them, the status card before
       // the catalogue. Land once they have painted.
       if (
-        anchor !== 'wallet' &&
-        anchor !== 'stamps' &&
+        anchor !== WalletAnchor.Wallet &&
+        anchor !== WalletAnchor.Stamps &&
         vm.holdings.loadState === LoadState.Loading
       ) {
         return;
       }
-      if (anchor === 'catalog' && vm.tier?.loadState === LoadState.Loading) {
+      if (
+        anchor === WalletAnchor.Catalog &&
+        vm.tier?.loadState === LoadState.Loading
+      ) {
         return;
       }
       this.anchored = anchor;
@@ -240,17 +253,17 @@ export class ClientLoyaltyPage {
   /** A disc's verb (§2.2.3). */
   protected act(action: WalletActionVm): void {
     switch (action.id) {
-      case 'use':
+      case WalletActionId.Use:
         if (action.grantId !== null) this.openReward.emit(action.grantId);
         else this.openCode.emit();
         return;
-      case 'code':
+      case WalletActionId.Code:
         this.openCode.emit();
         return;
-      case 'catalog':
-        this.landOn('catalog');
+      case WalletActionId.Catalog:
+        this.landOn(WalletAnchor.Catalog);
         return;
-      case 'history':
+      case WalletActionId.History:
         this.openLedger.emit();
         return;
     }
@@ -273,14 +286,14 @@ export class ClientLoyaltyPage {
 
   private headingOf(anchor: WalletAnchor): ElementRef<HTMLElement> | undefined {
     switch (anchor) {
-      case 'wallet':
-      case 'stamps':
+      case WalletAnchor.Wallet:
+      case WalletAnchor.Stamps:
         return this.walletHeading();
-      case 'rhythm':
+      case WalletAnchor.Rhythm:
         return this.rhythmHeading();
-      case 'status':
+      case WalletAnchor.Status:
         return this.statusHeading();
-      case 'catalog':
+      case WalletAnchor.Catalog:
         return this.catalogHeading();
     }
   }

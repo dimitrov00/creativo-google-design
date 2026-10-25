@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { afterEach, vi } from 'vitest';
 import { Result } from '@core/primitives';
+import { UiIconAsset } from '../manifest/icon-manifest';
 import { UI_LOGO } from '../manifest/icon-vocabulary';
 import { MATERIAL_GLYPHS } from '../material/material-glyphs.generated';
 import {
@@ -10,13 +11,14 @@ import {
   UiIconDiagnostic,
   UiIconManifestSource,
   UiIconRegistry,
+  UiIconSourceFailure,
   consoleUiIconReporter,
   provideUiIcons,
 } from './icon-registry.service';
 
 interface Harness {
   readonly registry: UiIconRegistry;
-  readonly changes: Subject<Result<unknown, Error>>;
+  readonly changes: Subject<Result<unknown, UiIconSourceFailure>>;
   readonly remembered: unknown[];
   readonly diagnostics: UiIconDiagnostic[];
 }
@@ -24,7 +26,7 @@ interface Harness {
 function setUp(
   options: { cached?: unknown; overrides?: boolean } = {},
 ): Harness {
-  const changes = new Subject<Result<unknown, Error>>();
+  const changes = new Subject<Result<unknown, UiIconSourceFailure>>();
   const remembered: unknown[] = [];
   const diagnostics: UiIconDiagnostic[] = [];
   const source: UiIconManifestSource = {
@@ -65,7 +67,7 @@ describe('UiIconRegistry', () => {
 
   it('applies the cached last-known-good synchronously, before any live emission', () => {
     const { registry } = setUp({
-      cached: { schemaVersion: 1, icons: { 'sheet.close': 'cancel' } },
+      cached: { schemaVersion: 2, icons: { 'sheet.close': 'cancel' } },
     });
     expect(registry.origin()).toBe('cached');
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('cancel'));
@@ -76,21 +78,23 @@ describe('UiIconRegistry', () => {
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('close'));
 
     changes.next(
-      Result.ok({ schemaVersion: 1, icons: { 'sheet.close': 'cancel' } }),
+      Result.ok({ schemaVersion: 2, icons: { 'sheet.close': 'cancel' } }),
     );
     expect(registry.origin()).toBe('remote');
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('cancel'));
     expect(remembered).toEqual([
       {
-        schemaVersion: 1,
-        icons: { 'sheet.close': { kind: 'material', glyph: 'cancel' } },
+        schemaVersion: 2,
+        icons: {
+          'sheet.close': { iconAsset: UiIconAsset.Material, glyph: 'cancel' },
+        },
       },
     ]);
   });
 
   it('keeps the current manifest when a live one is rejected, and reports it', () => {
     const { registry, changes, remembered, diagnostics } = setUp({
-      cached: { schemaVersion: 1, icons: { 'sheet.close': 'cancel' } },
+      cached: { schemaVersion: 2, icons: { 'sheet.close': 'cancel' } },
     });
     changes.next(Result.ok({ schemaVersion: 99 }));
     expect(registry.origin()).toBe('cached');
@@ -101,7 +105,7 @@ describe('UiIconRegistry', () => {
 
   it('reports a source failure and carries on', () => {
     const { registry, changes, diagnostics } = setUp();
-    changes.next(Result.err(new Error('offline')));
+    changes.next(Result.err({ detail: 'offline' }));
     expect(diagnostics).toEqual([
       { code: 'source-failed', origin: 'source', detail: 'offline' },
     ]);
@@ -110,7 +114,7 @@ describe('UiIconRegistry', () => {
 
   it('returns to the bundled defaults when the backend withdraws its manifest', () => {
     const { registry, changes, remembered } = setUp({
-      cached: { schemaVersion: 1, icons: { 'sheet.close': 'cancel' } },
+      cached: { schemaVersion: 2, icons: { 'sheet.close': 'cancel' } },
     });
     changes.next(Result.ok(null));
     expect(registry.origin()).toBe('bundled');
@@ -122,7 +126,7 @@ describe('UiIconRegistry', () => {
     const { registry, changes, diagnostics } = setUp();
     changes.next(
       Result.ok({
-        schemaVersion: 1,
+        schemaVersion: 2,
         icons: {
           'sheet.close': 'cancel',
           'nav.back': 'no_such_glyph',
@@ -143,7 +147,7 @@ describe('UiIconRegistry', () => {
   it('lets DI overrides beat the remote manifest', () => {
     const { registry, changes } = setUp({ overrides: true });
     changes.next(
-      Result.ok({ schemaVersion: 1, icons: { 'sheet.close': 'check' } }),
+      Result.ok({ schemaVersion: 2, icons: { 'sheet.close': 'check' } }),
     );
     const overrides = TestBed.inject(UiIconRegistry) && [
       { 'sheet.close': 'cancel' as const },
@@ -166,13 +170,13 @@ describe('UiIconRegistry', () => {
   it('takes a remote logo and falls back to the bundled one', () => {
     const { registry, changes } = setUp();
     const light = {
-      kind: 'vector',
+      iconAsset: 'VECTOR',
       viewBox: '0 0 2 2',
       paths: [{ d: 'M0 0h2v2H0z' }],
     };
-    changes.next(Result.ok({ schemaVersion: 1, logo: { light } }));
+    changes.next(Result.ok({ schemaVersion: 2, logo: { light } }));
     expect(registry.logo().light).toEqual(light);
-    changes.next(Result.ok({ schemaVersion: 1, icons: {} }));
+    changes.next(Result.ok({ schemaVersion: 2, icons: {} }));
     expect(registry.logo()).toBe(UI_LOGO);
   });
 

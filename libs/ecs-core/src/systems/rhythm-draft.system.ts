@@ -4,7 +4,6 @@ import {
   StreakIntervalRule,
   StreakQualifier,
   StreakQualifierRule,
-  STREAK_EXCUSES,
   StreakRule,
   type StreakExcuse,
   type StreakOnBreak,
@@ -238,8 +237,8 @@ function riskLeadOf(
 /** The excuses in the vocabulary's order, each once; what the vocabulary does not know is dropped. */
 function excusesOf(excuses: readonly StreakExcuse[]): readonly StreakExcuse[] {
   const out: StreakExcuse[] = [];
-  for (let i = 0; i < STREAK_EXCUSES.length; i++) {
-    const excuse = STREAK_EXCUSES[i] as StreakExcuse;
+  for (let i = 0; i < StreakRule.EXCUSES.length; i++) {
+    const excuse = StreakRule.EXCUSES[i] as StreakExcuse;
     for (let k = 0; k < excuses.length; k++) {
       if (excuses[k] === excuse) {
         out.push(excuse);

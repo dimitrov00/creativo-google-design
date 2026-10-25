@@ -3,16 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   FreezeReason,
   StreakCapsule,
+  StreakExcuse,
   StreakIntervalRule,
   StreakOutlook,
-  STREAK_EXCUSES,
-  STREAK_SHOP_EXCUSES,
-  StreakExcuse,
-  StreakPhase,
-  StreakRule,
-  StreakPhaseState,
-  StreakState,
   type StreakPeriodFact,
+  StreakPhase,
+  StreakPhaseState,
+  StreakRule,
+  StreakState,
+  StreakTrackMarkKind,
 } from '@core/components';
 import {
   AppointmentId,
@@ -33,7 +32,6 @@ import { ClientStatsSystem } from './client-stats.system';
 import { StreakRuleSystem } from './streak-rule.system';
 import {
   StreakSystem,
-  StreakTrackMarkKind,
   type StreakFacts as SystemFacts,
   type StreakOutlookView,
   type StreakTrace,
@@ -1076,13 +1074,13 @@ describe('projectStreak, protections (P8)', () => {
 describe('projectStreak, excuses (P9)', () => {
   const visits = visitsAt([-200, -120]);
 
-  it.each(STREAK_SHOP_EXCUSES.map((reason) => [reason]))(
+  it.each(StreakRule.SHOP_EXCUSES.map((reason) => [reason]))(
     'a visit called off for %s restarts the clock where the rule excuses it',
     (reason) => {
       const excused = [{ day: day(-165), reason }];
       expect(stateOf(DEFAULT, { visits, excused }, day(-115)).current).toBe(2);
       const others = rule({
-        excuses: STREAK_EXCUSES.filter((excuse) => excuse !== reason),
+        excuses: StreakRule.EXCUSES.filter((excuse) => excuse !== reason),
       });
       expect(stateOf(others, { visits, excused }, day(-115)).current).toBe(1);
     },
@@ -1172,7 +1170,7 @@ describe('projectStreak, excuses (P9)', () => {
   });
 
   describe('CLOSED_DAYS', () => {
-    const closing = rule({ excuses: STREAK_EXCUSES });
+    const closing = rule({ excuses: StreakRule.EXCUSES });
     // Due on day −7, and the shop was closed from that day for three.
     const closed = [-7, -6, -5].map((offset) => ({
       day: day(offset),
@@ -1773,7 +1771,7 @@ const CLOCK: readonly Loosening[] = [
   {
     name: 'one more excuse',
     of: (p, by) => {
-      const off = STREAK_EXCUSES.filter((e) => !p.excuses.includes(e));
+      const off = StreakRule.EXCUSES.filter((e) => !p.excuses.includes(e));
       const added = off[between(0, off.length - 1, by)];
       return added === undefined
         ? null
@@ -1878,7 +1876,7 @@ const anyRule: fc.Arbitrary<StreakRule> = fc
       earnEvery: fc.integer({ min: 1, max: 8 }),
       startWith: fc.integer({ min: 0, max: 5 }),
     }),
-    excuses: fc.subarray([...STREAK_EXCUSES]),
+    excuses: fc.subarray([...StreakRule.EXCUSES]),
     clientPause: fc.record({
       enabled: fc.boolean(),
       maxDaysPerYear: fc.integer({ min: 0, max: 180 }),
@@ -1958,7 +1956,7 @@ const anyFacts: fc.Arbitrary<{
         calledOff: fc.option(
           fc.record({
             at: fc.double({ min: 0, max: 0.999, noNaN: true }),
-            reason: fc.constantFrom(...STREAK_SHOP_EXCUSES),
+            reason: fc.constantFrom(...StreakRule.SHOP_EXCUSES),
           }),
           { nil: null, freq: 6 },
         ),

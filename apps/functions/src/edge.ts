@@ -7,6 +7,7 @@ import {
   PrimitiveErrorCode,
   type Result,
   TriggerEventId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
   AccountsErrorCode,
@@ -18,6 +19,7 @@ import {
   CompleteRegistrationRefusalCode,
   EngagementErrorCode,
   GovernanceErrorCode,
+  HttpsStatus,
   IdentityErrorCode,
   MediaErrorCode,
   MoneyErrorCode,
@@ -33,6 +35,7 @@ import {
   WaitlistErrorCode,
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
+import { AttemptOutcome } from '@core/components';
 import {
   type CallableName,
   type ClockPorts,
@@ -40,7 +43,6 @@ import {
   type TelemetryPorts,
 } from '@core/ports';
 import {
-  AttemptOutcome,
   type AttemptLine,
   TriggerAttemptSystem,
   WorkBudgetSystem,
@@ -72,22 +74,6 @@ import { eventInstantOf } from './wire/wire-read';
  */
 
 // ── The vocabulary ─────────────────────────────────────────────────────────
-
-/** The statuses the edge answers with — Firebase's `FunctionsErrorCode` strings, verbatim. */
-export const HttpsStatus = {
-  InvalidArgument: 'invalid-argument',
-  FailedPrecondition: 'failed-precondition',
-  NotFound: 'not-found',
-  AlreadyExists: 'already-exists',
-  PermissionDenied: 'permission-denied',
-  Unauthenticated: 'unauthenticated',
-  ResourceExhausted: 'resource-exhausted',
-  DeadlineExceeded: 'deadline-exceeded',
-  Aborted: 'aborted',
-  Unavailable: 'unavailable',
-  Internal: 'internal',
-} as const satisfies Record<string, FunctionsErrorCode>;
-export type HttpsStatus = (typeof HttpsStatus)[keyof typeof HttpsStatus];
 
 /**
  * Every dictionary the table covers, by name — the spec proves each of
@@ -206,7 +192,13 @@ type RuleBody =
 
 type WireTable<C extends string> = { readonly [K in C]: RuleBody };
 
-const S = HttpsStatus;
+/**
+ * The statuses the edge answers with — `@core/errors`' {@link HttpsStatus},
+ * the one dictionary of the callable protocol's status strings; the
+ * `satisfies` keeps the compile-time link to the server SDK's own
+ * `FunctionsErrorCode` (every status is one `HttpsError` takes).
+ */
+const S = HttpsStatus satisfies Readonly<Record<string, FunctionsErrorCode>>;
 
 /** The projected struct: its code and its allowlisted context. */
 const fields = (httpsStatus: HttpsStatus): RuleBody => ({
@@ -307,6 +299,13 @@ const BOOKING_WIRE: WireTable<BookingErrorCode> = {
 const MOVE_WIRE: WireTable<MoveErrorCode> = {
   // NOT `aborted`: only the shop can re-seat somebody else on the visit.
   [MoveErrorCode.CarriedSeatUnplaceable]: withRefusal(S.FailedPrecondition),
+  // The client booking flow's own move refusals (pass D, X-4: the folded
+  // `MoveRefusal`, `rescheduleFrom`'s answer in the browser): no callable
+  // raises them — inert rows, each a state that forbids the move, as the
+  // booking flow's own refusals are (`BOOKING_FLOW_WIRE`).
+  [MoveErrorCode.CompanionsOnly]: fields(S.FailedPrecondition),
+  [MoveErrorCode.Unavailable]: fields(S.FailedPrecondition),
+  [MoveErrorCode.CarriedOutOfReach]: fields(S.FailedPrecondition),
 };
 
 const STAFF_EDIT_WIRE: WireTable<StaffEditErrorCode> = {
@@ -588,6 +587,11 @@ const ENGAGEMENT_WIRE = uniform(
     // raises it; an inert row — the answer the edge gives a code it does not
     // know, not the dictionary's `invalid-argument` default.
     [EngagementErrorCode.RepositoryFailure]: fields(S.Internal),
+    // A voucher code repeated in one request (pass D, X-4, DEP-18:
+    // `VoucherCode.distinct`): the booking wire reads it as no codes at all
+    // (`voucherCodesOf` → `null`), so no callable raises it — an inert row,
+    // a refusal of what was sent (the dictionary's default, spelled out).
+    [EngagementErrorCode.VoucherCodeDuplicate]: fields(S.InvalidArgument),
   },
 );
 
@@ -769,17 +773,19 @@ export const PLATFORM_TIMEOUT_SECONDS = 60;
  * question): a budgeted walk takes no new unit once `spent()`.
  */
 export type WorkBudget = {
-  readonly startedMs: number;
+  /** The instant the edge started the handler — a stamp, read once off the clock port. */
+  readonly startedAtUtcMs: UtcEpochMs;
+  /** The allowance, in milliseconds of elapsed time (a span, not an instant). */
   readonly limitMs: number;
   readonly spent: () => boolean;
 };
 
 export const workBudget = (nowUtcMs: NowUtcMs, limitMs: number): WorkBudget => {
-  const startedMs = nowUtcMs();
+  const startedAtUtcMs = nowUtcMs();
   return {
-    startedMs,
+    startedAtUtcMs,
     limitMs,
-    spent: () => WorkBudgetSystem.isSpent(startedMs, nowUtcMs(), limitMs),
+    spent: () => WorkBudgetSystem.isSpent(startedAtUtcMs, nowUtcMs(), limitMs),
   };
 };
 

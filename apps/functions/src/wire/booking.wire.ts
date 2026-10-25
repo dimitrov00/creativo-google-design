@@ -34,39 +34,39 @@ import {
   SeatId,
   ServiceId,
   ServiceVariantId,
+  Tag,
   UserId,
-  isBookingStatus,
 } from '@core/primitives';
 import {
+  type BookAppointmentError,
   BookingError,
   BookingErrorCode,
+  type CancelAppointmentError,
   CancellationRefusal,
+  type EditAppointmentError,
+  type MarkArrivalError,
+  type RecordSeatTipError,
+  type RescheduleAppointmentError,
   SchedulingErrorCode,
   StaffEditError,
   StaffEditErrorCode,
+  type TransitionAppointmentError,
 } from '@core/errors';
 import {
   type BookAppointmentAnswer,
   type BookAppointmentCommand,
-  type BookAppointmentError,
   type CancelAppointmentAnswer,
   type CancelAppointmentCommand,
-  type CancelAppointmentError,
   type EditAppointmentAnswer,
   type EditAppointmentCommand,
-  type EditAppointmentError,
   type MarkArrivalAnswer,
   type MarkArrivalCommand,
-  type MarkArrivalError,
   type RecordSeatTipAnswer,
   type RecordSeatTipCommand,
-  type RecordSeatTipError,
   type RescheduleAppointmentAnswer,
   type RescheduleAppointmentCommand,
-  type RescheduleAppointmentError,
   type TransitionAppointmentAnswer,
   type TransitionAppointmentCommand,
-  type TransitionAppointmentError,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import {
@@ -128,9 +128,6 @@ export const CallStateWord = {
   Unarrived: ArrivalVerb.Unarrived,
 } as const;
 export type CallStateWord = (typeof CallStateWord)[keyof typeof CallStateWord];
-
-const CANCELLATION_REASONS: readonly string[] =
-  Object.values(CancellationReason);
 
 /** A `barberPreference` — what the client ASKED for; anything else is unknown, never guessed. */
 function preferenceOf(raw: unknown): BarberPreference | null {
@@ -303,13 +300,13 @@ export function decodeCancelAppointment(
   }
   // The code the client files the cancellation under (code-only, D23).
   const reason = field(payload, 'reason');
-  if (typeof reason !== 'string' || !CANCELLATION_REASONS.includes(reason)) {
+  if (!Tag.has(CancellationReason, reason)) {
     return Result.err(CancellationRefusal.invalidInput('reason'));
   }
   return Result.ok({
     appointmentId,
     callerUserId: caller,
-    reason: reason as CancellationReason,
+    reason,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -380,9 +377,7 @@ export function rescheduleAppointmentRefusal(
  */
 function transitionReasonOf(raw: unknown): CancellationReason | null {
   if (raw === undefined || raw === null) return CancellationReason.Unspecified;
-  return typeof raw === 'string' && CANCELLATION_REASONS.includes(raw)
-    ? (raw as CancellationReason)
-    : null;
+  return Tag.has(CancellationReason, raw) ? raw : null;
 }
 
 export function decodeTransitionAppointment(
@@ -445,7 +440,7 @@ export function encodeTransitionAppointmentAnswer(
 
 /** A state as the refusal names it: a `BookingStatus` value, else the callable's own word. */
 function stateOf(raw: unknown): string {
-  return isBookingStatus(raw) ? raw : String(raw);
+  return Tag.has(BookingStatus, raw) ? raw : String(raw);
 }
 
 /** The lifecycle's refusals in the transition callable's own codes. */

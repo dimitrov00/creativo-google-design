@@ -34,6 +34,7 @@ import type {
 } from '@core/ports';
 import {
   PartyAdmissionSystem,
+  type WaitlistIdBasis,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -101,7 +102,7 @@ function namedLocation(raw: string | null): LocationId | null {
 
 /** The deterministic id of a decided request. */
 export function waitlistRequestIdOf(
-  body: Parameters<typeof WaitlistSystem.idBasis>[0],
+  body: WaitlistIdBasis,
   hash: (input: string) => string,
 ): WaitlistRequestId {
   return WaitlistRequestId.of(

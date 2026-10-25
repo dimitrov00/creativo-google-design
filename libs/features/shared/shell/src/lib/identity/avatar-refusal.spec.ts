@@ -5,19 +5,23 @@ import { avatarUploadRefusal } from './avatar-refusal';
 
 /*
  * The one wording rule for a refused avatar upload: the picked file's own
- * refusal keeps its code (today's words under `errors.<errorCode>`), every
- * Storage failure is today's one upload-failed copy.
+ * refusal keeps its struct (today's words under `errors.<errorCode>`, its
+ * own fields the params — pass D E-9), every Storage failure is today's one
+ * upload-failed copy.
  */
 describe('avatarUploadRefusal', () => {
   it('keeps the picked file’s own refusals', () => {
-    expect(avatarUploadRefusal(AccountsError.uploadAvatarNotAnImage())).toBe(
-      'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE',
+    expect(avatarUploadRefusal(AccountsError.uploadAvatarNotAnImage())).toEqual(
+      { errorCode: 'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE' },
     );
     expect(
       avatarUploadRefusal(
         AccountsError.uploadAvatarTooLarge(AvatarSystem.MAX_BYTES),
       ),
-    ).toBe('ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE');
+    ).toEqual({
+      errorCode: 'ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE',
+      maxBytes: AvatarSystem.MAX_BYTES,
+    });
   });
 
   it.each([
@@ -27,8 +31,8 @@ describe('avatarUploadRefusal', () => {
   ] as const)(
     'words a %s Storage failure as the upload-failed copy',
     (_name, error) => {
-      expect(avatarUploadRefusal(error)).toBe(
-        AccountsErrorCode.UploadAvatarUploadFailed,
+      expect(avatarUploadRefusal(error)).toEqual(
+        AccountsError.uploadAvatarUploadFailed(),
       );
       expect(AccountsErrorCode.UploadAvatarUploadFailed).toBe(
         'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',

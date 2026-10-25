@@ -1,9 +1,9 @@
 import type { Auth } from 'firebase-admin/auth';
 import { IdentifierChannel, Result, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
-import { AuthClaims } from '@core/components';
+import { AttemptOutcome, AuthClaims } from '@core/components';
 import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
-import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';
+import { TriggerAttemptSystem } from '@core/systems';
 
 /**
  * The Admin-Auth bundles of `identity.port.ts` over `firebase-admin/auth`

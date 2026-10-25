@@ -1,6 +1,7 @@
 import { Result, TenantId } from '@core/primitives';
 import { IdentityError } from '@core/errors';
-import { type Role, knownRoles } from './role.data';
+import type { Role } from './role.data';
+import { Roles } from './roles.data';
 
 /**
  * The account's stage on the token — the stored `stage` claim strings,
@@ -92,7 +93,7 @@ export const AuthClaims = {
       parsedTenant !== null && parsedTenant.ok ? parsedTenant.value : null;
     const rawRoles = raw['roles'];
     if (raw[STAGE_CLAIM] === AuthStage.Active && Array.isArray(rawRoles)) {
-      const roles = knownRoles(rawRoles);
+      const roles = Roles.known(rawRoles);
       if (roles.length > 0) {
         return { tenantId, authStage: AuthStage.Active, roles };
       }

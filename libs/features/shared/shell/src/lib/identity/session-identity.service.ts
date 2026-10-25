@@ -13,16 +13,11 @@ import {
   AVATAR_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import {
-  ADMIN_ROLES,
-  E164,
-  OnboardingFlowStep,
-  Principal,
-  STAFF_ROLES,
-} from '@core/components';
+import { E164, OnboardingFlowStep, Principal, Roles } from '@core/components';
 import { Profile } from '@core/entities';
 import { IdentifierChannel, type UserId } from '@core/primitives';
 import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
+import { OnboardingStepHint } from './onboarding-link';
 
 /** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
 function settled(url: string | null): Observable<string | null | undefined> {
@@ -68,11 +63,11 @@ export class SessionIdentityService {
    * rules re-check for themselves.
    */
   readonly isStaffMember = computed(() =>
-    Principal.hasAnyRole(this.principal(), STAFF_ROLES),
+    Principal.hasAnyRole(this.principal(), Roles.STAFF),
   );
 
   /**
-   * One of the admin pair, `admin | sysadmin` (`ADMIN_ROLES`, ONE home) —
+   * One of the admin pair, `admin | sysadmin` (`Roles.ADMIN`, ONE home) —
    * the SAME grouping firestore.rules' `isAdmin()` and the `/admin` routes'
    * `rolesGuard` use, read off the token's claims. Drives the menu's «Лоялност» entry (the one
    * way to the admin page `/admin/loyalty/rhythm`; client-card revision 3
@@ -80,7 +75,7 @@ export class SessionIdentityService {
    * the callable re-check for themselves.
    */
   readonly isAdmin = computed(() =>
-    Principal.hasAnyRole(this.principal(), ADMIN_ROLES),
+    Principal.hasAnyRole(this.principal(), Roles.ADMIN),
   );
 
   /**
@@ -274,10 +269,10 @@ export class SessionIdentityService {
    * the onboarding screen recomputes the full remaining set from
    * `profileProgress` on arrival, so a stale hint costs nothing.
    */
-  readonly nextOpenStep = computed<'birthday' | 'avatar'>(() =>
+  readonly nextOpenStep = computed<OnboardingStepHint>(() =>
     OnboardingFlowSystem.openPersonalizeSteps(this.profileProgress())[0] ===
     OnboardingFlowStep.Birthday
-      ? 'birthday'
-      : 'avatar',
+      ? OnboardingStepHint.Birthday
+      : OnboardingStepHint.Avatar,
   );
 }

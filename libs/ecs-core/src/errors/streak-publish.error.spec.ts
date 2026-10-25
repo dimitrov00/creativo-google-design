@@ -74,7 +74,7 @@ describe('StreakPublishError', () => {
 });
 
 describe('StreakPublishError.guard — the publish’s no, as against no answer', () => {
-  /** One struct per code of the dictionary, the two codes outside the union included. */
+  /** One struct per code of the union — the answered refusals and the missing caller. */
   const everyRefusal: readonly { readonly errorCode: string }[] = [
     StreakPublishError.callerUnauthenticated(),
     StreakPublishError.callerNotAdmin(),
@@ -86,17 +86,30 @@ describe('StreakPublishError.guard — the publish’s no, as against no answer'
     ),
     StreakPublishError.recomputeNeedsEngine(),
     StreakPublishError.previewStale(),
-    StreakPublishError.invalidInput('requestId'),
-    StreakPublishError.storeFailed(),
   ];
 
-  it('knows every code of the dictionary — never only the callable’s answered subset', () => {
+  it('knows every code of its union — never only the callable’s answered subset', () => {
     expect(everyRefusal.map((error) => error.errorCode).sort()).toEqual(
-      Object.values(StreakPublishErrorCode).sort(),
+      Object.values(StreakPublishErrorCode)
+        .filter(
+          (code) =>
+            code !== StreakPublishErrorCode.InvalidInput &&
+            code !== StreakPublishErrorCode.StoreFailed,
+        )
+        .sort(),
     );
     for (const error of everyRefusal) {
       expect(StreakPublishError.guard(error)).toBe(true);
     }
+  });
+
+  it('narrows to exactly its union: the edge’s thrown envelope and store faults are no refusal (pass D)', () => {
+    expect(
+      StreakPublishError.guard(StreakPublishError.invalidInput('requestId')),
+    ).toBe(false);
+    expect(StreakPublishError.guard(StreakPublishError.storeFailed())).toBe(
+      false,
+    );
   });
 
   it('tells a request that got no answer apart: a RepositoryError is no refusal', () => {
@@ -127,5 +140,44 @@ describe('StreakPublishError.guard — the publish’s no, as against no answer'
       StreakPublishError.guard(error),
     );
     expect(error).toEqual(StreakPublishError.stale(1, 2));
+  });
+});
+
+describe('StreakPublishError — the answered refusals, spelled once', () => {
+  it('lists the five rule refusals and the caller who is no admin, in dictionary order', () => {
+    expect(StreakPublishError.ANSWERED_CODES).toEqual([
+      'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
+      'LOYALTY_STREAK_PUBLISH_STALE',
+      'LOYALTY_STREAK_PUBLISH_INVALID',
+      'LOYALTY_STREAK_PUBLISH_TOO_EARLY',
+      'LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE',
+      'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE',
+    ]);
+  });
+
+  it('answers a refusal of the rule; throws a missing caller, an unread envelope and a store fault', () => {
+    expect(StreakPublishError.isAnswered(StreakPublishError.stale(1, 2))).toBe(
+      true,
+    );
+    expect(
+      StreakPublishError.isAnswered(StreakPublishError.callerNotAdmin()),
+    ).toBe(true);
+    expect(
+      StreakPublishError.isAnswered(StreakPublishError.callerUnauthenticated()),
+    ).toBe(false);
+    expect(
+      StreakPublishError.isAnswered(StreakPublishError.invalidInput('rule')),
+    ).toBe(false);
+    expect(
+      StreakPublishError.isAnswered(RepositoryError.writeFailed(null, 'threw')),
+    ).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const error = deepFreeze(StreakPublishError.previewStale());
+    expect(StreakPublishError.isAnswered(error)).toBe(
+      StreakPublishError.isAnswered(error),
+    );
+    expect(error).toEqual(StreakPublishError.previewStale());
   });
 });

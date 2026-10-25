@@ -7,6 +7,7 @@ import creativo, {
   ECS_TOKEN_RESTRICTIONS,
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
+  uiRawPrimitiveBlock,
 } from './tools/lint-rules/index.mjs';
 
 /**
@@ -396,6 +397,24 @@ export default [
   // either brand comes only from its companion. Specs may still cast to
   // UiIconName to exercise the runtime fallback.
   ...ecsRootEveryFileBlocks(),
+  // Law 7.4 in the features and the design system (pass D, D-13.1): a member
+  // of a type alias or an interface named as an id, an instant, money or a
+  // shop day (L3's one name list, `*Minutes` included — a time of day is
+  // MinuteOfDay/EndMinute/TrackMinute, a length DurationMinutes/MinuteCount —
+  // plus `*Ms` and `today`/`dayKey`/`todayKey`) is its brand, never a raw
+  // `number`/`string` — D-3's opaque UI keys allowed by name. Its `basePath`
+  // is THIS directory, absolute, so the two repo-root globs hold under both
+  // ESLint base paths (the note above the import cages); it restates the
+  // every-file icon and L7 guards (options replace); specs and test support
+  // keep the blocks above; it sits before the suffix blocks so a suffix file
+  // keeps its kind's list. libs/ui/icons turns `no-restricted-syntax` off on
+  // its non-suffix files (the registry boundary), this guard with it.
+  // Selectors and specs: tools/lint-rules/ecs-syntax.mjs; both base paths:
+  // tools/lint-rules/ecs-core-base-paths.spec.mjs.
+  uiRawPrimitiveBlock({
+    basePath: import.meta.dirname,
+    ignores: PRODUCTION_TS_IGNORES,
+  }),
   // ── ECS file kinds (CLAUDE.md §1–2) ───────────────────────────────────
   // One `files:` block per suffix — AST selectors cannot see file names, so
   // spreading the ECS selectors into the `**/*.ts` block above would fire
@@ -541,15 +560,10 @@ export default [
       'creativo/no-generic-discriminator': [
         'error',
         {
+          // No allow-list: the icon manifest's asset discriminator is
+          // `iconAsset` since schema 2 (pass D, DEP-16), so the manifest is
+          // checked like every other UI file.
           include: UI_LAYER_FRAGMENTS,
-          allowIn: [
-            // The icon MANIFEST: a `schemaVersion`'d JSON input format whose
-            // `kind` (vector | material | image) is validated by
-            // icon-manifest.ts and `pnpm icons:check` — renaming it is a
-            // manifest schema change, its own pass (UR-13 a, OQ-5), not view
-            // state.
-            '/libs/ui/icons/src/lib/manifest/',
-          ],
         },
       ],
     },

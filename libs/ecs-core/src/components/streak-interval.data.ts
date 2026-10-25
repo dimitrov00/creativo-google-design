@@ -1,9 +1,10 @@
-import { Result } from '@core/primitives';
+import { Result, Tag } from '@core/primitives';
 import {
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
 } from '@core/errors';
+import { StreakIntervalSource } from './streak-interval-source.data';
 
 /** How long a period of the rhythm lasts — the rule's discriminator `streakInterval`. */
 export const StreakInterval = {
@@ -15,17 +16,7 @@ export const StreakInterval = {
 export type StreakInterval =
   (typeof StreakInterval)[keyof typeof StreakInterval];
 
-/** Where a period's length came from: the rule's one number, the person's habit, or the newcomer's default. */
-export const StreakIntervalSource = {
-  Fixed: 'FIXED',
-  Personal: 'PERSONAL',
-  Fallback: 'FALLBACK',
-} as const;
-export type StreakIntervalSource =
-  (typeof StreakIntervalSource)[keyof typeof StreakIntervalSource];
-
-const STREAK_INTERVALS: readonly StreakInterval[] =
-  Object.values(StreakInterval);
+const STREAK_INTERVALS: readonly StreakInterval[] = Tag.values(StreakInterval);
 
 /** The interval's ranges, inclusive, by the flat fields they bound: two weeks to half a year (every `interval*Days`). */
 const LIMITS = {

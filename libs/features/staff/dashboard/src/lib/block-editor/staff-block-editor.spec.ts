@@ -7,6 +7,8 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { BarberId } from '@core/primitives';
+import { localDate, minute, trackMinute, utcMs } from '@core/testing';
 import {
   type BlockEditorCommit,
   type BlockEditorVm,
@@ -109,37 +111,51 @@ function provideTestI18n(): EnvironmentProviders[] {
 function vm(partial: Partial<BlockEditorVm> = {}): BlockEditorVm {
   return {
     blockId: null,
-    barberIds: ['ivan'],
-    dayKey: '2026-09-09',
-    todayKey: '2026-09-09',
+    barberIds: [BarberId.of('ivan')],
+    dayKey: localDate('2026-09-09'),
+    // 10:00 on the shop's clock, on the drafted day.
+    now: {
+      localDate: localDate('2026-09-09'),
+      currentMinute: minute(600),
+      utcEpochMs: utcMs('2026-09-09T10:00:00+03:00'),
+    },
     allDay: false,
-    startMinute: 12 * 60,
-    endMinute: 13 * 60,
+    startMinute: trackMinute(12 * 60),
+    endMinute: trackMinute(13 * 60),
     lanes: [
       {
-        barberId: 'ivan',
+        barberId: BarberId.of('ivan'),
         neighbours: [
-          { name: 'Мартин Илиев', startMinute: 750, endMinute: 780, tone: 0 },
+          {
+            name: 'Мартин Илиев',
+            startMinute: trackMinute(750),
+            endMinute: trackMinute(780),
+            tone: 0,
+          },
         ],
-        rosterStartMinute: 540,
-        rosterEndMinute: 1080,
+        rosterStartMinute: trackMinute(540),
+        rosterEndMinute: trackMinute(1080),
       },
       {
-        barberId: 'stefan',
+        barberId: BarberId.of('stefan'),
         neighbours: [
-          { name: 'Георги Петров', startMinute: 720, endMinute: 765, tone: 2 },
+          {
+            name: 'Георги Петров',
+            startMinute: trackMinute(720),
+            endMinute: trackMinute(765),
+            tone: 2,
+          },
         ],
-        rosterStartMinute: 600,
-        rosterEndMinute: 1140,
+        rosterStartMinute: trackMinute(600),
+        rosterEndMinute: trackMinute(1140),
       },
       {
-        barberId: 'niko',
+        barberId: BarberId.of('niko'),
         neighbours: [],
-        rosterStartMinute: 540,
-        rosterEndMinute: 1080,
+        rosterStartMinute: trackMinute(540),
+        rosterEndMinute: trackMinute(1080),
       },
     ],
-    nowMinute: 600,
     dayIsOff: false,
     liftArmed: false,
     acting: false,

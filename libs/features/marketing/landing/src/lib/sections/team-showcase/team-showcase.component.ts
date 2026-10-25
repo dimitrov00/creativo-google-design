@@ -21,17 +21,23 @@ import {
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { UiModalSheet } from '@creativo/ui/controls';
+import { BarberId } from '@core/primitives';
 import {
   ServiceRowComponent,
   type ServiceVm,
   ShowcaseGalleryComponent,
+  termsPrice,
 } from '@creativo/features/shared/catalog';
 import { LandingContentService } from '../../content/landing-content.service';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 
 interface BarberItem {
-  /** Matches the catalog's barber id — the key the price list derives from. */
-  readonly id: string;
+  /**
+   * Matches the catalog's barber id — the key the price list derives from
+   * (an authored literal of the catalogue's own ids, so a brand by
+   * construction).
+   */
+  readonly id: BarberId;
   readonly nameKey: string;
   readonly image: string;
   readonly roleKey: string;
@@ -73,13 +79,15 @@ export class TeamShowcaseComponent {
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly content = inject(LandingContentService);
   private readonly catalog = inject(CatalogNavigationService);
+  /** A price-list row's terms as the money the content service words. */
+  protected readonly termsPrice = termsPrice;
 
   /** Held across the exit — see `openService`. */
   private handoff: ServiceVm | null = null;
 
   protected readonly barbers: readonly BarberItem[] = [
     {
-      id: 'ivan',
+      id: BarberId.of('ivan'),
       nameKey: 'landing.barbers.ivan.name',
       image: '/barbers/ivan.jpg',
       roleKey: 'landing.barbers.ivan.role',
@@ -94,7 +102,7 @@ export class TeamShowcaseComponent {
       ],
     },
     {
-      id: 'niko',
+      id: BarberId.of('niko'),
       nameKey: 'landing.barbers.niko.name',
       image: '/barbers/niko.jpg',
       roleKey: 'landing.barbers.niko.role',
@@ -109,7 +117,7 @@ export class TeamShowcaseComponent {
       ],
     },
     {
-      id: 'stefan',
+      id: BarberId.of('stefan'),
       nameKey: 'landing.barbers.stefan.name',
       image: '/barbers/stefan.jpg',
       roleKey: 'landing.barbers.stefan.role',

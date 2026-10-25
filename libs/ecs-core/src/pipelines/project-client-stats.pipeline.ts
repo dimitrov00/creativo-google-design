@@ -12,7 +12,9 @@ import {
   ClientStatsPolicy,
   type PolicyPass,
   PolicyPassStamp,
+  PolicyPassVerdict,
   type ShopNow,
+  StatsWriteDecision,
   type WriteOp,
 } from '@core/components';
 import {
@@ -38,9 +40,7 @@ import {
   type AttemptFailure,
   type ClientStatsPaths,
   ClientStatsSystem,
-  PolicyPassVerdict,
   PolicyRecomputeJobSystem,
-  StatsWriteDecision,
   type StoredClientStats,
   TriggerAttemptSystem,
   WorkBudgetSystem,

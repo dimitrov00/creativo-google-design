@@ -1,4 +1,4 @@
-import { VisitFilter, VisitGrain, VisitPerspective } from '@core/systems';
+import { VisitFilter, VisitGrain, VisitPerspective } from '@core/components';
 
 /*
  * The visit list's lowercase words (UI residue cleanup §2.2, UR-3; the

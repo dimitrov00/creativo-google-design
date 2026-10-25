@@ -4,6 +4,7 @@ import {
   FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
+  isLazyPort,
 } from '@creativo/infrastructure/firebase-app';
 import { loadStorageAdapters } from '@creativo/infrastructure/storage';
 import { appConfig, firebaseData } from './app.config';
@@ -54,9 +55,9 @@ describe('appConfig — the lazily bound data ports', () => {
     expect(tokens.length).toBeGreaterThan(0);
     expect(new Set(tokens).size).toBe(tokens.length);
     for (const port of ports) {
-      // Each is the lazy proxy — a frozen plain object — not an adapter a
+      // Each is the lazy proxy — a plain object — not an adapter a
       // later eager binding put back in its place.
-      expect(Object.isFrozen(port)).toBe(true);
+      expect(isLazyPort(port)).toBe(true);
       expect(Object.getPrototypeOf(port)).toBe(Object.prototype);
     }
     expect(load).not.toHaveBeenCalled();

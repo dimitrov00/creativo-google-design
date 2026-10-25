@@ -1,34 +1,36 @@
 import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
+  CancelledSide,
   type DayWindows,
   type Seat,
   type ShopNow,
+  VisitGrain,
   VisitMark,
+  VisitPerspective,
+  VisitRowOutcome,
   VisitStatusMark,
   VisitTone,
 } from '@core/components';
 import {
-  CustomerId,
+  type AppointmentId,
+  type AppointmentPhotoId,
+  type CustomerId,
   LocalDate,
   type LocationId,
   type MinuteOfDay,
   type TimeZone,
-  UserId,
+  type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import {
-  CancelledSide,
   type SubjectStory,
-  VisitGrain,
   VisitListSystem,
-  VisitPerspective,
-  VisitRowOutcome,
   VisitStorySystem,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import { daypartWords, pluralForm } from '@creativo/infrastructure/i18n';
-import { dayRange } from './day-range';
+import { DayRangeFace, dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
 import { UPCOMING_SECTION_KEY } from './visit-sections';
@@ -37,9 +39,11 @@ import {
   formatMinute,
   formatWallClock,
 } from '@creativo/ui/wall-clock';
+import type { VisitLookup } from './visit-lookup.contracts';
 import {
+  type AppointmentRowVm,
+  StatusFactTone,
   TrailingFactFace,
-  type VisitLookup,
   type VisitRowMark,
   VisitRowEntry,
   type VisitRowVm,
@@ -47,6 +51,7 @@ import {
   type VisitTrailingFact,
   type VisitWaitlistWords,
   type VisitWords,
+  type WaitlistRowVm,
 } from './visit-row.vm';
 
 /*
@@ -110,7 +115,7 @@ export type VisitCatalogueWords = VisitBuilderWords &
 
 /** A photo of the visit as the reader lists it: `lib-visit-card`'s thumbs (`VisitCardOptions.photos`). */
 export interface VisitRowPhotoSource {
-  readonly id: string;
+  readonly id: AppointmentPhotoId;
   readonly url: string;
   /** When it was taken — read on the shop's calendar for the thumb's name. */
   readonly takenAtUtcMs: UtcEpochMs;
@@ -126,7 +131,7 @@ export interface VisitRowOptions {
    * decides whose own words a row quotes. Null (a guest) tells the
    * appointment's; the client's own list always does.
    */
-  readonly subjectUserId: string | null;
+  readonly subjectUserId: UserId | null;
   /**
    * The same person's client RECORD (D29: whom the shop served) — what the
    * story is keyed by (`VisitStorySystem.subjectStory`). The staff card
@@ -134,9 +139,9 @@ export interface VisitRowOptions {
    * names `subjectUserId` (the seat's explicit `subjectCustomerId` link,
    * never a uid taken for a record).
    */
-  readonly subjectCustomerId?: string | null;
+  readonly subjectCustomerId?: CustomerId | null;
   /** The appointment the sheet is open on: it wears «Този час» wherever its date files it. */
-  readonly currentAppointmentId: string | null;
+  readonly currentAppointmentId: AppointmentId | null;
   /**
    * "Now" on the shop's wall clock, derived ONCE by the host (Law 7.3,
    * `ZonedTimeSystem.shopNow`): every row of a list reads the same one.
@@ -160,8 +165,8 @@ export interface VisitRowOptions {
 
 export interface WaitlistRowOptions {
   readonly words: VisitWaitlistWords;
-  /** `YYYY-MM-DD` on the request's calendar: the days before it have passed. */
-  readonly today: string;
+  /** Today on the request's calendar (the shop's): the days before it have passed. */
+  readonly today: LocalDate;
   readonly locale: string;
   /**
    * The person's OTHER watching requests: the row names the newest one and
@@ -278,7 +283,7 @@ export function visitRowOf(
   appointment: Appointment,
   options: VisitRowOptions,
   lookup: VisitLookup,
-): VisitRowVm {
+): AppointmentRowVm {
   const words = options.words;
   const staff = options.perspective === VisitPerspective.Staff;
   // One reading per list: every row shares the host's `now`.
@@ -291,7 +296,7 @@ export function visitRowOf(
     visitZoneOf(appointment.locationId, lookup) ?? options.timeZone,
   );
   const story = subjectStoryOf(appointment, options);
-  const id: string = appointment.id;
+  const id = appointment.id;
   const current = id === options.currentAppointmentId;
   const start = {
     localDate: appointment.localDate,
@@ -500,14 +505,14 @@ export function visitRowOf(
             trailingFactFace: TrailingFactFace.Status,
             icon: 'visit.noShow',
             text: words.noShow,
-            tone: 'warning',
+            tone: StatusFactTone.Warning,
           }
         : statusMark === VisitStatusMark.Pending
           ? {
               trailingFactFace: TrailingFactFace.Status,
               icon: 'visit.pending',
               text: words.statusPending,
-              tone: 'neutral',
+              tone: StatusFactTone.Neutral,
             }
           : null;
 
@@ -526,7 +531,7 @@ export function visitRowOf(
   // may not read them.
   const quoted =
     options.clientWords !== false &&
-    VisitStorySystem.quotesBooker(appointment, userIdOf(options.subjectUserId))
+    VisitStorySystem.quotesBooker(appointment, options.subjectUserId)
       ? appointment.contactNote
       : null;
 
@@ -565,10 +570,9 @@ export function waitlistRowOf(
   request: WaitlistRequest,
   options: WaitlistRowOptions,
   lookup: VisitLookup,
-): VisitRowVm {
+): WaitlistRowVm {
   const words = options.words;
-  const parsedToday = LocalDate.parse(options.today);
-  const today = parsedToday.ok ? parsedToday.value : null;
+  const today = options.today;
   // The days it still watches come FIRST (every fact below reads them): a
   // request whose every day has passed is the host's to leave out; drawn
   // anyway, it names what it asked for rather than nothing.
@@ -603,8 +607,8 @@ export function waitlistRowOf(
           today,
           options.locale,
           withinWeek(first, today) && withinWeek(last, today)
-            ? 'weekday'
-            : 'date',
+            ? DayRangeFace.Weekday
+            : DayRangeFace.Date,
         ),
   );
   const shownDays =
@@ -694,8 +698,8 @@ export function subjectStoryOf(
     appointment,
     VisitStorySystem.subjectRecordOf(
       appointment,
-      namedRecordOf(options.subjectCustomerId),
-      userIdOf(options.subjectUserId),
+      options.subjectCustomerId,
+      options.subjectUserId,
     ),
     options.perspective === VisitPerspective.Staff,
   );
@@ -707,21 +711,6 @@ function seatsOf(
   story: SubjectStory,
 ): readonly Seat[] {
   return story.seatIndexes.map((index) => appointment.seats[index] as Seat);
-}
-
-/**
- * The record the host named, branded at the edge (a document id the host
- * read): `undefined` names none, `null` names a guest.
- */
-function namedRecordOf(
-  named: string | null | undefined,
-): CustomerId | null | undefined {
-  return named === undefined || named === null ? named : CustomerId.of(named);
-}
-
-/** The subject's account, branded at the edge (a uid the host read); `null` is a guest. */
-function userIdOf(subjectUserId: string | null): UserId | null {
-  return subjectUserId === null ? null : UserId.of(subjectUserId);
 }
 
 /**

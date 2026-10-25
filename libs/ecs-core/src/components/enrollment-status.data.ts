@@ -3,7 +3,9 @@
  * `enrollmentStatus`, the single source of truth for the Open/Upcoming
  * split on the public page (a course's timing "runs hot/cold"), not a date
  * derived from a start field. Stored SCREAMING since flip 4; the pages
- * still print today's lowercase word through their words tables.
+ * still print today's lowercase word through their words tables. Every
+ * status in key order is `Tag.values(EnrollmentStatus)`; which are shown
+ * on the public page is `ProgramsSystem.isEnrollmentOpenOrUpcoming`.
  */
 export const EnrollmentStatus = {
   Open: 'OPEN',
@@ -12,15 +14,3 @@ export const EnrollmentStatus = {
 } as const;
 export type EnrollmentStatus =
   (typeof EnrollmentStatus)[keyof typeof EnrollmentStatus];
-
-/** Every enrollment status, dictionary order — derived, never a second source. */
-export const ENROLLMENT_STATUSES: readonly EnrollmentStatus[] =
-  Object.values(EnrollmentStatus);
-
-/**
- * Shown on the public page: open now, or opening — `MarketingCourses`'
- * `LISTED_STATUSES`, the values of index #11's `in` filter.
- */
-export function isEnrollmentOpenOrUpcoming(status: EnrollmentStatus): boolean {
-  return status !== EnrollmentStatus.Closed;
-}

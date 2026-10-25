@@ -79,9 +79,15 @@ function daysOf(raw: unknown): readonly WaitlistCall.DayInput[] {
 }
 
 /**
- * The wire cart as the flat `BookingCart` the door reads. Ids are branded as
- * sent (`of`): what is readable is the door's question
- * (`WaitlistSystem.decide` refuses an unreadable line as `cart`).
+ * The wire cart as the flat `BookingCart` the door reads. A DELIBERATE
+ * pre-door brand (pass D, the D-4.1 row): each id is branded as sent with
+ * the unchecked `of`, never `parse`, because judging a cart's ids is the
+ * door's question, answered in the door's own order — `WaitlistSystem.decide`
+ * checks the windows, the days and the cart's size and sequence first, then
+ * refuses a line `lineReadable` cannot read (a blank id) as
+ * `invalidRequest('cart')`. A parse here would refuse ahead of those checks,
+ * and refuse ids the door accepts today (an id holding `/`, a blank
+ * `seatKey` or `locationId`).
  */
 function cartOf(raw: unknown): BookingCart {
   const cartSeats: CartSeatLines[] = listOf(raw, 'cartSeats').map((seat) => {

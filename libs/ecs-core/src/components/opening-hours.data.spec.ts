@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { minute, until } from '@core/testing';
-import {
-  DayHours,
-  type DayHoursInput,
-  OpeningState,
-  SHOP_CLOSES_SOON_MINUTES,
-  ShopOpening,
-} from './opening-hours.data';
+import type { DayHoursInput } from './day-hours-input.data';
+import { DayHours, OpeningState } from './opening-hours.data';
 import { Weekday } from '@core/primitives';
 
 const CLOSED = DayHours.closed();
@@ -146,25 +141,8 @@ describe('DayHours.parseWeek', () => {
   });
 });
 
-describe('ShopOpening', () => {
-  it('pins the opening-line tags and the closes-soon threshold', () => {
-    expect(ShopOpening).toEqual({
-      ClosesAt: 'CLOSES_AT',
-      ClosesSoon: 'CLOSES_SOON',
-      OpensAt: 'OPENS_AT',
-      OpensOn: 'OPENS_ON',
-    });
-    // The type is exactly the dictionary's literals.
-    const tags: readonly ShopOpening[] = [
-      'CLOSES_AT',
-      'CLOSES_SOON',
-      'OPENS_AT',
-      'OPENS_ON',
-    ];
-    expect(Object.values(ShopOpening)).toEqual(tags);
-    // @ts-expect-error — not a shop-opening tag
-    const stray: ShopOpening = 'OPEN';
-    expect(stray).toBe('OPEN');
-    expect(SHOP_CLOSES_SOON_MINUTES).toBe(60);
+describe('DayHours.CLOSES_SOON_MINUTES', () => {
+  it('pins the closes-soon threshold (was `SHOP_CLOSES_SOON_MINUTES`)', () => {
+    expect(DayHours.CLOSES_SOON_MINUTES).toBe(60);
   });
 });

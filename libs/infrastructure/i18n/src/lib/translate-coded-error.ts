@@ -1,4 +1,7 @@
 import { TranslocoService } from '@jsverse/transloco';
+import { WallTime } from '@core/components';
+import { TimeErrorCode } from '@core/errors';
+import { LocalDate, MinuteOfDay } from '@core/primitives';
 
 /**
  * The one shape a refusal reaches the UI in (Law 7.5): an ecs-core error
@@ -8,30 +11,37 @@ import { TranslocoService } from '@jsverse/transloco';
  */
 type CodedError = { readonly errorCode: string } & Record<string, unknown>;
 
-/** The owner-locked DST code (`TimeErrorCode.DstGap`, Law 7.3). */
-const DST_GAP_INVALID_TIME = 'DST_GAP_INVALID_TIME';
-
-const pad2 = (value: number): string => String(value).padStart(2, '0');
-
 /**
- * The display params a struct's own fields imply. A DST-gap refusal names
- * the refused time of day, not a whole date: `wallClock` is its `localDate`
- * and `minute` as the wall clock the user typed (`2026-03-29T03:30`, the
- * legacy `rawValue` form). The struct's own fields stay as they are.
+ * The display params a struct's own fields imply. A DST-gap refusal
+ * (`TimeErrorCode.DstGap`, Law 7.3) names the refused time of day, not a
+ * whole date: `wallClock` is its `localDate` and `minute` as the wall clock
+ * the user typed (`2026-03-29T03:30`, the legacy `rawValue` form —
+ * {@link WallTime.toLocalIso}). The struct's own fields stay as they are.
+ *
+ * The struct reaches this lookup untyped (`Record<string, unknown>`, maybe
+ * decoded off the wire), so its two fields become brands here, once, through
+ * the smart constructors. Every DST-gap struct is minted by
+ * `TimeError.dstGap(localDate: LocalDate, minute: MinuteOfDay, …)` — a real
+ * shop day and a minute in `[0, 1440)` — so neither constructor refuses a
+ * struct the app raises; a field that is not one keeps the params as they
+ * are, as a non-string day or a non-number minute does.
  */
 function displayParamsOf(
   code: string,
   params: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (code !== DST_GAP_INVALID_TIME) return params;
-  const localDate = params['localDate'];
-  const minute = params['minute'];
-  if (typeof localDate !== 'string' || typeof minute !== 'number') {
+  if (code !== TimeErrorCode.DstGap) return params;
+  const rawDate = params['localDate'];
+  const rawMinute = params['minute'];
+  if (typeof rawDate !== 'string' || typeof rawMinute !== 'number') {
     return params;
   }
+  const localDate = LocalDate.parse(rawDate);
+  const minute = MinuteOfDay.of(rawMinute);
+  if (!localDate.ok || !minute.ok) return params;
   return {
     ...params,
-    wallClock: `${localDate}T${pad2(Math.floor(minute / 60))}:${pad2(minute % 60)}`,
+    wallClock: WallTime.toLocalIso(WallTime.of(localDate.value, minute.value)),
   };
 }
 

@@ -12,6 +12,7 @@ import {
   runInInjectionContext,
 } from '@angular/core';
 import { Observable } from 'rxjs';
+import { Result, type Tag } from '@core/primitives';
 import { retryDelayMs } from './retry-schedule';
 
 /**
@@ -25,16 +26,17 @@ import { retryDelayMs } from './retry-schedule';
  *
  * ## One mechanism, typed per method
  * A proxy can only defer what is already asynchronous, so every binding
- * classifies every method of its port as `'observable'` or `'promise'`
- * ({@link LazyPortMethods}). The mapped type makes the list exhaustive and
- * checked: a missing or extra method, a method classified as the wrong kind,
- * or a SYNCHRONOUS method (which a lazy proxy could only answer by lying) is
- * a compile error — nothing silently breaks when a port grows a method.
+ * classifies every method of its port as `LazyMethod.Observable` or
+ * `LazyMethod.Promise` ({@link LazyPortMethods}). The mapped type makes the
+ * list exhaustive and checked: a missing or extra method, a method
+ * classified as the wrong kind, or a SYNCHRONOUS method (which a lazy proxy
+ * could only answer by lying) is a compile error — nothing silently breaks
+ * when a port grows a method.
  *
- * - `'observable'`: nothing loads until SUBSCRIBE; an unsubscribe before the
- *   load lands never reaches the adapter (the import itself runs on — it
- *   cannot be cancelled — and simply warms the next call).
- * - `'promise'`: the call awaits the load, then the adapter.
+ * - `LazyMethod.Observable`: nothing loads until SUBSCRIBE; an unsubscribe
+ *   before the load lands never reaches the adapter (the import itself runs
+ *   on — it cannot be cancelled — and simply warms the next call).
+ * - `LazyMethod.Promise`: the call awaits the load, then the adapter.
  *
  * ## One form of binding: a bundle factory
  * A binding names what answers the port in the loaded module with
@@ -101,8 +103,18 @@ import { retryDelayMs } from './retry-schedule';
  *   call calls the factory afresh.
  */
 
-/** How a lazy port method answers. */
-export type LazyMethodKind = 'observable' | 'promise';
+/**
+ * How a lazy port method answers — the value each binding's `methods` row
+ * gives every member of its port. Internal values: they reach no DOM, URL,
+ * storage or wire, only the proxy built here.
+ */
+export const LazyMethod = {
+  /** The method returns an `Observable`: nothing loads until SUBSCRIBE. */
+  Observable: 'OBSERVABLE',
+  /** The method returns a `Promise`: the call awaits the load, then the adapter. */
+  Promise: 'PROMISE',
+} as const;
+export type LazyMethod = Tag<typeof LazyMethod>;
 
 /** What a scope's loader resolves to. */
 export type LazyAdapterModule<M> = {
@@ -157,21 +169,21 @@ type Settled<R> = [R] extends [Observable<infer T>]
 
 type KindOf<F> = F extends (...args: never[]) => infer R
   ? [R] extends [Observable<unknown>]
-    ? 'observable'
+    ? typeof LazyMethod.Observable
     : [R] extends [PromiseLike<unknown>]
-      ? 'promise'
+      ? typeof LazyMethod.Promise
       : 'NOT LAZY-SAFE: a lazy port method must return an Observable or a Promise'
   : 'NOT LAZY-SAFE: every member of a lazy port must be a method';
 
 /**
  * The per-method classification of port `P`, checked against `F`, the
- * binding's load-failure answer. Each key is `'observable'` or `'promise'`
- * when that is what the method returns AND `F` is a valid answer of it;
- * otherwise the expected type is a sentence saying what is wrong, so the
- * compile error reads as the fix.
+ * binding's load-failure answer. Each key is `LazyMethod.Observable` or
+ * `LazyMethod.Promise` when that is what the method returns AND `F` is a
+ * valid answer of it; otherwise the expected type is a sentence saying what
+ * is wrong, so the compile error reads as the fix.
  */
 export type LazyPortMethods<P, F> = {
-  readonly [K in keyof P]-?: KindOf<P[K]> extends LazyMethodKind
+  readonly [K in keyof P]-?: KindOf<P[K]> extends LazyMethod
     ? [F] extends [never]
       ? 'NOT LAZY-SAFE: onLoadError must answer, not throw — a throw is the rejection this mechanism exists to prevent'
       : [F] extends [Settled<Answer<P[K]>>]
@@ -192,11 +204,6 @@ export type LazyPortBinding<P, M, F> = {
   readonly onLoadError: (scopeName: string, cause: unknown) => F;
 };
 
-/** A bundle, or why there is none: the real cause. */
-type Outcome<P> =
-  | { readonly loaded: true; readonly bundle: P }
-  | { readonly loaded: false; readonly cause: unknown };
-
 /**
  * The per-application half of a scope: one load, one scope injector.
  * Created in the root injector on the first port INJECTION (which loads
@@ -205,8 +212,13 @@ type Outcome<P> =
 type LazyScopeHost<M> = {
   /** The application is gone: nothing loads, and nothing should retry. */
   readonly closed: () => boolean;
-  /** The bundle `factory` builds, created once in the loaded scope; never a rejection. */
-  readonly bundle: <P>(factory: FactoryPicker<M, P>) => Promise<Outcome<P>>;
+  /**
+   * The bundle `factory` builds, created once in the loaded scope — or why
+   * there is none, the real cause; never a rejection.
+   */
+  readonly bundle: <P>(
+    factory: FactoryPicker<M, P>,
+  ) => Promise<Result<P, unknown>>;
 };
 
 /**
@@ -331,22 +343,24 @@ function lazyScopeHost<M>(
 
   return {
     closed: () => destroyed,
-    bundle: async <P>(factory: FactoryPicker<M, P>): Promise<Outcome<P>> => {
+    bundle: async <P>(
+      factory: FactoryPicker<M, P>,
+    ): Promise<Result<P, unknown>> => {
       let scoped: LoadedScope<M>;
       try {
         scoped = await loaded();
       } catch (cause) {
         // Already reported (once) by `loaded()`.
-        return { loaded: false, cause };
+        return Result.err(cause);
       }
-      if (destroyed) return { loaded: false, cause: destroyedError() };
+      if (destroyed) return Result.err(destroyedError());
       try {
         const bundle = bundleOf(scoped, factory);
         failing.delete(factory);
-        return { loaded: true, bundle };
+        return Result.ok(bundle);
       } catch (cause) {
         report(factory, cause);
-        return { loaded: false, cause };
+        return Result.err(cause);
       }
     },
   };
@@ -403,6 +417,19 @@ export function provideLazyPort<P, M, F>(
 
 type Method = (...args: unknown[]) => unknown;
 
+/** Every proxy {@link provideLazyPort} built — what {@link isLazyPort} reads. */
+const LAZY_PORTS = new WeakSet<object>();
+
+/**
+ * Whether `value` is a proxy {@link provideLazyPort} bound — a wiring test's
+ * check that no eager binding put an adapter back in its place. The proxy
+ * is a plain record (Law 1: no freeze marks it), so its identity
+ * is kept here instead.
+ */
+export function isLazyPort(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && LAZY_PORTS.has(value);
+}
+
 function lazyPort<P, M, F>(
   host: LazyScopeHost<M>,
   scopeName: string,
@@ -428,12 +455,12 @@ function lazyPort<P, M, F>(
         void host.bundle(factory).then((outcome) => {
           if (subscriber.closed) return;
           try {
-            if (outcome.loaded) {
+            if (outcome.ok) {
               // Added to the subscriber, so a consumer that leaves on the
               // bundle's first, synchronous value still tears it down.
               subscriber.add(
                 (
-                  call(outcome.bundle, name, args) as Observable<unknown>
+                  call(outcome.value, name, args) as Observable<unknown>
                 ).subscribe({
                   next: (value) => subscriber.next(value),
                   error: (error: unknown) => subscriber.error(error),
@@ -445,7 +472,7 @@ function lazyPort<P, M, F>(
             // Once: later failures of the same streak change nothing the
             // UI shows.
             if (failures === 0) {
-              subscriber.next(onLoadError(scopeName, outcome.cause));
+              subscriber.next(onLoadError(scopeName, outcome.error));
             }
           } catch (error) {
             subscriber.error(error);
@@ -464,19 +491,20 @@ function lazyPort<P, M, F>(
       attempt();
     });
 
-  const forward = (name: string, kind: LazyMethodKind): Method =>
-    kind === 'observable'
+  const forward = (name: string, method: LazyMethod): Method =>
+    method === LazyMethod.Observable
       ? (...args) => observe(name, args)
       : async (...args) => {
           const outcome = await host.bundle(factory);
-          return outcome.loaded
-            ? call(outcome.bundle, name, args)
-            : onLoadError(scopeName, outcome.cause);
+          return outcome.ok
+            ? call(outcome.value, name, args)
+            : onLoadError(scopeName, outcome.error);
         };
-  const entries = Object.entries(methods) as [string, LazyMethodKind][];
-  return Object.freeze(
-    Object.fromEntries(
-      entries.map(([name, kind]) => [name, forward(name, kind)]),
-    ),
-  ) as P;
+  const entries = Object.entries(methods) as [string, LazyMethod][];
+  // A plain record (Law 1: no freeze) — the port's readonly type is the guard.
+  const port = Object.fromEntries(
+    entries.map(([name, method]) => [name, forward(name, method)]),
+  );
+  LAZY_PORTS.add(port);
+  return port as P;
 }

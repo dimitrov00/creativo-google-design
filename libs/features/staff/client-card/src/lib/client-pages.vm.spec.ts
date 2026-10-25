@@ -1,4 +1,9 @@
-import { type JournalFeed, PersonalRecordKind } from '@core/components';
+import {
+  type JournalFeed,
+  PersonalRecordKind,
+  VisitFilter,
+  VisitRowOutcome,
+} from '@core/components';
 import {
   TrailingFactFace,
   VisitCardSlot,
@@ -64,7 +69,6 @@ import {
   LoadState,
   type PagingState,
 } from '@creativo/shared/view-state';
-import { VisitFilter, VisitRowOutcome } from '@core/systems';
 import type { RECORD_KIND_WORDS } from './client-card.words';
 
 /*

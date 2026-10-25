@@ -15,38 +15,37 @@
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
 import type { WaitlistRequest, ScheduleException } from '@core/entities';
-import {
-  type BookingFlowEvent,
-  BookingFlowEventKind,
-  PrefillCompanions,
-} from '@core/systems';
 import { ExceptionEffect, WaitlistStatus } from '@core/primitives';
 import {
   BookingFlowErrorCode,
+  type MoveErrorCode,
+  type MoveRefusal,
   SchedulingErrorCode,
   WaitlistErrorCode,
 } from '@core/errors';
+import { type BookingFlowState, BookingFlowStep } from './booking-flow.data';
 import {
-  type BookingFlowState,
-  BookingFlowStep,
-  type MoveRefusal,
-  MoveRefusalReason,
-  ShopReach,
-} from './booking-flow.data';
-import { type SeatKey, SeatKeyRole } from './cart-line.data';
+  type BookingFlowEvent,
+  BookingFlowEventKind,
+} from './booking-flow-event.data';
 import { Daypart } from './daypart.data';
 import { type ExceptionDetail, ExceptionReason } from './exception-detail.data';
 import type { ExceptionEffectRule } from './exception-effect-rule.data';
-import { type PartyMember, PartyRole } from './party.data';
+import { type PartyMember, PartyRole } from './party-member.data';
+import { PrefillCompanions } from './prefill-companions.data';
 import {
-  MonthlyAnchor,
   RecurrenceEnd,
   type RecurrenceEndRule,
+} from './recurrence-end-rule.data';
+import {
+  MonthlyAnchor,
   RecurrenceFrequency,
   type RecurrencePattern,
-  type RecurrenceRule,
   WeekOfMonth,
-} from './recurrence-rule.data';
+} from './recurrence-pattern.data';
+import type { RecurrenceRule } from './recurrence-rule.data';
+import { type SeatKey, SeatKeyRole } from './seat-key.data';
+import { ShopReach } from './shop-reach.data';
 import type { WaitlistLifecycle } from './waitlist-lifecycle.data';
 
 /** A tag dictionary whose every value is a `T`. */
@@ -75,7 +74,6 @@ dictionary(BookingFlowErrorCode satisfies Dictionary<BookingFlowErrorCode>);
 dictionary(SchedulingErrorCode satisfies Dictionary<SchedulingErrorCode>);
 dictionary(WaitlistErrorCode satisfies Dictionary<WaitlistErrorCode>);
 dictionary(BookingFlowStep satisfies Dictionary<BookingFlowStep>);
-dictionary(MoveRefusalReason satisfies Dictionary<MoveRefusalReason>);
 dictionary(ShopReach satisfies Readonly<Record<'Call' | 'Contact', ShopReach>>);
 dictionary(SeatKeyRole satisfies Dictionary<SeatKeyRole>);
 dictionary(
@@ -100,22 +98,21 @@ export type BookingFlowDictionariesHold = [
   Expect<Holds<typeof SchedulingErrorCode, SchedulingErrorCode>>, // errors/scheduling.error.ts
   Expect<Holds<typeof WaitlistErrorCode, WaitlistErrorCode>>, // errors/waitlist.error.ts
   Expect<Holds<typeof BookingFlowStep, BookingFlowStep>>, // components/booking-flow.data.ts
-  Expect<Holds<typeof MoveRefusalReason, MoveRefusalReason>>, // components/booking-flow.data.ts
-  Expect<Holds<Pick<typeof ShopReach, 'Call' | 'Contact'>, ShopReach>>, // components/booking-flow.data.ts
-  Expect<Holds<typeof SeatKeyRole, SeatKeyRole>>, // components/cart-line.data.ts
+  Expect<Holds<Pick<typeof ShopReach, 'Call' | 'Contact'>, ShopReach>>, // components/shop-reach.data.ts
+  Expect<Holds<typeof SeatKeyRole, SeatKeyRole>>, // components/seat-key.data.ts
   Expect<
     Holds<Pick<typeof Daypart, 'Morning' | 'Afternoon' | 'Evening'>, Daypart>
   >, // components/daypart.data.ts
   Expect<Holds<typeof ExceptionReason, ExceptionReason>>, // components/exception-detail.data.ts
   Expect<Holds<typeof ExceptionEffect, ExceptionEffect>>, // primitives/exception-effect.data.ts
-  Expect<Holds<typeof PartyRole, PartyRole>>, // components/party.data.ts
-  Expect<Holds<typeof RecurrenceFrequency, RecurrenceFrequency>>, // components/recurrence-rule.data.ts
-  Expect<Holds<typeof WeekOfMonth, WeekOfMonth>>, // components/recurrence-rule.data.ts
-  Expect<Holds<typeof MonthlyAnchor, MonthlyAnchor>>, // components/recurrence-rule.data.ts
-  Expect<Holds<typeof RecurrenceEnd, RecurrenceEnd>>, // components/recurrence-rule.data.ts
+  Expect<Holds<typeof PartyRole, PartyRole>>, // components/party-member.data.ts
+  Expect<Holds<typeof RecurrenceFrequency, RecurrenceFrequency>>, // components/recurrence-pattern.data.ts
+  Expect<Holds<typeof WeekOfMonth, WeekOfMonth>>, // components/recurrence-pattern.data.ts
+  Expect<Holds<typeof MonthlyAnchor, MonthlyAnchor>>, // components/recurrence-pattern.data.ts
+  Expect<Holds<typeof RecurrenceEnd, RecurrenceEnd>>, // components/recurrence-end-rule.data.ts
   Expect<Holds<typeof WaitlistStatus, WaitlistStatus>>, // primitives/waitlist-status.data.ts
-  Expect<Holds<typeof BookingFlowEventKind, BookingFlowEventKind>>, // systems/booking-flow.system.ts
-  Expect<Holds<typeof PrefillCompanions, PrefillCompanions>>, // systems/booking-cart.system.ts
+  Expect<Holds<typeof BookingFlowEventKind, BookingFlowEventKind>>, // components/booking-flow-event.data.ts
+  Expect<Holds<typeof PrefillCompanions, PrefillCompanions>>, // components/prefill-companions.data.ts
 ];
 
 // (3) SCREAMING values (`ShopReach` and `WeekOfMonth` are exempt, §0.4).
@@ -124,7 +121,6 @@ export type BookingFlowScreamingChecks = [
   Expect<Screaming<SchedulingErrorCode>>,
   Expect<Screaming<WaitlistErrorCode>>,
   Expect<Screaming<BookingFlowStep>>,
-  Expect<Screaming<MoveRefusalReason>>,
   Expect<Screaming<SeatKeyRole>>,
   Expect<Screaming<Daypart>>,
   Expect<Screaming<ExceptionReason>>,
@@ -141,23 +137,35 @@ export type BookingFlowScreamingChecks = [
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.
 export type BookingFlowDictionaryFields = [
   Expect<Equals<BookingFlowState['bookingFlowStep'], BookingFlowStep>>, // components/booking-flow.data.ts
-  Expect<Equals<MoveRefusal['moveRefusalReason'], MoveRefusalReason>>, // components/booking-flow.data.ts
-  Expect<Equals<SeatKey['seatKeyRole'], SeatKeyRole>>, // components/cart-line.data.ts
+  Expect<Equals<SeatKey['seatKeyRole'], SeatKeyRole>>, // components/seat-key.data.ts
   Expect<Equals<ExceptionDetail['exceptionReason'], ExceptionReason>>, // components/exception-detail.data.ts
   Expect<Equals<ExceptionEffectRule['exceptionEffect'], ExceptionEffect>>, // primitives/exception-effect.data.ts
   Expect<Equals<ScheduleException['exceptionEffect'], ExceptionEffect>>, // entities/schedule-exception.entity.ts
-  Expect<Equals<PartyMember['partyRole'], PartyRole>>, // components/party.data.ts
-  Expect<Equals<RecurrencePattern['recurrenceFrequency'], RecurrenceFrequency>>, // components/recurrence-rule.data.ts
+  Expect<Equals<PartyMember['partyRole'], PartyRole>>, // components/party-member.data.ts
+  Expect<Equals<RecurrencePattern['recurrenceFrequency'], RecurrenceFrequency>>, // components/recurrence-pattern.data.ts
   Expect<Equals<RecurrenceRule['recurrenceFrequency'], RecurrenceFrequency>>, // components/recurrence-rule.data.ts
-  Expect<Equals<RecurrencePattern.Monthly['monthlyAnchor'], MonthlyAnchor>>, // components/recurrence-rule.data.ts
-  Expect<Equals<RecurrenceEndRule['recurrenceEnd'], RecurrenceEnd>>, // components/recurrence-rule.data.ts
+  Expect<Equals<RecurrencePattern.Monthly['monthlyAnchor'], MonthlyAnchor>>, // components/recurrence-pattern.data.ts
+  Expect<Equals<RecurrenceEndRule['recurrenceEnd'], RecurrenceEnd>>, // components/recurrence-end-rule.data.ts
   Expect<Equals<RecurrenceRule['recurrenceEnd'], RecurrenceEnd>>, // components/recurrence-rule.data.ts
   Expect<Equals<WaitlistLifecycle['waitlistStatus'], WaitlistStatus>>, // primitives/waitlist-status.data.ts
   Expect<Equals<WaitlistRequest['waitlistStatus'], WaitlistStatus>>, // entities/waitlist-request.entity.ts
   Expect<
     Equals<BookingFlowEvent['bookingFlowEventKind'], BookingFlowEventKind>
-  >, // systems/booking-flow.system.ts (N15: `BookingFlowEvent` is the union)
+  >, // components/booking-flow-event.data.ts (N15: `BookingFlowEvent` is the union)
 ];
+
+// The move refusal (pass D, D-9.2): its code is exactly the three client-side
+// members of the move family's ONE dictionary (`MoveErrorCode`, held and
+// SCREAMING-checked in appointment-dictionaries.type-spec.ts).
+type MoveRefusalCode = MoveRefusal['errorCode'];
+export type MoveRefusalCodes = Expect<
+  Equals<
+    MoveRefusalCode,
+    | typeof MoveErrorCode.CompanionsOnly
+    | typeof MoveErrorCode.Unavailable
+    | typeof MoveErrorCode.CarriedOutOfReach
+  >
+>;
 
 // The checks are not vacuous.
 export type ProbeNotScreaming = Expect<

@@ -4,6 +4,7 @@ import {
   StreakQualifier,
   type StreakQualifierRule,
 } from '@core/components';
+import type { ServiceCategoryId, ServiceId } from '@core/primitives';
 import { StreakRuleSystem, type StreakRuleSummary } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type { VisitTranslate } from '../visit-row.presenter';
@@ -66,7 +67,8 @@ export interface RhythmRuleContext {
    * by category), for «Броят се посещения с: …». An id it cannot name is
    * left out; with no name at all the sentence is not said.
    */
-  readonly nameOf?: ((id: string) => string | null) | null;
+  readonly nameOf?:
+    ((id: ServiceId | ServiceCategoryId) => string | null) | null;
 }
 
 /**
@@ -137,7 +139,7 @@ function countedNames(
   if (qualifier.streakQualifier === StreakQualifier.AnyVisit || !nameOf) {
     return null;
   }
-  const ids: readonly string[] =
+  const ids: readonly (ServiceId | ServiceCategoryId)[] =
     qualifier.streakQualifier === StreakQualifier.Services
       ? qualifier.qualifierServiceIds
       : qualifier.qualifierCategoryIds;

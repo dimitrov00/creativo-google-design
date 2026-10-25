@@ -1,5 +1,21 @@
-import type { CouponOccasion } from '@core/components';
-import type { LocationId, TimeZone } from '@core/primitives';
+import type { CouponOccasion, Email, Role } from '@core/components';
+import type {
+  AppointmentId,
+  BadgeCategoryId,
+  BarberId,
+  CouponGrantId,
+  DraftPersonKey,
+  DurationMinutes,
+  LocalDate,
+  LocationId,
+  MinuteOfDay,
+  SeasonId,
+  ServiceCategoryId,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+} from '@core/primitives';
+import type { VisitLookup } from '@creativo/features/shared/visits';
 
 /**
  * What the client card is handed from outside (client-card-redesign §5.2.1):
@@ -13,25 +29,29 @@ import type { LocationId, TimeZone } from '@core/primitives';
  * catalogue service on purpose — `CatalogContentService` injects its
  * readers non-optionally, which would make every spec that mounts the card
  * provide the whole catalogue.
+ *
+ * Every id is its brand, every day a `LocalDate`, every minute a
+ * `MinuteOfDay` (Law 7.4): the host hands over what its entities hold, and
+ * the card never re-parses a host's value (pass D, §2.6).
  */
 
 /** The person on the seat, as the visit's draft has them. The head renders from this at once (S1). */
 export interface ClientCardSubject {
-  /** `DraftClient.id`: an account uid, or a `guest-…` id for a walk-in without a profile. */
-  readonly id: string;
-  /** The account uid; `null` for a guest, whose card reads nothing. */
-  readonly userId: string | null;
+  /** `DraftClient.id`: an account uid, or a `guest-…` key for a walk-in without a profile. */
+  readonly id: DraftPersonKey;
+  /** The account (`DraftPersonKey.accountOf`); `null` for a guest, whose card reads nothing. */
+  readonly userId: UserId | null;
   /** The seat's name, shown until `users/{uid}` answers (and for good, for a guest). */
   readonly label: string;
   readonly phone: string | null;
   readonly phoneHref: string | null;
-  readonly email: string | null;
+  readonly email: Email | null;
   readonly avatarSrc: string | null;
 }
 
 /** One held reward, already worded by the editor's own discount formatter (no second formatter). */
 export interface ClientCardGrant {
-  readonly grantId: string;
+  readonly grantId: CouponGrantId;
   /** The coupon's name: «Безплатно подстригване». */
   readonly title: string;
   /**
@@ -40,8 +60,8 @@ export interface ClientCardGrant {
    * name already says it («Безплатно подстригване»): the name alone.
    */
   readonly valueLabel: string | null;
-  /** ISO date, or `null` when the grant does not expire. */
-  readonly expiresOn: string | null;
+  /** The shop day the grant lapses on, or `null` when it does not expire. */
+  readonly expiresOn: LocalDate | null;
   /**
    * The moment the grant's coupon was made for (`Coupon.couponOccasion`,
    * revision 3 §4.6), passed through as the coupon holds it: the birthday
@@ -54,21 +74,17 @@ export interface ClientCardGrant {
 
 /**
  * The catalogue as the card needs it: names and art, resolved by the
- * dashboard. It satisfies the shared visit row's `VisitLookup`
- * structurally, so the dashboard builds ONE object for both.
+ * dashboard. It IS the shared visit row's `VisitLookup` and more, so the
+ * dashboard builds ONE object for both. Its shop count is a plain number,
+ * never a getter (pass D, D-7.6).
  */
-export interface ClientCardCatalog {
-  serviceName(serviceId: string): string | null;
-  serviceCoverSrc(serviceId: string): string | null;
-  serviceCategory(
-    serviceId: string,
-  ): { readonly id: string; readonly name: string } | null;
-  barberName(barberId: string): string | null;
-  barberAvatarSrc(barberId: string): string | null;
-  locationName(locationId: string): string | null;
-  locationCoverSrc(locationId: string): string | null;
-  /** The shop names a location in a fact line only when it has more than one. */
-  readonly locationCount: number;
+export interface ClientCardCatalog extends VisitLookup {
+  serviceCoverSrc(serviceId: ServiceId): string | null;
+  serviceCategory(serviceId: ServiceId): {
+    readonly id: ServiceCategoryId;
+    readonly name: string;
+  } | null;
+  locationCoverSrc(locationId: LocationId): string | null;
   /**
    * Owner art for a medal family (`BadgeSeries.artPath`, a Storage path)
    * as a URL the page can draw, resolved by the dashboard's media reader —
@@ -83,40 +99,53 @@ export interface ClientCardCatalog {
    * as `badgeArtSrc` is: without it (or with `null`) the cover stands
    * without a price (contract delta P4-1).
    */
-  servicePrice?(serviceId: string): string | null;
+  servicePrice?(serviceId: ServiceId): string | null;
   /**
    * Every barber of the shop, in the shop's own order — the faces «Как се
    * печели» draws for a family about the barbers. Optional: without it the
    * page draws the barbers the loyalty catalogue itself names (P4-1).
    */
-  barberIds?(): readonly string[];
-  /**
-   * A location's own zone (Law 7.2) — what a visit row reads a photo's day
-   * in (`VisitLookup.locationTimeZone`); the dashboard fills it. Optional:
-   * without it a row falls back to the zone the card read "now" in.
-   */
-  locationTimeZone?(locationId: LocationId): TimeZone | null;
+  barberIds?(): readonly BarberId[];
 }
 
 /**
  * One service of the visit on screen, as the draft holds it: what «с това
- * посещение» measures a family's next level against (a service, a barber,
- * an early-bird start).
+ * посещение» measures a family's next level against (a service, a barber).
+ * When the visit starts is the context's, once (`ClientCardContext.start`).
  */
 export interface ClientCardLeg {
-  readonly serviceId: string;
-  readonly variantId: string | null;
-  readonly minutes: number;
-  readonly barberId: string | null;
-  readonly startsAtIso: string;
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
+  readonly minutes: DurationMinutes;
+  readonly barberId: BarberId | null;
+}
+
+/**
+ * When the visit on screen starts, on the shop's wall clock (Law 7.3): its
+ * shop day and minute. `startMinutes` is `null` for a drafted start that is
+ * no minute of the day (an anchored track minute past midnight): such a
+ * start starts on no day the card can read.
+ */
+export interface ClientCardStart {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay | null;
+}
+
+/** The signed-in principal: whose roles gate the card's ‹role› reads (pass D, D-10.6). */
+export interface ClientCardViewer {
+  readonly userId: UserId;
+  readonly roles: readonly Role[];
 }
 
 /** The visit the card was opened from, and who is looking at it. */
 export interface ClientCardContext {
-  /** The visit on screen: «Този час» in the history, and excluded from «last visit» and the photo rail. */
-  readonly appointmentId: string | null;
-  /** The signed-in principal: the ‹role› gates and the admin-only money read. */
-  readonly viewer: { readonly uid: string; readonly roles: readonly string[] };
+  /** The visit on screen: «Този час» in the history, and excluded from «last visit» and the photo rail. `null` while creating. */
+  readonly appointmentId: AppointmentId | null;
+  /**
+   * The signed-in principal: the ‹role› gates and the admin-only money
+   * read. `null` reads as no roles at all.
+   */
+  readonly viewer: ClientCardViewer | null;
   /** The subject is the appointment's owner — the only person whose held rewards the visit can use (§3.1.3). */
   readonly isOwner: boolean;
   /**
@@ -135,13 +164,20 @@ export interface ClientCardContext {
    */
   readonly gone: boolean;
   readonly partyOfOne: boolean;
+  /**
+   * The drafted start of the visit on screen, on the shop's wall clock —
+   * every leg starts there; `null` when the draft holds no start. The card
+   * reads it as it is (in the chair today, an early start), and derives an
+   * instant from it only where a rule needs one, on the shop's zone.
+   */
+  readonly start: ClientCardStart | null;
   readonly legs: readonly ClientCardLeg[];
   /**
    * The visit's shop as the draft has it (a «Салон» relocate included):
    * the one metric of «с това посещение» the legs do not carry. `null`
    * while the draft has none.
    */
-  readonly locationId: string | null;
+  readonly locationId: LocationId | null;
   /**
    * The owner's held rewards READY TO USE — not on this visit's bill yet:
    * E and LD offer these. `[]` unless `isOwner`.
@@ -161,6 +197,26 @@ export interface ClientCardContext {
 }
 
 /**
+ * Which page of the client stack the card's store titles
+ * (`ClientCardStore.barTitle`) — the host maps its own page kinds onto
+ * these (internal, SCREAMING: no observer outside the call, pass D,
+ * D-8.3).
+ */
+export const ClientCardPage = {
+  Client: 'CLIENT',
+  ClientLoyalty: 'CLIENT_LOYALTY',
+  ClientAchievements: 'CLIENT_ACHIEVEMENTS',
+  ClientHistory: 'CLIENT_HISTORY',
+  ClientLedger: 'CLIENT_LEDGER',
+  ClientRecords: 'CLIENT_RECORDS',
+  AchievementCategory: 'ACHIEVEMENT_CATEGORY',
+  AchievementDetail: 'ACHIEVEMENT_DETAIL',
+  Photo: 'PHOTO',
+} as const;
+export type ClientCardPage =
+  (typeof ClientCardPage)[keyof typeof ClientCardPage];
+
+/**
  * The section of the WALLET a way in opens on (revision 3 §2.2, §4.9);
  * `null` — from «Всички» and from the glance's loyalty card — is the
  * page's top: `catalog` is «Награди за точки», `stamps` the stamp cards,
@@ -170,8 +226,19 @@ export interface ClientCardContext {
  * this one type (the built page's narrower `LoyaltyAnchor` went with its
  * last reader in W4, G1-4).
  */
-export type WalletAnchor =
-  'catalog' | 'stamps' | 'rhythm' | 'wallet' | 'status';
+export const WalletAnchor = {
+  Catalog: 'catalog',
+  Stamps: 'stamps',
+  Rhythm: 'rhythm',
+  Wallet: 'wallet',
+  Status: 'status',
+} as const;
+/**
+ * Values: external contract — the wallet tiles' test ids
+ * (`client-loyalty-<anchor>`, the editor's push origin), so the dictionary
+ * keeps their spelling (pass D, D-8.2).
+ */
+export type WalletAnchor = (typeof WalletAnchor)[keyof typeof WalletAnchor];
 
 /**
  * Which page an `achievementCategory` scope is — the values of its
@@ -187,21 +254,21 @@ export const AchievementScope = {
 /**
  * What one `achievementCategory` page shows: a category's families, a
  * season's, the archive of ended seasons and events, or the levels earned
- * on one day (`YYYY-MM-DD`, the shop's calendar).
+ * on one shop day.
  */
 export type AchievementScope =
   | {
       readonly achievementScope: typeof AchievementScope.Category;
-      readonly categoryId: string;
+      readonly categoryId: BadgeCategoryId;
     }
   | {
       readonly achievementScope: typeof AchievementScope.Season;
-      readonly seasonId: string;
+      readonly seasonId: SeasonId;
     }
   | { readonly achievementScope: typeof AchievementScope.Archive }
   | {
       readonly achievementScope: typeof AchievementScope.Day;
-      readonly day: string;
+      readonly day: LocalDate;
     };
 
 /**
@@ -212,12 +279,20 @@ export type AchievementScope =
  * (`CLIENT_JOURNAL_PORTS`), the wallet's two reads of revision 3
  * (§4.5, §4.7).
  */
+export const ClientCardRegion = {
+  Profile: 'profile',
+  Loyalty: 'loyalty',
+  Achievements: 'achievements',
+  Visits: 'visits',
+  Photos: 'photos',
+  History: 'history',
+  Vouchers: 'vouchers',
+  Activity: 'activity',
+} as const;
+/**
+ * Values: external contract — the glance's notice test ids
+ * (`client-failed-<region>`, `client-retry-<region>`), so the dictionary
+ * keeps their spelling (pass D, D-8.2).
+ */
 export type ClientCardRegion =
-  | 'profile'
-  | 'loyalty'
-  | 'achievements'
-  | 'visits'
-  | 'photos'
-  | 'history'
-  | 'vouchers'
-  | 'activity';
+  (typeof ClientCardRegion)[keyof typeof ClientCardRegion];

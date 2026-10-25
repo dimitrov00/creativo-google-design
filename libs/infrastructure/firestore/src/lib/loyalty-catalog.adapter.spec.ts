@@ -8,8 +8,12 @@ import {
   StreakRuleDirection,
   StreakTransition,
 } from '@core/components';
-import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
-import { Callables, type LoyaltyCatalog } from '@core/ports';
+import type {
+  LoyaltyCatalog,
+  StreakDefinition,
+  StreakDefinitionVersion,
+} from '@core/entities';
+import { Callables } from '@core/ports';
 import {
   type LocalDate,
   PublishRequestId,

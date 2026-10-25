@@ -1,6 +1,7 @@
 import {
   AppliedDiscount,
   Combinability,
+  CouponStatus,
   CouponValue,
   DiscountMethod,
   DiscountProvenance,
@@ -15,7 +16,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import type { Coupon } from '@core/entities';
+import type { Coupon, OfferedCoupon } from '@core/entities';
 
 /**
  * One discount to apply — a discount on the visit, or one the visit editor
@@ -179,6 +180,16 @@ function applyCap(
  * same breakdown (legacy bug 7.4). Money never goes below zero.
  */
 export const DiscountSystem = {
+  /**
+   * The offer rule, said once: a coupon is on offer at the counter when it
+   * is enabled and carries a code — a grant-only (code-less) coupon reaches
+   * people only as grants (`coupons-vouchers.adapter.ts` `listOpenCoupons`,
+   * its memory double, the staff day's promo list).
+   */
+  isOffered(coupon: Coupon): coupon is OfferedCoupon {
+    return coupon.couponStatus === CouponStatus.Enabled && coupon.code !== null;
+  },
+
   /** What one value takes off `amount` — positive, never more than `amount`. */
   amountOf,
 

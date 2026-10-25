@@ -1,5 +1,6 @@
 import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
+import { AttemptOutcome } from '@core/components';
 
 /**
  * How a retrying handler judges one failed attempt
@@ -9,21 +10,6 @@ import { RepositoryError } from '@core/errors';
  * the same way. Logging and rethrowing stay with the caller: this module
  * returns the verdict and the one structured line, never writes it.
  */
-
-/**
- * Whether a redelivery could help — the ONLY source of these strings, the
- * field `attemptOutcome` (N15). The gRPC canonical code names a failure
- * carries (`aborted`, `already-exists`) are an external vocabulary and stay
- * as Firestore spells them (flatten-spec §0.4).
- */
-export const AttemptOutcome = {
-  /** A contended, overloaded or briefly absent backend: retry. */
-  Transient: 'TRANSIENT',
-  /** Would fail the same way for the whole retry window: log and drop. */
-  Permanent: 'PERMANENT',
-} as const;
-export type AttemptOutcome =
-  (typeof AttemptOutcome)[keyof typeof AttemptOutcome];
 
 /** What a code is called when nothing names it. */
 const UNKNOWN_CODE = 'unknown';

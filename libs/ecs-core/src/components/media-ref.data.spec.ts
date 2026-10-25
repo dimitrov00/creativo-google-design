@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MediaRefId } from '@core/primitives';
-import { MediaRef, type MediaRefInput } from './media-ref.data';
+import { MediaRef } from './media-ref.data';
 
-function validInput(): MediaRefInput {
+function validInput(): MediaRef.Input {
   return {
     mediaId: 'media_1',
     mediaPath: 'barbers/ivan/avatar.jpg',

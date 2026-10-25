@@ -5,9 +5,10 @@
  * `GridLayoutSystem` reads ONE shop day's track as branded minutes
  * (`MinuteOfDay` starts in `[0, 1440)`, `EndMinute` ends in `(0, 1440]`) and
  * tags a block by `gridEvent` (SCREAMING), the same tag the frames' own
- * `GridEvent` carries. The frames keep their plain `startMinute` /
- * `endMinute`; the figures they draw are whole minutes of the column's day
- * by construction (a visit never crosses midnight, F-6), so the conversion
+ * `GridEvent` carries. The frames keep their `startMinute` / `endMinute`
+ * on the anchored track axis (`TrackMinute`, which may reach 1440 and pass
+ * it); the figures they draw are whole minutes of the column's day by
+ * construction (a visit never crosses midnight, F-6), so the conversion
  * clamps onto the day rather than inventing a figure the track does not
  * have.
  *
@@ -16,23 +17,36 @@
  * `SHORT` and `OUTSIDE` past midnight (pass C, R-6).
  */
 
-import { EndMinute, MinuteOfDay } from '@core/primitives';
+import { EndMinute, MinuteOfDay, TrackMinute } from '@core/primitives';
 import { GridLayoutSystem, type MinuteRun } from '@core/systems';
 
+/**
+ * A minute a frame's own arithmetic or its producer holds WHOLE and
+ * NON-NEGATIVE, as the track's (`TrackMinute.ofProven` — no `Result` per
+ * drag tick). The one door every frame uses: a stored seat or roster
+ * minute, a block's range, the noon default, an axis bound (a whole hour),
+ * a snapped drag (a whole multiple of the snap, clamped to the drawn axis,
+ * whose first minute is ≥ 0), a keyboard step clamped the same way. A value
+ * outside that is a broken invariant of the caller, never foreign input.
+ */
+export function trackMinuteOf(raw: number): TrackMinute {
+  return TrackMinute.ofProven(raw);
+}
+
 /** A minute of the track as a start, clamped onto the day — proven, so no `Result` per drag tick. */
-export function trackStart(minute: number): MinuteOfDay {
+export function trackStart(minute: TrackMinute): MinuteOfDay {
   return MinuteOfDay.ofProven(Math.min(1439, Math.max(0, Math.round(minute))));
 }
 
 /** A minute of the track as an exclusive end, clamped onto the day — proven, so no `Result` per drag tick. */
-export function trackEnd(minute: number): EndMinute {
+export function trackEnd(minute: TrackMinute): EndMinute {
   return EndMinute.ofProven(Math.min(1440, Math.max(1, Math.round(minute))));
 }
 
 /** A stretch of the track — an open window, a laid block — as the system's run. */
 export function toMinuteRun(stretch: {
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 }): MinuteRun {
   return {
     startMinutes: trackStart(stretch.startMinute),
@@ -48,8 +62,8 @@ export function toMinuteRun(stretch: {
  */
 export function closedMinuteRuns(
   open: readonly MinuteRun[],
-  start: number,
-  end: number,
+  start: TrackMinute,
+  end: TrackMinute,
 ): readonly MinuteRun[] {
   return GridLayoutSystem.closedRuns(open, trackStart(start), trackEnd(end));
 }

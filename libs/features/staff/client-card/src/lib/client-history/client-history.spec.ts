@@ -1,7 +1,7 @@
+import { VisitRowOutcome } from '@core/components';
 import type { AppointmentReadPorts } from '@core/ports';
-import { Result } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
-import { VisitRowOutcome } from '@core/systems';
 import { memoryAppointmentReadPorts } from '@core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -102,7 +102,7 @@ async function mount(options: Partial<MountOptions> = {}) {
   return { ...mounted, click, rows, sections, pills, visibleFacts };
 }
 
-const ADMIN = { uid: 'dev-admin', roles: ['admin'] } as const;
+const ADMIN = { userId: UserId.of('dev-admin'), roles: ['admin'] } as const;
 
 afterEach(() => {
   window.dispatchEvent(new Event('online'));

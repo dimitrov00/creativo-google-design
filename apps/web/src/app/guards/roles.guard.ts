@@ -1,7 +1,7 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import type { Role } from '@core/components';
-import { RouteGate, SessionAccessSystem } from '@core/systems';
+import { type Role, RouteGate } from '@core/components';
+import { SessionAccessSystem } from '@core/systems';
 import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 import { firstValueFrom } from 'rxjs';
 import { routeFor } from './access';

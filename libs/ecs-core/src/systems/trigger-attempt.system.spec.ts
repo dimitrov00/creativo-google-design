@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { TriggerEventId, UtcEpochMs } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
-import { AttemptOutcome, TriggerAttemptSystem } from './trigger-attempt.system';
+import { AttemptOutcome } from '@core/components';
+import { TriggerAttemptSystem } from './trigger-attempt.system';
 
 /*
  * The cases of apps/functions/src/lib/trigger-attempts.spec.ts, copied (the

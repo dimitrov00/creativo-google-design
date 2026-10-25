@@ -12,13 +12,14 @@ import {
   APPOINTMENT_READ_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { AppointmentId, type UserId } from '@core/primitives';
 import {
-  BookingFlowStep,
-  type MoveRefusal,
-  MoveRefusalReason,
-  Principal,
-} from '@core/components';
+  AppointmentId,
+  LocalDate,
+  type UserId,
+  WaitlistRequestId,
+} from '@core/primitives';
+import { BookingFlowStep, Principal } from '@core/components';
+import { MoveRefusal } from '@core/errors';
 import { MoveSystem, ShopReachSystem } from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -142,6 +143,20 @@ export class ClientBooking {
   readonly waitlist = input<string | undefined>(undefined);
   readonly day = input<string | undefined>(undefined);
 
+  /**
+   * `?day=` as a shop day — parsed ONCE, here at the edge (`LocalDate.parse`,
+   * pass D D-4). Three answers, as the landing has always read the link:
+   * `undefined` when it names no day (the earliest day the request watches
+   * lands), `null` when it names something that is no day (no day lands),
+   * else the day.
+   */
+  private readonly linkDay = computed<LocalDate | null | undefined>(() => {
+    const raw = this.day();
+    if (raw === undefined) return undefined;
+    const parsed = LocalDate.parse(raw);
+    return parsed.ok ? parsed.value : null;
+  });
+
   /** `?repeat={appointmentId}` — "the same again", from a past visit. */
   readonly repeat = input<string | undefined>(undefined);
 
@@ -165,7 +180,7 @@ export class ClientBooking {
    * booking flow.
    */
   private async landWaitlistDeepLink(
-    requestId: string,
+    requestId: WaitlistRequestId,
     owner: UserId,
   ): Promise<void> {
     // The caller's OWN requests (`ownerUserId ==`, owner-readable), first
@@ -178,7 +193,7 @@ export class ClientBooking {
     if (found === undefined) return;
     // The day is a shop day as it stands; the zone it is judged in is the
     // schedule step's (the location's, Law 7.2).
-    this.store.restoreFromWaitlist(found, this.day() ?? null, (ordinal) =>
+    this.store.restoreFromWaitlist(found, this.linkDay(), (ordinal) =>
       this.transloco.translate('booking.party.guest', {
         number: ordinal,
       }),
@@ -186,11 +201,9 @@ export class ClientBooking {
   }
 
   /** One reading of the live visit — its first answer (owner-readable). */
-  private async readVisit(appointmentId: string) {
-    const id = AppointmentId.parse(appointmentId);
-    if (!id.ok) return null;
+  private async readVisit(appointmentId: AppointmentId) {
     const found = await firstValueFrom(
-      this.appointments.observeAppointment(id.value).pipe(take(1)),
+      this.appointments.observeAppointment(appointmentId).pipe(take(1)),
     );
     return found.ok ? found.value : null;
   }
@@ -204,7 +217,7 @@ export class ClientBooking {
    * a retired service or a foreign id is not worth an error screen over
    * what is still a perfectly good booking flow.
    */
-  private async landRepeat(appointmentId: string): Promise<void> {
+  private async landRepeat(appointmentId: AppointmentId): Promise<void> {
     // A CONTINUATION that already holds this source (a reload after the
     // landing ran) has nothing to do: the draft brought it back.
     if (this.restoredDraft && this.store.bookedFrom() === appointmentId) return;
@@ -234,7 +247,7 @@ export class ClientBooking {
    * Every way this cannot become that move is a refusal the shell shows
    * instead of the wizard (`BookingFlowStore.moveRefusal`).
    */
-  private async landReschedule(appointmentId: string): Promise<void> {
+  private async landReschedule(appointmentId: AppointmentId): Promise<void> {
     // Already moving THIS visit (a reload, or the round trip of a flow that
     // landed signed in): the restored draft is the move, and its bag stays
     // as built. What the grid decides it with (who is carried, which chairs
@@ -248,7 +261,7 @@ export class ClientBooking {
     }
     const found = await this.readVisit(appointmentId);
     if (found === null) {
-      this.store.refuseMove(MoveRefusalReason.Unavailable);
+      this.store.refuseMove(MoveRefusal.unavailable(null));
       return;
     }
     // Refuses on its own when the visit cannot move here — see `MoveRefusal`.
@@ -372,9 +385,10 @@ export class ClientBooking {
 
     // A move link binds the flow to THAT move before anything is read:
     // until the visit lands (or is refused), Confirm cannot quietly become a
-    // new booking — see `BookingFlowStore.expectMove`.
-    const moveId = params.get('reschedule');
-    if (moveId) this.store.expectMove(moveId);
+    // new booking — see `BookingFlowStore.expectMove`. The link's raw text,
+    // whether or not it parses: text that is no id must block the commit too.
+    const moveLink = params.get('reschedule');
+    if (moveLink) this.store.expectMove(moveLink);
 
     // The deep link can only be honoured once the PRINCIPAL is live: the
     // request is owner-readable, and on a cold tab Firebase auth hydrates
@@ -384,12 +398,17 @@ export class ClientBooking {
     // not polish; it is the difference between the feature existing and not.
     effect(() => {
       const principal = this.accountState.principal();
-      const waitlistId = this.waitlist();
-      if (this.waitlistLanded || !waitlistId) return;
+      const waitlistLink = this.waitlist();
+      if (this.waitlistLanded || !waitlistLink) return;
       if (!Principal.isActive(principal)) return;
       this.waitlistLanded = true;
+      // The link's id, parsed ONCE (pass D, D-4). Text that is no request id
+      // names none of the caller's requests: the silent fall-through to the
+      // ordinary entry it always was.
+      const requestId = WaitlistRequestId.parse(waitlistLink);
+      if (!requestId.ok) return;
       untracked(
-        () => void this.landWaitlistDeepLink(waitlistId, principal.userId),
+        () => void this.landWaitlistDeepLink(requestId.value, principal.userId),
       );
     });
 
@@ -402,25 +421,33 @@ export class ClientBooking {
     // effect order alone would put it (the claim effect is declared last).
     effect(() => {
       const principal = this.accountState.principal();
-      const repeatId = this.repeat();
-      if (this.repeatLanded || !repeatId) return;
+      const repeatLink = this.repeat();
+      if (this.repeatLanded || !repeatLink) return;
       if (!Principal.isActive(principal)) return;
       this.repeatLanded = true;
+      // Parsed ONCE (pass D, D-4). Text that is no appointment id reads no
+      // visit: the silent fall-through it always was.
+      const appointmentId = AppointmentId.parse(repeatLink);
       untracked(() => {
         this.store.claim(principal.userId);
-        void this.landRepeat(repeatId);
+        if (appointmentId.ok) void this.landRepeat(appointmentId.value);
       });
     });
 
     effect(() => {
       const principal = this.accountState.principal();
-      const moveId = this.reschedule();
-      if (this.rescheduleLanded || !moveId) return;
+      const moveLink = this.reschedule();
+      if (this.rescheduleLanded || !moveLink) return;
       if (!Principal.isActive(principal)) return;
       this.rescheduleLanded = true;
+      // Parsed ONCE (pass D, D-4). Text that is no appointment id is a visit
+      // that cannot be read: refused as one, never a bookable flow — the
+      // commit stays blocked on the raw text `expectMove` latched above.
+      const appointmentId = AppointmentId.parse(moveLink);
       untracked(() => {
         this.store.claim(principal.userId);
-        void this.landReschedule(moveId);
+        if (appointmentId.ok) void this.landReschedule(appointmentId.value);
+        else this.store.refuseMove(MoveRefusal.unavailable(null));
       });
     });
 

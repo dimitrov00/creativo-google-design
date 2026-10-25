@@ -14,6 +14,7 @@
  *    reads the pair lines below.
  */
 import type { AppliedDiscount } from './applied-discount.data';
+import { BillPending } from './bill-pending.data';
 import {
   BookingStatus,
   GrantStatus,
@@ -21,29 +22,24 @@ import {
   VoucherRefusal,
 } from '@core/primitives';
 import type { BookingLifecycle } from './booking-lifecycle.data';
+import { BookingReadSnapshot } from './booking-read-snapshot.data';
 import { Combinability } from './coupon-combinability.data';
 import { CouponExpiry, type CouponExpiryRule } from './coupon-expiry.data';
-import { CouponOccasion, CouponStatus } from './coupon-occasion.data';
+import { CouponOccasion } from './coupon-occasion.data';
 import { DiscountSource } from './discount-provenance.data';
 import { DiscountMethod, type CouponValue } from './coupon-value.data';
-import {
-  GrantCapacity,
-  type GrantCapacityTerms,
-  GrantExpiry,
-  type GrantExpiryTerms,
-  type GrantLifecycle,
-} from './grant-lifecycle.data';
+import { EditCallOutcome } from './edit-call-outcome.data';
+import { type GrantLifecycle } from './grant-lifecycle.data';
+import { LedgerVerdict } from './ledger-verdict.data';
+import { MoveOutcome } from './move-outcome.data';
 import { PhotoOrigin } from './photo-origin.data';
-import {
-  CancellationReason,
-  CancelledBy,
-  type SeatOutcome,
-} from './seat-outcome.data';
+import { TipPreset } from './tip-preset.data';
+import { CancelledBy, type SeatOutcome } from './seat-outcome.data';
 import {
   type SeatOccupant,
   SeatSubject,
   SubjectRelationship,
-} from './seat.data';
+} from './seat-occupant.data';
 import { type VoucherLifecycle, VoucherStatus } from './voucher-state.data';
 import type {
   Appointment,
@@ -55,12 +51,8 @@ import type {
 } from '@core/entities';
 import {
   type EditCommandRequest,
-  LedgerVerdict,
   type LedgerVerdictResult,
-  ProfileAuthType,
-  BillPending,
   type PendingDiscounts,
-  TipPreset,
   type TipPresetOption,
 } from '@core/systems';
 import {
@@ -70,6 +62,14 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import { EditCommand, ResizeEdge } from './edit-command.data';
+import { CouponStatus } from './coupon-status.data';
+import {
+  GrantCapacity,
+  type GrantCapacityTerms,
+} from './grant-capacity-terms.data';
+import { GrantExpiry, type GrantExpiryTerms } from './grant-expiry-terms.data';
+import { CancellationReason } from './cancellation-reason.data';
+import { ProfileAuthType } from './profile-auth-type.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -123,6 +123,9 @@ dictionary(StaffEditErrorCode satisfies Dictionary<StaffEditErrorCode>);
 dictionary(EditCommand satisfies Dictionary<EditCommand>);
 dictionary(ResizeEdge satisfies Dictionary<ResizeEdge>);
 dictionary(LedgerVerdict satisfies Dictionary<LedgerVerdict>);
+dictionary(BookingReadSnapshot satisfies Dictionary<BookingReadSnapshot>);
+dictionary(EditCallOutcome satisfies Dictionary<EditCallOutcome>);
+dictionary(MoveOutcome satisfies Dictionary<MoveOutcome>);
 dictionary(ProfileAuthType satisfies Dictionary<ProfileAuthType>);
 dictionary(BillPending satisfies Dictionary<BillPending>);
 dictionary(TipPreset satisfies Dictionary<TipPreset>);
@@ -136,31 +139,34 @@ dictionary(MoveErrorCode satisfies Dictionary<MoveErrorCode>);
 export type AppointmentDictionariesHold = [
   Expect<Holds<typeof BookingStatus, BookingStatus>>, // primitives/booking-status.data.ts
   Expect<Holds<typeof AttendanceState, AttendanceState>>, // primitives/attendance-state.data.ts
-  Expect<Holds<typeof CancellationReason, CancellationReason>>, // components/seat-outcome.data.ts
+  Expect<Holds<typeof CancellationReason, CancellationReason>>, // components/cancellation-reason.data.ts
   Expect<Holds<typeof CancelledBy, CancelledBy>>, // components/seat-outcome.data.ts
-  Expect<Holds<typeof SeatSubject, SeatSubject>>, // components/seat.data.ts
-  Expect<Holds<typeof SubjectRelationship, SubjectRelationship>>, // components/seat.data.ts
+  Expect<Holds<typeof SeatSubject, SeatSubject>>, // components/seat-occupant.data.ts
+  Expect<Holds<typeof SubjectRelationship, SubjectRelationship>>, // components/seat-occupant.data.ts
   Expect<Holds<typeof DiscountSource, DiscountSource>>, // components/discount-provenance.data.ts
   Expect<
     Holds<Pick<typeof Combinability, 'Exclusive' | 'Stackable'>, Combinability>
   >, // components/coupon-combinability.data.ts (COMBINABILITY)
   Expect<Holds<typeof CouponExpiry, CouponExpiry>>, // components/coupon-expiry.data.ts
   Expect<Holds<typeof CouponOccasion, CouponOccasion>>, // components/coupon-occasion.data.ts
-  Expect<Holds<typeof CouponStatus, CouponStatus>>, // components/coupon-occasion.data.ts
+  Expect<Holds<typeof CouponStatus, CouponStatus>>, // components/coupon-status.data.ts
   Expect<Holds<typeof DiscountMethod, DiscountMethod>>, // components/coupon-value.data.ts
   Expect<Holds<typeof GrantStatus, GrantStatus>>, // primitives/grant-status.data.ts
-  Expect<Holds<typeof GrantCapacity, GrantCapacity>>, // primitives/grant-status.data.ts
-  Expect<Holds<typeof GrantExpiry, GrantExpiry>>, // primitives/grant-status.data.ts
+  Expect<Holds<typeof GrantCapacity, GrantCapacity>>, // components/grant-capacity-terms.data.ts
+  Expect<Holds<typeof GrantExpiry, GrantExpiry>>, // components/grant-expiry-terms.data.ts
   Expect<Holds<Pick<typeof PhotoOrigin, 'Shot' | 'Library'>, PhotoOrigin>>, // components/photo-origin.data.ts (PHOTO_ORIGIN)
   Expect<Holds<typeof VoucherStatus, VoucherStatus>>, // components/voucher-state.data.ts
   Expect<Holds<typeof VoucherRefusal, VoucherRefusal>>, // primitives/voucher-refusal.data.ts
   Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // errors/staff-edit.error.ts
   Expect<Holds<typeof EditCommand, EditCommand>>, // components/edit-command.data.ts
   Expect<Holds<typeof ResizeEdge, ResizeEdge>>, // components/edit-command.data.ts
-  Expect<Holds<typeof LedgerVerdict, LedgerVerdict>>, // systems/appointment-edit.system.ts
-  Expect<Holds<typeof ProfileAuthType, ProfileAuthType>>, // systems/audit.system.ts
-  Expect<Holds<typeof BillPending, BillPending>>, // systems/billing.system.ts
-  Expect<Holds<typeof TipPreset, TipPreset>>, // systems/billing.system.ts
+  Expect<Holds<typeof LedgerVerdict, LedgerVerdict>>, // components/ledger-verdict.data.ts
+  Expect<Holds<typeof BookingReadSnapshot, BookingReadSnapshot>>, // components/booking-read-snapshot.data.ts
+  Expect<Holds<typeof EditCallOutcome, EditCallOutcome>>, // components/edit-call-outcome.data.ts
+  Expect<Holds<typeof MoveOutcome, MoveOutcome>>, // components/move-outcome.data.ts
+  Expect<Holds<typeof ProfileAuthType, ProfileAuthType>>, // components/profile-auth-type.data.ts
+  Expect<Holds<typeof BillPending, BillPending>>, // components/bill-pending.data.ts
+  Expect<Holds<typeof TipPreset, TipPreset>>, // components/tip-preset.data.ts
   Expect<Holds<typeof CancellationRefusalCode, CancellationRefusalCode>>, // errors/cancellation.error.ts
   Expect<Holds<typeof CarriedSeatRefusal, CarriedSeatRefusal>>, // errors/move.error.ts
   Expect<Holds<typeof MoveErrorCode, MoveErrorCode>>, // errors/move.error.ts
@@ -190,6 +196,9 @@ export type AppointmentDictionariesScream = [
   Expect<Screaming<EditCommand>>,
   Expect<Screaming<ResizeEdge>>,
   Expect<Screaming<LedgerVerdict>>,
+  Expect<Screaming<BookingReadSnapshot>>,
+  Expect<Screaming<EditCallOutcome>>,
+  Expect<Screaming<MoveOutcome>>,
   Expect<Screaming<ProfileAuthType>>,
   Expect<Screaming<BillPending>>,
   Expect<Screaming<TipPreset>>,
@@ -219,8 +228,8 @@ export type AppointmentDictionaryFields = [
   Expect<Equals<SeatOutcome['attendanceState'], AttendanceState>>, // components/seat-outcome.data.ts
   Expect<Equals<CancelledSeat['cancellationReason'], CancellationReason>>, // seat-level; the root's is a CancellationReasonSet
   Expect<Equals<CancelledSeat['cancelledBy'], CancelledBy>>, // components/seat-outcome.data.ts
-  Expect<Equals<SeatOccupant['seatSubject'], SeatSubject>>, // components/seat.data.ts
-  Expect<Equals<AccountOccupant['subjectRelationship'], SubjectRelationship>>, // components/seat.data.ts
+  Expect<Equals<SeatOccupant['seatSubject'], SeatSubject>>, // components/seat-occupant.data.ts
+  Expect<Equals<AccountOccupant['subjectRelationship'], SubjectRelationship>>, // components/seat-occupant.data.ts
   Expect<Equals<AppliedDiscount['discountSource'], DiscountSource>>, // components/applied-discount.data.ts
   Expect<Equals<AppliedDiscount['combinability'], Combinability>>, // components/applied-discount.data.ts
   Expect<Equals<CouponExpiryRule['couponExpiry'], CouponExpiry>>, // components/coupon-expiry.data.ts

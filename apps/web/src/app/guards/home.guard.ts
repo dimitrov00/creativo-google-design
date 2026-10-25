@@ -1,10 +1,11 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { RouteGate, SessionAccessSystem } from '@core/systems';
+import { SessionAccessSystem } from '@core/systems';
 import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 import { firstValueFrom } from 'rxjs';
 import { isStandalone } from '../shell/is-standalone';
 import { routeFor } from './access';
+import { RouteGate } from '@core/components';
 
 /**
  * Blueprint §1.4's `/` guard: an installed-PWA launch by an already-active

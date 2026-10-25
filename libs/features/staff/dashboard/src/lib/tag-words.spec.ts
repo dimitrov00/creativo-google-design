@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ClientQueryShape, GridEvent } from '@core/systems';
+import { ClientQueryShape, GridEvent } from '@core/components';
 import { clientQueryShapeWords, gridEventWords } from './tag-words';
 
 /*

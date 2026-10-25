@@ -1,11 +1,12 @@
 import {
-  AppointmentId,
+  type AppointmentId,
   type BadgeSeriesId,
-  LocalDate,
-  ServiceId,
-  ServiceVariantId,
+  type CustomerId,
+  type LocalDate,
+  type ServiceId,
   type TimeZone,
-  UtcEpochMs,
+  type UserId,
+  type UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
@@ -13,19 +14,17 @@ import {
   MedalCue,
   type ShopNow,
   type VisitLeg,
-  type WallTime,
+  WallTime,
 } from '@core/components';
 import {
   AgeSystem,
   BadgeSystem,
   ClientGlanceSystem,
-  type GlanceLeg,
   LoyaltyCatalogSystem,
   PhoneSystem,
   StandingSystem,
   type ValidLoyaltyCatalog,
   VisitStorySystem,
-  ZonedTimeSystem,
 } from '@core/systems';
 import {
   type Appointment,
@@ -43,7 +42,6 @@ import {
   completesWithThisVisit,
   medalVm,
   newestFaceLevel,
-  previousVisitOf,
   progressOf,
   seriesById,
   soonSeriesIds,
@@ -60,13 +58,14 @@ import {
   shopDayOf,
 } from './client-card.format';
 import { type LoyaltyFlags } from './loyalty.presenter';
-import type {
-  AchievementsData,
-  ClientCapsuleVm,
-  ClientCapsulesVm,
-  ClientPhotoVm,
-  MedalStripVm,
-  QuickActionVm,
+import {
+  type AchievementsData,
+  type ClientCapsuleVm,
+  type ClientCapsulesVm,
+  type ClientPhotoVm,
+  type MedalStripVm,
+  QuickActionId,
+  type QuickActionVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 
@@ -100,13 +99,10 @@ const STRIP_LIMIT = 3;
  */
 export function pauseOf(
   user: User | null,
-  nowMs: number,
+  now: UtcEpochMs,
   zone: TimeZone,
-): { readonly until: string | null } | null {
-  const now = UtcEpochMs.of(nowMs);
-  // No instant to judge by: nothing can be shown paused at it.
-  if (!now.ok) return null;
-  const pause = ClientGlanceSystem.pauseOf(user, now.value);
+): { readonly until: LocalDate | null } | null {
+  const pause = ClientGlanceSystem.pauseOf(user, now);
   if (pause === null) return null;
   return {
     until: pause.untilUtcMs === null ? null : shopDayOf(pause.untilUtcMs, zone),
@@ -114,11 +110,9 @@ export function pauseOf(
 }
 
 /** Today is the person's birthday (a 29 February one is kept on the 28th in other years). */
-export function isBirthdayToday(user: User | null, today: string): boolean {
+export function isBirthdayToday(user: User | null, today: LocalDate): boolean {
   const birth = user?.birthDate ?? null;
-  if (birth === null) return false;
-  const day = LocalDate.parse(today);
-  return day.ok && AgeSystem.isBirthdayOn(birth, day.value);
+  return birth !== null && AgeSystem.isBirthdayOn(birth, today);
 }
 
 /** The name the card shows: `users/{uid}`'s once read, the seat's until then (and for good, for a guest). */
@@ -140,7 +134,8 @@ export interface HeadInput {
   readonly statsKnown: boolean;
   /** `AVATAR_PORTS.findAvatar(uid)`, after the seat's own picture. */
   readonly avatarSrc: string | null;
-  readonly nowMs: number;
+  /** The store's one clock reading of the open: the pause is judged at it. */
+  readonly nowUtcMs: UtcEpochMs;
   /**
    * The shop's zone (Law 7.2) — `null` until the store has resolved it: the
    * head is the snapshot until then, without a pause or its line.
@@ -158,7 +153,8 @@ export interface CapsulesInput {
     readonly account: LoyaltyAccount;
     readonly catalog: ValidLoyaltyCatalog;
   } | null;
-  readonly nowMs: number;
+  /** The store's one clock reading of the open. */
+  readonly nowUtcMs: UtcEpochMs;
   /** The shop's zone (Law 7.2): where «днес» and the windows are read. */
   readonly zone: TimeZone;
   readonly words: ClientCardWords;
@@ -208,20 +204,16 @@ export function phoneOf(
     : { e164: number.digits, display: subject.phone ?? number.digits };
 }
 
-/** The visit on screen's services as the glance's legs, branded at the edge. */
-function draftLegsOf(draft: ClientCardContext['legs']): readonly GlanceLeg[] {
-  return draft.map((leg) => ({
-    serviceId: ServiceId.of(leg.serviceId),
-    variantId:
-      leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
-  }));
-}
-
+/**
+ * The visit on screen already holds the last visit's services. A draft leg
+ * IS a `GlanceLeg` (its `serviceId` and `variantId`, branded as the draft
+ * holds them), so it goes to the system as it is (Law 3).
+ */
 export function sameLegs(
   last: readonly VisitLeg[],
   draft: ClientCardContext['legs'],
 ): boolean {
-  return ClientGlanceSystem.sameLegs(last, draftLegsOf(draft));
+  return ClientGlanceSystem.sameLegs(last, draft);
 }
 
 export interface ActionsInput {
@@ -231,7 +223,8 @@ export interface ActionsInput {
   readonly stats: ClientStatsRecord | null;
   readonly context: ClientCardContext;
   readonly online: boolean;
-  readonly nowMs: number;
+  /** The store's one clock reading of the open. */
+  readonly nowUtcMs: UtcEpochMs;
   /** The shop's zone (Law 7.2): where «днес» is read. */
   readonly zone: TimeZone;
   readonly words: ClientCardWords;
@@ -252,21 +245,21 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
     const digits = phone.e164.replace(/^\+/, '');
     actions.push(
       {
-        id: 'call',
+        id: QuickActionId.Call,
         icon: 'contact.phone',
         label: words.actions.call,
         href: `tel:${phone.e164}`,
         accessibleName: words.actions.callName(name, phone.display),
       },
       {
-        id: 'sms',
+        id: QuickActionId.Sms,
         icon: 'contact.sms',
         label: words.actions.sms,
         href: `sms:${phone.e164}`,
         accessibleName: words.actions.smsName(name),
       },
       {
-        id: 'viber',
+        id: QuickActionId.Viber,
         icon: 'contact.viber',
         label: words.actions.viber,
         href: `viber://chat?number=%2B${digits}`,
@@ -290,20 +283,17 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
       {
         online: input.online,
         gone: context.gone,
-        currentAppointmentId:
-          context.appointmentId === null
-            ? null
-            : AppointmentId.of(context.appointmentId),
-        legs: draftLegsOf(context.legs),
+        currentAppointmentId: context.appointmentId,
+        legs: context.legs,
       },
       new Set<ServiceId>(named.map((leg) => leg.serviceId)),
     );
     const lastDay = stats.lastVisitLocalDate;
     if (offered && lastDay !== null) {
       const services = [...new Set(named.map((leg) => leg.name))];
-      const today = shopDayOf(input.nowMs, input.zone);
+      const today = shopDayOf(input.nowUtcMs, input.zone);
       actions.push({
-        id: 'same',
+        id: QuickActionId.Same,
         icon: 'visit.repeat',
         label: words.actions.repeat,
         href: null,
@@ -324,9 +314,9 @@ export interface VisitsModuleInput {
   /** The history's first page, newest first. */
   readonly appointments: readonly Appointment[];
   /** The account the card is open on — whose own words a card quotes. */
-  readonly subjectUserId: string;
+  readonly subjectUserId: UserId;
   /** Its client RECORD (D29) — whose seats and outcome a card tells; `null` before the record exists. */
-  readonly subjectCustomerId: string | null;
+  readonly subjectCustomerId: CustomerId | null;
   readonly context: ClientCardContext;
   /** The client's past cuts, newest first — the featured card's thumbs. */
   readonly photos: readonly AppointmentPhoto[];
@@ -349,7 +339,7 @@ export interface VisitsModuleInput {
 export function lastWorkedVisit(
   appointments: readonly Appointment[],
   rowOf: (appointment: Appointment) => VisitRowVm,
-  currentAppointmentId: string | null,
+  currentAppointmentId: AppointmentId | null,
 ): { readonly appointment: Appointment; readonly row: VisitRowVm } | null {
   // The visit on screen is UI read-state: dropped here, before the system
   // picks the newest WORKED one (`VisitStorySystem.lastWorked`).
@@ -368,11 +358,11 @@ export function lastWorkedVisit(
 /** One past cut: «12.08» on the tile, «Снимка от 12 август» for a reader. */
 export function clientPhotoVm(
   photo: AppointmentPhoto,
-  nowMs: number,
+  nowUtcMs: UtcEpochMs,
   zone: TimeZone,
   words: ClientCardWords,
 ): ClientPhotoVm {
-  const today = shopDayOf(nowMs, zone);
+  const today = shopDayOf(nowUtcMs, zone);
   const day = shopDayOf(photo.takenAtUtcMs, zone);
   return {
     photoId: photo.id,
@@ -393,18 +383,18 @@ export function clientPhotoVm(
  */
 export function photoRailVm(
   photos: readonly AppointmentPhoto[],
-  excludedAppointmentIds: readonly (string | null)[],
-  nowMs: number,
+  excludedAppointmentIds: readonly (AppointmentId | null)[],
+  nowUtcMs: UtcEpochMs,
   zone: TimeZone,
   words: ClientCardWords,
 ): readonly ClientPhotoVm[] {
   const excluded = new Set(
-    excludedAppointmentIds.filter((id): id is string => id !== null),
+    excludedAppointmentIds.filter((id): id is AppointmentId => id !== null),
   );
   return photos
     .filter((photo) => !excluded.has(photo.appointmentId))
     .slice(0, PHOTO_RAIL_LIMIT)
-    .map((photo) => clientPhotoVm(photo, nowMs, zone, words));
+    .map((photo) => clientPhotoVm(photo, nowUtcMs, zone, words));
 }
 
 // ── Loyalty and achievements on the glance ──────────────────────────────
@@ -415,12 +405,14 @@ export interface LoyaltyTilesInput {
   /** Needed by the points tile; `null` = not loaded (the tile waits, the store says how). */
   readonly catalog: ValidLoyaltyCatalog | null;
   readonly flags: LoyaltyFlags;
-  readonly visitsMs: readonly number[];
+  /** The stats' worked visits of the last year, each as its start instant on the shop's zone. */
+  readonly visitsMs: readonly UtcEpochMs[];
   /** `clientStats.lifetime.visitsCompleted`: the rhythm fact says «Винаги» for a run that long. */
   readonly lifetimeVisits?: number | null;
   readonly inChairToday: boolean;
   readonly paused: boolean;
-  readonly today: string;
+  /** The shop calendar's today, on the shop's zone. */
+  readonly today: LocalDate;
   readonly words: ClientCardWords;
   /**
    * The rewards the client holds on this visit — the titles of the grants
@@ -513,7 +505,7 @@ export function medalStripVm(
       newest === null || newestSeries === null
         ? null
         : { level: newest.level, earnedAtUtcMs: newest.earnedAtUtcMs },
-    previousVisitAtUtcMs: previousVisitOf(data),
+    previousVisitAtUtcMs: data.previousVisitUtcMs,
     closest: closestStanding,
   });
 
@@ -579,26 +571,30 @@ export function medalStripVm(
 
 /**
  * The client is in the chair today: the visit on screen is open and
- * starts on the shop's today (on `zone`, the shop's) — the rhythm's
- * current mark reads «днес».
+ * starts on the shop's today (`now`, the shop's) — the rhythm's current
+ * mark reads «днес». Every leg starts at the drafted start, read on the
+ * shop's wall clock as it is (Law 7.3, pass D DEP-15); a start that is no
+ * minute of the day starts on no day.
  */
 export function isInChairToday(
   context: ClientCardContext,
-  nowMs: number,
-  zone: TimeZone,
+  now: ShopNow,
 ): boolean {
-  const now = UtcEpochMs.of(nowMs);
-  // No "today" without a now to read it from.
-  if (!now.ok) return false;
-  const legs: WallTime[] = [];
-  for (const leg of context.legs) {
-    // A leg whose start is no instant starts on no day.
-    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
-    if (start.ok) legs.push(ZonedTimeSystem.toLocal(start.value, zone));
-  }
   return ClientGlanceSystem.isInChairToday(
     context.appointmentId !== null && !context.settled,
-    legs,
-    ZonedTimeSystem.shopNow(now.value, zone),
+    legStartsOf(context),
+    now,
   );
+}
+
+/**
+ * The visit on screen's legs' starts on the shop's wall clock — each leg
+ * starts at the drafted start; none while the draft holds no start, or
+ * one that is no minute of the day.
+ */
+function legStartsOf(context: ClientCardContext): readonly WallTime[] {
+  const start = context.start;
+  if (start === null || start.startMinutes === null) return [];
+  const at = WallTime.of(start.localDate, start.startMinutes);
+  return context.legs.map(() => at);
 }

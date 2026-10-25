@@ -51,10 +51,11 @@ import {
 } from '@core/components';
 import { RosterSystem, ShopReachSystem, ZonedTimeSystem } from '@core/systems';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
+import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ThemeService } from '@creativo/features/shared/shell';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import {
-  type LandingLocationId,
+  LandingLocationId,
   landingLocationZone,
 } from '../landing-location-zone';
 
@@ -117,12 +118,6 @@ interface ShopOpeningLine {
   readonly dayIndex: number;
 }
 
-/** A minute of the day as the page prints a time — zero-padded `HH:MM`, never a locale's «8:00 PM». */
-function clockOf(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  return `${String(hours).padStart(2, '0')}:${String(minutes - hours * 60).padStart(2, '0')}`;
-}
-
 /** An open day as authored here: from one whole hour to another. */
 const open = (from: number, to: number): DayHoursInput => ({
   openingState: OpeningState.Open,
@@ -137,12 +132,19 @@ function weekOf(raw: readonly DayHoursInput[]): readonly DayHours[] {
   return week.ok ? week.value : defect('a landing shop’s week is no week');
 }
 
-/** The week as the list prints it, Sunday first: each open day's `HH:MM` pair, `null` a closed one. */
+/**
+ * The week as the list prints it, Sunday first: each open day's `HH:MM` pair
+ * (`formatClock`, a midnight close as «24:00» — never a locale's «8:00 PM»),
+ * `null` a closed one.
+ */
 function displayWeek(week: readonly DayHours[]): WeekSchedule {
   const at = (weekday: Weekday): HoursLine | null => {
     const day = DayHours.forWeekday(week, weekday);
     return day !== null && day.openingState === OpeningState.Open
-      ? { open: clockOf(day.openMinutes), close: clockOf(day.closeMinutes) }
+      ? {
+          open: formatClock(day.openMinutes, ClockClosing.EndOfDay),
+          close: formatClock(day.closeMinutes, ClockClosing.EndOfDay),
+        }
       : null;
   };
   return [
@@ -168,8 +170,8 @@ const CENTER_WEEK = weekOf([
 ]);
 
 /** Each shop's zone, checked ONCE at module load (no zone literal here). */
-const CENTER_ZONE = landingLocationZone('center');
-const MLADOST_ZONE = landingLocationZone('mladost');
+const CENTER_ZONE = landingLocationZone(LandingLocationId.Center);
+const MLADOST_ZONE = landingLocationZone(LandingLocationId.Mladost);
 
 /** Mladost's week — the seed's `openingHours` for the shop. */
 const MLADOST_WEEK = weekOf([
@@ -257,7 +259,7 @@ export class LocationsComponent implements AfterViewInit {
 
   protected readonly locations: readonly LocationItem[] = [
     {
-      locationId: 'center',
+      locationId: LandingLocationId.Center,
       timeZone: CENTER_ZONE,
       nameKey: 'landing.location.center.name',
       addressKey: 'landing.location.center.address',
@@ -273,7 +275,7 @@ export class LocationsComponent implements AfterViewInit {
       lng: 25.6366,
     },
     {
-      locationId: 'mladost',
+      locationId: LandingLocationId.Mladost,
       timeZone: MLADOST_ZONE,
       nameKey: 'landing.location.mladost.name',
       addressKey: 'landing.location.mladost.address',
@@ -566,7 +568,10 @@ export class LocationsComponent implements AfterViewInit {
         opening.shopOpening === ShopOpening.ClosesAt ||
         opening.shopOpening === ShopOpening.ClosesSoon,
       shopOpening: opening.shopOpening,
-      time: opening.atMinutes === null ? '' : clockOf(opening.atMinutes),
+      time:
+        opening.atMinutes === null
+          ? ''
+          : formatClock(opening.atMinutes, ClockClosing.EndOfDay),
       // The `WEEKDAY_KEYS` index (Sunday = 0 — the ISO weekday mod 7).
       dayIndex: LocalDate.weekday(opening.localDate) % 7,
     };
@@ -574,15 +579,11 @@ export class LocationsComponent implements AfterViewInit {
 
   /**
    * The shop's wall clock now, in its `timeZone`: the weekday as a
-   * `WEEKDAY_KEYS` index (Sunday = 0 — the ISO weekday mod 7) and the
-   * minute from local midnight.
+   * `WEEKDAY_KEYS` index (Sunday = 0 — the ISO weekday mod 7).
    */
-  private wallAt(timeZone: TimeZone): {
-    readonly day: number;
-    readonly minute: number;
-  } {
-    const { localDate, minute } = ZonedTimeSystem.toLocal(this.now(), timeZone);
-    return { day: LocalDate.weekday(localDate) % 7, minute };
+  private wallAt(timeZone: TimeZone): { readonly day: number } {
+    const { localDate } = ZonedTimeSystem.toLocal(this.now(), timeZone);
+    return { day: LocalDate.weekday(localDate) % 7 };
   }
 
   /**

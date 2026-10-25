@@ -19,6 +19,7 @@ import {
   INBOX_PORTS,
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
+import { intlLocaleOf } from '@creativo/infrastructure/i18n';
 import { Principal } from '@core/components';
 import { NotificationSystem } from '@core/systems';
 import {
@@ -39,6 +40,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import { formatInstant } from '@creativo/ui/wall-clock';
+import { OnboardingPhase } from '../identity/onboarding-link';
 import { SessionIdentityService } from '../identity/session-identity.service';
 import { LocaleThemeToggleComponent } from '../prefs/locale-theme-toggle.component';
 
@@ -94,6 +96,9 @@ export class SiteMenuComponent {
    *  route's `rolesGuard` and firestore.rules' `isAdmin()` are the locks. */
   readonly isAdmin = input(false);
   readonly closed = output();
+
+  /** The onboarding link's `?phase=` word, for the template (D-8.2). */
+  protected readonly OnboardingPhase = OnboardingPhase;
 
   protected readonly behavior = inject(UiSheetBehavior);
   private readonly router = inject(Router);
@@ -190,12 +195,11 @@ export class SiteMenuComponent {
   protected readonly todayLabel = computed(() => {
     const zone = this.shopZone();
     if (zone === null) return null;
-    return formatInstant(
-      this.openedAt(),
-      zone,
-      this.lang() === 'en' ? 'en-GB' : 'bg-BG',
-      { weekday: 'short', day: 'numeric', month: 'long' },
-    );
+    return formatInstant(this.openedAt(), zone, intlLocaleOf(this.lang()), {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long',
+    });
   });
 
   /**

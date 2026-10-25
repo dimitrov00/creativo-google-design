@@ -1,10 +1,7 @@
 import type { InvitationCall } from '@core/components';
 import { InvitationId, Result } from '@core/primitives';
-import { EngagementError } from '@core/errors';
-import type {
-  RedeemInvitationCommand,
-  RedeemInvitationError,
-} from '@core/pipelines';
+import { EngagementError, type RedeemInvitationError } from '@core/errors';
+import type { RedeemInvitationCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
 import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';

@@ -1,9 +1,9 @@
 import { Router, type UrlTree } from '@angular/router';
 import {
-  AccessTarget,
   type AccessDecision,
+  AccessTarget,
   AccessVerdict,
-} from '@core/systems';
+} from '@core/components';
 
 /** Where each refused principal is sent — the one route per `AccessTarget`. */
 const TARGET_PATH = {

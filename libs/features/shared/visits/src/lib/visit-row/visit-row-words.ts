@@ -12,6 +12,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { StaffEventHead } from '../event-head/staff-event-head';
 import {
+  StatusFactTone,
   TrailingFactFace,
   VisitRowEntry,
   VisitRowOutcome,
@@ -76,6 +77,8 @@ export class VisitRowWords {
 
   /** The fact's faces, for the template's `@case`s. */
   protected readonly TrailingFactFace = TrailingFactFace;
+  /** The status fact's tones, for the template's glyph tint (never bare literals). */
+  protected readonly StatusFactTone = StatusFactTone;
 
   /** Where the quote sits, for a test to find it: `history-row-{id}-quote`. */
   protected readonly quoteTestId = computed(() =>

@@ -112,6 +112,8 @@ export const EngagementErrorCode = {
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
   VoucherCodeInvalid: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
+  /** A batch names one voucher twice — `attempted` is the repeat as typed (`VoucherCode.distinct`). */
+  VoucherCodeDuplicate: 'ENGAGEMENT_VOUCHER_CODE_DUPLICATE',
   GiftVoucherValueInvalid: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
   GiftVoucherNotRedeemable: 'ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE',
   GiftVoucherInsufficientBalance:
@@ -224,6 +226,7 @@ export type EngagementError =
   | EngagementError.CouponGrantNotExpiring
   | EngagementError.CouponGrantReasonEmpty
   | EngagementError.VoucherCodeInvalid
+  | EngagementError.VoucherCodeDuplicate
   | EngagementError.GiftVoucherValueInvalid
   | EngagementError.GiftVoucherNotRedeemable
   | EngagementError.GiftVoucherInsufficientBalance
@@ -267,6 +270,33 @@ export type ProgramSaveError =
   | EngagementError.ProgramNotFound
   | EngagementError.ShopEventZoneUnknown
   | RepositoryError;
+
+/**
+ * The errors a voucher's balance algebra can refuse with
+ * (`VoucherSystem.redeem`'s answer).
+ */
+export type VoucherBalanceError =
+  | EngagementError.GiftVoucherNotRedeemable
+  | EngagementError.GiftVoucherInsufficientBalance
+  | EngagementError.GiftVoucherCurrencyMismatch
+  | EngagementError.GiftVoucherOverRestore;
+
+/**
+ * What a rhythm's schedule refuses (`StreakRuleSystem.parseSchedule`): a
+ * waiting version that does not follow, or a transition nobody knows.
+ */
+export type StreakScheduleError =
+  | EngagementError.StreakScheduleVersionNotRising
+  | EngagementError.StreakScheduleNotAfterCurrent
+  | EngagementError.StreakUnknownOption;
+
+/** What the loyalty catalogue as a whole refuses (`LoyaltyCatalogSystem.validate`). */
+export type LoyaltyCatalogError =
+  | EngagementError.LoyaltyCatalogDuplicateId
+  | EngagementError.LoyaltyCatalogDanglingCategory
+  | EngagementError.LoyaltyCatalogDanglingSeason
+  | EngagementError.LoyaltyCatalogTiersNotRising
+  | EngagementError.LoyaltyCatalogCostNotPositive;
 
 /**
  * An i18n-safe parameter: a missing value is `null`, a list is joined with
@@ -350,6 +380,11 @@ export const EngagementError = {
   // ── Gift vouchers ─────────────────────────────────────────────────────
   voucherCodeInvalid(attempted: string): EngagementError.VoucherCodeInvalid {
     return { errorCode: EngagementErrorCode.VoucherCodeInvalid, attempted };
+  },
+  voucherCodeDuplicate(
+    attempted: string,
+  ): EngagementError.VoucherCodeDuplicate {
+    return { errorCode: EngagementErrorCode.VoucherCodeDuplicate, attempted };
   },
   giftVoucherValueInvalid(): EngagementError.GiftVoucherValueInvalid {
     return { errorCode: EngagementErrorCode.GiftVoucherValueInvalid };
@@ -689,6 +724,11 @@ export namespace EngagementError {
 
   export type VoucherCodeInvalid = {
     readonly errorCode: typeof EngagementErrorCode.VoucherCodeInvalid;
+    readonly attempted: string;
+  };
+  export type VoucherCodeDuplicate = {
+    readonly errorCode: typeof EngagementErrorCode.VoucherCodeDuplicate;
+    /** The repeated code, as typed. */
     readonly attempted: string;
   };
   export type GiftVoucherValueInvalid = Bare<

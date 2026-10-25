@@ -26,16 +26,21 @@ uiName ─▶ UiIconRegistry.resolve
             └─ bundled           icon-vocabulary.ts         (UI_ICON_REGISTRY · VECTORS · ALIASES · LOGO)
             │  alias? → hop (≤ 8, cycle-checked, restarts at the top layer)
             ▼
-        UiIconAsset ─▶ { kind: 'material', glyph } ─▶ material-glyphs.generated.ts ─▶ path data
-                    └▶ { kind: 'vector', viewBox, paths }  ──────────────────────────▶ path data
+        UiIconArtwork ─▶ { iconAsset: 'MATERIAL', glyph } ─▶ material-glyphs.generated.ts ─▶ path data
+                      └▶ { iconAsset: 'VECTOR', viewBox, paths }  ────────────────────────▶ path data
             ▼
         <svg viewBox fill="currentColor"><path d/></svg>   (1em box, synchronous, no font)
 ```
 
-An unresolvable key never throws: the component keeps its em box, stamps
-`data-missing` (dashed outline in development) and the failure is reported
-once through `UI_ICON_REPORTER` (console by default; plug an error reporter
-in production).
+An unresolvable key never throws: resolution answers a `Result` (the walk and
+the artwork, or a `UiIconFailure` with its `reason`), the component keeps its
+em box, stamps `data-missing` (dashed outline in development) and the failure
+is reported once through `UI_ICON_REPORTER` (console by default; plug an error
+reporter in production). The diagnostic codes it prints (`icon-missing`,
+`entry-rejected`, `source-failed`, …) are a contract and keep their kebab
+spelling; each family is an `as const` dictionary (`UiIconFailureReason`,
+`UiIconIssueCode`, `UiIconDiagnosticCode`), and so is the origin it names
+(`UiIconOrigin`).
 
 ## The vocabulary
 
@@ -70,19 +75,22 @@ record):
 
 ## The manifest
 
-One document, `schemaVersion: 1`, icons and the logo together — they are one
+One document, `schemaVersion: 2`, icons and the logo together — they are one
 theme and change together. Today the only manifest is the bundled one; the
-shape is what a backend override would have to speak:
+shape is what a backend override would have to speak. Every asset says what
+it is in `iconAsset` (`UiIconAsset`: `VECTOR`, `MATERIAL`, `IMAGE` — Law 6.2's
+domain-prefixed discriminator; schema 1 called it `kind`, and a version 1
+document is rejected whole):
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "icons": {
     "sheet.close": "cancel",
-    "visit.noShow": { "kind": "material", "glyph": "person_off" },
+    "visit.noShow": { "iconAsset": "MATERIAL", "glyph": "person_off" },
     "party.removeGuest": { "alias": "sheet.close" },
     "social.instagram": {
-      "kind": "vector",
+      "iconAsset": "VECTOR",
       "viewBox": "0 0 24 24",
       "paths": [
         {
@@ -96,12 +104,12 @@ shape is what a backend override would have to speak:
   },
   "logo": {
     "light": {
-      "kind": "vector",
+      "iconAsset": "VECTOR",
       "viewBox": "0 0 1920 419.82",
       "paths": [{ "d": "M1715.83,69.24c…" }]
     },
     "dark": {
-      "kind": "image",
+      "iconAsset": "IMAGE",
       "href": "https://firebasestorage.googleapis.com/…/logo-dark.png",
       "width": 1920,
       "height": 420
@@ -110,12 +118,15 @@ shape is what a backend override would have to speak:
 }
 ```
 
-`parseUiIconManifest` (`icon-manifest.ts`) is the only way in:
+`parseUiIconManifest` (`icon-manifest-parser.ts`; the shape itself, with no
+import at all, is `icon-manifest.ts`, so the Node icon tools can load the
+vocabulary) is the only way in. Each refusal is a `UiIconIssue` struct —
+`{ iconIssue, key?, detail }` — and every asset parser answers a `Result`:
 
 | Input                               | Outcome                                        |
 | ----------------------------------- | ---------------------------------------------- |
 | `null` / no document                | bundled defaults (not an error)                |
-| unsupported `schemaVersion`         | whole document rejected, current manifest kept |
+| unsupported `schemaVersion` (1 too) | whole document rejected, current manifest kept |
 | entry with an unknown key           | skipped with an issue (forward compatibility)  |
 | entry that fails validation         | dropped with an issue; every other entry kept  |
 | Material glyph not in the table     | dropped — send the path data instead           |
@@ -139,7 +150,8 @@ changes, remember, allowedImageOrigins }))`:
 
 - `cached()` — read once, synchronously, at startup: the last manifest that
   passed validation, so the first paint already wears it;
-- `changes` — `Observable<Result<unknown, Error>>`; failures are reported and
+- `changes` — `Observable<Result<unknown, UiIconSourceFailure>>` (a failure is
+  the flat `{ detail }` struct, never an `Error`); failures are reported and
   ignored, values validated and, if adopted, `remember`ed;
 - `null` from the backend returns to the bundled defaults and forgets the cache.
 

@@ -1,12 +1,13 @@
 import { Injectable, computed, inject } from '@angular/core';
+import type { Money } from '@core/components';
+import type { DurationMinutes } from '@core/primitives';
 import { LanguageService } from '@creativo/features/shared/shell';
+import { formatCents } from '@creativo/ui/wall-clock';
 import { type Localized, type ServiceVm } from './catalog.vm';
-import type { PriceCents } from '@core/primitives';
 import {
   formatDurationRange,
-  formatPrice,
-  formatPriceCents,
   formatServiceMeta,
+  serviceCardPrice,
 } from './catalog.presenter';
 
 /**
@@ -30,16 +31,18 @@ export class CatalogWording {
     return localized[this.language.activeLang()] ?? localized.en;
   }
 
-  price(major: number): string {
-    return formatPrice(major, this.locale());
+  /**
+   * An amount in the active language — «28,00 €» — through the ONE money
+   * formatter (`formatCents`: the stored currency's own symbol and fraction
+   * digits), at the catalogue's locale (`'bg'`/`'en'`, byte-identical to the
+   * retired EUR-only presenter formatter for every EUR amount — pass D,
+   * DEP-19).
+   */
+  price(money: Money): string {
+    return formatCents(money.amountCents, money.currency, this.locale());
   }
 
-  /** A figure a system answered in cents — the same money string. */
-  priceCents(cents: PriceCents): string {
-    return formatPriceCents(cents, this.locale());
-  }
-
-  durationRange(from: number, to: number): string {
+  durationRange(from: DurationMinutes, to: DurationMinutes): string {
     return formatDurationRange(from, to, this.locale());
   }
 
@@ -57,7 +60,7 @@ export class CatalogWording {
     // contradict one tap later. The tag is `CatalogPricingSystem.cardPrice`'s
     // answer, carried on the view model (`serviceToVm`).
     return formatServiceMeta({
-      price: this.price(service.cardPrice.cheapest),
+      price: this.price(serviceCardPrice(service)),
       fromLabel,
       spread: service.cardPrice.spread,
     });

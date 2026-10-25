@@ -20,6 +20,8 @@ import {
   type FactoryPicker,
   LAZY_PORT_LOAD_ERROR,
   type LazyAdapterModule,
+  LazyMethod,
+  isLazyPort,
   lazyAdapterScope,
   provideLazyPort,
 } from './lazy-port';
@@ -194,7 +196,10 @@ const reported = () =>
 const causeOf = (answer: Answer<unknown>): unknown =>
   answer.ok ? undefined : answer.error.cause;
 
-const DAY_METHODS = { loadDay: 'promise', observeDay: 'observable' } as const;
+const DAY_METHODS = {
+  loadDay: LazyMethod.Promise,
+  observeDay: LazyMethod.Observable,
+} as const;
 
 function setUp(load: Loader) {
   const scope = lazyAdapterScope<FakeModule>('test-data', load);
@@ -205,7 +210,7 @@ function setUp(load: Loader) {
       { provide: ErrorHandler, useValue: errorHandler },
       provideLazyPort(GREETER, scope, {
         factory: greeterFactory,
-        methods: { greet: 'promise' },
+        methods: { greet: LazyMethod.Promise },
         onLoadError: unavailable,
       }),
       provideLazyPort(DAY_READ_PORTS, scope, {
@@ -281,7 +286,7 @@ describe('provideLazyPort — bundle factories', () => {
     const { days } = setUp(gatedLoader().load);
 
     expect(Object.keys(days).sort()).toEqual(['loadDay', 'observeDay']);
-    expect(Object.isFrozen(days)).toBe(true);
+    expect(isLazyPort(days)).toBe(true);
   });
 
   it('imports once and creates the SDK and each bundle once, however many calls race across two factories', async () => {
@@ -664,7 +669,10 @@ describe('provideLazyPort — the binding, at compile time', () => {
         provideLazyPort(DAY_READ_PORTS, scope, {
           factory: (m) => (injector) =>
             m.dayReadPorts(injector.get(SDK), inject(SALUTATION)),
-          methods: { loadDay: 'promise', observeDay: 'observable' },
+          methods: {
+            loadDay: LazyMethod.Promise,
+            observeDay: LazyMethod.Observable,
+          },
           onLoadError: unavailable,
         }),
       ],
@@ -693,7 +701,7 @@ describe('provideLazyPort — the binding, at compile time', () => {
         factory: greeterFactory,
         // @ts-expect-error — the class form is retired (4A-14): no `adapter` key
         adapter: pickClass,
-        methods: { greet: 'promise' },
+        methods: { greet: LazyMethod.Promise },
         onLoadError: unavailable,
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
@@ -705,19 +713,22 @@ describe('provideLazyPort — the binding, at compile time', () => {
       provideLazyPort(GREETER, scope, {
         // @ts-expect-error — the bundle does not implement the port
         factory: (m) => () => m.dayReadPorts({ id: 0 }, ''),
-        methods: { greet: 'promise' },
+        methods: { greet: LazyMethod.Promise },
         onLoadError: unavailable,
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
         factory: dayReadFactory,
         // @ts-expect-error — a member left unclassified
-        methods: { loadDay: 'promise' },
+        methods: { loadDay: LazyMethod.Promise },
         onLoadError: unavailable,
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
         factory: dayReadFactory,
-        // @ts-expect-error — a stream classified as a promise
-        methods: { loadDay: 'promise', observeDay: 'promise' },
+        methods: {
+          loadDay: LazyMethod.Promise,
+          // @ts-expect-error — a stream classified as a promise
+          observeDay: LazyMethod.Promise,
+        },
         onLoadError: unavailable,
       });
     };

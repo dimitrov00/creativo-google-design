@@ -1,7 +1,14 @@
-import { AppointmentId, LocalDate, UserId } from '@core/primitives';
+import {
+  AppointmentId,
+  LocalDate,
+  type Result,
+  UserId,
+} from '@core/primitives';
 import { BookingContact } from './booking-contact.data';
 import { BookingFlowState, BookingFlowStep } from './booking-flow.data';
 import { ChairTime } from './chair-time.data';
+import { E164 } from './e164.data';
+import { Email } from './email.data';
 import { MoveRider } from './move-rider.data';
 
 /**
@@ -41,12 +48,10 @@ function fieldOf(raw: object, name: string): unknown {
   return Object.getOwnPropertyDescriptor(raw, name)?.value;
 }
 
-/** A non-empty id the brand's smart constructor accepts. */
-function idOf<T>(
+/** A stored text the brand's smart constructor accepts, as that brand — or `null`. */
+function idOf<T, E>(
   raw: unknown,
-  parse: (
-    raw: string,
-  ) => { readonly ok: true; readonly value: T } | { readonly ok: false },
+  parse: (raw: string) => Result<T, E>,
 ): T | null {
   if (typeof raw !== 'string') return null;
   const parsed = parse(raw);
@@ -255,12 +260,8 @@ export const BookingDraft = {
     if (day !== null && draftLocalDate === null) return null;
     const contact: BookingContact = {
       contactName: textOf(fieldOf(fields, 'contactName')),
-      contactPhone: textOf(
-        fieldOf(fields, 'contactPhone'),
-      ) as BookingContact['contactPhone'],
-      contactEmail: textOf(
-        fieldOf(fields, 'contactEmail'),
-      ) as BookingContact['contactEmail'],
+      contactPhone: phoneOf(fieldOf(fields, 'contactPhone')),
+      contactEmail: emailOf(fieldOf(fields, 'contactEmail')),
       contactNote: textOf(fieldOf(fields, 'contactNote')),
     };
     const origin = originOf(fields);
@@ -285,6 +286,30 @@ export const BookingDraft = {
 /** A stored text, or `null`. */
 function textOf(raw: unknown): string | null {
   return typeof raw === 'string' ? raw : null;
+}
+
+/**
+ * A stored e-mail through its brand's smart constructor — `null` when absent
+ * or when it does not parse (pass D, D-4 row 1). The app only ever writes a
+ * canonical `Email` here (`BookingContact.create`'s `Email.parse`, or the
+ * account's stored `users.email`, itself parsed at its edge), and
+ * `Email.parse` answers a canonical address unchanged, so no draft the app
+ * wrote restores differently.
+ */
+function emailOf(raw: unknown): Email | null {
+  const text = textOf(raw);
+  return text === null ? null : Email.parse(text);
+}
+
+/**
+ * A stored phone as its brand. `E164` has no smart constructor (its one door
+ * is the by-construction `of`, OQ-14): the draft's phone was written from
+ * `PhoneSystem.parse`'s E.164 answer or the account's stored `users.phone`,
+ * never from raw input, so it is an `E164` by construction.
+ */
+function phoneOf(raw: unknown): E164 | null {
+  const text = textOf(raw);
+  return text === null ? null : E164.of(text);
 }
 
 /** The flow state's own fields of a value that carries more (a stored draft). */

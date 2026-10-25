@@ -13,10 +13,10 @@ import { fixtureHash } from '@core/testing';
 import {
   type AppointmentBody,
   DEV_CHAIR,
-  SHOP_ZONE,
   upcomingAppointmentBody,
   workedAppointmentBody,
 } from '../../e2e/support/appointment-seed-document';
+import { SHOP_ZONE } from '../../e2e/support/shop-clock';
 
 /**
  * The e2e suite's appointment seed, held to the archetype (flip 1: the

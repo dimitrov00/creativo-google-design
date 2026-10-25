@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DEV_CHAIR, SHOP_ZONE } from './support/appointment-seed-document';
+import { BarberId, LocalDate, UtcEpochMs, Weekday } from '@core/primitives';
+import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
-import { bookableDays, bookingLane, shopToday } from './support/booking-days';
+import { bookableDays, bookingLane } from './support/booking-days';
 import {
   readAppointmentsOwnedBy,
   readBarberBusyDay,
@@ -10,6 +11,7 @@ import {
   seedInbox,
   seedUserProfile,
 } from './support/seed-firestore';
+import { shopDayOf, shopToday, sure } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 
 /**
@@ -165,18 +167,15 @@ test.describe('booking core (flip 1) — live', () => {
       expect(appointment, `no root «${retired}»`).not.toHaveProperty(retired);
     }
     // The shop's wall clock and the absolute instant agree (Law 7.3).
-    expect(
-      new Intl.DateTimeFormat('en-CA', { timeZone: SHOP_ZONE }).format(startMs),
-    ).toBe(dayKey);
+    expect(shopDayOf(sure(UtcEpochMs.of(startMs), 'the start'))).toBe(dayKey);
 
     // The busy trigger projected the chair's day, and it holds the visit.
+    const chair = BarberId.of(DEV_CHAIR.barberId);
+    const bookedDay = sure(LocalDate.parse(String(dayKey)), 'the booked day');
     await expect
       .poll(
         async () => {
-          const busy = await readBarberBusyDay(
-            DEV_CHAIR.barberId,
-            String(dayKey),
-          );
+          const busy = await readBarberBusyDay(chair, bookedDay);
           const blocks = (busy?.['blocks'] ?? []) as readonly {
             startMinutes: number;
             endMinutes: number;
@@ -192,7 +191,7 @@ test.describe('booking core (flip 1) — live', () => {
         { timeout: 30_000 },
       )
       .toBe(true);
-    const busy = await readBarberBusyDay(DEV_CHAIR.barberId, String(dayKey));
+    const busy = await readBarberBusyDay(chair, bookedDay);
     expect(busy).toMatchObject({
       barberId: DEV_CHAIR.barberId,
       localDate: dayKey,
@@ -259,7 +258,9 @@ test.describe('booking core (flip 1) — live', () => {
     // Stored as the sanitized public EFFECT, every field at the root: no
     // reason, no nested effect, no zone.
     await expect
-      .poll(() => readScheduleException(DEV_CHAIR.barberId, blockDay))
+      .poll(() =>
+        readScheduleException(BarberId.of(DEV_CHAIR.barberId), blockDay),
+      )
       .toEqual({
         barberId: DEV_CHAIR.barberId,
         localDate: blockDay,
@@ -291,17 +292,15 @@ test.describe('booking core (flip 1) — live', () => {
 });
 
 /**
- * The first Monday–Thursday at least `offset` days after the shop's today,
- * `YYYY-MM-DD` — calendar arithmetic on the day key alone (UTC noon, so no
- * zone can move it).
+ * The first Monday–Thursday at least `offset` days after the shop's today
+ * — calendar arithmetic on the shop day alone (`LocalDate`, so no zone can
+ * move it).
  */
-function centerWeekdayFrom(offset: number): string {
-  const [year, month, day] = shopToday().split('-').map(Number);
-  const at = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 12));
-  at.setUTCDate(at.getUTCDate() + offset);
-  // Sunday 0 … Saturday 6; Ivan works the Center Monday (1) to Thursday (4).
-  while (at.getUTCDay() < 1 || at.getUTCDay() > 4) {
-    at.setUTCDate(at.getUTCDate() + 1);
+function centerWeekdayFrom(offset: number): LocalDate {
+  let day = LocalDate.addDays(shopToday(), offset);
+  // ISO Monday 1 … Sunday 7; Ivan works the Center Monday to Thursday.
+  while (LocalDate.weekday(day) > Weekday.Thu) {
+    day = LocalDate.addDays(day, 1);
   }
-  return at.toISOString().slice(0, 10);
+  return day;
 }

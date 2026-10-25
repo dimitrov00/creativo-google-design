@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { Weekday } from '@core/primitives';
 import { UiWeekdayPicker } from './weekday-picker';
 
 @Component({
@@ -14,7 +15,7 @@ import { UiWeekdayPicker } from './weekday-picker';
   />`,
 })
 class HostComponent {
-  readonly selected = signal<readonly number[]>([1, 3]);
+  readonly selected = signal<readonly Weekday[]>([Weekday.Mon, Weekday.Wed]);
 }
 
 describe('UiWeekdayPicker', () => {

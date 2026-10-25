@@ -236,7 +236,8 @@
   [uiColumns]="actions.length"
   data-testid="client-quick-actions"
 >
-  @for (action of actions; track action.id) { @if (action.id === 'same') {
+  @for (action of actions; track action.id) { @if (action.id ===
+  QuickActionId.Same) {
   <button
     type="button"
     uiQuickAction
@@ -338,7 +339,8 @@
 @if (overview().visits; as visits) {
 <ui-stack uiSpacing="compact" data-testid="client-visits">
   <ui-section-header uiHeaderProminence="increased">
-    <h3 uiTitle [id]="headingId('visits')">{{ w.visitsModule.title }}</h3>
+    <!-- prettier-ignore -->
+    <h3 uiTitle [id]="headingId(ClientCardRegion.Visits)">{{ w.visitsModule.title }}</h3>
     @if (visitsAction(); as action) {
     <button
       uiSectionAction
@@ -372,7 +374,7 @@
   <ng-container
     *ngTemplateOutlet="
       moduleFailed;
-      context: { $implicit: 'visits', word: w.failed.visits }
+      context: { $implicit: ClientCardRegion.Visits, word: w.failed.visits }
     "
   />
   } @case (LoadState.Ready) { @if (visits.data.last || visits.data.next ||
@@ -412,7 +414,8 @@
   @if (overview().loyalty; as loyalty) {
   <ui-stack uiSpacing="compact" data-testid="client-loyalty">
     <ui-section-header uiHeaderProminence="increased">
-      <h3 uiTitle [id]="headingId('loyalty')">{{ w.loyalty.title }}</h3>
+      <!-- prettier-ignore -->
+      <h3 uiTitle [id]="headingId(ClientCardRegion.Loyalty)">{{ w.loyalty.title }}</h3>
       @if (loyalty.loadState === LoadState.Ready) {
       <button
         uiSectionAction
@@ -445,7 +448,7 @@
     <ng-container
       *ngTemplateOutlet="
         moduleFailed;
-        context: { $implicit: 'loyalty', word: w.failed.loyalty }
+        context: { $implicit: ClientCardRegion.Loyalty, word: w.failed.loyalty }
       "
     />
     } @case (LoadState.Ready) {
@@ -463,7 +466,7 @@
   @if (overview().medals; as medals) {
   <ui-stack uiSpacing="compact" data-testid="client-achievements">
     <ui-section-header uiHeaderProminence="increased">
-      <h3 uiTitle [id]="headingId('achievements')">
+      <h3 uiTitle [id]="headingId(ClientCardRegion.Achievements)">
         {{ w.achievements.title }}
       </h3>
       @if (achievementsAction(); as action) {
@@ -498,7 +501,7 @@
     <ng-container
       *ngTemplateOutlet="
         moduleFailed;
-        context: { $implicit: 'achievements', word: w.failed.achievements }
+        context: { $implicit: ClientCardRegion.Achievements, word: w.failed.achievements }
       "
     />
     } @case (LoadState.Ready) {
@@ -519,7 +522,8 @@
 @if (overview().photos; as photos) {
 <ui-stack uiSpacing="compact" data-testid="client-photos">
   <ui-section-header uiHeaderProminence="increased">
-    <h3 uiTitle [id]="headingId('photos')">{{ w.photos.title }}</h3>
+    <!-- prettier-ignore -->
+    <h3 uiTitle [id]="headingId(ClientCardRegion.Photos)">{{ w.photos.title }}</h3>
   </ui-section-header>
   @switch (photos.loadState) { @case (LoadState.Loading) {
   <ui-grid
@@ -536,7 +540,7 @@
   <ng-container
     *ngTemplateOutlet="
       moduleFailed;
-      context: { $implicit: 'photos', word: w.failed.photos }
+      context: { $implicit: ClientCardRegion.Photos, word: w.failed.photos }
     "
   />
   } @case (LoadState.Ready) {

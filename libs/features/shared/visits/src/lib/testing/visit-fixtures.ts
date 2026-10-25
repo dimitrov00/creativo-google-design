@@ -38,6 +38,8 @@ import {
   SeatSubject,
   type ShopNow,
   SubjectRelationship,
+  VisitGrain,
+  VisitPerspective,
   VoucherCode,
   WaitlistLifecycle,
 } from '@core/components';
@@ -62,7 +64,7 @@ import {
   type UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
-import { VisitGrain, VisitPerspective, ZonedTimeSystem } from '@core/systems';
+import { ZonedTimeSystem } from '@core/systems';
 import type {
   AppointmentPhotoRecordPorts,
   ClientHistoryReadPorts,
@@ -79,7 +81,8 @@ import {
   type VisitTranslate,
   visitRowOf,
 } from '../visit-row.presenter';
-import type { VisitLookup, VisitRowVm } from '../visit-row.vm';
+import type { VisitLookup } from '../visit-lookup.contracts';
+import type { VisitRowVm } from '../visit-row.vm';
 
 /*
  * TEST SUPPORT for this library's component specs — never production API:
@@ -104,13 +107,14 @@ export const VISITS_TIME_ZONE: TimeZone = unwrapOk(
   ZonedTimeSystem.checkZone(VISITS_ZONE),
 );
 /** Георги Петров — the loyalty fixtures' uid for him (`loyaltyAccountFixtures.georgi`, `@core/testing`). */
-export const GEORGI_UID = 'dev-client-1';
+export const GEORGI_UID: UserId = UserId.of('dev-client-1');
 /** Георги's client record (D29), derived the way the pipelines derive it. */
-export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(UserId.of(GEORGI_UID));
+export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(GEORGI_UID);
 /** Иво, the companion on Георги's December party. */
-export const IVO_UID = 'dev-client-10';
+export const IVO_UID: UserId = UserId.of('dev-client-10');
 /** The appointment the staff sheet is open on: today, 10:00, with Иван. */
-export const CURRENT_APPOINTMENT_ID = 'appt-today';
+export const CURRENT_APPOINTMENT_ID: AppointmentId =
+  AppointmentId.of('appt-today');
 
 const SERVICES = new Map([
   ['svc-fade', 'Фейд'],
@@ -555,7 +559,7 @@ export function waitlistOf(
   const first = localDates[0];
   return {
     id: WaitlistRequestId.of(id),
-    ownerUserId: UserId.of(GEORGI_UID),
+    ownerUserId: GEORGI_UID,
     locationId: null,
     localDates,
     utcEpochMs:

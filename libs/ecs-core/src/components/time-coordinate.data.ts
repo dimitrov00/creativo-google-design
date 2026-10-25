@@ -42,18 +42,17 @@ export const TimeCoordinate = {
   },
 
   /**
-   * The envelope's END as an instant — the start as stored plus its sold
-   * span ({@link TimeCoordinate.durationMinutes}) of real elapsed time
-   * (T2/T9: what an `.ics` event ends at, `client-appointments.ts`
-   * `addToCalendar`). Exact for every visit that does not straddle a DST
-   * transition, which none can (the shop is closed then).
+   * The envelope's END as an instant — {@link TimeCoordinate.instantAt} of
+   * its exclusive end: the start as stored plus the wall-clock distance to
+   * the end, of real elapsed time (T2/T9: what an `.ics` event ends at,
+   * `client-appointments.ts` `addToCalendar`). Equal to the stored start plus
+   * its sold span ({@link TimeCoordinate.durationMinutes}) because a stored
+   * `endMinutes` never comes before `startMinutes`. Exact for every visit that
+   * does not straddle a DST transition, which none can (the shop is closed
+   * then).
    */
   endUtcMs(time: TimeCoordinate): UtcEpochMs {
-    const span = MinuteDelta.of(TimeCoordinate.durationMinutes(time));
-    // A MinuteCount is a non-negative safe integer, always a MinuteDelta.
-    return span.ok
-      ? UtcEpochMs.plusMinutes(time.utcEpochMs, span.value)
-      : time.utcEpochMs;
+    return TimeCoordinate.instantAt(time, time.endMinutes);
   },
 
   /** Do two bookings overlap on the shop's wall clock? Same day, intersecting minutes. */
@@ -66,23 +65,29 @@ export const TimeCoordinate = {
   },
 
   /**
-   * A seat's start as an instant — the appointment's `utcEpochMs` plus the
-   * seat's wall-clock distance from the envelope start (T9). Exact for every
-   * visit that does not straddle a 03:00/04:00 DST transition, which none
-   * can (the shop is closed then). For the per-seat late-cancellation
-   * judgement only.
+   * A minute of the visit's shop day as an instant — the appointment's
+   * stored `utcEpochMs` plus that minute's wall-clock distance from the
+   * envelope start (T9): a seat's start, the envelope's exclusive end, a
+   * chair's start or end. Exact for every visit that does not straddle a
+   * 03:00/04:00 DST transition, which none can (the shop is closed then):
+   * on Sofia's 2026-03-29 (spring forward) a stored 02:30 start read at
+   * 04:30 lands 120 elapsed minutes on where the wall clock shows 60, and on
+   * 2026-10-25 (fall back) a 03:30 start read at 04:30 lands 60 on where it
+   * shows 120 — a visit across the switch, which the shop never books.
    *
-   * GATED by G-1 (flatten-spec §0.2, §2.3 T2/T9): it exists only under ruling
-   * (a); under ruling (b) the follow-up commit deletes it and judges the
-   * seat on `(localDate, seat.startMinutes)` instead.
+   * GATED by G-1 (flatten-spec §0.2, §2.3 T2/T9): it exists only under
+   * ruling (a), for the T2 elapsed-time rules on instants — the per-seat
+   * late-cancellation judgement (`CancellationPolicySystem`), the `.ics`
+   * end ({@link TimeCoordinate.endUtcMs}), and the staff dashboard's
+   * countdown and live remaining (an elapsed-time phrase, pass D D-6.4) —
+   * NEVER placement math. Under ruling (b) the follow-up commit deletes it
+   * and judges on `(localDate, minute)` instead. (The seat-start reader of
+   * old, folded and generalised to any start or end minute, pass D D-6.5.)
    */
-  seatStartUtcMs(
-    time: TimeCoordinate,
-    seat: { readonly startMinutes: MinuteOfDay },
-  ): UtcEpochMs {
+  instantAt(time: TimeCoordinate, minute: MinuteOfDay | EndMinute): UtcEpochMs {
     return UtcEpochMs.plusMinutes(
       time.utcEpochMs,
-      MinuteDelta.between(time.startMinutes, seat.startMinutes),
+      MinuteDelta.between(time.startMinutes, minute),
     );
   },
 } as const;

@@ -1,4 +1,4 @@
-import { Result, type UtcEpochMs } from '@core/primitives';
+import { Result, Tag, type UtcEpochMs } from '@core/primitives';
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import type { EdgeError } from '../edge';
@@ -84,15 +84,11 @@ export function idOf<T>(
   return parsed.ok ? parsed.value : null;
 }
 
-/** Every store failure's code — the infrastructure, never a refusal. */
-const STORE_FAILURES: ReadonlySet<string> = new Set(
-  Object.values(RepositoryErrorCode),
-);
-
+/** Whether a failure is a store failure (any {@link RepositoryErrorCode}) — the infrastructure, never a refusal. */
 export function isStoreFailure(error: {
   readonly errorCode: string;
 }): error is RepositoryError {
-  return STORE_FAILURES.has(error.errorCode);
+  return Tag.has(RepositoryErrorCode, error.errorCode);
 }
 
 /**

@@ -1,3 +1,4 @@
+import type { AppointmentPhotoId } from '@core/primitives';
 import {
   type InputSignal,
   type InputSignalWithTransform,
@@ -68,7 +69,7 @@ describe('lib-visit-card, the public API', () => {
     >();
     expectTypeOf<VisitCard['open']>().toEqualTypeOf<OutputEmitterRef<void>>();
     expectTypeOf<VisitCard['openPhoto']>().toEqualTypeOf<
-      OutputEmitterRef<string>
+      OutputEmitterRef<AppointmentPhotoId>
     >();
   });
 });

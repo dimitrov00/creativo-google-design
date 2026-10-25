@@ -96,4 +96,39 @@ describe('laneGeometryOf', () => {
     expect(asClock(geometry.rostered)).toEqual(['08:00–10:00', '10:30–12:00']);
     expect(asClock(geometry.blocks)).toEqual(['10:00–10:30']);
   });
+
+  // DEP-10: the lane's geometry is the roster's wall clock, and the lane
+  // now carries it as it is — a window opening inside Sofia's
+  // spring-forward gap (03:00 → 04:00 on 2026-03-29) opens at its own
+  // 03:30, where the old instant round trip drew it from the gap's end.
+  it('keeps a window opening inside the spring-forward gap at its own minute', () => {
+    const sunday = unwrapOk(LocalDate.parse('2026-03-29'));
+    const schedule = barberScheduleFixture({
+      id: IVAN,
+      turnaroundMinutes: MinuteCount.ZERO,
+      versions: [
+        {
+          seq: 1,
+          effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
+          effectiveToLocalDate: null,
+          segments: [
+            ShiftSegment.of(Weekday.Sun, CENTER, at(3, 30), until(12)),
+          ],
+        },
+      ],
+    });
+    const listed = [
+      locationFixture({
+        id: CENTER,
+        openingHours: Array.from({ length: 7 }, () =>
+          DayHours.open(at(0), until(24)),
+        ),
+      }),
+    ];
+
+    const geometry = laneGeometryOf(IVAN, sunday, schedule, null, null, listed);
+
+    expect(asClock(geometry.rostered)).toEqual(['03:30–12:00']);
+    expect(geometry.blocks).toEqual([]);
+  });
 });

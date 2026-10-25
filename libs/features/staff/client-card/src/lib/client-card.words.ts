@@ -5,13 +5,18 @@ import {
   visitWaitlistWordsOf,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
-import { JournalFeed, Metric, PersonalRecordKind } from '@core/components';
-import { VisitPerspective } from '@core/systems';
+import {
+  JournalFeed,
+  Metric,
+  PersonalRecordKind,
+  VisitPerspective,
+} from '@core/components';
 import {
   pluralForm,
   type StreakPeriodReasonWord,
 } from '@creativo/infrastructure/i18n';
 import { figure, inSentence } from './client-card.format';
+import type { RecordTheme } from './client-pages.vm';
 
 /*
  * THE CARD'S WORDS — every key the presenters read, looked up ONCE per
@@ -43,13 +48,16 @@ import { figure, inSentence } from './client-card.format';
  *   presenter finds in the sentence exactly what it passed in);
  * - an absent fact is `null`: the words drop its slot WITH its joint («, »,
  *   « · »), so no sentence is assembled by hand and none ends on a comma;
- * - a member that takes one of a closed set takes it as a literal union
- *   of the card's own words: a dictionary value of ecs-core
- *   (`PersonalRecordKind.FirstVisit`, `JournalFeed.All`, …) reaches it
- *   through ONE table keyed by that dictionary (`RECORD_KIND_WORDS`,
- *   `LEDGER_FILTER_WORDS` here; `streakPeriodReasonWords` in
- *   `@creativo/infrastructure/i18n`, read by two libs), so the words and
- *   the test ids keep their spelling.
+ * - a member that takes one of a closed set takes it as a member of the
+ *   card's own word dictionary (`LoyaltyHoldingWord`, `RecordKindWord`, …
+ *   — `as const`, its VALUES the i18n key segment and the test id, an
+ *   external contract, so they keep their spelling): a dictionary value of
+ *   ecs-core (`PersonalRecordKind.FirstVisit`, `JournalFeed.All`, …)
+ *   reaches it through ONE table keyed by that dictionary
+ *   (`RECORD_KIND_WORDS`, `LEDGER_FILTER_WORDS` here;
+ *   `streakPeriodReasonWords` in `@creativo/infrastructure/i18n`, read by
+ *   two libs), and a presenter names a word by its member, never a bare
+ *   literal.
  */
 
 /** Transloco's `translate`, or anything shaped like it. */
@@ -57,73 +65,142 @@ export type ClientCardTranslate = VisitTranslate;
 
 type Params = Readonly<Record<string, string | number>>;
 
-/** What the glance's holdings line counts: a voucher's balance, a stamp card, the rhythm. */
-export type LoyaltyHoldingWord = 'voucher' | 'stamps' | 'rhythm';
+/**
+ * What the glance's holdings line counts: a voucher's balance, a stamp
+ * card, the rhythm. Values: external contract — the i18n key segment
+ * `clientCard.loyalty.holding.<word>` and the fact's test id
+ * `client-loyalty-<word>` (`HoldingFactVm.id`).
+ */
+export const LoyaltyHoldingWord = {
+  Voucher: 'voucher',
+  Stamps: 'stamps',
+  Rhythm: 'rhythm',
+} as const;
+export type LoyaltyHoldingWord =
+  (typeof LoyaltyHoldingWord)[keyof typeof LoyaltyHoldingWord];
 
 /**
  * Why a period of the rhythm is protected: a used protection, the account's
- * pause, one of the shop's excuses (`STREAK_EXCUSES`), the client's own pause
- * — the word of `@creativo/infrastructure/i18n`'s ONE table
+ * pause, one of the shop's excuses (`StreakRule.EXCUSES`), the client's own
+ * pause — the word of `@creativo/infrastructure/i18n`'s ONE table
  * (`streakPeriodReasonWords`), which the admin rhythm page reads too.
  */
 export type RhythmReasonWord = StreakPeriodReasonWord;
 
-/** The ledger page's pill, as its i18n key and its test id spell it (`JournalFeed`). */
-export type LedgerFilterWord = 'all' | 'points' | 'rewards' | 'status';
+/**
+ * The ledger page's pill. Values: external contract — the pill's test id
+ * and the i18n key segment `clientCard.ledgerPage.filter.<word>`.
+ */
+export const LedgerFilterWord = {
+  All: 'all',
+  Points: 'points',
+  Rewards: 'rewards',
+  Status: 'status',
+} as const;
+export type LedgerFilterWord =
+  (typeof LedgerFilterWord)[keyof typeof LedgerFilterWord];
 
 /** Each pill of the ledger (`JournalFeed`) as the card words it: the SAME words and test ids as before the flip. */
 export const LEDGER_FILTER_WORDS = {
-  [JournalFeed.All]: 'all',
-  [JournalFeed.Points]: 'points',
-  [JournalFeed.Rewards]: 'rewards',
-  [JournalFeed.Status]: 'status',
+  [JournalFeed.All]: LedgerFilterWord.All,
+  [JournalFeed.Points]: LedgerFilterWord.Points,
+  [JournalFeed.Rewards]: LedgerFilterWord.Rewards,
+  [JournalFeed.Status]: LedgerFilterWord.Status,
 } as const satisfies Record<JournalFeed, LedgerFilterWord>;
 
-/** The account's four records, as the card's keys and test ids spell them (`PersonalRecordKind`). */
+/**
+ * What a ledger row says happened (`clientCard.ledger.verb.<word>`).
+ * Values: external contract (that i18n key segment).
+ */
+export const LedgerVerbWord = {
+  Earned: 'earned',
+  Bonus: 'bonus',
+  Spent: 'spent',
+  Adjusted: 'adjusted',
+  Reversed: 'reversed',
+  Expired: 'expired',
+  DebtCleared: 'debtCleared',
+  Voided: 'voided',
+  Received: 'received',
+  Status: 'status',
+} as const;
+export type LedgerVerbWord =
+  (typeof LedgerVerbWord)[keyof typeof LedgerVerbWord];
+
+/**
+ * The account's four records, as the card's keys and test ids spell them
+ * (`PersonalRecordKind`). Values: external contract — the i18n key
+ * segments (`clientCard.records.label.<word>`, …) and the record's test id
+ * and `data-kind`.
+ */
+export const RecordKindWord = {
+  LongestRhythm: 'longestRhythm',
+  MostVisitsInYear: 'mostVisitsInYear',
+  FavouriteService: 'favouriteService',
+  FirstVisit: 'firstVisit',
+} as const;
 export type RecordKindWord =
-  'longestRhythm' | 'mostVisitsInYear' | 'favouriteService' | 'firstVisit';
+  (typeof RecordKindWord)[keyof typeof RecordKindWord];
 
 /** Each record kind (`PersonalRecordKind`) as the card words it: its i18n keys and test ids. */
 export const RECORD_KIND_WORDS = {
-  [PersonalRecordKind.LongestRhythm]: 'longestRhythm',
-  [PersonalRecordKind.MostVisitsInYear]: 'mostVisitsInYear',
-  [PersonalRecordKind.FavouriteService]: 'favouriteService',
-  [PersonalRecordKind.FirstVisit]: 'firstVisit',
+  [PersonalRecordKind.LongestRhythm]: RecordKindWord.LongestRhythm,
+  [PersonalRecordKind.MostVisitsInYear]: RecordKindWord.MostVisitsInYear,
+  [PersonalRecordKind.FavouriteService]: RecordKindWord.FavouriteService,
+  [PersonalRecordKind.FirstVisit]: RecordKindWord.FirstVisit,
 } as const satisfies Record<PersonalRecordKind, RecordKindWord>;
 
-/** The records page's five rows that are not a record of the account's. */
-export type RecordRowWord =
-  | 'currentRhythm'
-  | 'totalVisits'
-  | 'last12Months'
-  | 'preferredBarber'
-  | 'usualServices';
+/**
+ * The records page's five rows that are not a record of the account's.
+ * Values: external contract — the i18n key segment
+ * `clientCard.records.row.<word>` and the row's test id.
+ */
+export const RecordRowWord = {
+  CurrentRhythm: 'currentRhythm',
+  TotalVisits: 'totalVisits',
+  Last12Months: 'last12Months',
+  PreferredBarber: 'preferredBarber',
+  UsualServices: 'usualServices',
+} as const;
+export type RecordRowWord = (typeof RecordRowWord)[keyof typeof RecordRowWord];
 
-/** The records page's groups. */
-export type RecordThemeWord = 'rhythm' | 'visits' | 'favourites';
-
-/** «Как се печели»: the sentence of a metric that names no subject. */
+/**
+ * «Как се печели»: the sentence of a metric that names no subject. Values:
+ * external contract — the i18n key segments `clientCard.achievement.how.<word>`
+ * and `….what.<word>`.
+ */
+export const AchievementHowWord = {
+  Visits: 'visits',
+  EarlyBird: 'earlyBird',
+  Weekend: 'weekend',
+  OnTime: 'onTime',
+  Party: 'party',
+  SelfService: 'selfService',
+  Waitlist: 'waitlist',
+  Referrals: 'referrals',
+  Services: 'services',
+  Barbers: 'barbers',
+  Shops: 'shops',
+  Months: 'months',
+  Spend: 'spend',
+  Points: 'points',
+  Tenure: 'tenure',
+  ShopBookings: 'shopBookings',
+} as const;
 export type AchievementHowWord =
-  | 'visits'
-  | 'earlyBird'
-  | 'weekend'
-  | 'onTime'
-  | 'party'
-  | 'selfService'
-  | 'waitlist'
-  | 'referrals'
-  | 'services'
-  | 'barbers'
-  | 'shops'
-  | 'months'
-  | 'spend'
-  | 'points'
-  | 'tenure'
-  | 'shopBookings';
+  (typeof AchievementHowWord)[keyof typeof AchievementHowWord];
 
-/** «Как се печели»: who and where, by what the family leaves open. */
+/**
+ * «Как се печели»: who and where, by what the family leaves open. Values:
+ * external contract — the i18n key segment `clientCard.achievement.who.<word>`.
+ */
+export const AchievementWhoWord = {
+  AnyBarberAnyShop: 'anyBarberAnyShop',
+  AnyServiceAnyShop: 'anyServiceAnyShop',
+  AnyBarberAnyService: 'anyBarberAnyService',
+} as const;
 export type AchievementWhoWord =
-  'anyBarberAnyShop' | 'anyServiceAnyShop' | 'anyBarberAnyService';
+  (typeof AchievementWhoWord)[keyof typeof AchievementWhoWord];
 
 /**
  * A family's metric by its id in the loyalty catalogue — ecs-core's
@@ -145,37 +222,37 @@ export function achievementMetricWord(
 ): AchievementHowWord {
   switch (metric) {
     case Metric.VisitsCompleted:
-      return 'visits';
+      return AchievementHowWord.Visits;
     case Metric.BookingsSelfService:
-      return 'selfService';
+      return AchievementHowWord.SelfService;
     case Metric.SpendMajor:
-      return 'spend';
+      return AchievementHowWord.Spend;
     case Metric.ReferralsCompleted:
-      return 'referrals';
+      return AchievementHowWord.Referrals;
     case Metric.WaitlistBooked:
-      return 'waitlist';
+      return AchievementHowWord.Waitlist;
     case Metric.PointsLifetime:
-      return 'points';
+      return AchievementHowWord.Points;
     case Metric.ShopBookingsCreated:
-      return 'shopBookings';
+      return AchievementHowWord.ShopBookings;
     case Metric.ServicesDistinct:
-      return 'services';
+      return AchievementHowWord.Services;
     case Metric.BarbersDistinct:
-      return 'barbers';
+      return AchievementHowWord.Barbers;
     case Metric.LocationsDistinct:
-      return 'shops';
+      return AchievementHowWord.Shops;
     case Metric.MonthsDistinct:
-      return 'months';
+      return AchievementHowWord.Months;
     case Metric.VisitsEarlyBird:
-      return 'earlyBird';
+      return AchievementHowWord.EarlyBird;
     case Metric.VisitsWeekend:
-      return 'weekend';
+      return AchievementHowWord.Weekend;
     case Metric.VisitsOnTime:
-      return 'onTime';
+      return AchievementHowWord.OnTime;
     case Metric.VisitsParty:
-      return 'party';
+      return AchievementHowWord.Party;
     case Metric.TenureDays:
-      return 'tenure';
+      return AchievementHowWord.Tenure;
   }
 }
 
@@ -543,19 +620,7 @@ export interface ClientCardWords {
     readonly emptyFiltered: string;
   };
   readonly ledger: {
-    readonly verb: (
-      verb:
-        | 'earned'
-        | 'bonus'
-        | 'spent'
-        | 'adjusted'
-        | 'reversed'
-        | 'expired'
-        | 'debtCleared'
-        | 'voided'
-        | 'received'
-        | 'status',
-    ) => string;
+    readonly verb: (verb: LedgerVerbWord) => string;
     readonly visit: string;
     /** «Посещение: Фейд, Оформяне на брада» — a visit row's spoken source. */
     readonly visitOf: (services: string) => string;
@@ -582,7 +647,7 @@ export interface ClientCardWords {
   /** «Рекорди»: the four cards on «Постижения» and the page of their own. */
   readonly records: {
     /** «Ритъм» · «Посещения» · «Любими» — a group's heading. */
-    readonly group: (theme: RecordThemeWord) => string;
+    readonly group: (theme: RecordTheme) => string;
     /** «По години» */
     readonly byYear: string;
     /** «Ритъм сега» · «Общо посещения» · … — a row that is not a record of the account's. */
@@ -604,7 +669,7 @@ export interface ClientCardWords {
      * date, its words take none.
      */
     readonly sentence: (
-      kind: Exclude<RecordKindWord, 'favouriteService'>,
+      kind: Exclude<RecordKindWord, typeof RecordKindWord.FavouriteService>,
       count?: number,
     ) => string;
     /**
@@ -669,13 +734,7 @@ export interface ClientCardWords {
     readonly seasonEnded: string;
     /** «Сезонът приключи на ниво III.» — heard only (a track's or a ladder's value text): the level is drawn. */
     readonly seasonEndedAt: (level: string) => string;
-    readonly record: (
-      kind:
-        | 'longestRhythm'
-        | 'mostVisitsInYear'
-        | 'favouriteService'
-        | 'firstVisit',
-    ) => string;
+    readonly record: (kind: RecordKindWord) => string;
     readonly favouriteValue: (service: string, count: string) => string;
     /** «×24» — the favourite service's figure: a count of times. */
     readonly favouriteCount: (count: string) => string;
@@ -1228,12 +1287,12 @@ export function clientCardWordsOf(
       filterLabel: t('clientCard.ledgerPage.filter.label'),
       filter: (kind) => {
         switch (kind) {
-          case 'all':
+          case LedgerFilterWord.All:
             return t('clientCard.loyalty.all');
-          case 'status':
+          case LedgerFilterWord.Status:
             return t('clientCard.loyaltyPage.tier');
-          case 'points':
-          case 'rewards':
+          case LedgerFilterWord.Points:
+          case LedgerFilterWord.Rewards:
             return t(`clientCard.ledgerPage.filter.${kind}`);
         }
       },
@@ -1286,7 +1345,7 @@ export function clientCardWordsOf(
           record: record ? t('clientCard.records.recordSuffix') : '',
         }),
       sentence: (kind, count) =>
-        kind === 'firstVisit'
+        kind === RecordKindWord.FirstVisit
           ? t('clientCard.records.sentence.firstVisit')
           : t(`clientCard.records.sentence.${kind}.${formOf(count)}`),
       sentenceFavourite: (service, count) =>

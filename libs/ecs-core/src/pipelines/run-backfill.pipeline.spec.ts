@@ -6,6 +6,7 @@ import {
   AuditTargetRef,
   BackfillJobName,
   BackfillOutcome,
+  BackfillStart,
   BookingLifecycle,
   BookingPolicy,
   type DocBody,
@@ -36,7 +37,7 @@ import {
   Collections,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
-import { BackfillStart, type BackfillRequest } from '@core/systems';
+import type { BackfillRequest } from '@core/systems';
 import {
   appointmentFixture,
   customerOf,

@@ -1,17 +1,19 @@
-import { type GovernanceCall, parseImpersonationScope } from '@core/components';
 import {
   ImpersonationSessionId,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import { GovernanceError } from '@core/errors';
+import {
+  type EndImpersonationError,
+  GovernanceError,
+  type StartImpersonationError,
+} from '@core/errors';
+import { type GovernanceCall, ImpersonationLifecycle } from '@core/components';
 import {
   admitImpersonationCaller,
   type EndImpersonationCommand,
-  type EndImpersonationError,
   type StartImpersonationCommand,
-  type StartImpersonationError,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
@@ -62,7 +64,7 @@ export function decodeStartImpersonation(
   const payload = payloadOf(request);
   const target = UserId.parse(sentText(payload, 'targetUserId'));
   if (!target.ok) return Result.err(target.error);
-  const scope = parseImpersonationScope(
+  const scope = ImpersonationLifecycle.parseScope(
     sentText(payload, 'impersonationScope'),
   );
   if (!scope.ok) return Result.err(scope.error);

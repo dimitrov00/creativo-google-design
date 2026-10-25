@@ -1,18 +1,10 @@
-import { Seat, SeatSubject, type AccountOccupant } from '@core/components';
+import {
+  ClientQueryShape,
+  Seat,
+  SeatSubject,
+  type AccountOccupant,
+} from '@core/components';
 import { UtcEpochMs, type UserId } from '@core/primitives';
-
-/**
- * Which part of a typed query leads the lookup — the field
- * `clientQueryShape` (N15), the ONLY source of these strings.
- */
-export const ClientQueryShape = {
-  Empty: 'EMPTY',
-  Name: 'NAME',
-  Phone: 'PHONE',
-  Email: 'EMAIL',
-} as const;
-export type ClientQueryShape =
-  (typeof ClientQueryShape)[keyof typeof ClientQueryShape];
 
 /**
  * One omnibox entry, read apart (`visit-editor/client-query.ts:17-50`): the

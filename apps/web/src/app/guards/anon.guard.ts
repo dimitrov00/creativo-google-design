@@ -1,8 +1,9 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { RouteGate, SessionAccessSystem } from '@core/systems';
+import { SessionAccessSystem } from '@core/systems';
 import { routeFor } from './access';
 import { ensureSessionReady } from './session';
+import { RouteGate } from '@core/components';
 
 /**
  * Blueprint §1.4's `/onboarding` guard ("anonGate anon → /auth") — only

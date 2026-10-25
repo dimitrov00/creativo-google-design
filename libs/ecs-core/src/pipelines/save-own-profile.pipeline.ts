@@ -1,31 +1,29 @@
 import type { ProfileEdits } from '@core/components';
-import { AccountsErrorCode } from '@core/errors';
+import { Result } from '@core/primitives';
+import { AccountsError, AccountsErrorCode } from '@core/errors';
 import { Callables, type GatewayPorts } from '@core/ports';
 
 export type SaveOwnProfilePorts = GatewayPorts;
 
-/** The edit refusals whose `errors.` keys word themselves — passed through as the server named them. */
-const EDIT_REFUSALS = [
-  AccountsErrorCode.UpdateProfileNotFound,
-  AccountsErrorCode.UpdateProfileValidationFailed,
-] as const;
-
-/** A refusal of the edit itself, as the server named it. */
-type EditRefusal = (typeof EDIT_REFUSALS)[number];
-
 /**
- * What a failed own-profile save answers — the code the screen translates
- * (`errors.<code>`): the edit's own refusal, or the ONE failed-write copy.
+ * The server's code as the edit's own refusal — `ACCOUNTS_UPDATE_PROFILE_
+ * NOT_FOUND` / `_VALIDATION_FAILED`, the two whose `errors.` keys word
+ * themselves — else `null`.
  */
-export type SaveOwnProfileRefusal =
-  EditRefusal | typeof AccountsErrorCode.UpdateProfileRepositoryFailure;
-
-/** The server's code when it is one of {@link EDIT_REFUSALS}, else `null` (linear scan of two). */
-function editRefusalOf(code: string | null): EditRefusal | null {
-  for (const refusal of EDIT_REFUSALS) {
-    if (refusal === code) return refusal;
+function editRefusalOf(
+  code: string | null,
+):
+  | AccountsError.UpdateProfileNotFound
+  | AccountsError.UpdateProfileValidationFailed
+  | null {
+  switch (code) {
+    case AccountsErrorCode.UpdateProfileNotFound:
+      return AccountsError.updateProfileNotFound();
+    case AccountsErrorCode.UpdateProfileValidationFailed:
+      return AccountsError.updateProfileValidationFailed();
+    default:
+      return null;
   }
-  return null;
 }
 
 /**
@@ -39,7 +37,8 @@ function editRefusalOf(code: string | null): EditRefusal | null {
  * edit that changes nothing writes nothing. `users/{uid}` refuses every
  * client update.
  *
- * Answers `null` on success, else the code the screen translates: the
+ * Answers `Result.ok` on success, else the refusal the screen translates
+ * (`AccountsError.OwnProfileSave`, pass D §2.11, `errors.<errorCode>`): the
  * server's `ACCOUNTS_UPDATE_PROFILE_NOT_FOUND` / `_VALIDATION_FAILED` (the
  * refusal allowlist), and `ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE` for
  * every other failure that is not a refusal of the edit itself — a store
@@ -50,11 +49,13 @@ function editRefusalOf(code: string | null): EditRefusal | null {
  */
 export const saveOwnProfile =
   (ports: SaveOwnProfilePorts) =>
-  async (edits: ProfileEdits): Promise<SaveOwnProfileRefusal | null> => {
+  async (
+    edits: ProfileEdits,
+  ): Promise<Result<void, AccountsError.OwnProfileSave>> => {
     const written = await ports.callableClient(Callables.UpdateProfile)(edits);
-    if (written.ok) return null;
-    return (
+    if (written.ok) return Result.ok(undefined);
+    return Result.err(
       editRefusalOf(written.error.serverErrorCode) ??
-      AccountsErrorCode.UpdateProfileRepositoryFailure
+        AccountsError.updateProfileRepositoryFailure(),
     );
   };

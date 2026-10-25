@@ -1,3 +1,6 @@
+import { Tag } from '@core/primitives';
+import type { RegistrationFields } from './registration-fields.data';
+
 /**
  * Registration tags — the ONLY source of these strings, the plain tag field
  * `registrationState` of `users/{uid}` (flatten-spec §3.7: a tag, not a
@@ -14,7 +17,7 @@ export type RegistrationState =
 
 /**
  * The fields a person may be asked for during registration — the identity
- * `REGISTRATION_FIELDS` vocabulary, re-shaped from a tuple into the
+ * `REGISTRATION_FIELDS` vocabulary (listed in order as `Registration.FIELDS`), re-shaped from a tuple into the
  * dictionary. Its values ARE the user document's field names, so they stay
  * as they are (flatten-spec §3.7). Which of them a deployment REQUIRES is
  * `AuthStrategy.required`; `birthDate` exists so a strategy MAY require it
@@ -30,29 +33,6 @@ export const RegistrationField = {
 export type RegistrationField =
   (typeof RegistrationField)[keyof typeof RegistrationField];
 
-/** Every registration field, dictionary order — derived, never a second source. */
-export const REGISTRATION_FIELDS: readonly RegistrationField[] =
-  Object.values(RegistrationField);
-
-/** The edge guard for an untrusted value (a strategy config entry, a form key). */
-export function isRegistrationField(
-  value: unknown,
-): value is RegistrationField {
-  for (let i = 0; i < REGISTRATION_FIELDS.length; i++) {
-    if (REGISTRATION_FIELDS[i] === value) return true;
-  }
-  return false;
-}
-
-/**
- * The raw values an about step submits, one per field, every key present —
- * `null` for a field the form did not collect (today's
- * `Partial<Record<RegistrationField, string>>`, without the optional keys).
- */
-export type RegistrationFields = {
-  readonly [K in RegistrationField]: string | null;
-};
-
 /**
  * Where `users/{uid}` stands — the slice holding the plain tag field
  * `registrationState` (blueprint §2.6): the provision stub and the
@@ -66,6 +46,24 @@ export type Registration = {
 };
 
 export const Registration = {
+  /**
+   * Every registration field, in the order the form, the strategy checks and
+   * `registration.system.ts` walk them — an EXPLICIT list (pass D, D-7.2:
+   * a list whose order is observed stays spelled out, never re-derived).
+   */
+  FIELDS: [
+    RegistrationField.Phone,
+    RegistrationField.Email,
+    RegistrationField.FirstName,
+    RegistrationField.LastName,
+    RegistrationField.BirthDate,
+  ],
+
+  /** The edge guard for an untrusted value (a strategy config entry, a form key). */
+  isField(value: unknown): value is RegistrationField {
+    return Tag.has(RegistrationField, value);
+  },
+
   /** Whether the account finished registering — reads the slice of any user. */
   isRegistered(registration: Registration): boolean {
     return registration.registrationState === RegistrationState.Registered;

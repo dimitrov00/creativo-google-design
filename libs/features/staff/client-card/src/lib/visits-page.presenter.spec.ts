@@ -1,5 +1,6 @@
 import type { ClientStatsRecord } from '@core/entities';
-import { VisitFilter, VisitRowOutcome } from '@core/systems';
+import { VisitFilter, VisitRowOutcome } from '@core/components';
+import { AppointmentId, UserId } from '@core/primitives';
 import {
   TrailingFactFace,
   type VisitRowVm,
@@ -88,12 +89,12 @@ function georgiInput(
 ): HistoryRowsInput {
   return {
     appointments: GEORGI_BOOK,
-    subjectUserId: GEORGI,
+    subjectUserId: UserId.of(GEORGI),
     subjectCustomerId: GEORGI_CUSTOMER_ID,
-    currentAppointmentId: 'appt-dev-1',
+    currentAppointmentId: AppointmentId.of('appt-dev-1'),
     now: NOW,
     timeZone: SHOP_TIME_ZONE,
-    photoCounts: new Map([['appt-hist-c1-23', 1]]),
+    photoCounts: new Map([[AppointmentId.of('appt-hist-c1-23'), 1]]),
     clientWords: true,
     catalog: SHOP_CATALOG,
     words: WORDS,
@@ -106,7 +107,7 @@ function martinInput(
 ): HistoryRowsInput {
   return georgiInput({
     appointments: MARTIN_BOOK,
-    subjectUserId: MARTIN,
+    subjectUserId: UserId.of(MARTIN),
     subjectCustomerId: MARTIN_CUSTOMER_ID,
     currentAppointmentId: MARTIN_TODAY_ID,
     photoCounts: new Map(),
@@ -177,7 +178,7 @@ const rowsOf = (sections: readonly VisitSectionVm[]): readonly VisitRowVm[] =>
 describe('the rows, by month', () => {
   it('files a visit under its month, the weekday on its tile, the face trailing and the staff’s fact on the second line', () => {
     const rows = new Map(visitsRows(georgiInput()).map((row) => [row.id, row]));
-    expect(rows.get('appt-hist-c1-23')).toMatchObject({
+    expect(rows.get(AppointmentId.of('appt-hist-c1-23'))).toMatchObject({
       sectionKey: '2026-09',
       upcoming: false,
       // The section says the month and the year: the tile says the rest.
@@ -264,7 +265,7 @@ describe('the rows, by month', () => {
     expect(own?.quote).toBe('„Къса отстрани“');
     // The same book on someone else's card (a party member's): the words
     // are the booker's, and stay off the row.
-    const rows = visitsRows(martinInput({ subjectUserId: GEORGI }));
+    const rows = visitsRows(martinInput({ subjectUserId: UserId.of(GEORGI) }));
     expect(rows).toHaveLength(MARTIN_BOOK.length);
     expect(rows.every((row) => row.quote === null)).toBe(true);
   });

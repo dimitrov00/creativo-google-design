@@ -6,8 +6,10 @@ import {
   LocalDate,
   EndMinute,
   MinuteOfDay,
+  type TrackMinute,
 } from '@core/primitives';
 import {
+  GridEvent,
   MinuteRange,
   PlacementVerdict,
   Seat,
@@ -23,17 +25,6 @@ import { IntervalSetSystem } from './interval-set.system';
  * shortest service and over its turnaround.
  */
 const SHORTEST_SELLABLE_MINUTES = 20;
-
-/** What a block in a grid column is — the field `gridEvent`, the ONLY source of these strings. */
-export const GridEvent = {
-  /** A booking. */
-  Visit: 'VISIT',
-  /** A sellable hole — the ABSENCE of a booking, never a collision. */
-  Gap: 'GAP',
-  /** Time carved OUT of the worked day (a break, an admin hour). */
-  Block: 'BLOCK',
-} as const;
-export type GridEvent = (typeof GridEvent)[keyof typeof GridEvent];
 
 /**
  * A seat as the occupancy reads it — a `Seat` satisfies it as is: its
@@ -106,8 +97,8 @@ export type LaneSlot = {
  * midnight. A frame's block, window or neighbour satisfies it as it is.
  */
 export type TrackSpan = {
-  readonly startMinute: number;
-  readonly endMinute: number;
+  readonly startMinute: TrackMinute;
+  readonly endMinute: TrackMinute;
 };
 
 /** A block of a frame column on the track axis — the grid's event satisfies it as is. */

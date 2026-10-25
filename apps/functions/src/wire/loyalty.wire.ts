@@ -1,7 +1,18 @@
 import {
+  ClientOperationId,
+  LocalDate,
+  PublishRequestId,
+  Result,
+  ServiceCategoryId,
+  ServiceId,
+  StreakDefinitionId,
+  Tag,
+  type UserId,
+} from '@core/primitives';
+import { StreakPublishError, StreakRuleField } from '@core/errors';
+import {
   type Actor,
-  STREAK_EXCUSES,
-  type StreakExcuse,
+  StreakExcuse,
   StreakInterval,
   StreakIntervalRule,
   StreakOnBreak,
@@ -11,22 +22,6 @@ import {
   type StreakRuleInput,
   StreakTransition,
 } from '@core/components';
-import {
-  ClientOperationId,
-  LocalDate,
-  PublishRequestId,
-  Result,
-  ServiceCategoryId,
-  ServiceId,
-  StreakDefinitionId,
-  type UserId,
-} from '@core/primitives';
-import {
-  type RepositoryError,
-  StreakPublishError,
-  StreakPublishErrorCode,
-  StreakRuleField,
-} from '@core/errors';
 import type { LogPorts } from '@core/ports';
 import { StreakPublishSystem } from '@core/systems';
 import {
@@ -80,26 +75,6 @@ import {
 /** What the callable answers. */
 export type StreakPublishAnswer = StreakPublishCall.Answer;
 
-/** Every way a request is not written. */
-export type StreakPublishFailure =
-  StreakPublishError | StreakPublishError.InvalidInput | RepositoryError;
-
-/** The refusals the callable ANSWERS (its faults and a missing caller it throws). */
-const ANSWERED: ReadonlySet<string> = new Set([
-  StreakPublishErrorCode.CallerNotAdmin,
-  StreakPublishErrorCode.Stale,
-  StreakPublishErrorCode.Invalid,
-  StreakPublishErrorCode.TooEarly,
-  StreakPublishErrorCode.RecomputeNeedsEngine,
-  StreakPublishErrorCode.PreviewStale,
-]);
-
-function isAnsweredRefusal(
-  failure: StreakPublishFailure,
-): failure is StreakPublishCall.AnsweredError {
-  return ANSWERED.has(failure.errorCode);
-}
-
 /**
  * A refusal or a failure → the answer (`Result.ok`, the page words it) or
  * the fault (`Result.err`, the edge throws it): the five rule refusals and
@@ -111,7 +86,7 @@ function isAnsweredRefusal(
  * `LOYALTY_STREAK_PUBLISH_STORE_FAILED`, the cause never in `details`.
  */
 export function publishStreakRefusal(
-  failure: StreakPublishFailure,
+  failure: StreakPublishError.Failure,
   ports: LogPorts,
 ): Result<StreakPublishAnswer, EdgeError> {
   if (isStoreFailure(failure)) {
@@ -120,14 +95,14 @@ export function publishStreakRefusal(
     });
     return Result.err(StreakPublishError.storeFailed());
   }
-  return isAnsweredRefusal(failure)
+  return StreakPublishError.isAnswered(failure)
     ? Result.ok(StreakPublishCall.refused(failure))
     : Result.err(failure);
 }
 
 /** A pipeline's answer, as the wire carries it. */
 function settleStreakAnswer<A>(
-  result: Result<A, StreakPublishFailure>,
+  result: Result<A, StreakPublishError.Failure>,
   encode: (answer: A) => StreakPublishAnswer,
   ports: LogPorts,
 ): Result<StreakPublishAnswer, EdgeError> {
@@ -226,16 +201,13 @@ function malformed(
   return Result.err(StreakPublishError.invalidInput(name));
 }
 
-/** A dictionary's value, or `null` for anything else. */
-function wordOf<K extends string>(
-  values: readonly K[],
+/** A dictionary's member ({@link Tag.has}, the one membership scan), or `null` for anything else. */
+function wordOf<D extends Readonly<Record<string, string>>>(
+  d: D,
   raw: unknown,
-): K | null {
-  return values.find((value) => value === raw) ?? null;
+): Tag<D> | null {
+  return Tag.has(d, raw) ? raw : null;
 }
-
-const TRANSITIONS: readonly StreakTransition[] =
-  Object.values(StreakTransition);
 
 /**
  * The request in order: the caller first — somebody who may not change the
@@ -244,7 +216,7 @@ const TRANSITIONS: readonly StreakTransition[] =
  */
 export function decodeStreakPublish(
   request: WireRequest,
-): Result<StreakPublishAsk, StreakPublishFailure> {
+): Result<StreakPublishAsk, StreakPublishError.Failure> {
   const caller = decodeStreakCaller(request);
   const admitted = StreakPublishSystem.admitCaller(
     caller.callerUserId,
@@ -300,7 +272,10 @@ export function decodeStreakRequest(
   if (!isRecord(rule) || JSON.stringify(rule).length > RULE_MAX_BYTES) {
     return malformed('rule');
   }
-  const streakTransition = wordOf(TRANSITIONS, field(raw, 'streakTransition'));
+  const streakTransition = wordOf(
+    StreakTransition,
+    field(raw, 'streakTransition'),
+  );
   if (streakTransition === null) return malformed('streakTransition');
   const previewHash = field(raw, 'previewHash') ?? null;
   if (
@@ -360,14 +335,14 @@ function switchAt(reader: RuleReader, rule: Payload, name: string): boolean {
   return false;
 }
 
-function wordAt<K extends string>(
+function wordAt<D extends Readonly<Record<string, string>>>(
   reader: RuleReader,
   rule: Payload,
   name: string,
-  values: readonly K[],
-  placeholder: K,
-): K {
-  const value = wordOf(values, field(rule, name));
+  d: D,
+  placeholder: Tag<D>,
+): Tag<D> {
+  const value = wordOf(d, field(rule, name));
   if (value !== null) return value;
   faultAt(reader, name);
   return placeholder;
@@ -400,7 +375,7 @@ function excusesAt(reader: RuleReader, rule: Payload): readonly StreakExcuse[] {
   }
   const excuses: StreakExcuse[] = [];
   for (const entry of value as readonly unknown[]) {
-    const excuse = wordOf(STREAK_EXCUSES, entry);
+    const excuse = wordOf(StreakExcuse, entry);
     if (excuse === null) {
       faultAt(reader, StreakRuleField.Excuses);
       return [];
@@ -410,10 +385,6 @@ function excusesAt(reader: RuleReader, rule: Payload): readonly StreakExcuse[] {
   return excuses;
 }
 
-const QUALIFIERS: readonly StreakQualifier[] = Object.values(StreakQualifier);
-const INTERVALS: readonly StreakInterval[] = Object.values(StreakInterval);
-const ON_BREAKS: readonly StreakOnBreak[] = Object.values(StreakOnBreak);
-
 function qualifierAt(reader: RuleReader, rule: Payload): StreakQualifierRule {
   // A service or category the list names is a reference the rule's own door
   // (`StreakRule.parse`) judges — non-blank and listed once.
@@ -422,7 +393,7 @@ function qualifierAt(reader: RuleReader, rule: Payload): StreakQualifierRule {
       reader,
       rule,
       StreakRuleField.QualifierKind,
-      QUALIFIERS,
+      StreakQualifier,
       StreakQualifier.AnyVisit,
     )
   ) {
@@ -448,7 +419,7 @@ function intervalAt(reader: RuleReader, rule: Payload): StreakIntervalRule {
     reader,
     rule,
     StreakRuleField.IntervalKind,
-    INTERVALS,
+    StreakInterval,
     StreakInterval.Fixed,
   );
   if (kind === StreakInterval.Fixed) {
@@ -529,7 +500,7 @@ export function decodeRule(
     reader,
     rule,
     StreakRuleField.OnBreak,
-    ON_BREAKS,
+    StreakOnBreak,
     StreakOnBreak.Restart,
   );
 

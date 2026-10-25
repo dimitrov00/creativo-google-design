@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ClientQueryShape } from '@core/systems';
+import { ClientQueryShape } from '@core/components';
 import {
   clientLookupKeys,
   emailSegments,

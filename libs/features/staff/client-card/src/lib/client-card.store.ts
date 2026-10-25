@@ -12,7 +12,6 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
 import type { Subscription } from 'rxjs';
-import { map, switchMap } from 'rxjs/operators';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -28,12 +27,16 @@ import type {
   WaitlistRequest,
 } from '@core/entities';
 import {
-  AppointmentId,
+  type AppointmentId,
+  AppointmentPhotoId,
+  BadgeSeriesId,
   CustomerId,
+  type LocalDate,
   Result,
+  ServiceId,
   type TimeZone,
   UtcEpochMs,
-  UserId,
+  type UserId,
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import {
@@ -42,8 +45,9 @@ import {
   Registration,
   type ShopNow,
   type VisitFact,
-  readsClientWords,
-  seesClientSpend,
+  VisitFilter,
+  Roles,
+  VisitRowOutcome,
 } from '@core/components';
 import {
   ClientStatsSystem,
@@ -52,8 +56,6 @@ import {
   StreakSystem,
   type StreakRuleSummary,
   type ValidLoyaltyCatalog,
-  VisitFilter,
-  VisitRowOutcome,
   WalletSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -88,10 +90,11 @@ import {
 import {
   AchievementScope,
   type ClientCardContext,
-  type ClientCardRegion,
+  ClientCardPage,
+  ClientCardRegion,
   type ClientCardSubject,
 } from './client-card.contracts';
-import { cardLocaleOf, dayShort, shopDayOf } from './client-card.format';
+import { cardLocaleOf, dayShort } from './client-card.format';
 import {
   clientPhotoVm,
   displayNameOf,
@@ -115,7 +118,12 @@ import {
   type VisitsPageVm,
   type WalletVm,
 } from './client-pages.vm';
-import { LoadSlice, LoadState, PagingState } from '@creativo/shared/view-state';
+import {
+  LoadSlice,
+  LoadState,
+  PagingState,
+  timedRead,
+} from '@creativo/shared/view-state';
 import {
   type ClientCardTranslate,
   type ClientCardWords,
@@ -137,6 +145,7 @@ import {
 } from './history.presenter';
 import {
   LEDGER_PAGE_READ,
+  type VisitNames,
   ledgerPageVm,
   wholeMonthsOf,
 } from './ledger.presenter';
@@ -154,6 +163,7 @@ import {
   visitsPaging,
 } from './visits-page.presenter';
 import { WALLET_ACTIVITY_READ, walletVm } from './wallet.presenter';
+import { loadedLanguage } from '@creativo/infrastructure/i18n';
 
 /** Every read settles within this, or counts as failed (§5.2.1). */
 export const CLIENT_CARD_READ_TIMEOUT_MS = 10_000;
@@ -183,12 +193,23 @@ function factInstant(fact: VisitFact, zone: TimeZone): UtcEpochMs {
     : ZonedTimeSystem.startOfLocalDay(fact.localDate, zone);
 }
 
+/** Each day's names, the repeats of one day once, joined in their order («Иван, Никола»). */
+function joinedByDay(
+  byDay: ReadonlyMap<LocalDate, readonly string[]>,
+): ReadonlyMap<LocalDate, string> {
+  return new Map(
+    [...byDay].map(([day, names]) => [day, [...new Set(names)].join(', ')]),
+  );
+}
+
 /** A read's answer as the store settles it — the ports' plain `Result`. */
 type ReadAnswer<T> = Result<T, unknown>;
 
-/** A read that did not answer in time (`CLIENT_CARD_READ_TIMEOUT_MS`), or threw. */
-const READ_TIMED_OUT = RepositoryError.readFailed(null, 'timeout');
-const READ_THREW = RepositoryError.readFailed(null, 'threw');
+/** A read that did not answer in time (`CLIENT_CARD_READ_TIMEOUT_MS`), or threw — `timedRead`'s two failure answers. */
+const READ_FAILURES = {
+  timedOut: Result.err(RepositoryError.readFailed(null, 'timeout')),
+  threw: Result.err(RepositoryError.readFailed(null, 'threw')),
+} as const;
 
 /** The history's pages as the store holds them. */
 interface HistoryState {
@@ -201,7 +222,7 @@ interface HistoryState {
   /** The «Покажи още» read: `MORE` while idle (the end is the `null` cursor, never stored). */
   readonly pagingState: Exclude<PagingState, typeof PagingState.End>;
   /** Each loaded visit's own photos, counted, for the rows' marks. */
-  readonly photoCounts: ReadonlyMap<string, number>;
+  readonly photoCounts: ReadonlyMap<AppointmentId, number>;
 }
 
 const LOADING_HISTORY: HistoryState = {
@@ -407,11 +428,12 @@ export class ClientCardStore {
     undefined,
   );
   /** The record's id as the rows key their story; `null` until it is known, or for none. */
-  readonly customerId = computed<string | null>(
+  readonly customerId = computed<CustomerId | null>(
     () => this._customerId() ?? null,
   );
   private readonly _context = signal<ClientCardContext | null>(null);
-  private readonly _nowMs = signal(0);
+  /** The open's one clock reading (`CLOCK_PORTS`); the epoch before the first `open`. */
+  private readonly _nowUtcMs = signal<UtcEpochMs>(UtcEpochMs.EPOCH);
   private readonly _profile = signal<LoadSlice<User | null> | null>(null);
   private readonly _stats = signal<LoadSlice<ClientStatsRecord | null> | null>(
     null,
@@ -464,14 +486,9 @@ export class ClientCardStore {
    * only ever asked of a loaded language, so no lookup here can start a
    * load (a write) from inside a `computed`.
    */
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
   /**
    * The catalogue's own reading in the loaded language, for the shared
@@ -498,14 +515,28 @@ export class ClientCardStore {
 
   private readonly user = computed(() => LoadSlice.dataOf(this._profile()));
   private readonly stats = computed(() => LoadSlice.dataOf(this._stats()));
-  /** The shop calendar's today on the shop's zone; `null` until the zone resolves. */
-  private readonly today = computed((): string | null => {
+  /**
+   * "Now" on the shop's wall clock (Law 7.3), derived ONCE from the open's
+   * clock reading in the shop's zone — what the presenters read «днес» and
+   * what is still to come by; `null` until the zone resolves (the rows wait
+   * for it, the page stays loading).
+   */
+  private readonly shopNow = computed((): ShopNow | null => {
     const zone = this.zone();
-    return zone === null ? null : shopDayOf(this._nowMs(), zone);
+    return zone === null
+      ? null
+      : ZonedTimeSystem.shopNow(this._nowUtcMs(), zone);
   });
+
+  /** The shop calendar's today on the shop's zone; `null` until the zone resolves. */
+  private readonly today = computed(
+    (): LocalDate | null => this.shopNow()?.localDate ?? null,
+  );
   private readonly paused = computed(() => {
     const zone = this.zone();
-    return zone !== null && pauseOf(this.user(), this._nowMs(), zone) !== null;
+    return (
+      zone !== null && pauseOf(this.user(), this._nowUtcMs(), zone) !== null
+    );
   });
 
   /** `users/{uid}`, `clientStats/{uid}` or the shop's zone failed: the whole card's S7. */
@@ -539,18 +570,6 @@ export class ClientCardStore {
   });
 
   /**
-   * "Now" on the shop's wall clock for the visit rows and cards (Law 7.3),
-   * derived ONCE from the open's clock reading in the shop's zone; `null`
-   * until the zone resolves (the rows wait for it, the page stays loading).
-   */
-  private readonly visitNow = computed((): ShopNow | null => {
-    const zone = this.zone();
-    if (zone === null) return null;
-    const now = UtcEpochMs.of(this._nowMs());
-    return now.ok ? ZonedTimeSystem.shopNow(now.value, zone) : null;
-  });
-
-  /**
    * What the staff rows are worded with — the built `historyRows` (by
    * year) and revision 3's `visitsRows` (by month) take the same input,
    * and the medal detail words its counted visits with it. `null` until
@@ -575,10 +594,11 @@ export class ClientCardStore {
       subjectUserId: subject.userId,
       subjectCustomerId: this._customerId() ?? null,
       currentAppointmentId: context.appointmentId,
-      now: this.visitNow(),
+      now: this.shopNow(),
       timeZone: this.zone(),
       photoCounts: history.photoCounts,
-      clientWords: readsClientWords(context.viewer.roles),
+      // No viewer reads as no roles (pass D, D-10.6).
+      clientWords: Roles.readsClientWords(context.viewer?.roles ?? []),
       catalog: context.catalog,
       words,
     };
@@ -603,7 +623,7 @@ export class ClientCardStore {
       history?.loadState !== LoadState.Ready ||
       subject?.userId == null ||
       words === null ||
-      this.visitNow() === null
+      this.shopNow() === null
     ) {
       return null;
     }
@@ -640,7 +660,7 @@ export class ClientCardStore {
    * each a shop day and minute (Law 7.3), read back as the instant the
    * loyalty presenters (flip 3) still take — once, here, in the shop's zone.
    */
-  private readonly visitsMs = computed((): readonly number[] => {
+  private readonly visitsMs = computed((): readonly UtcEpochMs[] => {
     const zone = this.zone();
     if (zone === null) return [];
     return (
@@ -650,37 +670,10 @@ export class ClientCardStore {
     );
   });
 
-  /**
-   * What each worked visit on the loaded history was, by its shop day —
-   * the rows' own titles («Фейд, Оформяне на брада»), so a ledger row names
-   * its visit the way the history does. Two worked visits on one day are
-   * named together.
-   */
-  private readonly visitTitles = computed((): ReadonlyMap<string, string> => {
-    const titles = new Map<string, string[]>();
-    for (const row of this.historyRowVms()) {
-      if (
-        row.visitRowEntry !== VisitRowEntry.Visit ||
-        row.outcome !== VisitRowOutcome.Worked
-      ) {
-        continue;
-      }
-      const day = row.localDate;
-      titles.set(day, [...(titles.get(day) ?? []), row.title]);
-    }
-    return new Map(
-      [...titles].map(([day, rows]) => [day, [...new Set(rows)].join(', ')]),
-    );
-  });
-
   private readonly inChairToday = computed(() => {
     const context = this._context();
-    const zone = this.zone();
-    return (
-      context !== null &&
-      zone !== null &&
-      isInChairToday(context, this._nowMs(), zone)
-    );
+    const now = this.shopNow();
+    return context !== null && now !== null && isInChairToday(context, now);
   });
 
   /**
@@ -731,7 +724,7 @@ export class ClientCardStore {
           (LoadSlice.dataOf(seasons) ?? []).map((p) => [p.id, p]),
         ),
         today,
-        previousVisitAtMs: this.previousVisitAtMs(),
+        previousVisitUtcMs: this.previousVisitUtcMs(),
       });
     });
 
@@ -739,16 +732,13 @@ export class ClientCardStore {
    * The start of the client's last worked visit before the one on screen —
    * what «Ново» is measured from (`ClientStatsSystem.previousVisit`), each
    * visit read as its instant on the shop's zone here, at the boundary. The
-   * host's raw id of the visit on screen is parsed here (Law 7.4); one that
-   * is no id names no stored visit, so nothing is left out.
+   * visit on screen arrives as its id (Law 7.4).
    */
-  private readonly previousVisitAtMs = computed(() => {
+  private readonly previousVisitUtcMs = computed((): UtcEpochMs | null => {
     const stats = this.stats();
     const zone = this.zone();
-    const raw = this._context()?.appointmentId ?? null;
+    const current = this._context()?.appointmentId ?? null;
     if (stats === null || zone === null) return null;
-    const parsed = raw === null ? null : AppointmentId.parse(raw);
-    const current = parsed !== null && parsed.ok ? parsed.value : null;
     return ClientStatsSystem.previousVisit(stats, current, (fact) =>
       factInstant(fact, zone),
     );
@@ -779,6 +769,7 @@ export class ClientCardStore {
         visit: open
           ? {
               legs: context.legs,
+              start: context.start,
               locationId: context.locationId,
               birthdayToday: isBirthdayToday(this.user(), today),
             }
@@ -812,7 +803,7 @@ export class ClientCardStore {
       stats: this.stats(),
       statsKnown: this._stats() !== null,
       avatarSrc: this._avatar(),
-      nowMs: this._nowMs(),
+      nowUtcMs: this._nowUtcMs(),
       zone: this.zone(),
       words: this.words(),
       tier: LoadSlice.dataOf(tier),
@@ -916,12 +907,12 @@ export class ClientCardStore {
         ? {
             actions: [],
             canRemove: this._online() && !context.gone,
-            failed: ['profile'],
+            failed: [ClientCardRegion.Profile],
           }
         : EMPTY_OVERVIEW;
     }
     const online = this._online();
-    const nowMs = this._nowMs();
+    const nowUtcMs = this._nowUtcMs();
     const user = this.user();
     const stats = this.stats();
     const name = this.displayName() ?? subject.label;
@@ -932,14 +923,14 @@ export class ClientCardStore {
       stats,
       context,
       online,
-      nowMs,
+      nowUtcMs,
       zone,
       words,
     });
     const canRemove = online && !context.gone;
     if (subject.userId === null) return { actions, canRemove, failed: [] };
     if (this.profileFailed()) {
-      return { actions, canRemove, failed: ['profile'] };
+      return { actions, canRemove, failed: [ClientCardRegion.Profile] };
     }
     const gate = this.gateOpen();
     const failed: ClientCardRegion[] = [];
@@ -952,7 +943,13 @@ export class ClientCardStore {
     if (!gate) {
       overview.capsules = LOADING;
     } else {
-      const capsules = overviewCapsulesVm({ user, stats, nowMs, zone, words });
+      const capsules = overviewCapsulesVm({
+        user,
+        stats,
+        nowUtcMs,
+        zone,
+        words,
+      });
       if (capsules.shown.length > 0) {
         overview.capsules = LoadSlice.ready(capsules);
       }
@@ -983,7 +980,9 @@ export class ClientCardStore {
     const visits = this.visitCardsSlice(gate);
     if (visits !== undefined) {
       overview.visits = visits;
-      if (visits.loadState === LoadState.Failed) failed.push('visits');
+      if (visits.loadState === LoadState.Failed) {
+        failed.push(ClientCardRegion.Visits);
+      }
     }
 
     // F — one card: the points, what they buy, what else is held.
@@ -993,14 +992,18 @@ export class ClientCardStore {
     );
     if (loyalty !== undefined) {
       overview.loyalty = loyalty;
-      if (loyalty.loadState === LoadState.Failed) failed.push('loyalty');
+      if (loyalty.loadState === LoadState.Failed) {
+        failed.push(ClientCardRegion.Loyalty);
+      }
     }
 
     // G — the medals and the records' line
     const medals = this.medalsGlanceSlice(gate);
     if (medals !== undefined) {
       overview.medals = medals;
-      if (medals.loadState === LoadState.Failed) failed.push('achievements');
+      if (medals.loadState === LoadState.Failed) {
+        failed.push(ClientCardRegion.Achievements);
+      }
     }
 
     // I — as built: waits for the featured visit, whose photos it leaves out.
@@ -1015,12 +1018,12 @@ export class ClientCardStore {
         overview.photos = LOADING;
       } else if (photos.loadState === LoadState.Failed) {
         overview.photos = FAILED;
-        failed.push('photos');
+        failed.push(ClientCardRegion.Photos);
       } else {
         const rail = photoRailVm(
           photos.data,
           [this.featuredVisitId(), context.appointmentId],
-          nowMs,
+          nowUtcMs,
           zone,
           words,
         );
@@ -1045,7 +1048,7 @@ export class ClientCardStore {
     ) {
       return undefined;
     }
-    const now = this.visitNow();
+    const now = this.shopNow();
     if (zone === null || now === null) return LOADING;
     if (!gate || history.loadState === LoadState.Loading) return LOADING;
     if (history.loadState === LoadState.Failed) return FAILED;
@@ -1064,7 +1067,7 @@ export class ClientCardStore {
         waitlist: LoadSlice.dataOf(waitlist),
         paused: this.paused(),
         count: this.stats()?.lifetimeVisitsCompleted ?? 0,
-        clientWords: readsClientWords(context.viewer.roles),
+        clientWords: Roles.readsClientWords(context.viewer?.roles ?? []),
         now,
         zone,
         words,
@@ -1170,21 +1173,23 @@ export class ClientCardStore {
   });
 
   /**
-   * A worked visit's services by its APPOINTMENT id and by its shop day
-   * (a ledger row asks for its appointment first, then for its day): the
-   * rows' own titles, so the feed names a visit the way the history does.
+   * What each worked visit on the loaded history was — the rows' own titles
+   * («Фейд, Оформяне на брада»), so a ledger row names its visit the way
+   * the history does — by its APPOINTMENT id and by its shop day (a ledger
+   * row asks for its appointment first, then for its day). Two worked
+   * visits on one day are named together.
    */
-  private readonly visitNames = computed((): ReadonlyMap<string, string> => {
-    const names = new Map<string, string>(this.visitTitles());
-    for (const row of this.historyRowVms()) {
-      if (
-        row.visitRowEntry === VisitRowEntry.Visit &&
-        row.outcome === VisitRowOutcome.Worked
-      ) {
-        names.set(row.id, row.title);
-      }
+  private readonly visitNames = computed((): VisitNames => {
+    const byAppointment = new Map<AppointmentId, string>();
+    const byDay = new Map<LocalDate, string[]>();
+    for (const row of this.workedRows()) {
+      byAppointment.set(row.id, row.title);
+      byDay.set(row.localDate, [
+        ...(byDay.get(row.localDate) ?? []),
+        row.title,
+      ]);
     }
-    return names;
+    return { byAppointment, byDay: joinedByDay(byDay) };
   });
 
   /**
@@ -1195,29 +1200,33 @@ export class ClientCardStore {
    * round 2); two worked visits on one day name their barbers together.
    * «2 бръснари» is a count, not a name, and stays whole.
    */
-  private readonly visitBarbers = computed((): ReadonlyMap<string, string> => {
-    const barbers = new Map<string, string>();
-    const byDay = new Map<string, string[]>();
-    for (const row of this.historyRowVms()) {
-      if (
-        row.visitRowEntry !== VisitRowEntry.Visit ||
-        row.outcome !== VisitRowOutcome.Worked ||
-        row.trailing === null
-      ) {
-        continue;
-      }
+  private readonly visitBarbers = computed((): VisitNames => {
+    const byAppointment = new Map<AppointmentId, string>();
+    const byDay = new Map<LocalDate, string[]>();
+    for (const row of this.workedRows()) {
+      if (row.trailing === null) continue;
       const name = row.trailing.several
         ? row.trailing.name
         : firstNameOf(row.trailing.name);
-      barbers.set(row.id, name);
-      const day = row.localDate;
-      byDay.set(day, [...(byDay.get(day) ?? []), name]);
+      byAppointment.set(row.id, name);
+      byDay.set(row.localDate, [...(byDay.get(row.localDate) ?? []), name]);
     }
-    for (const [day, names] of byDay) {
-      barbers.set(day, [...new Set(names)].join(', '));
-    }
-    return barbers;
+    return { byAppointment, byDay: joinedByDay(byDay) };
   });
+
+  /**
+   * The loaded history's WORKED visit rows, in the history's order. A
+   * visit row's id is its appointment's (`AppointmentRowVm.id`), so the
+   * maps above key it as it is.
+   */
+  private readonly workedRows = computed(() =>
+    this.historyRowVms().flatMap((row) =>
+      row.visitRowEntry === VisitRowEntry.Visit &&
+      row.outcome === VisitRowOutcome.Worked
+        ? [row]
+        : [],
+    ),
+  );
 
   /**
    * «Лоялност» as a wallet (§2.2) — `null` when every loyalty flag is off,
@@ -1292,8 +1301,13 @@ export class ClientCardStore {
         translate,
         // A counted service by its id; the card's catalogue names no
         // category by id, so a rule that counts categories says nothing
-        // about them (V3-1: nothing breaks).
-        nameOf: (id) => catalog.serviceName(id),
+        // about them (V3-1: nothing breaks). The rule's id text is read as
+        // a service's (`ServiceId.parse`, which every stored id passes): a
+        // category's names no service, so the catalogue answers `null`.
+        nameOf: (id) => {
+          const service = ServiceId.parse(id);
+          return service.ok ? catalog.serviceName(service.value) : null;
+        },
       }),
     );
   });
@@ -1461,7 +1475,7 @@ export class ClientCardStore {
       const same = this._subject()?.id === subject.id;
       this._subject.set(subject);
       this._context.set(context);
-      this._nowMs.set(this.readNow());
+      this._nowUtcMs.set(this.readNow());
       this.generation += 1;
       if (!same) this.reset(subject);
       if (subject.userId !== null) {
@@ -1519,7 +1533,7 @@ export class ClientCardStore {
    * services lack it and the family can still move. `null` otherwise: the
    * dock draws ✓ alone. Read inside the editor's `computed`.
    */
-  detailAction(seriesId: string): DetailActionVm | null {
+  detailAction(seriesId: BadgeSeriesId): DetailActionVm | null {
     const data = LoadSlice.dataOf(this.achievementsData());
     const ctx = this.achievementsContext();
     const context = this._context();
@@ -1548,49 +1562,49 @@ export class ClientCardStore {
         slice?.loadState === LoadState.Failed;
       // Behind a failed gate nothing else was read: any retry is the
       // profile's (the pages' own notices land here too).
-      const scope = this.profileFailed() ? 'profile' : region;
+      const scope = this.profileFailed() ? ClientCardRegion.Profile : region;
       switch (scope) {
-        case 'profile':
+        case ClientCardRegion.Profile:
           this.shopZones.retryDefaultZone();
           this.generation += 1;
           if (failed(this._profile())) this._profile.set(LOADING);
           if (failed(this._stats())) this._stats.set(LOADING);
           void this.loadAll(this.generation, userId);
           return;
-        case 'visits':
-        case 'history':
+        case ClientCardRegion.Visits:
+        case ClientCardRegion.History:
           if (this._history()?.loadState === LoadState.Failed) {
             void this.withRecord(generation, userId, (record) =>
               this.loadFirstPage(generation, record),
             );
           } else if (
-            region === 'history' &&
+            region === ClientCardRegion.History &&
             this._history()?.pagingState === PagingState.Failed
           ) {
             void this.fetchMore();
           }
           if (failed(this._waitlist())) this.watchWaitlist(generation, userId);
           return;
-        case 'photos':
+        case ClientCardRegion.Photos:
           if (failed(this._photos())) {
             void this.withRecord(generation, userId, (record) =>
               this.loadPhotos(generation, record),
             );
           }
           return;
-        case 'loyalty':
-        case 'achievements':
+        case ClientCardRegion.Loyalty:
+        case ClientCardRegion.Achievements:
           this.loadLoyalty(generation, userId, true);
           if (failed(this._catalog())) void this.loadCatalog();
           return;
-        case 'vouchers':
+        case ClientCardRegion.Vouchers:
           if (failed(this._vouchers())) {
             void this.withRecord(generation, userId, (record) =>
               this.loadVouchers(generation, record),
             );
           }
           return;
-        case 'activity':
+        case ClientCardRegion.Activity:
           if (failed(this._activity())) void this.loadFeed(generation, userId);
           if (this._ledgerPage()?.loadState === LoadState.Failed) {
             this.loadLedgerFirst(generation, userId);
@@ -1607,36 +1621,37 @@ export class ClientCardStore {
     const photos = LoadSlice.dataOf(this._photos());
     const words = this.words();
     const zone = this.zone();
-    const photo = photos?.find((p) => p.id === photoId);
+    // The page key the editor minted from a photo's id (pass D, D-8.9).
+    const id = AppointmentPhotoId.of(photoId);
+    const photo = photos?.find((p) => p.id === id);
     return photo === undefined || words === null || zone === null
       ? null
-      : clientPhotoVm(photo, this._nowMs(), zone, words);
+      : clientPhotoVm(photo, this._nowUtcMs(), zone, words);
   }
 
   /**
    * The compact title of a page in the client stack: the person on
    * `client`, the page's name on the three module pages, the scope's or
    * the family's title on `achievementCategory` / `achievementDetail`, the
-   * date on a `photo`. `null` for a kind the card does not title, or data
-   * not loaded yet.
+   * date on a `photo`. `null` for data not loaded yet.
    */
-  barTitle(kind: string, subjectId: string | null): string | null {
+  barTitle(page: ClientCardPage, subjectId: string | null): string | null {
     const words = this.words();
     if (words === null) return null;
-    switch (kind) {
-      case 'client':
+    switch (page) {
+      case ClientCardPage.Client:
         return this.displayName();
-      case 'clientLoyalty':
+      case ClientCardPage.ClientLoyalty:
         return words.loyalty.title;
-      case 'clientAchievements':
+      case ClientCardPage.ClientAchievements:
         return words.achievements.title;
-      case 'clientHistory':
+      case ClientCardPage.ClientHistory:
         return words.visitsModule.title;
-      case 'clientLedger':
+      case ClientCardPage.ClientLedger:
         return words.ledgerPage.title;
-      case 'clientRecords':
+      case ClientCardPage.ClientRecords:
         return words.achievements.records;
-      case 'achievementCategory': {
+      case ClientCardPage.AchievementCategory: {
         const scope = subjectId === null ? null : achievementScopeOf(subjectId);
         if (scope === null) return null;
         const data = LoadSlice.dataOf(this.achievementsData());
@@ -1652,26 +1667,24 @@ export class ClientCardStore {
         }
         return null;
       }
-      case 'achievementDetail': {
+      case ClientCardPage.AchievementDetail: {
         const data = LoadSlice.dataOf(this.achievementsData());
         const series =
           subjectId === null || data === null
             ? null
-            : seriesById(data, subjectId);
+            : seriesById(data, BadgeSeriesId.of(subjectId));
         return series?.title[cardLocaleOf(words.lang)] ?? null;
       }
-      case 'photo':
+      case ClientCardPage.Photo:
         return subjectId === null
           ? null
           : (this.photoById(subjectId)?.dateLabel ?? null);
-      default:
-        return null;
     }
   }
 
   // ── Loading ─────────────────────────────────────────────────────────
 
-  private readNow(): number {
+  private readNow(): UtcEpochMs {
     return this.clock.nowUtcMs();
   }
 
@@ -1684,7 +1697,7 @@ export class ClientCardStore {
    */
   private recordOf(
     generation: number,
-    uid: string,
+    uid: UserId,
   ): Promise<LoadSlice.WithEmpty<CustomerId>> {
     const known = untracked(this._customerId);
     if (known !== undefined) return Promise.resolve(recordSliceOf(known));
@@ -1707,25 +1720,21 @@ export class ClientCardStore {
 
   /** The in-flight record read, shared by every read of one open. */
   private recordRead: {
-    readonly uid: string;
+    readonly uid: UserId;
     readonly generation: number;
     readonly answer: Promise<LoadSlice.WithEmpty<CustomerId>>;
   } | null = null;
 
   private async readRecord(
     generation: number,
-    uid: string,
+    uid: UserId,
   ): Promise<LoadSlice.WithEmpty<CustomerId>> {
     const customers = this.customers;
     if (customers === null) {
       this._customerId.set(null);
       return LoadSlice.empty;
     }
-    const userId = UserId.parse(uid);
-    if (!userId.ok) return FAILED;
-    const result = await this.timed(() =>
-      customers.loadCustomerForUser(userId.value),
-    );
+    const result = await this.timed(() => customers.loadCustomerForUser(uid));
     if (generation !== this.generation) return FAILED;
     if (!result.ok) return FAILED;
     const record = result.value === null ? null : result.value.id;
@@ -1741,7 +1750,7 @@ export class ClientCardStore {
    */
   private async withRecord(
     generation: number,
-    uid: string,
+    uid: UserId,
     run: (record: CustomerId) => Promise<void>,
     none?: () => void,
     failed?: () => void,
@@ -1803,18 +1812,13 @@ export class ClientCardStore {
    * history, the photos and the vouchers, D29), so it costs no round trip
    * of its own.
    */
-  private async loadAll(generation: number, uid: string): Promise<void> {
-    const userId = UserId.parse(uid);
+  private async loadAll(generation: number, uid: UserId): Promise<void> {
     // Asked for at once, beside the gate: every keyed read below waits on it.
     void this.recordOf(generation, uid);
     const profiles = this.profiles;
     if (profiles !== null) {
-      if (!userId.ok) {
-        this._profile.set(FAILED);
-        return;
-      }
       const ok = await this.read(generation, this._profile, async () =>
-        Result.map(await profiles.loadProfile(userId.value), registeredOnly),
+        Result.map(await profiles.loadProfile(uid), registeredOnly),
       );
       if (!ok) return;
     }
@@ -1832,15 +1836,15 @@ export class ClientCardStore {
         () => this._stats.set(LoadSlice.ready(null)),
         () => this._stats.set(FAILED),
       );
-      const viewer = this._context()?.viewer;
-      if (viewer !== undefined && seesClientSpend(viewer.roles)) {
+      // No viewer reads as no roles: the money read is never asked for.
+      if (Roles.seesClientSpend(this._context()?.viewer?.roles ?? [])) {
         void this.withRecord(generation, uid, (customerId) =>
           this.loadMoney(generation, customerId),
         );
       }
     }
-    if (this.avatars !== null && userId.ok) {
-      void this.loadAvatar(generation, userId.value);
+    if (this.avatars !== null) {
+      void this.loadAvatar(generation, uid);
     }
     void this.withRecord(
       generation,
@@ -1927,33 +1931,16 @@ export class ClientCardStore {
     return true;
   }
 
-  /** The read, or a failure after `CLIENT_CARD_READ_TIMEOUT_MS`; a thrown error is a failure too. */
+  /** The read, or a failure after `CLIENT_CARD_READ_TIMEOUT_MS`; a thrown error is a failure too (`timedRead`). */
   private timed<T>(
     read: () => Promise<ReadAnswer<T>>,
   ): Promise<Result<T, unknown>> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.timers.delete(timer);
-        resolve(Result.err(READ_TIMED_OUT));
-      }, CLIENT_CARD_READ_TIMEOUT_MS);
-      this.timers.add(timer);
-      const settle = (result: Result<T, unknown>) => {
-        clearTimeout(timer);
-        this.timers.delete(timer);
-        resolve(result);
-      };
-      let pending: Promise<ReadAnswer<T>>;
-      try {
-        pending = read();
-      } catch {
-        settle(Result.err(READ_THREW));
-        return;
-      }
-      pending.then(
-        (answer) => settle(answer),
-        () => settle(Result.err(READ_THREW)),
-      );
-    });
+    return timedRead(
+      read,
+      CLIENT_CARD_READ_TIMEOUT_MS,
+      this.timers,
+      READ_FAILURES,
+    );
   }
 
   private async loadAvatar(generation: number, userId: UserId): Promise<void> {
@@ -2090,14 +2077,9 @@ export class ClientCardStore {
    * keyed by the account, D29): its first answer settles the slice (or the
    * timeout fails it), later ones update it.
    */
-  private watchWaitlist(generation: number, uid: string): void {
+  private watchWaitlist(generation: number, uid: UserId): void {
     const reader = this.waitlistReader;
     if (reader === null) return;
-    const userId = UserId.parse(uid);
-    if (!userId.ok) {
-      this._waitlist.set(FAILED);
-      return;
-    }
     this.waitlistSubscription?.unsubscribe();
     if (this._waitlist()?.loadState !== LoadState.Ready)
       this._waitlist.set(LOADING);
@@ -2116,7 +2098,7 @@ export class ClientCardStore {
       this.timers.delete(timer);
     };
     this.waitlistSubscription = reader
-      .observeMyWaitlistRequests(userId.value)
+      .observeMyWaitlistRequests(uid)
       .subscribe({
         next: (result) => {
           settle();
@@ -2162,7 +2144,7 @@ export class ClientCardStore {
    */
   private loadLoyalty(
     generation: number,
-    uid: string,
+    uid: UserId,
     failedOnly: boolean,
   ): void {
     const ports = this.loyaltyPorts;
@@ -2267,7 +2249,7 @@ export class ClientCardStore {
    * «Всички», one per entry, unfolded (`WALLET_ACTIVITY_READ`). No record
    * is no row; a record that could not be read fails the feed.
    */
-  private async loadFeed(generation: number, uid: string): Promise<void> {
+  private async loadFeed(generation: number, uid: UserId): Promise<void> {
     const ports = this.journalPorts;
     if (ports === null || this._activity() === null) return;
     if (this._activity()?.loadState !== LoadState.Ready)
@@ -2309,7 +2291,7 @@ export class ClientCardStore {
    * refresh (the rows stay on screen until the fresh page lands; a refresh
    * that fails keeps them).
    */
-  private loadLedgerFirst(generation: number, uid: string): void {
+  private loadLedgerFirst(generation: number, uid: UserId): void {
     const state = this._ledgerPage();
     if (state === null || this.journalPorts === null) return;
     if (state.loadState !== LoadState.Ready) {
@@ -2326,7 +2308,7 @@ export class ClientCardStore {
    */
   private async readLedgerPage(
     generation: number,
-    uid: string,
+    uid: UserId,
     kind: JournalFeed,
   ): Promise<void> {
     const ports = this.journalPorts;

@@ -17,7 +17,24 @@ import type {
   UiIconName,
   UiStreakPeriod,
 } from '@creativo/ui/controls';
+import type {
+  AchievementRuleId,
+  AppointmentId,
+  AppointmentPhotoId,
+  BadgeCategoryId,
+  BadgeSeriesId,
+  BarberId,
+  CouponGrantId,
+  GiftVoucherId,
+  JournalEntryId,
+  LocalDate,
+  RewardId,
+  SeasonId,
+  ServiceId,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { ClientCardRegion } from './client-card.contracts';
+import type { LoyaltyHoldingWord } from './client-card.words';
 import {
   BirthdayMoment,
   type JournalFeed,
@@ -80,8 +97,17 @@ export interface GaugeVm {
 
 // ── The glance page «client» (§3.1) ─────────────────────────────────────
 
-/** B — which capsule a `client-capsule-{id}` test id names (R17). */
-export type ClientCapsuleId = 'tier' | 'birthday' | 'noShows';
+/**
+ * B — which capsule a `client-capsule-{id}` test id names (R17). Values:
+ * external contract (that test id), so they keep its spelling.
+ */
+export const ClientCapsuleId = {
+  Tier: 'tier',
+  Birthday: 'birthday',
+  NoShows: 'noShows',
+} as const;
+export type ClientCapsuleId =
+  (typeof ClientCapsuleId)[keyof typeof ClientCapsuleId];
 
 /** B — one qualifier in the head's capsule row. Named apart from `shared/catalog`'s `CapsuleVm`. */
 export interface ClientCapsuleVm {
@@ -106,10 +132,22 @@ export interface ClientCapsulesVm {
   } | null;
 }
 
+/**
+ * D — which quick action a `client-quick-{id}` test id names: the phone's
+ * three apps and «Повтори». Values: external contract (that test id).
+ */
+export const QuickActionId = {
+  Call: 'call',
+  Sms: 'sms',
+  Viber: 'viber',
+  Same: 'same',
+} as const;
+export type QuickActionId = (typeof QuickActionId)[keyof typeof QuickActionId];
+
 /** D — a link that leaves for the phone's own app: call, SMS, Viber. */
 export interface ContactActionVm {
   /** The `client-quick-{id}` test id. */
-  readonly id: 'call' | 'sms' | 'viber';
+  readonly id: Exclude<QuickActionId, typeof QuickActionId.Same>;
   readonly icon: UiIconName;
   /** The visible word: «Обади се» · «SMS» · «Viber». */
   readonly label: string;
@@ -121,7 +159,7 @@ export interface ContactActionVm {
 
 /** D — «Повтори»: a button carrying the last visit's legs, emitted as `repeatLast`. */
 export interface RepeatActionVm {
-  readonly id: 'same';
+  readonly id: typeof QuickActionId.Same;
   readonly icon: UiIconName;
   /** «Повтори» — one word, one line in the tile. */
   readonly label: string;
@@ -145,7 +183,7 @@ export type QuickActionVm = ContactActionVm | RepeatActionVm;
  */
 export interface RewardReadyVm {
   /** The grant the discount page opens on: the soonest-expiring of a collapsed stack. */
-  readonly grantId: string;
+  readonly grantId: CouponGrantId;
   /** The coupon's name: «Безплатно подстригване». */
   readonly title: string;
   /**
@@ -171,7 +209,13 @@ export interface RewardReadyVm {
  * `null`, and a target lives only in words, in `caption`.
  */
 export interface MedalVm {
-  readonly seriesId: string;
+  /**
+   * The family drawn — or, on an archived season's OWN medal (a season
+   * without a track family, whose tile opens the season's scope:
+   * `AchievementTileVm.opens`), the season. A tap opens a family's detail
+   * only where `opens` is `null`, so a season's id never reaches it.
+   */
+  readonly seriesId: BadgeSeriesId | SeasonId;
   /**
    * The state DRAWN: the family's standing, except that a family the open
    * visit completes is drawn at least in progress (the pending face: the
@@ -221,24 +265,24 @@ export interface MedalStripVm {
  * `VisitEditorPhoto` (this lib cannot import that type: a cycle).
  */
 export interface ClientPhotoVm {
-  readonly photoId: string;
-  readonly appointmentId: string;
+  readonly photoId: AppointmentPhotoId;
+  readonly appointmentId: AppointmentId;
   readonly url: string;
   /** When it was taken (`AppointmentPhoto.takenAtUtcMs`). */
-  readonly takenAtUtcMs: number;
+  readonly takenAtUtcMs: UtcEpochMs;
   /** «12.08» (R59): the tile's on-media badge and the photo page's bar title. */
   readonly dateLabel: string;
   /** «Снимка от 12 август». */
   readonly accessibleName: string;
   /** The visit's chair; the editor names it through `ClientCardCatalog.barberName`. */
-  readonly barberId: string;
+  readonly barberId: BarberId;
   readonly width: number | null;
   readonly height: number | null;
 }
 
 /** LF — one punch card on the page. */
 export interface StampCardVm {
-  readonly ruleId: string;
+  readonly ruleId: AchievementRuleId;
   /** The card's reward: «Безплатно подстригване». */
   readonly title: string;
   /** «4 от 10». */
@@ -263,13 +307,13 @@ export interface AchievementsData {
   /** `loyaltyAccounts/{customerId}` as stored (the client RECORD's, D29). */
   readonly account: LoyaltyAccount;
   /** `badgeProgress`, by series id; a family without an entry is not started. */
-  readonly progress: ReadonlyMap<string, BadgeProgress>;
+  readonly progress: ReadonlyMap<BadgeSeriesId, BadgeProgress>;
   /** `seasonProgress`, by season id. */
-  readonly seasonProgress: ReadonlyMap<string, SeasonProgress>;
-  /** The shop calendar's today (`YYYY-MM-DD`, on the shop's zone), read once from `CLOCK_PORTS`: phases, closest levels. */
-  readonly today: string;
-  /** The start of the client's last worked visit before this one — what «Ново» is measured from. */
-  readonly previousVisitAtMs: number | null;
+  readonly seasonProgress: ReadonlyMap<SeasonId, SeasonProgress>;
+  /** The shop calendar's today (on the shop's zone), read once from `CLOCK_PORTS`: phases, closest levels. */
+  readonly today: LocalDate;
+  /** The start of the client's last worked visit before this one — what «Ново» is measured from; `null` before a first one. */
+  readonly previousVisitUtcMs: UtcEpochMs | null;
 }
 
 /**
@@ -290,7 +334,7 @@ export interface AchievementTileVm {
 
 /** A season's medal over its step track: AF's card body and CE, the season scope's head. */
 export interface SeasonTrackVm {
-  readonly seasonId: string;
+  readonly seasonId: SeasonId;
   /**
    * The season's medal, large and static. Its rim is empty while the steps
    * beside it print the level on their current node (§3.0, wave D r5); a
@@ -328,7 +372,7 @@ export interface SeasonCardVm extends SeasonTrackVm {
 
 /** AG — one open event, or an announced one (never hidden). */
 export interface EventCardVm {
-  readonly seasonId: string;
+  readonly seasonId: SeasonId;
   /** «Седмица на брадата». */
   readonly title: string;
   /** «до 5.10»; announced: «от 1.11». */
@@ -383,10 +427,22 @@ export interface DetailRelatedVm {
 
 // ── «Посещения» (§3.6) ──────────────────────────────────────────────────
 
+/**
+ * HC — which figure a `history-count-{id}` test id names (R17). Values:
+ * external contract (that test id).
+ */
+export const HistoryCellId = {
+  Visits: 'visits',
+  Cadence: 'cadence',
+  NoShows: 'noShows',
+  Cancelled: 'cancelled',
+} as const;
+export type HistoryCellId = (typeof HistoryCellId)[keyof typeof HistoryCellId];
+
 /** HC — one open figure of the stats band. */
 export interface HistoryCellVm {
   /** The `history-count-{id}` test id (R17). */
-  readonly id: 'visits' | 'cadence' | 'noShows' | 'cancelled';
+  readonly id: HistoryCellId;
   /** «24» · «~4» · «2» · «1». */
   readonly value: string;
   /** «седм.» — the interval's unit, in ui-metric's unit slot; absent on a bare count. */
@@ -514,8 +570,8 @@ export interface VisitCardsVm {
 
 /** F1 — one fact of the loyalty card's holdings line. */
 export interface HoldingFactVm {
-  /** The `client-loyalty-{id}` test id. */
-  readonly id: 'voucher' | 'stamps' | 'rhythm';
+  /** The `client-loyalty-{id}` test id — the holding's word (`LoyaltyHoldingWord`). */
+  readonly id: LoyaltyHoldingWord;
   /** «Ваучер» · «Печати» · «Ритъм». */
   readonly label: string;
   /** «25,00 €» · «3 от 10» · «9» — the run in primary ink. */
@@ -614,7 +670,7 @@ export interface PassVm {
 /** WC1 — a gift voucher issued to the person: `active`, with a balance. */
 export interface VoucherVm {
   /** The `rewards-voucher-{voucherId}` test id. */
-  readonly voucherId: string;
+  readonly voucherId: GiftVoucherId;
   /** «Ваучер за подарък». */
   readonly title: string;
   /** «25,00 €» (`formatCents`): the ticket's accent figure. */
@@ -625,8 +681,18 @@ export interface VoucherVm {
   readonly accessibleName: string;
 }
 
-/** WB — which disc a `rewards-action-{id}` test id names. */
-export type WalletActionId = 'use' | 'code' | 'catalog' | 'history';
+/**
+ * WB — which disc a `rewards-action-{id}` test id names. Values: external
+ * contract (that test id).
+ */
+export const WalletActionId = {
+  Use: 'use',
+  Code: 'code',
+  Catalog: 'catalog',
+  History: 'history',
+} as const;
+export type WalletActionId =
+  (typeof WalletActionId)[keyof typeof WalletActionId];
 
 /** WB — one disc under the pass. A disc that cannot be used is ABSENT, never disabled. */
 export interface WalletActionVm {
@@ -639,7 +705,7 @@ export interface WalletActionVm {
   /** Begins with the visible word (WCAG 2.5.3). */
   readonly accessibleName: string;
   /** `use` with exactly ONE ready ticket: the grant it applies; else `null`. */
-  readonly grantId: string | null;
+  readonly grantId: CouponGrantId | null;
   /** `use` with MORE than one: the count on the disc's badge; else `null`. */
   readonly count: number | null;
 }
@@ -726,7 +792,7 @@ export interface WalletTierVm {
 /** WF — one reward of the catalogue, a STATIC tile: information in this round (ES-2). */
 export interface RewardTileVm {
   /** The `rewards-catalog-{rewardId}` test id. */
-  readonly rewardId: string;
+  readonly rewardId: RewardId;
   /** «Безплатно оформяне на брада» — two lines at most. */
   readonly title: string;
   /** «120 т.» — the neutral capsule of a reward within reach. */
@@ -750,14 +816,24 @@ export interface RewardGridVm {
   readonly tiles: readonly RewardTileVm[];
 }
 
+/**
+ * WG, LE — the ink of an activity row's glyph. Values: external contract
+ * (the row's `data-tone` attribute, which the stylesheet reads).
+ */
+export const ActivityTone = {
+  Accent: 'accent',
+  Neutral: 'neutral',
+} as const;
+export type ActivityTone = (typeof ActivityTone)[keyof typeof ActivityTone];
+
 /** WG, LE — one EVENT of the journal as one row: entries of one `correlationId`, folded (§2.2.5). */
 export interface ActivityRowVm {
   /** The `…-entry-{entryId}` test id: the event's newest entry. */
-  readonly entryId: string;
+  readonly entryId: JournalEntryId;
   /** By the event's leading effect: `loyalty.activity.*`. */
   readonly icon: UiIconName;
   /** The GLYPH's ink; the disc is white on the grey segment. */
-  readonly tone: 'accent' | 'neutral';
+  readonly tone: ActivityTone;
   /** The visit's services · «Години с нас I» · the reward's name · «Статус: Злато» · «Бонус от салона» · «Изтекли» · «Анулирано». */
   readonly title: string;
   /** The fact line: «5.09 · Иван» · «1.03 · постижение» · «12.06 · от Сребро». */
@@ -877,7 +953,7 @@ export interface CollectionVm {
 /** AL — one category as a section of the overview: a grid, never a rail. */
 export interface MedalSectionVm {
   /** The `achievements-shelf-{categoryId}` test id. */
-  readonly categoryId: string;
+  readonly categoryId: BadgeCategoryId;
   /** «Етапи». */
   readonly title: string;
   /** «3 от 5»: families started of the category's families — text, not a button. */
@@ -910,8 +986,17 @@ export interface MedalsPageVm {
   readonly emptyHint: string | null;
 }
 
-/** RD — the themes «Рекорди» groups its rows by. */
-export type RecordTheme = 'rhythm' | 'visits' | 'favourites';
+/**
+ * RD — the themes «Рекорди» groups its rows by. Values: external contract
+ * (the i18n key segment `clientCard.records.group.<theme>` and the group's
+ * test id `…-group-<theme>`); the words read this one dictionary.
+ */
+export const RecordTheme = {
+  Rhythm: 'rhythm',
+  Visits: 'visits',
+  Favourites: 'favourites',
+} as const;
+export type RecordTheme = (typeof RecordTheme)[keyof typeof RecordTheme];
 
 /** RE — one row of «Рекорди»: a record of the account, or a fact the card already reads (§2.3.4). */
 export interface RecordRowVm {
@@ -1018,6 +1103,18 @@ export interface DetailHowVm {
   readonly steps: readonly string[];
 }
 
+/**
+ * DH — the ink of a ladder row's words. Values: external contract (the
+ * row's `data-tone` attribute).
+ */
+export const DetailLevelTone = {
+  Passed: 'passed',
+  Next: 'next',
+  Later: 'later',
+} as const;
+export type DetailLevelTone =
+  (typeof DetailLevelTone)[keyof typeof DetailLevelTone];
+
 /** DH — one level of the ladder of medals. */
 export interface DetailLevelVm {
   /** The `achievements-detail-level-{n}` test id. */
@@ -1031,7 +1128,7 @@ export interface DetailLevelVm {
   /** «16.04.2025»; `null` until earned. */
   readonly earnedOn: string | null;
   /** The words' ink: `passed` and `next` primary, `later` secondary. */
-  readonly tone: 'passed' | 'next' | 'later';
+  readonly tone: DetailLevelTone;
   /** «Ниво II, 10 посещения, 50 точки, спечелено на 24 септември 2025 г.» */
   readonly accessibleName: string;
 }
@@ -1039,7 +1136,7 @@ export interface DetailLevelVm {
 /** DK — the detail's one verb, drawn by the editor's DOCK, never in the body (DV-C). */
 export interface DetailActionVm {
   /** The service the dock adds to this person's seat. */
-  readonly serviceId: string;
+  readonly serviceId: ServiceId;
   /** «Добави фейд». */
   readonly label: string;
   /** «Добави Фейд към посещението». */
@@ -1062,9 +1159,9 @@ export interface MedalProgressVm {
 
 /** One medal family's detail (§2.4): six blocks, each fact once. */
 export interface MedalDetailVm {
-  readonly seriesId: string;
+  readonly seriesId: BadgeSeriesId;
   /** The chip «Всички ›» chooses on «Постижения»; `null` for a season's family. */
-  readonly categoryId: string | null;
+  readonly categoryId: BadgeCategoryId | null;
   /** DC — «Фейд»: the `h2` and the bar's title. */
   readonly title: string;
   /** DA — the medal on its stage, `extraLarge`, wearing its own ring; `aria-hidden`. */

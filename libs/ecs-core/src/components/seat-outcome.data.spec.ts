@@ -2,12 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { UtcEpochMs, BookingStatus, AttendanceState } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
 import { BookingLifecycle } from './booking-lifecycle.data';
-import {
-  CancellationReason,
-  CancellationReasonSet,
-  CancelledBy,
-  SeatOutcome,
-} from './seat-outcome.data';
+import { CancellationReason } from './cancellation-reason.data';
+import { CancellationReasonSet } from './cancellation-reason-set.data';
+import { CancelledBy, SeatOutcome } from './seat-outcome.data';
 
 const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
@@ -82,45 +79,6 @@ describe('SeatOutcome.OFFERED_REASONS', () => {
     expect(SeatOutcome.OFFERED_REASONS).not.toContain('UNSPECIFIED');
     expect(SeatOutcome.OFFERED_REASONS).not.toContain('NO_SHOW_CONVERTED');
     expect(SeatOutcome.OFFERED_REASONS[0]).toBe('CLIENT_CHANGED_PLANS');
-  });
-});
-
-describe('CancellationReasonSet — a party’s reasons as one stored string', () => {
-  it('joins distinct codes, sorted, with +', () => {
-    expect(
-      CancellationReasonSet.of([
-        CancellationReason.Unspecified,
-        CancellationReason.ClientUnwell,
-        CancellationReason.ClientUnwell,
-      ]),
-    ).toBe('CLIENT_UNWELL+UNSPECIFIED');
-    expect(
-      CancellationReasonSet.of([CancellationReason.StaffShopClosure]),
-    ).toBe('STAFF_SHOP_CLOSURE');
-  });
-
-  it('sorts as the lower-case stored codes sort — a legacy set keeps its bytes', () => {
-    const all = Object.values(CancellationReason);
-    expect(CancellationReasonSet.of(all).toLowerCase()).toBe(
-      [...all]
-        .map((code) => code.toLowerCase())
-        .sort()
-        .join('+'),
-    );
-  });
-
-  it('splits back into its codes', () => {
-    expect(
-      CancellationReasonSet.codes(
-        CancellationReasonSet.of([
-          CancellationReason.StaffShopClosure,
-          CancellationReason.ClientUnwell,
-        ]),
-      ),
-    ).toEqual(['CLIENT_UNWELL', 'STAFF_SHOP_CLOSURE']);
-    expect(CancellationReasonSet.codes(CancellationReasonSet.of([]))).toEqual(
-      [],
-    );
   });
 });
 

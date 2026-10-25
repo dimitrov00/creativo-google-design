@@ -740,7 +740,7 @@
            the signup form's field, the percent as tiles, the sum written
            large. The row is the choice; the page is the answer. -->
     </ul>
-    @if (discountKind() === 'coupon') {
+    @if (discountKind() === DiscountKind.Coupon) {
     <!-- THE CODE — the DS code field in its bordered dress, the field the
          signup flow types a name into, on the page under the kind that
          names it: no label, no hint, «Вид · Ваучер / Купон» already said
@@ -791,7 +791,7 @@
       >
       }
     </ui-stack>
-    } @if (discountKind() === 'percent') {
+    } @if (discountKind() === DiscountKind.Percent) {
     <!-- THE PERCENT, ON A RULER (owner, 2026-09-16: "not tiles — a slider
          or something like that, but catchy and creative"): the figure
          written large — the DS amount field on a whole count with no
@@ -843,7 +843,7 @@
         (uiValueChange)="slidePercent($event)"
       />
     </ui-stack>
-    } @if (discountKind() === 'amount') {
+    } @if (discountKind() === DiscountKind.Amount) {
     <!-- THE SUM, the same instrument: the figure written large on «0,00 €»
          with what is left beneath, and the ruler from nothing to the bill
          in half-euro steps, a euro a tick, five the taller; a sum typed
@@ -885,7 +885,7 @@
       />
       }
     </ui-stack>
-    } @if (discountKind() === 'promo') {
+    } @if (discountKind() === DiscountKind.Promo) {
     <!-- THE FRAME (owner, 2026-09-16: "vertical, but in a scrollable area
          / frame"): every live code as a card, stacked, inside the DS scroll
          column capped at two cards and a half — the cut card is HIG's cue
@@ -901,13 +901,14 @@
       [attr.aria-label]="t('staff.visit.kindPromo')"
       data-testid="staff-visit-discount-promo-list"
     >
-      @for (offer of promoChoices(); track offer.id) {
+      @for (offer of promoChoices(); track offer.key) {
       <ng-container
         *ngTemplateOutlet="offerCard; context: { $implicit: offer }"
       />
       }
     </ui-scroll-column>
-    } @if (discountKind() === 'coupon' && grantChoices().length > 0) {
+    } @if (discountKind() === DiscountKind.Coupon && grantChoices().length > 0)
+    {
     <!-- THE CLIENT'S OWN COUPONS — theirs to burn, so they need no code:
          the same cards in the same frame, under the field a stranger's
          voucher goes in by. -->
@@ -927,7 +928,7 @@
         [attr.aria-label]="t('staff.visit.kindGrant')"
         data-testid="staff-visit-discount-grant-list"
       >
-        @for (offer of grantChoices(); track offer.id) {
+        @for (offer of grantChoices(); track offer.key) {
         <ng-container
           *ngTemplateOutlet="offerCard; context: { $implicit: offer }"
         />
@@ -1645,7 +1646,7 @@
               <lib-staff-day-pill
                 uiAlignment="trailing"
                 [uiDayKey]="draft().dayKey"
-                [uiTodayKey]="vm().todayKey"
+                [uiTodayKey]="vm().now?.localDate ?? null"
                 [uiLocale]="locale()"
                 [uiRelatives]="dayRelatives()"
                 [uiPreviousLabel]="t('staff.visit.monthPrevious')"
@@ -1691,7 +1692,7 @@
             [uiWindow]="frameWindow()"
             [uiSnapMinutes]="snapMinutes"
             [uiDragCopy]="dragCopy()"
-            [uiEditableEventId]="vm().appointmentId"
+            [uiEditableEventId]="vm().appointmentId ?? ''"
             [uiEditable]="!gone()"
             [uiPickable]="false"
             [uiMinMinutes]="10"
@@ -1786,7 +1787,7 @@
               data-testid="staff-visit-timing-mode"
               (click)="timingMenu.set(true)"
             >
-              {{ t(timingMode() === 'end' ? 'staff.visit.end' :
+              {{ t(timingMode() === TimingMode.End ? 'staff.visit.end' :
               'staff.visit.duration') }}
               <ui-icon uiName="field.popUp" />
             </button>
@@ -1806,7 +1807,7 @@
         <span uiTrailing class="staff-visit__figures"
           >{{ t('staff.visit.minutes', { minutes: durationMinutes() }) }}</span
         >
-        } @else if (timingMode() === 'end') {
+        } @else if (timingMode() === TimingMode.End) {
         <span uiTrailing>
           <span class="staff-sheet__pill staff-visit__figures">
             <ui-time-field
@@ -2174,7 +2175,7 @@
                      scrolling sheet, and a swipe must scroll. -->
                   <div
                     class="staff-visit__map"
-                    [hidden]="shopView() !== 'map'"
+                    [hidden]="shopView() !== ShopView.Map"
                     data-testid="staff-visit-shop-map"
                   >
                     @if (shopMapMounted()) {
@@ -2200,7 +2201,7 @@
                     uiText
                     uiFont="footnote"
                     uiForegroundStyle="secondary"
-                    [hidden]="shopView() !== 'map'"
+                    [hidden]="shopView() !== ShopView.Map"
                     data-testid="staff-visit-shop-place"
                   >
                     <ui-icon uiName="location.pin" aria-hidden="true" />
@@ -2211,7 +2212,7 @@
                      grammar — the storefront at the name, the address under
                      it, the accent check on the chosen one. A row IS the
                      answer; the list stays up so the check is seen. -->
-                  @if (shopView() === 'list') {
+                  @if (shopView() === ShopView.List) {
                   <ul
                     uiListGroup
                     class="staff-visit__shop-list"
@@ -2795,7 +2796,7 @@
       uiTint="neutral"
       uiControlSize="large"
       data-testid="staff-visit-camera-upload"
-      (click)="pop(); openPhotoDoor('upload')"
+      (click)="pop(); openPhotoDoor(PhotoDoor.Upload)"
     >
       <ui-icon uiLeading uiName="media.library" />
       {{ t('staff.visit.photoUpload') }}
@@ -2905,7 +2906,7 @@
       uiButtonStyle="borderedProminent"
       uiControlSize="large"
       [disabled]="apply.disabled"
-      [uiLoading]="codeState() === 'checking'"
+      [uiLoading]="codeState() === DiscountCodeState.Checking"
       data-testid="staff-visit-discount-apply"
       (click)="applyDiscount()"
     >

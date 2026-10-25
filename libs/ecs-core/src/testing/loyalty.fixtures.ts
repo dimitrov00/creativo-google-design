@@ -17,8 +17,8 @@ import type {
   StreakDefinition,
   StreakDefinitionVersion,
   TierDefinition,
+  LoyaltyCatalog,
 } from '@core/entities';
-import type { LoyaltyCatalog } from '@core/ports';
 import {
   CustomerId,
   PublishRequestId,

@@ -33,14 +33,6 @@ export type ServiceComposition =
   | ServiceComposition.Bundle
   | ServiceComposition.Unspecified;
 
-/** A composition as authored, before its edge guard — the raw ids. */
-export type ServiceCompositionInput =
-  | ServiceComposition.Single
-  | {
-      readonly compositionKind: typeof CompositionKind.Bundle;
-      readonly bundleServiceIds: readonly string[];
-    };
-
 const SINGLE: ServiceComposition.Single = {
   compositionKind: CompositionKind.Single,
 };
@@ -97,7 +89,7 @@ export const ServiceComposition = {
    * Ids are kept exactly as given.
    */
   parse(
-    raw: ServiceCompositionInput,
+    raw: ServiceComposition.Input,
   ): Result<ServiceComposition, readonly CatalogError[]> {
     if (raw.compositionKind === CompositionKind.Single) {
       return Result.ok(ServiceComposition.single());
@@ -122,6 +114,13 @@ export const ServiceComposition = {
 } as const;
 
 export namespace ServiceComposition {
+  /** A composition as authored, before its edge guard — the raw ids. */
+  export type Input =
+    | ServiceComposition.Single
+    | {
+        readonly compositionKind: typeof CompositionKind.Bundle;
+        readonly bundleServiceIds: readonly string[];
+      };
   export type Single = {
     readonly compositionKind: typeof CompositionKind.Single;
   };

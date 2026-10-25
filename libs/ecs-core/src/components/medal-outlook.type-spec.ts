@@ -1,5 +1,5 @@
 /**
- * The medal outlook's dictionaries (`medal-outlook.data.ts`, the
+ * The medal outlook's dictionaries (one file each since pass D — the
  * decision-extraction pass §2.4), checked at compile time:
  *
  * 1. `Holds` — each dictionary's values are exactly its type, each value
@@ -13,18 +13,16 @@
  *
  * `tsc` failing IS the test; nothing here runs.
  */
-import {
-  LadderRung,
-  MedalCaption,
-  MedalCue,
-  MedalDetailState,
-  MedalMeter,
-  MedalProgressCard,
-  MedalRingState,
-  ScopeSection,
-  SeasonTrackState,
-} from './medal-outlook.data';
-import type { MedalState } from './badge-level.data';
+import { LadderRung } from './ladder-rung.data';
+import { MedalCaption } from './medal-caption.data';
+import { MedalCue } from './medal-cue.data';
+import { MedalDetailState } from './medal-detail-state.data';
+import { MedalMeter } from './medal-meter.data';
+import { MedalProgressCard } from './medal-progress-card.data';
+import { MedalRingState } from './medal-ring-state.data';
+import { ScopeSection } from './scope-section.data';
+import { SeasonTrackState } from './season-track-state.data';
+import type { MedalState } from './series-standing.data';
 import type {
   MedalDetailReading,
   MedalLadderStep,

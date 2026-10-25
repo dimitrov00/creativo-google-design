@@ -10,6 +10,7 @@ import {
   startAfter,
 } from 'firebase/firestore';
 import { Result } from '@core/primitives';
+import { PageStep } from '@core/components';
 import {
   CLIENT_MONEY_DOC,
   type ClientMoneyRecord,
@@ -18,7 +19,7 @@ import {
   Subcollections,
 } from '@core/entities';
 import type { ClientStatsReadPorts } from '@core/ports';
-import { PageStep, PagingSystem } from '@core/systems';
+import { PagingSystem } from '@core/systems';
 import { readDoc, readQuery } from './observe';
 
 /** The id a page of stored stats is ordered and resumed by. */

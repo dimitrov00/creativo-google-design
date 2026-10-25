@@ -1,4 +1,4 @@
-import { LocalDate } from '@core/primitives';
+import { type EndMinute, LocalDate, type MinuteOfDay } from '@core/primitives';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 
 /*
@@ -25,12 +25,12 @@ const LONG_DAY: Intl.DateTimeFormatOptions = {
 };
 
 /**
- * A minute of the shop day `localDate` — `1440` (an end at the next
- * midnight) reads as that midnight.
+ * A minute of the shop day `localDate` — a start, or an exclusive end:
+ * `1440` (an end at the next midnight) reads as that midnight.
  */
 export function formatBookingTime(
   localDate: LocalDate,
-  minute: number,
+  minute: MinuteOfDay | EndMinute,
   locale: string,
 ): string {
   return formatWallClock(localDate, minute, locale, TIME_OF_DAY);

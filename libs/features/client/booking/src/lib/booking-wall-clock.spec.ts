@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDate } from '@core/testing';
+import { endMinute, localDate, minute } from '@core/testing';
 import {
   formatBookingDay,
   formatBookingMonth,
@@ -15,10 +15,10 @@ describe('the booking steps’ clock faces', () => {
   const thursday = localDate('2026-08-20');
 
   it('says a minute of the shop day on the 24-hour clock, in both languages', () => {
-    expect(formatBookingTime(thursday, 14 * 60, 'bg')).toBe('14:00');
-    expect(formatBookingTime(thursday, 9 * 60 + 5, 'en')).toBe('09:05');
+    expect(formatBookingTime(thursday, minute(14 * 60), 'bg')).toBe('14:00');
+    expect(formatBookingTime(thursday, minute(9 * 60 + 5), 'en')).toBe('09:05');
     // An end at the closing midnight reads as that midnight.
-    expect(formatBookingTime(thursday, 1440, 'bg')).toBe('00:00');
+    expect(formatBookingTime(thursday, endMinute(1440), 'bg')).toBe('00:00');
   });
 
   it('spells the shop day out', () => {

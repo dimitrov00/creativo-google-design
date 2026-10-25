@@ -2,12 +2,14 @@ import {
   type ServiceCategoryId,
   type ServiceId,
   Result,
+  Tag,
 } from '@core/primitives';
 import {
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
 } from '@core/errors';
+import { QualifierComparison } from './qualifier-comparison.data';
 
 /** Which visit keeps the rhythm — the rule's discriminator `streakQualifier`. */
 export const StreakQualifier = {
@@ -18,22 +20,9 @@ export const StreakQualifier = {
 export type StreakQualifier =
   (typeof StreakQualifier)[keyof typeof StreakQualifier];
 
-/**
- * How a qualifier stands to the one before it: `WIDER` counts every visit
- * the other counted and more, `NARROWER` the reverse, `OTHER` neither (two
- * lists that only overlap, services against categories).
- */
-export const QualifierComparison = {
-  Same: 'SAME',
-  Wider: 'WIDER',
-  Narrower: 'NARROWER',
-  Other: 'OTHER',
-} as const;
-export type QualifierComparison =
-  (typeof QualifierComparison)[keyof typeof QualifierComparison];
-
+/** Every qualifier, dictionary (key) order — what an unknown one is refused against. */
 const STREAK_QUALIFIERS: readonly StreakQualifier[] =
-  Object.values(StreakQualifier);
+  Tag.values(StreakQualifier);
 
 /**
  * Which visit keeps the rhythm (client-card revision 3 §4.1, P2): any

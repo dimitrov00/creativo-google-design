@@ -1,12 +1,6 @@
 import {
   defect,
-  type DurationMinutes,
-  type MinuteCount,
   type BarberId,
-  type CustomerId,
-  type SeatId,
-  type ServiceId,
-  type ServiceVariantId,
   type UserId,
   EndMinute,
   MinuteOfDay,
@@ -14,154 +8,19 @@ import {
   AttendanceState,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-import type { BarberPreference } from './barber-pref.data';
+import type { AccountOccupant } from './account-occupant.data';
+import type { AccountSeat } from './account-seat.data';
+import type { ChairGeometry } from './chair-geometry.data';
 import { MinuteRange } from './minute-range.data';
-import type { SeatLabel } from './seat-label.data';
+import type { SeatCatalogTerms } from './seat-catalog-terms.data';
+import type { SeatCore } from './seat-core.data';
+import {
+  SeatOccupant,
+  SeatSubject,
+  SubjectRelationship,
+} from './seat-occupant.data';
 import type { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
-
-/**
- * What a seat's chair geometry reads — its start and its snapshotted
- * minutes. A whole `Seat` passes straight in; so does any slice that holds
- * these (the staff grid's occupancy rows).
- */
-export type ChairGeometry = {
-  readonly startMinutes: MinuteOfDay;
-  readonly durationMinutes: DurationMinutes;
-  readonly setupMinutes: MinuteCount;
-  readonly cleanupMinutes: MinuteCount;
-};
-
-/**
- * Who a seat's subject is — the field `seatSubject`, the ONLY source of
- * these strings. `ACCOUNT` names the account AND, beside it, the client
- * record the shop keeps about that person (D29, the appointment flip (1),
- * F1-4: "beside, not instead"); a `CUSTOMER` variant — a record with no
- * account — joins with the walk-in path.
- */
-export const SeatSubject = {
-  /** A registered account and its client record, each referenced by id — never an embedded profile. */
-  Account: 'ACCOUNT',
-  /** No account, no PII beyond a `SeatLabel` handle. */
-  Anonymous: 'ANONYMOUS',
-} as const;
-export type SeatSubject = (typeof SeatSubject)[keyof typeof SeatSubject];
-
-/** How an account subject relates to the party's owner — the field `subjectRelationship`. */
-export const SubjectRelationship = {
-  /** The booker's own seat — what authority hangs off; never guessed. */
-  Self: 'SELF',
-  /** Someone with an account of their own the booker vouches for. */
-  Companion: 'COMPANION',
-  /** A third party a STAFF member booked for. */
-  Client: 'CLIENT',
-} as const;
-export type SubjectRelationship =
-  (typeof SubjectRelationship)[keyof typeof SubjectRelationship];
-
-/**
- * WHO a seat is FOR (`seat.ts:22,40-52`) — a flat variant slice of every
- * `seats[]` element, discriminated by `seatSubject`: an account by its uid
- * (`subjectUserId` — who signs in, the rules and "my …" key) with the
- * client record the shop keeps about that person (`subjectCustomerId` —
- * whom the shop serves, bills and rewards; D29: two fields, two values,
- * never derived from each other) and its relationship to the booker, or an
- * anonymous guest by label.
- */
-export type SeatOccupant = SeatOccupant.Account | SeatOccupant.Anonymous;
-
-/**
- * The `ACCOUNT` variant as the ACCOUNT rules read it — who signed in, never
- * whom the shop serves (D29): the booker's own seat, one person in two
- * chairs, the uid mirrors. A {@link SeatOccupant.Account} passes straight in
- * (Law 3), and a rule that reads no client record never asks for one — no
- * placeholder value, no uid→customer cast (flatten L7).
- */
-export type AccountRef = Omit<SeatOccupant.Account, 'subjectCustomerId'>;
-
-/** An occupant as the account rules read it — {@link AccountRef} or an anonymous guest. */
-export type AccountOccupant = AccountRef | SeatOccupant.Anonymous;
-
-export const SeatOccupant = {
-  account(
-    userId: UserId,
-    customerId: CustomerId,
-    relationship: SubjectRelationship,
-  ): SeatOccupant.Account {
-    return {
-      seatSubject: SeatSubject.Account,
-      subjectUserId: userId,
-      subjectCustomerId: customerId,
-      subjectRelationship: relationship,
-    };
-  },
-
-  anonymous(label: SeatLabel): SeatOccupant.Anonymous {
-    return { seatSubject: SeatSubject.Anonymous, guestLabel: label };
-  },
-
-  /** A subject with no identity and no contact channel. */
-  isContactless(occupant: AccountOccupant): boolean {
-    return occupant.seatSubject === SeatSubject.Anonymous;
-  },
-
-  /** The occupant slice of a value that carries one (a whole `Seat`), copied to exactly its variant's fields. */
-  of(occupant: SeatOccupant): SeatOccupant {
-    return occupant.seatSubject === SeatSubject.Account
-      ? SeatOccupant.account(
-          occupant.subjectUserId,
-          occupant.subjectCustomerId,
-          occupant.subjectRelationship,
-        )
-      : SeatOccupant.anonymous(occupant.guestLabel);
-  },
-} as const;
-
-export namespace SeatOccupant {
-  export type Account = {
-    readonly seatSubject: typeof SeatSubject.Account;
-    readonly subjectUserId: UserId;
-    /** The client record of this account (D29) — `CustomerId.forUser(subjectUserId, hash)`, resolved by the pipeline. */
-    readonly subjectCustomerId: CustomerId;
-    readonly subjectRelationship: SubjectRelationship;
-  };
-  export type Anonymous = {
-    readonly seatSubject: typeof SeatSubject.Anonymous;
-    readonly guestLabel: SeatLabel;
-  };
-}
-
-/**
- * What the CATALOGUE said when staff overrode a seat's terms
- * (`appointment-document.ts:122-135`). Both figures are `null` together for
- * the ordinary seat whose terms ARE the catalogue's — and for every seat
- * written before provenance existed, which is "we do not know", not a claim.
- */
-export type SeatCatalogTerms = {
-  readonly catalogPriceCents: PriceCents | null;
-  readonly catalogDurationMinutes: DurationMinutes | null;
-};
-
-/**
- * A seat's own 1-to-1 fields — its identity, what it is for, where it sits
- * and its tip. `barberPreference` is the stored TAG of the preference the
- * seat was resolved from (the specific barber is the seat's own `barberId`);
- * `null` is "we do not know" and never reads as `ANY`. `startMinutes` is on
- * the appointment's `localDate` (T7). `tipCents` has one home, the seat — a
- * party can be two barbers and a tip belongs to whoever did the work; it is
- * in the seat's `currency`, and `null` is "not recorded", which is not zero.
- */
-export type SeatCore = {
-  readonly seatId: SeatId;
-  readonly serviceId: ServiceId;
-  /** The choice made within the service — `null` only when it declares none. */
-  readonly variantId: ServiceVariantId | null;
-  /** RESOLVED, never a preference. */
-  readonly barberId: BarberId;
-  readonly barberPreference: BarberPreference | null;
-  readonly startMinutes: MinuteOfDay;
-  readonly tipCents: PriceCents | null;
-};
 
 /**
  * One person being served within an appointment — a party of N is one
@@ -177,18 +36,6 @@ export type Seat = SeatCore &
   ServiceTerms &
   SeatCatalogTerms &
   SeatOccupant &
-  SeatOutcome;
-
-/**
- * A seat as the ACCOUNT rules read it — every slice of {@link Seat}, its
- * occupant an {@link AccountOccupant} (D29). What a system that reads no
- * client record takes (Law 3: the slice it reads), so a whole `Seat` passes
- * straight in.
- */
-export type AccountSeat = SeatCore &
-  ServiceTerms &
-  SeatCatalogTerms &
-  AccountOccupant &
   SeatOutcome;
 
 function outcomeOf(outcome: SeatOutcome): SeatOutcome {

@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ENROLLMENT_STATUSES,
-  EnrollmentStatus,
-  isEnrollmentOpenOrUpcoming,
-} from './enrollment-status.data';
+import { Tag } from '@core/primitives';
+import { EnrollmentStatus } from './enrollment-status.data';
 
+// The status list is `Tag.values(EnrollmentStatus)`; which are shown is
+// `ProgramsSystem.isEnrollmentOpenOrUpcoming` (its cases live in
+// `programs.system.spec.ts`). Pass D retired the `ENROLLMENT_STATUSES` /
+// `isEnrollmentOpenOrUpcoming` delegates.
 describe('EnrollmentStatus', () => {
   it('declares the statuses SCREAMING, in order', () => {
-    expect(ENROLLMENT_STATUSES).toEqual(['OPEN', 'UPCOMING', 'CLOSED']);
-  });
-
-  it('shows an open or an upcoming course, never a closed one', () => {
-    expect(isEnrollmentOpenOrUpcoming(EnrollmentStatus.Open)).toBe(true);
-    expect(isEnrollmentOpenOrUpcoming(EnrollmentStatus.Upcoming)).toBe(true);
-    expect(isEnrollmentOpenOrUpcoming(EnrollmentStatus.Closed)).toBe(false);
+    expect(Tag.values(EnrollmentStatus)).toEqual([
+      'OPEN',
+      'UPCOMING',
+      'CLOSED',
+    ]);
   });
 });

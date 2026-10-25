@@ -4,6 +4,7 @@ import {
   AuditAction,
   E164,
   Email,
+  type RegistrationField,
   WriteOp,
   type ProfileEdits,
 } from '@core/components';
@@ -60,7 +61,7 @@ function rig(users: readonly User[]) {
 }
 
 /** The edit's row as the plan `Create`s it: `AuditSystem.planOwnProfileEdit` over `fields`, under `hash(basis)`. */
-function rowWrite(fields: readonly string[]): WriteOp {
+function rowWrite(fields: readonly RegistrationField[]): WriteOp {
   const plan = AuditSystem.planOwnProfileEdit(UID, fields, FIXTURE_NOW_UTC_MS);
   if (plan === null || plan.idBasis === null) throw new Error('no row');
   return WriteOp.create(

@@ -10,7 +10,6 @@ import {
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
-  type GrantTerms,
 } from '@core/components';
 import {
   GrantStatus,
@@ -64,7 +63,7 @@ function multiUse(total: number): GrantCapacityTerms {
 function terms(
   capacity: GrantCapacityTerms,
   expiry: GrantExpiryTerms,
-): GrantTerms {
+): GrantLifecycle.Terms {
   return { ...capacity, ...expiry };
 }
 

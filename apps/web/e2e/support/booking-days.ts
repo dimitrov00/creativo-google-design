@@ -1,12 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { SHOP_ZONE } from './appointment-seed-document';
-
-/** Today on the shop's wall clock, `YYYY-MM-DD` — whatever the device's zone. */
-export function shopToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: SHOP_ZONE }).format(
-    new Date(),
-  );
-}
+import { shopToday } from './shop-clock';
 
 /**
  * The days after today the booking calendar lets you tap, in calendar order.

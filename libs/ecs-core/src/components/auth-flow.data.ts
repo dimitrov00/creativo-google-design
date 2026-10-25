@@ -1,4 +1,5 @@
-import type { ParsedIdentifier } from './identifier.data';
+import type { AuthFailure } from '@core/errors';
+import type { ParsedIdentifier } from './parsed-identifier.data';
 import type { SessionKind } from './session-kind.data';
 
 /** Auth flow step tags — the ONLY source of these strings, the discriminator `authFlowStep`. */
@@ -12,31 +13,17 @@ export const AuthFlowStep = {
 export type AuthFlowStep = (typeof AuthFlowStep)[keyof typeof AuthFlowStep];
 
 /**
- * Auth flow event tags — what the wrapping store dispatches; the
- * discriminator `authFlowEventKind` (N15: `AuthFlowEvent` is the union).
- */
-export const AuthFlowEventKind = {
-  SubmitIdentifier: 'SUBMIT_IDENTIFIER',
-  RequestFailed: 'REQUEST_FAILED',
-  SubmitOtp: 'SUBMIT_OTP',
-  VerifyFailed: 'VERIFY_FAILED',
-  Verified: 'VERIFIED',
-  ResendOtp: 'RESEND_OTP',
-  ChangeIdentifier: 'CHANGE_IDENTIFIER',
-  Back: 'BACK',
-} as const;
-export type AuthFlowEventKind =
-  (typeof AuthFlowEventKind)[keyof typeof AuthFlowEventKind];
-
-/**
  * The identity flow's state — prove who the person is via a code challenge,
  * `identify → otp → authenticated | done` (the pure port of v2's
  * `auth.machine.ts`). The network never runs here: the async send and verify
  * collapse into events the store dispatches once the callables settle, and
  * `AuthFlowSystem.next(state, event)` stays a synchronous total function.
  * `error` is the last refusal to show (`null` for none) — present on every
- * step that can show one, never an optional key. In-memory UI state (F-8):
- * the parsed `identifier` stays a named reference.
+ * step that can show one, never an optional key — as its struct
+ * (`AuthFailure`: an identity refusal, or the callable's failure as the
+ * gateway answered it), so its params survive to the words (Law 7.5, pass D
+ * §2.11). In-memory UI state (F-8): the parsed `identifier` stays a named
+ * reference.
  */
 export type AuthFlowState =
   | AuthFlowState.Identify
@@ -59,12 +46,15 @@ export const AuthFlowState = {
   initial(): AuthFlowState.Identify {
     return IDENTIFY;
   },
-  identify(error: string | null): AuthFlowState.Identify {
+  identify(error: AuthFailure | null): AuthFlowState.Identify {
     return error === null
       ? IDENTIFY
       : { authFlowStep: AuthFlowStep.Identify, error };
   },
-  otp(identifier: ParsedIdentifier, error: string | null): AuthFlowState.Otp {
+  otp(
+    identifier: ParsedIdentifier,
+    error: AuthFailure | null,
+  ): AuthFlowState.Otp {
     return { authFlowStep: AuthFlowStep.Otp, identifier, error };
   },
   blocked(): AuthFlowState.Blocked {
@@ -94,12 +84,12 @@ export const AuthFlowState = {
 export namespace AuthFlowState {
   export type Identify = {
     readonly authFlowStep: typeof AuthFlowStep.Identify;
-    readonly error: string | null;
+    readonly error: AuthFailure | null;
   };
   export type Otp = {
     readonly authFlowStep: typeof AuthFlowStep.Otp;
     readonly identifier: ParsedIdentifier;
-    readonly error: string | null;
+    readonly error: AuthFailure | null;
   };
   export type Blocked = {
     readonly authFlowStep: typeof AuthFlowStep.Blocked;
@@ -111,95 +101,5 @@ export namespace AuthFlowState {
   };
   export type Authenticated = {
     readonly authFlowStep: typeof AuthFlowStep.Authenticated;
-  };
-}
-
-/**
- * What the store tells the auth flow. `blocked` on a failure says the
- * channel is locked out (the flow ends); `message` is the refusal to show.
- */
-export type AuthFlowEvent =
-  | AuthFlowEvent.SubmitIdentifier
-  | AuthFlowEvent.RequestFailed
-  | AuthFlowEvent.SubmitOtp
-  | AuthFlowEvent.VerifyFailed
-  | AuthFlowEvent.Verified
-  | AuthFlowEvent.ResendOtp
-  | AuthFlowEvent.ChangeIdentifier
-  | AuthFlowEvent.Back;
-
-export const AuthFlowEvent = {
-  submitIdentifier(
-    identifier: ParsedIdentifier,
-  ): AuthFlowEvent.SubmitIdentifier {
-    return {
-      authFlowEventKind: AuthFlowEventKind.SubmitIdentifier,
-      identifier,
-    };
-  },
-  requestFailed(
-    blocked: boolean,
-    message: string,
-  ): AuthFlowEvent.RequestFailed {
-    return {
-      authFlowEventKind: AuthFlowEventKind.RequestFailed,
-      blocked,
-      message,
-    };
-  },
-  submitOtp(): AuthFlowEvent.SubmitOtp {
-    return { authFlowEventKind: AuthFlowEventKind.SubmitOtp };
-  },
-  verifyFailed(blocked: boolean, message: string): AuthFlowEvent.VerifyFailed {
-    return {
-      authFlowEventKind: AuthFlowEventKind.VerifyFailed,
-      blocked,
-      message,
-    };
-  },
-  verified(sessionKind: SessionKind): AuthFlowEvent.Verified {
-    return { authFlowEventKind: AuthFlowEventKind.Verified, sessionKind };
-  },
-  resendOtp(): AuthFlowEvent.ResendOtp {
-    return { authFlowEventKind: AuthFlowEventKind.ResendOtp };
-  },
-  changeIdentifier(): AuthFlowEvent.ChangeIdentifier {
-    return { authFlowEventKind: AuthFlowEventKind.ChangeIdentifier };
-  },
-  back(): AuthFlowEvent.Back {
-    return { authFlowEventKind: AuthFlowEventKind.Back };
-  },
-} as const;
-
-export namespace AuthFlowEvent {
-  export type SubmitIdentifier = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.SubmitIdentifier;
-    readonly identifier: ParsedIdentifier;
-  };
-  export type RequestFailed = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.RequestFailed;
-    readonly blocked: boolean;
-    readonly message: string;
-  };
-  export type SubmitOtp = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.SubmitOtp;
-  };
-  export type VerifyFailed = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.VerifyFailed;
-    readonly blocked: boolean;
-    readonly message: string;
-  };
-  export type Verified = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.Verified;
-    readonly sessionKind: SessionKind;
-  };
-  export type ResendOtp = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.ResendOtp;
-  };
-  export type ChangeIdentifier = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.ChangeIdentifier;
-  };
-  export type Back = {
-    readonly authFlowEventKind: typeof AuthFlowEventKind.Back;
   };
 }

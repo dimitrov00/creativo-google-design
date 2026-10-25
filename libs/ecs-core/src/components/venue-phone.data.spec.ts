@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { E164 } from './phone-number.data';
 import { VenuePhone } from './venue-phone.data';
+import { E164 } from './e164.data';
 
 const CENTER = E164.of('+359881234567');
 

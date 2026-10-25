@@ -4,10 +4,12 @@ import {
   AppliedOperation,
   AuditAction,
   BarberPreference,
+  BillPending,
   BookingCall,
   BookingLifecycle,
   DiscountMethod,
   DiscountSource,
+  LedgerVerdict,
   RequestedSubjectRole,
   SeatLabel,
   SeatOutcome,
@@ -62,9 +64,7 @@ import {
 import {
   AppointmentEditSystem,
   type EditCommandRequest,
-  LedgerVerdict,
 } from './appointment-edit.system';
-import { BillPending } from './billing.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*

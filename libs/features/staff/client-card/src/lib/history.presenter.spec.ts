@@ -1,3 +1,4 @@
+import { AppointmentId, UserId } from '@core/primitives';
 import { describe, expect, it } from 'vitest';
 import type { ClientStatsRecord } from '@core/entities';
 import { historyFacts, historyRows } from './history.presenter';
@@ -73,9 +74,9 @@ describe('the rows and the year sections', () => {
   it('counts each visit once, however the pages overlap', () => {
     const rows = historyRows({
       appointments: [...GEORGI_BOOK, ...GEORGI_BOOK.slice(0, 3)],
-      subjectUserId: GEORGI,
+      subjectUserId: UserId.of(GEORGI),
       subjectCustomerId: GEORGI_CUSTOMER_ID,
-      currentAppointmentId: 'appt-dev-1',
+      currentAppointmentId: AppointmentId.of('appt-dev-1'),
       now: NOW,
       timeZone: SHOP_TIME_ZONE,
       photoCounts: new Map(),

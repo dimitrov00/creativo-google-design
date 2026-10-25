@@ -2,6 +2,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiIcon, UiIconScale } from './icon';
 import { MATERIAL_GLYPHS } from '../material/material-glyphs.generated';
+import { UiIconAsset } from '../manifest/icon-manifest';
 import { UiIconName } from '../manifest/icon-vocabulary';
 import {
   UI_ICON_REPORTER,
@@ -175,7 +176,7 @@ describe('UiIcon', () => {
           provideUiIcons({ 'sheet.close': 'cancel' }),
           provideUiIcons({
             'sheet.close': {
-              kind: 'vector',
+              iconAsset: UiIconAsset.Vector,
               viewBox: '0 0 2 2',
               paths: [{ d: 'M0 0h2v2H0z' }],
             },

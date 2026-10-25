@@ -27,6 +27,14 @@ export type UtcEpochMs = Brand<number, 'UtcEpochMs'>;
 
 export const UtcEpochMs = {
   /**
+   * The Unix epoch, 1970-01-01T00:00:00Z (`0`) — inside the window
+   * {@link UtcEpochMs.of} accepts, so the brand is proven. The floor an
+   * instant counts from (the retention rules' civil-day origin) and the
+   * "no tick yet" seed of a clock signal.
+   */
+  EPOCH: 0 as UtcEpochMs,
+
+  /**
    * The smart constructor: a safe integer inside the years 0001–9999 (UTC) —
    * the window `ZonedTimeSystem` reads.
    */

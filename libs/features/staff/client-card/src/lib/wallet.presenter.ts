@@ -1,4 +1,9 @@
-import { CouponGrantId, LocalDate, defect } from '@core/primitives';
+import {
+  type CouponGrantId,
+  type LocalDate,
+  type TierId,
+  defect,
+} from '@core/primitives';
 import {
   FreezeReason,
   PassFigure,
@@ -7,6 +12,8 @@ import {
   RewardGrant,
   StreakCapsule,
   StreakState,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
   WalletAction,
 } from '@core/components';
 import type {
@@ -23,8 +30,6 @@ import {
   type StreakOutlookAnswer,
   StreakRuleSystem,
   StreakSystem,
-  type StreakTrackMark,
-  StreakTrackMarkKind,
   TierSystem,
   type ValidLoyaltyCatalog,
   type VoucherIdOrder,
@@ -33,6 +38,7 @@ import {
 } from '@core/systems';
 import {
   type RhythmClosedMark,
+  type RhythmRuleContext,
   isRhythmClosedMark,
   rhythmClosedMarkPeriod,
   rhythmRuleWords,
@@ -58,6 +64,7 @@ import {
   type RhythmPhaseVm,
   type StampCardVm,
   type VoucherVm,
+  WalletActionId,
   type WalletActionVm,
   WalletHolding,
   type WalletHoldingVm,
@@ -71,7 +78,13 @@ import {
   type ClientCardTranslate,
   type ClientCardWords,
 } from './client-card.words';
-import { activityGroups, foldByEvent, wholeMonthsOf } from './ledger.presenter';
+import {
+  NO_VISIT_NAMES,
+  type VisitNames,
+  activityGroups,
+  foldByEvent,
+  wholeMonthsOf,
+} from './ledger.presenter';
 import {
   type LoyaltyPageInput,
   groupedGrants,
@@ -120,7 +133,7 @@ export interface WalletInput extends LoyaltyPageInput {
   /** The head's name; `null` until it is known. */
   readonly holder: string | null;
   /** The first worked visit's shop day (`ClientStatsRecord.firstVisitLocalDate`); `null` before it. */
-  readonly sinceDay: string | null;
+  readonly sinceDay: LocalDate | null;
   /** The vouchers issued to the person, any state; `null` = not read (no reader bound). */
   readonly vouchers: LoadSlice<readonly GiftVoucher[]> | null;
   /**
@@ -159,9 +172,9 @@ export interface WalletInput extends LoyaltyPageInput {
    * by category), for the rule's «Броят се посещения с: …». Absent, a rule
    * that counts a list says nothing about it.
    */
-  readonly nameOf?: ((id: string) => string | null) | null;
+  readonly nameOf?: RhythmRuleContext['nameOf'];
   /** Who worked a visit, under `visitTitles`' keys: the activity row's «5.09 · Иван». */
-  readonly visitBarbers?: ReadonlyMap<string, string>;
+  readonly visitBarbers?: VisitNames;
 }
 
 function catalogOf(input: WalletInput): ValidLoyaltyCatalog | null {
@@ -196,7 +209,7 @@ function passOf(input: WalletInput): LoyaltyPass {
   return LoyaltyPassSystem.passOf(input.account, {
     pointsOn: input.flags.points,
     paused: input.paused,
-    today: dayOf(input.today),
+    today: input.today,
   });
 }
 
@@ -292,29 +305,21 @@ export function passVm(input: WalletInput): PassVm {
  */
 const BY_ID_COLLATION: VoucherIdOrder = (a, b) => a.localeCompare(b);
 
-/** The card's today as a shop day; a day the table cannot place is none. */
-function heldDayOf(today: string): LocalDate | null {
-  const day = LocalDate.parse(today);
-  return day.ok ? day.value : null;
-}
-
 /**
  * The vouchers held (`VoucherSystem.held`): the spendable ones — issued,
  * not voided, not past their day, with a balance — the soonest to run out
- * first. A day the table cannot place spends nothing rather than
- * everything.
+ * first.
  */
 function heldOf(
   vouchers: readonly GiftVoucher[],
-  today: string,
+  today: LocalDate,
 ): readonly GiftVoucher[] {
-  const day = heldDayOf(today);
-  return day === null ? [] : VoucherSystem.held(vouchers, day, BY_ID_COLLATION);
+  return VoucherSystem.held(vouchers, today, BY_ID_COLLATION);
 }
 
 function voucherVm(
   voucher: GiftVoucher,
-  today: string,
+  today: LocalDate,
   words: Words,
 ): VoucherVm {
   const page = words.loyaltyPage;
@@ -351,7 +356,7 @@ function voucherVm(
  */
 export function voucherVms(
   vouchers: readonly GiftVoucher[],
-  today: string,
+  today: LocalDate,
   words: Words,
 ): readonly VoucherVm[] {
   return heldOf(vouchers, today).map((voucher) =>
@@ -461,11 +466,9 @@ function holdingsDetailOf(
   holdings: readonly WalletHoldingVm[],
 ): string | null {
   const { words, today } = input;
-  const day = heldDayOf(today);
   // From two vouchers on, in one currency (`VoucherSystem.heldTotal`); the
   // count is every holding the section draws.
-  const total =
-    day === null ? null : VoucherSystem.heldTotal(vouchersOf(input), day);
+  const total = VoucherSystem.heldTotal(vouchersOf(input), today);
   return total === null
     ? null
     : words.loyaltyPage.walletSum(
@@ -479,22 +482,22 @@ function holdingsDetailOf(
 /** Each disc as drawn: its id, glyph and prominence — «Използвай» the one promoted verb. */
 const WALLET_ACTION_DISCS = {
   [WalletAction.Use]: {
-    id: 'use',
+    id: WalletActionId.Use,
     icon: 'promo.coupon',
     prominence: 'accent',
   },
   [WalletAction.Code]: {
-    id: 'code',
+    id: WalletActionId.Code,
     icon: 'loyalty.enterCode',
     prominence: 'standard',
   },
   [WalletAction.Catalog]: {
-    id: 'catalog',
+    id: WalletActionId.Catalog,
     icon: 'loyalty.reward',
     prominence: 'standard',
   },
   [WalletAction.History]: {
-    id: 'history',
+    id: WalletActionId.History,
     icon: 'loyalty.ledger',
     prominence: 'standard',
   },
@@ -528,9 +531,7 @@ function discWordsOf(
 function readyGrantIdsOf(input: WalletInput): readonly CouponGrantId[] {
   return ticketGroups(input).flatMap((group) => {
     const first = group.grants[0];
-    return group.applied || first === undefined
-      ? []
-      : [CouponGrantId.of(first.grantId)];
+    return group.applied || first === undefined ? [] : [first.grantId];
   });
 }
 
@@ -583,11 +584,11 @@ function catalogSectionStands(input: WalletInput): boolean {
 interface RhythmStanding {
   readonly line: string;
   /** The day the line names: the open mark under it stays uncaptioned for that day. */
-  readonly day: string | null;
+  readonly day: LocalDate | null;
   /** `null` while healthy. */
   readonly phase: RhythmPhaseVm | null;
   /** The due date the track's sentence names (`StreakOutlookAnswer.nextDue`); `null` where the line names none. */
-  readonly nextDue: string | null;
+  readonly nextDue: LocalDate | null;
 }
 
 /**
@@ -600,7 +601,7 @@ function inChairDueOf(
   state: StreakState,
   input: WalletInput,
 ): LocalDate | null {
-  return StreakSystem.inChairDue(state, dayOf(input.today), {
+  return StreakSystem.inChairDue(state, input.today, {
     inChairToday: input.inChairToday,
     paused: input.paused,
   });
@@ -705,7 +706,7 @@ function openPeriod(
   const lang = words.lang;
   // One fact, once: the day the sentence under the track names is not
   // captioned a second time.
-  const due = (day: string) =>
+  const due = (day: LocalDate) =>
     day === standing.day ? '' : rhythm.dueBy(dayShort(day, today, lang));
   if (mark.streakTrackMarkKind === StreakTrackMarkKind.Protected) {
     // The open mark's reason is the frozen phase's own.
@@ -755,7 +756,7 @@ function rhythmMarks(
 ): readonly UiStreakPeriod[] {
   const { words } = input;
   const track = StreakSystem.track(state, {
-    today: dayOf(input.today),
+    today: input.today,
     inChairToday: input.inChairToday,
     paused: input.paused,
     limit: WALLET_RHYTHM_PERIODS,
@@ -783,7 +784,7 @@ function rhythmMarks(
 export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
   const { account, flags, words, today } = input;
   // The rhythm counts: its flag, and the rule in force switched on.
-  if (!StreakRuleSystem.isOnOn(input.rhythm, dayOf(today), flags.streaks)) {
+  if (!StreakRuleSystem.isOnOn(input.rhythm, today, flags.streaks)) {
     return null;
   }
   const rule = ruleInForceOf(input.rhythm, today);
@@ -851,7 +852,7 @@ function tierOf(
   const locale = cardLocaleOf(words.lang);
   const page = words.loyaltyPage;
   const track = TierSystem.steps(account, catalog.tiers);
-  const stepOf = (tierId: string | null) =>
+  const stepOf = (tierId: TierId | null) =>
     track.steps.find((step) => step.tierId === tierId) ?? null;
   const current = stepOf(track.currentTierId);
   // The nodes are the tiers, named; what remains is the ring's, so no node
@@ -935,7 +936,7 @@ function rewardTilesOf(input: WalletInput, catalog: ValidLoyaltyCatalog) {
   return RewardSystem.tiles(
     catalog.rewards,
     input.account.balance,
-    dayOf(input.today),
+    input.today,
   );
 }
 
@@ -998,7 +999,7 @@ function walletActivity(entries: readonly JournalEntry[], input: WalletInput) {
   // A read that came back full may have cut its oldest event.
   const whole = entries.length < WALLET_ACTIVITY_READ;
   const groups = activityGroups(foldByEvent(entries, whole), {
-    visitTitles: input.visitTitles ?? new Map<string, string>(),
+    visitTitles: input.visitTitles ?? NO_VISIT_NAMES,
     visitBarbers: input.visitBarbers,
     catalog: catalogOf(input),
     today: input.today,
@@ -1055,12 +1056,4 @@ export function walletVm(input: WalletInput): WalletVm {
     ...(catalog === undefined ? {} : { catalog }),
     ...(activity === undefined ? {} : { activity }),
   };
-}
-
-// ── The card's own values → ecs-core structs ──────────────────────────────
-
-/** A shop day the card holds: a clock's «today». */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
 }

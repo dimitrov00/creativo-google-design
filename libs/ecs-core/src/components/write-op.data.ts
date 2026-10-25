@@ -1,3 +1,6 @@
+import type { DocBody } from './doc-body.data';
+import type { DocPath } from './doc-path.data';
+
 /**
  * One entry of a write plan. A system that would "write" returns
  * `readonly WriteOp[]` and the pipeline's single commit port applies it
@@ -13,6 +16,9 @@
  * document equal to exactly one variant: {@link WriteOp.transition} sets
  * every field of the new variant and deletes every field of the old one the
  * new one does not declare ({@link WriteOp.variantFieldsToDelete}).
+ *
+ * Its path and body types are their own components (`DocPath`, `DocBody` —
+ * pass D, S-21, one name per file).
  */
 
 /** Write tags — the ONLY source of these strings; the field is `writeAction`. */
@@ -23,20 +29,6 @@ export const WriteAction = {
   Delete: 'DELETE',
 } as const;
 export type WriteAction = (typeof WriteAction)[keyof typeof WriteAction];
-
-/**
- * A document path as alternating collection names and ids —
- * `['clientStats', uid, 'restricted', 'money']` is one path. Collection
- * names come from the collection registry, never a literal at the call site.
- */
-export type DocPath = readonly string[];
-
-/**
- * A document body (or an update's field map): the flat entity minus `id`.
- * Entity types are object type aliases, so any of them is assignable here
- * without a cast.
- */
-export type DocBody = { readonly [field: string]: unknown };
 
 export type WriteOp =
   WriteOp.Set | WriteOp.Create | WriteOp.Update | WriteOp.Delete;

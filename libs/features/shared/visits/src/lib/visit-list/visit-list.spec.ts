@@ -5,11 +5,15 @@ import { TestBed } from '@angular/core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { UiButton } from '@creativo/ui/controls';
 import {
+  VisitGrain,
+  VisitPerspective,
+  VisitRowOutcome,
+} from '@core/components';
+import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
   FIXTURE_TODAY,
 } from '@core/testing';
-import { VisitGrain, VisitPerspective, VisitRowOutcome } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {

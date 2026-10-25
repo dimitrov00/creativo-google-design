@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GovernanceErrorCode } from '@core/errors';
-import { FLAG_NAMES, FeatureFlags, FlagName } from './feature-flags.data';
+import { FeatureFlags, FlagName } from './feature-flags.data';
 
 /*
  * The cases of the legacy governance `feature-flags.spec.ts` (deleted in Phase
@@ -25,7 +25,7 @@ function workspaceRoot(from: string): string {
 
 describe('FlagName', () => {
   it('is the R41 vocabulary plus the two earlier keys, each once', () => {
-    expect([...FLAG_NAMES].sort()).toEqual(
+    expect([...FeatureFlags.NAMES].sort()).toEqual(
       [
         'client.profile',
         'client.pause',
@@ -42,7 +42,7 @@ describe('FlagName', () => {
         'discounts.grants',
       ].sort(),
     );
-    expect(new Set(FLAG_NAMES).size).toBe(FLAG_NAMES.length);
+    expect(new Set(FeatureFlags.NAMES).size).toBe(FeatureFlags.NAMES.length);
   });
 
   it('no longer knows the retired rewards.* keys', () => {
@@ -63,7 +63,7 @@ describe('FlagName', () => {
     expect(environments.length).toBeGreaterThan(0);
     for (const [environment, flags] of environments) {
       expect(Object.keys(flags).sort(), environment).toEqual(
-        [...FLAG_NAMES].sort(),
+        [...FeatureFlags.NAMES].sort(),
       );
       expect(FeatureFlags.parse(flags).ok, environment).toBe(true);
     }
@@ -73,8 +73,8 @@ describe('FlagName', () => {
 describe('FeatureFlags.defaults', () => {
   it('is all-disabled, every key present', () => {
     const flags = FeatureFlags.defaults();
-    expect(Object.keys(flags).sort()).toEqual([...FLAG_NAMES].sort());
-    for (const key of FLAG_NAMES) {
+    expect(Object.keys(flags).sort()).toEqual([...FeatureFlags.NAMES].sort());
+    for (const key of FeatureFlags.NAMES) {
       expect(FeatureFlags.flagOn(flags, key)).toBe(false);
     }
   });
@@ -96,7 +96,7 @@ describe('FeatureFlags.parse', () => {
 
   it('accepts a complete map, one entry per key', () => {
     const complete = Object.fromEntries(
-      FLAG_NAMES.map((key) => [key, key === FlagName.ClientProfile]),
+      FeatureFlags.NAMES.map((key) => [key, key === FlagName.ClientProfile]),
     );
     const result = FeatureFlags.parse(complete);
     expect(result.ok).toBe(true);
@@ -175,7 +175,7 @@ describe('FeatureFlags.withFlag', () => {
       FlagName.LoyaltyPoints,
       true,
     );
-    expect(Object.keys(flags).sort()).toEqual([...FLAG_NAMES].sort());
+    expect(Object.keys(flags).sort()).toEqual([...FeatureFlags.NAMES].sort());
     expect(FeatureFlags.parse(flags)).toEqual({ ok: true, value: flags });
   });
 });

@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
 import { UiButton, type UiControlSize } from '@creativo/ui/controls';
-import { VisitGrain } from '@core/systems';
+import { VisitGrain } from '@core/components';
 import { FIXTURE_TODAY } from '@core/testing';
 import {
   GEORGI_UID,

@@ -352,14 +352,14 @@
               </span>
             </li>
             <!-- P2a, only with «избрани услуги» -->
-            @if (qualifierChoice() !== 'anyVisit') {
+            @if (qualifierChoice() !== StreakQualifier.AnyVisit) {
             <button
               type="button"
               uiListRow
               uiSize="regular"
               [uiInteractive]="true"
               data-testid="admin-rhythm-services"
-              (click)="openSheet('services')"
+              (click)="openSheet(RhythmSheet.Services)"
             >
               {{ t('admin.rhythm.counts.servicesRow') }}
               <span uiTrailing class="admin-rhythm__value">
@@ -711,7 +711,7 @@
             [uiInteractive]="true"
             class="admin-rhythm__row"
             data-testid="admin-rhythm-row-protections"
-            (click)="openSheet('protections')"
+            (click)="openSheet(RhythmSheet.Protections)"
           >
             {{ t('admin.rhythm.protections.title') }}
             <span uiTrailing class="admin-rhythm__value">
@@ -728,7 +728,7 @@
             [uiInteractive]="true"
             class="admin-rhythm__row"
             data-testid="admin-rhythm-row-excuses"
-            (click)="openSheet('excuses')"
+            (click)="openSheet(RhythmSheet.Excuses)"
           >
             {{ t('admin.rhythm.excuses.title') }}
             <span uiTrailing class="admin-rhythm__value">
@@ -745,7 +745,7 @@
             [uiInteractive]="true"
             class="admin-rhythm__row"
             data-testid="admin-rhythm-row-afterMiss"
-            (click)="openSheet('afterMiss')"
+            (click)="openSheet(RhythmSheet.AfterMiss)"
           >
             {{ t('admin.rhythm.afterMiss.title') }}
             <span uiTrailing class="admin-rhythm__value">
@@ -934,7 +934,7 @@
   </main>
 
   <lib-admin-rhythm-sheet
-    [kind]="sheetKind()"
+    [sheet]="sheet()"
     [services]="serviceGroups()"
     (closed)="closeSheet()"
   />

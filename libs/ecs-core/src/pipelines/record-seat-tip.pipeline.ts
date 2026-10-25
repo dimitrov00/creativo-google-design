@@ -6,11 +6,7 @@ import {
   type PriceCents,
   type SeatId,
 } from '@core/primitives';
-import {
-  BookingError,
-  type RepositoryError,
-  type SchedulingError,
-} from '@core/errors';
+import { BookingError, type RecordSeatTipError } from '@core/errors';
 import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import { type AuditFact, AuditSystem, BillingSystem } from '@core/systems';
 import {
@@ -44,16 +40,6 @@ export type RecordSeatTipAnswer = {
   /** The stored figure already was this one — nothing written, nothing logged. */
   readonly unchanged: boolean;
 };
-
-/**
- * No such visit (`BOOKING_INVALID_INPUT`, field `appointmentId`), no such
- * seat on it (`SCHEDULING_APPOINTMENT_UNKNOWN_SEAT`) — the edge answers both
- * as the callable's not-found — or the store.
- */
-export type RecordSeatTipError =
-  | BookingError.InvalidInput
-  | SchedulingError.AppointmentUnknownSeat
-  | RepositoryError;
 
 export type RecordSeatTipPorts = TxPorts & AuditAppendPorts & TelemetryPorts;
 

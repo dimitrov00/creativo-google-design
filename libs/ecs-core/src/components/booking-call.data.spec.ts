@@ -13,7 +13,7 @@ import { endMinute, localDate, minute } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { BookingCall, RequestedSubjectRole } from './booking-call.data';
 import { EditCommand, ResizeEdge } from './edit-command.data';
-import { CancellationReason } from './seat-outcome.data';
+import { CancellationReason } from './cancellation-reason.data';
 
 /*
  * THE BOOKING WIRE (Phase 4a 4A-4): the builders the web stores call

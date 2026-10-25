@@ -24,6 +24,10 @@ import {
   type ShopNow,
   type DocPath,
   WriteOp,
+  CancellationAttribution,
+  ClientStatsWritePlan,
+  SubjectVisitOutcome,
+  SubjectVisitOutcomeState,
 } from '@core/components';
 import {
   BookingStatus,
@@ -147,30 +151,6 @@ export type BilledAppointment<S extends AccountSeat = AccountSeat> =
   };
 
 /**
- * What one appointment was, for one person — the ONLY source of these
- * strings, the field `subjectVisitOutcome`.
- */
-export const SubjectVisitOutcome = {
-  Worked: 'WORKED',
-  NoShow: 'NO_SHOW',
-  Cancelled: 'CANCELLED',
-  Open: 'OPEN',
-} as const;
-export type SubjectVisitOutcome =
-  (typeof SubjectVisitOutcome)[keyof typeof SubjectVisitOutcome];
-
-/** One person's story of one appointment, discriminated by `subjectVisitOutcome`. */
-export type SubjectVisitOutcomeState =
-  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Worked }
-  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.NoShow }
-  | {
-      readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Cancelled;
-      /** The seat called off LAST — the cancellation that ended the visit. */
-      readonly decisive: AccountSeat & SeatOutcome.Cancelled;
-    }
-  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Open };
-
-/**
  * One appointment as one person's visit: their seats, its span on the shop
  * wall clock, its start instant (the late-cancel line, T9) and their outcome.
  */
@@ -184,17 +164,6 @@ export type SubjectVisit<A extends StatsAppointment = StatsAppointment> = {
   readonly startUtcMs: UtcEpochMs;
   readonly outcome: SubjectVisitOutcomeState;
 };
-
-/**
- * Who a cancellation is on, when an outcome correction said so (P4, R49) —
- * the ONLY source of these strings.
- */
-export const CancellationAttribution = {
-  Client: 'CLIENT',
-  Shop: 'SHOP',
-} as const;
-export type CancellationAttribution =
-  (typeof CancellationAttribution)[keyof typeof CancellationAttribution];
 
 export type WindowedCount = {
   readonly lifetime: number;
@@ -288,38 +257,6 @@ export type ClientStatsPaths = {
   readonly money: DocPath;
 };
 
-/** The revision guard's verdict tags — the ONLY source of these strings, the field `statsWriteDecision`. */
-export const StatsWriteDecision = {
-  Unchanged: 'UNCHANGED',
-  Write: 'WRITE',
-} as const;
-export type StatsWriteDecision =
-  (typeof StatsWriteDecision)[keyof typeof StatsWriteDecision];
-
-export type ClientStatsWritePlan =
-  | {
-      readonly statsWriteDecision: typeof StatsWriteDecision.Unchanged;
-      /** Nothing, or the stamp's move alone. */
-      readonly writes: readonly WriteOp[];
-    }
-  | {
-      readonly statsWriteDecision: typeof StatsWriteDecision.Write;
-      readonly version: number;
-      readonly updatedAtUtcMs: UtcEpochMs;
-      /** Both documents, at one version. */
-      readonly writes: readonly WriteOp[];
-    };
-
-const WORKED: SubjectVisitOutcomeState = {
-  subjectVisitOutcome: SubjectVisitOutcome.Worked,
-};
-const NO_SHOW: SubjectVisitOutcomeState = {
-  subjectVisitOutcome: SubjectVisitOutcome.NoShow,
-};
-const OPEN: SubjectVisitOutcomeState = {
-  subjectVisitOutcome: SubjectVisitOutcome.Open,
-};
-
 /** Order of two shop wall-clock points: negative, zero or positive. */
 function compareWall(
   aDate: LocalDate,
@@ -345,7 +282,7 @@ function outcomeOf(seats: readonly AccountSeat[]): SubjectVisitOutcomeState {
     const seat = seats[i] as AccountSeat;
     switch (seat.attendanceState) {
       case AttendanceState.Worked:
-        return WORKED;
+        return SubjectVisitOutcomeState.WORKED;
       case AttendanceState.Scheduled:
         open = true;
         break;
@@ -363,12 +300,12 @@ function outcomeOf(seats: readonly AccountSeat[]): SubjectVisitOutcomeState {
         break;
     }
   }
-  if (open) return OPEN;
-  if (noShow) return NO_SHOW;
+  if (open) return SubjectVisitOutcomeState.OPEN;
+  if (noShow) return SubjectVisitOutcomeState.NO_SHOW;
   // Seats are non-empty, so a visit that reaches here was cancelled.
   return decisive === null
-    ? OPEN
-    : { subjectVisitOutcome: SubjectVisitOutcome.Cancelled, decisive };
+    ? SubjectVisitOutcomeState.OPEN
+    : SubjectVisitOutcomeState.cancelled(decisive);
 }
 
 /** Oldest first on the shop's clock, the id breaking ties — so input order never shows in the output. */
@@ -1420,10 +1357,7 @@ export const ClientStatsSystem = {
   ): ClientStatsWritePlan {
     const { stored } = input;
     if (!input.hasHistory && !stored.statsPresent && !stored.moneyPresent) {
-      return {
-        statsWriteDecision: StatsWriteDecision.Unchanged,
-        writes: [],
-      };
+      return ClientStatsWritePlan.unchanged([]);
     }
     const same =
       stored.stats !== null &&
@@ -1434,36 +1368,29 @@ export const ClientStatsSystem = {
         { stats: input.stats, money: input.money },
       );
     if (same) {
-      return {
-        statsWriteDecision: StatsWriteDecision.Unchanged,
-        writes:
-          input.restamp && stored.statsPresent
-            ? [WriteOp.update(paths.stats, PolicyPassStamp.of(input.stamp))]
-            : [],
-      };
+      return ClientStatsWritePlan.unchanged(
+        input.restamp && stored.statsPresent
+          ? [WriteOp.update(paths.stats, PolicyPassStamp.of(input.stamp))]
+          : [],
+      );
     }
     const version =
       Math.max(stored.statsVersion ?? 0, stored.moneyVersion ?? 0) + 1;
     const updatedAtUtcMs = input.nowUtcMs;
-    return {
-      statsWriteDecision: StatsWriteDecision.Write,
-      version,
-      updatedAtUtcMs,
-      writes: [
-        WriteOp.set(paths.stats, {
-          customerId: input.customerId,
-          ...statsContent(input.stats),
-          version,
-          updatedAtUtcMs,
-          ...PolicyPassStamp.of(input.stamp),
-        }),
-        WriteOp.set(paths.money, {
-          customerId: input.customerId,
-          ...moneyContent(input.money),
-          version,
-          updatedAtUtcMs,
-        }),
-      ],
-    };
+    return ClientStatsWritePlan.write(version, updatedAtUtcMs, [
+      WriteOp.set(paths.stats, {
+        customerId: input.customerId,
+        ...statsContent(input.stats),
+        version,
+        updatedAtUtcMs,
+        ...PolicyPassStamp.of(input.stamp),
+      }),
+      WriteOp.set(paths.money, {
+        customerId: input.customerId,
+        ...moneyContent(input.money),
+        version,
+        updatedAtUtcMs,
+      }),
+    ]);
   },
 } as const;

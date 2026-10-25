@@ -647,34 +647,35 @@ export class BookingScheduleStep {
    * the day's arrangements, derived from its documents by the systems
    * (`BookingCartSystem.dayOptions`). A day whose read failed offers nothing.
    */
-  private readonly exactAnswers = computed<ReadonlyMap<string, boolean> | null>(
-    () => {
-      const queries = this.exactQueries();
-      const docs = this.exactDocs();
-      if (queries === null || docs === null) return null;
-      const answers = new Map<string, boolean>();
-      for (const query of queries) {
-        const key = BookingCartSystem.dayDocsKey(query);
-        const read = docs.find((entry) =>
-          entry.ok
-            ? BookingCartSystem.sameDayDocsKey(entry.value.key, key)
-            : false,
-        );
-        const failed = docs.find((entry) => !entry.ok);
-        if (read === undefined || !read.ok) {
-          // Not answered for THIS question yet — loading, unless a read failed.
-          if (failed === undefined) return null;
-          answers.set(query.localDate, false);
-          continue;
-        }
-        answers.set(
-          query.localDate,
-          BookingCartSystem.dayOptions(query, read.value).length > 0,
-        );
+  private readonly exactAnswers = computed<ReadonlyMap<
+    LocalDate,
+    boolean
+  > | null>(() => {
+    const queries = this.exactQueries();
+    const docs = this.exactDocs();
+    if (queries === null || docs === null) return null;
+    const answers = new Map<LocalDate, boolean>();
+    for (const query of queries) {
+      const key = BookingCartSystem.dayDocsKey(query);
+      const read = docs.find((entry) =>
+        entry.ok
+          ? BookingCartSystem.sameDayDocsKey(entry.value.key, key)
+          : false,
+      );
+      const failed = docs.find((entry) => !entry.ok);
+      if (read === undefined || !read.ok) {
+        // Not answered for THIS question yet — loading, unless a read failed.
+        if (failed === undefined) return null;
+        answers.set(query.localDate, false);
+        continue;
       }
-      return answers;
-    },
-  );
+      answers.set(
+        query.localDate,
+        BookingCartSystem.dayOptions(query, read.value).length > 0,
+      );
+    }
+    return answers;
+  });
 
   // ── Commands ────────────────────────────────────────────────────────
 

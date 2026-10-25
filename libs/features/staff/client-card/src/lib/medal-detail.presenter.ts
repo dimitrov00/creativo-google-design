@@ -1,8 +1,9 @@
 import type { Appointment, BadgeProgress, BadgeSeries } from '@core/entities';
 import {
-  AppointmentId,
   AwardKind,
-  CustomerId,
+  type BadgeSeriesId,
+  type BarberId,
+  type CustomerId,
   type LocalDate,
   type TimeZone,
   defect,
@@ -11,11 +12,11 @@ import {
   type BadgeLevel,
   BadgeSubject,
   type EarnedLevel,
-  Gamification,
   LadderRung,
   MedalDetailState,
   MedalProgressCard,
   Metric,
+  MetricRef,
   type SeriesStanding,
 } from '@core/components';
 import {
@@ -34,14 +35,14 @@ import {
 } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
-  cardDayOf,
   completesWithThisVisit,
   draftStart,
   draftVisitOf,
+  familyOfMedal,
   inEndedSeason,
   isOneOff,
   isSingleLevel,
-  landsOnDay,
+  landsOn,
   latestEarned,
   localeOf,
   progressOf,
@@ -61,21 +62,23 @@ import {
   levelNumeral,
 } from './client-card.format';
 import {
-  type AchievementWhoWord,
+  AchievementHowWord,
+  AchievementWhoWord,
   achievementMetricWord,
 } from './client-card.words';
-import type {
-  AchievementsData,
-  DetailActionVm,
-  DetailFaceVm,
-  DetailHowVm,
-  DetailLevelVm,
-  DetailPictureVm,
-  DetailRelatedVm,
-  LinePart,
-  MedalDetailVm,
-  MedalProgressVm,
-  MedalVm,
+import {
+  type AchievementsData,
+  type DetailActionVm,
+  type DetailFaceVm,
+  type DetailHowVm,
+  DetailLevelTone,
+  type DetailLevelVm,
+  type DetailPictureVm,
+  type DetailRelatedVm,
+  type LinePart,
+  type MedalDetailVm,
+  type MedalProgressVm,
+  type MedalVm,
 } from './client-pages.vm';
 import type { HistoryRowsInput } from './history.presenter';
 import { medalRingVm } from './medals.presenter';
@@ -202,14 +205,11 @@ function canStillMove(
  */
 function countedVisitOf(
   visit: Appointment,
-  subjectCustomerId: string | null,
+  subjectCustomerId: CustomerId | null,
   zone: TimeZone,
 ): CountedVisit | null {
   if (subjectCustomerId === null) return null;
-  const facts = AchievementsSystem.workedVisitOf(
-    visit,
-    CustomerId.of(subjectCustomerId),
-  );
+  const facts = AchievementsSystem.workedVisitOf(visit, subjectCustomerId);
   if (facts === null) return null;
   const start = ZonedTimeSystem.toUtc(
     facts.localDate,
@@ -249,7 +249,7 @@ function countedVisitOf(
 export function countsToward(
   series: BadgeSeries,
   visit: Appointment,
-  subjectCustomerId: string | null,
+  subjectCustomerId: CustomerId | null,
   zone: TimeZone,
 ): boolean {
   const counted = countedVisitOf(visit, subjectCustomerId, zone);
@@ -501,7 +501,7 @@ function whatOf(
     const shop = ctx.catalog.locationName(series.metricScopeLocationId);
     return shop === null ? own : words.whatShop(shop, count);
   }
-  return words.what('visits', count);
+  return words.what(AchievementHowWord.Visits, count);
 }
 
 /**
@@ -529,7 +529,7 @@ function progressCardOf(
 ): MedalProgressVm {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const on = landsOnDay(series, standing, data);
+  const on = landsOn(series, standing, data);
   const card = BadgeSystem.progressCard(
     series,
     standing,
@@ -629,7 +629,7 @@ function howSentenceOf(
     const shop = ctx.catalog.locationName(series.metricScopeLocationId);
     return shop === null ? own : words.howShop(shop);
   }
-  return words.how('visits');
+  return words.how(AchievementHowWord.Visits);
 }
 
 /**
@@ -668,7 +668,7 @@ function barberFacesOf(
   ctx: AchievementsContext,
 ): readonly DetailFaceVm[] {
   const catalog: ClientCardCatalog = ctx.catalog;
-  const ids: readonly string[] =
+  const ids: readonly BarberId[] =
     catalog.barberIds?.() ?? LoyaltyCatalogSystem.barberIds(data.catalog);
   return [...new Set(ids)].flatMap((id) => {
     const name = catalog.barberName(id);
@@ -699,7 +699,7 @@ function subjectShownOf(
     title === null ? [] : [{ key, title, caption, src, more: null }];
   switch (series.badgeSubject) {
     case BadgeSubject.Service: {
-      const id: string = series.subjectServiceId;
+      const id = series.subjectServiceId;
       return {
         covers: cover(
           id,
@@ -708,12 +708,12 @@ function subjectShownOf(
           catalog.serviceCoverSrc(id),
         ),
         ratio: '16 / 9',
-        who: 'anyBarberAnyShop',
+        who: AchievementWhoWord.AnyBarberAnyShop,
         faces: true,
       };
     }
     case BadgeSubject.Barber: {
-      const id: string = series.subjectBarberId;
+      const id = series.subjectBarberId;
       return {
         covers: cover(
           id,
@@ -722,12 +722,12 @@ function subjectShownOf(
           catalog.barberAvatarSrc(id),
         ),
         ratio: '4 / 3',
-        who: 'anyServiceAnyShop',
+        who: AchievementWhoWord.AnyServiceAnyShop,
         faces: false,
       };
     }
     case BadgeSubject.Location: {
-      const id: string = series.subjectLocationId;
+      const id = series.subjectLocationId;
       return {
         covers: cover(
           id,
@@ -736,7 +736,7 @@ function subjectShownOf(
           catalog.locationCoverSrc(id),
         ),
         ratio: '16 / 9',
-        who: 'anyBarberAnyService',
+        who: AchievementWhoWord.AnyBarberAnyService,
         faces: true,
       };
     }
@@ -744,7 +744,7 @@ function subjectShownOf(
       return {
         covers: [],
         ratio: '16 / 9',
-        who: 'anyBarberAnyShop',
+        who: AchievementWhoWord.AnyBarberAnyShop,
         faces: true,
       };
   }
@@ -765,7 +765,7 @@ function howOf(
     faces: shown.faces ? barberFacesOf(data, ctx) : [],
     who: ctx.words.achievement.who(shown.who),
     // A count made of visits ends on the exclusion, once.
-    excluded: Gamification.countsVisits(series.metric)
+    excluded: MetricRef.countsVisits(series.metric)
       ? ctx.words.achievement.excluded
       : null,
     steps: [],
@@ -882,10 +882,10 @@ function ladderOf(
 
 /** Where a rung stands, as the ladder's row draws it: the next level's words in primary ink, the later ones quiet. */
 const LADDER_TONES = {
-  [LadderRung.Passed]: 'passed',
-  [LadderRung.Next]: 'next',
-  [LadderRung.Later]: 'later',
-} as const satisfies Record<LadderRung, DetailLevelVm['tone']>;
+  [LadderRung.Passed]: DetailLevelTone.Passed,
+  [LadderRung.Next]: DetailLevelTone.Next,
+  [LadderRung.Later]: DetailLevelTone.Later,
+} as const satisfies Record<LadderRung, DetailLevelTone>;
 
 // ── DI · the visits that counted ────────────────────────────────────────
 
@@ -916,11 +916,9 @@ function countedVisitsOf(
       appointment,
       counted: countedVisitOf(appointment, extra.subjectCustomerId, ctx.zone),
     })),
-    cardDayOf(data.today),
+    data.today,
     countingDraftOf(series, standing, data, ctx),
-    rows.currentAppointmentId === null
-      ? null
-      : AppointmentId.of(rows.currentAppointmentId),
+    rows.currentAppointmentId,
   );
   return visitsRows({ ...rows, appointments: counted }).slice(
     0,
@@ -941,7 +939,7 @@ function neighboursOf(
   return {
     ...related,
     tiles: related.tiles.slice(0, RELATED_LIMIT).map((tile) => {
-      const family = seriesById(data, tile.medal.seriesId);
+      const family = familyOfMedal(data, tile.medal);
       return family === null
         ? tile
         : { ...tile, medal: medalRingVm(family, data, ctx, 'large') };
@@ -956,7 +954,7 @@ export interface MedalDetailExtra {
   /** The history's loaded pages (`ClientCardStore.loadedVisits`). */
   readonly visits: readonly Appointment[];
   /** The client RECORD the card is open on (D29) — whose seats count; `null` before it exists. */
-  readonly subjectCustomerId: string | null;
+  readonly subjectCustomerId: CustomerId | null;
   /** The rhythm's rule in force, worded (`rhythmRuleWords`); `null` while it is not known, or off. */
   readonly rule: RhythmRuleWords | null;
   /** What the staff rows are worded with (`ClientCardStore.visitRowsInput`); `null` until the history is read: no rows. */
@@ -967,7 +965,7 @@ export interface MedalDetailExtra {
 
 /** One medal family's page (§2.4); `null` for a family the catalogue lacks. */
 export function medalDetailVm(
-  seriesId: string,
+  seriesId: BadgeSeriesId,
   data: AchievementsData,
   ctx: AchievementsContext,
   extra: MedalDetailExtra,

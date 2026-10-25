@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BookingLifecycle,
+  GridEvent,
   MinuteRange,
   CancellationReason,
   CancellationReasonSet,
@@ -21,6 +22,7 @@ import {
   endMinute,
   localDate,
   minute,
+  trackMinute,
   unwrapOk,
   appointmentFixture,
   seatFixture,
@@ -28,7 +30,6 @@ import {
 } from '@core/testing';
 import { IntervalSetSystem } from './interval-set.system';
 import {
-  GridEvent,
   GridLayoutSystem,
   type MinuteRun,
   type RunEvent,
@@ -725,23 +726,28 @@ describe('totalMinutes — the free time a chair states', () => {
 
 const floorOf = (n: number): DurationMinutes => unwrapOk(DurationMinutes.of(n));
 const track = (startMinute: number, endMinute: number): TrackSpan => ({
-  startMinute,
-  endMinute,
+  startMinute: trackMinute(startMinute),
+  endMinute: trackMinute(endMinute),
 });
 const onTrack = (
   id: string,
   startMinute: number,
   endMinute: number,
   gridEvent: GridEvent = GridEvent.Visit,
-): TrackEvent => ({ id, gridEvent, startMinute, endMinute });
+): TrackEvent => ({
+  id,
+  gridEvent,
+  startMinute: trackMinute(startMinute),
+  endMinute: trackMinute(endMinute),
+});
 const chair = (
   events: readonly TrackEvent[],
   open: readonly TrackSpan[],
 ): TrackColumn => ({ events, open });
 const draft = (startMinute: number, endMinute: number) => ({
   id: 'draft-block',
-  startMinute,
-  endMinute,
+  startMinute: trackMinute(startMinute),
+  endMinute: trackMinute(endMinute),
 });
 
 type Verdict = {
@@ -828,7 +834,7 @@ describe('placementVerdict — the frames’ fixtures', () => {
       [track(0, 1440)],
     );
     const verdict = S.placementVerdict(
-      { id: 'a', startMinute: 600, endMinute: 675 },
+      { id: 'a', startMinute: trackMinute(600), endMinute: trackMinute(675) },
       [column],
       floorOf(10),
     );
@@ -867,8 +873,16 @@ describe('placementVerdict — the frames’ fixtures', () => {
     // Ivan's noon hour on Мартин's 12:30 — and the all-day block, as the
     // whole axis, sits on every visit of the day.
     const visits = [
-      { name: 'Мартин Илиев', startMinute: 750, endMinute: 780 },
-      { name: 'Георги Петров', startMinute: 600, endMinute: 645 },
+      {
+        name: 'Мартин Илиев',
+        startMinute: trackMinute(750),
+        endMinute: trackMinute(780),
+      },
+      {
+        name: 'Георги Петров',
+        startMinute: trackMinute(600),
+        endMinute: trackMinute(645),
+      },
     ];
     const noon = track(720, 780);
     const wholeDay = track(0, 1440);
@@ -1059,12 +1073,14 @@ describe('placementVerdict — past midnight, on raw minutes', () => {
 });
 
 describe('placementVerdict ≡ the two frames’ bodies (property)', () => {
-  // Raw track minutes on both sides of midnight, ids that may repeat the
-  // block's, every tag, windows that may be empty or inverted.
+  // Track minutes on both sides of midnight, ids that may repeat the
+  // block's, every tag, windows that may be empty or inverted. A track
+  // minute is never negative (`TrackMinute`, pass D): an inverted span's
+  // end stops at the day's first minute.
   const minuteArb = fc.integer({ min: 0, max: 1600 });
   const spanArb = fc
     .tuple(minuteArb, fc.integer({ min: -30, max: 240 }))
-    .map(([start, length]) => track(start, start + length));
+    .map(([start, length]) => track(start, Math.max(0, start + length)));
   const eventArb = fc
     .tuple(
       fc.constantFrom('draft-block', 'a', 'b', 'c'),
@@ -1152,7 +1168,11 @@ describe('frameVerdict — the visit sheet’s line under its frame', () => {
     name: string,
     startMinute: number,
     endMinute: number,
-  ): Neighbour => ({ name, startMinute, endMinute });
+  ): Neighbour => ({
+    name,
+    startMinute: trackMinute(startMinute),
+    endMinute: trackMinute(endMinute),
+  });
   const hitAt = (event: number): Verdict => overlapAt(0, event);
 
   /** One shop day's `[start, end)` — the editor's former `dayRangeOf`, as numbers. */
@@ -1163,7 +1183,7 @@ describe('frameVerdict — the visit sheet’s line under its frame', () => {
     start < 1440 &&
     end > 0 &&
     end <= 1440
-      ? { startMinute: start, endMinute: end }
+      ? { startMinute: trackMinute(start), endMinute: trackMinute(end) }
       : null;
 
   /** `staff-visit-editor.ts` `frameVerdict` as it read before, verbatim, on numbers. */

@@ -1,10 +1,30 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type {
+  AccountContactPorts,
+  AdminBatchPorts,
+  AuditPorts,
+  BackfillJobPorts,
+  BarberListPorts,
+  CallerRolesPorts,
+  CapacityReadPorts,
+  CatalogLoadPorts,
   ClockPorts,
+  CouponLookupPorts,
   HashPorts,
   IdPorts,
+  LeadTimeWritePorts,
+  ListedCatalogPorts,
+  LocationLoadPorts,
+  OpenWaitlistReadPorts,
+  OtpStorePorts,
+  PolicyLinePorts,
+  PolicyReadPorts,
+  RecentNotificationPorts,
+  ShopDayReadPorts,
   TelemetryPorts,
   TxPorts,
+  UserLookupPorts,
+  WaitlistRequestReadPorts,
 } from '@core/ports';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
@@ -46,22 +66,46 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
  * left unbuilt.
  */
 
-/** Every Firestore-backed bundle, intersected — one member per adapter factory. */
+/**
+ * Every Firestore-backed bundle, intersected — the named ports-tier bundles
+ * each adapter factory is typed to return (Law 9.1), in the order the
+ * factories are spread below.
+ */
 export type FirestorePorts = TxPorts &
-  ReturnType<typeof firestoreSettingsPorts> &
-  ReturnType<typeof firestoreCouponPorts> &
-  ReturnType<typeof firestoreAccountPorts> &
-  ReturnType<typeof firestoreAuditPorts> &
-  ReturnType<typeof firestoreCatalogPorts> &
-  ReturnType<typeof firestoreSchedulePorts> &
-  ReturnType<typeof firestoreCapacityPorts> &
-  ReturnType<typeof firestoreLeadTimePorts> &
-  ReturnType<typeof firestoreWaitlistPorts> &
-  ReturnType<typeof firestoreNotificationPorts> &
-  ReturnType<typeof firestoreClientStatsPorts> &
-  ReturnType<typeof firestoreJobPorts> &
-  ReturnType<typeof firestoreOtpPorts> &
-  ReturnType<typeof firestoreUserPorts>;
+  // firestoreSettingsPorts
+  PolicyReadPorts &
+  // firestoreCouponPorts
+  CouponLookupPorts &
+  // firestoreAccountPorts
+  AccountContactPorts &
+  // firestoreAuditPorts
+  AuditPorts &
+  // firestoreCatalogPorts
+  CatalogLoadPorts &
+  ListedCatalogPorts &
+  LocationLoadPorts &
+  // firestoreSchedulePorts
+  BarberListPorts &
+  ShopDayReadPorts &
+  // firestoreCapacityPorts
+  CapacityReadPorts &
+  // firestoreLeadTimePorts
+  LeadTimeWritePorts &
+  // firestoreWaitlistPorts
+  OpenWaitlistReadPorts &
+  WaitlistRequestReadPorts &
+  // firestoreNotificationPorts
+  RecentNotificationPorts &
+  // firestoreClientStatsPorts
+  AdminBatchPorts &
+  PolicyLinePorts &
+  // firestoreJobPorts
+  BackfillJobPorts &
+  CallerRolesPorts &
+  // firestoreOtpPorts
+  OtpStorePorts &
+  // firestoreUserPorts
+  UserLookupPorts;
 
 export const firestorePorts = (
   db: Firestore,

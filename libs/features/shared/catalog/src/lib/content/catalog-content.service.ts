@@ -14,6 +14,7 @@ import {
   MEDIA_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { MediaRef, Principal, PrincipalKind } from '@core/components';
+import type { MediaRefId, ServiceId } from '@core/primitives';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog.vm';
@@ -170,7 +171,7 @@ export class CatalogContentService {
    * by id, for a caller that holds only the id. One that holds the
    * `Service` asks {@link coverUrlOf}, which does not search the list.
    */
-  coverUrl(serviceId: string): string | undefined {
+  coverUrl(serviceId: ServiceId): string | undefined {
     const service = this.findService(serviceId);
     return service ? this.coverUrlOf(service) : undefined;
   }
@@ -200,7 +201,7 @@ export class CatalogContentService {
     );
   }
 
-  findService(serviceId: string): Service | undefined {
+  findService(serviceId: ServiceId): Service | undefined {
     return this.services().find((service) => service.id === serviceId);
   }
 }
@@ -239,7 +240,7 @@ function avatarRefOf(barber: Barber): MediaRef | null {
 }
 
 function mediaRefOf(
-  id: string | null,
+  id: MediaRefId | null,
   path: string | null,
   width: number | null,
   height: number | null,

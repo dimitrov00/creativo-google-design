@@ -6,14 +6,23 @@ import {
   input,
   output,
 } from '@angular/core';
-import { LocalDate } from '@core/primitives';
+import { LocalDate, Weekday } from '@core/primitives';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
 import { formatWallClock, formatWeekdayLabels } from '@creativo/ui/wall-clock';
 
-/** An ISO weekday: 1 = Monday … 7 = Sunday. */
-export type UiIsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-
-const ISO_WEEK: readonly UiIsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
+/**
+ * The week in ISO order, Monday first — the `Weekday` dictionary's members
+ * (`1` = Monday … `7` = Sunday), the one weekday tag of `@core/primitives`.
+ */
+const ISO_WEEK: readonly Weekday[] = [
+  Weekday.Mon,
+  Weekday.Tue,
+  Weekday.Wed,
+  Weekday.Thu,
+  Weekday.Fri,
+  Weekday.Sat,
+  Weekday.Sun,
+];
 
 /** 2026-08-03, a Monday — walking seven from it names the week in order. */
 const MONDAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 8, 3));
@@ -22,7 +31,7 @@ const MONDAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 8, 3));
 const WHOLE_NAME: Intl.DateTimeFormatOptions = { weekday: 'long' };
 
 interface WeekdayCell {
-  readonly iso: UiIsoWeekday;
+  readonly iso: Weekday;
   /** What the circle says — `Intl`'s own `short` («пн», «Mon»). */
   readonly short: string;
   /** What a screen reader says — the whole name («понеделник»). */
@@ -87,7 +96,7 @@ interface WeekdayCell {
 })
 export class UiWeekdayPicker {
   /** The days that are on, as ISO weekdays. */
-  readonly uiSelected = input.required<readonly number[]>();
+  readonly uiSelected = input.required<readonly Weekday[]>();
   readonly uiLocale = input('en');
   /** The group's accessible name — what the days are OF. */
   readonly uiLabel = input('');
@@ -95,7 +104,7 @@ export class UiWeekdayPicker {
   readonly uiMinimum = input(1);
   /** Each toggle's `data-testid` is this, a dash, and its ISO weekday. */
   readonly uiTestId = input<string | null>(null);
-  readonly uiSelectedChange = output<readonly UiIsoWeekday[]>();
+  readonly uiSelectedChange = output<readonly Weekday[]>();
 
   protected readonly days = computed<readonly WeekdayCell[]>(() => {
     const locale = this.uiLocale();

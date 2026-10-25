@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   EnvironmentProviders,
   Injectable,
@@ -8,6 +10,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
@@ -353,6 +356,106 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
     expect(
       find(harness.host, 'booking-contact-error')?.textContent?.trim(),
     ).toBe('booking.contact.profileFailed');
+  });
+
+  /*
+   * DEP-23 (pass D): the sheet holds the refusal's struct and words it in a
+   * `computed`, so a line shown in bg re-words when the language switches
+   * to en — before, the words were fixed when the line was set and the bg
+   * line stayed until the next save. In the language it was raised in the
+   * line is byte-identical (the same `errors.<errorCode>` line with the
+   * struct's params; the profile write's `booking.contact.profileFailed`).
+   */
+  describe('DEP-23 — a shown line re-words on a language switch', () => {
+    type Lang = 'bg' | 'en';
+
+    /** The app's own catalogue for `lang` — read, never re-typed. */
+    function catalogue(lang: Lang): {
+      readonly errors: Record<string, string>;
+      readonly booking: { readonly contact: Record<string, string> };
+    } {
+      return JSON.parse(
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+        readFileSync(
+          resolve(
+            __dirname,
+            `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+          ),
+          'utf8',
+        ),
+      );
+    }
+
+    /** Loads the two languages' shipped lines this case reads; bg stays active. */
+    function loadLines(): void {
+      const transloco = TestBed.inject(TranslocoService);
+      for (const lang of ['bg', 'en'] as const) {
+        const shipped = catalogue(lang);
+        transloco.setTranslation(
+          {
+            errors: {
+              SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL:
+                shipped.errors['SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL'],
+            },
+            booking: {
+              contact: {
+                profileFailed: shipped.booking.contact['profileFailed'],
+              },
+            },
+          },
+          lang,
+        );
+      }
+      transloco.setActiveLang('bg');
+    }
+
+    const lineOf = (harness: Harness) =>
+      find(harness.host, 'booking-contact-error')?.textContent?.trim();
+
+    it('a refused contact shown in bg prints its en line once the language switches', async () => {
+      const harness = await render();
+      loadLines();
+      await type(harness, 'booking-contact-email', 'not-an-email');
+
+      await click(harness, 'booking-contact-save');
+
+      expect(lineOf(harness)).toBe(
+        catalogue('bg').errors[
+          'SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL'
+        ]?.replace('{{rawValue}}', 'not-an-email'),
+      );
+
+      TestBed.inject(TranslocoService).setActiveLang('en');
+      await harness.settle();
+
+      expect(lineOf(harness)).toBe(
+        catalogue('en').errors[
+          'SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL'
+        ]?.replace('{{rawValue}}', 'not-an-email'),
+      );
+      expect(harness.emitted).toEqual([]);
+    });
+
+    it('a failed profile write shown in bg prints its en line once the language switches', async () => {
+      const harness = await render({ writeFails: true });
+      loadLines();
+      await type(harness, 'booking-contact-name', 'Ада Иванова');
+      await click(harness, SWITCH);
+
+      await click(harness, 'booking-contact-save');
+
+      expect(lineOf(harness)).toBe(
+        catalogue('bg').booking.contact['profileFailed'],
+      );
+
+      TestBed.inject(TranslocoService).setActiveLang('en');
+      await harness.settle();
+
+      expect(lineOf(harness)).toBe(
+        catalogue('en').booking.contact['profileFailed'],
+      );
+      expect(harness.emitted).toEqual([]);
+    });
   });
 
   it('offers neither the switch nor the footnote without a profile', async () => {

@@ -1,3 +1,4 @@
+import { ProfileCompletionKey } from '@core/components';
 import type { User } from '@core/entities';
 
 /**
@@ -12,14 +13,6 @@ import type { User } from '@core/entities';
  * drives. The photo answer comes from storage, so it is a parameter. An
  * item's key is its field `profileCompletionKey` (N15).
  */
-export const ProfileCompletionKey = {
-  Name: 'NAME',
-  Phone: 'PHONE',
-  Birthday: 'BIRTHDAY',
-  Photo: 'PHOTO',
-} as const;
-export type ProfileCompletionKey =
-  (typeof ProfileCompletionKey)[keyof typeof ProfileCompletionKey];
 
 export type ProfileCompletionItem = {
   readonly profileCompletionKey: ProfileCompletionKey;

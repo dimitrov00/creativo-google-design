@@ -2,7 +2,7 @@ import { type Actor, MarkArrivalAction, type WriteOp } from '@core/components';
 import { Result, type AppointmentId } from '@core/primitives';
 import {
   BookingError,
-  type RepositoryError,
+  type MarkArrivalError,
   type SchedulingError,
 } from '@core/errors';
 import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
@@ -36,15 +36,6 @@ export type MarkArrivalAnswer = {
   /** Nothing changed — already arrived (a second tap), or already clear. */
   readonly unchanged: boolean;
 };
-
-/**
- * What it refuses with: no such visit (`BOOKING_INVALID_INPUT`, field
- * `appointmentId` — the edge answers it as the callable's own not-found),
- * a settled visit (the lifecycle's `SCHEDULING_APPOINTMENT_NOT_ARRIVABLE`),
- * or the store.
- */
-export type MarkArrivalError =
-  BookingError.InvalidInput | SchedulingError | RepositoryError;
 
 export type MarkArrivalPorts = TxPorts & AuditAppendPorts & TelemetryPorts;
 

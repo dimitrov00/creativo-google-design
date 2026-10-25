@@ -14,11 +14,10 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
+  type CompleteRegistrationError,
   type CompleteRegistrationRefusal,
   CompleteRegistrationRefusalCode,
   IdentityError,
-  type PipelineError,
-  type RepositoryError,
 } from '@core/errors';
 import { Collections, type Customer, Profile, type User } from '@core/entities';
 import type {
@@ -104,10 +103,6 @@ export type CompleteRegistrationCommand = {
 export type CompleteRegistrationAnswer = {
   readonly customToken: string;
 };
-
-/** A refusal, a store failure, or the Admin-Auth mint failing. */
-export type CompleteRegistrationError =
-  IdentityError | CompleteRegistrationRefusal | RepositoryError | PipelineError;
 
 /** The transaction's read: the account and its client record (`null` when absent). */
 type RegistrationRead = {

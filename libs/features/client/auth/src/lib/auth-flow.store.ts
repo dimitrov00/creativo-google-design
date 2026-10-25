@@ -14,7 +14,7 @@ import {
   type SessionKind,
 } from '@core/components';
 import { type OtpId } from '@core/primitives';
-import { IdentityErrorCode, PipelineError } from '@core/errors';
+import { IdentityError, PipelineError } from '@core/errors';
 import { AuthFlowSystem } from '@core/systems';
 import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 
@@ -35,12 +35,13 @@ export const RESEND_COOLDOWN_SECONDS = 30;
  * challenge (and its ticking cooldown) alive, so resubmitting the same
  * destination rejoins the otp step without burning a second code.
  *
- * Translation-free by design: `state().error` carries an error code — the
- * server's `errorCode` off the failed callable (`PipelineError`'s
- * `serverErrorCode`), never a firebase import here — not a display string;
- * the component resolves it as `errors.<code>` at render time. A failure on
- * the `permission-denied` wire status is the lockout
- * (`PipelineError.isBlocked`).
+ * Translation-free by design: `state().error` carries the refusal as its
+ * struct (`AuthFailure`, pass D §2.11) — the failed callable's
+ * `PipelineError` as the gateway answered it (never a firebase import
+ * here), or the identity refusal the store raised itself — not a display
+ * string; the component words it at render time (`wordFlowFailure`: the
+ * server's code, else `IDENTITY_CALL_FAILED`). A failure on the
+ * `permission-denied` wire status is the lockout (`PipelineError.isBlocked`).
  */
 @Injectable()
 export class AuthFlowStore {
@@ -128,7 +129,7 @@ export class AuthFlowStore {
       // A code that is not six digits never reaches the server — refused
       // as a wrong code, exactly as the verify use case did.
       this.dispatch(
-        AuthFlowEvent.verifyFailed(false, IdentityErrorCode.OtpWrongCode),
+        AuthFlowEvent.verifyFailed(false, IdentityError.otpWrongCode()),
       );
       return null;
     }
@@ -143,7 +144,7 @@ export class AuthFlowStore {
       this.dispatch(
         AuthFlowEvent.verifyFailed(
           PipelineError.isBlocked(result.error),
-          messageOf(result.error),
+          result.error,
         ),
       );
       return null;
@@ -162,7 +163,7 @@ export class AuthFlowStore {
       this.dispatch(
         AuthFlowEvent.requestFailed(
           PipelineError.isBlocked(result.error),
-          messageOf(result.error),
+          result.error,
         ),
       );
       return;
@@ -196,12 +197,4 @@ export class AuthFlowStore {
       this._state.set(result.value);
     }
   }
-}
-
-/**
- * The refusal to show for a failed callable: the server's own code, else
- * the auth surface's own generic copy (`IDENTITY_CALL_FAILED`).
- */
-function messageOf(error: PipelineError): string {
-  return error.serverErrorCode ?? IdentityErrorCode.CallFailed;
 }

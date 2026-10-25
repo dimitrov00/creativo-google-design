@@ -7,12 +7,7 @@ import {
 import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { ImpersonationScope } from './impersonation-scope.data';
-import { ImpersonationEndReason } from './impersonation-status.data';
-
-/** Every end reason — derived, never a second source. */
-const END_REASONS: readonly ImpersonationEndReason[] = Object.values(
-  ImpersonationEndReason,
-);
+import { ImpersonationEndReason } from './end-reason-fields.data';
 
 /**
  * THE GOVERNANCE WIRE (Phase 4a 4A-3 (4)) — `startImpersonation`: whom an
@@ -45,10 +40,10 @@ export const GovernanceCall = {
       'sessionId',
       ImpersonationSessionId.parse,
     );
-    const impersonationEndReason = CallAnswer.oneOf(
+    const impersonationEndReason = CallAnswer.tag(
       answer,
       'impersonationEndReason',
-      END_REASONS,
+      ImpersonationEndReason,
     );
     return sessionId === null || impersonationEndReason === null
       ? CallAnswer.unusable()

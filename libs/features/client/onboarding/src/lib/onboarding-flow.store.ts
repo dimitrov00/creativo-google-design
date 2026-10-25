@@ -6,9 +6,11 @@ import {
   OnboardingFlowEvent,
   type OnboardingFlowState,
   type ParsedIdentifier,
+  PersonalizeStep,
   Principal,
   PrincipalKind,
   type RegistrationFields,
+  type SettledVerdict,
 } from '@core/components';
 import {
   ensureSessionReady,
@@ -16,15 +18,12 @@ import {
   saveOwnProfile,
   uploadAvatar,
 } from '@core/pipelines';
-import { type ServiceId, type UserId } from '@core/primitives';
-import { IdentityErrorCode } from '@core/errors';
+import { Result, type ServiceId, type UserId } from '@core/primitives';
+import { type AccountsError, IdentityError } from '@core/errors';
 import {
   AgeSystem,
   GuestGuardSystem,
   OnboardingFlowSystem,
-  PERSONALIZE_STEPS,
-  type PersonalizeStep,
-  type SettledVerdict,
 } from '@core/systems';
 import { ageDayOf } from '@creativo/features/client/account-state';
 import { avatarUploadRefusal } from '@creativo/features/shared/shell';
@@ -97,8 +96,9 @@ export class OnboardingFlowStore {
    * the profile is still missing, so someone who already set a birthday is
    * never asked for it again.
    */
-  private readonly _plan =
-    signal<readonly PersonalizeStep[]>(PERSONALIZE_STEPS);
+  private readonly _plan = signal<readonly PersonalizeStep[]>(
+    PersonalizeStep.ALL,
+  );
   readonly plan = this._plan.asReadonly();
 
   /** 1-based position of the current step within the plan; 0 outside the personalization phase. */
@@ -120,7 +120,7 @@ export class OnboardingFlowStore {
       // The session carries no identifier to register against.
       this.dispatch(
         OnboardingFlowEvent.registrationFailed(
-          IdentityErrorCode.IdentifierMissing,
+          IdentityError.identifierMissing(),
         ),
       );
       return;
@@ -133,14 +133,10 @@ export class OnboardingFlowStore {
 
     if (!result.ok) {
       // A field the strategy requires is missing (`IDENTITY_REGISTRATION_
-      // FIELD_MISSING`, before any call), else the callable's own code, else
-      // the surface's own generic copy (`IDENTITY_CALL_FAILED`).
-      const error = result.error;
-      const message =
-        error.errorCode === IdentityErrorCode.RegistrationFieldMissing
-          ? error.errorCode
-          : (error.serverErrorCode ?? IdentityErrorCode.CallFailed);
-      this.dispatch(OnboardingFlowEvent.registrationFailed(message));
+      // FIELD_MISSING`, before any call), or the callable failed — kept as
+      // its struct; the screen words it (`wordFlowFailure`: the callable's
+      // own code, else the surface's own generic `IDENTITY_CALL_FAILED`).
+      this.dispatch(OnboardingFlowEvent.registrationFailed(result.error));
       return;
     }
     this.dispatch(OnboardingFlowEvent.registered());
@@ -188,11 +184,11 @@ export class OnboardingFlowStore {
    * reachable, just not forced.
    */
   beginPersonalization(
-    steps: readonly PersonalizeStep[] = PERSONALIZE_STEPS,
+    steps: readonly PersonalizeStep[] = PersonalizeStep.ALL,
   ): void {
     // An empty plan would leave the flow parked on services forever;
     // there is nothing to personalize, so go straight to the app.
-    const plan = steps.length > 0 ? steps : PERSONALIZE_STEPS;
+    const plan = steps.length > 0 ? steps : PersonalizeStep.ALL;
     this._plan.set(plan);
     this.dispatch(OnboardingFlowEvent.registered());
     this.dispatch(OnboardingFlowEvent.personalize());
@@ -215,36 +211,36 @@ export class OnboardingFlowStore {
    * the edit against the stored profile inside its transaction and audits
    * it, credited to this user. Dispatches `SUBMIT_BIRTHDAY` only once the
    * save settles successfully; every failure stays on the step as a quiet,
-   * reason-coded inline error (`errors.<errorCode>`, today's words).
+   * reason-coded inline error (`errors.<errorCode>`, today's words) — the
+   * refusal's whole struct, so a save re-judged outside the age window names
+   * its `minAge`/`maxAge` (pass D DEP-17).
    */
   async submitBirthday(parts: BirthDate.Parts): Promise<void> {
     // The day the age window is judged on, from this save's one clock reading.
     const ageDay = ageDayOf(this.clock);
     const birthDate = AgeSystem.fromParts(parts, ageDay);
     if (!birthDate.ok) {
-      this.dispatch(
-        OnboardingFlowEvent.birthdayFailed(birthDate.error.errorCode),
-      );
+      this.dispatch(OnboardingFlowEvent.birthdayFailed(birthDate.error));
       return;
     }
 
     if (this.currentUserId() === null) {
       this.dispatch(
-        OnboardingFlowEvent.birthdayFailed(IdentityErrorCode.IdentifierMissing),
+        OnboardingFlowEvent.birthdayFailed(IdentityError.identifierMissing()),
       );
       return;
     }
 
     this._pending.set(true);
-    const code = await saveOwnProfile(this.gateway)({
+    const saved = await saveOwnProfile(this.gateway)({
       firstName: null,
       lastName: null,
       birthDate: birthDate.value,
     });
     this._pending.set(false);
 
-    if (code !== null) {
-      this.dispatch(OnboardingFlowEvent.birthdayFailed(code));
+    if (!saved.ok) {
+      this.dispatch(OnboardingFlowEvent.birthdayFailed(saved.error));
       return;
     }
     this.dispatch(OnboardingFlowEvent.submitBirthday());
@@ -269,19 +265,31 @@ export class OnboardingFlowStore {
   /**
    * The avatar step's optional upload — persistence IS the Storage object
    * at the well-known `avatars/{uid}/original` path (the `User` entity
-   * deliberately carries no photo URL; readers resolve the path). Returns
-   * the stable error code for the step's inline line, or null on success —
-   * no flow event: the machine's `ENTER_APP` fires only after the caller
-   * decides what a failure means.
+   * deliberately carries no photo URL; readers resolve the path). Answers
+   * the refusal for the step's inline line as its struct, or ok — no flow
+   * event: the machine's `ENTER_APP` fires only after the caller decides
+   * what a failure means.
    */
-  async uploadAvatar(data: Blob): Promise<string | null> {
+  async uploadAvatar(
+    data: Blob,
+  ): Promise<
+    Result<
+      void,
+      | AccountsError.UploadAvatarNotAnImage
+      | AccountsError.UploadAvatarTooLarge
+      | AccountsError.UploadAvatarUploadFailed
+      | IdentityError.IdentifierMissing
+    >
+  > {
     const owner = this.currentUserId();
-    if (owner === null) return IdentityErrorCode.IdentifierMissing;
+    if (owner === null) return Result.err(IdentityError.identifierMissing());
 
     this._pending.set(true);
     const result = await this.upload(owner, data);
     this._pending.set(false);
-    return result.ok ? null : avatarUploadRefusal(result.error);
+    return result.ok
+      ? Result.ok(undefined)
+      : Result.err(avatarUploadRefusal(result.error));
   }
 
   /**

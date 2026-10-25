@@ -1,7 +1,7 @@
 import { Component, computed, inject, resource } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { map, of, switchMap } from 'rxjs';
+import { of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   APPOINTMENT_READ_PORTS,
@@ -10,15 +10,18 @@ import {
   ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
-import { Principal } from '@core/components';
-import { type LocationId, type UtcEpochMs } from '@core/primitives';
-import { AccountsErrorCode } from '@core/errors';
 import {
+  Principal,
   ProfileCompletionKey,
-  VisitListSystem,
   VisitPerspective,
-  ZonedTimeSystem,
-} from '@core/systems';
+} from '@core/components';
+import {
+  type AppointmentId,
+  type LocationId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
+import { VisitListSystem, ZonedTimeSystem } from '@core/systems';
 import {
   LoadSlice,
   LoadState,
@@ -26,13 +29,15 @@ import {
 } from '@creativo/shared/view-state';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
+  OnboardingPhase,
+  OnboardingStepHint,
   SessionIdentityService,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
 import {
+  type AppointmentCardVm,
   VisitCard,
   VisitCardSlot,
-  type VisitCardVm,
   type VisitCardWords,
   type VisitLookup,
   type VisitWords,
@@ -57,7 +62,10 @@ import {
   UiPaddingDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { translateCodedError } from '@creativo/infrastructure/i18n';
+import {
+  translateCodedError,
+  loadedLanguage,
+} from '@creativo/infrastructure/i18n';
 
 /**
  * The checklist item keys as the copy and the DOM spell them — lowercase,
@@ -72,11 +80,11 @@ const COMPLETION_KEY_WORDS = {
 
 /** The onboarding step slug (`?step=`) an open checklist item resumes at. */
 const PERSONALIZE_STEP_SLUGS = {
-  [ProfileCompletionKey.Name]: 'services',
-  [ProfileCompletionKey.Phone]: 'services',
-  [ProfileCompletionKey.Birthday]: 'birthday',
-  [ProfileCompletionKey.Photo]: 'avatar',
-} as const satisfies Record<ProfileCompletionKey, string>;
+  [ProfileCompletionKey.Name]: OnboardingStepHint.Services,
+  [ProfileCompletionKey.Phone]: OnboardingStepHint.Services,
+  [ProfileCompletionKey.Birthday]: OnboardingStepHint.Birthday,
+  [ProfileCompletionKey.Photo]: OnboardingStepHint.Avatar,
+} as const satisfies Record<ProfileCompletionKey, OnboardingStepHint>;
 
 /**
  * Where the next visit stands, as the host's `data-upcoming` and the waiting
@@ -197,6 +205,8 @@ export class ClientAccount {
 
   /** The load states, for the template's `@switch`. */
   protected readonly LoadState = LoadState;
+  /** The onboarding link's `?phase=` word, for the checklist rows (D-8.2). */
+  protected readonly OnboardingPhase = OnboardingPhase;
 
   /** The host's `data-state` — the account snapshot loading, or ready. */
   protected readonly accountDataState = computed(
@@ -300,14 +310,9 @@ export class ClientAccount {
    * `translate(…, lang)`, so no lookup inside a `computed` can start a load
    * — a write the computed would read back and never settle on.
    */
-  private readonly loadedLang = toSignal(
-    this.transloco.langChanges$.pipe(
-      switchMap((lang) =>
-        this.transloco.selectTranslation(lang).pipe(map(() => lang)),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
 
   /** The shared card's words in the client's perspective, and the page's own heading for it. */
   private readonly cardWords = computed<CardWords | null>(() => {
@@ -337,7 +342,7 @@ export class ClientAccount {
    * capsule. Null until there is a visit, the words it is told in AND its
    * shop's zone — "now" is read on that shop's wall clock (Law 7.3).
    */
-  protected readonly upcomingCard = computed<VisitCardVm | null>(() => {
+  protected readonly upcomingCard = computed<AppointmentCardVm | null>(() => {
     const state = this.upcoming();
     const words = this.cardWords();
     const zone = this.cardZoneAnswer();
@@ -410,7 +415,7 @@ export class ClientAccount {
    * on arrival (`?visit=<id>`, read by the appointments page's `visit`
    * input). The card is a button, so the hand-off is the router's.
    */
-  protected openUpcoming(id: string): void {
+  protected openUpcoming(id: AppointmentId): void {
     void this.router.navigate(['/account/appointments'], {
       queryParams: { visit: id },
     });
@@ -422,7 +427,7 @@ export class ClientAccount {
   }
 
   /** Which onboarding personalization step an open checklist item deep-links into (`?step=`). Name/phone are registration facts (always done for an active account) — their entry covers any future key honestly. */
-  protected personalizeStep(key: ProfileCompletionKey): string {
+  protected personalizeStep(key: ProfileCompletionKey): OnboardingStepHint {
     return PERSONALIZE_STEP_SLUGS[key];
   }
 

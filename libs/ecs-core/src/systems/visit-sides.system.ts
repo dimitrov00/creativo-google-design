@@ -1,12 +1,5 @@
 import type { PriceCents } from '@core/primitives';
-
-/** The note and the tip, as one visit holds them. */
-export type VisitSides = {
-  /** The team note, `null` for none. */
-  readonly note: string | null;
-  /** What the chair was tipped, in cents of the seat's currency; `null` when unrecorded. */
-  readonly tipCents: PriceCents | null;
-};
+import type { VisitSides } from '@core/components';
 
 /** Which of the side fields a write carries. */
 export type SideWrites = {

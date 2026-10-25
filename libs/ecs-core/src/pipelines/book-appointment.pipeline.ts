@@ -5,6 +5,7 @@ import {
   type BookingCall,
   type BookingContact,
   type BookingPolicy,
+  BookingReadSnapshot,
   CustomerOrigin,
   Placement,
   PlacementPolicy,
@@ -25,8 +26,8 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import {
+  type BookAppointmentError,
   BookingError,
-  type RepositoryError,
   ShopUnavailableReason,
   type TimeError,
 } from '@core/errors';
@@ -35,6 +36,7 @@ import type {
   AccountContactPorts,
   AuditAppendPorts,
   PolicyReadPorts,
+  ReadTx,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -142,8 +144,6 @@ export type BookAppointmentAnswer = {
   readonly replayed: boolean;
 };
 
-export type BookAppointmentError = BookingError | TimeError | RepositoryError;
-
 export type BookAppointmentPorts = TxPorts &
   PolicyReadPorts &
   AccountContactPorts &
@@ -151,10 +151,16 @@ export type BookAppointmentPorts = TxPorts &
   TelemetryPorts;
 
 type Snapshot =
-  | { readonly snapshot: 'REPLAY'; readonly existing: Appointment }
-  | { readonly snapshot: 'REFUSED'; readonly error: BookingError | TimeError }
   | {
-      readonly snapshot: 'LOADED';
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Replay;
+      readonly existing: Appointment;
+    }
+  | {
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Refused;
+      readonly error: BookingError | TimeError;
+    }
+  | {
+      readonly bookingReadSnapshot: typeof BookingReadSnapshot.Loaded;
       readonly set: BookingReadSet;
       readonly placement: PlacementSet;
       readonly frame: ShopDayFrame;
@@ -273,18 +279,20 @@ export const bookAppointment =
 
 /** The transaction's read half — see {@link bookAppointment}. */
 async function readBooking(
-  tx: Parameters<Parameters<TxPorts['commit']>[0]>[0],
+  tx: ReadTx,
   cmd: BookAppointmentCommand,
   customerIds: readonly CustomerId[],
 ): Promise<Snapshot> {
   if (cmd.attemptId !== null) {
     const existing = await readAppointment(tx, cmd.attemptId);
-    if (existing !== null) return { snapshot: 'REPLAY', existing };
+    if (existing !== null) {
+      return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
+    }
   }
   const locationId = LocationId.parse(cmd.locationId);
   if (!locationId.ok || !isReadableId(cmd.locationId)) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.shopUnavailable(
         cmd.locationId,
         ShopUnavailableReason.NotFound,
@@ -305,7 +313,7 @@ async function readBooking(
   });
   if (set.location === null) {
     return {
-      snapshot: 'REFUSED',
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
       error: BookingError.shopUnavailable(
         cmd.locationId,
         ShopUnavailableReason.NotFound,
@@ -322,7 +330,12 @@ async function readBooking(
           startUtcMs: null,
         })
       : frameWallClock(cmd.localDate, starts, zone);
-  if (!framed.ok) return { snapshot: 'REFUSED', error: framed.error };
+  if (!framed.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: framed.error,
+    };
+  }
   const frame = framed.value;
   const placement = await readPlacementSet(
     tx,
@@ -334,7 +347,12 @@ async function readBooking(
       frame.localDate,
     ),
   );
-  return { snapshot: 'LOADED', set, placement, frame };
+  return {
+    bookingReadSnapshot: BookingReadSnapshot.Loaded,
+    set,
+    placement,
+    frame,
+  };
 }
 
 /** The pure half — the decision and its one write plan. */
@@ -347,14 +365,16 @@ function decideBooking(
   nowUtcMs: UtcEpochMs,
   nextId: () => string,
 ): Result<Decided, BookingError | TimeError> {
-  if (snapshot.snapshot === 'REPLAY') {
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
       appointment: snapshot.existing,
       replayed: true,
       writes: [],
     });
   }
-  if (snapshot.snapshot === 'REFUSED') return Result.err(snapshot.error);
+  if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
+    return Result.err(snapshot.error);
+  }
   const { set, placement, frame } = snapshot;
   const location = set.location;
   if (location === null) {

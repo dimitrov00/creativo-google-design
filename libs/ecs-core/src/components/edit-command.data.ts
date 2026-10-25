@@ -8,7 +8,7 @@ import type {
   ServiceVariantId,
   UtcEpochMs,
 } from '@core/primitives';
-import type { AccountOccupant } from './seat.data';
+import type { AccountOccupant } from './account-occupant.data';
 
 /*
  * The staff edit's two discriminator dictionaries — the call component

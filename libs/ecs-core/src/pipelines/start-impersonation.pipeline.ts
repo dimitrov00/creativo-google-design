@@ -1,7 +1,7 @@
 import {
   type GovernanceCall,
-  isAdmin,
   type Role,
+  Roles,
   WriteOp,
 } from '@core/components';
 import {
@@ -10,7 +10,7 @@ import {
   Result,
   type UserId,
 } from '@core/primitives';
-import { GovernanceError, type RepositoryError } from '@core/errors';
+import { GovernanceError, type StartImpersonationError } from '@core/errors';
 import { Collections, type ImpersonationSession } from '@core/entities';
 import type {
   ClockPorts,
@@ -27,7 +27,7 @@ import { ImpersonationSystem } from '@core/systems';
  * (the rules refuse every client write), so the caller gate is today's
  * rule, `isAdmin()`, asked here BEFORE anything else: no verified caller →
  * `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, a caller whose verified roles
- * hold no admin role (`isAdmin`, `ADMIN_ROLES`) →
+ * hold no admin role (`Roles.isAdmin`, `Roles.ADMIN`) →
  * `GOVERNANCE_IMPERSONATION_FORBIDDEN`. Then `ImpersonationSystem.start` —
  * the structural invariants (no self-impersonation, a reason, an expiry
  * after the start) and its own staff gate — over a minted id and the
@@ -50,8 +50,6 @@ export type StartImpersonationCommand = GovernanceCall & {
   readonly adminRoles: readonly Role[];
 };
 
-export type StartImpersonationError = GovernanceError | RepositoryError;
-
 /** The caller as both impersonation callables gate it — a verified admin, or the refusal. */
 export function admitImpersonationCaller(
   adminUserId: UserId | null,
@@ -60,7 +58,7 @@ export function admitImpersonationCaller(
   if (adminUserId === null) {
     return Result.err(GovernanceError.impersonationUnauthenticated());
   }
-  return isAdmin(adminRoles)
+  return Roles.isAdmin(adminRoles)
     ? Result.ok(adminUserId)
     : Result.err(GovernanceError.impersonationForbidden(adminUserId));
 }

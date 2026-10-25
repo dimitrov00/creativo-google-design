@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { VisitPerspective } from '@core/systems';
+import { VisitPerspective } from '@core/components';
+import { AppointmentPhotoId } from '@core/primitives';
 import { FIXTURE_TODAY } from '@core/testing';
 import type { UiCardPadding, UiCardTone } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
@@ -77,7 +78,7 @@ function lastVisit(): VisitCardVm {
       photos: GEORGI_PHOTOS.filter(
         (photo) => photo.appointmentId === 'appt-sep',
       ).map((photo) => ({
-        id: photo.id as string,
+        id: photo.id,
         url: photo.url,
         takenAtUtcMs: photo.takenAtUtcMs,
       })),
@@ -502,7 +503,7 @@ describe('VisitCard · the thumbs', () => {
     return {
       ...lastVisit(),
       photos: Array.from({ length: count }, (_, index) => ({
-        id: `photo-${index + 1}`,
+        id: AppointmentPhotoId.of(`photo-${index + 1}`),
         url: `https://example.test/photos/photo-${index + 1}.jpg`,
         alt: `Снимка от ${index + 4} септември`,
       })),

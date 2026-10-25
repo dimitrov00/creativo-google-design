@@ -1,6 +1,6 @@
 import { MATERIAL_GLYPHS } from '../material/material-glyphs.generated';
 import { hasMaterialGlyph } from '../material/material';
-import { parseUiIconManifest } from './icon-manifest';
+import { parseUiIconManifest } from './icon-manifest-parser';
 import {
   UI_BUNDLED_ICON_MANIFEST,
   UI_ICON_ALIASES,

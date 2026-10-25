@@ -1,3 +1,5 @@
+import { Tag } from '@core/primitives';
+
 /**
  * Why a read or write through a storage port failed — the `E` of every
  * `Observe*` / `Load*` / `Page*` port (`Result<X, RepositoryError>`), in place
@@ -25,13 +27,6 @@ export const RepositoryErrorCode = {
 } as const;
 export type RepositoryErrorCode =
   (typeof RepositoryErrorCode)[keyof typeof RepositoryErrorCode];
-
-/**
- * Every {@link RepositoryErrorCode}, dictionary order — derived once, never
- * a second source; {@link RepositoryError.guard}'s table (scanned; no `new`
- * in a data file, Law 1).
- */
-const REPOSITORY_CODES: readonly string[] = Object.values(RepositoryErrorCode);
 
 /** One shape for every code, so every error shares one hidden class. */
 export type RepositoryError = {
@@ -95,7 +90,7 @@ export const RepositoryError = {
       typeof value === 'object' &&
       'errorCode' in value &&
       typeof value.errorCode === 'string' &&
-      REPOSITORY_CODES.includes(value.errorCode) &&
+      Tag.has(RepositoryErrorCode, value.errorCode) &&
       'path' in value &&
       'reason' in value
     );

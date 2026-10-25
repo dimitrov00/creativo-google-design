@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AttemptOutcome,
   BookingLifecycle,
   BookingPolicy,
   CancellationReason,
@@ -31,7 +32,6 @@ import {
   type PolicyRecomputeJob,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
-import { AttemptOutcome } from '@core/systems';
 import {
   appointmentFixture,
   customerOf,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { at, until } from '@core/testing';
 import { BarberId, LocationId } from '@core/primitives';
-import { RosterWindow, ShopDayHours } from './roster-window.data';
+import { RosterWindow } from './roster-window.data';
 
 describe('RosterWindow', () => {
   it('is a plain struct on the wall clock, attributed to its shop', () => {
@@ -18,14 +18,5 @@ describe('RosterWindow', () => {
       endMinutes: 780,
     });
     expect(RosterWindow.durationMinutes(window)).toBe(240);
-  });
-});
-
-describe('ShopDayHours', () => {
-  it('is the opening envelope on the wall clock', () => {
-    expect(ShopDayHours.of(at(10), until(20))).toEqual({
-      openMinutes: 600,
-      closeMinutes: 1200,
-    });
   });
 });

@@ -1,5 +1,5 @@
 import type { Appointment } from '@core/entities';
-import type { BookingStatus } from '@core/primitives';
+import type { AppointmentId, BookingStatus } from '@core/primitives';
 
 /**
  * One visit, as the CALENDAR and the VISIT SHEET state it: the day cell's
@@ -19,7 +19,7 @@ import type { BookingStatus } from '@core/primitives';
  * calendar's day cells slow enough to feel.
  */
 export interface ClientVisitVm {
-  readonly id: string;
+  readonly id: AppointmentId;
   /** The stored visit — the flat entity straight from its document. */
   readonly appointment: Appointment;
   /** The services, deduplicated and joined — what the visit IS (the row's title). */

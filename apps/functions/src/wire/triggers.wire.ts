@@ -122,31 +122,25 @@ const RFC3339 =
   /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+|)(Z|[+-]\d{2}:\d{2})$/i;
 
 /**
- * A change that delivered an unreadable time reads as the LATEST instant —
- * newer than any stamp, so the system's conservative answer (restart,
- * judge) is the one taken, never a skip (today's reading).
- */
-const LATEST_INSTANT = ((): PreciseInstant => {
-  const latest = PreciseInstant.of(Number.MAX_SAFE_INTEGER, 999_999_999);
-  if (latest === null) throw new Error('the D17 bound is no instant');
-  return latest;
-})();
-
-/**
  * An event's RFC 3339 time at FULL precision (§9 D17) — whole seconds
  * through the offset, the fraction read to the nanosecond: a Firestore
  * event's time is stamped in microseconds, and two settings writes inside
- * one millisecond must still order.
+ * one millisecond must still order. A change that delivered an unreadable
+ * time reads as {@link PreciseInstant.LATEST} — newer than any stamp, so the
+ * system's conservative answer (restart, judge) is the one taken, never a
+ * skip (today's reading).
  */
 export function preciseInstantOf(time: string): PreciseInstant {
   const [, wholeSeconds, fraction, zone] = RFC3339.exec(time) ?? [];
-  if (wholeSeconds === undefined || zone === undefined) return LATEST_INSTANT;
+  if (wholeSeconds === undefined || zone === undefined) {
+    return PreciseInstant.LATEST;
+  }
   const whole = ZonedTimeSystem.parseOffsetIso(`${wholeSeconds}${zone}`);
-  if (!whole.ok) return LATEST_INSTANT;
+  if (!whole.ok) return PreciseInstant.LATEST;
   const digits = (fraction ?? '').slice(1, 10).padEnd(9, '0');
   return (
-    PreciseInstant.of(Math.floor(whole.value / 1000), Number(digits)) ??
-    LATEST_INSTANT
+    PreciseInstant.fromWholeSecond(whole.value, Number(digits)) ??
+    PreciseInstant.LATEST
   );
 }
 

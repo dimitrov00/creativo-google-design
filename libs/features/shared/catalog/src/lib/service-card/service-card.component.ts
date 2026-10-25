@@ -6,6 +6,7 @@ import {
   input,
   output,
 } from '@angular/core';
+import type { ServiceId } from '@core/primitives';
 import { UiButton, UiIcon, UiMediaCard } from '@creativo/ui/controls';
 import {
   UiInteractiveDirective,
@@ -72,7 +73,7 @@ import {
   },
 })
 export class ServiceCardComponent {
-  readonly uiServiceId = input.required<string>();
+  readonly uiServiceId = input.required<ServiceId>();
   readonly uiName = input.required<string>();
   /** Pre-formatted "45 мин · 15,00 €" line — locale work stays with the parent. */
   readonly uiMeta = input.required<string>();

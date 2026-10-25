@@ -14,27 +14,27 @@
         <button
           type="button"
           uiChip
-          [uiSelected]="tab() === 'positions'"
+          [uiSelected]="tab() === ProgramsTab.Positions"
           data-testid="admin-tab-positions"
-          (click)="setTab('positions')"
+          (click)="setTab(ProgramsTab.Positions)"
         >
           Positions
         </button>
         <button
           type="button"
           uiChip
-          [uiSelected]="tab() === 'courses'"
+          [uiSelected]="tab() === ProgramsTab.Courses"
           data-testid="admin-tab-courses"
-          (click)="setTab('courses')"
+          (click)="setTab(ProgramsTab.Courses)"
         >
           Courses
         </button>
         <button
           type="button"
           uiChip
-          [uiSelected]="tab() === 'events'"
+          [uiSelected]="tab() === ProgramsTab.Events"
           data-testid="admin-tab-events"
-          (click)="setTab('events')"
+          (click)="setTab(ProgramsTab.Events)"
         >
           Events
         </button>
@@ -337,7 +337,7 @@
             + New
           </button>
 
-          @switch (tab()) { @case ('positions') {
+          @switch (tab()) { @case (ProgramsTab.Positions) {
           <ui-list-group data-testid="admin-positions-list">
             @for (position of store.positions(); track position.id) {
             <button
@@ -353,7 +353,7 @@
             </button>
             }
           </ui-list-group>
-          } @case ('courses') {
+          } @case (ProgramsTab.Courses) {
           <ui-list-group data-testid="admin-courses-list">
             @for (course of store.courses(); track course.id) {
             <button
@@ -369,7 +369,7 @@
             </button>
             }
           </ui-list-group>
-          } @case ('events') {
+          } @case (ProgramsTab.Events) {
           <ui-list-group data-testid="admin-events-list">
             @for (event of store.events(); track event.id) {
             <button

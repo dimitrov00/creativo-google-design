@@ -126,6 +126,11 @@
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "The information provided is invalid.",
     "IDENTITY_CALL_FAILED": "Something went wrong — please try again.",
     "ENGAGEMENT_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
+    "LOYALTY_STREAK_PUBLISH_STALE": "Someone else changed the rule. See the new one.",
+    "LOYALTY_STREAK_PUBLISH_TOO_EARLY": "The earliest possible day is {{date}}.",
+    "LOYALTY_STREAK_PUBLISH_INVALID": "Fix: {{field}}.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "You aren't allowed to make that change.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "You aren't allowed to make that change.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Please try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Please try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Please try again.",
@@ -1009,10 +1014,8 @@
         "open": "Add",
         "close": "Close",
         "booking": "Add booking",
-        "block": "Block time",
-        "waitlist": "Add to waitlist"
+        "block": "Block time"
       },
-      "notBuiltYet": "Not built yet — this one needs the server-side write (Phase B4).",
       "searchLabel": "Search",
       "searchPlaceholder": "Name, phone, email, service…",
       "searchClear": "Clear search",
@@ -2314,12 +2317,6 @@
       "empty": "No rule yet. These are the recommended values.",
       "flagOff": "The rhythm is not switched on for the app yet.",
       "failed": "The rule did not load.",
-      "refused": {
-        "stale": "Someone else changed the rule. See the new one.",
-        "tooEarly": "The earliest possible day is {{date}}.",
-        "invalid": "Fix: {{field}}.",
-        "notAdmin": "Only an admin can change the rule."
-      },
       "offline": "Offline · the rule cannot be saved."
     }
   }

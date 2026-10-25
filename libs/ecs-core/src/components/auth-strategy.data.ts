@@ -5,8 +5,7 @@ import {
   Result,
 } from '@core/primitives';
 import { AuthPolicyField, IdentityError } from '@core/errors';
-import { CountryIso2 } from './country-iso2.data';
-import { RegistrationField, isRegistrationField } from './registration.data';
+import { Registration, RegistrationField } from './registration.data';
 
 /**
  * Strategy tags — the ONLY source of these strings (deployment config); the
@@ -21,23 +20,6 @@ export type AuthStrategyKind =
   (typeof AuthStrategyKind)[keyof typeof AuthStrategyKind];
 
 /**
- * Policy for a code challenge (phone or e-mail OTP) — deployment config, a
- * named reference of the strategy (F-8): a code lives `ttlMinutes`, locks
- * out after `maxAttempts` wrong codes, and a session lasts `sessionDays`.
- */
-export type OtpPolicy = {
-  readonly ttlMinutes: DurationMinutes;
-  readonly maxAttempts: number;
-  readonly sessionDays: number;
-};
-
-/** Policy for a magic-link challenge — deployment config. */
-export type LinkPolicy = {
-  readonly ttlMinutes: DurationMinutes;
-  readonly sessionDays: number;
-};
-
-/**
  * Which challenge flow a deployment runs. Each variant owns the policy it
  * needs — no shared policy on a parent shape, which would let a future
  * variant carry an unused field. Every strategy's `required` set includes
@@ -45,13 +27,6 @@ export type LinkPolicy = {
  */
 export type AuthStrategy =
   AuthStrategy.PhoneOtp | AuthStrategy.EmailOtp | AuthStrategy.EmailLink;
-
-/** The untyped shape a deployment config hands `parse` — foreign input (the L3 `Input` escape). */
-export type AuthStrategyInput = {
-  readonly authStrategyKind: string;
-  readonly required: readonly string[];
-  readonly policy: Readonly<Record<string, unknown>>;
-};
 
 function isPositiveInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -116,7 +91,7 @@ export const AuthStrategy = {
    * and each bad policy figure (`createAuthStrategy`).
    */
   parse(
-    input: AuthStrategyInput,
+    input: AuthStrategy.Input,
   ): Result<AuthStrategy, readonly IdentityError[]> {
     const kind = input.authStrategyKind;
     if (
@@ -132,7 +107,7 @@ export const AuthStrategy = {
     let unknownField = false;
     for (let i = 0; i < input.required.length; i++) {
       const value = input.required[i] as string;
-      if (isRegistrationField(value)) required.push(value);
+      if (Registration.isField(value)) required.push(value);
       else {
         unknownField = true;
         errors.push(IdentityError.authStrategyUnknownField(value));
@@ -195,92 +170,40 @@ export const AuthStrategy = {
 } as const;
 
 export namespace AuthStrategy {
+  /**
+   * Policy for a code challenge (phone or e-mail OTP) — deployment config, a
+   * named reference of the strategy (F-8): a code lives `ttlMinutes`, locks
+   * out after `maxAttempts` wrong codes, and a session lasts `sessionDays`.
+   */
+  export type OtpPolicy = {
+    readonly ttlMinutes: DurationMinutes;
+    readonly maxAttempts: number;
+    readonly sessionDays: number;
+  };
+  /** Policy for a magic-link challenge — deployment config. */
+  export type LinkPolicy = {
+    readonly ttlMinutes: DurationMinutes;
+    readonly sessionDays: number;
+  };
+  /** The untyped shape a deployment config hands `parse` — foreign input (the L3 `Input` escape). */
+  export type Input = {
+    readonly authStrategyKind: string;
+    readonly required: readonly string[];
+    readonly policy: Readonly<Record<string, unknown>>;
+  };
   export type PhoneOtp = {
     readonly authStrategyKind: typeof AuthStrategyKind.PhoneOtp;
     readonly required: readonly RegistrationField[];
-    readonly policy: OtpPolicy;
+    readonly policy: AuthStrategy.OtpPolicy;
   };
   export type EmailOtp = {
     readonly authStrategyKind: typeof AuthStrategyKind.EmailOtp;
     readonly required: readonly RegistrationField[];
-    readonly policy: OtpPolicy;
+    readonly policy: AuthStrategy.OtpPolicy;
   };
   export type EmailLink = {
     readonly authStrategyKind: typeof AuthStrategyKind.EmailLink;
     readonly required: readonly RegistrationField[];
-    readonly policy: LinkPolicy;
+    readonly policy: AuthStrategy.LinkPolicy;
   };
 }
-
-/**
- * Entry-method tags of the identify screen — the discriminator
- * `authProviderKind` (N15: `AuthProvider` is the union).
- */
-export const AuthProviderKind = {
-  /** The deployment's own OTP flow. */
-  Otp: 'OTP',
-  /** A third-party sign-in button. */
-  OAuth: 'OAUTH',
-} as const;
-export type AuthProviderKind =
-  (typeof AuthProviderKind)[keyof typeof AuthProviderKind];
-
-/** The third-party providers a deployment may offer. */
-export const OAuthProvider = {
-  Google: 'GOOGLE',
-  Apple: 'APPLE',
-  Facebook: 'FACEBOOK',
-} as const;
-export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
-
-/**
- * One way to start authenticating on the identify screen — a concept BESIDE
- * `AuthStrategy`, never a variant of it: an OAuth sign-in carries no
- * challenge policy, and still funnels through onboarding, where
- * `AuthStrategy.required` collects the phone.
- */
-export type AuthProvider = AuthProvider.Otp | AuthProvider.OAuth;
-
-const OTP_PROVIDER: AuthProvider.Otp = {
-  authProviderKind: AuthProviderKind.Otp,
-};
-
-export const AuthProvider = {
-  otp(): AuthProvider.Otp {
-    return OTP_PROVIDER;
-  },
-  oauth(provider: OAuthProvider): AuthProvider.OAuth {
-    return { authProviderKind: AuthProviderKind.OAuth, provider };
-  },
-} as const;
-
-export namespace AuthProvider {
-  export type Otp = {
-    readonly authProviderKind: typeof AuthProviderKind.Otp;
-  };
-  export type OAuth = {
-    readonly authProviderKind: typeof AuthProviderKind.OAuth;
-    readonly provider: OAuthProvider;
-  };
-}
-
-/**
- * Everything one deployment decides about authentication: which challenge
- * runs, which entry buttons the identify screen renders (in order), and the
- * country phone entry defaults to (national-format typing everywhere).
- * Flipping a deployment is a config change at the composition root.
- */
-export type AuthDeployment = {
-  readonly strategy: AuthStrategy;
-  readonly providers: readonly AuthProvider[];
-  readonly defaultCountry: CountryIso2;
-};
-
-export const AuthDeployment = {
-  /** The single-tenant stand-in: the default strategy, OTP entry only, Bulgaria. */
-  DEFAULT: {
-    strategy: DEFAULT_STRATEGY,
-    providers: [OTP_PROVIDER],
-    defaultCountry: CountryIso2.of('BG'),
-  } satisfies AuthDeployment as AuthDeployment,
-} as const;

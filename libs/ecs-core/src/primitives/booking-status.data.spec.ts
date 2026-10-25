@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { BookingStatus, isBookingStatus } from './booking-status.data';
+import { BookingStatus } from './booking-status.data';
+import { Tag } from './tag.data';
 
-describe('isBookingStatus — the edge guard of the stored tag', () => {
+// The edge guard of the stored tag is the one membership scan,
+// `Tag.has(BookingStatus, raw)` (pass D retired the `isBookingStatus`
+// delegate; its cases are restated here on the scan).
+const isBookingStatus = (raw: unknown): raw is BookingStatus =>
+  Tag.has(BookingStatus, raw);
+
+describe('Tag.has(BookingStatus, …) — the edge guard of the stored tag', () => {
   it('accepts every stored tag', () => {
     for (const status of Object.values(BookingStatus)) {
       expect(isBookingStatus(status)).toBe(true);

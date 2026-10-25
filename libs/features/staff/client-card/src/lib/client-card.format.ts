@@ -1,4 +1,10 @@
-import { LocalDate, type TimeZone, UtcEpochMs, defect } from '@core/primitives';
+import {
+  type LocalDate,
+  Locale,
+  Tag,
+  type TimeZone,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { LinePart } from './client-pages.vm';
@@ -14,65 +20,50 @@ import type { LinePart } from './client-pages.vm';
  * instant becomes one through `shopDayOf`, and a day is formatted as
  * itself — the shared wall-clock face (`formatWallClock`, read back in UTC,
  * no `Date` built) — so no device zone can move it. `Intl`'s output is
- * never post-processed (its « г.» included).
- *
- * The second half is THE CARD'S QUIET LINES: one grammar for cutting a
- * sentence into runs, binding a fact's words and hanging its joints, so
- * every line of the card wraps the same way.
+ * never post-processed (its « г.» included). Every day here is the
+ * branded `LocalDate` it is at its source (Law 7.4): no formatter parses.
  */
 
-/** The catalogue's two languages; anything else reads Bulgarian, the shop's own. */
-export type CardLocale = 'bg' | 'en';
-
-export function cardLocaleOf(lang: string): CardLocale {
-  return lang === 'en' ? 'en' : 'bg';
+/** The catalogue's language for the card's words: a `Locale`, anything else Bulgarian — the shop's own. */
+export function cardLocaleOf(lang: string): Locale {
+  return Tag.or(Locale, lang, Locale.Bg);
 }
 
-/**
- * A `YYYY-MM-DD` shop day as the branded day it is (Law 7.4). Every day the
- * card formats is a stored or computed `LocalDate`: one that is not is a
- * defect, never a guess.
- */
-function localDateOf(day: string): LocalDate {
-  const parsed = LocalDate.parse(day);
-  if (!parsed.ok) defect(`${day} is not a shop day`);
-  return parsed.value;
-}
-
-function yearOf(day: string): string {
+function yearOf(day: LocalDate): string {
   return day.slice(0, 4);
 }
 
 /** The year, only when the day is not in `today`'s. */
 function yearUnlessCurrent(
-  day: string,
-  today: string,
+  day: LocalDate,
+  today: LocalDate,
 ): Pick<Intl.DateTimeFormatOptions, 'year'> {
   return yearOf(day) === yearOf(today) ? {} : { year: 'numeric' };
 }
 
 function formatDay(
-  day: string,
+  day: LocalDate,
   lang: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return formatWallClock(localDateOf(day), null, lang, options);
+  return formatWallClock(day, null, lang, options);
 }
 
 /**
- * The shop day an instant falls on (`YYYY-MM-DD`) on the shop's zone — the
- * one the card's store resolved (Law 7.2: the location's, the default
- * location's here) — UI formatting of a stamp. Every instant the card holds
- * is inside the brand's window: one outside it is a defect.
+ * The shop day an instant falls on on the shop's zone — the one the card's
+ * store resolved (Law 7.2: the location's, the default location's here) —
+ * UI formatting of a stamp.
  */
-export function shopDayOf(ms: number, zone: TimeZone): LocalDate {
-  const instant = UtcEpochMs.of(ms);
-  if (!instant.ok) defect(`${ms} is not an instant`);
-  return ZonedTimeSystem.toLocal(instant.value, zone).localDate;
+export function shopDayOf(at: UtcEpochMs, zone: TimeZone): LocalDate {
+  return ZonedTimeSystem.toLocal(at, zone).localDate;
 }
 
 /** «4.09» · «6.03.2025 г.» — a fact line's or a caption's date (R59). */
-export function dayShort(day: string, today: string, lang: string): string {
+export function dayShort(
+  day: LocalDate,
+  today: LocalDate,
+  lang: string,
+): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: '2-digit',
@@ -81,17 +72,17 @@ export function dayShort(day: string, today: string, lang: string): string {
 }
 
 /** «6.03» — the day and month alone, where the year stands elsewhere (a ladder node's line under it). */
-export function dayMonth(day: string, lang: string): string {
+export function dayMonth(day: LocalDate, lang: string): string {
   return formatDay(day, lang, { day: 'numeric', month: '2-digit' });
 }
 
 /** «2025 г.» — a day's year alone (a ladder node's second line, under its «6.03»). */
-export function yearAlone(day: string, lang: string): string {
+export function yearAlone(day: LocalDate, lang: string): string {
   return formatDay(day, lang, { year: 'numeric' });
 }
 
 /** «6.03.2025 г.» — a date that always names its year (a first visit, a record). */
-export function dayWithYear(day: string, lang: string): string {
+export function dayWithYear(day: LocalDate, lang: string): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: '2-digit',
@@ -100,7 +91,11 @@ export function dayWithYear(day: string, lang: string): string {
 }
 
 /** «4 септември» · «6 март 2025 г.» — a date someone hears (accessible names, announcements). */
-export function dayLong(day: string, today: string, lang: string): string {
+export function dayLong(
+  day: LocalDate,
+  today: LocalDate,
+  lang: string,
+): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: 'long',
@@ -109,12 +104,12 @@ export function dayLong(day: string, today: string, lang: string): string {
 }
 
 /** «март 2025 г.» — a month someone has been a client since. */
-export function monthYearLong(day: string, lang: string): string {
+export function monthYearLong(day: LocalDate, lang: string): string {
   return formatDay(day, lang, { month: 'long', year: 'numeric' });
 }
 
 /** «септември» — a month in words (the rhythm's hidden period list). */
-export function monthLong(day: string, lang: string): string {
+export function monthLong(day: LocalDate, lang: string): string {
   return formatDay(day, lang, { month: 'long' });
 }
 

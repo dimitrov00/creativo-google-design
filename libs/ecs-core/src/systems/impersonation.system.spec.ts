@@ -4,7 +4,6 @@ import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import {
   ImpersonationScope,
-  parseImpersonationScope,
   EndReasonFields,
   ImpersonationEndReason,
   ImpersonationLifecycle,
@@ -103,7 +102,7 @@ describe('ImpersonationSystem.start', () => {
   });
 
   it('rejects an invalid scope — at its edge, before start', () => {
-    expect(unwrapErr(parseImpersonationScope('full'))).toEqual({
+    expect(unwrapErr(ImpersonationLifecycle.parseScope('full'))).toEqual({
       errorCode: GovernanceErrorCode.ImpersonationScopeInvalid,
       attempted: 'full',
     });

@@ -3,7 +3,7 @@ import {
   Email,
   Registration,
   type Role,
-  isRole,
+  Roles,
   type ProfileEdits,
 } from '@core/components';
 import { type LocalDate, Result } from '@core/primitives';
@@ -56,7 +56,8 @@ function roleRefusals(roles: readonly Role[]): readonly AccountsError[] {
   const out: AccountsError[] = [];
   for (let i = 0; i < roles.length; i++) {
     const role: unknown = roles[i];
-    if (!isRole(role)) out.push(AccountsError.userRoleInvalid(String(role)));
+    if (!Roles.isRole(role))
+      out.push(AccountsError.userRoleInvalid(String(role)));
   }
   if (out.length === 0 && roles.length === 0) {
     out.push(AccountsError.userRolesEmpty());

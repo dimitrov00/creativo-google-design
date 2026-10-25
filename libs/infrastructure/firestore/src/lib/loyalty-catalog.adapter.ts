@@ -6,12 +6,13 @@ import {
   type BadgeCategory,
   type BadgeSeries,
   Collections,
+  type LoyaltyCatalog,
   type RewardCatalogItem,
   type Season,
   type StreakDefinition,
   type TierDefinition,
 } from '@core/entities';
-import type { LoyaltyCatalog, LoyaltyCatalogReadPorts } from '@core/ports';
+import type { LoyaltyCatalogReadPorts } from '@core/ports';
 import { readQuery } from './observe';
 
 /**

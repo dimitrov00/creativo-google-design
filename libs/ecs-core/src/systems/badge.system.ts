@@ -1,6 +1,6 @@
 import {
   BadgeLevel,
-  Gamification,
+  MetricRef,
   LadderRung,
   MedalCaption,
   MedalDetailState,
@@ -215,13 +215,13 @@ export const BadgeSystem = {
 
   /**
    * The family's count is a count of VISITS: a kind of visit
-   * (`Gamification.isVisitKind`), or the rhythm's run — no metric, with
+   * (`MetricRef.isVisitKind`), or the rhythm's run — no metric, with
    * targets (a single act counts nothing).
    */
   countsInVisits(series: Pick<BadgeSeries, 'metric' | 'levels'>): boolean {
     return series.metric === null
       ? !BadgeSystem.isOneOff(series)
-      : Gamification.isVisitKind(series.metric);
+      : MetricRef.isVisitKind(series.metric);
   },
 
   /** The level earned most recently — the latest stamp; the first one wins a tie. `null` = none. */
@@ -269,7 +269,7 @@ export const BadgeSystem = {
     firstVisitOn: LocalDate | null,
     today: LocalDate,
   ): LocalDate | null {
-    if (!Gamification.isCalendarDriven(series) || standing.target === null) {
+    if (!MetricRef.isCalendarDriven(series) || standing.target === null) {
       return null;
     }
     const day =
@@ -567,6 +567,6 @@ export const BadgeSystem = {
 
   /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
   isCalendarDriven(series: Pick<BadgeSeries, 'metric'>): boolean {
-    return Gamification.isCalendarDriven(series);
+    return MetricRef.isCalendarDriven(series);
   },
 } as const;

@@ -14,7 +14,6 @@ import {
 } from '@core/primitives';
 // Types only (erased): the testing entry's runtime half is not Playwright's to load.
 import type { LoyaltyClientJson } from '@core/testing';
-import { SHOP_ZONE } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import { expectNoAxeViolations } from './support/axe';
 import {
@@ -28,6 +27,7 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
 } from './support/seed-firestore';
+import { shopToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 import { THEMES, pinTheme } from './support/theme';
 
@@ -48,13 +48,6 @@ import { THEMES, pinTheme } from './support/theme';
  * `support/global-setup.ts`. Axe runs on every page of the stack, once
  * per theme.
  */
-
-/** Today in the shop's zone — the day the schedule opens on. */
-function shopToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: SHOP_ZONE }).format(
-    new Date(),
-  );
-}
 
 /**
  * Георги's shared loyalty fixture (`@core/testing`'s `account-georgi.json`,

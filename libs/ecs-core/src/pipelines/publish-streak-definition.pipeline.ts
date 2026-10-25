@@ -23,7 +23,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import {
-  type RepositoryError,
+  type PublishStreakDefinitionError,
   StreakPublishError,
   StreakRuleField,
 } from '@core/errors';
@@ -142,8 +142,6 @@ export type WithdrawStreakDefinitionCommand = {
 
 /** What a withdrawal answers: the version called off. */
 export type StreakWithdrawReceipt = { readonly version: number };
-
-export type PublishStreakDefinitionError = StreakPublishError | RepositoryError;
 
 /** What a publish's transaction read. */
 type PublishSnapshot = {

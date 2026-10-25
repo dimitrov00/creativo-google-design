@@ -4,7 +4,7 @@ import {
   BadgeCategoryKind,
   BadgeSubject,
   type BadgeSubjectSlot,
-  Gamification,
+  MetricRef,
   MedalCue,
   MedalState,
   ScopeSection,
@@ -12,11 +12,16 @@ import {
   type SeasonWindow,
   FamilyScope,
   FamilyScopeFilter,
-  type ClosestLevel,
   type EarnedDay,
   type SeriesStanding,
 } from '@core/components';
-import type { BadgeCategory, BadgeProgress, BadgeSeries } from '@core/entities';
+import type {
+  BadgeCategory,
+  BadgeProgress,
+  BadgeSeries,
+  CatalogCategoryRef,
+  CatalogSeasonRef,
+} from '@core/entities';
 import {
   type BadgeSeriesId,
   type LocalDate,
@@ -26,11 +31,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { BadgeSystem } from './badge.system';
-import {
-  LoyaltyCatalogSystem,
-  type CatalogCategoryRef,
-  type CatalogSeasonRef,
-} from './loyalty-catalog.system';
+import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
 import { SeasonSystem } from './season.system';
 
 /*
@@ -46,6 +47,18 @@ import { SeasonSystem } from './season.system';
  * from it is not started. Generic over the catalogue's family rows, which
  * come back as the very rows they were.
  */
+
+/**
+ * A family's next level, and how far the client is from it — the system's
+ * own answer of `closestLevels` (pass D: system I/O, homed here from
+ * `standing.data.ts`).
+ */
+export type ClosestLevel = {
+  readonly badgeSeriesId: BadgeSeriesId;
+  readonly level: number;
+  readonly value: number;
+  readonly target: number;
+};
 
 /** What a standing reads of a family. */
 export type StandingSeriesRef = Pick<
@@ -431,7 +444,7 @@ export const StandingSystem = {
         c.value === 0 ||
         c.series.categoryId === null ||
         metric === null ||
-        !Gamification.isPerVisitMetric(metric)
+        !MetricRef.isPerVisitMetric(metric)
       ) {
         continue;
       }

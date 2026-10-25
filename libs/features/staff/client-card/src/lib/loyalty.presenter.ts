@@ -1,8 +1,8 @@
 import type { LoyaltyAccount, StreakDefinition } from '@core/entities';
 import {
-  CouponGrantId,
-  LocalDate,
+  type LocalDate,
   type TimeZone,
+  type UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
@@ -25,6 +25,7 @@ import { dayLong, dayShort, shopDayOf } from './client-card.format';
 import { type RewardReadyVm } from './client-pages.vm';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
+import type { VisitNames } from './ledger.presenter';
 
 /*
  * «ЛОЯЛНОСТ» — what the wallet (`wallet.presenter.ts`) and the glance
@@ -73,7 +74,7 @@ export function groupedGrants(
 export function ticketOf(
   group: GrantGroup,
   others: number,
-  today: string,
+  today: LocalDate,
   words: ClientCardWords,
 ): RewardReadyVm {
   const first = group.grants[0] as ClientCardGrant;
@@ -107,7 +108,7 @@ export function ticketOf(
  */
 export function glanceReward(
   grants: readonly ClientCardGrant[],
-  today: string,
+  today: LocalDate,
   words: ClientCardWords,
   onBill: readonly ClientCardGrant[] = [],
 ): RewardReadyVm | null {
@@ -128,21 +129,17 @@ export function glanceReward(
  */
 export function ruleInForceOf(
   rhythm: StreakDefinition | null,
-  today: string,
+  today: LocalDate,
 ): StreakHeadRule | null {
-  return rhythm === null
-    ? null
-    : StreakRuleSystem.inForceOn(rhythm, dayOf(today));
+  return rhythm === null ? null : StreakRuleSystem.inForceOn(rhythm, today);
 }
 
 /** The rule that waits for its day (`StreakRuleSystem.upcomingOn`); `null` with nothing waiting, or without a rhythm. */
 export function ruleUpcomingOf(
   rhythm: StreakDefinition | null,
-  today: string,
+  today: LocalDate,
 ): StreakHeadRule | null {
-  return rhythm === null
-    ? null
-    : StreakRuleSystem.upcomingOn(rhythm, dayOf(today));
+  return rhythm === null ? null : StreakRuleSystem.upcomingOn(rhythm, today);
 }
 
 /** The account's state of the rhythm (`StreakState.find`, a linear scan); `null` without a rhythm or a state. */
@@ -160,8 +157,8 @@ export function rhythmStateOf(
  */
 export function rhythmTrackName(
   state: Pick<StreakState, 'current' | 'best'>,
-  due: string | null,
-  today: string,
+  due: LocalDate | null,
+  today: LocalDate,
   words: ClientCardWords,
 ): string {
   const best = StreakSystem.record(state);
@@ -177,7 +174,7 @@ export function rhythmTrackName(
 /** LG's state line, and the day it names (`null` when it names none). */
 interface RhythmStateLine {
   readonly line: string;
-  readonly day: string | null;
+  readonly day: LocalDate | null;
 }
 
 /** What the card reads around the rhythm's state when it asks where the rhythm stands. */
@@ -185,7 +182,7 @@ export interface RhythmOutlookView {
   readonly paused: boolean;
   /** The next due date once the visit in the chair counts (`StreakSystem.inChairDue`). */
   readonly inChairDue: LocalDate | null;
-  readonly today: string;
+  readonly today: LocalDate;
   /** The shop's zone (Law 7.2): where the last counted visit's stamp becomes its shop day. */
   readonly zone: TimeZone;
 }
@@ -200,7 +197,7 @@ export function rhythmOutlookOf(
   view: RhythmOutlookView,
 ): StreakOutlookAnswer {
   return StreakSystem.outlook(state, {
-    today: dayOf(view.today),
+    today: view.today,
     inChairDue: view.inChairDue,
     paused: view.paused,
     lastQualifiedOn:
@@ -242,7 +239,7 @@ function frozenLine(
  */
 export function rhythmLineOf(
   outlook: StreakOutlookAnswer,
-  today: string,
+  today: LocalDate,
   words: ClientCardWords,
 ): RhythmStateLine {
   const rhythm = words.rhythm;
@@ -294,17 +291,19 @@ export interface LoyaltyPageInput {
    * same gate as `usableGrants`. Absent = none.
    */
   readonly usableGrantsOnBill?: readonly ClientCardGrant[];
-  readonly visitsMs: readonly number[];
+  /** The stats' worked visits of the last year, each as its start instant on the shop's zone. */
+  readonly visitsMs: readonly UtcEpochMs[];
   /** The worked visits of a lifetime — LG says «Винаги» for a run that long (`RhythmInput`). */
   readonly lifetimeVisits?: number | null;
   /**
-   * A worked visit's services by its shop day, as the history rows word
-   * them — what the wallet's activity rows name a visit by; absent =
-   * «Посещение».
+   * A worked visit's services by its appointment and by its shop day, as
+   * the history rows word them — what the wallet's activity rows name a
+   * visit by; absent = «Посещение».
    */
-  readonly visitTitles?: ReadonlyMap<string, string>;
+  readonly visitTitles?: VisitNames;
   readonly inChairToday: boolean;
-  readonly today: string;
+  /** The shop calendar's today, on the shop's zone. */
+  readonly today: LocalDate;
   /** The shop's zone (Law 7.2): where a stamp's shop day is read. */
   readonly zone: TimeZone;
   readonly words: ClientCardWords;
@@ -322,12 +321,6 @@ export function sliceMap<T, U>(
 
 // ── The card's own values → ecs-core structs ──────────────────────────────
 
-/** A shop day the card holds: a guarded document day, a clock's «today». */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
 /**
  * A held grant as `RewardSystem.groupGrants` reads it: identical grants —
  * the same coupon, worded the same — share a key, and the grant rides along.
@@ -336,9 +329,9 @@ function ticketRefOf(grant: ClientCardGrant): GrantTicketRef & {
   readonly source: ClientCardGrant;
 } {
   return {
-    grantId: CouponGrantId.of(grant.grantId),
+    grantId: grant.grantId,
     groupKey: `${grant.title}\u0000${grant.valueLabel ?? ''}`,
-    expiresOn: grant.expiresOn === null ? null : dayOf(grant.expiresOn),
+    expiresOn: grant.expiresOn,
     source: grant,
   };
 }

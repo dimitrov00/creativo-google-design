@@ -1,5 +1,9 @@
-import { Result, defect, LocalDate } from '@core/primitives';
-import { EngagementError, StreakRuleField } from '@core/errors';
+import { Result, defect, LocalDate, Tag } from '@core/primitives';
+import {
+  EngagementError,
+  type StreakScheduleError,
+  StreakRuleField,
+} from '@core/errors';
 import {
   StreakInterval,
   StreakIntervalRule,
@@ -7,8 +11,6 @@ import {
   QualifierComparison,
   StreakQualifierRule,
   HeadRole,
-  STREAK_EXCUSES,
-  STREAK_RULE_PARAMETER_ORDER,
   StreakOnBreak,
   StreakPublishConsent,
   StreakRule,
@@ -72,7 +74,7 @@ export type StreakRuleSummary = {
     readonly maxBanked: number;
     readonly earnEvery: number;
   } | null;
-  /** Every visit the shop calls off is excused: all of `STREAK_SHOP_EXCUSES`. */
+  /** Every visit the shop calls off is excused: all of `StreakRule.SHOP_EXCUSES`. */
   readonly shopExcuses: boolean;
   /** `null`: off, or no day past the due date is held. */
   readonly hold: { readonly maxDaysPastDue: number } | null;
@@ -102,15 +104,9 @@ export type StreakExcuseCount = {
   readonly all: number;
 };
 
-/** What a schedule refuses: a waiting version that does not follow, or a transition nobody knows. */
-export type StreakScheduleError =
-  | EngagementError.StreakScheduleVersionNotRising
-  | EngagementError.StreakScheduleNotAfterCurrent
-  | EngagementError.StreakUnknownOption;
-
 /** Every transition, dictionary order — what an unknown one is refused against. */
 const STREAK_TRANSITIONS: readonly StreakTransition[] =
-  Object.values(StreakTransition);
+  Tag.values(StreakTransition);
 
 /** A part's direction: never `switch`, which only the rule as a whole takes. */
 type PartDirection =
@@ -358,11 +354,7 @@ export const StreakRuleSystem = {
         ),
       );
     }
-    let known = false;
-    for (let i = 0; i < STREAK_TRANSITIONS.length; i++) {
-      if (STREAK_TRANSITIONS[i] === scheduled.streakTransition) known = true;
-    }
-    if (!known) {
+    if (!Tag.has(StreakTransition, scheduled.streakTransition)) {
       errors.push(
         EngagementError.streakUnknownOption(
           StreakRuleField.ScheduledTransition,
@@ -663,7 +655,7 @@ export const StreakRuleSystem = {
 
   /**
    * The parameters a stored version lists as changed, in the order its
-   * history names them (`STREAK_RULE_PARAMETER_ORDER`: the rule's parts,
+   * history names them (`StreakRule.PARAMETER_ORDER`: the rule's parts,
    * the name last), each once. What is no parameter — a version's identity
    * (`version`, `effectiveFromLocalDate`), a word nobody knows — is no
    * change and is left out.
@@ -672,8 +664,8 @@ export const StreakRuleSystem = {
     changed: readonly string[],
   ): readonly StreakRuleParameter[] {
     const out: StreakRuleParameter[] = [];
-    for (let i = 0; i < STREAK_RULE_PARAMETER_ORDER.length; i++) {
-      const parameter = STREAK_RULE_PARAMETER_ORDER[i] as StreakRuleParameter;
+    for (let i = 0; i < StreakRule.PARAMETER_ORDER.length; i++) {
+      const parameter = StreakRule.PARAMETER_ORDER[i] as StreakRuleParameter;
       for (let j = 0; j < changed.length; j++) {
         if (changed[j] === parameter) {
           out.push(parameter);
@@ -688,7 +680,7 @@ export const StreakRuleSystem = {
   excuseCount(rule: {
     readonly excuses: readonly StreakExcuse[];
   }): StreakExcuseCount {
-    return { on: rule.excuses.length, all: STREAK_EXCUSES.length };
+    return { on: rule.excuses.length, all: StreakRule.EXCUSES.length };
   },
 
   /**

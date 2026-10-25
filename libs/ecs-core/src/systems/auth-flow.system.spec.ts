@@ -10,7 +10,7 @@ import {
   ParsedIdentifier as Parsed,
   SessionKind,
 } from '@core/components';
-import { IdentityErrorCode } from '@core/errors';
+import { IdentityError, IdentityErrorCode, PipelineError } from '@core/errors';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { AuthFlowSystem } from './auth-flow.system';
 
@@ -26,6 +26,13 @@ import { AuthFlowSystem } from './auth-flow.system';
 const IDENTIFIER: ParsedIdentifier = Parsed.email(
   Email.of('client@example.com'),
 );
+
+/** The refusals the cases carry — structs since pass D (§2.11), the legacy strings' stand-ins. */
+const INCORRECT_CODE = IdentityError.otpWrongCode();
+const RATE_LIMITED = PipelineError.fromWire('resource-exhausted', {
+  errorCode: IdentityErrorCode.OtpRateLimited,
+});
+const BLOCKED = PipelineError.fromWire('permission-denied', null);
 
 function advance(state: AuthFlowState, event: AuthFlowEvent): AuthFlowState {
   return unwrapOk(AuthFlowSystem.next(state, event));
@@ -60,7 +67,7 @@ describe('AuthFlowSystem.next', () => {
   it('routes a blocked verify failure to the terminal blocked state', () => {
     const state = advance(
       submitted(),
-      AuthFlowEvent.verifyFailed(true, 'blocked'),
+      AuthFlowEvent.verifyFailed(true, BLOCKED),
     );
     expect(state.authFlowStep).toBe(AuthFlowStep.Blocked);
   });
@@ -68,12 +75,12 @@ describe('AuthFlowSystem.next', () => {
   it('keeps a non-blocked verify failure on the otp step, carrying the error', () => {
     const state = advance(
       submitted(),
-      AuthFlowEvent.verifyFailed(false, 'incorrect code'),
+      AuthFlowEvent.verifyFailed(false, INCORRECT_CODE),
     );
 
     expect(state.authFlowStep).toBe(AuthFlowStep.Otp);
     if (state.authFlowStep === AuthFlowStep.Otp) {
-      expect(state.error).toBe('incorrect code');
+      expect(state.error).toBe(INCORRECT_CODE);
       expect(state.identifier).toEqual(IDENTIFIER);
     }
   });
@@ -81,19 +88,19 @@ describe('AuthFlowSystem.next', () => {
   it('routes a failed (re)send back to identify with the error attached', () => {
     const state = advance(
       submitted(),
-      AuthFlowEvent.requestFailed(false, 'rate limited'),
+      AuthFlowEvent.requestFailed(false, RATE_LIMITED),
     );
 
     expect(state.authFlowStep).toBe(AuthFlowStep.Identify);
     if (state.authFlowStep === AuthFlowStep.Identify) {
-      expect(state.error).toBe('rate limited');
+      expect(state.error).toBe(RATE_LIMITED);
     }
   });
 
   it('routes a blocked (re)send failure to the terminal blocked state', () => {
     const state = advance(
       submitted(),
-      AuthFlowEvent.requestFailed(true, 'blocked'),
+      AuthFlowEvent.requestFailed(true, BLOCKED),
     );
     expect(state.authFlowStep).toBe(AuthFlowStep.Blocked);
   });
@@ -104,7 +111,7 @@ describe('AuthFlowSystem.next', () => {
       // Even with an error attached, leaving the otp step drops it.
       let state = advance(
         submitted(),
-        AuthFlowEvent.verifyFailed(false, 'incorrect code'),
+        AuthFlowEvent.verifyFailed(false, INCORRECT_CODE),
       );
 
       state = advance(state, event);
@@ -158,20 +165,20 @@ describe('AuthFlowSystem.next', () => {
 describe('AuthFlowSystem properties', () => {
   const states: readonly AuthFlowState[] = [
     AuthFlowState.initial(),
-    AuthFlowState.identify('rate limited'),
+    AuthFlowState.identify(RATE_LIMITED),
     AuthFlowState.otp(IDENTIFIER, null),
-    AuthFlowState.otp(IDENTIFIER, 'incorrect code'),
+    AuthFlowState.otp(IDENTIFIER, INCORRECT_CODE),
     AuthFlowState.blocked(),
     AuthFlowState.done(IDENTIFIER, SessionKind.New),
     AuthFlowState.authenticated(),
   ];
   const events: readonly AuthFlowEvent[] = [
     AuthFlowEvent.submitIdentifier(IDENTIFIER),
-    AuthFlowEvent.requestFailed(false, 'x'),
-    AuthFlowEvent.requestFailed(true, 'x'),
+    AuthFlowEvent.requestFailed(false, INCORRECT_CODE),
+    AuthFlowEvent.requestFailed(true, INCORRECT_CODE),
     AuthFlowEvent.submitOtp(),
-    AuthFlowEvent.verifyFailed(false, 'x'),
-    AuthFlowEvent.verifyFailed(true, 'x'),
+    AuthFlowEvent.verifyFailed(false, INCORRECT_CODE),
+    AuthFlowEvent.verifyFailed(true, INCORRECT_CODE),
     AuthFlowEvent.verified(SessionKind.New),
     AuthFlowEvent.verified(SessionKind.Returning),
     AuthFlowEvent.resendOtp(),
@@ -204,11 +211,11 @@ describe('AuthFlowSystem properties', () => {
 
 describe('AuthFlowSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
-    const state = deepFreeze(AuthFlowState.otp(IDENTIFIER, 'incorrect code'));
+    const state = deepFreeze(AuthFlowState.otp(IDENTIFIER, INCORRECT_CODE));
     const event = deepFreeze(AuthFlowEvent.verified(SessionKind.New));
     const once = AuthFlowSystem.next(state, event);
     const twice = AuthFlowSystem.next(state, event);
     expect(twice).toEqual(once);
-    expect(state).toEqual(AuthFlowState.otp(IDENTIFIER, 'incorrect code'));
+    expect(state).toEqual(AuthFlowState.otp(IDENTIFIER, INCORRECT_CODE));
   });
 });

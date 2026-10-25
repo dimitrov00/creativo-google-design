@@ -126,7 +126,7 @@
         [vm]="row"
         [perspective]="perspective()"
         [interactive]="interactive()"
-        (open)="openRow.emit(row.id)"
+        (open)="opened(row)"
       />
       }
     </ul>
@@ -137,7 +137,7 @@
         [vm]="row"
         [perspective]="perspective()"
         [interactive]="interactive()"
-        (open)="openRow.emit(row.id)"
+        (open)="opened(row)"
       />
       }
     </ul>

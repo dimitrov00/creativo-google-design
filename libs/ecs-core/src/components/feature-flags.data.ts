@@ -1,4 +1,4 @@
-import { Result } from '@core/primitives';
+import { Result, Tag } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
 
 /**
@@ -26,9 +26,6 @@ export const FlagName = {
 } as const;
 export type FlagName = (typeof FlagName)[keyof typeof FlagName];
 
-/** Every flag, rollout order — derived, never a second source. */
-export const FLAG_NAMES: readonly FlagName[] = Object.values(FlagName);
-
 /**
  * One environment's flags — every key present, a boolean each. **Never
  * stored in Firestore** and never a live backend (owner ruling 2026-09-24):
@@ -55,6 +52,9 @@ const ALL_OFF: FeatureFlags = {
 };
 
 export const FeatureFlags = {
+  /** Every flag, rollout order — derived, never a second source. */
+  NAMES: Tag.values(FlagName),
+
   /** Every flag off — safe when the manifest is missing or partial. */
   defaults(): FeatureFlags {
     return ALL_OFF;
@@ -62,10 +62,7 @@ export const FeatureFlags = {
 
   /** The edge guard for an untrusted key. */
   isFlagName(value: unknown): value is FlagName {
-    for (let i = 0; i < FLAG_NAMES.length; i++) {
-      if (FLAG_NAMES[i] === value) return true;
-    }
-    return false;
+    return Tag.has(FlagName, value);
   },
 
   /**

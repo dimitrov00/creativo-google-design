@@ -1,6 +1,7 @@
 import {
   type AppliedDiscount,
   AuditAction,
+  BillPending,
   type BookingCall,
   Combinability,
   CouponValue,
@@ -8,9 +9,10 @@ import {
   DiscountProvenance,
   DiscountSource,
   type Money,
-  seesMoney,
+  Roles,
   Seat,
   type TipAction,
+  TipPreset,
   VoucherCode,
   VoucherRedemption,
 } from '@core/components';
@@ -62,15 +64,6 @@ export type BillTotals = {
   readonly tipsCents: PriceCents | null;
   readonly currency: Currency;
 };
-
-/** A batch's word on the bill — the field `billPending`: the stored set kept, or a named one. */
-export const BillPending = {
-  /** The batch never mentioned it: the stored value is carried forward. */
-  Keep: 'KEEP',
-  /** The batch named the whole set. */
-  Set: 'SET',
-} as const;
-export type BillPending = (typeof BillPending)[keyof typeof BillPending];
 
 /**
  * A typed manual figure — the `CouponValue` slice minus `FREE_SERVICE`: a
@@ -177,15 +170,6 @@ const TIP_FIXED_MAX_SHARE = 0.5;
 const TIP_FIXED_SLOTS = 3;
 /** The round-up targets: the next whole euro, the next 5, the next 10. */
 const TIP_ROUND_UP_STEPS: readonly number[] = [100, 500, 1000];
-
-/** How a tip preset was found — the field `tipPreset`, the bento's two tile sizes. */
-export const TipPreset = {
-  /** The bill rounded up to a note a hand holds. */
-  RoundUp: 'ROUND_UP',
-  /** A coin on top of an exact payment. */
-  Coin: 'COIN',
-} as const;
-export type TipPreset = (typeof TipPreset)[keyof typeof TipPreset];
 
 /** One tip tile: the tip itself, and the total it rounds the bill to (`null` for a coin). */
 export type TipPresetOption = {
@@ -571,7 +555,7 @@ export const BillingSystem = {
           }
           // A barber may stretch his own time; he may not discount the
           // shop's money — refused as FORBIDDEN, not as a bad command.
-          if (!seesMoney(actorRoles)) {
+          if (!Roles.seesMoney(actorRoles)) {
             return Result.err(StaffEditError.forbidden());
           }
           settled.push({

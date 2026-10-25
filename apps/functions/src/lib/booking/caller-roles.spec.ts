@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ActorRole, ADMIN_ROLES, USER_ROLES } from '@core/components';
+import { ActorRole, Roles } from '@core/components';
 import {
   callerActor,
   callerActorAsClaimed,
@@ -70,7 +70,7 @@ describe('callerIsAdmin', () => {
   );
 
   it('admits the pair and nobody else, role by role', () => {
-    expect(USER_ROLES.filter((role) => callerIsAdmin(caller([role])))).toEqual([
+    expect(Roles.ALL.filter((role) => callerIsAdmin(caller([role])))).toEqual([
       'admin',
       'sysadmin',
     ]);
@@ -82,7 +82,7 @@ describe('callerIsAdmin', () => {
   });
 
   it('holds the same pair as isAdmin() in firestore.rules', () => {
-    expect([...ADMIN_ROLES].sort()).toEqual(rulesAdminRoles().sort());
+    expect([...Roles.ADMIN].sort()).toEqual(rulesAdminRoles().sort());
   });
 
   it('refuses a token with no claim', () => {
@@ -119,7 +119,7 @@ describe('callerIsAdmin', () => {
 describe('callerWorksTheBook', () => {
   it('admits the four roles that work the book — never a content manager or a client', () => {
     expect(
-      USER_ROLES.filter((role) => callerWorksTheBook(caller([role]))),
+      Roles.ALL.filter((role) => callerWorksTheBook(caller([role]))),
     ).toEqual(['barber', 'receptionist', 'admin', 'sysadmin']);
   });
 

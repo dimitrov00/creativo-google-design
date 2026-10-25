@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { IdentifierChannel } from '@core/primitives';
+import { IdentityError, PipelineError, PipelineErrorCode } from '@core/errors';
 import { Email } from './email.data';
-import {
-  AuthFlowEvent,
-  AuthFlowEventKind,
-  AuthFlowState,
-  AuthFlowStep,
-} from './auth-flow.data';
-import { ParsedIdentifier } from './identifier.data';
+import { AuthFlowEvent, AuthFlowEventKind } from './auth-flow-event.data';
+import { AuthFlowState, AuthFlowStep } from './auth-flow.data';
+import { ParsedIdentifier } from './parsed-identifier.data';
 import { SessionKind } from './session-kind.data';
 
 const identifier = ParsedIdentifier.email(Email.of('client@example.com'));
@@ -20,10 +18,14 @@ describe('AuthFlowState', () => {
     expect(AuthFlowState.initial()).toBe(AuthFlowState.identify(null));
   });
 
-  it('identify(error) carries the refusal to show', () => {
-    expect(AuthFlowState.identify('IDENTITY_IDENTIFIER_INVALID')).toEqual({
+  it('identify(error) carries the refusal to show, as its struct', () => {
+    const refusal = IdentityError.identifierInvalid(
+      IdentifierChannel.Email,
+      'nope',
+    );
+    expect(AuthFlowState.identify(refusal)).toEqual({
       authFlowStep: AuthFlowStep.Identify,
-      error: 'IDENTITY_IDENTIFIER_INVALID',
+      error: refusal,
     });
   });
 
@@ -69,15 +71,18 @@ describe('AuthFlowEvent — each event built from its tag', () => {
       authFlowEventKind: AuthFlowEventKind.SubmitIdentifier,
       identifier,
     });
-    expect(AuthFlowEvent.requestFailed(true, 'locked')).toEqual({
+    const locked = PipelineError.bare(PipelineErrorCode.Unavailable);
+    expect(AuthFlowEvent.requestFailed(true, locked)).toEqual({
       authFlowEventKind: AuthFlowEventKind.RequestFailed,
       blocked: true,
-      message: 'locked',
+      error: locked,
     });
-    expect(AuthFlowEvent.verifyFailed(false, 'wrong code')).toEqual({
+    expect(
+      AuthFlowEvent.verifyFailed(false, IdentityError.otpWrongCode()),
+    ).toEqual({
       authFlowEventKind: AuthFlowEventKind.VerifyFailed,
       blocked: false,
-      message: 'wrong code',
+      error: IdentityError.otpWrongCode(),
     });
     expect(AuthFlowEvent.verified(SessionKind.Returning)).toEqual({
       authFlowEventKind: AuthFlowEventKind.Verified,

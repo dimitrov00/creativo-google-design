@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { EnvironmentProviders, Injectable } from '@angular/core';
@@ -13,7 +15,7 @@ import {
   AuthDeployment,
   AuthStrategy,
   AuthStrategyKind,
-  type CountryIso2,
+  CountryIso2,
   Email,
   E164,
   type MediaRef,
@@ -24,6 +26,7 @@ import {
 import type { Service, User } from '@core/entities';
 import {
   Callables,
+  type ClockPorts,
   type LoadProfile,
   type MediaResolvePorts,
   type MediaVariant,
@@ -34,6 +37,7 @@ import {
   Result,
   ServiceId,
   type UserId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
   AccountsErrorCode,
@@ -49,7 +53,6 @@ import {
   memoryAuthSessionPorts,
   memoryAvatarPorts,
   memoryCatalogReadPorts,
-  memoryClockPorts,
   memoryOtpChallengePorts,
   memoryProfilePorts,
   principalFixture,
@@ -73,7 +76,28 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
+import { translateCodedError } from '@creativo/infrastructure/i18n';
 import { ClientOnboarding } from './client-onboarding';
+
+/** The `errors` lines the birthday pins read, as the app's catalogue ships them. */
+type BirthdayCopy = {
+  readonly IDENTITY_BIRTH_DATE_INVALID: string;
+  readonly IDENTITY_BIRTH_DATE_TOO_YOUNG: string;
+  readonly IDENTITY_BIRTH_DATE_TOO_OLD: string;
+};
+
+/** The app's own `errors` table for `lang` — read, never re-typed, so a case pins today's words. */
+function errorsCatalogue(lang: 'bg' | 'en'): BirthdayCopy {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly errors: BirthdayCopy;
+  };
+  return catalogue.errors;
+}
 
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
@@ -203,6 +227,11 @@ describe('ClientOnboarding', () => {
   const loadProfile = vi.fn<LoadProfile>();
   /** A spec sets it to make the `updateProfile` call fail as a store failure. */
   let writeFails: boolean;
+  /**
+   * The clock's one reading — pinned (2026-07-25 12:00 UTC) unless a case
+   * turns the UTC day between the screen's check and the save (DEP-17).
+   */
+  let clockNowUtcMs: UtcEpochMs;
   const uploadAvatarFile = vi.fn();
   let fixture: ComponentFixture<ClientOnboarding>;
 
@@ -221,6 +250,7 @@ describe('ClientOnboarding', () => {
     const memory = memoryProfilePorts(users);
     loadProfile.mockReset().mockImplementation(memory.loadProfile);
     writeFails = false;
+    clockNowUtcMs = utcMs('2026-07-25T12:00:00.000Z');
     const avatars = memoryAvatarPorts();
     uploadAvatarFile.mockReset().mockImplementation(avatars.uploadAvatar);
 
@@ -232,7 +262,9 @@ describe('ClientOnboarding', () => {
         // Frozen clock — the birthday age window must never read real time.
         {
           provide: CLOCK_PORTS,
-          useValue: memoryClockPorts(utcMs('2026-07-25T12:00:00.000Z')),
+          useValue: {
+            nowUtcMs: () => clockNowUtcMs,
+          } satisfies ClockPorts,
         },
         ...(deployment
           ? [
@@ -405,6 +437,30 @@ describe('ClientOnboarding', () => {
       typePhone(exampleDigits);
       await settle();
       expect(host().querySelector('.ui-phone-field__error')).toBeNull();
+    });
+  });
+
+  describe('a default country the phone metadata lacks', () => {
+    beforeEach(async () => {
+      await setup(EMAIL_IDENTIFIER, {
+        ...AuthDeployment.DEFAULT,
+        defaultCountry: CountryIso2.of('ZZ'),
+      });
+    });
+
+    it('words the held refusal by its own reason on blur — the invalid-country line', async () => {
+      typePhone('0888');
+      query<HTMLInputElement>('phone-field-input')?.dispatchEvent(
+        new Event('blur'),
+      );
+      await settle();
+
+      // `PhoneSystem.parse` refuses the country as `PHONE_INVALID` with the
+      // `invalid-country` reason; the field words that struct, unmapped
+      // (empty test catalog → the raw `<errorCode>.<reason>` key).
+      expect(
+        host().querySelector('.ui-phone-field__error')?.textContent,
+      ).toContain('PHONE_INVALID.invalid-country');
     });
   });
 
@@ -623,6 +679,100 @@ describe('ClientOnboarding', () => {
         AccountsErrorCode.UpdateProfileRepositoryFailure,
       );
     });
+
+    /** Loads the app's own `errors` lines for `lang` and makes it the active language. */
+    function speak(lang: 'bg' | 'en'): BirthdayCopy {
+      const copy = errorsCatalogue(lang);
+      const transloco = TestBed.inject(TranslocoService);
+      transloco.setTranslation({ errors: copy }, lang);
+      transloco.setActiveLang(lang);
+      fixture.detectChanges();
+      return copy;
+    }
+
+    it.each(['bg', 'en'] as const)(
+      'words an unfinished birthday group as the generic invalid-date line — today’s words, byte-identical — in %s',
+      async (lang) => {
+        await walkToBirthday();
+        const copy = speak(lang);
+
+        typeBirth('day', '03');
+        blurBirthGroup();
+        await settle();
+
+        const line = host()
+          .querySelector('.ui-date-field__error')
+          ?.textContent?.trim();
+        // Before pass D the step worded the param-less struct.
+        expect(line).toBe(
+          translateCodedError(TestBed.inject(TranslocoService), {
+            errorCode: IdentityErrorCode.BirthDateInvalid,
+          }),
+        );
+        expect(line).toBe(copy.IDENTITY_BIRTH_DATE_INVALID);
+      },
+    );
+
+    /*
+     * DEP-17 (pass D): the screen checks the age window on its own day; the
+     * store re-judges the save on the clock's reading at the tap. When the
+     * UTC day turns in between and the re-judged age leaves the window, the
+     * refusal's WHOLE struct rides the flow event, so the line names the
+     * limit — before, the state held the bare code and printed an empty
+     * `{{maxAge}}` / `{{minAge}}`.
+     */
+    it.each(['bg', 'en'] as const)(
+      'DEP-17: a save re-judged too old across midnight names the maximum age (120), in %s',
+      async (lang) => {
+        await walkToBirthday();
+        const copy = speak(lang);
+        // 120 on the screen's day (2026-07-25): Save is live.
+        typeBirth('day', '26');
+        typeBirth('month', '07');
+        typeBirth('year', '1905');
+        await settle();
+
+        // The UTC day turns before the tap: judged on 2026-07-26, 121.
+        clockNowUtcMs = utcMs('2026-07-26T00:00:01.000Z');
+        query<HTMLButtonElement>('onboarding-submit-birthday')?.click();
+        await settle();
+
+        expect(gatewayCalls).toEqual([]);
+        const line = query('onboarding-birthday-error')?.textContent?.trim();
+        expect(line).toBe(
+          copy.IDENTITY_BIRTH_DATE_TOO_OLD.replace('{{maxAge}}', '120'),
+        );
+        expect(line).toContain('120');
+        expect(line).not.toContain('{{');
+      },
+    );
+
+    it.each(['bg', 'en'] as const)(
+      'DEP-17: a save re-judged too young across midnight names the minimum age (16), in %s',
+      async (lang) => {
+        await walkToBirthday();
+        const copy = speak(lang);
+        // 16 on the screen's day (2026-07-25): Save is live.
+        typeBirth('day', '25');
+        typeBirth('month', '07');
+        typeBirth('year', '2010');
+        await settle();
+
+        // The clock reads the day before at the tap (a device clock set
+        // back over UTC midnight): judged on 2026-07-24, 15.
+        clockNowUtcMs = utcMs('2026-07-24T23:59:59.000Z');
+        query<HTMLButtonElement>('onboarding-submit-birthday')?.click();
+        await settle();
+
+        expect(gatewayCalls).toEqual([]);
+        const line = query('onboarding-birthday-error')?.textContent?.trim();
+        expect(line).toBe(
+          copy.IDENTITY_BIRTH_DATE_TOO_YOUNG.replace('{{minAge}}', '16'),
+        );
+        expect(line).toContain('16');
+        expect(line).not.toContain('{{');
+      },
+    );
   });
 
   describe('service covers (the shared catalogue media cache)', () => {

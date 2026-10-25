@@ -51,6 +51,8 @@ import {
   LocalDate,
   EndMinute,
   MinuteOfDay,
+  TrackMinute,
+  DraftPersonKey,
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -145,6 +147,24 @@ export function minute(raw: number): MinuteOfDay {
 /** An `EndMinute` literal — `endMinute(1440)` is the closing midnight; throws outside `(0, 1440]`. */
 export function endMinute(raw: number): EndMinute {
   return unwrapOk(EndMinute.of(raw));
+}
+
+/**
+ * A `TrackMinute` literal — `trackMinute(1455)` is 00:15 past the closing
+ * midnight on a frame's anchored axis; throws on a negative or fractional
+ * minute.
+ */
+export function trackMinute(raw: number): TrackMinute {
+  return unwrapOk(TrackMinute.of(raw));
+}
+
+/**
+ * A staff draft's person key, spelled as the sheet spells it —
+ * `draftPersonKey('u-anna')`, `draftPersonKey('guest-Мария')`,
+ * `draftPersonKey('primary')`; unchecked (`DraftPersonKey.of`).
+ */
+export function draftPersonKey(raw: string): DraftPersonKey {
+  return DraftPersonKey.of(raw);
 }
 
 /**

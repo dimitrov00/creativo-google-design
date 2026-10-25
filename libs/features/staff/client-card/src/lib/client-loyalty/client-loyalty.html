@@ -160,7 +160,7 @@
     uiTint="neutral"
     uiControlSize="regular"
     data-testid="rewards-retry"
-    (click)="retry('loyalty')"
+    (click)="retry(ClientCardRegion.Loyalty)"
   >
     {{ w.visitsModule.retry }}
   </button>
@@ -244,7 +244,7 @@
 <section
   class="client-loyalty__module"
   data-testid="rewards-wallet"
-  [attr.aria-labelledby]="headingId('wallet')"
+  [attr.aria-labelledby]="headingId(WalletSection.Wallet)"
 >
   <ui-section-header uiHeaderProminence="increased">
     <h3
@@ -252,7 +252,7 @@
       uiTitle
       tabindex="-1"
       class="client-loyalty__anchor"
-      [id]="headingId('wallet')"
+      [id]="headingId(WalletSection.Wallet)"
     >
       {{ w.loyaltyPage.wallet }}
     </h3>
@@ -278,7 +278,7 @@
       sectionRetry;
       context: {
         $implicit: 'wallet',
-        region: 'vouchers',
+        region: ClientCardRegion.Vouchers,
         message: w.failed.vouchers
       }
     "
@@ -314,7 +314,7 @@
 @if (vm.rhythm; as rhythm) {
 <section
   class="client-loyalty__module"
-  [attr.aria-labelledby]="headingId('rhythm')"
+  [attr.aria-labelledby]="headingId(WalletSection.Rhythm)"
 >
   <ui-section-header uiHeaderProminence="increased">
     <h3
@@ -322,7 +322,7 @@
       uiTitle
       tabindex="-1"
       class="client-loyalty__anchor"
-      [id]="headingId('rhythm')"
+      [id]="headingId(WalletSection.Rhythm)"
     >
       {{ w.loyaltyPage.rhythm }}
     </h3>
@@ -336,7 +336,7 @@
 <section
   class="client-loyalty__module"
   data-testid="rewards-status"
-  [attr.aria-labelledby]="headingId('status')"
+  [attr.aria-labelledby]="headingId(WalletSection.Status)"
 >
   <ui-section-header uiHeaderProminence="increased">
     <h3
@@ -344,7 +344,7 @@
       uiTitle
       tabindex="-1"
       class="client-loyalty__anchor"
-      [id]="headingId('status')"
+      [id]="headingId(WalletSection.Status)"
     >
       {{ w.loyaltyPage.tier }}
     </h3>
@@ -359,7 +359,7 @@
   <ng-container
     *ngTemplateOutlet="
       sectionRetry;
-      context: { $implicit: 'tier', region: 'loyalty', message: w.failed.loyalty }
+      context: { $implicit: 'tier', region: ClientCardRegion.Loyalty, message: w.failed.loyalty }
     "
   />
   } @case (LoadState.Ready) { @let status = tier.data;
@@ -427,7 +427,7 @@
 <section
   class="client-loyalty__module"
   data-testid="rewards-catalog-module"
-  [attr.aria-labelledby]="headingId('catalog')"
+  [attr.aria-labelledby]="headingId(WalletSection.Catalog)"
 >
   <ui-section-header uiHeaderProminence="increased">
     <h3
@@ -435,7 +435,7 @@
       uiTitle
       tabindex="-1"
       class="client-loyalty__anchor"
-      [id]="headingId('catalog')"
+      [id]="headingId(WalletSection.Catalog)"
     >
       {{ w.loyaltyPage.catalogTitle }}
     </h3>
@@ -459,7 +459,7 @@
       sectionRetry;
       context: {
         $implicit: 'catalog',
-        region: 'loyalty',
+        region: ClientCardRegion.Loyalty,
         message: w.failed.loyalty
       }
     "
@@ -531,10 +531,11 @@
 <section
   class="client-loyalty__module"
   data-testid="rewards-ledger"
-  [attr.aria-labelledby]="headingId('ledger')"
+  [attr.aria-labelledby]="headingId(WalletSection.Ledger)"
 >
   <ui-section-header uiHeaderProminence="increased">
-    <h3 uiTitle [id]="headingId('ledger')">{{ w.loyaltyPage.ledgerTitle }}</h3>
+    <!-- prettier-ignore -->
+    <h3 uiTitle [id]="headingId(WalletSection.Ledger)">{{ w.loyaltyPage.ledgerTitle }}</h3>
     <button
       uiSectionAction
       type="button"
@@ -559,7 +560,7 @@
       sectionRetry;
       context: {
         $implicit: 'ledger',
-        region: 'activity',
+        region: ClientCardRegion.Activity,
         message: w.failed.activity
       }
     "

@@ -1,4 +1,4 @@
-import type { UiVectorAsset } from '../manifest/icon-manifest';
+import { UiIconAsset, type UiVectorAsset } from '../manifest/icon-manifest';
 import {
   MATERIAL_GLYPHS,
   MATERIAL_GLYPHS_SOURCE,
@@ -13,9 +13,9 @@ import {
  * shares one viewBox, so the asset is the path alone plus that constant.
  *
  * This module is the extension seam: a second provider would be another
- * `kind` on `UiIconAsset` with its own table and its own `xxxGlyph()`; the
- * resolver would gain one `case`. Nothing else in the registry knows what
- * "material" means.
+ * `iconAsset` value ({@link UiIconAsset}) with its own table and its own
+ * `xxxGlyph()`; the resolver would gain one `case`. Nothing else in the
+ * registry knows what "material" means.
  */
 export const MATERIAL_VIEW_BOX = '0 -960 960 960';
 
@@ -28,7 +28,7 @@ export function hasMaterialGlyph(glyph: string): boolean {
 export function materialGlyph(glyph: string): UiVectorAsset | null {
   if (!hasMaterialGlyph(glyph)) return null;
   return {
-    kind: 'vector',
+    iconAsset: UiIconAsset.Vector,
     viewBox: MATERIAL_VIEW_BOX,
     paths: [{ d: MATERIAL_GLYPHS[glyph] as string }],
   };

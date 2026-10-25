@@ -1,11 +1,12 @@
-import type { Daypart } from '@core/components';
+import type { CancelledSide, Daypart, VisitRowOutcome } from '@core/components';
 import type {
+  AppointmentId,
+  AppointmentPhotoId,
   BookingStatus,
   LocalDate,
   MinuteOfDay,
-  TimeZone,
+  WaitlistRequestId,
 } from '@core/primitives';
-import type { CancelledSide, VisitRowOutcome } from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { StaffEventLine } from './event-head/staff-event-line';
 
@@ -21,11 +22,12 @@ import type { StaffEventLine } from './event-head/staff-event-line';
  * caption.
  *
  * The rows are built by pure functions that take the translated words
- * (`VisitWords`) and the catalogue (`VisitLookup`) as arguments, so a row
+ * (`VisitWords`) and the catalogue (`VisitLookup`, its own contracts file)
+ * as arguments, so a row
  * builds the same in a spec, in the client's page and in the staff sheet —
  * no DI anywhere, no NullInjectorError in anyone's TestBed.
  *
- * The list's own vocabulary is `VisitListSystem`'s (`@core/systems`): who
+ * The list's own vocabulary is the visit family of `@core/components`: who
  * reads (`VisitPerspective`), what a section heads (`VisitGrain`), how a
  * visit went (`VisitRowOutcome`) and the funnel's choice (`VisitFilter`),
  * SCREAMING tags re-exported here for the templates and hosts. A row IS a
@@ -41,14 +43,22 @@ export {
   VisitGrain,
   VisitPerspective,
   VisitRowOutcome,
-} from '@core/systems';
+} from '@core/components';
 
 /**
  * ≙ SwiftUI's `.listStyle(…)`. `insetGrouped` runs the rows as one
  * segmented group per section (the client's look); `plain` sets them on the
- * page under pinned heads (the staff history, the glance's rows).
+ * page under pinned heads (the staff history, the glance's rows). Values:
+ * external contract — hosts set the input as a static template attribute
+ * (`listStyle="insetGrouped"`), so the dictionary keeps that spelling
+ * (pass D, D-8.8).
  */
-export type VisitListStyle = 'insetGrouped' | 'plain';
+export const VisitListStyle = {
+  InsetGrouped: 'insetGrouped',
+  Plain: 'plain',
+} as const;
+export type VisitListStyle =
+  (typeof VisitListStyle)[keyof typeof VisitListStyle];
 
 /** What a row of the list is — the field `visitRowEntry`, the ONLY source of these strings. */
 export const VisitRowEntry = {
@@ -70,6 +80,19 @@ export const TrailingFactFace = {
 } as const;
 export type TrailingFactFace =
   (typeof TrailingFactFace)[keyof typeof TrailingFactFace];
+
+/**
+ * The tone of a staff row's state-in-words fact (`VisitTrailingFact`'s
+ * `STATUS` face): `warning` tints the glyph, `neutral` keeps it detail.
+ * Values: external contract — the fact's `data-tone` CSS hook, so the
+ * dictionary keeps that spelling (pass D, D-8.2).
+ */
+export const StatusFactTone = {
+  Neutral: 'neutral',
+  Warning: 'warning',
+} as const;
+export type StatusFactTone =
+  (typeof StatusFactTone)[keyof typeof StatusFactTone];
 
 /**
  * A 16 px glyph at the end of a staff row's second line, before its fact —
@@ -124,7 +147,7 @@ export type VisitTrailingFact =
       readonly trailingFactFace: typeof TrailingFactFace.Status;
       readonly icon: UiIconName;
       readonly text: string;
-      readonly tone: 'neutral' | 'warning';
+      readonly tone: StatusFactTone;
     }
   /** «Този час»: the appointment the sheet is open on. */
   | {
@@ -135,16 +158,16 @@ export type VisitTrailingFact =
 
 /** A thumb on `lib-visit-card` (`VisitCardVm.photos`); each opens its photo. */
 export interface VisitRowPhoto {
-  readonly id: string;
+  readonly id: AppointmentPhotoId;
   readonly url: string;
   readonly alt: string;
 }
 
-/** One row of the list: a visit, or a request waiting for a free slot. */
-export interface VisitRowVm {
-  /** The appointment's id, or the waitlist request's. */
-  readonly id: string;
-  readonly visitRowEntry: VisitRowEntry;
+/**
+ * What every row of the list carries, whichever entry it is — the two
+ * entries below add their id, discriminated by `visitRowEntry`.
+ */
+export interface VisitRowFields {
   /**
    * The shop day the visit starts on (Law 7.3) — with `startMinutes`, the
    * order within a section (`VisitListSystem.sections`). A waiting request
@@ -209,6 +232,24 @@ export interface VisitRowVm {
   readonly testId: string;
 }
 
+/** An appointment's row: its id is the appointment's (`data-appointment-id`). */
+export interface AppointmentRowVm extends VisitRowFields {
+  readonly visitRowEntry: typeof VisitRowEntry.Visit;
+  readonly id: AppointmentId;
+}
+
+/** A waiting request's row: its id is the request's. */
+export interface WaitlistRowVm extends VisitRowFields {
+  readonly visitRowEntry: typeof VisitRowEntry.Waitlist;
+  readonly id: WaitlistRequestId;
+}
+
+/**
+ * One row of the list: a visit, or a request waiting for a free slot — the
+ * id branded by the entry (Law 7.4), told apart by `visitRowEntry`.
+ */
+export type VisitRowVm = AppointmentRowVm | WaitlistRowVm;
+
 /** A run of rows under one heading. */
 export interface VisitSectionVm {
   /** `upcoming` · `YYYY-MM` · `YYYY` — also the `data-section-key` the client's pills jump to. */
@@ -219,32 +260,6 @@ export interface VisitSectionVm {
   readonly detail: string | null;
   readonly rows: readonly VisitRowVm[];
   readonly testId: string;
-}
-
-/**
- * The catalogue, as a row needs it. `ClientCardCatalog` satisfies it
- * structurally, so the staff sheet hands one object to both.
- */
-export interface VisitLookup {
-  serviceName(id: string): string | null;
-  barberName(id: string): string | null;
-  barberAvatarSrc(id: string): string | null;
-  /**
-   * The shop as a fact line names it: `Location.shortName` («Център»), not
-   * its whole name. Every shop carries the tenant's brand («Креативо ·
-   * Център»), so on every row the whole name would repeat the one part
-   * that never changes.
-   */
-  locationName(id: string): string | null;
-  /** More than one shop puts the shop's name in a worked visit's fact line. */
-  readonly locationCount: number;
-  /**
-   * The shop's IANA zone (`ShopLocation.timeZone`, Law 7.2) — what a
-   * photo's day is read in. Optional: a lookup that names none reads it in
-   * the zone the host read "now" in (`VisitRowOptions.timeZone`; every shop
-   * of the tenant keeps one clock).
-   */
-  locationTimeZone?(id: string): TimeZone | null;
 }
 
 /**

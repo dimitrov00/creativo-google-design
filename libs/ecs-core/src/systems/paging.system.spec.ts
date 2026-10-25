@@ -2,7 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { UtcEpochMs } from '@core/primitives';
 import { deepFreeze, utcMs } from '@core/testing';
-import { type Page, PageStep, PagingSystem } from './paging.system';
+import { type Page, PageStep } from '@core/components';
+import { PagingSystem } from './paging.system';
 
 /*
  * COPIED and re-targeted: the three paging cases of libs/infrastructure/

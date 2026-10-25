@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceId } from '@core/primitives';
 import {
+  AccountsError,
+  IdentityError,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
+import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
+} from './onboarding-flow-event.data';
+import {
   OnboardingFlowState,
   OnboardingFlowStep,
 } from './onboarding-flow.data';
-import type { RegistrationFields } from './registration.data';
+import type { RegistrationFields } from './registration-fields.data';
 
 const picked = [ServiceId.of('svc-cut'), ServiceId.of('svc-beard')];
 
@@ -19,10 +27,11 @@ describe('OnboardingFlowState', () => {
     expect(OnboardingFlowState.initial()).toBe(OnboardingFlowState.about(null));
   });
 
-  it('about(error) carries the refusal to show', () => {
-    expect(OnboardingFlowState.about('ACCOUNTS_FIRST_NAME_TOO_SHORT')).toEqual({
+  it('about(error) carries the refusal to show, as its struct', () => {
+    const refusal = IdentityError.registrationFieldMissing('firstName');
+    expect(OnboardingFlowState.about(refusal)).toEqual({
       onboardingFlowStep: OnboardingFlowStep.About,
-      error: 'ACCOUNTS_FIRST_NAME_TOO_SHORT',
+      error: refusal,
     });
   });
 
@@ -71,9 +80,10 @@ describe('OnboardingFlowEvent — each event built from its tag', () => {
       onboardingFlowEventKind: OnboardingFlowEventKind.SubmitAbout,
       fields,
     });
-    expect(OnboardingFlowEvent.registrationFailed('taken')).toEqual({
+    const taken = PipelineError.bare(PipelineErrorCode.InvalidRequest);
+    expect(OnboardingFlowEvent.registrationFailed(taken)).toEqual({
       onboardingFlowEventKind: OnboardingFlowEventKind.RegistrationFailed,
-      message: 'taken',
+      error: taken,
     });
     expect(
       OnboardingFlowEvent.submitServices([ServiceId.of('svc-cut')]),
@@ -81,9 +91,13 @@ describe('OnboardingFlowEvent — each event built from its tag', () => {
       onboardingFlowEventKind: OnboardingFlowEventKind.SubmitServices,
       services: ['svc-cut'],
     });
-    expect(OnboardingFlowEvent.birthdayFailed('invalid')).toEqual({
+    expect(
+      OnboardingFlowEvent.birthdayFailed(
+        AccountsError.updateProfileRepositoryFailure(),
+      ),
+    ).toEqual({
       onboardingFlowEventKind: OnboardingFlowEventKind.BirthdayFailed,
-      message: 'invalid',
+      error: AccountsError.updateProfileRepositoryFailure(),
     });
     expect([
       OnboardingFlowEvent.registered(),

@@ -11,23 +11,18 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import type { Service } from '@core/entities';
-import {
+import type {
   BarberId,
-  type CartLineId,
-  type SeatKeyText,
+  CartLineId,
+  SeatKeyText,
   ServiceVariantId,
 } from '@core/primitives';
-import {
-  BookingCart,
-  type CartLine,
-  type Money as MoneyData,
-} from '@core/components';
+import { BookingCart, type CartLine } from '@core/components';
 import {
   CatalogPricingSystem,
   type TermsSpan,
   TermsSpanSystem,
 } from '@core/systems';
-import { formatCents } from '@creativo/ui/wall-clock';
 import {
   CatalogContentService,
   CatalogWording,
@@ -88,17 +83,32 @@ const BAG_SELECT_WORDS = {
   [BagSelect.Barber]: 'barber',
 } as const satisfies Record<BagSelect, string>;
 
-/** One option on a line's variant or performer menu. */
-interface BagOptionVm {
+/** What every option on a line's menu shows, whichever select it is on. */
+interface BagOptionFace {
   readonly key: string;
-  /** `null` is the "anyone" option; variants always carry an id. */
-  readonly id: string | null;
   readonly name: string;
   readonly avatarSrc: string | null;
   /** Terms on THIS option — "45 мин · 28,00 €". */
   readonly terms: string;
   readonly selected: boolean;
 }
+
+/**
+ * One option on a line's variant or performer menu, told apart by the select
+ * it belongs to (`bagSelect`): a variant always carries the catalogue's
+ * variant id; a performer carries the barber's, `null` being "anyone".
+ */
+type BagOptionVm = BagOptionFace &
+  (
+    | {
+        readonly bagSelect: typeof BagSelect.Variant;
+        readonly id: ServiceVariantId;
+      }
+    | {
+        readonly bagSelect: typeof BagSelect.Barber;
+        readonly id: BarberId | null;
+      }
+  );
 
 /** A pull-down on the row: what it currently says, and what it could say. */
 interface BagSelectVm {
@@ -328,25 +338,15 @@ export class BookingBagSheet {
   protected pick(
     seat: SeatScopeVm,
     line: BagLineVm,
-    select: BagSelectVm,
     option: BagOptionVm,
   ): void {
     this.openMenu.set(null);
-    if (select.bagSelect === BagSelect.Variant) {
-      if (option.id === null) return;
-      const variantId = ServiceVariantId.parse(option.id);
-      if (!variantId.ok) return;
-      this.store.setLineVariant(seat.key, line.id, variantId.value);
+    if (option.bagSelect === BagSelect.Variant) {
+      this.store.setLineVariant(seat.key, line.id, option.id);
       return;
     }
     // "Anyone" is `null`; a named performer is a SPECIFIC preference.
-    if (option.id === null) {
-      this.store.setLineBarber(seat.key, line.id, null);
-      return;
-    }
-    const barberId = BarberId.parse(option.id);
-    if (!barberId.ok) return;
-    this.store.setLineBarber(seat.key, line.id, barberId.value);
+    this.store.setLineBarber(seat.key, line.id, option.id);
   }
 
   // ── Terms ───────────────────────────────────────────────────────────
@@ -383,18 +383,9 @@ export class BookingBagSheet {
   private priceLabel(span: TermsSpan | null): string | null {
     if (!span) return null;
     const bounds = TermsSpanSystem.priceBounds(span);
-    const low = this.money(bounds.min);
+    const low = this.content.price(bounds.min);
     if (TermsSpanSystem.isPricePoint(span)) return low;
-    return `${low} – ${this.money(bounds.max)}`;
-  }
-
-  /** A struct amount in the locale's words — the one money formatter. */
-  private money(amount: MoneyData): string {
-    return formatCents(
-      amount.amountCents,
-      amount.currency,
-      this.content.locale(),
-    );
+    return `${low} – ${this.content.price(bounds.max)}`;
   }
 
   /** A menu option's one-line terms — "45 мин · 28,00 €". */
@@ -473,21 +464,17 @@ export class BookingBagSheet {
       ariaLabel: this.transloco.translate('booking.configure.variant'),
       avatarSrc: null,
       showsFace: false,
-      options: vm.variants.map((variant) => {
-        const id = ServiceVariantId.parse(variant.id);
-        return {
-          key: variant.id,
-          id: variant.id,
-          name: this.content.text(variant.name),
-          avatarSrc: null,
-          // Priced on the CURRENT performer answer, so switching variant shows
-          // what it would cost the way this line is actually set up.
-          terms: this.termsLabel(
-            this.spanFor(service, id.ok ? id.value : null, barberId),
-          ),
-          selected: variant.id === variantId,
-        };
-      }),
+      options: vm.variants.map((variant): BagOptionVm => ({
+        bagSelect: BagSelect.Variant,
+        key: variant.id,
+        id: variant.id,
+        name: this.content.text(variant.name),
+        avatarSrc: null,
+        // Priced on the CURRENT performer answer, so switching variant shows
+        // what it would cost the way this line is actually set up.
+        terms: this.termsLabel(this.spanFor(service, variant.id, barberId)),
+        selected: variant.id === variantId,
+      })),
     };
   }
 
@@ -508,6 +495,7 @@ export class BookingBagSheet {
       : undefined;
 
     const anyone: BagOptionVm = {
+      bagSelect: BagSelect.Barber,
       key: 'any',
       id: null,
       name: this.transloco.translate('booking.configure.anyBarber'),
@@ -531,6 +519,7 @@ export class BookingBagSheet {
         ];
       })
       .map((entry): BagOptionVm => ({
+        bagSelect: BagSelect.Barber,
         key: entry.barber.id,
         id: entry.barber.id,
         name: this.content.text(entry.barber.name),

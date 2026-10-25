@@ -1,12 +1,45 @@
 import { firstValueFrom } from 'rxjs';
-import { type AppointmentId, type UserId, Result } from '@core/primitives';
+import {
+  type AppointmentId,
+  type UserId,
+  type UtcEpochMs,
+  Result,
+} from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import type { AppointmentNote } from '@core/entities';
 import type { AppointmentNotePorts, ClockPorts } from '@core/ports';
 import { VisitSidesSystem } from '@core/systems';
 
-/** The visit's note — read once, written once — and the clock that stamps it. */
-export type AppendTeamNotePorts = AppointmentNotePorts & ClockPorts;
+/**
+ * The visit's note and the clock that stamps it — both team-note
+ * pipelines' ports ({@link appendTeamNote} reads the note once and writes
+ * it once; {@link saveTeamNote} writes it straight through).
+ */
+export type TeamNotePorts = AppointmentNotePorts & ClockPorts;
+
+/** The note a visit's sheet saves, and who saves it. */
+export type SaveTeamNoteCommand = {
+  readonly appointmentId: AppointmentId;
+  /** The note as drafted — stored trimmed; blank (or `null`) deletes it. */
+  readonly text: string | null;
+  /** The session's account the note's author names — `null` before onboarding. */
+  readonly authorUserId: UserId | null;
+};
+
+/**
+ * THE ONE RECORD a team note is stored as (D-10.2: built once, for
+ * {@link saveTeamNote} and {@link appendTeamNote} alike) — the visit's id,
+ * the text in its stored form, its author and the instant it was written,
+ * in that key order.
+ */
+function noteRecord(
+  appointmentId: AppointmentId,
+  text: string,
+  authorUserId: UserId | null,
+  writtenAtUtcMs: UtcEpochMs,
+): AppointmentNote {
+  return { id: appointmentId, text, authorUserId, writtenAtUtcMs };
+}
 
 /** A line to file below a visit's note, and who files it. */
 export type AppendTeamNoteCommand = {
@@ -33,7 +66,7 @@ export type AppendTeamNoteCommand = {
  *    note — the clock's instant; the answer is the note as written.
  */
 export const appendTeamNote =
-  (ports: AppendTeamNotePorts) =>
+  (ports: TeamNotePorts) =>
   async (
     cmd: AppendTeamNoteCommand,
   ): Promise<Result<AppointmentNote | null, RepositoryError>> => {
@@ -52,12 +85,44 @@ export const appendTeamNote =
     // A line that says something always leaves a note; nothing is written
     // over a note for want of words.
     if (text === null) return Result.ok(null);
-    const note: AppointmentNote = {
-      id: cmd.appointmentId,
+    const note = noteRecord(
+      cmd.appointmentId,
       text,
-      authorUserId: cmd.authorUserId,
-      writtenAtUtcMs: ports.nowUtcMs(),
-    };
+      cmd.authorUserId,
+      ports.nowUtcMs(),
+    );
+    const saved = await ports.saveAppointmentNote(cmd.appointmentId, note);
+    return saved.ok ? Result.ok(note) : saved;
+  };
+
+/**
+ * THE VISIT'S NOTE, WRITTEN STRAIGHT THROUGH — what the visit sheet's
+ * «Запази» writes beside the staff-edit batch (moved from
+ * `staff-day.store.ts` `saveTeamNote`, D-10.2):
+ *
+ * 1. the text in its stored form (`VisitSidesSystem.storedNote`: trimmed,
+ *    `null` for none); a note that says nothing DELETES the stored one —
+ *    the port is handed `null`, and the clock is not read;
+ * 2. otherwise the one record ({@link noteRecord}) stamped with the
+ *    command's author and the clock's instant;
+ * 3. one write; the answer is the note as written (`null` for a delete),
+ *    or the write's failure.
+ */
+export const saveTeamNote =
+  (ports: TeamNotePorts) =>
+  async (
+    cmd: SaveTeamNoteCommand,
+  ): Promise<Result<AppointmentNote | null, RepositoryError>> => {
+    const stored = VisitSidesSystem.storedNote(cmd.text);
+    const note =
+      stored === null
+        ? null
+        : noteRecord(
+            cmd.appointmentId,
+            stored,
+            cmd.authorUserId,
+            ports.nowUtcMs(),
+          );
     const saved = await ports.saveAppointmentNote(cmd.appointmentId, note);
     return saved.ok ? Result.ok(note) : saved;
   };

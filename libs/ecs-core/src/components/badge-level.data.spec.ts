@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { AchievementRuleId } from '@core/primitives';
-import { BadgeLevel, EarnedVia, MedalState } from './badge-level.data';
+import { BadgeLevel } from './badge-level.data';
+import { EarnedVia } from './earned-level.data';
+import { MedalState } from './series-standing.data';
 
 const level = (target: number | null): BadgeLevel => ({
   level: 1,

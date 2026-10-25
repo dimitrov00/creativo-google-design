@@ -6,15 +6,14 @@ import {
 } from '@core/primitives';
 import {
   type PipelineError,
+  type StreakPublishAnsweredCode,
   StreakPublishError,
   StreakPublishErrorCode,
 } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
-import {
-  type StreakRule,
-  StreakRuleDirection,
-  type StreakTransition,
-} from './streak-rule.data';
+import type { StreakRule } from './streak-rule.data';
+import { StreakRuleDirection } from './streak-rule-direction.data';
+import type { StreakTransition } from './streak-transition.data';
 
 /**
  * What a publish call was answered — the field `streakPublishOutcome`, the
@@ -29,18 +28,6 @@ export const StreakPublishOutcome = {
 } as const;
 export type StreakPublishOutcome =
   (typeof StreakPublishOutcome)[keyof typeof StreakPublishOutcome];
-
-/** The refusals the callable ANSWERS (its faults it throws). */
-const ANSWERED_CODES: readonly StreakPublishCall.AnsweredCode[] = [
-  StreakPublishErrorCode.CallerNotAdmin,
-  StreakPublishErrorCode.Stale,
-  StreakPublishErrorCode.Invalid,
-  StreakPublishErrorCode.TooEarly,
-  StreakPublishErrorCode.RecomputeNeedsEngine,
-  StreakPublishErrorCode.PreviewStale,
-];
-const DIRECTIONS: readonly StreakRuleDirection[] =
-  Object.values(StreakRuleDirection);
 
 /** A day field holds a day, or nothing (`null`/absent) — never anything else. */
 function dayFieldOk(answer: CallAnswer, name: string): boolean {
@@ -121,7 +108,7 @@ export const StreakPublishCall = {
    * `INVALID` names (`[]` otherwise), and a `TOO_EARLY`'s two days (`null`
    * otherwise) — never the legacy nested locators.
    */
-  refused(error: StreakPublishCall.AnsweredError): StreakPublishCall.Refused {
+  refused(error: StreakPublishError.Answered): StreakPublishCall.Refused {
     return {
       streakPublishOutcome: StreakPublishOutcome.Refused,
       errorCode: error.errorCode,
@@ -178,10 +165,10 @@ export const StreakPublishCall = {
       case StreakPublishOutcome.Published: {
         const version = CallAnswer.whole(answer, 'version', 1);
         const day = dayFieldOf(answer, 'effectiveFromLocalDate');
-        const direction = CallAnswer.oneOf(
+        const direction = CallAnswer.tag(
           answer,
           'streakRuleDirection',
-          DIRECTIONS,
+          StreakRuleDirection,
         );
         return version === null || day === null || direction === null
           ? CallAnswer.unusable()
@@ -198,7 +185,11 @@ export const StreakPublishCall = {
           : Result.ok(StreakPublishCall.withdrawn(version));
       }
       case StreakPublishOutcome.Refused: {
-        const errorCode = CallAnswer.oneOf(answer, 'errorCode', ANSWERED_CODES);
+        const errorCode = CallAnswer.oneOf(
+          answer,
+          'errorCode',
+          StreakPublishError.ANSWERED_CODES,
+        );
         const rawFields = CallAnswer.field(answer, 'fields');
         if (
           errorCode === null ||
@@ -242,19 +233,6 @@ export namespace StreakPublishCall {
     readonly streakRuleDirection: StreakRuleDirection;
   };
 
-  /** The refusals the callable answers rather than throws. */
-  export type AnsweredCode =
-    | typeof StreakPublishErrorCode.CallerNotAdmin
-    | typeof StreakPublishErrorCode.Stale
-    | typeof StreakPublishErrorCode.Invalid
-    | typeof StreakPublishErrorCode.TooEarly
-    | typeof StreakPublishErrorCode.RecomputeNeedsEngine
-    | typeof StreakPublishErrorCode.PreviewStale;
-  export type AnsweredError = Extract<
-    StreakPublishError,
-    { readonly errorCode: AnsweredCode }
-  >;
-
   /** What the callable answers — a receipt, a withdrawal, or a judgement. */
   export type Answer = Published | Withdrawn | Refused;
   export type Published = {
@@ -267,7 +245,7 @@ export namespace StreakPublishCall {
   };
   export type Refused = {
     readonly streakPublishOutcome: typeof StreakPublishOutcome.Refused;
-    readonly errorCode: AnsweredCode;
+    readonly errorCode: StreakPublishAnsweredCode;
     /** An `INVALID`'s flat rule fields at fault (`StreakRuleField`), else `[]`. */
     readonly fields: readonly string[];
     /** A `TOO_EARLY`'s first day the change may start, else `null`. */

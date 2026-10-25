@@ -2,7 +2,6 @@ import {
   StreakInterval,
   StreakIntervalRule,
   StreakIntervalSource,
-  STREAK_SHOP_EXCUSES,
   StreakExcuse,
   StreakOnBreak,
   StreakRule,
@@ -14,8 +13,9 @@ import {
   StreakCapsule,
   StreakOutlook,
   type StreakPeriodFact,
-  type StreakPeriodReason,
   type StreakPeriodTerms,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
 } from '@core/components';
 import {
   AppointmentId,
@@ -146,35 +146,6 @@ export type StreakTrace = {
   readonly comebacks: readonly LocalDate[];
   /** The days on which the nightly judgement moved the phase: what the daily job would have written. */
   readonly judgedOn: readonly LocalDate[];
-};
-
-/** A mark of the track — the field `streakTrackMarkKind`: a closed period's mark, or the open one (`CURRENT`). */
-export const StreakTrackMarkKind = {
-  Kept: StreakPeriodMark.Kept,
-  Protected: StreakPeriodMark.Protected,
-  Repaired: StreakPeriodMark.Repaired,
-  Missed: StreakPeriodMark.Missed,
-  Current: 'CURRENT',
-} as const;
-export type StreakTrackMarkKind =
-  (typeof StreakTrackMarkKind)[keyof typeof StreakTrackMarkKind];
-
-/**
- * One mark of the rhythm's track, oldest first: the projection's closed
- * periods, then the open one. Numbers, days and tags — the words and the
- * captions are the template's (`wallet.presenter.ts` `closedPeriod`,
- * `openPeriod`, `rhythmMarks`).
- */
-export type StreakTrackMark = {
-  readonly streakTrackMarkKind: StreakTrackMarkKind;
-  /** The day the mark stands for: a visit's day, a due date, the moved due date, or today. */
-  readonly on: LocalDate;
-  /** What covered a `PROTECTED` mark (a closed period's reason, or the open phase's `FreezeReason`); `null` otherwise. */
-  readonly reason: StreakPeriodReason | FreezeReason | null;
-  /** The open period, after every closed one. */
-  readonly open: boolean;
-  /** The visit a `KEPT` or `REPAIRED` mark stands for; `null` on a due date nobody met and on the open mark. */
-  readonly visitDay: LocalDate | null;
 };
 
 /** The track as drawn: its marks, and whether the visits' captions can be one per month. */
@@ -332,8 +303,8 @@ const isDay = (raw: string): boolean => LocalDate.parse(raw).ok;
 type Held = { readonly appointmentId: AppointmentId; readonly on: LocalDate };
 
 function isShopExcuse(reason: StreakExcuse): boolean {
-  for (let i = 0; i < STREAK_SHOP_EXCUSES.length; i++) {
-    if (STREAK_SHOP_EXCUSES[i] === reason) return true;
+  for (let i = 0; i < StreakRule.SHOP_EXCUSES.length; i++) {
+    if (StreakRule.SHOP_EXCUSES[i] === reason) return true;
   }
   return false;
 }

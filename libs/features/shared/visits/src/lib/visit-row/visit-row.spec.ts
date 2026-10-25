@@ -3,12 +3,12 @@ import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { VisitGrain, VisitPerspective } from '@core/components';
 import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
   FIXTURE_TODAY,
 } from '@core/testing';
-import { VisitGrain, VisitPerspective } from '@core/systems';
 import {
   CURRENT_APPOINTMENT_ID,
   GEORGI_PHOTOS,

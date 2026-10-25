@@ -523,10 +523,11 @@ const distinct = (values) => [...new Set(values)];
 /**
  * The instant a seat of a stored visit starts: the visit's one instant plus
  * the seat's wall-clock distance from the visit's start
- * (`TimeCoordinate.seatStartUtcMs`, T9 — exact: no visit straddles a DST
- * switch, the shop is closed then).
+ * (`TimeCoordinate.instantAt` of the seat's start minute, T9 — exact: no
+ * visit straddles a DST switch, the shop is closed then).
  */
-const seatStartMs = (doc, seat) => TimeCoordinate.seatStartUtcMs(doc, seat);
+const seatStartMs = (doc, seat) =>
+  TimeCoordinate.instantAt(doc, seat.startMinutes);
 
 /**
  * Every visit `uid` was worked on, oldest first: an appointment with a

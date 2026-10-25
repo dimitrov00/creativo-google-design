@@ -1,12 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { PriceCents } from '@core/primitives';
+import type { VisitSides } from '@core/components';
 import { deepFreeze, unwrapOk } from '@core/testing';
 import {
   type DrawnSides,
   type LiveSides,
   type SideWrites,
-  type VisitSides,
   VisitSidesSystem,
 } from './visit-sides.system';
 

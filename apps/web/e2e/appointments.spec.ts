@@ -5,14 +5,13 @@ import {
   seedUpcomingAppointment,
   seedUserProfile,
 } from './support/seed-firestore';
+import { shopToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 
 /** Today's `YYYY-MM` in the shop's zone — the month the calendar opens on,
  *  whatever day it already is on the device. */
 function shopMonthKey(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Sofia' })
-    .format(new Date())
-    .slice(0, 7);
+  return shopToday().slice(0, 7);
 }
 
 /**

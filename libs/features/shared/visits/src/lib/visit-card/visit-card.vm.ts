@@ -1,6 +1,12 @@
-import type { ShopNow } from '@core/components';
-import type { TimeZone } from '@core/primitives';
-import type { VisitPerspective } from '@core/systems';
+import type { ShopNow, VisitPerspective } from '@core/components';
+import type {
+  AppointmentId,
+  CustomerId,
+  LocalDate,
+  TimeZone,
+  UserId,
+  WaitlistRequestId,
+} from '@core/primitives';
 import type { UiBadgeTone } from '@creativo/ui/controls';
 import type { VisitRowPhotoSource } from '../visit-row.presenter';
 import type {
@@ -51,11 +57,11 @@ export interface VisitLinePart {
   readonly fact: boolean;
 }
 
-/** One visit, or one waiting request, as `lib-visit-card` draws it. */
-export interface VisitCardVm {
-  /** The appointment's id, or the waitlist request's. */
-  readonly id: string;
-  readonly visitCardSlot: VisitCardSlot;
+/**
+ * What every card carries, whichever slot it fills — the two cards below
+ * add their id, discriminated by `visitCardSlot`.
+ */
+export interface VisitCardFields {
   /** «Последно посещение» · «Следващ час» · «Предстоящ час» · «Чака свободен час». */
   readonly label: string;
   /** Always the services, deduplicated: «Фейд · Оформяне на брада». */
@@ -104,6 +110,24 @@ export interface VisitCardVm {
   readonly testId: string;
 }
 
+/** An appointment's card — the last worked visit or the next one; its id is the appointment's. */
+export interface AppointmentCardVm extends VisitCardFields {
+  readonly visitCardSlot: Exclude<VisitCardSlot, typeof VisitCardSlot.Waitlist>;
+  readonly id: AppointmentId;
+}
+
+/** A waiting request's card; its id is the request's. */
+export interface WaitlistCardVm extends VisitCardFields {
+  readonly visitCardSlot: typeof VisitCardSlot.Waitlist;
+  readonly id: WaitlistRequestId;
+}
+
+/**
+ * One visit, or one waiting request, as `lib-visit-card` draws it — the id
+ * branded by the slot (Law 7.4), told apart by `visitCardSlot`.
+ */
+export type VisitCardVm = AppointmentCardVm | WaitlistCardVm;
+
 /**
  * The card's own words, read from the catalogue once. What it shares with
  * a row — the fallbacks, the quote, the sentence of the facts, the status
@@ -130,13 +154,13 @@ export interface VisitCardOptions {
    */
   readonly perspective: VisitPerspective;
   /** Whose story the staff card tells; `null` (a guest, the client's own page) tells the appointment's. */
-  readonly subjectUserId: string | null;
+  readonly subjectUserId: UserId | null;
   /**
    * The same person's client RECORD (D29), what the story is keyed by —
    * the staff card passes the one it resolved; absent, the seat's own link
    * names it (`VisitRowOptions.subjectCustomerId`).
    */
-  readonly subjectCustomerId?: string | null;
+  readonly subjectCustomerId?: CustomerId | null;
   /** "Now" on the shop's wall clock, derived ONCE by the host (Law 7.3). */
   readonly now: ShopNow;
   /** The zone `now` was read in — a photo's day falls back to it. */
@@ -169,8 +193,8 @@ export interface VisitCardOptions {
 export interface WaitlistCardOptions {
   /** The request's words; its label is their state, «Чака свободен час» (`waiting`). */
   readonly words: VisitWaitlistWords;
-  /** `YYYY-MM-DD` on the request's calendar: the days before it have passed. */
-  readonly today: string;
+  /** Today on the request's calendar (the shop's): the days before it have passed. */
+  readonly today: LocalDate;
   readonly locale: string;
   /**
    * The person's OTHER watching requests: the card names the newest one

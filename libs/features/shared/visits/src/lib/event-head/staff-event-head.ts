@@ -10,8 +10,18 @@ import type { BookingStatus } from '@core/primitives';
 import { UiIcon } from '@creativo/ui/controls';
 import type { StaffEventLine, StaffEventRun } from './staff-event-line';
 
-/** The frame's block, or the agenda's card: one grammar, two densities. */
-export type StaffEventHeadSize = 'compact' | 'regular';
+/**
+ * The frame's block, or the agenda's card: one grammar, two densities.
+ * Values: external contract — hosts set the input as a static template
+ * attribute (`size="compact"`), so the dictionary keeps that spelling
+ * (pass D, D-8.8).
+ */
+export const StaffEventHeadSize = {
+  Compact: 'compact',
+  Regular: 'regular',
+} as const;
+export type StaffEventHeadSize =
+  (typeof StaffEventHeadSize)[keyof typeof StaffEventHeadSize];
 
 /**
  * An hour that did not happen — a cancellation, a no-show. Both are struck
@@ -195,7 +205,7 @@ export class StaffEventHead {
    * foreground ink and the weight, so it outranks the clock above it.
    */
   readonly glossState = input(false);
-  readonly size = input<StaffEventHeadSize>('regular');
+  readonly size = input<StaffEventHeadSize>(StaffEventHeadSize.Regular);
   /** An hour that did not happen: the name is struck through. */
   readonly struck = input(false);
   /** A past hour: the fact lines lift back over the contrast floor of a faded card. */
@@ -248,7 +258,9 @@ export class StaffEventHead {
    */
   protected readonly drawnLines = computed(() => {
     const oneLine =
-      this.size() === 'compact' || this.truncate() || this.truncateLines();
+      this.size() === StaffEventHeadSize.Compact ||
+      this.truncate() ||
+      this.truncateLines();
     return this.stackedLines().map((line) => {
       const hold = line.hold ?? '';
       const splits =

@@ -2,8 +2,19 @@ import { type TimeZone, defect } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { LOCATIONS } from '../../content/landing-content';
 
-/** The landing's two shops — the ids of their `LOCATIONS` entries. */
-export type LandingLocationId = 'center' | 'mladost';
+/**
+ * The landing's two shops (D-14). The values keep an external contract's
+ * spelling: they are the ids of the `LOCATIONS` entries in
+ * `content/landing-content.ts` and the `landing.location.<id>.*` i18n key
+ * segment. Deliberately NOT catalogue `LocationId`s — the static landing
+ * content names its own two shops, it reads no stored location.
+ */
+export const LandingLocationId = {
+  Center: 'center',
+  Mladost: 'mladost',
+} as const;
+export type LandingLocationId =
+  (typeof LandingLocationId)[keyof typeof LandingLocationId];
 
 /**
  * A landing shop's IANA zone — its `LOCATIONS` entry's `timezone`, checked

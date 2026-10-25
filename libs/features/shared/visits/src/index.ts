@@ -1,4 +1,5 @@
 export * from './lib/visit-row.vm';
+export * from './lib/visit-lookup.contracts';
 export * from './lib/visit-sections';
 export * from './lib/visit-filter';
 export * from './lib/visit-row.presenter';

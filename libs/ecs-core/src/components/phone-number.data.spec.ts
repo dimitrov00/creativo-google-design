@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { E164, PhoneNumber } from './phone-number.data';
+import { E164 } from './e164.data';
+import { PhoneNumber } from './phone-number.data';
 
 describe('E164', () => {
   it('of() is a zero-cost cast to the stored string', () => {

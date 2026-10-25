@@ -8,9 +8,9 @@
  * the brand checks the engagement ids carried before they moved to
  * `primitives/ids.primitive.ts`; then the loyalty flip's (3) contracts:
  * the account and the journal key by the client RECORD (`CustomerId`, D29),
- * never by an account's `UserId`, and the ports tier's `LoyaltyCatalog`
- * passes to `LoyaltyCatalogSystem` unmapped (its part names, the rhythm's
- * heads included); and the programs flip's (4): `ShopEvent` is the
+ * never by an account's `UserId` (the catalogue the ports answer and the
+ * system validates is ONE declaration since pass D, `loyalty-catalog.ts`,
+ * so no pin is needed); and the programs flip's (4): `ShopEvent` is the
  * intersection of two disjoint slices, and `ProgramsPorts` is the
  * intersection of six non-empty bundles holding exactly nine ports (Law 9).
  * `tsc` failing — on a `false` constant or an unused
@@ -61,14 +61,12 @@ import type {
 import type {
   CourseReadPorts,
   CourseWritePorts,
-  LoyaltyCatalog,
   PositionReadPorts,
   PositionWritePorts,
   ProgramsPorts,
   ShopEventReadPorts,
   ShopEventWritePorts,
 } from '@core/ports';
-import type { LoyaltyCatalogParts } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BadgeCategory } from './badge-category.entity';
 import type { BadgeProgress } from './badge-progress.entity';
@@ -369,21 +367,6 @@ if (entry.actorRole === ActorRole.User) {
   // @ts-expect-error — the actor is an account, never a client record
   takes<CustomerId>(entry.actorUserId);
 }
-
-/* ── LoyaltyCatalog (ports) passes to LoyaltyCatalogSystem unmapped ─────── */
-
-declare const catalog: LoyaltyCatalog;
-declare function takesParts(parts: LoyaltyCatalogParts): void;
-takesParts(catalog);
-
-export const catalogCarriesTheHeads: Equals<
-  LoyaltyCatalog['streaks'],
-  readonly StreakDefinition[]
-> = true;
-export const catalogKeysAreTheParts: Equals<
-  keyof LoyaltyCatalog,
-  keyof LoyaltyCatalogParts
-> = true;
 
 /* ── ShopEvent = Meta (id, instant) & Content (what the admin typed) ────── */
 
