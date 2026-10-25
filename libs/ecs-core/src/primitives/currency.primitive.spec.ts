@@ -37,3 +37,29 @@ describe('Currency — an ISO-4217 code', () => {
     expect(Currency.tradable('')).toBeNull();
   });
 });
+
+describe('Currency.is — the read-time door, the code AS STORED (edge hardening D-1)', () => {
+  it('takes each known code exactly as stored', () => {
+    for (const raw of ['EUR', 'BGN', 'USD', 'GBP']) {
+      expect(Currency.is(raw), raw).toBe(true);
+      expect(Currency.parse(raw).ok).toBe(true);
+    }
+  });
+
+  it('refuses what parse would only take after normalising, and every unknown code', () => {
+    expect(Currency.parse(' eur ').ok).toBe(true);
+    expect(Currency.is(' eur ')).toBe(false);
+    expect(Currency.is('eur')).toBe(false);
+    expect(Currency.is('EUR ')).toBe(false);
+    for (const raw of ['CHF', '', 'EURO']) {
+      expect(Currency.is(raw), raw).toBe(false);
+      expect(Currency.parse(raw).ok).toBe(false);
+    }
+  });
+
+  it('answers false for every other type', () => {
+    for (const raw of [null, undefined, 978, {}, ['EUR'], true]) {
+      expect(Currency.is(raw)).toBe(false);
+    }
+  });
+});

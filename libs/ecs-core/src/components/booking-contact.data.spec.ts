@@ -207,3 +207,48 @@ describe('BookingContact.withNote — the note the client just typed', () => {
     expect(contact.contactNote).toBeNull();
   });
 });
+
+describe('BookingContact.fieldFault — the read-time check of a stored contact (edge hardening D-1)', () => {
+  const present = {
+    contactName: 'Георги',
+    contactPhone: E164.of('+359888123456'),
+    contactEmail: null,
+    contactNote: 'по-късно',
+  };
+
+  it('answers null for no contact and for a present one', () => {
+    expect(BookingContact.fieldFault(BookingContact.NONE)).toBeNull();
+    expect(BookingContact.fieldFault(present)).toBeNull();
+  });
+
+  it('names each field that is neither a string nor null, in field order', () => {
+    for (const field of [
+      'contactName',
+      'contactPhone',
+      'contactEmail',
+      'contactNote',
+    ] as const) {
+      expect(BookingContact.fieldFault({ ...present, [field]: 42 })).toBe(
+        field,
+      );
+      expect(
+        BookingContact.fieldFault({ ...present, [field]: undefined }),
+      ).toBe(field);
+    }
+    expect(
+      BookingContact.fieldFault({ ...present, contactName: 1, contactNote: 2 }),
+    ).toBe('contactName');
+  });
+
+  it('never re-checks the phone’s or the e-mail’s shape — no system decides on them', () => {
+    expect(
+      BookingContact.fieldFault({ ...present, contactPhone: 'call me' }),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ ...present, contactNote: 7 });
+    expect(BookingContact.fieldFault(raw)).toBe(BookingContact.fieldFault(raw));
+    expect(raw.contactNote).toBe(7);
+  });
+});

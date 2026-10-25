@@ -342,6 +342,48 @@ describe('BusySystem.rebuild over the affected keys — a rebuild, not a subtrac
     ]);
   });
 
+  it('unions the keys a refused side salvaged — distinct, sorted, beside both sides (edge-hardening D-3)', () => {
+    const moved = visit('a', [seat('s1', IVAN, at(10))], {
+      localDate: JUNE_2,
+    });
+    expect(
+      BusySystem.affectedKeys(null, moved, [
+        key(PETAR, '2026-06-03'),
+        key(IVAN, '2026-06-02'),
+        key(IVAN, '2026-06-01'),
+        key(PETAR, '2026-06-03'),
+      ]),
+    ).toEqual([
+      key(IVAN, '2026-06-01'),
+      key(IVAN, '2026-06-02'),
+      key(PETAR, '2026-06-03'),
+    ]);
+    // A deleted malformed visit: no side admitted, its salvaged keys alone.
+    expect(
+      BusySystem.affectedKeys(null, null, [key(IVAN, '2026-06-01')]),
+    ).toEqual([key(IVAN, '2026-06-01')]);
+    // The two-argument call is unchanged: nothing salvaged.
+    expect(BusySystem.affectedKeys(morning, moved)).toEqual(
+      BusySystem.affectedKeys(morning, moved, []),
+    );
+    expect(BusySystem.affectedKeys(null, null)).toEqual([]);
+  });
+
+  it('is pure with salvaged keys: same input → same output, inputs untouched', () => {
+    const before = deepFreeze(morning);
+    const salvaged = deepFreeze([
+      key(PETAR, '2026-06-03'),
+      key(IVAN, '2026-06-01'),
+    ]);
+    const once = BusySystem.affectedKeys(before, null, salvaged);
+    expect(BusySystem.affectedKeys(before, null, salvaged)).toEqual(once);
+    expect(once).toEqual([key(IVAN, '2026-06-01'), key(PETAR, '2026-06-03')]);
+    expect(salvaged).toEqual([
+      key(PETAR, '2026-06-03'),
+      key(IVAN, '2026-06-01'),
+    ]);
+  });
+
   it('is pure: same input → same output, inputs untouched', () => {
     const before = deepFreeze(morning);
     const live = deepFreeze([morning, noon]);

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cents, duration, EUR, minuteCount, termsFixture } from '@core/testing';
+import {
+  cents,
+  deepFreeze,
+  duration,
+  EUR,
+  minuteCount,
+  termsFixture,
+} from '@core/testing';
 import { ServiceTerms } from './service-terms.data';
 import type { ServiceTermsInput } from './service-terms-input.data';
 
@@ -132,5 +139,40 @@ describe('ServiceTerms.price', () => {
       amountCents: 1500,
       currency: 'EUR',
     });
+  });
+});
+
+describe('ServiceTerms.fieldFault — the read-time check of stored terms (edge hardening D-1)', () => {
+  it('answers null for terms as a writer stores them', () => {
+    expect(ServiceTerms.fieldFault(termsFixture(2800, 30))).toBeNull();
+    expect(
+      ServiceTerms.fieldFault({ ...termsFixture(0, 5), currency: 'BGN' }),
+    ).toBeNull();
+  });
+
+  it('names each field broken in turn, in field order', () => {
+    const terms = termsFixture(2800, 30);
+    const broken = [
+      ['priceCents', -1],
+      ['priceCents', 28.5],
+      ['currency', 'eur'],
+      ['currency', 'CHF'],
+      ['durationMinutes', 0],
+      ['durationMinutes', '30'],
+      ['setupMinutes', -5],
+      ['cleanupMinutes', null],
+    ] as const;
+    for (const [field, value] of broken) {
+      expect(ServiceTerms.fieldFault({ ...terms, [field]: value })).toBe(field);
+    }
+    expect(
+      ServiceTerms.fieldFault({ ...terms, priceCents: -1, cleanupMinutes: -1 }),
+    ).toBe('priceCents');
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ ...termsFixture(2800, 30), currency: 'eur' });
+    expect(ServiceTerms.fieldFault(raw)).toBe(ServiceTerms.fieldFault(raw));
+    expect(raw.currency).toBe('eur');
   });
 });

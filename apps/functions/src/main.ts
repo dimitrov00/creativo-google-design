@@ -55,6 +55,7 @@ import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { consoleTelemetry } from './adapters/console-telemetry.adapter';
 import { cryptoPorts } from './adapters/crypto.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
+import { logRefusal } from './adapters/firestore-tx.adapter';
 import { paramFlagsPorts } from './adapters/flags.adapter';
 import {
   fixedCodeOtpCryptoPorts,
@@ -143,6 +144,7 @@ import {
   decodePolicySweepRun,
   decodeProfileChangeEvent,
   decodeRebuildBusyEvent,
+  type DocumentWriteEvent,
   failOnRefusal,
   POLICY_STEP_TIMEOUT_SECONDS,
   profileAuditReport,
@@ -173,10 +175,15 @@ import { settle, type WireRequest } from './wire/wire-read';
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
  * are the ones the legacy definitions declared, which no export sets a
- * region, secret or App Check on. `main.spec.ts` pins every endpoint as a
- * literal table, proves each export runs exactly its own pipeline (and no
- * other), and that each callable reports an unexpected throw under its own
- * name.
+ * region, secret or App Check on — except three retry flags flipped by
+ * edge-hardening D-5: `rebuildBusyOnAppointmentChange`,
+ * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange` deploy with
+ * the retry flag on and run through `retryingTrigger` (each recomputes its
+ * projection from its source, so a redelivery is idempotent; only an
+ * allowlisted transient failure is rethrown). `main.spec.ts` pins every
+ * endpoint as a literal table, proves each export runs exactly its own
+ * pipeline (and no other), and that each callable reports an unexpected
+ * throw under its own name.
  *
  * Flips 1–3 moved every legacy export onto its pipeline; Phase 4a flipped
  * the wire (4A-4) and added `startImpersonation`, `endImpersonation` and
@@ -540,14 +547,40 @@ export const staffEditAppointment = onCall(
   ),
 );
 
+// ── The projection triggers' retry (edge-hardening D-5) ──────────────────
+
+const REBUILD_BUSY_FN = 'rebuildBusyOnAppointmentChange';
+const REBUILD_CAPACITY_ON_BUSY_FN = 'rebuildCapacityOnBusyChange';
+const MATCH_WAITLIST_FN = 'matchWaitlistOnBusyChange';
+
+/**
+ * A trigger side the read-time guard refused, logged where it was refused
+ * (edge-hardening D-4) under the one phrase every functions read site uses
+ * (`logRefusal`, `'malformed document refused'`): its path and the
+ * offending field — what the attempt line, which carries codes only, never
+ * names.
+ */
+const logRefusedSide = (error: RepositoryError): void =>
+  logRefusal(root.edge.log, error);
+
 /** Both sides of an appointment write re-derive the busy days they touch (a reschedule frees one, fills another). */
 export const rebuildBusyOnAppointmentChange = onDocumentWritten(
-  APPOINTMENT_DOC,
-  async (event) => {
-    failOnRefusal(
-      await rebuildBusy(root.ports())(decodeRebuildBusyEvent(event)),
-    );
-  },
+  { document: APPOINTMENT_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_BUSY_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodeRebuildBusyEvent>[0]) => {
+      const answer = await rebuildBusy(root.ports())(
+        decodeRebuildBusyEvent(event, logRefusedSide),
+      );
+      settleAttempt(
+        REBUILD_BUSY_FN,
+        event,
+        projectionReport(answer),
+        root.edge,
+      );
+    },
+  ),
 );
 
 // ── Capacity (one projection, five triggers and a sweep) ──────────────────
@@ -562,9 +595,15 @@ async function rebuildCapacityFrom(
   failOnRefusal(await rebuildCapacity(root.ports())(cmd));
 }
 
+/** A busy day's change re-derives that (barber, day)'s capacity — retried: the month is replaced, never merged. */
 export const rebuildCapacityOnBusyChange = onDocumentWritten(
-  BUSY_DOC,
-  (event) => rebuildCapacityFrom(CapacitySource.BusyDay, event.params),
+  { document: BUSY_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_CAPACITY_ON_BUSY_FN, timeoutSeconds: null },
+    root.edge,
+    (event: DocumentWriteEvent<{ readonly docId: string }>) =>
+      rebuildCapacityFrom(CapacitySource.BusyDay, event.params),
+  ),
 );
 
 export const rebuildCapacityOnExceptionChange = onDocumentWritten(
@@ -629,12 +668,21 @@ export const cancelWaitlist = onCall(
 
 /** A busy day freed (or deleted — the strongest freeing) wakes the people watching it. */
 export const matchWaitlistOnBusyChange = onDocumentWritten(
-  BUSY_DOC,
-  async (event) => {
-    const cmd = decodeMatchWaitlistEvent(event);
-    if (cmd === null) return;
-    failOnRefusal(await matchWaitlist(root.ports())(cmd));
-  },
+  { document: BUSY_DOC, retry: true },
+  retryingTrigger(
+    { fn: MATCH_WAITLIST_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodeMatchWaitlistEvent>[0]) => {
+      const cmd = decodeMatchWaitlistEvent(event);
+      if (cmd === null) return;
+      settleAttempt(
+        MATCH_WAITLIST_FN,
+        event,
+        projectionReport(await matchWaitlist(root.ports())(cmd)),
+        root.edge,
+      );
+    },
+  ),
 );
 
 // ── Client projections ────────────────────────────────────────────────────
@@ -651,9 +699,10 @@ export const dispatchClientProjections = onDocumentWritten(
     { fn: DISPATCH_FN, timeoutSeconds: null },
     root.edge,
     async (event: Parameters<typeof decodeDispatchProjectionsEvent>[0]) => {
-      const answer = await projectClientStats(root.ports())(
-        decodeDispatchProjectionsEvent(event),
-      );
+      const cmd = decodeDispatchProjectionsEvent(event, logRefusedSide);
+      const answer = cmd.ok
+        ? await projectClientStats(root.ports())(cmd.value)
+        : cmd;
       settleAttempt(DISPATCH_FN, event, projectionReport(answer), root.edge);
     },
   ),

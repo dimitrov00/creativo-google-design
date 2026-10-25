@@ -18,10 +18,16 @@ import {
 import {
   type CollectionPath,
   type CommitPlan,
+  type Log,
   type QuerySpec,
   type ReadTx,
 } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import {
+  type StoredDocument,
+  StoredDocumentSystem,
+  type StoredGuardOf,
+  TriggerAttemptSystem,
+} from '@core/systems';
 import { withPurgeAt } from './firestore-ttl.adapter';
 
 /**
@@ -52,6 +58,21 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  *   (flip 1, F1-7): the one stamp of `firestore-ttl.adapter.ts`
  *   (`purgeAtFor`), added here beside the entity body — the plan never
  *   carries it, so no pipeline or system ever sees a `Timestamp`.
+ * - A read of a MALFORMED document of a guarded collection refuses the
+ *   whole commit (edge hardening D-3): built with
+ *   `StoredDocumentSystem.guardOf` (the composition root's
+ *   `firestorePorts`), the read half runs each top-level `appointments` /
+ *   `customers` / `barberBusy` document through its stored-document guard
+ *   — an admitted one is THE SAME OBJECT `{ id, ...data }` it always was;
+ *   a refused one reads as `null` (a query leaves it out) so the pipeline's
+ *   read callback can finish without touching it, and the FIRST refusal is
+ *   recorded. After `read` and before `decide`, a recorded refusal answers
+ *   `RepositoryError.malformed(path, field)` and nothing is written; it is
+ *   logged ONCE per commit (`'malformed document refused'`, `{ path, field }`
+ *   — the edge's wire projection drops both, so the refusal logs itself).
+ *   Each contention attempt starts with a clean record. A bare
+ *   `firestoreCommitPlan(db)` guards nothing (the mechanics specs' partial
+ *   bodies, the seed and the integration specs; DEP-11).
  *
  * An `Update` key is ONE root field (Laws 5 and 6: writes target root
  * fields, never dot paths). Each `fields` key goes to the SDK as a
@@ -68,6 +89,69 @@ export const FIELD_SET_AND_DELETED = 'field-set-and-deleted';
 
 /** Firestore's canonical name for gRPC 6, as `TriggerAttemptSystem.failureCode` reads it. */
 const ALREADY_EXISTS = 'already-exists';
+
+/**
+ * The line every functions read site logs a refused document under (edge
+ * hardening D-4) — the schedule and job adapters (through
+ * {@link admitStored}) and the trigger decoders' root binding log through
+ * {@link logRefusal} too, so an operator searches one phrase.
+ */
+export const MALFORMED_DOCUMENT_REFUSED = 'malformed document refused';
+
+/** Logs one refusal: `'malformed document refused'`, `{ path, field }` (`field` = the error's `reason`). */
+export function logRefusal(log: Log, error: RepositoryError): void {
+  log('error', MALFORMED_DOCUMENT_REFUSED, {
+    path: error.path,
+    field: error.reason,
+  });
+}
+
+/** No log — the default of a bare factory. */
+const NO_LOG: Log = () => undefined;
+
+/** No refusal handler — the default of a bare read half. */
+const IGNORE_REFUSAL: (error: RepositoryError) => void = () => undefined;
+
+/**
+ * A stored document read OUTSIDE a transaction, through its collection's
+ * guard (`StoredDocumentSystem.admit`, the one dispatch rule): `Result.ok`
+ * with the same object when admitted or unguarded, or the refusal —
+ * logged once ({@link logRefusal}). `collection` is `null` for a
+ * subcollection, which is never guarded. The schedule and job adapters'
+ * single and walk reads answer through it.
+ */
+export function admitStored<E>(
+  guardOf: StoredGuardOf,
+  collection: string | null,
+  doc: StoredDocument,
+  log: Log,
+): Result<E, RepositoryError> {
+  const verdict = StoredDocumentSystem.admit(guardOf, collection, doc);
+  if (!verdict.ok) logRefusal(log, verdict.error);
+  // Admitted field by field (or read as stored, unguarded) — the entity.
+  return verdict as unknown as Result<E, RepositoryError>;
+}
+
+/**
+ * The transaction read half's form of {@link admitStored}: the same object
+ * when admitted or unguarded, `null` — after telling `onRefused`, which
+ * RECORDS the refusal for the commit to answer and log once — when refused.
+ */
+function admittedOrNull<E>(
+  guardOf: StoredGuardOf,
+  collection: string | null,
+  doc: StoredDocument,
+  onRefused: (error: RepositoryError) => void,
+): E | null {
+  const verdict = StoredDocumentSystem.admit(guardOf, collection, doc);
+  if (verdict.ok) return verdict.value as unknown as E;
+  onRefused(verdict.error);
+  return null;
+}
+
+/** The top-level collection a document path names, or `null` for a nested one. */
+const collectionOf = (path: DocPath): string | null =>
+  path.length === 2 ? (path[0] ?? null) : null;
 
 const slashed = (path: DocPath | CollectionPath): string => path.join('/');
 
@@ -90,24 +174,60 @@ function toQuery(db: Firestore, spec: QuerySpec): Query {
  * The read half over one SDK transaction. An absent document answers
  * `null` (and still enters the conflict set); the entity is the body plus
  * its id, cast once here — the document body IS the entity minus `id`.
+ * A top-level document of a collection `guardOf` guards passes its
+ * stored-document guard first: refused, it reads as `null` (`get`,
+ * `getAll` — the position kept) or is left out (`query`), and `onRefused`
+ * hears the refusal; the commit refuses on it before `decide`
+ * ({@link firestoreCommitPlan}).
  */
-export const firestoreReadTx = (db: Firestore, tx: Transaction): ReadTx => ({
+export const firestoreReadTx = (
+  db: Firestore,
+  tx: Transaction,
+  guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
+  onRefused: (error: RepositoryError) => void = IGNORE_REFUSAL,
+): ReadTx => ({
   get: async <E>(path: DocPath): Promise<E | null> => {
     const snap = await tx.get(docRef(db, path));
-    return snap.exists ? ({ id: snap.id, ...snap.data() } as E) : null;
+    return snap.exists
+      ? admittedOrNull<E>(
+          guardOf,
+          collectionOf(path),
+          { id: snap.id, ...snap.data() },
+          onRefused,
+        )
+      : null;
   },
   getAll: async <E>(
     paths: readonly DocPath[],
   ): Promise<readonly (E | null)[]> => {
     if (paths.length === 0) return [];
     const snaps = await tx.getAll(...paths.map((path) => docRef(db, path)));
-    return snaps.map((snap) =>
-      snap.exists ? ({ id: snap.id, ...snap.data() } as E) : null,
+    return snaps.map((snap, i) =>
+      snap.exists
+        ? admittedOrNull<E>(
+            guardOf,
+            collectionOf(paths.at(i) ?? []),
+            { id: snap.id, ...snap.data() },
+            onRefused,
+          )
+        : null,
     );
   },
   query: async <E>(spec: QuerySpec): Promise<readonly E[]> => {
     const snap = await tx.get(toQuery(db, spec));
-    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as E);
+    const collection =
+      spec.collection.length === 1 ? (spec.collection[0] ?? null) : null;
+    const rows: E[] = [];
+    for (const doc of snap.docs) {
+      const row = admittedOrNull<E>(
+        guardOf,
+        collection,
+        { id: doc.id, ...doc.data() },
+        onRefused,
+      );
+      if (row !== null) rows.push(row);
+    }
+    return rows;
   },
 });
 
@@ -201,7 +321,11 @@ function conflictPath(
 }
 
 export const firestoreCommitPlan =
-  (db: Firestore): CommitPlan =>
+  (
+    db: Firestore,
+    guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
+    log: Log = NO_LOG,
+  ): CommitPlan =>
   async <S, D, E>(
     read: (tx: ReadTx) => Promise<S>,
     decide: (
@@ -209,10 +333,26 @@ export const firestoreCommitPlan =
     ) => Result<D & { readonly writes: readonly WriteOp[] }, E>,
   ): Promise<Result<D, E | RepositoryError>> => {
     let creates: readonly DocPath[] = [];
+    // The refusal the LAST attempt answered (at most one entry) — logged
+    // once, after the transaction settles, never per contention attempt.
+    const answered: RepositoryError[] = [];
     try {
-      return await db.runTransaction(
+      const settled = await db.runTransaction(
         async (tx): Promise<Result<D, E | RepositoryError>> => {
-          const decision = decide(await read(firestoreReadTx(db, tx)));
+          answered.length = 0;
+          // Each attempt records its own refusals, first one first.
+          const refusals: RepositoryError[] = [];
+          const snapshot = await read(
+            firestoreReadTx(db, tx, guardOf, (error) => {
+              refusals.push(error);
+            }),
+          );
+          const malformed = refusals[0];
+          if (malformed !== undefined) {
+            answered.push(malformed);
+            return Result.err(malformed);
+          }
+          const decision = decide(snapshot);
           if (!decision.ok) return decision;
           const { writes, ...answer } = decision.value;
           const refused = setAndDeleted(writes);
@@ -233,6 +373,9 @@ export const firestoreCommitPlan =
           return Result.ok(answer as unknown as D);
         },
       );
+      const refusal = answered[0];
+      if (refusal !== undefined) logRefusal(log, refusal);
+      return settled;
     } catch (error) {
       if (TriggerAttemptSystem.failureCode(error) !== ALREADY_EXISTS) {
         throw error;

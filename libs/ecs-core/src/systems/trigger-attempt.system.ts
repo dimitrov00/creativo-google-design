@@ -1,5 +1,5 @@
 import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
 
 /**
@@ -9,10 +9,29 @@ import { AttemptOutcome } from '@core/components';
  * so they read a code, decide on a redelivery and measure the attempt's age
  * the same way. Logging and rethrowing stay with the caller: this module
  * returns the verdict and the one structured line, never writes it.
+ *
+ * **The retry allowlist** (the 2026-08 audit remediation): a redelivery is
+ * earned ONLY by a code of `TRANSIENT_CODES` — the server twin of the web's
+ * live re-listen (`subscribe-with-retry.ts` `RETRYABLE_CODES`, which also
+ * keeps `internal`: a re-listen is free, a trigger retrying an `internal`
+ * for the whole retry window is the billed loop the audit closed). Its
+ * deployed half is the `retry` flag per export (`main.spec.ts`
+ * `ENDPOINTS`); `edge.ts` `retryingTrigger` is the one function that
+ * applies the verdict. A port's refusal is judged by the canonical code its
+ * adapter recorded as its `reason`; a MALFORMED stored document
+ * (`REPOSITORY_MALFORMED`, refused at read time — edge-hardening D-2/D-5)
+ * by `data-loss` whatever field its `reason` names: it reads the same on
+ * every redelivery, so it is logged and never retried.
  */
 
 /** What a code is called when nothing names it. */
 const UNKNOWN_CODE = 'unknown';
+
+/**
+ * What a malformed stored document is judged by — gRPC 15, "unrecoverable
+ * data loss or corruption": never transient, so never redelivered.
+ */
+const DATA_LOSS_CODE = 'data-loss';
 
 /** gRPC status numbers as the Admin SDK reports them, by canonical name. */
 const GRPC_CODE_NAMES: { readonly [status: number]: string } = {
@@ -86,16 +105,22 @@ function codeOf(error: unknown): unknown {
 /**
  * The code a failure is JUDGED by: a port's refusal (`RepositoryError.guard`)
  * by the canonical code its adapter recorded as its `reason` (`unavailable`,
- * `aborted`, …; `unknown` without one), anything else by its own `code`.
+ * `aborted`, …; `unknown` without one) — except a malformed document, judged
+ * {@link DATA_LOSS_CODE} (its `reason` is a field name, never a code) —
+ * anything else by its own `code`.
  */
 function judgedCode(error: unknown): string {
-  return RepositoryError.guard(error)
-    ? TriggerAttemptSystem.failureCode({ code: error.reason ?? '' })
-    : TriggerAttemptSystem.failureCode(error);
+  if (!RepositoryError.guard(error)) {
+    return TriggerAttemptSystem.failureCode(error);
+  }
+  return error.errorCode === RepositoryErrorCode.Malformed
+    ? DATA_LOSS_CODE
+    : TriggerAttemptSystem.failureCode({ code: error.reason ?? '' });
 }
 
 export const TriggerAttemptSystem = {
   UNKNOWN_CODE,
+  DATA_LOSS_CODE,
 
   /** A failure's canonical code — numeric (Admin SDK) or string, `unknown` otherwise. */
   failureCode(error: unknown): string {
@@ -155,7 +180,8 @@ export const TriggerAttemptSystem = {
   /**
    * A port's refusal as the retrying edge judges it: by the canonical code
    * the adapter recorded as its `reason` (`unavailable`, `aborted`, …), else
-   * `unknown` — a failure no redelivery is known to fix. What
+   * `unknown` — a failure no redelivery is known to fix; a malformed
+   * document by {@link DATA_LOSS_CODE}, permanent. What
    * {@link TriggerAttemptSystem.attemptFailure} reads off a
    * `RepositoryError` (the pipeline tier's `repositoryFailure`, homed here).
    */

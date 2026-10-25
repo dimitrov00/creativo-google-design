@@ -16,7 +16,9 @@ import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   at,
+  barberBusyDayFixture,
   localDate,
+  recordingTelemetry,
   schedulingPortsContract,
   until,
   utcMs,
@@ -29,6 +31,7 @@ vi.mock('firebase/firestore', async () =>
 
 const { scheduleExceptionPorts, schedulingReadPorts } =
   await import('./scheduling.adapter');
+const { guardedReads } = await import('./observe');
 
 const IVAN = BarberId.of('ivan');
 const MONDAY = BusyKey.of(IVAN, localDate('2026-10-12'));
@@ -364,5 +367,54 @@ describe('scheduleExceptionPorts.writeScheduleException — read, merge, write i
 
     expect(answer.ok).toBe(false);
     expect(fake.writes).toEqual([]);
+  });
+});
+
+describe('schedulingReadPorts.observeBusyDay, guarded — the SINGLE rule, fail-closed (edge hardening D-3)', () => {
+  it('emits REPOSITORY_MALFORMED for a malformed busy day, keeps listening, and emits ok once it is fixed', () => {
+    const day = barberBusyDayFixture();
+    const path = `barberBusy/${day.id}`;
+    const body = Object.fromEntries(
+      Object.entries(day).filter(([key]) => key !== 'id'),
+    );
+    const fake = new FakeFirestore({
+      [path]: { ...body, blocks: [{ startMinutes: 660, endMinutes: 600 }] },
+    });
+    const telemetry = recordingTelemetry();
+    const live = recorded(
+      schedulingReadPorts(asDb(fake), guardedReads(telemetry)).observeBusyDay(
+        BusyKey.of(day.barberId, day.localDate),
+      ),
+    );
+
+    fake.set(path, body);
+
+    expect(live.seen).toEqual([
+      Result.err({
+        errorCode: RepositoryErrorCode.Malformed,
+        path,
+        reason: 'blocks[0].endMinutes',
+      }),
+      Result.ok(day),
+    ]);
+    expect(telemetry.lines.map((line) => line.fields)).toEqual([
+      { path, field: 'blocks[0].endMinutes' },
+    ]);
+    expect(fake.listening).toBe(1);
+    live.stop();
+  });
+
+  it('reads the other five members as stored — the guard is the busy day’s alone', () => {
+    const fake = new FakeFirestore({
+      'barberSchedules/ivan': { odd: true },
+    });
+    const telemetry = recordingTelemetry();
+    const roster = recorded(
+      schedulingReadPorts(asDb(fake), guardedReads(telemetry)).observeSchedule(
+        IVAN,
+      ),
+    );
+    expect(roster.seen).toEqual([Result.ok({ id: 'ivan', odd: true })]);
+    expect(telemetry.lines).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@ import {
   MinuteCount,
   PriceCents,
   Result,
+  type StoredFields,
 } from '@core/primitives';
 import { CatalogError } from '@core/errors';
 import { Money } from './money.data';
@@ -123,6 +124,21 @@ export const ServiceTerms = {
         cleanup.value,
       ),
     );
+  },
+
+  /**
+   * The read-time check of stored terms (edge hardening D-1): the NAME of
+   * the first field that is not well-formed — `priceCents` (a non-negative
+   * safe integer), `currency` (a known code as stored), `durationMinutes`
+   * (positive), `setupMinutes`, `cleanupMinutes` (non-negative) — or
+   * `null`. What the bill sums and the chair-time math adds. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    if (!PriceCents.is(raw['priceCents'])) return 'priceCents';
+    if (!Currency.is(raw['currency'])) return 'currency';
+    if (!DurationMinutes.is(raw['durationMinutes'])) return 'durationMinutes';
+    if (!MinuteCount.is(raw['setupMinutes'])) return 'setupMinutes';
+    return MinuteCount.is(raw['cleanupMinutes']) ? null : 'cleanupMinutes';
   },
 
   /** Chair time one booking consumes — setup + sold duration + cleanup. */

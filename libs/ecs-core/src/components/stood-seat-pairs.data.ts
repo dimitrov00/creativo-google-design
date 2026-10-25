@@ -1,3 +1,4 @@
+import { StoredFields } from '@core/primitives';
 import { SeatIdPair } from './seat-id-pair.data';
 
 /**
@@ -25,6 +26,24 @@ const NO_MEMORY: StoodSeatPairs = {
 export const StoodSeatPairs = {
   /** No remembered pairs — what a visit holds until a save breaks one. */
   NONE: NO_MEMORY,
+
+  /**
+   * The read-time check of a stored memory (edge hardening D-1): the NAME of
+   * the first field that is not well-formed — `stoodSeatPairsRevision` (a
+   * non-negative safe integer, or `null` for no memory), then
+   * `stoodSeatPairs` (an array whose every element is a record: what
+   * {@link liveAt} hands an edit) — or `null`. The pairs' own fields are not
+   * re-checked. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    const revision = raw['stoodSeatPairsRevision'];
+    if (revision !== null && !StoredFields.isCount(revision)) {
+      return 'stoodSeatPairsRevision';
+    }
+    return StoredFields.isRecordArray(raw['stoodSeatPairs'])
+      ? null
+      : 'stoodSeatPairs';
+  },
 
   /** A save's memory: the canonical pairs under its revision, or {@link NONE} when it broke none. */
   remember(revision: number, pairs: readonly SeatIdPair[]): StoodSeatPairs {

@@ -45,10 +45,16 @@ import {
   type EndMinute,
   MinuteOfDay,
   PriceCents,
+  Result,
   UtcEpochMs,
 } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
+import {
+  type AppointmentSide,
+  StoredDocumentSystem,
+} from './stored-document.system';
 
 /**
  * One client's statistics, from every appointment they have a seat on (the
@@ -934,6 +940,16 @@ function seatInputOf(seat: Seat): StatsInputSeat {
   };
 }
 
+/** Nobody — the shared empty answer of a write that moved no one; never mutated. */
+const NO_SUBJECTS: readonly CustomerId[] = [];
+
+/** A present side's subjects through the salvage — `[]` for an absent side. */
+function subjectsOf(side: AppointmentSide): readonly CustomerId[] {
+  return side.stored === null
+    ? NO_SUBJECTS
+    : StoredDocumentSystem.salvage(side.stored).subjectCustomerIds;
+}
+
 export const ClientStatsSystem = {
   BGN_PER_EUR,
 
@@ -1302,6 +1318,41 @@ export const ClientStatsSystem = {
     const all = new Set<K>(before);
     for (let i = 0; i < after.length; i++) all.add(after[i] as K);
     return [...all].sort();
+  },
+
+  /**
+   * Whom one appointment write sends to the projection — the sides as the
+   * read-time guard left them (edge hardening D-3): both admitted, a write
+   * that changed nothing a stat reads ({@link statsInputChanged}) moves
+   * nobody; otherwise everybody either present side names
+   * ({@link affectedSubjects}), each side's subjects read through
+   * `StoredDocumentSystem.salvage` (an admitted legacy row may hold no
+   * mirror: absent / `null` reads `[]`). A REFUSED side cannot be compared,
+   * so the change test is skipped and everybody named is re-projected (the
+   * recompute is idempotent); the first refusal is the answer only when
+   * nobody is named — never a decision made on the malformed side's data.
+   */
+  dispatchSubjects(
+    before: AppointmentSide,
+    after: AppointmentSide,
+  ): Result<readonly CustomerId[], RepositoryError> {
+    const refusal = before.refusal ?? after.refusal;
+    if (
+      refusal === null &&
+      !ClientStatsSystem.statsInputChanged(
+        before.appointment,
+        after.appointment,
+      )
+    ) {
+      return Result.ok(NO_SUBJECTS);
+    }
+    const subjects = ClientStatsSystem.affectedSubjects(
+      subjectsOf(before),
+      subjectsOf(after),
+    );
+    return refusal !== null && subjects.length === 0
+      ? Result.err(refusal)
+      : Result.ok(subjects);
   },
 
   /**

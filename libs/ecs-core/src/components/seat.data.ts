@@ -1,11 +1,15 @@
 import {
   defect,
-  type BarberId,
+  BarberId,
   type UserId,
   EndMinute,
   MinuteOfDay,
-  type PriceCents,
+  PriceCents,
   AttendanceState,
+  SeatId,
+  ServiceId,
+  ServiceVariantId,
+  type StoredFields,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import type { AccountOccupant } from './account-occupant.data';
@@ -19,7 +23,7 @@ import {
   SeatSubject,
   SubjectRelationship,
 } from './seat-occupant.data';
-import type { SeatOutcome } from './seat-outcome.data';
+import { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
 
 /**
@@ -119,6 +123,41 @@ export const Seat = {
       catalogPriceCents: override ? catalog.priceCents : null,
       catalogDurationMinutes: override ? catalog.durationMinutes : null,
     };
+  },
+
+  /**
+   * The read-time check of a stored seat (edge hardening D-1): the NAME of
+   * the first field that is not well-formed, or `null` — the seat's own
+   * fields first (`seatId`, `serviceId`, `variantId` an id or `null`,
+   * `barberId`, `startMinutes` a `MinuteOfDay`, `tipCents` a price or
+   * `null`), then its slices through their companions: the charged terms
+   * (`ServiceTerms.fieldFault`), who it is for (`SeatOccupant.fieldFault`)
+   * and what became of it (`SeatOutcome.fieldFault`). Never a second copy
+   * of a slice's check (Law 1). One invariant spans two slices and is the
+   * seat's own: the sold service ends by the closing midnight (F-6 —
+   * `startMinutes + durationMinutes ≤ 1440`, what {@link endMinutes}
+   * otherwise refuses as a defect), reported as `durationMinutes`. The
+   * catalogue provenance and the barber preference are display-only and
+   * not checked. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    if (!SeatId.is(raw['seatId'])) return 'seatId';
+    if (!ServiceId.is(raw['serviceId'])) return 'serviceId';
+    const variant = raw['variantId'];
+    if (variant !== null && !ServiceVariantId.is(variant)) return 'variantId';
+    if (!BarberId.is(raw['barberId'])) return 'barberId';
+    const start = raw['startMinutes'];
+    if (!MinuteOfDay.is(start)) return 'startMinutes';
+    const tip = raw['tipCents'];
+    if (tip !== null && !PriceCents.is(tip)) return 'tipCents';
+    const terms = ServiceTerms.fieldFault(raw);
+    if (terms !== null) return terms;
+    // `durationMinutes` passed the terms' check; `typeof` only narrows it.
+    const duration = raw['durationMinutes'];
+    if (typeof duration === 'number' && !EndMinute.is(start + duration)) {
+      return 'durationMinutes';
+    }
+    return SeatOccupant.fieldFault(raw) ?? SeatOutcome.fieldFault(raw);
   },
 
   /** When the sold service ends — start plus the snapshotted duration (was `endMs`). */

@@ -5,6 +5,10 @@
 // webchannel-wrapper) out of the web app's initial chunk.
 // tools/verify/bundle/check-initial-bundle.mjs fails a build where it leaks.
 export * from './firestore-db.provider';
+// The read-time guard the composition root binds for the appointment,
+// customer and scheduling bundles (edge hardening D-7) — reached only
+// through this lazy module, so `@core/systems` stays off the eager chunk.
+export { guardedReads, type ReadGuard } from './observe';
 // The flip-1 (booking core), flip-2 (identity and accounts), flip-3
 // (loyalty) and flip-4 (programs) bundles: `(db) => bundle` factories, each
 // bound in app.config.ts with `provideLazyPort`'s factory. The rhythm's

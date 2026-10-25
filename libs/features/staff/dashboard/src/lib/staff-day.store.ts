@@ -1355,10 +1355,11 @@ export class StaffDayStore {
    * A line added BELOW the visit's note, never over it — what a cancel's
    * «Друго…» files (D23: the words staff type are the visit's note, not
    * the seat's reason): `appendTeamNote` (`@core/pipelines`) reads the note
-   * as stored now, once, off the port the sheet listens on, and writes the
-   * joined text stamped from the session and the store's clock. A read that
-   * fails writes nothing — a note this device could not read would be
-   * written over — and is a failure the sheet says; blank text writes
+   * on the server, joins the line below it and writes the joined text —
+   * stamped from the session and the store's clock — in ONE transaction, so
+   * a concurrent edit is re-read and kept above the line, never lost.
+   * Offline the transaction refuses and nothing is written over the
+   * server's note: a failure the sheet says (`false`); blank text writes
    * nothing and is none (the pipeline's `ok(null)`), saying nothing.
    */
   async appendTeamNote(

@@ -30,10 +30,15 @@ export const Tag = {
    * The edge guard: `raw` is one of the dictionary's members — exact match
    * (no case folding, no trimming), `false` for anything else, non-strings
    * included.
+   *
+   * A `for…in` scan over the dictionary's OWN keys — the members
+   * `Object.values` would list, so the answers are the same — allocating
+   * nothing: the read-time guards (`StoredDocumentSystem`) run it per
+   * stored discriminator, per document, on every staff-day snapshot.
    */
   has<D extends TagDictionary>(d: D, raw: unknown): raw is Tag<D> {
-    for (const member of Object.values(d)) {
-      if (member === raw) return true;
+    for (const key in d) {
+      if (Object.hasOwn(d, key) && d[key] === raw) return true;
     }
     return false;
   },

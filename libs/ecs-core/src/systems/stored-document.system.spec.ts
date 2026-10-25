@@ -1,0 +1,471 @@
+import { describe, expect, it } from 'vitest';
+import { BlockKind, MinuteBlock } from '@core/components';
+import { RepositoryErrorCode } from '@core/errors';
+import { Collections } from '@core/entities';
+import {
+  appointmentFixture,
+  at,
+  barberBusyDayFixture,
+  customerFixture,
+  deepFreeze,
+  seatFixture,
+  until,
+} from '@core/testing';
+import {
+  type StoredDocument,
+  StoredDocumentSystem,
+} from './stored-document.system';
+
+/** The document minus the named fields — a legacy row, a hand edit. */
+function without(doc: StoredDocument, ...fields: string[]): StoredDocument {
+  const kept = Object.fromEntries(
+    Object.entries(doc).filter(([field]) => !fields.includes(field)),
+  );
+  return { ...kept, id: doc.id };
+}
+
+/** The refusal a guard answers for `path` and `reason`. */
+const refused = (path: string, reason: string) => ({
+  ok: false,
+  error: { errorCode: RepositoryErrorCode.Malformed, path, reason },
+});
+
+const APPOINTMENT_PATH = `appointments/${appointmentFixture().id}`;
+
+describe('StoredDocumentSystem.appointment — appointments/{id} as read', () => {
+  it('admits a well-formed document as THE SAME OBJECT — zero mapping (Law 5)', () => {
+    const doc = appointmentFixture();
+    const answer = StoredDocumentSystem.appointment(doc);
+    expect(answer.ok).toBe(true);
+    expect(answer.ok && answer.value).toBe(doc);
+  });
+
+  it('admits every lifecycle variant the factories build', () => {
+    for (const [status, stamp] of [
+      ['PENDING', 'pendingAtUtcMs'],
+      ['CONFIRMED', 'confirmedAtUtcMs'],
+      ['COMPLETED', 'completedAtUtcMs'],
+      ['NO_SHOW', 'noShowAtUtcMs'],
+    ] as const) {
+      const doc = {
+        ...without(appointmentFixture(), 'confirmedAtUtcMs'),
+        bookingStatus: status,
+        [stamp]: appointmentFixture().utcEpochMs,
+      };
+      expect(StoredDocumentSystem.appointmentFault(doc), status).toBeNull();
+    }
+  });
+
+  it.each([
+    ['id', '', 'id'],
+    ['id', 'a/b', 'id'],
+    ['locationId', null, 'locationId'],
+    ['localDate', '2026-02-30', 'localDate'],
+    ['startMinutes', 1440, 'startMinutes'],
+    ['endMinutes', 0, 'endMinutes'],
+    ['utcEpochMs', '1790575200000', 'utcEpochMs'],
+    ['bookingStatus', 'BOOKED', 'bookingStatus'],
+    ['confirmedAtUtcMs', null, 'confirmedAtUtcMs'],
+    ['busyKeys', 'b-ivan__2026-09-28', 'busyKeys'],
+    ['busyKeys', ['b-ivan_2026-09-28'], 'busyKeys'],
+    ['barberIds', [''], 'barberIds'],
+    ['barberIds', null, 'barberIds'],
+    ['subjectUserIds', 'u-client', 'subjectUserIds'],
+    ['subjectUserIds', [7], 'subjectUserIds'],
+    ['subjectCustomerIds', [''], 'subjectCustomerIds'],
+    ['subjectCustomerIds', 'cus_1', 'subjectCustomerIds'],
+    ['seats', 'seat-1', 'seats'],
+    ['seats', [null], 'seats[0]'],
+    ['discounts', null, 'discounts'],
+    ['discounts', [1], 'discounts'],
+    ['voucherRedemptions', {}, 'voucherRedemptions'],
+    ['appliedOperations', ['op'], 'appliedOperations'],
+    ['stoodSeatPairsRevision', -1, 'stoodSeatPairsRevision'],
+    ['stoodSeatPairs', [3], 'stoodSeatPairs'],
+    ['revision', -1, 'revision'],
+    ['revision', 1.5, 'revision'],
+    ['revision', undefined, 'revision'],
+    ['bookedFromAppointmentId', '', 'bookedFromAppointmentId'],
+    ['bookedAtUtcMs', 'yesterday', 'bookedAtUtcMs'],
+    ['arrivedAtUtcMs', 1.5, 'arrivedAtUtcMs'],
+    ['contactName', 3, 'contactName'],
+    ['contactPhone', 359, 'contactPhone'],
+    ['contactEmail', {}, 'contactEmail'],
+    ['contactNote', [], 'contactNote'],
+  ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
+    const doc = { ...appointmentFixture(), [field]: value };
+    expect(StoredDocumentSystem.appointment(doc)).toEqual(
+      refused(`appointments/${doc.id}`, reason),
+    );
+    expect(StoredDocumentSystem.appointmentFault(doc)).toBe(reason);
+  });
+
+  it('names a seat’s field with the seat’s index', () => {
+    const second = { ...seatFixture(), priceCents: -1 };
+    expect(
+      StoredDocumentSystem.appointment({
+        ...appointmentFixture(),
+        seats: [seatFixture(), second],
+      }),
+    ).toEqual(refused(APPOINTMENT_PATH, 'seats[1].priceCents'));
+    expect(
+      StoredDocumentSystem.appointmentFault({
+        ...appointmentFixture(),
+        seats: [{ ...seatFixture(), startMinutes: 'ten' }],
+      }),
+    ).toBe('seats[0].startMinutes');
+  });
+
+  it('admits the subject mirrors absent or null — the backfill’s legacy rows, repaired later', () => {
+    const doc = appointmentFixture();
+    for (const legacy of [
+      without(doc, 'subjectUserIds', 'subjectCustomerIds'),
+      { ...doc, subjectUserIds: null, subjectCustomerIds: null },
+    ]) {
+      const answer = StoredDocumentSystem.appointment(legacy);
+      expect(answer.ok).toBe(true);
+      expect(answer.ok && answer.value).toBe(legacy);
+    }
+  });
+
+  it('leaves the unchecked fields alone — query keys and repair targets no decision reads', () => {
+    const legacy = without(
+      appointmentFixture(),
+      'ownerUserId',
+      'ownerCustomerId',
+      'placement',
+      'inferredPlacement',
+    );
+    expect(StoredDocumentSystem.appointmentFault(legacy)).toBeNull();
+    expect(
+      StoredDocumentSystem.appointmentFault({
+        ...appointmentFixture(),
+        contactPhone: 'not an E.164',
+        seats: [{ ...seatFixture(), barberPreference: 'WHOEVER' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('answers the FIRST offending field, in the fixed order', () => {
+    expect(
+      StoredDocumentSystem.appointmentFault({
+        ...appointmentFixture(),
+        locationId: '',
+        seats: 'x',
+        contactName: 1,
+      }),
+    ).toBe('locationId');
+  });
+});
+
+describe('StoredDocumentSystem.customer — customers/{id} as read', () => {
+  it('admits a well-formed record as the same object', () => {
+    const doc = customerFixture();
+    const answer = StoredDocumentSystem.customer(doc);
+    expect(answer.ok && answer.value).toBe(doc);
+    expect(
+      StoredDocumentSystem.customerFault(customerFixture({ userId: null })),
+    ).toBeNull();
+  });
+
+  it.each([
+    ['id', 'a/b', 'id'],
+    ['userId', '', 'userId'],
+    ['displayName', null, 'displayName'],
+    ['phone', 359, 'phone'],
+    ['email', {}, 'email'],
+    ['createdAtUtcMs', '2026-09-27', 'createdAtUtcMs'],
+    ['customerOrigin', 'WALK_IN', 'customerOrigin'],
+  ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
+    const doc = { ...customerFixture(), [field]: value };
+    expect(StoredDocumentSystem.customer(doc)).toEqual(
+      refused(`customers/${doc.id}`, reason),
+    );
+  });
+
+  it('leaves the search mirrors alone — only index #8 reads them', () => {
+    expect(
+      StoredDocumentSystem.customerFault(
+        without(customerFixture(), 'searchName', 'searchPrefixes'),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('StoredDocumentSystem.busyDay — barberBusy/{id} as read', () => {
+  it('admits a well-formed day as the same object, an empty day included', () => {
+    const doc = barberBusyDayFixture();
+    const answer = StoredDocumentSystem.busyDay(doc);
+    expect(answer.ok && answer.value).toBe(doc);
+    expect(
+      StoredDocumentSystem.busyDayFault(barberBusyDayFixture({ blocks: [] })),
+    ).toBeNull();
+  });
+
+  it.each([
+    ['id', 'b-ivan_2026-09-28', 'id'],
+    ['barberId', '', 'barberId'],
+    ['localDate', '2026-9-28', 'localDate'],
+    ['utcEpochMs', Number.NaN, 'utcEpochMs'],
+    ['blocks', 'x', 'blocks'],
+    ['blocks', [null], 'blocks[0]'],
+  ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
+    const doc = { ...barberBusyDayFixture(), [field]: value };
+    expect(StoredDocumentSystem.busyDay(doc)).toEqual(
+      refused(`barberBusy/${doc.id}`, reason),
+    );
+  });
+
+  it('names a block’s field with the block’s index — the span, then the kind', () => {
+    const good = MinuteBlock.of(at(10), until(10, 30), BlockKind.Busy);
+    const doc = barberBusyDayFixture();
+    expect(
+      StoredDocumentSystem.busyDayFault({
+        ...doc,
+        blocks: [{ ...good, startMinutes: 700, endMinutes: 600 }],
+      }),
+    ).toBe('blocks[0].endMinutes');
+    expect(
+      StoredDocumentSystem.busyDayFault({
+        ...doc,
+        blocks: [good, { ...good, blockKind: 'X' }],
+      }),
+    ).toBe('blocks[1].blockKind');
+  });
+});
+
+describe('StoredDocumentSystem.salvage — what a trigger may read off a side', () => {
+  it('answers a well-formed document’s OWN arrays and its location', () => {
+    const doc = appointmentFixture();
+    const salvage = StoredDocumentSystem.salvage(doc);
+    expect(salvage.busyKeys).toBe(doc.busyKeys);
+    expect(salvage.subjectCustomerIds).toBe(doc.subjectCustomerIds);
+    expect(salvage.locationId).toBe(doc.locationId);
+  });
+
+  it('keeps the busy keys of a refused document whose seats are broken', () => {
+    const doc = { ...appointmentFixture(), seats: [{ startMinutes: 'ten' }] };
+    expect(StoredDocumentSystem.appointment(doc).ok).toBe(false);
+    expect(StoredDocumentSystem.salvage(doc).busyKeys).toBe(doc.busyKeys);
+  });
+
+  it('answers the shared empty array for a non-array or a bad element, and null for a bad location', () => {
+    const empty = StoredDocumentSystem.salvage({
+      ...appointmentFixture(),
+      busyKeys: 'k',
+      subjectCustomerIds: ['cus_1', ''],
+      locationId: 7,
+    });
+    expect(empty).toEqual({
+      busyKeys: [],
+      subjectCustomerIds: [],
+      locationId: null,
+    });
+    const other = StoredDocumentSystem.salvage({ id: 'x', busyKeys: [3] });
+    expect(other.busyKeys).toBe(empty.busyKeys);
+  });
+
+  it('reads absent or null subjects as [] — never a TypeError', () => {
+    expect(
+      StoredDocumentSystem.salvage(
+        without(appointmentFixture(), 'subjectCustomerIds'),
+      ).subjectCustomerIds,
+    ).toEqual([]);
+    expect(
+      StoredDocumentSystem.salvage({
+        ...appointmentFixture(),
+        subjectCustomerIds: null,
+      }).subjectCustomerIds,
+    ).toEqual([]);
+  });
+});
+
+describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
+  it('answers a guard for the three collections, null for every other', () => {
+    expect(StoredDocumentSystem.guardOf(Collections.Appointments)).toBe(
+      StoredDocumentSystem.appointment,
+    );
+    expect(StoredDocumentSystem.guardOf(Collections.Customers)).toBe(
+      StoredDocumentSystem.customer,
+    );
+    expect(StoredDocumentSystem.guardOf(Collections.BarberBusy)).toBe(
+      StoredDocumentSystem.busyDay,
+    );
+    for (const collection of [
+      Collections.Users,
+      Collections.AppointmentNotes,
+      'barberBusy/x/sub',
+      'users/u1/notifications',
+      '',
+    ]) {
+      expect(StoredDocumentSystem.guardOf(collection), collection).toBeNull();
+    }
+  });
+
+  it('unguarded answers null for every collection', () => {
+    for (const collection of [
+      Collections.Appointments,
+      Collections.Customers,
+      Collections.BarberBusy,
+      Collections.Users,
+    ]) {
+      expect(StoredDocumentSystem.unguarded(collection)).toBeNull();
+    }
+  });
+});
+
+describe('StoredDocumentSystem.admit — the one dispatch every read site shares', () => {
+  it('answers THE SAME OBJECT for an admitted document of a guarded collection', () => {
+    const doc = appointmentFixture();
+    const answer = StoredDocumentSystem.admit(
+      StoredDocumentSystem.guardOf,
+      Collections.Appointments,
+      doc,
+    );
+    expect(answer.ok && answer.value).toBe(doc);
+  });
+
+  it('answers the guard’s refusal for a malformed one', () => {
+    expect(
+      StoredDocumentSystem.admit(
+        StoredDocumentSystem.guardOf,
+        Collections.BarberBusy,
+        { ...barberBusyDayFixture(), blocks: 'none' },
+      ),
+    ).toEqual(refused(`barberBusy/${barberBusyDayFixture().id}`, 'blocks'));
+  });
+
+  it('reads an unguarded collection, a subcollection (null) and the unguarded registry as stored — the same object, never checked', () => {
+    const garbage: StoredDocument = { id: 'x', bookingStatus: 'BOGUS' };
+    for (const [guardOf, collection] of [
+      [StoredDocumentSystem.guardOf, Collections.Users],
+      [StoredDocumentSystem.guardOf, null],
+      [StoredDocumentSystem.unguarded, Collections.Appointments],
+    ] as const) {
+      const answer = StoredDocumentSystem.admit(guardOf, collection, garbage);
+      expect(answer.ok && answer.value).toBe(garbage);
+    }
+  });
+});
+
+describe('StoredDocumentSystem.appointmentSide and salvageSides — a trigger’s two sides', () => {
+  const visit = appointmentFixture();
+  const broken = { ...visit, seats: [{ startMinutes: 'ten' }] };
+  const brokenRefusal = StoredDocumentSystem.appointment(broken);
+
+  it('reads an absent side as all null, an admitted one as its entity (the same object), a refused one as its refusal beside the stored side', () => {
+    expect(StoredDocumentSystem.appointmentSide(null)).toEqual({
+      stored: null,
+      appointment: null,
+      refusal: null,
+    });
+    const admitted = StoredDocumentSystem.appointmentSide(visit);
+    expect(admitted.appointment).toBe(visit);
+    expect(admitted.stored).toBe(visit);
+    expect(admitted.refusal).toBeNull();
+    const refusedSide = StoredDocumentSystem.appointmentSide(broken);
+    expect(refusedSide.appointment).toBeNull();
+    expect(refusedSide.stored).toBe(broken);
+    expect(refusedSide.refusal?.errorCode).toBe(RepositoryErrorCode.Malformed);
+  });
+
+  it('leaves nothing when no side was refused — admitted and absent sides add no keys, no location, no refusal', () => {
+    expect(
+      StoredDocumentSystem.salvageSides(
+        StoredDocumentSystem.appointmentSide(visit),
+        StoredDocumentSystem.appointmentSide(null),
+      ),
+    ).toEqual({ refusal: null, busyKeys: [], locationId: null });
+  });
+
+  it('answers a refused side’s OWN keys and location, and its refusal', () => {
+    const left = StoredDocumentSystem.salvageSides(
+      StoredDocumentSystem.appointmentSide(broken),
+      StoredDocumentSystem.appointmentSide(visit),
+    );
+    expect(left.busyKeys).toBe(broken.busyKeys);
+    expect(left.locationId).toBe(visit.locationId);
+    expect(brokenRefusal.ok).toBe(false);
+    expect(left.refusal).toEqual(!brokenRefusal.ok && brokenRefusal.error);
+    expect(left.refusal?.path).toBe(APPOINTMENT_PATH);
+  });
+
+  it('joins both refused sides’ keys — before’s, then after’s — and names the before’s refusal and the first location', () => {
+    const moved = {
+      ...broken,
+      busyKeys: ['b-1__2026-09-29'],
+      locationId: 'loc-north',
+      seats: 'none',
+    };
+    const left = StoredDocumentSystem.salvageSides(
+      StoredDocumentSystem.appointmentSide(broken),
+      StoredDocumentSystem.appointmentSide(moved),
+    );
+    expect(left.busyKeys).toEqual([...visit.busyKeys, 'b-1__2026-09-29']);
+    expect(left.locationId).toBe(visit.locationId);
+    expect(left.refusal).toEqual(!brokenRefusal.ok && brokenRefusal.error);
+  });
+
+  it('answers the other refused side’s keys when the first names none, and no location when neither does', () => {
+    const keyless = { ...broken, busyKeys: 'x', locationId: 7 };
+    const left = StoredDocumentSystem.salvageSides(
+      StoredDocumentSystem.appointmentSide(keyless),
+      StoredDocumentSystem.appointmentSide({ ...broken, locationId: 7 }),
+    );
+    expect(left.busyKeys).toBe(broken.busyKeys);
+    expect(left.locationId).toBeNull();
+    const none = StoredDocumentSystem.salvageSides(
+      StoredDocumentSystem.appointmentSide(keyless),
+      StoredDocumentSystem.appointmentSide(null),
+    );
+    expect(none.busyKeys).toEqual([]);
+    expect(none.refusal?.reason).toBe('locationId');
+  });
+});
+
+describe('StoredDocumentSystem — purity and cost', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const doc = deepFreeze(appointmentFixture());
+    const bad = deepFreeze({ ...barberBusyDayFixture(), blocks: [null] });
+    expect(StoredDocumentSystem.appointment(doc)).toEqual(
+      StoredDocumentSystem.appointment(doc),
+    );
+    expect(StoredDocumentSystem.busyDay(bad)).toEqual(
+      StoredDocumentSystem.busyDay(bad),
+    );
+    expect(StoredDocumentSystem.salvage(doc)).toEqual(
+      StoredDocumentSystem.salvage(doc),
+    );
+    const sides = [
+      StoredDocumentSystem.appointmentSide(bad),
+      StoredDocumentSystem.appointmentSide(doc),
+    ] as const;
+    expect(StoredDocumentSystem.salvageSides(...sides)).toEqual(
+      StoredDocumentSystem.salvageSides(...sides),
+    );
+    expect(doc).toEqual(appointmentFixture());
+  });
+
+  it('the *Fault halves answer null on 1,000 frozen clean documents — no reason string is built', () => {
+    const appointments = Array.from({ length: 1000 }, () =>
+      deepFreeze(appointmentFixture()),
+    );
+    const days = Array.from({ length: 1000 }, () =>
+      deepFreeze(barberBusyDayFixture()),
+    );
+    const customers = Array.from({ length: 1000 }, () =>
+      deepFreeze(customerFixture()),
+    );
+    let faults = 0;
+    for (const doc of appointments) {
+      if (StoredDocumentSystem.appointmentFault(doc) !== null) faults++;
+    }
+    for (const doc of days) {
+      if (StoredDocumentSystem.busyDayFault(doc) !== null) faults++;
+    }
+    for (const doc of customers) {
+      if (StoredDocumentSystem.customerFault(doc) !== null) faults++;
+    }
+    expect(faults).toBe(0);
+  });
+});

@@ -4,6 +4,7 @@ import {
   type Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
+import { vi } from 'vitest';
 import { Result } from '@core/primitives';
 import {
   CancellationRefusalCode,
@@ -11,10 +12,13 @@ import {
   RepositoryErrorCode,
 } from '@core/errors';
 import { type DocPath, WriteOp } from '@core/components';
-import { QueryOp } from '@core/entities';
+import { Collections, QueryOp } from '@core/entities';
 import { type ReadTx } from '@core/ports';
+import { StoredDocumentSystem } from '@core/systems';
+import { appointmentFixture, recordingTelemetry } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import {
+  admitStored,
   FIELD_SET_AND_DELETED,
   firestoreCommitPlan,
 } from './firestore-tx.adapter';
@@ -541,6 +545,271 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
           () => Result.ok({ writes: [] }),
         ),
       ).rejects.toMatchObject({ code: 14 });
+    });
+  });
+
+  describe('guarded — a malformed document refuses the whole commit (edge hardening D-3)', () => {
+    /** An appointment body as stored — the entity minus its id. */
+    const appointmentBody = (): Doc =>
+      Object.fromEntries(
+        Object.entries(appointmentFixture()).filter(([key]) => key !== 'id'),
+      );
+    const APPT_ID = appointmentFixture().id;
+    const STORED: DocPath = [Collections.Appointments, APPT_ID];
+    const STORED_PATH = `${Collections.Appointments}/${APPT_ID}`;
+    const malformedBody = (): Doc => ({ ...appointmentBody(), revision: -1 });
+
+    function guarded(seed: Record<string, Doc> = {}) {
+      const fake = createProjectionFirestore(seed);
+      const telemetry = recordingTelemetry();
+      return {
+        fake,
+        telemetry,
+        commit: firestoreCommitPlan(
+          fake.db as unknown as Firestore,
+          StoredDocumentSystem.guardOf,
+          telemetry.log,
+        ),
+      };
+    }
+
+    const refusal = (path: string, reason: string) => ({
+      ok: false,
+      error: { errorCode: RepositoryErrorCode.Malformed, path, reason },
+    });
+
+    const refusedLine = (path: string, field: string) => ({
+      level: 'error',
+      msg: 'malformed document refused',
+      fields: { path, field },
+    });
+
+    it('admitStored — the reads outside a transaction: the same object when admitted or unguarded, the refusal logged once', () => {
+      const telemetry = recordingTelemetry();
+      const doc = { ...appointmentBody(), id: APPT_ID };
+      const admitted = admitStored(
+        StoredDocumentSystem.guardOf,
+        Collections.Appointments,
+        doc,
+        telemetry.log,
+      );
+      expect(admitted.ok && admitted.value).toBe(doc);
+      const bad = { ...malformedBody(), id: APPT_ID };
+      for (const [guardOf, collection] of [
+        [StoredDocumentSystem.guardOf, null],
+        [StoredDocumentSystem.guardOf, Collections.Users],
+        [StoredDocumentSystem.unguarded, Collections.Appointments],
+      ] as const) {
+        const asStored = admitStored(guardOf, collection, bad, telemetry.log);
+        expect(asStored.ok && asStored.value).toBe(bad);
+      }
+      expect(telemetry.lines).toEqual([]);
+      expect(
+        admitStored(
+          StoredDocumentSystem.guardOf,
+          Collections.Appointments,
+          bad,
+          telemetry.log,
+        ),
+      ).toEqual(refusal(STORED_PATH, 'revision'));
+      expect(telemetry.lines).toEqual([refusedLine(STORED_PATH, 'revision')]);
+    });
+
+    it('a malformed appointment read with get: REPOSITORY_MALFORMED, decide never called, nothing written, one log line', async () => {
+      const { fake, telemetry, commit } = guarded({
+        [STORED_PATH]: malformedBody(),
+      });
+      const decide = vi.fn(() =>
+        Result.ok({ writes: [WriteOp.set(BUSY, { blocks: [] })] }),
+      );
+      const result = await commit(async (tx) => tx.get(STORED), decide);
+      expect(result).toEqual(refusal(STORED_PATH, 'revision'));
+      expect(decide).not.toHaveBeenCalled();
+      expect(fake.docs.has('barberBusy/b_ivan__2026-10-07')).toBe(false);
+      expect(fake.docs.get(STORED_PATH)).toEqual(malformedBody());
+      expect(telemetry.lines).toEqual([refusedLine(STORED_PATH, 'revision')]);
+    });
+
+    it('the same through getAll and query — the read callback finishes, the commit refuses', async () => {
+      const seed = {
+        [STORED_PATH]: malformedBody(),
+        'customers/c1': { anything: true },
+      };
+      const viaGetAll = guarded(seed);
+      const seen: unknown[] = [];
+      const fromGetAll = await viaGetAll.commit(
+        async (tx) => {
+          const rows = await tx.getAll([
+            ['users', 'u1'],
+            STORED,
+            ['barberBusy', 'k1'],
+          ]);
+          seen.push(rows);
+          return rows;
+        },
+        () => Result.ok({ writes: [] }),
+      );
+      expect(fromGetAll).toEqual(refusal(STORED_PATH, 'revision'));
+      // The refused document reads as null; the positions are kept.
+      expect(seen).toEqual([[null, null, null]]);
+
+      const viaQuery = guarded({
+        [STORED_PATH]: malformedBody(),
+        [`${Collections.Appointments}/appt-2`]: appointmentBody(),
+      });
+      const queried: unknown[] = [];
+      const fromQuery = await viaQuery.commit(
+        async (tx) => {
+          const rows = await tx.query<{ readonly id: string }>({
+            collection: [Collections.Appointments],
+            where: [],
+            orderBy: [],
+            limit: null,
+          });
+          queried.push(rows.map((row) => row.id));
+          return rows;
+        },
+        () => Result.ok({ writes: [] }),
+      );
+      expect(fromQuery).toEqual(refusal(STORED_PATH, 'revision'));
+      expect(queried).toEqual([['appt-2']]);
+      expect(viaQuery.telemetry.lines).toHaveLength(1);
+    });
+
+    it('the FIRST refusal wins, and the commit logs one line however many were read', async () => {
+      const { telemetry, commit } = guarded({
+        [STORED_PATH]: malformedBody(),
+        'barberBusy/b_ivan__2026-10-07': { blocks: 'none' },
+      });
+      const result = await commit(
+        async (tx) => {
+          await tx.get(['barberBusy', 'b_ivan__2026-10-07']);
+          return tx.get(STORED);
+        },
+        () => Result.ok({ writes: [] }),
+      );
+      expect(result).toEqual(
+        refusal('barberBusy/b_ivan__2026-10-07', 'barberId'),
+      );
+      expect(telemetry.lines).toEqual([
+        refusedLine('barberBusy/b_ivan__2026-10-07', 'barberId'),
+      ]);
+    });
+
+    it('an unguarded collection reads as stored — a users body, a subcollection', async () => {
+      const { telemetry, commit } = guarded({
+        'users/u1': { roles: 'odd' },
+        'users/u1/notifications/n1': { whatever: 1 },
+      });
+      const result = await commit(
+        async (tx) => ({
+          user: await tx.get(['users', 'u1']),
+          note: await tx.get(['users', 'u1', 'notifications', 'n1']),
+        }),
+        (snapshot) => Result.ok({ snapshot, writes: [] }),
+      );
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          snapshot: {
+            user: { id: 'u1', roles: 'odd' },
+            note: { id: 'n1', whatever: 1 },
+          },
+        },
+      });
+      expect(telemetry.lines).toEqual([]);
+    });
+
+    it('a well-formed appointment reads as { id, ...body } — the very object decide receives', async () => {
+      const { telemetry, commit } = guarded({
+        [STORED_PATH]: appointmentBody(),
+      });
+      let read: unknown = null;
+      let decided: unknown = undefined;
+      const result = await commit(
+        async (tx) => {
+          read = await tx.get(STORED);
+          return read;
+        },
+        (snapshot) => {
+          decided = snapshot;
+          return Result.ok({ writes: [] });
+        },
+      );
+      expect(result.ok).toBe(true);
+      expect(read).toEqual(appointmentFixture());
+      expect(decided).toBe(read);
+      expect(telemetry.lines).toEqual([]);
+    });
+
+    it('a contention re-run starts clean: a malformed read on attempt 1, repaired before attempt 2, decides', async () => {
+      const telemetry = recordingTelemetry();
+      const bodies = [malformedBody(), appointmentBody()];
+      const decide = vi.fn((snapshot: unknown) =>
+        Result.ok({ snapshot, writes: [] }),
+      );
+      const db = {
+        doc: (path: string) => ({ path }),
+        // The SDK re-runs the callback when the commit of an attempt
+        // aborts — here, a concurrent repair of the document read.
+        runTransaction: async (
+          fn: (tx: unknown) => Promise<unknown>,
+        ): Promise<unknown> => {
+          let answer: unknown;
+          for (const body of bodies) {
+            answer = await fn({
+              get: async () => ({
+                exists: true,
+                id: APPT_ID,
+                data: () => body,
+              }),
+            });
+          }
+          return answer;
+        },
+      } as unknown as Firestore;
+      const result = await firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      )(async (tx) => tx.get(STORED), decide);
+      expect(decide).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        ok: true,
+        value: { snapshot: appointmentFixture() },
+      });
+      // The answered attempt refused nothing, so nothing is logged.
+      expect(telemetry.lines).toEqual([]);
+    });
+
+    it('two refusing attempts log ONE line — the answered one', async () => {
+      const telemetry = recordingTelemetry();
+      const db = {
+        doc: (path: string) => ({ path }),
+        runTransaction: async (
+          fn: (tx: unknown) => Promise<unknown>,
+        ): Promise<unknown> => {
+          const tx = {
+            get: async () => ({
+              exists: true,
+              id: APPT_ID,
+              data: () => malformedBody(),
+            }),
+          };
+          await fn(tx);
+          return fn(tx);
+        },
+      } as unknown as Firestore;
+      const result = await firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      )(
+        async (tx) => tx.get(STORED),
+        () => Result.ok({ writes: [] }),
+      );
+      expect(result).toEqual(refusal(STORED_PATH, 'revision'));
+      expect(telemetry.lines).toEqual([refusedLine(STORED_PATH, 'revision')]);
     });
   });
 

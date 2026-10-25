@@ -379,3 +379,101 @@ describe('GuestKey — the guest key on the wire', () => {
     });
   });
 });
+
+describe('the id doors is and isSpan — read-time, allocation-free (edge hardening D-1)', () => {
+  /** A plain id companion's three doors, as the runtime case reads them. */
+  type IdDoors = {
+    readonly parse: (raw: string) => { readonly ok: boolean };
+    readonly is: (raw: unknown) => boolean;
+    readonly isSpan: (text: string, start: number, end: number) => boolean;
+  };
+
+  /** Every plain id companion (built by `idCompanion`): the ones with `isSpan`. */
+  const PLAIN_IDS: readonly (readonly [string, IdDoors])[] = Object.entries(
+    Ids as Record<string, unknown>,
+  ).flatMap(([name, companion]) =>
+    typeof companion === 'object' &&
+    companion !== null &&
+    'isSpan' in companion &&
+    'is' in companion &&
+    'parse' in companion
+      ? [[name, companion as IdDoors] as const]
+      : [],
+  );
+
+  it('every plain id companion has the doors — CustomerId’s spread included', () => {
+    expect(PLAIN_IDS.length).toBeGreaterThanOrEqual(35);
+    expect(PLAIN_IDS.map(([name]) => name)).toEqual(
+      expect.arrayContaining([
+        'AppointmentId',
+        'BarberId',
+        'CustomerId',
+        'LocationId',
+        'SeatId',
+        'TenantId',
+        'UserId',
+      ]),
+    );
+  });
+
+  it.each(PLAIN_IDS)(
+    '%s.is ⇔ parse over strings: valid, blank, padded, slashed',
+    (_name, ids) => {
+      for (const raw of [
+        'apt_1',
+        'a',
+        ' creativo ',
+        '',
+        ' ',
+        '   ',
+        '\t\n',
+        'a/b',
+        '/',
+        'cus_3f9a',
+        'Мария',
+      ]) {
+        expect(ids.is(raw), JSON.stringify(raw)).toBe(ids.parse(raw).ok);
+      }
+    },
+  );
+
+  it('is ⇔ parse for every single code unit — the trim set read exactly, without trim()', () => {
+    for (let code = 0; code <= 0xffff; code++) {
+      const raw = String.fromCharCode(code);
+      if (UserId.is(raw) !== UserId.parse(raw).ok) {
+        expect.unreachable(`U+${code.toString(16)} answers differently`);
+      }
+    }
+  });
+
+  it('is ⇔ parse for arbitrary strings (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.string({
+          unit: fc.constantFrom('a', ' ', ' ', ' ', '/', '﻿'),
+        }),
+        (raw) => AppointmentId.is(raw) === AppointmentId.parse(raw).ok,
+      ),
+    );
+  });
+
+  it('is answers false for every other type — parse is never handed one', () => {
+    for (const raw of [null, undefined, 1, {}, [], ['a'], true]) {
+      expect(AppointmentId.is(raw)).toBe(false);
+      expect(CustomerId.is(raw)).toBe(false);
+    }
+  });
+
+  it('isSpan reads the part of a composite key in place, clamped to the text', () => {
+    expect(UserId.isSpan('b-ivan__2026-09-28', 0, 6)).toBe(true);
+    expect(UserId.isSpan('  __2026-09-28', 0, 2)).toBe(false);
+    expect(UserId.isSpan('a/b__2026-09-28', 0, 3)).toBe(false);
+    expect(UserId.isSpan('abc', 1, 1)).toBe(false);
+    expect(UserId.isSpan('abc', -5, 99)).toBe(true);
+  });
+
+  it('is pure: same input → same answer', () => {
+    expect(UserId.is('u-1')).toBe(UserId.is('u-1'));
+    expect(UserId.isSpan('u-1', 0, 3)).toBe(UserId.isSpan('u-1', 0, 3));
+  });
+});

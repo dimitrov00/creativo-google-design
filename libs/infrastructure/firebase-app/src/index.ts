@@ -6,3 +6,4 @@ export * from './lib/loyalty-catalog-memo';
 export * from './lib/flags.provider';
 export * from './lib/shop-zone.service';
 export * from './lib/callable-client.adapter';
+export * from './lib/error-handler-log.adapter';

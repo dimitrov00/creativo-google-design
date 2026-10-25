@@ -1,8 +1,11 @@
 import { type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { Result, UtcEpochMs } from '@core/primitives';
+import { BusyKey, Result, UtcEpochMs } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { Email, ParsedIdentifier, WriteOp } from '@core/components';
 import type { ClockPorts, HashPorts, IdPorts } from '@core/ports';
 import {
+  appointmentFixture,
+  barberBusyDayFixture,
   otpFixture,
   recordingTelemetry,
   registeredUserFixture,
@@ -117,5 +120,58 @@ describe('firestorePorts — the assembler', () => {
     fake.docs.set('settings/bookingPolicy', { cancellationWindowHours: 6 });
     const policy = await ports.loadPolicy();
     expect(policy.ok && policy.value.cancellationWindowHours).toBe(6);
+  });
+
+  it('passes the stored-document guards and the telemetry log to every reader of the three collections (edge hardening D-7)', async () => {
+    const fake = createProjectionFirestore();
+    const telemetry = recordingTelemetry();
+    const ports = firestorePorts(
+      fake.db as unknown as Firestore,
+      primitives,
+      telemetry,
+    );
+    const body = (entity: { readonly id: string }) =>
+      Object.fromEntries(
+        Object.entries(entity).filter(([key]) => key !== 'id'),
+      );
+    const appointment = appointmentFixture();
+    const day = barberBusyDayFixture();
+    fake.docs.set(`appointments/${appointment.id}`, {
+      ...body(appointment),
+      bookingStatus: 'BOOKED',
+    });
+    fake.docs.set(`barberBusy/${day.id}`, { ...body(day), utcEpochMs: 'x' });
+
+    const committed = await ports.commit(
+      (tx) => tx.get(['appointments', appointment.id]),
+      () => Result.ok({ writes: [] }),
+    );
+    const busy = await ports.loadBusyDay(
+      BusyKey.of(day.barberId, day.localDate),
+    );
+    const page = await ports.pageAppointments(null, 10);
+
+    const malformed = (path: string, reason: string) => ({
+      ok: false,
+      error: { errorCode: RepositoryErrorCode.Malformed, path, reason },
+    });
+    expect(committed).toEqual(
+      malformed(`appointments/${appointment.id}`, 'bookingStatus'),
+    );
+    expect(busy).toEqual(malformed(`barberBusy/${day.id}`, 'utcEpochMs'));
+    expect(page).toEqual(
+      malformed(`appointments/${appointment.id}`, 'bookingStatus'),
+    );
+    expect(telemetry.lines.map((line) => line.fields)).toEqual([
+      { path: `appointments/${appointment.id}`, field: 'bookingStatus' },
+      { path: `barberBusy/${day.id}`, field: 'utcEpochMs' },
+      { path: `appointments/${appointment.id}`, field: 'bookingStatus' },
+    ]);
+    expect(
+      telemetry.lines.every(
+        (line) =>
+          line.level === 'error' && line.msg === 'malformed document refused',
+      ),
+    ).toBe(true);
   });
 });

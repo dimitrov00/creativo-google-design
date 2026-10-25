@@ -19,15 +19,20 @@ import {
   SCHEDULING_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
+  AppointmentId,
   BarberId,
   LocalDate,
   LocationId,
   Result,
   Weekday,
 } from '@core/primitives';
-import { CatalogErrorCode } from '@core/errors';
+import { CatalogErrorCode, RepositoryError } from '@core/errors';
 import { DayHours, ShiftSegment } from '@core/components';
-import type { BarberSchedule, ShopLocation } from '@core/entities';
+import type {
+  AppointmentNote,
+  BarberSchedule,
+  ShopLocation,
+} from '@core/entities';
 import type {
   AppointmentNotePorts,
   AppointmentReadPorts,
@@ -101,6 +106,7 @@ async function build(
     readonly schedules?: readonly BarberSchedule[];
     readonly storedView?: string;
     readonly url?: string;
+    readonly notes?: AppointmentNotePorts;
   } = {},
 ): Promise<Harness> {
   localStorage.clear();
@@ -166,10 +172,14 @@ async function build(
       { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       {
         provide: APPOINTMENT_NOTE_PORTS,
-        useValue: {
-          observeAppointmentNote: () => of(Result.ok(null)),
-          saveAppointmentNote: async () => Result.ok(undefined),
-        } satisfies AppointmentNotePorts,
+        useValue:
+          options.notes ??
+          ({
+            observeAppointmentNote: () => of(Result.ok(null)),
+            saveAppointmentNote: async () => Result.ok(undefined),
+            updateAppointmentNote: async (_appointmentId, decide) =>
+              Result.ok(decide(null)),
+          } satisfies AppointmentNotePorts),
       },
       {
         provide: APPOINTMENT_PHOTO_PORTS,
@@ -432,5 +442,47 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
         [540, 720],
       ],
     );
+  });
+});
+
+describe('StaffDayStore — the team note’s append, one transaction', () => {
+  const VISIT = AppointmentId.of('appointment-1');
+
+  /**
+   * A note bundle whose append transaction lands — deciding over no stored
+   * note — or, with a `failure`, refuses without deciding anything.
+   */
+  function notesFailing(failure: RepositoryError | null) {
+    const decided: (AppointmentNote | null)[] = [];
+    const notes: AppointmentNotePorts = {
+      observeAppointmentNote: () => of(Result.ok(null)),
+      saveAppointmentNote: async () => Result.ok(undefined),
+      updateAppointmentNote: async (_appointmentId, decide) => {
+        if (failure !== null) return Result.err(failure);
+        const next = decide(null);
+        decided.push(next);
+        return Result.ok(next);
+      },
+    };
+    return { notes, decided };
+  }
+
+  it('answers true once the line is appended through the transaction', async () => {
+    const world = notesFailing(null);
+    const { store } = await build({ notes: world.notes });
+    expect(await store.appendTeamNote(VISIT, '  наводнение ')).toBe(true);
+    expect(world.decided.map((note) => note?.text)).toEqual(['наводнение']);
+  });
+
+  it('answers false when the transaction cannot reach the server — the sheet says so', async () => {
+    const world = notesFailing(
+      RepositoryError.writeFailed(
+        'appointmentNotes/appointment-1',
+        'unavailable',
+      ),
+    );
+    const { store } = await build({ notes: world.notes });
+    expect(await store.appendTeamNote(VISIT, 'наводнение')).toBe(false);
+    expect(world.decided).toEqual([]);
   });
 });

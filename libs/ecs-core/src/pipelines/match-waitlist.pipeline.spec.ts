@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AttemptOutcome,
   BlockKind,
   BookingPolicy,
   type BookingCart,
@@ -189,6 +190,14 @@ type World = {
   readonly recent?: (
     requestId: WaitlistRequestId,
   ) => Result<boolean, RepositoryError>;
+  /** A busy day's read as scripted — `null`: as stored. */
+  readonly busyDay?: (
+    key: BusyKey,
+  ) => Result<BarberBusyDay | null, RepositoryError> | null;
+  /** The nth commit (from 1) as scripted — `null`: the store's own transaction. */
+  readonly commitAttempt?: (
+    attempt: number,
+  ) => Promise<Result<never, RepositoryError>> | null;
 };
 
 /**
@@ -220,10 +229,16 @@ function rig(world: World) {
   const exceptions = new Map(
     (world.exceptions ?? []).map((e) => [String(e.id), e]),
   );
+  const storedBusyDay = memoryLoadBusyDay(store);
+  let commits = 0;
   const run = matchWaitlist({
     ...tx,
     ...telemetry,
     ...ZONE_PORTS,
+    commit: (read, decide) => {
+      commits += 1;
+      return world.commitAttempt?.(commits) ?? tx.commit(read, decide);
+    },
     loadPolicy: async () => {
       calls.policy += 1;
       return Result.ok(BookingPolicy.DEFAULT);
@@ -246,7 +261,7 @@ function rig(world: World) {
       Result.ok(schedules.get(barberId) ?? null),
     loadScheduleException: async (key) =>
       Result.ok(exceptions.get(key) ?? null),
-    loadBusyDay: memoryLoadBusyDay(store),
+    loadBusyDay: async (key) => world.busyDay?.(key) ?? storedBusyDay(key),
     hasRecentNotification: async (_user, _topic, requestId) => {
       calls.cooldown += 1;
       return world.recent?.(requestId) ?? Result.ok(false);
@@ -256,6 +271,9 @@ function rig(world: World) {
 }
 
 const command = { localDate: DAY };
+
+/** An answer nothing failed in. */
+const NO_FAILURE = { failures: [], attemptFailure: null } as const;
 
 /** The plan a match on `DAY` at `startMinutes` writes for `request`. */
 function matchPlan(request: WaitlistRequest, startMinutes: number) {
@@ -307,7 +325,11 @@ describe('matchWaitlist — one plan per match', () => {
     const { tx, run } = rig({ watching: [request] });
     expect(await run(command)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [request.id], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [request.id],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
     });
     expect(tx.plans).toEqual([matchPlan(request, 600)]);
     expect(tx.transactions[0]?.reads).toEqual([
@@ -326,7 +348,11 @@ describe('matchWaitlist — one plan per match', () => {
     });
     expect(await run(command)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
     });
     expect(tx.plans).toEqual([[]]);
   });
@@ -352,7 +378,11 @@ describe('matchWaitlist — one plan per match', () => {
     });
     expect(await run(command)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
     });
     expect(tx.plans).toEqual([]);
     expect(telemetry.lines).toEqual([]);
@@ -400,7 +430,16 @@ describe('matchWaitlist — one plan per match', () => {
     });
     expect(await run(command)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [second.id], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [second.id],
+        expiredRequestIds: [],
+        failures: [failure],
+        attemptFailure: {
+          error: failure,
+          failureCode: 'unavailable',
+          attemptOutcome: AttemptOutcome.Transient,
+        },
+      },
     });
     expect(calls.catalogue).toBe(1);
     expect(tx.plans).toEqual([matchPlan(second, 600)]);
@@ -560,7 +599,11 @@ describe('matchWaitlist — only the shops the public surface lists', () => {
     });
     expect(await run(command)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [lapsed.id] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [lapsed.id],
+        ...NO_FAILURE,
+      },
     });
     expect(tx.plans).toEqual([
       [
@@ -596,7 +639,11 @@ describe('matchWaitlist — a day gone by', () => {
     const { tx, calls, run } = rig({ watching: [lapsed] });
     expect(await run(pastCommand)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [lapsed.id] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [lapsed.id],
+        ...NO_FAILURE,
+      },
     });
     expect(calls).toEqual({ policy: 0, open: 1, catalogue: 0, cooldown: 0 });
     expect(tx.plans).toEqual([
@@ -629,8 +676,189 @@ describe('matchWaitlist — a day gone by', () => {
     });
     expect(await run(pastCommand)).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
     });
     expect(tx.plans).toEqual([[]]);
+  });
+});
+
+describe('matchWaitlist — retried (edge-hardening D-5)', () => {
+  const first = requestFixture('wl_1');
+  const second = requestFixture('wl_2', {
+    ownerUserId: UserId.of('u-other'),
+  });
+
+  it('settles every request past one whose commit rejected, and answers the verdict TRANSIENT — a redelivery is earned', async () => {
+    const outage = Object.assign(new Error('14 UNAVAILABLE'), { code: 14 });
+    const { tx, telemetry, run } = rig({
+      watching: [first, second],
+      commitAttempt: (attempt) =>
+        attempt === 1 ? Promise.reject(outage) : null,
+    });
+    expect(await run(command)).toEqual({
+      ok: true,
+      value: {
+        notifiedRequestIds: [second.id],
+        expiredRequestIds: [],
+        failures: [outage],
+        attemptFailure: {
+          error: outage,
+          failureCode: 'unavailable',
+          attemptOutcome: AttemptOutcome.Transient,
+        },
+      },
+    });
+    expect(tx.plans).toEqual([matchPlan(second, 600)]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: 'waitlist match failed',
+        fields: { requestId: first.id, error: String(outage) },
+      },
+    ]);
+  });
+
+  it('answers a request’s permanent refusal as the PERMANENT verdict — logged, never redelivered', async () => {
+    const denied = RepositoryError.writeFailed(
+      `${Collections.WaitlistRequests}/${first.id}`,
+      'permission-denied',
+    );
+    const { run } = rig({
+      watching: [first, second],
+      commitAttempt: (attempt) =>
+        attempt === 1 ? Promise.resolve(Result.err(denied)) : null,
+    });
+    expect(await run(command)).toEqual({
+      ok: true,
+      value: {
+        notifiedRequestIds: [second.id],
+        expiredRequestIds: [],
+        failures: [denied],
+        attemptFailure: {
+          error: denied,
+          failureCode: 'permission-denied',
+          attemptOutcome: AttemptOutcome.Permanent,
+        },
+      },
+    });
+  });
+
+  it('is a no-op for whoever the first delivery told: the redelivery tells the failed request once and nobody twice', async () => {
+    const outage = Object.assign(new Error('10 ABORTED'), { code: 10 });
+    const { tx, store, run } = rig({
+      watching: [first, second],
+      commitAttempt: (attempt) =>
+        attempt === 1 ? Promise.reject(outage) : null,
+    });
+    await run(command);
+    const again = await run(command);
+    expect(again).toEqual({
+      ok: true,
+      value: {
+        notifiedRequestIds: [first.id],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
+    });
+    // Delivery 1: the second told. Delivery 2: the first told, the second
+    // re-read as MATCHED — an empty plan.
+    expect(tx.plans).toEqual([
+      matchPlan(second, 600),
+      matchPlan(first, 600),
+      [],
+    ]);
+    const told = (owner: UserId) =>
+      [...store.keys()].filter((path) =>
+        path.startsWith(`${Collections.Users}/${owner}/`),
+      );
+    expect(told(first.ownerUserId)).toHaveLength(1);
+    expect(told(second.ownerUserId)).toHaveLength(1);
+    const third = await run(command);
+    expect(third).toEqual({
+      ok: true,
+      value: { notifiedRequestIds: [], expiredRequestIds: [], ...NO_FAILURE },
+    });
+  });
+});
+
+describe('matchWaitlist — a malformed busy day skips only its barber (edge-hardening DEP-13)', () => {
+  /** Ivan works 10:00–11:00, Niko 15:00–16:00 — each request fits only one of them. */
+  const world = {
+    barbers: [barberFixture({ id: IVAN }), barberFixture({ id: NIKO })],
+    schedules: [
+      tuesdayRoster(IVAN, [segment(CENTRE, 600, 660)]),
+      tuesdayRoster(NIKO, [segment(CENTRE, 900, 960)]),
+    ],
+  };
+  const morning = requestFixture('wl_ivan', {
+    flexibleDays: [
+      DayWindows.of(DAY, [MinuteRange.of(minute(600), endMinute(660))]),
+    ],
+  });
+  const afternoon = requestFixture('wl_niko', {
+    ownerUserId: UserId.of('u-other'),
+    flexibleDays: [
+      DayWindows.of(DAY, [MinuteRange.of(minute(900), endMinute(960))]),
+    ],
+  });
+  const IVAN_KEY = BusyKey.of(IVAN, DAY);
+
+  it('matches each request to its own barber when both busy days read', async () => {
+    const { tx, run } = rig({ ...world, watching: [morning, afternoon] });
+    expect(await run(command)).toEqual({
+      ok: true,
+      value: {
+        notifiedRequestIds: [morning.id, afternoon.id],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
+    });
+    expect(sentStarts(tx)).toEqual([600, 900]);
+  });
+
+  it('offers none of the refused barber’s time, matches the other barber, logs the skip — no attempt failure', async () => {
+    const malformed = RepositoryError.malformed(
+      `${Collections.BarberBusy}/${IVAN_KEY}`,
+      'blocks[0].startMinutes',
+    );
+    const { tx, telemetry, run } = rig({
+      ...world,
+      watching: [morning, afternoon],
+      busyDay: (key) => (key === IVAN_KEY ? Result.err(malformed) : null),
+    });
+    expect(await run(command)).toEqual({
+      ok: true,
+      value: {
+        notifiedRequestIds: [afternoon.id],
+        expiredRequestIds: [],
+        ...NO_FAILURE,
+      },
+    });
+    expect(tx.plans).toEqual([matchPlan(afternoon, 900)]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: 'waitlist barber skipped',
+        fields: { key: IVAN_KEY, error: malformed },
+      },
+    ]);
+  });
+
+  it('still answers any other busy-day refusal as the match’s store failure — judged by its reason at the edge', async () => {
+    const unavailable = RepositoryError.readFailed(
+      `${Collections.BarberBusy}/${IVAN_KEY}`,
+      'unavailable',
+    );
+    const { tx, run } = rig({
+      ...world,
+      watching: [morning, afternoon],
+      busyDay: (key) => (key === IVAN_KEY ? Result.err(unavailable) : null),
+    });
+    expect(await run(command)).toEqual(Result.err(unavailable));
+    expect(tx.transactions).toEqual([]);
   });
 });

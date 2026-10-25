@@ -1,7 +1,10 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { BookingError, IdentityError, RepositoryError } from '@core/errors';
+import { BusyKey, CustomerId } from '@core/primitives';
 import { Callables } from '@core/ports';
+import { TriggerAttemptSystem } from '@core/systems';
+import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
 
 /**
  * The pipelines and the Firestore bundle, replaced at the module seam: each
@@ -151,8 +154,11 @@ const daily = (schedule: string) => ({
  * streak publish's plain `onCall` stays as its Phase 3a row declared it
  * (flip 3); Phase 4a's three new callables (`startImpersonation`,
  * `endImpersonation`, `redeemInvitation`, 4A-3 (4), (5)) declare no option
- * either. A literal: what `firebase deploy` reads, so a changed path,
- * retry flag, timeout, memory or schedule fails here.
+ * either. Edge-hardening D-5 flipped three retry flags — the projection
+ * triggers `rebuildBusyOnAppointmentChange`, `rebuildCapacityOnBusyChange`
+ * and `matchWaitlistOnBusyChange` retry now (the allowlist's deployed half).
+ * A literal: what `firebase deploy` reads, so a changed path, retry flag,
+ * timeout, memory or schedule fails here.
  */
 const ENDPOINTS = {
   requestOtpChallenge: callable,
@@ -176,11 +182,8 @@ const ENDPOINTS = {
   clearArrival: callable,
   recordSeatTip: callable,
   staffEditAppointment: callable,
-  rebuildBusyOnAppointmentChange: written(
-    'appointments/{appointmentId}',
-    false,
-  ),
-  rebuildCapacityOnBusyChange: written('barberBusy/{docId}', false),
+  rebuildBusyOnAppointmentChange: written('appointments/{appointmentId}', true),
+  rebuildCapacityOnBusyChange: written('barberBusy/{docId}', true),
   rebuildCapacityOnExceptionChange: written(
     'scheduleExceptions/{docId}',
     false,
@@ -192,7 +195,7 @@ const ENDPOINTS = {
   sampleBarberLeadTimeDaily: daily('every day 04:00'),
   requestWaitlist: callable,
   cancelWaitlist: callable,
-  matchWaitlistOnBusyChange: written('barberBusy/{docId}', false),
+  matchWaitlistOnBusyChange: written('barberBusy/{docId}', true),
   dispatchClientProjections: written('appointments/{appointmentId}', true),
   recomputeClientStatsOnPolicyChange: written('settings/{docId}', true),
   continueClientStatsPolicyRecompute: {
@@ -499,7 +502,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
     pipeline: 'rebuildBusy',
     input: writeEvent({ appointmentId: 'a-1' }),
     command: { before: null, after: null },
-    answer: ok({ written: 0 }),
+    answer: ok({ written: 0, failures: [], attemptFailure: null }),
     expected: undefined,
   },
   rebuildCapacityOnBusyChange: {
@@ -587,7 +590,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
     pipeline: 'matchWaitlist',
     input: writeEvent({ docId: 'b-1__2026-10-12' }),
     command: { localDate: '2026-10-12' },
-    answer: ok({ notified: 0 }),
+    answer: ok({ notified: 0, failures: [], attemptFailure: null }),
     expected: undefined,
   },
   dispatchClientProjections: {
@@ -917,13 +920,13 @@ describe('main.ts — the composition root', () => {
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
       const down = () => ({
         ok: false,
-        error: RepositoryError.readFailed('barberBusy', 'unavailable'),
+        error: RepositoryError.readFailed('barberSchedules', 'unavailable'),
       });
-      seam.answers.set('rebuildBusy', down);
+      seam.answers.set('rebuildCapacity', down);
       await expect(
         run(
-          'rebuildBusyOnAppointmentChange',
-          caseOf('rebuildBusyOnAppointmentChange').input,
+          'rebuildCapacityOnRosterChange',
+          caseOf('rebuildCapacityOnRosterChange').input,
         ),
       ).rejects.toThrow();
       seam.answers.set('startPolicyRecompute', down);
@@ -939,6 +942,265 @@ describe('main.ts — the composition root', () => {
           eventId: 'event-1',
         }),
       );
+    });
+  });
+
+  describe('edge-hardening D-5 — the projection triggers retry a transient failure and drop a decisive one', () => {
+    /** Each retrying projection trigger, the pipeline it runs and what it answers when nothing failed. */
+    const RETRIED = [
+      ['rebuildBusyOnAppointmentChange', 'rebuildBusy'],
+      ['rebuildCapacityOnBusyChange', 'rebuildCapacity'],
+      ['matchWaitlistOnBusyChange', 'matchWaitlist'],
+    ] as const;
+
+    /** The `'trigger attempt failed'` lines the edge logged. */
+    const attemptLines = (): readonly unknown[] =>
+      vi
+        .mocked(logger.error)
+        .mock.calls.filter(([msg]) => msg === 'trigger attempt failed')
+        .map(([, fields]) => fields);
+
+    /** The `'malformed document refused'` lines a decoder's refusal logged. */
+    const refusalLines = (): readonly unknown[] =>
+      vi
+        .mocked(logger.error)
+        .mock.calls.filter(([msg]) => msg === 'malformed document refused')
+        .map(([, fields]) => fields);
+
+    beforeEach(() => {
+      vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    });
+
+    it.each(RETRIED)(
+      '%s rejects a transient refusal — its one attempt line TRANSIENT — so the platform redelivers',
+      async (name, pipeline) => {
+        seam.answers.set(pipeline, () => ({
+          ok: false,
+          error: RepositoryError.readFailed(
+            'locations/loc-center',
+            'unavailable',
+          ),
+        }));
+        await expect(run(name, caseOf(name).input)).rejects.toBeDefined();
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({
+            fn: name,
+            eventId: 'event-1',
+            outcome: 'TRANSIENT',
+            errorCode: 'unavailable',
+          }),
+        ]);
+      },
+    );
+
+    it.each(RETRIED)(
+      '%s resolves a malformed-document refusal — logged PERMANENT as data-loss, never redelivered',
+      async (name, pipeline) => {
+        seam.answers.set(pipeline, () => ({
+          ok: false,
+          error: RepositoryError.malformed(
+            'barberBusy/b-1__2026-10-12',
+            'blocks[0].startMinutes',
+          ),
+        }));
+        await expect(run(name, caseOf(name).input)).resolves.toBeUndefined();
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({
+            fn: name,
+            outcome: 'PERMANENT',
+            errorCode: 'data-loss',
+          }),
+        ]);
+      },
+    );
+
+    it.each([
+      ['rebuildBusyOnAppointmentChange', 'rebuildBusy'],
+      ['matchWaitlistOnBusyChange', 'matchWaitlist'],
+    ] as const)(
+      '%s reads its answer’s verdict: a transient item failure rejects, a permanent one resolves',
+      async (name, pipeline) => {
+        const transient = TriggerAttemptSystem.attemptFailure(
+          Object.assign(new Error('10 ABORTED'), { code: 10 }),
+        );
+        seam.answers.set(
+          pipeline,
+          ok({ failures: [transient.error], attemptFailure: transient }),
+        );
+        await expect(run(name, caseOf(name).input)).rejects.toBe(
+          transient.error,
+        );
+        const permanent = TriggerAttemptSystem.repositoryFailure(
+          RepositoryError.writeFailed('barberBusy/b-1__2026-10-12', 'internal'),
+        );
+        seam.answers.set(
+          pipeline,
+          ok({ failures: [permanent.error], attemptFailure: permanent }),
+        );
+        await expect(run(name, caseOf(name).input)).resolves.toBeUndefined();
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({ fn: name, outcome: 'TRANSIENT' }),
+          expect.objectContaining({
+            fn: name,
+            outcome: 'PERMANENT',
+            errorCode: 'internal',
+          }),
+        ]);
+      },
+    );
+
+    describe('a malformed appointment side (edge-hardening D-3, D-4)', () => {
+      const visit = appointmentFixture();
+      const TOMORROW = localDate('2026-09-29');
+      const ana = CustomerId.of('cus_ana');
+      const bob = CustomerId.of('cus_bob');
+
+      /** A stored document's body — the entity minus its id (Law 5). */
+      const bodyOf = (entity: {
+        readonly id: string;
+      }): Record<string, unknown> =>
+        Object.fromEntries(
+          Object.entries(entity).filter(([key]) => key !== 'id'),
+        );
+
+      const side = (body: Record<string, unknown> | null) => ({
+        exists: body !== null,
+        data: () => body ?? undefined,
+      });
+
+      const appointmentWrite = (
+        before: Record<string, unknown> | null,
+        after: Record<string, unknown> | null,
+      ) => ({
+        id: 'event-2',
+        time: '2026-10-11T07:00:00.000000Z',
+        params: { appointmentId: visit.id },
+        data: { before: side(before), after: side(after) },
+      });
+
+      /** The visit, its first seat's start no minute — refused, its mirrors intact. */
+      const brokenSeat = (entity: typeof visit) => ({
+        ...bodyOf(entity),
+        seats: [{ ...entity.seats[0], startMinutes: 'ten' }],
+      });
+
+      const moved = {
+        ...visit,
+        localDate: TOMORROW,
+        busyKeys: [BusyKey.of(FIXTURE_IDS.barber, TOMORROW)],
+      };
+
+      it('rebuildBusyOnAppointmentChange: a refused side naming no day is forwarded with its refusal; the pipeline’s refusal resolves — ONE refusal line with its path and field, the PERMANENT attempt line', async () => {
+        const refused = RepositoryError.malformed(
+          `appointments/${visit.id}`,
+          'busyKeys',
+        );
+        // The pipeline's own rule (its spec): no day left → the refusal.
+        seam.answers.set('rebuildBusy', () => ({ ok: false, error: refused }));
+        const event = appointmentWrite(null, {
+          ...bodyOf(visit),
+          busyKeys: 'garbage',
+        });
+        await expect(
+          run('rebuildBusyOnAppointmentChange', event),
+        ).resolves.toBeUndefined();
+        expect(seam.calls.map((call) => call.pipeline)).toEqual([
+          'rebuildBusy',
+        ]);
+        expect(seam.calls[0]?.args[0]).toEqual({
+          before: null,
+          after: null,
+          salvagedKeys: [],
+          salvagedLocationId: visit.locationId,
+          refusal: refused,
+        });
+        expect(refusalLines()).toEqual([
+          { path: `appointments/${visit.id}`, field: 'busyKeys' },
+        ]);
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({
+            fn: 'rebuildBusyOnAppointmentChange',
+            eventId: 'event-2',
+            outcome: 'PERMANENT',
+            errorCode: 'data-loss',
+          }),
+        ]);
+      });
+
+      it('rebuildBusyOnAppointmentChange: a refused before beside a good after rebuilds the after’s day AND the before’s salvaged one, and logs the refusal', async () => {
+        seam.answers.set(
+          'rebuildBusy',
+          ok({ rebuiltKeys: [], failures: [], attemptFailure: null }),
+        );
+        await expect(
+          run(
+            'rebuildBusyOnAppointmentChange',
+            appointmentWrite(brokenSeat(visit), bodyOf(moved)),
+          ),
+        ).resolves.toBeUndefined();
+        expect(seam.calls.map((call) => call.pipeline)).toEqual([
+          'rebuildBusy',
+        ]);
+        expect(seam.calls[0]?.args[0]).toEqual({
+          before: null,
+          after: moved,
+          salvagedKeys: visit.busyKeys,
+          salvagedLocationId: visit.locationId,
+          refusal: RepositoryError.malformed(
+            `appointments/${visit.id}`,
+            'seats[0].startMinutes',
+          ),
+        });
+        expect(refusalLines()).toEqual([
+          { path: `appointments/${visit.id}`, field: 'seats[0].startMinutes' },
+        ]);
+        expect(attemptLines()).toEqual([]);
+      });
+
+      it('dispatchClientProjections: a refused side naming nobody resolves — the refusal line and the PERMANENT attempt line, no projection', async () => {
+        await expect(
+          run(
+            'dispatchClientProjections',
+            appointmentWrite(null, {
+              ...bodyOf(visit),
+              subjectCustomerIds: 'nope',
+            }),
+          ),
+        ).resolves.toBeUndefined();
+        expect(refusalLines()).toEqual([
+          { path: `appointments/${visit.id}`, field: 'subjectCustomerIds' },
+        ]);
+        expect(attemptLines()).toEqual([
+          expect.objectContaining({
+            fn: 'dispatchClientProjections',
+            outcome: 'PERMANENT',
+            errorCode: 'data-loss',
+          }),
+        ]);
+        expect(seam.calls).toEqual([]);
+      });
+
+      it('dispatchClientProjections: a refused before beside a good after re-projects both sides’ people — no change test — and logs the refusal', async () => {
+        seam.answers.set(
+          'projectClientStats',
+          ok({ written: 0, failures: [], attemptFailure: null }),
+        );
+        const bobsVisit: typeof visit = { ...visit, subjectCustomerIds: [bob] };
+        const anasVisit: typeof visit = { ...visit, subjectCustomerIds: [ana] };
+        await expect(
+          run(
+            'dispatchClientProjections',
+            appointmentWrite(brokenSeat(bobsVisit), bodyOf(anasVisit)),
+          ),
+        ).resolves.toBeUndefined();
+        expect(seam.calls.map((call) => call.pipeline)).toEqual([
+          'projectClientStats',
+        ]);
+        expect(seam.calls[0]?.args[0]).toEqual({ customerIds: [ana, bob] });
+        expect(refusalLines()).toEqual([
+          { path: `appointments/${visit.id}`, field: 'seats[0].startMinutes' },
+        ]);
+      });
     });
   });
 

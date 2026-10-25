@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { at, until } from '@core/testing';
+import { at, deepFreeze, until } from '@core/testing';
 import { BlockKind, MinuteBlock } from './minute-block.data';
 import { MinuteRange } from './minute-range.data';
 
@@ -50,5 +50,37 @@ describe('MinuteBlock', () => {
       'BREAK',
       'EXCEPTION',
     ]);
+  });
+});
+
+describe('MinuteBlock.fieldFault — the read-time check of a stored busy block (edge hardening D-1)', () => {
+  const block = MinuteBlock.of(at(10), until(10, 30), BlockKind.Busy);
+
+  it('answers null for a well-formed block of every kind', () => {
+    for (const blockKind of Object.values(BlockKind)) {
+      expect(MinuteBlock.fieldFault({ ...block, blockKind })).toBeNull();
+    }
+  });
+
+  it('names blockKind when it is no BlockKind member', () => {
+    for (const blockKind of ['busy', 'BOOKED', '', null, 1]) {
+      expect(MinuteBlock.fieldFault({ ...block, blockKind })).toBe('blockKind');
+    }
+  });
+
+  it('reads the span through MinuteRange first — composed, never re-checked', () => {
+    const inverted = { ...block, startMinutes: 700, endMinutes: 600 };
+    expect(MinuteBlock.fieldFault(inverted)).toBe(
+      MinuteRange.fieldFault(inverted),
+    );
+    expect(
+      MinuteBlock.fieldFault({ ...block, startMinutes: -5, blockKind: 'X' }),
+    ).toBe('startMinutes');
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ ...block, blockKind: 'X' });
+    expect(MinuteBlock.fieldFault(raw)).toBe(MinuteBlock.fieldFault(raw));
+    expect(raw.blockKind).toBe('X');
   });
 });

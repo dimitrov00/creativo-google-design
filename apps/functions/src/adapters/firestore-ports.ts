@@ -26,6 +26,7 @@ import type {
   UserLookupPorts,
   WaitlistRequestReadPorts,
 } from '@core/ports';
+import { StoredDocumentSystem } from '@core/systems';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
 import { firestoreCapacityPorts } from './firestore-capacity.adapter';
@@ -58,6 +59,17 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
  * (identity) adds the `otps` store and the account lookup by destination.
  * The impure primitives arrive as the three bundles they are
  * (`ClockPorts & HashPorts & IdPorts`, Law 9 — no local record).
+ *
+ * The read-time guards (edge hardening D-1, D-7): this is the ONLY
+ * production construction site of the three adapters that read
+ * `appointments`, `customers` or `barberBusy` — the transaction
+ * (`firestoreCommitPlan`), the schedule singles (`firestoreSchedulePorts`)
+ * and the backfill walk (`firestoreJobPorts`) — so each is handed the
+ * stored-document guard registry and the telemetry log here: no Firestore
+ * read of the three collections is unguarded, and every refusal is logged
+ * at the point of refusal (`'malformed document refused'`, `{ path, field }`)
+ * through the same sink as every other line. The bare factories guard
+ * nothing (the mechanics specs, the seed, the integration specs).
  *
  * Extension point, by type: a flip adds its collections' server bundle as
  * one more member of the {@link FirestorePorts} intersection and spreads its
@@ -112,7 +124,7 @@ export const firestorePorts = (
   primitives: ClockPorts & HashPorts & IdPorts,
   telemetry: TelemetryPorts,
 ): FirestorePorts => ({
-  commit: firestoreCommitPlan(db),
+  commit: firestoreCommitPlan(db, StoredDocumentSystem.guardOf, telemetry.log),
   nowUtcMs: primitives.nowUtcMs,
   nextId: primitives.nextId,
   hash: primitives.hash,
@@ -121,13 +133,13 @@ export const firestorePorts = (
   ...firestoreAccountPorts(db),
   ...firestoreAuditPorts(db, telemetry),
   ...firestoreCatalogPorts(db),
-  ...firestoreSchedulePorts(db),
+  ...firestoreSchedulePorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreCapacityPorts(db),
   ...firestoreLeadTimePorts(db),
   ...firestoreWaitlistPorts(db),
   ...firestoreNotificationPorts(db),
   ...firestoreClientStatsPorts(db),
-  ...firestoreJobPorts(db),
+  ...firestoreJobPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreOtpPorts(db),
   ...firestoreUserPorts(db),
 });

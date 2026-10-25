@@ -95,3 +95,35 @@ describe('MinuteDelta — a signed whole number of minutes', () => {
     );
   });
 });
+
+describe('DurationMinutes.is and MinuteCount.is — the read-time doors (edge hardening D-1)', () => {
+  const NUMBERS = [
+    0,
+    -0,
+    1,
+    30,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER + 2,
+  ];
+
+  it('each is ⇔ its constructor over the numbers', () => {
+    for (const raw of NUMBERS) {
+      expect(DurationMinutes.is(raw), String(raw)).toBe(
+        DurationMinutes.of(raw).ok,
+      );
+      expect(MinuteCount.is(raw), String(raw)).toBe(MinuteCount.of(raw).ok);
+    }
+  });
+
+  it('both answer false for every other type', () => {
+    for (const raw of [null, undefined, '30', {}, [], [30], false]) {
+      expect(DurationMinutes.is(raw)).toBe(false);
+      expect(MinuteCount.is(raw)).toBe(false);
+    }
+  });
+});

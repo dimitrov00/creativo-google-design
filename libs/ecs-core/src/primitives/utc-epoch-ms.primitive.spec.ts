@@ -61,3 +61,50 @@ describe('UtcEpochMs — an absolute instant', () => {
     expect(UtcEpochMs.plusDays(t, 1)).toBe(86_401_000);
   });
 });
+
+describe('UtcEpochMs.is and MAX — the read-time door (edge hardening D-1)', () => {
+  const MAX = 253_402_300_799_999;
+  const MIN = -62_135_596_800_000;
+
+  it('MAX is the last instant of 9999 the constructor takes', () => {
+    expect(UtcEpochMs.MAX).toBe(MAX);
+    expect(UtcEpochMs.of(UtcEpochMs.MAX).ok).toBe(true);
+    expect(UtcEpochMs.of(UtcEpochMs.MAX + 1).ok).toBe(false);
+  });
+
+  it('is ⇔ of over the constructor’s own domain — numbers', () => {
+    for (const raw of [
+      0,
+      -0,
+      1,
+      -1,
+      1_790_575_200_000,
+      MAX,
+      MAX + 1,
+      MIN,
+      MIN - 1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER + 2,
+    ]) {
+      expect(UtcEpochMs.is(raw), String(raw)).toBe(UtcEpochMs.of(raw).ok);
+    }
+  });
+
+  it('is answers false for every other type — an ISO string or a Timestamp-like included', () => {
+    for (const raw of [
+      null,
+      undefined,
+      '1790575200000',
+      '2026-09-28T06:00:00Z',
+      { seconds: 1, nanoseconds: 0 },
+      [],
+      true,
+    ]) {
+      expect(UtcEpochMs.is(raw)).toBe(false);
+    }
+  });
+});

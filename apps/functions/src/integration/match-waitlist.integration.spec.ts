@@ -202,7 +202,12 @@ describe('matchWaitlist (emulator)', () => {
     const again = await run()(command);
     expect(again).toEqual({
       ok: true,
-      value: { notifiedRequestIds: [], expiredRequestIds: [] },
+      value: {
+        notifiedRequestIds: [],
+        expiredRequestIds: [],
+        failures: [],
+        attemptFailure: null,
+      },
     });
     expect(await inbox()).toHaveLength(1);
   });

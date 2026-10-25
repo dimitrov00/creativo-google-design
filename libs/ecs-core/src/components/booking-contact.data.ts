@@ -1,5 +1,5 @@
 import { Email } from './email.data';
-import { Result } from '@core/primitives';
+import { Result, StoredFields } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import type { E164 } from './e164.data';
 
@@ -97,6 +97,21 @@ export const BookingContact = {
   ): BookingContact.Present {
     const note = raw.trim().slice(0, BookingContact.MAX_NOTE_LENGTH);
     return { ...contact, contactNote: note || null };
+  },
+
+  /**
+   * The read-time check of a stored contact (edge hardening D-1): the NAME
+   * of the first of `contactName`, `contactPhone`, `contactEmail`,
+   * `contactNote` that is neither a string nor `null`, else `null`. The
+   * SHAPE of the phone (E.164) and the e-mail is not re-checked — only a
+   * presenter and the call sheet read them, and no system decides on them.
+   * No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    if (!StoredFields.isTextOrNull(raw['contactName'])) return 'contactName';
+    if (!StoredFields.isTextOrNull(raw['contactPhone'])) return 'contactPhone';
+    if (!StoredFields.isTextOrNull(raw['contactEmail'])) return 'contactEmail';
+    return StoredFields.isTextOrNull(raw['contactNote']) ? null : 'contactNote';
   },
 
   /** Is there somebody to call? Narrows to the present contact. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_TIME_ZONE,
+  appointmentFixture,
   deepFreeze,
   endMinute,
   localDate,
@@ -8,6 +9,7 @@ import {
   utcMs,
 } from '@core/testing';
 import { ZonedTimeSystem } from '@core/systems';
+import { MinuteRange } from './minute-range.data';
 import { TimeCoordinate } from './time-coordinate.data';
 
 const DAY = localDate('2026-10-07');
@@ -144,5 +146,61 @@ describe('TimeCoordinate.endUtcMs — the envelope’s end as an instant (.ics)'
   it('is pure: same input → same output, inputs untouched', () => {
     const visit = deepFreeze(time(600, 645));
     expect(TimeCoordinate.endUtcMs(visit)).toBe(TimeCoordinate.endUtcMs(visit));
+  });
+});
+
+describe('TimeCoordinate.fieldFault — the read-time check of a stored time slice (edge hardening D-1)', () => {
+  it('answers null for a stored appointment’s slice — the whole entity passes by structure', () => {
+    expect(TimeCoordinate.fieldFault(appointmentFixture())).toBeNull();
+  });
+
+  it('names localDate, the minutes or utcEpochMs — each broken in turn', () => {
+    const slice = appointmentFixture();
+    expect(
+      TimeCoordinate.fieldFault({ ...slice, localDate: '2026-02-30' }),
+    ).toBe('localDate');
+    expect(
+      TimeCoordinate.fieldFault({ ...slice, localDate: '2026-09-28T00:00' }),
+    ).toBe('localDate');
+    expect(TimeCoordinate.fieldFault({ ...slice, startMinutes: 'ten' })).toBe(
+      'startMinutes',
+    );
+    expect(TimeCoordinate.fieldFault({ ...slice, endMinutes: 1441 })).toBe(
+      'endMinutes',
+    );
+    expect(
+      TimeCoordinate.fieldFault({ ...slice, utcEpochMs: '1790575200000' }),
+    ).toBe('utcEpochMs');
+    expect(TimeCoordinate.fieldFault({ ...slice, utcEpochMs: 1.5 })).toBe(
+      'utcEpochMs',
+    );
+  });
+
+  it('reads the minutes through MinuteRange — an inverted envelope answers what the range answers', () => {
+    const inverted = {
+      ...appointmentFixture(),
+      startMinutes: 700,
+      endMinutes: 600,
+    };
+    expect(TimeCoordinate.fieldFault(inverted)).toBe(
+      MinuteRange.fieldFault(inverted),
+    );
+    expect(TimeCoordinate.fieldFault(inverted)).toBe('endMinutes');
+  });
+
+  it('answers the first fault in field order', () => {
+    expect(
+      TimeCoordinate.fieldFault({
+        ...appointmentFixture(),
+        localDate: null,
+        utcEpochMs: null,
+      }),
+    ).toBe('localDate');
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze(appointmentFixture());
+    expect(TimeCoordinate.fieldFault(raw)).toBe(TimeCoordinate.fieldFault(raw));
+    expect(raw).toEqual(appointmentFixture());
   });
 });

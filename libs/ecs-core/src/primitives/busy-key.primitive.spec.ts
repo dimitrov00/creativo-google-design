@@ -67,3 +67,57 @@ describe('BusyKey — `${barberId}__${localDate}`', () => {
     expect(BusyKey.split(key)).toEqual(BusyKey.split(key));
   });
 });
+
+describe('BusyKey.is — the read-time door (edge hardening D-1)', () => {
+  it('is ⇔ parse(x) !== null over keys valid and broken', () => {
+    for (const raw of [
+      'b_ivan__2026-10-07',
+      'b__x__2026-10-07',
+      'a___2026-10-07',
+      'b_ivan__2024-02-29',
+      'b_ivan__2026-02-29',
+      'b_ivan__2026-10-7',
+      'b_ivan__2026-10-07x',
+      'b_ivan__2026-10-07__',
+      '__2026-10-07',
+      '  __2026-10-07',
+      'a/b__2026-10-07',
+      'b_ivan_2026-10-07',
+      'b_ivan',
+      '2026-10-07',
+      '',
+      '____',
+    ]) {
+      expect(BusyKey.is(raw), raw).toBe(BusyKey.parse(raw) !== null);
+    }
+  });
+
+  it('is ⇔ parse(x) !== null for arbitrary keys (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.string({ unit: fc.constantFrom('b', '_', ' ', '/') }),
+        fc.string({
+          minLength: 8,
+          maxLength: 12,
+          unit: fc.constantFrom('0', '1', '2', '9', '-', '_'),
+        }),
+        (barber, tail) => {
+          const raw = `${barber}__${tail}`;
+          return BusyKey.is(raw) === (BusyKey.parse(raw) !== null);
+        },
+      ),
+    );
+  });
+
+  it('is answers false for every other type', () => {
+    for (const raw of [null, undefined, 20261007, {}, ['b__2026-10-07']]) {
+      expect(BusyKey.is(raw)).toBe(false);
+    }
+  });
+
+  it('is pure: same input → same answer', () => {
+    expect(BusyKey.is('b_ivan__2026-10-07')).toBe(
+      BusyKey.is('b_ivan__2026-10-07'),
+    );
+  });
+});

@@ -25,14 +25,17 @@ import {
   RegistrationState,
   Seat,
   TimeCoordinate,
+  WriteAction,
 } from '@core/components';
 import { clientStatsOf } from '@core/pipelines';
 import { LocalDate, TimeZone, UserId, Weekday } from '@core/primitives';
 import {
   AppointmentIndexSystem,
+  BusySystem,
   ClientStatsSystem,
   ProfileEditSystem,
   RegistrationSystem,
+  StoredDocumentSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import fc from 'fast-check';
@@ -41,7 +44,10 @@ import { createShopCalendar } from './calendar.mjs';
 import {
   BARBERS,
   EXCEPTION_EARLIEST_OFFSET,
+  SCHEDULES,
   SERVICES,
+  busyDayBody,
+  busyKeyOf,
   chairTerms,
   scheduleExceptionsFor,
   segmentsAt,
@@ -1207,5 +1213,89 @@ describe('the seed’s booking guards', () => {
     // Нико declares no reset, so back to back is his to take.
     book.take('niko', -1, at(14, 0), at(14, 30));
     expect(book.isFree('niko', -1, at(14, 30), at(15, 0))).toBe(true);
+  });
+});
+
+describe('the seed’s documents pass the read-time guards (edge hardening D-1)', () => {
+  /**
+   * `seed-dev-catalog.mjs`'s `BUSY_PATTERN`, restated (that module runs the
+   * seed on import): the spans each barber's fabricated busy days take,
+   * `[fromHour, fromMinute, toHour, toMinute]`.
+   */
+  const BUSY_PATTERN = {
+    ivan: [
+      [10, 0, 10, 45],
+      [15, 0, 16, 0],
+    ],
+    niko: [
+      [13, 0, 13, 45],
+      [17, 30, 18, 15],
+    ],
+    stefan: [[11, 0, 11, 45]],
+  };
+  /** `seed-dev-catalog.mjs`'s `BUSY_HORIZON_DAYS`. */
+  const BUSY_HORIZON_DAYS = 21;
+
+  /** Every guard verdict that is not the very document, as `path: reason`. */
+  const refusalsOf = (guard, docs) =>
+    docs.flatMap((doc) => {
+      const verdict = guard(doc);
+      if (!verdict.ok) return [`${verdict.error.path}: ${verdict.error.reason}`];
+      return verdict.value === doc ? [] : [`${doc.id}: not the same object`];
+    });
+
+  it.each([
+    ['morning', MORNING],
+    ['evening', EVENING],
+  ])(
+    'every seeded appointment and client record passes its guard as the same object (%s)',
+    (_when, nowMs) => {
+      const book = buildClientBook(nowMs);
+      expect(book.appointments.length).toBeGreaterThan(0);
+      expect(
+        refusalsOf(StoredDocumentSystem.appointment, entitiesOf(book)),
+      ).toEqual([]);
+      expect(
+        refusalsOf(
+          StoredDocumentSystem.customer,
+          book.customers.map(({ id, body }) => ({ id, ...body })),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it('every fabricated busy day, and every day the trigger rebuilds from the book, passes the busy-day guard', () => {
+    const book = buildClientBook(MORNING);
+    const calendar = createShopCalendar(MORNING);
+    const fabricated = SCHEDULES.flatMap(({ id: barberId }) =>
+      Array.from(
+        { length: BUSY_HORIZON_DAYS - book.appointmentDays },
+        (_, i) => {
+          const localDate = calendar.dayKeyAt(book.appointmentDays + i);
+          const spans = (BUSY_PATTERN[barberId] ?? []).map(
+            ([fromH, fromM, toH, toM]) => [fromH * 60 + fromM, toH * 60 + toM],
+          );
+          return {
+            id: busyKeyOf(barberId, localDate),
+            ...busyDayBody(barberId, localDate, spans),
+          };
+        },
+      ),
+    );
+    expect(fabricated.length).toBeGreaterThan(0);
+    expect(refusalsOf(StoredDocumentSystem.busyDay, fabricated)).toEqual([]);
+
+    const appointments = entitiesOf(book);
+    const keys = [...new Set(appointments.flatMap((doc) => doc.busyKeys))];
+    const rebuilt = keys.flatMap((key) => {
+      const op = BusySystem.rebuild(key, appointments, (localDate) =>
+        ZonedTimeSystem.startOfLocalDay(localDate, ZONE),
+      );
+      return op !== null && op.writeAction === WriteAction.Set
+        ? [{ id: key, ...op.body }]
+        : [];
+    });
+    expect(rebuilt.length).toBeGreaterThan(0);
+    expect(refusalsOf(StoredDocumentSystem.busyDay, rebuilt)).toEqual([]);
   });
 });

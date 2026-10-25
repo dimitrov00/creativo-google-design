@@ -115,6 +115,15 @@ export type ReadTx = {
  * infrastructure failure (contention retries exhausted, the store
  * unreachable, an `Update` of an absent document) rejects the promise: it
  * is not an expected outcome, and the edge maps it once.
+ *
+ * A read of a MALFORMED document of a guarded collection (`appointments`,
+ * `customers`, `barberBusy` — `StoredDocumentSystem`, edge hardening D-3)
+ * refuses the whole commit as a value: the read half answers that document
+ * as `null` (a query leaves it out) so the read callback can finish, and
+ * the commit answers `RepositoryError.malformed(path, field)` — the FIRST
+ * refusal — before `decide` runs; nothing is written. No decision is ever
+ * made on a malformed document. A contention re-run starts with a clean
+ * record.
  */
 export type CommitPlan = <S, D, E>(
   read: (tx: ReadTx) => Promise<S>,

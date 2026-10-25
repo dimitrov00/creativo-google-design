@@ -35,13 +35,21 @@ export const UtcEpochMs = {
   EPOCH: 0 as UtcEpochMs,
 
   /**
+   * The last instant {@link UtcEpochMs.of} accepts — 9999-12-31T23:59:59.999Z
+   * (`253402300799999`). The numeric bound of a newest-first history's first
+   * page (`utcEpochMs <= MAX`): Firestore's range filters match numbers
+   * only, so the bound keeps a non-numeric stored instant out of the read
+   * (edge hardening D-3).
+   */
+  MAX: MAX_UTC_EPOCH_MS as UtcEpochMs,
+
+  /**
    * The smart constructor: a safe integer inside the years 0001–9999 (UTC) —
    * the window `ZonedTimeSystem` reads.
    */
   of(raw: number): Result<UtcEpochMs, PrimitiveError> {
-    return Number.isSafeInteger(raw) &&
-      raw >= MIN_UTC_EPOCH_MS &&
-      raw <= MAX_UTC_EPOCH_MS
+    // `+ 0` folds a negative zero, so `-0` never reaches a document.
+    return UtcEpochMs.is(raw)
       ? Result.ok((raw + 0) as UtcEpochMs)
       : Result.err(
           PrimitiveError.of(
@@ -50,6 +58,22 @@ export const UtcEpochMs = {
             'UtcEpochMs',
           ),
         );
+  },
+
+  /**
+   * The read-time door (edge hardening D-1) and the ONE home of the window
+   * rule — a safe integer inside the years 0001–9999 — which {@link of}
+   * answers through; `false` for every other value. No `Result`, no
+   * allocation. (A stored `-0` passes, as `of` accepts it; `of` folds it to
+   * `0`, the door narrows it as stored.)
+   */
+  is(raw: unknown): raw is UtcEpochMs {
+    return (
+      typeof raw === 'number' &&
+      Number.isSafeInteger(raw) &&
+      raw >= MIN_UTC_EPOCH_MS &&
+      raw <= MAX_UTC_EPOCH_MS
+    );
   },
 
   /** Instant order: `-1` when `a` is earlier, `0` when equal, `1` after. */

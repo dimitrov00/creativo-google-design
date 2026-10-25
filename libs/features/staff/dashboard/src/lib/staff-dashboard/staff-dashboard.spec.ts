@@ -132,7 +132,10 @@ import {
   type CouponVoucherPorts,
   type LocationLoadPorts,
   type MediaResolvePorts,
+  type ObserveAppointmentNote,
+  type SaveAppointmentNote,
   type SchedulingReadPorts,
+  type UpdateAppointmentNote,
 } from '@core/ports';
 import {
   AppointmentIndexSystem,
@@ -828,6 +831,8 @@ describe('StaffDashboard', () => {
           useValue: {
             observeAppointmentNote: () => of(PortResult.ok(null)),
             saveAppointmentNote: async () => PortResult.ok(undefined),
+            updateAppointmentNote: async (_appointmentId, decide) =>
+              PortResult.ok(decide(null)),
           } satisfies AppointmentNotePorts,
         },
         {
@@ -2498,21 +2503,24 @@ describe('StaffDashboard', () => {
    * The cancellation is code-only: the call says `OTHER` and nothing more.
    * What the barber wrote is "an appointment note" — saved, once the
    * cancel has landed, BELOW whatever note the visit already has, through
-   * the same note write the visit sheet uses.
+   * the note's one transaction (`updateAppointmentNote`: the note read on
+   * the server, the line joined below it, written — edge hardening D-6).
    */
   describe('«Друго…» files its words as the visit’s note (D23)', () => {
     /** The visit's stored note, as the notes collection would answer it. */
     let storedText: string | null;
-    let saveAnswer: PortResult<void, RepositoryError>;
-    /** Every note write, in order, beside every call — one timeline. */
+    /** Why the note's transaction fails — `null` while it lands. */
+    let appendFailure: RepositoryError | null;
+    /** Every note transaction, in order, beside every call — one timeline. */
     let timeline: string[];
+    /** Every note the transaction wrote. */
     let saved: (AppointmentNote | null)[];
     /** The lanes' own visits, put back after a case that rebuilt with its own. */
     let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
 
     beforeEach(() => {
       storedText = null;
-      saveAnswer = PortResult.ok(undefined);
+      appendFailure = null;
       timeline = [];
       saved = [];
       visits = observeBarberDay.getMockImplementation();
@@ -2526,26 +2534,37 @@ describe('StaffDashboard', () => {
      */
     function wireNotes(): void {
       const notes = TestBed.inject(APPOINTMENT_NOTE_PORTS) as {
-        observeAppointmentNote: AppointmentNotePorts['observeAppointmentNote'];
-        saveAppointmentNote: AppointmentNotePorts['saveAppointmentNote'];
+        observeAppointmentNote: ObserveAppointmentNote;
+        saveAppointmentNote: SaveAppointmentNote;
+        updateAppointmentNote: UpdateAppointmentNote;
       };
+      const storedNote = (
+        appointmentId: AppointmentNote['id'],
+      ): AppointmentNote | null =>
+        storedText === null
+          ? null
+          : {
+              id: appointmentId,
+              text: storedText,
+              authorUserId: null,
+              writtenAtUtcMs: wall('2026-08-05T08:00:00').utcEpochMs,
+            };
       notes.observeAppointmentNote = (appointmentId) =>
-        of(
-          PortResult.ok<AppointmentNote | null>(
-            storedText === null
-              ? null
-              : {
-                  id: appointmentId,
-                  text: storedText,
-                  authorUserId: null,
-                  writtenAtUtcMs: wall('2026-08-05T08:00:00').utcEpochMs,
-                },
-          ),
-        );
-      notes.saveAppointmentNote = async (_appointmentId, note) => {
+        of(PortResult.ok(storedNote(appointmentId)));
+      // The append never writes straight through: a write here would show
+      // on the timeline as `save`, never as `note`.
+      notes.saveAppointmentNote = async () => {
+        timeline.push('save');
+        return PortResult.ok(undefined);
+      };
+      // The transaction: the note as stored, the page's decision over it,
+      // the answer written — or, failing, nothing decided and nothing written.
+      notes.updateAppointmentNote = async (appointmentId, decide) => {
         timeline.push('note');
-        saved.push(note);
-        return saveAnswer;
+        if (appendFailure !== null) return PortResult.err(appendFailure);
+        const note = decide(storedNote(appointmentId));
+        if (note !== null) saved.push(note);
+        return PortResult.ok(note);
       };
       transition.mockImplementation(async (input) => {
         timeline.push('transition');
@@ -2692,8 +2711,9 @@ describe('StaffDashboard', () => {
     });
 
     it('says so in the page’s toast when the note did not save — the cancel stands', async () => {
-      saveAnswer = PortResult.err(
-        RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+      appendFailure = RepositoryError.writeFailed(
+        'appointmentNotes/appointment-1',
+        null,
       );
       await cancelWith('other', 'наводнение');
 
@@ -2744,8 +2764,9 @@ describe('StaffDashboard', () => {
       'says the cancel stands and only the note was lost, for a seat called off out of a party — exact %s',
       async (lang, sentence) => {
         await inCatalogue(lang, async () => {
-          saveAnswer = PortResult.err(
-            RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+          appendFailure = RepositoryError.writeFailed(
+            'appointmentNotes/appointment-1',
+            null,
           );
           await cancelWith('other', 'наводнение');
 
@@ -2762,8 +2783,9 @@ describe('StaffDashboard', () => {
       async (lang, sentence) => {
         await rebuildWith(appointment('appointment-1', '2026-08-05T10:00:00'));
         await inCatalogue(lang, async () => {
-          saveAnswer = PortResult.err(
-            RepositoryError.writeFailed('appointmentNotes/appointment-1', null),
+          appendFailure = RepositoryError.writeFailed(
+            'appointmentNotes/appointment-1',
+            null,
           );
           await cancelWith('other', 'наводнение');
 
@@ -2901,22 +2923,17 @@ describe('StaffDashboard', () => {
       expect(page.cancelSeatIds()).toEqual(['seat-father', 'seat-son']);
     });
 
-    it('writes over nothing it could not read: a failed read saves nothing and says so', async () => {
+    it('an append that cannot reach the server saves nothing and says so', async () => {
       storedText = 'алергия към ментол';
-      const notes = TestBed.inject(APPOINTMENT_NOTE_PORTS) as {
-        observeAppointmentNote: AppointmentNotePorts['observeAppointmentNote'];
-      };
-      notes.observeAppointmentNote = () =>
-        of(
-          PortResult.err(
-            RepositoryError.readFailed(
-              'appointmentNotes/appointment-1',
-              'unavailable',
-            ),
-          ),
-        );
+      // Offline: the transaction never reads the cache, so it refuses —
+      // nothing decided, nothing written over the server's note.
+      appendFailure = RepositoryError.writeFailed(
+        'appointmentNotes/appointment-1',
+        'unavailable',
+      );
       await cancelWith('other', 'наводнение');
 
+      expect(timeline).toEqual(['transition', 'note']);
       expect(saved).toEqual([]);
       expect(notice()).toBe('staff.day.cancelNoteFailed');
     });

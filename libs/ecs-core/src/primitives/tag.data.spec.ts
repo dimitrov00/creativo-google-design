@@ -66,6 +66,37 @@ describe('Tag — the one membership scan of every as-const dictionary (pass D, 
     expectTypeOf<Tag<typeof Rank>>().toEqualTypeOf<1 | 2>();
   });
 
+  it('has scans the dictionary’s OWN members only — the answers Object.values gave', () => {
+    // An inherited enumerable key is not a member: `Object.values` never
+    // listed it, and the allocation-free scan agrees (edge hardening, DEP-12).
+    const inherited: Readonly<Record<string, string>> = Object.create({
+      Ghost: 'GHOST',
+    });
+    const withOwn = Object.assign(Object.create({ Ghost: 'GHOST' }), {
+      Real: 'REAL',
+    }) as Readonly<Record<string, string>>;
+    expect(Object.values(inherited)).toEqual([]);
+    expect(Tag.has(inherited, 'GHOST')).toBe(false);
+    expect(Tag.has(withOwn, 'GHOST')).toBe(false);
+    expect(Tag.has(withOwn, 'REAL')).toBe(true);
+    // Every member and near miss answers as an Object.values scan would.
+    for (const raw of [
+      ...Tag.values(BookingStatus),
+      ...Tag.values(Shuffled),
+      'CONFIRMED ',
+      'zulu',
+      1,
+      null,
+    ]) {
+      expect(Tag.has(BookingStatus, raw)).toBe(
+        Object.values(BookingStatus).some((member) => member === raw),
+      );
+      expect(Tag.has(Shuffled, raw)).toBe(
+        Object.values(Shuffled).some((member) => member === raw),
+      );
+    }
+  });
+
   it('or answers the member, or the fallback for anything else', () => {
     expect(Tag.or(Locale, 'en', Locale.Bg)).toBe('en');
     expect(Tag.or(Locale, 'fr', Locale.Bg)).toBe('bg');

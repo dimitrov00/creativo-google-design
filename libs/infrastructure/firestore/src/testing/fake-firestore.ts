@@ -114,6 +114,12 @@ export class FakeFirestore {
   /** Every write an adapter made through the SDK functions, in order (not `set`/`delete` seeding). */
   readonly writes: FakeWrite[] = [];
   private readonly documents = new Map<string, Fields>();
+  /**
+   * Each path's write VERSION, bumped by every `set`/`delete` (and so by
+   * every commit): what an optimistic transaction compares its reads
+   * against at commit. A path never written since seeding reads 0.
+   */
+  private readonly versions = new Map<string, number>();
   private readonly listeners = new Set<Listener>();
   private failure: unknown = null;
 
@@ -135,12 +141,14 @@ export class FakeFirestore {
   /** Writes, or replaces, one document, and tells whoever watches it. */
   set(path: string, data: Fields): this {
     this.documents.set(path, data);
+    this.bump(path);
     return this.told(path);
   }
 
   /** Removes one document, and tells whoever watches it. */
   delete(path: string): this {
     this.documents.delete(path);
+    this.bump(path);
     return this.told(path);
   }
 
@@ -162,6 +170,11 @@ export class FakeFirestore {
   }
 
   // ── What the module's functions call ──────────────────────────────────
+
+  /** @internal The write version of `path` now — 0 until something writes it. */
+  versionOf(path: string): number {
+    return this.versions.get(path) ?? 0;
+  }
 
   /** @internal */
   read(ref: DocumentRef): DocumentSnapshot {
@@ -233,6 +246,10 @@ export class FakeFirestore {
     }
   }
 
+  private bump(path: string): void {
+    this.versions.set(path, this.versionOf(path) + 1);
+  }
+
   private told(path: string): this {
     for (const listener of [...this.listeners]) {
       const { ref } = listener;
@@ -279,6 +296,9 @@ export class FakeFirestore {
       }));
   }
 }
+
+/** The SDK's own bound on a transaction's attempts (`DEFAULT_MAX_ATTEMPTS_COUNT`). */
+const TRANSACTION_ATTEMPTS = 5;
 
 /** The mocked `firebase/firestore`: exactly the functions the adapters and the path helpers import. */
 export function fakeFirestoreModule(): Record<string, unknown> {
@@ -358,31 +378,58 @@ export function fakeFirestoreModule(): Record<string, unknown> {
       };
       return batch;
     },
-    /** One attempt (no contention here): reads through the fake, writes applied only when `update` resolves. */
+    /**
+     * OPTIMISTIC, like the SDK: reads go through the fake, each read path's
+     * write version is recorded, and the writes are applied only when
+     * `update` resolves AND no path it read was written meanwhile. A moved
+     * version discards the attempt's writes and re-runs `update` on fresh
+     * reads, up to {@link TRANSACTION_ATTEMPTS} attempts, then rejects with
+     * Firestore's `aborted`. A failure `update` throws (or a `failWith`)
+     * rejects at once, nothing written. One attempt with no interleaved
+     * write is exactly one read pass and one commit.
+     */
     runTransaction: async <T>(
       db: FakeFirestore,
       update: (transaction: unknown) => Promise<T>,
     ): Promise<T> => {
-      const pending: PendingWrite[] = [];
-      const transaction = {
-        get: async (ref: DocumentRef): Promise<DocumentSnapshot> =>
-          db.read(ref),
-        set: (ref: DocumentRef, data: Fields) => {
-          pending.push({ kind: 'set', ref, data });
-          return transaction;
-        },
-        update: (ref: DocumentRef, data: Fields) => {
-          pending.push({ kind: 'update', ref, data });
-          return transaction;
-        },
-        delete: (ref: DocumentRef) => {
-          pending.push({ kind: 'delete', ref });
-          return transaction;
-        },
-      };
-      const answer = await update(transaction);
-      db.commit(pending);
-      return answer;
+      for (let attempt = 0; attempt < TRANSACTION_ATTEMPTS; attempt++) {
+        const pending: PendingWrite[] = [];
+        const readVersions = new Map<string, number>();
+        const transaction = {
+          get: async (ref: DocumentRef): Promise<DocumentSnapshot> => {
+            const snapshot = db.read(ref);
+            if (!readVersions.has(ref.path)) {
+              readVersions.set(ref.path, db.versionOf(ref.path));
+            }
+            return snapshot;
+          },
+          set: (ref: DocumentRef, data: Fields) => {
+            pending.push({ kind: 'set', ref, data });
+            return transaction;
+          },
+          update: (ref: DocumentRef, data: Fields) => {
+            pending.push({ kind: 'update', ref, data });
+            return transaction;
+          },
+          delete: (ref: DocumentRef) => {
+            pending.push({ kind: 'delete', ref });
+            return transaction;
+          },
+        };
+        const answer = await update(transaction);
+        const contended = [...readVersions].some(
+          ([path, version]) => db.versionOf(path) !== version,
+        );
+        if (contended) continue;
+        db.commit(pending);
+        return answer;
+      }
+      throw Object.assign(
+        new Error(
+          `Transaction contended ${TRANSACTION_ATTEMPTS} times; aborted`,
+        ),
+        { code: 'aborted' },
+      );
     },
   };
 }
@@ -491,7 +538,15 @@ function valueOf(document: QueryDocument, field: FieldRef): unknown {
 }
 
 function compare(a: unknown, b: unknown): number {
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (typeof a === 'number' && typeof b === 'number') {
+    // Firestore orders NaN below every other number (and equal to itself),
+    // so a stored NaN matches `<=`/`<` any number and sorts last in `desc`.
+    if (Number.isNaN(a) || Number.isNaN(b)) {
+      if (!Number.isNaN(b)) return -1;
+      return Number.isNaN(a) ? 0 : 1;
+    }
+    return a - b;
+  }
   const left = String(a);
   const right = String(b);
   return left < right ? -1 : left > right ? 1 : 0;

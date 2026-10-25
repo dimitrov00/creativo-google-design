@@ -20,9 +20,19 @@ export const PriceCents = {
   /** The smart constructor for a price: a safe integer `≥ 0`. */
   of(raw: number): Result<PriceCents, PrimitiveError> {
     // `+ 0` folds a negative zero, so `-0` never reaches a document.
-    return Number.isSafeInteger(raw) && raw >= 0
+    return PriceCents.is(raw)
       ? Result.ok((raw + 0) as PriceCents)
       : refuse(raw);
+  },
+
+  /**
+   * The read-time door of a PRICE (edge hardening D-1) and the ONE home of
+   * its rule — a safe integer `≥ 0` — which {@link of} answers through;
+   * `false` for every other value, a signed amount included. No `Result`,
+   * no allocation.
+   */
+  is(raw: unknown): raw is PriceCents {
+    return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0;
   },
 
   /** The smart constructor for a signed amount (a delta, a balance): any safe integer. */

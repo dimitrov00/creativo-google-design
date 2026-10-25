@@ -40,6 +40,11 @@ function digitAt(text: string, index: number): number {
   return digit >= 0 && digit <= 9 ? digit : Number.NaN;
 }
 
+/** The text length of a day — `YYYY-MM-DD`. */
+const DAY_LENGTH = 10;
+/** `-`, the separator at offsets 4 and 7 of a day. */
+const HYPHEN = 45;
+
 export const LocalDate = {
   /**
    * The smart constructor — the ONLY way foreign input becomes a LocalDate:
@@ -57,6 +62,53 @@ export const LocalDate = {
     return LocalDate.fromEpochDay(epochDay) === raw
       ? Result.ok(raw as LocalDate)
       : refuse(raw);
+  },
+
+  /**
+   * The read-time door (edge hardening D-1): `raw` is a string {@link parse}
+   * accepts — exactly ten characters that {@link isAt} reads as a real day
+   * — and `false` for every other value, non-strings included. Allocates
+   * nothing (no `Result`, no slice, no regular-expression match), so a
+   * stored-document guard runs it per document on every snapshot.
+   */
+  is(raw: unknown): raw is LocalDate {
+    return (
+      typeof raw === 'string' &&
+      raw.length === DAY_LENGTH &&
+      LocalDate.isAt(raw, 0)
+    );
+  },
+
+  /**
+   * The ten characters of `text` from `start` spell a real day —
+   * `YYYY-MM-DD`, ASCII digits, the month `01`–`12`, the day of month
+   * within that month by the proleptic Gregorian leap rule — read in place
+   * by character code (no slice). What a `BusyKey`'s tail is checked with.
+   * `false` when fewer than ten characters remain.
+   */
+  isAt(text: string, start: number): boolean {
+    if (start < 0 || text.length - start < DAY_LENGTH) return false;
+    if (
+      text.charCodeAt(start + 4) !== HYPHEN ||
+      text.charCodeAt(start + 7) !== HYPHEN
+    ) {
+      return false;
+    }
+    const year =
+      digitAt(text, start) * 1000 +
+      digitAt(text, start + 1) * 100 +
+      digitAt(text, start + 2) * 10 +
+      digitAt(text, start + 3);
+    const month = digitAt(text, start + 5) * 10 + digitAt(text, start + 6);
+    const day = digitAt(text, start + 8) * 10 + digitAt(text, start + 9);
+    // A non-digit reads as NaN, which fails every comparison below.
+    return (
+      year >= 0 &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= LocalDate.daysInMonth(year, month)
+    );
   },
 
   /** A day from numeric parts (`month` 1..12, `day` 1..31) — refused unless real. */

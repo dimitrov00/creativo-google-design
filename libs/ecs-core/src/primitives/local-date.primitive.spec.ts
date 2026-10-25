@@ -345,3 +345,102 @@ describe('LocalDate — the former ZonedTimeSystem day-key cases', () => {
     );
   });
 });
+
+describe('LocalDate.is and isAt — the read-time doors (edge hardening D-1)', () => {
+  /** Every day of `year` as text, through the epoch-day algorithm. */
+  const everyDayOf = (year: number): readonly string[] =>
+    LocalDate.range(d(`${year}-01-01`), d(`${year}-12-31`));
+
+  it('is ⇔ parse on every day of a leap and a common year', () => {
+    const days = [...everyDayOf(2024), ...everyDayOf(2026)];
+    expect(days).toHaveLength(366 + 365);
+    for (const raw of days) {
+      expect(LocalDate.is(raw), raw).toBe(true);
+      expect(LocalDate.parse(raw).ok, raw).toBe(true);
+    }
+  });
+
+  it('is ⇔ parse over the constructor’s own domain — strings, valid and not', () => {
+    const table = [
+      '2026-09-28',
+      '2024-02-29',
+      '2025-02-29',
+      '2000-02-29',
+      '1900-02-29',
+      '2026-02-30',
+      '2026-04-31',
+      '2026-13-01',
+      '2026-00-10',
+      '2026-01-00',
+      '2026-01-32',
+      '2026-9-28',
+      '2026-09-8',
+      '2026/09/28',
+      '2026-09-28T00:00:00Z',
+      '2026-09-28T10:00:00+03:00',
+      ' 2026-09-28',
+      '2026-09-28 ',
+      '2026-09-28\n',
+      '０２０２-09-28',
+      '0000-01-01',
+      '0000-02-29',
+      '9999-12-31',
+      '',
+      '          ',
+      'abcd-ef-gh',
+    ];
+    for (const raw of table) {
+      expect(LocalDate.is(raw), JSON.stringify(raw)).toBe(
+        LocalDate.parse(raw).ok,
+      );
+    }
+  });
+
+  it('is ⇔ parse for any ten-character string (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.string({
+          minLength: 10,
+          maxLength: 10,
+          unit: fc.constantFrom('0', '1', '2', '3', '9', '-', '/', ' ', 'a'),
+        }),
+        (raw) => LocalDate.is(raw) === LocalDate.parse(raw).ok,
+      ),
+    );
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 9999 }),
+        fc.integer({ min: 0, max: 13 }),
+        fc.integer({ min: 0, max: 32 }),
+        (year, month, day) => {
+          const raw = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          return LocalDate.is(raw) === LocalDate.parse(raw).ok;
+        },
+      ),
+    );
+  });
+
+  it('is answers false for every other type — the string constructor is never called with one', () => {
+    for (const raw of [null, undefined, 20260928, {}, [], ['2026-09-28']]) {
+      expect(LocalDate.is(raw)).toBe(false);
+    }
+  });
+
+  it('isAt reads a day in place at an offset, and needs ten characters there', () => {
+    expect(LocalDate.isAt('b-ivan__2026-09-28', 8)).toBe(true);
+    expect(LocalDate.isAt('b-ivan__2026-02-29', 8)).toBe(false);
+    expect(LocalDate.isAt('b-ivan__2024-02-29', 8)).toBe(true);
+    expect(LocalDate.isAt('b-ivan__2026-09-2', 8)).toBe(false);
+    expect(LocalDate.isAt('2026-09-28', 1)).toBe(false);
+    expect(LocalDate.isAt('2026-09-28', -1)).toBe(false);
+    // The window only: what follows it is the caller's to bound.
+    expect(LocalDate.isAt('2026-09-28tail', 0)).toBe(true);
+  });
+
+  it('is pure: same input → same answer', () => {
+    expect(LocalDate.is('2026-09-28')).toBe(LocalDate.is('2026-09-28'));
+    expect(LocalDate.isAt('x2026-09-28', 1)).toBe(
+      LocalDate.isAt('x2026-09-28', 1),
+    );
+  });
+});

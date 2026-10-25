@@ -9,7 +9,13 @@ import {
   type ScheduleException,
 } from '@core/entities';
 import type { ScheduleExceptionPorts, SchedulingReadPorts } from '@core/ports';
-import { entityOf, observeDoc, writeFailed } from './observe';
+import {
+  entityOf,
+  observeDoc,
+  type ReadGuard,
+  UNGUARDED,
+  writeFailed,
+} from './observe';
 
 /**
  * The booking store's raw scheduling streams (flip 1, plan §3.4) — the
@@ -26,9 +32,21 @@ import { entityOf, observeDoc, writeFailed } from './observe';
  *   the shop (its `timeZone`, its `openingHours`);
  * - `capacity/{YYYY-MM}` — the month calendar's free minutes (§9 D7);
  * - `settings/bookingPolicy` — the tenant's policy, defaults as the floor.
+ *
+ * Built with a {@link ReadGuard} (the composition root's `guardedReads`),
+ * `observeBusyDay` answers the SINGLE rule (edge hardening D-3): a malformed
+ * busy day emits `REPOSITORY_MALFORMED` and the listener stays — the grid
+ * shows that barber-day as unreadable, fail-closed, never as free time (the
+ * old reader dropped a corrupt span and offered the time under it, DEP-2).
+ * The other five members read as stored. A bare `schedulingReadPorts(db)`
+ * guards nothing.
  */
-export const schedulingReadPorts = (db: Firestore): SchedulingReadPorts => ({
-  observeBusyDay: (key) => observeDoc(doc(db, Collections.BarberBusy, key)),
+export const schedulingReadPorts = (
+  db: Firestore,
+  guard: ReadGuard = UNGUARDED,
+): SchedulingReadPorts => ({
+  observeBusyDay: (key) =>
+    observeDoc(doc(db, Collections.BarberBusy, key), guard),
   observeExceptions: (key) =>
     observeDoc(doc(db, Collections.ScheduleExceptions, key)),
   observeSchedule: (barberId) =>

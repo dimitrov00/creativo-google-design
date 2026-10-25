@@ -1,4 +1,9 @@
-import type { EndMinute, MinuteOfDay } from '@core/primitives';
+import {
+  type EndMinute,
+  type MinuteOfDay,
+  type StoredFields,
+  Tag,
+} from '@core/primitives';
 import { MinuteRange } from './minute-range.data';
 
 /**
@@ -33,6 +38,18 @@ export const MinuteBlock = {
     blockKind: BlockKind,
   ): MinuteBlock {
     return { startMinutes, endMinutes, blockKind };
+  },
+
+  /**
+   * The read-time check of a stored busy block (edge hardening D-1): the
+   * NAME of the first field that is not well-formed — the span
+   * (`MinuteRange.fieldFault`), then `blockKind` (a `BlockKind` member) —
+   * or `null`. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    const span = MinuteRange.fieldFault(raw);
+    if (span !== null) return span;
+    return Tag.has(BlockKind, raw['blockKind']) ? null : 'blockKind';
   },
 
   /** Half-open overlap of the spans; the kinds do not matter. */

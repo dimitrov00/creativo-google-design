@@ -20,7 +20,13 @@ export const RepositoryErrorCode = {
    * a lost create race or a replay; nothing of the plan was applied.
    */
   AlreadyExists: 'REPOSITORY_ALREADY_EXISTS',
-  /** A document was read but is not the entity's shape. */
+  /**
+   * A document was read but is not the entity's shape. Its read-time
+   * producer is `StoredDocumentSystem` (edge hardening D-2): `path` names the
+   * document (`appointments/a1`), `reason` its first offending field
+   * (`seats[1].startMinutes`). A retrying trigger judges it `data-loss`,
+   * permanent, whatever field it names.
+   */
   Malformed: 'REPOSITORY_MALFORMED',
   /** The adapter itself could not be loaded (a lazy chunk failed). */
   Unavailable: 'REPOSITORY_UNAVAILABLE',

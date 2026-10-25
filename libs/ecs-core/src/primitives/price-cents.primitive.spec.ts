@@ -30,3 +30,30 @@ describe('PriceCents — money in minor units', () => {
     expect(PriceCents.sum([])).toBe(0);
   });
 });
+
+describe('PriceCents.is — the read-time door of a price (edge hardening D-1)', () => {
+  it('is ⇔ of (never signed) over the numbers', () => {
+    for (const raw of [
+      0,
+      -0,
+      2800,
+      -1,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER + 2,
+    ]) {
+      expect(PriceCents.is(raw), String(raw)).toBe(PriceCents.of(raw).ok);
+    }
+    // A signed amount is a balance, not a price: the door is `of`'s.
+    expect(PriceCents.signed(-100).ok).toBe(true);
+    expect(PriceCents.is(-100)).toBe(false);
+  });
+
+  it('is answers false for every other type', () => {
+    for (const raw of [null, undefined, '2800', {}, [], true]) {
+      expect(PriceCents.is(raw)).toBe(false);
+    }
+  });
+});

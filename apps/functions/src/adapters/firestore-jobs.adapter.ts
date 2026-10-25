@@ -7,8 +7,13 @@ import {
   type BackfillJob,
   Collections,
 } from '@core/entities';
-import type { BackfillJobPorts, CallerRolesPorts } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import type { BackfillJobPorts, CallerRolesPorts, Log } from '@core/ports';
+import {
+  StoredDocumentSystem,
+  type StoredGuardOf,
+  TriggerAttemptSystem,
+} from '@core/systems';
+import { admitStored } from './firestore-tx.adapter';
 
 /**
  * The operator backfill's server reads and its progress write (flip 1,
@@ -28,14 +33,30 @@ import { TriggerAttemptSystem } from '@core/systems';
  *
  * Bodies spread as stored; a read or write that throws answers a
  * `RepositoryError` value whose `reason` is the failure's canonical code.
+ *
+ * `pageAppointments` is a CURSOR WALK (edge hardening D-3): built with the
+ * guard registry (`StoredDocumentSystem.guardOf`, the composition root's),
+ * it runs every row through the appointment guard, and the FIRST malformed
+ * row fails the whole page — `RepositoryError.malformed(path, field)`,
+ * logged once (`'malformed document refused'`, `{ path, field }`) — so the
+ * backfill call stops AT the document and names it. Dropping the row would
+ * shorten the page, and `BackfillPlanSystem.pageWalk` reads a short page
+ * as "exhausted": the walk would end early and silently. Legacy rows
+ * lacking the subject mirrors or a placement pass (unchecked by design) and
+ * are repaired. A bare `firestoreJobPorts(db)` guards nothing (DEP-11).
  */
 
 function code(error: unknown): string {
   return TriggerAttemptSystem.failureCode(error);
 }
 
+/** No log — the default of a bare factory. */
+const NO_LOG: Log = () => undefined;
+
 export const firestoreJobPorts = (
   db: Firestore,
+  guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
+  log: Log = NO_LOG,
 ): BackfillJobPorts & CallerRolesPorts => ({
   loadBackfillJob: async (id) => {
     const path = `${Collections.BackfillJobs}/${id}`;
@@ -61,21 +82,31 @@ export const firestoreJobPorts = (
   },
 
   pageAppointments: async (afterId, limit) => {
+    let page;
     try {
       let query = db
         .collection(Collections.Appointments)
         .orderBy(FieldPath.documentId())
         .limit(limit);
       if (afterId !== null) query = query.startAfter(afterId);
-      const page = await query.get();
-      return Result.ok(
-        page.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Appointment),
-      );
+      page = await query.get();
     } catch (error) {
       return Result.err(
         RepositoryError.readFailed(Collections.Appointments, code(error)),
       );
     }
+    const rows: Appointment[] = [];
+    for (const snap of page.docs) {
+      const row = admitStored<Appointment>(
+        guardOf,
+        Collections.Appointments,
+        { id: snap.id, ...snap.data() },
+        log,
+      );
+      if (!row.ok) return row;
+      rows.push(row.value);
+    }
+    return Result.ok(rows);
   },
 
   loadCallerRoles: async (userId) => {

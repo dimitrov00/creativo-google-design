@@ -1,6 +1,7 @@
 import {
   AccountLifecycle,
   BlockReason,
+  CustomerOrigin,
   E164,
   Identifier,
   ImpersonationLifecycle,
@@ -13,7 +14,7 @@ import {
   RegistrationState,
   Role,
 } from '@core/components';
-import type { ImpersonationSession, Otp, User } from '@core/entities';
+import type { Customer, ImpersonationSession, Otp, User } from '@core/entities';
 import {
   ImpersonationSessionId,
   OtpId,
@@ -23,6 +24,7 @@ import {
   defect,
 } from '@core/primitives';
 import { RegistrationSystem } from '@core/systems';
+import { customerOf } from './test-support';
 
 /**
  * The identity fixtures (flatten-spec §8.1/§8.7) — the account entities in
@@ -33,7 +35,10 @@ import { RegistrationSystem } from '@core/systems';
  * imports `testing.ts` back (a cycle would hand a spec half-initialised
  * constants). The pins it shares with `test-support.ts` — the client's id
  * (`FIXTURE_IDS.client`) and the pinned clock (`FIXTURE_NOW_UTC_MS`) — are
- * restated here and held equal by `identity.fixtures.spec.ts`.
+ * restated here and held equal by `identity.fixtures.spec.ts`. The one
+ * import from `test-support.ts` is {@link customerFixture}'s id derivation
+ * (`customerOf`, D29 — never a cast): `test-support.ts` imports no fixture
+ * file, so the edge cannot close a cycle.
  */
 
 /** `FIXTURE_IDS.client` — the fixture client's account. */
@@ -135,6 +140,30 @@ export function blockedUserFixture(overrides: Partial<User> = {}): User {
     ...AccountLifecycle.block(BlockReason.Manual, instant(1_796_083_200_000)),
     ...overrides,
   });
+}
+
+/**
+ * The fixture client's RECORD (`customers/{id}`, D29) as the first booking
+ * opened it: Maria Petrova, linked to her account by the explicit `userId`,
+ * her login phone, no e-mail, the search keys of her name, opened a day
+ * before the pinned clock. The id is DERIVED from the account
+ * (`customerOf` — `CustomerId.forUser`), never cast. Every field present,
+ * overridable field by field; it passes `StoredDocumentSystem.customer`
+ * as stored (`identity.fixtures.spec.ts`).
+ */
+export function customerFixture(overrides: Partial<Customer> = {}): Customer {
+  return {
+    id: customerOf(CLIENT_USER_ID),
+    userId: CLIENT_USER_ID,
+    displayName: 'Maria Petrova',
+    phone: FIXTURE_PHONE,
+    email: null,
+    searchName: 'maria petrova',
+    searchPrefixes: ['m', 'ma', 'mar', 'p', 'pe', 'pet'],
+    createdAtUtcMs: instant(NOW_MS - 86_400_000),
+    customerOrigin: CustomerOrigin.FirstBooking,
+    ...overrides,
+  };
 }
 
 /**

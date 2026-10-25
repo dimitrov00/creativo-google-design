@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UtcEpochMs, BookingStatus, AttendanceState } from '@core/primitives';
-import { unwrapOk } from '@core/testing';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import { BookingLifecycle } from './booking-lifecycle.data';
 import { CancellationReason } from './cancellation-reason.data';
 import { CancellationReasonSet } from './cancellation-reason-set.data';
@@ -239,5 +239,52 @@ describe('SeatOutcome.summarize — the root is a summary of its seats', () => {
     expect(
       SeatOutcome.summarize([SeatOutcome.noShow(at(1))], noShow, at(9)),
     ).toBe(noShow);
+  });
+});
+
+describe('SeatOutcome.fieldFault — the read-time check of a stored outcome (edge hardening D-1)', () => {
+  const at = unwrapOk(UtcEpochMs.of(1_790_575_200_000));
+  const stamped = [
+    [SeatOutcome.worked(at), 'workedAtUtcMs'],
+    [SeatOutcome.noShow(at), 'noShowAtUtcMs'],
+    [
+      SeatOutcome.cancelled(
+        at,
+        CancelledBy.Client,
+        CancellationReason.ClientUnwell,
+        24,
+      ),
+      'cancelledAtUtcMs',
+    ],
+  ] as const;
+
+  it('answers null for every variant as its factory builds it', () => {
+    expect(SeatOutcome.fieldFault(SeatOutcome.scheduled())).toBeNull();
+    for (const [outcome] of stamped) {
+      expect(SeatOutcome.fieldFault(outcome)).toBeNull();
+    }
+  });
+
+  it('names the variant’s own stamp when it is missing or no instant', () => {
+    for (const [outcome, stamp] of stamped) {
+      expect(SeatOutcome.fieldFault({ ...outcome, [stamp]: undefined })).toBe(
+        stamp,
+      );
+      expect(SeatOutcome.fieldFault({ ...outcome, [stamp]: -0.5 })).toBe(stamp);
+    }
+  });
+
+  it('names attendanceState for anything the dictionary does not hold', () => {
+    for (const attendanceState of ['DONE', 'scheduled', null, 3]) {
+      expect(SeatOutcome.fieldFault({ attendanceState })).toBe(
+        'attendanceState',
+      );
+    }
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ attendanceState: AttendanceState.Worked });
+    expect(SeatOutcome.fieldFault(raw)).toBe(SeatOutcome.fieldFault(raw));
+    expect(raw).toEqual({ attendanceState: 'WORKED' });
   });
 });

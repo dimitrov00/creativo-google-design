@@ -78,12 +78,34 @@ export type SaveAppointmentNote = (
   note: AppointmentNote | null,
 ) => Promise<Result<void, RepositoryError>>;
 
+/**
+ * `appointmentNotes/{appointmentId}` read → decided → written in ONE
+ * transaction — the transaction IS the sandwich (Law 4): the note as stored
+ * on the server (`null` when the visit has none) is handed to the PURE
+ * `decide`, and its answer is `Set` in the same transaction. `decide` may
+ * run more than once — a concurrent write to the note re-runs read →
+ * decide on the fresher note, so nothing a colleague wrote meanwhile is
+ * lost — and must not stamp, read a clock or touch anything outside its
+ * argument. `decide` answering `null` writes nothing (this port never
+ * deletes). The answer is the note as written, or `null` when nothing was.
+ *
+ * Every failure — the server unreachable (offline: a transaction never reads
+ * the cache, so nothing is ever written over the server's copy), contention
+ * past the store's attempts, a rule denial — is
+ * `RepositoryError.writeFailed(path, reason)` and nothing is written.
+ */
+export type UpdateAppointmentNote = (
+  appointmentId: AppointmentId,
+  decide: (stored: AppointmentNote | null) => AppointmentNote | null,
+) => Promise<Result<AppointmentNote | null, RepositoryError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** A visit's note — the bundle the web's `APPOINTMENT_NOTE_PORTS` token binds. */
 export type AppointmentNotePorts = {
   readonly observeAppointmentNote: ObserveAppointmentNote;
   readonly saveAppointmentNote: SaveAppointmentNote;
+  readonly updateAppointmentNote: UpdateAppointmentNote;
 };
 
 /** A visit's photo documents and a client record's strip — Firestore's half. */

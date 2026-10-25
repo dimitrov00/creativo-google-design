@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MinuteRange } from './minute-range.data';
 import { MinuteCount } from '@core/primitives';
-import { endMinute, minute, unwrapOk as okOf } from '@core/testing';
+import { deepFreeze, endMinute, minute, unwrapOk as okOf } from '@core/testing';
 
 const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
 
@@ -88,5 +88,53 @@ describe('MinuteRange.contains / pad (folded in from time-interval.data.spec.ts)
 
   it('durationMinutes is end − start', () => {
     expect(MinuteRange.durationMinutes(r(600, 645))).toBe(45);
+  });
+});
+
+describe('MinuteRange.fieldFault — the read-time check of a stored range (edge hardening D-1)', () => {
+  it('answers null for a well-formed range, the day’s own bounds included', () => {
+    expect(MinuteRange.fieldFault({ startMinutes: 540, endMinutes: 720 })).toBe(
+      null,
+    );
+    expect(MinuteRange.fieldFault({ startMinutes: 0, endMinutes: 1440 })).toBe(
+      null,
+    );
+    expect(
+      MinuteRange.fieldFault(MinuteRange.of(minute(600), endMinute(645))),
+    ).toBeNull();
+  });
+
+  it('names startMinutes when it is no MinuteOfDay', () => {
+    for (const startMinutes of [-1, 1440, 10.5, Number.NaN, '540', null]) {
+      expect(
+        MinuteRange.fieldFault({ startMinutes, endMinutes: 720 }),
+        String(startMinutes),
+      ).toBe('startMinutes');
+    }
+    expect(MinuteRange.fieldFault({ endMinutes: 720 })).toBe('startMinutes');
+  });
+
+  it('names endMinutes when it is no EndMinute', () => {
+    for (const endMinutes of [0, 1441, 700.5, Number.NaN, '720', null]) {
+      expect(
+        MinuteRange.fieldFault({ startMinutes: 540, endMinutes }),
+        String(endMinutes),
+      ).toBe('endMinutes');
+    }
+  });
+
+  it('names endMinutes for an empty or inverted range — start < end is the range’s own check', () => {
+    expect(MinuteRange.fieldFault({ startMinutes: 600, endMinutes: 600 })).toBe(
+      'endMinutes',
+    );
+    expect(MinuteRange.fieldFault({ startMinutes: 700, endMinutes: 600 })).toBe(
+      'endMinutes',
+    );
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ startMinutes: 700, endMinutes: 600 });
+    expect(MinuteRange.fieldFault(raw)).toBe(MinuteRange.fieldFault(raw));
+    expect(raw).toEqual({ startMinutes: 700, endMinutes: 600 });
   });
 });

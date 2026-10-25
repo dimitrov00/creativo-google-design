@@ -6,7 +6,11 @@ import {
   Registration,
 } from '@core/components';
 import type { User } from '@core/entities';
-import { ProfileEditSystem, SearchFieldsSystem } from '@core/systems';
+import {
+  ProfileEditSystem,
+  SearchFieldsSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -18,6 +22,7 @@ import {
   FIXTURE_OTP_CODE,
   FIXTURE_OTP_SALT,
   blockedUserFixture,
+  customerFixture,
   fixtureCodeHash,
   impersonationSessionFixture,
   otpFixture,
@@ -114,6 +119,22 @@ describe('identity fixtures', () => {
       expect(user.blockedUntilUtcMs).toBe(utcMs('2026-12-01T00:00:00Z'));
     }
     expect(user.registrationState).toBe('REGISTERED');
+  });
+
+  it('the customer fixture is the client’s record — derived id, explicit link — and passes the read-time guard as stored', () => {
+    const record = customerFixture();
+    expect(record).toMatchObject({
+      id: FIXTURE_IDS.customer,
+      userId: FIXTURE_IDS.client,
+      displayName: 'Maria Petrova',
+      customerOrigin: 'FIRST_BOOKING',
+    });
+    expect(record.createdAtUtcMs).toBeLessThan(FIXTURE_NOW_UTC_MS);
+    const admitted = StoredDocumentSystem.customer(record);
+    expect(admitted.ok).toBe(true);
+    expect(admitted.ok && admitted.value).toBe(record);
+    expect(customerFixture({ userId: null }).userId).toBeNull();
+    expect(customerFixture()).toEqual(deepFreeze(customerFixture()));
   });
 
   it('the challenge is open at the pinned clock, hashed from the fixed code', () => {

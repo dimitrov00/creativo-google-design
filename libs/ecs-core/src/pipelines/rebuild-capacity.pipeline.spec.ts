@@ -262,6 +262,36 @@ describe('rebuildCapacity — one (barber, day)', () => {
     expect(tx.transactions).toEqual([]);
   });
 
+  it('is idempotent — a redelivered busy write rebuilds the identical plan and leaves the identical month document (edge-hardening D-5)', async () => {
+    const busy = barberBusyDayFixture();
+    const { store, tx, run } = rig(
+      seeded([
+        { path: [Collections.BarberBusy, busy.id], body: bodyOf(busy) },
+        {
+          path: MONTH_PATH,
+          body: {
+            month: MONTH,
+            entries: [entry(FIXTURE_TODAY, PETAR, CENTRE, 300)],
+          },
+        },
+      ]),
+    );
+    const first = await run(today);
+    const monthAfterFirst = store.get(MONTH_PATH.join('/'));
+    const second = await run(today);
+    expect(second).toEqual(first);
+    expect(tx.plans).toHaveLength(2);
+    expect(tx.plans[1]).toEqual(tx.plans[0]);
+    expect(store.get(MONTH_PATH.join('/'))).toEqual(monthAfterFirst);
+    expect(monthAfterFirst).toEqual({
+      month: MONTH,
+      entries: [
+        entry(FIXTURE_TODAY, IVAN, CENTRE, 510),
+        entry(FIXTURE_TODAY, PETAR, CENTRE, 300),
+      ],
+    });
+  });
+
   it('lets an infrastructure failure go on to the edge', async () => {
     const telemetry = recordingTelemetry();
     const outage = Object.assign(new Error('10 ABORTED'), { code: 10 });

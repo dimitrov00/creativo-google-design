@@ -231,6 +231,61 @@ describe('a port’s refusal — judged by the code its adapter recorded as its 
   });
 });
 
+describe('a malformed stored document — judged data-loss, never redelivered (edge-hardening D-2, D-5)', () => {
+  const { repositoryFailure, DATA_LOSS_CODE } = TriggerAttemptSystem;
+
+  it('judges a REPOSITORY_MALFORMED refusal by data-loss — PERMANENT, whatever field its reason names', () => {
+    // A field that happens to spell a transient code must never earn a redelivery.
+    const malformed = RepositoryError.malformed('appointments/a1', 'aborted');
+    expect(DATA_LOSS_CODE).toBe('data-loss');
+    expect(repositoryFailure(malformed)).toEqual({
+      error: malformed,
+      failureCode: 'data-loss',
+      attemptOutcome: 'PERMANENT',
+    });
+    expect(attemptFailure(malformed)).toEqual(repositoryFailure(malformed));
+    expect(
+      repositoryFailure(
+        RepositoryError.malformed('barberBusy/b1__2026-10-25', 'blocks[0]'),
+      ),
+    ).toMatchObject({ failureCode: 'data-loss', attemptOutcome: 'PERMANENT' });
+  });
+
+  it('lets a transient failure beside it decide the attempt — the redelivery re-runs both', () => {
+    const malformed = RepositoryError.malformed('appointments/a1', 'seats');
+    const unavailable = RepositoryError.readFailed('x', 'unavailable');
+    expect(decisiveFailure([malformed, unavailable])).toEqual({
+      error: unavailable,
+      failureCode: 'unavailable',
+      attemptOutcome: 'TRANSIENT',
+    });
+    expect(decisiveFailure([malformed])).toMatchObject({
+      error: malformed,
+      failureCode: 'data-loss',
+      attemptOutcome: 'PERMANENT',
+    });
+  });
+
+  it('keeps the allowlist closed: data-loss and internal stay permanent on the server', () => {
+    expect(attemptOutcome('data-loss')).toBe('PERMANENT');
+    expect(attemptOutcome('internal')).toBe('PERMANENT');
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const malformed = deepFreeze(
+      RepositoryError.malformed('appointments/a1', 'localDate'),
+    );
+    const failures = deepFreeze([malformed, { code: 7 }]);
+    expect(repositoryFailure(malformed)).toEqual(repositoryFailure(malformed));
+    expect(decisiveFailure(failures)).toEqual(decisiveFailure(failures));
+    expect(malformed).toEqual({
+      errorCode: 'REPOSITORY_MALFORMED',
+      path: 'appointments/a1',
+      reason: 'localDate',
+    });
+  });
+});
+
 describe('properties', () => {
   it('reads every gRPC status by its own name, and never an age below zero', () => {
     fc.assert(

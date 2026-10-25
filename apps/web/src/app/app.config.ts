@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import {
   ApplicationConfig,
+  ErrorHandler,
   InjectionToken,
   inject,
   isDevMode,
@@ -59,6 +60,7 @@ import {
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
   callableClientPorts,
+  errorHandlerLogPorts,
   lazyAdapterScope,
   provideFirebaseApp,
   provideFirebaseAuth,
@@ -329,10 +331,18 @@ export const appConfig: ApplicationConfig = {
     // `onLoadError` answer that is not valid for every method.
 
     // The booking core (flip 1): plain port BUNDLES, each built once per
-    // scope by its `(db) => bundle` export.
+    // scope by its `(db) => bundle` export. The three bundles that read
+    // `barberBusy`, `appointments` and `customers` are built with the
+    // read-time guard (edge hardening D-7): refusals reported through
+    // Angular's ErrorHandler (`errorHandlerLogPorts` — the device console
+    // today), the guard made inside this lazy scope so `@core/systems`
+    // stays off the initial chunk.
     provideLazyPort(SCHEDULING_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.schedulingReadPorts(inj.get(FIREBASE_FIRESTORE)),
+        m.firestore.schedulingReadPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
       methods: {
         observeBusyDay: LazyMethod.Observable,
         observeExceptions: LazyMethod.Observable,
@@ -351,7 +361,10 @@ export const appConfig: ApplicationConfig = {
     }),
     provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.appointmentReadPorts(inj.get(FIREBASE_FIRESTORE)),
+        m.firestore.appointmentReadPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
       methods: {
         observeAppointment: LazyMethod.Observable,
         observeBarberDay: LazyMethod.Observable,
@@ -426,6 +439,7 @@ export const appConfig: ApplicationConfig = {
       methods: {
         observeAppointmentNote: LazyMethod.Observable,
         saveAppointmentNote: LazyMethod.Promise,
+        updateAppointmentNote: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -456,7 +470,10 @@ export const appConfig: ApplicationConfig = {
     },
     provideLazyPort(CUSTOMER_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.customerPorts(inj.get(FIREBASE_FIRESTORE)),
+        m.firestore.customerPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
       methods: { loadCustomerForUser: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),

@@ -53,9 +53,24 @@ export const MinuteOfDay = {
 
   /** The smart constructor — the ONLY way foreign input becomes a MinuteOfDay. */
   of(raw: number): Result<MinuteOfDay, PrimitiveError> {
-    return Number.isInteger(raw) && raw >= 0 && raw < MINUTES_PER_DAY
-      ? Result.ok(raw as MinuteOfDay)
+    return MinuteOfDay.is(raw)
+      ? Result.ok(raw)
       : outOfRange(raw, 'MinuteOfDay');
+  },
+
+  /**
+   * The read-time door (edge hardening D-1) and the ONE home of the range
+   * rule — an integer in `[0, 1440)` — which {@link of} and
+   * {@link ofProven} answer through; `false` for every other value,
+   * non-numbers included. No `Result`, no allocation.
+   */
+  is(raw: unknown): raw is MinuteOfDay {
+    return (
+      typeof raw === 'number' &&
+      Number.isInteger(raw) &&
+      raw >= 0 &&
+      raw < MINUTES_PER_DAY
+    );
   },
 
   /**
@@ -65,9 +80,7 @@ export const MinuteOfDay = {
    * through {@link of}.
    */
   ofProven(raw: number): MinuteOfDay {
-    return Number.isInteger(raw) && raw >= 0 && raw < MINUTES_PER_DAY
-      ? (raw as MinuteOfDay)
-      : defect(`minute ${raw} is off the clock`);
+    return MinuteOfDay.is(raw) ? raw : defect(`minute ${raw} is off the clock`);
   },
 
   /**
@@ -125,9 +138,22 @@ export const MinuteOfDay = {
 export const EndMinute = {
   /** The smart constructor — the ONLY way foreign input becomes an EndMinute. */
   of(raw: number): Result<EndMinute, PrimitiveError> {
-    return Number.isInteger(raw) && raw > 0 && raw <= MINUTES_PER_DAY
-      ? Result.ok(raw as EndMinute)
-      : outOfRange(raw, 'EndMinute');
+    return EndMinute.is(raw) ? Result.ok(raw) : outOfRange(raw, 'EndMinute');
+  },
+
+  /**
+   * The read-time door (edge hardening D-1) and the ONE home of the range
+   * rule — an integer in `(0, 1440]` — which {@link of} and
+   * {@link ofProven} answer through; `false` for every other value. No
+   * `Result`, no allocation.
+   */
+  is(raw: unknown): raw is EndMinute {
+    return (
+      typeof raw === 'number' &&
+      Number.isInteger(raw) &&
+      raw > 0 &&
+      raw <= MINUTES_PER_DAY
+    );
   },
 
   /**
@@ -136,9 +162,7 @@ export const EndMinute = {
    * of range is a broken invariant ({@link defect}).
    */
   ofProven(raw: number): EndMinute {
-    return Number.isInteger(raw) && raw > 0 && raw <= MINUTES_PER_DAY
-      ? (raw as EndMinute)
-      : defect(`end ${raw} is off the clock`);
+    return EndMinute.is(raw) ? raw : defect(`end ${raw} is off the clock`);
   },
 
   /** The end of a span of `d` minutes starting at `start` — refused past midnight. */

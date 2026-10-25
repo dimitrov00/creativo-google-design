@@ -1,5 +1,6 @@
 import {
-  type UtcEpochMs,
+  type StoredFields,
+  UtcEpochMs,
   BookingStatus,
   AttendanceState,
 } from '@core/primitives';
@@ -95,6 +96,32 @@ export const SeatOutcome = {
           ? windowHours + 0
           : null,
     };
+  },
+
+  /**
+   * The read-time check of a stored outcome (edge hardening D-1): the NAME
+   * of the first field that is not well-formed, or `null`. Narrows on
+   * `attendanceState` (an `AttendanceState` member, else
+   * `'attendanceState'`), then checks THAT variant's stamp — `workedAtUtcMs`,
+   * `noShowAtUtcMs`, `cancelledAtUtcMs` (an instant). The cancellation's
+   * `cancelledBy` and window are display and statistics inputs judged
+   * where they are read, and are not checked here. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    switch (raw['attendanceState']) {
+      case AttendanceState.Scheduled:
+        return null;
+      case AttendanceState.Worked:
+        return UtcEpochMs.is(raw['workedAtUtcMs']) ? null : 'workedAtUtcMs';
+      case AttendanceState.NoShow:
+        return UtcEpochMs.is(raw['noShowAtUtcMs']) ? null : 'noShowAtUtcMs';
+      case AttendanceState.Cancelled:
+        return UtcEpochMs.is(raw['cancelledAtUtcMs'])
+          ? null
+          : 'cancelledAtUtcMs';
+      default:
+        return 'attendanceState';
+    }
   },
 
   /** Anything but `SCHEDULED` — a seat whose story is over. */

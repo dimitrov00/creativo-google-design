@@ -2,9 +2,14 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { BackfillJobName, Role } from '@core/components';
 import { AppointmentId, BackfillJobId, UserId } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { type BackfillJob, Collections } from '@core/entities';
-import { appointmentFixture, FIXTURE_NOW_UTC_MS } from '@core/testing';
+import {
+  appointmentFixture,
+  FIXTURE_NOW_UTC_MS,
+  recordingTelemetry,
+} from '@core/testing';
+import { StoredDocumentSystem } from '@core/systems';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreJobPorts } from './firestore-jobs.adapter';
 
@@ -118,5 +123,67 @@ describe('firestoreJobPorts', () => {
         'permission-denied',
       ),
     });
+  });
+});
+
+describe('firestoreJobPorts.pageAppointments, guarded — the walk stops AT a malformed row (edge hardening D-3)', () => {
+  const guarded = (fake: ReturnType<typeof createProjectionFirestore>) => {
+    const telemetry = recordingTelemetry();
+    return {
+      telemetry,
+      ports: firestoreJobPorts(
+        fake.db as unknown as Firestore,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
+    };
+  };
+
+  it('fails the whole page naming the document — never a shorter page the walk would read as the end', async () => {
+    const fake = seeded();
+    fake.docs.set(`${Collections.Appointments}/a2`, {
+      ...bodyOf(visit('a2')),
+      seats: [{ ...visit('a2').seats[0], durationMinutes: 0 }],
+    });
+    const { telemetry, ports } = guarded(fake);
+    expect(await ports.pageAppointments(null, 3)).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.Malformed,
+        path: `${Collections.Appointments}/a2`,
+        reason: 'seats[0].durationMinutes',
+      },
+    });
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: 'malformed document refused',
+        fields: {
+          path: `${Collections.Appointments}/a2`,
+          field: 'seats[0].durationMinutes',
+        },
+      },
+    ]);
+  });
+
+  it('pages a clean walk as before — legacy rows without the subject mirrors included', async () => {
+    const fake = seeded();
+    const legacy = Object.fromEntries(
+      Object.entries(bodyOf(visit('a3'))).filter(
+        ([field]) =>
+          field !== 'subjectUserIds' && field !== 'subjectCustomerIds',
+      ),
+    );
+    fake.docs.set(`${Collections.Appointments}/a3`, legacy);
+    const { telemetry, ports } = guarded(fake);
+    expect(await ports.pageAppointments(null, 2)).toEqual({
+      ok: true,
+      value: [visit('a1'), visit('a2')],
+    });
+    expect(await ports.pageAppointments(AppointmentId.of('a2'), 2)).toEqual({
+      ok: true,
+      value: [{ id: 'a3', ...legacy }],
+    });
+    expect(telemetry.lines).toEqual([]);
   });
 });

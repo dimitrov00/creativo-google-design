@@ -1,8 +1,14 @@
-import { type Firestore, deleteDoc, doc, setDoc } from 'firebase/firestore';
-import { defect } from '@core/primitives';
+import {
+  type Firestore,
+  deleteDoc,
+  doc,
+  runTransaction,
+  setDoc,
+} from 'firebase/firestore';
+import { Result, defect } from '@core/primitives';
 import { type AppointmentNote, Collections } from '@core/entities';
 import type { AppointmentNotePorts } from '@core/ports';
-import { attemptWrite, observeDoc } from './observe';
+import { attemptWrite, entityOf, observeDoc, writeFailed } from './observe';
 
 /**
  * `appointmentNotes/{appointmentId}` — the team's note on a visit,
@@ -16,6 +22,14 @@ import { attemptWrite, observeDoc } from './observe';
  * the caller's (a system decides blankness; the session and the injected
  * clock stamp it), never this adapter's. `null` deletes the document — a
  * cleared note leaves nothing behind.
+ *
+ * A line APPENDED below the note (a cancel's «Друго…») is one transaction —
+ * {@link appointmentNotePorts}' `updateAppointmentNote`: read the note on
+ * the server, hand it to the caller's pure decision, `Set` the answer, the
+ * SDK re-running read → decide when a concurrent write moved the note. A
+ * transaction never reads the persistent cache and writes only at commit,
+ * so offline it refuses — `REPOSITORY_WRITE_FAILED`, the SDK's rejection
+ * code as the reason — and never writes over the server's copy.
  */
 export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
   observeAppointmentNote: (appointmentId) =>
@@ -32,5 +46,41 @@ export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
       defect(`saveAppointmentNote: note ${id} handed for ${appointmentId}`);
     }
     return attemptWrite(ref.path, () => setDoc(ref, body));
+  },
+
+  updateAppointmentNote: async (appointmentId, decide) => {
+    const ref = doc(db, Collections.AppointmentNotes, appointmentId);
+    // A decision naming another visit is a defect, raised OUTSIDE the
+    // transaction so it is never mistaken for the store's failure; the
+    // attempt that met it writes nothing.
+    let misfiled = null as string | null;
+    let written: AppointmentNote | null;
+    try {
+      written = await runTransaction(db, async (tx) => {
+        misfiled = null;
+        const snap = await tx.get(ref);
+        const data = snap.data();
+        const next = decide(
+          data === undefined ? null : entityOf<AppointmentNote>(snap.id, data),
+        );
+        if (next === null) return null;
+        // The note's id IS the appointment's: the body is the entity minus it.
+        const { id, ...body } = next;
+        if (id !== appointmentId) {
+          misfiled = id;
+          return null;
+        }
+        tx.set(ref, body);
+        return next;
+      });
+    } catch (cause) {
+      return Result.err(writeFailed(ref.path, cause));
+    }
+    if (misfiled !== null) {
+      defect(
+        `updateAppointmentNote: note ${misfiled} decided for ${appointmentId}`,
+      );
+    }
+    return Result.ok(written);
   },
 });

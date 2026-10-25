@@ -1,4 +1,9 @@
-import { MinuteCount, EndMinute, MinuteOfDay } from '@core/primitives';
+import {
+  MinuteCount,
+  EndMinute,
+  MinuteOfDay,
+  type StoredFields,
+} from '@core/primitives';
 
 /**
  * A `[startMinutes, endMinutes)` span of the shop's wall clock within one
@@ -24,6 +29,23 @@ export type MinuteRange = {
 export const MinuteRange = {
   of(startMinutes: MinuteOfDay, endMinutes: EndMinute): MinuteRange {
     return { startMinutes, endMinutes };
+  },
+
+  /**
+   * The read-time check of a stored range (edge hardening D-1): the NAME of
+   * the first field that is not well-formed — `startMinutes` (a
+   * `MinuteOfDay`), `endMinutes` (an `EndMinute`), then `endMinutes` again
+   * when the range is empty or inverted (`startMinutes < endMinutes`, what
+   * every collision scan relies on) — or `null`. The one home of the minute
+   * pair's check: `TimeCoordinate` and `MinuteBlock` compose it. No
+   * allocation (the answer is a literal).
+   */
+  fieldFault(raw: StoredFields): string | null {
+    const start = raw['startMinutes'];
+    if (!MinuteOfDay.is(start)) return 'startMinutes';
+    const end = raw['endMinutes'];
+    if (!EndMinute.is(end)) return 'endMinutes';
+    return start < end ? null : 'endMinutes';
   },
 
   /** Half-open, so `09:00–12:00` and `12:00–17:00` do not overlap. */

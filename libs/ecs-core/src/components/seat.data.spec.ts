@@ -12,7 +12,13 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-import { deepFreeze, minute, unwrapOk, customerOf } from '@core/testing';
+import {
+  deepFreeze,
+  minute,
+  unwrapOk,
+  customerOf,
+  seatFixture,
+} from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
@@ -416,5 +422,71 @@ describe('Seat.violations — the aggregate invariants, every one at once', () =
     ).toEqual([
       SchedulingError.appointmentMixedCurrency(Currency.EUR, Currency.USD),
     ]);
+  });
+});
+
+describe('Seat.fieldFault — the read-time check of a stored seat (edge hardening D-1)', () => {
+  it('answers null for a seat as Seat.compose builds it, guest and account alike', () => {
+    expect(Seat.fieldFault(seatFixture())).toBeNull();
+    expect(
+      Seat.fieldFault(
+        seatFixture({
+          occupant: SeatOccupant.anonymous(SeatLabel.of('Гост')),
+          variantId: null,
+          tipCents: unwrapOk(PriceCents.of(500)),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('names each of the seat’s own fields broken in turn', () => {
+    const seat = seatFixture();
+    const broken = [
+      ['seatId', ''],
+      ['serviceId', 'a/b'],
+      ['variantId', 7],
+      ['barberId', null],
+      ['startMinutes', 1440],
+      ['tipCents', -100],
+    ] as const;
+    for (const [field, value] of broken) {
+      expect(Seat.fieldFault({ ...seat, [field]: value })).toBe(field);
+    }
+  });
+
+  it('reads its slices through their companions — never a second copy', () => {
+    const seat = seatFixture();
+    const badTerms = { ...seat, currency: 'eur' };
+    expect(Seat.fieldFault(badTerms)).toBe(ServiceTerms.fieldFault(badTerms));
+    const badOccupant = { ...seat, subjectCustomerId: '  ' };
+    expect(Seat.fieldFault(badOccupant)).toBe(
+      SeatOccupant.fieldFault(badOccupant),
+    );
+    expect(Seat.fieldFault(badOccupant)).toBe('subjectCustomerId');
+    const badOutcome = { ...seat, attendanceState: 'WORKED' };
+    expect(Seat.fieldFault(badOutcome)).toBe(
+      SeatOutcome.fieldFault(badOutcome),
+    );
+    expect(Seat.fieldFault(badOutcome)).toBe('workedAtUtcMs');
+  });
+
+  it('names durationMinutes for a seat whose service runs past midnight (F-6) — and not one ending at it', () => {
+    expect(Seat.fieldFault({ ...seatFixture(), startMinutes: 1430 })).toBe(
+      'durationMinutes',
+    );
+    const lastSlot = seatFixture({ startMinutes: minute(1410) });
+    expect(Seat.fieldFault(lastSlot)).toBeNull();
+  });
+
+  it('answers the first fault in field order', () => {
+    expect(
+      Seat.fieldFault({ ...seatFixture(), seatId: 1, priceCents: -1 }),
+    ).toBe('seatId');
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({ ...seatFixture(), tipCents: -1 });
+    expect(Seat.fieldFault(raw)).toBe(Seat.fieldFault(raw));
+    expect(raw.tipCents).toBe(-1);
   });
 });

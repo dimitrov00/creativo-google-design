@@ -1,4 +1,4 @@
-import { type UtcEpochMs, BookingStatus } from '@core/primitives';
+import { type StoredFields, UtcEpochMs, BookingStatus } from '@core/primitives';
 import type { CancellationReasonSet } from './cancellation-reason-set.data';
 
 /**
@@ -103,6 +103,39 @@ export const BookingLifecycle = {
       cancelledAtUtcMs: atUtcMs,
       cancellationReason: reasons,
     };
+  },
+
+  /**
+   * The read-time check of a stored lifecycle (edge hardening D-1): the
+   * NAME of the first field that is not well-formed, or `null`. Narrows on
+   * the discriminator (`bookingStatus` — a `BookingStatus` member, else
+   * `'bookingStatus'`), then checks THAT variant's entering stamp (an
+   * instant — `pendingAtUtcMs` … `cancelledAtUtcMs`, what
+   * {@link enteredAtUtcMs} reads) and, for a cancellation, that its
+   * `cancellationReason` is the stored string. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    switch (raw['bookingStatus']) {
+      case BookingStatus.Pending:
+        return UtcEpochMs.is(raw['pendingAtUtcMs']) ? null : 'pendingAtUtcMs';
+      case BookingStatus.Confirmed:
+        return UtcEpochMs.is(raw['confirmedAtUtcMs'])
+          ? null
+          : 'confirmedAtUtcMs';
+      case BookingStatus.Completed:
+        return UtcEpochMs.is(raw['completedAtUtcMs'])
+          ? null
+          : 'completedAtUtcMs';
+      case BookingStatus.NoShow:
+        return UtcEpochMs.is(raw['noShowAtUtcMs']) ? null : 'noShowAtUtcMs';
+      case BookingStatus.Cancelled:
+        if (!UtcEpochMs.is(raw['cancelledAtUtcMs'])) return 'cancelledAtUtcMs';
+        return typeof raw['cancellationReason'] === 'string'
+          ? null
+          : 'cancellationReason';
+      default:
+        return 'bookingStatus';
+    }
   },
 
   /** Whether `from.bookingStatus → to` is a legal lifecycle move. */

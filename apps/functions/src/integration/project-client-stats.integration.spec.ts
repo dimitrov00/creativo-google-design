@@ -198,7 +198,10 @@ function visit(
       start,
     ),
   });
-  return { ...draft, ...AppointmentIndexSystem.queryKeys(draft) };
+  // Every mirror from the seats, the envelope included — exactly what a write
+  // plan stores, so the stored row passes the read-time guard (edge
+  // hardening D-1: `startMinutes < endMinutes`) like a committed one.
+  return AppointmentIndexSystem.withQueryKeys(draft);
 }
 
 /** One of every state the stats can show, across four people and a guest. */
@@ -388,7 +391,9 @@ describe('client stats projection (emulator)', () => {
           after: { exists: true, data: () => bodyOf(appointment) },
         },
       });
-      const answer = await project(command);
+      expect(command.ok).toBe(true);
+      if (!command.ok) continue;
+      const answer = await project(command.value);
       expect(answer.ok && answer.value.failures).toEqual([]);
     }
   }

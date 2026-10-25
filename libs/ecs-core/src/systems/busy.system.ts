@@ -171,14 +171,18 @@ export const BusySystem = {
    * The busy documents a write touched, from BOTH sides — a reschedule to
    * another day must free the old document and fill the new one. Each side
    * reads its mirror (`busyKeys`) when present, else re-derives it from its
-   * seats. Distinct, sorted.
+   * seats — and `salvaged` adds the keys a REFUSED side still names (a
+   * malformed stored document's well-formed `busyKeys`, edge-hardening
+   * D-3): safe, because each key only says WHICH day to recompute, and the
+   * rebuild re-reads that day's live appointments. Distinct, sorted.
    */
   affectedKeys(
     before: Pick<Appointment, 'busyKeys' | 'localDate' | 'seats'> | null,
     after: Pick<Appointment, 'busyKeys' | 'localDate' | 'seats'> | null,
+    salvaged: readonly BusyKey[] = [],
   ): readonly BusyKey[] {
     const keys: BusyKey[] = [];
-    const sides = [keysOf(before), keysOf(after)];
+    const sides = [keysOf(before), keysOf(after), salvaged];
     for (let s = 0; s < sides.length; s++) {
       const side = sides[s] as readonly BusyKey[];
       for (let i = 0; i < side.length; i++) {

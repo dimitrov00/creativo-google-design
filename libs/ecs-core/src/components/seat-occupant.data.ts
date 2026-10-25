@@ -1,4 +1,4 @@
-import type { CustomerId, UserId } from '@core/primitives';
+import { CustomerId, type StoredFields, UserId } from '@core/primitives';
 import type { AccountOccupant } from './account-occupant.data';
 import type { SeatLabel } from './seat-label.data';
 
@@ -56,6 +56,29 @@ export const SeatOccupant = {
 
   anonymous(label: SeatLabel): SeatOccupant.Anonymous {
     return { seatSubject: SeatSubject.Anonymous, guestLabel: label };
+  },
+
+  /**
+   * The read-time check of a stored occupant (edge hardening D-1): the NAME
+   * of the first field that is not well-formed, or `null`. Narrows on
+   * `seatSubject` (a `SeatSubject` member, else `'seatSubject'`); an
+   * ACCOUNT names its account (`subjectUserId`) and its client record
+   * (`subjectCustomerId`) — the ids the mirrors, the rules and the stats
+   * projection key on. An anonymous guest's label is display-only and is
+   * not checked; neither is `subjectRelationship`. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    switch (raw['seatSubject']) {
+      case SeatSubject.Account:
+        if (!UserId.is(raw['subjectUserId'])) return 'subjectUserId';
+        return CustomerId.is(raw['subjectCustomerId'])
+          ? null
+          : 'subjectCustomerId';
+      case SeatSubject.Anonymous:
+        return null;
+      default:
+        return 'seatSubject';
+    }
   },
 
   /** A subject with no identity and no contact channel. */

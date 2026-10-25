@@ -1,11 +1,13 @@
 import {
   MinuteCount,
   MinuteDelta,
-  type LocalDate,
+  LocalDate,
   type EndMinute,
   type MinuteOfDay,
+  type StoredFields,
   UtcEpochMs,
 } from '@core/primitives';
+import { MinuteRange } from './minute-range.data';
 
 /**
  * Where a booking sits on the shop's clock, and on the absolute timeline —
@@ -36,6 +38,20 @@ export type TimeCoordinate = {
 };
 
 export const TimeCoordinate = {
+  /**
+   * The read-time check of a stored time slice (edge hardening D-1): the
+   * NAME of the first field that is not well-formed — `localDate` (a real
+   * day), the envelope's minutes (`MinuteRange.fieldFault`: both minutes in
+   * range and `startMinutes < endMinutes`), `utcEpochMs` (an instant of the
+   * years 0001–9999) — or `null`. No allocation.
+   */
+  fieldFault(raw: StoredFields): string | null {
+    if (!LocalDate.is(raw['localDate'])) return 'localDate';
+    const minutes = MinuteRange.fieldFault(raw);
+    if (minutes !== null) return minutes;
+    return UtcEpochMs.is(raw['utcEpochMs']) ? null : 'utcEpochMs';
+  },
+
   /** The envelope's length on the wall clock — `0` for an empty or inverted one. */
   durationMinutes(time: TimeCoordinate): MinuteCount {
     return MinuteCount.span(time.startMinutes, time.endMinutes);

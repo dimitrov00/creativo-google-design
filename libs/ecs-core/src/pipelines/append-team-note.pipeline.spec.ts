@@ -1,4 +1,4 @@
-import { EMPTY, of } from 'rxjs';
+import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import {
   AppointmentId,
@@ -8,8 +8,9 @@ import {
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import type { AppointmentNote } from '@core/entities';
-import type { AppointmentNotePorts, ObserveAppointmentNote } from '@core/ports';
-import { memoryClockPorts, utcMs } from '@core/testing';
+import type { AppointmentNotePorts, UpdateAppointmentNote } from '@core/ports';
+import { VisitSidesSystem } from '@core/systems';
+import { deepFreeze, memoryClockPorts, utcMs } from '@core/testing';
 import {
   appendTeamNote,
   type AppendTeamNoteCommand,
@@ -19,12 +20,16 @@ import {
 
 /*
  * The `appendTeamNote` cases of libs/features/staff/dashboard/src/lib/
- * staff-dashboard/staff-dashboard.spec.ts (the «Друго…» block — :2550 the
- * words filed as the visit's note with the session's author, :2567 appended
- * below a note already there, :2576 blank words file nothing, :2614 a note
- * write that failed is the failure; :5326, :5339, :5409), restated on the
- * pipeline moved out of `staff-day.store.ts` (Law 8.4) — the store keeps
- * the noteError signal and the session; the read → decide → write is here.
+ * staff-dashboard/staff-dashboard.spec.ts (the «Друго…» block — the words
+ * filed as the visit's note with the session's author, appended below a
+ * note already there, blank words file nothing, a note that did not save is
+ * the failure), restated on the pipeline moved out of `staff-day.store.ts`
+ * (Law 8.4) — the store keeps the session; the read → decide → write is
+ * here, and since edge hardening it is ONE transaction
+ * (`updateAppointmentNote`, Law 4: the transaction IS the sandwich). The
+ * double below runs the pipeline's decision the way the adapter's
+ * `runTransaction` does — over the note as stored, more than once when a
+ * concurrent writer moved it.
  */
 
 const VISIT = AppointmentId.of('appointment-1');
@@ -34,39 +39,53 @@ const WRITTEN_BEFORE = utcMs('2026-08-05T08:00:00.000+03:00');
 
 type Timeline = string[];
 
-/** The note bundle over one stored note, recording every call in order. */
+/** A note as the notes collection would hold it, written before the append. */
+function heldNote(text: string): AppointmentNote {
+  return {
+    id: VISIT,
+    text,
+    authorUserId: null,
+    writtenAtUtcMs: WRITTEN_BEFORE,
+  };
+}
+
+/**
+ * The note bundle over one stored note, recording every call in order:
+ * `observe` (the live read the append must never use), `read` and `write`
+ * (the transaction's halves) and `write` for a straight-through save.
+ */
 function noteWorld(
   stored: string | null,
   options: {
-    readonly read?: ObserveAppointmentNote;
+    readonly update?: UpdateAppointmentNote;
     readonly save?: Result<void, RepositoryError>;
   } = {},
 ) {
   const timeline: Timeline = [];
   const saved: (AppointmentNote | null)[] = [];
+  let current: AppointmentNote | null =
+    stored === null ? null : heldNote(stored);
   const ports: AppointmentNotePorts = {
-    observeAppointmentNote:
-      options.read ??
-      ((appointmentId) => {
-        timeline.push('read');
-        return of(
-          Result.ok<AppointmentNote | null>(
-            stored === null
-              ? null
-              : {
-                  id: appointmentId,
-                  text: stored,
-                  authorUserId: null,
-                  writtenAtUtcMs: WRITTEN_BEFORE,
-                },
-          ),
-        );
-      }),
+    observeAppointmentNote: () => {
+      timeline.push('observe');
+      return of(Result.ok(current));
+    },
     saveAppointmentNote: async (_appointmentId, note) => {
       timeline.push('write');
       saved.push(note);
       return options.save ?? Result.ok(undefined);
     },
+    updateAppointmentNote:
+      options.update ??
+      (async (_appointmentId, decide) => {
+        timeline.push('read');
+        const next = decide(current);
+        if (next === null) return Result.ok(null);
+        timeline.push('write');
+        saved.push(next);
+        current = next;
+        return Result.ok(next);
+      }),
   };
   return { ports, timeline, saved };
 }
@@ -87,7 +106,17 @@ const command = (line: string): AppendTeamNoteCommand => ({
   authorUserId: IVAN,
 });
 
-describe('appendTeamNote — a line below the visit’s note', () => {
+/** The decision the pipeline handed the transaction, caught for a case to run by hand. */
+function caughtDecision() {
+  const decisions: Parameters<UpdateAppointmentNote>[1][] = [];
+  const update: UpdateAppointmentNote = async (_appointmentId, decide) => {
+    decisions.push(decide);
+    return Result.ok(null);
+  };
+  return { decisions, update };
+}
+
+describe('appendTeamNote — a line below the visit’s note, in one transaction', () => {
   it('files the words as the visit’s note, trimmed, stamped with the author and the clock', async () => {
     const world = noteWorld(null);
     const append = appendTeamNote({
@@ -105,8 +134,9 @@ describe('appendTeamNote — a line below the visit’s note', () => {
     };
     expect(result).toEqual(Result.ok(note));
     expect(world.saved).toEqual([note]);
-    // The note is read first, the clock after it, the write last.
-    expect(world.timeline).toEqual(['read', 'clock', 'write']);
+    // The clock once, before the transaction; the transaction reads, then
+    // writes — and the live stream is never asked.
+    expect(world.timeline).toEqual(['clock', 'read', 'write']);
   });
 
   it('appends below a note the visit already has, never over it', async () => {
@@ -126,8 +156,9 @@ describe('appendTeamNote — a line below the visit’s note', () => {
     );
   });
 
-  it('reads nothing and writes nothing for words that say nothing', async () => {
-    const world = noteWorld('алергия към ментол');
+  it('reads nothing and writes nothing for words that say nothing — no decision, no clock', async () => {
+    const caught = caughtDecision();
+    const world = noteWorld('алергия към ментол', { update: caught.update });
     const append = appendTeamNote({
       ...world.ports,
       ...clockReading(world.timeline),
@@ -135,54 +166,118 @@ describe('appendTeamNote — a line below the visit’s note', () => {
 
     expect(await append(command('   '))).toEqual(Result.ok(null));
     expect(await append(command(''))).toEqual(Result.ok(null));
+    expect(caught.decisions).toEqual([]);
     expect(world.timeline).toEqual([]);
     expect(world.saved).toEqual([]);
   });
 
-  it('writes nothing over a note it could not read — the read’s failure is the answer', async () => {
-    const failure = RepositoryError.readFailed(
-      'appointmentNotes/appointment-1',
-      'permission-denied',
-    );
+  it('keeps a concurrent edit: a re-run decides on the fresher note, and its words stay above the line', async () => {
+    const before = heldNote('алергия към ментол');
+    const concurrent = heldNote('алергия към ментол\nколега: идва с дете');
+    const decided: (AppointmentNote | null)[] = [];
     const world = noteWorld(null, {
-      read: () => of(Result.err(failure)),
+      // The transaction's first pass read `before`; a colleague's write
+      // moved the note, so the store re-ran read → decide on `concurrent`
+      // and committed only the second answer.
+      update: async (_appointmentId, decide) => {
+        decided.push(decide(before));
+        const next = decide(concurrent);
+        decided.push(next);
+        return Result.ok(next);
+      },
     });
     const append = appendTeamNote({
       ...world.ports,
       ...clockReading(world.timeline),
     });
 
-    expect(await append(command('наводнение'))).toEqual(Result.err(failure));
-    expect(world.saved).toEqual([]);
-    expect(world.timeline).toEqual([]);
-  });
+    const result = await append(command('наводнение'));
 
-  it('writes nothing when the note stream closes without answering', async () => {
-    const world = noteWorld(null, { read: () => EMPTY });
-    const append = appendTeamNote({
-      ...world.ports,
-      ...clockReading(world.timeline),
-    });
-
-    expect(await append(command('наводнение'))).toEqual(
-      Result.err(RepositoryError.readFailed(null, null)),
+    const written = VisitSidesSystem.appendedNote(
+      concurrent.text,
+      'наводнение',
     );
-    expect(world.saved).toEqual([]);
+    expect(written).toBe('алергия към ментол\nколега: идва с дете\nнаводнение');
+    expect(result.ok && result.value?.text).toBe(written);
+    expect(result.ok && result.value?.text).not.toBe(
+      VisitSidesSystem.appendedNote(before.text, 'наводнение'),
+    );
+    // One stamp for every pass: the clock was read once, before them all.
+    expect(decided.map((note) => note?.writtenAtUtcMs)).toEqual([NOW, NOW]);
+    expect(world.timeline).toEqual(['clock']);
   });
 
-  it('answers the write’s failure when the note did not save', async () => {
-    const failure = RepositoryError.writeFailed(
+  it('refuses offline — the transaction’s failure is the answer, nothing decided, nothing written', async () => {
+    const offline = RepositoryError.writeFailed(
       'appointmentNotes/appointment-1',
-      null,
+      'unavailable',
     );
-    const world = noteWorld(null, { save: Result.err(failure) });
+    // The transaction could not reach the server: it answers its failure
+    // and never runs the decision.
+    const world = noteWorld('алергия към ментол', {
+      update: async () => Result.err(offline),
+    });
     const append = appendTeamNote({
       ...world.ports,
       ...clockReading(world.timeline),
     });
 
-    expect(await append(command('наводнение'))).toEqual(Result.err(failure));
-    expect(world.timeline).toEqual(['read', 'clock', 'write']);
+    expect(await append(command('наводнение'))).toEqual(Result.err(offline));
+    expect(world.saved).toEqual([]);
+    // No fallback read, no straight-through write over the server's copy.
+    expect(world.timeline).toEqual(['clock']);
+  });
+
+  it('decides purely — the same stored note gives the same record, and the stored note is untouched', async () => {
+    const caught = caughtDecision();
+    const world = noteWorld(null, { update: caught.update });
+    await appendTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    })(command('наводнение'));
+    const decide = caught.decisions[0];
+    expect(decide).toBeDefined();
+    if (decide === undefined) return;
+
+    const stored = deepFreeze(heldNote('алергия към ментол'));
+    const first = decide(stored);
+    const second = decide(stored);
+
+    expect(first).toEqual(second);
+    expect(first).toEqual({
+      id: VISIT,
+      text: 'алергия към ментол\nнаводнение',
+      authorUserId: IVAN,
+      writtenAtUtcMs: NOW,
+    });
+    expect(stored).toEqual(heldNote('алергия към ментол'));
+    expect(decide(null)).toEqual(decide(null));
+    // Deciding reads no clock: the one reading came before the transaction.
+    expect(world.timeline).toEqual(['clock']);
+  });
+
+  it('reads the clock once per append, before the transaction', async () => {
+    const world = noteWorld(null);
+    const append = appendTeamNote({
+      ...world.ports,
+      ...clockReading(world.timeline),
+    });
+
+    await append(command('първо'));
+    await append(command('второ'));
+
+    expect(world.timeline).toEqual([
+      'clock',
+      'read',
+      'write',
+      'clock',
+      'read',
+      'write',
+    ]);
+    expect(world.saved.map((note) => note?.text)).toEqual([
+      'първо',
+      'първо\nвторо',
+    ]);
   });
 
   it('names no author before the session is an onboarded one', async () => {
@@ -203,8 +298,7 @@ describe('appendTeamNote — a line below the visit’s note', () => {
     const append = appendTeamNote(ports);
     const second = noteWorld('по-късна бележка');
     Object.assign(ports, {
-      observeAppointmentNote: second.ports.observeAppointmentNote,
-      saveAppointmentNote: second.ports.saveAppointmentNote,
+      updateAppointmentNote: second.ports.updateAppointmentNote,
     });
 
     await append(command('наводнение'));
@@ -213,6 +307,24 @@ describe('appendTeamNote — a line below the visit’s note', () => {
     expect(second.saved.map((note) => note?.text)).toEqual([
       'по-късна бележка\nнаводнение',
     ]);
+  });
+
+  it('writes the one record — the key order saveTeamNote writes too', async () => {
+    const appended = noteWorld(null);
+    await appendTeamNote({
+      ...appended.ports,
+      ...clockReading(appended.timeline),
+    })(command('наводнение'));
+    const savedStraight = noteWorld(null);
+    await saveTeamNote({
+      ...savedStraight.ports,
+      ...clockReading(savedStraight.timeline),
+    })({ appointmentId: VISIT, text: 'наводнение', authorUserId: IVAN });
+
+    const keys = ['id', 'text', 'authorUserId', 'writtenAtUtcMs'];
+    expect(Object.keys(appended.saved[0] ?? {})).toEqual(keys);
+    expect(Object.keys(savedStraight.saved[0] ?? {})).toEqual(keys);
+    expect(appended.saved).toEqual(savedStraight.saved);
   });
 });
 

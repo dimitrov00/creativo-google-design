@@ -5,6 +5,8 @@ import { LocalDate } from './local-date.primitive';
 
 /** The separator — a DOUBLE underscore, split at its LAST occurrence. */
 const SEPARATOR = '__';
+/** The text length of the key's day half — `YYYY-MM-DD`. */
+const DAY_LENGTH = 10;
 
 /**
  * `${barberId}__${localDate}` — the id of a barber's shop day: the
@@ -47,6 +49,27 @@ export const BusyKey = {
     if (!day.ok) return null;
     const barber = BarberId.parse(raw.slice(0, at));
     return barber.ok ? BusyKey.of(barber.value, day.value) : null;
+  },
+
+  /**
+   * The read-time door (edge hardening D-1): `raw` is a string
+   * {@link parse} accepts — `parse(raw) !== null` — read in place: the LAST
+   * `__`, a barber id before it (`BarberId.isSpan`: not blank, no `/`) and
+   * exactly one real day after it (`LocalDate.isAt`). `false` for every
+   * other value. Allocates nothing (no slice, no `Result`, no rebuilt key) —
+   * a stored appointment's `busyKeys` and a busy day's id are checked with
+   * it per document.
+   */
+  is(raw: unknown): raw is BusyKey {
+    if (typeof raw !== 'string') return false;
+    const at = raw.lastIndexOf(SEPARATOR);
+    const dayAt = at + SEPARATOR.length;
+    return (
+      at > 0 &&
+      raw.length - dayAt === DAY_LENGTH &&
+      LocalDate.isAt(raw, dayAt) &&
+      BarberId.isSpan(raw, 0, at)
+    );
   },
 } as const;
 

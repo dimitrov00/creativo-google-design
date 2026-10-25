@@ -35,6 +35,7 @@ import {
   AttendanceState,
   CouponGrantId,
   Currency,
+  CustomerId,
   AppointmentId,
   BarberId,
   SeatId,
@@ -46,7 +47,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
-import { SchedulingErrorCode } from '@core/errors';
+import { RepositoryErrorCode, SchedulingErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_NOW,
@@ -69,6 +70,7 @@ import {
   type PauseBasisFact,
   type StoredClientStats,
 } from './client-stats.system';
+import { StoredDocumentSystem } from './stored-document.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
@@ -1512,6 +1514,90 @@ describe('affectedSubjects', () => {
       ClientStatsSystem.affectedSubjects(['ana', 'zora'], ['ana', 'bob']),
     ).toEqual(['ana', 'bob', 'zora']);
     expect(ClientStatsSystem.affectedSubjects([], [])).toEqual([]);
+  });
+});
+
+describe('dispatchSubjects — whom an appointment write sends to the projection (edge hardening D-3)', () => {
+  const ana = CustomerId.of('cus_ana');
+  const bob = CustomerId.of('cus_bob');
+  const side = StoredDocumentSystem.appointmentSide;
+  const visit = appointmentFixture({ subjectCustomerIds: [bob] });
+  /** The same visit, its first seat's start no minute — refused, its mirrors intact. */
+  const broken = (entity: Appointment) => ({
+    ...entity,
+    seats: [{ ...entity.seats[0], startMinutes: 'ten' }],
+  });
+
+  it('moves nobody for a write that changed nothing a stat reads — both sides admitted', () => {
+    const arrived = {
+      ...visit,
+      arrivedAtUtcMs: utcMs('2026-09-28T10:01:00+03:00'),
+    };
+    expect(
+      ClientStatsSystem.dispatchSubjects(side(visit), side(arrived)),
+    ).toEqual({ ok: true, value: [] });
+  });
+
+  it('moves everybody before AND after a write that moved stats, a create and a delete included', () => {
+    const after = {
+      ...visit,
+      subjectCustomerIds: [ana],
+      localDate: localDate('2026-09-29'),
+    };
+    expect(
+      ClientStatsSystem.dispatchSubjects(side(visit), side(after)),
+    ).toEqual({ ok: true, value: [ana, bob] });
+    expect(ClientStatsSystem.dispatchSubjects(side(null), side(visit))).toEqual(
+      { ok: true, value: [bob] },
+    );
+    expect(ClientStatsSystem.dispatchSubjects(side(visit), side(null))).toEqual(
+      { ok: true, value: [bob] },
+    );
+  });
+
+  it('skips the change test beside a REFUSED side — it cannot be compared — and re-projects everybody named', () => {
+    expect(
+      ClientStatsSystem.dispatchSubjects(side(broken(visit)), side(visit)),
+    ).toEqual({ ok: true, value: [bob] });
+    expect(
+      ClientStatsSystem.dispatchSubjects(
+        side(broken(visit)),
+        side({ ...visit, subjectCustomerIds: [ana] }),
+      ),
+    ).toEqual({ ok: true, value: [ana, bob] });
+  });
+
+  it('reads a legacy admitted side with no subject mirror as nobody — never a TypeError', () => {
+    const legacy = {
+      ...visit,
+      subjectCustomerIds: null,
+      localDate: localDate('2026-09-29'),
+    };
+    expect(
+      ClientStatsSystem.dispatchSubjects(side(visit), side(legacy)),
+    ).toEqual({ ok: true, value: [bob] });
+  });
+
+  it('answers the first refusal only when nobody is named', () => {
+    const nobody = { ...visit, subjectCustomerIds: 'nope' };
+    const answer = ClientStatsSystem.dispatchSubjects(side(nobody), side(null));
+    expect(answer).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.Malformed,
+        path: `appointments/${visit.id}`,
+        reason: 'subjectCustomerIds',
+      },
+    });
+  });
+
+  it('is pure: same sides → same answer, the sides untouched', () => {
+    const before = deepFreeze(broken(visit));
+    const after = deepFreeze({ ...visit, subjectCustomerIds: [ana] });
+    expect(
+      ClientStatsSystem.dispatchSubjects(side(before), side(after)),
+    ).toEqual(ClientStatsSystem.dispatchSubjects(side(before), side(after)));
+    expect(after.subjectCustomerIds).toEqual([ana]);
   });
 });
 

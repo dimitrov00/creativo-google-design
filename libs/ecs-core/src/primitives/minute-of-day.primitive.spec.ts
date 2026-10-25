@@ -227,3 +227,48 @@ describe('TrackMinute — a minute on a frame’s anchored axis (pass D, D-5)', 
     expect(TrackMinute.toEnd(t(1440))).toEqual(TrackMinute.toEnd(t(1440)));
   });
 });
+
+describe('MinuteOfDay.is and EndMinute.is — the read-time doors (edge hardening D-1)', () => {
+  /** The constructors' own domain: numbers, valid, boundary, off by one and broken. */
+  const NUMBERS = [
+    0,
+    -0,
+    1,
+    600,
+    1439,
+    1440,
+    1441,
+    -1,
+    10.5,
+    0.0001,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER,
+  ];
+
+  it('MinuteOfDay.is ⇔ of over every number of the table', () => {
+    for (const raw of NUMBERS) {
+      expect(MinuteOfDay.is(raw), String(raw)).toBe(MinuteOfDay.of(raw).ok);
+    }
+    for (let raw = -2; raw <= 1442; raw++) {
+      expect(MinuteOfDay.is(raw)).toBe(MinuteOfDay.of(raw).ok);
+    }
+  });
+
+  it('EndMinute.is ⇔ of over every number of the table', () => {
+    for (const raw of NUMBERS) {
+      expect(EndMinute.is(raw), String(raw)).toBe(EndMinute.of(raw).ok);
+    }
+    for (let raw = -2; raw <= 1442; raw++) {
+      expect(EndMinute.is(raw)).toBe(EndMinute.of(raw).ok);
+    }
+  });
+
+  it('both answer false for every other type — a string minute included', () => {
+    for (const raw of [null, undefined, '600', '', {}, [], [600], true]) {
+      expect(MinuteOfDay.is(raw)).toBe(false);
+      expect(EndMinute.is(raw)).toBe(false);
+    }
+  });
+});

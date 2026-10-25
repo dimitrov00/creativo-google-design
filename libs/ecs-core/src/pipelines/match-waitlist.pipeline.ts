@@ -7,7 +7,7 @@ import {
   type WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
-import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
+import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import {
   type BookingPolicy,
   NotificationTopic,
@@ -39,10 +39,12 @@ import type {
   ShopDayReadPorts,
 } from '@core/ports';
 import {
+  type AttemptFailure,
   AvailabilitySystem,
   type CartBarberDay,
   PartyAdmissionSystem,
   RosterSystem,
+  TriggerAttemptSystem,
   type WaitlistMatch,
   WaitlistSystem,
   ZonedTimeSystem,
@@ -77,6 +79,18 @@ import { readShopZone } from './shop-zone-read.pipeline';
  *
  * The notification is an invitation, never a hold: `bookAppointment` stays
  * the only authority, and its words are the inbox's (facts only, §9 D20).
+ *
+ * **Retried (edge-hardening D-5).** The trigger deploys `retry: true`. Each
+ * request's failure (a rejection or a refusal of its settle) is logged and
+ * collected, the others still settled, and the attempt's verdict over them
+ * is the edge's (`attemptFailure`, `TriggerAttemptSystem.decisiveFailure`):
+ * transient when any one is — the redelivery re-runs every request, safe
+ * because a match re-reads its request and requires it `OPEN` under the
+ * deterministic notification id, so a request the first delivery told is
+ * `MATCHED` and never told twice — else the first, logged and dropped. A
+ * barber whose busy day is MALFORMED (refused at read time,
+ * `REPOSITORY_MALFORMED`) is skipped, fail-closed: none of their time is
+ * offered, the skip is logged, the other barbers are matched (DEP-13).
  */
 
 /**
@@ -94,6 +108,10 @@ export type MatchWaitlistAnswer = {
   readonly notifiedRequestIds: readonly WaitlistRequestId[];
   /** Requests whose every day had passed, moved to `EXPIRED`. */
   readonly expiredRequestIds: readonly WaitlistRequestId[];
+  /** One per request whose settle failed — a refusal or a rejection, in the order read. */
+  readonly failures: readonly unknown[];
+  /** The attempt's verdict over them (`TriggerAttemptSystem.decisiveFailure`); `null` when none. */
+  readonly attemptFailure: AttemptFailure | null;
 };
 
 export type MatchWaitlistPorts = CommitPorts &
@@ -135,7 +153,10 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
   /**
    * The day's snapshot — loaded ONCE for every request that named it. A day
    * with nothing to search is EMPTY, never missing: each request still has
-   * its lapse read. Fail-closed: an absent roster reads as "nobody works".
+   * its lapse read. Fail-closed: an absent roster reads as "nobody works",
+   * and a barber whose busy day is malformed is left out (none of their
+   * time offered, the skip logged — DEP-13); any other failed read is the
+   * whole match's.
    */
   async function loadDay(
     localDate: LocalDate,
@@ -207,7 +228,17 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     for (let i = 0; i < rostered.length; i++) {
       const entry = rostered[i] as (typeof rostered)[number];
       const busy = busyDays[i] as Awaited<(typeof busyDays)[number]>;
-      if (!busy.ok) return busy;
+      if (!busy.ok) {
+        if (!RepositoryError.is(busy.error, RepositoryErrorCode.Malformed)) {
+          return busy;
+        }
+        // Fail-closed per barber: time that cannot be read is never offered.
+        ports.log('error', 'waitlist barber skipped', {
+          key: BusyKey.of(entry.barberId, localDate),
+          error: busy.error,
+        });
+        continue;
+      }
       barbers.push({
         barberId: entry.barberId,
         windows: entry.windows,
@@ -355,6 +386,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     const watching = await ports.loadOpenWaitlist(localDate);
     if (!watching.ok) return watching;
     const expiredRequestIds: WaitlistRequestId[] = [];
+    const failures: unknown[] = [];
     for (const request of watching.value) {
       if (!WaitlistSystem.hasLapsed(request, now.localDate)) continue;
       let expired: Result<WaitlistDeliveryOutcome, RepositoryError>;
@@ -365,6 +397,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           requestId: request.id,
           error: String(error),
         });
+        failures.push(error);
         continue;
       }
       if (!expired.ok) {
@@ -372,13 +405,19 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           requestId: request.id,
           error: expired.error,
         });
+        failures.push(expired.error);
         continue;
       }
       if (expired.value === WaitlistDeliveryOutcome.Expired) {
         expiredRequestIds.push(request.id);
       }
     }
-    return Result.ok({ notifiedRequestIds: [], expiredRequestIds });
+    return Result.ok({
+      notifiedRequestIds: [],
+      expiredRequestIds,
+      failures,
+      attemptFailure: TriggerAttemptSystem.decisiveFailure(failures),
+    });
   }
 
   return async (
@@ -390,6 +429,8 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
     const none: MatchWaitlistAnswer = {
       notifiedRequestIds: [],
       expiredRequestIds: [],
+      failures: [],
+      attemptFailure: null,
     };
     if (cmd.localDate < now.localDate) return retireLapsed(cmd.localDate, now);
 
@@ -404,9 +445,11 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
 
     const notifiedRequestIds: WaitlistRequestId[] = [];
     const expiredRequestIds: WaitlistRequestId[] = [];
+    const failures: unknown[] = [];
     for (const request of watching.value) {
       // Independent promises to different people: one request's failure is
-      // logged and never costs the others their notification.
+      // logged, collected for the verdict, and never costs the others their
+      // notification.
       let settled: Result<WaitlistDeliveryOutcome, RepositoryError>;
       try {
         settled = await settle(
@@ -421,6 +464,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           requestId: request.id,
           error: String(error),
         });
+        failures.push(error);
         continue;
       }
       if (!settled.ok) {
@@ -428,6 +472,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           requestId: request.id,
           error: settled.error,
         });
+        failures.push(settled.error);
         continue;
       }
       if (settled.value === WaitlistDeliveryOutcome.Notified) {
@@ -437,6 +482,11 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         expiredRequestIds.push(request.id);
       }
     }
-    return Result.ok({ notifiedRequestIds, expiredRequestIds });
+    return Result.ok({
+      notifiedRequestIds,
+      expiredRequestIds,
+      failures,
+      attemptFailure: TriggerAttemptSystem.decisiveFailure(failures),
+    });
   };
 };

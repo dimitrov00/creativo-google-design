@@ -16,9 +16,67 @@ import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
  *   adapter just read, a derived key, a fixture literal). No check.
  */
 
+/** `/` — the Firestore path separator an id may not hold. */
+const SLASH = 47;
+
+/**
+ * A code unit `String.prototype.trim` strips — ECMAScript's WhiteSpace
+ * (TAB, VT, FF, SP, NBSP, ZWNBSP and every `Zs` space) and LineTerminator
+ * (LF, CR, LS, PS) — so a scan for anything else answers exactly what
+ * `raw.trim().length > 0` answers, without allocating the trimmed copy.
+ */
+function isTrimmedAway(code: number): boolean {
+  if (code <= 0x20) {
+    return code === 0x20 || (code >= 0x09 && code <= 0x0d);
+  }
+  if (code < 0xa0) return false;
+  return (
+    code === 0xa0 ||
+    code === 0x1680 ||
+    (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000 ||
+    code === 0xfeff
+  );
+}
+
+/**
+ * `text[start, end)` is a plain id — not blank and no `/` — read in place by
+ * code unit: exactly what `parse` accepts of that slice, without the slice.
+ */
+function isIdSpan(text: string, start: number, end: number): boolean {
+  let blank = true;
+  for (let i = start; i < end; i++) {
+    const code = text.charCodeAt(i);
+    if (code === SLASH) return false;
+    if (blank && !isTrimmedAway(code)) blank = false;
+  }
+  return !blank;
+}
+
 /** The companion every plain id shares — built once per brand. */
 function idCompanion<B extends string>(brand: B) {
   return {
+    /**
+     * The read-time door (edge hardening D-1): `raw` is a string
+     * {@link parse} accepts — not blank, no `/` — and `false` for every
+     * other value (`parse` itself is never called with a non-string: its
+     * `trim()` would throw). Allocates nothing — no `trim()` copy, no
+     * `Result` — so a stored-document guard runs it per id per document.
+     */
+    is(raw: unknown): raw is Brand<string, B> {
+      return typeof raw === 'string' && isIdSpan(raw, 0, raw.length);
+    },
+    /**
+     * `text[start, end)` would pass {@link is} — read in place, no slice:
+     * how a composite key (`BusyKey`'s barber half) checks its id part.
+     */
+    isSpan(text: string, start: number, end: number): boolean {
+      return isIdSpan(text, Math.max(0, start), Math.min(end, text.length));
+    },
     /** Foreign input (an HTTP body, a callable payload, a route param). */
     parse(raw: string): Result<Brand<string, B>, PrimitiveError> {
       if (raw.trim().length === 0) {

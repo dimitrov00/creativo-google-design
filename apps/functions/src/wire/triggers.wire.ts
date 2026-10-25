@@ -1,8 +1,7 @@
 import {
   BarberId,
   BusyKey,
-  type CustomerId,
-  type Result,
+  Result,
   TriggerEventId,
   UserId,
   UtcEpochMs,
@@ -13,22 +12,20 @@ import {
   CapacityTrigger,
   PreciseInstant,
 } from '@core/components';
+import { POLICY_RECOMPUTE_DOC, type PolicyRecomputeJob } from '@core/entities';
 import {
-  type Appointment,
-  POLICY_RECOMPUTE_DOC,
-  type PolicyRecomputeJob,
-} from '@core/entities';
-import {
+  type AppointmentSide,
   type AttemptFailure,
   AuditSystem,
   ClientStatsSystem,
   type ProfileChange,
+  type StoredDocument,
+  StoredDocumentSystem,
   TriggerAttemptSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   type AuditProfileChangeAnswer,
-  type ClientStatsProjection,
   type ContinuePolicyRecomputeCommand,
   type MatchWaitlistCommand,
   type ProjectClientStatsCommand,
@@ -57,7 +54,7 @@ import { eventInstantOf } from './wire-read';
  *   policy or the daily sweep → the rebuild's scope;
  * - `decodeMatchWaitlistEvent` — the busy day a write touched;
  * - `decodeDispatchProjectionsEvent` — the client records before ∪ after a
- *   write that changed what stats read (`ClientStatsSystem.statsInputChanged`;
+ *   write that changed what stats read (`ClientStatsSystem.dispatchSubjects`;
  *   most writes — an arrival, a tip — decode to nobody);
  * - `decodePolicyRecomputeEvent` / `decodePolicyStepEvent` /
  *   `decodePolicySweepRun` — the policy pass's settings write, job write and
@@ -65,8 +62,29 @@ import { eventInstantOf } from './wire-read';
  * - `decodeProfileChangeEvent` — a `users/{uid}` write, its writer from the
  *   auth context and both sides' `profileEditedAtUtcMs` stamps.
  *
- * Triggers keep today's options (F1-2); attempts and budgets are
- * `edge.ts`'s (`retryingTrigger`, `workBudget`).
+ * **Which triggers retry.** `auditProfileChanges`, `dispatchClientProjections`,
+ * the policy pass's start and step and its daily sweep, and — since
+ * edge-hardening D-5 — the three projection triggers
+ * `rebuildBusyOnAppointmentChange`, `rebuildCapacityOnBusyChange` and
+ * `matchWaitlistOnBusyChange` (each recomputes its projection from its
+ * source, so a redelivery is a no-op on what the first delivery wrote); the
+ * other triggers keep today's options (F1-2). Attempts and budgets are
+ * `edge.ts`'s (`retryingTrigger`, `workBudget`): a transient failure is
+ * rethrown and redelivered, every other is logged once and dropped.
+ *
+ * **A malformed side (edge-hardening D-3).** An appointment side is read
+ * through the read-time guard (`StoredDocumentSystem.appointmentSide`),
+ * each side SEPARATELY: an admitted side is the entity; a refused side is
+ * reported once (`onRefused` — the composition root logs `'malformed
+ * document refused'` with its path and field) and reaches the command as
+ * `null` beside what it still names (`StoredDocumentSystem.salvageSides`:
+ * its busy keys and location, the refusal itself) — which only PICK the
+ * work, since the pipelines re-read the store. The decoders guard and
+ * forward; whether the refusal is the answer (`REPOSITORY_MALFORMED`,
+ * judged `data-loss`: permanent) — only when the sides together name
+ * nothing to do — is decided past the edge: by `rebuildBusy` over its one
+ * `affectedKeys`, and by `ClientStatsSystem.dispatchSubjects` for the
+ * client projection. So a malformed visit never freezes its own repair.
  */
 
 /** One step's platform timeout; the step's budget is a share of it (`retryingTrigger`). */
@@ -101,13 +119,45 @@ export type ScheduledTick = {
   readonly scheduleTime: string;
 };
 
-/** A side of a write as the stored entity, `null` when the document is absent there. */
+/** A side of a write as stored — its id beside its body — `null` when the document is absent there. */
+function storedOf(
+  snapshot: StoredSnapshot | undefined,
+  id: string,
+): StoredDocument | null {
+  const data = snapshot?.exists === true ? snapshot.data() : undefined;
+  return data === undefined ? null : { id, ...data };
+}
+
+/**
+ * A side of a write read AS STORED, unguarded — the policy job's document
+ * only (not one of the guarded collections, edge-hardening D-1).
+ */
 function entityOf<E>(
   snapshot: StoredSnapshot | undefined,
   id: string,
 ): E | null {
-  const data = snapshot?.exists === true ? snapshot.data() : undefined;
-  return data === undefined ? null : ({ id, ...data } as E);
+  const stored = storedOf(snapshot, id);
+  return stored === null ? null : (stored as unknown as E);
+}
+
+/**
+ * How a refused side is reported — once per side; the root logs it (D-4).
+ * Module-private: a decoder's callback parameter, never a port (Law 9.3 —
+ * the decoders' signatures spell it inline for their callers).
+ */
+type OnRefused = (error: RepositoryError) => void;
+
+const IGNORE_REFUSAL: OnRefused = () => undefined;
+
+/** A side of an appointment write, guarded: admitted, refused (reported once) or absent. */
+function appointmentSide(
+  snapshot: StoredSnapshot | undefined,
+  id: string,
+  onRefused: OnRefused,
+): AppointmentSide {
+  const side = StoredDocumentSystem.appointmentSide(storedOf(snapshot, id));
+  if (side.refusal !== null) onRefused(side.refusal);
+  return side;
 }
 
 /** A side of a write as its raw body, `{}` when absent. */
@@ -144,15 +194,27 @@ export function preciseInstantOf(time: string): PreciseInstant {
   );
 }
 
+/**
+ * Both sides of an `appointments` write as the busy rebuild's command — each
+ * side guarded on its own (D-3): a refused side is `null`, and the command
+ * carries what the refused sides leave (`StoredDocumentSystem.salvageSides`:
+ * their busy keys, the first location, the first refusal). Whether that
+ * refusal is the answer — no day left to rebuild — is `rebuildBusy`'s.
+ */
 export function decodeRebuildBusyEvent(
   event: DocumentWriteEvent<{ readonly appointmentId: string }>,
+  onRefused: (error: RepositoryError) => void = IGNORE_REFUSAL,
 ): RebuildBusyCommand {
+  const id = event.params.appointmentId;
+  const before = appointmentSide(event.data?.before, id, onRefused);
+  const after = appointmentSide(event.data?.after, id, onRefused);
+  const salvage = StoredDocumentSystem.salvageSides(before, after);
   return {
-    before: entityOf<Appointment>(
-      event.data?.before,
-      event.params.appointmentId,
-    ),
-    after: entityOf<Appointment>(event.data?.after, event.params.appointmentId),
+    before: before.appointment,
+    after: after.appointment,
+    salvagedKeys: salvage.busyKeys,
+    salvagedLocationId: salvage.locationId,
+    refusal: salvage.refusal,
   };
 }
 
@@ -208,29 +270,21 @@ export function decodeMatchWaitlistEvent(
 /**
  * Everybody an appointment write can have moved — the client records on the
  * visit before AND after it (a person removed from a party must lose the
- * visit) — or nobody, for a write that changed nothing stats read.
+ * visit) — or nobody, for a write that changed nothing stats read. Each side
+ * guarded on its own (D-3) and forwarded; whom that names — and when a
+ * refused side's refusal is the answer instead — is
+ * `ClientStatsSystem.dispatchSubjects`'.
  */
 export function decodeDispatchProjectionsEvent(
   event: DocumentWriteEvent<{ readonly appointmentId: string }>,
-): ProjectClientStatsCommand {
-  const before = entityOf<Appointment>(
-    event.data?.before,
-    event.params.appointmentId,
+  onRefused: (error: RepositoryError) => void = IGNORE_REFUSAL,
+): Result<ProjectClientStatsCommand, RepositoryError> {
+  const id = event.params.appointmentId;
+  const subjects = ClientStatsSystem.dispatchSubjects(
+    appointmentSide(event.data?.before, id, onRefused),
+    appointmentSide(event.data?.after, id, onRefused),
   );
-  const after = entityOf<Appointment>(
-    event.data?.after,
-    event.params.appointmentId,
-  );
-  if (!ClientStatsSystem.statsInputChanged(before, after)) {
-    return { customerIds: [] };
-  }
-  const none: readonly CustomerId[] = [];
-  return {
-    customerIds: ClientStatsSystem.affectedSubjects(
-      before === null ? none : before.subjectCustomerIds,
-      after === null ? none : after.subjectCustomerIds,
-    ),
-  };
+  return subjects.ok ? Result.ok({ customerIds: subjects.value }) : subjects;
 }
 
 /** A `settings/{docId}` write as the pass's start command (policies through the component's edge guard). */
@@ -370,9 +424,17 @@ export function settleAttempt(
   }
 }
 
-/** The client projection's answer as an attempt report — the policy read is every client's failure. */
+/**
+ * A projection's answer as an attempt report — the client projection's, the
+ * busy rebuild's, the waitlist match's (each answers its verdict as
+ * `attemptFailure`), or a decoder's refusal: a refusal of the whole (the
+ * policy or zone read, a malformed event) is every item's failure.
+ */
 export function projectionReport(
-  result: Result<ClientStatsProjection, RepositoryError>,
+  result: Result<
+    { readonly attemptFailure: AttemptFailure | null },
+    RepositoryError
+  >,
 ): AttemptReport {
   return {
     attemptFailure: result.ok

@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { BarberId, BusyKey } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   barberBusyDayFixture,
@@ -9,11 +9,13 @@ import {
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
+  recordingTelemetry,
   scheduleExceptionFixture,
   type SchedulingBusyCase,
   schedulingPortsContract,
 } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
+import { StoredDocumentSystem } from '@core/systems';
 import { firestoreSchedulePorts } from './firestore-schedules.adapter';
 
 /*
@@ -134,6 +136,76 @@ describe('firestoreSchedulePorts — rosters, exceptions and the rostered popula
     expect(await failing.listBarbers()).toEqual({
       ok: false,
       error: RepositoryError.readFailed(Collections.BarberSchedules, 'aborted'),
+    });
+  });
+});
+
+describe('firestoreSchedulePorts, guarded — a busy day is a SINGLE read (edge hardening D-3)', () => {
+  const KEY = BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY);
+  const guarded = (body: Record<string, unknown>) => {
+    const telemetry = recordingTelemetry();
+    const fake = createProjectionFirestore({
+      [`${Collections.BarberBusy}/${KEY}`]: body,
+    });
+    return {
+      telemetry,
+      ports: firestoreSchedulePorts(
+        fake.db as unknown as Firestore,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
+    };
+  };
+
+  it('answers a malformed busy day as REPOSITORY_MALFORMED naming path and field, logged once', async () => {
+    const { telemetry, ports } = guarded({
+      ...bodyOf(barberBusyDayFixture()),
+      blocks: [{ startMinutes: 600, endMinutes: 630, blockKind: 'LUNCH' }],
+    });
+    expect(await ports.loadBusyDay(KEY)).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.Malformed,
+        path: `${Collections.BarberBusy}/${KEY}`,
+        reason: 'blocks[0].blockKind',
+      },
+    });
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: 'malformed document refused',
+        fields: {
+          path: `${Collections.BarberBusy}/${KEY}`,
+          field: 'blocks[0].blockKind',
+        },
+      },
+    ]);
+  });
+
+  it('reads a well-formed day — and an absent one — exactly as before, logging nothing', async () => {
+    const day = barberBusyDayFixture();
+    const { telemetry, ports } = guarded(bodyOf(day));
+    expect(await ports.loadBusyDay(KEY)).toEqual({ ok: true, value: day });
+    expect(await ports.loadBusyDay(BusyKey.of(NIKO, FIXTURE_TODAY))).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(telemetry.lines).toEqual([]);
+  });
+
+  it('leaves the unguarded collections as stored — a roster is read as it always was', async () => {
+    const telemetry = recordingTelemetry();
+    const fake = createProjectionFirestore({
+      [`${Collections.BarberSchedules}/${FIXTURE_IDS.barber}`]: { odd: true },
+    });
+    const ports = firestoreSchedulePorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    );
+    expect(await ports.loadSchedule(FIXTURE_IDS.barber)).toEqual({
+      ok: true,
+      value: { id: FIXTURE_IDS.barber, odd: true },
     });
   });
 });

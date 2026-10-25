@@ -56,6 +56,21 @@ export const Currency = {
   },
 
   /**
+   * The read-time door (edge hardening D-1): `raw` is one of the four known
+   * codes EXACTLY AS STORED — no trimming, no case folding (`' eur '` is
+   * refused here though {@link parse} normalises it: a stored amount is
+   * written upper-case by every writer, so anything else is not what a
+   * system may compare) — and `false` for every other value. No allocation.
+   */
+  is(raw: unknown): raw is Currency {
+    if (typeof raw !== 'string') return false;
+    for (let i = 0; i < KNOWN.length; i++) {
+      if (KNOWN[i] === raw) return true;
+    }
+    return false;
+  },
+
+  /**
    * The currency a NEW amount may be priced in, or `null` — EUR only (today's
    * `Money.currencyFrom`; the set `Money.of` accepts, unchanged).
    */

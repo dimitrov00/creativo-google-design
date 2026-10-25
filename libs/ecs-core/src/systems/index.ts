@@ -69,6 +69,7 @@ export * from './shop-zone.system';
 export * from './staff-edit-plan.system';
 export * from './staff-intent.system';
 export * from './standing.system';
+export * from './stored-document.system';
 export * from './streak-preview.system';
 export * from './streak-publish.system';
 export * from './streak-rule.system';

@@ -24,8 +24,8 @@ export type MinuteDelta = Brand<number, 'MinuteDelta'>;
 export const DurationMinutes = {
   /** The smart constructor: an integer `> 0`. */
   of(raw: number): Result<DurationMinutes, PrimitiveError> {
-    return Number.isSafeInteger(raw) && raw > 0
-      ? Result.ok(raw as DurationMinutes)
+    return DurationMinutes.is(raw)
+      ? Result.ok(raw)
       : Result.err(
           PrimitiveError.of(
             PrimitiveErrorCode.DurationNotPositive,
@@ -33,6 +33,15 @@ export const DurationMinutes = {
             'DurationMinutes',
           ),
         );
+  },
+
+  /**
+   * The read-time door (edge hardening D-1) and the ONE home of the rule —
+   * a safe integer `> 0` — which {@link of} answers through; `false` for
+   * every other value. No `Result`, no allocation.
+   */
+  is(raw: unknown): raw is DurationMinutes {
+    return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0;
   },
 
   /** The sum of two positive durations is positive. */
@@ -44,7 +53,7 @@ export const DurationMinutes = {
 export const MinuteCount = {
   /** The smart constructor: an integer `≥ 0`. */
   of(raw: number): Result<MinuteCount, PrimitiveError> {
-    return Number.isSafeInteger(raw) && raw >= 0
+    return MinuteCount.is(raw)
       ? Result.ok((raw + 0) as MinuteCount)
       : Result.err(
           PrimitiveError.of(
@@ -53,6 +62,15 @@ export const MinuteCount = {
             'MinuteCount',
           ),
         );
+  },
+
+  /**
+   * The read-time door (edge hardening D-1) and the ONE home of the rule —
+   * a safe integer `≥ 0` — which {@link of} answers through; `false` for
+   * every other value. No `Result`, no allocation.
+   */
+  is(raw: unknown): raw is MinuteCount {
+    return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0;
   },
 
   /** No minutes — the identity of {@link add}. */

@@ -258,3 +258,67 @@ describe('BookingLifecycle.isTransitionTarget — the edge guard of a move’s t
     expect(input).toEqual({ raw: BookingStatus.NoShow });
   });
 });
+
+describe('BookingLifecycle.fieldFault — the read-time check of a stored lifecycle (edge hardening D-1)', () => {
+  const at = unwrapOk(UtcEpochMs.of(1_790_575_200_000));
+  const reasons = CancellationReasonSet.of([]);
+  const variants = [
+    [BookingLifecycle.pending(at), 'pendingAtUtcMs'],
+    [BookingLifecycle.confirm(at), 'confirmedAtUtcMs'],
+    [BookingLifecycle.complete(at), 'completedAtUtcMs'],
+    [BookingLifecycle.noShow(at), 'noShowAtUtcMs'],
+    [BookingLifecycle.cancel(at, reasons), 'cancelledAtUtcMs'],
+  ] as const;
+
+  it('answers null for every variant as its factory builds it', () => {
+    for (const [lifecycle] of variants) {
+      expect(BookingLifecycle.fieldFault(lifecycle)).toBeNull();
+    }
+  });
+
+  it('names the variant’s own stamp when it is missing or no instant', () => {
+    for (const [lifecycle, stamp] of variants) {
+      expect(BookingLifecycle.fieldFault({ ...lifecycle, [stamp]: null })).toBe(
+        stamp,
+      );
+      expect(
+        BookingLifecycle.fieldFault({ ...lifecycle, [stamp]: '2026-09-28' }),
+      ).toBe(stamp);
+    }
+    // Another variant's stamp is not this one's.
+    expect(
+      BookingLifecycle.fieldFault({
+        bookingStatus: BookingStatus.Confirmed,
+        pendingAtUtcMs: at,
+      }),
+    ).toBe('confirmedAtUtcMs');
+  });
+
+  it('names cancellationReason when a cancellation carries no stored string', () => {
+    expect(
+      BookingLifecycle.fieldFault({
+        ...BookingLifecycle.cancel(at, reasons),
+        cancellationReason: 42,
+      }),
+    ).toBe('cancellationReason');
+  });
+
+  it('names bookingStatus for anything the dictionary does not hold', () => {
+    for (const bookingStatus of ['BOOKED', 'confirmed', '', null, undefined]) {
+      expect(
+        BookingLifecycle.fieldFault({ bookingStatus, confirmedAtUtcMs: at }),
+      ).toBe('bookingStatus');
+    }
+  });
+
+  it('is pure: same input → same output, the input untouched', () => {
+    const raw = deepFreeze({
+      bookingStatus: 'CANCELLED',
+      cancelledAtUtcMs: at,
+    });
+    expect(BookingLifecycle.fieldFault(raw)).toBe(
+      BookingLifecycle.fieldFault(raw),
+    );
+    expect(raw).toEqual({ bookingStatus: 'CANCELLED', cancelledAtUtcMs: at });
+  });
+});
