@@ -409,6 +409,330 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
   });
 });
 
+/*
+ * Pass E, E-4: the cart as the wire sends it — every id a raw string — is
+ * judged INSIDE the door, in the door's own order. These cases pin today's
+ * answers on the raw edge cases (an id holding `/`, a blank seat key or line
+ * shop accepted; a blank line id or a line counter that is no count refused
+ * `cart`, after the days and before the commit's admission).
+ */
+
+/** A cart line as the wire reads it: every id as sent. */
+type SentLine = {
+  readonly lineId: string;
+  readonly serviceId: string;
+  readonly variantId: string | null;
+  readonly barberId: string | null;
+  readonly locationId: string | null;
+};
+
+const sentLine = (overrides: Partial<SentLine> = {}): SentLine => ({
+  lineId: 'line-0',
+  serviceId: 'svc-cut',
+  variantId: null,
+  barberId: null,
+  locationId: null,
+  ...overrides,
+});
+
+/** One seat's cart, as the wire sends it — raw strings, no brand. */
+function sentCart(
+  seatKey: string,
+  lines: readonly SentLine[],
+  cartNextSequence: number = lines.length,
+): WaitlistCall.CartInput {
+  return { cartSeats: [{ seatKey, lines }], cartNextSequence };
+}
+
+/** The cart a decided request stores — each id branded as sent, the seat's key on every line. */
+function storedCart(
+  seatKey: string,
+  lines: readonly SentLine[],
+  cartNextSequence: number = lines.length,
+): BookingCart {
+  const key = SeatKeyText.of(seatKey);
+  return {
+    cartSeats: [
+      {
+        seatKey: key,
+        lines: lines.map((line): CartLine => ({
+          lineId: CartLineId.of(line.lineId),
+          seatKey: key,
+          serviceId: ServiceId.of(line.serviceId),
+          variantId:
+            line.variantId === null
+              ? null
+              : ServiceVariantId.of(line.variantId),
+          barberId: line.barberId === null ? null : BarberId.of(line.barberId),
+          locationId:
+            line.locationId === null ? null : LocationId.of(line.locationId),
+        })),
+      },
+    ],
+    cartNextSequence,
+  };
+}
+
+describe('WaitlistSystem.decide — the raw cart, judged in the door’s own order (pass E, E-4)', () => {
+  const sent = (cart: ReturnType<typeof sentCart>): WaitlistCall.Input => ({
+    ...ask([[{ serviceId: 'svc-cut' }]]),
+    cart,
+  });
+
+  it('stores ids holding `/` exactly as sent — the commit judges a service, the door only reads', () => {
+    const lines = [
+      sentLine({
+        lineId: 'line/0',
+        barberId: 'barbers/ivan',
+        locationId: 'loc/x',
+      }),
+    ];
+    const body = unwrapOk(
+      WaitlistSystem.decide(sent(sentCart('self/1', lines)), door()),
+    );
+    expect(body.cartSeats).toEqual(storedCart('self/1', lines).cartSeats);
+    expect(body.cartNextSequence).toBe(1);
+  });
+
+  it.each([
+    ['an empty seat key', '', null],
+    ['a blank seat key', '   ', null],
+    ['an empty line shop', 'self', ''],
+    ['a blank line shop', 'self', '   '],
+  ] as const)('accepts %s and stores it as sent', (_label, seatKey, shop) => {
+    const lines = [sentLine({ locationId: shop })];
+    const body = unwrapOk(
+      WaitlistSystem.decide(sent(sentCart(seatKey, lines)), door()),
+    );
+    expect(body.cartSeats).toEqual(storedCart(seatKey, lines).cartSeats);
+  });
+
+  it.each([
+    ['an empty line id', { lineId: '' }],
+    ['a blank line id', { lineId: '   ' }],
+    ['a blank service id', { serviceId: ' ' }],
+    ['an empty variant id', { variantId: '' }],
+    ['a blank barber id', { barberId: '  ' }],
+  ] as const)('refuses %s as `cart`', (_label, overrides) => {
+    expect(answer(sent(sentCart('self', [sentLine(overrides)])))).toBe('cart');
+  });
+
+  it.each([
+    ['a fraction', 1.5],
+    ['not a number', Number.NaN],
+    ['an infinity', Number.POSITIVE_INFINITY],
+    ['a negative count', -1],
+  ] as const)('refuses a line counter that is %s as `cart`', (_label, n) => {
+    expect(answer(sent(sentCart('self', [sentLine()], n)))).toBe('cart');
+  });
+
+  it('accepts a line counter of zero — an integer, never negative', () => {
+    expect(answer(sent(sentCart('self', [sentLine()], 0)))).toBe('accepted');
+  });
+
+  it('asks about the line after the shop, the days and the windows', () => {
+    const blank = sentCart('self', [sentLine({ lineId: '' })]);
+    expect(answer(sent(blank), { shopListed: false })).toBe('locationId');
+    expect(
+      answer({
+        ...sent(blank),
+        days: [{ localDate: 'not-a-day', windows: [] }],
+      }),
+    ).toBe('localDate');
+    expect(
+      answer({
+        ...sent(blank),
+        days: [
+          { localDate: DAY, windows: [{ startMinutes: 720, endMinutes: 600 }] },
+        ],
+      }),
+    ).toBe('windows');
+    expect(
+      answer({
+        ...sent(blank),
+        days: [{ localDate: '2030-01-12', windows: [] }],
+      }),
+    ).toBe(SchedulingErrorCode.WaitlistNoDays);
+    const anonymous = WaitlistSystem.decide(
+      sent(blank),
+      door({ ownerUserId: null }),
+    );
+    expect(!anonymous.ok && anonymous.error.errorCode).toBe(
+      WaitlistErrorCode.Unauthenticated,
+    );
+  });
+
+  it('asks about an empty bag before its line counter', () => {
+    expect(answer(sent(sentCart('self', [], Number.NaN)))).toBe(
+      SchedulingErrorCode.WaitlistEmptyCart,
+    );
+  });
+
+  it('asks about the line and the counter before the commit’s admission', () => {
+    const retired = refusedBy(BookingError.unknownService('svc-retired'));
+    expect(
+      answer(
+        sent(
+          sentCart('self', [
+            sentLine({ lineId: '', serviceId: 'svc-retired' }),
+          ]),
+        ),
+        retired,
+      ),
+    ).toBe('cart');
+    expect(
+      answer(
+        sent(sentCart('self', [sentLine({ serviceId: 'svc-retired' })], 0.5)),
+        retired,
+      ),
+    ).toBe('cart');
+  });
+});
+
+describe('WaitlistSystem.withinReadBounds — the raw cart, counted as sent (pass E, E-4)', () => {
+  it('counts each service spelling as sent, blanks and `/` included', () => {
+    // One allowed person: at most MAX_SERVICES_PER_PERSON (8) distinct spellings.
+    const eight = [
+      '',
+      ' ',
+      'svc/x',
+      'svc-a',
+      'svc-b',
+      'svc-c',
+      'svc-d',
+      'svc-e',
+    ];
+    const linesOf = (spellings: readonly string[]) =>
+      spellings.map((serviceId, i) =>
+        sentLine({ lineId: `line-${i}`, serviceId }),
+      );
+    expect(
+      WaitlistSystem.withinReadBounds(sentCart('self', linesOf(eight)), 1),
+    ).toBe(true);
+    // A repeated spelling is one service; a ninth spelling (two spaces) is not.
+    expect(
+      WaitlistSystem.withinReadBounds(
+        sentCart('self', linesOf([...eight, ''])),
+        1,
+      ),
+    ).toBe(true);
+    expect(
+      WaitlistSystem.withinReadBounds(
+        sentCart('self', linesOf([...eight, '  '])),
+        1,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('WaitlistSystem.cartAsSent — the bag branded as sent, never judged (pass E, E-4)', () => {
+  it('brands every id exactly as sent — blanks, padding and `/` kept, nothing parsed', () => {
+    const raw: WaitlistCall.CartInput = {
+      cartSeats: [
+        {
+          seatKey: '  self/1 ',
+          lines: [
+            {
+              lineId: '',
+              serviceId: 'services/../x',
+              variantId: '',
+              barberId: '  ',
+              locationId: 'loc/x',
+            },
+            {
+              lineId: ' line-1',
+              serviceId: '   ',
+              variantId: null,
+              barberId: null,
+              locationId: null,
+            },
+          ],
+        },
+        { seatKey: '', lines: [] },
+      ],
+      cartNextSequence: Number.NaN,
+    };
+    const seat = SeatKeyText.of('  self/1 ');
+    const cart = WaitlistSystem.cartAsSent(raw);
+    expect(cart).toEqual({
+      cartSeats: [
+        {
+          seatKey: seat,
+          lines: [
+            {
+              lineId: CartLineId.of(''),
+              seatKey: seat,
+              serviceId: ServiceId.of('services/../x'),
+              variantId: ServiceVariantId.of(''),
+              barberId: BarberId.of('  '),
+              locationId: LocationId.of('loc/x'),
+            },
+            {
+              lineId: CartLineId.of(' line-1'),
+              seatKey: seat,
+              serviceId: ServiceId.of('   '),
+              variantId: null,
+              barberId: null,
+              locationId: null,
+            },
+          ],
+        },
+        { seatKey: SeatKeyText.of(''), lines: [] },
+      ],
+      cartNextSequence: Number.NaN,
+    });
+  });
+
+  it('names every line by its seat’s key — the line’s own key is not read', () => {
+    const typed = cartOf([[{ serviceId: 'svc-cut' }]]);
+    const seat = typed.cartSeats[0] as CartSeatLines;
+    const stray = {
+      ...typed,
+      cartSeats: [
+        {
+          seatKey: seat.seatKey,
+          lines: [
+            {
+              ...(seat.lines[0] as CartLine),
+              seatKey: SeatKeyText.of('other'),
+            },
+          ],
+        },
+      ],
+    };
+    expect(WaitlistSystem.cartAsSent(stray)).toEqual(typed);
+  });
+
+  it('hands a well-formed typed cart back equal, and the door stores it as it was given', () => {
+    const typed = cartOf([
+      [{ serviceId: 'svc-cut', barberId: 'ivan' }],
+      [{ serviceId: 'svc-color', variantId: 'long' }],
+    ]);
+    expect(WaitlistSystem.cartAsSent(typed)).toEqual(typed);
+    const body = unwrapOk(
+      WaitlistSystem.decide(
+        { ...ask([[{ serviceId: 'svc-cut' }]]), cart: typed },
+        door(),
+      ),
+    );
+    expect({
+      cartSeats: body.cartSeats,
+      cartNextSequence: body.cartNextSequence,
+    }).toEqual(typed);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const raw = deepFreeze(
+      sentCart('self', [sentLine({ lineId: 'line/0', barberId: 'ivan' })], 3),
+    );
+    const before = JSON.stringify(raw);
+    const once = WaitlistSystem.cartAsSent(raw);
+    expect(WaitlistSystem.cartAsSent(raw)).toEqual(once);
+    expect(once).not.toBe(raw);
+    expect(JSON.stringify(raw)).toBe(before);
+  });
+});
+
 describe('WaitlistSystem.idBasis — a request is named by what it means', () => {
   it('collapses two phrasings of one ask to one basis, and tells different asks apart', () => {
     const phrased = (windows: readonly MinuteRange[]): WaitlistCall.Input => ({
@@ -1222,6 +1546,16 @@ describe('WaitlistSystem — purity', () => {
     expect(WaitlistSystem.decide(asked, door())).toEqual(
       WaitlistSystem.decide(asked, door()),
     );
+    // The raw twin, as the wire decodes it (pass E, E-4).
+    const sentAsk = deepFreeze({
+      ...ask([[{ serviceId: 'svc-cut' }]]),
+      cart: sentCart('self', [sentLine({ lineId: 'line/0' })]),
+    });
+    const sentBefore = JSON.stringify(sentAsk);
+    expect(WaitlistSystem.decide(sentAsk, door())).toEqual(
+      WaitlistSystem.decide(sentAsk, door()),
+    );
+    expect(JSON.stringify(sentAsk)).toBe(sentBefore);
     expect(JSON.stringify([request, day])).toBe(before);
   });
 });

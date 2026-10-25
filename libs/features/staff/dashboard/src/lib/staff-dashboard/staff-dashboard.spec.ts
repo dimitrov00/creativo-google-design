@@ -82,7 +82,6 @@ import type {
   BarberSchedule,
   Barber,
   Coupon,
-  CouponGrant,
   ScheduleException,
   Service,
   ShopLocation,
@@ -139,6 +138,7 @@ import {
 } from '@core/ports';
 import {
   AppointmentIndexSystem,
+  type HeldGrant,
   type StaffEditRowFacts,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -499,12 +499,6 @@ function provideTestI18n(): EnvironmentProviders[] {
     },
     loader: TestTranslationLoader,
   });
-}
-
-/** A held grant and the coupon it was issued from — what the «Отстъпка» menu reads. */
-interface HeldGrant {
-  readonly grant: CouponGrant;
-  readonly coupon: Coupon;
 }
 
 /**

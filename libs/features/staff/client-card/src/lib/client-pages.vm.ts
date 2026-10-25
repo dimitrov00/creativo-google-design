@@ -213,9 +213,16 @@ export interface MedalVm {
    * The family drawn — or, on an archived season's OWN medal (a season
    * without a track family, whose tile opens the season's scope:
    * `AchievementTileVm.opens`), the season. A tap opens a family's detail
-   * only where `opens` is `null`, so a season's id never reaches it.
+   * only where `opens` is `null`, so a season's id never reaches it. The
+   * medal's key and test ids; the family it draws is {@link familyId}.
    */
   readonly seriesId: BadgeSeriesId | SeasonId;
+  /**
+   * The family drawn, by its own brand — `null` on an archived season's OWN
+   * medal, which draws no family (`familyOfMedal` reads it: a typed lookup,
+   * never a season's id matched against a family's, pass E DEP-4).
+   */
+  readonly familyId: BadgeSeriesId | null;
   /**
    * The state DRAWN: the family's standing, except that a family the open
    * visit completes is drawn at least in progress (the pending face: the

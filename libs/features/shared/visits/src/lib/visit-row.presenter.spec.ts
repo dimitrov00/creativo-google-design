@@ -167,14 +167,17 @@ function seatCancelled(
 
 /**
  * A flat visit at the centre (`visitOf`), on its first seat's day, in
- * `status`. A cancelled visit's `reason` is the legacy whole-visit word: the
- * flat document keeps the reason on each SEAT (`seat()`'s outcome), so the
- * word here only names the case.
+ * `status.bookingStatus`. A cancelled visit's `cancellationReason` is the
+ * legacy whole-visit word: the flat document keeps the reason on each SEAT
+ * (`seat()`'s outcome), so the word here only names the case.
  */
 function visit(
   id: string,
   seats: readonly Seat[],
-  status: { readonly kind: VisitStatusSpec; readonly reason?: string },
+  status: {
+    readonly bookingStatus: VisitStatusSpec;
+    readonly cancellationReason?: string;
+  },
   extras: {
     readonly note?: string;
     readonly discounted?: boolean;
@@ -186,7 +189,7 @@ function visit(
     id,
     'loc-center',
     seats,
-    status.kind,
+    status.bookingStatus,
     (first === undefined ? null : SEAT_START.get(first)) ??
       '2026-09-04T10:00:00',
     {
@@ -205,7 +208,7 @@ const WORKED_AT = sofia('2026-09-04T10:40:00');
 const LAST_VISIT = visit(
   'appt-sep',
   [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
-  { kind: 'completed' },
+  { bookingStatus: 'completed' },
   { note: 'Къса отстрани, по-дълго отгоре' },
 );
 
@@ -301,7 +304,10 @@ describe('visitRowOf · the staff card', () => {
           ),
         }),
       ],
-      { kind: 'cancelled', reason: 'client_changed_plans' },
+      {
+        bookingStatus: 'cancelled',
+        cancellationReason: 'client_changed_plans',
+      },
     );
     const row = visitRowOf(cancelled, staffOptions(), LOOKUP);
     expect(row.tile).toEqual({ caption: 'юли', day: 16, tone: 'hollow' });
@@ -339,7 +345,7 @@ describe('visitRowOf · the staff card', () => {
           ),
         }),
       ],
-      { kind: 'cancelled', reason: 'staff_shop_closure' },
+      { bookingStatus: 'cancelled', cancellationReason: 'staff_shop_closure' },
     );
     expect(visitRowOf(byShop, staffOptions(), LOOKUP).lines).toEqual([
       { text: 'Отказан от салона' },
@@ -374,7 +380,10 @@ describe('visitRowOf · the staff card', () => {
           ),
         }),
       ],
-      { kind: 'cancelled', reason: 'client_changed_plans' },
+      {
+        bookingStatus: 'cancelled',
+        cancellationReason: 'client_changed_plans',
+      },
     );
     expect(visitRowOf(withCompany, staffOptions(), LOOKUP).lines).toEqual([
       { text: 'Отказан от клиента' },
@@ -390,7 +399,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatNoShow(sofia('2026-07-07T10:20:00')),
         }),
       ],
-      { kind: 'no_show' },
+      { bookingStatus: 'no_show' },
     );
     const row = visitRowOf(noShow, staffOptions(), LOOKUP);
     expect(row.tile?.tone).toBe('hollow');
@@ -408,7 +417,7 @@ describe('visitRowOf · the staff card', () => {
 
   it('files an hour still to come under «Предстоящи», saying when in the day — nothing paid yet', () => {
     const ahead = visit('appt-oct', [seat('2026-10-02T10:00:00')], {
-      kind: 'confirmed',
+      bookingStatus: 'confirmed',
     });
     const row = visitRowOf(ahead, staffOptions(), LOOKUP);
     expect(row.upcoming).toBe(true);
@@ -429,7 +438,7 @@ describe('visitRowOf · the staff card', () => {
 
   it('says a request the shop has not confirmed is «Заявен»', () => {
     const pending = visit('appt-pending', [seat('2026-10-02T10:00:00')], {
-      kind: 'pending',
+      bookingStatus: 'pending',
     });
     const row = visitRowOf(pending, staffOptions(), LOOKUP);
     expect(row.trailingFact).toEqual({
@@ -443,7 +452,7 @@ describe('visitRowOf · the staff card', () => {
 
   it('marks the visit on screen «Този час» wherever its date files it, and leads with its time alone', () => {
     const today = visit('appt-today', [seat('2026-09-28T10:00:00')], {
-      kind: 'confirmed',
+      bookingStatus: 'confirmed',
     });
     const row = visitRowOf(
       today,
@@ -466,7 +475,7 @@ describe('visitRowOf · the staff card', () => {
     const settled = visit(
       'appt-today',
       [seat('2026-09-28T08:00:00', { outcome: seatWorked(NOW_MS) })],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
     );
     const worked = visitRowOf(
       settled,
@@ -505,7 +514,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatNoShow(WORKED_AT),
         }),
       ],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
       { note: 'Ще дойдем двамата', discounted: true },
     );
 
@@ -583,7 +592,7 @@ describe('visitRowOf · the staff card', () => {
             outcome: seatWorked(WORKED_AT),
           }),
         ],
-        { kind: 'completed' },
+        { bookingStatus: 'completed' },
       );
       expect(visitRowOf(withGuest, staffOptions(), LOOKUP).lines).toEqual([
         { text: 'Център · с още 1 · Иван', hold: ' · Иван' },
@@ -595,7 +604,7 @@ describe('visitRowOf · the staff card', () => {
     const discounted = visit(
       'appt-discounted',
       [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
       { discounted: true },
     );
     const row = visitRowOf(discounted, staffOptions(), LOOKUP);
@@ -628,7 +637,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatWorked(sofia('2025-03-06T10:40:00')),
         }),
       ],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
     );
     const row = visitRowOf(old, staffOptions(), LOOKUP);
     expect(row.sectionKey).toBe('2025');
@@ -657,7 +666,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatWorked(WORKED_AT),
         }),
       ],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
     );
     const row = visitRowOf(two, staffOptions(), LOOKUP);
     expect(row.title).toBe('Фейд · Брада');
@@ -697,7 +706,7 @@ describe('visitRowOf · the staff card', () => {
           outcome: seatWorked(WORKED_AT),
         }),
       ],
-      { kind: 'completed' },
+      { bookingStatus: 'completed' },
     );
     expect(visitRowOf(gone, staffOptions(), LOOKUP).trailing).toEqual({
       avatarSrc: null,
@@ -721,7 +730,7 @@ describe('visitRowOf · the staff card', () => {
       const paid = visit(
         'appt-voucher',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
-        { kind: 'completed' },
+        { bookingStatus: 'completed' },
         { discounted: true, vouchers: [redemption(false)] },
       );
       const row = visitRowOf(paid, staffOptions({ photoCount: 2 }), LOOKUP);
@@ -743,7 +752,7 @@ describe('visitRowOf · the staff card', () => {
       const reversed = visit(
         'appt-voucher-reversed',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
-        { kind: 'completed' },
+        { bookingStatus: 'completed' },
         { vouchers: [redemption(true)] },
       );
       expect(visitRowOf(reversed, staffOptions(), LOOKUP).marks).toEqual([]);
@@ -755,7 +764,7 @@ describe('visitRowOf · the staff card', () => {
             outcome: seatNoShow(sofia('2026-09-04T10:20:00')),
           }),
         ],
-        { kind: 'no_show' },
+        { bookingStatus: 'no_show' },
         { vouchers: [redemption(false)] },
       );
       expect(visitRowOf(missed, staffOptions(), LOOKUP).marks).toEqual([]);
@@ -777,7 +786,7 @@ describe('visitRowOf · the staff card', () => {
             outcome: seatWorked(WORKED_AT),
           }),
         ],
-        { kind: 'completed' },
+        { bookingStatus: 'completed' },
         { vouchers: [redemption(false)] },
       );
       expect(
@@ -792,7 +801,7 @@ describe('visitRowOf · the staff card', () => {
       const paid = visit(
         'appt-voucher-older',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
-        { kind: 'completed' },
+        { bookingStatus: 'completed' },
         { vouchers: [redemption(false)] },
       );
       expect(
@@ -902,7 +911,7 @@ describe('visitRowOf · the client’s own list', () => {
           ),
         }),
       ],
-      { kind: 'cancelled', reason: 'unspecified' },
+      { bookingStatus: 'cancelled', cancellationReason: 'unspecified' },
     );
     const row = visitRowOf(cancelled, clientOptions(), LOOKUP);
     expect(row.struck).toBe(true);
@@ -917,7 +926,7 @@ describe('visitRowOf · the client’s own list', () => {
           outcome: seatNoShow(sofia('2026-07-07T10:20:00')),
         }),
       ],
-      { kind: 'no_show' },
+      { bookingStatus: 'no_show' },
     );
     expect(visitRowOf(missed, clientOptions(), LOOKUP).accessibleName).toBe(
       'Фейд, 7 юли в 10:00, Иван, Пропуснат',
@@ -936,7 +945,7 @@ describe('visitRowOf · the client’s own list', () => {
           barber: 'barber-petar',
         }),
       ],
-      { kind: 'confirmed' },
+      { bookingStatus: 'confirmed' },
     );
     const row = visitRowOf(party, clientOptions(), LOOKUP);
     // Deduplicated: a party having the same cut is one thing, twice.
@@ -1282,7 +1291,9 @@ describe('waitlistRowOf', () => {
       LOOKUP,
     );
     const ahead = visitRowOf(
-      visit('appt-oct', [seat('2026-10-02T10:00:00')], { kind: 'confirmed' }),
+      visit('appt-oct', [seat('2026-10-02T10:00:00')], {
+        bookingStatus: 'confirmed',
+      }),
       staffOptions(),
       LOOKUP,
     );

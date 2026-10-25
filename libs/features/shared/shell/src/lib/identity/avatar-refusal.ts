@@ -17,10 +17,7 @@ import {
  */
 export function avatarUploadRefusal(
   error: AccountsError | MediaError,
-):
-  | AccountsError.UploadAvatarNotAnImage
-  | AccountsError.UploadAvatarTooLarge
-  | AccountsError.UploadAvatarUploadFailed {
+): AccountsError.AvatarRefusal {
   return error.errorCode === AccountsErrorCode.UploadAvatarNotAnImage ||
     error.errorCode === AccountsErrorCode.UploadAvatarTooLarge
     ? error

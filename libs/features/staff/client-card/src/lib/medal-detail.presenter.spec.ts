@@ -1567,6 +1567,7 @@ describe('medalDetailVm', () => {
       for (const level of page.ladder) {
         expect(level.medal).toEqual({
           seriesId: 'series-svc-fade',
+          familyId: 'series-svc-fade',
           state: level.tone === 'passed' ? 'complete' : 'notStarted',
           icon: page.medal.icon,
           src: page.medal.src,
@@ -1705,6 +1706,7 @@ describe('medalDetailVm', () => {
           level: 1,
           medal: {
             seriesId: 'series-welcome',
+            familyId: 'series-welcome',
             state: 'complete',
             icon: 'loyalty.badge.welcome',
             src: null,

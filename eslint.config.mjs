@@ -68,7 +68,7 @@ export const TESTING_ENTRY_POINT_RESTRICTION = {
 
 /**
  * The ECS lint pieces the project-scoped configs (libs/ecs-core,
- * apps/functions) restate, re-exported from HERE on purpose: this file
+ * apps/functions, libs/ui/icons) restate, re-exported from HERE on purpose: this file
  * belongs to no Nx project, but a project config importing
  * tools/lint-rules directly gives that project a graph edge to
  * `lint-rules` — and the functions build then writes eslint's parsers into
@@ -84,6 +84,7 @@ export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
   PARENT_SEGMENT_REGEX,
+  UI_RAW_PRIMITIVE_RESTRICTIONS,
   ecsProjectBlocks,
 } from './tools/lint-rules/index.mjs';
 
@@ -103,7 +104,7 @@ export { creativo };
  * `e2e/` tooling (UR-8). Every pattern is `**\/`-prefixed so it matches
  * under BOTH basePaths (the note above the import cages).
  */
-const PRODUCTION_TS_IGNORES = [
+export const PRODUCTION_TS_IGNORES = [
   '**/*.spec.ts',
   '**/*.type-spec.ts',
   '**/testing/**',
@@ -407,8 +408,9 @@ export default [
   // ESLint base paths (the note above the import cages); it restates the
   // every-file icon and L7 guards (options replace); specs and test support
   // keep the blocks above; it sits before the suffix blocks so a suffix file
-  // keeps its kind's list. libs/ui/icons turns `no-restricted-syntax` off on
-  // its non-suffix files (the registry boundary), this guard with it.
+  // keeps its kind's list. libs/ui/icons lifts only the icon selectors on its
+  // non-suffix files (the registry boundary) and restates this guard and L7
+  // there (pass E, E-5).
   // Selectors and specs: tools/lint-rules/ecs-syntax.mjs; both base paths:
   // tools/lint-rules/ecs-core-base-paths.spec.mjs.
   uiRawPrimitiveBlock({

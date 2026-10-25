@@ -17,6 +17,7 @@ import {
   WaitlistError,
 } from '@core/errors';
 import type { RequestWaitlistCommand } from '@core/pipelines';
+import { WaitlistSystem } from '@core/systems';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   cancelWaitlistRefusal,
@@ -94,8 +95,7 @@ const CALL_JSON = {
 };
 
 describe('decodeRequestWaitlist', () => {
-  it('turns the call component into the command: the verified owner, the ask on the shop’s minutes, the flat cart — no zone, the pipeline reads the shop’s', () => {
-    const self = SeatKeyText.of('self');
+  it('turns the call component into the command: the verified owner, the ask on the shop’s minutes, the flat cart as raw strings — no zone, the pipeline reads the shop’s', () => {
     const expected: RequestWaitlistCommand = {
       ownerUserId: UserId.of('u-waiting'),
       ask: {
@@ -106,18 +106,18 @@ describe('decodeRequestWaitlist', () => {
             windows: [{ startMinutes: 600, endMinutes: 720 }],
           },
         ],
+        // The raw twin (pass E, E-4): the brand is the door's.
         cart: {
           cartSeats: [
             {
-              seatKey: self,
+              seatKey: 'self',
               lines: [
                 {
-                  lineId: CartLineId.of('line-1'),
-                  seatKey: self,
-                  serviceId: ServiceId.of('svc-cut'),
-                  variantId: ServiceVariantId.of('short'),
-                  barberId: BarberId.of('ivan'),
-                  locationId: LocationId.of('loc-center'),
+                  lineId: 'line-1',
+                  serviceId: 'svc-cut',
+                  variantId: 'short',
+                  barberId: 'ivan',
+                  locationId: 'loc-center',
                 },
               ],
             },
@@ -126,9 +126,28 @@ describe('decodeRequestWaitlist', () => {
         },
       },
     };
-    expect(valueOf(decodeRequestWaitlist(callable(CALL_JSON)))).toEqual(
-      expected,
-    );
+    const command = valueOf(decodeRequestWaitlist(callable(CALL_JSON)));
+    expect(command).toEqual(expected);
+    // Branded as sent by the door, it is the flat cart the wire once built.
+    const self = SeatKeyText.of('self');
+    expect(WaitlistSystem.cartAsSent(command.ask.cart)).toEqual({
+      cartSeats: [
+        {
+          seatKey: self,
+          lines: [
+            {
+              lineId: CartLineId.of('line-1'),
+              seatKey: self,
+              serviceId: ServiceId.of('svc-cut'),
+              variantId: ServiceVariantId.of('short'),
+              barberId: BarberId.of('ivan'),
+              locationId: LocationId.of('loc-center'),
+            },
+          ],
+        },
+      ],
+      cartNextSequence: 1,
+    });
   });
 
   it('defaults nothing into existence: absent fields read empty, a bound that is no number a span the door refuses', () => {
@@ -151,7 +170,6 @@ describe('decodeRequestWaitlist', () => {
           lines: [
             {
               lineId: '',
-              seatKey: '',
               serviceId: '',
               variantId: null,
               barberId: null,
@@ -162,6 +180,81 @@ describe('decodeRequestWaitlist', () => {
       ],
       cartNextSequence: 0,
     });
+  });
+
+  it('judges no id: `/`, blanks and a stray line seat key pass to the door as raw strings, the counter `Number`-read', () => {
+    const command = valueOf(
+      decodeRequestWaitlist(
+        callable({
+          ...CALL_JSON,
+          cart: {
+            cartSeats: [
+              {
+                seatKey: 'self/1',
+                lines: [
+                  {
+                    lineId: 'line/0',
+                    seatKey: 'someone-else',
+                    serviceId: 'svc/x',
+                    variantId: '',
+                    barberId: 7,
+                    locationId: '  ',
+                  },
+                ],
+              },
+            ],
+            cartNextSequence: '2',
+          },
+        }),
+      ),
+    );
+    expect(command.ask.cart).toEqual({
+      cartSeats: [
+        {
+          seatKey: 'self/1',
+          lines: [
+            {
+              lineId: 'line/0',
+              serviceId: 'svc/x',
+              variantId: '',
+              barberId: '7',
+              locationId: '  ',
+            },
+          ],
+        },
+      ],
+      cartNextSequence: 2,
+    });
+    // Branded as sent by the door: the seat's key on the line, nothing judged
+    // — the cart the wire built before pass E, byte for byte.
+    const seat = SeatKeyText.of('self/1');
+    expect(WaitlistSystem.cartAsSent(command.ask.cart)).toEqual({
+      cartSeats: [
+        {
+          seatKey: seat,
+          lines: [
+            {
+              lineId: CartLineId.of('line/0'),
+              seatKey: seat,
+              serviceId: ServiceId.of('svc/x'),
+              variantId: ServiceVariantId.of(''),
+              barberId: BarberId.of('7'),
+              locationId: LocationId.of('  '),
+            },
+          ],
+        },
+      ],
+      cartNextSequence: 2,
+    });
+    const noCount = valueOf(
+      decodeRequestWaitlist(
+        callable({
+          ...CALL_JSON,
+          cart: { ...CALL_JSON.cart, cartNextSequence: 'x' },
+        }),
+      ),
+    );
+    expect(noCount.ask.cart.cartNextSequence).toBeNaN();
   });
 
   it('reads no legacy field: `when`, `dayKey`, `from`/`to` and `seats` are no request', () => {

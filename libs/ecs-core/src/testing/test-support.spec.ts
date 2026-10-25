@@ -1,5 +1,12 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Result, Weekday, LocalDate, UtcEpochMs } from '@core/primitives';
+import {
+  Result,
+  Weekday,
+  LocalDate,
+  type TimeZone,
+  UtcEpochMs,
+} from '@core/primitives';
 import { BookingErrorCode, RepositoryErrorCode } from '@core/errors';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
@@ -29,6 +36,7 @@ import {
   textFixture,
   unwrapErr,
   unwrapOk,
+  offsetIso,
 } from './test-support';
 import { deepFreeze } from './deep-freeze';
 
@@ -394,6 +402,118 @@ describe('the flatten-pass time fixtures (flatten-spec §2.2)', () => {
 
   it('pinnedNowUtcMs is deterministic', () => {
     expect(pinnedNowUtcMs()()).toBe(FIXTURE_NOW_UTC_MS);
+  });
+});
+
+/*
+ * `offsetIso` — the spelling the zoned-time system no longer owns (pass E,
+ * E-6): its two describes of `zoned-time.system.spec.ts` restated here, same
+ * literals, same property. Every instant is a LITERAL epoch-ms constant (its
+ * UTC reading in the comment).
+ */
+describe('offsetIso — an instant on the zone’s clock, with its offset', () => {
+  const zone = (raw: string): TimeZone =>
+    unwrapOk(ZonedTimeSystem.checkZone(raw));
+  const SOFIA_TZ = zone('Europe/Sofia');
+  const KOLKATA_TZ = zone('Asia/Kolkata');
+  const UTC_TZ = zone('UTC');
+  const SAO_PAULO_TZ = zone('America/Sao_Paulo');
+  const LORD_HOWE_TZ = zone('Australia/Lord_Howe');
+  /** A literal epoch-ms constant as the brand. */
+  const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
+
+  const SOFIA_0801_0900 = 1_785_564_000_000; // 2026-08-01T06:00Z
+  const SOFIA_1025_0330_SECOND = 1_792_891_800_000; // 2026-10-25T01:30Z (+02:00)
+  const UTC_0729_START = 1_785_283_200_000; // 2026-07-29T00:00Z
+  const KOLKATA_0730_0915 = 1_785_383_100_000; // 2026-07-30T03:45Z
+
+  it('spells the instant as ZonedDateTime.toISO() did in the shop’s zone', () => {
+    // 2026-10-10T11:00:00.000Z — Sofia summer (EEST, +03:00).
+    expect(offsetIso(at(1_791_630_000_000), SOFIA_TZ)).toBe(
+      '2026-10-10T14:00:00.000+03:00',
+    );
+    // 2026-12-01T08:30:15.007Z — Sofia winter (EET, +02:00); seconds and ms kept.
+    expect(offsetIso(at(1_796_113_815_007), SOFIA_TZ)).toBe(
+      '2026-12-01T10:30:15.007+02:00',
+    );
+  });
+
+  it('names each occurrence of the repeated hour by its own offset', () => {
+    // 2026-10-25T00:30Z and 01:30Z both read 03:30 in Sofia.
+    expect(offsetIso(at(1_792_888_200_000), SOFIA_TZ)).toBe(
+      '2026-10-25T03:30:00.000+03:00',
+    );
+    expect(offsetIso(at(1_792_891_800_000), SOFIA_TZ)).toBe(
+      '2026-10-25T03:30:00.000+02:00',
+    );
+  });
+
+  it('writes a non-hour, a negative and a zero offset as ±HH:MM', () => {
+    // 2026-10-10T00:00Z.
+    expect(offsetIso(at(1_791_590_400_000), KOLKATA_TZ)).toBe(
+      '2026-10-10T05:30:00.000+05:30',
+    );
+    expect(offsetIso(at(1_791_590_400_000), UTC_TZ)).toBe(
+      '2026-10-10T00:00:00.000+00:00',
+    );
+    // 2026-10-10T02:00Z is the previous evening in São Paulo (-03:00).
+    expect(offsetIso(at(1_791_597_600_000), SAO_PAULO_TZ)).toBe(
+      '2026-10-09T23:00:00.000-03:00',
+    );
+    // Before the epoch: the millisecond is still the positive remainder.
+    expect(offsetIso(at(-1), UTC_TZ)).toBe('1969-12-31T23:59:59.999+00:00');
+  });
+
+  it('reads back through parseOffsetIso as the same instant', () => {
+    for (const epochMs of [1_791_630_000_000, 1_792_891_800_000]) {
+      const iso = offsetIso(at(epochMs), SOFIA_TZ);
+      expect(unwrapOk(ZonedTimeSystem.parseOffsetIso(iso))).toBe(epochMs);
+    }
+  });
+
+  it('an unknown zone throws — a broken fixture', () => {
+    expect(() => offsetIso(at(0), 'Not/AZone' as TimeZone)).toThrow();
+  });
+
+  it('is byte-identical to the legacy ZonedDateTime.toISO()', () => {
+    expect(offsetIso(at(SOFIA_0801_0900), SOFIA_TZ)).toBe(
+      '2026-08-01T09:00:00.000+03:00',
+    );
+    expect(offsetIso(at(SOFIA_1025_0330_SECOND), SOFIA_TZ)).toBe(
+      '2026-10-25T03:30:00.000+02:00',
+    );
+    expect(offsetIso(at(UTC_0729_START), UTC_TZ)).toBe(
+      '2026-07-29T00:00:00.000+00:00',
+    );
+    expect(offsetIso(at(KOLKATA_0730_0915), KOLKATA_TZ)).toBe(
+      '2026-07-30T09:15:00.000+05:30',
+    );
+  });
+
+  it('spells the wall clock toLocal reads and round-trips through parseOffsetIso (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 4_102_444_800_000 }),
+        fc.constantFrom(
+          SOFIA_TZ,
+          KOLKATA_TZ,
+          UTC_TZ,
+          SAO_PAULO_TZ,
+          LORD_HOWE_TZ,
+        ),
+        (ms, tz) => {
+          const instant = at(ms);
+          const iso = offsetIso(instant, tz);
+          const wall = ZonedTimeSystem.toLocal(instant, tz);
+          expect(iso.slice(0, 10)).toBe(wall.localDate);
+          expect(
+            Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+          ).toBe(wall.minute);
+          expect(unwrapOk(ZonedTimeSystem.parseOffsetIso(iso))).toBe(ms);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });
 

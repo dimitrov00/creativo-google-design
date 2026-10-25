@@ -2,13 +2,9 @@ import { Injectable, computed, inject } from '@angular/core';
 import type { Money } from '@core/components';
 import type { DurationMinutes } from '@core/primitives';
 import { LanguageService } from '@creativo/features/shared/shell';
-import { formatCents } from '@creativo/ui/wall-clock';
+import { formatCents, formatMinutesRange } from '@creativo/ui/wall-clock';
 import { type Localized, type ServiceVm } from './catalog.vm';
-import {
-  formatDurationRange,
-  formatServiceMeta,
-  serviceCardPrice,
-} from './catalog.presenter';
+import { formatServiceMeta, serviceCardPrice } from './catalog.presenter';
 
 /**
  * The three locale-bound reads every catalog surface needs: resolve a
@@ -42,8 +38,12 @@ export class CatalogWording {
     return formatCents(money.amountCents, money.currency, this.locale());
   }
 
+  /**
+   * A duration range in the active language — «30 – 50 мин» — through the
+   * shared cached minutes formatter (`formatMinutesRange`, pass E, E-12).
+   */
   durationRange(from: DurationMinutes, to: DurationMinutes): string {
-    return formatDurationRange(from, to, this.locale());
+    return formatMinutesRange(from, to, this.locale());
   }
 
   /**

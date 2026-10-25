@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsError, AccountsErrorCode } from './accounts.error';
+import {
+  AccountsError,
+  AccountsErrorCode,
+  type AvatarUploadError,
+} from './accounts.error';
+import { IdentityError } from './identity.error';
 
 describe('AccountsError', () => {
   it('builds each struct with its errorCode and i18n params', () => {
@@ -105,5 +110,26 @@ describe('AccountsError', () => {
     const stranger: AccountsError.OwnProfileSave =
       AccountsError.emailInvalid('x');
     expect(stranger.errorCode).toBe('ACCOUNTS_EMAIL_INVALID');
+  });
+
+  it('AvatarRefusal names the three refusals of an avatar upload, AvatarUploadError adds the missing account (pass E E-7)', () => {
+    const refusals: readonly AccountsError.AvatarRefusal[] = [
+      AccountsError.uploadAvatarNotAnImage(),
+      AccountsError.uploadAvatarTooLarge(5),
+      AccountsError.uploadAvatarUploadFailed(),
+    ];
+    const answers: readonly AvatarUploadError[] = [
+      ...refusals,
+      IdentityError.identifierMissing(),
+    ];
+    expect(answers.map((answer) => answer.errorCode)).toEqual([
+      'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE',
+      'ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE',
+      'ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED',
+      'IDENTITY_IDENTIFIER_MISSING',
+    ]);
+    // @ts-expect-error — a failed removal is no upload refusal.
+    const removal: AvatarUploadError = AccountsError.removeAvatarRemoveFailed();
+    expect(removal.errorCode).toBe('ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED');
   });
 });

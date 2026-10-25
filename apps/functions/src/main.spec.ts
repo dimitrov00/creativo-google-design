@@ -156,7 +156,10 @@ const daily = (schedule: string) => ({
  * `endImpersonation`, `redeemInvitation`, 4A-3 (4), (5)) declare no option
  * either. Edge-hardening D-5 flipped three retry flags — the projection
  * triggers `rebuildBusyOnAppointmentChange`, `rebuildCapacityOnBusyChange`
- * and `matchWaitlistOnBusyChange` retry now (the allowlist's deployed half).
+ * and `matchWaitlistOnBusyChange` retry now (the allowlist's deployed half)
+ * — and pass E (E-1, DEP-1) four more: the capacity triggers
+ * `rebuildCapacityOnExceptionChange`, `rebuildCapacityOnRosterChange`,
+ * `rebuildCapacityOnLocationChange` and `rebuildCapacityOnSettingsChange`.
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
  * timeout, memory or schedule fails here.
  */
@@ -184,13 +187,10 @@ const ENDPOINTS = {
   staffEditAppointment: callable,
   rebuildBusyOnAppointmentChange: written('appointments/{appointmentId}', true),
   rebuildCapacityOnBusyChange: written('barberBusy/{docId}', true),
-  rebuildCapacityOnExceptionChange: written(
-    'scheduleExceptions/{docId}',
-    false,
-  ),
-  rebuildCapacityOnRosterChange: written('barberSchedules/{barberId}', false),
-  rebuildCapacityOnLocationChange: written('locations/{locationId}', false),
-  rebuildCapacityOnSettingsChange: written('settings/{docId}', false),
+  rebuildCapacityOnExceptionChange: written('scheduleExceptions/{docId}', true),
+  rebuildCapacityOnRosterChange: written('barberSchedules/{barberId}', true),
+  rebuildCapacityOnLocationChange: written('locations/{locationId}', true),
+  rebuildCapacityOnSettingsChange: written('settings/{docId}', true),
   sweepCapacityDaily: daily('every day 03:00'),
   sampleBarberLeadTimeDaily: daily('every day 04:00'),
   requestWaitlist: callable,
@@ -924,10 +924,7 @@ describe('main.ts — the composition root', () => {
       });
       seam.answers.set('rebuildCapacity', down);
       await expect(
-        run(
-          'rebuildCapacityOnRosterChange',
-          caseOf('rebuildCapacityOnRosterChange').input,
-        ),
+        run('sweepCapacityDaily', caseOf('sweepCapacityDaily').input),
       ).rejects.toThrow();
       seam.answers.set('startPolicyRecompute', down);
       const settled = run(
@@ -946,10 +943,17 @@ describe('main.ts — the composition root', () => {
   });
 
   describe('edge-hardening D-5 — the projection triggers retry a transient failure and drop a decisive one', () => {
-    /** Each retrying projection trigger, the pipeline it runs and what it answers when nothing failed. */
+    /**
+     * Each retrying projection trigger and the pipeline it runs — D-5's
+     * three, and pass E's four other capacity triggers (E-1, DEP-1).
+     */
     const RETRIED = [
       ['rebuildBusyOnAppointmentChange', 'rebuildBusy'],
       ['rebuildCapacityOnBusyChange', 'rebuildCapacity'],
+      ['rebuildCapacityOnExceptionChange', 'rebuildCapacity'],
+      ['rebuildCapacityOnRosterChange', 'rebuildCapacity'],
+      ['rebuildCapacityOnLocationChange', 'rebuildCapacity'],
+      ['rebuildCapacityOnSettingsChange', 'rebuildCapacity'],
       ['matchWaitlistOnBusyChange', 'matchWaitlist'],
     ] as const;
 

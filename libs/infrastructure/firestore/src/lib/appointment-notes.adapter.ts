@@ -6,9 +6,19 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { Result, defect } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import { type AppointmentNote, Collections } from '@core/entities';
 import type { AppointmentNotePorts } from '@core/ports';
-import { attemptWrite, entityOf, observeDoc, writeFailed } from './observe';
+import type { StoredDocument } from '@core/systems';
+import {
+  admitted,
+  attemptWrite,
+  entityOf,
+  observeDoc,
+  type ReadGuard,
+  UNGUARDED,
+  writeFailed,
+} from './observe';
 
 /**
  * `appointmentNotes/{appointmentId}` — the team's note on a visit,
@@ -30,11 +40,27 @@ import { attemptWrite, entityOf, observeDoc, writeFailed } from './observe';
  * transaction never reads the persistent cache and writes only at commit,
  * so offline it refuses — `REPOSITORY_WRITE_FAILED`, the SDK's rejection
  * code as the reason — and never writes over the server's copy.
+ *
+ * Built with a {@link ReadGuard} (the composition root's `guardedReads`),
+ * both reads answer the SINGLE rule through
+ * `StoredDocumentSystem.appointmentNote` (pass E, E-2): a malformed note —
+ * a text that is no string or blank, an author that is no account id, an
+ * instant that is no instant — is never handed on. Live, the refusal
+ * (`REPOSITORY_MALFORMED`, its path and first offending field) is an
+ * emitted value and the listener stays; in the append's transaction it is
+ * admitted BEFORE `decide`, so a refused note is never decided on, nothing
+ * is `Set`, and the port answers the refusal — reported once per call
+ * through the guard's log however often the SDK re-runs the attempt. A
+ * bare `appointmentNotePorts(db)` guards nothing (edge hardening DEP-11).
  */
-export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
+export const appointmentNotePorts = (
+  db: Firestore,
+  guard: ReadGuard = UNGUARDED,
+): AppointmentNotePorts => ({
   observeAppointmentNote: (appointmentId) =>
     observeDoc<AppointmentNote>(
       doc(db, Collections.AppointmentNotes, appointmentId),
+      guard,
     ),
 
   saveAppointmentNote: (appointmentId, note) => {
@@ -54,15 +80,29 @@ export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
     // transaction so it is never mistaken for the store's failure; the
     // attempt that met it writes nothing.
     let misfiled = null as string | null;
+    // The guard's refusal of the note this attempt read — the port's answer,
+    // reported once per path however many attempts meet it.
+    let refused = null as RepositoryError | null;
+    const reported = new Set<string>();
     let written: AppointmentNote | null;
     try {
       written = await runTransaction(db, async (tx) => {
         misfiled = null;
+        refused = null;
         const snap = await tx.get(ref);
         const data = snap.data();
-        const next = decide(
-          data === undefined ? null : entityOf<AppointmentNote>(snap.id, data),
+        const stored = admitted<AppointmentNote>(
+          data === undefined ? null : entityOf<StoredDocument>(snap.id, data),
+          Collections.AppointmentNotes,
+          guard,
+          reported,
         );
+        if (!stored.ok) {
+          // Never decided on, never written over: the attempt ends here.
+          refused = stored.error;
+          return null;
+        }
+        const next = decide(stored.value);
         if (next === null) return null;
         // The note's id IS the appointment's: the body is the entity minus it.
         const { id, ...body } = next;
@@ -76,6 +116,7 @@ export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
     } catch (cause) {
       return Result.err(writeFailed(ref.path, cause));
     }
+    if (refused !== null) return Result.err(refused);
     if (misfiled !== null) {
       defect(
         `updateAppointmentNote: note ${misfiled} decided for ${appointmentId}`,

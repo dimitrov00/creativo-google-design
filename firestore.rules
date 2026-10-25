@@ -56,7 +56,9 @@ service cloud.firestore {
     }
 
     /**
-     * Who may rewrite a chair's hours or declare it absent.
+     * Who may change a chair's hours for a day or declare it absent — the
+     * `scheduleExceptions` grant. (The weekly roster itself,
+     * `barberSchedules`, has no client writer since pass E, DEP-6.)
      *
      * The intended rule is SELF-OR-MANAGER, and it is not expressible yet:
      * `Barber` deliberately carries no `userId`, so no token claim can say
@@ -85,6 +87,89 @@ service cloud.firestore {
 
     function affectedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ── the programs bodies (pass E, E-15 / DEP-7) ──────────────────────
+    // A programs write must BE its document: the flat `Position`, `Course`
+    // or `ShopEvent` (`@core/entities`) minus `id`, every key present
+    // (`null` for none, never absent), each value of its type. These mirror
+    // what `ProgramsSystem` admits on the way in and are never stricter
+    // than it: where the rules cannot repeat a check (a URL the parser
+    // accepts, a real calendar day, an integer sort order, trimmed text)
+    // they test the looser shape around it.
+
+    /** `LocalizedText` (`@core/components`): exactly `{ bg, en }`, both non-empty strings. */
+    function isLocalizedText(v) {
+      return v is map
+        && v.keys().hasOnly(['bg', 'en'])
+        && v.keys().hasAll(['bg', 'en'])
+        && v.bg is string && v.bg.size() > 0
+        && v.en is string && v.en.size() > 0;
+    }
+
+    function isLocalizedTextOrNull(v) {
+      return v == null || isLocalizedText(v);
+    }
+
+    /** An `applyUrl`: `null` (the shop's shared contact link) or a non-empty string. */
+    function isLinkOrNull(v) {
+      return v == null || (v is string && v.size() > 0);
+    }
+
+    /** A `LocationId` (non-empty, no `/`) or `null` (no single shop). */
+    function isLocationIdOrNull(v) {
+      return v == null || (v is string && v.matches('^[^/]+$'));
+    }
+
+    /** A list order: a number `>= 0` (the system admits integers `>= 0`). */
+    function isSortOrder(v) {
+      return v is number && v >= 0;
+    }
+
+    /** `positions/{id}` — `Position` minus `id`; `positionStatus` a `PositionStatus` tag. */
+    function validPosition(d) {
+      return d.keys().hasOnly(['title', 'summary', 'locationIds', 'positionStatus', 'applyUrl', 'sortOrder'])
+        && d.keys().hasAll(['title', 'summary', 'locationIds', 'positionStatus', 'applyUrl', 'sortOrder'])
+        && isLocalizedText(d.title)
+        && isLocalizedText(d.summary)
+        && d.locationIds is list
+        && d.positionStatus in ['OPEN', 'CLOSED']
+        && isLinkOrNull(d.applyUrl)
+        && isSortOrder(d.sortOrder);
+    }
+
+    /** `courses/{id}` — `Course` minus `id`; `enrollmentStatus` an `EnrollmentStatus` tag. */
+    function validCourse(d) {
+      return d.keys().hasOnly(['title', 'description', 'enrollmentStatus', 'startsLabel', 'applyUrl', 'sortOrder'])
+        && d.keys().hasAll(['title', 'description', 'enrollmentStatus', 'startsLabel', 'applyUrl', 'sortOrder'])
+        && isLocalizedText(d.title)
+        && isLocalizedText(d.description)
+        && d.enrollmentStatus in ['OPEN', 'UPCOMING', 'CLOSED']
+        && isLocalizedTextOrNull(d.startsLabel)
+        && isLinkOrNull(d.applyUrl)
+        && isSortOrder(d.sortOrder);
+    }
+
+    /**
+     * `events/{id}` — `ShopEvent` minus `id`: the shop wall clock
+     * (`localDate` `YYYY-MM-DD`, `startMinutes` a `MinuteOfDay` in
+     * `[0, 1440)`) and the instant computed once at ingestion
+     * (`utcEpochMs`, an integer). No zone field (Law 7.2).
+     */
+    function validEvent(d) {
+      return d.keys().hasOnly(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'applyUrl', 'sortOrder'])
+        && d.keys().hasAll(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'applyUrl', 'sortOrder'])
+        && isLocalizedText(d.title)
+        && isLocalizedText(d.description)
+        && d.localDate is string
+        && d.localDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.startMinutes is int
+        && d.startMinutes >= 0
+        && d.startMinutes < 1440
+        && d.utcEpochMs is int
+        && isLocationIdOrNull(d.locationId)
+        && isLinkOrNull(d.applyUrl)
+        && isSortOrder(d.sortOrder);
     }
 
     // Default deny — every collection below must opt in explicitly.
@@ -376,28 +461,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── catalog (public browse, staff/content-manager write) ──────────────
+    // ── catalog (public browse, no client write) ──────────────────────────
     // `/book` lists the catalogue anonymously (`catalogReadPorts`: the
-    // active services, barbers and shops, every category); the content
-    // roles keep it.
+    // active services, barbers and shops, every category). No client writes
+    // it (pass E, DEP-6): no web adapter does — `catalog.adapter.ts` only
+    // reads — so the catalogue-manager grant that stood here was a browser
+    // write path no app code used. The Admin SDK is the one writer (the dev
+    // seed `tools/seed-dev-catalog.mjs`, which the e2e global setup runs,
+    // and Cloud Functions), and it bypasses these rules.
     match /serviceCategories/{categoryId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow write: if false;
     }
 
     match /services/{serviceId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow write: if false;
     }
 
     match /barbers/{barberId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow write: if false;
     }
 
     match /locations/{locationId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow write: if false;
     }
 
     // ── availability (public read, PII-free by construction) ─────────────
@@ -410,11 +499,15 @@ service cloud.firestore {
     // which stays closed.
     match /barberSchedules/{barberId} {
       allow read: if true;
-      // Rosters are staff-authored; utilisation history DIVIDES BY THEM, so
-      // a blanket staff write let any barber rewrite any other barber's hours
-      // (and a `content_manager` rewrite all of them), silently changing
-      // everyone's utilisation denominator.
-      allow write: if mayEditRoster();
+      // Utilisation history DIVIDES BY the rosters, so a blanket staff write
+      // let any barber rewrite any other barber's week (and a
+      // `content_manager` rewrite all of them), silently changing everyone's
+      // utilisation denominator. The roster-editor grant that replaced it
+      // had no writer either: no web adapter writes a roster
+      // (`schedulingReadPorts.observeSchedule` only reads). Closed (pass E,
+      // DEP-6); the Admin SDK (the dev seed, which the e2e global setup
+      // runs, and Cloud Functions) is the one writer.
+      allow write: if false;
     }
 
     match /scheduleExceptions/{dayDocId} {
@@ -422,7 +515,9 @@ service cloud.firestore {
       // geometry only, structurally reason-free (the doc schema has no field
       // a reason could ride in; a `sick` day must never be derivable here).
       allow read: if true;
-      // Same boundary as the roster it overrides — see `mayEditRoster`.
+      // The roster editors' boundary — see `mayEditRoster`. The live writer
+      // is the staff's pen on the day, `scheduleExceptionPorts`
+      // (`scheduling.adapter.ts`, one transaction per edit).
       allow write: if mayEditRoster();
     }
 
@@ -481,22 +576,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── programs (public browse, staff/content-manager write) ─────────────
-    // Open positions, courses, and shop events — same posture as catalog:
-    // public read, `content_manager`/`admin`/`sysadmin` write.
+    // ── programs (public browse, catalogue-manager write, shape-checked) ──
+    // Open positions, courses and shop events: public read; a catalogue
+    // manager (`content_manager`/`admin`/`sysadmin`) writes them straight
+    // from the browser through `programsPorts` (`programs.adapter.ts`
+    // `saveBody`: ONE full-document `setDoc` of the entity minus `id`,
+    // never a merge, never a delete). Since pass E (E-15, DEP-7) a create
+    // or an update must BE that body — `validPosition` / `validCourse` /
+    // `validEvent` above — and no client deletes one.
     match /positions/{positionId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow create, update: if isCatalogManager() && validPosition(request.resource.data);
+      allow delete: if false;
     }
 
     match /courses/{courseId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow create, update: if isCatalogManager() && validCourse(request.resource.data);
+      allow delete: if false;
     }
 
     match /events/{eventId} {
       allow read: if true;
-      allow write: if isCatalogManager();
+      allow create, update: if isCatalogManager() && validEvent(request.resource.data);
+      allow delete: if false;
     }
 
     // ── engagement ──────────────────────────────────────────────────────
@@ -580,7 +683,11 @@ service cloud.firestore {
     // defaults-only policy plus a per-tab retry loop.
     match /settings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      // No client writes the settings (pass E, DEP-6): no web adapter does
+      // — `schedulingReadPorts.observePolicy` only reads — so the admin
+      // grant that stood here was a browser write path no app code used.
+      // The Admin SDK (the dev seed, Cloud Functions) is the one writer.
+      allow write: if false;
     }
 
     // ── server-only (Admin SDK bypasses rules; closed to every client) ──

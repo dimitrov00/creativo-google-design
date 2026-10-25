@@ -1,4 +1,3 @@
-import { positionStatusWords } from '@creativo/infrastructure/i18n';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -114,10 +113,5 @@ export class MarketingCareers {
   protected statusTone(positionStatus: PositionStatus): UiBadgeTone {
     // eslint-disable-next-line security/detect-object-injection -- closed union.
     return STATUS_TONES[positionStatus];
-  }
-
-  protected statusWord(positionStatus: PositionStatus): string {
-    // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return positionStatusWords[positionStatus];
   }
 }

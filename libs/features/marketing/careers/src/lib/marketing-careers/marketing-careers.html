@@ -66,7 +66,7 @@
               uiSpacing="compact"
             >
               <span uiBadge [uiTone]="statusTone(position.positionStatus)">
-                {{ statusWord(position.positionStatus) }}
+                {{ t('programs.status.position.' + position.positionStatus) }}
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>

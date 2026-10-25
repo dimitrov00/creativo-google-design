@@ -348,7 +348,8 @@
             >
               <span>{{ position.title.en }}</span>
               <span uiTrailing
-                >{{ positionStatusWords[position.positionStatus] }}</span
+                >{{ t('programs.status.position.' + position.positionStatus)
+                }}</span
               >
             </button>
             }
@@ -364,7 +365,8 @@
             >
               <span>{{ course.title.en }}</span>
               <span uiTrailing
-                >{{ enrollmentStatusWords[course.enrollmentStatus] }}</span
+                >{{ t('programs.status.enrollment.' + course.enrollmentStatus)
+                }}</span
               >
             </button>
             }

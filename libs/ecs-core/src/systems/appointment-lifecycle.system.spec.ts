@@ -1487,6 +1487,36 @@ describe('AppointmentLifecycleSystem — the transition callable’s three predi
       }
     }
   });
+
+  it('endsLive: live after, and not before — the busy projection’s predicate (pass E, DEP-5)', () => {
+    const live = (status: BookingStatus) =>
+      status === S.Pending || status === S.Confirmed;
+    for (const before of Object.values(S)) {
+      for (const after of Object.values(S)) {
+        expect(
+          AppointmentLifecycleSystem.endsLive(
+            { bookingStatus: before },
+            { bookingStatus: after },
+          ),
+        ).toBe(!live(before) && live(after));
+      }
+    }
+    // The three reopens the graph allows, and a confirm that was live already.
+    for (const before of [S.Cancelled, S.NoShow, S.Completed]) {
+      expect(
+        AppointmentLifecycleSystem.endsLive(
+          { bookingStatus: before },
+          { bookingStatus: S.Confirmed },
+        ),
+      ).toBe(true);
+    }
+    expect(
+      AppointmentLifecycleSystem.endsLive(
+        { bookingStatus: S.Pending },
+        { bookingStatus: S.Confirmed },
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('AppointmentLifecycleSystem — the read-only legality is pure', () => {
@@ -1517,6 +1547,7 @@ describe('AppointmentLifecycleSystem — the read-only legality is pure', () => 
         deepFreeze({ to: S.Confirmed, seatId: null }),
       ),
       ends: AppointmentLifecycleSystem.endsCancelled(root, root),
+      live: AppointmentLifecycleSystem.endsLive(root, root),
     });
     const once = calls();
     expect(calls()).toEqual(once);

@@ -1,11 +1,15 @@
 import {
   Actor,
   AuditAction,
+  BlockKind,
   BookingLifecycle,
   BookingPolicy,
   CancellationReason,
   CancellationReasonSet,
+  CancelledBy,
   type DocBody,
+  MinuteBlock,
+  RequestedSubjectRole,
   SeatOccupant,
   SeatLabel,
   SeatOutcome,
@@ -17,8 +21,11 @@ import {
 import {
   AppointmentId,
   BookingStatus,
+  BusyKey,
   Currency,
+  type EndMinute,
   GiftVoucherId,
+  type MinuteOfDay,
   Result,
   SeatId,
   UserId,
@@ -31,25 +38,42 @@ import {
 import {
   type Appointment,
   type AuditEntry,
+  type BarberBusyDay,
   type GiftVoucher,
+  type ShopLocation,
   Collections,
   QueryOp,
 } from '@core/entities';
-import { AuditSystem } from '@core/systems';
+import { AppointmentLifecycleSystem, AuditSystem } from '@core/systems';
 import {
   appointmentFixture,
+  at,
+  barberBusyDayFixture,
+  barberScheduleFixture,
   cents,
   FIXTURE_IDS,
+  FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
+  FIXTURE_TODAY,
   fixtureHash,
   localDate,
   locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
   seatFixture,
+  serviceFixture,
+  until,
   utcMs,
 } from '@core/testing';
+import {
+  type BookAppointmentCommand,
+  bookAppointment,
+} from './book-appointment.pipeline';
+import { rebuildBusy } from './rebuild-busy.pipeline';
 import { transitionAppointment } from './transition-appointment.pipeline';
 
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
@@ -83,13 +107,22 @@ function rig(
   options: {
     readonly vouchers?: readonly GiftVoucher[];
     readonly policy?: Result<BookingPolicy, RepositoryError>;
+    /** The visit's shop — the fixture shop unless given; `null`: none stored. */
+    readonly location?: ShopLocation | null;
+    readonly busy?: readonly BarberBusyDay[];
   } = {},
 ) {
+  const location =
+    options.location === undefined ? locationFixture() : options.location;
   const store = memoryStore([
-    {
-      path: [Collections.Locations, FIXTURE_IDS.location],
-      body: bodyOf(locationFixture()),
-    },
+    ...(location === null
+      ? []
+      : [
+          {
+            path: [Collections.Locations, location.id],
+            body: bodyOf(location),
+          },
+        ]),
     ...appointments.map((appointment) => ({
       path: [Collections.Appointments, appointment.id],
       body: bodyOf(appointment),
@@ -97,6 +130,10 @@ function rig(
     ...(options.vouchers ?? []).map((each) => ({
       path: [Collections.GiftVouchers, each.id],
       body: bodyOf(each),
+    })),
+    ...(options.busy ?? []).map((day) => ({
+      path: [Collections.BarberBusy, day.id],
+      body: bodyOf(day),
     })),
   ]);
   const tx = memoryTxPorts(store);
@@ -472,4 +509,324 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
       field: 'appointmentId',
     });
   });
+});
+
+/*
+ * THE REOPEN-THEN-BOOK WINDOW (pass E, E-14 — flip 1's deferred "reopen busy
+ * write", proven before it was fixed). The busy projection keeps only LIVE
+ * visits (`BusySystem.rebuild` skips `!BookingLifecycle.isLive`), so a
+ * cancelled, a no-show and a completed visit all lose their blocks once
+ * `rebuildBusyOnAppointmentChange` ran — and a booking checks its collisions
+ * against the busy DOCUMENTS only (`readPlacementSet`). Each window case
+ * (the last describe) runs the whole story over ONE store: the visit leaves
+ * the book, the trigger frees its day, the shop reopens it — and, BEFORE the
+ * trigger runs again, a walk-in is placed over it.
+ *
+ * On `6d64f69f` (no busy write on any edge, F1-2) the walk-in was ADMITTED on
+ * all three edges — outcome (b), DEP-5: the reopen now merges the visit's
+ * blocks onto the busy days it reads, so the walk-in is refused. The plan
+ * cases pin the reopen's `WriteOp[]` for each edge.
+ */
+
+const BUSY_KEY = BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY);
+const BUSY_PATH = `${Collections.BarberBusy}/${BUSY_KEY}`;
+
+/** The fixture visit called off by the shop. */
+const CANCELLED_VISIT = appointmentFixture({
+  seats: [
+    seatFixture({
+      outcome: SeatOutcome.cancelled(
+        FIXTURE_NOW_UTC_MS,
+        CancelledBy.Staff,
+        CancellationReason.StaffBarberAbsence,
+        24,
+      ),
+    }),
+  ],
+  lifecycle: BookingLifecycle.cancel(
+    FIXTURE_NOW_UTC_MS,
+    CancellationReasonSet.of([CancellationReason.StaffBarberAbsence]),
+  ),
+});
+
+/** The fixture visit nobody came to. */
+const NO_SHOW_VISIT = appointmentFixture({
+  seats: [seatFixture({ outcome: SeatOutcome.noShow(FIXTURE_NOW_UTC_MS) })],
+  lifecycle: BookingLifecycle.noShow(FIXTURE_NOW_UTC_MS),
+});
+
+/** The fixture visit worked and settled. */
+const COMPLETED_VISIT = appointmentFixture({
+  seats: [seatFixture({ outcome: SeatOutcome.worked(FIXTURE_NOW_UTC_MS) })],
+  lifecycle: BookingLifecycle.complete(FIXTURE_NOW_UTC_MS),
+});
+
+/** The three statuses a reopen comes back from — the settled two on the visit's own day. */
+const LEFT_VISITS: readonly (readonly [BookingStatus, Appointment])[] = [
+  [BookingStatus.Cancelled, CANCELLED_VISIT],
+  [BookingStatus.NoShow, NO_SHOW_VISIT],
+  [BookingStatus.Completed, COMPLETED_VISIT],
+];
+
+/** The reopen's own writes, as the system decides them on the pinned now — the plan's head. */
+function reopenWrites(left: Appointment): readonly WriteOp[] {
+  const step = AppointmentLifecycleSystem.transition(
+    left,
+    {
+      to: BookingStatus.Confirmed,
+      seatId: null,
+      reason: null,
+      windowHours: null,
+    },
+    FIXTURE_NOW,
+  );
+  if (!step.ok) throw new Error('a broken reopen fixture');
+  return step.value.writes;
+}
+
+function busyBlock(from: MinuteOfDay, to: EndMinute): MinuteBlock {
+  return MinuteBlock.of(from, to, BlockKind.Busy);
+}
+
+/** Ivan's busy day today as stored — the entity minus its id. */
+function busyDayBody(blocks: readonly MinuteBlock[]): DocBody {
+  return bodyOf(barberBusyDayFixture({ blocks }));
+}
+
+describe('transitionAppointment — a reopen holds its chair in barberBusy at once (DEP-5)', () => {
+  it.each(LEFT_VISITS)(
+    'reopening a %s visit merges its chair time onto the busy day it read, in the same plan',
+    async (_from, left) => {
+      const { tx, run } = rig([left]);
+      const answer = await run(command(BookingStatus.Confirmed));
+      expect(answer.ok).toBe(true);
+      expect(tx.plans).toEqual([
+        [
+          ...reopenWrites(left),
+          WriteOp.set(
+            [Collections.BarberBusy, BUSY_KEY],
+            busyDayBody([busyBlock(at(10), until(10, 30))]),
+          ),
+        ],
+      ]);
+      // The busy day and its exceptions are read in the transaction, absent ones too.
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Appointments, FIXTURE_IDS.appointment],
+        [Collections.Locations, FIXTURE_IDS.location],
+        [Collections.BarberBusy, BUSY_KEY],
+        [Collections.ScheduleExceptions, BUSY_KEY],
+      ]);
+    },
+  );
+
+  it('merges onto the body it read: a neighbour’s blocks kept, a touching span joined', async () => {
+    const { store, tx, run } = rig([NO_SHOW_VISIT], {
+      busy: [
+        barberBusyDayFixture({
+          blocks: [
+            busyBlock(at(10, 30), until(11)),
+            busyBlock(at(12), until(12, 30)),
+          ],
+        }),
+      ],
+    });
+    await run(command(BookingStatus.Confirmed));
+    const merged = busyDayBody([
+      busyBlock(at(10), until(11)),
+      busyBlock(at(12), until(12, 30)),
+    ]);
+    expect(tx.plans[0]?.at(-1)).toEqual(
+      WriteOp.set([Collections.BarberBusy, BUSY_KEY], merged),
+    );
+    expect(store.get(BUSY_PATH)).toEqual(merged);
+  });
+
+  it('writes no busy day for a shop with no zone (its first instant is the zone’s) — the reopen still lands', async () => {
+    const { tx, run } = rig([NO_SHOW_VISIT], { location: null });
+    expect((await run(command(BookingStatus.Confirmed))).ok).toBe(true);
+    expect(tx.plans.map((plan) => plan.map((op) => op.path[0]))).toEqual([
+      [Collections.Appointments],
+    ]);
+  });
+
+  it('a move that leaves the visit live, or ends it, reads and writes no busy day', async () => {
+    const pending = rig([
+      appointmentFixture({
+        lifecycle: BookingLifecycle.pending(
+          utcMs('2026-09-27T09:00:00.000+03:00'),
+        ),
+      }),
+    ]);
+    await pending.run(command(BookingStatus.Confirmed));
+    const ended = rig([appointmentFixture()]);
+    await ended.run(command(BookingStatus.NoShow));
+    for (const { tx } of [pending, ended]) {
+      expect(tx.plans.flat().map((op) => op.path[0])).toEqual([
+        Collections.Appointments,
+      ]);
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Appointments, FIXTURE_IDS.appointment],
+        [Collections.Locations, FIXTURE_IDS.location],
+      ]);
+    }
+  });
+
+  it.each([
+    [BookingStatus.Completed, COMPLETED_VISIT, BookingStatus.NoShow],
+    [BookingStatus.Cancelled, CANCELLED_VISIT, BookingStatus.NoShow],
+    [BookingStatus.NoShow, NO_SHOW_VISIT, BookingStatus.Completed],
+  ] as const)(
+    'a move from a %s visit to a status that is not live reads no busy day, so it keeps its own answer',
+    async (_from, left, to) => {
+      const { tx, run } = rig([left], {
+        busy: [barberBusyDayFixture()],
+      });
+      const answer = await run(command(to));
+      expect(answer.ok).toBe(false);
+      expect(tx.plans).toEqual([]);
+      const reads = tx.transactions.flatMap((each) => each.reads);
+      expect(reads.map((path) => path[0])).not.toContain(
+        Collections.BarberBusy,
+      );
+      expect(reads.map((path) => path[0])).not.toContain(
+        Collections.ScheduleExceptions,
+      );
+    },
+  );
+});
+
+/** A walk-in the shop places at 10:15 today, on the reopened visit's chair. */
+const WALK_IN: BookAppointmentCommand = {
+  locationId: FIXTURE_IDS.location,
+  localDate: FIXTURE_TODAY,
+  seats: [
+    {
+      lineId: 'line-1',
+      serviceId: FIXTURE_IDS.service,
+      variantId: null,
+      barberId: FIXTURE_IDS.barber,
+      barberPreference: null,
+      startMinutes: 615,
+      subject: {
+        requestedSubjectRole: RequestedSubjectRole.Guest,
+        label: 'Walk-in',
+        guestKey: null,
+      },
+    },
+  ],
+  attemptId: null,
+  bookedFromAppointmentId: null,
+  contact: null,
+  ownerUserId: null,
+  staffPlacement: true,
+  actor: STAFF,
+};
+
+/** The three pipelines over ONE store: the confirmed 10:00 visit, its busy day, the catalogue. */
+function windowRig() {
+  const confirmed = appointmentFixture();
+  const store = memoryStore([
+    {
+      path: [Collections.Locations, FIXTURE_IDS.location],
+      body: bodyOf(locationFixture()),
+    },
+    {
+      path: [Collections.Services, FIXTURE_IDS.service],
+      body: bodyOf(serviceFixture()),
+    },
+    {
+      path: [Collections.BarberSchedules, FIXTURE_IDS.barber],
+      body: bodyOf(barberScheduleFixture()),
+    },
+    {
+      path: [Collections.Appointments, confirmed.id],
+      body: bodyOf(confirmed),
+    },
+    {
+      path: [Collections.BarberBusy, BUSY_KEY],
+      body: bodyOf(barberBusyDayFixture()),
+    },
+  ]);
+  const tx = memoryTxPorts(store);
+  const telemetry = recordingTelemetry();
+  const policy = async () => Result.ok(BookingPolicy.DEFAULT);
+  const appendAudit = async () => undefined;
+  const transition = transitionAppointment({
+    ...tx,
+    ...telemetry,
+    loadPolicy: policy,
+    appendAudit,
+  });
+  const rebuild = rebuildBusy({
+    ...tx,
+    ...telemetry,
+    ...memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    ),
+    ...memoryDefaultLocationPorts(),
+  });
+  const book = bookAppointment({
+    ...tx,
+    ...telemetry,
+    loadPolicy: policy,
+    loadAccountContacts: async () => Result.ok(new Map()),
+    appendAudit,
+  });
+  /** The visit as stored now — the side the trigger is handed. */
+  const visit = (): Appointment =>
+    ({ id: confirmed.id, ...store.get(PATH) }) as Appointment;
+  /** The trigger on one write of the visit (no refused side). */
+  const trigger = (before: Appointment, after: Appointment) =>
+    rebuild({
+      before,
+      after,
+      salvagedKeys: [],
+      salvagedLocationId: null,
+      refusal: null,
+    });
+  return { store, tx, confirmed, visit, transition, trigger, book };
+}
+
+describe('transitionAppointment — the reopen-then-book window (E-14)', () => {
+  it.each([
+    [
+      BookingStatus.Cancelled,
+      CancellationReason.StaffBarberAbsence as CancellationReason | null,
+    ],
+    [BookingStatus.NoShow, null],
+    [BookingStatus.Completed, null],
+  ])(
+    'a visit reopened from %s holds its chair before the trigger runs: an overlapping walk-in is refused',
+    async (to, reason) => {
+      const world = windowRig();
+      // 0. While the visit holds its chair, the walk-in collides with it.
+      const before = await world.book(WALK_IN);
+      expect(!before.ok && before.error.errorCode).toBe(
+        BookingErrorCode.SlotUnavailable,
+      );
+      // 1. The visit leaves the book (the settled two on its own day).
+      expect((await world.transition(command(to, { reason }))).ok).toBe(true);
+      const left = world.visit();
+      expect(left.bookingStatus).toBe(to);
+      // 2. The trigger frees its day: nothing live occupies it.
+      await world.trigger(world.confirmed, left);
+      expect(world.store.get(BUSY_PATH)).toBeUndefined();
+      // 3. The shop reopens it — the trigger has NOT run since.
+      const reopened = await world.transition(command(BookingStatus.Confirmed));
+      expect(reopened.ok).toBe(true);
+      expect(world.visit().bookingStatus).toBe(BookingStatus.Confirmed);
+      // 4. A walk-in over the reopened chair is refused, nothing written.
+      const plans = world.tx.plans.length;
+      const booked = await world.book(WALK_IN);
+      expect(!booked.ok && booked.error.errorCode).toBe(
+        BookingErrorCode.SlotUnavailable,
+      );
+      expect(world.tx.plans).toHaveLength(plans);
+      // 5. Idempotent with the trigger: its recompute lands on the same body.
+      const merged = world.store.get(BUSY_PATH);
+      expect(merged).toBeDefined();
+      await world.trigger(left, world.visit());
+      expect(world.store.get(BUSY_PATH)).toEqual(merged);
+    },
+  );
 });

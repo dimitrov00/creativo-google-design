@@ -19,7 +19,7 @@ import {
   uploadAvatar,
 } from '@core/pipelines';
 import { Result, type ServiceId, type UserId } from '@core/primitives';
-import { type AccountsError, IdentityError } from '@core/errors';
+import { type AvatarUploadError, IdentityError } from '@core/errors';
 import {
   AgeSystem,
   GuestGuardSystem,
@@ -270,17 +270,7 @@ export class OnboardingFlowStore {
    * event: the machine's `ENTER_APP` fires only after the caller decides
    * what a failure means.
    */
-  async uploadAvatar(
-    data: Blob,
-  ): Promise<
-    Result<
-      void,
-      | AccountsError.UploadAvatarNotAnImage
-      | AccountsError.UploadAvatarTooLarge
-      | AccountsError.UploadAvatarUploadFailed
-      | IdentityError.IdentifierMissing
-    >
-  > {
+  async uploadAvatar(data: Blob): Promise<Result<void, AvatarUploadError>> {
     const owner = this.currentUserId();
     if (owner === null) return Result.err(IdentityError.identifierMissing());
 

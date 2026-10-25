@@ -229,7 +229,12 @@ describe('the rows, by month', () => {
       sectionKey: '2026-05',
       struck: true,
       tile: { tone: 'hollow' },
-      lines: [{ text: 'Отказан от салона · Нико' }],
+      // Two lines: the cancelled word, then the barber held against the
+      // ellipsis — the shared row's design since revision 3 (`c1db6611`;
+      // `visit-row.presenter.spec.ts:344-347`, «Отказан от салона» over
+      // «Иван»). This case, born in the same commit, pinned the joined
+      // «Отказан от салона · Нико» (pass E, E-19).
+      lines: [{ text: 'Отказан от салона' }, { text: 'Нико' }],
       trailing: { name: 'Нико' },
       trailingFact: {
         trailingFactFace: TrailingFactFace.Amount,

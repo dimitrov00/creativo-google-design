@@ -9,7 +9,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
-import { fixtureHash } from '@core/testing';
+import { fixtureHash, offsetIso } from '@core/testing';
 import {
   type AppointmentBody,
   DEV_CHAIR,
@@ -169,9 +169,7 @@ describe('the e2e appointment seed', () => {
         expect(body.localDate).toBe(visit.start.slice(0, 10));
         expect(body.startMinutes).toBe(10 * 60);
         expect(body.utcEpochMs).toBe(instantOf(visit.startsAtOffset));
-        expect(ZonedTimeSystem.toIso(body.utcEpochMs, ZONE)).toBe(
-          visit.startsAtOffset,
-        );
+        expect(offsetIso(body.utcEpochMs, ZONE)).toBe(visit.startsAtOffset);
       });
 
       test('reads on the shop’s clock for any shop-hours start, on either side of a DST switch', () => {
@@ -205,9 +203,9 @@ describe('the e2e appointment seed', () => {
               ok: true,
               value: body.utcEpochMs,
             });
-            expect(
-              ZonedTimeSystem.toIso(body.utcEpochMs, ZONE).slice(0, 16),
-            ).toBe(`${date}T${clock}`);
+            expect(offsetIso(body.utcEpochMs, ZONE).slice(0, 16)).toBe(
+              `${date}T${clock}`,
+            );
           }),
           { numRuns: 300 },
         );

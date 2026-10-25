@@ -12,6 +12,7 @@ import {
   type WaitlistCall,
 } from '@core/components';
 import {
+  BarberId,
   CartLineId,
   LocationId,
   Result,
@@ -143,7 +144,7 @@ function cartOf(...serviceIds: readonly string[]): BookingCart {
 }
 
 function askOf(
-  cart: BookingCart,
+  cart: WaitlistCall.CartInput,
   locationId: string | null = CENTRE,
 ): WaitlistCall.Input {
   return {
@@ -305,6 +306,153 @@ describe('requestWaitlist — a crafted cart costs the shop no reads', () => {
     expect(reads).toEqual([
       { serviceIds: [CUT, ServiceId.of('svc-nope')], locationId: CENTRE },
     ]);
+  });
+});
+
+/*
+ * Pass E, E-4: the cart as the wire sends it — every id a raw string — is
+ * judged inside the door, in the door's own order. Today's answers on the
+ * raw edge cases, pinned through the whole sandwich.
+ */
+
+/** A cart line as the wire reads it: every id as sent. */
+type SentLine = {
+  readonly lineId: string;
+  readonly serviceId: string;
+  readonly variantId: string | null;
+  readonly barberId: string | null;
+  readonly locationId: string | null;
+};
+
+const sentLine = (overrides: Partial<SentLine> = {}): SentLine => ({
+  lineId: 'line-0',
+  serviceId: CUT,
+  variantId: null,
+  barberId: null,
+  locationId: null,
+  ...overrides,
+});
+
+/** One seat's cart, as the wire sends it — raw strings, no brand. */
+function sentCart(
+  seatKey: string,
+  lines: readonly SentLine[],
+  cartNextSequence: number = lines.length,
+): WaitlistCall.CartInput {
+  return { cartSeats: [{ seatKey, lines }], cartNextSequence };
+}
+
+/** The cart a recorded request stores — each id branded as sent, the seat's key on every line. */
+function storedCart(
+  seatKey: string,
+  lines: readonly SentLine[],
+  cartNextSequence: number = lines.length,
+): BookingCart {
+  const key = SeatKeyText.of(seatKey);
+  return {
+    cartSeats: [
+      {
+        seatKey: key,
+        lines: lines.map((line) => ({
+          lineId: CartLineId.of(line.lineId),
+          seatKey: key,
+          serviceId: ServiceId.of(line.serviceId),
+          variantId:
+            line.variantId === null
+              ? null
+              : ServiceVariantId.of(line.variantId),
+          barberId: line.barberId === null ? null : BarberId.of(line.barberId),
+          locationId:
+            line.locationId === null ? null : LocationId.of(line.locationId),
+        })),
+      },
+    ],
+    cartNextSequence,
+  };
+}
+
+describe('requestWaitlist — the raw cart, judged in the door’s own order (pass E, E-4)', () => {
+  it.each([
+    [
+      'ids holding `/`',
+      'self/1',
+      sentLine({
+        lineId: 'line/0',
+        barberId: 'barbers/ivan',
+        locationId: 'loc/x',
+      }),
+    ],
+    ['an empty seat key', '', sentLine()],
+    ['a blank seat key', '   ', sentLine()],
+    ['a blank line shop', 'self', sentLine({ locationId: '  ' })],
+  ] as const)(
+    'records %s exactly as sent, under the id of what was sent',
+    async (_what, seatKey, line) => {
+      const { tx, reads, run } = rig();
+      const answer = await run(command(askOf(sentCart(seatKey, [line]))));
+      const body = storedRequest(storedCart(seatKey, [line]), CENTRE);
+      const id = waitlistRequestIdOf(body, fixtureHash);
+      expect(answer).toEqual({ ok: true, value: { requestId: id } });
+      expect(reads).toEqual([{ serviceIds: [CUT], locationId: CENTRE }]);
+      expect(tx.plans).toEqual([
+        [WriteOp.create([Collections.WaitlistRequests, id], body)],
+      ]);
+    },
+  );
+
+  it.each([
+    ['an empty line id', sentLine({ lineId: '' }), 1],
+    ['a blank line id', sentLine({ lineId: '   ' }), 1],
+    ['a line counter that is a fraction', sentLine(), 1.5],
+    ['a line counter that is no number', sentLine(), Number.NaN],
+  ] as const)(
+    'refuses %s as `cart` after reading the catalogue, and records nothing',
+    async (_what, line, sequence) => {
+      const { tx, reads, run } = rig();
+      const answer = await run(
+        command(askOf(sentCart('self', [line], sequence))),
+      );
+      expect(answer).toEqual({
+        ok: false,
+        error: WaitlistError.invalidRequest('cart'),
+      });
+      expect(reads).toEqual([{ serviceIds: [CUT], locationId: CENTRE }]);
+      expect(tx.transactions).toEqual([]);
+    },
+  );
+
+  it('refuses a blank line id before the commit’s own refusal of its service', async () => {
+    const { tx, run } = rig();
+    const answer = await run(
+      command(
+        askOf(sentCart('self', [sentLine({ lineId: '', serviceId: RETIRED })])),
+      ),
+    );
+    expect(answer).toEqual({
+      ok: false,
+      error: WaitlistError.invalidRequest('cart'),
+    });
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('refuses a blank line id past the read bound as `cart`, reading no service', async () => {
+    const cap = BookingPolicy.DEFAULT.maxPartySize;
+    const lines = Array.from(
+      { length: WaitlistSystem.MAX_SERVICES_PER_PERSON * cap + 1 },
+      (_, index) =>
+        sentLine({
+          lineId: index === 0 ? '' : `line-${index}`,
+          serviceId: `svc-${index}`,
+        }),
+    );
+    const { tx, reads, run } = rig();
+    const answer = await run(command(askOf(sentCart('self', lines))));
+    expect(answer).toEqual({
+      ok: false,
+      error: WaitlistError.invalidRequest('cart'),
+    });
+    expect(reads).toEqual([{ serviceIds: [], locationId: CENTRE }]);
+    expect(tx.transactions).toEqual([]);
   });
 });
 

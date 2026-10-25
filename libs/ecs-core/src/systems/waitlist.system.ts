@@ -1,6 +1,6 @@
 import {
   BookingPolicy,
-  BookingCart,
+  type BookingCart,
   type CartLine,
   type CartSeatLines,
   Daypart,
@@ -17,9 +17,12 @@ import {
 import {
   Result,
   WaitlistStatus,
-  type BarberId,
+  BarberId,
+  CartLineId,
   LocationId,
-  type SeatKeyText,
+  SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
   NotificationId,
   type UserId,
   type WaitlistRequestId,
@@ -209,14 +212,26 @@ type BasisLine = Pick<
   'lineId' | 'serviceId' | 'variantId' | 'barberId'
 >;
 
-/** A line every id of which is readable — the stored cart's own reading. */
-function lineReadable(line: CartLine): boolean {
+/**
+ * A line every id of which is readable — the stored cart's own reading, on
+ * the ids as sent (a `CartLine` is one).
+ */
+function lineReadable(line: WaitlistCall.CartLineInput): boolean {
   return (
     line.lineId.trim().length > 0 &&
     line.serviceId.trim().length > 0 &&
     (line.variantId === null || line.variantId.trim().length > 0) &&
     (line.barberId === null || line.barberId.trim().length > 0)
   );
+}
+
+/** How many lines the bag holds, as sent. */
+function lineCountOf(cart: WaitlistCall.CartInput): number {
+  let total = 0;
+  for (let s = 0; s < cart.cartSeats.length; s++) {
+    total += (cart.cartSeats[s] as WaitlistCall.CartSeatInput).lines.length;
+  }
+  return total;
 }
 
 /**
@@ -252,6 +267,11 @@ export const WaitlistSystem = {
    *    promise for part of the party is a broken one;
    * 8. the commit's own admission of the bag — its refusal, carried typed
    *    (`WaitlistError.cartRefused`).
+   *
+   * The bag arrives RAW (pass E, E-4): steps 6–7 read the ids as sent, and
+   * the stored body holds {@link cartAsSent} — so an id holding `/`, a blank
+   * seat key or line shop is stored as sent, never refused ahead of the
+   * days.
    */
   decide(
     ask: WaitlistCall.Input,
@@ -303,7 +323,7 @@ export const WaitlistSystem = {
     if (FlexibleWhen.isEmpty(when))
       return Result.err(WaitlistError.invalidRequest(NO_DAYS));
 
-    if (BookingCart.lineCount(ask.cart) === 0) {
+    if (lineCountOf(ask.cart) === 0) {
       return Result.err(WaitlistError.invalidRequest(EMPTY_CART));
     }
     const sequence = ask.cart.cartNextSequence;
@@ -311,9 +331,9 @@ export const WaitlistSystem = {
       return Result.err(WaitlistError.invalidRequest('cart'));
     }
     for (let s = 0; s < ask.cart.cartSeats.length; s++) {
-      const lines = (ask.cart.cartSeats[s] as CartSeatLines).lines;
+      const lines = (ask.cart.cartSeats[s] as WaitlistCall.CartSeatInput).lines;
       for (let k = 0; k < lines.length; k++) {
-        if (!lineReadable(lines[k] as CartLine)) {
+        if (!lineReadable(lines[k] as WaitlistCall.CartLineInput)) {
           return Result.err(WaitlistError.invalidRequest('cart'));
         }
       }
@@ -322,17 +342,54 @@ export const WaitlistSystem = {
       return Result.err(WaitlistError.cartRefused(door.admission));
     }
 
+    const cart = WaitlistSystem.cartAsSent(ask.cart);
     return Result.ok({
       ownerUserId: door.ownerUserId,
       locationId:
         ask.locationId === null ? null : LocationId.of(ask.locationId),
-      cartSeats: ask.cart.cartSeats,
-      cartNextSequence: ask.cart.cartNextSequence,
+      cartSeats: cart.cartSeats,
+      cartNextSequence: cart.cartNextSequence,
       flexibleDays: when.flexibleDays,
       localDates: FlexibleWhen.localDates(when),
       ...WaitlistLifecycle.open(door.now.utcEpochMs),
       createdAtUtcMs: door.now.utcEpochMs,
     });
+  },
+
+  /**
+   * The bag as sent, branded for the stored body and the commit's admission
+   * (pass E, E-4 — the one pre-door brand, moved here from the callable's
+   * wire): every id with its unchecked `of`, NEVER `parse`, because judging
+   * the ids is {@link decide}'s question, answered in its own order (a blank
+   * line id refused `cart` after the days; an id holding `/`, a blank seat
+   * key or line shop accepted). Every line names its seat's key; the counter
+   * passes as sent. A well-formed `BookingCart` (each line on its seat's
+   * key) comes back equal.
+   */
+  cartAsSent(raw: WaitlistCall.CartInput): BookingCart {
+    const cartSeats: CartSeatLines[] = [];
+    for (let s = 0; s < raw.cartSeats.length; s++) {
+      const seat = raw.cartSeats[s] as WaitlistCall.CartSeatInput;
+      const seatKey = SeatKeyText.of(seat.seatKey);
+      const lines: CartLine[] = [];
+      for (let l = 0; l < seat.lines.length; l++) {
+        const line = seat.lines[l] as WaitlistCall.CartLineInput;
+        lines.push({
+          lineId: CartLineId.of(line.lineId),
+          seatKey,
+          serviceId: ServiceId.of(line.serviceId),
+          variantId:
+            line.variantId === null
+              ? null
+              : ServiceVariantId.of(line.variantId),
+          barberId: line.barberId === null ? null : BarberId.of(line.barberId),
+          locationId:
+            line.locationId === null ? null : LocationId.of(line.locationId),
+        });
+      }
+      cartSeats.push({ seatKey, lines });
+    }
+    return { cartSeats, cartNextSequence: raw.cartNextSequence };
   },
 
   /**
@@ -398,15 +455,19 @@ export const WaitlistSystem = {
    * May the callable read the catalogue for this cart
    * (`cartWithinReadBounds`, `request-waitlist.ts:194-204`)? Not past the
    * party cap in seats, nor past {@link MAX_SERVICES_PER_PERSON} distinct
-   * services per allowed person — both refused without a read.
+   * services per allowed person — both refused without a read. Counts only,
+   * on the ids as sent (a typed `BookingCart` is one).
    */
-  withinReadBounds(cart: BookingCart, maxPartySize: number): boolean {
+  withinReadBounds(
+    cart: WaitlistCall.CartInput,
+    maxPartySize: number,
+  ): boolean {
     if (cart.cartSeats.length > maxPartySize) return false;
     const distinct: string[] = [];
     for (let s = 0; s < cart.cartSeats.length; s++) {
-      const lines = (cart.cartSeats[s] as CartSeatLines).lines;
+      const lines = (cart.cartSeats[s] as WaitlistCall.CartSeatInput).lines;
       for (let k = 0; k < lines.length; k++) {
-        const serviceId = (lines[k] as CartLine).serviceId;
+        const serviceId = (lines[k] as WaitlistCall.CartLineInput).serviceId;
         if (!distinct.includes(serviceId)) distinct.push(serviceId);
       }
     }

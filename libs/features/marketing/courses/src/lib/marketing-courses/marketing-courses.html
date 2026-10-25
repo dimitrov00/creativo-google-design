@@ -90,7 +90,7 @@
               uiSpacing="compact"
             >
               <span uiBadge [uiTone]="statusTone(course.enrollmentStatus)">
-                {{ statusWord(course.enrollmentStatus) }}
+                {{ t('programs.status.enrollment.' + course.enrollmentStatus) }}
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>

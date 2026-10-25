@@ -3,6 +3,7 @@ import {
   LINE_JOINT,
   NO_BREAK,
   factRun,
+  figure,
   heldFacts,
   hungJoints,
   joined,
@@ -170,6 +171,25 @@ describe('partedAtJoints', () => {
     expect(partedAtJoints([quietRun('Първо посещение')])).toEqual([
       [quietRun('Първо посещение')],
     ]);
+  });
+});
+
+/*
+ * The card's figures (pass E pin, E-12): a count grouped the locale's way —
+ * Bulgarian groups from five digits (CLDR's minimum grouping) with a
+ * no-break space, English from four with a comma.
+ */
+describe('figure', () => {
+  it('prints a single value and a grouped count in bg', () => {
+    expect(figure(7, 'bg')).toBe('7');
+    expect(figure(1000, 'bg')).toBe('1000');
+    expect(figure(12_450, 'bg')).toBe('12\u00a0450');
+  });
+
+  it('prints a single value and a grouped count in en', () => {
+    expect(figure(7, 'en')).toBe('7');
+    expect(figure(1000, 'en')).toBe('1,000');
+    expect(figure(12_450, 'en')).toBe('12,450');
   });
 });
 

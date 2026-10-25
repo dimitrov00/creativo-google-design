@@ -40,7 +40,6 @@ import {
   RHYTHM_PREVIEW_PAGE_SIZE,
   readRhythmPreviewFacts,
   rhythmPreviewOf,
-  rhythmPreviewReadsFacts,
   rhythmPreviewSource,
   streakFactsReader,
 } from './admin-rhythm.preview';
@@ -406,21 +405,6 @@ describe('RhythmPreviewSource', () => {
     expect(second).not.toBe(first);
     expect(second.ok && second.value.clients).toHaveLength(3);
     expect(directory.calls).toHaveLength(2);
-  });
-});
-
-describe('rhythmPreviewReadsFacts', () => {
-  it('reads the statistics while both rules count every visit', () => {
-    expect(rhythmPreviewReadsFacts(ruleOf(), ruleOf({ graceDays: 10 }))).toBe(
-      true,
-    );
-  });
-
-  it('reads nothing when either rule counts by a list', () => {
-    const listed = ruleOf({ qualifier: fade() });
-
-    expect(rhythmPreviewReadsFacts(ruleOf(), listed)).toBe(false);
-    expect(rhythmPreviewReadsFacts(listed, ruleOf())).toBe(false);
   });
 });
 

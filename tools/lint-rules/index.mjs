@@ -36,6 +36,7 @@ export {
   ECS_SYSTEM_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
+  UI_RAW_PRIMITIVE_RESTRICTIONS,
   ecsProjectBlocks,
   ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,

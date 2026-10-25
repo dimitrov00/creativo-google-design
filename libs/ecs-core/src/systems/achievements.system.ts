@@ -366,25 +366,6 @@ export const AchievementsSystem = {
   },
 
   /**
-   * When the visit on screen starts: the earliest of its legs' start
-   * instants (`starts`, read on the shop's zone at the edge), ordered by
-   * instant — so legs on different shop days and the fall-back repeat hour
-   * order as the timeline does; equal starts are one start. `null` with no
-   * start yet. The one rule behind the draft's start minute
-   * ({@link DraftVisit}) and its counted start ({@link countedDraft}).
-   */
-  firstStart(starts: readonly UtcEpochMs[]): UtcEpochMs | null {
-    let earliest: UtcEpochMs | null = null;
-    for (let i = 0; i < starts.length; i++) {
-      const start = starts[i] as UtcEpochMs;
-      if (earliest === null || UtcEpochMs.compare(start, earliest) < 0) {
-        earliest = start;
-      }
-    }
-    return earliest;
-  },
-
-  /**
    * The visit on screen as a visit the counting rule can judge. What the
    * day itself decides is not promised — a draft has no arrival and no
    * company. A draft with no start yet holds no day, minute, weekday or

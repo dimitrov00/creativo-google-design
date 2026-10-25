@@ -11,10 +11,3 @@
 .phone-field__control {
   inline-size: 20rem;
 }
-
-/* The demo canvas's `overflow-x: auto` (for wide demos) forces a vertical
-   clip box, which would swallow the field's ANCHORED POPOVER. Nothing on
-   this page is wider than the canvas, so let the popover escape. */
-:host ::ng-deep .sc-demo__canvas {
-  overflow-x: visible;
-}

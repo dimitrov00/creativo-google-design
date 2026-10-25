@@ -481,13 +481,22 @@ describe('UiGauge', () => {
   });
 
   describe('steps', () => {
+    /*
+     * A node's words, trimmed: the template (`gauge.ts`, 98adfb3f) sets the
+     * `@if (node.check)` glyph and `{{ node.numeral ?? '' }}` on lines of
+     * their own, so a collapsed whitespace text node leads the numeral
+     * (`' III'`, `' '`). It renders as nothing; the design is the numeral.
+     */
+    const nodeText = (node: HTMLElement): string =>
+      (node.textContent ?? '').trim();
+
     it('draws a node per mark in order, evenly — ranks, not distances', () => {
       const { gauge, all } = render(tierTrack);
       expect(gauge.dataset['gaugeStyle']).toBe('steps');
       expect(gauge.style.getPropertyValue('--ui-gauge-slots')).toBe('4');
       // The levels passed draw the check; the current one and those still
       // to come print their numerals.
-      expect(all('.ui-gauge__node').map((n) => n.textContent)).toEqual([
+      expect(all('.ui-gauge__node').map(nodeText)).toEqual([
         '',
         '',
         'III',
@@ -523,7 +532,7 @@ describe('UiGauge', () => {
       const { all, fixture, host } = render(tierTrack);
       const drawn = () =>
         all('.ui-gauge__node').map((n) =>
-          n.querySelector('.ui-gauge__check') ? '✓' : (n.textContent ?? ''),
+          n.querySelector('.ui-gauge__check') ? '✓' : nodeText(n),
         );
       host.value.set(20);
       fixture.detectChanges();
@@ -591,12 +600,7 @@ describe('UiGauge', () => {
         tierTrack(h);
         h.size.set('small');
       });
-      expect(all('.ui-gauge__node').map((n) => n.textContent)).toEqual([
-        '',
-        '',
-        '',
-        '',
-      ]);
+      expect(all('.ui-gauge__node').map(nodeText)).toEqual(['', '', '', '']);
       // A 16 pt node has no room for the check: the fill alone says it.
       expect(all('.ui-gauge__check')).toHaveLength(0);
       expect(all('.ui-gauge__step-label')).toHaveLength(0);
@@ -1160,8 +1164,16 @@ describe('UiGauge', () => {
       const notFull = ruleBody(
         '.ui-gauge:not([data-complete]) .ui-gauge__fill',
       );
-      expect(notFull).toContain(
-        'max( calc((1 - var(--ui-gauge-value, 0)) * 100%), var(--sys-space-tight) )',
+      // Compared with the formatter's spacing inside parentheses folded
+      // away: prettier writes `max(calc(…), …)` on one line where it fits
+      // and wraps it where it does not. 98adfb3f pinned the wrapped
+      // spelling; `gauge.css`, from the same commit, holds the one-line one.
+      const tight = (text: string): string =>
+        text.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+      expect(tight(notFull)).toContain(
+        tight(
+          'max( calc((1 - var(--ui-gauge-value, 0)) * 100%), var(--sys-space-tight) )',
+        ),
       );
     });
 

@@ -1,3 +1,4 @@
+import type { IdentityError } from './identity.error';
 import type { RepositoryError } from './repository.error';
 
 /**
@@ -224,6 +225,14 @@ export namespace AccountsError {
     | UpdateProfileNotFound
     | UpdateProfileValidationFailed
     | UpdateProfileRepositoryFailure;
+  /**
+   * What a person reads for a refused upload of their own photo
+   * (`avatarUploadRefusal`, pass E E-7): the picked file's own refusal (not
+   * an image, over `maxBytes`) or the ONE upload-failed copy for every
+   * Storage failure.
+   */
+  export type AvatarRefusal =
+    UploadAvatarNotAnImage | UploadAvatarTooLarge | UploadAvatarUploadFailed;
 }
 
 /**
@@ -231,3 +240,12 @@ export namespace AccountsError {
  * failure — homed here in pass D (E-20; Law 7.5: never in a pipeline file).
  */
 export type UpdateProfileError = AccountsError | RepositoryError;
+
+/**
+ * What a surface's upload of a person's own photo answers (the profile page,
+ * onboarding's avatar step — pass E E-7): the upload's refusal
+ * ({@link AccountsError.AvatarRefusal}) or no signed-in account to upload for
+ * (`IDENTITY_IDENTIFIER_MISSING`, the web's own failure word).
+ */
+export type AvatarUploadError =
+  AccountsError.AvatarRefusal | IdentityError.IdentifierMissing;

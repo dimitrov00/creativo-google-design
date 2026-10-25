@@ -40,9 +40,6 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
-    },
-    {
       "path": "../../shared/shell/tsconfig.lib.json"
     },
     {

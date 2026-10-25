@@ -25,9 +25,9 @@ import { ShopNow, WallTime } from '@core/components';
  *
  * **The ingestion API (flatten-spec §2.1):** `checkZone` (the `TimeZone`
  * smart constructor, F-2), `toUtc` (shop wall clock → instant), `toLocal`
- * (instant → shop wall clock), `shopNow`, `startOfLocalDay`,
- * `parseOffsetIso` and `toIso`. **DST, locked 2026-10-10:** a wall-clock time
- * inside a spring-forward gap is the error `DST_GAP_INVALID_TIME`; a time the
+ * (instant → shop wall clock), `shopNow`, `startOfLocalDay` and
+ * `parseOffsetIso`. **DST, locked 2026-10-10:** a wall-clock time inside a
+ * spring-forward gap is the error `DST_GAP_INVALID_TIME`; a time the
  * fall-back repeats resolves deterministically to the EARLIER offset (its
  * first occurrence).
  */
@@ -381,28 +381,6 @@ function instantResult(
       );
 }
 
-/**
- * `epochMs` spelt as ISO-8601 on the wall clock `localMs` with the offset
- * `localMs − epochMs` — the legacy `ZonedDateTime.toISO()` form
- * (`2026-10-10T14:00:00.000+03:00`).
- */
-function isoAt(epochMs: number, localMs: number): string {
-  const epochDay = Math.floor(localMs / MS_PER_DAY);
-  const msOfDay = localMs - epochDay * MS_PER_DAY;
-  const minuteOfDay = Math.floor(msOfDay / MS_PER_MINUTE);
-  const second = Math.floor((msOfDay % MS_PER_MINUTE) / MS_PER_SECOND);
-  const millisecond =
-    ((epochMs % MS_PER_SECOND) + MS_PER_SECOND) % MS_PER_SECOND;
-  const offsetMinutes = (localMs - epochMs) / MS_PER_MINUTE;
-  const offset = Math.abs(offsetMinutes);
-  const sign = offsetMinutes < 0 ? '-' : '+';
-  return (
-    `${describeWallClock(LocalDate.fromEpochDay(epochDay), minuteOfDay)}:${pad2(second)}.` +
-    `${String(millisecond).padStart(3, '0')}` +
-    `${sign}${pad2(Math.floor(offset / 60))}:${pad2(offset % 60)}`
-  );
-}
-
 export const ZonedTimeSystem = {
   /* ── The ingestion API (flatten-spec §2.1) ───────────────────────────── */
 
@@ -627,19 +605,5 @@ export const ZonedTimeSystem = {
           minute.value,
         )
       : start;
-  },
-
-  /**
-   * The instant as ISO-8601 on the zone's wall clock WITH the offset in force
-   * — `2026-10-10T14:00:00.000+03:00` in Sofia — byte-identical to the legacy
-   * `ZonedDateTime.toISO()` (milliseconds always, `±HH:MM` always; a zero
-   * offset prints `+00:00`). For the e2e support and the specs' fixtures
-   * (pass D OQ-4: no production reader is left — the visit editor's leg
-   * start is a `WallTime` since pass D).
-   */
-  toIso(utcEpochMs: UtcEpochMs, timeZone: TimeZone): string {
-    const formatter = formatterFor(timeZone);
-    if (formatter === null) return defect(`unknown TimeZone ${timeZone}`);
-    return isoAt(utcEpochMs, localMsAt(utcEpochMs, formatter));
   },
 } as const;

@@ -63,14 +63,19 @@ import { eventInstantOf } from './wire-read';
  *   auth context and both sides' `profileEditedAtUtcMs` stamps.
  *
  * **Which triggers retry.** `auditProfileChanges`, `dispatchClientProjections`,
- * the policy pass's start and step and its daily sweep, and — since
- * edge-hardening D-5 — the three projection triggers
- * `rebuildBusyOnAppointmentChange`, `rebuildCapacityOnBusyChange` and
- * `matchWaitlistOnBusyChange` (each recomputes its projection from its
- * source, so a redelivery is a no-op on what the first delivery wrote); the
- * other triggers keep today's options (F1-2). Attempts and budgets are
- * `edge.ts`'s (`retryingTrigger`, `workBudget`): a transient failure is
- * rethrown and redelivered, every other is logged once and dropped.
+ * the policy pass's start and step and its daily sweep, and every projection
+ * trigger — since edge-hardening D-5 `rebuildBusyOnAppointmentChange`,
+ * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, since pass E
+ * (E-1) the four other capacity triggers on an exception, a roster, a shop
+ * and the policy (each recomputes its projection from its source, so a
+ * redelivery is a no-op on what the first delivery wrote; a shop's or the
+ * policy's re-sweep still logs one barber's failed commit and moves on,
+ * left to the 03:00 sweep — pass E R-1). The two plain schedules
+ * (`sweepCapacityDaily`, `sampleBarberLeadTimeDaily`) keep today's options
+ * (F1-2): a refusal fails the run (`failOnRefusal`) and the scheduler's
+ * `retryCount` reruns it. Attempts and budgets are `edge.ts`'s
+ * (`retryingTrigger`, `workBudget`): a transient failure is rethrown and
+ * redelivered, every other is logged once and dropped.
  *
  * **A malformed side (edge-hardening D-3).** An appointment side is read
  * through the read-time guard (`StoredDocumentSystem.appointmentSide`),
@@ -463,8 +468,10 @@ export function profileAuditReport(
 }
 
 /**
- * A non-retrying trigger's answer: a refusal fails the invocation as
- * today's throw did (the platform logs it; nothing redelivers).
+ * A refusal as today's throw. In a plain schedule it fails the run (the
+ * platform logs it; the scheduler's `retryCount` reruns it); inside
+ * `retryingTrigger` the edge judges the throw — one attempt line, and only a
+ * transient failure is rethrown and redelivered.
  */
 export function failOnRefusal<T>(result: Result<T, RepositoryError>): T {
   if (result.ok) return result.value;

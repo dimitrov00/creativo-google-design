@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { EnvironmentProviders, Injectable } from '@angular/core';
@@ -39,10 +41,27 @@ import {
 import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingCareers } from './marketing-careers';
 
+/**
+ * The app's own `programs.status` words for `lang` — read, never re-typed, so
+ * the badge cases pin today's words (pass E, E-17: they moved into the
+ * catalogues unchanged). Every other key renders as itself.
+ */
+function programStatusWords(lang: string): Translation {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly programs: { readonly status: Translation };
+  };
+  return { programs: { status: catalogue.programs.status } };
+}
+
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of({});
+  getTranslation(lang: string): Observable<Translation> {
+    return of(programStatusWords(lang));
   }
 }
 
@@ -241,6 +260,15 @@ describe('MarketingCareers', () => {
       '[data-testid="careers-list"] a[uilistrow] [uibadge]',
     );
     expect(badge?.textContent?.trim()).toBe('closed');
+  });
+
+  it('prints the same lowercase badge word in bg — the catalogue keeps it untranslated (E-17)', async () => {
+    const host = await render(await configure([positionOf('pos_1')]), 'bg');
+
+    const badge = host.querySelector(
+      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
+    );
+    expect(badge?.textContent?.trim()).toBe('open');
   });
 
   it('prints the title and summary in the active language', async () => {

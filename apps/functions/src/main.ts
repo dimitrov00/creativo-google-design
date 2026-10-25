@@ -175,12 +175,15 @@ import { settle, type WireRequest } from './wire/wire-read';
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
  * are the ones the legacy definitions declared, which no export sets a
- * region, secret or App Check on — except three retry flags flipped by
- * edge-hardening D-5: `rebuildBusyOnAppointmentChange`,
- * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange` deploy with
- * the retry flag on and run through `retryingTrigger` (each recomputes its
- * projection from its source, so a redelivery is idempotent; only an
- * allowlisted transient failure is rethrown). `main.spec.ts` pins every
+ * region, secret or App Check on — except seven retry flags: edge-hardening
+ * D-5 flipped `rebuildBusyOnAppointmentChange`,
+ * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, and pass E
+ * (E-1) the four other capacity triggers `rebuildCapacityOnExceptionChange`,
+ * `rebuildCapacityOnRosterChange`, `rebuildCapacityOnLocationChange` and
+ * `rebuildCapacityOnSettingsChange`. Each deploys with the retry flag on and
+ * runs through `retryingTrigger` (each recomputes its projection from its
+ * source, so a redelivery is idempotent; only an allowlisted transient
+ * failure is rethrown). `main.spec.ts` pins every
  * endpoint as a literal table, proves each export runs exactly its own
  * pipeline (and no other), and that each callable reports an unexpected
  * throw under its own name.
@@ -547,10 +550,14 @@ export const staffEditAppointment = onCall(
   ),
 );
 
-// ── The projection triggers' retry (edge-hardening D-5) ──────────────────
+// ── The projection triggers' retry (edge-hardening D-5, pass E E-1) ───────
 
 const REBUILD_BUSY_FN = 'rebuildBusyOnAppointmentChange';
 const REBUILD_CAPACITY_ON_BUSY_FN = 'rebuildCapacityOnBusyChange';
+const REBUILD_CAPACITY_ON_EXCEPTION_FN = 'rebuildCapacityOnExceptionChange';
+const REBUILD_CAPACITY_ON_ROSTER_FN = 'rebuildCapacityOnRosterChange';
+const REBUILD_CAPACITY_ON_LOCATION_FN = 'rebuildCapacityOnLocationChange';
+const REBUILD_CAPACITY_ON_SETTINGS_FN = 'rebuildCapacityOnSettingsChange';
 const MATCH_WAITLIST_FN = 'matchWaitlistOnBusyChange';
 
 /**
@@ -606,26 +613,51 @@ export const rebuildCapacityOnBusyChange = onDocumentWritten(
   ),
 );
 
+/** An exception's change re-derives that (barber, day)'s capacity — retried, as the busy day's (pass E E-1). */
 export const rebuildCapacityOnExceptionChange = onDocumentWritten(
-  EXCEPTION_DOC,
-  (event) => rebuildCapacityFrom(CapacitySource.Exception, event.params),
+  { document: EXCEPTION_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_CAPACITY_ON_EXCEPTION_FN, timeoutSeconds: null },
+    root.edge,
+    (event: DocumentWriteEvent<{ readonly docId: string }>) =>
+      rebuildCapacityFrom(CapacitySource.Exception, event.params),
+  ),
 );
 
+/** A roster's change re-derives that barber's horizon — retried: each month is replaced, never merged. */
 export const rebuildCapacityOnRosterChange = onDocumentWritten(
-  SCHEDULE_DOC,
-  (event) => rebuildCapacityFrom(CapacitySource.Roster, event.params),
+  { document: SCHEDULE_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_CAPACITY_ON_ROSTER_FN, timeoutSeconds: null },
+    root.edge,
+    (event: DocumentWriteEvent<{ readonly barberId: string }>) =>
+      rebuildCapacityFrom(CapacitySource.Roster, event.params),
+  ),
 );
 
-/** Hours clamp every window: a shop's edit re-sweeps rather than wait for 03:00. */
+/**
+ * Hours clamp every window: a shop's edit re-sweeps rather than wait for
+ * 03:00. Retried for the sweep's own reads (zone, policy, roster list); a
+ * barber's failed commit inside the sweep is logged and left to the 03:00
+ * sweep, as before (pass E R-1).
+ */
 export const rebuildCapacityOnLocationChange = onDocumentWritten(
-  LOCATION_DOC,
-  () => rebuildCapacityFrom(CapacitySource.Location),
+  { document: LOCATION_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_CAPACITY_ON_LOCATION_FN, timeoutSeconds: null },
+    root.edge,
+    () => rebuildCapacityFrom(CapacitySource.Location),
+  ),
 );
 
-/** The policy IS the horizon: its edit re-sweeps too. */
+/** The policy IS the horizon: its edit re-sweeps too — retried the same way (pass E R-1). */
 export const rebuildCapacityOnSettingsChange = onDocumentWritten(
-  SETTINGS_DOC,
-  () => rebuildCapacityFrom(CapacitySource.Settings),
+  { document: SETTINGS_DOC, retry: true },
+  retryingTrigger(
+    { fn: REBUILD_CAPACITY_ON_SETTINGS_FN, timeoutSeconds: null },
+    root.edge,
+    () => rebuildCapacityFrom(CapacitySource.Settings),
+  ),
 );
 
 /** 03:00 on the schedules' clock (`CRON_TIME_ZONE`) — after the shop's day, before anyone books breakfast. */

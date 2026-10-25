@@ -58,6 +58,8 @@ import {
 // spec contracts — is not Playwright's to load.
 import type { LoyaltyClientJson } from '@core/testing';
 import {
+  type ChairService,
+  DEV_CHAIR,
   upcomingAppointmentBody,
   workedAppointmentBody,
 } from './appointment-seed-document';
@@ -235,17 +237,20 @@ export async function seedUpcomingAppointment(
  * themselves in the dev catalogue's chair, worked at the naive shop-time
  * `startsAt` — the body {@link workedAppointmentBody} builds — and the
  * owner's client record. The visit a client repeats with `/book?repeat=`.
+ * Its one seat sells the chair's beard trim unless `service` names another
+ * of Ivan's services.
  */
 export async function seedWorkedAppointment(
   id: string,
   ownerUserId: string,
   startsAt: string,
+  service: ChairService = DEV_CHAIR,
 ): Promise<void> {
   const customerId = await seedCustomerRecord(ownerUserId);
   await getFirestore(adminApp())
     .collection(Collections.Appointments)
     .doc(id)
-    .set(workedAppointmentBody(id, ownerUserId, customerId, startsAt));
+    .set(workedAppointmentBody(id, ownerUserId, customerId, startsAt, service));
 }
 
 /**

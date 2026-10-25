@@ -146,33 +146,14 @@ export function barberToVm(
   };
 }
 
-// ─── Formatting (v2 lib/format-duration semantics) ──────────────────────
+// ─── Formatting ─────────────────────────────────────────────────────────
 //
-// Money is NOT formatted here: a price is `formatCents`
+// Neither money nor minutes are formatted here. A price is `formatCents`
 // (`@creativo/ui/wall-clock`, the ONE money formatter — the currency's own
 // fraction digits, so «28,00 €» lines up beside «17,50 €» in a tabular
-// column), reached through `CatalogWording.price`.
-
-export function formatDurationRange(
-  min: DurationMinutes,
-  max: DurationMinutes,
-  locale: string,
-): string {
-  const formatter = new Intl.NumberFormat(locale, {
-    style: 'unit',
-    unit: 'minute',
-    unitDisplay: 'narrow',
-  });
-  if (min === max) return formatter.format(min);
-  // `formatRange` postdates the workspace TS lib — feature-detect at runtime.
-  const ranged = formatter as Intl.NumberFormat & {
-    formatRange?: (start: number, end: number) => string;
-  };
-  if (typeof ranged.formatRange === 'function') {
-    return ranged.formatRange(min, max);
-  }
-  return `${new Intl.NumberFormat(locale, { useGrouping: false }).format(min)}–${formatter.format(max)}`;
-}
+// column), reached through `CatalogWording.price`; a duration range is
+// `formatMinutesRange` (the same lib, cached per locale — pass E, E-12),
+// reached through `CatalogWording.durationRange`.
 
 /**
  * Cheapest base offering — the "from" price on a marketing tile: the

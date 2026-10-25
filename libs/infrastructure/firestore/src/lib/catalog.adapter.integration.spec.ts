@@ -137,7 +137,7 @@ describe('catalogReadPorts (emulator)', () => {
     expect(nowhere).toEqual(Result.ok(null));
   });
 
-  it('denies writes through the rules (public read, catalogue-manager write only)', async () => {
+  it('denies writes through the rules (public read, no client write)', async () => {
     const clientDb = modularFirestore(
       testEnv.authenticatedContext('client-1', { roles: ['client'] }),
     );

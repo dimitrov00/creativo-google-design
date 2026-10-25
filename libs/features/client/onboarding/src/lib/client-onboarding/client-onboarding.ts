@@ -33,6 +33,7 @@ import {
 } from '@core/primitives';
 import {
   type AccountsError,
+  type AvatarUploadError,
   IdentityError,
   type OnboardingFailure,
   PhoneError,
@@ -319,10 +320,7 @@ export class ClientOnboarding {
   protected readonly avatarPreviewUrl = signal<string | null>(null);
   /** The refusal under the avatar, as its struct — picker rejections and upload failures share the line. */
   protected readonly avatarError = signal<
-    | AccountsError
-    | AccountsError.UploadAvatarUploadFailed
-    | IdentityError.IdentifierMissing
-    | null
+    AccountsError | AvatarUploadError | null
   >(null);
   /** Monogram source — the names collected two steps ago (same component instance). */
   protected readonly fullName = computed(() =>
@@ -457,11 +455,7 @@ export class ClientOnboarding {
 
   /** A field's refusal (a name, the avatar) in words — `errors.<errorCode>`, its own fields the params. */
   protected translateError(
-    error:
-      | AccountsError
-      | AccountsError.UploadAvatarUploadFailed
-      | IdentityError.IdentifierMissing
-      | null,
+    error: AccountsError | AvatarUploadError | null,
   ): string | null {
     return error === null ? null : translateCodedError(this.transloco, error);
   }

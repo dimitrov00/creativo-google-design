@@ -26,10 +26,6 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
 import { AdminProgramsStore, ProgramsTab } from '../admin-programs.store';
-import {
-  enrollmentStatusWords,
-  positionStatusWords,
-} from '@creativo/infrastructure/i18n';
 
 /** Which program the edit form is open on — the field `programEditing`, the
  *  ONLY source of these strings (Law 6). */
@@ -94,9 +90,11 @@ export class AdminPrograms {
   /** The status dictionaries, for the chips — the template never spells a stored tag. */
   protected readonly PositionStatus = PositionStatus;
   protected readonly EnrollmentStatus = EnrollmentStatus;
-  /** The rows' trailing status text — today's lowercase word (F4-7). */
-  protected readonly positionStatusWords = positionStatusWords;
-  protected readonly enrollmentStatusWords = enrollmentStatusWords;
+  /*
+   * The rows' trailing status text is today's lowercase word (F4-7), read
+   * from the catalogue by its stored tag — `programs.status.position.<tag>`,
+   * `programs.status.enrollment.<tag>` (pass E, E-17).
+   */
   /** The edit form's program kinds, for the template. */
   protected readonly ProgramEditing = ProgramEditing;
   /** The tabs, for the template's chips and `@case`s (never bare literals). */

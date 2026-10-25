@@ -7,8 +7,9 @@ import { CatalogSystem } from './catalog.system';
 /*
  * Which catalogue services a surface lists and how it groups them — the
  * marketing shelf (`LandingContentService.shelfServices`) and the category
- * grouping (the admin rhythm page's services sheet, whose feature spec case
- * is restated below on the same fixture data).
+ * grouping (the admin rhythm page's services sheet, whose former feature
+ * spec `rhythm-service-groups.spec.ts` — deleted in pass E, E-10 — held the
+ * first case below, on the same fixture data).
  */
 
 /** A category as stored (`serviceCategories/{id}`), the flat entity. */

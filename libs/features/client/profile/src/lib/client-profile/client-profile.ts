@@ -17,10 +17,11 @@ import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import type {
   AccountsError,
+  AvatarUploadError,
   IdentityError,
   OwnProfileWriteFailure,
 } from '@core/errors';
-import { LocalDate, type Result } from '@core/primitives';
+import type { Result } from '@core/primitives';
 import {
   AgeSystem,
   PhoneSystem,
@@ -168,9 +169,8 @@ export class ClientProfile {
   /** The photo's refusal, as its struct — a picker rejection, an upload or a removal failure. */
   protected readonly photoError = signal<
     | AccountsError
-    | AccountsError.UploadAvatarUploadFailed
+    | AvatarUploadError
     | AccountsError.RemoveAvatarRemoveFailed
-    | IdentityError.IdentifierMissing
     | null
   >(null);
   protected readonly photoMenuOpen = signal(false);
@@ -196,9 +196,9 @@ export class ClientProfile {
     // A civil date, printed as stored on the cached wall-clock formatter
     // (no zone consulted, so no device ever shows the previous day). The
     // language is read as before — once per run, not as a dependency.
-    const day = LocalDate.parse(birthDate);
-    return day.ok
-      ? formatWallClock(day.value, null, this.transloco.getActiveLang(), {
+    const day = BirthDate.toLocalDate(birthDate);
+    return day !== null
+      ? formatWallClock(day, null, this.transloco.getActiveLang(), {
           day: 'numeric',
           month: 'long',
           year: 'numeric',
@@ -369,10 +369,9 @@ export class ClientProfile {
   protected translateError(
     error:
       | AccountsError
+      | AvatarUploadError
       | AccountsError.OwnProfileSave
-      | AccountsError.UploadAvatarUploadFailed
       | AccountsError.RemoveAvatarRemoveFailed
-      | IdentityError.IdentifierMissing
       | null,
   ): string | null {
     return error === null ? null : translateCodedError(this.transloco, error);

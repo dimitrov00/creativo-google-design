@@ -331,9 +331,10 @@ export const appConfig: ApplicationConfig = {
     // `onLoadError` answer that is not valid for every method.
 
     // The booking core (flip 1): plain port BUNDLES, each built once per
-    // scope by its `(db) => bundle` export. The three bundles that read
-    // `barberBusy`, `appointments` and `customers` are built with the
-    // read-time guard (edge hardening D-7): refusals reported through
+    // scope by its `(db) => bundle` export. The four bundles that read
+    // `barberBusy`, `appointments`, `customers` and `appointmentNotes` are
+    // built with the read-time guard (edge hardening D-7; the note since
+    // pass E, E-2): refusals reported through
     // Angular's ErrorHandler (`errorHandlerLogPorts` — the device console
     // today), the guard made inside this lazy scope so `@core/systems`
     // stays off the initial chunk.
@@ -435,7 +436,10 @@ export const appConfig: ApplicationConfig = {
     }),
     provideLazyPort(APPOINTMENT_NOTE_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.appointmentNotePorts(inj.get(FIREBASE_FIRESTORE)),
+        m.firestore.appointmentNotePorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
       methods: {
         observeAppointmentNote: LazyMethod.Observable,
         saveAppointmentNote: LazyMethod.Promise,

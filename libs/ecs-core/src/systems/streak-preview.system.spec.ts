@@ -607,9 +607,10 @@ describe('StreakPreviewSystem purity', () => {
 });
 
 // ── The preview's facts and the rule card's sample run (pass C R-13, R-14, R-15) ──
-// The cases of `admin-rhythm.preview.spec.ts` (`streakFactsReader`,
-// `rhythmPreviewReadsFacts`, the sample run), restated on branded days and
-// the boundary's day-start reader.
+// The cases of `admin-rhythm.preview.spec.ts` (`streakFactsReader`, the
+// facts check, the sample run), restated on branded days and the boundary's
+// day-start reader. The feature's thin delegate of the facts check and its
+// block went in pass E (E-6); `readsFacts` below is their successor.
 
 /** The first instant of a Sofia day — the reader the page binds to the shop's zone. */
 const sofiaDayStart = (on: LocalDate): UtcEpochMs =>

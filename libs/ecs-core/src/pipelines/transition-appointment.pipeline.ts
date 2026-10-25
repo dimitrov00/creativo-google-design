@@ -8,6 +8,7 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
+  type BusyKey,
   Result,
   type AppointmentId,
   type SeatId,
@@ -36,12 +37,17 @@ import type {
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
+  BusySystem,
+  type BusyWrite,
   CancellationPolicySystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   appendAuditFacts,
+  busyMergeWrites,
+  type PlacementSet,
   readAppointment,
+  readPlacementSet,
   readRedemptionVouchers,
   voucherRestoreWrites,
   zoneOf,
@@ -61,15 +67,30 @@ import {
  *   UNKNOWN (`null`) and logs a warning — it never refuses the shop's cancel.
  * - **Read set:** the visit, its location (the shop's "today" for the
  *   same-day edge, `ShopNow` from its zone), for a cancel the vouchers its
- *   live lines name (runbook §1.3 (4)), and for a REINSTATED cancellation
+ *   live lines name (runbook §1.3 (4)), for a REINSTATED cancellation
  *   the live appointments sharing a busy key (`busyKeys array-contains ∧
  *   bookingStatus in [PENDING, CONFIRMED]`, index #7): the cancel gave the
  *   chair away and the waitlist may have taken it — the answer is then
- *   honestly "taken" (a `BOOKING_SLOT_UNAVAILABLE` value).
+ *   honestly "taken" (a `BOOKING_SLOT_UNAVAILABLE` value) — and, for a
+ *   visit that is NOT live before the move (only such a move can end it
+ *   live), the busy days and exceptions of its seats' keys
+ *   (`readPlacementSet`, one `getAll`, absent days read too).
  * - **Plan:** the appointment's variant transition; when the visit ENDS
  *   cancelled, the reversed voucher lines folded into it and each voucher's
- *   restored balance beside it. No busy write — occupancy comes back
- *   through `rebuildBusy`, as today (F1-2).
+ *   restored balance beside it; when it ENDS live from a status that is not
+ *   (`AppointmentLifecycleSystem.endsLive` — the busy projection's own
+ *   predicate: the reopen of a `CANCELLED`,
+ *   `NO_SHOW` or `COMPLETED` visit), its seats' chair time
+ *   (`BusySystem.contributionsOf`, what `BusySystem.rebuild` restores)
+ *   merged onto the EXACT busy bodies this attempt read (`busyMergeWrites`,
+ *   as a booking does) — the chair is held at once, not only once
+ *   `rebuildBusy` ran, so no booking is admitted over it in between (pass E,
+ *   E-14, DEP-5). The trigger's recompute lands on the same document. A shop
+ *   whose zone cannot be read gets no busy day (its first instant is the
+ *   zone's, Law 7.2 — the rebuild cannot stamp one either). Every other
+ *   edge writes no busy day — occupancy leaves through `rebuildBusy`
+ *   (F1-2). Which reopens are REFUSED is unchanged: the #7 check runs only
+ *   for a party reinstatement of a cancelled visit.
  * - **Audit:** after the commit, the system's facts
  *   (`transition:<seatId|party>:<decidedAtUtcMs>`). No version CAS — the
  *   status graph refuses a transition already applied (§4.1).
@@ -101,6 +122,8 @@ type Snapshot = {
   readonly location: ShopLocation | null;
   readonly vouchers: readonly GiftVoucher[];
   readonly others: readonly Appointment[];
+  /** The visit's busy days as read — `null` when the visit was live before the move (nothing to restore). */
+  readonly placement: PlacementSet | null;
 };
 
 type Decided = {
@@ -133,13 +156,47 @@ async function readCollisions(
   return others;
 }
 
-/** A visit whose shop cannot be read keeps no shop clock: never "today" (the settled stay settled). */
+/** A shop that cannot be read, or whose stored zone is no zone, has none. */
+function zoneOfShop(location: ShopLocation | null): TimeZone | null {
+  return location === null ? null : zoneOf(location);
+}
+
+/** A visit whose shop has no zone keeps no shop clock: never "today" (the settled stay settled). */
 function shopNowOf(
-  location: ShopLocation | null,
+  zone: TimeZone | null,
   nowUtcMs: UtcEpochMs,
 ): ShopNow | null {
-  const zone = location === null ? null : zoneOf(location);
   return zone === null ? null : ZonedTimeSystem.shopNow(nowUtcMs, zone);
+}
+
+/**
+ * The busy days a visit's seats occupy — one key per barber on its shop day
+ * (`BusySystem.contributionsOf`), the keys {@link restoredBusyWrites} writes.
+ * A lifecycle move never moves a seat, so the keys read on the side before
+ * the move are the keys the side after it writes.
+ */
+function busyKeysOf(appointment: Appointment): readonly BusyKey[] {
+  const keys: BusyKey[] = [];
+  for (const share of BusySystem.contributionsOf(appointment)) {
+    keys.push(share.id);
+  }
+  return keys;
+}
+
+/** The visit's chair time as `busyMergeWrites` takes it — every span of every share, as the projection renders it. */
+function restoredBusyWrites(appointment: Appointment): readonly BusyWrite[] {
+  const writes: BusyWrite[] = [];
+  for (const share of BusySystem.contributionsOf(appointment)) {
+    for (const span of share.spans) {
+      writes.push({
+        barberId: share.barberId,
+        localDate: share.localDate,
+        startMinutes: span.startMinutes,
+        endMinutes: span.endMinutes,
+      });
+    }
+  }
+  return writes;
 }
 
 export const transitionAppointment =
@@ -167,7 +224,13 @@ export const transitionAppointment =
       async (tx): Promise<Snapshot> => {
         const appointment = await readAppointment(tx, cmd.appointmentId);
         if (appointment === null) {
-          return { appointment, location: null, vouchers: [], others: [] };
+          return {
+            appointment,
+            location: null,
+            vouchers: [],
+            others: [],
+            placement: null,
+          };
         }
         const location = await tx.get<ShopLocation>([
           Collections.Locations,
@@ -183,7 +246,17 @@ export const transitionAppointment =
         )
           ? await readCollisions(tx, appointment)
           : [];
-        return { appointment, location, vouchers, others };
+        // Only a move from a visit that is not live TO a live status may end
+        // live (a party or a seat reopen) — the system decides whether it
+        // does. Every other move reads no busy day: it pays no extra read, and
+        // a malformed busy day never turns its own answer into
+        // REPOSITORY_MALFORMED.
+        const placement =
+          !BookingLifecycle.isLive(appointment) &&
+          BookingLifecycle.isLive({ bookingStatus: cmd.to })
+            ? await readPlacementSet(tx, busyKeysOf(appointment))
+            : null;
+        return { appointment, location, vouchers, others, placement };
       },
       (snapshot): Result<Decided, TransitionAppointmentError> => {
         const appointment = snapshot.appointment;
@@ -196,7 +269,8 @@ export const transitionAppointment =
           reason: cmd.reason,
           windowHours,
         };
-        const now = shopNowOf(snapshot.location, nowUtcMs);
+        const zone = zoneOfShop(snapshot.location);
+        const now = shopNowOf(zone, nowUtcMs);
         if (
           now === null &&
           AppointmentLifecycleSystem.readsShopToday(appointment, cmd)
@@ -230,19 +304,36 @@ export const transitionAppointment =
             ),
           );
         }
+        const after = step.value.appointment;
+        const writes = AppointmentLifecycleSystem.endsCancelled(
+          appointment,
+          after,
+        )
+          ? voucherRestoreWrites(
+              step.value.writes,
+              appointment.voucherRedemptions,
+              snapshot.vouchers,
+              nowUtcMs,
+            )
+          : step.value.writes;
+        // The projection's own predicate: what the trigger would restore.
+        const endsLive = AppointmentLifecycleSystem.endsLive(
+          appointment,
+          after,
+        );
         return Result.ok({
           auditFacts: step.value.auditFacts,
-          writes: AppointmentLifecycleSystem.endsCancelled(
-            appointment,
-            step.value.appointment,
-          )
-            ? voucherRestoreWrites(
-                step.value.writes,
-                appointment.voucherRedemptions,
-                snapshot.vouchers,
-                nowUtcMs,
-              )
-            : step.value.writes,
+          writes:
+            endsLive && snapshot.placement !== null && zone !== null
+              ? [
+                  ...writes,
+                  ...busyMergeWrites(
+                    snapshot.placement,
+                    restoredBusyWrites(after),
+                    zone,
+                  ),
+                ]
+              : writes,
         });
       },
     );

@@ -1,24 +1,10 @@
-import {
-  BarberId,
-  CartLineId,
-  LocationId,
-  Result,
-  SeatKeyText,
-  ServiceId,
-  ServiceVariantId,
-  WaitlistRequestId,
-} from '@core/primitives';
+import { Result, WaitlistRequestId } from '@core/primitives';
 import {
   type CancelWaitlistRefusal,
   type RepositoryError,
   WaitlistError,
 } from '@core/errors';
-import type {
-  BookingCart,
-  CartLine,
-  CartSeatLines,
-  WaitlistCall,
-} from '@core/components';
+import type { WaitlistCall } from '@core/components';
 import type {
   CancelWaitlistAnswer,
   CancelWaitlistCommand,
@@ -79,36 +65,28 @@ function daysOf(raw: unknown): readonly WaitlistCall.DayInput[] {
 }
 
 /**
- * The wire cart as the flat `BookingCart` the door reads. A DELIBERATE
- * pre-door brand (pass D, the D-4.1 row): each id is branded as sent with
- * the unchecked `of`, never `parse`, because judging a cart's ids is the
- * door's question, answered in the door's own order — `WaitlistSystem.decide`
- * checks the windows, the days and the cart's size and sequence first, then
- * refuses a line `lineReadable` cannot read (a blank id) as
- * `invalidRequest('cart')`. A parse here would refuse ahead of those checks,
- * and refuse ids the door accepts today (an id holding `/`, a blank
- * `seatKey` or `locationId`).
+ * The wire cart as its raw twin (`WaitlistCall.CartInput`): each id the raw
+ * string sent, the line counter `Number`-read — no brand here. The brand is
+ * the door's (pass E, E-4): `WaitlistSystem.cartAsSent` brands the ids as
+ * sent, and `WaitlistSystem.decide` judges them in its own order — the
+ * windows, the days and the cart's size and sequence first, then a line
+ * `lineReadable` cannot read (a blank id) refused as
+ * `invalidRequest('cart')`; an id holding `/`, a blank `seatKey` or
+ * `locationId` accepted. A line's own `seatKey` is not read: the seat's key
+ * names every line's seat.
  */
-function cartOf(raw: unknown): BookingCart {
-  const cartSeats: CartSeatLines[] = listOf(raw, 'cartSeats').map((seat) => {
-    const seatKey = SeatKeyText.of(text(seat, 'seatKey'));
-    const lines: CartLine[] = listOf(seat, 'lines').map((line) => {
-      const variantId = textOrNull(line, 'variantId');
-      const barberId = textOrNull(line, 'barberId');
-      const locationId = textOrNull(line, 'locationId');
-      return {
-        lineId: CartLineId.of(text(line, 'lineId')),
-        seatKey,
-        serviceId: ServiceId.of(text(line, 'serviceId')),
-        variantId: variantId === null ? null : ServiceVariantId.of(variantId),
-        barberId: barberId === null ? null : BarberId.of(barberId),
-        locationId: locationId === null ? null : LocationId.of(locationId),
-      };
-    });
-    return { seatKey, lines };
-  });
+function cartOf(raw: unknown): WaitlistCall.CartInput {
   return {
-    cartSeats,
+    cartSeats: listOf(raw, 'cartSeats').map((seat) => ({
+      seatKey: text(seat, 'seatKey'),
+      lines: listOf(seat, 'lines').map((line) => ({
+        lineId: text(line, 'lineId'),
+        serviceId: text(line, 'serviceId'),
+        variantId: textOrNull(line, 'variantId'),
+        barberId: textOrNull(line, 'barberId'),
+        locationId: textOrNull(line, 'locationId'),
+      })),
+    })),
     cartNextSequence: Number(field(raw, 'cartNextSequence') ?? 0),
   };
 }

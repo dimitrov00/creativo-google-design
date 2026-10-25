@@ -36,7 +36,7 @@ import {
   pluralForm,
   streakPeriodReasonWords,
 } from '@creativo/infrastructure/i18n';
-import { formatWallClock } from '@creativo/ui/wall-clock';
+import { formatCount, formatWallClock } from '@creativo/ui/wall-clock';
 import type {
   UiChoiceOption,
   UiSliderMark,
@@ -189,9 +189,12 @@ function counted(
   });
 }
 
-/** «1 000» — a figure grouped the language's way. */
+/**
+ * «12 450» — a figure grouped the language's way, through the shared
+ * cached `formatCount` (pass E, E-12).
+ */
 function figure(context: AdminRhythmContext, value: number): string {
-  return new Intl.NumberFormat(context.lang).format(value);
+  return formatCount(value, context.lang);
 }
 
 /**

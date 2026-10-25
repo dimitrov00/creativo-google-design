@@ -53,7 +53,10 @@ import { readShopZone } from './shop-zone-read.pipeline';
  * read bound, `WaitlistSystem.withinReadBounds`) and the named shop, in one
  * `loadCatalog`. The door is `WaitlistSystem.decide`, with the commit's own
  * time-independent admission (`PartyAdmissionSystem.admitCart`) and shop
- * rule (`shopListed`) as its verdicts. The id is `wl_` + the first 40 hex of
+ * rule (`shopListed`) as its verdicts. The bag arrives raw
+ * (`WaitlistCall.CartInput`, pass E, E-4): it is branded as sent ONCE
+ * (`WaitlistSystem.cartAsSent`) for the read bound, the catalogue read and
+ * the admission, and judged by the door. The id is `wl_` + the first 40 hex of
  * `hash(WaitlistSystem.idBasis(…))` — what the request MEANS — so a
  * duplicate is the one in-transaction read (or a lost `Create` race), and
  * answers `BOOKING_WAITLIST_ALREADY_WATCHING`.
@@ -126,6 +129,8 @@ export const requestWaitlist =
     if (!zone.ok) return zone;
     const timeZone = zone.value;
     const now = ZonedTimeSystem.shopNow(ports.nowUtcMs(), timeZone);
+    // The bag as sent, branded once — the door judges its ids.
+    const cart = WaitlistSystem.cartAsSent(cmd.ask.cart);
 
     // Read for a caller who can be notified at all: an anonymous request is
     // refused by the door and costs no catalogue read, and a cart past the
@@ -134,10 +139,10 @@ export const requestWaitlist =
     let location: ShopLocation | null = null;
     if (cmd.ownerUserId !== null) {
       const serviceIds = WaitlistSystem.withinReadBounds(
-        cmd.ask.cart,
+        cart,
         policy.value.maxPartySize,
       )
-        ? cartServiceIds(cmd.ask.cart)
+        ? cartServiceIds(cart)
         : [];
       if (serviceIds.length > 0 || locationId !== null) {
         const catalog = await ports.loadCatalog(serviceIds, locationId);
@@ -155,7 +160,7 @@ export const requestWaitlist =
       cmd.ask.locationId !== null && locationId === null
         ? Result.ok(null)
         : PartyAdmissionSystem.admitCart(
-            cmd.ask.cart,
+            cart,
             services,
             policy.value,
             locationId,

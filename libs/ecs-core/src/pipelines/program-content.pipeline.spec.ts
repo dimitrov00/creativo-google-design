@@ -39,6 +39,7 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
+  offsetIso,
 } from '@core/testing';
 import {
   type WriteShopEventPorts,
@@ -406,7 +407,7 @@ describe('writeShopEvent', () => {
     );
 
     expect(saved.utcEpochMs).toBe(utcMs('2026-10-25T03:30:00.000+03:00'));
-    expect(ZonedTimeSystem.toIso(saved.utcEpochMs, FIXTURE_TIME_ZONE)).toMatch(
+    expect(offsetIso(saved.utcEpochMs, FIXTURE_TIME_ZONE)).toMatch(
       /^2026-10-25T03:30:00(\.000)?\+03:00$/,
     );
     expect(world.events.get(saved.id)).toEqual(saved);

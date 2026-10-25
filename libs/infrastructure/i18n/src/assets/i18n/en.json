@@ -33,6 +33,7 @@
     "BOOKING_BEYOND_HORIZON": "We are not taking bookings that far ahead yet.",
     "BOOKING_PARTY_TOO_LARGE": "A booking seats at most {{maxPartySize}} people.",
     "BOOKING_INVARIANT_VIOLATED": "That combination is not possible. Try another time.",
+    "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Sign in again to continue.",
     "BOOKING_STAFF_EDIT_FORBIDDEN": "You aren't allowed to make that change.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "That request isn't valid for this visit.",
     "BOOKING_STAFF_EDIT_BEFORE_ARRIVAL": "The visit can't end before the client arrived.",
@@ -45,7 +46,11 @@
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.service_unavailable": "The shop no longer offers the service booked for someone coming with you, so only the shop can move this visit — {{reach}} and we'll sort it out together.",
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.shop_only": "The shop moves this visit because it only holds someone the shop added for you — {{reach}} and we'll move it together.",
     "BOOKING_CANCEL_POLICY_UNAVAILABLE": "We couldn't check the cancellation terms. Try again in a moment.",
+    "BOOKING_CANCEL_NOT_CANCELLABLE": "This appointment can no longer be cancelled.",
     "BOOKING_CANCEL_WINDOW_CLOSED": "Free cancellation ends {{windowHours}} h before the appointment — {{reach}}.",
+    "BOOKING_CANCEL_UNAUTHENTICATED": "Sign in again to continue.",
+    "BOOKING_CANCEL_INVALID_INPUT": "That request is not valid.",
+    "BOOKING_CANCEL_NOT_FOUND": "That appointment no longer exists.",
     "BOOKING_WAITLIST_UNAUTHENTICATED": "Sign in so we know who to tell.",
     "BOOKING_WAITLIST_INVALID_REQUEST": "That request can't be watched — try picking the days again.",
     "BOOKING_WAITLIST_TOO_MANY_DAYS": "That's the most days we can watch at once.",
@@ -99,12 +104,24 @@
     "PHONE_INVALID.invalid-country": "We don't recognize that country code — for example, {{example}}.",
     "PHONE_INVALID.invalid": "This doesn't look like a valid phone number — for example, {{example}}.",
     "PHONE_COUNTRY_UNSUPPORTED": "We don't recognize the country code \"{{attempted}}\".",
+    "BOOKING_COMMIT_FORBIDDEN": "Only staff can do that.",
     "BOOKING_COMMIT_STORE_FAILED": "We could not save the booking. Please try again.",
     "BOOKING_TRANSITION_UNAUTHENTICATED": "Sign in again to continue.",
     "BOOKING_TRANSITION_FORBIDDEN": "Only staff can do that.",
     "BOOKING_TRANSITION_INVALID_INPUT": "That request is not valid.",
     "BOOKING_TRANSITION_NOT_FOUND": "That appointment no longer exists.",
     "BOOKING_TRANSITION_NOT_ALLOWED": "The appointment cannot move from \"{{from}}\" to \"{{to}}\".",
+    "BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED": "A settled appointment can only be reopened on its own day.",
+    "BOOKING_TRANSITION_SLOT_TAKEN": "That time was taken in the meantime, so the appointment can't be restored.",
+    "BOOKING_ARRIVED_UNAUTHENTICATED": "Sign in again to continue.",
+    "BOOKING_ARRIVED_FORBIDDEN": "Only staff can do that.",
+    "BOOKING_ARRIVED_INVALID_INPUT": "That request is not valid.",
+    "BOOKING_ARRIVED_NOT_FOUND": "That appointment no longer exists.",
+    "BOOKING_ARRIVED_NOT_ALLOWED": "A settled appointment's arrival can't be changed.",
+    "BOOKING_TIP_UNAUTHENTICATED": "Sign in again to continue.",
+    "BOOKING_TIP_FORBIDDEN": "Only staff can do that.",
+    "BOOKING_TIP_INVALID_INPUT": "That request is not valid.",
+    "BOOKING_TIP_NOT_FOUND": "That appointment or seat no longer exists.",
     "BOOKING_TRANSITION_SEAT_RESOLVED": "That seat is already settled.",
     "BOOKING_CALL_FAILED": "Something went wrong. Please try again.",
     "IDENTITY_INVALID_INPUT": "The information provided is invalid.",
@@ -119,8 +136,10 @@
     "IDENTITY_OTP_WRONG_CODE": "That code isn't right — check and try again.",
     "IDENTITY_OTP_DESTINATION_CORRUPTED": "Something went wrong on our end — please try again.",
     "IDENTITY_TOKEN_MINTING_FAILURE": "We couldn't sign you in — please try again.",
+    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "We couldn't finish your registration — please try again.",
     "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Your session has expired — please sign in again.",
     "IDENTITY_REGISTRATION_FORBIDDEN": "This registration doesn't belong to your session — please sign in again.",
+    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "We couldn't find your profile — please sign in again.",
     "IDENTITY_REGISTRATION_FIELD_MISSING": "Please fill in all required fields.",
     "IDENTITY_REGISTRATION_BIRTH_DATE_INVALID": "The birthday provided is not valid.",
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "The information provided is invalid.",
@@ -748,6 +767,17 @@
       "emptyPast": {
         "title": "No past events yet.",
         "body": "This is where the recap lives once the first one wraps."
+      }
+    },
+    "status": {
+      "position": {
+        "OPEN": "open",
+        "CLOSED": "closed"
+      },
+      "enrollment": {
+        "OPEN": "open",
+        "UPCOMING": "upcoming",
+        "CLOSED": "closed"
       }
     }
   },

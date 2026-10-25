@@ -31,9 +31,9 @@ import { subscribeWithRetry } from './subscribe-with-retry';
  * {@link ReadGuard} — the stored-document guard registry plus the log a
  * refusal is reported through — defaulting to {@link UNGUARDED}. Guarded
  * (`guardedReads`, bound by the composition root for the appointment,
- * customer and scheduling bundles), a top-level `appointments` /
- * `customers` / `barberBusy` document passes its `StoredDocumentSystem`
- * guard first. An ADMITTED document is THE SAME OBJECT it always was (zero
+ * customer, scheduling and team-note bundles), a top-level `appointments` /
+ * `customers` / `barberBusy` / `appointmentNotes` document passes its
+ * `StoredDocumentSystem` guard first. An ADMITTED document is THE SAME OBJECT it always was (zero
  * mapping kept — validate, then the entity). A REFUSED one — a body that is
  * not its entity, a writer's defect or a hand edit — is never handed on:
  *

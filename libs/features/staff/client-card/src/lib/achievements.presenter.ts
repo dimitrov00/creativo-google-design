@@ -341,19 +341,17 @@ export function seriesById(
 }
 
 /**
- * The family a drawn medal shows, or `null`. `MedalVm.seriesId` names a
- * family — or, on an archived season's OWN medal (a season without a track
- * family), the season — so the family is the catalogue's family whose id
- * EQUALS the medal's, found without re-branding a season's id as a
- * family's (Law 7.4); a season's id finds none.
+ * The family a drawn medal shows, or `null`: the catalogue's family by the
+ * medal's own `familyId` — a typed lookup, so an archived season's OWN
+ * medal (a season without a track family, `familyId: null`) draws no
+ * family even where its season's id spells a family's (pass E DEP-4;
+ * before it, the family whose id EQUALLED `seriesId` was drawn).
  */
 export function familyOfMedal(
   data: AchievementsData,
   medal: MedalVm,
 ): BadgeSeries | null {
-  return (
-    data.catalog.families.find((family) => family.id === medal.seriesId) ?? null
-  );
+  return medal.familyId === null ? null : seriesById(data, medal.familyId);
 }
 
 /** Where a family stands for this client. */
@@ -916,6 +914,7 @@ export function medalVm(
 
   return {
     seriesId: series.id,
+    familyId: series.id,
     state: MEDAL_STATES[BadgeSystem.faceState(standing, withThisVisit)],
     icon: BADGE_EMBLEM_ICONS[series.emblem],
     src,
@@ -1175,7 +1174,7 @@ export function newestFaceLevel(
   const card = season === null ? null : seasonCardVm(season, data, ctx);
   const lead = latestTiles(data, ctx, facesBesideCard(card))[0];
   return (
-    day.levels.find((level) => level.badgeSeriesId === lead?.medal.seriesId) ??
+    day.levels.find((level) => level.badgeSeriesId === lead?.medal.familyId) ??
     day.levels[0] ??
     null
   );
@@ -1572,6 +1571,8 @@ function archivedSeasonTile(
     key: season.id,
     medal: {
       seriesId: season.id,
+      // The season's OWN medal: no family is drawn (DEP-4).
+      familyId: null,
       state: MEDAL_STATES[StandingSystem.scopeMedalState(counts)],
       icon: BADGE_EMBLEM_ICONS[season.emblem],
       src: null,

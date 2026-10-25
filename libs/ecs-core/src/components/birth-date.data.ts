@@ -76,6 +76,18 @@ export const BirthDate = {
   equals(a: BirthDate, b: BirthDate): boolean {
     return a === b;
   },
+
+  /**
+   * The calendar day the birth date names, as the `LocalDate` the wall-clock
+   * formatter prints (a civil date: no zone consulted) — or `null` when the
+   * stored string names no calendar day (a value rebuilt with {@link of},
+   * never through a guard). Through `LocalDate.parse`, so the cast stays in
+   * the primitive's own file (Law 7.4; pass E E-8).
+   */
+  toLocalDate(birthDate: BirthDate): LocalDate | null {
+    const day = LocalDate.parse(birthDate);
+    return day.ok ? day.value : null;
+  },
 } as const;
 
 export namespace BirthDate {

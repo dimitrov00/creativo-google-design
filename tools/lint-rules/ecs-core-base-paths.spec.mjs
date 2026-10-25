@@ -61,6 +61,10 @@ describe('libs/ecs-core lint: the tier rules from either base path', () => {
  * guard reports (the key passes) and the L7 report the block restates. The
  * same text in a spec, and in a library outside the scope, draws no guard
  * report — and keeps L7 from the every-file blocks.
+ *
+ * libs/ui/icons is the registry boundary: its own config lifts the icon
+ * selectors and restates the raw-brand guard and L7 (pass E, E-5), so the
+ * same canary draws the same reports there — its specs L7 alone.
  */
 const CANARY =
   'export interface CanaryVm {\n  readonly barberId: string;\n  readonly startUtcMs: number;\n  readonly today: string;\n  readonly rowId: string;\n}\nexport const canary = (raw: string) => raw as UserId;\n';
@@ -96,9 +100,11 @@ describe('features and UI lint: the raw-brand guard from either base path', () =
   ];
 
   it.each(
-    ['libs/features/staff/dashboard', 'libs/ui/controls'].flatMap((project) =>
-      bases.map(([label, cwd]) => [project, label, cwd]),
-    ),
+    [
+      'libs/features/staff/dashboard',
+      'libs/ui/controls',
+      'libs/ui/icons',
+    ].flatMap((project) => bases.map(([label, cwd]) => [project, label, cwd])),
   )(
     'reports three raw brand fields in %s, linted from %s',
     async (project, _label, cwd) => {
@@ -113,6 +119,7 @@ describe('features and UI lint: the raw-brand guard from either base path', () =
     [
       ['libs/features/staff/dashboard', 'src/lib/__canary__.spec.ts'],
       ['libs/features/staff/dashboard', 'src/testing/__canary__.ts'],
+      ['libs/ui/icons', 'src/lib/__canary__.spec.ts'],
       ['libs/shared/view-state', 'src/lib/__canary__.ts'],
     ].flatMap(([project, file]) =>
       bases.map(([label, cwd]) => [project, file, label, cwd]),

@@ -8275,6 +8275,27 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
       'до 28.10',
     );
   });
+
+  it('the birthday gift’s «Премахни» takes it off the bill where it stands — the band’s gift offered again, focused, where no reward ticket stands (pass E, DEP-9)', async () => {
+    profiles.set(CoreUserId.of(GEORGI), georgiBornToday());
+    render();
+    fixture.componentRef.setInput('uiGrants', [GEORGI_BIRTHDAY_GRANT]);
+    await openCard();
+    // The band carries the gift; the glance draws no reward ticket for it.
+    expect(find('client-reward-ready')).toBeNull();
+    find('client-birthday-gift')?.click();
+    await settle();
+    expect(pageKind()).toBe('discount');
+    await back();
+    expect(find('client-birthday-gift')?.tagName).toBe('ARTICLE');
+
+    find('client-birthday-gift-remove')?.click();
+    await settle();
+    const offered = find('client-birthday-gift');
+    expect(offered?.tagName).toBe('BUTTON');
+    expect(document.activeElement).toBe(offered);
+    expect(pageKind()).toBe('client');
+  });
 });
 
 describe('nameSaysRule — whether a coupon’s name already says its rule', () => {

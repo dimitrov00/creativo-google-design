@@ -22,8 +22,9 @@ import type { RhythmPreviewFacts } from '@core/pipelines';
  *
  * The walk's names (`readRhythmPreviewFacts`, `rhythmPreviewSource`,
  * `streakFactsReader`, `RHYTHM_PREVIEW_*`) are re-exported here from their
- * one home, and `rhythmPreviewReadsFacts` is a thin delegate of the system —
- * never a second copy of a rule.
+ * one home — never a second copy of a rule. Whether the two rules can be
+ * previewed from visit days at all is `StreakPreviewSystem.readsFacts`,
+ * which the store calls itself.
  */
 
 export {
@@ -39,18 +40,6 @@ export {
 
 /** The preview recomputes by itself this long after the last change. */
 export const RHYTHM_PREVIEW_DELAY_MS = 600;
-
-/**
- * Whether the two rules can be previewed from visit days alone
- * (`StreakPreviewSystem.readsFacts`): a rule that counts by a list asks
- * what a visit HELD, which the statistics do not say.
- */
-export function rhythmPreviewReadsFacts(
-  inForce: StreakRule,
-  draft: StreakRule,
-): boolean {
-  return StreakPreviewSystem.readsFacts(inForce, draft);
-}
 
 /** The fold: `StreakPreviewSystem.estimate` (`@core/systems`), over the facts the walk read. */
 export function rhythmPreviewOf(input: {

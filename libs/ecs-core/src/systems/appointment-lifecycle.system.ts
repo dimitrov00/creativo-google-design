@@ -1093,4 +1093,17 @@ export const AppointmentLifecycleSystem = {
       before.bookingStatus !== BookingStatus.Cancelled
     );
   },
+
+  /**
+   * Did the move END the visit live — live after, not before
+   * (`BookingLifecycle.isLive`, the busy projection's own predicate)? The
+   * reopen of a `CANCELLED`, `NO_SHOW` or `COMPLETED` visit: what holds its
+   * chair again at once (pass E, E-14, DEP-5).
+   */
+  endsLive(
+    before: { readonly bookingStatus: BookingStatus },
+    after: { readonly bookingStatus: BookingStatus },
+  ): boolean {
+    return !BookingLifecycle.isLive(before) && BookingLifecycle.isLive(after);
+  },
 } as const;

@@ -309,9 +309,15 @@ describe('VisitPills · one control, pinned at the rail’s trailing end', () =>
     expect(band.get('display')).toBe('grid');
     expect(band.get('grid-template-columns')).toBe('minmax(0, 1fr) auto');
     expect(band.get('align-items')).toBe('center');
-    // The rail's height, pills or none: 36 and the ring's air.
-    expect(band.get('min-block-size')).toBe(
-      'calc( var(--control-size-small) + 2 * var(--sys-space-tight) )',
+    // The rail's height, pills or none: 36 and the ring's air. Compared with
+    // the formatter's spacing inside parentheses folded away: prettier
+    // writes `calc(…)` on one line where it fits and wraps it where it does
+    // not. c1db6611 pinned the wrapped spelling; `visit-pills.css`, from the
+    // same commit, holds the one-line one.
+    const tight = (text: string | undefined): string | undefined =>
+      text?.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+    expect(tight(band.get('min-block-size'))).toBe(
+      tight('calc( var(--control-size-small) + 2 * var(--sys-space-tight) )'),
     );
     expect(cssRule(pillsCss(), '.visit-pills__rail').get('grid-column')).toBe(
       '1',

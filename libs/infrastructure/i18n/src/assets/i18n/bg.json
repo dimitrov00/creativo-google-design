@@ -33,6 +33,7 @@
     "BOOKING_BEYOND_HORIZON": "Още не приемаме резервации толкова напред.",
     "BOOKING_PARTY_TOO_LARGE": "Максимум {{maxPartySize}} души в една резервация.",
     "BOOKING_INVARIANT_VIOLATED": "Тази комбинация не е възможна. Пробвай друг час.",
+    "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Влез отново, за да продължиш.",
     "BOOKING_STAFF_EDIT_FORBIDDEN": "Нямаш право за тази промяна.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "Заявката не е валидна за това посещение.",
     "BOOKING_STAFF_EDIT_BEFORE_ARRIVAL": "Посещението не може да свърши преди клиентът да е дошъл.",
@@ -45,7 +46,11 @@
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.service_unavailable": "Салонът вече не предлага услугата на човека, който идва с теб, затова това посещение може да премести само салонът — {{reach}} и ще го уредим заедно.",
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.shop_only": "Това посещение мести салонът, защото в него е само човек, когото салонът добави за теб — {{reach}} и ще го преместим заедно.",
     "BOOKING_CANCEL_POLICY_UNAVAILABLE": "Не успяхме да проверим условията за отказ. Пробвай пак след малко.",
+    "BOOKING_CANCEL_NOT_CANCELLABLE": "Този час вече не може да се откаже.",
     "BOOKING_CANCEL_WINDOW_CLOSED": "Безплатното отказване е до {{windowHours}} ч. преди часа — {{reach}}.",
+    "BOOKING_CANCEL_UNAUTHENTICATED": "Влез отново, за да продължиш.",
+    "BOOKING_CANCEL_INVALID_INPUT": "Заявката не е валидна.",
+    "BOOKING_CANCEL_NOT_FOUND": "Този час вече не съществува.",
     "BOOKING_WAITLIST_UNAUTHENTICATED": "Влез, за да знаем на кого да кажем.",
     "BOOKING_WAITLIST_INVALID_REQUEST": "Тази заявка не може да бъде следена — пробвай да избереш дните отново.",
     "BOOKING_WAITLIST_TOO_MANY_DAYS": "Това е максималният брой дни, които можем да следим наведнъж.",
@@ -99,12 +104,24 @@
     "PHONE_INVALID.invalid-country": "Не разпознаваме този телефонен код — например {{example}}.",
     "PHONE_INVALID.invalid": "Този номер не изглежда валиден — например {{example}}.",
     "PHONE_COUNTRY_UNSUPPORTED": "Не разпознаваме кода на държава „{{attempted}}“.",
+    "BOOKING_COMMIT_FORBIDDEN": "Само служители могат да правят това.",
     "BOOKING_COMMIT_STORE_FAILED": "Не успяхме да запишем резервацията. Пробвай пак.",
     "BOOKING_TRANSITION_UNAUTHENTICATED": "Влез отново, за да продължиш.",
     "BOOKING_TRANSITION_FORBIDDEN": "Само служители могат да правят това.",
     "BOOKING_TRANSITION_INVALID_INPUT": "Заявката не е валидна.",
     "BOOKING_TRANSITION_NOT_FOUND": "Този час вече не съществува.",
     "BOOKING_TRANSITION_NOT_ALLOWED": "Часът не може да мине от „{{from}}“ към „{{to}}“.",
+    "BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED": "Приключен час може да се отвори отново само в същия ден.",
+    "BOOKING_TRANSITION_SLOT_TAKEN": "Този час междувременно е зает, затова не може да се възстанови.",
+    "BOOKING_ARRIVED_UNAUTHENTICATED": "Влез отново, за да продължиш.",
+    "BOOKING_ARRIVED_FORBIDDEN": "Само служители могат да правят това.",
+    "BOOKING_ARRIVED_INVALID_INPUT": "Заявката не е валидна.",
+    "BOOKING_ARRIVED_NOT_FOUND": "Този час вече не съществува.",
+    "BOOKING_ARRIVED_NOT_ALLOWED": "Пристигането на приключен час не може да се променя.",
+    "BOOKING_TIP_UNAUTHENTICATED": "Влез отново, за да продължиш.",
+    "BOOKING_TIP_FORBIDDEN": "Само служители могат да правят това.",
+    "BOOKING_TIP_INVALID_INPUT": "Заявката не е валидна.",
+    "BOOKING_TIP_NOT_FOUND": "Този час или това място вече не съществува.",
     "BOOKING_TRANSITION_SEAT_RESOLVED": "Това място вече е приключено.",
     "BOOKING_CALL_FAILED": "Нещо се обърка. Пробвай пак.",
     "IDENTITY_INVALID_INPUT": "Предоставената информация е невалидна.",
@@ -119,8 +136,10 @@
     "IDENTITY_OTP_WRONG_CODE": "Този код не е верен — проверете го и опитайте отново.",
     "IDENTITY_OTP_DESTINATION_CORRUPTED": "Възникна проблем от наша страна — моля, опитайте отново.",
     "IDENTITY_TOKEN_MINTING_FAILURE": "Не успяхме да ви впишем — моля, опитайте отново.",
+    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "Не успяхме да завършим регистрацията ви — моля, опитайте отново.",
     "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Сесията ви е изтекла — моля, влезте отново.",
     "IDENTITY_REGISTRATION_FORBIDDEN": "Тази регистрация не принадлежи на вашата сесия — моля, влезте отново.",
+    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "Не открихме профила ви — моля, влезте отново.",
     "IDENTITY_REGISTRATION_FIELD_MISSING": "Моля, попълнете всички задължителни полета.",
     "IDENTITY_REGISTRATION_BIRTH_DATE_INVALID": "Посочената дата на раждане е невалидна.",
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "Предоставената информация е невалидна.",
@@ -748,6 +767,17 @@
       "emptyPast": {
         "title": "Все още няма минали събития.",
         "body": "Тук ще остане спомен веднага щом първото приключи."
+      }
+    },
+    "status": {
+      "position": {
+        "OPEN": "open",
+        "CLOSED": "closed"
+      },
+      "enrollment": {
+        "OPEN": "open",
+        "UPCOMING": "upcoming",
+        "CLOSED": "closed"
       }
     }
   },

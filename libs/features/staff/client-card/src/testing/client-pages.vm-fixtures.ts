@@ -122,13 +122,18 @@ export function gaugeOf(
   };
 }
 
-/** A medal: not started, faceless and unnamed unless the spec says otherwise. */
+/**
+ * A medal: not started, faceless and unnamed unless the spec says otherwise.
+ * A family's medal — it draws the family it names (`familyId`); a season's
+ * OWN medal passes `familyId: null` (and its `seriesId`) through `overrides`.
+ */
 export function medalOf(
   seriesId: string,
   overrides: Partial<MedalVm> = {},
 ): MedalVm {
   return {
     seriesId: BadgeSeriesId.of(seriesId),
+    familyId: BadgeSeriesId.of(seriesId),
     state: 'notStarted',
     icon: 'loyalty.badge',
     src: null,

@@ -6,7 +6,9 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
  * Demo section — a titled spec block whose canvas puts the rendered
  * primitives on a Figma-style dot grid. Wide content scrolls INSIDE the
  * canvas (never the page), and `scTone="media"` flips the canvas to the
- * dark media surface for on-media/glass demos.
+ * dark media surface for on-media/glass demos. `scCanvasOverflow="visible"`
+ * lets content escape the canvas instead — for a page whose demos are never
+ * wider than it and hold an anchored popover the scroll box would clip.
  */
 @Component({
   selector: 'sc-demo',
@@ -25,7 +27,13 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
             <ng-content select="[scAbout]" />
           </p>
         </ui-stack>
-        <div class="sc-demo__canvas" [attr.data-tone]="scTone()">
+        <div
+          class="sc-demo__canvas"
+          [attr.data-tone]="scTone()"
+          [attr.data-canvas-overflow]="
+            scCanvasOverflow() === 'visible' ? 'visible' : null
+          "
+        >
           <ng-content />
         </div>
       </ui-stack>
@@ -49,6 +57,12 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
       /* Wide demos scroll inside the canvas — the page never overflows. */
       overflow-x: auto;
     }
+    /* A canvas that scrolls (overflow-x: auto) clips on both axes, which
+       would swallow an anchored popover; a page with nothing wider than the
+       canvas lets it escape. */
+    .sc-demo__canvas[data-canvas-overflow='visible'] {
+      overflow-x: visible;
+    }
     .sc-demo__canvas[data-tone='media'] {
       background-color: var(--sys-color-media-canvas);
       background-image: radial-gradient(
@@ -62,4 +76,9 @@ import { UiTextDirective } from '@creativo/ui/modifiers';
 export class ScDemo {
   readonly scTitle = input.required<string>();
   readonly scTone = input<'default' | 'media'>('default');
+  /**
+   * `scroll` (the default): wide content scrolls inside the canvas.
+   * `visible`: nothing is clipped — an anchored popover escapes the canvas.
+   */
+  readonly scCanvasOverflow = input<'scroll' | 'visible'>('scroll');
 }

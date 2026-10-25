@@ -2,8 +2,8 @@ import { VisitFilter, VisitGrain, VisitPerspective } from '@core/components';
 
 /*
  * The visit list's lowercase words (UI residue cleanup §2.2, UR-3; the
- * flip-4 F4-7 / Phase 4a 4A-10 precedent of `program-status-words.ts` and
- * `booking-status-words.ts`) — what the `visits.filter.<word>` keys, the
+ * Phase 4a 4A-10 precedent of `booking-status-words.ts` — flip-4 F4-7's
+ * programs status words moved into the catalogues in pass E, E-17) — what the `visits.filter.<word>` keys, the
  * filter and section test ids (`…-filter-no_show`, `history-month-2026-09`,
  * `history-year-2026`) and the lists' `data-perspective` have always
  * spelled. The `VisitListSystem` tags are SCREAMING; the words are not. ONE

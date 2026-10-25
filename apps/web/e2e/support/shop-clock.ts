@@ -57,3 +57,29 @@ export function shopToday(): LocalDate {
     SHOP_TIME_ZONE,
   ).localDate;
 }
+
+/** The evening start a seeded "today" visit takes while the shop's clock allows it. */
+const EVENING_START = 21 * 60;
+
+/** The latest start a 30-minute chair visit still ends today on (23:55). */
+const LATEST_START = 23 * 60 + 25;
+
+/**
+ * A start STILL AHEAD on today's shop clock, as the naive wall time
+ * `HH:mm:00` a seed reads: 21:00 — or, once the shop's clock is past 20:50,
+ * the first five-minute step at least ten minutes ahead — so a visit
+ * seeded today is still to come (open, not yet started:
+ * `VisitStorySystem.isUpcoming`) while the spec reads it. Capped at 23:25,
+ * so the dev chair's 30-minute visit ends today: a run started after about
+ * 23:15 can no longer seed an hour still to come today.
+ */
+export function stillAheadToday(): string {
+  const now = ZonedTimeSystem.shopNow(
+    sure(UtcEpochMs.of(Date.now()), 'now'),
+    SHOP_TIME_ZONE,
+  );
+  const soonest = Math.ceil((now.currentMinute + 10) / 5) * 5;
+  const start = Math.min(Math.max(EVENING_START, soonest), LATEST_START);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(Math.floor(start / 60))}:${pad(start % 60)}:00`;
+}

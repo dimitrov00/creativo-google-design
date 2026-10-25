@@ -632,6 +632,27 @@ describe('previewWords', () => {
     expect(english.capped).toBe('of the first 1,000 clients');
   });
 
+  it('groups a five-digit figure the language’s way, signed or not (pass E pin, E-12)', () => {
+    const big: StreakPreview = {
+      ...estimate,
+      after: { inRhythm: 12_581, inGrace: 9, broken: 57 },
+    };
+    const words = previewWords(context, big, true, 12_450);
+    if (words.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
+    expect(words.metrics[0]?.value).toBe('12\u00a0581');
+    expect(words.metrics[0]?.delta).toBe('+12\u00a0450');
+    expect(words.metrics[0]?.label).toBe('В ритъм: 131 → 12\u00a0581');
+    expect(words.capped).toBe('от първите 12\u00a0450 клиенти');
+    const english = previewWords(contextOf('en'), big, true, 12_450);
+    if (english.rhythmEstimate !== RhythmEstimate.Estimate)
+      throw new Error('estimate');
+    expect(english.metrics[0]?.value).toBe('12,581');
+    expect(english.metrics[0]?.delta).toBe('+12,450');
+    expect(english.metrics[1]?.delta).toBe('−3');
+    expect(english.capped).toBe('of the first 12,450 clients');
+  });
+
   it('draws no figures while either rule is off', () => {
     const words = previewWords(
       context,

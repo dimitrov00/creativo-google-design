@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BlockKind, MinuteBlock } from '@core/components';
 import { RepositoryErrorCode } from '@core/errors';
-import { Collections } from '@core/entities';
+import { type AppointmentNote, Collections } from '@core/entities';
+import { AppointmentId, UserId } from '@core/primitives';
 import {
   appointmentFixture,
   at,
@@ -10,6 +11,7 @@ import {
   deepFreeze,
   seatFixture,
   until,
+  utcMs,
 } from '@core/testing';
 import {
   type StoredDocument,
@@ -31,6 +33,21 @@ const refused = (path: string, reason: string) => ({
 });
 
 const APPOINTMENT_PATH = `appointments/${appointmentFixture().id}`;
+
+/** A team note as the notes collection holds it — the body beside its id. */
+function noteFixture(
+  overrides: Partial<AppointmentNote> = {},
+): AppointmentNote {
+  return {
+    id: AppointmentId.of('appointment-1'),
+    text: 'алергия към ментол',
+    authorUserId: UserId.of('dev-staff-ivan'),
+    writtenAtUtcMs: utcMs('2026-08-05T08:00:00.000+03:00'),
+    ...overrides,
+  };
+}
+
+const NOTE_PATH = 'appointmentNotes/appointment-1';
 
 describe('StoredDocumentSystem.appointment — appointments/{id} as read', () => {
   it('admits a well-formed document as THE SAME OBJECT — zero mapping (Law 5)', () => {
@@ -234,6 +251,94 @@ describe('StoredDocumentSystem.busyDay — barberBusy/{id} as read', () => {
   });
 });
 
+describe('StoredDocumentSystem.appointmentNote — appointmentNotes/{id} as read (pass E, E-2)', () => {
+  it('admits a well-formed note as THE SAME OBJECT — zero mapping (Law 5)', () => {
+    const doc = noteFixture();
+    const answer = StoredDocumentSystem.appointmentNote(doc);
+    expect(answer.ok).toBe(true);
+    expect(answer.ok && answer.value).toBe(doc);
+  });
+
+  it('admits a note with no author (written before onboarding) and a text padded with blanks', () => {
+    for (const doc of [
+      noteFixture({ authorUserId: null }),
+      noteFixture({ text: '  алергия\n' }),
+      noteFixture({ text: 'ред 1\nред 2' }),
+    ]) {
+      const answer = StoredDocumentSystem.appointmentNote(doc);
+      expect(answer.ok && answer.value, doc.text).toBe(doc);
+    }
+  });
+
+  it.each([
+    ['id', '', 'id'],
+    ['id', 'a/b', 'id'],
+    ['text', undefined, 'text'],
+    ['text', null, 'text'],
+    ['text', 3, 'text'],
+    ['text', ['алергия'], 'text'],
+    ['text', '', 'text'],
+    ['text', ' \n\t ', 'text'],
+    ['text', ' 　﻿', 'text'],
+    ['authorUserId', undefined, 'authorUserId'],
+    ['authorUserId', '', 'authorUserId'],
+    ['authorUserId', 'a/b', 'authorUserId'],
+    ['authorUserId', 7, 'authorUserId'],
+    ['writtenAtUtcMs', undefined, 'writtenAtUtcMs'],
+    ['writtenAtUtcMs', null, 'writtenAtUtcMs'],
+    ['writtenAtUtcMs', '2026-08-05', 'writtenAtUtcMs'],
+    ['writtenAtUtcMs', 1.5, 'writtenAtUtcMs'],
+    ['writtenAtUtcMs', Number.NaN, 'writtenAtUtcMs'],
+  ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
+    const doc = { ...noteFixture(), [field]: value };
+    expect(StoredDocumentSystem.appointmentNote(doc)).toEqual(
+      refused(`appointmentNotes/${doc.id}`, reason),
+    );
+    expect(StoredDocumentSystem.appointmentNoteFault(doc)).toBe(reason);
+  });
+
+  it('refuses an absent field as that field — a legacy `authorUid` row names its author', () => {
+    expect(
+      StoredDocumentSystem.appointmentNote({
+        ...without(noteFixture(), 'authorUserId'),
+        authorUid: 'dev-staff-ivan',
+      }),
+    ).toEqual(refused(NOTE_PATH, 'authorUserId'));
+  });
+
+  it('answers the FIRST offending field, in the fixed order: id, text, authorUserId, writtenAtUtcMs', () => {
+    expect(
+      StoredDocumentSystem.appointmentNoteFault({
+        ...noteFixture(),
+        text: '',
+        authorUserId: 7,
+        writtenAtUtcMs: 'x',
+      }),
+    ).toBe('text');
+    expect(
+      StoredDocumentSystem.appointmentNoteFault({
+        ...noteFixture(),
+        authorUserId: 7,
+        writtenAtUtcMs: 'x',
+      }),
+    ).toBe('authorUserId');
+  });
+
+  it('refuses a text exactly when trim() would leave nothing — every single code unit agrees', () => {
+    const disagreements: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      const text = String.fromCharCode(code);
+      const refusedText =
+        StoredDocumentSystem.appointmentNoteFault({
+          ...noteFixture(),
+          text,
+        }) === 'text';
+      if (refusedText !== (text.trim().length === 0)) disagreements.push(code);
+    }
+    expect(disagreements).toEqual([]);
+  });
+});
+
 describe('StoredDocumentSystem.salvage — what a trigger may read off a side', () => {
   it('answers a well-formed document’s OWN arrays and its location', () => {
     const doc = appointmentFixture();
@@ -281,7 +386,7 @@ describe('StoredDocumentSystem.salvage — what a trigger may read off a side', 
 });
 
 describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
-  it('answers a guard for the three collections, null for every other', () => {
+  it('answers a guard for the four collections, null for every other', () => {
     expect(StoredDocumentSystem.guardOf(Collections.Appointments)).toBe(
       StoredDocumentSystem.appointment,
     );
@@ -291,9 +396,13 @@ describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
     expect(StoredDocumentSystem.guardOf(Collections.BarberBusy)).toBe(
       StoredDocumentSystem.busyDay,
     );
+    expect(StoredDocumentSystem.guardOf(Collections.AppointmentNotes)).toBe(
+      StoredDocumentSystem.appointmentNote,
+    );
     for (const collection of [
       Collections.Users,
-      Collections.AppointmentNotes,
+      Collections.AppointmentPhotos,
+      'appointmentNotes/x/sub',
       'barberBusy/x/sub',
       'users/u1/notifications',
       '',
@@ -307,6 +416,7 @@ describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
       Collections.Appointments,
       Collections.Customers,
       Collections.BarberBusy,
+      Collections.AppointmentNotes,
       Collections.Users,
     ]) {
       expect(StoredDocumentSystem.unguarded(collection)).toBeNull();
@@ -333,6 +443,23 @@ describe('StoredDocumentSystem.admit — the one dispatch every read site shares
         { ...barberBusyDayFixture(), blocks: 'none' },
       ),
     ).toEqual(refused(`barberBusy/${barberBusyDayFixture().id}`, 'blocks'));
+  });
+
+  it('dispatches a team note to its guard — the same object admitted, a blank text refused', () => {
+    const note = noteFixture();
+    const answer = StoredDocumentSystem.admit(
+      StoredDocumentSystem.guardOf,
+      Collections.AppointmentNotes,
+      note,
+    );
+    expect(answer.ok && answer.value).toBe(note);
+    expect(
+      StoredDocumentSystem.admit(
+        StoredDocumentSystem.guardOf,
+        Collections.AppointmentNotes,
+        { ...note, text: '   ' },
+      ),
+    ).toEqual(refused(NOTE_PATH, 'text'));
   });
 
   it('reads an unguarded collection, a subcollection (null) and the unguarded registry as stored — the same object, never checked', () => {
@@ -444,6 +571,16 @@ describe('StoredDocumentSystem — purity and cost', () => {
       StoredDocumentSystem.salvageSides(...sides),
     );
     expect(doc).toEqual(appointmentFixture());
+    const note = deepFreeze(noteFixture());
+    const badNote = deepFreeze({ ...noteFixture(), writtenAtUtcMs: 'x' });
+    expect(StoredDocumentSystem.appointmentNote(note)).toEqual(
+      StoredDocumentSystem.appointmentNote(note),
+    );
+    expect(StoredDocumentSystem.appointmentNote(badNote)).toEqual(
+      StoredDocumentSystem.appointmentNote(badNote),
+    );
+    expect(note).toEqual(noteFixture());
+    expect(badNote).toEqual({ ...noteFixture(), writtenAtUtcMs: 'x' });
   });
 
   it('the *Fault halves answer null on 1,000 frozen clean documents — no reason string is built', () => {
@@ -456,6 +593,7 @@ describe('StoredDocumentSystem — purity and cost', () => {
     const customers = Array.from({ length: 1000 }, () =>
       deepFreeze(customerFixture()),
     );
+    const notes = Array.from({ length: 1000 }, () => deepFreeze(noteFixture()));
     let faults = 0;
     for (const doc of appointments) {
       if (StoredDocumentSystem.appointmentFault(doc) !== null) faults++;
@@ -465,6 +603,9 @@ describe('StoredDocumentSystem — purity and cost', () => {
     }
     for (const doc of customers) {
       if (StoredDocumentSystem.customerFault(doc) !== null) faults++;
+    }
+    for (const doc of notes) {
+      if (StoredDocumentSystem.appointmentNoteFault(doc) !== null) faults++;
     }
     expect(faults).toBe(0);
   });

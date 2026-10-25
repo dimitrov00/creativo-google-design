@@ -1,5 +1,6 @@
 import {
   type Currency,
+  type DurationMinutes,
   type EndMinute,
   LocalDate,
   type MinuteOfDay,
@@ -24,8 +25,8 @@ import {
  *
  * The ONE set of formatters of the web UI (`@creativo/ui/wall-clock`):
  * the features, the `libs/ui` pickers, the shell and the showcase all
- * format a day, an instant or a price here, so no two of them ever format
- * one apart.
+ * format a day, an instant, a price, a span of minutes or a count here, so
+ * no two of them ever format one apart.
  */
 
 const MS_PER_DAY = 86_400_000;
@@ -301,4 +302,65 @@ export function formatCentsFigure(
     FIGURE_FORMATS.set(key, format);
   }
   return format.format(amountCents / 10 ** exponent);
+}
+
+const NUMBER_FORMATS = new Map<string, Intl.NumberFormat>();
+
+/** The ONE cached plain-number formatter per locale + options. */
+function numberFormat(
+  locale: string,
+  options: Intl.NumberFormatOptions,
+): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = NUMBER_FORMATS.get(key);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale, options);
+    NUMBER_FORMATS.set(key, format);
+  }
+  return format;
+}
+
+const MINUTE_UNIT: Intl.NumberFormatOptions = {
+  style: 'unit',
+  unit: 'minute',
+  unitDisplay: 'narrow',
+};
+const UNGROUPED: Intl.NumberFormatOptions = { useGrouping: false };
+const COUNT: Intl.NumberFormatOptions = {};
+
+/**
+ * «30 – 50 мин» · «30–50m» — a span of minutes (a service's duration
+ * range) in the locale's narrow unit form; one figure when the ends agree
+ * («30 мин»). `Intl`'s `formatRange` owns the separator and the unit said
+ * once; where the platform lacks it, the bare low end (ungrouped), an en
+ * dash and the worded high end. Cached per locale (pass E, E-12; moved from
+ * the catalogue presenter's per-call `formatDurationRange`, words
+ * byte-identical).
+ */
+export function formatMinutesRange(
+  min: DurationMinutes,
+  max: DurationMinutes,
+  locale: string,
+): string {
+  const formatter = numberFormat(locale, MINUTE_UNIT);
+  if (min === max) return formatter.format(min);
+  // `formatRange` postdates the workspace TS lib — feature-detect at runtime.
+  const ranged = formatter as Intl.NumberFormat & {
+    formatRange?: (start: number, end: number) => string;
+  };
+  if (typeof ranged.formatRange === 'function') {
+    return ranged.formatRange(min, max);
+  }
+  return `${numberFormat(locale, UNGROUPED).format(min)}–${formatter.format(max)}`;
+}
+
+/**
+ * «12 450» · «12,450» — a count or a figure, grouped the locale's way
+ * (Bulgarian from five digits, CLDR's minimum grouping: «1000»; English
+ * from four: «1,000»). Cached per locale (pass E, E-12; the client card's
+ * and the rhythm editor's per-call `Intl.NumberFormat(lang)`, words
+ * byte-identical).
+ */
+export function formatCount(value: number, locale: string): string {
+  return numberFormat(locale, COUNT).format(value);
 }

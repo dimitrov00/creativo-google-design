@@ -1015,45 +1015,6 @@ describe('AchievementsSystem.serviceToAdd — the dock’s verb (M-32)', () => {
   });
 });
 
-describe('AchievementsSystem.firstStart — when the visit on screen starts', () => {
-  const nine = utcMs('2026-09-28T06:00:00.000Z');
-  const ten = utcMs('2026-09-28T07:00:00.000Z');
-  const nextDayEight = utcMs('2026-09-29T05:00:00.000Z');
-
-  it('is null with no start yet', () => {
-    expect(AchievementsSystem.firstStart([])).toBeNull();
-  });
-
-  it('is the one start of a single leg', () => {
-    expect(AchievementsSystem.firstStart([ten])).toBe(ten);
-  });
-
-  it('is the earliest instant, whatever order the legs come in', () => {
-    expect(AchievementsSystem.firstStart([ten, nine])).toBe(nine);
-    expect(AchievementsSystem.firstStart([nine, ten])).toBe(nine);
-    // A later shop day's earlier wall-clock minute is still later.
-    expect(AchievementsSystem.firstStart([nextDayEight, ten])).toBe(ten);
-  });
-
-  it('holds equal starts as one start', () => {
-    expect(AchievementsSystem.firstStart([ten, ten])).toBe(ten);
-  });
-
-  it('orders the fall-back repeat hour by instant, not by wall clock', () => {
-    // Europe/Sofia, 2026-10-25: 03:30 EEST (00:30Z) comes before 03:15 EET (01:15Z).
-    const first = utcMs('2026-10-25T00:30:00.000Z');
-    const repeat = utcMs('2026-10-25T01:15:00.000Z');
-    expect(AchievementsSystem.firstStart([repeat, first])).toBe(first);
-  });
-
-  it('is pure: same input → same output, inputs untouched', () => {
-    const starts = deepFreeze([ten, nextDayEight, nine]);
-    const run = () => AchievementsSystem.firstStart(starts);
-    expect(run()).toBe(run());
-    expect(starts).toEqual([ten, nextDayEight, nine]);
-  });
-});
-
 describe('AchievementsSystem.countedVisits — «Броени посещения» (M-39)', () => {
   type Row = {
     readonly id: AppointmentId;

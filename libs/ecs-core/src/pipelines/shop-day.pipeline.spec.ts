@@ -21,11 +21,12 @@ import {
 import { observeCapacityEntries, observeDayDocs } from './shop-day.pipeline';
 
 /*
- * ONE SHOP DAY'S RAW STREAMS — the cases of the booking feature's
- * `day-availability.spec.ts` that pin the impure half (which documents a
- * day reads, as streams; the month documents of the calendar's markers),
- * restated on the pipeline they moved to. Which documents is
- * `BookingCartSystem.dayDocsKey`'s decision, pinned by its own spec.
+ * ONE SHOP DAY'S RAW STREAMS — the cases of the booking feature's former
+ * `day-availability.spec.ts` (deleted in pass E, E-10) that pin the impure
+ * half (which documents a day reads, as streams; the month documents of the
+ * calendar's markers), restated on the pipeline they moved to. Which
+ * documents is `BookingCartSystem.dayDocsKey`'s decision, pinned by its own
+ * spec.
  */
 
 const IVAN = BarberId.of('b-ivan');

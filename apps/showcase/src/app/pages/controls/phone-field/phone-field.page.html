@@ -8,7 +8,7 @@
     <code>value</code> model that is non-null only while the draft is valid.
   </ng-container>
 
-  <sc-demo scTitle="Sizes">
+  <sc-demo scCanvasOverflow="visible" scTitle="Sizes">
     <ng-container scAbout>
       ≙ <code>.controlSize(_:)</code> — the same 36 / 44 / 52 ladder as every
       other control; label, hint and error ride the footnote convention.
@@ -33,7 +33,7 @@
     </ui-flow>
   </sc-demo>
 
-  <sc-demo scTitle="Invalid & disabled">
+  <sc-demo scCanvasOverflow="visible" scTitle="Invalid & disabled">
     <ng-container scAbout>
       Validation belongs to the CONSUMER — <code>error</code> is an input
       (validate on blur/submit via <code>PhoneSystem.parse</code>, clear once
@@ -69,7 +69,7 @@
     </ui-flow>
   </sc-demo>
 
-  <sc-demo scTitle="Prefilled E.164">
+  <sc-demo scCanvasOverflow="visible" scTitle="Prefilled E.164">
     <ng-container scAbout>
       An external <code>value</code> write (prefill, browser autofill via
       <code>autocomplete="tel"</code>) is treated like a pasted international
@@ -92,7 +92,10 @@
     </ui-stack>
   </sc-demo>
 
-  <sc-demo scTitle="Country picker — popover & sheet">
+  <sc-demo
+    scCanvasOverflow="visible"
+    scTitle="Country picker — popover & sheet"
+  >
     <ng-container scAbout>
       The trigger is an APG <code>combobox</code> showing the emoji flag
       (regional-indicator pairs, <code>aria-hidden</code> — Windows falls back
@@ -122,7 +125,7 @@
     </ui-stack>
   </sc-demo>
 
-  <sc-demo scTitle="Normalized display">
+  <sc-demo scCanvasOverflow="visible" scTitle="Normalized display">
     <ng-container scAbout>
       Paste something messy — <code>08 88-12 34 56</code> — and the text
       re-renders as the canonical national grouping (<code>088 812 3456</code>),

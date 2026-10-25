@@ -856,6 +856,7 @@ function ladderOf(
       level: level.level,
       medal: {
         seriesId: face.seriesId,
+        familyId: face.familyId,
         state: passed ? 'complete' : 'notStarted',
         icon: face.icon,
         src: face.src,

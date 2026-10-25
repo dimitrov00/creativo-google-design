@@ -63,7 +63,13 @@ export type CountPhotosByAppointment = (
 
 // ── Notes ─────────────────────────────────────────────────────────────────
 
-/** `appointmentNotes/{appointmentId}`, live — `null` when the visit has no note. */
+/**
+ * `appointmentNotes/{appointmentId}`, live — `null` when the visit has no
+ * note. A stored note that is not its entity (the read-time guard,
+ * `StoredDocumentSystem.appointmentNote`, pass E — when the adapter is built
+ * guarded) emits `RepositoryError.malformed(path, field)` as a value and
+ * the listener stays: a corrected note emits `ok` again.
+ */
 export type ObserveAppointmentNote = (
   appointmentId: AppointmentId,
 ) => Observable<Result<AppointmentNote | null, RepositoryError>>;
@@ -92,7 +98,11 @@ export type SaveAppointmentNote = (
  * Every failure — the server unreachable (offline: a transaction never reads
  * the cache, so nothing is ever written over the server's copy), contention
  * past the store's attempts, a rule denial — is
- * `RepositoryError.writeFailed(path, reason)` and nothing is written.
+ * `RepositoryError.writeFailed(path, reason)` and nothing is written. A
+ * stored note that is not its entity (the read-time guard,
+ * `StoredDocumentSystem.appointmentNote`, pass E — when the adapter is built
+ * guarded) is `RepositoryError.malformed(path, field)`: `decide` is never
+ * handed it, and nothing is written.
  */
 export type UpdateAppointmentNote = (
   appointmentId: AppointmentId,

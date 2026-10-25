@@ -14,6 +14,7 @@ import {
 } from '@core/primitives';
 // Types only (erased): the testing entry's runtime half is not Playwright's to load.
 import type { LoyaltyClientJson } from '@core/testing';
+import { DEV_CLASSIC_CUT } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import { expectNoAxeViolations } from './support/axe';
 import {
@@ -27,7 +28,7 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
 } from './support/seed-firestore';
-import { shopToday } from './support/shop-clock';
+import { shopToday, stillAheadToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
 import { THEMES, pinTheme } from './support/theme';
 
@@ -82,15 +83,22 @@ function tenAm(appointmentId: string, day: string): VisitFact {
  * The stats the two worked visits make — the flat `ClientStats` slice of
  * the `ClientStatsRecord` the projection writes (`seedClientStats` adds the
  * record's key and stamps): both at 10:00 on the shop's clock, the last one
- * a beard with Иван — what «Повтори» would repeat.
+ * a classic cut with Иван — what «Повтори» would repeat.
+ *
+ * Not the chair's beard trim, which today's visit holds: «Повтори» is
+ * offered only while the visit on screen does not already hold the last
+ * visit's services (`ClientGlanceSystem.repeatOffer` / `sameLegs`, the
+ * card's rule since revision 3, c1db6611), so a last visit of the same
+ * beard drew no disc and this journey failed at the disc from the day it
+ * was written.
  */
 function statsFor(uid: string): ClientStatsSeed {
   const older = tenAm(`${uid}-y25`, '2025-11-12');
   const last = tenAm(`${uid}-y26`, '2026-03-10');
-  const beard = ServiceId.of('svc-beard');
+  const cut = ServiceId.of(DEV_CLASSIC_CUT.serviceId);
   const ivan = BarberId.of('ivan');
-  const minutes = DurationMinutes.of(30);
-  if (!minutes.ok) throw new Error('no thirty minutes');
+  const minutes = DurationMinutes.of(DEV_CLASSIC_CUT.durationMinutes);
+  if (!minutes.ok) throw new Error('no classic-cut minutes');
   return {
     ...ClientStats.empty(),
     lifetimeVisitsCompleted: 2,
@@ -100,12 +108,12 @@ function statsFor(uid: string): ClientStatsSeed {
     lastVisitAppointmentId: last.appointmentId,
     lastVisitLocalDate: last.localDate,
     lastVisitStartMinutes: last.startMinutes,
-    lastVisitServiceIds: [beard],
+    lastVisitServiceIds: [cut],
     lastVisitBarberIds: [ivan],
     lastVisitLegs: [
       {
         seatId: SeatId.of(`${uid}-y26-seat`),
-        serviceId: beard,
+        serviceId: cut,
         variantId: null,
         barberId: ivan,
         durationMinutes: minutes.value,
@@ -124,7 +132,13 @@ async function seedGeorgi(uid: string, today: string): Promise<void> {
     phone: '+359881234567',
   });
   await seedWorkedAppointment(`${uid}-y25`, uid, '2025-11-12T10:00:00');
-  await seedWorkedAppointment(`${uid}-y26`, uid, '2026-03-10T10:00:00');
+  // The last visit, a classic cut (`statsFor`): what «Повтори» repeats.
+  await seedWorkedAppointment(
+    `${uid}-y26`,
+    uid,
+    '2026-03-10T10:00:00',
+    DEV_CLASSIC_CUT,
+  );
   // A year with a cut a month, January to October 2025: twelve month heads
   // in the history, so its pills have somewhere to jump.
   await Promise.all(
@@ -137,13 +151,23 @@ async function seedGeorgi(uid: string, today: string): Promise<void> {
       );
     }),
   );
-  // Late in the day, so the visit is still ahead whenever the suite runs —
-  // and OPEN (not settled), which is what lets the medal page's verb add
-  // a service to it.
-  await seedUpcomingAppointment(`${uid}-today`, uid, `${today}T21:00:00`);
-  await seedAppointmentPhoto(`${uid}-y26`, uid, {
+  // Late in the day and still ahead when the history reads it (its
+  // «Предстоящи»; `stillAheadToday` — a fixed 21:00 had started, and left
+  // that run, whenever the suite ran after nine in the evening) — and OPEN
+  // (not settled), which is what lets the medal page's verb add a service
+  // to it.
+  await seedUpcomingAppointment(
+    `${uid}-today`,
+    uid,
+    `${today}T${stillAheadToday()}`,
+  );
+  // A past cut on the OLDER visit: «Снимки» (I) shows the cuts the cards
+  // do not — the featured last visit's own ride its card as thumbs
+  // (`photoRailVm`; revision 3 §3 rows H1 / I1, c1db6611) — so a photo on
+  // `-y26` never reached the grid this journey opens it from.
+  await seedAppointmentPhoto(`${uid}-y25`, uid, {
     clientLabel: 'Георги Петров',
-    takenAt: '2026-03-10T08:40:00.000Z',
+    takenAt: '2025-11-12T08:40:00.000Z',
   });
   await seedLoyalty(uid, georgiLoyalty());
   // His punch-card reward, held: the glance's ready ticket (E).
@@ -167,7 +191,11 @@ async function seedMartin(uid: string, today: string): Promise<void> {
     phone: '+359887654321',
     birthDate: `${MARTIN_BORN}-${today.slice(5)}`,
   });
-  await seedUpcomingAppointment(`${uid}-today`, uid, `${today}T21:00:00`);
+  await seedUpcomingAppointment(
+    `${uid}-today`,
+    uid,
+    `${today}T${stillAheadToday()}`,
+  );
   await seedBirthdayGift(uid);
 }
 
@@ -451,7 +479,7 @@ test.describe('client card — the glance (client.profile on)', () => {
 
       // A PAST CUT IS NAMED BY THE BAR FROM REST (§3.7): the photo has no
       // large title to scroll under the bar, so its date shows at once.
-      const cut = card.getByTestId(`client-photo-photo-${uid}-y26`);
+      const cut = card.getByTestId(`client-photo-photo-${uid}-y25`);
       await expect(cut).toBeVisible({ timeout: 20_000 });
       await cut.click();
       await expect(editor).toHaveAttribute('data-depth', '2');

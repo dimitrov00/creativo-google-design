@@ -48,7 +48,7 @@ import {
   ClientQueryShape,
   Combinability,
   type CountryIso2,
-  type CouponOccasion,
+  CouponOccasion,
   CouponValue,
   DiscountMethod,
   DiscountProvenance,
@@ -72,6 +72,7 @@ import {
   AppointmentLifecycleSystem,
   BillingSystem,
   ClientQuerySystem,
+  CouponGrantSystem,
   type DiscountInput,
   DiscountSystem,
   type DraftBill,
@@ -7393,7 +7394,12 @@ export class StaffVisitEditor {
     this.focusLater(
       this.page()?.editorPage === EditorPage.ClientLoyalty
         ? `[data-testid="rewards-action-use"], ${ticket}`
-        : ticket,
+        : // A birthday grant stands as today's band's gift while the band
+          // carries it (the birthday card, first in the DOM), the reward
+          // ticket else: the list lands on whichever stands (pass E, DEP-9).
+          this.isBirthdayGrant(grantId)
+          ? `[data-testid="client-birthday-gift"], ${ticket}`
+          : ticket,
     );
   }
 
@@ -7402,6 +7408,15 @@ export class StaffVisitEditor {
     return this.page()?.editorPage === EditorPage.ClientLoyalty
       ? `rewards-ready-${grantId}`
       : 'client-reward-ready';
+  }
+
+  /** Whether the held grant's coupon was made for the birthday — the gift today's band carries (`CouponGrantSystem.isOccasion`). */
+  private isBirthdayGrant(grantId: CouponGrantId): boolean {
+    const grant = this.uiGrants().find((entry) => entry.grantId === grantId);
+    return CouponGrantSystem.isOccasion(
+      grant?.couponOccasion ?? null,
+      CouponOccasion.Birthday,
+    );
   }
 
   /**

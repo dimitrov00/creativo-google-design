@@ -29,6 +29,7 @@ import {
   AuditContext,
   AuditTargetRef,
   BadgeCategoryKind,
+  BarberStatus,
   BlockReason,
   Combinability,
   CouponExpiryRule,
@@ -39,6 +40,7 @@ import {
   DayWindows,
   E164,
   Email,
+  EnrollmentStatus,
   ExceptionEffectRule,
   GrantCapacityTerms,
   GrantExpiryTerms,
@@ -47,14 +49,17 @@ import {
   JournalEffect,
   JournalFeed,
   JournalVisibility,
+  LocationStatus,
   MinuteRange,
   NotificationPayload,
   NotificationTopic,
   ParsedIdentifier,
   PhotoOrigin,
+  PositionStatus,
   RegistrationState,
   Role,
   SeasonKind,
+  ServiceStatus,
   StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
@@ -67,7 +72,9 @@ import {
 import type {
   AppointmentPhoto,
   AuditEntry,
+  Barber,
   BarberLeadTimeSample,
+  BarberSchedule,
   ClientMoneyRecord,
   ClientStatsRecord,
   Coupon,
@@ -78,6 +85,9 @@ import type {
   JournalEntry,
   LoyaltyAccount,
   ScheduleException,
+  Service,
+  ServiceCategory,
+  ShopLocation,
   StreakDefinition,
   StreakDefinitionVersion,
   User,
@@ -92,20 +102,26 @@ import {
   JournalEntryId,
   LocationId,
   PublishRequestId,
+  ServiceCategoryId,
   StreakDefinitionVersionId,
   UserId,
   WaitlistRequestId,
 } from '@core/primitives';
 import { RegistrationSystem, SearchFieldsSystem } from '@core/systems';
 import {
+  FIXTURE_TIME_ZONE,
   cents,
+  courseOf,
   customerOf,
   endMinute,
   localDate,
   minute,
   minuteCount,
+  positionOf,
+  shopEventOf,
   streakDefinitionFixture,
   streakDefinitionVersionFixture,
+  textFixture,
   unwrapOk,
   utcMs,
 } from '@core/testing';
@@ -243,6 +259,113 @@ function moneyBody(uid: string, spent: number): Omit<ClientMoneyRecord, 'id'> {
     updatedAtUtcMs: SEPT_FIRST,
   } satisfies Omit<ClientMoneyRecord, 'id'>;
 }
+
+/** A stored body: the entity minus its id (Law 5) — what `programsPorts`' `saveBody` writes. */
+function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(entity).filter(([key]) => key !== 'id'),
+  );
+}
+
+/** `body` with one root key dropped — a document missing a key its entity declares. */
+function withoutKey(
+  body: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(body).filter(([name]) => name !== key),
+  );
+}
+
+/**
+ * The whole body a catalogue manager's save writes for each programs
+ * collection (`programsPorts` → `saveBody`): the `@core/testing` fixtures
+ * `programs.adapter.integration.spec.ts` saves, every optional `null`
+ * (pass E, E-15 — the shape the rules admit).
+ */
+const POSITION_BODY = bodyOf(positionOf('doc-3'));
+const COURSE_BODY = bodyOf(courseOf('doc-3'));
+const EVENT_BODY = bodyOf(shopEventOf('doc-3'));
+
+/**
+ * The same three with every optional filled and every tag moved off its
+ * default — the non-`null` branch of each check: a location list, a starts
+ * label, an event at a shop at the day's last minute (1439).
+ */
+const FILLED_POSITION_BODY = bodyOf(
+  positionOf('doc-4', {
+    locationIds: [LocationId.of('loc-center')],
+    positionStatus: PositionStatus.Closed,
+    applyUrl: 'https://example.test/apply',
+    sortOrder: 3,
+  }),
+);
+const FILLED_COURSE_BODY = bodyOf(
+  courseOf('doc-4', {
+    enrollmentStatus: EnrollmentStatus.Upcoming,
+    startsLabel: textFixture('Spring 2027', 'Пролет 2027'),
+    applyUrl: 'https://example.test/course',
+    sortOrder: 2,
+  }),
+);
+const FILLED_EVENT_BODY = bodyOf(
+  shopEventOf('doc-4', {
+    startMinutes: minute(1439),
+    locationId: LocationId.of('loc-center'),
+    applyUrl: 'https://example.test/rsvp',
+    sortOrder: 1,
+  }),
+);
+
+/** Each programs collection: its saved body, and that body with every optional filled. */
+const PROGRAMS: ReadonlyArray<
+  readonly [string, Record<string, unknown>, Record<string, unknown>]
+> = [
+  ['positions', POSITION_BODY, FILLED_POSITION_BODY],
+  ['courses', COURSE_BODY, FILLED_COURSE_BODY],
+  ['events', EVENT_BODY, FILLED_EVENT_BODY],
+];
+
+/**
+ * The catalogue, the roster and the settings as their documents store them,
+ * trimmed: no client writes them since pass E (DEP-6), so these rules check
+ * who, never the shape — but every key is a flat root key of its entity.
+ */
+const CATEGORY_BODY = {
+  name: textFixture('Haircuts', 'Подстригване'),
+  sortOrder: 1,
+} satisfies Omit<ServiceCategory, 'id'>;
+
+const SERVICE_BODY = {
+  name: textFixture('Haircut', 'Подстригване'),
+  categoryId: ServiceCategoryId.of('cat-1'),
+  serviceStatus: ServiceStatus.Active,
+  sortOrder: 1,
+} satisfies Partial<Omit<Service, 'id'>>;
+
+const BARBER_BODY = {
+  name: textFixture('Ivan', 'Иван'),
+  handle: 'ivan',
+  locationIds: [LocationId.of('loc-center')],
+  barberStatus: BarberStatus.Active,
+  sortOrder: 1,
+} satisfies Partial<Omit<Barber, 'id'>>;
+
+const LOCATION_BODY = {
+  name: textFixture('Center', 'Център'),
+  locationStatus: LocationStatus.Active,
+  sortOrder: 1,
+} satisfies Partial<Omit<ShopLocation, 'id'>>;
+
+const SCHEDULE_BODY = {
+  turnaroundMinutes: minuteCount(10),
+  versions: [],
+} satisfies Omit<BarberSchedule, 'id'>;
+
+/** Who `isCatalogManager()` admits — the catalogue's writers until pass E. */
+const CATALOGUE_ROLES = ['content_manager', 'admin', 'sysadmin'] as const;
+/** Who `mayEditRoster()` admits — the roster's writers until pass E. */
+const ROSTER_ROLES = ['barber', 'receptionist', 'admin', 'sysadmin'] as const;
 
 describe('firestore.rules', () => {
   let testEnv: RulesTestEnvironment;
@@ -683,17 +806,164 @@ describe('firestore.rules', () => {
       },
     );
 
-    it.each(['positions', 'courses', 'events'])(
+    // DEP-7 (pass E, E-15): the write is the entity body the live writer
+    // saves — a `{ title }`-only body is refused by the shape check now.
+    it.each(PROGRAMS)(
       'lets a content_manager write %s',
-      async (collectionName) => {
+      async (collectionName, body) => {
         const manager = testEnv.authenticatedContext('manager-1', {
           roles: ['content_manager'],
         });
         await assertSucceeds(
-          setDoc(doc(manager.firestore(), collectionName, 'doc-3'), {
-            title: { en: 'Title', bg: 'Заглавие' },
-          }),
+          setDoc(doc(manager.firestore(), collectionName, 'doc-3'), body),
         );
+      },
+    );
+
+    it.each(PROGRAMS)(
+      'lets the admin pair replace a stored %s with a whole body, every optional filled — an update',
+      async (collectionName, body, filled) => {
+        await seed(`${collectionName}/doc-4`, body);
+        for (const role of ['admin', 'sysadmin']) {
+          await assertSucceeds(
+            setDoc(
+              doc(
+                signedIn(`actor-${role}`, role).firestore(),
+                collectionName,
+                'doc-4',
+              ),
+              filled,
+            ),
+          );
+        }
+      },
+    );
+
+    /**
+     * Each malformed body differs from its valid fixture in ONE way. The
+     * same manager first writes the valid body (so the refusal is the
+     * shape's, never the role's), then is refused the malformed one both as
+     * a create and as an update over the stored valid document.
+     */
+    const position = (change: Record<string, unknown>) =>
+      ['positions', POSITION_BODY, { ...POSITION_BODY, ...change }] as const;
+    const course = (change: Record<string, unknown>) =>
+      ['courses', COURSE_BODY, { ...COURSE_BODY, ...change }] as const;
+    const event = (change: Record<string, unknown>) =>
+      ['events', EVENT_BODY, { ...EVENT_BODY, ...change }] as const;
+    it.each<
+      readonly [
+        string,
+        string,
+        Record<string, unknown>,
+        Record<string, unknown>,
+      ]
+    >([
+      ['a key its entity does not declare', ...position({ featured: true })],
+      [
+        'a zone field — the zone is the location’s (Law 7.2)',
+        ...event({ timeZone: FIXTURE_TIME_ZONE }),
+      ],
+      [
+        'a missing key — startsLabel absent, not null',
+        'courses',
+        COURSE_BODY,
+        withoutKey(COURSE_BODY, 'startsLabel'),
+      ],
+      [
+        'a position tag outside PositionStatus',
+        ...position({ positionStatus: 'open' }),
+      ],
+      [
+        'an enrollment tag outside EnrollmentStatus',
+        ...course({ enrollmentStatus: 'PAUSED' }),
+      ],
+      [
+        'a title without en',
+        ...event({ title: { bg: 'Ден на отворените столове' } }),
+      ],
+      [
+        'a summary with an empty locale',
+        ...position({ summary: { bg: 'Пълен работен ден', en: '' } }),
+      ],
+      [
+        'a starts label with a third locale',
+        ...course({
+          startsLabel: { bg: 'Пролет', en: 'Spring', de: 'Frühling' },
+        }),
+      ],
+      ['a startMinutes of 1440', ...event({ startMinutes: 1440 })],
+      ['a startMinutes that is no integer', ...event({ startMinutes: 1140.5 })],
+      [
+        'a localDate not spelled YYYY-MM-DD',
+        ...event({ localDate: '5.10.2026' }),
+      ],
+      [
+        'a utcEpochMs that is no integer',
+        ...event({ utcEpochMs: String(shopEventOf('doc-3').utcEpochMs) }),
+      ],
+      ['a locationId holding a slash', ...event({ locationId: 'loc/center' })],
+      [
+        'locationIds that are no list',
+        ...position({ locationIds: 'loc-center' }),
+      ],
+      ['an empty applyUrl — none is null', ...course({ applyUrl: '' })],
+      ['a string sortOrder', ...course({ sortOrder: '0' })],
+      ['a negative sortOrder', ...position({ sortOrder: -1 })],
+    ])(
+      'refuses a content_manager %s (%s)',
+      async (_shape, collectionName, valid, malformed) => {
+        const db = signedIn('manager-1', 'content_manager').firestore();
+        await assertSucceeds(setDoc(doc(db, collectionName, 'doc-ok'), valid));
+
+        await assertFails(
+          setDoc(doc(db, collectionName, 'doc-bad'), malformed),
+        );
+        await assertFails(setDoc(doc(db, collectionName, 'doc-ok'), malformed));
+      },
+    );
+
+    it.each(PROGRAMS)(
+      'refuses every delete of %s — the content_manager’s and the admin pair’s (no client deletes one)',
+      async (collectionName, body) => {
+        await seed(`${collectionName}/doc-1`, body);
+        for (const role of CATALOGUE_ROLES) {
+          await assertFails(
+            deleteDoc(
+              doc(
+                signedIn(`actor-${role}`, role).firestore(),
+                collectionName,
+                'doc-1',
+              ),
+            ),
+          );
+        }
+        await assertSucceeds(
+          getDoc(
+            doc(
+              testEnv.unauthenticatedContext().firestore(),
+              collectionName,
+              'doc-1',
+            ),
+          ),
+        );
+      },
+    );
+
+    it.each(PROGRAMS)(
+      'refuses a whole, valid %s to everyone but a catalogue manager — the role, not the shape',
+      async (collectionName, body) => {
+        const outsiders = [
+          signedIn('client-1', 'client'),
+          signedIn('staff-1', 'barber'),
+          signedIn('desk-1', 'receptionist'),
+          testEnv.unauthenticatedContext(),
+        ];
+        for (const outsider of outsiders) {
+          await assertFails(
+            setDoc(doc(outsider.firestore(), collectionName, 'doc-5'), body),
+          );
+        }
       },
     );
   });
@@ -798,7 +1068,9 @@ describe('firestore.rules', () => {
 
   // ── the booking-critical rules the audit found untested (F26) ─────────
 
-  describe('settings — public read, admin write', () => {
+  // DEP-6 (pass E, E-16): the admin grant is closed — no client writes the
+  // settings; the two cases below are unchanged, the admin's refusal is new.
+  describe('settings — public read, no client write', () => {
     it('lets an anonymous visitor read the booking policy', async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'settings', 'bookingPolicy'), {
@@ -821,6 +1093,65 @@ describe('firestore.rules', () => {
         }),
       );
     });
+
+    it("refuses an admin's write to settings", async () => {
+      await seed('settings/bookingPolicy', { horizonMonths: 2 });
+      for (const role of ['admin', 'sysadmin']) {
+        const db = signedIn(`actor-${role}`, role).firestore();
+
+        await assertFails(
+          setDoc(doc(db, 'settings', 'bookingPolicy'), { horizonMonths: 12 }),
+        );
+        await assertFails(
+          setDoc(doc(db, 'settings', 'nextPolicy'), { horizonMonths: 12 }),
+        );
+        await assertFails(deleteDoc(doc(db, 'settings', 'bookingPolicy')));
+      }
+    });
+  });
+
+  // DEP-6 (pass E, E-16): the catalogue (once a catalogue manager's) and the
+  // roster (once a roster editor's) have no client writer — the Admin SDK
+  // (the dev seed, Cloud Functions) is the one; `/book` still reads them.
+  describe('the catalogue and the rosters — public read, no client write', () => {
+    const closed: ReadonlyArray<
+      readonly [string, Record<string, unknown>, readonly string[]]
+    > = [
+      ['serviceCategories', CATEGORY_BODY, CATALOGUE_ROLES],
+      ['services', SERVICE_BODY, CATALOGUE_ROLES],
+      ['barbers', BARBER_BODY, CATALOGUE_ROLES],
+      ['locations', LOCATION_BODY, CATALOGUE_ROLES],
+      ['barberSchedules', SCHEDULE_BODY, ROSTER_ROLES],
+    ];
+
+    it.each(closed.map(([path, body]) => [path, body] as const))(
+      'lets an anonymous visitor read %s — the reads are unchanged',
+      async (path, body) => {
+        await seed(`${path}/doc-1`, body);
+
+        await assertSucceeds(
+          getDoc(
+            doc(testEnv.unauthenticatedContext().firestore(), path, 'doc-1'),
+          ),
+        );
+      },
+    );
+
+    it.each(
+      closed.flatMap(([path, body, roles]) =>
+        roles.map((role) => [path, role, body] as const),
+      ),
+    )(
+      'refuses every write to %s by a %s it once admitted — create, replace and delete',
+      async (path, role, body) => {
+        await seed(`${path}/doc-1`, body);
+        const db = signedIn(`actor-${role}`, role).firestore();
+
+        await assertFails(setDoc(doc(db, path, 'doc-2'), body));
+        await assertFails(setDoc(doc(db, path, 'doc-1'), body));
+        await assertFails(deleteDoc(doc(db, path, 'doc-1')));
+      },
+    );
   });
 
   describe('scheduleExceptions — public read, staff write', () => {

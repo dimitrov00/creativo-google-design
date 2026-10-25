@@ -585,8 +585,19 @@ describe('section-header.css · the eyebrow', () => {
         ] as const;
       });
   }
-  const valueOf = (selector: string, property: string): string | undefined =>
-    declarations(selector).findLast(([name]) => name === property)?.[1];
+  /**
+   * The LAST declaration of `property` in the rule — the one the cascade
+   * keeps. A reverse scan, not `Array.prototype.findLast`: that is ES2023
+   * and the workspace lib is `es2022` (`tsconfig.base.json`).
+   */
+  function valueOf(selector: string, property: string): string | undefined {
+    const found = declarations(selector);
+    for (let index = found.length - 1; index >= 0; index -= 1) {
+      const declaration = found.at(index);
+      if (declaration?.[0] === property) return declaration[1];
+    }
+    return undefined;
+  }
 
   it('sets the eyebrow’s words in primary ink, uppercase and tracked', () => {
     const eyebrow = '.ui-section-header > [uieyebrow]';

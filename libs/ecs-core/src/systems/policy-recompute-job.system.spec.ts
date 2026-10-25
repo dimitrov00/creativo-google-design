@@ -13,13 +13,18 @@ import {
   type SubsecondNanos,
   UtcEpochMs,
 } from '@core/primitives';
-import { FIXTURE_TIME_ZONE, deepFreeze, unwrapOk, utcMs } from '@core/testing';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  unwrapOk,
+  utcMs,
+  offsetIso,
+} from '@core/testing';
 import {
   type PolicyChange,
   PolicyRecomputeJobSystem,
   type PolicyStep,
 } from './policy-recompute-job.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of apps/functions/src/lib/clients/policy-recompute-plan.spec.ts
@@ -494,7 +499,7 @@ describe('catchUp (planPolicyCatchUp) — the pass a dropped start owed', () => 
     windowHours,
   });
   /** The sweep's label for a change: the edge renders the instant. */
-  const label = (ms: number) => ZonedTimeSystem.toIso(t(ms), FIXTURE_TIME_ZONE);
+  const label = (ms: number) => offsetIso(t(ms), FIXTURE_TIME_ZONE);
 
   it('starts one from the top when the policy is newer and draws another line', () => {
     const owed = catchUp(

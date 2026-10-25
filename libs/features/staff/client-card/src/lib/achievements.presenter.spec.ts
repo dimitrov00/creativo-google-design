@@ -33,6 +33,7 @@ import {
   startOf,
   georgiContext,
   georgiOpenContext,
+  loyaltyCatalogWith,
   martinContext,
   must,
 } from '../testing/client-card.fixtures';
@@ -123,6 +124,7 @@ describe('medalVm', () => {
     expect(medalVm(series(GEORGI, 'series-svc-fade'), GEORGI, SETTLED)).toEqual(
       {
         seriesId: 'series-svc-fade',
+        familyId: 'series-svc-fade',
         state: 'earned',
         icon: 'loyalty.badge.service',
         src: 'https://example.test/covers/fade.jpg',
@@ -556,8 +558,72 @@ describe('familyOfMedal', () => {
     const own: MedalVm = {
       ...fade,
       seriesId: SeasonId.of('event-2026-beard-week'),
+      familyId: null,
     };
     expect(familyOfMedal(GEORGI, own)).toBeNull();
+  });
+
+  it("draws no family for an archived season whose id spells a family's (DEP-4)", () => {
+    // Pass E DEP-4. Before: `familyOfMedal` found the family whose id
+    // EQUALLED the medal's `seriesId` as a string, so this trackless event,
+    // its id spelling «Фейд»'s, drew the fade family on its archive tile —
+    // its ring, standing and detail hooks. After: a season's OWN medal
+    // carries `familyId: null` and draws no family; a family's medal still
+    // finds its own.
+    const beardWeek = SeasonId.of('event-2026-beard-week');
+    const clash = SeasonId.of('series-svc-fade');
+    const beard = BadgeSeriesId.of('series-2026-beard-week-beard');
+    const progress = new Map(GEORGI.progress);
+    progress.set(beard, {
+      id: beard,
+      value: 1,
+      earned: [
+        {
+          level: 1,
+          // 11:00 in Sofia, written with its shop day (T5).
+          earnedAtUtcMs: utcMs('2026-09-30T08:00:00.000Z'),
+          earnedLocalDate: localDate('2026-09-30'),
+          earnedVia: EarnedVia.Rule,
+          count: 1,
+        },
+      ],
+    });
+    const data: AchievementsData = {
+      ...GEORGI,
+      today: localDate('2027-01-15'),
+      progress,
+      catalog: loyaltyCatalogWith((catalog) => ({
+        ...catalog,
+        seasons: catalog.seasons.map((season) =>
+          season.id === beardWeek ? { ...season, id: clash } : season,
+        ),
+        series: catalog.series.map((family) =>
+          family.seasonId === beardWeek
+            ? { ...family, seasonId: clash }
+            : family,
+        ),
+      })),
+    };
+    const tile = scopePageVm(
+      data,
+      { achievementScope: AchievementScope.Archive },
+      SETTLED,
+    )
+      ?.sections.flatMap((section) => section.tiles)
+      .find((archived) => archived.key === clash);
+    expect(tile).toMatchObject({
+      opens: { achievementScope: AchievementScope.Season, seasonId: clash },
+      medal: {
+        seriesId: clash,
+        familyId: null,
+        icon: 'loyalty.badge.event',
+        title: 'Седмица на брадата',
+      },
+    });
+    expect(familyOfMedal(data, must(tile).medal)).toBeNull();
+    // The family the season's id spells still draws itself.
+    const fade = medalVm(series(data, 'series-svc-fade'), data, SETTLED);
+    expect(familyOfMedal(data, fade)?.id).toBe('series-svc-fade');
   });
 });
 

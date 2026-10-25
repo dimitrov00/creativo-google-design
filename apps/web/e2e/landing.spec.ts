@@ -16,6 +16,13 @@ declare global {
  * `/account` (home.guard.spec.ts covers the same branch as a fast unit test;
  * this proves it end-to-end against a real session).
  */
+/**
+ * The path a bundled chunk names a `maplibre-gl` module by
+ * (`// node_modules/.pnpm/maplibre-gl@5.24.0/node_modules/maplibre-gl/dist/maplibre-gl.js`,
+ * and its `maplibre-gl.css` text twin).
+ */
+const MAPLIBRE_MODULE = /\/maplibre-gl\/dist\/maplibre-gl\.(?:js|css)\b/;
+
 async function scrollThroughPage(page: Page): Promise<void> {
   // Forces every `@defer (on viewport)` section to hydrate — the page has
   // no infinite scroll/virtualization, so a few full-viewport steps reach
@@ -121,10 +128,36 @@ test.describe('marketing landing', () => {
   test('MapLibre only loads once the locations section is in view', async ({
     page,
   }) => {
-    const mapLibreRequests: string[] = [];
-    page.on('request', (request) => {
-      if (/maplibre-gl/i.test(request.url()))
-        mapLibreRequests.push(request.url());
+    // A MapLibre download is known by what it CARRIES, not by its URL. Since
+    // c1db6611 (2026-10-07) the dev server no longer prebundles `maplibre-gl`
+    // (`apps/web/project.json` `prebundle.exclude`, so the loader's
+    // `loader: 'text'` stylesheet import can work — see `MapLibreLoader`): the
+    // library and its stylesheet are bundled into hashed lazy chunks
+    // (`chunk-XXXXXXXX.js`), exactly as a production build ships them, and no
+    // URL names the package any more. A non-minified chunk opens each module
+    // it bundles with its source path (`// node_modules/…/maplibre-gl/dist/…`),
+    // so that is the identity read here; a URL naming the package (a
+    // prebundled or unbundled dependency) still counts.
+    const mapLibreDownloads: string[] = [];
+    const reads: Promise<void>[] = [];
+    page.on('response', (response) => {
+      const url = response.url();
+      if (/maplibre-gl/i.test(url)) {
+        mapLibreDownloads.push(url);
+        return;
+      }
+      const type = response.request().resourceType();
+      if (type !== 'script' && type !== 'stylesheet') return;
+      reads.push(
+        response
+          .text()
+          .then((body) => {
+            if (MAPLIBRE_MODULE.test(body)) mapLibreDownloads.push(url);
+          })
+          // A body the page no longer holds (a redirect, a closed page) is
+          // not a download this test can attribute.
+          .catch(() => undefined),
+      );
     });
 
     await page.goto('/');
@@ -132,7 +165,8 @@ test.describe('marketing landing', () => {
     // Above-the-fold only — the locations section hasn't been scrolled to,
     // so its `@defer (on viewport)` block (and the dynamic `import('maplibre-gl')`
     // inside locations.component.ts) must not have fired yet.
-    expect(mapLibreRequests).toHaveLength(0);
+    await Promise.all(reads);
+    expect(mapLibreDownloads).toHaveLength(0);
 
     // The locations testid only exists once its `@defer (on viewport)` block
     // has hydrated — scroll the whole page first (its placeholder anchor,
@@ -141,7 +175,13 @@ test.describe('marketing landing', () => {
     await expect(page.getByTestId('landing-locations')).toBeVisible();
     await expect(page.locator('[data-locations-map]')).toBeVisible();
     await expect
-      .poll(() => mapLibreRequests.length, { timeout: 10_000 })
+      .poll(
+        async () => {
+          await Promise.all(reads);
+          return mapLibreDownloads.length;
+        },
+        { timeout: 10_000 },
+      )
       .toBeGreaterThan(0);
   });
 

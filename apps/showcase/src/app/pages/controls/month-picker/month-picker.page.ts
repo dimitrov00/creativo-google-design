@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { LocalDate } from '@core/primitives';
 import type { UiMonthPickerRelative } from '@creativo/ui/controls';
 import { UiMonthPicker } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
@@ -16,8 +17,15 @@ interface BadgeSample {
   readonly marker: boolean;
 }
 
+/**
+ * A day of October 2026 — a real day by construction (civil arithmetic,
+ * nothing to refuse), as the menu page builds its own.
+ */
+const october = (day: number): LocalDate =>
+  LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 10, day));
+
 /** A fixed today, so the page draws the same month on every visit. */
-const TODAY = '2026-10-06';
+const TODAY = october(6);
 
 @Component({
   selector: 'cr-month-picker-page',
@@ -38,7 +46,8 @@ const TODAY = '2026-10-06';
 })
 export class MonthPickerPage {
   protected readonly today = TODAY;
-  protected readonly selected = signal('2026-10-14');
+  protected readonly selected = signal(october(14));
+  protected readonly min = october(1);
   protected readonly largeSelected = signal(TODAY);
 
   protected readonly relatives: readonly UiMonthPickerRelative[] = [
@@ -47,11 +56,11 @@ export class MonthPickerPage {
   ];
 
   /** A series' days: the dots the picker draws under them. */
-  protected readonly marked: readonly string[] = [
-    '2026-10-07',
-    '2026-10-14',
-    '2026-10-21',
-    '2026-10-28',
+  protected readonly marked: readonly LocalDate[] = [
+    october(7),
+    october(14),
+    october(21),
+    october(28),
   ];
 
   /** The badge's states, one each, with the day they stand for. */

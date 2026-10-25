@@ -10,6 +10,7 @@ import {
 import { RepositoryError } from '@core/errors';
 import {
   type Appointment,
+  type AppointmentNote,
   type BarberBusyDay,
   Collections,
   type Customer,
@@ -112,6 +113,14 @@ function isUtcOrNull(raw: unknown): boolean {
 }
 
 /**
+ * One character `String.prototype.trim` keeps: `\s` is exactly the
+ * WhiteSpace and LineTerminator set `trim()` strips, so a text this matches
+ * is non-empty after trim — tested in place, no trimmed copy built. No `g`
+ * flag: `test` keeps no `lastIndex` state between calls.
+ */
+const KEPT_BY_TRIM = /\S/;
+
+/**
  * The first refused element of a stored struct array, as `<field>[i]` or
  * `<field>[i].<inner>` — the ONLY place a reason string is built, and only
  * on a refusal.
@@ -193,6 +202,15 @@ function busyDayFault(doc: StoredDocument): string | null {
   return structArrayFault('blocks', doc['blocks'], MinuteBlock.fieldFault);
 }
 
+function appointmentNoteFault(doc: StoredDocument): string | null {
+  if (!AppointmentId.is(doc.id)) return 'id';
+  const text = doc['text'];
+  if (typeof text !== 'string' || !KEPT_BY_TRIM.test(text)) return 'text';
+  const author = doc['authorUserId'];
+  if (author !== null && !UserId.is(author)) return 'authorUserId';
+  return UtcEpochMs.is(doc['writtenAtUtcMs']) ? null : 'writtenAtUtcMs';
+}
+
 function salvage(doc: StoredDocument): StoredSalvage {
   const keys = doc['busyKeys'];
   const subjects = doc['subjectCustomerIds'];
@@ -250,10 +268,25 @@ function busyDay(doc: StoredDocument): Result<BarberBusyDay, RepositoryError> {
       );
 }
 
+function appointmentNote(
+  doc: StoredDocument,
+): Result<AppointmentNote, RepositoryError> {
+  const fault = appointmentNoteFault(doc);
+  return fault === null
+    ? Result.ok(doc as unknown as AppointmentNote)
+    : Result.err(
+        RepositoryError.malformed(
+          pathOf(Collections.AppointmentNotes, doc),
+          fault,
+        ),
+      );
+}
+
 /**
- * StoredDocumentSystem — the READ-TIME GUARDS of the three main stored
- * archetypes (edge hardening D-1), the successor of the `reconstitute()`
- * mappers' `MalformedField` refusals without their mapping: each guard
+ * StoredDocumentSystem — the READ-TIME GUARDS of the four main stored
+ * archetypes (edge hardening D-1; the team note since pass E, E-2), the
+ * successor of the `reconstitute()` mappers' `MalformedField` refusals
+ * without their mapping: each guard
  * checks a document AS READ and answers `Result.ok` with THE SAME OBJECT,
  * typed as its entity (zero mapping, Law 5 — no field copied, renamed,
  * defaulted or dropped), or `Result.err(RepositoryError.malformed(path,
@@ -294,6 +327,14 @@ function busyDay(doc: StoredDocument): Result<BarberBusyDay, RepositoryError> {
  *   `localDate`; `utcEpochMs`; `blocks` (each a record and
  *   `MinuteBlock.fieldFault` clean) — a busy day feeds the collision math
  *   directly, so its blocks are checked whole.
+ * - `appointmentNotes/{id}`: `id` (an `AppointmentId` — the note's id IS
+ *   the visit's); `text` (a string with something left after trim — the
+ *   entity's stored invariant, "trimmed and non-empty"; the team note's
+ *   append joins its line below it, `VisitSidesSystem.appendedNote`);
+ *   `authorUserId` (an account id or `null` — D29); `writtenAtUtcMs` (an
+ *   instant). Four fields, checked whole like a busy day's blocks: the
+ *   note is one small record the append re-decides in full, so none of
+ *   it is handed on as the entity unchecked.
  *
  * **The one admitted field that may differ from its type.** The subject
  * mirrors (`subjectUserIds`, `subjectCustomerIds`) are iterated — the
@@ -328,6 +369,9 @@ export const StoredDocumentSystem = {
   /** A `barberBusy/{id}` document — the same object as the entity, or its refusal. */
   busyDay,
 
+  /** An `appointmentNotes/{id}` document — the same object as the entity, or its refusal (pass E, E-2). */
+  appointmentNote,
+
   /** The first offending field of an appointment, or `null` — allocation-free on a clean document. */
   appointmentFault,
 
@@ -337,11 +381,14 @@ export const StoredDocumentSystem = {
   /** The first offending field of a busy day, or `null`. */
   busyDayFault,
 
+  /** The first offending field of a team note, or `null` — allocation-free on a clean document. */
+  appointmentNoteFault,
+
   /**
    * The registry an adapter dispatches on: the guard of `appointments`,
-   * `customers` and `barberBusy`, `null` for every other collection (read
-   * as stored, as before). A subcollection path is never a registered name,
-   * so it is never guarded.
+   * `customers`, `barberBusy` and `appointmentNotes`, `null` for every
+   * other collection (read as stored, as before). A subcollection path is
+   * never a registered name, so it is never guarded.
    */
   guardOf(collection: string): StoredGuard | null {
     switch (collection) {
@@ -351,6 +398,8 @@ export const StoredDocumentSystem = {
         return customer;
       case Collections.BarberBusy:
         return busyDay;
+      case Collections.AppointmentNotes:
+        return appointmentNote;
       default:
         return null;
     }

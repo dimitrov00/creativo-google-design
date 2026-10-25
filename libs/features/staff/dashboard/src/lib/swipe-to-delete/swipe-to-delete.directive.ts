@@ -2,7 +2,6 @@ import {
   DestroyRef,
   Directive,
   ElementRef,
-  HostListener,
   inject,
   output,
   signal,
@@ -39,6 +38,10 @@ const ENGAGE_PX = 8;
     '[attr.data-open]': 'open() ? "" : null',
     '[attr.data-dragging]': 'dragging() ? "" : null',
     '[style.--lib-swipe-x.px]': 'offset()',
+    '(pointerdown)': 'onDown($event)',
+    '(pointermove)': 'onMove($event)',
+    '(pointerup)': 'onUp($event)',
+    '(pointercancel)': 'onUp($event)',
   },
 })
 export class SwipeToDeleteDirective {
@@ -71,7 +74,6 @@ export class SwipeToDeleteDirective {
     inject(DestroyRef).onDestroy(() => this.listen(false));
   }
 
-  @HostListener('pointerdown', ['$event'])
   onDown(event: PointerEvent): void {
     if (event.button !== 0) return;
     // A press on the act itself is the act's own click.
@@ -85,7 +87,6 @@ export class SwipeToDeleteDirective {
     this.engaged = false;
   }
 
-  @HostListener('pointermove', ['$event'])
   onMove(event: PointerEvent): void {
     if (this.pointerId !== event.pointerId) return;
     const dx = event.clientX - this.startX;
@@ -107,8 +108,6 @@ export class SwipeToDeleteDirective {
     this.offset.set(next);
   }
 
-  @HostListener('pointerup', ['$event'])
-  @HostListener('pointercancel', ['$event'])
   onUp(event: PointerEvent): void {
     if (this.pointerId !== event.pointerId) return;
     this.pointerId = null;

@@ -2229,6 +2229,17 @@ describe('BookingCartSystem — one shop day’s grid from its raw documents', (
       expect(offered).toContain(10 * 60 + 45);
     });
 
+    it('keeps out what is taken — unpadded with no turnaround, touching starts and ends allowed', () => {
+      // Restates the deleted feature spec's 'keeps out what is taken'
+      // (day-availability.spec.ts, pass E E-10) one to one.
+      const offered = starts(query(), docs({ busy: busyOn(600, 630) }));
+      expect(offered).toContain(9 * 60 + 30);
+      expect(offered).not.toContain(9 * 60 + 45);
+      expect(offered).not.toContain(10 * 60);
+      expect(offered).not.toContain(10 * 60 + 15);
+      expect(offered).toContain(10 * 60 + 30);
+    });
+
     it('hands a moved visit’s own chairs back on its own day only', () => {
       const own = query({
         release: [heldChair(600, 630)],

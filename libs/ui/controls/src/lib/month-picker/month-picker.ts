@@ -28,14 +28,6 @@ import { UiButton } from '../button/button';
 import { UiChip } from '../chip/chip';
 import { UiIcon } from '@creativo/ui/icons';
 
-/**
- * A shop day — the `LocalDate` brand itself (`YYYY-MM-DD`), the one shape
- * every date on this surface travels as. The picker hands back only days it
- * built (a cell's own `LocalDate`, or a relative day walked from `uiToday`),
- * so a consumer never re-parses what it is handed.
- */
-export type UiDayKey = LocalDate;
-
 /** One relative shortcut offered above the grid. */
 export interface UiMonthPickerRelative {
   /** `0` is today, `1` tomorrow. Resolved against `uiToday`. */
@@ -113,9 +105,9 @@ export class UiMonthPicker {
    * day to choose from yet — the grid then draws no month (the head reads
    * empty and the steps page nothing) until one arrives.
    */
-  readonly uiSelected = input.required<UiDayKey | null>();
+  readonly uiSelected = input.required<LocalDate | null>();
   /** Today, so a selected today still says it is today. */
-  readonly uiToday = input<UiDayKey | null>(null);
+  readonly uiToday = input<LocalDate | null>(null);
   /**
    * The locale the month name and weekday row are written in.
    *
@@ -138,17 +130,23 @@ export class UiMonthPicker {
    * own days, drawn on the calendar that picks where the series ends
    * (2026-09-24), so the end is chosen against the days it will cut.
    */
-  readonly uiMarked = input<readonly UiDayKey[]>([]);
+  readonly uiMarked = input<readonly LocalDate[]>([]);
   /**
    * The earliest day that may be picked; the ones before it read as
    * unavailable and do not answer. An end cannot come before its start.
    */
-  readonly uiMin = input<UiDayKey | null>(null);
+  readonly uiMin = input<LocalDate | null>(null);
 
   readonly uiPreviousLabel = input<string>('Previous month');
   readonly uiNextLabel = input<string>('Next month');
 
-  readonly uiPicked = output<UiDayKey>();
+  /**
+   * The day picked — a shop day, the `LocalDate` brand itself (`YYYY-MM-DD`),
+   * the one shape every date on this surface travels as. The picker hands
+   * back only days it built (a cell's own `LocalDate`, or a relative day
+   * walked from `uiToday`), so a consumer never re-parses what it is handed.
+   */
+  readonly uiPicked = output<LocalDate>();
 
   /**
    * The month on screen, as its 1st — `null` while there is no selection.
@@ -212,7 +210,7 @@ export class UiMonthPicker {
     const first = this.shownMonth();
     if (first === null) return [];
     return CalendarGridSystem.monthGrid(first, []).map((week) =>
-      week.map((cell): { day: number; dayKey: UiDayKey } | null =>
+      week.map((cell): { day: number; dayKey: LocalDate } | null =>
         cell.inMonth ? { day: cell.dayOfMonth, dayKey: cell.localDate } : null,
       ),
     );
@@ -222,7 +220,7 @@ export class UiMonthPicker {
   protected readonly marked = computed(() => new Set(this.uiMarked()));
 
   /** Before the floor — on the calendar's own day order. */
-  protected isBeforeMin(dayKey: UiDayKey): boolean {
+  protected isBeforeMin(dayKey: LocalDate): boolean {
     const min = this.uiMin();
     return min !== null && LocalDate.compare(dayKey, min) < 0;
   }
@@ -233,7 +231,7 @@ export class UiMonthPicker {
    * resolve against and the shortcut is inert (`null`) — this lib never
    * reads a device clock (Law 7; ui-residue-cleanup DEP-3).
    */
-  protected relativeDay(offset: number): UiDayKey | null {
+  protected relativeDay(offset: number): LocalDate | null {
     const today = this.uiToday();
     return today === null ? null : LocalDate.addDays(today, offset);
   }
@@ -246,7 +244,7 @@ export class UiMonthPicker {
   }
 
   /** An inert shortcut (`null`) picks nothing. */
-  protected pick(dayKey: UiDayKey | null): void {
+  protected pick(dayKey: LocalDate | null): void {
     if (dayKey === null) return;
     this.uiPicked.emit(dayKey);
   }

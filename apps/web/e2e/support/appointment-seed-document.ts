@@ -59,6 +59,28 @@ export const DEV_CHAIR = {
   durationMinutes: 30,
 } as const;
 
+/**
+ * The service a seeded visit's one seat sells in the dev chair, at the
+ * terms Ivan sells it for (the catalogue's `offerings`). The dev chair's
+ * own beard trim is the default.
+ */
+export type ChairService = {
+  readonly serviceId: string;
+  readonly priceCents: number;
+  readonly durationMinutes: number;
+};
+
+/**
+ * Ivan's classic cut at the Center, no length chosen — his offering's
+ * terms (14,50 €, 35 minutes): a past visit's service that today's beard
+ * trim in the chair does not hold.
+ */
+export const DEV_CLASSIC_CUT = {
+  serviceId: 'svc-classic-cut',
+  priceCents: 1450,
+  durationMinutes: 35,
+} as const satisfies ChairService;
+
 /** A fixed instant, so a seeded row is the same bytes on every run. */
 const BOOKED_AT_UTC_MS = shopInstant('2026-09-01', 12);
 
@@ -94,6 +116,7 @@ function chairVisitBody(
   ownerCustomerId: CustomerId,
   startsAt: string,
   fate: VisitFate,
+  service: ChairService,
 ): AppointmentBody {
   const startUtcMs = sure(
     ZonedTimeSystem.parseIsoIn(startsAt, SHOP_TIME_ZONE),
@@ -104,9 +127,9 @@ function chairVisitBody(
     SHOP_TIME_ZONE,
   );
   const terms = ServiceTerms.of(
-    sure(PriceCents.of(DEV_CHAIR.priceCents), 'price'),
+    sure(PriceCents.of(service.priceCents), 'price'),
     Currency.EUR,
-    sure(DurationMinutes.of(DEV_CHAIR.durationMinutes), 'duration'),
+    sure(DurationMinutes.of(service.durationMinutes), 'duration'),
     sure(MinuteCount.of(0), 'setup'),
     sure(MinuteCount.of(0), 'cleanup'),
   );
@@ -114,13 +137,13 @@ function chairVisitBody(
   // Worked as the chair freed, as the dev seed stamps its past visits.
   const workedAtUtcMs = ZonedTimeSystem.toUtc(
     localDate,
-    sure(MinuteOfDay.of(minute + DEV_CHAIR.durationMinutes), 'end'),
+    sure(MinuteOfDay.of(minute + service.durationMinutes), 'end'),
     SHOP_TIME_ZONE,
   );
   const seat = Seat.compose(
     {
       seatId: SeatId.of(`${id}-seat`),
-      serviceId: ServiceId.of(DEV_CHAIR.serviceId),
+      serviceId: ServiceId.of(service.serviceId),
       variantId: null,
       barberId: BarberId.of(DEV_CHAIR.barberId),
       barberPreference: BarberPreference.Specific,
@@ -188,19 +211,36 @@ export function upcomingAppointmentBody(
   ownerCustomerId: CustomerId,
   startsAt: string,
 ): AppointmentBody {
-  return chairVisitBody(id, ownerUserId, ownerCustomerId, startsAt, 'upcoming');
+  return chairVisitBody(
+    id,
+    ownerUserId,
+    ownerCustomerId,
+    startsAt,
+    'upcoming',
+    DEV_CHAIR,
+  );
 }
 
 /**
  * A finished visit: the same chair, `COMPLETED`, its one seat `WORKED` as
  * the chair freed and booked a week before — the visit a client repeats with
  * `/book?repeat=` (see {@link chairVisitBody}). Pick a start in the past.
+ * The seat sells the chair's beard trim unless `service` names another of
+ * Ivan's services.
  */
 export function workedAppointmentBody(
   id: string,
   ownerUserId: string,
   ownerCustomerId: CustomerId,
   startsAt: string,
+  service: ChairService = DEV_CHAIR,
 ): AppointmentBody {
-  return chairVisitBody(id, ownerUserId, ownerCustomerId, startsAt, 'worked');
+  return chairVisitBody(
+    id,
+    ownerUserId,
+    ownerCustomerId,
+    startsAt,
+    'worked',
+    service,
+  );
 }

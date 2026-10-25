@@ -6,7 +6,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { formatWallClock } from '@creativo/ui/wall-clock';
+import { formatCount, formatWallClock } from '@creativo/ui/wall-clock';
 import type { LinePart } from './client-pages.vm';
 
 /*
@@ -121,9 +121,12 @@ export function monthLong(day: LocalDate, lang: string): string {
  */
 export { dayRange } from '@creativo/features/shared/visits';
 
-/** «12 450» — a count or a figure, grouped the locale's way. */
+/**
+ * «12 450» — a count or a figure, grouped the locale's way, through the
+ * shared cached `formatCount` (pass E, E-12).
+ */
 export function figure(value: number, lang: string): string {
-  return new Intl.NumberFormat(lang).format(value);
+  return formatCount(value, lang);
 }
 
 /** The Roman numerals, largest first. */

@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
@@ -35,16 +38,34 @@ import {
   memoryProfilePorts,
   memoryProgramsWorld,
 } from '@core/testing';
+import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingCourses } from './marketing-courses';
 
 function course(id: string, enrollmentStatus: EnrollmentStatus): Course {
   return courseOf(id, { enrollmentStatus });
 }
 
+/**
+ * The app's own `programs.status` words for `lang` — read, never re-typed, so
+ * the badge cases pin today's words (pass E, E-17: they moved into the
+ * catalogues unchanged). Every other key renders as itself.
+ */
+function programStatusWords(lang: string): Translation {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly programs: { readonly status: Translation };
+  };
+  return { programs: { status: catalogue.programs.status } };
+}
+
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of({});
+  getTranslation(lang: string): Observable<Translation> {
+    return of(programStatusWords(lang));
   }
 }
 
@@ -235,5 +256,33 @@ describe('MarketingCourses', () => {
       '[data-testid="courses-list"] a[uilistrow] [uibadge]',
     );
     expect(badge?.textContent?.trim()).toBe('open');
+  });
+
+  it('prints the same lowercase badge words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+    const fixture = await configure([
+      course('course_1', EnrollmentStatus.Open),
+      course('course_2', EnrollmentStatus.Upcoming),
+    ]);
+    // The shell's language service applies its own default when the chrome
+    // first creates it, so it is booted first and bg is applied after it.
+    TestBed.inject(LanguageService);
+    TestBed.inject(TranslocoService).setActiveLang('bg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const host: HTMLElement = fixture.nativeElement;
+    const badge = () =>
+      host.querySelector('[data-testid="courses-list"] a[uilistrow] [uibadge]');
+    expect(badge()?.textContent?.trim()).toBe('open');
+
+    (
+      host.querySelector(
+        '[data-testid="courses-tab-upcoming"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+
+    expect(badge()?.textContent?.trim()).toBe('upcoming');
   });
 });

@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { Currency, LocalDate, MinuteOfDay } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { cents, minute, trackMinute, unwrapOk, utcMs } from '@core/testing';
+import {
+  cents,
+  duration,
+  minute,
+  trackMinute,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   ClockClosing,
   formatClock,
   formatCents,
   formatCentsFigure,
+  formatCount,
   formatInstant,
+  formatMinutesRange,
   formatZoneName,
   formatWallClockParts,
   formatWallClockRange,
@@ -189,6 +198,114 @@ describe('formatCentsFigure', () => {
     expect(formatCentsFigure(cents(2800), eur, 'bg')).toBe(
       formatCentsFigure(cents(2800), eur, 'bg'),
     );
+  });
+});
+
+/*
+ * A span of minutes (pass E, E-12): the catalogue presenter's per-call
+ * `formatDurationRange` moved onto the shared cache. Its words were pinned
+ * in bg and en on `6d64f69f` before the move (the literal cases, moved here
+ * with the function), and the function itself is copied below verbatim as
+ * the reference (a `type:ui` spec may not import the features), byte-
+ * compared on every pair of ends a service can carry.
+ */
+describe('formatMinutesRange', () => {
+  /** `catalog.presenter.ts` `formatDurationRange` on `6d64f69f`, verbatim. */
+  function legacyDurationRange(
+    min: number,
+    max: number,
+    locale: string,
+  ): string {
+    const formatter = new Intl.NumberFormat(locale, {
+      style: 'unit',
+      unit: 'minute',
+      unitDisplay: 'narrow',
+    });
+    if (min === max) return formatter.format(min);
+    const ranged = formatter as Intl.NumberFormat & {
+      formatRange?: (start: number, end: number) => string;
+    };
+    if (typeof ranged.formatRange === 'function') {
+      return ranged.formatRange(min, max);
+    }
+    return `${new Intl.NumberFormat(locale, { useGrouping: false }).format(min)}–${formatter.format(max)}`;
+  }
+
+  it('prints a single value, an equal min/max and a range in bg', () => {
+    expect(formatMinutesRange(duration(30), duration(30), 'bg')).toBe('30 мин');
+    expect(formatMinutesRange(duration(30), duration(50), 'bg')).toBe(
+      '30 \u2013 50 мин',
+    );
+    expect(formatMinutesRange(duration(5), duration(1440), 'bg')).toBe(
+      '5 \u2013 1440 мин',
+    );
+  });
+
+  it('prints a single value, an equal min/max and a range in en, grouped the locale’s way', () => {
+    expect(formatMinutesRange(duration(30), duration(30), 'en')).toBe('30m');
+    expect(formatMinutesRange(duration(30), duration(50), 'en')).toBe(
+      '30\u201350m',
+    );
+    expect(formatMinutesRange(duration(1440), duration(1440), 'en')).toBe(
+      '1,440m',
+    );
+    expect(formatMinutesRange(duration(5), duration(1440), 'en')).toBe(
+      '5\u20131,440m',
+    );
+  });
+
+  it('is byte-identical to the per-call formatter it replaces, in bg and en', () => {
+    const ends = [1, 5, 15, 30, 45, 50, 90, 120, 999, 1000, 1440];
+    for (const locale of ['bg', 'en']) {
+      for (const min of ends) {
+        for (const max of ends) {
+          if (max < min) continue;
+          expect(formatMinutesRange(duration(min), duration(max), locale)).toBe(
+            legacyDurationRange(min, max, locale),
+          );
+        }
+      }
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(formatMinutesRange(duration(30), duration(50), 'bg')).toBe(
+      formatMinutesRange(duration(30), duration(50), 'bg'),
+    );
+  });
+});
+
+/*
+ * A count (pass E, E-12): the client card's `figure` and the rhythm
+ * editor's `figure`, both a per-call `new Intl.NumberFormat(lang)`, moved
+ * onto the shared cache — pinned in bg and en and byte-compared against
+ * that per-call reference.
+ */
+describe('formatCount', () => {
+  const reference = (value: number, lang: string): string =>
+    new Intl.NumberFormat(lang).format(value);
+
+  it('prints a single value and a count grouped the locale’s way', () => {
+    expect(formatCount(7, 'bg')).toBe('7');
+    expect(formatCount(1000, 'bg')).toBe('1000');
+    expect(formatCount(12_450, 'bg')).toBe('12\u00a0450');
+    expect(formatCount(7, 'en')).toBe('7');
+    expect(formatCount(1000, 'en')).toBe('1,000');
+    expect(formatCount(12_450, 'en')).toBe('12,450');
+  });
+
+  it('is byte-identical to the per-call formatter it replaces, in bg and en', () => {
+    for (const lang of ['bg', 'en']) {
+      for (const value of [
+        0, 1, 7, 42, 999, 1000, 9999, 12_450, 1_234_567, 2.5,
+      ]) {
+        expect(formatCount(value, lang)).toBe(reference(value, lang));
+      }
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(formatCount(12_450, 'bg')).toBe(formatCount(12_450, 'bg'));
   });
 });
 

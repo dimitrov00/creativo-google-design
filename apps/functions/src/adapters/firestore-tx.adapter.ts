@@ -61,8 +61,9 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  * - A read of a MALFORMED document of a guarded collection refuses the
  *   whole commit (edge hardening D-3): built with
  *   `StoredDocumentSystem.guardOf` (the composition root's
- *   `firestorePorts`), the read half runs each top-level `appointments` /
- *   `customers` / `barberBusy` document through its stored-document guard
+ *   `firestorePorts`), the read half runs each top-level document of a
+ *   guarded collection (`appointments` / `customers` / `barberBusy` /
+ *   `appointmentNotes`) through its stored-document guard
  *   — an admitted one is THE SAME OBJECT `{ id, ...data }` it always was;
  *   a refused one reads as `null` (a query leaves it out) so the pipeline's
  *   read callback can finish without touching it, and the FIRST refusal is

@@ -1,11 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import { Observable, firstValueFrom, of } from 'rxjs';
 import { EnrollmentStatus, PositionStatus } from '@core/components';
 import type { ProgramsPorts } from '@core/ports';
 import {
@@ -104,10 +107,27 @@ function valueOf(host: HTMLElement, testId: string): string {
     .value;
 }
 
+/**
+ * The app's own `programs.status` words for `lang` — read, never re-typed, so
+ * the rows' cases pin today's words (pass E, E-17: they moved into the
+ * catalogues unchanged). Every other key renders as itself.
+ */
+function programStatusWords(lang: string): Translation {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly programs: { readonly status: Translation };
+  };
+  return { programs: { status: catalogue.programs.status } };
+}
+
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of({});
+  getTranslation(lang: string): Observable<Translation> {
+    return of(programStatusWords(lang));
   }
 }
 
@@ -167,6 +187,18 @@ async function configure(
   await fixture.whenStable();
   fixture.detectChanges();
   return { fixture, host: fixture.nativeElement, world };
+}
+
+/** Switches the page to bg once its words are loaded, then renders. */
+async function inBulgarian(
+  fixture: ComponentFixture<AdminPrograms>,
+): Promise<void> {
+  const transloco = TestBed.inject(TranslocoService);
+  await firstValueFrom(transloco.load('bg'));
+  transloco.setActiveLang('bg');
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
 }
 
 /** Lets a save's whole read-decide-write chain run, then renders. */
@@ -303,6 +335,24 @@ describe('AdminPrograms', () => {
       );
     });
 
+    it('prints the same lowercase words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+      const { fixture, host } = await configure({
+        positions: [
+          positionOf('pos_closed', {
+            positionStatus: PositionStatus.Closed,
+            sortOrder: 1,
+          }),
+          positionOf('pos_open', { sortOrder: 0 }),
+        ],
+      });
+
+      await inBulgarian(fixture);
+
+      expect(trailingTextOf(host, 'admin-positions-list')).toBe(
+        'open · closed',
+      );
+    });
+
     it('wipes the stored location ids on an edit — the form has none (F4-8)', async () => {
       const { fixture, host, world } = await configure({
         positions: [
@@ -342,6 +392,29 @@ describe('AdminPrograms', () => {
 
       click(host, 'admin-tab-courses');
       fixture.detectChanges();
+
+      expect(trailingTextOf(host, 'admin-courses-list')).toBe(
+        'open · upcoming · closed',
+      );
+    });
+
+    it('prints the same lowercase words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+      const { fixture, host } = await configure({
+        courses: [
+          courseOf('course_closed', {
+            enrollmentStatus: EnrollmentStatus.Closed,
+            sortOrder: 2,
+          }),
+          courseOf('course_open', { sortOrder: 0 }),
+          courseOf('course_upcoming', {
+            enrollmentStatus: EnrollmentStatus.Upcoming,
+            sortOrder: 1,
+          }),
+        ],
+      });
+
+      click(host, 'admin-tab-courses');
+      await inBulgarian(fixture);
 
       expect(trailingTextOf(host, 'admin-courses-list')).toBe(
         'open · upcoming · closed',

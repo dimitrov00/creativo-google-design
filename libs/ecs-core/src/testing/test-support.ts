@@ -28,7 +28,8 @@
  *   (`testing/fixtures/loyalty/`) the dev seed reads by path.
  *
  * Expected instants come from `utcMs(…)` (ISO with an offset, through
- * ZonedTimeSystem), never from a date library or `Date` (§9 D5, L4).
+ * ZonedTimeSystem) and are spelled back on a zone's clock with
+ * `offsetIso(…)`, never with a date library or `Date` (§9 D5, L4).
  */
 import {
   type LocalizedText,
@@ -174,6 +175,45 @@ export function draftPersonKey(raw: string): DraftPersonKey {
  */
 export function utcMs(isoWithOffset: string): UtcEpochMs {
   return unwrapOk(ZonedTimeSystem.parseOffsetIso(isoWithOffset));
+}
+
+/** `7` → `07`, `123` → `123` — a field padded to `width` digits. */
+function padded(value: number, width: number): string {
+  return String(value).padStart(width, '0');
+}
+
+/**
+ * An instant spelled as ISO-8601 on `timeZone`'s wall clock WITH the offset
+ * in force — `offsetIso(utcMs('2026-10-10T11:00:00Z'), sofia)` is
+ * `2026-10-10T14:00:00.000+03:00`: milliseconds always, `±HH:MM` always, a
+ * zero offset `+00:00` (the legacy `ZonedDateTime.toISO()` spelling). The
+ * inverse of {@link utcMs}, for a spec that names an instant on the shop's
+ * clock — test support since pass E (E-6): no production code spells one.
+ * Built on the ONE zone engine (`ZonedTimeSystem.toLocal`, ecs-systems.md:
+ * zone math lives only in `zoned-time.system.ts`): the wall day and minute
+ * come from it, the second and millisecond from the instant itself (every
+ * zone's offset has been a whole number of minutes since 1972), and the
+ * offset is that wall clock read as UTC minus the instant. A zone the
+ * runtime does not know is the engine's defect: a broken fixture.
+ */
+export function offsetIso(utcEpochMs: UtcEpochMs, timeZone: TimeZone): string {
+  const wall = ZonedTimeSystem.toLocal(utcEpochMs, timeZone);
+  const msOfMinute = ((utcEpochMs % 60_000) + 60_000) % 60_000;
+  const offsetMinutes =
+    (LocalDate.toEpochDay(wall.localDate) * 86_400_000 +
+      wall.minute * 60_000 +
+      msOfMinute -
+      utcEpochMs) /
+    60_000;
+  const offset = Math.abs(offsetMinutes);
+  return (
+    `${wall.localDate}` +
+    `T${padded(Math.floor(wall.minute / 60), 2)}:${padded(wall.minute % 60, 2)}` +
+    `:${padded(Math.floor(msOfMinute / 1_000), 2)}` +
+    `.${padded(msOfMinute % 1_000, 3)}` +
+    `${offsetMinutes < 0 ? '-' : '+'}` +
+    `${padded(Math.floor(offset / 60), 2)}:${padded(offset % 60, 2)}`
+  );
 }
 
 /* ── Pinned impure primitives ───────────────────────────────────────────── */

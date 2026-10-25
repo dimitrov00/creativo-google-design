@@ -118,3 +118,32 @@ describe('BirthDate.of / equals', () => {
     expect(raw).toBe('1990-07-03');
   });
 });
+
+describe('BirthDate.toLocalDate — the calendar day it names (pass E E-8)', () => {
+  it('answers the stored day as a LocalDate', () => {
+    expect(BirthDate.toLocalDate(BirthDate.of('1990-07-03'))).toBe(
+      '1990-07-03',
+    );
+  });
+
+  it('knows the Gregorian leap rule: 2000-02-29 is a day, 1990-02-29 is none', () => {
+    expect(BirthDate.toLocalDate(BirthDate.of('2000-02-29'))).toBe(
+      '2000-02-29',
+    );
+    expect(BirthDate.toLocalDate(BirthDate.of('1990-02-29'))).toBeNull();
+  });
+
+  it('answers null for a well-shaped string that names no day, and for a stored non-ISO shape', () => {
+    expect(BirthDate.toLocalDate(BirthDate.of('2026-13-01'))).toBeNull();
+    expect(BirthDate.toLocalDate(BirthDate.of('2026-04-31'))).toBeNull();
+    expect(BirthDate.toLocalDate(BirthDate.of(' 1990-07-03'))).toBeNull();
+    expect(BirthDate.toLocalDate(BirthDate.of('1990-7-3'))).toBeNull();
+  });
+
+  it('is pure: same input → same output, input untouched', () => {
+    const stored = BirthDate.of('2004-02-29');
+    const once = BirthDate.toLocalDate(stored);
+    expect(BirthDate.toLocalDate(stored)).toBe(once);
+    expect(stored).toBe('2004-02-29');
+  });
+});

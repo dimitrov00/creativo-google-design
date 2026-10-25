@@ -323,6 +323,7 @@ describe('medalRingVm', () => {
   it('draws an earned family on its way: the rim numeral, the arc from the level won, the target in words', () => {
     expect(ring(GEORGI, 'series-svc-fade')).toEqual({
       seriesId: 'series-svc-fade',
+      familyId: 'series-svc-fade',
       state: 'earned',
       icon: 'loyalty.badge.service',
       src: 'https://example.test/covers/fade.jpg',
@@ -1857,6 +1858,46 @@ describe('medalScopeVm', () => {
         ],
       ],
     ]);
+  });
+
+  it("keeps an archived event's own medal whose id spells a family's: no family's ring (DEP-4)", () => {
+    // Pass E DEP-4. Before: the event's tile, its season id spelling
+    // «Фейд»'s family id, was redrawn in the fade family's ring (its art,
+    // its state, its rim). After: a season's own medal draws no family, so
+    // the tile keeps the event's emblem and count.
+    const beardWeek = SeasonId.of('event-2026-beard-week');
+    const clash = SeasonId.of('series-svc-fade');
+    const data: AchievementsData = {
+      ...withProgress('series-2026-beard-week-beard', 1, [[1, '2026-09-30']]),
+      today: localDate('2027-01-15'),
+      catalog: loyaltyCatalogWith((catalog) => ({
+        ...catalog,
+        seasons: catalog.seasons.map((season) =>
+          season.id === beardWeek ? { ...season, id: clash } : season,
+        ),
+        series: catalog.series.map((family) =>
+          family.seasonId === beardWeek
+            ? { ...family, seasonId: clash }
+            : family,
+        ),
+      })),
+    };
+    const tile = medalScopeVm(
+      data,
+      { achievementScope: AchievementScope.Archive },
+      SETTLED,
+    )
+      ?.sections.flatMap((section) => section.tiles)
+      .find((archived) => archived.key === clash);
+    expect(tile?.medal).toMatchObject({
+      seriesId: clash,
+      familyId: null,
+      icon: 'loyalty.badge.event',
+      src: null,
+      level: null,
+      state: 'earned',
+      title: 'Седмица на брадата',
+    });
   });
 
   it('draws a day’s levels in rings, and marks none new: the day is the past', () => {

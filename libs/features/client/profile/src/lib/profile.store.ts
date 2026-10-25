@@ -4,6 +4,7 @@ import { saveOwnProfile, uploadAvatar } from '@core/pipelines';
 import { Result, type UserId } from '@core/primitives';
 import {
   AccountsError,
+  type AvatarUploadError,
   IdentityError,
   type OwnProfileWriteFailure,
 } from '@core/errors';
@@ -104,14 +105,7 @@ export class ProfileStore {
    */
   async uploadPhoto(
     file: File,
-  ): Promise<
-    Result<
-      void,
-      | AccountsError
-      | AccountsError.UploadAvatarUploadFailed
-      | IdentityError.IdentifierMissing
-    >
-  > {
+  ): Promise<Result<void, AccountsError | AvatarUploadError>> {
     const checked = AvatarSystem.check(file);
     if (!checked.ok) return checked;
     const userId = this.currentUserId();

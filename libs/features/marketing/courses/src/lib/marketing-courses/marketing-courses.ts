@@ -1,4 +1,3 @@
-import { enrollmentStatusWords } from '@creativo/infrastructure/i18n';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -143,10 +142,5 @@ export class MarketingCourses {
   protected statusTone(enrollmentStatus: EnrollmentStatus): UiBadgeTone {
     // eslint-disable-next-line security/detect-object-injection -- closed union.
     return STATUS_TONES[enrollmentStatus];
-  }
-
-  protected statusWord(enrollmentStatus: EnrollmentStatus): string {
-    // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return enrollmentStatusWords[enrollmentStatus];
   }
 }
