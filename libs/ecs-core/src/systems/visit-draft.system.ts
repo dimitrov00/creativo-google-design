@@ -14,7 +14,6 @@ import {
   MinuteDelta,
   LocalDate,
   TrackMinute,
-  type EndMinute,
   type MinuteOfDay,
 } from '@core/primitives';
 import type { TrackSpan } from './grid-layout.system';
@@ -309,16 +308,19 @@ export const VisitDraftSystem = {
 
   /**
    * The override a seeded draft pins: none when the booked span — from its
-   * start to its exclusive end on the shop's clock — IS the legs' own
+   * start to its exclusive end on the frame's track axis — IS the legs' own
    * minutes, else the booked span: only a number that never was the
-   * catalogue's is pinned. A span with no length pins nothing.
+   * catalogue's is pinned. A span with no length pins nothing. Measured on
+   * the track, not the shop's clock: a seeded frame may sit past the closing
+   * midnight (its start at 1440, its end beyond it), which no wall-clock
+   * span holds — the span is still the frame's, and nothing here refuses it.
    */
   durationOverrideOf(
-    start: MinuteOfDay,
-    end: EndMinute,
+    start: TrackMinute,
+    end: TrackMinute,
     legs: readonly DraftLegMinutes[],
   ): DurationMinutes | null {
-    const span = DurationMinutes.between(start, end);
+    const span = DurationMinutes.of(TrackMinute.span(start, end));
     if (!span.ok) return null;
     return span.value === VisitDraftSystem.legMinutes(legs) ? null : span.value;
   },

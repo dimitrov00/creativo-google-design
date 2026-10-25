@@ -1329,12 +1329,31 @@ the raw-brand guard. +2 spec cases (`familyOfMedal`, the onboarding's
 unsupported-country line); the FULL gate re-ran green (§4's pass-D
 numbers; plan §9.3 Fixer, second round).
 
+**Fixed after pass D (2026-10-25, owner go-ahead):** two of pass D's
+carried defects. (1) The agenda row's error line now prints: the template
+asked `rowError` with the row's own `appointment#chair` key while the store
+files refusals by appointment, so no row ever showed one; it now asks by
+`entry.appointmentId` (the owner's 2026-09-03 ruling for anything addressing
+the aggregate — a party's refusal reads in each of its chairs' rows), and
+the cancel sheet's error reads through the same `rowError`. Refusals now
+show in their row (beside the toast) until the next write to that
+appointment, as the store intended. (2) The ＋ no longer crashes the page
+late in the evening: the create sheet seeds the next tick on the track axis
+(24:00 from 23:56) and its default half hour past 24:00 from 23:31, and
+`seedDraft` converted both onto the shop's clock through converters that
+threw; `VisitDraftSystem.durationOverrideOf` now measures the seeded span on
+the track (`TrackMinute.span`), identical for every pair the clock can hold.
+No save accepts a frame past midnight: a 24:00 start is refused on this side
+(`StaffEditPlanSystem`), an end past it by the server. Dead with the fixes and
+deleted: `StaffDayStore.errors` and `DurationMinutes.between`. Specs:
+`visit-draft.system.spec.ts` (the track span past midnight),
+`staff-dashboard.spec.ts` (a refusal in its own row and in no other visit's;
+the ＋ at 23:57). **Carried (owner, UX):** opened at 23:56–23:59 the new
+visit's frame starts at 24:00, which the sheet's grid does not draw, so it is
+moved by typing «Начало» or changing the day — start it at 23:55 instead?
+
 **Carried from pass D** (none blocks anything; the plan's §9.6 has each
-with its reason): the dashboard's row-error line never matches
-(`rowError` receives the row key `appointmentId#barberId`; production
-printed no row error before or after pass D — a later fix is a DEP); the
-editor's `seedDraft` turns a VM start of 1440 into a defect (a walk-in
-create opened at 23:56–23:59, as on `cf91b43`); `subjectCustomerId` stays
+with its reason): `subjectCustomerId` stays
 optional on the visit row/card options; the icons lib's config turns
 `no-restricted-syntax` off on its non-suffix files, so the raw-brand guard
 is off there too (zero hits today); the spec-only survivors

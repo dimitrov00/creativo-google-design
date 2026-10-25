@@ -25,7 +25,6 @@ import {
   type CustomerId,
   DraftPersonKey,
   type DurationMinutes,
-  type EndMinute,
   type GiftVoucherId,
   LocalDate,
   type LocationId,
@@ -42,7 +41,6 @@ import {
   type UserId,
   UtcEpochMs,
   VoucherRefusal,
-  defect,
 } from '@core/primitives';
 import {
   BookingLifecycle,
@@ -1338,25 +1336,6 @@ function legMinutesOf(
 }
 
 /**
- * A seeded frame's start and end read back onto its shop day's clock, for
- * the seed's override rule (`VisitDraftSystem.durationOverrideOf`). A start
- * at the closing midnight, or an end off the day, was refused here before
- * the track minutes were branded (the seed's own converters), and still is:
- * a broken invariant, never input.
- */
-function seededStartOf(minute: TrackMinute): MinuteOfDay {
-  const start = TrackMinute.toStart(minute);
-  return start.ok
-    ? start.value
-    : defect(`a start off the shop's clock: ${minute}`);
-}
-
-function seededEndOf(minute: TrackMinute): EndMinute {
-  const end = TrackMinute.toEnd(minute);
-  return end.ok ? end.value : defect(`an end off the shop's clock: ${minute}`);
-}
-
-/**
  * THE FIRST PERSON TAKES THE PLACEHOLDER'S SEATS. A service picked before
  * anyone was named sits on the placeholder (`DraftPersonKey.PLACEHOLDER`);
  * when the first person joins an empty draft those seats become theirs —
@@ -1462,10 +1441,14 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     dayKey: vm.dayKey,
     dayLabel: vm.dayLabel,
     startMinute: vm.startMinute,
-    // Only pin a number when the booked span never was the catalogue's.
+    // Only pin a number when the booked span never was the catalogue's —
+    // measured on the track, so a frame seeded past the closing midnight (a
+    // new visit opened after 23:30) opens. No save accepts it until it is
+    // moved back onto the day: a 24:00 start is refused on this side, an end
+    // past midnight by the server.
     durationOverride: VisitDraftSystem.durationOverrideOf(
-      seededStartOf(vm.startMinute),
-      seededEndOf(vm.endMinute),
+      vm.startMinute,
+      vm.endMinute,
       legMinutesOf(legs),
     ),
     chairId: vm.chairId,

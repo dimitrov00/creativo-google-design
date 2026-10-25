@@ -6498,24 +6498,21 @@ export class StaffDashboard {
    * A page banner puts the sentence three screens away from the tap that
    * caused it on a forty-row day, which is how staff conclude the button is
    * broken rather than learning what the server actually said.
+   *
+   * Asked by the APPOINTMENT (`entry.appointmentId`), never the row's own
+   * `appointment#chair` key: a refusal is the aggregate's, which is how the
+   * store files it (owner ruling 2026-09-03, `DayRowVm.id`) — so a party's
+   * refusal reads in each of its chairs' rows.
    */
-  protected rowError(rowKey: string): string | null {
-    // ⚠ The template hands the ROW's key (`entry.id`, `appointment#chair`)
-    // while the store keeps errors by APPOINTMENT id, so this answers
-    // nothing today (carried as found, pass D — see the package note). The
-    // lookup is by text so the answer stays exactly today's.
-    for (const [appointmentId, error] of this.store.errors()) {
-      if (appointmentId === rowKey) return this.describeError(error);
-    }
-    return null;
+  protected rowError(appointmentId: AppointmentId): string | null {
+    const error = this.store.errorFor(appointmentId);
+    return error ? this.describeError(error) : null;
   }
 
   /** The cancel sheet's own error, which has no row to live in. */
   protected readonly cancelError = computed(() => {
     const id = this.cancelId();
-    if (id === null) return null;
-    const error = this.store.errorFor(id);
-    return error ? this.describeError(error) : null;
+    return id === null ? null : this.rowError(id);
   });
 
   /**

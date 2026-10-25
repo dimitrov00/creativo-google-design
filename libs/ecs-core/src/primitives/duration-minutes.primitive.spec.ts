@@ -22,12 +22,7 @@ describe('DurationMinutes — a positive whole number of minutes', () => {
     }
   });
 
-  it('between is end − start, refused when empty; sum adds', () => {
-    expect(DurationMinutes.between(m(600), e(645))).toEqual({
-      ok: true,
-      value: 45,
-    });
-    expect(DurationMinutes.between(m(600), e(600)).ok).toBe(false);
+  it('sum adds', () => {
     const half = unwrapOk(DurationMinutes.of(30));
     expect(DurationMinutes.sum(half, half)).toBe(60);
   });

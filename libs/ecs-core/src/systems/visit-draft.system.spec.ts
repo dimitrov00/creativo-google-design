@@ -438,6 +438,18 @@ describe("the visit draft's span and placeholder seats", () => {
     expect(S.durationOverrideOf(minute(600), endMinute(630), [])).toBeNull();
   });
 
+  it('measures a seeded frame on the track — past the closing midnight too, never refused', () => {
+    const track = trackMinute;
+    // A new visit opened at 23:57 snaps to 24:00 and spans the default half hour.
+    expect(S.durationOverrideOf(track(1440), track(1470), [])).toBeNull();
+    // 23:35–00:20 is the legs' own 45 minutes; 23:35–00:35 pins its hour.
+    expect(S.durationOverrideOf(track(1415), track(1460), legs)).toBeNull();
+    expect(S.durationOverrideOf(track(1415), track(1475), legs)).toBe(60);
+    // A span with no length pins nothing, wherever it sits.
+    expect(S.durationOverrideOf(track(1440), track(1440), legs)).toBeNull();
+    expect(S.durationOverrideOf(track(1470), track(1440), legs)).toBeNull();
+  });
+
   it('hands the placeholder seats to the first person to join, and no one else', () => {
     const drafted = [
       { clientId: draftPersonKey('primary'), durationMinutes: d(30) },

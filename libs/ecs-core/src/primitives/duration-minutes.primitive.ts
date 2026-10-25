@@ -35,14 +35,6 @@ export const DurationMinutes = {
         );
   },
 
-  /** `end − start` — refused when the span is empty or inverted. */
-  between(
-    start: MinuteOfDay,
-    end: EndMinute,
-  ): Result<DurationMinutes, PrimitiveError> {
-    return DurationMinutes.of(end - start);
-  },
-
   /** The sum of two positive durations is positive. */
   sum(a: DurationMinutes, b: DurationMinutes): DurationMinutes {
     return (a + b) as DurationMinutes;

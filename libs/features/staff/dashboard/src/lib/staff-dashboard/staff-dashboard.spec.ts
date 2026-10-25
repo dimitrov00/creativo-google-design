@@ -1662,9 +1662,49 @@ describe('StaffDashboard', () => {
     }
     // And the error, when it renders, is its own class.
     const component = fixture.componentInstance as unknown as {
-      rowError: (id: string) => string | null;
+      rowError: (id: AppointmentId) => string | null;
     };
     expect(typeof component.rowError).toBe('function');
+  });
+
+  it("files a refusal in the row of the visit that earned it, never in another visit's", () => {
+    // The store files a refusal by APPOINTMENT; the row is asked by its
+    // aggregate, not by its own `appointment#chair` key (owner ruling
+    // 2026-09-03) — which matched nothing, so no row ever printed one.
+    const store = (
+      fixture.componentInstance as unknown as {
+        store: { refuse: (id: AppointmentId, error: PipelineError) => void };
+      }
+    ).store;
+    const resolved = refusal(
+      PipelineErrorCode.InvalidRequest,
+      BookingErrorCode.TransitionNotAllowed,
+      {
+        fromBookingStatus: 'RESOLVED',
+        toBookingStatus: BookingStatus.Cancelled,
+      },
+    );
+    const messages = (): (string | null)[] =>
+      [...host().querySelectorAll('[data-testid="staff-visit-row"]')].map(
+        (row) =>
+          row
+            .querySelector('[data-testid="staff-row-error"]')
+            ?.textContent?.trim() ?? null,
+      );
+    const rows = host().querySelectorAll('[data-testid="staff-visit-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    // Another visit's refusal prints in none of these rows…
+    store.refuse(AppointmentId.of('appointment-elsewhere'), resolved);
+    fixture.detectChanges();
+    expect(messages().every((message) => message === null)).toBe(true);
+    // …and this visit's prints in its own. The loader returns no
+    // translations, so the KEY reached for is the assertion.
+    // The row key is `appointment#chair`; the aggregate is what precedes the last `#`.
+    const rowId = rows[0]?.getAttribute('data-row-id') ?? '';
+    const own = rowId.slice(0, rowId.lastIndexOf('#'));
+    store.refuse(AppointmentId.of(own), resolved);
+    fixture.detectChanges();
+    expect(messages()[0]).toBe('errors.BOOKING_TRANSITION_SEAT_RESOLVED');
   });
 
   it('leads the card with a LEDE row, never a capsule or a third row', () => {
@@ -6214,6 +6254,27 @@ describe('StaffDashboard', () => {
     ).not.toBeNull();
     expect(component.createVm()?.clientLabel).toBe('');
     expect((component.createVm()?.startMinute ?? 0) % 5).toBe(0);
+  });
+
+  it('opens a new visit late in the evening without throwing — its frame starts at 24:00 until it is moved', async () => {
+    // At 23:57 the next tick is the closing midnight (24:00 on the track):
+    // the seed measured its span on the shop's clock and threw on it, so the
+    // ＋ crashed the page from 23:31 on (the default half hour ran past 24:00).
+    TestBed.resetTestingModule();
+    await build('2026-08-05T23:57:00.000+03:00');
+    const component = fixture.componentInstance as unknown as {
+      openCreate: (createIntent: CreateIntent) => void;
+      createVm: () => { startMinute: number; endMinute: number } | null;
+    };
+    expect(() => {
+      component.openCreate(CreateIntent.Booking);
+      fixture.detectChanges();
+    }).not.toThrow();
+    expect(
+      host().querySelector('[data-testid="staff-create-sheet"]'),
+    ).not.toBeNull();
+    expect(component.createVm()?.startMinute).toBe(1440);
+    expect(component.createVm()?.endMinute).toBe(1470);
   });
 
   it('places a party as one booking: the account holder owns it, the rest ride as guests', async () => {

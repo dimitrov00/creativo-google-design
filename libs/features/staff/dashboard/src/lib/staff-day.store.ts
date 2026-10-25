@@ -1675,7 +1675,6 @@ export class StaffDayStore {
   private readonly _errors = signal<ReadonlyMap<AppointmentId, PipelineError>>(
     new Map(),
   );
-  readonly errors = this._errors.asReadonly();
 
   errorFor(appointmentId: AppointmentId): PipelineError | null {
     return this._errors().get(appointmentId) ?? null;

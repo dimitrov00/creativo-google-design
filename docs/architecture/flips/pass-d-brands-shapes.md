@@ -3569,7 +3569,7 @@ so the seed state is the committed seed's and every port is free.
   `'bg-BG'`.
 - The KEEP-PARKED lifecycle write verbs, `VoucherSystem.redeem`,
   `IntervalSetSystem.clip` (pass C §9.6, owner call).
-- The dashboard's row-error line never matches (`rowError` gets the row key
+- (FIXED after pass D, 2026-10-25 — HANDOFF §3.3 "Fixed after pass D", with the `seedDraft` 1440 defect below.) The dashboard's row-error line never matches (`rowError` gets the row key
   `appointmentId#barberId`; the store keys errors by appointment id) —
   production prints no row error before or after pass D; a defect for a
   later pass with a DEP.
