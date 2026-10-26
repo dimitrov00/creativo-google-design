@@ -63,6 +63,7 @@ import {
   fixedCodeOtpCryptoPorts,
   nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
+import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   callableEdge,
@@ -284,8 +285,11 @@ const serverPorts = once(() => ({
 const identityPorts = once(() => ({
   ...serverPorts(),
   ...authClaimsPorts(adminAuth()),
-  // The login-OTP sender identity — never a campaign sender.
-  ...consoleOtpSender(telemetry.log),
+  // The login-OTP sender identity — never a campaign sender. Under the
+  // emulator the code goes to the log (manual QA reads `devCode` anyway); a
+  // deployed environment can only construct the refusing sender, which
+  // answers IDENTITY_OTP_SEND_UNAVAILABLE until a real one lands (WS-0).
+  ...(onEmulator() ? consoleOtpSender(telemetry.log) : refusingOtpSender()),
   // Under the emulator every code is the fixed one (manual QA never fishes
   // logs); a deployed environment can only construct the real generator.
   ...(onEmulator() ? fixedCodeOtpCryptoPorts() : nodeOtpCryptoPorts()),

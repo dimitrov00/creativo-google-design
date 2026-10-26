@@ -27,18 +27,18 @@ pnpm run preflight --scope functions --project "$PROJECT_ID"
 > straight after the script name, as above (checked on 2026-10-26 with a dry
 > `--scope bogus` run; the runbook, the HANDOFF gate and the preflight's usage
 > line were corrected the same day). Source: `package.json:18`, `:31`;
-> `tools/verify/preflight/preflight.mjs:906-916`.
+> `tools/verify/preflight/preflight.mjs:1039-1049`.
 
 The preflight is a read-only check that the project is ready (OR-35, DEP-F26).
 Both predeploy hooks in `firebase.json` run it too and refuse the deploy if a
 check fails. Run it by hand before you start, in both scopes as above, so a
 failure doesn't land in the middle of a deploy. By hand it defaults to
 `--scope web` (P1–P6), so build the web first (`pnpm nx build web`) or P4
-fails with "no built scripts"; only `--scope functions` (P1–P3, P6, P7) runs
-P7. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
+fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P8) runs
+P7 and P8. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
 `.firebaserc`'s default. On a first deploy P2 and P3 fail until the index
-deploy of section 3.1 has run; that is expected. P7 fails every functions
-deploy until the OTP sender of section 1 lands — that is the point. Its seven
+deploy of section 3.1 has run; that is expected. P8 fails every functions
+deploy until the OTP sender of section 1 lands — that is the point. Its eight
 checks are:
 
 | Check | Passes when                                                                                                       |
@@ -50,6 +50,7 @@ checks are:
 | P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host             |
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
 | P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)  |
+| P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                          |
 
 The `@emulatorOnly` exports are the console OTP sender (`consoleOtpSender`),
 the fixed-code OTP crypto (`fixedCodeOtpCryptoPorts`) and its code
@@ -60,11 +61,13 @@ used. It judges a run-time `import()` or `require()` of a module that exports
 one (declared or re-exported, a barrel included) at the load, and refuses a
 load whose specifier isn't a literal. The tag anchors only on an exported
 top-level `const` or `function`; anywhere else it fails, so it can't drop out
-unnoticed. Exit codes: 0 = pass, 1 = a check
-failed, 2 = bad arguments. If P6 fails, P1–P3 are skipped; P7 reads only the
-repository, so it runs either way.
-Source: `tools/verify/preflight/preflight.mjs:1-51`, `:93-96`, `:450-790`,
-`:906-929`; runbook §3 (`docs/architecture/firestore-runbook.md:193-208`).
+unnoticed. The one `@launchBlocker` export is the refusing OTP sender
+(`refusingOtpSender`); P8 follows its uses the same way and fails on any use
+at all, behind `onEmulator()` or not. Exit codes: 0 = pass, 1 = a check
+failed, 2 = bad arguments. If P6 fails, P1–P3 are skipped; P7 and P8 read only
+the repository, so they run either way.
+Source: `tools/verify/preflight/preflight.mjs:1-56`, `:100-103`, `:463-920`,
+`:1039-1062`; runbook §3 (`docs/architecture/firestore-runbook.md:193-209`).
 
 Set these once in the shell you deploy from:
 
@@ -91,8 +94,8 @@ so the owner has to make the call.
       plan. The first `firebase deploy --only functions` offers to enable the
       APIs it needs (Cloud Functions, Cloud Build, Artifact Registry, Cloud Run,
       Eventarc, Pub/Sub, Cloud Scheduler, Secret Manager). Accept them.
-      Source: `firebase.json:9-25`; `apps/functions/src/main.ts:334`, `:718-728`,
-      `:835-837`.
+      Source: `firebase.json:9-25`; `apps/functions/src/main.ts:338`, `:722-732`,
+      `:839-841`.
 - [ ] **Choose the Firestore location knowing that functions run in
       `us-central1`.** No export sets a `region` and there is no
       `setGlobalOptions`. The web calls `getFunctions(app)` with no region, and
@@ -104,7 +107,7 @@ so the owner has to make the call.
       the `connect-src` host in `firebase.json` and the `functionsHost` in
       `check-csp.mjs`, all in one change. **decide** (the repo records no
       location decision).
-      Source: `apps/functions/src/main.ts:185-190`;
+      Source: `apps/functions/src/main.ts:186-191`;
       `libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts:121`;
       `firebase.json:41`; `tools/verify/csp/check-csp.mjs:170-173`.
 - [ ] **Create the (default) Firestore database (Native mode) and the Storage
@@ -135,7 +138,7 @@ another id and put it in `.firebaserc` → `targets` → `<id>` → `hosting` �
 `web` (the template comment calls it `<site-id>`).
 
 Source: `.firebaserc:2-12`; P6 refuses the placeholder
-(`tools/verify/preflight/preflight.mjs:23-24`, `:187-190`).
+(`tools/verify/preflight/preflight.mjs:23-24`, `:200-203`).
 
 - [ ] **Fill in the production web Firebase config.** Replace every
       `REPLACE_ME` in `apps/web/src/environments/environment.production.ts`
@@ -147,7 +150,7 @@ Source: `.firebaserc:2-12`; P6 refuses the placeholder
       names the project id as a string literal.
       Source: `apps/web/src/environments/environment.production.ts:8-15`;
       `apps/web/project.json:52-57`;
-      `tools/verify/preflight/preflight.mjs:386-422`.
+      `tools/verify/preflight/preflight.mjs:399-435`.
 - [ ] **Point the CSP at the real callables host.** In `firebase.json`, change
       `https://us-central1-creativo-replace-me.cloudfunctions.net` to
       `https://us-central1-<PROJECT_ID>.cloudfunctions.net`. If the host is
@@ -206,32 +209,42 @@ openssl rand -hex 32 | firebase functions:secrets:set WALKIN_ID_KEY --data-file=
 > record. Set it once and keep its current version enabled.
 
 Source: `docs/architecture/firestore-runbook.md:233`;
-`apps/functions/src/main.ts:326-347`;
+`apps/functions/src/main.ts:330-351`;
 `docs/architecture/decisions/2026-10-26-owner-rulings.md:710`.
 
 ### Sign-in: the OTP sender (LAUNCH BLOCKER)
 
-- [ ] **Replace the console OTP sender with a real transactional sender.**
-      Production currently wires `consoleOtpSender`. It sends nothing: it writes
-      `[otp] would send <channel> OTP to <destination>: <code>` to Cloud Logging
-      at `info` and always reports success. Until this is replaced, nobody
-      receives a sign-in code (staff and admins included), and anyone who can
-      read the project's logs can sign in as anyone. What to build:
+- [ ] **Replace the refusing OTP sender with a real transactional sender.**
+      A deployed project wires `refusingOtpSender`: it sends nothing and
+      refuses each code request that reaches it with
+      `IDENTITY_OTP_SEND_UNAVAILABLE` (`failed-precondition`; the sign-in
+      screen says codes aren't being sent yet and offers no retry). The
+      refused request still saved its challenge and used up the resend
+      window, so a repeat for the same destination inside that window
+      answers `IDENTITY_OTP_RATE_LIMITED`, whose words say a code was already
+      sent though none was. Until this is replaced, nobody can sign in,
+      staff and admins included. The console sender (`consoleOtpSender`,
+      which writes `[otp] would send <channel> OTP to <destination>: <code>`
+      to the log) runs only under the emulator, so no deployed project logs a
+      code or a destination. What to build:
   - an adapter implementing `OtpDeliveryPorts.sendOtp` for both channels
     (`OtpDestinationType.Email` and `Sms`) over a transactional provider (the
-    adapter's comment suggests Postmark or Twilio);
-  - bind it in `identityPorts` behind the emulator switch, the way the OTP
-    crypto beside it is bound —
+    console adapter's comment suggests Postmark or Twilio);
+  - bind it in `identityPorts` in place of `refusingOtpSender()`, in the
+    deployed branch of the emulator switch, the way the OTP crypto beside it
+    is bound —
     `...(onEmulator() ? consoleOtpSender(telemetry.log) : <real sender>(…))` —
-    so the emulator keeps the console sender and a deployed project never
-    constructs it. The preflight's **P7** refuses every functions deploy until
-    then: `consoleOtpSender` is tagged `@emulatorOnly`, and P7 fails on any
-    use of it (followed through renames and re-exports) outside
-    `onEmulator() ? … : …` or `if (onEmulator())`. Keep the tag, and tag any
-    new emulator-only adapter the same way (in its JSDoc, on the exported
-    `const` or `function` itself). Flip the pin in
-    `preflight.spec.mjs` ("P7 refuses today’s functions on main.ts’s console
-    sender alone, …") to expect PASS in the same change;
+    so the emulator keeps the console sender. The preflight's **P8** refuses
+    every functions deploy until then: `refusingOtpSender` is tagged
+    `@launchBlocker`, and P8 fails on any use of it (followed through renames
+    and re-exports). **P7** already passes: `consoleOtpSender` is tagged
+    `@emulatorOnly` and is used only behind `onEmulator()`; keep that tag,
+    and tag any new emulator-only adapter the same way (in its JSDoc, on the
+    exported `const` or `function` itself). In the same change, delete the
+    refusing adapter (or drop its last use) and flip the pin in
+    `preflight.spec.mjs` ("P8 refuses today’s functions on main.ts’s
+    refusing sender alone, …", and the fail-closed predeploy case beside it)
+    to expect PASS;
   - declare the provider's keys with `defineSecret('<NAME>')` and bind them
     through `onCall({ secrets: [...] })` on the three callables that build
     `root.identity` (`requestOtpChallenge`, `verifyOtpChallenge`,
@@ -244,10 +257,12 @@ firebase functions:secrets:set <NAME> --project "$PROJECT_ID"
 
 - add each new secret to `EMULATOR_SECRETS` so the emulator keeps working.
 
-Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
-`apps/functions/src/main.ts:283-292`, `:334-337`, `:440-470`;
+Source: `apps/functions/src/adapters/refusing-otp-sender.adapter.ts:5-25`;
+`apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
+`apps/functions/src/main.ts:284-299`, `:338-341`, `:444-474`;
+`apps/functions/src/edge.ts` (`IDENTITY_WIRE`);
 `tools/flags/write-functions-env.mjs:97-99`;
-`tools/verify/preflight/preflight.mjs:450-790` (P7).
+`tools/verify/preflight/preflight.mjs:831-879` (P7), `:881-920` (P8).
 
 - [ ] **Keep the login-OTP sender separate from any campaign or marketing
       sender (owner rule).** It gets its own provider account or sub-account,
@@ -256,7 +271,7 @@ Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
       file. Never send marketing through `OtpDeliveryPorts`, and never reuse
       this identity from a campaign adapter. No campaign sender exists today.
       Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:7-11`;
-      `apps/functions/src/main.ts:287`.
+      `apps/functions/src/main.ts:288-292`.
 - [ ] **Publish the provider's e-mail DNS records (SPF, DKIM, DMARC) for the
       `auth.*` sending domain**, and register an SMS sender id if the BG
       provider requires one. The provider defines these steps; the repo has no
@@ -342,7 +357,7 @@ Source: `firebase.json:2-8` (only rules and indexes configured).
       Billing → Budgets & alerts: a monthly budget with e-mail alerts. All
       callables are reachable without App Check (see section 8), and only
       `reportClientIssues` is capped (`maxInstances: 2`).
-      Source: `apps/functions/src/main.ts:941-948`; Deferred #4.
+      Source: `apps/functions/src/main.ts:945-952`; Deferred #4.
 
 ### Monitoring and privacy (owner's, OR-34)
 
@@ -379,7 +394,7 @@ gcloud logging metrics create client_issue_count --project="$PROJECT_ID" --confi
       `'Europe/Sofia'`, a deploy-time constant. If `loc-center.timeZone` is a
       different zone, edit the constant before deploying functions.
       Source: `apps/functions/src/lib/cron-zone.ts:11`;
-      `apps/functions/src/main.ts:718-728`, `:835-837`.
+      `apps/functions/src/main.ts:722-732`, `:839-841`.
 - [ ] **Review the production feature-flag map.** All 13 flags in
       `config/feature-flags.json` → `production` are `false` today, so loyalty,
       the client profile, pause, support, merge, privacy, referrals and
@@ -490,7 +505,7 @@ pnpm run verify:csp
 
 - [ ] Make sure no emulator variable (`FIRESTORE_EMULATOR_HOST`,
       `FUNCTIONS_EMULATOR`, …) is set in the deploying shell, then run the
-      preflight in both scopes (only the functions scope runs P7):
+      preflight in both scopes (only the functions scope runs P7 and P8):
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"
@@ -560,10 +575,11 @@ firebase deploy --only functions --project "$PROJECT_ID"
 The predeploy hook already runs, in order: `pnpm nx build functions`, then
 `node tools/flags/write-functions-env.mjs` (the `production` flag map into
 `dist/apps/functions/.env.<projectId>`), then the preflight with
-`--scope functions` (P1–P3, P6, P7). Don't set `FLAGS_ENV` for production.
+`--scope functions` (P1–P3, P6–P8). Don't set `FLAGS_ENV` for production.
 The deploy fails closed if `loc-center`, the TTLs or the composites aren't
-ready, if an emulator-only adapter (today the console OTP sender) is wired
-outside the emulator (P7), or if `WALKIN_ID_KEY` is missing.
+ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
+code) is wired outside the emulator (P7), while the refusing OTP sender is
+still wired (P8), or if `WALKIN_ID_KEY` is missing.
 Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:231`.
 
 ### 3.4 Hosting, straight after functions
@@ -671,7 +687,7 @@ firebase deploy --only functions,hosting:web --project "$PROJECT_ID"
       rollback, set `CREATIVO_SKIP_PREFLIGHT=1` for that one deploy, then run
       the preflight by hand afterwards in every scope that deploy skipped:
       the banner prints the exact command, `--scope` included, because a
-      by-hand run defaults to the web scope and never runs P7. Never make it
+      by-hand run defaults to the web scope and never runs P7 or P8. Never make it
       a habit.
 
 ```bash
@@ -688,8 +704,8 @@ CREATIVO_SKIP_PREFLIGHT=1 firebase deploy --only functions,hosting:web --project
       (section 1).
 
 Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
-`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:48-51`,
-`:950-953`;
+`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:53-56`,
+`:1083-1086`;
 `docs/security/csp-baseline.md` ("The service-worker header lag").
 
 ---
@@ -703,11 +719,11 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
       Source: `tools/seed-dev-catalog.mjs:130-136`.
 - [ ] **Never set `FUNCTIONS_EMULATOR` or any `*_EMULATOR_HOST`** in the
       deploying shell, in `.env.<projectId>` or in the runtime environment.
-      Under `FUNCTIONS_EMULATOR=true` every OTP code is the fixed one and
-      `devCode` is returned to the caller, which means anyone can take over any
-      account. P6 refuses these variables in the shell.
-      Source: `apps/functions/src/main.ts:256-257`, `:289-291`, `:446-447`;
-      `tools/verify/preflight/preflight.mjs:110-111`, `:176-182`.
+      Under `FUNCTIONS_EMULATOR=true` every OTP code is the fixed one,
+      `devCode` is returned to the caller and the console sender writes every
+      code to the log, which means anyone can take over any account. P6 refuses these variables in the shell.
+      Source: `apps/functions/src/main.ts:257-258`, `:293-295`, `:450-451`;
+      `tools/verify/preflight/preflight.mjs:117-118`, `:189-195`.
 - [ ] **Never deploy the test `WALKIN_ID_KEY`.** `.secret.local` (a public
       TEST value) is written only for `demo-*` projects, and `firebase.json`'s
       `functions.ignore` keeps it and `.env.local` out of the upload. Keep
@@ -739,4 +755,4 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
 | **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1471`); `firebase.json:43-46`                                                 |
 | **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1478`); OR-29                                                                |
 | **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                  |
-| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:941-948`                                                                          |
+| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:945-952`                                                                          |

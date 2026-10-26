@@ -2149,10 +2149,13 @@ bundle names the project, P5 `connect-src` names its callables host, P6 no
 emulator variable and no placeholder or `demo-*` project, and (functions
 scope, 2026-10-26) P7 every use of an `@emulatorOnly` export (the console
 OTP sender, the fixed-code OTP crypto) behind `onEmulator()`, followed by the
-TypeScript checker through renames and re-exports — and exits 1 unless every
-row passes. P7 FAILs on today's tree by design: it is the OTP-sender launch
-blocker of `docs/production-deploy.md` §1, pinned by the spec until the
-transactional sender lands. Its pure checks run in `run-many -t test`
+TypeScript checker through renames and re-exports, and P8 no use at all of a
+`@launchBlocker` export (the refusing OTP sender), followed the same way —
+and exits 1 unless every row passes. P7 passes since audit-hardening WS-0
+gated the console sender; P8 FAILs on today's tree by design: it is the
+OTP-sender launch blocker of `docs/production-deploy.md` §1 (a deployed
+project refuses every sign-in `IDENTITY_OTP_SEND_UNAVAILABLE`), pinned by
+the spec until the transactional sender lands. Its pure checks run in `run-many -t test`
 (`verify-tools`, `preflight.spec.mjs`); against the emulator project it
 stops at P6 by design, so the gate on a tree with no hosted project is that
 spec, and the run against the real project is the release step before any

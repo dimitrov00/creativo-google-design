@@ -1,9 +1,14 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
-import { ClientIssueKind } from '@core/components';
-import { BookingError, IdentityError, RepositoryError } from '@core/errors';
+import { ClientIssueKind, Email, ParsedIdentifier } from '@core/components';
+import {
+  BookingError,
+  IdentityError,
+  IdentityErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { BusyKey, CustomerId } from '@core/primitives';
-import { Callables } from '@core/ports';
+import { Callables, type Log, type OtpDeliveryPorts } from '@core/ports';
 import { ClientIssueSystem, TriggerAttemptSystem } from '@core/systems';
 import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
 import { hmacSha256Hex } from './adapters/crypto.adapter';
@@ -75,8 +80,11 @@ const seam = vi.hoisted(() => {
       }),
     ]),
   );
+  /** The console OTP sender, spied over the real one — the WS-0 proof that a deployment never builds it. */
+  const consoleOtpSender = vi.fn<(log: Log) => OtpDeliveryPorts>();
   return {
     PIPELINES,
+    consoleOtpSender,
     calls,
     answers,
     DB,
@@ -100,6 +108,13 @@ vi.mock('./lib/firebase-admin', () => ({
 vi.mock('./adapters/firestore-ports', () => ({
   firestorePorts: seam.firestorePorts,
 }));
+vi.mock('./adapters/console-otp-sender.adapter', async (importOriginal) => {
+  const actual = await importOriginal<{
+    readonly consoleOtpSender: (log: Log) => OtpDeliveryPorts;
+  }>();
+  seam.consoleOtpSender.mockImplementation(actual.consoleOtpSender);
+  return { ...actual, consoleOtpSender: seam.consoleOtpSender };
+});
 vi.mock('@core/pipelines', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   ...seam.pipelines,
@@ -1650,4 +1665,55 @@ describe('main.ts — the composition root', () => {
       expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });
     },
   );
+
+  // Last in the file: each case loads a FRESH composition root (the identity
+  // ports are built once per module), so no earlier case's cold start is
+  // disturbed.
+  describe('WS-0 — the console OTP sender runs under the emulator alone', () => {
+    const DESTINATION = ParsedIdentifier.email(Email.of('ana@example.com'));
+
+    /** A fresh composition root under `emulator` (unset when `undefined`) — the ports its `requestOtp` was built over. */
+    async function identityPortsUnder(
+      emulator: string | undefined,
+    ): Promise<OtpDeliveryPorts> {
+      vi.stubEnv('FUNCTIONS_EMULATOR', emulator);
+      vi.resetModules();
+      seam.consoleOtpSender.mockClear();
+      const fresh = new Map<string, unknown>(
+        Object.entries(await import('./main')),
+      );
+      await runnable(fresh.get('requestOtpChallenge')).run(
+        caseOf('requestOtpChallenge').input,
+      );
+      const call = seam.calls.find(({ pipeline }) => pipeline === 'requestOtp');
+      return call?.ports as OtpDeliveryPorts;
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('a deployment (FUNCTIONS_EMULATOR unset) refuses every delivery IDENTITY_OTP_SEND_UNAVAILABLE and never constructs the console sender', async () => {
+      const ports = await identityPortsUnder(undefined);
+      expect(process.env['FUNCTIONS_EMULATOR']).toBeUndefined();
+      await expect(ports.sendOtp(DESTINATION, '123456')).resolves.toEqual({
+        ok: false,
+        error: { errorCode: IdentityErrorCode.OtpSendUnavailable },
+      });
+      expect(seam.consoleOtpSender).not.toHaveBeenCalled();
+    });
+
+    it('the emulator (FUNCTIONS_EMULATOR=true) keeps the console sender — the code goes to the log', async () => {
+      const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+      const ports = await identityPortsUnder('true');
+      expect(seam.consoleOtpSender).toHaveBeenCalledTimes(1);
+      await expect(ports.sendOtp(DESTINATION, '123456')).resolves.toEqual({
+        ok: true,
+        value: undefined,
+      });
+      expect(info).toHaveBeenCalledWith(
+        '[otp] would send email OTP to ana@example.com: 123456',
+      );
+    });
+  });
 });

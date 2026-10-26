@@ -209,6 +209,28 @@ describe('identity wire', () => {
       });
     });
 
+    it('lets the deployed sender’s refusal leave as its own failed-precondition IDENTITY_OTP_SEND_UNAVAILABLE — never collapsed to IDENTITY_OTP_SEND_FAILURE (WS-0)', () => {
+      const unavailable = wire(
+        requestOtpRefusal(IdentityError.otpSendUnavailable()),
+      );
+      expect(unavailable).toEqual({
+        status: 'failed-precondition',
+        details: { errorCode: IdentityErrorCode.OtpSendUnavailable },
+      });
+      // Never the lockout's status, never the retryable failure's code.
+      expect(unavailable.status).not.toBe('permission-denied');
+      expect(unavailable.details).not.toEqual({
+        errorCode: IdentityErrorCode.OtpSendFailure,
+      });
+      // A failed delivery still collapses, as before.
+      expect(
+        wire(requestOtpRefusal(PipelineError.bare(PipelineErrorCode.Unknown))),
+      ).toEqual({
+        status: 'internal',
+        details: { errorCode: IdentityErrorCode.OtpSendFailure },
+      });
+    });
+
     it('throws a store failure for the edge to track and answer as the callable’s IDENTITY_REPOSITORY_FAILURE', () => {
       expect(() => requestOtpRefusal(STORE_DOWN)).toThrow(STORE_DOWN.errorCode);
       expect(wire(IdentityError.repositoryFailure())).toEqual({

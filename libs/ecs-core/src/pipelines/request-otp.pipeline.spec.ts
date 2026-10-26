@@ -13,6 +13,7 @@ import {
 } from '@core/components';
 import { IdentifierChannel, OtpId, Result, UtcEpochMs } from '@core/primitives';
 import {
+  IdentityError,
   IdentityErrorCode,
   PipelineErrorCode,
   RepositoryError,
@@ -87,6 +88,8 @@ type Rig = {
   readonly deployment?: AuthDeployment;
   readonly nowUtcMs?: NowUtcMs;
   readonly failingSend?: boolean;
+  /** The deployed project's sender: every delivery refused `IDENTITY_OTP_SEND_UNAVAILABLE` (WS-0). */
+  readonly refusingSend?: boolean;
   readonly store?: Partial<OtpStorePorts>;
   /** The id prefix — distinct per rig when two share a world. */
   readonly idPrefix?: string;
@@ -102,6 +105,11 @@ function rig(options: Rig = {}) {
     ...memoryOtpStorePorts(world),
     ...options.store,
     ...delivery.ports,
+    ...(options.refusingSend === true
+      ? {
+          sendOtp: async () => Result.err(IdentityError.otpSendUnavailable()),
+        }
+      : {}),
     ...fixedOtpCryptoPorts(),
     ...fixedTenantPorts(),
     authDeployment: options.deployment ?? AuthDeployment.DEFAULT,
@@ -416,6 +424,31 @@ describe('requestOtp', () => {
         fields: { otpId: 'otp-1', errorCode: PipelineErrorCode.Unavailable },
       },
     ]);
+  });
+
+  it('passes the deployed sender’s refusal through unchanged — saved first, the resend window consumed, the order frozen (WS-0)', async () => {
+    const { world, telemetry, run } = rig({ refusingSend: true });
+    const answer = await run(EMAIL);
+    expect(answer).toEqual({
+      ok: false,
+      error: { errorCode: IdentityErrorCode.OtpSendUnavailable },
+    });
+    expect(otpsIn(world).size).toBe(1);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: 'otp.send_failed',
+        fields: {
+          otpId: 'otp-1',
+          errorCode: IdentityErrorCode.OtpSendUnavailable,
+        },
+      },
+    ]);
+    // The saved challenge holds the OR-9 window, as a delivered one would.
+    const again = await run(EMAIL);
+    expect(!again.ok && again.error.errorCode).toBe(
+      IdentityErrorCode.OtpRateLimited,
+    );
   });
 
   it('answers a store failure of the probe or the save, sending nothing', async () => {

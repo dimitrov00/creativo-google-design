@@ -127,6 +127,7 @@
     "IDENTITY_OTP_CHANNEL_MISMATCH": "Sign-in over this channel isn't available. Use the sign-in form.",
     "IDENTITY_OTP_RATE_LIMITED": "We already sent you a code. You can ask for a new one in {{seconds}} s.",
     "IDENTITY_OTP_SEND_FAILURE": "We couldn't send your verification code. Try again.",
+    "IDENTITY_OTP_SEND_UNAVAILABLE": "Sign-in codes aren't being sent yet. Contact the shop.",
     "IDENTITY_OTP_NOT_FOUND": "This verification code request no longer exists.",
     "IDENTITY_OTP_ALREADY_CONSUMED": "This code has already been used.",
     "IDENTITY_OTP_EXPIRED": "That code expired. We can send you a new one.",

@@ -679,6 +679,14 @@ describe('edge — the wire table', () => {
       );
     });
 
+    it('the deployed sender’s refusal is `failed-precondition`, its code alone — never the lockout’s `permission-denied`, never a retryable `internal` (WS-0)', () => {
+      expect(wire(IdentityError.otpSendUnavailable())).toEqual({
+        status: 'failed-precondition',
+        message: 'IDENTITY_OTP_SEND_UNAVAILABLE',
+        details: { errorCode: 'IDENTITY_OTP_SEND_UNAVAILABLE' },
+      });
+    });
+
     it('both waitlist doors answer the shared WaitlistError shape', () => {
       expect(wire(WaitlistError.unauthenticated())).toEqual({
         status: 'unauthenticated',

@@ -430,6 +430,10 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.RegistrationForbidden]: fields(S.FailedPrecondition),
   [IdentityErrorCode.RegistrationUserNotFound]: fields(S.FailedPrecondition),
   [IdentityErrorCode.RegistrationFieldMissing]: withField(S.InvalidArgument),
+  // The deployed sender refuses every delivery (WS-0) — a precondition of
+  // the deployment, never `permission-denied` (the lockout) and never
+  // `internal` (the web would offer a retry that cannot succeed).
+  [IdentityErrorCode.OtpSendUnavailable]: fields(S.FailedPrecondition),
   // The identity callables' own faults and payload refusals (Phase 4a 4A-4);
   // `reason` leaves for the invalid input, as the legacy one did.
   [IdentityErrorCode.InvalidInput]: fields(S.InvalidArgument),

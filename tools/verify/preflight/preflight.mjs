@@ -25,11 +25,15 @@
 //   P7  no deployed project can construct an emulator-only adapter: every
 //       use of a functions export tagged `@emulatorOnly` (the console OTP
 //       sender, the fixed-code OTP crypto), followed through renames and
-//       re-exports, sits behind `onEmulator()` — today the console sender
-//       does not (the launch blocker of docs/production-deploy.md §1).
+//       re-exports, sits behind `onEmulator()`;
+//   P8  no launch-blocker stand-in is wired: no functions export
+//       tagged `@launchBlocker` is used anywhere, followed as P7 follows
+//       its tag — today the deployed branch wires `refusingOtpSender`, which
+//       refuses every sign-in (the launch blocker of
+//       docs/production-deploy.md §1), so P8 fails by design.
 //
 // `--scope web` (the default; the hosting predeploy) runs P1–P6,
-// `--scope functions` (the functions predeploy) P1–P3, P6 and P7. The
+// `--scope functions` (the functions predeploy) P1–P3 and P6–P8. The
 // project is `--project`, else $GCLOUD_PROJECT (the Firebase CLI sets it for
 // a predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 never
 // read (SKIP): the read would reach an emulator, or a project nobody deploys
@@ -38,9 +42,10 @@
 // Reads only. P1 reads through firebase-admin under the application-default
 // credentials; P2 and P3 list through the Firestore Admin REST API with the
 // same credentials' token, the project named as the quota project
-// (`gcloud auth application-default login` first; runbook §3); P7 reads no
-// project: it resolves names across the files of apps/functions/src that
-// tsconfig.app.json builds, in memory, with the TypeScript compiler. The
+// (`gcloud auth application-default login` first; runbook §3); P7 and P8
+// read no project: they resolve names across the files of
+// apps/functions/src that tsconfig.app.json builds, in memory, with the
+// TypeScript compiler. The
 // domain is the production TypeScript, bundled by
 // `tools/seed/load-domain.mjs` — never a second copy of the default id, the
 // read guard or the zone check.
@@ -76,6 +81,7 @@ export const CHECKS = {
   P5: "connect-src names the project's callables host",
   P6: 'no emulator variable; a real project',
   P7: 'the emulator-only adapters run only behind onEmulator()',
+  P8: 'no launch-blocker stand-in is wired (@launchBlocker)',
 };
 
 /** What each check proves something about — the escape hatch names what went unproven. */
@@ -87,12 +93,13 @@ const SUBJECTS = {
   P5: 'the CSP',
   P6: 'the environment',
   P7: 'the emulator-only adapters',
+  P8: 'the launch blockers',
 };
 
 /** The checks each predeploy runs (firebase.json). */
 export const SCOPES = {
   web: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'],
-  functions: ['P1', 'P2', 'P3', 'P6', 'P7'],
+  functions: ['P1', 'P2', 'P3', 'P6', 'P7', 'P8'],
 };
 
 /** The checks that read the hosted project — never run when P6 fails. */
@@ -119,6 +126,9 @@ const EMULATOR_ONLY_TAG = 'emulatorOnly';
 
 /** The composition root's emulator switch — the one gate an emulator-only export may sit behind. */
 const EMULATOR_GATE = 'onEmulator';
+
+/** The JSDoc tag that marks a functions export a launch must replace (the refusing OTP sender) — P8 fails while one is used. */
+const LAUNCH_BLOCKER_TAG = 'launchBlocker';
 
 /** The Firestore Admin REST API. */
 const FIRESTORE_ADMIN = 'https://firestore.googleapis.com/v1';
@@ -150,6 +160,9 @@ const CREDENTIALS_HINT =
 
 /** P7's way out: the shape the OTP crypto already has, and the OTP sender's checklist item. */
 const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto is; the OTP sender's is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
+
+/** P8's way out: the checklist item that replaces the refusing sender. */
+const LAUNCH_BLOCKER_HINT = `replace each use with the real adapter — the deployed OTP sender is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
 
 const USAGE =
   'usage: node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--dist=<dir>] [--config=<firebase.json>]';
@@ -488,6 +501,7 @@ function isBindingName(node) {
     ts.isImportSpecifier(parent) ||
     ts.isImportClause(parent) ||
     ts.isNamespaceImport(parent) ||
+    ts.isNamespaceExport(parent) ||
     ts.isImportEqualsDeclaration(parent) ||
     ts.isExportSpecifier(parent) ||
     ts.isExportAssignment(parent) ||
@@ -592,34 +606,38 @@ function docTagsOf(node) {
 }
 
 /**
- * P7 — no deployed project can construct an emulator-only adapter. An
- * export of the functions tagged `@emulatorOnly` in its JSDoc — the console
- * OTP sender, which writes every sign-in code to the log and reports it
- * delivered; the fixed-code OTP crypto and its code — is the emulator's
- * alone: wired in a deployed project, nobody receives a code, or everybody
- * knows it. Over the functions' source (`sources`: `{ path, text }` for
- * every file tsconfig.app.json builds under `root`):
+ * The uses, in the functions' source, of every export tagged `@<tag>` in
+ * its JSDoc — the machinery P7 (`@emulatorOnly`) and P8 (`@launchBlocker`)
+ * share. Over `sources` (`{ path, text }` for every file tsconfig.app.json
+ * builds):
  *
- * - every use of such an export — followed by the TypeScript checker
+ * - every use of such an export is followed by the TypeScript checker
  *   through renamed imports, re-exports and namespaces back to the tagged
- *   declaration, so a rename keeps the anchor — sits behind the composition
- *   root's `onEmulator()` (the true branch of `onEmulator() ? … : …` or the
- *   then-block of `if (onEmulator())`), or inside another tagged
- *   declaration, which is judged where it is used in turn. A type position
- *   (`typeof consoleOtpSender`) constructs nothing and is no use;
+ *   declaration, so a rename keeps the anchor. A use inside another
+ *   declaration of the same tag is no use of its own: that one is judged
+ *   where it is used in turn. A type position (`typeof consoleOtpSender`)
+ *   constructs nothing and is no use;
  * - a run-time load (`import(…)`, `require(…)`) of a module that exports
- *   one, declared or re-exported, is judged at the load, since the checker
+ *   one, declared or re-exported, is a use at the load, since the checker
  *   cannot follow what it hands back; a load whose specifier is not a
- *   literal cannot be followed at all and fails outside the gate;
+ *   literal cannot be followed at all and is a use wherever it sits;
+ * - a namespace of such a module (`import * as ns`) is followed member by
+ *   member where a member is reached by name (`ns.name`, `ns['name']`);
+ *   used any other way — as a whole (`Object.values(ns)`, `{ ...ns }`,
+ *   `{ ns }`, a destructuring, `ns[key]`) — it is a use where it sits, since
+ *   the checker cannot tell which export it reaches;
  * - the tag anchors only on an exported top-level `const` or `function`;
  *   anywhere else — a type, a record member, a default-exported expression,
  *   a declaration its module never exports (a line slipped in between the
- *   doc and the export) — it fails, so a tag can never drop out unnoticed.
+ *   doc and the export) — it is a failure line, so a tag can never drop out
+ *   unnoticed.
+ *
+ * Answers `{ names, lines, uses }`: the tagged exports' names; the failure
+ * lines of tags that anchor nothing; and each use in file order as
+ * `{ at, node, head, tail }` — its `path:line`, its node, and the words a
+ * check composes around where it sits (`${at} ${head}<where>${tail}`).
  */
-export function checkEmulatorOnly({ root, sources }) {
-  if (sources.length === 0) {
-    return row('P7', Verdict.Fail, `no functions source under ${root}`);
-  }
+function taggedExportUses({ sources, tag, check }) {
   const { program, resolve: resolveModule } = programOver(sources);
   const checker = program.getTypeChecker();
   const pathOf = new Map(
@@ -629,6 +647,7 @@ export function checkEmulatorOnly({ root, sources }) {
     .getSourceFiles()
     .filter((file) => pathOf.has(file.fileName));
   const lines = [];
+  const uses = [];
   /** `path:line` of `node` in `file`. */
   const at = (file, node) =>
     `${pathOf.get(file.fileName)}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
@@ -652,13 +671,11 @@ export function checkEmulatorOnly({ root, sources }) {
     }),
   );
 
-  /** Each `@emulatorOnly` declaration → its name and file; a failure line for each tag that anchors nothing. */
+  /** Each `@<tag>` declaration → its name and file; a failure line for each tag that anchors nothing. */
   const tagged = new Map();
   for (const file of files) {
     const collect = (node) => {
-      if (
-        docTagsOf(node).some((tag) => tag.tagName.text === EMULATOR_ONLY_TAG)
-      ) {
+      if (docTagsOf(node).some((entry) => entry.tagName.text === tag)) {
         const declarations =
           node.parent !== file
             ? []
@@ -669,7 +686,7 @@ export function checkEmulatorOnly({ root, sources }) {
                 : [];
         if (declarations.length === 0) {
           lines.push(
-            `${at(file, node)} tags ${/^[AEIOU]/.test(ts.SyntaxKind[node.kind]) ? 'an' : 'a'} ${ts.SyntaxKind[node.kind]} @${EMULATOR_ONLY_TAG} — the tag anchors only on an exported top-level const or function`,
+            `${at(file, node)} tags ${/^[AEIOU]/.test(ts.SyntaxKind[node.kind]) ? 'an' : 'a'} ${ts.SyntaxKind[node.kind]} @${tag} — the tag anchors only on an exported top-level const or function`,
           );
         }
         for (const declaration of declarations) {
@@ -678,7 +695,7 @@ export function checkEmulatorOnly({ root, sources }) {
             : undefined;
           if (!name || !exported.get(file.fileName).has(declaration)) {
             lines.push(
-              `${at(file, declaration)} tags ${name ?? 'a destructuring'} @${EMULATOR_ONLY_TAG}, which its module does not export — move the tag onto the export`,
+              `${at(file, declaration)} tags ${name ?? 'a destructuring'} @${tag}, which its module does not export — move the tag onto the export`,
             );
           } else {
             tagged.set(declaration, {
@@ -693,7 +710,7 @@ export function checkEmulatorOnly({ root, sources }) {
     collect(file);
   }
 
-  /** Each file whose module exports an `@emulatorOnly` declaration → their names. */
+  /** Each file whose module exports a tagged declaration → their names. */
   const taggedIn = new Map();
   for (const file of files) {
     const names = [...exported.get(file.fileName)]
@@ -716,6 +733,31 @@ export function checkEmulatorOnly({ root, sources }) {
     return declaration ? tagged.get(declaration) : undefined;
   };
 
+  /** The file of a module exporting a tagged declaration that the identifier `node` names as a namespace (`import * as ns`), if any. */
+  const namespaceOf = (node) => {
+    let symbol = ts.isShorthandPropertyAssignment(node.parent)
+      ? checker.getShorthandAssignmentValueSymbol(node.parent)
+      : checker.getSymbolAtLocation(node);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+      symbol = checker.getAliasedSymbol(symbol);
+    }
+    const module = symbol?.declarations?.find(
+      (entry) => ts.isSourceFile(entry) && taggedIn.has(entry.fileName),
+    );
+    return module?.fileName;
+  };
+
+  /** Whether the namespace `node` is only the object of a member reached by name (`ns.name`, `ns['name']`) — that member is judged instead. */
+  const reachesByName = (node) => {
+    const { parent } = node;
+    return (
+      (ts.isPropertyAccessExpression(parent) && parent.expression === node) ||
+      (ts.isElementAccessExpression(parent) &&
+        parent.expression === node &&
+        ts.isStringLiteralLike(parent.argumentExpression))
+    );
+  };
+
   /** Whether `node` sits inside a tagged declaration — judged where that one is used. */
   const insideTagged = (node) => {
     for (let parent = node.parent; parent; parent = parent.parent) {
@@ -724,14 +766,13 @@ export function checkEmulatorOnly({ root, sources }) {
     return false;
   };
 
-  let gated = 0;
   if (tagged.size > 0) {
     for (const file of files) {
-      /** Counts `node` as a use behind the gate, or records it as a failure worded `wording`. */
-      const judge = (node, wording) => {
-        if (insideTagged(node)) return;
-        if (behindEmulatorGate(node)) gated += 1;
-        else lines.push(`${at(file, node)} ${wording}`);
+      /** Records `node` as a use worded `head` … `tail`, unless a tagged declaration holds it. */
+      const use = (node, head, tail = '') => {
+        if (!insideTagged(node)) {
+          uses.push({ at: at(file, node), node, head, tail });
+        }
       };
       const visit = (node) => {
         const load = runtimeLoadOf(node);
@@ -740,25 +781,41 @@ export function checkEmulatorOnly({ root, sources }) {
             ? undefined
             : resolveModule(load.specifier, file.fileName);
         if (load && load.specifier === undefined) {
-          judge(
+          use(
             node,
-            'loads a module named at run time outside the emulator — P7 cannot follow it; name it with a string literal',
+            'loads a module named at run time',
+            ` — ${check} cannot follow it; name it with a string literal`,
           );
         } else if (taggedIn.has(loaded)) {
-          judge(
+          use(
             node,
-            `loads ${pathOf.get(loaded)} (@${EMULATOR_ONLY_TAG} ${taggedIn.get(loaded).join(', ')}) outside the emulator — import it statically, so each use can be followed`,
+            `loads ${pathOf.get(loaded)} (@${tag} ${taggedIn.get(loaded).join(', ')})`,
+            ' — import it statically, so each use can be followed',
           );
+        } else if (
+          ts.isStringLiteralLike(node) &&
+          ts.isElementAccessExpression(node.parent) &&
+          node.parent.argumentExpression === node &&
+          !inTypePosition(node)
+        ) {
+          const target = taggedOf(node);
+          if (target) {
+            use(node, `uses ${target.name} (@${tag}, ${target.path})`);
+          }
         } else if (
           ts.isIdentifier(node) &&
           !isBindingName(node) &&
           !inTypePosition(node)
         ) {
           const target = taggedOf(node);
+          const whole = target ? undefined : namespaceOf(node);
           if (target) {
-            judge(
+            use(node, `uses ${target.name} (@${tag}, ${target.path})`);
+          } else if (whole && !reachesByName(node)) {
+            use(
               node,
-              `uses ${target.name} (@${EMULATOR_ONLY_TAG}, ${target.path}) outside the emulator`,
+              `uses the namespace of ${pathOf.get(whole)} (@${tag} ${taggedIn.get(whole).join(', ')}) as a whole`,
+              ` — ${check} cannot follow which export it reaches; reach it by name`,
             );
           }
         }
@@ -766,6 +823,39 @@ export function checkEmulatorOnly({ root, sources }) {
       };
       visit(file);
     }
+  }
+  const names = [...new Set([...tagged.values()].map(({ name }) => name))];
+  return { names, lines, uses };
+}
+
+/**
+ * P7 — no deployed project can construct an emulator-only adapter. An
+ * export of the functions tagged `@emulatorOnly` in its JSDoc — the console
+ * OTP sender, which writes every sign-in code to the log and reports it
+ * delivered; the fixed-code OTP crypto and its code — is the emulator's
+ * alone: wired in a deployed project, nobody receives a code, or everybody
+ * knows it. Over the functions' source (`sources`: `{ path, text }` for
+ * every file tsconfig.app.json builds under `root`), every use of such an
+ * export ({@link taggedExportUses}: followed through renames, re-exports
+ * and run-time loads; the tag anchoring only on an exported top-level
+ * `const` or `function`) sits behind the composition root's `onEmulator()`
+ * — the true branch of `onEmulator() ? … : …` or the then-block of
+ * `if (onEmulator())` — or inside another tagged declaration, which is
+ * judged where it is used in turn.
+ */
+export function checkEmulatorOnly({ root, sources }) {
+  if (sources.length === 0) {
+    return row('P7', Verdict.Fail, `no functions source under ${root}`);
+  }
+  const { names, lines, uses } = taggedExportUses({
+    sources,
+    tag: EMULATOR_ONLY_TAG,
+    check: 'P7',
+  });
+  let gated = 0;
+  for (const { at, node, head, tail } of uses) {
+    if (behindEmulatorGate(node)) gated += 1;
+    else lines.push(`${at} ${head} outside the emulator${tail}`);
   }
   if (lines.length > 0) {
     return row(
@@ -775,8 +865,7 @@ export function checkEmulatorOnly({ root, sources }) {
       [...lines, EMULATOR_ONLY_HINT],
     );
   }
-  const names = [...new Set([...tagged.values()].map(({ name }) => name))];
-  const uses =
+  const used =
     gated === 0
       ? 'never used'
       : `${gated === 1 ? 'the one use' : `all ${gated} uses`} behind ${EMULATOR_GATE}()`;
@@ -785,7 +874,48 @@ export function checkEmulatorOnly({ root, sources }) {
     Verdict.Pass,
     names.length === 0
       ? `no @${EMULATOR_ONLY_TAG} export in ${sources.length} files under ${root}`
-      : `${names.join(', ')}: ${uses}`,
+      : `${names.join(', ')}: ${used}`,
+  );
+}
+
+/**
+ * P8 — no launch-blocker stand-in is wired. An export of the
+ * functions tagged `@launchBlocker` in its JSDoc stands in for something a
+ * launch needs — today `refusingOtpSender`, the deployed project's login-OTP
+ * sender until a transactional provider lands, which refuses every sign-in
+ * with `IDENTITY_OTP_SEND_UNAVAILABLE`. P8 fails while ANY use of such an
+ * export remains in the functions' source, behind a gate or not, followed
+ * exactly as P7 follows its own tag ({@link taggedExportUses}: renames,
+ * re-exports, run-time loads, a load it cannot name, a tag that anchors
+ * nothing), and passes once no tagged export is used. It reads no project.
+ * A PASS proves no tagged stand-in is wired, not that a code arrives: that
+ * proof is docs/production-deploy.md §1's checkbox and §4's post-deploy
+ * check (request an OTP and receive it).
+ */
+export function checkLaunchBlockers({ root, sources }) {
+  if (sources.length === 0) {
+    return row('P8', Verdict.Fail, `no functions source under ${root}`);
+  }
+  const { names, lines, uses } = taggedExportUses({
+    sources,
+    tag: LAUNCH_BLOCKER_TAG,
+    check: 'P8',
+  });
+  for (const { at, head, tail } of uses) lines.push(`${at} ${head}${tail}`);
+  if (lines.length > 0) {
+    return row(
+      'P8',
+      Verdict.Fail,
+      'a launch blocker is still wired into the functions',
+      [...lines, LAUNCH_BLOCKER_HINT],
+    );
+  }
+  return row(
+    'P8',
+    Verdict.Pass,
+    names.length === 0
+      ? `no @${LAUNCH_BLOCKER_TAG} export in ${sources.length} files under ${root}`
+      : `${names.join(', ')}: never used`,
   );
 }
 
@@ -796,10 +926,12 @@ export function checkEmulatorOnly({ root, sources }) {
  * project's listings), `bundle()` (`{ dist, scripts }`), `config()`
  * (firebase.json) and `functionsSource()` (`{ root, sources }`). A read that
  * throws fails its check; P6 runs first and, failing, keeps P1–P3 from
- * reading at all — P7 reads the repository only, so it runs either way.
+ * reading at all — P7 and P8 read the repository only (one read, shared),
+ * so they run either way.
  */
 export async function runPreflight({ scope, projectId, env, read }) {
   const environment = checkEnvironment({ env, projectId });
+  const functionsSource = once(() => read.functionsSource());
   const jobs = {
     P1: async () => {
       const domain = await read.domain();
@@ -821,7 +953,8 @@ export async function runPreflight({ scope, projectId, env, read }) {
     P4: async () => checkBundle({ ...(await read.bundle()), projectId }),
     P5: async () => checkConnectSrc({ config: await read.config(), projectId }),
     P6: async () => environment,
-    P7: async () => checkEmulatorOnly(await read.functionsSource()),
+    P7: async () => checkEmulatorOnly(await functionsSource()),
+    P8: async () => checkLaunchBlockers(await functionsSource()),
   };
   return Promise.all(
     SCOPES[scope].map(async (check) => {
@@ -884,7 +1017,7 @@ export function renderTable({ projectId, scope, rows }) {
 /**
  * The banner the escape hatch prints instead of the table: what the
  * scope's checks would have proved, and the command that proves it — the
- * same scope, since a by-hand run defaults to `web` and would skip P7.
+ * same scope, since a by-hand run defaults to `web` and would skip P7 and P8.
  */
 export function skipBanner({ projectId, scope }) {
   const bar = '!'.repeat(78);

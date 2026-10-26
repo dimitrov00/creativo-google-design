@@ -314,6 +314,7 @@ describe('translateCodedError', () => {
     IdentityErrorCode.OtpRateLimited,
     IdentityErrorCode.RepositoryFailure,
     IdentityErrorCode.OtpSendFailure,
+    IdentityErrorCode.OtpSendUnavailable,
     IdentityErrorCode.OtpNotFound,
     IdentityErrorCode.OtpAlreadyConsumed,
     IdentityErrorCode.OtpExpired,
