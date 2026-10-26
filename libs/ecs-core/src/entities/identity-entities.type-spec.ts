@@ -20,7 +20,7 @@ import {
   ImpersonationStatus,
   type SearchFields,
 } from '@core/components';
-import type { CustomerId, UserId } from '@core/primitives';
+import type { CustomerId, OperationId, UserId } from '@core/primitives';
 import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
@@ -182,6 +182,13 @@ if (row.auditAction === AuditAction.OpsBackfill) {
 if (row.auditAction === AuditAction.BookingCommitted) {
   void row.placementLocationId;
 }
+/** Every row names its operation (WS-4.4): an id, or `null` for a trigger or backfill row. */
+export const auditOperationIdOf: OperationId | null = row.auditOperationId;
+/** The operation slot is the meta's — a root field, never nested, never optional. */
+export const auditOperationIdIsMeta: Equals<
+  AuditEntryMeta['auditOperationId'],
+  OperationId | null
+> = true;
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;

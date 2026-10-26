@@ -62,7 +62,6 @@ import {
 } from '../wire/booking.wire';
 import { settle } from '../wire/wire-read';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
@@ -213,7 +212,6 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       ...firestoreSettingsPorts(db),
       ...firestoreCouponPorts(db),
       ...firestoreAccountPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     };
   }

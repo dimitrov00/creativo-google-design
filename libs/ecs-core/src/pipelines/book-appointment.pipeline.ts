@@ -36,7 +36,6 @@ import {
 import type { AccountContact, Appointment } from '@core/entities';
 import type {
   AccountContactPorts,
-  AuditAppendPorts,
   PolicyReadPorts,
   ReadTx,
   TelemetryPorts,
@@ -54,8 +53,8 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
+  logUnaudited,
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
@@ -112,10 +111,10 @@ import {
  *   meanwhile (ALREADY_EXISTS) re-runs the whole transaction ONCE — it
  *   re-reads and finds the record — and is never answered as success; the
  *   same phone twice is one record, and a retried attempt is answered
- *   before anything is planned.
- * - **After the commit:** the act's rows (`attempt:<attemptId>` — the
- *   attempt id is required, WS-4.1), never fatal. A replay appends them again — the same ids, so
- *   nothing is written twice.
+ *   before anything is planned — and, LAST, the act's rows
+ *   (`attempt:<attemptId>` — the attempt id is required, WS-4.1),
+ *   `Create`d in the SAME plan (WS-1): they land with the booking or not at
+ *   all. A replay plans none — it never meets its own row.
  */
 
 /**
@@ -165,7 +164,6 @@ export type BookAppointmentPorts = TxPorts &
   WalkInKeyPorts &
   PolicyReadPorts &
   AccountContactPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 type Snapshot =
@@ -187,6 +185,8 @@ type Snapshot =
 type Decided = {
   readonly appointment: Appointment;
   readonly replayed: boolean;
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -265,6 +265,8 @@ export const bookAppointment =
       : [];
     const contacts = await ports.loadAccountContacts(accounts);
     if (!contacts.ok) return contacts;
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
     const committed = await runWithCustomerRetry(() =>
@@ -284,6 +286,7 @@ export const bookAppointment =
             contacts.value,
             nowUtcMs,
             ports.nextId,
+            ports.hash,
           ),
       ),
     );
@@ -293,19 +296,8 @@ export const bookAppointment =
       });
       return committed;
     }
-    const { appointment, replayed } = committed.value;
-    const fact: AuditFact = {
-      resourceId: AuditResourceId.forAppointment(appointment.id),
-      subjects: AuditSystem.subjectsOf(appointment),
-      changeKey: AuditSystem.changeKey.attempt(cmd.attemptId, appointment.id),
-      context: AuditContext.placement(
-        cmd.staffPlacement
-          ? AuditAction.BookingStaffCreated
-          : AuditAction.BookingCommitted,
-        appointment.locationId,
-      ),
-    };
-    await appendAuditFacts(ports, [fact], cmd.actor);
+    const { appointment, replayed, unaudited } = committed.value;
+    logUnaudited(ports, unaudited);
     return Result.ok({ appointmentId: appointment.id, replayed });
   };
 
@@ -395,11 +387,14 @@ function decideBooking(
   contacts: ReadonlyMap<UserId, AccountContact>,
   nowUtcMs: UtcEpochMs,
   nextId: () => string,
+  hash: (input: string) => string,
 ): Result<Decided, BookingError | TimeError> {
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
+    // A replay plans NO row: its rows landed with the first commit.
     return Result.ok({
       appointment: snapshot.existing,
       replayed: true,
+      unaudited: [],
       writes: [],
     });
   }
@@ -461,10 +456,31 @@ function decideBooking(
     },
   );
   if (!decided.ok) return decided;
-  const { id, ...body } = decided.value.appointment;
+  const appointment = decided.value.appointment;
+  const { id, ...body } = appointment;
+  const audit = AuditSystem.commitWrites(
+    [
+      {
+        resourceId: AuditResourceId.forAppointment(id),
+        subjects: AuditSystem.subjectsOf(appointment),
+        changeKey: AuditSystem.changeKey.attempt(cmd.attemptId),
+        operationId: cmd.operationId,
+        context: AuditContext.placement(
+          cmd.staffPlacement
+            ? AuditAction.BookingStaffCreated
+            : AuditAction.BookingCommitted,
+          appointment.locationId,
+        ),
+      },
+    ],
+    cmd.actor,
+    nowUtcMs,
+    hash,
+  );
   return Result.ok({
-    appointment: decided.value.appointment,
+    appointment,
     replayed: false,
+    unaudited: audit.unaudited,
     writes: [
       WriteOp.create(appointmentPath(id), body),
       ...busyMergeWrites(placement, decided.value.busyWrites, zone),
@@ -476,6 +492,7 @@ function decideBooking(
         nowUtcMs,
       ),
       ...CustomerRecordSystem.walkInCreates(walkIns, set.customers, nowUtcMs),
+      ...audit.writes,
     ],
   });
 }

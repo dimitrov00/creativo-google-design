@@ -2,6 +2,7 @@ import type { Actor, AuditContext, AuditTargetRef } from '@core/components';
 import type {
   AuditEntryId,
   AuditResourceId,
+  OperationId,
   UtcEpochMs,
 } from '@core/primitives';
 
@@ -11,13 +12,22 @@ import type {
  * body, so a retried attempt derives the same id and `create()` writes it
  * once (blueprint §2.6) — when it was recorded, and the resource the act
  * changed (`appointments` id, `users/{uid}`, `streakDefinitions/{id}` — the
- * {@link AuditResourceId} spellings). The verb is NOT here: `auditAction` is
- * the {@link AuditContext} slice's discriminator alone (Law 6.3).
+ * {@link AuditResourceId} spellings) — and the operation that caused it.
+ * The verb is NOT here: `auditAction` is the {@link AuditContext} slice's
+ * discriminator alone (Law 6.3).
  */
 export type AuditEntryMeta = {
   readonly id: AuditEntryId;
   readonly recordedAtUtcMs: UtcEpochMs;
   readonly resourceId: AuditResourceId;
+  /**
+   * The client-minted operation that caused the row (audit-hardening
+   * WS-4.4): a booking verb's operation id, a streak publish's request id,
+   * an own profile edit's transport id — `null` for a trigger or backfill
+   * row, or a call that sent none. Keeps its automatic single-field index
+   * (never in `fieldOverrides`): "every row of one operation" is a query.
+   */
+  readonly auditOperationId: OperationId | null;
 };
 
 /**

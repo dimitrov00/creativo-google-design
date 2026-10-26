@@ -12,7 +12,6 @@ import {
 import {
   AuditEntryId,
   AuditResourceId,
-  defect,
   type LocalDate,
   type PublishRequestId,
   Result,
@@ -44,7 +43,6 @@ import type {
   ReadTx,
 } from '@core/ports';
 import {
-  type AuditRowPlan,
   AuditSystem,
   type StreakNoticePolicy,
   StreakPublishSystem,
@@ -265,7 +263,7 @@ export const publishStreakDefinition =
             ),
             ...stamps(cmd.streakId, plan.stampVersions, nowUtcMs),
             WriteOp.set(headPath(cmd.streakId), plan.headBody),
-            ...auditCreates(plan.audit, ports),
+            ...AuditSystem.createsOf(plan.audit, ports.hash),
           ],
         });
       },
@@ -334,7 +332,7 @@ export const withdrawStreakDefinition =
           writes: [
             ...stamps(cmd.streakId, plan.stampVersions, nowUtcMs),
             WriteOp.set(headPath(cmd.streakId), plan.headBody),
-            ...auditCreates(plan.audit, ports),
+            ...AuditSystem.createsOf(plan.audit, ports.hash),
           ],
         });
       },
@@ -439,28 +437,6 @@ function stamps(
       WriteOp.update(versionPath(streakId, version), {
         withdrawnAtUtcMs: nowUtcMs,
       }),
-    );
-  }
-  return writes;
-}
-
-/** The act's rows, each `Create`d under `hash(idBasis)` — a replayed act derives the same id. */
-function auditCreates(
-  rows: readonly AuditRowPlan[],
-  ports: HashPorts,
-): readonly WriteOp[] {
-  const writes: WriteOp[] = [];
-  for (const { row, idBasis } of rows) {
-    writes.push(
-      WriteOp.create(
-        auditPath(
-          ports.hash(
-            idBasis ??
-              defect('a streak act’s audit row carries its change key'),
-          ),
-        ),
-        row,
-      ),
     );
   }
   return writes;

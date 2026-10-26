@@ -5,8 +5,10 @@ import type { ClientIssue } from '@core/components';
  * (`.claude/rules/ecs-pipelines.md`, blueprint §4.3), so a pipeline calls
  * `ports.log('warn', 'booking.rejected', { errorCode })` exactly as the rule's
  * example does. `fields?`/`context?` are optional FUNCTION parameters, which
- * the optional-property guard leaves legal; no `LogEvent`/`ErrorContext`
- * struct is invented.
+ * the optional-property guard leaves legal; no `ErrorContext` struct is
+ * invented. The messages are the `LogEvent` dictionary's values
+ * (`@core/primitives`, audit-hardening RU-8 / RU-9) — a vocabulary, not a
+ * struct: the `msg` parameter stays a `string`, verbatim.
  *
  * Implemented by `apps/functions/src/adapters/console-telemetry.adapter.ts`
  * over `firebase-functions/logger` today (§9 D11(a)); Pino and Sentry

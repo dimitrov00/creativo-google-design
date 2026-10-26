@@ -56,7 +56,6 @@ import {
 } from '@core/testing';
 import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
@@ -235,7 +234,6 @@ describe('a coupon grant is burned by the save that spends it (emulator)', () =>
       ...firestoreSettingsPorts(db),
       ...firestoreCouponPorts(db),
       ...firestoreAccountPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     };
   }

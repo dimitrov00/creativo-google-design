@@ -29,6 +29,7 @@ import {
   CouponId,
   GiftVoucherId,
   GrantStatus,
+  OperationId,
   SeatId,
   UserId,
   PriceCents,
@@ -75,6 +76,8 @@ import {
 const NOW = FIXTURE_NOW_UTC_MS;
 /** {@link NOW} as the fixture shop sees it — what a lifecycle move reads. */
 const NOW_SHOP = FIXTURE_NOW;
+/** The lifecycle act's operation id (WS-1) — type-forced, asserted nowhere here. */
+const OPERATION_ID = OperationId.of('op-billing-0001');
 /** The visit owner's client record (D29) — what a new grant must belong to. */
 const OWNER = customerOf(UserId.of('user-owner'));
 
@@ -202,6 +205,7 @@ describe('BillingSystem — an appointment’s discounts', () => {
           seatId: null,
           reason: null,
           windowHours: null,
+          operationId: OPERATION_ID,
         },
         NOW_SHOP,
       ),
@@ -304,6 +308,7 @@ describe('BillingSystem — the vouchers on an appointment', () => {
           seatId: null,
           reason: null,
           windowHours: null,
+          operationId: OPERATION_ID,
         },
         NOW_SHOP,
       ),

@@ -26,6 +26,9 @@ import { firestoreAuditPorts } from './firestore-audit.adapter';
 /**
  * `appendAudit`'s exactly-once write against the REAL Firestore emulator —
  * the successor of `lib/booking/audit.integration.spec.ts` (flip 1 §5.2).
+ * Its one caller is the operator backfill's per-call row (audit-hardening
+ * L2); the booking verbs' rows commit inside their own plan
+ * (`integration/audit-in-commit.integration.spec.ts`).
  *
  * The unit spec proves the logic over a fake that throws what the author
  * believes the SDK throws; this proves the belief — that a batch `create()`
@@ -65,6 +68,8 @@ function rowFor(
     ),
     recordedAtUtcMs,
     resourceId: RESOURCE,
+    // A backfill row — `appendAudit`'s one caller (L2) — names no operation.
+    auditOperationId: null,
     ...Actor.staff(UserId.of('dev-staff-georgi'), [Role.Barber]),
     ...AuditContext.placement(
       AuditAction.BookingCommitted,

@@ -50,6 +50,7 @@ import {
   GiftVoucherId,
   GrantStatus,
   LocationId,
+  LogEvent,
   OperationId,
   Result,
   SeatId,
@@ -57,6 +58,7 @@ import {
 } from '@core/primitives';
 import {
   BookingErrorCode,
+  RepositoryErrorCode,
   StaffEditErrorCode,
   TimeErrorCode,
 } from '@core/errors';
@@ -79,9 +81,11 @@ import {
 import {
   appointmentFixture,
   at,
+  auditRowsOf,
   barberBusyDayFixture,
   barberScheduleFixture,
   cents,
+  contendedCommit,
   duration,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -272,13 +276,17 @@ function rig(
 ) {
   const store = memoryStore(documents);
   const tx = memoryTxPorts(store);
+  // The rows the committed plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
   const codesAsked: string[] = [];
   const contactsAsked: (readonly UserId[])[] = [];
-  const run = editAppointment({
+  const telemetry = recordingTelemetry();
+  const contended = contendedCommit(tx.commit);
+  const pipeline = editAppointment({
     ...tx,
+    commit: contended.commit,
     walkInHash: fixtureWalkInHash,
-    ...recordingTelemetry(),
+    ...telemetry,
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     findCouponByCode: async (code) => {
       codesAsked.push(code);
@@ -294,12 +302,33 @@ function rig(
       };
       return Result.ok(new Map([[FIXTURE_IDS.client, maria]]));
     },
-    appendAudit: async (written) => {
-      rows.push(...written);
-    },
   });
-  return { store, tx, rows, codesAsked, contactsAsked, run };
+  const run: typeof pipeline = async (cmd) => {
+    const answer = await pipeline(cmd);
+    rows.splice(0, rows.length, ...auditRowsOf(tx.plans));
+    return answer;
+  };
+  return {
+    store,
+    tx,
+    rows,
+    telemetry,
+    codesAsked,
+    contactsAsked,
+    run,
+    decisions: contended.decisions,
+  };
 }
+
+/** The row a staff move of the fixture visit files for its client (`operation:<operationId>`). */
+const EDIT_ROW = fixtureHash(
+  AuditSystem.rowBasis(
+    AuditAction.BookingStaffMove,
+    FIXTURE_IDS.appointment,
+    FIXTURE_IDS.customer,
+    `operation:${OPERATION}`,
+  ),
+);
 
 function stored(appointment: Appointment) {
   return {
@@ -316,7 +345,7 @@ const readKeys = (tx: ReturnType<typeof rig>['tx']): ReadonlySet<string> =>
   );
 
 describe('editAppointment — the shop moving its own book', () => {
-  it('folds a move and re-decides it: ONE Update (revision, ledger) and the busy Set, audited as the staff verb', async () => {
+  it('folds a move and re-decides it: ONE Update (revision, ledger), the busy Set and, last, the staff verb’s row (WS-1)', async () => {
     const { store, tx, rows, run } = rig([...catalogue(), stored(visit())]);
     const answer = await run(command());
     expect(answer).toEqual({
@@ -333,7 +362,22 @@ describe('editAppointment — the shop moving its own book', () => {
     ).toEqual([
       [WriteAction.Update, PATH],
       [WriteAction.Set, `${Collections.BarberBusy}/${THURSDAY_KEY}`],
+      [WriteAction.Create, `${Collections.AuditLog}/${EDIT_ROW}`],
     ]);
+    expect(plan.at(-1)).toEqual({
+      writeAction: WriteAction.Create,
+      path: [Collections.AuditLog, EDIT_ROW],
+      body: {
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: FIXTURE_IDS.appointment,
+        auditOperationId: OPERATION,
+        ...RECEPTION,
+        auditAction: AuditAction.BookingStaffMove,
+        editRevision: 2,
+        auditTarget: 'CUSTOMER',
+        targetCustomerId: FIXTURE_IDS.customer,
+      },
+    });
     expect(store.get(PATH)).toMatchObject({
       startMinutes: at(11),
       utcEpochMs: utcMs('2026-10-01T11:00:00.000+03:00'),
@@ -366,13 +410,13 @@ describe('editAppointment — the shop moving its own book', () => {
           AuditAction.BookingStaffMove,
           FIXTURE_IDS.appointment,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.staffEdit(OPERATION, 2),
+          AuditSystem.changeKey.staffEdit(OPERATION),
         ),
       ),
     );
   });
 
-  it('keys the row `operation:<operationId>` — byte for byte today’s key, the id now required (WS-4.1, DEP-4)', async () => {
+  it('keys the row `operation:<operationId>` — the id required (WS-4.1), the key byte for byte today’s', async () => {
     const { rows, run } = rig([...catalogue(), stored(visit())]);
     expect((await run(command())).ok).toBe(true);
     expect(rows.map((row) => row.id)).toEqual([
@@ -426,7 +470,7 @@ describe('editAppointment — the shop moving its own book', () => {
     expect(tx.plans).toEqual([]);
   });
 
-  it('answers a re-sent intent with its original revision — before the stale check — and writes nothing', async () => {
+  it('answers a re-sent intent with its original revision — before the stale check — writes nothing and plans ZERO audit ops (WS-1)', async () => {
     const digest = fixtureHash(
       AppointmentEditSystem.digestBasis([MOVE_TO_ELEVEN]),
     ).slice(0, 16);
@@ -445,16 +489,79 @@ describe('editAppointment — the shop moving its own book', () => {
       },
     });
     expect(tx.plans).toEqual([[]]);
-    expect(rows[0]?.id).toBe(
-      fixtureHash(
-        AuditSystem.rowBasis(
-          AuditAction.BookingStaffMove,
-          FIXTURE_IDS.appointment,
-          FIXTURE_IDS.customer,
-          AuditSystem.changeKey.staffEdit(OPERATION, 5),
-        ),
-      ),
+    expect(rows).toEqual([]);
+  });
+
+  it('the same intent twice on one store: the second answers the first’s revision as a replay, ZERO audit ops', async () => {
+    const { tx, rows, run } = rig([...catalogue(), stored(visit())]);
+    const first = await run(command());
+    const second = await run(command());
+    expect(first).toEqual({
+      ok: true,
+      value: {
+        appointmentId: FIXTURE_IDS.appointment,
+        revision: 2,
+        replayed: false,
+      },
+    });
+    expect(second).toEqual({
+      ok: true,
+      value: {
+        appointmentId: FIXTURE_IDS.appointment,
+        revision: 2,
+        replayed: true,
+      },
+    });
+    expect(tx.plans[1]).toEqual([]);
+    expect(rows.map((row) => row.id)).toEqual([EDIT_ROW]);
+  });
+
+  it('commits the edit without a row when no verified actor is known, and logs it loudly', async () => {
+    const { store, tx, rows, telemetry, run } = rig([
+      ...catalogue(),
+      stored(visit()),
+    ]);
+    const answer = await run(command({ actor: null }));
+    expect(answer.ok).toBe(true);
+    expect(store.get(PATH)?.['revision']).toBe(2);
+    expect(
+      (tx.plans[0] ?? []).some((op) => op.path[0] === Collections.AuditLog),
+    ).toBe(false);
+    expect(rows).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: LogEvent.AuditActorMissing,
+        fields: {
+          action: AuditAction.BookingStaffMove,
+          resourceId: FIXTURE_IDS.appointment,
+        },
+      },
+    ]);
+  });
+
+  it('a Create of a row already there refuses the WHOLE edit as REPOSITORY_ALREADY_EXISTS — nothing applied (an id older than the ledger)', async () => {
+    const { store, tx, run } = rig([
+      ...catalogue(),
+      stored(visit()),
+      { path: [Collections.AuditLog, EDIT_ROW], body: { seeded: true } },
+    ]);
+    const answer = await run(command());
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      RepositoryErrorCode.AlreadyExists,
     );
+    expect(store.get(PATH)?.['revision']).toBe(1);
+    expect(tx.plans).toEqual([]);
+  });
+
+  it('a contention re-run of the decision derives the identical rows', async () => {
+    const { decisions, run } = rig([...catalogue(), stored(visit())]);
+    expect((await run(command())).ok).toBe(true);
+    expect(decisions).toHaveLength(2);
+    const auditOf = (plan: readonly WriteOp[] | undefined) =>
+      (plan ?? []).filter((op) => op.path[0] === Collections.AuditLog);
+    expect(auditOf(decisions[0])).toHaveLength(1);
+    expect(auditOf(decisions[1])).toEqual(auditOf(decisions[0]));
   });
 
   it('refuses a known name with another batch (operationId)', async () => {
@@ -1061,7 +1168,10 @@ describe('editAppointment — the shop moving its own book', () => {
     const docs = catalogue().filter(
       (doc) => doc.path[0] !== Collections.Customers,
     );
-    const { store, tx, contactsAsked, run } = rig([...docs, stored(visit())]);
+    const { store, tx, rows, contactsAsked, run } = rig([
+      ...docs,
+      stored(visit()),
+    ]);
     const answer = await run(
       command({
         commands: [
@@ -1081,6 +1191,12 @@ describe('editAppointment — the shop moving its own book', () => {
     );
     expect(answer.ok).toBe(true);
     expect(contactsAsked).toEqual([[FIXTURE_IDS.client]]);
+    // The contacts-first pass wrote nothing and planned no row; the second
+    // pass's ONE plan holds the record and, last, the row (WS-1).
+    expect(tx.plans).toHaveLength(2);
+    expect(tx.plans[0]).toEqual([]);
+    expect(tx.plans[1]?.at(-1)?.path[0]).toBe(Collections.AuditLog);
+    expect(rows).toHaveLength(1);
     expect(
       store.get(`${Collections.Customers}/${FIXTURE_IDS.customer}`),
     ).toMatchObject({

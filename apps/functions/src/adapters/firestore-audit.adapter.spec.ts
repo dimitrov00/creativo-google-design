@@ -23,12 +23,16 @@ import { firestoreAuditPorts } from './firestore-audit.adapter';
 
 const AT = unwrapOk(UtcEpochMs.of(1_790_000_000_000));
 
-/** One flat row, as `AuditSystem.plan` builds it and the pipeline ids it. */
+/**
+ * One flat row, as `AuditSystem.plan` builds it and the pipeline ids it —
+ * a backfill row names no operation (`auditOperationId: null`, WS-4.4).
+ */
 function row(id: string, target: string | null): AuditEntry {
   return {
     id: AuditEntryId.of(id),
     recordedAtUtcMs: AT,
     resourceId: AuditResourceId.forAppointment(AppointmentId.of('a1')),
+    auditOperationId: null,
     ...Actor.staff(UserId.of('u-staff'), [Role.Receptionist]),
     ...AuditContext.placement(
       AuditAction.BookingStaffCreated,
@@ -46,7 +50,7 @@ const body = (entry: AuditEntry): Record<string, unknown> => {
 };
 
 describe('firestoreAuditPorts', () => {
-  describe('appendAudit — after the commit, created, never fatal', () => {
+  describe('appendAudit — the backfill’s after-commit row, created, never fatal', () => {
     it('creates each row at its derived id, the body the flat entry minus its id', async () => {
       const fake = createProjectionFirestore();
       const telemetry = recordingTelemetry();

@@ -90,6 +90,8 @@ function rowOf(
     ),
     recordedAtUtcMs: EVENT_AT,
     resourceId,
+    // A trigger row names no operation (WS-4.4).
+    auditOperationId: null,
     ...Actor.user(OWNER),
     ...AuditContext.profile(AuditAction.ProfileUpdated, fields),
     ...AuditTargetRef.user(OWNER),

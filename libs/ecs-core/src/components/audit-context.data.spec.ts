@@ -93,10 +93,9 @@ describe('AuditContext — one flat variant per verb family, every field present
       auditAction: 'BOOKING_STAFF_MOVE',
       editRevision: 7,
     });
-    expect(AuditContext.rescheduled(3, true)).toEqual({
+    expect(AuditContext.rescheduled(3)).toEqual({
       auditAction: 'BOOKING_RESCHEDULED',
       rescheduleRevision: 3,
-      loggedOnRetry: true,
     });
     expect(
       AuditContext.cancelled(CancellationReason.ClientChangedPlans),

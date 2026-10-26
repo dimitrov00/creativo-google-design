@@ -121,14 +121,10 @@ export const AuditContext = {
   ): AuditContext.StaffEdit {
     return { auditAction, editRevision };
   },
-  rescheduled(
-    rescheduleRevision: number,
-    loggedOnRetry: boolean,
-  ): AuditContext.Rescheduled {
+  rescheduled(rescheduleRevision: number): AuditContext.Rescheduled {
     return {
       auditAction: AuditAction.BookingRescheduled,
       rescheduleRevision,
-      loggedOnRetry,
     };
   },
   cancelled(cancellationReason: CancellationReason): AuditContext.Cancelled {
@@ -212,11 +208,13 @@ export namespace AuditContext {
     readonly auditAction: StaffEditAction;
     readonly editRevision: number;
   };
-  /** A move; `loggedOnRetry` when the row was written by a replay of it. */
+  /**
+   * A move, and the revision it stamped. A replay writes no row (WS-1: the
+   * row commits with the move, so a replay has nothing left to log).
+   */
   export type Rescheduled = {
     readonly auditAction: typeof AuditAction.BookingRescheduled;
     readonly rescheduleRevision: number;
-    readonly loggedOnRetry: boolean;
   };
   /** A client cancellation; `cancellationReason` is the cancellation reason CODE. */
   export type Cancelled = {

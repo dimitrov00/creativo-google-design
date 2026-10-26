@@ -47,8 +47,9 @@ export const auditProfileChange =
     if (!planned.ok) return planned;
     if (planned.value === null) return Result.ok({ rows: 0 });
     const { row, idBasis } = planned.value;
-    // A profile row always has its basis: the event id is its change key.
-    const id = AuditEntryId.of(ports.hash(idBasis ?? cmd.eventId));
+    // A profile row's basis is keyed by the event id (its change key, RU-41);
+    // the row names no operation (`auditOperationId: null` — a trigger row).
+    const id = AuditEntryId.of(ports.hash(idBasis));
     const entry: AuditEntry = { id, ...row };
     const written = await ports.createAuditRows([entry]);
     return written.ok ? Result.ok({ rows: 1 }) : written;

@@ -37,12 +37,13 @@ import {
   Collections,
 } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
-import type { BackfillRequest } from '@core/systems';
+import { AuditSystem, type BackfillRequest } from '@core/systems';
 import {
   appointmentFixture,
   customerOf,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
+  fixtureHash,
   localDate,
   locationFixture,
   memoryDefaultLocationPorts,
@@ -117,6 +118,7 @@ function commitRow(
     id: AuditEntryId.of(`row-${appointmentId}`),
     recordedAtUtcMs: WORKED_AT,
     resourceId: AuditResourceId.forAppointment(AppointmentId.of(appointmentId)),
+    auditOperationId: null,
     ...Actor.user(ANA),
     ...AuditContext.placement(
       auditAction as typeof AuditAction.BookingCommitted,
@@ -552,6 +554,8 @@ describe('runBackfill — one audit row per call', () => {
     expect(audit[0]).toMatchObject({
       recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
       resourceId: 'backfillJobs/subjectMirror',
+      // An ops call carries no client operation id (WS-4.4).
+      auditOperationId: null,
       ...ACTOR,
       ...AuditContext.backfill({
         backfillJobName: BackfillJobName.SubjectMirror,
@@ -607,8 +611,18 @@ describe('runBackfill — one audit row per call', () => {
       run(command(resume(BackfillJobName.SubjectMirror)), unbounded),
     ).rejects.toBe(outage);
     expect(audit).toHaveLength(1);
+    // A FAILED call keys its row by a minted id (RU-41) — hashed like every
+    // other row, never the raw mint (`nextId` no longer names a row).
     expect(audit[0]).toMatchObject({
-      id: 'rnd-1',
+      id: fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.OpsBackfill,
+          'backfillJobs/subjectMirror',
+          null,
+          AuditSystem.changeKey.backfillFailed('rnd-1'),
+        ),
+      ),
+      auditOperationId: null,
       backfillOutcome: BackfillOutcome.Failed,
       backfillFailureCode: 'internal',
       backfillProcessed: null,
@@ -626,6 +640,14 @@ describe('runBackfill — one audit row per call', () => {
       backfillOutcome: BackfillOutcome.Failed,
       backfillFailureCode: 'unavailable',
     });
+  });
+
+  it('keys every FAILED call apart — no result to key on, each call its own act (RU-41)', async () => {
+    const { audit, run } = rig([visitOf('a1', ANA)], { failJobRead: true });
+    await run(command(resume(BackfillJobName.SubjectMirror)), unbounded);
+    await run(command(resume(BackfillJobName.SubjectMirror)), unbounded);
+    expect(audit).toHaveLength(2);
+    expect(audit[0]?.id).not.toBe(audit[1]?.id);
   });
 
   it('reads no zone for a mirror-only page — the clock is a stats page’s, loaded on first use', async () => {

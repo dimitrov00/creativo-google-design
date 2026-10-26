@@ -26,6 +26,7 @@ import {
   AppointmentId,
   AuditResourceId,
   BarberId,
+  OperationId,
   SeatId,
   UserId,
   LocalDate,
@@ -86,6 +87,8 @@ const NEXT_DAY = nowAt(plus(RESOLVED_AT, 86_400_000));
 /** Before the visit's day — what "now" is when a booking is made. */
 const BOOKING_NOW = plus(today(0), -30 * 86_400_000);
 const MINUTE = 60_000;
+/** The act's client-minted name — what every audit fact is keyed by (WS-1). */
+const OP = OperationId.of('op-lifecycle-0001');
 
 let seq = 0;
 function nextSeatId(): SeatId {
@@ -184,7 +187,14 @@ function request(
   to: BookingStatus,
   overrides: Partial<LifecycleTransitionRequest> = {},
 ): LifecycleTransitionRequest {
-  return { to, seatId: null, reason: null, windowHours: null, ...overrides };
+  return {
+    to,
+    seatId: null,
+    reason: null,
+    windowHours: null,
+    operationId: OP,
+    ...overrides,
+  };
 }
 
 /** ONE seat called off — `reason` filed with the window in force. */
@@ -344,11 +354,11 @@ describe('AppointmentLifecycleSystem — the revision survives every verb', () =
     for (const revision of [7, 0]) {
       const copy = visit([seat()], CONFIRMED, { revision });
       const arrived = unwrapOk(
-        AppointmentLifecycleSystem.markArrived(copy, RESOLVED_AT),
+        AppointmentLifecycleSystem.markArrived(copy, RESOLVED_AT, OP),
       );
       expect(arrived.appointment.revision).toBe(revision);
       const cleared = unwrapOk(
-        AppointmentLifecycleSystem.clearArrival(arrived.appointment),
+        AppointmentLifecycleSystem.clearArrival(arrived.appointment, OP),
       );
       expect(cleared.appointment.revision).toBe(revision);
       const completed = unwrapOk(
@@ -456,6 +466,7 @@ describe('AppointmentLifecycleSystem — cancel', () => {
         CancellationReason.Other,
         hourCount(6),
         RESOLVED_AT,
+        OP,
       ),
     );
     expect(step.appointment.seats[0]).toMatchObject({
@@ -467,6 +478,34 @@ describe('AppointmentLifecycleSystem — cancel', () => {
     });
   });
 
+  it('files ONE fact for everyone on the visit, keyed by the operation — never by the instant (WS-1)', () => {
+    const appointment = party();
+    const at = (instant: UtcEpochMs) =>
+      unwrapOk(
+        AppointmentLifecycleSystem.cancelByClient(
+          appointment,
+          CancellationReason.Other,
+          hourCount(6),
+          instant,
+          OP,
+        ),
+      ).auditFacts;
+    expect(at(RESOLVED_AT)).toEqual([
+      {
+        resourceId: AuditResourceId.forAppointment(appointment.id),
+        subjects: AuditSystem.subjectsOf(appointment),
+        changeKey: `cancel:${OP}`,
+        operationId: OP,
+        context: {
+          auditAction: AuditAction.BookingCancelled,
+          cancellationReason: 'OTHER',
+        },
+      },
+    ]);
+    // A retried attempt a minute later is the same act: the same key.
+    expect(at(plus(RESOLVED_AT, MINUTE))).toEqual(at(RESOLVED_AT));
+  });
+
   it('plans ONE root update: the new variant set, the old variant’s fields deleted', () => {
     const before = withStatus(CONFIRMED);
     const step = unwrapOk(
@@ -475,6 +514,7 @@ describe('AppointmentLifecycleSystem — cancel', () => {
         CancellationReason.Other,
         hourCount(6),
         RESOLVED_AT,
+        OP,
       ),
     );
     expect(step.writes).toHaveLength(1);
@@ -852,17 +892,17 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('takes an arrival stamp back, and only while the visit is live', () => {
     const live = withStatus(CONFIRMED);
     const arrived = unwrapOk(
-      AppointmentLifecycleSystem.markArrived(live, live.utcEpochMs),
+      AppointmentLifecycleSystem.markArrived(live, live.utcEpochMs, OP),
     );
     expect(arrived.appointment.arrivedAtUtcMs).not.toBeNull();
     const cleared = unwrapOk(
-      AppointmentLifecycleSystem.clearArrival(arrived.appointment),
+      AppointmentLifecycleSystem.clearArrival(arrived.appointment, OP),
     );
     expect(cleared.appointment.arrivedAtUtcMs).toBeNull();
     // Idempotent: clearing what was never set is a no-op.
-    expect(AppointmentLifecycleSystem.clearArrival(live).ok).toBe(true);
+    expect(AppointmentLifecycleSystem.clearArrival(live, OP).ok).toBe(true);
     expect(
-      AppointmentLifecycleSystem.clearArrival(withStatus(COMPLETED)).ok,
+      AppointmentLifecycleSystem.clearArrival(withStatus(COMPLETED), OP).ok,
     ).toBe(false);
   });
 
@@ -896,16 +936,17 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 });
 
 describe('AppointmentLifecycleSystem — arrival', () => {
-  it('stamps the first arrival and audits it once; a second tap changes nothing', () => {
+  it('stamps the first arrival and audits it once, keyed by its operation; a second tap changes nothing', () => {
     const live = withStatus(CONFIRMED);
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markArrived(live, RESOLVED_AT),
+      AppointmentLifecycleSystem.markArrived(live, RESOLVED_AT, OP),
     );
     expect(first.appointment.arrivedAtUtcMs).toBe(RESOLVED_AT);
     expect(first.auditFacts).toEqual([
       expect.objectContaining({
         context: { auditAction: AuditAction.BookingStaffArrived },
-        changeKey: `arrived:${RESOLVED_AT}`,
+        changeKey: `arrived:${OP}`,
+        operationId: OP,
       }),
     ]);
     expect(first.writes[0]).toMatchObject({
@@ -916,6 +957,7 @@ describe('AppointmentLifecycleSystem — arrival', () => {
       AppointmentLifecycleSystem.markArrived(
         first.appointment,
         plus(RESOLVED_AT, MINUTE),
+        OP,
       ),
     );
     expect(again.appointment.arrivedAtUtcMs).toBe(RESOLVED_AT);
@@ -929,22 +971,26 @@ describe('AppointmentLifecycleSystem — arrival', () => {
         AppointmentLifecycleSystem.markArrived(
           withStatus(COMPLETED),
           RESOLVED_AT,
+          OP,
         ),
       ),
     ).toEqual(SchedulingError.appointmentNotArrivable(BookingStatus.Completed));
   });
 
-  it('keys an undo by the stamp it cleared', () => {
+  it('keys an undo by its own operation — never by the stamp it cleared (WS-1)', () => {
     const arrived = visit([seat()], CONFIRMED, {
       arrivedAtUtcMs: unwrapOk(UtcEpochMs.of(123)),
     });
-    const cleared = unwrapOk(AppointmentLifecycleSystem.clearArrival(arrived));
-    expect(cleared.auditFacts[0]?.changeKey).toBe('unarrived:123');
+    const cleared = unwrapOk(
+      AppointmentLifecycleSystem.clearArrival(arrived, OP),
+    );
+    expect(cleared.auditFacts[0]?.changeKey).toBe(`unarrived:${OP}`);
+    expect(cleared.auditFacts[0]?.operationId).toBe(OP);
   });
 });
 
 describe('AppointmentLifecycleSystem.transition — the staff verbs and their facts', () => {
-  it('names the verb, the reason CODE and the seat, keyed by the seat and the instant', () => {
+  it('names the verb, the reason CODE and the seat, keyed by the operation and the seat', () => {
     const appointment = party();
     const seatId = seatIdAt(appointment, 1);
     const step = unwrapOk(
@@ -962,7 +1008,8 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
       {
         resourceId: AuditResourceId.forAppointment(appointment.id),
         subjects: AuditSystem.subjectsOfSeats(appointment.seats, seatId),
-        changeKey: `transition:${seatId}:${RESOLVED_AT}`,
+        changeKey: `transition:${OP}:${seatId}`,
+        operationId: OP,
         context: {
           auditAction: AuditAction.BookingStaffCancelled,
           transitionReason: 'CLIENT_UNWELL',
@@ -994,7 +1041,7 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
         ),
       );
       expect(step.auditFacts[0]?.context.auditAction).toBe(action);
-      expect(step.auditFacts[0]?.changeKey).toMatch(/^transition:party:/);
+      expect(step.auditFacts[0]?.changeKey).toBe(`transition:${OP}`);
     }
   });
 

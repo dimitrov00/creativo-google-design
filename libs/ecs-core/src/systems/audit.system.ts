@@ -12,12 +12,16 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
+  WriteOp,
 } from '@core/components';
 import {
   Result,
   type AppointmentId,
+  AuditEntryId,
   AuditResourceId,
+  type ClientOperationId,
   type CustomerId,
+  defect,
   type OperationId,
   type PublishRequestId,
   type SeatId,
@@ -27,7 +31,11 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
-import type { Appointment, AuditEntryMeta } from '@core/entities';
+import {
+  type Appointment,
+  type AuditEntryMeta,
+  Collections,
+} from '@core/entities';
 import { type EditCommandRequest } from './appointment-edit.system';
 
 /**
@@ -74,14 +82,18 @@ function account(customerId: CustomerId): AuditAccountSubject {
  *
  * `changeKey` is what makes the act ONE logical change — the same on every
  * replay, different for every other change (the companion derivations of
- * {@link AuditSystem.changeKey}). `null` is a caller with no replay to
- * recognise: each row gets a fresh id from the pipeline's `nextId`.
+ * {@link AuditSystem.changeKey}). Never null (RU-41): a booking verb's key
+ * derives from its operation id, a failed backfill call's from a minted id
+ * — a fact with no key would be a row nobody can recognise again.
+ * `operationId` is the operation that caused the act (WS-4.4), copied onto
+ * every row it fans out to (`auditOperationId`); `null` for a backfill.
  */
 export type AuditFact = {
   readonly resourceId: AuditResourceId;
   /** The seats the act touched, guests included; the plan picks the people. */
   readonly subjects: readonly AuditSubject[];
-  readonly changeKey: string | null;
+  readonly changeKey: string;
+  readonly operationId: OperationId | null;
   readonly context: AuditContext;
 };
 
@@ -97,14 +109,26 @@ export type AuditRow = Omit<AuditEntryMeta, 'id'> &
   AuditTargetRef;
 
 /**
- * One planned row and the basis of its id: the pipeline sets
- * `id = hash(idBasis)` and writes it with `create()`, so a retried attempt
- * derives the same id and never writes twice; `null` is a fact without a
- * change key, whose id the pipeline mints (`nextId`).
+ * One planned row and the basis of its id: `id = hash(idBasis)`, written
+ * with `create()` ({@link AuditSystem.createsOf}), so a retried attempt
+ * derives the same id. Never null (RU-41).
  */
 export type AuditRowPlan = {
   readonly row: AuditRow;
-  readonly idBasis: string | null;
+  readonly idBasis: string;
+};
+
+/**
+ * An act's audit rows as entries of its OWN commit plan (WS-1): one
+ * `WriteOp.create([auditLog, hash(idBasis)], row)` per row, appended LAST to
+ * the plan the transaction commits — the rows land with the act or not at
+ * all. `unaudited` holds the facts dropped for want of a verified actor:
+ * the act still commits (unchanged behaviour); the pipeline logs each one
+ * (`LogEvent.AuditActorMissing`) after the commit lands.
+ */
+export type AuditCommit = {
+  readonly writes: readonly WriteOp[];
+  readonly unaudited: readonly AuditFact[];
 };
 
 /** Every `authType` tag, dictionary order — the scan order of {@link authTypeOf}. */
@@ -165,8 +189,12 @@ const AUDITED_PROFILE_FIELDS: readonly RegistrationField[] = [
 /** A Firebase uid as this app mints and accepts them (the commit path's shape). */
 const UID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
 
-/** The id basis version — a later derivation never collides with a `v1` row. */
-const ROW_BASIS_TAG = 'audit-row/v1';
+/**
+ * The id basis version — a later derivation never collides with an earlier
+ * one. `v2` (WS-1, RU-6): the cancel / transition / arrival / tip keys
+ * derive from the act's operation id, never from an instant.
+ */
+const ROW_BASIS_TAG = 'audit-row/v2';
 
 /** Absent, `null` and `''` are one fact — "no value" — however a writer spelled it. */
 function comparable(value: unknown): string {
@@ -222,14 +250,16 @@ function targets(
 /**
  * The audit log's pure half (`audit.ts:65-178`, `audit-profile-changes.ts`):
  * who gets a row, what each row says, and the basis each row's id is hashed
- * from. No `crypto` here — the pipeline calls `hash(idBasis)`; no clock —
- * `nowUtcMs` is a parameter (an audit row has no shop clock, F-5); no I/O —
- * the rows go to `AppendAudit`.
+ * from. No `crypto` here — `hash` is a parameter; no clock — `nowUtcMs` is
+ * a parameter (an audit row has no shop clock, F-5); no I/O — the rows are
+ * `WriteOp.create` entries of the act's own commit plan
+ * ({@link AuditSystem.commitWrites}), or go to `AppendAudit` (the backfill)
+ * and `CreateAuditRows` (the profile trigger).
  */
 export const AuditSystem = {
   /**
-   * The basis of one person's row id for one logical change — today's
-   * `auditEntryIdFor` minus the SHA-256: `JSON.stringify(['audit-row/v1',
+   * The basis of one person's row id for one logical change — the legacy
+   * row-id derivation minus the SHA-256: `JSON.stringify(['audit-row/v2',
    * action, resourceId, targetId, changeKey])` (the target's id text: a
    * client record for a booking act, an account for a profile act). The JSON
    * array keeps the parts unambiguous (`("a:b","c")` and `("a","b:c")` never
@@ -243,7 +273,8 @@ export const AuditSystem = {
    * The rows the facts write, one per person per fact: every row of one fact
    * shares the actor, the verb, the instant and the context; only the target
    * slice differs — `AuditTargetRef.Customer` (D29), which is what makes
-   * "everything done to Maria" one `targetCustomerId` query. A fact whose verb is not an audited one is refused
+   * "everything done to Maria" one `targetCustomerId` query; every row
+   * carries the fact's operation (`auditOperationId`). A fact whose verb is not an audited one is refused
    * whole rather than written half-formed (`AuditEntry.create`'s
    * empty-action guard).
    */
@@ -266,20 +297,66 @@ export const AuditSystem = {
           row: {
             recordedAtUtcMs: nowUtcMs,
             resourceId: fact.resourceId,
+            auditOperationId: fact.operationId,
             ...actor,
             ...fact.context,
             ...(target === null
               ? AuditTargetRef.none()
               : AuditTargetRef.customer(target)),
           },
-          idBasis:
-            fact.changeKey === null
-              ? null
-              : rowBasis(action, fact.resourceId, target, fact.changeKey),
+          idBasis: rowBasis(action, fact.resourceId, target, fact.changeKey),
         });
       }
     }
     return Result.ok(rows);
+  },
+
+  /**
+   * The planned rows as entries of a commit plan: one
+   * `WriteOp.create([auditLog, hash(idBasis)], row)` each, in plan order.
+   * A replayed act derives the same ids — so a replay must plan NO row
+   * (its own replay detection decides first): inside a transaction a
+   * `Create` of an existing row refuses the whole act
+   * (`REPOSITORY_ALREADY_EXISTS`), a tripwire that never fires on a
+   * legitimate replay.
+   */
+  createsOf(
+    plans: readonly AuditRowPlan[],
+    hash: (input: string) => string,
+  ): readonly WriteOp[] {
+    const writes: WriteOp[] = [];
+    for (let i = 0; i < plans.length; i++) {
+      const plan = plans[i] as AuditRowPlan;
+      writes.push(
+        WriteOp.create(
+          [Collections.AuditLog, AuditEntryId.of(hash(plan.idBasis))],
+          plan.row,
+        ),
+      );
+    }
+    return writes;
+  },
+
+  /**
+   * An act's audit rows for its own commit plan (WS-1): {@link plan} then
+   * {@link createsOf}. With no verified actor the act still commits, with
+   * no row: every fact comes back `unaudited` for the pipeline to log. The
+   * verb sets are closed (every fact's verb comes from a constant of its
+   * verb), so a fact the planner refuses is a programmer defect, never a
+   * value (precedent: `StreakPublishSystem`'s rows).
+   */
+  commitWrites(
+    facts: readonly AuditFact[],
+    actor: Actor | null,
+    nowUtcMs: UtcEpochMs,
+    hash: (input: string) => string,
+  ): AuditCommit {
+    if (facts.length === 0) return { writes: [], unaudited: [] };
+    if (actor === null) return { writes: [], unaudited: facts };
+    const planned = AuditSystem.plan(facts, actor, nowUtcMs);
+    return planned.ok
+      ? { writes: AuditSystem.createsOf(planned.value, hash), unaudited: [] }
+      : defect(`audit entry refused by domain: ${planned.error.errorCode}`);
   },
 
   /**
@@ -345,52 +422,56 @@ export const AuditSystem = {
   },
 
   /**
-   * Each verb's change key, carried over VERBATIM — one per verb, so a
-   * retried attempt yields the same row ids and a different change never
-   * does. None of them includes a per-attempt instant the verb's own key
-   * does not already carry.
+   * Each verb's change key — one per verb, derived from the client-minted
+   * name of the ONE act (WS-1, RU-6), never from an instant: a retried
+   * attempt yields the same row ids and a different act never does. The
+   * act's own replay detection runs first, so a replay plans no row at all.
    */
   changeKey: {
-    /** A commit (`commit-booking.ts:222`): the attempt id, else the appointment's. */
-    attempt(attemptId: string | null, appointmentId: AppointmentId): string {
-      return `attempt:${attemptId ?? appointmentId}`;
+    /** A commit (`commit-booking.ts:222`): the attempt id — the appointment's own id (WS-4.1). */
+    attempt(attemptId: AppointmentId): string {
+      return `attempt:${attemptId}`;
     },
-    /** A named move (`reschedule-appointment.ts:109`). */
-    move(attemptId: string): string {
+    /** A move (`reschedule-appointment.ts:109`): its attempt id. */
+    move(attemptId: ClientOperationId): string {
       return `move:${attemptId}`;
     },
-    /** An unnamed move or edit: the revision its transaction stamped. */
-    revision(revision: number): string {
-      return `revision:${revision}`;
+    /** A staff edit (`staffEditChangeKey`): its operation id (RU-5). */
+    staffEdit(operationId: OperationId): string {
+      return `operation:${operationId}`;
     },
-    /** A staff edit (`staffEditChangeKey`): its operation id, else its revision. */
-    staffEdit(operationId: OperationId | null, revision: number): string {
-      return operationId === null
-        ? `revision:${revision}`
-        : `operation:${operationId}`;
-    },
-    /** A client cancel (`cancel-appointment.ts:234`): the instant it stamped. */
-    cancelled(cancelledAtUtcMs: UtcEpochMs): string {
-      return `cancelled:${cancelledAtUtcMs}`;
+    /** A client cancel: its operation id. */
+    cancel(operationId: OperationId): string {
+      return `cancel:${operationId}`;
     },
     /**
-     * A staff lifecycle verb (`transition-appointment.ts:517`) — the seat is
-     * in the key because one person can hold two seats.
+     * A staff lifecycle verb: its operation id, and the seat for a per-seat
+     * act (one person can hold two seats); the whole party has none.
      */
-    transition(seatId: SeatId | null, decidedAtUtcMs: UtcEpochMs): string {
-      return `transition:${seatId !== null && seatId.length > 0 ? seatId : 'party'}:${decidedAtUtcMs}`;
+    transition(operationId: OperationId, seatId: SeatId | null): string {
+      return seatId !== null && seatId.length > 0
+        ? `transition:${operationId}:${seatId}`
+        : `transition:${operationId}`;
     },
-    /** An arrival stamped (`mark-arrived.ts:118`). */
-    arrived(stampUtcMs: UtcEpochMs): string {
-      return `arrived:${stampUtcMs}`;
+    /** An arrival stamped: its operation id. */
+    arrived(operationId: OperationId): string {
+      return `arrived:${operationId}`;
     },
-    /** An arrival taken back (`clear-arrival.ts:88`): the stamp it cleared. */
-    unarrived(clearedStampUtcMs: UtcEpochMs): string {
-      return `unarrived:${clearedStampUtcMs}`;
+    /** An arrival taken back: its operation id. */
+    unarrived(operationId: OperationId): string {
+      return `unarrived:${operationId}`;
     },
-    /** A tip recorded or cleared (`record-seat-tip.ts:155`). */
-    tip(seatId: SeatId, recordedAtUtcMs: UtcEpochMs): string {
-      return `tip:${seatId}:${recordedAtUtcMs}`;
+    /** A tip recorded or cleared: its operation id and the seat. */
+    tip(operationId: OperationId, seatId: SeatId): string {
+      return `tip:${operationId}:${seatId}`;
+    },
+    /**
+     * A FAILED backfill call (RU-41): one row per call, no result to key on,
+     * every call a distinct act — the one minted key, built in the one
+     * pipeline that stays off the commit plan (L2).
+     */
+    backfillFailed(mintedId: string): string {
+      return `backfill-failed:${mintedId}`;
     },
     /** A streak publish or withdraw: the client's request id. */
     publish(requestId: PublishRequestId): string {
@@ -510,6 +591,7 @@ export const AuditSystem = {
       row: {
         recordedAtUtcMs: change.eventAtUtcMs ?? nowUtcMs,
         resourceId,
+        auditOperationId: null,
         ...change.writer,
         ...AuditContext.profile(action, change.fields),
         ...AuditTargetRef.user(change.ownerUserId),
@@ -548,14 +630,16 @@ export const AuditSystem = {
    * The ONE row an owner's own profile edit writes inside `updateProfile`'s
    * transaction (4A-16): `PROFILE_UPDATED`, credited to the owner
    * (`Actor.user`), the changed field NAMES its only context, stamped with
-   * the edit's instant; its id basis keyed by
-   * {@link AuditSystem.changeKey.ownProfileEdit}. `null` when no audited
-   * field changed — an unchanged edit writes nothing.
+   * the edit's instant, naming the call's transport operation id
+   * (`operationId`, `null` when the call sent none — RU-21); its id basis
+   * keyed by {@link AuditSystem.changeKey.ownProfileEdit}. `null` when no
+   * audited field changed — an unchanged edit writes nothing.
    */
   planOwnProfileEdit(
     ownerUserId: UserId,
     fields: readonly RegistrationField[],
     nowUtcMs: UtcEpochMs,
+    operationId: OperationId | null,
   ): AuditRowPlan | null {
     if (fields.length === 0) return null;
     const action = AuditAction.ProfileUpdated;
@@ -564,6 +648,7 @@ export const AuditSystem = {
       row: {
         recordedAtUtcMs: nowUtcMs,
         resourceId,
+        auditOperationId: operationId,
         ...Actor.user(ownerUserId),
         ...AuditContext.profile(action, fields),
         ...AuditTargetRef.user(ownerUserId),

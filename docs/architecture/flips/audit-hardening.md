@@ -1808,6 +1808,11 @@ message, stack }` scrubbed (RU-38: an `Error('… +359888123456 a@b.bg …')`
 
 ---
 
+### 4.1 Added at integration (spec changes on purpose found by the stage integrators)
+
+- **C1 (WS-4.1):** listed under DEP-4 ("Also changed on purpose").
+- **C2 (WS-1 + WS-4.4):** the `logUnaudited` cases in `booking-read-set.pipeline.spec.ts` replace the deleted `appendAuditFacts` describe (DEP-5); `log-event.data.spec.ts` also pins that every value is unique and the "dropped" pair that `reporting-error-handler.ts` classifies on (RU-9); the book, reschedule and edit contention re-run cases compare the audit rows only, not the whole plan (their seat and decision ids come from `nextId`, RU-7).
+
 ## 5. DEPARTURES
 
 - **DEP-1 (P0, WS-0) — a deployed sign-in refuses instead of logging the

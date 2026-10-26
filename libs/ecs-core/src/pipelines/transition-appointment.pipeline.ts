@@ -31,7 +31,6 @@ import {
   QueryOp,
 } from '@core/entities';
 import type {
-  AuditAppendPorts,
   PolicyReadPorts,
   ReadTx,
   TelemetryPorts,
@@ -40,6 +39,7 @@ import type {
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
+  AuditSystem,
   BillingSystem,
   BusySystem,
   type BusyWrite,
@@ -47,9 +47,9 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   busyMergeWrites,
   grantReleaseWrites,
+  logUnaudited,
   type PlacementSet,
   readAppointment,
   readDiscountGrants,
@@ -113,9 +113,11 @@ import {
  *   zone's, Law 7.2 — the rebuild cannot stamp one either). Every other
  *   edge writes no busy day — occupancy leaves through `rebuildBusy`
  *   (F1-2).
- * - **Audit:** after the commit, the system's facts
- *   (`transition:<seatId|party>:<decidedAtUtcMs>`). No version CAS — the
- *   status graph refuses a transition already applied (§4.1).
+ * - **Audit:** the system's facts, `Create`d LAST in the SAME plan (WS-1 —
+ *   they land with the move or not at all), keyed by the act's operation id
+ *   (`transition:<operationId>` for the party, `…:<seatId>` for one seat).
+ *   No version CAS — the status graph refuses a transition already applied
+ *   (§4.1), so a replay never reaches its own row (RU-4).
  */
 
 export type TransitionAppointmentCommand = {
@@ -138,7 +140,6 @@ export type TransitionAppointmentAnswer = {
 
 export type TransitionAppointmentPorts = TxPorts &
   PolicyReadPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 type Snapshot = {
@@ -152,7 +153,8 @@ type Snapshot = {
 };
 
 type Decided = {
-  readonly auditFacts: readonly AuditFact[];
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -243,7 +245,9 @@ export const transitionAppointment =
         });
       }
     }
-    // ONE instant per request: the seats are stamped with it and the row is keyed by it.
+    // ONE instant per request, read before the transaction: the seats and
+    // the rows are stamped with it — a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
@@ -304,6 +308,7 @@ export const transitionAppointment =
           seatId: cmd.seatId,
           reason: cmd.reason,
           windowHours,
+          operationId: cmd.operationId,
         };
         const zone = zoneOfShop(snapshot.location);
         const now = shopNowOf(zone, nowUtcMs);
@@ -360,8 +365,14 @@ export const transitionAppointment =
               snapshot.grants,
             )
           : step.value.writes;
+        const audit = AuditSystem.commitWrites(
+          step.value.auditFacts,
+          cmd.actor,
+          nowUtcMs,
+          ports.hash,
+        );
         return Result.ok({
-          auditFacts: step.value.auditFacts,
+          unaudited: audit.unaudited,
           writes:
             endsLive && snapshot.placement !== null && zone !== null
               ? [
@@ -371,12 +382,13 @@ export const transitionAppointment =
                     restoredBusyWrites(after),
                     zone,
                   ),
+                  ...audit.writes,
                 ]
-              : writes,
+              : [...writes, ...audit.writes],
         });
       },
     );
     if (!committed.ok) return committed;
-    await appendAuditFacts(ports, committed.value.auditFacts, cmd.actor);
+    logUnaudited(ports, committed.value.unaudited);
     return Result.ok({ appointmentId: cmd.appointmentId, to: cmd.to });
   };

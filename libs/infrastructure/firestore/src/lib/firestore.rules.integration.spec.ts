@@ -1807,11 +1807,13 @@ describe('firestore.rules', () => {
   });
 
   describe('auditLog — admins read, only the server writes (FIX 1)', () => {
-    // The flat row a booking act appends (`AuditEntry`): the actor, the
-    // context and the CUSTOMER target slices at the root (D29).
+    // The flat row a booking act commits with itself (`AuditEntry`, WS-1):
+    // the actor, the context and the CUSTOMER target slices at the root
+    // (D29); a system actor's row names no operation (WS-4.4).
     const row = {
       recordedAtUtcMs: utcMs('2026-09-25T13:00:00.000+03:00'),
       resourceId: AuditResourceId.forAppointment(AppointmentId.of('appt-1')),
+      auditOperationId: null,
       ...Actor.system(SystemSource.FirestoreSystem),
       ...AuditContext.cancelled('CLIENT_CHANGED_PLANS'),
       ...AuditTargetRef.customer(recordOf('client-1')),

@@ -54,8 +54,8 @@ No interfaces with methods, no abstract classes, no `InjectionToken`s here.
 Port functions are grouped in focused bundle records declared in the ports
 tier and composed bottom-up with `&` (Law 9, `ecs-ports.md`); a pipeline's
 dependency type is an intersection of named bundles —
-`export type BookAppointmentPorts = TxPorts & PolicyReadPorts &
-AccountContactPorts & AuditAppendPorts & TelemetryPorts` — never a
+`export type BookAppointmentPorts = TxPorts & WalkInKeyPorts &
+PolicyReadPorts & AccountContactPorts & TelemetryPorts` — never a
 `Pick`/`Omit` of a larger catalogue.
 The sandwich derives the shop's `ShopNow` ONCE from `ports.nowUtcMs()` and
 the location's `timeZone` (`ZonedTimeSystem.shopNow`) and hands that to the
@@ -97,9 +97,12 @@ export const bookAppointment =
 - The example is schematic: `BookingSystem.decide` and `ports.enqueue` stand
   for the real system calls and the future task port. The real
   `book-appointment.pipeline.ts` reads through `readBookingSet` inside
-  `ports.commit` and files its audit rows after the commit
-  (`appendAuditFacts`); the follow-up work rides the triggers on the written
-  document (`rebuildBusyOnAppointmentChange`, `dispatchClientProjections`).
+  `ports.commit` and plans its audit rows inside the same decide step
+  (`AuditSystem.commitWrites`), as `WriteOp.create` entries of the one
+  commit plan — they land with the act or not at all; a fact with no
+  verified actor is logged after the commit (`logUnaudited`). The follow-up
+  work rides the triggers on the written document
+  (`rebuildBusyOnAppointmentChange`, `dispatchClientProjections`).
 - No business math inside the pipeline; if you are comparing intervals or
   summing money here, move it to a system.
 - No SDK import (`firebase-admin`, `pino`, `@sentry/*`) inside a pipeline.

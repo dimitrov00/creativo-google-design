@@ -8,11 +8,11 @@ import {
   type SeatId,
 } from '@core/primitives';
 import { BookingError, type RecordSeatTipError } from '@core/errors';
-import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
+import type { TelemetryPorts, TxPorts } from '@core/ports';
 import { type AuditFact, AuditSystem, BillingSystem } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
+  logUnaudited,
   readAppointment,
 } from './booking-read-set.pipeline';
 
@@ -23,8 +23,10 @@ import {
  * «Запази» writes nothing and logs nothing. Otherwise the stored seats are
  * rewritten with that one field changed — inside the transaction, so the
  * read is what the write is conditioned on — and the act's row (the act,
- * never the amount) is appended AFTER the commit, keyed by the seat and the
- * instant (`tip:<seatId>:<recordedAtUtcMs>`) and naming that seat's person.
+ * never the amount) is `Create`d in the SAME plan (WS-1), keyed by the act's
+ * operation id and the seat (`tip:<operationId>:<seatId>`) and naming that
+ * seat's person. An unchanged figure plans no row, so a replay never meets
+ * its own.
  */
 
 export type RecordSeatTipCommand = {
@@ -44,11 +46,11 @@ export type RecordSeatTipAnswer = {
   readonly unchanged: boolean;
 };
 
-export type RecordSeatTipPorts = TxPorts & AuditAppendPorts & TelemetryPorts;
+export type RecordSeatTipPorts = TxPorts & TelemetryPorts;
 
-/** The decision: its facts and whether anything changes, with the plan beside it. */
+/** The decision: whether anything changes and the facts it could not audit, with the plan beside it. */
 type Decided = {
-  readonly auditFacts: readonly AuditFact[];
+  readonly unaudited: readonly AuditFact[];
   readonly unchanged: boolean;
   readonly writes: readonly WriteOp[];
 };
@@ -58,6 +60,8 @@ export const recordSeatTip =
   async (
     cmd: RecordSeatTipCommand,
   ): Promise<Result<RecordSeatTipAnswer, RecordSeatTipError>> => {
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const recordedAtUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       (tx) => readAppointment(tx, cmd.appointmentId),
@@ -72,31 +76,39 @@ export const recordSeatTip =
         );
         if (!tip.ok) return tip;
         if (tip.value === null) {
-          return Result.ok({ auditFacts: [], unchanged: true, writes: [] });
+          return Result.ok({ unaudited: [], unchanged: true, writes: [] });
         }
-        return Result.ok({
-          auditFacts: [
+        const audit = AuditSystem.commitWrites(
+          [
             {
               resourceId: AuditResourceId.forAppointment(appointment.id),
               subjects: AuditSystem.subjectsOfSeats(
                 appointment.seats,
                 cmd.seatId,
               ),
-              changeKey: AuditSystem.changeKey.tip(cmd.seatId, recordedAtUtcMs),
+              changeKey: AuditSystem.changeKey.tip(cmd.operationId, cmd.seatId),
+              operationId: cmd.operationId,
               context: AuditContext.tip(tip.value.auditAction, cmd.seatId),
             },
           ],
+          cmd.actor,
+          recordedAtUtcMs,
+          ports.hash,
+        );
+        return Result.ok({
+          unaudited: audit.unaudited,
           unchanged: false,
           writes: [
             WriteOp.update(appointmentPath(appointment.id), {
               seats: tip.value.seats,
             }),
+            ...audit.writes,
           ],
         });
       },
     );
     if (!committed.ok) return committed;
-    await appendAuditFacts(ports, committed.value.auditFacts, cmd.actor);
+    logUnaudited(ports, committed.value.unaudited);
     return Result.ok({
       appointmentId: cmd.appointmentId,
       seatId: cmd.seatId,

@@ -15,10 +15,11 @@ import type { QueryOp } from '@core/entities';
  * `CommitPlan` is the ONE commit port. The pipeline table's
  * `txCommitPlan`, `txCommitBooking`, `txUpdateAppointment` and the
  * backfill's per-row `writePage` (§4.1) are all this port: voucher
- * restores, busy merges, grant burns and waitlist notifications are entries
- * of the one plan, never a second write port. The two sanctioned writes
- * AFTER a commit are `appendAudit` (`governance.port.ts`) and task
- * enqueueing.
+ * restores, busy merges, grant burns, waitlist notifications and an act's
+ * audit rows (audit-hardening WS-1) are entries of the one plan, never a
+ * second write port. The one write after a commit is the backfill's
+ * `appendAudit` (`governance.port.ts`, one row per CALL — L2); task
+ * enqueueing joins it when a task port exists.
  */
 
 /**

@@ -8,7 +8,7 @@ import {
   WriteOp,
   type ProfileEdits,
 } from '@core/components';
-import { AuditEntryId, UserId } from '@core/primitives';
+import { AuditEntryId, OperationId, UserId } from '@core/primitives';
 import { AccountsErrorCode } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import { AuditSystem, SearchFieldsSystem } from '@core/systems';
@@ -62,9 +62,17 @@ function rig(users: readonly User[]) {
 }
 
 /** The edit's row as the plan `Create`s it: `AuditSystem.planOwnProfileEdit` over `fields`, under `hash(basis)`. */
-function rowWrite(fields: readonly RegistrationField[]): WriteOp {
-  const plan = AuditSystem.planOwnProfileEdit(UID, fields, FIXTURE_NOW_UTC_MS);
-  if (plan === null || plan.idBasis === null) throw new Error('no row');
+function rowWrite(
+  fields: readonly RegistrationField[],
+  operationId: OperationId | null = null,
+): WriteOp {
+  const plan = AuditSystem.planOwnProfileEdit(
+    UID,
+    fields,
+    FIXTURE_NOW_UTC_MS,
+    operationId,
+  );
+  if (plan === null) throw new Error('no row');
   return WriteOp.create(
     [Collections.AuditLog, AuditEntryId.of(fixtureHash(plan.idBasis))],
     plan.row,
@@ -124,6 +132,20 @@ describe('updateProfile', () => {
     expect(rowWrite(['firstName', 'birthDate'])).toMatchObject({
       body: rows[0]?.[1],
     });
+    // The call sent no transport id: the row names no operation (RU-21).
+    expect(rows[0]?.[1]?.['auditOperationId']).toBeNull();
+  });
+
+  it('names the call’s transport operation id on the row when it sent one (WS-4.4) — the row id unchanged', async () => {
+    const OPERATION = OperationId.of('profile-op-0123456789');
+    const { tx, run } = rig([registeredUserFixture()]);
+    await run({ ...edit({ lastName: 'Ivanova' }), operationId: OPERATION });
+    const write = tx.plans[0]?.at(-1);
+    expect(write).toEqual(rowWrite(['lastName'], OPERATION));
+    expect(write?.path).toEqual(rowWrite(['lastName'], null).path);
+    expect(
+      write?.writeAction === 'CREATE' && write.body['auditOperationId'],
+    ).toBe(OPERATION);
   });
 
   it('reads only the caller’s own account inside the transaction', async () => {

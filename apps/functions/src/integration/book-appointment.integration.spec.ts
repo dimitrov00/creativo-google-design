@@ -29,7 +29,6 @@ import {
 } from '@core/testing';
 import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
@@ -155,7 +154,6 @@ describe('bookAppointment (emulator)', () => {
       ...walkInKeyPorts(() => 'walkin-integration-key'),
       ...firestoreSettingsPorts(db),
       ...firestoreAccountPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     })(cmd);
   }
@@ -190,7 +188,11 @@ describe('bookAppointment (emulator)', () => {
           .get()
       ).data()?.['purgeAt'],
     ).toBeDefined();
-    expect(await ids(Collections.AuditLog)).toHaveLength(1);
+    // The act's row, committed in the same plan and naming its operation (WS-1, WS-4.4).
+    const rows = (await db.collection(Collections.AuditLog).get()).docs;
+    expect(rows.map((row) => row.get('auditOperationId'))).toEqual([
+      OperationId.of(ATTEMPT),
+    ]);
 
     const replay = await run(booking(ATTEMPT, 600));
 
@@ -202,7 +204,8 @@ describe('bookAppointment (emulator)', () => {
       true,
     );
     expect(await ids(Collections.Appointments)).toEqual([ATTEMPT]);
-    expect(await ids(Collections.AuditLog)).toHaveLength(1);
+    // A replay plans no row: still the first commit's one.
+    expect(await ids(Collections.AuditLog)).toEqual([rows[0]?.id]);
   });
 
   it('creates the client record of a first booking — the account’s contact copied — and never twice when two first bookings race', async () => {

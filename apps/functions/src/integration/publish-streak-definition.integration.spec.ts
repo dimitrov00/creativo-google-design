@@ -12,6 +12,7 @@ import {
 } from '@core/components';
 import {
   AuditResourceId,
+  OperationId,
   PublishRequestId,
   Result,
   StreakDefinitionVersionId,
@@ -210,6 +211,8 @@ describe('publishStreakDefinition (emulator)', () => {
       ).data(),
     ).toMatchObject({
       auditAction: AuditAction.LoyaltyStreakDefinitionPublished,
+      // The intent's request id is the act's operation (WS-4.4).
+      auditOperationId: OperationId.of(cmd.requestId),
       actorRole: 'ADMIN',
       streakToVersion: 2,
       auditTarget: 'NONE',

@@ -24,7 +24,6 @@ import {
   utcMs,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
@@ -44,6 +43,7 @@ if (!EMULATOR_HOST.includes('127.0.0.1')) {
 }
 
 const VOUCHER = GiftVoucherId.of('v-gift50');
+const OPERATION = OperationId.of('cancel-operation-0123456789');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 const VOUCHER_PATH = `${Collections.GiftVouchers}/${VOUCHER}`;
 
@@ -112,13 +112,12 @@ describe('cancelAppointment (emulator)', () => {
       nextId: () => 'id-1',
       hash: sha256Hex,
       ...firestoreSettingsPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     })({
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
-      operationId: OperationId.of('cancel-operation-0123456789'),
+      operationId: OPERATION,
       actor: Actor.user(FIXTURE_IDS.client),
     });
   }
@@ -153,7 +152,12 @@ describe('cancelAppointment (emulator)', () => {
       balanceCents: 3000,
       voucherStatus: 'ACTIVE',
     });
-    expect((await db.collection(Collections.AuditLog).get()).size).toBe(1);
+    // The cancel's row, committed with it and naming its operation (WS-1, WS-4.4).
+    expect(
+      (await db.collection(Collections.AuditLog).get()).docs.map((row) =>
+        row.get('auditOperationId'),
+      ),
+    ).toEqual([OPERATION]);
   });
 
   it('refuses inside the window and writes nothing — the visit and the voucher as they were', async () => {

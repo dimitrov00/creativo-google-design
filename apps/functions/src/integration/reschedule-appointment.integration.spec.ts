@@ -46,7 +46,6 @@ import {
   utcMs,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
@@ -209,7 +208,6 @@ describe('rescheduleAppointment (emulator)', () => {
       nextId: () => `id-${++minted}`,
       hash: sha256Hex,
       ...firestoreSettingsPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     })(cmd);
   }

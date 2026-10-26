@@ -76,7 +76,7 @@ import type {
   TrackError,
   TxPorts,
 } from '@core/ports';
-import { QueryOp } from '@core/entities';
+import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 
 /* ── The purity contract ────────────────────────────────────────────────── */
@@ -735,6 +735,77 @@ export type TrackedError = {
   readonly error: unknown;
   readonly context: Record<string, unknown> | null;
 };
+
+/**
+ * The audit rows a commit record's APPLIED plans created (audit-hardening
+ * WS-1: an act's rows are `WriteOp.create([auditLog, id], row)` entries of
+ * its own plan) — each `{ id, ...body }`, in commit order. A refused plan
+ * adds none, as it applies none.
+ */
+export function auditRowsOf(
+  plans: readonly (readonly WriteOp[])[],
+): readonly AuditEntry[] {
+  const rows: AuditEntry[] = [];
+  for (const plan of plans) {
+    for (const op of plan) {
+      if (
+        op.writeAction === WriteAction.Create &&
+        op.path.length === 2 &&
+        op.path[0] === Collections.AuditLog
+      ) {
+        rows.push({ id: op.path[1], ...op.body } as unknown as AuditEntry);
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * A {@link CommitPlan} that runs every decision TWICE over the same
+ * snapshot — what a contention re-run does — records both plans, and
+ * commits the second through `commit`. A pure decide derives the same plan,
+ * audit row ids included (audit-hardening WS-1: the instant is read once,
+ * before the transaction).
+ */
+export function contendedCommit(commit: CommitPlan): {
+  readonly commit: CommitPlan;
+  readonly decisions: readonly (readonly WriteOp[])[];
+} {
+  const decisions: (readonly WriteOp[])[] = [];
+  const contended: CommitPlan = (read, decide) =>
+    commit(read, (snapshot) => {
+      const first = decide(snapshot);
+      const second = decide(snapshot);
+      if (first.ok) decisions.push(first.value.writes);
+      if (second.ok) decisions.push(second.value.writes);
+      return second;
+    });
+  return { commit: contended, decisions };
+}
+
+/**
+ * Wraps any {@link CommitPlan} and records the plan of every call that
+ * LANDED (answered `ok`) — the last decision's writes of that call — so a
+ * spec whose commit double is not a memory store can still read the rows an
+ * act committed ({@link auditRowsOf} over `applied`).
+ */
+export function recordingCommit(commit: CommitPlan): {
+  readonly commit: CommitPlan;
+  readonly applied: readonly (readonly WriteOp[])[];
+} {
+  const applied: (readonly WriteOp[])[] = [];
+  const recorded: CommitPlan = async (read, decide) => {
+    let last: readonly WriteOp[] = [];
+    const answer = await commit(read, (snapshot) => {
+      const decision = decide(snapshot);
+      last = decision.ok ? decision.value.writes : [];
+      return decision;
+    });
+    if (answer.ok) applied.push(last);
+    return answer;
+  };
+  return { commit: recorded, applied };
+}
 
 /** The telemetry bundle as recording doubles. */
 export function recordingTelemetry(): {

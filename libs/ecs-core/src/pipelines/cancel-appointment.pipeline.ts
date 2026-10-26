@@ -11,21 +11,17 @@ import {
   CancellationRefusalCode,
 } from '@core/errors';
 import type { Appointment, CouponGrant, GiftVoucher } from '@core/entities';
-import type {
-  AuditAppendPorts,
-  PolicyReadPorts,
-  TelemetryPorts,
-  TxPorts,
-} from '@core/ports';
+import type { PolicyReadPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
+  AuditSystem,
   BillingSystem,
   CancellationPolicySystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   grantReleaseWrites,
+  logUnaudited,
   readAppointment,
   readDiscountGrants,
   readRedemptionVouchers,
@@ -51,10 +47,12 @@ import {
  * releases the visit's holdings (`BillingSystem.releasesHoldings`, the one
  * predicate the shop's pen reads too), the reversed voucher lines and the
  * bill with its grant lines dropped folded into it, beside each voucher's
- * restored balance and each grant's restore. The act's row goes
- * AFTER the commit, keyed by the instant it stamped
- * (`cancelled:<atUtcMs>`), naming everyone on the visit. No version CAS —
- * today's payload carries none (§4.1).
+ * restored balance and each grant's restore — and, LAST, the act's rows
+ * (WS-1: `Create`d in the same plan, so they land with the cancel or not at
+ * all), keyed by the act's operation id (`cancel:<operationId>`), naming
+ * everyone on the visit. A replay of a landed cancel is refused by the
+ * status graph (`not_cancellable`, RU-4), so it never reaches its own row.
+ * No version CAS — today's payload carries none (§4.1).
  */
 
 export type CancelAppointmentCommand = {
@@ -72,10 +70,7 @@ export type CancelAppointmentAnswer = {
   readonly appointmentId: AppointmentId;
 };
 
-export type CancelAppointmentPorts = TxPorts &
-  PolicyReadPorts &
-  AuditAppendPorts &
-  TelemetryPorts;
+export type CancelAppointmentPorts = TxPorts & PolicyReadPorts & TelemetryPorts;
 
 type Snapshot = {
   readonly appointment: Appointment | null;
@@ -84,7 +79,8 @@ type Snapshot = {
 };
 
 type Decided = {
-  readonly auditFacts: readonly AuditFact[];
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -104,6 +100,8 @@ export const cancelAppointment =
         errorCode: CancellationRefusalCode.PolicyUnavailable,
       });
     }
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
     const committed = await ports.commit(
       async (tx): Promise<Snapshot> => {
@@ -139,29 +137,37 @@ export const cancelAppointment =
           cmd.reason,
           allowed.value.windowHours,
           nowUtcMs,
+          cmd.operationId,
         );
         if (!step.ok) return step;
+        const writes = BillingSystem.releasesHoldings(
+          appointment,
+          step.value.appointment,
+        )
+          ? grantReleaseWrites(
+              voucherRestoreWrites(
+                step.value.writes,
+                appointment.voucherRedemptions,
+                snapshot.vouchers,
+                nowUtcMs,
+              ),
+              appointment.discounts,
+              snapshot.grants,
+            )
+          : step.value.writes;
+        const audit = AuditSystem.commitWrites(
+          step.value.auditFacts,
+          cmd.actor,
+          nowUtcMs,
+          ports.hash,
+        );
         return Result.ok({
-          auditFacts: step.value.auditFacts,
-          writes: BillingSystem.releasesHoldings(
-            appointment,
-            step.value.appointment,
-          )
-            ? grantReleaseWrites(
-                voucherRestoreWrites(
-                  step.value.writes,
-                  appointment.voucherRedemptions,
-                  snapshot.vouchers,
-                  nowUtcMs,
-                ),
-                appointment.discounts,
-                snapshot.grants,
-              )
-            : step.value.writes,
+          unaudited: audit.unaudited,
+          writes: [...writes, ...audit.writes],
         });
       },
     );
     if (!committed.ok) return committed;
-    await appendAuditFacts(ports, committed.value.auditFacts, cmd.actor);
+    logUnaudited(ports, committed.value.unaudited);
     return Result.ok({ appointmentId: cmd.appointmentId });
   };

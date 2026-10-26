@@ -636,10 +636,14 @@ export const runBackfill = (
         {
           resourceId: resourceId.value,
           subjects: [],
+          // A RETURNED page keys its replay; a FAILED call — one row per
+          // call, no result to key on — mints its key (RU-41).
           changeKey:
             ended.backfillCallEnd === BackfillCallEnd.Returned
               ? AuditSystem.backfillChangeKey(ended.result, cmd.actor)
-              : null,
+              : AuditSystem.changeKey.backfillFailed(ports.nextId()),
+          // An ops call carries no client operation id (WS-4.4).
+          operationId: null,
           context: backfillContext(backfillJobName, ended),
         },
       ],
@@ -649,12 +653,7 @@ export const runBackfill = (
     if (!planned.ok) return;
     const rows: AuditEntry[] = [];
     for (const { row, idBasis } of planned.value) {
-      rows.push({
-        id: AuditEntryId.of(
-          idBasis === null ? ports.nextId() : ports.hash(idBasis),
-        ),
-        ...row,
-      });
+      rows.push({ id: AuditEntryId.of(ports.hash(idBasis)), ...row });
     }
     try {
       await ports.appendAudit(rows);

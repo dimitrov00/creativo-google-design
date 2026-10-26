@@ -13,6 +13,7 @@ import {
 } from '@core/components';
 import {
   AuditResourceId,
+  OperationId,
   PublishRequestId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
@@ -722,6 +723,7 @@ const rowsOf = (
         resourceId: AuditResourceId.forStreakDefinition(CADENCE),
         subjects: [],
         changeKey: REQUEST,
+        operationId: OperationId.of(REQUEST),
         context,
       },
     ],
@@ -891,6 +893,8 @@ describe('StreakPublishSystem.publishPlan — what one publish writes', () => {
     });
     expect(plan.audit).toHaveLength(1);
     expect(plan.audit[0]?.row).toMatchObject({ auditTarget: 'NONE' });
+    // The intent's request id is the row's operation (WS-4.4).
+    expect(plan.audit[0]?.row.auditOperationId).toBe(REQUEST);
   });
 
   it('stamps a called-off version only when the read found its document, and names it replaced either way', () => {

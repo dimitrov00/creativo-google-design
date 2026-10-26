@@ -40,7 +40,6 @@ import {
 } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import type {
-  AuditAppendPorts,
   HashPorts,
   IdPorts,
   PolicyReadPorts,
@@ -67,8 +66,8 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
+  logUnaudited,
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
@@ -119,11 +118,13 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   the decision seats the line of that label `WALK_IN` again
  *   (`CustomerRecordSystem.walkInsByLabel`, OR-26).
  * - **One plan:** the appointment `Update` (the revision stamped, a named
- *   move recorded in the ledger) and the busy `Set`s of the NEW day merged
- *   onto what this attempt read; the old day is left to `rebuildBusy`.
- * - **After:** the row (`move:<attemptId>` — every move is named, WS-4.1), naming
- *   everyone the move touched; a replayed named move appends it again
- *   (`loggedOnRetry`), a request for where the visit already is logs none.
+ *   move recorded in the ledger), the busy `Set`s of the NEW day merged
+ *   onto what this attempt read (the old day is left to `rebuildBusy`) and,
+ *   LAST, the act's rows (WS-1: `move:<attemptId>` — every move is named,
+ *   WS-4.1), naming everyone the move touched, `Create`d in the SAME plan so
+ *   they land with the move or not at all. A replayed named move and a
+ *   request for where the visit already is plan none — a replay never meets
+ *   its own row.
  */
 
 /**
@@ -159,7 +160,6 @@ export type RescheduleAppointmentAnswer = {
 
 export type RescheduleAppointmentPorts = TxPorts &
   PolicyReadPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 /** The ledger name of a client's move — one ledger with the staff edits. */
@@ -197,11 +197,11 @@ type Snapshot =
   | Loaded;
 
 type Decided = {
-  readonly stored: Appointment;
-  readonly after: Appointment | null;
   /** How the call ended: written, a named move replayed, or nothing to do (`MoveOutcome`, a component). */
   readonly moveOutcome: MoveOutcome;
   readonly revision: number;
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -230,34 +230,26 @@ export const rescheduleAppointment =
         ),
       ),
     };
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
     const committed = await ports.commit(
       (tx) => readMove(tx, cmd, owner, operation),
       (snapshot) =>
-        decideMove(snapshot, owner, operation, policy.value, nowUtcMs, ports),
+        decideMove(
+          snapshot,
+          cmd,
+          owner,
+          operation,
+          policy.value,
+          nowUtcMs,
+          ports,
+        ),
     );
     if (!committed.ok) return committed;
-    const { stored, after, moveOutcome, revision } = committed.value;
-
-    if (moveOutcome !== MoveOutcome.Unchanged) {
-      const fact: AuditFact = {
-        resourceId: AuditResourceId.forAppointment(stored.id),
-        subjects:
-          after === null
-            ? AuditSystem.subjectsOf(stored)
-            : [
-                ...AuditSystem.subjectsOf(stored),
-                ...AuditSystem.subjectsOf(after),
-              ],
-        changeKey: AuditSystem.changeKey.move(cmd.attemptId),
-        context: AuditContext.rescheduled(
-          revision,
-          moveOutcome === MoveOutcome.Replayed,
-        ),
-      };
-      await appendAuditFacts(ports, [fact], cmd.actor);
-    }
+    const { moveOutcome, revision, unaudited } = committed.value;
+    logUnaudited(ports, unaudited);
     return Result.ok({
       appointmentId: cmd.appointmentId,
       revision,
@@ -612,6 +604,7 @@ function decideLines(
 /** The pure half — the decision and its one write plan. */
 function decideMove(
   snapshot: Snapshot,
+  cmd: RescheduleAppointmentCommand,
   owner: UserId,
   operation: Operation,
   policy: BookingPolicy,
@@ -621,21 +614,21 @@ function decideMove(
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
     return Result.err(snapshot.error);
   }
+  // A replayed named move and a move to where the visit already is plan NO
+  // row: the first landed with its move; the second moved nothing.
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
-      stored: snapshot.stored,
-      after: null,
       moveOutcome: MoveOutcome.Replayed,
       revision: snapshot.revision,
+      unaudited: [],
       writes: [],
     });
   }
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Unchanged) {
     return Result.ok({
-      stored: snapshot.stored,
-      after: null,
       moveOutcome: MoveOutcome.Unchanged,
       revision: snapshot.stored.revision,
+      unaudited: [],
       writes: [],
     });
   }
@@ -690,11 +683,28 @@ function decideMove(
       operation.digest,
     ),
   });
+  // Everyone the move touched: who the visit had, and who it has now.
+  const audit = AuditSystem.commitWrites(
+    [
+      {
+        resourceId: AuditResourceId.forAppointment(stored.id),
+        subjects: [
+          ...AuditSystem.subjectsOf(stored),
+          ...AuditSystem.subjectsOf(after),
+        ],
+        changeKey: AuditSystem.changeKey.move(cmd.attemptId),
+        operationId: cmd.operationId,
+        context: AuditContext.rescheduled(revision),
+      },
+    ],
+    cmd.actor,
+    nowUtcMs,
+    ports.hash,
+  );
   return Result.ok({
-    stored,
-    after,
     moveOutcome: MoveOutcome.Moved,
     revision,
+    unaudited: audit.unaudited,
     writes: [
       WriteOp.update(appointmentPath(stored.id), placementFields(after)),
       ...busyMergeWrites(
@@ -702,6 +712,7 @@ function decideMove(
         decided.value.busyWrites,
         loaded.zone,
       ),
+      ...audit.writes,
     ],
   });
 }

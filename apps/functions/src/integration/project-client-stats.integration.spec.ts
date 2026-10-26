@@ -540,6 +540,8 @@ describe('client stats projection (emulator)', () => {
         .set({
           recordedAtUtcMs: NOW,
           resourceId,
+          // A fixture's row (a system actor) names no operation (WS-4.4).
+          auditOperationId: null,
           ...Actor.system(SystemSource.Fixture),
           ...AuditContext.placement(
             action as typeof AuditAction.BookingCommitted,

@@ -19,6 +19,7 @@ import {
   AttendanceState,
   AuditResourceId,
   type HourCount,
+  type OperationId,
   type SeatId,
   type LocalDate,
   type UtcEpochMs,
@@ -54,15 +55,17 @@ type LifecycleSlice = {
 
 /**
  * A staff lifecycle request (`transition-appointment.ts`): the target state,
- * ONE seat or the whole party (`seatId: null`), and — for a cancel only —
- * the reason code and the window in force (`null` when the policy could not
- * be read: the seats are stamped unknown, the shop's cancel still lands).
+ * ONE seat or the whole party (`seatId: null`), — for a cancel only — the
+ * reason code and the window in force (`null` when the policy could not be
+ * read: the seats are stamped unknown, the shop's cancel still lands), and
+ * the act's operation id, which keys its audit fact (WS-1).
  */
 export type LifecycleTransitionRequest = {
   readonly to: BookingStatus;
   readonly seatId: SeatId | null;
   readonly reason: CancellationReason | null;
   readonly windowHours: HourCount | null;
+  readonly operationId: OperationId;
 };
 
 /**
@@ -290,12 +293,13 @@ function staffFact(
   action: TransitionAction,
   reason: CancellationReason | null,
   seatId: SeatId | null,
-  nowUtcMs: UtcEpochMs,
+  operationId: OperationId,
 ): AuditFact {
   return {
     resourceId: AuditResourceId.forAppointment(appointment.id),
     subjects: AuditSystem.subjectsOfSeats(appointment.seats, seatId),
-    changeKey: AuditSystem.changeKey.transition(seatId, nowUtcMs),
+    changeKey: AuditSystem.changeKey.transition(operationId, seatId),
+    operationId,
     context: AuditContext.transition(action, reason, seatId),
   };
 }
@@ -306,11 +310,13 @@ function arrivalFact(
     | typeof AuditAction.BookingStaffArrived
     | typeof AuditAction.BookingStaffUnarrived,
   changeKey: string,
+  operationId: OperationId,
 ): AuditFact {
   return {
     resourceId: AuditResourceId.forAppointment(appointment.id),
     subjects: AuditSystem.subjectsOf(appointment),
     changeKey,
+    operationId,
     context: AuditContext.arrival(action),
   };
 }
@@ -522,7 +528,13 @@ function transitionAt(
     if (!resolved.ok) return resolved;
     return Result.ok(
       step(appointment, applySlice(appointment, resolved.value), [
-        staffFact(appointment, verb, reason, request.seatId, nowUtcMs),
+        staffFact(
+          appointment,
+          verb,
+          reason,
+          request.seatId,
+          request.operationId,
+        ),
       ]),
     );
   }
@@ -539,7 +551,7 @@ function transitionAt(
             : AuditAction.BookingStaffReinstate,
           null,
           null,
-          nowUtcMs,
+          request.operationId,
         ),
       ]),
     );
@@ -554,7 +566,7 @@ function transitionAt(
           AuditAction.BookingStaffReopenNoShow,
           null,
           null,
-          nowUtcMs,
+          request.operationId,
         ),
       ]),
     );
@@ -569,7 +581,7 @@ function transitionAt(
   if (!moved.ok) return moved;
   return Result.ok(
     step(appointment, applySlice(appointment, moved.value), [
-      staffFact(appointment, verb, reason, null, nowUtcMs),
+      staffFact(appointment, verb, reason, null, request.operationId),
     ]),
   );
 }
@@ -623,14 +635,15 @@ export const AppointmentLifecycleSystem = {
    * The client's own cancel (`cancel-appointment.ts:180-219`): every open
    * seat cancelled BY THE CLIENT under the window it was allowed under, the
    * root carrying the code, one `BOOKING_CANCELLED` fact for everyone on the
-   * visit keyed by the instant it stamped. Whether the client MAY cancel is
-   * `CancellationPolicySystem.mayCancel`, asked first.
+   * visit keyed by the act's operation id (WS-1). Whether the client MAY
+   * cancel is `CancellationPolicySystem.mayCancel`, asked first.
    */
   cancelByClient(
     appointment: Appointment,
     reason: CancellationReason,
     windowHours: HourCount | null,
     nowUtcMs: UtcEpochMs,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     const stamp = SeatOutcome.cancelled(
       nowUtcMs,
@@ -651,7 +664,8 @@ export const AppointmentLifecycleSystem = {
         {
           resourceId: AuditResourceId.forAppointment(appointment.id),
           subjects: AuditSystem.subjectsOf(appointment),
-          changeKey: AuditSystem.changeKey.cancelled(nowUtcMs),
+          changeKey: AuditSystem.changeKey.cancel(operationId),
+          operationId,
           context: AuditContext.cancelled(reason),
         },
       ]),
@@ -665,7 +679,8 @@ export const AppointmentLifecycleSystem = {
    * stamp; `COMPLETED`/`CANCELLED → CONFIRMED` reopens on the visit's own
    * day only (`now.localDate` against the visit's `localDate`). The audit
    * fact names the verb — a correction under its own action — the reason
-   * CODE, the seat, and keys the change by the seat and `now.utcEpochMs`.
+   * CODE, the seat, and keys the change by the act's operation id and the
+   * seat (WS-1).
    */
   transition(
     appointment: Appointment,
@@ -725,6 +740,7 @@ export const AppointmentLifecycleSystem = {
   markArrived(
     appointment: Appointment,
     nowUtcMs: UtcEpochMs,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     if (!BookingLifecycle.isLive(appointment)) {
       return Result.err(
@@ -745,7 +761,8 @@ export const AppointmentLifecycleSystem = {
         arrivalFact(
           appointment,
           AuditAction.BookingStaffArrived,
-          AuditSystem.changeKey.arrived(nowUtcMs),
+          AuditSystem.changeKey.arrived(operationId),
+          operationId,
         ),
       ]),
     );
@@ -757,6 +774,7 @@ export const AppointmentLifecycleSystem = {
    */
   clearArrival(
     appointment: Appointment,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     if (!BookingLifecycle.isLive(appointment)) {
       return Result.err(
@@ -778,7 +796,8 @@ export const AppointmentLifecycleSystem = {
         arrivalFact(
           appointment,
           AuditAction.BookingStaffUnarrived,
-          AuditSystem.changeKey.unarrived(stamp),
+          AuditSystem.changeKey.unarrived(operationId),
+          operationId,
         ),
       ]),
     );

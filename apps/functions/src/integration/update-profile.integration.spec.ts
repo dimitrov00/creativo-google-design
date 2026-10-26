@@ -126,6 +126,8 @@ describe('updateProfile (emulator)', () => {
         actorRole: 'USER',
         actorUserId: UID,
         recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        // No transport id was sent (RU-21): the row names no operation (WS-4.4).
+        auditOperationId: null,
       }),
     ]);
   });

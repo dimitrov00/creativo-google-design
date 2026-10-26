@@ -20,8 +20,10 @@ import {
 import {
   DurationMinutes,
   AppointmentId,
+  AuditEntryId,
   AuditResourceId,
   BarberId,
+  ClientOperationId,
   CustomerId,
   OperationId,
   PublishRequestId,
@@ -32,6 +34,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
+import { Collections } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,
   deepFreeze,
@@ -68,11 +71,16 @@ const AT = utcMs('2026-09-25T08:00:00Z');
 const APPT_1 = AuditResourceId.forAppointment(AppointmentId.of('appt-1'));
 const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
+const OP = OperationId.of('op-0123456789abcdef');
+/** A stand-in digest: the hash is a port; the plan must hash exactly the basis. */
+const hashOf = (input: string): string => `h(${input.length}:${input})`;
+
 function fact(overrides: Partial<AuditFact> = {}): AuditFact {
   return {
     resourceId: APPT_1,
     subjects: [account('maria')],
-    changeKey: null,
+    changeKey: 'operation:op-0123456789abcdef',
+    operationId: OP,
     context: AuditContext.staffEdit(AuditAction.BookingStaffMove, 3),
     ...overrides,
   };
@@ -191,27 +199,39 @@ describe('AuditSystem.plan — one row per person', () => {
     });
   });
 
-  it('bases each row id on its change, once a change key is given — and leaves it to the pipeline without one', () => {
+  it('bases each row id on its change — every fact carries its key (RU-41), so no row is left to a minted id', () => {
     const subjects = [account('maria'), account('stefan')];
     const keyed = unwrapOk(
-      AuditSystem.plan([fact({ subjects, changeKey: 'revision:4' })], ivan, AT),
+      AuditSystem.plan(
+        [fact({ subjects, changeKey: 'operation:op-4' })],
+        ivan,
+        AT,
+      ),
     );
     expect(keyed.map((r) => r.idBasis)).toEqual([
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
         cus('maria'),
-        'revision:4',
+        'operation:op-4',
       ),
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
         cus('stefan'),
-        'revision:4',
+        'operation:op-4',
       ),
     ]);
-    const random = unwrapOk(AuditSystem.plan([fact({ subjects })], ivan, AT));
-    expect(random.map((r) => r.idBasis)).toEqual([null, null]);
+  });
+
+  it('copies the fact’s operation onto every row it fans out to (WS-4.4) — null stays null', () => {
+    const subjects = [account('maria'), account('stefan')];
+    const named = unwrapOk(AuditSystem.plan([fact({ subjects })], ivan, AT));
+    expect(named.map((r) => r.row.auditOperationId)).toEqual([OP, OP]);
+    const unnamed = unwrapOk(
+      AuditSystem.plan([fact({ subjects, operationId: null })], ivan, AT),
+    );
+    expect(unnamed.map((r) => r.row.auditOperationId)).toEqual([null, null]);
   });
 
   it('carries the target slice and the instant onto the flat row: NONE when nobody, the context as given', () => {
@@ -230,6 +250,7 @@ describe('AuditSystem.plan — one row per person', () => {
     expect(rows[0]?.row).toEqual({
       recordedAtUtcMs: AT,
       resourceId: 'appt-1',
+      auditOperationId: 'op-0123456789abcdef',
       actorRole: 'SYSTEM',
       actorSystemSource: 'FIXTURE',
       auditAction: 'BOOKING_STAFF_ARRIVED',
@@ -368,7 +389,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(basis(parts)).toBe(basis({ ...parts }));
     expect(basis(parts)).toBe(
       JSON.stringify([
-        'audit-row/v1',
+        'audit-row/v2',
         'booking.committed',
         'appt-1',
         'maria',
@@ -389,7 +410,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
             AuditSystem.rowBasis(action, resourceId, targetUserId, changeKey),
           );
           expect(parsed).toEqual([
-            'audit-row/v1',
+            'audit-row/v2',
             action,
             resourceId,
             targetUserId,
@@ -422,23 +443,36 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     );
   });
 
-  it('a retried attempt derives the same key, verb by verb — no per-attempt instant the verb does not carry', () => {
+  it('a retried attempt derives the same key, verb by verb — from the act’s operation id, never an instant (WS-1, RU-6)', () => {
     const keys = AuditSystem.changeKey;
-    const appt = AppointmentId.of('appt-1');
-    expect(keys.attempt('abc', appt)).toBe('attempt:abc');
-    expect(keys.attempt(null, appt)).toBe('attempt:appt-1');
-    expect(keys.move('m1')).toBe('move:m1');
-    expect(keys.revision(4)).toBe('revision:4');
-    expect(keys.staffEdit(OperationId.of('op-1'), 4)).toBe('operation:op-1');
-    expect(keys.staffEdit(null, 4)).toBe('revision:4');
-    expect(keys.cancelled(at(123))).toBe('cancelled:123');
-    expect(keys.transition(SeatId.of('s1'), at(9))).toBe('transition:s1:9');
-    expect(keys.transition(null, at(9))).toBe('transition:party:9');
-    expect(keys.arrived(at(5))).toBe('arrived:5');
-    expect(keys.unarrived(at(5))).toBe('unarrived:5');
-    expect(keys.tip(SeatId.of('s1'), at(7))).toBe('tip:s1:7');
+    const op = OperationId.of('op-1');
+    expect(keys.attempt(AppointmentId.of('abc'))).toBe('attempt:abc');
+    expect(
+      keys.move(unwrapOk(ClientOperationId.parse('m1m1m1m1m1m1m1m1'))),
+    ).toBe('move:m1m1m1m1m1m1m1m1');
+    expect(keys.staffEdit(op)).toBe('operation:op-1');
+    expect(keys.cancel(op)).toBe('cancel:op-1');
+    expect(keys.transition(op, SeatId.of('s1'))).toBe('transition:op-1:s1');
+    expect(keys.transition(op, null)).toBe('transition:op-1');
+    expect(keys.arrived(op)).toBe('arrived:op-1');
+    expect(keys.unarrived(op)).toBe('unarrived:op-1');
+    expect(keys.tip(op, SeatId.of('s1'))).toBe('tip:op-1:s1');
+    expect(keys.backfillFailed('minted-1')).toBe('backfill-failed:minted-1');
     expect(keys.publish(PublishRequestId.of('req-1'))).toBe('req-1');
     expect(keys.profile(TriggerEventId.of('evt-1'))).toBe('evt-1');
+  });
+
+  it('keeps two acts apart however close in time — and a seat act apart from the party act', () => {
+    const keys = AuditSystem.changeKey;
+    const a = OperationId.of('op-a');
+    const b = OperationId.of('op-b');
+    expect(keys.cancel(a)).not.toBe(keys.cancel(b));
+    expect(keys.transition(a, null)).not.toBe(
+      keys.transition(a, SeatId.of('s1')),
+    );
+    expect(keys.tip(a, SeatId.of('s1'))).not.toBe(keys.tip(a, SeatId.of('s2')));
+    // The arrival pair keeps its two verb words: an undo is its own act.
+    expect(keys.arrived(a)).not.toBe(keys.unarrived(a));
   });
 });
 
@@ -629,6 +663,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       actorRole: 'SYSTEM',
       actorSystemSource: 'ADMIN_SDK',
     });
+    // A trigger row names no operation (WS-4.4).
+    expect(plan?.row.auditOperationId).toBeNull();
   });
 
   it("stamps the event's own instant, not the delivery's", () => {
@@ -760,10 +796,12 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
       OWNER,
       ['firstName', 'birthDate'],
       EDITED_AT,
+      OP,
     );
     expect(plan?.row).toMatchObject({
       recordedAtUtcMs: EDITED_AT,
       resourceId: 'users/maria',
+      auditOperationId: OP,
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName', 'birthDate'],
       actorRole: 'USER',
@@ -782,7 +820,14 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
   });
 
   it('plans nothing for an edit that changed no audited field', () => {
-    expect(AuditSystem.planOwnProfileEdit(OWNER, [], EDITED_AT)).toBeNull();
+    expect(AuditSystem.planOwnProfileEdit(OWNER, [], EDITED_AT, OP)).toBeNull();
+  });
+
+  it('names no operation when the call sent none (RU-21: optional on the wire)', () => {
+    expect(
+      AuditSystem.planOwnProfileEdit(OWNER, ['lastName'], EDITED_AT, null)?.row
+        .auditOperationId,
+    ).toBeNull();
   });
 
   it('keys each landed edit by its owner and instant', () => {
@@ -877,5 +922,105 @@ describe('AuditSystem — purity', () => {
     const once = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
     const twice = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
     expect(twice).toEqual(once);
+  });
+
+  it('createsOf is pure: same input → same output, inputs untouched', () => {
+    const plans = deepFreeze(
+      unwrapOk(
+        AuditSystem.plan(
+          [fact({ subjects: [account('a'), account('b')] })],
+          ivan,
+          AT,
+        ),
+      ),
+    );
+    expect(AuditSystem.createsOf(plans, hashOf)).toEqual(
+      AuditSystem.createsOf(plans, hashOf),
+    );
+  });
+
+  it('commitWrites is pure: same input → same output, inputs untouched', () => {
+    const facts = deepFreeze([fact({ subjects: [account('a'), guest] })]);
+    const actor = deepFreeze(ivan);
+    const once = AuditSystem.commitWrites(facts, actor, AT, hashOf);
+    expect(AuditSystem.commitWrites(facts, actor, AT, hashOf)).toEqual(once);
+    expect(AuditSystem.commitWrites(facts, null, AT, hashOf)).toEqual(
+      AuditSystem.commitWrites(facts, null, AT, hashOf),
+    );
+  });
+});
+
+describe('AuditSystem.createsOf — each planned row a Create of the commit plan (WS-1)', () => {
+  it('creates auditLog/<hash(idBasis)> with the row as its body, in plan order', () => {
+    const plans = unwrapOk(
+      AuditSystem.plan(
+        [fact({ subjects: [account('maria'), account('stefan')] })],
+        ivan,
+        AT,
+      ),
+    );
+    expect(AuditSystem.createsOf(plans, hashOf)).toEqual(
+      plans.map((plan) => ({
+        writeAction: 'CREATE',
+        path: [Collections.AuditLog, AuditEntryId.of(hashOf(plan.idBasis))],
+        body: plan.row,
+      })),
+    );
+  });
+
+  it('plans nothing for no rows', () => {
+    expect(AuditSystem.createsOf([], hashOf)).toEqual([]);
+  });
+});
+
+describe('AuditSystem.commitWrites — an act’s rows inside its own commit (WS-1)', () => {
+  it('plans one Create per person per fact, under the derived ids', () => {
+    const facts = [
+      fact({ subjects: [account('maria'), guest, account('stefan')] }),
+    ];
+    const commit = AuditSystem.commitWrites(facts, ivan, AT, hashOf);
+    expect(commit.unaudited).toEqual([]);
+    expect(commit.writes).toEqual(
+      AuditSystem.createsOf(
+        unwrapOk(AuditSystem.plan(facts, ivan, AT)),
+        hashOf,
+      ),
+    );
+    expect(commit.writes).toHaveLength(2);
+  });
+
+  it('derives the same ids on a re-run of the decision — the same facts, actor and instant', () => {
+    const facts = [fact()];
+    expect(AuditSystem.commitWrites(facts, ivan, AT, hashOf).writes).toEqual(
+      AuditSystem.commitWrites(facts, ivan, AT, hashOf).writes,
+    );
+  });
+
+  it('plans no row without a verified actor — every fact comes back unaudited, the act still commits', () => {
+    const facts = [fact(), fact({ changeKey: 'operation:other' })];
+    expect(AuditSystem.commitWrites(facts, null, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: facts,
+    });
+  });
+
+  it('plans nothing for no facts — an unchanged act, with or without an actor', () => {
+    expect(AuditSystem.commitWrites([], ivan, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: [],
+    });
+    expect(AuditSystem.commitWrites([], null, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: [],
+    });
+  });
+
+  it('treats a fact the planner refuses as a programmer defect — the verb sets are closed', () => {
+    const blank = fact({
+      context: { auditAction: '  ' as AuditAction } as AuditContext,
+    });
+    expect(() => AuditSystem.commitWrites([blank], ivan, AT, hashOf)).toThrow(
+      /audit entry refused by domain/,
+    );
   });
 });
