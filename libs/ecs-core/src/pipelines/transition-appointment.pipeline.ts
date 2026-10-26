@@ -10,6 +10,7 @@ import {
   BookingStatus,
   type BusyKey,
   type HourCount,
+  type OperationId,
   Result,
   type AppointmentId,
   type SeatId,
@@ -125,6 +126,8 @@ export type TransitionAppointmentCommand = {
   readonly seatId: SeatId | null;
   /** The cancel's code (`null` for every other verb). */
   readonly reason: CancellationReason | null;
+  /** The act's operation id — the client-minted name of this ONE act, REQUIRED (WS-4.1). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 

@@ -14,6 +14,7 @@ import {
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   GATEWAY_PORTS,
+  ID_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
   MEDIA_RESOLVE_PORTS,
@@ -63,6 +64,7 @@ import {
   memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
   memoryDefaultLocationPorts,
+  memoryIdPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
   memoryMediaResolvePorts,
@@ -379,6 +381,8 @@ async function configure(
         useValue: memorySchedulingReadPorts(),
       },
       { provide: CLOCK_PORTS, useValue: { nowUtcMs: pinnedNowUtcMs() } },
+      // Names each cancel the store sends (WS-4.1).
+      { provide: ID_PORTS, useValue: memoryIdPorts('cancel-operation') },
       {
         // "Today" is the default shop's day — the fixture shop, on the
         // fixture zone.
@@ -1443,9 +1447,14 @@ describe('ClientAppointments', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Nothing typed, nothing claimed: the cancel is filed as UNSPECIFIED.
+    // Nothing typed, nothing claimed: the cancel is filed as UNSPECIFIED,
+    // under the name the store minted for it (WS-4.1).
     expect(cancelCalls).toEqual([
-      { appointmentId: 'appt_1', reason: CancellationReason.Unspecified },
+      {
+        appointmentId: 'appt_1',
+        reason: CancellationReason.Unspecified,
+        operationId: 'cancel-operation-1',
+      },
     ]);
   });
 
@@ -1478,7 +1487,11 @@ describe('ClientAppointments', () => {
 
     // The words are the client's own: the call files them as OTHER (D23).
     expect(cancelCalls).toEqual([
-      { appointmentId: 'appt_1', reason: CancellationReason.Other },
+      {
+        appointmentId: 'appt_1',
+        reason: CancellationReason.Other,
+        operationId: 'cancel-operation-1',
+      },
     ]);
   });
 

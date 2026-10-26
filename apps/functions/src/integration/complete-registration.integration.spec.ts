@@ -86,6 +86,8 @@ function command(
     identifierChannel: IdentifierChannel.Phone,
     rawIdentifier: PHONE,
     fields: { ...Registration.emptyFields(), ...submitted },
+    // The optional transport id (RU-21): none sent.
+    operationId: null,
   };
 }
 

@@ -8,7 +8,7 @@ import {
   VoucherLifecycle,
   type VoucherRedemption,
 } from '@core/components';
-import { Currency, GiftVoucherId } from '@core/primitives';
+import { Currency, GiftVoucherId, OperationId } from '@core/primitives';
 import { CancellationRefusalCode } from '@core/errors';
 import { type GiftVoucher, Collections } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
@@ -118,6 +118,7 @@ describe('cancelAppointment (emulator)', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OperationId.of('cancel-operation-0123456789'),
       actor: Actor.user(FIXTURE_IDS.client),
     });
   }

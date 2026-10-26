@@ -44,6 +44,7 @@ const KEEP: ProfileEdits = { firstName: null, lastName: null, birthDate: null };
 const edit = (edits: Partial<ProfileEdits>): UpdateProfileCommand => ({
   callerUserId: UID,
   edits: { ...KEEP, ...edits },
+  operationId: null,
 });
 
 function rig(users: readonly User[]) {

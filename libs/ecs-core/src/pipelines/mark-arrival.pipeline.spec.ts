@@ -6,7 +6,12 @@ import {
   MarkArrivalAction,
   WriteOp,
 } from '@core/components';
-import { AppointmentId, UserId, UtcEpochMs } from '@core/primitives';
+import {
+  AppointmentId,
+  OperationId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { BookingErrorCode, SchedulingErrorCode } from '@core/errors';
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
@@ -22,6 +27,8 @@ import {
 import { markArrival } from './mark-arrival.pipeline';
 
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
+/** The tap's client-minted operation id (WS-4.1 — required on the call). */
+const OPERATION = OperationId.of('arrival-op-0123456789');
 
 function bodyOf(appointment: Appointment): DocBody {
   const { id: _id, ...body } = appointment;
@@ -56,6 +63,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer).toEqual({
@@ -93,6 +101,50 @@ describe('markArrival', () => {
     );
   });
 
+  it('keys the rows `arrived:<stamp>` / `unarrived:<cleared stamp>` — byte for byte today’s keys; the operation id changes no key in WS-4.1 (DEP-4)', async () => {
+    const arrive = rig([appointmentFixture()]);
+    expect(
+      (
+        await arrive.run({
+          markArrivalAction: MarkArrivalAction.Arrive,
+          appointmentId: FIXTURE_IDS.appointment,
+          operationId: OPERATION,
+          actor: STAFF,
+        })
+      ).ok,
+    ).toBe(true);
+    const earlier = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -60_000);
+    const clear = rig([appointmentFixture({ arrivedAtUtcMs: earlier })]);
+    expect(
+      (
+        await clear.run({
+          markArrivalAction: MarkArrivalAction.Clear,
+          appointmentId: FIXTURE_IDS.appointment,
+          operationId: OPERATION,
+          actor: STAFF,
+        })
+      ).ok,
+    ).toBe(true);
+    expect([...arrive.rows, ...clear.rows].map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingStaffArrived,
+          FIXTURE_IDS.appointment,
+          FIXTURE_IDS.customer,
+          `arrived:${FIXTURE_NOW_UTC_MS}`,
+        ),
+      ),
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingStaffUnarrived,
+          FIXTURE_IDS.appointment,
+          FIXTURE_IDS.customer,
+          `unarrived:${earlier}`,
+        ),
+      ),
+    ]);
+  });
+
   it('a second tap changes nothing: no write, no row — the first stamp wins', async () => {
     const earlier = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -60_000);
     const { store, tx, rows, run } = rig([
@@ -101,6 +153,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer.ok && answer.value.unchanged).toBe(true);
@@ -117,6 +170,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Clear,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer.ok && answer.value.unchanged).toBe(false);
@@ -141,6 +195,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Clear,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer).toEqual({
@@ -162,6 +217,7 @@ describe('markArrival', () => {
       const answer = await run({
         markArrivalAction,
         appointmentId: FIXTURE_IDS.appointment,
+        operationId: OPERATION,
         actor: STAFF,
       });
       expect(answer.ok).toBe(false);
@@ -178,6 +234,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: AppointmentId.of('nope'),
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer).toEqual({
@@ -196,6 +253,7 @@ describe('markArrival', () => {
     const answer = await run({
       markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: null,
     });
     expect(answer.ok).toBe(true);
@@ -211,6 +269,7 @@ describe('markArrival', () => {
     await run({
       markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
       actor: STAFF,
     });
     const before = appointmentFixture();

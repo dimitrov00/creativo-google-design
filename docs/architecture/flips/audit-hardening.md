@@ -1856,6 +1856,19 @@ message, stack }` scrubbed (RU-38: an `Error('… +359888123456 a@b.bg …')`
   P1–P3 rows of §4. e2e: none (UI-driven, `browserIdPorts`
   mints; `appointments.spec.ts` and `staff-walk-in.spec.ts` are the smoke).
   P0: `verify-p0.mjs:473-480`, `:694-716` (ids only; assertions unchanged).
+  **Also changed on purpose (C1 integrator):** the reschedule "unnamed
+  move" case (deleted — a move without an attempt id is now a wire
+  refusal); the book walk-in fixture and the transition spec's E-14 book
+  command (they now carry an id); `booking.wire.spec.ts` — an anonymous book
+  is refused `BOOKING_UNAUTHENTICATED` by the decoder before the id check
+  (P2: the pipeline's own first check, moved to the edge so the §2.1 refusal
+  order holds — the answer is unchanged), the anonymous reschedule case at
+  `:691` now decodes a signed-in caller, two cases retitled; two
+  `edit-appointment.integration.spec.ts` cases; the reschedule integration
+  spec's retry path (now a ledger replay answering the same);
+  `staff-dashboard.spec.ts`'s "keeps a name the caller chose" case (replaced:
+  the store mints the id); the two `cancelCalls` pins of
+  `client-appointments.spec.ts`.
 - **DEP-5 (P4, P5, WS-1) — audit rows commit with the act.** Before: the
   seven booking pipelines appended rows after the commit, swallowed every
   failure, re-appended a row on a book / reschedule / edit replay

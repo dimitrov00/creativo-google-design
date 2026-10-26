@@ -133,6 +133,7 @@ function command(
     localDate: FRIDAY,
     seats: [CART_SEAT],
     attemptId: ATTEMPT,
+    operationId: OperationId.of(ATTEMPT),
     actor: Actor.user(FIXTURE_IDS.client),
     ...extra,
   };
@@ -236,19 +237,21 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     );
   });
 
-  it('an unnamed move is logged under the revision it stamped', async () => {
+  it('keys the row `move:<attemptId>` — byte for byte today’s key; every move is named now (WS-4.1, DEP-4)', async () => {
+    // The unnamed move (`attemptId: null` → `revision:<n>`) is gone: the
+    // edge refuses a move without its attempt id, and the web always sent one.
     const { rows, run } = rig([...catalogue(), stored(visit())]);
-    await run(command({ attemptId: null }));
-    expect(rows[0]?.id).toBe(
+    expect((await run(command())).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
           FIXTURE_IDS.appointment,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.revision(2),
+          'move:move-attempt-0123456789',
         ),
       ),
-    );
+    ]);
   });
 
   it('a request for exactly where the visit already is changes nothing and logs nothing', async () => {

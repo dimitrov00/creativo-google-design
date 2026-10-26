@@ -273,7 +273,7 @@ export type Callable<In, Out> = (
  * `CALLABLE_ANSWER_DECODERS`), with ONE error classification
  * (`PipelineError.fromWire`). The name is read from the `Callables`
  * registry (`ports/callables.ts`), never a free string at the call site.
- * The implementation is `callableClientPorts(functions)` in
+ * The implementation is `callableClientPorts(functions, ids)` in
  * `libs/infrastructure/firebase-app`.
  */
 export type CallableClient = <N extends CallableName>(

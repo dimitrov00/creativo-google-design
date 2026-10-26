@@ -7,6 +7,7 @@ import {
 import {
   defect,
   ImpersonationSessionId,
+  type OperationId,
   Result,
   type UserId,
 } from '@core/primitives';
@@ -48,6 +49,11 @@ export type StartImpersonationCommand = GovernanceCall & {
   readonly adminUserId: UserId | null;
   /** The verified token's roles. */
   readonly adminRoles: readonly Role[];
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 /** The caller as both impersonation callables gate it — a verified admin, or the refusal. */

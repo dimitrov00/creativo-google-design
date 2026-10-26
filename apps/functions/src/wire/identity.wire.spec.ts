@@ -4,7 +4,7 @@ import {
   RegistrationField,
   SessionKind,
 } from '@core/components';
-import { IdentifierChannel, OtpId } from '@core/primitives';
+import { IdentifierChannel, OperationId, OtpId } from '@core/primitives';
 import {
   AccountsError,
   CompleteRegistrationRefusalCode,
@@ -65,6 +65,20 @@ function refusalOf<T>(
   if (decoded.ok) throw new Error('expected a refusal');
   return wire(decoded.error);
 }
+
+/** A client-minted transport id (WS-4.1) — the key's shape, a plain id. */
+const OPERATION_TEXT = 'operation-0123456789ab';
+/** Absent, `null`, malformed and reserved (OR-44): none of them an id. */
+const NOT_AN_OPERATION_ID: readonly unknown[] = [
+  undefined,
+  null,
+  'short',
+  'x'.repeat(65),
+  'has spaces in it, sixteen+',
+  1234567890123456,
+  { id: OPERATION_TEXT },
+  '_'.repeat(16),
+];
 
 const request = (data: unknown, uid: string | null = null): WireRequest => ({
   data,
@@ -426,8 +440,25 @@ describe('identity wire', () => {
             [RegistrationField.LastName]: 'Lovelace',
             [RegistrationField.BirthDate]: null,
           },
+          operationId: null,
         },
       });
+    });
+
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21)', () => {
+      const registration = {
+        identifierChannel: IdentifierChannel.Email,
+        identifier: 'ada@example.com',
+        fields: {},
+      };
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeCompleteRegistration(
+          request({ ...registration, operationId }, 'uid_1'),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
     });
 
     it('answers { customToken }', () => {
@@ -631,6 +662,7 @@ describe('identity wire', () => {
         value: {
           callerUserId: 'uid_1',
           edits: { firstName: ' Ada ', lastName: null, birthDate: null },
+          operationId: null,
         },
       });
       expect(
@@ -642,6 +674,26 @@ describe('identity wire', () => {
           details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED' },
         });
       }
+    });
+
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21)', () => {
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeUpdateProfile(
+          request({ firstName: 'Ada', operationId }, 'uid_1'),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
+      // The caller still comes first: no session is refused, id or none.
+      expect(
+        refusalOf(
+          decodeUpdateProfile(request({ operationId: OPERATION_TEXT })),
+        ),
+      ).toEqual({
+        status: 'unauthenticated',
+        details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED' },
+      });
     });
 
     it('answers { changed }, and its refusals as themselves', () => {

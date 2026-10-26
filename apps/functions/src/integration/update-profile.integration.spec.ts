@@ -59,6 +59,8 @@ function sameUpdate(
 const rename: UpdateProfileCommand = {
   callerUserId: UID,
   edits: { firstName: 'Mariya', lastName: null, birthDate: null },
+  // The optional transport id (RU-21): none sent.
+  operationId: null,
 };
 
 describe('updateProfile (emulator)', () => {

@@ -28,6 +28,7 @@ import {
   Currency,
   GiftVoucherId,
   GrantStatus,
+  OperationId,
   Result,
   UserId,
 } from '@core/primitives';
@@ -186,6 +187,8 @@ function rig(
 }
 
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
+/** The cancel's client-minted operation id (WS-4.1 — required on the call). */
+const OPERATION = OperationId.of('cancel-op-0123456789');
 
 describe('cancelAppointment — the client calling off their own visit', () => {
   it('moves the visit to CANCELLED in ONE variant transition (the old variant’s fields deleted) and every open seat cancelled by the client under the window', async () => {
@@ -195,6 +198,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer).toEqual({ ok: true, value: { appointmentId: visit.id } });
@@ -248,12 +252,39 @@ describe('cancelAppointment — the client calling off their own visit', () => {
     );
   });
 
+  it('keys the row `cancelled:<instant>` — byte for byte today’s key; the operation id changes no key in WS-4.1 (DEP-4)', async () => {
+    const visit = laterVisit();
+    const { rows, run } = rig([visit]);
+    expect(
+      (
+        await run({
+          appointmentId: visit.id,
+          callerUserId: FIXTURE_IDS.client,
+          reason: CancellationReason.Unspecified,
+          operationId: OPERATION,
+          actor: CLIENT,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingCancelled,
+          visit.id,
+          FIXTURE_IDS.customer,
+          `cancelled:${FIXTURE_NOW_UTC_MS}`,
+        ),
+      ),
+    ]);
+  });
+
   it('files a typed reason as OTHER (code-only, D23)', async () => {
     const { store, run } = rig([laterVisit()]);
     await run({
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Other,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(store.get(PATH)?.['cancellationReason']).toBe('OTHER');
@@ -266,6 +297,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
@@ -303,6 +335,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
@@ -346,6 +379,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
@@ -365,6 +399,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
         appointmentId,
         callerUserId,
         reason: CancellationReason.Unspecified,
+        operationId: OPERATION,
         actor: CLIENT,
       });
       expect(!answer.ok && answer.error).toMatchObject({
@@ -388,6 +423,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(!answer.ok && answer.error.errorCode).toBe(
@@ -404,6 +440,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(!answer.ok && answer.error).toMatchObject({
@@ -423,6 +460,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer).toEqual({

@@ -73,6 +73,7 @@ const end = (
   sessionId: SESSION,
   adminUserId: ADMIN,
   adminRoles: [Role.Admin],
+  operationId: null,
   ...extra,
 });
 

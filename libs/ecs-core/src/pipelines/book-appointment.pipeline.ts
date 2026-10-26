@@ -20,6 +20,7 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
+  type OperationId,
   ServiceId,
   TimeZone,
   type UserId,
@@ -112,8 +113,8 @@ import {
  *   re-reads and finds the record — and is never answered as success; the
  *   same phone twice is one record, and a retried attempt is answered
  *   before anything is planned.
- * - **After the commit:** the act's rows (`attempt:<attemptId>`, else the
- *   new id), never fatal. A replay appends them again — the same ids, so
+ * - **After the commit:** the act's rows (`attempt:<attemptId>` — the
+ *   attempt id is required, WS-4.1), never fatal. A replay appends them again — the same ids, so
  *   nothing is written twice.
  */
 
@@ -134,8 +135,13 @@ export type BookAppointmentCommand = {
   readonly localDate: string;
   /** Each seat's start a minute of that day (`null`: not one). */
   readonly seats: readonly BookingCall.SeatInput[];
-  /** The client's idempotency key — the new appointment's id; `null` mints one. */
-  readonly attemptId: AppointmentId | null;
+  /**
+   * The client's idempotency key — the new appointment's id, REQUIRED
+   * (WS-4.1: the edge refuses a call without one; the web always minted it).
+   */
+  readonly attemptId: AppointmentId;
+  /** The act's operation id — the attempt id's own text, parsed once at the edge (RU-20). */
+  readonly operationId: OperationId;
   /** The rebooking edge — an analytics link, no authority. */
   readonly bookedFromAppointmentId: AppointmentId | null;
   readonly contact: BookingContact.Input | null;
@@ -309,11 +315,9 @@ async function readBooking(
   cmd: BookAppointmentCommand,
   customerIds: readonly CustomerId[],
 ): Promise<Snapshot> {
-  if (cmd.attemptId !== null) {
-    const existing = await readAppointment(tx, cmd.attemptId);
-    if (existing !== null) {
-      return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
-    }
+  const existing = await readAppointment(tx, cmd.attemptId);
+  if (existing !== null) {
+    return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
   }
   // A shop id `LocationId.parse` refuses — blank, a `/`, a reserved name
   // (OR-44) — is an invalid request, refused UNREAD (DEP-F31): no document

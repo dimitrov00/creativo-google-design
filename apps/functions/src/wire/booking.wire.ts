@@ -29,7 +29,6 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
-  OperationId,
   PriceCents,
   Result,
   SeatId,
@@ -83,6 +82,7 @@ import {
   isRecord,
   listOf,
   numberOrNull,
+  operationIdOf,
   payloadOf,
   refusalOf,
   text,
@@ -284,23 +284,39 @@ export function decodeCommitBooking(
   if (staffPlacement && !callerWorksTheBook(request)) {
     return Result.err(BookingError.bare(BookingErrorCode.CommitForbidden));
   }
+  const owner = callerUserId(request);
+  // The pipeline's own first refusal, answered before the attempt id is
+  // judged: an anonymous client still hears "sign in" (WS-4.1 — the refusal
+  // order stays unauthenticated → forbidden → payload fields).
+  if (!staffPlacement && owner === null) {
+    return Result.err(BookingError.unauthenticated());
+  }
+  // The attempt id is REQUIRED (WS-4.1): it is the new visit's id and the
+  // act's operation id — the key's shape, then a plain id (a reserved
+  // `__x__` name is refused here, never a store throw).
+  const operationId = operationIdOf(payload, 'attemptId');
+  const attemptId =
+    operationId === null ? null : idOf(operationId, AppointmentId.parse);
+  if (operationId === null || attemptId === null) {
+    return Result.err(BookingError.invalidInput('attemptId'));
+  }
   const named =
     typeof onBehalfOf === 'string' && ON_BEHALF_OF.test(onBehalfOf)
       ? UserId.of(onBehalfOf)
       : null;
-  const attempt = field(payload, 'attemptId');
   const bookedFrom = field(payload, 'bookedFromAppointmentId');
   return Result.ok({
     locationId: text(payload, 'locationId'),
     localDate: text(payload, 'localDate'),
     seats,
-    attemptId: ClientOperationId.is(attempt) ? AppointmentId.of(attempt) : null,
+    attemptId,
+    operationId,
     bookedFromAppointmentId:
       typeof bookedFrom === 'string' && BOOKED_FROM.test(bookedFrom)
         ? AppointmentId.of(bookedFrom)
         : null,
     contact: contactOf(field(payload, 'contact')),
-    ownerUserId: staffPlacement ? named : callerUserId(request),
+    ownerUserId: staffPlacement ? named : owner,
     staffPlacement,
     actor: callerActorAsClaimed(request),
   });
@@ -337,10 +353,16 @@ export function decodeCancelAppointment(
   if (!Tag.has(CancellationReason, reason)) {
     return Result.err(CancellationRefusal.invalidInput('reason'));
   }
+  // The act's name, REQUIRED (WS-4.1) — the web mints one per cancel.
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) {
+    return Result.err(CancellationRefusal.invalidInput('operationId'));
+  }
   return Result.ok({
     appointmentId,
     callerUserId: caller,
     reason,
+    operationId,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -375,14 +397,25 @@ export function decodeRescheduleAppointment(
   if (appointmentId === null) {
     return Result.err(BookingError.invalidInput('appointmentId'));
   }
-  const attempt = field(payload, 'attemptId');
+  // The pipeline's own first refusal, answered before the attempt id is
+  // judged (WS-4.1 — an anonymous caller still hears "sign in").
+  const caller = callerUserId(request);
+  if (caller === null) return Result.err(BookingError.unauthenticated());
+  // The move's name, REQUIRED (WS-4.1): the ledger key and the act's
+  // operation id, one text.
+  const attemptId = ClientOperationId.inPayload(payload, 'attemptId');
+  const operationId = operationIdOf(payload, 'attemptId');
+  if (attemptId === null || operationId === null) {
+    return Result.err(BookingError.invalidInput('attemptId'));
+  }
   return Result.ok({
     appointmentId,
-    callerUserId: callerUserId(request),
+    callerUserId: caller,
     locationId: text(payload, 'locationId'),
     localDate: text(payload, 'localDate'),
     seats: seatsOf(field(payload, 'seats')),
-    attemptId: idOf(attempt, ClientOperationId.parse),
+    attemptId,
+    operationId,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -457,11 +490,15 @@ export function decodeTransitionAppointment(
   if (to === BookingStatus.Cancelled && reason === null) {
     return invalid('cancellationReason');
   }
+  // The act's name, REQUIRED (WS-4.1) — the web mints one per transition.
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
   return Result.ok({
     appointmentId,
     to,
     seatId,
     reason,
+    operationId,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -550,21 +587,23 @@ function arrivalOf(
   if (!callerWorksTheBook(request)) {
     return Result.err(BookingError.bare(BookingErrorCode.ArrivedForbidden));
   }
+  const payload = payloadOf(request);
+  const invalid = (name: string) =>
+    Result.err(
+      BookingError.callInvalidInput(BookingErrorCode.ArrivedInvalidInput, name),
+    );
   const appointmentId = idOf(
-    field(payloadOf(request), 'appointmentId'),
+    field(payload, 'appointmentId'),
     AppointmentId.parse,
   );
-  if (appointmentId === null) {
-    return Result.err(
-      BookingError.callInvalidInput(
-        BookingErrorCode.ArrivedInvalidInput,
-        'appointmentId',
-      ),
-    );
-  }
+  if (appointmentId === null) return invalid('appointmentId');
+  // The act's name, REQUIRED (WS-4.1) — the web mints one per tap.
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
   return Result.ok({
     markArrivalAction,
     appointmentId,
+    operationId,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -658,10 +697,14 @@ export function decodeRecordSeatTip(
   if (amount === undefined || (amount !== null && !amount.ok)) {
     return invalid('amountCents');
   }
+  // The act's name, REQUIRED (WS-4.1) — the web mints one per tip.
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
   return Result.ok({
     appointmentId,
     seatId,
     tipCents: amount === null ? null : amount.value,
+    operationId,
     actor: callerActorAsClaimed(request),
   });
 }
@@ -1026,12 +1069,10 @@ export function decodeStaffEditAppointment(
     AppointmentId.parse,
   );
   if (appointmentId === null) return invalid('appointmentId');
-  const operation = field(payload, 'operationId');
-  let operationId: OperationId | null = null;
-  if (operation !== undefined && operation !== null) {
-    if (!ClientOperationId.is(operation)) return invalid('operationId');
-    operationId = OperationId.of(operation);
-  }
+  // The save's name, REQUIRED (WS-4.1): absent, malformed or reserved is
+  // refused alike — the web always sent one.
+  const operationId = operationIdOf(payload, 'operationId');
+  if (operationId === null) return invalid('operationId');
   const version = field(payload, 'expectedVersion');
   let expectedVersion: number | null = null;
   if (version !== undefined && version !== null) {

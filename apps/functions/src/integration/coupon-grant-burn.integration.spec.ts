@@ -25,6 +25,7 @@ import {
   CouponGrantId,
   CouponId,
   GrantStatus,
+  OperationId,
   SeatId,
 } from '@core/primitives';
 import { StaffEditErrorCode } from '@core/errors';
@@ -88,6 +89,12 @@ const SECOND = AppointmentId.of('appt-2');
 const GRANT = CouponGrantId.of('grant-free-cut');
 const COUPON = CouponId.of('coupon-free-cut');
 const GRANT_PATH = `${Collections.CouponGrants}/${GRANT}`;
+let named = 0;
+/** A fresh name per act — every staff save and transition is named (WS-4.1). */
+function nextOperation(): OperationId {
+  named += 1;
+  return OperationId.of(`burn-operation-${String(named).padStart(6, '0')}`);
+}
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -244,7 +251,7 @@ describe('a coupon grant is burned by the save that spends it (emulator)', () =>
       commands,
       acknowledgedOverlap: false,
       expectedVersion: null,
-      operationId: null,
+      operationId: nextOperation(),
       actor: RECEPTION,
     });
   }
@@ -336,6 +343,7 @@ describe('a coupon grant is burned by the save that spends it (emulator)', () =>
       to: BookingStatus.NoShow,
       seatId: null,
       reason: null,
+      operationId: nextOperation(),
       actor: RECEPTION,
     });
     expect(noShow.ok).toBe(true);

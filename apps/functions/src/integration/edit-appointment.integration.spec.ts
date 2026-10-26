@@ -17,6 +17,7 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
+  ClientOperationId,
   Currency,
   GiftVoucherId,
   OperationId,
@@ -90,6 +91,18 @@ if (!EMULATOR_HOST.includes('127.0.0.1')) {
 /** Thursday of the week the pinned Monday 09:00 opens. */
 const THURSDAY = localDate('2026-10-01');
 const OPERATION = OperationId.of('operation-0123456789abcdef');
+/** The client's move's name — every move is named (WS-4.1). */
+const MOVE_ATTEMPT = ((): ClientOperationId => {
+  const id = ClientOperationId.parse('move-attempt-0123456789');
+  if (!id.ok) throw new Error('a broken fixture');
+  return id.value;
+})();
+let named = 0;
+/** A fresh name for a save that is no re-send — every staff save is named (WS-4.1). */
+function nextOperation(): OperationId {
+  named += 1;
+  return OperationId.of(`edit-operation-${String(named).padStart(6, '0')}`);
+}
 const PETAR = BarberId.of('b-petar');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 const RECEPTION = Actor.staff(FIXTURE_IDS.client, [Role.Receptionist]);
@@ -222,7 +235,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       ],
       acknowledgedOverlap: false,
       expectedVersion: null,
-      operationId: null,
+      operationId: nextOperation(),
       actor: RECEPTION,
       ...extra,
     });
@@ -287,14 +300,20 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
           subject: { requestedSubjectRole: RequestedSubjectRole.Self },
         },
       ],
-      attemptId: null,
+      attemptId: MOVE_ATTEMPT,
+      operationId: OperationId.of(MOVE_ATTEMPT),
       actor: Actor.user(FIXTURE_IDS.client),
     });
     expect(moved.ok).toBe(true);
     const afterMove = await stored();
     expect(afterMove['revision']).toBe(3);
+    // The client's move is named too (WS-4.1): the ledger holds both acts.
     expect(afterMove['appliedOperations']).toEqual([
       expect.objectContaining({ operationId: OPERATION, revision: 2 }),
+      expect.objectContaining({
+        operationId: OperationId.of(`move:${MOVE_ATTEMPT}`),
+        revision: 3,
+      }),
     ]);
 
     const resent = await staffEdit(11, { operationId: OPERATION });
@@ -311,13 +330,18 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     expect(await stored()).toEqual(afterMove);
   });
 
-  it('applies an unnamed send every time, exactly as before', async () => {
-    await staffEdit(11);
-    await staffEdit(11);
+  it('applies two differently named saves once each — no save is unnamed (WS-4.1)', async () => {
+    const first = nextOperation();
+    const second = nextOperation();
+    await staffEdit(11, { operationId: first });
+    await staffEdit(11, { operationId: second });
 
     const after = await stored();
     expect(after['revision']).toBe(3);
-    expect(after['appliedOperations']).toEqual([]);
+    expect(after['appliedOperations']).toEqual([
+      expect.objectContaining({ operationId: first, revision: 2 }),
+      expect.objectContaining({ operationId: second, revision: 3 }),
+    ]);
   });
 
   it('settles two saves drawing one voucher BY CODE at once against the balance the loser re-reads — the draws never sum past it', async () => {
@@ -360,7 +384,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
         ],
         acknowledgedOverlap: false,
         expectedVersion: null,
-        operationId: null,
+        operationId: nextOperation(),
         actor: RECEPTION,
       });
 
@@ -451,7 +475,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
           commands: Array.isArray(commands) ? commands : [commands],
           acknowledgedOverlap: false,
           expectedVersion,
-          operationId: null,
+          operationId: nextOperation(),
           actor: RECEPTION,
         }),
         encodeStaffEditAppointmentAnswer,

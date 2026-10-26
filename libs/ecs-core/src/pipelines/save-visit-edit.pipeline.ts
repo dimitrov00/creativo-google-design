@@ -50,7 +50,6 @@ export const saveVisitEdit =
         commands: plan.commands,
         acknowledgedOverlap: false,
         expectedVersion: cmd.commit.revision,
-        operationId: null,
       });
       if (!landed) return VisitEditWrite.batchRefused(null);
     }

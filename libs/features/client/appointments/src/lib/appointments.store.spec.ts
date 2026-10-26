@@ -5,12 +5,14 @@ import {
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   GATEWAY_PORTS,
+  ID_PORTS,
   LOCATION_LOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   type AccountAppointmentReadPorts,
   type AppointmentReadPorts,
   Callables,
+  type IdPorts,
   type LocationLoadPorts,
 } from '@core/ports';
 import type { Appointment } from '@core/entities';
@@ -46,6 +48,7 @@ import {
   locationFixture,
   memoryAppointmentReadPorts,
   memoryDefaultLocationPorts,
+  memoryIdPorts,
   memoryLocationLoadPorts,
   memoryProgramsWorld,
   minute,
@@ -153,6 +156,8 @@ interface Configure {
   readonly calls?: GatewayCall[];
   /** The location reads the shop's zone comes from — the fixture shop by default. */
   readonly locations?: LocationLoadPorts;
+  /** The id source each cancel's `operationId` is minted from — `cancel-operation-1`, `-2`, … by default. */
+  readonly ids?: IdPorts;
 }
 
 function configure(
@@ -178,6 +183,11 @@ function configure(
       },
       // The pinned clock: 2026-09-28 09:00 at the fixture shop.
       { provide: CLOCK_PORTS, useValue: { nowUtcMs: pinnedNowUtcMs() } },
+      // Names each cancel (WS-4.1), counted so a spec reads which call got which.
+      {
+        provide: ID_PORTS,
+        useValue: extras.ids ?? memoryIdPorts('cancel-operation'),
+      },
       {
         provide: LOCATION_LOAD_PORTS,
         useValue: extras.locations ?? defaultShop(),
@@ -495,7 +505,11 @@ describe('AppointmentsStore', () => {
     expect(calls).toEqual([
       {
         callable: Callables.CancelAppointment,
-        input: { appointmentId: 'appt_1', reason: CancellationReason.Other },
+        input: {
+          appointmentId: 'appt_1',
+          reason: CancellationReason.Other,
+          operationId: 'cancel-operation-1',
+        },
       },
     ]);
     expect(store.cancelError()).toBeNull();
@@ -513,9 +527,58 @@ describe('AppointmentsStore', () => {
     await store.cancel(AppointmentId.of('appt_2'), '   ');
 
     expect(calls.map((call) => call.input)).toEqual([
-      { appointmentId: 'appt_1', reason: CancellationReason.Unspecified },
-      { appointmentId: 'appt_2', reason: CancellationReason.Unspecified },
+      {
+        appointmentId: 'appt_1',
+        reason: CancellationReason.Unspecified,
+        operationId: 'cancel-operation-1',
+      },
+      {
+        appointmentId: 'appt_2',
+        reason: CancellationReason.Unspecified,
+        operationId: 'cancel-operation-2',
+      },
     ]);
+  });
+
+  // WS-4.1: every cancel is ONE act under its own name — a second tap after
+  // a failure is a second act, minted afresh (no unsettled-name memory: the
+  // server refuses a cancel of a cancelled visit by its graph, RU-4).
+  it('cancel() names each call afresh — the same visit tapped twice goes out under two names', async () => {
+    const calls: GatewayCall[] = [];
+    const store = configure(
+      appointmentReads({ observeUpcoming: () => of(Result.ok([])) }),
+      {
+        calls,
+        gateway: {
+          [Callables.CancelAppointment]: () =>
+            Result.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
+        },
+      },
+    );
+
+    await store.cancel(AppointmentId.of('appt_1'), '');
+    await store.cancel(AppointmentId.of('appt_1'), '');
+
+    expect(
+      calls.map((call) => (call.input as BookingCall.Cancel).operationId),
+    ).toEqual(['cancel-operation-1', 'cancel-operation-2']);
+  });
+
+  it('cancel() refuses a minted name the call cannot carry — nothing goes out', async () => {
+    const calls: GatewayCall[] = [];
+    const store = configure(
+      appointmentReads({ observeUpcoming: () => of(Result.ok([])) }),
+      { calls, ids: { nextId: () => 'short' } },
+    );
+
+    const outcome = await store.cancel(AppointmentId.of('appt_1'), 'reason');
+
+    expect(outcome).toBe(false);
+    expect(calls).toEqual([]);
+    expect(store.cancelError()).toEqual(
+      PipelineError.bare(PipelineErrorCode.InvalidRequest),
+    );
+    expect(store.cancellingId()).toBeNull();
   });
 
   it('cancel() keeps the call’s refusal for the sheet to word', async () => {

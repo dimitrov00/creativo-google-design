@@ -5,6 +5,7 @@ import {
   APPOINTMENT_READ_PORTS,
   CLOCK_PORTS,
   GATEWAY_PORTS,
+  ID_PORTS,
   ShopZoneService,
   distinctLocationIds,
   nowOfZones,
@@ -14,12 +15,13 @@ import type { Appointment } from '@core/entities';
 import { Callables } from '@core/ports';
 import {
   type AppointmentId,
+  ClientOperationId,
   LocalDate,
   type LocationId,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import { type PipelineError } from '@core/errors';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { BookingCall, BookingLifecycle, ShopNow } from '@core/components';
 import { VisitListSystem, ZonedTimeSystem } from '@core/systems';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
@@ -86,6 +88,8 @@ export class AppointmentsStore {
   private readonly cancelCall = inject(GATEWAY_PORTS).callableClient(
     Callables.CancelAppointment,
   );
+  /** Mints each cancel's `operationId` — the name of that ONE act (WS-4.1). */
+  private readonly ids = inject(ID_PORTS);
 
   /**
    * "Now" as the instant the cancellation window is measured against (an
@@ -362,14 +366,25 @@ export class AppointmentsStore {
    * `rebuildBusy` trigger frees the slot the moment the status lands.
    * `reason` is what the client typed — the call carries the code it is
    * filed under (`OTHER` when anything was typed, else `UNSPECIFIED`).
-   * Resolves `true` on success.
+   * Each call goes out under a freshly minted `operationId` (WS-4.1 — a
+   * second tap is a second act); a minted name the wire cannot carry is
+   * refused here, before anything goes out, as the server refuses a
+   * malformed call. Resolves `true` on success.
    */
   async cancel(appointmentId: AppointmentId, reason: string): Promise<boolean> {
+    const operationId = ClientOperationId.parse(this.ids.nextId());
+    if (!operationId.ok) {
+      this._cancelError.set(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      );
+      return false;
+    }
     this._cancellingId.set(appointmentId);
     this._cancelError.set(null);
-    const result = await this.cancelCall(
-      BookingCall.clientCancel(appointmentId, reason),
-    );
+    const result = await this.cancelCall({
+      ...BookingCall.clientCancel(appointmentId, reason),
+      operationId: operationId.value,
+    });
     this._cancellingId.set(null);
     if (!result.ok) {
       this._cancelError.set(result.error);

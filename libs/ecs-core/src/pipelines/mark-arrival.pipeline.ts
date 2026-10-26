@@ -1,5 +1,5 @@
 import { type Actor, MarkArrivalAction, type WriteOp } from '@core/components';
-import { Result, type AppointmentId } from '@core/primitives';
+import { Result, type AppointmentId, type OperationId } from '@core/primitives';
 import {
   BookingError,
   type MarkArrivalError,
@@ -27,6 +27,8 @@ export type MarkArrivalCommand = {
   /** The verb — `MarkArrivalAction` (`@core/components`). */
   readonly markArrivalAction: MarkArrivalAction;
   readonly appointmentId: AppointmentId;
+  /** The act's operation id — the client-minted name of this ONE act, REQUIRED (WS-4.1). */
+  readonly operationId: OperationId;
   /** The verified caller the row names; `null` logs loudly and writes no row. */
   readonly actor: Actor | null;
 };

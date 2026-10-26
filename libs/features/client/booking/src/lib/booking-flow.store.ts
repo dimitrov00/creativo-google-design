@@ -817,13 +817,19 @@ export class BookingFlowStore {
   /**
    * A MOVE, not a second booking (`rescheduleAppointment`): the server keeps
    * the appointment's id, its status and its contact, and refuses the same
-   * window a cancellation would be refused in.
+   * window a cancellation would be refused in. Its attempt id is required
+   * on the wire (WS-4.1), so a selection the id source could not name is
+   * refused here, never sent — as {@link sendBooking} refuses it.
    */
-  private sendMove(
+  private async sendMove(
     moving: HeldMove,
     selection: ScheduleSelection,
     seats: readonly BookingCall.Seat[],
   ): Promise<Result<BookingCall.Rescheduled, PipelineError>> {
+    const attemptId = this._attemptId;
+    if (attemptId === null) {
+      return Result.err(PipelineError.bare(PipelineErrorCode.InvalidRequest));
+    }
     return this.gateway.callableClient(Callables.RescheduleAppointment)({
       appointmentId: moving.appointmentId,
       locationId: selection.locationId,
@@ -831,10 +837,10 @@ export class BookingFlowStore {
       seats,
       // The same name as a commit's, and for the same reason: one per ARMED
       // selection (`selectSchedule`), reused by every retry of it. The
-      // server keys the move's audit rows by it, so a retry whose first
-      // attempt landed fills a lost row instead of logging nothing — and
-      // never logs the move twice.
-      attemptId: this._attemptId,
+      // server keys the move's replay answer and its audit rows by it, so
+      // a retry whose first attempt landed never moves — nor logs — the
+      // visit twice.
+      attemptId,
     });
   }
 

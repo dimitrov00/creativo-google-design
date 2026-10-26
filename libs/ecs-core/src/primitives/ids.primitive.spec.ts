@@ -25,6 +25,7 @@ import {
   CartLineId,
   ClientMoneyStatsId,
   ClientOperationId,
+  OperationId,
   DraftPersonKey,
   GuestKey,
   CustomerId,
@@ -435,6 +436,64 @@ describe('ClientOperationId — a client-minted idempotency key', () => {
     }
     expect(ClientOperationId.is(1234567890123456)).toBe(false);
     expect(ClientOperationId.is(null)).toBe(false);
+  });
+
+  describe('inPayload — the id a payload carries under a field (WS-4.1)', () => {
+    const id = '6f1c2a9e-5b3d-4e7a-9c11-0a2b3c4d5e6f';
+
+    it('reads a well-shaped id from the named own field', () => {
+      expect(
+        ClientOperationId.inPayload({ operationId: id }, 'operationId'),
+      ).toBe(id);
+      expect(
+        ClientOperationId.inPayload(
+          { appointmentId: 'apt-1', attemptId: id },
+          'attemptId',
+        ),
+      ).toBe(id);
+    });
+
+    it('is null for an absent, mistyped or misshapen id — never the raw value', () => {
+      for (const payload of [
+        {},
+        { operationId: null },
+        { operationId: 1234567890123456 },
+        { operationId: '' },
+        { operationId: 'a'.repeat(15) },
+        { operationId: 'a'.repeat(65) },
+        { operationId: 'a/b'.repeat(8) },
+        { attemptId: id },
+      ]) {
+        expect(ClientOperationId.inPayload(payload, 'operationId')).toBeNull();
+      }
+    });
+
+    it('judges the shape only — a reserved `__x__` name is `OperationId.parse`’s to refuse', () => {
+      const reserved = '__operation_id__';
+      expect(
+        ClientOperationId.inPayload({ operationId: reserved }, 'operationId'),
+      ).toBe(reserved);
+      expect(OperationId.parse(reserved).ok).toBe(false);
+    });
+
+    it('is null when the payload is no record', () => {
+      for (const payload of [null, undefined, id, 42, [id], true]) {
+        expect(ClientOperationId.inPayload(payload, 'operationId')).toBeNull();
+      }
+    });
+
+    it('reads an own property only — an inherited id is none the caller sent', () => {
+      const inherited = Object.create({ operationId: id }) as object;
+      expect(ClientOperationId.inPayload(inherited, 'operationId')).toBeNull();
+    });
+
+    it('is pure: same input → same output, the payload untouched', () => {
+      const payload = Object.freeze({ operationId: id, extra: 'x' });
+      expect(ClientOperationId.inPayload(payload, 'operationId')).toBe(
+        ClientOperationId.inPayload(payload, 'operationId'),
+      );
+      expect(payload).toEqual({ operationId: id, extra: 'x' });
+    });
   });
 });
 

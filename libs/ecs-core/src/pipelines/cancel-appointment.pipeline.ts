@@ -1,5 +1,10 @@
 import type { Actor, CancellationReason, WriteOp } from '@core/components';
-import { Result, type AppointmentId, type UserId } from '@core/primitives';
+import {
+  Result,
+  type AppointmentId,
+  type OperationId,
+  type UserId,
+} from '@core/primitives';
 import {
   BookingError,
   type CancelAppointmentError,
@@ -58,6 +63,8 @@ export type CancelAppointmentCommand = {
   readonly callerUserId: UserId;
   /** The code the seats are filed under (code-only, §9 D23). */
   readonly reason: CancellationReason;
+  /** The act's operation id — the client-minted name of this ONE act, REQUIRED (WS-4.1). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 

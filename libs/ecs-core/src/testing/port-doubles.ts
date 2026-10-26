@@ -1514,14 +1514,14 @@ export function scriptedGatewayPorts(
 export type VisitEditWriteCall =
   | {
       readonly port: 'sendStaffEdit';
-      readonly intent: BookingCall.StaffEdit;
+      readonly intent: BookingCall.StaffEditIntent;
     }
   | {
       readonly port: 'saveTeamNoteText';
       readonly appointmentId: AppointmentId;
       readonly text: string | null;
     }
-  | { readonly port: 'sendSeatTip'; readonly request: BookingCall.Tip };
+  | { readonly port: 'sendSeatTip'; readonly request: BookingCall.TipIntent };
 
 /** How `scriptedVisitEditWritePorts` answers — every part optional. */
 export type VisitEditWriteScript = {

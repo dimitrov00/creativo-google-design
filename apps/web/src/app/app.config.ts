@@ -321,14 +321,16 @@ export const appConfig: ApplicationConfig = {
       } satisfies DefaultLocationPorts,
     },
     // The session and the callables, eager: the shell reads the session at
-    // boot, and every callable goes through the ONE typed client.
+    // boot, and every callable goes through the ONE typed client (which
+    // mints a transport operation id from the id source, WS-4.1).
     {
       provide: AUTH_SESSION_PORTS,
       useFactory: () => authSessionPorts(inject(FIREBASE_AUTH)),
     },
     {
       provide: GATEWAY_PORTS,
-      useFactory: () => callableClientPorts(inject(FIREBASE_FUNCTIONS)),
+      useFactory: () =>
+        callableClientPorts(inject(FIREBASE_FUNCTIONS), inject(ID_PORTS)),
     },
     {
       provide: OTP_CHALLENGE_PORTS,

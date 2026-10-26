@@ -10,6 +10,7 @@ import {
   CustomerId,
   type IdentifierChannel,
   type LocalDate,
+  type OperationId,
   Result,
   type UserId,
 } from '@core/primitives';
@@ -98,6 +99,11 @@ export type CompleteRegistrationCommand = {
    * 7.4 exception): its refusal needs the age day.
    */
   readonly fields: RegistrationFields;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type CompleteRegistrationAnswer = {

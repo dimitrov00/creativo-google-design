@@ -17,7 +17,13 @@ import {
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';
+import {
+  field,
+  operationIdOf,
+  payloadOf,
+  refusalOf,
+  type WireRequest,
+} from './wire-read';
 
 /**
  * THE IMPERSONATION CALLABLES' WIRE (Phase 4a 4A-3 (4)) — new with the
@@ -81,6 +87,8 @@ export function decodeStartImpersonation(
     impersonationScope: scope.value,
     reason: sentText(payload, 'reason'),
     expiresAtUtcMs: expiry.value,
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(payload, 'operationId'),
   });
 }
 
@@ -102,14 +110,17 @@ export function decodeEndImpersonation(
 ): Result<EndImpersonationCommand, EdgeError> {
   const refused = gate(request);
   if (refused !== null) return Result.err(refused);
+  const payload = payloadOf(request);
   const sessionId = ImpersonationSessionId.parse(
-    sentText(payloadOf(request), 'sessionId'),
+    sentText(payload, 'sessionId'),
   );
   if (!sessionId.ok) return Result.err(sessionId.error);
   return Result.ok({
     sessionId: sessionId.value,
     adminUserId: callerUserId(request),
     adminRoles: callerKnownRoles(request),
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(payload, 'operationId'),
   });
 }
 

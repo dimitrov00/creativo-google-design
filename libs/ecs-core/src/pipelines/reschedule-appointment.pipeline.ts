@@ -121,7 +121,7 @@ import { customerIdsFor } from './customer-records.pipeline';
  * - **One plan:** the appointment `Update` (the revision stamped, a named
  *   move recorded in the ledger) and the busy `Set`s of the NEW day merged
  *   onto what this attempt read; the old day is left to `rebuildBusy`.
- * - **After:** the row (`move:<attemptId>`, else `revision:<n>`), naming
+ * - **After:** the row (`move:<attemptId>` — every move is named, WS-4.1), naming
  *   everyone the move touched; a replayed named move appends it again
  *   (`loggedOnRetry`), a request for where the visit already is logs none.
  */
@@ -142,8 +142,10 @@ export type RescheduleAppointmentCommand = {
   /** The ONE shop day the cart is on, as sent (`YYYY-MM-DD`). */
   readonly localDate: string;
   readonly seats: readonly BookingCall.SeatInput[];
-  /** The client's name for this move; `null` makes no claim. */
-  readonly attemptId: ClientOperationId | null;
+  /** The client's name for this move — REQUIRED (WS-4.1; the web always minted it). */
+  readonly attemptId: ClientOperationId;
+  /** The act's operation id — the attempt id's own text, parsed once at the edge (RU-20). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 
@@ -214,24 +216,20 @@ export const rescheduleAppointment =
     if (owner === null) return Result.err(BookingError.unauthenticated());
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;
-    const operation: Operation | null =
-      cmd.attemptId === null
-        ? null
-        : {
-            id: OperationId.of(`${MOVE_OPERATION}${cmd.attemptId}`),
-            // The shop, the day and the seats, as sent — the staff edit's
-            // basis over one `{ move }` command, so both kinds of intent
-            // share a ledger.
-            digest: AppointmentEditSystem.digestOf(
-              ports.hash(
-                MoveSystem.digestBasis({
-                  locationId: cmd.locationId,
-                  localDate: cmd.localDate,
-                  seats: cmd.seats,
-                }),
-              ),
-            ),
-          };
+    const operation: Operation = {
+      id: OperationId.of(`${MOVE_OPERATION}${cmd.attemptId}`),
+      // The shop, the day and the seats, as sent — the staff edit's basis
+      // over one `{ move }` command, so both kinds of intent share a ledger.
+      digest: AppointmentEditSystem.digestOf(
+        ports.hash(
+          MoveSystem.digestBasis({
+            locationId: cmd.locationId,
+            localDate: cmd.localDate,
+            seats: cmd.seats,
+          }),
+        ),
+      ),
+    };
     const nowUtcMs = ports.nowUtcMs();
 
     const committed = await ports.commit(
@@ -252,10 +250,7 @@ export const rescheduleAppointment =
                 ...AuditSystem.subjectsOf(stored),
                 ...AuditSystem.subjectsOf(after),
               ],
-        changeKey:
-          cmd.attemptId === null
-            ? AuditSystem.changeKey.revision(revision)
-            : AuditSystem.changeKey.move(cmd.attemptId),
+        changeKey: AuditSystem.changeKey.move(cmd.attemptId),
         context: AuditContext.rescheduled(
           revision,
           moveOutcome === MoveOutcome.Replayed,
@@ -321,7 +316,7 @@ async function readMove(
   tx: ReadTx,
   cmd: RescheduleAppointmentCommand,
   owner: UserId,
-  operation: Operation | null,
+  operation: Operation,
 ): Promise<Snapshot> {
   const stored = await readAppointment(tx, cmd.appointmentId);
   if (stored === null || stored.ownerUserId !== owner) {
@@ -330,25 +325,23 @@ async function readMove(
       error: BookingError.invalidInput('appointmentId'),
     };
   }
-  if (operation !== null) {
-    const verdict = AppointmentEditSystem.ledgerVerdict(
-      stored.appliedOperations,
-      operation.id,
-      operation.digest,
-    );
-    if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Refused,
-        error: BookingError.invalidInput('attemptId'),
-      };
-    }
-    if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Replay,
-        stored,
-        revision: verdict.applied.revision,
-      };
-    }
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    stored.appliedOperations,
+    operation.id,
+    operation.digest,
+  );
+  if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: BookingError.invalidInput('attemptId'),
+    };
+  }
+  if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Replay,
+      stored,
+      revision: verdict.applied.revision,
+    };
   }
   const notFound: Snapshot = {
     bookingReadSnapshot: BookingReadSnapshot.Refused,
@@ -620,7 +613,7 @@ function decideLines(
 function decideMove(
   snapshot: Snapshot,
   owner: UserId,
-  operation: Operation | null,
+  operation: Operation,
   policy: BookingPolicy,
   nowUtcMs: UtcEpochMs,
   ports: DecidePorts,
@@ -690,15 +683,12 @@ function decideMove(
     utcEpochMs: loaded.startUtcMs,
     seats,
     revision,
-    appliedOperations:
-      operation === null
-        ? stored.appliedOperations
-        : AppointmentEditSystem.record(
-            stored.appliedOperations,
-            operation.id,
-            revision,
-            operation.digest,
-          ),
+    appliedOperations: AppointmentEditSystem.record(
+      stored.appliedOperations,
+      operation.id,
+      revision,
+      operation.digest,
+    ),
   });
   return Result.ok({
     stored,

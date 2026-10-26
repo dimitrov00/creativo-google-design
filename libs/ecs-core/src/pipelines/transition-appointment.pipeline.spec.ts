@@ -39,6 +39,7 @@ import {
   GiftVoucherId,
   GrantStatus,
   type MinuteOfDay,
+  OperationId,
   Result,
   SeatId,
   UserId,
@@ -182,15 +183,26 @@ function rig(
 
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 
+/**
+ * A staff transition as the edge decodes it. Its operation id (WS-4.1 —
+ * required on the call) names the verb by default, so two different acts in
+ * one spec never share a name; `extra.operationId` names a retry.
+ */
 function command(
   to: BookingStatus,
-  extra: { seatId?: SeatId | null; reason?: CancellationReason | null } = {},
+  extra: {
+    seatId?: SeatId | null;
+    reason?: CancellationReason | null;
+    operationId?: OperationId;
+  } = {},
 ) {
   return {
     appointmentId: FIXTURE_IDS.appointment,
     to,
     seatId: extra.seatId ?? null,
     reason: extra.reason ?? null,
+    operationId:
+      extra.operationId ?? OperationId.of(`transition-op-${to.toLowerCase()}`),
     actor: STAFF,
   };
 }
@@ -237,6 +249,26 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
         ),
       ),
     );
+  });
+
+  it('keys the row `transition:party:<instant>` — byte for byte today’s key; the operation id changes no key in WS-4.1 (DEP-4)', async () => {
+    const pending = appointmentFixture({
+      lifecycle: BookingLifecycle.pending(
+        utcMs('2026-09-27T09:00:00.000+03:00'),
+      ),
+    });
+    const { rows, run } = rig([pending]);
+    expect((await run(command(BookingStatus.Confirmed))).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingStaffConfirmed,
+          pending.id,
+          FIXTURE_IDS.customer,
+          `transition:party:${FIXTURE_NOW_UTC_MS}`,
+        ),
+      ),
+    ]);
   });
 
   it('completes the party: every open seat worked; the read set is the visit and its shop', async () => {
@@ -1049,7 +1081,8 @@ const WALK_IN: BookAppointmentCommand = {
       },
     },
   ],
-  attemptId: null,
+  attemptId: AppointmentId.of('walk-in-attempt-0123456789'),
+  operationId: OperationId.of('walk-in-attempt-0123456789'),
   bookedFromAppointmentId: null,
   contact: null,
   ownerUserId: null,

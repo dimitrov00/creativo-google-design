@@ -433,7 +433,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
         locationId: 'loc-1',
         localDate: '2026-10-12',
         seats: [],
-        attemptId: null,
+        attemptId: 'attempt-0123456789abcdef',
         contact: null,
         bookedFromAppointmentId: null,
         placement: 'SELF',
@@ -452,7 +452,14 @@ const FLIPPED: { readonly [name: string]: Case } = {
   },
   cancelAppointment: {
     pipeline: 'cancelAppointment',
-    input: request({ appointmentId: 'a-1', reason: 'UNSPECIFIED' }, CLIENT),
+    input: request(
+      {
+        appointmentId: 'a-1',
+        reason: 'UNSPECIFIED',
+        operationId: 'operation-0123456789ab',
+      },
+      CLIENT,
+    ),
     command: {
       appointmentId: 'a-1',
       callerUserId: 'u-client',
@@ -469,7 +476,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
         locationId: 'loc-1',
         localDate: '2026-10-12',
         seats: [],
-        attemptId: null,
+        attemptId: 'move-attempt-0123456789',
       },
       CLIENT,
     ),
@@ -490,6 +497,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
         toBookingStatus: 'COMPLETED',
         cancellationReason: null,
         seatId: null,
+        operationId: 'operation-0123456789ab',
       },
       STAFF,
     ),
@@ -499,14 +507,20 @@ const FLIPPED: { readonly [name: string]: Case } = {
   },
   markArrived: {
     pipeline: 'markArrival',
-    input: request({ appointmentId: 'a-1' }, STAFF),
+    input: request(
+      { appointmentId: 'a-1', operationId: 'operation-0123456789ab' },
+      STAFF,
+    ),
     command: { markArrivalAction: 'ARRIVE', appointmentId: 'a-1' },
     answer: ok({ appointmentId: 'a-1', unchanged: false }),
     expected: { appointmentId: 'a-1', alreadyArrived: false },
   },
   clearArrival: {
     pipeline: 'markArrival',
-    input: request({ appointmentId: 'a-1' }, STAFF),
+    input: request(
+      { appointmentId: 'a-1', operationId: 'operation-0123456789ab' },
+      STAFF,
+    ),
     command: { markArrivalAction: 'CLEAR', appointmentId: 'a-1' },
     answer: ok({ appointmentId: 'a-1', unchanged: true }),
     expected: { appointmentId: 'a-1', alreadyClear: true },
@@ -514,7 +528,12 @@ const FLIPPED: { readonly [name: string]: Case } = {
   recordSeatTip: {
     pipeline: 'recordSeatTip',
     input: request(
-      { appointmentId: 'a-1', seatId: 's-1', amountCents: 500 },
+      {
+        appointmentId: 'a-1',
+        seatId: 's-1',
+        amountCents: 500,
+        operationId: 'operation-0123456789ab',
+      },
       STAFF,
     ),
     command: { appointmentId: 'a-1', seatId: 's-1', tipCents: 500 },
@@ -536,7 +555,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
         ],
         acknowledgedOverlap: false,
         expectedVersion: null,
-        operationId: null,
+        operationId: 'operation-0123456789ab',
       },
       STAFF,
     ),

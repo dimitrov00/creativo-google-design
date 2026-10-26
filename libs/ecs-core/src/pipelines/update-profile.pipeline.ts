@@ -2,6 +2,7 @@ import { type ProfileEdits, WriteOp } from '@core/components';
 import {
   AuditEntryId,
   defect,
+  type OperationId,
   Result,
   type UserId,
   type UtcEpochMs,
@@ -50,6 +51,11 @@ export type UpdateProfileCommand = {
   /** The VERIFIED session's uid — an owner edits only their own account. */
   readonly callerUserId: UserId;
   readonly edits: ProfileEdits;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type UpdateProfileAnswer = {

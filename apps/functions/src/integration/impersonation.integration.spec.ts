@@ -102,6 +102,8 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       impersonationScope: ImpersonationScope.Read,
       reason: 'support ticket 42',
       expiresAtUtcMs: EXPIRES,
+      // The optional transport id (RU-21): none sent.
+      operationId: null,
     });
 
   it('starts ONE session, stamped to purge 30 days after its expiry', async () => {
@@ -123,6 +125,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
         sessionId: SESSION,
         adminUserId: OWNER,
         adminRoles: [Role.Admin],
+        operationId: null,
       }),
     ).toEqual({
       ok: true,
@@ -144,6 +147,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       sessionId: SESSION,
       adminUserId: OWNER,
       adminRoles: [Role.Admin],
+      operationId: null,
     });
     expect(!answer.ok && answer.error.errorCode).toBe(
       GovernanceErrorCode.EndImpersonationNotFound,

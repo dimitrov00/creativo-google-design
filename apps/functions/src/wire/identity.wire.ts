@@ -37,6 +37,7 @@ import {
   field,
   isRecord,
   isStoreFailure,
+  operationIdOf,
   storeFailure,
   type WireRequest,
 } from './wire-read';
@@ -252,6 +253,8 @@ export function decodeCompleteRegistration(
     identifierChannel: channel,
     rawIdentifier: identifier,
     fields: registrationFieldsOf(fields),
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(payload, 'operationId'),
   });
 }
 
@@ -356,6 +359,8 @@ export function decodeUpdateProfile(
       lastName: lastName.text,
       birthDate: birthDate.text,
     },
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(request.data, 'operationId'),
   });
 }
 

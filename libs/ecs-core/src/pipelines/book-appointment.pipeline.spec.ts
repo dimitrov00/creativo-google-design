@@ -21,6 +21,7 @@ import {
   BarberBusyDayId,
   BusyKey,
   CustomerId,
+  OperationId,
   Result,
   UserId,
 } from '@core/primitives';
@@ -122,6 +123,7 @@ function command(
     localDate: TOMORROW,
     seats: [SEAT],
     attemptId: ATTEMPT,
+    operationId: OperationId.of(ATTEMPT),
     bookedFromAppointmentId: null,
     contact: null,
     ownerUserId: FIXTURE_IDS.client,
@@ -235,6 +237,21 @@ describe('bookAppointment', () => {
         ),
       ),
     );
+  });
+
+  it('keys the row `attempt:<attemptId>` — byte for byte today’s key, the id now required (WS-4.1, DEP-4)', async () => {
+    const { rows, run } = rig(catalogue());
+    expect((await run(command())).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingCommitted,
+          ATTEMPT,
+          FIXTURE_IDS.customer,
+          'attempt:attempt-0123456789abcdef',
+        ),
+      ),
+    ]);
   });
 
   it('reads the attempt FIRST, then the customer record inside the phase-one getAll — never users/{uid}', async () => {
@@ -386,7 +403,6 @@ describe('bookAppointment', () => {
       command({
         staffPlacement: true,
         ownerUserId: null,
-        attemptId: null,
         seats: [
           {
             ...SEAT,

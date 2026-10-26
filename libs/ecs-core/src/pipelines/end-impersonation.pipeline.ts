@@ -4,7 +4,12 @@ import {
   type Role,
   WriteOp,
 } from '@core/components';
-import { defect, Result, type UserId } from '@core/primitives';
+import {
+  defect,
+  type OperationId,
+  Result,
+  type UserId,
+} from '@core/primitives';
 import { type EndImpersonationError, GovernanceError } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
 import type { ClockPorts, CommitPorts, TelemetryPorts } from '@core/ports';
@@ -40,6 +45,11 @@ export type EndImpersonationCommand = GovernanceCall.End & {
   readonly adminUserId: UserId | null;
   /** The verified token's roles. */
   readonly adminRoles: readonly Role[];
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 /** The answer and its one write. */

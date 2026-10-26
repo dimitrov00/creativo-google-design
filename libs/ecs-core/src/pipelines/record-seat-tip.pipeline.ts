@@ -3,6 +3,7 @@ import {
   Result,
   type AppointmentId,
   AuditResourceId,
+  type OperationId,
   type PriceCents,
   type SeatId,
 } from '@core/primitives';
@@ -31,6 +32,8 @@ export type RecordSeatTipCommand = {
   readonly seatId: SeatId;
   /** In the seat's own currency; `null` clears ("not recorded" — never zero). */
   readonly tipCents: PriceCents | null;
+  /** The act's operation id — the client-minted name of this ONE act, REQUIRED (WS-4.1). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 

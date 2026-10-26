@@ -1738,7 +1738,6 @@ describe('scriptedVisitEditWritePorts — the visit sheet’s three writes', () 
     commands: [],
     acknowledgedOverlap: false,
     expectedVersion: 3,
-    operationId: null,
   };
   const tip = {
     appointmentId: FIXTURE_IDS.appointment,

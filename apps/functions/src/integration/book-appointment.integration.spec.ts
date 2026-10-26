@@ -10,6 +10,7 @@ import {
   AppointmentId,
   BusyKey,
   CustomerId,
+  OperationId,
   UtcEpochMs,
 } from '@core/primitives';
 import { Collections } from '@core/entities';
@@ -81,6 +82,8 @@ function booking(
       },
     ],
     attemptId,
+    // The act's name — the attempt id's own text, as the edge parses it (WS-4.1).
+    operationId: OperationId.of(attemptId),
     bookedFromAppointmentId: null,
     contact: null,
     ownerUserId: FIXTURE_IDS.client,

@@ -1,6 +1,7 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
+import { StoredFields } from './stored-fields.data';
 
 /*
  * The id family (Law 7.4, flatten-spec §1.5) — every entity id, key and
@@ -262,6 +263,23 @@ export const ClientOperationId = {
   /** The guard — anything, a string of the key's shape or not. */
   is(raw: unknown): raw is ClientOperationId {
     return typeof raw === 'string' && CLIENT_OPERATION_ID.test(raw);
+  },
+  /**
+   * The client-minted id `payload[field]` carries, else `null` — never an
+   * unvalidated string (WS-4.1): `payload` a record, `field` its OWN
+   * property (an inherited `operationId` is no id the caller sent), its
+   * value of the key's shape. How the edge reads an operation id from a
+   * callable payload, and how the web's callable client asks whether the
+   * input already names one. No allocation.
+   */
+  inPayload(payload: unknown, field: string): ClientOperationId | null {
+    if (!StoredFields.isRecord(payload) || !Object.hasOwn(payload, field)) {
+      return null;
+    }
+    const raw = payload[field];
+    return typeof raw === 'string' && CLIENT_OPERATION_ID.test(raw)
+      ? (raw as ClientOperationId)
+      : null;
   },
 } as const;
 

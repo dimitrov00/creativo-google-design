@@ -91,6 +91,7 @@ const byPhone = (
   identifierChannel: IdentifierChannel.Phone,
   rawIdentifier: PHONE,
   fields: fields(submitted),
+  operationId: null,
 });
 
 const ADA = { firstName: 'Ada', lastName: 'Lovelace' } as const;
@@ -415,6 +416,7 @@ describe('completeRegistration', () => {
       identifierChannel: IdentifierChannel.Email,
       rawIdentifier: 'ada@example.com',
       fields: fields({ ...ADA, phone: '+14155552671' }),
+      operationId: null,
     });
     expect(answer.ok).toBe(true);
     expect(stored(world, USER_PATH)).toMatchObject({
@@ -641,6 +643,7 @@ describe('completeRegistration', () => {
         identifierChannel: IdentifierChannel.Email,
         rawIdentifier: 'ada@example.com',
         fields: fields({ ...ADA, phone: '+14155550999' }),
+        operationId: null,
       });
       expect(viaEmail.ok).toBe(true);
       expect(stored(world, USER_PATH)?.['phone']).toBe('+14155552671');

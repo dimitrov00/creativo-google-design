@@ -4,6 +4,7 @@ import {
   BarberId,
   BookingStatus,
   CartLineId,
+  ClientOperationId,
   CouponGrantId,
   LocationId,
   SeatId,
@@ -403,6 +404,7 @@ describe('BookingCall.Transition — a staff cancel is a code, never words (D23)
       toBookingStatus: BookingStatus.Cancelled,
       cancellationReason: CancellationReason.Other,
       seatId: null,
+      operationId: OPERATION_ID,
     };
     // What a barber types beside «Друго» is the visit's note
     // (`appointmentNotes`), written after the cancel — the call has no room
@@ -413,9 +415,87 @@ describe('BookingCall.Transition — a staff cancel is a code, never words (D23)
     expect(Object.keys(cancel).sort()).toEqual([
       'appointmentId',
       'cancellationReason',
+      'operationId',
       'seatId',
       'toBookingStatus',
     ]);
+  });
+});
+
+/** A client-minted operation id, parsed as the web mints it. */
+const OPERATION_ID = ((): ClientOperationId => {
+  const id = ClientOperationId.parse('op-0123456789abcdef');
+  if (!id.ok) throw new Error('fixture: a valid client operation id');
+  return id.value;
+})();
+
+describe('BookingCall.Operated — every mutating booking call names its act (WS-4.1)', () => {
+  const visit = AppointmentId.of('apt-1');
+
+  it('a call is its intent & a REQUIRED operation id — never null, never absent', () => {
+    const intent: BookingCall.CancelIntent = BookingCall.clientCancel(
+      visit,
+      '',
+    );
+    const call: BookingCall.Cancel = { ...intent, operationId: OPERATION_ID };
+    expect(call).toEqual({
+      appointmentId: visit,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION_ID,
+    });
+    // @ts-expect-error — a cancel call without its operation id does not type.
+    const unnamed: BookingCall.Cancel = intent;
+    // @ts-expect-error — `null` makes no claim, and the call must make one.
+    const nulled: BookingCall.Cancel = { ...intent, operationId: null };
+    expect([unnamed, nulled]).toHaveLength(2);
+  });
+
+  it('the intents carry no operation id — the store names the act', () => {
+    const tip: BookingCall.TipIntent = {
+      appointmentId: visit,
+      seatId: SeatId.of('seat-1'),
+      amountCents: null,
+    };
+    const edit: BookingCall.StaffEditIntent = {
+      appointmentId: visit,
+      commands: [],
+      acknowledgedOverlap: false,
+      expectedVersion: 3,
+    };
+    const transition: BookingCall.TransitionIntent = {
+      appointmentId: visit,
+      toBookingStatus: BookingStatus.Completed,
+      cancellationReason: null,
+      seatId: null,
+    };
+    for (const intent of [tip, edit, transition]) {
+      expect(Object.keys(intent)).not.toContain('operationId');
+    }
+    const named: readonly [
+      BookingCall.Tip,
+      BookingCall.StaffEdit,
+      BookingCall.Transition,
+      BookingCall.Arrival,
+    ] = [
+      { ...tip, operationId: OPERATION_ID },
+      { ...edit, operationId: OPERATION_ID },
+      { ...transition, operationId: OPERATION_ID },
+      { appointmentId: visit, operationId: OPERATION_ID },
+    ];
+    for (const call of named) expect(call.operationId).toBe(OPERATION_ID);
+  });
+
+  it('a move names itself by its attempt id — required, never null', () => {
+    const move: BookingCall.Reschedule = {
+      appointmentId: visit,
+      locationId: LocationId.of('loc-1'),
+      localDate: localDate('2026-11-02'),
+      seats: [],
+      attemptId: OPERATION_ID,
+    };
+    // @ts-expect-error — a move without its attempt id does not type.
+    const unnamed: BookingCall.Reschedule = { ...move, attemptId: null };
+    expect(unnamed.appointmentId).toBe(move.appointmentId);
   });
 });
 

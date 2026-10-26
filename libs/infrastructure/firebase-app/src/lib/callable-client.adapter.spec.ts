@@ -78,7 +78,12 @@ const COLD: BookingCall = {
   onBehalfOfUserId: null,
 };
 
-const client = () => callableClientPorts(FUNCTIONS).callableClient;
+/** The id source the transport ids come from: one fixed, well-formed key per call. */
+const TRANSPORT_ID = 'transport-0123456789abcdef';
+const IDS = { nextId: () => TRANSPORT_ID };
+
+const client = (ids = IDS) =>
+  callableClientPorts(FUNCTIONS, ids).callableClient;
 
 describe('callableClientPorts — the request', () => {
   beforeEach(() => {
@@ -107,6 +112,87 @@ describe('callableClientPorts — the request', () => {
 
     expect(callableMock).toHaveBeenCalledTimes(1);
     expect(callableMock.mock.calls[0]?.[0]).toBe(rebooked);
+  });
+});
+
+// WS-4.1: every call the server reads an operation id from carries one — a
+// store-named act keeps its own (re-sent on a retry), any other
+// `operationId` callable gets a transport id minted here; `attemptId` /
+// `requestId` calls and the issue sink are never touched.
+describe('callableClientPorts — the transport operation id', () => {
+  beforeEach(() => {
+    callableMock.mockReset();
+    callableMock.mockResolvedValue({ data: {} });
+  });
+
+  const OTP_REQUEST = {
+    identifierChannel: IdentifierChannel.Phone,
+    identifier: '+359888123456',
+  } as const;
+
+  it('mints one for an operationId callable whose input names none, the input otherwise unchanged', async () => {
+    await client()(Callables.RequestOtpChallenge)(OTP_REQUEST);
+
+    expect(callableMock.mock.calls[0]?.[0]).toEqual({
+      ...OTP_REQUEST,
+      operationId: TRANSPORT_ID,
+    });
+    expect(OTP_REQUEST).not.toHaveProperty('operationId');
+  });
+
+  it('mints a fresh one per call — a second call is a second act', async () => {
+    let n = 0;
+    const ids = { nextId: () => `transport-call-000000${(n += 1)}` };
+
+    await client(ids)(Callables.RequestOtpChallenge)(OTP_REQUEST);
+    await client(ids)(Callables.RequestOtpChallenge)(OTP_REQUEST);
+
+    expect(callableMock.mock.calls.map((call) => call[0].operationId)).toEqual([
+      'transport-call-0000001',
+      'transport-call-0000002',
+    ]);
+  });
+
+  it('sends a store-named act as it is, its own id kept and none minted', async () => {
+    const nextId = vi.fn(() => TRANSPORT_ID);
+    const cancel: BookingCall.Cancel = {
+      ...BookingCall.clientCancel(brand(AppointmentId.parse('appt-1')), 'нещо'),
+      operationId: brand(ClientOperationId.parse('store-minted-0123456789')),
+    };
+
+    await client({ nextId })(Callables.CancelAppointment)(cancel);
+
+    expect(callableMock.mock.calls[0]?.[0]).toBe(cancel);
+    expect(nextId).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['commitBooking (attemptId)', Callables.CommitBooking, COLD],
+    [
+      'publishStreakDefinition (requestId)',
+      Callables.PublishStreakDefinition,
+      StreakPublishCall.withdraw(
+        PublishRequestId.of('req-1'),
+        StreakRule.DEFAULT_DEFINITION_ID,
+        2,
+      ),
+    ],
+    ['reportClientIssues (none — OR-34)', Callables.ReportClientIssues, []],
+  ] as const)('never touches %s', async (_what, name, input) => {
+    const nextId = vi.fn(() => TRANSPORT_ID);
+
+    await client({ nextId })(name)(input as never);
+
+    expect(callableMock.mock.calls[0]?.[0]).toBe(input);
+    expect(nextId).not.toHaveBeenCalled();
+  });
+
+  it('sends none when the mint fails the key’s shape', async () => {
+    await client({ nextId: () => 'short' })(Callables.RequestOtpChallenge)(
+      OTP_REQUEST,
+    );
+
+    expect(callableMock.mock.calls[0]?.[0]).toBe(OTP_REQUEST);
   });
 });
 

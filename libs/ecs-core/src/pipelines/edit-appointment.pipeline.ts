@@ -164,8 +164,8 @@ import {
  *   voucher's balance, each moved grant's lifecycle transition, a
  *   `customers` `Create` for an added account with no record, and one for
  *   each added walk-in whose record was absent (`STAFF_WALK_IN`).
- * - **After:** the act's rows (`operation:<operationId>`, else
- *   `revision:<n>`) — a replay appends them again under the same key.
+ * - **After:** the act's rows (`operation:<operationId>` — every intent is
+ *   named, WS-4.1) — a replay appends them again under the same key.
  */
 
 /**
@@ -184,8 +184,8 @@ export type EditAppointmentCommand = {
   readonly acknowledgedOverlap: boolean;
   /** The revision the intent was drawn on; `null` makes no claim. */
   readonly expectedVersion: number | null;
-  /** The client's name for this ONE intent; `null` for an older client. */
-  readonly operationId: OperationId | null;
+  /** The client's name for this ONE intent — REQUIRED (WS-4.1; the web always minted it). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 
@@ -272,15 +272,12 @@ export const editAppointment =
       if (!found.ok) return found;
       couponsByCode.set(request.code, found.value);
     }
-    const operation: Operation | null =
-      cmd.operationId === null
-        ? null
-        : {
-            id: cmd.operationId,
-            digest: AppointmentEditSystem.digestOf(
-              ports.hash(AppointmentEditSystem.digestBasis(cmd.commands)),
-            ),
-          };
+    const operation: Operation = {
+      id: cmd.operationId,
+      digest: AppointmentEditSystem.digestOf(
+        ports.hash(AppointmentEditSystem.digestBasis(cmd.commands)),
+      ),
+    };
     const nowUtcMs = ports.nowUtcMs();
 
     const run = (contacts: ReadonlyMap<UserId, AccountContact>) =>
@@ -464,7 +461,7 @@ function requestOf(
 async function readEdit(
   tx: ReadTx,
   cmd: EditAppointmentCommand,
-  operation: Operation | null,
+  operation: Operation,
   { hash, walkInHash }: HashPorts & WalkInKeyPorts,
 ): Promise<Snapshot> {
   const stored = await readAppointment(tx, cmd.appointmentId);
@@ -475,25 +472,23 @@ async function readEdit(
     };
   }
   // A RE-SENT INTENT IS ANSWERED, NOT APPLIED — and before anything else.
-  if (operation !== null) {
-    const verdict = AppointmentEditSystem.ledgerVerdict(
-      stored.appliedOperations,
-      operation.id,
-      operation.digest,
-    );
-    if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Refused,
-        error: StaffEditError.invalidCommand('operationId'),
-      };
-    }
-    if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Replay,
-        stored,
-        revision: verdict.applied.revision,
-      };
-    }
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    stored.appliedOperations,
+    operation.id,
+    operation.digest,
+  );
+  if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: StaffEditError.invalidCommand('operationId'),
+    };
+  }
+  if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Replay,
+      stored,
+      revision: verdict.applied.revision,
+    };
   }
   const fresh = AppointmentEditSystem.checkRevision(
     stored,
@@ -726,7 +721,7 @@ function subjectOfSeat(seat: Seat): BookingCall.SubjectInput | null {
 
 type DecideContext = {
   readonly cmd: EditAppointmentCommand;
-  readonly operation: Operation | null;
+  readonly operation: Operation;
   readonly policy: BookingPolicy;
   readonly couponsByCode: CouponsByCode;
   readonly contacts: ReadonlyMap<UserId, AccountContact>;
@@ -958,15 +953,12 @@ function decideEdit(
     discounts,
     voucherRedemptions: paid.value.voucherRedemptions,
     revision,
-    appliedOperations:
-      context.operation === null
-        ? stored.appliedOperations
-        : AppointmentEditSystem.record(
-            stored.appliedOperations,
-            context.operation.id,
-            revision,
-            context.operation.digest,
-          ),
+    appliedOperations: AppointmentEditSystem.record(
+      stored.appliedOperations,
+      context.operation.id,
+      revision,
+      context.operation.digest,
+    ),
     // THE PAIRS THIS SAVE BROKE, remembered for its undo under the revision
     // it stamps (none: whatever an older save remembered is dropped).
     ...StoodSeatPairs.remember(

@@ -372,6 +372,21 @@ describe('editAppointment — the shop moving its own book', () => {
     );
   });
 
+  it('keys the row `operation:<operationId>` — byte for byte today’s key, the id now required (WS-4.1, DEP-4)', async () => {
+    const { rows, run } = rig([...catalogue(), stored(visit())]);
+    expect((await run(command())).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingStaffMove,
+          FIXTURE_IDS.appointment,
+          FIXTURE_IDS.customer,
+          'operation:operation-0123456789ab',
+        ),
+      ),
+    ]);
+  });
+
   it('a batch is a save — folded in order, so the resize measures the MOVED seats', async () => {
     const { store, rows, run } = rig([...catalogue(), stored(visit())]);
     const answer = await run(

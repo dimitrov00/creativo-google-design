@@ -902,14 +902,15 @@ const ANCHOR_TOLERANCE = 2;
  * One lifecycle move as the call carries it — the whole party (`seatId`
  * `null`) or one seat; a reason only on a cancellation, and a CODE only
  * (D23): what the barber typed beside «Друго…» is the visit's note, written
- * once the cancel has landed (`confirmCancel`), never the call's.
+ * once the cancel has landed (`confirmCancel`), never the call's. The
+ * INTENT only: the store names each act (`operationId`, WS-4.1).
  */
 function transitionOf(
   appointmentId: AppointmentId,
   toBookingStatus: BookingStatus,
   cancellationReason: CancellationReason | null,
   seatId: SeatId | null,
-): BookingCall.Transition {
+): BookingCall.TransitionIntent {
   return { appointmentId, toBookingStatus, cancellationReason, seatId };
 }
 

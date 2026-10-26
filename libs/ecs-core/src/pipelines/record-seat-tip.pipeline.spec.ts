@@ -6,7 +6,7 @@ import {
   SeatLabel,
   WriteOp,
 } from '@core/components';
-import { AppointmentId, SeatId, UserId } from '@core/primitives';
+import { AppointmentId, OperationId, SeatId, UserId } from '@core/primitives';
 import { BookingErrorCode, SchedulingErrorCode } from '@core/errors';
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
@@ -25,6 +25,8 @@ import { recordSeatTip } from './record-seat-tip.pipeline';
 
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 const GUEST_SEAT = SeatId.of('seat-2');
+/** The tip's client-minted operation id (WS-4.1 — required on the call). */
+const OPERATION = OperationId.of('tip-op-0123456789ab');
 
 function bodyOf(appointment: Appointment): DocBody {
   const { id: _id, ...body } = appointment;
@@ -72,6 +74,7 @@ describe('recordSeatTip', () => {
       appointmentId: FIXTURE_IDS.appointment,
       seatId: FIXTURE_IDS.seat,
       tipCents: cents(300),
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer).toEqual({
@@ -115,12 +118,38 @@ describe('recordSeatTip', () => {
     );
   });
 
+  it('keys the row `tip:<seat>:<instant>` — byte for byte today’s key; the operation id changes no key in WS-4.1 (DEP-4)', async () => {
+    const { rows, run } = rig([party()]);
+    expect(
+      (
+        await run({
+          appointmentId: FIXTURE_IDS.appointment,
+          seatId: FIXTURE_IDS.seat,
+          tipCents: cents(300),
+          operationId: OPERATION,
+          actor: STAFF,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingTipRecorded,
+          FIXTURE_IDS.appointment,
+          FIXTURE_IDS.customer,
+          `tip:${FIXTURE_IDS.seat}:${FIXTURE_NOW_UTC_MS}`,
+        ),
+      ),
+    ]);
+  });
+
   it('a guest’s tip keeps one untargeted row — a label is nobody a history can be asked about', async () => {
     const { rows, run } = rig([party()]);
     await run({
       appointmentId: FIXTURE_IDS.appointment,
       seatId: GUEST_SEAT,
       tipCents: cents(100),
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(rows).toHaveLength(1);
@@ -135,6 +164,7 @@ describe('recordSeatTip', () => {
       appointmentId: FIXTURE_IDS.appointment,
       seatId: FIXTURE_IDS.seat,
       tipCents: null,
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(answer.ok && answer.value.unchanged).toBe(false);
@@ -160,6 +190,7 @@ describe('recordSeatTip', () => {
         appointmentId: FIXTURE_IDS.appointment,
         seatId: FIXTURE_IDS.seat,
         tipCents: sent,
+        operationId: OPERATION,
         actor: STAFF,
       });
       expect(answer.ok && answer.value.unchanged).toBe(true);
@@ -174,6 +205,7 @@ describe('recordSeatTip', () => {
       appointmentId: FIXTURE_IDS.appointment,
       seatId: SeatId.of('ghost'),
       tipCents: cents(100),
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(!seat.ok && seat.error.errorCode).toBe(
@@ -183,6 +215,7 @@ describe('recordSeatTip', () => {
       appointmentId: AppointmentId.of('nope'),
       seatId: FIXTURE_IDS.seat,
       tipCents: cents(100),
+      operationId: OPERATION,
       actor: STAFF,
     });
     expect(!visit.ok && visit.error.errorCode).toBe(

@@ -57,6 +57,7 @@ const start = (
   impersonationScope: ImpersonationScope.Write,
   reason: 'support ticket #123',
   expiresAtUtcMs: IN_AN_HOUR,
+  operationId: null,
   ...extra,
 });
 

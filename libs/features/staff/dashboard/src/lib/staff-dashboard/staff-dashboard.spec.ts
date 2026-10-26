@@ -94,7 +94,6 @@ import {
   BarberId,
   BookingStatus,
   BusyKey,
-  ClientOperationId,
   CouponGrantId,
   CouponId,
   Currency,
@@ -729,8 +728,9 @@ describe('StaffDashboard', () => {
         provideRouter([]),
         { provide: CLOCK_PORTS, useValue: memoryClockPorts(utcMs(nowIso)) },
         {
-          // Names each staff intent; counted, so a spec can tell a reused
-          // name from a fresh one without comparing random strings.
+          // Names each act — every staff intent, arrival, transition and
+          // tip (WS-4.1); counted, so a spec can tell a reused name from a
+          // fresh one without comparing random strings.
           provide: ID_PORTS,
           useValue: {
             nextId: () => `operation-${String(++minted).padStart(12, '0')}`,
@@ -4168,17 +4168,19 @@ describe('StaffDashboard', () => {
       BookingCall.editMove(DAY, unwrapOk(MinuteOfDay.of(minuteOfDay)), null);
     const MOVE = moveTo(11 * 60);
 
-    /** One staff intent on `appointment-1` — a claim of nothing unless said. */
+    /**
+     * One staff intent on `appointment-1` — a claim of nothing unless said.
+     * The INTENT only (WS-4.1): its name is the store's to mint.
+     */
     function intent(
       command: BookingCall.EditCommand,
-      extra: Partial<BookingCall.StaffEdit> = {},
-    ): BookingCall.StaffEdit {
+      extra: Partial<BookingCall.StaffEditIntent> = {},
+    ): BookingCall.StaffEditIntent {
       return {
         appointmentId: AppointmentId.of('appointment-1'),
         commands: [command],
         acknowledgedOverlap: false,
         expectedVersion: null,
-        operationId: null,
         ...extra,
       };
     }
@@ -4202,13 +4204,15 @@ describe('StaffDashboard', () => {
     }
 
     function store(): {
-      staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+      staffEdit: (request: BookingCall.StaffEditIntent) => Promise<boolean>;
       errorFor: (id: string) => PipelineError | null;
     } {
       return (
         fixture.componentInstance as unknown as {
           store: {
-            staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+            staffEdit: (
+              request: BookingCall.StaffEditIntent,
+            ) => Promise<boolean>;
             errorFor: (id: string) => PipelineError | null;
           };
         }
@@ -4248,18 +4252,17 @@ describe('StaffDashboard', () => {
       expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
     });
 
-    it('keeps a name the caller chose', async () => {
+    // WS-4.1: the caller hands the intent only — the name is required on
+    // the wire and is the store's own, so no caller can send an unnamed
+    // intent or pick a name of its own (was: "keeps a name the caller chose").
+    it('names an intent the caller hands without one — the name is the store’s own', async () => {
       const sent = sends(['ok']);
+      const handed = intent(MOVE);
 
-      await store().staffEdit(
-        intent(MOVE, {
-          operationId: unwrapOk(
-            ClientOperationId.parse('operation-chosen-by-caller'),
-          ),
-        }),
-      );
+      await store().staffEdit(handed);
 
-      expect(sent[0]?.operationId).toBe('operation-chosen-by-caller');
+      expect(handed).not.toHaveProperty('operationId');
+      expect(sent[0]?.operationId).toMatch(/^operation-\d{12}$/);
     });
 
     it('refuses an intent whose freshly minted name the call cannot carry — nothing goes out', async () => {
@@ -6861,10 +6864,10 @@ describe('StaffDashboard', () => {
         'bg',
         { merge: true },
       );
-      const sent: BookingCall.StaffEdit[] = [];
+      const sent: BookingCall.StaffEditIntent[] = [];
       const component = fixture.componentInstance as unknown as {
         store: {
-          staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+          staffEdit: (request: BookingCall.StaffEditIntent) => Promise<boolean>;
         };
         commitFromEditor: (
           id: string,

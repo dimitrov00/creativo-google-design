@@ -181,12 +181,13 @@ export const BookingCall = {
    * A client's cancel (code-only, D23): whatever the client typed files it
    * as `OTHER`; nothing typed, or only blanks, is `UNSPECIFIED` — the rule
    * the callable's decoder applied to the text until the wire carried the
-   * code itself (Phase 4a 4A-4).
+   * code itself (Phase 4a 4A-4). The INTENT only: the store that sends it
+   * names the act (`BookingCall.Operated`, WS-4.1).
    */
   clientCancel(
     appointmentId: AppointmentId,
     typedReason: string,
-  ): BookingCall.Cancel {
+  ): BookingCall.CancelIntent {
     return {
       appointmentId,
       reason:
@@ -562,57 +563,80 @@ export namespace BookingCall {
         readonly contact: GuestContact | null;
       };
 
-  /** `rescheduleAppointment`: the visit, the shop and day it moves to, the cart that stands in for it. */
+  /**
+   * The client-minted id every mutating booking call carries (WS-4.1) — the
+   * name of this ONE act, REQUIRED: the web mints it before the first send
+   * and re-sends it on a retry, the edge refuses a call without one, and
+   * the server keys the act's audit rows and its replay answer by it.
+   */
+  export type Operated = { readonly operationId: ClientOperationId };
+
+  /**
+   * `rescheduleAppointment`: the visit, the shop and day it moves to, the
+   * cart that stands in for it, and the move's name (`attemptId`, required
+   * since WS-4.1 — the web always minted one).
+   */
   export type Reschedule = {
     readonly appointmentId: AppointmentId;
     readonly locationId: LocationId;
     readonly localDate: LocalDate;
     readonly seats: readonly Seat[];
-    readonly attemptId: ClientOperationId | null;
+    readonly attemptId: ClientOperationId;
   };
 
-  /** `cancelAppointment`: the visit and the code it is filed under. */
-  export type Cancel = {
+  /** What a cancel says — the visit and the code it is filed under — before the act is named. */
+  export type CancelIntent = {
     readonly appointmentId: AppointmentId;
     readonly reason: CancellationReason;
   };
 
+  /** `cancelAppointment`: the intent & its operation id. */
+  export type Cancel = CancelIntent & Operated;
+
   /**
-   * `transitionAppointment`: one seat (`seatId`) or the whole party (`null`).
+   * What a transition says: one seat (`seatId`) or the whole party (`null`).
    * A cancel carries its CODE only (D23): words a barber types beside
    * `OTHER` are the visit's note (`appointmentNotes/{appointmentId}`),
    * written by the staff day once the cancel has landed — never this call's.
    */
-  export type Transition = {
+  export type TransitionIntent = {
     readonly appointmentId: AppointmentId;
     readonly toBookingStatus: BookingStatus;
     readonly cancellationReason: CancellationReason | null;
     readonly seatId: SeatId | null;
   };
 
-  /** `markArrived` / `clearArrival`. */
-  export type Arrival = {
-    readonly appointmentId: AppointmentId;
-  };
+  /** `transitionAppointment`: the intent & its operation id. */
+  export type Transition = TransitionIntent & Operated;
 
-  /** `recordSeatTip`: `null` clears ("not recorded" — never zero). */
-  export type Tip = {
+  /** `markArrived` / `clearArrival`: the visit & the act's operation id. */
+  export type Arrival = { readonly appointmentId: AppointmentId } & Operated;
+
+  /** What a tip says: `null` clears ("not recorded" — never zero). */
+  export type TipIntent = {
     readonly appointmentId: AppointmentId;
     readonly seatId: SeatId;
     readonly amountCents: PriceCents | null;
   };
 
-  /** `staffEditAppointment`: one named intent — always an array of commands. */
-  export type StaffEdit = {
+  /** `recordSeatTip`: the intent & its operation id. */
+  export type Tip = TipIntent & Operated;
+
+  /** What a staff edit says: one named intent — always an array of commands. */
+  export type StaffEditIntent = {
     readonly appointmentId: AppointmentId;
     readonly commands: readonly EditCommand[];
     /** «Запази въпреки застъпването» — the ONLY thing that turns the collision check off. */
     readonly acknowledgedOverlap: boolean;
     /** The revision the intent was drawn on; `null` makes no claim. */
     readonly expectedVersion: number | null;
-    /** The client's name for this ONE intent. */
-    readonly operationId: ClientOperationId | null;
   };
+
+  /**
+   * `staffEditAppointment`: the intent & the client's name for it — the
+   * same id on every retry of the ONE intent (required since WS-4.1).
+   */
+  export type StaffEdit = StaffEditIntent & Operated;
 
   /**
    * Who an added seat is for: the visit's owner, or a guest by label — with
