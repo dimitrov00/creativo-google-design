@@ -158,7 +158,7 @@ gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --enable
 A successful `firestore:indexes` deploy only means the seven field configurations were accepted. The TTL service applies each policy afterwards, asynchronously, so the deploy's success is not the gate. The preflight's **P2** is (§3, OR-35): it lists the project's TTL policies and passes only when every `purgeAt` entry `firestore.indexes.json` declares reads `ACTIVE`, naming each one that does not:
 
 ```bash
-pnpm run preflight -- --project "$PROJECT_ID"
+pnpm run preflight --project "$PROJECT_ID"
 # P2     PASS    every declared purgeAt TTL policy is ACTIVE
 #                7 of 7 TTL policies ACTIVE
 ```
@@ -188,9 +188,9 @@ gcloud firestore fields ttls list --project="$PROJECT_ID"
 
 ## 3. Deploy order
 
-This order applies to the **first production deploy**. It also applies to every deploy of a 3b flip to a non-emulator project. `pnpm run seed:dev` refuses to run outside the local emulators (`tools/seed-dev-catalog.mjs:150-153`), so a hosted dev project is wiped and repopulated by hand, never by the seed.
+This order applies to the **first production deploy**. It also applies to every deploy of a 3b flip to a non-emulator project. `pnpm run seed:dev` refuses to run outside the local emulators (`tools/seed-dev-catalog.mjs:133-136`), so a hosted dev project is wiped and repopulated by hand, never by the seed.
 
-**The preflight (owner ruling OR-35, DEP-F26).** `pnpm run preflight -- --project "$PROJECT_ID"` (`tools/verify/preflight/preflight.mjs`) proves, read-only, that the project is ready for a deploy, and prints one PASS/FAIL row per check:
+**The preflight (owner ruling OR-35, DEP-F26).** `pnpm run preflight --project "$PROJECT_ID"` (`tools/verify/preflight/preflight.mjs`) proves, read-only, that the project is ready for a deploy, and prints one PASS/FAIL row per check:
 
 | Check | What it proves                                                                                                                                                                                                                                         |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -217,7 +217,7 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 
 If production's default shop ever takes another id, `TenantConfig.DEFAULT` (`libs/ecs-core/src/components/tenant-config.data.ts`) changes in that one place and `cfg` binds it; ids are opaque, so that is one constant and one document, and P1 then checks the new document.
 
-1. **Indexes first, additive.** Run `firebase deploy --only firestore:indexes --project "$PROJECT_ID"`. When the CLI offers to delete indexes the project has but the file does not, answer **No** here, because code still running may query them. The same deploy writes the seven TTL policies and their `purgeAt` exemptions (§2.2); if it also offers to delete field overrides the file does not hold, answer **No** as well. Then wait until every composite is `READY`: the preflight's P3 row reads `PASS` (`pnpm run preflight -- --project "$PROJECT_ID"`), and it names each composite still building. Fallback, with gcloud:
+1. **Indexes first, additive.** Run `firebase deploy --only firestore:indexes --project "$PROJECT_ID"`. When the CLI offers to delete indexes the project has but the file does not, answer **No** here, because code still running may query them. The same deploy writes the seven TTL policies and their `purgeAt` exemptions (§2.2); if it also offers to delete field overrides the file does not hold, answer **No** as well. Then wait until every composite is `READY`: the preflight's P3 row reads `PASS` (`pnpm run preflight --project "$PROJECT_ID"`), and it names each composite still building. Fallback, with gcloud:
 
    ```bash
    gcloud firestore indexes composite list --project="$PROJECT_ID" --format="table(name.basename(),collectionGroup,state)"

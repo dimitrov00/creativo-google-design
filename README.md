@@ -12,6 +12,8 @@ plain data, pure systems, impure-pure-impure pipelines, zero-mapper Firestore.
 - `docs/architecture/HANDOFF.md` — the ECS migration record: what landed,
   the gate every change passes and its known baselines (§4), the open
   questions for the owner (§6) and the work carried forward.
+- `docs/production-deploy.md` — production deploy: the one-time setup, the
+  data bootstrap, the deploy order, verification and rollback.
 
 ## Apps
 

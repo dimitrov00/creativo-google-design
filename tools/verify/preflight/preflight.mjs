@@ -3,7 +3,7 @@
 // read-only proof that a hosted Firebase project is ready for a deploy, run
 // by hand and as the hosting and functions predeploy of firebase.json.
 //
-//   pnpm run preflight -- --project <id> [--scope web|functions]
+//   pnpm run preflight --project <id> [--scope web|functions]
 //   node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--dist=dist/apps/web/browser] [--config=firebase.json]
 //
 // One PASS/FAIL row per check (runbook §3):

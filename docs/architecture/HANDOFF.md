@@ -2127,7 +2127,7 @@ pnpm run verify:csp   # since pass F (OR-31): the static hash gate on the produc
                       # and csp-smoke builds, then the hosting-emulator smoke
 # before any deploy, against the target project (OR-35, DEP-F26; also the
 # hosting and functions predeploy of firebase.json, which refuses the deploy):
-pnpm run preflight -- --project "$PROJECT_ID"
+pnpm run preflight --project "$PROJECT_ID"
 ```
 
 **`verify:csp` and the preflight (pass F).** `pnpm run verify:csp`
@@ -2309,6 +2309,8 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 ## 5. Operating rules
 
+- Production deploy: `docs/production-deploy.md` (the checklist — setup,
+  bootstrap, order, verification, rollback; the preflight first).
 - Work directly on `main`; commit and push at every green step, in a few
   logical commits; fast-forward only, never force-push. Never bypass the
   pre-commit hook (Prettier + stylelint + gitleaks).
