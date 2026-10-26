@@ -4,6 +4,7 @@ import type {
   AppointmentNotePorts,
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AuditReadPorts,
   AuthDeploymentPorts,
   AuthSessionPorts,
   AvatarPorts,
@@ -72,6 +73,15 @@ export const WAITLIST_READ_PORTS = new InjectionToken<WaitlistReadPorts>(
 /** The client-stats readers, keyed by the client record (`ClientStatsReadPorts`). */
 export const CLIENT_STATS_READ_PORTS = new InjectionToken<ClientStatsReadPorts>(
   'CLIENT_STATS_READ_PORTS',
+);
+
+/**
+ * The admin's read of the audit trail — the five timelines and one
+ * operation's rows (`AuditReadPorts`, audit-hardening WS-7). `auditLog` is
+ * admin-read in the rules; no screen consumes it yet.
+ */
+export const AUDIT_READ_PORTS = new InjectionToken<AuditReadPorts>(
+  'AUDIT_READ_PORTS',
 );
 
 /** The catalogue's four live streams (`CatalogReadPorts`). */

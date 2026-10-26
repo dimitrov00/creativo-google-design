@@ -28,7 +28,7 @@ import {
   type TriggerEventId,
   Tag,
   UserId,
-  type UtcEpochMs,
+  UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
 import {
@@ -660,5 +660,21 @@ export const AuditSystem = {
         AuditSystem.changeKey.ownProfileEdit(ownerUserId, nowUtcMs),
       ),
     };
+  },
+
+  /**
+   * The order one operation's rows read in (audit-hardening WS-7,
+   * `auditRowsForOperation`): oldest `recordedAtUtcMs` first, rows sharing
+   * an instant (an act's fan-out, one per client record) by id in code-unit
+   * order — a total, stable order the store's equality read never gives
+   * (OR-18's code-unit tie-break precedent). The rule is this system's,
+   * never the adapter's (Law 4). A sorted copy; the input is never touched.
+   */
+  chronological<R extends AuditEntryMeta>(rows: readonly R[]): readonly R[] {
+    return [...rows].sort(
+      (a, b) =>
+        UtcEpochMs.compare(a.recordedAtUtcMs, b.recordedAtUtcMs) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
   },
 } as const;

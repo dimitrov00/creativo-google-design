@@ -1024,3 +1024,100 @@ describe('AuditSystem.commitWrites — an act’s rows inside its own commit (WS
     );
   });
 });
+
+describe('AuditSystem.chronological — one operation’s rows, oldest first (WS-7)', () => {
+  const OWNER = UserId.of('u-owner');
+  const row = (id: string, recordedAtUtcMs: UtcEpochMs) => ({
+    id: AuditEntryId.of(id),
+    recordedAtUtcMs,
+    resourceId: AuditResourceId.forUser(OWNER),
+    auditOperationId: OP,
+    ...Actor.user(OWNER),
+    ...AuditContext.profile(AuditAction.ProfileUpdated, [
+      RegistrationField.FirstName,
+    ]),
+    ...AuditTargetRef.user(OWNER),
+  });
+  const idsOf = (rows: readonly { readonly id: AuditEntryId }[]) =>
+    rows.map((entry) => entry.id);
+
+  it('reads the oldest instant first', () => {
+    const rows = [
+      row('c', at(3_000)),
+      row('a', at(1_000)),
+      row('b', at(2_000)),
+    ];
+
+    expect(idsOf(AuditSystem.chronological(rows))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('orders rows sharing one instant by id, in code-unit order', () => {
+    // 'Z' (U+005A) < 'a' (U+0061) < 'ä' (U+00E4): code units, never a locale.
+    const rows = [
+      row('ä', at(1_000)),
+      row('a', at(1_000)),
+      row('Z', at(1_000)),
+      row('0', at(500)),
+    ];
+
+    expect(idsOf(AuditSystem.chronological(rows))).toEqual([
+      '0',
+      'Z',
+      'a',
+      'ä',
+    ]);
+  });
+
+  it('answers an empty list for no rows, and the one row for one', () => {
+    expect(AuditSystem.chronological([])).toEqual([]);
+    expect(idsOf(AuditSystem.chronological([row('x', at(7))]))).toEqual(['x']);
+  });
+
+  it('is total: every arrival order of the same rows reads the same', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 4 }),
+            atMs: fc.integer({ min: 0, max: 3 }),
+          }),
+          { selector: (entry) => entry.id, maxLength: 12 },
+        ),
+        (specs) => {
+          const rows = specs.map((entry) => row(entry.id, at(entry.atMs)));
+          const once = AuditSystem.chronological(rows);
+          const reversed = AuditSystem.chronological([...rows].reverse());
+
+          expect(reversed).toEqual(once);
+          expect(once).toHaveLength(rows.length);
+          let prev: (typeof once)[number] | null = null;
+          for (const next of once) {
+            if (prev !== null) {
+              expect(
+                prev.recordedAtUtcMs < next.recordedAtUtcMs ||
+                  (prev.recordedAtUtcMs === next.recordedAtUtcMs &&
+                    prev.id < next.id),
+              ).toBe(true);
+            }
+            prev = next;
+          }
+        },
+      ),
+    );
+  });
+
+  it('is pure: same input → same output, input untouched, a copy answered', () => {
+    const rows = deepFreeze([
+      row('b', at(2_000)),
+      row('a', at(2_000)),
+      row('c', at(1_000)),
+    ]);
+
+    const once = AuditSystem.chronological(rows);
+    const twice = AuditSystem.chronological(rows);
+
+    expect(twice).toEqual(once);
+    expect(once).not.toBe(rows);
+    expect(idsOf(rows)).toEqual(['b', 'a', 'c']);
+  });
+});

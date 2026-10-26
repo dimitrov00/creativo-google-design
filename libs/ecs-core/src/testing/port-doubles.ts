@@ -24,6 +24,7 @@ import {
 import {
   BusyKey,
   GrantStatus,
+  type OperationId,
   IdentifierChannel,
   OtpId,
   Result,
@@ -82,6 +83,8 @@ import {
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AuditReadPorts,
+  AuditTimelinePage,
   AuthAdminPorts,
   AuthSessionPorts,
   AuthUserLookupPorts,
@@ -129,7 +132,7 @@ import type {
   VisitEditWritePorts,
   WaitlistReadPorts,
 } from '@core/ports';
-import { DiscountSystem, PagingSystem } from '@core/systems';
+import { AuditSystem, DiscountSystem, PagingSystem } from '@core/systems';
 import {
   FIXTURE_OTP_CODE,
   FIXTURE_OTP_SALT,
@@ -443,6 +446,87 @@ export function memoryClientStatsReadPorts(
           : { records: read.slice(0, size), nextAfterCustomerId: null },
       );
     },
+  };
+}
+
+// ── Audit trail ──────────────────────────────────────────────────────────
+
+/** Newest first, a tie by id descending — the order `recordedAtUtcMs desc` reads in. */
+function newestRowFirst(a: AuditEntry, b: AuditEntry): number {
+  return (
+    UtcEpochMs.compare(b.recordedAtUtcMs, a.recordedAtUtcMs) ||
+    byString(b.id, a.id)
+  );
+}
+
+/**
+ * `AUDIT_READ_PORTS` (audit-hardening WS-7) over the given rows, as an
+ * admin reads them: each timeline the rows whose `field` equals the key,
+ * strictly older than the cursor, newest first, one row more than the page
+ * read to know whether anything older is left, the same-instant boundary
+ * kept by `PagingSystem` (an act's fan-out rows share its instant); one
+ * operation's rows (`auditOperationId ==`, at most 50) in
+ * `AuditSystem.chronological` order.
+ */
+export function memoryAuditReadPorts(
+  rows: readonly AuditEntry[],
+): AuditReadPorts {
+  const timeline =
+    (matches: (row: AuditEntry, key: string) => boolean) =>
+    async (
+      key: string,
+      beforeRecordedAtUtcMs: UtcEpochMs | null,
+      limit: number,
+    ): Promise<Result.Ok<AuditTimelinePage>> => {
+      const newestFirst = rows
+        .filter(
+          (row) =>
+            matches(row, key) &&
+            (beforeRecordedAtUtcMs === null ||
+              row.recordedAtUtcMs < beforeRecordedAtUtcMs),
+        )
+        .sort(newestRowFirst);
+      const size = PagingSystem.pageSizeOf(limit);
+      const step = PagingSystem.nextCursor(
+        newestFirst.slice(0, size + 1),
+        size,
+        (row: AuditEntry): UtcEpochMs => row.recordedAtUtcMs,
+      );
+      if (step.pageStep === PageStep.Page) {
+        return Result.ok({ rows: step.rows, cursor: step.cursor });
+      }
+      return Result.ok(
+        PagingSystem.sameInstantBoundary(
+          step.newer,
+          newestFirst.filter((row) => row.recordedAtUtcMs === step.boundary),
+          (row) => row.id,
+          newestFirst.some((row) => row.recordedAtUtcMs < step.boundary),
+          step.boundary,
+        ),
+      );
+    };
+  return {
+    // A field equality, as the store reads it: a row whose variant has no
+    // such field never matches.
+    pageAuditByTargetCustomer: timeline(
+      (row, key) => 'targetCustomerId' in row && row.targetCustomerId === key,
+    ),
+    pageAuditByTargetUser: timeline(
+      (row, key) => 'targetUserId' in row && row.targetUserId === key,
+    ),
+    pageAuditByResource: timeline((row, key) => row.resourceId === key),
+    pageAuditByActorUser: timeline(
+      (row, key) => 'actorUserId' in row && row.actorUserId === key,
+    ),
+    pageAuditByActorAdmin: timeline(
+      (row, key) => 'actorAdminUserId' in row && row.actorAdminUserId === key,
+    ),
+    auditRowsForOperation: async (operationId: OperationId) =>
+      Result.ok(
+        AuditSystem.chronological(
+          rows.filter((row) => row.auditOperationId === operationId),
+        ).slice(0, 50),
+      ),
   };
 }
 

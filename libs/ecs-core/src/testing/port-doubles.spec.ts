@@ -1,6 +1,11 @@
 import { BehaviorSubject, firstValueFrom, type Observable } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import {
+  Actor,
+  AuditAction,
+  AuditContext,
+  AuditTargetRef,
+  RegistrationField,
   BarberStatus,
   BookingLifecycle,
   EnrollmentStatus,
@@ -41,6 +46,8 @@ import {
   AppointmentId,
   AppointmentPhotoId,
   AuditEntryId,
+  AuditResourceId,
+  OperationId,
   BarberId,
   BusyKey,
   CapacityMonthId,
@@ -126,6 +133,7 @@ import {
   fixedTenantPorts,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryAuditReadPorts,
   memoryAuthAdminPorts,
   memoryAuthUserLookupPorts,
   memoryCatalogReadPorts,
@@ -514,6 +522,109 @@ describe('memoryClientStatsReadPorts — keyed by the client record (D29)', () =
     );
     expect(page2.records.map((entry) => entry.id)).toEqual(['cus_c']);
     expect(page2.nextAfterCustomerId).toBeNull();
+  });
+});
+
+describe('memoryAuditReadPorts — the admin’s audit trail (WS-7)', () => {
+  const OP_1 = OperationId.of('op-0000000000000001');
+  const OP_2 = OperationId.of('op-0000000000000002');
+  const APPT = AuditResourceId.forAppointment(AppointmentId.of('appt-1'));
+  const ADMIN = UserId.of('admin-1');
+  const at = (ms: number) => unwrapOk(UtcEpochMs.of(ms));
+  /** A booking act's row for one client record; an admin's when `byAdmin`. */
+  const row = (
+    id: string,
+    recordedAtMs: number,
+    target: CustomerId,
+    operationId: OperationId | null,
+    byAdmin = false,
+  ): AuditEntry => ({
+    id: AuditEntryId.of(id),
+    recordedAtUtcMs: at(recordedAtMs),
+    resourceId: APPT,
+    auditOperationId: operationId,
+    ...(byAdmin ? Actor.admin(ADMIN) : Actor.user(ANA)),
+    ...AuditContext.profile(AuditAction.ProfileUpdated, [
+      RegistrationField.FirstName,
+    ]),
+    ...AuditTargetRef.customer(target),
+  });
+  const profileRow = (id: string, recordedAtMs: number): AuditEntry => ({
+    id: AuditEntryId.of(id),
+    recordedAtUtcMs: at(recordedAtMs),
+    resourceId: AuditResourceId.forUser(BOB),
+    auditOperationId: null,
+    ...Actor.user(BOB),
+    ...AuditContext.profile(AuditAction.ProfileUpdated, [
+      RegistrationField.LastName,
+    ]),
+    ...AuditTargetRef.user(BOB),
+  });
+  const ids = (rows: readonly AuditEntry[]) => rows.map((entry) => entry.id);
+  // r3 and r4 are one act's fan-out: one instant, two client records' rows.
+  const ROWS = [
+    row('r1', 1_000, ANA_RECORD, OP_1),
+    row('r3', 3_000, ANA_RECORD, OP_2, true),
+    row('r4', 3_000, ANA_RECORD, OP_2, true),
+    row('r2', 2_000, ANA_RECORD, null),
+    row('r5', 4_000, BOB_RECORD, OP_2, true),
+    profileRow('p1', 5_000),
+  ];
+
+  it('pages a client record’s rows newest first, resuming below the cursor', async () => {
+    const ports = memoryAuditReadPorts(ROWS);
+
+    const page1 = unwrapOk(
+      await ports.pageAuditByTargetCustomer(ANA_RECORD, null, 1),
+    );
+    // The page's last row shares its instant with the next: the page takes it whole.
+    expect(ids(page1.rows)).toEqual(['r4', 'r3']);
+    expect(page1.cursor).toBe(3_000);
+    const page2 = unwrapOk(
+      await ports.pageAuditByTargetCustomer(ANA_RECORD, page1.cursor, 1),
+    );
+    expect(ids(page2.rows)).toEqual(['r2']);
+    expect(page2.cursor).toBe(2_000);
+    const page3 = unwrapOk(
+      await ports.pageAuditByTargetCustomer(ANA_RECORD, page2.cursor, 1),
+    );
+    expect(ids(page3.rows)).toEqual(['r1']);
+    expect(page3.cursor).toBeNull();
+  });
+
+  it('reads each timeline by its own field, a row lacking the field never matching', async () => {
+    const ports = memoryAuditReadPorts(ROWS);
+
+    const byUser = unwrapOk(await ports.pageAuditByTargetUser(BOB, null, 10));
+    const byResource = unwrapOk(
+      await ports.pageAuditByResource(APPT, null, 10),
+    );
+    const byActor = unwrapOk(await ports.pageAuditByActorUser(ANA, null, 10));
+    const byAdmin = unwrapOk(
+      await ports.pageAuditByActorAdmin(ADMIN, null, 10),
+    );
+    const nobody = unwrapOk(await ports.pageAuditByActorAdmin(ANA, null, 10));
+
+    expect(ids(byUser.rows)).toEqual(['p1']);
+    expect(ids(byResource.rows)).toEqual(['r5', 'r4', 'r3', 'r2', 'r1']);
+    expect(ids(byActor.rows)).toEqual(['r2', 'r1']);
+    expect(ids(byAdmin.rows)).toEqual(['r5', 'r4', 'r3']);
+    expect(nobody).toEqual({ rows: [], cursor: null });
+  });
+
+  it('answers one operation’s rows oldest first, a tie by id', async () => {
+    const ports = memoryAuditReadPorts(ROWS);
+
+    expect(ids(unwrapOk(await ports.auditRowsForOperation(OP_2)))).toEqual([
+      'r3',
+      'r4',
+      'r5',
+    ]);
+    expect(
+      unwrapOk(
+        await ports.auditRowsForOperation(OperationId.of('op-none-written')),
+      ),
+    ).toEqual([]);
   });
 });
 

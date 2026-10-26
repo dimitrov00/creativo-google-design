@@ -45,7 +45,7 @@ checks are:
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
 | P1    | `locations/loc-center` exists, the read guard admits it, and its `timeZone` is a canonical IANA zone              |
 | P2    | all 7 `purgeAt` TTL policies are `ACTIVE`                                                                         |
-| P3    | all 19 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates) |
+| P3    | all 24 declared composite indexes are `READY` (indexes the file doesn't declare show as `INFO`, prune candidates) |
 | P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                            |
 | P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host             |
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
@@ -523,7 +523,7 @@ firebase deploy --only firestore:indexes --project "$PROJECT_ID"
 
 - [ ] Answer **No** to every offer to delete indexes or field overrides. Code
       that is still running may query them.
-- [ ] Wait until P3 is PASS (all 19 composites `READY`). A query that runs
+- [ ] Wait until P3 is PASS (all 24 composites `READY`). A query that runs
       before its composite is ready fails with `FAILED_PRECONDITION`, and only
       in production. Fallback:
 
@@ -553,7 +553,7 @@ gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --enable
 ```
 
 Source: `docs/architecture/firestore-runbook.md:135-180`, `:221-230`;
-`firestore.indexes.json` (19 `indexes`, 61 `fieldOverrides`, 7 with
+`firestore.indexes.json` (24 `indexes`, 61 `fieldOverrides`, 7 with
 `ttl: true`).
 
 ### 3.2 Rules

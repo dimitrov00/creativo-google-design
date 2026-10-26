@@ -23,6 +23,7 @@ import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AUDIT_READ_PORTS,
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
@@ -415,6 +416,22 @@ export const appConfig: ApplicationConfig = {
         loadClientStats: LazyMethod.Promise,
         loadClientMoney: LazyMethod.Promise,
         pageClientStats: LazyMethod.Promise,
+      },
+      onLoadError: dataUnavailable,
+    }),
+    // The admin's read of the audit trail (audit-hardening WS-7): the five
+    // timelines and one operation's rows. `auditLog` is admin-read in the
+    // rules; no screen consumes it yet (the Activity screen is out of scope).
+    provideLazyPort(AUDIT_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.auditReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        pageAuditByTargetCustomer: LazyMethod.Promise,
+        pageAuditByTargetUser: LazyMethod.Promise,
+        pageAuditByResource: LazyMethod.Promise,
+        pageAuditByActorUser: LazyMethod.Promise,
+        pageAuditByActorAdmin: LazyMethod.Promise,
+        auditRowsForOperation: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
