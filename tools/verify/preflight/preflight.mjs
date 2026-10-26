@@ -21,20 +21,29 @@
 //   P5  the CSP's connect-src names the project's callables host, the only
 //       one;
 //   P6  no emulator variable is set, and the project is neither the
-//       placeholder nor a demo-* one.
+//       placeholder nor a demo-* one;
+//   P7  no deployed project can construct an emulator-only adapter: every
+//       use of a functions export tagged `@emulatorOnly` (the console OTP
+//       sender, the fixed-code OTP crypto), followed through renames and
+//       re-exports, sits behind `onEmulator()` — today the console sender
+//       does not (the launch blocker of docs/production-deploy.md §1).
 //
-// `--scope web` (the default; the hosting predeploy) runs all six,
-// `--scope functions` (the functions predeploy) P1–P3 and P6. The project is
-// `--project`, else $GCLOUD_PROJECT (the Firebase CLI sets it for a
-// predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 never read
-// (SKIP): the read would reach an emulator, or a project nobody deploys to.
+// `--scope web` (the default; the hosting predeploy) runs P1–P6,
+// `--scope functions` (the functions predeploy) P1–P3, P6 and P7. The
+// project is `--project`, else $GCLOUD_PROJECT (the Firebase CLI sets it for
+// a predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 never
+// read (SKIP): the read would reach an emulator, or a project nobody deploys
+// to.
 //
 // Reads only. P1 reads through firebase-admin under the application-default
 // credentials; P2 and P3 list through the Firestore Admin REST API with the
 // same credentials' token, the project named as the quota project
-// (`gcloud auth application-default login` first; runbook §3). The domain is
-// the production TypeScript, bundled by `tools/seed/load-domain.mjs` — never
-// a second copy of the default id, the read guard or the zone check.
+// (`gcloud auth application-default login` first; runbook §3); P7 reads no
+// project: it resolves names across the files of apps/functions/src that
+// tsconfig.app.json builds, in memory, with the TypeScript compiler. The
+// domain is the production TypeScript, bundled by
+// `tools/seed/load-domain.mjs` — never a second copy of the default id, the
+// read guard or the zone check.
 //
 // Exits 1 when a check does not pass (the CLI then stops the deploy), 2 on
 // unreadable arguments. `CREATIVO_SKIP_PREFLIGHT=1` runs no check, warns
@@ -42,9 +51,10 @@
 // functions over what was read, exported for preflight.spec.mjs.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import ts from 'typescript';
 import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import {
   CSP_HEADER,
@@ -65,12 +75,24 @@ export const CHECKS = {
   P4: 'the built bundle has no REPLACE_ME and names the project',
   P5: "connect-src names the project's callables host",
   P6: 'no emulator variable; a real project',
+  P7: 'the emulator-only adapters run only behind onEmulator()',
+};
+
+/** What each check proves something about — the escape hatch names what went unproven. */
+const SUBJECTS = {
+  P1: 'the default location',
+  P2: 'the TTL policies',
+  P3: 'the indexes',
+  P4: 'the bundle',
+  P5: 'the CSP',
+  P6: 'the environment',
+  P7: 'the emulator-only adapters',
 };
 
 /** The checks each predeploy runs (firebase.json). */
 export const SCOPES = {
   web: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'],
-  functions: ['P1', 'P2', 'P3', 'P6'],
+  functions: ['P1', 'P2', 'P3', 'P6', 'P7'],
 };
 
 /** The checks that read the hosted project — never run when P6 fails. */
@@ -87,6 +109,16 @@ const PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
 /** An emulator switch (`FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`, `FUNCTIONS_EMULATOR`, …). */
 const EMULATOR_VARIABLE = /EMULATOR/;
+
+/** The functions' source, and — relative to it — the files tsconfig.app.json leaves out of the build. */
+const FUNCTIONS_SOURCE = 'apps/functions/src';
+const NOT_BUILT = /\.(spec|test)\.ts$|^test-support\//;
+
+/** The JSDoc tag that marks a functions export as the emulator's alone (the console OTP sender, the fixed OTP code). */
+const EMULATOR_ONLY_TAG = 'emulatorOnly';
+
+/** The composition root's emulator switch — the one gate an emulator-only export may sit behind. */
+const EMULATOR_GATE = 'onEmulator';
 
 /** The Firestore Admin REST API. */
 const FIRESTORE_ADMIN = 'https://firestore.googleapis.com/v1';
@@ -115,6 +147,9 @@ const CREDENTIALS_FAILURE =
   /credential|permission|UNAUTHENTICATED|HTTP 40[13]\b/i;
 const CREDENTIALS_HINT =
   'application-default credentials: gcloud auth application-default login (runbook §3)';
+
+/** P7's way out: the shape the OTP crypto already has, and the OTP sender's checklist item. */
+const EMULATOR_ONLY_HINT = `wire a deployed adapter beside it — ${EMULATOR_GATE}() ? <emulator adapter> : <deployed adapter>, as the OTP crypto is; the OTP sender's is the launch blocker of docs/production-deploy.md §1, "Sign-in: the OTP sender"`;
 
 const USAGE =
   'usage: node tools/verify/preflight/preflight.mjs [--project <id>] [--scope web|functions] [--dist=<dir>] [--config=<firebase.json>]';
@@ -412,13 +447,356 @@ export function checkConnectSrc({ config, projectId }) {
       ]);
 }
 
+/** Whether `expression`, parentheses aside, is the bare `onEmulator()` call. */
+function isEmulatorGate(expression) {
+  let call = expression;
+  while (ts.isParenthesizedExpression(call)) call = call.expression;
+  return (
+    ts.isCallExpression(call) &&
+    ts.isIdentifier(call.expression) &&
+    call.expression.text === EMULATOR_GATE &&
+    call.arguments.length === 0
+  );
+}
+
+/** Whether `node` sits in the true branch of `onEmulator() ? … : …` or the then-block of `if (onEmulator())`. */
+function behindEmulatorGate(node) {
+  for (let child = node; child.parent; child = child.parent) {
+    const { parent } = child;
+    if (
+      ts.isConditionalExpression(parent) &&
+      parent.whenTrue === child &&
+      isEmulatorGate(parent.condition)
+    ) {
+      return true;
+    }
+    if (
+      ts.isIfStatement(parent) &&
+      parent.thenStatement === child &&
+      isEmulatorGate(parent.expression)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether the identifier `node` names a binding — a declaration, an import, an export — rather than using a value. */
+function isBindingName(node) {
+  const { parent } = node;
+  return (
+    ts.isImportSpecifier(parent) ||
+    ts.isImportClause(parent) ||
+    ts.isNamespaceImport(parent) ||
+    ts.isImportEqualsDeclaration(parent) ||
+    ts.isExportSpecifier(parent) ||
+    ts.isExportAssignment(parent) ||
+    ((ts.isVariableDeclaration(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isPropertyAssignment(parent)) &&
+      parent.name === node)
+  );
+}
+
+/**
+ * Whether `node` sits in a type (`typeof x`, `ReturnType<typeof x>`), a
+ * position that constructs nothing — a heritage clause's expression
+ * (`extends make()`) is a value, though the syntax files it as a type.
+ */
+function inTypePosition(node) {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (ts.isExpressionWithTypeArguments(parent)) return false;
+    if (ts.isTypeNode(parent)) return true;
+  }
+  return false;
+}
+
+/**
+ * The functions' source as one in-memory program: every file of `sources`
+ * under a virtual `/`, relative imports resolved between them, everything
+ * else (`@core/*`, the SDKs, the lib) left unresolved — the checker only has
+ * to follow a name from its use back to its declaration inside the app.
+ * Answers the program and `resolve(specifier, fromFile)`, the file a
+ * module specifier names.
+ */
+function programOver(sources) {
+  const files = new Map(
+    sources.map(({ path, text }) => [posix.resolve('/', path), text]),
+  );
+  const directories = new Set(
+    [...files.keys()].flatMap((name) =>
+      name
+        .split('/')
+        .slice(1, -1)
+        .map((_, depth, parts) => `/${parts.slice(0, depth + 1).join('/')}`),
+    ),
+  );
+  const host = {
+    getSourceFile: (name, target) =>
+      files.has(name)
+        ? ts.createSourceFile(name, files.get(name), target, true)
+        : undefined,
+    getDefaultLibFileName: () => '/lib.d.ts',
+    writeFile: () => undefined,
+    getCurrentDirectory: () => '/',
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (name) => files.has(name),
+    readFile: (name) => files.get(name),
+    directoryExists: (name) => name === '/' || directories.has(name),
+    getDirectories: () => [],
+  };
+  const options = {
+    noLib: true,
+    types: [],
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.CommonJS,
+    moduleResolution: ts.ModuleResolutionKind.Node10,
+  };
+  return {
+    program: ts.createProgram([...files.keys()], options, host),
+    resolve: (specifier, fromFile) =>
+      ts.resolveModuleName(specifier, fromFile, options, host).resolvedModule
+        ?.resolvedFileName,
+  };
+}
+
+/**
+ * The run-time load `node` is — `import(…)` or `require(…)` — as
+ * `{ specifier }`, the specifier `undefined` when it is not a literal; or
+ * `undefined` for any other node.
+ */
+function runtimeLoadOf(node) {
+  if (!ts.isCallExpression(node) || node.arguments.length === 0) {
+    return undefined;
+  }
+  const callee = node.expression;
+  if (
+    callee.kind !== ts.SyntaxKind.ImportKeyword &&
+    !(ts.isIdentifier(callee) && callee.text === 'require')
+  ) {
+    return undefined;
+  }
+  const [argument] = node.arguments;
+  return {
+    specifier: ts.isStringLiteralLike(argument) ? argument.text : undefined,
+  };
+}
+
+/** Every JSDoc tag on `node`, from each of its doc blocks — `ts.getJSDocTags` reads only the last. */
+function docTagsOf(node) {
+  return (node.jsDoc ?? []).flatMap((doc) => doc.tags ?? []);
+}
+
+/**
+ * P7 — no deployed project can construct an emulator-only adapter. An
+ * export of the functions tagged `@emulatorOnly` in its JSDoc — the console
+ * OTP sender, which writes every sign-in code to the log and reports it
+ * delivered; the fixed-code OTP crypto and its code — is the emulator's
+ * alone: wired in a deployed project, nobody receives a code, or everybody
+ * knows it. Over the functions' source (`sources`: `{ path, text }` for
+ * every file tsconfig.app.json builds under `root`):
+ *
+ * - every use of such an export — followed by the TypeScript checker
+ *   through renamed imports, re-exports and namespaces back to the tagged
+ *   declaration, so a rename keeps the anchor — sits behind the composition
+ *   root's `onEmulator()` (the true branch of `onEmulator() ? … : …` or the
+ *   then-block of `if (onEmulator())`), or inside another tagged
+ *   declaration, which is judged where it is used in turn. A type position
+ *   (`typeof consoleOtpSender`) constructs nothing and is no use;
+ * - a run-time load (`import(…)`, `require(…)`) of a module that exports
+ *   one, declared or re-exported, is judged at the load, since the checker
+ *   cannot follow what it hands back; a load whose specifier is not a
+ *   literal cannot be followed at all and fails outside the gate;
+ * - the tag anchors only on an exported top-level `const` or `function`;
+ *   anywhere else — a type, a record member, a default-exported expression,
+ *   a declaration its module never exports (a line slipped in between the
+ *   doc and the export) — it fails, so a tag can never drop out unnoticed.
+ */
+export function checkEmulatorOnly({ root, sources }) {
+  if (sources.length === 0) {
+    return row('P7', Verdict.Fail, `no functions source under ${root}`);
+  }
+  const { program, resolve: resolveModule } = programOver(sources);
+  const checker = program.getTypeChecker();
+  const pathOf = new Map(
+    sources.map(({ path }) => [posix.resolve('/', path), path]),
+  );
+  const files = program
+    .getSourceFiles()
+    .filter((file) => pathOf.has(file.fileName));
+  const lines = [];
+  /** `path:line` of `node` in `file`. */
+  const at = (file, node) =>
+    `${pathOf.get(file.fileName)}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
+
+  /** Each file → the declarations its module exports, re-exports included. */
+  const exported = new Map(
+    files.map((file) => {
+      const module = checker.getSymbolAtLocation(file);
+      return [
+        file.fileName,
+        new Set(
+          (module ? checker.getExportsOfModule(module) : [])
+            .map((symbol) =>
+              symbol.flags & ts.SymbolFlags.Alias
+                ? checker.getAliasedSymbol(symbol)
+                : symbol,
+            )
+            .flatMap((symbol) => symbol.declarations ?? []),
+        ),
+      ];
+    }),
+  );
+
+  /** Each `@emulatorOnly` declaration → its name and file; a failure line for each tag that anchors nothing. */
+  const tagged = new Map();
+  for (const file of files) {
+    const collect = (node) => {
+      if (
+        docTagsOf(node).some((tag) => tag.tagName.text === EMULATOR_ONLY_TAG)
+      ) {
+        const declarations =
+          node.parent !== file
+            ? []
+            : ts.isVariableStatement(node)
+              ? node.declarationList.declarations
+              : ts.isFunctionDeclaration(node) && node.name
+                ? [node]
+                : [];
+        if (declarations.length === 0) {
+          lines.push(
+            `${at(file, node)} tags ${/^[AEIOU]/.test(ts.SyntaxKind[node.kind]) ? 'an' : 'a'} ${ts.SyntaxKind[node.kind]} @${EMULATOR_ONLY_TAG} — the tag anchors only on an exported top-level const or function`,
+          );
+        }
+        for (const declaration of declarations) {
+          const name = ts.isIdentifier(declaration.name)
+            ? declaration.name.text
+            : undefined;
+          if (!name || !exported.get(file.fileName).has(declaration)) {
+            lines.push(
+              `${at(file, declaration)} tags ${name ?? 'a destructuring'} @${EMULATOR_ONLY_TAG}, which its module does not export — move the tag onto the export`,
+            );
+          } else {
+            tagged.set(declaration, {
+              name,
+              path: pathOf.get(file.fileName),
+            });
+          }
+        }
+      }
+      ts.forEachChild(node, collect);
+    };
+    collect(file);
+  }
+
+  /** Each file whose module exports an `@emulatorOnly` declaration → their names. */
+  const taggedIn = new Map();
+  for (const file of files) {
+    const names = [...exported.get(file.fileName)]
+      .filter((declaration) => tagged.has(declaration))
+      .map((declaration) => tagged.get(declaration).name);
+    if (names.length > 0) taggedIn.set(file.fileName, [...new Set(names)]);
+  }
+
+  /** The tagged declaration a use of `node` resolves to, if any. */
+  const taggedOf = (node) => {
+    let symbol = ts.isShorthandPropertyAssignment(node.parent)
+      ? checker.getShorthandAssignmentValueSymbol(node.parent)
+      : checker.getSymbolAtLocation(node);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+      symbol = checker.getAliasedSymbol(symbol);
+    }
+    const declaration = symbol?.declarations?.find((entry) =>
+      tagged.has(entry),
+    );
+    return declaration ? tagged.get(declaration) : undefined;
+  };
+
+  /** Whether `node` sits inside a tagged declaration — judged where that one is used. */
+  const insideTagged = (node) => {
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (tagged.has(parent)) return true;
+    }
+    return false;
+  };
+
+  let gated = 0;
+  if (tagged.size > 0) {
+    for (const file of files) {
+      /** Counts `node` as a use behind the gate, or records it as a failure worded `wording`. */
+      const judge = (node, wording) => {
+        if (insideTagged(node)) return;
+        if (behindEmulatorGate(node)) gated += 1;
+        else lines.push(`${at(file, node)} ${wording}`);
+      };
+      const visit = (node) => {
+        const load = runtimeLoadOf(node);
+        const loaded =
+          load?.specifier === undefined
+            ? undefined
+            : resolveModule(load.specifier, file.fileName);
+        if (load && load.specifier === undefined) {
+          judge(
+            node,
+            'loads a module named at run time outside the emulator — P7 cannot follow it; name it with a string literal',
+          );
+        } else if (taggedIn.has(loaded)) {
+          judge(
+            node,
+            `loads ${pathOf.get(loaded)} (@${EMULATOR_ONLY_TAG} ${taggedIn.get(loaded).join(', ')}) outside the emulator — import it statically, so each use can be followed`,
+          );
+        } else if (
+          ts.isIdentifier(node) &&
+          !isBindingName(node) &&
+          !inTypePosition(node)
+        ) {
+          const target = taggedOf(node);
+          if (target) {
+            judge(
+              node,
+              `uses ${target.name} (@${EMULATOR_ONLY_TAG}, ${target.path}) outside the emulator`,
+            );
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(file);
+    }
+  }
+  if (lines.length > 0) {
+    return row(
+      'P7',
+      Verdict.Fail,
+      'an emulator-only adapter is not provably behind onEmulator()',
+      [...lines, EMULATOR_ONLY_HINT],
+    );
+  }
+  const names = [...new Set([...tagged.values()].map(({ name }) => name))];
+  const uses =
+    gated === 0
+      ? 'never used'
+      : `${gated === 1 ? 'the one use' : `all ${gated} uses`} behind ${EMULATOR_GATE}()`;
+  return row(
+    'P7',
+    Verdict.Pass,
+    names.length === 0
+      ? `no @${EMULATOR_ONLY_TAG} export in ${sources.length} files under ${root}`
+      : `${names.join(', ')}: ${uses}`,
+  );
+}
+
 /**
  * Every check of `scope`, over what `read` answers: `domain()` (the seed
  * bundle), `location(domain)` (the default location as stored, or `null`),
  * `declared()` (firestore.indexes.json), `ttlFields()` and `indexes()` (the
- * project's listings), `bundle()` (`{ dist, scripts }`) and `config()`
- * (firebase.json). A read that throws fails its check; P6 runs first and,
- * failing, keeps P1–P3 from reading at all.
+ * project's listings), `bundle()` (`{ dist, scripts }`), `config()`
+ * (firebase.json) and `functionsSource()` (`{ root, sources }`). A read that
+ * throws fails its check; P6 runs first and, failing, keeps P1–P3 from
+ * reading at all — P7 reads the repository only, so it runs either way.
  */
 export async function runPreflight({ scope, projectId, env, read }) {
   const environment = checkEnvironment({ env, projectId });
@@ -443,6 +821,7 @@ export async function runPreflight({ scope, projectId, env, read }) {
     P4: async () => checkBundle({ ...(await read.bundle()), projectId }),
     P5: async () => checkConnectSrc({ config: await read.config(), projectId }),
     P6: async () => environment,
+    P7: async () => checkEmulatorOnly(await read.functionsSource()),
   };
   return Promise.all(
     SCOPES[scope].map(async (check) => {
@@ -502,14 +881,19 @@ export function renderTable({ projectId, scope, rows }) {
   return out.join('\n');
 }
 
-/** The banner the escape hatch prints instead of the table. */
+/**
+ * The banner the escape hatch prints instead of the table: what the
+ * scope's checks would have proved, and the command that proves it — the
+ * same scope, since a by-hand run defaults to `web` and would skip P7.
+ */
 export function skipBanner({ projectId, scope }) {
   const bar = '!'.repeat(78);
+  const subjects = SCOPES[scope].map((check) => SUBJECTS[check]);
   return [
     bar,
     `!!! CREATIVO_SKIP_PREFLIGHT=1 — the production preflight did NOT run (scope ${scope}, ${SCOPES[scope].join(' ')}).`,
-    `!!! Nothing proved the default location, the TTL policies, the indexes, the bundle,`,
-    `!!! the CSP or the environment of ${projectId || '(no project)'}. Run \`pnpm run preflight\` after this deploy.`,
+    `!!! Nothing proved ${subjects.slice(0, -1).join(', ')} or ${subjects.at(-1)} of ${projectId || '(no project)'}.`,
+    `!!! Run \`pnpm run preflight --scope ${scope} --project ${projectId || '<id>'}\` after this deploy.`,
     bar,
   ].join('\n');
 }
@@ -581,15 +965,19 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-/** Every `.js` / `.mjs` file under `dir`, as `{ path, text }` (`path` relative to the working directory). */
-function scriptsUnder(dir) {
-  const scripts = [];
+/**
+ * Every file under `dir` whose path relative to `dir` (`/`-separated)
+ * `keep` accepts, as `{ path, text }` (`path` relative to the working
+ * directory).
+ */
+function filesUnder(dir, keep) {
+  const files = [];
   const walk = (folder) => {
     for (const name of readdirSync(folder)) {
       const full = join(folder, name);
       if (statSync(full).isDirectory()) walk(full);
-      else if (/\.m?js$/.test(name)) {
-        scripts.push({
+      else if (keep(relative(dir, full).split(sep).join('/'))) {
+        files.push({
           path: relative(process.cwd(), full),
           text: readFileSync(full, 'utf8'),
         });
@@ -597,7 +985,22 @@ function scriptsUnder(dir) {
     }
   };
   walk(dir);
-  return scripts;
+  return files;
+}
+
+/** Every `.js` / `.mjs` file under `dir`. */
+function scriptsUnder(dir) {
+  return filesUnder(dir, (inner) => /\.m?js$/.test(inner));
+}
+
+/** The files under `dir` (the functions' `src`) that tsconfig.app.json builds: every `.ts` but specs, tests and `test-support/`. */
+export function functionsSourceUnder(dir) {
+  return existsSync(dir)
+    ? filesUnder(
+        dir,
+        (inner) => inner.endsWith('.ts') && !NOT_BUILT.test(inner),
+      )
+    : [];
 }
 
 /** Calls `load` once and hands every caller the same promise. */
@@ -607,10 +1010,11 @@ function once(load) {
 }
 
 /**
- * The live reads for `options`: the files on disk, the default location
- * through firebase-admin, and the two listings through the Firestore Admin
- * REST API — all under the one application-default credential. firebase-admin
- * loads only when a project read runs.
+ * The live reads for `options`: the files on disk (the functions' source
+ * among them), the default location through firebase-admin, and the two
+ * listings through the Firestore Admin REST API — all under the one
+ * application-default credential. firebase-admin loads only when a project
+ * read runs.
  */
 function liveReaders({ projectId, dist, config }) {
   const configPath = resolve(config);
@@ -689,6 +1093,10 @@ function liveReaders({ projectId, dist, config }) {
       };
     },
     config: firebaseConfig,
+    functionsSource: async () => ({
+      root: FUNCTIONS_SOURCE,
+      sources: functionsSourceUnder(resolve(FUNCTIONS_SOURCE)),
+    }),
   };
 }
 

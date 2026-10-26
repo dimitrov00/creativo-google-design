@@ -1,8 +1,8 @@
 // node --test tools/verify/preflight/preflight.spec.mjs
 //
 // The production preflight's checks over fakes (owner ruling OR-35): what a
-// project read, the indexes file, a build and firebase.json would answer —
-// never a network, a credential or the seed bundle. The domain is a fake of
+// project read, the indexes file, a build, firebase.json and the functions'
+// source would answer — never a network, a credential or the seed bundle. The domain is a fake of
 // the four names `tools/seed/load-domain.mjs` hands out (its own spec holds
 // each equal to the ordinary import); the zone check answers as `Intl` does.
 import assert from 'node:assert/strict';
@@ -19,14 +19,17 @@ import {
   checkConnectSrc,
   checkDefaultLocation,
   checkEnvironment,
+  checkEmulatorOnly,
   checkTtlPolicies,
   exitCodeOf,
   fieldKeyOf,
+  functionsSourceUnder,
   optionsOf,
   preflight,
   renderTable,
   runPreflight,
   sameIndex,
+  skipBanner,
 } from './preflight.mjs';
 
 const PROJECT = 'creativo-prod';
@@ -164,6 +167,42 @@ function firebaseJson(callables) {
   };
 }
 
+/**
+ * The functions' source root; the console sender's adapter, tagged
+ * `@emulatorOnly` as the real one is; and a composition root wiring it as
+ * the OTP crypto is wired.
+ */
+const FUNCTIONS = 'apps/functions/src';
+const ADAPTER_PATH = `${FUNCTIONS}/adapters/console-otp-sender.adapter.ts`;
+const adapterExporting = (name) => ({
+  path: ADAPTER_PATH,
+  text: [
+    '/**',
+    " * The emulator's login-OTP sender: the code goes to the log.",
+    ' *',
+    ' * @emulatorOnly The production preflight refuses it outside onEmulator().',
+    ' */',
+    `export const ${name} = (log: Log): OtpDeliveryPorts => ({ sendOtp: async () => ok });`,
+  ].join('\n'),
+});
+const ADAPTER = adapterExporting('consoleOtpSender');
+const IMPORT =
+  "import { consoleOtpSender } from './adapters/console-otp-sender.adapter';";
+const GATED_ROOT = [
+  IMPORT,
+  'const identityPorts = once(() => ({',
+  '  ...(onEmulator()',
+  '    ? consoleOtpSender(telemetry.log)',
+  '    : transactionalOtpSender(apiKey.value())),',
+  '}));',
+].join('\n');
+
+/** The tagged adapter beside a composition root of `lines`. */
+const tree = (...lines) => [
+  ADAPTER,
+  { path: `${FUNCTIONS}/main.ts`, text: lines.join('\n') },
+];
+
 /** Readers that answer a healthy project, each overridable, and count their calls. */
 function fakeReaders(overrides = {}) {
   const calls = [];
@@ -193,6 +232,10 @@ function fakeReaders(overrides = {}) {
       ],
     })),
     config: counted('config', () => firebaseJson([HOST])),
+    functionsSource: counted('functionsSource', () => ({
+      root: FUNCTIONS,
+      sources: tree(GATED_ROOT),
+    })),
     ...overrides,
   };
   return { read, calls };
@@ -507,12 +550,312 @@ describe('P6 · the environment', () => {
   });
 });
 
+describe('P7 · the emulator-only adapters', () => {
+  const main = `${FUNCTIONS}/main.ts`;
+  const judge = (sources) => checkEmulatorOnly({ root: FUNCTIONS, sources });
+  /** The failure line of a use at `line` of main.ts. */
+  const outside = (line, name = 'consoleOtpSender') =>
+    `${main}:${line} uses ${name} (@emulatorOnly, ${ADAPTER_PATH}) outside the emulator`;
+
+  it('passes when every use of an @emulatorOnly export sits behind onEmulator(), as the OTP crypto does', () => {
+    const ternary = judge(tree(GATED_ROOT));
+    assert.equal(ternary.verdict, Verdict.Pass);
+    assert.equal(
+      ternary.detail,
+      'consoleOtpSender: the one use behind onEmulator()',
+    );
+    const block = judge(
+      tree(
+        IMPORT,
+        'let sender = transactionalOtpSender(apiKey.value());',
+        'if ((onEmulator())) {',
+        '  sender = consoleOtpSender(telemetry.log);',
+        '}',
+        'const ports = onEmulator() ? { ...consoleOtpSender(log) } : sender;',
+      ),
+    );
+    assert.equal(block.verdict, Verdict.Pass);
+    assert.equal(
+      block.detail,
+      'consoleOtpSender: all 2 uses behind onEmulator()',
+    );
+  });
+
+  it('judges uses only: the declaration, an import, a re-export, a type position, a comment and a string construct nothing', () => {
+    const answer = judge([
+      ADAPTER,
+      {
+        path: `${FUNCTIONS}/adapters/index.ts`,
+        text: "export { consoleOtpSender } from './console-otp-sender.adapter';",
+      },
+      {
+        path: main,
+        text: [
+          IMPORT,
+          'type Sender = ReturnType<typeof consoleOtpSender>;',
+          '// ...consoleOtpSender(telemetry.log) until the provider lands',
+          "log('info', 'consoleOtpSender(telemetry.log)');",
+          'const ports = { ...transactionalOtpSender(apiKey.value()) };',
+        ].join('\n'),
+      },
+    ]);
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(answer.detail, 'consoleOtpSender: never used');
+  });
+
+  it('anchors on the tag, not on a name: an untagged export is never judged', () => {
+    const answer = judge([
+      {
+        path: ADAPTER_PATH,
+        text: 'export const consoleOtpSender = () => ({});',
+      },
+      {
+        path: main,
+        text: `${IMPORT}\nconst ports = { ...consoleOtpSender(log) };`,
+      },
+    ]);
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(
+      answer.detail,
+      `no @emulatorOnly export in 2 files under ${FUNCTIONS}`,
+    );
+  });
+
+  it('fails on the adapter wired outright — today’s composition root — naming the line and the adapter, the way out last', () => {
+    const answer = judge(
+      tree(
+        IMPORT,
+        'const identityPorts = once(() => ({',
+        '  ...consoleOtpSender(telemetry.log),',
+        '}));',
+      ),
+    );
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.equal(
+      answer.detail,
+      'an emulator-only adapter is not provably behind onEmulator()',
+    );
+    assert.deepEqual(answer.lines.slice(0, -1), [outside(3)]);
+    assert.match(
+      answer.lines.at(-1),
+      /onEmulator\(\) \? <emulator adapter> : <deployed adapter>, as the OTP crypto is; .* docs\/production-deploy\.md §1/,
+    );
+  });
+
+  it('follows a renamed export, an aliased import, a barrel re-export, a namespace and a shorthand back to the tagged declaration', () => {
+    const ungated = (sources) => judge(sources).lines.slice(0, -1);
+    assert.deepEqual(
+      ungated([
+        adapterExporting('consoleOtpDeliveryPorts'),
+        {
+          path: main,
+          text: [
+            "import { consoleOtpDeliveryPorts } from './adapters/console-otp-sender.adapter';",
+            'const ports = { ...consoleOtpDeliveryPorts(log) };',
+          ].join('\n'),
+        },
+      ]),
+      [outside(2, 'consoleOtpDeliveryPorts')],
+    );
+    assert.deepEqual(
+      ungated(
+        tree(
+          "import { consoleOtpSender as loginOtpSender } from './adapters/console-otp-sender.adapter';",
+          'const ports = { ...loginOtpSender(log) };',
+        ),
+      ),
+      [outside(2)],
+    );
+    assert.deepEqual(
+      ungated([
+        ...tree(
+          "import { otpSenderPorts } from './adapters';",
+          'const ports = { ...otpSenderPorts(log) };',
+        ),
+        {
+          path: `${FUNCTIONS}/adapters/index.ts`,
+          text: "export { consoleOtpSender as otpSenderPorts } from './console-otp-sender.adapter';",
+        },
+      ]),
+      [outside(2)],
+    );
+    assert.deepEqual(
+      ungated(
+        tree(
+          "import * as dev from './adapters/console-otp-sender.adapter';",
+          'const ports = { ...dev.consoleOtpSender(log) };',
+        ),
+      ),
+      [outside(2)],
+    );
+    assert.deepEqual(
+      ungated(tree(IMPORT, 'const factories = { consoleOtpSender };')),
+      [outside(2)],
+    );
+  });
+
+  it('judges a run-time load of an emulator-only module at the load, and a default export at its importers', () => {
+    const load = (line) =>
+      `${main}:${line} loads ${ADAPTER_PATH} (@emulatorOnly consoleOtpSender) outside the emulator — import it statically, so each use can be followed`;
+    const loads = judge(
+      tree(
+        "const a = async () => (await import('./adapters/console-otp-sender.adapter')).consoleOtpSender(log);",
+        "const { consoleOtpSender } = require('./adapters/console-otp-sender.adapter');",
+        "const c = onEmulator() ? import('./adapters/console-otp-sender.adapter') : import('./adapters/transactional');",
+      ),
+    );
+    assert.equal(loads.verdict, Verdict.Fail);
+    assert.deepEqual(loads.lines.slice(0, -1), [load(1), load(2)]);
+    const byDefault = {
+      path: ADAPTER_PATH,
+      text: '/** @emulatorOnly */\nconst consoleOtpSender = (log) => ({});\nexport default consoleOtpSender;',
+    };
+    const importing = (use) => [
+      byDefault,
+      {
+        path: main,
+        text: `import sender from './adapters/console-otp-sender.adapter';\n${use}`,
+      },
+    ];
+    assert.equal(
+      judge(importing('const p = onEmulator() ? sender(log) : real();')).detail,
+      'consoleOtpSender: the one use behind onEmulator()',
+    );
+    assert.deepEqual(
+      judge(importing('const p = sender(log);')).lines.slice(0, -1),
+      [outside(2)],
+    );
+  });
+
+  it('judges a lazy load of a module that only re-exports one, and refuses a load it cannot name', () => {
+    const barrel = {
+      path: `${FUNCTIONS}/adapters/index.ts`,
+      text: "export * from './console-otp-sender.adapter';",
+    };
+    const answer = judge([
+      ...tree(
+        "const a = async () => { const { consoleOtpSender } = await import('./adapters'); return consoleOtpSender(log); };",
+        'const b = (kind) => import(`./adapters/${kind}-otp-sender.adapter`);',
+        "const c = onEmulator() ? import('./adapters') : import('./adapters/transactional');",
+      ),
+      barrel,
+    ]);
+    assert.deepEqual(answer.lines.slice(0, -1), [
+      `${main}:1 loads ${FUNCTIONS}/adapters/index.ts (@emulatorOnly consoleOtpSender) outside the emulator — import it statically, so each use can be followed`,
+      `${main}:2 loads a module named at run time outside the emulator — P7 cannot follow it; name it with a string literal`,
+    ]);
+  });
+
+  it('never lets a tag drop out: one in an earlier doc block still anchors, and a tag on anything but an exported const or function fails', () => {
+    const adapter = (text) => [
+      { path: ADAPTER_PATH, text },
+      {
+        path: main,
+        text: `${IMPORT}\nconst ports = { ...consoleOtpSender(log) };`,
+      },
+    ];
+    const earlierBlock = judge(
+      adapter(
+        '/** @emulatorOnly */\n/**\n * The emulator sender.\n */\nexport const consoleOtpSender = (log) => ({});',
+      ),
+    );
+    assert.deepEqual(earlierBlock.lines.slice(0, -1), [outside(2)]);
+    const drifted = judge(
+      adapter(
+        [
+          '/** @emulatorOnly */',
+          "type Channel = 'email' | 'sms';",
+          'export const consoleOtpSender = (log) => ({});',
+          '/** @emulatorOnly */',
+          "const PREFIX = '[otp]';",
+          'export const senders = {',
+          '  /** @emulatorOnly */',
+          '  console: (log) => ({}),',
+          '};',
+          '/** @emulatorOnly */',
+          'export default (log) => ({});',
+        ].join('\n'),
+      ),
+    );
+    assert.equal(drifted.verdict, Verdict.Fail);
+    assert.deepEqual(drifted.lines.slice(0, -1), [
+      `${ADAPTER_PATH}:2 tags a TypeAliasDeclaration @emulatorOnly — the tag anchors only on an exported top-level const or function`,
+      `${ADAPTER_PATH}:5 tags PREFIX @emulatorOnly, which its module does not export — move the tag onto the export`,
+      `${ADAPTER_PATH}:8 tags a PropertyAssignment @emulatorOnly — the tag anchors only on an exported top-level const or function`,
+      `${ADAPTER_PATH}:11 tags an ExportAssignment @emulatorOnly — the tag anchors only on an exported top-level const or function`,
+    ]);
+  });
+
+  it('lets one tagged declaration use another — it is judged where it is used in turn', () => {
+    const crypto = {
+      path: `${FUNCTIONS}/adapters/otp-crypto.adapter.ts`,
+      text: [
+        '/** @emulatorOnly */',
+        "export const OTP_FIXED_CODE = '123456';",
+        '/** @emulatorOnly */',
+        'export const fixedCodeOtpCryptoPorts = () => ({ nextCode: () => OTP_FIXED_CODE });',
+      ].join('\n'),
+    };
+    const root = (use) => ({
+      path: main,
+      text: `import { fixedCodeOtpCryptoPorts } from './adapters/otp-crypto.adapter';\n${use}`,
+    });
+    const gated = judge([
+      crypto,
+      root('const p = onEmulator() ? fixedCodeOtpCryptoPorts() : real();'),
+    ]);
+    assert.equal(gated.verdict, Verdict.Pass);
+    assert.equal(
+      gated.detail,
+      'OTP_FIXED_CODE, fixedCodeOtpCryptoPorts: the one use behind onEmulator()',
+    );
+    assert.deepEqual(
+      judge([crypto, root('const p = fixedCodeOtpCryptoPorts();')]).lines.slice(
+        0,
+        -1,
+      ),
+      [
+        `${main}:2 uses fixedCodeOtpCryptoPorts (@emulatorOnly, ${FUNCTIONS}/adapters/otp-crypto.adapter.ts) outside the emulator`,
+      ],
+    );
+  });
+
+  it('fails on the deployed branch, a negated or another gate, a gate with an argument, an else-block and an alias, naming each', () => {
+    const answer = judge(
+      tree(
+        IMPORT,
+        'const a = onEmulator() ? fixed() : consoleOtpSender(log);',
+        'const b = !onEmulator() ? consoleOtpSender(log) : real();',
+        'const c = isEmulator() ? consoleOtpSender(log) : real();',
+        'const d = onEmulator(true) ? consoleOtpSender(log) : real();',
+        'if (onEmulator()) { real(); } else { consoleOtpSender(log); }',
+        'const sender = consoleOtpSender;',
+      ),
+    );
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.deepEqual(
+      answer.lines.slice(0, -1),
+      [2, 3, 4, 5, 6, 7].map((line) => outside(line)),
+    );
+  });
+
+  it('fails when there is no functions source to judge', () => {
+    const answer = judge([]);
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.equal(answer.detail, `no functions source under ${FUNCTIONS}`);
+  });
+});
+
 describe('runPreflight', () => {
   const env = { GCLOUD_PROJECT: PROJECT };
 
-  it('runs all six checks for the web scope, and four for the functions scope', async () => {
-    assert.deepEqual(Object.keys(CHECKS), SCOPES.web);
-    assert.deepEqual(SCOPES.functions, ['P1', 'P2', 'P3', 'P6']);
+  it('runs P1–P6 for the web scope and P1–P3, P6, P7 for the functions scope — every check in one of them', async () => {
+    assert.deepEqual(SCOPES.web, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
+    assert.deepEqual(SCOPES.functions, ['P1', 'P2', 'P3', 'P6', 'P7']);
+    assert.deepEqual(
+      [...new Set([...SCOPES.web, ...SCOPES.functions])].sort(),
+      Object.keys(CHECKS),
+    );
     const web = await runPreflight({
       scope: 'web',
       projectId: PROJECT,
@@ -532,14 +875,14 @@ describe('runPreflight', () => {
       read,
     });
     assert.deepEqual(
-      functions.map((entry) => entry.check),
-      SCOPES.functions,
+      functions.map((entry) => [entry.check, entry.verdict]),
+      SCOPES.functions.map((check) => [check, Verdict.Pass]),
     );
     assert.equal(calls.includes('bundle'), false);
     assert.equal(calls.includes('config'), false);
   });
 
-  it('reads nothing of the project when P6 fails: P1–P3 SKIP, and the run fails', async () => {
+  it('reads nothing of the project when P6 fails: P1–P3 SKIP, P7 still judges the source, and the run fails', async () => {
     const { read, calls } = fakeReaders();
     const rows = await runPreflight({
       scope: 'functions',
@@ -549,9 +892,34 @@ describe('runPreflight', () => {
     });
     assert.deepEqual(
       rows.map((entry) => entry.verdict),
-      [Verdict.Skip, Verdict.Skip, Verdict.Skip, Verdict.Fail],
+      [Verdict.Skip, Verdict.Skip, Verdict.Skip, Verdict.Fail, Verdict.Pass],
     );
-    assert.deepEqual(calls, []);
+    assert.deepEqual(calls, ['functionsSource']);
+    assert.equal(exitCodeOf(rows), 1);
+  });
+
+  it('fails the functions deploy on the console sender wired outright, whatever the project reads', async () => {
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env,
+      read: fakeReaders({
+        functionsSource: async () => ({
+          root: FUNCTIONS,
+          sources: tree(IMPORT, 'const ports = { ...consoleOtpSender(log) };'),
+        }),
+      }).read,
+    });
+    assert.deepEqual(
+      rows.map((entry) => [entry.check, entry.verdict]),
+      [
+        ['P1', Verdict.Pass],
+        ['P2', Verdict.Pass],
+        ['P3', Verdict.Pass],
+        ['P6', Verdict.Pass],
+        ['P7', Verdict.Fail],
+      ],
+    );
     assert.equal(exitCodeOf(rows), 1);
   });
 
@@ -652,6 +1020,28 @@ describe('preflight · the command', () => {
     }
   });
 
+  it('names in the skip banner what the scope would have proved, and the command that proves it', () => {
+    const functions = skipBanner({ projectId: PROJECT, scope: 'functions' });
+    assert.match(
+      functions,
+      /Nothing proved the default location, the TTL policies, the indexes, the environment or the emulator-only adapters of creativo-prod\./,
+    );
+    assert.match(
+      functions,
+      /Run `pnpm run preflight --scope functions --project creativo-prod` after this deploy\./,
+    );
+    const web = skipBanner({ projectId: PROJECT, scope: 'web' });
+    assert.match(
+      web,
+      /the bundle, the CSP or the environment of creativo-prod\./,
+    );
+    assert.doesNotMatch(web, /emulator-only/);
+    assert.match(
+      skipBanner({ projectId: null, scope: 'web' }),
+      /--scope web --project <id>` after this deploy/,
+    );
+  });
+
   it('runs no check under CREATIVO_SKIP_PREFLIGHT=1, warns loudly and exits 0', async () => {
     const warnings = [];
     let read = false;
@@ -695,7 +1085,7 @@ describe('the deploy wiring', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
   const json = (file) => JSON.parse(readFileSync(join(root, file), 'utf8'));
 
-  it('runs the preflight as the hosting predeploy (all checks) and last in the functions predeploy (P1–P3, P6), on the deployed project', () => {
+  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6, P7), on the deployed project', () => {
     const config = json('firebase.json');
     const web = config.hosting.find((entry) => entry.target === 'web');
     assert.deepEqual(web.predeploy, [
@@ -704,6 +1094,48 @@ describe('the deploy wiring', () => {
     assert.equal(
       config.functions.predeploy.at(-1),
       'node tools/verify/preflight/preflight.mjs --scope functions --project $GCLOUD_PROJECT',
+    );
+  });
+
+  // The launch blocker, read off the repository: P7 resolves the very files
+  // the functions build compiles. This pin flips to PASS in the change that
+  // wires a transactional sender (docs/production-deploy.md §1, "Sign-in:
+  // the OTP sender") — update it there, with that checklist item.
+  it('P7 refuses today’s functions on main.ts’s console sender alone, and passes once that one line is gated — both OTP adapters and the fixed code tagged', () => {
+    const sources = functionsSourceUnder(join(root, FUNCTIONS));
+    assert.ok(sources.some(({ path }) => path.endsWith('/main.ts')));
+    assert.equal(
+      sources.some(({ path }) =>
+        /\.(spec|test)\.ts$|functions\/src\/test-support\//.test(path),
+      ),
+      false,
+    );
+    const today = checkEmulatorOnly({ root: FUNCTIONS, sources });
+    assert.equal(today.verdict, Verdict.Fail);
+    assert.equal(today.lines.length, 2);
+    assert.match(
+      today.lines[0],
+      /apps\/functions\/src\/main\.ts:\d+ uses consoleOtpSender \(@emulatorOnly, .*apps\/functions\/src\/adapters\/console-otp-sender\.adapter\.ts\) outside the emulator$/,
+    );
+    const wired = '...consoleOtpSender(telemetry.log),';
+    const main = sources.find(({ path }) => path.endsWith('/main.ts'));
+    assert.ok(main.text.includes(wired));
+    const gated = sources.map((file) =>
+      file === main
+        ? {
+            ...file,
+            text: file.text.replace(
+              wired,
+              '...(onEmulator() ? consoleOtpSender(telemetry.log) : transactionalOtpSender()),',
+            ),
+          }
+        : file,
+    );
+    const tomorrow = checkEmulatorOnly({ root: FUNCTIONS, sources: gated });
+    assert.equal(tomorrow.verdict, Verdict.Pass);
+    assert.equal(
+      tomorrow.detail,
+      'consoleOtpSender, OTP_FIXED_CODE, fixedCodeOtpCryptoPorts: all 2 uses behind onEmulator()',
     );
   });
 

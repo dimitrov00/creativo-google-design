@@ -2144,8 +2144,13 @@ production preflight (`tools/verify/preflight/preflight.mjs`, runbook §3)
 reads the target project — P1 the default location and its zone, P2 the
 seven TTL policies `ACTIVE`, P3 every declared composite `READY`, P4 the
 bundle names the project, P5 `connect-src` names its callables host, P6 no
-emulator variable and no placeholder or `demo-*` project — and exits 1
-unless every row passes. Its pure checks run in `run-many -t test`
+emulator variable and no placeholder or `demo-*` project, and (functions
+scope, 2026-10-26) P7 every use of an `@emulatorOnly` export (the console
+OTP sender, the fixed-code OTP crypto) behind `onEmulator()`, followed by the
+TypeScript checker through renames and re-exports — and exits 1 unless every
+row passes. P7 FAILs on today's tree by design: it is the OTP-sender launch
+blocker of `docs/production-deploy.md` §1, pinned by the spec until the
+transactional sender lands. Its pure checks run in `run-many -t test`
 (`verify-tools`, `preflight.spec.mjs`); against the emulator project it
 stops at P6 by design, so the gate on a tree with no hosted project is that
 spec, and the run against the real project is the release step before any

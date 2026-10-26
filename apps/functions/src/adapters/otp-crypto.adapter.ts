@@ -33,6 +33,9 @@ const HASH_BYTES = 64;
  * The emulator's fixed code: manual QA never fishes codes out of logs.
  * Salting and hashing stay the real scrypt, so the request → hash → verify
  * path is the production one.
+ *
+ * @emulatorOnly The production preflight's P7 refuses a functions deploy
+ * that uses this outside the composition root's `onEmulator()`.
  */
 export const OTP_FIXED_CODE = '123456';
 
@@ -59,6 +62,9 @@ export const nodeOtpCryptoPorts = (): OtpCryptoPorts => ({
  * the hash and the comparison are production's. Chosen only by the composition root
  * behind the `FUNCTIONS_EMULATOR` gate, the same gate that scopes
  * `devCode`, so a deployed environment can never construct it.
+ *
+ * @emulatorOnly The production preflight's P7 refuses a functions deploy
+ * that uses this outside the composition root's `onEmulator()`.
  */
 export const fixedCodeOtpCryptoPorts = (): OtpCryptoPorts => ({
   otpCrypto: { ...NODE_OTP_CRYPTO, nextCode: () => OTP_FIXED_CODE },

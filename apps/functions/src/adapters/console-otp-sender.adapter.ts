@@ -28,6 +28,13 @@ const LEGACY_OTP_DESTINATION_TYPE = {
   [OtpDestinationType.Sms]: 'sms',
 } as const;
 
+/**
+ * The emulator's login-OTP sender: the code goes to the log, never to the
+ * person, and the send always succeeds.
+ *
+ * @emulatorOnly The production preflight's P7 refuses a functions deploy
+ * that uses this outside the composition root's `onEmulator()`.
+ */
 export const consoleOtpSender = (log: Log): OtpDeliveryPorts => ({
   sendOtp: async (
     destination: ParsedIdentifier,

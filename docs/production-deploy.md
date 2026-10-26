@@ -7,13 +7,17 @@ ship.
 
 **The app has never been deployed.** `.firebaserc` still names the placeholder
 project `creativo-replace-me`, and no hosted project exists yet
-(`.firebaserc:2-11`, `docs/architecture/firestore-runbook.md:237`). Section 1
+(`.firebaserc:2-11`, `docs/architecture/firestore-runbook.md:238`). Section 1
 is therefore all still to do.
 
-**Golden rule: run the preflight first.**
+**Golden rule: run the preflight first, in both scopes.**
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"
+```
+
+```bash
+pnpm run preflight --scope functions --project "$PROJECT_ID"
 ```
 
 > **No `--` before the flags.** Under the repo's pnpm
@@ -23,17 +27,19 @@ pnpm run preflight --project "$PROJECT_ID"
 > straight after the script name, as above (checked on 2026-10-26 with a dry
 > `--scope bogus` run; the runbook, the HANDOFF gate and the preflight's usage
 > line were corrected the same day). Source: `package.json:18`, `:31`;
-> `tools/verify/preflight/preflight.mjs:522-532`.
+> `tools/verify/preflight/preflight.mjs:906-916`.
 
 The preflight is a read-only check that the project is ready (OR-35, DEP-F26).
 Both predeploy hooks in `firebase.json` run it too and refuse the deploy if a
-check fails. Run it by hand before you start, so a failure doesn't land in the
-middle of a deploy. By hand it defaults to `--scope web` (all six checks), so
-build the web first (`pnpm nx build web`) or P4 fails with "no built
-scripts"; `--scope functions` runs P1–P3 and P6 only. Without `--project` it
-falls back to `$GCLOUD_PROJECT`, then to `.firebaserc`'s default. On a
-first deploy P2 and P3 fail until the index deploy of section 3.1 has run;
-that is expected. Its six checks are:
+check fails. Run it by hand before you start, in both scopes as above, so a
+failure doesn't land in the middle of a deploy. By hand it defaults to
+`--scope web` (P1–P6), so build the web first (`pnpm nx build web`) or P4
+fails with "no built scripts"; only `--scope functions` (P1–P3, P6, P7) runs
+P7. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
+`.firebaserc`'s default. On a first deploy P2 and P3 fail until the index
+deploy of section 3.1 has run; that is expected. P7 fails every functions
+deploy until the OTP sender of section 1 lands — that is the point. Its seven
+checks are:
 
 | Check | Passes when                                                                                                       |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
@@ -43,11 +49,22 @@ that is expected. Its six checks are:
 | P4    | the built web bundle contains no `REPLACE_ME` and names the project id                                            |
 | P5    | the CSP `connect-src` names `https://us-central1-<id>.cloudfunctions.net` and no other callables host             |
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
+| P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)  |
 
-Exit codes: 0 = pass, 1 = a check failed, 2 = bad arguments. If P6 fails,
-P1–P3 are skipped.
-Source: `tools/verify/preflight/preflight.mjs:1-42`, `:71-74`, `:515-545`;
-runbook §3 (`docs/architecture/firestore-runbook.md:193-208`).
+The `@emulatorOnly` exports are the console OTP sender (`consoleOtpSender`),
+the fixed-code OTP crypto (`fixedCodeOtpCryptoPorts`) and its code
+(`OTP_FIXED_CODE`). P7 follows each use back to the tagged declaration
+through renamed imports, re-exports and namespaces, so a rename can't hide
+one; a use inside another tagged declaration is judged where that one is
+used. It judges a run-time `import()` or `require()` of a module that exports
+one (declared or re-exported, a barrel included) at the load, and refuses a
+load whose specifier isn't a literal. The tag anchors only on an exported
+top-level `const` or `function`; anywhere else it fails, so it can't drop out
+unnoticed. Exit codes: 0 = pass, 1 = a check
+failed, 2 = bad arguments. If P6 fails, P1–P3 are skipped; P7 reads only the
+repository, so it runs either way.
+Source: `tools/verify/preflight/preflight.mjs:1-51`, `:93-96`, `:450-790`,
+`:906-929`; runbook §3 (`docs/architecture/firestore-runbook.md:193-208`).
 
 Set these once in the shell you deploy from:
 
@@ -118,7 +135,7 @@ another id and put it in `.firebaserc` → `targets` → `<id>` → `hosting` �
 `web` (the template comment calls it `<site-id>`).
 
 Source: `.firebaserc:2-12`; P6 refuses the placeholder
-(`tools/verify/preflight/preflight.mjs:23-24`, `:152-155`).
+(`tools/verify/preflight/preflight.mjs:23-24`, `:187-190`).
 
 - [ ] **Fill in the production web Firebase config.** Replace every
       `REPLACE_ME` in `apps/web/src/environments/environment.production.ts`
@@ -130,7 +147,7 @@ Source: `.firebaserc:2-12`; P6 refuses the placeholder
       names the project id as a string literal.
       Source: `apps/web/src/environments/environment.production.ts:8-15`;
       `apps/web/project.json:52-57`;
-      `tools/verify/preflight/preflight.mjs:351-387`.
+      `tools/verify/preflight/preflight.mjs:386-422`.
 - [ ] **Point the CSP at the real callables host.** In `firebase.json`, change
       `https://us-central1-creativo-replace-me.cloudfunctions.net` to
       `https://us-central1-<PROJECT_ID>.cloudfunctions.net`. If the host is
@@ -171,7 +188,7 @@ Source: `firebase.json:41`; `tools/verify/csp/check-csp.mjs:20-22`,
 gcloud auth application-default login
 ```
 
-Source: `docs/architecture/firestore-runbook.md:148`, `:205`.
+Source: `docs/architecture/firestore-runbook.md:148`, `:206`.
 
 ### Secrets
 
@@ -188,7 +205,7 @@ openssl rand -hex 32 | firebase functions:secrets:set WALKIN_ID_KEY --data-file=
 > ids, and the desk then sees every returning walk-in as a new client
 > record. Set it once and keep its current version enabled.
 
-Source: `docs/architecture/firestore-runbook.md:232`;
+Source: `docs/architecture/firestore-runbook.md:233`;
 `apps/functions/src/main.ts:326-347`;
 `docs/architecture/decisions/2026-10-26-owner-rulings.md:709`.
 
@@ -203,7 +220,18 @@ Source: `docs/architecture/firestore-runbook.md:232`;
   - an adapter implementing `OtpDeliveryPorts.sendOtp` for both channels
     (`OtpDestinationType.Email` and `Sms`) over a transactional provider (the
     adapter's comment suggests Postmark or Twilio);
-  - bind it in `identityPorts` in place of `...consoleOtpSender(telemetry.log)`;
+  - bind it in `identityPorts` behind the emulator switch, the way the OTP
+    crypto beside it is bound —
+    `...(onEmulator() ? consoleOtpSender(telemetry.log) : <real sender>(…))` —
+    so the emulator keeps the console sender and a deployed project never
+    constructs it. The preflight's **P7** refuses every functions deploy until
+    then: `consoleOtpSender` is tagged `@emulatorOnly`, and P7 fails on any
+    use of it (followed through renames and re-exports) outside
+    `onEmulator() ? … : …` or `if (onEmulator())`. Keep the tag, and tag any
+    new emulator-only adapter the same way (in its JSDoc, on the exported
+    `const` or `function` itself). Flip the pin in
+    `preflight.spec.mjs` ("P7 refuses today’s functions on main.ts’s console
+    sender alone, …") to expect PASS in the same change;
   - declare the provider's keys with `defineSecret('<NAME>')` and bind them
     through `onCall({ secrets: [...] })` on the three callables that build
     `root.identity` (`requestOtpChallenge`, `verifyOtpChallenge`,
@@ -216,9 +244,10 @@ firebase functions:secrets:set <NAME> --project "$PROJECT_ID"
 
 - add each new secret to `EMULATOR_SECRETS` so the emulator keeps working.
 
-Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:6-45`;
+Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
 `apps/functions/src/main.ts:283-292`, `:334-337`, `:440-470`;
-`tools/flags/write-functions-env.mjs:97-99`.
+`tools/flags/write-functions-env.mjs:97-99`;
+`tools/verify/preflight/preflight.mjs:450-790` (P7).
 
 - [ ] **Keep the login-OTP sender separate from any campaign or marketing
       sender (owner rule).** It gets its own provider account or sub-account,
@@ -279,7 +308,7 @@ Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
       exactly as it is. **No `preload`** until the apex domain is final (OR-29,
       Deferred #10).
       Source: `firebase.json:47-50`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:783`, `:1418`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:783`, `:1435`.
 
 ### Data retention, backups, cost
 
@@ -329,18 +358,18 @@ gcloud logging metrics create client_issue_count --project="$PROJECT_ID" --confi
 - [ ] **Add an alert policy** in Cloud Monitoring → Alerting on
       `logging.googleapis.com/user/client_issue_count` above 100 per 5 minutes,
       with an e-mail notification channel.
-      Source: `docs/architecture/firestore-runbook.md:239-258`;
+      Source: `docs/architecture/firestore-runbook.md:240-259`;
       `docs/architecture/decisions/2026-10-26-owner-rulings.md:914`.
 - [ ] **Turn on Error Reporting notifications.** There is no Sentry or Pino
       (D11(a)): Cloud Logging plus Error Reporting is the only error channel
       for both server and client errors.
       Source: `apps/functions/src/adapters/console-telemetry.adapter.ts:5-22`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:885`, `:1466`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:885`, `:1483`.
 - [ ] **Publish the privacy-policy line:** "diagnostic data under legitimate
       interest, 30-day Cloud Logging retention, no personal identifiers". Keep
       the `_Default` log bucket at 30 days so the statement stays true.
       Source: `docs/architecture/decisions/2026-10-26-owner-rulings.md:918`;
-      `docs/architecture/HANDOFF.md:2357-2367`.
+      `docs/architecture/HANDOFF.md:2362-2372`.
 
 ### Schedules and flags
 
@@ -391,7 +420,7 @@ by the read guards (OR-33). **Never use `seed:dev` for this** (section 7).
       `libs/ecs-core/src/components/tenant-config.data.ts:20-24`;
       `libs/ecs-core/src/entities/shop-location.entity.ts:63`;
       `tools/seed/fixtures/catalog.fixtures.ts:172-208`;
-      `docs/architecture/firestore-runbook.md:209-218`. Check it with:
+      `docs/architecture/firestore-runbook.md:210-219`. Check it with:
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"
@@ -439,7 +468,7 @@ lint/test/build, the static CSP hash check, the icon checks, `pnpm audit` and
 gitleaks. It doesn't run the emulator CSP smoke.
 
 This is runbook §3's ordinary order. Its Phase 4a exception (rules after
-functions and hosting, `firestore-runbook.md:264-269`) protects a project
+functions and hosting, `firestore-runbook.md:265-270`) protects a project
 already serving a pre-4a web whose direct writes the tightened rules close;
 a first deploy has no such web, so the ordinary order applies.
 
@@ -461,10 +490,14 @@ pnpm run verify:csp
 
 - [ ] Make sure no emulator variable (`FIRESTORE_EMULATOR_HOST`,
       `FUNCTIONS_EMULATOR`, …) is set in the deploying shell, then run the
-      preflight:
+      preflight in both scopes (only the functions scope runs P7):
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"
+```
+
+```bash
+pnpm run preflight --scope functions --project "$PROJECT_ID"
 ```
 
 ### 3.1 Indexes and TTL (additive)
@@ -504,7 +537,7 @@ gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --disabl
 gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --enable-ttl --project="$PROJECT_ID"
 ```
 
-Source: `docs/architecture/firestore-runbook.md:135-180`, `:220-229`;
+Source: `docs/architecture/firestore-runbook.md:135-180`, `:221-230`;
 `firestore.indexes.json` (19 `indexes`, 61 `fieldOverrides`, 7 with
 `ttl: true`).
 
@@ -516,7 +549,7 @@ firebase deploy --only firestore:rules,storage --project "$PROJECT_ID"
 
 Rules ship before the code that depends on them. Appointments stay
 callable-only.
-Source: `docs/architecture/firestore-runbook.md:228`.
+Source: `docs/architecture/firestore-runbook.md:229`.
 
 ### 3.3 Functions
 
@@ -527,15 +560,16 @@ firebase deploy --only functions --project "$PROJECT_ID"
 The predeploy hook already runs, in order: `pnpm nx build functions`, then
 `node tools/flags/write-functions-env.mjs` (the `production` flag map into
 `dist/apps/functions/.env.<projectId>`), then the preflight with
-`--scope functions` (P1–P3, P6). Don't set `FLAGS_ENV` for production. The
-deploy fails closed if `loc-center`, the TTLs or the composites aren't ready,
-or if `WALKIN_ID_KEY` is missing.
-Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:230`.
+`--scope functions` (P1–P3, P6, P7). Don't set `FLAGS_ENV` for production.
+The deploy fails closed if `loc-center`, the TTLs or the composites aren't
+ready, if an emulator-only adapter (today the console OTP sender) is wired
+outside the emulator (P7), or if `WALKIN_ID_KEY` is missing.
+Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:231`.
 
 ### 3.4 Hosting, straight after functions
 
 The hosting predeploy does **not** build. It only runs the preflight with
-`--scope web` (all six checks) over `dist/apps/web/browser`. Build first:
+`--scope web` (P1–P6) over `dist/apps/web/browser`. Build first:
 
 ```bash
 pnpm nx build web
@@ -548,8 +582,8 @@ firebase deploy --only hosting:web --project "$PROJECT_ID"
 Deploy functions and hosting back to back with no gap between them. They share
 the callable wire (requests and `HttpsError(status, errorCode, details)`), so
 an old web against new functions, or the other way round, can refuse calls.
-Source: `firebase.json:26-34`; `docs/architecture/firestore-runbook.md:234`,
-`:264-267`.
+Source: `firebase.json:26-34`; `docs/architecture/firestore-runbook.md:235`,
+`:265-268`.
 
 ### 3.5 After the first functions deploy (once)
 
@@ -607,7 +641,7 @@ Answer **Yes** to the deletions (`--force` answers yes for you). P3 lists the
 candidates as `INFO` until then. On the first deploy there is nothing to prune
 (OR-36). A stored-id change is never migrated: the affected collection is
 wiped.
-Source: `docs/architecture/firestore-runbook.md:235-237`, `:260-262`.
+Source: `docs/architecture/firestore-runbook.md:236-238`, `:261-263`.
 
 ---
 
@@ -635,7 +669,10 @@ firebase deploy --only functions,hosting:web --project "$PROJECT_ID"
       `firestore:rules,storage` from the previous commit.
 - [ ] **Escape hatch, emergencies only:** if the preflight can't judge the
       rollback, set `CREATIVO_SKIP_PREFLIGHT=1` for that one deploy, then run
-      the preflight by hand afterwards. Never make it a habit.
+      the preflight by hand afterwards in every scope that deploy skipped:
+      the banner prints the exact command, `--scope` included, because a
+      by-hand run defaults to the web scope and never runs P7. Never make it
+      a habit.
 
 ```bash
 CREATIVO_SKIP_PREFLIGHT=1 firebase deploy --only functions,hosting:web --project "$PROJECT_ID"
@@ -650,9 +687,9 @@ CREATIVO_SKIP_PREFLIGHT=1 firebase deploy --only functions,hosting:web --project
       composites. A rollback doesn't undo data writes; that needs PITR
       (section 1).
 
-Source: `docs/architecture/firestore-runbook.md:206`, `:264-266`;
-`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:39-42`,
-`:566-569`;
+Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
+`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:48-51`,
+`:950-953`;
 `docs/security/csp-baseline.md` ("The service-worker header lag").
 
 ---
@@ -670,7 +707,7 @@ Source: `docs/architecture/firestore-runbook.md:206`, `:264-266`;
       `devCode` is returned to the caller, which means anyone can take over any
       account. P6 refuses these variables in the shell.
       Source: `apps/functions/src/main.ts:256-257`, `:289-291`, `:446-447`;
-      `tools/verify/preflight/preflight.mjs:88-89`, `:141-147`.
+      `tools/verify/preflight/preflight.mjs:110-111`, `:176-182`.
 - [ ] **Never deploy the test `WALKIN_ID_KEY`.** `.secret.local` (a public
       TEST value) is written only for `demo-*` projects, and `firebase.json`'s
       `functions.ignore` keeps it and `.env.local` out of the upload. Keep
@@ -698,8 +735,8 @@ Source: `docs/architecture/firestore-runbook.md:206`, `:264-266`;
 
 | Item                                                                 | State at launch                                                                                                                                                                                                          | Ruling                                                                                                        |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| **App Check** on the callables and `reportClientIssues`              | Not wired: the web has no provider and no callable enforces it. **Leave enforcement OFF in the console**, or every callable from the current build is refused. Needs reCAPTCHA hosts in the CSP and an enrolment design. | Deferred #4 (`docs/architecture/decisions/2026-10-26-owner-rulings.md:1412`); `docs/security/csp-baseline.md` |
-| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1411`); `firebase.json:43-46`                                                 |
-| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1418`); OR-29                                                                |
+| **App Check** on the callables and `reportClientIssues`              | Not wired: the web has no provider and no callable enforces it. **Leave enforcement OFF in the console**, or every callable from the current build is refused. Needs reCAPTCHA hosts in the CSP and an enrolment design. | Deferred #4 (`docs/architecture/decisions/2026-10-26-owner-rulings.md:1429`); `docs/security/csp-baseline.md` |
+| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1428`); `firebase.json:43-46`                                                 |
+| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1435`); OR-29                                                                |
 | **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                  |
 | **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:941-948`                                                                          |
