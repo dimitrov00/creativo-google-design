@@ -3,6 +3,7 @@ export * from './age.system';
 export * from './appointment-edit.system';
 export * from './appointment-index.system';
 export * from './appointment-lifecycle.system';
+export * from './audit-delta.system';
 export * from './audit.system';
 export * from './auth-flow.system';
 export * from './availability.system';

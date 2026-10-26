@@ -246,10 +246,9 @@ function rowId(
 
 describe('transitionAppointment — the shop’s lifecycle pen', () => {
   it('confirms a pending booking: one transition, the pending stamp deleted, audited as the staff verb', async () => {
+    const pendingAt = utcMs('2026-09-27T09:00:00.000+03:00');
     const pending = appointmentFixture({
-      lifecycle: BookingLifecycle.pending(
-        utcMs('2026-09-27T09:00:00.000+03:00'),
-      ),
+      lifecycle: BookingLifecycle.pending(pendingAt),
     });
     const { tx, rows, run } = rig([pending]);
     const answer = await run(command(BookingStatus.Confirmed));
@@ -288,6 +287,10 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
             auditAction: AuditAction.BookingStaffConfirmed,
             transitionReason: null,
             transitionSeatId: null,
+            // The state the act left — and the stamp it deleted (WS-2).
+            transitionFromBookingStatus: BookingStatus.Pending,
+            transitionFromStatusAtUtcMs: pendingAt,
+            transitionFromAttendanceState: null,
             auditTarget: 'CUSTOMER',
             targetCustomerId: FIXTURE_IDS.customer,
           },

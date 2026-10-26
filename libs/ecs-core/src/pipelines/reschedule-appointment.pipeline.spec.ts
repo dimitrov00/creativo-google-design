@@ -226,6 +226,16 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
         ...Actor.user(FIXTURE_IDS.client),
         auditAction: AuditAction.BookingRescheduled,
         rescheduleRevision: 2,
+        // Where the move took the visit (WS-2): Thursday 10:00 → Friday
+        // 11:00, the same shop, Ivan on the one seat before and after.
+        rescheduleFromLocalDate: THURSDAY,
+        rescheduleToLocalDate: FRIDAY,
+        rescheduleFromStartMinutes: at(10),
+        rescheduleToStartMinutes: at(11),
+        rescheduleFromBarberIds: [FIXTURE_IDS.barber],
+        rescheduleToBarberIds: [FIXTURE_IDS.barber],
+        rescheduleFromLocationId: FIXTURE_IDS.location,
+        rescheduleToLocationId: FIXTURE_IDS.location,
         auditTarget: 'CUSTOMER',
         targetCustomerId: FIXTURE_IDS.customer,
       },

@@ -22,7 +22,7 @@ import {
   AccountStatus,
   BlockReason,
 } from './account-status.data';
-import { IdentifierChannel } from '@core/primitives';
+import { type BookingStatus, IdentifierChannel } from '@core/primitives';
 import {
   AccountsErrorCode,
   GovernanceErrorCode,
@@ -43,6 +43,8 @@ import {
   BackfillOutcome,
 } from './audit-context.data';
 import { AuditTarget, type AuditTargetRef } from './audit-target-ref.data';
+import type { CancellationDelta } from './cancellation-delta.data';
+import type { TransitionDelta } from './transition-delta.data';
 import { type AuthClaims, AuthStage } from './auth-claims.data';
 import { type AuthFlowEvent, AuthFlowEventKind } from './auth-flow-event.data';
 import { type AuthFlowState, AuthFlowStep } from './auth-flow.data';
@@ -173,6 +175,10 @@ export type IdentityDictionaryFields = [
   Expect<Equals<AuditContext['auditAction'], AuditAction>>, // audit-context.data.ts
   Expect<Equals<BackfillContext['backfillOutcome'], BackfillOutcome>>, // audit-context.data.ts
   Expect<Equals<AuditTargetRef['auditTarget'], AuditTarget>>, // audit-target-ref.data.ts
+  Expect<Equals<TransitionDelta['transitionFromBookingStatus'], BookingStatus>>, // N15-exempt: the before-value of a transition (role-prefixed)
+  Expect<
+    Equals<CancellationDelta['cancellationFromBookingStatus'], BookingStatus>
+  >, // N15-exempt: the before-value of a transition (role-prefixed)
   Expect<Equals<AuthClaims['authStage'], AuthStage>>, // auth-claims.data.ts
   Expect<Equals<AuthFlowState['authFlowStep'], AuthFlowStep>>, // auth-flow.data.ts
   Expect<Equals<AuthFlowEvent['authFlowEventKind'], AuthFlowEventKind>>, // auth-flow-event.data.ts

@@ -9,7 +9,12 @@ import {
 } from '@core/primitives';
 import { BookingError, type RecordSeatTipError } from '@core/errors';
 import type { TelemetryPorts, TxPorts } from '@core/ports';
-import { type AuditFact, AuditSystem, BillingSystem } from '@core/systems';
+import {
+  AuditDeltaSystem,
+  type AuditFact,
+  AuditSystem,
+  BillingSystem,
+} from '@core/systems';
 import {
   appointmentPath,
   logUnaudited,
@@ -22,11 +27,11 @@ import {
  * same figure again is not a change: a retried call or a second tap on
  * «Запази» writes nothing and logs nothing. Otherwise the stored seats are
  * rewritten with that one field changed — inside the transaction, so the
- * read is what the write is conditioned on — and the act's row (the act,
- * never the amount) is `Create`d in the SAME plan (WS-1), keyed by the act's
- * operation id and the seat (`tip:<operationId>:<seatId>`) and naming that
- * seat's person. An unchanged figure plans no row, so a replay never meets
- * its own.
+ * read is what the write is conditioned on — and the act's row (the act AND
+ * the amount, before and after, in the seat's currency — WS-2) is
+ * `Create`d in the SAME plan (WS-1), keyed by the act's operation id and
+ * the seat (`tip:<operationId>:<seatId>`) and naming that seat's person.
+ * An unchanged figure plans no row, so a replay never meets its own.
  */
 
 export type RecordSeatTipCommand = {
@@ -88,7 +93,15 @@ export const recordSeatTip =
               ),
               changeKey: AuditSystem.changeKey.tip(cmd.operationId, cmd.seatId),
               operationId: cmd.operationId,
-              context: AuditContext.tip(tip.value.auditAction, cmd.seatId),
+              context: AuditContext.tip(
+                tip.value.auditAction,
+                cmd.seatId,
+                AuditDeltaSystem.tipOnSeat(
+                  appointment.seats,
+                  tip.value.seats,
+                  cmd.seatId,
+                ),
+              ),
             },
           ],
           cmd.actor,

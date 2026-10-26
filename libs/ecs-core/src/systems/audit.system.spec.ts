@@ -16,13 +16,16 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
+  StaffEditDelta,
 } from '@core/components';
 import {
   DurationMinutes,
   AppointmentId,
+  AttendanceState,
   AuditEntryId,
   AuditResourceId,
   BarberId,
+  BookingStatus,
   ClientOperationId,
   CustomerId,
   OperationId,
@@ -81,7 +84,11 @@ function fact(overrides: Partial<AuditFact> = {}): AuditFact {
     subjects: [account('maria')],
     changeKey: 'operation:op-0123456789abcdef',
     operationId: OP,
-    context: AuditContext.staffEdit(AuditAction.BookingStaffMove, 3),
+    context: AuditContext.staffEdit(
+      AuditAction.BookingStaffMove,
+      3,
+      StaffEditDelta.NONE,
+    ),
     ...overrides,
   };
 }
@@ -356,21 +363,36 @@ describe('audit context carries codes, never free text (T5)', () => {
       AuditAction.BookingStaffCancelled,
       'OTHER',
       SeatId.of('s1'),
+      {
+        transitionFromBookingStatus: BookingStatus.Confirmed,
+        transitionFromStatusAtUtcMs: AT,
+        transitionFromAttendanceState: AttendanceState.Scheduled,
+      },
     );
     expect(context).toEqual({
       auditAction: 'BOOKING_STAFF_CANCELLED',
       transitionReason: 'OTHER',
       transitionSeatId: 's1',
+      transitionFromBookingStatus: 'CONFIRMED',
+      transitionFromStatusAtUtcMs: AT,
+      transitionFromAttendanceState: 'SCHEDULED',
     });
   });
 
-  it('records nothing when there is nothing to record', () => {
+  it('records nothing when there is nothing to record — but the state it left', () => {
     expect(
-      AuditContext.transition(AuditAction.BookingStaffCompleted, null, null),
+      AuditContext.transition(AuditAction.BookingStaffCompleted, null, null, {
+        transitionFromBookingStatus: BookingStatus.Confirmed,
+        transitionFromStatusAtUtcMs: AT,
+        transitionFromAttendanceState: null,
+      }),
     ).toEqual({
       auditAction: 'BOOKING_STAFF_COMPLETED',
       transitionReason: null,
       transitionSeatId: null,
+      transitionFromBookingStatus: 'CONFIRMED',
+      transitionFromStatusAtUtcMs: AT,
+      transitionFromAttendanceState: null,
     });
   });
 });

@@ -23,6 +23,7 @@ import {
 import {
   AppliedDiscountId,
   AppointmentId,
+  BookingStatus,
   CouponGrantId,
   CouponId,
   Currency,
@@ -249,6 +250,10 @@ describe('cancelAppointment — the client calling off their own visit', () => {
           ...CLIENT,
           auditAction: AuditAction.BookingCancelled,
           cancellationReason: CancellationReason.Unspecified,
+          // The state the cancel left — and the stamp it deleted (WS-2):
+          // the fixture's confirmation, a day before the pinned now.
+          cancellationFromBookingStatus: BookingStatus.Confirmed,
+          cancellationFromStatusAtUtcMs: utcMs('2026-09-27T09:00:00.000+03:00'),
           auditTarget: 'CUSTOMER',
           targetCustomerId: FIXTURE_IDS.customer,
         }),

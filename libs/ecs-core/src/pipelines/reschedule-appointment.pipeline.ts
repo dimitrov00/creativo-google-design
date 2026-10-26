@@ -50,6 +50,7 @@ import type {
 import {
   AppointmentEditSystem,
   AppointmentIndexSystem,
+  AuditDeltaSystem,
   type AuditFact,
   AuditSystem,
   BookingDecisionSystem,
@@ -694,7 +695,11 @@ function decideMove(
         ],
         changeKey: AuditSystem.changeKey.move(cmd.attemptId),
         operationId: cmd.operationId,
-        context: AuditContext.rescheduled(revision),
+        // Where the move took the visit — stored against moved (WS-2).
+        context: AuditContext.rescheduled(
+          revision,
+          AuditDeltaSystem.rescheduled(stored, after),
+        ),
       },
     ],
     cmd.actor,

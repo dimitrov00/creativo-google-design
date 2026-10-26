@@ -9,13 +9,18 @@ import {
   Tag,
 } from '@core/primitives';
 import type { ArrivalAction } from './arrival-action.data';
+import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
 import type { ProfileAction } from './profile-action.data';
 import type { RegistrationField } from './registration.data';
+import type { RescheduleDelta } from './reschedule-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
+import type { StaffEditDelta } from './staff-edit-delta.data';
 import type { TipAction } from './tip-action.data';
+import type { TipDelta } from './tip-delta.data';
 import type { TransitionAction } from './transition-action.data';
+import type { TransitionDelta } from './transition-delta.data';
 
 /**
  * The audited verbs — the ONLY source of these strings, the discriminator
@@ -91,6 +96,11 @@ export type BackfillOutcome =
  * or meta slices. Every field present per variant (`null` for n/a), never an
  * open bag of optional strings; ids and CODES only (T5, R36) — never a
  * sentence somebody typed. Verbs that carry the same facts share one variant.
+ * The booking verbs that change a value also carry its before / after as a
+ * flat delta slice intersected into their variant (audit-hardening WS-2,
+ * RU-12: `RescheduleDelta`, `StaffEditDelta`, `TipDelta`, `TransitionDelta`,
+ * `CancellationDelta`) — money, time and ids only, computed by
+ * `AuditDeltaSystem` from the entities the act already read.
  */
 export type AuditContext =
   | AuditContext.Placement
@@ -105,6 +115,11 @@ export type AuditContext =
   | AuditContext.Backfill
   | AuditContext.Profile;
 
+/** A copy of a nullable id list — `null` stays `null`. */
+function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
+  return list === null ? null : [...list];
+}
+
 export const AuditContext = {
   /** Every audited verb, dictionary order — derived, never a second source. */
   ACTIONS: Tag.values(AuditAction),
@@ -115,33 +130,92 @@ export const AuditContext = {
   ): AuditContext.Placement {
     return { auditAction, placementLocationId };
   },
+  /** Copies the delta's id lists, so a caller's later mutation cannot rewrite the row. */
   staffEdit(
     auditAction: StaffEditAction,
     editRevision: number,
+    delta: StaffEditDelta,
   ): AuditContext.StaffEdit {
-    return { auditAction, editRevision };
+    return {
+      auditAction,
+      editRevision,
+      editRepriceFromCents: delta.editRepriceFromCents,
+      editRepriceToCents: delta.editRepriceToCents,
+      editCurrency: delta.editCurrency,
+      editDiscountFromIds: copyOrNull(delta.editDiscountFromIds),
+      editDiscountIds: copyOrNull(delta.editDiscountIds),
+      editVoucherDebitCents: delta.editVoucherDebitCents,
+      editDurationFromMinutes: delta.editDurationFromMinutes,
+      editDurationToMinutes: delta.editDurationToMinutes,
+      editRelocateFromLocationId: delta.editRelocateFromLocationId,
+      editRelocateToLocationId: delta.editRelocateToLocationId,
+      editMoveFromLocalDate: delta.editMoveFromLocalDate,
+      editMoveToLocalDate: delta.editMoveToLocalDate,
+      editMoveFromStartMinutes: delta.editMoveFromStartMinutes,
+      editMoveToStartMinutes: delta.editMoveToStartMinutes,
+      editRestaffFromBarberIds: copyOrNull(delta.editRestaffFromBarberIds),
+      editRestaffToBarberIds: copyOrNull(delta.editRestaffToBarberIds),
+    };
   },
-  rescheduled(rescheduleRevision: number): AuditContext.Rescheduled {
+  /** Copies the barber lists, so a caller's later mutation cannot rewrite the row. */
+  rescheduled(
+    rescheduleRevision: number,
+    delta: RescheduleDelta,
+  ): AuditContext.Rescheduled {
     return {
       auditAction: AuditAction.BookingRescheduled,
       rescheduleRevision,
+      rescheduleFromLocalDate: delta.rescheduleFromLocalDate,
+      rescheduleToLocalDate: delta.rescheduleToLocalDate,
+      rescheduleFromStartMinutes: delta.rescheduleFromStartMinutes,
+      rescheduleToStartMinutes: delta.rescheduleToStartMinutes,
+      rescheduleFromBarberIds: [...delta.rescheduleFromBarberIds],
+      rescheduleToBarberIds: [...delta.rescheduleToBarberIds],
+      rescheduleFromLocationId: delta.rescheduleFromLocationId,
+      rescheduleToLocationId: delta.rescheduleToLocationId,
     };
   },
-  cancelled(cancellationReason: CancellationReason): AuditContext.Cancelled {
-    return { auditAction: AuditAction.BookingCancelled, cancellationReason };
+  cancelled(
+    cancellationReason: CancellationReason,
+    delta: CancellationDelta,
+  ): AuditContext.Cancelled {
+    return {
+      auditAction: AuditAction.BookingCancelled,
+      cancellationReason,
+      cancellationFromBookingStatus: delta.cancellationFromBookingStatus,
+      cancellationFromStatusAtUtcMs: delta.cancellationFromStatusAtUtcMs,
+    };
   },
   transition(
     auditAction: TransitionAction,
     transitionReason: CancellationReason | null,
     transitionSeatId: SeatId | null,
+    delta: TransitionDelta,
   ): AuditContext.Transition {
-    return { auditAction, transitionReason, transitionSeatId };
+    return {
+      auditAction,
+      transitionReason,
+      transitionSeatId,
+      transitionFromBookingStatus: delta.transitionFromBookingStatus,
+      transitionFromStatusAtUtcMs: delta.transitionFromStatusAtUtcMs,
+      transitionFromAttendanceState: delta.transitionFromAttendanceState,
+    };
   },
   arrival(auditAction: ArrivalAction): AuditContext.Arrival {
     return { auditAction };
   },
-  tip(auditAction: TipAction, tipSeatId: SeatId): AuditContext.Tip {
-    return { auditAction, tipSeatId };
+  tip(
+    auditAction: TipAction,
+    tipSeatId: SeatId,
+    delta: TipDelta,
+  ): AuditContext.Tip {
+    return {
+      auditAction,
+      tipSeatId,
+      tipAmountCents: delta.tipAmountCents,
+      tipFromCents: delta.tipFromCents,
+      tipCurrency: delta.tipCurrency,
+    };
   },
   streakPublished(
     facts: Omit<AuditContext.StreakPublished, 'auditAction'>,
@@ -203,39 +277,52 @@ export namespace AuditContext {
     readonly auditAction: PlacementAction;
     readonly placementLocationId: LocationId;
   };
-  /** A staff edit; `editRevision` is the one the save stamped. */
+  /**
+   * A staff edit; `editRevision` is the one the save stamped, and the
+   * {@link StaffEditDelta} what it changed (each pair `null` when untouched).
+   */
   export type StaffEdit = {
     readonly auditAction: StaffEditAction;
     readonly editRevision: number;
-  };
+  } & StaffEditDelta;
   /**
-   * A move, and the revision it stamped. A replay writes no row (WS-1: the
-   * row commits with the move, so a replay has nothing left to log).
+   * A move, the revision it stamped and where it took the visit
+   * ({@link RescheduleDelta}). A replay writes no row (WS-1: the row commits
+   * with the move, so a replay has nothing left to log).
    */
   export type Rescheduled = {
     readonly auditAction: typeof AuditAction.BookingRescheduled;
     readonly rescheduleRevision: number;
-  };
-  /** A client cancellation; `cancellationReason` is the cancellation reason CODE. */
+  } & RescheduleDelta;
+  /**
+   * A client cancellation; `cancellationReason` is the cancellation reason
+   * CODE, and the {@link CancellationDelta} the state it left.
+   */
   export type Cancelled = {
     readonly auditAction: typeof AuditAction.BookingCancelled;
     readonly cancellationReason: CancellationReason;
-  };
-  /** A staff lifecycle verb; the reason for a cancel, the seat for a per-seat act. */
+  } & CancellationDelta;
+  /**
+   * A staff lifecycle verb; the reason for a cancel, the seat for a per-seat
+   * act, and the {@link TransitionDelta} the state it left.
+   */
   export type Transition = {
     readonly auditAction: TransitionAction;
     readonly transitionReason: CancellationReason | null;
     readonly transitionSeatId: SeatId | null;
-  };
+  } & TransitionDelta;
   /** Arrival stamped or cleared — the verb is the whole fact. */
   export type Arrival = {
     readonly auditAction: ArrivalAction;
   };
-  /** A tip recorded or cleared on one seat — the act, never the amount. */
+  /**
+   * A tip recorded or cleared on one seat — the act AND the amount, before
+   * and after, in the seat's currency ({@link TipDelta}).
+   */
   export type Tip = {
     readonly auditAction: TipAction;
     readonly tipSeatId: SeatId;
-  };
+  } & TipDelta;
   /** A streak rule published: versions, the day it takes effect, what moved. */
   export type StreakPublished = {
     readonly auditAction: typeof AuditAction.LoyaltyStreakDefinitionPublished;

@@ -8,6 +8,7 @@ import {
 } from '@core/components';
 import {
   AppointmentId,
+  Currency,
   LogEvent,
   OperationId,
   SeatId,
@@ -129,6 +130,10 @@ describe('recordSeatTip', () => {
           ...STAFF,
           auditAction: AuditAction.BookingTipRecorded,
           tipSeatId: FIXTURE_IDS.seat,
+          // The amount, before and after, in the seat's currency (WS-2).
+          tipAmountCents: cents(300),
+          tipFromCents: null,
+          tipCurrency: Currency.EUR,
           auditTarget: 'CUSTOMER',
           targetCustomerId: FIXTURE_IDS.customer,
         }),

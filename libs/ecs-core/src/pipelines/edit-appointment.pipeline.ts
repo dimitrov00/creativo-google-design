@@ -70,6 +70,7 @@ import type {
 import {
   AppointmentEditSystem,
   AppointmentIndexSystem,
+  AuditDeltaSystem,
   type AuditFact,
   AuditSystem,
   BillingSystem,
@@ -981,9 +982,12 @@ function decideEdit(
         ),
         changeKey: AuditSystem.changeKey.staffEdit(cmd.operationId),
         operationId: cmd.operationId,
+        // What the save changed — stored against saved, every command of
+        // the batch folded into one delta (WS-2, L3).
         context: AuditContext.staffEdit(
           AppointmentEditSystem.auditVerb(cmd.commands),
           revision,
+          AuditDeltaSystem.staffEdit(stored, after),
         ),
       },
     ],

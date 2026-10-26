@@ -499,6 +499,9 @@ describe('AppointmentLifecycleSystem — cancel', () => {
         context: {
           auditAction: AuditAction.BookingCancelled,
           cancellationReason: 'OTHER',
+          // The state the cancel left, and its entering stamp (WS-2).
+          cancellationFromBookingStatus: BookingStatus.Confirmed,
+          cancellationFromStatusAtUtcMs: BOOKING_NOW,
         },
       },
     ]);
@@ -1014,6 +1017,10 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
           auditAction: AuditAction.BookingStaffCancelled,
           transitionReason: 'CLIENT_UNWELL',
           transitionSeatId: seatId,
+          // The state the act left: the root's, and the seat's own (WS-2).
+          transitionFromBookingStatus: BookingStatus.Confirmed,
+          transitionFromStatusAtUtcMs: BOOKING_NOW,
+          transitionFromAttendanceState: AttendanceState.Scheduled,
         },
       },
     ]);
@@ -1042,6 +1049,12 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
       );
       expect(step.auditFacts[0]?.context.auditAction).toBe(action);
       expect(step.auditFacts[0]?.changeKey).toBe(`transition:${OP}`);
+      // A party act names the state it reopened, never a seat's (WS-2).
+      expect(step.auditFacts[0]?.context).toMatchObject({
+        transitionFromBookingStatus: lifecycle.bookingStatus,
+        transitionFromStatusAtUtcMs: BOOKING_NOW,
+        transitionFromAttendanceState: null,
+      });
     }
   });
 

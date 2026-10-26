@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { BackfillJobName } from './backfill-job-name.data';
-import { CustomerId, LocationId, SeatId, UserId } from '@core/primitives';
-import { localDate } from '@core/testing';
+import {
+  AppliedDiscountId,
+  AttendanceState,
+  BarberId,
+  BookingStatus,
+  Currency,
+  CustomerId,
+  LocationId,
+  PriceCents,
+  SeatId,
+  UserId,
+} from '@core/primitives';
+import { localDate, minute, unwrapOk, utcMs } from '@core/testing';
 import type { ArrivalAction } from './arrival-action.data';
 import {
   AuditAction,
@@ -13,6 +24,8 @@ import { CancellationReason } from './cancellation-reason.data';
 import type { PlacementAction } from './placement-action.data';
 import type { ProfileAction } from './profile-action.data';
 import { RegistrationField } from './registration.data';
+import type { RescheduleDelta } from './reschedule-delta.data';
+import { StaffEditDelta } from './staff-edit-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { TipAction } from './tip-action.data';
 import type { TransitionAction } from './transition-action.data';
@@ -78,6 +91,19 @@ describe('AuditAction', () => {
   });
 });
 
+const AT = utcMs('2026-09-25T08:00:00Z');
+/** A move across two days, two shops, a re-staffed first seat. */
+const MOVE: RescheduleDelta = {
+  rescheduleFromLocalDate: localDate('2026-10-01'),
+  rescheduleToLocalDate: localDate('2026-10-02'),
+  rescheduleFromStartMinutes: minute(600),
+  rescheduleToStartMinutes: minute(660),
+  rescheduleFromBarberIds: [BarberId.of('b-1'), BarberId.of('b-1')],
+  rescheduleToBarberIds: [BarberId.of('b-2'), BarberId.of('b-1')],
+  rescheduleFromLocationId: LocationId.of('loc-1'),
+  rescheduleToLocationId: LocationId.of('loc-2'),
+};
+
 describe('AuditContext — one flat variant per verb family, every field present', () => {
   it('placement / staff edit / reschedule / cancel', () => {
     expect(
@@ -89,20 +115,87 @@ describe('AuditContext — one flat variant per verb family, every field present
       auditAction: 'BOOKING_COMMITTED',
       placementLocationId: 'loc-1',
     });
-    expect(AuditContext.staffEdit(AuditAction.BookingStaffMove, 7)).toEqual({
+    // A save that touched nothing audited: every delta pair null.
+    expect(
+      AuditContext.staffEdit(
+        AuditAction.BookingStaffMove,
+        7,
+        StaffEditDelta.NONE,
+      ),
+    ).toEqual({
       auditAction: 'BOOKING_STAFF_MOVE',
       editRevision: 7,
+      editRepriceFromCents: null,
+      editRepriceToCents: null,
+      editCurrency: null,
+      editDiscountFromIds: null,
+      editDiscountIds: null,
+      editVoucherDebitCents: null,
+      editDurationFromMinutes: null,
+      editDurationToMinutes: null,
+      editRelocateFromLocationId: null,
+      editRelocateToLocationId: null,
+      editMoveFromLocalDate: null,
+      editMoveToLocalDate: null,
+      editMoveFromStartMinutes: null,
+      editMoveToStartMinutes: null,
+      editRestaffFromBarberIds: null,
+      editRestaffToBarberIds: null,
     });
-    expect(AuditContext.rescheduled(3)).toEqual({
+    expect(AuditContext.rescheduled(3, MOVE)).toEqual({
       auditAction: 'BOOKING_RESCHEDULED',
       rescheduleRevision: 3,
+      rescheduleFromLocalDate: '2026-10-01',
+      rescheduleToLocalDate: '2026-10-02',
+      rescheduleFromStartMinutes: 600,
+      rescheduleToStartMinutes: 660,
+      rescheduleFromBarberIds: ['b-1', 'b-1'],
+      rescheduleToBarberIds: ['b-2', 'b-1'],
+      rescheduleFromLocationId: 'loc-1',
+      rescheduleToLocationId: 'loc-2',
     });
     expect(
-      AuditContext.cancelled(CancellationReason.ClientChangedPlans),
+      AuditContext.cancelled(CancellationReason.ClientChangedPlans, {
+        cancellationFromBookingStatus: BookingStatus.Confirmed,
+        cancellationFromStatusAtUtcMs: AT,
+      }),
     ).toEqual({
       auditAction: 'BOOKING_CANCELLED',
       cancellationReason: 'CLIENT_CHANGED_PLANS',
+      cancellationFromBookingStatus: 'CONFIRMED',
+      cancellationFromStatusAtUtcMs: AT,
     });
+  });
+
+  it('staff edit carries a touched pair and copies its id lists', () => {
+    const discountIds = [AppliedDiscountId.of('manual')];
+    const barbers = [BarberId.of('b-1')];
+    const context = AuditContext.staffEdit(AuditAction.BookingStaffSave, 4, {
+      ...StaffEditDelta.NONE,
+      editDiscountFromIds: [],
+      editDiscountIds: discountIds,
+      editRestaffFromBarberIds: barbers,
+      editRestaffToBarberIds: [BarberId.of('b-2')],
+    });
+    discountIds.push(AppliedDiscountId.of('code:c-1'));
+    barbers.push(BarberId.of('b-9'));
+    expect(context).toMatchObject({
+      editDiscountFromIds: [],
+      editDiscountIds: ['manual'],
+      editRestaffFromBarberIds: ['b-1'],
+      editRestaffToBarberIds: ['b-2'],
+      editCurrency: null,
+    });
+  });
+
+  it('reschedule copies its barber lists', () => {
+    const from = [BarberId.of('b-1')];
+    const context = AuditContext.rescheduled(1, {
+      ...MOVE,
+      rescheduleFromBarberIds: from,
+    });
+    from.push(BarberId.of('b-9'));
+    expect(context.rescheduleFromBarberIds).toEqual(['b-1']);
   });
 
   it('transition / arrival / tip', () => {
@@ -111,20 +204,35 @@ describe('AuditContext — one flat variant per verb family, every field present
         AuditAction.BookingStaffNoShow,
         null,
         SeatId.of('s-1'),
+        {
+          transitionFromBookingStatus: BookingStatus.Confirmed,
+          transitionFromStatusAtUtcMs: AT,
+          transitionFromAttendanceState: AttendanceState.Scheduled,
+        },
       ),
     ).toEqual({
       auditAction: 'BOOKING_STAFF_NO_SHOW',
       transitionReason: null,
       transitionSeatId: 's-1',
+      transitionFromBookingStatus: 'CONFIRMED',
+      transitionFromStatusAtUtcMs: AT,
+      transitionFromAttendanceState: 'SCHEDULED',
     });
     expect(AuditContext.arrival(AuditAction.BookingStaffArrived)).toEqual({
       auditAction: 'BOOKING_STAFF_ARRIVED',
     });
     expect(
-      AuditContext.tip(AuditAction.BookingTipCleared, SeatId.of('s-2')),
+      AuditContext.tip(AuditAction.BookingTipCleared, SeatId.of('s-2'), {
+        tipAmountCents: null,
+        tipFromCents: unwrapOk(PriceCents.of(500)),
+        tipCurrency: Currency.EUR,
+      }),
     ).toEqual({
       auditAction: 'BOOKING_TIP_CLEARED',
       tipSeatId: 's-2',
+      tipAmountCents: null,
+      tipFromCents: 500,
+      tipCurrency: 'EUR',
     });
   });
 

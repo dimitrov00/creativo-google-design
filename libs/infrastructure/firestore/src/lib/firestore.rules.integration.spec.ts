@@ -1815,7 +1815,10 @@ describe('firestore.rules', () => {
       resourceId: AuditResourceId.forAppointment(AppointmentId.of('appt-1')),
       auditOperationId: null,
       ...Actor.system(SystemSource.FirestoreSystem),
-      ...AuditContext.cancelled('CLIENT_CHANGED_PLANS'),
+      ...AuditContext.cancelled('CLIENT_CHANGED_PLANS', {
+        cancellationFromBookingStatus: 'CONFIRMED',
+        cancellationFromStatusAtUtcMs: utcMs('2026-09-24T10:00:00.000+03:00'),
+      }),
       ...AuditTargetRef.customer(recordOf('client-1')),
     } satisfies Omit<AuditEntry, 'id'>;
 

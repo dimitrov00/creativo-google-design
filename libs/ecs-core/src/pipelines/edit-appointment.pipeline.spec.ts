@@ -36,6 +36,7 @@ import {
   EditCommand,
   RequestedSubjectRole,
   ResizeEdge,
+  StaffEditDelta,
 } from '@core/components';
 import {
   AppliedDiscountId,
@@ -374,6 +375,13 @@ describe('editAppointment — the shop moving its own book', () => {
         ...RECEPTION,
         auditAction: AuditAction.BookingStaffMove,
         editRevision: 2,
+        // What the save changed (WS-2): the slot only — the day rides
+        // with the start, every other pair untouched.
+        ...StaffEditDelta.NONE,
+        editMoveFromLocalDate: THURSDAY,
+        editMoveToLocalDate: THURSDAY,
+        editMoveFromStartMinutes: at(10),
+        editMoveToStartMinutes: at(11),
         auditTarget: 'CUSTOMER',
         targetCustomerId: FIXTURE_IDS.customer,
       },

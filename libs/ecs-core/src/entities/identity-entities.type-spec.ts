@@ -15,12 +15,22 @@ import {
   type AuditContext,
   AuditTarget,
   type AuditTargetRef,
+  type CancellationDelta,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
+  type RescheduleDelta,
   type SearchFields,
+  type StaffEditDelta,
+  type TipDelta,
+  type TransitionDelta,
 } from '@core/components';
-import type { CustomerId, OperationId, UserId } from '@core/primitives';
+import type {
+  AttendanceState,
+  CustomerId,
+  OperationId,
+  UserId,
+} from '@core/primitives';
 import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
@@ -189,6 +199,107 @@ export const auditOperationIdIsMeta: Equals<
   AuditEntryMeta['auditOperationId'],
   OperationId | null
 > = true;
+
+/*
+ * The typed deltas (audit-hardening WS-2, RU-12): each delta slice is flat,
+ * shares no field with its variant's head nor with any other slice of the
+ * row, and each verb narrows to ITS delta fields only.
+ */
+type StaffEditHead = {
+  readonly auditAction: unknown;
+  readonly editRevision: unknown;
+};
+export const auditDeltaDisjoint: [
+  Disjoint<StaffEditDelta, StaffEditHead>,
+  Disjoint<RescheduleDelta, AuditEntryMeta>,
+  Disjoint<RescheduleDelta, Actor>,
+  Disjoint<RescheduleDelta, AuditTargetRef>,
+  Disjoint<StaffEditDelta, AuditEntryMeta>,
+  Disjoint<StaffEditDelta, Actor>,
+  Disjoint<StaffEditDelta, AuditTargetRef>,
+  Disjoint<TipDelta, AuditEntryMeta>,
+  Disjoint<TipDelta, Actor>,
+  Disjoint<TipDelta, AuditTargetRef>,
+  Disjoint<TransitionDelta, AuditEntryMeta>,
+  Disjoint<TransitionDelta, Actor>,
+  Disjoint<TransitionDelta, AuditTargetRef>,
+  Disjoint<CancellationDelta, AuditEntryMeta>,
+  Disjoint<CancellationDelta, Actor>,
+  Disjoint<CancellationDelta, AuditTargetRef>,
+  Disjoint<RescheduleDelta, StaffEditDelta>,
+  Disjoint<TransitionDelta, CancellationDelta>,
+  Disjoint<TipDelta, StaffEditDelta>,
+] = [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+];
+export const auditDeltaFlat: [
+  AllTrue<NoNested<RescheduleDelta>>,
+  AllTrue<NoNested<StaffEditDelta>>,
+  AllTrue<NoNested<TipDelta>>,
+  AllTrue<NoNested<TransitionDelta>>,
+  AllTrue<NoNested<CancellationDelta>>,
+] = [true, true, true, true, true];
+/** The nullable tag field, pinned here (the L8 pair regex reads one dictionary name only). */
+export const transitionFromAttendanceStateIs: Equals<
+  TransitionDelta['transitionFromAttendanceState'],
+  AttendanceState | null
+> = true;
+if (row.auditAction === AuditAction.BookingRescheduled) {
+  void row.rescheduleFromLocalDate;
+  void row.rescheduleToBarberIds;
+  void row.rescheduleToLocationId;
+  // @ts-expect-error — a client move carries no staff-edit delta
+  void row.editRepriceFromCents;
+}
+if (row.auditAction === AuditAction.BookingStaffReprice) {
+  void row.editRepriceFromCents;
+  void row.editDiscountIds;
+  void row.editMoveToStartMinutes;
+  // @ts-expect-error — a staff edit carries no client-move delta
+  void row.rescheduleToLocalDate;
+}
+if (row.auditAction === AuditAction.BookingTipRecorded) {
+  void row.tipAmountCents;
+  void row.tipFromCents;
+  void row.tipCurrency;
+  // @ts-expect-error — a tip carries no transition delta
+  void row.transitionFromBookingStatus;
+}
+if (row.auditAction === AuditAction.BookingStaffNoShow) {
+  void row.transitionFromBookingStatus;
+  void row.transitionFromStatusAtUtcMs;
+  void row.transitionFromAttendanceState;
+  // @ts-expect-error — a staff transition carries no client-cancel delta
+  void row.cancellationFromBookingStatus;
+}
+if (row.auditAction === AuditAction.BookingCancelled) {
+  void row.cancellationFromBookingStatus;
+  void row.cancellationFromStatusAtUtcMs;
+  // @ts-expect-error — a client cancel carries no tip delta
+  void row.tipAmountCents;
+}
+if (row.auditAction === AuditAction.BookingStaffArrived) {
+  // @ts-expect-error — an arrival is the verb alone: no delta
+  void row.transitionFromBookingStatus;
+}
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;

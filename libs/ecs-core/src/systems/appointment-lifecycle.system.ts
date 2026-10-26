@@ -26,6 +26,7 @@ import {
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
+import { AuditDeltaSystem } from './audit-delta.system';
 import { type AuditFact, AuditSystem } from './audit.system';
 
 /**
@@ -288,6 +289,10 @@ function indexOfSeat(seats: readonly Seat[], seatId: SeatId): number {
   return -1;
 }
 
+/**
+ * The staff verb's fact, on the visit BEFORE the act (`appointment`): whom
+ * it touched, and — WS-2 — the state it left (`AuditDeltaSystem.transitioned`).
+ */
 function staffFact(
   appointment: Appointment,
   action: TransitionAction,
@@ -300,7 +305,12 @@ function staffFact(
     subjects: AuditSystem.subjectsOfSeats(appointment.seats, seatId),
     changeKey: AuditSystem.changeKey.transition(operationId, seatId),
     operationId,
-    context: AuditContext.transition(action, reason, seatId),
+    context: AuditContext.transition(
+      action,
+      reason,
+      seatId,
+      AuditDeltaSystem.transitioned(appointment, seatId),
+    ),
   };
 }
 
@@ -635,7 +645,8 @@ export const AppointmentLifecycleSystem = {
    * The client's own cancel (`cancel-appointment.ts:180-219`): every open
    * seat cancelled BY THE CLIENT under the window it was allowed under, the
    * root carrying the code, one `BOOKING_CANCELLED` fact for everyone on the
-   * visit keyed by the act's operation id (WS-1). Whether the client MAY
+   * visit keyed by the act's operation id (WS-1), carrying the state the
+   * cancel left (WS-2, `AuditDeltaSystem.cancelled`). Whether the client MAY
    * cancel is `CancellationPolicySystem.mayCancel`, asked first.
    */
   cancelByClient(
@@ -666,7 +677,10 @@ export const AppointmentLifecycleSystem = {
           subjects: AuditSystem.subjectsOf(appointment),
           changeKey: AuditSystem.changeKey.cancel(operationId),
           operationId,
-          context: AuditContext.cancelled(reason),
+          context: AuditContext.cancelled(
+            reason,
+            AuditDeltaSystem.cancelled(appointment),
+          ),
         },
       ]),
     );
