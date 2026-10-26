@@ -8,11 +8,7 @@ import {
   type ScheduleException,
 } from '@core/entities';
 import type { BarberListPorts, Log, ShopDayReadPorts } from '@core/ports';
-import {
-  StoredDocumentSystem,
-  type StoredGuardOf,
-  TriggerAttemptSystem,
-} from '@core/systems';
+import { type StoredGuardOf, TriggerAttemptSystem } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
 
 /**
@@ -35,12 +31,10 @@ import { admitStored } from './firestore-tx.adapter';
  * passes its stored-document guard first (edge hardening D-3, a SINGLE
  * read): admitted, it is the same object as before; refused, the read
  * answers `RepositoryError.malformed(path, field)` and logs the refusal
- * once (`'malformed document refused'`, `{ path, field }`). A bare
- * `firestoreSchedulePorts(db)` guards nothing (DEP-11).
+ * once (`'malformed document refused'`, `{ path, field }`). The registry
+ * and the log are REQUIRED (OR-33, DEP-F24): a bare
+ * `firestoreSchedulePorts(db)` does not type-check.
  */
-
-/** No log — the default of a bare factory. */
-const NO_LOG: Log = () => undefined;
 
 function readFailed(path: string, error: unknown): RepositoryError {
   return RepositoryError.readFailed(
@@ -79,8 +73,8 @@ async function loadOne<E>(
 
 export const firestoreSchedulePorts = (
   db: Firestore,
-  guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
-  log: Log = NO_LOG,
+  guardOf: StoredGuardOf,
+  log: Log,
 ): BarberListPorts & ShopDayReadPorts => ({
   loadSchedule: (barberId) =>
     loadOne<BarberSchedule>(

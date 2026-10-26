@@ -93,10 +93,16 @@ export type ListGiftVouchersForHolder = (
   customerId: CustomerId,
 ) => Promise<Result<readonly GiftVoucher[], RepositoryError>>;
 
-/** `couponGrants/{id}` — `null` when absent. */
-export type LoadCouponGrant = (
-  id: CouponGrantId,
-) => Promise<Result<CouponGrant | null, RepositoryError>>;
+/**
+ * Several `couponGrants/{id}` in one batched get (OR-13), WHATEVER their
+ * status: the held-grants read joins the open visit's saved bill grants to
+ * the usable ones, so a grant the visit burned (`USED`) still shows on its
+ * card. An id with no document is simply absent from the answer (order not
+ * promised; the caller matches by `id`); no ids, no read.
+ */
+export type LoadCouponGrants = (
+  ids: readonly CouponGrantId[],
+) => Promise<Result<readonly CouponGrant[], RepositoryError>>;
 
 /**
  * A client record's ACTIVE grants — `customerId ==`, `grantStatus ==
@@ -221,7 +227,7 @@ export type CouponCatalogPorts = {
 
 /** A client record's coupon grants. */
 export type CouponGrantPorts = {
-  readonly loadCouponGrant: LoadCouponGrant;
+  readonly loadCouponGrants: LoadCouponGrants;
   readonly listUsableCouponGrants: ListUsableCouponGrants;
 };
 

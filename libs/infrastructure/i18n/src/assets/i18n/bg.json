@@ -13,6 +13,7 @@
     "PRIMITIVE_CURRENCY_UNKNOWN": "Невалидна стойност.",
     "PRIMITIVE_ID_EMPTY": "Невалидна стойност.",
     "PRIMITIVE_ID_HAS_SLASH": "Невалидна стойност.",
+    "PRIMITIVE_ID_RESERVED": "Невалидна стойност.",
     "PRIMITIVE_LATITUDE_OUT_OF_RANGE": "Невалидна стойност.",
     "PRIMITIVE_LONGITUDE_OUT_OF_RANGE": "Невалидна стойност.",
     "PRIMITIVE_EPOCH_SECONDS_INVALID": "Невалидна стойност.",
@@ -20,7 +21,7 @@
     "PRIMITIVE_SEAT_KEY_TEXT_EMPTY": "Невалидна стойност.",
     "PRIMITIVE_AUDIT_RESOURCE_ID_INVALID": "Невалидна стойност.",
     "BOOKING_UNAUTHENTICATED": "Влез, за да завършиш резервацията.",
-    "BOOKING_INVALID_INPUT": "Нещо в резервацията не е наред. Пробвай пак.",
+    "BOOKING_INVALID_INPUT": "Нещо в резервацията не е наред. Опитай пак.",
     "BOOKING_INVALID_INPUT.person_overlap": "Един човек не може да е на два стола по едно и също време. Избери друг час.",
     "BOOKING_INVALID_INPUT.guest_label": "Двама души в групата са с едно и също име. Върни се и преименувай единия.",
     "BOOKING_INVALID_INPUT.locationId": "Този салон в момента не приема онлайн резервации.",
@@ -34,8 +35,9 @@
     "BOOKING_PARTY_TOO_LARGE": "Максимум {{maxPartySize}} души в една резервация.",
     "BOOKING_INVARIANT_VIOLATED": "Тази комбинация не е възможна. Пробвай друг час.",
     "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Влез отново, за да продължиш.",
-    "BOOKING_STAFF_EDIT_FORBIDDEN": "Нямаш право за тази промяна.",
+    "BOOKING_STAFF_EDIT_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "Заявката не е валидна за това посещение.",
+    "BOOKING_STAFF_EDIT_INVALID_COMMAND.grant": "Тази награда вече не важи — използвана е или е изтекла.",
     "BOOKING_STAFF_EDIT_BEFORE_ARRIVAL": "Посещението не може да свърши преди клиентът да е дошъл.",
     "BOOKING_STAFF_EDIT_OVERLAPS": "Часът се застъпва с друга резервация.",
     "BOOKING_STAFF_EDIT_STALE": "Някой друг току-що промени посещението — ето го, както е сега.",
@@ -45,11 +47,10 @@
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.party_conflict": "Този час не става за всички от посещението. Избери друг час или {{reach}} и ще преместим всички заедно.",
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.service_unavailable": "Салонът вече не предлага услугата на човека, който идва с теб, затова това посещение може да премести само салонът — {{reach}} и ще го уредим заедно.",
     "BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.shop_only": "Това посещение мести салонът, защото в него е само човек, когото салонът добави за теб — {{reach}} и ще го преместим заедно.",
-    "BOOKING_CANCEL_POLICY_UNAVAILABLE": "Не успяхме да проверим условията за отказ. Пробвай пак след малко.",
+    "BOOKING_CANCEL_POLICY_UNAVAILABLE": "Не успяхме да проверим условията за отказ. Опитай пак след малко.",
     "BOOKING_CANCEL_NOT_CANCELLABLE": "Този час вече не може да се откаже.",
     "BOOKING_CANCEL_WINDOW_CLOSED": "Безплатното отказване е до {{windowHours}} ч. преди часа — {{reach}}.",
     "BOOKING_CANCEL_UNAUTHENTICATED": "Влез отново, за да продължиш.",
-    "BOOKING_CANCEL_INVALID_INPUT": "Заявката не е валидна.",
     "BOOKING_CANCEL_NOT_FOUND": "Този час вече не съществува.",
     "BOOKING_WAITLIST_UNAUTHENTICATED": "Влез, за да знаем на кого да кажем.",
     "BOOKING_WAITLIST_INVALID_REQUEST": "Тази заявка не може да бъде следена — пробвай да избереш дните отново.",
@@ -70,124 +71,126 @@
     "SCHEDULING_BOOKING_CONTACT_NOTE_TOO_LONG": "Бележката може да е до {{maxLength}} знака.",
     "SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL": "В групата вече има «{{label}}». Дай друго име, за да не ги объркаме.",
     "SCHEDULING_RECURRENCE_INVALID_INTERVAL": "Повтаря се на всеки от 1 до {{max}} периода.",
-    "SCHEDULING_RECURRENCE_NO_WEEKDAYS": "Изберете поне един ден от седмицата.",
+    "SCHEDULING_RECURRENCE_NO_WEEKDAYS": "Избери поне един ден от седмицата.",
     "SCHEDULING_RECURRENCE_INVALID_DAY": "Такъв ден няма.",
     "SCHEDULING_RECURRENCE_INVALID_COUNT": "Броят пъти е от 1 до {{max}}.",
     "SCHEDULING_RECURRENCE_ENDS_BEFORE_START": "Краят е преди началото.",
     "SCHEDULING_RECURRENCE_NEVER_OCCURS": "До края не се пада нито един ден.",
-    "SCHEDULING_RECURRENCE_TOO_LONG": "Най-много {{max}} пъти — изберете по-ранен край.",
-    "IDENTITY_IDENTIFIER_INVALID": "Въведете валиден телефонен номер или имейл адрес.",
-    "IDENTITY_IDENTIFIER_MISSING": "Не открихме вашия телефонен номер или имейл — моля, влезте отново.",
-    "IDENTITY_OTP_CODE_INVALID": "Въведете 6-цифрения код.",
-    "IDENTITY_BIRTH_DATE_INVALID": "Това не изглежда като истинска дата — проверете деня, месеца и годината.",
+    "SCHEDULING_RECURRENCE_TOO_LONG": "Най-много {{max}} пъти — избери по-ранен край.",
+    "IDENTITY_IDENTIFIER_INVALID": "Въведи валиден телефонен номер или имейл адрес.",
+    "IDENTITY_IDENTIFIER_MISSING": "Не намерихме телефонния ти номер или имейл. Влез отново.",
+    "IDENTITY_OTP_CODE_INVALID": "Въведи 6-цифрения код.",
+    "IDENTITY_BIRTH_DATE_INVALID": "Това не изглежда като истинска дата — провери деня, месеца и годината.",
     "IDENTITY_BIRTH_DATE_IN_FUTURE": "Рождената дата не може да е в бъдещето.",
-    "IDENTITY_BIRTH_DATE_TOO_YOUNG": "Трябва да сте поне на {{minAge}} години, за да се регистрирате.",
-    "IDENTITY_BIRTH_DATE_TOO_OLD": "Проверете годината — това е преди повече от {{maxAge}} години.",
+    "IDENTITY_BIRTH_DATE_TOO_YOUNG": "Трябва да си поне на {{minAge}} години, за да се регистрираш.",
+    "IDENTITY_BIRTH_DATE_TOO_OLD": "Провери годината — това е преди повече от {{maxAge}} години.",
     "ACCOUNTS_FIRST_NAME_TOO_SHORT": "Името трябва да е поне 2 знака.",
     "ACCOUNTS_LAST_NAME_TOO_SHORT": "Фамилията трябва да е поне 2 знака.",
-    "ACCOUNTS_UPDATE_PROFILE_NOT_FOUND": "Не открихме профила ви — моля, влезте отново.",
-    "ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED": "Предоставената информация е невалидна — моля, проверете я.",
-    "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "Този файл не е изображение — изберете снимка.",
+    "ACCOUNTS_UPDATE_PROFILE_NOT_FOUND": "Не намерихме профила ти. Влез отново.",
+    "ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED": "Предоставената информация е невалидна. Провери я.",
+    "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "Този файл не е изображение — избери снимка.",
     "ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE": "Снимката е твърде голяма — до 5 MB.",
-    "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "Не успяхме да качим снимката — моля, опитайте отново.",
-    "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "Не успяхме да премахнем снимката — моля, опитайте отново.",
-    "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "Не успяхме да запазим това — моля, опитайте отново.",
-    "ACCOUNTS_REPOSITORY_FAILURE": "Възникна проблем от наша страна — моля, опитайте отново.",
+    "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "Не успяхме да качим снимката. Опитай пак.",
+    "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "Не успяхме да премахнем снимката. Опитай пак.",
+    "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "Не успяхме да запазим това. Опитай пак.",
+    "ACCOUNTS_REPOSITORY_FAILURE": "Нещо се обърка от наша страна. Опитай пак.",
     "MONEY_INVALID_AMOUNT": "Това не е валидна сума.",
-    "MONEY_CURRENCY_MISMATCH": "Не можете да комбинирате суми в {{leftCurrency}} и {{rightCurrency}}.",
+    "MONEY_CURRENCY_MISMATCH": "Не можеш да комбинираш суми в {{leftCurrency}} и {{rightCurrency}}.",
     "MONEY_UNKNOWN_CURRENCY": "„{{rawCode}}“ не е поддържана валута.",
     "MONEY_INVALID_RATIO": "Този дял от сумата не може да бъде изчислен.",
     "PHONE_INVALID": "„{{attempted}}“ не изглежда като валиден телефонен номер.",
-    "PHONE_INVALID.not-a-number": "Въведете телефонен номер, например {{example}}.",
+    "PHONE_INVALID.not-a-number": "Въведи телефонен номер, например {{example}}.",
     "PHONE_INVALID.too-short": "Този номер изглежда твърде кратък — например {{example}}.",
     "PHONE_INVALID.too-long": "Този номер изглежда твърде дълъг — например {{example}}.",
     "PHONE_INVALID.invalid-country": "Не разпознаваме този телефонен код — например {{example}}.",
     "PHONE_INVALID.invalid": "Този номер не изглежда валиден — например {{example}}.",
     "PHONE_COUNTRY_UNSUPPORTED": "Не разпознаваме кода на държава „{{attempted}}“.",
-    "BOOKING_COMMIT_FORBIDDEN": "Само служители могат да правят това.",
-    "BOOKING_COMMIT_STORE_FAILED": "Не успяхме да запишем резервацията. Пробвай пак.",
+    "BOOKING_COMMIT_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
+    "BOOKING_COMMIT_STORE_FAILED": "Не успяхме да запишем резервацията. Опитай пак.",
     "BOOKING_TRANSITION_UNAUTHENTICATED": "Влез отново, за да продължиш.",
-    "BOOKING_TRANSITION_FORBIDDEN": "Само служители могат да правят това.",
-    "BOOKING_TRANSITION_INVALID_INPUT": "Заявката не е валидна.",
+    "BOOKING_TRANSITION_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
     "BOOKING_TRANSITION_NOT_FOUND": "Този час вече не съществува.",
     "BOOKING_TRANSITION_NOT_ALLOWED": "Часът не може да мине от „{{from}}“ към „{{to}}“.",
-    "BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED": "Приключен час може да се отвори отново само в същия ден.",
-    "BOOKING_TRANSITION_SLOT_TAKEN": "Този час междувременно е зает, затова не може да се възстанови.",
+    "BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED": "Приключен час може да се върне в работа само в същия ден.",
+    "BOOKING_TRANSITION_SLOT_TAKEN": "Това време междувременно е заето — часът не може да се възстанови.",
     "BOOKING_ARRIVED_UNAUTHENTICATED": "Влез отново, за да продължиш.",
-    "BOOKING_ARRIVED_FORBIDDEN": "Само служители могат да правят това.",
-    "BOOKING_ARRIVED_INVALID_INPUT": "Заявката не е валидна.",
+    "BOOKING_ARRIVED_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
     "BOOKING_ARRIVED_NOT_FOUND": "Този час вече не съществува.",
-    "BOOKING_ARRIVED_NOT_ALLOWED": "Пристигането на приключен час не може да се променя.",
+    "BOOKING_ARRIVED_NOT_ALLOWED": "Часът е приключен — пристигането не може да се променя.",
     "BOOKING_TIP_UNAUTHENTICATED": "Влез отново, за да продължиш.",
-    "BOOKING_TIP_FORBIDDEN": "Само служители могат да правят това.",
-    "BOOKING_TIP_INVALID_INPUT": "Заявката не е валидна.",
-    "BOOKING_TIP_NOT_FOUND": "Този час или това място вече не съществува.",
+    "BOOKING_TIP_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
+    "BOOKING_TIP_NOT_FOUND": "Този час вече не съществува или човекът не е в него.",
     "BOOKING_TRANSITION_SEAT_RESOLVED": "Това място вече е приключено.",
-    "BOOKING_CALL_FAILED": "Нещо се обърка. Пробвай пак.",
+    "BOOKING_CALL_FAILED": "Нещо се обърка. Опитай пак.",
     "IDENTITY_INVALID_INPUT": "Предоставената информация е невалидна.",
-    "IDENTITY_REPOSITORY_FAILURE": "Възникна проблем от наша страна — моля, опитайте отново.",
-    "IDENTITY_OTP_CHANNEL_MISMATCH": "Входът през този канал не е достъпен — моля, използвайте формата за вход.",
-    "IDENTITY_OTP_RATE_LIMITED": "Вече изпратихме код наскоро — моля, изчакайте преди да поискате нов.",
-    "IDENTITY_OTP_SEND_FAILURE": "Не успяхме да изпратим кода за потвърждение — моля, опитайте отново.",
+    "IDENTITY_REPOSITORY_FAILURE": "Нещо се обърка от наша страна. Опитай пак.",
+    "IDENTITY_OTP_CHANNEL_MISMATCH": "Входът през този канал не е достъпен. Използвай формата за вход.",
+    "IDENTITY_OTP_RATE_LIMITED": "Вече ти изпратихме код. Нов можеш да поискаш след {{seconds}} сек.",
+    "IDENTITY_OTP_SEND_FAILURE": "Не успяхме да изпратим кода за потвърждение. Опитай пак.",
     "IDENTITY_OTP_NOT_FOUND": "Тази заявка за код вече не съществува.",
     "IDENTITY_OTP_ALREADY_CONSUMED": "Този код вече е използван.",
-    "IDENTITY_OTP_EXPIRED": "Този код е изтекъл. Можем да ви изпратим нов.",
-    "IDENTITY_OTP_LOCKED_OUT": "Твърде много неуспешни опити — моля, поискайте нов код.",
-    "IDENTITY_OTP_WRONG_CODE": "Този код не е верен — проверете го и опитайте отново.",
-    "IDENTITY_OTP_DESTINATION_CORRUPTED": "Възникна проблем от наша страна — моля, опитайте отново.",
-    "IDENTITY_TOKEN_MINTING_FAILURE": "Не успяхме да ви впишем — моля, опитайте отново.",
-    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "Не успяхме да завършим регистрацията ви — моля, опитайте отново.",
-    "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Сесията ви е изтекла — моля, влезте отново.",
-    "IDENTITY_REGISTRATION_FORBIDDEN": "Тази регистрация не принадлежи на вашата сесия — моля, влезте отново.",
-    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "Не открихме профила ви — моля, влезте отново.",
-    "IDENTITY_REGISTRATION_FIELD_MISSING": "Моля, попълнете всички задължителни полета.",
+    "IDENTITY_OTP_EXPIRED": "Този код е изтекъл. Можем да ти изпратим нов.",
+    "IDENTITY_OTP_LOCKED_OUT": "Твърде много неуспешни опити. Поискай нов код.",
+    "IDENTITY_OTP_WRONG_CODE": "Този код не е верен — провери го и опитай пак.",
+    "IDENTITY_OTP_DESTINATION_CORRUPTED": "Нещо се обърка от наша страна. Опитай пак.",
+    "IDENTITY_TOKEN_MINTING_FAILURE": "Не успяхме да те впишем. Опитай пак.",
+    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "Не успяхме да завършим регистрацията. Опитай пак.",
+    "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Сесията ти е изтекла. Влез отново.",
+    "IDENTITY_REGISTRATION_FORBIDDEN": "Тази регистрация не принадлежи на твоята сесия. Влез отново.",
+    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "Не намерихме профила ти. Влез отново.",
+    "IDENTITY_REGISTRATION_FIELD_MISSING": "Попълни всички задължителни полета.",
     "IDENTITY_REGISTRATION_BIRTH_DATE_INVALID": "Посочената дата на раждане е невалидна.",
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "Предоставената информация е невалидна.",
-    "IDENTITY_CALL_FAILED": "Възникна грешка — моля, опитайте отново.",
-    "ENGAGEMENT_REPOSITORY_FAILURE": "Възникна проблем от наша страна — моля, опитайте отново.",
+    "IDENTITY_CALL_FAILED": "Нещо се обърка. Опитай пак.",
+    "ENGAGEMENT_REPOSITORY_FAILURE": "Нещо се обърка от наша страна. Опитай пак.",
+    "ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN": "Този салон вече не съществува. Избери друг.",
     "LOYALTY_STREAK_PUBLISH_STALE": "Правилото беше променено от друг. Виж новото.",
     "LOYALTY_STREAK_PUBLISH_TOO_EARLY": "Най-ранният възможен ден е {{date}}.",
     "LOYALTY_STREAK_PUBLISH_INVALID": "Поправи: {{field}}.",
-    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "Нямаш право за тази промяна.",
-    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Нямаш право за тази промяна.",
-    "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Пробвай пак.",
-    "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Пробвай пак.",
-    "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Пробвай пак.",
-    "PIPELINE_INVALID_REQUEST": "Нещо се обърка. Пробвай пак.",
-    "PIPELINE_UNAVAILABLE": "Нещо се обърка. Пробвай пак.",
-    "PIPELINE_UNKNOWN": "Нещо се обърка. Пробвай пак.",
-    "REPOSITORY_READ_FAILED": "Не успяхме да запазим това — моля, опитайте отново.",
-    "REPOSITORY_WRITE_FAILED": "Не успяхме да запазим това — моля, опитайте отново.",
-    "REPOSITORY_ALREADY_EXISTS": "Не успяхме да запазим това — моля, опитайте отново.",
-    "REPOSITORY_MALFORMED": "Не успяхме да запазим това — моля, опитайте отново.",
-    "REPOSITORY_UNAVAILABLE": "Не успяхме да запазим това — моля, опитайте отново.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "Нямаш права за това. Влез отново или питай администратора.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Влез отново, за да продължиш.",
+    "LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE": "Досегашните ритми засега само се запазват.",
+    "LOYALTY_STREAK_PUBLISH_PREVIEW_STALE": "Прегледът вече не е актуален. Запази отново.",
+    "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
+    "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
+    "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Опитай пак.",
+    "PIPELINE_INVALID_REQUEST": "Нещо се обърка. Опитай пак.",
+    "PIPELINE_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
+    "PIPELINE_UNKNOWN": "Нещо се обърка. Опитай пак.",
+    "REPOSITORY_READ_FAILED": "Не успяхме да заредим това. Опитай пак.",
+    "REPOSITORY_WRITE_FAILED": "Не успяхме да запазим това. Опитай пак.",
+    "REPOSITORY_ALREADY_EXISTS": "Не успяхме да запазим това. Опитай пак.",
+    "REPOSITORY_MALFORMED": "Този запис е повреден и не може да се използва.",
+    "REPOSITORY_UNAVAILABLE": "Няма връзка в момента. Опитай пак след малко.",
     "PRIMITIVE_CLIENT_OPERATION_ID_INVALID": "Невалидна стойност.",
     "PRIMITIVE_GUEST_KEY_INVALID": "Невалидна стойност.",
-    "PRIMITIVE_REDIRECT_PATH_UNSAFE": "Невалидна стойност."
+    "PRIMITIVE_REDIRECT_PATH_UNSAFE": "Невалидна стойност.",
+    "PRIMITIVE_HOUR_COUNT_OUT_OF_RANGE": "Невалидна стойност.",
+    "PRIMITIVE_PHONE_NOT_E164": "Невалидна стойност."
   },
   "shell": {
     "forbidden": {
       "title": "Забранено",
-      "body": "Нямате достъп до тази страница."
+      "body": "Нямаш достъп до тази страница."
     }
   },
   "auth": {
-    "settling": "Влизаме в профила ви…",
+    "settling": "Влизаме в профила ти…",
     "steps": {
       "label": "Стъпка {{current}} от {{total}}"
     },
     "identify": {
       "eyebrow": "Creativo",
       "title": "Вход или регистрация",
-      "lede": "Записвайте и управлявайте часовете си в салона.",
-      "ledeBooking": "Влезте, за да запазите часа си.",
+      "lede": "Записвай и управлявай часовете си в салона.",
+      "ledeBooking": "Влез, за да запазиш часа си.",
       "emailLabel": "Имейл",
       "phoneLabel": "Телефонен номер",
-      "emailHint": "Ще ви изпратим 6-цифрен код за вход на този имейл.",
-      "phoneHint": "Ще ви изпратим 6-цифрен код по SMS.",
+      "emailHint": "Ще ти изпратим 6-цифрен код за вход на този имейл.",
+      "phoneHint": "Ще ти изпратим 6-цифрен код по SMS.",
       "back": "Назад",
       "continue": "Продължи",
-      "legal": "Продължавайки, приемате {terms} и {privacy}.",
+      "legal": "Продължавайки, приемаш {terms} и {privacy}.",
       "terms": "Общите условия",
       "privacy": "Политиката за поверителност",
       "countryPicker": "Телефонен код",
@@ -196,47 +199,47 @@
       "countryNoResults": "Няма съвпадения"
     },
     "code": {
-      "title": "Въведете кода",
+      "title": "Въведи кода",
       "back": "Назад",
       "sentTo": "Изпратихме 6-цифрен код на",
       "edit": "Промени",
       "checking": "Проверяваме…",
       "resend": "Изпрати нов код",
       "resendIn": "Нов код след {{seconds}} сек",
-      "resendReady": "Вече можете да поискате нов код.",
+      "resendReady": "Вече можеш да поискаш нов код.",
       "escalation": {
-        "email": "Още нищо? Проверете папка „Спам“ или опитайте с друг имейл.",
-        "phone": "Още нищо? Проверете съобщенията си или опитайте с друг номер."
+        "email": "Още нищо? Провери папка „Спам“ или опитай с друг имейл.",
+        "phone": "Още нищо? Провери съобщенията си или опитай с друг номер."
       }
     },
     "blocked": {
       "title": "Твърде много опити",
-      "body": "За да защитим профила ви, входът е временно спрян. Моля, опитайте отново по-късно.",
+      "body": "За да защитим профила ти, входът е временно спрян. Опитай пак по-късно.",
       "home": "Обратно към началото"
     }
   },
   "onboarding": {
     "optional": "Незадължително",
     "about": {
-      "title": "За вас",
+      "title": "За теб",
       "lede": "Отнема около 30 секунди.",
       "firstName": "Име",
       "lastName": "Фамилия",
       "phoneLabel": "Телефонен номер",
-      "phoneHint": "Салонът може да ви се обади за часа ви — закъснение, потвърждение или разместване. Никога за маркетинг.",
+      "phoneHint": "Салонът може да ти се обади за часа ти — закъснение, потвърждение или разместване. Никога за маркетинг.",
       "continue": "Продължи",
-      "signedInAs": "Влезли сте като {{identifier}}",
+      "signedInAs": "Влизаш като {{identifier}}",
       "signOut": "Изход"
     },
     "reward": {
-      "title": "Вътре сте",
-      "body": "Профилът ви е готов — персонализирайте го или влезте направо.",
+      "title": "Вътре си",
+      "body": "Профилът ти е готов — персонализирай го или влез направо.",
       "personalize": "Персонализирай",
       "enterApp": "Не сега"
     },
     "services": {
-      "title": "От какво се интересувате?",
-      "body": "Изберете до {{max}} услуги — винаги можете да промените това по-късно.",
+      "title": "От какво се интересуваш?",
+      "body": "Избери до {{max}} услуги — винаги можеш да промениш това по-късно.",
       "counter": "{{selected}} от {{max}} избрани",
       "minutes": "{{minutes}} мин",
       "from": "от",
@@ -247,8 +250,8 @@
       "skip": "Пропусни"
     },
     "birthday": {
-      "title": "Кога е рожденият ви ден?",
-      "lede": "За изненади за рождения ви ден.",
+      "title": "Кога е рожденият ти ден?",
+      "lede": "За изненади за рождения ти ден.",
       "label": "Дата на раждане",
       "day": "Ден",
       "month": "Месец",
@@ -260,18 +263,18 @@
       "skip": "Пропусни"
     },
     "avatar": {
-      "title": "Добавете профилна снимка",
-      "body": "Помогнете на бръснаря си да ви разпознае.",
+      "title": "Добави профилна снимка",
+      "body": "Помогни на бръснаря си да те разпознае.",
       "changePhoto": "Промени снимката",
       "addPhoto": "Добави снимка",
       "save": "Запази",
       "skip": "Пропусни"
     },
     "entering": {
-      "title": "Настройваме профила ви…",
+      "title": "Настройваме профила ти…",
       "failedTitle": "Това отнема повече от очакваното",
-      "failedBody": "Все още не успяхме да потвърдим профила ви — моля, опитайте отново.",
-      "retry": "Опитай отново"
+      "failedBody": "Все още не успяхме да потвърдим профила ти. Опитай пак.",
+      "retry": "Опитай пак"
     }
   },
   "booking": {
@@ -457,7 +460,7 @@
       "notePlaceholder": "Напр. закъснявам 5 минути",
       "save": "Готово",
       "close": "Затвори",
-      "profileFailed": "Резервацията е наред, но профилът не се запази. Пробвай пак от профила си.",
+      "profileFailed": "Резервацията е наред, но профилът не се запази. Опитай пак от профила си.",
       "saveToProfile": "Запази името в профила ми",
       "contactThisBookingOnly": "Телефонът и имейлът важат само за този час."
     }
@@ -470,7 +473,7 @@
     "tiles": {
       "book": {
         "title": "Запази час",
-        "subtitle": "Избери барбър, услуга и час"
+        "subtitle": "Избери бръснар, услуга и час"
       },
       "appointments": {
         "title": "Часове",
@@ -480,15 +483,15 @@
         "title": "Лична информация",
         "subtitle": "Име, рожден ден, снимка"
       },
-      "comingSoon": "Очаквайте скоро"
+      "comingSoon": "Очаквай скоро"
     },
     "upcoming": {
       "title": "Предстоящ час",
-      "empty": "Нямате предстоящи часове.",
+      "empty": "Нямаш предстоящи часове.",
       "bookCta": "Запази час"
     },
     "completion": {
-      "title": "Завършете профила си",
+      "title": "Завърши профила си",
       "progress": "{{done}} от {{total}} завършени",
       "items": {
         "name": "Име",
@@ -499,7 +502,7 @@
     },
     "profile": {
       "title": "Лична информация",
-      "empty": "Не намерихме профила ви. Опитайте да влезете отново.",
+      "empty": "Не намерихме профила ти. Опитай да влезеш отново.",
       "photo": {
         "add": "Добави снимка",
         "change": "Промени снимката",
@@ -524,11 +527,11 @@
         "close": "Затвори",
         "save": "Запази",
         "nameTitle": "Име",
-        "nameLede": "Така се обръщаме към вас и така ви разпознава барберът.",
+        "nameLede": "Така се обръщаме към теб и така те разпознава бръснарят.",
         "firstName": "Име",
         "lastName": "Фамилия",
         "birthdayTitle": "Дата на раждане",
-        "birthdayLede": "За изненади за рождения ви ден.",
+        "birthdayLede": "За изненади за рождения ти ден.",
         "birthdayLabel": "Дата на раждане",
         "day": "Ден",
         "month": "Месец",
@@ -536,6 +539,37 @@
         "dayPlaceholder": "ДД",
         "monthPlaceholder": "ММ",
         "yearPlaceholder": "ГГГГ"
+      }
+    }
+  },
+  "notifications": {
+    "empty": "Няма известия",
+    "unread": "Ново",
+    "topic": {
+      "APPOINTMENT_REMINDER": {
+        "title": "Напомняне за часа ти",
+        "detail": "{{day}} · {{time}}",
+        "label": "Напомняне за часа ти: {{day}}, {{time}}. Виж часовете си"
+      },
+      "APPOINTMENT_CHANGED": {
+        "title": "Часът ти е променен",
+        "detail": "{{day}} · {{time}}",
+        "label": "Часът ти е променен: {{day}}, {{time}}. Виж часовете си"
+      },
+      "WAITLIST_MATCH": {
+        "title": "Освободи се час",
+        "detail": "{{day}} · {{time}}",
+        "label": "Освободи се час: {{day}}, {{time}}. Запиши се"
+      },
+      "REWARD_GRANTED": {
+        "title": "Имаш нова награда",
+        "detail": "Виж я в профила си",
+        "label": "Имаш нова награда. Виж я в профила си"
+      },
+      "ANNOUNCEMENT": {
+        "title": "{{title}}",
+        "detail": "{{body}}",
+        "label": "Съобщение от салона: {{title}}"
       }
     }
   },
@@ -552,7 +586,7 @@
     "menu": {
       "account": "Акаунт",
       "profile": "Лична информация",
-      "completeProfile": "Завършете профила си",
+      "completeProfile": "Завърши профила си",
       "bookings": "Моите резервации",
       "rewards": "Моите награди",
       "notifications": "Известия",
@@ -588,7 +622,7 @@
       "viewAll": "Виж още {{count}}",
       "explore": "Разгледай",
       "exploreBarber": "Разгледай профила на {{barber}}",
-      "closeDetails": "Затвори профила на барбъра",
+      "closeDetails": "Затвори профила на бръснаря",
       "galleryLabel": "Подбрани визии от {{barber}}",
       "galleryImageAlt": "Визия, създадена от {{barber}}",
       "ratingLabel": "оценка от клиенти",
@@ -596,19 +630,19 @@
       "bookWith": "Запази час с {{barber}}",
       "ivan": {
         "name": "Иван Колев",
-        "role": "Главен барбър",
+        "role": "Главен бръснар",
         "specialty": "Ножица · форма · естествено движение",
         "about": "Иван изгражда форма, която работи и след като излезеш от стола — прецизна, естествена и съобразена с начина ти на живот."
       },
       "niko": {
         "name": "Нико Димов",
-        "role": "Топ барбър",
+        "role": "Топ бръснар",
         "specialty": "Модерен фейд · чиста геометрия",
         "about": "Нико съчетава технически чисти преливки със силен усет към пропорцията, текстурата и модерния силует."
       },
       "stefan": {
         "name": "Стефан Илиев",
-        "role": "Старши барбър",
+        "role": "Старши бръснар",
         "specialty": "Бръснач · ритуал · контур на брада"
       }
     },
@@ -631,8 +665,8 @@
       "bookWithBarber": "Запази при {{barber}}",
       "bookServiceWith": "Запази {{service}} при {{barber}}",
       "whoLabel": "Кой и цена",
-      "whoListView": "Барберите като списък",
-      "whoGridView": "Барберите като мрежа",
+      "whoListView": "Бръснарите като списък",
+      "whoGridView": "Бръснарите като мрежа",
       "allBarbers": "Всички бръснари",
       "nBarbers": "{{count}} бръснари",
       "goToPhoto": "Снимка {{index}}",
@@ -771,13 +805,13 @@
     },
     "status": {
       "position": {
-        "OPEN": "open",
-        "CLOSED": "closed"
+        "OPEN": "Отворена",
+        "CLOSED": "Затворена"
       },
       "enrollment": {
-        "OPEN": "open",
-        "UPCOMING": "upcoming",
-        "CLOSED": "closed"
+        "OPEN": "Отворен",
+        "UPCOMING": "Предстоящ",
+        "CLOSED": "Затворен"
       }
     }
   },
@@ -967,6 +1001,11 @@
       "backToNow": "Към сега",
       "freeDay": "Свободен ден",
       "laneFailed": "Този график не се зареди — презареди страницата.",
+      "unreadable": {
+        "one": "{{count}} посещение не може да се покаже",
+        "other": "{{count}} посещения не могат да се покажат"
+      },
+      "unreadableHint": "Презареди страницата",
       "noRoster": "Днес никой не е на смяна.",
       "unnamedClient": "Клиент без име",
       "cancelTitle": "Отказ от салона",
@@ -1057,6 +1096,7 @@
       "allDayBlock": "Блокирай целия ден",
       "offChip": "{{name}} почива",
       "offBadge": "Почивен ден",
+      "laneFailedBadge": "Не се зареди",
       "blockedLabel": "Блокирано",
       "blockLift": "Премахни блокировките за деня",
       "zoneTitle": "Часовете са в",
@@ -1361,8 +1401,8 @@
       "photoChair": "Бръснар",
       "photoClient": "Клиент",
       "photoRemove": "Изтрий снимката",
-      "photoFailed": "Снимката не се качи. Пробвай пак.",
-      "photoRemoveFailed": "Снимката не се изтри. Пробвай пак.",
+      "photoFailed": "Снимката не се качи. Опитай пак.",
+      "photoRemoveFailed": "Снимката не се изтри. Опитай пак.",
       "photoOpen": "Снимка от {{when}}",
       "notePlaceholder": "Напр. предпочитания, алергии, напомняния…",
       "title": "Час",
@@ -1451,6 +1491,9 @@
           "sameAsLast": "Взехме услугите от {{date}}."
         }
       }
+    },
+    "client": {
+      "noAccount": "Без профил"
     }
   },
   "clientCard": {
@@ -2351,6 +2394,47 @@
       "flagOff": "Ритъмът още не е включен за приложението.",
       "failed": "Правилото не се зареди.",
       "offline": "Без връзка · правилото не може да се запази."
+    },
+    "programs": {
+      "documentTitle": "Програми · Creativo Admin",
+      "title": "Програми",
+      "lede": "Управлявай отворените позиции, курсовете и събитията.",
+      "tabs": {
+        "positions": "Позиции",
+        "courses": "Курсове",
+        "events": "Събития"
+      },
+      "new": "+ Добави",
+      "save": "Запази",
+      "cancel": "Отказ",
+      "saveFailed": "Не успяхме да запазим. Провери задължителните полета и опитай пак.",
+      "field": {
+        "titleEn": "Заглавие (EN)",
+        "titleBg": "Заглавие (BG)",
+        "descriptionEn": "Описание (EN)",
+        "descriptionBg": "Описание (BG)",
+        "status": "Статус",
+        "applyUrl": "Линк за кандидатстване (по избор — иначе Instagram)",
+        "sortOrder": "Подредба"
+      },
+      "position": {
+        "summaryEn": "Кратко описание (EN)",
+        "summaryBg": "Кратко описание (BG)",
+        "shops": "Салони",
+        "shopsAll": "Всеки салон"
+      },
+      "course": {
+        "startsLabelEn": "Кога започва (EN) — напр. „Пролет 2026“",
+        "startsLabelBg": "Кога започва (BG)"
+      },
+      "event": {
+        "startsAt": "Начало — по часа на салона",
+        "shop": "Салон",
+        "shopNone": "Без конкретен салон",
+        "rsvpUrl": "Линк за записване (по избор — иначе Instagram)"
+      },
+      "shopHidden": "{{name}} (скрит)",
+      "shopMissing": "Изтрит салон"
     }
   }
 }

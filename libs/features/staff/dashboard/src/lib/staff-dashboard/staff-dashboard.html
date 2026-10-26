@@ -422,7 +422,14 @@
         } } }
       </ui-stack>
     </ui-modal-sheet>
-    } @if (isGrid()) {
+    } @if (isGrid()) { @if (dayHealth().length > 0) {
+    <!-- THE DAY'S HEALTH above the calendar (OR-2): the same rows the
+         agenda's all-day strip opens with — a chair the sheet could not read
+         in full is said before any column is read. -->
+    <ul class="staff-allday" data-testid="staff-day-health">
+      <ng-container [ngTemplateOutlet]="dayHealthRows" />
+    </ul>
+    }
     <!-- THE CANVAS — full bleed, the column's growing middle, no padding
          (owner, 2026-09-23). One renderer for day / 3-day / week — they
          differ only in what a column IS, which is the one thing the grid is
@@ -470,7 +477,7 @@
            the groups ask for — reading as a hole in the day where there
            was only layout. Free time is a CARD here; whitespace must
            never be mistaken for it. -->
-      @if (resting().length > 0) {
+      @if (resting().length > 0 || dayHealth().length > 0) {
       <!-- ALL-DAY, AND THEREFORE AT THE TOP — one full-width row per barber.
            A barber being off is not a footnote about the screen, it is a fact
            ON the day, and Apple Calendar banners exactly this class of event
@@ -484,6 +491,9 @@
            the run, carrying no clock time when every card below carries one,
            says it by construction. -->
       <ul class="staff-allday">
+        <!-- First, the chairs the sheet could not read in full (OR-2): a
+             booking nobody can see outranks who is off. -->
+        <ng-container [ngTemplateOutlet]="dayHealthRows" />
         @for (barber of resting(); track barber.id) {
         <li>
           <!-- A BUTTON, at 44px. It opens the same block sheet the rest of
@@ -900,7 +910,8 @@
            announced there were none — off today AND nonexistent, one of the
            two sentences necessarily false. The rest line already explains an
            empty day whenever it can; this is the case where nothing does. -->
-      @if (!store.loading() && lanes().length === 0 && resting().length === 0) {
+      @if (!store.loading() && lanes().length === 0 && resting().length === 0 &&
+      dayHealth().length === 0) {
       <p uiText uiFont="body" uiForegroundStyle="secondary">
         {{ t('staff.day.noRoster') }}
       </p>
@@ -1048,6 +1059,67 @@
       </ui-menu>
     </ui-page-action-bar>
   </main>
+
+  <!-- THE DAY'S HEALTH ROWS (OR-2) — one per chair the sheet could not read
+       in full, worded by `dayHealthRowsOf`. Built out of the off row's own
+       parts (`.agenda-card--allday`: the chair's tint, the capsule, the disc,
+       the name, the trailing meta), so it reads as an all-day fact of that
+       chair rather than as a banner about the screen.
+
+       NOT A BUTTON: there is nothing to open, and a card-shaped thing at a
+       touch target that does nothing is the lie the off row's button exists
+       to avoid. A STATUS, so it is announced when it appears — on the card
+       INSIDE a plain list item, the way the off row nests its button, so
+       the strip stays a list a screen reader can count. The disc holds the
+       error mark — the colour is the shape, the words are ink — a partial
+       read's count sits under the name, and the trailing meta says what to
+       do (or, for a failed chair, what went wrong); a screen reader hears
+       the name, then the whole sentence (what happened, then what to do). -->
+  <ng-template #dayHealthRows>
+    @for (row of dayHealth(); track row.barberId) {
+    <li [attr.data-testid]="row.testId">
+      <span
+        role="status"
+        class="agenda-card agenda-card--allday agenda-card--health"
+        [attr.data-barber-tone]="row.tone"
+      >
+        <span class="agenda-allday__body">
+          <span class="agenda-allday__disc" aria-hidden="true">
+            <ui-icon uiName="staff.dayHealth" />
+          </span>
+          <ui-stack uiSpacing="none">
+            <span
+              class="agenda-allday__name"
+              uiText
+              uiFont="callout"
+              uiWeight="semibold"
+              >{{ row.name }}</span
+            >
+            @if (row.detail; as detail) {
+            <span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="secondary"
+              aria-hidden="true"
+              data-testid="staff-lane-health-detail"
+              >{{ detail }}</span
+            >
+            }
+          </ui-stack>
+          <span
+            class="agenda-allday__meta"
+            uiText
+            uiFont="callout"
+            uiForegroundStyle="secondary"
+            aria-hidden="true"
+            >{{ row.meta }}</span
+          >
+          <span uiVisuallyHidden>{{ row.label }}</span>
+        </span>
+      </span>
+    </li>
+    }
+  </ng-template>
 
   <!-- WHICH FACTS THE CARDS CARRY.
        A shop's schedule is read by people asking different questions of it:
@@ -1286,9 +1358,11 @@
       [uiClientSearching]="visitClientSearching()"
       [uiViewer]="cardViewer()"
       [uiClientCardCatalog]="clientCardCatalog()"
+      [uiFrameDay]="createFrameDay()"
       (clientsBrowsed)="browseClients()"
       (dismissed)="closeCreateSheet()"
       (clientQuery)="searchClients($event)"
+      (dayChanged)="onCreateDayChanged($event)"
       (chairChanged)="onCreateChairChanged($event)"
       (committed)="createFromEditor($event)"
     />

@@ -1,11 +1,13 @@
 import {
-  type LocalizedText,
+  CouponValue,
   PointsReach,
   RedeemProblem,
   type RedemptionRecord,
+  RewardGrant,
+  type RewardGrantRule,
 } from '@core/components';
 import type { RewardCatalogItem } from '@core/entities';
-import { type CouponGrantId, LocalDate, type Locale } from '@core/primitives';
+import { type CouponGrantId, type CouponId, LocalDate } from '@core/primitives';
 
 /*
  * WHAT POINTS BUY (client-card-redesign §4.2, `standing.ts:319-391`; the
@@ -77,11 +79,17 @@ export type PointsReachAnswer<
   readonly short: number;
 };
 
-/** What a ticket reads of a held grant: its id, what makes two grants one ticket, and when it expires. */
+/**
+ * What a ticket reads of a held grant: its id, what makes two grants one
+ * ticket — the same coupon at the same value (OR-15: never a display word)
+ * — and when it expires.
+ */
 export type GrantTicketRef = {
   readonly grantId: CouponGrantId;
-  /** Grants with one key are one ticket: the same coupon, worded the same. */
-  readonly groupKey: string;
+  /** The coupon the grant was issued from. */
+  readonly couponId: CouponId;
+  /** What the grant takes off, snapshotted at granting. */
+  readonly value: CouponValue;
   readonly expiresOn: LocalDate | null;
 };
 
@@ -293,33 +301,40 @@ export const RewardSystem = {
    * rule, `glance.presenter.ts` `pointsSentence`): of the rewards
    * {@link RewardSystem.offered} today, none held on this visit — offered
    * by the ticket or already on the bill — then
-   * {@link RewardSystem.pointsReach}. A held reward is known by the name
-   * its coupon was stored under, in the card's `locale` (a grant carries no
-   * reward id yet), so the answer does not flip with «Използвай» and
-   * «Премахни».
+   * {@link RewardSystem.pointsReach}. A held reward is known by the coupon
+   * its grant was issued from: a reward that mints a coupon is in hand when
+   * `heldCouponIds` names its `grantCouponId` (OR-15, DEP-F11 — never by a
+   * name, so it holds in every language), and the answer does not flip
+   * with «Използвай» and «Премахни». A voucher or a perk reward is never
+   * in hand.
    */
-  pointsReachBeyondHeld<
-    R extends RedeemableRewardRef & { readonly name: LocalizedText },
-  >(
+  pointsReachBeyondHeld<R extends RedeemableRewardRef & RewardGrantRule>(
     rewards: readonly R[],
-    heldNames: readonly string[],
-    locale: Locale,
+    heldCouponIds: readonly CouponId[],
     balance: number,
     today: LocalDate,
   ): PointsReachAnswer<R> {
     const offered = RewardSystem.offered(rewards, today);
-    const held = new Set(heldNames);
+    const held = new Set(heldCouponIds);
     const beyond: R[] = [];
     for (let i = 0; i < offered.length; i++) {
       const reward = offered[i] as R;
-      if (!held.has(reward.name[locale])) beyond.push(reward);
+      if (
+        reward.rewardGrant === RewardGrant.Coupon &&
+        held.has(reward.grantCouponId)
+      ) {
+        continue;
+      }
+      beyond.push(reward);
     }
     return RewardSystem.pointsReach(beyond, balance, today);
   },
 
   /**
-   * Held grants as tickets: identical ready grants (one `groupKey`) are one
-   * ticket; a grant ON THE BILL is a ticket of its own, applied. Every
+   * Held grants as tickets: identical ready grants — one coupon at one
+   * value ({@link CouponValue.same}) — are one ticket (OR-15: two coupons
+   * that share a name are two tickets, and so is one coupon granted at two
+   * values); a grant ON THE BILL is a ticket of its own, applied. Every
    * ticket in ONE order, the soonest to expire first (then by grant id),
    * applied or not — so the one used stays where it stood.
    */
@@ -327,16 +342,33 @@ export const RewardSystem = {
     ready: readonly G[],
     onBill: readonly G[],
   ): readonly GrantTicket<G>[] {
-    const groups = new Map<string, G[]>();
+    // Per coupon, its groups: each group's grants share the first one's value.
+    const byCoupon = new Map<CouponId, G[][]>();
     for (let i = 0; i < ready.length; i++) {
       const grant = ready[i] as G;
-      const group = groups.get(grant.groupKey);
-      if (group === undefined) groups.set(grant.groupKey, [grant]);
+      const groups = byCoupon.get(grant.couponId);
+      if (groups === undefined) {
+        byCoupon.set(grant.couponId, [[grant]]);
+        continue;
+      }
+      let group: G[] | null = null;
+      for (let k = 0; k < groups.length && group === null; k++) {
+        const candidate = groups[k] as G[];
+        if (CouponValue.same((candidate[0] as G).value, grant.value)) {
+          group = candidate;
+        }
+      }
+      if (group === null) groups.push([grant]);
       else group.push(grant);
     }
     const tickets: GrantTicket<G>[] = [];
-    for (const group of groups.values()) {
-      tickets.push({ grants: group.sort(soonestFirst), applied: false });
+    for (const groups of byCoupon.values()) {
+      for (let k = 0; k < groups.length; k++) {
+        tickets.push({
+          grants: (groups[k] as G[]).sort(soonestFirst),
+          applied: false,
+        });
+      }
     }
     for (let i = 0; i < onBill.length; i++) {
       tickets.push({ grants: [onBill[i] as G], applied: true });

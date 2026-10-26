@@ -1,4 +1,4 @@
-import type { SeatKeyText, EndMinute, MinuteOfDay } from '@core/primitives';
+import type { PersonKey, EndMinute, MinuteOfDay } from '@core/primitives';
 
 /**
  * A SOLD span and the person who sits in it — the unit of "one person, one
@@ -8,23 +8,23 @@ import type { SeatKeyText, EndMinute, MinuteOfDay } from '@core/primitives';
  * booking decision both ask, so a grid can never offer an arrangement the
  * server refuses for this reason.
  *
- * `personKey` is opaque — whatever the caller counts people by (`self`,
- * `account:<uid>`, `guest:<label>`); the rule only compares two keys for
- * equality. The span is the SERVICE, never the chair time around it: a cut
- * that ends at 10:45 frees its person at 10:45, whatever the barber still has
- * to sweep up. Half-open `[startMinutes, endMinutes)` on the visit's ONE shop
+ * `personKey` is a `PersonKey` (OR-49) — `self`, `account:<uid>` or
+ * `guest:<label>`, spelt by its one constructor module; the rule only
+ * compares two keys for equality. The span is the SERVICE, never the chair
+ * time around it: a cut that ends at 10:45 frees its person at 10:45,
+ * whatever the barber still has to sweep up. Half-open `[startMinutes, endMinutes)` on the visit's ONE shop
  * day (T7), so back to back is one person walking across the room. Scanned
  * sorted by `startMinutes`.
  */
 export type StandingSeatPair = {
-  readonly personKey: SeatKeyText;
+  readonly personKey: PersonKey;
   readonly startMinutes: MinuteOfDay;
   readonly endMinutes: EndMinute;
 };
 
 export const StandingSeatPair = {
   of(
-    personKey: SeatKeyText,
+    personKey: PersonKey,
     startMinutes: MinuteOfDay,
     endMinutes: EndMinute,
   ): StandingSeatPair {

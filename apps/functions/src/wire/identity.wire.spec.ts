@@ -186,11 +186,16 @@ describe('identity wire', () => {
       ).toEqual(invalidInput('invalid email destination'));
     });
 
-    it('lets the rate limit leave as `resource-exhausted`', () => {
-      expect(wire(requestOtpRefusal(IdentityError.otpRateLimited()))).toEqual({
-        status: 'resource-exhausted',
-        details: { errorCode: IdentityErrorCode.OtpRateLimited },
-      });
+    it('lets the rate limit leave as `resource-exhausted`, carrying the seconds left (OR-9)', () => {
+      expect(wire(requestOtpRefusal(IdentityError.otpRateLimited(42)))).toEqual(
+        {
+          status: 'resource-exhausted',
+          details: {
+            errorCode: IdentityErrorCode.OtpRateLimited,
+            retryAfterSeconds: 42,
+          },
+        },
+      );
     });
 
     it('answers a failed delivery as internal IDENTITY_OTP_SEND_FAILURE', () => {
@@ -214,7 +219,8 @@ describe('identity wire', () => {
 
     it('sends the errorCode as the message, never a legacy human sentence', () => {
       expect(
-        toHttpsError(requestOtpRefusal(IdentityError.otpRateLimited())).message,
+        toHttpsError(requestOtpRefusal(IdentityError.otpRateLimited(42)))
+          .message,
       ).toBe(IdentityErrorCode.OtpRateLimited);
     });
   });

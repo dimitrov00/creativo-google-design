@@ -217,7 +217,7 @@ describe('the rows, by month', () => {
     expect(rows.find((row) => row.id === GEORGI_NEXT_ID)).toMatchObject({
       sectionKey: 'upcoming',
       upcoming: true,
-      tile: { caption: 'пт', day: 2, tone: 'upcoming' },
+      tile: { caption: 'окт.', day: 2, tone: 'upcoming' },
       trailing: { name: 'Иван' },
       trailingFact: null,
     });

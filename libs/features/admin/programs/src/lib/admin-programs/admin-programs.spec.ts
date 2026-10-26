@@ -9,7 +9,12 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, firstValueFrom, of } from 'rxjs';
-import { EnrollmentStatus, PositionStatus } from '@core/components';
+import {
+  EnrollmentStatus,
+  LocationStatus,
+  PositionStatus,
+} from '@core/components';
+import type { ShopLocation } from '@core/entities';
 import type { ProgramsPorts } from '@core/ports';
 import {
   CourseId,
@@ -26,6 +31,7 @@ import {
   courseOf,
   localDate,
   locationFixture,
+  memoryCatalogReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryIdPorts,
@@ -38,6 +44,7 @@ import {
   utcMs,
 } from '@core/testing';
 import {
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   ID_PORTS,
@@ -50,9 +57,34 @@ import { AdminPrograms } from './admin-programs';
  * The admin programs page over the in-memory programs world (flip 4, P2):
  * the lists, the forms and the documents a save leaves. Time is pinned —
  * the clock answers `FIXTURE_NOW_UTC_MS` (2026-09-28 09:00 in Sofia) and the
- * world's one shop, `loc-center`, is the default shop, in `Europe/Sofia`.
- * Fresh ids are `generated-1`, `generated-2`, … in call order.
+ * world's first shop, `loc-center`, is the default shop, in `Europe/Sofia`.
+ * The catalogue lists the world's ACTIVE shops; a hidden one is still a
+ * stored document `loadLocation` reads. Fresh ids are `generated-1`,
+ * `generated-2`, … in call order.
  */
+
+/** «Център», the default shop — what a row names it (`shortName`). */
+const CENTER = locationFixture({
+  shortName: textFixture('Center', 'Център'),
+  sortOrder: 1,
+});
+/** «Младост», the second shop — at a two-shop tenant the pickers draw. */
+const MLADOST = locationFixture({
+  id: LocationId.of('loc-mladost'),
+  name: textFixture('Creativo · Mladost', 'Креативо · Младост'),
+  shortName: textFixture('Mladost', 'Младост'),
+  sortOrder: 2,
+});
+/** A shop taken off the catalogue — stored, never listed. */
+const HIDDEN = locationFixture({
+  id: LocationId.of('loc-old-town'),
+  name: textFixture('Creativo · Old Town', 'Креативо · Стария град'),
+  shortName: textFixture('Old Town', 'Стария град'),
+  locationStatus: LocationStatus.Hidden,
+  sortOrder: 3,
+});
+/** An id no shop answers — its document was deleted. */
+const GONE = LocationId.of('loc-gone');
 
 function fillInput(host: HTMLElement, testId: string, value: string): void {
   const el = host.querySelector(`[data-testid="${testId}"]`) as
@@ -107,27 +139,62 @@ function valueOf(host: HTMLElement, testId: string): string {
     .value;
 }
 
+function textOf(host: HTMLElement, testId: string): string {
+  return (
+    host.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
+  );
+}
+
+/** The form's chip worded `label`. */
+function chipWorded(host: HTMLElement, label: string): HTMLButtonElement {
+  const chip = Array.from(
+    host.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="admin-form"] button[uichip]',
+    ),
+  ).find((candidate) => candidate.textContent?.trim() === label);
+  if (!chip) throw new Error(`no chip worded ${label}`);
+  return chip;
+}
+
+/** The role form's shop chips, each as `label` (selected marked `✓`), in order. */
+function shopChipsOf(host: HTMLElement): string[] {
+  return Array.from(
+    host.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="admin-position-shops-all"], [data-testid^="admin-position-shop-"]',
+    ),
+    (chip) =>
+      `${chip.textContent?.trim()}${chip.hasAttribute('data-selected') ? ' ✓' : ''}`,
+  );
+}
+
 /**
- * The app's own `programs.status` words for `lang` — read, never re-typed, so
- * the rows' cases pin today's words (pass E, E-17: they moved into the
- * catalogues unchanged). Every other key renders as itself.
+ * The app's own words for `lang` — the page's (`admin.programs`), the
+ * status words its rows and chips print (`programs.status`, OR-53) and the
+ * refusal copy (`errors`) — read, never re-typed, so each case pins the
+ * catalogue's words. Every other key renders as itself.
  */
-function programStatusWords(lang: string): Translation {
+function catalogueWords(lang: string): Translation {
   const file = resolve(
     __dirname,
     `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
   );
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
   const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
+    readonly admin: { readonly programs: Translation };
     readonly programs: { readonly status: Translation };
+    readonly errors: Translation;
   };
-  return { programs: { status: catalogue.programs.status } };
+  return {
+    admin: { programs: catalogue.admin.programs },
+    programs: { status: catalogue.programs.status },
+    errors: catalogue.errors,
+  };
 }
 
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
   getTranslation(lang: string): Observable<Translation> {
-    return of(programStatusWords(lang));
+    return of(catalogueWords(lang));
   }
 }
 
@@ -137,6 +204,8 @@ function provideTestI18n(): EnvironmentProviders[] {
       availableLangs: ['bg', 'en'],
       defaultLang: 'en',
       fallbackLang: 'en',
+      // As the app runs (`provideI18n`): a switch re-renders the words.
+      reRenderOnLangChange: true,
       missingHandler: { logMissingKey: false },
     },
     loader: TestTranslationLoader,
@@ -144,9 +213,9 @@ function provideTestI18n(): EnvironmentProviders[] {
 }
 
 /**
- * The page over a world seeded with `seed` (plus the default shop). A case
- * that scripts a member of the suite overrides it over the full double,
- * which it receives.
+ * The page over a world seeded with `seed` (the default shop alone unless
+ * `seed.locations` names the shops). A case that scripts a member of the
+ * suite overrides it over the full double, which it receives.
  */
 async function configure(
   seed: ProgramsWorldSeed = {},
@@ -156,10 +225,8 @@ async function configure(
   host: HTMLElement;
   world: ProgramsWorld;
 }> {
-  const world = memoryProgramsWorld({
-    locations: [locationFixture()],
-    ...seed,
-  });
+  const locations: readonly ShopLocation[] = seed.locations ?? [CENTER];
+  const world = memoryProgramsWorld({ ...seed, locations });
   const programs = memoryProgramsPorts(world);
   await TestBed.configureTestingModule({
     imports: [AdminPrograms],
@@ -168,6 +235,10 @@ async function configure(
       {
         provide: PROGRAMS_PORTS,
         useValue: { ...programs, ...scripted(programs) },
+      },
+      {
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({ locations }),
       },
       {
         provide: LOCATION_LOAD_PORTS,
@@ -201,7 +272,7 @@ async function inBulgarian(
   fixture.detectChanges();
 }
 
-/** Lets a save's whole read-decide-write chain run, then renders. */
+/** Lets a save's whole read-decide-write chain (or a stored shop's read) run, then renders. */
 async function settle(fixture: ComponentFixture<AdminPrograms>): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
@@ -212,7 +283,6 @@ async function openNewEventForm(
   fixture: ComponentFixture<AdminPrograms>,
   host: HTMLElement,
   startsAt: string,
-  locationId = '',
 ): Promise<void> {
   click(host, 'admin-tab-events');
   fixture.detectChanges();
@@ -223,7 +293,18 @@ async function openNewEventForm(
   fillInput(host, 'admin-event-description-en', 'Walk-in trims');
   fillInput(host, 'admin-event-description-bg', 'Подстригвания');
   fillInput(host, 'admin-event-starts-at', startsAt);
-  if (locationId) fillInput(host, 'admin-event-location-id', locationId);
+  fixture.detectChanges();
+}
+
+/** Opens the event's «Салон» menu and picks the option `testId` names. */
+function pickShop(
+  fixture: ComponentFixture<AdminPrograms>,
+  host: HTMLElement,
+  testId: string,
+): void {
+  click(host, 'admin-event-shop-trigger');
+  fixture.detectChanges();
+  click(host, testId);
   fixture.detectChanges();
 }
 
@@ -267,21 +348,21 @@ describe('AdminPrograms', () => {
     expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
   });
 
-  it('shows an error and keeps the form open when the save fails validation', async () => {
+  it('shows the generic line and keeps the form open when the save fails validation', async () => {
     const { fixture, host, world } = await configure();
 
     click(host, 'admin-new');
     fixture.detectChanges();
 
-    // Blank title — ProgramsSystem refuses it.
+    // Blank title and summary — ProgramsSystem refuses all four fields.
     click(host, 'admin-save');
     await settle(fixture);
 
     expect(world.positions.size).toBe(0);
     expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
-    expect(
-      host.querySelector('[data-testid="admin-save-error"]'),
-    ).not.toBeNull();
+    expect(textOf(host, 'admin-save-error')).toBe(
+      "Couldn't save. Check the required fields and try again.",
+    );
   });
 
   it('opens an edit form pre-filled from the clicked row', async () => {
@@ -294,10 +375,7 @@ describe('AdminPrograms', () => {
     rowsOf(host, 'admin-positions-list')[0]?.click();
     fixture.detectChanges();
 
-    const closedChip = Array.from(
-      host.querySelectorAll('[data-testid="admin-form"] button[uichip]'),
-    ).find((el) => el.textContent?.trim() === 'Closed');
-    expect(closedChip?.getAttribute('data-selected')).toBe('');
+    expect(chipWorded(host, 'Closed').getAttribute('data-selected')).toBe('');
   });
 
   it('switches tabs and clears any open form', async () => {
@@ -318,8 +396,41 @@ describe('AdminPrograms', () => {
     ).not.toBeNull();
   });
 
+  it('words the page from the catalogue in the active language (OR-37)', async () => {
+    const { fixture, host } = await configure();
+
+    expect(host.querySelector('h1')?.textContent?.trim()).toBe('Programs');
+    expect(textOf(host, 'admin-tab-events')).toBe('Events');
+    expect(textOf(host, 'admin-new')).toBe('+ New');
+
+    await inBulgarian(fixture);
+    expect(host.querySelector('h1')?.textContent?.trim()).toBe('Програми');
+    expect(textOf(host, 'admin-tab-positions')).toBe('Позиции');
+    expect(textOf(host, 'admin-tab-courses')).toBe('Курсове');
+    expect(textOf(host, 'admin-tab-events')).toBe('Събития');
+
+    click(host, 'admin-tab-events');
+    fixture.detectChanges();
+    click(host, 'admin-new');
+    fixture.detectChanges();
+    const labels = Array.from(
+      host.querySelectorAll('[data-testid="admin-form"] label'),
+      (label) => label.childNodes[0]?.textContent?.trim(),
+    );
+    expect(labels).toEqual([
+      'Заглавие (EN)',
+      'Заглавие (BG)',
+      'Описание (EN)',
+      'Описание (BG)',
+      'Начало — по часа на салона',
+      'Линк за записване (по избор — иначе Instagram)',
+      'Подредба',
+    ]);
+    expect(textOf(host, 'admin-save')).toBe('Запази');
+  });
+
   describe('positions (flip 4)', () => {
-    it('prints each role status as its lowercase word, never the stored tag (F4-7)', async () => {
+    it("prints each role status as the catalogue's word, never the stored tag (F4-7)", async () => {
       const { host } = await configure({
         positions: [
           positionOf('pos_closed', {
@@ -331,11 +442,11 @@ describe('AdminPrograms', () => {
       });
 
       expect(trailingTextOf(host, 'admin-positions-list')).toBe(
-        'open · closed',
+        'Open · Closed',
       );
     });
 
-    it('prints the same lowercase words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+    it('prints the bg words, agreeing with «позиция» (OR-53)', async () => {
       const { fixture, host } = await configure({
         positions: [
           positionOf('pos_closed', {
@@ -349,33 +460,115 @@ describe('AdminPrograms', () => {
       await inBulgarian(fixture);
 
       expect(trailingTextOf(host, 'admin-positions-list')).toBe(
-        'open · closed',
+        'Отворена · Затворена',
       );
     });
 
-    it('wipes the stored location ids on an edit — the form has none (F4-8)', async () => {
+    it('keeps the stored scope on an edit (OR-42)', async () => {
+      const stored = [MLADOST.id, CENTER.id];
       const { fixture, host, world } = await configure({
-        positions: [
-          positionOf('pos_1', {
-            locationIds: [LocationId.of('loc-center')],
-          }),
-        ],
+        locations: [CENTER, MLADOST],
+        positions: [positionOf('pos_1', { locationIds: stored })],
       });
 
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
+      // Prefilled from the stored scope — «Всеки салон» is not chosen.
+      expect(shopChipsOf(host)).toEqual(['Any shop', 'Center ✓', 'Mladost ✓']);
+
       click(host, 'admin-save');
       await settle(fixture);
 
       expect(world.positions.get(PositionId.of('pos_1'))).toEqual(
-        positionOf('pos_1', { locationIds: [] }),
+        positionOf('pos_1', { locationIds: stored }),
       );
       expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+    });
+
+    it('keeps the stored scope at a one-shop tenant, where no chip is drawn', async () => {
+      const { fixture, host, world } = await configure({
+        positions: [positionOf('pos_1', { locationIds: [CENTER.id] })],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual([]);
+
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
+        CENTER.id,
+      ]);
+    });
+
+    it('edits the scope through the chips (OR-42)', async () => {
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST],
+        positions: [positionOf('pos_1')],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['Any shop ✓', 'Center', 'Mladost']);
+
+      click(host, 'admin-position-shop-loc-mladost');
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['Any shop', 'Center', 'Mladost ✓']);
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
+        MLADOST.id,
+      ]);
+
+      // «Всеки салон» clears the scope: every shop again, written `[]`.
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      click(host, 'admin-position-shops-all');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual(
+        [],
+      );
+    });
+
+    it('shows a stored shop the list does not hold as a hidden or deleted chip, kept on save', async () => {
+      const stored = [HIDDEN.id, GONE, CENTER.id];
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST, HIDDEN],
+        positions: [positionOf('pos_1', { locationIds: stored })],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      await settle(fixture);
+      expect(shopChipsOf(host)).toEqual([
+        'Any shop',
+        'Center ✓',
+        'Mladost',
+        'Old Town (hidden) ✓',
+        'Deleted shop ✓',
+      ]);
+
+      await inBulgarian(fixture);
+      expect(shopChipsOf(host)).toEqual([
+        'Всеки салон',
+        'Център ✓',
+        'Младост',
+        'Стария град (скрит) ✓',
+        'Изтрит салон ✓',
+      ]);
+
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual(
+        stored,
+      );
     });
   });
 
   describe('courses (flip 4)', () => {
-    it('prints each enrolment status as its lowercase word, never the stored tag (F4-7)', async () => {
+    it("prints each enrolment status as the catalogue's word, never the stored tag (F4-7)", async () => {
       const { fixture, host } = await configure({
         courses: [
           courseOf('course_closed', {
@@ -394,11 +587,11 @@ describe('AdminPrograms', () => {
       fixture.detectChanges();
 
       expect(trailingTextOf(host, 'admin-courses-list')).toBe(
-        'open · upcoming · closed',
+        'Open · Upcoming · Closed',
       );
     });
 
-    it('prints the same lowercase words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+    it('prints the bg words, agreeing with «курс» (OR-53)', async () => {
       const { fixture, host } = await configure({
         courses: [
           courseOf('course_closed', {
@@ -417,7 +610,7 @@ describe('AdminPrograms', () => {
       await inBulgarian(fixture);
 
       expect(trailingTextOf(host, 'admin-courses-list')).toBe(
-        'open · upcoming · closed',
+        'Отворен · Предстоящ · Затворен',
       );
     });
 
@@ -432,13 +625,7 @@ describe('AdminPrograms', () => {
       fillInput(host, 'admin-course-title-bg', 'Фейд');
       fillInput(host, 'admin-course-description-en', 'Six weeks');
       fillInput(host, 'admin-course-description-bg', 'Шест седмици');
-      Array.from(
-        host.querySelectorAll<HTMLButtonElement>(
-          '[data-testid="admin-form"] button[uichip]',
-        ),
-      )
-        .find((chip) => chip.textContent?.trim() === 'Upcoming')
-        ?.click();
+      chipWorded(host, 'Upcoming').click();
       fixture.detectChanges();
 
       click(host, 'admin-save');
@@ -476,9 +663,10 @@ describe('AdminPrograms', () => {
 
       expect(world.courses.size).toBe(0);
       expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
-      expect(
-        host.querySelector('[data-testid="admin-save-error"]'),
-      ).not.toBeNull();
+      // One refusal the catalogue has no words for: the generic line.
+      expect(textOf(host, 'admin-save-error')).toBe(
+        "Couldn't save. Check the required fields and try again.",
+      );
     });
   });
 
@@ -507,7 +695,7 @@ describe('AdminPrograms', () => {
       expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
     });
 
-    it('refuses a start inside the spring-forward gap and saves nothing (F4-1 (a))', async () => {
+    it('refuses a start inside the spring-forward gap in its own words and saves nothing (F4-1 (a))', async () => {
       const { fixture, host, world } = await configure();
 
       await openNewEventForm(fixture, host, '2027-03-28T03:30');
@@ -516,25 +704,109 @@ describe('AdminPrograms', () => {
 
       expect(world.events.size).toBe(0);
       expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
-      expect(
-        host.querySelector('[data-testid="admin-save-error"]'),
-      ).not.toBeNull();
+      expect(textOf(host, 'admin-save-error')).toBe(
+        "2027-03-28T03:30 doesn't exist in Europe/Sofia — the clocks jump past it. Pick another time.",
+      );
     });
 
-    it('saves a typed location that names no shop on the default shop zone (F4-1 (c))', async () => {
-      const { fixture, host, world } = await configure();
+    it('draws no shop menu at a one-shop tenant (OR-37)', async () => {
+      const { fixture, host } = await configure();
 
-      await openNewEventForm(fixture, host, '2026-11-05T19:00', 'loc-nowhere');
+      await openNewEventForm(fixture, host, '2026-11-05T19:00');
+
+      expect(host.querySelector('[data-testid="admin-event-shop"]')).toBeNull();
+    });
+
+    it('picks a shop through the menu — no specific shop first — and saves it (OR-37)', async () => {
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST],
+      });
+
+      await openNewEventForm(fixture, host, '2026-11-05T19:00');
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe('No specific shop');
+      click(host, 'admin-event-shop-trigger');
+      fixture.detectChanges();
+      const options = Array.from(
+        host.querySelectorAll(
+          '[data-testid="admin-event-shop"] [role="menuitemradio"]',
+        ),
+        (option) => option.textContent?.trim(),
+      );
+      expect(options).toEqual(['No specific shop', 'Center', 'Mladost']);
+      click(host, 'admin-event-shop-loc-mladost');
+      fixture.detectChanges();
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe('Mladost');
+
       click(host, 'admin-save');
       await settle(fixture);
 
       const saved = world.events.get(EventId.of('generated-1'));
-      expect(saved?.locationId).toBe(LocationId.of('loc-nowhere'));
+      expect(saved?.locationId).toBe(MLADOST.id);
       expect(saved?.utcEpochMs).toBe(utcMs('2026-11-05T19:00:00.000+02:00'));
     });
 
-    it('pre-fills the start as the input reads it, zero-padded (F4-11)', async () => {
+    it('refuses an event whose stored shop was deleted, in its own words, until another is picked (OR-38)', async () => {
+      const stored = shopEventOf('ev_gone', {
+        title: textFixture('Gone'),
+        locationId: GONE,
+      });
+      const { fixture, host, world } = await configure({ events: [stored] });
+      click(host, 'admin-tab-events');
+      fixture.detectChanges();
+
+      rowTitled(host, 'admin-events-list', 'Gone').click();
+      await settle(fixture);
+      // One shop, yet the menu draws: the stored id is never dropped silently.
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe('Deleted shop');
+
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.events.get(stored.id)).toEqual(stored);
+      expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+      expect(textOf(host, 'admin-save-error')).toBe(
+        'That shop no longer exists. Pick another.',
+      );
+
+      await inBulgarian(fixture);
+      expect(textOf(host, 'admin-save-error')).toBe(
+        'Този салон вече не съществува. Избери друг.',
+      );
+
+      pickShop(fixture, host, 'admin-event-shop-none');
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.events.get(stored.id)?.locationId).toBeNull();
+      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+    });
+
+    it('keeps a hidden shop under its own name, and saves it on its zone (OR-37)', async () => {
+      const stored = shopEventOf('ev_old_town', {
+        title: textFixture('Old Town night'),
+        locationId: HIDDEN.id,
+      });
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST, HIDDEN],
+        events: [stored],
+      });
+      click(host, 'admin-tab-events');
+      fixture.detectChanges();
+
+      rowTitled(host, 'admin-events-list', 'Old Town night').click();
+      await settle(fixture);
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe(
+        'Old Town (hidden)',
+      );
+
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.events.get(stored.id)).toEqual(stored);
+      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+    });
+
+    it('pre-fills the start as the input reads it, zero-padded, and the shop the event is at (F4-11)', async () => {
       const { fixture, host } = await configure({
+        locations: [CENTER, MLADOST],
         events: [
           shopEventOf('ev_evening', {
             title: textFixture('Evening'),
@@ -555,14 +827,14 @@ describe('AdminPrograms', () => {
       rowTitled(host, 'admin-events-list', 'Evening').click();
       fixture.detectChanges();
       expect(valueOf(host, 'admin-event-starts-at')).toBe('2026-11-05T19:00');
-      expect(valueOf(host, 'admin-event-location-id')).toBe('loc-center');
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe('Center');
 
       click(host, 'admin-tab-events');
       fixture.detectChanges();
       rowTitled(host, 'admin-events-list', 'Morning').click();
       fixture.detectChanges();
       expect(valueOf(host, 'admin-event-starts-at')).toBe('2026-11-06T09:05');
-      expect(valueOf(host, 'admin-event-location-id')).toBe('');
+      expect(textOf(host, 'admin-event-shop-trigger')).toBe('No specific shop');
     });
 
     it('lists the upcoming events soonest first, then the past ones latest first, split at the pinned now', async () => {

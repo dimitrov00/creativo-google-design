@@ -5,7 +5,7 @@ import {
   type CancelAppointmentError,
   CancellationRefusalCode,
 } from '@core/errors';
-import type { Appointment, GiftVoucher } from '@core/entities';
+import type { Appointment, CouponGrant, GiftVoucher } from '@core/entities';
 import type {
   AuditAppendPorts,
   PolicyReadPorts,
@@ -15,11 +15,14 @@ import type {
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
+  BillingSystem,
   CancellationPolicySystem,
 } from '@core/systems';
 import {
   appendAuditFacts,
+  grantReleaseWrites,
   readAppointment,
+  readDiscountGrants,
   readRedemptionVouchers,
   voucherRestoreWrites,
 } from './booking-read-set.pipeline';
@@ -30,16 +33,20 @@ import {
  * transaction (policy is tuning data and never widens a conflict set) and a
  * failed read REFUSES the cancel (`BOOKING_CANCEL_POLICY_UNAVAILABLE`):
  * here the window is the rule being enforced, and falling open would let a
- * late cancel through unjudged. Inside the transaction: the visit and the
- * vouchers its live redemption lines name; then
- * `CancellationPolicySystem.mayCancel` (the status graph — a terminal
+ * late cancel through unjudged. Inside the transaction: the visit, the
+ * vouchers its live redemption lines name and the coupon grants its bill's
+ * grant lines name (`readDiscountGrants`, OR-13 — no grant line, no read);
+ * then `CancellationPolicySystem.mayCancel` (the status graph — a terminal
  * visit refuses, which is also what makes a lost-response retry of a
  * committed cancel answer `not_cancellable` — and the window) and
  * `AppointmentLifecycleSystem.cancelByClient` (every open seat cancelled BY
  * THE CLIENT under the window it was allowed under, the root carrying the
  * code). ONE plan: the appointment's variant transition
- * (`WriteOp.transition` + `variantFieldsToDelete`) with the reversed voucher
- * lines folded in, and each voucher's restored balance. The act's row goes
+ * (`WriteOp.transition` + `variantFieldsToDelete`) and, as the move
+ * releases the visit's holdings (`BillingSystem.releasesHoldings`, the one
+ * predicate the shop's pen reads too), the reversed voucher lines and the
+ * bill with its grant lines dropped folded into it, beside each voucher's
+ * restored balance and each grant's restore. The act's row goes
  * AFTER the commit, keyed by the instant it stamped
  * (`cancelled:<atUtcMs>`), naming everyone on the visit. No version CAS —
  * today's payload carries none (§4.1).
@@ -66,6 +73,7 @@ export type CancelAppointmentPorts = TxPorts &
 type Snapshot = {
   readonly appointment: Appointment | null;
   readonly vouchers: readonly GiftVoucher[];
+  readonly grants: readonly CouponGrant[];
 };
 
 type Decided = {
@@ -97,7 +105,7 @@ export const cancelAppointment =
           appointment === null ||
           appointment.ownerUserId !== cmd.callerUserId
         ) {
-          return { appointment: null, vouchers: [] };
+          return { appointment: null, vouchers: [], grants: [] };
         }
         return {
           appointment,
@@ -105,6 +113,7 @@ export const cancelAppointment =
             tx,
             appointment.voucherRedemptions,
           ),
+          grants: await readDiscountGrants(tx, appointment.discounts),
         };
       },
       (snapshot): Result<Decided, CancelAppointmentError> => {
@@ -127,12 +136,21 @@ export const cancelAppointment =
         if (!step.ok) return step;
         return Result.ok({
           auditFacts: step.value.auditFacts,
-          writes: voucherRestoreWrites(
-            step.value.writes,
-            appointment.voucherRedemptions,
-            snapshot.vouchers,
-            nowUtcMs,
-          ),
+          writes: BillingSystem.releasesHoldings(
+            appointment,
+            step.value.appointment,
+          )
+            ? grantReleaseWrites(
+                voucherRestoreWrites(
+                  step.value.writes,
+                  appointment.voucherRedemptions,
+                  snapshot.vouchers,
+                  nowUtcMs,
+                ),
+                appointment.discounts,
+                snapshot.grants,
+              )
+            : step.value.writes,
         });
       },
     );

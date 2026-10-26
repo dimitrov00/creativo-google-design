@@ -1,10 +1,11 @@
 import { logger } from 'firebase-functions';
 import { BookingErrorCode } from '@core/errors';
 import type { TelemetryPorts } from '@core/ports';
+import { ClientIssueSystem } from '@core/systems';
 import { type LogSink, consoleTelemetry } from './console-telemetry.adapter';
 
 type Call = {
-  readonly level: 'info' | 'warn' | 'error';
+  readonly level: 'info' | 'warn' | 'error' | 'write';
   readonly args: unknown[];
 };
 
@@ -16,6 +17,7 @@ function recordingSink(): { readonly sink: LogSink; readonly calls: Call[] } {
       info: (...args) => calls.push({ level: 'info', args }),
       warn: (...args) => calls.push({ level: 'warn', args }),
       error: (...args) => calls.push({ level: 'error', args }),
+      write: (entry) => calls.push({ level: 'write', args: [entry] }),
     },
   };
 }
@@ -55,6 +57,42 @@ describe('console-telemetry adapter', () => {
       expect(payload).toEqual({ errorCode: BookingErrorCode.SlotUnavailable });
       expect(payload).not.toBe(fields);
       expect((payload as object).constructor).toBe(Object);
+    });
+  });
+
+  describe('a web client’s error line (OR-34)', () => {
+    it('is written as a whole ERROR entry, its message the client’s own frame — never the server’s stack', () => {
+      const { sink, calls } = recordingSink();
+      const fields = {
+        '@type': ClientIssueSystem.REPORTED_ERROR_EVENT,
+        clientIssueKind: 'UNCAUGHT_ERROR',
+        serviceContext: { service: 'web', version: 'unknown' },
+      };
+      consoleTelemetry(sink).log(
+        'error',
+        'TypeError: x is undefined\n    at main.js:1:2',
+        fields,
+      );
+      expect(calls).toEqual([
+        {
+          level: 'write',
+          args: [
+            {
+              ...fields,
+              severity: 'ERROR',
+              message: 'TypeError: x is undefined\n    at main.js:1:2',
+            },
+          ],
+        },
+      ]);
+    });
+
+    it('leaves every other error line to the logger’s own error writer', () => {
+      const { sink, calls } = recordingSink();
+      consoleTelemetry(sink).log('error', 'booking.failed', { callable: 'x' });
+      expect(calls).toEqual([
+        { level: 'error', args: ['booking.failed', { callable: 'x' }] },
+      ]);
     });
   });
 

@@ -302,14 +302,18 @@ function emailOf(raw: unknown): Email | null {
 }
 
 /**
- * A stored phone as its brand. `E164` has no smart constructor (its one door
- * is the by-construction `of`, OQ-14): the draft's phone was written from
- * `PhoneSystem.parse`'s E.164 answer or the account's stored `users.phone`,
- * never from raw input, so it is an `E164` by construction.
+ * A stored phone through its brand's smart constructor — `null` when absent
+ * or when it is not the E.164 shape (OR-48). Browser storage is foreign
+ * input: the app only ever writes `PhoneSystem.parse`'s E.164 answer or the
+ * account's stored `users.phone` here, and `E164.parse` answers either
+ * unchanged, so no draft the app wrote restores differently — a tampered one
+ * restores with no phone, and the review step asks again.
  */
 function phoneOf(raw: unknown): E164 | null {
   const text = textOf(raw);
-  return text === null ? null : E164.of(text);
+  if (text === null) return null;
+  const phone = E164.parse(text);
+  return phone.ok ? phone.value : null;
 }
 
 /** The flow state's own fields of a value that carries more (a stored draft). */

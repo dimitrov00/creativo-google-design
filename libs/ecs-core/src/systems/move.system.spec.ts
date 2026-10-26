@@ -30,6 +30,7 @@ import {
   MinuteCount,
   MinuteDelta,
   BarberId,
+  CustomerId,
   LocationId,
   OperationId,
   SeatId,
@@ -234,6 +235,83 @@ describe('MoveSystem.placeRiders — the server’s shift, restated for the revi
         },
       ),
     );
+  });
+});
+
+/*
+ * OR-7 — the client time sheet frames the WHOLE party: every start a pick
+ * would seat somebody at, the cart's own seats and the carried companions,
+ * so a start the zone erases for any one of them is never offered.
+ */
+describe('MoveSystem.partyStarts — every start the party would sit at', () => {
+  it('is the assignments’ own starts, in order, with no rider', () => {
+    expect(
+      MoveSystem.partyStarts(
+        [{ startMinutes: at(15) }, { startMinutes: at(14, 30) }],
+        [],
+      ),
+    ).toEqual([at(15), at(14, 30)]);
+  });
+
+  it('puts a rider who goes first BEFORE the earliest seat (a negative offset)', () => {
+    expect(
+      MoveSystem.partyStarts(
+        [{ startMinutes: at(15) }, { startMinutes: at(14, 30) }],
+        [rider(-30)],
+      ),
+    ).toEqual([at(15), at(14, 30), at(14)]);
+  });
+
+  it('puts a rider who goes after at their distance after the earliest seat', () => {
+    expect(
+      MoveSystem.partyStarts([{ startMinutes: at(14) }], [rider(45), rider(0)]),
+    ).toEqual([at(14), at(14, 45), at(14)]);
+  });
+
+  it('answers null for a rider its kept distance pushes off the shop day', () => {
+    expect(
+      MoveSystem.partyStarts(
+        [{ startMinutes: at(0, 10) }],
+        [rider(-30), rider(15)],
+      ),
+    ).toEqual([at(0, 10), null, at(0, 25)]);
+    expect(
+      MoveSystem.partyStarts([{ startMinutes: at(23, 50) }], [rider(15)]),
+    ).toEqual([at(23, 50), null]);
+  });
+
+  it('seats every rider where placeRiders does — one shift', () => {
+    const assignments = [
+      { startMinutes: at(15) },
+      { startMinutes: at(14, 30) },
+    ];
+    const riders = [rider(-30), rider(45), rider(-900)];
+    expect(
+      MoveSystem.partyStarts(assignments, riders).slice(assignments.length),
+    ).toEqual(
+      MoveSystem.placeRiders(assignments, riders).map(
+        (placed) => placed.startMinutes,
+      ),
+    );
+  });
+
+  it('frames nobody when there is no seat to anchor to', () => {
+    expect(MoveSystem.partyStarts([], [rider(0)])).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const assignments = deepFreeze([
+      { startMinutes: at(15) },
+      { startMinutes: at(14, 30) },
+    ]);
+    const riders = deepFreeze([rider(-30), rider(45)]);
+    const once = MoveSystem.partyStarts(assignments, riders);
+    expect(MoveSystem.partyStarts(assignments, riders)).toEqual(once);
+    expect(assignments).toEqual([
+      { startMinutes: at(15) },
+      { startMinutes: at(14, 30) },
+    ]);
+    expect(riders).toEqual([rider(-30), rider(45)]);
   });
 });
 
@@ -867,6 +945,38 @@ describe('MoveSystem.plan — the self and guest seats behave as before', () => 
     ).toBe(false);
   });
 
+  it('reads a walk-in the shop keeps a record for as the guest it is — a retried move with them is a replay, never the booker’s seat (OR-26)', () => {
+    const withWalkIn = {
+      ...party(),
+      seats: [
+        party().seats[0] as Seat,
+        seat('seat-walk-in', {
+          serviceId: BEARD,
+          barberId: PETAR,
+          barberPreference: null,
+          startMinutes: at(10),
+          occupant: SeatOccupant.walkIn(
+            CustomerId.of('cus_0123456789abcdef0123'),
+            SeatLabel.of('Мария'),
+          ),
+        }),
+      ],
+    };
+    const cart = [
+      cartSeat(at(10)),
+      cartSeat(at(10), {
+        subject: BookingCall.guestSubject('Мария', null),
+        serviceId: BEARD,
+        barberId: PETAR,
+        barberPreference: null,
+      }),
+    ];
+    const planned = unwrapOk(plan(withWalkIn, cart));
+    expect(planned.unchanged).toBe(true);
+    // The booker's cart names the walk-in: nobody is carried by the server.
+    expect(planned.carried).toEqual([]);
+  });
+
   it('still refuses a party with a resolved seat — unless nothing would change', () => {
     const served = {
       ...party(),
@@ -990,6 +1100,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
               requestedSubjectRole: RequestedSubjectRole.Guest,
               label: line.seat.subject.label,
               guestKey: null,
+              contact: null,
             }
           : { requestedSubjectRole: RequestedSubjectRole.Self },
     }));
@@ -1006,6 +1117,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
               requestedSubjectRole: RequestedSubjectRole.Guest,
               label: 'Гост',
               guestKey: null,
+              contact: null,
             }
           : {
               requestedSubjectRole: RequestedSubjectRole.Companion,
@@ -1045,6 +1157,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
         standing: [],
         stood: [],
         parsePhone: () => null,
+        walkIns: [],
       },
     );
   }

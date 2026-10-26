@@ -440,8 +440,10 @@
             autocomplete="off"
             inputmode="email"
             data-testid="staff-visit-new-email"
+            [uiInvalid]="newClientMailLeft() && newClientMailInvalid()"
             [value]="newClient().email"
             (input)="setNewClientEmail($any($event.target).value)"
+            (blur)="newClientMailLeft.set(true)"
           />
         </ui-stack>
       </label>

@@ -1,11 +1,19 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type {
   RulesTestContext,
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { firstValueFrom, skip } from 'rxjs';
-import { BookingPolicy, MinuteRange } from '@core/components';
+import { BlockKind, BookingPolicy, MinuteRange } from '@core/components';
 import {
   BarberId,
   BusyKey,
@@ -17,11 +25,12 @@ import {
 } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import type { ScheduleException } from '@core/entities';
-import { at, localDate, until, utcMs } from '@core/testing';
+import { at, localDate, recordingTelemetry, until, utcMs } from '@core/testing';
 import {
   createEmulatorTestEnv,
   modularFirestore,
 } from '../testing/emulator-test-env';
+import { guardedReads } from './observe';
 import {
   scheduleExceptionPorts,
   schedulingReadPorts,
@@ -51,18 +60,22 @@ function bodyOf(exception: ScheduleException): object {
   return body;
 }
 
+/** The stored busy day — the whole body the busy-day guard admits. */
 const BUSY = {
   barberId: 'ivan',
   localDate: '2026-10-12',
   utcEpochMs: utcMs('2026-10-12T00:00:00+03:00'),
-  blocks: [{ startMinutes: 600, endMinutes: 645 }],
+  blocks: [{ startMinutes: 600, endMinutes: 645, blockKind: BlockKind.Busy }],
 };
 
 describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
   let testEnv: RulesTestEnvironment;
+  // The reads go through the REAL guard, as the composition root binds it
+  // (OR-33): every document seeded here is admitted, so nothing is reported.
+  let telemetry = recordingTelemetry();
 
   const readsFor = (context: RulesTestContext) =>
-    schedulingReadPorts(modularFirestore(context));
+    schedulingReadPorts(modularFirestore(context), guardedReads(telemetry));
   const writesFor = (context: RulesTestContext) =>
     scheduleExceptionPorts(modularFirestore(context));
   const barber = () =>
@@ -76,7 +89,12 @@ describe('schedulingReadPorts and scheduleExceptionPorts (emulator)', () => {
     await testEnv.cleanup();
   });
 
+  afterEach(() => {
+    expect(telemetry.lines).toEqual([]);
+  });
+
   beforeEach(async () => {
+    telemetry = recordingTelemetry();
     await testEnv.clearFirestore();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = modularFirestore(ctx);

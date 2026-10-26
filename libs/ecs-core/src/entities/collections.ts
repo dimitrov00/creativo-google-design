@@ -51,9 +51,10 @@ export const Collections = {
   Users: 'users',
   /**
    * `Customer` — the client RECORD (D29), keyed by a `CustomerId`
-   * (`CustomerId.forUser(uid, hash)` for an account holder, a random `cus_…`
-   * for a walk-in). The booking and edit transactions create an account
-   * holder's record (`FIRST_BOOKING`) in their phase-one read, and
+   * (`CustomerId.forUser(uid, hash)` for an account holder,
+   * `CustomerId.forWalkIn` for a walk-in, OR-26). The booking and edit
+   * transactions create an account holder's record (`FIRST_BOOKING`) and a
+   * walk-in's (`STAFF_WALK_IN`) in their phase-one read, and
    * `completeRegistration` creates it beside the registered account
    * (`REGISTRATION`); the web resolves a signed-in account's record by
    * `userId ==` (single-field).

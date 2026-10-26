@@ -25,6 +25,7 @@ import {
   AppointmentId,
   BusyKey,
   LocalDate,
+  LocationId,
   Result,
   type TimeZone,
   UserId,
@@ -79,6 +80,46 @@ function appointmentAt(
     busyKeys: [BusyKey.of(seat.barberId, day)],
     ...(lifecycle ? { lifecycle } : {}),
   });
+}
+
+/** A shop of the book's own, with the zone it keeps its wall clock in. */
+interface Shop {
+  readonly id: LocationId;
+  readonly timeZone: TimeZone;
+}
+
+/** A confirmed one-seat visit at `shop`, at `HH:MM` on that shop's own day — its instant placed in the shop's zone. */
+function appointmentAtShop(
+  id: string,
+  shop: Shop,
+  localDate: string,
+  startMinutes: number,
+): Appointment {
+  const visit = appointmentAt(id, localDate, startMinutes);
+  return {
+    ...visit,
+    locationId: shop.id,
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(visit.localDate, visit.startMinutes, shop.timeZone),
+    ),
+  };
+}
+
+/** The deployment's default shop (the fixture shop, on the fixture zone) and `shops` besides. */
+function shopsOf(...shops: readonly Shop[]): LocationLoadPorts {
+  return memoryLocationLoadPorts(
+    memoryProgramsWorld({
+      locations: [
+        locationFixture(),
+        ...shops.map((shop) => locationFixture(shop)),
+      ],
+    }),
+  );
+}
+
+/** A zone by its IANA name, for a spec's shop. */
+function zone(name: string): TimeZone {
+  return unwrapOk(ZonedTimeSystem.checkZone(name));
 }
 
 /**
@@ -173,6 +214,9 @@ describe('AppointmentsStore', () => {
 
     upcoming$.next(Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]));
     TestBed.tick();
+    // The visit is not judged before its own shop's clock is known (OR-8).
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
+    await settle();
     expect(store.upcoming().loadState).toBe(LoadState.Ready);
     expect(store.appointments()).toHaveLength(1);
   });
@@ -229,7 +273,7 @@ describe('AppointmentsStore', () => {
     upcomingReads[1]?.next(
       Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]),
     );
-    TestBed.tick();
+    await settle();
     expect(store.upcoming().loadState).toBe(LoadState.Ready);
     expect(store.appointments()).toHaveLength(1);
   });
@@ -262,9 +306,105 @@ describe('AppointmentsStore', () => {
 
     store.setUserId(UserId.of('user_1'));
     TestBed.tick();
+    // Settled is history at once; a live visit waits for its shop's clock.
+    expect(store.history().map((appointment) => appointment.id)).toEqual([
+      'called-off',
+    ]);
+    await settle();
     expect(store.history().map((appointment) => appointment.id)).toEqual([
       'called-off',
       'begun',
+    ]);
+  });
+
+  it('judges each visit on its OWN shop’s wall clock — two shops in two zones (OR-8)', async () => {
+    // At the pinned instant (2026-09-28T06:00Z) it is 09:00 at the default
+    // shop, 23:00 the day before in Los Angeles and 20:00 on Kiritimati.
+    const losAngeles: Shop = {
+      id: LocationId.of('loc-la'),
+      timeZone: zone('America/Los_Angeles'),
+    };
+    const kiritimati: Shop = {
+      id: LocationId.of('loc-kiritimati'),
+      timeZone: zone('Pacific/Kiritimati'),
+    };
+    const store = configure(
+      appointmentReads({
+        observeUpcoming: () =>
+          of(
+            Result.ok([
+              // 08:00 on the 28th has not come yet in Los Angeles — the
+              // default shop's clock would call it begun.
+              appointmentAtShop('la-ahead', losAngeles, '2026-09-28', 480),
+              // 10:00 on the 28th has gone on Kiritimati — the default
+              // shop's clock would call it still to come.
+              appointmentAtShop('kiri-begun', kiritimati, '2026-09-28', 600),
+            ]),
+          ),
+      }),
+      { locations: shopsOf(losAngeles, kiritimati) },
+    );
+    store.setUserId(UserId.of('user_1'));
+    await settle();
+
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
+    expect(store.appointments().map((appointment) => appointment.id)).toEqual([
+      'la-ahead',
+    ]);
+    // Begun at its shop, so the history's — though the history read (held
+    // here) has not answered: no visit falls between the two lists.
+    expect(store.history().map((appointment) => appointment.id)).toEqual([
+      'kiri-begun',
+    ]);
+    expect(store.nowOf()(losAngeles.id)).toMatchObject({
+      localDate: '2026-09-27',
+      currentMinute: 23 * 60,
+    });
+    expect(store.nowOf()(kiritimati.id)?.currentMinute).toBe(20 * 60);
+    // The page's "today" stays the default shop's.
+    expect(store.today()).toBe('2026-09-28');
+  });
+
+  it('shows its failed state when a visit’s own shop zone cannot be read, and reads it again on retry', async () => {
+    const losAngeles: Shop = {
+      id: LocationId.of('loc-la'),
+      timeZone: zone('America/Los_Angeles'),
+    };
+    const shops = shopsOf(losAngeles);
+    let up = false;
+    const store = configure(
+      appointmentReads({
+        observeUpcoming: () =>
+          of(
+            Result.ok([
+              appointmentAtShop('la-ahead', losAngeles, '2026-09-28', 480),
+            ]),
+          ),
+      }),
+      {
+        locations: {
+          loadLocation: async (id) =>
+            up || id !== losAngeles.id
+              ? shops.loadLocation(id)
+              : Result.err(
+                  RepositoryError.readFailed('locations/loc-la', 'down'),
+                ),
+        },
+      },
+    );
+    store.setUserId(UserId.of('user_1'));
+    await settle();
+    expect(store.upcoming().loadState).toBe(LoadState.Failed);
+    expect(store.nowOf()(losAngeles.id)).toBeNull();
+
+    up = true;
+    store.retry();
+    TestBed.tick();
+    expect(store.upcoming().loadState).toBe(LoadState.Loading);
+    await settle();
+    expect(store.upcoming().loadState).toBe(LoadState.Ready);
+    expect(store.appointments().map((appointment) => appointment.id)).toEqual([
+      'la-ahead',
     ]);
   });
 

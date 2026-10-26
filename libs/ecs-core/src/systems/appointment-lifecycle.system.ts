@@ -18,6 +18,7 @@ import {
   Result,
   AttendanceState,
   AuditResourceId,
+  type HourCount,
   type SeatId,
   type LocalDate,
   type UtcEpochMs,
@@ -61,7 +62,7 @@ export type LifecycleTransitionRequest = {
   readonly to: BookingStatus;
   readonly seatId: SeatId | null;
   readonly reason: CancellationReason | null;
-  readonly windowHours: number | null;
+  readonly windowHours: HourCount | null;
 };
 
 /**
@@ -474,15 +475,15 @@ function seatOutcomeSlice(
 }
 
 /**
- * The staff transition at `nowUtcMs` with `today` the shop's day — `null` is
- * a day the caller could not resolve (a party verb with no shop clock),
- * which is never "the visit's own day", so a settled visit stays settled.
+ * The staff transition at `nowUtcMs` (the instant it stamps, T4) with
+ * `today` the shop's day (T1) — the one a reopen of a settled visit is
+ * judged on; on any other day a settled visit stays settled.
  */
 function transitionAt(
   appointment: Appointment,
   request: LifecycleTransitionRequest,
   nowUtcMs: UtcEpochMs,
-  today: LocalDate | null,
+  today: LocalDate,
 ): Result<LifecycleStep, SchedulingError> {
   const slice = sliceOf(appointment);
   const to = request.to;
@@ -576,12 +577,12 @@ function transitionAt(
 /**
  * {@link reopenSettledSlice} over the entity —
  * the visit's day is its `localDate` (one shop day per appointment, F-6; a
- * visit with no seat has no day), today the caller's.
+ * visit with no seat has no day), today the shop's.
  */
 function reopenSettledAt(
   appointment: Appointment,
   nowUtcMs: UtcEpochMs,
-  today: LocalDate | null,
+  today: LocalDate,
 ): Result<Appointment, SchedulingError> {
   const reopened = reopenSettledSlice(
     sliceOf(appointment),
@@ -599,91 +600,25 @@ function reopenSettledAt(
  * verbs that drive it (`transition-appointment.ts`, `cancel-appointment.ts`,
  * `mark-arrived.ts`, `clear-arrival.ts`). The graph is
  * `BookingLifecycle.canTransition`, never re-encoded; seat outcomes roll up
- * through `SeatOutcome.summarize`. Every verb returns a NEW entity, the audit
- * facts of the act and its write plan. Stamping verbs take `nowUtcMs` (a
- * lifecycle instant, T4); the ones that ask "is it today" take the shop's
- * `ShopNow` and compare on its `localDate` (T1).
+ * through `SeatOutcome.summarize`.
+ *
+ * ONE lifecycle write surface (OR-20): {@link transition} — the staff's
+ * every move, a whole party through the graph or one of the correction
+ * edges, or ONE seat's outcome — plus the client's own
+ * {@link cancelByClient}; the arrival stamp has its two verbs
+ * ({@link markArrived}, {@link clearArrival}). There is no second door: the
+ * parked entity verbs over the same decision (confirm, complete, no-show,
+ * cancel, the two reopens, a seat's outcome) are deleted. Every write verb
+ * returns a NEW entity, the audit facts of the act and its write plan. The
+ * transition takes the shop's `ShopNow` — its instant stamps (T4), its
+ * `localDate` judges a reopen (T1); the client's cancel and the arrival
+ * stamp take `nowUtcMs` alone. The rest is read-only: what a staff surface
+ * may offer, and the callables' predicates.
  *
  * No version CAS: neither the cancel nor the transition callable carries
  * one (§4.1).
  */
 export const AppointmentLifecycleSystem = {
-  /**
-   * Confirming is about the BOOKING, not the work — no seat is resolved. A
-   * settled visit is not reopened here (no shop clock: never "today").
-   */
-  confirm(
-    appointment: Appointment,
-    nowUtcMs: UtcEpochMs,
-  ): Result<LifecycleStep, SchedulingError> {
-    return transitionAt(
-      appointment,
-      {
-        to: BookingStatus.Confirmed,
-        seatId: null,
-        reason: null,
-        windowHours: null,
-      },
-      nowUtcMs,
-      null,
-    );
-  },
-
-  /** The whole party was served: every open seat `WORKED`, resolved seats untouched. */
-  complete(
-    appointment: Appointment,
-    nowUtcMs: UtcEpochMs,
-  ): Result<LifecycleStep, SchedulingError> {
-    return transitionAt(
-      appointment,
-      {
-        to: BookingStatus.Completed,
-        seatId: null,
-        reason: null,
-        windowHours: null,
-      },
-      nowUtcMs,
-      null,
-    );
-  },
-
-  /** Nobody came — the same fan-out rule as {@link complete}. */
-  markNoShow(
-    appointment: Appointment,
-    nowUtcMs: UtcEpochMs,
-  ): Result<LifecycleStep, SchedulingError> {
-    return transitionAt(
-      appointment,
-      {
-        to: BookingStatus.NoShow,
-        seatId: null,
-        reason: null,
-        windowHours: null,
-      },
-      nowUtcMs,
-      null,
-    );
-  },
-
-  /**
-   * The shop calls the whole party off — `reason` filed on every seat it
-   * closes, with the window in force (`null` unknown), and the root
-   * carrying the code. A seat called off earlier keeps its own stamp.
-   */
-  cancel(
-    appointment: Appointment,
-    reason: CancellationReason,
-    windowHours: number | null,
-    nowUtcMs: UtcEpochMs,
-  ): Result<LifecycleStep, SchedulingError> {
-    return transitionAt(
-      appointment,
-      { to: BookingStatus.Cancelled, seatId: null, reason, windowHours },
-      nowUtcMs,
-      null,
-    );
-  },
-
   /**
    * The client's own cancel (`cancel-appointment.ts:180-219`): every open
    * seat cancelled BY THE CLIENT under the window it was allowed under, the
@@ -694,7 +629,7 @@ export const AppointmentLifecycleSystem = {
   cancelByClient(
     appointment: Appointment,
     reason: CancellationReason,
-    windowHours: number | null,
+    windowHours: HourCount | null,
     nowUtcMs: UtcEpochMs,
   ): Result<LifecycleStep, SchedulingError> {
     const stamp = SeatOutcome.cancelled(
@@ -738,47 +673,6 @@ export const AppointmentLifecycleSystem = {
     now: ShopNow,
   ): Result<LifecycleStep, SchedulingError> {
     return transitionAt(appointment, request, now.utcEpochMs, now.localDate);
-  },
-
-  /** {@link reopenNoShowSlice} over the entity. */
-  reopenNoShow(
-    appointment: Appointment,
-    nowUtcMs: UtcEpochMs,
-  ): Result<Appointment, SchedulingError> {
-    const reopened = reopenNoShowSlice(sliceOf(appointment), nowUtcMs);
-    return reopened.ok
-      ? Result.ok(applySlice(appointment, reopened.value))
-      : reopened;
-  },
-
-  /**
-   * {@link reopenSettledSlice} over the entity — the visit's day is its
-   * `localDate`, today the shop's (`now.localDate`); no zone math here.
-   */
-  reopenSettled(
-    appointment: Appointment,
-    now: ShopNow,
-  ): Result<Appointment, SchedulingError> {
-    return reopenSettledAt(appointment, now.utcEpochMs, now.localDate);
-  },
-
-  /** {@link seatOutcomeSlice} over the entity, by seat id. */
-  markSeatOutcome(
-    appointment: Appointment,
-    seatId: SeatId,
-    outcome: SeatOutcome,
-    nowUtcMs: UtcEpochMs,
-  ): Result<Appointment, SchedulingError> {
-    const resolved = seatOutcomeSlice(
-      sliceOf(appointment),
-      indexOfSeat(appointment.seats, seatId),
-      seatId,
-      outcome,
-      nowUtcMs,
-    );
-    return resolved.ok
-      ? Result.ok(applySlice(appointment, resolved.value))
-      : resolved;
   },
 
   /**
@@ -886,7 +780,7 @@ export const AppointmentLifecycleSystem = {
   /**
    * May a settled root come back to `CONFIRMED` on `today` — the same-day
    * correction edge's guard, the ONE copy the write path
-   * ({@link reopenSettled}, {@link transition}) reads too.
+   * ({@link transition}) reads too.
    */
   reopenable,
 
@@ -992,8 +886,8 @@ export const AppointmentLifecycleSystem = {
    * a whole-party `COMPLETED`, `NO_SHOW` or `CANCELLED` comes back to
    * `CONFIRMED`; a move of one chair's share inside a party has no inverse
    * the callable offers, and a correction (`CONFIRMED`) or an `UNARRIVED`
-   * is not itself undoable. No reopen-day guard (unlike
-   * {@link reopenSettled}): the undo is offered at once, and the server
+   * is not itself undoable. No reopen-day guard (unlike the reopen
+   * {@link transition} makes): the undo is offered at once, and the server
    * still refuses it on another day.
    */
   inverseOf(did: StaffVerb, wholeParty: boolean): StaffVerb | null {
@@ -1079,20 +973,6 @@ export const AppointmentLifecycleSystem = {
    * the instant.
    */
   readsShopToday,
-
-  /**
-   * Did the move END the visit cancelled — cancelled after, not before?
-   * What releases its voucher draws.
-   */
-  endsCancelled(
-    before: { readonly bookingStatus: BookingStatus },
-    after: { readonly bookingStatus: BookingStatus },
-  ): boolean {
-    return (
-      after.bookingStatus === BookingStatus.Cancelled &&
-      before.bookingStatus !== BookingStatus.Cancelled
-    );
-  },
 
   /**
    * Did the move END the visit live — live after, not before

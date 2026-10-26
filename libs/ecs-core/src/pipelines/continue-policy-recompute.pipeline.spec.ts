@@ -39,6 +39,7 @@ import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
+  hourCount,
   localDate,
   locationFixture,
   memoryDefaultLocationPorts,
@@ -117,7 +118,7 @@ function cancelledAhead(
           cancelledAt,
           CancelledBy.Client,
           CancellationReason.Unspecified,
-          windowHours,
+          windowHours === null ? null : hourCount(windowHours),
         ),
       }),
     ],
@@ -130,7 +131,7 @@ function cancelledAhead(
 
 const policyAt = (windowHours: number): BookingPolicy => ({
   ...BookingPolicy.DEFAULT,
-  cancellationWindowHours: windowHours,
+  cancellationWindowHours: hourCount(windowHours),
 });
 
 const instant = (seconds: number) => {

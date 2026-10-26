@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { unwrapErr, unwrapOk, utcMs } from '@core/testing';
 import { MinuteDelta } from './duration-minutes.primitive';
+import { HourCount } from './hour-count.primitive';
 import { UtcEpochMs } from './utc-epoch-ms.primitive';
 
 /*
@@ -59,6 +60,27 @@ describe('UtcEpochMs — an absolute instant', () => {
     );
     expect(UtcEpochMs.plusHours(t, 2)).toBe(7_201_000);
     expect(UtcEpochMs.plusDays(t, 1)).toBe(86_401_000);
+  });
+
+  it('minusHours takes whole hours off an instant — the window’s deadline, exact to the end of the range (OR-45)', () => {
+    const hours = (raw: number) => unwrapOk(HourCount.of(raw));
+    const t = at(7_201_000);
+    expect(UtcEpochMs.minusHours(t, hours(2))).toBe(1_000);
+    expect(UtcEpochMs.minusHours(t, HourCount.ZERO)).toBe(7_201_000);
+    expect(UtcEpochMs.minusHours(t, hours(24))).toBe(
+      UtcEpochMs.plusHours(t, -24),
+    );
+    // The longest window off the epoch: −8.64e15 ms, still a safe integer.
+    const deadline = UtcEpochMs.minusHours(UtcEpochMs.EPOCH, HourCount.MAX);
+    expect(deadline).toBe(-8_640_000_000_000_000);
+    expect(Number.isSafeInteger(deadline)).toBe(true);
+  });
+
+  it('minusHours is pure: same input → same output', () => {
+    const t = at(86_400_000);
+    const h = unwrapOk(HourCount.of(6));
+    expect(UtcEpochMs.minusHours(t, h)).toBe(UtcEpochMs.minusHours(t, h));
+    expect(t).toBe(86_400_000);
   });
 });
 

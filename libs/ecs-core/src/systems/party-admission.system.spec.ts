@@ -173,6 +173,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
                       requestedSubjectRole: RequestedSubjectRole.Guest,
                       label: seat.seatKey,
                       guestKey: seat.seatKey,
+                      contact: null,
                     },
             })),
           );
@@ -212,6 +213,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
               standing: [],
               stood: [],
               parsePhone: () => null,
+              walkIns: [],
             },
           );
           // Anything past admission (no roster here) is the commit's

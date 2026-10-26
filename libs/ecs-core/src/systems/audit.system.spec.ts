@@ -22,7 +22,7 @@ import {
   AppointmentId,
   AuditResourceId,
   BarberId,
-  type CustomerId,
+  CustomerId,
   OperationId,
   PublishRequestId,
   SeatId,
@@ -88,6 +88,18 @@ describe('AuditSystem.targets', () => {
         account('maria'),
       ]),
     ).toEqual([cus('maria'), cus('stefan')]);
+  });
+
+  it('names a walk-in’s record too — a client with a record gets a row of its own (OR-26)', () => {
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    expect(
+      AuditSystem.targets([
+        guest,
+        { seatSubject: SeatSubject.WalkIn, customerId: record },
+        account('maria'),
+        { seatSubject: SeatSubject.WalkIn, customerId: record },
+      ]),
+    ).toEqual([record, cus('maria')]);
   });
 
   it('keeps one untargeted row when nobody on the visit has an account', () => {
@@ -259,6 +271,17 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
       guest,
       account('stefan'),
     ]);
+  });
+
+  it('reads a walk-in’s seat by the record the shop keeps for them (OR-26)', () => {
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const walkIn = seatFixture({
+      seatId: SeatId.of('s4'),
+      occupant: SeatOccupant.walkIn(record, SeatLabel.of('Мария')),
+    });
+    expect(
+      AuditSystem.subjectsOfSeats([...visit.seats, walkIn], SeatId.of('s4')),
+    ).toEqual([{ seatSubject: SeatSubject.WalkIn, customerId: record }]);
   });
 
   it("narrows to the one seat a per-seat verb touched — a companion's no-show is theirs", () => {

@@ -16,7 +16,6 @@ import {
   entityOf,
   observeDoc,
   type ReadGuard,
-  UNGUARDED,
   writeFailed,
 } from './observe';
 
@@ -50,12 +49,13 @@ import {
  * emitted value and the listener stays; in the append's transaction it is
  * admitted BEFORE `decide`, so a refused note is never decided on, nothing
  * is `Set`, and the port answers the refusal — reported once per call
- * through the guard's log however often the SDK re-runs the attempt. A
- * bare `appointmentNotePorts(db)` guards nothing (edge hardening DEP-11).
+ * through the guard's log however often the SDK re-runs the attempt. The
+ * guard is REQUIRED (OR-33, DEP-F24, reversing edge hardening DEP-11): a
+ * bare `appointmentNotePorts(db)` does not type-check.
  */
 export const appointmentNotePorts = (
   db: Firestore,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard,
 ): AppointmentNotePorts => ({
   observeAppointmentNote: (appointmentId) =>
     observeDoc<AppointmentNote>(

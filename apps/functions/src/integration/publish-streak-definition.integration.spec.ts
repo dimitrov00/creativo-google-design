@@ -25,12 +25,13 @@ import {
   publishStreakDefinition,
   withdrawStreakDefinition,
 } from '@core/pipelines';
-import { AuditSystem } from '@core/systems';
+import { AuditSystem, StoredDocumentSystem } from '@core/systems';
 import {
   FIXTURE_IDS,
   localDate,
   locationFixture,
   pinnedNowUtcMs,
+  recordingTelemetry,
   streakDefinitionFixture,
   streakDefinitionVersionFixture,
   utcMs,
@@ -155,7 +156,11 @@ describe('publishStreakDefinition (emulator)', () => {
   });
 
   const ports = (): PublishStreakDefinitionPorts => ({
-    commit: firestoreCommitPlan(db),
+    commit: firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      recordingTelemetry().log,
+    ),
     nowUtcMs: pinnedNowUtcMs(NOW),
     hash: sha256Hex,
     flagOn: () => false,

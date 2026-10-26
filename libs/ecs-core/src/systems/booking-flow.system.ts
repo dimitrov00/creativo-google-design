@@ -268,13 +268,6 @@ export const BookingFlowSystem = {
             }
             return Result.ok({ ...state, when: added.value });
           }
-          case E.SetDayWindows:
-            // An unselected day is ignored, so a sheet that outlives its day
-            // cannot resurrect it as a windows-only entry.
-            return Result.ok({
-              ...state,
-              when: FlexibleWhen.withWindows(state.when, event.dayWindows),
-            });
           case E.ClearFlexible:
             return Result.ok({ ...state, when: FlexibleWhen.empty() });
           case E.Waitlisted:

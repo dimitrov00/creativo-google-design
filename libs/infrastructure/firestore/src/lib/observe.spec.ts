@@ -9,6 +9,7 @@ import {
   recordingTelemetry,
 } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
+import { UNGUARDED } from '../testing/unguarded';
 
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
@@ -17,17 +18,20 @@ vi.mock('firebase/firestore', async () =>
 const { collection, doc, orderBy, query, where } =
   await import('firebase/firestore');
 const {
+  AS_STORED,
   ListAdmission,
-  UNGUARDED,
+  admitCounted,
   admitted,
   attemptWrite,
   entityOf,
   guardedReads,
   keepAdmitted,
+  observeCountedQuery,
   observeDoc,
   observeQuery,
   readDoc,
   readQuery,
+  readRawQuery,
   reasonOf,
 } = await import('./observe');
 
@@ -223,6 +227,42 @@ describe('readDoc and readQuery — once', () => {
       },
     });
   });
+
+  it('readRawQuery answers the rows as stored, in the query’s order, through no guard — the caller admits them', async () => {
+    const fake = new FakeFirestore({
+      'appointments/a1': { startMinutes: 'ten', utcEpochMs: 2 },
+      'appointments/a2': { startMinutes: 600, utcEpochMs: 1 },
+    });
+
+    const rows = await readRawQuery(
+      query(collection(asDb(fake), 'appointments'), orderBy('utcEpochMs')),
+      'appointments',
+    );
+
+    expect(rows).toEqual({
+      ok: true,
+      value: [
+        { id: 'a2', startMinutes: 600, utcEpochMs: 1 },
+        { id: 'a1', startMinutes: 'ten', utcEpochMs: 2 },
+      ],
+    });
+    expect(
+      await readRawQuery(
+        collection(
+          asDb(new FakeFirestore().failWith({ code: 'unavailable' })),
+          'appointments',
+        ),
+        'appointments',
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'appointments',
+        reason: 'unavailable',
+      },
+    });
+  });
 });
 
 describe('attemptWrite', () => {
@@ -300,11 +340,62 @@ describe('the read-time guard (edge hardening D-1, D-3)', () => {
       ]);
     });
 
-    it('reads an unguarded collection, and anything UNGUARDED, as stored', () => {
+    it('reads an unguarded collection, and anything the test support’s UNGUARDED reads, as stored', () => {
       const odd = { id: 'u1', roles: 'x' };
       const { guard } = guardWithLines();
       expect(admitted(odd, 'users', guard)).toEqual({ ok: true, value: odd });
       expect(admitted(broken('a1'), 'appointments', UNGUARDED).ok).toBe(true);
+    });
+  });
+
+  describe('AS_STORED — the guard of a read that names none (OR-33)', () => {
+    it('reads a collection the registry never guards as stored, reporting nothing', async () => {
+      const odd = { id: 'u1', roles: 'x' };
+      expect(admitted(odd, 'users', AS_STORED)).toEqual({
+        ok: true,
+        value: odd,
+      });
+      const fake = new FakeFirestore({
+        'users/u1': { roles: 'x' },
+        'locations/l1': { timeZone: 7 },
+        'users/u1/notifications/n1': { startMinutes: 'ten' },
+      });
+      expect(await readDoc(doc(asDb(fake), 'users', 'u1'))).toEqual({
+        ok: true,
+        value: odd,
+      });
+      expect(
+        await readQuery(collection(asDb(fake), 'locations'), 'locations'),
+      ).toEqual({ ok: true, value: [{ id: 'l1', timeZone: 7 }] });
+      expect(
+        await readDoc(doc(asDb(fake), 'users', 'u1', 'notifications', 'n1')),
+      ).toEqual({ ok: true, value: { id: 'n1', startMinutes: 'ten' } });
+    });
+
+    it('refuses to read a guarded collection unguarded — a defect, never a silent read', async () => {
+      const fake = new FakeFirestore({
+        'appointments/a1': bodyOf(visit('a1')),
+      });
+      for (const guarded of [
+        'appointments',
+        'customers',
+        'barberBusy',
+        'appointmentNotes',
+      ]) {
+        expect(() => admitted(visit('x'), guarded, AS_STORED)).toThrow(
+          `defect: ${guarded} read without its guard`,
+        );
+        // A list asks for its guard before its first row: an empty read too.
+        expect(() => admitCounted([], guarded, AS_STORED, null)).toThrow(
+          `defect: ${guarded} read without its guard`,
+        );
+      }
+      await expect(
+        readDoc(doc(asDb(fake), 'appointments', 'a1')),
+      ).rejects.toThrow('defect: appointments read without its guard');
+      await expect(
+        readQuery(collection(asDb(fake), 'customers'), 'customers'),
+      ).rejects.toThrow('defect: customers read without its guard');
     });
   });
 
@@ -409,6 +500,99 @@ describe('the read-time guard (edge hardening D-1, D-3)', () => {
     });
   });
 
+  describe('admitCounted — the LIST rule, counted (OR-2)', () => {
+    it('keeps the SAME array and counts nothing on a clean read — guarded or not', () => {
+      const { lines, guard } = guardWithLines();
+      const rows = [visit('a1'), visit('a2')];
+      const clean = admitCounted<StoredDocument>(
+        rows,
+        'appointments',
+        guard,
+        null,
+      );
+      expect(clean.ok && clean.value.kept).toBe(rows);
+      expect(clean.ok && clean.value.dropped).toBe(0);
+      // An unguarded collection is read as stored: the rows, uncounted.
+      const odd = [{ id: 'u1', roles: 'x' }];
+      const unguarded = admitCounted(odd, 'users', guard, null);
+      expect(unguarded.ok && unguarded.value.kept).toBe(odd);
+      expect(unguarded.ok && unguarded.value.dropped).toBe(0);
+      expect(lines).toEqual([]);
+    });
+
+    it('counts every dropped row beside the rows it kept, in their order', () => {
+      const { lines, guard } = guardWithLines();
+      const rows = [broken('a1'), visit('a2'), broken('a3'), visit('a4')];
+      const answer = admitCounted<StoredDocument>(
+        rows,
+        'appointments',
+        guard,
+        new Set<string>(),
+      );
+      expect(answer.ok && answer.value.kept).toEqual([rows[1], rows[3]]);
+      expect(answer.ok && answer.value.dropped).toBe(2);
+      // The admitted rows are the same objects.
+      expect(answer.ok && answer.value.kept[0]).toBe(rows[1]);
+      expect(lines.map((line) => line.fields)).toEqual([
+        { path: 'appointments/a1', field: 'startMinutes' },
+        { path: 'appointments/a3', field: 'startMinutes' },
+      ]);
+    });
+
+    it('keeps the systemic rule and the strict list — the count rides only an answer', () => {
+      const { guard } = guardWithLines();
+      expect(
+        admitCounted([broken('a1'), broken('a2')], 'appointments', guard, null),
+      ).toEqual({
+        ok: false,
+        error: malformed('appointments/a1', 'startMinutes'),
+      });
+      expect(admitCounted([], 'appointments', guard, null)).toEqual({
+        ok: true,
+        value: { kept: [], dropped: 0 },
+      });
+      expect(
+        admitCounted(
+          [broken('a1'), broken('a2')],
+          'appointments',
+          guard,
+          null,
+          ListAdmission.DropOnly,
+        ),
+      ).toEqual({ ok: true, value: { kept: [], dropped: 2 } });
+      expect(
+        admitCounted(
+          [visit('a1'), broken('a2')],
+          'appointments',
+          guard,
+          null,
+          ListAdmission.RefuseMalformed,
+        ),
+      ).toEqual({
+        ok: false,
+        error: malformed('appointments/a2', 'startMinutes'),
+      });
+    });
+
+    it('keepAdmitted is its rows alone — the same drop, the same array', () => {
+      const { guard } = guardWithLines();
+      const rows = [visit('a1'), broken('a2'), visit('a3')];
+      const counted = admitCounted<StoredDocument>(
+        rows,
+        'appointments',
+        guard,
+        null,
+      );
+      const kept = keepAdmitted<StoredDocument>(
+        rows,
+        'appointments',
+        guard,
+        null,
+      );
+      expect(kept.ok && kept.value).toEqual(counted.ok && counted.value.kept);
+    });
+  });
+
   describe('the live and one-shot reads, guarded', () => {
     it('a live single emits the refusal, keeps listening, and emits ok once the document is fixed', () => {
       const day = barberBusyDayFixture();
@@ -457,6 +641,44 @@ describe('the read-time guard (edge hardening D-1, D-3)', () => {
       ).toEqual([['a1'], ['a1', 'a3']]);
       expect(lines.map((line) => line.fields)).toEqual([
         { path: 'appointments/a2', field: 'startMinutes' },
+      ]);
+      live.stop();
+    });
+
+    it('a live COUNTED list counts the drops of every snapshot, and reports each once', () => {
+      const fake = new FakeFirestore({
+        'appointments/a1': bodyOf(visit('a1')),
+        'appointments/a2': bodyOf(broken('a2')),
+      });
+      const { lines, guard } = guardWithLines();
+      const live = recorded(
+        observeCountedQuery<{ readonly id: string }>(
+          collection(asDb(fake), 'appointments'),
+          'appointments',
+          guard,
+        ),
+      );
+
+      fake.set('appointments/a3', bodyOf(broken('a3')));
+      fake.set('appointments/a2', bodyOf(visit('a2')));
+
+      expect(
+        live.seen.map((answer) =>
+          answer.ok
+            ? {
+                ids: answer.value.kept.map((row) => row.id),
+                dropped: answer.value.dropped,
+              }
+            : answer,
+        ),
+      ).toEqual([
+        { ids: ['a1'], dropped: 1 },
+        { ids: ['a1'], dropped: 2 },
+        { ids: ['a1', 'a2'], dropped: 1 },
+      ]);
+      expect(lines.map((line) => line.fields)).toEqual([
+        { path: 'appointments/a2', field: 'startMinutes' },
+        { path: 'appointments/a3', field: 'startMinutes' },
       ]);
       live.stop();
     });

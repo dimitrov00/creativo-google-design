@@ -31,6 +31,7 @@ import {
   CartLineId,
   ClientMoneyStatsId,
   CouponGrantId,
+  CouponId,
   Currency,
   type CustomerId,
   DraftPersonKey,
@@ -63,6 +64,7 @@ import {
   CancelledBy,
   type CartLine,
   ClientStatsPolicy,
+  CouponValue,
   CustomerOrigin,
   DayWindows,
   E164,
@@ -1043,12 +1045,20 @@ export const GUEST: ClientCardSubject = {
   avatarSrc: null,
 };
 
-/** Георги's held punch-card reward (his twentieth stamp). */
+/**
+ * Георги's held punch-card reward (his twentieth stamp): a grant of the
+ * punch card's coupon — the one the catalogue's «Безплатно подстригване»
+ * reward mints (`reward-cut`'s `grantCouponId`), so the points never name
+ * it while he holds it (OR-15).
+ */
 export const GEORGI_GRANT: ClientCardGrant = {
   grantId: CouponGrantId.of('grant-dev-georgi-punch'),
+  couponId: CouponId.of('coupon-punch-free-cut'),
+  value: CouponValue.freeService(),
   title: 'Безплатно подстригване',
   valueLabel: 'Безплатна услуга',
   expiresOn: unwrapOk(LocalDate.parse('2026-10-28')),
+  couponOccasion: null,
 };
 
 export const BARBER_VIEWER: ClientCardViewer = {

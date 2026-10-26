@@ -18,6 +18,7 @@ import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
 import { PolicyRecomputeJobSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
+  hourCount,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
@@ -80,7 +81,7 @@ function jobOf(
     ),
     stalledAtUtcMs: null,
     lastFailureCode: null,
-    windowHours: 48,
+    windowHours: hourCount(48),
     ...overrides,
   };
 }
@@ -91,7 +92,7 @@ const lineAt = (
   seconds: number | null,
 ): LivePolicyLine => ({
   updatedAt: seconds === null ? null : instant(seconds),
-  windowHours,
+  windowHours: hourCount(windowHours),
 });
 
 function rig(job: PolicyRecomputeJob | null, line: LivePolicyLine) {
@@ -202,7 +203,7 @@ describe('sweepPolicyRecompute — the daily nudge for a pass that stopped movin
       {
         generation: `${PolicyRecomputeJobSystem.SWEEP_GENERATION_PREFIX}1800000500.000000000`,
         changedAt: instant(1_800_000_500),
-        windowHours: 24,
+        windowHours: hourCount(24),
       },
       FIXTURE_NOW_UTC_MS,
     );

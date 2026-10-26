@@ -266,6 +266,12 @@ export const UI_ICON_REGISTRY = {
    *  an ordinary Monday off is not. (`palm_tree` does not ship in the pinned
    *  font; `coffee`, `beach_access`, `sunny` and `deck` all do.) */
   'staff.off': 'coffee',
+  /** A chair whose day the sheet could not read in full — its read failed,
+   *  or it holds visits that cannot be shown (OR-2): the error mark in the
+   *  all-day row's disc, where `staff.off` puts its cup. Not
+   *  `schedule.outsideShift`, which shares the glyph today: that marks a
+   *  booking placed out of hours, this a day the sheet cannot vouch for. */
+  'staff.dayHealth': 'running_with_errors',
   /** What the client asked the shop to know before the chair. */
   'visit.note': 'sticky_note_2',
   /** The chair was held and nobody came. Distinct from a cancellation, which

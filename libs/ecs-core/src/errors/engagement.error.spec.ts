@@ -14,7 +14,7 @@ import {
   TierId,
   VoucherRefusal,
 } from '@core/primitives';
-import { localDate, unwrapOk, utcMs } from '@core/testing';
+import { localDate, unwrapOk } from '@core/testing';
 import {
   EngagementError,
   EngagementErrorCode,
@@ -67,6 +67,18 @@ describe('EngagementErrorCode', () => {
     );
   });
 
+  it('retires the codes whose producers the owner rulings deleted (OR-13, OR-14, OR-19, OR-28)', () => {
+    for (const retired of [
+      'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
+      'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
+      'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
+      'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
+      'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
+    ]) {
+      expect(ENGAGEMENT_ERROR_CODES).not.toContain(retired);
+    }
+  });
+
   it('names every field of the rule once, by its flat name (the admin page keys it)', () => {
     const fields = Object.values(StreakRuleField);
     expect(new Set(fields).size).toBe(fields.length);
@@ -88,15 +100,6 @@ describe('EngagementError factories', () => {
     expect(EngagementError.couponGrantNotActive(GrantStatus.Used)).toEqual({
       errorCode: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
       currentState: 'USED',
-    });
-    expect(EngagementError.couponGrantNotExpiring()).toEqual({
-      errorCode: 'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
-    });
-    expect(EngagementError.couponGrantReasonEmpty()).toEqual({
-      errorCode: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
-    });
-    expect(EngagementError.giftVoucherValueInvalid()).toEqual({
-      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
     });
     expect(
       EngagementError.giftVoucherNotRedeemable(VoucherRefusal.Expired),
@@ -145,10 +148,6 @@ describe('EngagementError factories', () => {
   });
 
   it('build the catalogue faults, a list of ids as brands', () => {
-    expect(EngagementError.badgeCategoryOrderNegative(-1)).toEqual({
-      errorCode: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
-      rawValue: -1,
-    });
     expect(
       EngagementError.loyaltyCatalogDanglingCategory(
         BadgeSeriesId.of('series-a'),
@@ -194,7 +193,7 @@ describe('EngagementError factories', () => {
     });
   });
 
-  it('build the schedule, notification and programs faults', () => {
+  it('build the schedule and programs faults', () => {
     expect(EngagementError.streakScheduleVersionNotRising(3, 3)).toEqual({
       errorCode: 'ENGAGEMENT_STREAK_SCHEDULE_VERSION_NOT_RISING',
       field: 'scheduledVersion',
@@ -211,13 +210,6 @@ describe('EngagementError factories', () => {
       field: 'scheduledEffectiveFromLocalDate',
       value: '2026-08-01',
       currentEffectiveFromLocalDate: '2026-09-01',
-    });
-    const sent = utcMs('2026-09-28T09:00:02.000+03:00');
-    const read = utcMs('2026-09-28T09:00:01.000+03:00');
-    expect(EngagementError.notificationReadBeforeSent(sent, read)).toEqual({
-      errorCode: 'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
-      sentAtUtcMs: sent,
-      readAtUtcMs: read,
     });
     expect(
       EngagementError.program(
@@ -272,7 +264,21 @@ describe('EngagementError factories', () => {
     });
   });
 
-  it('keeps the four programs save codes after the six field codes', () => {
+  it('names the shop an event names and no store holds (OR-38)', () => {
+    expect(EngagementErrorCode.ShopEventLocationUnknown).toBe(
+      'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+    );
+    const refusal = EngagementError.shopEventLocationUnknown(
+      LocationId.of('loc-gone'),
+    );
+    expect(refusal).toEqual({
+      errorCode: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+      locationId: 'loc-gone',
+    });
+    expect(Object.keys(refusal)).toEqual(['errorCode', 'locationId']);
+  });
+
+  it('keeps the five programs save codes after the six field codes', () => {
     const codes = ENGAGEMENT_ERROR_CODES;
     const at = (code: EngagementErrorCode) => codes.indexOf(code);
     expect(at(EngagementErrorCode.PositionNotFound)).toBe(
@@ -283,6 +289,7 @@ describe('EngagementError factories', () => {
       'ENGAGEMENT_COURSE_NOT_FOUND',
       'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
       'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
+      'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
     ]);
   });
 

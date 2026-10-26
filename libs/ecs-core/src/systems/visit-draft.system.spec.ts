@@ -12,6 +12,7 @@ import {
   DraftPersonKey,
   DurationMinutes,
   LocalDate,
+  MinuteOfDay,
   TrackMinute,
   Weekday,
 } from '@core/primitives';
@@ -50,9 +51,10 @@ import { VisitDraftSystem } from './visit-draft.system';
  * `MinuteOfDay` → `EndMinute`.
  *
  * Pass C, ported as values (S-23, S-24, E-14, E-15, E-18, Y-19):
- * - the grain and its snaps — the editor's and the block editor's `snap`,
- *   the dashboard's `nowSnapped` (staff-visit-editor.spec.ts :1903, :5730 —
- *   47 typed reads 45; staff-time-grid.spec.ts :851, :1582);
+ * - the grain and its snaps — the editor's and the block editor's `snap`
+ *   (staff-visit-editor.spec.ts :1903, :5730 — 47 typed reads 45;
+ *   staff-time-grid.spec.ts :851, :1582); the dashboard's `nowSnapped` is
+ *   `walkInStart` since OR-1 (staff-dashboard.spec.ts :6270);
  * - the block editor's typed pair (`commitStart`/`commitEnd`,
  *   staff-block-editor.spec.ts :183);
  * - the visit sheet's span and its two override rules — the frame
@@ -488,31 +490,85 @@ describe('the grain', () => {
     expect(S.snap(minute(1439))).toBe(1440);
   });
 
-  it('snaps UP for a start at the next tick', () => {
-    expect(S.snapUp(minute(0))).toBe(0);
-    expect(S.snapUp(minute(1))).toBe(5);
-    expect(S.snapUp(minute(4))).toBe(5);
-    expect(S.snapUp(minute(5))).toBe(5);
-    expect(S.snapUp(minute(601))).toBe(605);
-    expect(S.snapUp(minute(1435))).toBe(1435);
-    expect(S.snapUp(minute(1436))).toBe(1440);
-    expect(S.snapUp(minute(1439))).toBe(1440);
-  });
-
   it('lands every clock minute on a grain mark within half a grain (property)', () => {
     fc.assert(
       fc.property(fc.integer({ min: 0, max: 1439 }), (raw) => {
         const near = S.snap(minute(raw));
-        const up = S.snapUp(minute(raw));
         expect(near % 5).toBe(0);
         expect(Math.abs(near - raw)).toBeLessThanOrEqual(2.5);
-        expect(up % 5).toBe(0);
-        expect(up).toBeGreaterThanOrEqual(raw);
-        expect(up - raw).toBeLessThan(5);
         expect(near).toBeGreaterThanOrEqual(0);
         expect(near).toBeLessThanOrEqual(1440);
-        expect(up).toBeLessThanOrEqual(1440);
       }),
+    );
+  });
+});
+
+/*
+ * OR-1 — a walk-in is seeded where it fits inside the shop day: the next
+ * tick (the owner's ruling) until the default half hour would cross the
+ * closing midnight, then the latest half hour that fits (DEP-F1: from 23:26
+ * the ＋ seeds 23:30–24:00; the grid has no row for 24:00).
+ */
+describe('VisitDraftSystem.walkInStart — the next tick, inside the shop day', () => {
+  const HALF_HOUR = S.DEFAULT_SPAN_MINUTES;
+
+  it('starts at the next tick while the visit still fits the day', () => {
+    expect(S.walkInStart(minute(0), HALF_HOUR)).toBe(0);
+    expect(S.walkInStart(minute(1), HALF_HOUR)).toBe(5);
+    expect(S.walkInStart(minute(4), HALF_HOUR)).toBe(5);
+    expect(S.walkInStart(minute(5), HALF_HOUR)).toBe(5);
+    expect(S.walkInStart(minute(601), HALF_HOUR)).toBe(605);
+    // 23:25 + 30 minutes ends at midnight sharp: still the next tick.
+    expect(S.walkInStart(minute(1405), HALF_HOUR)).toBe(1405);
+    expect(S.walkInStart(minute(1406), HALF_HOUR)).toBe(1410);
+  });
+
+  it('holds the latest start that fits once the next tick would cross midnight (DEP-F1)', () => {
+    expect(S.walkInStart(minute(1411), HALF_HOUR)).toBe(1410);
+    expect(S.walkInStart(minute(1435), HALF_HOUR)).toBe(1410);
+    expect(S.walkInStart(minute(1436), HALF_HOUR)).toBe(1410);
+    expect(S.walkInStart(minute(1439), HALF_HOUR)).toBe(1410);
+    // A longer span pulls the latest start back with it: 23:20 for an hour
+    // is 23:00.
+    expect(S.walkInStart(minute(1400), d(60))).toBe(1380);
+    // A span off the grain still starts on it: 1440 − 7 floors to 1430.
+    expect(S.walkInStart(minute(1439), d(7))).toBe(1430);
+  });
+
+  it('never starts before the day’s first minute — a whole day starts at 00:00', () => {
+    expect(S.walkInStart(minute(720), d(1440))).toBe(0);
+    expect(S.walkInStart(minute(720), d(1500))).toBe(0);
+  });
+
+  it('answers a minute of the day — never the closing midnight', () => {
+    const start: MinuteOfDay = S.walkInStart(minute(1439), HALF_HOUR);
+    expect(MinuteOfDay.is(start)).toBe(true);
+  });
+
+  it('lands on the grain and ends by midnight, at the next tick whenever that fits (every minute × spans 5–240)', () => {
+    const broken: string[] = [];
+    for (let span = 5; span <= 240; span++) {
+      const minutes = d(span);
+      for (let raw = 0; raw < 1440; raw++) {
+        const start = S.walkInStart(minute(raw), minutes);
+        const nextTick = Math.ceil(raw / 5) * 5;
+        const fits = start % 5 === 0 && start + span <= 1440;
+        // Pulled back only as far as the day demands: the next tick, or a
+        // start one grain later would already cross midnight.
+        const tight =
+          start === nextTick || (start < nextTick && start + 5 + span > 1440);
+        if (!fits || !tight) broken.push(`${raw}+${span}→${start}`);
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+
+  it('is pure: same input → same output', () => {
+    expect(S.walkInStart(minute(1406), HALF_HOUR)).toBe(
+      S.walkInStart(minute(1406), HALF_HOUR),
+    );
+    expect(S.walkInStart(minute(1439), d(60))).toBe(
+      S.walkInStart(minute(1439), d(60)),
     );
   });
 });
@@ -520,9 +576,7 @@ describe('the grain', () => {
 describe('the grain and the person key, branded (pass D)', () => {
   it('answers a snapped mark as a TrackMinute — the closing midnight included, never refused', () => {
     const near: TrackMinute = S.snap(minute(1439));
-    const up: TrackMinute = S.snapUp(minute(1436));
     expect(near).toBe(1440);
-    expect(up).toBe(1440);
     expect(TrackMinute.toStart(near).ok).toBe(false);
     expect(TrackMinute.toEnd(near).ok).toBe(true);
   });
@@ -781,7 +835,9 @@ describe('VisitDraftSystem — purity', () => {
       S.spanToEnd(minute(600), minute(15)),
     );
     expect(S.snap(minute(47))).toBe(S.snap(minute(47)));
-    expect(S.snapUp(minute(47))).toBe(S.snapUp(minute(47)));
+    expect(S.walkInStart(minute(47), d(30))).toBe(
+      S.walkInStart(minute(47), d(30)),
+    );
   });
 
   it('reads back every shortcut it makes, from any start (property)', () => {

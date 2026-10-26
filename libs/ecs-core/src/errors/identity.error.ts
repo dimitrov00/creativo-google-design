@@ -67,7 +67,10 @@ export const IdentityErrorCode = {
     'IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION',
   /** The deployment's strategy challenges another channel than the one asked for. */
   OtpChannelMismatch: 'IDENTITY_OTP_CHANNEL_MISMATCH',
-  /** An open challenge for the destination is younger than the resend window. */
+  /**
+   * An open challenge for the destination is younger than the resend window
+   * — `retryAfterSeconds` says how long is left (OR-9).
+   */
   OtpRateLimited: 'IDENTITY_OTP_RATE_LIMITED',
   /** No `otps/{id}` — an unknown or purged challenge. */
   OtpNotFound: 'IDENTITY_OTP_NOT_FOUND',
@@ -284,8 +287,16 @@ export const IdentityError = {
       authStrategyKind,
     };
   },
-  otpRateLimited(): IdentityError.OtpRateLimited {
-    return { errorCode: IdentityErrorCode.OtpRateLimited };
+  /**
+   * `retryAfterSeconds` is `OtpSystem.retryAfterSeconds` of the refused
+   * request — the whole seconds left on the destination's resend window,
+   * at least 1 (OR-9).
+   */
+  otpRateLimited(retryAfterSeconds: number): IdentityError.OtpRateLimited {
+    return {
+      errorCode: IdentityErrorCode.OtpRateLimited,
+      retryAfterSeconds,
+    };
   },
   otpNotFound(): IdentityError.OtpNotFound {
     return { errorCode: IdentityErrorCode.OtpNotFound };
@@ -444,6 +455,11 @@ export namespace IdentityError {
   };
   export type OtpRateLimited = {
     readonly errorCode: typeof IdentityErrorCode.OtpRateLimited;
+    /**
+     * Whole seconds until a new code may go to the destination, at least 1
+     * — the code step restarts its resend countdown from it (OR-9, DEP-F8).
+     */
+    readonly retryAfterSeconds: number;
   };
   export type OtpNotFound = {
     readonly errorCode: typeof IdentityErrorCode.OtpNotFound;

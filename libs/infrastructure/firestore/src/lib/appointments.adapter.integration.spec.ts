@@ -18,6 +18,7 @@ import {
   createEmulatorTestEnv,
   modularFirestore,
 } from '../testing/emulator-test-env';
+import { UNGUARDED } from '../testing/unguarded';
 import { appointmentReadPorts } from './appointments.adapter';
 
 const GEORGI = CustomerId.of('cus_georgi');
@@ -44,8 +45,16 @@ function visit(fields: {
   };
 }
 
+/**
+ * The ports under test. The seeded visits are DELIBERATELY partial — the
+ * query keys alone (`visit`), what every query and rule here reads — so the
+ * reads pass the test support's `UNGUARDED` (OR-33): this spec proves the
+ * queries and the rules. The guard is proved by `appointments.adapter.spec.ts`
+ * and, over the emulator, by the functions' integration specs, which read
+ * their whole visits through the real one.
+ */
 const portsFor = (context: RulesTestContext) =>
-  appointmentReadPorts(modularFirestore(context));
+  appointmentReadPorts(modularFirestore(context), UNGUARDED);
 
 describe('appointmentReadPorts (emulator)', () => {
   let testEnv: RulesTestEnvironment;
@@ -222,7 +231,12 @@ describe('appointmentReadPorts (emulator)', () => {
         portsFor(barber()).observeBarberDay(IVAN_MONDAY),
       );
 
-      expect(day.ok && day.value.map((a) => a.id)).toEqual(['early', 'late']);
+      expect(day.ok && day.value.appointments.map((a) => a.id)).toEqual([
+        'early',
+        'late',
+      ]);
+      // Every visit read cleanly: nothing for the sheet to say (OR-2).
+      expect(day.ok && day.value.unreadableCount).toBe(0);
     });
 
     it('searchAppointmentWindow reads the two halves around now on utcEpochMs alone — the single-field index, no composite', async () => {

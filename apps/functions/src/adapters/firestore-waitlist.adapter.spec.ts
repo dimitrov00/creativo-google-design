@@ -15,9 +15,10 @@ import { createProjectionFirestore } from '../test-support/fake-projection-fires
 import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
 
 /*
- * The waitlist's server reads, over the in-memory Admin SDK: the requests
+ * The waitlist's server read, over the in-memory Admin SDK: the requests
  * still OPEN on a day (`waitlistStatus ==` ∧ `localDates array-contains`,
- * index #14) and one request by id — bodies as stored.
+ * index #14) — bodies as stored. The read of one request by id is gone
+ * (OR-28: no caller).
  */
 
 const MONDAY = localDate('2026-09-28');
@@ -75,15 +76,9 @@ describe('firestoreWaitlistPorts', () => {
     });
   });
 
-  it('reads one request by id, `null` when absent', async () => {
+  it('builds the open-requests read alone — no read of one request by id (OR-28)', () => {
     const ports = firestoreWaitlistPorts(seeded().db as unknown as Firestore);
-    expect(await ports.loadWaitlistRequest(matched.id)).toEqual({
-      ok: true,
-      value: matched,
-    });
-    expect(
-      await ports.loadWaitlistRequest(WaitlistRequestId.of('wl_gone')),
-    ).toEqual({ ok: true, value: null });
+    expect(Object.keys(ports)).toEqual(['loadOpenWaitlist']);
   });
 
   it('answers a read that throws as a value, the canonical code its reason', async () => {

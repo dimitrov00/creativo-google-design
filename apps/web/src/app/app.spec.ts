@@ -45,9 +45,10 @@ describe('App', () => {
         { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
         // No account signed in: an empty profile store.
         { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
-        // E2eSignInHookService (only wired in dev mode, which TestBed runs
-        // under) injects FIREBASE_AUTH just to stash a window hook — never
-        // called in this spec, so an opaque stand-in is enough.
+        // E2eSignInHookService (wired while the emulators are on — the
+        // default environment this spec builds with) injects FIREBASE_AUTH
+        // just to stash a window hook — never called in this spec, so an
+        // opaque stand-in is enough.
         { provide: FIREBASE_AUTH, useValue: {} },
       ],
     }).compileComponents();

@@ -14,7 +14,7 @@ import {
   MinuteDelta,
   LocalDate,
   TrackMinute,
-  type MinuteOfDay,
+  MinuteOfDay,
 } from '@core/primitives';
 import type { TrackSpan } from './grid-layout.system';
 import { RecurrenceSystem } from './recurrence.system';
@@ -179,6 +179,8 @@ function fitted(
  * - the five-minute grain every authored time lands on, and the typed
  *   pair of a block (`block-editor/staff-block-editor.ts`
  *   `commitStart`/`commitEnd`) — pass C;
+ * - where a walk-in starts — the next tick, inside the shop day (the staff
+ *   dashboard's `nowSnapped`, OR-1);
  * - the visit's span and the placeholder seats
  *   (`visit-editor/staff-visit-editor.ts` `spanOf`/`seedDraft`/
  *   `adoptPlaceholderLegs`), the frame's and the typed figure's two
@@ -223,16 +225,24 @@ export const VisitDraftSystem = {
   },
 
   /**
-   * A clock minute pulled UP to the next grain mark — a walk-in starts at
-   * the next tick. A track minute out, in `[0, 1440]` (`1436`–`1439` land
-   * on `1440`).
+   * WHERE A WALK-IN STARTS (OR-1): `now` pulled UP to the next grain mark —
+   * a walk-in starts at the next tick — unless a visit of `span` minutes
+   * would then run past the closing midnight; from there on, the latest
+   * grain mark it still fits before 24:00 (`1440 − span`, floored to the
+   * grain), so what the grid draws is what the server accepts (one shop day
+   * per visit, F-6). With the default half hour that is the next tick until
+   * 23:25, and 23:30 from 23:26 on (DEP-F1). Never before the day's first
+   * minute: a span of a whole day or more starts at 00:00. A minute of the
+   * day out — never the closing midnight, which has no height on the grid.
    */
-  snapUp(minute: MinuteOfDay): TrackMinute {
-    // A whole minute in [0, 1440) raised to the 5-minute grain: a whole
-    // number in [0, 1440] — on the track by construction.
-    return TrackMinute.ofProven(
-      Math.ceil(minute / GRAIN_MINUTES) * GRAIN_MINUTES,
-    );
+  walkInStart(now: MinuteOfDay, span: DurationMinutes): MinuteOfDay {
+    const nextTick = Math.ceil(now / GRAIN_MINUTES) * GRAIN_MINUTES;
+    const latestFit =
+      Math.floor((DAY_MINUTES - span) / GRAIN_MINUTES) * GRAIN_MINUTES;
+    // Both whole; a span of at least one minute holds the fit at or below
+    // 1435, and the floor at 0 keeps it on the day — a minute of the day by
+    // construction.
+    return MinuteOfDay.ofProven(Math.max(0, Math.min(nextTick, latestFit)));
   },
 
   /**

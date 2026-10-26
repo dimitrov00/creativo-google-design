@@ -38,26 +38,6 @@ export const DayWindows = {
     return day.windows.length === 0;
   },
 
-  /** Add a span, re-normalizing — the window sheet's only write. */
-  withWindow(day: DayWindows, range: MinuteRange): DayWindows {
-    return DayWindows.of(day.localDate, [...day.windows, range]);
-  },
-
-  /** Drop the span at `index`; out of range is a no-op, not a throw. */
-  withoutWindow(day: DayWindows, index: number): DayWindows {
-    if (index < 0 || index >= day.windows.length) return day;
-    const kept: MinuteRange[] = [];
-    for (let i = 0; i < day.windows.length; i++) {
-      if (i !== index) kept.push(day.windows[i] as MinuteRange);
-    }
-    return { localDate: day.localDate, windows: kept };
-  },
-
-  /** Back to "any time" — the way out of over-specifying. */
-  clearWindows(day: DayWindows): DayWindows {
-    return DayWindows.wholeDay(day.localDate);
-  },
-
   /**
    * The edge guard for a stored or persisted value: a real shop day and an
    * array of integer spans inside the day with `start < end`. Normalization

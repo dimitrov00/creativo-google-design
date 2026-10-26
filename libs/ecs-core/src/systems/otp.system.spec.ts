@@ -47,6 +47,7 @@ import { type OtpChallenge, OtpLimits, OtpSystem } from './otp.system';
  */
 
 const T0 = utcMs('2026-01-01T00:00:00.000Z');
+const SECOND = 1_000;
 const MINUTE = 60_000;
 const at = (minutes: number, seconds = 0): UtcEpochMs =>
   UtcEpochMs.plusMs(T0, minutes * MINUTE + seconds * 1_000);
@@ -333,8 +334,14 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
 
   it('throttles inclusively at the window edge, and never on a consumed challenge', () => {
     expect(
-      OtpSystem.mayIssue([issued(T0)], at(OtpLimits.ResendWindowMinutes)),
+      OtpSystem.mayIssue([issued(T0)], at(0, OtpLimits.ResendWindowSeconds)),
     ).toBe(false);
+    expect(
+      OtpSystem.mayIssue(
+        [issued(T0)],
+        UtcEpochMs.plusMs(at(0, OtpLimits.ResendWindowSeconds), 1),
+      ),
+    ).toBe(true);
     expect(
       OtpSystem.mayIssue([stored({ consumedAtUtcMs: T0 })], at(0, 30)),
     ).toBe(true);
@@ -366,6 +373,13 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
     ).toBe(true);
   });
 
+  it('owns the figures the client reads — a 60 s resend window, escalation from the third send (OR-9, OR-10)', () => {
+    expect(OtpLimits).toEqual({
+      ResendWindowSeconds: 60,
+      EscalateAfterSends: 3,
+    });
+  });
+
   it('issues no code challenge at all under a magic-link deployment', () => {
     const link = unwrapOk(
       AuthStrategy.parse({
@@ -383,6 +397,76 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
     const otp = issued(T0, { ttlMinutes: ttl(7), maxAttempts: 2 });
     expect(otp.maxAttempts).toBe(2);
     expect(otp.expiresAtUtcMs).toBe(at(7));
+  });
+});
+
+describe('OtpSystem.retryAfterSeconds (OR-9)', () => {
+  it('counts down the 60 s window of a challenge created at T0 — 60 at 0 s, 59 at 1 s, 1 at 59 s', () => {
+    const open = [issued(T0)];
+    expect(OtpSystem.retryAfterSeconds(open, at(0, 0))).toBe(60);
+    expect(OtpSystem.retryAfterSeconds(open, at(0, 1))).toBe(59);
+    expect(OtpSystem.retryAfterSeconds(open, at(0, 59))).toBe(1);
+  });
+
+  it('rounds what remains UP — a part second left is a whole second to wait', () => {
+    const open = [issued(T0)];
+    expect(OtpSystem.retryAfterSeconds(open, UtcEpochMs.plusMs(T0, 1))).toBe(
+      60,
+    );
+    expect(
+      OtpSystem.retryAfterSeconds(open, UtcEpochMs.plusMs(at(0, 58), 1)),
+    ).toBe(2);
+    expect(
+      OtpSystem.retryAfterSeconds(open, UtcEpochMs.plusMs(at(0, 59), 999)),
+    ).toBe(1);
+  });
+
+  it("answers 1 at 60 s — the window's last instant still throttles, so a refusal never says 0 — and 0 one millisecond past it", () => {
+    const open = [issued(T0)];
+    expect(OtpSystem.mayIssue(open, at(0, 60))).toBe(false);
+    expect(OtpSystem.retryAfterSeconds(open, at(0, 60))).toBe(1);
+    const past = UtcEpochMs.plusMs(at(0, 60), 1);
+    expect(OtpSystem.mayIssue(open, past)).toBe(true);
+    expect(OtpSystem.retryAfterSeconds(open, past)).toBe(0);
+  });
+
+  it('is 0 when the destination is free — no challenge, or only ones outside the window', () => {
+    expect(OtpSystem.retryAfterSeconds([], T0)).toBe(0);
+    expect(OtpSystem.retryAfterSeconds([issued(T0)], at(2))).toBe(0);
+  });
+
+  it('ignores a consumed challenge — it neither throttles nor counts', () => {
+    expect(
+      OtpSystem.retryAfterSeconds([stored({ consumedAtUtcMs: T0 })], at(0, 1)),
+    ).toBe(0);
+    expect(
+      OtpSystem.retryAfterSeconds(
+        [
+          stored({ createdAtUtcMs: at(0, 30), consumedAtUtcMs: at(0, 31) }),
+          stored({ createdAtUtcMs: T0 }),
+        ],
+        at(0, 40),
+      ),
+    ).toBe(20);
+  });
+
+  it('counts from the NEWEST open challenge, whatever the read order', () => {
+    const older = stored({ createdAtUtcMs: T0 });
+    const newer = stored({ createdAtUtcMs: at(0, 45) });
+    expect(OtpSystem.retryAfterSeconds([older, newer], at(0, 50))).toBe(55);
+    expect(OtpSystem.retryAfterSeconds([newer, older], at(0, 50))).toBe(55);
+  });
+});
+
+describe('OtpSystem.escalates (OR-10)', () => {
+  it('escalates from the third send on — 2 → false, 3 → true', () => {
+    expect(OtpSystem.escalates(0)).toBe(false);
+    expect(OtpSystem.escalates(1)).toBe(false);
+    expect(OtpSystem.escalates(2)).toBe(false);
+    expect(OtpSystem.escalates(3)).toBe(true);
+    expect(OtpSystem.escalates(4)).toBe(true);
+    expect(OtpSystem.escalates(OtpLimits.EscalateAfterSends)).toBe(true);
+    expect(OtpSystem.escalates(OtpLimits.EscalateAfterSends - 1)).toBe(false);
   });
 });
 
@@ -447,9 +531,54 @@ describe('OtpSystem properties', () => {
             (otp) =>
               otp.consumedAtUtcMs === null &&
               otp.createdAtUtcMs >=
-                nowUtcMs - OtpLimits.ResendWindowMinutes * MINUTE,
+                nowUtcMs - OtpLimits.ResendWindowSeconds * SECOND,
           );
           expect(OtpSystem.mayIssue(open, nowUtcMs)).toBe(brute);
+        },
+      ),
+    );
+  });
+
+  it('retryAfterSeconds equals the brute-force ceiling of the newest open window, and is 0 exactly when mayIssue', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            created: fc.integer({ min: -3 * MINUTE, max: 0 }),
+            consumed: fc.boolean(),
+          }),
+          { maxLength: 6 },
+        ),
+        (rows) => {
+          const nowUtcMs = T0;
+          const open = rows.map((row) =>
+            stored({
+              createdAtUtcMs: UtcEpochMs.plusMs(nowUtcMs, row.created),
+              consumedAtUtcMs: row.consumed ? nowUtcMs : null,
+            }),
+          );
+          const windowMs = OtpLimits.ResendWindowSeconds * SECOND;
+          const throttling = open.filter(
+            (otp) =>
+              otp.consumedAtUtcMs === null &&
+              otp.createdAtUtcMs >= nowUtcMs - windowMs,
+          );
+          const brute =
+            throttling.length === 0
+              ? 0
+              : Math.max(
+                  1,
+                  Math.ceil(
+                    (Math.max(...throttling.map((o) => o.createdAtUtcMs)) +
+                      windowMs -
+                      nowUtcMs) /
+                      SECOND,
+                  ),
+                );
+          const seconds = OtpSystem.retryAfterSeconds(open, nowUtcMs);
+          expect(seconds).toBe(brute);
+          expect(seconds === 0).toBe(OtpSystem.mayIssue(open, nowUtcMs));
+          expect(seconds).toBeLessThanOrEqual(OtpLimits.ResendWindowSeconds);
         },
       ),
     );
@@ -468,10 +597,14 @@ describe('OtpSystem purity', () => {
       wrong: OtpSystem.attempt(otp, false, at(1)),
       recorded: OtpSystem.recordAttempt(otp),
       mayIssue: OtpSystem.mayIssue(open, at(0, 30)),
+      retryAfterSeconds: OtpSystem.retryAfterSeconds(open, at(0, 30)),
+      escalates: OtpSystem.escalates(OtpLimits.EscalateAfterSends),
     });
     const once = run();
     const twice = run();
     expect(twice).toEqual(once);
+    expect(once.retryAfterSeconds).toBe(30);
     expect(otp).toEqual(stored());
+    expect(open).toEqual([stored({ createdAtUtcMs: T0 })]);
   });
 });

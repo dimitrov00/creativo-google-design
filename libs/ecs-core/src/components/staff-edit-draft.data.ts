@@ -114,10 +114,16 @@ export namespace StaffEditDraft {
     readonly availableCents: PriceCents;
   };
 
-  /** One person on the visit — the sheet's draft key, the name it shows and their number. */
+  /**
+   * One person on the visit — the sheet's draft key, the name it shows, and
+   * the number and the e-mail the desk has for them (`null` for none), as
+   * typed: the plan parses both into the guest's contact (OR-26), so what
+   * the barber typed reaches the server's walk-in record.
+   */
   export type Client = {
     readonly id: DraftPersonKey;
     readonly label: string;
     readonly phone: string | null;
+    readonly email: string | null;
   };
 }

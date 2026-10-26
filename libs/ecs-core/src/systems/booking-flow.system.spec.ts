@@ -11,7 +11,6 @@ import {
   SeatKey,
   DayWindows,
   FlexibleWhen,
-  MinuteRange,
   Party,
   PartyMember,
   SeatLabel,
@@ -616,37 +615,19 @@ describe('BookingFlowSystem.next — the schedule step', () => {
     ).toBe(LIMITS.maxFlexibleDays - 1);
   });
 
-  it('narrows a selected day, ignores an unselected one, and clears the declaration', () => {
-    let state: BookingFlowState = unwrapOk(
+  it('watches a selected day whole, and clears the declaration', () => {
+    const state: BookingFlowState = unwrapOk(
       next(scheduleState(), {
         bookingFlowEventKind: E.ToggleFlexibleDay,
         localDate: day('2026-09-10'),
       }),
     );
-    state = unwrapOk(
-      next(state, {
-        bookingFlowEventKind: E.SetDayWindows,
-        dayWindows: DayWindows.of(day('2026-09-10'), [
-          MinuteRange.of(minute(480), endMinute(720)),
-        ]),
-      }),
-    );
-    state = unwrapOk(
-      next(state, {
-        bookingFlowEventKind: E.SetDayWindows,
-        dayWindows: DayWindows.of(day('2026-09-11'), [
-          MinuteRange.of(minute(480), endMinute(720)),
-        ]),
-      }),
-    );
     if (state.bookingFlowStep !== BookingFlowStep.Schedule)
       throw new Error('unexpected');
+    // The client watches one WHOLE day (owner, 2026-08-01): no window verb
+    // narrows it (OR-23).
     expect(state.when).toEqual(
-      FlexibleWhen.of([
-        DayWindows.of(day('2026-09-10'), [
-          MinuteRange.of(minute(480), endMinute(720)),
-        ]),
-      ]),
+      FlexibleWhen.of([DayWindows.wholeDay(day('2026-09-10'))]),
     );
     const cleared = unwrapOk(
       next(state, { bookingFlowEventKind: E.ClearFlexible }),

@@ -1,5 +1,6 @@
 import {
   type Firestore,
+  type Query,
   type QueryConstraint,
   collection,
   doc,
@@ -23,12 +24,12 @@ import { PagingSystem, type StoredDocument } from '@core/systems';
 import {
   keepAdmitted,
   ListAdmission,
+  observeCountedQuery,
   observeDoc,
   observeQuery,
   type ReadGuard,
   readFailed,
-  readQuery,
-  UNGUARDED,
+  readRawQuery,
 } from './observe';
 
 /** Ascending by the absolute start — the order a day sheet reads in. */
@@ -69,28 +70,41 @@ const resumable = (cursor: UtcEpochMs | null): UtcEpochMs | null =>
  * keeps none — the search's two halves admitted together, the history
  * judged on its first page (a later page that drops every row answers an
  * empty page and the history goes on) — c1db661's list posture, plus the
- * report and the systemic rule; `observeUpcoming` stays STRICT (a booking
- * you cannot see is a booking you cannot cancel). A bare
- * `appointmentReadPorts(db)` guards nothing.
+ * report and the systemic rule; the staff day answers how many it dropped
+ * (`BarberDayRead.unreadableCount`, OR-2); `observeUpcoming` stays STRICT (a booking
+ * you cannot see is a booking you cannot cancel). The guard is REQUIRED
+ * (OR-33, DEP-F24): a bare `appointmentReadPorts(db)` does not type-check,
+ * and the raw reads the page and the search cut before admitting
+ * (`readRawQuery`) are admitted through it.
  */
 export const appointmentReadPorts = (
   db: Firestore,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard,
 ): AppointmentReadPorts => {
   const path = Collections.Appointments;
   const appointments = collection(db, path);
 
   /**
-   * A person's visits (as company too), newest start first — read RAW (no
-   * guard): the page and its cursor are cut on the rows as read, and only
-   * then is the page admitted (`pageOf`).
+   * Visits read RAW (`readRawQuery`, no guard) — typed as visits for
+   * `PagingSystem`'s cut alone, which keys them by their instant and id:
+   * the page and its cursor are cut on the rows as read, and only then is
+   * the page admitted (`admitPage`).
    */
+  const rawVisits = async (
+    raw: Query,
+  ): Promise<Result<readonly Appointment[], RepositoryError>> =>
+    (await readRawQuery(raw, path)) as unknown as Result<
+      readonly Appointment[],
+      RepositoryError
+    >;
+
+  /** A person's visits (as company too), newest start first — read RAW. */
   const newestFirst = (
     theirs: QueryConstraint,
     before: readonly QueryConstraint[],
     max: number,
   ) =>
-    readQuery<Appointment>(
+    rawVisits(
       query(
         appointments,
         theirs,
@@ -98,7 +112,6 @@ export const appointmentReadPorts = (
         orderBy('utcEpochMs', 'desc'),
         limit(max),
       ),
-      path,
     );
 
   /**
@@ -179,9 +192,8 @@ export const appointmentReadPorts = (
         : page;
     }
     const [sameInstant, older] = await Promise.all([
-      readQuery<Appointment>(
+      rawVisits(
         query(appointments, theirs, where('utcEpochMs', '==', step.boundary)),
-        path,
       ),
       newestFirst(theirs, [where('utcEpochMs', '<', step.boundary)], 1),
     ]);
@@ -213,7 +225,7 @@ export const appointmentReadPorts = (
     limitPerSide: number,
   ): Promise<Result<readonly Appointment[], RepositoryError>> => {
     const [past, upcoming] = await Promise.all([
-      readQuery<StoredDocument>(
+      readRawQuery(
         query(
           appointments,
           where('utcEpochMs', '<', nowUtcMs),
@@ -222,7 +234,7 @@ export const appointmentReadPorts = (
         ),
         path,
       ),
-      readQuery<StoredDocument>(
+      readRawQuery(
         query(
           appointments,
           where('utcEpochMs', '>=', nowUtcMs),
@@ -250,16 +262,24 @@ export const appointmentReadPorts = (
      * `busyKeys array-contains` (single-field, the key the busy projection
      * is rebuilt from), sorted by start here because an `orderBy` beside it
      * would need a composite index for a handful of documents. Cancelled
-     * rows included: the sheet greys them rather than leaving a gap.
+     * rows included: the sheet greys them rather than leaving a gap. The
+     * visits the guard dropped are COUNTED beside the rest
+     * (`unreadableCount`, OR-2 — `admitCounted`, the same loop that drops
+     * them), so the sheet says a chair holds visits it cannot show.
      */
     observeBarberDay: (key) =>
-      observeQuery<Appointment>(
+      observeCountedQuery<Appointment>(
         query(appointments, where('busyKeys', 'array-contains', key)),
         path,
         guard,
       ).pipe(
         map((answer) =>
-          answer.ok ? Result.ok([...answer.value].sort(byStart)) : answer,
+          answer.ok
+            ? Result.ok({
+                appointments: [...answer.value.kept].sort(byStart),
+                unreadableCount: answer.value.dropped,
+              })
+            : answer,
         ),
       ),
 

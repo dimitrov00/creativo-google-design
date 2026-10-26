@@ -37,6 +37,7 @@ import {
   AppointmentId,
   BarberId,
   CartLineId,
+  CustomerId,
   GuestId,
   LocationId,
   SeatKeyText,
@@ -1229,6 +1230,8 @@ describe('BookingCartSystem.toCommitSeats — the commit request', () => {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Maria',
         guestKey: 'guest-0',
+        // A client's cart files no guest's contact (OR-26).
+        contact: null,
       },
     ]);
     const first = seats?.[0] as unknown as Record<string, unknown>;
@@ -1288,6 +1291,23 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
           : [],
       ),
     ).toEqual(['Иван (син)']);
+  });
+
+  it('keeps a walk-in the shop keeps a record for as a guest by their stored label — never as an account (OR-26)', () => {
+    const walkIn = SeatOccupant.walkIn(
+      CustomerId.of('cus_0123456789abcdef0123'),
+      SeatLabel.of('Мария'),
+    );
+    const bag = prefilled(
+      [
+        seat(account('client-1', SubjectRelationship.Self), 'ivan', 'svc-fade'),
+        seat(walkIn, 'stefan', 'svc-fade'),
+        seat(walkIn, 'stefan', 'svc-beard'),
+      ],
+      PrefillCompanions.CarriedByServer,
+    );
+    expect(guestLabels(bag.party)).toEqual(['Мария']);
+    expect(linesPerPerson(bag.cart)).toEqual([1, 2]);
   });
 
   it('keeps the stored names on a repeat too, and numbers a nameless companion around them', () => {

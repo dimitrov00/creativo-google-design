@@ -12,9 +12,10 @@ import type { ShopLocation } from '@core/entities';
 export const ShopZoneSystem = {
   /**
    * The named location's zone; else the fallback (the default location)'s;
-   * `null` when neither is stored — each boundary answers that with its own
-   * refusal (`ProgramsSystem.zoneOf`'s `ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN`,
-   * `resolveShopZone`'s `CATALOG_LOCATION_ZONE_UNKNOWN`).
+   * `null` when neither is stored — the boundary answers that with its own
+   * refusal (`resolveShopZone`'s `CATALOG_LOCATION_ZONE_UNKNOWN`). An event's
+   * shop no longer falls back (OR-38): `ProgramsSystem.zoneOf` reads the one
+   * shop it names.
    */
   zoneOf(
     named: ShopLocation | null,

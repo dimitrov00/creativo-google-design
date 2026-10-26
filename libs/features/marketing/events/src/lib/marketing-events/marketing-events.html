@@ -75,18 +75,18 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="events-list">
-          @for (event of current.data; track event.id) {
+          @for (row of current.data; track row.id) {
           <a
             uiListRow
             [uiInteractive]="true"
-            [href]="applyHref(event)"
+            [href]="row.href"
             target="_blank"
             rel="noopener"
           >
             <ui-stack uiSpacing="none">
-              <span>{{ text(event.title) }}</span>
+              <span>{{ row.title }}</span>
               <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ formatDate(event) }}</span
+                >{{ row.whenLine }}</span
               >
             </ui-stack>
             <ui-icon uiTrailing uiName="link.external" />

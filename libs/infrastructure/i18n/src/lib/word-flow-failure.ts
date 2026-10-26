@@ -16,9 +16,10 @@ import { translateCodedError } from './translate-coded-error';
  *
  * - a failed call (`PipelineError`) words as the server's own code, else the
  *   surfaces' own generic copy — `errors.<serverErrorCode>`, else
- *   `errors.IDENTITY_CALL_FAILED` — with no parameters (the wire's
- *   `serverParams` never reach these lines, as before; unlike
- *   `wordPipelineError`, no reason one level down is tried);
+ *   `errors.IDENTITY_CALL_FAILED` — with no parameters but one: a throttled
+ *   code request's allowlisted `retryAfterSeconds`, the seconds its copy
+ *   names (OR-9); no other `serverParams` reach these lines, and unlike
+ *   `wordPipelineError`, no reason one level down is tried;
  * - every other refusal words as itself, `errors.<errorCode>` with its own
  *   fields as the parameters ({@link translateCodedError}).
  */
@@ -27,9 +28,15 @@ export function wordFlowFailure(
   failure: OnboardingFailure,
 ): string {
   if (PipelineError.isPipelineError(failure)) {
-    return translateCodedError(transloco, {
-      errorCode: failure.serverErrorCode ?? IdentityErrorCode.CallFailed,
-    });
+    const errorCode = failure.serverErrorCode ?? IdentityErrorCode.CallFailed;
+    // A throttled send names the seconds left (OR-9): the copy's one
+    // parameter, from the refusal's allowlisted `retryAfterSeconds`.
+    return errorCode === IdentityErrorCode.OtpRateLimited
+      ? translateCodedError(transloco, {
+          errorCode,
+          retryAfterSeconds: failure.serverParams['retryAfterSeconds'] ?? null,
+        })
+      : translateCodedError(transloco, { errorCode });
   }
   return translateCodedError(transloco, failure);
 }

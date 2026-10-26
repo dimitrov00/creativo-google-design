@@ -3,6 +3,7 @@ import {
   AuditAction,
   BillPending,
   type BookingCall,
+  BookingLifecycle,
   Combinability,
   CouponValue,
   DiscountMethod,
@@ -18,6 +19,7 @@ import {
 } from '@core/components';
 import {
   Result,
+  type BookingStatus,
   type Currency,
   AppliedDiscountId,
   type CouponGrantId,
@@ -149,6 +151,9 @@ export type DraftBill = {
   /** What came off altogether: the lines' amounts and the covers. */
   readonly takenCents: PriceCents;
 };
+
+/** The lifecycle slice a release reads — a whole appointment passes (Law 3). */
+export type HoldingsStatus = { readonly bookingStatus: BookingStatus };
 
 /** The seat slice a tip sum reads — a whole seat passes (Law 3). */
 export type SeatTip = Pick<Seat, 'tipCents' | 'currency'>;
@@ -460,8 +465,9 @@ export const BillingSystem = {
    * stored (the same grant, the same code, the same manual figure — a
    * promise once kept is not withdrawn by a coupon retired since) or NEW, a
    * snapshot stamped `nowUtcMs`. A NEW grant must be the owner's own (the
-   * visit's `ownerCustomerId`, D29) and still usable; a new code must have opened a coupon; a NEW manual figure
-   * needs a role that handles money (`FORBIDDEN` otherwise — keeping one
+   * visit's `ownerCustomerId`, D29) and still usable — refused as `grant`
+   * otherwise (OR-13); a new code must have opened a coupon; a NEW manual
+   * figure needs a role that handles money (`FORBIDDEN` otherwise — keeping one
    * somebody else set does not). Then the set: at most one manual figure, an
    * exclusive coupon alone, no promise twice.
    */
@@ -495,6 +501,8 @@ export const BillingSystem = {
             settled.push(kept);
             break;
           }
+          // A grant that no longer applies — not found, spent, expired, or
+          // another client's — is its own answer (OR-13): `grant`.
           const grant = item.resolved;
           if (
             grant === null ||
@@ -502,7 +510,7 @@ export const BillingSystem = {
             ownerCustomerId === null ||
             ownerCustomerId !== grant.customerId
           ) {
-            return invalid('discounts');
+            return invalid('grant');
           }
           settled.push({
             discountId: AppliedDiscountId.of(`grant:${grant.grantId}`),
@@ -574,6 +582,25 @@ export const BillingSystem = {
       return invalid('discounts');
     }
     return Result.ok(settled);
+  },
+
+  /**
+   * Does this move give the visit's holdings back — its voucher draws to
+   * their balances and its coupon grants to the wallet (OR-13, DEP-F10b)?
+   * The ONE predicate both give-backs read (`VoucherSystem.restorePlan`,
+   * `CouponGrantSystem.releasePlan`): value the client holds is consumed
+   * only by a visit that happened, so the move releases when it ENDS the
+   * visit cancelled or no-show from a status that did not
+   * (`BookingLifecycle.didNotHappen`). A completed visit keeps what it
+   * spent; a reopen releases nothing and re-burns nothing (the barber
+   * re-adds the reward or the voucher), and a cancelled visit marked
+   * no-show, or the reverse, gives nothing back twice.
+   */
+  releasesHoldings(before: HoldingsStatus, after: HoldingsStatus): boolean {
+    return (
+      BookingLifecycle.didNotHappen(after) &&
+      !BookingLifecycle.didNotHappen(before)
+    );
   },
 
   /**

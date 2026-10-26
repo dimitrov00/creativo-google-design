@@ -13,11 +13,13 @@
       ".git",
       "firebase-debug.log",
       "firebase-debug.*.log",
-      ".env.local"
+      ".env.local",
+      ".secret.local"
     ],
     "predeploy": [
       "pnpm nx build functions",
-      "node tools/flags/write-functions-env.mjs"
+      "node tools/flags/write-functions-env.mjs",
+      "node tools/verify/preflight/preflight.mjs --scope functions --project $GCLOUD_PROJECT"
     ],
     "runtime": "nodejs22"
   },
@@ -26,11 +28,82 @@
       "target": "web",
       "public": "dist/apps/web/browser",
       "ignore": ["firebase.json", "**/.*"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }]
+      "predeploy": [
+        "node tools/verify/preflight/preflight.mjs --scope web --project $GCLOUD_PROJECT"
+      ],
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'self'; script-src 'self' 'sha256-SoSGhLyDOR6S9joKx8MYwWpYCgO7Xq97FpXNpYMBpxI=' 'sha256-LMY6wYoFV9I4wWzxaq1N/dTpl4iurQktw706UCHK3vM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://firebasestorage.googleapis.com; font-src 'self'; media-src 'self'; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://us-central1-creativo-replace-me.cloudfunctions.net https://tiles.openfreemap.org; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+            },
+            {
+              "key": "Content-Security-Policy-Report-Only",
+              "value": "require-trusted-types-for 'script'; trusted-types angular angular#bundler"
+            },
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "strict-origin-when-cross-origin"
+            },
+            {
+              "key": "Permissions-Policy",
+              "value": "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
+            },
+            {
+              "key": "Cross-Origin-Opener-Policy",
+              "value": "same-origin"
+            },
+            {
+              "key": "X-Frame-Options",
+              "value": "DENY"
+            }
+          ]
+        },
+        {
+          "source": "/",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        },
+        {
+          "source": "**/!(*.*)",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        },
+        {
+          "source": "/@(index.html|ngsw.json|ngsw-worker.js|safety-worker.js|worker-basic.min.js|manifest.webmanifest)",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        },
+        {
+          "source": "/assets/i18n/*.json",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        },
+        {
+          "source": "/@(main|polyfills|chunk|styles)-*.@(js|css)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
+        },
+        {
+          "source": "**/*.@(ico|png|jpg|jpeg|webp|avif|gif|svg|mp4|webm|woff|woff2|ttf|otf)",
+          "headers": [{ "key": "Cache-Control", "value": "max-age=86400" }]
+        }
+      ]
     }
   ],
   "emulators": {
-    "//": "Every emulator binds to 0.0.0.0, not the default 127.0.0.1, so a phone on the same Wi-Fi can reach auth/firestore/functions/storage at the dev machine's LAN IP. Local-only by nature — these are demo-project emulators with no real credentials behind them.",
+    "//": "Every emulator binds to 0.0.0.0, not the default 127.0.0.1, so a phone on the same Wi-Fi can reach auth/firestore/functions/storage at the dev machine's LAN IP. Local-only by nature — these are demo-project emulators with no real credentials behind them. Hosting (the CSP smoke, OR-31) is on 5050, not its default 5000, which macOS' AirPlay Receiver holds.",
     "firestore": {
       "host": "0.0.0.0",
       "port": 8080
@@ -49,7 +122,7 @@
     },
     "hosting": {
       "host": "0.0.0.0",
-      "port": 5000
+      "port": 5050
     },
     "ui": {
       "enabled": false

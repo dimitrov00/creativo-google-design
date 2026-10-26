@@ -1,5 +1,4 @@
-import { ServiceId, Result } from '@core/primitives';
-import { CatalogError } from '@core/errors';
+import type { ServiceId } from '@core/primitives';
 
 /**
  * The composition tags — the ONLY source of these strings, named after the
@@ -20,8 +19,9 @@ export type CompositionKind =
  * What a service is made of (`service.ts:48`): a `SINGLE` service, a
  * `BUNDLE` of other services, or `UNSPECIFIED`. A flat variant SLICE (Law 6)
  * that `Service` intersects, discriminated so "a bundle without parts" is
- * unrepresentable — `bundleServiceIds` exists only on the bundle variant, and
- * {@link ServiceComposition.parse} refuses an empty one.
+ * unrepresentable — `bundleServiceIds` exists only on the bundle variant.
+ * No authoring edge exists to guard (OR-22 deleted the producer-less
+ * `parse` with its empty-bundle refusal).
  *
  * Named *composition*, not "offering": on a service, `offerings` is the
  * per-barber pricing matrix, and one word cannot mean both. (Until the
@@ -45,7 +45,7 @@ export const ServiceComposition = {
     return SINGLE;
   },
 
-  /** Trusted parts; validate untrusted input with {@link parse}. */
+  /** Trusted parts, in order. */
   bundle(bundleServiceIds: readonly ServiceId[]): ServiceComposition.Bundle {
     return { compositionKind: CompositionKind.Bundle, bundleServiceIds };
   },
@@ -81,46 +81,9 @@ export const ServiceComposition = {
       ? composition.bundleServiceIds
       : [];
   },
-
-  /**
-   * The edge guard: a bundle must include at least one service
-   * (`CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES`, reported alone), and each
-   * included id must be non-blank (`CATALOG_ID_EMPTY`, one per blank id).
-   * Ids are kept exactly as given.
-   */
-  parse(
-    raw: ServiceComposition.Input,
-  ): Result<ServiceComposition, readonly CatalogError[]> {
-    if (raw.compositionKind === CompositionKind.Single) {
-      return Result.ok(ServiceComposition.single());
-    }
-    if (raw.bundleServiceIds.length === 0) {
-      return Result.err([CatalogError.serviceEmptyBundleIncludes()]);
-    }
-    const errors: CatalogError[] = [];
-    const bundleServiceIds: ServiceId[] = [];
-    for (let i = 0; i < raw.bundleServiceIds.length; i++) {
-      const id = raw.bundleServiceIds[i] as string;
-      if (id.trim().length === 0) {
-        errors.push(CatalogError.idEmpty('ServiceId'));
-      } else {
-        bundleServiceIds.push(ServiceId.of(id));
-      }
-    }
-    return errors.length > 0
-      ? Result.err(errors)
-      : Result.ok(ServiceComposition.bundle(bundleServiceIds));
-  },
 } as const;
 
 export namespace ServiceComposition {
-  /** A composition as authored, before its edge guard — the raw ids. */
-  export type Input =
-    | ServiceComposition.Single
-    | {
-        readonly compositionKind: typeof CompositionKind.Bundle;
-        readonly bundleServiceIds: readonly string[];
-      };
   export type Single = {
     readonly compositionKind: typeof CompositionKind.Single;
   };

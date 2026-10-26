@@ -781,8 +781,9 @@ export const BookingCartSystem = {
    * The bag of a visit, rebuilt (`prefillFrom`, `booking-flow.store.ts:1070-1180`).
    *
    * ONE KEY PER PERSON, not per seat: the booker's own seats are `self`; an
-   * anonymous guest is known by their stored LABEL (the identity the server
-   * counts people by) and keeps it; an account the booker cannot name
+   * anonymous guest — or a walk-in the shop keeps a record for (OR-26) — is
+   * known by their stored LABEL (the identity the server counts people by)
+   * and keeps it; an account the booker cannot name
    * (`Seat.isMovableByBooker`) is a guest seat on a new booking
    * (`AS_GUESTS`) and is left to the server on a move (`CARRIED_BY_SERVER`).
    * Guest seat keys are minted `guest-0…` in visit order; lines are `line-1…`
@@ -813,11 +814,13 @@ export const BookingCartSystem = {
         continue;
       }
       const isSelf = theBookers && seat.seatSubject === SeatSubject.Account;
+      // A walk-in the shop keeps a record for is a guest to the cart too
+      // (OR-26): known by its stored label, as every guest is.
       const person = isSelf
         ? SELF_KEY
-        : seat.seatSubject === SeatSubject.Anonymous
-          ? `label:${seat.guestLabel}`
-          : `account:${seat.subjectUserId}`;
+        : seat.seatSubject === SeatSubject.Account
+          ? `account:${seat.subjectUserId}`
+          : `label:${seat.guestLabel}`;
       let at = persons.indexOf(person);
       if (at === -1) {
         at = persons.length;
@@ -829,7 +832,7 @@ export const BookingCartSystem = {
         );
         buckets.push([]);
         storedLabels.push(
-          !isSelf && seat.seatSubject === SeatSubject.Anonymous
+          !isSelf && seat.seatSubject !== SeatSubject.Account
             ? seat.guestLabel
             : null,
         );

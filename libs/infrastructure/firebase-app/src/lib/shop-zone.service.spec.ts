@@ -15,7 +15,8 @@ import { ShopZoneService } from './shop-zone.service';
 /*
  * The web's one zone read (Phase 4a 4A-11): the default location's zone
  * ONCE per session, cached; a failed read leaves it `null` (each surface's
- * own failed state); a location's own zone on demand.
+ * own failed state); a location's own zone on demand, read once per
+ * location and never kept when it failed (OR-8).
  */
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');
@@ -123,5 +124,80 @@ describe('ShopZoneService', () => {
     expect(!refused.ok && refused.error.errorCode).toBe(
       CatalogErrorCode.LocationZoneUnknown,
     );
+  });
+
+  it('reads a location’s zone once — a second ask does no read, and two asks at once share the one read (OR-8)', async () => {
+    const { service, reads } = setup((id) => Result.ok(stored(id)));
+    const [first, second] = await Promise.all([
+      service.zoneOf(MLADOST),
+      service.zoneOf(MLADOST),
+    ]);
+    expect(first).toEqual(Result.ok(LONDON));
+    expect(second).toEqual(Result.ok(LONDON));
+    expect(reads).toEqual([MLADOST]);
+
+    expect(await service.zoneOf(MLADOST)).toEqual(Result.ok(LONDON));
+    expect(reads).toEqual([MLADOST]);
+  });
+
+  it('keeps no failed answer — the next ask reads again, and a zone once read is then kept (OR-8)', async () => {
+    let up = false;
+    const { service, reads } = setup((id) =>
+      up
+        ? Result.ok(stored(id))
+        : Result.err(
+            RepositoryError.readFailed('locations/loc-mladost', 'down'),
+          ),
+    );
+    expect((await service.zoneOf(MLADOST)).ok).toBe(false);
+
+    up = true;
+    expect(await service.zoneOf(MLADOST)).toEqual(Result.ok(LONDON));
+    expect(await service.zoneOf(MLADOST)).toEqual(Result.ok(LONDON));
+    expect(reads).toEqual([MLADOST, MLADOST]);
+  });
+
+  it('keeps no refusal either — a location with no zone stored is asked again', async () => {
+    let seeded = false;
+    const { service } = setup((id) => Result.ok(seeded ? stored(id) : null));
+    const refused = await service.zoneOf(MLADOST);
+    expect(!refused.ok && refused.error.errorCode).toBe(
+      CatalogErrorCode.LocationZoneUnknown,
+    );
+    seeded = true;
+    expect(await service.zoneOf(MLADOST)).toEqual(Result.ok(LONDON));
+  });
+
+  it('keeps no read that threw — the next ask reads again', async () => {
+    let calls = 0;
+    const { service } = setup((id) => {
+      calls += 1;
+      if (calls === 1) throw new Error('socket closed');
+      return Result.ok(stored(id));
+    });
+    await expect(service.zoneOf(MLADOST)).rejects.toThrow('socket closed');
+    expect(await service.zoneOf(MLADOST)).toEqual(Result.ok(LONDON));
+  });
+
+  it('keeps the default location’s zone as that location’s entry — the default read and a visit at that shop cost one read', async () => {
+    const { service, reads } = setup((id) => Result.ok(stored(id)));
+    service.defaultZone();
+    await settle();
+    expect(await service.zoneOf(CENTER)).toEqual(Result.ok(FIXTURE_TIME_ZONE));
+    expect(await service.zoneOf(null)).toEqual(Result.ok(FIXTURE_TIME_ZONE));
+    expect(reads).toEqual([CENTER]);
+  });
+
+  it('answers several locations’ zones by location, over the same memo', async () => {
+    const { service, reads } = setup((id) => Result.ok(stored(id)));
+    await service.zoneOf(CENTER);
+
+    const zones = await service.zonesOf([CENTER, MLADOST]);
+    expect([...zones]).toEqual([
+      [CENTER, Result.ok(FIXTURE_TIME_ZONE)],
+      [MLADOST, Result.ok(LONDON)],
+    ]);
+    expect(reads).toEqual([CENTER, MLADOST]);
+    expect((await service.zonesOf([])).size).toBe(0);
   });
 });

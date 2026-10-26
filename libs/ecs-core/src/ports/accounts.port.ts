@@ -2,7 +2,7 @@ import type { Observable } from 'rxjs';
 import type { Result, UserId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { Role } from '@core/components';
-import type { User } from '@core/entities';
+import type { Customer, User } from '@core/entities';
 
 /**
  * The accounts context's ports (blueprint §4.1, §4.2) over `users/{uid}` —
@@ -10,6 +10,8 @@ import type { User } from '@core/entities';
  * no search-result view model. The reads answer the STORED body, a
  * `PROVISIONED` stub included: whether a stub counts as "no profile" is the
  * consumer's call (`Registration.isRegistered`), never the adapter's.
+ * Beside the account search sits the search over the client records
+ * (`customers`, OR-26), answered as stored too.
  *
  * Profile WRITES are the server's alone (Phase 4a 4A-3 (2)): the
  * `updateProfile` callable runs `ProfileEditSystem.decide` inside its own
@@ -27,6 +29,19 @@ export type SearchUsers = (
   prefix: string,
   limit: number,
 ) => Promise<Result<readonly User[], RepositoryError>>;
+
+/**
+ * The staff client search over the shop's client RECORDS (OR-26) —
+ * `customers` where `searchPrefixes array-contains prefix`, `orderBy
+ * searchName`, at most `limit` (its composite index declared with the
+ * adapter). The same normalised `prefix` as {@link SearchUsers}: the client
+ * book merges both answers through `ClientQuerySystem`'s ranking, so a
+ * walk-in the desk entered — a record with no account — is found again.
+ */
+export type SearchCustomers = (
+  prefix: string,
+  limit: number,
+) => Promise<Result<readonly Customer[], RepositoryError>>;
 
 /**
  * `users/{uid}`, live — `null` while the document is absent (before the
@@ -68,10 +83,18 @@ export type UserSearchPorts = {
   readonly searchUsers: SearchUsers;
 };
 
+/** The staff client search over the client records (web, its own token). */
+export type CustomerSearchPorts = {
+  readonly searchCustomers: SearchCustomers;
+};
+
 /** The stored roles behind a token claim (server). */
 export type CallerRolesPorts = {
   readonly loadCallerRoles: LoadCallerRoles;
 };
 
 /** The accounts context's whole port suite — an intersection of its bundles. */
-export type AccountsPorts = ProfilePorts & UserSearchPorts & CallerRolesPorts;
+export type AccountsPorts = ProfilePorts &
+  UserSearchPorts &
+  CustomerSearchPorts &
+  CallerRolesPorts;

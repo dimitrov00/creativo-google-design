@@ -1,12 +1,13 @@
 import type { SeatOccupant } from './seat-occupant.data';
 
 /**
- * An occupant as the ACCOUNT rules read it — {@link AccountOccupant.Account}
- * or an anonymous guest (split out of `seat.data.ts`, pass D, L-2: a helper
- * type with readers outside its file gets its own). A
- * {@link SeatOccupant} passes straight in (Law 3).
+ * An occupant as the ACCOUNT rules read it — {@link AccountOccupant.Account},
+ * an anonymous guest or {@link AccountOccupant.WalkIn} (split out of
+ * `seat.data.ts`, pass D, L-2: a helper type with readers outside its file
+ * gets its own). A {@link SeatOccupant} passes straight in (Law 3).
  */
-export type AccountOccupant = AccountOccupant.Account | SeatOccupant.Anonymous;
+export type AccountOccupant =
+  AccountOccupant.Account | SeatOccupant.Anonymous | AccountOccupant.WalkIn;
 
 export namespace AccountOccupant {
   /**
@@ -18,4 +19,12 @@ export namespace AccountOccupant {
    * the top-level `AccountRef`, read nowhere else.)
    */
   export type Account = Omit<SeatOccupant.Account, 'subjectCustomerId'>;
+
+  /**
+   * The `WALK_IN` variant as the ACCOUNT rules read it (OR-26) — no
+   * account, so a guest by label to every rule that reads accounts; the
+   * client record it names is the shop's, which those rules never ask for.
+   * A {@link SeatOccupant.WalkIn} passes straight in (Law 3).
+   */
+  export type WalkIn = Omit<SeatOccupant.WalkIn, 'subjectCustomerId'>;
 }

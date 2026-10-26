@@ -234,6 +234,12 @@ describe('programsPorts (emulator)', () => {
     const event = eventOn('e-new', 10, {
       locationId: LocationId.of('loc-center'),
     });
+    // The shop the event names must exist (OR-37, the rules' `exists()`).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(modularFirestore(ctx), 'locations', 'loc-center'), {
+        name: textFixture('Center', 'Център'),
+      });
+    });
 
     await ports.saveCourse(course);
     await ports.saveEvent(event);

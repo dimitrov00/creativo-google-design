@@ -11,7 +11,7 @@ import {
   RecomputeJobName,
 } from '@core/entities';
 import { PolicyRecomputeJobSystem } from '@core/systems';
-import { FIXTURE_NOW_UTC_MS } from '@core/testing';
+import { FIXTURE_NOW_UTC_MS, hourCount } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreClientStatsPorts } from './firestore-client-stats.adapter';
 
@@ -43,7 +43,7 @@ const job: PolicyRecomputeJob = {
   stepKey: PolicyRecomputeJobSystem.stepKeyOf('evt-a', ANA, null),
   stalledAtUtcMs: null,
   lastFailureCode: null,
-  windowHours: 48,
+  windowHours: hourCount(48),
 };
 
 function seeded() {

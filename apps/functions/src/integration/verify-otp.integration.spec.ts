@@ -15,7 +15,7 @@ import { OtpId, UserId } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
 import { Collections, type Otp } from '@core/entities';
 import { type VerifyOtpCommand, verifyOtp } from '@core/pipelines';
-import { RegistrationSystem } from '@core/systems';
+import { RegistrationSystem, StoredDocumentSystem } from '@core/systems';
 import { otpFixture, pinnedNowUtcMs, recordingTelemetry } from '@core/testing';
 import { authClaimsPorts } from '../adapters/auth-claims.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
@@ -118,7 +118,11 @@ describe('verifyOtp (emulator)', () => {
   function run(cmd: VerifyOtpCommand) {
     const telemetry = recordingTelemetry();
     return verifyOtp({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       ...crypto,
       ...firestoreUserPorts(db),

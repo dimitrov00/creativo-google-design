@@ -24,7 +24,9 @@ import type { BookingContact } from './booking-contact.data';
 import { CallAnswer } from './call-answer.data';
 import type { DiscountMethod } from './coupon-value.data';
 import type { DiscountSource } from './discount-provenance.data';
+import type { E164 } from './e164.data';
 import { EditCommand as EditCommandTag, ResizeEdge } from './edit-command.data';
+import type { Email } from './email.data';
 import type { Placement } from './placement-kind.data';
 import type { SeatLabel } from './seat-label.data';
 import type { VoucherCode } from './voucher-code.data';
@@ -47,6 +49,47 @@ export const RequestedSubjectRole = {
 } as const;
 export type RequestedSubjectRole =
   (typeof RequestedSubjectRole)[keyof typeof RequestedSubjectRole];
+
+/**
+ * Two wire values that say the same thing ({@link BookingCall.sameCommands}):
+ * equal scalars; arrays equal item by item, IN ORDER; records holding the
+ * same keys with equal values, whatever order the keys were written in.
+ * The wire is plain JSON-shaped data (Law 5) — no prototype, no cycle, and
+ * absent is `null`, never `undefined` — so nothing else needs a rule.
+ */
+function sameWire(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (
+    typeof a !== 'object' ||
+    typeof b !== 'object' ||
+    a === null ||
+    b === null
+  ) {
+    return false;
+  }
+  const list = Array.isArray(a);
+  if (list !== Array.isArray(b)) return false;
+  if (list) {
+    const left = a as readonly unknown[];
+    const right = b as readonly unknown[];
+    if (left.length !== right.length) return false;
+    for (let i = 0; i < left.length; i++) {
+      if (!sameWire(left[i], right[i])) return false;
+    }
+    return true;
+  }
+  const left = a as { readonly [key: string]: unknown };
+  const right = b as { readonly [key: string]: unknown };
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i] as string;
+    if (!Object.hasOwn(right, key) || !sameWire(left[key], right[key])) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * THE BOOKING WIRE (Phase 4a 4A-4) — the request the booking callables take
@@ -87,7 +130,9 @@ export const BookingCall = {
   /**
    * A guest by label. `guestKey` is the cart's seat key text: a key that is
    * not one (`GuestKey.parse`) drops to `null`, never refuses — the guest is
-   * then read by label alone, as today.
+   * then read by label alone, as today. No contact: a client's cart names
+   * its guests, it never files their numbers (a walk-in's contact is the
+   * shop's to take, {@link staffGuestSubject}).
    */
   guestSubject(
     label: string,
@@ -98,7 +143,38 @@ export const BookingCall = {
       requestedSubjectRole: RequestedSubjectRole.Guest,
       label,
       guestKey: key !== null && key.ok ? key.value : null,
+      contact: null,
     };
+  },
+
+  /**
+   * A guest the SHOP seats (the staff create): by label, read by label alone
+   * (no cart key), with the contact the desk took for them — `null` for a
+   * name only. A contact makes the server keep a client record for the
+   * walk-in (OR-26).
+   */
+  staffGuestSubject(
+    label: string,
+    contact: BookingCall.GuestContact | null,
+  ): BookingCall.Subject.Guest {
+    return {
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label,
+      guestKey: null,
+      contact,
+    };
+  },
+
+  /**
+   * The contact a guest carries (OR-26): the phone and the e-mail as
+   * parsed, or `null` when neither is there — a name-only guest carries no
+   * contact at all, never an empty one.
+   */
+  guestContact(
+    phone: E164 | null,
+    email: Email | null,
+  ): BookingCall.GuestContact | null {
+    return phone === null && email === null ? null : { phone, email };
   },
 
   /**
@@ -274,6 +350,24 @@ export const BookingCall = {
     return { editCommand: EditCommandTag.Vouchers, codes };
   },
 
+  /* ── comparison ── */
+
+  /**
+   * Two batches that ask the server for the same thing (OR-4): the same
+   * commands in the same order, each the same record whatever order its
+   * keys were written in. The structural equality that replaced the staff
+   * day's `JSON.stringify` text comparison, which called two equal batches
+   * different when one command's keys had been built in another order.
+   * Order still counts where the wire means it: the batch is folded in
+   * order, and a scope names its seats in order.
+   */
+  sameCommands(
+    a: readonly BookingCall.EditCommand[],
+    b: readonly BookingCall.EditCommand[],
+  ): boolean {
+    return sameWire(a, b);
+  },
+
   /* ── answer decoders: the only way an answer becomes branded data ── */
 
   /** `commitBooking`'s answer — an empty or missing id is a failure, never a success. */
@@ -399,9 +493,22 @@ export namespace BookingCall {
   };
 
   /**
+   * What the desk took down about a guest so the shop can find them again
+   * (OR-26) — the phone and the e-mail, each parsed (`PhoneSystem.parse`,
+   * `Email.parse`) or `null`, never both `null` ({@link BookingCall.guestContact}).
+   * A guest who carries one is a walk-in the server keeps a client record
+   * for (`CustomerId.forWalkIn`), seated `WALK_IN`.
+   */
+  export type GuestContact = {
+    readonly phone: E164 | null;
+    readonly email: Email | null;
+  };
+
+  /**
    * ONE subject shape: the booker, a guest by label (with the cart's
    * `guestKey`, so two guests sharing a label are told apart; `null` reads
-   * one label as one person), or an account (a staff edit's or a carried
+   * one label as one person — and, on the shop's own placement, the contact
+   * the desk took, OR-26), or an account (a staff edit's or a carried
    * seat's — refused on a client cart, as today).
    */
   export type Subject = Subject.Self | Subject.Guest | Subject.Companion;
@@ -413,6 +520,8 @@ export namespace BookingCall {
       readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
       readonly label: string;
       readonly guestKey: GuestKey | null;
+      /** The contact the desk took (OR-26); `null` for a name only — and always on a client's cart. */
+      readonly contact: GuestContact | null;
     };
     export type Companion = {
       readonly requestedSubjectRole: typeof RequestedSubjectRole.Companion;
@@ -435,7 +544,11 @@ export namespace BookingCall {
     readonly subject: SubjectInput;
   };
 
-  /** The raw twin of {@link Subject} — the account id before it is parsed. */
+  /**
+   * The raw twin of {@link Subject} — the account id before it is parsed. A
+   * guest's contact is parsed already: the callable edge reads it once
+   * (OR-26), and a part that does not parse is dropped there.
+   */
   export type SubjectInput =
     | { readonly requestedSubjectRole: typeof RequestedSubjectRole.Self }
     | {
@@ -446,6 +559,7 @@ export namespace BookingCall {
         readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
         readonly label: string;
         readonly guestKey: string | null;
+        readonly contact: GuestContact | null;
       };
 
   /** `rescheduleAppointment`: the visit, the shop and day it moves to, the cart that stands in for it. */
@@ -500,12 +614,16 @@ export namespace BookingCall {
     readonly operationId: ClientOperationId | null;
   };
 
-  /** Who an added seat is for: the visit's owner, or a guest by label. */
+  /**
+   * Who an added seat is for: the visit's owner, or a guest by label — with
+   * the contact the desk took for them (OR-26; `null` for a name only).
+   */
   export type AddedSubject =
     | { readonly requestedSubjectRole: typeof RequestedSubjectRole.Self }
     | {
         readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
         readonly label: SeatLabel;
+        readonly contact: GuestContact | null;
       };
 
   /** A discount the shop applies in a `DISCOUNTS` command. */

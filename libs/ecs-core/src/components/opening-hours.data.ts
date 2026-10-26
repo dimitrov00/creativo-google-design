@@ -15,9 +15,10 @@ export type OpeningState = (typeof OpeningState)[keyof typeof OpeningState];
 /**
  * One weekday of a shop's opening hours (`location.ts:27-40`), on the shop's
  * wall clock: `CLOSED`, or `OPEN` from `openMinutes` to `closeMinutes`
- * (half-open, `openMinutes < closeMinutes`, both authored within
- * 00:00–23:59). An element of `ShopLocation.openingHours` — a flat struct
- * with a domain-prefixed tag (Law 6).
+ * (half-open, `openMinutes < closeMinutes`; the opening a minute of the day,
+ * 00:00–23:59, the close an exclusive end up to 24:00 — a shop open until
+ * midnight closes at 1440, OR-22). An element of `ShopLocation.openingHours`
+ * — a flat struct with a domain-prefixed tag (Law 6).
  *
  * A location stores exactly seven, Monday first — index `weekday − 1` with
  * `weekday` the ISO `Weekday` — and keeps the closed day as an entry, so a
@@ -76,12 +77,14 @@ export const DayHours = {
   },
 
   /**
-   * The edge guard for a week in minutes (an admin write, a stored
-   * document): exactly seven entries, Monday first
+   * The edge guard for a week in minutes (the landing's published weeks at
+   * module load, a stored document): exactly seven entries, Monday first
    * (`CATALOG_LOCATION_INVALID_HOURS_LENGTH`, reported alone); on each open
-   * day both figures a minute of the day (`CATALOG_LOCATION_INVALID_TIME_OF_DAY`
-   * with the figure as text — the opening figure is checked first and the
-   * day stops at its first bad figure) and `openMinutes < closeMinutes`
+   * day the opening a minute of the day (`[0, 1440)`) and the close an
+   * exclusive end (`(0, 1440]` — 24:00 is a shop open until midnight,
+   * OR-22), each refused as `CATALOG_LOCATION_INVALID_TIME_OF_DAY` with the
+   * figure as text — the opening figure is checked first and the day stops
+   * at its first bad figure — and `openMinutes < closeMinutes`
    * (`CATALOG_LOCATION_INVALID_HOURS_RANGE` with the day's index). Every
    * day's violation is reported. Each entry comes back as a fresh struct
    * holding only its own keys.
@@ -107,8 +110,8 @@ export const DayHours = {
         );
         continue;
       }
-      // An authored closing figure is a minute of the day too (00:00–23:59).
-      const closes = MinuteOfDay.of(day.closeMinutes);
+      // An authored close is an exclusive end: up to 24:00, never 00:00.
+      const closes = EndMinute.of(day.closeMinutes);
       if (!closes.ok) {
         errors.push(
           CatalogError.locationInvalidTimeOfDay(String(day.closeMinutes)),
@@ -124,18 +127,17 @@ export const DayHours = {
 } as const;
 
 /**
- * An open day from two minutes of the day: `opens < closes`, or
- * `CATALOG_LOCATION_INVALID_HOURS_RANGE` with the day's index. The closing
- * minute, strictly after an opening one, is a valid exclusive end.
+ * An open day from its opening minute and its exclusive close:
+ * `opens < closes`, or `CATALOG_LOCATION_INVALID_HOURS_RANGE` with the day's
+ * index.
  */
 function openDay(
   dayIndex: number,
   opens: MinuteOfDay,
-  closes: MinuteOfDay,
+  closes: EndMinute,
 ): Result<DayHours.Open, CatalogError.LocationInvalidHoursRange> {
-  const end = EndMinute.of(closes);
-  return opens < closes && end.ok
-    ? Result.ok(DayHours.open(opens, end.value))
+  return opens < closes
+    ? Result.ok(DayHours.open(opens, closes))
     : Result.err(CatalogError.locationInvalidHoursRange(dayIndex));
 }
 

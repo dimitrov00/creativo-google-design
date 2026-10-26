@@ -9,7 +9,14 @@ import {
   POLICY_RECOMPUTE_DOC,
 } from '@core/entities';
 import { VisitDraftSystem } from '@core/systems';
-import { deepFreeze, fixtureHash, unwrapErr, unwrapOk } from '@core/testing';
+import {
+  deepFreeze,
+  fixtureHash,
+  fixtureKeyedHash,
+  fixtureWalkInHash,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
 import * as Ids from './ids.primitive';
 import {
   AppointmentId,
@@ -22,6 +29,7 @@ import {
   GuestKey,
   CustomerId,
   JournalEntryId,
+  LocationId,
   PolicyRecomputeJobId,
   SeatKeyText,
   StreakDefinitionId,
@@ -71,6 +79,44 @@ describe('the id companions (decision F-3)', () => {
       raw: 'a/b',
       brand: 'AppointmentId',
     });
+  });
+
+  it('parse refuses the names Firestore reserves — `.`, `..`, `__…__` — as PRIMITIVE_ID_RESERVED (OR-44)', () => {
+    for (const raw of ['.', '..', '____', '__x__', '__reserved__', '__/__x']) {
+      const refused = unwrapErr(LocationId.parse(raw));
+      // A slash is the slash refusal first; the reserved rule reads the rest.
+      expect(refused, raw).toEqual({
+        errorCode: raw.includes('/')
+          ? 'PRIMITIVE_ID_HAS_SLASH'
+          : 'PRIMITIVE_ID_RESERVED',
+        raw,
+        brand: 'LocationId',
+      });
+    }
+  });
+
+  it('keeps every near miss of a reserved name a plain id — length-gated, exact', () => {
+    for (const raw of [
+      '_',
+      '__',
+      '___',
+      'a__b',
+      '__a',
+      'a__',
+      '__a_',
+      '_a__',
+      '...',
+      '. ',
+      ' .',
+      '.a',
+      'a.',
+      ' __x__',
+      '__x__ ',
+      'loc-center',
+    ]) {
+      expect(unwrapOk(LocationId.parse(raw)), JSON.stringify(raw)).toBe(raw);
+      expect(LocationId.is(raw), JSON.stringify(raw)).toBe(true);
+    }
   });
 
   it('of takes a value that is an id by construction, unchecked', () => {
@@ -146,6 +192,47 @@ describe('CustomerId (D29) — never a UserId', () => {
     // The record id is never the uid it was derived from.
     expect(id).not.toBe('u_42');
   });
+
+  it('forWalkIn is deterministic: cus_ + 20 hex of keyedHash(walkin/v1:contactKey) — one contact, one record (OR-26)', () => {
+    const id = CustomerId.forWalkIn('+359888123456', fixtureWalkInHash);
+    expect(id).toBe(
+      `cus_${fixtureWalkInHash('walkin/v1:+359888123456').slice(0, 20)}`,
+    );
+    expect(id).toMatch(/^cus_[0-9a-f]{20}$/);
+    // The same number twice is the same record; another number another one.
+    expect(CustomerId.forWalkIn('+359888123456', fixtureWalkInHash)).toBe(id);
+    expect(CustomerId.forWalkIn('+359888123457', fixtureWalkInHash)).not.toBe(
+      id,
+    );
+    expect(
+      CustomerId.forWalkIn('maria@example.com', fixtureWalkInHash),
+    ).not.toBe(id);
+    expect(CustomerId.is(id)).toBe(true);
+  });
+
+  it('forWalkIn is KEYED: two keys, two ids for one contact — nobody without the key recomputes it', () => {
+    const contact = '+359888123456';
+    const one = CustomerId.forWalkIn(contact, fixtureKeyedHash('key-one'));
+    const two = CustomerId.forWalkIn(contact, fixtureKeyedHash('key-two'));
+    expect(one).not.toBe(two);
+    // One key keeps one id — the dedupe and the retry idempotency hold.
+    expect(CustomerId.forWalkIn(contact, fixtureKeyedHash('key-one'))).toBe(
+      one,
+    );
+    // And neither is the unkeyed digest of the contact.
+    expect(one).not.toBe(CustomerId.forWalkIn(contact, fixtureHash));
+  });
+
+  it('forWalkIn and forUser never meet — each id family has its own namespace', () => {
+    const key = 'u_42';
+    // Even under one and the same digest, the namespace keeps them apart.
+    expect(CustomerId.forWalkIn(key, fixtureHash)).not.toBe(
+      CustomerId.forUser(UserId.of(key), fixtureHash),
+    );
+    expect(CustomerId.forWalkIn(key, fixtureWalkInHash)).not.toBe(
+      CustomerId.forUser(UserId.of(key), fixtureHash),
+    );
+  });
 });
 
 describe('AuditResourceId — the one id that may hold a slash', () => {
@@ -205,6 +292,15 @@ describe('DraftPersonKey — a person’s key in a staff sheet’s draft (pass D
     expect(unwrapOk(DraftPersonKey.parse('u-anna'))).toBe(
       DraftPersonKey.account(UserId.of('u-anna')),
     );
+  });
+
+  it('refuses an account key that is a reserved name, named for this brand', () => {
+    expect(unwrapErr(DraftPersonKey.parse('..'))).toEqual({
+      errorCode: 'PRIMITIVE_ID_RESERVED',
+      raw: '..',
+      brand: 'DraftPersonKey',
+    });
+    expect(DraftPersonKey.accountOf(DraftPersonKey.of('__x__'))).toBeNull();
   });
 
   it('refuses a blank key and one that would name a nested document', () => {
@@ -431,6 +527,14 @@ describe('the id doors is and isSpan — read-time, allocation-free (edge harden
         '/',
         'cus_3f9a',
         'Мария',
+        '.',
+        '..',
+        '...',
+        '__',
+        '___',
+        '____',
+        '__x__',
+        'a__b',
       ]) {
         expect(ids.is(raw), JSON.stringify(raw)).toBe(ids.parse(raw).ok);
       }
@@ -450,7 +554,7 @@ describe('the id doors is and isSpan — read-time, allocation-free (edge harden
     fc.assert(
       fc.property(
         fc.string({
-          unit: fc.constantFrom('a', ' ', ' ', ' ', '/', '﻿'),
+          unit: fc.constantFrom('a', ' ', ' ', ' ', '/', '﻿', '.', '_'),
         }),
         (raw) => AppointmentId.is(raw) === AppointmentId.parse(raw).ok,
       ),
@@ -470,6 +574,12 @@ describe('the id doors is and isSpan — read-time, allocation-free (edge harden
     expect(UserId.isSpan('a/b__2026-09-28', 0, 3)).toBe(false);
     expect(UserId.isSpan('abc', 1, 1)).toBe(false);
     expect(UserId.isSpan('abc', -5, 99)).toBe(true);
+    // The reserved rule reads the span alone, never the text around it.
+    expect(UserId.isSpan('..__2026-09-28', 0, 2)).toBe(false);
+    expect(UserId.isSpan('x..__2026-09-28', 0, 3)).toBe(true);
+    expect(UserId.isSpan('__a____2026-09-28', 0, 5)).toBe(false);
+    expect(UserId.isSpan('__a____2026-09-28', 0, 4)).toBe(true);
+    expect(UserId.isSpan('a.b', 1, 2)).toBe(false);
   });
 
   it('is pure: same input → same answer', () => {

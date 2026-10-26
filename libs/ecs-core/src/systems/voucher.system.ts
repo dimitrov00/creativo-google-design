@@ -2,9 +2,7 @@ import {
   Result,
   VoucherRefusal,
   type Currency,
-  type CustomerId,
   type GiftVoucherId,
-  type UserId,
   type LocalDate,
   PriceCents,
   UtcEpochMs,
@@ -12,7 +10,6 @@ import {
 import { EngagementError, type VoucherBalanceError } from '@core/errors';
 import {
   type Money,
-  VoucherCode,
   VoucherRedemption,
   VoucherLifecycle,
   VoucherStatus,
@@ -36,27 +33,6 @@ export type VoucherBalance = Pick<
 > &
   VoucherLifecycle;
 
-/** What a new voucher is issued from — every field present. */
-export type IssueVoucher = {
-  readonly id: GiftVoucherId;
-  /** As typed or printed; normalised (trimmed, upper-case) and guarded here. */
-  readonly code: string;
-  readonly valueCents: PriceCents;
-  readonly currency: Currency;
-  readonly issuedAtUtcMs: UtcEpochMs;
-  readonly expiresAtUtcMs: UtcEpochMs | null;
-  /** The shop day of the expiry instant (T5) — `null` together with it. */
-  readonly expiresLocalDate: LocalDate | null;
-  /** The client record it is issued to (D29); `null` for a paper voucher. */
-  readonly issuedToCustomerId: CustomerId | null;
-  /**
-   * The account that may read it — the record's `Customer.userId`, handed in
-   * by the boundary, never derived from `issuedToCustomerId` (D29); `null`
-   * for a paper voucher or a record without an account.
-   */
-  readonly holderUserId: UserId | null;
-};
-
 /**
  * What a cancellation gives back (`voucher-restore.ts`): every voucher the
  * visit drew on, with its restored balance, and the visit's own redemption
@@ -68,13 +44,13 @@ export type VoucherRestorePlan = {
   readonly voucherRedemptions: readonly VoucherRedemption[];
 };
 
-/** How two vouchers whose last day is the same are told apart: a comparator over their ids. */
-export type VoucherIdOrder = (a: GiftVoucherId, b: GiftVoucherId) => number;
-
 /** The day a never-expiring voucher sorts as: after every real one. */
 const NEVER_EXPIRES = '9999-12-31';
 
-/** Ids by their UTF-16 code units — `soonestFirst`'s tie-break. */
+/**
+ * Ids by their UTF-16 code units — every tie-break (OR-18): the same order
+ * on every device, never a locale's collation.
+ */
 function codeUnitOrder(a: GiftVoucherId, b: GiftVoucherId): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -83,18 +59,15 @@ function codeUnitOrder(a: GiftVoucherId, b: GiftVoucherId): number {
  * The one by-last-day order of {@link VoucherSystem.soonestFirst} and
  * {@link VoucherSystem.held}: by the voucher's last DAY on the shop's
  * calendar (`expiresLocalDate`), the never-expiring ones last, equal days
- * by `idOrder`. A new array; the input is untouched.
+ * by id in code units. A new array; the input is untouched.
  */
-function byLastDay(
-  vouchers: readonly GiftVoucher[],
-  idOrder: VoucherIdOrder,
-): readonly GiftVoucher[] {
+function byLastDay(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
   const sorted = [...vouchers];
   sorted.sort((a, b) => {
     const dayA = a.expiresLocalDate ?? NEVER_EXPIRES;
     const dayB = b.expiresLocalDate ?? NEVER_EXPIRES;
     if (dayA !== dayB) return dayA < dayB ? -1 : 1;
-    return idOrder(a.id, b.id);
+    return codeUnitOrder(a.id, b.id);
   });
   return sorted;
 }
@@ -158,52 +131,19 @@ function restore<V extends VoucherBalance>(
  * A gift voucher's balance algebra (`gift-voucher.ts`, `voucher-restore.ts`)
  * — money the shop has already been paid, drawn down by visits. A voucher
  * PAYS part of a visit; a coupon lowers its price. Every balance change goes
- * through redeem / restore / settle, which REFUSE rather than round: never
- * below zero, never above what was issued. Redeemability against the expiry
+ * through restore / settle, which REFUSE rather than round: never below
+ * zero, never above what was issued. Redeemability against the expiry
  * instant is a T2 lifecycle comparison (G-1); "spendable today" compares the
- * expiry's shop day (`expiresLocalDate`, T5).
+ * expiry's shop day (`expiresLocalDate`, T5). No voucher is issued here:
+ * issuing returns with the points-redemption callable or with payments
+ * (OR-14).
  */
 export const VoucherSystem = {
   /**
-   * A new voucher, its whole value as balance, `ACTIVE` — every violation
-   * at once: a code outside the shape (after normalising), a value of zero
-   * or less.
+   * Why it cannot be used at `nowUtcMs` — void, expired (AT the instant
+   * still is not), empty — or `null`: the gate a voucher NEW to a bill
+   * passes before it draws (`BillingSystem.settleVouchers`).
    */
-  issue(
-    input: IssueVoucher,
-  ): Result<
-    GiftVoucher,
-    readonly (
-      | EngagementError.VoucherCodeInvalid
-      | EngagementError.GiftVoucherValueInvalid
-    )[]
-  > {
-    const errors: (
-      | EngagementError.VoucherCodeInvalid
-      | EngagementError.GiftVoucherValueInvalid
-    )[] = [];
-    const code = VoucherCode.parseTyped(input.code);
-    if (!code.ok) errors.push(code.error);
-    if (input.valueCents <= 0) {
-      errors.push(EngagementError.giftVoucherValueInvalid());
-    }
-    if (!code.ok || errors.length > 0) return Result.err(errors);
-    return Result.ok({
-      id: input.id,
-      code: code.value,
-      initialValueCents: input.valueCents,
-      balanceCents: input.valueCents,
-      currency: input.currency,
-      issuedAtUtcMs: input.issuedAtUtcMs,
-      expiresAtUtcMs: input.expiresAtUtcMs,
-      expiresLocalDate: input.expiresLocalDate,
-      issuedToCustomerId: input.issuedToCustomerId,
-      holderUserId: input.holderUserId,
-      ...VoucherLifecycle.active(),
-    });
-  },
-
-  /** Why it cannot be used at `nowUtcMs` — void, expired (AT the instant still is not), empty — or `null`. */
   refusal,
 
   /**
@@ -252,42 +192,6 @@ export const VoucherSystem = {
       remaining = figure(remaining.amountCents - cover.amountCents, currency);
     }
     return { covers, left, dueAfter: remaining };
-  },
-
-  /** `amount` taken off the balance — refused when not redeemable, in another currency, or more than is left. */
-  redeem<V extends VoucherBalance>(
-    voucher: V,
-    amount: Money,
-    nowUtcMs: UtcEpochMs,
-  ): Result<
-    V,
-    | EngagementError.GiftVoucherNotRedeemable
-    | EngagementError.GiftVoucherInsufficientBalance
-    | EngagementError.GiftVoucherCurrencyMismatch
-  > {
-    const refused = refusal(voucher, nowUtcMs);
-    if (refused !== null) {
-      return Result.err(EngagementError.giftVoucherNotRedeemable(refused));
-    }
-    if (amount.currency !== voucher.currency) {
-      return Result.err(
-        EngagementError.giftVoucherCurrencyMismatch(
-          voucher.currency,
-          amount.currency,
-        ),
-      );
-    }
-    if (amount.amountCents > voucher.balanceCents) {
-      return Result.err(
-        EngagementError.giftVoucherInsufficientBalance(
-          amount.amountCents,
-          voucher.balanceCents,
-        ),
-      );
-    }
-    return Result.ok(
-      withBalance(voucher, voucher.balanceCents - amount.amountCents),
-    );
   },
 
   /**
@@ -401,23 +305,34 @@ export const VoucherSystem = {
     );
   },
 
-  /** The money the {@link spendable} vouchers in `currency` still hold. */
-  spendableSum(
+  /**
+   * The money the {@link spendable} vouchers still hold — ONE sum per
+   * currency, in the order each currency is first seen (OR-17: no currency
+   * is dropped, and none is added to another). Empty when nothing can be
+   * spent.
+   */
+  spendableSums(
     vouchers: readonly GiftVoucher[],
     today: LocalDate,
-    currency: Currency,
-  ): Money {
-    let total = 0;
+  ): readonly Money[] {
+    const currencies: Currency[] = [];
+    const totals: number[] = [];
     for (let i = 0; i < vouchers.length; i++) {
       const voucher = vouchers[i] as GiftVoucher;
-      if (
-        voucher.currency === currency &&
-        VoucherSystem.spendable(voucher, today)
-      ) {
-        total += voucher.balanceCents;
+      if (!VoucherSystem.spendable(voucher, today)) continue;
+      const at = currencies.indexOf(voucher.currency);
+      if (at < 0) {
+        currencies.push(voucher.currency);
+        totals.push(voucher.balanceCents);
+      } else {
+        totals[at] = (totals[at] as number) + voucher.balanceCents;
       }
     }
-    return figure(total, currency);
+    const sums: Money[] = [];
+    for (let i = 0; i < currencies.length; i++) {
+      sums.push(figure(totals[i] as number, currencies[i] as Currency));
+    }
+    return sums;
   },
 
   /**
@@ -426,28 +341,26 @@ export const VoucherSystem = {
    * by id. A new array; the input is untouched.
    */
   soonestFirst(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
-    return byLastDay(vouchers, codeUnitOrder);
+    return byLastDay(vouchers);
   },
 
   /**
    * What the wallet holds (`wallet.presenter.ts` `voucherVms`): the
    * {@link VoucherSystem.spendable} vouchers, the soonest to run out first —
    * the by-last-day order {@link VoucherSystem.soonestFirst} shares, the
-   * never-expiring ones last — and two that end on one day in the CALLER's
-   * `idOrder` (the wallet passes its locale collation, which a system
-   * cannot hold; `soonestFirst` passes the code-unit order). A new array.
+   * never-expiring ones last — and two that end on one day by id in UTF-16
+   * code units (OR-18: no device locale decides an order). A new array.
    */
   held(
     vouchers: readonly GiftVoucher[],
     today: LocalDate,
-    idOrder: VoucherIdOrder,
   ): readonly GiftVoucher[] {
     const spendable: GiftVoucher[] = [];
     for (let i = 0; i < vouchers.length; i++) {
       const voucher = vouchers[i] as GiftVoucher;
       if (VoucherSystem.spendable(voucher, today)) spendable.push(voucher);
     }
-    return byLastDay(spendable, idOrder);
+    return byLastDay(spendable);
   },
 
   /** Nothing has been drawn from it yet: the balance is the whole value it was issued with. */
@@ -462,23 +375,19 @@ export const VoucherSystem = {
    * what the {@link VoucherSystem.spendable} vouchers hold together — said
    * only from two of them on (one voucher's figure is already over it), and
    * never across two currencies (they have no sum): `null` then. Composes
-   * {@link VoucherSystem.spendableSum} in the first spendable voucher's
-   * currency. NOT the glance's voucher sum (`ClientGlanceSystem.holdings`,
-   * which adds the first currency's and ignores the rest). It decides only
-   * WHETHER a total exists and its money — never a count.
+   * {@link VoucherSystem.spendableSums}: its one sum when there is exactly
+   * one currency. The glance prints every sum instead
+   * (`ClientGlanceSystem.holdings`, OR-17). It decides only WHETHER a total
+   * exists and its money — never a count.
    */
   heldTotal(vouchers: readonly GiftVoucher[], today: LocalDate): Money | null {
-    let currency: Currency | null = null;
+    const sums = VoucherSystem.spendableSums(vouchers, today);
+    if (sums.length !== 1) return null;
     let count = 0;
-    for (let i = 0; i < vouchers.length; i++) {
-      const voucher = vouchers[i] as GiftVoucher;
-      if (!VoucherSystem.spendable(voucher, today)) continue;
-      if (currency === null) currency = voucher.currency;
-      else if (voucher.currency !== currency) return null;
-      count++;
+    for (let i = 0; i < vouchers.length && count < 2; i++) {
+      if (VoucherSystem.spendable(vouchers[i] as GiftVoucher, today)) count++;
     }
-    if (currency === null || count < 2) return null;
-    return VoucherSystem.spendableSum(vouchers, today, currency);
+    return count < 2 ? null : (sums[0] as Money);
   },
 
   /**

@@ -7,7 +7,7 @@ import {
   type MinuteOfDay,
   type UserId,
   LocalDate,
-  SeatKeyText,
+  PersonKey,
   UtcEpochMs,
 } from '@core/primitives';
 import {
@@ -34,9 +34,6 @@ import { LocationScopeSystem } from './location-scope.system';
 import { VisitListSystem } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
-/** The person-key prefixes (`GuestLabelSystem`'s spelling of the family). */
-const ACCOUNT_KEY_PREFIX = 'account:';
-const GUEST_KEY_PREFIX = 'guest:';
 
 /**
  * One person's own story of an appointment, as a row tells it: the seats
@@ -268,17 +265,19 @@ export const VisitStorySystem = {
   },
 
   /**
-   * One person, one key: an account by its id (`account:<uid>`), a guest by
-   * the seat's name (`guest:<label>`) — the `SeatKeyText` person-key family,
-   * spelled as `GuestLabelSystem.personKeyOf` spells it. Read off the
-   * occupant AS IT IS STORED (an account by its `subjectUserId`, a guest by
-   * its `guestLabel` — zero inbound mapping): a whole `Seat` passes straight
-   * in.
+   * One person, one key (a `PersonKey`, OR-49): an account by its id
+   * (`account:<uid>`), a guest by the seat's name (`guest:<label>`). Read
+   * off the occupant AS IT IS STORED (an account by its `subjectUserId`, a
+   * guest by its `guestLabel` — zero inbound mapping): a whole `Seat` passes
+   * straight in. The STORED side's spelling: the booker's own seat is keyed
+   * by its account too, never `self` — `self` is the REQUEST side's key
+   * (`GuestLabelSystem.personKeyOf`), whose booker has no uid on the seat;
+   * so a stored key and a request key are never compared with each other.
    */
-  personKeyOf(occupant: AccountOccupant): SeatKeyText {
+  personKeyOf(occupant: AccountOccupant): PersonKey {
     return occupant.seatSubject === SeatSubject.Account
-      ? SeatKeyText.of(`${ACCOUNT_KEY_PREFIX}${occupant.subjectUserId}`)
-      : SeatKeyText.of(`${GUEST_KEY_PREFIX}${occupant.guestLabel}`);
+      ? PersonKey.account(occupant.subjectUserId)
+      : PersonKey.guest(occupant.guestLabel);
   },
 
   /**
@@ -286,7 +285,7 @@ export const VisitStorySystem = {
    * it by (the staff dashboard's party check) — the same key, off the same
    * stored occupant.
    */
-  seatPersonKey(seat: AccountOccupant): SeatKeyText {
+  seatPersonKey(seat: AccountOccupant): PersonKey {
     return VisitStorySystem.personKeyOf(seat);
   },
 
@@ -359,7 +358,7 @@ export const VisitStorySystem = {
     occupants: readonly AccountOccupant[],
     own: readonly boolean[],
   ): number {
-    const people = new Set<SeatKeyText>();
+    const people = new Set<PersonKey>();
     for (let i = 0; i < occupants.length; i++) {
       if (own[i] === true) continue;
       people.add(VisitStorySystem.personKeyOf(occupants[i] as AccountOccupant));

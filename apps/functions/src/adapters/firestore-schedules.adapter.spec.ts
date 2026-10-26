@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import { BarberId, BusyKey } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
+import type { Log } from '@core/ports';
 import {
   barberBusyDayFixture,
   barberScheduleFixture,
@@ -13,6 +14,7 @@ import {
   scheduleExceptionFixture,
   type SchedulingBusyCase,
   schedulingPortsContract,
+  unguarded,
 } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { StoredDocumentSystem } from '@core/systems';
@@ -25,6 +27,13 @@ import { firestoreSchedulePorts } from './firestore-schedules.adapter';
  * bundle): `loadBusyDay` hands back exactly what the projection stores, the
  * caller derives `busy` (released first, then padded).
  */
+
+/**
+ * The mechanics cases' log: they read through the test support's
+ * `unguarded` registry (OR-33 — the registry and the log have no default),
+ * so there is no refusal to report.
+ */
+const NO_LOG: Log = () => undefined;
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -53,6 +62,8 @@ describe('firestoreSchedulePorts.loadBusyDay — the scheduling ports’ busy co
     async (_name, entry) => {
       const ports = firestoreSchedulePorts(
         storeFor(entry).db as unknown as Firestore,
+        unguarded,
+        NO_LOG,
       );
       expect(await contract.busyThroughLoad(ports.loadBusyDay, entry)).toEqual(
         entry.busy,
@@ -65,7 +76,11 @@ describe('firestoreSchedulePorts.loadBusyDay — the scheduling ports’ busy co
     const fake = createProjectionFirestore({
       [`${Collections.BarberBusy}/${day.id}`]: bodyOf(day),
     });
-    const ports = firestoreSchedulePorts(fake.db as unknown as Firestore);
+    const ports = firestoreSchedulePorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(
       await ports.loadBusyDay(BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY)),
     ).toEqual({
@@ -89,7 +104,11 @@ describe('firestoreSchedulePorts — rosters, exceptions and the rostered popula
     ),
     [`${Collections.ScheduleExceptions}/${exception.id}`]: bodyOf(exception),
   });
-  const ports = firestoreSchedulePorts(fake.db as unknown as Firestore);
+  const ports = firestoreSchedulePorts(
+    fake.db as unknown as Firestore,
+    unguarded,
+    NO_LOG,
+  );
 
   it('reads a roster by the barber’s id, `null` when unrostered', async () => {
     expect(await ports.loadSchedule(FIXTURE_IDS.barber)).toEqual({
@@ -125,7 +144,11 @@ describe('firestoreSchedulePorts — rosters, exceptions and the rostered popula
     vi.spyOn(broken.db, 'collection').mockImplementation(() => {
       throw Object.assign(new Error('10 ABORTED'), { code: 10 });
     });
-    const failing = firestoreSchedulePorts(broken.db as unknown as Firestore);
+    const failing = firestoreSchedulePorts(
+      broken.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(await failing.loadSchedule(FIXTURE_IDS.barber)).toEqual({
       ok: false,
       error: RepositoryError.readFailed(

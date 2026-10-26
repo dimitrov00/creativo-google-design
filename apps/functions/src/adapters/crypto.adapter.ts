@@ -1,12 +1,19 @@
 import {
   createHash,
+  createHmac,
   randomBytes,
   randomInt,
   randomUUID,
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
-import type { Hash, HashPorts, IdPorts, NextId } from '@core/ports';
+import type {
+  Hash,
+  HashPorts,
+  IdPorts,
+  NextId,
+  WalkInKeyPorts,
+} from '@core/ports';
 
 /**
  * The server's randomness and digests — the ONE `node:crypto` import of the
@@ -22,6 +29,10 @@ import type { Hash, HashPorts, IdPorts, NextId } from '@core/ports';
 /** The `hash` port: sha256 of the UTF-8 input, lower-case hex (64 characters). */
 export const sha256Hex: Hash = (input) =>
   createHash('sha256').update(input, 'utf8').digest('hex');
+
+/** HMAC-SHA-256 of the UTF-8 input under `key`, lower-case hex (64 characters). */
+export const hmacSha256Hex = (key: string, input: string): string =>
+  createHmac('sha256', key).update(input, 'utf8').digest('hex');
 
 /** The `nextId` port: a v4 UUID from Node's CSPRNG — the id exists before the write. */
 export const randomUuid: NextId = () => randomUUID();
@@ -59,4 +70,16 @@ export const hexEqualInConstantTime = (a: string, b: string): boolean => {
 export const cryptoPorts = (): HashPorts & IdPorts => ({
   hash: sha256Hex,
   nextId: randomUuid,
+});
+
+/**
+ * The keyed digest a walk-in's record id is derived with
+ * (`WalkInKeyPorts`, OR-26): HMAC-SHA-256 under the key `key()` answers,
+ * read at EACH call — the composition root hands the `WALKIN_ID_KEY`
+ * secret's reader, a runtime value never read at load. A plain sha256 of a
+ * phone number is brute-forced back in seconds; under the server's key the
+ * id says nothing about the contact.
+ */
+export const walkInKeyPorts = (key: () => string): WalkInKeyPorts => ({
+  walkInHash: (input) => hmacSha256Hex(key(), input),
 });

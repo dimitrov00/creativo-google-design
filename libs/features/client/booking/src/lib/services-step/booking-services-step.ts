@@ -432,18 +432,20 @@ export class BookingServicesStep {
   }
 
   protected addGuest(): void {
-    // Numbered off the monotonic id counter, not the roster LENGTH: ids are
-    // never reused, so after add → add → remove-first the length-based number
-    // repeats one that is still on screen and two people end up with the same
-    // name. The number can skip after removals, which is the honest cost of
-    // never showing two "Guest 2"s. A prefilled guest can already hold a
-    // placeholder-shaped name the visit stored («Гост 3»), so the number
-    // also steps past every label in use (`unusedGuestLabel`). Where the
-    // number starts is the party's (`Party.labelNumberAfter`).
+    // The LOWEST number nobody on screen answers to, from 1 (OR-6) — the
+    // one placeholder rule the visit prefill and the staff walk-ins number
+    // by too (`unusedGuestLabel`, `GuestLabelSystem.firstUnusedLabel`), and
+    // the Finder's. Never the roster LENGTH: after add → add → remove-first
+    // the length repeats «Гост 2», still on screen, and two people share a
+    // name. Never past the highest guest id either: the ids are never
+    // reused, so that number drifted from the labels shown (Гост 1, Гост 2,
+    // Гост 4). A number freed by a removal is handed out again (DEP-F5:
+    // remove the first guest and the next one added is «Гост 1»), and a
+    // placeholder-shaped name a prefilled guest already holds («Гост 3»)
+    // is stepped past, so two people never merge into one on the wire.
     this.store.addGuest(
-      this.store.unusedGuestLabel(
-        (number) => this.transloco.translate('booking.party.guest', { number }),
-        Party.labelNumberAfter(this.store.party()),
+      this.store.unusedGuestLabel((number) =>
+        this.transloco.translate('booking.party.guest', { number }),
       ),
     );
     // Read the id BACK rather than deriving it from the count: guest ids are

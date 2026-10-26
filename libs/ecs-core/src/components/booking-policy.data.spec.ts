@@ -2,12 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   deepFreeze,
+  hourCount,
   localDate,
   utcMs,
   duration,
   minuteCount,
 } from '@core/testing';
-import { UtcEpochMs } from '@core/primitives';
+import { HourCount, UtcEpochMs } from '@core/primitives';
 import { type SchedulingError, SchedulingErrorCode } from '@core/errors';
 import { BookingPolicy } from './booking-policy.data';
 
@@ -25,6 +26,7 @@ const VALID: BookingPolicy = {
   ...VALID_INPUT,
   slotStepMinutes: duration(15),
   minLeadMinutes: minuteCount(120),
+  cancellationWindowHours: hourCount(24),
 };
 
 function fieldsOf(errors: readonly SchedulingError[]): readonly string[] {
@@ -138,7 +140,10 @@ describe('BookingPolicy.equals — autoConfirm counts (the legacy defect)', () =
       { ...VALID, slotStepMinutes: duration(VALID.slotStepMinutes + 1) },
       { ...VALID, minLeadMinutes: minuteCount(VALID.minLeadMinutes + 1) },
       { ...VALID, horizonMonths: VALID.horizonMonths + 1 },
-      { ...VALID, cancellationWindowHours: VALID.cancellationWindowHours + 1 },
+      {
+        ...VALID,
+        cancellationWindowHours: hourCount(VALID.cancellationWindowHours + 1),
+      },
       { ...VALID, maxFlexibleDays: VALID.maxFlexibleDays + 1 },
       { ...VALID, autoConfirm: !VALID.autoConfirm },
     ];
@@ -227,21 +232,26 @@ describe('cancellation window (elapsed time on instants — flatten-spec §2.3 T
     UtcEpochMs.plusMs(t, ms);
 
   it('draws the deadline exactly windowHours before the start', () => {
-    expect(BookingPolicy.cancellationDeadlineUtcMs(24, start)).toBe(
+    expect(BookingPolicy.cancellationDeadlineUtcMs(hourCount(24), start)).toBe(
       start - 24 * 3_600_000,
     );
   });
 
   it('permits AT the deadline and refuses one millisecond past it', () => {
-    const deadline = BookingPolicy.cancellationDeadlineUtcMs(24, start);
+    const deadline = BookingPolicy.cancellationDeadlineUtcMs(
+      hourCount(24),
+      start,
+    );
     expect(BookingPolicy.mayCancelAt(VALID, start, deadline)).toBe(true);
     expect(BookingPolicy.mayCancelAt(VALID, start, plusMs(deadline, 1))).toBe(
       false,
     );
-    expect(BookingPolicy.allowsFreeCancelAt(0, start, start)).toBe(true);
-    expect(BookingPolicy.allowsFreeCancelAt(0, start, plusMs(start, 1))).toBe(
-      false,
+    expect(BookingPolicy.allowsFreeCancelAt(HourCount.ZERO, start, start)).toBe(
+      true,
     );
+    expect(
+      BookingPolicy.allowsFreeCancelAt(HourCount.ZERO, start, plusMs(start, 1)),
+    ).toBe(false);
   });
 
   it('accepts exactly the windows the policy could set', () => {

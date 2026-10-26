@@ -1,12 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { endMinute, minute } from '@core/testing';
-import { SeatKeyText } from '@core/primitives';
+import { endMinute, minute, personKeyFrom } from '@core/testing';
 import { StandingSeatPair } from './standing-seat.data';
 
 const at = (personKey: string, start: number, minutes: number) =>
   StandingSeatPair.of(
-    SeatKeyText.of(personKey),
+    personKeyFrom(personKey),
     minute(start),
     endMinute(start + minutes),
   );

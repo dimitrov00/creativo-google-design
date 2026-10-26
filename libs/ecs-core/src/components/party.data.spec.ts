@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { GuestId, UserId } from '@core/primitives';
 import { Party } from './party.data';
-import { PartyMember, PartyRole } from './party-member.data';
+import { PartyRole } from './party-member.data';
 import { SeatLabel } from './seat-label.data';
 
 const OWNER = UserId.of('u-owner');
@@ -334,49 +334,5 @@ describe('Party.is — the edge guard', () => {
     },
   ])('refuses %j', (raw) => {
     expect(Party.is(raw)).toBe(false);
-  });
-});
-
-describe('Party.labelNumberAfter — the next guest placeholder’s ordinal', () => {
-  it('starts at 1 for a party with no guest, and for no party at all', () => {
-    expect(Party.labelNumberAfter(Party.anonymous())).toBe(1);
-    expect(Party.labelNumberAfter(null)).toBe(1);
-  });
-
-  it('is one past the highest guest number PRESENT, plus one (highest + 2)', () => {
-    // guest-0, guest-1 → «Гост 3».
-    expect(Party.labelNumberAfter(partyOf('Мария', 'Ани'))).toBe(3);
-  });
-
-  it('reads the roster, not the counter — removing the last guest gives its number back (today’s rule, OQ-6)', () => {
-    const party = partyOf('Мария', 'Ани', 'Ива');
-    const last = Party.guests(party)[2]?.guestId as GuestId;
-    const removed = Party.removeGuest(party, last);
-    if (!removed.ok) throw new Error('bad fixture');
-    expect(removed.value.nextGuestSequence).toBe(3);
-    expect(Party.labelNumberAfter(removed.value)).toBe(3);
-    const first = Party.guests(party)[0]?.guestId as GuestId;
-    const firstGone = Party.removeGuest(party, first);
-    if (!firstGone.ok) throw new Error('bad fixture');
-    expect(Party.labelNumberAfter(firstGone.value)).toBe(4);
-  });
-
-  it('skips a guest id with no number, and ignores companions', () => {
-    const label = (raw: string): SeatLabel => {
-      const parsed = SeatLabel.parse(raw);
-      if (!parsed.ok) throw new Error(`bad fixture: ${raw}`);
-      return parsed.value;
-    };
-    const party: Party = {
-      ownerUserId: OWNER,
-      members: [
-        PartyMember.owner(),
-        PartyMember.companion(COMPANION),
-        PartyMember.guest(GuestId.of('guest-x'), label('Гост')),
-        PartyMember.guest(GuestId.of('guest-4'), label('Ани')),
-      ],
-      nextGuestSequence: 5,
-    };
-    expect(Party.labelNumberAfter(party)).toBe(6);
   });
 });

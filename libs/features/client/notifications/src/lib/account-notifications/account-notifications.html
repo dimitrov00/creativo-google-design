@@ -1,0 +1,168 @@
+<ng-container *transloco="let t">
+  <!-- Chrome as /account/appointments: a sticky bar over a scrim, the way
+       out icon-only (quiet HIG chrome) — the inbox is reached from the
+       menu's account run, so it leads back to the account. -->
+  <ui-toolbar uiSticky uiToolbarBackground="scrim">
+    <ui-stack
+      uiAxis="horizontal"
+      uiAlignment="center"
+      uiFrame
+      uiFrameMaxWidth="infinity"
+      uiFrameMinHeight="var(--control-size-large)"
+    >
+      <a
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        routerLink="/account"
+        [attr.aria-label]="t('landing.nav.back')"
+        data-testid="notifications-back"
+      >
+        <ui-icon uiName="nav.back" />
+      </a>
+    </ui-stack>
+  </ui-toolbar>
+
+  <ui-stack
+    uiSpacing="comfortable"
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
+    class="notifications"
+  >
+    <!-- The page's head: the menu row's own word, «Известия». -->
+    <ui-sheet-headline class="notifications__head">
+      <h1 uiText uiFont="largeTitle" data-testid="notifications-title">
+        {{ t('landing.menu.notifications') }}
+      </h1>
+    </ui-sheet-headline>
+
+    @switch (store.state()) { @case (LoadState.Loading) {
+    <ui-stack
+      uiSpacing="tight"
+      data-testid="notifications-skeleton"
+      aria-busy="true"
+    >
+      @for (row of skeletonRows; track row) {
+      <ui-skeleton uiFrame uiFrameHeight="4.5rem" />
+      }
+    </ui-stack>
+    } @case (LoadState.Failed) {
+    <ui-notice
+      uiTone="destructive"
+      uiAnnounce="polite"
+      data-testid="notifications-failed"
+    >
+      {{ failure() }}
+      <button
+        uiNoticeActions
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiControlSize="small"
+        data-testid="notifications-retry"
+        (click)="store.retry()"
+      >
+        {{ t('visits.retry') }}
+      </button>
+    </ui-notice>
+    } @case (LoadState.Empty) {
+    <ui-empty-state data-testid="notifications-empty">
+      <p uiText uiFont="callout" uiForegroundStyle="secondary">
+        {{ t('notifications.empty') }}
+      </p>
+    </ui-empty-state>
+    } @default {
+    <!-- One segmented run, newest first. A row that leads somewhere is a
+         link named by its whole sentence; an announcement only says
+         something, so it is a static row. The trailing run is the age and
+         the unread dot — the accent as a SHAPE (the accent law), its box
+         kept on a read row too, so every age lines up. A shape says nothing
+         to a screen reader, and the row's name replaces what it holds, so
+         each row is DESCRIBED by a hidden line in its trailing run: the
+         unread word on an unread row, then the age («Ново, преди 2 ч»). -->
+    <ui-list-group data-testid="notifications-list">
+      @for (row of rows(); track row.id) { @if (row.route; as route) {
+      <a
+        uiListRow
+        uiSize="large"
+        uiAlignment="leading"
+        [uiInteractive]="true"
+        [routerLink]="route.path"
+        [queryParams]="route.query"
+        [attr.aria-label]="row.label"
+        [attr.aria-describedby]="'notification-' + row.id + '-meta'"
+        data-testid="notifications-row"
+        [attr.data-topic]="row.topic"
+        [attr.data-unread]="row.unread ? '' : null"
+      >
+        <ui-icon
+          uiLeading
+          [uiName]="row.glyph"
+          uiScale="medium"
+          uiForegroundStyle="secondary"
+        />
+        <ui-stack uiSpacing="none" class="notifications__text">
+          <span uiText uiFont="body" uiWeight="semibold">{{ row.title }}</span>
+          @if (row.detail; as detail) {
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ detail }}
+          </span>
+          }
+        </ui-stack>
+        <span uiTrailing uiText uiFont="footnote" class="notifications__trail">
+          <span aria-hidden="true">{{ row.age }}</span>
+          <span
+            class="notifications__dot"
+            aria-hidden="true"
+            [attr.data-unread]="row.unread ? '' : null"
+          ></span>
+          <span uiVisuallyHidden [id]="'notification-' + row.id + '-meta'"
+            >{{ row.meta }}</span
+          >
+        </span>
+      </a>
+      } @else {
+      <ui-list-row
+        uiSize="large"
+        uiAlignment="leading"
+        role="group"
+        [attr.aria-label]="row.label"
+        [attr.aria-describedby]="'notification-' + row.id + '-meta'"
+        data-testid="notifications-row"
+        [attr.data-topic]="row.topic"
+        [attr.data-unread]="row.unread ? '' : null"
+      >
+        <ui-icon
+          uiLeading
+          [uiName]="row.glyph"
+          uiScale="medium"
+          uiForegroundStyle="secondary"
+        />
+        <ui-stack uiSpacing="none" class="notifications__text">
+          <span uiText uiFont="body" uiWeight="semibold">{{ row.title }}</span>
+          @if (row.detail; as detail) {
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary">
+            {{ detail }}
+          </span>
+          }
+        </ui-stack>
+        <span uiTrailing uiText uiFont="footnote" class="notifications__trail">
+          <span aria-hidden="true">{{ row.age }}</span>
+          <span
+            class="notifications__dot"
+            aria-hidden="true"
+            [attr.data-unread]="row.unread ? '' : null"
+          ></span>
+          <span uiVisuallyHidden [id]="'notification-' + row.id + '-meta'"
+            >{{ row.meta }}</span
+          >
+        </span>
+      </ui-list-row>
+      } }
+    </ui-list-group>
+    } }
+  </ui-stack>
+</ng-container>

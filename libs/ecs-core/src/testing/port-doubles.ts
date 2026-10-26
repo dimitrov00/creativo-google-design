@@ -2,8 +2,10 @@ import { BehaviorSubject, defer, map, of, type Observable } from 'rxjs';
 import {
   type AuthClaims,
   BarberStatus,
+  type BookingCall,
   BookingLifecycle,
   BookingPolicy,
+  type ClientIssue,
   CouponStatus,
   type FlagName,
   JournalVisibility,
@@ -25,6 +27,7 @@ import {
   IdentifierChannel,
   OtpId,
   Result,
+  type AppointmentId,
   type CourseId,
   type CustomerId,
   type EventId,
@@ -87,6 +90,7 @@ import type {
   CallableName,
   CallableWire,
   CatalogReadPorts,
+  ClientIssuePorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
   ClockPorts,
@@ -94,6 +98,7 @@ import type {
   CourseReadPorts,
   CourseWritePorts,
   CustomerPorts,
+  CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
   GatewayPorts,
@@ -121,6 +126,7 @@ import type {
   TimerPorts,
   UserLookupPorts,
   UserSearchPorts,
+  VisitEditWritePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import { DiscountSystem, PagingSystem } from '@core/systems';
@@ -279,25 +285,39 @@ function earliestFirst(a: Appointment, b: Appointment): number {
   return UtcEpochMs.compare(a.utcEpochMs, b.utcEpochMs) || byString(a.id, b.id);
 }
 
+/** What `memoryAppointmentReadPorts` adds to the visits it reads — nothing unreadable unless given. */
+export type AppointmentReadScript = {
+  /**
+   * Per barber day, how many stored visits the read-time guard dropped —
+   * the day's `unreadableCount` (OR-2); `0` for a key it does not name.
+   */
+  readonly unreadable: ReadonlyMap<BusyKey, number>;
+};
+
 /**
  * `APPOINTMENT_READ_PORTS` — the appointment readers over `appointments`:
- * one visit; a barber's day (`busyKeys` contains, every status); an
- * account's live visits by start and its newest `limit` (`ownerUserId`); a
- * client record's history pages (`subjectCustomerIds` contains, newest
- * first, the same-instant boundary kept by `PagingSystem`); and the staff
- * search window — the `limitPerSide` nearest each side of `nowUtcMs`,
- * merged oldest first.
+ * one visit; a barber's day (`busyKeys` contains, every status, with the
+ * script's `unreadableCount` for it — `0` unless given); an account's live
+ * visits by start and its newest `limit` (`ownerUserId`); a client record's
+ * history pages (`subjectCustomerIds` contains, newest first, the
+ * same-instant boundary kept by `PagingSystem`); and the staff search
+ * window — the `limitPerSide` nearest each side of `nowUtcMs`, merged
+ * oldest first.
  */
 export function memoryAppointmentReadPorts(
   appointments: readonly Appointment[],
+  script: Partial<AppointmentReadScript> = {},
 ): AppointmentReadPorts {
   return {
     observeAppointment: (id) =>
       stream(() => appointments.find((entry) => entry.id === id) ?? null),
     observeBarberDay: (key) =>
-      stream(() =>
-        appointments.filter((entry) => entry.busyKeys.includes(key)),
-      ),
+      stream(() => ({
+        appointments: appointments.filter((entry) =>
+          entry.busyKeys.includes(key),
+        ),
+        unreadableCount: script.unreadable?.get(key) ?? 0,
+      })),
     observeUpcoming: (ownerUserId) =>
       stream(() =>
         appointments
@@ -479,9 +499,11 @@ export type CouponVoucherState = {
 /**
  * `COUPON_VOUCHER_PORTS` — an ENABLED coupon by its normalised code, every
  * enabled coupon that carries a code (a grant-only one is not on offer, as
- * the adapter answers), a grant by id, a client record's ACTIVE grants, a voucher
- * by code, a record's vouchers (`issuedToCustomerId`), and the coupons of a
- * set of ids WHATEVER their status (`loadCoupons`, no status filter).
+ * the adapter answers), the grants of a set of ids WHATEVER their status
+ * (`loadCouponGrants`, a burned one included), a client record's ACTIVE
+ * grants, a voucher by code, a record's vouchers (`issuedToCustomerId`), and
+ * the coupons of a set of ids WHATEVER their status (`loadCoupons`, no
+ * status filter).
  */
 export function memoryCouponVoucherPorts(
   state: Partial<CouponVoucherState> = {},
@@ -499,8 +521,8 @@ export function memoryCouponVoucherPorts(
     // carrying a code — a grant-only (code-less) coupon is not on offer.
     listOpenCoupons: async () =>
       Result.ok((state.coupons ?? []).filter(DiscountSystem.isOffered)),
-    loadCouponGrant: async (id) =>
-      Result.ok((state.grants ?? []).find((entry) => entry.id === id) ?? null),
+    loadCouponGrants: async (ids) =>
+      Result.ok((state.grants ?? []).filter((entry) => ids.includes(entry.id))),
     listUsableCouponGrants: async (customerId) =>
       Result.ok(
         (state.grants ?? []).filter(
@@ -533,8 +555,9 @@ const INBOX_LIMIT = 50;
 
 /**
  * `INBOX_PORTS` — each account's inbox (`users/{uid}/notifications`) in
- * `inboxes`, written IN PLACE: the newest 50 by `sentAtUtcMs`; a read stamp
- * set on one notification, or on every unread one.
+ * `inboxes`, written IN PLACE: the newest 50 by `sentAtUtcMs`; the read
+ * receipt — one stamp on each named notification still unread, a stamped
+ * one keeping its own (the stamp is one-shot), an unknown id skipped.
  */
 export function memoryInboxPorts(
   inboxes: Map<UserId, InboxNotification[]>,
@@ -557,13 +580,13 @@ export function memoryInboxPorts(
           )
           .slice(0, INBOX_LIMIT),
       ),
-    markNotificationRead: async (userId, id, readAtUtcMs) => {
+    markNotificationsRead: async (userId, ids, readAtUtcMs) => {
       const inbox = inboxOf(userId);
-      const at = inbox.findIndex((entry) => entry.id === id);
-      const found = inbox.at(at);
-      if (at >= 0 && found !== undefined) {
-        inbox.splice(at, 1, { ...found, readAtUtcMs });
-      }
+      inbox.forEach((entry, at) => {
+        if (entry.readAtUtcMs === null && ids.includes(entry.id)) {
+          inbox.splice(at, 1, { ...entry, readAtUtcMs });
+        }
+      });
       return Result.ok(undefined);
     },
   };
@@ -683,6 +706,28 @@ export function memoryUserSearchPorts(users: readonly User[]): UserSearchPorts {
             (a, b) =>
               byString(a.searchName ?? '', b.searchName ?? '') ||
               byString(a.id, b.id),
+          )
+          .slice(0, limit),
+      ),
+  };
+}
+
+/**
+ * The staff client search over the client records (OR-26): every customer
+ * whose `searchPrefixes` contains the (already normalised) prefix, by
+ * `searchName` (ties by id), at most `limit` — the adapter's query.
+ */
+export function memoryCustomerSearchPorts(
+  customers: readonly Customer[],
+): CustomerSearchPorts {
+  return {
+    searchCustomers: async (prefix, limit) =>
+      Result.ok(
+        customers
+          .filter((entry) => entry.searchPrefixes.includes(prefix))
+          .sort(
+            (a, b) =>
+              byString(a.searchName, b.searchName) || byString(a.id, b.id),
           )
           .slice(0, limit),
       ),
@@ -1463,6 +1508,77 @@ export function scriptedGatewayPorts(
         Result<CallableWire[N]['answer'], PipelineError>
       >) as CallableClient;
   return { callableClient };
+}
+
+/** One write `scriptedVisitEditWritePorts` was asked for, in order — named by its bundle member. */
+export type VisitEditWriteCall =
+  | {
+      readonly port: 'sendStaffEdit';
+      readonly intent: BookingCall.StaffEdit;
+    }
+  | {
+      readonly port: 'saveTeamNoteText';
+      readonly appointmentId: AppointmentId;
+      readonly text: string | null;
+    }
+  | { readonly port: 'sendSeatTip'; readonly request: BookingCall.Tip };
+
+/** How `scriptedVisitEditWritePorts` answers — every part optional. */
+export type VisitEditWriteScript = {
+  /** Every write, recorded in order — the spec's own array. */
+  readonly calls?: VisitEditWriteCall[];
+  /** Whether the staff-edit batch lands (`true` unless given). */
+  readonly staffEdit?: boolean;
+  /** Whether the team note is written (`true` unless given). */
+  readonly teamNote?: boolean;
+  /** Whether the tip is recorded (`true` unless given). */
+  readonly seatTip?: boolean;
+};
+
+/**
+ * The visit sheet's three writes (OR-4), scripted and recorded: each call
+ * pushed to `calls` in the order it was made — what a `saveVisitEdit` spec
+ * asserts the sequence by — and answered `true` (landed) unless the script
+ * says otherwise. Nothing is stored: the store's writers own the state.
+ */
+export function scriptedVisitEditWritePorts(
+  script: VisitEditWriteScript = {},
+): VisitEditWritePorts {
+  const calls = script.calls ?? [];
+  return {
+    sendStaffEdit: async (intent) => {
+      calls.push({ port: 'sendStaffEdit', intent });
+      return script.staffEdit ?? true;
+    },
+    saveTeamNoteText: async (appointmentId, text) => {
+      calls.push({ port: 'saveTeamNoteText', appointmentId, text });
+      return script.teamNote ?? true;
+    },
+    sendSeatTip: async (request) => {
+      calls.push({ port: 'sendSeatTip', request });
+      return script.seatTip ?? true;
+    },
+  };
+}
+
+/**
+ * The client issue sink (OR-34), recording: every issue handed over is
+ * pushed to `reported`, in order, one batch after another — nothing is
+ * deduplicated, capped or sent (that is the web reporter's adapter).
+ */
+export function recordingClientIssuePorts(): {
+  readonly ports: ClientIssuePorts;
+  readonly reported: readonly ClientIssue[];
+} {
+  const reported: ClientIssue[] = [];
+  return {
+    reported,
+    ports: {
+      reportClientIssues: (issues) => {
+        reported.push(...issues);
+      },
+    },
+  };
 }
 
 /**

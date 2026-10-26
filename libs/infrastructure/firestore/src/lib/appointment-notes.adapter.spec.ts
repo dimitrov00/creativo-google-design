@@ -5,6 +5,7 @@ import { RepositoryError } from '@core/errors';
 import type { AppointmentNote } from '@core/entities';
 import { recordingTelemetry, utcMs } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
+import { UNGUARDED } from '../testing/unguarded';
 
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
@@ -52,10 +53,10 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     const fake = new FakeFirestore();
     const decide = vi.fn(appending('наводнение'));
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      decide,
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, decide);
 
     expect(decide).toHaveBeenCalledExactlyOnceWith(null);
     const note: AppointmentNote = {
@@ -81,10 +82,10 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     const fake = new FakeFirestore({ [PATH]: body('алергия към ментол') });
     const decide = vi.fn(appending('наводнение'));
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      decide,
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, decide);
 
     expect(decide).toHaveBeenCalledExactlyOnceWith({
       id: VISIT,
@@ -103,10 +104,10 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
   it('writes nothing when the decision answers null — and never deletes', async () => {
     const fake = new FakeFirestore({ [PATH]: body('алергия към ментол') });
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      () => null,
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, () => null);
 
     expect(answer).toEqual(Result.ok(null));
     expect(fake.writes).toEqual([]);
@@ -119,19 +120,19 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     const append = appending('наводнение');
     let colleagueWrote = false;
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      (stored) => {
-        seen.push(stored?.text ?? null);
-        if (!colleagueWrote) {
-          // A colleague's save lands between this attempt's read and its
-          // commit: the note's version moves under the transaction.
-          colleagueWrote = true;
-          fake.set(PATH, body('алергия към ментол\nколега: идва с дете', NOW));
-        }
-        return append(stored);
-      },
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, (stored) => {
+      seen.push(stored?.text ?? null);
+      if (!colleagueWrote) {
+        // A colleague's save lands between this attempt's read and its
+        // commit: the note's version moves under the transaction.
+        colleagueWrote = true;
+        fake.set(PATH, body('алергия към ментол\nколега: идва с дете', NOW));
+      }
+      return append(stored);
+    });
 
     expect(seen).toEqual([
       'алергия към ментол',
@@ -155,10 +156,10 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     fake.failWith({ code: 'unavailable' });
     const decide = vi.fn(appending('наводнение'));
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      decide,
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, decide);
 
     expect(answer).toEqual(
       Result.err(RepositoryError.writeFailed(PATH, 'unavailable')),
@@ -172,10 +173,10 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     const fake = new FakeFirestore({ [PATH]: body('алергия към ментол') });
     fake.failWith({ code: 'deadline-exceeded' });
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      appending('наводнение'),
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, appending('наводнение'));
 
     expect(answer).toEqual(
       Result.err(RepositoryError.writeFailed(PATH, 'deadline-exceeded')),
@@ -188,15 +189,15 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     let attempts = 0;
     const append = appending('наводнение');
 
-    const answer = await appointmentNotePorts(asDb(fake)).updateAppointmentNote(
-      VISIT,
-      (stored) => {
-        attempts += 1;
-        // Somebody writes the note under every attempt.
-        fake.set(PATH, body(`правка ${attempts}`, NOW));
-        return append(stored);
-      },
-    );
+    const answer = await appointmentNotePorts(
+      asDb(fake),
+      UNGUARDED,
+    ).updateAppointmentNote(VISIT, (stored) => {
+      attempts += 1;
+      // Somebody writes the note under every attempt.
+      fake.set(PATH, body(`правка ${attempts}`, NOW));
+      return append(stored);
+    });
 
     expect(answer).toEqual(
       Result.err(RepositoryError.writeFailed(PATH, 'aborted')),
@@ -210,7 +211,7 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
     const fake = new FakeFirestore();
 
     await expect(
-      appointmentNotePorts(asDb(fake)).updateAppointmentNote(
+      appointmentNotePorts(asDb(fake), UNGUARDED).updateAppointmentNote(
         VISIT,
         (stored) => ({
           ...appending('наводнение')(stored),
@@ -228,7 +229,8 @@ describe('appointmentNotePorts.updateAppointmentNote — read → decide → wri
  * the composition root builds it, a stored note that is not its entity is
  * refused — live as an emitted value (the listener stays), in the append's
  * transaction BEFORE the decision (nothing decided, nothing written). The
- * cases above run unguarded, the default, and keep today's behaviour.
+ * mechanics cases above pass the test support's `UNGUARDED` explicitly —
+ * the guard has no default since OR-33 — and keep today's behaviour.
  */
 describe('appointmentNotePorts, guarded — a malformed note is refused (pass E, E-2)', () => {
   /** Every answer a stream gave, in order. */
@@ -412,10 +414,10 @@ describe('appointmentNotePorts, guarded — a malformed note is refused (pass E,
     expect(fresh.lines).toEqual([]);
   });
 
-  it('unguarded — the default — keeps today’s behaviour: a malformed note is read and decided on as stored', async () => {
+  it('UNGUARDED — the test support’s, passed explicitly (OR-33) — keeps today’s behaviour: a malformed note is read and decided on as stored', async () => {
     const stored = { ...body('алергия към ментол'), text: 3 };
     const fake = new FakeFirestore({ [PATH]: stored });
-    const ports = appointmentNotePorts(asDb(fake));
+    const ports = appointmentNotePorts(asDb(fake), UNGUARDED);
     const live = recorded(ports.observeAppointmentNote(VISIT));
     const decide = vi.fn(() => null);
 

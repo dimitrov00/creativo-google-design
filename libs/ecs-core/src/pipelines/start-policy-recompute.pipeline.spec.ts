@@ -14,7 +14,12 @@ import {
   RecomputeJobName,
 } from '@core/entities';
 import { PolicyRecomputeJobSystem } from '@core/systems';
-import { FIXTURE_NOW_UTC_MS, memoryStore, memoryTxPorts } from '@core/testing';
+import {
+  FIXTURE_NOW_UTC_MS,
+  hourCount,
+  memoryStore,
+  memoryTxPorts,
+} from '@core/testing';
 import {
   POLICY_RECOMPUTE_JOB_PATH,
   policyJobWrite,
@@ -37,7 +42,7 @@ const instant = (seconds: number) => {
 
 const at = (windowHours: number): BookingPolicy => ({
   ...BookingPolicy.DEFAULT,
-  cancellationWindowHours: windowHours,
+  cancellationWindowHours: hourCount(windowHours),
 });
 
 const change = (
@@ -93,7 +98,7 @@ function passOf(
     stepKey: PolicyRecomputeJobSystem.stepKeyOf(generation, null, null),
     stalledAtUtcMs: null,
     lastFailureCode: null,
-    windowHours,
+    windowHours: hourCount(windowHours),
   };
 }
 

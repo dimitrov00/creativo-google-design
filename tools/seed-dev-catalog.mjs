@@ -28,8 +28,9 @@
  * shop calendar (`calendar.mjs`, `ZonedTimeSystem` on the default shop's
  * zone), the book's assembly (`fixtures.mjs`), the history generator
  * (`history.mjs`), the placing of each visit (`appointments.mjs`), the
- * loyalty engine's output (`loyalty.mjs`), the promotions (`promotions.mjs`)
- * and Мартин's waitlist request (`waitlist.mjs`). This file only writes.
+ * loyalty engine's output (`loyalty.mjs`), the promotions (`promotions.mjs`),
+ * the programs (`programs.mjs`) and Мартин's waitlist request
+ * (`waitlist.mjs`). This file only writes.
  *
  * ### Requirements beyond the emulators
  * The seed runs TypeScript in-process: at start it bundles the fixtures,
@@ -187,6 +188,7 @@ const {
   readPromotionWrites,
 } = seed.promotions;
 const { waitlistRequestWriteOf } = seed.waitlist;
+const { programWritesOf } = seed.programs;
 
 /** A body as written: the body, and its TTL `purgeAt` when its group has one (F1-7). */
 function stamped(path, body) {
@@ -487,7 +489,7 @@ const loyaltyCatalog = catalogAsHeld(
 
 if (CATALOG_ONLY) {
   console.log(
-    'catalogue only: no staff account, client book, client records, avatars, promotions, stats or loyalty accounts',
+    'catalogue only: no staff account, client book, client records, avatars, promotions, programs, stats or loyalty accounts',
   );
   process.exit(0);
 }
@@ -614,6 +616,22 @@ console.log(`seeded ${clientBook.customers.length} client records`);
 }
 
 /*
+ * PROGRAMS (OR-41): the roles, courses and events `/careers`, `/courses`,
+ * `/events` and `/admin/programs` show — engine output
+ * (`tools/seed/programs.mjs`, every body through `ProgramsSystem`), the
+ * events two weeks ahead and a month behind the shop's today. Full mode
+ * only, so the e2e emulator stays free of seeded rows; the locations an
+ * event names are written by now, as the rules' `exists()` asks (OR-37).
+ */
+{
+  const writes = programWritesOf(calendar);
+  const batch = db.batch();
+  for (const { path, data } of writes) batch.set(db.doc(path), data);
+  await batch.commit();
+  console.log(`seeded ${writes.length} programs (roles, courses, events)`);
+}
+
+/*
  * REAL APPOINTMENTS — eighteen months back and three or four days ahead
  * (`APPOINTMENT_DAYS`), each inside its barber's bookable window.
  *
@@ -677,15 +695,40 @@ for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {
  * and a recompute that still failed is run again. Without it
  * (`firestore,auth` only), this is the only writer — and the reason stats
  * exist at all in that setup.
+ *
+ * The commit reads through the REAL read guard (OR-33, DEP-F24): the
+ * registry the composition root passes (`StoredDocumentSystem.guardOf`, from
+ * the bundle), its refusal reported on the console (`seedLog`). A seeded
+ * visit the guard refuses fails its client's stats, and the run stops on
+ * it — intended: fix the fixture, never unguard the seed
+ * (`load-domain.spec.mjs` holds every seeded body to the guard first).
  */
 const statsProjection = seed.projectClientStats({
-  commit: seed.firestoreCommitPlan(db),
+  commit: seed.firestoreCommitPlan(
+    db,
+    seed.StoredDocumentSystem.guardOf,
+    seedLog,
+  ),
   nowUtcMs: () => Date.now(),
   ...seed.firestoreSettingsPorts(db),
   ...seed.firestoreCatalogPorts(db),
   defaultLocationId: seed.TenantConfig.DEFAULT.defaultLocationId,
   log: () => {},
 });
+
+/**
+ * A server `Log` over the console — what the commit reports a refused
+ * document through (`'malformed document refused'`, `{ path, field }`).
+ */
+function seedLog(level, msg, fields) {
+  const print =
+    level === 'error'
+      ? console.error
+      : level === 'warn'
+        ? console.warn
+        : console.log;
+  print(`seed: ${msg}`, fields ?? {});
+}
 
 async function recomputeStats(customerId) {
   for (let attempt = 1; ; attempt += 1) {

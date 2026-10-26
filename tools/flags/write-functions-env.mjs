@@ -9,10 +9,15 @@
  *   node tools/flags/write-functions-env.mjs --project demo-creativo-test
  *   FLAGS_ENV=staging firebase deploy --only functions --project <staging-id>
  *
- * Both files land in dist/apps/functions/, the deployed `functions.source`,
+ * The files land in dist/apps/functions/, the deployed `functions.source`,
  * so this runs AFTER `pnpm nx build functions` (the build wipes the folder):
  *   .env.<projectId>  the chosen map, one `PARAM=true|false` line per flag;
- *   .env.local        the development map; the CLI loads it only when emulating.
+ *   .env.local        the development map; the CLI loads it only when emulating;
+ *   .secret.local     a demo-* project only: a fixed TEST value for every
+ *                     secret the functions bind (`EMULATOR_SECRETS`) — the
+ *                     CLI reads it only when emulating, `firebase.json`
+ *                     never deploys it, and a real project's values live in
+ *                     Secret Manager (`firebase functions:secrets:set`).
  *
  * Which map: a demo-* project, or none, only ever gets `development`. A real
  * project gets --env / FLAGS_ENV, else `production` — the map that switches
@@ -83,6 +88,16 @@ export function manifestErrors(manifest) {
   return errors;
 }
 
+/**
+ * The emulator's secret values (`.secret.local`) — one fixed, public TEST
+ * value per secret the functions bind, so an emulated function never asks
+ * Secret Manager: today the key walk-in record ids are keyed by (OR-26,
+ * `WALKIN_ID_KEY`, `apps/functions/src/main.ts`). Never a real key.
+ */
+export const EMULATOR_SECRETS = Object.freeze({
+  WALKIN_ID_KEY: 'emulator-walkin-id-key-not-secret',
+});
+
 export function isDemoProject(projectId) {
   return !projectId || projectId.startsWith('demo-');
 }
@@ -110,6 +125,14 @@ export function renderEnv(map, environment) {
   ].join('\n');
 }
 
+export function renderSecrets(secrets) {
+  return [
+    '# Emulator-only TEST secrets, written by tools/flags/write-functions-env.mjs. Never deployed; do not edit.',
+    ...Object.entries(secrets).map(([name, value]) => `${name}=${value}`),
+    '',
+  ].join('\n');
+}
+
 /** Returns what it wrote; throws before writing anything when the input is bad. */
 export function writeFunctionsEnv({ manifest, projectId, requested, outDir }) {
   const errors = manifestErrors(manifest);
@@ -132,6 +155,13 @@ export function writeFunctionsEnv({ manifest, projectId, requested, outDir }) {
   const local = join(outDir, '.env.local');
   writeFileSync(local, renderEnv(manifest.development, 'development'));
   files.push(local);
+  // The emulator's secrets — only for a project that can only ever be
+  // emulated (an explicit demo-*), never beside a real project's build.
+  if (projectId && projectId.startsWith('demo-')) {
+    const secrets = join(outDir, '.secret.local');
+    writeFileSync(secrets, renderSecrets(EMULATOR_SECRETS));
+    files.push(secrets);
+  }
   return { environment, files };
 }
 

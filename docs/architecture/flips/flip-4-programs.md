@@ -1263,43 +1263,81 @@ too), so the smoke switched language with the page's own toggle.
 
 ## 10. Open questions (owner) — with the default this plan applies
 
+> **All eleven CLOSED.** Q7 with pass E (`apps/web/e2e/programs.spec.ts`);
+> the other ten by the owner rulings of 2026-10-26
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`) — the ruling
+> follows each question. The defaults below are kept as the plan wrote them.
+
 1. **An event's typed location names no shop** (F4-1 (c)): fall back to
    the default shop's zone and save (today's outcome), or refuse the save
    with a flat error (the field would finally be checked)? _Default: fall
    back; the field stays free text until a picker replaces it (F4-2)._
+   **CLOSED — OR-37 (DEP-F27) and OR-38 (DEP-F28):** the location is a
+   `ui-choice-menu` over the active shops plus «Без конкретен салон»
+   (null), hidden at a one-shop tenant; `ProgramsSystem.eventShop` and the
+   rules' `exists()` check the shop; an event naming no existing shop is
+   refused `ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN` (null still reads the
+   default shop), retiring half of F4-1 (c) and taking back F4-2's
+   exclusions.
 2. **The status words** (F4-7): keep today's raw lowercase (`open`,
    `upcoming`, `closed`) or translate them (`programs.status.*` keys, a
    visible change)? _Default: keep (fidelity); translating is a follow-up._
+   **CLOSED — OR-53 (DEP-F37):** translated, sentence case, agreeing with
+   the noun (`programs.status.position.*`, `programs.status.enrollment.*`;
+   reverses F4-7).
 3. **Read-side validation** (F4-1 (b)): drop it (zero mapper) or keep a
    per-document guard on the public lists? _Default: drop; every writer is
-   the system._
+   the system._ **CLOSED — OR-39:** kept dropped; the rules' `validPosition`
+   / `validCourse` / `validEvent` shape checks (pass E DEP-7) are the guard.
+   Revisit only if an Admin SDK writer of programs appears, which then joins
+   the guarded set (OR-33).
 4. **The legacy programs libraries** (F4-10): delete them in this flip
-   (wave 2) or leave them to Phase 4? _Default: delete now._
+   (wave 2) or leave them to Phase 4? _Default: delete now._ **CLOSED —
+   OR-40:** applied; `libs/domain` and `libs/application` no longer exist.
 5. **Seed programs content** (a few positions, courses and events in
    `tools/seed`) so the pages are not empty in dev? _Default: no. Nothing
    seeds them today; adding rows is new data, and the smoke creates them
-   through the page._
+   through the page._ **CLOSED — OR-41 (DEP-F29):** the dev seed creates a
+   small set as engine output through `ProgramsSystem` — 2 positions, 3
+   courses, 2 events, fixed ids (`pos-barber`, `crs-fundamentals`,
+   `evt-open-studio`, …) — reversing this default.
 6. **The web's clock and id source** (F4-9): new `CLOCK_PORTS`/`ID_PORTS`
    bundles (flipped features only), or the legacy `CLOCK`/`ID_GENERATOR` as
    flip 3's admin rhythm store still does? _Default: the bundles; Phase 4
    moves every remaining feature to them and deletes the legacy two._
+   **CLOSED — OR-40:** applied; only `CLOCK_PORTS` / `ID_PORTS` remain
+   (`ID_GENERATOR` has no hits).
 7. **A programs e2e journey** (admin create → public page)? _Default: not
    in this flip (none exists today); propose it as a follow-up after the
-   smoke._
+   smoke._ **CLOSED by pass E:** `apps/web/e2e/programs.spec.ts` proves the
+   tightened rules admit the live admin writer.
 8. **The event-date formatter** (F4-11): reuse `formatWallClock` of
    `shared/visits`, or a page-local `Intl.DateTimeFormat`? _Default: reuse._
+   **CLOSED — OR-40:** the shared cached `formatWallClock` stays; the
+   `/events` presenter of OR-37 calls it once per row per emission.
 9. **The accepted start form** (F4-1 (f)): exactly `YYYY-MM-DDTHH:mm`, or
    also `…:ss` with zero seconds? _Default: exactly what the input emits._
+   **CLOSED — OR-40:** strictly `YYYY-MM-DDTHH:mm` (one producer, which
+   never emits seconds).
 10. **The position `locationIds` wipe-on-edit** (F4-8): keep, or have an
     update carry the stored `locationIds` forward? _Default: keep (frozen);
-    fixing it is a behaviour change for a follow-up._
+    fixing it is a behaviour change for a follow-up._ **CLOSED — OR-42
+    (DEP-F30):** the scope is editable as shop chips prefilled from the
+    stored scope (none = every shop) and never wiped on edit; `/careers`
+    names the shops at multi-shop tenants (`ProgramsSystem.positionShops`);
+    retires the F4-8 wipe.
 11. **The production default shop id** (F4-1 (c), linked to flatten-spec
     OQ-2): flip 4 makes `TenantConfig.DEFAULT.defaultLocationId` load-bearing
     for every event save. Which id is the production default shop, and does
     that document carry a valid `timeZone`? _Default: `loc-center`,
     verified in the target project before deploy (runbook §3 precondition,
     P4); if production uses another id, `TenantConfig.DEFAULT` changes in
-    one place and `cfg` binds it._
+    one place and `cfg` binds it._ **CLOSED — OR-35 (DEP-F26):** the
+    production default id stays `loc-center` (a genuine product decision on
+    the safest reversible default); the production preflight's P1, the
+    hosting and functions predeploy, proves the document exists, passes the
+    read guard and carries a valid IANA `timeZone` before every deploy
+    (runbook §3).
 
 ---
 

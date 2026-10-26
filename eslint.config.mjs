@@ -468,6 +468,21 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/presenter-purity': 'error' },
   },
+  // OR-33 (owner rulings 2026-10-26, DEP-F24) — the read guard is a required
+  // parameter, and the registries that guard NOTHING are test support:
+  // `unguarded` (@core/testing, libs/ecs-core/src/testing/unguarded.ts) and
+  // the web's `UNGUARDED` (libs/infrastructure/firestore/src/testing/
+  // unguarded.ts). Neither name is declared, imported or referenced outside
+  // specs, `testing/` and `test-support/`. A core rule no other config sets,
+  // so no later block replaces its options; `**/` patterns hold under both
+  // ESLint base paths (the note above the import cages). A property READ
+  // (`StoredDocumentSystem.unguarded`) is the type checker's: the systems
+  // tier no longer has it. Runbook §4.10 proves it on.
+  {
+    files: ['**/*.ts', '**/*.mjs', '**/*.js'],
+    ignores: ['**/*.spec.ts', '**/testing/**', '**/test-support/**'],
+    rules: { 'id-denylist': ['error', 'UNGUARDED', 'unguarded'] },
+  },
   // …and strict mode on every port file: no `Pick`/`Omit` at all — a port's
   // argument shape is a named type (.claude/rules/ecs-ports.md).
   // libs/ecs-core keeps its own `src/ports/**` strict block, which also

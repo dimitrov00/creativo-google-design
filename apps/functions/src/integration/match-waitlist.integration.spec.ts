@@ -21,7 +21,7 @@ import {
   Subcollections,
   type WaitlistRequest,
 } from '@core/entities';
-import { ZonedTimeSystem } from '@core/systems';
+import { StoredDocumentSystem, ZonedTimeSystem } from '@core/systems';
 import { matchWaitlist } from '@core/pipelines';
 import {
   barberFixture,
@@ -147,15 +147,24 @@ describe('matchWaitlist (emulator)', () => {
    * catalogue adapter's `loadLocation`.
    */
   function run() {
+    const telemetry = recordingTelemetry();
     return matchWaitlist({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       hash: sha256Hex,
       ...firestoreWaitlistPorts(db),
-      ...firestoreSchedulePorts(db),
+      ...firestoreSchedulePorts(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       ...firestoreCatalogPorts(db),
       ...firestoreNotificationPorts(db),
       nowUtcMs: pinnedNowUtcMs(),
-      ...recordingTelemetry(),
+      ...telemetry,
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       defaultLocationId: FIXTURE_IDS.location,
     });

@@ -414,13 +414,6 @@ export interface LoyaltyTilesInput {
   /** The shop calendar's today, on the shop's zone. */
   readonly today: LocalDate;
   readonly words: ClientCardWords;
-  /**
-   * The rewards the client holds on this visit — the titles of the grants
-   * E offers and of those already on the draft bill: the points tile never
-   * says its points are «enough for» one of them (`loyaltyGlanceVm`). Empty
-   * when the owner holds none (or the subject is not the owner).
-   */
-  readonly heldRewards?: readonly string[];
 }
 
 /**

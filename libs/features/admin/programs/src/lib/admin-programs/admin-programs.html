@@ -6,8 +6,8 @@
   >
     <ui-stack uiSpacing="loose">
       <ui-section-header uiAlignment="leading">
-        <h1 uiTitle>Programs</h1>
-        <p uiLede>Manage open positions, courses, and events.</p>
+        <h1 uiTitle>{{ t('admin.programs.title') }}</h1>
+        <p uiLede>{{ t('admin.programs.lede') }}</p>
       </ui-section-header>
 
       <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
@@ -18,7 +18,7 @@
           data-testid="admin-tab-positions"
           (click)="setTab(ProgramsTab.Positions)"
         >
-          Positions
+          {{ t('admin.programs.tabs.positions') }}
         </button>
         <button
           type="button"
@@ -27,7 +27,7 @@
           data-testid="admin-tab-courses"
           (click)="setTab(ProgramsTab.Courses)"
         >
-          Courses
+          {{ t('admin.programs.tabs.courses') }}
         </button>
         <button
           type="button"
@@ -36,7 +36,7 @@
           data-testid="admin-tab-events"
           (click)="setTab(ProgramsTab.Events)"
         >
-          Events
+          {{ t('admin.programs.tabs.events') }}
         </button>
       </ui-stack>
 
@@ -46,7 +46,7 @@
           @switch (current.programEditing) { @case (ProgramEditing.Position) {
           <ui-stack uiSpacing="tight">
             <label>
-              Title (EN)
+              {{ t('admin.programs.field.titleEn') }}
               <input
                 uiTextField
                 data-testid="admin-position-title-en"
@@ -55,7 +55,7 @@
               />
             </label>
             <label>
-              Title (BG)
+              {{ t('admin.programs.field.titleBg') }}
               <input
                 uiTextField
                 data-testid="admin-position-title-bg"
@@ -64,7 +64,7 @@
               />
             </label>
             <label>
-              Summary (EN)
+              {{ t('admin.programs.position.summaryEn') }}
               <textarea
                 uiTextField
                 data-testid="admin-position-summary-en"
@@ -73,7 +73,7 @@
               ></textarea>
             </label>
             <label>
-              Summary (BG)
+              {{ t('admin.programs.position.summaryBg') }}
               <textarea
                 uiTextField
                 data-testid="admin-position-summary-bg"
@@ -81,14 +81,19 @@
                 (input)="positionSummaryBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-stack uiAxis="horizontal" uiSpacing="compact">
+            <ui-stack
+              uiAxis="horizontal"
+              uiSpacing="compact"
+              role="group"
+              [attr.aria-label]="t('admin.programs.field.status')"
+            >
               <button
                 type="button"
                 uiChip
                 [uiSelected]="positionStatus() === PositionStatus.Open"
                 (click)="positionStatus.set(PositionStatus.Open)"
               >
-                Open
+                {{ t('programs.status.position.' + PositionStatus.Open) }}
               </button>
               <button
                 type="button"
@@ -96,11 +101,42 @@
                 [uiSelected]="positionStatus() === PositionStatus.Closed"
                 (click)="positionStatus.set(PositionStatus.Closed)"
               >
-                Closed
+                {{ t('programs.status.position.' + PositionStatus.Closed) }}
               </button>
             </ui-stack>
+            @if (shopsShown()) {
+            <div
+              class="lib-admin-programs__field"
+              role="group"
+              [attr.aria-label]="t('admin.programs.position.shops')"
+            >
+              <span>{{ t('admin.programs.position.shops') }}</span>
+              <ui-flow uiSpacing="compact" uiAlignment="leading">
+                <button
+                  type="button"
+                  uiChip
+                  [uiSelected]="positionShopIds().length === 0"
+                  data-testid="admin-position-shops-all"
+                  (click)="chooseEveryShop()"
+                >
+                  {{ t('admin.programs.position.shopsAll') }}
+                </button>
+                @for (choice of shopChoices(); track choice.id) {
+                <button
+                  type="button"
+                  uiChip
+                  [uiSelected]="shopChosen(choice.id)"
+                  [attr.data-testid]="'admin-position-shop-' + choice.id"
+                  (click)="toggleShop(choice.id)"
+                >
+                  {{ choice.label }}
+                </button>
+                }
+              </ui-flow>
+            </div>
+            }
             <label>
-              Apply URL (optional — falls back to Instagram)
+              {{ t('admin.programs.field.applyUrl') }}
               <input
                 uiTextField
                 [value]="positionApplyUrl()"
@@ -108,7 +144,7 @@
               />
             </label>
             <label>
-              Sort order
+              {{ t('admin.programs.field.sortOrder') }}
               <input
                 uiTextField
                 type="number"
@@ -120,7 +156,7 @@
           } @case (ProgramEditing.Course) {
           <ui-stack uiSpacing="tight">
             <label>
-              Title (EN)
+              {{ t('admin.programs.field.titleEn') }}
               <input
                 uiTextField
                 data-testid="admin-course-title-en"
@@ -129,7 +165,7 @@
               />
             </label>
             <label>
-              Title (BG)
+              {{ t('admin.programs.field.titleBg') }}
               <input
                 uiTextField
                 data-testid="admin-course-title-bg"
@@ -138,7 +174,7 @@
               />
             </label>
             <label>
-              Description (EN)
+              {{ t('admin.programs.field.descriptionEn') }}
               <textarea
                 uiTextField
                 data-testid="admin-course-description-en"
@@ -147,7 +183,7 @@
               ></textarea>
             </label>
             <label>
-              Description (BG)
+              {{ t('admin.programs.field.descriptionBg') }}
               <textarea
                 uiTextField
                 data-testid="admin-course-description-bg"
@@ -155,14 +191,19 @@
                 (input)="courseDescriptionBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-stack uiAxis="horizontal" uiSpacing="compact">
+            <ui-stack
+              uiAxis="horizontal"
+              uiSpacing="compact"
+              role="group"
+              [attr.aria-label]="t('admin.programs.field.status')"
+            >
               <button
                 type="button"
                 uiChip
                 [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Open"
                 (click)="courseEnrollmentStatus.set(EnrollmentStatus.Open)"
               >
-                Open
+                {{ t('programs.status.enrollment.' + EnrollmentStatus.Open) }}
               </button>
               <button
                 type="button"
@@ -170,7 +211,8 @@
                 [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Upcoming"
                 (click)="courseEnrollmentStatus.set(EnrollmentStatus.Upcoming)"
               >
-                Upcoming
+                {{ t('programs.status.enrollment.' + EnrollmentStatus.Upcoming)
+                }}
               </button>
               <button
                 type="button"
@@ -178,11 +220,11 @@
                 [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Closed"
                 (click)="courseEnrollmentStatus.set(EnrollmentStatus.Closed)"
               >
-                Closed
+                {{ t('programs.status.enrollment.' + EnrollmentStatus.Closed) }}
               </button>
             </ui-stack>
             <label>
-              Starts label (EN) — e.g. "Spring 2026"
+              {{ t('admin.programs.course.startsLabelEn') }}
               <input
                 uiTextField
                 data-testid="admin-course-starts-label-en"
@@ -191,7 +233,7 @@
               />
             </label>
             <label>
-              Starts label (BG)
+              {{ t('admin.programs.course.startsLabelBg') }}
               <input
                 uiTextField
                 data-testid="admin-course-starts-label-bg"
@@ -200,7 +242,7 @@
               />
             </label>
             <label>
-              Apply URL (optional — falls back to Instagram)
+              {{ t('admin.programs.field.applyUrl') }}
               <input
                 uiTextField
                 [value]="courseApplyUrl()"
@@ -208,7 +250,7 @@
               />
             </label>
             <label>
-              Sort order
+              {{ t('admin.programs.field.sortOrder') }}
               <input
                 uiTextField
                 type="number"
@@ -220,7 +262,7 @@
           } @case (ProgramEditing.Event) {
           <ui-stack uiSpacing="tight">
             <label>
-              Title (EN)
+              {{ t('admin.programs.field.titleEn') }}
               <input
                 uiTextField
                 data-testid="admin-event-title-en"
@@ -229,7 +271,7 @@
               />
             </label>
             <label>
-              Title (BG)
+              {{ t('admin.programs.field.titleBg') }}
               <input
                 uiTextField
                 data-testid="admin-event-title-bg"
@@ -238,7 +280,7 @@
               />
             </label>
             <label>
-              Description (EN)
+              {{ t('admin.programs.field.descriptionEn') }}
               <textarea
                 uiTextField
                 data-testid="admin-event-description-en"
@@ -247,7 +289,7 @@
               ></textarea>
             </label>
             <label>
-              Description (BG)
+              {{ t('admin.programs.field.descriptionBg') }}
               <textarea
                 uiTextField
                 data-testid="admin-event-description-bg"
@@ -256,7 +298,7 @@
               ></textarea>
             </label>
             <label>
-              Starts at (Europe/Sofia)
+              {{ t('admin.programs.event.startsAt') }}
               <input
                 uiTextField
                 type="datetime-local"
@@ -265,17 +307,38 @@
                 (input)="eventStartsAt.set(inputValue($event))"
               />
             </label>
+            @if (shopsShown()) {
+            <div class="lib-admin-programs__field">
+              <span>{{ t('admin.programs.event.shop') }}</span>
+              <ui-choice-menu
+                data-testid="admin-event-shop"
+                [uiOptions]="eventShopOptions()"
+                [uiSelectedId]="eventLocationId()"
+                [uiLabel]="t('admin.programs.event.shop')"
+                [(uiPresented)]="eventShopMenu"
+                (uiPicked)="eventLocationId.set($event)"
+              >
+                <button
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiTint="neutral"
+                  uiControlSize="regular"
+                  uiMenuTrigger
+                  [attr.aria-label]="
+                    t('admin.programs.event.shop') + ': ' + eventShopLabel()
+                  "
+                  data-testid="admin-event-shop-trigger"
+                  (click)="eventShopMenu.set(true)"
+                >
+                  <span>{{ eventShopLabel() }}</span>
+                  <ui-icon uiTrailing uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </div>
+            }
             <label>
-              Location id (optional)
-              <input
-                uiTextField
-                data-testid="admin-event-location-id"
-                [value]="eventLocationId()"
-                (input)="eventLocationId.set(inputValue($event))"
-              />
-            </label>
-            <label>
-              RSVP URL (optional — falls back to Instagram)
+              {{ t('admin.programs.event.rsvpUrl') }}
               <input
                 uiTextField
                 [value]="eventApplyUrl()"
@@ -283,7 +346,7 @@
               />
             </label>
             <label>
-              Sort order
+              {{ t('admin.programs.field.sortOrder') }}
               <input
                 uiTextField
                 type="number"
@@ -292,10 +355,8 @@
               />
             </label>
           </ui-stack>
-          } } @if (saveFailed()) {
-          <p data-testid="admin-save-error">
-            Couldn't save — check the required fields and try again.
-          </p>
+          } } @if (saveRefusals() !== null) {
+          <p data-testid="admin-save-error">{{ saveError() }}</p>
           }
 
           <ui-stack uiAxis="horizontal" uiSpacing="compact">
@@ -309,7 +370,7 @@
               data-testid="admin-save"
               (click)="save()"
             >
-              Save
+              {{ t('admin.programs.save') }}
             </button>
             <button
               type="button"
@@ -318,7 +379,7 @@
               uiControlSize="regular"
               (click)="cancelEdit()"
             >
-              Cancel
+              {{ t('admin.programs.cancel') }}
             </button>
           </ui-stack>
         </ui-stack>
@@ -334,7 +395,7 @@
             data-testid="admin-new"
             (click)="startCreate()"
           >
-            + New
+            {{ t('admin.programs.new') }}
           </button>
 
           @switch (tab()) { @case (ProgramsTab.Positions) {

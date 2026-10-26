@@ -9,6 +9,7 @@ import { RecomputeJobName, type PolicyRecomputeJob } from '@core/entities';
 import {
   PolicyRecomputeJobId,
   type CustomerId,
+  type HourCount,
   UtcEpochMs,
 } from '@core/primitives';
 
@@ -49,7 +50,7 @@ export type PolicyChange = {
   /** The write's time, at full precision. */
   readonly changedAt: PreciseInstant;
   /** The window the write drew the line at; `null` when the caller does not know. */
-  readonly windowHours: number | null;
+  readonly windowHours: HourCount | null;
 };
 
 /** What one step of the walk got through. */
@@ -290,7 +291,7 @@ export const PolicyRecomputeJobSystem = {
   owesCatchUp(
     job: PolicyRecomputeJob | null,
     live: LivePolicyLine,
-    defaultWindowHours: number = BookingPolicy.DEFAULT.cancellationWindowHours,
+    defaultWindowHours = BookingPolicy.DEFAULT.cancellationWindowHours,
   ): boolean {
     if (job === null) return live.windowHours !== defaultWindowHours;
     const order =
@@ -316,7 +317,7 @@ export const PolicyRecomputeJobSystem = {
     live: LivePolicyLine,
     nowUtcMs: UtcEpochMs,
     label: string,
-    defaultWindowHours: number = BookingPolicy.DEFAULT.cancellationWindowHours,
+    defaultWindowHours = BookingPolicy.DEFAULT.cancellationWindowHours,
   ): PolicyRecomputeJob | null {
     if (!PolicyRecomputeJobSystem.owesCatchUp(job, live, defaultWindowHours)) {
       return null;

@@ -9,10 +9,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocalizedText } from '@core/components';
-import type { ShopEvent } from '@core/entities';
-import { Locale } from '@core/primitives';
 import {
+  CATALOG_PORTS,
   CLOCK_PORTS,
   SHOP_EVENT_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -20,7 +18,6 @@ import {
   SiteFooterComponent,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
-import { formatWallClock } from '@creativo/ui/wall-clock';
 import { UiButton, UiChip, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -31,6 +28,8 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { eventRowsVm } from './marketing-events.presenter';
+import type { EventRowVm } from './marketing-events.vm';
 
 /**
  * Which events `/events` lists — the page's field `tab`, the ONLY source of
@@ -48,24 +47,18 @@ type EventsTab = (typeof EventsTab)[keyof typeof EventsTab];
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
-/** A row's date — «Mon, Oct 5, 07:00 PM» / «пн, 5.10, 19:00». */
-const EVENT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-};
-
 /** `/events` — public browse page for shop events, Upcoming/Past. Unlike
  *  `MarketingCourses`' single query split client-side by tab, upcoming and
  *  past are two distinct reads of `SHOP_EVENT_READ_PORTS` (`observeEvents`
  *  with `upcoming: true | false`, split on the instant the clock answers
  *  once per tab subscription) — switching tabs re-subscribes via
  *  `toObservable(tab).pipe(switchMap(...))`, the same pattern
- *  `AppointmentsStore` uses for its `userId` cursor. A row's date is the
- *  shop's wall clock as stored (`formatWallClock`, flip-4 F4-11). Chrome is
- *  the real site header/footer, solid (`uiOverHero=false`). */
+ *  `AppointmentsStore` uses for its `userId` cursor. A row's words are the
+ *  presenter's (`eventRowsVm`, OR-37): its date on the shop's wall clock as
+ *  stored (flip-4 F4-11), then — at a multi-shop tenant — the shop it is
+ *  at, from the catalogue's ACTIVE shops read once beside the events
+ *  (`observeLocations`); unread or failed, the date alone. Chrome is the
+ *  real site header/footer, solid (`uiOverHero=false`). */
 @Component({
   selector: 'cr-marketing-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -91,6 +84,7 @@ const EVENT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
 })
 export class MarketingEvents {
   private readonly events = inject(SHOP_EVENT_READ_PORTS);
+  private readonly catalog = inject(CATALOG_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
@@ -114,11 +108,28 @@ export class MarketingEvents {
     { initialValue: undefined },
   );
 
-  protected readonly state = computed<LoadSlice<readonly ShopEvent[]>>(() => {
+  /** The active UI language — the rows re-word on a switch. */
+  private readonly lang = toSignal(this.transloco.langChanges$, {
+    initialValue: this.transloco.getActiveLang(),
+  });
+
+  /** The ACTIVE shops, as read — `undefined` until they answer (OR-37). */
+  private readonly shops = toSignal(this.catalog.observeLocations(), {
+    initialValue: undefined,
+  });
+
+  protected readonly state = computed<LoadSlice<readonly EventRowVm[]>>(() => {
     const result = this.result();
     if (result === undefined) return LoadSlice.loading;
     if (!result.ok) return LoadSlice.failed;
-    return LoadSlice.ready(result.value);
+    return LoadSlice.ready(
+      eventRowsVm({
+        events: result.value,
+        shops: this.shops(),
+        lang: this.lang(),
+        fallbackHref: this.instagramUrl,
+      }),
+    );
   });
 
   constructor() {
@@ -127,27 +138,5 @@ export class MarketingEvents {
 
   protected setTab(next: EventsTab): void {
     this.tab.set(next);
-  }
-
-  /** The active language's string — `bg` for every language but `en`. */
-  protected text(localized: LocalizedText): string {
-    return LocalizedText.pick(
-      localized,
-      this.transloco.getActiveLang() === Locale.En ? Locale.En : Locale.Bg,
-    );
-  }
-
-  protected applyHref(event: ShopEvent): string {
-    return event.applyUrl ?? this.instagramUrl;
-  }
-
-  /** The event's day and time on the shop's wall clock, in the active language. */
-  protected formatDate(event: ShopEvent): string {
-    return formatWallClock(
-      event.localDate,
-      event.startMinutes,
-      this.transloco.getActiveLang(),
-      EVENT_DATE_FORMAT,
-    );
   }
 }

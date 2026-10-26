@@ -12,6 +12,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
@@ -19,9 +20,9 @@ import {
   PROFILE_PORTS,
   SHOP_EVENT_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { ShopEvent } from '@core/entities';
+import type { ShopEvent, ShopLocation } from '@core/entities';
 import type { EventsQuery, ShopEventReadPorts } from '@core/ports';
-import { LocalDate } from '@core/primitives';
+import { LocalDate, LocationId } from '@core/primitives';
 import {
   at,
   FIXTURE_EVENT_DAY,
@@ -29,6 +30,7 @@ import {
   FIXTURE_TODAY,
   locationFixture,
   memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
   memoryClockPorts,
@@ -39,6 +41,7 @@ import {
   memoryProgramsWorld,
   memoryShopEventReadPorts,
   shopEventOf,
+  textFixture,
 } from '@core/testing';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingEvents } from './marketing-events';
@@ -57,6 +60,16 @@ function event(id: string, dayOffset = 0, hours = 19, minutes = 0): ShopEvent {
     startMinutes: at(hours, minutes),
   });
 }
+
+/** The two shops of a multi-shop tenant — «Център» (the default) and «Младост». */
+const TWO_SHOPS: readonly ShopLocation[] = [
+  locationFixture({ shortName: textFixture('Center', 'Център') }),
+  locationFixture({
+    id: LocationId.of('loc-mladost'),
+    shortName: textFixture('Mladost', 'Младост'),
+    sortOrder: 1,
+  }),
+];
 
 /** A past event — a week before `FIXTURE_TODAY`, 19:00 shop time. */
 function pastEvent(id: string): ShopEvent {
@@ -104,6 +117,7 @@ async function configure(
   upcoming: readonly ShopEvent[],
   past: readonly ShopEvent[] = [],
   asked: EventsQuery[] = [],
+  shops: readonly ShopLocation[] = [locationFixture()],
 ): Promise<ComponentFixture<MarketingEvents>> {
   await TestBed.configureTestingModule({
     imports: [MarketingEvents],
@@ -113,6 +127,11 @@ async function configure(
       {
         provide: SHOP_EVENT_READ_PORTS,
         useValue: recordedEventReads([...upcoming, ...past], asked),
+      },
+      // The catalogue's ACTIVE shops, which a row names at a multi-shop tenant.
+      {
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({ locations: shops }),
       },
       { provide: CLOCK_PORTS, useValue: memoryClockPorts(FIXTURE_NOW_UTC_MS) },
       // An anonymous visitor: the session double's default principal.
@@ -237,6 +256,39 @@ describe('MarketingEvents', () => {
     );
 
     expect(rowDates(host)).toEqual(['пн, 5.10, 19:00', 'вт, 6.10, 09:05']);
+  });
+
+  // OR-37: at a multi-shop tenant a row names the shop its event is at; an
+  // event at no shop keeps the date alone.
+  it('names the shop after the date at a multi-shop tenant', async () => {
+    const atMladost = shopEventOf('event_1', {
+      localDate: FIXTURE_EVENT_DAY,
+      locationId: LocationId.of('loc-mladost'),
+    });
+    const host = await render(
+      await configure(
+        [atMladost, event('event_2', 1, 9, 5)],
+        [],
+        [],
+        TWO_SHOPS,
+      ),
+      'bg',
+    );
+
+    expect(rowDates(host)).toEqual([
+      'пн, 5.10, 19:00 · Младост',
+      'вт, 6.10, 09:05',
+    ]);
+  });
+
+  it('prints the date alone at a one-shop tenant, the event at that shop', async () => {
+    const atCenter = shopEventOf('event_1', {
+      localDate: FIXTURE_EVENT_DAY,
+      locationId: LocationId.of('loc-center'),
+    });
+    const host = await render(await configure([atCenter]), 'en');
+
+    expect(rowDates(host)).toEqual(['Mon, Oct 5, 07:00 PM']);
   });
 });
 

@@ -13,9 +13,13 @@ import {
 } from '@core/errors';
 import { type DocPath, WriteOp } from '@core/components';
 import { Collections, QueryOp } from '@core/entities';
-import { type ReadTx } from '@core/ports';
+import { type Log, type ReadTx } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
-import { appointmentFixture, recordingTelemetry } from '@core/testing';
+import {
+  appointmentFixture,
+  recordingTelemetry,
+  unguarded,
+} from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import {
   admitStored,
@@ -25,11 +29,22 @@ import {
 
 type Doc = Record<string, unknown>;
 
+/**
+ * The mechanics cases' log: their partial bodies exercise the SDK plumbing
+ * through the test support's `unguarded` registry (OR-33 — the registry and
+ * the log have no default), so there is no refusal to report.
+ */
+const NO_LOG: Log = () => undefined;
+
 function store(seed: Record<string, Doc> = {}) {
   const fake = createProjectionFirestore(seed);
   return {
     fake,
-    commit: firestoreCommitPlan(fake.db as unknown as Firestore),
+    commit: firestoreCommitPlan(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    ),
   };
 }
 
@@ -265,7 +280,11 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
           }) => Promise<unknown>,
         ) => fn({ update: (...args: unknown[]) => void calls.push(args) }),
       } as unknown as Firestore;
-      await firestoreCommitPlan(db)(
+      await firestoreCommitPlan(
+        db,
+        unguarded,
+        NO_LOG,
+      )(
         async () => null,
         () =>
           Result.ok({
@@ -330,7 +349,11 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
           }) => Promise<unknown>,
         ) => fn({ update: (...args: unknown[]) => void calls.push(args) }),
       } as unknown as Firestore;
-      await firestoreCommitPlan(db)(
+      await firestoreCommitPlan(
+        db,
+        unguarded,
+        NO_LOG,
+      )(
         async () => null,
         () =>
           Result.ok({
@@ -448,7 +471,11 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
     ])(
       'names the refused document from the message %s writes, over the plan’s own single Create',
       async (_store, message) => {
-        const result = await firestoreCommitPlan(refusingAfterThePlan(message))(
+        const result = await firestoreCommitPlan(
+          refusingAfterThePlan(message),
+          unguarded,
+          NO_LOG,
+        )(
           async () => null,
           () =>
             Result.ok({
@@ -465,6 +492,8 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
     it('falls back to the plan’s one Create when the message names no document', async () => {
       const result = await firestoreCommitPlan(
         refusingAfterThePlan('6 ALREADY_EXISTS'),
+        unguarded,
+        NO_LOG,
       )(
         async () => null,
         () =>
@@ -484,6 +513,8 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
     it('falls back to no path when neither the message nor a single Create names it', async () => {
       const result = await firestoreCommitPlan(
         refusingAfterThePlan('6 ALREADY_EXISTS'),
+        unguarded,
+        NO_LOG,
       )(
         async () => null,
         () =>
@@ -506,7 +537,11 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
           throw Object.assign(new Error('6 ALREADY_EXISTS'), { code: 6 });
         },
       } as unknown as Firestore;
-      const result = await firestoreCommitPlan(db)(
+      const result = await firestoreCommitPlan(
+        db,
+        unguarded,
+        NO_LOG,
+      )(
         async () => null,
         () => Result.ok({ writes: [] }),
       );
@@ -540,7 +575,11 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
         },
       } as unknown as Firestore;
       await expect(
-        firestoreCommitPlan(db)(
+        firestoreCommitPlan(
+          db,
+          unguarded,
+          NO_LOG,
+        )(
           async () => null,
           () => Result.ok({ writes: [] }),
         ),
@@ -598,7 +637,7 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
       for (const [guardOf, collection] of [
         [StoredDocumentSystem.guardOf, null],
         [StoredDocumentSystem.guardOf, Collections.Users],
-        [StoredDocumentSystem.unguarded, Collections.Appointments],
+        [unguarded, Collections.Appointments],
       ] as const) {
         const asStored = admitStored(guardOf, collection, bad, telemetry.log);
         expect(asStored.ok && asStored.value).toBe(bad);

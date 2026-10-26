@@ -78,9 +78,11 @@ export const FlexibleWhen = {
   },
 
   /**
-   * Select a day, as "any time" — narrowing is a second, deliberate act.
-   * Re-selecting a held day is a no-op, never a reset (a double-fire must not
-   * discard windows somebody just authored). Refused past `maxDays`
+   * Select a day, as "any time" — the client watches one whole day (owner,
+   * 2026-08-01), so nothing here narrows it; a stored declaration's windows
+   * are read, never written (OR-23 deleted the window verbs). Re-selecting a
+   * held day is a no-op, never a reset (a double-fire must not discard the
+   * windows a restored request carries). Refused past `maxDays`
    * (`SCHEDULING_FLEXIBLE_WHEN_FULL`): each day is its own search.
    */
   withDay(
@@ -105,15 +107,6 @@ export const FlexibleWhen = {
     for (let i = 0; i < when.flexibleDays.length; i++) {
       if (i !== at) days.push(when.flexibleDays[i] as DayWindows);
     }
-    return { flexibleDays: days };
-  },
-
-  /** Replace one SELECTED day's windows; windows for an unselected day are ignored. */
-  withWindows(when: FlexibleWhen, dayWindows: DayWindows): FlexibleWhen {
-    const at = indexOfDay(when.flexibleDays, dayWindows.localDate);
-    if (at === -1) return when;
-    const days = [...when.flexibleDays];
-    days[at] = dayWindows;
     return { flexibleDays: days };
   },
 

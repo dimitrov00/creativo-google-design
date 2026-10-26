@@ -1,6 +1,7 @@
 import {
   BarberPreference,
   BookingLifecycle,
+  Cadence,
   ClientStatsPolicy,
   type ClientMoneyStats,
   type ClientStats,
@@ -77,9 +78,6 @@ import {
  * comparisons of lifecycle instants — the late-cancel line and the pause
  * dismissal — read `UtcEpochMs` (T2, T9).
  */
-
-/** A day of real elapsed time — the cadence statistic's unit. */
-const MS_PER_DAY = 86_400_000;
 
 /** The fixed rate BGN retired at (2026): legacy seats priced in leva count in euro. */
 const BGN_PER_EUR = 1.95583;
@@ -458,19 +456,21 @@ function nextVisitOf(visit: SubjectVisit | null): NextVisit {
 
 /**
  * R34: the mean gap between consecutive worked visits, once there are
- * three, in days of REAL elapsed time — a statistic, so it stays on the
- * visits' instants (G-1(a), a T2 reading) and a DST transition between two
- * visits moves no stored figure. A gap the SHOP stretched — a visit it
- * cancelled falls inside it — says nothing about the client's rhythm and is
- * left out. Both lists are oldest first, so one pointer walks the shop's
- * cancellations once.
+ * three, in SHOP CALENDAR DAYS (OR-46, flatten-spec T8): each gap is
+ * `LocalDate.daysBetween` of the two visits' shop days, so neither the time
+ * of day nor a DST weekend between them moves the figure, and a same-day
+ * pair is no gap (the streak's habit reads its gaps by the same rule) — the
+ * mean is `Cadence.meanDays`, one decimal. A gap the SHOP stretched — a
+ * visit it cancelled falls inside it — says nothing about the client's
+ * rhythm and is left out. Both lists are oldest first, so one pointer walks
+ * the shop's cancellations once.
  */
 function cadenceOf(
   worked: readonly SubjectVisit[],
   shopCancelled: readonly SubjectVisit[],
-): number | null {
+): Cadence | null {
   if (worked.length < 3) return null;
-  let totalMs = 0;
+  let totalDays = 0;
   let gaps = 0;
   let j = 0;
   for (let i = 1; i < worked.length; i++) {
@@ -486,13 +486,12 @@ function cadenceOf(
       j < shopCancelled.length &&
       chronologicalPoint(shopCancelled[j] as SubjectVisit, to) < 0;
     if (stretched) continue;
-    totalMs += UtcEpochMs.elapsedMs(from.startUtcMs, to.startUtcMs);
+    const days = LocalDate.daysBetween(from.localDate, to.localDate);
+    if (days === 0) continue;
+    totalDays += days;
     gaps++;
   }
-  if (gaps === 0) return null;
-  const meanDays = totalMs / gaps / MS_PER_DAY;
-  // One decimal: enough for "every ~4 weeks", and a stable number to store.
-  return Math.round(meanDays * 10) / 10;
+  return Cadence.meanDays(totalDays, gaps);
 }
 
 /** Two visits' starts on the shop's clock: negative, zero or positive. */
@@ -927,7 +926,9 @@ function seatInputOf(seat: Seat): StatsInputSeat {
     subjectUserId:
       seat.seatSubject === SeatSubject.Account ? seat.subjectUserId : null,
     subjectCustomerId:
-      seat.seatSubject === SeatSubject.Account ? seat.subjectCustomerId : null,
+      seat.seatSubject === SeatSubject.Anonymous
+        ? null
+        : seat.subjectCustomerId,
     startMinutes: seat.startMinutes,
     priceCents: seat.priceCents,
     currency: seat.currency,
@@ -986,9 +987,10 @@ export const ClientStatsSystem = {
 
   /**
    * One appointment as this CLIENT RECORD's visit (D29 — whom the shop
-   * served), from its seats alone — `null` when it holds no seat on it. The
-   * same reading the statistics count by, so a history row and the counts
-   * above it never tell two stories.
+   * served), from its seats alone — an account's seats, or a walk-in's
+   * (OR-26: the record is the person either way) — `null` when it holds no
+   * seat on it. The same reading the statistics count by, so a history row
+   * and the counts above it never tell two stories.
    */
   subjectVisitOf<A extends StatsAppointment<Seat>>(
     subject: CustomerId,
@@ -998,7 +1000,7 @@ export const ClientStatsSystem = {
     for (let i = 0; i < appointment.seats.length; i++) {
       const seat = appointment.seats[i] as Seat;
       if (
-        seat.seatSubject === SeatSubject.Account &&
+        seat.seatSubject !== SeatSubject.Anonymous &&
         seat.subjectCustomerId === subject
       ) {
         seats.push(seat);

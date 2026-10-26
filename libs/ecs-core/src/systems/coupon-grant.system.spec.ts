@@ -1,17 +1,22 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  type AppliedDiscount,
   Combinability,
   CouponExpiryRule,
   CouponOccasion,
   CouponStatus,
   CouponValue,
+  DiscountProvenance,
   GrantCapacity,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
+  WriteOp,
 } from '@core/components';
 import {
+  AppliedDiscountId,
+  AppointmentId,
   GrantStatus,
   CouponGrantId,
   CouponId,
@@ -33,8 +38,10 @@ import { CouponGrantSystem } from './coupon-grant.system';
  * The cases of the legacy engagement `coupon-grant.spec.ts` (deleted in Phase
  * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
  * plain flat entities: `markUsed` is `burn`, instants are `UtcEpochMs`. Plus
- * the inverse the visit editor's undo needs (`restore`), as an exact-inverse
- * property.
+ * the inverse a give-back needs (`restore`), as an exact-inverse property,
+ * and the bill's grant writes (OR-13: `settleBill`, `releasePlan`). The
+ * expire and revoke verbs are deleted with their cases (OR-13: no expiry
+ * job or admin revoke is built).
  */
 
 const JAN_1 = utcMs('2026-01-01T00:00:00+02:00');
@@ -60,20 +67,26 @@ function multiUse(total: number): GrantCapacityTerms {
   return unwrapOk(GrantCapacityTerms.multiUse(total));
 }
 
-function terms(
-  capacity: GrantCapacityTerms,
-  expiry: GrantExpiryTerms,
-): GrantLifecycle.Terms {
-  return { ...capacity, ...expiry };
+/** The fixture grant moved to `lifecycle` — its meta and value as they were. */
+function grantIn(lifecycle: GrantLifecycle): CouponGrant {
+  const { id, customerId, holderUserId, couponId, grantedAtUtcMs } =
+    makeActiveGrant(GrantCapacityTerms.singleUse());
+  return {
+    id,
+    customerId,
+    holderUserId,
+    couponId,
+    grantedAtUtcMs,
+    ...unwrapOk(CouponValue.percentOff(10)),
+    ...lifecycle,
+  };
 }
 
 describe('CouponGrantSystem — a fresh grant', () => {
-  it('creates an active grant', () => {
-    expect(
-      CouponGrantSystem.isActive(
-        makeActiveGrant(GrantCapacityTerms.singleUse()),
-      ),
-    ).toBe(true);
+  it('creates an active, usable grant', () => {
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
+    expect(grant.grantStatus).toBe(GrantStatus.Active);
+    expect(CouponGrantSystem.isUsable(grant, at(0))).toBe(true);
   });
 
   it('GrantCapacityTerms.multiUse rejects a non-positive total', () => {
@@ -82,28 +95,46 @@ describe('CouponGrantSystem — a fresh grant', () => {
 });
 
 describe('CouponGrantSystem.burn', () => {
-  it('single-use transitions straight to used, leaving no active field behind', () => {
-    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
+  it('single-use transitions straight to used, the issue terms kept (OR-13)', () => {
+    const grant = makeActiveGrant(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(31)),
+    );
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
     expect(GrantLifecycle.of(used)).toEqual({
       grantStatus: GrantStatus.Used,
+      grantCapacity: GrantCapacity.SingleUse,
+      grantExpiry: 'EXPIRES_AT',
+      grantExpiresAtUtcMs: at(31),
       usedAtUtcMs: at(1),
       usedNote: '',
     });
-    expect('grantCapacity' in used).toBe(false);
     expect(CouponValue.of(used)).toEqual(unwrapOk(CouponValue.percentOff(10)));
     // Whose it is rides every transition: the record and the reading account (D29).
     expect(used.customerId).toBe(grant.customerId);
     expect(used.holderUserId).toBe(grant.holderUserId);
   });
 
-  it('multi-use decrements remaining and stays active until exhausted', () => {
+  it('multi-use decrements remaining and stays active until exhausted — then USED with no use remaining', () => {
     const grant = makeActiveGrant(multiUse(2));
     const first = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(first.grantStatus).toBe('ACTIVE');
+    expect(GrantLifecycle.of(first)).toEqual(
+      GrantLifecycle.active(
+        {
+          grantCapacity: GrantCapacity.MultiUse,
+          usesRemaining: 1,
+          usesGranted: 2,
+        },
+        GrantExpiryTerms.none(),
+      ),
+    );
     const second = unwrapOk(CouponGrantSystem.burn(first, at(2), 'appt-1'));
     expect(GrantLifecycle.of(second)).toEqual({
       grantStatus: GrantStatus.Used,
+      grantCapacity: GrantCapacity.MultiUse,
+      usesRemaining: 0,
+      usesGranted: 2,
+      grantExpiry: 'NO_EXPIRY',
       usedAtUtcMs: at(2),
       usedNote: 'appt-1',
     });
@@ -121,64 +152,6 @@ describe('CouponGrantSystem.burn', () => {
       errorCode: EngagementErrorCode.CouponGrantNotActive,
       currentState: GrantStatus.Used,
     });
-  });
-});
-
-describe('CouponGrantSystem.expire', () => {
-  it('expires a grant with a scheduled expiry', () => {
-    const grant = makeActiveGrant(
-      GrantCapacityTerms.singleUse(),
-      GrantExpiryTerms.at(at(31)),
-    );
-    const expired = unwrapOk(CouponGrantSystem.expire(grant, at(32)));
-    expect(GrantLifecycle.of(expired)).toEqual({
-      grantStatus: GrantStatus.Expired,
-      expiredAtUtcMs: at(32),
-      expiryScheduledAtUtcMs: at(31),
-    });
-  });
-
-  it('rejects expiring a grant with no scheduled expiry', () => {
-    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
-    expect(unwrapErr(CouponGrantSystem.expire(grant, at(32))).errorCode).toBe(
-      EngagementErrorCode.CouponGrantNotExpiring,
-    );
-  });
-});
-
-describe('CouponGrantSystem.revoke', () => {
-  it('revokes an active grant with a reason', () => {
-    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
-    const revoked = unwrapOk(
-      CouponGrantSystem.revoke(grant, at(4), UserId.of('admin'), '  fraud '),
-    );
-    expect(GrantLifecycle.of(revoked)).toEqual({
-      grantStatus: GrantStatus.Revoked,
-      revokedAtUtcMs: at(4),
-      revokedByUserId: 'admin',
-      revocationReason: 'fraud',
-    });
-  });
-
-  it('rejects an empty revocation reason', () => {
-    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
-    expect(
-      unwrapErr(CouponGrantSystem.revoke(grant, at(4), UserId.of('a'), '  '))
-        .errorCode,
-    ).toBe(EngagementErrorCode.CouponGrantReasonEmpty);
-  });
-
-  it('rejects revoking a non-active grant', () => {
-    const used = unwrapOk(
-      CouponGrantSystem.burn(
-        makeActiveGrant(GrantCapacityTerms.singleUse()),
-        at(1),
-        '',
-      ),
-    );
-    expect(CouponGrantSystem.revoke(used, at(4), UserId.of('a'), 'x').ok).toBe(
-      false,
-    );
   });
 });
 
@@ -206,22 +179,48 @@ describe('CouponGrantSystem.isUsable', () => {
 });
 
 describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
-  it('brings a spent grant back as it was issued, one use on it', () => {
-    const issued = terms(
+  it('brings a spent grant back as it was issued, one use on it — from its own kept terms', () => {
+    const grant = makeActiveGrant(
       GrantCapacityTerms.singleUse(),
       GrantExpiryTerms.at(at(31)),
     );
-    const grant = makeActiveGrant(issued, issued);
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(unwrapOk(CouponGrantSystem.restore(used, issued))).toEqual(grant);
-    if (grant.grantStatus !== GrantStatus.Active) throw new Error('fixture');
-    expect(CouponGrantSystem.termsOf(grant)).toEqual(issued);
+    expect(unwrapOk(CouponGrantSystem.restore(used))).toEqual(grant);
+  });
+
+  it('gives a spent multi-use grant exactly one use back', () => {
+    const used = unwrapOk(
+      CouponGrantSystem.burn(makeActiveGrant(multiUse(1)), at(1), ''),
+    );
+    expect(
+      GrantLifecycle.of(unwrapOk(CouponGrantSystem.restore(used))),
+    ).toEqual(
+      GrantLifecycle.active(
+        {
+          grantCapacity: GrantCapacity.MultiUse,
+          usesRemaining: 1,
+          usesGranted: 1,
+        },
+        GrantExpiryTerms.none(),
+      ),
+    );
+  });
+
+  it('restores a spent grant past its expiry to ACTIVE — and it is not usable', () => {
+    const grant = makeActiveGrant(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(10)),
+    );
+    const used = unwrapOk(CouponGrantSystem.burn(grant, at(9), ''));
+    const back = unwrapOk(CouponGrantSystem.restore(used));
+    expect(back.grantStatus).toBe(GrantStatus.Active);
+    expect(CouponGrantSystem.isUsable(back, at(11))).toBe(false);
+    expect(CouponGrantSystem.isUsable(back, at(10))).toBe(true);
   });
 
   it('gives a multi-use grant its use back, up to what was granted', () => {
-    const issued = terms(multiUse(3), GrantExpiryTerms.none());
-    const grant = makeActiveGrant(issued);
-    expect(unwrapErr(CouponGrantSystem.restore(grant, issued))).toEqual({
+    const grant = makeActiveGrant(multiUse(3));
+    expect(unwrapErr(CouponGrantSystem.restore(grant))).toEqual({
       errorCode: EngagementErrorCode.CouponGrantCapacityInvalid,
       attempted: 4,
     });
@@ -229,23 +228,34 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
       unwrapErr(
         CouponGrantSystem.restore(
           makeActiveGrant(GrantCapacityTerms.singleUse()),
-          issued,
         ),
-      ).errorCode,
-    ).toBe(EngagementErrorCode.CouponGrantCapacityInvalid);
+      ),
+    ).toEqual({
+      errorCode: EngagementErrorCode.CouponGrantCapacityInvalid,
+      attempted: 2,
+    });
   });
 
   it('refuses an expired or revoked grant', () => {
-    const issued = terms(
-      GrantCapacityTerms.singleUse(),
-      GrantExpiryTerms.at(at(31)),
-    );
-    const expired = unwrapOk(
-      CouponGrantSystem.expire(makeActiveGrant(issued, issued), at(32)),
-    );
-    expect(unwrapErr(CouponGrantSystem.restore(expired, issued))).toEqual({
+    expect(
+      unwrapErr(
+        CouponGrantSystem.restore(
+          grantIn(GrantLifecycle.expired(at(32), at(31))),
+        ),
+      ),
+    ).toEqual({
       errorCode: EngagementErrorCode.CouponGrantNotActive,
       currentState: GrantStatus.Expired,
+    });
+    expect(
+      unwrapErr(
+        CouponGrantSystem.restore(
+          grantIn(GrantLifecycle.revoked(at(4), UserId.of('admin'), 'fraud')),
+        ),
+      ),
+    ).toEqual({
+      errorCode: EngagementErrorCode.CouponGrantNotActive,
+      currentState: GrantStatus.Revoked,
     });
   });
 
@@ -254,30 +264,19 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
       fc.property(
         fc.integer({ min: 1, max: 6 }),
         fc.integer({ min: 0, max: 5 }),
-        (total, spent) => {
+        fc.boolean(),
+        (total, spent, expiring) => {
           fc.pre(spent < total);
-          const issued = terms(multiUse(total), GrantExpiryTerms.none());
-          let grant = makeActiveGrant(issued);
+          let grant = makeActiveGrant(
+            multiUse(total),
+            expiring ? GrantExpiryTerms.at(at(30)) : GrantExpiryTerms.none(),
+          );
           for (let i = 0; i < spent; i++) {
             grant = unwrapOk(CouponGrantSystem.burn(grant, at(i), ''));
           }
           const burnt = unwrapOk(CouponGrantSystem.burn(grant, at(9), ''));
-          const back = unwrapOk(CouponGrantSystem.restore(burnt, issued));
-          if (spent + 1 === total) {
-            // A spent multi-use comes back with exactly one use.
-            expect(GrantLifecycle.of(back)).toEqual(
-              GrantLifecycle.active(
-                {
-                  grantCapacity: GrantCapacity.MultiUse,
-                  usesRemaining: 1,
-                  usesGranted: total,
-                },
-                GrantExpiryTerms.none(),
-              ),
-            );
-          } else {
-            expect(back).toEqual(grant);
-          }
+          // The last use spent included: the USED grant kept its terms.
+          expect(unwrapOk(CouponGrantSystem.restore(burnt))).toEqual(grant);
         },
       ),
     );
@@ -285,24 +284,39 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
 });
 
 describe('CouponGrantSystem.transitionWrite — one variant on the stored document', () => {
-  it('sets the used variant and deletes the active terms', () => {
+  it('sets the used variant over the kept terms, and deletes nothing', () => {
     const grant = makeActiveGrant(multiUse(1), GrantExpiryTerms.at(at(31)));
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), 'appt-1'));
-    expect(CouponGrantSystem.transitionWrite(grant, used)).toMatchObject({
+    expect(CouponGrantSystem.transitionWrite(grant, used)).toEqual({
       writeAction: 'UPDATE',
       path: ['couponGrants', 'grant-1'],
       fields: {
         grantStatus: 'USED',
+        grantCapacity: 'MULTI_USE',
+        usesRemaining: 0,
+        usesGranted: 1,
+        grantExpiry: 'EXPIRES_AT',
+        grantExpiresAtUtcMs: at(31),
         usedAtUtcMs: at(1),
         usedNote: 'appt-1',
       },
-      deleteFields: [
-        'grantCapacity',
-        'usesRemaining',
-        'usesGranted',
-        'grantExpiry',
-        'grantExpiresAtUtcMs',
-      ],
+      deleteFields: [],
+    });
+  });
+
+  it('a restore sets the active variant and deletes the redemption', () => {
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
+    const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), 'appt-1'));
+    const back = unwrapOk(CouponGrantSystem.restore(used));
+    expect(CouponGrantSystem.transitionWrite(used, back)).toEqual({
+      writeAction: 'UPDATE',
+      path: ['couponGrants', 'grant-1'],
+      fields: {
+        grantStatus: 'ACTIVE',
+        grantCapacity: 'SINGLE_USE',
+        grantExpiry: 'NO_EXPIRY',
+      },
+      deleteFields: ['usedAtUtcMs', 'usedNote'],
     });
   });
 });
@@ -326,18 +340,19 @@ describe('CouponGrantSystem.isOccasion', () => {
  * `birthdayVm`/`grantsBesideBirthday`, glance.presenter.spec.ts «carries
  * the gift under the band», «never reads a name», «takes the gift out of
  * the reward ticket’s grants while the card carries it, and only then»).
- * A card grant may leave its occasion out (`ClientCardGrant.couponOccasion`
- * is optional): absent reads as none.
+ * A card grant always states its occasion (OR-16: required) — `null` is
+ * none.
  */
 type CardGrant = {
   readonly grantId: string;
   readonly title: string;
-  readonly couponOccasion?: CouponOccasion | null;
+  readonly couponOccasion: CouponOccasion | null;
 };
 
 const GEORGI_GRANT: CardGrant = {
   grantId: 'grant-dev-georgi-1',
   title: 'Безплатна брада',
+  couponOccasion: null,
 };
 const BIRTHDAY_GRANT: CardGrant = {
   grantId: 'grant-dev-martin-birthday',
@@ -361,7 +376,7 @@ describe('CouponGrantSystem.forOccasion — the gift is picked from these', () =
     ).toEqual([BIRTHDAY_GRANT]);
   });
 
-  it('never reads a name: an absent or null occasion is none', () => {
+  it('never reads a name: a null occasion is none', () => {
     expect(
       CouponGrantSystem.forOccasion(
         [NAMED_ONLY, GEORGI_GRANT],
@@ -482,7 +497,13 @@ describe('CouponGrantSystem.expiresAtUtcMs — when a held grant lapses', () => 
       ),
     ).toBeNull();
     expect(
-      CouponGrantSystem.expiresAtUtcMs(GrantLifecycle.used(at(2), '')),
+      CouponGrantSystem.expiresAtUtcMs(
+        GrantLifecycle.used(
+          { ...GrantCapacityTerms.singleUse(), ...GrantExpiryTerms.at(at(30)) },
+          at(2),
+          '',
+        ),
+      ),
     ).toBeNull();
     expect(
       CouponGrantSystem.expiresAtUtcMs(GrantLifecycle.expired(at(31), at(30))),
@@ -560,6 +581,63 @@ describe('CouponGrantSystem.resolved — a grant as the bill settle reads it', (
   });
 });
 
+describe('CouponGrantSystem.offered — the grants the «Отстъпка» menu offers (OR-13)', () => {
+  const expiring = (id: string): CouponGrant => ({
+    ...grantOf(id, 'coupon-1'),
+    ...GrantLifecycle.active(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(1)),
+    ),
+  });
+  const spent = (id: string): CouponGrant => ({
+    ...grantOf(id, 'coupon-1'),
+    ...GrantLifecycle.used(
+      { ...GrantCapacityTerms.singleUse(), ...GrantExpiryTerms.none() },
+      at(1),
+      'appointment:a-1',
+    ),
+  });
+
+  it('offers the usable held grants in their order, then each bill grant whatever its status, in bill order, once', () => {
+    const fresh = grantOf('grant-fresh', 'coupon-1');
+    const lapsed = expiring('grant-lapsed');
+    const burned = spent('grant-burned');
+    const offered = CouponGrantSystem.offered(
+      [lapsed, fresh],
+      [burned],
+      [
+        CouponGrantId.of('grant-burned'),
+        CouponGrantId.of('grant-fresh'),
+        CouponGrantId.of('grant-lapsed'),
+        CouponGrantId.of('grant-unknown'),
+      ],
+      at(2),
+    );
+    // The lapsed one is no NEW promise — it shows only as the bill's own.
+    expect(offered.map((grant) => grant.id)).toEqual([
+      'grant-fresh',
+      'grant-burned',
+      'grant-lapsed',
+    ]);
+  });
+
+  it('offers nothing for a bill id neither answer names, and nothing at all from nothing', () => {
+    expect(
+      CouponGrantSystem.offered([], [], [CouponGrantId.of('gone')], at(0)),
+    ).toEqual([]);
+    expect(CouponGrantSystem.offered([], [], [], at(0))).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const held = deepFreeze([grantOf('grant-a', 'coupon-1')]);
+    const billed = deepFreeze([spent('grant-b')]);
+    const ids = deepFreeze([CouponGrantId.of('grant-b')]);
+    const once = CouponGrantSystem.offered(held, billed, ids, at(0));
+    expect(CouponGrantSystem.offered(held, billed, ids, at(0))).toEqual(once);
+    expect(held.map((grant) => grant.id)).toEqual(['grant-a']);
+  });
+});
+
 describe('CouponGrantSystem.held — the grants joined to their coupons', () => {
   it("keeps the grants' order, keeps a disabled coupon's grant, and leaves out a grant whose coupon is gone", () => {
     const loyal = couponOf('coupon-loyal', 'Постоянен клиент');
@@ -605,5 +683,288 @@ describe('CouponGrantSystem.held — the grants joined to their coupons', () => 
       CouponGrantSystem.held(grants, coupons),
     );
     expect(grants.map((grant) => grant.id)).toEqual(['grant-a', 'grant-b']);
+  });
+});
+
+/* ── OR-13: the bill burns a grant at save and gives it back ───────────── */
+
+const APPOINTMENT = AppointmentId.of('appt-7');
+
+/** A grant line on a bill, as the settle stores it — a whole discount passes. */
+function grantLine(grantId: string): AppliedDiscount {
+  return {
+    discountId: AppliedDiscountId.of(`grant:${grantId}`),
+    label: 'Рожден ден',
+    appliedAtUtcMs: at(0),
+    combinability: Combinability.Stackable,
+    ...DiscountProvenance.grant(CouponGrantId.of(grantId)),
+    ...unwrapOk(CouponValue.percentOff(10)),
+  };
+}
+
+const MANUAL_LINE: AppliedDiscount = {
+  discountId: AppliedDiscountId.of('manual'),
+  label: 'manual',
+  appliedAtUtcMs: at(0),
+  combinability: Combinability.Stackable,
+  ...DiscountProvenance.manual(),
+  ...unwrapOk(CouponValue.percentOff(5)),
+};
+
+/** Grant `id`, fresh: single-use unless `capacity` says otherwise. */
+function freshGrant(
+  id: string,
+  capacity: GrantCapacityTerms = GrantCapacityTerms.singleUse(),
+): CouponGrant {
+  return { ...makeActiveGrant(capacity), id: CouponGrantId.of(id) };
+}
+
+describe('CouponGrantSystem.settleBill — a saved bill’s grant writes', () => {
+  it('burns a grant line new on the bill, noted with the visit', () => {
+    const grant = freshGrant('grant-1');
+    const writes = unwrapOk(
+      CouponGrantSystem.settleBill(
+        [MANUAL_LINE],
+        [MANUAL_LINE, grantLine('grant-1')],
+        [grant],
+        APPOINTMENT,
+        at(2),
+      ),
+    );
+    const used = unwrapOk(
+      CouponGrantSystem.burn(grant, at(2), 'appointment:appt-7'),
+    );
+    expect(writes).toEqual([CouponGrantSystem.transitionWrite(grant, used)]);
+    expect(writes[0]).toMatchObject({
+      fields: {
+        grantStatus: 'USED',
+        grantCapacity: 'SINGLE_USE',
+        usedAtUtcMs: at(2),
+        usedNote: 'appointment:appt-7',
+      },
+    });
+  });
+
+  it('counts a multi-use grant down by one, and to USED on its last use', () => {
+    const three = freshGrant('grant-3', multiUse(3));
+    const [down] = unwrapOk(
+      CouponGrantSystem.settleBill(
+        [],
+        [grantLine('grant-3')],
+        [three],
+        APPOINTMENT,
+        at(2),
+      ),
+    );
+    expect(down).toMatchObject({
+      fields: { grantStatus: 'ACTIVE', usesRemaining: 2, usesGranted: 3 },
+    });
+    const last = freshGrant('grant-1x', multiUse(1));
+    const [spent] = unwrapOk(
+      CouponGrantSystem.settleBill(
+        [],
+        [grantLine('grant-1x')],
+        [last],
+        APPOINTMENT,
+        at(2),
+      ),
+    );
+    expect(spent).toMatchObject({
+      fields: { grantStatus: 'USED', usesRemaining: 0, usesGranted: 1 },
+    });
+  });
+
+  it('restores a grant line that left the bill', () => {
+    const grant = freshGrant('grant-1');
+    const used = unwrapOk(
+      CouponGrantSystem.burn(grant, at(1), 'appointment:appt-7'),
+    );
+    expect(
+      unwrapOk(
+        CouponGrantSystem.settleBill(
+          [grantLine('grant-1'), MANUAL_LINE],
+          [MANUAL_LINE],
+          [used],
+          APPOINTMENT,
+          at(2),
+        ),
+      ),
+    ).toEqual([CouponGrantSystem.transitionWrite(used, grant)]);
+  });
+
+  it('writes nothing for a kept line — a replay of the same bill writes nothing', () => {
+    const used = unwrapOk(
+      CouponGrantSystem.burn(
+        freshGrant('grant-1'),
+        at(1),
+        'appointment:appt-7',
+      ),
+    );
+    const bill = [grantLine('grant-1'), MANUAL_LINE];
+    expect(
+      unwrapOk(
+        CouponGrantSystem.settleBill(bill, bill, [used], APPOINTMENT, at(2)),
+      ),
+    ).toEqual([]);
+    expect(
+      unwrapOk(CouponGrantSystem.settleBill([], [], [], APPOINTMENT, at(2))),
+    ).toEqual([]);
+  });
+
+  it('burns the new, restores the gone and leaves the kept in one pass', () => {
+    const kept = unwrapOk(
+      CouponGrantSystem.burn(freshGrant('grant-kept'), at(1), 'x'),
+    );
+    const gone = unwrapOk(
+      CouponGrantSystem.burn(freshGrant('grant-gone'), at(1), 'x'),
+    );
+    const added = freshGrant('grant-new');
+    const writes = unwrapOk(
+      CouponGrantSystem.settleBill(
+        [grantLine('grant-kept'), grantLine('grant-gone')],
+        [grantLine('grant-kept'), grantLine('grant-new')],
+        [kept, gone, added],
+        APPOINTMENT,
+        at(2),
+      ),
+    );
+    expect(writes.map((write) => write.path)).toEqual([
+      ['couponGrants', 'grant-new'],
+      ['couponGrants', 'grant-gone'],
+    ]);
+  });
+
+  it('reads a grant the batch and the stored bill both named once — the first copy answers', () => {
+    const grant = freshGrant('grant-1');
+    const writes = unwrapOk(
+      CouponGrantSystem.settleBill(
+        [],
+        [grantLine('grant-1')],
+        [grant, { ...grant, couponId: CouponId.of('coupon-copy') }],
+        APPOINTMENT,
+        at(2),
+      ),
+    );
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.path).toEqual(['couponGrants', 'grant-1']);
+  });
+
+  it('refuses the save when a new line names a grant that will not burn — the second visit of a single-use grant', () => {
+    const spent = unwrapOk(
+      CouponGrantSystem.burn(
+        freshGrant('grant-1'),
+        at(1),
+        'appointment:appt-1',
+      ),
+    );
+    expect(
+      unwrapErr(
+        CouponGrantSystem.settleBill(
+          [],
+          [grantLine('grant-1')],
+          [spent],
+          APPOINTMENT,
+          at(2),
+        ),
+      ),
+    ).toEqual({
+      errorCode: EngagementErrorCode.CouponGrantNotActive,
+      currentState: GrantStatus.Used,
+    });
+  });
+
+  it('skips a restore the grant refuses, and a line whose grant was not read — the save still lands', () => {
+    const expired = {
+      ...grantIn(GrantLifecycle.expired(at(5), at(4))),
+      id: CouponGrantId.of('grant-old'),
+    };
+    const untouched = freshGrant('grant-full');
+    expect(
+      unwrapOk(
+        CouponGrantSystem.settleBill(
+          [grantLine('grant-old'), grantLine('grant-full')],
+          [grantLine('grant-unread')],
+          [expired, untouched],
+          APPOINTMENT,
+          at(2),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const before = deepFreeze([grantLine('grant-gone'), MANUAL_LINE]);
+    const after = deepFreeze([grantLine('grant-new')]);
+    const grants = deepFreeze([
+      freshGrant('grant-new'),
+      unwrapOk(CouponGrantSystem.burn(freshGrant('grant-gone'), at(1), 'x')),
+    ]);
+    const run = () =>
+      CouponGrantSystem.settleBill(before, after, grants, APPOINTMENT, at(2));
+    expect(run()).toEqual(run());
+    expect(grants[0]?.grantStatus).toBe(GrantStatus.Active);
+    expect(before).toHaveLength(2);
+  });
+});
+
+describe('CouponGrantSystem.releasePlan — a cancel or a no-show gives the grants back', () => {
+  it('drops every grant line, keeps the rest in order, and restores each grant', () => {
+    const grant = freshGrant('grant-1');
+    const used = unwrapOk(
+      CouponGrantSystem.burn(grant, at(1), 'appointment:appt-7'),
+    );
+    const plan = CouponGrantSystem.releasePlan(
+      [grantLine('grant-1'), MANUAL_LINE],
+      [used],
+    );
+    expect(plan.discounts).toEqual([MANUAL_LINE]);
+    expect(plan.writes).toEqual([
+      CouponGrantSystem.transitionWrite(used, grant),
+    ]);
+    expect(WriteOp.isDelete(plan.writes[0] as WriteOp)).toBe(false);
+  });
+
+  it('hands the same discounts back, and writes nothing, when the bill holds no grant line', () => {
+    const discounts = [MANUAL_LINE];
+    const plan = CouponGrantSystem.releasePlan(discounts, []);
+    expect(plan.discounts).toBe(discounts);
+    expect(plan.writes).toEqual([]);
+    expect(CouponGrantSystem.releasePlan([], []).discounts).toEqual([]);
+  });
+
+  it('drops the line of a grant it cannot give back, and writes nothing for it', () => {
+    const revoked = {
+      ...grantIn(GrantLifecycle.revoked(at(3), UserId.of('admin'), 'грешка')),
+      id: CouponGrantId.of('grant-revoked'),
+    };
+    const plan = CouponGrantSystem.releasePlan(
+      [grantLine('grant-revoked'), grantLine('grant-unread'), MANUAL_LINE],
+      [revoked],
+    );
+    expect(plan.discounts).toEqual([MANUAL_LINE]);
+    expect(plan.writes).toEqual([]);
+  });
+
+  it('gives a multi-use grant its use back', () => {
+    const once = unwrapOk(
+      CouponGrantSystem.burn(freshGrant('grant-3', multiUse(3)), at(1), 'x'),
+    );
+    expect(
+      CouponGrantSystem.releasePlan([grantLine('grant-3')], [once]).writes,
+    ).toMatchObject([
+      { fields: { grantStatus: 'ACTIVE', usesRemaining: 3, usesGranted: 3 } },
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const discounts = deepFreeze([grantLine('grant-1'), MANUAL_LINE]);
+    const grants = deepFreeze([
+      unwrapOk(CouponGrantSystem.burn(freshGrant('grant-1'), at(1), 'x')),
+    ]);
+    expect(CouponGrantSystem.releasePlan(discounts, grants)).toEqual(
+      CouponGrantSystem.releasePlan(discounts, grants),
+    );
+    expect(discounts).toHaveLength(2);
+    expect(grants[0]?.grantStatus).toBe(GrantStatus.Used);
   });
 });

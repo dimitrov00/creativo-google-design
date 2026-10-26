@@ -515,6 +515,15 @@ describe('PipelineError.serverParams — bounded by the per-code allowlist (§10
     },
   );
 
+  it('carries a throttled code request’s seconds left — the countdown the code step restarts from (OR-9)', () => {
+    expect(
+      PipelineError.fromWire('resource-exhausted', {
+        errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+        retryAfterSeconds: 42,
+      }).serverParams,
+    ).toEqual({ retryAfterSeconds: 42 });
+  });
+
   it('pins the window-closed copy’s one figure and drops its deadline', () => {
     expect(
       PipelineError.fromWire('failed-precondition', {

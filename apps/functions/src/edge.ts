@@ -7,7 +7,7 @@ import {
   PrimitiveErrorCode,
   type Result,
   TriggerEventId,
-  type UtcEpochMs,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   AccountsErrorCode,
@@ -16,6 +16,7 @@ import {
   CancellationRefusalCode,
   CancelWaitlistRefusalCode,
   CatalogErrorCode,
+  ClientIssueErrorCode,
   CompleteRegistrationRefusalCode,
   EngagementErrorCode,
   GovernanceErrorCode,
@@ -54,6 +55,8 @@ import { eventInstantOf } from './wire/wire-read';
  * `HttpsError`, and the only place, besides a pipeline's write half, that
  * telemetry is invoked. A handler in `main.ts` is `callableEdge(spec, ports,
  * pipeline(bundle))` (or `retryingTrigger` for an event); it holds no logic.
+ * A callable any device may dial without a session — the client issue sink
+ * (OR-34) — first passes a per-instance token bucket (`throttledCallable`).
  *
  * **The wire, flipped (Phase 4a 4A-4).** A refusal leaves as its ecs-core
  * struct: `HttpsError(status, errorCode, details)`, `details` the struct
@@ -87,6 +90,7 @@ export const EDGE_DICTIONARIES = {
   CancellationRefusalCode,
   CancelWaitlistRefusalCode,
   CatalogErrorCode,
+  ClientIssueErrorCode,
   CompleteRegistrationRefusalCode,
   EngagementErrorCode,
   GovernanceErrorCode,
@@ -114,6 +118,7 @@ export type EdgeCode =
   | CancellationRefusalCode
   | CancelWaitlistRefusalCode
   | CatalogErrorCode
+  | ClientIssueErrorCode
   | CompleteRegistrationRefusalCode
   | EngagementErrorCode
   | GovernanceErrorCode
@@ -365,6 +370,16 @@ const WAITLIST_WIRE: WireTable<WaitlistErrorCode> = {
 };
 
 /**
+ * The client issue sink's door (OR-34): a payload that is no admitted batch
+ * is a refusal of what was sent. Its code leaves alone — the reason, the
+ * issue's index and the field at fault stay in the sink's own log line
+ * (`client-issue.wire.ts`): the reporter never words a refusal, it drops it.
+ */
+const CLIENT_ISSUE_WIRE: WireTable<ClientIssueErrorCode> = {
+  [ClientIssueErrorCode.BatchRefused]: fields(S.InvalidArgument),
+};
+
+/**
  * The streak publish's refusals are ANSWERED —
  * `{ streakPublishOutcome: 'REFUSED', errorCode, fields, earliest, … }`
  * (`StreakPublishCall.refused`) — never thrown, but for a caller without a
@@ -548,7 +563,6 @@ const ENGAGEMENT_WIRE = uniform(
   fields(S.InvalidArgument),
   {
     [EngagementErrorCode.CouponGrantNotActive]: fields(S.FailedPrecondition),
-    [EngagementErrorCode.CouponGrantNotExpiring]: fields(S.FailedPrecondition),
     [EngagementErrorCode.GiftVoucherNotRedeemable]: fields(
       S.FailedPrecondition,
     ),
@@ -583,6 +597,12 @@ const ENGAGEMENT_WIRE = uniform(
     [EngagementErrorCode.CourseNotFound]: fields(S.NotFound),
     [EngagementErrorCode.ShopEventNotFound]: fields(S.NotFound),
     [EngagementErrorCode.ShopEventZoneUnknown]: fields(S.FailedPrecondition),
+    // An event naming a shop that is not stored (OR-38, DEP-F28): refused,
+    // never placed on another shop's clock — a precondition of the save, as
+    // the missing zone is. Its `locationId` stays on the server.
+    [EngagementErrorCode.ShopEventLocationUnknown]: fields(
+      S.FailedPrecondition,
+    ),
     // The admin rhythm page's own failure word (Phase 4b, 4B-5): no pipeline
     // raises it; an inert row — the answer the edge gives a code it does not
     // know, not the dictionary's `invalid-argument` default.
@@ -649,6 +669,7 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...CANCELLATION_WIRE,
     ...CANCEL_WAITLIST_WIRE,
     ...CATALOG_WIRE,
+    ...CLIENT_ISSUE_WIRE,
     ...COMPLETE_REGISTRATION_WIRE,
     ...ENGAGEMENT_WIRE,
     ...GOVERNANCE_WIRE,
@@ -789,6 +810,100 @@ export const workBudget = (nowUtcMs: NowUtcMs, limitMs: number): WorkBudget => {
   };
 };
 
+// ── Throttle ───────────────────────────────────────────────────────────────
+
+/**
+ * A callable's admission rate on ONE instance: a bucket that holds
+ * `capacity` calls (the burst it absorbs) and refills at `callsPerSecond`.
+ * Per instance, never global — the definition's `maxInstances` bounds the
+ * whole.
+ */
+export type ThrottleRate = {
+  readonly capacity: number;
+  readonly callsPerSecond: number;
+};
+
+/**
+ * One instance's bucket, in thousandths of a call — so a refill over whole
+ * milliseconds is a whole number (`callsPerSecond` thousandths per
+ * millisecond) and no fraction drifts — as of the instant it was last
+ * filled.
+ */
+export type TokenBucket = {
+  readonly milliTokens: number;
+  readonly filledAtUtcMs: UtcEpochMs;
+};
+
+/** One call's turn at the bucket: admitted or not, and the bucket it leaves behind. */
+export type BucketTurn = {
+  readonly admitted: boolean;
+  readonly bucket: TokenBucket;
+};
+
+/** What one call costs, in the bucket's thousandths. */
+const MILLI_TOKENS_PER_CALL = 1000;
+
+/** A full bucket — how an instance starts. */
+export function fullBucket(
+  rate: ThrottleRate,
+  nowUtcMs: UtcEpochMs,
+): TokenBucket {
+  return {
+    milliTokens: rate.capacity * MILLI_TOKENS_PER_CALL,
+    filledAtUtcMs: nowUtcMs,
+  };
+}
+
+/**
+ * One call's turn — pure: the bucket refilled for the time since it was
+ * last filled, never past its capacity, then one call taken when a whole
+ * one is there. A clock that stepped back refills nothing and re-anchors
+ * the bucket on now (an elapsed-time rule on stamps, Law 7.3 T2: a
+ * cooldown).
+ */
+export function takeToken(
+  rate: ThrottleRate,
+  bucket: TokenBucket,
+  nowUtcMs: UtcEpochMs,
+): BucketTurn {
+  const elapsedMs = Math.max(
+    0,
+    UtcEpochMs.elapsedMs(bucket.filledAtUtcMs, nowUtcMs),
+  );
+  const milliTokens = Math.min(
+    rate.capacity * MILLI_TOKENS_PER_CALL,
+    bucket.milliTokens + elapsedMs * rate.callsPerSecond,
+  );
+  const admitted = milliTokens >= MILLI_TOKENS_PER_CALL;
+  return {
+    admitted,
+    bucket: {
+      milliTokens: admitted ? milliTokens - MILLI_TOKENS_PER_CALL : milliTokens,
+      filledAtUtcMs: nowUtcMs,
+    },
+  };
+}
+
+/**
+ * A per-instance token bucket over the clock port: the bucket lives in this
+ * closure — module state of the composition root, so each instance (each
+ * cold start) has its own — full at its first call, one {@link takeToken}
+ * per call after. What it answers is the admission question a throttled
+ * callable asks before anything else (an edge closure, no port).
+ */
+export const tokenBucket = (
+  rate: ThrottleRate,
+  nowUtcMs: NowUtcMs,
+): (() => boolean) => {
+  let bucket: TokenBucket | null = null;
+  return () => {
+    const now = nowUtcMs();
+    const turn = takeToken(rate, bucket ?? fullBucket(rate, now), now);
+    bucket = turn.bucket;
+    return turn.admitted;
+  };
+};
+
 // ── The wrappers ───────────────────────────────────────────────────────────
 
 /** What the edge itself reads: telemetry and the clock (`ClockPorts`, flatten-spec T4). */
@@ -865,6 +980,26 @@ export const callableEdge =
       return spec.answer(result.error);
     }
     throw toHttpsError(result.error);
+  };
+
+/** The answer a throttled call gets: the status's own name, as the platform's bare INTERNAL is named. */
+const THROTTLED_MESSAGE = 'RESOURCE_EXHAUSTED';
+
+/**
+ * A callable behind its instance's token bucket ({@link tokenBucket}): a
+ * call the bucket admits runs the handler as it is; one it refuses is
+ * answered `resource-exhausted` before anything is read — no details, no
+ * line of ours (the platform's request log counts it, HTTP 429), so a flood
+ * costs neither a decode nor a log line.
+ */
+export const throttledCallable =
+  <In, Out>(
+    admit: () => boolean,
+    handle: (request: CallableRequest<In>) => Promise<Out>,
+  ) =>
+  async (request: CallableRequest<In>): Promise<Out> => {
+    if (!admit()) throw new HttpsError(S.ResourceExhausted, THROTTLED_MESSAGE);
+    return handle(request);
   };
 
 /** How one retrying trigger meets the platform. */

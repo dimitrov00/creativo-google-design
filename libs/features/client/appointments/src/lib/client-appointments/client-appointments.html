@@ -161,11 +161,14 @@
          (`--visit-list-anchor-clearance`, client-appointments.css). It
          draws its own placeholders and its own failure with «Опитай пак»;
          the EMPTY is the page's, because only the page knows whether
-         nothing is there or the funnel is hiding it. -->
+         nothing is there or the funnel is hiding it. The pills show from
+         two sections up (OR-56 c): one pill would only repeat the one
+         heading under it. -->
     <lib-visits-browser
       [perspective]="VisitPerspective.Client"
       testIdPrefix="appointments"
       class="appointments__browser"
+      [pills]="showPills()"
       [sections]="sections()"
       [state]="listState()"
       (openRow)="showVisit($event)"

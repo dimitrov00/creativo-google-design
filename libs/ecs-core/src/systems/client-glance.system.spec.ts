@@ -48,8 +48,9 @@ import { ZonedTimeSystem } from './zoned-time.system';
  *   «pauseOf, isInChairToday», the head's «treats a pause that has run out
  *   as none», and «Повтори»'s «the draft already holds it» (`sameLegs`);
  * - libs/features/staff/client-card/src/lib/glance.presenter.spec.ts — the
- *   holdings: the vouchers that still pay as one sum, the facts the flags
- *   and the data allow, no rhythm for a lost run or a paused client.
+ *   holdings: the vouchers that still pay as one sum per currency (OR-17),
+ *   the facts the flags and the data allow, no rhythm for a lost run or a
+ *   paused client.
  * `isBirthdayToday` is AgeSystem's (identity), not here.
  *
  * Zone-blind (Law 7): "now" is the fixture shop's `ShopNow` (2026-09-28
@@ -198,25 +199,19 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
     today: TODAY,
     ...overrides,
   });
-  const eur = (amount: number) => ({
-    voucherCents: amount,
-    voucherCurrency: 'EUR',
+  const money = (amount: number, currency: Currency = Currency.EUR) => ({
+    amountCents: amount,
+    currency,
   });
+  const eur = (amount: number) => ({ vouchers: [money(amount)] });
 
   it('counts only the vouchers that still pay: active, not empty, not past their last day, as one sum', () => {
-    const fact = (vouchers: readonly GiftVoucher[] | null) => {
-      const held = ClientGlanceSystem.holdings(input({ vouchers }));
-      return held.voucherCents === null
-        ? null
-        : {
-            voucherCents: held.voucherCents,
-            voucherCurrency: held.voucherCurrency,
-          };
-    };
-    expect(fact([voucher(2500)])).toEqual(eur(2500));
-    expect(fact([voucher(2500), voucher(2500), voucher(500)])).toEqual(
-      eur(5500),
-    );
+    const fact = (vouchers: readonly GiftVoucher[] | null) =>
+      ClientGlanceSystem.holdings(input({ vouchers })).vouchers;
+    expect(fact([voucher(2500)])).toEqual([money(2500)]);
+    expect(fact([voucher(2500), voucher(2500), voucher(500)])).toEqual([
+      money(5500),
+    ]);
     expect(
       fact([
         voucher(0),
@@ -224,7 +219,7 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
           ...VoucherLifecycle.voided(utcMs('2026-09-01T00:00:00Z'), 'refund'),
         }),
       ]),
-    ).toBeNull();
+    ).toEqual([]);
     // The last day is the expiry's day on the shop calendar (T5).
     const lastDay = (iso: string) => {
       const expiresAtUtcMs = utcMs(iso);
@@ -236,22 +231,26 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
         ).localDate,
       });
     };
-    expect(fact([lastDay('2026-09-27T23:59:59.999+03:00')])).toBeNull();
-    expect(fact([lastDay('2026-09-28T23:59:59.999+03:00')])).toEqual(eur(2500));
-    expect(fact([])).toBeNull();
-    expect(fact(null)).toBeNull();
+    expect(fact([lastDay('2026-09-27T23:59:59.999+03:00')])).toEqual([]);
+    expect(fact([lastDay('2026-09-28T23:59:59.999+03:00')])).toEqual([
+      money(2500),
+    ]);
+    expect(fact([])).toEqual([]);
+    expect(fact(null)).toEqual([]);
   });
 
-  it('sums in the first voucher’s currency alone', () => {
+  it('keeps every currency — one sum each, in the order each is first seen (OR-17, DEP-F12)', () => {
     const held = ClientGlanceSystem.holdings(
       input({
-        vouchers: [voucher(2500), voucher(1000, { currency: Currency.BGN })],
+        vouchers: [
+          voucher(2500),
+          voucher(1000, { currency: Currency.BGN }),
+          voucher(500),
+          voucher(300, { currency: Currency.BGN }),
+        ],
       }),
     );
-    expect({
-      voucherCents: held.voucherCents,
-      voucherCurrency: held.voucherCurrency,
-    }).toEqual(eur(2500));
+    expect(held.vouchers).toEqual([money(3000), money(1300, Currency.BGN)]);
   });
 
   it('draws only the facts its flags and its data allow', () => {
@@ -272,11 +271,10 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
     expect(
       ClientGlanceSystem.holdings(input({ rhythm: null })).rhythm,
     ).toBeNull();
-    // No voucher left: both halves of the sum are absent together.
-    expect(ClientGlanceSystem.holdings(input({ vouchers: [] }))).toMatchObject({
-      voucherCents: null,
-      voucherCurrency: null,
-    });
+    // No voucher left: no sum at all.
+    expect(
+      ClientGlanceSystem.holdings(input({ vouchers: [] })).vouchers,
+    ).toEqual([]);
   });
 
   it('says no rhythm for a run that was lost, and agrees a run of one', () => {
@@ -458,6 +456,6 @@ describe('ClientGlanceSystem purity', () => {
       ClientGlanceSystem.isInChairToday(true, chair, NOW),
     ];
     expect(run()).toEqual(run());
-    expect(run()[0]).toMatchObject({ voucherCents: 2500 });
+    expect(run()[0]).toMatchObject({ vouchers: [{ amountCents: 2500 }] });
   });
 });

@@ -53,7 +53,7 @@ const DRAFT: StaffEditDraft = {
   vouchers: [],
   tipCents: null,
   drawn: null,
-  clients: [{ id: ANNA, label: 'Анна', phone: null }],
+  clients: [{ id: ANNA, label: 'Анна', phone: null, email: null }],
 };
 
 // @ts-expect-error — `revision` is required: absent is `null`.
@@ -62,6 +62,8 @@ const noRevision: StaffEditDraft = { ...DRAFT, revision: undefined };
 const noDrawn: StaffEditDraft = { ...DRAFT, drawn: undefined };
 // @ts-expect-error — a leg's `typedPriceCents` is required: absent is `null`.
 const noTyped: StaffEditDraft.Leg = { ...LEG, typedPriceCents: undefined };
+// @ts-expect-error — a person's `email` is required: absent is `null` (OR-26).
+const noEmail: StaffEditDraft.Client = { id: ANNA, label: 'Анна', phone: null };
 
 /** A whole draft omitting a field, as an object literal — refused at compile time. */
 function omitted(): StaffEditDraft {
@@ -118,6 +120,17 @@ describe('StaffEditDraft — the staff sheet’s commit, every field present', (
     expect(LEG.typedPriceCents).toBeNull();
   });
 
+  it('carries each person’s number and e-mail as typed — what the plan parses into a walk-in’s contact (OR-26)', () => {
+    const typed: StaffEditDraft.Client = {
+      id: draftPersonKey('guest-maria'),
+      label: 'Мария',
+      phone: '+359888123456',
+      email: 'Maria@Example.com',
+    };
+    expect(Object.keys(typed)).toEqual(['id', 'label', 'phone', 'email']);
+    expect(DRAFT.clients[0]?.email).toBeNull();
+  });
+
   it('carries a discount flat — provenance and value fields at the root', () => {
     expect(GRANTED).toMatchObject({
       discountSource: 'GRANT',
@@ -128,6 +141,6 @@ describe('StaffEditDraft — the staff sheet’s commit, every field present', (
   });
 
   it('keeps the compile-time refusals compiled out of nothing at run time', () => {
-    expect([noRevision, noDrawn, noTyped, omitted()].length).toBe(4);
+    expect([noRevision, noDrawn, noTyped, noEmail, omitted()].length).toBe(5);
   });
 });

@@ -20,6 +20,7 @@ import {
   SeatLabel,
   CancellationReason,
   CancelledBy,
+  SeatOccupant,
   type SeatOutcome,
   Seat,
   SeatSubject,
@@ -54,6 +55,7 @@ import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   deepFreeze,
+  hourCount,
   localDate,
   minute,
   unwrapOk,
@@ -204,7 +206,9 @@ function outcomeOf(spec: OutcomeSpec, visitStartMs: number): SeatOutcome {
         cancellationWindowHours:
           spec.windowHours === undefined
             ? DEFAULT_WINDOW_HOURS
-            : spec.windowHours,
+            : spec.windowHours === null
+              ? null
+              : hourCount(spec.windowHours),
       };
   }
 }
@@ -295,7 +299,7 @@ function stats(
 function policyWithWindow(cancellationWindowHours: number): ClientStatsPolicy {
   return ClientStatsPolicy.forBooking({
     ...BookingPolicy.DEFAULT,
-    cancellationWindowHours,
+    cancellationWindowHours: hourCount(cancellationWindowHours),
   });
 }
 
@@ -663,16 +667,63 @@ describe('stats — cadence (R34)', () => {
     expect(result.avgCadenceDays).toBe(30);
   });
 
-  it('measures the gaps in REAL elapsed days — a spring-forward between two visits moves no stored figure', () => {
-    // 10 days, then 10 days 2:53 on the wall clock across 2026-03-29 — but
-    // one hour less of real time: (10 + 10.0786) / 2 = 10.04 → 10.0. Read on
-    // the wall clock the mean would be 10.06 → 10.1.
+  // OR-46 (DEP-F32): the gaps are SHOP CALENDAR DAYS — `LocalDate`
+  // arithmetic (flatten-spec T8), never instants. This case was "REAL
+  // elapsed days" (10 + 10.0786 → 10.0); on the calendar it is 10 + 10.
+  it('measures the gaps in shop calendar days — the time of day leaks into no figure', () => {
     const result = stats([
       solo('a', utcMs('2026-03-10T10:00:00+02:00'), WORKED),
       solo('b', utcMs('2026-03-20T10:00:00+02:00'), WORKED),
       solo('c', utcMs('2026-03-30T12:53:00+03:00'), WORKED),
     ]);
     expect(result.avgCadenceDays).toBe(10);
+  });
+
+  it('gives an evening-to-morning pair a whole-day mean — never the hours between', () => {
+    // 20:00 → 09:00 a week later is 6 days 13 hours of real time (the old
+    // reading: (6.54 + 7) / 2 → 6.8); on the shop's calendar it is 7 + 7.
+    const result = stats([
+      solo('a', utcMs('2026-05-04T20:00:00+03:00'), WORKED),
+      solo('b', utcMs('2026-05-11T09:00:00+03:00'), WORKED),
+      solo('c', utcMs('2026-05-18T09:00:00+03:00'), WORKED),
+    ]);
+    expect(result.avgCadenceDays).toBe(7);
+  });
+
+  it('is unchanged across the DST weekend — the same weekly rhythm as any other month', () => {
+    // Sunday 2026-03-29 03:00 jumps to 04:00 in Sofia: the week over it
+    // holds one hour less of real time — never a day less.
+    const acrossDst = stats([
+      solo('a', utcMs('2026-03-22T10:00:00+02:00'), WORKED),
+      solo('b', utcMs('2026-03-29T10:00:00+03:00'), WORKED),
+      solo('c', utcMs('2026-04-05T10:00:00+03:00'), WORKED),
+    ]);
+    const plain = stats([
+      solo('a', utcMs('2026-05-03T10:00:00+03:00'), WORKED),
+      solo('b', utcMs('2026-05-10T10:00:00+03:00'), WORKED),
+      solo('c', utcMs('2026-05-17T10:00:00+03:00'), WORKED),
+    ]);
+    expect(acrossDst.avgCadenceDays).toBe(7);
+    expect(acrossDst.avgCadenceDays).toBe(plain.avgCadenceDays);
+  });
+
+  it('skips a same-day pair — no gap, the streak habit’s rule', () => {
+    // Morning and afternoon of one day are one gap short, not a 0-day gap:
+    // the mean is the one real gap, 14 (the old reading: (0.2 + 13.8) / 2).
+    const result = stats([
+      solo('a', utcMs('2026-05-04T10:00:00+03:00'), WORKED),
+      solo('b', utcMs('2026-05-04T15:00:00+03:00'), WORKED),
+      solo('c', utcMs('2026-05-18T10:00:00+03:00'), WORKED),
+    ]);
+    expect(result.avgCadenceDays).toBe(14);
+    // Three worked visits on one day hold no gap at all — no rhythm.
+    expect(
+      stats([
+        solo('a', utcMs('2026-05-04T09:00:00+03:00'), WORKED),
+        solo('b', utcMs('2026-05-04T12:00:00+03:00'), WORKED),
+        solo('c', utcMs('2026-05-04T16:00:00+03:00'), WORKED),
+      ]).avgCadenceDays,
+    ).toBeNull();
   });
 });
 
@@ -987,7 +1038,7 @@ describe('ClientStatsPolicy', () => {
           policy,
           instant(start),
           instant(deadline),
-          6,
+          hourCount(6),
         ),
       ).toBe(false);
       expect(
@@ -995,7 +1046,7 @@ describe('ClientStatsPolicy', () => {
           policy,
           instant(start),
           instant(deadline + 1),
-          6,
+          hourCount(6),
         ),
       ).toBe(true);
     }
@@ -1376,6 +1427,33 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       expect(outcome.decisive).toBe(appointment.seats[1]);
       expect(ClientStatsSystem.clientCaused(outcome.decisive)).toBe(false);
     }
+  });
+
+  it('reads a walk-in’s seats as its record’s visit — the record is the person, an account or not (OR-26)', () => {
+    const walkIn = CustomerId.of('cus_0123456789abcdef0123');
+    const appointment = party([
+      { who: 'ana', outcome: WORKED },
+      { who: 'guest', outcome: NO_SHOW },
+    ]);
+    const [own, stranger] = appointment.seats as readonly Seat[];
+    const withWalkIn: BilledAppointment<Seat> = {
+      ...appointment,
+      seats: [
+        own as Seat,
+        {
+          ...(stranger as Seat),
+          ...SeatOccupant.walkIn(walkIn, SeatLabel.of('Мария')),
+        } as Seat,
+      ],
+    };
+    expect(
+      ClientStatsSystem.subjectVisitOf(walkIn, withWalkIn)?.outcome,
+    ).toEqual({ subjectVisitOutcome: 'NO_SHOW' });
+    expect(
+      ClientStatsSystem.subjectVisitOf(RECORDS.ana, withWalkIn)?.outcome,
+    ).toEqual({ subjectVisitOutcome: 'WORKED' });
+    // An anonymous guest is still nobody's.
+    expect(ClientStatsSystem.subjectVisitOf(walkIn, appointment)).toBeNull();
   });
 
   it('is null for a person with no seat on the appointment', () => {

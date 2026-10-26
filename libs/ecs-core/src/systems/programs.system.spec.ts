@@ -552,7 +552,7 @@ describe('ProgramsSystem.eventFields', () => {
   });
 });
 
-describe('ProgramsSystem — the event’s zone (F-4, F4-1 (c))', () => {
+describe('ProgramsSystem — the event’s zone (F-4, OR-38)', () => {
   const defaultId = LocationId.of('loc-center');
   const fields = unwrapOk(ProgramsSystem.eventFields(shopEventInputOf()));
   const athens = unwrapOk(ZonedTimeSystem.checkZone('Europe/Athens'));
@@ -574,26 +574,207 @@ describe('ProgramsSystem — the event’s zone (F-4, F4-1 (c))', () => {
     ).toBe('loc-center');
   });
 
-  it('places the event on the named location’s zone, over any fallback', () => {
-    expect(unwrapOk(ProgramsSystem.zoneOf(mladost, center, defaultId))).toBe(
-      athens,
-    );
-    expect(unwrapOk(ProgramsSystem.zoneOf(center, null, defaultId))).toBe(
+  it('places the event on the zone of the one location read: its own shop’s, or — at no shop — the default shop’s', () => {
+    expect(
+      unwrapOk(
+        ProgramsSystem.zoneOf(LocationId.of('loc-mladost'), mladost, defaultId),
+      ),
+    ).toBe(athens);
+    expect(unwrapOk(ProgramsSystem.zoneOf(null, center, defaultId))).toBe(
       FIXTURE_TIME_ZONE,
     );
   });
 
-  it('falls back to the default shop’s zone when the typed location names no shop', () => {
-    expect(unwrapOk(ProgramsSystem.zoneOf(null, mladost, defaultId))).toBe(
-      athens,
-    );
+  // DEP-F28: was «falls back to the default shop’s zone when the typed
+  // location names no shop» — an event at a shop that is gone is refused.
+  it('refuses an event whose shop is not stored, naming that shop — never the default shop’s clock (OR-38)', () => {
+    expect(
+      unwrapErr(
+        ProgramsSystem.zoneOf(LocationId.of('loc-nowhere'), null, defaultId),
+      ),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+      locationId: 'loc-nowhere',
+    });
   });
 
-  it('refuses when neither is stored, naming the default shop', () => {
+  it('refuses an event at no shop when the default shop is not stored, naming the default shop', () => {
     expect(unwrapErr(ProgramsSystem.zoneOf(null, null, defaultId))).toEqual({
       errorCode: 'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
       locationId: 'loc-center',
     });
+  });
+});
+
+describe('ProgramsSystem.eventShop — the shop an event is at (OR-37)', () => {
+  const center = locationFixture();
+  const north = locationFixture({ id: LocationId.of('loc-north') });
+  const shops = [center, north];
+  const at = (locationId: string | null) => ({
+    locationId: locationId === null ? null : LocationId.of(locationId),
+  });
+
+  it('finds the event’s shop among the listed ones', () => {
+    expect(ProgramsSystem.eventShop(at('loc-north'), shops)).toBe(north);
+    expect(ProgramsSystem.eventShop(shopEventOf('evt-1'), shops)).toBeNull();
+  });
+
+  it('answers nothing for an event at no shop, for a shop not listed (hidden or deleted), and over no shops', () => {
+    expect(ProgramsSystem.eventShop(at(null), shops)).toBeNull();
+    expect(ProgramsSystem.eventShop(at('loc-gone'), shops)).toBeNull();
+    expect(ProgramsSystem.eventShop(at('loc-center'), [])).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const frozen = deepFreeze([center, north]);
+    expect(ProgramsSystem.eventShop(at('loc-center'), frozen)).toEqual(
+      ProgramsSystem.eventShop(at('loc-center'), frozen),
+    );
+    expect(frozen).toHaveLength(2);
+  });
+});
+
+describe('ProgramsSystem.positionShops — the shops a role is open at (OR-42)', () => {
+  const center = locationFixture();
+  const north = locationFixture({ id: LocationId.of('loc-north') });
+  const south = locationFixture({ id: LocationId.of('loc-south') });
+  const shops = [center, north, south];
+  const scoped = (...ids: string[]) => ({
+    locationIds: ids.map((id) => LocationId.of(id)),
+  });
+
+  it('names the listed shops the role’s scope holds, in the catalogue’s order', () => {
+    expect(
+      ProgramsSystem.positionShops(scoped('loc-south', 'loc-center'), shops),
+    ).toEqual([center, south]);
+  });
+
+  it('names none for a role open at every shop — an empty scope — and leaves out a shop not listed', () => {
+    expect(ProgramsSystem.positionShops(scoped(), shops)).toEqual([]);
+    expect(
+      ProgramsSystem.positionShops(scoped('loc-gone', 'loc-north'), shops),
+    ).toEqual([north]);
+    expect(ProgramsSystem.positionShops(scoped('loc-center'), [])).toEqual([]);
+  });
+
+  it('reads a whole role as it is (Law 3)', () => {
+    expect(
+      ProgramsSystem.positionShops(
+        positionOf('pos-1', { locationIds: [LocationId.of('loc-north')] }),
+        shops,
+      ),
+    ).toEqual([north]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const role = deepFreeze(scoped('loc-north', 'loc-center'));
+    const frozen = deepFreeze([center, north]);
+    expect(ProgramsSystem.positionShops(role, frozen)).toEqual(
+      ProgramsSystem.positionShops(role, frozen),
+    );
+    expect(role.locationIds).toEqual(['loc-north', 'loc-center']);
+  });
+});
+
+describe('ProgramsSystem.eventUnlistedShop — the event’s stored shop the list does not hold (OR-37)', () => {
+  const center = locationFixture();
+  const north = locationFixture({ id: LocationId.of('loc-north') });
+  const shops = [center, north];
+  const at = (locationId: string | null) => ({
+    locationId: locationId === null ? null : LocationId.of(locationId),
+  });
+
+  it('answers the stored shop no listed shop answers (hidden or deleted), over no shops too', () => {
+    expect(ProgramsSystem.eventUnlistedShop(at('loc-gone'), shops)).toBe(
+      'loc-gone',
+    );
+    expect(ProgramsSystem.eventUnlistedShop(at('loc-center'), [])).toBe(
+      'loc-center',
+    );
+  });
+
+  it('answers nothing for an event at no shop, and for one whose shop is listed', () => {
+    expect(ProgramsSystem.eventUnlistedShop(at(null), shops)).toBeNull();
+    expect(ProgramsSystem.eventUnlistedShop(at('loc-north'), shops)).toBeNull();
+    expect(ProgramsSystem.eventUnlistedShop(at(null), [])).toBeNull();
+  });
+
+  it('reads a whole event as it is (Law 3)', () => {
+    expect(
+      ProgramsSystem.eventUnlistedShop(shopEventOf('evt-1'), shops),
+    ).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const event = deepFreeze(at('loc-gone'));
+    const frozen = deepFreeze([center, north]);
+    expect(ProgramsSystem.eventUnlistedShop(event, frozen)).toBe(
+      ProgramsSystem.eventUnlistedShop(event, frozen),
+    );
+    expect(event.locationId).toBe('loc-gone');
+    expect(frozen).toHaveLength(2);
+  });
+});
+
+describe('ProgramsSystem.positionUnlistedShops — the role’s stored shops the list does not hold (OR-42)', () => {
+  const center = locationFixture();
+  const north = locationFixture({ id: LocationId.of('loc-north') });
+  const shops = [center, north];
+  const scoped = (...ids: string[]) => ({
+    locationIds: ids.map((id) => LocationId.of(id)),
+  });
+
+  it('names the stored shops no listed shop answers, in stored order', () => {
+    expect(
+      ProgramsSystem.positionUnlistedShops(
+        scoped('loc-west', 'loc-north', 'loc-east', 'loc-center'),
+        shops,
+      ),
+    ).toEqual(['loc-west', 'loc-east']);
+    expect(
+      ProgramsSystem.positionUnlistedShops(scoped('loc-north', 'loc-a'), []),
+    ).toEqual(['loc-north', 'loc-a']);
+  });
+
+  it('names none for a role open at every shop — an empty scope — and none when every stored shop is listed', () => {
+    expect(ProgramsSystem.positionUnlistedShops(scoped(), shops)).toEqual([]);
+    expect(ProgramsSystem.positionUnlistedShops(scoped(), [])).toEqual([]);
+    expect(
+      ProgramsSystem.positionUnlistedShops(
+        scoped('loc-north', 'loc-center'),
+        shops,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names a repeated stored id once, where it first stands', () => {
+    expect(
+      ProgramsSystem.positionUnlistedShops(
+        scoped('loc-gone', 'loc-center', 'loc-west', 'loc-gone', 'loc-center'),
+        shops,
+      ),
+    ).toEqual(['loc-gone', 'loc-west']);
+  });
+
+  it('reads a whole role as it is (Law 3)', () => {
+    expect(
+      ProgramsSystem.positionUnlistedShops(
+        positionOf('pos-1', {
+          locationIds: [LocationId.of('loc-north'), LocationId.of('loc-gone')],
+        }),
+        shops,
+      ),
+    ).toEqual(['loc-gone']);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const role = deepFreeze(scoped('loc-gone', 'loc-center', 'loc-gone'));
+    const frozen = deepFreeze([center, north]);
+    expect(ProgramsSystem.positionUnlistedShops(role, frozen)).toEqual(
+      ProgramsSystem.positionUnlistedShops(role, frozen),
+    );
+    expect(role.locationIds).toEqual(['loc-gone', 'loc-center', 'loc-gone']);
+    expect(frozen).toHaveLength(2);
   });
 });
 
@@ -659,13 +840,13 @@ describe('ProgramsSystem — purity', () => {
       ProgramsSystem.position(POSITION_ID, positionInput),
       ProgramsSystem.course(COURSE_ID, courseInput),
       ProgramsSystem.eventFields(eventInput),
-      ProgramsSystem.zoneOf(named, null, LocationId.of('loc-center')),
+      ProgramsSystem.zoneOf(null, named, LocationId.of('loc-center')),
     ];
     const twice = [
       ProgramsSystem.position(POSITION_ID, positionInput),
       ProgramsSystem.course(COURSE_ID, courseInput),
       ProgramsSystem.eventFields(eventInput),
-      ProgramsSystem.zoneOf(named, null, LocationId.of('loc-center')),
+      ProgramsSystem.zoneOf(null, named, LocationId.of('loc-center')),
     ];
     expect(twice).toEqual(once);
     expect(unwrapOk(once[3] as ReturnType<typeof ProgramsSystem.zoneOf>)).toBe(

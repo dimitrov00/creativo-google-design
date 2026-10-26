@@ -15,9 +15,13 @@ import { signInAs } from './support/sign-in';
  * (`validPosition` / `validCourse` / `validEvent`, DEP-7) admit the live
  * writer. Then the public pages show them to anyone: `/careers` the
  * position with its status word, `/courses` the course with its status
- * word (the catalogues' `programs.status.*`, E-17 — the same lowercase
- * words in bg and en), and `/events` the event's title and its date on the
- * shop's wall clock — an event has no status (`event.entity.ts`).
+ * word (the catalogues' `programs.status.*`, E-17, translated by OR-53 —
+ * this run is in bg, so «Отворена» for a role and «Отворен» for a course,
+ * each agreeing with its noun), and `/events` the event's title and its
+ * date on the shop's wall clock — an event has no status
+ * (`event.entity.ts`). The event is at no specific shop, picked through
+ * the form's «Салон» menu (OR-37: the seeded tenant has two shops, so the
+ * menu draws).
  *
  * Every title carries this attempt's key: the three collections are shared
  * by every run on one emulator, and a row is found by its own words.
@@ -104,7 +108,8 @@ test.describe('programs — a content manager publishes, the public pages show i
       timeout: 20_000,
     });
 
-    // THE POSITION — open (the form's default status).
+    // THE POSITION — open (the form's default status), its chip worded by
+    // the catalogue (OR-53).
     await create(page, 'positions', async (form) => {
       await form.getByTestId('admin-position-title-en').fill(position.en);
       await form.getByTestId('admin-position-title-bg').fill(position.bg);
@@ -114,13 +119,13 @@ test.describe('programs — a content manager publishes, the public pages show i
       await form
         .getByTestId('admin-position-summary-bg')
         .fill('Пълен работен ден, в Центъра.');
-      await form.getByRole('button', { name: 'Open', exact: true }).click();
+      await form.getByRole('button', { name: 'Отворена', exact: true }).click();
     });
     const positionRow = page
       .getByTestId('admin-positions-list')
       .locator('[uilistrow]', { hasText: position.en });
     await expect(positionRow).toBeVisible({ timeout: 20_000 });
-    await expect(positionRow).toContainText('open');
+    await expect(positionRow).toContainText('Отворена');
 
     // THE COURSE — open for enrolment, with when it starts.
     await create(page, 'courses', async (form) => {
@@ -132,7 +137,7 @@ test.describe('programs — a content manager publishes, the public pages show i
       await form
         .getByTestId('admin-course-description-bg')
         .fill('Шест вечери върху фейда.');
-      await form.getByRole('button', { name: 'Open', exact: true }).click();
+      await form.getByRole('button', { name: 'Отворен', exact: true }).click();
       await form.getByTestId('admin-course-starts-label-en').fill('Spring');
       await form.getByTestId('admin-course-starts-label-bg').fill('Пролет');
     });
@@ -140,10 +145,11 @@ test.describe('programs — a content manager publishes, the public pages show i
       .getByTestId('admin-courses-list')
       .locator('[uilistrow]', { hasText: course.en });
     await expect(courseRow).toBeVisible({ timeout: 20_000 });
-    await expect(courseRow).toContainText('open');
+    await expect(courseRow).toContainText('Отворен');
 
-    // THE EVENT — a month ahead, at the default shop (no location typed:
-    // the default location's zone places it, flip 4 F4-11).
+    // THE EVENT — a month ahead, at no specific shop, picked through the
+    // «Салон» menu (OR-37): the default location's zone places it (flip 4
+    // F4-11).
     await create(page, 'events', async (form) => {
       await form.getByTestId('admin-event-title-en').fill(event.en);
       await form.getByTestId('admin-event-title-bg').fill(event.bg);
@@ -154,6 +160,11 @@ test.describe('programs — a content manager publishes, the public pages show i
         .getByTestId('admin-event-description-bg')
         .fill('Горещи кърпи и бръсначи.');
       await form.getByTestId('admin-event-starts-at').fill(startsAt);
+      await form.getByTestId('admin-event-shop-trigger').click();
+      await form.getByTestId('admin-event-shop-none').click();
+      await expect(form.getByTestId('admin-event-shop-trigger')).toContainText(
+        'Без конкретен салон',
+      );
     });
     await expect(
       page
@@ -167,7 +178,7 @@ test.describe('programs — a content manager publishes, the public pages show i
     const careers = page.getByTestId('careers-list');
     const careersRow = rowOf(careers, position.bg);
     await expect(careersRow).toBeVisible({ timeout: 20_000 });
-    await expect(statusOf(careersRow)).toHaveText('open');
+    await expect(statusOf(careersRow)).toHaveText('Отворена');
 
     // /courses — the course under «Open» (the default tab), with its
     // status word.
@@ -178,7 +189,7 @@ test.describe('programs — a content manager publishes, the public pages show i
     const coursesRow = rowOf(page.getByTestId('courses-list'), course.bg);
     await expect(coursesRow).toBeVisible({ timeout: 20_000 });
     await expect(coursesRow).toContainText('Пролет');
-    await expect(statusOf(coursesRow)).toHaveText('open');
+    await expect(statusOf(coursesRow)).toHaveText('Отворен');
 
     // /events — the event under «Upcoming» (the default tab): its title and
     // its date on the shop's wall clock, and no status word.

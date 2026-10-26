@@ -214,6 +214,15 @@ describe('IntervalSetSystem.intersect / union', () => {
     ).toEqual([iv(30, 60), iv(120, 150)]);
   });
 
+  it('clips to a bound, dropping what falls entirely outside it (the deleted `clip`, OR-21)', () => {
+    expect(
+      IntervalSetSystem.intersect(
+        [iv(0, 30), iv(50, 100), iv(200, 260), iv(300, 360)],
+        [iv(20, 220)],
+      ),
+    ).toEqual([iv(20, 30), iv(50, 100), iv(200, 220)]);
+  });
+
   it('intersection is commutative and bounded by both sides', () => {
     fc.assert(
       fc.property(anyIntervals, anyIntervals, (a, b) => {
@@ -269,22 +278,13 @@ describe('MinuteRange.pad (the busy-buffer cases)', () => {
   });
 });
 
-describe('IntervalSetSystem.totalMinutes / clip', () => {
+describe('IntervalSetSystem.totalMinutes', () => {
   it('never double-counts overlapping input', () => {
     expect(IntervalSetSystem.totalMinutes([iv(0, 60), iv(30, 90)])).toBe(90);
   });
 
   it('is zero for empty input', () => {
     expect(IntervalSetSystem.totalMinutes([])).toBe(0);
-  });
-
-  it('clips to a bound, dropping what falls entirely outside it', () => {
-    expect(
-      IntervalSetSystem.clip(
-        [iv(0, 30), iv(50, 100), iv(200, 260)],
-        iv(20, 220),
-      ),
-    ).toEqual([iv(20, 30), iv(50, 100), iv(200, 220)]);
   });
 });
 
@@ -355,7 +355,7 @@ describe('IntervalSetSystem purity', () => {
       free: IntervalSetSystem.subtract(base, cut),
       both: IntervalSetSystem.intersect(base, cut),
       either: IntervalSetSystem.union(base, cut),
-      clipped: IntervalSetSystem.clip(base, iv(50, 310)),
+      clipped: IntervalSetSystem.intersect(base, [iv(50, 310)]),
       total: IntervalSetSystem.totalMinutes(base),
     });
     const once = run();

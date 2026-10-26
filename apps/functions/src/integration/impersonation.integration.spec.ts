@@ -9,6 +9,7 @@ import {
 import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
+import { StoredDocumentSystem } from '@core/systems';
 import { endImpersonation, startImpersonation } from '@core/pipelines';
 import {
   FIXTURE_NOW_UTC_MS,
@@ -72,12 +73,19 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
     );
   });
 
-  const ports = (nowUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS) => ({
-    commit: firestoreCommitPlan(db),
-    nowUtcMs: pinnedNowUtcMs(nowUtcMs),
-    nextId: () => SESSION,
-    ...recordingTelemetry(),
-  });
+  const ports = (nowUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS) => {
+    const telemetry = recordingTelemetry();
+    return {
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
+      nowUtcMs: pinnedNowUtcMs(nowUtcMs),
+      nextId: () => SESSION,
+      ...telemetry,
+    };
+  };
 
   const stored = async () =>
     (

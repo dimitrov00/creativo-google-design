@@ -10,6 +10,7 @@ import {
   seedCustomerRecord,
   seedInbox,
   seedUserProfile,
+  seedWaitlistMatch,
 } from './support/seed-firestore';
 import { shopDayOf, shopToday, sure } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
@@ -20,8 +21,9 @@ import { signInAs } from './support/sign-in';
  * Functions emulator — a `/book` day with times (the capacity month's
  * sorted `entries[]` and the busy days, both trigger-built), a booking
  * that lands as a FLAT appointment body with its busy block projected, a
- * staff block stored as the flat public effect, and the shell's inbox
- * count over `users/{uid}/notifications`.
+ * staff block stored as the flat public effect, the shell's inbox count
+ * over `users/{uid}/notifications`, and the inbox page itself (OR-19):
+ * opening it reads everything, and a waitlist match deep-links to `/book`.
  *
  * The catalogue (shops, services, rosters, the policy) is the dev seed
  * `support/global-setup.ts` writes once per run; every person and document
@@ -288,6 +290,76 @@ test.describe('booking core (flip 1) — live', () => {
     await page.getByTestId('nav-menu-trigger').click();
     await expect(page.getByTestId('menu-notifications')).toBeVisible();
     await expect(page.getByTestId('menu-notifications-count')).toHaveText('2');
+  });
+
+  test('the inbox page reads every notification: the menu badge clears, and a waitlist match deep-links to /book', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const key = attemptKey(test.info());
+    const uid = `e2e-inbox-page-${key}`;
+    const requestId = `wl-${key}`;
+    const freedDay = LocalDate.addDays(shopToday(), 3);
+    await seedUserProfile(uid);
+    await seedInbox(uid, { unread: 1, read: 1 });
+    await seedWaitlistMatch(uid, requestId, freedDay, 10 * 60);
+    await signInAs(page, uid, ['client']);
+
+    const accountReady = async () =>
+      expect(page.getByTestId('account-page')).toHaveAttribute(
+        'data-state',
+        'ready',
+        { timeout: 20_000 },
+      );
+    await page.goto('/account', { waitUntil: 'commit' });
+    await accountReady();
+
+    // The menu row counts the two unread and leads to the inbox itself.
+    await page.getByTestId('nav-menu-trigger').click();
+    await expect(page.getByTestId('menu-notifications-count')).toHaveText('2');
+    await page.getByTestId('menu-notifications').click();
+    await expect(page).toHaveURL(/\/account\/notifications$/);
+    const inbox = page.getByTestId('notifications-page');
+    await expect(inbox).toHaveAttribute('data-state', 'ready', {
+      timeout: 20_000,
+    });
+    const rows = page.getByTestId('notifications-row');
+    await expect(rows).toHaveCount(3);
+    // What was unread on entry keeps its dot for the visit.
+    await expect(
+      page.locator('[data-testid="notifications-row"][data-unread]'),
+    ).toHaveCount(2);
+
+    // Entering was the receipt: back on the account, the badge is gone.
+    await page.getByTestId('notifications-back').click();
+    await accountReady();
+    await page.getByTestId('nav-menu-trigger').click();
+    await expect(page.getByTestId('menu-notifications')).toBeVisible();
+    await expect(page.getByTestId('menu-notifications-count')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+
+    // A second visit finds nothing unread, and the match leads to /book on
+    // the freed day.
+    await page.getByTestId('menu-notifications').click();
+    await expect(inbox).toHaveAttribute('data-state', 'ready', {
+      timeout: 20_000,
+    });
+    await expect(
+      page.locator('[data-testid="notifications-row"][data-unread]'),
+    ).toHaveCount(0);
+    await page
+      .locator('[data-testid="notifications-row"][data-topic="WAITLIST_MATCH"]')
+      .click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === '/book' &&
+        url.searchParams.get('waitlist') === requestId &&
+        url.searchParams.get('day') === freedDay,
+    );
+    await expect(page.getByTestId('booking-machine')).toBeVisible({
+      timeout: 20_000,
+    });
   });
 });
 

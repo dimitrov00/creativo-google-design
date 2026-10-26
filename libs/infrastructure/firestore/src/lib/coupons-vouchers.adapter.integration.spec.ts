@@ -135,12 +135,19 @@ describe('couponVoucherPorts (emulator)', () => {
       expect(grants.ok && grants.value.map((g) => g.id)).toEqual(['g-active']);
     });
 
-    it('loads one grant by id', async () => {
-      const found = await barber().loadCouponGrant(
+    it('loads grants by id for the book, whatever their status — a burned one included', async () => {
+      const found = await barber().loadCouponGrants([
         CouponGrantId.of('g-active'),
-      );
+        CouponGrantId.of('g-used'),
+        CouponGrantId.of('g-none'),
+      ]);
 
-      expect(found.ok && found.value?.grantStatus).toBe('ACTIVE');
+      expect(
+        found.ok && found.value.map((g) => [g.id, g.grantStatus]).sort(),
+      ).toEqual([
+        ['g-active', 'ACTIVE'],
+        ['g-used', 'USED'],
+      ]);
     });
 
     it('RULES: a client may read their own grant, never another’s', async () => {

@@ -2394,7 +2394,16 @@ fields). The 68 below changed a count or a title.
   clock says it — the commit’s pipeline is what refuses it» (was «refuses a
   minute the spring-forward gap erased …») — unreachable from a screen on
   the same premise as (a) (no grid offers a gap minute); the reviewer should
-  confirm this re-pin is inside (a).
+  confirm this re-pin is inside (a). **Confirmed 2026-10-26 — owner ruling
+  OR-7 (`docs/architecture/decisions/2026-10-26-owner-rulings.md`):** the
+  re-pin is inside (a) (option C there); the selection mapper stays a pure
+  wall-clock mapping. The premise is now code, not a comment: the sheet
+  frames every start of the party — the envelope, each sequential seat, each
+  carried companion — through `MoveSystem.partyStarts` and
+  `ZonedTimeSystem.frameShopDay`, and a pure `timedOptionsOf` spec pins that
+  a start the zone erases is not offered (DEP-F6: on a companion-first move
+  `data-start` carries the party's earliest instant, the stored
+  `utcEpochMs`).
 - **(b) An `active` token with no tenant or empty roles reads ONBOARDING** —
   `principal.data.spec.ts` «degrades active claims with no tenant to
   onboarding»; `auth-session.adapter.spec.ts` «reads an active token with %s

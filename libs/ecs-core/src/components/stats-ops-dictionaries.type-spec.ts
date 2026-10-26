@@ -34,6 +34,7 @@ import {
 } from './backfill-start.data';
 import { CancellationAttribution } from './cancellation-attribution.data';
 import { CapacityTrigger } from './capacity-trigger.data';
+import { type ClientIssue, ClientIssueKind } from './client-issue.data';
 import { ClientStatsOutcome } from './client-stats-outcome.data';
 import {
   type PolicyPassJudgement,
@@ -94,6 +95,7 @@ dictionary(BackfillCallEnd satisfies Dictionary<BackfillCallEnd>);
 dictionary(
   WaitlistDeliveryOutcome satisfies Dictionary<WaitlistDeliveryOutcome>,
 );
+dictionary(ClientIssueKind satisfies Dictionary<ClientIssueKind>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type StatsOpsDictionariesHold = [
@@ -113,6 +115,7 @@ export type StatsOpsDictionariesHold = [
   Expect<Holds<typeof CapacityTrigger, CapacityTrigger>>, // components/capacity-trigger.data.ts
   Expect<Holds<typeof BackfillCallEnd, BackfillCallEnd>>, // components/backfill-call-end.data.ts
   Expect<Holds<typeof WaitlistDeliveryOutcome, WaitlistDeliveryOutcome>>, // components/waitlist-delivery-outcome.data.ts
+  Expect<Holds<typeof ClientIssueKind, ClientIssueKind>>, // components/client-issue.data.ts
 ];
 
 // (3) SCREAMING values.
@@ -133,6 +136,7 @@ export type StatsOpsScreamingChecks = [
   Expect<Screaming<CapacityTrigger>>,
   Expect<Screaming<BackfillCallEnd>>,
   Expect<Screaming<WaitlistDeliveryOutcome>>,
+  Expect<Screaming<ClientIssueKind>>,
 ];
 
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.
@@ -151,6 +155,7 @@ export type StatsOpsDictionaryFields = [
   Expect<Equals<PolicyPassJudgement['policyPassVerdict'], PolicyPassVerdict>>, // components/policy-pass-verdict.data.ts
   Expect<Equals<AttemptFailure['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
   Expect<Equals<AttemptLine['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
+  Expect<Equals<ClientIssue['clientIssueKind'], ClientIssueKind>>, // components/client-issue.data.ts
 ];
 
 // The checks are not vacuous.

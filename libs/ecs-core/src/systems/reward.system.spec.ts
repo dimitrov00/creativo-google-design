@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CouponValue,
   Points,
   PointsReach,
   RewardGrantRule,
   RedeemProblem,
 } from '@core/components';
 import type { RewardCatalogItem } from '@core/entities';
-import { CouponGrantId, CouponId, Locale, RewardId } from '@core/primitives';
-import { deepFreeze, localDate } from '@core/testing';
+import {
+  CouponGrantId,
+  CouponId,
+  Currency,
+  PriceCents,
+  RewardId,
+} from '@core/primitives';
+import { deepFreeze, localDate, unwrapOk } from '@core/testing';
 import {
   RewardSystem,
   type GrantTicketRef,
@@ -431,16 +438,18 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
     ),
     named('reward-product', 400, 3, 'Продукт по избор', 'Product of choice'),
   ];
+  /** The coupon each fixture reward mints — `reward()` names it `coupon-<id>`. */
+  const CUT = CouponId.of('coupon-reward-cut');
+  const BEARD = CouponId.of('coupon-reward-beard');
+  const PRODUCT = CouponId.of('coupon-reward-product');
   const reach = (
-    held: readonly string[],
+    held: readonly CouponId[],
     balance: number,
-    locale: Locale = Locale.Bg,
     rewards: readonly RewardCatalogItem[] = seed,
   ) => {
     const answer = RewardSystem.pointsReachBeyondHeld(
       rewards,
       held,
-      locale,
       balance,
       TODAY,
     );
@@ -448,7 +457,7 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
   };
 
   it('never names the reward in hand: the points add the next best', () => {
-    expect(reach(['Безплатно подстригване'], 358)).toEqual([
+    expect(reach([CUT], 358)).toEqual([
       PointsReach.EnoughFor,
       'reward-beard',
       0,
@@ -460,9 +469,11 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
   });
 
   it('says how far the next reward is when everything in reach is in hand', () => {
-    expect(
-      reach(['Безплатно подстригване', 'Безплатно оформяне на брада'], 358),
-    ).toEqual([PointsReach.MoreTo, 'reward-product', 42]);
+    expect(reach([CUT, BEARD], 358)).toEqual([
+      PointsReach.MoreTo,
+      'reward-product',
+      42,
+    ]);
     expect(reach([], 78)).toEqual([PointsReach.MoreTo, 'reward-beard', 42]);
   });
 
@@ -471,31 +482,46 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
   });
 
   it('names nothing when every reward is in hand, or none is offered', () => {
-    expect(
-      reach(
-        [
-          'Безплатно подстригване',
-          'Безплатно оформяне на брада',
-          'Продукт по избор',
-        ],
-        358,
-      ),
-    ).toEqual([PointsReach.None, null, 0]);
-    expect(reach([], 358, Locale.Bg, [])).toEqual([PointsReach.None, null, 0]);
+    expect(reach([CUT, BEARD, PRODUCT], 358)).toEqual([
+      PointsReach.None,
+      null,
+      0,
+    ]);
+    expect(reach([], 358, [])).toEqual([PointsReach.None, null, 0]);
   });
 
-  it('knows a held reward by its name in the card’s language only', () => {
-    expect(reach(['Free haircut'], 358, Locale.En)).toEqual([
+  it('knows a held reward by its coupon, never a name — so it holds in every language (OR-15, DEP-F11)', () => {
+    // The card's language plays no part: the English card, which matched
+    // `name.en` against coupon names and so excluded nothing, now excludes.
+    expect(reach([CUT], 358)).toEqual([
       PointsReach.EnoughFor,
       'reward-beard',
       0,
     ]);
-    // The English name held on a Bulgarian card holds nothing.
-    expect(reach(['Free haircut'], 358, Locale.Bg)).toEqual([
+    // Two rewards with one name are two rewards: holding one coupon holds
+    // only the reward that mints it.
+    const twins = [
+      reward('reward-a', 300, 1, { name: { bg: 'Подарък', en: 'Gift' } }),
+      reward('reward-b', 200, 2, { name: { bg: 'Подарък', en: 'Gift' } }),
+    ];
+    expect(reach([CouponId.of('coupon-reward-a')], 358, twins)).toEqual([
       PointsReach.EnoughFor,
-      'reward-cut',
+      'reward-b',
       0,
     ]);
+  });
+
+  it('never holds a reward that mints no coupon — a voucher or a perk', () => {
+    const voucher = reward('reward-voucher', 300, 0, {
+      ...RewardGrantRule.voucher(
+        unwrapOk(PriceCents.of(2000)),
+        Currency.EUR,
+        90,
+      ),
+    });
+    expect(
+      reach([CouponId.of('coupon-reward-voucher')], 358, [voucher]),
+    ).toEqual([PointsReach.EnoughFor, 'reward-voucher', 0]);
   });
 
   it('names only what the catalogue offers today: never a reward switched off or over', () => {
@@ -510,7 +536,7 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
           ? { ...item, availableUntil: day('2026-09-27') }
           : item,
     );
-    expect(reach([], 358, Locale.Bg, closed)).toEqual([
+    expect(reach([], 358, closed)).toEqual([
       PointsReach.EnoughFor,
       'reward-cut',
       0,
@@ -519,17 +545,21 @@ describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоя�
 });
 
 describe('RewardSystem.groupGrants (loyalty.presenter.ts `groupedGrants`)', () => {
+  const TEN = unwrapOk(CouponValue.percentOff(10));
+  const TWENTY = unwrapOk(CouponValue.percentOff(20));
   const grant = (
     grantId: string,
-    groupKey: string,
+    couponId: string,
     expiresOn: string | null,
+    value: CouponValue = TEN,
   ): GrantTicketRef => ({
     grantId: CouponGrantId.of(grantId),
-    groupKey,
+    couponId: CouponId.of(couponId),
+    value,
     expiresOn: expiresOn === null ? null : day(expiresOn),
   });
-  const punch = grant('grant-dev-georgi-punch', 'cut', '2026-10-28');
-  const beard = grant('grant-beard', 'beard', null);
+  const punch = grant('grant-dev-georgi-punch', 'coupon-cut', '2026-10-28');
+  const beard = grant('grant-beard', 'coupon-beard', null);
 
   it('puts the soonest to expire first, one that never expires last', () => {
     const tickets = RewardSystem.groupGrants([beard, punch], []);
@@ -552,9 +582,9 @@ describe('RewardSystem.groupGrants (loyalty.presenter.ts `groupedGrants`)', () =
     ]);
   });
 
-  it('stacks identical grants into one ticket, the soonest first inside it', () => {
-    const later = grant('grant-cut-2', 'cut', '2026-12-01');
-    const sooner = grant('grant-cut-1', 'cut', '2026-11-01');
+  it('stacks the grants of one coupon at one value into one ticket, the soonest first inside it', () => {
+    const later = grant('grant-cut-2', 'coupon-cut', '2026-12-01');
+    const sooner = grant('grant-cut-1', 'coupon-cut', '2026-11-01');
     const tickets = RewardSystem.groupGrants([later, beard, sooner], []);
     expect(tickets.map((t) => t.grants.map((g) => g.grantId))).toEqual([
       ['grant-cut-1', 'grant-cut-2'],
@@ -563,9 +593,31 @@ describe('RewardSystem.groupGrants (loyalty.presenter.ts `groupedGrants`)', () =
     expect(RewardSystem.groupGrants([], [])).toEqual([]);
   });
 
+  it('keeps two coupons apart, whatever their names — a grant carries no name (OR-15, DEP-F11)', () => {
+    // Both coupons are called «Рожден ден» on the card; the key is the coupon.
+    const ours = grant('grant-1', 'coupon-birthday', '2026-11-01');
+    const theirs = grant('grant-2', 'coupon-birthday-vip', '2026-11-01');
+    expect(
+      RewardSystem.groupGrants([ours, theirs], []).map((t) =>
+        t.grants.map((g) => g.grantId),
+      ),
+    ).toEqual([['grant-1'], ['grant-2']]);
+  });
+
+  it('keeps one coupon granted at two values as two tickets', () => {
+    const ten = grant('grant-1', 'coupon-cut', '2026-11-01', TEN);
+    const twenty = grant('grant-2', 'coupon-cut', '2026-11-02', TWENTY);
+    const tenAgain = grant('grant-3', 'coupon-cut', '2026-11-03', TEN);
+    expect(
+      RewardSystem.groupGrants([ten, twenty, tenAgain], []).map((t) =>
+        t.grants.map((g) => g.grantId),
+      ),
+    ).toEqual([['grant-1', 'grant-3'], ['grant-2']]);
+  });
+
   it('breaks a tie of days by the grant’s id', () => {
-    const a = grant('grant-a', 'x', '2026-11-01');
-    const b = grant('grant-b', 'y', '2026-11-01');
+    const a = grant('grant-a', 'coupon-x', '2026-11-01');
+    const b = grant('grant-b', 'coupon-y', '2026-11-01');
     expect(
       RewardSystem.groupGrants([b, a], []).map((t) => t.grants[0]?.grantId),
     ).toEqual(['grant-a', 'grant-b']);
@@ -581,16 +633,18 @@ describe('RewardSystem purity', () => {
     const grants = deepFreeze([
       {
         grantId: CouponGrantId.of('g2'),
-        groupKey: 'k',
+        couponId: CouponId.of('k'),
+        value: unwrapOk(CouponValue.percentOff(10)),
         expiresOn: day('2026-12-01'),
       },
       {
         grantId: CouponGrantId.of('g1'),
-        groupKey: 'k',
+        couponId: CouponId.of('k'),
+        value: unwrapOk(CouponValue.percentOff(10)),
         expiresOn: day('2026-11-01'),
       },
     ]);
-    const held = deepFreeze(['reward-product']);
+    const held = deepFreeze([CouponId.of('coupon-reward-product')]);
     const run = () => [
       RewardSystem.bestAffordable(rewards, 358, TODAY),
       RewardSystem.nextAffordable(rewards, 358, TODAY),
@@ -600,14 +654,14 @@ describe('RewardSystem purity', () => {
       RewardSystem.tiles(rewards, 358, TODAY),
       RewardSystem.pointsReach(rewards, 358, TODAY),
       RewardSystem.pointsReach(rewards, 50, TODAY),
-      RewardSystem.pointsReachBeyondHeld(rewards, held, Locale.Bg, 358, TODAY),
-      RewardSystem.pointsReachBeyondHeld(rewards, held, Locale.En, 50, TODAY),
+      RewardSystem.pointsReachBeyondHeld(rewards, held, 358, TODAY),
+      RewardSystem.pointsReachBeyondHeld(rewards, held, 50, TODAY),
     ];
     expect(run()).toEqual(run());
     expect(rewards.map((item) => item.id)).toEqual([
       'reward-product',
       'reward-beard',
     ]);
-    expect(held).toEqual(['reward-product']);
+    expect(held).toEqual(['coupon-reward-product']);
   });
 });

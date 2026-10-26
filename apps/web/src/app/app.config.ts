@@ -4,9 +4,11 @@ import {
   ApplicationConfig,
   ErrorHandler,
   InjectionToken,
+  Injector,
   inject,
   isDevMode,
   provideBrowserGlobalErrorListeners,
+  provideEnvironmentInitializer,
   provideZonelessChangeDetection,
 } from '@angular/core';
 import {
@@ -26,12 +28,14 @@ import {
   AVATAR_PORTS,
   BOOKING_DRAFT_PORTS,
   CATALOG_PORTS,
+  CLIENT_ISSUE_REPORTER,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   COURSE_READ_PORTS,
   CUSTOMER_PORTS,
+  CUSTOMER_SEARCH_PORTS,
   DEFAULT_LOCATION_PORTS,
   FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
@@ -51,6 +55,7 @@ import {
   POSITION_READ_PORTS,
   PROFILE_PORTS,
   PROGRAMS_PORTS,
+  ReportingErrorHandler,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   SHOP_EVENT_READ_PORTS,
@@ -260,9 +265,24 @@ export const appConfig: ApplicationConfig = {
         },
       }),
     ),
+    // Never against the emulators: the CSP smoke's optimised build ships no
+    // service worker (`web:build:csp-smoke`, OR-31), and a cached shell
+    // would outlive the emulators' data anyway.
     provideServiceWorker('ngsw-worker.js', {
-      enabled: !isDevMode(),
+      enabled: !isDevMode() && !environment.emulators.enabled,
       registrationStrategy: 'registerWhenStable:30000',
+    }),
+
+    // ── The client issue sink (OR-34) ──
+    // Every error Angular sees is still printed as Angular prints it, then
+    // classified, scrubbed and handed to the page's issue reporter — the
+    // one `main.ts` made before boot for its CSP listener (OR-30), or this
+    // root's own — which batches it to the first-party `reportClientIssues`
+    // callable through the one callable client, read on the first send.
+    { provide: ErrorHandler, useClass: ReportingErrorHandler },
+    provideEnvironmentInitializer(() => {
+      const injector = inject(Injector);
+      inject(CLIENT_ISSUE_REPORTER).connect(() => injector.get(GATEWAY_PORTS));
     }),
 
     // Firebase SDK singletons (raw SDK stays behind these tokens). Only the
@@ -335,9 +355,10 @@ export const appConfig: ApplicationConfig = {
     // `barberBusy`, `appointments`, `customers` and `appointmentNotes` are
     // built with the read-time guard (edge hardening D-7; the note since
     // pass E, E-2): refusals reported through
-    // Angular's ErrorHandler (`errorHandlerLogPorts` — the device console
-    // today), the guard made inside this lazy scope so `@core/systems`
-    // stays off the initial chunk.
+    // Angular's ErrorHandler (`errorHandlerLogPorts` — printed, and sent to
+    // the client issue sink by `ReportingErrorHandler`, OR-34), the guard
+    // made inside this lazy scope so the stored-document guards stay off the
+    // initial chunk.
     provideLazyPort(SCHEDULING_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.schedulingReadPorts(
@@ -407,15 +428,16 @@ export const appConfig: ApplicationConfig = {
       onLoadError: dataUnavailable,
     }),
     // The counter's code lookups (what a typed promo code opens), a client's
-    // held grants and the coupons they name whatever their status, and the
-    // wallet's gift vouchers.
+    // held grants — the usable ones, and the ones a saved bill names in one
+    // batched get, burned or not (OR-13) — the coupons they name whatever
+    // their status, and the wallet's gift vouchers.
     provideLazyPort(COUPON_VOUCHER_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.couponVoucherPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
         findCouponByCode: LazyMethod.Promise,
         listOpenCoupons: LazyMethod.Promise,
-        loadCouponGrant: LazyMethod.Promise,
+        loadCouponGrants: LazyMethod.Promise,
         listUsableCouponGrants: LazyMethod.Promise,
         findGiftVoucherByCode: LazyMethod.Promise,
         listGiftVouchersForHolder: LazyMethod.Promise,
@@ -424,13 +446,14 @@ export const appConfig: ApplicationConfig = {
       onLoadError: dataUnavailable,
     }),
     // The waitlist matcher writes a match into the recipient's inbox; the
-    // menu's unread count reads it live.
+    // menu's unread count and the inbox page read it live, and the page
+    // stamps what it showed read in one batched receipt (OR-19).
     provideLazyPort(INBOX_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.inboxPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
         observeInbox: LazyMethod.Observable,
-        markNotificationRead: LazyMethod.Promise,
+        markNotificationsRead: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),
@@ -499,6 +522,19 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.userSearchPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { searchUsers: LazyMethod.Promise },
+      onLoadError: dataUnavailable,
+    }),
+    // The same search over the shop's client RECORDS (OR-26): a walk-in the
+    // desk entered — a record with no account — is found again, merged with
+    // the accounts' answers (`client-search.ts`). Guarded like every
+    // `customers` read: a malformed record is dropped and reported.
+    provideLazyPort(CUSTOMER_SEARCH_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.customerSearchPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          m.firestore.guardedReads(errorHandlerLogPorts(inj.get(ErrorHandler))),
+        ),
+      methods: { searchCustomers: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
 

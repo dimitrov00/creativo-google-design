@@ -2,17 +2,14 @@ import { DOCUMENT } from '@angular/common';
 import { Injectable, effect, inject, signal } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
 import { Locale, Tag } from '@core/primitives';
+import { ThemeService } from '@creativo/ui/theme';
 import {
   DEFAULT_DENSITY,
   DEFAULT_LANG,
-  DEFAULT_THEME,
   DENSITY_STORAGE_KEY,
   LANG_STORAGE_KEY,
-  THEME_STORAGE_KEY,
   UI_DENSITIES,
-  UI_THEMES,
   UiDensity,
-  UiTheme,
 } from '@creativo/ui/tokens';
 
 /**
@@ -21,6 +18,13 @@ import {
  * `<html>` agree with what pre-paint already set (no flash), then keeps
  * them reactive for the rest of the session (e.g. a future preferences
  * toggle can just write these signals).
+ *
+ * The theme is not stamped here: `ThemeService` is its one writer (OR-47)
+ * and saves only an explicit choice. It is started at boot so its system
+ * listener follows the appearance on every page, not only the pages whose
+ * toggle happens to inject it — from `@creativo/ui/theme`, an entry of its
+ * own: through the `@creativo/ui/controls` barrel it dragged 530 kB into
+ * the initial chunk.
  */
 @Injectable({ providedIn: 'root' })
 export class AppChromeService {
@@ -28,14 +32,10 @@ export class AppChromeService {
   private readonly window = this.document.defaultView;
   private readonly transloco = inject(TranslocoService);
 
-  readonly theme = signal<UiTheme>(this.readTheme());
   readonly density = signal<UiDensity>(this.readDensity());
 
   constructor() {
-    effect(() => {
-      this.document.documentElement.setAttribute('data-theme', this.theme());
-      this.store(THEME_STORAGE_KEY, this.theme());
-    });
+    inject(ThemeService);
 
     effect(() => {
       const density = this.density();
@@ -56,22 +56,8 @@ export class AppChromeService {
     });
   }
 
-  setTheme(theme: UiTheme): void {
-    this.theme.set(theme);
-  }
-
   setDensity(density: UiDensity): void {
     this.density.set(density);
-  }
-
-  private readTheme(): UiTheme {
-    const stored = this.readStored(THEME_STORAGE_KEY);
-    const theme = UI_THEMES.find((candidate) => candidate === stored);
-    if (theme !== undefined) return theme;
-    const prefersLight = this.matchMediaSafe(
-      '(prefers-color-scheme: light)',
-    )?.matches;
-    return prefersLight ? 'light' : DEFAULT_THEME;
   }
 
   private readDensity(): UiDensity {
@@ -79,12 +65,6 @@ export class AppChromeService {
     return (
       UI_DENSITIES.find((candidate) => candidate === stored) ?? DEFAULT_DENSITY
     );
-  }
-
-  private matchMediaSafe(query: string): MediaQueryList | undefined {
-    return typeof this.window?.matchMedia === 'function'
-      ? this.window.matchMedia(query)
-      : undefined;
   }
 
   private readStored(key: string): string | null {

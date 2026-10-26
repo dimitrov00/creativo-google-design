@@ -980,6 +980,7 @@ const callAddSeat = (
   addedSubject: BookingCall.AddedSubject = {
     requestedSubjectRole: RequestedSubjectRole.Guest,
     label: SeatLabel.of('Гост'),
+    contact: null,
   },
 ): BookingCall.EditCommand =>
   BookingCall.editAddSeat(
@@ -1204,6 +1205,7 @@ describe('AppointmentEditSystem.addedOccupantOf / addedAccounts — who an added
         {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: SeatLabel.of('Мария'),
+          contact: null,
         },
         OWNER,
         SEAT,

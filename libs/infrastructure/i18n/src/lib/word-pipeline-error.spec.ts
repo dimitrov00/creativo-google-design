@@ -1,3 +1,20 @@
+/*
+ * THE COPY RULES for every new refusal (owner rulings 2026-10-26, OR-55,
+ * `docs/architecture/decisions/2026-10-26-owner-rulings.md`), checked in
+ * review. Every new `errors.<CODE>`:
+ * - speaks in «ти», in sentence case;
+ * - is at most two short sentences: first what happened, then the action;
+ * - avoids «моля», «грешка» and «невалиден» when a plain word exists;
+ * - offers «Опитай пак.» only when a retry can succeed;
+ * - never promises that someone is looking into it;
+ * - uses the staff vocabulary on staff surfaces;
+ * - drops "please" in en;
+ * - lands in bg and en in the same commit;
+ * - words a reason one level down, as `<CODE>.<reason>`.
+ * A code no web surface can reach gets no words: the surface's own generic
+ * line answers it (the four `*_INVALID_INPUT` codes, OR-50).
+ */
+
 import { TestBed } from '@angular/core/testing';
 import {
   Translation,
@@ -17,6 +34,7 @@ import {
   PipelineError,
   PipelineErrorCode,
   StaffEditErrorCode,
+  StreakPublishErrorCode,
   TimeErrorCode,
 } from '@core/errors';
 import bg from '../assets/i18n/bg.json';
@@ -208,6 +226,77 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
       ),
     ).toBe('Часът не може да мине от „completed“ към „confirmed“.');
   });
+
+  it('words a reward the visit can no longer take — the staff edit’s `grant` reason (OR-13)', () => {
+    const refused = (field: string) =>
+      PipelineError.fromWire(`functions/${HttpsStatus.InvalidArgument}`, {
+        errorCode: StaffEditErrorCode.InvalidCommand,
+        field,
+      });
+    expect(
+      wordPipelineError(
+        refused('grant'),
+        errorsOf(en.errors),
+        BookingErrorCode.CallFailed,
+      ),
+    ).toBe("This reward no longer applies — it's been used or has expired.");
+    expect(
+      wordPipelineError(
+        refused('grant'),
+        errorsOf(bg.errors),
+        BookingErrorCode.CallFailed,
+      ),
+    ).toBe('Тази награда вече не важи — използвана е или е изтекла.');
+    // Any other field the command names is the code's own line.
+    expect(
+      wordPipelineError(
+        refused('seatIds'),
+        errorsOf(en.errors),
+        BookingErrorCode.CallFailed,
+      ),
+    ).toBe(en.errors.BOOKING_STAFF_EDIT_INVALID_COMMAND);
+  });
+});
+
+/*
+ * A request the callable could not read (`*_INVALID_INPUT`, the edge's
+ * `invalid-argument`) is a defect no user can act on, so its four keys were
+ * deleted (OR-50): the surface's own generic line answers it, one level
+ * down included. Read from the catalogue, never re-typed — the voice pass
+ * owns that line's words.
+ */
+const INVALID_INPUT_CODES: readonly string[] = [
+  CancellationRefusalCode.InvalidInput,
+  BookingErrorCode.ArrivedInvalidInput,
+  BookingErrorCode.TipInvalidInput,
+  BookingErrorCode.TransitionInvalidInput,
+];
+
+describe('wordPipelineError — an unreadable request is the surface’s generic line (OR-50)', () => {
+  it.each(INVALID_INPUT_CODES)(
+    'words %s, with or without its field, as BOOKING_CALL_FAILED',
+    (errorCode) => {
+      for (const words of [en, bg]) {
+        expect(
+          Object.getOwnPropertyDescriptor(words.errors, errorCode),
+        ).toBeUndefined();
+        for (const details of [{ errorCode }, { errorCode, field: 'seatId' }]) {
+          const refused = PipelineError.fromWire(
+            `functions/${HttpsStatus.InvalidArgument}`,
+            details,
+          );
+          expect(refused.serverErrorCode).toBe(errorCode);
+          expect(
+            wordPipelineError(
+              refused,
+              errorsOf(words.errors),
+              BookingErrorCode.CallFailed,
+            ),
+          ).toBe(words.errors.BOOKING_CALL_FAILED);
+        }
+      }
+    },
+  );
 });
 
 /**
@@ -215,7 +304,9 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
  * before pass E (E-18, DEP-8): the status the edge answers it with
  * (`apps/functions/src/edge.ts`), the surface's own fallback, and its words
  * in both catalogues. Before, the staff day and the appointments page printed
- * their generic copy for these, and the onboarding flow the raw code.
+ * their generic copy for these, and the onboarding flow the raw code. The
+ * owner rulings of 2026-10-26 (OR-50, DEP-F35) re-worded the clumsy lines
+ * before they shipped and dropped the four `*_INVALID_INPUT` rows (above).
  */
 type WordedRefusal = {
   readonly errorCode: string;
@@ -229,13 +320,13 @@ const SIGN_IN_AGAIN = {
   en: 'Sign in again to continue.',
   bg: 'Влез отново, за да продължиш.',
 } as const;
-const STAFF_ONLY = {
-  en: 'Only staff can do that.',
-  bg: 'Само служители могат да правят това.',
-} as const;
-const NOT_VALID = {
-  en: 'That request is not valid.',
-  bg: 'Заявката не е валидна.',
+/**
+ * The one not-allowed line (OR-50): the people refused are mostly staff
+ * with stale claims, so it says what to do rather than who may.
+ */
+const FORBIDDEN = {
+  en: "You don't have access to this. Sign in again or ask an admin.",
+  bg: 'Нямаш права за това. Влез отново или питай администратора.',
 } as const;
 const GONE = {
   en: 'That appointment no longer exists.',
@@ -280,54 +371,53 @@ const E18_WORDS: readonly WordedRefusal[] = [
     S.Unauthenticated,
     SIGN_IN_AGAIN,
   ),
-  booking(CancellationRefusalCode.InvalidInput, S.InvalidArgument, NOT_VALID),
   booking(CancellationRefusalCode.NotFound, S.NotFound, GONE),
   // The staff day: the walk-in commit, the lifecycle moves, the arrival, the
   // tip and the visit editor's save.
-  booking(BookingErrorCode.CommitForbidden, S.PermissionDenied, STAFF_ONLY),
+  booking(BookingErrorCode.CommitForbidden, S.PermissionDenied, FORBIDDEN),
+  booking(BookingErrorCode.TransitionForbidden, S.PermissionDenied, FORBIDDEN),
   booking(BookingErrorCode.TransitionReopenWindowClosed, S.FailedPrecondition, {
     en: 'A settled appointment can only be reopened on its own day.',
-    bg: 'Приключен час може да се отвори отново само в същия ден.',
+    bg: 'Приключен час може да се върне в работа само в същия ден.',
   }),
   booking(BookingErrorCode.TransitionSlotTaken, S.FailedPrecondition, {
-    en: "That time was taken in the meantime, so the appointment can't be restored.",
-    bg: 'Този час междувременно е зает, затова не може да се възстанови.',
+    en: "That time was taken in the meantime — the appointment can't be reinstated.",
+    bg: 'Това време междувременно е заето — часът не може да се възстанови.',
   }),
   booking(
     BookingErrorCode.ArrivedUnauthenticated,
     S.Unauthenticated,
     SIGN_IN_AGAIN,
   ),
-  booking(BookingErrorCode.ArrivedForbidden, S.PermissionDenied, STAFF_ONLY),
-  booking(BookingErrorCode.ArrivedInvalidInput, S.InvalidArgument, NOT_VALID),
+  booking(BookingErrorCode.ArrivedForbidden, S.PermissionDenied, FORBIDDEN),
   booking(BookingErrorCode.ArrivedNotFound, S.NotFound, GONE),
   booking(BookingErrorCode.ArrivedNotAllowed, S.FailedPrecondition, {
-    en: "A settled appointment's arrival can't be changed.",
-    bg: 'Пристигането на приключен час не може да се променя.',
+    en: "This appointment is settled — its arrival can't be changed.",
+    bg: 'Часът е приключен — пристигането не може да се променя.',
   }),
   booking(
     BookingErrorCode.TipUnauthenticated,
     S.Unauthenticated,
     SIGN_IN_AGAIN,
   ),
-  booking(BookingErrorCode.TipForbidden, S.PermissionDenied, STAFF_ONLY),
-  booking(BookingErrorCode.TipInvalidInput, S.InvalidArgument, NOT_VALID),
+  booking(BookingErrorCode.TipForbidden, S.PermissionDenied, FORBIDDEN),
   booking(BookingErrorCode.TipNotFound, S.NotFound, {
-    en: 'That appointment or seat no longer exists.',
-    bg: 'Този час или това място вече не съществува.',
+    en: 'That appointment no longer exists, or the person is no longer on it.',
+    bg: 'Този час вече не съществува или човекът не е в него.',
   }),
   booking(StaffEditErrorCode.Unauthenticated, S.Unauthenticated, SIGN_IN_AGAIN),
+  booking(StaffEditErrorCode.Forbidden, S.PermissionDenied, FORBIDDEN),
   // The onboarding flow's registration.
   identity(IdentityErrorCode.RegistrationUserNotFound, S.FailedPrecondition, {
-    en: "We couldn't find your profile — please sign in again.",
-    bg: 'Не открихме профила ви — моля, влезте отново.',
+    en: "We couldn't find your profile. Sign in again.",
+    bg: 'Не намерихме профила ти. Влез отново.',
   }),
   // `internal` on the wire, but its details reach the flow, which printed
   // the raw code (`wordFlowFailure`): worded like the identity flows' other
   // "our side" failures (`IDENTITY_TOKEN_MINTING_FAILURE`).
   identity(IdentityErrorCode.ClaimsPromotionFailure, S.Internal, {
-    en: "We couldn't finish your registration — please try again.",
-    bg: 'Не успяхме да завършим регистрацията ви — моля, опитайте отново.',
+    en: "We couldn't finish signing you up. Try again.",
+    bg: 'Не успяхме да завършим регистрацията. Опитай пак.',
   }),
 ];
 
@@ -347,6 +437,21 @@ describe('wordPipelineError — every UI-reachable refusal words as itself (E-18
       ).toBe(bgWords);
     },
   );
+
+  // One refusal, one line (OR-50): every not-allowed code — the staff day's
+  // callables, the visit editor's save and the rhythm page's publish — says
+  // the same words.
+  it.each([
+    BookingErrorCode.CommitForbidden,
+    BookingErrorCode.ArrivedForbidden,
+    BookingErrorCode.TipForbidden,
+    BookingErrorCode.TransitionForbidden,
+    StaffEditErrorCode.Forbidden,
+    StreakPublishErrorCode.CallerNotAdmin,
+  ])('words %s in the one not-allowed line', (errorCode) => {
+    expect(errorsOf(en.errors)(errorCode, {})).toBe(FORBIDDEN.en);
+    expect(errorsOf(bg.errors)(errorCode, {})).toBe(FORBIDDEN.bg);
+  });
 });
 
 const CATALOGUES = new Map<string, Translation>([

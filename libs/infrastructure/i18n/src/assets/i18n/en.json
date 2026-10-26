@@ -13,6 +13,7 @@
     "PRIMITIVE_CURRENCY_UNKNOWN": "Invalid value.",
     "PRIMITIVE_ID_EMPTY": "Invalid value.",
     "PRIMITIVE_ID_HAS_SLASH": "Invalid value.",
+    "PRIMITIVE_ID_RESERVED": "Invalid value.",
     "PRIMITIVE_LATITUDE_OUT_OF_RANGE": "Invalid value.",
     "PRIMITIVE_LONGITUDE_OUT_OF_RANGE": "Invalid value.",
     "PRIMITIVE_EPOCH_SECONDS_INVALID": "Invalid value.",
@@ -20,7 +21,7 @@
     "PRIMITIVE_SEAT_KEY_TEXT_EMPTY": "Invalid value.",
     "PRIMITIVE_AUDIT_RESOURCE_ID_INVALID": "Invalid value.",
     "BOOKING_UNAUTHENTICATED": "Sign in to finish your booking.",
-    "BOOKING_INVALID_INPUT": "Something about this booking is off. Please try again.",
+    "BOOKING_INVALID_INPUT": "Something about this booking is off. Try again.",
     "BOOKING_INVALID_INPUT.person_overlap": "One person can't be in two chairs at the same time. Pick another time.",
     "BOOKING_INVALID_INPUT.guest_label": "Two people in the party have the same name. Go back and rename one of them.",
     "BOOKING_INVALID_INPUT.locationId": "This shop isn't taking online bookings right now.",
@@ -34,8 +35,9 @@
     "BOOKING_PARTY_TOO_LARGE": "A booking seats at most {{maxPartySize}} people.",
     "BOOKING_INVARIANT_VIOLATED": "That combination is not possible. Try another time.",
     "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Sign in again to continue.",
-    "BOOKING_STAFF_EDIT_FORBIDDEN": "You aren't allowed to make that change.",
+    "BOOKING_STAFF_EDIT_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "That request isn't valid for this visit.",
+    "BOOKING_STAFF_EDIT_INVALID_COMMAND.grant": "This reward no longer applies — it's been used or has expired.",
     "BOOKING_STAFF_EDIT_BEFORE_ARRIVAL": "The visit can't end before the client arrived.",
     "BOOKING_STAFF_EDIT_OVERLAPS": "That time overlaps another booking.",
     "BOOKING_STAFF_EDIT_STALE": "Someone else just changed this visit — here it is as it stands now.",
@@ -49,7 +51,6 @@
     "BOOKING_CANCEL_NOT_CANCELLABLE": "This appointment can no longer be cancelled.",
     "BOOKING_CANCEL_WINDOW_CLOSED": "Free cancellation ends {{windowHours}} h before the appointment — {{reach}}.",
     "BOOKING_CANCEL_UNAUTHENTICATED": "Sign in again to continue.",
-    "BOOKING_CANCEL_INVALID_INPUT": "That request is not valid.",
     "BOOKING_CANCEL_NOT_FOUND": "That appointment no longer exists.",
     "BOOKING_WAITLIST_UNAUTHENTICATED": "Sign in so we know who to tell.",
     "BOOKING_WAITLIST_INVALID_REQUEST": "That request can't be watched — try picking the days again.",
@@ -77,22 +78,22 @@
     "SCHEDULING_RECURRENCE_NEVER_OCCURS": "No day falls before the end.",
     "SCHEDULING_RECURRENCE_TOO_LONG": "At most {{max}} times — choose an earlier end.",
     "IDENTITY_IDENTIFIER_INVALID": "Enter a valid phone number or email address.",
-    "IDENTITY_IDENTIFIER_MISSING": "We couldn't find your phone number or email — please sign in again.",
+    "IDENTITY_IDENTIFIER_MISSING": "We couldn't find your phone number or email. Sign in again.",
     "IDENTITY_OTP_CODE_INVALID": "Enter the 6-digit code.",
     "IDENTITY_BIRTH_DATE_INVALID": "This doesn't look like a real date — check the day, month and year.",
     "IDENTITY_BIRTH_DATE_IN_FUTURE": "A birthday can't be in the future.",
     "IDENTITY_BIRTH_DATE_TOO_YOUNG": "You need to be at least {{minAge}} to register.",
-    "IDENTITY_BIRTH_DATE_TOO_OLD": "Please check the year — that's more than {{maxAge}} years ago.",
+    "IDENTITY_BIRTH_DATE_TOO_OLD": "Check the year — that's more than {{maxAge}} years ago.",
     "ACCOUNTS_FIRST_NAME_TOO_SHORT": "First name needs at least 2 characters.",
     "ACCOUNTS_LAST_NAME_TOO_SHORT": "Last name needs at least 2 characters.",
-    "ACCOUNTS_UPDATE_PROFILE_NOT_FOUND": "We couldn't find your profile — please sign in again.",
-    "ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED": "The information provided is invalid — please check it.",
+    "ACCOUNTS_UPDATE_PROFILE_NOT_FOUND": "We couldn't find your profile. Sign in again.",
+    "ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED": "The information provided is invalid. Check it.",
     "ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE": "That file isn't an image — pick a photo.",
     "ACCOUNTS_UPLOAD_AVATAR_TOO_LARGE": "That photo is too large — up to 5 MB.",
-    "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "We couldn't upload the photo — please try again.",
-    "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "We couldn't remove the photo — please try again.",
-    "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "We couldn't save that right now — please try again.",
-    "ACCOUNTS_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
+    "ACCOUNTS_UPLOAD_AVATAR_UPLOAD_FAILED": "We couldn't upload the photo. Try again.",
+    "ACCOUNTS_REMOVE_AVATAR_REMOVE_FAILED": "We couldn't remove the photo. Try again.",
+    "ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE": "We couldn't save that right now. Try again.",
+    "ACCOUNTS_REPOSITORY_FAILURE": "Something went wrong on our end. Try again.",
     "MONEY_INVALID_AMOUNT": "That is not a valid amount.",
     "MONEY_CURRENCY_MISMATCH": "Cannot combine amounts in {{leftCurrency}} and {{rightCurrency}}.",
     "MONEY_UNKNOWN_CURRENCY": "\"{{rawCode}}\" is not a supported currency.",
@@ -104,66 +105,68 @@
     "PHONE_INVALID.invalid-country": "We don't recognize that country code — for example, {{example}}.",
     "PHONE_INVALID.invalid": "This doesn't look like a valid phone number — for example, {{example}}.",
     "PHONE_COUNTRY_UNSUPPORTED": "We don't recognize the country code \"{{attempted}}\".",
-    "BOOKING_COMMIT_FORBIDDEN": "Only staff can do that.",
-    "BOOKING_COMMIT_STORE_FAILED": "We could not save the booking. Please try again.",
+    "BOOKING_COMMIT_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
+    "BOOKING_COMMIT_STORE_FAILED": "We could not save the booking. Try again.",
     "BOOKING_TRANSITION_UNAUTHENTICATED": "Sign in again to continue.",
-    "BOOKING_TRANSITION_FORBIDDEN": "Only staff can do that.",
-    "BOOKING_TRANSITION_INVALID_INPUT": "That request is not valid.",
+    "BOOKING_TRANSITION_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
     "BOOKING_TRANSITION_NOT_FOUND": "That appointment no longer exists.",
     "BOOKING_TRANSITION_NOT_ALLOWED": "The appointment cannot move from \"{{from}}\" to \"{{to}}\".",
     "BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED": "A settled appointment can only be reopened on its own day.",
-    "BOOKING_TRANSITION_SLOT_TAKEN": "That time was taken in the meantime, so the appointment can't be restored.",
+    "BOOKING_TRANSITION_SLOT_TAKEN": "That time was taken in the meantime — the appointment can't be reinstated.",
     "BOOKING_ARRIVED_UNAUTHENTICATED": "Sign in again to continue.",
-    "BOOKING_ARRIVED_FORBIDDEN": "Only staff can do that.",
-    "BOOKING_ARRIVED_INVALID_INPUT": "That request is not valid.",
+    "BOOKING_ARRIVED_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
     "BOOKING_ARRIVED_NOT_FOUND": "That appointment no longer exists.",
-    "BOOKING_ARRIVED_NOT_ALLOWED": "A settled appointment's arrival can't be changed.",
+    "BOOKING_ARRIVED_NOT_ALLOWED": "This appointment is settled — its arrival can't be changed.",
     "BOOKING_TIP_UNAUTHENTICATED": "Sign in again to continue.",
-    "BOOKING_TIP_FORBIDDEN": "Only staff can do that.",
-    "BOOKING_TIP_INVALID_INPUT": "That request is not valid.",
-    "BOOKING_TIP_NOT_FOUND": "That appointment or seat no longer exists.",
+    "BOOKING_TIP_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
+    "BOOKING_TIP_NOT_FOUND": "That appointment no longer exists, or the person is no longer on it.",
     "BOOKING_TRANSITION_SEAT_RESOLVED": "That seat is already settled.",
-    "BOOKING_CALL_FAILED": "Something went wrong. Please try again.",
+    "BOOKING_CALL_FAILED": "Something went wrong. Try again.",
     "IDENTITY_INVALID_INPUT": "The information provided is invalid.",
-    "IDENTITY_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
-    "IDENTITY_OTP_CHANNEL_MISMATCH": "Sign-in over this channel isn't available — please use the sign-in form.",
-    "IDENTITY_OTP_RATE_LIMITED": "A code was already sent recently — please wait before requesting another.",
-    "IDENTITY_OTP_SEND_FAILURE": "We couldn't send your verification code — please try again.",
+    "IDENTITY_REPOSITORY_FAILURE": "Something went wrong on our end. Try again.",
+    "IDENTITY_OTP_CHANNEL_MISMATCH": "Sign-in over this channel isn't available. Use the sign-in form.",
+    "IDENTITY_OTP_RATE_LIMITED": "We already sent you a code. You can ask for a new one in {{seconds}} s.",
+    "IDENTITY_OTP_SEND_FAILURE": "We couldn't send your verification code. Try again.",
     "IDENTITY_OTP_NOT_FOUND": "This verification code request no longer exists.",
     "IDENTITY_OTP_ALREADY_CONSUMED": "This code has already been used.",
     "IDENTITY_OTP_EXPIRED": "That code expired. We can send you a new one.",
-    "IDENTITY_OTP_LOCKED_OUT": "Too many incorrect attempts — please request a new code.",
+    "IDENTITY_OTP_LOCKED_OUT": "Too many incorrect attempts. Request a new code.",
     "IDENTITY_OTP_WRONG_CODE": "That code isn't right — check and try again.",
-    "IDENTITY_OTP_DESTINATION_CORRUPTED": "Something went wrong on our end — please try again.",
-    "IDENTITY_TOKEN_MINTING_FAILURE": "We couldn't sign you in — please try again.",
-    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "We couldn't finish your registration — please try again.",
-    "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Your session has expired — please sign in again.",
-    "IDENTITY_REGISTRATION_FORBIDDEN": "This registration doesn't belong to your session — please sign in again.",
-    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "We couldn't find your profile — please sign in again.",
-    "IDENTITY_REGISTRATION_FIELD_MISSING": "Please fill in all required fields.",
+    "IDENTITY_OTP_DESTINATION_CORRUPTED": "Something went wrong on our end. Try again.",
+    "IDENTITY_TOKEN_MINTING_FAILURE": "We couldn't sign you in. Try again.",
+    "IDENTITY_CLAIMS_PROMOTION_FAILURE": "We couldn't finish signing you up. Try again.",
+    "IDENTITY_REGISTRATION_UNAUTHENTICATED": "Your session has expired. Sign in again.",
+    "IDENTITY_REGISTRATION_FORBIDDEN": "This registration doesn't belong to your session. Sign in again.",
+    "IDENTITY_REGISTRATION_USER_NOT_FOUND": "We couldn't find your profile. Sign in again.",
+    "IDENTITY_REGISTRATION_FIELD_MISSING": "Fill in all required fields.",
     "IDENTITY_REGISTRATION_BIRTH_DATE_INVALID": "The birthday provided is not valid.",
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "The information provided is invalid.",
-    "IDENTITY_CALL_FAILED": "Something went wrong — please try again.",
-    "ENGAGEMENT_REPOSITORY_FAILURE": "Something went wrong on our end — please try again.",
+    "IDENTITY_CALL_FAILED": "Something went wrong. Try again.",
+    "ENGAGEMENT_REPOSITORY_FAILURE": "Something went wrong on our end. Try again.",
+    "ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN": "That shop no longer exists. Pick another.",
     "LOYALTY_STREAK_PUBLISH_STALE": "Someone else changed the rule. See the new one.",
     "LOYALTY_STREAK_PUBLISH_TOO_EARLY": "The earliest possible day is {{date}}.",
     "LOYALTY_STREAK_PUBLISH_INVALID": "Fix: {{field}}.",
-    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "You aren't allowed to make that change.",
-    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "You aren't allowed to make that change.",
-    "PIPELINE_UNAUTHENTICATED": "Something went wrong. Please try again.",
-    "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Please try again.",
-    "PIPELINE_CATALOG_CHANGED": "Something went wrong. Please try again.",
-    "PIPELINE_INVALID_REQUEST": "Something went wrong. Please try again.",
-    "PIPELINE_UNAVAILABLE": "Something went wrong. Please try again.",
-    "PIPELINE_UNKNOWN": "Something went wrong. Please try again.",
-    "REPOSITORY_READ_FAILED": "We couldn't save that right now — please try again.",
-    "REPOSITORY_WRITE_FAILED": "We couldn't save that right now — please try again.",
-    "REPOSITORY_ALREADY_EXISTS": "We couldn't save that right now — please try again.",
-    "REPOSITORY_MALFORMED": "We couldn't save that right now — please try again.",
-    "REPOSITORY_UNAVAILABLE": "We couldn't save that right now — please try again.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN": "You don't have access to this. Sign in again or ask an admin.",
+    "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Sign in again to continue.",
+    "LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE": "For now, existing runs can only be kept.",
+    "LOYALTY_STREAK_PUBLISH_PREVIEW_STALE": "The preview is out of date. Save again.",
+    "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
+    "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Try again.",
+    "PIPELINE_CATALOG_CHANGED": "Something went wrong. Try again.",
+    "PIPELINE_INVALID_REQUEST": "Something went wrong. Try again.",
+    "PIPELINE_UNAVAILABLE": "Something went wrong. Try again.",
+    "PIPELINE_UNKNOWN": "Something went wrong. Try again.",
+    "REPOSITORY_READ_FAILED": "We couldn't load that. Try again.",
+    "REPOSITORY_WRITE_FAILED": "We couldn't save that. Try again.",
+    "REPOSITORY_ALREADY_EXISTS": "We couldn't save that. Try again.",
+    "REPOSITORY_MALFORMED": "This record is damaged and can't be used.",
+    "REPOSITORY_UNAVAILABLE": "Can't connect right now. Try again in a moment.",
     "PRIMITIVE_CLIENT_OPERATION_ID_INVALID": "Invalid value.",
     "PRIMITIVE_GUEST_KEY_INVALID": "Invalid value.",
-    "PRIMITIVE_REDIRECT_PATH_UNSAFE": "Invalid value."
+    "PRIMITIVE_REDIRECT_PATH_UNSAFE": "Invalid value.",
+    "PRIMITIVE_HOUR_COUNT_OUT_OF_RANGE": "Invalid value.",
+    "PRIMITIVE_PHONE_NOT_E164": "Invalid value."
   },
   "shell": {
     "forbidden": {
@@ -211,7 +214,7 @@
     },
     "blocked": {
       "title": "Too many attempts",
-      "body": "To protect your account, sign-in is paused for a while. Please try again later.",
+      "body": "To protect your account, sign-in is paused for a while. Try again later.",
       "home": "Back to home"
     }
   },
@@ -270,7 +273,7 @@
     "entering": {
       "title": "Setting up your account…",
       "failedTitle": "This is taking longer than expected",
-      "failedBody": "We couldn't confirm your account just yet — please try again.",
+      "failedBody": "We couldn't confirm your account just yet. Try again.",
       "retry": "Try again"
     }
   },
@@ -539,6 +542,37 @@
       }
     }
   },
+  "notifications": {
+    "empty": "No notifications",
+    "unread": "New",
+    "topic": {
+      "APPOINTMENT_REMINDER": {
+        "title": "Reminder: your visit",
+        "detail": "{{day}} · {{time}}",
+        "label": "Reminder: your visit — {{day}}, {{time}}. See your appointments"
+      },
+      "APPOINTMENT_CHANGED": {
+        "title": "Your visit has changed",
+        "detail": "{{day}} · {{time}}",
+        "label": "Your visit has changed: {{day}}, {{time}}. See your appointments"
+      },
+      "WAITLIST_MATCH": {
+        "title": "A time opened up",
+        "detail": "{{day}} · {{time}}",
+        "label": "A time opened up: {{day}}, {{time}}. Book it"
+      },
+      "REWARD_GRANTED": {
+        "title": "You've got a new reward",
+        "detail": "See it in your account",
+        "label": "You've got a new reward. See it in your account"
+      },
+      "ANNOUNCEMENT": {
+        "title": "{{title}}",
+        "detail": "{{body}}",
+        "label": "From the shop: {{title}}"
+      }
+    }
+  },
   "landing": {
     "nav": {
       "login": "Log in",
@@ -771,13 +805,13 @@
     },
     "status": {
       "position": {
-        "OPEN": "open",
-        "CLOSED": "closed"
+        "OPEN": "Open",
+        "CLOSED": "Closed"
       },
       "enrollment": {
-        "OPEN": "open",
-        "UPCOMING": "upcoming",
-        "CLOSED": "closed"
+        "OPEN": "Open",
+        "UPCOMING": "Upcoming",
+        "CLOSED": "Closed"
       }
     }
   },
@@ -967,6 +1001,11 @@
       "backToNow": "Back to now",
       "freeDay": "Free day",
       "laneFailed": "This schedule didn't load — reload the page.",
+      "unreadable": {
+        "one": "{{count}} visit can't be shown",
+        "other": "{{count}} visits can't be shown"
+      },
+      "unreadableHint": "Reload the page",
       "noRoster": "Nobody is on shift today.",
       "unnamedClient": "Unnamed client",
       "cancelTitle": "Cancel from the shop",
@@ -1057,6 +1096,7 @@
       "allDayBlock": "Block the whole day",
       "offChip": "{{name}} off",
       "offBadge": "Off today",
+      "laneFailedBadge": "Didn't load",
       "blockedLabel": "Blocked",
       "blockLift": "Lift all blocks for this day",
       "zoneTitle": "Times shown in",
@@ -1448,6 +1488,9 @@
           "sameAsLast": "Took the services from {{date}}."
         }
       }
+    },
+    "client": {
+      "noAccount": "No account"
     }
   },
   "clientCard": {
@@ -2348,6 +2391,47 @@
       "flagOff": "The rhythm is not switched on for the app yet.",
       "failed": "The rule did not load.",
       "offline": "Offline · the rule cannot be saved."
+    },
+    "programs": {
+      "documentTitle": "Programs · Creativo Admin",
+      "title": "Programs",
+      "lede": "Manage open positions, courses and events.",
+      "tabs": {
+        "positions": "Positions",
+        "courses": "Courses",
+        "events": "Events"
+      },
+      "new": "+ New",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saveFailed": "Couldn't save. Check the required fields and try again.",
+      "field": {
+        "titleEn": "Title (EN)",
+        "titleBg": "Title (BG)",
+        "descriptionEn": "Description (EN)",
+        "descriptionBg": "Description (BG)",
+        "status": "Status",
+        "applyUrl": "Apply URL (optional — falls back to Instagram)",
+        "sortOrder": "Sort order"
+      },
+      "position": {
+        "summaryEn": "Summary (EN)",
+        "summaryBg": "Summary (BG)",
+        "shops": "Shops",
+        "shopsAll": "Any shop"
+      },
+      "course": {
+        "startsLabelEn": "Starts label (EN) — e.g. “Spring 2026”",
+        "startsLabelBg": "Starts label (BG)"
+      },
+      "event": {
+        "startsAt": "Starts — shop's local time",
+        "shop": "Shop",
+        "shopNone": "No specific shop",
+        "rsvpUrl": "RSVP URL (optional — falls back to Instagram)"
+      },
+      "shopHidden": "{{name}} (hidden)",
+      "shopMissing": "Deleted shop"
     }
   }
 }

@@ -26,9 +26,9 @@ import {
   type AppointmentId,
   AuditResourceId,
   type BarberId,
-  type CouponGrantId,
-  type CouponId,
-  type LocationId,
+  CouponGrantId,
+  CouponId,
+  LocationId,
   MinuteDelta,
   type OperationId,
   type SeatId,
@@ -61,10 +61,12 @@ import type {
   AccountContactPorts,
   AuditAppendPorts,
   CouponLookupPorts,
+  HashPorts,
   PolicyReadPorts,
   ReadTx,
   TelemetryPorts,
   TxPorts,
+  WalkInKeyPorts,
 } from '@core/ports';
 import {
   AppointmentEditSystem,
@@ -86,6 +88,7 @@ import {
   type SeatedSpan,
   SeatingRuleSystem,
   VoucherSystem,
+  type WalkInGuest,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -94,7 +97,6 @@ import {
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
-  isReadableId,
   type PlacementSet,
   placementFields,
   placementKeysOf,
@@ -134,21 +136,34 @@ import {
  *   code the batch names that the id reads did not resolve; the booking
  *   read set of the target shop (its zone is the clock every wire instant,
  *   and every chair of the folded visit, is read on — a gap start is
- *   `DST_GAP_INVALID_TIME`); and the busy days, exceptions and added
- *   accounts' client records of the folded placement in one `getAll`.
+ *   `DST_GAP_INVALID_TIME`), with the client records of the walk-ins the
+ *   batch adds in the same `getAll` (each guest the desk took a phone or an
+ *   e-mail for, its record's id derived from the contact under the server's
+ *   key — `CustomerRecordSystem.addedWalkIns` over `walkInHash`, OR-26);
+ *   and the busy days, exceptions and added accounts' client records of the
+ *   folded placement in one `getAll`.
  * - **The decision:** `AppointmentEditSystem` folds and guards (a visit
  *   that never happened is history; nothing may end before its arrival);
  *   `BookingDecisionSystem` re-decides under the shop's rules (outside the
  *   roster, any service mix, an overlap only when acknowledged — a
  *   collision is answered as the acknowledgeable `overlaps`), with the
- *   stored ids, terms, outcomes and tips carried back; `BillingSystem`
- *   settles the bill's discounts, then the vouchers against the bill as the
- *   batch leaves it.
+ *   stored ids, terms, outcomes and tips carried back — and every walk-in
+ *   seated `WALK_IN`: an added one by the record resolved for it, a stored
+ *   one by its own (`CustomerRecordSystem.seatedWalkIns`); `BillingSystem`
+ *   settles the bill's discounts (a grant that no longer applies — spent,
+ *   expired, another client's — is refused as `grant`), and
+ *   `CouponGrantSystem.settleBill` moves the grants the bill's lines name
+ *   (OR-13, the voucher semantics, DEP-F10): a grant line NEW on the bill
+ *   is burned, one that LEFT it restored, one kept writes nothing — on the
+ *   grants this transaction already read, so no read is added and a double
+ *   spend cannot land; then the vouchers against the bill as the batch
+ *   leaves it.
  * - **One plan:** the appointment `Update` (the revision stamped, a named
  *   intent recorded, the pairs this save broke remembered for its undo),
  *   the busy `Set`s merged onto what this attempt read, each settled
- *   voucher's balance, and a `customers` `Create` for an added account with
- *   no record. No grant write (F1-2).
+ *   voucher's balance, each moved grant's lifecycle transition, a
+ *   `customers` `Create` for an added account with no record, and one for
+ *   each added walk-in whose record was absent (`STAFF_WALK_IN`).
  * - **After:** the act's rows (`operation:<operationId>`, else
  *   `revision:<n>`) — a replay appends them again under the same key.
  */
@@ -183,6 +198,7 @@ export type EditAppointmentAnswer = {
 };
 
 export type EditAppointmentPorts = TxPorts &
+  WalkInKeyPorts &
   PolicyReadPorts &
   CouponLookupPorts &
   AccountContactPorts &
@@ -208,6 +224,8 @@ type Loaded = {
   /** The decision's subject of each fresh `SELF` seat — the owner, whoever the fold placed. */
   readonly freshSubjects: ReadonlyMap<SeatId, BookingCall.SubjectInput>;
   readonly addedAccounts: readonly UserId[];
+  /** The walk-ins the batch adds (OR-26) — their records read in phase one, `set.customers`. */
+  readonly addedWalkIns: readonly WalkInGuest[];
   readonly grants: readonly CouponGrant[];
   readonly coupons: ReadonlyMap<CouponId, Coupon | null>;
   readonly vouchers: readonly GiftVoucher[];
@@ -268,7 +286,11 @@ export const editAppointment =
     const run = (contacts: ReadonlyMap<UserId, AccountContact>) =>
       runWithCustomerRetry(() =>
         ports.commit(
-          (tx) => readEdit(tx, cmd, operation, ports.hash),
+          (tx) =>
+            readEdit(tx, cmd, operation, {
+              hash: ports.hash,
+              walkInHash: ports.walkInHash,
+            }),
           (snapshot) =>
             decideEdit(snapshot, {
               cmd,
@@ -434,12 +456,16 @@ function requestOf(
   }
 }
 
-/** The transaction's read half — see {@link editAppointment}. */
+/**
+ * The transaction's read half — see {@link editAppointment}. Two digests:
+ * the plain `hash` derives the added accounts' record ids, the keyed
+ * `walkInHash` the added walk-ins' (a person's contact is its input, OR-26).
+ */
 async function readEdit(
   tx: ReadTx,
   cmd: EditAppointmentCommand,
   operation: Operation | null,
-  hash: (input: string) => string,
+  { hash, walkInHash }: HashPorts & WalkInKeyPorts,
 ): Promise<Snapshot> {
   const stored = await readAppointment(tx, cmd.appointmentId);
   if (stored === null) {
@@ -487,7 +513,7 @@ async function readEdit(
     []) {
     if (
       request.discountSource === DiscountSource.Grant &&
-      isReadableId(request.grantId)
+      CouponGrantId.is(request.grantId)
     ) {
       if (!grantIds.includes(request.grantId)) grantIds.push(request.grantId);
     }
@@ -495,7 +521,7 @@ async function readEdit(
   for (const discount of stored.discounts) {
     if (discount.discountSource !== DiscountSource.Grant) continue;
     const grantId = discount.discountGrantId;
-    if (isReadableId(grantId) && !grantIds.includes(grantId))
+    if (CouponGrantId.is(grantId) && !grantIds.includes(grantId))
       grantIds.push(grantId);
   }
   const grantDocs =
@@ -508,7 +534,7 @@ async function readEdit(
   for (const grant of grantDocs) if (grant !== null) grants.push(grant);
   const couponIds: CouponId[] = [];
   for (const grant of grants) {
-    if (isReadableId(grant.couponId) && !couponIds.includes(grant.couponId)) {
+    if (CouponId.is(grant.couponId) && !couponIds.includes(grant.couponId)) {
       couponIds.push(grant.couponId);
     }
   }
@@ -561,12 +587,18 @@ async function readEdit(
     if (command.editCommand === EditCommand.Restaff)
       barberIds.push(command.barberId);
   }
-  const set = isReadableId(targetLocationId)
+  // THE WALK-INS the batch adds: their records' ids derive from the
+  // contacts, under the server's key, so they ride phase one (OR-26).
+  const addedWalkIns = CustomerRecordSystem.addedWalkIns(
+    cmd.commands,
+    walkInHash,
+  );
+  const set = LocationId.is(targetLocationId)
     ? await readBookingSet(tx, {
         locationId: targetLocationId,
         serviceIds,
         barberIds,
-        customerIds: [],
+        customerIds: addedWalkIns.map((walkIn) => walkIn.customerId),
       })
     : null;
   const zone =
@@ -658,19 +690,25 @@ async function readEdit(
     freshSeatIds: folded.value.freshSeatIds,
     freshSubjects,
     addedAccounts,
+    addedWalkIns,
     grants,
     coupons,
     vouchers,
   };
 }
 
-/** A stored seat's person as the decision's request — a `CLIENT` account cannot be re-decided. */
+/**
+ * A stored seat's person as the decision's request — a `CLIENT` account
+ * cannot be re-decided. A guest is their label (a walk-in's record rides
+ * beside, as the decision's `walkIns`, never on the request).
+ */
 function subjectOfSeat(seat: Seat): BookingCall.SubjectInput | null {
-  if (seat.seatSubject === SeatSubject.Anonymous) {
+  if (seat.seatSubject !== SeatSubject.Account) {
     return {
       requestedSubjectRole: RequestedSubjectRole.Guest,
       label: seat.guestLabel,
       guestKey: null,
+      contact: null,
     };
   }
   switch (seat.subjectRelationship) {
@@ -752,6 +790,19 @@ function decideEdit(
   );
   if (!settledDiscounts.ok) return settledDiscounts;
   const discounts = settledDiscounts.value;
+  // …and the grants they name, burned or restored by the bill's delta. A
+  // burn the grant refuses is the same answer as the settle's: it no longer
+  // applies.
+  const grantWrites = CouponGrantSystem.settleBill(
+    stored.discounts,
+    discounts,
+    loaded.grants,
+    stored.id,
+    nowUtcMs,
+  );
+  if (!grantWrites.ok) {
+    return Result.err(StaffEditError.invalidCommand('grant'));
+  }
 
   // 2. May the folded visit be written at all?
   const refusal = AppointmentEditSystem.guard(
@@ -841,6 +892,12 @@ function decideEdit(
       standing,
       stood: StoodSeatPairs.liveAt(stored, stored.revision),
       parsePhone: parseContactPhone,
+      // Every walk-in of the folded visit: the stored ones keep their
+      // records, an added one takes the record resolved for it (OR-26).
+      walkIns: [
+        ...CustomerRecordSystem.seatedWalkIns(draft.seats),
+        ...loaded.addedWalkIns,
+      ],
     },
   );
   if (!decided.ok) {
@@ -950,11 +1007,17 @@ function decideEdit(
       }),
       ...busyMergeWrites(loaded.placement, decided.value.busyWrites, zone),
       ...voucherWrites,
+      ...grantWrites.value,
       ...CustomerRecordSystem.createsFor(
         added,
         loaded.placement.customers,
         context.contacts,
         CustomerOrigin.FirstBooking,
+        nowUtcMs,
+      ),
+      ...CustomerRecordSystem.walkInCreates(
+        loaded.addedWalkIns,
+        loaded.set.customers,
         nowUtcMs,
       ),
     ],

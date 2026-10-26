@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Currency, PriceCents } from '@core/primitives';
-import { unwrapOk } from '@core/testing';
+import { deepFreeze, unwrapOk } from '@core/testing';
 import { CouponValue, DiscountMethod } from './coupon-value.data';
 
 // The cases of `coupon-value.spec.ts`, on the flat variant slice.
@@ -170,5 +170,44 @@ describe('CouponValue.manualPercentOff — the percent the counter types (DEP-6)
     expect(CouponValue.percentOff(12.5).ok).toBe(true);
     expect(CouponValue.manualPercentOff(0).ok).toBe(false);
     expect(CouponValue.manualPercentOff(12.5).ok).toBe(false);
+  });
+});
+
+describe('CouponValue.same — one value, whatever carries it (OR-15)', () => {
+  const percent = (value: number) => unwrapOk(CouponValue.percentOff(value));
+  const fixed = (minor: number, currency: Currency = Currency.EUR) =>
+    unwrapOk(CouponValue.fixedAmount(cents(minor), currency));
+
+  it('holds for the same method and the same figure', () => {
+    expect(CouponValue.same(percent(10), percent(10))).toBe(true);
+    expect(CouponValue.same(fixed(500), fixed(500))).toBe(true);
+    expect(
+      CouponValue.same(CouponValue.freeService(), CouponValue.freeService()),
+    ).toBe(true);
+    // Read off the value slice of a wider struct, as a grant carries it.
+    const carrier = { ...percent(15), grantStatus: 'ACTIVE' } as const;
+    expect(CouponValue.same(carrier, percent(15))).toBe(true);
+  });
+
+  it('tells another figure, another currency and another method apart', () => {
+    expect(CouponValue.same(percent(10), percent(20))).toBe(false);
+    expect(CouponValue.same(fixed(500), fixed(600))).toBe(false);
+    expect(CouponValue.same(fixed(500), fixed(500, Currency.BGN))).toBe(false);
+    // 10 % off and 10 cents off share a magnitude, never a value.
+    expect(CouponValue.same(percent(10), fixed(10))).toBe(false);
+    expect(CouponValue.same(fixed(10), percent(10))).toBe(false);
+    expect(CouponValue.same(CouponValue.freeService(), percent(100))).toBe(
+      false,
+    );
+    expect(CouponValue.same(percent(100), CouponValue.freeService())).toBe(
+      false,
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const a = deepFreeze(fixed(500));
+    const b = deepFreeze(fixed(500));
+    expect(CouponValue.same(a, b)).toBe(CouponValue.same(a, b));
+    expect(a.discountAmountCents).toBe(500);
   });
 });

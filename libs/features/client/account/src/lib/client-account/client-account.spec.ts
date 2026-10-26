@@ -30,6 +30,7 @@ import {
   AppointmentId,
   BusyKey,
   LocalDate,
+  LocationId,
   Result as EcsResult,
   UserId,
 } from '@core/primitives';
@@ -71,19 +72,26 @@ function user(birthDate?: string): User {
 /**
  * The client's confirmed visit at 10:00 on 2030-01-01 on the shop's wall
  * clock, its instant placed in the shop's `zone` (the one field that zone
- * reaches: a temporal entity stores no zone of its own).
+ * reaches: a temporal entity stores no zone of its own) — at the fixture
+ * shop unless `at` names another day, minute or shop.
  */
 function appointment(
   zone = 'Europe/Sofia',
-  at: { readonly id: string; readonly startMinute: number } = {
+  at: {
+    readonly id: string;
+    readonly startMinute: number;
+    readonly localDate?: string;
+    readonly locationId?: LocationId;
+  } = {
     id: 'appt_1',
     startMinute: 600,
   },
 ): Appointment {
-  const day = unwrapOk(LocalDate.parse('2030-01-01'));
+  const day = unwrapOk(LocalDate.parse(at.localDate ?? '2030-01-01'));
   const seat = seatFixture({ startMinutes: minute(at.startMinute) });
   return appointmentFixture({
     id: AppointmentId.of(at.id),
+    ...(at.locationId === undefined ? {} : { locationId: at.locationId }),
     localDate: day,
     startMinutes: seat.startMinutes,
     endMinutes: Seat.endMinutes(seat),
@@ -475,7 +483,7 @@ describe('ClientAccount', () => {
     const upcoming = host.querySelector('[data-testid="account-upcoming"]');
     expect(upcoming?.getAttribute('data-state')).toBe('error');
     expect(upcoming?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
-      'Възникна проблем от наша страна — моля, опитайте отново.',
+      'Нещо се обърка от наша страна. Опитай пак.',
     );
     expect(
       host.querySelector('[data-testid="account-upcoming-book-cta"]'),
@@ -529,7 +537,7 @@ describe('ClientAccount', () => {
     expect(upcoming?.getAttribute('data-state')).toBe('error');
     // The card's one alert line, whichever read failed.
     expect(upcoming?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
-      'Възникна проблем от наша страна — моля, опитайте отново.',
+      'Нещо се обърка от наша страна. Опитай пак.',
     );
     expect(host.querySelector('lib-visit-card')).toBeNull();
     expect(
@@ -576,6 +584,209 @@ describe('ClientAccount', () => {
     expect(host.getAttribute('data-upcoming')).toBe('populated');
     expect(card()?.getAttribute('aria-label')).toMatch(/09:00, Потвърден$/);
     expect(zoneOf).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a confirmed visit that has begun on its shop’s clock, and shows the next one (OR-8)', async () => {
+    // "Now" is pinned at 2026-09-28 09:00 at the shop: the 08:30 visit has
+    // begun — nobody settled it, but it is no longer «next».
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [
+        appointment('Europe/Sofia', {
+          id: 'appt_begun',
+          startMinute: 8 * 60 + 30,
+          localDate: '2026-09-28',
+        }),
+        appointment('Europe/Sofia', {
+          id: 'appt_next',
+          startMinute: 10 * 60,
+          localDate: '2026-09-28',
+        }),
+      ],
+    );
+    await settle(fixture);
+    const navigate = vi
+      .spyOn(TestBed.inject(Router), 'navigate')
+      .mockResolvedValue(true);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    const card = host.querySelector<HTMLButtonElement>(
+      '[data-testid="account-upcoming"]',
+    );
+    expect(card?.getAttribute('aria-label')).toMatch(/10:00, Потвърден$/);
+    card?.click();
+    expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
+      queryParams: { visit: 'appt_next' },
+    });
+  });
+
+  it('shows the empty state when the only live visit has begun — its start minute included (OR-8, DEP-F7)', async () => {
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [
+        appointment('Europe/Sofia', {
+          id: 'appt_now',
+          startMinute: 9 * 60,
+          localDate: '2026-09-28',
+        }),
+      ],
+    );
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('empty');
+    expect(host.querySelector('lib-visit-card')).toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).not.toBeNull();
+  });
+
+  it('judges each visit on its OWN shop’s clock — two shops, two zones (OR-8)', async () => {
+    // At the pinned instant it is 09:00 in Sofia and 20:00 at a shop on
+    // Kiritimati: the 10:00 visit there has begun, so the 11:00 one in
+    // Sofia is next — one clock for both would have shown the 10:00.
+    const kiritimati = LocationId.of('loc-kiritimati');
+    const shops = memoryLocationLoadPorts(
+      memoryProgramsWorld({
+        locations: [
+          locationFixture(),
+          locationFixture({
+            id: kiritimati,
+            timeZone: unwrapOk(ZonedTimeSystem.checkZone('Pacific/Kiritimati')),
+          }),
+        ],
+      }),
+    );
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [
+        appointment('Pacific/Kiritimati', {
+          id: 'appt_far',
+          startMinute: 10 * 60,
+          localDate: '2026-09-28',
+          locationId: kiritimati,
+        }),
+        appointment('Europe/Sofia', {
+          id: 'appt_home',
+          startMinute: 11 * 60,
+          localDate: '2026-09-28',
+        }),
+      ],
+      { loadLocation: shops.loadLocation },
+    );
+    const zoneOf = vi.spyOn(TestBed.inject(ShopZoneService), 'zoneOf');
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    expect(
+      host
+        .querySelector('[data-testid="account-upcoming"]')
+        ?.getAttribute('aria-label'),
+    ).toMatch(/11:00, Потвърден$/);
+    // Each shop's zone asked for once, by its own id.
+    expect(zoneOf.mock.calls.map(([id]) => id).sort()).toEqual([
+      'loc-center',
+      'loc-kiritimati',
+    ]);
+  });
+
+  it('draws the visit at a shop whose zone answered when another shop’s zone fails — skipping, as the menu badge skips (OR-8)', async () => {
+    // The sooner visit is at a shop whose zone read fails: it cannot be
+    // judged, so it is skipped — the 11:00 visit at the shop that answered
+    // is drawn, the one visit the menu's badge counts for the same book
+    // ('counts nothing at a shop whose zone cannot be read'), never the
+    // failed state.
+    const elsewhere = LocationId.of('loc-elsewhere');
+    const shops = memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    );
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [
+        appointment('Europe/Sofia', {
+          id: 'appt_elsewhere',
+          startMinute: 10 * 60,
+          localDate: '2026-09-28',
+          locationId: elsewhere,
+        }),
+        appointment('Europe/Sofia', {
+          id: 'appt_home',
+          startMinute: 11 * 60,
+          localDate: '2026-09-28',
+        }),
+      ],
+      {
+        loadLocation: (id) =>
+          id === elsewhere
+            ? Promise.resolve(
+                EcsResult.err(
+                  RepositoryError.readFailed(`locations/${id}`, 'unavailable'),
+                ),
+              )
+            : shops.loadLocation(id),
+      },
+    );
+    await settle(fixture);
+    const navigate = vi
+      .spyOn(TestBed.inject(Router), 'navigate')
+      .mockResolvedValue(true);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('populated');
+    const card = host.querySelector<HTMLButtonElement>(
+      '[data-testid="account-upcoming"]',
+    );
+    expect(card?.getAttribute('aria-label')).toMatch(/11:00, Потвърден$/);
+    card?.click();
+    expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
+      queryParams: { visit: 'appt_home' },
+    });
+  });
+
+  it('shows the failed state, not the empty one, when a zone fails and nothing at a shop that answered is next', async () => {
+    // The visit at the shop that answered has begun; the other cannot be
+    // judged — "nothing to come" would be untrue, so the card says the
+    // read failed.
+    const elsewhere = LocationId.of('loc-elsewhere');
+    const shops = memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    );
+    const fixture = await configure(
+      accountStateStub({ accountLoading: false, account: user() }),
+      [
+        appointment('Europe/Sofia', {
+          id: 'appt_elsewhere',
+          startMinute: 10 * 60,
+          localDate: '2026-09-28',
+          locationId: elsewhere,
+        }),
+        appointment('Europe/Sofia', {
+          id: 'appt_begun',
+          startMinute: 8 * 60 + 30,
+          localDate: '2026-09-28',
+        }),
+      ],
+      {
+        loadLocation: (id) =>
+          id === elsewhere
+            ? Promise.resolve(
+                EcsResult.err(
+                  RepositoryError.readFailed(`locations/${id}`, 'unavailable'),
+                ),
+              )
+            : shops.loadLocation(id),
+      },
+    );
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('error');
+    expect(host.querySelector('lib-visit-card')).toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).toBeNull();
   });
 
   it('says on the host whether the profile is complete, with the card gone once it is', async () => {

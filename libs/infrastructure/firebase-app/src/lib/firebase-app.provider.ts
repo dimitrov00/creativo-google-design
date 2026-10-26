@@ -4,7 +4,14 @@ import {
   makeEnvironmentProviders,
 } from '@angular/core';
 import { FirebaseApp, FirebaseOptions, initializeApp } from 'firebase/app';
-import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import {
+  Auth,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
 // TYPE-ONLY, and it must stay that way: this file is in the initial chunk,
 // and a value import of firebase/firestore puts the whole SDK there. The
 // instance is created lazily by `provideFirestoreDb()` in
@@ -64,12 +71,37 @@ export interface FirebaseEmulatorConfig {
   readonly storagePort?: number;
 }
 
+/**
+ * The session's persistence, in the order `getAuth` picks it — IndexedDB
+ * first, then `localStorage`, then `sessionStorage` (a browser that refuses
+ * one falls through to the next).
+ */
+const FIREBASE_AUTH_PERSISTENCE = [
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+] as const;
+
+/**
+ * Firebase Auth WITHOUT a popup/redirect resolver (OR-32): `initializeAuth`
+ * with `getAuth`'s own persistence and nothing else. `getAuth` also wires
+ * `browserPopupRedirectResolver`, which on phones and Safari loads
+ * `apis.google.com` and a hidden `__/auth/iframe` on every page load — for
+ * sign-in flows this app never runs (every session starts from a custom
+ * token: the OTP callable's, or the e2e hook's). Without it no third-party
+ * script or frame is fetched, the strict CSP keeps `frame-src 'none'`
+ * (OR-29), and the auth code in the initial chunk is ~11 kB smaller
+ * (~3.4 kB gzipped, measured on firebase 12.16). A popup or redirect
+ * sign-in added later passes its resolver to that call, never back here.
+ */
 export function provideFirebaseAuth(emulator?: FirebaseEmulatorConfig) {
   return makeEnvironmentProviders([
     {
       provide: FIREBASE_AUTH,
       useFactory: () => {
-        const auth = getAuth(inject(FIREBASE_APP));
+        const auth = initializeAuth(inject(FIREBASE_APP), {
+          persistence: [...FIREBASE_AUTH_PERSISTENCE],
+        });
         if (emulator?.authUrl) {
           connectAuthEmulator(auth, emulator.authUrl, {
             disableWarnings: true,

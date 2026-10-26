@@ -30,7 +30,6 @@ import {
   TimeError,
   type ProgramFieldError,
 } from '@core/errors';
-import { ShopZoneSystem } from './shop-zone.system';
 
 /**
  * The admin programs form, judged (flip 4, F4-5) — pure: the raw
@@ -44,10 +43,19 @@ import { ShopZoneSystem } from './shop-zone.system';
  *
  * The event's start is the shop's wall clock (`localDate` + `startMinutes`)
  * read from the exact form `<input type="datetime-local">` emits. No zone is
- * touched here (Law 7.3): the save pipeline reads the zone's location, asks
- * {@link ProgramsSystem.zoneOf} for the zone, converts ONCE with
- * `ZonedTimeSystem.toUtc`, and hands the instant to
+ * touched here (Law 7.3): the save pipeline reads the ONE location that
+ * places the event, asks {@link ProgramsSystem.zoneOf} for the zone (an
+ * event at a shop that is not stored is refused — OR-38), converts ONCE
+ * with `ZonedTimeSystem.toUtc`, and hands the instant to
  * {@link ProgramsSystem.shopEvent}.
+ *
+ * The pages' shop lookups are here too (OR-37, OR-42): the shop an event
+ * is at ({@link ProgramsSystem.eventShop}) and the shops a role is open at
+ * ({@link ProgramsSystem.positionShops}), each a linear scan of the
+ * catalogue's shops — and their complements, the stored shops the
+ * catalogue does not list (hidden or deleted) that the admin's pickers
+ * keep ({@link ProgramsSystem.eventUnlistedShop},
+ * {@link ProgramsSystem.positionUnlistedShops}).
  */
 
 /** The event's start on the shop's wall clock — the parsed `startsAt`. */
@@ -301,7 +309,10 @@ export const ProgramsSystem = {
     });
   },
 
-  /** The location to read for the event's zone (F-4): its own, else the default shop. */
+  /**
+   * The ONE location to read for the event's zone (F-4, OR-38): its own,
+   * else — an event at no shop — the default shop.
+   */
   zoneLocationOf(
     fields: ShopEventContent,
     defaultLocationId: LocationId,
@@ -310,20 +321,116 @@ export const ProgramsSystem = {
   },
 
   /**
-   * The zone that places the event, or the refusal: the named location's
-   * zone; else (a typed id naming no document) the default shop's; neither
-   * → `ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN` naming `defaultLocationId`.
+   * The zone that places the event, from the ONE location read for it
+   * ({@link zoneLocationOf}) — `loaded`, `null` when it is not stored: its
+   * zone; else an event that names a shop (`locationId`) is refused as
+   * `ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN` naming that shop — never
+   * placed on the default shop's clock (OR-38, DEP-F28); an event at no
+   * shop whose default shop is absent is
+   * `ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN` naming `defaultLocationId`.
    */
   zoneOf(
-    named: ShopLocation | null,
-    fallback: ShopLocation | null,
+    locationId: LocationId | null,
+    loaded: ShopLocation | null,
     defaultLocationId: LocationId,
-  ): Result<TimeZone, EngagementError.ShopEventZoneUnknown> {
-    // The ONE named → default rule is ShopZoneSystem's; the event's refusal is its own.
-    const zone = ShopZoneSystem.zoneOf(named, fallback);
-    return zone === null
-      ? Result.err(EngagementError.shopEventZoneUnknown(defaultLocationId))
-      : Result.ok(zone);
+  ): Result<
+    TimeZone,
+    | EngagementError.ShopEventZoneUnknown
+    | EngagementError.ShopEventLocationUnknown
+  > {
+    if (loaded !== null) return Result.ok(loaded.timeZone);
+    return Result.err(
+      locationId === null
+        ? EngagementError.shopEventZoneUnknown(defaultLocationId)
+        : EngagementError.shopEventLocationUnknown(locationId),
+    );
+  },
+
+  /**
+   * The shop an event is at (OR-37, the `/events` line and the admin's
+   * picker), from the catalogue's `shops` — `null` for an event at no
+   * shop, and for one whose shop is not among them (hidden or deleted:
+   * the caller words that). One linear scan; the first shop of the id.
+   */
+  eventShop<S extends Pick<ShopLocation, 'id'>>(
+    event: Pick<ShopEventContent, 'locationId'>,
+    shops: readonly S[],
+  ): S | null {
+    const locationId = event.locationId;
+    if (locationId === null) return null;
+    for (let i = 0; i < shops.length; i++) {
+      const shop = shops[i] as S;
+      if (shop.id === locationId) return shop;
+    }
+    return null;
+  },
+
+  /**
+   * The shops a role is open at (OR-42, the `/careers` line), of the
+   * catalogue's `shops`, in the catalogue's order: those its
+   * `locationIds` name. Empty for a role scoped to no shop — open at every
+   * shop, naming none of its own (`LocationScopeSystem.serves`) — and an id
+   * no listed shop answers (hidden or deleted) is left out. One linear scan
+   * of the shops.
+   */
+  positionShops<S extends Pick<ShopLocation, 'id'>>(
+    position: Pick<Position, 'locationIds'>,
+    shops: readonly S[],
+  ): readonly S[] {
+    if (position.locationIds.length === 0) return [];
+    const scope = new Set<LocationId>(position.locationIds);
+    const out: S[] = [];
+    for (let i = 0; i < shops.length; i++) {
+      const shop = shops[i] as S;
+      if (scope.has(shop.id)) out.push(shop);
+    }
+    return out;
+  },
+
+  /**
+   * The event's stored shop that the catalogue's `shops` do not list
+   * (OR-37, the admin's picker) — hidden or deleted: the picker keeps it
+   * as an extra option and words which. `null` for an event at no shop and
+   * for one whose shop is listed ({@link eventShop} finds it). One linear
+   * scan of the shops.
+   */
+  eventUnlistedShop(
+    event: Pick<ShopEventContent, 'locationId'>,
+    shops: readonly Pick<ShopLocation, 'id'>[],
+  ): LocationId | null {
+    const locationId = event.locationId;
+    if (locationId === null) return null;
+    return ProgramsSystem.eventShop(event, shops) === null ? locationId : null;
+  },
+
+  /**
+   * The role's stored shops that the catalogue's `shops` do not list
+   * (OR-42, the admin's chips) — hidden or deleted: the chips keep them as
+   * extra choices and word which. In stored order, each once (a stored
+   * scope that repeats an id draws one chip). Empty for a role open at
+   * every shop (an empty scope) and for one whose every shop is listed
+   * ({@link positionShops} names them all). One linear scan of the shops,
+   * one of the scope.
+   */
+  positionUnlistedShops(
+    position: Pick<Position, 'locationIds'>,
+    shops: readonly Pick<ShopLocation, 'id'>[],
+  ): readonly LocationId[] {
+    const scope = position.locationIds;
+    if (scope.length === 0) return [];
+    const listed = new Set<LocationId>();
+    for (let i = 0; i < shops.length; i++) {
+      listed.add((shops[i] as Pick<ShopLocation, 'id'>).id);
+    }
+    const out: LocationId[] = [];
+    for (let i = 0; i < scope.length; i++) {
+      const id = scope[i] as LocationId;
+      if (listed.has(id)) continue;
+      // Marked as it is taken, so a repeated id is taken once.
+      listed.add(id);
+      out.push(id);
+    }
+    return out;
   },
 
   /** The event with the instant the ingestion boundary computed — a pure assembler. */

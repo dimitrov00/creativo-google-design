@@ -185,7 +185,14 @@ export function couponGrantBody(
             GrantCapacityTerms.singleUse(),
             GrantExpiryTerms.none(),
           )
-        : GrantLifecycle.used(sure(UtcEpochMs.of(usedAtUtcMs), 'used'), 'seed'),
+        : GrantLifecycle.used(
+            {
+              ...GrantCapacityTerms.singleUse(),
+              ...GrantExpiryTerms.none(),
+            },
+            sure(UtcEpochMs.of(usedAtUtcMs), 'used'),
+            'seed',
+          ),
     ),
   } satisfies Omit<CouponGrant, 'id'>;
 }

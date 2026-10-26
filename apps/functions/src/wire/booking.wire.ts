@@ -1,7 +1,7 @@
 import {
   ArrivalVerb,
   BarberPreference,
-  type BookingCall,
+  BookingCall,
   type BookingContact,
   BookingLifecycle,
   CancellationReason,
@@ -9,6 +9,7 @@ import {
   DiscountMethod,
   DiscountSource,
   EditCommand,
+  Email,
   MarkArrivalAction,
   Placement,
   RequestedSubjectRole,
@@ -68,6 +69,7 @@ import {
   type TransitionAppointmentAnswer,
   type TransitionAppointmentCommand,
 } from '@core/pipelines';
+import { PhoneSystem } from '@core/systems';
 import type { EdgeError } from '../edge';
 import {
   callerActorAsClaimed,
@@ -146,10 +148,41 @@ function isAppointmentMiss(error: { readonly errorCode: string }): boolean {
 
 // ── The seats (commitBooking, rescheduleAppointment) ──────────────────────
 
+/** The longest phone text a guest's contact is parsed from — the booking contact's bound. */
+const GUEST_PHONE_MAX = 32;
+/** The longest e-mail text a guest's contact is parsed from (RFC 5321's path limit). */
+const GUEST_EMAIL_MAX = 254;
+
+/**
+ * A guest's contact (OR-26), parsed ONCE, here: the phone through
+ * `PhoneSystem.parse` (E.164 or an international form — no default
+ * country, the booking contact's rule), the e-mail through `Email.parse`,
+ * each bounded first. A part that does not parse is dropped, never
+ * refused — the guest is then kept by what remains, or by label alone, as
+ * a name-only guest is; neither part leaves the contact absent (`null`).
+ */
+function guestContactOf(raw: unknown): BookingCall.GuestContact | null {
+  if (!isRecord(raw)) return null;
+  const phone = field(raw, 'phone');
+  const email = field(raw, 'email');
+  const parsed =
+    typeof phone === 'string' && phone.length <= GUEST_PHONE_MAX
+      ? PhoneSystem.parse(phone, null)
+      : null;
+  return BookingCall.guestContact(
+    parsed !== null && parsed.ok ? parsed.value.e164 : null,
+    typeof email === 'string' && email.length <= GUEST_EMAIL_MAX
+      ? Email.parse(email)
+      : null,
+  );
+}
+
 /**
  * A seat's subject, raw: a guest by label (its `guestKey` kept only when it
- * has the key's shape — dropped, never refused), an account by id, else the
- * booker. A companion on a client cart is the decision's to refuse.
+ * has the key's shape — dropped, never refused — and the contact the desk
+ * took, parsed here, OR-26), an account by id, else the booker. A companion
+ * on a client cart is the decision's to refuse; a contact on one is the
+ * pipeline's to ignore (only the shop's placement keeps a record).
  */
 function subjectOf(raw: unknown): BookingCall.SubjectInput {
   switch (field(raw, 'requestedSubjectRole')) {
@@ -159,6 +192,7 @@ function subjectOf(raw: unknown): BookingCall.SubjectInput {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: text(raw, 'label'),
         guestKey: GuestKey.is(guestKey) ? guestKey : null,
+        contact: guestContactOf(field(raw, 'contact')),
       };
     }
     case RequestedSubjectRole.Companion:
@@ -793,7 +827,10 @@ function voucherCodesOf(raw: unknown): readonly VoucherCode[] | null {
   return codes.ok ? codes.value : null;
 }
 
-/** Who an added seat is for: the owner, or a guest by a label the seat rules accept. */
+/**
+ * Who an added seat is for: the owner, or a guest by a label the seat rules
+ * accept — with the contact the desk took, parsed here (OR-26).
+ */
 function addedSubjectOf(raw: unknown): BookingCall.AddedSubject | null {
   switch (field(raw, 'requestedSubjectRole')) {
     case RequestedSubjectRole.Self:
@@ -806,6 +843,7 @@ function addedSubjectOf(raw: unknown): BookingCall.AddedSubject | null {
         : {
             requestedSubjectRole: RequestedSubjectRole.Guest,
             label: parsed.value,
+            contact: guestContactOf(field(raw, 'contact')),
           };
     }
     default:

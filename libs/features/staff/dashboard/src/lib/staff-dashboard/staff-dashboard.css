@@ -895,6 +895,36 @@
   min-block-size: 5rem;
 }
 
+/* ── THE DAY'S HEALTH (OR-2) ────────────────────────────────────────────
+ *
+ * A chair the sheet could not read in full is an all-day row built from the
+ * off row's parts (`.agenda-card--allday`, in the chrome sheet). It opens
+ * nothing, so the pointer says so — two classes, because the chrome sheet
+ * loads after this one and its `cursor: pointer` would otherwise win. */
+.agenda-card--allday.agenda-card--health {
+  cursor: default;
+}
+
+/* A partial read's meta is what to do («Презареди страницата»), a phrase
+   rather than a badge, and on a 330 phone it shares the row with the name
+   and the count under it: it may wrap at the trailing edge instead of
+   starving them. */
+.agenda-card--health .agenda-allday__meta {
+  flex: 0 1 auto;
+  text-align: end;
+}
+
+/* Above the calendar the band is a plain line of the column, not the
+   agenda's sticky band: the canvas below never scrolls the page, and the
+   agenda's pull towards the run would sink the rows into the grid's head.
+   The page's own gutter, since the canvas runs full bleed. */
+.staff-day[data-view-kind='grid'] > .staff-allday {
+  position: static;
+  flex: none;
+  margin: 0;
+  padding: var(--sys-space-compact) var(--sys-space-regular);
+}
+
 /* The page around the run — the write actions, the toolbar and the week
    strip, the barber picker, the all-day band and the toast — continues in
    `staff-dashboard.chrome.css`. */

@@ -214,16 +214,18 @@ export const Seat = {
   },
 
   /**
-   * Is this seat one the BOOKER's own cart can name — and so move? An
-   * anonymous guest, or the booker's own `SELF` seat bound to the booker's
-   * account. A `SELF` seat naming another account is the shop's, like a
-   * companion; `null` names nobody, so only the anonymous guests remain.
+   * Is this seat one the BOOKER's own cart can name — and so move? A guest
+   * (an anonymous one, or a walk-in the shop keeps a record for — OR-26:
+   * the cart names them by label, as it names every guest), or the
+   * booker's own `SELF` seat bound to the booker's account. A `SELF` seat
+   * naming another account is the shop's, like a companion; `null` names
+   * nobody, so only the guests remain.
    */
   isMovableByBooker(
     seat: AccountOccupant,
     ownerUserId: UserId | null,
   ): boolean {
-    if (seat.seatSubject === SeatSubject.Anonymous) return true;
+    if (seat.seatSubject !== SeatSubject.Account) return true;
     return (
       seat.subjectRelationship === SubjectRelationship.Self &&
       ownerUserId !== null &&

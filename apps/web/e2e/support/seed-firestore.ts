@@ -47,7 +47,9 @@ import {
   CustomerId,
   JournalEntryId,
   type LocalDate,
+  MinuteOfDay,
   UserId,
+  WaitlistRequestId,
 } from '@core/primitives';
 import {
   PhoneSystem,
@@ -629,4 +631,36 @@ export async function seedInbox(
     batch.set(inbox.doc(`${uid}-note-${index}`), body);
   }
   await batch.commit();
+}
+
+/**
+ * Seeds one unread `WAITLIST_MATCH` in `users/{uid}/notifications` — the
+ * matcher's delivery (its server plan in the product), for the inbox row's
+ * deep link: the request `requestId` and the freed slot, `localDate` at
+ * `startMinutes` on the shop's clock, sent at the seed's fixed instant.
+ * Answers the notification's id.
+ */
+export async function seedWaitlistMatch(
+  uid: string,
+  requestId: string,
+  localDate: LocalDate,
+  startMinutes: number,
+): Promise<string> {
+  const id = `${uid}-match`;
+  const body = {
+    sentAtUtcMs: SEEDED_AT_UTC_MS,
+    readAtUtcMs: null,
+    ...NotificationPayload.waitlistMatch(
+      WaitlistRequestId.of(requestId),
+      localDate,
+      sure(MinuteOfDay.of(startMinutes), `minute ${startMinutes}`),
+    ),
+  } satisfies Omit<InboxNotification, 'id'>;
+  await getFirestore(adminApp())
+    .collection(Collections.Users)
+    .doc(uid)
+    .collection(Subcollections.Notifications)
+    .doc(id)
+    .set(body);
+  return id;
 }

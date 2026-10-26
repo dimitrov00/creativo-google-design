@@ -139,7 +139,9 @@ export const AppointmentIndexSystem = {
    * - `ownerCustomerId` — the first `SELF` seat's client record; `null`
    *   exactly when `ownerUserId` is;
    * - `subjectCustomerIds` — every client record on the visit, distinct,
-   *   sorted (one `array-contains` index, #19); guests have none.
+   *   sorted (one `array-contains` index, #19): an account's, and a
+   *   walk-in's (OR-26 — so the walk-in's history and card find the
+   *   visit); an anonymous guest has none.
    */
   queryKeys(appointment: IndexedAppointment): AppointmentQueryKeys {
     let ownerCustomerId: CustomerId | null = null;
@@ -147,8 +149,9 @@ export const AppointmentIndexSystem = {
     const seats = appointment.seats;
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as IndexedSeat;
-      if (seat.seatSubject !== SeatSubject.Account) continue;
+      if (seat.seatSubject === SeatSubject.Anonymous) continue;
       if (
+        seat.seatSubject === SeatSubject.Account &&
         ownerCustomerId === null &&
         seat.subjectRelationship === SubjectRelationship.Self
       ) {

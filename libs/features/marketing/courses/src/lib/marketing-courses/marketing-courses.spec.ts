@@ -47,8 +47,8 @@ function course(id: string, enrollmentStatus: EnrollmentStatus): Course {
 
 /**
  * The app's own `programs.status` words for `lang` — read, never re-typed, so
- * the badge cases pin today's words (pass E, E-17: they moved into the
- * catalogues unchanged). Every other key renders as itself.
+ * the badge cases pin the catalogue's words (E-17, translated by OR-53).
+ * Every other key renders as itself.
  */
 function programStatusWords(lang: string): Translation {
   const file = resolve(
@@ -218,9 +218,9 @@ describe('MarketingCourses', () => {
     expect(badge?.getAttribute('data-tone')).toBe('accent');
   });
 
-  // Flip 4, F4-7: the stored status is SCREAMING (`UPCOMING`); the badge
-  // still prints today's lowercase word, in today's tone.
-  it('badges an upcoming course "upcoming" with a warning tone', async () => {
+  // OR-53: the stored status is SCREAMING (`UPCOMING`); the badge prints the
+  // catalogue's sentence-case word, in today's tone.
+  it('badges an upcoming course "Upcoming" with a warning tone', async () => {
     const fixture = await configure([
       course('course_1', EnrollmentStatus.Upcoming),
     ]);
@@ -239,11 +239,11 @@ describe('MarketingCourses', () => {
     const badge = host.querySelector(
       '[data-testid="courses-list"] a[uilistrow] [uibadge]',
     );
-    expect(badge?.textContent?.trim()).toBe('upcoming');
+    expect(badge?.textContent?.trim()).toBe('Upcoming');
     expect(badge?.getAttribute('data-tone')).toBe('warning');
   });
 
-  it('prints the badge text "open" for an open course', async () => {
+  it('prints the badge text "Open" for an open course', async () => {
     const fixture = await configure([
       course('course_1', EnrollmentStatus.Open),
     ]);
@@ -255,10 +255,10 @@ describe('MarketingCourses', () => {
     const badge = host.querySelector(
       '[data-testid="courses-list"] a[uilistrow] [uibadge]',
     );
-    expect(badge?.textContent?.trim()).toBe('open');
+    expect(badge?.textContent?.trim()).toBe('Open');
   });
 
-  it('prints the same lowercase badge words in bg — the catalogue keeps them untranslated (E-17)', async () => {
+  it('prints the badge words in bg, agreeing with «курс» (OR-53)', async () => {
     const fixture = await configure([
       course('course_1', EnrollmentStatus.Open),
       course('course_2', EnrollmentStatus.Upcoming),
@@ -274,7 +274,7 @@ describe('MarketingCourses', () => {
     const host: HTMLElement = fixture.nativeElement;
     const badge = () =>
       host.querySelector('[data-testid="courses-list"] a[uilistrow] [uibadge]');
-    expect(badge()?.textContent?.trim()).toBe('open');
+    expect(badge()?.textContent?.trim()).toBe('Отворен');
 
     (
       host.querySelector(
@@ -283,6 +283,6 @@ describe('MarketingCourses', () => {
     ).click();
     fixture.detectChanges();
 
-    expect(badge()?.textContent?.trim()).toBe('upcoming');
+    expect(badge()?.textContent?.trim()).toBe('Предстоящ');
   });
 });

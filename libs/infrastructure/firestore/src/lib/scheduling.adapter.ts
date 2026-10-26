@@ -9,13 +9,7 @@ import {
   type ScheduleException,
 } from '@core/entities';
 import type { ScheduleExceptionPorts, SchedulingReadPorts } from '@core/ports';
-import {
-  entityOf,
-  observeDoc,
-  type ReadGuard,
-  UNGUARDED,
-  writeFailed,
-} from './observe';
+import { entityOf, observeDoc, type ReadGuard, writeFailed } from './observe';
 
 /**
  * The booking store's raw scheduling streams (flip 1, plan §3.4) — the
@@ -38,23 +32,24 @@ import {
  * busy day emits `REPOSITORY_MALFORMED` and the listener stays — the grid
  * shows that barber-day as unreadable, fail-closed, never as free time (the
  * old reader dropped a corrupt span and offered the time under it, DEP-2).
- * The other five members read as stored. A bare `schedulingReadPorts(db)`
- * guards nothing.
+ * The other five members read through the same guard, as stored — the
+ * registry guards none of their collections. The guard is REQUIRED (OR-33,
+ * DEP-F24): a bare `schedulingReadPorts(db)` does not type-check.
  */
 export const schedulingReadPorts = (
   db: Firestore,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard,
 ): SchedulingReadPorts => ({
   observeBusyDay: (key) =>
     observeDoc(doc(db, Collections.BarberBusy, key), guard),
   observeExceptions: (key) =>
-    observeDoc(doc(db, Collections.ScheduleExceptions, key)),
+    observeDoc(doc(db, Collections.ScheduleExceptions, key), guard),
   observeSchedule: (barberId) =>
-    observeDoc(doc(db, Collections.BarberSchedules, barberId)),
+    observeDoc(doc(db, Collections.BarberSchedules, barberId), guard),
   observeLocation: (locationId) =>
-    observeDoc(doc(db, Collections.Locations, locationId)),
+    observeDoc(doc(db, Collections.Locations, locationId), guard),
   observeCapacityMonth: (month) =>
-    observeDoc(doc(db, Collections.Capacity, month)),
+    observeDoc(doc(db, Collections.Capacity, month), guard),
   /**
    * `settings/bookingPolicy`, live, never `null`: the document IS the flat
    * `BookingPolicySettings` (Law 5), and it reaches the store through the
@@ -69,6 +64,7 @@ export const schedulingReadPorts = (
   observePolicy: () =>
     observeDoc<BookingPolicySettings>(
       doc(db, Collections.Settings, BOOKING_POLICY_DOC),
+      guard,
     ).pipe(
       map((answer) =>
         answer.ok

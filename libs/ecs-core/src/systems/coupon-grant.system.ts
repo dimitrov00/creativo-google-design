@@ -2,34 +2,32 @@ import {
   Combinability,
   type CouponOccasion,
   CouponValue,
+  DiscountProvenance,
   GrantCapacity,
-  GrantCapacityTerms,
   GrantExpiry,
-  GrantExpiryTerms,
   GrantLifecycle,
   WriteOp,
 } from '@core/components';
 import {
+  type AppointmentId,
   type CouponGrantId,
   type CouponId,
   type CustomerId,
   GrantStatus,
   Result,
-  type UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import { EngagementError } from '@core/errors';
 import { type Coupon, type CouponGrant, Collections } from '@core/entities';
 
 /**
- * A grant as the card holds it, carrying its coupon's occasion tag. The
- * host's card grant may leave the tag out (`ClientCardGrant.couponOccasion`
- * is optional), so the constraint takes it as it is held — absent reads as
- * `null`, no occasion — and the grants pass in unmapped (Law 3).
+ * A grant as the card holds it, carrying its coupon's occasion tag — every
+ * producer sets it, `null` for no occasion (OR-16: required, one hidden
+ * class) — so the grants pass in unmapped (Law 3).
  */
-export type OccasionTagged = Partial<{
+export type OccasionTagged = {
   readonly couponOccasion: CouponOccasion | null;
-}>;
+};
 
 /** A grant as the resolver found it — whose it is, whether it can still be honoured, and its value. */
 export type ResolvedGrant = {
@@ -49,9 +47,62 @@ export type HeldGrant = {
   readonly coupon: Coupon;
 };
 
+/**
+ * What a cancel or a no-show gives back of a bill's grants
+ * (`CouponGrantSystem.releasePlan`): the discounts with every grant line
+ * dropped, and the write plan that restores each grant they named.
+ */
+export type GrantReleasePlan<D extends DiscountProvenance> = {
+  readonly discounts: readonly D[];
+  readonly writes: readonly WriteOp[];
+};
+
+/** The note a bill's burn stamps on the grant it spends. */
+function appointmentNote(appointmentId: AppointmentId): string {
+  return `appointment:${appointmentId}`;
+}
+
+/** The grants read, by id — the first of two copies of one grant answers. */
+function grantsById(
+  grants: readonly CouponGrant[],
+): ReadonlyMap<CouponGrantId, CouponGrant> {
+  const byId = new Map<CouponGrantId, CouponGrant>();
+  for (let i = 0; i < grants.length; i++) {
+    const grant = grants[i] as CouponGrant;
+    if (!byId.has(grant.id)) byId.set(grant.id, grant);
+  }
+  return byId;
+}
+
+/** The grant ids a bill's lines name, in line order. */
+function grantIdsOf(
+  discounts: readonly DiscountProvenance[],
+): ReadonlySet<CouponGrantId> {
+  const ids = new Set<CouponGrantId>();
+  for (let i = 0; i < discounts.length; i++) {
+    const grantId = DiscountProvenance.grantIdOf(
+      discounts[i] as DiscountProvenance,
+    );
+    if (grantId !== null) ids.add(grantId);
+  }
+  return ids;
+}
+
+/**
+ * The restore of the grant a line that left the bill named, as its write —
+ * `null` when the grant was not read or will not take the use back (an
+ * expired or revoked grant, one with no use spent): a give-back never
+ * fails the save or the cancel that makes it.
+ */
+function restoreWrite(grant: CouponGrant | undefined): WriteOp | null {
+  if (grant === undefined) return null;
+  const back = CouponGrantSystem.restore(grant);
+  return back.ok ? CouponGrantSystem.transitionWrite(grant, back.value) : null;
+}
+
 /** The ONE predicate both occasion cuts share: the grant's coupon was made for `occasion`. */
 function madeFor(grant: OccasionTagged, occasion: CouponOccasion): boolean {
-  return CouponGrantSystem.isOccasion(grant.couponOccasion ?? null, occasion);
+  return CouponGrantSystem.isOccasion(grant.couponOccasion, occasion);
 }
 
 /** The grant with a new lifecycle variant — its meta and value untouched, the old variant's fields gone. */
@@ -71,7 +122,7 @@ function withLifecycle(
 }
 
 /*
- * The four verbs on the LIFECYCLE SLICE (`*Slice`) — the grant's state
+ * The two verbs on the LIFECYCLE SLICE (`*Slice`) — the grant's state
  * machine, total on `GrantLifecycle`; each entity verb of
  * {@link CouponGrantSystem} is its slice verb with the grant's meta and
  * value carried through untouched.
@@ -79,9 +130,9 @@ function withLifecycle(
 
 /**
  * One redemption (`markUsed`): a single-use grant goes straight to
- * `USED`; a multi-use one counts down, and is `USED` at zero. `note` is
- * the caller's account of the channel («appointment abc123»), `''` when
- * none was given.
+ * `USED`; a multi-use one counts down, and is `USED` at zero — the terms
+ * kept either way (OR-13). `note` is the caller's account of the channel
+ * (`appointment:<id>`), `''` when none was given.
  */
 function burnSlice(
   grant: GrantLifecycle,
@@ -91,18 +142,17 @@ function burnSlice(
   if (grant.grantStatus !== GrantStatus.Active) {
     return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
   }
-  if (grant.grantCapacity === GrantCapacity.SingleUse) {
-    return Result.ok(GrantLifecycle.used(atUtcMs, note));
-  }
-  const remaining = grant.usesRemaining - 1;
-  if (remaining <= 0) {
-    return Result.ok(GrantLifecycle.used(atUtcMs, note));
+  if (
+    grant.grantCapacity === GrantCapacity.SingleUse ||
+    grant.usesRemaining - 1 <= 0
+  ) {
+    return Result.ok(GrantLifecycle.used(grant, atUtcMs, note));
   }
   return Result.ok(
     GrantLifecycle.active(
       {
         grantCapacity: GrantCapacity.MultiUse,
-        usesRemaining: remaining,
+        usesRemaining: grant.usesRemaining - 1,
         usesGranted: grant.usesGranted,
       },
       grant,
@@ -111,45 +161,36 @@ function burnSlice(
 }
 
 /**
- * The exact inverse of {@link burn} — a grant discount a save removed, or
- * a cancel released, goes back to the client: a `USED` grant returns to
- * `ACTIVE` with one use (single-use, or a multi-use with one of its
- * `issued` total), a multi-use `ACTIVE` one gains a use back. Refused for
- * an expired or revoked grant (`NOT_ACTIVE`), and for a grant with no use
- * spent to give back (`INVALID_CAPACITY`, naming the count it would reach).
+ * The exact inverse of {@link burnSlice}, read off the grant's own terms
+ * (a `USED` grant keeps them): a grant discount a save removed, or a
+ * cancel or a no-show released, goes back to the client — a `USED` grant
+ * returns to `ACTIVE` with one use, a multi-use `ACTIVE` one gains a use
+ * back. Expiry is not judged: a grant restored past its expiry is `ACTIVE`
+ * and not usable. Refused for an expired or revoked grant (`NOT_ACTIVE`),
+ * and for a grant with no use spent to give back (`INVALID_CAPACITY`,
+ * naming the count it would reach).
  */
 function restoreSlice(
   grant: GrantLifecycle,
-  issued: GrantLifecycle.Terms,
 ): Result<
   GrantLifecycle,
   | EngagementError.CouponGrantNotActive
   | EngagementError.CouponGrantCapacityInvalid
 > {
-  if (grant.grantStatus === GrantStatus.Used) {
-    const capacity: GrantCapacityTerms =
-      issued.grantCapacity === GrantCapacity.SingleUse
-        ? GrantCapacityTerms.singleUse()
-        : {
-            grantCapacity: GrantCapacity.MultiUse,
-            usesRemaining: 1,
-            usesGranted: issued.usesGranted,
-          };
-    return Result.ok(GrantLifecycle.active(capacity, issued));
-  }
-  if (grant.grantStatus !== GrantStatus.Active) {
+  if (
+    grant.grantStatus !== GrantStatus.Used &&
+    grant.grantStatus !== GrantStatus.Active
+  ) {
     return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
   }
-  if (
-    grant.grantCapacity === GrantCapacity.SingleUse ||
-    grant.usesRemaining >= grant.usesGranted
-  ) {
+  if (grant.grantCapacity === GrantCapacity.SingleUse) {
+    return grant.grantStatus === GrantStatus.Used
+      ? Result.ok(GrantLifecycle.active(grant, grant))
+      : Result.err(EngagementError.couponGrantCapacityInvalid(2));
+  }
+  if (grant.usesRemaining >= grant.usesGranted) {
     return Result.err(
-      EngagementError.couponGrantCapacityInvalid(
-        grant.grantCapacity === GrantCapacity.SingleUse
-          ? 2
-          : grant.usesRemaining + 1,
-      ),
+      EngagementError.couponGrantCapacityInvalid(grant.usesRemaining + 1),
     );
   }
   return Result.ok(
@@ -164,61 +205,22 @@ function restoreSlice(
   );
 }
 
-/** The expiry job's act — only an `ACTIVE` grant that HAS an `EXPIRES_AT`. */
-function expireSlice(
-  grant: GrantLifecycle,
-  atUtcMs: UtcEpochMs,
-): Result<
-  GrantLifecycle,
-  EngagementError.CouponGrantNotActive | EngagementError.CouponGrantNotExpiring
-> {
-  if (grant.grantStatus !== GrantStatus.Active) {
-    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
-  }
-  if (grant.grantExpiry !== GrantExpiry.ExpiresAt) {
-    return Result.err(EngagementError.couponGrantNotExpiring());
-  }
-  return Result.ok(GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs));
-}
-
-/** An admin takes a grant back — a reason is required, stored trimmed. */
-function revokeSlice(
-  grant: GrantLifecycle,
-  atUtcMs: UtcEpochMs,
-  revokedBy: UserId,
-  reason: string,
-): Result<
-  GrantLifecycle,
-  EngagementError.CouponGrantNotActive | EngagementError.CouponGrantReasonEmpty
-> {
-  if (grant.grantStatus !== GrantStatus.Active) {
-    return Result.err(EngagementError.couponGrantNotActive(grant.grantStatus));
-  }
-  const trimmed = reason.trim();
-  if (trimmed.length === 0) {
-    return Result.err(EngagementError.couponGrantReasonEmpty());
-  }
-  return Result.ok(GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed));
-}
-
 /**
  * A client's coupon grant through its life (`coupon-grant.ts:134-299`):
  *
  *   `ACTIVE` ─ burn    → `ACTIVE` (multi-use, one fewer) OR `USED`
- *   `ACTIVE` ─ expire  → `EXPIRED` (only with an `EXPIRES_AT` expiry)
- *   `ACTIVE` ─ revoke  → `REVOKED`
  *   `USED` / `ACTIVE` ─ restore → the exact inverse of `burn`
  *
- * Every transition refuses a grant that is not `ACTIVE` (`NOT_ACTIVE`,
- * naming the state it found). `nowUtcMs`/`atUtcMs` are parameters; usability
- * against an expiry instant is a T2 lifecycle comparison (G-1).
+ * A burn refuses a grant that is not `ACTIVE` (`NOT_ACTIVE`, naming the
+ * state it found). The bill moves grants (OR-13, the voucher semantics):
+ * {@link CouponGrantSystem.settleBill} burns a grant line new on a saved
+ * bill and restores one that left it; {@link CouponGrantSystem.releasePlan}
+ * gives every grant back when a cancel or a no-show releases the visit's
+ * holdings (`BillingSystem.releasesHoldings`). `nowUtcMs`/`atUtcMs` are
+ * parameters; usability against an expiry instant is a T2 lifecycle
+ * comparison (G-1).
  */
 export const CouponGrantSystem = {
-  /** Is the grant `ACTIVE`? Reads the lifecycle slice alone — a whole grant passes. */
-  isActive(grant: GrantLifecycle): boolean {
-    return GrantLifecycle.isActive(grant);
-  },
-
   /** Active, and not past its expiry — AT the instant is still usable. */
   isUsable(grant: GrantLifecycle, nowUtcMs: UtcEpochMs): boolean {
     if (grant.grantStatus !== GrantStatus.Active) return false;
@@ -271,6 +273,37 @@ export const CouponGrantSystem = {
   },
 
   /**
+   * THE GRANTS THE VISIT SHEET'S «Отстъпка» MENU OFFERS (OR-13): the
+   * record's grants still usable at `nowUtcMs` ({@link isUsable} — an
+   * expired one is never offered as a new promise), in `held` order, then
+   * every grant the open visit's SAVED bill names, in `billIds` order,
+   * WHATEVER its status — the save burned it (`USED`), and a burned grant
+   * must still show on its own visit's card. A bill id is answered by
+   * `held` or `billed`, whichever names it; one neither names offers
+   * nothing; each grant is offered once.
+   */
+  offered(
+    held: readonly CouponGrant[],
+    billed: readonly CouponGrant[],
+    billIds: readonly CouponGrantId[],
+    nowUtcMs: UtcEpochMs,
+  ): readonly CouponGrant[] {
+    const out: CouponGrant[] = [];
+    for (let i = 0; i < held.length; i++) {
+      const grant = held[i] as CouponGrant;
+      if (CouponGrantSystem.isUsable(grant, nowUtcMs)) out.push(grant);
+    }
+    for (let i = 0; i < billIds.length; i++) {
+      const id = billIds[i] as CouponGrantId;
+      const grant =
+        held.find((each) => each.id === id) ??
+        billed.find((each) => each.id === id);
+      if (grant !== undefined && !out.includes(grant)) out.push(grant);
+    }
+    return out;
+  },
+
+  /**
    * The grants joined to their coupons by id (`staff-day.store.ts`
    * `loadGrants`), in the grants' order: a grant whose coupon is absent from
    * `coupons` — gone altogether — has nothing to say and is left out; a
@@ -308,52 +341,92 @@ export const CouponGrantSystem = {
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
-  /** {@link restoreSlice} on a whole grant. */
+  /** {@link restoreSlice} on a whole grant — its own kept terms, nothing handed in. */
   restore(
     grant: CouponGrant,
-    issued: GrantLifecycle.Terms,
   ): Result<
     CouponGrant,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantCapacityInvalid
   > {
-    const next = restoreSlice(grant, issued);
+    const next = restoreSlice(grant);
     return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
-  /** {@link expireSlice} on a whole grant. */
-  expire(
-    grant: CouponGrant,
-    atUtcMs: UtcEpochMs,
-  ): Result<
-    CouponGrant,
-    | EngagementError.CouponGrantNotActive
-    | EngagementError.CouponGrantNotExpiring
-  > {
-    const next = expireSlice(grant, atUtcMs);
-    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
+  /**
+   * The grant writes of a saved bill (OR-13, the edit transaction's own
+   * reads): ONE linear pass over the bill's grant lines `before` (as
+   * stored) and `after` (as settled), against the `grants` the
+   * transaction read —
+   * - a grant line NEW on the bill is burned, stamped `nowUtcMs` and noted
+   *   `appointment:<appointmentId>`; a grant that will not burn refuses
+   *   the save (`NOT_ACTIVE` — the read set is the transaction's, so a
+   *   double spend cannot land);
+   * - a line that LEFT the bill is restored; a restore the grant refuses
+   *   (expired, revoked, nothing spent) is skipped, never failing the save;
+   * - a KEPT line writes nothing — a replay of the same bill writes nothing.
+   * A line whose grant was not read writes nothing: the settle never admits
+   * a new grant it could not resolve (`BillingSystem.settleDiscounts`).
+   */
+  settleBill(
+    before: readonly DiscountProvenance[],
+    after: readonly DiscountProvenance[],
+    grants: readonly CouponGrant[],
+    appointmentId: AppointmentId,
+    nowUtcMs: UtcEpochMs,
+  ): Result<readonly WriteOp[], EngagementError.CouponGrantNotActive> {
+    const read = grantsById(grants);
+    const stored = grantIdsOf(before);
+    const settled = grantIdsOf(after);
+    const writes: WriteOp[] = [];
+    for (const grantId of settled) {
+      if (stored.has(grantId)) continue;
+      const grant = read.get(grantId);
+      if (grant === undefined) continue;
+      const burnt = CouponGrantSystem.burn(
+        grant,
+        nowUtcMs,
+        appointmentNote(appointmentId),
+      );
+      if (!burnt.ok) return burnt;
+      writes.push(CouponGrantSystem.transitionWrite(grant, burnt.value));
+    }
+    for (const grantId of stored) {
+      if (settled.has(grantId)) continue;
+      const write = restoreWrite(read.get(grantId));
+      if (write !== null) writes.push(write);
+    }
+    return Result.ok(writes);
   },
 
-  /** {@link revokeSlice} on a whole grant. */
-  revoke(
-    grant: CouponGrant,
-    atUtcMs: UtcEpochMs,
-    revokedBy: UserId,
-    reason: string,
-  ): Result<
-    CouponGrant,
-    | EngagementError.CouponGrantNotActive
-    | EngagementError.CouponGrantReasonEmpty
-  > {
-    const next = revokeSlice(grant, atUtcMs, revokedBy, reason);
-    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
-  },
-
-  /** The terms an active grant holds — what {@link restore} needs back once it is spent. */
-  termsOf(grant: GrantLifecycle.Active): GrantLifecycle.Terms {
+  /**
+   * What a cancel or a no-show gives back of the bill (OR-13, DEP-F10b —
+   * read when `BillingSystem.releasesHoldings` says the move releases): the
+   * `discounts` with every grant line dropped, in their order (the same
+   * array when none is a grant line), and the restore of each grant they
+   * named among the `grants` read — a grant not read, or one that will not
+   * take the use back, is skipped: the cancel still lands.
+   */
+  releasePlan<D extends DiscountProvenance>(
+    discounts: readonly D[],
+    grants: readonly CouponGrant[],
+  ): GrantReleasePlan<D> {
+    const read = grantsById(grants);
+    const kept: D[] = [];
+    const writes: WriteOp[] = [];
+    for (let i = 0; i < discounts.length; i++) {
+      const discount = discounts[i] as D;
+      const grantId = DiscountProvenance.grantIdOf(discount);
+      if (grantId === null) {
+        kept.push(discount);
+        continue;
+      }
+      const write = restoreWrite(read.get(grantId));
+      if (write !== null) writes.push(write);
+    }
     return {
-      ...GrantCapacityTerms.of(grant),
-      ...GrantExpiryTerms.of(grant),
+      discounts: kept.length === discounts.length ? discounts : kept,
+      writes,
     };
   },
 

@@ -336,6 +336,8 @@ describe('BookingFlowStore — commit', () => {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Maria',
         guestKey: 'guest-0',
+        // A client's cart names its guests; it never files their contact.
+        contact: null,
       },
     ]);
     // The placement is the shop day and its minutes — the pipeline places
@@ -834,7 +836,8 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
       labelledGuestVisit('appt-moving', 'Guest 3'),
       guestLabel,
     );
-    // The services step numbers from past the highest guest id — 3 here.
+    // The services step numbers from 1 (OR-6): the prefilled guest holds
+    // «Guest 3», so the lowest free is «Guest 1»; a start past it steps past it.
     expect(store.unusedGuestLabel(guestLabel, 3)).toBe('Guest 4');
     expect(store.unusedGuestLabel(guestLabel, 1)).toBe('Guest 1');
   });

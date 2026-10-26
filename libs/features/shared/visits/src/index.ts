@@ -3,6 +3,9 @@ export * from './lib/visit-lookup.contracts';
 export * from './lib/visit-sections';
 export * from './lib/visit-filter';
 export * from './lib/visit-row.presenter';
+// OR-5: a photo's moment in the active language — the staff sheet's words.
+export * from './lib/photo-moment.vm';
+export * from './lib/photo-moment.presenter';
 export * from './lib/first-name';
 export * from './lib/day-range';
 export * from './lib/event-head/staff-event-line';

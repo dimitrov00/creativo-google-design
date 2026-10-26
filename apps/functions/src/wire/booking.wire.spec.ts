@@ -3,6 +3,8 @@ import {
   CancellationReason,
   DiscountMethod,
   DiscountSource,
+  E164,
+  Email,
   VoucherCode,
   EditCommand,
   MarkArrivalAction,
@@ -179,6 +181,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
             requestedSubjectRole: RequestedSubjectRole.Guest,
             label: 'Petar',
             guestKey: 'guest-1',
+            contact: null,
           },
         },
       ]);
@@ -235,6 +238,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Мария',
         guestKey: 'guest-3',
+        contact: null,
       });
       expect(
         guestSeat({
@@ -263,7 +267,61 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: 'Мария',
           guestKey: null,
+          contact: null,
         });
+      },
+    );
+
+    it('parses a guest’s contact ONCE, here — the phone through PhoneSystem, the e-mail through its guard (OR-26)', () => {
+      expect(
+        guestSeat({
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: 'Мария',
+          contact: { phone: '+359 88 812 3456', email: ' Maria@Example.com ' },
+        }),
+      ).toEqual({
+        requestedSubjectRole: RequestedSubjectRole.Guest,
+        label: 'Мария',
+        guestKey: null,
+        contact: {
+          phone: E164.of('+359888123456'),
+          email: Email.of('maria@example.com'),
+        },
+      });
+    });
+
+    it.each([
+      ['no contact', undefined, null],
+      ['a contact that is no record', 'phone', null],
+      ['neither part', { phone: '', email: '' }, null],
+      ['a phone that is no number', { phone: '12345', email: null }, null],
+      ['an over-long phone', { phone: `+359${'8'.repeat(40)}` }, null],
+      ['an e-mail that is none', { email: 'not-an-email' }, null],
+      [
+        'an over-long e-mail',
+        { email: `${'m'.repeat(250)}@example.com` },
+        null,
+      ],
+      [
+        'a broken phone beside a good e-mail',
+        { phone: 'abc', email: 'ana@example.com' },
+        { phone: null, email: 'ana@example.com' },
+      ],
+      [
+        'a phone with no e-mail',
+        { phone: '+359888123456' },
+        { phone: '+359888123456', email: null },
+      ],
+    ])(
+      'drops, never refuses, what does not parse — %s',
+      (_what, contact, expected) => {
+        expect(
+          guestSeat({
+            requestedSubjectRole: RequestedSubjectRole.Guest,
+            label: 'Мария',
+            ...(contact === undefined ? {} : { contact }),
+          }),
+        ).toMatchObject({ label: 'Мария', contact: expected });
       },
     );
 
@@ -465,6 +523,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           barberId: 'b-ivan',
           localDate: '2026-09-29',
           startMinutes: 600,
+          seatIndex: 0,
         },
       });
     });
@@ -1365,6 +1424,49 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           codes: [VoucherCode.of('GIFT50')],
         },
       ]);
+    });
+
+    it('an added guest carries the contact the desk took, parsed here — a part that does not parse is dropped (OR-26)', () => {
+      const added = (contact: unknown) =>
+        valueOf(
+          edit(
+            one({
+              editCommand: EditCommand.AddSeat,
+              seatId: 's9',
+              serviceId: 'svc',
+              barberId: 'b-ivan',
+              localDate: '2026-10-01',
+              startMinutes: 720,
+              durationMinutes: 30,
+              addedSubject: {
+                requestedSubjectRole: RequestedSubjectRole.Guest,
+                label: ' Мария ',
+                ...(contact === undefined ? {} : { contact }),
+              },
+            }),
+          ),
+        ).commands[0];
+      expect(
+        added({ phone: '+359888123456', email: 'Maria@Example.com' }),
+      ).toMatchObject({
+        addedSubject: {
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: 'Мария',
+          contact: {
+            phone: E164.of('+359888123456'),
+            email: Email.of('maria@example.com'),
+          },
+        },
+      });
+      expect(added(undefined)).toMatchObject({
+        addedSubject: { label: 'Мария', contact: null },
+      });
+      expect(added({ phone: 'nope', email: null })).toMatchObject({
+        addedSubject: { contact: null },
+      });
+      expect(added({ phone: 'nope', email: 'ana@example.com' })).toMatchObject({
+        addedSubject: { contact: { phone: null, email: 'ana@example.com' } },
+      });
     });
 
     it('an added seat is the owner’s or a guest’s; an absent claim and name are none', () => {

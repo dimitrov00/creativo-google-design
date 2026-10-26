@@ -38,6 +38,7 @@ import {
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
   USER_SEARCH_PORTS,
+  CUSTOMER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   AppliedOperation,
@@ -166,6 +167,7 @@ import {
   memoryProgramsWorld,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  memoryCustomerSearchPorts,
   memoryUserSearchPorts,
   principalFixture,
   provisionedUserFixture,
@@ -611,6 +613,12 @@ describe('StaffDashboard', () => {
   );
 
   /**
+   * How many visits each chair's read could not show (OR-2), by chair —
+   * none unless a case says so (and puts it back).
+   */
+  let unreadableBy: ReadonlyMap<string, number> = new Map();
+
+  /**
    * Ivan is rostered 09:00–18:00 every day; Niko is NOT rostered at all,
    * which is what separates "off today" from "free day". The raw roster —
    * the store derives the windows (F1-10).
@@ -748,10 +756,20 @@ describe('StaffDashboard', () => {
           provide: APPOINTMENT_READ_PORTS,
           useValue: {
             observeAppointment: () => of(PortResult.ok(null)),
-            // `busyKeys array-contains`: the chair's day, handed in split.
+            // `busyKeys array-contains`: the chair's day, handed in split —
+            // and the visits its read could not show (OR-2, `unreadableBy`).
             observeBarberDay: (key) => {
               const { barberId, localDate } = BusyKey.split(key);
-              return observeBarberDay(barberId, localDate);
+              return observeBarberDay(barberId, localDate).pipe(
+                map((answer) =>
+                  answer.ok
+                    ? PortResult.ok({
+                        appointments: answer.value,
+                        unreadableCount: unreadableBy.get(barberId) ?? 0,
+                      })
+                    : answer,
+                ),
+              );
             },
             observeUpcoming: () => of(PortResult.ok([])),
             observeHistory: () => of(PortResult.ok([])),
@@ -819,6 +837,10 @@ describe('StaffDashboard', () => {
         {
           provide: USER_SEARCH_PORTS,
           useValue: memoryUserSearchPorts([]),
+        },
+        {
+          provide: CUSTOMER_SEARCH_PORTS,
+          useValue: memoryCustomerSearchPorts([]),
         },
         {
           provide: APPOINTMENT_NOTE_PORTS,
@@ -1196,6 +1218,199 @@ describe('StaffDashboard', () => {
       host().querySelectorAll('[data-testid="staff-agenda-group"]').length,
     ).toBeGreaterThan(0);
     expect(host().textContent).not.toContain('staff.day.noRoster');
+  });
+
+  /*
+   * ── THE DAY'S HEALTH (OR-2) ─────────────────────────────────────────
+   * A chair whose read FAILED drew as an empty rostered day whose gaps
+   * looked sellable, or — unrostered — as «почива»; a partial drop told only
+   * the device console. Both are said now, as all-day rows of that chair.
+   */
+  describe('the day’s health (OR-2)', () => {
+    const healthRows = () =>
+      host().querySelectorAll(
+        '[data-testid="staff-lane-failed"], [data-testid="staff-lane-unreadable"]',
+      );
+
+    it('says nothing on a day every chair read cleanly', () => {
+      expect(healthRows().length).toBe(0);
+      const component = fixture.componentInstance as unknown as {
+        dayHealth: () => readonly unknown[];
+      };
+      expect(component.dayHealth()).toEqual([]);
+    });
+
+    it('banners a chair holding visits it cannot show — a status row, its count under the name, what to do as its meta', async () => {
+      unreadableBy = new Map([['ivan', 2]]);
+      try {
+        TestBed.resetTestingModule();
+        await build();
+        const row = host().querySelector(
+          '[data-testid="staff-lane-unreadable"]',
+        );
+        expect(row).not.toBeNull();
+        // A PLAIN LIST ITEM, the way the off row nests its button: the
+        // strip stays a list of listitems a screen reader can count.
+        expect(row?.tagName.toLowerCase()).toBe('li');
+        expect(row?.getAttribute('role')).toBeNull();
+        const list = row?.closest('.staff-allday');
+        expect(list?.tagName.toLowerCase()).toBe('ul');
+        for (const item of [...(list?.children ?? [])]) {
+          expect(item.tagName.toLowerCase()).toBe('li');
+          expect(item.getAttribute('role')).toBeNull();
+        }
+        // The card inside it — AN EVENT OF THE CHAIR, built from the off
+        // row's own parts…
+        const card = row?.querySelector('[role="status"]');
+        expect(card).not.toBeNull();
+        expect(card?.classList.contains('agenda-card')).toBe(true);
+        expect(card?.classList.contains('agenda-card--allday')).toBe(true);
+        expect(card?.getAttribute('data-barber-tone')).not.toBeNull();
+        expect(card?.querySelector('.agenda-allday__disc')).not.toBeNull();
+        // …but NOT a button — there is nothing to open — and announced.
+        expect(card?.tagName.toLowerCase()).toBe('span');
+        expect(row?.querySelector('button')).toBeNull();
+        expect(
+          card?.querySelector('.agenda-allday__name')?.textContent?.trim(),
+        ).toBe('Иван');
+        // The test catalogue answers with keys: the count under the name,
+        // what to do as the meta (OR-2), then the whole sentence a reader
+        // hears.
+        const detail = card?.querySelector(
+          '[data-testid="staff-lane-health-detail"]',
+        );
+        expect(detail?.textContent?.trim()).toBe('staff.day.unreadable.other');
+        expect(
+          card?.querySelector('.agenda-allday__meta')?.textContent?.trim(),
+        ).toBe('staff.day.unreadableHint');
+        expect(
+          card?.querySelector('[data-visually-hidden]')?.textContent?.trim(),
+        ).toBe('staff.day.unreadable.other. staff.day.unreadableHint.');
+        // The count and the meta are the sentence's two halves, so a reader
+        // hears each once.
+        expect(detail?.getAttribute('aria-hidden')).toBe('true');
+        expect(
+          card
+            ?.querySelector('.agenda-allday__meta')
+            ?.getAttribute('aria-hidden'),
+        ).toBe('true');
+        // The visits it could read are still drawn.
+        expect(
+          host().querySelectorAll('[data-testid="staff-visit-row"]').length,
+        ).toBeGreaterThan(0);
+        // ABOVE the run, like every all-day fact.
+        const agenda = host().querySelector('.agenda');
+        expect(
+          !!(
+            row!.compareDocumentPosition(agenda!) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+        ).toBe(true);
+      } finally {
+        unreadableBy = new Map();
+      }
+    });
+
+    it('banners a chair whose read failed — no gap cards for it, and never «почива»', async () => {
+      const visits = observeBarberDay.getMockImplementation();
+      // Both chairs fail: Ivan is rostered (his gaps would look sellable),
+      // Niko is not (he would be listed as off).
+      observeBarberDay.mockImplementation(() =>
+        of(
+          PortResult.err(
+            RepositoryError.malformed('appointments/broken', 'seats[0]'),
+          ),
+        ),
+      );
+      try {
+        TestBed.resetTestingModule();
+        await build();
+        showFreeTime();
+        const rows = [
+          ...host().querySelectorAll('[data-testid="staff-lane-failed"]'),
+        ];
+        expect(
+          rows.map((row) =>
+            row.querySelector('.agenda-allday__name')?.textContent?.trim(),
+          ),
+        ).toEqual(['Иван', 'Нико']);
+        expect(
+          rows[0]?.querySelector('.agenda-allday__meta')?.textContent?.trim(),
+        ).toBe('staff.day.laneFailedBadge');
+        // A failed chair read no visits: no count under its name.
+        expect(
+          rows[0]?.querySelector('[data-testid="staff-lane-health-detail"]'),
+        ).toBeNull();
+        expect(rows[0]?.querySelector('[role="status"]')).not.toBeNull();
+        expect(
+          rows[0]?.querySelector('[data-visually-hidden]')?.textContent?.trim(),
+        ).toBe('staff.day.laneFailed');
+        // No free time is offered on a day that was never read…
+        expect(
+          host().querySelectorAll(
+            '[data-testid="staff-gap-row"], [data-testid="staff-idle-row"]',
+          ).length,
+        ).toBe(0);
+        // …and nobody is off: the failure is not a day off.
+        expect(
+          host().querySelector('[data-testid="staff-off-today"]'),
+        ).toBeNull();
+        const component = fixture.componentInstance as unknown as {
+          resting: () => readonly unknown[];
+        };
+        expect(component.resting()).toEqual([]);
+        // The empty-day sentence would be one more false claim.
+        expect(host().textContent).not.toContain('staff.day.noRoster');
+      } finally {
+        if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
+
+    it('sits above the calendar grid too, never as an off chip in its band', async () => {
+      unreadableBy = new Map([['ivan', 1]]);
+      const visits = observeBarberDay.getMockImplementation();
+      observeBarberDay.mockImplementation((barberId, dayKey) =>
+        barberId === 'niko'
+          ? of(
+              PortResult.err(
+                RepositoryError.readFailed('appointments', 'unavailable'),
+              ),
+            )
+          : (visits?.(barberId, dayKey) ?? of(PortResult.ok([]))),
+      );
+      try {
+        TestBed.resetTestingModule();
+        await build();
+        const component = fixture.componentInstance as unknown as {
+          store: { setView: (view: string) => void };
+          allDay: () => Record<string, readonly unknown[]>;
+        };
+        component.store.setView('day');
+        fixture.detectChanges();
+        const band = host().querySelector('[data-testid="staff-day-health"]');
+        const canvas = host().querySelector('[data-testid="staff-canvas"]');
+        expect(band).not.toBeNull();
+        expect(
+          !!(
+            band!.compareDocumentPosition(canvas!) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+        ).toBe(true);
+        expect(
+          band?.querySelector('[data-testid="staff-lane-unreadable"]'),
+        ).not.toBeNull();
+        expect(
+          band?.querySelector('[data-testid="staff-lane-failed"]'),
+        ).not.toBeNull();
+        // Niko's unrostered column says nothing is off: his read failed.
+        expect(component.allDay()['niko']).toBeUndefined();
+        component.store.setView('agenda');
+        fixture.detectChanges();
+      } finally {
+        unreadableBy = new Map();
+        if (visits) observeBarberDay.mockImplementation(visits);
+      }
+    });
   });
 
   it('gives every time group a real heading that names its own run', () => {
@@ -6267,10 +6482,11 @@ describe('StaffDashboard', () => {
     expect((component.createVm()?.startMinute ?? 0) % 5).toBe(0);
   });
 
-  it('opens a new visit late in the evening without throwing — its frame starts at 24:00 until it is moved', async () => {
-    // At 23:57 the next tick is the closing midnight (24:00 on the track):
-    // the seed measured its span on the shop's clock and threw on it, so the
-    // ＋ crashed the page from 23:31 on (the default half hour ran past 24:00).
+  it('opens a new visit late in the evening on the latest half hour that fits — 23:30–24:00, drawn (DEP-F1)', async () => {
+    // At 23:57 the next tick is the closing midnight, which the grid cannot
+    // draw, and from 23:31 the default half hour ran past 24:00 into a seed
+    // the server refuses. The walk-in now starts where it fits inside the
+    // shop day (`VisitDraftSystem.walkInStart`, OR-1): 23:30–24:00.
     TestBed.resetTestingModule();
     await build('2026-08-05T23:57:00.000+03:00');
     const component = fixture.componentInstance as unknown as {
@@ -6284,8 +6500,202 @@ describe('StaffDashboard', () => {
     expect(
       host().querySelector('[data-testid="staff-create-sheet"]'),
     ).not.toBeNull();
-    expect(component.createVm()?.startMinute).toBe(1440);
-    expect(component.createVm()?.endMinute).toBe(1470);
+    expect(component.createVm()?.startMinute).toBe(1410);
+    expect(component.createVm()?.endMinute).toBe(1440);
+  });
+
+  it('saves the late seed as drawn — no refusal at 23:40 (OR-1)', async () => {
+    TestBed.resetTestingModule();
+    await build('2026-08-05T23:40:00.000+03:00');
+    const requests: BookingCall[] = [];
+    gateway[Callables.CommitBooking] = async (request) => {
+      requests.push(request);
+      return PortResult.ok({ appointmentId: AppointmentId.of('apt-late') });
+    };
+    const component = fixture.componentInstance as unknown as {
+      openCreate: (createIntent: CreateIntent) => void;
+      createVm: () => VisitEditorVm | null;
+      createVisit: () => unknown;
+      createFromEditor: (commit: unknown) => Promise<void>;
+      notice: () => string | null;
+    };
+    component.openCreate(CreateIntent.Booking);
+    fixture.detectChanges();
+    const seed = component.createVm();
+    expect(seed?.startMinute).toBe(1410);
+    expect(seed?.endMinute).toBe(1440);
+    // «Запази» on the seed as it opened: one half-hour cut, nobody named.
+    await component.createFromEditor({
+      dayKey: seed?.dayKey,
+      startMinute: seed?.startMinute,
+      endMinute: seed?.endMinute,
+      note: null,
+      clients: [],
+      legs: [
+        {
+          seatId: 'draft-late',
+          serviceId: 'fade',
+          variantId: null,
+          minutes: 30,
+          priceLabel: null,
+          barberId: 'ivan',
+          clientId: 'primary',
+        },
+      ],
+    });
+    expect(component.notice()).toBeNull();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.localDate).toBe('2026-08-05');
+    expect(requests[0]?.seats.map((seat) => seat.startMinutes)).toEqual([1410]);
+    expect(component.createVisit()).toBeNull();
+  });
+
+  /*
+   * ── THE CREATE SHEET'S FRAME FOLLOWS ITS DRAFT (OR-3) ──────────────
+   * The create sheet bound neither the frame day nor the day change, so a
+   * new visit stepped onto tomorrow kept drawing — and judging against —
+   * the shown day's neighbours. It now reads the same probe the visit
+   * sheet does.
+   */
+  describe('the create sheet’s frame day (OR-3)', () => {
+    /** One booked visit on 6 August in `chair`, named for the frame. */
+    const tomorrowIn = (chair: string, name: string, phone: string) =>
+      visitOf(
+        `appointment-tomorrow-${chair}`,
+        [
+          seatAt({
+            chair,
+            startsAt: '2026-08-06T11:00:00',
+            occupant: accountOf(freshId('user'), SubjectRelationship.Self),
+          }),
+        ],
+        { contact: contactOf(name, phone) },
+      );
+    const IVAN_TOMORROW = tomorrowIn('ivan', 'Утрешен Клиент', '+359884444444');
+    const NIKO_TOMORROW = tomorrowIn('niko', 'Клиент на Нико', '+359885555555');
+
+    type CreatePage = {
+      openCreate: (createIntent: CreateIntent) => void;
+      createFrameDay: () => {
+        readonly neighbours: readonly { readonly name: string }[];
+        readonly nowMinute: number | null;
+      } | null;
+      createVm: () => VisitEditorVm | null;
+      onCreateChairChanged: (barberId: string) => void;
+      store: { goToDay: (day: string) => void };
+    };
+    const daysFor = () => observeBarberDay.mock.calls.map((call) => call[1]);
+
+    let visits: ReturnType<typeof observeBarberDay.getMockImplementation>;
+    beforeEach(async () => {
+      visits = observeBarberDay.getMockImplementation();
+      observeBarberDay.mockImplementation((barberId, dayKey) =>
+        dayKey === '2026-08-06'
+          ? of(
+              PortResult.ok(
+                barberId === 'ivan'
+                  ? [IVAN_TOMORROW]
+                  : barberId === 'niko'
+                    ? [NIKO_TOMORROW]
+                    : [],
+              ),
+            )
+          : (visits?.(barberId, dayKey) ?? of(PortResult.ok([]))),
+      );
+      TestBed.resetTestingModule();
+      await build();
+    });
+    afterEach(() => {
+      if (visits) observeBarberDay.mockImplementation(visits);
+    });
+
+    /** The ＋, then the create sheet's own › onto 6 August. */
+    async function openOnTomorrow(page: CreatePage): Promise<void> {
+      page.openCreate(CreateIntent.Booking);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // On the shown day, in its own chair, the VM already draws the frame.
+      expect(page.createFrameDay()).toBeNull();
+      observeBarberDay.mockClear();
+      (
+        host().querySelector(
+          '[data-testid="staff-create-sheet"] [data-testid="staff-visit-day-next"]',
+        ) as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('draws tomorrow’s neighbours once re-dated to tomorrow — and lets the day go on close', async () => {
+      const page = fixture.componentInstance as unknown as CreatePage;
+      await openOnTomorrow(page);
+      // The drafted day is live, and the frame is drawn from it.
+      expect(daysFor()).toContain('2026-08-06');
+      expect(
+        (page.createFrameDay()?.neighbours ?? []).map((n) => n.name),
+      ).toEqual(['Утрешен Клиент']);
+      // Not today: no now-line on tomorrow's frame.
+      expect(page.createFrameDay()?.nowMinute).toBeNull();
+      // The seed is untouched — the VM is still the shown day's.
+      expect(page.createVm()?.dayKey).toBe('2026-08-05');
+
+      // The real close: the shell's ✕, then «Отхвърли» (the day was stepped,
+      // so the draft is dirty and the ✕ asks first).
+      host()
+        .querySelector<HTMLElement>(
+          '[data-testid="staff-create-sheet"] .ui-sheet-header button[uitrailing]',
+        )
+        ?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-testid="staff-discard-confirm"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="staff-create-sheet"]'),
+      ).toBeNull();
+      expect(page.createFrameDay()).toBeNull();
+      // RELEASE IS PROVED BY THE NEXT SUBSCRIPTION (see the visit sheet's
+      // twin above): the probe's day is absent only if it was let go.
+      observeBarberDay.mockClear();
+      page.store.goToDay('2026-08-04');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(daysFor()).toContain('2026-08-04');
+      expect(daysFor()).not.toContain('2026-08-06');
+    });
+
+    it('draws the switched chair’s day — on the drafted day, and on the shown one', async () => {
+      const page = fixture.componentInstance as unknown as CreatePage;
+      await openOnTomorrow(page);
+      page.onCreateChairChanged('niko');
+      fixture.detectChanges();
+      // Niko's tomorrow, never Ivan's.
+      expect(
+        (page.createFrameDay()?.neighbours ?? []).map((n) => n.name),
+      ).toEqual(['Клиент на Нико']);
+      expect(page.createVm()?.chairId).toBe('niko');
+      // Back on the shown day the rebuilt VM draws Niko's chair itself.
+      (
+        host().querySelector(
+          '[data-testid="staff-create-sheet"] [data-testid="staff-visit-day-prev"]',
+        ) as HTMLElement
+      ).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(page.createFrameDay()).toBeNull();
+      expect((page.createVm()?.neighbours ?? []).map((n) => n.name)).toEqual(
+        [],
+      );
+    });
   });
 
   it('places a party as one booking: the account holder owns it, the rest ride as guests', async () => {
@@ -6342,6 +6752,7 @@ describe('StaffDashboard', () => {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Без запазен час',
         guestKey: null,
+        contact: null,
       },
       { requestedSubjectRole: RequestedSubjectRole.Self },
     ]);
@@ -6400,6 +6811,7 @@ describe('StaffDashboard', () => {
       requestedSubjectRole: RequestedSubjectRole.Guest,
       label,
       guestKey: null,
+      contact: null,
     });
     expect(requests[0]?.seats.map((seat) => seat.subject)).toEqual([
       guest('staff.visit.walkIn'),
@@ -6499,6 +6911,7 @@ describe('StaffDashboard', () => {
       ).toEqual({
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: `${WALK_IN} 2`,
+        contact: null,
       });
     } finally {
       if (visits) observeBarberDay.mockImplementation(visits);

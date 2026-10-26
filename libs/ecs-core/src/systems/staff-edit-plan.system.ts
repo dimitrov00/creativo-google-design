@@ -2,10 +2,13 @@ import {
   BookingCall,
   DiscountMethod,
   DiscountSource,
+  Email,
   Placement,
   RequestedSubjectRole,
   SeatLabel,
   type StaffEditDraft,
+  VisitEditWrite,
+  type VisitSides,
   VoucherCode,
 } from '@core/components';
 import {
@@ -29,9 +32,16 @@ import {
   PipelineErrorCode,
   StaffEditErrorCode,
 } from '@core/errors';
+import { AppointmentEditSystem } from './appointment-edit.system';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
 import { DiscountSystem } from './discount.system';
+import { PhoneSystem } from './phone.system';
 import { VisitDraftSystem, type WalkInLabel } from './visit-draft.system';
+import {
+  type LiveSides,
+  type SideWrites,
+  VisitSidesSystem,
+} from './visit-sides.system';
 
 /**
  * The facts of the ROW a staff visit sheet was opened on that the save plan
@@ -67,6 +77,103 @@ export type StaffEditRowFacts = {
   /** The vouchers paying the bill as stored, in cover order. */
   readonly vouchers: readonly { readonly code: VoucherCode }[];
 };
+
+/**
+ * The row facts a SAVE reads beside the batch's ({@link StaffEditRowFacts}):
+ * the ROOT appointment's status — whether the save has a way back
+ * (`AppointmentEditSystem.undoable`), read on the root, never on the
+ * chair's summary (DEP-3). The dashboard's row view model passes in AS IS
+ * (`DayRowVm.rootBookingStatus`).
+ */
+export type StaffSaveRowFacts = StaffEditRowFacts & {
+  readonly rootBookingStatus: BookingStatus;
+};
+
+/**
+ * ONE WRITE OF THE STAFF VISIT SHEET as {@link StaffEditPlanSystem.savePlan}
+ * reads it (OR-4) — a save, or a save's undo. Both are "make the stored
+ * visit say this", from a row, with the note and the tip beside the batch;
+ * the undo differs only in what it hands in (its target is the save's
+ * snapshot, its row the live one, its sides drawn from what the save
+ * wrote, and the side fields it carries are the save's).
+ */
+export type StaffSaveInput = {
+  /** What the write makes the stored visit say — the sheet's commit for a save, the snapshot for its undo. */
+  readonly commit: StaffEditDraft;
+  /** The row the write starts from (the LIVE row for an undo); `null` for a sheet with none. */
+  readonly row: StaffSaveRowFacts | null;
+  /**
+   * The note and the tip the write is DRAWN from (round 5): what the draft
+   * last read for a save (`commit.drawn`, or what is stored now when the
+   * commit does not say), what the save wrote for its undo.
+   */
+  readonly drawn: VisitSides;
+  /** The stored note and tip as this device hears them now (`LiveSides`). */
+  readonly live: LiveSides;
+  /**
+   * Every guest label the VISIT holds on any loaded day — a stranger
+   * joining this chair is numbered past the other chairs' walk-ins too
+   * (`commandsFor`'s `visitGuestLabels`).
+   */
+  readonly guestLabels: readonly string[];
+  readonly words: StaffEditWords;
+  /**
+   * The visit as the sheet was opened on it — the receipt's snapshot, the
+   * target of the save's undo; `null` with none, and for the undo itself.
+   */
+  readonly before: StaffEditDraft | null;
+  /**
+   * The side fields the write carries: `null` for a save — the ones its
+   * commit CHANGED from `drawn` — and, for an undo, the save's own, so the
+   * way back writes back exactly what the save wrote.
+   */
+  readonly writes: SideWrites | null;
+};
+
+/**
+ * What one write of the visit sheet costs, and what it says about its way
+ * back ({@link StaffEditPlanSystem.savePlan}, OR-4).
+ */
+export type StaffSavePlan = {
+  /**
+   * The write refused before anything goes out — `STALE`: a side field it
+   * carries moved under the draft; `BATCH_REFUSED`: a placement the call
+   * cannot carry, refused as the server refuses it — or `null`.
+   */
+  readonly refusal: VisitEditWrite.Stale | VisitEditWrite.BatchRefused | null;
+  /** The batch (`commandsFor`), in its load-bearing order; empty when it could not be built. */
+  readonly commands: readonly BookingCall.EditCommand[];
+  /** The side fields the write carries — what its undo writes back. */
+  readonly writes: SideWrites;
+  /** The seat the tip is stamped on (`tipSeat`); `null` when the write carries no tip, or has no seat for one. */
+  readonly tipSeat: SeatId | null;
+  /** The save has a way back through the same callable (`AppointmentEditSystem.undoable`, on the root's status). */
+  readonly reversible: boolean;
+  /**
+   * The save cannot change the row's shape — no tip, and the batch asks for
+   * nothing the snapshot's would not (`BookingCall.sameCommands`): a note
+   * alone, whose undo need not wait for the listener. `false` without a
+   * snapshot.
+   */
+  readonly shapeNeutral: boolean;
+};
+
+/**
+ * The side fields a SAVE carries: each one its commit changed from what it
+ * was drawn from (`VisitSidesSystem.writesOf`), the tip only on a row with
+ * a seat to stamp it on.
+ */
+function saveWritesOf(
+  commit: StaffEditDraft,
+  drawn: VisitSides,
+  row: StaffEditRowFacts | null,
+): SideWrites {
+  const touched = VisitSidesSystem.writesOf(commit, drawn);
+  return {
+    note: touched.note,
+    tip: touched.tip && row !== null && row.seatIds[0] !== undefined,
+  };
+}
 
 /**
  * The catalogue words a save names its unnamed people by — the plain
@@ -109,17 +216,45 @@ function refusedAt(field: string): Result.Err<PipelineError> {
 }
 
 /**
+ * The contact the desk has for a drafted person (OR-26) — the number and
+ * the e-mail as typed, each parsed as the callable edge parses it (the
+ * number as E.164 or in an international form, `PhoneSystem.parse` with no
+ * default country; the e-mail through `Email.parse`); a part that does not
+ * parse is not sent (the edge would drop it), and a person with neither
+ * carries no contact. `null` for nobody the draft names. A draft read back
+ * from an older sheet may lack the e-mail: absent is none. An ACCOUNT
+ * holder who rides as a guest (a second account on a create) carries none
+ * either: their record is the account's, and a contact would mint them a
+ * second, walk-in record.
+ */
+function contactOf(
+  client: StaffEditDraft.Client | null,
+): BookingCall.GuestContact | null {
+  if (client === null) return null;
+  if (DraftPersonKey.accountOf(client.id) !== null) return null;
+  const phone = client.phone ? PhoneSystem.parse(client.phone, null) : null;
+  return BookingCall.guestContact(
+    phone !== null && phone.ok ? phone.value.e164 : null,
+    client.email ? Email.parse(client.email) : null,
+  );
+}
+
+/**
  * A guest an added seat is for — by label, the guest's only identity: trimmed
- * and bounded as the server reads it, refused as it refuses a bad one.
+ * and bounded as the server reads it, refused as it refuses a bad one — and
+ * the contact the desk took for them (OR-26), so the server keeps the
+ * walk-in's record.
  */
 function guestSubject(
   label: string,
+  contact: BookingCall.GuestContact | null,
 ): Result<BookingCall.AddedSubject, PipelineError> {
   const parsed = SeatLabel.parse(label);
   return parsed.ok
     ? Result.ok({
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: parsed.value,
+        contact,
       })
     : refusedAt('addedSubject');
 }
@@ -205,9 +340,12 @@ function toDiscountRequest(
  * `createFromEditor`'s request): what the server is asked for to make the
  * stored visit say what the sheet's draft says. The save's arithmetic and
  * its undo's, since both are "make the stored visit say this" — so the
- * command ORDER and every object's KEY order are load-bearing (the undo
- * compares two plans as `JSON.stringify` text). Decisions only: the awaits,
- * the pending maps and the receipt stay the dashboard's.
+ * command ORDER is load-bearing (the undo compares two plans,
+ * `BookingCall.sameCommands`; key order no longer counts, OR-4). Since
+ * OR-4 the whole write's plan is here too ({@link savePlan}: the stale
+ * guard, the side fields, the tip's seat, the way back). Decisions only:
+ * the awaits are `saveVisitEdit`'s, the pending maps the store's and the
+ * receipt the dashboard's.
  */
 export const StaffEditPlanSystem = {
   /**
@@ -223,7 +361,8 @@ export const StaffEditPlanSystem = {
    *    placed serially where the ladder draws it, for the person it names
    *    (the chair's own person keeps the chair's subject; anyone else rides
    *    as a guest by label, a stranger numbered past every label the VISIT
-   *    holds — `visitGuestLabels`, the other chairs' too);
+   *    holds — `visitGuestLabels`, the other chairs' too; a drafted person
+   *    with the number and the e-mail the desk typed for them, OR-26);
    * 4. with more than one leg, each kept leg PINNED to its ladder slot
    *    (`MOVE` of that seat alone), so the chair-wide move cannot swap
    *    them;
@@ -318,14 +457,21 @@ export const StaffEditPlanSystem = {
     ): Result<BookingCall.AddedSubject, PipelineError> => {
       if (clientId === chairPerson) {
         return row?.selfSeat === false
-          ? guestSubject(draft.clients[0]?.label ?? row.clientLabel)
+          ? guestSubject(
+              draft.clients[0]?.label ?? row.clientLabel,
+              contactOf(draft.clients[0] ?? null),
+            )
           : Result.ok({ requestedSubjectRole: RequestedSubjectRole.Self });
       }
+      // A drafted person carries what the desk typed for them; a stranger
+      // the draft never named carries nothing.
+      const drafted =
+        draft.clients.find((client) => client.id === clientId) ?? null;
       const label: string =
-        draft.clients.find((client) => client.id === clientId)?.label ??
+        drafted?.label ??
         strangers.find((stranger) => stranger.personId === clientId)?.label ??
         words.walkIn;
-      return guestSubject(label);
+      return guestSubject(label, contactOf(drafted));
     };
     // SERVICES ADDED — placed serially where the ladder draws them.
     let offset = 0;
@@ -467,6 +613,76 @@ export const StaffEditPlanSystem = {
   },
 
   /**
+   * THE WHOLE WRITE'S PLAN (OR-4; moved from the staff dashboard's
+   * `saveFromEditor` and `writeFromEditor`) — for a save and for its undo
+   * alike, what `saveVisitEdit` sends and in which order it may:
+   *
+   * 1. the side fields the write carries ({@link StaffSaveInput.writes});
+   * 2. STALE when one of them moved under the draft — its stored value is
+   *    neither what it was drawn from nor what the write would write
+   *    (`VisitSidesSystem.movedUnder`; a field this device does not hear is
+   *    not judged): the note and the tip do not move the revision, so this
+   *    device's view is the only guard they have, and nothing goes out;
+   * 3. the batch ({@link commandsFor}) — BATCH_REFUSED, with the refusal,
+   *    when a placement cannot be carried (stale is judged first);
+   * 4. the seat the tip is stamped on ({@link tipSeat}), only when the tip
+   *    is written;
+   * 5. the way back: whether there is one (`AppointmentEditSystem.undoable`
+   *    on the ROOT's status — a seat added to a finished visit is worked
+   *    the moment it is written), and whether the save could change the
+   *    row's shape at all (its batch against the snapshot's, structurally:
+   *    `BookingCall.sameCommands`).
+   *
+   * A new plan; the inputs are untouched.
+   */
+  savePlan(input: StaffSaveInput): StaffSavePlan {
+    const { commit, row, before } = input;
+    const writes = input.writes ?? saveWritesOf(commit, input.drawn, row);
+    const built = StaffEditPlanSystem.commandsFor(
+      commit,
+      row,
+      input.guestLabels,
+      input.words,
+    );
+    const commands = built.ok ? built.value : [];
+    const undone =
+      before === null
+        ? null
+        : StaffEditPlanSystem.commandsFor(
+            before,
+            row,
+            input.guestLabels,
+            input.words,
+          );
+    const refusal = VisitSidesSystem.movedUnder(
+      writes,
+      input.drawn,
+      commit,
+      input.live,
+    )
+      ? VisitEditWrite.stale()
+      : built.ok
+        ? null
+        : VisitEditWrite.batchRefused(built.error);
+    return {
+      refusal,
+      commands,
+      writes,
+      tipSeat: writes.tip ? StaffEditPlanSystem.tipSeat(row, commit) : null,
+      reversible: AppointmentEditSystem.undoable(
+        row?.rootBookingStatus ?? null,
+        commands,
+      ),
+      shapeNeutral:
+        !writes.tip &&
+        built.ok &&
+        undone !== null &&
+        undone.ok &&
+        BookingCall.sameCommands(commands, undone.value),
+    };
+  },
+
+  /**
    * THE CREATE SHEET'S BOOKING REQUEST — a visit placed by staff, in the
    * party grammar: every leg names its person; the appointment's owner is
    * the FIRST client with an account (`DraftPersonKey.accountOf`, seated
@@ -477,9 +693,13 @@ export const StaffEditPlanSystem = {
    * `null` asks for nothing: a draft with no leg, or no shop (neither the
    * draft's pick nor the chair's home). A seat past the shop's midnight is
    * refused as the server refuses such a start (`BOOKING_INVALID_INPUT`,
-   * `startMinutes`). The contact is the owner's — or the first named
-   * person's — when it carries a number; the rebooking edge is sent only
-   * while the owner is still the person the «Запиши пак» was for.
+   * `startMinutes`). Every guest carries the contact the desk typed for
+   * them (OR-26 — the number and the e-mail, parsed as the edge parses
+   * them), so the server keeps each walk-in's record; a stranger the draft
+   * never named carries none. The booking's contact is the owner's — or the
+   * first named person's — when it carries a number, with their e-mail
+   * beside it; the rebooking edge is sent only while the owner is still the
+   * person the «Запиши пак» was for.
    */
   bookingRequest(
     draft: StaffEditDraft,
@@ -532,7 +752,13 @@ export const StaffEditPlanSystem = {
           start.value,
           owner !== null && leg.clientId === owner.id
             ? BookingCall.selfSubject()
-            : BookingCall.guestSubject(labelOf(leg.clientId), null),
+            : BookingCall.staffGuestSubject(
+                labelOf(leg.clientId),
+                contactOf(
+                  draft.clients.find((client) => client.id === leg.clientId) ??
+                    null,
+                ),
+              ),
         ),
       );
       offset += leg.minutes;
@@ -553,7 +779,11 @@ export const StaffEditPlanSystem = {
         ? {
             name: contactPerson.label,
             phone: contactPerson.phone,
-            email: null,
+            // Parsed as the guest's is: a typed e-mail that is none is not
+            // sent, so it never refuses the whole booking.
+            email: contactPerson.email
+              ? Email.parse(contactPerson.email)
+              : null,
             note: null,
           }
         : null,

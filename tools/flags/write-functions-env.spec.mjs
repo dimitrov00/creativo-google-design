@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  EMULATOR_SECRETS,
   chooseEnvironment,
   isDemoProject,
   manifestErrors,
@@ -203,6 +204,31 @@ describe('writeFunctionsEnv', () => {
       outDir,
     });
     expect(read('.env.demo-creativo-test')).toEqual(read('.env.local'));
+  });
+
+  it('gives a demo project the emulator’s TEST secrets — the walk-in key among them (OR-26)', () => {
+    const result = writeFunctionsEnv({
+      manifest: manifest(),
+      projectId: 'demo-creativo-test',
+      outDir,
+    });
+    expect(readdirSync(outDir).sort()).toEqual([
+      '.env.demo-creativo-test',
+      '.env.local',
+      '.secret.local',
+    ]);
+    expect(result.files).toContain(join(outDir, '.secret.local'));
+    expect(read('.secret.local')).toEqual(EMULATOR_SECRETS);
+    expect(read('.secret.local')['WALKIN_ID_KEY']).toMatch(/\S/);
+  });
+
+  it('never writes the TEST secrets beside a real project’s build', () => {
+    writeFunctionsEnv({
+      manifest: manifest(),
+      projectId: 'creativo-prod',
+      outDir,
+    });
+    expect(readdirSync(outDir)).not.toContain('.secret.local');
   });
 
   it('writes only .env.local when no project is known', () => {

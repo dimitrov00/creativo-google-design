@@ -6,7 +6,7 @@ import { UserId } from '@core/primitives';
 import { AccountsErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import { type UpdateProfileCommand, updateProfile } from '@core/pipelines';
-import { SearchFieldsSystem } from '@core/systems';
+import { SearchFieldsSystem, StoredDocumentSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   pinnedNowUtcMs,
@@ -85,7 +85,11 @@ describe('updateProfile (emulator)', () => {
   function run(cmd: UpdateProfileCommand) {
     const telemetry = recordingTelemetry();
     return updateProfile({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       hash: sha256Hex,
       ...telemetry,

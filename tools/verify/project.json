@@ -3,7 +3,8 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "tools/verify",
   "projectType": "library",
-  "tags": ["scope:tooling", "type:util"],
+  "tags": ["scope:tooling", "type:tooling"],
+  "// tags": "type:tooling since OR-35: the production preflight (tools/verify/preflight) runs the ecs-core domain through tools/seed/load-domain.mjs, so this project reads the typed core the way seed-tools does",
   "// test": "The runners here (the initial-bundle guard, the P0 proofs) keep their pure parts in node:test specs, so `test` is node's own runner rather than vitest; the runners themselves need a build or the emulators and run as `pnpm run verify:bundle` and `pnpm run verify:p0`",
   "// layering": "Law 8 (CLAUDE.md): tier hierarchy, import cycles, tier barrels and the root-barrel ban in libs/ecs-core, deep relative imports across libs/apps/tools. It reads the whole workspace in about a second, so it is never cached: a cached pass could hide a new violation in a project it does not depend on",
   "targets": {
@@ -18,6 +19,7 @@
     "test": {
       "executor": "nx:run-commands",
       "cache": true,
+      "dependsOn": [],
       "inputs": ["default"],
       "options": {
         "command": "node --test \"tools/verify/**/*.spec.mjs\"",

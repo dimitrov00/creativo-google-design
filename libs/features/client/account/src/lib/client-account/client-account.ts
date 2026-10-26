@@ -6,13 +6,16 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   APPOINTMENT_READ_PORTS,
   CLOCK_PORTS,
-  type ShopZoneAnswer,
   ShopZoneService,
+  distinctLocationIds,
+  nowOfZones,
+  sameLocationIds,
 } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
 import {
   Principal,
   ProfileCompletionKey,
+  type ShopNow,
   VisitPerspective,
 } from '@core/components';
 import {
@@ -21,7 +24,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { AccountsErrorCode } from '@core/errors';
-import { VisitListSystem, ZonedTimeSystem } from '@core/systems';
+import { VisitListSystem } from '@core/systems';
 import {
   LoadSlice,
   LoadState,
@@ -135,7 +138,9 @@ const NO_CATALOGUE: VisitLookup = {
  *  - Three live tiles: book a visit (`/book`), my appointments
  *    (`/account/appointments`) and my profile (`/account/profile`).
  *  - The next visit, from the live `APPOINTMENT_READ_PORTS.observeUpcoming`
- *    stream, as
+ *    stream — the soonest live visit still to come, each judged on its
+ *    OWN shop's wall clock (OR-8: one that has begun there is not «next»
+ *    any more, DEP-F7) — as
  *    the SHARED visit card (`lib-visit-card`, client-card revision 3 §3.10,
  *    R2-I — the card the staff glance draws too): «Предстоящ час» as the
  *    card's own heading, the day and the hour in the SHOP's zone, the
@@ -255,54 +260,96 @@ export class ClientAccount {
     { initialValue: undefined },
   );
 
+  /**
+   * The shops of the account's live visits, each once, in code-unit order —
+   * the zone read's ONE input (`undefined` while there is no live visit to
+   * judge). Equal by value: a snapshot that books, moves or drops a visit at
+   * a shop already listed leaves it as it was, so each shop's zone is read
+   * ONCE and a drawn card is replaced straight by the next one, never
+   * through the skeleton.
+   */
+  private readonly liveLocationIds = computed<
+    readonly LocationId[] | undefined
+  >(
+    () => {
+      const result = this.upcomingResult();
+      if (!result?.ok || result.value.length === 0) return undefined;
+      return distinctLocationIds(result.value);
+    },
+    { equal: sameLocationIds },
+  );
+
+  /**
+   * Each live visit's shop zone, by shop (Law 7.2 — the zone belongs to the
+   * location, never the device or a default shop): "next" is judged on each
+   * visit's OWN shop's wall clock (OR-8), through the session's memo
+   * (`ShopZoneService.zonesOf`), so a shop already read costs no read.
+   */
+  private readonly cardZones = resource({
+    params: () => this.liveLocationIds(),
+    loader: ({ params }) => this.shopZones.zonesOf(params),
+  });
+
+  /** The live shops' zone answers, by shop — `null` while the reads are on their way. */
+  private readonly cardZoneAnswers = computed(() =>
+    this.cardZones.hasValue() ? (this.cardZones.value() ?? null) : null,
+  );
+
+  /**
+   * A live shop's zone could not be read — the zone read threw, or a shop
+   * answered no zone (none stored, or its read failed). Read only when no
+   * visit is next: a visit at a shop whose zone did answer is drawn all
+   * the same (OR-8).
+   */
+  private readonly cardZoneFailed = computed(() => {
+    if (this.cardZones.error() !== undefined) return true;
+    const answers = this.cardZoneAnswers();
+    if (answers === null) return false;
+    for (const answer of answers.values()) if (!answer.ok) return true;
+    return false;
+  });
+
+  /**
+   * "Now" on each live shop's OWN wall clock as the page opened
+   * (`nowOfZones`, the menu badge's and `/account/appointments`' one fold)
+   * — `null` until the live shops' zones have answered; a shop whose zone
+   * could not be read has no clock (`null`). "Now" is read once per shop,
+   * never per visit.
+   */
+  private readonly nowOf = computed<
+    ((locationId: LocationId) => ShopNow | null) | null
+  >(() => {
+    const answers = this.cardZoneAnswers();
+    return answers === null ? null : nowOfZones(answers, this.openedAtUtcMs);
+  });
+
+  /**
+   * The next visit: the soonest live one that has not begun on its OWN
+   * shop's wall clock (`VisitListSystem.nextUpcoming`, OR-8). It waits for
+   * the live shops' zones — a visit is not judged before its shop's clock
+   * is known. A visit whose shop zone is unknown is skipped, as the menu
+   * badge skips it, so the soonest visit at a shop that answered is drawn
+   * even when another shop's zone failed. Nothing next: the failed state
+   * when a zone could not be read (a skipped visit makes "nothing to
+   * come" untrue) or the read threw, else — every live visit begun — the
+   * empty state.
+   */
   protected readonly upcoming = computed<LoadSlice.WithEmpty<Appointment>>(
     () => {
       const result = this.upcomingResult();
       if (result === undefined) return LoadSlice.loading;
       if (result === null) return LoadSlice.empty;
       if (!result.ok) return LoadSlice.failed;
-
-      // The soonest, on the shop's wall clock (`localDate` + `startMinutes`):
-      // `VisitListSystem.soonestFirstByStart`'s stable day-then-minute order.
-      const next = VisitListSystem.soonestFirstByStart(result.value)[0];
-      return next ? LoadSlice.ready(next) : LoadSlice.empty;
+      if (result.value.length === 0) return LoadSlice.empty;
+      // The read threw: no zone is known, and none will answer.
+      if (this.cardZones.error() !== undefined) return LoadSlice.failed;
+      const nowOf = this.nowOf();
+      if (nowOf === null) return LoadSlice.loading;
+      const next = VisitListSystem.nextUpcoming(result.value, nowOf);
+      if (next !== null) return LoadSlice.ready(next);
+      return this.cardZoneFailed() ? LoadSlice.failed : LoadSlice.empty;
     },
   );
-
-  /**
-   * The shown visit's shop, or `undefined` while no visit is shown — the
-   * zone read's ONE input. A branded string, equal by value: a snapshot of
-   * the same visit, or a sooner visit at the same shop, leaves it as it
-   * was, so the zone is read ONCE per shop and a drawn card is replaced
-   * straight by the next one, never through the skeleton.
-   */
-  private readonly shownLocationId = computed<LocationId | undefined>(
-    () => LoadSlice.dataOf(this.upcoming())?.locationId,
-  );
-
-  /**
-   * The zone the card reads "now" in: the shown visit's OWN shop's (Law
-   * 7.2 — the zone belongs to the location, never the device or a default
-   * shop), read once per shop and fed back from the read as a signal.
-   */
-  private readonly cardZone = resource({
-    params: () => this.shownLocationId(),
-    loader: ({ params }) => this.shopZones.zoneOf(params),
-  });
-
-  /** The card's zone answer — `null` while the read is on its way. */
-  private readonly cardZoneAnswer = computed<ShopZoneAnswer | null>(() =>
-    this.cardZone.hasValue() ? (this.cardZone.value() ?? null) : null,
-  );
-
-  /** The card's zone could not be read — no zone stored, or the read failed. */
-  private readonly cardZoneFailed = computed(() => {
-    const answer = this.cardZoneAnswer();
-    // A read that threw (never an answer) fails the card too.
-    return (
-      (answer !== null && !answer.ok) || this.cardZone.error() !== undefined
-    );
-  });
 
   /**
    * The language the catalogue has LOADED, once it has (the appointments
@@ -339,29 +386,25 @@ export class ClientAccount {
    * The next visit as the shared card draws it: «Предстоящ час» as the
    * heading, no services and no face (§3.10 — `/account`'s form, until Q7),
    * the day and the hour on the visit's own calendar, the status as the
-   * capsule. Null until there is a visit, the words it is told in AND its
-   * shop's zone — "now" is read on that shop's wall clock (Law 7.3).
+   * capsule. Null until there is a visit and the words it is told in; its
+   * zone and "now" are the chosen visit's OWN shop's (Law 7.3).
    */
   protected readonly upcomingCard = computed<AppointmentCardVm | null>(() => {
     const state = this.upcoming();
     const words = this.cardWords();
-    const zone = this.cardZoneAnswer();
-    if (
-      state.loadState !== LoadState.Ready ||
-      words === null ||
-      zone === null ||
-      !zone.ok
-    ) {
-      return null;
-    }
-    const timeZone = zone.value;
+    if (state.loadState !== LoadState.Ready || words === null) return null;
+    const { locationId } = state.data;
+    const answer = this.cardZoneAnswers()?.get(locationId);
+    const now = this.nowOf()?.(locationId) ?? null;
+    if (answer === undefined || !answer.ok || now === null) return null;
+    const timeZone = answer.value;
     return visitCardOf(
       state.data,
       {
         visitCardSlot: VisitCardSlot.Next,
         perspective: VisitPerspective.Client,
         subjectUserId: null,
-        now: ZonedTimeSystem.shopNow(this.openedAtUtcMs, timeZone),
+        now,
         timeZone,
         locale: words.lang,
         words: words.words,
@@ -380,14 +423,14 @@ export class ClientAccount {
    * Where the next visit stands, on the HOST (`data-upcoming`) — the card
    * is a button and wears no state of its own — and on the waiting card
    * (`data-state`): READY only once the card can be drawn; a visit whose
-   * words or shop zone have not loaded is still on its way, never "no
-   * upcoming appointments"; a zone that could not be read is the card's
-   * failed state, never loading forever.
+   * words or shop zones have not loaded is still on its way, never "no
+   * upcoming appointments"; a zone that could not be read, with no visit
+   * next at a shop that answered, is the card's failed state
+   * ({@link upcoming}), never loading forever.
    */
   protected readonly upcomingState = computed<LoadState>(() => {
     const state = this.upcoming().loadState;
     if (state !== LoadState.Ready) return state;
-    if (this.cardZoneFailed()) return LoadState.Failed;
     return this.upcomingCard() === null ? LoadState.Loading : LoadState.Ready;
   });
 

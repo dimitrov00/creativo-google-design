@@ -67,7 +67,9 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: CLIENT_DETAILS_SPECS,
+      // The CSP smoke runs on its own config against the Hosting emulator
+      // (`playwright.csp.config.mts`, `pnpm run verify:csp` — OR-31).
+      testIgnore: [...CLIENT_DETAILS_SPECS, '**/csp/**'],
       use: { ...devices['Desktop Chrome'] },
     },
     {

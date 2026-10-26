@@ -32,7 +32,6 @@ import {
   StreakSystem,
   TierSystem,
   type ValidLoyaltyCatalog,
-  type VoucherIdOrder,
   VoucherSystem,
   WalletSystem,
 } from '@core/systems';
@@ -299,22 +298,16 @@ export function passVm(input: WalletInput): PassVm {
 // ── WC · What is held ───────────────────────────────────────────────────
 
 /**
- * Two vouchers that end on one day keep the wallet's locale collation of
- * their ids — a locale's order, which no system can hold
- * (`VoucherSystem.held` takes it as its tie-break).
- */
-const BY_ID_COLLATION: VoucherIdOrder = (a, b) => a.localeCompare(b);
-
-/**
  * The vouchers held (`VoucherSystem.held`): the spendable ones — issued,
  * not voided, not past their day, with a balance — the soonest to run out
- * first.
+ * first, two that end on one day by id in UTF-16 code units (OR-18,
+ * DEP-F13: no device locale decides an order).
  */
 function heldOf(
   vouchers: readonly GiftVoucher[],
   today: LocalDate,
 ): readonly GiftVoucher[] {
-  return VoucherSystem.held(vouchers, today, BY_ID_COLLATION);
+  return VoucherSystem.held(vouchers, today);
 }
 
 function voucherVm(

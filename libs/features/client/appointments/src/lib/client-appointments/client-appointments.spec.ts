@@ -202,6 +202,8 @@ function appointment(
  */
 const COPY: Translation = {
   booking: { reach: { call: 'REACH:call', contact: 'REACH:contact' } },
+  // The tile's month word — the one the far fixture visit's tile names.
+  visits: { tile: { month: { '6': 'юни' } } },
   appointments: {
     cancel: { windowClosed: 'COPY:window-closed-page {{reach}}' },
     visit: { shopMoves: 'COPY:shop-moves {{reach}}' },
@@ -568,7 +570,7 @@ describe('ClientAppointments', () => {
       expect(pills[0]?.hasAttribute('aria-pressed')).toBe(false);
     });
 
-    it('draws a visit as the shared row: the date tile, the service, «barber · time», the barber’s face', async () => {
+    it('draws a visit as the shared row: the date tile, the service, «barber · weekday, time», the barber’s face', async () => {
       const fixture = await configure(
         [appointment('appt_1', FAR)],
         undefined,
@@ -585,16 +587,18 @@ describe('ClientAppointments', () => {
       expect(row?.closest('lib-visit-row')).not.toBeNull();
       expect(row?.getAttribute('aria-label')).toBeTruthy();
 
-      // WHEN, as the DS's stamp: the weekday over the day (the section says
-      // the month), in the accent while the visit is still ahead.
+      // WHEN, as the DS's stamp, in the accent while the visit is still
+      // ahead: «Предстоящи» names no period, so the tile names the month —
+      // never the year, which the square cannot hold (OR-56 b, DEP-F39).
       const tile = row?.querySelector('ui-date-tile');
       expect(tile?.getAttribute('data-tone')).toBe('upcoming');
-      expect(text(tile?.querySelector('.ui-date-tile__caption'))).toBe('сб');
+      expect(text(tile?.querySelector('.ui-date-tile__caption'))).toBe('юни');
       expect(text(tile?.querySelector('.ui-date-tile__day'))).toBe('1');
-      // WHAT, then WITH WHOM and at what time — in the shop's zone.
+      // WHAT, then WITH WHOM and when in the week — in the shop's zone: the
+      // weekday the tile gave up rides the line, joined to the time.
       expect(text(row?.querySelector('.staff-event-head__title'))).toBe('Фейд');
       expect(text(row?.querySelector('.staff-event-head__line'))).toBe(
-        'Иван · 10:00',
+        'Иван · сб, 10:00',
       );
       // The barber's face sits on the trailing edge.
       expect(
@@ -685,10 +689,37 @@ describe('ClientAppointments', () => {
           ?.getAttribute('data-tone'),
       ).toBe('past');
       expect(
-        [...host.querySelectorAll('[data-testid="appointments-pill"]')].map(
-          (pill) => pill.getAttribute('data-section'),
+        [...host.querySelectorAll('lib-visit-list h3[data-section-key]')].map(
+          (heading) => heading.getAttribute('data-section-key'),
         ),
       ).toEqual(['2020-05']);
+      // One section: no rail repeats its heading (OR-56 c).
+      expect(
+        host.querySelectorAll('[data-testid="appointments-pill"]').length,
+      ).toBe(0);
+    });
+
+    it('draws no rail over one section — a lone pill would repeat the heading under it (OR-56 c)', async () => {
+      const single = await configure([appointment('appt_1', FAR)]);
+      const host = await render(single);
+
+      // The one section is there, under its heading…
+      expect(
+        [...host.querySelectorAll('lib-visit-list h3[data-section-key]')].map(
+          (heading) => heading.getAttribute('data-section-key'),
+        ),
+      ).toEqual(['upcoming']);
+      expect(rowById(host, 'appt_1')).not.toBeNull();
+      // …and no rail over it: not a pill, not the band.
+      expect(host.querySelector('lib-visit-pills')).toBeNull();
+      expect(
+        host.querySelector('[data-testid="appointments-pills"]'),
+      ).toBeNull();
+      // The funnel still stands in the bar. (Two sections draw the rail:
+      // the browser case above, «upcoming» and «2020-07».)
+      expect(
+        host.querySelector('[data-testid="appointments-filter"]'),
+      ).not.toBeNull();
     });
 
     it('jumps to a month’s heading when its pill is tapped — the browser’s jump, through the page’s ids', async () => {
@@ -773,6 +804,11 @@ describe('ClientAppointments', () => {
       expect(
         host.querySelectorAll('[data-testid="appointments-pill"]').length,
       ).toBe(0);
+      // The rail keeps its placeholders meanwhile: how many sections there
+      // are is not known yet (OR-56 c decides once the list is drawn).
+      expect(
+        host.querySelector('[data-testid="appointments-pills-skeleton"]'),
+      ).not.toBeNull();
     });
 
     it('stays loading, never empty, until the catalogue words load', async () => {
@@ -1230,12 +1266,16 @@ describe('ClientAppointments', () => {
     const rows = host.querySelectorAll('[data-testid="appointment-row"]');
     expect(rows.length).toBe(1);
     expect(rows[0]?.getAttribute('data-status')).toBe('CANCELLED');
-    // The pills follow the narrowed list — June is all that is left.
+    // The sections follow the narrowed list — June is all that is left, and
+    // one section draws no rail (OR-56 c).
     expect(
-      [...host.querySelectorAll('[data-testid="appointments-pill"]')].map(
-        (pill) => pill.getAttribute('data-section'),
+      [...host.querySelectorAll('lib-visit-list h3[data-section-key]')].map(
+        (heading) => heading.getAttribute('data-section-key'),
       ),
     ).toEqual(['2020-06']);
+    expect(
+      host.querySelectorAll('[data-testid="appointments-pill"]').length,
+    ).toBe(0);
   });
 
   it('offers the filter back when nothing matches it', async () => {

@@ -155,6 +155,14 @@ service cloud.firestore {
      * (`localDate` `YYYY-MM-DD`, `startMinutes` a `MinuteOfDay` in
      * `[0, 1440)`) and the instant computed once at ingestion
      * (`utcEpochMs`, an integer). No zone field (Law 7.2).
+     *
+     * The shop it names must exist (OR-37/OR-38): `null` is the default
+     * shop, any other `locationId` a `locations/{id}` document — the
+     * refusal `ProgramsSystem.zoneOf` answers as
+     * `ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN`, repeated here so a write
+     * that skipped the system cannot store an event at no shop. The
+     * `exists()` runs last, after `isLocationIdOrNull` proved the id a
+     * slash-free string, and costs one document read per save.
      */
     function validEvent(d) {
       return d.keys().hasOnly(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'applyUrl', 'sortOrder'])
@@ -169,7 +177,8 @@ service cloud.firestore {
         && d.utcEpochMs is int
         && isLocationIdOrNull(d.locationId)
         && isLinkOrNull(d.applyUrl)
-        && isSortOrder(d.sortOrder);
+        && isSortOrder(d.sortOrder)
+        && (d.locationId == null || exists(/databases/$(database)/documents/locations/$(d.locationId)));
     }
 
     // Default deny — every collection below must opt in explicitly.
@@ -216,13 +225,21 @@ service cloud.firestore {
         // own notifications could forge a "your slot is free" message.
         allow read: if isOwner(uid);
         // The ONE thing a recipient may change is their own read stamp,
-        // `readAtUtcMs` (the flat root field `inboxPorts.markNotificationRead`
-        // stamps).
+        // `readAtUtcMs` (the flat root field `inboxPorts.markNotificationsRead`
+        // stamps, one batch per visit to `/account/notifications`, OR-19).
         // Everything else — the topic, what it is about, when it was sent —
         // is the sender's, and a client that could rewrite the payload
         // could turn its own inbox into a phishing surface.
+        // The stamp is ONE-SHOT and never predates its message (DEP-F14): a
+        // notification already read stays read, the stamp is an integer
+        // epoch-ms instant, and it is no earlier than `sentAtUtcMs` — the
+        // clamp `NotificationSystem.receiptAt` applies when it builds the
+        // receipt, repeated here for a write that skipped it.
         allow update: if isOwner(uid)
-          && affectedKeys().hasOnly(['readAtUtcMs']);
+          && affectedKeys().hasOnly(['readAtUtcMs'])
+          && resource.data.readAtUtcMs == null
+          && request.resource.data.readAtUtcMs is int
+          && request.resource.data.readAtUtcMs >= resource.data.sentAtUtcMs;
         allow create, delete: if false;
       }
     }
@@ -339,19 +356,26 @@ service cloud.firestore {
 
     // ── the shop's client records (D29) ──────────────────────────────────
     // `customers/{customerId}` — whom the shop serves, bills and rewards,
-    // with or without an account (`Customer`). The book reads and keeps
-    // them; the account a record names (`userId`) reads its own and nothing
+    // with or without an account (`Customer`). The book reads them; the
+    // account a record names (`userId`) reads its own and nothing
     // else (`customerPorts.loadCustomerForUser`) — a client may never see
-    // the desk's copy of another person, and no anonymous visitor any. The
-    // booking transaction (`FIRST_BOOKING`) and `completeRegistration`
-    // (`REGISTRATION`) create an account holder's record with the Admin
-    // SDK; the desk's `create`/`update` is the walk-in path's
-    // (flatten-spec §5.5). Records are never deleted from a client: a
-    // visit, a grant or a voucher may name one.
+    // the desk's copy of another person, and no anonymous visitor any.
+    //
+    // NO CLIENT WRITES A RECORD — the book included (OR-25, DEP-F19).
+    // Records are written only by the booking, edit and registration
+    // callables, with the Admin SDK (which bypasses these rules): the
+    // booking transaction (`FIRST_BOOKING`), `completeRegistration`
+    // (`REGISTRATION`), and the book and edit pipelines' walk-in creates
+    // (`STAFF_WALK_IN`, OR-26). The desk's `create`/`update` grant that
+    // stood here checked no field and had no web writer
+    // (`customerPorts` only reads): any staff session could set `userId`
+    // to another account's uid and hand the record — name, phone, e-mail —
+    // to that account through the read rule above. Records are never
+    // deleted from a client: a visit, a grant or a voucher may name one.
     match /customers/{customerId} {
       allow read: if worksTheBook()
         || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create, update: if worksTheBook();
+      allow create, update: if false;
       allow delete: if false;
     }
 

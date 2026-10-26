@@ -1720,41 +1720,74 @@ Every signature identical but the DEP rows and the now-label minute.
 
 ## 8. Open questions (owner) — with the default this plan applies
 
+> **All fourteen CLOSED 2026-10-26** by the owner rulings
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`); the ruling
+> follows each question, the default above it kept as the plan wrote it.
+> Two KEEP-PARKED rulings of this plan are reversed with them: the seven
+> lifecycle write verbs are deleted (OR-20, DEP-F15, reversing §0 D-3) and
+> so is `IntervalSetSystem.clip` (OR-21, DEP-F16); `VoucherSystem.redeem`
+> goes with `issue` (OR-14).
+
 - **OQ-1 (DEP-1)** — "Отказан от клиента/от салона" means the side the
   REASON puts it on (the card rows and the statistics), not who pressed the
   button. Default: the system rule. If the owner meant the actor, the card's
-  words change instead.
+  words change instead. **CLOSED — OR-43:** kept; the card, the sheet and
+  the statistics share one rule.
 - **OQ-2 (DEP-2)** — what occupies the chair for a placement is the
   server's busy rule (`BookingLifecycle.isLive`), not
   `GridLayoutSystem.occupiedIntervals` (the idle-gap record, which keeps
-  completed and no-show visits). Default: `isLive`.
+  completed and no-show visits). Default: `isLive`. **CLOSED — OR-43:**
+  `BusySystem.chairOccupants` everywhere — the client warns about exactly
+  what the server refuses.
 - **OQ-3 (D18)** — `PlacementPolicy.staffWalkIn()` (owner D18:
   `allowConflictingServices: false`) has no caller; both live staff paths
   allow conflicting services (the component's own JSDoc: "the shop's own
   book need not obey"). Default: frozen live rule via
   `PlacementPolicy.staffPlacement()`; `staffWalkIn` and its spec untouched
   until the owner rules (apply D18 = a behaviour change; or delete the
-  preset).
+  preset). **CLOSED — OR-11 (DEP-F9):** `staffWalkIn` and the spec-only
+  `equals` are deleted; staff placement allows conflicting services
+  everywhere, a recorded departure from §9 D18 (the live rule since flip
+  1).
 - **OQ-4** — `/account`'s «Предстоящ час» may show a still-CONFIRMED visit
   whose start has passed (the appointments page lists it as past). Fixing it
-  needs every listed shop's zone. Default: carried, unchanged.
+  needs every listed shop's zone. Default: carried, unchanged. **CLOSED —
+  OR-8 (DEP-F7):** `VisitListSystem.nextUpcoming` / `countUpcoming` over
+  `isHistory`, each visit on its own shop's clock (memoised zones); a visit
+  whose zone is unknown is skipped.
 - **OQ-5** — the OTP resend: client 30 s (design doc) vs server 60 s
-  (`OtpLimits.ResendWindowMinutes`). Default: carried, unchanged.
+  (`OtpLimits.ResendWindowMinutes`). Default: carried, unchanged. **CLOSED
+  — OR-9 (DEP-F8):** the server's 60 s (`OtpLimits.ResendWindowSeconds`)
+  is the one truth; the refusal carries `retryAfterSeconds` and the store
+  turns it into the countdown.
 - **OQ-6** — the guest label number: highest present + 2 (today) vs the
   monotonic counter (the code comment's intent). Default: today's rule, in
-  `Party.labelNumberAfter`.
+  `Party.labelNumberAfter`. **CLOSED — OR-6 (DEP-F5):** the lowest free
+  number, `firstUnusedLabel`, on all three surfaces; `labelNumberAfter`
+  deleted.
 - **OQ-7 (DEP-4)** — "off all day" = roster empty. Default: applied.
+  **CLOSED — OR-43:** kept, the only rule whose write the server accepts.
 - **OQ-8 (DEP-5)** — a recent visit's client is the booker
-  (client-card-redesign §3.1.4). Default: applied.
+  (client-card-redesign §3.1.4). Default: applied. **CLOSED — OR-43:**
+  kept; a companion never wears the booker's name (privacy).
 - **OQ-9** — the editor's frame verdict reads the SEEDED day after a re-date.
-  Default: unchanged.
+  Default: unchanged. **CLOSED — OR-3 (DEP-F3):** the verdict reads
+  `frameDay()`, the day it draws; the create sheet follows its drafted day
+  and chair through the same probe.
 - **OQ-10** — the booking-flow store's orchestration stays in the store
-  (D-3). Default: stays.
+  (D-3). Default: stays. **CLOSED — OR-43:** stays; signal transactions,
+  the decisions already systems.
 - **OQ-11** — `isReadableId` (Firestore path rules) in the pipeline tier.
-  Default: carried.
+  Default: carried. **CLOSED — OR-44 (DEP-F31):** the reserved-id check is
+  folded into the id primitive's `parse` / `is` / `isSpan`
+  (`PRIMITIVE_ID_RESERVED`) and `isReadableId` is deleted.
 - **OQ-12** — D-11's pass-D list (the write plan, the save use case, the
   editor VM reshape, draft-id rules, prices from labels). Default: pass D.
+  **CLOSED — OR-43:** landed with pass D (D-10).
 - **OQ-13** — the OTP escalation `sendCount >= 3`. Default: display, stays.
+  **CLOSED — OR-10:** a threshold is a decision (Law 10.2) —
+  `OtpLimits.EscalateAfterSends: 3` and `OtpSystem.escalates`, read by the
+  store's `escalated`.
 - **OQ-14** — the dashboard's instant-measured durations/spans AND its
   instant visit-vs-now answers (Law 7.3): `live`, `isNext`, `past`, the
   search's outward order (with its `+∞` before the zone), «Скорошни»'s
@@ -1762,7 +1795,8 @@ Every signature identical but the DEP rows and the now-label minute.
   `openWindowsOf` merge. The lawful home is the wall-clock pair
   `VisitStorySystem.hasStarted`/`hasEnded`; adopting it changes answers in a
   DST fall-back hour and across zones. Default: carried, unchanged; no
-  instant-based copy is homed in a system.
+  instant-based copy is homed in a system. **CLOSED — OR-43:** landed with
+  pass D (DEP-1…DEP-6).
 
 ---
 

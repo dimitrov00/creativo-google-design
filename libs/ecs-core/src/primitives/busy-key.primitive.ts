@@ -37,10 +37,11 @@ export const BusyKey = {
   },
 
   /**
-   * The edge guard for a raw document id or stored array entry: a non-empty
-   * barber id, the double underscore and a real calendar day — rebuilt
-   * through {@link of}, so a parsed key is spelt exactly as a built one.
-   * `null` when the raw string is not a busy key.
+   * The edge guard for a raw document id or stored array entry: a barber id
+   * `BarberId.parse` takes (not blank, no `/`, not a reserved name — OR-44),
+   * the double underscore and a real calendar day — rebuilt through
+   * {@link of}, so a parsed key is spelt exactly as a built one. `null` when
+   * the raw string is not a busy key.
    */
   parse(raw: string): BusyKey | null {
     const at = raw.lastIndexOf(SEPARATOR);
@@ -54,9 +55,9 @@ export const BusyKey = {
   /**
    * The read-time door (edge hardening D-1): `raw` is a string
    * {@link parse} accepts — `parse(raw) !== null` — read in place: the LAST
-   * `__`, a barber id before it (`BarberId.isSpan`: not blank, no `/`) and
-   * exactly one real day after it (`LocalDate.isAt`). `false` for every
-   * other value. Allocates nothing (no slice, no `Result`, no rebuilt key) —
+   * `__`, a barber id before it (`BarberId.isSpan`: not blank, no `/`, not
+   * reserved) and exactly one real day after it (`LocalDate.isAt`). `false`
+   * for every other value. Allocates nothing (no slice, no `Result`, no rebuilt key) —
    * a stored appointment's `busyKeys` and a busy day's id are checked with
    * it per document.
    */

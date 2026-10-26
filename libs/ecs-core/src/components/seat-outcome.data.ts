@@ -1,10 +1,10 @@
 import {
   type StoredFields,
+  HourCount,
   UtcEpochMs,
   BookingStatus,
   AttendanceState,
 } from '@core/primitives';
-import { BookingPolicy } from './booking-policy.data';
 import { BookingLifecycle } from './booking-lifecycle.data';
 import { CancellationReason } from './cancellation-reason.data';
 import { CancellationReasonSet } from './cancellation-reason-set.data';
@@ -74,27 +74,23 @@ export const SeatOutcome = {
   },
 
   /**
-   * A seat called off at `atUtcMs` under a `windowHours` window. A window
-   * the policy itself could not have set (`NaN`, `-1`, `1.5`) is stamped as
-   * unknown (`null`) — a stamp is a real window or nothing, never a number
-   * the stats would later refuse and silently re-judge.
+   * A seat called off at `atUtcMs` under a `windowHours` window — an
+   * `HourCount` (OR-45), so a stamp is a real window or `null` (unknown) by
+   * its type: no number the stats would later refuse and silently re-judge
+   * can reach it.
    */
   cancelled(
     atUtcMs: UtcEpochMs,
     by: CancelledBy,
     reason: CancellationReason,
-    windowHours: number | null,
+    windowHours: HourCount | null,
   ): SeatOutcome.Cancelled {
     return {
       attendanceState: AttendanceState.Cancelled,
       cancelledAtUtcMs: atUtcMs,
       cancelledBy: by,
       cancellationReason: reason,
-      cancellationWindowHours:
-        windowHours !== null &&
-        BookingPolicy.isValidCancellationWindowHours(windowHours)
-          ? windowHours + 0
-          : null,
+      cancellationWindowHours: windowHours,
     };
   },
 
@@ -103,9 +99,11 @@ export const SeatOutcome = {
    * of the first field that is not well-formed, or `null`. Narrows on
    * `attendanceState` (an `AttendanceState` member, else
    * `'attendanceState'`), then checks THAT variant's stamp — `workedAtUtcMs`,
-   * `noShowAtUtcMs`, `cancelledAtUtcMs` (an instant). The cancellation's
-   * `cancelledBy` and window are display and statistics inputs judged
-   * where they are read, and are not checked here. No allocation.
+   * `noShowAtUtcMs`, `cancelledAtUtcMs` (an instant) — and a cancellation's
+   * window, `cancellationWindowHours`: an `HourCount` or `null` (OR-45: the
+   * statistics judge lateness by it, so a stored window is the brand it is
+   * typed as). The cancellation's `cancelledBy` is a display input judged
+   * where it is read, and is not checked here. No allocation.
    */
   fieldFault(raw: StoredFields): string | null {
     switch (raw['attendanceState']) {
@@ -115,10 +113,13 @@ export const SeatOutcome = {
         return UtcEpochMs.is(raw['workedAtUtcMs']) ? null : 'workedAtUtcMs';
       case AttendanceState.NoShow:
         return UtcEpochMs.is(raw['noShowAtUtcMs']) ? null : 'noShowAtUtcMs';
-      case AttendanceState.Cancelled:
-        return UtcEpochMs.is(raw['cancelledAtUtcMs'])
+      case AttendanceState.Cancelled: {
+        if (!UtcEpochMs.is(raw['cancelledAtUtcMs'])) return 'cancelledAtUtcMs';
+        const window = raw['cancellationWindowHours'];
+        return window === null || HourCount.is(window)
           ? null
-          : 'cancelledAtUtcMs';
+          : 'cancellationWindowHours';
+      }
       default:
         return 'attendanceState';
     }
@@ -139,7 +140,7 @@ export const SeatOutcome = {
     to: BookingStatus,
     atUtcMs: UtcEpochMs,
     reason: CancellationReason,
-    windowHours: number | null,
+    windowHours: HourCount | null,
   ): SeatOutcome | null {
     switch (to) {
       case BookingStatus.Completed:
@@ -249,6 +250,6 @@ export namespace SeatOutcome {
     /** The code and nothing else (§9 D23) — was the nested `reason: { kind }`. */
     readonly cancellationReason: CancellationReason;
     /** The window in force, whole hours; `null` is unknown. */
-    readonly cancellationWindowHours: number | null;
+    readonly cancellationWindowHours: HourCount | null;
   };
 }

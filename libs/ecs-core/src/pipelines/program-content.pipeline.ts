@@ -28,13 +28,13 @@ import { ProgramsSystem, ZonedTimeSystem } from '@core/systems';
  *
  * 1. **Impure read** — on an update, the stored document (today's existence
  *    check: an update never silently re-creates a deleted document); for an
- *    event, also the location whose zone places it, and the default shop's
- *    when a typed location names no document (F-4).
+ *    event, also the ONE location whose zone places it — its own, else the
+ *    default shop (F-4, OR-38).
  * 2. **Pure compute** — `ProgramsSystem` judges the raw form and builds the
- *    entity; for an event it picks the zone (`zoneOf`), this pipeline — the
- *    ingestion boundary — converts the wall clock ONCE with
- *    `ZonedTimeSystem.toUtc` (Law 7.3), and `ProgramsSystem.shopEvent`
- *    assembles the entity with that instant.
+ *    entity; for an event it picks the zone or refuses a shop that is not
+ *    stored (`zoneOf`), this pipeline — the ingestion boundary — converts
+ *    the wall clock ONCE with `ZonedTimeSystem.toUtc` (Law 7.3), and
+ *    `ProgramsSystem.shopEvent` assembles the entity with that instant.
  * 3. **Impure write** — `saveX(entity)`, a full-document set of the body.
  *
  * No transaction: an admin save has no invariant across documents, and the
@@ -116,11 +116,11 @@ export const writeCourse =
 
 /**
  * Creates or updates a shop event from the admin form — the ingestion
- * boundary of its instant: the zone's location read (its own, else the
- * default shop; the default too when a typed one is absent), the zone
- * picked by `ProgramsSystem.zoneOf`, the wall clock converted ONCE (a
- * spring-forward gap time is `DST_GAP_INVALID_TIME`, a fall-back repeat the
- * earlier offset).
+ * boundary of its instant: exactly ONE location read (its own, else the
+ * default shop), the zone picked by `ProgramsSystem.zoneOf` — an event at a
+ * shop that is not stored is refused, never placed on the default shop's
+ * clock (OR-38) — the wall clock converted ONCE (a spring-forward gap time
+ * is `DST_GAP_INVALID_TIME`, a fall-back repeat the earlier offset).
  */
 export const writeShopEvent =
   (ports: WriteShopEventPorts) =>
@@ -139,20 +139,13 @@ export const writeShopEvent =
     const fields = ProgramsSystem.eventFields(cmd.input);
     if (!fields.ok) return fields;
 
-    const zoneLocationId = ProgramsSystem.zoneLocationOf(
-      fields.value,
-      ports.defaultLocationId,
+    const loaded = await ports.loadLocation(
+      ProgramsSystem.zoneLocationOf(fields.value, ports.defaultLocationId),
     );
-    const named = await ports.loadLocation(zoneLocationId);
-    if (!named.ok) return Result.err([named.error]);
-    const fallback =
-      named.value === null && zoneLocationId !== ports.defaultLocationId
-        ? await ports.loadLocation(ports.defaultLocationId)
-        : Result.ok(null);
-    if (!fallback.ok) return Result.err([fallback.error]);
+    if (!loaded.ok) return Result.err([loaded.error]);
     const zone = ProgramsSystem.zoneOf(
-      named.value,
-      fallback.value,
+      fields.value.locationId,
+      loaded.value,
       ports.defaultLocationId,
     );
     if (!zone.ok) return Result.err([zone.error]);

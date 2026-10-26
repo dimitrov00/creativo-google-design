@@ -71,9 +71,12 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  *   `RepositoryError.malformed(path, field)` and nothing is written; it is
  *   logged ONCE per commit (`'malformed document refused'`, `{ path, field }`
  *   — the edge's wire projection drops both, so the refusal logs itself).
- *   Each contention attempt starts with a clean record. A bare
- *   `firestoreCommitPlan(db)` guards nothing (the mechanics specs' partial
- *   bodies, the seed and the integration specs; DEP-11).
+ *   Each contention attempt starts with a clean record. The registry and
+ *   the log are REQUIRED (OR-33, DEP-F24, reversing DEP-11): a bare
+ *   `firestoreCommitPlan(db)` does not type-check; the seed and the
+ *   integration specs read through the real registry, and only a mechanics
+ *   spec over partial bodies passes the test support's `unguarded`
+ *   (`@core/testing`).
  *
  * An `Update` key is ONE root field (Laws 5 and 6: writes target root
  * fields, never dot paths). Each `fields` key goes to the SDK as a
@@ -106,12 +109,6 @@ export function logRefusal(log: Log, error: RepositoryError): void {
     field: error.reason,
   });
 }
-
-/** No log — the default of a bare factory. */
-const NO_LOG: Log = () => undefined;
-
-/** No refusal handler — the default of a bare read half. */
-const IGNORE_REFUSAL: (error: RepositoryError) => void = () => undefined;
 
 /**
  * A stored document read OUTSIDE a transaction, through its collection's
@@ -184,8 +181,8 @@ function toQuery(db: Firestore, spec: QuerySpec): Query {
 export const firestoreReadTx = (
   db: Firestore,
   tx: Transaction,
-  guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
-  onRefused: (error: RepositoryError) => void = IGNORE_REFUSAL,
+  guardOf: StoredGuardOf,
+  onRefused: (error: RepositoryError) => void,
 ): ReadTx => ({
   get: async <E>(path: DocPath): Promise<E | null> => {
     const snap = await tx.get(docRef(db, path));
@@ -322,11 +319,7 @@ function conflictPath(
 }
 
 export const firestoreCommitPlan =
-  (
-    db: Firestore,
-    guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
-    log: Log = NO_LOG,
-  ): CommitPlan =>
+  (db: Firestore, guardOf: StoredGuardOf, log: Log): CommitPlan =>
   async <S, D, E>(
     read: (tx: ReadTx) => Promise<S>,
     decide: (

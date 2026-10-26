@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs, BookingStatus, AttendanceState } from '@core/primitives';
-import { deepFreeze, unwrapOk } from '@core/testing';
+import {
+  HourCount,
+  UtcEpochMs,
+  BookingStatus,
+  AttendanceState,
+} from '@core/primitives';
+import { deepFreeze, hourCount, unwrapOk } from '@core/testing';
 import { BookingLifecycle } from './booking-lifecycle.data';
 import { CancellationReason } from './cancellation-reason.data';
 import { CancellationReasonSet } from './cancellation-reason-set.data';
@@ -26,7 +31,7 @@ describe('SeatOutcome factories', () => {
         at(5),
         CancelledBy.Client,
         CancellationReason.ClientUnwell,
-        24,
+        hourCount(24),
       ),
     ).toEqual({
       attendanceState: 'CANCELLED',
@@ -43,24 +48,33 @@ describe('SeatOutcome factories', () => {
     ]);
   });
 
-  it('stamps a window the policy could not have set as unknown, never as a number', () => {
-    for (const hours of [-1, 1.5, Number.NaN]) {
-      const outcome = SeatOutcome.cancelled(
-        at(5),
-        CancelledBy.Staff,
-        CancellationReason.Unspecified,
-        hours,
-      );
-      expect(outcome.cancellationWindowHours).toBeNull();
-    }
+  // OR-45: the window is an `HourCount` by its type, so the old case
+  // «stamps a window the policy could not have set (-1, 1.5, NaN) as
+  // unknown» has nothing left to run — the compiler refuses such a number.
+  it('stamps the window it is handed — an HourCount, or null for unknown', () => {
     expect(
       SeatOutcome.cancelled(
         at(5),
         CancelledBy.Staff,
         CancellationReason.Other,
-        0,
+        HourCount.ZERO,
       ).cancellationWindowHours,
     ).toBe(0);
+    expect(
+      SeatOutcome.cancelled(
+        at(5),
+        CancelledBy.Staff,
+        CancellationReason.Unspecified,
+        null,
+      ).cancellationWindowHours,
+    ).toBeNull();
+    SeatOutcome.cancelled(
+      at(5),
+      CancelledBy.Staff,
+      CancellationReason.Unspecified,
+      // @ts-expect-error — a raw number is no window: the type refuses 1.5.
+      1.5,
+    );
   });
 
   it('only scheduled is unresolved', () => {
@@ -84,10 +98,16 @@ describe('SeatOutcome.OFFERED_REASONS', () => {
 
 describe('SeatOutcome.outcomeForStatus — the window in force rides on a cancellation', () => {
   const reason = CancellationReason.ClientChangedPlans;
+  const TWELVE = hourCount(12);
 
   it('stamps the window on the seats a party cancel closes, by staff', () => {
     expect(
-      SeatOutcome.outcomeForStatus(BookingStatus.Cancelled, at(5), reason, 12),
+      SeatOutcome.outcomeForStatus(
+        BookingStatus.Cancelled,
+        at(5),
+        reason,
+        TWELVE,
+      ),
     ).toEqual({
       attendanceState: 'CANCELLED',
       cancelledAtUtcMs: 5,
@@ -113,16 +133,31 @@ describe('SeatOutcome.outcomeForStatus — the window in force rides on a cancel
 
   it('puts it on nothing else — worked and no-show carry no window', () => {
     expect(
-      SeatOutcome.outcomeForStatus(BookingStatus.Completed, at(5), reason, 12),
+      SeatOutcome.outcomeForStatus(
+        BookingStatus.Completed,
+        at(5),
+        reason,
+        TWELVE,
+      ),
     ).toEqual({ attendanceState: 'WORKED', workedAtUtcMs: 5 });
     expect(
-      SeatOutcome.outcomeForStatus(BookingStatus.NoShow, at(5), reason, 12),
+      SeatOutcome.outcomeForStatus(BookingStatus.NoShow, at(5), reason, TWELVE),
     ).toEqual({ attendanceState: 'NO_SHOW', noShowAtUtcMs: 5 });
     expect(
-      SeatOutcome.outcomeForStatus(BookingStatus.Confirmed, at(5), reason, 12),
+      SeatOutcome.outcomeForStatus(
+        BookingStatus.Confirmed,
+        at(5),
+        reason,
+        TWELVE,
+      ),
     ).toBeNull();
     expect(
-      SeatOutcome.outcomeForStatus(BookingStatus.Pending, at(5), reason, 12),
+      SeatOutcome.outcomeForStatus(
+        BookingStatus.Pending,
+        at(5),
+        reason,
+        TWELVE,
+      ),
     ).toBeNull();
   });
 });
@@ -252,7 +287,7 @@ describe('SeatOutcome.fieldFault — the read-time check of a stored outcome (ed
         at,
         CancelledBy.Client,
         CancellationReason.ClientUnwell,
-        24,
+        hourCount(24),
       ),
       'cancelledAtUtcMs',
     ],
@@ -272,6 +307,40 @@ describe('SeatOutcome.fieldFault — the read-time check of a stored outcome (ed
       );
       expect(SeatOutcome.fieldFault({ ...outcome, [stamp]: -0.5 })).toBe(stamp);
     }
+  });
+
+  it('names a cancellation’s window unless it is an HourCount or null — unknown (OR-45)', () => {
+    const cancelled = SeatOutcome.cancelled(
+      at,
+      CancelledBy.Staff,
+      CancellationReason.Other,
+      null,
+    );
+    for (const window of [null, 0, 24, 2_400_000_000]) {
+      expect(
+        SeatOutcome.fieldFault({
+          ...cancelled,
+          cancellationWindowHours: window,
+        }),
+      ).toBeNull();
+    }
+    for (const window of [undefined, -1, 1.5, Number.NaN, '24', 2.4e9 + 1]) {
+      expect(
+        SeatOutcome.fieldFault({
+          ...cancelled,
+          cancellationWindowHours: window,
+        }),
+        String(window),
+      ).toBe('cancellationWindowHours');
+    }
+    // The stamp is read first: a broken instant is named before the window.
+    expect(
+      SeatOutcome.fieldFault({
+        ...cancelled,
+        cancelledAtUtcMs: null,
+        cancellationWindowHours: -1,
+      }),
+    ).toBe('cancelledAtUtcMs');
   });
 
   it('names attendanceState for anything the dictionary does not hold', () => {

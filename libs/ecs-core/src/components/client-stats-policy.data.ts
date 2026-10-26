@@ -1,4 +1,4 @@
-import { type UtcEpochMs, Result } from '@core/primitives';
+import { type HourCount, type UtcEpochMs, Result } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import { BookingPolicy } from './booking-policy.data';
 
@@ -105,7 +105,7 @@ export const ClientStatsPolicy = {
     policy: ClientStatsPolicy,
     startUtcMs: UtcEpochMs,
     cancelledAtUtcMs: UtcEpochMs,
-    stampedWindowHours: number | null,
+    stampedWindowHours: HourCount | null,
   ): boolean {
     const windowHours =
       stampedWindowHours ?? policy.booking.cancellationWindowHours;

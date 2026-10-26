@@ -9,7 +9,6 @@ import {
   E164,
   CancellationReason,
   CancellationReasonSet,
-  CancelledBy,
   SeatOutcome,
   Seat,
   SeatOccupant,
@@ -38,6 +37,7 @@ import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   deepFreeze,
+  hourCount,
   minute,
   unwrapErr,
   unwrapOk,
@@ -62,7 +62,9 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * invariants, the transition matrix, cancel, seat outcomes, the correction
  * edges and arrival — over plain flat entities.
  * `isSuccess(r)` → `r.ok`; the verbs' instant is a parameter, and "today" is
- * the shop's `ShopNow`.
+ * the shop's `ShopNow`. Every lifecycle move goes through the one write
+ * surface, `transition` (OR-20: the parked entity verbs are deleted); a case
+ * that once ran with no shop clock is a reopen on another shop day, refused.
  */
 
 /** An instant on the fixture shop's wall clock today (Sofia, UTC+3). */
@@ -78,6 +80,8 @@ const plus = (base: UtcEpochMs, ms: number): UtcEpochMs =>
 
 /** The instant a lifecycle verb is taken. Fixed so outcomes are comparable. */
 const RESOLVED_AT = today(9);
+/** "Now" on the shop's next day — off every fixture visit's own day. */
+const NEXT_DAY = nowAt(plus(RESOLVED_AT, 86_400_000));
 /** Before the visit's day — what "now" is when a booking is made. */
 const BOOKING_NOW = plus(today(0), -30 * 86_400_000);
 const MINUTE = 60_000;
@@ -175,23 +179,24 @@ function party(): Appointment {
   return visit([seat(), seat({ relationship: 'companion' })]);
 }
 
-function seatCancelled(
-  reason: CancellationReason,
-  windowHours: number | null,
-): SeatOutcome {
-  return SeatOutcome.cancelled(
-    RESOLVED_AT,
-    CancelledBy.Client,
-    reason,
-    windowHours,
-  );
-}
-
 function request(
   to: BookingStatus,
   overrides: Partial<LifecycleTransitionRequest> = {},
 ): LifecycleTransitionRequest {
   return { to, seatId: null, reason: null, windowHours: null, ...overrides };
+}
+
+/** ONE seat called off — `reason` filed with the window in force. */
+function seatCancel(
+  seatId: SeatId,
+  reason: CancellationReason,
+  windowHours: number | null,
+): LifecycleTransitionRequest {
+  return request(BookingStatus.Cancelled, {
+    seatId,
+    reason,
+    windowHours: windowHours === null ? null : hourCount(windowHours),
+  });
 }
 
 /*
@@ -346,7 +351,11 @@ describe('AppointmentLifecycleSystem — the revision survives every verb', () =
       );
       expect(cleared.appointment.revision).toBe(revision);
       const completed = unwrapOk(
-        AppointmentLifecycleSystem.complete(copy, RESOLVED_AT),
+        AppointmentLifecycleSystem.transition(
+          copy,
+          request(BookingStatus.Completed),
+          nowAt(RESOLVED_AT),
+        ),
       );
       expect(completed.appointment.revision).toBe(revision);
     }
@@ -374,37 +383,38 @@ describe('Appointment status transition matrix (goal condition item)', () => {
   };
 
   /*
-   * The party verbs — `confirm` on a no-show is the graph's correction
-   * edge; with no shop clock a settled visit is never reopened.
+   * The party moves through `transition` — `CONFIRMED` on a no-show is the
+   * graph's correction edge; on the shop's next day a settled visit is
+   * never reopened (a reopen on another shop day is refused).
    */
-  const VERBS: Record<
-    string,
-    (appointment: Appointment) => { readonly ok: boolean }
-  > = {
-    CONFIRMED: (a) => AppointmentLifecycleSystem.confirm(a, RESOLVED_AT),
-    COMPLETED: (a) => AppointmentLifecycleSystem.complete(a, RESOLVED_AT),
-    CANCELLED: (a) =>
-      AppointmentLifecycleSystem.cancel(
-        a,
-        CancellationReason.Other,
-        24,
-        RESOLVED_AT,
-      ),
-    NO_SHOW: (a) => AppointmentLifecycleSystem.markNoShow(a, RESOLVED_AT),
+  const MOVES: Record<string, LifecycleTransitionRequest> = {
+    CONFIRMED: request(BookingStatus.Confirmed),
+    COMPLETED: request(BookingStatus.Completed),
+    CANCELLED: request(BookingStatus.Cancelled, {
+      reason: CancellationReason.Other,
+      windowHours: hourCount(24),
+    }),
+    NO_SHOW: request(BookingStatus.NoShow),
   };
 
   const legal = new Map(Object.entries(LEGAL));
   for (const [from, lifecycle] of Object.entries(STARTING)) {
-    for (const [to, verb] of Object.entries(VERBS)) {
+    for (const [to, move] of Object.entries(MOVES)) {
       const shouldSucceed = (legal.get(from) ?? []).includes(to);
       it(`${from} → ${to} is ${shouldSucceed ? 'legal' : 'illegal'}`, () => {
-        expect(verb(withStatus(lifecycle)).ok).toBe(shouldSucceed);
+        expect(
+          AppointmentLifecycleSystem.transition(
+            withStatus(lifecycle),
+            move,
+            NEXT_DAY,
+          ).ok,
+        ).toBe(shouldSucceed);
       });
     }
   }
 });
 
-describe('AppointmentLifecycleSystem.cancel', () => {
+describe('AppointmentLifecycleSystem — cancel', () => {
   it('rejects a cancel that names no reason', () => {
     const error = unwrapErr(
       AppointmentLifecycleSystem.transition(
@@ -420,11 +430,13 @@ describe('AppointmentLifecycleSystem.cancel', () => {
 
   it('carries the reason structurally on the cancelled lifecycle — the code', () => {
     const step = unwrapOk(
-      AppointmentLifecycleSystem.cancel(
+      AppointmentLifecycleSystem.transition(
         withStatus(PENDING),
-        CancellationReason.ClientChangedPlans,
-        24,
-        RESOLVED_AT,
+        request(BookingStatus.Cancelled, {
+          reason: CancellationReason.ClientChangedPlans,
+          windowHours: hourCount(24),
+        }),
+        nowAt(RESOLVED_AT),
       ),
     );
     expect(BookingLifecycle.sliceOf(step.appointment)).toEqual(
@@ -441,7 +453,7 @@ describe('AppointmentLifecycleSystem.cancel', () => {
       AppointmentLifecycleSystem.cancelByClient(
         withStatus(CONFIRMED),
         CancellationReason.Other,
-        6,
+        hourCount(6),
         RESOLVED_AT,
       ),
     );
@@ -460,7 +472,7 @@ describe('AppointmentLifecycleSystem.cancel', () => {
       AppointmentLifecycleSystem.cancelByClient(
         before,
         CancellationReason.Other,
-        6,
+        hourCount(6),
         RESOLVED_AT,
       ),
     );
@@ -492,13 +504,12 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('keeps the root unchanged while any seat is still open', () => {
     const appointment = party();
     const marked = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.Completed, { seatId: seatIdAt(appointment, 0) }),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     expect(marked.bookingStatus).toBe('CONFIRMED');
     expect(
       marked.seats.map((s) => s.attendanceState === AttendanceState.Scheduled),
@@ -508,21 +519,19 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('summarises a mixed party as completed while keeping the no-show visible', () => {
     const appointment = party();
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.Completed, { seatId: seatIdAt(appointment, 0) }),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     const second = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         first,
-        seatIdAt(first, 1),
-        SeatOutcome.noShow(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.NoShow, { seatId: seatIdAt(first, 1) }),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     expect(second.bookingStatus).toBe('COMPLETED');
     expect(second.seats[0]?.attendanceState).toBe('WORKED');
     expect(second.seats[1]?.attendanceState).toBe('NO_SHOW');
@@ -531,21 +540,27 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('summarises an all-cancelled party as cancelled, with groupable codes', () => {
     const appointment = party();
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        seatCancelled(CancellationReason.ClientUnwell, 24),
-        RESOLVED_AT,
+        seatCancel(
+          seatIdAt(appointment, 0),
+          CancellationReason.ClientUnwell,
+          24,
+        ),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     const second = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         first,
-        seatIdAt(first, 1),
-        seatCancelled(CancellationReason.ClientChangedPlans, 24),
-        RESOLVED_AT,
+        seatCancel(
+          seatIdAt(first, 1),
+          CancellationReason.ClientChangedPlans,
+          24,
+        ),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     expect(BookingLifecycle.sliceOf(second)).toEqual(
       BookingLifecycle.cancel(
         RESOLVED_AT,
@@ -559,11 +574,10 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('refuses a seat it does not hold', () => {
     const error = unwrapErr(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         party(),
-        SeatId.of('nobody'),
-        SeatOutcome.worked(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.Completed, { seatId: SeatId.of('nobody') }),
+        nowAt(RESOLVED_AT),
       ),
     );
     expect(error).toEqual(
@@ -574,18 +588,16 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('refuses to re-resolve a seat', () => {
     const appointment = party();
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.Completed, { seatId: seatIdAt(appointment, 0) }),
+        nowAt(RESOLVED_AT),
       ),
-    );
-    const again = AppointmentLifecycleSystem.markSeatOutcome(
+    ).appointment;
+    const again = AppointmentLifecycleSystem.transition(
       first,
-      seatIdAt(first, 0),
-      SeatOutcome.noShow(RESOLVED_AT),
-      RESOLVED_AT,
+      request(BookingStatus.NoShow, { seatId: seatIdAt(first, 0) }),
+      nowAt(RESOLVED_AT),
     );
     expect(unwrapErr(again)).toEqual(
       SchedulingError.appointmentSeatAlreadyResolved(
@@ -598,19 +610,24 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('a party cancel stamps only the seats it closes; one called off earlier keeps its own window', () => {
     const appointment = party();
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        seatCancelled(CancellationReason.ClientUnwell, 48),
-        RESOLVED_AT,
+        seatCancel(
+          seatIdAt(appointment, 0),
+          CancellationReason.ClientUnwell,
+          48,
+        ),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     const done = unwrapOk(
-      AppointmentLifecycleSystem.cancel(
+      AppointmentLifecycleSystem.transition(
         first,
-        CancellationReason.StaffShopClosure,
-        24,
-        plus(RESOLVED_AT, 1),
+        request(BookingStatus.Cancelled, {
+          reason: CancellationReason.StaffShopClosure,
+          windowHours: hourCount(24),
+        }),
+        nowAt(plus(RESOLVED_AT, 1)),
       ),
     );
     expect(
@@ -624,11 +641,13 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('refuses to resolve a seat on a terminal appointment', () => {
     const done = unwrapOk(
-      AppointmentLifecycleSystem.cancel(
+      AppointmentLifecycleSystem.transition(
         party(),
-        CancellationReason.StaffShopClosure,
-        24,
-        RESOLVED_AT,
+        request(BookingStatus.Cancelled, {
+          reason: CancellationReason.StaffShopClosure,
+          windowHours: hourCount(24),
+        }),
+        nowAt(RESOLVED_AT),
       ),
     );
     const terminal: Appointment = {
@@ -638,11 +657,10 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       ),
     };
     const error = unwrapErr(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         terminal,
-        seatIdAt(terminal, 0),
-        SeatOutcome.worked(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.Completed, { seatId: seatIdAt(terminal, 0) }),
+        nowAt(RESOLVED_AT),
       ),
     );
     expect(error).toEqual(
@@ -655,7 +673,11 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('fans a party-level complete out to every open seat', () => {
     const step = unwrapOk(
-      AppointmentLifecycleSystem.complete(party(), RESOLVED_AT),
+      AppointmentLifecycleSystem.transition(
+        party(),
+        request(BookingStatus.Completed),
+        nowAt(RESOLVED_AT),
+      ),
     );
     expect(
       step.appointment.seats.every((s) => s.attendanceState === 'WORKED'),
@@ -665,15 +687,18 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('leaves an already-resolved seat alone when the party completes', () => {
     const appointment = party();
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         appointment,
-        seatIdAt(appointment, 0),
-        SeatOutcome.noShow(RESOLVED_AT),
-        RESOLVED_AT,
+        request(BookingStatus.NoShow, { seatId: seatIdAt(appointment, 0) }),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     const done = unwrapOk(
-      AppointmentLifecycleSystem.complete(first, plus(RESOLVED_AT, MINUTE)),
+      AppointmentLifecycleSystem.transition(
+        first,
+        request(BookingStatus.Completed),
+        nowAt(plus(RESOLVED_AT, MINUTE)),
+      ),
     );
     expect(done.appointment.seats[0]?.attendanceState).toBe('NO_SHOW');
     expect(done.appointment.seats[1]?.attendanceState).toBe('WORKED');
@@ -681,12 +706,20 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('reopens a no-show and lifts the stamp off the seats it wrote', () => {
     const marked = unwrapOk(
-      AppointmentLifecycleSystem.markNoShow(withStatus(CONFIRMED), RESOLVED_AT),
+      AppointmentLifecycleSystem.transition(
+        withStatus(CONFIRMED),
+        request(BookingStatus.NoShow),
+        nowAt(RESOLVED_AT),
+      ),
     );
     expect(marked.appointment.seats[0]?.attendanceState).toBe('NO_SHOW');
     const reopened = unwrapOk(
-      AppointmentLifecycleSystem.reopenNoShow(marked.appointment, RESOLVED_AT),
-    );
+      AppointmentLifecycleSystem.transition(
+        marked.appointment,
+        request(BookingStatus.Confirmed),
+        nowAt(RESOLVED_AT),
+      ),
+    ).appointment;
     expect(reopened.bookingStatus).toBe('CONFIRMED');
     for (const s of reopened.seats) expect(s.attendanceState).toBe('SCHEDULED');
   });
@@ -694,32 +727,50 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('reopening leaves a seat that was resolved on its own alone', () => {
     const base = party();
     const withSeatCancelled = unwrapOk(
-      AppointmentLifecycleSystem.markSeatOutcome(
+      AppointmentLifecycleSystem.transition(
         base,
-        seatIdAt(base, 0),
-        seatCancelled(CancellationReason.ClientUnwell, 24),
-        RESOLVED_AT,
+        seatCancel(seatIdAt(base, 0), CancellationReason.ClientUnwell, 24),
+        nowAt(RESOLVED_AT),
       ),
-    );
+    ).appointment;
     const marked = unwrapOk(
-      AppointmentLifecycleSystem.markNoShow(
+      AppointmentLifecycleSystem.transition(
         withSeatCancelled,
-        plus(RESOLVED_AT, 1_000),
+        request(BookingStatus.NoShow),
+        nowAt(plus(RESOLVED_AT, 1_000)),
       ),
     );
     const reopened = unwrapOk(
-      AppointmentLifecycleSystem.reopenNoShow(marked.appointment, RESOLVED_AT),
-    );
+      AppointmentLifecycleSystem.transition(
+        marked.appointment,
+        request(BookingStatus.Confirmed),
+        nowAt(RESOLVED_AT),
+      ),
+    ).appointment;
     expect(reopened.seats[0]?.attendanceState).toBe('CANCELLED');
     expect(reopened.seats[1]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('refuses to reopen anything that is not a no-show', () => {
-    for (const lifecycle of [PENDING, CONFIRMED, COMPLETED]) {
+    // Only a NO_SHOW takes the stamp-lifting edge: a pending visit's
+    // CONFIRMED is its accept, filed as one; a confirmed visit has nothing
+    // to reopen; a completed one is refused on another shop day.
+    const accepted = unwrapOk(
+      AppointmentLifecycleSystem.transition(
+        withStatus(PENDING),
+        request(BookingStatus.Confirmed),
+        NEXT_DAY,
+      ),
+    );
+    expect(accepted.auditFacts[0]?.context.auditAction).toBe(
+      AuditAction.BookingStaffConfirmed,
+    );
+    for (const lifecycle of [CONFIRMED, COMPLETED]) {
       expect(
-        AppointmentLifecycleSystem.reopenNoShow(
+        AppointmentLifecycleSystem.transition(
           withStatus(lifecycle),
-          RESOLVED_AT,
+          request(BookingStatus.Confirmed),
+          NEXT_DAY,
         ).ok,
       ).toBe(false);
     }
@@ -727,39 +778,51 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('reopens a completed visit on its own day, every seat back to scheduled', () => {
     const confirmed = unwrapOk(
-      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT),
+      AppointmentLifecycleSystem.transition(
+        withStatus(PENDING),
+        request(BookingStatus.Confirmed),
+        nowAt(RESOLVED_AT),
+      ),
     );
     const completed = unwrapOk(
-      AppointmentLifecycleSystem.complete(confirmed.appointment, RESOLVED_AT),
+      AppointmentLifecycleSystem.transition(
+        confirmed.appointment,
+        request(BookingStatus.Completed),
+        nowAt(RESOLVED_AT),
+      ),
     );
     expect(completed.appointment.seats[0]?.attendanceState).toBe('WORKED');
     const end = endInstantOf(completed.appointment);
     const reopened = unwrapOk(
-      AppointmentLifecycleSystem.reopenSettled(
+      AppointmentLifecycleSystem.transition(
         completed.appointment,
+        request(BookingStatus.Confirmed),
         nowAt(end),
       ),
-    );
+    ).appointment;
     expect(reopened.bookingStatus).toBe('CONFIRMED');
     expect(reopened.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('reinstates a cancelled visit on its own day', () => {
     const cancelled = unwrapOk(
-      AppointmentLifecycleSystem.cancel(
+      AppointmentLifecycleSystem.transition(
         withStatus(CONFIRMED),
-        CancellationReason.Other,
-        24,
-        RESOLVED_AT,
+        request(BookingStatus.Cancelled, {
+          reason: CancellationReason.Other,
+          windowHours: hourCount(24),
+        }),
+        nowAt(RESOLVED_AT),
       ),
     );
     const end = endInstantOf(cancelled.appointment);
     const back = unwrapOk(
-      AppointmentLifecycleSystem.reopenSettled(
+      AppointmentLifecycleSystem.transition(
         cancelled.appointment,
+        request(BookingStatus.Confirmed),
         nowAt(end),
       ),
-    );
+    ).appointment;
     expect(back.bookingStatus).toBe('CONFIRMED');
     expect(back.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
@@ -767,8 +830,9 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('refuses to reopen a settled visit the next day, or a live one at all', () => {
     const completed = withStatus(COMPLETED);
     const end = endInstantOf(completed);
-    const late = AppointmentLifecycleSystem.reopenSettled(
+    const late = AppointmentLifecycleSystem.transition(
       completed,
+      request(BookingStatus.Confirmed),
       nowAt(plus(end, 24 * 60 * MINUTE)),
     );
     expect(unwrapErr(late).errorCode).toBe(
@@ -776,8 +840,11 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
     );
     const live = withStatus(CONFIRMED);
     expect(
-      AppointmentLifecycleSystem.reopenSettled(live, nowAt(endInstantOf(live)))
-        .ok,
+      AppointmentLifecycleSystem.transition(
+        live,
+        request(BookingStatus.Confirmed),
+        nowAt(endInstantOf(live)),
+      ).ok,
     ).toBe(false);
   });
 
@@ -800,7 +867,11 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('confirming resolves nothing — it is about the booking, not the work', () => {
     const step = unwrapOk(
-      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT),
+      AppointmentLifecycleSystem.transition(
+        withStatus(PENDING),
+        request(BookingStatus.Confirmed),
+        nowAt(RESOLVED_AT),
+      ),
     );
     expect(step.appointment.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
@@ -813,9 +884,10 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       contactNote: null,
     };
     const step = unwrapOk(
-      AppointmentLifecycleSystem.confirm(
+      AppointmentLifecycleSystem.transition(
         visit([seat()], PENDING, contact),
-        RESOLVED_AT,
+        request(BookingStatus.Confirmed),
+        nowAt(RESOLVED_AT),
       ),
     );
     expect(BookingContact.of(step.appointment)).toEqual(contact);
@@ -880,7 +952,7 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
         request(BookingStatus.Cancelled, {
           seatId,
           reason: CancellationReason.ClientUnwell,
-          windowHours: 24,
+          windowHours: hourCount(24),
         }),
         nowAt(RESOLVED_AT),
       ),
@@ -1046,15 +1118,29 @@ describe('AppointmentLifecycleSystem.reopenable — the same-day edge’s one gu
     }
   });
 
-  it('is the guard reopenSettled writes through — ok exactly where reopenable holds', () => {
-    // `reopenSettled`'s own refusals: a live root is an invalid move, a
-    // settled one on another day is a closed window.
+  it('is the guard the reopen writes through — transition reopens exactly where reopenable holds', () => {
+    // A party CONFIRMED from every root: the settled reopen (filed as a
+    // reopen-completed or a reinstate) lands exactly where the guard holds;
+    // a live root is an accept or an invalid move, a no-show its own edge,
+    // and a settled one on another day a closed window.
+    const reopens: readonly string[] = [
+      AuditAction.BookingStaffReopenCompleted,
+      AuditAction.BookingStaffReinstate,
+    ];
     for (const lifecycle of LIFECYCLES) {
       const appointment = withStatus(lifecycle);
       for (const instant of [today(12), plus(today(12), 86_400_000)]) {
         const now = nowAt(instant);
+        const step = AppointmentLifecycleSystem.transition(
+          appointment,
+          request(S.Confirmed),
+          now,
+        );
         expect(
-          AppointmentLifecycleSystem.reopenSettled(appointment, now).ok,
+          step.ok &&
+            reopens.includes(
+              step.value.auditFacts[0]?.context.auditAction ?? '',
+            ),
         ).toBe(
           AppointmentLifecycleSystem.reopenable(
             lifecycle.bookingStatus,
@@ -1280,7 +1366,8 @@ describe('AppointmentLifecycleSystem.inverseOf — the undo an act offers', () =
   });
 
   it('carries no day guard — the undo is offered whatever day it is', () => {
-    // Unlike `reopenSettled`: the server still refuses it off the visit's day.
+    // Unlike the reopen `transition` makes: the server still refuses it off
+    // the visit's day.
     expect(AppointmentLifecycleSystem.inverseOf(S.Cancelled, true)).toBe(
       S.Confirmed,
     );
@@ -1475,19 +1562,6 @@ describe('AppointmentLifecycleSystem — the transition callable’s three predi
     );
   });
 
-  it('endsCancelled: cancelled after, and not before', () => {
-    for (const before of Object.values(S)) {
-      for (const after of Object.values(S)) {
-        expect(
-          AppointmentLifecycleSystem.endsCancelled(
-            { bookingStatus: before },
-            { bookingStatus: after },
-          ),
-        ).toBe(after === S.Cancelled && before !== S.Cancelled);
-      }
-    }
-  });
-
   it('endsLive: live after, and not before — the busy projection’s predicate (pass E, DEP-5)', () => {
     const live = (status: BookingStatus) =>
       status === S.Pending || status === S.Confirmed;
@@ -1546,7 +1620,6 @@ describe('AppointmentLifecycleSystem — the read-only legality is pure', () => 
         root,
         deepFreeze({ to: S.Confirmed, seatId: null }),
       ),
-      ends: AppointmentLifecycleSystem.endsCancelled(root, root),
       live: AppointmentLifecycleSystem.endsLive(root, root),
     });
     const once = calls();
@@ -1563,7 +1636,7 @@ describe('AppointmentLifecycleSystem — purity', () => {
     const req = deepFreeze(
       request(BookingStatus.Cancelled, {
         reason: CancellationReason.ClientUnwell,
-        windowHours: 24,
+        windowHours: hourCount(24),
       }),
     );
     const once = AppointmentLifecycleSystem.transition(

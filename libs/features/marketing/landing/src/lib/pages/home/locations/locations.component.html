@@ -121,13 +121,16 @@
                      ui-spacer needed — ui-list-row's label is the flexible
                      column and the slot never shrinks). -->
                 <span uiTrailing class="location-card__actions">
-                  @if (location.phoneKey) {
+                  @if (
+                    location.phoneKey && phoneHref(t(location.phoneKey));
+                    as callHref
+                  ) {
                     <a
                       uiButton
                       uiButtonStyle="bordered"
                       uiTint="neutral"
                       [uiIconOnly]="true"
-                      [href]="phoneHref(t(location.phoneKey))"
+                      [href]="callHref"
                       [attr.aria-label]="
                         t('landing.location.callAria', {
                           location: t(location.nameKey),
@@ -260,7 +263,7 @@
                         class="location-sheet__phone-line"
                         uiText
                         uiFont="caption"
-                        [href]="phoneHref(t(location.phoneKey))"
+                        [attr.href]="phoneHref(t(location.phoneKey))"
                       >
                         <ui-icon uiName="location.call" />
                         {{ t(location.phoneKey) }}
@@ -402,14 +405,17 @@
       [uiVisible]="true"
     >
       @if (activeLocation(); as location) {
-        @if (location.phoneKey) {
+        @if (
+          location.phoneKey && phoneHref(t(location.phoneKey));
+          as callHref
+        ) {
           <a
             uiButton
             uiButtonStyle="strokedBorder"
             uiControlSize="large"
             uiMaterial="regular"
             [uiIconOnly]="true"
-            [href]="phoneHref(t(location.phoneKey))"
+            [href]="callHref"
             [attr.aria-label]="
               t('landing.location.callAria', {
                 location: t(location.nameKey),

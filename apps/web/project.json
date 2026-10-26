@@ -60,6 +60,22 @@
           "optimization": false,
           "extractLicenses": false,
           "sourceMap": true
+        },
+        "csp-smoke": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "975kb",
+              "maximumError": "1mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "10kb",
+              "maximumError": "20kb"
+            }
+          ],
+          "outputHashing": "all",
+          "outputPath": "dist/apps/web-csp-smoke"
         }
       },
       "inputs": [
@@ -99,6 +115,14 @@
         "^production",
         "{workspaceRoot}/config/feature-flags.json"
       ]
+    },
+    "e2e-csp": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "pnpm exec playwright test --config apps/web/playwright.csp.config.mts",
+        "cwd": "{workspaceRoot}"
+      }
     },
     "serve-static": {
       "continuous": true,

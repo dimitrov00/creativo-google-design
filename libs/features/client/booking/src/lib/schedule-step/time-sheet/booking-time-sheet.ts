@@ -23,6 +23,7 @@ import type {
 import {
   type BookingPolicy,
   Daypart,
+  type MoveRider,
   ScheduleSelection,
   type SeatAssignment,
   type ShopNow,
@@ -31,6 +32,7 @@ import {
   BookingCartSystem,
   type CartLocatedOption,
   type DayQuery,
+  MoveSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -69,9 +71,10 @@ interface DaypartVm {
 
 /**
  * One arrangement, at its shop, and the instant its party starts — the
- * `data-start` the e2e suite reads the booked instant from.
+ * `data-start` the e2e suite reads the booked instant from
+ * ({@link timedOptionsOf}).
  */
-interface TimedOption {
+export interface TimedOption {
   readonly located: CartLocatedOption;
   readonly startUtcMs: UtcEpochMs;
 }
@@ -236,9 +239,11 @@ export class BookingTimeSheet {
 
   /**
    * The day's arrangements — derived from its documents by the systems
-   * (`BookingCartSystem.dayOptions`), each with the instant its party starts on the shop's
-   * clock. A start inside a spring-forward gap names no instant and is not
-   * offered — the commit would refuse it (`DST_GAP_INVALID_TIME`). `null`
+   * (`BookingCartSystem.dayOptions`), each framed on the shop's clock with
+   * the whole party a move carries ({@link timedOptionsOf}, OR-7): one that
+   * would seat anybody — a sequential seat or a carried companion too — in
+   * a spring-forward gap is not offered, because the commit would refuse it
+   * (`DST_GAP_INVALID_TIME`). `null`
    * while the documents for THIS question are on their way; a read that
    * failed offers nothing.
    */
@@ -256,12 +261,12 @@ export class BookingTimeSheet {
       ) {
         return null;
       }
-      const timed: TimedOption[] = [];
-      for (const located of BookingCartSystem.dayOptions(query, docs.value)) {
-        const startUtcMs = this.instantAt(located.option.startMinutes);
-        if (startUtcMs !== null) timed.push({ located, startUtcMs });
-      }
-      return timed;
+      return timedOptionsOf(
+        BookingCartSystem.dayOptions(query, docs.value),
+        this.day(),
+        this.zone(),
+        this.store.moveRiders(),
+      );
     },
   );
 
@@ -405,11 +410,10 @@ export class BookingTimeSheet {
   }
 
   /**
-   * Emit the whole arrangement — envelope and per-seat placement.
-   *
-   * Shared with the flexible sheet through {@link toScheduleSelection}: both
-   * turn a `LocatedOption` into the same shape, and two copies of that mapping
-   * would be two answers to "what exactly did the user agree to".
+   * Emit the whole arrangement — envelope and per-seat placement — through
+   * {@link toScheduleSelection}, the one mapping from an offer to the
+   * machine's selection: a second copy of it would be a second answer to
+   * "what exactly did the user agree to".
    */
   protected confirm(): void {
     const located = this.selectedOption();
@@ -419,15 +423,6 @@ export class BookingTimeSheet {
     );
     if (!selection) return;
     this.confirmed.emit(selection);
-  }
-
-  /**
-   * A minute of this sheet's shop day as an instant, in the shop's zone —
-   * `null` in a spring-forward gap. Only the DOM's `data-start` reads it.
-   */
-  private instantAt(minute: MinuteOfDay): UtcEpochMs | null {
-    const instant = ZonedTimeSystem.toUtc(this.day(), minute, this.zone());
-    return instant.ok ? instant.value : null;
   }
 
   // ── Formatting ──────────────────────────────────────────────────────
@@ -447,6 +442,47 @@ export class BookingTimeSheet {
       this.content.text(name),
     );
   }
+}
+
+/**
+ * The day's arrangements on the shop's clock (OR-7, the ingestion
+ * boundary's rule restated for the offer): each option's WHOLE party — its
+ * seats' own starts, then every rider a move carries at its kept distance
+ * (`MoveSystem.partyStarts`) — framed on `zone` by
+ * `ZonedTimeSystem.frameShopDay`, the frame the reschedule and the commit
+ * place a request by. A start the zone erases (a spring-forward gap minute)
+ * for the envelope, a sequential seat or a carried companion frames nothing,
+ * so the option is not offered: the server would refuse it
+ * `DST_GAP_INVALID_TIME`. The instant is the party's EARLIEST start
+ * (DEP-F6) — on a companion-first move the companion's, the `utcEpochMs`
+ * the server stores — and only the DOM's `data-start` reads it; the
+ * selection stays wall clock ({@link toScheduleSelection}).
+ *
+ * Pure. The frames are memoised for the one call, keyed on the starts they
+ * place: a lone client's options are framed once per minute, and a party's
+ * arrangements that share their seats' minutes (the same start on other
+ * barbers) once between them.
+ */
+export function timedOptionsOf(
+  options: readonly CartLocatedOption[],
+  day: LocalDate,
+  zone: TimeZone,
+  riders: readonly MoveRider[],
+): readonly TimedOption[] {
+  const frames = new Map<string, UtcEpochMs | null>();
+  const timed: TimedOption[] = [];
+  for (const located of options) {
+    const starts = MoveSystem.partyStarts(located.option.assignments, riders);
+    const key = starts.join(',');
+    let startUtcMs = frames.get(key);
+    if (startUtcMs === undefined) {
+      const framed = ZonedTimeSystem.frameShopDay(day, starts, zone);
+      startUtcMs = framed.ok ? framed.value : null;
+      frames.set(key, startUtcMs);
+    }
+    if (startUtcMs !== null) timed.push({ located, startUtcMs });
+  }
+  return timed;
 }
 
 /**

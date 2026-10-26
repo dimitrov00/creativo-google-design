@@ -65,7 +65,6 @@ describe('firestorePorts — the assembler', () => {
       'loadCapacityMonths',
       'writeLeadTimeSample',
       'loadOpenWaitlist',
-      'loadWaitlistRequest',
       'hasRecentNotification',
       'pageClients',
       'loadPolicyRecomputeJob',

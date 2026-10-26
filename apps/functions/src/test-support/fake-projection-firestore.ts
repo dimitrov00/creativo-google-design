@@ -541,7 +541,14 @@ export function createProjectionFirestore(seed: Record<string, Data> = {}) {
 
   const plans: (readonly WriteOp[])[] = [];
   const transactions: RecordedReadTx[] = [];
-  const adapterCommit = firestoreCommitPlan(db as unknown as Firestore);
+  // A mechanics double over partial bodies: the registry that guards
+  // nothing, nothing to report (OR-33 — the commit plan's registry and log
+  // have no default).
+  const adapterCommit = firestoreCommitPlan(
+    db as unknown as Firestore,
+    () => null,
+    () => undefined,
+  );
 
   const recording = (tx: ReadTx): RecordedReadTx => {
     const reads: DocPath[] = [];

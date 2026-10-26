@@ -136,14 +136,57 @@ describe('couponVoucherPorts — coupons', () => {
 });
 
 describe('couponVoucherPorts — grants', () => {
-  it('loads one grant by id, and null when there is none', async () => {
-    const ports = couponVoucherPorts(asDb(promotions()));
+  it('loads grants by id in one batched get, WHATEVER their status — a burned one shows on its visit’s card; an absent id is not answered', async () => {
+    const fake = promotions();
 
-    expect(await ports.loadCouponGrant(CouponGrantId.of('g-active'))).toEqual(
-      Result.ok({ id: 'g-active', ...grant('cus_georgi', 'ACTIVE') }),
+    const loaded = await couponVoucherPorts(asDb(fake)).loadCouponGrants([
+      CouponGrantId.of('g-used'),
+      CouponGrantId.of('g-active'),
+      CouponGrantId.of('g-none'),
+    ]);
+
+    expect(
+      loaded.ok && [...loaded.value].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    ).toEqual([
+      { id: 'g-active', ...grant('cus_georgi', 'ACTIVE') },
+      { id: 'g-used', ...grant('cus_georgi', 'USED') },
+    ]);
+    expect(fake.reads).toHaveLength(1);
+    expect(fake.reads[0]?.constraints).toEqual([
+      '__name__ in ["g-used","g-active","g-none"]',
+    ]);
+  });
+
+  it('asks thirty grant ids at a time, each once — and reads nothing for none', async () => {
+    const fake = promotions();
+    const ids = Array.from({ length: 31 }, (_, i) =>
+      CouponGrantId.of(`g-${i}`),
     );
-    expect(await ports.loadCouponGrant(CouponGrantId.of('g-none'))).toEqual(
-      Result.ok(null),
+    const ports = couponVoucherPorts(asDb(fake));
+
+    await ports.loadCouponGrants([...ids, ids[0] as CouponGrantId]);
+    expect(fake.reads).toHaveLength(2);
+
+    const empty = promotions();
+    expect(await couponVoucherPorts(asDb(empty)).loadCouponGrants([])).toEqual(
+      Result.ok([]),
+    );
+    expect(empty.reads).toEqual([]);
+  });
+
+  it('turns a refused grant read into a failed Result', async () => {
+    const fake = promotions().failWith({ code: 'permission-denied' });
+
+    const loaded = await couponVoucherPorts(asDb(fake)).loadCouponGrants([
+      CouponGrantId.of('g-active'),
+    ]);
+
+    expect(loaded).toEqual(
+      Result.err({
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'couponGrants',
+        reason: 'permission-denied',
+      }),
     );
   });
 

@@ -175,6 +175,23 @@ function carriedStartMinutes(
   return start.ok ? start.value : null;
 }
 
+/**
+ * The selection's EARLIEST start — what every rider's kept distance is
+ * measured from ({@link MoveSystem.placeRiders}, {@link MoveSystem.partyStarts});
+ * `null` for no assignment at all. One linear scan.
+ */
+function earliestStart(
+  assignments: readonly Pick<SeatAssignment, 'startMinutes'>[],
+): MinuteOfDay | null {
+  let earliest: MinuteOfDay | null = null;
+  for (let i = 0; i < assignments.length; i++) {
+    const start = (assignments[i] as Pick<SeatAssignment, 'startMinutes'>)
+      .startMinutes;
+    if (earliest === null || start < earliest) earliest = start;
+  }
+  return earliest;
+}
+
 function anchorOf(
   appointment: { readonly seats: readonly AccountSeat[] },
   ownerUserId: UserId | null,
@@ -329,14 +346,8 @@ export const MoveSystem = {
     assignments: readonly Pick<SeatAssignment, 'startMinutes'>[],
     riders: readonly MoveRider[],
   ): readonly PlacedRider[] {
-    if (assignments.length === 0) return [];
-    let earliest = (assignments[0] as Pick<SeatAssignment, 'startMinutes'>)
-      .startMinutes;
-    for (let i = 1; i < assignments.length; i++) {
-      const start = (assignments[i] as Pick<SeatAssignment, 'startMinutes'>)
-        .startMinutes;
-      if (start < earliest) earliest = start;
-    }
+    const earliest = earliestStart(assignments);
+    if (earliest === null) return [];
     const placed: PlacedRider[] = [];
     for (let i = 0; i < riders.length; i++) {
       const rider = riders[i] as MoveRider;
@@ -346,6 +357,36 @@ export const MoveSystem = {
       });
     }
     return placed;
+  },
+
+  /**
+   * EVERY START THE PARTY WOULD SIT AT (OR-7): each assignment's own start,
+   * in order, then each rider's — its stored distance after the selection's
+   * earliest start, the scan {@link placeRiders} makes — `null` for a rider
+   * its kept distance takes off the shop day (which the server refuses).
+   * What the time sheet frames on the shop's clock, start by start, so it
+   * never offers a start the zone erases for a sequential seat or a carried
+   * companion either. Reads the assignments as they are (Law 3). Empty when
+   * there is nothing to anchor to.
+   */
+  partyStarts(
+    assignments: readonly Pick<SeatAssignment, 'startMinutes'>[],
+    riders: readonly MoveRider[],
+  ): readonly (MinuteOfDay | null)[] {
+    const earliest = earliestStart(assignments);
+    if (earliest === null) return [];
+    const starts: (MinuteOfDay | null)[] = [];
+    for (let i = 0; i < assignments.length; i++) {
+      starts.push(
+        (assignments[i] as Pick<SeatAssignment, 'startMinutes'>).startMinutes,
+      );
+    }
+    for (let i = 0; i < riders.length; i++) {
+      starts.push(
+        carriedStartMinutes(earliest, (riders[i] as MoveRider).offsetMinutes),
+      );
+    }
+    return starts;
   },
 
   /**
@@ -760,9 +801,11 @@ export const MoveSystem = {
       const seat = replaced[i] as Seat;
       storedKeys.push(
         placementKey(
-          seat.seatSubject === SeatSubject.Anonymous
-            ? `guest:${seat.guestLabel}`
-            : 'self',
+          // A replaced seat is the booker's own or a guest's — a walk-in
+          // the shop keeps a record for is a guest by label too (OR-26).
+          seat.seatSubject === SeatSubject.Account
+            ? 'self'
+            : `guest:${seat.guestLabel}`,
           seat.serviceId,
           seat.variantId,
           seat.barberId,

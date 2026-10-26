@@ -4,13 +4,18 @@ import {
   BookingLifecycle,
   BookingPolicy,
 } from '@core/components';
-import { BookingStatus, Result, type UtcEpochMs } from '@core/primitives';
+import {
+  BookingStatus,
+  type HourCount,
+  Result,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { CancellationRefusal } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 
 /** A free cancel (or move): the window it was allowed under — the stamp its seats carry. */
-export type CancellationAllowance = { readonly windowHours: number };
+export type CancellationAllowance = { readonly windowHours: HourCount };
 
 /**
  * The visit's start as an instant — the earliest seat, the truth, placed on
@@ -29,8 +34,8 @@ function startUtcMsOf(
 
 /**
  * The free-cancellation window — `cancellation-window.ts` as arithmetic over
- * whole hours (one rule for the number: `BookingPolicy.isValidCancellationWindowHours`,
- * which the setting and every stamp on a cancelled seat accept alike).
+ * whole hours (one rule for the number: the `HourCount` brand, OR-45, which
+ * the setting and every stamp on a cancelled seat carry alike).
  *
  * ONE formula for the deadline (`start − hours × 1 h` of elapsed time — a T2
  * lifecycle comparison on `UtcEpochMs`, G-1), `BookingPolicy`'s
@@ -46,7 +51,7 @@ export const CancellationPolicySystem = {
    * UNKNOWN — when the policy could not be read (a shop cancel still lands;
    * the stats then judge it by the current policy).
    */
-  stampOf(policy: BookingPolicy | null): number | null {
+  stampOf(policy: BookingPolicy | null): HourCount | null {
     return policy === null ? null : policy.cancellationWindowHours;
   },
 

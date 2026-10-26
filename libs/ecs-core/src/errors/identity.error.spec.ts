@@ -136,8 +136,9 @@ describe('IdentityError', () => {
       requested: 'PHONE',
       authStrategyKind: 'EMAIL_OTP',
     });
-    expect(IdentityError.otpRateLimited()).toEqual({
+    expect(IdentityError.otpRateLimited(42)).toEqual({
       errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+      retryAfterSeconds: 42,
     });
     expect(IdentityError.otpNotFound()).toEqual({
       errorCode: 'IDENTITY_OTP_NOT_FOUND',
@@ -164,6 +165,16 @@ describe('IdentityError', () => {
     // None of them is an OTP verdict — `OtpSystem.verify` never answers one.
     expect(IdentityError.isOtp(IdentityError.otpNotFound())).toBe(false);
     expect(IdentityError.isOtp(IdentityError.otpAccountConflict())).toBe(false);
+  });
+
+  it('the rate limit carries the seconds left on the resend window — one scalar i18n param, never an OTP verdict (OR-9)', () => {
+    const error: IdentityError = IdentityError.otpRateLimited(17);
+    expect(Object.keys(error)).toEqual(['errorCode', 'retryAfterSeconds']);
+    expect(
+      IdentityError.is(error, IdentityErrorCode.OtpRateLimited) &&
+        error.retryAfterSeconds,
+    ).toBe(17);
+    expect(IdentityError.isOtp(error)).toBe(false);
   });
 
   it('is() narrows by errorCode; isOtp() picks out the four verdicts', () => {

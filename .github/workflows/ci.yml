@@ -33,6 +33,15 @@ jobs:
       - run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
       - run: pnpm exec nx affected -t lint test build --base=$NX_BASE --head=$NX_HEAD
 
+      # The CSP gate (owner ruling OR-31): the built index.html's inline
+      # scripts, hashed here, against firebase.json's script-src — with the
+      # security headers and the cache rules beside it. Built whether or not
+      # the affected run touched web (a cache hit when it did): the policy
+      # guards every deploy. The emulator smoke (`pnpm run verify:csp`) is
+      # the full gate's, not CI's.
+      - run: pnpm exec nx build web
+      - run: node tools/verify/csp/check-csp.mjs
+
       # Repo-wide icon sweep — every icon and the logo go through libs/ui/icons.
       # Runs regardless of the affected graph: it is cheap and the lint rules
       # it backs only run for projects that changed.

@@ -6,8 +6,8 @@ import { GrantExpiry, GrantExpiryTerms } from './grant-expiry-terms.data';
 import { GrantLifecycle } from './grant-lifecycle.data';
 
 // The capacity / expiry factory cases of `coupon-grant.spec.ts`; the
-// lifecycle (`burn`, `restore`, `expire`, `revoke`, `isUsable`) is
-// CouponGrantSystem's.
+// lifecycle (`burn`, `restore`, `isUsable`, the bill's settle and release)
+// is CouponGrantSystem's.
 
 const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
@@ -76,10 +76,40 @@ describe('GrantLifecycle', () => {
     expect(GrantLifecycle.isActive(lifecycle)).toBe(true);
   });
 
-  it('tells a spent grant from an active one', () => {
-    const used = GrantLifecycle.used(at(1), '');
-    expect(used).toEqual({ grantStatus: 'USED', usedAtUtcMs: 1, usedNote: '' });
+  it('tells a spent grant from an active one, the issue terms kept (OR-13)', () => {
+    const used = GrantLifecycle.used(
+      GrantLifecycle.active(
+        GrantCapacityTerms.singleUse(),
+        GrantExpiryTerms.none(),
+      ),
+      at(1),
+      '',
+    );
+    expect(used).toEqual({
+      grantStatus: 'USED',
+      grantCapacity: 'SINGLE_USE',
+      grantExpiry: 'NO_EXPIRY',
+      usedAtUtcMs: 1,
+      usedNote: '',
+    });
     expect(GrantLifecycle.isActive(used)).toBe(false);
+  });
+
+  it('stores a spent multi-use grant with no use remaining, its expiry as it was', () => {
+    const terms = {
+      ...unwrapOk(GrantCapacityTerms.multiUse(3)),
+      ...GrantExpiryTerms.at(at(9)),
+    };
+    expect(GrantLifecycle.used(terms, at(2), 'appointment:appt-1')).toEqual({
+      grantStatus: 'USED',
+      grantCapacity: 'MULTI_USE',
+      usesRemaining: 0,
+      usesGranted: 3,
+      grantExpiry: 'EXPIRES_AT',
+      grantExpiresAtUtcMs: 9,
+      usedAtUtcMs: 2,
+      usedNote: 'appointment:appt-1',
+    });
   });
 
   it('copies exactly its variant out of a whole grant', () => {
@@ -87,6 +117,9 @@ describe('GrantLifecycle', () => {
     const active = GrantLifecycle.active(multi, GrantExpiryTerms.at(at(9)));
     const grant = { ...active, couponId: 'c-1' };
     expect(GrantLifecycle.of(grant)).toEqual(active);
+    const used = GrantLifecycle.used(active, at(3), 'seed');
+    const spent = { ...used, couponId: 'c-1' };
+    expect(GrantLifecycle.of(spent)).toEqual(used);
     const expired = GrantLifecycle.expired(at(5), at(4));
     expect(GrantLifecycle.of(expired)).toEqual({
       grantStatus: 'EXPIRED',

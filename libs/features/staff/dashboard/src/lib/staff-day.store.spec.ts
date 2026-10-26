@@ -21,26 +21,45 @@ import {
 import {
   AppointmentId,
   BarberId,
+  CouponGrantId,
+  CouponId,
+  CustomerId,
+  GrantStatus,
   LocalDate,
   LocationId,
   Result,
   Weekday,
 } from '@core/primitives';
 import { CatalogErrorCode, RepositoryError } from '@core/errors';
-import { DayHours, ShiftSegment } from '@core/components';
+import {
+  Combinability,
+  CouponExpiryRule,
+  CouponStatus,
+  CouponValue,
+  DayHours,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
+  ShiftSegment,
+} from '@core/components';
 import type {
   AppointmentNote,
   BarberSchedule,
+  Coupon,
+  CouponGrant,
   ShopLocation,
 } from '@core/entities';
 import type {
   AppointmentNotePorts,
   AppointmentReadPorts,
+  CouponVoucherPorts,
   MediaResolvePorts,
+  ObserveBarberDay,
 } from '@core/ports';
-import { ZonedTimeSystem } from '@core/systems';
+import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  appointmentFixture,
   at,
   barberFixture,
   barberScheduleFixture,
@@ -107,6 +126,9 @@ async function build(
     readonly storedView?: string;
     readonly url?: string;
     readonly notes?: AppointmentNotePorts;
+    /** The chairs' days as the read port answers them — every chair empty and clean by default. */
+    readonly barberDay?: ObserveBarberDay;
+    readonly couponsVouchers?: CouponVoucherPorts;
   } = {},
 ): Promise<Harness> {
   localStorage.clear();
@@ -142,7 +164,9 @@ async function build(
         provide: APPOINTMENT_READ_PORTS,
         useValue: {
           observeAppointment: () => of(Result.ok(null)),
-          observeBarberDay: () => of(Result.ok([])),
+          observeBarberDay:
+            options.barberDay ??
+            (() => of(Result.ok({ appointments: [], unreadableCount: 0 }))),
           observeUpcoming: () => of(Result.ok([])),
           observeHistory: () => of(Result.ok([])),
           pageClientHistory: async () =>
@@ -185,7 +209,10 @@ async function build(
         provide: APPOINTMENT_PHOTO_PORTS,
         useValue: memoryAppointmentPhotoPorts([]),
       },
-      { provide: COUPON_VOUCHER_PORTS, useValue: memoryCouponVoucherPorts() },
+      {
+        provide: COUPON_VOUCHER_PORTS,
+        useValue: options.couponsVouchers ?? memoryCouponVoucherPorts(),
+      },
       {
         provide: MEDIA_RESOLVE_PORTS,
         useValue: {
@@ -442,6 +469,129 @@ describe('StaffDayStore — the lanes carry the roster’s own minutes', () => {
         [540, 720],
       ],
     );
+  });
+});
+
+describe('StaffDayStore — a chair whose day was not read in full (OR-2)', () => {
+  /** Ivan rostered 09:00–18:00 on the fixture's Wednesday. */
+  const ROSTERED = [
+    barberScheduleFixture({
+      id: IVAN,
+      versions: [
+        {
+          seq: 1,
+          effectiveFromLocalDate: localDate('2026-01-01'),
+          effectiveToLocalDate: null,
+          segments: [ShiftSegment.of(Weekday.Wed, CENTER, at(9), until(18))],
+        },
+      ],
+    }),
+  ];
+  const failing: ObserveBarberDay = () =>
+    of(Result.err(RepositoryError.malformed('appointments/bad', 'seats[0]')));
+
+  it('carries the count of visits the read could not show — 1 of 3 dropped', async () => {
+    const kept = [
+      appointmentFixture({ id: AppointmentId.of('apt-1') }),
+      appointmentFixture({ id: AppointmentId.of('apt-2') }),
+    ];
+    const { store } = await build({
+      barberDay: () =>
+        of(Result.ok({ appointments: kept, unreadableCount: 1 })),
+    });
+    const lane = store.lanes().find((entry) => entry.barberId === IVAN);
+    expect(lane?.unreadable).toBe(1);
+    expect(lane?.failed).toBe(false);
+    expect(lane?.appointments).toBe(kept);
+  });
+
+  it('reads a clean day as nothing unread', async () => {
+    const { store } = await build({ schedules: ROSTERED });
+    const lane = store.lanes().find((entry) => entry.barberId === IVAN);
+    expect(lane?.unreadable).toBe(0);
+    expect(lane?.failed).toBe(false);
+    // The contrast for the failed case below: a clean rostered day has holes.
+    expect(lane?.gaps.length).toBeGreaterThan(0);
+  });
+
+  it('draws no gap on a failed chair — a hole from a list never read would sell held time', async () => {
+    const { store } = await build({ schedules: ROSTERED, barberDay: failing });
+    const lane = store.lanes().find((entry) => entry.barberId === IVAN);
+    expect(lane?.failed).toBe(true);
+    expect(lane?.unreadable).toBe(0);
+    expect(lane?.appointments).toEqual([]);
+    expect(lane?.rostered.length).toBeGreaterThan(0);
+    expect(lane?.gaps).toEqual([]);
+  });
+
+  it('never lists a failed chair as off — an unrostered chair that read cleanly still is', async () => {
+    const clean = await build();
+    expect(clean.store.offToday()).toEqual([IVAN]);
+    TestBed.resetTestingModule();
+    const { store } = await build({ barberDay: failing });
+    expect(store.lanes()[0]?.failed).toBe(true);
+    expect(store.offToday()).toEqual([]);
+  });
+});
+
+describe('StaffDayStore — the open visit’s saved bill grants (OR-13)', () => {
+  const GEORGI = CustomerId.of('cus_georgi');
+  const COUPON: Coupon = {
+    id: CouponId.of('coupon-free-cut'),
+    name: 'Безплатно подстригване',
+    code: null,
+    combinability: Combinability.Exclusive,
+    usageLimit: null,
+    couponStatus: CouponStatus.Enabled,
+    couponOccasion: null,
+    ...unwrapOk(CouponValue.percentOff(100)),
+    ...CouponExpiryRule.never(),
+  };
+  const grant = (id: string): CouponGrant => ({
+    id: CouponGrantId.of(id),
+    customerId: GEORGI,
+    holderUserId: null,
+    couponId: COUPON.id,
+    grantedAtUtcMs: utcMs('2026-08-01T09:00:00.000+03:00'),
+    ...CouponValue.of(COUPON),
+    ...GrantLifecycle.active(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.none(),
+    ),
+  });
+  /** The grant a save burned — `USED`, so the usable list no longer holds it. */
+  const SPENT = unwrapOk(
+    CouponGrantSystem.burn(
+      grant('grant-spent'),
+      utcMs('2026-08-04T10:00:00.000+03:00'),
+      'appointment:apt-1',
+    ),
+  );
+  const HELD = grant('grant-held');
+
+  it('offers the usable grants and the ones the saved bill already spent', async () => {
+    expect(SPENT.grantStatus).toBe(GrantStatus.Used);
+    const { store } = await build({
+      couponsVouchers: memoryCouponVoucherPorts({
+        grants: [SPENT, HELD],
+        coupons: [COUPON],
+      }),
+    });
+    store.probeGrants(GEORGI);
+    await settle();
+    expect(store.grants().map((option) => option.grantId)).toEqual([
+      'grant-held',
+    ]);
+    // The open visit's bill names the burned grant: it shows on its card.
+    store.probeGrants(GEORGI, [SPENT.id]);
+    await settle();
+    expect(store.grants().map((option) => option.grantId)).toEqual([
+      'grant-held',
+      'grant-spent',
+    ]);
+    store.probeGrants(null);
+    await settle();
+    expect(store.grants()).toEqual([]);
   });
 });
 

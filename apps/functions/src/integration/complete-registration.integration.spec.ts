@@ -24,7 +24,7 @@ import {
   type CompleteRegistrationCommand,
   completeRegistration,
 } from '@core/pipelines';
-import { RegistrationSystem } from '@core/systems';
+import { RegistrationSystem, StoredDocumentSystem } from '@core/systems';
 import { pinnedNowUtcMs, recordingTelemetry } from '@core/testing';
 import { authClaimsPorts } from '../adapters/auth-claims.adapter';
 import { sha256Hex } from '../adapters/crypto.adapter';
@@ -128,7 +128,11 @@ describe('completeRegistration (emulator)', () => {
   function run(cmd: CompleteRegistrationCommand) {
     const telemetry = recordingTelemetry();
     return completeRegistration({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       hash: sha256Hex,
       ...firestoreUserPorts(db),

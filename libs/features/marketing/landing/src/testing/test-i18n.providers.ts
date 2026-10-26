@@ -96,6 +96,8 @@ const bg: Translation = {
       opensAt: 'Отваря в {{time}}',
       opensOn: 'Отваря в {{day}} в {{time}}',
       today: 'Днес',
+      center: { phone: '+359 88 123 4567' },
+      mladost: { phone: '+359 88 765 4321' },
       weekdays: {
         sun: 'Неделя',
         mon: 'Понеделник',

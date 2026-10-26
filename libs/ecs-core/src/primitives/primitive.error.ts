@@ -22,6 +22,12 @@ export const PrimitiveErrorCode = {
   CurrencyUnknown: 'PRIMITIVE_CURRENCY_UNKNOWN',
   IdEmpty: 'PRIMITIVE_ID_EMPTY',
   IdHasSlash: 'PRIMITIVE_ID_HAS_SLASH',
+  /** A name Firestore reserves for itself: `.`, `..` or `__…__` (OR-44). */
+  IdReserved: 'PRIMITIVE_ID_RESERVED',
+  /** Not a whole number of hours in `[0, HourCount.MAX]` (OR-45). */
+  HourCountOutOfRange: 'PRIMITIVE_HOUR_COUNT_OUT_OF_RANGE',
+  /** Not the E.164 shape `+<1-9><6 to 14 digits>` (OR-48). */
+  PhoneNotE164: 'PRIMITIVE_PHONE_NOT_E164',
   LatitudeOutOfRange: 'PRIMITIVE_LATITUDE_OUT_OF_RANGE',
   LongitudeOutOfRange: 'PRIMITIVE_LONGITUDE_OUT_OF_RANGE',
   EpochSecondsInvalid: 'PRIMITIVE_EPOCH_SECONDS_INVALID',

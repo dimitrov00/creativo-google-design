@@ -22,6 +22,7 @@ export * from './capacity.system';
 export * from './catalog-pricing.system';
 export * from './catalog.system';
 export * from './client-glance.system';
+export * from './client-issue.system';
 export * from './client-query.system';
 export * from './client-stats.system';
 export * from './coupon-grant.system';

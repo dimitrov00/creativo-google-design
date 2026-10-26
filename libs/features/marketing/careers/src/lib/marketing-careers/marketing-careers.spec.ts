@@ -14,6 +14,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
@@ -22,11 +23,13 @@ import {
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { PositionStatus } from '@core/components';
-import type { Position } from '@core/entities';
+import type { Position, ShopLocation } from '@core/entities';
 import type { PositionReadPorts } from '@core/ports';
+import { LocationId } from '@core/primitives';
 import {
   locationFixture,
   memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
   memoryClockPorts,
@@ -37,14 +40,23 @@ import {
   memoryProfilePorts,
   memoryProgramsWorld,
   positionOf,
+  textFixture,
 } from '@core/testing';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingCareers } from './marketing-careers';
 
+/** The two shops of a multi-shop tenant — «Център» (the default) and «Младост». */
+const CENTER = locationFixture({ shortName: textFixture('Center', 'Център') });
+const MLADOST = locationFixture({
+  id: LocationId.of('loc-mladost'),
+  shortName: textFixture('Mladost', 'Младост'),
+  sortOrder: 1,
+});
+
 /**
  * The app's own `programs.status` words for `lang` — read, never re-typed, so
- * the badge cases pin today's words (pass E, E-17: they moved into the
- * catalogues unchanged). Every other key renders as itself.
+ * the badge cases pin the catalogue's words (pass E, E-17; translated by
+ * OR-53). Every other key renders as itself.
  */
 function programStatusWords(lang: string): Translation {
   const file = resolve(
@@ -99,6 +111,7 @@ function recordedPositionReads(
 async function configure(
   open: readonly Position[],
   asked: (PositionStatus | null)[] = [],
+  shops: readonly ShopLocation[] = [locationFixture()],
 ): Promise<ComponentFixture<MarketingCareers>> {
   document.documentElement.setAttribute('data-theme', 'light');
   await TestBed.configureTestingModule({
@@ -109,6 +122,12 @@ async function configure(
       {
         provide: POSITION_READ_PORTS,
         useValue: recordedPositionReads(open, asked),
+      },
+      // The catalogue's ACTIVE shops, which a scoped role names at a
+      // multi-shop tenant.
+      {
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({ locations: shops }),
       },
       // An anonymous visitor: the session double's default principal.
       { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
@@ -238,18 +257,18 @@ describe('MarketingCareers', () => {
     );
   });
 
-  // Flip 4, F4-7: the stored status is SCREAMING (`OPEN`); the badge still
-  // prints today's lowercase word through the page's words table.
-  it('prints the badge text "open" for an open role', async () => {
+  // Flip 4, F4-7: the stored status is SCREAMING (`OPEN`); the badge prints
+  // the catalogue's word for it (OR-53).
+  it('prints the badge text "Open" for an open role', async () => {
     const host = await render(await configure([positionOf('pos_1')]));
 
     const badge = host.querySelector(
       '[data-testid="careers-list"] a[uilistrow] [uibadge]',
     );
-    expect(badge?.textContent?.trim()).toBe('open');
+    expect(badge?.textContent?.trim()).toBe('Open');
   });
 
-  it('prints the badge text "closed" for a closed role', async () => {
+  it('prints the badge text "Closed" for a closed role', async () => {
     const host = await render(
       await configure([
         positionOf('pos_1', { positionStatus: PositionStatus.Closed }),
@@ -259,16 +278,16 @@ describe('MarketingCareers', () => {
     const badge = host.querySelector(
       '[data-testid="careers-list"] a[uilistrow] [uibadge]',
     );
-    expect(badge?.textContent?.trim()).toBe('closed');
+    expect(badge?.textContent?.trim()).toBe('Closed');
   });
 
-  it('prints the same lowercase badge word in bg — the catalogue keeps it untranslated (E-17)', async () => {
+  it('prints the bg badge word, agreeing with «позиция» (OR-53)', async () => {
     const host = await render(await configure([positionOf('pos_1')]), 'bg');
 
     const badge = host.querySelector(
       '[data-testid="careers-list"] a[uilistrow] [uibadge]',
     );
-    expect(badge?.textContent?.trim()).toBe('open');
+    expect(badge?.textContent?.trim()).toBe('Отворена');
   });
 
   it('prints the title and summary in the active language', async () => {
@@ -282,5 +301,43 @@ describe('MarketingCareers', () => {
     const bgRow = bg.querySelector('[data-testid="careers-list"] a[uilistrow]');
     expect(bgRow?.textContent).toContain('Бръснар');
     expect(bgRow?.textContent).toContain('Пълен работен ден');
+  });
+
+  // OR-42: at a multi-shop tenant a role scoped to some shops names them
+  // under its summary; a role open at every shop names none.
+  it('names the shops a scoped role is open at, at a multi-shop tenant', async () => {
+    const host = await render(
+      await configure(
+        [
+          positionOf('pos_scoped', {
+            locationIds: [MLADOST.id, CENTER.id],
+          }),
+          positionOf('pos_everywhere', { sortOrder: 1 }),
+        ],
+        [],
+        [CENTER, MLADOST],
+      ),
+      'bg',
+    );
+
+    const rows = host.querySelectorAll(
+      '[data-testid="careers-list"] a[uilistrow]',
+    );
+    expect(
+      rows[0]
+        ?.querySelector('[data-testid="careers-row-shops"]')
+        ?.textContent?.trim(),
+    ).toBe('Център · Младост');
+    expect(
+      rows[1]?.querySelector('[data-testid="careers-row-shops"]'),
+    ).toBeNull();
+  });
+
+  it('names no shop at a one-shop tenant', async () => {
+    const host = await render(
+      await configure([positionOf('pos_scoped', { locationIds: [CENTER.id] })]),
+    );
+
+    expect(host.querySelector('[data-testid="careers-row-shops"]')).toBeNull();
   });
 });

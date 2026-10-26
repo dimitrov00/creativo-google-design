@@ -5,7 +5,7 @@ The home of the dev seed's document bodies as TypeScript (ECS migration,
 3b flip moves the bodies of the collections it reshapes here, in the same
 commit that changes their shape.
 
-## What is here (flip 1 — booking core; flip 2 — identity and accounts; flip 3 — loyalty; the post-migration cleanup)
+## What is here (flip 1 — booking core; flip 2 — identity and accounts; flip 3 — loyalty; the post-migration cleanup; the programs, OR-41)
 
 | File                       | Collections                                                                                                                                                                                             | Exports                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -15,6 +15,7 @@ commit that changes their shape.
 | `book.fixtures.ts`         | `appointments` (authored), `users` and `customers` (who)                                                                                                                                                | `CLIENTS`, `contactOf`; `HISTORY_PLANS` (one rhythm per client, drawn by `history.mjs`); `dayVisits(links)`, the hand-written visits of today and the next two days; `walkInVisit(placed)`                                                                                                                                                                        |
 | `settings.fixtures.ts`     | `settings` (`bookingPolicy`)                                                                                                                                                                            | `BOOKING_POLICY` (the flat `BookingPolicySettings` body, all seven fields, `autoConfirm` included), `CANCELLATION_WINDOW_HOURS`                                                                                                                                                                                                                                   |
 | `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`                                                                                                                                                               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                                                                                                                                                                                                                                                                                                 |
+| `programs.fixtures.ts`     | `positions`, `courses`, `events` (OR-41)                                                                                                                                                                | the admin forms (`POSITION_FORMS`, `COURSE_FORMS`, `OPEN_STUDIO`, `CRAFT_NIGHT`) and the engine that stores them — `positionDocument`, `courseDocument`, `shopEventDocument(form, localDate)`: `ProgramsSystem` judges each form as the admin save does, an event's instant `ZonedTimeSystem.toUtc` on its shop's zone                                            |
 | `waitlist.fixtures.ts`     | `waitlistRequests`                                                                                                                                                                                      | `waitlistRequestBody(plan)`                                                                                                                                                                                                                                                                                                                                       |
 | `customers.fixtures.ts`    | `customers` (D29)                                                                                                                                                                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin)                                                                                                                                                                                                                                                                      |
 | `users.fixtures.ts`        | `users` (flip 2)                                                                                                                                                                                        | `clientUserBody(contact, birthDate)`, `staffAccountBody`, `registeredAccountBody` (`REGISTERED`, `ACTIVE`, search keys from `SearchFieldsSystem`)                                                                                                                                                                                                                 |
@@ -22,7 +23,8 @@ commit that changes their shape.
 
 The plan logic that decides WHERE and WHEN stays in the `.mjs` modules
 (`catalog.mjs`, `calendar.mjs`, `fixtures.mjs`, `history.mjs`,
-`appointments.mjs`, `promotions.mjs`, `waitlist.mjs`, `loyalty.mjs`). A visit
+`appointments.mjs`, `promotions.mjs`, `programs.mjs`, `waitlist.mjs`,
+`loyalty.mjs`). A visit
 is authored here in the entity's own vocabulary — no symbolic code and no
 table turning one into a stored tag; the plan logic places it on the shop's
 calendar (`calendar.mjs`: `ZonedTimeSystem` and `LocalDate` on the default
@@ -31,7 +33,13 @@ return the document. (The loyalty: `loyalty.mjs` folds the book — the visits, 
 levels, the tiers, the rhythm `StreakSystem.trace` projects — and hands each
 builder plain values; an account, its progress and its journal are keyed by
 the client RECORD, `customerIdOf(uid)` (D29), and every instant beside its
-shop day is one reading of the shop's clock (T5).) (The accounts: `fixtures.mjs` hands `clientUserBody` each client's
+shop day is one reading of the shop's clock (T5).) (The programs: each body
+is ENGINE OUTPUT — the admin form an editor would type, judged by
+`ProgramsSystem` exactly as the admin save judges it, an event's instant
+converted once on its shop's zone — and `programs.mjs` places the two
+events on the shop's calendar, two weeks ahead and a month behind;
+`programs.spec.mjs` holds every body to the system and to the rules' key
+sets.) (The accounts: `fixtures.mjs` hands `clientUserBody` each client's
 contact and the birth date its fixture places; `seed-dev-catalog.mjs` writes
 `staffAccountBody`; `tools/verify/p0/verify-p0.mjs` builds its sysadmin with
 `registeredAccountBody`. There is no second copy of the search-prefix rule:

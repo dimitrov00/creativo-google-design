@@ -2,13 +2,13 @@ import {
   type Firestore,
   collection,
   limit,
+  orderBy,
   query,
   where,
 } from 'firebase/firestore';
 import { Collections, type Customer } from '@core/entities';
-import type { CustomerPorts } from '@core/ports';
-import type { StoredDocument } from '@core/systems';
-import { admitted, type ReadGuard, readQuery, UNGUARDED } from './observe';
+import type { CustomerPorts, CustomerSearchPorts } from '@core/ports';
+import { admitted, type ReadGuard, readQuery, readRawQuery } from './observe';
 
 /**
  * `customers/*`, read side (D29, flip 1, plan §3.4) — the client RECORD of
@@ -20,16 +20,17 @@ import { admitted, type ReadGuard, readQuery, UNGUARDED } from './observe';
  *
  * Built with a {@link ReadGuard} (the composition root's `guardedReads`),
  * the one row answers the SINGLE rule (edge hardening D-3): the query reads
- * raw, and a malformed record answers `REPOSITORY_MALFORMED` (reported) —
- * never read as "no record yet", which the client card would offer to
- * create over it. A bare `customerPorts(db)` guards nothing.
+ * raw (`readRawQuery`), and a malformed record answers
+ * `REPOSITORY_MALFORMED` (reported) — never read as "no record yet", which
+ * the client card would offer to create over it. The guard is REQUIRED
+ * (OR-33, DEP-F24): a bare `customerPorts(db)` does not type-check.
  */
 export const customerPorts = (
   db: Firestore,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard,
 ): CustomerPorts => ({
   loadCustomerForUser: async (userId) => {
-    const found = await readQuery<StoredDocument>(
+    const found = await readRawQuery(
       query(
         collection(db, Collections.Customers),
         where('userId', '==', userId),
@@ -41,4 +42,35 @@ export const customerPorts = (
       ? admitted<Customer>(found.value[0] ?? null, Collections.Customers, guard)
       : found;
   },
+});
+
+/**
+ * The staff client search over the client RECORDS (OR-26) — `customers`
+ * where `searchPrefixes array-contains prefix`, `orderBy searchName`, at
+ * most `limit` (the composite index `customers (searchPrefixes CONTAINS,
+ * searchName ASC)` in `firestore.indexes.json`, deployed before the web).
+ * `prefix` is already normalised (`SearchFieldsSystem.normalizeQuery`), as
+ * for the account search (`userSearchPorts`), whose answers the client book
+ * merges these with — so a walk-in the desk entered, a record with no
+ * account (`userId: null`), is found again.
+ *
+ * Built with a {@link ReadGuard} — REQUIRED (OR-33, DEP-F24) — the rows
+ * answer the LIST rule (edge hardening D-3): a malformed record is dropped
+ * and reported, the rest answered — one bad record never blanks a search.
+ */
+export const customerSearchPorts = (
+  db: Firestore,
+  guard: ReadGuard,
+): CustomerSearchPorts => ({
+  searchCustomers: (prefix, count) =>
+    readQuery<Customer>(
+      query(
+        collection(db, Collections.Customers),
+        where('searchPrefixes', 'array-contains', prefix),
+        orderBy('searchName'),
+        limit(count),
+      ),
+      Collections.Customers,
+      guard,
+    ),
 });

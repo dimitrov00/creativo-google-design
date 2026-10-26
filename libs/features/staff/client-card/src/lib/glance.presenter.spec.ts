@@ -5,7 +5,9 @@ import {
   BlockReason,
   BookingLifecycle,
   CouponOccasion,
+  CouponValue,
   E164,
+  RewardGrant,
   PersonalRecordKind,
   StreakState,
   TierOverride,
@@ -25,6 +27,8 @@ import {
   AppointmentPhotoId,
   BadgeSeriesId,
   CouponGrantId,
+  CouponId,
+  Currency,
   RewardId,
   ServiceId,
   StreakDefinitionId,
@@ -32,7 +36,7 @@ import {
   UserId,
 } from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
-import { localDate, registeredUserFixture } from '@core/testing';
+import { localDate, registeredUserFixture, unwrapOk } from '@core/testing';
 import { VisitCardSlot } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
@@ -167,7 +171,7 @@ const CONTRACT = {
 type Added<New extends Built, Built> = Exclude<keyof New, keyof Built>;
 const ADDED = {
   hero: ['tier'],
-  loyalty: ['vouchers', 'rhythm'],
+  loyalty: ['vouchers', 'rhythm', 'heldCouponIds'],
 } satisfies {
   readonly hero: readonly Added<HeroInput, HeadInput>[];
   readonly loyalty: readonly Added<LoyaltyGlanceInput, LoyaltyTilesInput>[];
@@ -190,7 +194,7 @@ describe('the contract (§7.3)', () => {
     ]);
     expect(ADDED).toEqual({
       hero: ['tier'],
-      loyalty: ['vouchers', 'rhythm'],
+      loyalty: ['vouchers', 'rhythm', 'heldCouponIds'],
     });
   });
 });
@@ -553,6 +557,8 @@ describe('the capsules (B)', () => {
 
 const BIRTHDAY_GRANT: ClientCardGrant = {
   grantId: CouponGrantId.of('grant-dev-martin-birthday'),
+  couponId: CouponId.of('coupon-birthday'),
+  value: unwrapOk(CouponValue.percentOff(20)),
   title: 'Рожден ден',
   valueLabel: '−20 %',
   expiresOn: localDate('2026-10-28'),
@@ -630,18 +636,10 @@ describe('the birthday card (BD)', () => {
   });
 
   it('never reads a name: a grant titled «Рожден ден» with no occasion is no gift', () => {
-    // A host that does not know the coupon's occasion states none.
-    const named: ClientCardGrant = {
-      grantId: BIRTHDAY_GRANT.grantId,
-      title: BIRTHDAY_GRANT.title,
-      valueLabel: BIRTHDAY_GRANT.valueLabel,
-      expiresOn: BIRTHDAY_GRANT.expiresOn,
-    };
+    // A coupon tied to no occasion says `null` — never nothing (OR-16).
+    const named: ClientCardGrant = { ...BIRTHDAY_GRANT, couponOccasion: null };
     expect(birthdayOf({ grants: [named, GEORGI_GRANT] })?.gift).toBeNull();
-    expect(
-      birthdayOf({ grants: [{ ...BIRTHDAY_GRANT, couponOccasion: null }] })
-        ?.gift,
-    ).toBeNull();
+    expect(birthdayOf({ grants: [named] })?.gift).toBeNull();
   });
 
   it('says a gift whose name says it all by its name', () => {
@@ -1035,6 +1033,9 @@ const ALL_FLAGS = {
   tiers: true,
 } as const;
 
+/** The coupon the catalogue's «Безплатно оформяне на брада» mints (`reward-beard`). */
+const FREE_BEARD = CouponId.of('coupon-free-beard');
+
 function loyaltyOf(
   overrides: Partial<Parameters<typeof loyaltyGlanceVm>[0]> = {},
 ) {
@@ -1047,7 +1048,7 @@ function loyaltyOf(
     paused: false,
     today: TODAY,
     words: WORDS,
-    heldRewards: [GEORGI_GRANT.title],
+    heldCouponIds: [GEORGI_GRANT.couponId],
     vouchers: GEORGI_VOUCHERS,
     rhythm: RHYTHM,
     ...overrides,
@@ -1081,26 +1082,25 @@ describe('«Лоялност» (F1)', () => {
   });
 
   it('names the costliest reward in reach when none is in hand, in the running case', () => {
-    expect(loyaltyOf({ heldRewards: [] })?.sentence).toBe(
+    expect(loyaltyOf({ heldCouponIds: [] })?.sentence).toBe(
       'Стигат за безплатно подстригване',
     );
-    expect(loyaltyOf({ heldRewards: undefined })?.sentence).toBe(
+    expect(loyaltyOf({ heldCouponIds: undefined })?.sentence).toBe(
       'Стигат за безплатно подстригване',
     );
   });
 
   it('says how far the next reward is when none is in reach', () => {
     expect(
-      loyaltyOf({ account: accountWith({ balance: 78 }), heldRewards: [] }),
+      loyaltyOf({ account: accountWith({ balance: 78 }), heldCouponIds: [] }),
     ).toMatchObject({
       figure: '78',
       sentence: 'Още 42 до безплатно оформяне на брада',
     });
     // Everything in reach is in hand: the next one out of reach.
     expect(
-      loyaltyOf({
-        heldRewards: ['Безплатно подстригване', 'Безплатно оформяне на брада'],
-      })?.sentence,
+      loyaltyOf({ heldCouponIds: [GEORGI_GRANT.couponId, FREE_BEARD] })
+        ?.sentence,
     ).toBe('Още 42 до продукт по избор');
   });
 
@@ -1115,7 +1115,7 @@ describe('«Лоялност» (F1)', () => {
         ),
       }));
     const sentenceOf = (bg: string) =>
-      loyaltyOf({ catalog: renamed(bg), heldRewards: [] })?.sentence;
+      loyaltyOf({ catalog: renamed(bg), heldCouponIds: [] })?.sentence;
     expect(sentenceOf('SPA ден')).toBe('Стигат за SPA ден');
     expect(sentenceOf('VIP грижа')).toBe('Стигат за VIP грижа');
     expect(sentenceOf('Barber box')).toBe('Стигат за Barber box');
@@ -1123,18 +1123,24 @@ describe('«Лоялност» (F1)', () => {
     expect(sentenceOf('Подстригване „Класик“')).toBe(
       'Стигат за подстригване „Класик“',
     );
-    expect(loyaltyOf({ words: ENGLISH, heldRewards: [] })?.sentence).toBe(
+    expect(loyaltyOf({ words: ENGLISH, heldCouponIds: [] })?.sentence).toBe(
       'Enough for Free haircut',
     );
   });
 
   it('prints the figure alone when no reward is left to name, or the catalogue was not read', () => {
+    // A voucher reward is never in hand (OR-15: a reward is held by the
+    // coupon it mints), so a catalogue of the two coupon rewards, both held,
+    // leaves nothing to name.
+    const coupons = loyaltyCatalogWith((catalog) => ({
+      ...catalog,
+      rewards: catalog.rewards.filter(
+        (reward) => reward.rewardGrant === RewardGrant.Coupon,
+      ),
+    }));
     const nothing = loyaltyOf({
-      heldRewards: [
-        'Безплатно подстригване',
-        'Безплатно оформяне на брада',
-        'Продукт по избор',
-      ],
+      catalog: coupons,
+      heldCouponIds: [GEORGI_GRANT.couponId, FREE_BEARD],
       vouchers: null,
       flags: { ...ALL_FLAGS, achievements: false, streaks: false },
     });
@@ -1163,7 +1169,7 @@ describe('«Лоялност» (F1)', () => {
       loyaltyOf({ account: accountWith({ balance: 12450 }) })?.figure,
     ).toBe('12 450');
     expect(
-      loyaltyOf({ account: accountWith({ balance: -40 }), heldRewards: [] }),
+      loyaltyOf({ account: accountWith({ balance: -40 }), heldCouponIds: [] }),
     ).toMatchObject({
       figure: '−40',
       unit: 'точки',
@@ -1200,6 +1206,34 @@ describe('«Лоялност» (F1)', () => {
     );
     expect(voucherFact([])).toBeUndefined();
     expect(voucherFact(null)).toBeUndefined();
+  });
+
+  it('prints every currency the vouchers hold, each its own sum, joined with « · » (OR-17, DEP-F12)', () => {
+    // Георги's 25,00 € and the five, beside a voucher held in leva: two
+    // sums — none dropped, none added to the other — in the order each
+    // currency is first seen.
+    const mixed = [
+      ...GEORGI_VOUCHERS,
+      fixtureVoucher('voucher-dev-martin', { currency: Currency.BGN }),
+      fixtureVoucher('voucher-dev-five'),
+    ];
+    const voucher = (words: typeof WORDS) =>
+      loyaltyOf({ vouchers: mixed, words })?.holdings.find(
+        (holding) => holding.id === 'voucher',
+      );
+    expect(voucher(WORDS)).toEqual({
+      id: 'voucher',
+      label: 'Ваучер',
+      value: '30,00\u00a0€ · 25,00\u00a0лв.',
+    });
+    expect(voucher(ENGLISH)?.value).toBe('€30.00 · BGN\u00a025.00');
+    expect(loyaltyOf({ vouchers: mixed })?.accessibleName).toBe(
+      'Лоялност: 358 точки. Стигат за безплатно оформяне на брада. Ваучер 30,00\u00a0€ · 25,00\u00a0лв., печати 4 от 10, ритъм 24 посещения.',
+    );
+    // One currency: the one sum, worded as it always was.
+    expect(
+      loyaltyOf()?.holdings.find((holding) => holding.id === 'voucher')?.value,
+    ).toBe(NBSP_EURO('25,00 €'));
   });
 
   it('draws only the facts its flags and its data allow', () => {
@@ -1311,10 +1345,10 @@ describe('«Лоялност» (F1)', () => {
   });
 
   it('words the card in its language', () => {
-    // The host words a grant in the card's language, as it words the card.
-    expect(
-      loyaltyOf({ words: ENGLISH, heldRewards: ['Free haircut'] }),
-    ).toMatchObject({
+    // The held reward is known by its coupon, whatever the grant's title
+    // says: in English too the points never name the haircut in hand
+    // (OR-15, DEP-F11 — by the name, an en card named it).
+    expect(loyaltyOf({ words: ENGLISH })).toMatchObject({
       unit: 'points',
       sentence: 'Enough for Free beard trim',
       accessibleName:

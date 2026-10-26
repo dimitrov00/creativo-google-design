@@ -8,7 +8,7 @@ import {
 import type { MoneyError } from './money.error';
 
 /**
- * The catalog context's error codes — the 25 codes of the legacy catalog
+ * The catalog context's error codes — the codes of the legacy catalog
  * domain lib's `*.errors.ts` (deleted in Phase 4b), SCREAMING_SNAKE with the
  * `CATALOG_` prefix (Law 7.5, flatten-spec §4.2; the legacy dotted
  * `catalog.service.invalid_duration` is now `CATALOG_SERVICE_INVALID_DURATION`):
@@ -19,10 +19,12 @@ import type { MoneyError } from './money.error';
  *
  * Raised by the catalogue edge guards — `LocalizedText.parse`,
  * `MediaRef.parse`, `GeoPoint.parse`, `ServiceTerms.parse`,
- * `BarberOffering.parse`, `ServiceComposition.parse`, `DayHours.parseWeek`,
- * `VenuePhone.of` — and, for the entity-level checks (sort orders, handle,
- * years of experience, map URL, zone), by whichever edge validates a whole
- * catalogue document.
+ * `BarberOffering.parse`, `DayHours.parseWeek`, `VenuePhone.of` — and, for
+ * the entity-level checks (sort orders, handle, years of experience, map
+ * URL), by whichever edge validates a whole catalogue document. The bundle
+ * and zone refusals that had no producer are gone (OR-22): no admin
+ * location writer exists, and a stored zone is read through
+ * `CATALOG_LOCATION_ZONE_UNKNOWN`.
  */
 export const CatalogErrorCode = {
   /** A blank id where a catalogue id was required (`idType` names which). */
@@ -51,8 +53,6 @@ export const CatalogErrorCode = {
    */
   ServiceInvalidDuration: 'CATALOG_SERVICE_INVALID_DURATION',
   ServiceInvalidSortOrder: 'CATALOG_SERVICE_INVALID_SORT_ORDER',
-  /** A bundle composition that includes no service. */
-  ServiceEmptyBundleIncludes: 'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES',
   /** An offering prices a variant its service does not declare. */
   ServiceUnknownVariantTerms: 'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
   /** An offering prices one variant twice. */
@@ -65,14 +65,16 @@ export const CatalogErrorCode = {
   ServiceMixedCurrencyTerms: 'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
   /** Latitude outside −90..90 or longitude outside −180..180. */
   LocationInvalidGeoCoordinate: 'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
-  /** A zone name the runtime does not know. */
-  LocationInvalidTimezone: 'CATALOG_LOCATION_INVALID_TIMEZONE',
   LocationInvalidSortOrder: 'CATALOG_LOCATION_INVALID_SORT_ORDER',
   /** A map link that is not an absolute URL. */
   LocationInvalidMapUrl: 'CATALOG_LOCATION_INVALID_MAP_URL',
   /** Opening hours that are not exactly seven days, Monday first. */
   LocationInvalidHoursLength: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
-  /** An opening-hours figure that is not a minute of the day (00:00–23:59). */
+  /**
+   * An opening-hours figure off the clock: an opening that is not a minute
+   * of the day (00:00–23:59), or a close that is not an exclusive end
+   * (00:01–24:00 — 24:00 is a shop open until midnight).
+   */
   LocationInvalidTimeOfDay: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
   /** An open day whose closing time is not after its opening time. */
   LocationInvalidHoursRange: 'CATALOG_LOCATION_INVALID_HOURS_RANGE',
@@ -113,14 +115,12 @@ export type CatalogError =
   | CatalogError.ServiceCategoryInvalidSortOrder
   | CatalogError.ServiceInvalidDuration
   | CatalogError.ServiceInvalidSortOrder
-  | CatalogError.ServiceEmptyBundleIncludes
   | CatalogError.ServiceUnknownVariantTerms
   | CatalogError.ServiceDuplicateVariantTerms
   | CatalogError.ServiceDuplicateVariant
   | CatalogError.ServiceDuplicateOffering
   | CatalogError.ServiceMixedCurrencyTerms
   | CatalogError.LocationInvalidGeoCoordinate
-  | CatalogError.LocationInvalidTimezone
   | CatalogError.LocationInvalidSortOrder
   | CatalogError.LocationInvalidMapUrl
   | CatalogError.LocationInvalidHoursLength
@@ -193,9 +193,6 @@ export const CatalogError = {
   ): CatalogError.ServiceInvalidSortOrder {
     return { errorCode: CatalogErrorCode.ServiceInvalidSortOrder, rawValue };
   },
-  serviceEmptyBundleIncludes(): CatalogError.ServiceEmptyBundleIncludes {
-    return { errorCode: CatalogErrorCode.ServiceEmptyBundleIncludes };
-  },
   /** The raw ids are echoed as authored (i18n params), under their brands. */
   serviceUnknownVariantTerms(
     barberId: string,
@@ -252,11 +249,6 @@ export const CatalogError = {
       geoAxis,
       rawValue,
     };
-  },
-  locationInvalidTimezone(
-    rawValue: string,
-  ): CatalogError.LocationInvalidTimezone {
-    return { errorCode: CatalogErrorCode.LocationInvalidTimezone, rawValue };
   },
   locationInvalidSortOrder(
     rawValue: number,
@@ -349,9 +341,6 @@ export namespace CatalogError {
     readonly errorCode: typeof CatalogErrorCode.ServiceInvalidSortOrder;
     readonly rawValue: number;
   };
-  export type ServiceEmptyBundleIncludes = {
-    readonly errorCode: typeof CatalogErrorCode.ServiceEmptyBundleIncludes;
-  };
   export type ServiceUnknownVariantTerms = {
     readonly errorCode: typeof CatalogErrorCode.ServiceUnknownVariantTerms;
     readonly barberId: BarberId;
@@ -381,10 +370,6 @@ export namespace CatalogError {
     readonly errorCode: typeof CatalogErrorCode.LocationInvalidGeoCoordinate;
     readonly geoAxis: GeoAxis;
     readonly rawValue: number;
-  };
-  export type LocationInvalidTimezone = {
-    readonly errorCode: typeof CatalogErrorCode.LocationInvalidTimezone;
-    readonly rawValue: string;
   };
   export type LocationInvalidSortOrder = {
     readonly errorCode: typeof CatalogErrorCode.LocationInvalidSortOrder;

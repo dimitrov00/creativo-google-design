@@ -396,7 +396,7 @@
           </ui-stack>
           <p uiVisuallyHidden aria-live="polite">{{ resendAnnouncement() }}</p>
 
-          @if (store.sendCount() >= 3) {
+          @if (store.escalated()) {
           <p
             uiText
             uiFont="caption"

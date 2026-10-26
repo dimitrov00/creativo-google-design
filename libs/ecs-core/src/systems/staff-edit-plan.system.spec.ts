@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AppointmentId,
   BarberId,
+  BookingStatus,
   CartLineId,
   type Result,
   CouponGrantId,
@@ -18,12 +19,15 @@ import {
   DiscountMethod,
   DiscountProvenance,
   DiscountSource,
+  E164,
   EditCommand,
+  Email,
   Placement,
   RequestedSubjectRole,
   ResizeEdge,
   SeatLabel,
   type StaffEditDraft,
+  VisitEditWrite,
   VoucherCode,
 } from '@core/components';
 import {
@@ -49,7 +53,10 @@ import {
   StaffEditPlanSystem,
   type StaffEditRowFacts,
   type StaffEditWords,
+  type StaffSaveInput,
+  type StaffSaveRowFacts,
 } from './staff-edit-plan.system';
+import type { LiveSides } from './visit-sides.system';
 
 /*
  * PORTED from libs/features/staff/dashboard/src/lib/staff-dashboard/
@@ -58,7 +65,8 @@ import {
  * save, its undo, REPRICE, serial placement, the subject choice and the
  * ladder pins, restated on the system's branded input with the command
  * arrays the dashboard sent, byte for byte (`toEqual` AND `JSON.stringify`:
- * the undo compares two plans as text, so key order is load-bearing):
+ * the wire's own text — the undo compared two plans as that text until
+ * OR-4's `BookingCall.sameCommands`, and the bytes stay pinned):
  *
  * - «keeps a drag in the frame in the draft … «Запази» carries it» (:4762)
  *   and the receipt's undo (:4823) → «the drag»;
@@ -149,7 +157,9 @@ const SNAPSHOT: StaffEditDraft = {
   vouchers: [],
   tipCents: null,
   drawn: null,
-  clients: [{ id: MARTIN, label: MARTIN_LABEL, phone: '+359881234567' }],
+  clients: [
+    { id: MARTIN, label: MARTIN_LABEL, phone: '+359881234567', email: null },
+  ],
 };
 
 function at(
@@ -399,6 +409,7 @@ describe('StaffEditPlanSystem.commandsFor — REPRICE (:6028, DEP-20)', () => {
         {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: SeatLabel.of(WORDS.walkIn),
+          contact: null,
         },
       ),
       BookingCall.editReprice(wash, cents(900)),
@@ -483,6 +494,7 @@ describe('StaffEditPlanSystem.commandsFor — whose seat (:6274, DEP-3)', () => 
         {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: SeatLabel.of(`${WALK_IN} 2`),
+          contact: null,
         },
       ),
       BookingCall.editMove(DAY, minute(600), [CUT_SEAT]),
@@ -508,7 +520,7 @@ describe('StaffEditPlanSystem.commandsFor — whose seat (:6274, DEP-3)', () => 
     const extra = SeatId.of('draft-extra');
     const draft: StaffEditDraft = {
       ...SNAPSHOT,
-      clients: [{ id: companion, label: 'Петър', phone: null }],
+      clients: [{ id: companion, label: 'Петър', phone: null, email: null }],
       legs: [
         leg({ clientId: companion, typedPriceCents: cents(2800) }),
         leg({
@@ -533,6 +545,7 @@ describe('StaffEditPlanSystem.commandsFor — whose seat (:6274, DEP-3)', () => 
         {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: SeatLabel.of('Петър'),
+          contact: null,
         },
       ),
     );
@@ -543,7 +556,10 @@ describe('StaffEditPlanSystem.commandsFor — whose seat (:6274, DEP-3)', () => 
     const blank = draftPersonKey('guest-blank');
     const draft: StaffEditDraft = {
       ...SNAPSHOT,
-      clients: [...SNAPSHOT.clients, { id: blank, label: '   ', phone: null }],
+      clients: [
+        ...SNAPSHOT.clients,
+        { id: blank, label: '   ', phone: null, email: null },
+      ],
       legs: [
         ...SNAPSHOT.legs,
         leg({ seatId: SeatId.of('draft-x'), clientId: blank }),
@@ -552,6 +568,118 @@ describe('StaffEditPlanSystem.commandsFor — whose seat (:6274, DEP-3)', () => 
     expect(StaffEditPlanSystem.commandsFor(draft, ROW, [], WORDS)).toEqual({
       ok: false,
       error: refused('addedSubject'),
+    });
+  });
+});
+
+describe('StaffEditPlanSystem.commandsFor — what the desk typed reaches the server (OR-26)', () => {
+  const maria = draftPersonKey('guest-maria-1');
+  const added = SeatId.of('draft-maria');
+  const withMaria = (client: StaffEditDraft.Client): StaffEditDraft => ({
+    ...SNAPSHOT,
+    endMinute: trackMinute(660),
+    clients: [...SNAPSHOT.clients, client],
+    legs: [...SNAPSHOT.legs, leg({ seatId: added, clientId: client.id })],
+  });
+  const addedSubjectOf = (draft: StaffEditDraft) => {
+    const command = plan(draft).find(
+      (each) => each.editCommand === EditCommand.AddSeat,
+    );
+    return command?.editCommand === EditCommand.AddSeat
+      ? command.addedSubject
+      : null;
+  };
+
+  it('sends a drafted guest’s number and e-mail, parsed as the edge parses them', () => {
+    expect(
+      addedSubjectOf(
+        withMaria({
+          id: maria,
+          label: 'Мария',
+          phone: '+359888123456',
+          email: ' Maria@Example.com ',
+        }),
+      ),
+    ).toEqual({
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label: SeatLabel.of('Мария'),
+      contact: {
+        phone: E164.of('+359888123456'),
+        email: Email.of('maria@example.com'),
+      },
+    });
+  });
+
+  it('sends what parses and drops what does not — a name alone sends no contact at all', () => {
+    expect(
+      addedSubjectOf(
+        withMaria({ id: maria, label: 'Мария', phone: '12', email: null }),
+      ),
+    ).toMatchObject({ contact: null });
+    expect(
+      addedSubjectOf(
+        withMaria({
+          id: maria,
+          label: 'Мария',
+          phone: 'not a phone',
+          email: 'maria@example.com',
+        }),
+      ),
+    ).toMatchObject({
+      contact: { phone: null, email: Email.of('maria@example.com') },
+    });
+    expect(
+      addedSubjectOf(
+        withMaria({ id: maria, label: 'Мария', phone: null, email: 'nope' }),
+      ),
+    ).toMatchObject({ contact: null });
+  });
+
+  it('reads a person an older sheet drafted without an e-mail as none — never a crash', () => {
+    const older = {
+      id: maria,
+      label: 'Мария',
+      phone: '+359888123456',
+    } as unknown as StaffEditDraft.Client;
+    expect(addedSubjectOf(withMaria(older))).toMatchObject({
+      contact: { phone: E164.of('+359888123456'), email: null },
+    });
+  });
+
+  it('a stranger the draft never named carries nothing; the chair’s own guest carries their own', () => {
+    const stranger: StaffEditDraft = {
+      ...SNAPSHOT,
+      endMinute: trackMinute(660),
+      legs: [
+        ...SNAPSHOT.legs,
+        leg({ seatId: added, clientId: draftPersonKey('primary') }),
+      ],
+    };
+    expect(addedSubjectOf(stranger)).toMatchObject({ contact: null });
+
+    const guestChair: StaffEditRowFacts = {
+      ...ROW,
+      selfSeat: false,
+      clientLabel: 'Петър',
+      people: [{ label: 'Петър' }],
+    };
+    const petar = draftPersonKey('guest-petar-1');
+    const second: StaffEditDraft = {
+      ...SNAPSHOT,
+      endMinute: trackMinute(660),
+      clients: [
+        { id: petar, label: 'Петър', phone: '+359888000111', email: null },
+      ],
+      legs: [leg({ clientId: petar }), leg({ seatId: added, clientId: petar })],
+    };
+    const command = plan(second, guestChair).find(
+      (each) => each.editCommand === EditCommand.AddSeat,
+    );
+    expect(command).toMatchObject({
+      addedSubject: {
+        label: 'Петър',
+        contact: { phone: E164.of('+359888000111'), email: null },
+      },
     });
   });
 });
@@ -739,6 +867,251 @@ describe('StaffEditPlanSystem.tipSeat — the seat a tip is stamped on (:5446)',
   });
 });
 
+describe('StaffEditPlanSystem.savePlan — the whole write (OR-4)', () => {
+  /*
+   * The staff dashboard's `saveFromEditor` / `writeFromEditor` decisions,
+   * moved here (OR-4): the side fields a write carries, the stale guard,
+   * the batch, the tip's seat and the way back. The dashboard spec's save
+   * and undo cases («sends the batch first …» :5426, «refuses a tip typed
+   * over one a colleague recorded since» :5480, «refuses a note typed over
+   * one a colleague wrote since» :5509, «does not undo a tip over one a
+   * colleague recorded after the save» :5524, «stamps the tip on a seat the
+   * batch KEPT» :5546, «withholds the way back only from a save that added
+   * a seat to a finished visit» :5778) restated on the plan.
+   */
+  const ROW_OPEN: StaffSaveRowFacts = {
+    ...ROW,
+    rootBookingStatus: BookingStatus.Confirmed,
+  };
+  /** The stored note and tip, heard: nothing on either. */
+  const QUIET: LiveSides = {
+    note: null,
+    noteHeard: true,
+    tipCents: null,
+    tipHeard: true,
+  };
+  const NOTE = 'дължи 5 €';
+  const THEIR_NOTE = 'не обича да говори';
+
+  function input(overrides: Partial<StaffSaveInput> = {}): StaffSaveInput {
+    return {
+      commit: SNAPSHOT,
+      row: ROW_OPEN,
+      drawn: { note: null, tipCents: null },
+      live: QUIET,
+      guestLabels: [],
+      words: WORDS,
+      before: SNAPSHOT,
+      writes: null,
+      ...overrides,
+    };
+  }
+
+  it('carries the note and the tip the commit changed from what it drew — and nothing it left alone', () => {
+    const typed = StaffEditPlanSystem.savePlan(
+      input({ commit: { ...SNAPSHOT, note: NOTE, tipCents: cents(200) } }),
+    );
+    expect(typed.writes).toEqual({ note: true, tip: true });
+    expect(typed.tipSeat).toBe(CUT_SEAT);
+    expect(typed.refusal).toBeNull();
+
+    // The stored form is what counts: blanks around the same words are no change.
+    const untouched = StaffEditPlanSystem.savePlan(
+      input({
+        commit: { ...SNAPSHOT, note: `  ${NOTE} `, tipCents: cents(300) },
+        drawn: { note: NOTE, tipCents: cents(300) },
+      }),
+    );
+    expect(untouched.writes).toEqual({ note: false, tip: false });
+    expect(untouched.tipSeat).toBeNull();
+  });
+
+  it('carries no tip without a row or a seat to stamp it on', () => {
+    const tipped = { ...SNAPSHOT, tipCents: cents(200) };
+    for (const row of [null, { ...ROW_OPEN, seatIds: [] }]) {
+      const plan = StaffEditPlanSystem.savePlan(input({ commit: tipped, row }));
+      expect(plan.writes.tip).toBe(false);
+      expect(plan.tipSeat).toBeNull();
+    }
+  });
+
+  it('stamps the tip on a seat the batch KEPT, never on one it removed (:5546)', () => {
+    const FIRST = SeatId.of('seat-first');
+    const SECOND = SeatId.of('seat-second');
+    const plan = StaffEditPlanSystem.savePlan(
+      input({
+        row: {
+          ...ROW_OPEN,
+          seatIds: [FIRST, SECOND],
+          legs: [FIRST, SECOND].map((seatId) => ({
+            seatId,
+            minutes: duration(30),
+            barberId: IVAN,
+            priceCents: cents(2800),
+          })),
+        },
+        commit: {
+          ...SNAPSHOT,
+          legs: [leg({ seatId: SECOND })],
+          tipCents: cents(200),
+        },
+        before: null,
+      }),
+    );
+    expect(plan.commands[0]).toEqual(BookingCall.editRemoveSeat(FIRST));
+    expect(plan.tipSeat).toBe(SECOND);
+  });
+
+  it('lets an undo carry its save’s side fields as handed in, whatever the commit says', () => {
+    const plan = StaffEditPlanSystem.savePlan(
+      input({
+        commit: SNAPSHOT,
+        drawn: { note: NOTE, tipCents: cents(200) },
+        writes: { note: true, tip: false },
+        before: null,
+      }),
+    );
+    expect(plan.writes).toEqual({ note: true, tip: false });
+    expect(plan.tipSeat).toBeNull();
+  });
+
+  it('is STALE when a note it carries moved under the draft (:5509) — refused before anything is sent', () => {
+    const plan = StaffEditPlanSystem.savePlan(
+      input({
+        commit: { ...SNAPSHOT, note: NOTE },
+        live: { ...QUIET, note: THEIR_NOTE },
+      }),
+    );
+    expect(plan.refusal).toEqual(VisitEditWrite.stale());
+  });
+
+  it('is STALE when a tip it carries moved under the draft (:5480), and judges stale before the batch', () => {
+    const tipped = { ...SNAPSHOT, tipCents: cents(200) };
+    const moved = { ...QUIET, tipCents: cents(300) };
+    expect(
+      StaffEditPlanSystem.savePlan(input({ commit: tipped, live: moved }))
+        .refusal,
+    ).toEqual(VisitEditWrite.stale());
+    // A batch that could not be built is still a stale write first.
+    expect(
+      StaffEditPlanSystem.savePlan(
+        input({
+          commit: { ...tipped, startMinute: trackMinute(1440) },
+          live: moved,
+        }),
+      ).refusal,
+    ).toEqual(VisitEditWrite.stale());
+  });
+
+  it('refuses no write over a field it does not carry, one this device does not hear, or one already saying what it writes', () => {
+    const noted = { ...SNAPSHOT, note: NOTE };
+    for (const live of [
+      // A colleague's tip under a save that writes no tip (:5465).
+      { ...QUIET, tipCents: cents(300) },
+      // The note's listener has not answered.
+      { ...QUIET, note: THEIR_NOTE, noteHeard: false },
+      // The barber's own save landing, as its undo's listener sees it.
+      { ...QUIET, note: NOTE },
+    ]) {
+      expect(
+        StaffEditPlanSystem.savePlan(input({ commit: noted, live })).refusal,
+      ).toBeNull();
+    }
+  });
+
+  it('does not undo a tip over one a colleague recorded after the save (:5524)', () => {
+    // The save wrote 2,00 €; a colleague recorded 3,00 € over it since.
+    const plan = StaffEditPlanSystem.savePlan(
+      input({
+        commit: SNAPSHOT,
+        drawn: { note: null, tipCents: cents(200) },
+        live: { ...QUIET, tipCents: cents(300) },
+        writes: { note: false, tip: true },
+        before: null,
+      }),
+    );
+    expect(plan.refusal).toEqual(VisitEditWrite.stale());
+  });
+
+  it('is BATCH_REFUSED, with the refusal, when a placement cannot be carried — the batch empty', () => {
+    const plan = StaffEditPlanSystem.savePlan(
+      input({ commit: { ...SNAPSHOT, startMinute: trackMinute(1440) } }),
+    );
+    expect(plan.refusal).toEqual(
+      VisitEditWrite.batchRefused(refused('startMinutes')),
+    );
+    expect(plan.commands).toEqual([]);
+    expect(plan.shapeNeutral).toBe(false);
+  });
+
+  it('plans the batch commandsFor plans, guest labels and words passed through', () => {
+    const dragged = { ...SNAPSHOT, ...at(660, 690) };
+    expectBytes(
+      StaffEditPlanSystem.savePlan(
+        input({ commit: dragged, guestLabels: ['Гост 1'] }),
+      ).commands,
+      plan(dragged, ROW_OPEN, ['Гост 1']),
+    );
+  });
+
+  it('withholds the way back only from a save that adds a seat to a finished visit (:5778)', () => {
+    const added = {
+      ...SNAPSHOT,
+      endMinute: trackMinute(640),
+      legs: [
+        ...SNAPSHOT.legs,
+        leg({
+          seatId: SeatId.of('draft-wash-1'),
+          serviceId: ServiceId.of('wash'),
+          minutes: duration(10),
+        }),
+      ],
+    };
+    const finished = {
+      ...ROW_OPEN,
+      rootBookingStatus: BookingStatus.Completed,
+    };
+    expect(
+      StaffEditPlanSystem.savePlan(input({ commit: added, row: finished }))
+        .reversible,
+    ).toBe(false);
+    expect(
+      StaffEditPlanSystem.savePlan(
+        input({ commit: { ...SNAPSHOT, ...at(660, 690) }, row: finished }),
+      ).reversible,
+    ).toBe(true);
+    expect(
+      StaffEditPlanSystem.savePlan(input({ commit: added })).reversible,
+    ).toBe(true);
+    expect(
+      StaffEditPlanSystem.savePlan(input({ commit: added, row: null }))
+        .reversible,
+    ).toBe(true);
+  });
+
+  it('calls a note alone shape-neutral — its batch asks nothing the snapshot’s would not — and nothing else', () => {
+    expect(
+      StaffEditPlanSystem.savePlan(
+        input({ commit: { ...SNAPSHOT, note: NOTE } }),
+      ).shapeNeutral,
+    ).toBe(true);
+    // A drag, a tip, or no snapshot to measure against.
+    for (const overrides of [
+      { commit: { ...SNAPSHOT, ...at(660, 690) } },
+      { commit: { ...SNAPSHOT, tipCents: cents(200) } },
+      { commit: { ...SNAPSHOT, note: NOTE }, before: null },
+      {
+        commit: { ...SNAPSHOT, note: NOTE },
+        before: { ...SNAPSHOT, startMinute: trackMinute(1440) },
+      },
+    ]) {
+      expect(StaffEditPlanSystem.savePlan(input(overrides)).shapeNeutral).toBe(
+        false,
+      );
+    }
+  });
+});
+
 describe('StaffEditPlanSystem.bookingRequest — the create sheet’s booking (:6149, :6219, :5871)', () => {
   const COLD: StaffCreateContext = {
     homeLocationId: SHOP,
@@ -783,11 +1156,13 @@ describe('StaffEditPlanSystem.bookingRequest — the create sheet’s booking (:
             id: draftPersonKey('primary'),
             label: 'Без запазен час',
             phone: null,
+            email: null,
           },
           {
             id: draftPersonKey('user-martin'),
             label: MARTIN_LABEL,
             phone: '+359881234567',
+            email: null,
           },
         ],
         legs: [
@@ -877,7 +1252,12 @@ describe('StaffEditPlanSystem.bookingRequest — the create sheet’s booking (:
         ...at(600, 630),
         dayKey: localDate('2026-09-02'),
         clients: [
-          { id: draftPersonKey(clientId), label, phone: '+359881234567' },
+          {
+            id: draftPersonKey(clientId),
+            label,
+            phone: '+359881234567',
+            email: null,
+          },
         ],
         legs: [draftLeg('draft-cut', clientId, 30)],
       });
@@ -945,6 +1325,138 @@ describe('StaffEditPlanSystem.bookingRequest — the create sheet’s booking (:
   });
 });
 
+describe('StaffEditPlanSystem.bookingRequest — every guest’s contact (OR-26)', () => {
+  const COLD_CREATE: StaffCreateContext = {
+    homeLocationId: SHOP,
+    clientId: null,
+    bookedFrom: null,
+  };
+  const legFor = (seatId: string, clientId: string): StaffEditDraft.Leg =>
+    leg({
+      seatId: SeatId.of(seatId),
+      priceCents: null,
+      clientId: draftPersonKey(clientId),
+    });
+  const requestFor = (draft: StaffEditDraft): StaffBookingRequest => {
+    const result = StaffEditPlanSystem.bookingRequest(
+      draft,
+      COLD_CREATE,
+      WORDS,
+    );
+    if (result === null) throw new Error('the create asked for nothing');
+    return unwrapOk(result);
+  };
+
+  it('sends each guest the desk took a contact for with it — not only the first person’s number', () => {
+    const request = requestFor({
+      ...SNAPSHOT,
+      revision: null,
+      ...at(600, 690),
+      clients: [
+        {
+          id: draftPersonKey('user-martin'),
+          label: MARTIN_LABEL,
+          phone: '+359881234567',
+          email: 'martin@example.com',
+        },
+        {
+          id: draftPersonKey('guest-maria-1'),
+          label: 'Мария',
+          phone: '+359888123456',
+          email: null,
+        },
+        {
+          id: draftPersonKey('guest-ana-2'),
+          label: 'Ана',
+          phone: null,
+          email: 'Ana@Example.com',
+        },
+      ],
+      legs: [
+        legFor('draft-a', 'user-martin'),
+        legFor('draft-b', 'guest-maria-1'),
+        legFor('draft-c', 'guest-ana-2'),
+      ],
+    });
+    expect(request.seats.map((seat) => seat.subject)).toEqual([
+      BookingCall.selfSubject(),
+      BookingCall.staffGuestSubject('Мария', {
+        phone: E164.of('+359888123456'),
+        email: null,
+      }),
+      BookingCall.staffGuestSubject('Ана', {
+        phone: null,
+        email: Email.of('ana@example.com'),
+      }),
+    ]);
+    // The booking's contact is the owner's — the e-mail beside the number now.
+    expect(request.contact).toEqual({
+      name: MARTIN_LABEL,
+      phone: '+359881234567',
+      email: 'martin@example.com',
+      note: null,
+    });
+  });
+
+  it('sends no contact for a second ACCOUNT holder riding as a guest — their record is the account’s, never a walk-in’s', () => {
+    const request = requestFor({
+      ...SNAPSHOT,
+      revision: null,
+      clients: [
+        {
+          id: draftPersonKey('user-martin'),
+          label: MARTIN_LABEL,
+          phone: '+359881234567',
+          email: 'martin@example.com',
+        },
+        {
+          id: draftPersonKey('user-georgi'),
+          label: 'Георги',
+          phone: '+359888000222',
+          email: 'georgi@example.com',
+        },
+      ],
+      legs: [
+        legFor('draft-a', 'user-martin'),
+        legFor('draft-b', 'user-georgi'),
+      ],
+    });
+    expect(request.seats.map((seat) => seat.subject)).toEqual([
+      BookingCall.selfSubject(),
+      BookingCall.staffGuestSubject('Георги', null),
+    ]);
+  });
+
+  it('keeps a walk-in visit’s first guest’s contact on their seat, and never sends an e-mail that is none', () => {
+    const request = requestFor({
+      ...SNAPSHOT,
+      revision: null,
+      clients: [
+        {
+          id: draftPersonKey('guest-maria-1'),
+          label: 'Мария',
+          phone: '+359888123456',
+          email: 'not an e-mail',
+        },
+      ],
+      legs: [legFor('draft-a', 'guest-maria-1')],
+    });
+    expect(request.seats[0]?.subject).toEqual(
+      BookingCall.staffGuestSubject('Мария', {
+        phone: E164.of('+359888123456'),
+        email: null,
+      }),
+    );
+    expect(request.onBehalfOfUserId).toBeNull();
+    expect(request.contact).toEqual({
+      name: 'Мария',
+      phone: '+359888123456',
+      email: null,
+      note: null,
+    });
+  });
+});
+
 describe('StaffEditPlanSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const draft = deepFreeze({
@@ -971,8 +1483,22 @@ describe('StaffEditPlanSystem — purity', () => {
     expect(StaffEditPlanSystem.bookingRequest(draft, context, WORDS)).toEqual(
       StaffEditPlanSystem.bookingRequest(draft, context, WORDS),
     );
+    const save = deepFreeze({
+      commit: { ...draft, note: 'дължи 5 €', tipCents: cents(200) },
+      row: { ...ROW, rootBookingStatus: BookingStatus.Confirmed },
+      drawn: { note: null, tipCents: null },
+      live: { note: null, noteHeard: true, tipCents: null, tipHeard: true },
+      guestLabels: ['x'],
+      words: WORDS,
+      before: SNAPSHOT,
+      writes: null,
+    });
+    expect(StaffEditPlanSystem.savePlan(save)).toEqual(
+      StaffEditPlanSystem.savePlan(save),
+    );
     expect(draft.legs).toHaveLength(2);
     expect(row.legs).toHaveLength(1);
+    expect(save.commit.note).toBe('дължи 5 €');
   });
 
   it('answers track minutes off the clock with a refusal, never a throw', () => {

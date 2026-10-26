@@ -4,16 +4,31 @@ import {
   BarberId,
   BookingStatus,
   CartLineId,
+  CouponGrantId,
+  LocationId,
   SeatId,
   ServiceId,
   UserId,
 } from '@core/primitives';
 import { PipelineErrorCode } from '@core/errors';
-import { endMinute, localDate, minute } from '@core/testing';
+import {
+  cents,
+  deepFreeze,
+  duration,
+  endMinute,
+  localDate,
+  minute,
+} from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { BookingCall, RequestedSubjectRole } from './booking-call.data';
+import { DiscountMethod } from './coupon-value.data';
+import { DiscountSource } from './discount-provenance.data';
+import { E164 } from './e164.data';
 import { EditCommand, ResizeEdge } from './edit-command.data';
+import { Email } from './email.data';
 import { CancellationReason } from './cancellation-reason.data';
+import { SeatLabel } from './seat-label.data';
+import { VoucherCode } from './voucher-code.data';
 
 /*
  * THE BOOKING WIRE (Phase 4a 4A-4): the builders the web stores call
@@ -62,6 +77,7 @@ describe('BookingCall — the builders', () => {
       requestedSubjectRole: RequestedSubjectRole.Guest,
       label: 'Maria',
       guestKey: 'guest-3',
+      contact: null,
     });
     expect(BookingCall.guestSubject('Maria', 'guest 3').guestKey).toBeNull();
     expect(BookingCall.guestSubject('Maria', null).guestKey).toBeNull();
@@ -69,6 +85,39 @@ describe('BookingCall — the builders', () => {
       requestedSubjectRole: 'COMPANION',
       companionUserId: 'u-son',
     });
+  });
+
+  it('a client’s guest carries no contact; the shop’s carries what the desk took (OR-26)', () => {
+    const phone = E164.of('+359888123456');
+    const email = Email.of('maria@example.com');
+    expect(BookingCall.guestSubject('Maria', 'guest-3').contact).toBeNull();
+    expect(
+      BookingCall.staffGuestSubject(
+        'Maria',
+        BookingCall.guestContact(phone, email),
+      ),
+    ).toEqual({
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label: 'Maria',
+      guestKey: null,
+      contact: { phone, email },
+    });
+    expect(BookingCall.staffGuestSubject('Мария', null).contact).toBeNull();
+  });
+
+  it('guestContact: a phone, an e-mail or both — neither is no contact at all, never an empty one', () => {
+    const phone = E164.of('+359888123456');
+    const email = Email.of('maria@example.com');
+    expect(BookingCall.guestContact(phone, null)).toEqual({
+      phone,
+      email: null,
+    });
+    expect(BookingCall.guestContact(null, email)).toEqual({
+      phone: null,
+      email,
+    });
+    expect(BookingCall.guestContact(phone, email)).toEqual({ phone, email });
+    expect(BookingCall.guestContact(null, null)).toBeNull();
   });
 
   it('builds the staff commands on the wall clock — a day and minutes, never an instant', () => {
@@ -100,6 +149,190 @@ describe('BookingCall — the builders', () => {
     });
   });
 });
+
+describe('BookingCall.sameCommands — two batches that ask for the same thing (OR-4)', () => {
+  const DAY = localDate('2026-08-05');
+  const CUT_SEAT = SeatId.of('seat-0002');
+  const BEARD_SEAT = SeatId.of('seat-beard');
+
+  /** A save's batch as the staff plan builds it — every arm the wire knows. */
+  function batch(): readonly BookingCall.EditCommand[] {
+    return [
+      BookingCall.editRelocate(LocationId.of('loc-mladost')),
+      BookingCall.editRemoveSeat(BEARD_SEAT),
+      BookingCall.editAddSeat(
+        SeatId.of('draft-wash-1'),
+        ServiceId.of('wash'),
+        null,
+        BarberId.of('ivan'),
+        DAY,
+        minute(630),
+        duration(10),
+        {
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: guest(),
+          contact: BookingCall.guestContact(
+            E164.of('+359888123456'),
+            Email.of('maria@example.com'),
+          ),
+        },
+      ),
+      BookingCall.editMove(DAY, minute(600), [CUT_SEAT]),
+      BookingCall.editResizeEnd(DAY, endMinute(640), [CUT_SEAT]),
+      BookingCall.editReprice(CUT_SEAT, cents(1800)),
+      BookingCall.editDiscounts([
+        {
+          discountSource: DiscountSource.Grant,
+          grantId: CouponGrantId.of('grant-1'),
+        },
+        {
+          discountSource: DiscountSource.Manual,
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: 10,
+        },
+      ]),
+      BookingCall.editVouchers([VoucherCode.of('GIFT-A')]),
+    ];
+  }
+
+  it('calls two batches built alike the same', () => {
+    expect(BookingCall.sameCommands(batch(), batch())).toBe(true);
+    expect(BookingCall.sameCommands([], [])).toBe(true);
+  });
+
+  it('calls a command the same whatever order its keys were written in — where the stringify text told them apart', () => {
+    const built = BookingCall.editMove(DAY, minute(600), [CUT_SEAT]);
+    const reordered: BookingCall.EditCommand.Move = {
+      seatIds: [CUT_SEAT],
+      startMinutes: minute(600),
+      localDate: DAY,
+      editCommand: EditCommand.Move,
+    };
+    expect(JSON.stringify([built])).not.toBe(JSON.stringify([reordered]));
+    expect(BookingCall.sameCommands([built], [reordered])).toBe(true);
+  });
+
+  it('reads nested records key-order-blind too — a discount, an added seat’s subject', () => {
+    const nested = batch().map((command): BookingCall.EditCommand => {
+      if (command.editCommand === EditCommand.Discounts) {
+        return {
+          discounts: [
+            {
+              grantId: CouponGrantId.of('grant-1'),
+              discountSource: DiscountSource.Grant,
+            },
+            {
+              discountPercent: 10,
+              discountMethod: DiscountMethod.PercentOff,
+              discountSource: DiscountSource.Manual,
+            },
+          ],
+          editCommand: EditCommand.Discounts,
+        };
+      }
+      if (command.editCommand === EditCommand.AddSeat) {
+        return {
+          ...command,
+          addedSubject: {
+            contact: {
+              email: Email.of('maria@example.com'),
+              phone: E164.of('+359888123456'),
+            },
+            label: guest(),
+            requestedSubjectRole: RequestedSubjectRole.Guest,
+          },
+        };
+      }
+      return command;
+    });
+    expect(BookingCall.sameCommands(batch(), nested)).toBe(true);
+  });
+
+  it('counts order where the wire means it: the batch’s, and a scope’s seats', () => {
+    const [first, second, ...rest] = batch() as BookingCall.EditCommand[];
+    expect(
+      BookingCall.sameCommands(batch(), [
+        second as BookingCall.EditCommand,
+        first as BookingCall.EditCommand,
+        ...rest,
+      ]),
+    ).toBe(false);
+    expect(
+      BookingCall.sameCommands(
+        [BookingCall.editMove(DAY, minute(600), [CUT_SEAT, BEARD_SEAT])],
+        [BookingCall.editMove(DAY, minute(600), [BEARD_SEAT, CUT_SEAT])],
+      ),
+    ).toBe(false);
+  });
+
+  it('tells apart a changed value, another arm, a missing command, a whole-party scope and an empty one', () => {
+    const move = BookingCall.editMove(DAY, minute(600), [CUT_SEAT]);
+    expect(
+      BookingCall.sameCommands(
+        [move],
+        [BookingCall.editMove(DAY, minute(660), [CUT_SEAT])],
+      ),
+    ).toBe(false);
+    expect(
+      BookingCall.sameCommands(
+        [BookingCall.editReprice(CUT_SEAT, cents(1800))],
+        [BookingCall.editRedurate(CUT_SEAT, duration(18))],
+      ),
+    ).toBe(false);
+    expect(
+      BookingCall.sameCommands(
+        [move],
+        [BookingCall.editResizeStart(DAY, minute(600), [CUT_SEAT])],
+      ),
+    ).toBe(false);
+    expect(BookingCall.sameCommands(batch(), batch().slice(1))).toBe(false);
+    // A guest's contact is part of what the batch asks for (OR-26).
+    const withoutContact = batch().map((command): BookingCall.EditCommand =>
+      command.editCommand === EditCommand.AddSeat
+        ? {
+            ...command,
+            addedSubject: {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: guest(),
+              contact: null,
+            },
+          }
+        : command,
+    );
+    expect(BookingCall.sameCommands(batch(), withoutContact)).toBe(false);
+    expect(
+      BookingCall.sameCommands(
+        [BookingCall.editMove(DAY, minute(600), null)],
+        [BookingCall.editMove(DAY, minute(600), [])],
+      ),
+    ).toBe(false);
+  });
+
+  it('never takes a record for a list holding the same items', () => {
+    // Not a shape the wire builds — a guard on the equality itself.
+    const listed = [BookingCall.editMove(DAY, minute(600), [CUT_SEAT])];
+    const keyed = {
+      0: BookingCall.editMove(DAY, minute(600), [CUT_SEAT]),
+      length: 1,
+    } as unknown as readonly BookingCall.EditCommand[];
+    expect(BookingCall.sameCommands(listed, keyed)).toBe(false);
+    expect(BookingCall.sameCommands(keyed, listed)).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched, either way round', () => {
+    const a = deepFreeze(batch());
+    const b = deepFreeze(batch().slice(0, -1));
+    const once = BookingCall.sameCommands(a, b);
+    expect(BookingCall.sameCommands(a, b)).toBe(once);
+    expect(BookingCall.sameCommands(b, a)).toBe(once);
+    expect(a).toEqual(batch());
+  });
+});
+
+/** A guest label the server reads as it is. */
+function guest(): SeatLabel {
+  return SeatLabel.of('Гост 1');
+}
 
 describe('BookingCall.clientCancel — the code a client’s cancel is filed under (D23)', () => {
   const visit = AppointmentId.of('apt-1');

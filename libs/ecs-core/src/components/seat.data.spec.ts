@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   Currency,
+  CustomerId,
   DurationMinutes,
   MinuteCount,
   BarberId,
@@ -14,6 +15,7 @@ import {
 import { SchedulingError } from '@core/errors';
 import {
   deepFreeze,
+  hourCount,
   minute,
   unwrapOk,
   customerOf,
@@ -225,7 +227,7 @@ describe('Seat transitions carry every field', () => {
   it('withOutcome drops the old outcome’s variant fields', () => {
     const cancelled = Seat.withOutcome(
       tipped,
-      SeatOutcome.cancelled(STAMP, 'CLIENT', 'CLIENT_UNWELL', 24),
+      SeatOutcome.cancelled(STAMP, 'CLIENT', 'CLIENT_UNWELL', hourCount(24)),
     );
     const reopened = Seat.withOutcome(cancelled, SeatOutcome.scheduled());
     expect(reopened).toEqual(tipped);
@@ -270,6 +272,19 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
     expect(Seat.isMovableByBooker(seat(), null)).toBe(true);
   });
 
+  it('is the booker’s for a walk-in the shop keeps a record for — a guest by label to the cart (OR-26)', () => {
+    const walkIn = seat({
+      occupant: SeatOccupant.walkIn(
+        CustomerId.of('cus_walkin'),
+        SeatLabel.of('Мария'),
+      ),
+    });
+    expect(Seat.isMovableByBooker(walkIn, OWNER)).toBe(true);
+    expect(Seat.isMovableByBooker(walkIn, null)).toBe(true);
+    expect(Seat.isOwnAccount(walkIn)).toBe(false);
+    expect(Seat.isContactless(walkIn)).toBe(false);
+  });
+
   it('is the SHOP’s for a companion or a client the shop seated', () => {
     for (const relationship of [
       SubjectRelationship.Companion,
@@ -290,9 +305,12 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
     expect(Seat.isMovableByBooker(own, null)).toBe(false);
   });
 
-  it('is exactly "anonymous, or self AND the owner’s own account" (property)', () => {
+  it('is exactly "a guest, or self AND the owner’s own account" (property)', () => {
     const occupants = fc.oneof(
       fc.constant<SeatOccupant>(SeatOccupant.anonymous(SeatLabel.of('Guest'))),
+      fc.constant<SeatOccupant>(
+        SeatOccupant.walkIn(CustomerId.of('cus_walkin'), SeatLabel.of('Guest')),
+      ),
       fc
         .tuple(
           fc.constantFrom(OWNER, OTHER),
@@ -308,7 +326,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
         fc.constantFrom(OWNER, OTHER, null),
         (occupant, owner) => {
           const expected =
-            occupant.seatSubject === SeatSubject.Anonymous ||
+            occupant.seatSubject !== SeatSubject.Account ||
             (occupant.subjectRelationship === SubjectRelationship.Self &&
               owner !== null &&
               occupant.subjectUserId === owner);

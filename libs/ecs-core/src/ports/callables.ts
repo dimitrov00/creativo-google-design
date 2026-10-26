@@ -1,13 +1,15 @@
 import {
   BackfillCall,
   BookingCall,
+  CallAnswer,
+  type ClientIssue,
   GovernanceCall,
   IdentityCall,
   InvitationCall,
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
-import type { Result } from '@core/primitives';
+import { Result } from '@core/primitives';
 import type { PipelineError } from '@core/errors';
 
 /**
@@ -20,7 +22,8 @@ import type { PipelineError } from '@core/errors';
  * name Firebase deploys and the browser SDK resolves.
  *
  * Phase 4a adds `startImpersonation`, `endImpersonation` and
- * `redeemInvitation` with their server pipelines (4A-3 (4), (5)).
+ * `redeemInvitation` with their server pipelines (4A-3 (4), (5)); pass F
+ * adds `reportClientIssues`, the web's first-party issue sink (OR-34).
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
@@ -43,6 +46,7 @@ export const Callables = {
   StartImpersonation: 'startImpersonation',
   EndImpersonation: 'endImpersonation',
   RedeemInvitation: 'redeemInvitation',
+  ReportClientIssues: 'reportClientIssues',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -129,6 +133,15 @@ export type CallableWire = {
     readonly input: InvitationCall;
     readonly answer: InvitationCall.Redeemed;
   };
+  /**
+   * A batch of client issues — the array `ClientIssueSystem.admitBatch`
+   * holds a payload to (at most 10 issues and 4 KB, refused whole) — and
+   * how many log lines the sink wrote, one per issue (OR-34).
+   */
+  readonly [Callables.ReportClientIssues]: {
+    readonly input: readonly ClientIssue[];
+    readonly answer: { readonly loggedCount: number };
+  };
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -137,10 +150,30 @@ export type AnswerDecoder<N extends CallableName> = (
 ) => Result<CallableWire[N]['answer'], PipelineError>;
 
 /**
+ * `reportClientIssues`' answer (OR-34) — the count of lines written, read
+ * through `CallAnswer` like every answer, so a reply with nothing usable in
+ * it is `PIPELINE_UNKNOWN` all the same. Kept here, not on a call
+ * component: the sink's wire is one array of `ClientIssue` structs (the
+ * issue's own component) and one count, and the reporter never reads the
+ * count — a sink answers nothing the device acts on.
+ */
+const decodeIssuesLogged: AnswerDecoder<typeof Callables.ReportClientIssues> = (
+  raw,
+) => {
+  const answer = CallAnswer.read(raw);
+  const loggedCount =
+    answer === null ? null : CallAnswer.whole(answer, 'loggedCount', 0);
+  return loggedCount === null
+    ? CallAnswer.unusable()
+    : Result.ok({ loggedCount });
+};
+
+/**
  * The runtime twin of {@link CallableWire}: each callable's answer decoder,
- * the call component's own (§3.2). The web's `callableClient` adapter looks
- * the decoder up here — a table lookup, no rule of its own; a failing
- * decode is `PIPELINE_UNKNOWN`, today's "a 200 with nothing usable in it".
+ * the call component's own (§3.2) — the sink's count excepted, read above.
+ * The web's `callableClient` adapter looks the decoder up here — a table
+ * lookup, no rule of its own; a failing decode is `PIPELINE_UNKNOWN`,
+ * today's "a 200 with nothing usable in it".
  */
 export const CALLABLE_ANSWER_DECODERS: {
   readonly [N in CallableName]: AnswerDecoder<N>;
@@ -165,4 +198,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.StartImpersonation]: GovernanceCall.decodeStarted,
   [Callables.EndImpersonation]: GovernanceCall.decodeEnded,
   [Callables.RedeemInvitation]: InvitationCall.decodeRedeemed,
+  [Callables.ReportClientIssues]: decodeIssuesLogged,
 };

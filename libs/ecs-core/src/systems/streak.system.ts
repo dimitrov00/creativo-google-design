@@ -1,4 +1,5 @@
 import {
+  Cadence,
   StreakInterval,
   StreakIntervalRule,
   StreakIntervalSource,
@@ -403,8 +404,8 @@ function termsNow(run: Run): StreakPeriodTerms {
     const from = Math.max(0, run.gaps.length - HABIT_GAPS);
     let sum = 0;
     for (let i = from; i < run.gaps.length; i++) sum += run.gaps[i] as number;
-    // One decimal, the `cadenceOf` rule: a stable number to store.
-    habit = Math.round((sum / (run.gaps.length - from)) * 10) / 10;
+    // One decimal — the card's cadence and the habit share ONE mean (OR-46).
+    habit = Cadence.meanDays(sum, run.gaps.length - from);
   }
   const { days, source } = StreakIntervalRule.daysFor(rule, habit);
   return {

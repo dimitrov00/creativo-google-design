@@ -13,6 +13,7 @@ import {
   IdentityErrorCode,
   PhoneErrorCode,
   PhoneInvalidReason,
+  RepositoryErrorCode,
   SchedulingErrorCode,
 } from '@core/errors';
 import { Observable, of } from 'rxjs';
@@ -76,50 +77,50 @@ const SUCCESSOR_WORDS: readonly SuccessorRow[] = [
   coded(
     1,
     AccountsErrorCode.UploadAvatarUploadFailed,
-    "We couldn't upload the photo — please try again.",
-    'Не успяхме да качим снимката — моля, опитайте отново.',
+    "We couldn't upload the photo. Try again.",
+    'Не успяхме да качим снимката. Опитай пак.',
   ),
   coded(
     2,
     AccountsErrorCode.RemoveAvatarRemoveFailed,
-    "We couldn't remove the photo — please try again.",
-    'Не успяхме да премахнем снимката — моля, опитайте отново.',
+    "We couldn't remove the photo. Try again.",
+    'Не успяхме да премахнем снимката. Опитай пак.',
   ),
   coded(
     3,
     AccountsErrorCode.UpdateProfileRepositoryFailure,
-    "We couldn't save that right now — please try again.",
-    'Не успяхме да запазим това — моля, опитайте отново.',
+    "We couldn't save that right now. Try again.",
+    'Не успяхме да запазим това. Опитай пак.',
   ),
   coded(
     4,
     IdentityErrorCode.IdentifierMissing,
-    "We couldn't find your phone number or email — please sign in again.",
-    'Не открихме вашия телефонен номер или имейл — моля, влезте отново.',
+    "We couldn't find your phone number or email. Sign in again.",
+    'Не намерихме телефонния ти номер или имейл. Влез отново.',
   ),
   coded(
     5,
     IdentityErrorCode.CallFailed,
-    'Something went wrong — please try again.',
-    'Възникна грешка — моля, опитайте отново.',
+    'Something went wrong. Try again.',
+    'Нещо се обърка. Опитай пак.',
   ),
   coded(
     6,
     AccountsErrorCode.RepositoryFailure,
-    'Something went wrong on our end — please try again.',
-    'Възникна проблем от наша страна — моля, опитайте отново.',
+    'Something went wrong on our end. Try again.',
+    'Нещо се обърка от наша страна. Опитай пак.',
   ),
   coded(
     7,
     EngagementErrorCode.RepositoryFailure,
-    'Something went wrong on our end — please try again.',
-    'Възникна проблем от наша страна — моля, опитайте отново.',
+    'Something went wrong on our end. Try again.',
+    'Нещо се обърка от наша страна. Опитай пак.',
   ),
   phoned(
     8,
     PhoneInvalidReason.NotANumber,
     `Enter a phone number, like ${PHONE_EXAMPLE}.`,
-    `Въведете телефонен номер, например ${PHONE_EXAMPLE}.`,
+    `Въведи телефонен номер, например ${PHONE_EXAMPLE}.`,
   ),
   phoned(
     9,
@@ -148,8 +149,8 @@ const SUCCESSOR_WORDS: readonly SuccessorRow[] = [
   coded(
     13,
     BookingErrorCode.CallFailed,
-    'Something went wrong. Please try again.',
-    'Нещо се обърка. Пробвай пак.',
+    'Something went wrong. Try again.',
+    'Нещо се обърка. Опитай пак.',
   ),
   coded(
     14,
@@ -343,8 +344,10 @@ describe('translateCodedError', () => {
 
   // Phase 4b retired the dotted keys only after every still-read one had a
   // SCREAMING successor holding its words (4B-1; the table is §2 of
-  // `docs/architecture/flips/phase-4b-delete.md`) — the permanent pin that no
-  // word moved, exact, in both locales; the phone rows through `reason`.
+  // `docs/architecture/flips/phase-4b-delete.md`) — the permanent pin of their
+  // words, exact, in both locales; the phone rows through `reason`. The voice
+  // pass (OR-51) re-worded them once, on purpose: «ти», no «моля» or
+  // "please", and «Опитай пак» / "Try again" as the one retry phrase.
   it.each(SUCCESSOR_WORDS)(
     'the Phase 4b successors carry the retired keys’ words — §2 row $row, errors.$key',
     async ({ error, reason, enWords, bgWords }) => {
@@ -357,4 +360,75 @@ describe('translateCodedError', () => {
       expect(translateCodedError(transloco, error, reason)).toBe(bgWords);
     },
   );
+
+  // The five store codes say what each one means (OR-54, DEP-F38) — no
+  // longer all "couldn't save": a read, a write (or a create that met a
+  // document already there), a store out of reach, and a record damaged for
+  // good, which offers no retry because none can succeed.
+  const REPOSITORY_WORDS: readonly (readonly [
+    errorCode: string,
+    enWords: string,
+    bgWords: string,
+  ])[] = [
+    [
+      RepositoryErrorCode.ReadFailed,
+      "We couldn't load that. Try again.",
+      'Не успяхме да заредим това. Опитай пак.',
+    ],
+    [
+      RepositoryErrorCode.WriteFailed,
+      "We couldn't save that. Try again.",
+      'Не успяхме да запазим това. Опитай пак.',
+    ],
+    [
+      RepositoryErrorCode.AlreadyExists,
+      "We couldn't save that. Try again.",
+      'Не успяхме да запазим това. Опитай пак.',
+    ],
+    [
+      RepositoryErrorCode.Unavailable,
+      "Can't connect right now. Try again in a moment.",
+      'Няма връзка в момента. Опитай пак след малко.',
+    ],
+    [
+      RepositoryErrorCode.Malformed,
+      "This record is damaged and can't be used.",
+      'Този запис е повреден и не може да се използва.',
+    ],
+  ];
+
+  it.each(REPOSITORY_WORDS)(
+    'words %s by what it means, in en and bg',
+    async (errorCode, enWords, bgWords) => {
+      await transloco.load('en').toPromise();
+      await transloco.load('bg').toPromise();
+      const refusal = { errorCode, path: 'appointments/a1' };
+
+      transloco.setActiveLang('en');
+      expect(translateCodedError(transloco, refusal)).toBe(enWords);
+      transloco.setActiveLang('bg');
+      expect(translateCodedError(transloco, refusal)).toBe(bgWords);
+    },
+  );
+
+  // A throttled code request names the seconds left (OR-9, DEP-F8): the
+  // copy's one parameter is `seconds`, which the lookup fills from the
+  // refusal's own `retryAfterSeconds` — the struct as it is minted.
+  it('names the seconds left before a new code may be asked for, in en and bg', async () => {
+    await transloco.load('en').toPromise();
+    await transloco.load('bg').toPromise();
+    const throttled = {
+      errorCode: IdentityErrorCode.OtpRateLimited,
+      retryAfterSeconds: 42,
+    };
+
+    transloco.setActiveLang('en');
+    expect(translateCodedError(transloco, throttled)).toBe(
+      'We already sent you a code. You can ask for a new one in 42 s.',
+    );
+    transloco.setActiveLang('bg');
+    expect(translateCodedError(transloco, throttled)).toBe(
+      'Вече ти изпратихме код. Нов можеш да поискаш след 42 сек.',
+    );
+  });
 });

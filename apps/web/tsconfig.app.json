@@ -16,6 +16,9 @@
       "path": "../../libs/ui/tokens/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/ui/theme/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/ui/modifiers/tsconfig.lib.json"
     },
     {
@@ -25,13 +28,13 @@
       "path": "../../libs/features/admin/programs/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/features/staff/dashboard/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/client/profile/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/client/notifications/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/client/appointments/tsconfig.lib.json"

@@ -29,6 +29,7 @@ import {
   Collections,
 } from '@core/entities';
 import type { BookingCall } from '@core/components';
+import { StoredDocumentSystem } from '@core/systems';
 import {
   type EditAppointmentCommand,
   editAppointment,
@@ -52,7 +53,7 @@ import {
   serviceFixture,
   utcMs,
 } from '@core/testing';
-import { sha256Hex } from '../adapters/crypto.adapter';
+import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { toHttpsError } from '../edge';
 import {
   encodeStaffEditAppointmentAnswer,
@@ -186,10 +187,16 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     const telemetry = recordingTelemetry();
     let minted = 0;
     return {
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       nextId: () => `id-${++minted}`,
       hash: sha256Hex,
+      // The walk-in key, as the emulator's `.secret.local` holds one (OR-26).
+      ...walkInKeyPorts(() => 'walkin-integration-key'),
       ...firestoreSettingsPorts(db),
       ...firestoreCouponPorts(db),
       ...firestoreAccountPorts(db),
@@ -493,6 +500,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
         addedSubject: {
           requestedSubjectRole: RequestedSubjectRole.Guest,
           label: guest.value,
+          contact: null,
         },
       };
     };

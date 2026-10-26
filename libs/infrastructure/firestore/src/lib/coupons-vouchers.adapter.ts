@@ -1,13 +1,13 @@
 import {
   type Firestore,
+  type CollectionReference,
   collection,
-  doc,
   documentId,
   limit,
   query,
   where,
 } from 'firebase/firestore';
-import { type CouponId, GrantStatus, Result } from '@core/primitives';
+import { GrantStatus, Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
 import { CouponStatus } from '@core/components';
 import {
@@ -19,7 +19,7 @@ import {
 } from '@core/entities';
 import type { CouponVoucherPorts } from '@core/ports';
 import { DiscountSystem } from '@core/systems';
-import { readDoc, readQuery } from './observe';
+import { readQuery } from './observe';
 
 /** Firestore's cap on the values of one `in` filter. */
 const IN_FILTER_MAX = 30;
@@ -31,16 +31,40 @@ const first = <E>(
   answer.ok ? Result.ok(answer.value[0] ?? null) : answer;
 
 /** `ids`, each once, in chunks one `in` filter can carry. */
-function chunksOf(
-  ids: readonly CouponId[],
+function chunksOf<Id extends string>(
+  ids: readonly Id[],
   size: number,
-): readonly (readonly CouponId[])[] {
+): readonly (readonly Id[])[] {
   const distinct = [...new Set(ids)];
-  const chunks: CouponId[][] = [];
+  const chunks: Id[][] = [];
   for (let start = 0; start < distinct.length; start += size) {
     chunks.push(distinct.slice(start, start + size));
   }
   return chunks;
+}
+
+/**
+ * The documents of `ids` in one collection — `documentId() in`, thirty ids
+ * a query, all asked at once — and NO other filter. An id with no document
+ * is simply not answered; no ids, no read; one refused query fails the
+ * whole read.
+ */
+async function readByIds<E>(
+  ref: CollectionReference,
+  ids: readonly string[],
+  path: string,
+): Promise<Result<readonly E[], RepositoryError>> {
+  const batches = await Promise.all(
+    chunksOf(ids, IN_FILTER_MAX).map((batch) =>
+      readQuery<E>(query(ref, where(documentId(), 'in', batch)), path),
+    ),
+  );
+  const found: E[] = [];
+  for (const batch of batches) {
+    if (!batch.ok) return batch;
+    found.push(...batch.value);
+  }
+  return Result.ok(found);
 }
 
 /**
@@ -49,8 +73,9 @@ function chunksOf(
  * voucher reader and the client vouchers reader. Every query is an
  * equality on root keys (Firestore merges single-field indexes; no
  * composite): `code`, `couponStatus`, `customerId`, `grantStatus`,
- * `issuedToCustomerId`. A grant burn or a voucher balance is never written
- * from here — those are entries of the server's commit plans.
+ * `issuedToCustomerId` — and two reads by id, `documentId() in`. A grant
+ * burn or a voucher balance is never written from here — those are entries
+ * of the server's commit plans.
  */
 export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
   const coupons = collection(db, Collections.Coupons);
@@ -92,8 +117,15 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
         : open;
     },
 
-    loadCouponGrant: (id) =>
-      readDoc<CouponGrant>(doc(db, Collections.CouponGrants, id)),
+    /**
+     * Grants by id in one batched get (OR-13) — `documentId() in`, thirty
+     * ids a query, and NO status filter: the open visit's saved bill names
+     * the grants it burned (`USED`), and each still shows on its card. Read
+     * by the book (`worksTheBook`): a list the rules let a client run only
+     * when it pins `holderUserId`.
+     */
+    loadCouponGrants: (ids) =>
+      readByIds<CouponGrant>(grants, ids, Collections.CouponGrants),
 
     /**
      * A client's ACTIVE grants — `customerId ==`, `grantStatus ==` (D29: the
@@ -137,21 +169,6 @@ export const couponVoucherPorts = (db: Firestore): CouponVoucherPorts => {
      * «Отстъпка» menu. An id with no document is simply not answered;
      * no ids, no read.
      */
-    loadCoupons: async (ids) => {
-      const batches = await Promise.all(
-        chunksOf(ids, IN_FILTER_MAX).map((batch) =>
-          readQuery<Coupon>(
-            query(coupons, where(documentId(), 'in', batch)),
-            Collections.Coupons,
-          ),
-        ),
-      );
-      const found: Coupon[] = [];
-      for (const batch of batches) {
-        if (!batch.ok) return batch;
-        found.push(...batch.value);
-      }
-      return Result.ok(found);
-    },
+    loadCoupons: (ids) => readByIds<Coupon>(coupons, ids, Collections.Coupons),
   };
 };

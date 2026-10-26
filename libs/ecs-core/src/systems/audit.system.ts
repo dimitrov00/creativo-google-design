@@ -34,15 +34,22 @@ import { type EditCommandRequest } from './appointment-edit.system';
  * A seat's person as the audit log sees them (`audit.ts:19-25`): a client
  * with a record gets a row of its own, targeted at that RECORD (D29: a
  * booking act is done to whom the shop serves — `AuditTargetRef.Customer`,
- * flip (1)); a guest does not — a label typed at the desk is not somebody a
- * per-client history can ever be asked about. Discriminated by the seat's
- * own `seatSubject`.
+ * flip (1)) — an account's, or a walk-in's (OR-26); an anonymous guest does
+ * not — a label typed at the desk is not somebody a per-client history can
+ * ever be asked about. Discriminated by the seat's own `seatSubject`.
  */
-export type AuditSubject = AuditAccountSubject | AuditAnonymousSubject;
+export type AuditSubject =
+  AuditAccountSubject | AuditWalkInSubject | AuditAnonymousSubject;
 
 export type AuditAccountSubject = {
   readonly seatSubject: typeof SeatSubject.Account;
   /** The seat's client record — the row's `targetCustomerId`. */
+  readonly customerId: CustomerId;
+};
+
+export type AuditWalkInSubject = {
+  readonly seatSubject: typeof SeatSubject.WalkIn;
+  /** The walk-in's client record (OR-26) — the row's `targetCustomerId`. */
   readonly customerId: CustomerId;
 };
 
@@ -200,7 +207,7 @@ function targets(
   const people: CustomerId[] = [];
   for (let i = 0; i < subjects.length; i++) {
     const subject = subjects[i] as AuditSubject;
-    if (subject.seatSubject !== SeatSubject.Account) continue;
+    if (subject.seatSubject === SeatSubject.Anonymous) continue;
     if (
       subject.customerId.length === 0 ||
       people.includes(subject.customerId)
@@ -276,9 +283,10 @@ export const AuditSystem = {
   },
 
   /**
-   * The people on a visit's seats — accounts by their client record (D29),
-   * guests as anonymous — narrowed to ONE seat for a per-seat act (a
-   * companion's no-show is theirs, not the booker's). `null` is every seat.
+   * The people on a visit's seats — accounts and walk-ins by their client
+   * record (D29, OR-26), anonymous guests as anonymous — narrowed to ONE
+   * seat for a per-seat act (a companion's no-show is theirs, not the
+   * booker's). `null` is every seat.
    */
   subjectsOfSeats(
     seats: readonly Seat[],
@@ -288,11 +296,20 @@ export const AuditSystem = {
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as Seat;
       if (seatId !== null && seat.seatId !== seatId) continue;
-      subjects.push(
-        seat.seatSubject === SeatSubject.Account
-          ? account(seat.subjectCustomerId)
-          : ANONYMOUS,
-      );
+      switch (seat.seatSubject) {
+        case SeatSubject.Account:
+          subjects.push(account(seat.subjectCustomerId));
+          break;
+        case SeatSubject.WalkIn:
+          subjects.push({
+            seatSubject: SeatSubject.WalkIn,
+            customerId: seat.subjectCustomerId,
+          });
+          break;
+        case SeatSubject.Anonymous:
+          subjects.push(ANONYMOUS);
+          break;
+      }
     }
     return subjects;
   },

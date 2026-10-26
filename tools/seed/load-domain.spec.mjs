@@ -12,6 +12,15 @@
  * the domain's projection (`StreakSystem.trace` under the rule
  * `StreakRuleSystem.inForceOn` reads off the head) only if the bundle folds
  * a book into the very documents the ordinary imports fold it into.
+ *
+ * The preflight (OR-35) reads the default location through the bundle: its
+ * id, its collection, the read guard and the zone constructor must judge
+ * what the ordinary imports judge.
+ *
+ * The seed's commit reads through the REAL read guard (OR-33), the bundle's
+ * `StoredDocumentSystem.guardOf`: every body the seed writes to a guarded
+ * collection must pass it, so a seed run the guard would refuse fails here
+ * first — a defect of the fixture, never a reason to unguard the seed.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,8 +30,10 @@ import { clientStatsPaths, projectClientStats } from '@core/pipelines';
 import { Result } from '@core/primitives';
 import {
   LoyaltyCatalogSystem,
+  StoredDocumentSystem,
   StreakRuleSystem,
   StreakSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
 import {
   locationFixture,
@@ -60,6 +71,7 @@ import {
   giftVoucherWritesOf,
   readPromotionWrites,
 } from './promotions.mjs';
+import { programWritesOf } from './programs.mjs';
 import { waitlistRequestWriteOf } from './waitlist.mjs';
 
 const NOW = Date.parse('2026-09-25T15:00:00+03:00');
@@ -72,6 +84,17 @@ const LOYALTY_DOMAIN_MEMBERS = {
   LoyaltyCatalogSystem: ['validate'],
 };
 
+/** What the preflight is handed of the read guard and the zone (OR-35): each companion, by the members it calls. */
+const PREFLIGHT_DOMAIN_MEMBERS = {
+  StoredDocumentSystem: ['admit', 'guardOf'],
+  ZonedTimeSystem: ['checkZone'],
+};
+
+/** What the seed's commit plan is handed of the read guard (OR-33): the registry itself. */
+const SEED_COMMIT_MEMBERS = {
+  StoredDocumentSystem: ['guardOf'],
+};
+
 /** The same names, imported the ordinary way. */
 const direct = {
   projectClientStats,
@@ -80,6 +103,8 @@ const direct = {
   StreakRuleSystem,
   StreakRule,
   LoyaltyCatalogSystem,
+  StoredDocumentSystem,
+  ZonedTimeSystem,
 };
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -159,7 +184,11 @@ describe('loadSeedDomain', () => {
         'function',
       );
     }
-    for (const [name, members] of Object.entries(LOYALTY_DOMAIN_MEMBERS)) {
+    for (const [name, members] of [
+      ...Object.entries(LOYALTY_DOMAIN_MEMBERS),
+      ...Object.entries(PREFLIGHT_DOMAIN_MEMBERS),
+      ...Object.entries(SEED_COMMIT_MEMBERS),
+    ]) {
       for (const member of members) {
         expect(typeof domain[name]?.[member], `${name}.${member}`).toBe(
           'function',
@@ -188,6 +217,7 @@ describe('loadSeedDomain', () => {
       'catalog',
       'customers',
       'loyalty',
+      'programs',
       'promotions',
       'settings',
       'users',
@@ -235,6 +265,10 @@ describe('loadSeedDomain', () => {
     expect(written(bundled)).toEqual(written(ordinary));
     expect(plain(domain.waitlist.waitlistRequestWriteOf(bundled))).toEqual(
       plain(waitlistRequestWriteOf(ordinary)),
+    );
+    // The programs (OR-41): engine output on the same shop calendar.
+    expect(plain(domain.programs.programWritesOf(bundled.calendar))).toEqual(
+      plain(programWritesOf(ordinary.calendar)),
     );
     // The accounts (flip 2): the staff account `seed-dev-catalog.mjs` takes
     // from the bundle is the body the ordinary import builds.
@@ -345,6 +379,92 @@ describe('loadSeedDomain', () => {
     });
     expect(answers[0]).toEqual(answers[1]);
     expect(answers[0].state).toMatchObject({ streakId: 'cadence', current: 3 });
+  });
+
+  it('bundles the preflight’s domain (OR-35): the default location, its collection, the read guard and the zone judge what the ordinary imports judge', () => {
+    expect(domain.TenantConfig.DEFAULT).toEqual(TenantConfig.DEFAULT);
+    expect(domain.Collections).toEqual(Collections);
+    // The zone constructor: canonical, canonicalised, refused — alike.
+    for (const raw of ['Europe/Sofia', 'europe/sofia', 'UTC', 'Mars/Olympus']) {
+      expect(plain(domain.ZonedTimeSystem.checkZone(raw)), raw).toEqual(
+        plain(ZonedTimeSystem.checkZone(raw)),
+      );
+    }
+    // The read guard: the same registry behind the same dispatch — a seeded
+    // visit admitted, a tampered one refused alike, a location read as stored.
+    const [{ id, doc }] = buildClientBook(NOW).appointments;
+    const visit = { ...doc, id };
+    const tampered = { ...visit, busyKeys: 'not-a-list' };
+    const location = {
+      id: TenantConfig.DEFAULT.defaultLocationId,
+      timeZone: 'Europe/Sofia',
+    };
+    const admitted = [
+      [Collections.Appointments, visit, true],
+      [Collections.Appointments, tampered, false],
+      [Collections.Locations, location, true],
+    ];
+    for (const [collection, stored, ok] of admitted) {
+      const bundled = domain.StoredDocumentSystem.admit(
+        domain.StoredDocumentSystem.guardOf,
+        collection,
+        stored,
+      );
+      const ordinary = StoredDocumentSystem.admit(
+        StoredDocumentSystem.guardOf,
+        collection,
+        stored,
+      );
+      expect(ordinary.ok, `${collection}/${stored.id}`).toBe(ok);
+      expect(plain(bundled)).toEqual(plain(ordinary));
+    }
+  });
+
+  it('hands the seed’s commit the REAL read guard (OR-33): every body the seed writes to a guarded collection is admitted, as the ordinary import admits it', () => {
+    const book = buildClientBook(NOW);
+    const localDate = book.calendar.dayKeyAt(9);
+    const written = [
+      ...book.appointments.map(({ id, doc }) => [
+        Collections.Appointments,
+        { ...doc, id },
+      ]),
+      ...book.customers.map(({ id, body }) => [
+        Collections.Customers,
+        { ...body, id },
+      ]),
+      [
+        Collections.BarberBusy,
+        {
+          ...busyDayBody('ivan', localDate, [
+            [600, 645],
+            [900, 960],
+          ]),
+          id: busyKeyOf('ivan', localDate),
+        },
+      ],
+    ];
+    expect(book.appointments.length).toBeGreaterThan(0);
+    expect(book.customers.length).toBeGreaterThan(0);
+    const { guardOf } = domain.StoredDocumentSystem;
+    for (const [collection, stored] of written) {
+      const where = `${collection}/${stored.id}`;
+      // A guarded collection: the registry answers its guard, never `null`.
+      expect(guardOf(collection), where).not.toBeNull();
+      const bundled = domain.StoredDocumentSystem.admit(
+        guardOf,
+        collection,
+        stored,
+      );
+      expect(bundled.ok ? null : bundled.error, where).toBeNull();
+      expect(
+        StoredDocumentSystem.admit(
+          StoredDocumentSystem.guardOf,
+          collection,
+          stored,
+        ).ok,
+        where,
+      ).toBe(true);
+    }
   });
 
   it('bundles the promotions’ plan, and it writes and reads back what the ordinary import does', () => {

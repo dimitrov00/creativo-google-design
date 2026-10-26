@@ -6,15 +6,23 @@ import type {
   PositionInput,
   ShopEventInput,
 } from '@core/components';
-import type { Course, Position, ShopEvent } from '@core/entities';
+import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
+import type { ProgramSaveError } from '@core/errors';
 import {
   type WriteProgramCommand,
   writeCourse,
   writePosition,
   writeShopEvent,
 } from '@core/pipelines';
-import type { CourseId, EventId, PositionId } from '@core/primitives';
+import type {
+  CourseId,
+  EventId,
+  LocationId,
+  PositionId,
+  Result,
+} from '@core/primitives';
 import {
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   ID_PORTS,
@@ -39,19 +47,22 @@ export const ProgramsTab = {
 export type ProgramsTab = (typeof ProgramsTab)[keyof typeof ProgramsTab];
 
 /**
- * Page-scoped store for `/admin/programs` — the three live lists and one
- * save per kind. Component-provided, not root: nothing outside this screen
- * needs admin content-management state.
+ * Page-scoped store for `/admin/programs` — the three live lists, the
+ * shops the forms pick from, and one save per kind. Component-provided,
+ * not root: nothing outside this screen needs admin content-management
+ * state.
  *
  * Programs content stays a rules-guarded admin write (D9(b)), so each save
  * is a browser pipeline of `@core/pipelines` over the programs suite: it
  * reads the stored document on an update (and, for an event, the shop
  * whose zone places it), lets `ProgramsSystem` judge the form, and writes
- * the flat entity whole. The page reads only whether it saved.
+ * the flat entity whole. The page reads the save's answer: the entity, or
+ * the refusals it words (`errors.<errorCode>`, OR-38).
  */
 @Injectable()
 export class AdminProgramsStore {
   private readonly programs = inject(PROGRAMS_PORTS);
+  private readonly catalog = inject(CATALOG_PORTS);
   private readonly locations = inject(LOCATION_LOAD_PORTS);
   private readonly defaultLocation = inject(DEFAULT_LOCATION_PORTS);
   private readonly ids = inject(ID_PORTS);
@@ -108,21 +119,51 @@ export class AdminProgramsStore {
     { initialValue: [] },
   );
 
-  async submitPosition(
+  /**
+   * The ACTIVE shops, `sortOrder` order — what the event's «Салон» menu and
+   * the role's shop chips offer (OR-37, OR-42). The read as it answered,
+   * the failure kept: `undefined` until the first answer.
+   */
+  readonly shops = toSignal(this.catalog.observeLocations(), {
+    initialValue: undefined,
+  });
+
+  /**
+   * The stored shops the active list does not hold, each read once by id
+   * (OR-37, OR-42): a hidden shop answers its body, a deleted one `null`.
+   * A failed read leaves its id out of the answer, so its option claims
+   * neither.
+   */
+  async loadShops(
+    ids: readonly LocationId[],
+  ): Promise<ReadonlyMap<LocationId, ShopLocation | null>> {
+    const answers = await Promise.all(
+      ids.map(
+        async (id) => [id, await this.locations.loadLocation(id)] as const,
+      ),
+    );
+    const out = new Map<LocationId, ShopLocation | null>();
+    for (const [id, answer] of answers) {
+      if (answer.ok) out.set(id, answer.value);
+    }
+    return out;
+  }
+
+  submitPosition(
     command: WriteProgramCommand<PositionId, PositionInput>,
-  ): Promise<boolean> {
-    return (await this.savePosition(command)).ok;
+  ): Promise<Result<Position, readonly ProgramSaveError[]>> {
+    return this.savePosition(command);
   }
 
-  async submitCourse(
+  submitCourse(
     command: WriteProgramCommand<CourseId, CourseInput>,
-  ): Promise<boolean> {
-    return (await this.saveCourse(command)).ok;
+  ): Promise<Result<Course, readonly ProgramSaveError[]>> {
+    return this.saveCourse(command);
   }
 
-  async submitEvent(
+  submitEvent(
     command: WriteProgramCommand<EventId, ShopEventInput>,
-  ): Promise<boolean> {
-    return (await this.saveEvent(command)).ok;
+  ): Promise<Result<ShopEvent, readonly ProgramSaveError[]>> {
+    return this.saveEvent(command);
   }
 }

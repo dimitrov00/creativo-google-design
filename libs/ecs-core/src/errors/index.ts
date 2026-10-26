@@ -3,6 +3,7 @@ export * from './booking-flow.error';
 export * from './booking.error';
 export * from './cancellation.error';
 export * from './catalog.error';
+export * from './client-issue.error';
 export * from './engagement.error';
 export * from './governance.error';
 export * from './identity.error';

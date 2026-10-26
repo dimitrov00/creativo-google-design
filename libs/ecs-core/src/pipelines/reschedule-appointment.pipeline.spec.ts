@@ -7,8 +7,10 @@ import {
   type DocPath,
   LocationStatus,
   MinuteBlock,
+  SeatLabel,
   SeatOccupant,
   SeatOutcome,
+  SeatSubject,
   ServiceStatus,
   SubjectRelationship,
   WriteAction,
@@ -350,6 +352,56 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     });
   });
 
+  it('keeps a walk-in the shop seated on their record through the move — the cart names them by label (OR-26)', async () => {
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const walkIn = seatFixture({
+      seatId: SeatId.of('seat-maria'),
+      startMinutes: at(10, 30),
+      occupant: SeatOccupant.walkIn(record, SeatLabel.of('Мария')),
+    });
+    const { store, run } = rig([
+      ...catalogue(),
+      stored(
+        visit({
+          seats: [seatFixture(), walkIn],
+          subjectCustomerIds: [FIXTURE_IDS.customer, record],
+        }),
+      ),
+    ]);
+    const answer = await run(
+      command({
+        seats: [
+          CART_SEAT,
+          {
+            ...CART_SEAT,
+            lineId: 'line-2',
+            startMinutes: 690,
+            // Whatever contact a client's cart sends, it files nothing.
+            subject: {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: 'Мария',
+              guestKey: null,
+              contact: null,
+            },
+          },
+        ],
+      }),
+    );
+    expect(answer.ok).toBe(true);
+    const moved = store.get(PATH);
+    expect(moved?.['subjectCustomerIds']).toEqual(
+      [FIXTURE_IDS.customer, record].sort(),
+    );
+    expect(
+      (moved?.['seats'] as readonly Record<string, unknown>[])[1],
+    ).toMatchObject({
+      seatSubject: SeatSubject.WalkIn,
+      subjectCustomerId: record,
+      guestLabel: 'Мария',
+      startMinutes: at(11, 30),
+    });
+  });
+
   describe('the carried seats', () => {
     const son = seatFixture({
       seatId: COMPANION_SEAT,
@@ -502,6 +554,17 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       field: 'locationId',
       reason: 'not_found',
     });
+    // A reserved name is the parse's refusal (OR-44), refused unread as an
+    // invalid request (DEP-F31), not as a shop not found.
+    for (const locationId of ['..', '__x__']) {
+      const reserved = await run(command({ locationId }));
+      expect(!reserved.ok && reserved.error, locationId).toEqual({
+        errorCode: 'BOOKING_INVALID_INPUT',
+        field: 'locationId',
+        detail: null,
+        reason: null,
+      });
+    }
   });
 
   it('refuses a cart start inside the spring-forward gap DST_GAP_INVALID_TIME, writing nothing (4A-2 (a))', async () => {

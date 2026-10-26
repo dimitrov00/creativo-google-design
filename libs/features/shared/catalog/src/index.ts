@@ -4,6 +4,7 @@ export * from './lib/content/catalog-wording.service';
 export * from './lib/content/catalog-content.service';
 export * from './lib/content/media-url-cache';
 export * from './lib/content/catalog.presenter';
+export * from './lib/content/shop-name.format';
 export * from './lib/service-card/service-card.component';
 export * from './lib/service-sheet/service-detail-sheet.component';
 export * from './lib/service-sheet/service-row.component';

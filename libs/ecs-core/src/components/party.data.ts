@@ -135,32 +135,6 @@ export const Party = {
     return guests;
   },
 
-  /**
-   * The ordinal the next guest's placeholder label starts from
-   * (`booking-services-step.ts` `nextGuestNumber`): one past the highest
-   * guest number PRESENT, plus one — `highest + 2`, read off each guest id's
-   * `guest-<n>` (a guest id with no number is skipped; no guest, or no
-   * party, gives 1). Today's rule exactly, kept on purpose (§8 OQ-6): it
-   * reads the roster, not {@link Party.nextGuestSequence}, so it can repeat
-   * a removed guest's number — the caller's `firstUnusedLabel` steps past
-   * every label in use.
-   */
-  labelNumberAfter(party: Party | null): number {
-    let highest = -1;
-    if (party !== null) {
-      for (let i = 0; i < party.members.length; i++) {
-        const member = party.members[i] as PartyMember;
-        if (member.partyRole !== PartyRole.Guest) continue;
-        const seq = Number.parseInt(
-          member.guestId.replace(GUEST_PREFIX, ''),
-          10,
-        );
-        if (Number.isFinite(seq) && seq > highest) highest = seq;
-      }
-    }
-    return highest + 2;
-  },
-
   /** Every seat in the party: the booker first, then companions and guests in member order. */
   seatKeys(party: Party): readonly SeatKey[] {
     const keys: SeatKey[] = [SeatKey.self()];

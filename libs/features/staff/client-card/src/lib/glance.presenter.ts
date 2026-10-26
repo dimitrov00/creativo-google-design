@@ -12,7 +12,12 @@ import {
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
 import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
-import { type LocalDate, type ServiceId, defect } from '@core/primitives';
+import {
+  type CouponId,
+  type LocalDate,
+  type ServiceId,
+  defect,
+} from '@core/primitives';
 import {
   BirthdayMoment,
   CouponOccasion,
@@ -551,6 +556,15 @@ export interface LoyaltyGlanceInput extends LoyaltyTilesInput {
    * prints none.
    */
   readonly rhythm: StreakDefinition | null;
+  /**
+   * The coupons of the rewards the client holds on this visit — the grants
+   * E offers and those already on the draft bill (`ClientCardGrant.couponId`):
+   * the points never say they are «enough for» one of them (OR-15 — a
+   * reward is known by the coupon it mints, never by its name, so the rule
+   * holds in every language). Empty, or absent, when the owner holds none
+   * (or the subject is not the owner).
+   */
+  readonly heldCouponIds?: readonly CouponId[];
 }
 
 /** One holding, and how a reader hears it after its label («9 посещения»). */
@@ -558,22 +572,24 @@ interface Holding extends HoldingFactVm {
   readonly spoken: string;
 }
 
+/** The joint between two currencies' sums in the vouchers' fact. */
+const SUMS_JOINT = ' · ';
+
 /**
  * The vouchers' fact: what is left on every voucher the person can still
  * pay with — active, not empty, and not past its last day on the shop's
- * calendar — as ONE sum (`ClientGlanceSystem.holdings`). `null` when
- * nothing is left.
+ * calendar — ONE sum per currency, every currency printed and joined with
+ * « · » (`ClientGlanceSystem.holdings`, OR-17, DEP-F12: none is dropped,
+ * none is added to another). `null` when nothing is left.
  */
 function voucherHolding(
   held: GlanceHoldings,
   words: ClientCardWords,
 ): Holding | null {
-  if (held.voucherCents === null || held.voucherCurrency === null) return null;
-  const value = formatCents(
-    held.voucherCents,
-    held.voucherCurrency,
-    words.lang,
-  );
+  if (held.vouchers.length === 0) return null;
+  const value = held.vouchers
+    .map((sum) => formatCents(sum.amountCents, sum.currency, words.lang))
+    .join(SUMS_JOINT);
   return {
     id: LoyaltyHoldingWord.Voucher,
     label: words.loyalty.holding(LoyaltyHoldingWord.Voucher),
@@ -669,11 +685,11 @@ function pointsSentence(
   const { account, today, words } = input;
   const locale = cardLocaleOf(words.lang);
   // Which rewards the sentence may name, what the balance reaches and how
-  // far it falls short are `RewardSystem.pointsReachBeyondHeld`'s.
+  // far it falls short are `RewardSystem.pointsReachBeyondHeld`'s — a held
+  // reward known by the coupon it mints (OR-15).
   const reach = RewardSystem.pointsReachBeyondHeld(
     catalog.rewards,
-    input.heldRewards ?? [],
-    locale,
+    input.heldCouponIds ?? [],
     account.balance,
     today,
   );

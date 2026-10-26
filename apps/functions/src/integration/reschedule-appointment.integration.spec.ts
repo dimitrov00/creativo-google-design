@@ -22,7 +22,7 @@ import {
 } from '@core/primitives';
 import { CarriedSeatRefusal, MoveErrorCode } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
-import { ZonedTimeSystem } from '@core/systems';
+import { StoredDocumentSystem, ZonedTimeSystem } from '@core/systems';
 import {
   type RescheduleAppointmentCommand,
   rescheduleAppointment,
@@ -198,7 +198,11 @@ describe('rescheduleAppointment (emulator)', () => {
     const telemetry = recordingTelemetry();
     let minted = 0;
     return rescheduleAppointment({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       nextId: () => `id-${++minted}`,
       hash: sha256Hex,

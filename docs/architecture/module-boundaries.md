@@ -80,16 +80,16 @@ through `src/edge.ts` and `src/wire/*`. It gets a scope of its own rather than
 
 ## `type:*` — architectural layer
 
-| Tag                   | Meaning                                                                                                                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type:app`            | A deployable application (`apps/web`, `apps/showcase`, `apps/functions`)                                                                                                                                                      |
-| `type:feature`        | A routed presentation slice: Angular components, stores and their templates, reading `@core/*` data and calling `@core/systems` directly (`libs/features/*`)                                                                  |
-| `type:ui`             | The design system: presentational components and modifiers, no business logic or data access (`libs/ui/*`)                                                                                                                    |
-| `type:infrastructure` | Adapters implementing `@core/ports` bundles over one SDK each, the web's `InjectionToken` wiring and the SDK providers (`libs/infrastructure/*`)                                                                              |
-| `type:domain`         | `libs/ecs-core` **only** (D10(a)): primitives, components, entities, ports, systems and pipelines — pure TypeScript, zero Angular, zero Firebase                                                                              |
-| `type:util`           | Pure helpers with no framework opinions (`libs/shared/view-state`), and the `scope:tooling` projects `tools/lint-rules`, `tools/icons`, `tools/flags`, `tools/verify` (Node scripts, `.mjs` — outside the `.ts` rules, below) |
-| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/ui/tokens`: the `--sys-*` CSS, the baseline reset and reduced-motion sheets, the theme vocabulary)                                                                         |
-| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed`, the `seed-tools` project)                                                                                                                        |
+| Tag                   | Meaning                                                                                                                                                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type:app`            | A deployable application (`apps/web`, `apps/showcase`, `apps/functions`)                                                                                                                                        |
+| `type:feature`        | A routed presentation slice: Angular components, stores and their templates, reading `@core/*` data and calling `@core/systems` directly (`libs/features/*`)                                                    |
+| `type:ui`             | The design system: presentational components and modifiers, no business logic or data access (`libs/ui/*`)                                                                                                      |
+| `type:infrastructure` | Adapters implementing `@core/ports` bundles over one SDK each, the web's `InjectionToken` wiring and the SDK providers (`libs/infrastructure/*`)                                                                |
+| `type:domain`         | `libs/ecs-core` **only** (D10(a)): primitives, components, entities, ports, systems and pipelines — pure TypeScript, zero Angular, zero Firebase                                                                |
+| `type:util`           | Pure helpers with no framework opinions (`libs/shared/view-state`), and the `scope:tooling` projects `tools/lint-rules`, `tools/icons`, `tools/flags` (Node scripts, `.mjs` — outside the `.ts` rules, below)   |
+| `type:tokens`         | Design tokens — a true dependency-free leaf (`libs/ui/tokens`: the `--sys-*` CSS, the baseline reset and reduced-motion sheets, the theme vocabulary)                                                           |
+| `type:tooling`        | Workspace tooling whose inputs are typed against the ECS core (`tools/seed`, the `seed-tools` project; `tools/verify`, whose production preflight runs the domain through `tools/seed/load-domain.mjs` — OR-35) |
 
 **Rule** (the root `depConstraints`, layer half):
 
@@ -219,7 +219,6 @@ verifier).
 | `showcase`             | `apps/showcase`                      | `scope:showcase`, `type:app`          |
 | `functions`            | `apps/functions`                     | `scope:backend`, `type:app`           |
 | `ecs-core`             | `libs/ecs-core`                      | `scope:shared`, `type:domain`         |
-| `admin-impersonation`  | `libs/features/admin/impersonation`  | `scope:app`, `type:feature`           |
 | `admin-loyalty`        | `libs/features/admin/loyalty`        | `scope:app`, `type:feature`           |
 | `admin-programs`       | `libs/features/admin/programs`       | `scope:app`, `type:feature`           |
 | `client-account`       | `libs/features/client/account`       | `scope:app`, `type:feature`           |
@@ -227,6 +226,7 @@ verifier).
 | `client-appointments`  | `libs/features/client/appointments`  | `scope:app`, `type:feature`           |
 | `client-auth`          | `libs/features/client/auth`          | `scope:app`, `type:feature`           |
 | `client-booking`       | `libs/features/client/booking`       | `scope:app`, `type:feature`           |
+| `client-notifications` | `libs/features/client/notifications` | `scope:app`, `type:feature`           |
 | `client-onboarding`    | `libs/features/client/onboarding`    | `scope:app`, `type:feature`           |
 | `client-profile`       | `libs/features/client/profile`       | `scope:app`, `type:feature`           |
 | `marketing-careers`    | `libs/features/marketing/careers`    | `scope:app`, `type:feature`           |
@@ -251,13 +251,14 @@ verifier).
 | `modifiers`            | `libs/ui/modifiers`                  | `scope:shared`, `type:ui`             |
 | `patterns`             | `libs/ui/patterns`                   | `scope:shared`, `type:ui`             |
 | `ui-wall-clock`        | `libs/ui/wall-clock`                 | `scope:shared`, `type:ui`             |
+| `ui-theme`             | `libs/ui/theme`                      | `scope:shared`, `type:ui`             |
 | `tokens`               | `libs/ui/tokens`                     | `scope:shared`, `type:tokens`         |
 | `view-state`           | `libs/shared/view-state`             | `scope:shared`, `type:util`           |
 | `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
 | `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
 | `lint-rules`           | `tools/lint-rules`                   | `scope:tooling`, `type:util`          |
 | `seed-tools`           | `tools/seed`                         | `scope:tooling`, `type:tooling`       |
-| `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:util`          |
+| `verify-tools`         | `tools/verify`                       | `scope:tooling`, `type:tooling`       |
 
 Read off every `project.json` (`git ls-files '**/project.json'`); check it at
 any time with `pnpm nx show projects` (43) and `pnpm nx graph`.

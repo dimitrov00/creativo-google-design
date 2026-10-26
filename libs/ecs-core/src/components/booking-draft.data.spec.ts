@@ -149,6 +149,35 @@ describe('BookingDraft.read — the restore', () => {
     expect(BookingDraft.read(corrupted)).toEqual(draft);
   });
 
+  it('restores a tampered contact phone as none — the review step asks again (OR-48, DEP-F34)', () => {
+    const draft = BookingDraft.fresh(
+      STATE,
+      {
+        contactName: 'Мария Петрова',
+        contactPhone: null,
+        contactEmail: Email.of('maria@example.com'),
+        contactNote: null,
+      },
+      DAY,
+    );
+    for (const tampered of [
+      '0888 123 456',
+      '+0888123456',
+      '+359 888 123 456',
+      '+35988',
+      '+1234567890123456',
+      'javascript:alert(1)',
+      '',
+    ]) {
+      const restored = BookingDraft.read({
+        ...(stored(draft) as object),
+        contactPhone: tampered,
+      });
+      expect(restored, tampered).toEqual(draft);
+      expect(restored?.contactPhone ?? null, tampered).toBeNull();
+    }
+  });
+
   it('drops a rebooking edge that does not parse — the draft restores FRESH', () => {
     const broken = {
       ...(stored(

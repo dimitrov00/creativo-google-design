@@ -3,13 +3,14 @@
  * every document the seed writes is TypeScript now (flip 1, booking core):
  *
  * - THE SEED ITSELF. The catalogue, the rosters, the appointments, the
- *   promotions, the waitlist request, the client records, the accounts
- *   (`users`, flip 2) and the booking policy are bodies in
- *   `tools/seed/fixtures/*.fixtures.ts`, each `satisfies Omit<X, 'id'>` of
- *   its `@core/entities` archetype, and the plan modules that place them
- *   (`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `loyalty.mjs`,
- *   `promotions.mjs`, `waitlist.mjs`, over the shop calendar of
- *   `calendar.mjs`) import those bodies and the `@core/*` tiers;
+ *   promotions, the programs (OR-41), the waitlist request, the client
+ *   records, the accounts (`users`, flip 2) and the booking policy are
+ *   bodies in `tools/seed/fixtures/*.fixtures.ts`, each
+ *   `satisfies Omit<X, 'id'>` of its `@core/entities` archetype, and the
+ *   plan modules that place them (`catalog.mjs`, `fixtures.mjs`,
+ *   `appointments.mjs`, `loyalty.mjs`, `promotions.mjs`, `programs.mjs`,
+ *   `waitlist.mjs`, over the shop calendar of `calendar.mjs`) import those
+ *   bodies and the `@core/*` tiers;
  *   `seed-dev-catalog.mjs` takes the staff account's body straight from
  *   `users` and the policy's from `settings`. Plain Node can
  *   neither strip their types nor resolve their `@core/*` aliases, so
@@ -20,8 +21,10 @@
  *   writes are the server's by construction (design §12.5.7, "the seed is
  *   engine output"), never a second copy: `projectClientStats` from
  *   `@core/pipelines` writes `clientStats/{customerId}` and its
- *   `restricted/money` through the server's `firestoreCommitPlan`, under
- *   the policy `firestoreSettingsPorts` reads, on the shop day of the
+ *   `restricted/money` through the server's `firestoreCommitPlan` — which
+ *   reads through the REAL read guard, the bundle's
+ *   `StoredDocumentSystem.guardOf` (OR-33) — under the policy
+ *   `firestoreSettingsPorts` reads, on the shop day of the
  *   default location (`TenantConfig.DEFAULT`) that `firestoreCatalogPorts`
  *   loads (F-4, Phase 4a 4A-11); `purgeAtFor` is the ONE
  *   `purgeAt` stamp (F1-7) every busy day and waitlist request the seed
@@ -32,8 +35,16 @@
  *   run-time checks the seed reads its loyalty documents back with before
  *   writing them (`readLoyaltyWrites`): `LoyaltyCatalogSystem.validate`
  *   over the catalogue and `StreakRule.parse` over every rule of a head
- *   and every version. `load-domain.spec.mjs` holds each equal to the
- *   ordinary import.
+ *   and every version.
+ * - THE PREFLIGHT'S DOMAIN (OR-35), which `tools/verify/preflight/preflight.mjs`
+ *   reads the default location with — the same code every boundary runs,
+ *   never a second copy: `TenantConfig` (the default location's id),
+ *   `Collections` (its collection), `StoredDocumentSystem` (the read
+ *   guards' registry `guardOf` and their one dispatch `admit`, which a read
+ *   passes through before it is trusted) and `ZonedTimeSystem` (its
+ *   `checkZone`, the `TimeZone` smart constructor, F-2).
+ *
+ * `load-domain.spec.mjs` holds each name equal to the ordinary import.
  *
  * `tools/icons/load-ts.mjs` transpiles file by file and follows relative
  * imports only; this graph crosses the `@creativo/*` and `@core/*` path
@@ -64,6 +75,7 @@ export const SEED_PLAN_MODULES = Object.freeze({
   appointments: 'tools/seed/appointments.mjs',
   loyalty: 'tools/seed/loyalty.mjs',
   promotions: 'tools/seed/promotions.mjs',
+  programs: 'tools/seed/programs.mjs',
   waitlist: 'tools/seed/waitlist.mjs',
   customers: 'tools/seed/fixtures/customers.fixtures.ts',
   users: 'tools/seed/fixtures/users.fixtures.ts',
@@ -88,10 +100,13 @@ ${Object.entries(SEED_PLAN_MODULES)
   .map(([name, path]) => `export * as ${name} from './${path}';`)
   .join('\n')}
 export { StreakRule, TenantConfig } from '@core/components';
+export { Collections } from '@core/entities';
 export {
   LoyaltyCatalogSystem,
+  StoredDocumentSystem,
   StreakRuleSystem,
   StreakSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
 `;
 

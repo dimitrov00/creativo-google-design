@@ -1,9 +1,16 @@
 import {
   Actor,
+  type AppliedDiscount,
   AuditAction,
   AuditContext,
   BlockKind,
+  Combinability,
+  CouponValue,
+  DiscountProvenance,
   type DocBody,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
   MinuteBlock,
   ServiceStatus,
   VoucherCode,
@@ -13,16 +20,26 @@ import {
   WriteOp,
 } from '@core/components';
 import {
+  AppliedDiscountId,
   AuditResourceId,
   BarberBusyDayId,
+  BarberId,
   BusyKey,
+  CouponGrantId,
+  CouponId,
   Currency,
+  CustomerId,
   GiftVoucherId,
   ServiceId,
   UserId,
 } from '@core/primitives';
-import { type AuditEntry, type GiftVoucher, Collections } from '@core/entities';
-import { AuditSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  type AuditEntry,
+  type CouponGrant,
+  type GiftVoucher,
+  Collections,
+} from '@core/entities';
+import { AuditSystem, CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -42,15 +59,17 @@ import {
   sequentialIds,
   serviceFixture,
   until,
+  unwrapOk,
 } from '@core/testing';
 import {
   appendAuditFacts,
   bookingSnapshotOf,
   busyMergeWrites,
-  isReadableId,
+  grantReleaseWrites,
   placementFields,
   placementKeysOf,
   readBookingSet,
+  readDiscountGrants,
   readPlacementSet,
   voucherRestoreWrites,
   withMoreFields,
@@ -135,12 +154,33 @@ describe('the booking read set', () => {
     ).toMatchObject({ keys: [] });
   });
 
-  it('names a document only by an id that could be one', () => {
-    expect(isReadableId('loc-center')).toBe(true);
-    // A blank id is still a name — read, and refused as the shop that is not there.
-    expect(isReadableId('   ')).toBe(true);
-    for (const id of ['', 'a/b', '.', '..', '__x__'])
-      expect(isReadableId(id)).toBe(false);
+  it('names a document only by an id that could be one — the brand’s own door (OR-44)', async () => {
+    const tx = memoryReadTx(memoryStore());
+    const unreadable = ['', '   ', 'a/b', '.', '..', '__x__'];
+    await readBookingSet(tx, {
+      locationId: FIXTURE_IDS.location,
+      serviceIds: [...unreadable.map(ServiceId.of), FIXTURE_IDS.service],
+      barberIds: unreadable.map(BarberId.of),
+      customerIds: [...unreadable.map(CustomerId.of), FIXTURE_IDS.customer],
+    });
+    expect(tx.reads).toEqual([
+      [Collections.Locations, FIXTURE_IDS.location],
+      [Collections.Services, FIXTURE_IDS.service],
+      [Collections.Customers, FIXTURE_IDS.customer],
+    ]);
+    const placement = memoryReadTx(memoryStore());
+    await readPlacementSet(placement, [], unreadable.map(CustomerId.of));
+    expect(placement.reads).toEqual([]);
+    expect(
+      placementKeysOf(
+        [
+          { barberId: '..', startMinutes: at(10) },
+          { barberId: '__x__', startMinutes: at(10) },
+          { barberId: FIXTURE_IDS.barber, startMinutes: at(10) },
+        ],
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([KEY]);
   });
 
   it('the snapshot keeps the bookable services, each schedule under its barber, each busy day’s blocks as spans', async () => {
@@ -288,6 +328,115 @@ describe('the booking read set', () => {
     expect(voucherRestoreWrites([base], [], [], FIXTURE_NOW_UTC_MS)).toEqual([
       base,
     ]);
+  });
+
+  describe('the coupon grants a bill names (OR-13)', () => {
+    const GRANT = CouponGrantId.of('grant-1');
+    const OTHER = CouponGrantId.of('grant-2');
+
+    /** A grant line on the bill, honouring `grantId`. */
+    function grantLine(grantId: CouponGrantId): AppliedDiscount {
+      return {
+        discountId: AppliedDiscountId.of(`grant:${grantId}`),
+        label: 'Autumn',
+        appliedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        combinability: Combinability.Stackable,
+        ...DiscountProvenance.grant(grantId),
+        ...unwrapOk(CouponValue.percentOff(10)),
+      };
+    }
+
+    const MANUAL: AppliedDiscount = {
+      discountId: AppliedDiscountId.of('manual'),
+      label: 'Desk',
+      appliedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      combinability: Combinability.Stackable,
+      ...DiscountProvenance.manual(),
+      ...unwrapOk(CouponValue.percentOff(5)),
+    };
+
+    /** `id`, single-use, burned by the visit's save. */
+    function burnt(id: CouponGrantId): CouponGrant {
+      const active: CouponGrant = {
+        id,
+        customerId: FIXTURE_IDS.customer,
+        holderUserId: FIXTURE_IDS.client,
+        couponId: CouponId.of('coupon-1'),
+        grantedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        ...unwrapOk(CouponValue.percentOff(10)),
+        ...GrantLifecycle.active(
+          GrantCapacityTerms.singleUse(),
+          GrantExpiryTerms.none(),
+        ),
+      };
+      return unwrapOk(
+        CouponGrantSystem.burn(active, FIXTURE_NOW_UTC_MS, 'appointment:a1'),
+      );
+    }
+
+    it('reads the bill’s grants in ONE getAll — each once, an absent one too, an unreadable id never — and nothing for a bill with no grant line', async () => {
+      const tx = memoryReadTx(
+        memoryStore([
+          {
+            path: [Collections.CouponGrants, GRANT],
+            body: bodyOf(burnt(GRANT)),
+          },
+        ]),
+      );
+      const grants = await readDiscountGrants(tx, [
+        grantLine(GRANT),
+        MANUAL,
+        grantLine(OTHER),
+        grantLine(GRANT),
+        grantLine(CouponGrantId.of('a/b')),
+      ]);
+      expect(tx.reads).toEqual([
+        [Collections.CouponGrants, GRANT],
+        [Collections.CouponGrants, OTHER],
+      ]);
+      expect(grants.map((grant) => grant.id)).toEqual([GRANT]);
+
+      const none = memoryReadTx(memoryStore());
+      expect(await readDiscountGrants(none, [MANUAL])).toEqual([]);
+      expect(await readDiscountGrants(none, [])).toEqual([]);
+      expect(none.reads).toEqual([]);
+    });
+
+    it('a release drops the grant lines from the appointment write and restores each grant read — one not read skipped, the move still lands', () => {
+      const base = WriteOp.transition(
+        ['appointments', 'a1'],
+        { bookingStatus: 'CANCELLED' },
+        ['confirmedAtUtcMs'],
+      );
+      const spent = burnt(GRANT);
+      const writes = grantReleaseWrites(
+        [base, WriteOp.set(['x', '1'], { a: 1 })],
+        [grantLine(GRANT), MANUAL, grantLine(OTHER)],
+        [spent],
+      );
+      expect(writes).toEqual([
+        WriteOp.transition(
+          ['appointments', 'a1'],
+          { bookingStatus: 'CANCELLED', discounts: [MANUAL] },
+          ['confirmedAtUtcMs'],
+        ),
+        WriteOp.set(['x', '1'], { a: 1 }),
+        CouponGrantSystem.transitionWrite(
+          spent,
+          unwrapOk(CouponGrantSystem.restore(spent)),
+        ),
+      ]);
+      expect(writes[2]?.path).toEqual([Collections.CouponGrants, GRANT]);
+    });
+
+    it('leaves the plan as it is for a bill with no grant line', () => {
+      const base = WriteOp.update(['appointments', 'a1'], {
+        bookingStatus: 'NO_SHOW',
+      });
+      const plan = [base];
+      expect(grantReleaseWrites(plan, [MANUAL], [burnt(GRANT)])).toBe(plan);
+      expect(grantReleaseWrites(plan, [], [])).toBe(plan);
+    });
   });
 
   it('placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle', () => {

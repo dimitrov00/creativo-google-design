@@ -105,7 +105,7 @@ describe('DayHours.parseWeek', () => {
     });
   });
 
-  it('rejects a figure that is not a minute of the day', () => {
+  it('rejects an opening figure that is not a minute of the day', () => {
     for (const bad of [-1, 1440, 570.5, Number.NaN]) {
       const raw = [open(bad, 1080), ...rawWeek().slice(1)];
       expect(DayHours.parseWeek(raw)).toEqual({
@@ -118,13 +118,32 @@ describe('DayHours.parseWeek', () => {
         ],
       });
     }
+  });
+
+  it('keeps a shop open until midnight — a 24:00 close is an open day (OR-22, DEP-F17)', () => {
     const lateClose = [open(540, 1440), ...rawWeek().slice(1)];
-    expect(DayHours.parseWeek(lateClose)).toEqual({
-      ok: false,
-      error: [
-        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: '1440' },
-      ],
-    });
+    const result = DayHours.parseWeek(lateClose);
+    expect(result.ok && result.value[0]).toEqual(
+      DayHours.open(minute(540), until(24)),
+    );
+    expect(
+      result.ok && DayHours.isOpenAt(result.value, Weekday.Mon, minute(1439)),
+    ).toBe(true);
+  });
+
+  it('rejects a close that is no exclusive end — 00:00 and past midnight', () => {
+    for (const bad of [0, 1441, 1080.5, Number.NaN]) {
+      const raw = [open(540, bad), ...rawWeek().slice(1)];
+      expect(DayHours.parseWeek(raw)).toEqual({
+        ok: false,
+        error: [
+          {
+            errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
+            rawValue: String(bad),
+          },
+        ],
+      });
+    }
   });
 
   it('rejects an open day where closing is not after opening, by day index', () => {

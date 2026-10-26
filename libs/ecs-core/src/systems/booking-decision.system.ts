@@ -24,6 +24,7 @@ import {
 import {
   Result,
   BusyKey,
+  type CartLineId,
   Currency,
   type DurationMinutes,
   MinuteCount,
@@ -147,8 +148,10 @@ export type DecisionStandingSeat = {
  * the cart (D29 — resolved by the pipeline, `CustomerId.forUser(uid, hash)`
  * for each of {@link BookingDecisionSystem.accountSubjects}; the system is
  * handed ids, never a hash), the staff term overrides, the visit as it
- * stands and the pairs its last save broke (both `[]` on a commit), and the
- * edge's phone parser.
+ * stands and the pairs its last save broke (both `[]` on a commit), the
+ * edge's phone parser, and the guest lines the shop keeps a client record
+ * for (OR-26 — resolved by the pipeline, `CustomerId.forWalkIn`; `[]` on a
+ * client's commit).
  */
 export type DecideBookingContext = {
   readonly now: ShopNow;
@@ -160,6 +163,20 @@ export type DecideBookingContext = {
   readonly standing: readonly DecisionStandingSeat[];
   readonly stood: readonly SeatIdPair[];
   readonly parsePhone: (raw: string) => E164 | null;
+  readonly walkIns: readonly DecisionWalkIn[];
+};
+
+/**
+ * A guest line the shop keeps a client record for (OR-26): the request
+ * line (`lineId` — a commit's cart line, an edit's seat id, which IS its
+ * line id there, as `termsOverrides` names lines) and the record, resolved
+ * by the pipeline (`CustomerRecordSystem`). The decision seats that guest
+ * `WALK_IN`; a guest line it does not name stays `ANONYMOUS`, and a line
+ * that is no guest's is never one.
+ */
+export type DecisionWalkIn = {
+  readonly lineId: CartLineId;
+  readonly customerId: CustomerId;
 };
 
 /** A span to add to one barber's public busy projection — flat, on its shop day. */
@@ -342,16 +359,32 @@ function customerOf(
   );
 }
 
+/** The record the pipeline resolved for a guest line, or `null` (OR-26). */
+function walkInOf(
+  walkIns: readonly DecisionWalkIn[],
+  lineId: string,
+): CustomerId | null {
+  for (let i = 0; i < walkIns.length; i++) {
+    const walkIn = walkIns[i] as DecisionWalkIn;
+    if (walkIn.lineId === lineId) return walkIn.customerId;
+  }
+  return null;
+}
+
 /**
  * The seat's occupant (`decide-booking.ts:860-890`): `SELF` is bound to the
  * TOKEN — refused outright with no owner, because the self seat IS the
  * owner's seat; a companion is only ever a stored person carried forward; a
- * guest is their label. An account carries its client record beside it.
+ * guest is their label — a walk-in (`WALK_IN`, its record beside the
+ * label) when the pipeline resolved a record for the line (OR-26), else
+ * anonymous. An account carries its client record beside it.
  */
 function toOccupant(
   subject: BookingCall.SubjectInput,
+  lineId: string,
   owner: UserId | null,
   customerIds: ReadonlyMap<UserId, CustomerId>,
+  walkIns: readonly DecisionWalkIn[],
 ): Result<SeatOccupant, BookingError> {
   if (subject.requestedSubjectRole === RequestedSubjectRole.Self) {
     if (owner === null) {
@@ -384,7 +417,12 @@ function toOccupant(
   if (!label.ok) {
     return Result.err(BookingError.invalidInput('guest label'));
   }
-  return Result.ok(SeatOccupant.anonymous(label.value));
+  const record = walkInOf(walkIns, lineId);
+  return Result.ok(
+    record === null
+      ? SeatOccupant.anonymous(label.value)
+      : SeatOccupant.walkIn(record, label.value),
+  );
 }
 
 /** Per (barber, day), the bookable windows and the padded busy — memoized within ONE call. */
@@ -587,8 +625,10 @@ export const BookingDecisionSystem = {
 
       const occupant = toOccupant(
         requested.subject,
+        requested.lineId,
         owner,
         context.customerIds,
+        context.walkIns,
       );
       if (!occupant.ok) return occupant;
 

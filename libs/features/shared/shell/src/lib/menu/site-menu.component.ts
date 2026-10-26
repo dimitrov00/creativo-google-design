@@ -6,6 +6,7 @@ import {
   inject,
   input,
   output,
+  resource,
   signal,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -16,12 +17,17 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   CLOCK_PORTS,
-  INBOX_PORTS,
   ShopZoneService,
+  distinctLocationIds,
+  nowOfZones,
+  sameLocationIds,
 } from '@creativo/infrastructure/firebase-app';
 import { intlLocaleOf } from '@creativo/infrastructure/i18n';
+import { InboxStore } from '@creativo/features/client/notifications';
 import { Principal } from '@core/components';
-import { NotificationSystem } from '@core/systems';
+import type { Appointment } from '@core/entities';
+import type { LocationId } from '@core/primitives';
+import { VisitListSystem } from '@core/systems';
 import {
   UiAvatar,
   UiBadge,
@@ -108,16 +114,67 @@ export class SiteMenuComponent {
   private readonly clock = inject(CLOCK_PORTS);
 
   /**
-   * The shop's zone — the default location's (Law 7.2, F-4: no zone
-   * constant), read ONCE per session through the root `ShopZoneService`.
-   * Asked here, at construction, because the header mounts this menu with
-   * the shell: the read starts at shell mount, long before the menu opens.
+   * The session's shop zones (Law 7.2, F-4: no zone constant) — read once
+   * per location through the root `ShopZoneService` memo.
    */
-  private readonly shopZone = inject(ShopZoneService).defaultZone();
+  private readonly shopZones = inject(ShopZoneService);
+
+  /**
+   * The default location's zone — the schedule row's date. Asked here, at
+   * construction, because the header mounts this menu with the shell: the
+   * read starts at shell mount, long before the menu opens.
+   */
+  private readonly shopZone = this.shopZones.defaultZone();
 
   /** Name + photo for the identity portrait — the same shell-level read
    *  model backing the header's trigger circle. */
   protected readonly identity = inject(SessionIdentityService);
+
+  /**
+   * The account's live bookings (`observeUpcoming`: live statuses, any
+   * date) — what the bookings row counts. Empty for a guest and on a
+   * failed read.
+   */
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
+
+  private readonly liveVisits = toSignal(
+    toObservable(this.identity.principal).pipe(
+      switchMap((principal) => {
+        if (!Principal.isActive(principal)) {
+          return of<readonly Appointment[]>([]);
+        }
+        return this.appointments
+          .observeUpcoming(principal.userId)
+          .pipe(map((result) => (result.ok ? result.value : [])));
+      }),
+    ),
+    { initialValue: [] as readonly Appointment[] },
+  );
+
+  /**
+   * The shops those visits are at, each once in code-unit order — the zone
+   * read's one input. Equal by value: a snapshot at shops already read
+   * reads nothing.
+   */
+  private readonly visitShops = computed<readonly LocationId[]>(
+    () => distinctLocationIds(this.liveVisits()),
+    { equal: sameLocationIds },
+  );
+
+  /**
+   * Those shops' zones, by shop, through the session's memo (`zonesOf`) —
+   * asked once the menu has been opened, not at shell mount: the count
+   * only shows inside the open menu, and a menu mounted for the whole
+   * session asks nothing to decorate a row nobody has looked at (the
+   * schedule row's rule, below). A shop already read costs no read.
+   */
+  private readonly visitZones = resource({
+    params: () => {
+      const shops = this.visitShops();
+      return !this.everOpened() || shops.length === 0 ? undefined : shops;
+    },
+    loader: ({ params }) => this.shopZones.zonesOf(params),
+  });
 
   /**
    * Upcoming-visit count for the bookings row's trailing accessory — the
@@ -125,49 +182,36 @@ export class SiteMenuComponent {
    * rather than in `SessionIdentityService` because it is not identity;
    * the menu is its only consumer today.
    *
+   * "Upcoming" is the rule `/account` and `/account/appointments` use
+   * (OR-8, `VisitListSystem.countUpcoming`): each visit judged on its OWN
+   * shop's wall clock at the instant the menu was last opened, so a visit
+   * that has begun there is no longer counted (DEP-F7); a shop whose zone
+   * is not known (yet) counts nothing.
+   *
    * Rendered only when non-zero — a "0" badge is noise, and its absence
    * already says "nothing upcoming".
    */
-  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
-
-  protected readonly upcomingCount = toSignal(
-    toObservable(this.identity.principal).pipe(
-      switchMap((principal) => {
-        if (!Principal.isActive(principal)) return of(0);
-        return this.appointments
-          .observeUpcoming(principal.userId)
-          .pipe(map((result) => (result.ok ? result.value.length : 0)));
-      }),
-    ),
-    { initialValue: 0 },
-  );
+  protected readonly upcomingCount = computed(() => {
+    const zones = this.visitZones.hasValue()
+      ? this.visitZones.value()
+      : undefined;
+    if (zones === undefined) return 0;
+    return VisitListSystem.countUpcoming(
+      this.liveVisits(),
+      nowOfZones(zones, this.openedAt()),
+    );
+  });
 
   /**
    * Unread notifications — the row's indicator, on the SAME rule as the
    * bookings count: absent at zero, because a "0" badge is noise and its
    * absence already says the inbox is clear.
    *
-   * Derived from the inbox stream via `NotificationSystem.unreadCount`,
-   * not a second count query — one source, so the badge can never disagree
-   * with the list it stands for.
+   * Read off the root `InboxStore` (OR-19) — the ONE inbox listener the
+   * `/account/notifications` page reads too, so the badge can never
+   * disagree with the list it stands for, and the page's receipt clears it.
    */
-  private readonly inbox = inject(INBOX_PORTS);
-
-  protected readonly unreadNotifications = toSignal(
-    toObservable(this.identity.principal).pipe(
-      switchMap((principal) => {
-        if (!Principal.isActive(principal)) return of(0);
-        return this.inbox
-          .observeInbox(principal.userId)
-          .pipe(
-            map((result) =>
-              result.ok ? NotificationSystem.unreadCount(result.value) : 0,
-            ),
-          );
-      }),
-    ),
-    { initialValue: 0 },
-  );
+  protected readonly unreadNotifications = inject(InboxStore).unreadCount;
 
   /**
    * "ср, 6 август" — the day the schedule opens on, as its own subtitle.
@@ -221,6 +265,9 @@ export class SiteMenuComponent {
    */
   private readonly openedAt = signal(this.clock.nowUtcMs());
 
+  /** Has the menu been opened in this session — the bookings count's zone read waits for it. */
+  private readonly everOpened = signal(false);
+
   /** The portrait's headline: the name, or — for a session with no name
    *  stamped — the identifier itself rather than an empty line. */
   protected readonly identityTitle = computed(
@@ -263,6 +310,8 @@ export class SiteMenuComponent {
       // …and re-reads the clock, so the schedule row's date is right on a
       // menu opened after midnight in a session left running overnight.
       this.openedAt.set(this.clock.nowUtcMs());
+      // …and, the first time, lets the bookings count read its shops' zones.
+      this.everOpened.set(true);
     });
   }
 

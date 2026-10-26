@@ -45,19 +45,28 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="careers-list">
-          @for (position of current.data; track position.id) {
+          @for (row of current.data; track row.id) {
           <a
             uiListRow
             [uiInteractive]="true"
-            [href]="applyHref(position)"
+            [href]="row.href"
             target="_blank"
             rel="noopener"
           >
             <ui-stack uiSpacing="none">
-              <span>{{ text(position.title) }}</span>
+              <span>{{ row.title }}</span>
               <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ text(position.summary) }}</span
+                >{{ row.summary }}</span
               >
+              @if (row.shopsLine; as shops) {
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                data-testid="careers-row-shops"
+                >{{ shops }}</span
+              >
+              }
             </ui-stack>
             <ui-stack
               uiTrailing
@@ -65,8 +74,8 @@
               uiAlignment="center"
               uiSpacing="compact"
             >
-              <span uiBadge [uiTone]="statusTone(position.positionStatus)">
-                {{ t('programs.status.position.' + position.positionStatus) }}
+              <span uiBadge [uiTone]="statusTone(row.positionStatus)">
+                {{ t('programs.status.position.' + row.positionStatus) }}
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>

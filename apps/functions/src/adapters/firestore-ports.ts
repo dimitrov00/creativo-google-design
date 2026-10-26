@@ -24,7 +24,6 @@ import type {
   TelemetryPorts,
   TxPorts,
   UserLookupPorts,
-  WaitlistRequestReadPorts,
 } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
@@ -105,7 +104,6 @@ export type FirestorePorts = TxPorts &
   LeadTimeWritePorts &
   // firestoreWaitlistPorts
   OpenWaitlistReadPorts &
-  WaitlistRequestReadPorts &
   // firestoreNotificationPorts
   RecentNotificationPorts &
   // firestoreClientStatsPorts

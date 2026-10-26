@@ -6,11 +6,18 @@
   padding-block: var(--sys-space-loose) var(--sys-space-spacious);
 }
 
-label {
+label,
+.lib-admin-programs__field {
   display: flex;
   flex-direction: column;
   gap: var(--sys-space-tight);
   font: var(--sys-font-subheadline);
   font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
   color: var(--sys-color-secondary-label);
+}
+
+/* A picker's caption over its control (the shop menu, the shop chips): the
+   control hugs its content rather than stretching like a text field. */
+.lib-admin-programs__field {
+  align-items: flex-start;
 }

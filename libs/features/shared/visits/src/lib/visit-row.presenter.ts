@@ -4,7 +4,7 @@ import {
   type DayWindows,
   type Seat,
   type ShopNow,
-  VisitGrain,
+  type VisitGrain,
   VisitMark,
   VisitPerspective,
   VisitRowOutcome,
@@ -80,10 +80,11 @@ import {
  * the status a row names, the figure (the whole bill or a share), the
  * marks, whose words are quoted, the shop named, the people counted, the
  * upcoming rule, the runs of watched days — is `VisitStorySystem` in
- * `@core/systems`; the section a row files under is `VisitListSystem`'s;
- * the days a request still watches, their parts and where its row files
- * are `WaitlistSystem`'s. The words, the clock's formatting and the
- * money's stay here, each tag worded through one table.
+ * `@core/systems`; the section a row files under, and what its tile names
+ * beside that section's heading, are `VisitListSystem`'s; the days a
+ * request still watches, their parts and where its row files are
+ * `WaitlistSystem`'s. The words, the clock's formatting and the money's
+ * stay here, each tag worded through one table.
  */
 
 /** The tile's tone, per the system's tag (`VisitStorySystem.toneOf`). */
@@ -334,15 +335,15 @@ export function visitRowOf(
     .map((part) => `, ${part}`)
     .join('');
 
-  // The caption says what the section does not: the weekday under a month
-  // («пт», `Intl`), the month under a year and on the glance («септ.», the
-  // catalogue's table — Bulgarian's `Intl` short month is numeric, LR4).
+  // The caption says what the section does not (`VisitListSystem.tileGrain`,
+  // OR-56 b): the weekday under a month («пт», `Intl`); the month under a
+  // year, on the glance and in the upcoming run, whose heading names no
+  // period («септ.», the catalogue's table — Bulgarian's `Intl` short month
+  // is numeric, LR4). Never the year (DEP-F39): the accessible name keeps it.
+  const grainOfTile = VisitListSystem.tileGrain(upcoming, options.grain);
   const day = LocalDate.parts(appointment.localDate);
   const tile = {
-    caption:
-      options.grain === VisitGrain.Month
-        ? at.weekday()
-        : words.tileMonth(day.month),
+    caption: grainOfTile.namesMonth ? words.tileMonth(day.month) : at.weekday(),
     day: day.day,
     tone: VISIT_TONE_WORDS[VisitStorySystem.toneOf(story.outcome, start, now)],
   };
@@ -370,15 +371,19 @@ export function visitRowOf(
 
   if (!staff) {
     // The client's own list: the barber is a face on the trailing edge, and
-    // the line says who and at what time — «Иван · 14:30».
+    // the line says who and at what time — «Иван · 14:30». Where the tile
+    // names the month (the upcoming run, OR-56 b), the weekday it gave up
+    // rides the line, joined to the time — «Иван Колев · сб, 10:00», one
+    // «·» still (`whenShort`: «днес» on the shop's today).
     const barberLabel =
       barberIds.length === 1
         ? (barberNames[0] ?? words.barberRole)
         : words.severalBarbers(barberIds.length);
     const single = barberIds.length === 1 ? (barberIds[0] ?? null) : null;
+    const when = grainOfTile.namesMonth ? at.whenShort(words.today) : at.time();
     return {
       ...base,
-      lines: [{ text: [barberLabel, at.time()].join(' · ') }],
+      lines: [{ text: [barberLabel, when].join(' · ') }],
       quote: null,
       trailing: {
         avatarSrc: single === null ? null : lookup.barberAvatarSrc(single),

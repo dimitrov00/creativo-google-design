@@ -3318,7 +3318,7 @@ His answers are written to `scratchpad/v2/owner-answers.md`. W2 starts on the de
 ### 7.7 After the round (NOT in this workflow: it needs the dev stack down)
 
 1. With the dev stack stopped, the lead runs the e2e target once (it starts its own emulators and seeds them): E2E's specs, axe in both themes on every page of the stack and on `/account`, `/account/appointments`, `/admin/loyalty/rhythm`.
-2. The screenshot baselines are regenerated ONLY after the owner has accepted review 2.
+2. The screenshot baselines are regenerated ONLY after the owner has accepted review 2. **Decided 2026-10-26 — owner ruling OR-56 (`docs/architecture/decisions/2026-10-26-owner-rulings.md`):** the six baselines pass E regenerated (`account-dashboard-populated-*`, `appointments-list-populated-*`, `appointments-calendar-*`, light and dark) are accepted — they record this revision, the accent law and the date-picker style faithfully. Two defects they show are fixed, each regenerating its own baselines after both images are viewed: an upcoming row's tile names the month (and the year outside the current one, R59 through `yearIfElsewhere`) with the weekday on the fact line — «Иван Колев · сб, 10:00» / "Ivan Kolev · Sat, 10:00" — and a filter row of a single chip is not shown (a system answers "show the chip row" only for 2 or more chips). The mixed voice they also show goes with the «ти» pass (OR-51).
 3. `pnpm run verify:bundle` reads `browser-stats.json` under the 22.2 bump (the known rename): the run names the file it found.
 4. Before production: deploy the rules and the indexes; `publishStreakDefinition` ships with the functions.
 

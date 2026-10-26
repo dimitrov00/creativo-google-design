@@ -16,7 +16,6 @@ import {
   type RewardId,
   type SeasonId,
   type TierId,
-  type UtcEpochMs,
   type VoucherRefusal,
 } from '@core/primitives';
 import type { RepositoryError } from './repository.error';
@@ -24,8 +23,8 @@ import type { TimeError } from './time.error';
 
 /**
  * The engagement context's error codes — coupons, grants, gift vouchers,
- * points, invitations, the loyalty catalogue, the rhythm's rule,
- * notifications and the programs pages (blueprint §2.3). The legacy
+ * points, invitations, the loyalty catalogue, the rhythm's rule and the
+ * programs pages (blueprint §2.3). The legacy
  * `DomainError` subclasses of the engagement and notifications domain
  * libraries (deleted in Phase 4b), and the programs classes (deleted by
  * flip 4), collapsed into ONE dictionary of flat `{ errorCode, … }` structs
@@ -42,7 +41,14 @@ import type { TimeError } from './time.error';
  * `RewardProgram` and `RewardProgress` codes (§2.3: deleted),
  * `engagement.streak_schedule.id_mismatch` (engagement Q8: a constant id
  * cannot mismatch), and `notifications.notification.empty_title` (§9 D20:
- * a notification carries facts, not a title).
+ * a notification carries facts, not a title). Retired with their producers
+ * (owner rulings 2026-10-26): the grant expiry and revoke refusals
+ * (`…_COUPON_GRANT_NOT_EXPIRING`, `…_COUPON_GRANT_EMPTY_REASON` — OR-13: no
+ * expiry job or admin revoke is built), the issue refusal
+ * `…_GIFT_VOUCHER_INVALID_VALUE` (OR-14: no voucher is issued here),
+ * `…_BADGE_CATEGORY_ORDER_NEGATIVE` (OR-28: no producer) and
+ * `…_NOTIFICATION_READ_BEFORE_SENT` (OR-19: the receipt is clamped at
+ * construction, never refused after the fact).
  *
  * Every non-`errorCode` field is an i18n parameter, so each is an i18n-safe
  * scalar (`string | number | boolean | null`) — a list the legacy error
@@ -107,14 +113,11 @@ export const EngagementErrorCode = {
   CouponValueAmountNotPositive: 'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
   CouponGrantCapacityInvalid: 'ENGAGEMENT_COUPON_GRANT_INVALID_CAPACITY',
   CouponGrantNotActive: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
-  CouponGrantNotExpiring: 'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
-  CouponGrantReasonEmpty: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
   VoucherCodeInvalid: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
   /** A batch names one voucher twice — `attempted` is the repeat as typed (`VoucherCode.distinct`). */
   VoucherCodeDuplicate: 'ENGAGEMENT_VOUCHER_CODE_DUPLICATE',
-  GiftVoucherValueInvalid: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
   GiftVoucherNotRedeemable: 'ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE',
   GiftVoucherInsufficientBalance:
     'ENGAGEMENT_GIFT_VOUCHER_INSUFFICIENT_BALANCE',
@@ -138,7 +141,6 @@ export const EngagementErrorCode = {
   InvitationUnauthenticated: 'ENGAGEMENT_INVITATION_UNAUTHENTICATED',
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
-  BadgeCategoryOrderNegative: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
   LoyaltyCatalogDanglingCategory:
     'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_CATEGORY',
   LoyaltyCatalogDanglingSeason: 'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_SEASON',
@@ -190,10 +192,6 @@ export const EngagementErrorCode = {
    */
   RepositoryFailure: 'ENGAGEMENT_REPOSITORY_FAILURE',
 
-  // ── Notifications ─────────────────────────────────────────────────────
-  /** A receipt that predates its own message — surfaced, never rounded. */
-  NotificationReadBeforeSent: 'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
-
   // ── Programs (positions, courses, shop events) ────────────────────────
   PositionSortOrderInvalid: 'ENGAGEMENT_POSITION_INVALID_SORT_ORDER',
   PositionApplyUrlInvalid: 'ENGAGEMENT_POSITION_INVALID_APPLY_URL',
@@ -208,10 +206,15 @@ export const EngagementErrorCode = {
   /** An admin update of an event that is no longer stored — nothing is written. */
   ShopEventNotFound: 'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
   /**
-   * No shop's zone can place the event's wall clock: neither its own
-   * location nor the deployment's default shop is stored (F-4).
+   * No shop's zone can place the event's wall clock: the event names no
+   * shop, and the deployment's default shop is not stored (F-4).
    */
   ShopEventZoneUnknown: 'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
+  /**
+   * The event names a shop that is not stored — refused, never placed on
+   * another shop's clock (OR-38, DEP-F28): the admin picks another.
+   */
+  ShopEventLocationUnknown: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
 } as const;
 export type EngagementErrorCode =
   (typeof EngagementErrorCode)[keyof typeof EngagementErrorCode];
@@ -223,11 +226,8 @@ export type EngagementError =
   | EngagementError.CouponValueAmountNotPositive
   | EngagementError.CouponGrantCapacityInvalid
   | EngagementError.CouponGrantNotActive
-  | EngagementError.CouponGrantNotExpiring
-  | EngagementError.CouponGrantReasonEmpty
   | EngagementError.VoucherCodeInvalid
   | EngagementError.VoucherCodeDuplicate
-  | EngagementError.GiftVoucherValueInvalid
   | EngagementError.GiftVoucherNotRedeemable
   | EngagementError.GiftVoucherInsufficientBalance
   | EngagementError.GiftVoucherOverRestore
@@ -239,7 +239,6 @@ export type EngagementError =
   | EngagementError.InvitationNotFound
   | EngagementError.InvitationAlreadyRedeemed
   | EngagementError.InvitationUnauthenticated
-  | EngagementError.BadgeCategoryOrderNegative
   | EngagementError.LoyaltyCatalogDanglingCategory
   | EngagementError.LoyaltyCatalogDanglingSeason
   | EngagementError.LoyaltyCatalogDuplicateId
@@ -248,10 +247,10 @@ export type EngagementError =
   | EngagementError.StreakRuleError
   | EngagementError.StreakScheduleVersionNotRising
   | EngagementError.StreakScheduleNotAfterCurrent
-  | EngagementError.NotificationReadBeforeSent
   | EngagementError.ProgramError
   | EngagementError.ProgramNotFound
-  | EngagementError.ShopEventZoneUnknown;
+  | EngagementError.ShopEventZoneUnknown
+  | EngagementError.ShopEventLocationUnknown;
 
 /**
  * Any refusal of a programs field the admin typed (`ProgramsSystem`): a sort
@@ -262,18 +261,20 @@ export type ProgramFieldError =
 
 /**
  * Any refusal of an admin programs save (`program-content.pipeline.ts`): the
- * field refusals, an update of a document that is gone, an event no shop's
- * zone can place, or a failed read or write.
+ * field refusals, an update of a document that is gone, an event at a shop
+ * that is not stored, an event no shop's zone can place, or a failed read
+ * or write.
  */
 export type ProgramSaveError =
   | ProgramFieldError
   | EngagementError.ProgramNotFound
   | EngagementError.ShopEventZoneUnknown
+  | EngagementError.ShopEventLocationUnknown
   | RepositoryError;
 
 /**
  * The errors a voucher's balance algebra can refuse with
- * (`VoucherSystem.redeem`'s answer).
+ * (`VoucherSystem.settle`'s answer).
  */
 export type VoucherBalanceError =
   | EngagementError.GiftVoucherNotRedeemable
@@ -370,12 +371,6 @@ export const EngagementError = {
       currentState,
     };
   },
-  couponGrantNotExpiring(): EngagementError.CouponGrantNotExpiring {
-    return { errorCode: EngagementErrorCode.CouponGrantNotExpiring };
-  },
-  couponGrantReasonEmpty(): EngagementError.CouponGrantReasonEmpty {
-    return { errorCode: EngagementErrorCode.CouponGrantReasonEmpty };
-  },
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
   voucherCodeInvalid(attempted: string): EngagementError.VoucherCodeInvalid {
@@ -385,9 +380,6 @@ export const EngagementError = {
     attempted: string,
   ): EngagementError.VoucherCodeDuplicate {
     return { errorCode: EngagementErrorCode.VoucherCodeDuplicate, attempted };
-  },
-  giftVoucherValueInvalid(): EngagementError.GiftVoucherValueInvalid {
-    return { errorCode: EngagementErrorCode.GiftVoucherValueInvalid };
   },
   giftVoucherNotRedeemable(
     reason: VoucherRefusal,
@@ -463,14 +455,6 @@ export const EngagementError = {
   },
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
-  badgeCategoryOrderNegative(
-    rawValue: number,
-  ): EngagementError.BadgeCategoryOrderNegative {
-    return {
-      errorCode: EngagementErrorCode.BadgeCategoryOrderNegative,
-      rawValue,
-    };
-  },
   loyaltyCatalogDanglingCategory(
     seriesId: BadgeSeriesId,
     categoryId: BadgeCategoryId,
@@ -640,18 +624,6 @@ export const EngagementError = {
     return { errorCode: EngagementErrorCode.RepositoryFailure };
   },
 
-  // ── Notifications ─────────────────────────────────────────────────────
-  notificationReadBeforeSent(
-    sentAtUtcMs: UtcEpochMs,
-    readAtUtcMs: UtcEpochMs,
-  ): EngagementError.NotificationReadBeforeSent {
-    return {
-      errorCode: EngagementErrorCode.NotificationReadBeforeSent,
-      sentAtUtcMs,
-      readAtUtcMs,
-    };
-  },
-
   // ── Programs ──────────────────────────────────────────────────────────
   /** A sort order that is not a non-negative integer, or an apply URL that does not parse. */
   program(
@@ -667,11 +639,20 @@ export const EngagementError = {
   ): EngagementError.ProgramNotFound {
     return { errorCode, programId };
   },
-  /** No zone can place the event: its location and the default shop are both absent. */
+  /** No zone can place the event: it names no shop, and the default shop is absent. */
   shopEventZoneUnknown(
     locationId: LocationId,
   ): EngagementError.ShopEventZoneUnknown {
     return { errorCode: EngagementErrorCode.ShopEventZoneUnknown, locationId };
+  },
+  /** The event names a shop that is not stored. */
+  shopEventLocationUnknown(
+    locationId: LocationId,
+  ): EngagementError.ShopEventLocationUnknown {
+    return {
+      errorCode: EngagementErrorCode.ShopEventLocationUnknown,
+      locationId,
+    };
   },
 
   /** Narrows an error to one code — `EngagementError.is(e, EngagementErrorCode.PointsInsufficient)`. */
@@ -715,12 +696,6 @@ export namespace EngagementError {
     readonly errorCode: typeof EngagementErrorCode.CouponGrantNotActive;
     readonly currentState: GrantStatus;
   };
-  export type CouponGrantNotExpiring = Bare<
-    typeof EngagementErrorCode.CouponGrantNotExpiring
-  >;
-  export type CouponGrantReasonEmpty = Bare<
-    typeof EngagementErrorCode.CouponGrantReasonEmpty
-  >;
 
   export type VoucherCodeInvalid = {
     readonly errorCode: typeof EngagementErrorCode.VoucherCodeInvalid;
@@ -731,9 +706,6 @@ export namespace EngagementError {
     /** The repeated code, as typed. */
     readonly attempted: string;
   };
-  export type GiftVoucherValueInvalid = Bare<
-    typeof EngagementErrorCode.GiftVoucherValueInvalid
-  >;
   export type GiftVoucherNotRedeemable = {
     readonly errorCode: typeof EngagementErrorCode.GiftVoucherNotRedeemable;
     readonly reason: VoucherRefusal;
@@ -771,10 +743,6 @@ export namespace EngagementError {
     typeof EngagementErrorCode.InvitationSelfRedemption
   >;
 
-  export type BadgeCategoryOrderNegative = {
-    readonly errorCode: typeof EngagementErrorCode.BadgeCategoryOrderNegative;
-    readonly rawValue: number;
-  };
   export type LoyaltyCatalogDanglingCategory = {
     readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogDanglingCategory;
     readonly seriesId: BadgeSeriesId;
@@ -898,12 +866,6 @@ export namespace EngagementError {
     typeof EngagementErrorCode.RepositoryFailure
   >;
 
-  export type NotificationReadBeforeSent = {
-    readonly errorCode: typeof EngagementErrorCode.NotificationReadBeforeSent;
-    readonly sentAtUtcMs: UtcEpochMs;
-    readonly readAtUtcMs: UtcEpochMs;
-  };
-
   export type ProgramCode =
     | typeof EngagementErrorCode.PositionSortOrderInvalid
     | typeof EngagementErrorCode.PositionApplyUrlInvalid
@@ -925,7 +887,12 @@ export namespace EngagementError {
   };
   export type ShopEventZoneUnknown = {
     readonly errorCode: typeof EngagementErrorCode.ShopEventZoneUnknown;
-    /** The default shop the save fell back to and found absent. */
+    /** The default shop the save read for an event at no shop, and found absent. */
+    readonly locationId: LocationId;
+  };
+  export type ShopEventLocationUnknown = {
+    readonly errorCode: typeof EngagementErrorCode.ShopEventLocationUnknown;
+    /** The shop the event names — read, and not stored. */
     readonly locationId: LocationId;
   };
   export type InvitationNotFound = {

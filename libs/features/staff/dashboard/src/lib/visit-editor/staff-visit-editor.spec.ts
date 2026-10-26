@@ -125,6 +125,7 @@ import {
 import { StaffTimeGrid } from '../time-grid/staff-time-grid';
 import { ArrivalVerb } from '../row-verb';
 import {
+  type VisitEditorFrameDay,
   type VisitEditorPhoto,
   StaffVisitEditor,
   type VisitEditorServiceOption,
@@ -198,6 +199,8 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.frameCollapse': 'Изход от цял екран',
       'staff.visit.tipInDock': '+{{amount}} бакшиш',
       'staff.visit.discount': 'Отстъпка',
+      'staff.visit.conflict': 'Застъпва се с {{name}} · {{start}} – {{end}}',
+      'staff.visit.outsideRoster': 'Извън смяната — отваря {{time}}',
       'staff.visit.discountNone': 'Няма',
       'staff.visit.photos': 'Снимки',
       'staff.visit.addPhoto': 'Добави снимка',
@@ -279,6 +282,7 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.visit.walkIn': 'Случаен клиент',
       'staff.visit.newClient': 'Нов клиент',
       'staff.visit.exactMatch': 'Вече е клиент',
+      'staff.client.noAccount': 'Без профил',
       'staff.visit.newClientParts': 'Нов клиент: {{parts}}',
       'staff.visit.clientsRecent': 'Скорошни',
       'staff.visit.searchHint':
@@ -1912,11 +1916,13 @@ describe('StaffVisitEditor', () => {
           // What the note and the tip were drawn from — what the owner
           // measures their writes against (round 5).
           drawn: { note: null, tipCents: null },
+          // Each person's number AND mail (OR-26) — none on file here.
           clients: [
             {
               id: 'user-martin',
               label: 'Мартин Илиев',
               phone: '+359 88 123 4567',
+              email: null,
             },
           ],
           legs: [
@@ -3520,6 +3526,92 @@ describe('StaffVisitEditor', () => {
       ).toBe('maria@mail.bg');
     });
 
+    /*
+     * WHAT THE BARBER TYPED REACHES THE SAVE (OR-26): «Нов клиент» on a
+     * saved visit seats the person with their number AND their mail, and
+     * «Запази» publishes both — what the plan turns into the guest's
+     * contact and the server into the walk-in's record. They vanished
+     * before: the mail rode only as the person's line.
+     */
+    it('keeps the number and the mail of a new client through a save of a saved visit', () => {
+      const host = render();
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-add-client');
+      const query = find(host, 'staff-visit-client-query') as HTMLInputElement;
+      query.value = 'Иван Тодоров 0888 123 123 ivan@mail.bg';
+      query.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      click(host, 'staff-visit-new-client-dock');
+      expect(
+        (find(host, 'staff-visit-new-email') as HTMLInputElement).value,
+      ).toBe('ivan@mail.bg');
+      click(host, 'staff-visit-new-client-save');
+      // The catalogue opens for the newcomer: one service, and the save.
+      expect(text(host, 'staff-visit-services-for')).toBe('За Иван Тодоров');
+      click(host, 'staff-visit-service-fade');
+      click(host, 'staff-visit-service-apply');
+      click(host, 'staff-visit-save');
+      expect(commits).toHaveLength(1);
+      expect(commits[0]?.clients).toEqual([
+        {
+          id: 'user-martin',
+          label: 'Мартин Илиев',
+          phone: '+359 88 123 4567',
+          email: null,
+        },
+        {
+          id: expect.stringMatching(/^guest-[0-9a-z]+-\d+$/),
+          label: 'Иван Тодоров',
+          phone: '+359888123123',
+          email: 'ivan@mail.bg',
+        },
+      ]);
+    });
+
+    it('holds the ✓ while the mail is not one, rings the field once it is left, and takes it canonical', () => {
+      const host = render();
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-add-client');
+      click(host, 'staff-visit-new-client-dock');
+      const name = find(host, 'staff-visit-new-name') as HTMLInputElement;
+      name.value = 'Иван Тодоров';
+      name.dispatchEvent(new Event('input'));
+      const mail = find(host, 'staff-visit-new-email') as HTMLInputElement;
+      const typeMail = (value: string) => {
+        mail.value = value;
+        mail.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+      };
+      const save = () =>
+        find(host, 'staff-visit-new-client-save') as HTMLButtonElement;
+      // Half a mail: the ✓ waits, and the field stays quiet while typed.
+      typeMail('ivan@');
+      expect(save().disabled).toBe(true);
+      expect(mail.hasAttribute('data-invalid')).toBe(false);
+      // Left as it is, the field says so.
+      mail.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(mail.getAttribute('aria-invalid')).toBe('true');
+      // Emptied, nothing is owed: a mail is welcome, never required.
+      typeMail('');
+      expect(save().disabled).toBe(false);
+      expect(mail.hasAttribute('data-invalid')).toBe(false);
+      // A whole mail, typed loosely, rides the save in its canonical form.
+      typeMail('  Ivan@Mail.BG ');
+      expect(save().disabled).toBe(false);
+      click(host, 'staff-visit-new-client-save');
+      click(host, 'staff-visit-service-fade');
+      click(host, 'staff-visit-service-apply');
+      click(host, 'staff-visit-save');
+      expect(commits[0]?.clients.at(-1)).toMatchObject({
+        label: 'Иван Тодоров',
+        phone: null,
+        email: 'ivan@mail.bg',
+      });
+    });
+
     it('ranks and marks the hits; the create row leads every search, yielding only to an exact match', () => {
       fixture.componentRef.setInput('uiClients', [
         {
@@ -3622,6 +3714,96 @@ describe('StaffVisitEditor', () => {
           ) ?? []),
         ].map((node) => node.textContent),
       ).toEqual(['martin@te']);
+    });
+
+    /*
+     * A WALK-IN'S RECORD IN THE SEARCH (OR-26): the desk typed a number once
+     * and the server kept it — the next visit finds the person again by it,
+     * ranked with everyone else, the row saying «Без профил» in ink on its
+     * own glyph-led line. The exact-match guard holds for them too.
+     */
+    it('says «Без профил» on a walk-in record the search found, ranks it with everyone, and keeps the exact-match guard', () => {
+      fixture.componentRef.setInput('uiClients', [
+        {
+          id: draftPersonKey('guest-cus_walkin'),
+          label: 'Иван Тодоров',
+          phone: '+359 88 812 3123',
+          phoneHref: '+359888123123',
+          meta: 'ivan@mail.bg',
+          email: 'ivan@mail.bg',
+          noAccount: true,
+        },
+        {
+          id: draftPersonKey('user-ivo'),
+          label: 'Иво Иванов',
+          phone: null,
+          phoneHref: null,
+          meta: null,
+          email: null,
+        },
+      ]);
+      const host = render();
+      click(host, 'staff-visit-add-client');
+      const query = find(host, 'staff-visit-client-query') as HTMLInputElement;
+      const type = (value: string) => {
+        query.value = value;
+        query.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+      };
+      const lines = (rowId: string) =>
+        [
+          ...(find(host, rowId)?.querySelectorAll('.staff-event-head__line') ??
+            []),
+        ].map((line) => ({
+          icon: line.querySelector('ui-icon')?.getAttribute('data-name'),
+          text: line
+            .querySelector('.staff-event-head__text')
+            ?.textContent?.trim(),
+        }));
+      type('Ив');
+      const ids = () =>
+        [
+          ...host.querySelectorAll(
+            '[data-testid="staff-visit-client-results"] [role="checkbox"]',
+          ),
+        ].map((row) =>
+          row.getAttribute('data-testid')?.replace('staff-visit-client-', ''),
+        );
+      expect([...ids()].sort()).toEqual(['guest-cus_walkin', 'user-ivo']);
+      // The mark is the LAST fact, after the mail and the number.
+      expect(lines('staff-visit-client-guest-cus_walkin')).toEqual([
+        { icon: 'contact.email', text: 'ivan@mail.bg' },
+        { icon: 'contact.phone', text: '+359 88 812 3123' },
+        { icon: 'account.anonymous', text: 'Без профил' },
+      ]);
+      expect(text(host, 'staff-visit-client-no-account-guest-cus_walkin')).toBe(
+        'Без профил',
+      );
+      // An account says nothing of the kind.
+      expect(find(host, 'staff-visit-client-no-account-user-ivo')).toBeNull();
+      expect(lines('staff-visit-client-user-ivo')).toEqual([]);
+      // Their number, typed whole: they lead, badged, and the create row
+      // steps behind them — no second record for the same person.
+      type('0888123123');
+      const order = [
+        ...host.querySelectorAll(
+          '[data-testid="staff-visit-create-group"] > li > [data-testid], [data-testid="staff-visit-client-results"] > li > [data-testid]',
+        ),
+      ].map((row) => row.getAttribute('data-testid'));
+      expect(order).toEqual([
+        'staff-visit-client-guest-cus_walkin',
+        'staff-visit-new-client',
+      ]);
+      expect(text(host, 'staff-visit-client-exact-guest-cus_walkin')).toBe(
+        'Вече е клиент',
+      );
+      // Picked, the mark follows them into «На посещението».
+      click(host, 'staff-visit-client-guest-cus_walkin');
+      expect(
+        find(host, 'staff-visit-picked-guest-cus_walkin')?.querySelector(
+          '[data-testid="staff-visit-client-no-account-guest-cus_walkin"]',
+        ),
+      ).not.toBeNull();
     });
 
     it("reads a typed number as the shop's international one before it is whole", () => {
@@ -4236,6 +4418,45 @@ describe('StaffVisitEditor', () => {
       expect(find(host, 'staff-visit-photo-chair-row')).toBeNull();
       expect(find(host, 'staff-visit-photo-client-row')).not.toBeNull();
       expect(text(host, 'staff-visit-photo-client')).toBe('Георги Петров');
+    });
+
+    it('words a picture’s moment and the money in the active language — `en-GB` in English, as Bulgaria writes it in Bulgarian (OR-5, DEP-F4)', async () => {
+      // The fixture's own words stay Bulgarian in either language; the
+      // moment and the money are `Intl`'s, in the language's own tag.
+      const transloco = TestBed.inject(TranslocoService);
+      transloco.setActiveLang('en');
+      await firstValueFrom(transloco.selectTranslation('en'));
+      const host = render(visit({ photos: PHOTOS, tipCents: cents(200) }));
+      const door = find(host, 'staff-visit-photo-p-1');
+      expect(door?.getAttribute('aria-label')).toBe('Снимка от 26 Aug, 12:05');
+      expect(text(host, 'staff-visit-dock-tip')).toBe('+€2.00 бакшиш');
+      click(host, 'staff-visit-photo-p-1');
+      // The bar's day in British order; the time the bar leaves unsaid.
+      expect(fixture.componentInstance.pageTitle()).toBe('26/08');
+      expect(text(host, 'staff-visit-photo-when')).toBe('12:05');
+    });
+
+    it('words the same moment as Bulgaria writes it in Bulgarian, the year only outside this one (R59)', () => {
+      // Last March's picture: 09:05 on 6 March 2025 in the shop's clock.
+      const lastYear: VisitEditorPhoto = {
+        photoId: AppointmentPhotoId.of('p-old'),
+        barberId: BarberId.of('ivan'),
+        url: 'https://cdn/p-old.jpg',
+        takenAtUtcMs: utcMs('2025-03-06T07:05:00.000Z'),
+        barberName: 'Иван Колев',
+        clientLabel: 'Георги Петров',
+        width: null,
+        height: null,
+        photoOrigin: PhotoOrigin.Shot,
+        label: null,
+      };
+      const host = render(visit({ photos: [...PHOTOS, lastYear] }));
+      expect(
+        find(host, 'staff-visit-photo-p-1')?.getAttribute('aria-label'),
+      ).toBe('Снимка от 26.08, 12:05');
+      click(host, 'staff-visit-photo-p-old');
+      expect(fixture.componentInstance.pageTitle()).toBe('6.03.2025 г.');
+      expect(text(host, 'staff-visit-photo-when')).toBe('09:05');
     });
 
     it('draws the person the photo names with the face the picked row has — as the chair keeps its portrait', () => {
@@ -6001,6 +6222,32 @@ describe('StaffVisitEditor', () => {
       expect(row?.textContent).toContain('+359');
     });
 
+    it('keeps the number and the mail of a walk-in through the create (OR-26)', () => {
+      const host = render(fresh());
+      const commits: VisitEditorCommit[] = [];
+      fixture.componentInstance.committed.subscribe((c) => commits.push(c));
+      click(host, 'staff-visit-add-client');
+      const query = find(host, 'staff-visit-client-query') as HTMLInputElement;
+      query.value = 'Иван Тодоров 0888 123 123 ivan@mail.bg';
+      query.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      click(host, 'staff-visit-new-client');
+      click(host, 'staff-visit-new-client-save');
+      click(host, 'staff-visit-service-fade');
+      click(host, 'staff-visit-service-apply');
+      click(host, 'staff-visit-save');
+      expect(commits).toHaveLength(1);
+      // The walk-in is the visit's one person: both reach the booking.
+      expect(commits[0]?.clients).toEqual([
+        {
+          id: expect.stringMatching(/^guest-[0-9a-z]+-\d+$/),
+          label: 'Иван Тодоров',
+          phone: '+359888123123',
+          email: 'ivan@mail.bg',
+        },
+      ]);
+    });
+
     it('never hands a new guest an id already on the visit', () => {
       // `guest-${length}` re-minted after a removal, and the flow took the
       // third guest for served (found in review, 2026-09-24).
@@ -6969,6 +7216,84 @@ describe('StaffVisitEditor', () => {
       ).toBeNull();
     });
 
+    it('judges the day the frame DRAWS — the redrawn day and chair, not the seeded one (OR-3, DEP-F3)', () => {
+      // The seeded day has Мартин at 14:00 – 14:50 in a 09:00 – 18:00
+      // shift; the day the frame draws after a re-date (`uiFrameDay`) has
+      // Пейо at 10:00 – 10:50 in a 12:00 – 20:00 one.
+      const drawn: VisitEditorFrameDay = {
+        neighbours: [
+          {
+            name: 'Пейо',
+            startMinute: trackMinute(600),
+            endMinute: trackMinute(650),
+            tone: 3,
+          },
+        ],
+        rosterStartMinute: trackMinute(720),
+        rosterEndMinute: trackMinute(1200),
+        nowMinute: null,
+      };
+      const note = (partial: Partial<VisitEditorVm>) => {
+        const host = render(
+          visit({
+            neighbours: [
+              {
+                name: 'Мартин',
+                startMinute: trackMinute(840),
+                endMinute: trackMinute(890),
+                tone: 2,
+              },
+            ],
+            ...partial,
+          }),
+        );
+        fixture.componentRef.setInput('uiFrameDay', drawn);
+        fixture.detectChanges();
+        const line = find(host, 'staff-visit-frame-note');
+        return line === null
+          ? null
+          : {
+              verdict: line.getAttribute('data-verdict'),
+              words: line.textContent?.trim(),
+            };
+      };
+      // 10:00 – 10:45 runs into the drawn day's Пейо: the line names him
+      // (the clash before the shift it also opens before).
+      expect(note({ rowId: 'ten#ivan' })).toEqual({
+        verdict: 'conflict',
+        words: 'Застъпва се с Пейо · 10:00 – 10:50',
+      });
+      // 14:00 – 14:45 would run into the seeded Мартин, whom the frame no
+      // longer draws: silent.
+      expect(
+        note({
+          rowId: 'two#ivan',
+          startMinute: trackMinute(840),
+          endMinute: trackMinute(885),
+        }),
+      ).toBeNull();
+      // The shift is the drawn day's roster too: 11:00 – 11:45 is before
+      // its 12:00 opening…
+      expect(
+        note({
+          rowId: 'eleven#ivan',
+          startMinute: trackMinute(660),
+          endMinute: trackMinute(705),
+        }),
+      ).toEqual({
+        verdict: 'outsideRoster',
+        words: 'Извън смяната — отваря 12:00',
+      });
+      // …and 18:30 – 19:15, past the seeded day's 18:00 close, is inside it.
+      expect(
+        note({
+          rowId: 'evening#ivan',
+          startMinute: trackMinute(1110),
+          endMinute: trackMinute(1155),
+        }),
+      ).toBeNull();
+    });
+
     it('names the clash before the shift (`GridLayoutSystem.frameVerdict`)', () => {
       const verdict = (partial: Partial<VisitEditorVm>) =>
         find(render(visit(partial)), 'staff-visit-frame-note')?.getAttribute(
@@ -7128,6 +7453,8 @@ const GEORGI_GRANT = {
   label: 'Безплатно подстригване',
   value: { discountMethod: DiscountMethod.FreeService },
   exclusive: true,
+  // A coupon tied to no occasion says so (OR-16: required, `null`).
+  couponOccasion: null,
 };
 
 /**

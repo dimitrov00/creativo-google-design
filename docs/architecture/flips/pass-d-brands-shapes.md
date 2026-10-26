@@ -2545,63 +2545,108 @@ Every signature identical but the DEP rows and the now-label minute.
 
 ## 8. Open questions (owner) — with the default this plan applies
 
+> **All nineteen CLOSED 2026-10-26** by the owner rulings
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`); the ruling
+> follows each question, the default above it kept as the plan wrote it.
+
 - **OQ-1** — `TrackMinute` as a brand (a union with `MinuteOfDay`/`EndMinute`)
   vs a documented raw exception for the frames' anchored axis. Default: the
-  brand (Law 7.4 names coordinates; ~200 fixture edits accepted).
+  brand (Law 7.4 names coordinates; ~200 fixture edits accepted). **CLOSED
+  — OR-43:** the brand stays (Law 7.4).
 - **OQ-2** — a stray helper type consumed outside its file becomes its own
   type-only file under its own name (L-2), rather than a namespace member
-  every consumer re-spells. Default: own file (zero churn).
+  every consumer re-spells. Default: own file (zero churn). **CLOSED —
+  OR-43:** kept — one home per name.
 - **OQ-3** — the pooled answers (search, «Скорошни») judge each visit on its
   OWN shop's clock (the physical chair invariant); rows/lanes/agenda on the
   day's zone. Default: applied (DEP-6/7 name the cross-zone change).
+  **CLOSED — OR-43:** kept, with a recorded rule (HANDOFF §6): the day a
+  tenant has shops in two zones, a pooled cross-zone order sorts on
+  `utcEpochMs`.
 - **OQ-4** — `ZonedTimeSystem.parseIsoIn`/`toIso` lose their last production
   callers; e2e support and specs still use them. Default: kept; retire with
-  the e2e seed in a later pass.
+  the e2e seed in a later pass. **CLOSED — OR-43:** `parseIsoIn` is kept as
+  the one ISO ingestion door with the DST rules (the e2e seed uses it);
+  `toIso` went with pass E (E-6).
 - **OQ-5** — the telemetry `Log` level (`'info'|'warn'|'error'`) as a
   dictionary (values kept). Default: unchanged (`ecs-pipelines.md` quotes the
-  signature verbatim — the rules file is the owner's).
+  signature verbatim — the rules file is the owner's). **CLOSED — OR-43:**
+  kept — a third-party sink's vocabulary.
 - **OQ-6** — a `WindowHours` brand for the cancellation window. Default: raw
-  (not a coordinate/amount/id).
+  (not a coordinate/amount/id). **CLOSED — OR-45:** an `HourCount` brand
+  (`of`, `is`; whole hours, `PRIMITIVE_HOUR_COUNT_OUT_OF_RANGE`) with
+  `UtcEpochMs.minusHours`, retyping `BookingPolicy`, `SeatOutcome.cancelled`
+  (its silent-null branch deleted), the policy-recompute job and the
+  transition, cancel and recompute pipelines; stored values unchanged.
 - **OQ-7** — `ClientStatsSystem.cadenceOf` averages instant gaps (T8 would use
   `LocalDate` days and change the stored cadence by up to 1/24 day per DST
-  gap). Default: unchanged.
+  gap). Default: unchanged. **CLOSED — OR-46 (DEP-F32):** gaps in shop
+  calendar days (`LocalDate.daysBetween`), same-day gaps skipped, one
+  shared `Cadence.meanDays` for the card and the rhythm
+  (`components/cadence.data.ts`).
 - **OQ-8** — the shell's `UiTheme` copy of `libs/ui/tokens` (the boundary
   forbids tokens in features). Default: the documented copy stays; app-chrome
-  uses the tokens' guards.
+  uses the tokens' guards. **CLOSED — OR-47 (DEP-F33):** one
+  `ThemeService` in the `type:ui` lib `libs/ui/theme`, importing the tokens
+  contract; `set()` saves, boot never saves, a visitor who never chose
+  follows the system live; the shell barrel re-exports it and AppChrome
+  loses its theme half.
 - **OQ-9** — the editor save's ORCHESTRATION stays in the component (pass-C
   D-2.9); only its decisions move to `StaffEditPlanSystem`. Default: applied.
+  **CLOSED — OR-4:** the orchestration is a pipeline — a pure
+  `StaffEditPlanSystem.savePlan` plus `saveVisitEdit` over
+  `VisitEditWritePorts`, called by the store for save and undo
+  (`BookingCall.sameCommands` replaces the stringify comparison); the
+  component keeps only the UI reactions.
 - **OQ-10** — `LoyaltyCatalog` homed in entities (below ports and systems),
   in a non-entity file `entities/loyalty-catalog.ts` (the `collections.ts`
   precedent) together with its eight `Catalog*Ref` bound types and
-  `LoyaltyCatalogParts`. Default: applied.
+  `LoyaltyCatalogParts`. Default: applied. **CLOSED — OR-43:** kept, its
+  lowest lawful tier.
 - **OQ-11** — the icon diagnostic codes keep their kebab spellings (a
-  printed console contract). Default: kept (no DEP).
+  printed console contract). Default: kept (no DEP). **CLOSED — OR-43:**
+  kept — a DS console contract, not a domain code.
 - **OQ-12** — the pipelines' `*Error` unions move to errors (Law 1's text:
-  "never in a pipeline file"). Default: moved.
+  "never in a pipeline file"). Default: moved. **CLOSED — OR-43:** kept in
+  `@core/errors`, the law, enforced by lint.
 - **OQ-13** — the role predicates stay claims-tolerant (`readonly string[]`).
-  Default: kept (no DEP).
+  Default: kept (no DEP). **CLOSED — OR-43:** kept — fail-closed, security
+  holds by construction.
 - **OQ-14** — `E164` stays a component brand with its by-construction `of`
-  (13 callers) in its own file. Default: unchanged.
+  (13 callers) in its own file. Default: unchanged. **CLOSED — OR-48
+  (DEP-F34):** `E164` stays a component brand and gains `E164.parse` (shape
+  `^\+[1-9]\d{6,14}$`, `PRIMITIVE_PHONE_NOT_E164`) and `is`; the two
+  foreign sites (the rehydrated booking draft, the landing's `phoneHref`)
+  parse, and `of`'s JSDoc says "proven values only".
 - **OQ-15 (DEP-21)** — the editor's bill words follow the seat currency
   instead of the constant `MONEY_CODE`. Default: the ecs-core rule (identical
-  for every EUR visit).
+  for every EUR visit). **CLOSED — OR-43:** kept — the data names its
+  currency.
 - **OQ-16 (DEP-19)** — the catalogue prices in the stored service currency
   instead of a hard-coded EUR. Default: the ecs-core rule (identical for
-  EUR).
+  EUR). **CLOSED — OR-43:** kept.
 - **OQ-17** — `SeatKeyText` carries two spelling families (the cart seat key
   and the party person key `account:`/`guest:`), which `GuestLabelSystem`
   already relies on; this pass DOCUMENTS both in its JSDoc rather than
   splitting a `PersonKey` brand (which would retype `GuestLabelSystem`,
   `VisitStorySystem` and the server's party check). Default: documented,
-  not split.
+  not split. **CLOSED — OR-49:** split — a `PersonKey` brand in primitives
+  (`self()`, `account(uid)`, `guest(label)`, `equals`), retyping both
+  systems, `StandingSeatPair.personKey` and the dashboard's set; spellings
+  byte-identical, pinned by spec; a type-spec shows `SeatKeyText` is not
+  assignable to `PersonKey`.
 - **OQ-18 (DEP-23)** — the two error lines worded once at set time
   (booking rename refusal, contact-sheet save refusal) re-word on a
   language switch like every other error surface. Default: the reactive
-  rule (Law 7.5).
+  rule (Law 7.5). **CLOSED — OR-43:** kept, for consistency.
 - **OQ-19** — the visit editor's photo titles are worded in `'bg-BG'`
   whatever the language (`ve:5397`/`:5409`/`:5418`). Default: kept (frozen
   pass; routing them through `intlLocaleOf` would change the en words — a
-  later pass with a DEP).
+  later pass with a DEP). **CLOSED — OR-5 (DEP-F4):** the titles follow the
+  active language through a shared `photoMomentOf` presenter
+  (`libs/features/shared/visits`, reusing `yearIfElsewhere`), and the
+  editor's money labels go through `intlLocaleOf` too; in English both read
+  en-GB.
 
 ---
 

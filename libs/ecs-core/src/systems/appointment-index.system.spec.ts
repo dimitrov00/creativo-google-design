@@ -9,7 +9,13 @@ import {
   SubjectRelationship,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
-import { BusyKey, BarberId, SeatId, UserId } from '@core/primitives';
+import {
+  BusyKey,
+  BarberId,
+  CustomerId,
+  SeatId,
+  UserId,
+} from '@core/primitives';
 import {
   deepFreeze,
   endMinute,
@@ -144,6 +150,32 @@ describe('queryKeys — the client-record mirrors beside the accounts (D29, F1-4
     expect(S.queryKeys(walkIn).ownerCustomerId).toBeNull();
     expect(S.queryKeys(walkIn).ownerUserId).toBeNull();
     expect(S.queryKeys(walkIn).subjectCustomerIds).toEqual([]);
+  });
+
+  it('writes a walk-in’s record beside the accounts’ — the walk-in’s history finds the visit — but never as the owner’s (OR-26)', () => {
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const walkIn = SeatOccupant.walkIn(record, SeatLabel.of('Мария'));
+    const keys = S.queryKeys(
+      party({
+        seats: [
+          ...party().seats,
+          seat('s5', walkIn, at(11, 30), 'ivan'),
+          seat('s6', walkIn, at(12), 'ivan'),
+        ],
+      }),
+    );
+    expect(keys.subjectCustomerIds).toEqual(
+      [cus('ana'), cus('zora'), record].sort(),
+    );
+    expect(keys.ownerCustomerId).toBe(cus('ana'));
+    // No account: the account mirror never names a walk-in.
+    expect(keys.subjectUserIds).toEqual([UserId.of('ana'), UserId.of('zora')]);
+    const alone = S.queryKeys(
+      party({ seats: [seat('s1', walkIn, at(9), 'ivan')] }),
+    );
+    expect(alone.subjectCustomerIds).toEqual([record]);
+    expect(alone.ownerCustomerId).toBeNull();
+    expect(alone.ownerUserId).toBeNull();
   });
 
   it('recomputes a stale record mirror from the seats, never carries it', () => {

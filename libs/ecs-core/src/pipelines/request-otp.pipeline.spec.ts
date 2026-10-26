@@ -11,7 +11,7 @@ import {
   ParsedIdentifier,
   RegistrationField,
 } from '@core/components';
-import { IdentifierChannel, Result, UtcEpochMs } from '@core/primitives';
+import { IdentifierChannel, OtpId, Result, UtcEpochMs } from '@core/primitives';
 import {
   IdentityErrorCode,
   PipelineErrorCode,
@@ -174,10 +174,56 @@ describe('requestOtp', () => {
     const answer = await again.run(EMAIL);
     expect(answer).toEqual({
       ok: false,
-      error: { errorCode: IdentityErrorCode.OtpRateLimited },
+      error: {
+        errorCode: IdentityErrorCode.OtpRateLimited,
+        retryAfterSeconds: 30,
+      },
     });
     expect(otpsIn(world).size).toBe(1);
     expect(again.delivery.sent).toEqual([]);
+  });
+
+  it('carries the seconds left on the 60 s window, rounded up — never 0 while refused, free one millisecond past it (OR-9)', async () => {
+    const world = memoryIdentityWorld();
+    await rig({ world }).run(EMAIL);
+    const retryAfter = async (ms: number) => {
+      const answer = await rig({ world, nowUtcMs: plusMs(ms) }).run(EMAIL);
+      return (
+        !answer.ok &&
+        answer.error.errorCode === IdentityErrorCode.OtpRateLimited &&
+        answer.error.retryAfterSeconds
+      );
+    };
+    expect(await retryAfter(0)).toBe(60);
+    expect(await retryAfter(1_000)).toBe(59);
+    expect(await retryAfter(59_000)).toBe(1);
+    expect(await retryAfter(59_500)).toBe(1);
+    // The window's last instant still throttles (index #10's `>=`).
+    expect(await retryAfter(60_000)).toBe(1);
+    expect(otpsIn(world).size).toBe(1);
+    const free = rig({ world, nowUtcMs: plusMs(60_001), idPrefix: 'free' });
+    expect((await free.run(EMAIL)).ok).toBe(true);
+    expect(free.delivery.sent).toHaveLength(1);
+  });
+
+  it('counts the seconds from the NEWEST open challenge of the destination', async () => {
+    const open = (id: string, agoMs: number) =>
+      otpFixture({
+        id: OtpId.of(id),
+        destination: EMAIL.rawDestination as Otp['destination'],
+        otpDestinationType: OtpDestinationType.Email,
+        createdAtUtcMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -agoMs),
+      });
+    const world = memoryIdentityWorld({
+      otps: [open('otp-old', 50_000), open('otp-new', 10_000)],
+    });
+    expect(await rig({ world }).run(EMAIL)).toEqual({
+      ok: false,
+      error: {
+        errorCode: IdentityErrorCode.OtpRateLimited,
+        retryAfterSeconds: 50,
+      },
+    });
   });
 
   it('allows a new request once the rate-limit window has passed', async () => {

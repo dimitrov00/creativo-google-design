@@ -30,20 +30,33 @@ import type { Otp } from '@core/entities';
  * boolean. The clock (`nowUtcMs`) and the id source (`nextId`) are
  * parameters. An OTP has no location, so no shop clock (flatten-spec F-5):
  * its TTL and resend window are T2 rows — lifecycle stamps compared and
- * added in elapsed real time through `UtcEpochMs.compare`/`plusMs`.
+ * added in elapsed real time through `UtcEpochMs.compare`/`plusMs` (and
+ * the throttle's remainder through `elapsedMs`).
  */
 
+const MS_PER_SECOND = 1_000;
 const MS_PER_MINUTE = 60_000;
 
 /** The figures this system applies — named, never magic numbers at a use site. */
 export const OtpLimits = {
   /**
-   * The resend throttle: one open challenge per destination per minute.
+   * The resend throttle: one open challenge per destination per 60 seconds.
    * Server-side abuse throttling, deliberately NOT part of the deployment's
    * `AuthStrategy.OtpPolicy` (`request-otp.use-case.ts:25-28`), so a config
-   * edit can never widen it by accident.
+   * edit can never widen it by accident. The ONE source of the window
+   * (owner ruling OR-9, 2026-10-26): the code step's resend countdown reads
+   * this figure, and a throttled resend answers what is left of it
+   * ({@link OtpSystem.retryAfterSeconds}).
    */
-  ResendWindowMinutes: 1,
+  ResendWindowSeconds: 60,
+  /**
+   * The send from which the code step escalates — from its third send of
+   * one session it adds the escalation footnote (check spam, or try another
+   * address; `auth-flow-design.md` §2.2). Owner ruling OR-10, 2026-10-26:
+   * a threshold is a decision (Law 10.2), so it lives here and
+   * {@link OtpSystem.escalates} answers it, never a template literal.
+   */
+  EscalateAfterSends: 3,
 } as const;
 
 /** A code's salted hash, as the `OtpCrypto` port produced it. */
@@ -87,6 +100,34 @@ export type OtpAttempt<O extends OtpCounters = Otp> = {
   readonly result: Result<O, IdentityError.Otp>;
   readonly write: O | null;
 };
+
+/** The two fields the resend throttle reads — an {@link Otp} satisfies it. */
+type ResendFacts = Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>;
+
+/**
+ * The `createdAtUtcMs` of the newest still-open (unconsumed) challenge
+ * created inside the resend window that starts at `sinceUtcMs`, or `null`
+ * when none is — the one scan behind {@link OtpSystem.mayIssue} and
+ * {@link OtpSystem.retryAfterSeconds}. Both conditions are re-checked here,
+ * so a wider read can never loosen the throttle.
+ */
+function newestOpenUtcMs(
+  open: readonly ResendFacts[],
+  sinceUtcMs: UtcEpochMs,
+): UtcEpochMs | null {
+  let newest: UtcEpochMs | null = null;
+  for (let i = 0; i < open.length; i++) {
+    const otp = open[i] as ResendFacts;
+    if (
+      otp.consumedAtUtcMs === null &&
+      UtcEpochMs.compare(otp.createdAtUtcMs, sinceUtcMs) >= 0 &&
+      (newest === null || UtcEpochMs.compare(otp.createdAtUtcMs, newest) > 0)
+    ) {
+      newest = otp.createdAtUtcMs;
+    }
+  }
+  return newest;
+}
 
 export const OtpSystem = {
   /**
@@ -175,11 +216,14 @@ export const OtpSystem = {
     };
   },
 
-  /** The earliest `createdAtUtcMs` an open challenge may carry and still throttle a resend. */
+  /**
+   * The earliest `createdAtUtcMs` an open challenge may carry and still
+   * throttle a resend — inclusive, as index #10's `>=` range reads it.
+   */
   resendWindowStartUtcMs(nowUtcMs: UtcEpochMs): UtcEpochMs {
     return UtcEpochMs.plusMs(
       nowUtcMs,
-      -OtpLimits.ResendWindowMinutes * MS_PER_MINUTE,
+      -OtpLimits.ResendWindowSeconds * MS_PER_SECOND,
     );
   },
 
@@ -189,21 +233,44 @@ export const OtpSystem = {
    * `LoadOpenOtps` port read for the destination; the scan re-checks both
    * conditions, so a wider read can never loosen the throttle.
    */
-  mayIssue(
-    open: readonly Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>[],
+  mayIssue(open: readonly ResendFacts[], nowUtcMs: UtcEpochMs): boolean {
+    return (
+      newestOpenUtcMs(open, OtpSystem.resendWindowStartUtcMs(nowUtcMs)) === null
+    );
+  },
+
+  /**
+   * The whole seconds until a new code may go to the destination — what a
+   * throttled resend answers (`IDENTITY_OTP_RATE_LIMITED`'s
+   * `retryAfterSeconds`, OR-9), so the code step restarts its countdown
+   * from the server's own figure: the time left on the NEWEST open,
+   * unconsumed challenge's window, rounded up. `0` exactly when
+   * {@link mayIssue} is true, and at least `1` while it is false — the
+   * window's last instant still throttles (inclusive), so a refusal never
+   * says "0 s". The same scan as {@link mayIssue}.
+   */
+  retryAfterSeconds(
+    open: readonly ResendFacts[],
     nowUtcMs: UtcEpochMs,
-  ): boolean {
-    const sinceUtcMs = OtpSystem.resendWindowStartUtcMs(nowUtcMs);
-    for (let i = 0; i < open.length; i++) {
-      const otp = open[i] as Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>;
-      if (
-        otp.consumedAtUtcMs === null &&
-        UtcEpochMs.compare(otp.createdAtUtcMs, sinceUtcMs) >= 0
-      ) {
-        return false;
-      }
-    }
-    return true;
+  ): number {
+    const newest = newestOpenUtcMs(
+      open,
+      OtpSystem.resendWindowStartUtcMs(nowUtcMs),
+    );
+    if (newest === null) return 0;
+    const leftMs = UtcEpochMs.elapsedMs(
+      nowUtcMs,
+      UtcEpochMs.plusMs(newest, OtpLimits.ResendWindowSeconds * MS_PER_SECOND),
+    );
+    return Math.max(1, Math.ceil(leftMs / MS_PER_SECOND));
+  },
+
+  /**
+   * Whether the code step escalates after `sendCount` sends of one session
+   * — from the {@link OtpLimits.EscalateAfterSends}th on (OR-10).
+   */
+  escalates(sendCount: number): boolean {
+    return sendCount >= OtpLimits.EscalateAfterSends;
   },
 
   /**

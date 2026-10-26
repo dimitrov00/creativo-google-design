@@ -8,11 +8,7 @@ import {
   Collections,
 } from '@core/entities';
 import type { BackfillJobPorts, CallerRolesPorts, Log } from '@core/ports';
-import {
-  StoredDocumentSystem,
-  type StoredGuardOf,
-  TriggerAttemptSystem,
-} from '@core/systems';
+import { type StoredGuardOf, TriggerAttemptSystem } from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
 
 /**
@@ -43,20 +39,18 @@ import { admitStored } from './firestore-tx.adapter';
  * shorten the page, and `BackfillPlanSystem.pageWalk` reads a short page
  * as "exhausted": the walk would end early and silently. Legacy rows
  * lacking the subject mirrors or a placement pass (unchecked by design) and
- * are repaired. A bare `firestoreJobPorts(db)` guards nothing (DEP-11).
+ * are repaired. The registry and the log are REQUIRED (OR-33, DEP-F24): a
+ * bare `firestoreJobPorts(db)` does not type-check.
  */
 
 function code(error: unknown): string {
   return TriggerAttemptSystem.failureCode(error);
 }
 
-/** No log — the default of a bare factory. */
-const NO_LOG: Log = () => undefined;
-
 export const firestoreJobPorts = (
   db: Firestore,
-  guardOf: StoredGuardOf = StoredDocumentSystem.unguarded,
-  log: Log = NO_LOG,
+  guardOf: StoredGuardOf,
+  log: Log,
 ): BackfillJobPorts & CallerRolesPorts => ({
   loadBackfillJob: async (id) => {
     const path = `${Collections.BackfillJobs}/${id}`;

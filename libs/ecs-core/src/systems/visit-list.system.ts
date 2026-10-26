@@ -2,6 +2,7 @@ import {
   type AppointmentId,
   type BookingStatus,
   LocalDate,
+  type LocationId,
   type MinuteOfDay,
 } from '@core/primitives';
 import {
@@ -37,6 +38,20 @@ export type FilterRow = {
   readonly outcome: VisitRowOutcome | null;
 };
 
+/**
+ * A visit as "upcoming" reads it ({@link VisitListSystem.nextUpcoming}): its
+ * id (the tie-break, OR-18), its lifecycle tag, the shop whose wall clock
+ * judges it, and where it starts on that clock — a whole `Appointment`
+ * passes in as it is.
+ */
+export type UpcomingVisit = {
+  readonly id: AppointmentId;
+  readonly bookingStatus: BookingStatus;
+  readonly locationId: LocationId;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+};
+
 /** One section of a list: its key and its rows, in the section's own order. */
 export type VisitSection<R extends SectionRow> = {
   readonly key: string;
@@ -44,6 +59,38 @@ export type VisitSection<R extends SectionRow> = {
   readonly upcoming: boolean;
   readonly rows: readonly R[];
 };
+
+/**
+ * What a row's date tile names over its day ({@link VisitListSystem.tileGrain},
+ * OR-56 b): what the heading of its section does not.
+ */
+export type TileGrain = {
+  /**
+   * The caption names the month — under a year's heading, and in the
+   * upcoming run, whose heading names no period at all. False under a
+   * month's heading, which names the month and its year: the caption is
+   * the weekday.
+   */
+  readonly namesMonth: boolean;
+};
+
+/** Under a month's heading («Септември 2026 г.»): the weekday, «пт». */
+const TILE_WEEKDAY: TileGrain = { namesMonth: false };
+
+/**
+ * Under a year's heading («2026») and in the upcoming run («Предстоящи»):
+ * the month, «септ.». Never the year (DEP-F39): the tile is a 44 pt square
+ * that cannot hold «юни 2030 г.», an upcoming visit lies within the booking
+ * horizon so its month is unambiguous, and the row's accessible name keeps
+ * the year (R59).
+ */
+const TILE_MONTH: TileGrain = { namesMonth: true };
+
+/**
+ * The fewest sections a jump rail is drawn for (OR-56 c): one pill alone
+ * names the one section its heading names right under it.
+ */
+const PILLS_AT_LEAST = 2;
 
 /** The client's list, as it always read. */
 const CLIENT_FILTERS: readonly VisitFilter[] = [
@@ -283,6 +330,32 @@ export const VisitListSystem = {
   },
 
   /**
+   * THE TILE'S GRAIN (OR-56 b) — what a row's date tile names over its day,
+   * by the section the row files under ({@link rowSectionKey}): what that
+   * section's heading does not. Under a month's heading the weekday; under
+   * a year's the month; in the upcoming run, whose heading («Предстоящи»)
+   * names no period, the month too — never the year, which the square
+   * cannot hold (DEP-F39; the row's accessible name keeps it, R59). An
+   * upcoming row once read «сб / 1» for 1 June 2030 — the month was nowhere
+   * on the row.
+   */
+  tileGrain(upcoming: boolean, grain: VisitGrain): TileGrain {
+    if (upcoming) return TILE_MONTH;
+    return grain === VisitGrain.Year ? TILE_MONTH : TILE_WEEKDAY;
+  },
+
+  /**
+   * Does the list's jump rail show (OR-56 c)? Over two sections or more:
+   * a pill jumps to its section, and a rail of one pill names the one
+   * section its heading names right under it — «Предстоящи» over
+   * «Предстоящи», one fact printed twice, with nowhere to jump. No rail
+   * over no section either.
+   */
+  showsPills(sections: readonly { readonly key: string }[]): boolean {
+    return sections.length >= PILLS_AT_LEAST;
+  },
+
+  /**
    * Each appointment once, by its id — the first copy wins and the input's
    * order is kept (pages never overlap, but a refresh may).
    */
@@ -301,27 +374,13 @@ export const VisitListSystem = {
   },
 
   /**
-   * The items soonest first on the shop's wall clock — the day, then the
-   * minute (the private `byStart`) — read straight off the items' own
-   * `localDate` + `startMinutes` (a whole `Appointment` passes in as it
-   * is). A STABLE sort on the start alone: two items at the same day and
-   * minute keep the input's order. A sorted copy; the input is untouched.
-   */
-  soonestFirstByStart<T extends WallClockStart>(
-    items: readonly T[],
-  ): readonly T[] {
-    return [...items].sort(byStart);
-  },
-
-  /**
    * The items whose row is upcoming, soonest first on the shop's wall clock
-   * — the day, then the minute — each row read once (`rowOf`). A STABLE
-   * sort on the start alone (the private `byStart`): two items at the same
-   * day and minute keep the input's order. Unlike `soonestFirst` — the
-   * order of {@link sections}' upcoming run, which adds the `byId`
-   * tie-break — no id is read, so a caller's own order survives a tie. No
-   * inbound mapping: the caller hands its items and its row reading as they
-   * are.
+   * — the day, then the minute — each row read once (`rowOf`). Two items at
+   * the same day and minute break the tie by their row's id in UTF-16 code
+   * units (`byStart || byId`, OR-18 — the order of {@link sections}'
+   * upcoming run), so the input's order never shows in the output (DEP-F13:
+   * only exact ties reorder). No inbound mapping: the caller hands its items
+   * and its row reading as they are.
    */
   upcomingSoonestFirst<T>(
     items: readonly T[],
@@ -333,7 +392,7 @@ export const VisitListSystem = {
       const row = rowOf(item);
       if (row.upcoming) kept.push({ item, row });
     }
-    kept.sort((a, b) => byStart(a.row, b.row));
+    kept.sort((a, b) => soonestFirst(a.row, b.row));
     const out: T[] = [];
     for (let i = 0; i < kept.length; i++) {
       out.push((kept[i] as { readonly item: T }).item);
@@ -377,5 +436,55 @@ export const VisitListSystem = {
         now,
       )
     );
+  },
+
+  /**
+   * THE NEXT VISIT TO COME (OR-8) — «Предстоящ час»: the soonest visit that
+   * is not history ({@link isHistory}: settled, or begun — its start minute
+   * included), each judged on its OWN shop's wall clock (`nowOf` its
+   * `locationId`, Law 7.2 — never the device's, never one shop's clock for
+   * all). A visit whose shop has no known zone (`nowOf` answers `null`) is
+   * skipped: it cannot be judged, and showing it would claim it is still to
+   * come. One linear scan, no sort and no copy; on an equal day and minute
+   * the code-unit smaller id wins (OR-18 — the order the upcoming list's
+   * {@link upcomingSoonestFirst} draws, so the card and the list's first
+   * row never disagree, whatever the input's order). `null` when nothing
+   * is to come.
+   */
+  nextUpcoming<T extends UpcomingVisit>(
+    items: readonly T[],
+    nowOf: (locationId: LocationId) => ShopNow | null,
+  ): T | null {
+    let next: T | null = null;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i] as T;
+      const now = nowOf(item.locationId);
+      if (now === null || VisitListSystem.isHistory(item, now)) continue;
+      if (next === null) {
+        next = item;
+        continue;
+      }
+      const order = byStart(item, next);
+      if (order < 0 || (order === 0 && item.id < next.id)) next = item;
+    }
+    return next;
+  },
+
+  /**
+   * How many visits are still to come — the menu badge's figure, by the
+   * rule of {@link nextUpcoming} (not history on its own shop's clock; an
+   * unknown zone skipped). One linear scan.
+   */
+  countUpcoming(
+    items: readonly UpcomingVisit[],
+    nowOf: (locationId: LocationId) => ShopNow | null,
+  ): number {
+    let count = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i] as UpcomingVisit;
+      const now = nowOf(item.locationId);
+      if (now !== null && !VisitListSystem.isHistory(item, now)) count++;
+    }
+    return count;
   },
 } as const;

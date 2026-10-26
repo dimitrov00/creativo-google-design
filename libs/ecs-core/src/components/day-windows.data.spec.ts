@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endMinute, localDate, minute } from '@core/testing';
+import { deepFreeze, endMinute, localDate, minute } from '@core/testing';
 import { DayWindows } from './day-windows.data';
 import { MinuteRange } from './minute-range.data';
 
@@ -25,23 +25,12 @@ describe('DayWindows', () => {
     expect(windows.windows).toEqual([r(480, 720), r(900, 990)]);
   });
 
-  it('adds, removes and clears windows', () => {
-    const base = DayWindows.of(DAY, [r(480, 720)]);
-    const widened = DayWindows.withWindow(base, r(900, 990));
-    expect(widened.windows).toHaveLength(2);
-    expect(DayWindows.withoutWindow(widened, 0).windows).toEqual([r(900, 990)]);
-    // Out of range is a no-op, not a throw.
-    expect(DayWindows.withoutWindow(widened, 9)).toBe(widened);
-    expect(DayWindows.withoutWindow(widened, -1)).toBe(widened);
-    expect(DayWindows.isWholeDay(DayWindows.clearWindows(widened))).toBe(true);
-    expect(base.windows).toEqual([r(480, 720)]);
-  });
-
-  it('a window added over an existing one re-normalizes', () => {
-    const base = DayWindows.of(DAY, [r(480, 720)]);
-    expect(DayWindows.withWindow(base, r(700, 800)).windows).toEqual([
-      r(480, 800),
-    ]);
+  it('is pure: same input → same output, inputs untouched', () => {
+    const windows = deepFreeze([r(900, 990), r(480, 720), r(700, 800)]);
+    const once = DayWindows.of(DAY, windows);
+    expect(DayWindows.of(DAY, windows)).toEqual(once);
+    expect(once.windows).toEqual([r(480, 800), r(900, 990)]);
+    expect(windows).toEqual([r(900, 990), r(480, 720), r(700, 800)]);
   });
 });
 

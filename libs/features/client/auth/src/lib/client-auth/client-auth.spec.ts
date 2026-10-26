@@ -18,6 +18,7 @@ import {
 } from '@core/components';
 import { OtpId, Result } from '@core/primitives';
 import { PipelineError } from '@core/errors';
+import { OtpLimits } from '@core/systems';
 import { memoryAuthSessionPorts, memoryOtpChallengePorts } from '@core/testing';
 import {
   AUTH_DEPLOYMENT_PORTS,
@@ -324,6 +325,31 @@ describe('ClientAuth', () => {
       // The ticking countdown is informational caption text (owner ruling
       // 2026-07-25), no longer a disabled button.
       expect(cooldown?.tagName).toBe('P');
+    });
+
+    it('adds the escalation footnote from the third send on, once each countdown has run out (OR-9, OR-10)', async () => {
+      // Fake time that still flows, so `settle`'s macrotask turn fires;
+      // each countdown is the server's window, run out in one jump.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      await fillEmailAndSubmit();
+      expect(query('auth-resend-escalation')).toBeNull();
+
+      async function resendAfterTheWindow(): Promise<void> {
+        await vi.advanceTimersByTimeAsync(OtpLimits.ResendWindowSeconds * 1000);
+        await settle();
+        const resend = query<HTMLButtonElement>('auth-resend');
+        if (!resend) throw new Error('resend not offered after the window');
+        resend.click();
+        await settle();
+      }
+
+      await resendAfterTheWindow();
+      expect(requestChallenge).toHaveBeenCalledTimes(2);
+      expect(query('auth-resend-escalation')).toBeNull();
+
+      await resendAfterTheWindow();
+      expect(requestChallenge).toHaveBeenCalledTimes(3);
+      expect(query('auth-resend-escalation')).not.toBeNull();
     });
   });
 

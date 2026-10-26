@@ -190,6 +190,12 @@ const recordOf = (uid: string) => customerOf(UserId.of(uid));
 /** 2026-09-01 09:00 in Sofia — the instant the flat fixtures below stamp. */
 const SEPT_FIRST = utcMs('2026-09-01T09:00:00.000+03:00');
 
+/** The terms the grants below are issued under — one use, no expiry — which a USED grant keeps (OR-13). */
+const SINGLE_USE_TERMS: GrantLifecycle.Terms = {
+  ...GrantCapacityTerms.singleUse(),
+  ...GrantExpiryTerms.none(),
+};
+
 /**
  * A coupon grant as `couponGrants/{id}` stores it (`CouponGrant`, flip 1):
  * the record it rewards, the account that may read it, the value it was
@@ -823,6 +829,9 @@ describe('firestore.rules', () => {
     it.each(PROGRAMS)(
       'lets the admin pair replace a stored %s with a whole body, every optional filled — an update',
       async (collectionName, body, filled) => {
+        // The filled event is at `loc-center`, and an event's shop must
+        // exist (OR-37) — so the shop is seeded first.
+        await seed('locations/loc-center', LOCATION_BODY);
         await seed(`${collectionName}/doc-4`, body);
         for (const role of ['admin', 'sysadmin']) {
           await assertSucceeds(
@@ -966,6 +975,60 @@ describe('firestore.rules', () => {
         }
       },
     );
+
+    // OR-37/OR-38: an event names an existing shop or none — the refusal
+    // `ProgramsSystem.zoneOf` answers, repeated by the rules' `exists()`.
+    describe('events — the shop an event names must exist (OR-37)', () => {
+      const atShop = (locationId: string | null) => ({
+        ...EVENT_BODY,
+        locationId,
+      });
+
+      it('refuses an event naming a shop with no locations document, as a create and as an update', async () => {
+        const db = signedIn('manager-1', 'content_manager').firestore();
+        await seed('events/doc-ok', EVENT_BODY);
+
+        await assertFails(
+          setDoc(doc(db, 'events/doc-new'), atShop('loc-nowhere')),
+        );
+        await assertFails(
+          setDoc(doc(db, 'events/doc-ok'), atShop('loc-nowhere')),
+        );
+      });
+
+      it('admits an event at no specific shop — `null` is the default shop, no read needed', async () => {
+        const db = signedIn('manager-1', 'content_manager').firestore();
+
+        await assertSucceeds(setDoc(doc(db, 'events/doc-new'), atShop(null)));
+      });
+
+      it('admits an event at a shop that exists — a hidden one included — and refuses it again once the shop is gone', async () => {
+        const db = signedIn('manager-1', 'content_manager').firestore();
+        await seed('locations/loc-center', LOCATION_BODY);
+        await seed('locations/loc-old', {
+          ...LOCATION_BODY,
+          locationStatus: LocationStatus.Hidden,
+        });
+
+        await assertSucceeds(
+          setDoc(doc(db, 'events/doc-new'), atShop('loc-center')),
+        );
+        // A hidden shop still exists: an edited event keeps it (OR-37).
+        await assertSucceeds(
+          setDoc(doc(db, 'events/doc-old'), atShop('loc-old')),
+        );
+
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await deleteDoc(doc(ctx.firestore(), 'locations/loc-center'));
+        });
+        await assertFails(
+          setDoc(doc(db, 'events/doc-new'), {
+            ...atShop('loc-center'),
+            sortOrder: 2,
+          }),
+        );
+      });
+    });
   });
 
   describe('server-only collections and unmatched paths', () => {
@@ -1195,7 +1258,11 @@ describe('firestore.rules', () => {
         'couponGrants/grant-used',
         grantBody(
           'client-1',
-          GrantLifecycle.used(utcMs('2026-09-10T12:00:00.000+03:00'), 'seed'),
+          GrantLifecycle.used(
+            SINGLE_USE_TERMS,
+            utcMs('2026-09-10T12:00:00.000+03:00'),
+            'seed',
+          ),
         ),
       );
     });
@@ -1308,6 +1375,7 @@ describe('firestore.rules', () => {
 
     it('refuses every other client-side update of a grant — the holder’s, the book’s and the admin’s', async () => {
       const used = GrantLifecycle.used(
+        SINGLE_USE_TERMS,
         utcMs('2026-09-12T12:00:00.000+03:00'),
         'client',
       );
@@ -1419,7 +1487,7 @@ describe('firestore.rules', () => {
     });
   });
 
-  describe('users/{uid}/notifications — the recipient may stamp the read, and nothing else', () => {
+  describe('users/{uid}/notifications — the recipient may stamp the read once, and nothing else', () => {
     const inboxPath = 'users/client-1/notifications/n1';
     const sent = utcMs('2026-09-01T09:00:00.000+03:00');
     const readAt = utcMs('2026-09-01T10:00:00.000+03:00');
@@ -1442,6 +1510,57 @@ describe('firestore.rules', () => {
       await assertSucceeds(
         updateDoc(doc(owner, inboxPath), { readAtUtcMs: readAt }),
       );
+    });
+
+    // OR-19 / DEP-F14: the stamp is one-shot and never predates its message.
+    it('admits a stamp at the very instant the notification was sent — the clamp’s floor', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+
+      await assertSucceeds(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: sent }),
+      );
+    });
+
+    it('refuses a stamp before the notification was sent, and one that is no integer instant', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), {
+          readAtUtcMs: utcMs('2026-09-01T08:59:59.999+03:00'),
+        }),
+      );
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: readAt + 0.5 }),
+      );
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: String(readAt) }),
+      );
+
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const snapshot = await getDoc(doc(ctx.firestore(), inboxPath));
+        expect(snapshot.data()?.['readAtUtcMs']).toBeNull();
+      });
+    });
+
+    it('refuses a re-stamp of a notification already read, and un-reading it', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertSucceeds(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: readAt }),
+      );
+
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), {
+          readAtUtcMs: utcMs('2026-09-02T10:00:00.000+03:00'),
+        }),
+      );
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: null }),
+      );
+
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const snapshot = await getDoc(doc(ctx.firestore(), inboxPath));
+        expect(snapshot.data()?.['readAtUtcMs']).toBe(readAt);
+      });
     });
 
     it('refuses the retired ISO read stamp, and any write beside the stamp', async () => {
@@ -1490,7 +1609,7 @@ describe('firestore.rules', () => {
     });
   });
 
-  describe('customers — the book keeps the records, an account reads its own (D29, flip 1)', () => {
+  describe('customers — the book reads the records, an account reads its own, only the server writes (D29, OR-25)', () => {
     const ownPath = `customers/${recordOf('client-1')}`;
     const walkInPath = 'customers/cus_walkin0000000000000';
 
@@ -1514,7 +1633,7 @@ describe('firestore.rules', () => {
     });
 
     it.each(['barber', 'receptionist', 'admin', 'sysadmin'])(
-      'lets a %s read and keep client records',
+      'lets a %s read client records',
       async (role) => {
         const db = signedIn('staff-1', role).firestore();
         await assertSucceeds(getDoc(doc(db, ownPath)));
@@ -1528,17 +1647,54 @@ describe('firestore.rules', () => {
             ),
           ),
         );
-        await assertSucceeds(
+      },
+    );
+
+    // OR-25 (DEP-F19): the desk's unchecked grant could point a record's
+    // `userId` at another account and hand it the record. The booking, edit
+    // and registration callables (Admin SDK) are the only writers now.
+    it.each(['barber', 'receptionist', 'admin', 'sysadmin'])(
+      'refuses the %s creating or updating a record — a walk-in’s included',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+
+        await assertFails(
           setDoc(
             doc(db, 'customers/cus_walkin0000000000001'),
             customerBody(null),
           ),
         );
-        await assertSucceeds(
+        await assertFails(
           updateDoc(doc(db, walkInPath), { displayName: 'Борис' }),
+        );
+        await assertFails(
+          updateDoc(doc(db, walkInPath), { userId: UserId.of('client-2') }),
+        );
+        await assertFails(
+          setDoc(doc(db, ownPath), {
+            ...customerBody('client-1'),
+            phone: E164.of('+359888000111'),
+          }),
         );
       },
     );
+
+    it('leaves a record exactly as the server wrote it after the book’s refused re-link', async () => {
+      await assertFails(
+        updateDoc(
+          doc(signedIn('desk-1', 'receptionist').firestore(), walkInPath),
+          { userId: UserId.of('client-2') },
+        ),
+      );
+
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const snapshot = await getDoc(doc(ctx.firestore(), walkInPath));
+        expect(snapshot.data()).toEqual(customerBody(null));
+      });
+      await assertFails(
+        getDoc(doc(signedIn('client-2', 'client').firestore(), walkInPath)),
+      );
+    });
 
     it('lets an account read its own record, by id and by the one-record query', async () => {
       const owner = signedIn('client-1', 'client').firestore();

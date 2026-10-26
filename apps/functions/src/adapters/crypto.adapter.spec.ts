@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
-import type { HashPorts, IdPorts } from '@core/ports';
+import type { HashPorts, IdPorts, WalkInKeyPorts } from '@core/ports';
 import {
   cryptoPorts,
   hexEqualInConstantTime,
+  hmacSha256Hex,
   randomHex,
   randomIntBelow,
   randomUuid,
   scryptHex,
   sha256Hex,
+  walkInKeyPorts,
 } from './crypto.adapter';
 
 const UUID_V4 =
@@ -90,5 +92,36 @@ describe('crypto adapter', () => {
     expect(ports.hash).toBe(sha256Hex);
     expect(ports.nextId).toBe(randomUuid);
     expect(Object.keys(ports).sort()).toEqual(['hash', 'nextId']);
+  });
+
+  describe('walkInKeyPorts — the keyed walk-in digest (OR-26)', () => {
+    it('is HMAC-SHA-256, lower-case hex (the RFC 4231 test case 2 vector)', () => {
+      expect(hmacSha256Hex('Jefe', 'what do ya want for nothing?')).toBe(
+        '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
+      );
+    });
+
+    it('keys the digest: two keys, two digests of one contact — and neither is its plain sha256', () => {
+      const basis = 'walkin/v1:+359888123456';
+      const one = walkInKeyPorts(() => 'key-one').walkInHash(basis);
+      const two = walkInKeyPorts(() => 'key-two').walkInHash(basis);
+      expect(one).toMatch(/^[0-9a-f]{64}$/);
+      expect(one).not.toBe(two);
+      expect(one).not.toBe(sha256Hex(basis));
+      // One key, one digest — the record id still dedupes.
+      expect(walkInKeyPorts(() => 'key-one').walkInHash(basis)).toBe(one);
+    });
+
+    it('reads the key at each call, never once at build — a secret is a runtime value', () => {
+      let key = 'before';
+      const ports: WalkInKeyPorts = walkInKeyPorts(() => key);
+      const before = ports.walkInHash('walkin/v1:x');
+      key = 'after';
+      expect(ports.walkInHash('walkin/v1:x')).not.toBe(before);
+      expect(ports.walkInHash('walkin/v1:x')).toBe(
+        hmacSha256Hex('after', 'walkin/v1:x'),
+      );
+      expect(Object.keys(ports)).toEqual(['walkInHash']);
+    });
   });
 });

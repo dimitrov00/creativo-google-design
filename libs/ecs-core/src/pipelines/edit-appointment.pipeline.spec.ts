@@ -1,5 +1,6 @@
 import {
   Actor,
+  type AppliedDiscount,
   AuditAction,
   BlockKind,
   BookingLifecycle,
@@ -12,16 +13,21 @@ import {
   CouponValue,
   CustomerOrigin,
   DiscountMethod,
+  DiscountProvenance,
   DiscountSource,
   type DocBody,
   type DocPath,
+  E164,
+  GrantCapacity,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
   MinuteBlock,
+  Placement,
   Role,
   SeatLabel,
   SeatOccupant,
+  SeatSubject,
   VoucherCode,
   VoucherLifecycle,
   WriteAction,
@@ -32,13 +38,17 @@ import {
   ResizeEdge,
 } from '@core/components';
 import {
+  AppliedDiscountId,
+  AppointmentId,
   BarberBusyDayId,
   BarberId,
   BusyKey,
   CouponGrantId,
   CouponId,
   Currency,
+  CustomerId,
   GiftVoucherId,
+  GrantStatus,
   LocationId,
   OperationId,
   Result,
@@ -63,6 +73,7 @@ import {
 import {
   AppointmentEditSystem,
   AuditSystem,
+  CouponGrantSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -76,6 +87,7 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   fixtureHash,
+  fixtureWalkInHash,
   localDate,
   locationFixture,
   memoryStore,
@@ -191,6 +203,35 @@ function grant(extra: Partial<CouponGrant> = {}): CouponGrant {
   } as CouponGrant;
 }
 
+/** The grant as a save that put it on `appointmentId`'s bill left it — burned. */
+function spentBy(appointmentId: AppointmentId): CouponGrant {
+  return unwrapOk(
+    CouponGrantSystem.burn(
+      grant(),
+      utcMs('2026-09-27T10:00:00.000+03:00'),
+      `appointment:${appointmentId}`,
+    ),
+  );
+}
+
+/** The grant's line as a save stored it on the bill. */
+const GRANT_LINE: AppliedDiscount = {
+  discountId: AppliedDiscountId.of(`grant:${GRANT}`),
+  label: 'Autumn',
+  appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
+  combinability: Combinability.Stackable,
+  ...DiscountProvenance.grant(GRANT),
+  ...CouponValue.of({
+    discountMethod: DiscountMethod.PercentOff,
+    discountPercent: 10,
+  }),
+};
+
+const APPLY_GRANT: BookingCall.EditCommand = {
+  editCommand: EditCommand.Discounts,
+  discounts: [{ discountSource: DiscountSource.Grant, grantId: GRANT }],
+};
+
 function coupon(extra: Partial<Coupon> = {}): Coupon {
   return {
     id: COUPON,
@@ -236,6 +277,7 @@ function rig(
   const contactsAsked: (readonly UserId[])[] = [];
   const run = editAppointment({
     ...tx,
+    walkInHash: fixtureWalkInHash,
     ...recordingTelemetry(),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     findCouponByCode: async (code) => {
@@ -682,6 +724,7 @@ describe('editAppointment — the shop moving its own book', () => {
             addedSubject: {
               requestedSubjectRole: RequestedSubjectRole.Guest,
               label: SeatLabel.of('Guest'),
+              contact: null,
             },
           },
         ],
@@ -694,35 +737,41 @@ describe('editAppointment — the shop moving its own book', () => {
   });
 
   describe('the bill', () => {
-    it('reads each grant AND its coupon in the transaction — the coupon’s name on the receipt — and writes no grant', async () => {
+    it('reads each grant AND its coupon in the transaction — the coupon’s name on the receipt — and burns the grant in the same plan (OR-13)', async () => {
       const { store, tx, run } = rig([
         ...catalogue(),
         stored(visit()),
         { path: [Collections.CouponGrants, GRANT], body: bodyOf(grant()) },
         { path: [Collections.Coupons, COUPON], body: bodyOf(coupon()) },
       ]);
-      const answer = await run(
-        command({
-          commands: [
-            {
-              editCommand: EditCommand.Discounts,
-              discounts: [
-                { discountSource: DiscountSource.Grant, grantId: GRANT },
-              ],
-            },
-          ],
-        }),
-      );
+      const answer = await run(command({ commands: [APPLY_GRANT] }));
       expect(answer.ok).toBe(true);
       expect(readKeys(tx).has(`${Collections.CouponGrants}/${GRANT}`)).toBe(
         true,
       );
       expect(readKeys(tx).has(`${Collections.Coupons}/${COUPON}`)).toBe(true);
-      expect(
-        (tx.plans[0] ?? []).some(
-          (op) => op.path[0] === Collections.CouponGrants,
+      // The burn rides the save's own plan, on the grant this attempt read.
+      const burn = (tx.plans[0] ?? []).filter(
+        (op) => op.path[0] === Collections.CouponGrants,
+      );
+      expect(burn).toEqual([
+        CouponGrantSystem.transitionWrite(
+          grant(),
+          unwrapOk(
+            CouponGrantSystem.burn(
+              grant(),
+              FIXTURE_NOW_UTC_MS,
+              `appointment:${FIXTURE_IDS.appointment}`,
+            ),
+          ),
         ),
-      ).toBe(false);
+      ]);
+      expect(store.get(`${Collections.CouponGrants}/${GRANT}`)).toMatchObject({
+        grantStatus: GrantStatus.Used,
+        usedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        usedNote: `appointment:${FIXTURE_IDS.appointment}`,
+        grantCapacity: GrantCapacity.SingleUse,
+      });
       expect(store.get(PATH)?.['discounts']).toEqual([
         expect.objectContaining({
           discountId: `grant:${GRANT}`,
@@ -731,6 +780,113 @@ describe('editAppointment — the shop moving its own book', () => {
           discountGrantId: GRANT,
         }),
       ]);
+    });
+
+    it('restores the grant when its line leaves the bill — ACTIVE again, the burn’s stamps deleted', async () => {
+      const spent = spentBy(FIXTURE_IDS.appointment);
+      const { store, tx, run } = rig([
+        ...catalogue(),
+        stored(visit({ discounts: [GRANT_LINE] })),
+        { path: [Collections.CouponGrants, GRANT], body: bodyOf(spent) },
+        { path: [Collections.Coupons, COUPON], body: bodyOf(coupon()) },
+      ]);
+      const answer = await run(
+        command({
+          commands: [{ editCommand: EditCommand.Discounts, discounts: [] }],
+        }),
+      );
+      expect(answer.ok).toBe(true);
+      expect(
+        (tx.plans[0] ?? []).filter(
+          (op) => op.path[0] === Collections.CouponGrants,
+        ),
+      ).toEqual([
+        CouponGrantSystem.transitionWrite(
+          spent,
+          unwrapOk(CouponGrantSystem.restore(spent)),
+        ),
+      ]);
+      expect(store.get(PATH)?.['discounts']).toEqual([]);
+      const back = store.get(`${Collections.CouponGrants}/${GRANT}`);
+      expect(back?.['grantStatus']).toBe(GrantStatus.Active);
+      expect(back).not.toHaveProperty('usedAtUtcMs');
+      expect(back).not.toHaveProperty('usedNote');
+    });
+
+    it('writes no grant for a line the bill keeps — the same bill saved again, or a save that leaves the bill alone', async () => {
+      for (const commands of [[APPLY_GRANT], [MOVE_TO_ELEVEN]]) {
+        const { store, tx, run } = rig([
+          ...catalogue(),
+          stored(visit({ discounts: [GRANT_LINE] })),
+          {
+            path: [Collections.CouponGrants, GRANT],
+            body: bodyOf(spentBy(FIXTURE_IDS.appointment)),
+          },
+          { path: [Collections.Coupons, COUPON], body: bodyOf(coupon()) },
+        ]);
+        const answer = await run(command({ commands }));
+        expect(answer.ok).toBe(true);
+        expect(
+          (tx.plans[0] ?? []).some(
+            (op) => op.path[0] === Collections.CouponGrants,
+          ),
+        ).toBe(false);
+        expect(store.get(PATH)?.['discounts']).toEqual([GRANT_LINE]);
+        expect(
+          store.get(`${Collections.CouponGrants}/${GRANT}`)?.['grantStatus'],
+        ).toBe(GrantStatus.Used);
+      }
+    });
+
+    it('answers a replay of the save that burned the grant without writing it again', async () => {
+      const digest = fixtureHash(
+        AppointmentEditSystem.digestBasis([APPLY_GRANT]),
+      ).slice(0, 16);
+      const { tx, run } = rig([
+        ...catalogue(),
+        stored(
+          visit({
+            revision: 2,
+            discounts: [GRANT_LINE],
+            appliedOperations: [
+              { operationId: OPERATION, revision: 2, digest },
+            ],
+          }),
+        ),
+        {
+          path: [Collections.CouponGrants, GRANT],
+          body: bodyOf(spentBy(FIXTURE_IDS.appointment)),
+        },
+      ]);
+      const answer = await run(command({ commands: [APPLY_GRANT] }));
+      expect(answer).toEqual({
+        ok: true,
+        value: {
+          appointmentId: FIXTURE_IDS.appointment,
+          revision: 2,
+          replayed: true,
+        },
+      });
+      expect(tx.plans).toEqual([[]]);
+    });
+
+    it('refuses a grant another visit already spent as `grant` — BOOKING_STAFF_EDIT_INVALID_COMMAND, nothing written', async () => {
+      const { store, tx, run } = rig([
+        ...catalogue(),
+        stored(visit()),
+        {
+          path: [Collections.CouponGrants, GRANT],
+          body: bodyOf(spentBy(AppointmentId.of('appt-earlier'))),
+        },
+        { path: [Collections.Coupons, COUPON], body: bodyOf(coupon()) },
+      ]);
+      const answer = await run(command({ commands: [APPLY_GRANT] }));
+      expect(!answer.ok && answer.error).toEqual({
+        errorCode: StaffEditErrorCode.InvalidCommand,
+        field: 'grant',
+      });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(PATH)?.['discounts']).toEqual([]);
     });
 
     it('labels a grant whose coupon is gone by the grant itself (couponId || grantId), stackable', async () => {
@@ -924,5 +1080,160 @@ describe('editAppointment — the shop moving its own book', () => {
     expect(
       [...readKeys(tx)].some((key) => key.startsWith(`${Collections.Users}/`)),
     ).toBe(false);
+  });
+});
+
+describe('editAppointment — a walk-in the desk took a contact for (OR-26)', () => {
+  const MARIA_PHONE = E164.of('+359888123456');
+  const MARIA_RECORD = CustomerId.forWalkIn(MARIA_PHONE, fixtureWalkInHash);
+  const MARIA_PATH = `${Collections.Customers}/${MARIA_RECORD}`;
+  const ADDED = SeatId.of('seat-maria');
+
+  /** A guest's seat added at noon, with what the desk took for them. */
+  const addGuest = (
+    contact: BookingCall.GuestContact | null,
+    label = 'Мария',
+  ): BookingCall.EditCommand => ({
+    editCommand: EditCommand.AddSeat,
+    seatId: ADDED,
+    serviceId: FIXTURE_IDS.service,
+    variantId: null,
+    barberId: FIXTURE_IDS.barber,
+    localDate: THURSDAY,
+    startMinutes: at(12),
+    durationMinutes: duration(30),
+    addedSubject: {
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label: SeatLabel.of(label),
+      contact,
+    },
+  });
+  const seatsOf = (body: unknown) =>
+    (body as { readonly seats: readonly Record<string, unknown>[] }).seats;
+
+  it('an added guest with a phone: the record is read in phase one, created STAFF_WALK_IN in the plan, and the seat is WALK_IN', async () => {
+    const { store, tx, run } = rig([...catalogue(), stored(visit())]);
+    const answer = await run(
+      command({ commands: [addGuest({ phone: MARIA_PHONE, email: null })] }),
+    );
+    expect(answer.ok).toBe(true);
+    const plan = tx.plans[0] ?? [];
+    expect(
+      plan
+        .filter((op) => op.path[0] === Collections.Customers)
+        .map((op) => [op.writeAction, op.path.join('/')]),
+    ).toEqual([[WriteAction.Create, MARIA_PATH]]);
+    expect(store.get(MARIA_PATH)).toMatchObject({
+      userId: null,
+      displayName: 'Мария',
+      phone: MARIA_PHONE,
+      email: null,
+      customerOrigin: CustomerOrigin.StaffWalkIn,
+    });
+    expect(readKeys(tx).has(MARIA_PATH)).toBe(true);
+    const saved = store.get(PATH);
+    expect(
+      seatsOf(saved).find((seat) => seat['seatId'] === ADDED),
+    ).toMatchObject({
+      seatSubject: SeatSubject.WalkIn,
+      subjectCustomerId: MARIA_RECORD,
+      guestLabel: 'Мария',
+    });
+    expect(saved).toMatchObject({
+      subjectCustomerIds: [FIXTURE_IDS.customer, MARIA_RECORD].sort(),
+    });
+  });
+
+  it('derives the added walk-in’s id under the KEYED digest, the added account’s under the plain one', async () => {
+    const { tx, run } = rig([...catalogue(), stored(visit())]);
+    expect(
+      (
+        await run(
+          command({
+            commands: [addGuest({ phone: MARIA_PHONE, email: null })],
+          }),
+        )
+      ).ok,
+    ).toBe(true);
+    const unkeyed = CustomerId.forWalkIn(MARIA_PHONE, fixtureHash);
+    expect(MARIA_RECORD).not.toBe(unkeyed);
+    expect(readKeys(tx).has(MARIA_PATH)).toBe(true);
+    expect(readKeys(tx).has(`${Collections.Customers}/${unkeyed}`)).toBe(false);
+  });
+
+  it('meets the record a visit before created: the same id, nothing written over it', async () => {
+    const before = {
+      path: [Collections.Customers, MARIA_RECORD],
+      body: { displayName: 'Мария Иванова' },
+    };
+    const { store, tx, run } = rig([...catalogue(), before, stored(visit())]);
+    const answer = await run(
+      command({ commands: [addGuest({ phone: MARIA_PHONE, email: null })] }),
+    );
+    expect(answer.ok).toBe(true);
+    expect(
+      (tx.plans[0] ?? []).filter((op) => op.path[0] === Collections.Customers),
+    ).toEqual([]);
+    expect(store.get(MARIA_PATH)).toEqual({ displayName: 'Мария Иванова' });
+  });
+
+  it('a re-sent intent writes nothing again — no second record, no second seat', async () => {
+    const { tx, run } = rig([...catalogue(), stored(visit())]);
+    const batch = command({
+      commands: [addGuest({ phone: MARIA_PHONE, email: null })],
+    });
+    expect((await run(batch)).ok).toBe(true);
+    const again = await run({ ...batch, expectedVersion: 2 });
+    expect(again.ok && again.value.replayed).toBe(true);
+    expect(tx.plans.slice(1).flat()).toEqual([]);
+  });
+
+  it('a name alone keys nothing — the added guest stays ANONYMOUS, no record is made', async () => {
+    const { store, tx, run } = rig([...catalogue(), stored(visit())]);
+    expect(
+      (await run(command({ commands: [addGuest(null, 'Петър')] }))).ok,
+    ).toBe(true);
+    expect(
+      (tx.plans[0] ?? []).filter((op) => op.path[0] === Collections.Customers),
+    ).toEqual([]);
+    expect(
+      seatsOf(store.get(PATH)).find((seat) => seat['seatId'] === ADDED),
+    ).toMatchObject({
+      seatSubject: SeatSubject.Anonymous,
+      guestLabel: 'Петър',
+    });
+  });
+
+  it('a stored walk-in keeps its record through a re-decision — a move re-seats it WALK_IN, never a stranger', async () => {
+    const walkInSeat = seatFixture({
+      seatId: SeatId.of('seat-walk-in'),
+      startMinutes: at(10),
+      occupant: SeatOccupant.walkIn(MARIA_RECORD, SeatLabel.of('Мария')),
+    });
+    const walkInVisit = visit({
+      ownerUserId: null,
+      ownerCustomerId: null,
+      subjectUserIds: [],
+      subjectCustomerIds: [MARIA_RECORD],
+      placement: Placement.Staff,
+      seats: [walkInSeat],
+    });
+    const { store, tx, run } = rig([...catalogue(), stored(walkInVisit)]);
+    const answer = await run(command());
+    expect(answer.ok).toBe(true);
+    expect(
+      (tx.plans[0] ?? []).filter((op) => op.path[0] === Collections.Customers),
+    ).toEqual([]);
+    expect(store.get(PATH)).toMatchObject({
+      startMinutes: at(11),
+      subjectCustomerIds: [MARIA_RECORD],
+      seats: [
+        {
+          seatSubject: SeatSubject.WalkIn,
+          subjectCustomerId: MARIA_RECORD,
+          guestLabel: 'Мария',
+        },
+      ],
+    });
   });
 });

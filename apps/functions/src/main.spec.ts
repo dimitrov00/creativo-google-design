@@ -1,10 +1,12 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
+import { ClientIssueKind } from '@core/components';
 import { BookingError, IdentityError, RepositoryError } from '@core/errors';
 import { BusyKey, CustomerId } from '@core/primitives';
 import { Callables } from '@core/ports';
-import { TriggerAttemptSystem } from '@core/systems';
+import { ClientIssueSystem, TriggerAttemptSystem } from '@core/systems';
 import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
+import { hmacSha256Hex } from './adapters/crypto.adapter';
 
 /**
  * The pipelines and the Firestore bundle, replaced at the module seam: each
@@ -30,6 +32,7 @@ const seam = vi.hoisted(() => {
     'rebuildCapacity',
     'recordSeatTip',
     'redeemInvitation',
+    'reportClientIssues',
     'requestOtp',
     'requestWaitlist',
     'rescheduleAppointment',
@@ -125,6 +128,12 @@ const WRITTEN = 'google.cloud.firestore.document.v1.written';
 
 const callable = { ...PLATFORM, callableTrigger: {} };
 
+/** A callable bound to the walk-in key (OR-26) — the two that mint walk-in records. */
+const walkInCallable = {
+  ...callable,
+  secretEnvironmentVariables: [{ key: 'WALKIN_ID_KEY' }],
+};
+
 const written = (document: string, retry: boolean) => ({
   ...PLATFORM,
   eventTrigger: {
@@ -160,8 +169,13 @@ const daily = (schedule: string) => ({
  * — and pass E (E-1, DEP-1) four more: the capacity triggers
  * `rebuildCapacityOnExceptionChange`, `rebuildCapacityOnRosterChange`,
  * `rebuildCapacityOnLocationChange` and `rebuildCapacityOnSettingsChange`.
+ * Pass F's new sink, `reportClientIssues` (OR-34), declares its own: two
+ * instances, 80 concurrent calls each, 256 MiB, 10 s. The two callables
+ * that mint walk-in records (`commitBooking`, `staffEditAppointment`) bind
+ * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26); no other
+ * export holds a secret.
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
- * timeout, memory or schedule fails here.
+ * timeout, memory, instance cap, secret or schedule fails here.
  */
 const ENDPOINTS = {
   requestOtpChallenge: callable,
@@ -177,14 +191,14 @@ const ENDPOINTS = {
       retry: true,
     },
   },
-  commitBooking: callable,
+  commitBooking: walkInCallable,
   cancelAppointment: callable,
   rescheduleAppointment: callable,
   transitionAppointment: callable,
   markArrived: callable,
   clearArrival: callable,
   recordSeatTip: callable,
-  staffEditAppointment: callable,
+  staffEditAppointment: walkInCallable,
   rebuildBusyOnAppointmentChange: written('appointments/{appointmentId}', true),
   rebuildCapacityOnBusyChange: written('barberBusy/{docId}', true),
   rebuildCapacityOnExceptionChange: written('scheduleExceptions/{docId}', true),
@@ -215,6 +229,13 @@ const ENDPOINTS = {
   startImpersonation: callable,
   endImpersonation: callable,
   redeemInvitation: callable,
+  reportClientIssues: {
+    ...callable,
+    availableMemoryMb: 256,
+    timeoutSeconds: 10,
+    maxInstances: 2,
+    concurrency: 80,
+  },
 } as const;
 
 type ExportName = keyof typeof ENDPOINTS;
@@ -274,6 +295,20 @@ const writeEvent = (params: Record<string, string>) => ({
 });
 
 const tick = { jobName: 'job', scheduleTime: '2026-10-11T00:00:00Z' };
+
+/** One issue as the web's reporter composes it — a batch the sink admits (OR-34). */
+const ISSUES = [
+  ClientIssueSystem.compose({
+    clientIssueKind: ClientIssueKind.ChunkLoadFailed,
+    errorName: 'ChunkLoadError',
+    documentPath: null,
+    fieldName: null,
+    routePattern: '/staff/schedule',
+    topFrame: null,
+    message: 'Loading chunk 7 failed',
+    release: '2026.10.26',
+  }),
+] as const;
 
 const ok = (value: unknown) => () => ({ ok: true, value });
 
@@ -703,7 +738,23 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ invitationId: 'inv-1', redemptionCount: 3 }),
     expected: { invitationId: 'inv-1', redemptionCount: 3 },
   },
+  // ── pass F: the client issue sink (OR-34) ──
+  reportClientIssues: {
+    pipeline: 'reportClientIssues',
+    input: request(ISSUES, STAFF),
+    command: {
+      reporterRoles: ['barber'],
+      reporterAuthed: true,
+      issues: ISSUES,
+    },
+    // The pipeline answers its count as it is — it refuses nothing.
+    answer: () => ({ loggedCount: 1 }),
+    expected: { loggedCount: 1 },
+  },
 };
+
+/** The exports that run over the telemetry alone — never the server ports (OR-34's sink). */
+const TELEMETRY_EXPORTS: ReadonlySet<string> = new Set(['reportClientIssues']);
 
 const FLIPPED_EXPORTS = Object.keys(FLIPPED).sort();
 /** The identity flip's callables — the ones that build the identity ports. */
@@ -751,7 +802,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 33 functions — today’s 30 and Phase 4a’s three callables', () => {
+  it('exports exactly the 34 functions — today’s 30, Phase 4a’s three callables and pass F’s issue sink', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -771,12 +822,12 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(33);
+    expect(FLIPPED_EXPORTS).toHaveLength(34);
   });
 
-  describe('flips 1–3 and Phase 4a — every export runs exactly its own pipeline', () => {
+  describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
     it.each(FLIPPED_EXPORTS)(
-      '%s decodes its call component, runs its own pipeline over the server ports — and no other — and answers the call component’s answer',
+      '%s decodes its call component, runs its own pipeline over its ports — and no other — and answers the call component’s answer',
       async (name) => {
         const own = caseOf(name);
         seam.answers.set(own.pipeline, own.answer);
@@ -784,12 +835,20 @@ describe('main.ts — the composition root', () => {
         expect(answer).toEqual(own.expected);
         expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
         const call = seam.calls[0];
-        // The shop's zone is the location's: the ports carry the default
-        // location a boundary with none in scope reads (4A-11), no zone.
-        expect(call?.ports).toMatchObject({
-          sentinel: seam.BUNDLE.sentinel,
-          defaultLocationId: 'loc-center',
-        });
+        if (TELEMETRY_EXPORTS.has(name)) {
+          // The sink reads and writes no document: the telemetry, nothing else.
+          expect(Object.keys(call?.ports as object).sort()).toEqual([
+            'log',
+            'trackError',
+          ]);
+        } else {
+          // The shop's zone is the location's: the ports carry the default
+          // location a boundary with none in scope reads (4A-11), no zone.
+          expect(call?.ports).toMatchObject({
+            sentinel: seam.BUNDLE.sentinel,
+            defaultLocationId: 'loc-center',
+          });
+        }
         expect(call?.ports).not.toHaveProperty('tenantTimeZone');
         if (own.command === undefined) expect(call?.args).toEqual([]);
         else expect(call?.args[0]).toMatchObject(own.command as object);
@@ -820,6 +879,44 @@ describe('main.ts — the composition root', () => {
         'nowUtcMs',
       ]);
       expect(Object.keys(telemetry).sort()).toEqual(['log', 'trackError']);
+    });
+
+    it('hands the keyed walk-in digest to the two callables that mint walk-ins, and to no other export (OR-26)', async () => {
+      await run('commitBooking', caseOf('commitBooking').input);
+      await run('staffEditAppointment', caseOf('staffEditAppointment').input);
+      await run('cancelAppointment', caseOf('cancelAppointment').input);
+      const [booking, edit, cancel] = seam.calls.map(
+        (call) => call.ports as Record<string, unknown>,
+      );
+      expect(booking).toHaveProperty('walkInHash');
+      expect(edit).toHaveProperty('walkInHash');
+      expect(cancel).not.toHaveProperty('walkInHash');
+      // The server ports underneath, built once.
+      expect(booking).toMatchObject({ sentinel: seam.BUNDLE.sentinel });
+      expect(seam.built).toHaveLength(1);
+    });
+
+    it('keys the walk-in digest by the WALKIN_ID_KEY secret, read per call — and an empty key is a defect, never an unkeyed id', async () => {
+      await run('commitBooking', caseOf('commitBooking').input);
+      const { walkInHash } = seam.calls[0]?.ports as {
+        walkInHash: (input: string) => string;
+      };
+      const before = process.env['WALKIN_ID_KEY'];
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        process.env['WALKIN_ID_KEY'] = 'spec-walkin-key';
+        expect(walkInHash('walkin/v1:+359888123456')).toBe(
+          hmacSha256Hex('spec-walkin-key', 'walkin/v1:+359888123456'),
+        );
+        process.env['WALKIN_ID_KEY'] = '';
+        expect(() => walkInHash('walkin/v1:+359888123456')).toThrow(
+          'WALKIN_ID_KEY',
+        );
+      } finally {
+        if (before === undefined) delete process.env['WALKIN_ID_KEY'];
+        else process.env['WALKIN_ID_KEY'] = before;
+        warn.mockRestore();
+      }
     });
 
     it('hands the step its work budget, a share of its 540 s timeout', async () => {
@@ -1297,14 +1394,17 @@ describe('main.ts — the composition root', () => {
 
       seam.answers.set('requestOtp', () => ({
         ok: false,
-        error: IdentityError.otpRateLimited(),
+        error: IdentityError.otpRateLimited(42),
       }));
       const limited = await rejection(
         run('requestOtpChallenge', caseOf('requestOtpChallenge').input),
       );
       expect(limited.code).toBe('resource-exhausted');
+      // The seconds left on the resend window ride along (OR-9): the code
+      // step restarts its countdown from them.
       expect(limited.details).toEqual({
         errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+        retryAfterSeconds: 42,
       });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
@@ -1450,6 +1550,86 @@ describe('main.ts — the composition root', () => {
         error:
           'REPOSITORY_ALREADY_EXISTS streakDefinitions/cadence/versions/000002',
       });
+    });
+  });
+
+  describe('pass F — the client issue sink (OR-34)', () => {
+    const sink = caseOf('reportClientIssues');
+
+    it('runs over the telemetry alone — it never builds the server ports or touches the Admin SDK', async () => {
+      const before = {
+        firestore: seam.adminFirestore.mock.calls.length,
+        auth: seam.adminAuth.mock.calls.length,
+        built: seam.built.length,
+      };
+      seam.answers.set(sink.pipeline, sink.answer);
+      await run('reportClientIssues', sink.input);
+      expect(Object.keys(seam.calls[0]?.ports as object).sort()).toEqual([
+        'log',
+        'trackError',
+      ]);
+      expect({
+        firestore: seam.adminFirestore.mock.calls.length,
+        auth: seam.adminAuth.mock.calls.length,
+        built: seam.built.length,
+      }).toEqual(before);
+    });
+
+    it('refuses what is no batch before the pipeline runs — `invalid-argument`, its code alone, ONE warn line naming why and who (never the uid)', async () => {
+      const warned = vi
+        .spyOn(logger, 'warn')
+        .mockImplementation(() => undefined);
+      const refused = await rejection(
+        run('reportClientIssues', request({ issues: ISSUES }, STAFF)),
+      );
+      expect(refused.code).toBe('invalid-argument');
+      expect(refused.details).toEqual({
+        errorCode: 'CLIENT_ISSUE_BATCH_REFUSED',
+      });
+      expect(seam.calls).toEqual([]);
+      expect(warned).toHaveBeenCalledTimes(1);
+      expect(warned).toHaveBeenCalledWith('client issue batch refused', {
+        errorCode: 'CLIENT_ISSUE_BATCH_REFUSED',
+        clientIssueBatchRefusedReason: 'SHAPE',
+        issueIndex: null,
+        issueField: null,
+        reporterRoles: ['barber'],
+        reporterAuthed: true,
+      });
+    });
+
+    it('answers past twenty calls a second on one instance `resource-exhausted` — before the batch is read or the pipeline runs', async () => {
+      seam.answers.set(sink.pipeline, sink.answer);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        // A minute behind the host clock: the instance's bucket, anchored on
+        // the real clock by the cases before, re-anchors here on the first
+        // call (a clock that steps back refills nothing), and a second
+        // later it is full — whatever those cases took. Back on the real
+        // clock, a minute has passed for it: full again for the cases after.
+        vi.setSystemTime(Date.now() - 60_000);
+        await run('reportClientIssues', sink.input).catch(() => undefined);
+        vi.setSystemTime(Date.now() + 1_000);
+        seam.calls.length = 0;
+        for (let i = 0; i < 20; i++) {
+          await expect(run('reportClientIssues', sink.input)).resolves.toEqual(
+            sink.expected,
+          );
+        }
+        const throttled = await rejection(
+          run('reportClientIssues', sink.input),
+        );
+        expect(throttled.code).toBe('resource-exhausted');
+        expect(throttled.details).toBeUndefined();
+        expect(seam.calls).toHaveLength(20);
+        // Fifty milliseconds refill one call at twenty a second.
+        vi.setSystemTime(Date.now() + 50);
+        await expect(run('reportClientIssues', sink.input)).resolves.toEqual(
+          sink.expected,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

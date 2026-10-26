@@ -121,13 +121,6 @@ function totalRangeMinutes(xs: readonly MinuteRange[]): MinuteCount {
   return total;
 }
 
-function clip(
-  xs: readonly MinuteRange[],
-  bound: MinuteRange,
-): NormalizedRanges {
-  return intersectRanges(xs, [bound]);
-}
-
 function hull(xs: readonly MinuteRange[]): MinuteRange | null {
   const first = xs[0];
   if (first === undefined) return null;
@@ -161,12 +154,13 @@ export const IntervalSetSystem = {
   normalize: normalizeRanges,
   /** `base − cut` — one merge-style pass over both sorted sets: O(n + m). */
   subtract: subtractRanges,
-  /** `a ∩ b` — a two-pointer sweep, O(n + m). Touching runs share nothing. */
+  /**
+   * `a ∩ b` — a two-pointer sweep, O(n + m). Touching runs share nothing.
+   * Clipping a set to a bound is `intersect(xs, [bound])`.
+   */
   intersect: intersectRanges,
   /** `a ∪ b` — a linear merge of the two sorted sets, O(n + m). */
   union: unionRanges,
-  /** Clip to a bound, dropping whatever falls entirely outside it. */
-  clip,
   /** Total minutes covered; overlaps are never counted twice. */
   totalMinutes: totalRangeMinutes,
   /**

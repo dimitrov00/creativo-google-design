@@ -16,6 +16,7 @@ import {
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
+  hourCount,
   unwrapOk,
   utcMs,
   offsetIso,
@@ -71,7 +72,11 @@ const change = (
   generation: string,
   offsetMs: number,
   windowHours: number | null = null,
-): PolicyChange => ({ generation, changedAt: at(offsetMs), windowHours });
+): PolicyChange => ({
+  generation,
+  changedAt: at(offsetMs),
+  windowHours: windowHours === null ? null : hourCount(windowHours),
+});
 /** An instant of whole second `wall` (UTC text) plus `nanos`. */
 const precise = (wall: string, nanos: number): PreciseInstant => {
   const instant = PreciseInstant.of(utcMs(wall) / 1000, nanos);
@@ -496,7 +501,7 @@ describe('catchUp (planPolicyCatchUp) — the pass a dropped start owed', () => 
     );
   const line = (updatedMs: number | null, windowHours: number) => ({
     updatedAt: updatedMs === null ? null : at(updatedMs),
-    windowHours,
+    windowHours: hourCount(windowHours),
   });
   /** The sweep's label for a change: the edge renders the instant. */
   const label = (ms: number) => offsetIso(t(ms), FIXTURE_TIME_ZONE);
@@ -715,7 +720,7 @@ describe('isIdle and shouldRecordStall — a delivery that leaves the pass alone
 describe('purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const job = deepFreeze(advance(start('evt-a', 0), step(), t(1)));
-    const live = deepFreeze({ updatedAt: at(5), windowHours: 48 });
+    const live = deepFreeze({ updatedAt: at(5), windowHours: hourCount(48) });
     const run = () => [
       nextStep(job, deepFreeze(change('evt-b', 2)), t(3)),
       advance(job, deepFreeze(step({ cursor: CustomerId.of('q') })), t(4)),

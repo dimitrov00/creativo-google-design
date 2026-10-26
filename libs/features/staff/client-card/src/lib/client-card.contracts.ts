@@ -1,9 +1,15 @@
-import type { CouponOccasion, Email, Role } from '@core/components';
+import type {
+  CouponOccasion,
+  CouponValue,
+  Email,
+  Role,
+} from '@core/components';
 import type {
   AppointmentId,
   BadgeCategoryId,
   BarberId,
   CouponGrantId,
+  CouponId,
   DraftPersonKey,
   DurationMinutes,
   LocalDate,
@@ -52,6 +58,15 @@ export interface ClientCardSubject {
 /** One held reward, already worded by the editor's own discount formatter (no second formatter). */
 export interface ClientCardGrant {
   readonly grantId: CouponGrantId;
+  /**
+   * The coupon the grant was issued from (`CouponGrant.couponId`): what
+   * makes two grants one ticket, beside `value`, and how the points'
+   * sentence knows a reward is already in hand (OR-15 — never a name, so
+   * it holds in every language).
+   */
+  readonly couponId: CouponId;
+  /** What the grant takes off, as the grant snapshotted it — the coupon's stored value (OR-15). */
+  readonly value: CouponValue;
   /** The coupon's name: «Безплатно подстригване». */
   readonly title: string;
   /**
@@ -66,10 +81,11 @@ export interface ClientCardGrant {
    * The moment the grant's coupon was made for (`Coupon.couponOccasion`,
    * revision 3 §4.6), passed through as the coupon holds it: the birthday
    * card carries a grant only when its coupon says `BIRTHDAY` — a name is
-   * never parsed. Optional, and absent reads as `null`: a host that does
-   * not know the coupon's occasion states nothing.
+   * never parsed. Required, `null` for a coupon tied to no occasion
+   * (OR-16): every producer reads it off the coupon, whose field is
+   * required too.
    */
-  readonly couponOccasion?: CouponOccasion | null;
+  readonly couponOccasion: CouponOccasion | null;
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   type AppointmentId,
   AppointmentPhotoId,
   BadgeSeriesId,
+  type CouponId,
   CustomerId,
   type LocalDate,
   Result,
@@ -988,7 +989,9 @@ export class ClientCardStore {
     // F — one card: the points, what they buy, what else is held.
     const loyalty = this.loyaltyGlanceSlice(
       gate,
-      [...context.grants, ...context.grantsOnBill].map((grant) => grant.title),
+      [...context.grants, ...context.grantsOnBill].map(
+        (grant) => grant.couponId,
+      ),
     );
     if (loyalty !== undefined) {
       overview.loyalty = loyalty;
@@ -1083,7 +1086,7 @@ export class ClientCardStore {
    */
   private loyaltyGlanceSlice(
     gate: boolean,
-    heldRewards: readonly string[],
+    heldCouponIds: readonly CouponId[],
   ): ClientOverviewVm['loyalty'] {
     const flags = this.flags;
     if (!flags.points && !flags.achievements && !flags.streaks) {
@@ -1116,7 +1119,7 @@ export class ClientCardStore {
       paused: this.paused(),
       today,
       words,
-      heldRewards,
+      heldCouponIds,
       vouchers: LoadSlice.dataOf(vouchers),
       rhythm: this.rhythm(),
     });

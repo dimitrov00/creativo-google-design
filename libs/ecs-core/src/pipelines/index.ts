@@ -42,3 +42,5 @@ export * from './save-own-profile.pipeline';
 export * from './attach-visit-photo.pipeline';
 export * from './rhythm-publish.pipeline';
 export * from './rhythm-preview.pipeline';
+export * from './save-visit-edit.pipeline';
+export * from './report-client-issues.pipeline';

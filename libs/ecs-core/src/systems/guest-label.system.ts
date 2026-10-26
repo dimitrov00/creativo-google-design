@@ -4,12 +4,7 @@ import {
   RequestedSubjectRole,
   SeatLabel,
 } from '@core/components';
-import { SeatKeyText } from '@core/primitives';
-
-/** The person key of the booker's own seat. */
-const SELF_KEY = SeatKeyText.of('self');
-const ACCOUNT_PREFIX = 'account:';
-const GUEST_PREFIX = 'guest:';
+import { PersonKey } from '@core/primitives';
 
 /**
  * GuestLabelSystem — who a seat is, as people are COUNTED: one key per person
@@ -21,20 +16,21 @@ const GUEST_PREFIX = 'guest:';
  */
 export const GuestLabelSystem = {
   /**
-   * One key per person: `self`, `account:<uid>`, `guest:<label>` (a
-   * `SeatKeyText`, the type `StandingSeatPair.personKey` carries) — a guest
-   * by the label as it is STORED (trimmed, the way `SeatLabel` keeps it), so
-   * « Иван» and «Иван» are the one person they will be on the appointment.
-   * Only ever compared for equality.
+   * One key per person on a REQUEST (a `PersonKey`, the type
+   * `StandingSeatPair.personKey` carries, OR-49): the booker `self` — a
+   * request's booker has no uid on the seat — a companion `account:<uid>`,
+   * a guest `guest:<label>` by the label as it is STORED (trimmed, the way
+   * `SeatLabel` keeps it), so « Иван» and «Иван» are the one person they
+   * will be on the appointment. Only ever compared for equality.
    */
-  personKeyOf(subject: BookingCall.SubjectInput): SeatKeyText {
+  personKeyOf(subject: BookingCall.SubjectInput): PersonKey {
     switch (subject.requestedSubjectRole) {
       case RequestedSubjectRole.Self:
-        return SELF_KEY;
+        return PersonKey.self();
       case RequestedSubjectRole.Companion:
-        return SeatKeyText.of(`${ACCOUNT_PREFIX}${subject.companionUserId}`);
+        return PersonKey.account(subject.companionUserId);
       case RequestedSubjectRole.Guest:
-        return SeatKeyText.of(`${GUEST_PREFIX}${subject.label.trim()}`);
+        return PersonKey.guest(subject.label);
     }
   },
 

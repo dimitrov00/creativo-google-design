@@ -210,9 +210,11 @@ interface VisitMonthVm {
  * A filter row hides things; these jump. Every section stays on screen and
  * the pills say where you are — the Photos-app grammar, and the reason there
  * is a pill for "upcoming" and one per month that ACTUALLY holds a visit.
- * An option that leads nowhere is the one thing a filter row must not have.
- * They moved from this page into the browser value for value (same ids);
- * the page hands it the sections and hears which row was opened.
+ * An option that leads nowhere is the one thing a filter row must not have
+ * — and so is a lone pill, which only repeats the one heading under it: a
+ * list of one section draws no rail (OR-56 c). They moved from this page
+ * into the browser value for value (same ids); the page hands it the
+ * sections, says whether the rail shows, and hears which row was opened.
  *
  * ### A visit can be asked for
  * `/account/appointments?visit=<id>` opens that visit's sheet on arrival —
@@ -423,10 +425,10 @@ export class ClientAppointments {
   });
 
   /**
-   * Every visit the two reads hold, each ONCE. An open booking whose hour
-   * has already begun is in both — the upcoming read has no date bound, the
-   * history holds everything started — and it is one visit, filed by its
-   * own start.
+   * Every visit the two lists hold, each ONCE. The store files each visit in
+   * exactly one of them — a live booking that has begun on its own shop's
+   * clock is the history's (OR-8) — so `distinctById` stays only as a
+   * guard.
    */
   private readonly appointments = computed<readonly Appointment[]>(() =>
     VisitListSystem.distinctById([
@@ -452,6 +454,7 @@ export class ClientAppointments {
     }
     const lookup = this.lookup();
     const owner = this.store.owner();
+    const nowOf = this.store.nowOf();
     return this.appointments().map((appointment) => {
       const row = visitRowOf(
         appointment,
@@ -460,7 +463,9 @@ export class ClientAppointments {
           grain: VisitGrain.Month,
           subjectUserId: owner,
           currentAppointmentId: null,
-          now,
+          // Each visit filed on its OWN shop's wall clock (OR-8), the
+          // default shop's while that shop's clock is on its way.
+          now: nowOf(appointment.locationId) ?? now,
           timeZone,
           locale: lang,
           words,
@@ -502,6 +507,20 @@ export class ClientAppointments {
       },
     );
   });
+
+  /**
+   * The jump pills, only where a pill has somewhere to jump
+   * (`VisitListSystem.showsPills`, OR-56 c): from two sections up. One
+   * pill alone named the one section its heading names right under it —
+   * «Предстоящи» over «Предстоящи» — so a single section, or none, draws
+   * no rail. While the first read is on its way the rail keeps its
+   * placeholders, so in the common case it lands without moving the list.
+   */
+  protected readonly showPills = computed(
+    () =>
+      this.listState() === LoadState.Loading ||
+      VisitListSystem.showsPills(this.sections()),
+  );
 
   /**
    * Where the list stands: the catalogue's words are part of "loaded" — a

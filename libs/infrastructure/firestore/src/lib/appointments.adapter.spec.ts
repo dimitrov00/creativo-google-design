@@ -19,6 +19,7 @@ import {
   utcMs,
 } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
+import { UNGUARDED } from '../testing/unguarded';
 
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
@@ -62,11 +63,28 @@ function recorded<T>(stream: {
 const idsOf = (answer: Result<readonly { readonly id: string }[], unknown>) =>
   answer.ok ? answer.value.map((appointment) => appointment.id) : answer;
 
+/** A staff day's answer as its visits' ids and the count it could not read (OR-2). */
+const dayOf = (
+  answer: Result<
+    {
+      readonly appointments: readonly { readonly id: string }[];
+      readonly unreadableCount: number;
+    },
+    unknown
+  >,
+) =>
+  answer.ok
+    ? {
+        ids: answer.value.appointments.map((appointment) => appointment.id),
+        unreadableCount: answer.value.unreadableCount,
+      }
+    : answer;
+
 describe('appointmentReadPorts.observeAppointment', () => {
   it('reads one visit as its entity, and null when there is none', () => {
     const body = visit({ at: '2026-10-12T10:00:00+03:00' });
     const fake = new FakeFirestore({ 'appointments/a1': body });
-    const ports = appointmentReadPorts(asDb(fake));
+    const ports = appointmentReadPorts(asDb(fake), UNGUARDED);
 
     const found = recorded(ports.observeAppointment(AppointmentId.of('a1')));
     const absent = recorded(ports.observeAppointment(AppointmentId.of('a2')));
@@ -95,10 +113,12 @@ describe('appointmentReadPorts.observeBarberDay — the staff day sheet', () => 
     });
 
     const day = recorded(
-      appointmentReadPorts(asDb(fake)).observeBarberDay(IVAN_MONDAY),
+      appointmentReadPorts(asDb(fake), UNGUARDED).observeBarberDay(IVAN_MONDAY),
     );
 
-    expect(day.seen.map(idsOf)).toEqual([['early', 'late']]);
+    expect(day.seen.map(dayOf)).toEqual([
+      { ids: ['early', 'late'], unreadableCount: 0 },
+    ]);
     expect(fake.reads).toEqual([
       {
         kind: 'listen',
@@ -111,7 +131,7 @@ describe('appointmentReadPorts.observeBarberDay — the staff day sheet', () => 
   it('follows the day: a booking made after the first snapshot joins it', () => {
     const fake = new FakeFirestore();
     const day = recorded(
-      appointmentReadPorts(asDb(fake)).observeBarberDay(IVAN_MONDAY),
+      appointmentReadPorts(asDb(fake), UNGUARDED).observeBarberDay(IVAN_MONDAY),
     );
 
     fake.set(
@@ -119,7 +139,10 @@ describe('appointmentReadPorts.observeBarberDay — the staff day sheet', () => 
       visit({ at: '2026-10-12T10:00:00+03:00', busyKeys: [IVAN_MONDAY] }),
     );
 
-    expect(day.seen.map(idsOf)).toEqual([[], ['a1']]);
+    expect(day.seen.map(dayOf)).toEqual([
+      { ids: [], unreadableCount: 0 },
+      { ids: ['a1'], unreadableCount: 0 },
+    ]);
   });
 });
 
@@ -149,7 +172,9 @@ describe('appointmentReadPorts.observeUpcoming and observeHistory — the accoun
     const db = fake();
 
     const upcoming = recorded(
-      appointmentReadPorts(asDb(db)).observeUpcoming(UserId.of('u-georgi')),
+      appointmentReadPorts(asDb(db), UNGUARDED).observeUpcoming(
+        UserId.of('u-georgi'),
+      ),
     );
 
     expect(upcoming.seen.map(idsOf)).toEqual([['mine-sooner', 'mine-later']]);
@@ -164,7 +189,10 @@ describe('appointmentReadPorts.observeUpcoming and observeHistory — the accoun
     const db = fake();
 
     const history = recorded(
-      appointmentReadPorts(asDb(db)).observeHistory(UserId.of('u-georgi'), 3),
+      appointmentReadPorts(asDb(db), UNGUARDED).observeHistory(
+        UserId.of('u-georgi'),
+        3,
+      ),
     );
 
     expect(history.seen.map(idsOf)).toEqual([
@@ -199,11 +227,10 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
   it('reads every visit with a seat for the client — as company too — newest first, one row more than the page', async () => {
     const fake = seeded();
 
-    const page = await appointmentReadPorts(asDb(fake)).pageClientHistory(
-      GEORGI,
-      null,
-      10,
-    );
+    const page = await appointmentReadPorts(
+      asDb(fake),
+      UNGUARDED,
+    ).pageClientHistory(GEORGI, null, 10);
 
     expect(page.ok && page.value.appointments.map((a) => a.id)).toEqual([
       'a-05',
@@ -221,7 +248,7 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
   });
 
   it('pages on the stored start until nothing older is left', async () => {
-    const ports = appointmentReadPorts(asDb(seeded()));
+    const ports = appointmentReadPorts(asDb(seeded()), UNGUARDED);
 
     const first = await ports.pageClientHistory(GEORGI, null, 3);
     if (!first.ok) throw new Error('first page refused');
@@ -250,7 +277,7 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
       'appointments/a-05b',
       visit({ at: '2026-09-28T10:00:00+03:00' }),
     );
-    const ports = appointmentReadPorts(asDb(fake));
+    const ports = appointmentReadPorts(asDb(fake), UNGUARDED);
 
     const page = await ports.pageClientHistory(GEORGI, null, 1);
     if (!page.ok) throw new Error('page refused');
@@ -270,11 +297,10 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
       'appointments/b-01': visit({ at: '2026-09-28T10:00:00+03:00' }),
       'appointments/b-02': visit({ at: '2026-09-28T10:00:00+03:00' }),
     });
-    const whole = await appointmentReadPorts(asDb(only)).pageClientHistory(
-      GEORGI,
-      null,
-      1,
-    );
+    const whole = await appointmentReadPorts(
+      asDb(only),
+      UNGUARDED,
+    ).pageClientHistory(GEORGI, null, 1);
     expect(whole.ok && whole.value.appointments).toHaveLength(2);
     expect(whole.ok && whole.value.nextBeforeUtcMs).toBeNull();
   });
@@ -282,11 +308,10 @@ describe('appointmentReadPorts.pageClientHistory — the client card, a page at 
   it('turns a refused read into a failed Result', async () => {
     const fake = seeded().failWith({ code: 'permission-denied' });
 
-    const page = await appointmentReadPorts(asDb(fake)).pageClientHistory(
-      GEORGI,
-      null,
-      5,
-    );
+    const page = await appointmentReadPorts(
+      asDb(fake),
+      UNGUARDED,
+    ).pageClientHistory(GEORGI, null, 5);
 
     expect(page).toEqual(
       Result.err({
@@ -313,10 +338,10 @@ describe('appointmentReadPorts.searchAppointmentWindow — the staff search pool
   it('reads two halves outward from now on utcEpochMs alone, each cut at the limit, and answers them by start', async () => {
     const fake = seeded();
 
-    const pool = await appointmentReadPorts(asDb(fake)).searchAppointmentWindow(
-      NOW,
-      2,
-    );
+    const pool = await appointmentReadPorts(
+      asDb(fake),
+      UNGUARDED,
+    ).searchAppointmentWindow(NOW, 2);
 
     expect(idsOf(pool)).toEqual(['p2', 'p1', 'n1', 'n2']);
     expect(fake.reads.map((read) => read.constraints)).toEqual([
@@ -328,6 +353,7 @@ describe('appointmentReadPorts.searchAppointmentWindow — the staff search pool
   it('answers whatever there is when a side runs short', async () => {
     const pool = await appointmentReadPorts(
       asDb(seeded()),
+      UNGUARDED,
     ).searchAppointmentWindow(NOW, 10);
 
     expect(idsOf(pool)).toEqual(['p3', 'p2', 'p1', 'n1', 'n2', 'n3']);
@@ -336,9 +362,11 @@ describe('appointmentReadPorts.searchAppointmentWindow — the staff search pool
   it('turns a refused read — or a limit no query takes — into a failed Result', async () => {
     const refused = await appointmentReadPorts(
       asDb(seeded().failWith({ code: 'permission-denied' })),
+      UNGUARDED,
     ).searchAppointmentWindow(NOW, 2);
     const nonsense = await appointmentReadPorts(
       asDb(seeded()),
+      UNGUARDED,
     ).searchAppointmentWindow(NOW, 0);
 
     expect(refused.ok).toBe(false);
@@ -393,7 +421,7 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
   const malformed = (path: string, reason: string) =>
     Result.err({ errorCode: RepositoryErrorCode.Malformed, path, reason });
 
-  it('observeBarberDay drops a malformed visit, answers the rest by start, and reports it once over two snapshots', () => {
+  it('observeBarberDay drops a malformed visit, COUNTS it beside the rest by start, and reports it once over two snapshots', () => {
     const fake = new FakeFirestore({
       'appointments/late': storedVisit({
         at: '2026-10-12T15:00:00+03:00',
@@ -416,9 +444,11 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
       storedVisit({ at: '2026-10-12T13:00:00+03:00', busyKeys: [IVAN_MONDAY] }),
     );
 
-    expect(day.seen.map(idsOf)).toEqual([
-      ['early', 'late'],
-      ['early', 'noon', 'late'],
+    // OR-2: the dropped visit is counted on every snapshot it is dropped
+    // from — the sheet says the chair holds a visit it cannot show.
+    expect(day.seen.map(dayOf)).toEqual([
+      { ids: ['early', 'late'], unreadableCount: 1 },
+      { ids: ['early', 'noon', 'late'], unreadableCount: 1 },
     ]);
     expect(lines).toEqual([
       {
@@ -426,6 +456,34 @@ describe('appointmentReadPorts, guarded — malformed visits at read time (edge 
         msg: 'malformed document dropped',
         fields: { path: 'appointments/bad', field: 'seats[0]' },
       },
+    ]);
+  });
+
+  it('observeBarberDay counts each snapshot afresh: a corrected visit joins the day and leaves the count', () => {
+    const fake = new FakeFirestore({
+      'appointments/bad': malformedVisit({
+        at: '2026-10-12T12:00:00+03:00',
+        busyKeys: [IVAN_MONDAY],
+      }),
+      'appointments/worse': malformedVisit({
+        at: '2026-10-12T14:00:00+03:00',
+        busyKeys: [IVAN_MONDAY],
+      }),
+      'appointments/early': storedVisit({
+        at: '2026-10-12T09:00:00+03:00',
+        busyKeys: [IVAN_MONDAY],
+      }),
+    });
+    const day = recorded(guarded(fake).ports.observeBarberDay(IVAN_MONDAY));
+
+    fake.set(
+      'appointments/bad',
+      storedVisit({ at: '2026-10-12T12:00:00+03:00', busyKeys: [IVAN_MONDAY] }),
+    );
+
+    expect(day.seen.map(dayOf)).toEqual([
+      { ids: ['early'], unreadableCount: 2 },
+      { ids: ['early', 'bad'], unreadableCount: 1 },
     ]);
   });
 

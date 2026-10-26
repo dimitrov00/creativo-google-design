@@ -20,6 +20,7 @@ import {
   viewChild,
   untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
@@ -28,7 +29,6 @@ import {
   type AppointmentPhoto,
   Profile,
   type ServiceCategory,
-  type User,
 } from '@core/entities';
 import {
   type AppointmentId,
@@ -44,10 +44,10 @@ import {
   type LocationId,
   MinuteCount,
   MinuteOfDay,
+  type PersonKey,
   type PriceCents,
   type Result,
   SeatId,
-  type SeatKeyText,
   type ServiceId,
   ServiceVariantId,
   Tag,
@@ -80,12 +80,14 @@ import {
   type Role,
   Roles,
   Seat,
+  type SeatLabel,
   SeatOutcome,
   SeatSubject,
   type ShopNow,
   StaffVerb,
   SubjectRelationship,
   TimeCoordinate,
+  VisitEditWrite,
   VisitEditWriteOutcome,
   type VisitSides,
   VoucherRedemption,
@@ -109,10 +111,10 @@ import {
   type StaffEditWords,
   StaffEditPlanSystem,
   VisitDraftSystem,
-  VisitSidesSystem,
   VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import type { SaveVisitEditCommand } from '@core/pipelines';
 import {
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
@@ -120,6 +122,7 @@ import {
   CATALOG_PORTS,
   CLOCK_PORTS,
   PROFILE_PORTS,
+  CUSTOMER_SEARCH_PORTS,
   USER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { AGENDA_FIELDS, AgendaField, AgendaFields } from '../agenda-fields';
@@ -222,6 +225,14 @@ import {
   StaffView,
 } from '../staff-day.store';
 import {
+  dayHealthRowsOf,
+  dayHealthWordsOf,
+} from '../day-health/day-health.presenter';
+import type {
+  DayHealthChair,
+  DayHealthRowVm,
+} from '../day-health/day-health.vm';
+import {
   type AllDayEntry,
   type GridColumn,
   type GridEvent,
@@ -240,6 +251,7 @@ import {
   parseClientQuery,
   rankClients,
 } from '../visit-editor/client-query';
+import { clientSearchOptions } from '../visit-editor/client-search';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
 
@@ -253,32 +265,6 @@ import { ArrivalVerb, ROW_VERB_WORD, type RowVerb } from '../row-verb';
  */
 function rowKey(appointmentId: AppointmentId, barberId: BarberId): string {
   return `${appointmentId}#${barberId}`;
-}
-
-/** What a save wrote BESIDE the batch — and so what its undo writes back. */
-type SaveWrites = SideWrites;
-
-/**
- * What one write of the sheet came to (`VisitEditWriteOutcome`): refused
- * before anything went out because a side field it carries was changed by
- * somebody else (`STALE`, `VisitSidesSystem.movedUnder`), the batch refused
- * (`BATCH_REFUSED`), or the batch landed — or there was none to send
- * (`WRITTEN`); and, beside it, whether the side documents due (the team
- * note, the tip) landed too (`sidesWritten` — `true` when none was due).
- */
-interface EditorWrite {
-  readonly visitEditWriteOutcome: VisitEditWriteOutcome;
-  readonly sidesWritten: boolean;
-}
-
-/** Did the batch land (or was there none to send)? */
-function batchLanded(write: EditorWrite): boolean {
-  return write.visitEditWriteOutcome === VisitEditWriteOutcome.Written;
-}
-
-/** Did the whole write land — the batch and every side document it was due? */
-function writeLanded(write: EditorWrite): boolean {
-  return batchLanded(write) && write.sidesWritten;
 }
 
 /**
@@ -389,6 +375,10 @@ const ROW_WAIT_MS = 5000;
  * history, so its `removeSeat` would be refused every time and that save's
  * receipt carries no «Отмени» (found in review). The caller hands the root
  * (`DayRowVm.rootBookingStatus`), never the chair's summary (DEP-3).
+ *
+ * Since OR-4 every save reads it off its own plan
+ * (`StaffEditPlanSystem.savePlan`, `reversible` — the same rule on the
+ * same root); this is that rule on its own, as the page's specs pin it.
  */
 export function reversibleSave(
   root: { readonly bookingStatus: BookingStatus } | null,
@@ -488,16 +478,6 @@ const CLIENT_SEARCH_LIMIT = 20;
 const BOOK_FACES_PER_QUERY = 12;
 /** How many recent visitors «Скорошни» lists — a display cap. */
 const RECENT_CLIENTS_CAP = 8;
-
-/**
- * An account the client search found, as its option names it: the name AS
- * WRITTEN — `searchName` is the lower-cased index key, and it read «мартин
- * илиев» on the desk's rows (2026-09-18) — else that key, else nothing.
- */
-function searchLabelOf(user: User): string {
-  const written = Profile.fullName(user);
-  return written.length > 0 ? written : (user.searchName ?? '');
-}
 
 /**
  * What an agenda entry is — the field `agendaRow`: a booked VISIT, or a
@@ -714,7 +694,7 @@ export interface DayRowVm {
   /**
    * The ROOT appointment's status, as stored — the party's, which a split
    * party's chair may not share. What the server's save rules read
-   * (`reversibleSave`, DEP-3).
+   * (the save plan's way back, `StaffEditPlanSystem.savePlan`, DEP-3).
    */
   readonly rootBookingStatus: BookingStatus;
   /** Whether the party has walked in — the gate for offering "Done". */
@@ -828,6 +808,16 @@ interface FrameNeighbour {
   readonly startMinute: MinuteOfDay;
   readonly endMinute: EndMinute;
   readonly tone: number;
+}
+
+/**
+ * What a sheet's frame is drawn ABOUT (`frameDayFor`, OR-3): the visit it
+ * edits — `null` for one not booked yet, which excludes nobody — and the
+ * chair its VM already draws, `null` for a row on no lane.
+ */
+interface FrameSubject {
+  readonly appointmentId: AppointmentId | null;
+  readonly chair: BarberId | null;
 }
 
 interface LaneVm {
@@ -1082,6 +1072,7 @@ const ALL_DAY_CHIP_CAP = 3;
 @Component({
   selector: 'lib-staff-dashboard',
   imports: [
+    NgTemplateOutlet,
     UiAlert,
     UiChoiceLeading,
     UiChoiceMenu,
@@ -1670,8 +1661,9 @@ export class StaffDashboard {
       out.push({ label: SearchField.Client, value: appointment.contactName });
     }
     for (const seat of appointment.seats) {
-      if (seat.seatSubject === SeatSubject.Anonymous) {
-        out.push({ label: SearchField.Client, value: seat.guestLabel });
+      const guestLabel = guestLabelOf(seat);
+      if (guestLabel !== null) {
+        out.push({ label: SearchField.Client, value: guestLabel });
       }
       const service = this.catalog.findService(seat.serviceId);
       if (service) {
@@ -2220,7 +2212,8 @@ export class StaffDashboard {
           .find((entry) => entry.dayKey === this.store.dayKey());
         const off = this.transloco.translate('staff.day.offBadge');
         for (const lane of cell?.lanes ?? []) {
-          if (lane.rostered.length === 0) {
+          // A FAILED lane is not off (OR-2): its health row says so.
+          if (lane.rostered.length === 0 && !lane.failed) {
             out[lane.barberId] = [
               {
                 key: lane.barberId,
@@ -2245,7 +2238,7 @@ export class StaffDashboard {
       // inside the pinned band would be a trap.
       for (const cell of this.store.dayCells()) {
         const off = cell.lanes
-          .filter((lane) => lane.rostered.length === 0)
+          .filter((lane) => lane.rostered.length === 0 && !lane.failed)
           .map((lane) => {
             const name = this.barberNameOf(lane.barberId);
             const first = firstNameOf(name);
@@ -3092,6 +3085,36 @@ export class StaffDashboard {
   });
 
   /**
+   * THE DAY'S HEALTH (OR-2) — one all-day row per chair whose day the sheet
+   * could not read in full: a chair whose read FAILED (it draws no gap and
+   * is not listed as off — `StaffDayStore.offToday`), or one that holds
+   * visits the read-time guard dropped. On a schedule a missing booking is
+   * the most plausible lie, so it is never silent: the row sits in the
+   * all-day strip, above the run and above the calendar grids, worded by
+   * `dayHealthRowsOf` (Law 10). The shown day's lanes, the chairs in scope.
+   */
+  protected readonly dayHealth = computed<readonly DayHealthRowVm[]>(() => {
+    // Read for its dependency: the rows re-word on a change of language.
+    const lang = this.content.locale();
+    const lanes = this.store.lanes();
+    const chairs = new Map<BarberId, DayHealthChair>();
+    for (const lane of lanes) {
+      chairs.set(lane.barberId, {
+        name: this.barberNameOf(lane.barberId),
+        tone: this.toneOf(lane.barberId),
+      });
+    }
+    return dayHealthRowsOf({
+      lanes,
+      chairs,
+      words: dayHealthWordsOf(
+        (key, params) => this.transloco.translate<string>(key, params),
+        lang,
+      ),
+    });
+  });
+
+  /**
    * The FACE column, reserved on the run exactly as a trail would be.
    *
    * Run-level and not per card: a card whose client has no disc must still
@@ -3605,40 +3628,47 @@ export class StaffDashboard {
     // Each person by the sheet's draft key (`DraftPersonKey`): a guest by
     // `guest-<label>`, an account by its uid — no address is known for any
     // of them here (`email: null`, what the client search reads as none).
-    const personOf = (seat: Seat): VisitEditorClientOption =>
-      seat.seatSubject === SeatSubject.Anonymous
-        ? {
+    // A walk-in (OR-26) is a guest by label here too: the seat holds only
+    // its label and its record's id, and the contact is the record's.
+    const personOf = (seat: Seat): VisitEditorClientOption => {
+      switch (seat.seatSubject) {
+        case SeatSubject.Anonymous:
+        case SeatSubject.WalkIn:
+          return {
             id: DraftPersonKey.guest(seat.guestLabel),
             label: seat.guestLabel,
             phone: null,
             phoneHref: null,
             meta: null,
             email: null,
-          }
-        : seat.subjectRelationship === SubjectRelationship.Companion
-          ? {
-              id: DraftPersonKey.account(seat.subjectUserId),
-              label:
-                companionNames[seat.subjectUserId] ??
-                this.transloco.translate('staff.day.unnamedClient'),
-              phone: null,
-              phoneHref: null,
-              meta: null,
-              email: null,
-            }
-          : {
-              id: DraftPersonKey.account(seat.subjectUserId),
-              label:
-                contactName ??
-                this.transloco.translate('staff.day.unnamedClient'),
-              phone: phoneLabel,
-              phoneHref: contactPhone,
-              meta: null,
-              email: null,
-            };
+          };
+        case SeatSubject.Account:
+          return seat.subjectRelationship === SubjectRelationship.Companion
+            ? {
+                id: DraftPersonKey.account(seat.subjectUserId),
+                label:
+                  companionNames[seat.subjectUserId] ??
+                  this.transloco.translate('staff.day.unnamedClient'),
+                phone: null,
+                phoneHref: null,
+                meta: null,
+                email: null,
+              }
+            : {
+                id: DraftPersonKey.account(seat.subjectUserId),
+                label:
+                  contactName ??
+                  this.transloco.translate('staff.day.unnamedClient'),
+                phone: phoneLabel,
+                phoneHref: contactPhone,
+                meta: null,
+                email: null,
+              };
+      }
+    };
     // One entry per PERSON, the first of their seats — the people key of
     // the server's party check (`VisitStorySystem.seatPersonKey`).
-    const peopleSeen = new Set<SeatKeyText>();
+    const peopleSeen = new Set<PersonKey>();
     const people: VisitEditorClientOption[] = [];
     for (const seat of seats) {
       const key = VisitStorySystem.seatPersonKey(seat);
@@ -3999,72 +4029,109 @@ export class StaffDashboard {
   /** The chair the sheet's draft has moved the visit to, or `null` (the row's). */
   private readonly visitDraftChair = signal<BarberId | null>(null);
 
+  /**
+   * The day and the chair the CREATE sheet's draft is on (OR-3) — `null`
+   * while it has said none. Set from the editor's `dayChanged` and
+   * `chairChanged`, released on close with the store's probe.
+   */
+  private readonly createDraftDay = signal<LocalDate | null>(null);
+  private readonly createDraftChair = signal<BarberId | null>(null);
+
   /** Bumped when a save lands, so the sheet can rebaseline. See `saveFromEditor`. */
   protected readonly visitSavedMark = signal(0);
 
   /**
-   * What the sheet's frame draws AROUND the block — for the DRAFTED day.
+   * What a sheet's frame draws AROUND the block — for the DRAFTED day and
+   * chair (OR-3: one input is drawn, narrated and judged — the editor's
+   * verdict reads this same day). `null` while the draft sits on the shown
+   * day in the subject's own chair: the sheet's VM already draws that one.
    *
-   * Kept out of `visitEditorVm` on purpose: that VM seeds the editor's draft
-   * and is what `dirty` measures against, so it must not move when the draft
+   * Kept out of the editor VMs on purpose: a VM seeds the editor's draft and
+   * is what `dirty` measures against, so it must not move when the draft
    * does. This does move — that is its entire job — and nothing here is ever
    * seeded or compared.
    *
-   * On the anchor day it resolves the same lane `visitEditorVm` already
-   * used, so the ordinary sheet is unchanged; only a stepped pill reaches
-   * the probe's cell.
+   * The probe's cell holds APPOINTMENTS, not agenda rows — `toRow` runs for
+   * the day on screen and nothing builds rows for a day nobody is looking
+   * at. The frame needs three fields per neighbour, so it takes them off the
+   * documents rather than making the whole agenda run twice. What occupies
+   * the chair is what the server's overlap refusal reads — the chair's seats
+   * of every other visit whose ROOT is live (`BusySystem.chairOccupants`,
+   * DEP-2). While the probe has not answered, the lane is absent and the
+   * frame draws nobody beside the block: silent, never wrong.
+   */
+  private frameDayFor(
+    subject: FrameSubject,
+    draftDay: LocalDate | null,
+    draftChair: BarberId | null,
+  ): VisitEditorFrameDay | null {
+    const shownDay = this.store.dayKey();
+    const day = draftDay ?? shownDay;
+    // THE DRAFT'S CHAIR, not the subject's (owner, 2026-09-09): switching
+    // the barber in the sheet must show that barber's day — his bookings,
+    // his hours — the same way stepping the day shows another day.
+    const barberId = draftChair ?? subject.chair;
+    if (day === shownDay && barberId === subject.chair) return null;
+    const cell = day === null ? null : this.store.cellFor(day);
+    const lane = cell?.lanes.find((entry) => entry.barberId === barberId);
+    // No chair (a row on no lane) has nobody beside it.
+    const neighbours =
+      barberId === null
+        ? []
+        : this.occupantNeighbours(
+            lane?.appointments ?? [],
+            barberId,
+            subject.appointmentId,
+          );
+    const roster = this.rosterHull(lane?.rostered ?? []);
+    return {
+      neighbours,
+      rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
+      rosterEndMinute: roster?.endMinutes ?? CLOSING,
+      // ⚠ The DRAFTED day against today: the `now` line was staying lit on
+      // a frame stepped onto tomorrow.
+      nowMinute: day === this.store.todayKey() ? this.nowMinute() : null,
+    };
+  }
+
+  /**
+   * The visit sheet's frame day ({@link frameDayFor}). On the anchor day it
+   * resolves the same lane `visitEditorVm` already used, so the ordinary
+   * sheet is unchanged; only a stepped pill or a switched chair reaches the
+   * probe's cell.
    */
   protected readonly visitFrameDay = computed<VisitEditorFrameDay | null>(
     () => {
       const row = this.visitSheetRow();
       if (row === null) return null;
-      const shownDay = this.store.dayKey();
-      const draftDay = this.visitDraftDay() ?? shownDay;
       const lane = this.lanes().find((entry) =>
         entry.entries.some(
           (e) => e.agendaRow === AgendaRow.Visit && e.id === row.id,
         ),
       );
-      const rowChair = lane?.barberId ?? null;
-      // THE DRAFT'S CHAIR, not the row's (owner, 2026-09-09): switching the
-      // barber in the sheet must show that barber's day — his bookings, his
-      // hours — the same way stepping the day shows another day.
-      const barberId = this.visitDraftChair() ?? rowChair;
-      if (draftDay === shownDay && barberId === rowChair) return null;
-      const cell = draftDay === null ? null : this.store.cellFor(draftDay);
-      const draftLane = cell?.lanes.find(
-        (entry) => entry.barberId === barberId,
+      return this.frameDayFor(
+        { appointmentId: row.appointmentId, chair: lane?.barberId ?? null },
+        this.visitDraftDay(),
+        this.visitDraftChair(),
       );
+    },
+  );
 
-      /*
-       * The probe's cell holds APPOINTMENTS, not agenda rows — `toRow` runs
-       * for the day on screen and nothing builds rows for a day nobody is
-       * looking at. The frame needs three fields per neighbour, so it takes
-       * them off the documents rather than making the whole agenda run twice.
-       * What occupies the chair is what the server's overlap refusal reads —
-       * the chair's seats of every other visit whose ROOT is live
-       * (`BusySystem.chairOccupants`, DEP-2).
-       */
-      // No chair (a row on no lane) has nobody beside it.
-      const neighbours =
-        barberId === null
-          ? []
-          : this.occupantNeighbours(
-              draftLane?.appointments ?? [],
-              barberId,
-              row.appointmentId,
-            );
-
-      const roster = this.rosterHull(draftLane?.rostered ?? []);
-
-      return {
-        neighbours,
-        rosterStartMinute: roster?.startMinutes ?? MIDNIGHT,
-        rosterEndMinute: roster?.endMinutes ?? CLOSING,
-        // ⚠ The DRAFTED day against today: the `now` line was staying lit on
-        // a frame stepped onto tomorrow.
-        nowMinute: draftDay === this.store.todayKey() ? this.nowMinute() : null,
-      };
+  /**
+   * The create sheet's frame day ({@link frameDayFor}, OR-3): its frame
+   * follows its DRAFT — re-dated to tomorrow, it draws tomorrow's
+   * neighbours and roster; before, it always drew the anchor day. A visit
+   * not booked yet excludes nobody from its chair.
+   */
+  protected readonly createFrameDay = computed<VisitEditorFrameDay | null>(
+    () => {
+      const create = this.createVisit();
+      if (create === null) return null;
+      return this.frameDayFor(
+        { appointmentId: null, chair: create.barberId },
+        this.createDraftDay(),
+        this.createDraftChair(),
+      );
     },
   );
 
@@ -4080,14 +4147,26 @@ export class StaffDashboard {
   /**
    * The create sheet's chair follows its draft: the VM is rebuilt for the
    * new barber (name, tone, neighbours, roster) under the SAME nonce, so the
-   * draft — services picked, people seated — survives the switch.
+   * draft — services picked, people seated — survives the switch; the frame
+   * follows the chair on whatever day the draft is on (`createFrameDay`).
    */
   protected onCreateChairChanged(barberId: BarberId): void {
+    this.createDraftChair.set(barberId);
     this.createVisit.update((create) =>
       create === null || create.barberId === barberId
         ? create
         : { ...create, barberId },
     );
+  }
+
+  /**
+   * The create sheet's drafted day (OR-3) — kept live through the store's
+   * probe, exactly as the visit sheet's `onVisitDayChanged` does, so its
+   * frame draws that day's chair.
+   */
+  protected onCreateDayChanged(dayKey: LocalDate): void {
+    this.createDraftDay.set(dayKey);
+    this.store.probeDay(dayKey);
   }
 
   protected readonly visitSheetRow = computed<DayRowVm | null>(() => {
@@ -4299,8 +4378,14 @@ export class StaffDashboard {
     this.store.probeNote(row.appointmentId);
     this.store.probePhotos(row.appointmentId);
     // The client's own coupons, for the discount row — nobody's for a
-    // walk-in, which reads as none.
-    this.store.probeGrants(row.ownerCustomerId);
+    // walk-in, which reads as none — and the grants this visit's SAVED bill
+    // already spent (OR-13): burned at the save, they still show on it.
+    this.store.probeGrants(
+      row.ownerCustomerId,
+      row.discounts.flatMap((discount) =>
+        discount.grantId === null ? [] : [discount.grantId],
+      ),
+    );
     this.visitCodeResult.set(null);
   }
 
@@ -4489,10 +4574,12 @@ export class StaffDashboard {
    * opened on: ONE batch through the same callable, decided by the server
    * like any edit, never a client-side rollback. The snapshot is the
    * editor's seed as it would have saved it untouched (`snapshotCommitOf`),
-   * and the way back is this save's own arithmetic (`commandsFor`) run
-   * from the LIVE row towards that snapshot — a seat the save added is
-   * removed, one it removed is re-added with its old terms, the block
-   * moves home, the bill, the tip and the note go back.
+   * and the way back is this save's own write (the store's `saveVisit`,
+   * OR-4) run from the LIVE row towards that snapshot — a seat the save
+   * added is removed, one it removed is re-added with its old terms, the
+   * block moves home, the bill, the tip and the note go back. This page
+   * keeps only what the outcome means on screen: the saved mark, the
+   * toast, the receipt's «Отмени» and the stale reload.
    *
    * The editor speaks in minutes-from-midnight because it knows the day only
    * as a key; the instant is built HERE, where the shop's zone lives. That
@@ -4524,12 +4611,12 @@ export class StaffDashboard {
         ? snapshotCommitOf(vm)
         : null;
     /*
-     * THE SIDE FIELDS this save writes (round 5): the ones the barber
-     * CHANGED from what the draft drew them from — never one they left
-     * alone, however long the sheet has been open
-     * (`VisitSidesSystem.writesOf`). The sheet follows the stored note and
-     * tip while they are untouched, so a colleague's tip recorded after it
-     * opened is shown, not written over.
+     * WHAT THE SIDE FIELDS WERE DRAWN FROM (round 5): the save writes only
+     * the ones the barber CHANGED from it — never one they left alone,
+     * however long the sheet has been open (`VisitSidesSystem.writesOf`,
+     * in the plan). The sheet follows the stored note and tip while they
+     * are untouched, so a colleague's tip recorded after it opened is
+     * shown, not written over.
      * A commit that does not say what it drew (`drawn: null`) is measured
      * against what is stored now.
      */
@@ -4537,36 +4624,24 @@ export class StaffDashboard {
       note: this.store.teamNote(),
       tipCents: row?.tipCents ?? null,
     };
-    const touched = VisitSidesSystem.writesOf(commit, drawn);
-    const writes: SaveWrites = {
-      note: touched.note,
-      tip: touched.tip && row !== null && row.seatIds[0] !== undefined,
-    };
-    /*
-     * What the way back has to work with: whether this save has one at all
-     * (`reversibleSave`), and whether it could change the row's shape — a
-     * note alone cannot, and its undo need not wait for the listener.
-     */
-    const built = this.commandsFor(commit, row);
-    const commands = built.ok ? built.value : [];
-    const reversible = reversibleSave(
-      row === null ? null : { bookingStatus: row.rootBookingStatus },
-      commands,
-    );
-    const undone = before === null ? null : this.commandsFor(before, row);
-    const shapeNeutral =
-      !writes.tip &&
-      built.ok &&
-      undone !== null &&
-      undone.ok &&
-      JSON.stringify(commands) === JSON.stringify(undone.value);
-    const landed = await this.writeFromEditor(
+    const command = this.saveCommandOf(
       appointmentId,
       commit,
       row,
-      writes,
       drawn,
+      before,
+      null,
     );
+    /*
+     * What the way back has to work with, read off the save's own plan
+     * (`StaffEditPlanSystem.savePlan`, OR-4 — the store's write runs the
+     * same plan over the same command): the side fields it writes, whether
+     * it has a way back at all, and whether it could change the row's
+     * shape — a note alone cannot, and its undo need not wait for the
+     * listener.
+     */
+    const plan = StaffEditPlanSystem.savePlan(command);
+    const landed = await this.store.saveVisit(command);
     /*
      * ⚠ ONLY ON SUCCESS. The mark tells the sheet the server has spoken, and
      * the sheet then takes the server's own encoding of the time as its
@@ -4575,10 +4650,12 @@ export class StaffDashboard {
      * draft holds an override on an unchanged leg. Two encodings of one
      * visit; the stored one wins.
      */
-    if (batchLanded(landed)) this.visitSavedMark.update((mark) => mark + 1);
+    if (VisitEditWrite.batchLanded(landed)) {
+      this.visitSavedMark.update((mark) => mark + 1);
+    }
     // The sheet stays, the toast says why (owner, 2026-09-17) — and a
     // save that lands takes a stale refusal down with it.
-    if (!writeLanded(landed)) {
+    if (!VisitEditWrite.landed(landed)) {
       const error =
         landed.visitEditWriteOutcome === VisitEditWriteOutcome.Stale
           ? sidesMovedError()
@@ -4587,17 +4664,21 @@ export class StaffDashboard {
       // SOMEBODY ELSE SAVED IT FIRST: the toast says so in one line, and
       // the sheet reloads the visit as it now stands — the draft drawn
       // from the older screen is never written over theirs.
-      if (!batchLanded(landed) && isStaleRefusal(error)) {
+      if (!VisitEditWrite.batchLanded(landed) && isStaleRefusal(error)) {
         void this.reloadStale(appointmentId, row, error);
       }
       return;
     }
-    if (before !== null && row !== null && reversible) {
+    if (before !== null && row !== null && plan.reversible) {
       this.notice.set(null);
-      this.offerSaveUndo(appointmentId, row, before, writes, shapeNeutral, {
-        note: commit.note,
-        tipCents: commit.tipCents,
-      });
+      this.offerSaveUndo(
+        appointmentId,
+        row,
+        before,
+        plan.writes,
+        plan.shapeNeutral,
+        { note: commit.note, tipCents: commit.tipCents },
+      );
       return;
     }
     /*
@@ -4610,120 +4691,47 @@ export class StaffDashboard {
   }
 
   /**
-   * THE WRITES a target state costs from a row: the batch (`commandsFor`),
-   * and beside it the team note and the tip, each only when the caller says
-   * it changed — a save knows what it typed, and its undo knows what the
-   * save wrote. `drawn` is what those side fields were when the change was
-   * made: the draft's for a save, what the save wrote for its undo.
+   * ONE WRITE OF THE SHEET as the store's `saveVisit` takes it (OR-4) — a
+   * save, or its undo: the target, the row it starts from AS IS (Law 3),
+   * what the side fields were drawn from (the draft's for a save, what the
+   * save wrote for its undo), the snapshot a save's receipt goes back to
+   * (`null` for the undo itself), and the side fields the write carries
+   * (`null` for a save — the plan reads them off its commit — the save's
+   * own for its undo). The order of the writes, the stale guard and the
+   * batch's claim are `saveVisitEdit`'s (`@core/pipelines`).
    *
-   * ⚠ THE BATCH GOES FIRST, AND ALONE DECIDES (round 5). The batch claims
-   * the revision the draft was drawn from; the note and the tip are written
-   * only once it has landed. Written before it, a save the server then
-   * refused as stale had already put the old screen's note and tip over a
-   * colleague's — the very overwrite the claim exists to stop. And a side
-   * field somebody else changed under the draft refuses the write before
-   * anything goes out (`VisitSidesSystem.movedUnder`): the note and the tip
-   * do not move the revision, so this device's own view is the only guard
-   * they have.
+   * Beside them, what this device hears NOW — the note's own listener,
+   * which may not answer (`undefined`), and the row's tip, unheard without
+   * a row; a field this device does not hear is not judged — and what this
+   * page alone holds: every guest label the VISIT holds on any loaded day
+   * (`visitGuestLabels`) and the catalogue's walk-in words. Built when the
+   * write goes out, so an undo reads the visit as it then stands.
    */
-  private async writeFromEditor(
+  private saveCommandOf(
     appointmentId: AppointmentId,
-    target: VisitEditorCommit,
+    commit: VisitEditorCommit,
     row: DayRowVm | null,
-    writes: SaveWrites,
     drawn: VisitSides,
-  ): Promise<EditorWrite> {
-    // What this device hears now: the note's own listener, which may not
-    // answer (`undefined`), and the row's tip, unheard without a row. A
-    // field this device does not hear is not judged.
+    before: VisitEditorCommit | null,
+    writes: SideWrites | null,
+  ): SaveVisitEditCommand {
     const liveNote = this.store.teamNoteOf(appointmentId);
-    if (
-      VisitSidesSystem.movedUnder(writes, drawn, target, {
+    return {
+      appointmentId,
+      commit,
+      row,
+      drawn,
+      live: {
         note: liveNote ?? null,
         noteHeard: liveNote !== undefined,
         tipCents: row === null ? null : row.tipCents,
         tipHeard: row !== null,
-      })
-    ) {
-      return {
-        visitEditWriteOutcome: VisitEditWriteOutcome.Stale,
-        sidesWritten: false,
-      };
-    }
-
-    // The batch claims the revision the draft was drawn from (round 5): a
-    // colleague's save since is refused as stale, never overwritten. A save
-    // that changed only the note or the tip has no batch to send.
-    const built = this.commandsFor(target, row);
-    if (!built.ok) {
-      // A placement the call cannot carry (a minute off the shop's day) is
-      // refused here as the server refuses it — nothing goes out.
-      this.store.refuse(appointmentId, built.error);
-      return {
-        visitEditWriteOutcome: VisitEditWriteOutcome.BatchRefused,
-        sidesWritten: false,
-      };
-    }
-    const commands = built.value;
-    if (commands.length > 0) {
-      const batch = await this.store.staffEdit({
-        appointmentId,
-        commands,
-        acknowledgedOverlap: false,
-        expectedVersion: target.revision,
-        operationId: null,
-      });
-      if (!batch) {
-        return {
-          visitEditWriteOutcome: VisitEditWriteOutcome.BatchRefused,
-          sidesWritten: false,
-        };
-      }
-    }
-
-    /*
-     * THE TEAM NOTE writes beside the batch, not inside it: it lives in a
-     * staff-only sibling collection the availability engine never sees, so
-     * there is no command for it and no reason to hold it hostage to a
-     * placement decision. An unchanged note writes nothing.
-     */
-    const noteWritten = writes.note
-      ? await this.store.saveTeamNote(appointmentId, target.note)
-      : true;
-
-    /*
-     * THE TIP writes beside the batch too (2026-09-15): a stamp on one of
-     * the chair's seats, not a `staffEdit` command (the port says why), and
-     * drafted with the rest of the sheet so «Запази» is the receipt's one
-     * verb. Unchanged writes nothing; a new visit carries none. The seat is
-     * the row's first that the batch KEPT (`StaffEditPlanSystem.tipSeat`) —
-     * the batch has already run, and a seat it removed takes a stamp with
-     * it.
-     */
-    const tipSeat = StaffEditPlanSystem.tipSeat(row, target);
-    const tipWritten =
-      writes.tip && tipSeat !== null
-        ? await this.recordTip(appointmentId, tipSeat, target.tipCents)
-        : true;
-
-    return {
-      visitEditWriteOutcome: VisitEditWriteOutcome.Written,
-      sidesWritten: noteWritten && tipWritten,
+      },
+      guestLabels: row === null ? [] : this.visitGuestLabels(row.appointmentId),
+      words: this.walkInWords(),
+      before,
+      writes,
     };
-  }
-
-  /**
-   * One chair's tip as the call carries it (`amountCents`, `null` clears).
-   * The figure is already a price: the sheet's entry made it one at the
-   * field (`PriceCents.of`), and a stored or preset tip is one by
-   * construction.
-   */
-  private recordTip(
-    appointmentId: AppointmentId,
-    seatId: SeatId,
-    amountCents: PriceCents | null,
-  ): Promise<boolean> {
-    return this.store.recordTip({ appointmentId, seatId, amountCents });
   }
 
   /**
@@ -4734,9 +4742,15 @@ export class StaffDashboard {
    * passes AS IS (Law 3). This page adds only what it alone holds: every
    * guest label the VISIT holds on any loaded day — a stranger joining
    * this chair is numbered past the other chairs' walk-ins too
-   * (`visitGuestLabels`) — and the catalogue's walk-in words.
+   * (`visitGuestLabels`) — and the catalogue's walk-in words, exactly as a
+   * write hands them to its plan (`saveCommandOf`).
+   *
+   * Since OR-4 the page never sends this itself: a write's batch is planned
+   * inside the store's `saveVisit` (`StaffEditPlanSystem.savePlan`). It
+   * stays as the page's read of that arithmetic, which the save and undo
+   * specs pin through the page.
    */
-  private commandsFor(
+  protected commandsFor(
     commit: VisitEditorCommit,
     row: DayRowVm | null,
   ): Result<readonly BookingCall.EditCommand[], PipelineError> {
@@ -4766,8 +4780,9 @@ export class StaffDashboard {
    * for the listener to deliver the save it is undoing (the callable
    * answers first), reads the visit AS IT NOW IS — the live row, on
    * whichever loaded day or chair the save put it — and runs the save's own
-   * arithmetic from there towards the snapshot, then asks the sheet on that
-   * visit to re-seed once the server's row agrees. Edits typed into the
+   * write from there towards the snapshot (the store's `saveVisit`, with
+   * the side fields the save wrote), then asks the sheet on that visit to
+   * re-seed once the server's row agrees. Edits typed into the
    * sheet in the eight seconds after a save go with the save: «Отмени»
    * means "as it was before I saved". A row the save moved beyond the
    * loaded days is undone from its own snapshot, which brings the block
@@ -4778,7 +4793,8 @@ export class StaffDashboard {
     appointmentId: AppointmentId,
     rowBefore: DayRowVm,
     before: VisitEditorCommit,
-    writes: SaveWrites,
+    /** The side fields the save wrote — what its undo writes back. */
+    writes: SideWrites,
     shapeNeutral: boolean,
     /** The note and the tip the save wrote — what the undo is drawn from. */
     wrote: VisitSides,
@@ -4805,12 +4821,15 @@ export class StaffDashboard {
         // Drawn from what the save wrote: a colleague's note or tip since
         // is refused as stale, never written over (round 5).
         const write = () =>
-          this.writeFromEditor(
-            appointmentId,
-            before,
-            find() ?? rowBefore,
-            writes,
-            wrote,
+          this.store.saveVisit(
+            this.saveCommandOf(
+              appointmentId,
+              before,
+              find() ?? rowBefore,
+              wrote,
+              null,
+              writes,
+            ),
           );
         let landed = await write();
         /*
@@ -4829,7 +4848,7 @@ export class StaffDashboard {
           await new Promise((resolve) => setTimeout(resolve, BUSY_SETTLE_MS));
           landed = await write();
         }
-        if (!writeLanded(landed)) {
+        if (!VisitEditWrite.landed(landed)) {
           /*
            * A REFUSED UNDO is not "try again": the receipt is spent and the
            * sheet is clean on the SAVED visit. The toast says the save
@@ -4847,7 +4866,7 @@ export class StaffDashboard {
           );
           // Somebody else saved the visit after this save: the undo is not
           // written over them, and the sheet shows what they left.
-          if (!batchLanded(landed) && isStaleRefusal(error)) {
+          if (!VisitEditWrite.batchLanded(landed) && isStaleRefusal(error)) {
             void this.reloadStale(appointmentId, find(), error);
           }
           return false;
@@ -5272,14 +5291,18 @@ export class StaffDashboard {
   // (a walk-in of guest seats).
 
   private readonly userSearch = inject(USER_SEARCH_PORTS);
+  private readonly customerSearch = inject(CUSTOMER_SEARCH_PORTS);
 
   /** The last create's nonce — counted, never read off the clock (UR-11). */
   private createSeq = 0;
 
   protected readonly createVisit = signal<{
     readonly barberId: BarberId;
-    /** Where the draft starts on the frame's anchored axis. */
-    readonly startMinute: TrackMinute;
+    /**
+     * Where the draft starts — a minute of the shop day, never the closing
+     * midnight (OR-1): what the frame draws is what the server accepts.
+     */
+    readonly startMinute: MinuteOfDay;
     /** A span to draw, when the caller knows one (a block turned visit). */
     readonly minutes?: DurationMinutes;
     /**
@@ -5419,9 +5442,17 @@ export class StaffDashboard {
     return this.lanes()[0]?.barberId ?? this.scopeOptions()[0]?.id ?? null;
   }
 
-  /** Now, snapped UP to the grain — a walk-in starts next tick (`snapUp`). */
-  private nowSnapped(): TrackMinute {
-    return VisitDraftSystem.snapUp(this.nowMinute());
+  /**
+   * Where a walk-in starts — the next tick, inside the shop day
+   * (`VisitDraftSystem.walkInStart`, OR-1): from 23:26 on, the latest half
+   * hour that still ends by midnight (23:30–24:00), so the seed the frame
+   * draws is one the server accepts (DEP-F1).
+   */
+  private nowSnapped(): MinuteOfDay {
+    return VisitDraftSystem.walkInStart(
+      this.nowMinute(),
+      VisitDraftSystem.DEFAULT_SPAN_MINUTES,
+    );
   }
 
   /**
@@ -5453,6 +5484,11 @@ export class StaffDashboard {
 
   protected closeCreateSheet(): void {
     this.createVisit.set(null);
+    // The probe is the sheet's own subscription (OR-3) — a closed sheet must
+    // not keep a listener open on a day nothing is looking at.
+    this.createDraftDay.set(null);
+    this.createDraftChair.set(null);
+    this.store.probeDay(null);
   }
 
   /**
@@ -5465,6 +5501,9 @@ export class StaffDashboard {
     // A visit sheet is always on a chair (its row's lane).
     const chair = vm.chairId;
     if (chair === null) return;
+    // A stored visit starts on its day's clock — read back off the axis.
+    const start = TrackMinute.toStart(vm.startMinute);
+    if (!start.ok) return;
     this.closeVisitSheet();
     this.presentOnly();
     this.visitClientOptions.set([]);
@@ -5472,7 +5511,7 @@ export class StaffDashboard {
     // desk's to pick, the hour is what the client already comes at.
     this.createVisit.set({
       barberId: chair,
-      startMinute: vm.startMinute,
+      startMinute: start.value,
       minutes: VisitDraftSystem.floorSpan(
         TrackMinute.span(vm.startMinute, vm.endMinute),
       ),
@@ -5747,38 +5786,23 @@ export class StaffDashboard {
     seq: number,
   ): Promise<void> {
     const answers = await Promise.all(
-      keys.map((key) => {
+      keys.map(async (key) => {
         // The index's own form of the key; one it could never match is
-        // asked nothing (no account holds an empty prefix).
+        // asked nothing (no account or record holds an empty prefix).
         const prefix = SearchFieldsSystem.normalizeQuery(key);
-        return prefix.length === 0
-          ? null
-          : this.userSearch.searchUsers(prefix, CLIENT_SEARCH_LIMIT);
+        if (prefix.length === 0) return null;
+        // Both indexes at once (OR-26): the accounts, and the shop's client
+        // records — where a walk-in the desk entered lives.
+        const [accounts, records] = await Promise.all([
+          this.userSearch.searchUsers(prefix, CLIENT_SEARCH_LIMIT),
+          this.customerSearch.searchCustomers(prefix, CLIENT_SEARCH_LIMIT),
+        ]);
+        return { accounts, records };
       }),
     );
     // A newer query owns the list now.
     if (seq !== this.clientSearchSeq) return;
-    const seen = new Set<string>();
-    const options: VisitEditorClientOption[] = [];
-    for (const answer of answers) {
-      if (answer === null || !answer.ok) continue;
-      for (const hit of answer.value) {
-        if (seen.has(hit.id)) continue;
-        seen.add(hit.id);
-        options.push({
-          id: DraftPersonKey.account(hit.id),
-          label: searchLabelOf(hit),
-          // Read as the profile prints it — «+359 88 765 4321», not the E.164.
-          phone:
-            hit.phone === null
-              ? null
-              : PhoneSystem.formatInternational(hit.phone),
-          phoneHref: hit.phone,
-          meta: hit.email,
-          email: hit.email,
-        });
-      }
-    }
+    const options = clientSearchOptions(answers);
     this.visitClientOptions.set(options);
     this.visitClientSearching.set(false);
     this.resolveAvatars(options.map((option) => option.id));
@@ -5852,7 +5876,7 @@ export class StaffDashboard {
       return;
     }
     const done = await this.store.createBooking(request.value);
-    if (done) this.createVisit.set(null);
+    if (done) this.closeCreateSheet();
     else this.refuse(this.store.createError(), 'staff.visit.createFailed');
   }
 
@@ -6077,12 +6101,15 @@ export class StaffDashboard {
    * new item was built and withdrawn the same day: the ＋ had already asked.)
    */
   private draftVisitOn(range: BlockEditorRange): void {
+    // A block starts on its day's clock — read back off the axis.
+    const start = TrackMinute.toStart(range.startMinute);
+    if (!start.ok) return;
     this.closeBlockSheet();
     this.presentOnly();
     this.visitClientOptions.set([]);
     this.createVisit.set({
       barberId: range.barberId,
-      startMinute: range.startMinute,
+      startMinute: start.value,
       // The shortest visit a converted block may draft — the grain.
       minutes: VisitDraftSystem.floorSpan(
         TrackMinute.span(range.startMinute, range.endMinute),
@@ -6577,9 +6604,27 @@ export class StaffDashboard {
  * (`personKey`).
  */
 function guestLabelsOf(seats: readonly Seat[]): string[] {
-  return seats.flatMap((seat) =>
-    seat.seatSubject === SeatSubject.Anonymous ? [seat.guestLabel] : [],
-  );
+  return seats.flatMap((seat) => {
+    const guestLabel = guestLabelOf(seat);
+    return guestLabel === null ? [] : [guestLabel];
+  });
+}
+
+/**
+ * The label a seat's subject rides under: an anonymous guest's, and a
+ * walk-in's — the label the desk gave them on this visit, their record
+ * (OR-26) keeping its own name — or `null` for an account, which is named
+ * by the contact or its profile. Every `SeatSubject` answers here, so a new
+ * one is a compile error until it does.
+ */
+function guestLabelOf(seat: Seat): SeatLabel | null {
+  switch (seat.seatSubject) {
+    case SeatSubject.Anonymous:
+    case SeatSubject.WalkIn:
+      return seat.guestLabel;
+    case SeatSubject.Account:
+      return null;
+  }
 }
 
 /**

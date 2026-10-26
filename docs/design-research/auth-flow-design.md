@@ -70,7 +70,7 @@ Landing "Book" CTA ──► /auth (identify)
         │   delayed auto-verify + Verify button · Resend w/ countdown]
         │
         ├─ Edit / browser-back ──► /auth (identify, field pre-filled, code invalidated)
-        ├─ resend ──► self (cooldown 30 s; escalation copy after 3 sends)
+        ├─ resend ──► self (cooldown 60 s, the server's window — `OtpLimits.ResendWindowSeconds`, OR-9; a throttled resend restarts the countdown, no error; escalation copy from the 3rd send — `OtpSystem.escalates`, OR-10)
         ├─ wrong code ──► self, inline error, digits KEPT, attempts warning near limit only
         ├─ expired code ──► self, inline error + resend CTA (field cleared here only)
         ├─ verify_failed(blocked) ──► blocked (terminal)
@@ -133,7 +133,7 @@ All pages: `<ng-container *transloco="let t">` wrapper; feature CSS ≈ `:host {
 3. `<ui-otp-field uiLength="6" [(value)]="rawCode" [uiInvalid]="!!error" data-testid="otp-input"/>` — autofocused on route entry (page context; the no-autofocus ruling applies to sheets). Underlying input semantics: `inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"`, never `type="number"`; paste fully supported and distributed across slots (verify `UiOtpField` handles multi-char paste — see slice 7).
 4. Error line: footnote destructive `role="alert"`, `aria-live="polite"`. Near-limit warning appears here too (only at ≤1 attempt remaining).
 5. CTA: `borderedProminent large` `t('auth.code.verify')`, `uiFrameMaxWidth="infinity"`, `[uiLoading]="store.pending()"`. **Auto-verify:** on 6th digit, wait ~250 ms (visible "checking" — button flips to `uiLoading`, field disabled) then submit; suppressed entirely while an error from a previous attempt is displayed (user must edit first). The button remains the accessible/explicit path.
-6. Resend row: `<ui-stack uiAxis="horizontal" uiSpacing="tight" uiAlignment="center">` — during cooldown a disabled `plain` button showing `t('auth.code.resendIn', { seconds })` with the countdown in an `aria-live="polite"` region (announce at 30/10/0, not every tick); after cooldown, enabled `plain` button `t('auth.code.resend')` with `<ui-icon uiName="auth.resend"/>`. Cooldown 30 s. After the 3rd send, add escalation footnote secondary: `t('auth.code.escalation')`.
+6. Resend row: `<ui-stack uiAxis="horizontal" uiSpacing="tight" uiAlignment="center">` — during cooldown a disabled `plain` button showing `t('auth.code.resendIn', { seconds })` with the countdown in an `aria-live="polite"` region (announce at 30/10/0, not every tick); after cooldown, enabled `plain` button `t('auth.code.resend')` with `<ui-icon uiName="auth.resend"/>`. Cooldown 60 s — server-owned: the countdown reads `OtpLimits.ResendWindowSeconds`, and a resend the server still throttles restarts it at the refusal's `retryAfterSeconds` instead of showing an error (owner ruling OR-9, 2026-10-26). From the 3rd send on (`OtpLimits.EscalateAfterSends`, read through `OtpSystem.escalates` — OR-10), add escalation footnote secondary: `t('auth.code.escalation')`.
 
 **Copy:**
 
@@ -302,7 +302,7 @@ Files: `apps/functions/src/use-cases/request-otp.use-case.ts` (policy from deplo
 Verify: emulator e2e — email_otp deployment: request over `kind:'phone'` rejected; devCode side channel still works; TTL/lockout follow policy.
 
 **Slice 7 — Auth screen polish + trust mechanics.**
-Files: `client-auth.{html,ts}` + `auth-flow.store.ts`: `ui-section-header` trio, `uiReveal` stagger, resend cooldown (30 s, aria-live, escalation after 3), 250 ms delayed auto-verify with checking state + suppression-while-error, keep-digits-on-wrong-code (replacing the wipe), attempts warning near limit, blocked + settling views per spec, legal footer; `libs/ui/controls/src/lib/otp-field/otp-field.ts` paste-distribution audit/fix.
+Files: `client-auth.{html,ts}` + `auth-flow.store.ts`: `ui-section-header` trio, `uiReveal` stagger, resend cooldown (60 s, server-owned through `OtpLimits` — OR-9; aria-live; escalation from the 3rd send through `OtpSystem.escalates` — OR-10), 250 ms delayed auto-verify with checking state + suppression-while-error, keep-digits-on-wrong-code (replacing the wipe), attempts warning near limit, blocked + settling views per spec, legal footer; `libs/ui/controls/src/lib/otp-field/otp-field.ts` paste-distribution audit/fix.
 Verify: extend e2e — resend cooldown, change-identifier prefill, wrong-code-keeps-digits, paste of 6-digit string fills all slots.
 
 **Slice 8 — Flip the deployment + email e2e.**

@@ -724,16 +724,16 @@ describe('VisitRow · «Моите часове»', () => {
     expect(fixture.componentInstance.opened).toEqual(['appt-oct']);
   });
 
-  it('stamps the weekday over the day, who and when as the facts, the barber’s face trailing', async () => {
+  it('stamps the month over the day of an hour still to come, the weekday with the time as the facts, the barber’s face trailing (OR-56 b)', async () => {
     const { q, text } = await mount(
       clientRow('appt-oct'),
       VisitPerspective.Client,
     );
 
-    expect(text('.ui-date-tile__caption')).toBe('пт');
+    expect(text('.ui-date-tile__caption')).toBe('окт.');
     expect(text('.ui-date-tile__day')).toBe('2');
     expect(q('ui-date-tile')?.getAttribute('data-tone')).toBe('upcoming');
-    expect(text('.staff-event-head__line')).toBe('Иван · 10:00');
+    expect(text('.staff-event-head__line')).toBe('Иван · пт, 10:00');
     const face = q('[data-trailing="barber"]');
     expect(face?.tagName).toBe('UI-AVATAR');
     expect(face?.getAttribute('data-control-size')).toBe('small');

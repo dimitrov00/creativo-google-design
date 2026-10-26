@@ -8,7 +8,7 @@ import {
 import { Currency, Locale, LocationId } from '@core/primitives';
 
 describe('CatalogErrorCode', () => {
-  it('keeps the 26 catalog codes, SCREAMING with the CATALOG_ prefix (flatten-spec §4.2; Phase 4a adds the zone refusal)', () => {
+  it('keeps the 24 catalog codes, SCREAMING with the CATALOG_ prefix (flatten-spec §4.2; Phase 4a adds the zone refusal; OR-22 drops the two with no producer)', () => {
     expect(Object.values(CatalogErrorCode).sort()).toEqual(
       [
         'CATALOG_ID_EMPTY',
@@ -23,14 +23,12 @@ describe('CatalogErrorCode', () => {
         'CATALOG_SERVICE_CATEGORY_INVALID_SORT_ORDER',
         'CATALOG_SERVICE_INVALID_DURATION',
         'CATALOG_SERVICE_INVALID_SORT_ORDER',
-        'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES',
         'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
         'CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS',
         'CATALOG_SERVICE_DUPLICATE_VARIANT',
         'CATALOG_SERVICE_DUPLICATE_OFFERING',
         'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
         'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
-        'CATALOG_LOCATION_INVALID_TIMEZONE',
         'CATALOG_LOCATION_INVALID_SORT_ORDER',
         'CATALOG_LOCATION_INVALID_MAP_URL',
         'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
@@ -111,10 +109,6 @@ describe('CatalogError factories', () => {
         { errorCode: 'CATALOG_SERVICE_INVALID_SORT_ORDER', rawValue: -1 },
       ],
       [
-        CatalogError.serviceEmptyBundleIncludes(),
-        { errorCode: 'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES' },
-      ],
-      [
         CatalogError.serviceUnknownVariantTerms('ivan', 'xl'),
         {
           errorCode: 'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
@@ -152,13 +146,6 @@ describe('CatalogError factories', () => {
           errorCode: 'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
           geoAxis: 'LNG',
           rawValue: 181,
-        },
-      ],
-      [
-        CatalogError.locationInvalidTimezone('Mars/Base'),
-        {
-          errorCode: 'CATALOG_LOCATION_INVALID_TIMEZONE',
-          rawValue: 'Mars/Base',
         },
       ],
       [

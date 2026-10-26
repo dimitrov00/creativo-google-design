@@ -1,6 +1,7 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
 import type { MinuteDelta } from './duration-minutes.primitive';
+import type { HourCount } from './hour-count.primitive';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 const MS_PER_MINUTE = 60_000;
@@ -112,6 +113,15 @@ export const UtcEpochMs = {
   /** `t + hours` of real elapsed time (T2 only — e.g. a cancellation window). */
   plusHours(t: UtcEpochMs, hours: number): UtcEpochMs {
     return (t + hours * MS_PER_HOUR) as UtcEpochMs;
+  },
+
+  /**
+   * `t − h` whole hours of real elapsed time (T2 only — the free-cancellation
+   * deadline, `start − window`, OR-45). `HourCount.MAX` keeps the result an
+   * exact, safe integer for any `t` at or after the epoch.
+   */
+  minusHours(t: UtcEpochMs, h: HourCount): UtcEpochMs {
+    return (t - h * MS_PER_HOUR) as UtcEpochMs;
   },
 
   /** `t + days × 24 h` of real elapsed time (T2 only — a TTL, never a calendar day). */

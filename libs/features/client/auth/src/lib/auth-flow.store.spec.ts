@@ -7,10 +7,19 @@ import {
   SessionKind,
 } from '@core/components';
 import { OtpId, Result } from '@core/primitives';
-import { IdentityError, PipelineError, PipelineErrorCode } from '@core/errors';
+import {
+  IdentityError,
+  IdentityErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
+import { OtpLimits } from '@core/systems';
 import { memoryOtpChallengePorts } from '@core/testing';
 import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
-import { AuthFlowStore, RESEND_COOLDOWN_SECONDS } from './auth-flow.store';
+import { AuthFlowStore } from './auth-flow.store';
+
+/** The server's resend window, the ONE source the countdown reads (OR-9). */
+const WINDOW = OtpLimits.ResendWindowSeconds;
 
 function emailIdentifier(raw: string): ParsedIdentifier {
   const email = Email.parse(raw);
@@ -20,6 +29,22 @@ function emailIdentifier(raw: string): ParsedIdentifier {
 
 function requiredIdentifier(): ParsedIdentifier {
   return emailIdentifier('client@example.com');
+}
+
+/**
+ * A throttled send as the gateway answers it: `IDENTITY_OTP_RATE_LIMITED`
+ * on `resource-exhausted`, the seconds left on the window in the refusal's
+ * allowlisted context (`serverParams.retryAfterSeconds`, OR-9) — or no
+ * figure at all, when `null`.
+ */
+function rateLimited(retryAfterSeconds: number | null): PipelineError {
+  const refused = PipelineError.fromWire('resource-exhausted', {
+    errorCode: IdentityErrorCode.OtpRateLimited,
+  });
+  return {
+    ...refused,
+    serverParams: retryAfterSeconds === null ? {} : { retryAfterSeconds },
+  };
 }
 
 describe('AuthFlowStore', () => {
@@ -60,12 +85,15 @@ describe('AuthFlowStore', () => {
     expect(store.state().authFlowStep).toBe(AuthFlowStep.Identify);
   });
 
-  it('starts the resend cooldown after a successful initial send', async () => {
+  it('starts the resend countdown at the server’s 60 s window after a successful initial send (OR-9)', async () => {
     await store.submitIdentifier(requiredIdentifier());
 
     expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(store.sendCount()).toBe(1);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
+    // The server's own window (`OtpLimits.ResendWindowSeconds`), never a
+    // client figure of its own — the 30 s one is retired (DEP-F8).
+    expect(store.resendSecondsLeft()).toBe(60);
+    expect(store.resendSecondsLeft()).toBe(WINDOW);
     expect(store.canResend()).toBe(false);
   });
 
@@ -73,9 +101,9 @@ describe('AuthFlowStore', () => {
     await store.submitIdentifier(requiredIdentifier());
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 1);
+    expect(store.resendSecondsLeft()).toBe(WINDOW - 1);
 
-    await vi.advanceTimersByTimeAsync((RESEND_COOLDOWN_SECONDS - 1) * 1000);
+    await vi.advanceTimersByTimeAsync((WINDOW - 1) * 1000);
     expect(store.resendSecondsLeft()).toBe(0);
     expect(store.canResend()).toBe(true);
   });
@@ -91,14 +119,91 @@ describe('AuthFlowStore', () => {
 
   it('resends after the cooldown, restarting it and counting the send', async () => {
     await store.submitIdentifier(requiredIdentifier());
-    await vi.advanceTimersByTimeAsync(RESEND_COOLDOWN_SECONDS * 1000);
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
     expect(store.canResend()).toBe(true);
 
     await store.resend();
 
     expect(requestChallenge).toHaveBeenCalledTimes(2);
     expect(store.sendCount()).toBe(2);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
+    expect(store.resendSecondsLeft()).toBe(WINDOW);
+  });
+
+  it('turns a throttled resend into a countdown restarted at the server’s figure — no error, the sent code still verifies (OR-9, DEP-F8)', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
+    requestChallenge.mockResolvedValue(Result.err(rateLimited(42)));
+
+    await store.resend();
+
+    expect(requestChallenge).toHaveBeenCalledTimes(2);
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Otp,
+      identifier: requiredIdentifier(),
+      error: null,
+    });
+    expect(store.resendSecondsLeft()).toBe(42);
+    expect(store.canResend()).toBe(false);
+    // No code went out: the count stands, and the first code still verifies.
+    expect(store.sendCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.resendSecondsLeft()).toBe(41);
+    await vi.advanceTimersByTimeAsync(41 * 1000);
+    expect(store.canResend()).toBe(true);
+
+    await store.submitCode('123456');
+    expect(verifyChallenge).toHaveBeenCalledWith('challenge_1', '123456');
+  });
+
+  it('waits out the whole window when a throttled resend names no figure', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
+    requestChallenge.mockResolvedValue(Result.err(rateLimited(null)));
+
+    await store.resend();
+
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Otp,
+      identifier: requiredIdentifier(),
+      error: null,
+    });
+    expect(store.resendSecondsLeft()).toBe(WINDOW);
+  });
+
+  it('still returns to identify when a resend fails for any other reason', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
+    const unavailable = PipelineError.bare(PipelineErrorCode.Unavailable);
+    requestChallenge.mockResolvedValue(Result.err(unavailable));
+
+    await store.resend();
+
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Identify,
+      error: unavailable,
+    });
+  });
+
+  it('escalates from the third send of one identifier on (OR-10)', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    expect(store.escalated()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
+    await store.resend();
+    expect(store.sendCount()).toBe(2);
+    expect(store.escalated()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(WINDOW * 1000);
+    await store.resend();
+    expect(store.sendCount()).toBe(3);
+    expect(store.escalated()).toBe(true);
+
+    // A new destination is a new attempt — the footnote goes with the count.
+    store.changeIdentifier();
+    await store.submitIdentifier(emailIdentifier('other@example.com'));
+    expect(store.sendCount()).toBe(1);
+    expect(store.escalated()).toBe(false);
   });
 
   it('keeps the outstanding challenge alive across change_identifier — an accidental back must not burn the sent code', async () => {
@@ -110,7 +215,7 @@ describe('AuthFlowStore', () => {
     expect(store.state().authFlowStep).toBe(AuthFlowStep.Identify);
     // Cooldown and send count survive — the code is still in the inbox.
     expect(store.sendCount()).toBe(1);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 5);
+    expect(store.resendSecondsLeft()).toBe(WINDOW - 5);
   });
 
   it('rejoins the otp step without a second send when the SAME identifier is resubmitted', async () => {
@@ -123,7 +228,7 @@ describe('AuthFlowStore', () => {
     expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(requestChallenge).toHaveBeenCalledTimes(1);
     expect(store.sendCount()).toBe(1);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 3);
+    expect(store.resendSecondsLeft()).toBe(WINDOW - 3);
   });
 
   it('still verifies against the original challenge after a back-and-rejoin', async () => {
@@ -148,7 +253,7 @@ describe('AuthFlowStore', () => {
     expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(requestChallenge).toHaveBeenCalledTimes(2);
     expect(store.sendCount()).toBe(1);
-    expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
+    expect(store.resendSecondsLeft()).toBe(WINDOW);
 
     await store.submitCode('123456');
     expect(verifyChallenge.mock.calls[0]![0]).toBe('challenge_2');
@@ -216,17 +321,20 @@ describe('AuthFlowStore', () => {
   });
 
   it('returns to identify with the server code when the send fails, and the generic code when the server named none', async () => {
-    const rateLimited = PipelineError.fromWire('resource-exhausted', {
-      errorCode: 'IDENTITY_OTP_RATE_LIMITED',
-    });
-    requestChallenge.mockResolvedValue(Result.err(rateLimited));
+    // A throttled FIRST send — no live challenge here, as after a reload of
+    // /auth: no countdown to restart, so the refusal is the error, its
+    // seconds kept for the words (OR-9).
+    const throttled = rateLimited(42);
+    requestChallenge.mockResolvedValue(Result.err(throttled));
     await store.submitIdentifier(requiredIdentifier());
     expect(store.state()).toEqual({
       authFlowStep: AuthFlowStep.Identify,
-      error: rateLimited,
+      error: throttled,
     });
-    expect(rateLimited.serverErrorCode).toBe('IDENTITY_OTP_RATE_LIMITED');
+    expect(throttled.serverErrorCode).toBe('IDENTITY_OTP_RATE_LIMITED');
+    expect(throttled.serverParams).toEqual({ retryAfterSeconds: 42 });
     expect(store.sendCount()).toBe(0);
+    expect(store.resendSecondsLeft()).toBe(0);
 
     // No server code: the failed call is kept as it is — `wordFlowFailure`
     // words it as the generic `IDENTITY_CALL_FAILED` (its spec pins that).

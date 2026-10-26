@@ -53,7 +53,7 @@ import {
   DiscountMethod,
   DiscountProvenance,
   DiscountSource,
-  type Email,
+  Email,
   FlagName,
   GridEvent as GridEventTag,
   type Money,
@@ -84,7 +84,6 @@ import {
   VisitDraftSystem,
   VisitSidesSystem,
   VisitStorySystem,
-  ZonedTimeSystem,
 } from '@core/systems';
 import {
   combinabilityOf,
@@ -177,17 +176,19 @@ import {
   minutesDeltaWords,
 } from '../shared/catalog-tag.words';
 import {
+  type PhotoMomentVm,
   StaffEventHead,
   type StaffEventLine,
   type StaffEventRun,
   type VisitRowVm,
+  photoMomentOf,
 } from '@creativo/features/shared/visits';
+import { intlLocaleOf } from '@creativo/infrastructure/i18n';
 import {
   ClockClosing,
   formatCents,
   formatCentsFigure,
   formatClock,
-  formatInstant,
   formatWallClock,
 } from '@creativo/ui/wall-clock';
 import { injectFrameFullscreen } from '../shared/frame-fullscreen';
@@ -635,6 +636,12 @@ export interface VisitEditorClientOption {
   readonly avatarSrc?: string | null;
   /** Their mail — what a typed mail is matched by; `null` when the owner does not know it. */
   readonly email: Email | null;
+  /**
+   * A client RECORD with no account behind it — a walk-in the desk entered
+   * (OR-26, `client-search.ts`): the row says so, «Без профил», in ink.
+   * Absent for everyone else.
+   */
+  readonly noAccount?: boolean;
 }
 
 /** A person row as the add-client page draws it: ticked, matched, marked. */
@@ -729,12 +736,11 @@ export interface VisitEditorGrantOption {
   /**
    * The moment the coupon was made for (`Coupon.couponOccasion`, revision
    * 3): the client card heads a birthday gift with its band and keeps it
-   * out of the generic ticket. Absent or `null` for a coupon tied to no
-   * occasion — the owner of this sheet reads it off the coupon; a host
-   * that does not know it yet hands nothing and the card draws a plain
-   * ticket.
+   * out of the generic ticket. Required, `null` for a coupon tied to no
+   * occasion (OR-16) — the owner of this sheet reads it off the coupon,
+   * whose field is required too; a `null` draws a plain ticket.
    */
-  readonly couponOccasion?: CouponOccasion | null;
+  readonly couponOccasion: CouponOccasion | null;
   /**
    * The shop's day the grant lapses on (`YYYY-MM-DD`, Europe/Sofia), read
    * off `CouponGrant.state.expiration` by the owner of this sheet: the
@@ -828,8 +834,13 @@ interface DraftClient {
   readonly meta: string | null;
   /** The face the pick came with, when it came with one (2026-09-22). */
   readonly avatarSrc?: string | null;
-  /** The mail the pick came with; `null` when it came with none. */
+  /**
+   * The mail the pick came with, or the one the new-client form took;
+   * `null` when there is none. It rides the save with the number (OR-26).
+   */
   readonly email: Email | null;
+  /** A walk-in's record with no account, picked from the search (OR-26). */
+  readonly noAccount?: boolean;
 }
 
 interface VisitDraft {
@@ -1506,10 +1517,14 @@ function commitOf(
     vouchers: draft.vouchers,
     tipCents: draft.tipCents,
     drawn: draft.drawn,
+    // The number AND the mail the desk has for each person (OR-26): what
+    // the plan turns into a guest's contact, and the server into the
+    // walk-in's record — never dropped on the way.
     clients: draft.clients.map((client) => ({
       id: client.id,
       label: client.label,
       phone: client.phone,
+      email: client.email,
     })),
     legs,
   };
@@ -2823,12 +2838,12 @@ export class StaffVisitEditor {
     // this day is past its end — not always, as it was marked: `past` is a
     // fact the drag guards read, and a 16:00 neighbour at noon is not one.
     // The story's wall-clock rule (`VisitStorySystem.hasEnded`). The
-    // neighbours are the FRAME day's, and a frame carries a clock only when
-    // that day is today (§8 OQ-9: after a re-date the frame still reads the
-    // day it was seeded with) — so a neighbour is measured on today's date,
-    // never on the draft's. With no clock (any day but today) only a gone
-    // day has ended. "Now" is the owner's (`vm.now`), read only while the
-    // frame carries a clock.
+    // neighbours are the FRAME day's — the drafted day and chair, which the
+    // host redraws on a re-date (`uiFrameDay`; OR-3: the verdict under the
+    // frame judges that same day) — and a frame carries a clock only when
+    // that day is today, so a neighbour is measured on today's date. With
+    // no clock (any day but today) only a gone day has ended. "Now" is the
+    // owner's (`vm.now`), read only while the frame carries a clock.
     const today = vm.now;
     const dayGone =
       today !== null && LocalDate.compare(draft.dayKey, today.localDate) < 0;
@@ -2926,7 +2941,12 @@ export class StaffVisitEditor {
    * cannot state. Everything else the frame already draws.
    */
   protected readonly frameVerdict = computed<FrameVerdictSlice | null>(() => {
-    const vm = this.vm();
+    // The day the frame DRAWS — the drafted day and chair the host redraws
+    // on a re-date, or the seeded one when it hands none — is the day the
+    // line judges (OR-3, DEP-F3): one input drawn, narrated
+    // (`frameSummary`) and judged, so the line never warns about a booking
+    // the frame does not draw nor misses the one it does.
+    const day = this.frameDay();
     // WHAT the drafted span breaks is the grid's rule
     // (`GridLayoutSystem.frameVerdict`): the first neighbour it runs into,
     // else leaving the shift — never against a roster that cannot be read
@@ -2935,14 +2955,14 @@ export class StaffVisitEditor {
     // always on is a footnote nobody reads when it finally means something;
     // nor one off the day's clock). A span with a part past midnight is
     // never inside one day's shift.
-    const shift = readableShiftOf(vm);
+    const shift = readableShiftOf(day);
     const placed = GridLayoutSystem.frameVerdict(
       { startMinute: this.draft().startMinute, endMinute: this.endMinute() },
-      vm.neighbours,
+      day.neighbours,
       shift,
     );
     const clash =
-      placed.hit === null ? undefined : vm.neighbours[placed.hit.event];
+      placed.hit === null ? undefined : day.neighbours[placed.hit.event];
     if (placed.placementVerdict === PlacementVerdict.Overlap && clash) {
       return {
         placementVerdict: PlacementVerdict.Overlap,
@@ -3093,6 +3113,16 @@ export class StaffVisitEditor {
     // repeats the mail (the index's hits carry it in both).
     if (client.meta && client.meta !== client.email) {
       lines.push({ text: client.meta, icon: 'visit.last' });
+    }
+    // A WALK-IN'S RECORD (OR-26): found again by the number or the mail the
+    // desk typed once, and said to have no profile — the last fact, in ink
+    // like the others, never a badge competing with «Вече е клиент».
+    if (client.noAccount) {
+      lines.push({
+        text: this.rawCopy('staff.client.noAccount'),
+        icon: 'account.anonymous',
+        testId: `staff-visit-client-no-account-${client.id}`,
+      });
     }
     return {
       ...client,
@@ -4037,11 +4067,7 @@ export class StaffVisitEditor {
    * the one way a Money becomes a LABEL; this is a figure beside a label.
    */
   private figureOf(cents: PriceCents): string {
-    return formatCentsFigure(
-      cents,
-      this.vm().currency,
-      this.transloco.getActiveLang(),
-    );
+    return formatCentsFigure(cents, this.vm().currency, this.intlLocale());
   }
 
   /** The swipe's act: the whole row — every seat it holds. */
@@ -4625,9 +4651,36 @@ export class StaffVisitEditor {
   protected readonly newClientCountry = signal<CountryIso2 | null>(
     this.deployment.defaultCountry,
   );
-  /** A person needs a name; the number and the mail are welcome. */
+  /**
+   * The form's mail as the save sends it — canonical (`Email.parse`:
+   * trimmed, lower-cased, shaped like a mail), or `null`: none typed, or
+   * not a mail.
+   */
+  private readonly newClientMail = computed(() =>
+    Email.parse(this.newClient().email),
+  );
+
+  /**
+   * SOMETHING TYPED THAT IS NOT A MAIL (OR-26: what the barber typed must
+   * never vanish on the way to the record) — the ✓ waits until it is one,
+   * or gone, rather than seating the person without it.
+   */
+  protected readonly newClientMailInvalid = computed(
+    () =>
+      this.newClient().email.trim().length > 0 && this.newClientMail() === null,
+  );
+
+  /**
+   * The mail field was left once: from then on its shape is judged on the
+   * field (reward early, punish late — never a red ring under a mail still
+   * being typed).
+   */
+  protected readonly newClientMailLeft = signal(false);
+
+  /** A person needs a name; the number and the mail are welcome — a mail that is one. */
   protected readonly newClientReady = computed(
-    () => this.newClient().name.trim().length > 0,
+    () =>
+      this.newClient().name.trim().length > 0 && !this.newClientMailInvalid(),
   );
 
   protected openNewClient(): void {
@@ -4650,6 +4703,7 @@ export class StaffVisitEditor {
           : null,
       email: parsed.email,
     });
+    this.newClientMailLeft.set(false);
     this.newClientCountry.set(this.deployment.defaultCountry);
     // The form REPLACES the search at the same depth — the query stays
     // typed — and `pop` replaces it back.
@@ -4671,9 +4725,10 @@ export class StaffVisitEditor {
 
   /** The dock's ✓ — the person joins the visit, and the sheet returns to the ladder. */
   protected saveNewClient(): void {
-    const { name, phone, email } = this.newClient();
+    if (!this.newClientReady()) return;
+    const { name, phone } = this.newClient();
     const label = name.trim();
-    if (!label) return;
+    const email = this.newClientMail();
     // NEVER A REUSED ID (found in review): `guest-${length}` handed a third
     // guest the id of one already unticked, and the flow then took the
     // newcomer for served — the seat-id rule, `minted`, applies to people
@@ -4692,10 +4747,11 @@ export class StaffVisitEditor {
           label,
           phone,
           phoneHref: phone,
-          meta: email.trim() || null,
-          // The form's mail rides as the person's line (`meta`), never as a
-          // matched mail — what the person always carried.
-          email: null,
+          // THE MAIL IS THE PERSON'S (OR-26): it rides the save beside the
+          // number, so the walk-in's record keeps it — no longer only the
+          // person's line (`meta`), which still prints it on their page.
+          meta: email,
+          email,
         },
       ],
       legs: adoptPlaceholderLegs(draft, id),
@@ -5631,55 +5687,34 @@ export class StaffVisitEditor {
     this.pop();
   }
 
-  // Every word about a picture's moment reads the shop's own clock, so the
-  // bar's day and the row's time can never straddle two midnights.
-  private shopMoment(
-    atMs: UtcEpochMs,
-    locale: string,
-    options: Intl.DateTimeFormatOptions,
-  ): string {
-    const zone = this.vm().timeZone;
-    return zone === null ? '' : formatInstant(atMs, zone, locale, options);
-  }
-
-  /** «4.09, 16:21» — the whole moment, for the names assistive tech hears (a thumbnail's, the picture's alt). */
-  protected photoWhen(photo: VisitEditorPhoto): string {
-    return this.shopMoment(photo.takenAtUtcMs, 'bg-BG', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
   /**
-   * «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar
-   * title. The picture's year is its stamp read onto the shop's calendar
-   * (`ZonedTimeSystem.toLocal`, the one zone engine); this year is the
-   * owner's today (`vm.now`). The words stay `bg-BG` whatever the language
-   * (D-14, as they always were).
+   * A picture's moment in the active language (OR-5, DEP-F4: `bg-BG`, or
+   * `en-GB` in English — `intlLocale`), worded by the shared presenter
+   * (`photoMomentOf`) from ONE reading of its stamp on the shop's calendar,
+   * so the bar's day and the row's time can never straddle two midnights;
+   * this year is the owner's today (`vm.now`). `null` before the shop's
+   * zone — and so its "now" — is known: nothing is said.
    */
+  private photoMoment(photo: VisitEditorPhoto): PhotoMomentVm | null {
+    const { timeZone, now } = this.vm();
+    return timeZone === null || now === null
+      ? null
+      : photoMomentOf(photo.takenAtUtcMs, timeZone, now, this.intlLocale());
+  }
+
+  /** «4.09, 16:21» · «4 Sept, 16:21» — the whole moment, for the names assistive tech hears (a thumbnail's, the picture's alt). */
+  protected photoWhen(photo: VisitEditorPhoto): string {
+    return this.photoMoment(photo)?.when ?? '';
+  }
+
+  /** «4.09» · «4/09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar title. */
   protected photoDay(photo: VisitEditorPhoto): string {
-    const at = photo.takenAtUtcMs;
-    const vm = this.vm();
-    const thisYear =
-      vm.timeZone !== null &&
-      vm.now !== null &&
-      LocalDate.parts(ZonedTimeSystem.toLocal(at, vm.timeZone).localDate)
-        .year === LocalDate.parts(vm.now.localDate).year;
-    return this.shopMoment(at, 'bg-BG', {
-      day: 'numeric',
-      month: '2-digit',
-      ...(thisYear ? {} : { year: 'numeric' }),
-    });
+    return this.photoMoment(photo)?.day ?? '';
   }
 
   /** «16:21» — the «Снимано» row: what the bar's day leaves unsaid. */
   protected photoTime(photo: VisitEditorPhoto): string {
-    return this.shopMoment(photo.takenAtUtcMs, 'bg-BG', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return this.photoMoment(photo)?.time ?? '';
   }
 
   /** The picture's own shape for its page; a photo that never said is drawn 4:3. */
@@ -6278,11 +6313,7 @@ export class StaffVisitEditor {
    * sheet words is cents already, so there is no `''` path any more.
    */
   private moneyLabel(cents: PriceCents): string {
-    return formatCents(
-      cents,
-      this.vm().currency,
-      this.transloco.getActiveLang(),
-    );
+    return formatCents(cents, this.vm().currency, this.intlLocale());
   }
 
   /**
@@ -6877,6 +6908,13 @@ export class StaffVisitEditor {
   protected readonly locale = computed(() => this.transloco.getActiveLang());
 
   /**
+   * The `Intl` tag the active language formats in (`intlLocaleOf`: bg →
+   * `bg-BG`, en → `en-GB`) — the sheet's photo moments and money (OR-5,
+   * DEP-F4: the raw `'en'` formatted as `en-US`).
+   */
+  protected readonly intlLocale = computed(() => intlLocaleOf(this.locale()));
+
+  /**
    * `Днес` / `Утре` — most re-datings are one or two days, and aiming at a
    * cell for that is the wrong amount of work. The picker resolves the
    * offsets against `uiToday`, so these cannot drift from the shop's own
@@ -7046,14 +7084,19 @@ export class StaffVisitEditor {
     const held: ClientCardGrant[] = isOwner
       ? this.uiGrants().map((grant) => ({
           grantId: grant.grantId,
+          // The coupon and the value the grant snapshotted: what makes two
+          // grants one ticket, and how the points know a reward is in hand
+          // (OR-15 — never the words below).
+          couponId: grant.couponId,
+          value: grant.value,
           title: grant.label,
           valueLabel: this.couponValue(grant.label, grant.value),
           // When it lapses, as the store read it off the grant: the
           // ticket's «до 28.10», and nothing for one that never does.
           expiresOn: grant.expiresOn ?? null,
-          // The coupon's moment, when the owner knows it (revision 3 §5.4):
-          // the card heads a birthday gift with its band.
-          couponOccasion: grant.couponOccasion ?? null,
+          // The coupon's moment (revision 3 §5.4, OR-16: always said,
+          // `null` for none): the card heads a birthday gift with its band.
+          couponOccasion: grant.couponOccasion,
         }))
       : [];
     const grants = held.filter((grant) => !onBill.has(grant.grantId));
@@ -7413,9 +7456,12 @@ export class StaffVisitEditor {
   /** Whether the held grant's coupon was made for the birthday — the gift today's band carries (`CouponGrantSystem.isOccasion`). */
   private isBirthdayGrant(grantId: CouponGrantId): boolean {
     const grant = this.uiGrants().find((entry) => entry.grantId === grantId);
-    return CouponGrantSystem.isOccasion(
-      grant?.couponOccasion ?? null,
-      CouponOccasion.Birthday,
+    return (
+      grant !== undefined &&
+      CouponGrantSystem.isOccasion(
+        grant.couponOccasion,
+        CouponOccasion.Birthday,
+      )
     );
   }
 

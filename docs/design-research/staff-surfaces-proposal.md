@@ -41,7 +41,7 @@ Proposed route tree — every leaf gets its own `rolesGuard`, matching the same 
   /staff/insights            admin sysadmin      …  barber sees own scorecard at /staff/me
   /staff/shop/*              admin sysadmin      …  roster · catalog · team · policy · audit
 /admin/programs              content_manager admin sysadmin   (exists)
-/admin                       admin sysadmin      impersonation (exists)
+/admin                       admin sysadmin      impersonation: server ledger only; no read-as (OR-24) — redirects to /admin/loyalty/rhythm
 ```
 
 `content_manager` is deliberately absent from `/staff/*`. It is a copy-and-media role; see §9.2 for why its current access is a privacy problem.
@@ -61,7 +61,7 @@ Proposed route tree — every leaf gets its own `rolesGuard`, matching the same 
 | Occupancy reasons, frozen classification, revenue per block | **built**                                     | `occupancy-block.ts`, `occupancy-class.ts`                                                                                                                                                 |
 | Audit log (append-only)                                     | **written, never read**                       | `auditLog`, admin-only                                                                                                                                                                     |
 | Booking policy as a tenant document                         | **built, no editor**                          | `settings/bookingPolicy`, `allow write: if isAdmin()`                                                                                                                                      |
-| Impersonation, programs editor                              | **built**                                     | `/admin`, `/admin/programs`                                                                                                                                                                |
+| Impersonation, programs editor                              | **built**                                     | `/admin`, `/admin/programs` — impersonation: server ledger only; no read-as (owner ruling OR-24, 2026-10-26)                                                                               |
 | Statistics **persistence** (day ledger, period rollups)     | **absent** — no collection, no rules, no port | —                                                                                                                                                                                          |
 | `bookedAtMs`, `bookedFromAppointmentId`, `SeatOutcome`      | **absent**                                    | §6.1                                                                                                                                                                                       |
 | Feedback / ratings                                          | **absent entirely**                           | §5                                                                                                                                                                                         |

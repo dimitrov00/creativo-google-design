@@ -854,8 +854,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
     switch (refusal.errorCode) {
       case StreakPublishErrorCode.CallerNotAdmin:
       case StreakPublishErrorCode.CallerUnauthenticated:
-        // «Нямаш право за тази промяна.» — the code's own line
-        // (`errors.LOYALTY_STREAK_PUBLISH_CALLER_*`, today's words).
+        // Each code's own line (`errors.LOYALTY_STREAK_PUBLISH_CALLER_*`,
+        // OR-50/OR-52): the one not-allowed line, or «Влез отново, за да
+        // продължиш.»
         this.toast.set({
           label: translateCodedError(this.transloco, refusal),
           undo: false,
@@ -942,7 +943,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
    * with the struct as its params, the display params the page formats
    * (`{{date}}`, `{{field}}`) spread over it. A request that got no answer
    * keeps the shop's "our side" words; the ones said in passing (the toast)
-   * or by nothing are `null` here.
+   * are `null` here. No `default`: a new refusal in the union fails the
+   * build until it is worded here (OR-52), never a silent save.
    */
   private wordRefusal(
     context: AdminRhythmContext,
@@ -955,6 +957,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
     }
     switch (refusal.errorCode) {
       case StreakPublishErrorCode.Stale:
+      case StreakPublishErrorCode.RecomputeNeedsEngine:
+      case StreakPublishErrorCode.PreviewStale:
         return translateCodedError(this.transloco, refusal);
       case StreakPublishErrorCode.Invalid:
         return translateCodedError(this.transloco, {
@@ -966,7 +970,10 @@ export class AdminRhythm implements AdminRhythmLeaving {
           ...refusal,
           date: shortDay(refusal.earliest, context.today, context.lang),
         });
-      default:
+      case StreakPublishErrorCode.CallerNotAdmin:
+      case StreakPublishErrorCode.CallerUnauthenticated:
+        // Said in passing by the toast (`told`), not under the head: the
+        // caller, not the rule, is what was refused.
         return null;
     }
   }

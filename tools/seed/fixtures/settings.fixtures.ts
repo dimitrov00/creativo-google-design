@@ -13,8 +13,13 @@
  * again.
  */
 import { BOOKING_POLICY_DOC, type BookingPolicySettings } from '@core/entities';
-import type { BookingPolicySettingsId } from '@core/primitives';
-import { minuteCount, minutesLong, type Seeded } from './catalog.fixtures';
+import { type BookingPolicySettingsId, HourCount } from '@core/primitives';
+import {
+  minuteCount,
+  minutesLong,
+  type Seeded,
+  sure,
+} from './catalog.fixtures';
 
 /**
  * The free-cancellation window the policy sets, and so the window every
@@ -22,7 +27,10 @@ import { minuteCount, minutesLong, type Seeded } from './catalog.fixtures';
  * paths stamp it (2026-09-25), which keeps the seed's late cancels where
  * they are whatever the window is moved to later. One number.
  */
-export const CANCELLATION_WINDOW_HOURS = 24;
+export const CANCELLATION_WINDOW_HOURS: HourCount = sure(
+  HourCount.of(24),
+  'cancellation window 24',
+);
 
 /** `settings/bookingPolicy` — the one settings document. */
 export const BOOKING_POLICY: Seeded<

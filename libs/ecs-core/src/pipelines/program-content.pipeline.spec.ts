@@ -55,7 +55,9 @@ import {
  * saved body (the full entity), the refusal list, and that NOTHING was
  * saved after a refusal. The zone CONVERSION pins live here too — this
  * pipeline is the event's ingestion boundary (Law 7.3): the Sofia gap and
- * repeat, the default-shop fallback and both refusals (F4-1 (a), (c)).
+ * repeat (F4-1 (a)), exactly one location read, and both refusals — a shop
+ * that is not stored (OR-38, DEP-F28: it was placed on the default shop's
+ * clock) and a default shop that is not stored.
  */
 
 const CENTER = LocationId.of('loc-center');
@@ -439,28 +441,31 @@ describe('writeShopEvent', () => {
     expect(reads).toEqual([LocationId.of('loc-north')]);
   });
 
-  it('saves a typed location that names no shop on the default shop’s zone (F4-1 (c))', async () => {
+  // DEP-F28: was «saves a typed location that names no shop on the default
+  // shop's zone (F4-1 (c))» — two reads and a save on another shop's clock.
+  it('refuses a shop that is not stored with ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN — one read, nothing saved (OR-38)', async () => {
     const world = worldWithCenter();
     const { ports, reads } = recordingLocations(world);
     const save = writeShopEvent(eventPorts(world, ports));
 
-    const saved = unwrapOk(
-      await save({
-        id: null,
-        input: shopEventInputOf({
-          startsAt: '2026-11-05T19:00',
-          locationId: 'loc-nowhere',
+    expect(
+      unwrapErr(
+        await save({
+          id: null,
+          input: shopEventInputOf({
+            startsAt: '2026-11-05T19:00',
+            locationId: 'loc-nowhere',
+          }),
         }),
-      }),
-    );
-
-    expect(saved.locationId).toBe('loc-nowhere');
-    expect(saved.utcEpochMs).toBe(utcMs('2026-11-05T19:00:00.000+02:00'));
-    expect(world.events.get(saved.id)).toEqual(saved);
-    expect(reads).toEqual([LocationId.of('loc-nowhere'), CENTER]);
+      ),
+    ).toEqual([
+      EngagementError.shopEventLocationUnknown(LocationId.of('loc-nowhere')),
+    ]);
+    expect(reads).toEqual([LocationId.of('loc-nowhere')]);
+    expect(world.events.size).toBe(0);
   });
 
-  it('refuses ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN when the default shop is absent, and saves nothing', async () => {
+  it('refuses ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN for an event at no shop when the default shop is absent, and saves nothing', async () => {
     const world = memoryProgramsWorld();
     const { ports, reads } = recordingLocations(world);
     const save = writeShopEvent(eventPorts(world, ports));
@@ -470,6 +475,7 @@ describe('writeShopEvent', () => {
     ).toEqual([EngagementError.shopEventZoneUnknown(CENTER)]);
     expect(reads).toEqual([CENTER]);
 
+    // A named shop that is gone names itself, whatever the default shop's state.
     expect(
       unwrapErr(
         await save({
@@ -477,7 +483,10 @@ describe('writeShopEvent', () => {
           input: shopEventInputOf({ locationId: 'loc-nowhere' }),
         }),
       ),
-    ).toEqual([EngagementError.shopEventZoneUnknown(CENTER)]);
+    ).toEqual([
+      EngagementError.shopEventLocationUnknown(LocationId.of('loc-nowhere')),
+    ]);
+    expect(reads).toEqual([CENTER, LocationId.of('loc-nowhere')]);
     expect(world.events.size).toBe(0);
   });
 
@@ -494,7 +503,10 @@ describe('writeShopEvent', () => {
     expect(world.events.size).toBe(0);
   });
 
-  it('answers a failed fallback read with that RepositoryError, and saves nothing', async () => {
+  // OR-38 deleted the fallback read: was «answers a failed fallback read
+  // with that RepositoryError» — the default shop is never asked for an
+  // event that names its own shop.
+  it('never reads the default shop for an event that names its own — a down default shop changes nothing', async () => {
     const world = worldWithCenter();
     const inner = memoryLocationLoadPorts(world);
     const save = writeShopEvent({
@@ -510,7 +522,9 @@ describe('writeShopEvent', () => {
           input: shopEventInputOf({ locationId: 'loc-nowhere' }),
         }),
       ),
-    ).toEqual([failedRead]);
+    ).toEqual([
+      EngagementError.shopEventLocationUnknown(LocationId.of('loc-nowhere')),
+    ]);
     expect(world.events.size).toBe(0);
   });
 

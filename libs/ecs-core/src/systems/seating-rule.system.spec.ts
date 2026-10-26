@@ -5,8 +5,14 @@ import {
   SeatIdPair,
   StandingSeatPair,
 } from '@core/components';
-import { DurationMinutes, SeatId, SeatKeyText } from '@core/primitives';
-import { deepFreeze, endMinute, minute, unwrapOk } from '@core/testing';
+import { DurationMinutes, SeatId } from '@core/primitives';
+import {
+  deepFreeze,
+  endMinute,
+  minute,
+  personKeyFrom,
+  unwrapOk,
+} from '@core/testing';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 
 /*
@@ -26,7 +32,7 @@ import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 const BASE = 540;
 const at = (personKey: string, from: number, to: number): StandingSeatPair =>
   StandingSeatPair.of(
-    SeatKeyText.of(personKey),
+    personKeyFrom(personKey),
     minute(BASE + from),
     endMinute(BASE + to),
   );
@@ -63,7 +69,8 @@ describe('sitsTwiceAt — one person, one chair at a time', () => {
     const slot = fc
       .tuple(fc.integer({ min: 0, max: 600 }), fc.integer({ min: 1, max: 120 }))
       .map(([from, length]) => [from, from + length] as const);
-    const key = fc.constantFrom('self', 'guest-0', 'guest-1');
+    // Person keys as spelt (OR-49), so the key IS the text compared below.
+    const key = fc.constantFrom('self', 'guest:0', 'guest:1');
     fc.assert(
       fc.property(
         fc.array(fc.tuple(key, slot), { maxLength: 5 }),
@@ -416,6 +423,7 @@ describe('SeatingRuleSystem.spanOf / soldEnd — a seat as the rule counts it (P
       requestedSubjectRole: RequestedSubjectRole.Guest,
       label,
       guestKey: null,
+      contact: null,
     }) as const;
 
   it('is WHICH seat, whose person and its sold span', () => {

@@ -19,7 +19,7 @@ import {
   Result,
 } from '@core/primitives';
 import { type BarberBusyDay, Collections } from '@core/entities';
-import { ZonedTimeSystem } from '@core/systems';
+import { StoredDocumentSystem, ZonedTimeSystem } from '@core/systems';
 import { rebuildCapacity } from '@core/pipelines';
 import {
   barberScheduleFixture,
@@ -117,10 +117,15 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
   });
 
   function run() {
+    const telemetry = recordingTelemetry();
     return rebuildCapacity({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(NOW),
-      ...recordingTelemetry(),
+      ...telemetry,
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([IVAN]),
       // The horizon is the default location's days (4A-11): the seeded centre.
@@ -206,7 +211,12 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
   });
 
   it('plans one whole-document Set per month — never an update, never a merge', async () => {
-    const commit = firestoreCommitPlan(db);
+    const telemetry = recordingTelemetry();
+    const commit = firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    );
     const kinds: string[] = [];
     await rebuildCapacity({
       commit: (read, decide) =>
@@ -219,7 +229,7 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
           return decision;
         }),
       nowUtcMs: pinnedNowUtcMs(NOW),
-      ...recordingTelemetry(),
+      ...telemetry,
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([IVAN]),
       ...firestoreCatalogPorts(db),

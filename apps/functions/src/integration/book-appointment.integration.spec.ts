@@ -13,6 +13,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { Collections } from '@core/entities';
+import { StoredDocumentSystem } from '@core/systems';
 import { type BookAppointmentCommand, bookAppointment } from '@core/pipelines';
 import {
   barberFixture,
@@ -25,7 +26,7 @@ import {
   serviceFixture,
   utcMs,
 } from '@core/testing';
-import { sha256Hex } from '../adapters/crypto.adapter';
+import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
@@ -139,10 +140,16 @@ describe('bookAppointment (emulator)', () => {
     const telemetry = recordingTelemetry();
     let minted = 0;
     return bookAppointment({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       nextId: () => `id-${++minted}`,
       hash: sha256Hex,
+      // The walk-in key, as the emulator's `.secret.local` holds one (OR-26).
+      ...walkInKeyPorts(() => 'walkin-integration-key'),
       ...firestoreSettingsPorts(db),
       ...firestoreAccountPorts(db),
       ...firestoreAuditPorts(db, telemetry),

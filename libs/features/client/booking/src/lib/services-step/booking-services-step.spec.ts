@@ -14,17 +14,25 @@ import {
   BookingFlowStep,
   PartyRole,
   SeatKey,
+  SeatLabel,
+  SeatOccupant,
   ServiceComposition,
+  SubjectRelationship,
 } from '@core/components';
 import {
   BarberId,
+  CustomerId,
   MediaRefId,
   Result,
+  SeatId,
   ServiceId,
   ServiceVariantId,
+  UserId,
 } from '@core/primitives';
 import {
+  appointmentFixture,
   memoryCatalogReadPorts,
+  seatFixture,
   serviceFixture,
   termsFixture,
 } from '@core/testing';
@@ -553,6 +561,109 @@ describe('BookingServicesStep', () => {
     await settle();
     expect(notice()).toBeNull();
     expect(proceed()?.disabled).toBe(false);
+  });
+
+  // OR-6: a new guest's placeholder is the LOWEST number nobody on screen
+  // answers to, from 1 — the rule the visit prefill and the staff walk-ins
+  // already number by. Past the highest guest id, it drifted from the labels
+  // shown (Guest 1, Guest 2, Guest 4).
+  describe('a new guest’s placeholder — the lowest free number', () => {
+    async function settle(
+      fixture: ComponentFixture<ClientBooking>,
+    ): Promise<void> {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function labels(fixture: ComponentFixture<ClientBooking>): string[] {
+      return fixture.debugElement.injector
+        .get(BookingFlowStore)
+        .guests()
+        .map((guest) => guest.guestLabel);
+    }
+
+    async function addGuest(
+      fixture: ComponentFixture<ClientBooking>,
+    ): Promise<void> {
+      click(fixture, 'booking-add-guest');
+      await settle(fixture);
+    }
+
+    /** Through the person's menu: a press on the ACTIVE guest opens it. */
+    async function removeGuest(
+      fixture: ComponentFixture<ClientBooking>,
+      seatKey: string,
+    ): Promise<void> {
+      const removeRow = () =>
+        host(fixture).querySelector(
+          `[data-testid="booking-seat-remove-${seatKey}"]`,
+        );
+      // Another person's pill makes them the active one first.
+      click(fixture, `booking-seat-${seatKey}`);
+      if (removeRow() === null) click(fixture, `booking-seat-${seatKey}`);
+      click(fixture, `booking-seat-remove-${seatKey}`);
+      await settle(fixture);
+    }
+
+    it('hands the first guest’s number to the next one added once they are removed (DEP-F5)', async () => {
+      const fixture = await toServices();
+      await addGuest(fixture);
+      await addGuest(fixture);
+      await removeGuest(fixture, 'guest-0');
+      expect(labels(fixture)).toEqual(['Guest 2']);
+
+      await addGuest(fixture);
+
+      expect(labels(fixture)).toEqual(['Guest 2', 'Guest 1']);
+    });
+
+    it('numbers on from the labels on screen after the last guest goes — never past a removed id', async () => {
+      const fixture = await toServices();
+      await addGuest(fixture);
+      await addGuest(fixture);
+      await removeGuest(fixture, 'guest-1');
+      expect(labels(fixture)).toEqual(['Guest 1']);
+
+      await addGuest(fixture);
+      await addGuest(fixture);
+
+      expect(labels(fixture)).toEqual(['Guest 1', 'Guest 2', 'Guest 3']);
+    });
+
+    it('starts from 1 beside a prefilled guest the visit stored as «Guest 3»', async () => {
+      const fixture = await toServices();
+      const store = fixture.debugElement.injector.get(BookingFlowStore);
+      // "The same again" from a visit the booker made with a guest the shop
+      // knew as «Guest 3» — back under that name, as the server counts them.
+      const visit = appointmentFixture({
+        seats: [
+          seatFixture({
+            seatId: SeatId.of('appt-source-seat-1'),
+            serviceId: ServiceId.of('fade'),
+            barberId: BarberId.of('ivan'),
+            occupant: SeatOccupant.account(
+              UserId.of('client-1'),
+              CustomerId.of('cus_client-1'),
+              SubjectRelationship.Self,
+            ),
+          }),
+          seatFixture({
+            seatId: SeatId.of('appt-source-seat-2'),
+            serviceId: ServiceId.of('fade'),
+            barberId: BarberId.of('ivan'),
+            occupant: SeatOccupant.anonymous(SeatLabel.of('Guest 3')),
+          }),
+        ],
+      });
+      expect(store.repeat(visit, (number) => `Guest ${number}`)).toBe(true);
+      store.rewindTo(BookingFlowStep.Services);
+      await settle(fixture);
+      expect(labels(fixture)).toEqual(['Guest 3']);
+
+      await addGuest(fixture);
+
+      expect(labels(fixture)).toEqual(['Guest 3', 'Guest 1']);
+    });
   });
 
   it('gates the CTA until BOTH selects are answered', async () => {

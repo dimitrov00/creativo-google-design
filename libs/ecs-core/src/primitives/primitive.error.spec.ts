@@ -3,8 +3,9 @@ import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 describe('PrimitiveError — one flat shape for every refusal', () => {
   it('codes are SCREAMING and PRIMITIVE_-prefixed', () => {
+    // SCREAMING_SNAKE holds digits too — `PRIMITIVE_PHONE_NOT_E164` (OR-48).
     for (const code of Object.values(PrimitiveErrorCode)) {
-      expect(code).toMatch(/^PRIMITIVE_[A-Z_]+$/);
+      expect(code).toMatch(/^PRIMITIVE_[A-Z0-9_]+$/);
     }
   });
 

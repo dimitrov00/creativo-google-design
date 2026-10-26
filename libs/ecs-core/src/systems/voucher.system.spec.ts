@@ -34,7 +34,10 @@ import { VoucherSystem } from './voucher.system';
  * The cases of the legacy engagement `gift-voucher.spec.ts` (deleted in Phase
  * 4b; ledger `docs/architecture/flips/phase-4b-delete.md` §11.1), copied over
  * plain entities, plus the cancellation's give-back (`voucher-restore.ts`), the
- * wallet's spendable math and the balance algebra as properties.
+ * wallet's spendable math and the balance algebra as properties. The issue
+ * and redeem verbs are deleted (OR-14); their refusal cases — insufficient
+ * balance, a currency mismatch, not redeemable, the inverse property — are
+ * ported onto `settle` and `refusal`, the one balance rule left.
  */
 
 const NOW = utcMs('2026-09-10T09:00:00Z');
@@ -86,52 +89,6 @@ function issued(
 }
 
 describe('VoucherSystem — the balance algebra', () => {
-  it('is issued with its whole value as balance, its code normalised', () => {
-    const voucher = unwrapOk(
-      VoucherSystem.issue({
-        id: GiftVoucherId.of('v2'),
-        code: 'gift5',
-        valueCents: cents(500),
-        currency: Currency.EUR,
-        issuedAtUtcMs: NOW,
-        expiresAtUtcMs: null,
-        expiresLocalDate: null,
-        issuedToCustomerId: null,
-        holderUserId: null,
-      }),
-    );
-    expect(voucher.code).toBe('GIFT5');
-    expect(voucher.balanceCents).toBe(500);
-    expect(voucher.voucherStatus).toBe('ACTIVE');
-    expect(voucher.issuedToCustomerId).toBeNull();
-    expect(voucher.holderUserId).toBeNull();
-    expect(VoucherSystem.refusal(voucher, NOW)).toBeNull();
-  });
-
-  it('refuses to be issued worthless or with an illegal code', () => {
-    const base = {
-      id: GiftVoucherId.of('v'),
-      currency: Currency.EUR,
-      issuedAtUtcMs: NOW,
-      expiresAtUtcMs: null,
-      expiresLocalDate: null,
-      issuedToCustomerId: null,
-      holderUserId: null,
-    };
-    expect(
-      unwrapErr(
-        VoucherSystem.issue({ ...base, code: 'GIFT5', valueCents: cents(0) }),
-      ),
-    ).toEqual([{ errorCode: EngagementErrorCode.GiftVoucherValueInvalid }]);
-    expect(
-      unwrapErr(
-        VoucherSystem.issue({ ...base, code: 'no', valueCents: cents(500) }),
-      ),
-    ).toEqual([
-      { errorCode: EngagementErrorCode.VoucherCodeInvalid, attempted: 'NO' },
-    ]);
-  });
-
   it('says why it cannot be used — void, expired, empty — in that order', () => {
     expect(VoucherSystem.refusal(issued(), NOW)).toBeNull();
     expect(VoucherSystem.refusal(issued({ balance: 0 }), NOW)).toBe('EMPTY');
@@ -164,10 +121,11 @@ describe('VoucherSystem — the balance algebra', () => {
     );
   });
 
-  it('redeems within its balance and restores never above its value', () => {
-    const drawn = unwrapOk(VoucherSystem.redeem(issued(), eur(1000), NOW));
+  it('draws within its balance (a settle from nothing) and restores never above its value — the redeem cases, ported (OR-14)', () => {
+    const drawn = unwrapOk(VoucherSystem.settle(issued(), eur(0), eur(1000)));
     expect(drawn.balanceCents).toBe(1500);
-    expect(unwrapErr(VoucherSystem.redeem(drawn, eur(1600), NOW))).toEqual({
+    // Insufficient balance: a draw past what is left.
+    expect(unwrapErr(VoucherSystem.settle(drawn, eur(0), eur(1600)))).toEqual({
       errorCode: EngagementErrorCode.GiftVoucherInsufficientBalance,
       requestedCents: 1600,
       balanceCents: 1500,
@@ -183,14 +141,28 @@ describe('VoucherSystem — the balance algebra', () => {
       lifecycle: VoucherLifecycle.voided(NOW, 'lost'),
     });
     expect(VoucherSystem.restore(voided, eur(1000)).ok).toBe(true);
-    expect(unwrapErr(VoucherSystem.redeem(voided, eur(1), NOW))).toEqual({
+    // Not redeemable: a void voucher refuses a draw that grows, as VOID.
+    expect(unwrapErr(VoucherSystem.settle(voided, eur(0), eur(1)))).toEqual({
       errorCode: EngagementErrorCode.GiftVoucherNotRedeemable,
       reason: VoucherRefusal.Void,
     });
+    // A voucher NEW to a bill passes `refusal` first: void, expired, empty.
+    expect(VoucherSystem.refusal(voided, NOW)).toBe(VoucherRefusal.Void);
     expect(
-      unwrapErr(VoucherSystem.redeem(drawn, money(1, Currency.BGN), NOW))
+      VoucherSystem.refusal(issued({ expiresAtUtcMs: later(NOW, -1) }), NOW),
+    ).toBe(VoucherRefusal.Expired);
+    // A currency mismatch, either way round.
+    expect(
+      unwrapErr(VoucherSystem.settle(drawn, eur(0), money(1, Currency.BGN)))
         .errorCode,
     ).toBe(EngagementErrorCode.GiftVoucherCurrencyMismatch);
+    expect(
+      unwrapErr(VoucherSystem.restore(drawn, money(1, Currency.BGN))),
+    ).toEqual({
+      errorCode: EngagementErrorCode.GiftVoucherCurrencyMismatch,
+      expected: 'EUR',
+      found: 'BGN',
+    });
   });
 
   it("settles one visit's draw from a previous amount to the next", () => {
@@ -240,20 +212,23 @@ describe('VoucherSystem — the balance algebra', () => {
     );
   });
 
-  it('a redeem and a restore of the same amount are inverses (property)', () => {
+  it('a draw and a give-back of the same amount are inverses (property — the redeem one, on settle)', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 2500 }),
         fc.integer({ min: 0, max: 2500 }),
         (balance, amount) => {
           const voucher = issued({ balance });
-          const drawn = VoucherSystem.redeem(voucher, eur(amount), NOW);
+          const drawn = VoucherSystem.settle(voucher, eur(0), eur(amount));
           if (!drawn.ok) {
             expect(amount).toBeGreaterThan(balance);
             return;
           }
           expect(
             unwrapOk(VoucherSystem.restore(drawn.value, eur(amount))),
+          ).toEqual(voucher);
+          expect(
+            unwrapOk(VoucherSystem.settle(drawn.value, eur(amount), eur(0))),
           ).toEqual(voucher);
         },
       ),
@@ -355,18 +330,35 @@ describe('VoucherSystem — spendable today, the soonest first', () => {
     ).toBe(false);
   });
 
-  it('sums what the spendable ones hold, in one currency', () => {
+  it('sums what the spendable ones hold, one sum per currency in first-seen order (OR-17)', () => {
     expect(
-      VoucherSystem.spendableSum(
+      VoucherSystem.spendableSums(
         [
           issued({ balance: 700 }),
           issued({ balance: 0 }),
           issued({ balance: 300 }),
         ],
         FIXTURE_TODAY,
-        Currency.EUR,
       ),
-    ).toEqual(eur(1000));
+    ).toEqual([eur(1000)]);
+    const lev = (balance: number) => ({
+      ...issued({ balance }),
+      currency: Currency.BGN,
+    });
+    expect(
+      VoucherSystem.spendableSums(
+        [lev(400), issued({ balance: 700 }), lev(100), issued({ balance: 0 })],
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([money(500, Currency.BGN), eur(700)]);
+    // A currency nothing spendable is held in has no sum.
+    expect(
+      VoucherSystem.spendableSums(
+        [lev(0), issued({ balance: 200 })],
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([eur(200)]);
+    expect(VoucherSystem.spendableSums([], FIXTURE_TODAY)).toEqual([]);
   });
 
   it('orders by the last day, never-expiring last, ties by id', () => {
@@ -410,10 +402,6 @@ describe('VoucherSystem.held, untouched, heldTotal (the wallet’s vouchers)', (
   const MARTIN = holding('dev-client-2');
   const [GIFT50] = GEORGI;
   const gift50 = GIFT50 as GiftVoucher;
-  /** The wallet's tie-break — any comparator over ids; this one is A→Z. */
-  const ascending = (a: GiftVoucherId, b: GiftVoucherId) =>
-    a < b ? -1 : a > b ? 1 : 0;
-  const descending = (a: GiftVoucherId, b: GiftVoucherId) => ascending(b, a);
   /** One more voucher of Георги's, GIFT50's document with some fields changed. */
   const voucherWith = (id: string, fields: Partial<GiftVoucher>) =>
     ({ ...gift50, id: GiftVoucherId.of(id), ...fields }) as GiftVoucher;
@@ -425,51 +413,52 @@ describe('VoucherSystem.held, untouched, heldTotal (the wallet’s vouchers)', (
 
   it('holds what can be spent: a voided voucher and an empty one are absent', () => {
     expect(GEORGI).toHaveLength(3);
-    expect(ids(VoucherSystem.held(GEORGI, FIXTURE_TODAY, ascending))).toEqual([
+    expect(ids(VoucherSystem.held(GEORGI, FIXTURE_TODAY))).toEqual([
       'voucher-dev-georgi',
     ]);
-    expect(ids(VoucherSystem.held(MARTIN, FIXTURE_TODAY, ascending))).toEqual([
+    expect(ids(VoucherSystem.held(MARTIN, FIXTURE_TODAY))).toEqual([
       'voucher-dev-martin',
     ]);
-    expect(VoucherSystem.held([], FIXTURE_TODAY, ascending)).toEqual([]);
+    expect(VoucherSystem.held([], FIXTURE_TODAY)).toEqual([]);
   });
 
   it('keeps a voucher to its last day and drops it after', () => {
-    expect(
-      ids(VoucherSystem.held([gift50], localDate('2026-12-31'), ascending)),
-    ).toEqual(['voucher-dev-georgi']);
-    expect(
-      VoucherSystem.held([gift50], localDate('2027-01-01'), ascending),
-    ).toEqual([]);
+    expect(ids(VoucherSystem.held([gift50], localDate('2026-12-31')))).toEqual([
+      'voucher-dev-georgi',
+    ]);
+    expect(VoucherSystem.held([gift50], localDate('2027-01-01'))).toEqual([]);
   });
 
   it('puts the soonest to expire first, one that never expires last', () => {
     const october = voucherWith('voucher-b', lastDay('2026-10-31'));
     const open = voucherWith('voucher-a', lastDay(null));
     expect(
-      ids(
-        VoucherSystem.held(
-          [open, ...GEORGI, october],
-          FIXTURE_TODAY,
-          ascending,
-        ),
-      ),
+      ids(VoucherSystem.held([open, ...GEORGI, october], FIXTURE_TODAY)),
     ).toEqual(['voucher-b', 'voucher-dev-georgi', 'voucher-a']);
-    // The never-expiring one stays last whatever the id order says.
-    expect(
-      ids(VoucherSystem.held([open, october], FIXTURE_TODAY, descending)),
-    ).toEqual(['voucher-b', 'voucher-a']);
+    // The never-expiring one stays last whatever the ids say.
+    expect(ids(VoucherSystem.held([open, october], FIXTURE_TODAY))).toEqual([
+      'voucher-b',
+      'voucher-a',
+    ]);
   });
 
-  it('breaks a tie of last days by the order the caller passes, both ways', () => {
+  it('breaks a tie of last days by id in UTF-16 code units, whatever the input order (OR-18)', () => {
     const b = voucherWith('voucher-b', lastDay('2026-10-31'));
     const a = voucherWith('voucher-a', lastDay('2026-10-31'));
-    expect(ids(VoucherSystem.held([b, a], FIXTURE_TODAY, ascending))).toEqual([
+    expect(ids(VoucherSystem.held([b, a], FIXTURE_TODAY))).toEqual([
       'voucher-a',
       'voucher-b',
     ]);
-    expect(ids(VoucherSystem.held([a, b], FIXTURE_TODAY, descending))).toEqual([
+    expect(ids(VoucherSystem.held([a, b], FIXTURE_TODAY))).toEqual([
+      'voucher-a',
       'voucher-b',
+    ]);
+    // Code units, not a locale's collation: an upper-case id sorts before
+    // every lower-case one, and «Z» before «a» (`localeCompare` would put
+    // «a» first on most devices).
+    const upper = voucherWith('voucher-Z', lastDay('2026-10-31'));
+    expect(ids(VoucherSystem.held([a, upper], FIXTURE_TODAY))).toEqual([
+      'voucher-Z',
       'voucher-a',
     ]);
     // Two that never expire tie too.
@@ -477,11 +466,11 @@ describe('VoucherSystem.held, untouched, heldTotal (the wallet’s vouchers)', (
       voucherWith('voucher-y', lastDay(null)),
       voucherWith('voucher-x', lastDay(null)),
     ];
-    expect(ids(VoucherSystem.held(never, FIXTURE_TODAY, ascending))).toEqual([
+    expect(ids(VoucherSystem.held(never, FIXTURE_TODAY))).toEqual([
       'voucher-x',
       'voucher-y',
     ]);
-    // `soonestFirst` keeps its own code-unit tie-break through the shared order.
+    // `soonestFirst` shares the one order.
     expect(ids(VoucherSystem.soonestFirst([b, a]))).toEqual([
       'voucher-a',
       'voucher-b',
@@ -542,8 +531,9 @@ describe('VoucherSystem.held, untouched, heldTotal (the wallet’s vouchers)', (
       voucherWith('voucher-a', lastDay('2026-10-31')),
     ]);
     const run = () => [
-      VoucherSystem.held(vouchers, FIXTURE_TODAY, descending),
+      VoucherSystem.held(vouchers, FIXTURE_TODAY),
       VoucherSystem.heldTotal(vouchers, FIXTURE_TODAY),
+      VoucherSystem.spendableSums(vouchers, FIXTURE_TODAY),
       VoucherSystem.untouched(vouchers[0] as GiftVoucher),
     ];
     expect(run()).toEqual(run());

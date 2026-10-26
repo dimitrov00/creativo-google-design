@@ -11,6 +11,7 @@ import {
 import { Currency, GiftVoucherId } from '@core/primitives';
 import { CancellationRefusalCode } from '@core/errors';
 import { type GiftVoucher, Collections } from '@core/entities';
+import { StoredDocumentSystem } from '@core/systems';
 import { cancelAppointment } from '@core/pipelines';
 import {
   appointmentFixture,
@@ -102,7 +103,11 @@ describe('cancelAppointment (emulator)', () => {
   function run() {
     const telemetry = recordingTelemetry();
     return cancelAppointment({
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: pinnedNowUtcMs(),
       nextId: () => 'id-1',
       hash: sha256Hex,

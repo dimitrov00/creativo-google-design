@@ -765,10 +765,28 @@ with the scanner after the deletions; the floors equal the measured counts.
 2. **Grant burn and restore** (`editAppointment`/`cancelAppointment`, blueprint
    §4.1, Risk 7): out of this flip under the frozen-behaviour constraint
    (today nothing burns a grant). Schedule it as its own commit?
+   **CLOSED 2026-10-26 — owner rulings OR-13 (DEP-F10, DEP-F10b;
+   `docs/architecture/decisions/2026-10-26-owner-rulings.md`):** built — a
+   grant line new on the bill is burned at save inside the edit transaction
+   (`CouponGrantSystem.settleBill`), one that left the bill is given back,
+   and a cancel or a no-show gives the visit's grants back
+   (`CouponGrantSystem.releasePlan` behind `BillingSystem.releasesHoldings`,
+   the voucher draw's predicate too); a reopen does not re-burn. This
+   departs from F1-2's "no grant write". Voucher issuing is not built:
+   `VoucherSystem.issue` and `redeem` are deleted and issuing returns with
+   points redemption or payments (OR-14).
 3. **The reopen busy write** (`transitionAppointment`), **`retry: true`** on
    the triggers, the **`leadTimeSampling`** gate, and the **refusal busy body**
    (docs Q4): each is a behaviour change the blueprint lists for flip 1; this
-   plan defers all four.
+   plan defers all four. **CLOSED, all four:** the reopen busy write landed
+   with pass E (DEP-5); `retry: true` with the edge hardening (the three
+   projection triggers) and pass E (the four other capacity triggers,
+   DEP-1); the `leadTimeSampling` gate by owner ruling OR-27 (DEP-F21,
+   2026-10-26) — the sampler stays ungated; the refusal busy body by owner
+   ruling OR-12 (2026-10-26) — declined: `BOOKING_SLOT_UNAVAILABLE`'s
+   details stay exactly
+   `{ errorCode, barberId, localDate, startMinutes, seatIndex }`, and the
+   live listeners redraw.
 4. **`cancelWaitlist` details:** the blueprint accepted `{ code }` →
    `{ code, params }`; this plan keeps `{ code }` (F1-3). Accept the change
    instead?
@@ -779,7 +797,11 @@ with the scanner after the deletions; the floors equal the measured counts.
    keep indexed for the coming customer search?
 7. **`customers` writes:** staff `create, update` per flatten-spec §5.5, though
    no web writer exists in this flip — or `allow write: if false` until the
-   walk-in path lands?
+   walk-in path lands? **CLOSED 2026-10-26 — owner rulings OR-25 (DEP-F19)
+   and OR-26 (DEP-F20):** `allow create, update: if false` — the server is
+   the only writer — and «Нов клиент» creates a server-written walk-in
+   record, `customers/{CustomerId.forWalkIn(…)}`, with a `WALK_IN` seat
+   occupant.
 8. **Visit-photo object metadata keys:** this plan writes today's six facts
    under the entity's key names (`clientCustomerId`, `takenByUserId`,
    `takenAtUtcMs`, §3.4) because `clientUserId`/`takenAtIso` are removed

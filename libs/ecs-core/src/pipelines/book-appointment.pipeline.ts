@@ -28,6 +28,7 @@ import {
 import {
   type BookAppointmentError,
   BookingError,
+  BookingErrorField,
   ShopUnavailableReason,
   type TimeError,
 } from '@core/errors';
@@ -39,6 +40,7 @@ import type {
   ReadTx,
   TelemetryPorts,
   TxPorts,
+  WalkInKeyPorts,
 } from '@core/ports';
 import {
   type AuditFact,
@@ -47,6 +49,7 @@ import {
   CustomerRecordSystem,
   type DecideBookingInput,
   PartyAdmissionSystem,
+  type WalkInGuest,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -55,7 +58,6 @@ import {
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
-  isReadableId,
   type PlacementSet,
   placementKeysOf,
   parseContactPhone,
@@ -80,27 +82,36 @@ import {
  * consulted (`BookingDecisionSystem`).
  *
  * - **Outside, before the transaction:** the tenant policy (never widens
- *   the conflict set) and the FIRST_BOOKING contact snapshot of every
- *   account on the cart (`loadAccountContacts`, F1-5).
+ *   the conflict set), the FIRST_BOOKING contact snapshot of every
+ *   account on the cart (`loadAccountContacts`, F1-5) and — on the shop's
+ *   own placement only — the walk-ins: each guest the desk took a phone or
+ *   an e-mail for, its record's deterministic id derived from the contact
+ *   under the server's key (`CustomerRecordSystem.walkInGuests` over
+ *   `walkInHash`, OR-26). A client's cart files no
+ *   guest's contact: whatever it sends there keeps no record.
  * - **In the transaction:** `appointments/{attemptId}` FIRST — an attempt
  *   that already committed (response lost, client retried) answers its
  *   original booking and writes nothing, before anything else is asked;
  *   then the booking read set — the shop, the services, the schedules and
- *   the subjects' `customers/{id}` in ONE `getAll`, the busy days and
- *   exceptions of every key in a second (read even when absent). A booking
- *   ARRIVES at its shop: a client's only at a shop `/book` lists, the
- *   shop's own placement at any.
+ *   the subjects' and the walk-ins' `customers/{id}` in ONE `getAll`, the
+ *   busy days and exceptions of every key in a second (read even when
+ *   absent). A booking ARRIVES at its shop: a client's only at a shop
+ *   `/book` lists, the shop's own placement at any.
  * - **The wall clock, once (Law 7.3):** the call carries the shop day and
  *   each seat's minute (`localDate` + `startMinutes`); having read the
  *   shop, the pipeline parses them ({@link frameWallClock}) and
  *   `ZonedTimeSystem.frameShopDay` places them on ITS zone — a start the
  *   zone never shows (a spring-forward gap) is refused
  *   `DST_GAP_INVALID_TIME`, never shifted.
- * - **One plan:** the appointment `Create`, the busy `Set`s merged onto the
- *   exact busy bodies this attempt read, and a `customers` `Create` for
- *   every record found absent (F1-5). A commit that meets a customer record
- *   created meanwhile (ALREADY_EXISTS) re-runs the whole transaction ONCE —
- *   it re-reads and finds the record — and is never answered as success.
+ * - **One plan:** the appointment `Create` (a walk-in's seat `WALK_IN`,
+ *   its record beside its label), the busy `Set`s merged onto the exact
+ *   busy bodies this attempt read, a `customers` `Create` for every
+ *   account's record found absent (F1-5) and for every walk-in's
+ *   (`STAFF_WALK_IN`, OR-26). A commit that meets a customer record created
+ *   meanwhile (ALREADY_EXISTS) re-runs the whole transaction ONCE — it
+ *   re-reads and finds the record — and is never answered as success; the
+ *   same phone twice is one record, and a retried attempt is answered
+ *   before anything is planned.
  * - **After the commit:** the act's rows (`attempt:<attemptId>`, else the
  *   new id), never fatal. A replay appends them again — the same ids, so
  *   nothing is written twice.
@@ -145,6 +156,7 @@ export type BookAppointmentAnswer = {
 };
 
 export type BookAppointmentPorts = TxPorts &
+  WalkInKeyPorts &
   PolicyReadPorts &
   AccountContactPorts &
   AuditAppendPorts &
@@ -207,7 +219,11 @@ export function frameWallClock(
   });
 }
 
-/** The ids a request names that could be documents — read; the rest are refused by the decision. */
+/**
+ * The ids a request names that could be documents — the ones their brand's
+ * `parse` takes (a reserved name refused with the rest, OR-44) are read; the
+ * rest are refused by the decision.
+ */
 function parsedIds<T>(
   raws: readonly string[],
   parse: (raw: string) => Result<T, unknown>,
@@ -215,7 +231,7 @@ function parsedIds<T>(
   const out: T[] = [];
   for (const raw of raws) {
     const parsed = parse(raw);
-    if (parsed.ok && isReadableId(raw)) out.push(parsed.value);
+    if (parsed.ok) out.push(parsed.value);
   }
   return out;
 }
@@ -236,19 +252,29 @@ export const bookAppointment =
       cmd.ownerUserId,
     );
     const customerIds = customerIdsFor(accounts, ports.hash);
+    // THE WALK-INS — the shop's own placement only: a client's cart keeps
+    // no record for anybody it names (OR-25, OR-26).
+    const walkIns = cmd.staffPlacement
+      ? CustomerRecordSystem.walkInGuests(cmd.seats, ports.walkInHash)
+      : [];
     const contacts = await ports.loadAccountContacts(accounts);
     if (!contacts.ok) return contacts;
     const nowUtcMs = ports.nowUtcMs();
 
     const committed = await runWithCustomerRetry(() =>
       ports.commit(
-        (tx) => readBooking(tx, cmd, customerIdsOf(customerIds)),
+        (tx) =>
+          readBooking(tx, cmd, [
+            ...customerIdsOf(customerIds),
+            ...walkIns.map((walkIn) => walkIn.customerId),
+          ]),
         (snapshot) =>
           decideBooking(
             snapshot,
             cmd,
             policy.value,
             customerIds,
+            walkIns,
             contacts.value,
             nowUtcMs,
             ports.nextId,
@@ -289,14 +315,14 @@ async function readBooking(
       return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
     }
   }
+  // A shop id `LocationId.parse` refuses — blank, a `/`, a reserved name
+  // (OR-44) — is an invalid request, refused UNREAD (DEP-F31): no document
+  // could ever bear it, so it is no "shop not found".
   const locationId = LocationId.parse(cmd.locationId);
-  if (!locationId.ok || !isReadableId(cmd.locationId)) {
+  if (!locationId.ok) {
     return {
       bookingReadSnapshot: BookingReadSnapshot.Refused,
-      error: BookingError.shopUnavailable(
-        cmd.locationId,
-        ShopUnavailableReason.NotFound,
-      ),
+      error: BookingError.invalidInput(BookingErrorField.LocationId),
     };
   }
   const set = await readBookingSet(tx, {
@@ -361,6 +387,7 @@ function decideBooking(
   cmd: BookAppointmentCommand,
   policy: BookingPolicy,
   customerIds: ReadonlyMap<UserId, CustomerId>,
+  walkIns: readonly WalkInGuest[],
   contacts: ReadonlyMap<UserId, AccountContact>,
   nowUtcMs: UtcEpochMs,
   nextId: () => string,
@@ -426,6 +453,7 @@ function decideBooking(
       standing: [],
       stood: [],
       parsePhone: parseContactPhone,
+      walkIns,
     },
   );
   if (!decided.ok) return decided;
@@ -443,6 +471,7 @@ function decideBooking(
         CustomerOrigin.FirstBooking,
         nowUtcMs,
       ),
+      ...CustomerRecordSystem.walkInCreates(walkIns, set.customers, nowUtcMs),
     ],
   });
 }

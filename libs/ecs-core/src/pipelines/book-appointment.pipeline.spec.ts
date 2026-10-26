@@ -6,8 +6,11 @@ import {
   CustomerOrigin,
   type DocBody,
   type DocPath,
+  E164,
+  Email,
   LocationStatus,
   MinuteBlock,
+  SeatSubject,
   WriteAction,
   type WriteOp,
   type BookingCall,
@@ -49,6 +52,7 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   fixtureHash,
+  fixtureWalkInHash,
   localDate,
   locationFixture,
   memoryCommitPlan,
@@ -142,6 +146,7 @@ function rig(
     ...tx,
     commit:
       options.commit === undefined ? tx.commit : options.commit(tx.commit),
+    walkInHash: fixtureWalkInHash,
     ...recordingTelemetry(),
     loadPolicy: async () => options.policy ?? Result.ok(BookingPolicy.DEFAULT),
     loadAccountContacts: async (userIds) => {
@@ -389,6 +394,7 @@ describe('bookAppointment', () => {
               requestedSubjectRole: RequestedSubjectRole.Guest,
               label: 'Walk-in',
               guestKey: null,
+              contact: null,
             },
           },
         ],
@@ -407,7 +413,7 @@ describe('bookAppointment', () => {
     expect(staff.rows[0]?.auditTarget).toBe('NONE');
   });
 
-  it('refuses a shop that is not there — and one whose id names no document, unread', async () => {
+  it('refuses a shop that is not there — and, as an invalid request, one whose id no document could bear, unread (DEP-F31)', async () => {
     const { tx, run } = rig([]);
     const missing = await run(command());
     expect(!missing.ok && missing.error).toMatchObject({
@@ -415,13 +421,26 @@ describe('bookAppointment', () => {
       reason: 'not_found',
     });
     const unreadable = await run(command({ locationId: 'a/b' }));
-    expect(!unreadable.ok && unreadable.error).toMatchObject({
+    expect(!unreadable.ok && unreadable.error).toEqual({
+      errorCode: 'BOOKING_INVALID_INPUT',
       field: 'locationId',
-      reason: 'not_found',
+      detail: null,
+      reason: null,
     });
     expect(tx.transactions[1]?.reads).toEqual([
       [Collections.Appointments, ATTEMPT],
     ]);
+    // A reserved name is the parse's refusal too (OR-44): never read.
+    for (const [i, locationId] of ['.', '..', '__x__'].entries()) {
+      const reserved = await run(command({ locationId }));
+      expect(!reserved.ok && reserved.error, locationId).toMatchObject({
+        field: 'locationId',
+        reason: null,
+      });
+      expect(tx.transactions[2 + i]?.reads, locationId).toEqual([
+        [Collections.Appointments, ATTEMPT],
+      ]);
+    }
   });
 
   it('refuses a time somebody else holds (SLOT_UNAVAILABLE), writing nothing', async () => {
@@ -514,6 +533,7 @@ describe('bookAppointment', () => {
                 requestedSubjectRole: RequestedSubjectRole.Guest,
                 label: 'Walk-in',
                 guestKey: null,
+                contact: null,
               },
             },
           ],
@@ -559,6 +579,226 @@ describe('bookAppointment', () => {
       FIXTURE_IDS.customer,
     );
     expect(FIXTURE_IDS.customer).not.toBe(FIXTURE_IDS.client as string);
+  });
+});
+
+describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', () => {
+  const MARIA_PHONE = E164.of('+359888123456');
+  const MARIA_RECORD = CustomerId.forWalkIn(MARIA_PHONE, fixtureWalkInHash);
+  const MARIA_PATH = `${Collections.Customers}/${MARIA_RECORD}`;
+  const STAFF = Actor.staff(UserId.of('u-staff'), []);
+
+  /** A guest seat on `lineId` at `startMinutes`, with what the desk took. */
+  const guest = (
+    lineId: string,
+    label: string,
+    contact: BookingCall.GuestContact | null,
+    startMinutes = 600,
+  ): BookingCall.SeatInput => ({
+    ...SEAT,
+    lineId,
+    startMinutes,
+    subject: {
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label,
+      guestKey: null,
+      contact,
+    },
+  });
+  const walkIn = (
+    seats: readonly BookingCall.SeatInput[],
+    extra: Partial<BookAppointmentCommand> = {},
+  ) =>
+    command({
+      staffPlacement: true,
+      ownerUserId: null,
+      attemptId: ATTEMPT,
+      seats,
+      actor: STAFF,
+      ...extra,
+    });
+
+  it('creates the walk-in’s record at its deterministic id, reads it in phase one, and seats them WALK_IN', async () => {
+    const { store, tx, run, rows } = rig(catalogue());
+    const answer = await run(
+      walkIn([
+        guest('line-1', 'Мария', {
+          phone: MARIA_PHONE,
+          email: Email.of('maria@example.com'),
+        }),
+      ]),
+    );
+    expect(answer.ok).toBe(true);
+    const plan = tx.plans[0] ?? [];
+    expect(plan.map((op) => [op.writeAction, op.path.join('/')])).toEqual([
+      [WriteAction.Create, `${Collections.Appointments}/${ATTEMPT}`],
+      [WriteAction.Set, `${Collections.BarberBusy}/${BUSY_KEY}`],
+      [WriteAction.Create, MARIA_PATH],
+    ]);
+    const expected: Omit<Customer, 'id'> = {
+      userId: null,
+      displayName: 'Мария',
+      phone: MARIA_PHONE,
+      email: Email.of('maria@example.com'),
+      ...SearchFieldsSystem.searchFields(
+        'Мария',
+        null,
+        MARIA_PHONE,
+        Email.of('maria@example.com'),
+      ),
+      createdAtUtcMs: FIXTURE_NOW_UTC_MS,
+      customerOrigin: CustomerOrigin.StaffWalkIn,
+    };
+    expect(store.get(MARIA_PATH)).toEqual(expected);
+    // The record rides the phase-one getAll — no extra round trip.
+    const reads = tx.transactions[0]?.reads.map((path) => path.join('/')) ?? [];
+    expect(reads.slice(1, 5)).toEqual([
+      `${Collections.Locations}/${FIXTURE_IDS.location}`,
+      `${Collections.Services}/${FIXTURE_IDS.service}`,
+      `${Collections.BarberSchedules}/${FIXTURE_IDS.barber}`,
+      MARIA_PATH,
+    ]);
+    const appointment = store.get(`${Collections.Appointments}/${ATTEMPT}`);
+    expect(appointment).toMatchObject({
+      ownerUserId: null,
+      ownerCustomerId: null,
+      subjectCustomerIds: [MARIA_RECORD],
+      seats: [
+        {
+          seatSubject: SeatSubject.WalkIn,
+          subjectCustomerId: MARIA_RECORD,
+          guestLabel: 'Мария',
+        },
+      ],
+    });
+    // The act is done to the walk-in's record.
+    expect(rows[0]).toMatchObject({
+      auditTarget: 'CUSTOMER',
+      targetCustomerId: MARIA_RECORD,
+    });
+  });
+
+  it('derives the walk-in’s id under the KEYED digest — never the plain hash a phone number could be brute-forced back out of', async () => {
+    const { store, run } = rig(catalogue());
+    const answer = await run(
+      walkIn([guest('line-1', 'Мария', { phone: MARIA_PHONE, email: null })]),
+    );
+    expect(answer.ok).toBe(true);
+    const unkeyed = CustomerId.forWalkIn(MARIA_PHONE, fixtureHash);
+    expect(MARIA_RECORD).not.toBe(unkeyed);
+    expect(store.get(MARIA_PATH)).toBeDefined();
+    expect(store.get(`${Collections.Customers}/${unkeyed}`)).toBeUndefined();
+    expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toMatchObject({
+      subjectCustomerIds: [MARIA_RECORD],
+    });
+  });
+
+  it('the same phone twice is ONE record — two seats of one walk-in, one Create', async () => {
+    const { store, tx, run } = rig(catalogue());
+    const answer = await run(
+      walkIn([
+        guest('line-1', 'Мария', { phone: MARIA_PHONE, email: null }),
+        guest('line-2', 'Мария', { phone: MARIA_PHONE, email: null }, 630),
+      ]),
+    );
+    expect(answer.ok).toBe(true);
+    expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([
+      MARIA_PATH,
+    ]);
+    const appointment = store.get(`${Collections.Appointments}/${ATTEMPT}`) as {
+      readonly seats: readonly { readonly subjectCustomerId: string }[];
+    };
+    expect(appointment.seats.map((seat) => seat.subjectCustomerId)).toEqual([
+      MARIA_RECORD,
+      MARIA_RECORD,
+    ]);
+  });
+
+  it('meets the record a visit before created: the same id, nothing written over it', async () => {
+    const stored = {
+      path: [Collections.Customers, MARIA_RECORD],
+      body: { displayName: 'Мария Иванова' },
+    };
+    const { store, tx, run } = rig([...catalogue(), stored]);
+    const answer = await run(
+      walkIn([guest('line-1', 'Мими', { phone: MARIA_PHONE, email: null })]),
+    );
+    expect(answer.ok).toBe(true);
+    expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([]);
+    expect(store.get(MARIA_PATH)).toEqual({ displayName: 'Мария Иванова' });
+    expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toMatchObject({
+      seats: [{ seatSubject: SeatSubject.WalkIn, guestLabel: 'Мими' }],
+    });
+  });
+
+  it('a retried attemptId creates no duplicate — answered with its booking before anything is planned', async () => {
+    const { tx, run } = rig(catalogue());
+    const seats = [
+      guest('line-1', 'Мария', { phone: MARIA_PHONE, email: null }),
+    ];
+    expect((await run(walkIn(seats))).ok).toBe(true);
+    const again = await run(walkIn(seats));
+    expect(again).toEqual({
+      ok: true,
+      value: { appointmentId: ATTEMPT, replayed: true },
+    });
+    expect(tx.plans.slice(1).flat()).toEqual([]);
+  });
+
+  it('a name alone keys nothing — that guest stays ANONYMOUS, and no record is made', async () => {
+    const { store, tx, run } = rig(catalogue());
+    expect((await run(walkIn([guest('line-1', 'Петър', null)]))).ok).toBe(true);
+    expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([]);
+    expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toMatchObject({
+      subjectCustomerIds: [],
+      seats: [{ seatSubject: SeatSubject.Anonymous, guestLabel: 'Петър' }],
+    });
+  });
+
+  it('a client’s cart keeps no record for a guest it names — whatever contact it sends (OR-25)', async () => {
+    const { store, tx, run } = rig(catalogue());
+    const answer = await run(
+      command({
+        seats: [
+          SEAT,
+          guest('line-2', 'Мария', { phone: MARIA_PHONE, email: null }, 630),
+        ],
+      }),
+    );
+    expect(answer.ok).toBe(true);
+    expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([
+      CUSTOMER_PATH,
+    ]);
+    expect(store.get(MARIA_PATH)).toBeUndefined();
+    expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toMatchObject({
+      seats: [
+        { seatSubject: SeatSubject.Account },
+        { seatSubject: SeatSubject.Anonymous, guestLabel: 'Мария' },
+      ],
+    });
+  });
+
+  it('a walk-in Create that meets a record created meanwhile re-runs the transaction ONCE — it re-reads, finds it and books', async () => {
+    let calls = 0;
+    const { store, tx, run } = rig(catalogue(), {
+      commit: (base) => async (read, decide) => {
+        calls += 1;
+        if (calls === 1) {
+          store.set(MARIA_PATH, { displayName: 'Мария' });
+          return Result.err(RepoError.alreadyExists(MARIA_PATH));
+        }
+        return base(read, decide);
+      },
+    });
+    const answer = await run(
+      walkIn([guest('line-1', 'Мария', { phone: MARIA_PHONE, email: null })]),
+    );
+    expect(answer).toEqual({
+      ok: true,
+      value: { appointmentId: ATTEMPT, replayed: false },
+    });
+    expect(calls).toBe(2);
+    expect(writeKeys(tx.plans.at(-1) ?? [], Collections.Customers)).toEqual([]);
   });
 });
 

@@ -10,14 +10,19 @@ import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
  *
  * Every companion has two doors (decision F-3):
  * - `parse(raw)` — FOREIGN input (an HTTP body, a callable payload, a route
- *   param): non-empty (not blank) and no `/` (a Firestore path separator), or
- *   a flat `PrimitiveError`. Mandatory at every edge.
+ *   param): non-empty (not blank), no `/` (a Firestore path separator) and
+ *   not a name Firestore reserves (`.`, `..`, `__…__` — OR-44), or a flat
+ *   `PrimitiveError`. Mandatory at every edge.
  * - `of(raw)` — a value that is an id BY CONSTRUCTION (a document id the
  *   adapter just read, a derived key, a fixture literal). No check.
  */
 
 /** `/` — the Firestore path separator an id may not hold. */
 const SLASH = 47;
+/** `.` — a document id of one or two of these alone is reserved. */
+const DOT = 46;
+/** `_` — a document id wrapped in two of these on each side is reserved. */
+const UNDERSCORE = 95;
 
 /**
  * A code unit `String.prototype.trim` strips — ECMAScript's WhiteSpace
@@ -44,8 +49,30 @@ function isTrimmedAway(code: number): boolean {
 }
 
 /**
- * `text[start, end)` is a plain id — not blank and no `/` — read in place by
- * code unit: exactly what `parse` accepts of that slice, without the slice.
+ * `text[start, end)` is a name Firestore keeps for itself (OR-44): `.` or
+ * `..` alone, or four or more code units wrapped in `__…__` (the server's
+ * `__.*__`) — `__` itself and `a__b` are plain ids. Gated on the length and
+ * read by code unit: no slice, no regular expression.
+ */
+function isReservedSpan(text: string, start: number, end: number): boolean {
+  const length = end - start;
+  if (length === 1) return text.charCodeAt(start) === DOT;
+  if (length === 2) {
+    return text.charCodeAt(start) === DOT && text.charCodeAt(start + 1) === DOT;
+  }
+  return (
+    length >= 4 &&
+    text.charCodeAt(start) === UNDERSCORE &&
+    text.charCodeAt(start + 1) === UNDERSCORE &&
+    text.charCodeAt(end - 2) === UNDERSCORE &&
+    text.charCodeAt(end - 1) === UNDERSCORE
+  );
+}
+
+/**
+ * `text[start, end)` is a plain id — not blank, no `/`, not reserved — read
+ * in place by code unit: exactly what `parse` accepts of that slice,
+ * without the slice.
  */
 function isIdSpan(text: string, start: number, end: number): boolean {
   let blank = true;
@@ -54,7 +81,7 @@ function isIdSpan(text: string, start: number, end: number): boolean {
     if (code === SLASH) return false;
     if (blank && !isTrimmedAway(code)) blank = false;
   }
-  return !blank;
+  return !blank && !isReservedSpan(text, start, end);
 }
 
 /** The companion every plain id shares — built once per brand. */
@@ -62,10 +89,13 @@ function idCompanion<B extends string>(brand: B) {
   return {
     /**
      * The read-time door (edge hardening D-1): `raw` is a string
-     * {@link parse} accepts — not blank, no `/` — and `false` for every
-     * other value (`parse` itself is never called with a non-string: its
-     * `trim()` would throw). Allocates nothing — no `trim()` copy, no
-     * `Result` — so a stored-document guard runs it per id per document.
+     * {@link parse} accepts — not blank, no `/`, not reserved — and `false`
+     * for every other value (`parse` itself is never called with a
+     * non-string: its `trim()` would throw). Allocates nothing — no
+     * `trim()` copy, no `Result` — so a stored-document guard runs it per id
+     * per document, and a pipeline asks it before it names a document
+     * (OR-44: `.`, `..` and `__…__` would make the SDK throw as the
+     * reference is built).
      */
     is(raw: unknown): raw is Brand<string, B> {
       return typeof raw === 'string' && isIdSpan(raw, 0, raw.length);
@@ -87,6 +117,11 @@ function idCompanion<B extends string>(brand: B) {
       if (raw.includes('/')) {
         return Result.err(
           PrimitiveError.of(PrimitiveErrorCode.IdHasSlash, raw, brand),
+        );
+      }
+      if (isReservedSpan(raw, 0, raw.length)) {
+        return Result.err(
+          PrimitiveError.of(PrimitiveErrorCode.IdReserved, raw, brand),
         );
       }
       return Result.ok(raw as Brand<string, B>);
@@ -272,7 +307,8 @@ export const UserId = idCompanion('UserId');
  * rewarded. Never a `UserId` and never assignable to one: a record may
  * reference an account through an explicit `userId` field, never by sharing
  * a value. Minted only by {@link CustomerId.forUser} (an account holder) or
- * as a walk-in's random `cus_…` id — nothing converts a uid string into one.
+ * {@link CustomerId.forWalkIn} (a walk-in the desk took a contact for,
+ * OR-26) — nothing converts a uid string into one.
  */
 export type CustomerId = Brand<string, 'CustomerId'>;
 export const CustomerId = {
@@ -284,6 +320,27 @@ export const CustomerId = {
    */
   forUser(userId: UserId, hash: (input: string) => string): CustomerId {
     return `cus_${hash(`customer/v1:${userId}`).slice(0, 20)}` as CustomerId;
+  },
+  /**
+   * The deterministic record id of a walk-in (OR-26): `cus_` + the first 20
+   * hex digits of `keyedHash('walkin/v1:' + contactKey)`, where `contactKey`
+   * is the walk-in's E.164 phone, or else their lower-cased e-mail
+   * (`CustomerRecordSystem.walkInKey` builds it). The same number twice is
+   * the same record, and a retried save meets the record it already
+   * created — dedupe and idempotency with no query. Its own namespace, so a
+   * walk-in's id never equals an account holder's.
+   *
+   * `keyedHash` is the pipeline's `KeyedHash` port (HMAC-SHA-256 under the
+   * server's `WALKIN_ID_KEY` in production), never the plain `Hash`: the id
+   * sits on every visit that seats the walk-in, where the visit's owner can
+   * read it, and an unkeyed digest of a phone number gives the number back
+   * to anyone who tries the country's few tens of millions of candidates.
+   */
+  forWalkIn(
+    contactKey: string,
+    keyedHash: (input: string) => string,
+  ): CustomerId {
+    return `cus_${keyedHash(`walkin/v1:${contactKey}`).slice(0, 20)}` as CustomerId;
   },
 } as const;
 
@@ -492,16 +549,13 @@ export const AuditResourceId = {
 } as const;
 
 /**
- * The text a party seat is told apart by — a key brand, not an entity id.
- * It carries TWO spelling families on purpose (pass D, D-3), never mixed in
- * one collection:
- * - a cart seat key — `self`, `guest-…` or `companion-<uid>`, unchanged —
- *   built by `SeatKey.text(key)` in `cart-line.data.ts`;
- * - a party person key — `account:<uid>` or `guest:<label>` — built by
- *   `GuestLabelSystem.personKeyOf` (and the visit story's
- *   `personKeyOf`/`seatPersonKey`).
- * A separate `PersonKey` brand for the second family is an owner question
- * (pass D OQ-17).
+ * The text a cart seat is told apart by — a key brand, not an entity id:
+ * `self`, `guest-…` or `companion-<uid>`, unchanged — built by
+ * `SeatKey.text(key)` in `seat-key.data.ts`. The party PERSON key family
+ * (`self`, `account:<uid>`, `guest:<label>`) it once carried too (pass D,
+ * D-3) is its own brand since OR-49 (`PersonKey`, `person-key.primitive.ts`):
+ * the two only share the `self` spelling, and neither is assignable to the
+ * other.
  */
 export type SeatKeyText = Brand<string, 'SeatKeyText'>;
 export const SeatKeyText = {
@@ -569,9 +623,10 @@ export const DraftPersonKey = {
    * exactly the three spellings the sheet mints, byte for byte —
    * {@link DraftPersonKey.PLACEHOLDER} (`primary`), `guest-<rest>` with a
    * non-empty rest (a typed label as is, Cyrillic, spaces or `/` included),
-   * or an account's uid as `UserId.parse` takes it (non-blank, no `/`).
-   * Anything else is that refusal (`PRIMITIVE_ID_EMPTY` /
-   * `PRIMITIVE_ID_HAS_SLASH`), named for this brand.
+   * or an account's uid as `UserId.parse` takes it (non-blank, no `/`,
+   * not reserved). Anything else is that refusal (`PRIMITIVE_ID_EMPTY` /
+   * `PRIMITIVE_ID_HAS_SLASH` / `PRIMITIVE_ID_RESERVED`), named for this
+   * brand.
    */
   parse(raw: string): Result<DraftPersonKey, PrimitiveError> {
     if (
@@ -597,8 +652,8 @@ export const DraftPersonKey = {
   /**
    * The ACCOUNT a draft key names — `null` for the placeholder and for a
    * stranger's `guest-…` key. Every other key is an account's uid, through
-   * `UserId.parse` (a refused key — blank, or one that would name a nested
-   * document — is no account).
+   * `UserId.parse` (a refused key — blank, one that would name a nested
+   * document, or a reserved name — is no account).
    */
   accountOf(key: DraftPersonKey): UserId | null {
     if (key === DRAFT_PLACEHOLDER || key.startsWith(DRAFT_GUEST_PREFIX)) {

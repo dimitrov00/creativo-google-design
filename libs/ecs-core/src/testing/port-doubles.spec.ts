@@ -9,6 +9,8 @@ import {
   BookingPolicy,
   CancellationReason,
   CancellationReasonSet,
+  type ClientIssue,
+  ClientIssueKind,
   ClientStats,
   CouponStatus,
   ExceptionEffectRule,
@@ -134,6 +136,7 @@ import {
   memoryCourseReadPorts,
   memoryCourseWritePorts,
   memoryCustomerPorts,
+  memoryCustomerSearchPorts,
   memoryDefaultLocationPorts,
   memoryIdPorts,
   memoryIdentityWorld,
@@ -157,7 +160,10 @@ import {
   memoryUserLookupPorts,
   memoryUserSearchPorts,
   memoryWaitlistReadPorts,
+  recordingClientIssuePorts,
   recordingOtpDeliveryPorts,
+  scriptedVisitEditWritePorts,
+  type VisitEditWriteCall,
   type GatewayCall,
   type OtpChallengeCall,
   immediateTimerPorts,
@@ -351,8 +357,28 @@ describe('memoryAppointmentReadPorts — the appointment readers', () => {
       busyKeys: [OTHER_KEY],
     });
     const ports = memoryAppointmentReadPorts([base, cancelled, elsewhere]);
-    expect(await first(ports.observeBarberDay(KEY))).toEqual([base, cancelled]);
-    expect(await first(ports.observeBarberDay(OTHER_KEY))).toEqual([elsewhere]);
+    expect(await first(ports.observeBarberDay(KEY))).toEqual({
+      appointments: [base, cancelled],
+      unreadableCount: 0,
+    });
+    expect(await first(ports.observeBarberDay(OTHER_KEY))).toEqual({
+      appointments: [elsewhere],
+      unreadableCount: 0,
+    });
+  });
+
+  it('answers a barber’s day with the unreadable count the script names for it — 0 for any other', async () => {
+    const ports = memoryAppointmentReadPorts([base], {
+      unreadable: new Map([[KEY, 2]]),
+    });
+    expect(await first(ports.observeBarberDay(KEY))).toEqual({
+      appointments: [base],
+      unreadableCount: 2,
+    });
+    expect(await first(ports.observeBarberDay(OTHER_KEY))).toEqual({
+      appointments: [],
+      unreadableCount: 0,
+    });
   });
 
   it('lists an account’s live visits by start, and its newest `limit`', async () => {
@@ -625,11 +651,17 @@ describe('memoryCouponVoucherPorts — coupons, grants and vouchers', () => {
     ).toEqual([closed]);
   });
 
-  it('reads a grant by id, and a client record’s ACTIVE grants only', async () => {
-    expect(unwrapOk(await ports.loadCouponGrant(held.id))).toBe(held);
+  it('reads grants by id WHATEVER their status — a used one included, a missing id absent — and a client record’s ACTIVE grants only', async () => {
     expect(
-      unwrapOk(await ports.loadCouponGrant(CouponGrantId.of('none'))),
-    ).toBeNull();
+      unwrapOk(
+        await ports.loadCouponGrants([
+          held.id,
+          spent.id,
+          CouponGrantId.of('none'),
+        ]),
+      ),
+    ).toEqual([held, spent]);
+    expect(unwrapOk(await ports.loadCouponGrants([]))).toEqual([]);
     expect(unwrapOk(await ports.listUsableCouponGrants(ANA_RECORD))).toEqual([
       held,
     ]);
@@ -676,15 +708,39 @@ describe('memoryInboxPorts — an account’s inbox, in place', () => {
     );
   });
 
-  it('stamps one read — the others keep theirs', async () => {
+  it('stamps the receipt on each named unread notification — the others, and a stamped one, keep theirs', async () => {
+    const EARLIER = utcMs('2026-09-28T08:00:00+03:00');
     const inboxes = new Map([
-      [ANA, [notification('a', 1), notification('b', 2)]],
+      [
+        ANA,
+        [
+          notification('a', 1),
+          notification('b', 2),
+          { ...notification('c', 3), readAtUtcMs: EARLIER },
+          notification('d', 4),
+        ],
+      ],
     ]);
     const ports = memoryInboxPorts(inboxes);
-    await ports.markNotificationRead(ANA, NotificationId.of('a'), READ_AT);
+    expect(
+      unwrapOk(
+        await ports.markNotificationsRead(
+          ANA,
+          [
+            NotificationId.of('a'),
+            NotificationId.of('c'),
+            NotificationId.of('d'),
+            NotificationId.of('gone'),
+          ],
+          READ_AT,
+        ),
+      ),
+    ).toBeUndefined();
     expect(inboxes.get(ANA)?.map((entry) => entry.readAtUtcMs)).toEqual([
       READ_AT,
       null,
+      EARLIER,
+      READ_AT,
     ]);
   });
 });
@@ -876,6 +932,39 @@ describe('memoryUserSearchPorts — the staff client search', () => {
     expect(unwrapOk(await ports.searchUsers('pe', 20))).toEqual([anna, zara]);
     expect(unwrapOk(await ports.searchUsers('pe', 1))).toEqual([anna]);
     expect(unwrapOk(await ports.searchUsers('x', 20))).toEqual([]);
+  });
+});
+
+describe('memoryCustomerSearchPorts — the staff client search over the records', () => {
+  const record = (
+    id: string,
+    searchName: string,
+    searchPrefixes: readonly string[],
+  ): Customer => ({
+    id: CustomerId.of(id),
+    userId: null,
+    displayName: searchName,
+    phone: null,
+    email: null,
+    searchName,
+    searchPrefixes,
+    createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
+    customerOrigin: CustomerOrigin.StaffWalkIn,
+  });
+
+  it('answers the records whose prefixes contain the query, by searchName then id, cut at the limit', async () => {
+    const zara = record('cus_zara', 'zara petrova', ['z', 'p', 'pe']);
+    const anna = record('cus_anna', 'anna petrova', ['a', 'p', 'pe']);
+    const twin = record('cus_anna_2', 'anna petrova', ['a', 'p', 'pe']);
+    const other = record('cus_ivan', 'ivan ivanov', ['i', 'iv']);
+    const ports = memoryCustomerSearchPorts([zara, twin, other, anna]);
+    expect(unwrapOk(await ports.searchCustomers('pe', 20))).toEqual([
+      anna,
+      twin,
+      zara,
+    ]);
+    expect(unwrapOk(await ports.searchCustomers('pe', 1))).toEqual([anna]);
+    expect(unwrapOk(await ports.searchCustomers('x', 20))).toEqual([]);
   });
 });
 
@@ -1640,5 +1729,77 @@ describe('memoryFlagsPorts and immediateTimerPorts', () => {
     await ports.delay(250);
     await ports.delay(0);
     expect(delays).toEqual([250, 0]);
+  });
+});
+
+describe('scriptedVisitEditWritePorts — the visit sheet’s three writes', () => {
+  const intent = {
+    appointmentId: FIXTURE_IDS.appointment,
+    commands: [],
+    acknowledgedOverlap: false,
+    expectedVersion: 3,
+    operationId: null,
+  };
+  const tip = {
+    appointmentId: FIXTURE_IDS.appointment,
+    seatId: FIXTURE_IDS.seat,
+    amountCents: null,
+  };
+
+  it('records every write in the order it was made, each landing unless the script says otherwise', async () => {
+    const calls: VisitEditWriteCall[] = [];
+    const ports = scriptedVisitEditWritePorts({ calls });
+    expect(await ports.sendStaffEdit(intent)).toBe(true);
+    expect(
+      await ports.saveTeamNoteText(FIXTURE_IDS.appointment, 'Бележка'),
+    ).toBe(true);
+    expect(await ports.sendSeatTip(tip)).toBe(true);
+    expect(calls).toEqual([
+      { port: 'sendStaffEdit', intent },
+      {
+        port: 'saveTeamNoteText',
+        appointmentId: FIXTURE_IDS.appointment,
+        text: 'Бележка',
+      },
+      { port: 'sendSeatTip', request: tip },
+    ]);
+  });
+
+  it('answers each write as scripted', async () => {
+    const ports = scriptedVisitEditWritePorts({
+      staffEdit: false,
+      teamNote: false,
+      seatTip: false,
+    });
+    expect(await ports.sendStaffEdit(intent)).toBe(false);
+    expect(await ports.saveTeamNoteText(FIXTURE_IDS.appointment, null)).toBe(
+      false,
+    );
+    expect(await ports.sendSeatTip(tip)).toBe(false);
+  });
+});
+
+describe('recordingClientIssuePorts — the client issue sink', () => {
+  const issue = (clientIssueKind: ClientIssueKind): ClientIssue => ({
+    clientIssueKind,
+    errorName: null,
+    documentPath: null,
+    fieldName: null,
+    routePattern: '/staff/schedule',
+    topFrame: null,
+    scrubbedMessage: null,
+    release: null,
+    occurrences: 1,
+  });
+
+  it('records every issue handed over, batch after batch, in order', () => {
+    const { ports, reported } = recordingClientIssuePorts();
+    const dropped = issue(ClientIssueKind.DataDocumentDropped);
+    const csp = issue(ClientIssueKind.CspViolation);
+    const uncaught = issue(ClientIssueKind.UncaughtError);
+    ports.reportClientIssues([dropped, csp]);
+    ports.reportClientIssues([]);
+    ports.reportClientIssues([uncaught]);
+    expect(reported).toEqual([dropped, csp, uncaught]);
   });
 });

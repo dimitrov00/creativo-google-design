@@ -32,6 +32,7 @@ import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   endMinute,
+  hourCount,
   localDate,
   minute,
   unwrapErr,
@@ -80,12 +81,14 @@ function policyWithWindow(cancellationWindowHours: number): BookingPolicy {
   );
 }
 
-/** Any whole number of hours the type holds, edges weighted in. */
-const anyValidHours = fc.oneof(
-  fc.integer({ min: 0, max: 8_760 }),
-  fc.integer({ min: 0, max: MAX }),
-  fc.constantFrom(0, 1, MAX),
-);
+/** Any whole number of hours the type holds, edges weighted in — as the brand (OR-45). */
+const anyValidHours = fc
+  .oneof(
+    fc.integer({ min: 0, max: 8_760 }),
+    fc.integer({ min: 0, max: MAX }),
+    fc.constantFrom(0, 1, MAX),
+  )
+  .map(hourCount);
 
 /** Every kind of number a caller or a stored document could hand over. */
 const anyNumber = fc.oneof(
@@ -214,7 +217,8 @@ describe('the deadline (`BookingPolicy.cancellationDeadlineUtcMs`)', () => {
       fc.property(
         fc.integer({ min: 0, max: 8_760 }),
         anyStart,
-        (hours, start) => {
+        (raw, start) => {
+          const hours = hourCount(raw);
           const deadline = BookingPolicy.cancellationDeadlineUtcMs(
             hours,
             start,
@@ -237,7 +241,10 @@ describe('the deadline (`BookingPolicy.cancellationDeadlineUtcMs`)', () => {
         anyStart,
         fc.integer({ min: -8_760 * HOUR, max: 8_760 * HOUR }),
         (a, b, start, offsetMs) => {
-          const [shorter, longer] = a <= b ? [a, b] : [b, a];
+          const [shorter, longer] =
+            a <= b
+              ? [hourCount(a), hourCount(b)]
+              : [hourCount(b), hourCount(a)];
           const at = plus(start, offsetMs);
           if (!BookingPolicy.allowsFreeCancelAt(shorter, start, at)) {
             expect(BookingPolicy.allowsFreeCancelAt(longer, start, at)).toBe(
@@ -288,7 +295,9 @@ describe('CancellationPolicySystem — the booking policy’s own rule', () => {
               policy.cancellationWindowHours,
               start,
             ),
-          ).toBe(BookingPolicy.cancellationDeadlineUtcMs(hours, start));
+          ).toBe(
+            BookingPolicy.cancellationDeadlineUtcMs(hourCount(hours), start),
+          );
         },
       ),
     );
@@ -399,7 +408,7 @@ describe('the client’s own cancel — stamped with the window it was allowed u
       instant(1),
       CancelledBy.Staff,
       CancellationReason.ClientUnwell,
-      48,
+      hourCount(48),
     );
     const step = unwrapOk(
       clientCancel(storedParty(earlier), policyWithWindow(24)),

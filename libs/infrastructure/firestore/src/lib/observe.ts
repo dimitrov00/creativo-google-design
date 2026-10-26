@@ -7,7 +7,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { type Observable, map } from 'rxjs';
-import { Result } from '@core/primitives';
+import { Result, defect } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import type { Log, LogPorts } from '@core/ports';
 import {
@@ -29,7 +29,13 @@ import { subscribeWithRetry } from './subscribe-with-retry';
  *
  * The read-time guard (edge hardening D-1, D-3): every helper takes a
  * {@link ReadGuard} — the stored-document guard registry plus the log a
- * refusal is reported through — defaulting to {@link UNGUARDED}. Guarded
+ * refusal is reported through. An adapter of a guarded collection takes
+ * its guard as a REQUIRED parameter (OR-33, DEP-F24: a bare one no longer
+ * type-checks) and hands it to every read; an adapter that reads only
+ * collections the registry never guards may leave it out and reads
+ * {@link AS_STORED}, which refuses — a defect, at once — to read a guarded
+ * collection unguarded. The registry that guards nothing is test support
+ * (`UNGUARDED`, this lib's `src/testing/unguarded.ts`). Guarded
  * (`guardedReads`, bound by the composition root for the appointment,
  * customer, scheduling and team-note bundles), a top-level `appointments` /
  * `customers` / `barberBusy` / `appointmentNotes` document passes its
@@ -46,7 +52,9 @@ import { subscribeWithRetry } from './subscribe-with-retry';
  *   drops rows and keeps NONE (the systemic rule: a bulk drift or a stale
  *   chunk's dictionary reads as the screen's failure, never as an empty
  *   day); a strict list (`RefuseMalformed`, the client's upcoming
- *   bookings) answers the refusal on its first bad row.
+ *   bookings) answers the refusal on its first bad row. The staff day
+ *   reads the same rule COUNTED ({@link admitCounted}): the rows and how
+ *   many were dropped, so its sheet says so (OR-2).
  *
  * Each refusal is reported ONCE per document path per port call through
  * the guard's `log` (`'malformed document refused'` for a single or a
@@ -99,9 +107,26 @@ export type ReadGuard = {
   readonly log: Log;
 };
 
-/** No guard, no report — every helper's default (DEP-11): read as stored. */
-export const UNGUARDED: ReadGuard = {
-  guardOf: StoredDocumentSystem.unguarded,
+/**
+ * The shared reads' guard when an adapter gives none — an adapter that
+ * reads only collections the registry never guards (`locations`, `users`,
+ * the catalogue, the programs, …): their documents read as stored, as they
+ * always did, and nothing is reported. A GUARDED collection (`appointments`,
+ * `customers`, `barberBusy`, `appointmentNotes`) read through it is a
+ * programmer defect, raised at the read (a list before its first row, a
+ * single read on the document it finds; OR-33): its adapter takes a
+ * `ReadGuard` as a required parameter, so the next read site that forgets
+ * one fails loudly instead of reading unguarded.
+ */
+export const AS_STORED: ReadGuard = {
+  guardOf: (collection) => {
+    if (StoredDocumentSystem.guardOf(collection) !== null) {
+      defect(
+        `${collection} read without its guard — its adapter takes the composition root's ReadGuard (OR-33)`,
+      );
+    }
+    return null;
+  },
   log: () => undefined,
 };
 
@@ -186,29 +211,45 @@ export function admitted<E>(
 }
 
 /**
- * The LIST rule over rows of `collection`, as read. DROP (the default):
- * each refused row is dropped and reported once per path (`reported`), the
- * rest answered in their order — the SAME array when nothing was dropped —
- * and, when rows were read and NONE kept, the first refusal is the answer
- * (the systemic rule; an empty read is `ok([])`). DROP ONLY: the same drop,
- * never the systemic refusal (a part of a whole the caller judges). REFUSE:
- * the first refused row is the answer. Admitted rows are the same objects.
- * An answer read in several parts (the staff search's two halves) is
- * admitted ONCE, whole, so the systemic rule judges the whole answer.
+ * A list's admitted rows and how many the guard dropped from them — the
+ * staff day's answer (`BarberDayRead`, OR-2) says the count beside the
+ * rows, so a dropped visit never draws its time as a free gap.
  */
-export function keepAdmitted<E>(
+export type CountedRows<E> = {
+  readonly kept: readonly E[];
+  readonly dropped: number;
+};
+
+/**
+ * The LIST rule over rows of `collection`, as read, COUNTED (OR-2). DROP
+ * (the default): each refused row is dropped and reported once per path
+ * (`reported`), the rest answered in their order — `kept` is the SAME
+ * array when nothing was dropped — with `dropped` the number of rows the
+ * guard refused (`0` on a clean or an unguarded read), counted in the loop
+ * that drops them; when rows were read and NONE kept, the first refusal is
+ * the answer (the systemic rule; an empty read is `{ kept: [], dropped: 0 }`).
+ * DROP ONLY: the same drop and count, never the systemic refusal (a part of
+ * a whole the caller judges). REFUSE: the first refused row is the answer.
+ * Admitted rows are the same objects. An answer read in several parts (the
+ * staff search's two halves) is admitted ONCE, whole, so the systemic rule
+ * judges the whole answer.
+ */
+export function admitCounted<E>(
   docs: readonly StoredDocument[],
   collection: string,
   guard: ReadGuard,
   reported: Set<string> | null,
   admission: ListAdmission = ListAdmission.DropMalformed,
-): Result<readonly E[], RepositoryError> {
+): Result<CountedRows<E>, RepositoryError> {
   const check = guard.guardOf(collection);
-  if (check === null) return Result.ok(docs as unknown as readonly E[]);
+  if (check === null) {
+    return Result.ok({ kept: docs as unknown as readonly E[], dropped: 0 });
+  }
   // Allocated only once a row is dropped: a clean read answers `docs` itself.
   let kept: StoredDocument[] | null = null;
   let firstRefusal: RepositoryError | null = null;
   let seen = 0;
+  let dropped = 0;
   for (const doc of docs) {
     seen++;
     const verdict = check(doc);
@@ -221,11 +262,14 @@ export function keepAdmitted<E>(
       return verdict;
     }
     report(guard, DROPPED, verdict.error, reported);
+    dropped++;
     firstRefusal ??= verdict.error;
     // Every row before this one was admitted.
     kept ??= docs.slice(0, seen - 1);
   }
-  if (kept === null) return Result.ok(docs as unknown as readonly E[]);
+  if (kept === null) {
+    return Result.ok({ kept: docs as unknown as readonly E[], dropped: 0 });
+  }
   if (
     kept.length === 0 &&
     firstRefusal !== null &&
@@ -233,7 +277,24 @@ export function keepAdmitted<E>(
   ) {
     return Result.err(firstRefusal);
   }
-  return Result.ok(kept as unknown as readonly E[]);
+  return Result.ok({ kept: kept as unknown as readonly E[], dropped });
+}
+
+/**
+ * The LIST rule's rows alone ({@link admitCounted} without the count) —
+ * what every list but the staff day answers (the search, the histories,
+ * the client's upcoming bookings): the same drop, the same report, the
+ * same systemic refusal, the SAME array when nothing was dropped.
+ */
+export function keepAdmitted<E>(
+  docs: readonly StoredDocument[],
+  collection: string,
+  guard: ReadGuard,
+  reported: Set<string> | null,
+  admission: ListAdmission = ListAdmission.DropMalformed,
+): Result<readonly E[], RepositoryError> {
+  const counted = admitCounted<E>(docs, collection, guard, reported, admission);
+  return counted.ok ? Result.ok(counted.value.kept) : counted;
 }
 
 /** A live read through `subscribeWithRetry`, its failure naming `path`. */
@@ -281,7 +342,7 @@ type QueryDocumentLike = {
  */
 export function observeDoc<E>(
   ref: DocumentReference,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard = AS_STORED,
 ): Observable<Result<E | null, RepositoryError>> {
   const collection = collectionOfRef(ref);
   const reported = new Set<string>();
@@ -312,7 +373,7 @@ export function observeDoc<E>(
 export function observeQuery<E>(
   query: Query,
   path: string,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard = AS_STORED,
   admission: ListAdmission = ListAdmission.DropMalformed,
 ): Observable<Result<readonly E[], RepositoryError>> {
   const reported = new Set<string>();
@@ -328,10 +389,30 @@ export function observeQuery<E>(
   );
 }
 
+/**
+ * One query, live, COUNTED — {@link observeQuery}'s rows with the number
+ * each snapshot's guard dropped beside them (`admitCounted`, drop by
+ * default): the staff day's read, whose sheet words the count (OR-2).
+ */
+export function observeCountedQuery<E>(
+  query: Query,
+  path: string,
+  guard: ReadGuard,
+): Observable<Result<CountedRows<E>, RepositoryError>> {
+  const reported = new Set<string>();
+  return liveAnswer<CountedRows<E>>(path, (next, error) =>
+    onSnapshot(
+      query,
+      (snap) => next(admitCounted<E>(rowsOf(snap.docs), path, guard, reported)),
+      error,
+    ),
+  );
+}
+
 /** One document, once — its entity, or `null` when there is none; guarded, the SINGLE rule. */
 export async function readDoc<E>(
   ref: DocumentReference,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard = AS_STORED,
 ): Promise<Result<E | null, RepositoryError>> {
   let data: DocumentData | undefined;
   let id: string;
@@ -350,21 +431,36 @@ export async function readDoc<E>(
 }
 
 /**
+ * One query, once, RAW — its rows as stored (`{ id, ...data }` each), in
+ * the query's own order, through NO guard: for a read that cuts its rows
+ * BEFORE they are admitted (a history page and its cursor, the staff
+ * search's two halves judged as one answer, a `limit 1` lookup answering
+ * the SINGLE rule), whose adapter then hands them to {@link admitted} or
+ * {@link keepAdmitted} with its guard. Never a port's answer by itself:
+ * its rows are stored documents, not entities.
+ */
+export async function readRawQuery(
+  query: Query,
+  path: string,
+): Promise<Result<readonly StoredDocument[], RepositoryError>> {
+  try {
+    return Result.ok(rowsOf((await getDocs(query)).docs));
+  } catch (cause) {
+    return Result.err(readFailed(path, cause));
+  }
+}
+
+/**
  * One query, once — its entities in the query's own order. `path` names the
  * collection it reads; guarded, the LIST rule (drop, systemic refusal).
  */
 export async function readQuery<E>(
   query: Query,
   path: string,
-  guard: ReadGuard = UNGUARDED,
+  guard: ReadGuard = AS_STORED,
 ): Promise<Result<readonly E[], RepositoryError>> {
-  let rows: StoredDocument[];
-  try {
-    rows = rowsOf((await getDocs(query)).docs);
-  } catch (cause) {
-    return Result.err(readFailed(path, cause));
-  }
-  return keepAdmitted<E>(rows, path, guard, null);
+  const rows = await readRawQuery(query, path);
+  return rows.ok ? keepAdmitted<E>(rows.value, path, guard, null) : rows;
 }
 
 /** A write of `path` as a `Result`: the SDK's rejection becomes `RepositoryError.writeFailed`. */

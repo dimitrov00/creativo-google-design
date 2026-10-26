@@ -212,8 +212,17 @@ void grant.holderUserId;
 // @ts-expect-error — the uid key is renamed `holderUserId` (D29, flip 1)
 void grant.userId;
 if (grant.grantStatus === GrantStatus.Used) {
-  // @ts-expect-error — a used grant holds no capacity
-  void grant.grantCapacity;
+  // A used grant keeps the terms it was issued under (OR-13): a give-back
+  // restores it from its own document.
+  void grant.usedNote;
+  void grant.grantExpiry;
+  if (grant.grantCapacity === GrantCapacity.MultiUse) void grant.usesRemaining;
+  // @ts-expect-error — a used grant was not revoked
+  void grant.revokedByUserId;
+}
+if (grant.grantStatus === GrantStatus.Active) {
+  // @ts-expect-error — an active grant holds no redemption note
+  void grant.usedNote;
 }
 
 /* ── GiftVoucher = Meta & Lifecycle ─────────────────────────────────────── */

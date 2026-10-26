@@ -25,6 +25,7 @@ import {
   type Result,
   Weekday,
   BusyKey,
+  CartLineId,
   Currency,
   type DurationMinutes,
   BarberId,
@@ -34,7 +35,7 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
-  type CustomerId,
+  CustomerId,
   LocalDate,
   EndMinute,
   MinuteOfDay,
@@ -62,6 +63,7 @@ import {
   until,
   resolvedCustomerIds,
   customerOf,
+  fixtureWalkInHash,
 } from '@core/testing';
 import {
   type BookingDecision,
@@ -72,6 +74,7 @@ import {
   type DecideBookingInput,
   type DecisionSchedule,
   type DecisionStandingSeat,
+  type DecisionWalkIn,
 } from './booking-decision.system';
 import { PhoneSystem } from './phone.system';
 import { ZonedTimeSystem } from './zoned-time.system';
@@ -201,6 +204,7 @@ const guestOf = (
   requestedSubjectRole: RequestedSubjectRole.Guest,
   label,
   guestKey,
+  contact: null,
 });
 const companionOf = (userId: string): BookingCall.SubjectInput => ({
   requestedSubjectRole: RequestedSubjectRole.Companion,
@@ -328,6 +332,7 @@ function decideBooking(
       standing: given.standing ?? [],
       stood: [],
       parsePhone,
+      walkIns: [],
     },
   );
 }
@@ -863,7 +868,7 @@ describe('decide — the shop places its own book', () => {
         request(),
         snapshot(),
         POLICY,
-        PlacementPolicy.staffWalkIn(),
+        PlacementPolicy.staffPlacement(),
         [],
         {
           now: nowAt(8),
@@ -875,6 +880,7 @@ describe('decide — the shop places its own book', () => {
           standing: [],
           stood: [],
           parsePhone,
+          walkIns: [],
         },
       ),
     ).toThrow(/client record/);
@@ -917,6 +923,90 @@ describe('decide — the shop places its own book', () => {
 /*
  * §11.2 #6: the preference is what somebody asked for, never a default.
  */
+describe('decide — a walk-in the shop keeps a record for (OR-26)', () => {
+  const MARIA = CustomerId.forWalkIn('+359888123456', fixtureWalkInHash);
+  const LINE_1 = CartLineId.of('line-1');
+
+  /** The shop's own placement, with the walk-ins the pipeline resolved. */
+  function decideStaff(
+    req: DecideBookingInput,
+    walkIns: readonly DecisionWalkIn[],
+    owner: UserId | null = null,
+  ) {
+    let counter = 0;
+    return BookingDecisionSystem.decide(
+      req,
+      snapshot(),
+      POLICY,
+      PlacementPolicy.staffPlacement(),
+      [],
+      {
+        now: nowAt(8),
+        startUtcMs: edgeStartUtcMs(req),
+        nextId: () => `id-${counter++}`,
+        ownerUserId: owner,
+        customerIds: resolved(req, owner),
+        termsOverrides: [],
+        standing: [],
+        stood: [],
+        parsePhone,
+        walkIns,
+      },
+    );
+  }
+
+  it('seats a guest line the pipeline resolved WALK_IN — its record beside its label — and indexes the record', () => {
+    const decision = unwrap(
+      decideStaff(request([seat({ subject: guestOf(' Мария ') })]), [
+        { lineId: LINE_1, customerId: MARIA },
+      ]),
+    );
+    const [walkIn] = decision.appointment.seats;
+    expect(walkIn?.seatSubject).toBe(SeatSubject.WalkIn);
+    expect(
+      walkIn?.seatSubject === SeatSubject.WalkIn && [
+        walkIn.subjectCustomerId,
+        walkIn.guestLabel,
+      ],
+    ).toEqual([MARIA, 'Мария']);
+    // The walk-in's history finds the visit; nobody owns it.
+    expect(decision.appointment.subjectCustomerIds).toEqual([MARIA]);
+    expect(decision.appointment.ownerCustomerId).toBeNull();
+    expect(decision.appointment.subjectUserIds).toEqual([]);
+  });
+
+  it('leaves a guest line it does not name ANONYMOUS, and never turns the booker into one', () => {
+    const decision = unwrap(
+      decideStaff(
+        request([
+          seat(),
+          seat({
+            lineId: 'line-2',
+            startMinutes: at(13),
+            subject: guestOf('Петър'),
+          }),
+        ]),
+        [{ lineId: LINE_1, customerId: MARIA }],
+        OWNER,
+      ),
+    );
+    const [booker, stranger] = decision.appointment.seats;
+    expect(booker?.seatSubject).toBe(SeatSubject.Account);
+    expect(stranger?.seatSubject).toBe(SeatSubject.Anonymous);
+    expect(decision.appointment.subjectCustomerIds).toEqual([
+      customerOf(OWNER),
+    ]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const req = deepFreeze(request([seat({ subject: guestOf('Мария') })]));
+    const walkIns = deepFreeze([{ lineId: LINE_1, customerId: MARIA }]);
+    const once = decideStaff(req, walkIns);
+    expect(decideStaff(req, walkIns)).toEqual(once);
+    expect(walkIns).toEqual([{ lineId: LINE_1, customerId: MARIA }]);
+  });
+});
+
 describe('decide — the barber preference is recorded, never guessed', () => {
   const prefOf = (requested: Partial<BookingCall.SeatInput>) =>
     unwrap(decideBooking(request([seat(requested)]), snapshot(), deps()))
@@ -1448,6 +1538,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         standing: [],
         stood: [],
         parsePhone,
+        walkIns: [],
       },
     );
     expect(result.ok && result.value.appointment.bookingStatus).toBe(
@@ -1461,7 +1552,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
       request(),
       snapshot(),
       POLICY,
-      PlacementPolicy.staffWalkIn(),
+      PlacementPolicy.staffPlacement(),
       [],
       {
         now: nowAt(8),
@@ -1482,6 +1573,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         standing: [],
         stood: [],
         parsePhone,
+        walkIns: [],
       },
     );
     const terms = result.ok ? result.value.appointment.seats[0] : null;
@@ -1522,6 +1614,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
           standing: [],
           stood: [],
           parsePhone,
+          walkIns: [],
         },
       );
     };
@@ -1559,6 +1652,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
       standing: [],
       stood: [],
       parsePhone,
+      walkIns: [],
       ...overrides,
     });
   }
@@ -1683,7 +1777,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
           }),
         ],
       },
-      PlacementPolicy.staffWalkIn(),
+      PlacementPolicy.staffPlacement(),
     );
     expect(leva.ok).toBe(true);
     const terms = leva.ok ? leva.value.appointment.seats[0] : null;
@@ -1708,7 +1802,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
                 override({ ...bad, durationMinutes: duration(30) }),
               ],
             },
-            PlacementPolicy.staffWalkIn(),
+            PlacementPolicy.staffPlacement(),
           ),
         ),
       ).toBe('priceCents');
@@ -1720,7 +1814,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     const decided = decideWith(
       request(),
       { termsOverrides: [override({ cleanupMinutes: minuteCount(0) })] },
-      PlacementPolicy.staffWalkIn(),
+      PlacementPolicy.staffPlacement(),
     );
     const terms = decided.ok ? decided.value.appointment.seats[0] : null;
     expect(terms?.cleanupMinutes).toBe(0);
@@ -1851,7 +1945,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     ).toBe('BOOKING_SLOT_UNAVAILABLE');
     // …the shop's own placement learns it broke the visit's day.
     expect(
-      refusal(decideWith(late, {}, PlacementPolicy.staffWalkIn())),
+      refusal(decideWith(late, {}, PlacementPolicy.staffPlacement())),
     ).toEqual({ errorCode: 'BOOKING_INVARIANT_VIOLATED', violations: [] });
   });
 

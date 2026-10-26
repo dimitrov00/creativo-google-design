@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../../../shared/view-state/tsconfig.lib.json"
+    },
+    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
@@ -40,19 +43,19 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../ui/wall-clock/tsconfig.lib.json"
-    },
-    {
       "path": "../../shared/shell/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
-      "path": "../../../shared/view-state/tsconfig.lib.json"
+      "path": "../../../ui/wall-clock/tsconfig.lib.json"
+    },
+    {
+      "path": "../../shared/catalog/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

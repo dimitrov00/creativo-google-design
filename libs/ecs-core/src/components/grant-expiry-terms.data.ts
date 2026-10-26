@@ -9,8 +9,9 @@ export type GrantExpiry = (typeof GrantExpiry)[keyof typeof GrantExpiry];
 
 /**
  * No expiry, or an absolute instant after which an active grant is no longer
- * usable — a flat variant slice of an ACTIVE grant (was the nested
- * `expiration: { kind, atMs }`).
+ * usable — a flat variant slice of an ACTIVE grant, kept by a USED one as the
+ * terms it was issued under (OR-13; was the nested `expiration: { kind,
+ * atMs }`).
  */
 export type GrantExpiryTerms =
   GrantExpiryTerms.NoExpiry | GrantExpiryTerms.ExpiresAt;

@@ -1,6 +1,6 @@
 import { TranslocoService } from '@jsverse/transloco';
 import { WallTime } from '@core/components';
-import { TimeErrorCode } from '@core/errors';
+import { IdentityErrorCode, TimeErrorCode } from '@core/errors';
 import { LocalDate, MinuteOfDay } from '@core/primitives';
 
 /**
@@ -12,7 +12,9 @@ import { LocalDate, MinuteOfDay } from '@core/primitives';
 type CodedError = { readonly errorCode: string } & Record<string, unknown>;
 
 /**
- * The display params a struct's own fields imply. A DST-gap refusal
+ * The display params a struct's own fields imply. A throttled code request
+ * (`IdentityErrorCode.OtpRateLimited`, OR-9) prints its `retryAfterSeconds`
+ * as `seconds`. A DST-gap refusal
  * (`TimeErrorCode.DstGap`, Law 7.3) names the refused time of day, not a
  * whole date: `wallClock` is its `localDate` and `minute` as the wall clock
  * the user typed (`2026-03-29T03:30`, the legacy `rawValue` form —
@@ -30,6 +32,12 @@ function displayParamsOf(
   code: string,
   params: Record<string, unknown>,
 ): Record<string, unknown> {
+  // A throttled code request names the seconds left (OR-9): the copy's
+  // `{{seconds}}` is the struct's `retryAfterSeconds`.
+  if (code === IdentityErrorCode.OtpRateLimited) {
+    const seconds = params['retryAfterSeconds'];
+    return typeof seconds === 'number' ? { ...params, seconds } : params;
+  }
   if (code !== TimeErrorCode.DstGap) return params;
   const rawDate = params['localDate'];
   const rawMinute = params['minute'];

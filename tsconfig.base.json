@@ -28,6 +28,7 @@
       "@creativo/ui/layout": ["./libs/ui/layout/src/index.ts"],
       "@creativo/ui/patterns": ["./libs/ui/patterns/src/index.ts"],
       "@creativo/ui/wall-clock": ["./libs/ui/wall-clock/src/index.ts"],
+      "@creativo/ui/theme": ["./libs/ui/theme/src/index.ts"],
       "@creativo/features/marketing/landing": [
         "./libs/features/marketing/landing/src/index.ts"
       ],
@@ -52,11 +53,11 @@
       "@creativo/features/staff/client-card": [
         "./libs/features/staff/client-card/src/index.ts"
       ],
-      "@creativo/features/admin/impersonation": [
-        "./libs/features/admin/impersonation/src/index.ts"
-      ],
       "@creativo/infrastructure/firebase-app": [
         "./libs/infrastructure/firebase-app/src/index.ts"
+      ],
+      "@creativo/infrastructure/firebase-app/csp-baseline": [
+        "./libs/infrastructure/firebase-app/src/csp-baseline.ts"
       ],
       "@creativo/infrastructure/i18n": [
         "./libs/infrastructure/i18n/src/index.ts"
@@ -84,6 +85,9 @@
       ],
       "@creativo/features/client/profile": [
         "./libs/features/client/profile/src/index.ts"
+      ],
+      "@creativo/features/client/notifications": [
+        "./libs/features/client/notifications/src/index.ts"
       ],
       "@creativo/features/marketing/careers": [
         "./libs/features/marketing/careers/src/index.ts"

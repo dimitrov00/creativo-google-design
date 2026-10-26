@@ -91,6 +91,21 @@ describe('wordFlowFailure', () => {
     },
   );
 
+  it('names the seconds left on a throttled code request — its one allowlisted figure (OR-9)', async () => {
+    const refused = PipelineError.fromWire('resource-exhausted', {
+      errorCode: IdentityErrorCode.OtpRateLimited,
+      retryAfterSeconds: 42,
+    });
+
+    expect(wordFlowFailure(await translocoIn('bg'), refused)).toBe(
+      'Вече ти изпратихме код. Нов можеш да поискаш след 42 сек.',
+    );
+    TestBed.resetTestingModule();
+    expect(wordFlowFailure(await translocoIn('en'), refused)).toBe(
+      'We already sent you a code. You can ask for a new one in 42 s.',
+    );
+  });
+
   it('falls back to the raw server code the catalogue has no copy for, as before', async () => {
     const transloco = await translocoIn('bg');
 

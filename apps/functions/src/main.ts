@@ -4,6 +4,7 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { defineSecret } from 'firebase-functions/params';
 import { Result, TenantId, UtcEpochMs, defect } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -38,6 +39,7 @@ import {
   rebuildCapacity,
   recordSeatTip as recordSeatTipPipeline,
   redeemInvitation as redeemInvitationPipeline,
+  reportClientIssues as reportClientIssuesPipeline,
   requestOtp,
   requestWaitlist as requestWaitlistPipeline,
   rescheduleAppointment as rescheduleAppointmentPipeline,
@@ -53,7 +55,7 @@ import {
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { consoleTelemetry } from './adapters/console-telemetry.adapter';
-import { cryptoPorts } from './adapters/crypto.adapter';
+import { cryptoPorts, walkInKeyPorts } from './adapters/crypto.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
 import { logRefusal } from './adapters/firestore-tx.adapter';
 import { paramFlagsPorts } from './adapters/flags.adapter';
@@ -68,6 +70,8 @@ import {
   type EdgeError,
   type EdgePorts,
   retryingTrigger,
+  throttledCallable,
+  tokenBucket,
   type WorkBudget,
 } from './edge';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
@@ -97,6 +101,13 @@ import {
   staffEditAppointmentRefusal,
   transitionAppointmentRefusal,
 } from './wire/booking.wire';
+import {
+  CLIENT_ISSUE_RATE,
+  decodeReportClientIssues,
+  encodeReportClientIssuesAnswer,
+  REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
+  reportClientIssuesRefusal,
+} from './wire/client-issue.wire';
 import {
   decodeEndImpersonation,
   decodeStartImpersonation,
@@ -174,9 +185,12 @@ import { settle, type WireRequest } from './wire/wire-read';
  * The exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
- * are the ones the legacy definitions declared, which no export sets a
- * region, secret or App Check on — except seven retry flags: edge-hardening
- * D-5 flipped `rebuildBusyOnAppointmentChange`,
+ * are the ones the legacy definitions declared (pass F's new sink aside,
+ * below), which no export sets a region, secret or App Check on — except
+ * the walk-in key the two callables that mint walk-in records bind
+ * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
+ * their ids are keyed by, OR-26), and seven retry flags: edge-hardening D-5 flipped
+ * `rebuildBusyOnAppointmentChange`,
  * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, and pass E
  * (E-1) the four other capacity triggers `rebuildCapacityOnExceptionChange`,
  * `rebuildCapacityOnRosterChange`, `rebuildCapacityOnLocationChange` and
@@ -190,7 +204,11 @@ import { settle, type WireRequest } from './wire/wire-read';
  *
  * Flips 1–3 moved every legacy export onto its pipeline; Phase 4a flipped
  * the wire (4A-4) and added `startImpersonation`, `endImpersonation` and
- * `redeemInvitation` with their rules tightenings (4A-3 (4), (5)).
+ * `redeemInvitation` with their rules tightenings (4A-3 (4), (5)); pass F
+ * added `reportClientIssues`, the web's first-party issue sink (OR-34) —
+ * new, so its options are its own (two instances, 80 concurrent calls
+ * each, 256 MiB, 10 s), and the one callable behind a per-instance token
+ * bucket.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -305,12 +323,46 @@ const streakPorts = once(() => {
   };
 });
 
+/**
+ * The key a walk-in's record id is keyed by (OR-26, `WalkInKeyPorts`): a
+ * Secret Manager secret, bound to the two callables that mint walk-in
+ * records and to no other export (`WALK_IN_SECRETS`). A deployment holds its
+ * own (`firebase functions:secrets:set WALKIN_ID_KEY`, the runbook's step
+ * 4); the emulator reads the fixed test key `tools/flags/write-functions-env.mjs`
+ * writes beside the build (`.secret.local`, never deployed).
+ */
+const WALKIN_ID_KEY = defineSecret('WALKIN_ID_KEY');
+
+/** The options of the two callables that mint walk-in records: the walk-in key, bound. */
+const WALK_IN_SECRETS = { secrets: [WALKIN_ID_KEY] };
+
+/**
+ * The walk-in key as the digest reads it — at each call (a secret is a
+ * runtime value). An empty one is a broken deployment, never a reason to
+ * fall back to an unkeyed id a phone number could be read back out of.
+ */
+const walkInKey = (): string => {
+  const key = WALKIN_ID_KEY.value();
+  return key !== '' ? key : defect('the WALKIN_ID_KEY secret holds no value');
+};
+
+/**
+ * The walk-in callables' ports (`commitBooking`, `staffEditAppointment`):
+ * the server ports and the keyed walk-in digest (`WalkInKeyPorts`) —
+ * built on first use, and handed to no other export, which holds no key.
+ */
+const walkInPorts = once(() => ({
+  ...serverPorts(),
+  ...walkInKeyPorts(walkInKey),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
   primitives,
   edge,
   ports: serverPorts,
+  walkIns: walkInPorts,
   identity: identityPorts,
   streak: streakPorts,
 } as const;
@@ -463,9 +515,10 @@ export const auditProfileChanges = onDocumentWrittenWithAuthContext(
 // ── Booking ───────────────────────────────────────────────────────────────
 
 export const commitBooking = onCall(
+  WALK_IN_SECRETS,
   wiredCallable(
     plain(Callables.CommitBooking, BookingErrorCode.CommitStoreFailed),
-    root.ports,
+    root.walkIns,
     decodeCommitBooking,
     (ports, cmd) => bookAppointment(ports)(cmd),
     encodeCommitBookingAnswer,
@@ -540,9 +593,10 @@ export const recordSeatTip = onCall(
 );
 
 export const staffEditAppointment = onCall(
+  WALK_IN_SECRETS,
   wiredCallable(
     plain(Callables.StaffEditAppointment, BookingErrorCode.CommitStoreFailed),
-    root.ports,
+    root.walkIns,
     decodeStaffEditAppointment,
     (ports, cmd) => editAppointment(ports)(cmd),
     encodeStaffEditAppointmentAnswer,
@@ -866,5 +920,45 @@ export const redeemInvitation = onCall(
     (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
     encodeRedeemInvitationAnswer,
     redeemInvitationRefusal,
+  ),
+);
+
+// ── The client issue sink (OR-34) ─────────────────────────────────────────
+
+/**
+ * The sink's bucket — module state, so each instance holds its own: twenty
+ * calls a second, two instances at most (the definition's `maxInstances`).
+ */
+const issueThrottle = tokenBucket(CLIENT_ISSUE_RATE, nowUtcMs);
+
+/**
+ * The web's issues into Cloud Logging, one line each — over the telemetry
+ * alone: it reads nothing and writes no document, so it never builds the
+ * server ports or touches the Admin SDK. Any device may dial it, signed in
+ * or not, so a call first passes the instance's bucket; the batch is
+ * admitted whole or refused (`client-issue.wire.ts`).
+ */
+export const reportClientIssues = onCall(
+  {
+    maxInstances: 2,
+    concurrency: 80,
+    memory: '256MiB',
+    timeoutSeconds: REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
+  },
+  throttledCallable(
+    issueThrottle,
+    wiredCallable(
+      {
+        callable: Callables.ReportClientIssues,
+        failureCode: null,
+        timeoutSeconds: REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
+      },
+      () => root.telemetry,
+      (request) => decodeReportClientIssues(request, root.telemetry.log),
+      async (ports, cmd) =>
+        Result.ok(await reportClientIssuesPipeline(ports)(cmd)),
+      encodeReportClientIssuesAnswer,
+      reportClientIssuesRefusal,
+    ),
   ),
 );

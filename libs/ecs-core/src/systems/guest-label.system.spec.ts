@@ -20,6 +20,7 @@ const guest = (label: string, guestKey: string | null = null) =>
     requestedSubjectRole: RequestedSubjectRole.Guest,
     label,
     guestKey,
+    contact: null,
   }) as const;
 
 describe('firstUnusedLabel — the one placeholder rule', () => {

@@ -1461,45 +1461,70 @@ same minute keep their `fd5f2a6` order.
 
 ## 8. Open questions (owner) — with the default this plan applies
 
+> **Every question CLOSED.** OQ-3 and OQ-6 with pass C; OQ-9's rule-file
+> example applied at landing (§9.4); the rest by the owner rulings of
+> 2026-10-26 (`docs/architecture/decisions/2026-10-26-owner-rulings.md`) —
+> the ruling follows each question, the default above it kept as the plan
+> wrote it.
+
 - **OQ-1 — component spec fixtures.** The catalog VM's three required
   figure fields mean five literals in two component specs gain fields
   (values only). Default: allowed (§4.3) — no expectation changes, and the
   alternative (optional fields + a kept reverse-mapping shim) keeps the
-  copy this pass exists to delete.
+  copy this pass exists to delete. **CLOSED — OR-43:** the applied default
+  stands.
 - **OQ-2 — one "this visit counts" rule?** The cue rule
   (`completesWithVisit`) and the detail/count rule (`countsToward`) differ
   (R-1). Default: both kept, documented side by side; unifying them is an
-  owner ruling with a visible change (glance strip, AF).
+  owner ruling with a visible change (glance strip, AF). **CLOSED —
+  OR-43:** both kept, documented side by side; no gap found.
 - **OQ-3 — the service detail sheet's math** (performers cheapest-first,
   bundle saving) is domain math in an Angular component, outside the
   presenter pass. Default: carried — `CatalogPricingSystem.performersByPrice`
   / `bundleSaving` in a follow-up, which then retires the anonymous
-  offering.
+  offering. **CLOSED by pass C** (C-4, C-6; affirmed by OR-43).
 - **OQ-4 — keys built from display words.** The grant group key (title +
   value label) and the glance's held rewards by NAME need a coupon id /
   `RewardId` on the card contracts. Default: carried (contract change).
+  **CLOSED — OR-15 (DEP-F11):** tickets group by `couponId` +
+  `CouponValue.same`
+  (`GrantTicketRef = { grantId; couponId; value; expiresOn }`), and
+  `pointsReachBeyondHeld` excludes a held reward by
+  `reward.grantCouponId` with no `locale` parameter — fixing the en case,
+  where a held reward was never excluded; `ClientCardGrant` gains `couponId`
+  and `value`, and its `couponOccasion` becomes required (OR-16).
 - **OQ-5 — the glance voucher sum** adds the first currency only, the
   wallet refuses mixed currencies. Default: both kept as they are; the
-  owner rules whether the glance should follow the wallet.
+  owner rules whether the glance should follow the wallet. **CLOSED —
+  OR-17 (DEP-F12):** the glance prints every currency
+  (`VoucherSystem.spendableSums`, joined with « · »); the wallet keeps "no
+  total across currencies".
 - **OQ-6 — read-policy constants in `history.presenter.ts`**
   (`HISTORY_PAGE_SIZE`, `FILTER_REFILL_*`). Default: left; they belong to
-  the store or `PagingSystem` in the T1/paging follow-up.
+  the store or `PagingSystem` in the T1/paging follow-up. **CLOSED by pass
+  C** (affirmed by OR-43).
 - **OQ-7 — DEP-1 / DEP-2 tie orders.** Revised: WITHDRAWN (D-13) — the
   pass is frozen, the plan has no owner ruling to change a tie order. The
   wallet keeps its `localeCompare` ties (a comparator parameter of
   `VoucherSystem.held`), the glance keeps input order on equal starts
   (`upcomingSoonestFirst` is stable without `byId`). Whether the wallet
   and the glance should follow the list's code-unit / id tie-breaks is an
-  owner question for later; default: no change.
+  owner question for later; default: no change. **CLOSED — OR-18
+  (DEP-F13):** UTF-16 code-unit id tie-breaks everywhere — the wallet drops
+  `localeCompare` (and `VoucherIdOrder`), `upcomingSoonestFirst` uses
+  `byStart || byId`; only exact ties reorder.
 - **OQ-9 — the canonical example of `presenters.md`.** It calls
   `LoyaltyPassSystem.passOf(input.account)` and reads `pass.points`; the
   landed binding is `passOf(account, view)` with `figure` (balance OR
   `tierQualifying` with points off — `points` would misname it). Default:
   the code follows §2.2; G owner-flags a one-line update of the rule
   file's example to the landed signature (no agent edits `.claude/rules`
-  without the owner) and records it in §9.4.
+  without the owner) and records it in §9.4. **CLOSED:** applied at landing
+  (§9.4) — the example calls `passOf(input.account, { … })` and words
+  `pass.figure`.
 - **OQ-8 — `samplePeriods` → `track`** if the equivalence of R-12 does not
-  hold. Default: `samplePeriods` stays, carried.
+  hold. Default: `samplePeriods` stays, carried. **CLOSED:** moot — it
+  delegates to `StreakSystem.track` (HANDOFF §6); OR-43 affirms it.
 
 ---
 

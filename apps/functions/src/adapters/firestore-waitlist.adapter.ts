@@ -2,19 +2,16 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { Result, WaitlistStatus } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
-import type {
-  OpenWaitlistReadPorts,
-  WaitlistRequestReadPorts,
-} from '@core/ports';
+import type { OpenWaitlistReadPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
- * The waitlist's server reads outside any transaction (flip 1, blueprint
- * §4.1 `matchWaitlist`):
- *
- * - `loadOpenWaitlist` — every request still `OPEN` that names the day:
- *   `waitlistStatus ==` ∧ `localDates array-contains` (index #14);
- * - `loadWaitlistRequest` — `waitlistRequests/{id}`, `null` when absent.
+ * The waitlist's server read outside any transaction (flip 1, blueprint
+ * §4.1 `matchWaitlist`): `loadOpenWaitlist` — every request still `OPEN`
+ * that names the day, `waitlistStatus ==` ∧ `localDates array-contains`
+ * (index #14). The single-request read `loadWaitlistRequest` had no caller
+ * and is gone (OR-28): the cancel callable reads its request inside its
+ * plan.
  *
  * Requests are CREATED and moved only inside a `CommitPlan` (the request and
  * cancel callables, the matcher's plan), never here. Bodies spread as stored;
@@ -31,7 +28,7 @@ function readFailed(path: string, error: unknown): RepositoryError {
 
 export const firestoreWaitlistPorts = (
   db: Firestore,
-): OpenWaitlistReadPorts & WaitlistRequestReadPorts => ({
+): OpenWaitlistReadPorts => ({
   loadOpenWaitlist: async (localDate) => {
     try {
       const snap = await db
@@ -46,20 +43,6 @@ export const firestoreWaitlistPorts = (
       );
     } catch (error) {
       return Result.err(readFailed(Collections.WaitlistRequests, error));
-    }
-  },
-
-  loadWaitlistRequest: async (id) => {
-    const path = `${Collections.WaitlistRequests}/${id}`;
-    try {
-      const snap = await db.doc(path).get();
-      return Result.ok(
-        snap.exists
-          ? ({ id: snap.id, ...snap.data() } as WaitlistRequest)
-          : null,
-      );
-    } catch (error) {
-      return Result.err(readFailed(path, error));
     }
   },
 });

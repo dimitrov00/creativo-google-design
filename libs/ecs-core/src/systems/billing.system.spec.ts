@@ -9,6 +9,9 @@ import {
   CouponValue,
   DiscountMethod,
   DiscountSource,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
   type Money,
   Seat,
   ServiceTerms,
@@ -18,20 +21,23 @@ import {
   VoucherLifecycle,
 } from '@core/components';
 import {
+  BookingStatus,
   Currency,
   DurationMinutes,
   AppliedDiscountId,
   CouponGrantId,
   CouponId,
   GiftVoucherId,
+  GrantStatus,
   SeatId,
   UserId,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
 import { SchedulingErrorCode, StaffEditErrorCode } from '@core/errors';
-import type { Appointment, GiftVoucher } from '@core/entities';
+import type { Appointment, CouponGrant, GiftVoucher } from '@core/entities';
 import {
+  FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
   deepFreeze,
   minute,
@@ -43,7 +49,8 @@ import {
   customerOf,
 } from '@core/testing';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
-import type { ResolvedGrant } from './coupon-grant.system';
+import { CouponGrantSystem, type ResolvedGrant } from './coupon-grant.system';
+import { VoucherSystem } from './voucher.system';
 import type { DiscountInput, ResolvedCode } from './discount.system';
 import {
   BillingSystem,
@@ -66,6 +73,8 @@ import {
 
 /** 09:00 on the fixture shop's today. */
 const NOW = FIXTURE_NOW_UTC_MS;
+/** {@link NOW} as the fixture shop sees it — what a lifecycle move reads. */
+const NOW_SHOP = FIXTURE_NOW;
 /** The visit owner's client record (D29) — what a new grant must belong to. */
 const OWNER = customerOf(UserId.of('user-owner'));
 
@@ -186,7 +195,16 @@ describe('BillingSystem — an appointment’s discounts', () => {
   it('survives every lifecycle move and can be replaced whole', () => {
     const discounted = visit([birthday]);
     const completed = unwrapOk(
-      AppointmentLifecycleSystem.complete(discounted, NOW),
+      AppointmentLifecycleSystem.transition(
+        discounted,
+        {
+          to: BookingStatus.Completed,
+          seatId: null,
+          reason: null,
+          windowHours: null,
+        },
+        NOW_SHOP,
+      ),
     );
     expect(completed.appointment.discounts).toHaveLength(1);
     expect(evaluate(completed.appointment).totalCents).toBe(2240);
@@ -278,7 +296,18 @@ describe('BillingSystem — the vouchers on an appointment', () => {
     const generous = { ...redemption, amountCents: cents(5000) };
     const paid = visit([], [generous]);
     expect(evaluate(paid).balanceDueCents).toBe(0);
-    const completed = unwrapOk(AppointmentLifecycleSystem.complete(paid, NOW));
+    const completed = unwrapOk(
+      AppointmentLifecycleSystem.transition(
+        paid,
+        {
+          to: BookingStatus.Completed,
+          seatId: null,
+          reason: null,
+          windowHours: null,
+        },
+        NOW_SHOP,
+      ),
+    );
     expect(completed.appointment.voucherRedemptions).toHaveLength(1);
   });
 
@@ -473,7 +502,7 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
     ]);
   });
 
-  it("honours the client's own grant — a barber may — and refuses another client's, a spent one, or none", () => {
+  it("honours the client's own grant — a barber may — and refuses another client's, a spent one, or none, as `grant` (OR-13)", () => {
     const honoured = unwrapOk(settle([grantArm('grant-1')], ['barber']));
     expect(honoured[0]).toMatchObject({
       discountId: 'grant:grant-1',
@@ -484,10 +513,11 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
       discountPercent: 20,
       combinability: 'EXCLUSIVE',
     });
+    // «Тази награда вече не важи» — its own field, not the set's `discounts`.
     for (const grantId of ['grant-other', 'grant-spent', 'grant-unknown']) {
       expect(unwrapErr(settle([grantArm(grantId)], ['barber']))).toEqual({
         errorCode: StaffEditErrorCode.InvalidCommand,
-        field: 'discounts',
+        field: 'grant',
       });
     }
   });
@@ -901,6 +931,153 @@ describe('BillingSystem — purity', () => {
         NOW,
       ),
     ).toEqual(once);
+  });
+});
+
+/*
+ * OR-13, DEP-F10b (orchestrator override, 2026-10-26): ONE predicate gives
+ * the visit's holdings back — the voucher draws to their balances and the
+ * coupon grants to the wallet — on a cancel AND on a no-show; a completed
+ * visit keeps what it spent, and a reopen re-burns nothing.
+ */
+describe('BillingSystem.releasesHoldings — the one give-back predicate', () => {
+  const status = (bookingStatus: BookingStatus) => ({ bookingStatus });
+  const LIVE = [BookingStatus.Pending, BookingStatus.Confirmed];
+
+  it('releases on a cancel and on a no-show, from a visit that was live or completed', () => {
+    for (const from of [...LIVE, BookingStatus.Completed]) {
+      for (const to of [BookingStatus.Cancelled, BookingStatus.NoShow]) {
+        expect(BillingSystem.releasesHoldings(status(from), status(to))).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('keeps the holdings of a completed visit, and of every live move', () => {
+    for (const from of LIVE) {
+      expect(
+        BillingSystem.releasesHoldings(
+          status(from),
+          status(BookingStatus.Completed),
+        ),
+      ).toBe(false);
+      for (const to of LIVE) {
+        expect(BillingSystem.releasesHoldings(status(from), status(to))).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('gives nothing back twice, and nothing on a reopen — cancelled ↔ no-show, and back to live', () => {
+    const gone = [BookingStatus.Cancelled, BookingStatus.NoShow];
+    for (const from of gone) {
+      for (const to of [...gone, ...LIVE, BookingStatus.Completed]) {
+        expect(BillingSystem.releasesHoldings(status(from), status(to))).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('reads a whole appointment as it is (Law 3)', () => {
+    const confirmed = visit();
+    expect(
+      BillingSystem.releasesHoldings(confirmed, {
+        ...confirmed,
+        bookingStatus: BookingStatus.NoShow,
+      }),
+    ).toBe(true);
+  });
+
+  /** A single-use grant the visit's bill burned (`grant-1`, `birthday`'s). */
+  const burnt = (): CouponGrant =>
+    unwrapOk(
+      CouponGrantSystem.burn(
+        {
+          id: CouponGrantId.of('grant-1'),
+          customerId: OWNER,
+          holderUserId: UserId.of('user-owner'),
+          couponId: CouponId.of('coupon-birthday'),
+          grantedAtUtcMs: plus(NOW, -86_400_000),
+          ...percent(20),
+          ...GrantLifecycle.active(
+            GrantCapacityTerms.singleUse(),
+            GrantExpiryTerms.none(),
+          ),
+        },
+        plus(NOW, -3_600_000),
+        'appointment:appointment-1',
+      ),
+    );
+  /** The voucher the visit drew 5,00 € from, 20,00 € left of 25,00 €. */
+  const drawnVoucher = (): GiftVoucher => ({
+    id: GiftVoucherId.of('v1'),
+    code: VoucherCode.of('GIFT2025'),
+    initialValueCents: cents(2500),
+    balanceCents: cents(2000),
+    currency: Currency.EUR,
+    issuedAtUtcMs: plus(NOW, -30 * 86_400_000),
+    expiresAtUtcMs: null,
+    expiresLocalDate: null,
+    issuedToCustomerId: OWNER,
+    holderUserId: UserId.of('user-owner'),
+    ...VoucherLifecycle.active(),
+  });
+  const draw: VoucherRedemption = {
+    voucherId: GiftVoucherId.of('v1'),
+    code: VoucherCode.of('GIFT2025'),
+    amountCents: cents(500),
+    balanceAfterCents: cents(2000),
+    currency: Currency.EUR,
+    appliedAtUtcMs: plus(NOW, -3_600_000),
+    reversedAtUtcMs: null,
+  };
+  /** What a move gives back of the visit's bill, under the one predicate. */
+  const giveBacks = (to: BookingStatus) => {
+    const before = visit([birthday], [draw]);
+    if (!BillingSystem.releasesHoldings(before, status(to))) return null;
+    return {
+      grants: CouponGrantSystem.releasePlan(before.discounts, [burnt()]),
+      vouchers: VoucherSystem.restorePlan(
+        before.voucherRedemptions,
+        [drawnVoucher()],
+        NOW,
+      ),
+    };
+  };
+
+  it('a no-show restores the grant to the wallet and the draw to the voucher (DEP-F10b)', () => {
+    const released = giveBacks(BookingStatus.NoShow);
+    expect(released).not.toBeNull();
+    expect(released?.grants.discounts).toEqual([]);
+    expect(released?.grants.writes).toMatchObject([
+      {
+        path: ['couponGrants', 'grant-1'],
+        fields: { grantStatus: GrantStatus.Active },
+        deleteFields: ['usedAtUtcMs', 'usedNote'],
+      },
+    ]);
+    expect(released?.vouchers?.vouchers.map((v) => v.balanceCents)).toEqual([
+      2500,
+    ]);
+    // A cancel gives back exactly the same.
+    expect(giveBacks(BookingStatus.Cancelled)).toEqual(released);
+  });
+
+  it('a completed visit keeps the grant USED and the voucher drawn', () => {
+    expect(giveBacks(BookingStatus.Completed)).toBeNull();
+    expect(burnt().grantStatus).toBe(GrantStatus.Used);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const before = deepFreeze(visit([birthday]));
+    const after = deepFreeze({ bookingStatus: BookingStatus.Cancelled });
+    expect(BillingSystem.releasesHoldings(before, after)).toBe(
+      BillingSystem.releasesHoldings(before, after),
+    );
+    expect(before.bookingStatus).toBe(BookingStatus.Confirmed);
   });
 });
 

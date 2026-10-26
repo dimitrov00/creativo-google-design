@@ -9,6 +9,7 @@ import {
 import {
   BookingStatus,
   type BusyKey,
+  type HourCount,
   Result,
   type AppointmentId,
   type SeatId,
@@ -22,6 +23,7 @@ import {
 } from '@core/errors';
 import {
   type Appointment,
+  type CouponGrant,
   type GiftVoucher,
   type ShopLocation,
   Collections,
@@ -37,6 +39,7 @@ import type {
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
+  BillingSystem,
   BusySystem,
   type BusyWrite,
   CancellationPolicySystem,
@@ -45,8 +48,10 @@ import {
 import {
   appendAuditFacts,
   busyMergeWrites,
+  grantReleaseWrites,
   type PlacementSet,
   readAppointment,
+  readDiscountGrants,
   readPlacementSet,
   readRedemptionVouchers,
   voucherRestoreWrites,
@@ -66,8 +71,12 @@ import {
  *   because it is STAMPED on the seats it closes; a failed read stamps
  *   UNKNOWN (`null`) and logs a warning — it never refuses the shop's cancel.
  * - **Read set:** the visit, its location (the shop's "today" for the
- *   same-day edge, `ShopNow` from its zone), for a cancel the vouchers its
- *   live lines name (runbook §1.3 (4)), for a REINSTATED cancellation
+ *   same-day edge, `ShopNow` from its zone), for a move that may release
+ *   the visit's holdings (`BillingSystem.releasesHoldings` on the status it
+ *   asks for: a cancel or a no-show of a visit that had not already ended
+ *   so) the vouchers its live lines name (runbook §1.3 (4)) and the coupon
+ *   grants its bill's grant lines name (`readDiscountGrants`, OR-13 — no
+ *   line, no read), for a REINSTATED cancellation
  *   the live appointments sharing a busy key (`busyKeys array-contains ∧
  *   bookingStatus in [PENDING, CONFIRMED]`, index #7): the cancel gave the
  *   chair away and the waitlist may have taken it — the answer is then
@@ -75,9 +84,14 @@ import {
  *   visit that is NOT live before the move (only such a move can end it
  *   live), the busy days and exceptions of its seats' keys
  *   (`readPlacementSet`, one `getAll`, absent days read too).
- * - **Plan:** the appointment's variant transition; when the visit ENDS
- *   cancelled, the reversed voucher lines folded into it and each voucher's
- *   restored balance beside it; when it ENDS live from a status that is not
+ * - **Plan:** the appointment's variant transition; when the move releases
+ *   the visit's holdings — it ENDS cancelled or no-show from a status that
+ *   did not (OR-13, DEP-F10b: value the client holds is consumed only by a
+ *   visit that happened) — the reversed voucher lines and the bill with its
+ *   grant lines dropped folded into it, each voucher's restored balance and
+ *   each grant's restore beside it (a completed visit keeps what it spent;
+ *   a reopen re-burns nothing — the barber re-adds the reward or the
+ *   voucher); when it ENDS live from a status that is not
  *   (`AppointmentLifecycleSystem.endsLive` — the busy projection's own
  *   predicate: the reopen of a `CANCELLED`,
  *   `NO_SHOW` or `COMPLETED` visit), its seats' chair time
@@ -121,6 +135,7 @@ type Snapshot = {
   readonly appointment: Appointment | null;
   readonly location: ShopLocation | null;
   readonly vouchers: readonly GiftVoucher[];
+  readonly grants: readonly CouponGrant[];
   readonly others: readonly Appointment[];
   /** The visit's busy days as read — `null` when the visit was live before the move (nothing to restore). */
   readonly placement: PlacementSet | null;
@@ -206,7 +221,7 @@ export const transitionAppointment =
   ): Promise<
     Result<TransitionAppointmentAnswer, TransitionAppointmentError>
   > => {
-    let windowHours: number | null = null;
+    let windowHours: HourCount | null = null;
     if (cmd.to === BookingStatus.Cancelled) {
       const policy = await ports.loadPolicy();
       if (policy.ok) {
@@ -228,6 +243,7 @@ export const transitionAppointment =
             appointment,
             location: null,
             vouchers: [],
+            grants: [],
             others: [],
             placement: null,
           };
@@ -236,10 +252,18 @@ export const transitionAppointment =
           Collections.Locations,
           appointment.locationId,
         ]);
-        const vouchers =
-          cmd.to === BookingStatus.Cancelled
-            ? await readRedemptionVouchers(tx, appointment.voucherRedemptions)
-            : [];
+        // What the visit holds is read only for a move that may give it back
+        // — the decision below asks the same predicate of the status the
+        // move actually ends in.
+        const releases = BillingSystem.releasesHoldings(appointment, {
+          bookingStatus: cmd.to,
+        });
+        const vouchers = releases
+          ? await readRedemptionVouchers(tx, appointment.voucherRedemptions)
+          : [];
+        const grants = releases
+          ? await readDiscountGrants(tx, appointment.discounts)
+          : [];
         const others = AppointmentLifecycleSystem.isReinstatement(
           appointment,
           cmd,
@@ -256,7 +280,14 @@ export const transitionAppointment =
           BookingLifecycle.isLive({ bookingStatus: cmd.to })
             ? await readPlacementSet(tx, busyKeysOf(appointment))
             : null;
-        return { appointment, location, vouchers, others, placement };
+        return {
+          appointment,
+          location,
+          vouchers,
+          grants,
+          others,
+          placement,
+        };
       },
       (snapshot): Result<Decided, TransitionAppointmentError> => {
         const appointment = snapshot.appointment;
@@ -305,15 +336,16 @@ export const transitionAppointment =
           );
         }
         const after = step.value.appointment;
-        const writes = AppointmentLifecycleSystem.endsCancelled(
-          appointment,
-          after,
-        )
-          ? voucherRestoreWrites(
-              step.value.writes,
-              appointment.voucherRedemptions,
-              snapshot.vouchers,
-              nowUtcMs,
+        const writes = BillingSystem.releasesHoldings(appointment, after)
+          ? grantReleaseWrites(
+              voucherRestoreWrites(
+                step.value.writes,
+                appointment.voucherRedemptions,
+                snapshot.vouchers,
+                nowUtcMs,
+              ),
+              appointment.discounts,
+              snapshot.grants,
             )
           : step.value.writes;
         // The projection's own predicate: what the trigger would restore.

@@ -13,12 +13,12 @@ export const DATA_LOG_ERROR = 'DataLog';
  * its message `msg` and its `cause` a copy of `fields` (`{ path, field }`
  * for a refused or dropped stored document).
  *
- * What it reaches, honestly: no custom `ErrorHandler` is provided in the
- * web app, so Angular's default prints it with `console.error` — the
- * console of the device that loaded the page, nothing more (not the shop,
- * not any telemetry). No read rule relies on the report to make a hidden
- * document visible; the seam is here for a real sink (an `ErrorHandler`
- * forwarding `DataLog` errors) when one exists. The level is not carried —
+ * What it reaches: the web's `ReportingErrorHandler` prints it with
+ * `console.error`, as Angular's default did, and forwards it to the
+ * first-party `reportClientIssues` sink as a `DATA_DOCUMENT_DROPPED` /
+ * `DATA_DOCUMENT_REFUSED` issue — scrubbed, never the document (OR-34). No
+ * read rule relies on the report to make a hidden document visible (the
+ * staff day counts what it drops itself, OR-2). The level is not carried —
  * every line this port reports today is an `'error'`.
  *
  * A logger must never break the read it reports on: a handler that throws

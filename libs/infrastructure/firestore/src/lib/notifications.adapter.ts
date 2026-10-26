@@ -5,9 +5,9 @@ import {
   limit,
   orderBy,
   query,
-  updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
-import type { UserId } from '@core/primitives';
+import { Result, type UserId } from '@core/primitives';
 import {
   Collections,
   type InboxNotification,
@@ -23,9 +23,9 @@ const INBOX_SIZE = 50;
  * A person's inbox — `users/{uid}/notifications` (flip 1, plan §3.4), the
  * successor of `FirestoreNotificationReader`. Live, the newest 50 by
  * `sentAtUtcMs`; the owner may stamp only `readAtUtcMs` (the rules'
- * `affectedKeys().hasOnly(['readAtUtcMs'])`), at the instant the caller's
- * injected clock gave. A notification is created only by the matcher's
- * server plan, never here.
+ * `affectedKeys().hasOnly(['readAtUtcMs'])`), once, never before the
+ * message was sent. A notification is created only by the matcher's server
+ * plan, never here.
  */
 export const inboxPorts = (db: Firestore): InboxPorts => {
   const inboxPath = (userId: UserId): string =>
@@ -40,12 +40,30 @@ export const inboxPorts = (db: Firestore): InboxPorts => {
         inboxPath(userId),
       ),
 
-    markNotificationRead: (userId, id, readAtUtcMs) =>
-      attemptWrite(`${inboxPath(userId)}/${id}`, () =>
-        updateDoc(
-          doc(db, Collections.Users, userId, Subcollections.Notifications, id),
-          { readAtUtcMs },
-        ),
-      ),
+    // THE READ RECEIPT (OR-19): ONE `writeBatch` of root `readAtUtcMs`
+    // updates, every named notification at the same instant — the ids the
+    // inbox page found unread, so at most the inbox's 50 (Firestore's batch
+    // takes 500). All or nothing: a stamp the rules refuse (a second one,
+    // one before its message) fails the batch, and nothing is written. No
+    // ids, no commit.
+    markNotificationsRead: (userId, ids, readAtUtcMs) => {
+      if (ids.length === 0) return Promise.resolve(Result.ok(undefined));
+      return attemptWrite(inboxPath(userId), () => {
+        const batch = writeBatch(db);
+        for (const id of ids) {
+          batch.update(
+            doc(
+              db,
+              Collections.Users,
+              userId,
+              Subcollections.Notifications,
+              id,
+            ),
+            { readAtUtcMs },
+          );
+        }
+        return batch.commit();
+      });
+    },
   };
 };

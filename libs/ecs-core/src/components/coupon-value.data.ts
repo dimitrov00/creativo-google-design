@@ -138,6 +138,30 @@ export const CouponValue = {
   },
 
   /**
+   * Do two values take the same off a price — the same method, and the
+   * same percent, or the same cents in the same currency? Two grants of one
+   * coupon snapshotted at different values are two promises, never one
+   * reward ticket (OR-15).
+   */
+  same(a: CouponValue, b: CouponValue): boolean {
+    switch (a.discountMethod) {
+      case DiscountMethod.PercentOff:
+        return (
+          b.discountMethod === DiscountMethod.PercentOff &&
+          a.discountPercent === b.discountPercent
+        );
+      case DiscountMethod.FixedAmount:
+        return (
+          b.discountMethod === DiscountMethod.FixedAmount &&
+          a.discountAmountCents === b.discountAmountCents &&
+          a.discountCurrency === b.discountCurrency
+        );
+      default:
+        return b.discountMethod === DiscountMethod.FreeService;
+    }
+  },
+
+  /**
    * The application order of the deterministic total order DiscountSystem
    * applies by (was `kindRank`): fixed amounts come off first, then
    * percentages bite the REDUCED remainder (15 % + 10 % is 23.5 % off, never

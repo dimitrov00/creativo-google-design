@@ -27,9 +27,9 @@ describe('BusyKey — `${barberId}__${localDate}`', () => {
   it('round-trips any parseable barber id and real day (property)', () => {
     fc.assert(
       fc.property(
-        fc
-          .string({ minLength: 1 })
-          .filter((raw) => raw.trim().length > 0 && !raw.includes('/')),
+        // Parseable is the id's own door — not blank, no `/`, and not a name
+        // Firestore reserves (`.`, `..`, `__…__`, OR-44).
+        fc.string({ minLength: 1 }).filter((raw) => BarberId.is(raw)),
         fc.integer({ min: -1000, max: 40_000 }),
         (rawBarber, epochDay) => {
           const barberId = BarberId.of(rawBarber);

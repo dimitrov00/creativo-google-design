@@ -10,7 +10,6 @@ import type {
   WaitlistRequestId,
 } from '@core/primitives';
 import type { BookingCart } from './booking-cart.data';
-import type { DayWindows } from './day-windows.data';
 import type { ScheduleSelection } from './schedule-selection.data';
 
 /**
@@ -31,8 +30,6 @@ export const BookingFlowEventKind = {
   SelectSchedule: 'SELECT_SCHEDULE',
   /** Select or deselect a day of the flexible declaration — one tap, one event. */
   ToggleFlexibleDay: 'TOGGLE_FLEXIBLE_DAY',
-  /** Replace one day's spans — what the per-day window sheet commits. */
-  SetDayWindows: 'SET_DAY_WINDOWS',
   /** Back to a single-day pick — drops the whole declaration deliberately. */
   ClearFlexible: 'CLEAR_FLEXIBLE',
   Confirmed: 'CONFIRMED',
@@ -63,7 +60,6 @@ export type BookingFlowEvent =
   | BookingFlowEvent.SelectLocation
   | BookingFlowEvent.SelectSchedule
   | BookingFlowEvent.ToggleFlexibleDay
-  | BookingFlowEvent.SetDayWindows
   | BookingFlowEvent.ClearFlexible
   | BookingFlowEvent.Confirmed
   | BookingFlowEvent.Waitlisted
@@ -117,10 +113,6 @@ export namespace BookingFlowEvent {
   export type ToggleFlexibleDay = {
     readonly bookingFlowEventKind: typeof BookingFlowEventKind.ToggleFlexibleDay;
     readonly localDate: LocalDate;
-  };
-  export type SetDayWindows = {
-    readonly bookingFlowEventKind: typeof BookingFlowEventKind.SetDayWindows;
-    readonly dayWindows: DayWindows;
   };
   export type ClearFlexible = {
     readonly bookingFlowEventKind: typeof BookingFlowEventKind.ClearFlexible;

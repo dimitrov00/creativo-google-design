@@ -4,6 +4,7 @@ import {
   readSeatCancellation,
   seedUpcomingAppointment,
   seedUserProfile,
+  seedWorkedAppointment,
 } from './support/seed-firestore';
 import { shopToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
@@ -55,6 +56,12 @@ test.describe('account appointments', () => {
     const appointmentId = `appt-${uid}`;
     await seedUserProfile(uid);
     await seedUpcomingAppointment(appointmentId, uid, '2030-06-01T10:00:00');
+    // A past visit too: the jump pills show from two sections up (OR-56 c).
+    await seedWorkedAppointment(
+      `${appointmentId}-past`,
+      uid,
+      '2026-01-15T10:00:00',
+    );
     await signInAs(page, uid, ['client']);
 
     await page.goto('/account/appointments');
@@ -163,11 +170,10 @@ test.describe('account appointments', () => {
     );
     await expect(row).toHaveAttribute('data-status', 'CONFIRMED');
     // It is filed under the upcoming run, which is what the cancel must
-    // take it out of.
-    const upcomingPill = page.locator(
-      '[data-testid="appointments-pill"][data-section="upcoming"]',
-    );
-    await expect(upcomingPill).toHaveCount(1);
+    // take it out of. One section draws no pill rail (OR-56 c): the
+    // section itself is the proof.
+    const upcomingSection = page.getByTestId('appointments-upcoming');
+    await expect(upcomingSection).toHaveCount(1);
 
     // The row opens the visit; cancelling lives in its sheet.
     await row.click();
@@ -189,7 +195,7 @@ test.describe('account appointments', () => {
     // The live listeners move the visit on their own — out of the upcoming
     // run and into the history, as cancelled — no manual UI removal.
     await expect(row).toHaveAttribute('data-status', 'CANCELLED');
-    await expect(upcomingPill).toHaveCount(0);
+    await expect(upcomingSection).toHaveCount(0);
 
     await expect.poll(() => readBookingStatus(appointmentId)).toBe('CANCELLED');
     // Filed as the client's, with no reason claimed on their behalf.

@@ -7,6 +7,7 @@ import type {
   StreakDefinition,
 } from '@core/entities';
 import {
+  CouponValue,
   FreezeReason,
   StreakExcuse,
   StreakInterval,
@@ -23,6 +24,7 @@ import {
   AdjustmentId,
   AppointmentId,
   CouponGrantId,
+  CouponId,
   GiftVoucherId,
   type LocalDate,
   RewardId,
@@ -532,6 +534,17 @@ describe('voucherVms', () => {
       ),
     ).toEqual(['voucher-b', 'voucher-dev-georgi', 'voucher-a']);
   });
+
+  it('breaks a tie on one last day by id in UTF-16 code units, never a locale’s collation (OR-18, DEP-F13)', () => {
+    // Every locale collates «voucher-a» before «voucher-B»; the code units
+    // put «B» (U+0042) before «a» (U+0061), on every device alike.
+    const lower = voucherWith('voucher-a', {});
+    const upper = voucherWith('voucher-B', {});
+    const order = (vouchers: readonly GiftVoucher[]) =>
+      voucherVms(vouchers, TODAY, WORDS).map((voucher) => voucher.voucherId);
+    expect(order([lower, upper])).toEqual(['voucher-B', 'voucher-a']);
+    expect(order([upper, lower])).toEqual(['voucher-B', 'voucher-a']);
+  });
 });
 
 describe('walletHoldings', () => {
@@ -586,9 +599,12 @@ describe('walletHoldings', () => {
   it('keeps a ticket on the bill where it stood, under its own name, the soonest to expire first', () => {
     const beard: ClientCardGrant = {
       grantId: CouponGrantId.of('grant-beard'),
+      couponId: CouponId.of('coupon-free-beard'),
+      value: CouponValue.freeService(),
       title: 'Безплатно оформяне на брада',
       valueLabel: null,
       expiresOn: null,
+      couponOccasion: null,
     };
     const tickets = walletHoldings(
       walletInput({
@@ -733,9 +749,12 @@ describe('walletActions', () => {
   it('counts the tickets on the disc when several are ready, and names none', () => {
     const beard: ClientCardGrant = {
       grantId: CouponGrantId.of('grant-beard'),
+      couponId: CouponId.of('coupon-free-beard'),
+      value: CouponValue.freeService(),
       title: 'Безплатно оформяне на брада',
       valueLabel: null,
       expiresOn: null,
+      couponOccasion: null,
     };
     const twin: ClientCardGrant = {
       ...GEORGI_GRANT,

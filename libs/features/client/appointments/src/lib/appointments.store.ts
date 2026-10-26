@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, resource, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { of, startWith, switchMap } from 'rxjs';
 import {
@@ -6,12 +6,16 @@ import {
   CLOCK_PORTS,
   GATEWAY_PORTS,
   ShopZoneService,
+  distinctLocationIds,
+  nowOfZones,
+  sameLocationIds,
 } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
 import { Callables } from '@core/ports';
 import {
   type AppointmentId,
   LocalDate,
+  type LocationId,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -45,6 +49,28 @@ export const appointmentsStateWords = {
 } as const satisfies Record<LoadState, string>;
 
 /**
+ * The shops whose wall clocks the lists are judged on, and which attempt
+ * they are read for — the zone read's ONE input.
+ */
+interface ClockShops {
+  readonly attempt: number;
+  /** Each shop once, in code-unit order. */
+  readonly locationIds: readonly LocationId[];
+}
+
+/** Two zone reads are the same read: the same attempt, the same shops in the same order. */
+function sameClockShops(
+  a: ClockShops | undefined,
+  b: ClockShops | undefined,
+): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return (
+    a.attempt === b.attempt && sameLocationIds(a.locationIds, b.locationIds)
+  );
+}
+
+/**
  * Page-scoped store for `/account/appointments` (goal 6.4) — the account's
  * live bookings (`APPOINTMENT_READ_PORTS.observeUpcoming`) and its newest
  * visits (`observeHistory`) as signals of the stored `Appointment` entities,
@@ -71,7 +97,9 @@ export class AppointmentsStore {
   /**
    * The shop's zone the page's "today" is read on — the deployment's
    * default location's (no location is in scope for a person's whole
-   * book; F-4, Phase 4a 4A-11). `null` until it resolves.
+   * book; F-4, Phase 4a 4A-11). `null` until it resolves. Whether a visit
+   * has begun is NOT read on it: each visit is judged on its own shop's
+   * clock ({@link nowOf}, OR-8).
    */
   private readonly shopZones = inject(ShopZoneService);
   readonly zone = this.shopZones.defaultZone();
@@ -79,9 +107,9 @@ export class AppointmentsStore {
   private readonly zoneFailed = this.shopZones.defaultZoneFailed();
 
   /**
-   * The same "now" on the shop's wall clock (`ShopNow`, Law 7.3) — what
-   * "has this visit begun" is compared with: `localDate` + `currentMinute`,
-   * never an instant. `null` until the shop's zone has resolved.
+   * The same "now" on the default shop's wall clock (`ShopNow`, Law 7.3) —
+   * the page's "today" (the calendar's month, the day words): `localDate` +
+   * `currentMinute`, never an instant. `null` until that zone has resolved.
    */
   readonly now = computed<ShopNow | null>(() => {
     const zone = this.zone();
@@ -130,30 +158,6 @@ export class AppointmentsStore {
   );
 
   /**
-   * The upcoming list's state. Loading until the listener answers AND the
-   * shop's zone has resolved: the page files and draws every visit against
-   * "today", which is a day on the shop's wall clock. A zone that cannot be
-   * read is the page's failed state, as a failed listener is (4A-2 (e)).
-   */
-  readonly upcoming = computed<LoadSlice<readonly Appointment[]>>(() => {
-    const result = this.upcomingResult();
-    if (result === null) return LoadSlice.loading;
-    if (this.zoneFailed()) return LoadSlice.failed;
-    if (result === undefined || this.now() === null) return LoadSlice.loading;
-    if (!result.ok) return LoadSlice.failed;
-    return LoadSlice.ready(
-      // The account's live bookings — a settled one is never "upcoming".
-      result.value.filter(
-        (appointment) => !BookingLifecycle.isSettled(appointment),
-      ),
-    );
-  });
-
-  readonly appointments = computed<readonly Appointment[]>(
-    () => LoadSlice.dataOf(this.upcoming()) ?? [],
-  );
-
-  /**
    * Past visits, newest first — a SECOND listener, bounded at
    * {@link HISTORY_LIMIT}.
    *
@@ -174,20 +178,126 @@ export class AppointmentsStore {
   );
 
   /**
-   * The history: of the newest {@link HISTORY_LIMIT}, every visit that has
-   * already begun OR reached a settled status. The read is one bounded
-   * query, split here (Firestore cannot express that OR without two
-   * queries) by `VisitListSystem.isHistory`; "begun" is the visit's start on
-   * the shop's wall clock against {@link now} (nothing is history until the
-   * shop's zone has resolved).
+   * The shops whose wall clocks judge a visit (OR-8): the shop of every
+   * visit not yet settled, in either read (a settled one is history
+   * whatever the clock), each once in code-unit order — with the attempt,
+   * so a retry reads again a zone that failed (the memo keeps no failure).
+   * `undefined` while no read holds such a visit. Equal by value: a
+   * snapshot at shops already read leaves it as it was.
+   */
+  private readonly clockShops = computed<ClockShops | undefined>(
+    () => {
+      const unsettled: Appointment[] = [];
+      for (const result of [this.upcomingResult(), this.historyResult()]) {
+        if (!result?.ok) continue;
+        for (const appointment of result.value) {
+          if (!BookingLifecycle.isSettled(appointment)) {
+            unsettled.push(appointment);
+          }
+        }
+      }
+      if (unsettled.length === 0) return undefined;
+      return {
+        attempt: this.attempt(),
+        locationIds: distinctLocationIds(unsettled),
+      };
+    },
+    { equal: sameClockShops },
+  );
+
+  /**
+   * Those shops' zones, by shop (Law 7.2 — the zone belongs to the
+   * location), through the session's memo (`ShopZoneService.zonesOf`): a
+   * shop already read costs no read.
+   */
+  private readonly shopZoneRead = resource({
+    params: () => this.clockShops(),
+    loader: ({ params }) => this.shopZones.zonesOf(params.locationIds),
+  });
+
+  /** The shops' zone answers — `null` while the reads are on their way. */
+  private readonly shopZoneAnswers = computed(() =>
+    this.shopZoneRead.hasValue() ? (this.shopZoneRead.value() ?? null) : null,
+  );
+
+  /** A shop's zone could not be read — the page's failed state, as the default zone's is. */
+  private readonly shopZonesFailed = computed(() => {
+    // A read that threw (never an answer) fails the page too.
+    if (this.shopZoneRead.error() !== undefined) return true;
+    const answers = this.shopZoneAnswers();
+    if (answers === null) return false;
+    for (const answer of answers.values()) if (!answer.ok) return true;
+    return false;
+  });
+
+  /**
+   * "Now" on a shop's OWN wall clock (`ShopNow`, Law 7.3, OR-8) — what
+   * "has this visit begun" is compared with, each visit at its own shop,
+   * never one shop's clock for all; read once per shop at
+   * {@link nowUtcMs} (`nowOfZones`, the menu badge's and `/account`'s one
+   * fold). `null` for a shop whose zone has not answered (or could not be
+   * read).
+   */
+  readonly nowOf = computed<(locationId: LocationId) => ShopNow | null>(() =>
+    nowOfZones(this.shopZoneAnswers(), this.nowUtcMs),
+  );
+
+  /**
+   * The upcoming list's state: the live bookings still to come, each on
+   * its OWN shop's wall clock (`VisitListSystem.isHistory` against
+   * {@link nowOf}, OR-8) — one that has begun there is the history's
+   * (DEP-F7). Loading until the listener answers, the default shop's zone
+   * has resolved (the page's "today") AND every live visit's shop has its
+   * clock. A zone that cannot be read is the page's failed state, as a
+   * failed listener is (4A-2 (e)).
+   */
+  readonly upcoming = computed<LoadSlice<readonly Appointment[]>>(() => {
+    const result = this.upcomingResult();
+    if (result === null) return LoadSlice.loading;
+    if (this.zoneFailed()) return LoadSlice.failed;
+    if (result === undefined || this.now() === null) return LoadSlice.loading;
+    if (!result.ok) return LoadSlice.failed;
+    if (this.shopZonesFailed()) return LoadSlice.failed;
+    const nowOf = this.nowOf();
+    const ahead: Appointment[] = [];
+    for (const appointment of result.value) {
+      const now = nowOf(appointment.locationId);
+      // Its shop's clock is still on its way: nothing is judged before it.
+      if (now === null) return LoadSlice.loading;
+      if (!VisitListSystem.isHistory(appointment, now)) ahead.push(appointment);
+    }
+    return LoadSlice.ready(ahead);
+  });
+
+  readonly appointments = computed<readonly Appointment[]>(
+    () => LoadSlice.dataOf(this.upcoming()) ?? [],
+  );
+
+  /**
+   * The history: of the visits both reads hold, each once, every one that
+   * has already begun OR reached a settled status. The history read is one
+   * bounded query, split here (Firestore cannot express that OR without
+   * two queries) by `VisitListSystem.isHistory`; "begun" is the visit's
+   * start on its OWN shop's wall clock ({@link nowOf}, OR-8). A live
+   * booking that has begun is filed here even when the bounded history
+   * read does not hold it — it left {@link upcoming}, and no visit falls
+   * between the two. A visit whose shop has no clock yet is judged by its
+   * status alone: settled is history whatever the clock.
    */
   readonly history = computed<readonly Appointment[]>(() => {
-    const result = this.historyResult();
-    const shopNow = this.now();
-    if (!result || !result.ok || shopNow === null) return [];
-    return result.value.filter((appointment) =>
-      VisitListSystem.isHistory(appointment, shopNow),
-    );
+    const read = this.historyResult();
+    const live = this.upcomingResult();
+    const nowOf = this.nowOf();
+    const visits = VisitListSystem.distinctById([
+      ...(read?.ok ? read.value : []),
+      ...(live?.ok ? live.value : []),
+    ]);
+    return visits.filter((appointment) => {
+      const now = nowOf(appointment.locationId);
+      return now === null
+        ? BookingLifecycle.isSettled(appointment)
+        : VisitListSystem.isHistory(appointment, now);
+    });
   });
 
   /** The month the calendar is focused on, as its first day; `null` follows today's. */
@@ -221,7 +331,7 @@ export class AppointmentsStore {
    * not parse) has stopped listening (`subscribeWithRetry` retries only the
    * healable codes), so the only way back is a new listener: the upcoming
    * list shows as loading until it answers. A shop zone that could not be
-   * read is read again too.
+   * read is read again too — the default shop's, and each visit's own.
    */
   retry(): void {
     this.shopZones.retryDefaultZone();

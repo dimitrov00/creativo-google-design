@@ -52,6 +52,8 @@ import {
   LocalDate,
   EndMinute,
   MinuteOfDay,
+  HourCount,
+  PersonKey,
   TrackMinute,
   DraftPersonKey,
   type TimeZone,
@@ -64,6 +66,7 @@ import type {
   Hash,
   HashPorts,
   IdPorts,
+  KeyedHash,
   Log,
   NextId,
   NowUtcMs,
@@ -157,6 +160,32 @@ export function endMinute(raw: number): EndMinute {
  */
 export function trackMinute(raw: number): TrackMinute {
   return unwrapOk(TrackMinute.of(raw));
+}
+
+/**
+ * An `HourCount` literal — `hourCount(24)` is a day's free-cancellation
+ * window (OR-45); throws on a negative, fractional or out-of-range count.
+ */
+export function hourCount(raw: number): HourCount {
+  return unwrapOk(HourCount.of(raw));
+}
+
+/**
+ * A `PersonKey` from its spelling, through its constructors (OR-49) —
+ * `personKeyFrom('self')`, `personKeyFrom('account:u-1')`,
+ * `personKeyFrom('guest:Мария')`; any other text is a guest of that name
+ * (`personKeyFrom('a')` is `guest:a`), for a spec whose keys are only
+ * compared.
+ */
+export function personKeyFrom(spelt: string): PersonKey {
+  if (spelt === 'self') return PersonKey.self();
+  if (spelt.startsWith('account:')) {
+    return PersonKey.account(spelt.slice('account:'.length));
+  }
+  if (spelt.startsWith('guest:')) {
+    return PersonKey.guest(spelt.slice('guest:'.length));
+  }
+  return PersonKey.guest(spelt);
 }
 
 /**
@@ -283,6 +312,23 @@ export const fixtureHash: Hash = (input) => {
   }
   return out;
 };
+
+/**
+ * A deterministic stand-in for the production {@link KeyedHash} (HMAC-SHA-256
+ * under a server-held key, OR-26): {@link fixtureHash} over the key and the
+ * input, so one key gives one id and two keys two ids — what a spec pins
+ * about a walk-in's record id. NOT cryptographic, never production code.
+ */
+export function fixtureKeyedHash(key: string): KeyedHash {
+  return (input) => fixtureHash(`${key}\u0000${input}`);
+}
+
+/**
+ * The keyed digest every spec's walk-ins are minted under — one fixed test
+ * key, the `WalkInKeyPorts.walkInHash` a booking or edit pipeline spec hands
+ * its pipeline and derives its expected `CustomerId.forWalkIn` ids with.
+ */
+export const fixtureWalkInHash: KeyedHash = fixtureKeyedHash('walkin-test-key');
 
 /**
  * The client record of an account, DERIVED the way the pipelines derive it

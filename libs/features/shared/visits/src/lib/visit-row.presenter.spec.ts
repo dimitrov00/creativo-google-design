@@ -436,6 +436,30 @@ describe('visitRowOf · the staff card', () => {
     expect(row.accessibleName).toBe('Фейд, 2 октомври в 10:00, Иван');
   });
 
+  it('names the month on an upcoming row’s tile by month too — the weekday already leads its line (OR-56 b)', () => {
+    const options = staffOptions({ grain: VisitGrain.Month });
+    const near = visitRowOf(
+      visit('appt-oct', [seat('2026-10-02T10:00:00')], {
+        bookingStatus: 'confirmed',
+      }),
+      options,
+      LOOKUP,
+    );
+    expect(near.tile).toEqual({ caption: 'окт.', day: 2, tone: 'upcoming' });
+    expect(near.lines).toEqual([{ text: 'пт, 10:00 · Иван', hold: ' · Иван' }]);
+    const far = visitRowOf(
+      visit('appt-far', [seat('2030-06-01T10:00:00')], {
+        bookingStatus: 'confirmed',
+      }),
+      options,
+      LOOKUP,
+    );
+    expect(far.tile?.caption).toBe('юни');
+    expect(far.lines).toEqual([{ text: 'сб, 10:00 · Иван', hold: ' · Иван' }]);
+    // A dated row by month keeps the weekday on its tile.
+    expect(visitRowOf(LAST_VISIT, options, LOOKUP).tile?.caption).toBe('пт');
+  });
+
   it('says a request the shop has not confirmed is «Заявен»', () => {
     const pending = visit('appt-pending', [seat('2026-10-02T10:00:00')], {
       bookingStatus: 'pending',
@@ -951,8 +975,9 @@ describe('visitRowOf · the client’s own list', () => {
     // Deduplicated: a party having the same cut is one thing, twice.
     expect(row.title).toBe('Фейд');
     expect(row.upcoming).toBe(true);
-    expect(row.tile).toEqual({ caption: 'пт', day: 2, tone: 'upcoming' });
-    expect(row.lines).toEqual([{ text: '2 бръснари · 10:00' }]);
+    // Upcoming: the tile names the month, the line the weekday (OR-56 b).
+    expect(row.tile).toEqual({ caption: 'окт.', day: 2, tone: 'upcoming' });
+    expect(row.lines).toEqual([{ text: '2 бръснари · пт, 10:00' }]);
     expect(row.trailing).toEqual({
       avatarSrc: null,
       name: '2 бръснари',
@@ -986,6 +1011,85 @@ describe('visitRowOf · the client’s own list', () => {
       LOOKUP,
     );
     expect(row.tile).toEqual({ caption: 'Sep', day: 4, tone: 'past' });
+  });
+
+  describe('an hour still to come (OR-56 b): the tile names the month, the line the weekday', () => {
+    const ahead = (id: string, iso: string) =>
+      visit(id, [seat(iso)], { bookingStatus: 'confirmed' });
+
+    it('names the month — «юни» over «1», «Иван · сб, 10:00» — and keeps the year for the ear alone (DEP-F39)', () => {
+      const row = visitRowOf(
+        ahead('appt-far', '2030-06-01T10:00:00'),
+        clientOptions(),
+        LOOKUP,
+      );
+      // «Предстоящи» names no period: the tile names what it does not.
+      expect(row.sectionKey).toBe('upcoming');
+      // Never the year: the 44 pt square cannot hold «юни 2030 г.»; the
+      // accessible name keeps it (R59).
+      expect(row.tile).toEqual({ caption: 'юни', day: 1, tone: 'upcoming' });
+      // The weekday the tile gave up, joined to the time — one «·».
+      expect(row.lines).toEqual([{ text: 'Иван · сб, 10:00' }]);
+      expect(row.accessibleName).toBe('Фейд, 1 юни 2030 г. в 10:00, Иван');
+    });
+
+    it('names the month inside the current year too', () => {
+      const row = visitRowOf(
+        ahead('appt-oct', '2026-10-03T10:00:00'),
+        clientOptions(),
+        LOOKUP,
+      );
+      expect(row.tile).toEqual({ caption: 'окт.', day: 3, tone: 'upcoming' });
+      expect(row.lines).toEqual([{ text: 'Иван · сб, 10:00' }]);
+    });
+
+    it('says «днес» for the weekday on the shop’s today', () => {
+      const row = visitRowOf(
+        ahead('appt-today', '2026-09-28T11:00:00'),
+        clientOptions(),
+        LOOKUP,
+      );
+      expect(row.upcoming).toBe(true);
+      expect(row.tile).toEqual({
+        caption: 'септ.',
+        day: 28,
+        tone: 'upcoming',
+      });
+      expect(row.lines).toEqual([{ text: 'Иван · днес, 11:00' }]);
+    });
+
+    it('words both in English from the same keys — «Jun», «Иван · Sat, 10:00 AM»', () => {
+      const en = translator(catalogue('en'));
+      const options = clientOptions({
+        locale: 'en',
+        words: visitWordsOf(en, 'en', VisitPerspective.Client),
+      });
+      const far = visitRowOf(
+        ahead('appt-far', '2030-06-01T10:00:00'),
+        options,
+        LOOKUP,
+      );
+      expect(far.tile).toEqual({ caption: 'Jun', day: 1, tone: 'upcoming' });
+      expect(far.lines).toEqual([{ text: 'Иван · Sat, 10:00 AM' }]);
+      const near = visitRowOf(
+        ahead('appt-oct', '2026-10-03T10:00:00'),
+        options,
+        LOOKUP,
+      );
+      expect(near.tile?.caption).toBe('Oct');
+      const today = visitRowOf(
+        ahead('appt-today', '2026-09-28T11:00:00'),
+        options,
+        LOOKUP,
+      );
+      expect(today.lines).toEqual([{ text: 'Иван · today, 11:00 AM' }]);
+    });
+
+    it('keeps a past row as it was: the weekday on the tile, the time alone in the line', () => {
+      const row = visitRowOf(LAST_VISIT, clientOptions(), LOOKUP);
+      expect(row.tile?.caption).toBe('пт');
+      expect(row.lines).toEqual([{ text: 'Иван · 10:00' }]);
+    });
   });
 });
 

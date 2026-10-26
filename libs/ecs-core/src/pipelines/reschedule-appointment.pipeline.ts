@@ -33,6 +33,7 @@ import {
 } from '@core/primitives';
 import {
   BookingError,
+  BookingErrorField,
   ShopUnavailableReason,
   CancellationRefusalCode,
   type RescheduleAppointmentError,
@@ -56,6 +57,7 @@ import {
   type BookingDecision,
   CancellationPolicySystem,
   type CarriedLine,
+  CustomerRecordSystem,
   type DecideBookingInput,
   type DecisionStandingSeat,
   type MovedCartLine,
@@ -70,7 +72,6 @@ import {
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
-  isReadableId,
   type PlacementSet,
   placementFields,
   placementKeysOf,
@@ -113,7 +114,10 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   client's rules after the free-cancellation window on the stored start;
  *   a carried seat it cannot place is the client's call to the shop
  *   (`carried_seat_unplaceable`, naming why) — unless the cart itself does
- *   not fit, which is the cart's own refusal.
+ *   not fit, which is the cart's own refusal. A walk-in the shop seated
+ *   keeps its record through the move: the cart names them by label, and
+ *   the decision seats the line of that label `WALK_IN` again
+ *   (`CustomerRecordSystem.walkInsByLabel`, OR-26).
  * - **One plan:** the appointment `Update` (the revision stamped, a named
  *   move recorded in the ledger) and the busy `Set`s of the NEW day merged
  *   onto what this attempt read; the old day is left to `rebuildBusy`.
@@ -353,8 +357,16 @@ async function readMove(
       ShopUnavailableReason.NotFound,
     ),
   };
+  // A shop id `LocationId.parse` refuses — blank, a `/`, a reserved name
+  // (OR-44) — is an invalid request, refused UNREAD (DEP-F31): no document
+  // could ever bear it, so it is no "shop not found".
   const locationId = LocationId.parse(cmd.locationId);
-  if (!locationId.ok || !isReadableId(cmd.locationId)) return notFound;
+  if (!locationId.ok) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: BookingError.invalidInput(BookingErrorField.LocationId),
+    };
+  }
   const serviceIds: ServiceId[] = [];
   const barberIds: BarberId[] = [];
   for (const seat of cmd.seats) {
@@ -474,7 +486,11 @@ async function readMove(
   };
 }
 
-/** The visit as it stood, for "one person, one chair" — the booker's own seats are `SELF`. */
+/**
+ * The visit as it stood, for "one person, one chair" — the booker's own
+ * seats are `SELF`; a guest (anonymous, or a walk-in the shop keeps a
+ * record for) is their label.
+ */
 function standingOf(
   stored: Appointment,
   owner: UserId,
@@ -484,11 +500,12 @@ function standingOf(
     standing.push({
       seatId: seat.seatId,
       subject:
-        seat.seatSubject === SeatSubject.Anonymous
+        seat.seatSubject !== SeatSubject.Account
           ? {
               requestedSubjectRole: RequestedSubjectRole.Guest,
               label: seat.guestLabel,
               guestKey: null,
+              contact: null,
             }
           : seat.subjectUserId === owner
             ? { requestedSubjectRole: RequestedSubjectRole.Self }
@@ -518,6 +535,7 @@ function cartLine(line: MovedCartLine): BookingCall.SeatInput {
             requestedSubjectRole: RequestedSubjectRole.Guest,
             label: line.seat.subject.label,
             guestKey: null,
+            contact: null,
           }
         : { requestedSubjectRole: RequestedSubjectRole.Self },
   };
@@ -593,6 +611,7 @@ function decideLines(
       standing: standingOf(loaded.stored, owner),
       stood: [],
       parsePhone: parseContactPhone,
+      walkIns: CustomerRecordSystem.walkInsByLabel(loaded.stored.seats, lines),
     },
   );
 }

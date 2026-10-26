@@ -10,8 +10,9 @@ export type GrantCapacity = (typeof GrantCapacity)[keyof typeof GrantCapacity];
 
 /**
  * A single-use grant, or a multi-use one counting down from `usesGranted`
- * (`usesRemaining` left) — a flat variant slice of an ACTIVE grant (was the
- * nested `capacity: { kind, remaining, totalGranted }`).
+ * (`usesRemaining` left) — a flat variant slice of an ACTIVE grant, kept by
+ * a USED one as the terms it was issued under (OR-13; was the nested
+ * `capacity: { kind, remaining, totalGranted }`).
  */
 export type GrantCapacityTerms =
   GrantCapacityTerms.SingleUse | GrantCapacityTerms.MultiUse;

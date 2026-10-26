@@ -3,8 +3,8 @@ import type {
   VisitWaitlistWords,
   VisitWords,
 } from '@creativo/features/shared/visits';
-import type { CouponOccasion } from '@core/components';
-import type { LocalDate } from '@core/primitives';
+import type { CouponOccasion, CouponValue } from '@core/components';
+import type { CouponId, LocalDate } from '@core/primitives';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import * as achievements from './achievements.presenter';
 import * as card from './client-card.presenter';
@@ -31,14 +31,25 @@ import * as loyalty from './loyalty.presenter';
  */
 
 describe('client card contracts, revision 3', () => {
-  it('lets a grant say the moment its coupon was made for, and lets it say nothing', () => {
-    expectTypeOf<ClientCardGrant['couponOccasion']>().toEqualTypeOf<
-      CouponOccasion | null | undefined
-    >();
-    // Additive: a host that builds a grant without it still builds a grant.
+  it('makes a grant say the moment its coupon was made for — `null` for none, never absent (OR-16)', () => {
+    expectTypeOf<
+      ClientCardGrant['couponOccasion']
+    >().toEqualTypeOf<CouponOccasion | null>();
+    // Required: a host that builds a grant without it builds no grant.
     expectTypeOf<
       Omit<ClientCardGrant, 'couponOccasion'>
-    >().toExtend<ClientCardGrant>();
+    >().not.toExtend<ClientCardGrant>();
+  });
+
+  it('keys a grant by the coupon it was issued from and the value it snapshotted, never by its words (OR-15)', () => {
+    expectTypeOf<ClientCardGrant['couponId']>().toEqualTypeOf<CouponId>();
+    expectTypeOf<ClientCardGrant['value']>().toEqualTypeOf<CouponValue>();
+    expectTypeOf<
+      Omit<ClientCardGrant, 'couponId'>
+    >().not.toExtend<ClientCardGrant>();
+    expectTypeOf<
+      Omit<ClientCardGrant, 'value'>
+    >().not.toExtend<ClientCardGrant>();
   });
 
   it('opens the wallet on five sections, one type for the glance, the wallet and the editor (G1-4)', () => {

@@ -28,6 +28,9 @@ import {
   CancellationRefusal,
   CarriedSeatRefusal,
   CatalogError,
+  ClientIssueBatchRefusedReason,
+  ClientIssueError,
+  ClientIssueErrorCode,
   CompleteRegistrationRefusalCode,
   EngagementError,
   EngagementErrorCode,
@@ -65,12 +68,18 @@ import {
   type EdgeError,
   NamedField,
   PLATFORM_TIMEOUT_SECONDS,
+  type ThrottleRate,
+  type TokenBucket,
   WireShape,
   callableEdge,
+  fullBucket,
   isAnswered,
   projected,
   retryingTrigger,
+  takeToken,
+  throttledCallable,
   toHttpsError,
+  tokenBucket,
   wireDetails,
   wireRuleOf,
   workBudget,
@@ -364,6 +373,29 @@ describe('edge — the wire table', () => {
       }
     });
 
+    it('holds no row for a code its dictionary retired with its producer (owner rulings 2026-10-26) — such a code leaves `internal`, as any unknown one', () => {
+      for (const retired of [
+        // OR-28: no producer.
+        'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
+        // OR-13: no expiry job, no admin revoke.
+        'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
+        'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
+        // OR-14: no voucher is issued here.
+        'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
+        // OR-19: the receipt is clamped, never refused.
+        'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
+        // OR-22: the catalogue's dead guards.
+        'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES',
+        'CATALOG_LOCATION_INVALID_TIMEZONE',
+      ]) {
+        expect(Object.hasOwn(EDGE_WIRE, retired), retired).toBe(false);
+        expect(wireRuleOf(retired)).toMatchObject({
+          httpsStatus: 'internal',
+          wireFields: [],
+        });
+      }
+    });
+
     it('answers — never throws — exactly the streak publish’s refusals', () => {
       expect(Object.keys(EDGE_WIRE).filter(isAnswered).sort()).toEqual(
         [...ANSWERED].sort(),
@@ -511,6 +543,7 @@ describe('edge — the wire table', () => {
           barberId: 'b_ivan',
           localDate: '2026-10-07',
           startMinutes: 600,
+          seatIndex: 1,
         },
       });
       // A barber not on the roster names its day by the struct's own name.
@@ -520,6 +553,64 @@ describe('edge — the wire table', () => {
         errorCode: 'BOOKING_BARBER_NOT_ROSTERED',
         barberId: 'b_ivan',
         localDate: '2026-10-07',
+      });
+    });
+
+    it('an availability refusal carries no busy body (OR-12): exactly `{ errorCode, barberId, localDate, startMinutes, seatIndex }` — the live listeners redraw the day', () => {
+      const refusal = BookingError.slotUnavailable(
+        IVAN,
+        day('2026-10-07'),
+        at(600),
+        2,
+      );
+      // Even a struct that somehow held the day leaves without it: an error
+      // carries scalars and brands only, never a data channel (Law 7.5).
+      const details = wireDetails({
+        ...refusal,
+        barberBusy: { blocks: [{ startMinutes: 600, endMinutes: 660 }] },
+      } as EdgeError);
+      expect(Object.keys(details).sort()).toEqual(
+        [
+          'barberId',
+          'errorCode',
+          'localDate',
+          'seatIndex',
+          'startMinutes',
+        ].sort(),
+      );
+      expect(details).toEqual({
+        errorCode: 'BOOKING_SLOT_UNAVAILABLE',
+        barberId: 'b_ivan',
+        localDate: '2026-10-07',
+        startMinutes: 600,
+        seatIndex: 2,
+      });
+    });
+
+    it('a throttled code request carries the seconds left on the resend window (OR-9) — `resource-exhausted`, `retryAfterSeconds` as the struct holds it', () => {
+      expect(wire(IdentityError.otpRateLimited(42))).toEqual({
+        status: 'resource-exhausted',
+        message: 'IDENTITY_OTP_RATE_LIMITED',
+        details: {
+          errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+          retryAfterSeconds: 42,
+        },
+      });
+    });
+
+    it('a refused client issue batch leaves as its code alone (OR-34) — why, which issue and which field stay in the sink’s log', () => {
+      expect(
+        wire(
+          ClientIssueError.batchRefused(
+            ClientIssueBatchRefusedReason.Shape,
+            3,
+            'scrubbedMessage',
+          ),
+        ),
+      ).toEqual({
+        status: 'invalid-argument',
+        message: ClientIssueErrorCode.BatchRefused,
+        details: { errorCode: ClientIssueErrorCode.BatchRefused },
       });
     });
 
@@ -735,7 +826,7 @@ describe('edge — the wire table', () => {
       expect(wire(StaffEditError.forbidden()).status).toBe('permission-denied');
     });
 
-    it('the programs refusals no callable returns yet (flip 4, D9(b)) leave by their kind — a missing program `not-found`, an event no zone places `failed-precondition`', () => {
+    it('the programs refusals no callable returns yet (flip 4, D9(b)) leave by their kind — a missing program `not-found`, an event no zone places or whose shop is gone `failed-precondition`', () => {
       expect(
         wire(
           EngagementError.programNotFound(
@@ -768,6 +859,16 @@ describe('edge — the wire table', () => {
         wire(EngagementError.shopEventZoneUnknown(LocationId.of('loc-center')))
           .status,
       ).toBe('failed-precondition');
+      // OR-38: an event naming no stored shop is refused, its id kept on the server.
+      expect(
+        wire(
+          EngagementError.shopEventLocationUnknown(LocationId.of('loc-gone')),
+        ),
+      ).toEqual({
+        status: 'failed-precondition',
+        message: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+        details: { errorCode: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN' },
+      });
       expect(
         wire(CatalogError.locationZoneUnknown(LocationId.of('loc-center')))
           .status,
@@ -1084,6 +1185,118 @@ describe('edge — the wrappers', () => {
         },
       ]);
       expect(WorkBudgetSystem.callableBudgetMs(540)).toBe(49_000);
+    });
+  });
+
+  describe('the throttle — a per-instance token bucket (OR-34)', () => {
+    /** The sink's rate: twenty a second, a burst of twenty. */
+    const RATE: ThrottleRate = { capacity: 20, callsPerSecond: 20 };
+
+    /** `n` turns at one instant, each on the bucket the last one left. */
+    function turns(
+      bucket: TokenBucket,
+      n: number,
+      nowUtcMs: UtcEpochMs,
+    ): { readonly admitted: readonly boolean[]; readonly bucket: TokenBucket } {
+      const admitted: boolean[] = [];
+      let current = bucket;
+      for (let i = 0; i < n; i++) {
+        const turn = takeToken(RATE, current, nowUtcMs);
+        admitted.push(turn.admitted);
+        current = turn.bucket;
+      }
+      return { admitted, bucket: current };
+    }
+
+    it('starts full — a burst of exactly its capacity, then a refusal', () => {
+      const start = utc(1_000);
+      expect(fullBucket(RATE, start)).toEqual({
+        milliTokens: 20_000,
+        filledAtUtcMs: start,
+      });
+      const burst = turns(fullBucket(RATE, start), 21, start);
+      expect(burst.admitted.filter(Boolean)).toHaveLength(20);
+      expect(burst.admitted[20]).toBe(false);
+      // A refused turn takes nothing: the bucket stays empty, not below.
+      expect(burst.bucket).toEqual({ milliTokens: 0, filledAtUtcMs: start });
+    });
+
+    it('refills at its rate — one call per 50 ms at twenty a second, never a fraction early', () => {
+      const empty: TokenBucket = { milliTokens: 0, filledAtUtcMs: utc(1_000) };
+      expect(takeToken(RATE, empty, utc(1_049)).admitted).toBe(false);
+      expect(takeToken(RATE, empty, utc(1_050))).toEqual({
+        admitted: true,
+        bucket: { milliTokens: 0, filledAtUtcMs: utc(1_050) },
+      });
+      // A refused turn keeps what had accrued: 49 ms + 1 ms is one call.
+      const partial = takeToken(RATE, empty, utc(1_049)).bucket;
+      expect(partial).toEqual({ milliTokens: 980, filledAtUtcMs: utc(1_049) });
+      expect(takeToken(RATE, partial, utc(1_050)).admitted).toBe(true);
+    });
+
+    it('never holds more than its capacity, however long it idled', () => {
+      const empty: TokenBucket = { milliTokens: 0, filledAtUtcMs: utc(1_000) };
+      const later = utc(1_000 + 3_600_000);
+      const idled = turns(empty, 21, later);
+      expect(idled.admitted.filter(Boolean)).toHaveLength(20);
+      expect(idled.admitted[20]).toBe(false);
+    });
+
+    it('refills nothing on a clock that stepped back, and re-anchors on now', () => {
+      const bucket: TokenBucket = {
+        milliTokens: 500,
+        filledAtUtcMs: utc(5_000),
+      };
+      expect(takeToken(RATE, bucket, utc(4_000))).toEqual({
+        admitted: false,
+        bucket: { milliTokens: 500, filledAtUtcMs: utc(4_000) },
+      });
+    });
+
+    it('is pure: the same turn answers the same, its bucket untouched', () => {
+      const bucket: TokenBucket = Object.freeze({
+        milliTokens: 1_500,
+        filledAtUtcMs: utc(2_000),
+      });
+      const rate = Object.freeze({ ...RATE });
+      const once = takeToken(rate, bucket, utc(2_010));
+      expect(takeToken(rate, bucket, utc(2_010))).toEqual(once);
+      expect(bucket).toEqual({ milliTokens: 1_500, filledAtUtcMs: utc(2_000) });
+    });
+
+    it('tokenBucket keeps one bucket over the clock it is given — full at its first call', () => {
+      const { ports, advance } = edgePorts();
+      const admit = tokenBucket(RATE, ports.nowUtcMs);
+      const burst: boolean[] = [];
+      for (let i = 0; i < 21; i++) burst.push(admit());
+      expect(burst.filter(Boolean)).toHaveLength(20);
+      expect(burst[20]).toBe(false);
+      advance(50);
+      expect(admit()).toBe(true);
+      expect(admit()).toBe(false);
+    });
+
+    it('throttledCallable runs an admitted call as it is, and answers a refused one `resource-exhausted` before the handler', async () => {
+      let admitting = true;
+      const handled: unknown[] = [];
+      const handler = throttledCallable(
+        () => admitting,
+        async (call: CallableRequest<unknown>) => {
+          handled.push(call.data);
+          return { loggedCount: 1 };
+        },
+      );
+      await expect(handler(request(['issue']))).resolves.toEqual({
+        loggedCount: 1,
+      });
+      admitting = false;
+      const thrown = await rejection(handler(request(['flood'])));
+      expect(thrown.code).toBe('resource-exhausted');
+      expect(thrown.toJSON()).toEqual({
+        message: 'RESOURCE_EXHAUSTED',
+        status: 'RESOURCE_EXHAUSTED',
+      });
+      expect(handled).toEqual([['issue']]);
     });
   });
 

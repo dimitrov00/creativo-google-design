@@ -1394,32 +1394,63 @@ true` deferred", record DEP-1…DEP-15 and the open questions; runbook §1.1
 
 ## 7. Open questions (proceed on the stated default)
 
+> **All seven CLOSED.** OQ-1 and OQ-2 with pass E (E-1, E-2); the other
+> five by the owner rulings of 2026-10-26
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`) — the ruling
+> follows each question, the default above it kept as the plan wrote it.
+> Two of this plan's choices are reversed with them: DEP-11 / D-7 (the
+> unguarded default, OR-33 / DEP-F24) and OQ-7's "out of scope" (OR-2 /
+> DEP-F2), which makes D-3's promise true.
+
 - **OQ-1** — the other four capacity triggers (`…OnExceptionChange`,
   `…OnRosterChange`, `…OnLocationChange`, `…OnSettingsChange`) share
   `rebuildCapacity` and are as idempotent; the brief names only the busy one.
   Default: unchanged (no `retry`), a one-line follow-up when the owner wants
-  them.
+  them. **CLOSED by pass E (E-1 / DEP-1):** all four retry through
+  `retryingTrigger`.
 - **OQ-2** — `appointmentNotes` bodies are not guarded; the append's
   `decide` reads `stored.text`. Default: out of scope (not one of the three
   collections); a `StoredDocumentSystem.appointmentNote` is the follow-up.
+  **CLOSED by pass E (E-2 / DEP-2):** guarded at read.
 - **OQ-3** — adapters default to unguarded (DEP-11). Alternative: guarded
   by default and the partial-body fixtures of the mechanics specs completed.
-  Default: as planned (keeps every existing spec unchanged).
+  Default: as planned (keeps every existing spec unchanged). **CLOSED —
+  OR-33 (DEP-F24):** no default at all — the guard is a required
+  parameter; `StoredDocumentSystem.unguarded` moves to `@core/testing` and
+  the web `UNGUARDED` to the firestore lib's testing entry, both banned by
+  lint outside specs and test support; the integration specs and the seed
+  read through the real guard, so a malformed seeded body refuses the seed
+  run.
 - **OQ-4** — `REPOSITORY_MALFORMED`'s words ("We couldn't save that…") are
   shared by every `REPOSITORY_*` code and read oddly for a read. Default:
-  unchanged (copy is the owner's).
+  unchanged (copy is the owner's). **CLOSED — OR-54 (DEP-F38):** each code
+  is worded for what it means — `REPOSITORY_MALFORMED`: «Този запис е
+  повреден и не може да се използва.» / "This record is damaged and can't
+  be used." (no "try again": the damage is permanent).
 - **OQ-5** — a separate `REPOSITORY_DOCUMENT_MALFORMED` code (DEP-10).
-  Default: reuse; mechanical follow-up if wanted.
+  Default: reuse; mechanical follow-up if wanted. **CLOSED — OR-43:** reuse
+  `REPOSITORY_MALFORMED`, no new code — one meaning, one code.
 - **OQ-6** — the web report reaches only the device console (D-4). A real
   sink — an `ErrorHandler` provided in `app.config.ts` that forwards
   `DATA_LOG_ERROR` errors to a telemetry endpoint — would let the shop's
   operator see a dropped staff-list row. Default: out of scope (no web
   telemetry service exists to forward to); `errorHandlerLogPorts` is the seam.
+  **CLOSED — OR-34 (DEP-F25):** a first-party sink — a `ReportingErrorHandler`
+  (the console output kept) and a batching reporter feed the
+  `reportClientIssues` callable, which writes closed, allowlisted, scrubbed
+  `ClientIssue` structs into Cloud Logging (`DATA_DOCUMENT_DROPPED` /
+  `DATA_DOCUMENT_REFUSED` among the kinds); no uid leaves the device.
 - **OQ-7** — a worded "1 visit could not be shown" on the staff day for a
   one-of-many drop (the list answer would carry a dropped count the store
   words). Default: out of scope (feature + presenter work in the dashboard,
   owned by no package here); the systemic rule already prevents the
-  dangerous case, an empty day that reads as free.
+  dangerous case, an empty day that reads as free. **CLOSED — OR-2
+  (DEP-F2):** `ObserveBarberDay` answers
+  `BarberDayRead { appointments; unreadableCount }` (`admitCounted` in
+  `observe.ts`), a failed chair is
+  drawn as failed — no gap cards, never listed as off — and the all-day
+  strip carries one `role="status"` health row per affected chair («N
+  посещение не може да се покаже» / "N visit can't be shown").
 
 **Review gaps, revision 2026-10-25.** Applied: the web report's reach
 (D-3/D-4/DEP-2, posture (a) for `observeUpcoming` + the systemic rule), the

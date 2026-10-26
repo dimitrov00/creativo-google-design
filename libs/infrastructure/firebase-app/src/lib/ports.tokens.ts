@@ -15,6 +15,7 @@ import type {
   CouponVoucherPorts,
   CourseReadPorts,
   CustomerPorts,
+  CustomerSearchPorts,
   DefaultLocationPorts,
   FlagsPorts,
   GatewayPorts,
@@ -106,6 +107,11 @@ export const PROFILE_PORTS = new InjectionToken<ProfilePorts>('PROFILE_PORTS');
 /** The staff client search over `users` (`UserSearchPorts`). */
 export const USER_SEARCH_PORTS = new InjectionToken<UserSearchPorts>(
   'USER_SEARCH_PORTS',
+);
+
+/** The staff client search over the client records (`CustomerSearchPorts`, OR-26). */
+export const CUSTOMER_SEARCH_PORTS = new InjectionToken<CustomerSearchPorts>(
+  'CUSTOMER_SEARCH_PORTS',
 );
 
 /** A client record's loyalty account, badge and season progress (`LoyaltyAccountReadPorts`). */

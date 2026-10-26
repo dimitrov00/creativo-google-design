@@ -1,3 +1,4 @@
+import type { HourCount } from '@core/primitives';
 import type { PreciseInstant } from './precise-instant.data';
 
 /*
@@ -10,5 +11,5 @@ export type LivePolicyLine = {
   /** The policy document's update time; `null` when there is no document. */
   readonly updatedAt: PreciseInstant | null;
   /** The free-cancellation window in force — the defaults' when there is no document. */
-  readonly windowHours: number;
+  readonly windowHours: HourCount;
 };

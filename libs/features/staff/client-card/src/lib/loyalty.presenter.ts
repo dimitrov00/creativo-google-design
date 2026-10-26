@@ -52,8 +52,9 @@ interface GrantGroup {
 }
 
 /**
- * Identical ready grants — the same coupon, worded the same — are one
- * ticket; a grant ON THE BILL is a ticket of its own, stamped. Every ticket
+ * Identical ready grants — the same coupon at the same value
+ * (`RewardSystem.groupGrants`, OR-15: never its words) — are one ticket; a
+ * grant ON THE BILL is a ticket of its own, stamped. Every ticket
  * in ONE order, the soonest to expire first, applied or not — so the one
  * «Използвай» used stays where it stood (the owner's coupon rule: «it
  * stays where it is and its button changes to remove», WP7 review r6).
@@ -322,15 +323,17 @@ export function sliceMap<T, U>(
 // ── The card's own values → ecs-core structs ──────────────────────────────
 
 /**
- * A held grant as `RewardSystem.groupGrants` reads it: identical grants —
- * the same coupon, worded the same — share a key, and the grant rides along.
+ * A held grant as `RewardSystem.groupGrants` reads it: the coupon it was
+ * issued from and the value it snapshotted — what makes two grants one
+ * ticket (OR-15) — and the grant rides along.
  */
 function ticketRefOf(grant: ClientCardGrant): GrantTicketRef & {
   readonly source: ClientCardGrant;
 } {
   return {
     grantId: grant.grantId,
-    groupKey: `${grant.title}\u0000${grant.valueLabel ?? ''}`,
+    couponId: grant.couponId,
+    value: grant.value,
     expiresOn: grant.expiresOn,
     source: grant,
   };

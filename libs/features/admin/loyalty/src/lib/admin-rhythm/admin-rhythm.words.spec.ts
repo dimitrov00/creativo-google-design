@@ -856,22 +856,26 @@ describe('the publish refusals, worded by their errorCode', () => {
     ).toBe('Fix: Grace and Due.');
   });
 
-  it('say a caller who may not publish is not allowed — the staff edit’s words', () => {
-    for (const errorCode of [
-      StreakPublishErrorCode.CallerNotAdmin,
-      StreakPublishErrorCode.CallerUnauthenticated,
-    ]) {
-      expect(lineOf('bg', errorCode)).toBe('Нямаш право за тази промяна.');
-      expect(lineOf('en', errorCode)).toBe(
-        "You aren't allowed to make that change.",
-      );
-      expect(lineOf('bg', errorCode)).toBe(
-        lineOf('bg', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
-      );
-      expect(lineOf('en', errorCode)).toBe(
-        lineOf('en', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
-      );
-    }
+  it('say a caller who is no admin is not allowed — the one not-allowed line (OR-50)', () => {
+    const errorCode = StreakPublishErrorCode.CallerNotAdmin;
+    expect(lineOf('bg', errorCode)).toBe(
+      'Нямаш права за това. Влез отново или питай администратора.',
+    );
+    expect(lineOf('en', errorCode)).toBe(
+      "You don't have access to this. Sign in again or ask an admin.",
+    );
+    expect(lineOf('bg', errorCode)).toBe(
+      lineOf('bg', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
+    );
+    expect(lineOf('en', errorCode)).toBe(
+      lineOf('en', 'BOOKING_STAFF_EDIT_FORBIDDEN'),
+    );
+  });
+
+  it('ask a caller with no session to sign in again (OR-52)', () => {
+    const errorCode = StreakPublishErrorCode.CallerUnauthenticated;
+    expect(lineOf('bg', errorCode)).toBe('Влез отново, за да продължиш.');
+    expect(lineOf('en', errorCode)).toBe('Sign in again to continue.');
   });
 });
 

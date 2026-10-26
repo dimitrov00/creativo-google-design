@@ -11,7 +11,6 @@ import type {
   Result,
   UserId,
   UtcEpochMs,
-  WaitlistRequestId,
 } from '@core/primitives';
 import type { PipelineError, RepositoryError } from '@core/errors';
 import type {
@@ -105,14 +104,29 @@ export type ObserveAppointment = (
 ) => Observable<Result<Appointment | null, RepositoryError>>;
 
 /**
+ * One barber's day as the staff sheet reads it (OR-2): the visits it could
+ * read, and how many it could not. `unreadableCount` is the number of
+ * stored visits the read-time guard dropped from THIS answer — counted in
+ * the loop that drops them, never a second read; `0` on a clean read. The
+ * sheet words the count on the chair's all-day strip, so a dropped visit
+ * never draws its time as a free gap.
+ */
+export type BarberDayRead = {
+  readonly appointments: readonly Appointment[];
+  readonly unreadableCount: number;
+};
+
+/**
  * Everything on ONE barber's chair for ONE day, every status — the staff
  * day sheet: `busyKeys array-contains key`, single-field, the key the
  * rebuild trigger queries by (`appointment-repository.adapter.ts:245-253`).
- * Rules allow it for staff only.
+ * Rules allow it for staff only. A partial drop answers the rest with its
+ * count ({@link BarberDayRead}); a day whose every visit is refused answers
+ * the refusal — the failed chair, never an empty, free-looking day.
  */
 export type ObserveBarberDay = (
   key: BusyKey,
-) => Observable<Result<readonly Appointment[], RepositoryError>>;
+) => Observable<Result<BarberDayRead, RepositoryError>>;
 
 /**
  * A person's live bookings — `ownerUserId ==` (the ACCOUNT's own visits —
@@ -295,11 +309,6 @@ export type LoadSchedule = (
   barberId: BarberId,
 ) => Promise<Result<BarberSchedule | null, RepositoryError>>;
 
-/** `waitlistRequests/{id}` — `null` when absent. */
-export type LoadWaitlistRequest = (
-  id: WaitlistRequestId,
-) => Promise<Result<WaitlistRequest | null, RepositoryError>>;
-
 /**
  * Every open request naming `localDate` — open status, `localDates
  * array-contains` (index #14, `firestore-waitlist-store.ts:94-95`): what a
@@ -329,9 +338,9 @@ export type ListBarbers = () => Promise<
 
 /**
  * `barberLeadTimeSamples/{barberId__localDate}` `Set` — one barber's daily
- * sample; the adapter stamps the root `purgeAt` (`localDate` + 400 d). The
- * daily writer runs only behind the `leadTimeSampling` manifest flag until
- * the trend reader lands (§3.1).
+ * sample; the adapter stamps the root `purgeAt` (`localDate` + 400 d).
+ * Written daily, ungated (F1-2): an un-backfillable snapshot; the TTL
+ * bounds it (OR-27 — no manifest flag gates the writer).
  */
 export type WriteLeadTimeSample = (
   sample: BarberLeadTimeSample,
@@ -458,11 +467,6 @@ export type BarberListPorts = {
   readonly listBarbers: ListBarbers;
 };
 
-/** One waitlist request by id. */
-export type WaitlistRequestReadPorts = {
-  readonly loadWaitlistRequest: LoadWaitlistRequest;
-};
-
 /** The open waitlist requests a freed time may match. */
 export type OpenWaitlistReadPorts = {
   readonly loadOpenWaitlist: LoadOpenWaitlist;
@@ -482,7 +486,6 @@ export type LeadTimeWritePorts = {
 export type ServerSchedulingReadPorts = PolicyReadPorts &
   ShopDayReadPorts &
   BarberListPorts &
-  WaitlistRequestReadPorts &
   OpenWaitlistReadPorts &
   CapacityReadPorts &
   LeadTimeWritePorts;

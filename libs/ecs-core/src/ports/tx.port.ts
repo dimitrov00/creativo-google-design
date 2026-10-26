@@ -136,6 +136,18 @@ export type CommitPlan = <S, D, E>(
 export type Hash = (input: string) => string;
 
 /**
+ * A KEYED digest — HMAC-SHA-256 hex under a server-held secret in
+ * production — for a deterministic id whose input is a person's contact (a
+ * walk-in's phone or e-mail, OR-26). A plain {@link Hash} of a phone number
+ * is reversible by brute force (a country's mobile numbers are a few tens
+ * of millions of candidates), and the id is readable wherever the record is
+ * referenced; under a key nobody outside the server holds it reveals
+ * nothing. Same key and input, same digest — so the id still dedupes and a
+ * retried save still meets its own record.
+ */
+export type KeyedHash = (input: string) => string;
+
+/**
  * The clock, as an absolute instant — a port so specs can pin it. The
  * boundary turns it into the shop's `ShopNow` once per request
  * (`ZonedTimeSystem.shopNow(ports.nowUtcMs(), location.timeZone)`); a
@@ -156,6 +168,16 @@ export type CommitPorts = {
 /** The digest for deterministic ids. */
 export type HashPorts = {
   readonly hash: Hash;
+};
+
+/**
+ * The keyed digest a walk-in's record id is derived with
+ * (`CustomerId.forWalkIn`, OR-26) — only the server pipelines that mint
+ * walk-ins (`bookAppointment`, `editAppointment`) take it, and only the two
+ * callables that run them hold its secret (`WALKIN_ID_KEY`).
+ */
+export type WalkInKeyPorts = {
+  readonly walkInHash: KeyedHash;
 };
 
 /** The clock — the one absolute instant a request reads. */

@@ -3,9 +3,12 @@ import {
   AppointmentId,
   BookingStatus,
   type LocalDate,
+  LocationId,
   type MinuteOfDay,
+  TimeZone,
 } from '@core/primitives';
 import {
+  type ShopNow,
   type VisitFilter,
   type VisitRowOutcome,
   WallTime,
@@ -556,6 +559,96 @@ describe('VisitListSystem.rowSectionKey — where a visit row files', () => {
   });
 });
 
+/*
+ * OR-56 (b) and (c): what a row's date tile names beside its section's
+ * heading, and whether the list's jump rail is drawn at all.
+ */
+
+describe('VisitListSystem.tileGrain — the tile says what the heading does not (OR-56 b)', () => {
+  it('names the weekday under a month’s heading, which names the month and its year', () => {
+    expect(S.tileGrain(false, 'MONTH')).toEqual({ namesMonth: false });
+  });
+
+  it('names the month under a year’s heading, which names the year', () => {
+    expect(S.tileGrain(false, 'YEAR')).toEqual({ namesMonth: true });
+  });
+
+  it('names the month in the upcoming run, whose heading names no period — whatever the list’s grain, and never the year (DEP-F39)', () => {
+    // «сб / 1» for 1 June 2030 named no month; the 44 pt square cannot hold
+    // «юни 2030 г.», and the row's accessible name keeps the year (R59).
+    for (const grain of ['MONTH', 'YEAR'] as const) {
+      expect(S.tileGrain(true, grain)).toEqual({ namesMonth: true });
+    }
+  });
+
+  it('files and captions alike: every row the upcoming run holds names its month', () => {
+    for (const upcoming of [true, false]) {
+      for (const grain of ['MONTH', 'YEAR'] as const) {
+        const filed =
+          S.rowSectionKey(upcoming, localDate('2030-06-01'), grain) ===
+          UPCOMING_SECTION_KEY;
+        expect(!filed || S.tileGrain(upcoming, grain).namesMonth).toBe(true);
+      }
+    }
+  });
+
+  it('is pure: same input → same output', () => {
+    for (const upcoming of [true, false]) {
+      for (const grain of ['MONTH', 'YEAR'] as const) {
+        expect(S.tileGrain(upcoming, grain)).toEqual(
+          S.tileGrain(upcoming, grain),
+        );
+      }
+    }
+  });
+});
+
+describe('VisitListSystem.showsPills — a rail only where a pill has somewhere to jump (OR-56 c)', () => {
+  const section = (key: string) => ({ key });
+
+  it('draws no rail over no section, nor over one — one pill would name the one heading right under it', () => {
+    expect(S.showsPills([])).toBe(false);
+    expect(S.showsPills([section(UPCOMING_SECTION_KEY)])).toBe(false);
+    expect(S.showsPills([section('2026-09')])).toBe(false);
+  });
+
+  it('draws the rail from two sections up', () => {
+    expect(
+      S.showsPills([section(UPCOMING_SECTION_KEY), section('2026-09')]),
+    ).toBe(true);
+    expect(
+      S.showsPills([
+        section('2026-09'),
+        section('2026-08'),
+        section('2026-07'),
+      ]),
+    ).toBe(true);
+  });
+
+  it('counts the sections a list draws, as `sections` builds them', () => {
+    const one = S.sections(
+      [row('next', '2030-06-01T10:00:00', { upcoming: true })],
+      'MONTH',
+    );
+    expect(S.showsPills(one)).toBe(false);
+    const two = S.sections(
+      [
+        row('next', '2030-06-01T10:00:00', { upcoming: true }),
+        row('past', '2026-09-04T10:00:00'),
+      ],
+      'MONTH',
+    );
+    expect(S.showsPills(two)).toBe(true);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const sections = deepFreeze([section('upcoming'), section('2026-09')]);
+    const once = S.showsPills(sections);
+    expect(S.showsPills(sections)).toBe(once);
+    expect(sections.map((entry) => entry.key)).toEqual(['upcoming', '2026-09']);
+  });
+});
+
 describe('VisitListSystem.distinctById — each visit once', () => {
   const visit = (id: string, page: number) => ({
     id: AppointmentId.of(id),
@@ -625,48 +718,6 @@ describe('VisitListSystem.offeredWith — the choice in force is always offered'
   });
 });
 
-describe('VisitListSystem.soonestFirstByStart — the soonest visit, read off the visits as they are', () => {
-  it('orders by the shop day, then the minute, whatever order the page holds them in', () => {
-    const rows = [
-      row('later', '2026-10-20T10:00:00'),
-      row('soonest', '2026-10-02T09:30:00'),
-      row('same-day-later', '2026-10-02T14:00:00'),
-      row('worked', '2026-09-04T10:00:00'),
-    ];
-    expect(ids(S.soonestFirstByStart(rows))).toEqual([
-      'worked',
-      'soonest',
-      'same-day-later',
-      'later',
-    ]);
-  });
-
-  it('keeps the INPUT order on an equal day and minute — no id breaks the tie', () => {
-    const rows = [
-      row('z', '2026-10-02T10:00:00'),
-      row('a', '2026-10-02T10:00:00'),
-    ];
-    expect(ids(S.soonestFirstByStart(rows))).toEqual(['z', 'a']);
-    expect(ids(S.soonestFirstByStart([...rows].reverse()))).toEqual(['a', 'z']);
-  });
-
-  it('answers nothing for nothing', () => {
-    expect(S.soonestFirstByStart([])).toEqual([]);
-  });
-
-  it('is pure: same input → same output, inputs untouched', () => {
-    const rows = deepFreeze([
-      row('b', '2026-10-04T10:00:00'),
-      row('a', '2026-09-04T10:00:00'),
-      row('c', '2026-10-02T10:00:00'),
-    ]);
-    const once = S.soonestFirstByStart(rows);
-    expect(S.soonestFirstByStart(rows)).toEqual(once);
-    expect(ids(once)).toEqual(['a', 'c', 'b']);
-    expect(ids(rows)).toEqual(['b', 'a', 'c']);
-  });
-});
-
 describe('VisitListSystem.upcomingSoonestFirst — the next card', () => {
   type Item = { readonly key: string; readonly row: Row };
   const item = (
@@ -701,22 +752,31 @@ describe('VisitListSystem.upcomingSoonestFirst — the next card', () => {
     expect(S.upcomingSoonestFirst([], rowOf)).toEqual([]);
   });
 
-  it('keeps the INPUT order on an equal day and minute — no id breaks the tie (DEP-2 withdrawn)', () => {
-    // The ids would sort «a» first; the input says «z» first, and it stays.
+  it('breaks a tie on an equal day and minute by the row’s id, in code units — never by the input order (OR-18, DEP-F13)', () => {
+    // The input says «z» first; the ids sort «a» first, and «a» leads.
     const items = [
       item('first-in', '2026-10-02T10:00:00', true, 'z'),
       item('second-in', '2026-10-02T10:00:00', true, 'a'),
     ];
     expect(keys(S.upcomingSoonestFirst(items, rowOf))).toEqual([
-      'first-in',
       'second-in',
+      'first-in',
     ]);
-    // Reversed input, reversed tie: the order is the caller's.
+    // Reversed input, the same order: the ids decide, not the caller.
     expect(keys(S.upcomingSoonestFirst([...items].reverse(), rowOf))).toEqual([
       'second-in',
       'first-in',
     ]);
-    // The list's own upcoming run breaks the same tie by id.
+    // Code units, not the device's collation: «Z» (U+005A) before «a».
+    const cased = [
+      item('lower', '2026-10-02T10:00:00', true, 'a'),
+      item('upper', '2026-10-02T10:00:00', true, 'Z'),
+    ];
+    expect(keys(S.upcomingSoonestFirst(cased, rowOf))).toEqual([
+      'upper',
+      'lower',
+    ]);
+    // The list's own upcoming run breaks the same tie the same way.
     const [run] = S.sections(
       items.map((entry) => entry.row),
       'MONTH',
@@ -855,5 +915,132 @@ describe('VisitListSystem.hasStarted / isHistory — begun, and the history’s 
     expect(S.isHistory(visit, now)).toBe(S.isHistory(visit, now));
     expect(S.hasStarted(start, now)).toBe(S.hasStarted(start, now));
     expect(visit).toEqual(visitAt(BookingStatus.Confirmed, '2026-09-28', 540));
+  });
+});
+
+/*
+ * OR-8 — «Предстоящ час» and the menu badge judge each visit on its OWN
+ * shop's wall clock: a CONFIRMED visit that has begun there is no longer
+ * upcoming (DEP-F7), and a visit whose shop zone is unknown is skipped.
+ */
+describe('VisitListSystem.nextUpcoming / countUpcoming — the next visit to come, on its own shop’s clock', () => {
+  const SOFIA_SHOP = LocationId.of('loc-sofia');
+  const UTC_SHOP = LocationId.of('loc-utc');
+  const UNKNOWN_SHOP = LocationId.of('loc-unknown');
+  // 06:00 UTC on 2026-09-28: 09:00 in Sofia (+03:00), 06:00 at the UTC shop.
+  const INSTANT = utcMs('2026-09-28T06:00:00Z');
+  const ZONES = new Map<LocationId, TimeZone>([
+    [SOFIA_SHOP, FIXTURE_TIME_ZONE],
+    [UTC_SHOP, TimeZone.UTC],
+  ]);
+  const nowOf = (locationId: LocationId): ShopNow | null => {
+    const zone = ZONES.get(locationId);
+    return zone === undefined ? null : ZonedTimeSystem.shopNow(INSTANT, zone);
+  };
+  const visit = (
+    key: string,
+    bookingStatus: BookingStatus,
+    locationId: LocationId,
+    day: string,
+    at: number,
+  ) => ({
+    key,
+    id: AppointmentId.of(key),
+    bookingStatus,
+    locationId,
+    localDate: localDate(day),
+    startMinutes: minute(at),
+  });
+  type Visit = ReturnType<typeof visit>;
+  const keyOf = (found: Visit | null) => found?.key ?? null;
+
+  it('skips a CONFIRMED visit that has begun on its shop’s clock — the start minute counts as begun', () => {
+    const items = [
+      visit('begun', BookingStatus.Confirmed, SOFIA_SHOP, '2026-09-28', 480),
+      visit('at-nine', BookingStatus.Confirmed, SOFIA_SHOP, '2026-09-28', 540),
+      visit('later', BookingStatus.Confirmed, SOFIA_SHOP, '2026-09-28', 541),
+    ];
+    expect(keyOf(S.nextUpcoming(items, nowOf))).toBe('later');
+    expect(S.countUpcoming(items, nowOf)).toBe(1);
+  });
+
+  it('skips a PENDING visit that has begun just the same, and keeps one still to come', () => {
+    const items = [
+      visit('begun', BookingStatus.Pending, SOFIA_SHOP, '2026-09-28', 500),
+      visit('to-come', BookingStatus.Pending, SOFIA_SHOP, '2026-09-29', 600),
+    ];
+    expect(keyOf(S.nextUpcoming(items, nowOf))).toBe('to-come');
+    expect(S.countUpcoming(items, nowOf)).toBe(1);
+  });
+
+  it('skips every settled visit, however far ahead it starts', () => {
+    const items = [
+      BookingStatus.Completed,
+      BookingStatus.Cancelled,
+      BookingStatus.NoShow,
+    ].map((status) => visit(status, status, SOFIA_SHOP, '2026-10-05', 600));
+    expect(S.nextUpcoming(items, nowOf)).toBeNull();
+    expect(S.countUpcoming(items, nowOf)).toBe(0);
+  });
+
+  it('judges two shops in two zones each on its own clock', () => {
+    // 08:30 has begun in Sofia (09:00 there); 07:00 is still to come at the
+    // UTC shop (06:00 there) — one clock for both would drop the second.
+    const items = [
+      visit('sofia', BookingStatus.Confirmed, SOFIA_SHOP, '2026-09-28', 510),
+      visit('utc', BookingStatus.Confirmed, UTC_SHOP, '2026-09-28', 420),
+    ];
+    expect(keyOf(S.nextUpcoming(items, nowOf))).toBe('utc');
+    expect(S.countUpcoming(items, nowOf)).toBe(1);
+  });
+
+  it('skips a visit whose shop zone is unknown', () => {
+    const items = [
+      visit('unknown', BookingStatus.Confirmed, UNKNOWN_SHOP, '2026-09-29', 0),
+      visit('known', BookingStatus.Confirmed, SOFIA_SHOP, '2026-09-30', 600),
+    ];
+    expect(keyOf(S.nextUpcoming(items, nowOf))).toBe('known');
+    expect(S.countUpcoming(items, nowOf)).toBe(1);
+    expect(S.nextUpcoming(items.slice(0, 1), nowOf)).toBeNull();
+  });
+
+  it('takes the soonest in any input order, the code-unit smaller id on a tie (OR-18)', () => {
+    const items = [
+      visit('later', BookingStatus.Confirmed, SOFIA_SHOP, '2026-10-20', 600),
+      visit(
+        'first-tie',
+        BookingStatus.Confirmed,
+        SOFIA_SHOP,
+        '2026-10-02',
+        600,
+      ),
+      visit('second-tie', BookingStatus.Pending, SOFIA_SHOP, '2026-10-02', 600),
+      visit('next-day', BookingStatus.Confirmed, SOFIA_SHOP, '2026-10-03', 0),
+    ];
+    // 'first-tie' < 'second-tie' in UTF-16 code units: the same answer in
+    // either order — the first row `upcomingSoonestFirst` draws.
+    expect(keyOf(S.nextUpcoming(items, nowOf))).toBe('first-tie');
+    expect(keyOf(S.nextUpcoming([...items].reverse(), nowOf))).toBe(
+      'first-tie',
+    );
+    expect(S.countUpcoming(items, nowOf)).toBe(4);
+  });
+
+  it('answers nothing for nothing', () => {
+    expect(S.nextUpcoming([], nowOf)).toBeNull();
+    expect(S.countUpcoming([], nowOf)).toBe(0);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const items = deepFreeze([
+      visit('b', BookingStatus.Confirmed, SOFIA_SHOP, '2026-10-04', 600),
+      visit('a', BookingStatus.Confirmed, UTC_SHOP, '2026-09-28', 420),
+      visit('c', BookingStatus.Cancelled, SOFIA_SHOP, '2026-10-02', 600),
+    ]);
+    const once = S.nextUpcoming(items, nowOf);
+    expect(S.nextUpcoming(items, nowOf)).toBe(once);
+    expect(keyOf(once)).toBe('a');
+    expect(S.countUpcoming(items, nowOf)).toBe(S.countUpcoming(items, nowOf));
+    expect(items.map((entry) => entry.key)).toEqual(['b', 'a', 'c']);
   });
 });

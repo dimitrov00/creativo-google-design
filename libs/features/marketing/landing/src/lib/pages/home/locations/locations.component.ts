@@ -588,13 +588,16 @@ export class LocationsComponent implements AfterViewInit {
 
   /**
    * `tel:` for a shop's DISPLAY number («+359 88 123 4567»): parsed once to
-   * its E.164 at this edge (the punctuation, there for reading, dropped),
-   * then the one `tel:` form every surface dials (`ShopReachSystem.callHref`).
+   * its E.164 at this edge (the punctuation, there for reading, dropped;
+   * `E164.parse` — the catalogue text is foreign input, OR-48), then the one
+   * `tel:` form every surface dials (`ShopReachSystem.callHref`). `null` —
+   * no `tel:` link at all — when what is left is not an E.164 number.
    */
-  protected phoneHref(phone: string): string {
-    return ShopReachSystem.callHref({
-      phoneE164: E164.of(phone.replace(/[^+\d]/g, '')),
-    });
+  protected phoneHref(phone: string): string | null {
+    const phoneE164 = E164.parse(phone.replace(/[^+\d]/g, ''));
+    return phoneE164.ok
+      ? ShopReachSystem.callHref({ phoneE164: phoneE164.value })
+      : null;
   }
 
   /** Completes the close on the shell's exit-transition callback. */

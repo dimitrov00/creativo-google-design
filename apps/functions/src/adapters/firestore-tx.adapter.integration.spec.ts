@@ -1,10 +1,20 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import admin from 'firebase-admin';
 import { type Firestore, Timestamp } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
+import { StoredDocumentSystem } from '@core/systems';
+import { recordingTelemetry, unguarded } from '@core/testing';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 /**
@@ -16,6 +26,10 @@ import { firestoreCommitPlan } from './firestore-tx.adapter';
  * Emulator-only by construction, as every functions integration spec:
  * refuses to run without a local `FIRESTORE_EMULATOR_HOST`, and uses its own
  * demo project id, so wiping between tests cannot disturb seeded data.
+ *
+ * Every commit reads through the REAL registry, `StoredDocumentSystem.guardOf`,
+ * as the composition root passes it (OR-33), its refusals recorded — and
+ * nothing these cases read is refused. The one exception says why.
  */
 const PROJECT_ID = 'demo-functions-tx';
 
@@ -27,6 +41,7 @@ if (!EMULATOR_HOST.includes('127.0.0.1')) {
 
 describe('firestore-tx adapter (emulator)', () => {
   let db: Firestore;
+  let telemetry = recordingTelemetry();
 
   beforeAll(() => {
     const app =
@@ -40,10 +55,15 @@ describe('firestore-tx adapter (emulator)', () => {
   });
 
   beforeEach(async () => {
+    telemetry = recordingTelemetry();
     await fetch(
       `http://${EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
       { method: 'DELETE' },
     );
+  });
+
+  afterEach(() => {
+    expect(telemetry.lines).toEqual([]);
   });
 
   const body = async (path: string) => (await db.doc(path).get()).data();
@@ -52,7 +72,11 @@ describe('firestore-tx adapter (emulator)', () => {
     await db.doc('settings/x').set({ a: { b: 1, c: 2 }, keep: true });
     await db.doc('barberBusy/old').set({ blocks: [1] });
 
-    const result = await firestoreCommitPlan(db)(
+    const result = await firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    )(
       async (tx) => tx.get<{ readonly id: string }>(['settings', 'x']),
       (settings) =>
         Result.ok({
@@ -90,7 +114,11 @@ describe('firestore-tx adapter (emulator)', () => {
       'a.b': 'literal',
       a: { b: 1 },
     });
-    const result = await firestoreCommitPlan(db)(
+    const result = await firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    )(
       async () => null,
       () =>
         Result.ok({
@@ -114,7 +142,11 @@ describe('firestore-tx adapter (emulator)', () => {
 
   it('refuses a key both set and deleted as a value, applying nothing', async () => {
     await db.doc('appointments/a1').set({ n: 1 });
-    const result = await firestoreCommitPlan(db)(
+    const result = await firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    )(
       async () => null,
       () =>
         Result.ok({
@@ -138,7 +170,11 @@ describe('firestore-tx adapter (emulator)', () => {
   it('answers ALREADY_EXISTS as a value naming the document, and applies nothing', async () => {
     await db.doc('auditLog/taken').set({ action: 'first' });
 
-    const result = await firestoreCommitPlan(db)(
+    const result = await firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    )(
       async () => null,
       () =>
         Result.ok({
@@ -161,7 +197,11 @@ describe('firestore-tx adapter (emulator)', () => {
 
   it('rejects an Update of an absent document (NOT_FOUND) and applies nothing', async () => {
     await expect(
-      firestoreCommitPlan(db)(
+      firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      )(
         async () => null,
         () =>
           Result.ok({
@@ -190,7 +230,14 @@ describe('firestore-tx adapter (emulator)', () => {
         .doc('appointments/a5')
         .set({ bookingStatus: 'PENDING', utcEpochMs: 9 }),
     ]);
-    const result = await firestoreCommitPlan(db)(
+    // The rows are DELIBERATELY partial — the two keys the query reads —
+    // so this case passes the test support's `unguarded` registry: it proves
+    // the query as data (a root key, `in`, ordering, a limit), not the guard.
+    const result = await firestoreCommitPlan(
+      db,
+      unguarded,
+      telemetry.log,
+    )(
       (tx) =>
         tx.query<{ readonly id: string }>({
           collection: ['appointments'],
@@ -210,7 +257,11 @@ describe('firestore-tx adapter (emulator)', () => {
   });
 
   it('stamps the TTL purgeAt as a real Timestamp on a TTL group’s Set, and nothing elsewhere (F1-7)', async () => {
-    const result = await firestoreCommitPlan(db)(
+    const result = await firestoreCommitPlan(
+      db,
+      StoredDocumentSystem.guardOf,
+      telemetry.log,
+    )(
       async () => null,
       () =>
         Result.ok({
@@ -236,7 +287,11 @@ describe('firestore-tx adapter (emulator)', () => {
   it('re-runs read → decide on contention, so two racing increments both land', async () => {
     await db.doc('settings/counter').set({ n: 0 });
     const increment = () =>
-      firestoreCommitPlan(db)(
+      firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      )(
         async (tx) => tx.get<{ readonly n: number }>(['settings', 'counter']),
         (counter) =>
           Result.ok({

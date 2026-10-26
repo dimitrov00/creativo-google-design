@@ -47,6 +47,7 @@ import {
 import {
   AppointmentIndexSystem,
   type BackfillRequest,
+  StoredDocumentSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import type { LoadPolicy } from '@core/ports';
@@ -62,6 +63,7 @@ import {
   customerOf,
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
+  hourCount,
   locationFixture,
   recordingTelemetry,
   seatFixture,
@@ -143,7 +145,9 @@ function outcomeAt(outcome: Outcome, start: UtcEpochMs): SeatOutcome {
     UtcEpochMs.plusMs(start, -outcome.leadHours * HOUR),
     outcome.by,
     outcome.reason,
-    outcome.windowHours ?? null,
+    outcome.windowHours === undefined || outcome.windowHours === null
+      ? null
+      : hourCount(outcome.windowHours),
   );
 }
 
@@ -269,7 +273,7 @@ function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
 
 const policyAt = (windowHours: number): BookingPolicy => ({
   ...BookingPolicy.DEFAULT,
-  cancellationWindowHours: windowHours,
+  cancellationWindowHours: hourCount(windowHours),
 });
 
 /** The bookkeeping a comparison of answers leaves out. */
@@ -319,7 +323,11 @@ describe('client stats projection (emulator)', () => {
   ) {
     const telemetry = recordingTelemetry();
     return {
-      commit: firestoreCommitPlan(db),
+      commit: firestoreCommitPlan(
+        db,
+        StoredDocumentSystem.guardOf,
+        telemetry.log,
+      ),
       nowUtcMs: () => clockUtcMs,
       nextId: sequentialIds('0'),
       hash: sha256Hex,
@@ -328,7 +336,7 @@ describe('client stats projection (emulator)', () => {
       ...telemetry,
       loadPolicy,
       ...firestoreClientStatsPorts(db),
-      ...firestoreJobPorts(db),
+      ...firestoreJobPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
       ...firestoreAuditPorts(db, telemetry),
     };
   }
@@ -750,7 +758,7 @@ describe('client stats projection (emulator)', () => {
     const nextDay = UtcEpochMs.plusMs(NOW, DAY);
     const line = {
       updatedAt: PreciseInstant.fromEpochMs(UtcEpochMs.plusMs(NOW, -1_000)),
-      windowHours: 1,
+      windowHours: hourCount(1),
     };
     const sweep = sweepPolicyRecompute({
       ...portsAt(nextDay),

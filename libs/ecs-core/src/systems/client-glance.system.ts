@@ -2,6 +2,7 @@ import {
   AccountLifecycle,
   AccountStatus,
   type ClientStats,
+  type Money,
   type PunchCard,
   type ShopNow,
   type StreakState,
@@ -11,11 +12,9 @@ import {
 import type { GiftVoucher } from '@core/entities';
 import type {
   AppointmentId,
-  Currency,
   ServiceId,
   ServiceVariantId,
   LocalDate,
-  PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
 import { VoucherSystem } from './voucher.system';
@@ -26,9 +25,10 @@ import { VoucherSystem } from './voucher.system';
  * `glance.presenter.ts` `holdingsOf`/`voucherHolding`) — whether booking is
  * paused and until when, whether the visit on screen already holds the
  * last visit's services, whether the client is in the chair today, and the
- * holdings the glance folds: what is left on the vouchers that still pay,
- * the first stamp card, the run in progress. Numbers, tags and verdicts —
- * the words, the capsules and the rows stay in the presenters.
+ * holdings the glance folds: what is left on the vouchers that still pay
+ * (one sum per currency), the first stamp card, the run in progress.
+ * Numbers, tags and verdicts — the words, the capsules and the rows stay in
+ * the presenters.
  *
  * Zone-blind (Law 7): "today" arrives as the shop's `LocalDate` / `ShopNow`,
  * a leg's start as the shop wall clock (`WallTime`, converted at the
@@ -71,17 +71,22 @@ export type GlanceHoldingsInput = {
   readonly today: LocalDate;
 };
 
-/** The holdings line, each `null` where it is absent. */
+/** The holdings line, each `null` (the vouchers: empty) where it is absent. */
 export type GlanceHoldings = {
-  /** What is left on every voucher that still pays, as ONE sum in the first one's currency. */
-  readonly voucherCents: PriceCents | null;
-  /** The currency of {@link voucherCents}; `null` together with it. */
-  readonly voucherCurrency: Currency | null;
+  /**
+   * What is left on every voucher that still pays — ONE sum per currency,
+   * in the order each is first seen (`VoucherSystem.spendableSums`, OR-17);
+   * empty when nothing is left or the vouchers were not read.
+   */
+  readonly vouchers: readonly Money[];
   /** The first stamp card. */
   readonly stamps: PunchCard | null;
   /** The run in progress; a count of nought is nothing held. */
   readonly rhythm: number | null;
 };
+
+/** No voucher money to show — shared, so an empty holding allocates nothing. */
+const NO_VOUCHERS: readonly Money[] = [];
 
 const LEG_JOINT = '\u0000';
 const KEY_JOINT = '\u0001';
@@ -175,32 +180,18 @@ export const ClientGlanceSystem = {
 
   /**
    * The holdings the glance folds, in its order: the vouchers that still
-   * pay — active, not empty, not past their last day — summed in the first
-   * one's currency; the first stamp card while `loyalty.achievements` is
-   * on; the run in progress while the rhythm is on, the client not paused
-   * and the run above nought.
+   * pay — active, not empty, not past their last day — summed per currency,
+   * every currency kept (OR-17, DEP-F12); the first stamp card while
+   * `loyalty.achievements` is on; the run in progress while the rhythm is
+   * on, the client not paused and the run above nought.
    */
   holdings(input: GlanceHoldingsInput): GlanceHoldings {
-    let voucherCents: PriceCents | null = null;
-    let voucherCurrency: Currency | null = null;
-    const vouchers = input.vouchers;
-    if (vouchers !== null) {
-      // What can be spent is the voucher's own rule (`VoucherSystem.
-      // spendable`), judged on the shop's today.
-      for (let i = 0; i < vouchers.length && voucherCurrency === null; i++) {
-        const held = vouchers[i] as GiftVoucher;
-        if (VoucherSystem.spendable(held, input.today)) {
-          voucherCurrency = held.currency;
-        }
-      }
-      if (voucherCurrency !== null) {
-        voucherCents = VoucherSystem.spendableSum(
-          vouchers,
-          input.today,
-          voucherCurrency,
-        ).amountCents;
-      }
-    }
+    // What can be spent is the voucher's own rule (`VoucherSystem.
+    // spendable`), judged on the shop's today.
+    const vouchers =
+      input.vouchers === null
+        ? NO_VOUCHERS
+        : VoucherSystem.spendableSums(input.vouchers, input.today);
     const stamps = input.achievements ? (input.punchCards[0] ?? null) : null;
     const rhythm =
       input.rhythmOn &&
@@ -209,6 +200,6 @@ export const ClientGlanceSystem = {
       input.rhythm.current > 0
         ? input.rhythm.current
         : null;
-    return { voucherCents, voucherCurrency, stamps, rhythm };
+    return { vouchers, stamps, rhythm };
   },
 } as const;

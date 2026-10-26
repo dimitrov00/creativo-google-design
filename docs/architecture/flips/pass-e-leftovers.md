@@ -1215,34 +1215,44 @@ during its build, the integrator re-runs it at the end).
 
 ### 7.1 OWNER (verbatim from the triage, with their source — never decided here)
 
-1. Location picker for the event's free-text location (flip 4) — HANDOFF §3.3 'Carried forward'; flip-4 F4-2, §10 Q1.
-2. customers create/update grant for worksTheBook and CustomerOrigin.StaffWalkIn kept with no web writer (the walk-in client-record path) — HANDOFF §3.3 pass B owner flag (b); flip-1 §10 Q7.
-3. Client time sheet cannot see where a carried companion lands, so such a reschedule is refused by the server — HANDOFF §3.3 'Carried from pass A'.
-4. KEEP-PARKED lifecycle write verbs (AppointmentLifecycleSystem.confirm/complete/markNoShow/cancel/reopenNoShow/reopenSettled/markSeatOutcome), VoucherSystem.redeem, IntervalSetSystem.clip — delete? — HANDOFF §3.3 'Carried from pass B/C/D'; pass-c §9.6; pass-d §9.6.
-5. Grant burn/restore and voucher issuing (features behind the parked code) — HANDOFF §6 flip-1 OQs; flip-1 §10 Q2.
-6. leadTimeSampling gate on sampleBarberLeadTimeDaily; the public busy body in an availability refusal's details — HANDOFF §3.3 'flip 1's other deferred behaviours'; flip-1 §10 Q3.
-7. Catalogue edge-guard family (DayHours.parseWeek/DayHoursInput, ServiceComposition.parse, openDay, CATALOG_LOCATION_INVALID_HOURS_*/_TIME_OF_DAY, reserved CatalogErrorCode.LocationInvalidTimezone) — delete or wire to an admin location writer — HANDOFF §3.3 'Carried from pass B' (KEEP-PARKED); §6.
-8. BookingFlowEventKind.SetDayWindows + FlexibleWhen.withWindows (never dispatched) — keep for the per-day window sheet or delete both — HANDOFF §3.3 'Carried from pass B'; §6.
-9. Pass B owner flag (e): apps/web/src/app/shell/impersonation-banner.ts empty slot — keep or drop — HANDOFF §3.3 pass B owner flags; §6.
-10. Pass B owner flag (f): deploy order of the three deleted composite indexes, and the waitlist request id reseed (every wl_ id changes) — HANDOFF §3.3 pass B owner flags; §6.
-11. CSP headers block of firebase.json (csp-baseline.md) — HANDOFF §3.3 pass B 'Smaller follow-ups'.
-12. Law 10.2 OQ-4: keys built from display words (the reward ticket's group key, the glance's held rewards by NAME → coupon id / RewardId on the card contracts) — HANDOFF §3.3 'Carried forward'; §6 decision-extraction OQs.
-13. Law 10.2 OQ-5: should the glance's voucher sum refuse mixed currencies like the wallet's total — HANDOFF §3.3 'Carried forward'; §6.
-14. Law 10.2 OQ-7: the wallet's localeCompare and the glance's input-order ties vs the visit list's code-unit/id tie-breaks — HANDOFF §3.3 'Carried forward'; §6.
-15. CouponGrantSystem's Partial<{ couponOccasion }> constraint — tighten once ClientCardGrant.couponOccasion is required — HANDOFF §3.3 'Carried forward'.
-16. Owner confirmation of the 4a plan's §11.4 (a) time-sheet re-pin — HANDOFF §3.3 'Carried forward'.
-17. Opened at 23:56–23:59 the new visit's frame starts at 24:00 (not drawn by the grid) — start it at 23:55 instead? — HANDOFF §3.3 'Fixed after pass D' (Carried, owner, UX).
-18. Pass C OQ-1…OQ-14 (OQ-1 cancel side by reason; OQ-2 isLive; OQ-3 staffWalkIn vs D18; OQ-4 /account's next visit past start; OQ-5 OTP cooldown 30 s vs 60 s; OQ-6 guest label number; OQ-7 off all day; OQ-8 recent visit's client; OQ-9 seeded-day verdict; OQ-10 flow store orchestration; OQ-11 isReadableId tier; OQ-13 OTP escalation sendCount ≥ 3) — HANDOFF §3.3 'Carried from pass C'; pass-c §8.
-19. Pass D OQ-1…OQ-19 (TrackMinute brand, stray helper files, pooled answers on own shop clock, parseIsoIn/toIso kept, telemetry Log level, windowHours raw, cadenceOf on instants, UiTheme copy, editor save orchestration, LoyaltyCatalog home, icon kebab codes, pipeline error unions, claims-tolerant roles, E164 component brand, stored currency for bills/catalogue, SeatKeyText families, reactive error lines, photo titles in 'bg-BG') — HANDOFF §3.3 'Carried from pass D'; pass-d §8, §9.6. _(Note: pass E deletes `toIso` under the task's spec-only-survivor rule — E-6 — and KEEPS `parseIsoIn` (an e2e calls it); OQ-4's default is otherwise untouched.)_
-20. Web report's sink (an ErrorHandler forwarding DATA_LOG_ERROR to telemetry) — HANDOFF §3.3 'Carried from the edge hardening' (OQ-6); edge-hardening §7.
-21. Worded 'N visits could not be shown' on the staff day — HANDOFF §3.3 edge hardening (OQ-7).
-22. REPOSITORY_MALFORMED's words shared with every REPOSITORY_* code (read oddly for a read) — HANDOFF §3.3 edge hardening (OQ-4).
-23. A separate REPOSITORY_DOCUMENT_MALFORMED read code — HANDOFF §3.3 edge hardening (OQ-5).
-24. Guarded-by-default adapters (vs unguarded default, DEP-11) — HANDOFF §3.3 edge hardening (OQ-3).
-25. Flip-4 OQ-11 / HANDOFF §6: confirm the production default location id and that its document holds a valid timeZone before the flip-4 web deploys — HANDOFF §6; flip-4 §10 Q11.
-26. Flip-4 OQs 1, 3–6, 8–10 (event location fallback, read-side validation, legacy libs, seed programs, clock/id bundles, event formatter, start form, positions locationIds wipe-on-edit) — flip-4-programs.md §10.
+> **All 26 RULED 2026-10-26** by the owner rulings
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`, OR-1 … OR-56,
+> DEP-F1 … DEP-F38); the ruling follows each item. Nothing here was decided
+> by pass E.
+
+1. Location picker for the event's free-text location (flip 4) — HANDOFF §3.3 'Carried forward'; flip-4 F4-2, §10 Q1. — **CLOSED: OR-37 / DEP-F27, OR-38 / DEP-F28.**
+2. customers create/update grant for worksTheBook and CustomerOrigin.StaffWalkIn kept with no web writer (the walk-in client-record path) — HANDOFF §3.3 pass B owner flag (b); flip-1 §10 Q7. — **CLOSED: OR-25 / DEP-F19, OR-26 / DEP-F20.**
+3. Client time sheet cannot see where a carried companion lands, so such a reschedule is refused by the server — HANDOFF §3.3 'Carried from pass A'. — **CLOSED: OR-7 / DEP-F6.**
+4. KEEP-PARKED lifecycle write verbs (AppointmentLifecycleSystem.confirm/complete/markNoShow/cancel/reopenNoShow/reopenSettled/markSeatOutcome), VoucherSystem.redeem, IntervalSetSystem.clip — delete? — HANDOFF §3.3 'Carried from pass B/C/D'; pass-c §9.6; pass-d §9.6. — **CLOSED: deleted — OR-20 / DEP-F15, OR-14, OR-21 / DEP-F16.**
+5. Grant burn/restore and voucher issuing (features behind the parked code) — HANDOFF §6 flip-1 OQs; flip-1 §10 Q2. — **CLOSED: OR-13 / DEP-F10 / DEP-F10b (a no-show releases too — the orchestrator's override); OR-14 (voucher issuing deferred, `issue` deleted).**
+6. leadTimeSampling gate on sampleBarberLeadTimeDaily; the public busy body in an availability refusal's details — HANDOFF §3.3 'flip 1's other deferred behaviours'; flip-1 §10 Q3. — **CLOSED: OR-27 / DEP-F21 (ungated), OR-12 (declined).**
+7. Catalogue edge-guard family (DayHours.parseWeek/DayHoursInput, ServiceComposition.parse, openDay, CATALOG_LOCATION_INVALID_HOURS_*/_TIME_OF_DAY, reserved CatalogErrorCode.LocationInvalidTimezone) — delete or wire to an admin location writer — HANDOFF §3.3 'Carried from pass B' (KEEP-PARKED); §6. — **CLOSED: OR-22 / DEP-F17.**
+8. BookingFlowEventKind.SetDayWindows + FlexibleWhen.withWindows (never dispatched) — keep for the per-day window sheet or delete both — HANDOFF §3.3 'Carried from pass B'; §6. — **CLOSED: OR-23.**
+9. Pass B owner flag (e): apps/web/src/app/shell/impersonation-banner.ts empty slot — keep or drop — HANDOFF §3.3 pass B owner flags; §6. — **CLOSED: OR-24 / DEP-F18.**
+10. Pass B owner flag (f): deploy order of the three deleted composite indexes, and the waitlist request id reseed (every wl_ id changes) — HANDOFF §3.3 pass B owner flags; §6. — **CLOSED: OR-36.**
+11. CSP headers block of firebase.json (csp-baseline.md) — HANDOFF §3.3 pass B 'Smaller follow-ups'. — **CLOSED: OR-29 / DEP-F23, OR-30, OR-31.**
+12. Law 10.2 OQ-4: keys built from display words (the reward ticket's group key, the glance's held rewards by NAME → coupon id / RewardId on the card contracts) — HANDOFF §3.3 'Carried forward'; §6 decision-extraction OQs. — **CLOSED: OR-15 / DEP-F11.**
+13. Law 10.2 OQ-5: should the glance's voucher sum refuse mixed currencies like the wallet's total — HANDOFF §3.3 'Carried forward'; §6. — **CLOSED: OR-17 / DEP-F12.**
+14. Law 10.2 OQ-7: the wallet's localeCompare and the glance's input-order ties vs the visit list's code-unit/id tie-breaks — HANDOFF §3.3 'Carried forward'; §6. — **CLOSED: OR-18 / DEP-F13.**
+15. CouponGrantSystem's Partial<{ couponOccasion }> constraint — tighten once ClientCardGrant.couponOccasion is required — HANDOFF §3.3 'Carried forward'. — **CLOSED: OR-16.**
+16. Owner confirmation of the 4a plan's §11.4 (a) time-sheet re-pin — HANDOFF §3.3 'Carried forward'. — **CLOSED: OR-7 (confirmed).**
+17. Opened at 23:56–23:59 the new visit's frame starts at 24:00 (not drawn by the grid) — start it at 23:55 instead? — HANDOFF §3.3 'Fixed after pass D' (Carried, owner, UX). — **CLOSED: OR-1 / DEP-F1.**
+18. Pass C OQ-1…OQ-14 (OQ-1 cancel side by reason; OQ-2 isLive; OQ-3 staffWalkIn vs D18; OQ-4 /account's next visit past start; OQ-5 OTP cooldown 30 s vs 60 s; OQ-6 guest label number; OQ-7 off all day; OQ-8 recent visit's client; OQ-9 seeded-day verdict; OQ-10 flow store orchestration; OQ-11 isReadableId tier; OQ-13 OTP escalation sendCount ≥ 3) — HANDOFF §3.3 'Carried from pass C'; pass-c §8. — **CLOSED: OR-43 (OQ-1, 2, 7, 8, 10, 12, 14), OR-11 / DEP-F9, OR-8 / DEP-F7, OR-9 / DEP-F8, OR-6 / DEP-F5, OR-3 / DEP-F3, OR-44 / DEP-F31, OR-10 — pass-c §8.**
+19. Pass D OQ-1…OQ-19 (TrackMinute brand, stray helper files, pooled answers on own shop clock, parseIsoIn/toIso kept, telemetry Log level, windowHours raw, cadenceOf on instants, UiTheme copy, editor save orchestration, LoyaltyCatalog home, icon kebab codes, pipeline error unions, claims-tolerant roles, E164 component brand, stored currency for bills/catalogue, SeatKeyText families, reactive error lines, photo titles in 'bg-BG') — HANDOFF §3.3 'Carried from pass D'; pass-d §8, §9.6. _(Note: pass E deletes `toIso` under the task's spec-only-survivor rule — E-6 — and KEEPS `parseIsoIn` (an e2e calls it); OQ-4's default is otherwise untouched.)_ — **CLOSED: OR-43 (OQ-1–5, 10–13, 15/16, 18), OR-45, OR-46 / DEP-F32, OR-47 / DEP-F33, OR-4, OR-48 / DEP-F34, OR-49, OR-5 / DEP-F4 — pass-d §8.**
+20. Web report's sink (an ErrorHandler forwarding DATA_LOG_ERROR to telemetry) — HANDOFF §3.3 'Carried from the edge hardening' (OQ-6); edge-hardening §7. — **CLOSED: OR-34 / DEP-F25.**
+21. Worded 'N visits could not be shown' on the staff day — HANDOFF §3.3 edge hardening (OQ-7). — **CLOSED: OR-2 / DEP-F2.**
+22. REPOSITORY_MALFORMED's words shared with every REPOSITORY_* code (read oddly for a read) — HANDOFF §3.3 edge hardening (OQ-4). — **CLOSED: OR-54 / DEP-F38.**
+23. A separate REPOSITORY_DOCUMENT_MALFORMED read code — HANDOFF §3.3 edge hardening (OQ-5). — **CLOSED: OR-43 (reuse `REPOSITORY_MALFORMED`).**
+24. Guarded-by-default adapters (vs unguarded default, DEP-11) — HANDOFF §3.3 edge hardening (OQ-3). — **CLOSED: OR-33 / DEP-F24.**
+25. Flip-4 OQ-11 / HANDOFF §6: confirm the production default location id and that its document holds a valid timeZone before the flip-4 web deploys — HANDOFF §6; flip-4 §10 Q11. — **CLOSED: OR-35 / DEP-F26.**
+26. Flip-4 OQs 1, 3–6, 8–10 (event location fallback, read-side validation, legacy libs, seed programs, clock/id bundles, event formatter, start form, positions locationIds wipe-on-edit) — flip-4-programs.md §10. — **CLOSED: OR-37 / OR-38 (Q1), OR-39 (Q3), OR-40 (Q4, Q6, Q8, Q9), OR-41 / DEP-F29 (Q5), OR-42 / DEP-F30 (Q10) — flip-4 §10.**
 
 ### 7.2 New for the owner, found by this plan (REPORTED, not done)
+
+> **After the owner rulings (2026-10-26):** the record does not rule N-1,
+> N-2 or N-5 — they stay open, listed in HANDOFF §6. N-3 and N-4 record
+> changes this pass made (each reverted by one edit, as below); no ruling
+> touches them.
 
 - **N-1 — `subjectCustomerId` required on `VisitRowOptions` /
   `VisitCardOptions`: NOT every producer has it.** The client's appointments
@@ -1288,6 +1298,16 @@ during its build, the integrator re-runs it at the end).
   busy blocks; it does not refuse anything new.
 
 ### 7.3 PARKED (from the triage; nothing to do)
+
+> **TRIAGED 2026-10-26 — owner ruling OR-28 (DEP-F22).** Wired: the grant
+> verbs (OR-13), the read receipt (OR-19), `readCustomers` (OR-26),
+> `loadCouponGrant` reshaped to `loadCouponGrants` (OR-13). Deleted:
+> `VoucherSystem.issue` / `redeem` (OR-14), `CouponGrantSystem.expire` /
+> `revoke` / `termsOf` (OR-13), `loadWaitlistRequest` (port, functions
+> adapter and double) and `EngagementErrorCode.BadgeCategoryOrderNegative`.
+> Kept, no action: every other item below — except the last clause of the
+> «Запази» item, which OR-33 (DEP-F24) reverses: the integration specs and
+> the seed read through the real guard.
 
 - `ZonedTimeSystem.parseIsoIn` — KEPT (e2e support calls it).
 - `GridLayoutSystem.closedRuns` on `MinuteRun` (no host feeds past-midnight ends).
@@ -1393,6 +1413,14 @@ fixer after review, both in §5):
 
 ### 8.2 E-18 words (for the owner's copy review)
 
+> **Reviewed 2026-10-26 — owner rulings OR-50 (DEP-F35), OR-51, OR-52
+> (DEP-F36), OR-54 (DEP-F38).** The clumsy lines are edited before they
+> ship (the four `*_INVALID_INPUT` keys deleted — the surface's generic line
+> answers —, one FORBIDDEN line, the SLOT_TAKEN and reopen-window lines
+> reworded), every line moves to the one «ти» voice, both rhythm refusals
+> get words, and each `REPOSITORY_*` code is worded for what it means. The
+> table below is the words as pass E shipped them.
+
 Path (2): a callable refusal the edge answers, worded by `wordPipelineError`
 (before: the surface's generic copy — the appointments page's cancel and the
 staff day's callables print `BOOKING_CALL_FAILED`); the two `IDENTITY_*` rows
@@ -1466,7 +1494,11 @@ five `programs.status.*` words of E-17).
 | `appointments-list-populated-{light,dark}`                                                              | revision 3's row: sentence-case section head (no uppercase eyebrow), lowercase weekday tile in ink, mono fact line, the barber's face trailing                                                                                                                                                                                                                                                                                                                                                                                        | **baseline regenerated**                                                                                                                                | `c1db6611` (revision 3 rows; `lib-staff-event-head` mono fact lines)                                                                         | the same pair, read by E2E and the integrator                                                                                                                                                                   |
 | `appointments-calendar-{light,dark}`                                                                    | today an orange bold number (was the brown accent-label), lighter day weights, the month head under the top fade                                                                                                                                                                                                                                                                                                                                                                                                                      | **baseline regenerated**                                                                                                                                | the date-picker style ruling 2026-10-06 / `98adfb3f`, revision 3                                                                             | the same pair, read by E2E and the integrator                                                                                                                                                                   |
 
-**Owner flag:** `client-card-revision-3.md` §7.7 rule 2 says the screenshot
+**Owner flag — CLOSED 2026-10-26 (owner ruling OR-56): the six baselines are
+accepted, which decides `client-card-revision-3.md` §7.7 rule 2; the two
+defects they show (an upcoming tile with no month or year, a filter row of
+one chip) are fixed, each regenerating its own baselines after both images
+are viewed.** The flag as raised: `client-card-revision-3.md` §7.7 rule 2 says the screenshot
 baselines are regenerated only after the owner accepts review 2; no record of
 that acceptance is in the repo. The six new baselines pin the design as built
 in `c1db6611` + `98adfb3f` + R59, which every pass since kept. To revert, restore
@@ -1545,7 +1577,10 @@ case red with the fix taken out, green with it.
 - **`translate-coded-error.spec.ts`' `AUTH_FLOW_ERROR_CODES`** does not list
   the two newly worded identity codes (I18N; optional, they are pinned in
   `word-pipeline-error.spec.ts`).
-- **OWNER (unchanged, §7):** every §7.1 item verbatim, and §7.2 N-1…N-5 —
+- **OWNER (§7 — every §7.1 item and the three new ones below RULED
+  2026-10-26 by the owner rulings: OR-56 the baselines, OR-51 the identity
+  words and voice, OR-52 / DEP-F36 the rhythm refusals; N-1, N-2 and N-5
+  not ruled, still open in HANDOFF §6):** every §7.1 item verbatim, and §7.2 N-1…N-5 —
   among them N-5, a `NO_SHOW` / same-day `COMPLETED` reopen (and a seat-level
   reopen inside a cancelled party) still checks no collision against
   appointments booked into the freed chair; DEP-5 only restores the busy
@@ -1553,7 +1588,7 @@ case red with the fix taken out, green with it.
   (§8.4), the IDENTITY_CLAIMS_PROMOTION_FAILURE words and the identity lines'
   formal voice (§8.1 I18N), and whether `LOYALTY_STREAK_PUBLISH_*`'s two
   refusals should get words (§8.2).
-- **PARKED (unchanged, §7.3).**
+- **PARKED (§7.3 — triaged 2026-10-26 by OR-28 / DEP-F22).**
 
 ### 8.7 The review's fixer (five findings, 2026-10-25)
 

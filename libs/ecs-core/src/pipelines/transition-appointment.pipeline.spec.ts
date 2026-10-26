@@ -1,5 +1,6 @@
 import {
   Actor,
+  type AppliedDiscount,
   AuditAction,
   BlockKind,
   BookingLifecycle,
@@ -7,7 +8,14 @@ import {
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
+  Combinability,
+  CouponValue,
+  DiscountProvenance,
   type DocBody,
+  GrantCapacity,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
   MinuteBlock,
   RequestedSubjectRole,
   SeatOccupant,
@@ -19,12 +27,16 @@ import {
   WriteOp,
 } from '@core/components';
 import {
+  AppliedDiscountId,
   AppointmentId,
   BookingStatus,
   BusyKey,
+  CouponGrantId,
+  CouponId,
   Currency,
   type EndMinute,
   GiftVoucherId,
+  GrantStatus,
   type MinuteOfDay,
   Result,
   SeatId,
@@ -39,12 +51,17 @@ import {
   type Appointment,
   type AuditEntry,
   type BarberBusyDay,
+  type CouponGrant,
   type GiftVoucher,
   type ShopLocation,
   Collections,
   QueryOp,
 } from '@core/entities';
-import { AppointmentLifecycleSystem, AuditSystem } from '@core/systems';
+import {
+  AppointmentLifecycleSystem,
+  AuditSystem,
+  CouponGrantSystem,
+} from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -56,6 +73,8 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
   fixtureHash,
+  fixtureWalkInHash,
+  hourCount,
   localDate,
   locationFixture,
   memoryDefaultLocationPorts,
@@ -67,6 +86,7 @@ import {
   seatFixture,
   serviceFixture,
   until,
+  unwrapOk,
   utcMs,
 } from '@core/testing';
 import {
@@ -106,6 +126,7 @@ function rig(
   appointments: readonly Appointment[],
   options: {
     readonly vouchers?: readonly GiftVoucher[];
+    readonly grants?: readonly CouponGrant[];
     readonly policy?: Result<BookingPolicy, RepositoryError>;
     /** The visit's shop — the fixture shop unless given; `null`: none stored. */
     readonly location?: ShopLocation | null;
@@ -129,6 +150,10 @@ function rig(
     })),
     ...(options.vouchers ?? []).map((each) => ({
       path: [Collections.GiftVouchers, each.id],
+      body: bodyOf(each),
+    })),
+    ...(options.grants ?? []).map((each) => ({
+      path: [Collections.CouponGrants, each.id],
       body: bodyOf(each),
     })),
     ...(options.busy ?? []).map((day) => ({
@@ -512,6 +537,210 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
 });
 
 /*
+ * WHAT THE CLIENT HOLDS (OR-13, DEP-F10b): a coupon grant and a gift-voucher
+ * balance are consumed only by a visit that happened. A move that ENDS the
+ * visit cancelled or no-show (`BillingSystem.releasesHoldings`) gives both
+ * back in its own plan — the reward's line dropped from the bill, the grant
+ * restored, the voucher line reversed and its balance restored; a completed
+ * visit keeps what it spent, and a reopen re-burns nothing (the barber
+ * re-adds the reward).
+ */
+
+const GRANT = CouponGrantId.of('grant-1');
+
+/** The client's single-use reward, burned by the save that put it on the bill. */
+function spentGrant(): CouponGrant {
+  const active: CouponGrant = {
+    id: GRANT,
+    customerId: FIXTURE_IDS.customer,
+    holderUserId: FIXTURE_IDS.client,
+    couponId: CouponId.of('coupon-1'),
+    grantedAtUtcMs: utcMs('2026-09-01T10:00:00.000+03:00'),
+    ...unwrapOk(CouponValue.percentOff(10)),
+    ...GrantLifecycle.active(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.none(),
+    ),
+  };
+  return unwrapOk(
+    CouponGrantSystem.burn(
+      active,
+      utcMs('2026-09-27T10:00:00.000+03:00'),
+      `appointment:${FIXTURE_IDS.appointment}`,
+    ),
+  );
+}
+
+const GRANT_LINE: AppliedDiscount = {
+  discountId: AppliedDiscountId.of(`grant:${GRANT}`),
+  label: 'Autumn',
+  appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
+  combinability: Combinability.Stackable,
+  ...DiscountProvenance.grant(GRANT),
+  ...unwrapOk(CouponValue.percentOff(10)),
+};
+
+const MANUAL_LINE: AppliedDiscount = {
+  discountId: AppliedDiscountId.of('manual'),
+  label: 'Desk',
+  appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
+  combinability: Combinability.Stackable,
+  ...DiscountProvenance.manual(),
+  ...unwrapOk(CouponValue.percentOff(5)),
+};
+
+const DRAW: VoucherRedemption = {
+  voucherId: VOUCHER,
+  code: VoucherCode.of('GIFT50'),
+  amountCents: cents(1000),
+  balanceAfterCents: cents(0),
+  currency: Currency.EUR,
+  appliedAtUtcMs: utcMs('2026-09-27T10:00:00.000+03:00'),
+  reversedAtUtcMs: null,
+};
+
+/** The voucher the draw emptied. */
+function drawnVoucher(): GiftVoucher {
+  return {
+    id: VOUCHER,
+    code: VoucherCode.of('GIFT50'),
+    initialValueCents: cents(1000),
+    balanceCents: cents(0),
+    currency: Currency.EUR,
+    issuedAtUtcMs: utcMs('2026-09-01T10:00:00.000+03:00'),
+    expiresAtUtcMs: null,
+    expiresLocalDate: null,
+    issuedToCustomerId: null,
+    holderUserId: null,
+    ...VoucherLifecycle.active(),
+  };
+}
+
+const GRANT_PATH = `${Collections.CouponGrants}/${GRANT}`;
+const VOUCHER_PATH = `${Collections.GiftVouchers}/${VOUCHER}`;
+
+describe('transitionAppointment — what the client holds goes back only when the visit did not happen (OR-13)', () => {
+  it.each([
+    [BookingStatus.NoShow, null],
+    [BookingStatus.Cancelled, CancellationReason.StaffBarberAbsence],
+  ] as const)(
+    'a %s gives back the reward AND the voucher draw, in the same plan — the reward’s line dropped from the bill',
+    async (to, reason) => {
+      const spent = spentGrant();
+      const { store, tx, run } = rig(
+        [
+          appointmentFixture({
+            discounts: [GRANT_LINE, MANUAL_LINE],
+            voucherRedemptions: [DRAW],
+          }),
+        ],
+        { vouchers: [drawnVoucher()], grants: [spent] },
+      );
+      const answer = await run(command(to, { reason }));
+      expect(answer.ok).toBe(true);
+      expect(tx.transactions[0]?.reads).toEqual([
+        [Collections.Appointments, FIXTURE_IDS.appointment],
+        [Collections.Locations, FIXTURE_IDS.location],
+        [Collections.GiftVouchers, VOUCHER],
+        [Collections.CouponGrants, GRANT],
+      ]);
+      const plan = tx.plans[0] ?? [];
+      expect(plan.map((op) => op.path.join('/'))).toEqual([
+        PATH,
+        VOUCHER_PATH,
+        GRANT_PATH,
+      ]);
+      expect(plan[2]).toEqual(
+        CouponGrantSystem.transitionWrite(
+          spent,
+          unwrapOk(CouponGrantSystem.restore(spent)),
+        ),
+      );
+      expect(store.get(PATH)).toMatchObject({
+        bookingStatus: to,
+        discounts: [MANUAL_LINE],
+        voucherRedemptions: [
+          VoucherRedemption.reversed(DRAW, FIXTURE_NOW_UTC_MS),
+        ],
+      });
+      expect(store.get(VOUCHER_PATH)?.['balanceCents']).toBe(1000);
+      expect(store.get(GRANT_PATH)).toMatchObject({
+        grantStatus: GrantStatus.Active,
+        grantCapacity: GrantCapacity.SingleUse,
+      });
+      expect(store.get(GRANT_PATH)).not.toHaveProperty('usedAtUtcMs');
+    },
+  );
+
+  it('a completed visit keeps the reward USED and the draw spent — nothing it holds is read or written', async () => {
+    const { store, tx, run } = rig(
+      [
+        appointmentFixture({
+          discounts: [GRANT_LINE],
+          voucherRedemptions: [DRAW],
+        }),
+      ],
+      { vouchers: [drawnVoucher()], grants: [spentGrant()] },
+    );
+    expect((await run(command(BookingStatus.Completed))).ok).toBe(true);
+    expect(tx.transactions[0]?.reads).toEqual([
+      [Collections.Appointments, FIXTURE_IDS.appointment],
+      [Collections.Locations, FIXTURE_IDS.location],
+    ]);
+    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([PATH]);
+    expect(store.get(PATH)?.['discounts']).toEqual([GRANT_LINE]);
+    expect(store.get(GRANT_PATH)?.['grantStatus']).toBe(GrantStatus.Used);
+    expect(store.get(VOUCHER_PATH)?.['balanceCents']).toBe(0);
+  });
+
+  it('one seat’s no-show while the party still happens gives nothing back', async () => {
+    const { store, tx, run } = rig(
+      [party({ discounts: [GRANT_LINE], voucherRedemptions: [DRAW] })],
+      { vouchers: [drawnVoucher()], grants: [spentGrant()] },
+    );
+    const answer = await run(
+      command(BookingStatus.NoShow, { seatId: FIXTURE_IDS.seat }),
+    );
+    expect(answer.ok).toBe(true);
+    expect(store.get(PATH)?.['bookingStatus']).toBe('CONFIRMED');
+    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([PATH]);
+    expect(store.get(PATH)?.['discounts']).toEqual([GRANT_LINE]);
+    expect(store.get(GRANT_PATH)?.['grantStatus']).toBe(GrantStatus.Used);
+  });
+
+  it.each([
+    [BookingStatus.Cancelled, CancellationReason.StaffBarberAbsence],
+    [BookingStatus.NoShow, null],
+  ] as const)(
+    'reopening a visit called %s re-burns nothing: the barber re-adds the reward',
+    async (to, reason) => {
+      const world = rig([appointmentFixture({ discounts: [GRANT_LINE] })], {
+        grants: [spentGrant()],
+      });
+      expect((await world.run(command(to, { reason }))).ok).toBe(true);
+      expect(world.store.get(GRANT_PATH)?.['grantStatus']).toBe(
+        GrantStatus.Active,
+      );
+      expect((await world.run(command(BookingStatus.Confirmed))).ok).toBe(true);
+      const reopen = world.tx.plans[1] ?? [];
+      expect(reopen.some((op) => op.path[0] === Collections.CouponGrants)).toBe(
+        false,
+      );
+      expect(
+        world.tx.transactions[1]?.reads.map((path) => path[0]),
+      ).not.toContain(Collections.CouponGrants);
+      expect(world.store.get(PATH)).toMatchObject({
+        bookingStatus: 'CONFIRMED',
+        discounts: [],
+      });
+      expect(world.store.get(GRANT_PATH)?.['grantStatus']).toBe(
+        GrantStatus.Active,
+      );
+    },
+  );
+});
+
+/*
  * THE REOPEN-THEN-BOOK WINDOW (pass E, E-14 — flip 1's deferred "reopen busy
  * write", proven before it was fixed). The busy projection keeps only LIVE
  * visits (`BusySystem.rebuild` skips `!BookingLifecycle.isLive`), so a
@@ -539,7 +768,7 @@ const CANCELLED_VISIT = appointmentFixture({
         FIXTURE_NOW_UTC_MS,
         CancelledBy.Staff,
         CancellationReason.StaffBarberAbsence,
-        24,
+        hourCount(24),
       ),
     }),
   ],
@@ -711,6 +940,7 @@ const WALK_IN: BookAppointmentCommand = {
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Walk-in',
         guestKey: null,
+        contact: null,
       },
     },
   ],
@@ -767,6 +997,7 @@ function windowRig() {
   });
   const book = bookAppointment({
     ...tx,
+    walkInHash: fixtureWalkInHash,
     ...telemetry,
     loadPolicy: policy,
     loadAccountContacts: async () => Result.ok(new Map()),

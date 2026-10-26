@@ -1,6 +1,7 @@
 import {
   type Actor,
   BlockKind,
+  DiscountProvenance,
   type E164,
   MinuteBlock,
   type MinuteRange,
@@ -15,10 +16,11 @@ import {
   BarberId,
   BusyKey,
   type AppointmentId,
-  type CustomerId,
+  CouponGrantId,
+  CustomerId,
   type GiftVoucherId,
   type LocationId,
-  type ServiceId,
+  ServiceId,
   type LocalDate,
   type MinuteOfDay,
   TimeZone,
@@ -29,6 +31,7 @@ import {
   type AuditEntry,
   type BarberBusyDay,
   type BarberSchedule,
+  type CouponGrant,
   type Customer,
   type GiftVoucher,
   type ScheduleException,
@@ -50,6 +53,7 @@ import {
   type BookingSnapshot,
   type BusyWrite,
   BusySystem,
+  CouponGrantSystem,
   PartyAdmissionSystem,
   PhoneSystem,
   VoucherSystem,
@@ -63,8 +67,10 @@ import {
  *
  * 1. {@link readBookingSet} — ONE `getAll` of everything whose id is
  *    derivable before a read: the location, the catalogue services, the
- *    barbers' schedules and the account subjects' `customers/{id}` (F1-5:
- *    the client records ride the phase-one read, no extra round trip);
+ *    barbers' schedules and the client records — the account subjects'
+ *    `customers/{id}` (F1-5) and the walk-ins' (OR-26: the id derives from
+ *    the contact, `CustomerId.forWalkIn`) — riding the phase-one read, no
+ *    extra round trip;
  * 2. {@link readPlacementSet} — ONE `getAll` of `barberBusy` AND
  *    `scheduleExceptions` for every `BusyKey` of the placement, read even
  *    when absent: an empty read still enters the conflict set, so two
@@ -96,7 +102,10 @@ export type BookingReadSet = {
   /** Every service read, whatever its status ({@link bookingSnapshotOf} keeps the bookable ones). */
   readonly services: readonly Service[];
   readonly schedules: readonly BarberSchedule[];
-  /** Every client record asked for, `null` when absent (F1-5: absent → a `FIRST_BOOKING` create). */
+  /**
+   * Every client record asked for, `null` when absent (F1-5: an account's
+   * absent → a `FIRST_BOOKING` create; OR-26: a walk-in's → `STAFF_WALK_IN`).
+   */
   readonly customers: ReadonlyMap<CustomerId, Customer | null>;
 };
 
@@ -118,26 +127,20 @@ export const NO_PLACEMENT: PlacementSet = {
 };
 
 /**
- * Could `raw` name a Firestore document? The SDK throws on an empty id or
- * one holding a `/` as the reference is built, and the server refuses `.`,
- * `..` and a reserved `__…__` name — an id that could not is never read: it
- * names nothing (the commit refuses such a shop UNREAD as not found).
+ * The ids of `ids` that could name a Firestore document, each once — `is`
+ * is the brand's own door (`XId.is`, OR-44): the SDK throws on an empty id
+ * or a `/` as the reference is built and the server refuses a reserved name
+ * (`.`, `..`, `__…__`), so an id the door refuses — a blank one too — is
+ * never read: it names nothing.
  */
-export function isReadableId(raw: string): boolean {
-  return (
-    raw.length > 0 &&
-    !raw.includes('/') &&
-    raw !== '.' &&
-    raw !== '..' &&
-    !/^__.*__$/.test(raw)
-  );
-}
-
-function distinctReadable<T extends string>(ids: readonly T[]): readonly T[] {
+function distinctReadable<T extends string>(
+  ids: readonly T[],
+  is: (raw: unknown) => raw is T,
+): readonly T[] {
   const out: T[] = [];
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i] as T;
-    if (isReadableId(id) && !out.includes(id)) out.push(id);
+    if (is(id) && !out.includes(id)) out.push(id);
   }
   return out;
 }
@@ -165,9 +168,9 @@ export async function readBookingSet(
   tx: ReadTx,
   request: BookingReadRequest,
 ): Promise<BookingReadSet> {
-  const serviceIds = distinctReadable(request.serviceIds);
-  const barberIds = distinctReadable(request.barberIds);
-  const customerIds = distinctReadable(request.customerIds);
+  const serviceIds = distinctReadable(request.serviceIds, ServiceId.is);
+  const barberIds = distinctReadable(request.barberIds, BarberId.is);
+  const customerIds = distinctReadable(request.customerIds, CustomerId.is);
   const paths: DocPath[] = [[Collections.Locations, request.locationId]];
   for (const id of serviceIds) paths.push([Collections.Services, id]);
   for (const id of barberIds) paths.push([Collections.BarberSchedules, id]);
@@ -211,7 +214,7 @@ export async function readPlacementSet(
 ): Promise<PlacementSet> {
   const distinct: BusyKey[] = [];
   for (const key of keys) if (!distinct.includes(key)) distinct.push(key);
-  const records = distinctReadable(customerIds);
+  const records = distinctReadable(customerIds, CustomerId.is);
   if (distinct.length === 0 && records.length === 0) return NO_PLACEMENT;
   const paths: DocPath[] = [];
   for (const key of distinct) paths.push([Collections.BarberBusy, key]);
@@ -239,9 +242,10 @@ export async function readPlacementSet(
 }
 
 /**
- * The busy keys a placement touches: each seat's barber (an id that parses)
- * on the visit's ONE shop day (T7), distinct, sorted. A seat with no
- * placed start touches no document — the decision refuses it.
+ * The busy keys a placement touches: each seat's barber (an id
+ * `BarberId.parse` takes — never a reserved name, OR-44) on the visit's ONE
+ * shop day (T7), distinct, sorted. A seat with no placed start touches no
+ * document — the decision refuses it.
  */
 export function placementKeysOf(
   seats: readonly {
@@ -255,7 +259,6 @@ export function placementKeysOf(
   for (const seat of seats) {
     const barber = BarberId.parse(seat.barberId);
     if (!barber.ok || seat.startMinutes === null) continue;
-    if (!isReadableId(barber.value)) continue;
     const key = BusyKey.of(barber.value, localDate);
     if (!keys.includes(key)) keys.push(key);
   }
@@ -451,6 +454,35 @@ export async function readRedemptionVouchers(
   return found;
 }
 
+/** `couponGrants/{id}`. */
+export function grantPath(id: CouponGrantId): DocPath {
+  return [Collections.CouponGrants, id];
+}
+
+/**
+ * The coupon grants a bill's GRANT lines name, in ONE `getAll` (each once,
+ * absent read too) — what a cancel or a no-show gives back (OR-13), read
+ * before any write so the restore settles against the grant this attempt
+ * read. A bill with no grant line — nearly every one — reads nothing; an
+ * id the brand's door refuses names nothing and is never read.
+ */
+export async function readDiscountGrants(
+  tx: ReadTx,
+  discounts: readonly DiscountProvenance[],
+): Promise<readonly CouponGrant[]> {
+  const named: CouponGrantId[] = [];
+  for (const discount of discounts) {
+    const grantId = DiscountProvenance.grantIdOf(discount);
+    if (grantId !== null) named.push(grantId);
+  }
+  const ids = distinctReadable(named, CouponGrantId.is);
+  if (ids.length === 0) return [];
+  const docs = await tx.getAll<CouponGrant>(ids.map(grantPath));
+  const found: CouponGrant[] = [];
+  for (const doc of docs) if (doc !== null) found.push(doc);
+  return found;
+}
+
 /**
  * `op` with more root fields set — the same path, the same deletions — so a
  * write the plan already holds absorbs a field instead of a second write of
@@ -473,10 +505,12 @@ export function withMoreFields(op: WriteOp, extra: DocBody): WriteOp {
 }
 
 /**
- * What a visit that ends CANCELLED gives back to the gift vouchers it drew
- * on (2026-09-10), in the SAME plan: `VoucherSystem.restorePlan` — each live
- * line reversed at `nowUtcMs`, each voucher's balance restored — folded into
- * the appointment's own write (its `voucherRedemptions`) beside one balance
+ * What a visit whose move releases its holdings
+ * (`BillingSystem.releasesHoldings` — it ends cancelled or no-show, OR-13,
+ * DEP-F10b) gives back to the gift vouchers it drew on (2026-09-10), in the
+ * SAME plan: `VoucherSystem.restorePlan` — each live line reversed at
+ * `nowUtcMs`, each voucher's balance restored — folded into the
+ * appointment's own write (its `voucherRedemptions`) beside one balance
  * `Update` per voucher. `appointmentWrites` unchanged when the visit paid
  * with no live line (nearly always).
  */
@@ -505,6 +539,34 @@ export function voucherRestoreWrites(
     if (before !== null)
       writes.push(VoucherSystem.transitionWrite(before, after));
   }
+  return writes;
+}
+
+/**
+ * What the same release gives back of the coupon grants the bill honoured
+ * (OR-13, DEP-F10b), in the SAME plan: `CouponGrantSystem.releasePlan` —
+ * every grant line dropped from the appointment's root `discounts`, folded
+ * into its own write, and each grant they named restored against the
+ * `grants` this attempt read (one the restore refuses, or one not read, is
+ * skipped: the move still lands). A reopen re-burns nothing — the barber
+ * re-adds the reward. `appointmentWrites` unchanged when the bill names no
+ * grant (nearly always).
+ */
+export function grantReleaseWrites<D extends DiscountProvenance>(
+  appointmentWrites: readonly WriteOp[],
+  discounts: readonly D[],
+  grants: readonly CouponGrant[],
+): readonly WriteOp[] {
+  const plan = CouponGrantSystem.releasePlan(discounts, grants);
+  if (plan.discounts === discounts) return appointmentWrites;
+  const writes: WriteOp[] = [];
+  for (let i = 0; i < appointmentWrites.length; i++) {
+    const op = appointmentWrites[i] as WriteOp;
+    writes.push(
+      i === 0 ? withMoreFields(op, { discounts: plan.discounts }) : op,
+    );
+  }
+  writes.push(...plan.writes);
   return writes;
 }
 

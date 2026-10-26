@@ -223,13 +223,15 @@ function scopeOf(
  * The seat an `ADD_SEAT` names, its occupant resolved: an account carries
  * its client record beside it (D29) — the map names every account of
  * {@link AppointmentEditSystem.addedAccounts}, so a miss is the caller's
- * defect, never a refusal.
+ * defect, never a refusal. A guest joins the draft by label: whether the
+ * shop keeps a record for them (`WALK_IN`, OR-26) is the decision's, from
+ * the record the pipeline resolved for the seat.
  */
 function addedOccupant(
   occupant: AccountOccupant,
   customerIds: ReadonlyMap<UserId, CustomerId>,
 ): SeatOccupant {
-  if (occupant.seatSubject === SeatSubject.Anonymous) {
+  if (occupant.seatSubject !== SeatSubject.Account) {
     return SeatOccupant.anonymous(occupant.guestLabel);
   }
   return SeatOccupant.account(

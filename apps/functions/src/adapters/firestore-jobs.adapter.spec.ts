@@ -4,10 +4,12 @@ import { BackfillJobName, Role } from '@core/components';
 import { AppointmentId, BackfillJobId, UserId } from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { type BackfillJob, Collections } from '@core/entities';
+import type { Log } from '@core/ports';
 import {
   appointmentFixture,
   FIXTURE_NOW_UTC_MS,
   recordingTelemetry,
+  unguarded,
 } from '@core/testing';
 import { StoredDocumentSystem } from '@core/systems';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
@@ -19,6 +21,13 @@ import { firestoreJobPorts } from './firestore-jobs.adapter';
  * of appointments in document-id order, and the stored roles behind the
  * token's claim.
  */
+
+/**
+ * The mechanics cases' log: they read through the test support's
+ * `unguarded` registry (OR-33 — the registry and the log have no default),
+ * so there is no refusal to report.
+ */
+const NO_LOG: Log = () => undefined;
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -57,7 +66,11 @@ function seeded() {
 describe('firestoreJobPorts', () => {
   it('writes the progress as a Set of the job minus its id, and reads it back as stored', async () => {
     const fake = seeded();
-    const ports = firestoreJobPorts(fake.db as unknown as Firestore);
+    const ports = firestoreJobPorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(await ports.loadBackfillJob(JOB_ID)).toEqual({
       ok: true,
       value: null,
@@ -76,7 +89,11 @@ describe('firestoreJobPorts', () => {
   });
 
   it('pages the appointments in document-id order, strictly after the cursor', async () => {
-    const ports = firestoreJobPorts(seeded().db as unknown as Firestore);
+    const ports = firestoreJobPorts(
+      seeded().db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(await ports.pageAppointments(null, 2)).toEqual({
       ok: true,
       value: [visit('a1'), visit('a2')],
@@ -88,7 +105,11 @@ describe('firestoreJobPorts', () => {
   });
 
   it('reads the stored roles — an unknown string grants nothing, a non-list or no account none at all', async () => {
-    const ports = firestoreJobPorts(seeded().db as unknown as Firestore);
+    const ports = firestoreJobPorts(
+      seeded().db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(await ports.loadCallerRoles(UserId.of('u-sys'))).toEqual({
       ok: true,
       value: [Role.Sysadmin],
@@ -108,7 +129,11 @@ describe('firestoreJobPorts', () => {
     vi.spyOn(fake.db, 'doc').mockImplementation(() => {
       throw Object.assign(new Error('7 PERMISSION_DENIED'), { code: 7 });
     });
-    const ports = firestoreJobPorts(fake.db as unknown as Firestore);
+    const ports = firestoreJobPorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
     expect(await ports.writeBackfillJob(job)).toEqual({
       ok: false,
       error: RepositoryError.writeFailed(

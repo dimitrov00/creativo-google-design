@@ -1,20 +1,13 @@
 import {
   defect,
   DurationMinutes,
+  HourCount,
   MinuteCount,
   LocalDate,
   UtcEpochMs,
   Result,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
-
-const MS_PER_HOUR = 3_600_000;
-
-/**
- * The ECMAScript time range's half-width in ms: a `Date` held instants up to
- * 8.64e15 ms either side of the epoch — the bound the window maximum keeps.
- */
-const TIME_RANGE_MS = 8_640_000_000_000_000;
 
 /**
  * Every number the booking flow used to hardcode, in one validated place —
@@ -24,10 +17,12 @@ const TIME_RANGE_MS = 8_640_000_000_000_000;
  * it as an argument, which is also what lets a test drive the engine at
  * 5-minute steps without touching the defaults.
  *
- * The free-cancellation window is plain whole hours here and wherever it is
- * stamped (`SeatOutcome`'s `cancellationWindowHours`), and one rule
- * ({@link BookingPolicy.isValidCancellationWindowHours}) says what a window
- * may be, so the setting and the stamp accept exactly the same numbers.
+ * The free-cancellation window is whole hours here and wherever it is
+ * stamped (`SeatOutcome`'s `cancellationWindowHours`), and one rule — the
+ * `HourCount` primitive's (OR-45), which
+ * {@link BookingPolicy.isValidCancellationWindowHours} answers through —
+ * says what a window may be, so the setting and the stamp accept exactly the
+ * same numbers.
  */
 export type BookingPolicy = {
   /** People per booking, the booker included. */
@@ -41,8 +36,8 @@ export type BookingPolicy = {
    * owner has an opinion about, ending where a month grid ends.
    */
   readonly horizonMonths: number;
-  /** Free cancellation window, whole hours, zero allowed. */
-  readonly cancellationWindowHours: number;
+  /** Free cancellation window, whole hours, zero allowed (OR-45). */
+  readonly cancellationWindowHours: HourCount;
   /** How many days one flexible request may span — each is its own search. */
   readonly maxFlexibleDays: number;
   /**
@@ -64,7 +59,7 @@ const DEFAULT: BookingPolicy = {
   slotStepMinutes: known(DurationMinutes.of(15)),
   minLeadMinutes: known(MinuteCount.of(120)),
   horizonMonths: 2,
-  cancellationWindowHours: 24,
+  cancellationWindowHours: known(HourCount.of(24)),
   maxFlexibleDays: 7,
   autoConfirm: true,
 };
@@ -88,24 +83,21 @@ export const BookingPolicy = {
   DEFAULT,
 
   /**
-   * The longest window a policy may hold: 2,400,000,000 hours, the time
-   * range's half-width — so for any visit at or after the epoch, the
-   * deadline `start − hours·1 h` is an exact, safe-integer instant. An
-   * arithmetic bound, not a product one.
+   * The longest window a policy may hold: `HourCount.MAX`, 2,400,000,000
+   * hours, the time range's half-width — so for any visit at or after the
+   * epoch, the deadline `start − hours·1 h` is an exact, safe-integer
+   * instant. An arithmetic bound, not a product one.
    */
-  CANCELLATION_WINDOW_MAX_HOURS: TIME_RANGE_MS / MS_PER_HOUR,
+  CANCELLATION_WINDOW_MAX_HOURS: HourCount.MAX,
 
   /**
    * The ONE rule for a free-cancellation window — the setting and every
-   * stamp on a cancelled seat: an integer number of hours, zero or more,
-   * within {@link CANCELLATION_WINDOW_MAX_HOURS}.
+   * stamp on a cancelled seat: an `HourCount` (`HourCount.is` — an integer
+   * number of hours, zero or more, within
+   * {@link CANCELLATION_WINDOW_MAX_HOURS}).
    */
-  isValidCancellationWindowHours(hours: number): boolean {
-    return (
-      Number.isInteger(hours) &&
-      hours >= 0 &&
-      hours <= BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS
-    );
+  isValidCancellationWindowHours(hours: number): hours is HourCount {
+    return HourCount.is(hours);
   },
 
   /**
@@ -123,6 +115,7 @@ export const BookingPolicy = {
     const step = DurationMinutes.of(raw.slotStepMinutes);
     // `+ 0` folds a negative zero: store the zero every reader compares against.
     const lead = MinuteCount.of(raw.minLeadMinutes + 0);
+    const window = HourCount.of(raw.cancellationWindowHours);
     check(isPositiveInt(raw.maxPartySize), 'maxPartySize', raw.maxPartySize);
     check(
       step.ok && 60 % raw.slotStepMinutes === 0,
@@ -131,23 +124,21 @@ export const BookingPolicy = {
     );
     check(lead.ok, 'minLeadMinutes', raw.minLeadMinutes);
     check(isPositiveInt(raw.horizonMonths), 'horizonMonths', raw.horizonMonths);
-    check(
-      BookingPolicy.isValidCancellationWindowHours(raw.cancellationWindowHours),
-      'cancellationWindowHours',
-      raw.cancellationWindowHours,
-    );
+    check(window.ok, 'cancellationWindowHours', raw.cancellationWindowHours);
     check(
       isPositiveInt(raw.maxFlexibleDays),
       'maxFlexibleDays',
       raw.maxFlexibleDays,
     );
-    if (errors.length > 0 || !step.ok || !lead.ok) return Result.err(errors);
+    if (errors.length > 0 || !step.ok || !lead.ok || !window.ok) {
+      return Result.err(errors);
+    }
     return Result.ok({
       maxPartySize: raw.maxPartySize,
       slotStepMinutes: step.value,
       minLeadMinutes: lead.value,
       horizonMonths: raw.horizonMonths,
-      cancellationWindowHours: raw.cancellationWindowHours + 0,
+      cancellationWindowHours: window.value,
       maxFlexibleDays: raw.maxFlexibleDays,
       autoConfirm: raw.autoConfirm,
     });
@@ -214,15 +205,15 @@ export const BookingPolicy = {
    * cancellation late (on its stamped window) all draw it here.
    */
   cancellationDeadlineUtcMs(
-    windowHours: number,
+    windowHours: HourCount,
     appointmentStartUtcMs: UtcEpochMs,
   ): UtcEpochMs {
-    return UtcEpochMs.plusHours(appointmentStartUtcMs, -windowHours);
+    return UtcEpochMs.minusHours(appointmentStartUtcMs, windowHours);
   },
 
   /** Free at `atUtcMs`: at the deadline itself still is, a millisecond past is not. */
   allowsFreeCancelAt(
-    windowHours: number,
+    windowHours: HourCount,
     appointmentStartUtcMs: UtcEpochMs,
     atUtcMs: UtcEpochMs,
   ): boolean {

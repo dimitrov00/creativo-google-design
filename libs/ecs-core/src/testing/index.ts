@@ -9,3 +9,4 @@ export * from './programs.fixtures';
 export * from './scheduling.port.contract';
 export * from './streak-publish-gateway.double';
 export * from './test-support';
+export * from './unguarded';

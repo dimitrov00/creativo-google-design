@@ -34,10 +34,13 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * phone through `PhoneSystem.parse` with no default country — the kernel's
  * rule) → `IDENTITY_IDENTIFIER_INVALID`; (3) the open challenges of the
  * PARSED destination created inside the resend window (`loadOpenOtps`,
- * index #10) → `IDENTITY_OTP_RATE_LIMITED`; (4) the tenant; then the
- * challenge is issued with the strategy's own `ttlMinutes`/`maxAttempts`,
- * saved (`saveOtp`, which stamps `purgeAt`) and sent. A send failure is
- * answered as such — the saved challenge stays, as today.
+ * index #10) → `IDENTITY_OTP_RATE_LIMITED`, carrying the seconds left on
+ * that window (`OtpSystem.retryAfterSeconds`, OR-9) so the code step
+ * restarts its countdown instead of showing a dead end; (4) the tenant;
+ * then the challenge is issued with the strategy's own
+ * `ttlMinutes`/`maxAttempts`, saved (`saveOtp`, which stamps `purgeAt`) and
+ * sent. A send failure is answered as such — the saved challenge stays, as
+ * today.
  *
  * The stored `destination` is the payload text TRIMMED, byte-identical to
  * today (F2-10): the probe queries the parsed identifier while the challenge
@@ -112,7 +115,11 @@ export const requestOtp =
     );
     if (!open.ok) return open;
     if (!OtpSystem.mayIssue(open.value, nowUtcMs)) {
-      return Result.err(IdentityError.otpRateLimited());
+      return Result.err(
+        IdentityError.otpRateLimited(
+          OtpSystem.retryAfterSeconds(open.value, nowUtcMs),
+        ),
+      );
     }
 
     const tenant = await ports.loadTenant();

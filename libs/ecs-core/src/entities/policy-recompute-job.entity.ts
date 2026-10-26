@@ -2,6 +2,7 @@ import type {
   PolicyRecomputeJobId,
   CustomerId,
   EpochSeconds,
+  HourCount,
   SubsecondNanos,
   UtcEpochMs,
 } from '@core/primitives';
@@ -68,5 +69,5 @@ export type PolicyRecomputeJob = {
    * line at; `null` on a job written before the field, or started by a change
    * that did not say.
    */
-  readonly windowHours: number | null;
+  readonly windowHours: HourCount | null;
 };

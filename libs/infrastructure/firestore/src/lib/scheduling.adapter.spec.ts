@@ -24,6 +24,7 @@ import {
   utcMs,
 } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
+import { UNGUARDED } from '../testing/unguarded';
 
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
@@ -83,7 +84,7 @@ describe('schedulingReadPorts — one document each, live, the body the entity',
         blocks,
       },
     });
-    const ports = schedulingReadPorts(asDb(fake));
+    const ports = schedulingReadPorts(asDb(fake), UNGUARDED);
 
     const monday = recorded(ports.observeBusyDay(MONDAY));
     const tuesday = recorded(ports.observeBusyDay(TUESDAY));
@@ -111,7 +112,7 @@ describe('schedulingReadPorts — one document each, live, the body the entity',
       'locations/loc-center': { timeZone: 'Europe/Sofia' },
       'capacity/2026-10': { month: '2026-10', entries: [] },
     });
-    const ports = schedulingReadPorts(asDb(fake));
+    const ports = schedulingReadPorts(asDb(fake), UNGUARDED);
 
     const exception = recorded(ports.observeExceptions(MONDAY));
     const schedule = recorded(ports.observeSchedule(IVAN));
@@ -141,7 +142,7 @@ describe('schedulingReadPorts — one document each, live, the body the entity',
   it('follows a day as it changes — a block added after the first snapshot', () => {
     const fake = new FakeFirestore();
     const exception = recorded(
-      schedulingReadPorts(asDb(fake)).observeExceptions(MONDAY),
+      schedulingReadPorts(asDb(fake), UNGUARDED).observeExceptions(MONDAY),
     );
 
     fake.set(`scheduleExceptions/${MONDAY}`, bodyOf(blocked(MONDAY)));
@@ -156,7 +157,7 @@ describe('schedulingReadPorts — one document each, live, the body the entity',
     const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
 
     const busy = recorded(
-      schedulingReadPorts(asDb(fake)).observeBusyDay(MONDAY),
+      schedulingReadPorts(asDb(fake), UNGUARDED).observeBusyDay(MONDAY),
     );
 
     expect(busy.seen).toEqual([
@@ -192,7 +193,7 @@ describe('schedulingReadPorts.observeBusyDay — the scheduling ports’ busy co
 
       expect(
         await contract.busyThroughObserve(
-          schedulingReadPorts(asDb(fake)).observeBusyDay,
+          schedulingReadPorts(asDb(fake), UNGUARDED).observeBusyDay,
           entry,
         ),
       ).toEqual(entry.busy);
@@ -204,7 +205,9 @@ describe('schedulingReadPorts.observePolicy — the defaults are the floor', () 
   it('starts on the defaults, and a tenant with no policy document stays on them', () => {
     const fake = new FakeFirestore();
 
-    const policy = recorded(schedulingReadPorts(asDb(fake)).observePolicy());
+    const policy = recorded(
+      schedulingReadPorts(asDb(fake), UNGUARDED).observePolicy(),
+    );
 
     expect(policy.seen).toEqual([Result.ok(BookingPolicy.DEFAULT)]);
     expect(fake.reads.map((read) => read.path)).toEqual([
@@ -217,7 +220,9 @@ describe('schedulingReadPorts.observePolicy — the defaults are the floor', () 
       'settings/bookingPolicy': { horizonMonths: 6, minLeadMinutes: 'soon' },
     });
 
-    const policy = recorded(schedulingReadPorts(asDb(fake)).observePolicy());
+    const policy = recorded(
+      schedulingReadPorts(asDb(fake), UNGUARDED).observePolicy(),
+    );
 
     expect(policy.seen).toEqual([
       Result.ok(BookingPolicy.DEFAULT),
@@ -229,7 +234,9 @@ describe('schedulingReadPorts.observePolicy — the defaults are the floor', () 
     const fake = new FakeFirestore({
       'settings/bookingPolicy': { ...BookingPolicy.DEFAULT },
     });
-    const policy = recorded(schedulingReadPorts(asDb(fake)).observePolicy());
+    const policy = recorded(
+      schedulingReadPorts(asDb(fake), UNGUARDED).observePolicy(),
+    );
 
     fake.set('settings/bookingPolicy', { ...BookingPolicy.DEFAULT });
     fake.set('settings/bookingPolicy', {
@@ -249,7 +256,9 @@ describe('schedulingReadPorts.observePolicy — the defaults are the floor', () 
   it('surfaces a refused read after the defaults, for the store to keep them', () => {
     const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
 
-    const policy = recorded(schedulingReadPorts(asDb(fake)).observePolicy());
+    const policy = recorded(
+      schedulingReadPorts(asDb(fake), UNGUARDED).observePolicy(),
+    );
 
     expect(policy.seen).toEqual([
       Result.ok(BookingPolicy.DEFAULT),

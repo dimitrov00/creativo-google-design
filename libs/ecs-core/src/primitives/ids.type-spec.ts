@@ -98,6 +98,8 @@ import type {
 import type { UtcEpochMs } from './utc-epoch-ms.primitive';
 import type { PriceCents } from './price-cents.primitive';
 import type { TimeZone } from './time-zone.primitive';
+import type { HourCount } from './hour-count.primitive';
+import type { PersonKey } from './person-key.primitive';
 import type { Latitude, Longitude } from './geo.primitive';
 import type { EpochSeconds, SubsecondNanos } from './precise-instant.primitive';
 import {
@@ -171,6 +173,8 @@ type Brands = {
   readonly AuditResourceId: AuditResourceId;
   readonly SeatKeyText: SeatKeyText;
   readonly DraftPersonKey: DraftPersonKey;
+  readonly PersonKey: PersonKey;
+  readonly HourCount: HourCount;
   readonly BusyKey: BusyKey;
   readonly Currency: Currency;
   readonly LocalDate: LocalDate;

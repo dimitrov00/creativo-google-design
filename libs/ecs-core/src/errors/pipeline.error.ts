@@ -119,7 +119,14 @@ export const WIRE_PARAM_ALLOWLIST: {
   BOOKING_SERVICE_NOT_AT_LOCATION: ['serviceId', 'locationId'],
   BOOKING_CONFLICTING_SERVICES: ['first', 'second'],
   BOOKING_BARBER_NOT_ROSTERED: ['barberId', 'localDate'],
-  BOOKING_SLOT_UNAVAILABLE: ['barberId', 'localDate', 'startMinutes'],
+  // The seat the refusal names — the flat scalar struct, never a busy body
+  // (OR-12: the live listeners redraw the day).
+  BOOKING_SLOT_UNAVAILABLE: [
+    'barberId',
+    'localDate',
+    'startMinutes',
+    'seatIndex',
+  ],
   BOOKING_TOO_SOON: ['minLeadMinutes'],
   BOOKING_BEYOND_HORIZON: ['horizonMonths'],
   BOOKING_PARTY_TOO_LARGE: ['maxPartySize'],
@@ -153,6 +160,9 @@ export const WIRE_PARAM_ALLOWLIST: {
   DST_GAP_INVALID_TIME: ['localDate', 'minute', 'timeZone'],
   IDENTITY_INVALID_INPUT: ['reason'],
   IDENTITY_OTP_CHANNEL_MISMATCH: ['requested', 'authStrategyKind'],
+  // The seconds left of the resend window — the countdown the web restarts
+  // from (OR-9, DEP-F8) and the copy's one parameter.
+  IDENTITY_OTP_RATE_LIMITED: ['retryAfterSeconds'],
   IDENTITY_BIRTH_DATE_INVALID: ['attempted'],
   IDENTITY_BIRTH_DATE_IN_FUTURE: ['attempted'],
   IDENTITY_BIRTH_DATE_TOO_YOUNG: ['age', 'minAge'],

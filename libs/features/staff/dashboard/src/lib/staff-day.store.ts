@@ -16,6 +16,7 @@ import {
   BarberId,
   BusyKey,
   ClientOperationId,
+  type CouponGrantId,
   type CustomerId,
   LocalDate,
   type LocationId,
@@ -42,9 +43,11 @@ import {
   type MinuteRange,
   Principal,
   type ShopNow,
+  type VisitEditWrite,
+  VisitEditWriteOutcome,
   VoucherCode,
 } from '@core/components';
-import { Callables } from '@core/ports';
+import { type BarberDayRead, Callables } from '@core/ports';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -78,6 +81,8 @@ import {
   clearScheduleBlock,
   loadHeldGrants,
   saveTeamNote as saveTeamNotePipeline,
+  type SaveVisitEditCommand,
+  saveVisitEdit,
   type VisitPhotoSubject,
   writeScheduleBlocks,
 } from '@core/pipelines';
@@ -243,6 +248,14 @@ interface DayGeometryCell {
   })[];
 }
 
+/** The same grant ids, in the same order — a sheet re-probing one visit reads nothing again. */
+function sameIds(
+  a: readonly CouponGrantId[],
+  b: readonly CouponGrantId[],
+): boolean {
+  return a.length === b.length && a.every((id, index) => id === b.at(index));
+}
+
 /** One string for one subscription — the days and the chairs it answers. */
 function laneKeyOf(
   days: readonly LocalDate[],
@@ -355,7 +368,8 @@ export function laneGeometryOf(
 }
 
 /**
- * One barber's chair for the chosen day, with its own failure flag.
+ * One barber's chair for the chosen day, with its own failure flag and its
+ * count of visits it could not read.
  *
  * `rostered` is what makes the run COMPLETE rather than sparse: without it a
  * barber on holiday and a barber with a wide-open Saturday both render as
@@ -389,7 +403,21 @@ export interface BarberDayLane {
    * in the lane day's minutes).
    */
   readonly gaps: readonly LaneGap[];
+  /**
+   * The chair's day could not be read at all (OR-2) — a refused listen, or
+   * a day whose every stored visit the read-time guard refused. Such a lane
+   * holds NO gaps (a hole computed from a list that was never read would be
+   * time sold twice) and is neither working nor off: the sheet says it
+   * failed, on the day's all-day strip.
+   */
   readonly failed: boolean;
+  /**
+   * How many of the day's stored visits the read-time guard dropped from
+   * this chair's answer (`BarberDayRead.unreadableCount`, OR-2) — `0` on a
+   * clean read and on a failed one. The sheet words it beside the chair, so
+   * a visit nobody can see is never silent.
+   */
+  readonly unreadable: number;
 }
 
 /**
@@ -1215,8 +1243,14 @@ export class StaffDayStore {
     }
   }
 
-  /** The client RECORD whose usable coupons the sheet is offering, or `null`. */
-  private readonly _grantsFor = signal<CustomerId | null>(null);
+  /**
+   * The client RECORD whose usable coupons the sheet is offering, with the
+   * grants the open visit's SAVED bill names — or `null`.
+   */
+  private readonly _grantsFor = signal<{
+    readonly customerId: CustomerId;
+    readonly billGrantIds: readonly CouponGrantId[];
+  } | null>(null);
 
   /**
    * THE CLIENT'S PROMISES, read while a visit is open (2026-09-10).
@@ -1229,19 +1263,42 @@ export class StaffDayStore {
    * reads as none. One read per client rather than a listener: a grant does
    * not change under an open sheet, and the save re-checks it on the server
    * anyway.
+   *
+   * THE SAVED BILL'S GRANTS ride along (OR-13): a save burns the grant a
+   * bill line names (`USED`), so the usable list no longer holds it — the
+   * open visit's own grant-line ids (`billGrantIds`) are read beside it,
+   * whatever their status (`loadHeldGrants`), so a burned reward still
+   * shows on the visit that spent it.
    */
-  probeGrants(customerId: CustomerId | null): void {
-    if (customerId === this._grantsFor()) return;
-    this._grantsFor.set(customerId);
+  probeGrants(
+    customerId: CustomerId | null,
+    billGrantIds: readonly CouponGrantId[] = [],
+  ): void {
+    const current = this._grantsFor();
+    if (customerId === null) {
+      if (current !== null) this._grantsFor.set(null);
+      return;
+    }
+    if (
+      current !== null &&
+      current.customerId === customerId &&
+      sameIds(current.billGrantIds, billGrantIds)
+    ) {
+      return;
+    }
+    this._grantsFor.set({ customerId, billGrantIds });
   }
 
   private readonly grantsResult = toSignal(
     toObservable(this._grantsFor).pipe(
-      switchMap((id) =>
-        id === null
+      switchMap((probe) =>
+        probe === null
           ? of(Result.ok<readonly HeldGrant[]>([]))
           : from(
-              loadHeldGrants({ ...this.couponsVouchers, ...this.clock })(id),
+              loadHeldGrants({ ...this.couponsVouchers, ...this.clock })(
+                probe.customerId,
+                probe.billGrantIds,
+              ),
             ),
       ),
     ),
@@ -1411,11 +1468,14 @@ export class StaffDayStore {
     barbers: this.scopedBarbers().map((barber) => barber.id),
   }));
 
-  /** The appointments of one chair on one shop day — `busyKeys array-contains`. */
+  /**
+   * The appointments of one chair on one shop day — `busyKeys
+   * array-contains` — and how many of them could not be read (OR-2).
+   */
   private barberDay(
     barberId: BarberId,
     day: LocalDate,
-  ): Observable<Result<readonly Appointment[], RepositoryError>> {
+  ): Observable<Result<BarberDayRead, RepositoryError>> {
     return this.appointments.observeBarberDay(BusyKey.of(barberId, day));
   }
 
@@ -1557,7 +1617,11 @@ export class StaffDayStore {
 
       const lanes = barbers.map((barber, barberIndex) => {
         const result = results[dayIndex * barbers.length + barberIndex];
-        const appointments = result?.ok ? result.value : [];
+        const appointments = result?.ok ? result.value.appointments : [];
+        // A chair whose day could not be read (OR-2): no visits, and no
+        // holes either — a gap computed from a list that was never read
+        // would offer time somebody may already hold.
+        const failed = result !== undefined && !result.ok;
         const answer = answers?.[barberIndex];
         const schedule = schedules[barberIndex];
         const geo =
@@ -1580,11 +1644,14 @@ export class StaffDayStore {
           appointments,
           rostered: geo.rostered,
           blocks: geo.blocks,
-          holes: GridLayoutSystem.holes(
-            geo.rostered,
-            occupiedOn(dayKey, appointments, barber.id, geo.busy),
-          ),
-          failed: result !== undefined && !result.ok,
+          holes: failed
+            ? []
+            : GridLayoutSystem.holes(
+                geo.rostered,
+                occupiedOn(dayKey, appointments, barber.id, geo.busy),
+              ),
+          failed,
+          unreadable: result?.ok ? result.value.unreadableCount : 0,
         };
       });
 
@@ -1637,11 +1704,16 @@ export class StaffDayStore {
     ),
   );
 
-  /** Rostered nowhere today — named under the run, never drawn as a column. */
+  /**
+   * Rostered nowhere today — named under the run, never drawn as a column.
+   * A FAILED lane is not off (OR-2): its visits were never read, so «почива»
+   * would be a guess; the sheet says it failed instead.
+   */
   readonly offToday = computed(() =>
     this.lanes()
       .filter(
         (lane) =>
+          !lane.failed &&
           !RosterSystem.worksDay(
             lane.rostered.length,
             lane.appointments.length,
@@ -2273,6 +2345,34 @@ export class StaffDayStore {
       return false;
     }
     return true;
+  }
+
+  /**
+   * ONE WRITE OF THE VISIT SHEET — «Запази», and the receipt's «Отмени»
+   * (OR-4): `saveVisitEdit` (`@core/pipelines`) over this store's own
+   * writers — the batch through `staffEdit`, so the queue, the revision
+   * claim and the intent's name stay here, then the team note
+   * (`saveTeamNote`) and the tip (`recordTip`), each only once the batch
+   * landed. Every writer keeps its refusal on the visit's row; a refusal
+   * the plan earned before anything went out (a placement the call cannot
+   * carry) is filed there too, so the sheet says either the same way. The
+   * outcome goes back as it is, for the sheet's saved mark, its toast and
+   * its undo.
+   */
+  async saveVisit(command: SaveVisitEditCommand): Promise<VisitEditWrite> {
+    const write = await saveVisitEdit({
+      sendStaffEdit: (intent) => this.staffEdit(intent),
+      saveTeamNoteText: (appointmentId, text) =>
+        this.saveTeamNote(appointmentId, text),
+      sendSeatTip: (request) => this.recordTip(request),
+    })(command);
+    if (
+      write.visitEditWriteOutcome === VisitEditWriteOutcome.BatchRefused &&
+      write.batchRefusal !== null
+    ) {
+      this.refuse(command.appointmentId, write.batchRefusal);
+    }
+    return write;
   }
 
   /** `true` on success — the caller closes whatever asked for the reason. */

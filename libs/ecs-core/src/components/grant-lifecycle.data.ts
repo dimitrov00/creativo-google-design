@@ -1,18 +1,21 @@
 import { type UserId, type UtcEpochMs, GrantStatus } from '@core/primitives';
-import { GrantCapacityTerms } from './grant-capacity-terms.data';
+import { GrantCapacity, GrantCapacityTerms } from './grant-capacity-terms.data';
 import { GrantExpiryTerms } from './grant-expiry-terms.data';
 
 /**
  * A grant, where it stands — a flat variant slice of the `CouponGrant`
  * archetype, discriminated by `grantStatus` (was the nested `state`), every
- * variant-only field prefixed by its variant. An ACTIVE grant also carries
- * its {@link GrantLifecycle.Terms} at the root.
+ * variant-only field prefixed by its variant. An ACTIVE grant carries its
+ * {@link GrantLifecycle.Terms} at the root, and a USED one KEEPS them (OR-13:
+ * a multi-use one with `usesRemaining` 0), so a give-back restores the
+ * grant from its own document.
  *
  * Lifecycle (the transitions live in CouponGrantSystem — `isUsable`,
- * `burn`, `restore`, `expire`, `revoke`):
+ * `burn`, `restore`, and the bill's `settleBill` / `releasePlan`):
  *   `ACTIVE` ─ burn    → `ACTIVE` (multi-use, one fewer) OR `USED`
- *   `ACTIVE` ─ expire  → `EXPIRED` (only with an `EXPIRES_AT` expiry)
- *   `ACTIVE` ─ revoke  → `REVOKED`
+ *   `USED` / `ACTIVE` ─ restore → the exact inverse of `burn`
+ * `EXPIRED` and `REVOKED` stay stored vocabulary: no writer moves a grant
+ * there today (the expiry job and the admin revoke are not built).
  */
 export type GrantLifecycle =
   | GrantLifecycle.Active
@@ -33,9 +36,26 @@ export const GrantLifecycle = {
     };
   },
 
-  used(atUtcMs: UtcEpochMs, note: string): GrantLifecycle.Used {
+  /**
+   * Spent at `atUtcMs`, keeping the `terms` it was issued under — a
+   * multi-use grant with no use remaining (`usesRemaining` 0, whatever the
+   * terms handed in said), its expiry as it was.
+   */
+  used(
+    terms: GrantLifecycle.Terms,
+    atUtcMs: UtcEpochMs,
+    note: string,
+  ): GrantLifecycle.Used {
     return {
       grantStatus: GrantStatus.Used,
+      ...(terms.grantCapacity === GrantCapacity.SingleUse
+        ? GrantCapacityTerms.singleUse()
+        : {
+            grantCapacity: GrantCapacity.MultiUse,
+            usesRemaining: 0,
+            usesGranted: terms.usesGranted,
+          }),
+      ...GrantExpiryTerms.of(terms),
       usedAtUtcMs: atUtcMs,
       usedNote: note,
     };
@@ -75,7 +95,11 @@ export const GrantLifecycle = {
       case GrantStatus.Active:
         return GrantLifecycle.active(lifecycle, lifecycle);
       case GrantStatus.Used:
-        return GrantLifecycle.used(lifecycle.usedAtUtcMs, lifecycle.usedNote);
+        return GrantLifecycle.used(
+          lifecycle,
+          lifecycle.usedAtUtcMs,
+          lifecycle.usedNote,
+        );
       case GrantStatus.Expired:
         return GrantLifecycle.expired(
           lifecycle.expiredAtUtcMs,
@@ -93,9 +117,10 @@ export const GrantLifecycle = {
 
 export namespace GrantLifecycle {
   /**
-   * The terms a grant was issued under — its capacity when fresh and its
-   * expiry (the system I/O of `CouponGrantSystem.restore`, which brings a
-   * spent grant back exactly as it was issued; was `GrantTerms`).
+   * The terms a grant was issued under — its capacity (what is left of it)
+   * and its expiry; an ACTIVE grant holds them and a USED one keeps them, so
+   * `CouponGrantSystem.restore` brings a spent grant back from its own
+   * document (was `GrantTerms`).
    */
   export type Terms = GrantCapacityTerms & GrantExpiryTerms;
   export type Active = {
@@ -105,12 +130,12 @@ export namespace GrantLifecycle {
     readonly grantStatus: typeof GrantStatus.Used;
     readonly usedAtUtcMs: UtcEpochMs;
     /**
-     * Free-text redemption note («appointment abc123», «manual admin: …») —
-     * the caller composes the meaning; the state only records that a
-     * redemption happened and when. `''` when none was given.
+     * Free-text redemption note (`appointment:<id>` from the bill's settle,
+     * `seed`) — the caller composes the meaning; the state only records that
+     * a redemption happened and when. `''` when none was given.
      */
     readonly usedNote: string;
-  };
+  } & Terms;
   export type Expired = {
     readonly grantStatus: typeof GrantStatus.Expired;
     readonly expiredAtUtcMs: UtcEpochMs;

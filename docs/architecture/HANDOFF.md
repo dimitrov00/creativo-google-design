@@ -6,7 +6,7 @@ working on this codebase after the ECS / data-oriented migration. It is the
 migration record: what landed in which order and how each step was proved
 (§2, §3), the gate every change still passes and its baselines (§4), the
 operating rules (§5), the owner's rulings and open questions (§6), and what
-was carried forward as follow-up work (end of §3.3). Last updated 2026-10-25
+was carried forward as follow-up work (end of §3.3). Last updated 2026-10-26
 (flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
 Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
 `libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
@@ -28,7 +28,11 @@ codebase, the staff day on the wall clock — integrated, the FULL §4 gate
 green, the DOM differential and the dev smoke showing only its DEPARTURES,
 end of §3.3; the edge hardening, end of §3.3; pass E — the leftovers: every
 carried engineering item closed and the standing red baseline green at its
-root causes, the FULL gate green with no standing reds, end of §3.3).
+root causes, the FULL gate green with no standing reds, end of §3.3; pass F
+— the owner rulings of 2026-10-26, OR-1…OR-56 and DEP-F1…DEP-F39 in
+`decisions/2026-10-26-owner-rulings.md`: every open question of §3.3 and §6
+ruled, the rulings built in four waves and integrated, the FULL gate green
+with no standing reds and `verify:csp` passing, end of §3.3).
 
 ## 1. Read these, in this order
 
@@ -55,6 +59,13 @@ root causes, the FULL gate green with no standing reds, end of §3.3).
    as built: the brand per concept and the parse/`ofProven` policy (§0
    D-3/D-4), one name per data file (D-7), the tag rules incl. external
    contracts (D-8), the error homes (D-9), the 23 DEPARTURES and the ledger.
+10. `docs/architecture/decisions/2026-10-26-owner-rulings.md` — the owner's
+    rulings on every question this record and the plans left open (OR-1 …
+    OR-56, each with its evidence, options, scores, consequences and bg/en
+    copy), the 39 DEPARTURES they cause (DEP-F1 … DEP-F39), the deferred
+    list, the per-ruling ledger of what landed (BUILT) and the
+    implementation plan. A question it rules is not reopened in code
+    (`CLAUDE.md` §4).
 
 ## 2. Where the work stands
 
@@ -85,6 +96,7 @@ root causes, the FULL gate green with no standing reds, end of §3.3).
 | **Pass D — brands, shapes, discriminators, error homes**                                                            | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-d-brands-shapes.md` §9): seven wave-0 ecs-core packages, nine wave-1, three wave-2 and two wave-3 packages, the integrator's two rounds, the review's six fixes and a second review's eight (type level, the FULL gate re-run green after each); Law 7.4 brands across every type boundary (new `TrackMinute`, `MinuteOfDay.parseClock`, `DraftPersonKey`, `Tag`, `formatClock`), Law 7.3 for the staff day (OQ-14, one zone engine), Law 1 shapes (~180 new component files, one name per `*.data.ts`), Law 1/6.2 tags (~110 UI unions, the icon manifest's `iconAsset`), Law 7.5 error homes; 23 DEPARTURES (DEP-1…DEP-23); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (94 spec files, 1,470 captured tests) and the §6.4 dev-stack smoke against `cf91b43` show only DEP differences (end of §3.3)                                                                                                                    | the "Pass D" commit                                          |
 | **Edge hardening — read-time guards, trigger retry, the transactional team note**                                   | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/edge-hardening.md` §8): three packages (GUARD, RETRY, NOTE) and the integrator; `StoredDocumentSystem` guards every read of `appointments`, `customers` and `barberBusy` (web adapters, functions transactions, singles, the backfill walk, both trigger sides — a single/transactional read refuses `REPOSITORY_MALFORMED` with path + field, a list drops and reports, refusing only when the WHOLE answer keeps none — the search's halves together, the history on its first page); the three projection triggers deploy `retry: true` through `retryingTrigger` (transient rejects, decisive logged and swallowed, reruns idempotent); `appendTeamNote` is ONE web transaction (`updateAppointmentNote`) — an unreachable server refuses after ~7 s, never overwrites; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the review's six findings fixed and the gate re-run green (plan §8.6) (end of §3.3)           | the "edge hardening" commit                                  |
 | **Pass E — the leftovers**                                                                                          | **done — FULL gate green, no standing reds, runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-e-leftovers.md` §8): twelve wave-0 packages, E2E and the integrator (end of §3.3); every carried ENGINEERING item closed — the four other capacity triggers retry, `appointmentNotes` guarded at read, TTL and the `purgeAt` exemptions declared in `firestore.indexes.json`, the waitlist cart branded inside its door, the spec-only survivors, the avatar union, `BirthDate.toLocalDate`, `UiDayKey`, the alias specs, cached number formatters, `familyOfMedal` by a typed id, the reopen's busy merge, the programs rules shape-checked and the unused client write grants denied, the programs status words in the catalogues, words for 19 UI-reachable codes, a programs e2e journey — and the standing red baseline fixed at each root cause (typecheck `patterns`, the 6 unit reds, the 19 e2e reds); 9 DEPARTURES (DEP-1…DEP-9); `verify:p0`, `test:emulator` 65 + 301, `e2e:web` 61 passed, 0 failures (41 + the 19 former reds + the programs journey) | the "Pass E" commit                                          |
+| **Owner rulings (2026-10-26) — pass F, OR-1…OR-56, built in four waves**                                            | **done — FULL gate green, no standing reds, runbook §4.2–§4.10 PASS, `verify:csp` PASS** — 2026-10-26 (`decisions/2026-10-26-owner-rulings.md`, marked BUILT with a per-ruling ledger; end of §3.3): the owner delegated every open decision; 56 rulings close every owner question of §3.3, §6 and the plans' open-question sections; 39 DEPARTURES (DEP-F1…DEP-F38, DEP-F10b — a no-show gives back the grant and the voucher draw, the orchestrator's override of OR-13 — and DEP-F39, the integrator's month-only upcoming tile); the live gaps built at once — coupon grants burned at save (OR-13), the walk-in client record (OR-26), the notification inbox (OR-19), the hash CSP and security headers with `verify:csp` (OR-29–OR-31), the fail-closed production preflight as predeploy (OR-35), the client issue sink (OR-34), the required read guard (OR-33); four waves of disjoint packages and one integrator round; the six baselines the rulings change regenerated after review (OR-51 voice, OR-56 tile and rail)                              | the per-package "Pass F" commits                             |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it with no standing reds
@@ -116,7 +128,11 @@ UI residue plan's §8.1.) **The migration is COMPLETE**, and the phase-4b plan
 §4.R R4 constitution and rules edits are applied (§6, OQ-7/OQ-11). The first
 follow-up pass, the UI residue cleanup, closed four carried items (end of
 §3.3); everything else is follow-up work, not migration (the carried-forward
-list at the end of §3.3).
+list at the end of §3.3). Since pass F (2026-10-26) no carried owner item is
+waiting on a ruling: `decisions/2026-10-26-owner-rulings.md` rules every one
+(each carried list below names its OR id), and §6 keeps only the rulings'
+standing contracts, the reversible defaults the record flags, and the three
+pass E findings it does not rule.
 
 ## 3. What landed, in order
 
@@ -142,7 +158,11 @@ exported the retired flip-1 tokens and `*_COLLECTION` constants (deleted
 with the layer in Phase 4b); `markNotificationRead`,
 `loadWaitlistRequest`, `loadCouponGrant`, `readCustomers`,
 `CouponGrantSystem.transitionWrite` have no caller yet (grant
-burn/restore deferred, F1-2); a notification produced by the waitlist
+burn/restore deferred, F1-2 — RULED 2026-10-26: the grant is burned at save
+and given back on removal, cancel or no-show through `transitionWrite`,
+OR-13 / DEP-F10; `loadCouponGrant` reshaped to `loadCouponGrants`, OR-13;
+the receipt wired as `markNotificationsRead`, OR-19; `readCustomers` read by
+the walk-in record, OR-26; `loadWaitlistRequest` deleted, OR-28); a notification produced by the waitlist
 matcher itself is not covered end to end; optional spec hardening —
 assert `ownerCustomerId` equals the seeded record and that no offered time
 starts in Ivan's 13:00–14:00 break.
@@ -309,8 +329,9 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
   upcoming/past split on the instant (e); only the `datetime-local` form
   accepted (f). **Deploy precondition (runbook §3):** before the web
   carrying flip 4 deploys, `locations/<TenantConfig.DEFAULT.defaultLocationId>`
-  (`loc-center` in the seed; the production id is flatten-spec OQ-2's, not
-  yet confirmed) must exist in the target project with a valid IANA
+  (`loc-center` in the seed; the production id was flatten-spec OQ-2's —
+  RULED 2026-10-26: `loc-center` stays the production default, OR-35, and
+  the preflight's P1 checks it before every deploy) must exist in the target project with a valid IANA
   `timeZone` — otherwise an event save that names no location, or one with
   no document, is refused; deploy index #12's new key before the web.
   Integrator rulings (§8.1): the four new codes leave the edge as
@@ -329,13 +350,16 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
   (F4-2); the admin view-state `kind` unions are a flatten-pass candidate;
   rules tightenings for the programs collections, a location picker, i18n of
   the status words and a programs e2e journey are follow-ups (F4-2,
-  §10); pre-existing and outside the flip, seen in the smoke: an
+  §10 — the rules, the e2e journey and the words in the catalogues landed
+  with pass E; the picker is OR-37, the translated words OR-53); pre-existing and outside the flip, seen in the smoke: an
   intermittent dev-mode Angular assertion in the shared
   `SiteFooterComponent` on `/careers`, `/courses`, `/events` (the footer's
   locale toggle constructs `LanguageService`, whose constructor re-renders
   the footer's `*transloco` view inside its first create pass) and a stored
   `ui-lang = 'en'` not restored on a fresh load; the plan's §10 open
-  questions stand on their defaults.
+  questions stood on their defaults until all eleven closed (Q7, the e2e
+  journey, with pass E; the other ten by the owner rulings of 2026-10-26 —
+  OR-35, OR-37–OR-42, OR-53; flip-4 §10).
 
 ### 3.3 Phase 4 — client integration and legacy deletion (blueprint §6 Phase 4)
 
@@ -645,12 +669,14 @@ the catalogue's anonymous offering —, its OQ-6 — the history page's
 read-policy constants — and the two word sources of the rhythm's closed
 track marks are CLOSED by pass C, end of §3.3): the keys built from display words (the reward ticket's group key, the
 glance's held rewards by NAME — a coupon id / `RewardId` on the card
-contracts, OQ-4), whether the glance's voucher sum should refuse mixed
-currencies like the wallet's total (OQ-5), whether the
+contracts, OQ-4 — CLOSED, OR-15 / DEP-F11: keyed by coupon id), whether the glance's voucher sum should refuse mixed
+currencies like the wallet's total (OQ-5 — CLOSED, OR-17 / DEP-F12: the
+glance prints every currency), whether the
 wallet's `localeCompare` and the glance's input-order ties should follow the
-visit list's code-unit / id tie-breaks (OQ-7, owner), `CouponGrantSystem`'s `Partial<{ couponOccasion }>`
+visit list's code-unit / id tie-breaks (OQ-7 — CLOSED, OR-18 / DEP-F13:
+UTF-16 code units everywhere), `CouponGrantSystem`'s `Partial<{ couponOccasion }>`
 constraint (tighten it once the owner makes `ClientCardGrant.couponOccasion`
-required — `client-card.contracts.spec.ts` pins it optional today); the
+required — CLOSED, OR-16: required `CouponOccasion | null`); the
 Law 7.4 branding/T1 pass (UR-13 c) and the icon manifest's `kind` wire
 field (UR-13 a, OQ-5) are CLOSED by pass D (end of §3.3: brands across
 every type boundary, the staff day on the wall clock, the manifest's
@@ -662,14 +688,27 @@ the flip-1 ports parked with no caller
 pass B), `termsOf`, `isActive` and `transitionWrite` — waiting for grant
 burn/restore, `NotificationSystem.markRead` / `readBeforeSent` / `isUnread`
 beside the parked `markNotificationRead`, `VoucherSystem.issue` waiting for
-voucher issuing, and flip 1's other deferred behaviours (the reopen busy
+voucher issuing (CLOSED 2026-10-26 by the owner rulings' triage, OR-28 /
+DEP-F22: the grant is burned at save and given back on removal, cancel or
+no-show — `settleBill`, `releasePlan`, `BillingSystem.releasesHoldings`,
+OR-13 / DEP-F10 / DEP-F10b — and `expire`, `revoke`, `termsOf` and
+`isActive` deleted;
+`loadCouponGrant` reshaped to `loadCouponGrants`, OR-13; the read receipt
+wired as `markNotificationsRead` over `NotificationSystem.unreadIds` /
+`receiptAt`, `markRead` and `readBeforeSent` deleted, OR-19 / DEP-F14;
+`readCustomers` read by the walk-in record, OR-26; `loadWaitlistRequest`
+deleted, OR-28; `VoucherSystem.issue` and `redeem` deleted — issuing returns
+with points redemption or payments, OR-14), and flip 1's other deferred behaviours (the reopen busy
 write is CLOSED by pass E, DEP-5; trigger `retry: true` is CLOSED for the
 three projection triggers by the edge hardening and for the four other
-capacity triggers by pass E, DEP-1 — end of §3.3); the owner's confirmation
-of the 4a plan's §11.4 (a) time-sheet re-pin; a location picker (flip 4 —
+capacity triggers by pass E, DEP-1 — end of §3.3; the `leadTimeSampling`
+gate is CLOSED, OR-27 / DEP-F21: the sampler stays ungated; the refusal's
+busy body is CLOSED, OR-12: declined); the owner's confirmation
+of the 4a plan's §11.4 (a) time-sheet re-pin (CLOSED, OR-7: confirmed); a location picker (flip 4 —
 the programs rules tightenings, the programs status words moved into the
 catalogues and a programs e2e journey are CLOSED by pass E, E-15 / E-17 /
-`programs.spec.ts`; translating the words stays the owner's, flip-4 §10 Q2); from the UI
+`programs.spec.ts`; the picker is CLOSED, OR-37 / DEP-F27; translating the
+words is CLOSED, OR-53 / DEP-F37, flip-4 §10 Q2); from the UI
 residue cleanup (plan §8.1 "Left as found"): the lower-case unions
 compared as bare literals are CLOSED by pass D (every one an `as const`
 dictionary compared through its members, contract spellings kept where a
@@ -833,7 +872,9 @@ so that offline with the note document never cached it could write over the
 server's copy (CLOSED by the edge hardening, end of §3.3: one transaction,
 an unreachable server refuses; the editor's guard keeps its own limit); the client time sheet
 cannot see where a carried companion lands, so such a reschedule is now
-refused by the server instead of written wrong; an end-to-end
+refused by the server instead of written wrong (CLOSED 2026-10-26, OR-7 /
+DEP-F6: `MoveSystem.partyStarts` and the sheet frames every seat's start,
+so it offers only times the server accepts); an end-to-end
 `word-pipeline-error.spec.ts` case for the DST chain (CLOSED by pass E: one
 case through `PipelineError` and the real catalogues); and `ecs-migration.md` / `flips/flip-1-booking-core.md` still
 describe #22's earlier two-field shape, as the historical records they are.
@@ -1011,21 +1052,32 @@ This record's port count and §6 owner flags were corrected too.
   `DiscountSystem.samePromise`, `TriggerAttemptSystem.decisiveFailure`,
   `VoucherSystem.coverage`) but the seven `AppointmentLifecycleSystem` write
   verbs, `VoucherSystem.redeem` and `IntervalSetSystem.clip`, which pass C
-  re-ruled KEEP-PARKED (not copies — `flips/pass-c-ui-decisions.md` §0 D-3).
-- **Parked on purpose (KEEP-PARKED):** the flip-1 ports and grant verbs above
+  re-ruled KEEP-PARKED (not copies — `flips/pass-c-ui-decisions.md` §0 D-3)
+  — all three DELETED by the owner rulings (2026-10-26): the write verbs,
+  their specs re-targeted to `transition` (OR-20 / DEP-F15), `redeem` beside
+  `issue` (OR-14), `clip` folded into `intersect` (OR-21 / DEP-F16).
+- **Parked on purpose (KEEP-PARKED) — TRIAGED 2026-10-26 (OR-28 / DEP-F22,
+  item by item below):** the flip-1 ports and grant verbs above
   (`markNotificationRead`, `loadWaitlistRequest`, `loadCouponGrant`,
   `readCustomers`, `CouponGrantSystem`'s verb set), `NotificationSystem`'s
-  read stamp and `VoucherSystem.issue`; the catalogue edge-guard family
+  read stamp and `VoucherSystem.issue` (wired or deleted — the carried-forward
+  list above: OR-13, OR-14, OR-19, OR-26, OR-28); the catalogue edge-guard family
   (`DayHours.parseWeek` / `DayHoursInput`, `ServiceComposition.parse`,
   `openDay`, the `CATALOG_LOCATION_INVALID_HOURS_*` / `_TIME_OF_DAY` codes and
   the reserved `CatalogErrorCode.LocationInvalidTimezone` — delete the family
-  or wire it to an admin location writer, the owner's call);
+  or wire it to an admin location writer, the owner's call — RULED, OR-22 /
+  DEP-F17: `parseWeek` is live, the landing's, and closes with `EndMinute.of`,
+  so a 24:00 close is accepted; `ServiceComposition.parse` and the two dead
+  codes deleted; no admin location writer);
   `BookingFlowEventKind.SetDayWindows` with `FlexibleWhen.withWindows`
-  (never dispatched — the per-day window sheet, or delete both);
+  (never dispatched — the per-day window sheet, or delete both — RULED,
+  OR-23: the write verbs and the `DayWindows` writers deleted, the stored
+  `windows` field and its readers kept);
   `EngagementErrorCode.BadgeCategoryOrderNegative` (no producer since before
-  pass B); the type-level variants `CancellationAttribution.Shop` and
+  pass B — DELETED, OR-28); the type-level variants `CancellationAttribution.Shop` and
   `StreakTrackMarkKind.Kept` / `Repaired` / `Missed`; the matchMedia and
-  ResizeObserver test polyfills (live consumers).
+  ResizeObserver test polyfills (live consumers) — the last three KEPT, no
+  action (OR-28).
 - **Owner flags:** (a) `CLAUDE.md` + `AGENTS.md` — APPLIED 2026-10-24 on the
   owner's go-ahead (byte for byte; Law 2's illustrative example left as is):
   §4's "D1–D28" twice → "D1–D29" (D29, the customer record,
@@ -1040,7 +1092,10 @@ bookedAtUtcMs, seats: [{ …, priceCents, currency }]`; Law 10.1's
   illustrative (the real entity intersects seven slices). (b) The walk-in
   client path: the `customers` create/update grant for `worksTheBook` and
   `CustomerOrigin.StaffWalkIn` are kept with no web writer (flatten-spec
-  §5.5). (c) The client write grants for the catalogue
+  §5.5) — RULED 2026-10-26: the client grant is closed,
+  `allow create, update: if false` (OR-25 / DEP-F19, a security fix), and «Нов клиент»
+  creates a server-written walk-in record `customers/{CustomerId.forWalkIn(…)}`
+  with a `WALK_IN` seat occupant (OR-26 / DEP-F20). (c) The client write grants for the catalogue
   (`isCatalogManager`), `barberSchedules` / `scheduleExceptions`
   (`mayEditRoster`) and `settings` (`isAdmin`) — CLOSED by pass E (E-16,
   DEP-6): the catalogue, `barberSchedules` and `settings` deny every client
@@ -1048,8 +1103,13 @@ bookedAtUtcMs, seats: [{ …, priceCents, currency }]`; Law 10.1's
   declarations — CLOSED by pass E (E-3, DEP-3): the seven policies and the
   `purgeAt` exemptions are declared in `firestore.indexes.json`. (e)
   `apps/web/src/app/shell/impersonation-banner.ts` is an empty slot whose
-  read port pass B deleted — keep the slot or drop it. (f) The deploy order
-  of the deleted composites (above) and the waitlist id reseed.
+  read port pass B deleted — keep the slot or drop it (RULED, OR-24 /
+  DEP-F18: the banner and the `admin/impersonation` lib are deleted, `/admin`
+  redirects to `/admin/loyalty/rhythm`, the server ledger stays, and the
+  contract any future read-as must meet is in §6). (f) The deploy order
+  of the deleted composites (above) and the waitlist id reseed (RULED,
+  OR-36: moot for a first deploy — no hosted project ever existed; the
+  general rule is in runbook §3, step 6 and "Stored-id changes").
 - **Smaller follow-ups:** the stylelint override for `libs/ui/**` and
   `libs/features/**` (~73 literal metrics to move onto tokens, then drop it);
   `swipe-to-delete.directive.ts`'s four `@HostListener`s and the showcase's
@@ -1062,7 +1122,11 @@ bookedAtUtcMs, seats: [{ …, priceCents, currency }]`; Law 10.1's
   client option's required `email`); the visit-row presenter spec's legacy
   whole-visit `{ kind }` fixture words (CLOSED by pass E: the fixture takes
   `bookingStatus`); and the CSP `headers` block of
-  `firebase.json` (`csp-baseline.md`).
+  `firebase.json` (`csp-baseline.md` — CLOSED 2026-10-26: a static hash CSP
+  and the full security header set on Hosting, enforced at launch with
+  Trusted Types report-only, proven by `verify:csp` — OR-29 / DEP-F23,
+  OR-30, OR-31; `csp-baseline.md` rewritten). The stylelint override and the
+  showcase snapshots stay as they are (OR-28).
 
 **Pass C — components, stores, pipelines, adapters and the edge decide
 nothing (2026-10-24, integrated, the FULL gate green).** What
@@ -1172,10 +1236,12 @@ DOM-visible, so the §6.3 differential and §6.4 smoke were not re-run.
 
 **Carried from pass C — for pass D and the owner** (none blocks anything;
 the plan's §9.6 has each with its reason; every pass-D item below is
-CLOSED by pass D — end of §3.3 — and only the owner calls remain):
+CLOSED by pass D — end of §3.3 — and every owner call is RULED by the owner
+rulings of 2026-10-26):
 the KEEP-PARKED lifecycle write verbs (`AppointmentLifecycleSystem.confirm`
 … `markSeatOutcome`), `VoucherSystem.redeem` and `IntervalSetSystem.clip`
-— owner call to delete (OPEN); the system-file dictionary family (`CancelledSide`,
+— owner call to delete (CLOSED: deleted — OR-20 / DEP-F15, OR-14, OR-21 /
+DEP-F16); the system-file dictionary family (`CancelledSide`,
 `VisitRowOutcome`, `VisitTone`, …) → components; the team note's record
 built twice (CLOSED: pass D's one builder `noteRecord`, which the edge
 hardening's transactional append decides through too — end of §3.3); a dedicated duplicate-voucher-code error
@@ -1194,7 +1260,14 @@ optional `email?`, `actorRoles`); `actFromSheet`'s dismissal set
 (= `BookingLifecycle.didNotHappen` — CLOSED by pass D's `StaffVerb.didNotHappen`,
 verified by pass E); the plan's §8 open questions OQ-1…OQ-14
 with their defaults as applied (OQ-3 `staffWalkIn` vs D18, OQ-4 the
-account's next visit, OQ-5 the OTP cooldown among them — OPEN, owner).
+account's next visit, OQ-5 the OTP cooldown among them — CLOSED, every one:
+OQ-1, OQ-2, OQ-7, OQ-8, OQ-10, OQ-12 and OQ-14 affirmed or closed by pass D
+(OR-43), OQ-3 `staffWalkIn` deleted (OR-11 / DEP-F9), OQ-4 upcoming judged
+on each visit's own shop clock (OR-8 / DEP-F7), OQ-5 the server's 60 s
+window with a countdown (OR-9 / DEP-F8), OQ-6 the lowest free guest number
+(OR-6 / DEP-F5), OQ-9 the verdict reads the drawn day (OR-3 / DEP-F3),
+OQ-11 reserved ids refused by the id primitive (OR-44 / DEP-F31), OQ-13
+`OtpLimits.EscalateAfterSends` (OR-10); pass C §8).
 
 **Pass D — brands, shapes, discriminators, error homes (2026-10-25,
 integrated, the FULL gate green).** The last pass of the post-migration
@@ -1372,10 +1445,14 @@ deleted: `StaffDayStore.errors` and `DurationMinutes.between`. Specs:
 the ＋ at 23:57). **Carried (owner, UX):** opened at 23:56–23:59 the new
 visit's frame starts at 24:00, which the sheet's grid does not draw, so it is
 moved by typing «Начало» or changing the day — start it at 23:55 instead?
+(CLOSED 2026-10-26, OR-1 / DEP-F1: `VisitDraftSystem.walkInStart` seeds
+`min(next tick, the latest grain start the span still fits before 24:00)`
+— from 23:26 on the ＋ seeds 23:30–24:00 — and `snapUp` is deleted.)
 
 **Carried from pass D** (none blocks anything; the plan's §9.6 has each
 with its reason; every engineering item below is CLOSED by pass E — end
-of §3.3 — and only the owner calls and the parked items remain): `subjectCustomerId` stays
+of §3.3 — and only the owner calls and the parked items remain; since
+2026-10-26 every one of those is ruled or triaged but N-1): `subjectCustomerId` stays
 optional on the visit row/card options (pass E N-1: the client's
 appointments page passes none and relies on the absent path, so requiring
 it is the owner's call); the icons lib's raw-brand guard (CLOSED, E-5); the spec-only survivors
@@ -1388,14 +1465,23 @@ defaults as applied (OQ-1 `TrackMinute` a brand, OQ-3 pooled answers on
 each visit's own shop clock, OQ-6 `windowHours` raw, OQ-7 `cadenceOf` on
 instants, OQ-9 the editor save's orchestration in the component, OQ-13
 claims-tolerant role predicates, OQ-14 `E164` a component brand, OQ-15/16
-the stored currency, OQ-19 the photo titles in `'bg-BG'` among them); from
+the stored currency, OQ-19 the photo titles in `'bg-BG'` among them —
+CLOSED 2026-10-26, every one: OQ-1–OQ-5, OQ-10–OQ-13, OQ-15/16 and OQ-18
+affirmed (OR-43; OQ-3 with the recorded two-zone rule of §6), OQ-6 an
+`HourCount` brand (OR-45), OQ-7 cadence in shop calendar days (OR-46 /
+DEP-F32), OQ-8 one theme writer (OR-47 / DEP-F33), OQ-9 the save a
+pipeline (OR-4), OQ-14 `E164.parse` for foreign phones (OR-48 / DEP-F34),
+OQ-17 a `PersonKey` brand (OR-49), OQ-19 the photo titles in the active
+language (OR-5 / DEP-F4); pass-d §8); from
 the second fixer round: the waitlist cart's pre-door brands (CLOSED by pass
 E, E-4: raw strings in `WaitlistCall.Input`, branded inside the door),
 `familyOfMedal`'s by-string lookup (CLOSED by pass E, E-13 / DEP-4: a typed
 `MedalVm.familyId` — recorded for the owner, N-4), and the visit
-row's DS-input-valued tile tone and amount emphasis unions. Still
-owner calls from pass C: the KEEP-PARKED lifecycle write verbs,
-`VoucherSystem.redeem` and `IntervalSetSystem.clip`.
+row's DS-input-valued tile tone and amount emphasis unions (kept, OR-28). The
+owner calls from pass C — the KEEP-PARKED lifecycle write verbs,
+`VoucherSystem.redeem` and `IntervalSetSystem.clip` — are CLOSED: deleted
+(OR-20 / DEP-F15, OR-14, OR-21 / DEP-F16). `subjectCustomerId` (pass E N-1)
+is not ruled by the record and stays an owner question (§6).
 
 **Edge hardening (2026-10-25, `flips/edge-hardening.md`, ledger §8).** The
 before/after architecture comparison found three regressions at the I/O
@@ -1523,14 +1609,22 @@ re-run green against its baselines (plan §8.6's gate record).
 and §8.5 have each with its reason): `appointmentNotes` bodies unguarded
 (OQ-2 — CLOSED by pass E, E-2 / DEP-2); the four other capacity triggers
 without `retry` (OQ-1 — CLOSED by pass E, E-1 / DEP-1); the web report's sink and a worded
-"N visits could not be shown" (OQ-6, OQ-7); `REPOSITORY_MALFORMED`'s words
-shared with every `REPOSITORY_*` code (OQ-4) and a separate read code if
-wanted (OQ-5); guarded-by-default adapters (OQ-3); the sheet's «Запази»
-(`saveTeamNote`, a whole-note write of the draft) keeps its offline limit;
+"N visits could not be shown" (OQ-6, OQ-7 — CLOSED 2026-10-26: the
+first-party `reportClientIssues` sink behind a `ReportingErrorHandler`,
+OR-34 / DEP-F25; `BarberDayRead.unreadableCount`, the failed lanes drawn and
+one health row per affected chair, OR-2 / DEP-F2); `REPOSITORY_MALFORMED`'s words
+shared with every `REPOSITORY_*` code (OQ-4 — CLOSED, OR-54 / DEP-F38: each
+code worded for what it means) and a separate read code if
+wanted (OQ-5 — CLOSED, OR-43: `REPOSITORY_MALFORMED` reused, no new code);
+guarded-by-default adapters (OQ-3 — CLOSED, OR-33 / DEP-F24: the guard is a
+required parameter, the unguarded value fenced into test support); the sheet's «Запази»
+(`saveTeamNote`, a whole-note write of the draft) keeps its offline limit
+(kept, OR-28);
 under the functions emulator a transient rethrow from a retrying trigger
 is not redelivered (`tools/seed/settle.mjs` reports it), so a settle run may
 list the retrying functions (seven since pass E); the integration specs and the seed
-build the functions adapters unguarded by design (D-7).
+build the functions adapters unguarded by design (D-7 — reversed by OR-33 /
+DEP-F24: they read through the real guard).
 
 **Pass E — leftovers (2026-10-25, `flips/pass-e-leftovers.md`, ledger
 §8).** The owner's word: "proceed with leftovers". Pass E closed every
@@ -1643,35 +1737,36 @@ green, lint 0 errors, `run-many -t test` **12,721 passed, 0 failed** (ecs-core
 counts, `verify:p0`, `test:emulator` 65 + 301, `e2e:web` **61 passed, 0
 failed**.
 
-**What remains after pass E — the OWNER items** (plan §7.1, verbatim; none
-blocks anything):
+**What remained after pass E — the OWNER items** (plan §7.1, verbatim; none
+blocked anything; every one RULED on 2026-10-26 by
+`decisions/2026-10-26-owner-rulings.md` — the ruling follows each item):
 
-1. Location picker for the event's free-text location (flip 4) — HANDOFF §3.3 'Carried forward'; flip-4 F4-2, §10 Q1.
-2. customers create/update grant for worksTheBook and CustomerOrigin.StaffWalkIn kept with no web writer (the walk-in client-record path) — HANDOFF §3.3 pass B owner flag (b); flip-1 §10 Q7.
-3. Client time sheet cannot see where a carried companion lands, so such a reschedule is refused by the server — HANDOFF §3.3 'Carried from pass A'.
-4. KEEP-PARKED lifecycle write verbs (AppointmentLifecycleSystem.confirm/complete/markNoShow/cancel/reopenNoShow/reopenSettled/markSeatOutcome), VoucherSystem.redeem, IntervalSetSystem.clip — delete? — HANDOFF §3.3 'Carried from pass B/C/D'; pass-c §9.6; pass-d §9.6.
-5. Grant burn/restore and voucher issuing (features behind the parked code) — HANDOFF §6 flip-1 OQs; flip-1 §10 Q2.
-6. leadTimeSampling gate on sampleBarberLeadTimeDaily; the public busy body in an availability refusal's details — HANDOFF §3.3 'flip 1's other deferred behaviours'; flip-1 §10 Q3.
-7. Catalogue edge-guard family (DayHours.parseWeek/DayHoursInput, ServiceComposition.parse, openDay, CATALOG_LOCATION_INVALID_HOURS_*/_TIME_OF_DAY, reserved CatalogErrorCode.LocationInvalidTimezone) — delete or wire to an admin location writer — HANDOFF §3.3 'Carried from pass B' (KEEP-PARKED); §6.
-8. BookingFlowEventKind.SetDayWindows + FlexibleWhen.withWindows (never dispatched) — keep for the per-day window sheet or delete both — HANDOFF §3.3 'Carried from pass B'; §6.
-9. Pass B owner flag (e): apps/web/src/app/shell/impersonation-banner.ts empty slot — keep or drop — HANDOFF §3.3 pass B owner flags; §6.
-10. Pass B owner flag (f): deploy order of the three deleted composite indexes, and the waitlist request id reseed (every wl_ id changes) — HANDOFF §3.3 pass B owner flags; §6.
-11. CSP headers block of firebase.json (csp-baseline.md) — HANDOFF §3.3 pass B 'Smaller follow-ups'.
-12. Law 10.2 OQ-4: keys built from display words (the reward ticket's group key, the glance's held rewards by NAME → coupon id / RewardId on the card contracts) — HANDOFF §3.3 'Carried forward'; §6 decision-extraction OQs.
-13. Law 10.2 OQ-5: should the glance's voucher sum refuse mixed currencies like the wallet's total — HANDOFF §3.3 'Carried forward'; §6.
-14. Law 10.2 OQ-7: the wallet's localeCompare and the glance's input-order ties vs the visit list's code-unit/id tie-breaks — HANDOFF §3.3 'Carried forward'; §6.
-15. CouponGrantSystem's Partial<{ couponOccasion }> constraint — tighten once ClientCardGrant.couponOccasion is required — HANDOFF §3.3 'Carried forward'.
-16. Owner confirmation of the 4a plan's §11.4 (a) time-sheet re-pin — HANDOFF §3.3 'Carried forward'.
-17. Opened at 23:56–23:59 the new visit's frame starts at 24:00 (not drawn by the grid) — start it at 23:55 instead? — HANDOFF §3.3 'Fixed after pass D' (Carried, owner, UX).
-18. Pass C OQ-1…OQ-14 (OQ-1 cancel side by reason; OQ-2 isLive; OQ-3 staffWalkIn vs D18; OQ-4 /account's next visit past start; OQ-5 OTP cooldown 30 s vs 60 s; OQ-6 guest label number; OQ-7 off all day; OQ-8 recent visit's client; OQ-9 seeded-day verdict; OQ-10 flow store orchestration; OQ-11 isReadableId tier; OQ-13 OTP escalation sendCount ≥ 3) — HANDOFF §3.3 'Carried from pass C'; pass-c §8.
-19. Pass D OQ-1…OQ-19 (TrackMinute brand, stray helper files, pooled answers on own shop clock, parseIsoIn/toIso kept, telemetry Log level, windowHours raw, cadenceOf on instants, UiTheme copy, editor save orchestration, LoyaltyCatalog home, icon kebab codes, pipeline error unions, claims-tolerant roles, E164 component brand, stored currency for bills/catalogue, SeatKeyText families, reactive error lines, photo titles in 'bg-BG') — HANDOFF §3.3 'Carried from pass D'; pass-d §8, §9.6. _(Note: pass E deletes `toIso` under the task's spec-only-survivor rule — E-6 — and KEEPS `parseIsoIn` (an e2e calls it); OQ-4's default is otherwise untouched.)_
-20. Web report's sink (an ErrorHandler forwarding DATA_LOG_ERROR to telemetry) — HANDOFF §3.3 'Carried from the edge hardening' (OQ-6); edge-hardening §7.
-21. Worded 'N visits could not be shown' on the staff day — HANDOFF §3.3 edge hardening (OQ-7).
-22. REPOSITORY_MALFORMED's words shared with every REPOSITORY_* code (read oddly for a read) — HANDOFF §3.3 edge hardening (OQ-4).
-23. A separate REPOSITORY_DOCUMENT_MALFORMED read code — HANDOFF §3.3 edge hardening (OQ-5).
-24. Guarded-by-default adapters (vs unguarded default, DEP-11) — HANDOFF §3.3 edge hardening (OQ-3).
-25. Flip-4 OQ-11 / HANDOFF §6: confirm the production default location id and that its document holds a valid timeZone before the flip-4 web deploys — HANDOFF §6; flip-4 §10 Q11.
-26. Flip-4 OQs 1, 3–6, 8–10 (event location fallback, read-side validation, legacy libs, seed programs, clock/id bundles, event formatter, start form, positions locationIds wipe-on-edit) — flip-4-programs.md §10.
+1. Location picker for the event's free-text location (flip 4) — HANDOFF §3.3 'Carried forward'; flip-4 F4-2, §10 Q1. — **CLOSED: OR-37 / DEP-F27** (a `ui-choice-menu` over the active shops; existence checked by `ProgramsSystem` and the rules), **OR-38 / DEP-F28** (a shop that does not exist is refused).
+2. customers create/update grant for worksTheBook and CustomerOrigin.StaffWalkIn kept with no web writer (the walk-in client-record path) — HANDOFF §3.3 pass B owner flag (b); flip-1 §10 Q7. — **CLOSED: OR-25 / DEP-F19** (the client grant closed, the server the only writer), **OR-26 / DEP-F20** (the server-written walk-in record, `WALK_IN` seats).
+3. Client time sheet cannot see where a carried companion lands, so such a reschedule is refused by the server — HANDOFF §3.3 'Carried from pass A'. — **CLOSED: OR-7 / DEP-F6** (`MoveSystem.partyStarts`; the sheet frames every seat).
+4. KEEP-PARKED lifecycle write verbs (AppointmentLifecycleSystem.confirm/complete/markNoShow/cancel/reopenNoShow/reopenSettled/markSeatOutcome), VoucherSystem.redeem, IntervalSetSystem.clip — delete? — HANDOFF §3.3 'Carried from pass B/C/D'; pass-c §9.6; pass-d §9.6. — **CLOSED: deleted — OR-20 / DEP-F15, OR-14, OR-21 / DEP-F16.**
+5. Grant burn/restore and voucher issuing (features behind the parked code) — HANDOFF §6 flip-1 OQs; flip-1 §10 Q2. — **CLOSED: OR-13 / DEP-F10 / DEP-F10b** (burned at save, given back on removal, cancel or no-show), **OR-14** (issuing returns with points redemption or payments).
+6. leadTimeSampling gate on sampleBarberLeadTimeDaily; the public busy body in an availability refusal's details — HANDOFF §3.3 'flip 1's other deferred behaviours'; flip-1 §10 Q3. — **CLOSED: OR-27 / DEP-F21** (the sampler stays ungated), **OR-12** (no busy body; the details stay the flat scalar struct).
+7. Catalogue edge-guard family (DayHours.parseWeek/DayHoursInput, ServiceComposition.parse, openDay, CATALOG_LOCATION_INVALID_HOURS_*/_TIME_OF_DAY, reserved CatalogErrorCode.LocationInvalidTimezone) — delete or wire to an admin location writer — HANDOFF §3.3 'Carried from pass B' (KEEP-PARKED); §6. — **CLOSED: OR-22 / DEP-F17** (`parseWeek` live with a 24:00 close; the dead members deleted; no admin writer).
+8. BookingFlowEventKind.SetDayWindows + FlexibleWhen.withWindows (never dispatched) — keep for the per-day window sheet or delete both — HANDOFF §3.3 'Carried from pass B'; §6. — **CLOSED: OR-23** (the write verbs deleted, the stored `windows` kept).
+9. Pass B owner flag (e): apps/web/src/app/shell/impersonation-banner.ts empty slot — keep or drop — HANDOFF §3.3 pass B owner flags; §6. — **CLOSED: OR-24 / DEP-F18** (dropped; `/admin` redirects; the read-as contract in §6).
+10. Pass B owner flag (f): deploy order of the three deleted composite indexes, and the waitlist request id reseed (every wl_ id changes) — HANDOFF §3.3 pass B owner flags; §6. — **CLOSED: OR-36** (moot for a first deploy; the rule is in runbook §3).
+11. CSP headers block of firebase.json (csp-baseline.md) — HANDOFF §3.3 pass B 'Smaller follow-ups'. — **CLOSED: OR-29 / DEP-F23, OR-30, OR-31** (the hash CSP and the header set, enforced, proven by `verify:csp`).
+12. Law 10.2 OQ-4: keys built from display words (the reward ticket's group key, the glance's held rewards by NAME → coupon id / RewardId on the card contracts) — HANDOFF §3.3 'Carried forward'; §6 decision-extraction OQs. — **CLOSED: OR-15 / DEP-F11** (keyed by coupon id).
+13. Law 10.2 OQ-5: should the glance's voucher sum refuse mixed currencies like the wallet's total — HANDOFF §3.3 'Carried forward'; §6. — **CLOSED: OR-17 / DEP-F12** (the glance prints every currency).
+14. Law 10.2 OQ-7: the wallet's localeCompare and the glance's input-order ties vs the visit list's code-unit/id tie-breaks — HANDOFF §3.3 'Carried forward'; §6. — **CLOSED: OR-18 / DEP-F13** (UTF-16 code units everywhere).
+15. CouponGrantSystem's Partial<{ couponOccasion }> constraint — tighten once ClientCardGrant.couponOccasion is required — HANDOFF §3.3 'Carried forward'. — **CLOSED: OR-16** (required `CouponOccasion | null`).
+16. Owner confirmation of the 4a plan's §11.4 (a) time-sheet re-pin — HANDOFF §3.3 'Carried forward'. — **CLOSED: OR-7** (confirmed).
+17. Opened at 23:56–23:59 the new visit's frame starts at 24:00 (not drawn by the grid) — start it at 23:55 instead? — HANDOFF §3.3 'Fixed after pass D' (Carried, owner, UX). — **CLOSED: OR-1 / DEP-F1** (`walkInStart`: the latest half hour that fits).
+18. Pass C OQ-1…OQ-14 (OQ-1 cancel side by reason; OQ-2 isLive; OQ-3 staffWalkIn vs D18; OQ-4 /account's next visit past start; OQ-5 OTP cooldown 30 s vs 60 s; OQ-6 guest label number; OQ-7 off all day; OQ-8 recent visit's client; OQ-9 seeded-day verdict; OQ-10 flow store orchestration; OQ-11 isReadableId tier; OQ-13 OTP escalation sendCount ≥ 3) — HANDOFF §3.3 'Carried from pass C'; pass-c §8. — **CLOSED: OR-43** (OQ-1, 2, 7, 8, 10, 12, 14), **OR-11 / DEP-F9** (OQ-3), **OR-8 / DEP-F7** (OQ-4), **OR-9 / DEP-F8** (OQ-5), **OR-6 / DEP-F5** (OQ-6), **OR-3 / DEP-F3** (OQ-9), **OR-44 / DEP-F31** (OQ-11), **OR-10** (OQ-13).
+19. Pass D OQ-1…OQ-19 (TrackMinute brand, stray helper files, pooled answers on own shop clock, parseIsoIn/toIso kept, telemetry Log level, windowHours raw, cadenceOf on instants, UiTheme copy, editor save orchestration, LoyaltyCatalog home, icon kebab codes, pipeline error unions, claims-tolerant roles, E164 component brand, stored currency for bills/catalogue, SeatKeyText families, reactive error lines, photo titles in 'bg-BG') — HANDOFF §3.3 'Carried from pass D'; pass-d §8, §9.6. _(Note: pass E deletes `toIso` under the task's spec-only-survivor rule — E-6 — and KEEPS `parseIsoIn` (an e2e calls it); OQ-4's default is otherwise untouched.)_ — **CLOSED: OR-43** (OQ-1–5, 10–13, 15/16, 18), **OR-45** (OQ-6), **OR-46 / DEP-F32** (OQ-7), **OR-47 / DEP-F33** (OQ-8), **OR-4** (OQ-9), **OR-48 / DEP-F34** (OQ-14), **OR-49** (OQ-17), **OR-5 / DEP-F4** (OQ-19).
+20. Web report's sink (an ErrorHandler forwarding DATA_LOG_ERROR to telemetry) — HANDOFF §3.3 'Carried from the edge hardening' (OQ-6); edge-hardening §7. — **CLOSED: OR-34 / DEP-F25** (the `reportClientIssues` callable into Cloud Logging).
+21. Worded 'N visits could not be shown' on the staff day — HANDOFF §3.3 edge hardening (OQ-7). — **CLOSED: OR-2 / DEP-F2.**
+22. REPOSITORY_MALFORMED's words shared with every REPOSITORY_* code (read oddly for a read) — HANDOFF §3.3 edge hardening (OQ-4). — **CLOSED: OR-54 / DEP-F38.**
+23. A separate REPOSITORY_DOCUMENT_MALFORMED read code — HANDOFF §3.3 edge hardening (OQ-5). — **CLOSED: OR-43** (no new code).
+24. Guarded-by-default adapters (vs unguarded default, DEP-11) — HANDOFF §3.3 edge hardening (OQ-3). — **CLOSED: OR-33 / DEP-F24** (no default; reverses edge DEP-11).
+25. Flip-4 OQ-11 / HANDOFF §6: confirm the production default location id and that its document holds a valid timeZone before the flip-4 web deploys — HANDOFF §6; flip-4 §10 Q11. — **CLOSED: OR-35 / DEP-F26** (`loc-center`; the preflight's P1).
+26. Flip-4 OQs 1, 3–6, 8–10 (event location fallback, read-side validation, legacy libs, seed programs, clock/id bundles, event formatter, start form, positions locationIds wipe-on-edit) — flip-4-programs.md §10. — **CLOSED: OR-37 / OR-38** (Q1), **OR-39** (Q3), **OR-40** (Q4, Q6, Q8, Q9), **OR-41 / DEP-F29** (Q5), **OR-42 / DEP-F30** (Q10).
 
 New for the owner from pass E (plan §7.2 and ledger §8): N-1 —
 `subjectCustomerId` cannot be required on `VisitRowOptions` /
@@ -1688,16 +1783,26 @@ owner's acceptance of review 2 (revert: the six PNGs from `6d64f69f`); the
 `IDENTITY_CLAIMS_PROMOTION_FAILURE` words (an `S.Internal` code the
 onboarding printed raw) and the two identity lines' formal «вие»; whether
 `LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE` / `_PREVIEW_STALE` should get
-words (the admin rhythm page says nothing for them on purpose).
+words (the admin rhythm page says nothing for them on purpose). Ruled
+2026-10-26: the six baselines are ACCEPTED, which decides
+`client-card-revision-3.md` §7.7 rule 2, and their two defects — an
+upcoming tile with no month or year, a filter row of one chip — are fixed,
+each regenerating its own baselines (OR-56); the identity words and the
+formal «вие» go to one «ти» voice (OR-51); both rhythm codes are worded and
+the page's switch is exhaustive (OR-52 / DEP-F36). N-1, N-2 and N-5 are not
+ruled by the record and stay open (§6); N-3 and N-4 record changes pass E
+made, each reverted by one edit (pass E §7.2).
 
-**PARKED** (plan §7.3, verbatim):
+**PARKED** (plan §7.3, verbatim; TRIAGED 2026-10-26 by OR-28 / DEP-F22 —
+an item the triage wired or deleted says so, every other item is kept with
+no action):
 
 - `ZonedTimeSystem.parseIsoIn` — KEPT (e2e support calls it).
 - `GridLayoutSystem.closedRuns` on `MinuteRun` (no host feeds past-midnight ends).
 - `ShopDayFrame` stays in `booking-read-set.pipeline.ts` (deliberate).
 - `ecs-migration.md` / `flip-1-booking-core.md` describing #22's earlier shape (historical records).
-- Flip-1 parked ports and grant verbs; `NotificationSystem` read stamp; `VoucherSystem.issue` (owner features).
-- `EngagementErrorCode.BadgeCategoryOrderNegative`; `CancellationAttribution.Shop`, `StreakTrackMarkKind.Kept/Repaired/Missed`.
+- Flip-1 parked ports and grant verbs; `NotificationSystem` read stamp; `VoucherSystem.issue` (owner features). — **Wired or deleted:** the grant verbs (OR-13), the read receipt (OR-19), `readCustomers` (OR-26), `loadCouponGrant` reshaped (OR-13); `VoucherSystem.issue` / `redeem` (OR-14), `expire` / `revoke` / `termsOf` (OR-13) and `loadWaitlistRequest` (OR-28) deleted.
+- `EngagementErrorCode.BadgeCategoryOrderNegative`; `CancellationAttribution.Shop`, `StreakTrackMarkKind.Kept/Repaired/Missed`. — **`BadgeCategoryOrderNegative` deleted** (OR-28); the closed vocabularies kept.
 - matchMedia and ResizeObserver test polyfills (live consumers).
 - The stylelint override for `libs/ui/**` and `libs/features/**` (a DS styling pass; taste risk).
 - Showcase Playwright snapshots refresh (only if a run fails, after viewing).
@@ -1705,12 +1810,14 @@ words (the admin rhythm page says nothing for them on purpose).
 - `TRANSIENT_CODES` / `RETRYABLE_CODES` spelled through `HttpsStatus` (optional; never widened).
 - `setLegClient` keeping `DraftPersonKey.of`.
 - Spec titles naming retired names.
-- The sheet «Запази» offline limit; the functions emulator not redelivering a transient rethrow (`settle.mjs` will now list up to seven retrying names); integration specs and seed building adapters unguarded.
+- The sheet «Запази» offline limit; the functions emulator not redelivering a transient rethrow (`settle.mjs` will now list up to seven retrying names); integration specs and seed building adapters unguarded. — **The last clause is reversed** by OR-33 / DEP-F24: they read through the real guard.
 - `SiteFooterComponent` dev-mode assertion on `/careers`, `/courses`, `/events`; a stored `ui-lang = 'en'` not restored (pre-existing; re-check against `index.html:24`'s pre-paint script before any work).
 - R-1 (E-1): the capacity sweep's per-barber failure handling.
 - `libs/ui/patterns/src/lib/metric/metric.ts:271` per-call `Intl.NumberFormat` (a DS component, outside E-12's wording-helper scope).
 
-**Carried from pass E** (engineering, none blocks anything; ledger §8.6):
+**Carried from pass E** (engineering, none blocks anything; ledger §8.6;
+the owner rulings keep R-1 as it is, OR-28, and rule nothing else here —
+the rest stay engineering follow-ups):
 R-1 — for the Location / Settings capacity triggers the retry covers the
 sweep's zone, policy and roster-list reads, not one barber's commit (still
 logged and healed by the 03:00 `sweepCapacityDaily`); the glance e2e seed
@@ -1719,6 +1826,276 @@ typechecks `apps/web/e2e/**`; three per-call `Intl.ListFormat` sites
 (`admin-rhythm.words.ts`, `rhythm-rule.words.ts`, `staff-block-editor.ts`);
 `translate-coded-error.spec.ts`' `AUTH_FLOW_ERROR_CODES` does not list the
 two newly worded identity codes.
+
+**Pass F — the owner rulings (2026-10-26,
+`docs/architecture/decisions/2026-10-26-owner-rulings.md`).** The owner
+delegated every open decision. Eight research clusters scored each
+question's real options on seven criteria (correctness, security,
+performance, one source of truth, UX, simplicity, reversibility); the chief
+architect re-read the evidence, settled the conflicts between clusters
+(record §0) and issued 56 rulings, OR-1 … OR-56, covering every owner item
+of the carried lists above and of §6, and every open question of the plans
+(`pass-e-leftovers.md` §7, `pass-c-ui-decisions.md` §8,
+`pass-d-brands-shapes.md` §8, `edge-hardening.md` §7,
+`law-10-decision-extraction.md` §8, `flip-1-booking-core.md` §10,
+`flip-4-programs.md` §10, `flatten-spec.md` OQ-2, the 4a plan's §11.4 (a),
+`client-card-revision-3.md` §7.7 rule 2), each plan marked in place. The
+rule of the round: anything that closes a live correctness, security or
+revenue gap is built now, whatever its size — the coupon-grant leak
+(OR-13), the walk-in data loss (OR-26), the notification inbox (OR-19), the
+`customers` write grant (OR-25), the CSP and security headers (OR-29–OR-31),
+the failed chair drawn as a free day (OR-2). The rulings were built in four
+waves of disjoint packages (the record's implementation plan): W0 the
+ecs-core contracts, systems and catalogue keys; W1 the pipelines, features,
+rules and platform; W2 the walk-in record's server and editor halves, the
+save pipeline's wiring, the theme writer, the operations (runbook, the
+preflight, the index rule) and the visit row; W3 the required read guard,
+the «ти» voice pass and these docs — one commit per package, the FULL gate
+of §4 (`verify:csp` from wave 1 on) at every wave boundary. Two rulings
+close no carried item and stand as rules: Firebase Auth through
+`initializeAuth` with no popup/redirect resolver, so no third-party script
+or iframe loads on a phone (OR-32), and the fixed rules for every new
+refusal's copy — «ти», at most two short sentences, «Опитай пак.» only when
+a retry can succeed, bg and en in the same commit (OR-55, recorded at the
+top of `word-pipeline-error.spec.ts`).
+
+**The orchestrator's override (2026-10-26, delegated owner authority).**
+OR-13 flagged one product default — a no-show keeps the grant burned, like
+the voucher draw. It is overridden: `BillingSystem.releasesHoldings`
+releases a visit's holdings on cancel AND no-show, on the staff and the
+server paths alike (DEP-F10b) — a reward or a voucher balance is value the
+client earned or bought, consumed only by a visit that happened; a no-show
+penalty belongs to the shop's explicit policy, never to a silent forfeit. A
+reopen of a cancelled or no-showed visit does not re-burn (the barber
+re-adds the reward), and a completed visit keeps its grant `USED`.
+
+**The DEPARTURES** (record, each pinned by its package's specs):
+
+- DEP-F1 (OR-1) — from 23:26 the ＋ seeds the latest half hour that fits
+  (23:30–24:00); `staff-dashboard.spec.ts`'s late-evening case re-pinned to
+  1410/1440.
+- DEP-F2 (OR-2) — a failed chair draws no gap cards and is no longer listed
+  as off: it shows a health row; a partial drop shows a count; the dead
+  `staff.day.laneFailed` key is wired; edge OQ-7's default reversed and
+  edge D-3's promise made true.
+- DEP-F3 (OR-3) — the frame verdict speaks about the drawn day and chair;
+  the create sheet's frame follows its draft.
+- DEP-F4 (OR-5) — in the English UI the editor's photo titles and money
+  read en-GB; Bulgarian unchanged.
+- DEP-F5 (OR-6) — after the first guest is removed, the next one added is
+  «Гост 1» (the lowest free number on all three surfaces).
+- DEP-F6 (OR-7) — on a companion-first move `data-start` carries the
+  party's earliest instant, the stored `utcEpochMs`.
+- DEP-F7 (OR-8) — a live visit that has begun on its shop's clock is no
+  longer shown or counted as upcoming.
+- DEP-F8 (OR-9) — the OTP countdown is 60 s, server-owned, and a throttled
+  resend restarts it instead of showing an error.
+- DEP-F9 (OR-11) — staff placement allows conflicting services everywhere,
+  a recorded departure from §9 D18 (the live behaviour since flip 1).
+- DEP-F10 (OR-13) — a coupon grant is burned at save and given back on
+  removal or cancel (departs from F1-2's "no grant write" and from the
+  design doc's "burn on completion"); DEP-F10b — a no-show gives the grant
+  back to the wallet and the voucher draw back to the balance.
+- DEP-F11 (OR-15) — in en, held rewards are excluded from «enough for», and
+  different coupons that share a name show as separate tickets.
+- DEP-F12 (OR-17) — the glance shows voucher money in every currency.
+- DEP-F13 (OR-18) — only exact ties reorder, by UTF-16 code units.
+- DEP-F14 (OR-19) — the read stamp is one-shot and never predates the
+  message; the menu row routes to `/account/notifications`; the read
+  stamp's KEEP-PARKED status reversed.
+- DEP-F15 (OR-20) — the seven lifecycle write wrappers are deleted
+  (reverses pass C D-3's KEEP-PARKED).
+- DEP-F16 (OR-21) — `IntervalSetSystem.clip` is deleted (reverses pass C's
+  KEEP-PARKED).
+- DEP-F17 (OR-22) — `parseWeek` is ruled live, and a 24:00 close is
+  accepted.
+- DEP-F18 (OR-24) — the impersonation slot is dropped and `/admin`
+  redirects to `/admin/loyalty/rhythm`.
+- DEP-F19 (OR-25) — no client writes `customers`; the server is the only
+  writer (closes pass B flag (b)).
+- DEP-F20 (OR-26) — a new `SeatSubject` variant, `WALK_IN`, and the
+  server-written walk-in client record (flatten-spec §5.5 anticipated it).
+- DEP-F21 (OR-27) — the lead-time sampler stays ungated (supersedes the
+  blueprint's "gated off").
+- DEP-F22 (OR-28) — the KEEP-PARKED status of the triaged items reversed.
+- DEP-F23 (OR-29) — `csp-baseline.md`: no nonces, no Google Fonts, style
+  `'unsafe-inline'`.
+- DEP-F24 (OR-33) — a bare adapter no longer typechecks; the seed and the
+  integration specs read through the real guard, and a malformed seeded
+  body refuses the seed run (reverses edge-hardening DEP-11 / D-7).
+- DEP-F25 (OR-34) — the web gains a custom `ErrorHandler`, and scrubbed
+  issue structs leave the device.
+- DEP-F26 (OR-35) — deploys refuse to run until the preflight passes.
+- DEP-F27 (OR-37) — the event's shop is a picker and `/events` shows the
+  shop at multi-shop tenants (takes back flip-4 F4-2's exclusions, extends
+  pass E DEP-7).
+- DEP-F28 (OR-38) — an event naming no existing shop is refused (retires
+  half of flip-4 F4-1 (c)).
+- DEP-F29 (OR-41) — the dev seed creates programs through `ProgramsSystem`
+  (reverses flip-4 Q5).
+- DEP-F30 (OR-42) — a position's shop scope is editable and never wiped,
+  and `/careers` names the shops at multi-shop tenants (retires the F4-8
+  wipe).
+- DEP-F31 (OR-44) — a book or reschedule naming a reserved location id gets
+  the parse refusal (invalid request) instead of not found.
+- DEP-F32 (OR-46) — `avgCadenceDays` is a mean of shop calendar-day gaps,
+  same-day pairs excluded.
+- DEP-F33 (OR-47) — a visitor who never toggled the theme follows the
+  system setting live.
+- DEP-F34 (OR-48) — a tampered draft phone rehydrates as null, and the
+  review step asks again.
+- DEP-F35 (OR-50) — the E-18 refusal lines are edited (overrides pass E
+  DEP-8's "no existing string changes" for three codes).
+- DEP-F36 (OR-52) — the rhythm page words both refusals (reverses pass E
+  §8.2).
+- DEP-F37 (OR-53) — the programs status words are translated (reverses
+  flip-4 F4-7).
+- DEP-F38 (OR-54) — each `REPOSITORY_*` code is worded for what it means
+  (reverses edge OQ-4's default).
+- DEP-F39 (OR-56 b, the integrator's at landing) — the upcoming tile names
+  the month and never the year: the 44 pt DS tile printed «юни 2030 г.» as
+  «юни 20…»; a booking lies within the horizon, and the row's accessible
+  name keeps the year (R59). Beside it (the fixer's note): on the shop's
+  today the client fact line says «днес» / "today" in place of the weekday
+  («Иван · днес, 11:00», `whenShort`), as the row's accessible name and
+  the staff lines do; `visit-row.presenter.spec.ts` pins it in bg and en.
+
+**Deferred** (the record's list — L-size work that deserves its own design;
+none closes a live gap): a server-atomic visit save (the north star after
+OR-4); adopting the walk-in record at registration; enforcing Trusted Types
+and the DS map attribution footnote; App Check on `reportClientIssues` and
+the callables; a nightly sweep that settles stale CONFIRMED visits (a
+product decision); voucher issuing and selling; impersonation read-as (its
+contract is in §6); an admin location writer, outside venues and the
+programs admin's date/time fields; a generic `ListAnswer<E>` dropped count;
+HSTS `preload`.
+
+**The integration (2026-10-26).** Every package delivered; the integrator
+resolved the open items the packages handed over (the record's ledger has
+the per-ruling list) and ran the FULL gate on the integrated tree:
+
+- **Bridges the contracts-first waves left:** the `@core/testing` double
+  spec on the reshaped ports (`loadCouponGrants`, `markNotificationsRead`,
+  `BarberDayRead`, the new doubles); the rest of the brands package's patch
+  (`HourCount` through policy, seat outcome, the recompute job and the
+  pipelines, `PersonKey` in the spellers and the dashboard, `E164.parse` at
+  the landing); the seed's USED grants keeping their terms; the
+  `WaitlistRequestReadPorts` remnant of `firestore-ports.ts`; the client
+  card's glance keyed by held coupon ids; the `CUSTOMER_SEARCH_PORTS` token,
+  its lazy wiring and the dashboard's merged account + record search
+  (`client-search.ts`); the e2e `seedWaitlistMatch` helper; the dev seed
+  writing the programs; `nx sync` (the theme, inbox and i18n references).
+- **The wire allowlist:** `IDENTITY_OTP_RATE_LIMITED: ['retryAfterSeconds']`
+  (OR-9 — the countdown restarts from the server's seconds, and
+  `translateCodedError` / `wordFlowFailure` fill the copy's `{{seconds}}`
+  from it) and `seatIndex` on `BOOKING_SLOT_UNAVAILABLE` (OR-12).
+- **Rulings the packages flagged, decided:** DEP-F31 as the record words it
+  (an unparseable shop id is `BOOKING_INVALID_INPUT` on `locationId`,
+  unread, at book and reschedule); DEP-F39 (above); a second ACCOUNT holder
+  riding a create as a guest sends no contact, so no account mints a second,
+  walk-in record (OR-26); the grant offer rule moved into
+  `CouponGrantSystem.offered` (Law 4: the pipeline only coordinates);
+  `AppointmentLifecycleSystem.endsCancelled` and
+  `VisitListSystem.soonestFirstByStart` deleted (no caller left); the
+  console telemetry writes a client error line as ONE whole ERROR entry, so
+  Error Reporting groups by the client's frame, never the server's stack
+  (OR-34); the edge's throttle answers an inline `() => boolean`, no port
+  function type outside the ports tier (Law 9.3).
+- **`verify:csp`, first run end to end:** the Hosting emulator moved to
+  port 5050 (macOS' AirPlay Receiver holds 5000); the smoke reads every
+  response off the network (Chromium's cache never persists
+  `Strict-Transport-Security`) and skips `blob:` URLs the page minted
+  itself. Zero violations beyond the tolerated MapLibre Trusted Types
+  report-only baseline (`docs/security/csp-baseline.md`).
+- **The grep gates, refined, not weakened:** `save-visit-edit.pipeline.spec.ts`
+  is excluded from the two wire-spelling gates (§4.2, §4.5) — `dayKey` there
+  is the staff sheet's draft day (`StaffEditDraft`), never stored — and the
+  §4.7 Error-subclass pattern matches `Error` as a whole word, so Angular's
+  own `ErrorHandler`, which `ReportingErrorHandler` extends, is not taken for
+  one. Every reference count is unchanged.
+- **Package departures (each pinned by its specs):** `releasesHoldings`
+  reads `(before, after)`; `GrantLifecycle.used` normalises a multi-use
+  grant to no use left; `settleBill` writes nothing for a new grant line
+  whose grant was not read; `settleDiscounts` refuses an unknown grant as
+  `invalidCommand('grant')` too; `VoucherSystem.spendableSums` replaces
+  `spendableSum` (OR-14/17, W0-ENGAGEMENT). The outcome dictionary keeps its
+  own one-name file, and a note-only save still sends the batch first (the
+  chair-wide MOVE / RESIZE_END ride along, as the dashboard's net pins —
+  W0-VISITEDIT). The health row's disc uses the registry's
+  `running_with_errors` (Material `error` is not in the pinned glyph set;
+  W1-STAFF-DAY). The time sheet memoises per party
+  start set, not per minute (W1-BOOKING). The editor's locale is read once,
+  as the date picker's already was (W1-EDITOR). The i18n catalogues
+  revalidate, the MapLibre report-only sinks are tolerated by name, the
+  service worker is off under the emulators and the e2e hook is keyed on
+  `environment.emulators.enabled` (W1-PLATFORM, `csp-baseline.md`). The
+  preflight checks the zone through `ZonedTimeSystem.checkZone` (no
+  `TimeZone.parse` exists) in its canonical spelling, requires exactly one
+  `cloudfunctions.net` host and reads the location through the guard
+  registry (W2-OPS); with P1–P2 in the functions predeploy, `loc-center` and
+  the seven TTLs must be ready before deploy step 4. Walk-in rows are keyed
+  by the record, never the name, «Без профил» is the event head's last fact
+  line, and the new-client ✓ waits for a valid e-mail (W2-WALKIN-UI). The
+  web's shared reads keep the default `AS_STORED`, which reads only the
+  collections no guard covers and raises a defect on the guarded ones — a
+  forgotten guard fails loudly instead of reading unguarded (W3-GUARDS). The
+  «Нещо се обърка от наша страна» family line went to the four
+  `*_REPOSITORY_FAILURE` / `OTP_DESTINATION_CORRUPTED` codes only;
+  `REPOSITORY_*` keep OR-54's words (W3-VOICE).
+- **The fixer round (review findings, each pinned by its specs):** a
+  walk-in's record id is KEYED — HMAC-SHA-256 under the Secret Manager
+  secret `WALKIN_ID_KEY` (`WalkInKeyPorts.walkInHash`, bound to
+  `commitBooking` and `staffEditAppointment` only), never the plain hash a
+  client could brute-force a guest's phone back out of (OR-26 "Built"); the
+  secret is the owner's to create before the first functions deploy
+  (runbook step 4), and the emulator reads a fixed TEST value that
+  `write-functions-env.mjs` writes to the build's `.secret.local` for a
+  `demo-*` project (never deployed). The page's issue reporter drops the
+  measured MapLibre report-only baseline (`MAPLIBRE_REPORT_ONLY_SINKS`, ONE
+  list with the CSP smoke's, behind its own Node-loadable entry point
+  `@creativo/infrastructure/firebase-app/csp-baseline`; OR-30 "Built").
+  The day's health row follows OR-2's copy placement — the meta is
+  `staff.day.unreadableHint`, the count sits under the chair's name — and
+  its `role="status"` card nests in a plain `<li>`, so the all-day strip
+  stays a list. Every inbox row is described (`aria-describedby`) by its age
+  and, unread, «Ново» (`notifications.unread`, OR-19's copy addendum). A
+  shop's name has one wording helper, `shop-name.format.ts`
+  (`@creativo/features/shared/catalog`), read by `/careers`, `/events` and
+  `/admin/programs`, each reading its data language as
+  `Tag.or(Locale, lang, Locale.Bg)`.
+- **Baselines regenerated after viewing old and new (exactly the rulings'
+  differences):** `auth-identify-{light,dark}` and
+  `account-dashboard-populated-{light,dark}` (OR-51: «Записвай и управлявай
+  часовете си в салона.», «Ще ти изпратим…», «Продължавайки, приемаш…»,
+  «Избери бръснар, услуга и час», «Завърши профила си»);
+  `appointments-list-populated-{light,dark}` (OR-56: no one-pill rail, the
+  tile «юни / 1», the line «Иван Колев · сб, 10:00»).
+- **The dev-stack smoke** (`pnpm run dev`, custom-token sign-in, the seed
+  restored and the stack stopped after): the staff day's health row for a
+  chair holding a malformed visit («1 посещение не може да се покаже»); a
+  coupon applied and saved (grant `USED`, `usedNote appointment:<id>`),
+  removed (`ACTIVE`), re-applied (`USED`) and the visit no-showed (`ACTIVE`,
+  the bill's grant line dropped); `/account/notifications` listing and
+  receipting both unread rows once; the OTP countdown at «Нов код след 60
+  сек»; `/admin` → `/admin/loyalty/rhythm`; the event shop picker («Без
+  конкретен салон», Център, Младост); the position chips («Всеки салон»);
+  `/careers` naming the shop with «Отворена»; `/account`'s upcoming card
+  skipping a visit begun an hour earlier on its shop's clock. The walk-in
+  «Нов клиент» with phone and e-mail is the e2e journey
+  `staff-walk-in.spec.ts`.
+- **Follow-ups (no ruling needed, none blocks):** the health rows read the
+  shown day's lanes only — the three-day and week grids give another visible
+  day no row; a hop to a peer visit does not re-probe its bill's grants; a
+  stored `WALK_IN` seat reopens as a guest by label (keying it by its record
+  and carrying the record's contact would keep the link through an undo);
+  the staff edit's audit fact does not target an added walk-in's record;
+  `StaffDashboard.commandsFor` and `reversibleSave` survive only for the
+  characterisation specs; `ClientIssue.release` is sent as `null` (no build
+  id stamped); the Firestore connectivity probe's `cleardot.gif` and the
+  service worker's Trusted Types report are listed in `csp-baseline.md`;
+  `libs/ui/patterns` `gauge.css` sits 45 bytes over its 10 kB warning
+  budget (unchanged); the OR-34 ops half (the `client_issue_count` metric
+  and alert) and the privacy-policy line are the owner's (runbook).
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -1740,16 +2117,44 @@ pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
 # and §4.9 (since the UI residue cleanup: no shim or legacy table, no kind/status
 # discriminator, no undecorated class, no ambient clock, no hand-built load
 # slice — the four rules proven under both ESLint base paths, with a canary)
+# and §4.10 (since pass F, OR-33: the read guard is a required parameter, the
+# unguarded registries live in test support only)
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
 pnpm run e2e:web
+pnpm run verify:csp   # since pass F (OR-31): the static hash gate on the production
+                      # and csp-smoke builds, then the hosting-emulator smoke
+# before any deploy, against the target project (OR-35, DEP-F26; also the
+# hosting and functions predeploy of firebase.json, which refuses the deploy):
+pnpm run preflight -- --project "$PROJECT_ID"
 ```
+
+**`verify:csp` and the preflight (pass F).** `pnpm run verify:csp`
+(`docs/security/csp-baseline.md`) builds production and the `csp-smoke`
+configuration, proves each `index.html`'s inline-script hashes against
+`firebase.json`'s `script-src` (`tools/verify/csp/check-csp.mjs` — CI runs
+this static half after every build), writes the emulator superset config
+(`tools/verify/csp/emulator-config.mjs`, its difference from production
+asserted) and runs `apps/web/e2e/csp/csp-smoke.spec.ts` on a desktop and a
+Pixel 7 under Hosting: any violation of either disposition, a missing
+security header or a wrong `Cache-Control` fails it. It starts every
+emulator, Hosting included, so it runs alone like the journeys above. The
+production preflight (`tools/verify/preflight/preflight.mjs`, runbook §3)
+reads the target project — P1 the default location and its zone, P2 the
+seven TTL policies `ACTIVE`, P3 every declared composite `READY`, P4 the
+bundle names the project, P5 `connect-src` names its callables host, P6 no
+emulator variable and no placeholder or `demo-*` project — and exits 1
+unless every row passes. Its pure checks run in `run-many -t test`
+(`verify-tools`, `preflight.spec.mjs`); against the emulator project it
+stops at P6 by design, so the gate on a tree with no hosted project is that
+spec, and the run against the real project is the release step before any
+deploy. `CREATIVO_SKIP_PREFLIGHT=1` is the loud escape hatch, never a habit.
 
 **Pre-existing red — none (since pass E, 2026-10-25).** Every typecheck,
 unit, emulator and e2e red of the old baseline was fixed at its root cause
-(pass E, end of §3.3): typecheck is green on all 39 projects, `run-many -t
-test` has 0 failures, `e2e:web` has 0 failures. Anything red is a
+(pass E, end of §3.3): typecheck is green on all projects (40 since pass
+F), `run-many -t test` has 0 failures, `e2e:web` has 0 failures. Anything red is a
 regression. **Known flakes under load** (judge each on a solo
 `--repeat-each=3` run: `START_LOGGING_EMULATOR=true pnpm exec firebase
 emulators:exec --only firestore,auth,functions,storage --project
@@ -1762,6 +2167,45 @@ re-run it after midnight). Under `run-many -t test --parallel=3` the heavy
 `client-booking`'s `booking-return-url.spec.ts` property case) can time
 out — re-run the project alone before calling it a regression. Typecheck
 after `rm -rf dist/out-tsc`.
+
+**Reference numbers after the pass-F fixer round (2026-10-26, the FULL
+gate after the review's seven findings, §3.3 "The fixer round")** — a drop
+without a reason is a lost case: `nx sync:check` up to date (the round's
+new edges synced); layering **923 files and 4,106 import edges**; typecheck
+**40 projects, all green**; 44 projects lint, 0 errors (245 warnings by a
+per-project count, unchanged); `run-many -t test` 44 test targets,
+**13,314 passed, 0 failed** (13,203 vitest + `verify-tools` 111);
+`lint-rules` 319 tests; ecs-core **6,383 tests, 98.42 % statements**
+(14,730–14,731/14,966 — the auth-flow property cases' unseeded draws
+reach two default-branch `break`s on some runs and not others, so the
+covered count moves by one or two between identical runs; no statement of
+a file the round touched is uncovered); functions **1,003 tests**;
+`seed-tools` typecheck; `lint:styles`; `build web` initial **581.63 kB**
+(157.92 kB transfer) + `verify:bundle`; the functions dist's four runtime
+dependencies; `build showcase`; runbook §4.2 28 `ok`, §4.3 22, §4.4 17,
+§4.5 6, §4.7 24, §4.8 27, §4.9 25, §4.10 20 (no reference count changed);
+`verify:csp` — both builds' hashes match, the Hosting smoke **10 passed**;
+the preflight's spec 32 passed; `verify:p0` (a)–(f); `test:emulator`
+**69 + 312**; `e2e:web` **63 passed, 0 failed** (the walk-in journey under
+the emulator's TEST walk-in key).
+
+**Reference numbers on the pass-F tree (2026-10-26, the integrator's FULL
+gate — `decisions/2026-10-26-owner-rulings.md`, ledger)** — a drop without a
+reason is a lost case: `nx sync:check` up to date; layering **923 files and
+4,106 import edges**; typecheck **40 projects, all green** (`ui-theme` is
+new); 44 projects lint, 0 errors (245 warnings by a per-project count);
+`run-many -t test` 44 test targets, **13,291 passed, 0 failed** (13,180
+vitest + `verify-tools` 111, the preflight's spec among them); `lint-rules`
+13 files and 319 tests; ecs-core 327 files, **6,380 tests, 98.43 %
+statements** (14,732/14,966); functions 38 files, 998 tests; `seed-tools`
+typecheck; `lint:styles`; `build web` initial **581.67 kB** (158.79 kB
+transfer) + `verify:bundle`; the functions dist's four runtime
+dependencies; `build showcase`; runbook §4.2 28 `ok`, §4.3 22, §4.4 17,
+§4.5 6, §4.7 24, §4.8 27, §4.9 25, §4.10 20; `verify:csp` — both builds'
+inline-script hashes match `script-src`, the Hosting smoke **10 passed**
+(desktop + Pixel 7), no violation beyond the MapLibre report-only baseline;
+`verify:p0` (a)–(f); `test:emulator` **69 + 312**; `e2e:web` **63 passed,
+0 failed** (61 + the inbox page and the walk-in journey).
 
 **Reference numbers on the pass-E tree (2026-10-25, the integrator's FULL
 gate — `flips/pass-e-leftovers.md` §8.5)** — a drop without a reason is a
@@ -1882,28 +2326,65 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 ## 6. Open questions for the owner
 
-- **Pass B owner flags (2026-10-24)** — the end of §3.3 lists them: the
-  `CLAUDE.md`/`AGENTS.md` corrections the docs package proposed (D1–D29,
-  Law 5's appointment example, Law 10.1's `formatCents` — applied on the
-  owner's go-ahead the same day), the walk-in client
-  path, the client write grants and the TTL declarations (both CLOSED by
-  pass E, end of §3.3), the catalogue
-  edge-guard family, the impersonation banner slot, the deploy order of the
-  three deleted composite indexes, the waitlist request ids, which now hash
-  the flat stored body (every `wl_` id changes; reseed), and
-  `BookingFlowEventKind.SetDayWindows` / `FlexibleWhen.withWindows` (keep for
-  the per-day window sheet, or delete both).
+- **Ruled 2026-10-26 — the owner rulings (pass F,
+  `docs/architecture/decisions/2026-10-26-owner-rulings.md`).** The owner
+  delegated every open decision; OR-1 … OR-56 rule every owner item this
+  record carried (end of §3.3, each list names its OR id) and every open
+  question of the plans, with DEP-F1 … DEP-F38. The pass B owner flags, the
+  flip-4 OQ-11 deploy check and the decision-extraction tie orders that used
+  to wait here are among them (OR-24, OR-25/OR-26, OR-35, OR-36, OR-18,
+  OR-22, OR-23). The rulings' standing contracts follow.
+- **The impersonation read-as contract (OR-24).** Today impersonation is
+  the server ledger only, with no read-as: the callables write an inert,
+  audited `impersonationSessions` ledger that nothing consumes (no token, no
+  rule), the web banner and the `admin/impersonation` lib are deleted, and
+  `/admin` redirects to `/admin/loyalty/rhythm`. A future read-as ships ALL
+  of the following in ONE change, or none of it: a custom token of at most
+  15 minutes carrying the claims `{ imp, impBy, impScope }`; a banner that
+  reads those claims from the ID token (no Firestore read) — «Действаш като
+  {{name}} · Край» / "Acting as {{name}} · End"; rules that deny every write
+  under `imp` with the `READ_ONLY` scope; and `Actor.impersonator` audit
+  rows. Building it is deferred (the record's deferred list, item 7).
+- **The two-zone ordering rule (OR-43, pass D OQ-3).** Every visit is judged
+  on its OWN shop's wall clock (Law 7.2, the physical chair invariant), and
+  rows, lanes and the agenda on the day's zone. The day a tenant has shops
+  in two zones, a pooled cross-zone ORDER (the staff search, «Скорошни», any
+  list that merges visits of several shops) sorts on `utcEpochMs`, never on
+  wall-clock minutes of different zones; placement math stays on the local
+  coordinates.
+- **Flagged by the record — decided on the safest reversible default; the
+  owner may reverse each:** impersonation kept as a ledger — if it will
+  never ship, delete it end to end (OR-24 option C, reversible through git);
+  the production default location id stays `loc-center` (OR-35 — one
+  constant plus one document, which the preflight then checks); one «ти»
+  voice, «бръснар», «Опитай пак» (OR-51, copy only); the privacy-policy line
+  for the client issue sink ("diagnostic data under legitimate interest,
+  30-day Cloud Logging retention, no personal identifiers") is the owner's
+  to publish (OR-34); and the orchestrator's override of OR-13's flagged
+  default — a no-show gives back the grant and the voucher draw (DEP-F10b,
+  end of §3.3).
+- **Still open — found by pass E, not ruled by the record** (pass E §7.2):
+  N-1, `subjectCustomerId` cannot be required on `VisitRowOptions` /
+  `VisitCardOptions` (the client's appointments page relies on
+  `VisitStorySystem.subjectRecordOf`'s absent path) — keep it optional, or
+  make the absent case an explicit contract value; N-2, the `coupons` write
+  grant (`isAdmin`) has no client writer, but a dated rules case pins an
+  admin's save — deny it on the owner's word only; N-5, a `NO_SHOW` or
+  same-day `COMPLETED` reopen (and a seat-level reopen inside a cancelled
+  party) checks no collision against appointments booked into the freed
+  chair — refuse such a reopen, or let the shop knowingly overlap.
 - Decision-extraction plan (`docs/architecture/flips/law-10-decision-extraction.md`)
-  §8: OQ-1 … OQ-8 proceed on their defaults — the catalog component specs'
-  fixture literals gained the three figure fields (OQ-1); the cue rule
+  §8 — every question CLOSED: the catalog component specs' fixture literals
+  gained the three figure fields (OQ-1); the cue rule
   (`AchievementsSystem.completesWithVisit`) and the detail/count rule
-  (`countsToward`) stay two functions, documented side by side (OQ-2);
-  the service detail sheet's math, keys built from display words, the
-  glance voucher sum and the history read-policy constants are carried
-  (OQ-3 … OQ-6, end of §3.3); the tie orders are unchanged — the wallet's
-  `localeCompare`, the glance's input order (OQ-7, yours to rule later);
-  OQ-8 is moot — `samplePeriods` delegates to `StreakSystem.track`, proven
-  equivalent on the admin sample's states.
+  (`countsToward`) stay two functions, documented side by side (OQ-2); the
+  service detail sheet's math and the history read-policy constants were
+  carried and closed by pass C (OQ-3, OQ-6); those applied defaults are
+  affirmed (OR-43); the keys built from display words, the glance voucher
+  sum and the tie orders are ruled — coupon-id keys (OQ-4, OR-15), every
+  currency on the glance (OQ-5, OR-17), UTF-16 code-unit ties everywhere
+  (OQ-7, OR-18); OQ-8 is moot — `samplePeriods` delegates to
+  `StreakSystem.track`, proven equivalent on the admin sample's states.
 - **Ruled 2026-10-23 — Law 10, presenters (the view-model pass, option B).**
   Presenters (`*.presenter.ts`) and display models (`*.vm.ts`) stay as a
   sanctioned, pure file kind that words what ecs-core systems decided; the
@@ -1924,23 +2405,28 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
   through `updateProfile`, the pipeline writes the profile-change audit row
   itself, inside its transaction, credited to the calling user; the
   `auditProfileChanges` trigger skips an edit the callable already audited.
-- **Before the flip-4 web deploys (flip-4 OQ-11):** confirm the production
-  default location id and that its document holds a valid `timeZone`
-  (runbook §3).
-- `flatten-spec.md` §10 OQ-2…OQ-12 proceed on their documented defaults
-  (cron zone home, Role/AuthStage claim casing, `LocalizedText` nested,
+- `flatten-spec.md` §10 OQ-3…OQ-12 proceed on their documented defaults
+  (Role/AuthStage claim casing, `LocalizedText` nested,
   D29 contact sync/merge, `EndMinute`, one shop day per appointment,
   `attendanceState` values, backfill job ids, media prefixes, D17
-  seconds + nanos, no index change in the flatten pass).
+  seconds + nanos, no index change in the flatten pass); OQ-2 is CLOSED
+  (2026-10-26, OR-35): the production default id stays `loc-center`,
+  checked by the preflight's P1 before every deploy, and the cron trigger
+  zone stays the deploy-time `CRON_TIME_ZONE` Phase 4a gave it.
 - Flip-1 plan open questions (its §open questions) proceed on the plan's
   defaults: customer ids sit beside `subjectUserIds`; grant burn/restore
-  deferred to its own commit (the reopen busy write landed with pass E,
+  deferred to its own commit (ruled and built 2026-10-26: burned at save,
+  given back on removal, cancel or no-show — OR-13 / DEP-F10 / DEP-F10b;
+  flip-1 §10 Q2) (the reopen busy write landed with pass E,
   DEP-5; trigger `retry: true` for the three projection triggers with the
   edge hardening and for the four other capacity triggers with pass E,
   2026-10-25, end of §3.3);
   `cancelWaitlist` kept `{ code }` until the Phase 4a wire flip (it now
   refuses with `CancelWaitlistRefusalCode` structs keyed by `errorCode`);
-  customers writes per flatten-spec §5.5.
+  customers writes per flatten-spec §5.5 (ruled 2026-10-26: the server is
+  the only writer — OR-25 / DEP-F19, OR-26 / DEP-F20; flip-1 §10 Q7); the
+  `leadTimeSampling` gate and the refusal's busy body (flip-1 §10 Q3) ruled
+  — ungated (OR-27 / DEP-F21) and declined (OR-12).
 - The test runner stays Analog 2.8 (owner ruling 2026-10-10).
 - Phase 4b plan §10: OQ-1 … OQ-9 proceed on their defaults — two
   `repository_failure` successors (`ACCOUNTS_REPOSITORY_FAILURE`,

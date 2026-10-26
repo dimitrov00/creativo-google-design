@@ -94,9 +94,6 @@ const ABSENT_SIDE: AppointmentSide = {
   refusal: null,
 };
 
-/** The registry that guards nothing (DEP-11) — `null` for every collection. */
-const unguarded: StoredGuardOf = () => null;
-
 /**
  * A subject mirror in its REPAIRABLE form: absent (`undefined`), `null`, or
  * an array of ids — see the system's JSDoc on why absent and `null` pass.
@@ -312,7 +309,11 @@ function appointmentNote(
  *   (`BookingLifecycle.fieldFault`); `busyKeys` and `barberIds` (arrays of
  *   keys / ids — `BusySystem.affectedKeys` and lane membership iterate
  *   them); `subjectUserIds` and `subjectCustomerIds` (see below); `seats`
- *   (each a record and `Seat.fieldFault` clean); `discounts`,
+ *   (each a record and `Seat.fieldFault` clean — a cancelled seat's
+ *   `cancellationWindowHours` an `HourCount` or `null`, OR-45, since the
+ *   statistics judge lateness by it; a `WALK_IN` seat's
+ *   `subjectCustomerId` a client-record id, OR-26, since the walk-in's
+ *   history and statistics key on it); `discounts`,
  *   `voucherRedemptions`, `appliedOperations` (arrays of records — the
  *   bill and the ledger replay iterate them); the stood-pair memory
  *   (`StoodSeatPairs.fieldFault`); `revision` (a non-negative safe
@@ -352,12 +353,11 @@ function appointmentNote(
  * display field no decision reads): `ownerUserId`, `ownerCustomerId`,
  * `placement`, `inferredPlacement`; a seat's `barberPreference`,
  * `catalogPriceCents`, `catalogDurationMinutes`, `guestLabel`,
- * `subjectRelationship`, `cancelledBy`, `cancellationWindowHours`; the
- * contact's E.164 / e-mail SHAPE; the elements of `discounts`,
- * `voucherRedemptions`, `appliedOperations`, `stoodSeatPairs` beyond "a
- * record"; a customer's `searchName` / `searchPrefixes` (search mirrors
- * only index #8 reads). A field joins the list the day a system starts to
- * rely on it.
+ * `subjectRelationship`, `cancelledBy`; the contact's E.164 / e-mail SHAPE;
+ * the elements of `discounts`, `voucherRedemptions`, `appliedOperations`,
+ * `stoodSeatPairs` beyond "a record"; a customer's `searchName` /
+ * `searchPrefixes` (search mirrors only index #8 reads). A field joins the
+ * list the day a system starts to rely on it.
  */
 export const StoredDocumentSystem = {
   /** An `appointments/{id}` document — the same object as the entity, or its refusal. */
@@ -388,7 +388,10 @@ export const StoredDocumentSystem = {
    * The registry an adapter dispatches on: the guard of `appointments`,
    * `customers`, `barberBusy` and `appointmentNotes`, `null` for every
    * other collection (read as stored, as before). A subcollection path is
-   * never a registered name, so it is never guarded.
+   * never a registered name, so it is never guarded. The ONE registry this
+   * tier exports (OR-33): every guarded adapter takes it as a required
+   * parameter, and the registry that guards nothing is test support
+   * (`unguarded`, `@core/testing`).
    */
   guardOf(collection: string): StoredGuard | null {
     switch (collection) {
@@ -404,9 +407,6 @@ export const StoredDocumentSystem = {
         return null;
     }
   },
-
-  /** The registry that guards nothing — the adapters' default (DEP-11). */
-  unguarded,
 
   /**
    * What a trigger may still read off an appointment side — admitted or

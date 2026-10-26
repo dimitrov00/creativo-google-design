@@ -1,173 +1,273 @@
 # CSP baseline
 
-> **Status (2026-10-24, pass B).** This is the Phase-0 record and most of
-> its setting is gone: `apps/marketing`, `apps/client` and `apps/staff`
-> were collapsed into the one CSR app `apps/web` (Firebase Hosting), there
-> is no per-request server (`@angular/ssr`, `@angular/platform-server` and
-> `express` were removed in pass B), and no app loads Google Fonts any more
-> — the faces are self-hosted through `@fontsource` — so the
-> `fonts.googleapis.com` / `fonts.gstatic.com` allowances below can go.
-> `firebase.json` declares no `headers` block yet; the target policy below
-> is still the intent for it.
+> **Status (2026-10-26, pass F).** Rewritten from scratch by the owner
+> rulings OR-29 – OR-32 and OR-34
+> (`docs/architecture/decisions/2026-10-26-owner-rulings.md`). The Phase-0
+> record this file used to be — per-request SSR nonces, Google Fonts, three
+> apps — described a setting that no longer exists (DEP-F23): `apps/web` is
+> one CSR app on Firebase Hosting, its faces are self-hosted, and no server
+> sits in front of it. `firebase.json` is the policy's ONE home; this file
+> says why each line is there and how it is kept true.
 
-`apps/marketing` is the first app in this workspace with a real per-request
-server (`apps/marketing/src/server.ts`) and ships the target policy below for
-real, verified end-to-end against the built SSR server (see "Verified"
-below). `apps/client`/`apps/staff` are CSR SPAs with no server of their own —
-their real headers depend on whatever static-hosting layer serves them
-(Firebase Hosting), see "Not yet done."
+## What Hosting serves
 
-## Target policy
+Every response of the web site carries, from the `**` header rule of
+`firebase.json`'s `web` hosting entry:
+
+| Header                                | Value                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Content-Security-Policy`             | the policy below                                                                       |
+| `Content-Security-Policy-Report-Only` | `require-trusted-types-for 'script'; trusted-types angular angular#bundler`            |
+| `Strict-Transport-Security`           | `max-age=31536000; includeSubDomains`                                                  |
+| `X-Content-Type-Options`              | `nosniff`                                                                              |
+| `Referrer-Policy`                     | `strict-origin-when-cross-origin`                                                      |
+| `Permissions-Policy`                  | `camera=(self), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()` |
+| `Cross-Origin-Opener-Policy`          | `same-origin`                                                                          |
+| `X-Frame-Options`                     | `DENY`                                                                                 |
+
+### The policy, directive by directive
 
 ```
-Content-Security-Policy:
-  default-src 'self';
-  script-src 'self' 'nonce-<per-request-nonce>';
-  style-src 'self' 'nonce-<per-request-nonce>' https://fonts.googleapis.com;
-  font-src 'self' https://fonts.gstatic.com;
-  img-src 'self' data:;
-  connect-src 'self';
-  object-src 'none';
-  base-uri 'self';
-  frame-ancestors 'none';
-
-Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-X-Content-Type-Options: nosniff
-Referrer-Policy: strict-origin-when-cross-origin
-Permissions-Policy: camera=(), microphone=(), geolocation=()
+default-src 'self';
+script-src 'self' 'sha256-<pre-paint theme>' 'sha256-<Beasties media swap>';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob: https://firebasestorage.googleapis.com;
+font-src 'self';
+media-src 'self';
+connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com
+  https://securetoken.googleapis.com https://firebasestorage.googleapis.com
+  https://us-central1-<PROJECT_ID>.cloudfunctions.net https://tiles.openfreemap.org;
+worker-src 'self' blob:;
+manifest-src 'self';
+frame-src 'none';
+object-src 'none';
+base-uri 'self';
+form-action 'self';
+frame-ancestors 'none';
+upgrade-insecure-requests
 ```
 
-Notes:
+- **`default-src 'self'`** — anything a directive below does not name is
+  same-origin only.
+- **`script-src`** — the app's own chunks, plus EXACTLY the two static
+  inline scripts the built `index.html` carries: the pre-paint
+  theme/density/language script (`apps/web/src/index.html`, blueprint §7.6)
+  and the Beasties media swap the builder's critical-CSS pass writes
+  (`link[data-beasties-media]` → `media`). No nonce (there is no server to
+  mint one), no `'unsafe-inline'`, no `'unsafe-eval'` — the build has no
+  `eval`, `innerHTML` or `bypassSecurityTrust*` sink (measured at
+  `1322b782`). A hash is a script the policy admits by name, so an extra
+  one is refused as firmly as a missing one (`check-csp.mjs`, below).
+- **`style-src 'self' 'unsafe-inline'`** — Angular writes every component's
+  styles into `<style>` tags at runtime, and `ui-map` puts MapLibre's
+  stylesheet into one (`maplibre-loader.ts`); without per-request nonces
+  neither can be hashed. A style injection cannot run script, which is
+  what this policy is for (OR-29 options B and C were declined).
+- **`img-src`** — the app's own images, `data:` (inline SVG and
+  placeholders), `blob:` (a camera capture before upload, MapLibre's
+  decoded sprites) and Storage's download host (avatars, catalogue
+  renditions, visit photos).
+- **`font-src 'self'`** — `@fontsource` faces, self-hosted under `media/`.
+- **`media-src 'self'`** — the landing's `hero.mp4` and `welcome.mp4`. The
+  camera's live preview is a `MediaStream` (`srcObject`), which no
+  directive governs.
+- **`connect-src`** — Firestore, Auth (`identitytoolkit`, `securetoken`),
+  Storage, the callables of the DEFAULT region of the `.firebaserc`
+  default project (an exact host, never `*.cloudfunctions.net`), and
+  OpenFreeMap's styles, tiles, sprites and glyphs (MapLibre fetches them
+  all; none is an `<img>`). `<PROJECT_ID>` is the literal of `.firebaserc`'s
+  default — the placeholder `creativo-replace-me` until the project exists;
+  the production preflight refuses a mismatch or the placeholder (OR-35 P5,
+  P6).
+- **`worker-src 'self' blob:`** — the Angular service worker, and the tile
+  worker MapLibre starts from a `blob:` URL (without it the map silently
+  never draws).
+- **`manifest-src 'self'`** — `manifest.webmanifest`.
+- **`frame-src 'none'`** — the app embeds nothing. This holds because Auth
+  is built with `initializeAuth` and no popup/redirect resolver (OR-32):
+  `getAuth` would load `apis.google.com` and a hidden `__/auth/iframe` on
+  phones and Safari, for sign-in flows the app never runs (every session
+  starts from a custom token).
+- **`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`** — no
+  plugins, no `<base>` hijack, no form posting off-site.
+- **`frame-ancestors 'none'`** (and `X-Frame-Options: DENY` for older
+  browsers) — nobody frames the app.
+- **`upgrade-insecure-requests`** — a stray `http:` URL is fetched over
+  HTTPS. Chromium leaves `127.0.0.1` alone (measured), so the emulator smoke
+  below runs under the same directive.
 
-- `style-src`/`font-src` allow Google Fonts (`fonts.googleapis.com` /
-  `fonts.gstatic.com`) because every app's `index.html` loads Roboto and
-  Roboto Flex from there (see `docs/design-research/design-google-notes.md`'s
-  exact-match-theme update — not Google Sans Flex/Source Serif 4, an earlier
-  pre-pixel-match guess). Self-hosting the font files would let us drop this
-  allowance — worth revisiting once real traffic makes that origin
-  dependency worth removing.
-- No `'unsafe-inline'` anywhere. Angular's `ngCspNonce` mechanism (see below) is
-  what makes that possible for the styles Angular injects at runtime.
-- `frame-ancestors 'none'` — none of these apps should ever be framed. Revisit
-  per-app if an embed use case shows up.
+### The other headers
 
-## Per-app `connect-src`/`img-src` extensions
+- **Trusted Types, report-only.** `require-trusted-types-for 'script'`
+  with Angular's own policy names. Nothing is enforced yet; every report
+  but MapLibre's three measured sinks reaches the in-app sink (below), and
+  the smoke pins today's list. The
+  measured list (2026-10-26, the built app behind these headers in
+  Chromium) is MapLibre's three sinks — its tile worker
+  (`Worker constructor|blob:…`) and its attribution control
+  (`DOMParser parseFromString`, `Element innerHTML`) — plus, in production
+  only, Angular's service-worker registration
+  (`ServiceWorkerContainer register|ngsw-worker.js`: it hands `register` a
+  string; the smoke's build ships no service worker, so the smoke cannot
+  see it). Enforcing waits on exactly those (Deferred #3: a DS attribution
+  footnote, a worker policy, and a trusted URL for the registration).
+- **HSTS** — a year, subdomains included. No `preload` until the apex
+  domain is fixed: the preload list is near-irreversible (Deferred #10).
+- **`Referrer-Policy: strict-origin-when-cross-origin`** — another origin
+  learns the site, never the path (`/staff/schedule?day=…&barber=…`).
+- **`Permissions-Policy`** — the camera for the visit photos and the code
+  scanner, on this origin only; the microphone, geolocation, payments, USB
+  and the Topics API for nobody.
+- **`Cross-Origin-Opener-Policy: same-origin`** — no window this app opens
+  or is opened by keeps a handle on it. Safe because no popup sign-in
+  exists (OR-32).
 
-The base policy above is shared; each authenticated app extends `connect-src`
-for the Firebase services it actually calls. **`apps/marketing` gets no
-Firebase additions at all** — it has zero direct Firebase SDK usage by
-product decision (a future contact/waitlist form would go through a single
-named Cloud Function endpoint, not broad Firebase domains — add that single
-URL when the form exists, not before).
+## Caching
 
-- **`apps/marketing`'s Locations section** (MapLibre GL JS + OpenFreeMap,
-  `apps/marketing/src/app/pages/home/locations/`) needs two additions beyond
-  the shared baseline:
+The cache rules follow the security rule, each header key set by ONE rule
+per path (Hosting applies every matching rule in order; a later value
+wins):
 
-  ```
-  connect-src 'self' https://tiles.openfreemap.org;
-  worker-src 'self' blob:;
-  ```
+| Paths                                                                                                                                                                              | `Cache-Control`                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `/`, every extensionless route (`**/!(*.*)`), `index.html`, `ngsw.json`, `ngsw-worker.js`, `safety-worker.js`, `worker-basic.min.js`, `manifest.webmanifest`, `assets/i18n/*.json` | `no-cache`                            |
+| the hashed build files `/@(main\|polyfills\|chunk\|styles)-*.@(js\|css)`                                                                                                           | `public, max-age=31536000, immutable` |
+| unhashed media (`ico`, `png`, `jpg`, `jpeg`, `webp`, `avif`, `gif`, `svg`, `mp4`, `webm`, `woff`, `woff2`, `ttf`, `otf`)                                                           | `max-age=86400`                       |
 
-  `connect-src` covers the style JSON, vector tiles, sprite, and glyphs —
-  MapLibre fetches all of them via `fetch()`, never native `<img>` tags, so
-  `img-src` doesn't need the OpenFreeMap host. `worker-src` is needed because
-  MapLibre spins up its tile-processing pipeline on a `blob:` Web Worker;
-  without it, `default-src 'self'` silently blocks worker creation and the
-  map never renders (no console-visible CSP violation makes this obvious
-  unless devtools' Console/Network tabs are checked directly). Both are set
-  in `apps/marketing/src/server.ts`'s `cspHeader()`, not just here.
+- The app shell and the service worker's update channel revalidate on
+  every load, so a deploy reaches every client on its next start.
+- A hashed file never changes under its name, so a year and `immutable`.
+  The rule names the builder's four prefixes rather than `**/*.js`, which
+  would also catch the unhashed service-worker scripts and freeze the
+  update channel.
+- **The i18n catalogues revalidate too** — a departure from the ruling's
+  list: they are fetched unhashed (`assets/i18n/{lang}.json`) and change
+  with every copy edit, and Hosting's default hour of caching would pair
+  new chunks with yesterday's words (raw keys on screen).
 
-- **`apps/client`, `apps/staff`** — both use `@creativo/adapters/firebase`
-  (Auth, Firestore, Functions), so both need:
-  ```
-  connect-src 'self'
-    https://firestore.googleapis.com
-    https://identitytoolkit.googleapis.com
-    https://securetoken.googleapis.com
-    https://*.cloudfunctions.net;
-  ```
-  (Narrow `*.cloudfunctions.net` to the real deployed region+project once
-  known, e.g. `https://us-central1-<project>.cloudfunctions.net` — left broad
-  here only because no real project ID exists yet.)
-- `img-src` gains the Firebase Storage host (`https://firebasestorage.googleapis.com`)
-  on `client`/`staff` once real asset URLs exist — not needed yet, `storage.rules`
-  is still a placeholder deny-all this pass.
-- **Stripe (follow-up, not live yet)** — when the deposit flow ships, `apps/client`
-  will need `script-src` to allow `https://js.stripe.com`, `connect-src` to allow
-  `https://api.stripe.com`, and `frame-src`/`child-src` allowances for Stripe
-  Elements' iframes. Documented here now so whoever picks up that pass doesn't
-  have to rediscover it; nothing in this pass makes a Stripe network call.
+## How the hashes stay true (`check-csp.mjs`)
 
-## Angular's nonce mechanism
+The hashes are **computed by the gate, never typed by hand**.
+`tools/verify/csp/check-csp.mjs` reads the BUILT `index.html` and
+`firebase.json`, and fails on:
 
-Angular can stamp a nonce onto the `<style>` tags it inserts at runtime (for
-component styles), which is what lets `style-src` avoid `'unsafe-inline'`. The
-mechanism: add an `ngCspNonce` attribute to the root element in `index.html`.
+- a missing security header on the `**` rule;
+- a `script-src` without `'self'`, or with `'unsafe-eval'`,
+  `'unsafe-inline'`, `'unsafe-hashes'`, a nonce, a wildcard or a bare
+  scheme;
+- any difference between the sha256 of each inline script, recomputed,
+  and the hashes `script-src` lists — on a mismatch it prints the exact
+  `script-src` the artifact needs;
+- an inline event handler or `javascript:` URL in the markup (a hash
+  policy blocks both);
+- a `connect-src` that does not name exactly the callables host of
+  `.firebaserc`'s default project;
+- a built js/css file, `/` or a route outside the cache rule its name
+  calls for.
 
-Every app's `index.html` carries this placeholder:
+**When an inline script changes** (the pre-paint script in
+`apps/web/src/index.html`, or the builder's critical-CSS output after an
+Angular update): build (`pnpm nx build web`), run
+`node tools/verify/csp/check-csp.mjs`, paste the `script-src` line it prints
+into `firebase.json`, run it again. CI runs the gate after every build
+(`.github/workflows/ci.yml`).
 
-```html
-<cr-root ngcspnonce="__CSP_NONCE__"></cr-root>
-```
+## The emulator smoke (`pnpm run verify:csp`)
 
-`apps/showcase`/`apps/client`/`apps/staff` are static CSR builds — for them
-`__CSP_NONCE__` stays a literal placeholder until a real edge/CDN layer with
-per-request logic is chosen (Firebase Hosting alone serves static files
-as-is; substituting a real nonce would need a Cloud Function/Cloud Run layer
-in front, which none of these three apps have — they're plain SPAs).
+The static gate proves the policy matches the artifact; the smoke proves
+the app RUNS under it. `pnpm run verify:csp`:
 
-**`apps/marketing` is the one app that actually does this for real**, because
-it has a genuine per-request Node/Express server. `apps/marketing/src/server.ts`:
+1. builds production and gates it; builds `web:build:csp-smoke` —
+   production minus the environment replacement (its SDKs talk to the
+   emulators) and minus the service worker, into `dist/apps/web-csp-smoke`
+   — and gates that too;
+2. writes `dist/firebase.csp-smoke.json` (`tools/verify/csp/emulator-config.mjs`):
+   `firebase.json` with the Auth, Firestore, Functions and Storage emulator
+   origins (`http://127.0.0.1:<port>`) added to `connect-src` (and
+   Storage's to `img-src`), and it **asserts the difference** — every other
+   header, directive, source, rule source and order is production's. The
+   rest is plumbing the CLI needs, no header sees it: `public` names the
+   smoke build, the site is named by `site` (no `.firebaserc` target), and
+   paths are re-pointed for a config file under `dist/`;
+3. starts every emulator with Hosting on that config and runs
+   `apps/web/e2e/csp/csp-smoke.spec.ts` (`pnpm nx run web:e2e-csp`,
+   `apps/web/playwright.csp.config.mts`) on a desktop and a Pixel 7: the
+   landing and its map, `/book` through the location map to the services,
+   `/careers`, `/courses`, `/events`, `/account` as a client, the staff day
+   with a visit sheet and its Storage photo as a barber, and
+   `/admin/programs` as an admin. It fails on ANY violation of either
+   disposition beyond the MapLibre report-only list above (tolerated only
+   from the MapLibre chunk), on any site response missing a security
+   header, and it pins `Cache-Control` on `/`, `/staff`, a hashed chunk and
+   `ngsw.json`.
 
-1. Generates a fresh `crypto.randomBytes(16)` nonce per request.
-2. Replaces `__CSP_NONCE__` in the rendered HTML with that value.
-3. Sets the real `Content-Security-Policy` response header (and the other
-   four headers from the target policy above) with the same nonce.
+The full gate (HANDOFF §4) runs `verify:csp` from wave 1 of pass F on; it
+shares the emulators' ports with `e2e:web`, so it runs alone.
 
-**Verified**: built `apps/marketing`, ran the produced
-`dist/apps/marketing/server/server.mjs` directly, and confirmed via `curl`
-that the response's `ngcspnonce="..."` attribute value and the
-`Content-Security-Policy: script-src 'self' 'nonce-...'` header value are
-identical on every request, and that all five headers (CSP, HSTS,
-X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are present.
+## The service-worker header lag
 
-**Deployment gotcha found during that verification, not previously
-documented anywhere**: `@angular/ssr`'s Node request handler validates the
-incoming `Host` header against an allow-list and returns `400 Bad Request`
-for anything not on it — a real SSRF hardening feature
-([angular.dev/best-practices/security#preventing-server-side-request-forgery-ssrf](https://angular.dev/best-practices/security#preventing-server-side-request-forgery-ssrf)),
-not a bug. Configure it via the `NG_ALLOWED_HOSTS` environment variable
-(comma-separated **hostnames without port**, e.g. `NG_ALLOWED_HOSTS=creativo.com`)
-wherever `server.mjs` actually runs in production — Cloud Run's service
-config or the deploy script, not committed anywhere as a file since the real
-value depends on the final domain choice.
+Hosting attaches the headers to each RESPONSE. A returning client's
+service worker serves `index.html` — and the policy that came with it —
+from its own cache, so a changed policy reaches that client one update
+cycle late: the first start after a deploy runs the cached shell under its
+cached policy while `ngsw.json` (never cached) reveals the new version, and
+the next start runs the new shell under the new policy. The two always
+travel together, so a hash never meets a shell it was not computed for. A
+policy change that must reach every client at once (a revoked origin) also
+needs the service worker's update to be forced (`SwUpdate`), or the
+`safety-worker.js` kill switch.
 
-## Hosting/deploy notes (from wiring `firebase.json` this pass)
+## Where violations go
 
-- `apps/client`/`apps/staff` are plain static SPA hosting targets in
-  `firebase.json` — unambiguous, fully wired, no open questions.
-- `apps/marketing`'s Hosting rewrite in `firebase.json` points at a Cloud Run
-  service (`"run": {"serviceId": "marketing-ssr", ...}`), **not** Firebase's
-  web-frameworks auto-detection — this repo has no `angular.json` anywhere
-  (confirmed), which that auto-detection has historically keyed off, so
-  auto-detection may not even recognize `apps/marketing` as Angular. Cloud
-  Run also avoids forcing marketing's SSR server into `apps/functions`
-  (tagged `scope:backend` for OTP/domain logic — a different concern from
-  marketing's own SSR deploy artifact).
-- **Not yet built this pass**: the actual Cloud Run deployment (Dockerfile,
-  build/push/deploy steps) for `marketing-ssr` — `serviceId`/`region` in
-  `firebase.json` are placeholders. This is real follow-up infrastructure
-  work, not a config-file-only task, and needs a real GCP project to build
-  and test against.
+`apps/web/src/main.ts` registers a `securitypolicyviolation` listener
+before the app boots (OR-30). It drops reports a browser extension raised
+(`chrome-extension:`, `moz-extension:`, `safari-web-extension:`) and the
+measured MapLibre baseline — a report-only `require-trusted-types-for`
+violation whose sample is one of the three of `MAPLIBRE_REPORT_ONLY_SINKS`
+(`@creativo/infrastructure/firebase-app/csp-baseline`, the one list the
+smoke tolerates them by): every map render trips them, and reported they
+would spend the callable's shared throttle and the `client_issue_count`
+alert on known noise at every landing and `/book` visit. An enforced
+violation, and any other report-only one, is always reported. It hands
+the rest — the directive, the disposition, the blocked ORIGIN (never a
+path), the script and line that tripped it, the route's pattern — to the
+first-party client issue sink (OR-34): the page's reporter, which dedupes,
+caps a page session at 20 issues and batches them to the
+`reportClientIssues` callable, which writes them to Cloud Logging
+(`client_issue_count` by kind). There is no `report-uri` / `report-to`
+endpoint: a public, unauthenticated report URL is exactly what OR-30
+option B declined.
 
-## Not yet done
+## Bundle record (OR-32, `verify:bundle`, 2026-10-26)
 
-- No headers are actually served in production anywhere yet (no real Firebase
-  project/hosting sites exist — `.firebaserc` is a checked-in template with a
-  placeholder project ID).
-- The Cloud Run deployment backing `apps/marketing`'s Hosting rewrite doesn't
-  exist yet (see above).
-- `connect-src`/`img-src` will grow further once Stripe and Cloud Storage
-  asset URLs are real (see the per-app section above) — this is a snapshot,
-  not a final list.
+`@firebase/auth` in the initial chunk: 104.51 kB with `getAuth` →
+92.67 kB with `initializeAuth` (−11.84 kB; the `__/auth/iframe` loader is
+gone). The client issue sink added in the same package costs 13.0 kB of
+the initial chunk (`ClientIssueSystem` 6.9, the error handler 4.1, the
+reporter 1.1, the issue data and error 0.9). Initial total: 580.09 kB
+(budget: warning 975 kB, error 1 MB).
+
+## Follow-ups
+
+- **Enforce Trusted Types** once the MapLibre sinks and the
+  service-worker registration are gone (Deferred #3). Until then every
+  production page session reports the registration once (one
+  `reportClientIssues` call per session, deduped and batched).
+- **Firestore's connectivity probe.** When a WebChannel request fails,
+  Firestore's transport loads `https://www.google.com/images/cleardot.gif`
+  to tell a dead network from a dead backend; `img-src` refuses it
+  (measured with the backend unreachable), so a client on a failing
+  network reports an enforced `img-src` violation and the probe reads as
+  "no network". Admitting `https://www.google.com` in `img-src` is the
+  owner's call (a request to Google on every failure); until then the
+  reports name it.
+- **App Check** on the callables needs a reCAPTCHA host admitted here
+  (`script-src`, `frame-src`, `connect-src`) and an enrolment design
+  (Deferred #4).
+- **HSTS `preload`** once the apex domain is fixed (Deferred #10).
+- **The project id**: `.firebaserc`'s placeholder becomes the real
+  project, and `connect-src`'s callables host with it (`check-csp.mjs`
+  keeps the two in step; the preflight refuses the placeholder).
+- **Payments** (when they ship): the provider's script, API and frame
+  hosts join `script-src`, `connect-src` and `frame-src` — each named
+  exactly, never a wildcard.

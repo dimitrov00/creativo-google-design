@@ -10,7 +10,9 @@ import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
  * value derived from the `CustomerId` text, never the other way round.
  *
  * An account holder's record has the deterministic id
- * `CustomerId.forUser(uid, hash)`; a walk-in's a random `cus_…` id. Contact
+ * `CustomerId.forUser(uid, hash)`; a walk-in's
+ * `CustomerId.forWalkIn(contactKey, keyedHash)` (OR-26, under the server's
+ * key — the contact is personal data). Contact
  * here is the SHOP's copy (what the desk may edit); the account's sign-in
  * contact stays on `users/{uid}` (OQ-5). The document body is this type
  * minus `id`.
@@ -18,9 +20,11 @@ import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
  * Created by `CustomerRecordSystem.createsFor` in exactly two
  * transactions — a first booking or edit seating the account
  * (`FIRST_BOOKING`, booking flip (1)) and `completeRegistration`
- * (`REGISTRATION`, identity flip (2)) — each only when its read found the
- * record absent; the dev seed writes `SEED` records. Never synchronised with
- * later profile edits (OQ-5).
+ * (`REGISTRATION`, identity flip (2)) — and by
+ * `CustomerRecordSystem.walkInCreates` (`STAFF_WALK_IN`, OR-26) in the staff
+ * commit and edit, each only when its read found the record absent; the dev
+ * seed writes `SEED` records. Never synchronised with later profile edits
+ * (OQ-5).
  */
 export type Customer = {
   readonly id: CustomerId;

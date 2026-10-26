@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import {
   type Translation,
   type TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { NEVER, type Observable, of } from 'rxjs';
@@ -821,7 +822,7 @@ describe('«Запази»', () => {
     click(host, 'admin-rhythm-save');
     await settle(fixture);
     expect(text(host, 'admin-rhythm-toast')).toMatch(
-      /^Нямаш право за тази промяна\./,
+      /^Нямаш права за това\. Влез отново или питай администратора\./,
     );
     expect(
       host.querySelector(
@@ -831,12 +832,43 @@ describe('«Запази»', () => {
     expect(byId(host, 'admin-rhythm-refusal')).toBeNull();
   });
 
+  // OR-52: the two refusals the page used to leave unsaid (a save that
+  // failed silently) are worded under the head, in both languages.
+  it.each([
+    {
+      refusal: StreakPublishError.recomputeNeedsEngine(),
+      bg: 'Досегашните ритми засега само се запазват.',
+      en: 'For now, existing runs can only be kept.',
+    },
+    {
+      refusal: StreakPublishError.previewStale(),
+      bg: 'Прегледът вече не е актуален. Запази отново.',
+      en: 'The preview is out of date. Save again.',
+    },
+  ])(
+    'says $refusal.errorCode under the head, in bg and en — never a silent save',
+    async ({ refusal, bg, en }) => {
+      const rules = seeded();
+      const { host, fixture } = await rig({ rules });
+      slide(host, 'admin-rhythm-interval-weeks', 8);
+      await settle(fixture);
+      rules.refuseWith(refusal);
+      click(host, 'admin-rhythm-save');
+      await settle(fixture);
+      expect(text(host, 'admin-rhythm-refusal')).toBe(bg);
+
+      TestBed.inject(TranslocoService).setActiveLang('en');
+      await settle(fixture);
+      expect(text(host, 'admin-rhythm-refusal')).toBe(en);
+    },
+  );
+
   /*
    * A WRITE THAT GOT NO ANSWER (a `RepositoryError`, not the server's no) is
    * said in the shop's "our side" words — on the real catalogue, byte for
    * byte, so the words survive whichever key carries them.
    */
-  const OUR_SIDE = 'Възникна проблем от наша страна — моля, опитайте отново.';
+  const OUR_SIDE = 'Нещо се обърка от наша страна. Опитай пак.';
   const toastLabel = (host: HTMLElement) =>
     host
       .querySelector('[data-testid="admin-rhythm-toast"] .ui-toast__label')

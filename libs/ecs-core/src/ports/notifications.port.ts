@@ -14,8 +14,9 @@ import type { InboxNotification } from '@core/entities';
  * A person's inbox — `users/{uid}/notifications`, the one owner-scoped
  * subcollection (blueprint §3.1, §4.2): payload facts, never formatted
  * words (§9 D20). The inbox is the ACCOUNT's, keyed by `UserId` for good
- * (D29). The owner may update the read stamp only; a notification is
- * CREATED only inside the matcher's `CommitPlan`, never through a port.
+ * (D29). The owner may set the read stamp only, and only once; a
+ * notification is CREATED only inside the matcher's `CommitPlan`, never
+ * through a port.
  */
 
 /** The newest 50 notifications, live — `orderBy sentAtUtcMs desc limit 50`, single-field. */
@@ -23,10 +24,18 @@ export type ObserveInbox = (
   userId: UserId,
 ) => Observable<Result<readonly InboxNotification[], RepositoryError>>;
 
-/** Stamp one notification read at `readAtUtcMs` (the caller's injected clock). */
-export type MarkNotificationRead = (
+/**
+ * The inbox's read receipt (OR-19) — ONE `writeBatch` of root `readAtUtcMs`
+ * updates, every named notification stamped at the same `readAtUtcMs`, at
+ * most the inbox's 50. One-shot: the caller names the unread ids only
+ * (`NotificationSystem.unreadIds`) at an instant never before the newest of
+ * them was sent (`NotificationSystem.receiptAt`), and the rules refuse a
+ * second stamp or one that predates its message — so a refused batch writes
+ * nothing.
+ */
+export type MarkNotificationsRead = (
   userId: UserId,
-  id: NotificationId,
+  ids: readonly NotificationId[],
   readAtUtcMs: UtcEpochMs,
 ) => Promise<Result<void, RepositoryError>>;
 
@@ -51,7 +60,7 @@ export type HasRecentNotification = (
 /** The signed-in account's inbox — the bundle the web's `INBOX_PORTS` token binds. */
 export type InboxPorts = {
   readonly observeInbox: ObserveInbox;
-  readonly markNotificationRead: MarkNotificationRead;
+  readonly markNotificationsRead: MarkNotificationsRead;
 };
 
 /** The notification cooldown check — the waitlist matcher (server). */

@@ -11,16 +11,7 @@ describe('PlacementPolicy', () => {
     });
   });
 
-  it('lets the shop place a walk-in outside the roster and without notice — and nothing more (§9 D18)', () => {
-    expect(PlacementPolicy.staffWalkIn()).toEqual({
-      allowOutsideWindow: true,
-      skipMinNotice: true,
-      allowOverlap: false,
-      allowConflictingServices: false,
-    });
-  });
-
-  it('lets the shop place or move its own book outside the roster, without notice and with any service mix — never an unacknowledged overlap', () => {
+  it('lets the shop place or move its own book — a walk-in included — outside the roster, without notice and with any service mix, never an unacknowledged overlap (OR-11, DEP-F9)', () => {
     expect(PlacementPolicy.staffPlacement()).toEqual({
       allowOutsideWindow: true,
       skipMinNotice: true,
@@ -36,33 +27,29 @@ describe('PlacementPolicy', () => {
       allowOverlap: true,
       allowConflictingServices: true,
     });
-    // Not the walk-in preset (D18 keeps conflicting services refused there).
-    expect(
-      PlacementPolicy.equals(
-        PlacementPolicy.staffPlacement(),
-        PlacementPolicy.staffWalkIn(),
-      ),
-    ).toBe(false);
   });
 
-  it('allows an overlap only once it is acknowledged', () => {
+  it('allows an overlap only once it is acknowledged, and withdraws it again', () => {
     const acknowledged = PlacementPolicy.withOverlap(
-      PlacementPolicy.staffWalkIn(),
+      PlacementPolicy.staffPlacement(),
       true,
     );
     expect(acknowledged.allowOverlap).toBe(true);
-    expect(PlacementPolicy.staffWalkIn().allowOverlap).toBe(false);
-    expect(
-      PlacementPolicy.equals(
-        PlacementPolicy.withOverlap(acknowledged, false),
-        PlacementPolicy.staffWalkIn(),
-      ),
-    ).toBe(true);
-    expect(
-      PlacementPolicy.equals(
-        PlacementPolicy.clientDefault(),
-        PlacementPolicy.staffWalkIn(),
-      ),
-    ).toBe(false);
+    expect(PlacementPolicy.staffPlacement().allowOverlap).toBe(false);
+    expect(PlacementPolicy.withOverlap(acknowledged, false)).toEqual(
+      PlacementPolicy.staffPlacement(),
+    );
+    expect(PlacementPolicy.clientDefault()).not.toEqual(
+      PlacementPolicy.staffPlacement(),
+    );
+  });
+
+  it('is pure: the presets are the same value every call, and withOverlap leaves its input untouched', () => {
+    expect(PlacementPolicy.staffPlacement()).toBe(
+      PlacementPolicy.staffPlacement(),
+    );
+    const base = PlacementPolicy.staffPlacement();
+    PlacementPolicy.withOverlap(base, true);
+    expect(base.allowOverlap).toBe(false);
   });
 });

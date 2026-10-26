@@ -1,0 +1,55 @@
+/*
+ * THE INBOX — layout only: the DS draws the bar, the head, the rows and
+ * their states. What is the page's own is the clearance under the sticky
+ * bar and the unread DOT.
+ */
+
+:host {
+  display: block;
+}
+
+/* The bar floats over a scrim and reserves no flow space (the sticky
+   toolbar, as on /account/appointments), so the content pads itself down
+   by the bar's height plus a gutter. */
+.notifications {
+  padding-block-start: calc(
+    var(--control-size-large) + var(--sys-space-regular)
+  );
+  padding-block-end: var(--sys-space-spacious);
+}
+
+.notifications__head {
+  padding-block-start: var(--sys-space-spacious);
+}
+
+/* A title and its detail may run long on a 330 phone: they wrap rather
+   than ellipsize, so a freed time is never cut off. */
+.notifications__text {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The age, then the dot, on one line — centred on the row (the list row's
+   trailing rule for a stacked label). */
+.notifications__trail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-tight);
+}
+
+/* UNREAD: the accent as a SHAPE (the accent law: colour is a shape, words
+   are ink) — a disc beside the age, as Mail marks an unread message. Its
+   box stays on a read row, empty, so the ages of a mixed run line up. It
+   takes no pointer and says nothing to a screen reader: the row's name
+   carries the sentence. */
+.notifications__dot {
+  flex-shrink: 0;
+  inline-size: var(--sys-size-dot);
+  block-size: var(--sys-size-dot);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.notifications__dot[data-unread] {
+  background: var(--sys-color-accent);
+}

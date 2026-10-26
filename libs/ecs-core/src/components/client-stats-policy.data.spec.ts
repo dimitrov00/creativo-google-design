@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs } from '@core/primitives';
+import { HourCount, UtcEpochMs } from '@core/primitives';
 import { SchedulingErrorCode } from '@core/errors';
-import { unwrapOk, utcMs } from '@core/testing';
+import { hourCount, unwrapOk, utcMs } from '@core/testing';
 import { BookingPolicy } from './booking-policy.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
 
@@ -24,7 +24,10 @@ describe('ClientStatsPolicy defaults', () => {
   });
 
   it('forBooking keeps the tenant’s booking policy', () => {
-    const booking = { ...BookingPolicy.DEFAULT, cancellationWindowHours: 48 };
+    const booking = {
+      ...BookingPolicy.DEFAULT,
+      cancellationWindowHours: hourCount(48),
+    };
     expect(ClientStatsPolicy.forBooking(booking).booking).toBe(booking);
   });
 });
@@ -107,16 +110,31 @@ describe('ClientStatsPolicy.isLateCancellation', () => {
       ClientStatsPolicy.isLateCancellation(policy, START, cancelled, null),
     ).toBe(false);
     expect(
-      ClientStatsPolicy.isLateCancellation(policy, START, cancelled, 48),
+      ClientStatsPolicy.isLateCancellation(
+        policy,
+        START,
+        cancelled,
+        hourCount(48),
+      ),
     ).toBe(true);
   });
 
   it('a stamped zero-hour window is a shop with no free cancellation window', () => {
-    expect(ClientStatsPolicy.isLateCancellation(policy, START, START, 0)).toBe(
-      false,
-    );
     expect(
-      ClientStatsPolicy.isLateCancellation(policy, START, at(START + 1), 0),
+      ClientStatsPolicy.isLateCancellation(
+        policy,
+        START,
+        START,
+        HourCount.ZERO,
+      ),
+    ).toBe(false);
+    expect(
+      ClientStatsPolicy.isLateCancellation(
+        policy,
+        START,
+        at(START + 1),
+        HourCount.ZERO,
+      ),
     ).toBe(true);
   });
 

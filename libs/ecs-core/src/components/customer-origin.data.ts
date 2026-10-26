@@ -5,8 +5,9 @@
  *
  * - `REGISTRATION` — `completeRegistration` created it beside the account
  *   (identity flip (2));
- * - `STAFF_WALK_IN` — the visit editor's «Нов клиент» created it for a
- *   person with no account (a random `cus_…` id, `userId: null`);
+ * - `STAFF_WALK_IN` — the staff commit or edit created it for a walk-in the
+ *   desk took a contact for (the deterministic `CustomerId.forWalkIn` id over
+ *   its phone, else its e-mail; `userId: null`; OR-26);
  * - `FIRST_BOOKING` — the booking pipeline created it for an account holder
  *   with no record yet, inside the commit (booking flip (1));
  * - `SEED` — the dev seed wrote it for a seeded client.

@@ -103,6 +103,16 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // The inbox (OR-19): the menu's «Известия» row opens it, the waitlist
+    // step promises it. Guarded like `/account`, whose page it hangs off.
+    path: 'account/notifications',
+    canActivate: [activeGuard],
+    loadComponent: () =>
+      import('@creativo/features/client/notifications').then(
+        (m) => m.AccountNotifications,
+      ),
+  },
+  {
     path: 'account/profile',
     canActivate: [activeGuard],
     loadComponent: () =>
@@ -140,15 +150,14 @@ export const appRoutes: Route[] = [
     redirectTo: 'staff/schedule',
   },
   {
-    // `sysadmin` included — rules' `isAdmin()` is the pair, and a guard
-    // that denies what the rules allow strands a legitimate principal on
-    // /forbidden over a screen the data layer would happily serve.
+    // The admin area's door: its one page with a body today is the
+    // rhythm's (OR-24 — the impersonation placeholder that answered here is
+    // deleted). Deliberately UNGUARDED, like `staff` and `admin/loyalty`:
+    // the redirect is not an authorization decision, and the target's own
+    // guards — the admin pair `isAdmin()` names — still run afterwards.
     path: 'admin',
-    canActivate: [activeGuard, rolesGuard(...Roles.ADMIN)],
-    loadComponent: () =>
-      import('@creativo/features/admin/impersonation').then(
-        (m) => m.AdminImpersonation,
-      ),
+    pathMatch: 'full',
+    redirectTo: 'admin/loyalty/rhythm',
   },
   {
     // Matches `isCatalogManager()` in firestore.rules — content_manager's
@@ -168,9 +177,11 @@ export const appRoutes: Route[] = [
   },
   {
     // «Ритъм» — the rhythm rule the admin manages (client-card revision 3
-    // §2.6). The pair `isAdmin()` names in firestore.rules, as on `admin`
-    // above; and the app's first `canDeactivate`: leaving with an unsaved
-    // draft asks first, whichever way the admin leaves.
+    // §2.6). The pair `isAdmin()` names in firestore.rules — `sysadmin`
+    // included, since a guard that denies what the rules allow strands a
+    // legitimate principal on /forbidden over a screen the data layer would
+    // happily serve; and the app's first `canDeactivate`: leaving with an
+    // unsaved draft asks first, whichever way the admin leaves.
     path: 'admin/loyalty/rhythm',
     canActivate: [activeGuard, rolesGuard(...Roles.ADMIN)],
     canDeactivate: [adminRhythmLeaveGuard],

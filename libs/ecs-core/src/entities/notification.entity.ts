@@ -6,8 +6,9 @@ import type { NotificationId, UtcEpochMs } from '@core/primitives';
  * recipient's inbox (owner-read, never queried across users, TTL-purged on
  * the adapter-stamped root `purgeAt` = `sentAtUtcMs` + 90 d). Read state
  * lives here: "unread" is `readAtUtcMs === null`, the question every badge
- * asks (NotificationSystem `unreadCount`, `markRead`). Named
- * `InboxNotification` because `Notification` shadows the DOM global (F-17).
+ * asks (NotificationSystem `unreadCount`, `unreadIds` / `receiptAt`,
+ * OR-19). Named `InboxNotification` because `Notification` shadows the DOM
+ * global (F-17).
  *
  * The archetype (Law 6): the stamps beside the `NotificationPayload` slice
  * — today's root `kind` duplicate, `requestId`, `dayKey` and the nested

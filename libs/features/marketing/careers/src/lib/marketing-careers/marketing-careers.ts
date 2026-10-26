@@ -7,10 +7,11 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocalizedText, PositionStatus } from '@core/components';
-import type { Position } from '@core/entities';
-import { Locale } from '@core/primitives';
-import { POSITION_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import { PositionStatus } from '@core/components';
+import {
+  CATALOG_PORTS,
+  POSITION_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
@@ -32,6 +33,8 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
+import { positionRowsVm } from './marketing-careers.presenter';
+import type { PositionRowVm } from './marketing-careers.vm';
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
@@ -46,9 +49,13 @@ const STATUS_TONES = {
  *  `toSignal` over the live read (`POSITION_READ_PORTS`, open roles only),
  *  the shared `LoadSlice` read state, `ui-list-group` for the list
  *  body (no `ui-divider`s — the seam is the separator), a hand-composed
- *  empty state falling back to the shop's Instagram link. Chrome is the
- *  real site header/footer (`@creativo/features/shared/shell`), solid
- *  (`uiOverHero=false`) since there's no hero underneath. */
+ *  empty state falling back to the shop's Instagram link. A row's words
+ *  are the presenter's (`positionRowsVm`, OR-42): at a multi-shop tenant a
+ *  role scoped to some shops names them under its summary, from the
+ *  catalogue's ACTIVE shops read once beside the roles
+ *  (`observeLocations`). Chrome is the real site header/footer
+ *  (`@creativo/features/shared/shell`), solid (`uiOverHero=false`) since
+ *  there's no hero underneath. */
 @Component({
   selector: 'cr-marketing-careers',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -75,6 +82,7 @@ const STATUS_TONES = {
 })
 export class MarketingCareers {
   private readonly positions = inject(POSITION_READ_PORTS);
+  private readonly catalog = inject(CATALOG_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
 
@@ -87,27 +95,34 @@ export class MarketingCareers {
     { initialValue: undefined },
   );
 
-  protected readonly state = computed<LoadSlice<readonly Position[]>>(() => {
-    const result = this.result();
-    if (result === undefined) return LoadSlice.loading;
-    if (!result.ok) return LoadSlice.failed;
-    return LoadSlice.ready(result.value);
+  /** The active UI language — the rows re-word on a switch. */
+  private readonly lang = toSignal(this.transloco.langChanges$, {
+    initialValue: this.transloco.getActiveLang(),
   });
+
+  /** The ACTIVE shops, as read — `undefined` until they answer (OR-42). */
+  private readonly shops = toSignal(this.catalog.observeLocations(), {
+    initialValue: undefined,
+  });
+
+  protected readonly state = computed<LoadSlice<readonly PositionRowVm[]>>(
+    () => {
+      const result = this.result();
+      if (result === undefined) return LoadSlice.loading;
+      if (!result.ok) return LoadSlice.failed;
+      return LoadSlice.ready(
+        positionRowsVm({
+          positions: result.value,
+          shops: this.shops(),
+          lang: this.lang(),
+          fallbackHref: this.instagramUrl,
+        }),
+      );
+    },
+  );
 
   constructor() {
     this.title.setTitle('Careers · Creativo');
-  }
-
-  /** The active language's string — `bg` for every language but `en`. */
-  protected text(localized: LocalizedText): string {
-    return LocalizedText.pick(
-      localized,
-      this.transloco.getActiveLang() === Locale.En ? Locale.En : Locale.Bg,
-    );
-  }
-
-  protected applyHref(position: Position): string {
-    return position.applyUrl ?? this.instagramUrl;
   }
 
   protected statusTone(positionStatus: PositionStatus): UiBadgeTone {

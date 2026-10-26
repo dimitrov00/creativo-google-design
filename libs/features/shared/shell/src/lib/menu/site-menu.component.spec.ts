@@ -26,10 +26,19 @@ import type {
 } from '@core/ports';
 import { BirthDate, Principal } from '@core/components';
 import type { Appointment, InboxNotification, User } from '@core/entities';
-import { Result as EcsResult, UserId, type UtcEpochMs } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import {
+  AppointmentId,
+  Result as EcsResult,
+  LocationId,
+  UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import { RepositoryError } from '@core/errors';
+import { InboxStore } from '@creativo/features/client/notifications';
+import {
+  appointmentFixture,
   locationFixture,
+  minute,
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
@@ -52,6 +61,21 @@ const SHOPS: LocationLoadPorts = memoryLocationLoadPorts(
   memoryProgramsWorld({ locations: [locationFixture()] }),
 );
 const ACTIVE_PRINCIPAL = principalFixture.client(UserId.of('user_1'));
+
+/*
+ * The account's live bookings at the centre shop, on the fixture day — its
+ * clock reads 09:00 (the pinned instant): the 08:30 visit has begun, the
+ * 10:00 and 11:00 ones are still to come.
+ */
+const BEGUN = appointmentFixture({
+  id: AppointmentId.of('appt-begun'),
+  startMinutes: minute(8 * 60 + 30),
+});
+const TEN_O_CLOCK = appointmentFixture({ id: AppointmentId.of('appt-ten') });
+const ELEVEN_O_CLOCK = appointmentFixture({
+  id: AppointmentId.of('appt-eleven'),
+  startMinutes: minute(11 * 60),
+});
 
 /** Ада Тестова, registered — a birth date closes that item. */
 function user(birthDate?: string): User {
@@ -115,10 +139,14 @@ describe('SiteMenuComponent', () => {
     isStaffMember?: boolean;
     /** One of the admin pair — surfaces the «Лоялност» entry. */
     isAdmin?: boolean;
-    /** How many upcoming visits the bookings row should report. */
-    upcoming?: number;
+    /** The account's live bookings — the bookings row counts those still to come. */
+    upcoming?: readonly Appointment[];
     /** How many UNREAD notifications the inbox should report. */
     unread?: number;
+    /** Stands in for the inbox listener outright (the unread count is then its). */
+    inbox$?: Observable<
+      EcsResult<readonly InboxNotification[], RepositoryError>
+    >;
     displayName?: string | null;
     avatarUrl?: string | null;
     /** Omit for "no profile row yet"; pass a birth date to close that item. */
@@ -176,18 +204,9 @@ describe('SiteMenuComponent', () => {
           provide: APPOINTMENT_READ_PORTS,
           useValue: {
             ...memoryAppointmentReadPorts([]),
-            // The row only reads `.length`, so bare placeholders are
-            // honest here — building real entities would test the
-            // fixture, not the badge. The one member wrapped.
-            observeUpcoming: () =>
-              of(
-                EcsResult.ok(
-                  Array.from(
-                    { length: inputs.upcoming ?? 0 },
-                    () => ({}) as Appointment,
-                  ),
-                ),
-              ),
+            // Real visits: "upcoming" reads each one's status, shop and
+            // start on its shop's clock (OR-8). The one member wrapped.
+            observeUpcoming: () => of(EcsResult.ok(inputs.upcoming ?? [])),
           } satisfies AppointmentReadPorts,
         },
         {
@@ -198,6 +217,7 @@ describe('SiteMenuComponent', () => {
             // stamp — `readAtUtcMs === null` is the only thing
             // `NotificationSystem.unreadCount` asks. The one member wrapped.
             observeInbox: () =>
+              inputs.inbox$ ??
               of(
                 EcsResult.ok(
                   Array.from(
@@ -445,7 +465,11 @@ describe('SiteMenuComponent', () => {
   });
 
   it('badges the bookings row with the upcoming-visit count', async () => {
-    const fixture = await render({ open: true, isAuthed: true, upcoming: 2 });
+    const fixture = await render({
+      open: true,
+      isAuthed: true,
+      upcoming: [TEN_O_CLOCK, ELEVEN_O_CLOCK],
+    });
 
     expect(
       fixture.nativeElement.querySelector('[data-testid="menu-bookings-count"]')
@@ -454,13 +478,110 @@ describe('SiteMenuComponent', () => {
   });
 
   it('shows no badge at zero — the absence already says nothing is upcoming', async () => {
-    const fixture = await render({ open: true, isAuthed: true, upcoming: 0 });
+    const fixture = await render({ open: true, isAuthed: true, upcoming: [] });
 
     expect(
       fixture.nativeElement.querySelector(
         '[data-testid="menu-bookings-count"]',
       ),
     ).toBeNull();
+  });
+
+  it('does not count a visit that has begun — judged on its own shop’s clock (OR-8)', async () => {
+    // 09:00 at the shop: the 08:30 visit is under way, the 10:00 one to come.
+    const fixture = await render({
+      open: true,
+      isAuthed: true,
+      upcoming: [BEGUN, TEN_O_CLOCK],
+    });
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="menu-bookings-count"]')
+        ?.textContent,
+    ).toContain('1');
+  });
+
+  it('shows no badge when the only live visit has begun (DEP-F7)', async () => {
+    const fixture = await render({
+      open: true,
+      isAuthed: true,
+      upcoming: [BEGUN],
+    });
+
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-testid="menu-bookings-count"]',
+      ),
+    ).toBeNull();
+  });
+
+  it('reads its visits’ shop zones only once the menu has been opened', async () => {
+    const elsewhere = LocationId.of('loc-elsewhere');
+    const asked: LocationId[] = [];
+    const fixture = await render({
+      open: false,
+      isAuthed: true,
+      locations: {
+        loadLocation: async (id) => {
+          asked.push(id);
+          return SHOPS.loadLocation(
+            id === elsewhere ? LocationId.of('loc-center') : id,
+          );
+        },
+      },
+      upcoming: [
+        appointmentFixture({
+          id: AppointmentId.of('appt-elsewhere'),
+          locationId: elsewhere,
+        }),
+      ],
+    });
+
+    // Mounted with the shell, closed: no row is on screen, nothing is read
+    // to decorate it.
+    expect(asked).not.toContain(elsewhere);
+
+    fixture.componentRef.setInput('open', true);
+    for (let pass = 0; pass < 3; pass++) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    expect(asked.filter((id) => id === elsewhere)).toHaveLength(1);
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="menu-bookings-count"]')
+        ?.textContent,
+    ).toContain('1');
+  });
+
+  it('counts nothing at a shop whose zone cannot be read', async () => {
+    const elsewhere = LocationId.of('loc-elsewhere');
+    const fixture = await render({
+      open: true,
+      isAuthed: true,
+      // The other shop's read fails: its visit cannot be judged, so it is
+      // not claimed to be still to come.
+      locations: {
+        loadLocation: async (id) =>
+          id === elsewhere
+            ? EcsResult.err(
+                RepositoryError.readFailed(`locations/${id}`, 'unavailable'),
+              )
+            : SHOPS.loadLocation(id),
+      },
+      upcoming: [
+        TEN_O_CLOCK,
+        appointmentFixture({
+          id: AppointmentId.of('appt-elsewhere'),
+          locationId: elsewhere,
+        }),
+      ],
+    });
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="menu-bookings-count"]')
+        ?.textContent,
+    ).toContain('1');
   });
 
   it('counts unread notifications on the notifications row', async () => {
@@ -471,11 +592,50 @@ describe('SiteMenuComponent', () => {
       '[data-testid="menu-notifications"]',
     );
     expect(row).not.toBeNull();
-    expect(row!.getAttribute('href')).toBe('/account');
+    // The inbox itself (OR-19), no longer the account dashboard.
+    expect(row!.getAttribute('href')).toBe('/account/notifications');
     expect(
       host.querySelector('[data-testid="menu-notifications-count"]')
         ?.textContent,
     ).toContain('4');
+  });
+
+  it('reads the badge off the root InboxStore — one listener, and it clears on the receipt', async () => {
+    const unread = (id: string) =>
+      ({ id, readAtUtcMs: null }) as unknown as InboxNotification;
+    const inbox$ = new BehaviorSubject<
+      EcsResult<readonly InboxNotification[], RepositoryError>
+    >(EcsResult.ok([unread('n1'), unread('n2')]));
+    let listeners = 0;
+    const fixture = await render({
+      open: true,
+      isAuthed: true,
+      inbox$: new Observable((subscriber) => {
+        listeners += 1;
+        return inbox$.subscribe(subscriber);
+      }),
+    });
+    const host: HTMLElement = fixture.nativeElement;
+    const count = () =>
+      host.querySelector('[data-testid="menu-notifications-count"]');
+
+    expect(count()?.textContent).toContain('2');
+    // The page's store and the badge's are ONE: it already holds the inbox.
+    expect(TestBed.inject(InboxStore).unreadCount()).toBe(2);
+    expect(listeners).toBe(1);
+
+    // The page's receipt comes back through the one listener: the badge goes.
+    inbox$.next(
+      EcsResult.ok([
+        { ...unread('n1'), readAtUtcMs: 1 },
+        { ...unread('n2'), readAtUtcMs: 1 },
+      ] as unknown as InboxNotification[]),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(count()).toBeNull();
+    expect(listeners).toBe(1);
   });
 
   it('shows no notifications badge at zero — same rule as the bookings count', async () => {
@@ -495,7 +655,9 @@ describe('SiteMenuComponent', () => {
     const row = host.querySelector<HTMLAnchorElement>(
       '[data-testid="menu-notifications"]',
     );
-    expect(row!.getAttribute('href')).toBe('/auth?redirect=%2Faccount');
+    expect(row!.getAttribute('href')).toBe(
+      '/auth?redirect=%2Faccount%2Fnotifications',
+    );
     // A count is never leaked to a signed-out visitor.
     expect(
       host.querySelector('[data-testid="menu-notifications-count"]'),

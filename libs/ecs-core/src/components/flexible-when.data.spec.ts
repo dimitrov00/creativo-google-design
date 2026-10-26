@@ -42,11 +42,10 @@ describe('FlexibleWhen', () => {
     expect(FlexibleWhen.windowsFor(when, day('2026-08-27'))).toBeNull();
   });
 
-  it('re-selecting a held day does NOT discard its windows', () => {
-    const narrowed = FlexibleWhen.withWindows(
-      added(FlexibleWhen.empty(), '2026-08-26'),
+  it('re-selecting a held day does NOT discard its windows (a restored request’s)', () => {
+    const narrowed = FlexibleWhen.of([
       DayWindows.of(day('2026-08-26'), [r(480, 720)]),
-    );
+    ]);
     const again = added(narrowed, '2026-08-26');
     expect(again).toBe(narrowed);
     expect(FlexibleWhen.windowsFor(again, day('2026-08-26'))?.windows).toEqual([
@@ -66,10 +65,9 @@ describe('FlexibleWhen', () => {
   });
 
   it('forgets a removed day’s windows — re-adding starts clean', () => {
-    const narrowed = FlexibleWhen.withWindows(
-      added(FlexibleWhen.empty(), '2026-08-26'),
+    const narrowed = FlexibleWhen.of([
       DayWindows.of(day('2026-08-26'), [r(480, 720)]),
-    );
+    ]);
     const removed = FlexibleWhen.withoutDay(narrowed, day('2026-08-26'));
     expect(FlexibleWhen.isEmpty(removed)).toBe(true);
     const readded = added(removed, '2026-08-26');
@@ -77,12 +75,7 @@ describe('FlexibleWhen', () => {
     expect(entry !== null && DayWindows.isWholeDay(entry)).toBe(true);
   });
 
-  it('ignores windows for a day that is not selected, and removing an absent day', () => {
-    const when = FlexibleWhen.withWindows(
-      FlexibleWhen.empty(),
-      DayWindows.of(day('2026-08-26'), [r(480, 720)]),
-    );
-    expect(FlexibleWhen.isEmpty(when)).toBe(true);
+  it('ignores removing a day that is not selected', () => {
     const one = added(FlexibleWhen.empty(), '2026-08-25');
     expect(FlexibleWhen.withoutDay(one, day('2026-08-26'))).toBe(one);
     expect(FlexibleWhen.has(one, day('2026-08-25'))).toBe(true);

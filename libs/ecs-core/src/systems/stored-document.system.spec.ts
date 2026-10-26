@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BlockKind, MinuteBlock } from '@core/components';
+import {
+  BlockKind,
+  MinuteBlock,
+  SeatLabel,
+  SeatOccupant,
+} from '@core/components';
 import { RepositoryErrorCode } from '@core/errors';
 import { type AppointmentNote, Collections } from '@core/entities';
-import { AppointmentId, UserId } from '@core/primitives';
+import { AppointmentId, CustomerId, UserId } from '@core/primitives';
 import {
   appointmentFixture,
   at,
@@ -10,6 +15,7 @@ import {
   customerFixture,
   deepFreeze,
   seatFixture,
+  unguarded,
   until,
   utcMs,
 } from '@core/testing';
@@ -131,6 +137,54 @@ describe('StoredDocumentSystem.appointment — appointments/{id} as read', () =>
         seats: [{ ...seatFixture(), startMinutes: 'ten' }],
       }),
     ).toBe('seats[0].startMinutes');
+  });
+
+  it('admits a walk-in’s seat, and names its record when it is no id (OR-26)', () => {
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const walkIn = seatFixture({
+      occupant: SeatOccupant.walkIn(record, SeatLabel.of('Мария')),
+    });
+    const doc = {
+      ...appointmentFixture(),
+      seats: [seatFixture(), walkIn],
+      subjectCustomerIds: [appointmentFixture().subjectCustomerIds[0], record],
+    };
+    const answer = StoredDocumentSystem.appointment(doc);
+    expect(answer.ok && answer.value).toBe(doc);
+    expect(
+      StoredDocumentSystem.appointmentFault({
+        ...doc,
+        seats: [seatFixture(), { ...walkIn, subjectCustomerId: 'cus/1' }],
+      }),
+    ).toBe('seats[1].subjectCustomerId');
+  });
+
+  it('checks a cancelled seat’s window as the HourCount it is typed as — null is unknown, admitted (OR-45)', () => {
+    const cancelled = {
+      ...seatFixture(),
+      attendanceState: 'CANCELLED',
+      cancelledAtUtcMs: appointmentFixture().utcEpochMs,
+      cancelledBy: 'STAFF',
+      cancellationReason: 'OTHER',
+    };
+    for (const window of [null, 0, 24, 2_400_000_000]) {
+      expect(
+        StoredDocumentSystem.appointmentFault({
+          ...appointmentFixture(),
+          seats: [{ ...cancelled, cancellationWindowHours: window }],
+        }),
+        String(window),
+      ).toBeNull();
+    }
+    for (const window of [-1, 1.5, '24', 2_400_000_001, undefined]) {
+      expect(
+        StoredDocumentSystem.appointment({
+          ...appointmentFixture(),
+          seats: [{ ...cancelled, cancellationWindowHours: window }],
+        }),
+        String(window),
+      ).toEqual(refused(APPOINTMENT_PATH, 'seats[0].cancellationWindowHours'));
+    }
   });
 
   it('admits the subject mirrors absent or null — the backfill’s legacy rows, repaired later', () => {
@@ -385,7 +439,7 @@ describe('StoredDocumentSystem.salvage — what a trigger may read off a side', 
   });
 });
 
-describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
+describe('StoredDocumentSystem.guardOf — the registry', () => {
   it('answers a guard for the four collections, null for every other', () => {
     expect(StoredDocumentSystem.guardOf(Collections.Appointments)).toBe(
       StoredDocumentSystem.appointment,
@@ -411,7 +465,8 @@ describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
     }
   });
 
-  it('unguarded answers null for every collection', () => {
+  it('is the one registry the tier exports (OR-33): the registry that guards nothing is test support, null for every collection', () => {
+    expect(Object.keys(StoredDocumentSystem)).not.toContain('unguarded');
     for (const collection of [
       Collections.Appointments,
       Collections.Customers,
@@ -419,7 +474,7 @@ describe('StoredDocumentSystem.guardOf and unguarded — the registry', () => {
       Collections.AppointmentNotes,
       Collections.Users,
     ]) {
-      expect(StoredDocumentSystem.unguarded(collection)).toBeNull();
+      expect(unguarded(collection), collection).toBeNull();
     }
   });
 });
@@ -462,12 +517,12 @@ describe('StoredDocumentSystem.admit — the one dispatch every read site shares
     ).toEqual(refused(NOTE_PATH, 'text'));
   });
 
-  it('reads an unguarded collection, a subcollection (null) and the unguarded registry as stored — the same object, never checked', () => {
+  it('reads an unguarded collection, a subcollection (null) and the test support’s unguarded registry as stored — the same object, never checked', () => {
     const garbage: StoredDocument = { id: 'x', bookingStatus: 'BOGUS' };
     for (const [guardOf, collection] of [
       [StoredDocumentSystem.guardOf, Collections.Users],
       [StoredDocumentSystem.guardOf, null],
-      [StoredDocumentSystem.unguarded, Collections.Appointments],
+      [unguarded, Collections.Appointments],
     ] as const) {
       const answer = StoredDocumentSystem.admit(guardOf, collection, garbage);
       expect(answer.ok && answer.value).toBe(garbage);

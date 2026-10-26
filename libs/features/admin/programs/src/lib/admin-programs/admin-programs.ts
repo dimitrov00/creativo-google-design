@@ -1,11 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
+  resource,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
-import { TranslocoDirective } from '@jsverse/transloco';
+import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   type CourseInput,
   EnrollmentStatus,
@@ -15,13 +18,30 @@ import {
   type ShopEventInput,
   WallTime,
 } from '@core/components';
-import type { Course, Position, ShopEvent } from '@core/entities';
-import { UiButton, UiChip, UiTextField } from '@creativo/ui/controls';
-import { UiStack } from '@creativo/ui/layout';
+import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
+import type { ProgramSaveError } from '@core/errors';
+import { Locale, type LocationId, Tag } from '@core/primitives';
+import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
+import { shopNameOf } from '@creativo/features/shared/catalog';
+import { sameLocationIds } from '@creativo/infrastructure/firebase-app';
+import {
+  loadedLanguage,
+  translateCodedError,
+} from '@creativo/infrastructure/i18n';
+import {
+  UiButton,
+  UiChip,
+  UiChoiceMenu,
+  type UiChoiceOption,
+  UiIcon,
+  UiTextField,
+} from '@creativo/ui/controls';
+import { UiFlow, UiStack } from '@creativo/ui/layout';
 import {
   UiCard,
   UiListGroup,
   UiListRow,
+  UiMenuTrigger,
   UiSectionHeader,
 } from '@creativo/ui/patterns';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
@@ -53,15 +73,34 @@ type EventEditing = {
 };
 type Editing = PositionEditing | CourseEditing | EventEditing | null;
 
+/** One shop chip of the role form: the shop's id and the word it prints. */
+type ShopChip = {
+  readonly id: LocationId;
+  readonly label: string;
+};
+
+/** The «Без конкретен салон» option's id — the form's blank location (`''` → `null`). */
+const NO_SHOP = '';
+
 /**
  * `/admin/programs` — the one place staff manage Positions/Courses/Events.
  * One page, one tab switcher (not three routes) since the three entities
  * share so much shape; list body is `ui-list-group`, status pickers are
- * `ui-chip` toggle pairs (no `ui-select` exists in the design system), and
- * the create/edit surface is an inline panel rather than a modal sheet —
- * `ModalSheetComponent` lives in `marketing-landing` and isn't part of its
- * public API, and pulling in the raw `ui-sheet` behavior wiring is more
- * ceremony than an internal tool needs.
+ * `ui-chip` toggle pairs, and the create/edit surface is an inline panel
+ * rather than a modal sheet — `ModalSheetComponent` lives in
+ * `marketing-landing` and isn't part of its public API, and pulling in the
+ * raw `ui-sheet` behavior wiring is more ceremony than an internal tool
+ * needs. Every word is the catalogue's (`admin.programs.*`, OR-37).
+ *
+ * The shops (OR-37, OR-42): an event is at one of the ACTIVE shops or at
+ * none (`ui-choice-menu`, «Без конкретен салон» first), a role is open at
+ * the shops its chips name or at every shop (none chosen). Both pickers
+ * draw only on a known list with shops to tell apart
+ * (`LocationScopeSystem.isMultiShop`) — or when the edited program holds a
+ * stored shop the list does not: that id stays, as an extra option worded
+ * hidden («Център (скрит)») or deleted («Изтрит салон») from one read of
+ * it, and is never dropped silently. A hidden picker leaves the stored
+ * value as it was.
  */
 @Component({
   selector: 'lib-admin-programs',
@@ -71,9 +110,13 @@ type Editing = PositionEditing | CourseEditing | EventEditing | null;
     UiButton,
     UiCard,
     UiChip,
+    UiChoiceMenu,
+    UiFlow,
     UiFrameDirective,
+    UiIcon,
     UiListGroup,
     UiListRow,
+    UiMenuTrigger,
     UiSectionHeader,
     UiStack,
     UiTextField,
@@ -86,14 +129,15 @@ type Editing = PositionEditing | CourseEditing | EventEditing | null;
 export class AdminPrograms {
   protected readonly store = inject(AdminProgramsStore);
   private readonly title = inject(Title);
+  private readonly transloco = inject(TranslocoService);
 
   /** The status dictionaries, for the chips — the template never spells a stored tag. */
   protected readonly PositionStatus = PositionStatus;
   protected readonly EnrollmentStatus = EnrollmentStatus;
   /*
-   * The rows' trailing status text is today's lowercase word (F4-7), read
-   * from the catalogue by its stored tag — `programs.status.position.<tag>`,
-   * `programs.status.enrollment.<tag>` (pass E, E-17).
+   * A status prints the catalogue's word for its stored tag —
+   * `programs.status.position.<tag>`, `programs.status.enrollment.<tag>`
+   * (pass E, E-17; translated by OR-53) — on the rows and on the chips.
    */
   /** The edit form's program kinds, for the template. */
   protected readonly ProgramEditing = ProgramEditing;
@@ -103,7 +147,10 @@ export class AdminPrograms {
   protected readonly tab = signal<ProgramsTab>(ProgramsTab.Positions);
   protected readonly editing = signal<Editing>(null);
   protected readonly saving = signal(false);
-  protected readonly saveFailed = signal(false);
+  /** The last save's refusals; `null` until a save is refused. */
+  protected readonly saveRefusals = signal<readonly ProgramSaveError[] | null>(
+    null,
+  );
 
   // Position fields
   protected readonly positionTitleEn = signal('');
@@ -113,6 +160,8 @@ export class AdminPrograms {
   protected readonly positionStatus = signal<PositionStatus>(
     PositionStatus.Open,
   );
+  /** The shops the chips name, in the order they were chosen; empty = every shop. */
+  protected readonly positionShopIds = signal<readonly LocationId[]>([]);
   protected readonly positionApplyUrl = signal('');
   protected readonly positionSortOrder = signal(0);
 
@@ -136,12 +185,182 @@ export class AdminPrograms {
   protected readonly eventDescriptionBg = signal('');
   /** The shop wall clock as typed, `YYYY-MM-DDTHH:mm`. */
   protected readonly eventStartsAt = signal('');
-  protected readonly eventLocationId = signal('');
+  /** The menu's pick — a shop's id, or {@link NO_SHOP}. */
+  protected readonly eventLocationId = signal<string>(NO_SHOP);
   protected readonly eventApplyUrl = signal('');
   protected readonly eventSortOrder = signal(0);
+  /** Whether the «Салон» menu is open. */
+  protected readonly eventShopMenu = signal(false);
+
+  // ── The words ───────────────────────────────────────────────────────────
+
+  /**
+   * The language the catalogue has loaded, once it has: every word below is
+   * built with `translate(…, lang)`, so no lookup inside a `computed` starts
+   * a load.
+   */
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
+
+  /** The data language a shop's name is read in — `bg` for every language but `en`. */
+  private readonly locale = computed(() =>
+    Tag.or(Locale, this.loadedLang(), Locale.Bg),
+  );
+
+  // ── The shops (OR-37, OR-42) ────────────────────────────────────────────
+
+  /** The active shops as read; empty until they answer and on a failed read. */
+  private readonly activeShops = computed((): readonly ShopLocation[] => {
+    const shops = this.store.shops();
+    return shops?.ok ? shops.value : [];
+  });
+
+  /**
+   * The edited program's stored shops that the active list does not hold
+   * (hidden or deleted), in stored order — `ProgramsSystem`'s answer
+   * (`eventUnlistedShop`, `positionUnlistedShops`), only once the list is
+   * known: an unread list proves nothing about a stored id.
+   */
+  private readonly unlistedIds = computed(
+    (): readonly LocationId[] => {
+      if (this.store.shops()?.ok !== true) return [];
+      const editing = this.editing();
+      if (editing?.programEditing === ProgramEditing.Event) {
+        if (editing.source === null) return [];
+        const id = ProgramsSystem.eventUnlistedShop(
+          editing.source,
+          this.activeShops(),
+        );
+        return id === null ? [] : [id];
+      }
+      if (editing?.programEditing === ProgramEditing.Position) {
+        if (editing.source === null) return [];
+        return ProgramsSystem.positionUnlistedShops(
+          editing.source,
+          this.activeShops(),
+        );
+      }
+      return [];
+    },
+    { equal: sameLocationIds },
+  );
+
+  /** What the unlisted ids are: each read once by id (hidden → the shop, deleted → `null`). */
+  private readonly unlistedShops = resource({
+    params: () => {
+      const ids = this.unlistedIds();
+      return ids.length === 0 ? undefined : ids;
+    },
+    loader: ({ params }) => this.store.loadShops(params),
+  });
+
+  /** Is there a picker to draw: a known list with shops to tell apart, or a stored shop it does not hold. */
+  protected readonly shopsShown = computed(
+    () =>
+      this.store.shops()?.ok === true &&
+      (LocationScopeSystem.isMultiShop(this.activeShops().length) ||
+        this.unlistedIds().length > 0),
+  );
+
+  /**
+   * Every shop a picker offers — the event menu's options after «Без
+   * конкретен салон», the role's chips after «Всеки салон»: the active ones,
+   * then the edited program's unlisted ones.
+   */
+  protected readonly shopChoices = computed((): readonly ShopChip[] => {
+    const lang = this.loadedLang();
+    if (lang === null) return [];
+    const locale = this.locale();
+    const chips: ShopChip[] = [];
+    for (const shop of this.activeShops()) {
+      chips.push({ id: shop.id, label: shopNameOf(shop, locale) });
+    }
+    const read = this.unlistedShops.hasValue()
+      ? this.unlistedShops.value()
+      : null;
+    for (const id of this.unlistedIds()) {
+      const loaded = read?.get(id);
+      chips.push({
+        id,
+        // Unread (still reading, or the read failed): the stored id itself,
+        // claiming neither hidden nor deleted.
+        label:
+          loaded === undefined
+            ? id
+            : loaded === null
+              ? this.transloco.translate('admin.programs.shopMissing', {}, lang)
+              : this.transloco.translate(
+                  'admin.programs.shopHidden',
+                  { name: shopNameOf(loaded, locale) },
+                  lang,
+                ),
+      });
+    }
+    return chips;
+  });
+
+  /** The event's «Салон» menu: «Без конкретен салон», then every shop choice. */
+  protected readonly eventShopOptions = computed(
+    (): readonly UiChoiceOption[] => {
+      const lang = this.loadedLang();
+      if (lang === null) return [];
+      const options: UiChoiceOption[] = [
+        {
+          id: NO_SHOP,
+          label: this.transloco.translate(
+            'admin.programs.event.shopNone',
+            {},
+            lang,
+          ),
+          testId: 'admin-event-shop-none',
+        },
+      ];
+      for (const choice of this.shopChoices()) {
+        options.push({
+          id: choice.id,
+          label: choice.label,
+          testId: `admin-event-shop-${choice.id}`,
+        });
+      }
+      return options;
+    },
+  );
+
+  /** What the menu's trigger reads: the picked option's word. */
+  protected readonly eventShopLabel = computed(
+    () =>
+      this.eventShopOptions().find(
+        (option) => option.id === this.eventLocationId(),
+      )?.label ?? '',
+  );
+
+  /**
+   * The refused save in words (OR-38): ONE refusal the catalogue words —
+   * `errors.<errorCode>`, «Този салон вече не съществува. Избери друг.» —
+   * prints as itself; several, or one without words, print the form's
+   * generic line.
+   */
+  protected readonly saveError = computed((): string | null => {
+    const refusals = this.saveRefusals();
+    const lang = this.loadedLang();
+    if (refusals === null || lang === null) return null;
+    const generic = this.transloco.translate(
+      'admin.programs.saveFailed',
+      {},
+      lang,
+    );
+    const [only] = refusals;
+    if (refusals.length !== 1 || only === undefined) return generic;
+    const worded = translateCodedError(this.transloco, only);
+    return worded === only.errorCode ? generic : worded;
+  });
 
   constructor() {
-    this.title.setTitle('Programs · Creativo Admin');
+    this.transloco
+      .selectTranslate('admin.programs.documentTitle')
+      .pipe(takeUntilDestroyed())
+      .subscribe((title: string) => this.title.setTitle(title));
   }
 
   protected setTab(next: ProgramsTab): void {
@@ -153,6 +372,7 @@ export class AdminPrograms {
     const tab = this.tab();
     if (tab === ProgramsTab.Positions) {
       this.fillPosition(ProgramInput.blankPosition());
+      this.positionShopIds.set([]);
       this.editing.set({
         programEditing: ProgramEditing.Position,
         source: null,
@@ -164,16 +384,18 @@ export class AdminPrograms {
       this.fillEvent(ProgramInput.blankShopEvent());
       this.editing.set({ programEditing: ProgramEditing.Event, source: null });
     }
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
   }
 
   protected startEditPosition(position: Position): void {
     this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
+    // The stored scope, as stored — an edit never wipes it (OR-42).
+    this.positionShopIds.set(position.locationIds);
     this.editing.set({
       programEditing: ProgramEditing.Position,
       source: position,
     });
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
   }
 
   protected startEditCourse(course: Course): void {
@@ -183,7 +405,7 @@ export class AdminPrograms {
       applyUrl: course.applyUrl ?? '',
     });
     this.editing.set({ programEditing: ProgramEditing.Course, source: course });
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
   }
 
   protected startEditEvent(event: ShopEvent): void {
@@ -195,47 +417,69 @@ export class AdminPrograms {
       startsAt: WallTime.toLocalIso(
         WallTime.of(event.localDate, event.startMinutes),
       ),
-      locationId: event.locationId ?? '',
+      locationId: event.locationId ?? NO_SHOP,
       applyUrl: event.applyUrl ?? '',
     });
     this.editing.set({ programEditing: ProgramEditing.Event, source: event });
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
   }
 
   protected cancelEdit(): void {
     this.editing.set(null);
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
+  }
+
+  /** «Всеки салон»: the role names no shop of its own — open at every one. */
+  protected chooseEveryShop(): void {
+    this.positionShopIds.set([]);
+  }
+
+  /** A shop chip toggled: off when chosen, else appended — the chosen order is kept. */
+  protected toggleShop(id: LocationId): void {
+    const chosen = this.positionShopIds();
+    this.positionShopIds.set(
+      chosen.includes(id)
+        ? chosen.filter((entry) => entry !== id)
+        : [...chosen, id],
+    );
+  }
+
+  protected shopChosen(id: LocationId): boolean {
+    return this.positionShopIds().includes(id);
   }
 
   protected async save(): Promise<void> {
     const editing = this.editing();
     if (!editing) return;
     this.saving.set(true);
-    this.saveFailed.set(false);
+    this.saveRefusals.set(null);
 
-    let succeeded: boolean;
+    let refusals: readonly ProgramSaveError[] | null;
     if (editing.programEditing === ProgramEditing.Position) {
-      succeeded = await this.store.submitPosition({
+      const saved = await this.store.submitPosition({
         id: editing.source?.id ?? null,
         input: this.positionInput(),
       });
+      refusals = saved.ok ? null : saved.error;
     } else if (editing.programEditing === ProgramEditing.Course) {
-      succeeded = await this.store.submitCourse({
+      const saved = await this.store.submitCourse({
         id: editing.source?.id ?? null,
         input: this.courseInput(),
       });
+      refusals = saved.ok ? null : saved.error;
     } else {
-      succeeded = await this.store.submitEvent({
+      const saved = await this.store.submitEvent({
         id: editing.source?.id ?? null,
         input: this.eventInput(),
       });
+      refusals = saved.ok ? null : saved.error;
     }
 
     this.saving.set(false);
-    if (succeeded) {
+    if (refusals === null) {
       this.editing.set(null);
     } else {
-      this.saveFailed.set(true);
+      this.saveRefusals.set(refusals);
     }
   }
 
@@ -279,17 +523,19 @@ export class AdminPrograms {
     this.eventLocationId.set(input.locationId);
     this.eventApplyUrl.set(input.applyUrl);
     this.eventSortOrder.set(input.sortOrder);
+    this.eventShopMenu.set(false);
   }
 
   /**
-   * The role form as typed. The form has no location field, so every save
-   * sends `locationIds: []` — an edit wipes stored ones, as before (F4-8).
+   * The role form as typed. Its scope is the chips' ids — the stored scope
+   * on an edit until a chip changes it, `[]` (every shop) when none is
+   * chosen (OR-42: an edit no longer wipes it, F4-8 retired).
    */
   private positionInput(): PositionInput {
     return {
       title: { en: this.positionTitleEn(), bg: this.positionTitleBg() },
       summary: { en: this.positionSummaryEn(), bg: this.positionSummaryBg() },
-      locationIds: [],
+      locationIds: this.positionShopIds(),
       positionStatus: this.positionStatus(),
       applyUrl: this.positionApplyUrl(),
       sortOrder: this.positionSortOrder(),
