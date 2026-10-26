@@ -216,7 +216,11 @@ export const appointmentPhotoPorts = (
      * object path, byte for byte), then their download URL. The object
      * carries the photo's six facts as its own metadata (strings only),
      * under the entity's key names: `clientCustomerId` and `takenByUserId`
-     * empty when absent, `takenAtUtcMs` in decimal. The limits — an image,
+     * empty when absent, `takenAtUtcMs` in decimal. That `takenAtUtcMs` is
+     * PROVISIONAL — the shutter press, read before the upload; the document
+     * `attachVisitPhoto` saves afterwards carries the instant read once the
+     * bytes are up (audit hardening L6, DEP-16: the rules' ±300 s stamp
+     * window must hold however long the upload took). The limits — an image,
      * at most `storage.rules`' 8 MiB — are the caller's guard BEFORE this
      * call (`media.port.ts`), never this adapter's: whatever slips past it,
      * Storage itself refuses, answered as `MEDIA_FORBIDDEN`.

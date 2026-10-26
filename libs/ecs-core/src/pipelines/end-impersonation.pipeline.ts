@@ -1,4 +1,5 @@
 import {
+  Actor,
   type GovernanceCall,
   ImpersonationStatus,
   type Role,
@@ -12,8 +13,13 @@ import {
 } from '@core/primitives';
 import { type EndImpersonationError, GovernanceError } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
-import type { ClockPorts, CommitPorts, TelemetryPorts } from '@core/ports';
-import { ImpersonationSystem } from '@core/systems';
+import type {
+  ClockPorts,
+  CommitPorts,
+  HashPorts,
+  TelemetryPorts,
+} from '@core/ports';
+import { AuditSystem, ImpersonationSystem } from '@core/systems';
 import {
   admitImpersonationCaller,
   impersonationSessionPath,
@@ -34,10 +40,18 @@ import {
  * The plan is ONE `Set` of the whole ENDED body, never a field transition:
  * the functions TTL adapter stamps `purgeAt` only on a `Set`/`Create`, and
  * the end re-stamps it to `endedAtUtcMs` + 30 d (runbook §2.1); a `Set` of
- * the ended variant also replaces every field the active one held.
+ * the ended variant also replaces every field the active one held. Beside
+ * it, in the same commit, the end's audit row (audit-hardening WS-3,
+ * DEP-12 — `AuditSystem.planImpersonationEnded`: `ADMIN_ENDED` or
+ * `EXPIRED`, credited as `Actor.forCaller` sees the caller, RU-13, naming
+ * the call's operation id) under `hash(idBasis)`. A second end is refused
+ * by `endByAdmin` before any plan is built — no row, no tripwire.
  */
 
-export type EndImpersonationPorts = CommitPorts & ClockPorts & TelemetryPorts;
+export type EndImpersonationPorts = CommitPorts &
+  ClockPorts &
+  HashPorts &
+  TelemetryPorts;
 
 /** The call (`GovernanceCall.End`) & the verified caller — the start's shape. */
 export type EndImpersonationCommand = GovernanceCall.End & {
@@ -68,6 +82,7 @@ export const endImpersonation =
       return admitted;
     }
     const endedBy = admitted.value;
+    const actor = Actor.forCaller(endedBy, cmd.adminRoles);
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const path = impersonationSessionPath(cmd.sessionId);
@@ -89,7 +104,19 @@ export const endImpersonation =
         return Result.ok({
           sessionId: id,
           impersonationEndReason: session.impersonationEndReason,
-          writes: [WriteOp.set(impersonationSessionPath(id), body)],
+          writes: [
+            WriteOp.set(impersonationSessionPath(id), body),
+            ...AuditSystem.createsOf(
+              [
+                AuditSystem.planImpersonationEnded(
+                  session,
+                  actor,
+                  cmd.operationId,
+                ),
+              ],
+              ports.hash,
+            ),
+          ],
         });
       },
     );

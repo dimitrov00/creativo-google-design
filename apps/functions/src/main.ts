@@ -12,7 +12,11 @@ import {
   RepositoryError,
   StreakPublishErrorCode,
 } from '@core/errors';
-import { AuthDeployment, TenantConfig } from '@core/components';
+import {
+  AuthDeployment,
+  GovernedCollection,
+  TenantConfig,
+} from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
 import {
   type CallableName,
@@ -23,8 +27,9 @@ import {
   type IdPorts,
   type NowUtcMs,
 } from '@core/ports';
+import { GovernedChangeSystem } from '@core/systems';
 import {
-  auditProfileChange,
+  auditDocumentChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
   cancelWaitlist as cancelWaitlistPipeline,
@@ -153,13 +158,13 @@ import {
   decodeMatchWaitlistEvent,
   decodePolicyRecomputeEvent,
   decodePolicyStepEvent,
+  decodeDocumentChangeEvent,
   decodePolicySweepRun,
-  decodeProfileChangeEvent,
   decodeRebuildBusyEvent,
   type DocumentWriteEvent,
+  documentAuditReport,
   failOnRefusal,
   POLICY_STEP_TIMEOUT_SECONDS,
-  profileAuditReport,
   projectionReport,
   settleAttempt,
 } from './wire/triggers.wire';
@@ -209,7 +214,11 @@ import { settle, type WireRequest } from './wire/wire-read';
  * added `reportClientIssues`, the web's first-party issue sink (OR-34) —
  * new, so its options are its own (two instances, 80 concurrent calls
  * each, 256 MiB, 10 s), and the one callable behind a per-instance token
- * bucket.
+ * bucket. Audit-hardening WS-3 (DEP-14, RU-40) added thirteen
+ * governed-collection audit triggers — new, each on its own
+ * `<collection>/{docId}` with the retry flag on — built, with
+ * `auditProfileChanges` (its name kept, its path param now `{docId}`), by
+ * the ONE `documentAuditTrigger` helper: 47 exports.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -423,7 +432,6 @@ const plain = (
 // ── Trigger paths, spelled through the collection registry ────────────────
 
 const APPOINTMENT_DOC = `${Collections.Appointments}/{appointmentId}` as const;
-const USER_DOC = `${Collections.Users}/{uid}` as const;
 const BUSY_DOC = `${Collections.BarberBusy}/{docId}` as const;
 const EXCEPTION_DOC = `${Collections.ScheduleExceptions}/{docId}` as const;
 const SCHEDULE_DOC = `${Collections.BarberSchedules}/{barberId}` as const;
@@ -491,29 +499,114 @@ export const updateProfile = onCall(
   ),
 );
 
-const AUDIT_PROFILE_FN = 'auditProfileChanges';
+/**
+ * THE ONE audit trigger (audit-hardening WS-3, RU-40), behind all fourteen
+ * `audit…Changes` exports: every write of a governed collection's
+ * `<path>/{docId}` — `users` and the thirteen of `GovernedCollection` —
+ * becomes at most one audit row, whatever wrote it, named by the auth
+ * context (`decodeDocumentChangeEvent` → `auditDocumentChange`); an owner's
+ * edit `updateProfile` already audited writes none. Each deploys with the
+ * retry flag on and runs through `retryingTrigger`: the row's id is keyed by
+ * the event id, so a redelivery writes nothing new, and only a transient
+ * failure is rethrown. One export per collection, on its own path — never
+ * a `{collection}/{docId}` wildcard.
+ */
+function documentAuditTrigger(
+  fn: string,
+  governedCollection: GovernedCollection,
+) {
+  const document =
+    `${GovernedChangeSystem.pathOf(governedCollection)}/{docId}` as const;
+  return onDocumentWrittenWithAuthContext(
+    { document, retry: true },
+    retryingTrigger(
+      { fn, timeoutSeconds: null },
+      root.edge,
+      async (event: Parameters<typeof decodeDocumentChangeEvent>[1]) => {
+        const answer = await auditDocumentChange(root.ports())(
+          decodeDocumentChangeEvent(governedCollection, event),
+        );
+        settleAttempt(fn, event, documentAuditReport(answer), root.edge);
+      },
+    ),
+  );
+}
 
 /**
  * Every profile change becomes an audit row — whatever wrote it, named by
  * the auth context — but an owner's edit `updateProfile` already audited.
+ * The name is a deployed function's, kept; its path param is `{docId}`.
  */
-export const auditProfileChanges = onDocumentWrittenWithAuthContext(
-  { document: USER_DOC, retry: true },
-  retryingTrigger(
-    { fn: AUDIT_PROFILE_FN, timeoutSeconds: null },
-    root.edge,
-    async (event: Parameters<typeof decodeProfileChangeEvent>[0]) => {
-      const answer = await auditProfileChange(root.ports())(
-        decodeProfileChangeEvent(event),
-      );
-      settleAttempt(
-        AUDIT_PROFILE_FN,
-        event,
-        profileAuditReport(answer),
-        root.edge,
-      );
-    },
-  ),
+export const auditProfileChanges = documentAuditTrigger(
+  'auditProfileChanges',
+  GovernedCollection.Users,
+);
+
+// ── Governed collections: one row per write, named by field (WS-3, DEP-14) ──
+
+export const auditSettingsChanges = documentAuditTrigger(
+  'auditSettingsChanges',
+  GovernedCollection.Settings,
+);
+
+export const auditServicesChanges = documentAuditTrigger(
+  'auditServicesChanges',
+  GovernedCollection.Services,
+);
+
+export const auditBarbersChanges = documentAuditTrigger(
+  'auditBarbersChanges',
+  GovernedCollection.Barbers,
+);
+
+export const auditLocationsChanges = documentAuditTrigger(
+  'auditLocationsChanges',
+  GovernedCollection.Locations,
+);
+
+export const auditBarberSchedulesChanges = documentAuditTrigger(
+  'auditBarberSchedulesChanges',
+  GovernedCollection.BarberSchedules,
+);
+
+export const auditScheduleExceptionsChanges = documentAuditTrigger(
+  'auditScheduleExceptionsChanges',
+  GovernedCollection.ScheduleExceptions,
+);
+
+export const auditCouponsChanges = documentAuditTrigger(
+  'auditCouponsChanges',
+  GovernedCollection.Coupons,
+);
+
+export const auditPositionsChanges = documentAuditTrigger(
+  'auditPositionsChanges',
+  GovernedCollection.Positions,
+);
+
+export const auditCoursesChanges = documentAuditTrigger(
+  'auditCoursesChanges',
+  GovernedCollection.Courses,
+);
+
+export const auditEventsChanges = documentAuditTrigger(
+  'auditEventsChanges',
+  GovernedCollection.Events,
+);
+
+export const auditCustomersChanges = documentAuditTrigger(
+  'auditCustomersChanges',
+  GovernedCollection.Customers,
+);
+
+export const auditAppointmentNotesChanges = documentAuditTrigger(
+  'auditAppointmentNotesChanges',
+  GovernedCollection.AppointmentNotes,
+);
+
+export const auditAppointmentPhotosChanges = documentAuditTrigger(
+  'auditAppointmentPhotosChanges',
+  GovernedCollection.AppointmentPhotos,
 );
 
 // ── Booking ───────────────────────────────────────────────────────────────

@@ -29,8 +29,9 @@ import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
 export type AppendAudit = (rows: readonly AuditEntry[]) => Promise<void>;
 
 /**
- * `createAuditRows` — the profile-change trigger's ONLY write
- * (`auditProfileChange`, §4.1): the same deterministic-id `create()` rows,
+ * `createAuditRows` — the document-change trigger's ONLY write
+ * (`auditDocumentChange`, §4.1; audit-hardening WS-3, RU-40 — the users and
+ * the thirteen governed collections): the same deterministic-id `create()` rows,
  * ALREADY_EXISTS a success (a redelivered event writes nothing new), but a
  * real failure IS reported, so the trigger's retry can deliver the row.
  */

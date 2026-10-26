@@ -648,6 +648,36 @@
       "indexes": []
     },
     {
+      "collectionGroup": "auditLog",
+      "fieldPath": "governedFields",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileRolesFrom",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileRolesTo",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileAccountStatusFrom",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileAccountStatusTo",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "impersonationExpiresAtUtcMs",
+      "indexes": []
+    },
+    {
       "collectionGroup": "loyaltyAccounts",
       "fieldPath": "streaks",
       "indexes": []

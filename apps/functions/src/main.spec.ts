@@ -1,6 +1,13 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
-import { ClientIssueKind, Email, ParsedIdentifier } from '@core/components';
+import {
+  Actor,
+  ClientIssueKind,
+  Email,
+  GovernedCollection,
+  ParsedIdentifier,
+  SystemSource,
+} from '@core/components';
 import {
   BookingError,
   IdentityError,
@@ -9,7 +16,12 @@ import {
 } from '@core/errors';
 import { BusyKey, CustomerId } from '@core/primitives';
 import { Callables, type Log, type OtpDeliveryPorts } from '@core/ports';
-import { ClientIssueSystem, TriggerAttemptSystem } from '@core/systems';
+import { Collections } from '@core/entities';
+import {
+  ClientIssueSystem,
+  GovernedChangeSystem,
+  TriggerAttemptSystem,
+} from '@core/systems';
 import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
 import { hmacSha256Hex } from './adapters/crypto.adapter';
 
@@ -21,7 +33,7 @@ import { hmacSha256Hex } from './adapters/crypto.adapter';
  */
 const seam = vi.hoisted(() => {
   const PIPELINES = [
-    'auditProfileChange',
+    'auditDocumentChange',
     'bookAppointment',
     'cancelAppointment',
     'cancelWaitlist',
@@ -149,6 +161,20 @@ const walkInCallable = {
   secretEnvironmentVariables: [{ key: 'WALKIN_ID_KEY' }],
 };
 
+/**
+ * A document-change audit trigger (audit-hardening WS-3, RU-40): the write
+ * with its auth context, on one collection's `<path>/{docId}`, retrying.
+ */
+const audited = (document: string) => ({
+  ...PLATFORM,
+  eventTrigger: {
+    eventType: `${WRITTEN}.withAuthContext`,
+    eventFilters: DATABASE,
+    eventFilterPathPatterns: { document },
+    retry: true,
+  },
+});
+
 const written = (document: string, retry: boolean) => ({
   ...PLATFORM,
   eventTrigger: {
@@ -188,7 +214,12 @@ const daily = (schedule: string) => ({
  * instances, 80 concurrent calls each, 256 MiB, 10 s. The two callables
  * that mint walk-in records (`commitBooking`, `staffEditAppointment`) bind
  * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26); no other
- * export holds a secret.
+ * export holds a secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
+ * thirteen governed-collection audit triggers (`auditSettingsChanges` …
+ * `auditAppointmentPhotosChanges`), each the write with its auth context on
+ * its own `<collection>/{docId}`, retrying — the one helper behind them is
+ * also `auditProfileChanges`', whose name is kept and whose path param
+ * became `{docId}` (`users/{uid}` before).
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
  * timeout, memory, instance cap, secret or schedule fails here.
  */
@@ -197,15 +228,20 @@ const ENDPOINTS = {
   verifyOtpChallenge: callable,
   completeRegistration: callable,
   updateProfile: callable,
-  auditProfileChanges: {
-    ...PLATFORM,
-    eventTrigger: {
-      eventType: `${WRITTEN}.withAuthContext`,
-      eventFilters: DATABASE,
-      eventFilterPathPatterns: { document: 'users/{uid}' },
-      retry: true,
-    },
-  },
+  auditProfileChanges: audited('users/{docId}'),
+  auditSettingsChanges: audited('settings/{docId}'),
+  auditServicesChanges: audited('services/{docId}'),
+  auditBarbersChanges: audited('barbers/{docId}'),
+  auditLocationsChanges: audited('locations/{docId}'),
+  auditBarberSchedulesChanges: audited('barberSchedules/{docId}'),
+  auditScheduleExceptionsChanges: audited('scheduleExceptions/{docId}'),
+  auditCouponsChanges: audited('coupons/{docId}'),
+  auditPositionsChanges: audited('positions/{docId}'),
+  auditCoursesChanges: audited('courses/{docId}'),
+  auditEventsChanges: audited('events/{docId}'),
+  auditCustomersChanges: audited('customers/{docId}'),
+  auditAppointmentNotesChanges: audited('appointmentNotes/{docId}'),
+  auditAppointmentPhotosChanges: audited('appointmentPhotos/{docId}'),
   commitBooking: walkInCallable,
   cancelAppointment: callable,
   rescheduleAppointment: callable,
@@ -342,6 +378,32 @@ const commitThrough = (ports: unknown): Promise<unknown> =>
   );
 
 const NO_ATTEMPT = { attemptFailure: null, survivedFailure: null } as const;
+
+/**
+ * One governed-collection audit trigger's case (WS-3, DEP-14): an event on
+ * `<path>/doc-1` with nothing on either side, decoded into the governed
+ * change `auditDocumentChange` runs — the resource `<path>/doc-1`, the
+ * client record for `customers` only — answering no row.
+ */
+const governedCase = (
+  governedCollection: GovernedCollection,
+  path: string,
+): Case => ({
+  pipeline: 'auditDocumentChange',
+  input: { ...writeEvent({ docId: 'doc-1' }), authType: 'service_account' },
+  command: {
+    governedCollection,
+    resourceId: `${path}/doc-1`,
+    targetCustomerId:
+      governedCollection === GovernedCollection.Customers ? 'doc-1' : null,
+    writer: Actor.system(SystemSource.AdminSdk),
+    beforeExists: false,
+    afterExists: false,
+    fields: [],
+  },
+  answer: ok({ rows: 0 }),
+  expected: undefined,
+});
 
 /** One flip-1 export: what the platform hands it, the pipeline it must run, and the round trip. */
 type Case = {
@@ -729,12 +791,52 @@ const FLIPPED: { readonly [name: string]: Case } = {
     },
   },
   auditProfileChanges: {
-    pipeline: 'auditProfileChange',
-    input: { ...writeEvent({ uid: 'u-1' }), authType: 'system' },
-    command: { ownerUserId: 'u-1', beforeExists: false, afterExists: false },
+    pipeline: 'auditDocumentChange',
+    input: { ...writeEvent({ docId: 'u-1' }), authType: 'system' },
+    command: {
+      governedCollection: GovernedCollection.Users,
+      ownerUserId: 'u-1',
+      beforeExists: false,
+      afterExists: false,
+    },
     answer: ok({ rows: 0 }),
     expected: undefined,
   },
+  // ── audit-hardening WS-3: the thirteen governed collections (DEP-14) ──
+  auditSettingsChanges: governedCase(GovernedCollection.Settings, 'settings'),
+  auditServicesChanges: governedCase(GovernedCollection.Services, 'services'),
+  auditBarbersChanges: governedCase(GovernedCollection.Barbers, 'barbers'),
+  auditLocationsChanges: governedCase(
+    GovernedCollection.Locations,
+    'locations',
+  ),
+  auditBarberSchedulesChanges: governedCase(
+    GovernedCollection.BarberSchedules,
+    'barberSchedules',
+  ),
+  auditScheduleExceptionsChanges: governedCase(
+    GovernedCollection.ScheduleExceptions,
+    'scheduleExceptions',
+  ),
+  auditCouponsChanges: governedCase(GovernedCollection.Coupons, 'coupons'),
+  auditPositionsChanges: governedCase(
+    GovernedCollection.Positions,
+    'positions',
+  ),
+  auditCoursesChanges: governedCase(GovernedCollection.Courses, 'courses'),
+  auditEventsChanges: governedCase(GovernedCollection.Events, 'events'),
+  auditCustomersChanges: governedCase(
+    GovernedCollection.Customers,
+    'customers',
+  ),
+  auditAppointmentNotesChanges: governedCase(
+    GovernedCollection.AppointmentNotes,
+    'appointmentNotes',
+  ),
+  auditAppointmentPhotosChanges: governedCase(
+    GovernedCollection.AppointmentPhotos,
+    'appointmentPhotos',
+  ),
   // ── Phase 4a: the new callables (4A-3 (4), (5)) ──
   startImpersonation: {
     pipeline: 'startImpersonation',
@@ -836,8 +938,34 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 34 functions — today’s 30, Phase 4a’s three callables and pass F’s issue sink', () => {
+  it('exports exactly the 47 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink and WS-3’s thirteen governed-collection audit triggers', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
+  });
+
+  it('audits every governed collection — USERS included — through exactly one export on its Collections path, and nothing else through the auth-context event (RU-40)', () => {
+    const members = Object.values(GovernedCollection);
+    expect(members).toHaveLength(14);
+    const paths: readonly string[] = Object.values(Collections);
+    const wanted = members.map((member) => {
+      const path = GovernedChangeSystem.pathOf(member);
+      expect(paths, member).toContain(path);
+      return `${path}/{docId}`;
+    });
+    expect(new Set(wanted).size).toBe(members.length);
+    // Read off the deployed endpoints themselves: every auth-context write
+    // trigger, by the document it listens on.
+    const deployed = [...exported.keys()].flatMap((name) => {
+      const endpoint = endpointOf(exported.get(name)) as {
+        readonly eventTrigger?: {
+          readonly eventType: string;
+          readonly eventFilterPathPatterns: { readonly document?: string };
+        };
+      };
+      return endpoint.eventTrigger?.eventType === `${WRITTEN}.withAuthContext`
+        ? [endpoint.eventTrigger.eventFilterPathPatterns.document]
+        : [];
+    });
+    expect([...deployed].sort()).toEqual([...wanted].sort());
   });
 
   it.each(EXPORTS)(
@@ -856,7 +984,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(34);
+    expect(FLIPPED_EXPORTS).toHaveLength(47);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

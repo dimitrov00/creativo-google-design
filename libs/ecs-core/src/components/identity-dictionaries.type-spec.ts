@@ -12,8 +12,8 @@
  *    §0.4 holds SCREAMING_SNAKE values. Exempt and so absent from (3):
  *    `AuthStage`, `Role` (claim and rules values, OQ-3), `FlagName`
  *    (manifest keys), `PhoneInvalidReason` (libphonenumber strings), and
- *    `RegistrationField` / `AuthPolicyField` (they ARE field names — the
- *    user document's and the policy bag's).
+ *    `RegistrationField` / `AuditedProfileField` / `AuthPolicyField` (they
+ *    ARE field names — the user document's and the policy bag's).
  *
  * `tsc` failing IS the test; nothing here runs.
  */
@@ -43,6 +43,8 @@ import {
   BackfillOutcome,
 } from './audit-context.data';
 import { AuditTarget, type AuditTargetRef } from './audit-target-ref.data';
+import { AuditedProfileField } from './audited-profile-field.data';
+import { GovernedCollection } from './governed-collection.data';
 import type { CancellationDelta } from './cancellation-delta.data';
 import type { TransitionDelta } from './transition-delta.data';
 import { type AuthClaims, AuthStage } from './auth-claims.data';
@@ -116,6 +118,9 @@ type BlockedLifecycle = AccountLifecycle.Blocked;
 type SystemActor = Actor.System;
 type ImpersonatorActor = Actor.Impersonator;
 type BackfillContext = AuditContext.Backfill;
+type GovernedContext = AuditContext.Governed;
+type ImpersonationStartedContext = AuditContext.ImpersonationStarted;
+type ImpersonationEndedContext = AuditContext.ImpersonationEnded;
 type DoneAuthFlow = AuthFlowState.Done;
 type OAuthEntry = AuthProvider.OAuth;
 type IdentifierRefusal = IdentityError.IdentifierInvalid;
@@ -130,6 +135,8 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof AuditAction, AuditAction>>, // audit-context.data.ts
   Expect<Holds<typeof BackfillOutcome, BackfillOutcome>>, // audit-context.data.ts
   Expect<Holds<typeof AuditTarget, AuditTarget>>, // audit-target-ref.data.ts
+  Expect<Holds<typeof AuditedProfileField, AuditedProfileField>>, // audited-profile-field.data.ts
+  Expect<Holds<typeof GovernedCollection, GovernedCollection>>, // governed-collection.data.ts
   Expect<Holds<typeof AuthStage, AuthStage>>, // auth-claims.data.ts
   Expect<Holds<typeof AuthFlowStep, AuthFlowStep>>, // auth-flow.data.ts
   Expect<Holds<typeof AuthFlowEventKind, AuthFlowEventKind>>, // auth-flow-event.data.ts
@@ -175,6 +182,22 @@ export type IdentityDictionaryFields = [
   Expect<Equals<AuditContext['auditAction'], AuditAction>>, // audit-context.data.ts
   Expect<Equals<BackfillContext['backfillOutcome'], BackfillOutcome>>, // audit-context.data.ts
   Expect<Equals<AuditTargetRef['auditTarget'], AuditTarget>>, // audit-target-ref.data.ts
+  Expect<Equals<GovernedContext['governedCollection'], GovernedCollection>>, // audit-context.data.ts
+  Expect<
+    Equals<
+      ImpersonationStartedContext['impersonationScope'],
+      ImpersonationScope
+    >
+  >, // audit-context.data.ts
+  Expect<
+    Equals<ImpersonationEndedContext['impersonationScope'], ImpersonationScope>
+  >, // audit-context.data.ts
+  Expect<
+    Equals<
+      ImpersonationEndedContext['impersonationEndReason'],
+      ImpersonationEndReason
+    >
+  >, // audit-context.data.ts
   Expect<Equals<TransitionDelta['transitionFromBookingStatus'], BookingStatus>>, // N15-exempt: the before-value of a transition (role-prefixed)
   Expect<
     Equals<CancellationDelta['cancellationFromBookingStatus'], BookingStatus>
@@ -232,6 +255,7 @@ export type IdentityScreamingChecks = [
   Expect<Screaming<AuditAction>>,
   Expect<Screaming<BackfillOutcome>>,
   Expect<Screaming<AuditTarget>>,
+  Expect<Screaming<GovernedCollection>>,
   Expect<Screaming<AuthFlowStep>>,
   Expect<Screaming<AuthFlowEventKind>>,
   Expect<Screaming<AuthStrategyKind>>,
@@ -265,4 +289,5 @@ export type IdentityScreamingChecks = [
 export type IdentityExemptAreNotScreaming = [
   Expect<Equals<Screaming<AuthStage>, false>>,
   Expect<Equals<Screaming<Role>, false>>,
+  Expect<Equals<Screaming<AuditedProfileField>, false>>,
 ];

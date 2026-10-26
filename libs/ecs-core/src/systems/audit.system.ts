@@ -1,13 +1,19 @@
 import {
+  AccountStatus,
   Actor,
   type BackfillCall,
   SystemSource,
   AuditAction,
   AuditContext,
+  AuditedProfileField,
   AuditTargetRef,
+  type GovernedCollection,
+  ImpersonationEndReason,
+  ImpersonationStatus,
   type ProfileAction,
   ProfileAuthType,
-  RegistrationField,
+  type Role,
+  Roles,
   type Seat,
   SeatSubject,
   SubjectRelationship,
@@ -22,9 +28,11 @@ import {
   type ClientOperationId,
   type CustomerId,
   defect,
+  type ImpersonationSessionId,
   type OperationId,
   type PublishRequestId,
   type SeatId,
+  type StoredFields,
   type TriggerEventId,
   Tag,
   UserId,
@@ -35,6 +43,7 @@ import {
   type Appointment,
   type AuditEntryMeta,
   Collections,
+  type ImpersonationSession,
 } from '@core/entities';
 import { type EditCommandRequest } from './appointment-edit.system';
 
@@ -143,12 +152,26 @@ function authTypeOf(raw: string): ProfileAuthType | null {
 }
 
 /**
- * A `users/{uid}` write, as the profile trigger sees it
+ * A profile row's role / status before-and-after (audit-hardening WS-3):
+ * the four tag fields of `AuditContext.Profile`, each pair set iff its field
+ * changed ({@link AuditSystem.profileTagDelta}), else both `null`.
+ */
+export type ProfileTagDelta = Omit<
+  AuditContext.Profile,
+  'auditAction' | 'profileFields'
+>;
+
+/**
+ * A `users/{uid}` write, as the document-change trigger sees it
  * (`audit-profile-changes.ts:108-126`): the delivery's event id (the row id
  * outright — a redelivery derives the same row), the event's own instant,
- * whose profile, who wrote it and which audited fields changed.
+ * whose profile, who wrote it, which audited fields changed and how the
+ * role / status tags moved. `governedCollection` is always `USERS` — the
+ * discriminator that tells it from a `GovernedChange` inside one
+ * `DocumentChange` (RU-40).
  */
 export type ProfileChange = {
+  readonly governedCollection: typeof GovernedCollection.Users;
   readonly eventId: TriggerEventId;
   /** The event's instant; `null` when it did not parse — the plan's `nowUtcMs` stands in. */
   readonly eventAtUtcMs: UtcEpochMs | null;
@@ -160,7 +183,7 @@ export type ProfileChange = {
   /**
    * The audited fields that changed (`changedProfileFields`).
    */
-  readonly fields: readonly RegistrationField[];
+  readonly fields: readonly AuditedProfileField[];
   /**
    * The two sides' raw `profileEditedAtUtcMs` stamps (4A-16) — `null` for an
    * absent side or an absent key. The decoder only decodes; whether the
@@ -168,23 +191,35 @@ export type ProfileChange = {
    */
   readonly beforeProfileEditedAtUtcMs: UtcEpochMs | null;
   readonly afterProfileEditedAtUtcMs: UtcEpochMs | null;
-};
+} & ProfileTagDelta;
 
 /**
  * The profile fields whose change is worth a row (`AUDITED_PROFILE_FIELDS`),
- * in TODAY's order — an explicit list, never `Registration.FIELDS` or
- * `Tag.values(RegistrationField)` (their order differs): the order is the
- * order of the stored `profileFields` arrays. `roles` and `status` are
- * absent on purpose: their writers audit themselves, inside their own
- * transactions.
+ * in the stored order — an explicit list, never `Registration.FIELDS` or
+ * `Tag.values(AuditedProfileField)` (their order differs): the order is the
+ * order of the stored `profileFields` arrays, the registration five first,
+ * then `roles` and `accountStatus` appended (audit-hardening WS-3, DEP-13).
+ * No other writer audits those two: `completeRegistration`'s `Set` writes
+ * the roles with no row of its own, no callable writes the status, and the
+ * Admin SDK or the console can change either — so the trigger does.
  */
-const AUDITED_PROFILE_FIELDS: readonly RegistrationField[] = [
-  RegistrationField.FirstName,
-  RegistrationField.LastName,
-  RegistrationField.Phone,
-  RegistrationField.Email,
-  RegistrationField.BirthDate,
+const AUDITED_PROFILE_FIELDS: readonly AuditedProfileField[] = [
+  AuditedProfileField.FirstName,
+  AuditedProfileField.LastName,
+  AuditedProfileField.Phone,
+  AuditedProfileField.Email,
+  AuditedProfileField.BirthDate,
+  AuditedProfileField.Roles,
+  AuditedProfileField.AccountStatus,
 ];
+
+/** A profile row's tag fields when neither `roles` nor `accountStatus` changed. */
+const NO_TAG_DELTA: ProfileTagDelta = {
+  profileRolesFrom: null,
+  profileRolesTo: null,
+  profileAccountStatusFrom: null,
+  profileAccountStatusTo: null,
+};
 
 /** A Firebase uid as this app mints and accepts them (the commit path's shape). */
 const UID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -196,11 +231,28 @@ const UID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
  */
 const ROW_BASIS_TAG = 'audit-row/v2';
 
-/** Absent, `null` and `''` are one fact — "no value" — however a writer spelled it. */
+/**
+ * Absent, `null`, `''` and an empty array are one fact — "no value" —
+ * however a writer spelled it (the PROVISIONED stub's `roles: []` lists
+ * nothing).
+ */
 function comparable(value: unknown): string {
-  return value === undefined || value === null || value === ''
+  return value === undefined ||
+    value === null ||
+    value === '' ||
+    (Array.isArray(value) && value.length === 0)
     ? ''
     : JSON.stringify(value);
+}
+
+/** One side's known roles — an absent or non-list value holds none. */
+function rolesOf(raw: unknown): readonly Role[] {
+  return Array.isArray(raw) ? Roles.known(raw) : [];
+}
+
+/** One side's status, when it is a known one. */
+function accountStatusOf(raw: unknown): AccountStatus | null {
+  return Tag.has(AccountStatus, raw) ? raw : null;
 }
 
 /**
@@ -254,7 +306,7 @@ function targets(
  * a parameter (an audit row has no shop clock, F-5); no I/O — the rows are
  * `WriteOp.create` entries of the act's own commit plan
  * ({@link AuditSystem.commitWrites}), or go to `AppendAudit` (the backfill)
- * and `CreateAuditRows` (the profile trigger).
+ * and `CreateAuditRows` (the document-change trigger).
  */
 export const AuditSystem = {
   /**
@@ -477,9 +529,20 @@ export const AuditSystem = {
     publish(requestId: PublishRequestId): string {
       return requestId;
     },
-    /** The profile trigger: the CloudEvent id — never a constant. */
+    /**
+     * The document-change trigger (a profile or a governed row): the
+     * CloudEvent id — never a constant.
+     */
     profile(eventId: TriggerEventId): string {
       return eventId;
+    },
+    /** An impersonation session opened (audit-hardening WS-3): one per session. */
+    impersonationStarted(sessionId: ImpersonationSessionId): string {
+      return `impersonation-start:${sessionId}`;
+    },
+    /** An impersonation session ended: one per session — the first end wins. */
+    impersonationEnded(sessionId: ImpersonationSessionId): string {
+      return `impersonation-end:${sessionId}`;
     },
     /**
      * An owner's own edit through `updateProfile` (4A-16): the account and
@@ -513,13 +576,14 @@ export const AuditSystem = {
 
   /**
    * The audited fields whose value changed, in a fixed order — NAMES only:
-   * the row says THAT the phone changed, never from what to what (R36).
+   * the row says THAT the phone changed, never from what to what (R36); the
+   * role / status before-and-after is {@link AuditSystem.profileTagDelta}'s.
    */
   changedProfileFields(
-    before: Readonly<Record<string, unknown>>,
-    after: Readonly<Record<string, unknown>>,
-  ): readonly RegistrationField[] {
-    const changed: RegistrationField[] = [];
+    before: StoredFields,
+    after: StoredFields,
+  ): readonly AuditedProfileField[] {
+    const changed: AuditedProfileField[] = [];
     for (const field of AUDITED_PROFILE_FIELDS) {
       if (comparable(before[field]) !== comparable(after[field])) {
         changed.push(field);
@@ -537,12 +601,48 @@ export const AuditSystem = {
   },
 
   /**
-   * WHO wrote a profile, from the event's auth context: the Admin SDK and the
-   * platform are processes; anything else is an end user, credited by a
-   * uid-shaped id — an id that is not one is never guessed at: the row says
-   * it could not tell.
+   * The role / status tags of a profile write (audit-hardening WS-3) — the
+   * one before-and-after a profile row carries, closed vocabularies only:
+   * `profileRolesFrom/To` are each side's known roles (`Roles.known`; an
+   * absent side holds none) when `roles` changed, `profileAccountStatusFrom/To`
+   * each side's known status (`null` for an absent or unknown one) when
+   * `accountStatus` changed; an unchanged field leaves its pair `null`.
+   * "Changed" is {@link AuditSystem.changedProfileFields}'s rule (an empty
+   * list is no value), so a pair is set iff its name is in `profileFields`.
    */
-  profileWriter(authType: string, authId: string | null): Actor {
+  profileTagDelta(before: StoredFields, after: StoredFields): ProfileTagDelta {
+    const rolesChanged =
+      comparable(before[AuditedProfileField.Roles]) !==
+      comparable(after[AuditedProfileField.Roles]);
+    const statusChanged =
+      comparable(before[AuditedProfileField.AccountStatus]) !==
+      comparable(after[AuditedProfileField.AccountStatus]);
+    if (!rolesChanged && !statusChanged) return NO_TAG_DELTA;
+    return {
+      profileRolesFrom: rolesChanged
+        ? rolesOf(before[AuditedProfileField.Roles])
+        : null,
+      profileRolesTo: rolesChanged
+        ? rolesOf(after[AuditedProfileField.Roles])
+        : null,
+      profileAccountStatusFrom: statusChanged
+        ? accountStatusOf(before[AuditedProfileField.AccountStatus])
+        : null,
+      profileAccountStatusTo: statusChanged
+        ? accountStatusOf(after[AuditedProfileField.AccountStatus])
+        : null,
+    };
+  },
+
+  /**
+   * WHO wrote a document, from the event's auth context (RU-17: was
+   * `profileWriter`; every document-change trigger reads it): the Admin SDK
+   * and the platform are processes; anything else is an end user, credited
+   * by a uid-shaped id — an id that is not one is never guessed at: the row
+   * says it could not tell. A browser write is `USER` with no role snapshot
+   * (the event carries no claims).
+   */
+  writerOf(authType: string, authId: string | null): Actor {
     const tag = authTypeOf(authType);
     if (tag === ProfileAuthType.ServiceAccount) {
       return Actor.system(SystemSource.AdminSdk);
@@ -593,7 +693,7 @@ export const AuditSystem = {
         resourceId,
         auditOperationId: null,
         ...change.writer,
-        ...AuditContext.profile(action, change.fields),
+        ...AuditContext.profileWithTags(action, change.fields, change),
         ...AuditTargetRef.user(change.ownerUserId),
       },
       idBasis: rowBasis(
@@ -637,7 +737,7 @@ export const AuditSystem = {
    */
   planOwnProfileEdit(
     ownerUserId: UserId,
-    fields: readonly RegistrationField[],
+    fields: readonly AuditedProfileField[],
     nowUtcMs: UtcEpochMs,
     operationId: OperationId | null,
   ): AuditRowPlan | null {
@@ -658,6 +758,91 @@ export const AuditSystem = {
         resourceId,
         ownerUserId,
         AuditSystem.changeKey.ownProfileEdit(ownerUserId, nowUtcMs),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row an impersonation start writes inside its own commit
+   * (audit-hardening WS-3, DEP-12): `GOVERNANCE_IMPERSONATION_STARTED`,
+   * credited to `actor` (the pipeline's `Actor.forCaller` — RU-13), stamped
+   * with the session's `startedAtUtcMs`, naming `impersonationSessions/<id>`
+   * and targeted at the impersonated account (`AuditTargetRef.user` — the
+   * row is on that user's timeline), with the call's transport operation id
+   * (`null` without one, RU-21). Ids, the scope and the expiry only — never
+   * the session's `reason`.
+   */
+  planImpersonationStarted(
+    session: ImpersonationSession,
+    actor: Actor,
+    operationId: OperationId | null,
+  ): AuditRowPlan {
+    const action = AuditAction.GovernanceImpersonationStarted;
+    const resourceId = AuditResourceId.forImpersonationSession(session.id);
+    return {
+      row: {
+        recordedAtUtcMs: session.startedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.impersonationStarted(
+          session.id,
+          session.impersonationScope,
+          session.expiresAtUtcMs,
+        ),
+        ...AuditTargetRef.user(session.targetUserId),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        session.targetUserId,
+        AuditSystem.changeKey.impersonationStarted(session.id),
+      ),
+    };
+  },
+
+  /**
+   * The ONE row an impersonation end writes inside its own commit: the
+   * start's shape, stamped with `endedAtUtcMs`, plus the end reason. Only
+   * `ADMIN_ENDED` and `EXPIRED` are ever written (RU-14: no revocation
+   * writer exists); a session that is not ENDED, or one revoked by
+   * security, is a programmer defect here — never a row.
+   */
+  planImpersonationEnded(
+    session: ImpersonationSession,
+    actor: Actor,
+    operationId: OperationId | null,
+  ): AuditRowPlan {
+    if (session.impersonationStatus !== ImpersonationStatus.Ended) {
+      return defect('an impersonation end row needs an ENDED session');
+    }
+    if (
+      session.impersonationEndReason ===
+      ImpersonationEndReason.RevokedBySecurity
+    ) {
+      return defect('no revocation writer exists to audit (RU-14)');
+    }
+    const action = AuditAction.GovernanceImpersonationEnded;
+    const resourceId = AuditResourceId.forImpersonationSession(session.id);
+    return {
+      row: {
+        recordedAtUtcMs: session.endedAtUtcMs,
+        resourceId,
+        auditOperationId: operationId,
+        ...actor,
+        ...AuditContext.impersonationEnded(
+          session.id,
+          session.impersonationScope,
+          session.expiresAtUtcMs,
+          session.impersonationEndReason,
+        ),
+        ...AuditTargetRef.user(session.targetUserId),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        session.targetUserId,
+        AuditSystem.changeKey.impersonationEnded(session.id),
       ),
     };
   },

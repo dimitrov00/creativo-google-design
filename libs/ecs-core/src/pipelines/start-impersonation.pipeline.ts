@@ -1,4 +1,5 @@
 import {
+  Actor,
   type GovernanceCall,
   type Role,
   Roles,
@@ -16,10 +17,11 @@ import { Collections, type ImpersonationSession } from '@core/entities';
 import type {
   ClockPorts,
   CommitPorts,
+  HashPorts,
   IdPorts,
   TelemetryPorts,
 } from '@core/ports';
-import { ImpersonationSystem } from '@core/systems';
+import { AuditSystem, ImpersonationSystem } from '@core/systems';
 
 /**
  * `startImpersonation` — an admin opens a time-bounded, audited session in
@@ -33,14 +35,20 @@ import { ImpersonationSystem } from '@core/systems';
  * the structural invariants (no self-impersonation, a reason, an expiry
  * after the start) and its own staff gate — over a minted id and the
  * server's clock; a refused start leaves as the FIRST of its faults, one
- * flat refusal per call (Law 7.5). Then ONE `Create` of the flat `ACTIVE`
- * body. The functions TTL adapter stamps its `purgeAt`
+ * flat refusal per call (Law 7.5). Then ONE commit of two `Create`s: the
+ * flat `ACTIVE` body, and its audit row (audit-hardening WS-3, DEP-12 —
+ * `AuditSystem.planImpersonationStarted`: credited to the caller as
+ * `Actor.forCaller` sees them (RU-13: the sysadmin is STAFF, never the
+ * owner), naming the call's transport operation id, never the reason) under
+ * `hash(idBasis)` — the row lands with the session or not at all, and is
+ * never TTL'd. The functions TTL adapter stamps the session's `purgeAt`
  * (`expiresAtUtcMs` + 30 d, runbook §2.1). Nothing is read.
  */
 
 export type StartImpersonationPorts = CommitPorts &
   ClockPorts &
   IdPorts &
+  HashPorts &
   TelemetryPorts;
 
 /** The call (`GovernanceCall`) & the verified caller — never the payload's. */
@@ -105,11 +113,24 @@ export const startImpersonation =
     }
     const session: ImpersonationSession = started.value;
     const { id, ...body } = session;
+    const actor = Actor.forCaller(admitted.value, cmd.adminRoles);
     const committed = await ports.commit(
       async () => null,
       (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
         Result.ok({
-          writes: [WriteOp.create(impersonationSessionPath(id), body)],
+          writes: [
+            WriteOp.create(impersonationSessionPath(id), body),
+            ...AuditSystem.createsOf(
+              [
+                AuditSystem.planImpersonationStarted(
+                  session,
+                  actor,
+                  cmd.operationId,
+                ),
+              ],
+              ports.hash,
+            ),
+          ],
         }),
     );
     if (!committed.ok) return committed;

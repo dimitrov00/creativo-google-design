@@ -29,6 +29,7 @@ export * from './client-stats.system';
 export * from './coupon-grant.system';
 export * from './customer-record.system';
 export * from './discount.system';
+export * from './governed-change.system';
 export * from './grid-layout.system';
 export * from './guest-guard.system';
 export * from './guest-label.system';

@@ -1,9 +1,9 @@
 /**
  * The Firestore trigger's `authType` — who the platform says wrote a
- * document (`audit-profile-changes.ts`). The ONLY source of these tags; the
- * platform delivers them lower-case (`service_account`), and
- * `AuditSystem.profileWriter` reads either spelling. Any other value is a
- * writer the event cannot attribute.
+ * document (the document-change triggers, `audit-document-change.pipeline.ts`).
+ * The ONLY source of these tags; the platform delivers them lower-case
+ * (`service_account`), and `AuditSystem.writerOf` reads either spelling.
+ * Any other value is a writer the event cannot attribute.
  */
 export const ProfileAuthType = {
   ServiceAccount: 'SERVICE_ACCOUNT',

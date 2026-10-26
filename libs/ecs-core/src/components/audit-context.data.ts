@@ -3,17 +3,25 @@ import type { StreakRuleParameter } from './streak-rule-parameter.data';
 import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
 import {
+  type ImpersonationSessionId,
   type LocalDate,
   type LocationId,
   type SeatId,
   Tag,
+  type UtcEpochMs,
 } from '@core/primitives';
+import type { AccountStatus } from './account-status.data';
 import type { ArrivalAction } from './arrival-action.data';
+import type { AuditedProfileField } from './audited-profile-field.data';
 import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
+import type { ImpersonationEndReason } from './end-reason-fields.data';
+import type { GovernedAction } from './governed-action.data';
+import type { GovernedCollection } from './governed-collection.data';
+import type { ImpersonationScope } from './impersonation-scope.data';
 import type { ProfileAction } from './profile-action.data';
-import type { RegistrationField } from './registration.data';
+import type { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { StaffEditDelta } from './staff-edit-delta.data';
@@ -33,7 +41,8 @@ import type { TransitionDelta } from './transition-delta.data';
  * `audit-profile-changes.ts:60-65`) upper-snaked, dots and camel humps to
  * `_` (flatten-spec §3.7); the stored bytes were the dotted strings until
  * the governance flip, which the legacy shims converted. A new audited act
- * is a deliberate code change here.
+ * is a deliberate code change here — the impersonation and governed-document
+ * verbs were added by audit-hardening WS-3 (DEP-17).
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',
@@ -71,6 +80,14 @@ export const AuditAction = {
   ProfileCreated: 'PROFILE_CREATED',
   ProfileUpdated: 'PROFILE_UPDATED',
   ProfileDeleted: 'PROFILE_DELETED',
+  /** An admin opened an impersonation session (no REVOKED verb: nothing revokes). */
+  GovernanceImpersonationStarted: 'GOVERNANCE_IMPERSONATION_STARTED',
+  /** A session was ended — by an admin, or found lapsed at the end call. */
+  GovernanceImpersonationEnded: 'GOVERNANCE_IMPERSONATION_ENDED',
+  /** A governed document was created (`GovernedCollection`, never USERS). */
+  GovernedDocCreated: 'GOVERNED_DOC_CREATED',
+  GovernedDocUpdated: 'GOVERNED_DOC_UPDATED',
+  GovernedDocDeleted: 'GOVERNED_DOC_DELETED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -113,12 +130,23 @@ export type AuditContext =
   | AuditContext.StreakPublished
   | AuditContext.StreakWithdrawn
   | AuditContext.Backfill
-  | AuditContext.Profile;
+  | AuditContext.Profile
+  | AuditContext.ImpersonationStarted
+  | AuditContext.ImpersonationEnded
+  | AuditContext.Governed;
 
 /** A copy of a nullable id list — `null` stays `null`. */
 function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
   return list === null ? null : [...list];
 }
+
+/** A profile row's four tag fields when neither `roles` nor `accountStatus` changed. */
+const NO_TAGS: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'> = {
+  profileRolesFrom: null,
+  profileRolesTo: null,
+  profileAccountStatusFrom: null,
+  profileAccountStatusTo: null,
+};
 
 export const AuditContext = {
   /** Every audited verb, dictionary order — derived, never a second source. */
@@ -257,12 +285,75 @@ export const AuditContext = {
       backfillCursor: facts.backfillCursor,
     };
   },
-  /** Copies the field list, so a caller's later mutation cannot rewrite the row. */
+  /**
+   * A profile row that names no role or status change — the four tag pairs
+   * `null` (an owner's own edit never touches `roles` or `accountStatus`).
+   * Copies the field list, so a caller's later mutation cannot rewrite the row.
+   */
   profile(
     auditAction: ProfileAction,
-    profileFields: readonly RegistrationField[],
+    profileFields: readonly AuditedProfileField[],
   ): AuditContext.Profile {
-    return { auditAction, profileFields: [...profileFields] };
+    return AuditContext.profileWithTags(auditAction, profileFields, NO_TAGS);
+  },
+  /**
+   * A profile row with its role / status before-and-after (audit-hardening
+   * WS-3: each pair set iff its field changed — `AuditSystem.profileTagDelta`).
+   * Copies the lists, so a caller's later mutation cannot rewrite the row.
+   */
+  profileWithTags(
+    auditAction: ProfileAction,
+    profileFields: readonly AuditedProfileField[],
+    tags: Omit<AuditContext.Profile, 'auditAction' | 'profileFields'>,
+  ): AuditContext.Profile {
+    return {
+      auditAction,
+      profileFields: [...profileFields],
+      profileRolesFrom: copyOrNull(tags.profileRolesFrom),
+      profileRolesTo: copyOrNull(tags.profileRolesTo),
+      profileAccountStatusFrom: tags.profileAccountStatusFrom,
+      profileAccountStatusTo: tags.profileAccountStatusTo,
+    };
+  },
+  /** An impersonation session opened (audit-hardening WS-3): ids, the scope and the window's end. */
+  impersonationStarted(
+    impersonationSessionId: ImpersonationSessionId,
+    impersonationScope: ImpersonationScope,
+    impersonationExpiresAtUtcMs: UtcEpochMs,
+  ): AuditContext.ImpersonationStarted {
+    return {
+      auditAction: AuditAction.GovernanceImpersonationStarted,
+      impersonationSessionId,
+      impersonationScope,
+      impersonationExpiresAtUtcMs,
+    };
+  },
+  /** An impersonation session ended, and why (RU-14: the planner writes ADMIN_ENDED / EXPIRED only). */
+  impersonationEnded(
+    impersonationSessionId: ImpersonationSessionId,
+    impersonationScope: ImpersonationScope,
+    impersonationExpiresAtUtcMs: UtcEpochMs,
+    impersonationEndReason: ImpersonationEndReason,
+  ): AuditContext.ImpersonationEnded {
+    return {
+      auditAction: AuditAction.GovernanceImpersonationEnded,
+      impersonationSessionId,
+      impersonationScope,
+      impersonationExpiresAtUtcMs,
+      impersonationEndReason,
+    };
+  },
+  /** A governed document write; copies the field-name list. */
+  governed(
+    auditAction: GovernedAction,
+    governedCollection: GovernedCollection,
+    governedFields: readonly string[],
+  ): AuditContext.Governed {
+    return {
+      auditAction,
+      governedCollection,
+      governedFields: [...governedFields],
+    };
   },
 
   /** The edge guard for a stored or submitted verb. */
@@ -356,9 +447,53 @@ export namespace AuditContext {
     readonly backfillBudgetSpent: boolean | null;
     readonly backfillCursor: string | null;
   };
-  /** A `users/{uid}` write; `profileFields` are the changed field names. */
+  /**
+   * A `users/{uid}` write; `profileFields` are the changed field names. The
+   * role and status tags are the one before-and-after a profile row carries
+   * (closed vocabularies, never a typed value — R36): each pair is set iff
+   * its field changed (`roles` as the known roles of each side, a side's
+   * unknown status `null`), else both `null`.
+   */
   export type Profile = {
     readonly auditAction: ProfileAction;
-    readonly profileFields: readonly RegistrationField[];
+    readonly profileFields: readonly AuditedProfileField[];
+    readonly profileRolesFrom: readonly Role[] | null;
+    readonly profileRolesTo: readonly Role[] | null;
+    readonly profileAccountStatusFrom: AccountStatus | null;
+    readonly profileAccountStatusTo: AccountStatus | null;
+  };
+  /**
+   * An admin opened an impersonation session (audit-hardening WS-3). Ids,
+   * the scope and the window's end only — never the session's `reason`
+   * (free text, T5 / R36). The row is never TTL'd, unlike the session.
+   */
+  export type ImpersonationStarted = {
+    readonly auditAction: typeof AuditAction.GovernanceImpersonationStarted;
+    readonly impersonationSessionId: ImpersonationSessionId;
+    readonly impersonationScope: ImpersonationScope;
+    readonly impersonationExpiresAtUtcMs: UtcEpochMs;
+  };
+  /**
+   * An impersonation session ended — the start's facts and the end reason
+   * (typed by the whole dictionary; only `ADMIN_ENDED` / `EXPIRED` are ever
+   * written, RU-14). Never `revocationNotes` (free text).
+   */
+  export type ImpersonationEnded = {
+    readonly auditAction: typeof AuditAction.GovernanceImpersonationEnded;
+    readonly impersonationSessionId: ImpersonationSessionId;
+    readonly impersonationScope: ImpersonationScope;
+    readonly impersonationExpiresAtUtcMs: UtcEpochMs;
+    readonly impersonationEndReason: ImpersonationEndReason;
+  };
+  /**
+   * A governed document's write (audit-hardening WS-3, RU-40): which
+   * collection (never USERS on a row — a users write is a `PROFILE_*` row)
+   * and which top-level fields changed.
+   */
+  export type Governed = {
+    readonly auditAction: GovernedAction;
+    readonly governedCollection: GovernedCollection;
+    /** Changed top-level field NAMES, ascending, deduplicated — never a value (R36). */
+    readonly governedFields: readonly string[];
   };
 }

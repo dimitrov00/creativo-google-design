@@ -7,6 +7,7 @@ import {
   BookingStatus,
   Currency,
   CustomerId,
+  ImpersonationSessionId,
   LocationId,
   PriceCents,
   SeatId,
@@ -23,7 +24,14 @@ import { AuditTarget, AuditTargetRef } from './audit-target-ref.data';
 import { CancellationReason } from './cancellation-reason.data';
 import type { PlacementAction } from './placement-action.data';
 import type { ProfileAction } from './profile-action.data';
+import { AccountStatus } from './account-status.data';
+import { AuditedProfileField } from './audited-profile-field.data';
+import { ImpersonationEndReason } from './end-reason-fields.data';
+import type { GovernedAction } from './governed-action.data';
+import { GovernedCollection } from './governed-collection.data';
+import { ImpersonationScope } from './impersonation-scope.data';
 import { RegistrationField } from './registration.data';
+import { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
 import { StaffEditDelta } from './staff-edit-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
@@ -49,12 +57,27 @@ describe('AuditAction', () => {
       AuditContext.ACTIONS.length,
     );
     for (const action of AuditContext.ACTIONS) {
-      expect(action).toMatch(/^(BOOKING|LOYALTY|OPS|PROFILE)_[A-Z_]+$/);
+      expect(action).toMatch(
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED)_[A-Z_]+$/,
+      );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
     expect(AuditAction.BookingStaffAddSeat).toBe('BOOKING_STAFF_ADD_SEAT');
     expect(AuditAction.BookingStaffReinstate).toBe('BOOKING_STAFF_REINSTATE');
     expect(AuditAction.OpsBackfill).toBe('OPS_BACKFILL');
+    // The audit-hardening WS-3 verbs (DEP-17) — no REVOKED verb.
+    expect(AuditAction.GovernanceImpersonationStarted).toBe(
+      'GOVERNANCE_IMPERSONATION_STARTED',
+    );
+    expect(AuditAction.GovernanceImpersonationEnded).toBe(
+      'GOVERNANCE_IMPERSONATION_ENDED',
+    );
+    expect(AuditAction.GovernedDocCreated).toBe('GOVERNED_DOC_CREATED');
+    expect(AuditAction.GovernedDocUpdated).toBe('GOVERNED_DOC_UPDATED');
+    expect(AuditAction.GovernedDocDeleted).toBe('GOVERNED_DOC_DELETED');
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.includes('REVOKE')),
+    ).toEqual([]);
   });
 
   it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
@@ -63,7 +86,9 @@ describe('AuditAction', () => {
       | typeof AuditAction.BookingCancelled
       | typeof AuditAction.LoyaltyStreakDefinitionPublished
       | typeof AuditAction.LoyaltyStreakDefinitionWithdrawn
-      | typeof AuditAction.OpsBackfill;
+      | typeof AuditAction.OpsBackfill
+      | typeof AuditAction.GovernanceImpersonationStarted
+      | typeof AuditAction.GovernanceImpersonationEnded;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -71,6 +96,7 @@ describe('AuditAction', () => {
       TipAction,
       StaffEditAction,
       ProfileAction,
+      GovernedAction,
       Singles,
     ];
     // `tsc` failing on either constant IS the failure.
@@ -299,13 +325,81 @@ describe('AuditContext — one flat variant per verb family, every field present
     });
   });
 
-  it('profile copies the changed field names', () => {
+  it('profile copies the changed field names; its role and status tags stay null', () => {
     const fields: RegistrationField[] = [RegistrationField.FirstName];
     const context = AuditContext.profile(AuditAction.ProfileUpdated, fields);
     fields.push(RegistrationField.Phone);
     expect(context).toEqual({
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName'],
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+    });
+  });
+
+  it('profileWithTags carries the role and status before-and-after, the lists copied (WS-3)', () => {
+    const rolesTo: Role[] = [Role.Barber];
+    const context = AuditContext.profileWithTags(
+      AuditAction.ProfileUpdated,
+      [AuditedProfileField.Roles, AuditedProfileField.AccountStatus],
+      {
+        profileRolesFrom: [],
+        profileRolesTo: rolesTo,
+        profileAccountStatusFrom: AccountStatus.Active,
+        profileAccountStatusTo: AccountStatus.Blocked,
+      },
+    );
+    rolesTo.push(Role.Admin);
+    expect(context).toEqual({
+      auditAction: 'PROFILE_UPDATED',
+      profileFields: ['roles', 'accountStatus'],
+      profileRolesFrom: [],
+      profileRolesTo: ['barber'],
+      profileAccountStatusFrom: 'ACTIVE',
+      profileAccountStatusTo: 'BLOCKED',
+    });
+  });
+
+  it('impersonation started / ended — ids, the scope, the window and the end reason only (WS-3)', () => {
+    const id = ImpersonationSessionId.of('imp-1');
+    expect(
+      AuditContext.impersonationStarted(id, ImpersonationScope.Read, AT),
+    ).toEqual({
+      auditAction: 'GOVERNANCE_IMPERSONATION_STARTED',
+      impersonationSessionId: 'imp-1',
+      impersonationScope: 'READ',
+      impersonationExpiresAtUtcMs: AT,
+    });
+    expect(
+      AuditContext.impersonationEnded(
+        id,
+        ImpersonationScope.Write,
+        AT,
+        ImpersonationEndReason.Expired,
+      ),
+    ).toEqual({
+      auditAction: 'GOVERNANCE_IMPERSONATION_ENDED',
+      impersonationSessionId: 'imp-1',
+      impersonationScope: 'WRITE',
+      impersonationExpiresAtUtcMs: AT,
+      impersonationEndReason: 'EXPIRED',
+    });
+  });
+
+  it('governed copies the changed field names (WS-3)', () => {
+    const fields = ['dayOfWeek', 'closed'];
+    const context = AuditContext.governed(
+      AuditAction.GovernedDocUpdated,
+      GovernedCollection.BarberSchedules,
+      fields,
+    );
+    fields.push('notes');
+    expect(context).toEqual({
+      auditAction: 'GOVERNED_DOC_UPDATED',
+      governedCollection: 'BARBER_SCHEDULES',
+      governedFields: ['dayOfWeek', 'closed'],
     });
   });
 });

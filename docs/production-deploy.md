@@ -421,6 +421,12 @@ dev seed's fixtures (`tools/seed/fixtures/*.fixtures.ts`): the flat entity
 minus `id`, every key present. Bodies that break the flat layout are refused
 by the read guards (OR-33). **Never use `seed:dev` for this** (section 7).
 
+The bootstrap's catalogue, settings and `users.roles` writes happen before
+the first functions deploy, so they leave no governed or profile audit row
+(the `audit…Changes` triggers do not exist yet); every later console or
+Admin-SDK edit of those collections is recorded as `SYSTEM` / `ADMIN_SDK`
+(audit-hardening WS-3, DEP-14).
+
 - [ ] **`locations/loc-center`**, the default shop, with a canonical IANA
       `timeZone` (for example `Europe/Sofia`). It has to exist before the
       functions deploy: P1 runs in both predeploys. Without it, event saves are
@@ -553,7 +559,7 @@ gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --enable
 ```
 
 Source: `docs/architecture/firestore-runbook.md:135-180`, `:221-230`;
-`firestore.indexes.json` (24 `indexes`, 61 `fieldOverrides`, 7 with
+`firestore.indexes.json` (24 `indexes`, 99 `fieldOverrides`, 7 with
 `ttl: true`).
 
 ### 3.2 Rules
@@ -563,8 +569,14 @@ firebase deploy --only firestore:rules,storage --project "$PROJECT_ID"
 ```
 
 Rules ship before the code that depends on them. Appointments stay
-callable-only.
-Source: `docs/architecture/firestore-runbook.md:229`.
+callable-only. Since audit-hardening WS-3 (DEP-15) a team note
+(`appointmentNotes`) and a visit photo (`appointmentPhotos`) are written only
+under the caller's own uid (`authorUserId` / `takenByUserId`) with a
+lifecycle stamp (`writtenAtUtcMs` / `takenAtUtcMs`) within five minutes of
+the server's clock (`stampInWindow`), and a photo document is never
+updated; a device whose clock is more than five minutes off is refused.
+Source: `docs/architecture/firestore-runbook.md:229`; `firestore.rules`
+(`stampInWindow`).
 
 ### 3.3 Functions
 
@@ -580,7 +592,22 @@ The deploy fails closed if `loc-center`, the TTLs or the composites aren't
 ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
 still wired (P8), or if `WALKIN_ID_KEY` is missing.
-Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:231`.
+
+The deploy holds 47 functions. Audit-hardening WS-3 (DEP-14) added thirteen
+document-change audit triggers, one per governed collection, each retrying:
+`auditSettingsChanges`, `auditServicesChanges`, `auditBarbersChanges`,
+`auditLocationsChanges`, `auditBarberSchedulesChanges`,
+`auditScheduleExceptionsChanges`, `auditCouponsChanges`,
+`auditPositionsChanges`, `auditCoursesChanges`, `auditEventsChanges`,
+`auditCustomersChanges`, `auditAppointmentNotesChanges` and
+`auditAppointmentPhotosChanges`. Every write of those collections, deletes
+included, writes one `GOVERNED_DOC_*` row to `auditLog` naming the changed
+fields, never their values. `auditProfileChanges` keeps its name; its path
+param is now `users/{docId}` (was `users/{uid}`), and it also records
+`roles` and `accountStatus` changes (the path param's name is only the
+pattern's wildcard: the trigger still fires on every `users` document).
+Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:231`;
+`apps/functions/src/main.ts` (`documentAuditTrigger`).
 
 ### 3.4 Hosting, straight after functions
 

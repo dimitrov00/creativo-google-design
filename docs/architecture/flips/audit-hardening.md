@@ -1812,6 +1812,8 @@ message, stack }` scrubbed (RU-38: an `Error('… +359888123456 a@b.bg …')`
 
 - **C1 (WS-4.1):** listed under DEP-4 ("Also changed on purpose").
 - **C2 (WS-1 + WS-4.4):** the `logUnaudited` cases in `booking-read-set.pipeline.spec.ts` replace the deleted `appendAuditFacts` describe (DEP-5); `log-event.data.spec.ts` also pins that every value is unique and the "dropped" pair that `reporting-error-handler.ts` classifies on (RU-9); the book, reschedule and edit contention re-run cases compare the audit rows only, not the whole plan (their seat and decision ids come from `nextId`, RU-7).
+- **C4 (WS-3):** `profile-edit.system.spec.ts`'s `stub → registered` case — both expected field lists now end in `'roles'` (registration moves `roles` from `[]` to `['client']`, and DEP-13 audits `roles`).
+- **Carried from C4 (not built):** whether a REORDERED `roles` list counts as a change (today it does — owner flag); `auditProfileChanges`' trigger path changes from `users/{uid}` to `users/{docId}` (RU-40) — if `firebase deploy` refuses to update the trigger in place, delete that one function and deploy again (deploy step, §7 item 7); `libs/infrastructure/firestore`'s inferred `test` target does not list the root `firestore.rules` as an input, so a CACHED run can skip the rules-text spec after a rules edit (the gate always runs with `--skip-nx-cache`).
 
 ## 5. DEPARTURES
 

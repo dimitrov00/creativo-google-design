@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { PhotoOrigin } from '@core/components';
-import { Result, UserId, type UtcEpochMs } from '@core/primitives';
+import { Result, UserId, UtcEpochMs } from '@core/primitives';
 import {
   MediaError,
   MediaErrorCode,
   RepositoryError,
   RepositoryErrorCode,
 } from '@core/errors';
-import type { AppointmentPhoto } from '@core/entities';
+import type { AppointmentPhoto, AppointmentPhotoFacts } from '@core/entities';
 import { MediaSystem } from '@core/systems';
 import {
   FIXTURE_IDS,
@@ -31,7 +31,9 @@ import {
  * `adoptPhoto` (a library picture: a document, no bytes, no guard), sharing
  * one record builder — the id first, then the taker, then the stamp. In
  * memory, with a pinned clock and id source; the calls each port saw are
- * recorded in order.
+ * recorded in order. A shot's document stamp is read AGAIN after its upload
+ * (audit hardening WS-3 L6, DEP-16: the rules' ±300 s window must hold
+ * however long the bytes took).
  */
 const IVAN = UserId.of('dev-staff-ivan');
 
@@ -54,13 +56,16 @@ function harness(
       Result<{ path: string; url: string }, MediaError>
     >;
     readonly save?: () => Promise<Result<void, RepositoryError>>;
+    /** A clock that moves — each read answers the next instant; pinned when absent. */
+    readonly clock?: () => UtcEpochMs;
   } = {},
 ) {
   const photos: AppointmentPhoto[] = [];
   const calls: string[] = [];
+  const uploaded: AppointmentPhotoFacts[] = [];
   const store = memoryAppointmentPhotoPorts(photos);
   const ids = memoryIdPorts('photo');
-  const clock = memoryClockPorts();
+  const clock = overrides.clock ?? memoryClockPorts().nowUtcMs;
   const ports = {
     ...store,
     nextId: () => {
@@ -69,12 +74,13 @@ function harness(
     },
     nowUtcMs: (): UtcEpochMs => {
       calls.push('nowUtcMs');
-      return clock.nowUtcMs();
+      return clock();
     },
     uploadPhotoBytes: async (
       ...args: Parameters<typeof store.uploadPhotoBytes>
     ) => {
       calls.push('uploadPhotoBytes');
+      uploaded.push(args[0]);
       return overrides.upload
         ? overrides.upload()
         : store.uploadPhotoBytes(...args);
@@ -86,7 +92,7 @@ function harness(
         : store.saveAppointmentPhoto(photo);
     },
   };
-  return { ports, photos, calls };
+  return { ports, photos, calls, uploaded };
 }
 
 describe('attachVisitPhoto — a shutter press onto a visit', () => {
@@ -122,8 +128,38 @@ describe('attachVisitPhoto — a shutter press onto a visit', () => {
       'nextId',
       'nowUtcMs',
       'uploadPhotoBytes',
+      'nowUtcMs',
       'saveAppointmentPhoto',
     ]);
+  });
+
+  it('stamps the document with the instant AFTER the upload — the object keeps the provisional stamp (L6, DEP-16)', async () => {
+    // Four minutes pass while the bytes go up: the clock answers the shutter
+    // press first, the end of the upload second.
+    const pressed = FIXTURE_NOW_UTC_MS;
+    const landed = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 240_000);
+    const reads = [pressed, landed];
+    const { ports, photos, uploaded } = harness({
+      clock: () => {
+        const next = reads.shift();
+        if (next === undefined) throw new Error('clock read a third time');
+        return next;
+      },
+    });
+
+    const photo = unwrapOk(
+      await attachVisitPhoto(ports)({
+        ...subject,
+        image: image('image/jpeg', 2048),
+        width: 1280,
+        height: 960,
+      }),
+    );
+
+    expect(uploaded.map((facts) => facts.takenAtUtcMs)).toEqual([pressed]);
+    expect(photo.takenAtUtcMs).toBe(landed);
+    expect(photos.map((saved) => saved.takenAtUtcMs)).toEqual([landed]);
+    expect(reads).toEqual([]);
   });
 
   it('refuses what is not an image — before the id, the clock or the upload', async () => {
@@ -208,6 +244,7 @@ describe('attachVisitPhoto — a shutter press onto a visit', () => {
       'nextId',
       'nowUtcMs',
       'uploadPhotoBytes',
+      'nowUtcMs',
       'saveAppointmentPhoto',
     ]);
   });

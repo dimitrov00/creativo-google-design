@@ -9,6 +9,7 @@
 import {
   type AccountLifecycle,
   AccountStatus,
+  type AuditedProfileField,
   type Actor,
   ActorRole,
   AuditAction,
@@ -16,10 +17,12 @@ import {
   AuditTarget,
   type AuditTargetRef,
   type CancellationDelta,
+  type GovernedCollection,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
   type RescheduleDelta,
+  type Role,
   type SearchFields,
   type StaffEditDelta,
   type TipDelta,
@@ -28,8 +31,10 @@ import {
 import type {
   AttendanceState,
   CustomerId,
+  ImpersonationSessionId,
   OperationId,
   UserId,
+  UtcEpochMs,
 } from '@core/primitives';
 import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
@@ -299,6 +304,54 @@ if (row.auditAction === AuditAction.BookingCancelled) {
 if (row.auditAction === AuditAction.BookingStaffArrived) {
   // @ts-expect-error — an arrival is the verb alone: no delta
   void row.transitionFromBookingStatus;
+}
+/*
+ * The privileged and governed rows (audit-hardening WS-3): each verb narrows
+ * to its own fields, and the profile row's role / status tags are nullable
+ * closed vocabularies (pinned here — the L8 pair regex reads one dictionary
+ * name only).
+ */
+export const profileRolesAre: [
+  Equals<AuditContext.Profile['profileRolesFrom'], readonly Role[] | null>,
+  Equals<AuditContext.Profile['profileRolesTo'], readonly Role[] | null>,
+  Equals<
+    AuditContext.Profile['profileAccountStatusFrom'],
+    AccountStatus | null
+  >,
+  Equals<AuditContext.Profile['profileAccountStatusTo'], AccountStatus | null>,
+  Equals<AuditContext.Profile['profileFields'], readonly AuditedProfileField[]>,
+] = [true, true, true, true, true];
+if (row.auditAction === AuditAction.ProfileUpdated) {
+  void row.profileFields;
+  void row.profileRolesTo;
+  void row.profileAccountStatusFrom;
+  // @ts-expect-error — a profile row names no governed collection
+  void row.governedCollection;
+}
+if (row.auditAction === AuditAction.GovernanceImpersonationStarted) {
+  const session: ImpersonationSessionId = row.impersonationSessionId;
+  const expires: UtcEpochMs = row.impersonationExpiresAtUtcMs;
+  void session;
+  void expires;
+  void row.impersonationScope;
+  // @ts-expect-error — a start has no end reason
+  void row.impersonationEndReason;
+  // @ts-expect-error — the session's free-text reason is never on a row (T5, R36)
+  void row.reason;
+}
+if (row.auditAction === AuditAction.GovernanceImpersonationEnded) {
+  void row.impersonationEndReason;
+  void row.impersonationSessionId;
+  // @ts-expect-error — nor its revocation notes
+  void row.revocationNotes;
+}
+if (row.auditAction === AuditAction.GovernedDocDeleted) {
+  const collection: GovernedCollection = row.governedCollection;
+  const fields: readonly string[] = row.governedFields;
+  void collection;
+  void fields;
+  // @ts-expect-error — a governed row carries no profile field list
+  void row.profileFields;
 }
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;

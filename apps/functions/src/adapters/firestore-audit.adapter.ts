@@ -27,7 +27,8 @@ import { TriggerAttemptSystem } from '@core/systems';
  *   gets that one row, and no row the first call wrote is rewritten. NEVER
  *   fatal and never silent: any other failure is logged at error level and
  *   the call's answer stands.
- * - `createAuditRows` — the profile trigger's only write: the same
+ * - `createAuditRows` — the document-change triggers' only write (the
+ *   profile trigger and the thirteen governed-collection triggers): the same
  *   deterministic-id `create()`s, ALREADY_EXISTS a success, but a real
  *   failure IS answered (a `RepositoryError` value) so the trigger's retry
  *   can deliver the row.

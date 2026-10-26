@@ -628,7 +628,7 @@ describe('ProfileEditSystem.registrationProfile — the registered aggregate (us
     });
   });
 
-  it('stub → registered changes exactly the names (+ birth date and e-mail when given), never the phone', () => {
+  it('stub → registered changes exactly the names and the roles (+ birth date and e-mail when given), never the phone', () => {
     const uid = UserId.of('uid_1');
     const stub = RegistrationSystem.provision(
       uid,
@@ -650,7 +650,7 @@ describe('ProfileEditSystem.registrationProfile — the registered aggregate (us
         stub,
         RegistrationSystem.register(stub, namesOnly),
       ),
-    ).toEqual(['firstName', 'lastName']);
+    ).toEqual(['firstName', 'lastName', 'roles']);
     const everything = unwrapOk(
       ProfileEditSystem.registrationProfile(
         settlement({ phone: '+359 888 123 456' }),
@@ -662,7 +662,7 @@ describe('ProfileEditSystem.registrationProfile — the registered aggregate (us
         stub,
         RegistrationSystem.register(stub, everything),
       ),
-    ).toEqual(['firstName', 'lastName', 'email', 'birthDate']);
+    ).toEqual(['firstName', 'lastName', 'email', 'birthDate', 'roles']);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

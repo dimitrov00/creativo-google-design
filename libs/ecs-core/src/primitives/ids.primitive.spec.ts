@@ -29,6 +29,7 @@ import {
   DraftPersonKey,
   GuestKey,
   CustomerId,
+  ImpersonationSessionId,
   JournalEntryId,
   LocationId,
   PolicyRecomputeJobId,
@@ -245,6 +246,14 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     expect(
       AuditResourceId.forStreakDefinition(StreakDefinitionId.of('rhythm')),
     ).toBe(`${Collections.StreakDefinitions}/rhythm`);
+  });
+
+  it('names an impersonation session by its collection path (audit-hardening WS-3)', () => {
+    const resource = AuditResourceId.forImpersonationSession(
+      ImpersonationSessionId.of('imp_7'),
+    );
+    expect(resource).toBe(`${Collections.ImpersonationSessions}/imp_7`);
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
   });
 
   it('parse takes at most one slash', () => {
