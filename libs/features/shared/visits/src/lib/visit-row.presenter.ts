@@ -135,10 +135,13 @@ export interface VisitRowOptions {
   readonly subjectUserId: UserId | null;
   /**
    * The same person's client RECORD (D29: whom the shop served) — what the
-   * story is keyed by (`VisitStorySystem.subjectStory`). The staff card
-   * passes the record it resolved; absent, it is read off the seat that
-   * names `subjectUserId` (the seat's explicit `subjectCustomerId` link,
-   * never a uid taken for a record).
+   * story is keyed by (`VisitStorySystem.subjectStory`). Optional on purpose
+   * (OR-59, pass E N-1): each of its three answers is part of the contract —
+   * - a `CustomerId`: the record the host resolved (the staff card);
+   * - `null`: no record — a guest, whose story is the appointment's;
+   * - absent: read off the seat that names `subjectUserId` (the seat's
+   *   explicit `subjectCustomerId` link, never a uid taken for a record) —
+   *   the client's own list, which holds the account and not the record.
    */
   readonly subjectCustomerId?: CustomerId | null;
   /** The appointment the sheet is open on: it wears «Този час» wherever its date files it. */

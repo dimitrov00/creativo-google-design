@@ -676,36 +676,45 @@ export const AppointmentLifecycleSystem = {
   },
 
   /**
-   * Is a reinstated cancellation's chair still free? The cancel gave its
-   * time away and the waitlist may have taken it: `others` are the live
-   * appointments sharing a busy key; any of their open seats on the same
-   * barber overlapping one of ours — on the same shop day — means the answer
-   * is honestly "taken".
+   * Has the chair a reopened visit holds again been given away since? A
+   * visit that left the book — cancelled, no-show, completed — freed its
+   * barbers' time in the busy projection, and a booking, the waitlist or a
+   * staff move may have taken it before the shop reopened it (OR-57, pass E
+   * N-5). `appointment` is the visit AFTER the move; `others` the live
+   * appointments sharing one of its busy keys. Answers the index of the
+   * first open seat of ours that an open seat of theirs, on the same barber
+   * and the same shop day, overlaps — the seat the refusal names — or
+   * `null` while the chair is still free. A seat the move leaves resolved
+   * holds no chair and is never compared.
    */
-  takenSince(
+  seatTakenSince(
     appointment: Appointment,
     others: readonly Appointment[],
-  ): boolean {
-    for (let o = 0; o < others.length; o++) {
-      const other = others[o] as Appointment;
-      if (
-        other.id === appointment.id ||
-        other.localDate !== appointment.localDate ||
-        !BookingLifecycle.isLive(other)
-      ) {
-        continue;
-      }
-      for (let s = 0; s < other.seats.length; s++) {
-        const theirs = other.seats[s] as Seat;
-        if (SeatOutcome.isResolved(theirs)) continue;
-        for (let m = 0; m < appointment.seats.length; m++) {
-          if (Seat.collidesWith(appointment.seats[m] as Seat, theirs)) {
-            return true;
+  ): number | null {
+    for (let m = 0; m < appointment.seats.length; m++) {
+      const mine = appointment.seats[m] as Seat;
+      if (SeatOutcome.isResolved(mine)) continue;
+      for (let o = 0; o < others.length; o++) {
+        const other = others[o] as Appointment;
+        if (
+          other.id === appointment.id ||
+          other.localDate !== appointment.localDate ||
+          !BookingLifecycle.isLive(other)
+        ) {
+          continue;
+        }
+        for (let s = 0; s < other.seats.length; s++) {
+          const theirs = other.seats[s] as Seat;
+          if (
+            !SeatOutcome.isResolved(theirs) &&
+            Seat.collidesWith(mine, theirs)
+          ) {
+            return m;
           }
         }
       }
     }
-    return false;
+    return null;
   },
 
   /**
@@ -951,18 +960,21 @@ export const AppointmentLifecycleSystem = {
   },
 
   /**
-   * Is this the party's reinstatement of a cancelled visit — a whole-party
-   * move to `CONFIRMED` from `CANCELLED`? The one move whose chair may have
-   * been given away since (`takenSince`).
+   * Could this move END the visit live — a move to a live status of a visit
+   * that is not live: the reopen of a `CANCELLED`, `NO_SHOW` or `COMPLETED`
+   * visit? Asked of the REQUEST, before the decision, it names every move
+   * whose chair may have been given away since ({@link seatTakenSince}) and
+   * whose chair time the busy projection must get back ({@link endsLive}) —
+   * what the transition reads both for. Every move the decision ends live,
+   * it answers `true` for.
    */
-  isReinstatement(
+  mayEndLive(
     appointment: { readonly bookingStatus: BookingStatus },
     move: LifecycleMove,
   ): boolean {
     return (
-      move.seatId === null &&
-      move.to === BookingStatus.Confirmed &&
-      appointment.bookingStatus === BookingStatus.Cancelled
+      !BookingLifecycle.isLive(appointment) &&
+      BookingLifecycle.isLive({ bookingStatus: move.to })
     );
   },
 
@@ -978,7 +990,8 @@ export const AppointmentLifecycleSystem = {
    * Did the move END the visit live — live after, not before
    * (`BookingLifecycle.isLive`, the busy projection's own predicate)? The
    * reopen of a `CANCELLED`, `NO_SHOW` or `COMPLETED` visit: what holds its
-   * chair again at once (pass E, E-14, DEP-5).
+   * chair again at once (pass E, E-14, DEP-5), once that chair is proved
+   * still free ({@link seatTakenSince}, OR-57).
    */
   endsLive(
     before: { readonly bookingStatus: BookingStatus },

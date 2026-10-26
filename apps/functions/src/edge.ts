@@ -541,6 +541,9 @@ const SCHEDULING_WIRE = uniform(
     [SchedulingErrorCode.AppointmentReopenWindowClosed]: fields(
       S.FailedPrecondition,
     ),
+    [SchedulingErrorCode.AppointmentReopenSlotTaken]: fields(
+      S.FailedPrecondition,
+    ),
     [SchedulingErrorCode.AppointmentUnknownSeat]: fields(S.NotFound),
     [SchedulingErrorCode.AppointmentSeatAlreadyResolved]: fields(
       S.FailedPrecondition,

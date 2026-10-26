@@ -38,8 +38,10 @@ import type {
  * redemption counter and the streak publish are entries of one
  * `CommitPlan` (`tx.port.ts`) planned by their systems and committed by
  * their pipelines; the web reaches the publish only through the callable
- * (`StreakPublishGatewayPorts`). Coupons stay a rules-guarded admin write
- * until an admin surface lands (§9 D28).
+ * (`StreakPublishGatewayPorts`). No client writes a coupon, the admin
+ * included (OR-58, amending D28's interim clause): the dev seed and the e2e
+ * support write through the Admin SDK, and a coupon editor ships with its
+ * own server write (D28's end state).
  */
 
 // ── Coupons, grants, vouchers ─────────────────────────────────────────────

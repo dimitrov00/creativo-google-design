@@ -1249,10 +1249,14 @@ during its build, the integrator re-runs it at the end).
 
 ### 7.2 New for the owner, found by this plan (REPORTED, not done)
 
-> **After the owner rulings (2026-10-26):** the record does not rule N-1,
-> N-2 or N-5 — they stay open, listed in HANDOFF §6. N-3 and N-4 record
-> changes this pass made (each reverted by one edit, as below); no ruling
-> touches them.
+> **After the owner rulings (2026-10-26):** the record did not rule N-1,
+> N-2 or N-5; the owner approved the chief architect's answers later the
+> same day and they are BUILT — N-5 as OR-57 (every reopen refused while a
+> live visit holds the chair; `isReinstatement` / `takenSince` became
+> `mayEndLive` / `seatTakenSince`), N-2 as OR-58 (`coupons` written by no
+> client), N-1 as OR-59 (optional, its absence a contract value). N-3 and
+> N-4 record changes this pass made (each reverted by one edit, as below);
+> no ruling touches them.
 
 - **N-1 — `subjectCustomerId` required on `VisitRowOptions` /
   `VisitCardOptions`: NOT every producer has it.** The client's appointments
@@ -1580,11 +1584,11 @@ case red with the fix taken out, green with it.
 - **OWNER (§7 — every §7.1 item and the three new ones below RULED
   2026-10-26 by the owner rulings: OR-56 the baselines, OR-51 the identity
   words and voice, OR-52 / DEP-F36 the rhythm refusals; N-1, N-2 and N-5
-  not ruled, still open in HANDOFF §6):** every §7.1 item verbatim, and §7.2 N-1…N-5 —
-  among them N-5, a `NO_SHOW` / same-day `COMPLETED` reopen (and a seat-level
-  reopen inside a cancelled party) still checks no collision against
-  appointments booked into the freed chair; DEP-5 only restores the busy
-  blocks. New for the owner from this pass: the six baselines' review-2 gate
+  ruled and built later the same day as OR-59, OR-58 and OR-57 — HANDOFF
+  §6):** every §7.1 item verbatim, and §7.2 N-1…N-5 — among them N-5, a
+  `NO_SHOW` / same-day `COMPLETED` reopen that checked no collision against
+  appointments booked into the freed chair (DEP-5 only restored the busy
+  blocks; since OR-57 every reopen is refused while the chair is taken). New for the owner from this pass: the six baselines' review-2 gate
   (§8.4), the IDENTITY_CLAIMS_PROMOTION_FAILURE words and the identity lines'
   formal voice (§8.1 I18N), and whether `LOYALTY_STREAK_PUBLISH_*`'s two
   refusals should get words (§8.2).

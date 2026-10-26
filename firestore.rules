@@ -631,10 +631,14 @@ service cloud.firestore {
     // value snapshot but not the coupon's name and terms, so the browser
     // joins a grant to its `Coupon` definition (`couponVoucherPorts`:
     // `loadCoupons` by the grants' ids, `findCouponByCode` for a typed
-    // code, `listOpenCoupons`). Only the admin writes one.
+    // code, `listOpenCoupons`). No client writes one, the admin included
+    // (OR-58, pass E N-2): no screen saves a coupon — the dev seed and the
+    // e2e support write through the Admin SDK, which these rules never see,
+    // and the functions only read. A coupon editor ships with its own
+    // server write (D28's end state).
     match /coupons/{couponId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
     // GIFT VOUCHERS — money the shop was paid (2026-09-10). The holder may

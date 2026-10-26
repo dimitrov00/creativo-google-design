@@ -490,12 +490,6 @@ export function transitionAppointmentRefusal(
     );
   }
   switch (error.errorCode) {
-    case BookingErrorCode.SlotUnavailable:
-      return BookingError.statusMove(
-        BookingErrorCode.TransitionSlotTaken,
-        BookingStatus.Cancelled,
-        BookingStatus.Confirmed,
-      );
     case SchedulingErrorCode.AppointmentUnknownSeat:
       return BookingError.callNotFound(
         BookingErrorCode.TransitionNotFound,
@@ -527,6 +521,12 @@ export function transitionAppointmentRefusal(
     case SchedulingErrorCode.AppointmentReopenWindowClosed:
       return BookingError.statusMove(
         BookingErrorCode.TransitionReopenWindowClosed,
+        stateOf(error.from),
+        cmd.to,
+      );
+    case SchedulingErrorCode.AppointmentReopenSlotTaken:
+      return BookingError.statusMove(
+        BookingErrorCode.TransitionSlotTaken,
         stateOf(error.from),
         cmd.to,
       );

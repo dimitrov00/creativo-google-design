@@ -957,26 +957,35 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           toBookingStatus: 'CONFIRMED',
         },
       });
-      expect(
-        wire(
-          transitionAppointmentRefusal(
-            BookingError.slotUnavailable(
-              BarberId.of('b'),
-              localDate('2026-09-28'),
-              minute(600),
-              0,
+      // A reopened chair taken since names the status the visit left —
+      // every reopen, not only a cancelled party's (OR-57).
+      for (const from of [
+        BookingStatus.Cancelled,
+        BookingStatus.NoShow,
+        BookingStatus.Completed,
+      ]) {
+        expect(
+          wire(
+            transitionAppointmentRefusal(
+              SchedulingError.appointmentReopenSlotTaken(
+                from,
+                BarberId.of('b'),
+                localDate('2026-09-28'),
+                minute(600),
+                0,
+              ),
+              { ...party, to: BookingStatus.Confirmed },
             ),
-            { ...party, to: BookingStatus.Confirmed },
           ),
-        ),
-      ).toEqual({
-        code: 'failed-precondition',
-        details: {
-          errorCode: 'BOOKING_TRANSITION_SLOT_TAKEN',
-          fromBookingStatus: 'CANCELLED',
-          toBookingStatus: 'CONFIRMED',
-        },
-      });
+        ).toEqual({
+          code: 'failed-precondition',
+          details: {
+            errorCode: 'BOOKING_TRANSITION_SLOT_TAKEN',
+            fromBookingStatus: from,
+            toBookingStatus: 'CONFIRMED',
+          },
+        });
+      }
       expect(
         wire(
           transitionAppointmentRefusal(

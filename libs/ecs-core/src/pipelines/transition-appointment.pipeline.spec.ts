@@ -29,6 +29,7 @@ import {
 import {
   AppliedDiscountId,
   AppointmentId,
+  BarberId,
   BookingStatus,
   BusyKey,
   CouponGrantId,
@@ -503,10 +504,114 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
     const taker = appointmentFixture({ id: AppointmentId.of('appt-taker') });
     const taken = rig([cancelled, taker]);
     const refused = await taken.run(command(BookingStatus.Confirmed));
-    expect(!refused.ok && refused.error.errorCode).toBe(
-      BookingErrorCode.SlotUnavailable,
-    );
+    expect(!refused.ok && refused.error).toMatchObject({
+      errorCode: SchedulingErrorCode.AppointmentReopenSlotTaken,
+      from: BookingStatus.Cancelled,
+    });
     expect(taken.tx.plans).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a no-show',
+      SeatOutcome.noShow(FIXTURE_NOW_UTC_MS),
+      BookingLifecycle.noShow(FIXTURE_NOW_UTC_MS),
+    ],
+    [
+      'a completed visit on its own day',
+      SeatOutcome.worked(FIXTURE_NOW_UTC_MS),
+      BookingLifecycle.complete(FIXTURE_NOW_UTC_MS),
+    ],
+  ])(
+    'refuses to reopen %s once a live visit took its chair — naming the seat, writing nothing (OR-57)',
+    async (_case, outcome, lifecycle) => {
+      const left = appointmentFixture({
+        seats: [seatFixture({ outcome })],
+        lifecycle,
+      });
+      const taker = appointmentFixture({ id: AppointmentId.of('appt-taker') });
+      const { tx, rows, run } = rig([left, taker]);
+      const refused = await run(command(BookingStatus.Confirmed));
+      expect(!refused.ok && refused.error).toEqual({
+        errorCode: SchedulingErrorCode.AppointmentReopenSlotTaken,
+        from: lifecycle.bookingStatus,
+        barberId: FIXTURE_IDS.barber,
+        localDate: FIXTURE_TODAY,
+        startMinutes: seatFixture().startMinutes,
+        seatIndex: 0,
+      });
+      expect(tx.transactions[0]?.queries).toHaveLength(1);
+      expect(tx.plans).toEqual([]);
+      expect(rows).toEqual([]);
+
+      // With the chair still free, the same reopen lands.
+      expect((await rig([left]).run(command(BookingStatus.Confirmed))).ok).toBe(
+        true,
+      );
+    },
+  );
+
+  it('names the seat a reopen would collide on, and lets a seat the reopen leaves resolved stay out of it (OR-57)', async () => {
+    const OTHER = BarberId.of('b-other');
+    const elsewhere = seatFixture({
+      outcome: SeatOutcome.noShow(FIXTURE_NOW_UTC_MS),
+      barberId: OTHER,
+    });
+    const keys = {
+      barberIds: [OTHER, FIXTURE_IDS.barber],
+      busyKeys: [
+        BusyKey.of(OTHER, FIXTURE_TODAY),
+        BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY),
+      ],
+      lifecycle: BookingLifecycle.noShow(FIXTURE_NOW_UTC_MS),
+    };
+    const taker = appointmentFixture({ id: AppointmentId.of('appt-taker') });
+    const bothAbsent = appointmentFixture({
+      ...keys,
+      seats: [
+        elsewhere,
+        seatFixture({
+          seatId: GUEST_SEAT,
+          outcome: SeatOutcome.noShow(FIXTURE_NOW_UTC_MS),
+        }),
+      ],
+    });
+    const refused = await rig([bothAbsent, taker]).run(
+      command(BookingStatus.Confirmed),
+    );
+    expect(!refused.ok && refused.error).toMatchObject({
+      errorCode: SchedulingErrorCode.AppointmentReopenSlotTaken,
+      from: BookingStatus.NoShow,
+      barberId: FIXTURE_IDS.barber,
+      seatIndex: 1,
+    });
+
+    // The guest had been called off: the no-show's reopen leaves that seat
+    // cancelled, so it holds no chair and the taker is no collision.
+    const guestCancelled = appointmentFixture({
+      ...keys,
+      seats: [
+        elsewhere,
+        seatFixture({
+          seatId: GUEST_SEAT,
+          outcome: SeatOutcome.cancelled(
+            FIXTURE_NOW_UTC_MS,
+            CancelledBy.Staff,
+            CancellationReason.Unspecified,
+            null,
+          ),
+        }),
+      ],
+    });
+    const { store, run } = rig([guestCancelled, taker]);
+    expect((await run(command(BookingStatus.Confirmed))).ok).toBe(true);
+    const seats = store.get(PATH)?.['seats'] as readonly {
+      attendanceState: string;
+    }[];
+    expect(seats.map((seat) => seat.attendanceState)).toEqual([
+      'SCHEDULED',
+      'CANCELLED',
+    ]);
   });
 
   it('refuses a move the graph does not allow (INVALID_TRANSITION)', async () => {

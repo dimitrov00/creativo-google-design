@@ -68,6 +68,13 @@ describe('SchedulingError factories', () => {
         BookingStatus.Confirmed,
       ),
       SchedulingError.appointmentReopenWindowClosed(BookingStatus.Completed),
+      SchedulingError.appointmentReopenSlotTaken(
+        BookingStatus.NoShow,
+        BarberId.of('ivan'),
+        localDate('2026-09-28'),
+        minute(600),
+        1,
+      ),
       SchedulingError.appointmentEmptyCancellationReason(),
       SchedulingError.appointmentUnknownSeat(SeatId.of('s1')),
       SchedulingError.appointmentSeatAlreadyResolved(

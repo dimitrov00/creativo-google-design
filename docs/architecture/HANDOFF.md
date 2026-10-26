@@ -30,8 +30,9 @@ end of §3.3; the edge hardening, end of §3.3; pass E — the leftovers: every
 carried engineering item closed and the standing red baseline green at its
 root causes, the FULL gate green with no standing reds, end of §3.3; pass F
 — the owner rulings of 2026-10-26, OR-1…OR-56 and DEP-F1…DEP-F39 in
-`decisions/2026-10-26-owner-rulings.md`: every open question of §3.3 and §6
-ruled, the rulings built in four waves and integrated, the FULL gate green
+`decisions/2026-10-26-owner-rulings.md` (OR-57…OR-59, pass E's N-5, N-2 and
+N-1, ruled and built after it the same day): every open question of §3.3
+and §6 ruled, the rulings built in four waves and integrated, the FULL gate green
 with no standing reds and `verify:csp` passing, end of §3.3).
 
 ## 1. Read these, in this order
@@ -61,7 +62,7 @@ with no standing reds and `verify:csp` passing, end of §3.3).
    contracts (D-8), the error homes (D-9), the 23 DEPARTURES and the ledger.
 10. `docs/architecture/decisions/2026-10-26-owner-rulings.md` — the owner's
     rulings on every question this record and the plans left open (OR-1 …
-    OR-56, each with its evidence, options, scores, consequences and bg/en
+    OR-59, each with its evidence, options, scores, consequences and bg/en
     copy), the 39 DEPARTURES they cause (DEP-F1 … DEP-F39), the deferred
     list, the per-ruling ledger of what landed (BUILT) and the
     implementation plan. A question it rules is not reopened in code
@@ -1452,10 +1453,10 @@ moved by typing «Начало» or changing the day — start it at 23:55 inste
 **Carried from pass D** (none blocks anything; the plan's §9.6 has each
 with its reason; every engineering item below is CLOSED by pass E — end
 of §3.3 — and only the owner calls and the parked items remain; since
-2026-10-26 every one of those is ruled or triaged but N-1): `subjectCustomerId` stays
+2026-10-26 every one of those is ruled or triaged): `subjectCustomerId` stays
 optional on the visit row/card options (pass E N-1: the client's
-appointments page passes none and relies on the absent path, so requiring
-it is the owner's call); the icons lib's raw-brand guard (CLOSED, E-5); the spec-only survivors
+appointments page passes none and relies on the absent path — ruled
+OR-59, its absence a contract value); the icons lib's raw-brand guard (CLOSED, E-5); the spec-only survivors
 (`AchievementsSystem.firstStart`, `ZonedTimeSystem.toIso`,
 `rhythmPreviewReadsFacts` — CLOSED, E-6, deleted; `parseIsoIn` KEPT, an e2e
 calls it); the per-surface avatar-upload unions (CLOSED, E-7);
@@ -1481,7 +1482,7 @@ row's DS-input-valued tile tone and amount emphasis unions (kept, OR-28). The
 owner calls from pass C — the KEEP-PARKED lifecycle write verbs,
 `VoucherSystem.redeem` and `IntervalSetSystem.clip` — are CLOSED: deleted
 (OR-20 / DEP-F15, OR-14, OR-21 / DEP-F16). `subjectCustomerId` (pass E N-1)
-is not ruled by the record and stays an owner question (§6).
+is ruled OR-59 — optional, its absence a contract value (§6).
 
 **Edge hardening (2026-10-25, `flips/edge-hardening.md`, ledger §8).** The
 before/after architecture comparison found three regressions at the I/O
@@ -1789,8 +1790,9 @@ words (the admin rhythm page says nothing for them on purpose). Ruled
 upcoming tile with no month or year, a filter row of one chip — are fixed,
 each regenerating its own baselines (OR-56); the identity words and the
 formal «вие» go to one «ти» voice (OR-51); both rhythm codes are worded and
-the page's switch is exhaustive (OR-52 / DEP-F36). N-1, N-2 and N-5 are not
-ruled by the record and stay open (§6); N-3 and N-4 record changes pass E
+the page's switch is exhaustive (OR-52 / DEP-F36). N-1, N-2 and N-5, which
+the record left open, were ruled and built later the same day on the owner's
+approval — OR-59, OR-58 and OR-57 (§6); N-3 and N-4 record changes pass E
 made, each reverted by one edit (pass E §7.2).
 
 **PARKED** (plan §7.3, verbatim; TRIAGED 2026-10-26 by OR-28 / DEP-F22 —
@@ -2370,16 +2372,16 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
   to publish (OR-34); and the orchestrator's override of OR-13's flagged
   default — a no-show gives back the grant and the voucher draw (DEP-F10b,
   end of §3.3).
-- **Still open — found by pass E, not ruled by the record** (pass E §7.2):
-  N-1, `subjectCustomerId` cannot be required on `VisitRowOptions` /
-  `VisitCardOptions` (the client's appointments page relies on
-  `VisitStorySystem.subjectRecordOf`'s absent path) — keep it optional, or
-  make the absent case an explicit contract value; N-2, the `coupons` write
-  grant (`isAdmin`) has no client writer, but a dated rules case pins an
-  admin's save — deny it on the owner's word only; N-5, a `NO_SHOW` or
-  same-day `COMPLETED` reopen (and a seat-level reopen inside a cancelled
-  party) checks no collision against appointments booked into the freed
-  chair — refuse such a reopen, or let the shop knowingly overlap.
+- **Found by pass E, ruled 2026-10-26 on the owner's approval** (pass E
+  §7.2; `decisions/2026-10-26-owner-rulings.md` OR-57 – OR-59, BUILT):
+  N-5 → **OR-57**, every reopen (`CANCELLED`, `NO_SHOW`, same-day
+  `COMPLETED` → `CONFIRMED`) reads the live visits on its busy keys (#7) and
+  is refused `BOOKING_SLOT_UNAVAILABLE`, naming the seat, when one it puts
+  back collides (`AppointmentLifecycleSystem.mayEndLive` /
+  `seatTakenSince`); N-2 → **OR-58**, no client writes `coupons`, the admin
+  included (amends D28's interim clause); N-1 → **OR-59**,
+  `subjectCustomerId` stays optional, its absence a documented contract
+  value (no behaviour change). Nothing found by pass E is open.
 - Decision-extraction plan (`docs/architecture/flips/law-10-decision-extraction.md`)
   §8 — every question CLOSED: the catalog component specs' fixture literals
   gained the three figure fields (OQ-1); the cue rule

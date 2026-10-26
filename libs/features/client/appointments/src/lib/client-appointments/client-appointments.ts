@@ -462,6 +462,8 @@ export class ClientAppointments {
           perspective: VisitPerspective.Client,
           grain: VisitGrain.Month,
           subjectUserId: owner,
+          // No `subjectCustomerId`: the list holds the account, not the
+          // record — each row reads it off the owner's own seat (OR-59).
           currentAppointmentId: null,
           // Each visit filed on its OWN shop's wall clock (OR-8), the
           // default shop's while that shop's clock is on its way.

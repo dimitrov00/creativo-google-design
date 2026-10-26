@@ -40,7 +40,7 @@ const TRANSITION_TARGETS = targetsOf(TRANSITIONS);
 /**
  * The statuses that still hold a slot, in this order — the one list the
  * live-occupancy reads filter on (`bookingStatus in [PENDING, CONFIRMED]`,
- * index #6/#7): the reinstated chair's collision read, the busy rebuild,
+ * index #6/#7): a reopened chair's collision read, the busy rebuild,
  * the upcoming read.
  */
 const LIVE_STATUSES: readonly BookingStatus[] = [

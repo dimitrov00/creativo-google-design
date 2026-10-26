@@ -207,7 +207,7 @@ openssl rand -hex 32 | firebase functions:secrets:set WALKIN_ID_KEY --data-file=
 
 Source: `docs/architecture/firestore-runbook.md:233`;
 `apps/functions/src/main.ts:326-347`;
-`docs/architecture/decisions/2026-10-26-owner-rulings.md:709`.
+`docs/architecture/decisions/2026-10-26-owner-rulings.md:710`.
 
 ### Sign-in: the OTP sender (LAUNCH BLOCKER)
 
@@ -274,7 +274,7 @@ Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
       Source: `libs/infrastructure/firebase-auth/src/lib/otp-challenge.adapter.ts:1`, `:19`;
       `libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts:85-114`;
       `apps/functions/src/adapters/auth-claims.adapter.ts:58-80`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:842-853`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:843-854`.
 - [ ] **Authorized domains: leave them as they are for launch.** Custom-token
       sign-in uses no OAuth redirect or e-mail link. Add the production domain
       only if a redirect or popup provider is ever introduced.
@@ -308,7 +308,7 @@ Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
       exactly as it is. **No `preload`** until the apex domain is final (OR-29,
       Deferred #10).
       Source: `firebase.json:47-50`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:783`, `:1435`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:784`, `:1478`.
 
 ### Data retention, backups, cost
 
@@ -359,17 +359,17 @@ gcloud logging metrics create client_issue_count --project="$PROJECT_ID" --confi
       `logging.googleapis.com/user/client_issue_count` above 100 per 5 minutes,
       with an e-mail notification channel.
       Source: `docs/architecture/firestore-runbook.md:240-259`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:914`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:915`.
 - [ ] **Turn on Error Reporting notifications.** There is no Sentry or Pino
       (D11(a)): Cloud Logging plus Error Reporting is the only error channel
       for both server and client errors.
       Source: `apps/functions/src/adapters/console-telemetry.adapter.ts:5-22`;
-      `docs/architecture/decisions/2026-10-26-owner-rulings.md:885`, `:1483`.
+      `docs/architecture/decisions/2026-10-26-owner-rulings.md:886`, `:1528`.
 - [ ] **Publish the privacy-policy line:** "diagnostic data under legitimate
       interest, 30-day Cloud Logging retention, no personal identifiers". Keep
       the `_Default` log bucket at 30 days so the statement stays true.
-      Source: `docs/architecture/decisions/2026-10-26-owner-rulings.md:918`;
-      `docs/architecture/HANDOFF.md:2362-2372`.
+      Source: `docs/architecture/decisions/2026-10-26-owner-rulings.md:919`;
+      `docs/architecture/HANDOFF.md:2364-2374`.
 
 ### Schedules and flags
 
@@ -437,7 +437,7 @@ pnpm run preflight --project "$PROJECT_ID"
       `BookingPolicy.withDefaults` applies. Writing it fires
       `rebuildCapacityOnSettingsChange`.
       Source: `apps/functions/src/adapters/firestore-settings.adapter.ts:26-36`;
-      `firestore.rules:708-716`; `tools/seed/fixtures/settings.fixtures.ts`.
+      `firestore.rules:712-720`; `tools/seed/fixtures/settings.fixtures.ts`.
 - [ ] **The first admin, then the staff.** No callable grants roles
       (`grantRoles` is unbuilt), and the rules never let a client write
       `users/{uid}`. Roles reach the ID token only from the stored
@@ -479,7 +479,7 @@ a first deploy has no such web, so the ordinary order applies.
       `typecheck seed-tools`, build web, verify:bundle, build functions +
       check-functions-deps, the grep gates, `verify:p0`, `test:emulator`,
       `e2e:web`). Run the emulator journeys one at a time.
-      Source: `docs/architecture/HANDOFF.md:2100-2131`.
+      Source: `docs/architecture/HANDOFF.md:2102-2133`.
 - [ ] Run the CSP gate on its own, because it starts every emulator. A changed
       inline script (the pre-paint script, or Beasties output after an Angular
       update) changes the hashes, and the enforced CSP would then block it.
@@ -623,7 +623,7 @@ curl -sI "https://<domain>/"
 - [ ] Re-run the preflight.
 
 Source: `apps/web/e2e/csp/csp-smoke.spec.ts:212-340` (the journeys this
-mirrors); `firebase.json:35-102`; `docs/architecture/HANDOFF.md:2080` (the `/admin` redirect).
+mirrors); `firebase.json:35-102`; `docs/architecture/HANDOFF.md:2082` (the `/admin` redirect).
 The emulator never enforces composites, TTL, IAM `signBlob` or real delivery,
 so this manual pass is the only proof of them.
 
@@ -735,8 +735,8 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
 
 | Item                                                                 | State at launch                                                                                                                                                                                                          | Ruling                                                                                                        |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| **App Check** on the callables and `reportClientIssues`              | Not wired: the web has no provider and no callable enforces it. **Leave enforcement OFF in the console**, or every callable from the current build is refused. Needs reCAPTCHA hosts in the CSP and an enrolment design. | Deferred #4 (`docs/architecture/decisions/2026-10-26-owner-rulings.md:1429`); `docs/security/csp-baseline.md` |
-| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1428`); `firebase.json:43-46`                                                 |
-| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1435`); OR-29                                                                |
+| **App Check** on the callables and `reportClientIssues`              | Not wired: the web has no provider and no callable enforces it. **Leave enforcement OFF in the console**, or every callable from the current build is refused. Needs reCAPTCHA hosts in the CSP and an enrolment design. | Deferred #4 (`docs/architecture/decisions/2026-10-26-owner-rulings.md:1472`); `docs/security/csp-baseline.md` |
+| **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1471`); `firebase.json:43-46`                                                 |
+| **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1478`); OR-29                                                                |
 | **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                  |
 | **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:941-948`                                                                          |

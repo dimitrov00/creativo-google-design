@@ -2334,13 +2334,13 @@ describe('firestore.rules', () => {
     });
   });
 
-  describe('coupons — an admin’s save keeps what the coupon is given for (2026-09-29)', () => {
+  describe('coupons — every signed-in account reads one; no client writes one, the admin included (OR-58)', () => {
     const couponPath = 'coupons/coupon-birthday';
 
     /**
      * The birthday coupon as `coupons/{id}` stores it (`Coupon`, flip 1):
      * the value, the expiry and the occasion slices at the root — what the
-     * seed writes and an admin's editor saves back whole.
+     * seed writes through the Admin SDK.
      */
     function birthday(percent: number): Omit<Coupon, 'id'> {
       return {
@@ -2355,55 +2355,40 @@ describe('firestore.rules', () => {
       } satisfies Omit<Coupon, 'id'>;
     }
 
-    async function stored(
-      db: ReturnType<RulesTestContext['firestore']>,
-    ): Promise<Record<string, unknown>> {
-      const snapshot = await assertSucceeds(getDoc(doc(db, couponPath)));
-      return snapshot.data() ?? {};
-    }
-
-    it('round-trips the occasion through an admin’s edit of the birthday coupon', async () => {
-      // As the seed writes it.
+    it('reads the coupon as stored — its occasion, or the field as `null` when it is tied to none', async () => {
       await seed(couponPath, birthday(20));
-      const admin = signedIn('staff-2', 'admin').firestore();
-
-      // The editor reads the coupon, changes the figure, saves the whole document.
-      const read = await stored(admin);
-      expect(read['couponOccasion']).toBe(CouponOccasion.Birthday);
-      await assertSucceeds(
-        setDoc(doc(admin, couponPath), { ...read, discountPercent: 25 }),
-      );
-
-      // What the card reads afterwards: the gift is still the birthday's.
-      const back = await stored(signedIn('staff-1', 'barber').firestore());
-      expect(back['couponOccasion']).toBe(CouponOccasion.Birthday);
-      expect(back).toEqual(birthday(25));
-    });
-
-    it('writes a coupon tied to no occasion back with the field, as `null`', async () => {
+      for (const [uid, role] of [
+        ['staff-1', 'barber'],
+        ['client-1', 'client'],
+      ] as const) {
+        const snapshot = await assertSucceeds(
+          getDoc(doc(signedIn(uid, role).firestore(), couponPath)),
+        );
+        expect(snapshot.data()).toEqual(birthday(20));
+      }
       await seed(couponPath, { ...birthday(20), couponOccasion: null });
-      const admin = signedIn('staff-2', 'admin').firestore();
-
-      const read = await stored(admin);
-      expect(read['couponOccasion']).toBeNull();
-      await assertSucceeds(setDoc(doc(admin, couponPath), read));
-
-      const snapshot = await assertSucceeds(getDoc(doc(admin, couponPath)));
+      const snapshot = await assertSucceeds(
+        getDoc(doc(signedIn('client-1', 'client').firestore(), couponPath)),
+      );
       expect(snapshot.data()).toHaveProperty('couponOccasion', null);
     });
 
-    it('refuses the save to everyone but the admin pair', async () => {
+    it('refuses every write to every role — the admin pair included', async () => {
       await seed(couponPath, birthday(20));
       for (const [uid, role] of [
+        ['staff-2', 'admin'],
+        ['staff-4', 'sysadmin'],
         ['staff-1', 'barber'],
         ['staff-3', 'receptionist'],
         ['client-1', 'client'],
       ] as const) {
+        const db = signedIn(uid, role).firestore();
+        await assertFails(setDoc(doc(db, couponPath), birthday(25)));
         await assertFails(
-          updateDoc(doc(signedIn(uid, role).firestore(), couponPath), {
-            couponOccasion: null,
-          }),
+          updateDoc(doc(db, couponPath), { couponOccasion: null }),
         );
+        await assertFails(deleteDoc(doc(db, couponPath)));
+        await assertFails(setDoc(doc(db, 'coupons/coupon-new'), birthday(10)));
       }
     });
   });

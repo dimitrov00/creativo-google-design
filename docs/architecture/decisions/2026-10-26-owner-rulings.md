@@ -2,7 +2,8 @@
 
 > **Status: BUILT (2026-10-26).** Every ruling below is built and
 > integrated; the FULL gate of `HANDOFF.md` §4 ran green with no standing
-> reds. What landed per ruling, and the departures the build took, are in
+> reds — for OR-1 … OR-56 on the pass-F tree, for OR-57 … OR-59 (ruled and
+> built after it, on `2f75cb21`) on their own change. What landed per ruling, and the departures the build took, are in
 > the ledger before the implementation plan.
 
 > **Authority.** The owner delegated every open decision on 2026-10-26:
@@ -1421,6 +1422,48 @@ Both regenerate `appointments-list-populated-{light,dark}` after viewing them.
 
 ---
 
+> **OR-57 – OR-59 — pass E's last open items (N-5, N-2, N-1).** The record
+> above left them open (`HANDOFF.md` §6, `pass-e-leftovers.md` §7.2). The
+> chief architect recommended each answer and the owner approved all three
+> on 2026-10-26 (_"yes do those three"_); grounded on `main` at `2f75cb21`.
+
+### OR-57 — Every reopen is refused while a live visit holds the chair it would take back (pass E N-5)
+
+**Context.** A visit that leaves the book — cancelled, no-show, completed — frees its barbers' time once `rebuildBusy` runs, and a booking, the waitlist or a staff move may take it. Only a party reinstatement of a CANCELLED visit read the live appointments on its busy keys (#7, `isReinstatement` → `takenSince`); a `NO_SHOW → CONFIRMED` or a same-day `COMPLETED → CONFIRMED` reopen was admitted over whoever booked the chair since — a double booking. DEP-5 (pass E) made a reopen hold its chair at once; it refused nothing new.
+
+| Option                                                                               | C/S/P/T/U/M/R     |
+| ------------------------------------------------------------------------------------ | ----------------- |
+| **A. Refuse every reopen whose returning seat collides — the answer a booking gets** | **5/5/5/5/4/5/5** |
+| B. Let the shop knowingly overlap (a warning, then a second confirm)                 | 3/5/5/3/4/2/4     |
+| C. Keep checking the cancelled party alone                                           | 2/5/5/3/2/5/5     |
+
+**Decision: A.** `AppointmentLifecycleSystem.mayEndLive` (a move to a live status of a visit that is not live) replaces `isReinstatement` as the read predicate: such a move reads the #7 collisions and its busy days, as DEP-5's restore already did. `seatTakenSince` (replacing `takenSince`) asks of the visit AFTER the move: the first open seat it puts back that an open seat of a live visit on the same barber and day overlaps. A hit refuses `SCHEDULING_APPOINTMENT_REOPEN_SLOT_TAKEN` — the status the visit left, and that seat's barber, day, minute and index (before, a `BOOKING_SLOT_UNAVAILABLE` naming the first seat whatever collided) — and writes nothing; the callable answers it as `BOOKING_TRANSITION_SLOT_TAKEN` with the REAL `fromBookingStatus` (the edge had hard-coded `CANCELLED`, true only for the one reopen checked before). A seat the move leaves resolved holds no chair and is never compared. The overlap is the seats' own minutes, as the reinstatement always compared (`Seat.collidesWith`): a booking's padded chair time and turnaround are not re-applied to a visit that held this chair before. A system spec sweeps every visit state × target × party-or-seat × day and proves `mayEndLive` covers every move the decision ends live (exactly four: the three reopens, and a no-show's on the next day). Option B's overlap is the gap itself; a shop that truly wants two clients at once moves one of them first. **Size** S.
+
+### OR-58 — No client writes a coupon, the admin included (pass E N-2)
+
+**Context.** `coupons` allowed `write: if isAdmin()`, but no screen saves a coupon: the dev seed (`tools/seed/promotions.mjs`) and the e2e support write through the Admin SDK, which the rules never see, and the functions only read. A dated rules case (2026-09-29) pinned an admin's save. D28 (2026-10-10) had kept "a rules-guarded admin write until an admin surface lands, then a pipeline".
+
+| Option                                                                   | C/S/P/T/U/M/R     |
+| ------------------------------------------------------------------------ | ----------------- |
+| **A. `allow write: if false`; a coupon editor ships with its own write** | **5/5/5/5/5/5/5** |
+| B. Keep the admin grant until an editor exists (D28's interim clause)    | 4/3/5/4/5/4/5     |
+
+**Decision: A** — least privilege: a grant with no writer is attack surface only. It amends D28's interim clause; D28's end state (an admin surface writes through a pipeline) stands. The dated case is replaced by one that reads the coupon as stored and refuses every write to every role, `admin` and `sysadmin` included. Reverting is one rules line. **Size** XS.
+
+### OR-59 — `subjectCustomerId` stays optional; its absence is a contract value (pass E N-1)
+
+**Context.** `VisitRowOptions` / `VisitCardOptions.subjectCustomerId` cannot be required: the client's own list holds the account, not the record, and relies on `VisitStorySystem.subjectRecordOf`'s absent path (read the record off the account's own seat).
+
+| Option                                                                | C/S/P/T/U/M/R     |
+| --------------------------------------------------------------------- | ----------------- |
+| **A. Keep it optional; document the three answers as one contract**   | **5/5/5/5/5/5/5** |
+| B. An explicit `CustomerId \| null \| 'FROM_SEAT'` value              | 5/5/5/5/5/3/4     |
+| C. Require it; the client list resolves the record first (a new read) | 5/5/3/4/5/3/3     |
+
+**Decision: A.** No behaviour change: a `CustomerId` is the record the host resolved (the staff card), `null` a guest (the appointment's story), absent the seat's own link (the client's list). The two option types, `subjectRecordOf` and the client list's call site say so; `visit-story.system.spec.ts` already pins all three. B spells the same contract with a sentinel every caller must learn. **Size** XS.
+
+---
+
 ## Deferred (L-size work that deserves its own design; none closes a live gap)
 
 1. **Server-atomic visit save**, with the note and the tip folded into the `staffEdit` transaction. It is the north star after OR-4, but it crosses the after-the-cut tip and transactional-note boundaries.
@@ -1438,10 +1481,12 @@ Both regenerate `appointments-list-populated-{light,dark}` after viewing them.
 
 ## Ledger — what landed (BUILT, 2026-10-26)
 
-Every ruling above is built on the pass-F tree, in the four waves of the
+OR-1 … OR-56 are built on the pass-F tree, in the four waves of the
 implementation plan below, and integrated by one integrator round that ran
 the FULL gate of `HANDOFF.md` §4 (`verify:csp` included) green with no
-standing reds (`HANDOFF.md` §4, the pass-F reference numbers). Where a
+standing reds (`HANDOFF.md` §4, the pass-F reference numbers). OR-57 …
+OR-59 were ruled and built afterwards, on `2f75cb21`, outside the four
+waves; the FULL gate ran green on that change. Where a
 package's build departed from the letter of a ruling, the departure is listed
 under its ruling and again in `HANDOFF.md` §3.3 (pass F).
 
@@ -1503,6 +1548,9 @@ under its ruling and again in `HANDOFF.md` §3.3 (pass F).
 | OR-54  | Each `REPOSITORY_*` code worded for what it means (DEP-F38).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | OR-55  | The rules recorded at the top of `word-pipeline-error.spec.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | OR-56  | (b) `VisitListSystem.tileGrain` and the client fact line «{{barber}} · {{weekday}}, {{time}}»; (c) `VisitListSystem.showsPills` (two sections or more). The upcoming tile names the MONTH only — integrator's departure (DEP-F39): the 44 pt DS tile cannot hold «юни 2030 г.» (65 px measured) and printed «юни 20…»; a booking lies within the horizon, so its month is unambiguous, and the row's accessible name keeps the year (R59). On the shop's today the client fact line says «днес» / "today" in place of the weekday («Иван · днес, 11:00», `whenShort`), as the row's accessible name and the staff lines do — integrator's note beside DEP-F39, pinned in bg and en by `visit-row.presenter.spec.ts`. The `appointments-list-populated-{light,dark}` baselines regenerated after review.                                                                                                      |
+| OR-57  | `AppointmentLifecycleSystem.mayEndLive` replaces `isReinstatement`, `seatTakenSince` replaces `takenSince`; `transition-appointment.pipeline.ts` reads the #7 collisions and the busy days for every move that may end the visit live and refuses `SchedulingError.appointmentReopenSlotTaken` (the status left, the colliding seat); `booking.wire.ts` answers it `BOOKING_TRANSITION_SLOT_TAKEN` with the real `fromBookingStatus`, `edge.ts` files the new code `failed-precondition`; system spec: the predicates, the seat-level answer, the coverage sweep; pipeline spec: the no-show and same-day completed refusals, the named seat, a seat left resolved.                                                                                                                                                                                                                                          |
+| OR-58  | `firestore.rules` `coupons`: `allow write: if false`; the dated admin-save case replaced by a read case and an every-role write refusal (`firestore.rules.integration.spec.ts`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| OR-59  | The three-answer contract on `VisitRowOptions.subjectCustomerId`, `VisitCardOptions.subjectCustomerId`, `VisitStorySystem.subjectRecordOf` and the client list's call site; no behaviour change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 

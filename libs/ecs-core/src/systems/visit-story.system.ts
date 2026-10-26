@@ -547,8 +547,9 @@ export const VisitStorySystem = {
 
   /**
    * The client record a row's story is about: the one the host named
-   * (`null` names a guest), else — when the host named none (`undefined`)
-   * — the record the ACCOUNT seat of `userId` links to
+   * (`null` names a guest), else — when the host named none (`undefined`,
+   * a contract value, OR-59: the client's own list holds the account, not
+   * the record) — the record the ACCOUNT seat of `userId` links to
    * (`subjectCustomerId`, never a uid taken for a record); `null` for a
    * guest, and for an account with no seat on the visit (the
    * appointment's story then).

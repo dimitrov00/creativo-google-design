@@ -76,14 +76,22 @@ import {
  *   asks for: a cancel or a no-show of a visit that had not already ended
  *   so) the vouchers its live lines name (runbook §1.3 (4)) and the coupon
  *   grants its bill's grant lines name (`readDiscountGrants`, OR-13 — no
- *   line, no read), for a REINSTATED cancellation
- *   the live appointments sharing a busy key (`busyKeys array-contains ∧
- *   bookingStatus in [PENDING, CONFIRMED]`, index #7): the cancel gave the
- *   chair away and the waitlist may have taken it — the answer is then
- *   honestly "taken" (a `BOOKING_SLOT_UNAVAILABLE` value) — and, for a
- *   visit that is NOT live before the move (only such a move can end it
- *   live), the busy days and exceptions of its seats' keys
- *   (`readPlacementSet`, one `getAll`, absent days read too).
+ *   line, no read), and for a move that may END the visit live
+ *   (`AppointmentLifecycleSystem.mayEndLive`: a move to a live status of a
+ *   visit that is not live — the reopen of a `CANCELLED`, `NO_SHOW` or
+ *   `COMPLETED` visit) the live appointments sharing a busy key
+ *   (`busyKeys array-contains ∧ bookingStatus in [PENDING, CONFIRMED]`,
+ *   index #7) — leaving the book freed the chair, and a booking, the
+ *   waitlist or a staff move may have taken it since — and the busy days
+ *   and exceptions of its seats' keys (`readPlacementSet`, one `getAll`,
+ *   absent days read too).
+ * - **Refusal:** a move that ends the visit live while an open seat it puts
+ *   back collides with an open seat of a live visit booked into that chair
+ *   since is honestly "taken" — `SCHEDULING_APPOINTMENT_REOPEN_SLOT_TAKEN`,
+ *   naming the status it left and that seat (the edge's
+ *   `BOOKING_TRANSITION_SLOT_TAKEN`) — and writes nothing
+ *   (`AppointmentLifecycleSystem.seatTakenSince`; OR-57, pass E N-5: every
+ *   reopen, not only a cancelled party's).
  * - **Plan:** the appointment's variant transition; when the move releases
  *   the visit's holdings — it ENDS cancelled or no-show from a status that
  *   did not (OR-13, DEP-F10b: value the client holds is consumed only by a
@@ -103,8 +111,7 @@ import {
  *   whose zone cannot be read gets no busy day (its first instant is the
  *   zone's, Law 7.2 — the rebuild cannot stamp one either). Every other
  *   edge writes no busy day — occupancy leaves through `rebuildBusy`
- *   (F1-2). Which reopens are REFUSED is unchanged: the #7 check runs only
- *   for a party reinstatement of a cancelled visit.
+ *   (F1-2).
  * - **Audit:** after the commit, the system's facts
  *   (`transition:<seatId|party>:<decidedAtUtcMs>`). No version CAS — the
  *   status graph refuses a transition already applied (§4.1).
@@ -264,22 +271,17 @@ export const transitionAppointment =
         const grants = releases
           ? await readDiscountGrants(tx, appointment.discounts)
           : [];
-        const others = AppointmentLifecycleSystem.isReinstatement(
-          appointment,
-          cmd,
-        )
-          ? await readCollisions(tx, appointment)
-          : [];
-        // Only a move from a visit that is not live TO a live status may end
-        // live (a party or a seat reopen) — the system decides whether it
-        // does. Every other move reads no busy day: it pays no extra read, and
-        // a malformed busy day never turns its own answer into
+        // Only a move that may end the visit live reopens a chair the busy
+        // projection freed: it reads who has booked into it since (#7) and the
+        // busy days it would hold again — the system decides whether it does.
+        // Every other move reads neither: it pays no extra read, and a
+        // malformed busy day never turns its own answer into
         // REPOSITORY_MALFORMED.
-        const placement =
-          !BookingLifecycle.isLive(appointment) &&
-          BookingLifecycle.isLive({ bookingStatus: cmd.to })
-            ? await readPlacementSet(tx, busyKeysOf(appointment))
-            : null;
+        const reopens = AppointmentLifecycleSystem.mayEndLive(appointment, cmd);
+        const others = reopens ? await readCollisions(tx, appointment) : [];
+        const placement = reopens
+          ? await readPlacementSet(tx, busyKeysOf(appointment))
+          : null;
         return {
           appointment,
           location,
@@ -321,21 +323,28 @@ export const transitionAppointment =
           now ?? ZonedTimeSystem.shopNow(nowUtcMs, TimeZone.UTC),
         );
         if (!step.ok) return step;
-        if (
-          AppointmentLifecycleSystem.isReinstatement(appointment, cmd) &&
-          AppointmentLifecycleSystem.takenSince(appointment, snapshot.others)
-        ) {
-          const first = appointment.seats[0] as Seat;
+        const after = step.value.appointment;
+        // The projection's own predicate: what the trigger would restore —
+        // a chair the reopen holds again only while nobody took it since.
+        const endsLive = AppointmentLifecycleSystem.endsLive(
+          appointment,
+          after,
+        );
+        const taken = endsLive
+          ? AppointmentLifecycleSystem.seatTakenSince(after, snapshot.others)
+          : null;
+        if (taken !== null) {
+          const seat = after.seats[taken] as Seat;
           return Result.err(
-            BookingError.slotUnavailable(
-              first.barberId,
-              appointment.localDate,
-              first.startMinutes,
-              0,
+            SchedulingError.appointmentReopenSlotTaken(
+              appointment.bookingStatus,
+              seat.barberId,
+              after.localDate,
+              seat.startMinutes,
+              taken,
             ),
           );
         }
-        const after = step.value.appointment;
         const writes = BillingSystem.releasesHoldings(appointment, after)
           ? grantReleaseWrites(
               voucherRestoreWrites(
@@ -348,11 +357,6 @@ export const transitionAppointment =
               snapshot.grants,
             )
           : step.value.writes;
-        // The projection's own predicate: what the trigger would restore.
-        const endsLive = AppointmentLifecycleSystem.endsLive(
-          appointment,
-          after,
-        );
         return Result.ok({
           auditFacts: step.value.auditFacts,
           writes:

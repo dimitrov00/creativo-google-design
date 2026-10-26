@@ -51,6 +51,7 @@ export const SchedulingErrorCode = {
   AppointmentMixedCurrency: 'SCHEDULING_APPOINTMENT_MIXED_CURRENCY',
   AppointmentInvalidTransition: 'SCHEDULING_APPOINTMENT_INVALID_TRANSITION',
   AppointmentReopenWindowClosed: 'SCHEDULING_APPOINTMENT_REOPEN_WINDOW_CLOSED',
+  AppointmentReopenSlotTaken: 'SCHEDULING_APPOINTMENT_REOPEN_SLOT_TAKEN',
   AppointmentEmptyCancellationReason:
     'SCHEDULING_APPOINTMENT_EMPTY_CANCELLATION_REASON',
   AppointmentUnknownSeat: 'SCHEDULING_APPOINTMENT_UNKNOWN_SEAT',
@@ -104,6 +105,7 @@ export type SchedulingError =
   | SchedulingError.AppointmentMixedCurrency
   | SchedulingError.AppointmentInvalidTransition
   | SchedulingError.AppointmentReopenWindowClosed
+  | SchedulingError.AppointmentReopenSlotTaken
   | SchedulingError.AppointmentEmptyCancellationReason
   | SchedulingError.AppointmentUnknownSeat
   | SchedulingError.AppointmentSeatAlreadyResolved
@@ -182,6 +184,27 @@ export const SchedulingError = {
     from: BookingStatus,
   ): SchedulingError.AppointmentReopenWindowClosed {
     return { errorCode: C.AppointmentReopenWindowClosed, from };
+  },
+  /**
+   * A reopen whose chair was taken since (OR-57): the visit's seat at
+   * `seatIndex` — `barberId`'s time at `startMinutes` on `localDate` — is
+   * held by a live visit booked after this one left the book `from`.
+   */
+  appointmentReopenSlotTaken(
+    from: BookingStatus,
+    barberId: BarberId,
+    localDate: LocalDate,
+    startMinutes: MinuteOfDay,
+    seatIndex: number,
+  ): SchedulingError.AppointmentReopenSlotTaken {
+    return {
+      errorCode: C.AppointmentReopenSlotTaken,
+      from,
+      barberId,
+      localDate,
+      startMinutes,
+      seatIndex,
+    };
   },
   appointmentEmptyCancellationReason(): SchedulingError.AppointmentEmptyCancellationReason {
     return { errorCode: C.AppointmentEmptyCancellationReason };
@@ -419,6 +442,14 @@ export namespace SchedulingError {
   export type AppointmentReopenWindowClosed = {
     readonly errorCode: typeof SchedulingErrorCode.AppointmentReopenWindowClosed;
     readonly from: BookingStatus;
+  };
+  export type AppointmentReopenSlotTaken = {
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentReopenSlotTaken;
+    readonly from: BookingStatus;
+    readonly barberId: BarberId;
+    readonly localDate: LocalDate;
+    readonly startMinutes: MinuteOfDay;
+    readonly seatIndex: number;
   };
   export type AppointmentEmptyCancellationReason = {
     readonly errorCode: typeof SchedulingErrorCode.AppointmentEmptyCancellationReason;

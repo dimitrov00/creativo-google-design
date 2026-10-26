@@ -60,7 +60,7 @@ export const BookingErrorCode = {
   TransitionNotAllowed: 'BOOKING_TRANSITION_NOT_ALLOWED',
   /** A reopen past its window. */
   TransitionReopenWindowClosed: 'BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED',
-  /** A reinstated chair taken since. */
+  /** A reopened chair taken since — any reopen (OR-57). */
   TransitionSlotTaken: 'BOOKING_TRANSITION_SLOT_TAKEN',
   ArrivedUnauthenticated: 'BOOKING_ARRIVED_UNAUTHENTICATED',
   ArrivedForbidden: 'BOOKING_ARRIVED_FORBIDDEN',
@@ -425,16 +425,13 @@ export type CancelAppointmentError =
 
 /**
  * What `transitionAppointment` answers with: no such visit
- * (`BOOKING_INVALID_INPUT`, field `appointmentId`), the reinstated chair
- * taken since (`BOOKING_SLOT_UNAVAILABLE`), any lifecycle refusal
- * (`SchedulingError`), or the store. The edge answers each in the
- * callable's own frozen words.
+ * (`BOOKING_INVALID_INPUT`, field `appointmentId`), any lifecycle refusal
+ * (`SchedulingError` — a reopened chair taken since among them,
+ * `SCHEDULING_APPOINTMENT_REOPEN_SLOT_TAKEN`, OR-57), or the store. The
+ * edge answers each in the callable's own frozen words.
  */
 export type TransitionAppointmentError =
-  | BookingError.InvalidInput
-  | BookingError.SlotUnavailable
-  | SchedulingError
-  | RepositoryError;
+  BookingError.InvalidInput | SchedulingError | RepositoryError;
 
 /**
  * What `markArrival` answers with: no such visit (`BOOKING_INVALID_INPUT`,

@@ -9,6 +9,7 @@ import {
   E164,
   CancellationReason,
   CancellationReasonSet,
+  CancelledBy,
   SeatOutcome,
   Seat,
   SeatOccupant,
@@ -1028,33 +1029,71 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
   });
 });
 
-describe('AppointmentLifecycleSystem.takenSince — a reinstated chair given away', () => {
-  it('finds a live seat of another visit on the same barber, overlapping', () => {
-    const IVAN = BarberId.of('ivan');
+describe('AppointmentLifecycleSystem.seatTakenSince — a reopened chair given away (OR-57)', () => {
+  const IVAN = BarberId.of('ivan');
+  const other = AppointmentId.of('other');
+
+  it('names the first open seat of ours a live seat of another visit overlaps, on the same barber and day', () => {
     const mine = visit([seat({ barberId: IVAN, startMinute: 600 })]);
     const theirsSeats = [seat({ barberId: IVAN, startMinute: 615 })];
-    const other = AppointmentId.of('other');
     const theirs = visit(theirsSeats, CONFIRMED, { id: other });
-    expect(AppointmentLifecycleSystem.takenSince(mine, [theirs])).toBe(true);
+    expect(AppointmentLifecycleSystem.seatTakenSince(mine, [theirs])).toBe(0);
     expect(
-      AppointmentLifecycleSystem.takenSince(mine, [
+      AppointmentLifecycleSystem.seatTakenSince(mine, [
         visit(theirsSeats, COMPLETED, { id: other }),
       ]),
-    ).toBe(false);
-    expect(AppointmentLifecycleSystem.takenSince(mine, [mine])).toBe(false);
+    ).toBeNull();
+    expect(AppointmentLifecycleSystem.seatTakenSince(mine, [mine])).toBeNull();
     const resolved = {
       ...theirs,
       seats: theirs.seats.map((s) =>
         Seat.withOutcome(s, SeatOutcome.worked(RESOLVED_AT)),
       ),
     };
-    expect(AppointmentLifecycleSystem.takenSince(mine, [resolved])).toBe(false);
+    expect(
+      AppointmentLifecycleSystem.seatTakenSince(mine, [resolved]),
+    ).toBeNull();
     // The same minutes on ANOTHER day are no collision.
     const tomorrow = visit(theirsSeats, CONFIRMED, {
       id: other,
       localDate: LocalDate.addDays(FIXTURE_TODAY, 1),
     });
-    expect(AppointmentLifecycleSystem.takenSince(mine, [tomorrow])).toBe(false);
+    expect(
+      AppointmentLifecycleSystem.seatTakenSince(mine, [tomorrow]),
+    ).toBeNull();
+  });
+
+  it('names the seat that collides, and never compares a seat the move left resolved', () => {
+    const PETAR = BarberId.of('petar');
+    const free = seat({ barberId: PETAR, startMinute: 600 });
+    const clashing = seat({ barberId: IVAN, startMinute: 600 });
+    const theirs = visit(
+      [seat({ barberId: IVAN, startMinute: 600 })],
+      CONFIRMED,
+      {
+        id: other,
+      },
+    );
+    expect(
+      AppointmentLifecycleSystem.seatTakenSince(visit([free, clashing]), [
+        theirs,
+      ]),
+    ).toBe(1);
+    // A seat that stays cancelled after the reopen holds no chair.
+    const stillCancelled = Seat.withOutcome(
+      clashing,
+      SeatOutcome.cancelled(
+        RESOLVED_AT,
+        CancelledBy.Staff,
+        CancellationReason.Other,
+        null,
+      ),
+    );
+    expect(
+      AppointmentLifecycleSystem.seatTakenSince(visit([free, stillCancelled]), [
+        theirs,
+      ]),
+    ).toBeNull();
   });
 });
 
@@ -1515,21 +1554,72 @@ describe('AppointmentLifecycleSystem — the transition callable’s three predi
     seatId,
   });
 
-  it('isReinstatement: a whole-party CONFIRMED of a cancelled visit, nothing else', () => {
+  it('mayEndLive: a move to a live status of a visit that is not live, nothing else', () => {
+    const live = (status: BookingStatus) =>
+      status === S.Pending || status === S.Confirmed;
     for (const status of Object.values(S)) {
       for (const to of Object.values(S)) {
         for (const seatId of [null, SeatId.of('s-1')]) {
           expect(
-            AppointmentLifecycleSystem.isReinstatement(
+            AppointmentLifecycleSystem.mayEndLive(
               { bookingStatus: status },
               move(to, seatId),
             ),
-          ).toBe(
-            seatId === null && to === S.Confirmed && status === S.Cancelled,
-          );
+          ).toBe(!live(status) && live(to));
         }
       }
     }
+  });
+
+  it('mayEndLive covers every move the decision ends live — on every visit, every target, party or seat, any day', () => {
+    const cancel = { reason: CancellationReason.Other };
+    const confirmed = party();
+    const settle = (to: BookingStatus, extra = {}) =>
+      unwrapOk(
+        AppointmentLifecycleSystem.transition(
+          confirmed,
+          request(to, extra),
+          nowAt(RESOLVED_AT),
+        ),
+      ).appointment;
+    const first = confirmed.seats[0] as Seat;
+    const visits: readonly Appointment[] = [
+      visit([seat()], PENDING),
+      confirmed,
+      settle(S.Completed),
+      settle(S.NoShow),
+      settle(S.Cancelled, cancel),
+      // A mixed party: one person absent, the visit still on.
+      settle(S.NoShow, { seatId: first.seatId }),
+    ];
+    let endedLive = 0;
+    for (const before of visits) {
+      for (const to of Object.values(S)) {
+        for (const seatId of [null, (before.seats[0] as Seat).seatId]) {
+          for (const now of [nowAt(RESOLVED_AT), NEXT_DAY]) {
+            const step = AppointmentLifecycleSystem.transition(
+              before,
+              request(to, { seatId, ...(to === S.Cancelled ? cancel : {}) }),
+              now,
+            );
+            if (
+              step.ok &&
+              AppointmentLifecycleSystem.endsLive(
+                before,
+                step.value.appointment,
+              )
+            ) {
+              endedLive++;
+              expect(
+                AppointmentLifecycleSystem.mayEndLive(before, { to, seatId }),
+              ).toBe(true);
+            }
+          }
+        }
+      }
+    }
+    // The three reopens on the visit's own day, and the no-show's on the next.
+    expect(endedLive).toBe(4);
   });
 
   it('readsShopToday: a whole-party CONFIRMED of a completed or cancelled visit, nothing else', () => {
@@ -1554,9 +1644,7 @@ describe('AppointmentLifecycleSystem — the transition callable’s three predi
   it('accepts the request and the appointment as they are', () => {
     const cancelled = withStatus(CANCELLED);
     const req = request(S.Confirmed);
-    expect(AppointmentLifecycleSystem.isReinstatement(cancelled, req)).toBe(
-      true,
-    );
+    expect(AppointmentLifecycleSystem.mayEndLive(cancelled, req)).toBe(true);
     expect(AppointmentLifecycleSystem.readsShopToday(cancelled, req)).toBe(
       true,
     );
@@ -1616,7 +1704,7 @@ describe('AppointmentLifecycleSystem — the read-only legality is pure', () => 
         FIXTURE_TODAY,
         FIXTURE_TODAY,
       ),
-      reinstates: AppointmentLifecycleSystem.isReinstatement(
+      reopens: AppointmentLifecycleSystem.mayEndLive(
         root,
         deepFreeze({ to: S.Confirmed, seatId: null }),
       ),

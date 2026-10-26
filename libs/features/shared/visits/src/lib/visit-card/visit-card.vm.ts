@@ -157,8 +157,9 @@ export interface VisitCardOptions {
   readonly subjectUserId: UserId | null;
   /**
    * The same person's client RECORD (D29), what the story is keyed by —
-   * the staff card passes the one it resolved; absent, the seat's own link
-   * names it (`VisitRowOptions.subjectCustomerId`).
+   * the staff card passes the one it resolved, `null` names a guest, and
+   * absent the seat's own link names it: optional on purpose, three answers
+   * of one contract (OR-59; `VisitRowOptions.subjectCustomerId`).
    */
   readonly subjectCustomerId?: CustomerId | null;
   /** "Now" on the shop's wall clock, derived ONCE by the host (Law 7.3). */
