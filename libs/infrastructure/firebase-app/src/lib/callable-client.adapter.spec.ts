@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Functions, FunctionsError } from 'firebase/functions';
 import {
   BookingCall,
+  type ClientIssue,
   OtpCode,
   Placement,
   StreakPublishCall,
@@ -17,6 +18,7 @@ import {
   MinuteOfDay,
   OtpId,
   PublishRequestId,
+  Result,
   ServiceId,
 } from '@core/primitives';
 import {
@@ -24,8 +26,14 @@ import {
   PipelineError,
   PipelineErrorCode,
 } from '@core/errors';
-import { Callables } from '@core/ports';
-import { localDate, unwrapErr, unwrapOk } from '@core/testing';
+import { Callables, type ClientIssuePorts } from '@core/ports';
+import { ClientIssueSystem } from '@core/systems';
+import {
+  localDate,
+  recordingClientIssuePorts,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
 
 const { callableMock, httpsCallableMock } = vi.hoisted(() => {
   const callable = vi.fn();
@@ -82,8 +90,10 @@ const COLD: BookingCall = {
 const TRANSPORT_ID = 'transport-0123456789abcdef';
 const IDS = { nextId: () => TRANSPORT_ID };
 
-const client = (ids = IDS) =>
-  callableClientPorts(FUNCTIONS, ids).callableClient;
+const client = (
+  ids = IDS,
+  issues: ClientIssuePorts = recordingClientIssuePorts().ports,
+) => callableClientPorts(FUNCTIONS, ids, issues).callableClient;
 
 describe('callableClientPorts — the request', () => {
   beforeEach(() => {
@@ -421,5 +431,138 @@ describe('callableClientPorts — the operation id on every failure', () => {
 
     expect(sink.operationId).toBeNull();
     expect(unminted.operationId).toBeNull();
+  });
+});
+
+// WS-5 (DEP-22): a call that never answered as a callable — the throw was no
+// `FunctionsError` — still answers PIPELINE_UNKNOWN, and is reported ONCE to
+// the client issue sink as CALLABLE_TRANSPORT_FAILED: the callable, the
+// thrown value's name and code, the operation id; never its message.
+describe('callableClientPorts — a transport failure, reported to the issue sink', () => {
+  beforeEach(() => callableMock.mockReset());
+
+  /** The issue the client reports for `name`'s failed call. */
+  const reported = (
+    callableName: string,
+    errorName: string | null,
+    callableErrorCode: string | null,
+    operationId: string | null,
+  ): ClientIssue =>
+    ClientIssueSystem.composeTransport({
+      callableName,
+      errorName,
+      callableErrorCode,
+      operationId:
+        operationId === null
+          ? null
+          : brand(ClientOperationId.parse(operationId)),
+      release: null,
+    });
+
+  it.each([
+    ['a plain Error', new Error('boom 0888123456'), 'Error', null],
+    ['something that is no error', 'nope', null, null],
+    [
+      'an error that only looks like a FunctionsError',
+      Object.assign(new TypeError('x'), {
+        code: 'functions/not-found',
+        details: { errorCode: BookingErrorCode.SlotUnavailable },
+      }),
+      'TypeError',
+      'functions/not-found',
+    ],
+  ])(
+    'reports %s once, with the callable, its name and code and the operation id — and still answers PIPELINE_UNKNOWN',
+    async (_what, thrown, errorName, callableErrorCode) => {
+      const sink = recordingClientIssuePorts();
+      callableMock.mockRejectedValueOnce(thrown);
+
+      const failure = unwrapErr(
+        await client(IDS, sink.ports)(Callables.CommitBooking)(COLD),
+      );
+
+      expect(failure).toEqual(
+        PipelineError.withOperation(
+          PipelineError.bare(PipelineErrorCode.Unknown),
+          COLD.attemptId,
+        ),
+      );
+      expect(sink.reported).toEqual([
+        reported(
+          'commitBooking',
+          errorName,
+          callableErrorCode,
+          'attempt-0123456789abcdef',
+        ),
+      ]);
+      expect(JSON.stringify(sink.reported)).not.toContain('0888123456');
+    },
+  );
+
+  it('reports the transport id minted for the call — the one the server would have logged', async () => {
+    const sink = recordingClientIssuePorts();
+    callableMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await client(IDS, sink.ports)(Callables.RequestOtpChallenge)({
+      identifierChannel: IdentifierChannel.Phone,
+      identifier: '+359888123456',
+    });
+
+    expect(sink.reported).toEqual([
+      reported('requestOtpChallenge', 'TypeError', null, TRANSPORT_ID),
+    ]);
+  });
+
+  it('reports nothing for a refusal or an answer its decoder refuses — the server answered', async () => {
+    const sink = recordingClientIssuePorts();
+    callableMock.mockRejectedValueOnce(new FunctionsError('internal'));
+    await client(IDS, sink.ports)(Callables.CommitBooking)(COLD);
+    callableMock.mockResolvedValueOnce({ data: {} });
+    await client(IDS, sink.ports)(Callables.CommitBooking)(COLD);
+
+    expect(sink.reported).toEqual([]);
+  });
+
+  it('never reports the sink’s own failure — it would report itself', async () => {
+    const sink = recordingClientIssuePorts();
+    callableMock.mockRejectedValueOnce(new Error('network'));
+
+    const failure = unwrapErr(
+      await client(IDS, sink.ports)(Callables.ReportClientIssues)([]),
+    );
+
+    expect(failure.errorCode).toBe(PipelineErrorCode.Unknown);
+    expect(sink.reported).toEqual([]);
+  });
+
+  it('never rejects when the report fails — a throwing sink or a thrown value that throws back', async () => {
+    const throwing: ClientIssuePorts = {
+      reportClientIssues: () => {
+        throw new Error('sink down');
+      },
+    };
+    callableMock.mockRejectedValueOnce(new Error('network'));
+    await expect(
+      client(IDS, throwing)(Callables.CommitBooking)(COLD),
+    ).resolves.toEqual(
+      Result.err(
+        PipelineError.withOperation(
+          PipelineError.bare(PipelineErrorCode.Unknown),
+          COLD.attemptId,
+        ),
+      ),
+    );
+
+    const sink = recordingClientIssuePorts();
+    const hostile = {
+      get name(): string {
+        throw new Error('no name for you');
+      },
+    };
+    callableMock.mockRejectedValueOnce(hostile);
+    await expect(
+      client(IDS, sink.ports)(Callables.CommitBooking)(COLD),
+    ).resolves.toMatchObject({ ok: false });
+    expect(sink.reported).toEqual([]);
   });
 });

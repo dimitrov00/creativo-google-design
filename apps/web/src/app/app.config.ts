@@ -323,7 +323,10 @@ export const appConfig: ApplicationConfig = {
     },
     // The session and the callables, eager: the shell reads the session at
     // boot, and every callable goes through the ONE typed client (which
-    // mints a transport operation id from the id source, WS-4.1).
+    // mints a transport operation id from the id source, WS-4.1, and
+    // reports a call that never answered as a callable to the page's issue
+    // reporter, WS-5 — the reporter reads this client back lazily, on its
+    // first send, so the two never wait on each other).
     {
       provide: AUTH_SESSION_PORTS,
       useFactory: () => authSessionPorts(inject(FIREBASE_AUTH)),
@@ -331,7 +334,11 @@ export const appConfig: ApplicationConfig = {
     {
       provide: GATEWAY_PORTS,
       useFactory: () =>
-        callableClientPorts(inject(FIREBASE_FUNCTIONS), inject(ID_PORTS)),
+        callableClientPorts(
+          inject(FIREBASE_FUNCTIONS),
+          inject(ID_PORTS),
+          inject(CLIENT_ISSUE_REPORTER),
+        ),
     },
     {
       provide: OTP_CHALLENGE_PORTS,

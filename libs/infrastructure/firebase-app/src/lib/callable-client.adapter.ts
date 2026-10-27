@@ -8,11 +8,14 @@ import { PipelineError, PipelineErrorCode } from '@core/errors';
 import {
   CALLABLE_ANSWER_DECODERS,
   type CallableName,
+  Callables,
   type CallableWire,
+  type ClientIssuePorts,
   type GatewayPorts,
   type IdPorts,
   OPERATION_ID_FIELD,
 } from '@core/ports';
+import { ClientIssueSystem } from '@core/systems';
 
 /**
  * THE WEB'S ONE CALLABLE CLIENT (Phase 4a 4A-4, 4A-5; blueprint §4.2) — the
@@ -27,7 +30,13 @@ import {
  *   happened is the one failure worse than reporting none);
  * - a refusal (`FunctionsError`) is `PipelineError.fromWire(code, details)`,
  *   the ONE classification of a failed call;
- * - anything else thrown is `PIPELINE_UNKNOWN`.
+ * - anything else thrown is `PIPELINE_UNKNOWN` — and is reported ONCE to
+ *   the client issue sink as `CALLABLE_TRANSPORT_FAILED`
+ *   (`ClientIssueSystem.composeTransport`: the callable, the thrown value's
+ *   name and `code`, the operation id; never its message or stack), so a
+ *   call that never reached the server still reaches Cloud Logging
+ *   (audit-hardening WS-5). The report never changes the answer and never
+ *   rejects; the sink's own call is never reported (it would report itself).
  *
  * Every failure — a refusal, an answer its decoder refuses, anything thrown
  * — carries the operation id the call went out with (WS-4.5,
@@ -48,6 +57,7 @@ import {
 export const callableClientPorts = (
   functions: Functions,
   ids: IdPorts,
+  issues: ClientIssuePorts,
 ): GatewayPorts => ({
   callableClient: (name) => async (input) => {
     const sent = withTransportId(name, input, ids);
@@ -64,17 +74,63 @@ export const callableClientPorts = (
             ),
           );
     } catch (error) {
+      const operationId = operationIdOf(name, sent);
+      if (error instanceof FunctionsError) {
+        return Result.err(
+          PipelineError.withOperation(
+            PipelineError.fromWire(error.code, error.details),
+            operationId,
+          ),
+        );
+      }
+      reportTransportFailure(issues, name, error, operationId);
       return Result.err(
         PipelineError.withOperation(
-          error instanceof FunctionsError
-            ? PipelineError.fromWire(error.code, error.details)
-            : PipelineError.bare(PipelineErrorCode.Unknown),
-          operationIdOf(name, sent),
+          PipelineError.bare(PipelineErrorCode.Unknown),
+          operationId,
         ),
       );
     }
   },
 });
+
+/**
+ * A call that never answered as a callable, handed to the issue sink once:
+ * its name, the thrown value's `name` and string `code` (when it is an
+ * object that has them), the operation id it went out with. Never the
+ * sink's own call (`reportClientIssues` — a sink that reports its own
+ * failure feeds itself), and never a throw out of here: a report that
+ * fails is dropped, the answer stays `PIPELINE_UNKNOWN`.
+ */
+function reportTransportFailure(
+  issues: ClientIssuePorts,
+  name: CallableName,
+  error: unknown,
+  operationId: ClientOperationId | null,
+): void {
+  if (name === Callables.ReportClientIssues) return;
+  try {
+    issues.reportClientIssues([
+      ClientIssueSystem.composeTransport({
+        callableName: name,
+        errorName: stringProperty(error, 'name'),
+        callableErrorCode: stringProperty(error, 'code'),
+        operationId,
+        release: null,
+      }),
+    ]);
+  } catch {
+    // A report never changes the answer: a sink that throws is dropped here.
+  }
+}
+
+/** `value[key]` when `value` is an object holding a string there (own or inherited, as an `Error`'s `name`), else `null`. */
+function stringProperty(value: unknown, key: 'name' | 'code'): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  // eslint-disable-next-line security/detect-object-injection -- `key` is one of two literal property names.
+  const held: unknown = (value as Readonly<Record<string, unknown>>)[key];
+  return typeof held === 'string' ? held : null;
+}
 
 /**
  * The operation id a call went out with — its `OPERATION_ID_FIELD` field of

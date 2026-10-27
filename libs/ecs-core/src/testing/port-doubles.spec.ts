@@ -1903,6 +1903,9 @@ describe('recordingClientIssuePorts — the client issue sink', () => {
     scrubbedMessage: null,
     release: null,
     occurrences: 1,
+    operationId: null,
+    callableName: null,
+    callableErrorCode: null,
   });
 
   it('records every issue handed over, batch after batch, in order', () => {

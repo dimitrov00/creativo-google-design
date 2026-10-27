@@ -1,7 +1,7 @@
 import { ClientIssue, ClientIssueKind, type Roles } from '@core/components';
 import { Collections, Subcollections } from '@core/entities';
 import { ClientIssueBatchRefusedReason, ClientIssueError } from '@core/errors';
-import { Result, StoredFields, Tag } from '@core/primitives';
+import { ClientOperationId, Result, StoredFields, Tag } from '@core/primitives';
 
 /**
  * What the web knows of an issue before it is shaped — every text raw, any
@@ -17,6 +17,22 @@ export type ClientIssueInput = {
   readonly routePattern: string | null;
   readonly topFrame: string | null;
   readonly message: string | null;
+  readonly release: string | null;
+};
+
+/**
+ * What the web's callable client knows of a call that never answered as a
+ * callable (audit-hardening WS-5): the callable it dialled, what was thrown
+ * (its name; the `code` it carried, if any — `callableErrorCode`), the
+ * operation id the call went out with and the build. No message and no
+ * stack: a transport failure's text is the browser's, not ours to send
+ * ({@link ClientIssueSystem.composeTransport} shapes it).
+ */
+export type TransportIssueInput = {
+  readonly callableName: string;
+  readonly errorName: string | null;
+  readonly callableErrorCode: string | null;
+  readonly operationId: ClientOperationId | null;
   readonly release: string | null;
 };
 
@@ -45,15 +61,15 @@ export type ClientIssueLogLine = {
   readonly fields: Readonly<Record<string, unknown>>;
 };
 
-/** A text field of the issue — the seven that hold a string or `null`. */
+/** A free text field of the issue — the nine that hold a string or `null`, each under its own cap. */
 type TextFieldName = Exclude<
   keyof ClientIssue,
-  'clientIssueKind' | 'occurrences'
+  'clientIssueKind' | 'occurrences' | 'operationId'
 >;
 
 /** A text field's admission rule: its cap in UTF-16 code units, and its shape. */
 type TextRule = {
-  readonly issueField: TextFieldName;
+  readonly issueField: TextFieldName | 'operationId';
   readonly cap: number;
   readonly isShaped: (text: string) => boolean;
 };
@@ -77,7 +93,23 @@ const CAPS = {
   topFrame: 200,
   scrubbedMessage: 160,
   release: 64,
+  callableName: 64,
+  callableErrorCode: 64,
 } as const satisfies Readonly<Record<TextFieldName, number>>;
+
+/** The longest operation id — the `ClientOperationId` key's own bound. */
+const OPERATION_ID_CAP = 64;
+
+/**
+ * The keys an issue on the WIRE may leave out (RU-30): the three WS-5 added.
+ * An old web's issue carries the nine OR-34 keys alone and is admitted with
+ * these `null`; the struct itself always holds all twelve.
+ */
+const WIRE_OPTIONAL_FIELDS = [
+  'operationId',
+  'callableName',
+  'callableErrorCode',
+] as const satisfies readonly (keyof ClientIssue)[];
 
 /**
  * How much of a raw text {@link scrub} and {@link frame} read — the e-mail
@@ -144,6 +176,10 @@ const INDEXED_FIELD_STEP = /^[A-Za-z_$][\w$]*\[\d+\]$/;
 const ROUTE_SEGMENT = /^(?:[a-z0-9][a-z0-9-]*|:[A-Za-z][A-Za-z0-9]*|\*\*)$/;
 /** A build name: a version, a commit, a build id. */
 const RELEASE = /^[\w.+-]+$/;
+/** A callable's export name, as `Callables` spells it (`commitBooking`). */
+const CALLABLE_NAME = /^[a-z][A-Za-z0-9]*$/;
+/** The code a failed call carried (`functions/internal`) — an identifier, `_ . / -` allowed. */
+const CALLABLE_ERROR_CODE = /^[A-Za-z][A-Za-z0-9_./-]*$/;
 /** A document id as this app writes them: printable ASCII, no `/`. */
 const DOC_ID = /^[!-.0-~]+$/;
 
@@ -319,7 +355,23 @@ const RELEASE_RULE: TextRule = {
   isShaped: (text) => RELEASE.test(text),
 };
 
-/** Every text field's rule, in the struct's order — admission reports the first field at fault. */
+const OPERATION_ID_RULE: TextRule = {
+  issueField: 'operationId',
+  cap: OPERATION_ID_CAP,
+  isShaped: ClientOperationId.is,
+};
+const CALLABLE_NAME_RULE: TextRule = {
+  issueField: 'callableName',
+  cap: CAPS.callableName,
+  isShaped: (text) => CALLABLE_NAME.test(text),
+};
+const CALLABLE_ERROR_CODE_RULE: TextRule = {
+  issueField: 'callableErrorCode',
+  cap: CAPS.callableErrorCode,
+  isShaped: (text) => CALLABLE_ERROR_CODE.test(text),
+};
+
+/** The OR-34 text fields' rules, in the struct's order — admission reports the first field at fault. */
 const TEXT_RULES: readonly TextRule[] = [
   ERROR_NAME_RULE,
   DOCUMENT_PATH_RULE,
@@ -329,6 +381,45 @@ const TEXT_RULES: readonly TextRule[] = [
   SCRUBBED_MESSAGE_RULE,
   RELEASE_RULE,
 ];
+
+/** The WS-5 fields' rules, in the struct's order — each checked only when the issue carries its key (RU-30). */
+const WIRE_OPTIONAL_RULES: readonly TextRule[] = [
+  OPERATION_ID_RULE,
+  CALLABLE_NAME_RULE,
+  CALLABLE_ERROR_CODE_RULE,
+];
+
+/** Whether `field` is one an issue on the wire may leave out. */
+function isWireOptional(field: keyof ClientIssue): boolean {
+  return (WIRE_OPTIONAL_FIELDS as readonly string[]).includes(field);
+}
+
+/** Whether a record carries every key an issue may leave out — then it IS the struct, nothing to fill. */
+function hasEveryWireOptional(raw: Readonly<Record<string, unknown>>): boolean {
+  for (let i = 0; i < WIRE_OPTIONAL_FIELDS.length; i++) {
+    if (!Object.hasOwn(raw, WIRE_OPTIONAL_FIELDS[i] as string)) return false;
+  }
+  return true;
+}
+
+/**
+ * An admitted issue that left a WS-5 key out, as the struct: each absent
+ * key read as `null` (RU-30) — a new record, the payload untouched.
+ */
+function filled(raw: Readonly<Record<string, unknown>>): ClientIssue {
+  // Admitted key by key: the nine OR-34 keys, and each WS-5 key it carries.
+  const issue = raw as ClientIssue;
+  return {
+    ...issue,
+    operationId: Object.hasOwn(raw, 'operationId') ? issue.operationId : null,
+    callableName: Object.hasOwn(raw, 'callableName')
+      ? issue.callableName
+      : null,
+    callableErrorCode: Object.hasOwn(raw, 'callableErrorCode')
+      ? issue.callableErrorCode
+      : null,
+  };
+}
 
 /** Why a text field is refused — its cap first (so no pattern reads an oversized text), then its shape; `null` admits it. */
 function textFault(
@@ -348,7 +439,11 @@ function kept(rule: TextRule, text: string | null): string | null {
   return text !== null && textFault(rule, text) === null ? text : null;
 }
 
-/** The issue at `index` refused, or `null`: exactly the struct's keys, each value of its type, shape and cap. */
+/**
+ * The issue at `index` refused, or `null`: the nine OR-34 keys and any of
+ * the three WS-5 keys (RU-30) — nothing else — each value of its type,
+ * shape and cap.
+ */
 function issueFault(raw: unknown, index: number): ClientIssueError | null {
   const refuse = (
     reason: ClientIssueBatchRefusedReason,
@@ -359,19 +454,21 @@ function issueFault(raw: unknown, index: number): ClientIssueError | null {
     return refuse(ClientIssueBatchRefusedReason.Shape, null);
   }
   const fields = ClientIssue.FIELDS;
+  let expected = 0;
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i] as (typeof fields)[number];
-    if (!Object.hasOwn(raw, field)) {
+    if (Object.hasOwn(raw, field)) expected++;
+    else if (!isWireOptional(field)) {
       return refuse(ClientIssueBatchRefusedReason.Shape, field);
     }
   }
-  // Every field is there; one key more is a key the struct does not have —
-  // never echoed (its name is the caller's text).
+  // Every required field is there; one key more is a key the struct does
+  // not have — never echoed (its name is the caller's text).
   let keys = 0;
   for (const key in raw) {
     if (Object.hasOwn(raw, key)) keys++;
   }
-  if (keys !== fields.length) {
+  if (keys !== expected) {
     return refuse(ClientIssueBatchRefusedReason.Shape, null);
   }
   if (!Tag.has(ClientIssueKind, raw['clientIssueKind'])) {
@@ -383,11 +480,20 @@ function issueFault(raw: unknown, index: number): ClientIssueError | null {
     if (reason !== null) return refuse(reason, rule.issueField);
   }
   const occurrences = raw['occurrences'];
-  return typeof occurrences === 'number' &&
-    Number.isSafeInteger(occurrences) &&
-    occurrences >= 1
-    ? null
-    : refuse(ClientIssueBatchRefusedReason.Shape, 'occurrences');
+  if (
+    typeof occurrences !== 'number' ||
+    !Number.isSafeInteger(occurrences) ||
+    occurrences < 1
+  ) {
+    return refuse(ClientIssueBatchRefusedReason.Shape, 'occurrences');
+  }
+  for (let i = 0; i < WIRE_OPTIONAL_RULES.length; i++) {
+    const rule = WIRE_OPTIONAL_RULES[i] as TextRule;
+    if (!Object.hasOwn(raw, rule.issueField)) continue;
+    const reason = textFault(rule, raw[rule.issueField]);
+    if (reason !== null) return refuse(reason, rule.issueField);
+  }
+  return null;
 }
 
 /**
@@ -443,6 +549,13 @@ function fingerprint(issue: ClientIssue): string {
   h = mix(h, issue.routePattern);
   h = mix(h, issue.topFrame);
   h = mix(h, issue.scrubbedMessage);
+  // The callable and its code are identity only where they exist, so every
+  // issue without them keeps the key it always had; the operation id never
+  // is (one per attempt: it would defeat the dedupe).
+  if (issue.callableName !== null || issue.callableErrorCode !== null) {
+    h = mix(h, issue.callableName);
+    h = mix(h, issue.callableErrorCode);
+  }
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
@@ -499,11 +612,12 @@ export const ClientIssueSystem = {
 
   /**
    * The issue's identity — 8 hex digits of FNV-1a over its kind, name,
-   * path, field, route, frame and message (UTF-16 code units, each field
-   * closed by a separator, `null` distinct from any text): the reporter's
-   * dedupe key and the log line's grouping key. The count and the build are
-   * not identity — the same fault seen again, or in the next build, is the
-   * same issue.
+   * path, field, route, frame and message, then — only when either is set —
+   * its callable and that callable's error code (UTF-16 code units, each
+   * field closed by a separator, `null` distinct from any text): the
+   * reporter's dedupe key and the log line's grouping key. The count, the
+   * build and the operation id are not identity — the same fault seen
+   * again, in the next build or on the next attempt, is the same issue.
    */
   fingerprint,
 
@@ -528,21 +642,57 @@ export const ClientIssueSystem = {
       scrubbedMessage: message === '' ? null : message,
       release: kept(RELEASE_RULE, input.release),
       occurrences: 1,
+      operationId: null,
+      callableName: null,
+      callableErrorCode: null,
+    };
+  },
+
+  /**
+   * The issue a callable that never answered as a callable leaves
+   * (`CALLABLE_TRANSPORT_FAILED`, audit-hardening WS-5): the callable's
+   * name, the thrown value's name and code and the build kept only when
+   * each is within its cap and of its shape (else `null`, never a
+   * refusal), the operation id as the call sent it, seen once. No message,
+   * no frame, no route, no document — a transport failure says which call
+   * and which attempt, nothing the browser wrote. Whatever it builds,
+   * {@link admitBatch} admits.
+   */
+  composeTransport(input: TransportIssueInput): ClientIssue {
+    return {
+      clientIssueKind: ClientIssueKind.CallableTransportFailed,
+      errorName: kept(ERROR_NAME_RULE, input.errorName),
+      documentPath: null,
+      fieldName: null,
+      routePattern: null,
+      topFrame: null,
+      scrubbedMessage: null,
+      release: kept(RELEASE_RULE, input.release),
+      occurrences: 1,
+      operationId: input.operationId,
+      callableName: kept(CALLABLE_NAME_RULE, input.callableName),
+      callableErrorCode: kept(
+        CALLABLE_ERROR_CODE_RULE,
+        input.callableErrorCode,
+      ),
     };
   },
 
   /**
    * The callable's edge guard: the payload as received, admitted as the
-   * batch it is — THE SAME ARRAY, typed (zero mapping) — or refused whole
-   * (`CLIENT_ISSUE_BATCH_REFUSED`): `SHAPE` when it is not an array of one
-   * or more closed issue structs (a missing or unknown key, a value of the
-   * wrong type, an unknown kind, a name, path, field, route or build of the
-   * wrong shape, a frame or a message not in its normal form, a count that
-   * is not a positive whole number); `TOO_MANY` past {@link MAX_ISSUES};
+   * batch it is — THE SAME ARRAY, typed (zero mapping), when every issue
+   * carries all twelve keys; else a copy whose issues read each WS-5 key
+   * they left out as `null` (an old web's nine-key issue, RU-30) — or
+   * refused whole (`CLIENT_ISSUE_BATCH_REFUSED`): `SHAPE` when it is not an
+   * array of one or more closed issue structs (a missing OR-34 key or an
+   * unknown key, a value of the wrong type, an unknown kind, a name, path,
+   * field, route, build, callable, code or operation id of the wrong shape,
+   * a frame or a message not in its normal form, a count that is not a
+   * positive whole number); `TOO_MANY` past {@link MAX_ISSUES};
    * `TOO_LARGE` for a text past its cap, or a batch whose JSON weighs more
-   * than {@link MAX_BYTES} UTF-8 bytes. Caps are checked before shapes and
-   * the issues before the weight, so no pattern and no measure ever reads
-   * an unbounded text.
+   * than {@link MAX_BYTES} UTF-8 bytes — the payload as sent. Caps are
+   * checked before shapes and the issues before the weight, so no pattern
+   * and no measure ever reads an unbounded text.
    */
   admitBatch(raw: unknown): Result<readonly ClientIssue[], ClientIssueError> {
     if (!Array.isArray(raw) || raw.length === 0) {
@@ -563,9 +713,11 @@ export const ClientIssueSystem = {
         ),
       );
     }
+    let complete = true;
     for (let i = 0; i < raw.length; i++) {
       const fault = issueFault(raw[i], i);
       if (fault !== null) return Result.err(fault);
+      complete &&= hasEveryWireOptional(raw[i] as Record<string, unknown>);
     }
     if (jsonBytes(raw) > MAX_BYTES) {
       return Result.err(
@@ -576,8 +728,13 @@ export const ClientIssueSystem = {
         ),
       );
     }
-    // Checked key by key above — the payload IS the batch.
-    return Result.ok(raw as readonly ClientIssue[]);
+    // Checked key by key above — the payload IS the batch, or (an old web's
+    // issues among it) the batch with their absent WS-5 keys read as `null`.
+    return Result.ok(
+      complete
+        ? (raw as readonly ClientIssue[])
+        : (raw as readonly Record<string, unknown>[]).map(filled),
+    );
   },
 
   /**
