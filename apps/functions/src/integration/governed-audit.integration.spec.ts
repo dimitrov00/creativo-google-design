@@ -11,6 +11,7 @@ import {
 import { CustomerId, UserId } from '@core/primitives';
 import { Collections } from '@core/entities';
 import { auditDocumentChange } from '@core/pipelines';
+import { GovernedChangeSystem } from '@core/systems';
 import { pinnedNowUtcMs, recordingTelemetry, utcMs } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
@@ -155,6 +156,37 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
     expect(JSON.stringify(rows)).not.toContain(NOTE_TEXT);
   });
 
+  it('a note carrying a key its entity does not declare: the row keeps the marker, never the key (R36, review round 1)', async () => {
+    const ref = db.doc(`${Collections.AppointmentNotes}/apt-3`);
+    const smuggled = 'Ivan Petrov 0888123456';
+    const event = await writeOf(
+      ref,
+      () =>
+        ref.set({
+          text: NOTE_TEXT,
+          authorUserId: BARBER,
+          writtenAtUtcMs: utcMs(EVENT_TIME),
+          [smuggled]: true,
+        }),
+      BROWSER,
+      'evt-note-smuggled',
+    );
+    await deliver(GovernedCollection.AppointmentNotes, event);
+    const rows = await auditRows();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        auditAction: AuditAction.GovernedDocCreated,
+        governedFields: [
+          GovernedChangeSystem.UNKNOWN_FIELD,
+          'authorUserId',
+          'text',
+          'writtenAtUtcMs',
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(smuggled);
+  });
+
   it('a photo document: ONE created row on its own resource', async () => {
     const ref = db.doc(`${Collections.AppointmentPhotos}/ph-1`);
     const event = await writeOf(
@@ -162,7 +194,7 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
       () =>
         ref.set({
           appointmentId: 'apt-1',
-          storagePath: 'appointment-photos/apt-1/ph-1.jpg',
+          path: 'appointmentPhotos/apt-1/ph-1.jpg',
           takenByUserId: BARBER,
           takenAtUtcMs: utcMs(EVENT_TIME),
         }),
@@ -179,7 +211,7 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
         auditAction: AuditAction.GovernedDocCreated,
         governedFields: [
           'appointmentId',
-          'storagePath',
+          'path',
           'takenAtUtcMs',
           'takenByUserId',
         ],
@@ -215,7 +247,11 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
     const created = await writeOf(
       ref,
       () =>
-        ref.set({ barberId: 'b-ivan', localDate: '2026-10-12', blocks: [] }),
+        ref.set({
+          barberId: 'b-ivan',
+          localDate: '2026-10-12',
+          exceptionEffect: 'CLOSED',
+        }),
       CONSOLE,
       'evt-exception-create',
     );
@@ -238,13 +274,13 @@ describe('auditDocumentChange over decodeDocumentChangeEvent (emulator)', () => 
           GovernedCollection.ScheduleExceptions,
         ),
         auditAction: AuditAction.GovernedDocDeleted,
-        governedFields: ['barberId', 'blocks', 'localDate'],
+        governedFields: ['barberId', 'exceptionEffect', 'localDate'],
       }),
     );
     expect(rows).toContainEqual(
       expect.objectContaining({
         auditAction: AuditAction.GovernedDocCreated,
-        governedFields: ['barberId', 'blocks', 'localDate'],
+        governedFields: ['barberId', 'exceptionEffect', 'localDate'],
       }),
     );
   });

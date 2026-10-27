@@ -79,6 +79,7 @@ import {
   AuditSystem,
   CouponGrantSystem,
   DecisionInputSystem,
+  MoveSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -669,6 +670,7 @@ describe('editAppointment — the shop moving its own book', () => {
     expect(tx.plans).toEqual([]);
     const read = lastSeen as {
       readonly placement: { readonly busy: readonly BarberBusyDay[] };
+      readonly stored: Appointment;
     };
     expect(telemetry.lines).toEqual([
       {
@@ -684,17 +686,22 @@ describe('editAppointment — the shop moving its own book', () => {
               startMinutes: refused.error.startMinutes,
             },
             5,
+            MoveSystem.release(read.stored),
           ),
         },
       },
     ]);
-    expect(telemetry.lines[0]?.fields).toMatchObject({
+    // Review round 1 (finding 2): the refusal names the sold start 10:00,
+    // which only the visit's OWN chair holds — the chair `decide` handed
+    // back — so no block is named. The resize ran into 10:30–11:00 through
+    // its new end, which the sold start does not prove.
+    expect(telemetry.lines[0]?.fields).toEqual({
+      errorCode: StaffEditErrorCode.Overlaps,
       readBusyKeys: [THURSDAY_KEY],
+      collidingStartMinutes: null,
+      collidingEndMinutes: null,
       readRevision: 5,
     });
-    expect(
-      telemetry.lines[0]?.fields?.['collidingStartMinutes'],
-    ).not.toBeNull();
   });
 
   it('refuses a visit that never happened (bookingStatus) and an end before the arrival (BEFORE_ARRIVAL)', async () => {

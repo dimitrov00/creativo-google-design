@@ -115,8 +115,15 @@ export const firestoreAuditPorts = (
       await createEach(db, rows);
       return Result.ok(undefined);
     } catch (error) {
+      // The canonical code (`unavailable`, `aborted`, …), never the
+      // message: the retrying edge judges the attempt by this `reason`
+      // (`TriggerAttemptSystem.repositoryFailure`), and only a transient
+      // code earns the redelivery that writes the row.
       return Result.err(
-        RepositoryError.writeFailed(Collections.AuditLog, String(error)),
+        RepositoryError.writeFailed(
+          Collections.AuditLog,
+          TriggerAttemptSystem.failureCode(error),
+        ),
       );
     }
   },

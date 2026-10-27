@@ -906,7 +906,10 @@ export type SlotFacts = {
   readonly readRevision: number | null;                  // the stored appointment's revision (move / edit)
 };
 DecisionInputSystem.slotFacts(busyDays: readonly BarberBusyDay[], refusal: { readonly barberId: BarberId; readonly localDate: LocalDate;
-  readonly startMinutes: MinuteOfDay } | null, revision: number | null): SlotFacts;
+  readonly startMinutes: MinuteOfDay } | null, revision: number | null, release: readonly ChairTime[]): SlotFacts;
+// amended in review round 1 (§8.R1 item 2): `release` = exactly what `decide` was handed ([] for book, the plan's
+// `release` for reschedule, `MoveSystem.release(stored)` for edit); the colliding span is the refused barber's blocks
+// minus those chairs, the one piece HOLDING the sold start — else null/null (no "next block after the start")
 
 // components/write-provenance.data.ts (+ components/index.ts)
 export type WriteProvenance = { readonly writeOperationId: OperationId | null };
@@ -1530,6 +1533,10 @@ transition (role-prefixed)`; the nullable `transitionFromAttendanceState`
   (`deepFreeze`, Law 3 / `ecs-systems.md`): `canonical-json` (plus key-order
   independence), `log-digest`, `decision-input` (plus boundary cases: no
   busy day, a refusal with no collision, minute 0 and minute 1439).
+  _Amended in review round 1 (§8.R1 item 2):_ `slotFacts` takes a fourth
+  argument `release: readonly ChairTime[]` and names only a span that
+  holds the sold start (pads, turnaround, window and past-midnight
+  refusals name none; a released chair is never named).
 - **Checks:** `pnpm nx test ecs-core`, typecheck, lint, layering; name check.
 
 ### P11a — WS-4.3 provenance core (W6b)
@@ -2001,6 +2008,31 @@ message, stack }` scrubbed (RU-38: an `Error('… +359888123456 a@b.bg …')`
   `operation-trace.integration.spec.ts`'s ports literal).
 - **DEP-24 (P17, WS-6) — preflight P9 (INFO) in the functions scope**;
   scripts and docs only, nothing applied. Specs: P17 row.
+- **DEP-25 (review round 1, WS-4.2) — a refusal names only a block it
+  provably ran into.** Before: `slotFacts` named the earliest block ending
+  after the sold start (a later, harmless block; the moved / edited visit's
+  own released chair). After: the refused barber's blocks minus the chairs
+  `decide` was handed back (`release`, a new fourth argument), the piece
+  HOLDING the sold start, else `null` / `null`. The error and the wire are
+  untouched (RU-25, OR-12). Specs: `decision-input.system.spec.ts` ("else
+  the next block" replaced by four cases); `edit-appointment.pipeline.spec.ts`'s
+  WS-4.2 case pins `null` / `null` exactly (it was `.not.toBeNull()` and
+  passed on 600 / 630, the visit's own block) — stricter; the book and
+  reschedule pins are unchanged.
+- **DEP-26 (review round 1, WS-3) — a caller-chosen field name never
+  reaches a governed row (R36 / T5).** Before: `governedFields` listed
+  every changed top-level key. After: on the three browser-written
+  collections with no key-set rule (`appointmentNotes`,
+  `appointmentPhotos`, `scheduleExceptions`) a key the entity does not
+  declare becomes ONE `'<unknown>'` marker (`GovernedChangeSystem.namedFields`,
+  `UNKNOWN_FIELD`); the write is still audited; every other collection is
+  unchanged. Specs: `governed-change.system.spec.ts` and
+  `audit-document-change.pipeline.spec.ts` fixtures switched from
+  non-entity names (`name`, `body`) to the entities' own (`text`, `label`,
+  `exceptionEffect`, …) for those three, same assertions; new cases;
+  `governed-audit.integration.spec.ts`'s photo (`storagePath` → `path`) and
+  exception (`blocks` → `exceptionEffect`) bodies made entity-shaped, plus a
+  smuggled-key case (emulator — not run by the fixer).
 
 Frozen (no DEP): WS-7's ports and adapter (additive), the OR-34 caps and
 rates, every callable answer apart from DEP-4's new refusals.
@@ -2219,3 +2251,73 @@ DEP-4's wire skew and the deploy order (§7 item 7); the OR-34 / operation-id
 join (§7 item 20); this ledger filled, with a
 per-package file list, every integrator edit beyond the packages, and every
 spec count that dropped explained.
+
+### 8.R1 Review round 1
+
+Four CONFIRMED findings, all applied by the fixer (no commit).
+
+1. **MAJOR — a transient Firestore failure on an audit trigger was judged
+   PERMANENT** (`apps/functions/src/adapters/firestore-audit.adapter.ts`,
+   `createAuditRows`). **FIXED:** the refusal's `reason` is
+   `TriggerAttemptSystem.failureCode(error)` (the canonical code), never
+   `String(error)`, so `documentAuditReport` judges `14 UNAVAILABLE` as
+   `unavailable` / TRANSIENT and the platform redelivers. Spec:
+   `firestore-audit.adapter.spec.ts` (describe retitled "the
+   document-change triggers' write") — gRPC 14 → `reason: 'unavailable'`,
+   TRANSIENT through `documentAuditReport`; gRPC 7 stays PERMANENT. Not
+   touched (pre-existing at `0df7d7ab`, untouched by this pass, outside the
+   finding): `String(error)` reasons in the `firestore-settings` (policy
+   read), `firestore-coupons` and `firestore-accounts` adapters — the
+   policy read feeds retrying triggers (`rebuild-capacity`,
+   `match-waitlist`, `project-client-stats` return its refusal), so a
+   transient policy read there is judged PERMANENT the same way; flagged
+   for the orchestrator.
+2. **MINOR — the refusal log named a busy block that did not collide**
+   (`libs/ecs-core/src/systems/decision-input.system.ts`). **FIXED
+   (DEP-25):** `slotFacts(busyDays, refusal, revision, release)` cuts the
+   chairs `decide` was handed back out of the refused barber's blocks
+   (`IntervalSetSystem.subtract`, by barber — as `paddedBusy` does, so the
+   projection's merged blocks are cut too) and names only the piece holding
+   the sold start; the "next block after" branch is gone. Callers pass
+   exactly `decide`'s `release`: book `[]`, reschedule `releaseRead` (the
+   Loaded plan's `release`), edit `releaseRead` (`MoveSystem.release(stored)`).
+   Specs: `decision-input.system.spec.ts` (pad / turnaround, window /
+   midnight, released chair incl. a merged block, another barber's chair,
+   purity with a frozen `release`); `edit-appointment.pipeline.spec.ts`
+   exact `null` / `null` pin; book / reschedule specs pass `[]` / the plan's
+   `release`, pins unchanged. §2.6 and P10 amended. Aside (unverified, out
+   of scope, pre-existing at `0df7d7ab`): `paddedBusy` filters `release` by
+   barber only, not by date — a cross-day move may cut its old chair
+   minutes out of the new day; `slotFacts` mirrors `decide` there.
+3. **MINOR — comments made false by WS-4.1 / WS-4.2 / WS-5**
+   (`libs/ecs-core/src/ports/scheduling.port.ts`,
+   `apps/functions/src/adapters/console-telemetry.adapter.ts`). **FIXED:**
+   `callableClientPorts(functions, ids, issues)`; "the same bundles
+   (`TelemetryPorts`, `LogContextPorts`)", matching `ecs-pipelines.md`.
+   Comment-only; no spec.
+4. **MINOR — client-chosen field names reached permanent audit rows**
+   (`libs/ecs-core/src/systems/governed-change.system.ts`). **FIXED
+   (DEP-26):** `GovernedChangeSystem.namedFields` — per-collection key
+   tables typed `{ [K in StoredKey<Entity>]: true }` (a renamed, added or
+   dropped entity field fails to compile) for `appointmentNotes`,
+   `appointmentPhotos`, `scheduleExceptions`; any other name becomes one
+   `'<unknown>'` marker, sorted, deduplicated; `plan` routes
+   `governedFields` through it; other collections pass unchanged. Specs:
+   `governed-change.system.spec.ts` (note / photo / exception smuggled-key
+   cases, only-unknown update still audited, schema-named collections
+   unchanged, prototype names, two fast-check properties, purity),
+   `audit-document-change.pipeline.spec.ts` (smuggled-key case),
+   `governed-audit.integration.spec.ts` (emulator). NOT built: the optional
+   `keys().hasOnly` rules on notes / photos (the system covers all three;
+   a rules edit needs its emulator run); the leftover gap — the caller-chosen
+   DOCUMENT ID reaches `resourceId` and `documentPath` — is carried in
+   HANDOFF §3.3 "Carried from the audit hardening" as an owner flag (a notes
+   `exists(appointments/…)` rule would close it for notes).
+
+Checks after the fixes (no emulator): `typecheck` 40 projects green
+(`--skip-nx-cache --parallel=1`, `dist/out-tsc` cleared); `verify-tools:layering`
+OK; `nx sync:check` up to date; `lint` (ecs-core, functions) 0 errors, warning
+files and counts equal to the baseline; `test` all 44 projects green
+(ecs-core 6,677, functions 1,316); prettier clean on the changed files. Not
+run here: `governed-audit.integration.spec.ts` (emulator — the photo and
+exception bodies made entity-shaped, one smuggled-key case added).

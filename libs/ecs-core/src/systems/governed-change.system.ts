@@ -16,7 +16,12 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceError } from '@core/errors';
-import { Collections } from '@core/entities';
+import {
+  type AppointmentNote,
+  type AppointmentPhoto,
+  Collections,
+  type ScheduleException,
+} from '@core/entities';
 import {
   AuditSystem,
   type AuditRowPlan,
@@ -65,6 +70,69 @@ function keysOf(side: StoredFields): readonly string[] {
   return Object.keys(side).sort(byCodeUnit);
 }
 
+/** Every stored root key of an entity, over all its variants — its `id` is the document id, never a field. */
+type StoredKey<T> = T extends unknown ? Exclude<keyof T, 'id'> : never;
+
+/**
+ * The key table of one entity: EVERY stored root key, and nothing else —
+ * a renamed, added or dropped field fails to compile here.
+ */
+type KeyTable<T> = { readonly [K in StoredKey<T>]: true };
+
+const NOTE_KEYS: KeyTable<AppointmentNote> = {
+  authorUserId: true,
+  text: true,
+  writtenAtUtcMs: true,
+};
+
+const PHOTO_KEYS: KeyTable<AppointmentPhoto> = {
+  appointmentId: true,
+  barberId: true,
+  clientCustomerId: true,
+  clientLabel: true,
+  height: true,
+  label: true,
+  path: true,
+  photoOrigin: true,
+  takenAtUtcMs: true,
+  takenByUserId: true,
+  url: true,
+  width: true,
+};
+
+const EXCEPTION_KEYS: KeyTable<ScheduleException> = {
+  barberId: true,
+  exceptionEffect: true,
+  exceptionRanges: true,
+  localDate: true,
+  locationId: true,
+  utcEpochMs: true,
+};
+
+/** The one name a row keeps for every field its collection does not declare (R36). */
+const UNKNOWN_FIELD = '<unknown>';
+
+/**
+ * The stored keys of a collection the BROWSER writes with no key-set rule
+ * (`appointmentNotes`, `appointmentPhotos` — `worksTheBook()`;
+ * `scheduleExceptions` — `mayEditRoster()`), where a field NAME is caller
+ * text; `null` for every other collection — written by the Admin SDK only,
+ * or by a rule that pins its keys (`keys().hasOnly`: positions, courses,
+ * events) — whose names are the schema's.
+ */
+function knownKeysOf(collection: GovernedDocCollection): object | null {
+  switch (collection) {
+    case GovernedCollection.AppointmentNotes:
+      return NOTE_KEYS;
+    case GovernedCollection.AppointmentPhotos:
+      return PHOTO_KEYS;
+    case GovernedCollection.ScheduleExceptions:
+      return EXCEPTION_KEYS;
+    default:
+      return null;
+  }
+}
+
 /**
  * The document-change trigger's pure half (audit-hardening WS-3, RU-40):
  * where each governed collection lives, which fields a write changed, its
@@ -74,6 +142,8 @@ function keysOf(side: StoredFields): readonly string[] {
  * Imports `AuditSystem` one way; `audit.system.ts` never imports this file.
  */
 export const GovernedChangeSystem = {
+  UNKNOWN_FIELD,
+
   /** The Firestore collection path of each governed tag — exhaustive. */
   pathOf(governedCollection: GovernedCollection): string {
     switch (governedCollection) {
@@ -137,6 +207,29 @@ export const GovernedChangeSystem = {
     return changed.sort(byCodeUnit);
   },
 
+  /**
+   * The field names a row may keep (R36 / T5 — review round 1): on a
+   * collection the browser writes with no key-set rule, a name the entity
+   * declares is kept and every other one becomes the ONE
+   * {@link UNKNOWN_FIELD} marker — a caller-chosen key is caller text (a
+   * name, a phone) and never reaches the permanent audit row; the write is
+   * still audited. Any other collection's names pass as they are.
+   * Ascending, each once.
+   */
+  namedFields(
+    collection: GovernedDocCollection,
+    fields: readonly string[],
+  ): readonly string[] {
+    const known = knownKeysOf(collection);
+    if (known === null) return fields;
+    const kept = new Set<string>();
+    for (let i = 0; i < fields.length; i++) {
+      const name = fields[i] as string;
+      kept.add(Object.hasOwn(known, name) ? name : UNKNOWN_FIELD);
+    }
+    return [...kept].sort(byCodeUnit);
+  },
+
   /** Creation, update and deletion, named apart. */
   action(beforeExists: boolean, afterExists: boolean): GovernedAction {
     if (!beforeExists) return AuditAction.GovernedDocCreated;
@@ -152,9 +245,10 @@ export const GovernedChangeSystem = {
    * changed no field plans nothing; an event with no id is refused rather
    * than minted one; otherwise one `GOVERNED_DOC_*` row credited to the
    * writer, stamped with the event's instant, naming the resource, targeted
-   * at the client record for a CUSTOMERS write and at nobody otherwise, its
-   * id basis keyed by the event id (a redelivery derives the same row). A
-   * trigger row names no operation (`auditOperationId: null`).
+   * at the client record for a CUSTOMERS write and at nobody otherwise,
+   * listing the changed names {@link GovernedChangeSystem.namedFields}
+   * keeps, its id basis keyed by the event id (a redelivery derives the
+   * same row). A trigger row names no operation (`auditOperationId: null`).
    */
   plan(
     change: DocumentChange,
@@ -180,7 +274,10 @@ export const GovernedChangeSystem = {
         ...AuditContext.governed(
           action,
           change.governedCollection,
-          change.fields,
+          GovernedChangeSystem.namedFields(
+            change.governedCollection,
+            change.fields,
+          ),
         ),
         ...(change.targetCustomerId === null
           ? AuditTargetRef.none()

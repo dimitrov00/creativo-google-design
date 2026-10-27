@@ -4,6 +4,7 @@ import {
   BillPending,
   type BookingPolicy,
   BookingReadSnapshot,
+  type ChairTime,
   CustomerOrigin,
   DiscountSource,
   EditCallOutcome,
@@ -175,7 +176,8 @@ import {
  * - **A refusal logs what the decision read** (WS-4.2, RU-25):
  *   `booking.staff_edit_rejected` with the `errorCode` and
  *   `DecisionInputSystem.slotFacts` of the LAST snapshot (the target day's
- *   busy days, the stored visit's revision) — captured in the impure read
+ *   busy days, the stored visit's revision, the visit's own chairs the
+ *   decision handed back, so they are never named) — captured in the impure read
  *   callback, never inside the pure `decide` (Law 4) — never in the error
  *   (OR-12).
  */
@@ -340,6 +342,7 @@ export const editAppointment =
           busyRead(lastRead),
           slotRefusalOf(committed.error),
           revisionRead(lastRead),
+          releaseRead(lastRead),
         ),
       });
       return committed;
@@ -367,6 +370,14 @@ function revisionRead(snapshot: Snapshot | null): number | null {
     snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused
     ? null
     : snapshot.stored.revision;
+}
+
+/** The chairs the edit's decision was handed back — the stored visit's own, once loaded. */
+function releaseRead(snapshot: Snapshot | null): readonly ChairTime[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? MoveSystem.release(snapshot.stored)
+    : [];
 }
 
 /** An instant on the shop's clock. */

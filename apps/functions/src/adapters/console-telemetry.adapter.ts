@@ -12,8 +12,8 @@ import { ClientIssueSystem } from '@core/systems';
  * The telemetry ports (`telemetry.port.ts`) over `firebase-functions/logger`
  * — §9 D11(a): Pino and Sentry are not installed, so logging and error
  * tracking are structured Cloud Logging entries. A Pino or Sentry adapter
- * replaces this file at the composition root with the same two ports; no
- * pipeline changes.
+ * replaces this file at the composition root with the same bundles
+ * (`TelemetryPorts`, `LogContextPorts`); no pipeline changes.
  *
  * Structured: `fields` / `context` ride as the entry's `jsonPayload` (the
  * logger takes a trailing PLAIN object as the payload, so they are copied

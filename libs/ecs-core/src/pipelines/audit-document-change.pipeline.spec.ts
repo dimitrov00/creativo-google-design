@@ -257,6 +257,24 @@ const DOCS: readonly GovernedDocCollection[] = [
   GovernedCollection.AppointmentPhotos,
 ];
 
+/**
+ * Two fields each collection's documents really hold — the browser-written
+ * three keep only their entities' names (review round 1, R36), so their
+ * fixture names two of those; the rest keep `name` / `priceCents`.
+ */
+function fieldsOf(collection: GovernedDocCollection): readonly string[] {
+  switch (collection) {
+    case GovernedCollection.AppointmentNotes:
+      return ['text', 'writtenAtUtcMs'];
+    case GovernedCollection.AppointmentPhotos:
+      return ['label', 'takenAtUtcMs'];
+    case GovernedCollection.ScheduleExceptions:
+      return ['exceptionEffect', 'exceptionRanges'];
+    default:
+      return ['name', 'priceCents'];
+  }
+}
+
 /** A governed write of `collection/docId`, branded as the wire edge brands it. */
 function governedOf(
   collection: GovernedDocCollection,
@@ -279,7 +297,7 @@ function governedOf(
     writer: Actor.user(OWNER),
     beforeExists: true,
     afterExists: true,
-    fields: ['name', 'priceCents'],
+    fields: fieldsOf(collection),
     ...overrides,
   };
 }
@@ -299,7 +317,7 @@ describe('auditDocumentChange — a governed write (WS-3, DEP-14)', () => {
         ...Actor.user(OWNER),
         auditAction: 'GOVERNED_DOC_UPDATED',
         governedCollection: collection,
-        governedFields: ['name', 'priceCents'],
+        governedFields: fieldsOf(collection),
         ...(isCustomer
           ? AuditTargetRef.customer(CustomerId.of('doc-1'))
           : AuditTargetRef.none()),
@@ -337,7 +355,7 @@ describe('auditDocumentChange — a governed write (WS-3, DEP-14)', () => {
         afterExists: false,
         eventId: TriggerEventId.of('evt-g2'),
         fields: GovernedChangeSystem.changedFields(
-          { authorUserId: 'u-1', body: 'x', writtenAtUtcMs: 1 },
+          { authorUserId: 'u-1', text: 'x', writtenAtUtcMs: 1 },
           null,
         ),
       }),
@@ -347,7 +365,7 @@ describe('auditDocumentChange — a governed write (WS-3, DEP-14)', () => {
       'GOVERNED_DOC_DELETED',
     ]);
     expect(written[1]?.[0]).toMatchObject({
-      governedFields: ['authorUserId', 'body', 'writtenAtUtcMs'],
+      governedFields: ['authorUserId', 'text', 'writtenAtUtcMs'],
     });
   });
 
@@ -420,13 +438,39 @@ describe('auditDocumentChange — a governed write (WS-3, DEP-14)', () => {
     await run(
       governedOf(GovernedCollection.AppointmentNotes, {
         fields: GovernedChangeSystem.changedFields(
-          { body: 'old' },
-          { body: SECRET },
+          { text: 'old' },
+          { text: SECRET },
         ),
       }),
     );
     expect(JSON.stringify(written)).not.toContain(SECRET);
-    expect(written[0]?.[0]).toMatchObject({ governedFields: ['body'] });
+    expect(written[0]?.[0]).toMatchObject({ governedFields: ['text'] });
+  });
+
+  it('never lets a caller-chosen field NAME into the row of a browser-written collection (R36, review round 1)', async () => {
+    const SMUGGLED = 'Ivan Petrov 0888123456 HIV+';
+    const { written, run } = rig();
+    await run(
+      governedOf(GovernedCollection.AppointmentNotes, {
+        beforeExists: false,
+        fields: GovernedChangeSystem.changedFields(null, {
+          text: 'x',
+          authorUserId: 'u-1',
+          writtenAtUtcMs: 1,
+          [SMUGGLED]: true,
+        }),
+      }),
+    );
+    expect(written[0]?.[0]).toMatchObject({
+      auditAction: 'GOVERNED_DOC_CREATED',
+      governedFields: [
+        GovernedChangeSystem.UNKNOWN_FIELD,
+        'authorUserId',
+        'text',
+        'writtenAtUtcMs',
+      ],
+    });
+    expect(JSON.stringify(written)).not.toContain('Ivan Petrov');
   });
 
   it('plans exactly what GovernedChangeSystem.plan plans, for any collection and sides', async () => {

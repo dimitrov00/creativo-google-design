@@ -347,6 +347,8 @@ export const bookAppointment =
           busyRead(lastRead),
           slotRefusalOf(committed.error),
           null,
+          // A new booking hands no chair back (`decide`'s `release` is `[]`).
+          [],
         ),
       });
       return committed;

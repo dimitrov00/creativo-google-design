@@ -3,6 +3,7 @@ import {
   AuditAction,
   BlockKind,
   BookingPolicy,
+  type ChairTime,
   type DocBody,
   type DocPath,
   LocationStatus,
@@ -772,6 +773,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     expect(tx.plans).toEqual([]);
     const read = lastSeen as {
       readonly placement: { readonly busy: readonly BarberBusyDay[] };
+      readonly plan: { readonly release: readonly ChairTime[] };
     };
     expect(telemetry.lines).toEqual([
       {
@@ -787,6 +789,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
               startMinutes: at(11),
             },
             3,
+            read.plan.release,
           ),
         },
       },

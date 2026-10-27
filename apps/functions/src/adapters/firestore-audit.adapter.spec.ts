@@ -5,12 +5,14 @@ import {
   AuditResourceId,
   CustomerId,
   LocationId,
+  Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import { RepositoryErrorCode } from '@core/errors';
+import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import {
   Actor,
+  AttemptOutcome,
   AuditAction,
   AuditContext,
   AuditTargetRef,
@@ -19,6 +21,7 @@ import {
 import type { AuditEntry } from '@core/entities';
 import { recordingTelemetry, unwrapOk } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
+import { documentAuditReport } from '../wire/triggers.wire';
 import { firestoreAuditPorts } from './firestore-audit.adapter';
 
 const AT = unwrapOk(UtcEpochMs.of(1_790_000_000_000));
@@ -178,7 +181,7 @@ describe('firestoreAuditPorts', () => {
     });
   });
 
-  describe('createAuditRows — the profile trigger’s write', () => {
+  describe('createAuditRows — the document-change triggers’ write', () => {
     it('creates the rows; an existing row is a success, not a rewrite', async () => {
       const kept = { ...body(row('r1', null)), recordedAtUtcMs: 1 };
       const fake = createProjectionFirestore({ 'auditLog/r1': kept });
@@ -208,6 +211,55 @@ describe('firestoreAuditPorts', () => {
       expect(!result.ok && result.error.errorCode).toBe(
         RepositoryErrorCode.WriteFailed,
       );
+    });
+
+    /** The trigger edge's verdict on the write's answer (`documentAuditReport`). */
+    const verdictOf = (written: Result<void, RepositoryError>) =>
+      documentAuditReport(written.ok ? Result.ok({ rows: 1 }) : written)
+        .attemptFailure;
+
+    /** A store whose every row create throws `thrown`. */
+    const throwingOnCreate = (thrown: unknown): Firestore =>
+      ({
+        collection: () => ({
+          doc: () => ({
+            create: async () => {
+              throw thrown;
+            },
+          }),
+        }),
+      }) as unknown as Firestore;
+
+    it('records the canonical code as the reason, so a transient outage is judged TRANSIENT and redelivered', async () => {
+      // The Admin SDK's shape: gRPC 14 on `code`, the status words in the message.
+      const outage = Object.assign(
+        new Error('14 UNAVAILABLE: No connection established'),
+        { code: 14 },
+      );
+      const result = await firestoreAuditPorts(
+        throwingOnCreate(outage),
+        recordingTelemetry(),
+      ).createAuditRows([row('r1', null)]);
+      expect(!result.ok && result.error.reason).toBe('unavailable');
+      expect(verdictOf(result)).toMatchObject({
+        failureCode: 'unavailable',
+        attemptOutcome: AttemptOutcome.Transient,
+      });
+    });
+
+    it('keeps a permanent failure permanent (gRPC 7, permission-denied)', async () => {
+      const refused = Object.assign(new Error('7 PERMISSION_DENIED: no'), {
+        code: 7,
+      });
+      const result = await firestoreAuditPorts(
+        throwingOnCreate(refused),
+        recordingTelemetry(),
+      ).createAuditRows([row('r1', null)]);
+      expect(!result.ok && result.error.reason).toBe('permission-denied');
+      expect(verdictOf(result)).toMatchObject({
+        failureCode: 'permission-denied',
+        attemptOutcome: AttemptOutcome.Permanent,
+      });
     });
   });
 

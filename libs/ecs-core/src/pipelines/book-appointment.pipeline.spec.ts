@@ -649,6 +649,7 @@ describe('bookAppointment', () => {
               startMinutes: minute(600),
             },
             null,
+            [],
           ),
         },
       },

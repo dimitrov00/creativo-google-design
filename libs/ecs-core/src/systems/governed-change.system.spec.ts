@@ -27,6 +27,24 @@ const AT = utcMs('2026-09-25T08:00:00.000Z');
 const EVENT_AT = utcMs('2026-09-25T07:59:59.500Z');
 const WRITER = Actor.user(UserId.of('u-ana'));
 
+/**
+ * One field each collection's documents really hold — the browser-written
+ * three keep only their entities' names (review round 1, R36), so their
+ * fixture names one of those; the rest keep `name`.
+ */
+function fieldOf(collection: GovernedDocCollection): string {
+  switch (collection) {
+    case GovernedCollection.AppointmentNotes:
+      return 'text';
+    case GovernedCollection.AppointmentPhotos:
+      return 'label';
+    case GovernedCollection.ScheduleExceptions:
+      return 'exceptionEffect';
+    default:
+      return 'name';
+  }
+}
+
 /** A governed write of `collection/docId`, branded as the wire edge brands it. */
 function changeOf(
   collection: GovernedDocCollection,
@@ -44,7 +62,7 @@ function changeOf(
     writer: WRITER,
     beforeExists: true,
     afterExists: true,
-    fields: ['name'],
+    fields: [fieldOf(collection)],
     ...overrides,
   };
 }
@@ -198,7 +216,7 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
         ...WRITER,
         auditAction: 'GOVERNED_DOC_UPDATED',
         governedCollection: collection,
-        governedFields: ['name'],
+        governedFields: [fieldOf(collection)],
         ...target,
       });
       expect(plan?.idBasis).toBe(
@@ -295,5 +313,191 @@ describe('GovernedChangeSystem.plan — the one planner entry (RU-40)', () => {
     expect(GovernedChangeSystem.changedFields(before, after)).toEqual(
       GovernedChangeSystem.changedFields(before, after),
     );
+  });
+});
+
+describe('GovernedChangeSystem.namedFields — a caller-chosen name never reaches a row (R36 / T5, review round 1)', () => {
+  /** Every stored key of the browser-written three, as their entities declare them. */
+  const KNOWN: ReadonlyMap<GovernedDocCollection, readonly string[]> = new Map([
+    [
+      GovernedCollection.AppointmentNotes,
+      ['authorUserId', 'text', 'writtenAtUtcMs'],
+    ],
+    [
+      GovernedCollection.AppointmentPhotos,
+      [
+        'appointmentId',
+        'barberId',
+        'clientCustomerId',
+        'clientLabel',
+        'height',
+        'label',
+        'path',
+        'photoOrigin',
+        'takenAtUtcMs',
+        'takenByUserId',
+        'url',
+        'width',
+      ],
+    ],
+    [
+      GovernedCollection.ScheduleExceptions,
+      [
+        'barberId',
+        'exceptionEffect',
+        'exceptionRanges',
+        'localDate',
+        'locationId',
+        'utcEpochMs',
+      ],
+    ],
+  ]);
+  const BROWSER_WRITTEN = [...KNOWN.keys()];
+  /** A key no entity declares, carrying a name, a phone and a diagnosis. */
+  const SMUGGLED = 'Ivan Petrov 0888123456 HIV+';
+  const MARKER = GovernedChangeSystem.UNKNOWN_FIELD;
+
+  /** The row a create of `after` plans, the decoder's names as they come. */
+  const createdRow = (
+    collection: GovernedDocCollection,
+    after: Record<string, unknown>,
+  ) =>
+    unwrapOk(
+      GovernedChangeSystem.plan(
+        changeOf(collection, {
+          beforeExists: false,
+          fields: GovernedChangeSystem.changedFields(null, after),
+        }),
+        AT,
+      ),
+    )?.row;
+
+  it('a note created with a smuggled key: the entity’s names kept, the smuggled one the marker — its text nowhere', () => {
+    const row = createdRow(GovernedCollection.AppointmentNotes, {
+      text: 'Fade',
+      authorUserId: 'u-ana',
+      writtenAtUtcMs: 1,
+      [SMUGGLED]: true,
+    });
+    expect(row).toMatchObject({
+      auditAction: 'GOVERNED_DOC_CREATED',
+      governedFields: [MARKER, 'authorUserId', 'text', 'writtenAtUtcMs'],
+    });
+    expect(JSON.stringify(row)).not.toContain('Ivan Petrov');
+  });
+
+  it('a photo created with a smuggled key: every declared name kept, one marker', () => {
+    const known = KNOWN.get(GovernedCollection.AppointmentPhotos) ?? [];
+    const after = Object.fromEntries([
+      [SMUGGLED, 'x'],
+      ...known.map((name) => [name, null]),
+    ]);
+    const row = createdRow(GovernedCollection.AppointmentPhotos, after);
+    expect(row).toMatchObject({ governedFields: [MARKER, ...known] });
+    expect(JSON.stringify(row)).not.toContain('Ivan Petrov');
+  });
+
+  it('a schedule exception that changed ONLY smuggled keys is still audited — with the marker alone, once', () => {
+    const plan = unwrapOk(
+      GovernedChangeSystem.plan(
+        changeOf(GovernedCollection.ScheduleExceptions, {
+          fields: GovernedChangeSystem.changedFields(
+            { exceptionEffect: 'CLOSED', [SMUGGLED]: 1, other: 1 },
+            { exceptionEffect: 'CLOSED', [SMUGGLED]: 2, other: 2 },
+          ),
+        }),
+        AT,
+      ),
+    );
+    expect(plan?.row.auditAction).toBe('GOVERNED_DOC_UPDATED');
+    expect(plan?.row).toMatchObject({ governedFields: [MARKER] });
+    expect(JSON.stringify(plan)).not.toContain('Ivan Petrov');
+  });
+
+  it('a collection whose names are the schema’s (Admin SDK only, or a key-pinned rule) keeps them as they are', () => {
+    for (const collection of DOCS) {
+      if (KNOWN.has(collection)) continue;
+      expect(
+        GovernedChangeSystem.namedFields(collection, ['name', 'priceCents']),
+      ).toEqual(['name', 'priceCents']);
+    }
+  });
+
+  it('keeps every declared name of the three and nothing else — a prototype name included', () => {
+    for (const [collection, known] of KNOWN) {
+      expect(GovernedChangeSystem.namedFields(collection, known)).toEqual(
+        known,
+      );
+      expect(
+        GovernedChangeSystem.namedFields(collection, [
+          '__proto__',
+          'constructor',
+          'toString',
+        ]),
+      ).toEqual([MARKER]);
+    }
+  });
+
+  it('for any caller key outside the table, the row never carries it (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...BROWSER_WRITTEN),
+        fc.string({ maxLength: 40 }),
+        fc.boolean(),
+        (collection, raw, deleted) => {
+          const key = `caller:${raw}`;
+          const known = KNOWN.get(collection) ?? [];
+          const side = { [known[0] as string]: 1, [key]: 1 };
+          const plan = unwrapOk(
+            GovernedChangeSystem.plan(
+              changeOf(collection, {
+                beforeExists: true,
+                afterExists: !deleted,
+                fields: GovernedChangeSystem.changedFields(
+                  side,
+                  deleted ? null : { [known[0] as string]: 2 },
+                ),
+              }),
+              AT,
+            ),
+          );
+          expect(plan?.row).toMatchObject({
+            governedFields: [MARKER, known[0]],
+          });
+          expect(JSON.stringify(plan)).not.toContain('caller:');
+        },
+      ),
+    );
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...BROWSER_WRITTEN),
+        fc.array(fc.string({ maxLength: 12 }), { maxLength: 6 }),
+        (collection, names) => {
+          const known = KNOWN.get(collection) ?? [];
+          for (const name of GovernedChangeSystem.namedFields(
+            collection,
+            names,
+          )) {
+            expect(name === MARKER || known.includes(name)).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const fields = deepFreeze([SMUGGLED, 'text', 'authorUserId']);
+    const once = GovernedChangeSystem.namedFields(
+      GovernedCollection.AppointmentNotes,
+      fields,
+    );
+    expect(
+      GovernedChangeSystem.namedFields(
+        GovernedCollection.AppointmentNotes,
+        fields,
+      ),
+    ).toEqual(once);
+    expect(once).toEqual([MARKER, 'authorUserId', 'text']);
+    expect(fields).toEqual([SMUGGLED, 'text', 'authorUserId']);
   });
 });
