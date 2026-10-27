@@ -10,7 +10,7 @@
     "loyalty.selfView": false,
     "client.merge": false,
     "support.bulk": false,
-    "client.privacy": false,
+    "client.privacy": true,
     "referrals.invitations": false,
     "discounts.grants": false
   },

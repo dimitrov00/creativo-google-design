@@ -502,6 +502,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.impersonationEnded(ImpersonationSessionId.of('imp-1'))).toBe(
       'impersonation-end:imp-1',
     );
+    expect(keys.clientExported(op)).toBe('export:op-1');
   });
 
   it('keeps two acts apart however close in time — and a seat act apart from the party act', () => {
@@ -515,6 +516,10 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.tip(a, SeatId.of('s1'))).not.toBe(keys.tip(a, SeatId.of('s2')));
     // The arrival pair keeps its two verb words: an undo is its own act.
     expect(keys.arrived(a)).not.toBe(keys.unarrived(a));
+    // Two exports are two acts; an export never shares a key with another verb of its id.
+    expect(keys.clientExported(a)).not.toBe(keys.clientExported(b));
+    expect(keys.clientExported(a)).not.toBe(keys.cancel(a));
+    expect(keys.clientExported(a)).not.toBe(keys.staffEdit(a));
   });
 
   it('keys the sign-in rows by state, never by the caller’s operation id (Phase 3 WS-B, P3-RU-7)', () => {

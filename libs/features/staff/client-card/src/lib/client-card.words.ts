@@ -986,6 +986,22 @@ export interface ClientCardWords {
   };
   readonly remove: string;
   readonly exitsLabel: string;
+  /**
+   * L — «Лични данни»: an admin's data-subject acts (audit-hardening
+   * Phase 3). A refusal's words are `errors.<errorCode>`, worded by the
+   * presenter through `wordPipelineError`, never held here.
+   */
+  readonly privacy: ClientPrivacyWords;
+}
+
+/** L — the privacy group's own words (`clientCard.privacy.*`). */
+export interface ClientPrivacyWords {
+  /** «Лични данни» — the group's name for a reader. */
+  readonly groupLabel: string;
+  /** «Изтегли данните». */
+  readonly export: string;
+  /** «Файлът е изтеглен.» */
+  readonly exportDone: string;
 }
 
 /**
@@ -1622,5 +1638,10 @@ export function clientCardWordsOf(
     },
     remove: t('staff.visit.removeClient'),
     exitsLabel: t('staff.visit.client.actions'),
+    privacy: {
+      groupLabel: t('clientCard.privacy.groupLabel'),
+      export: t('clientCard.privacy.export'),
+      exportDone: t('clientCard.privacy.exportDone'),
+    },
   };
 }

@@ -1106,6 +1106,23 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
   });
 });
 
+describe('the privacy group (audit-hardening Phase 3, WS-C)', () => {
+  it('words «Лични данни» and its export in bg and en', () => {
+    const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
+    const en = clientCardWordsOf(translatorOf('en'), 'en');
+    expect(bg.privacy).toEqual({
+      groupLabel: 'Лични данни',
+      export: 'Изтегли данните',
+      exportDone: 'Файлът е изтеглен.',
+    });
+    expect(en.privacy).toEqual({
+      groupLabel: 'Personal data',
+      export: 'Download the data',
+      exportDone: 'The file is downloaded.',
+    });
+  });
+});
+
 describe('the gaps K1b fills (lead ruling G1-6)', () => {
   const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
   const en = clientCardWordsOf(translatorOf('en'), 'en');

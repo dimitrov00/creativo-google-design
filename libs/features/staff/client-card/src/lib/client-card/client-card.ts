@@ -1,4 +1,4 @@
-import { NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -7,7 +7,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import type { VisitLeg } from '@core/components';
+import type { ClientPrivacyCall, VisitLeg } from '@core/components';
 import type { CouponGrantId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
@@ -108,7 +108,9 @@ const PLACEHOLDER = {
  * order for the last visit, the next one and a waiting request; the
  * loyalty as ONE card and ONE button to the wallet; the medals as three
  * named rings in a grid with the cue and the records line; the photos as a
- * grid of three, never a rail; one list group, the exits.
+ * grid of three, never a rail; one list group, the exits. After them, for
+ * the shop's admin only, a second group: the person's data (L), whose
+ * «Изтегли данните» saves the bundle the server answers as a file.
  *
  * A module is ABSENT when its slice is (a flag off, no account, a guest,
  * nothing to show); while its read runs it holds a placeholder shaped like
@@ -117,9 +119,10 @@ const PLACEHOLDER = {
  * the head. A failed profile is the whole card's failure: the head, one
  * notice, the verbs and the exits.
  *
- * The page computes nothing: the store's `hero` and `overview` are already
- * worded. It writes nothing either — every act is an output the visit
- * editor turns into a push, a draft change or a pop.
+ * The page computes nothing: the store's `hero`, `overview` and `privacy`
+ * are already worded. It writes nothing either — every act is an output the
+ * visit editor turns into a push, a draft change or a pop, except the
+ * admin's export, which the store asks the server for and this page saves.
  */
 @Component({
   selector: 'lib-client-card',
@@ -195,9 +198,12 @@ export class ClientCard {
   readonly removeClient = output<void>();
 
   private readonly store = inject(ClientCardStore);
+  private readonly document = inject(DOCUMENT);
   protected readonly words = this.store.words;
   protected readonly hero = this.store.hero;
   protected readonly overview = this.store.overview;
+  /** L — the admin's privacy block; `null` is no block. */
+  protected readonly privacy = this.store.privacy;
   protected readonly online = this.store.online;
 
   protected readonly placeholder = PLACEHOLDER;
@@ -317,6 +323,31 @@ export class ClientCard {
   /** «Опитай пак» under one module. */
   protected retry(region: ClientCardRegion): void {
     this.store.retry(region);
+  }
+
+  /** L «Изтегли данните»: the store asks for the bundle; a bundle that came back is saved. */
+  protected async exportData(): Promise<void> {
+    const answer = await this.store.exportData();
+    if (answer !== null) this.save(answer);
+  }
+
+  /**
+   * The bundle as a file, byte for byte as the server decided it: a JSON
+   * blob behind a link clicked once, named by the record's id — no clock
+   * and no zone in the name.
+   */
+  private save(answer: ClientPrivacyCall.Exported): void {
+    const blob = new Blob([answer.exportJson], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = this.document.createElement('a');
+    link.href = url;
+    link.download = `creativo-client-${answer.exportedCustomerId}.json`;
+    link.click();
+    // Freed on the next turn of the loop — revoking synchronously races the
+    // click the browser has not finished handling.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   /** «Опитай пак» under the head: every failed module again — or the whole card. */

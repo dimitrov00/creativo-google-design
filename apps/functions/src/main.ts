@@ -28,7 +28,11 @@ import {
   type NowUtcMs,
   type TriggerFailurePorts,
 } from '@core/ports';
-import { GovernedChangeSystem, LogDigestSystem } from '@core/systems';
+import {
+  GovernedChangeSystem,
+  LogDigestSystem,
+  StoredDocumentSystem,
+} from '@core/systems';
 import {
   auditDocumentChange,
   bookAppointment,
@@ -38,6 +42,7 @@ import {
   continuePolicyRecompute,
   editAppointment,
   endImpersonation as endImpersonationPipeline,
+  exportClientData as exportClientDataPipeline,
   markArrival,
   matchWaitlist,
   projectClientStats,
@@ -69,7 +74,9 @@ import {
   logDigestPorts,
   walkInKeyPorts,
 } from './adapters/crypto.adapter';
+import { firestoreAuditReadPorts } from './adapters/firestore-audit-read.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
+import { firestorePrivacyPorts } from './adapters/firestore-privacy.adapter';
 import { logRefusal } from './adapters/firestore-tx.adapter';
 import { paramFlagsPorts } from './adapters/flags.adapter';
 import {
@@ -161,6 +168,11 @@ import {
   runBackfillRefusal,
 } from './wire/ops.wire';
 import {
+  decodeExportClientData,
+  encodeExportClientDataAnswer,
+  exportClientDataRefusal,
+} from './wire/privacy.wire';
+import {
   CapacitySource,
   decodeCapacityEvent,
   decodeDispatchProjectionsEvent,
@@ -204,7 +216,8 @@ import { settle, type WireRequest } from './wire/wire-read';
  * below), which no export sets a region, secret or App Check on — except
  * the walk-in key the two callables that mint walk-in records bind
  * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
- * their ids are keyed by, OR-26), the log digest key every callable but
+ * their ids are keyed by, OR-26) and the admin privacy callables that
+ * recognise them (`exportClientData`, P3-RU-36), the log digest key every callable but
  * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
  * line's keyed `inputDigest`), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
@@ -229,7 +242,10 @@ import { settle, type WireRequest } from './wire/wire-read';
  * governed-collection audit triggers — new, each on its own
  * `<collection>/{docId}` with the retry flag on — built, with
  * `auditProfileChanges` (its name kept, its path param now `{docId}`), by
- * the ONE `documentAuditTrigger` helper: 47 exports.
+ * the ONE `documentAuditTrigger` helper: 47 exports. Audit-hardening
+ * Phase 3 (WS-C, P3-DEP-9) added `exportClientData`, the admin's
+ * data-subject export — bound to the walk-in key it recognises a walk-in's
+ * contact by (P3-RU-36) and the log digest key: 48 exports.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -378,14 +394,19 @@ const streakPorts = once(() => {
 /**
  * The key a walk-in's record id is keyed by (OR-26, `WalkInKeyPorts`): a
  * Secret Manager secret, bound to the two callables that mint walk-in
- * records and to no other export (`WALK_IN_SECRETS`). A deployment holds its
+ * records and the admin privacy callables that recognise them (P3-RU-36),
+ * and to no other export (`WALK_IN_SECRETS`). A deployment holds its
  * own (`firebase functions:secrets:set WALKIN_ID_KEY`, the runbook's step
  * 4); the emulator reads the fixed test key `tools/flags/write-functions-env.mjs`
  * writes beside the build (`.secret.local`, never deployed).
  */
 const WALKIN_ID_KEY = defineSecret('WALKIN_ID_KEY');
 
-/** The options of the two callables that mint walk-in records: the walk-in key and the log digest key, bound. */
+/**
+ * The options of the two callables that mint walk-in records and the admin
+ * privacy callables that recognise them: the walk-in key and the log
+ * digest key, bound.
+ */
 const WALK_IN_SECRETS = { secrets: [WALKIN_ID_KEY, LOG_DIGEST_KEY] };
 
 /**
@@ -408,6 +429,27 @@ const walkInPorts = once(() => ({
   ...walkInKeyPorts(walkInKey),
 }));
 
+/**
+ * The admin privacy callables' ports (`exportClientData`, audit-hardening
+ * Phase 3 WS-C): the server ports (the commit, the clock, the digests, the
+ * caller's stored roles, the telemetry), the keyed walk-in digest a visit's
+ * contact is recognised by (P3-RU-36), the person's footprint reads — the
+ * guarded ones over the stored-document guard and the telemetry log
+ * (OR-33) — the audit timelines and the build-time flags (`client.privacy`
+ * gates them, P3-RU-14). Built on first use; handed to no other export.
+ */
+const privacyPorts = once(() => ({
+  ...serverPorts(),
+  ...walkInKeyPorts(walkInKey),
+  ...firestorePrivacyPorts(
+    adminFirestore(),
+    StoredDocumentSystem.guardOf,
+    telemetry.log,
+  ),
+  ...firestoreAuditReadPorts(adminFirestore()),
+  ...paramFlagsPorts(),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -417,6 +459,7 @@ const root = {
   walkIns: walkInPorts,
   identity: identityPorts,
   streak: streakPorts,
+  privacy: privacyPorts,
 } as const;
 
 /** How one callable is wired: its name, its coded failure, its timeout. */
@@ -1098,6 +1141,26 @@ export const redeemInvitation = onCall(
     (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
     encodeRedeemInvitationAnswer,
     redeemInvitationRefusal,
+  ),
+);
+
+// ── The admin's data-subject requests (audit-hardening Phase 3) ───────────
+
+/**
+ * An admin exports one client's data (WS-C, GDPR Art. 15 / 20): ONE
+ * canonical JSON bundle of every document holding the person's data, and
+ * one `PRIVACY_CLIENT_EXPORTED` row. The larger instance: the bundle may
+ * reach its 4 MiB cap.
+ */
+export const exportClientData = onCall(
+  { memory: LARGE_MEMORY, ...WALK_IN_SECRETS },
+  wiredCallable(
+    plain(Callables.ExportClientData, null),
+    root.privacy,
+    decodeExportClientData,
+    (ports, cmd) => exportClientDataPipeline(ports)(cmd),
+    encodeExportClientDataAnswer,
+    exportClientDataRefusal,
   ),
 );
 

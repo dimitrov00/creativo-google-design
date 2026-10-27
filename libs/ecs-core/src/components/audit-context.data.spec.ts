@@ -63,7 +63,7 @@ describe('AuditAction', () => {
     );
     for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(
-        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY)_[A-Z_]+$/,
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY|PRIVACY)_[A-Z_]+$/,
       );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -93,6 +93,10 @@ describe('AuditAction', () => {
       'IDENTITY_SESSION_ISSUED',
       'IDENTITY_REGISTRATION_COMPLETED',
     ]);
+    // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10).
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.startsWith('PRIVACY_')),
+    ).toEqual(['PRIVACY_CLIENT_EXPORTED']);
   });
 
   it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
@@ -108,7 +112,8 @@ describe('AuditAction', () => {
       | typeof AuditAction.IdentityOtpVerified
       | typeof AuditAction.IdentityOtpRefused
       | typeof AuditAction.IdentitySessionIssued
-      | typeof AuditAction.IdentityRegistrationCompleted;
+      | typeof AuditAction.IdentityRegistrationCompleted
+      | typeof AuditAction.PrivacyClientExported;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -469,6 +474,19 @@ describe('AuditContext — one flat variant per verb family, every field present
         registrationIdentifierChannel: 'PHONE',
       },
     );
+  });
+
+  it('the export row — counts only, never the bundle or a value (Phase 3 WS-C)', () => {
+    const context = AuditContext.clientExported(42, 7, 18_304);
+    expect(context).toEqual({
+      auditAction: 'PRIVACY_CLIENT_EXPORTED',
+      exportDocumentCount: 42,
+      exportAuditRowCount: 7,
+      exportByteCount: 18_304,
+    });
+    for (const [field, value] of Object.entries(context)) {
+      if (field !== 'auditAction') expect(typeof value, field).toBe('number');
+    }
   });
 });
 

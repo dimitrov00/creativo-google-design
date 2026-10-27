@@ -93,6 +93,11 @@ function adminApp() {
  * as E.164, and the search keys `SearchFieldsSystem` derives — so the web's
  * profile reads (`ProfilePorts`) and the staff search see exactly what
  * production stores. A refused phone or birth date is a broken spec seed.
+ *
+ * `roles` is the STORED role set, `[client]` unless a spec says otherwise:
+ * `signInAs` puts roles in the token's claims only, and a pipeline that
+ * re-reads the caller's stored roles (the admin's privacy callables,
+ * audit-hardening Phase 3 P3-RU-13) judges by this field.
  */
 export async function seedUserProfile(
   uid: string,
@@ -101,6 +106,7 @@ export async function seedUserProfile(
     lastName?: string;
     phone?: string;
     birthDate?: string | null;
+    roles?: readonly Role[];
   } = {},
 ): Promise<void> {
   const firstName = overrides.firstName ?? 'Ada';
@@ -118,7 +124,7 @@ export async function seedUserProfile(
     phone,
     firstName,
     lastName,
-    roles: [Role.Client],
+    roles: overrides.roles ?? [Role.Client],
     ...AccountLifecycle.active(),
     email: null,
     birthDate,

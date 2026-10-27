@@ -698,6 +698,21 @@
       "indexes": []
     },
     {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportDocumentCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportAuditRowCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "exportByteCount",
+      "indexes": []
+    },
+    {
       "collectionGroup": "loyaltyAccounts",
       "fieldPath": "streaks",
       "indexes": []

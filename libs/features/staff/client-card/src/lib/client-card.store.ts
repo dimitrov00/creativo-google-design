@@ -30,6 +30,7 @@ import {
   type AppointmentId,
   AppointmentPhotoId,
   BadgeSeriesId,
+  ClientOperationId,
   type CouponId,
   CustomerId,
   type LocalDate,
@@ -39,8 +40,14 @@ import {
   UtcEpochMs,
   type UserId,
 } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
 import {
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
+import type { IdPorts } from '@core/ports';
+import {
+  type ClientPrivacyCall,
   FlagName,
   JournalFeed,
   Registration,
@@ -65,11 +72,13 @@ import {
   APPOINTMENT_READ_PORTS,
   AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
+  CLIENT_PRIVACY_PORTS,
   CLIENT_STATS_READ_PORTS,
   CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
   FLAGS_PORTS,
+  ID_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
@@ -109,9 +118,11 @@ import {
 import {
   type AchievementsData,
   type BirthdayVm,
+  ClientExportPhase,
   type ClientHeroVm,
   type ClientOverviewVm,
   type ClientPhotoVm,
+  type ClientPrivacyVm,
   type DetailActionVm,
   type LedgerPageVm,
   type RecordsPageVm,
@@ -157,6 +168,10 @@ import {
 } from './loyalty.presenter';
 import { detailActionOf } from './medal-detail.presenter';
 import { CHIP_ALL } from './medals.presenter';
+import {
+  type ClientExportState,
+  clientPrivacyVm,
+} from './client-privacy.presenter';
 import { recordsPageVm } from './records.presenter';
 import {
   visitsPageBlank,
@@ -164,7 +179,10 @@ import {
   visitsPaging,
 } from './visits-page.presenter';
 import { WALLET_ACTIVITY_READ, walletVm } from './wallet.presenter';
-import { loadedLanguage } from '@creativo/infrastructure/i18n';
+import {
+  type TranslateCode,
+  loadedLanguage,
+} from '@creativo/infrastructure/i18n';
 
 /** Every read settles within this, or counts as failed (§5.2.1). */
 export const CLIENT_CARD_READ_TIMEOUT_MS = 10_000;
@@ -285,6 +303,11 @@ const EMPTY_OVERVIEW: ClientOverviewVm = {
  * service (contract delta S1-2).
  */
 const NO_COVERS: ReadonlyMap<string, string> = new Map();
+
+/** No export asked (or the last one forgotten with its person). */
+const EXPORT_IDLE: ClientExportState = {
+  clientExportPhase: ClientExportPhase.Idle,
+};
 
 const LOADING = LoadSlice.loading;
 const FAILED = LoadSlice.failed;
@@ -409,6 +432,19 @@ export class ClientCardStore {
       tiers: flags.flagOn(FlagName.LoyaltyTiers),
     };
   })();
+  /** `client.privacy`, read once beside the loyalty flags: off, the privacy block is absent. */
+  private readonly privacyOn = inject(FLAGS_PORTS).flagOn(
+    FlagName.ClientPrivacy,
+  );
+  /**
+   * An admin's data-subject callables (audit-hardening Phase 3, WS-C) —
+   * optional: unbound, the privacy block is absent.
+   */
+  private readonly privacyPorts = inject(CLIENT_PRIVACY_PORTS, {
+    optional: true,
+  });
+  /** Mints each privacy act's `operationId` (WS-4.1); unbound, the privacy block is absent. */
+  private readonly ids = inject(ID_PORTS, { optional: true });
 
   /** Bumped by every `open`: an answer for an older one is dropped. */
   private generation = 0;
@@ -475,6 +511,15 @@ export class ClientCardStore {
   private readonly _ledgerPage = signal<LedgerState | null>(null);
   /** The chip «Постижения» is open on (§2.3.3): the store's, so ‹ from a medal's detail returns to it. */
   private readonly _medalsChip = signal<string>(CHIP_ALL);
+  /** Where the admin's export of this person stands (L). */
+  private readonly _export = signal<ClientExportState>(EXPORT_IDLE);
+  /**
+   * The export act not yet answered with a bundle — ONE `ClientPrivacyCall`,
+   * minted on its first tap and sent again verbatim by a retry of the same
+   * act (the server answers a replay of one operation id as the first call);
+   * `null` once a bundle came back, and for another person.
+   */
+  private exportCall: ClientPrivacyCall | null = null;
 
   /** The person the card is about; `null` before the first `open`. */
   readonly subject = this._subject.asReadonly();
@@ -513,6 +558,23 @@ export class ClientCardStore {
       ? null
       : clientCardWordsOf(translate, lang);
   });
+
+  /**
+   * `errors.<code>` in the loaded language — the code itself when the
+   * catalogue has no copy (`translateCodedError`'s contract) — for the
+   * privacy block's refusal words; `null` until the catalogue has loaded.
+   */
+  private readonly translateCode: Signal<TranslateCode | null> = computed(
+    () => {
+      const lang = this.loadedLang();
+      if (lang === null) return null;
+      return (code, params) => {
+        const key = `errors.${code}`;
+        const worded = this.transloco.translate(key, params, lang);
+        return worded === key ? code : worded;
+      };
+    },
+  );
 
   private readonly user = computed(() => LoadSlice.dataOf(this._profile()));
   private readonly stats = computed(() => LoadSlice.dataOf(this._stats()));
@@ -1481,10 +1543,105 @@ export class ClientCardStore {
       this._nowUtcMs.set(this.readNow());
       this.generation += 1;
       if (!same) this.reset(subject);
+      // A re-open of the same person forgets the last export's line (an act
+      // still on its way keeps it); a refused act keeps its call for a retry.
+      else if (this._export().clientExportPhase !== ClientExportPhase.Running) {
+        this._export.set(EXPORT_IDLE);
+      }
       if (subject.userId !== null) {
         void this.loadAll(this.generation, subject.userId);
       }
     });
+  }
+
+  /**
+   * L «Лични данни» (audit-hardening Phase 3, WS-C) — the admin's privacy
+   * block, a separate block after the exits (never part of `overview`).
+   * `null` — absent — without the callables' port or the id source, with
+   * `client.privacy` off, for a viewer who is not the shop's admin
+   * (`Roles.handlesClientPrivacy`: not a barber, a receptionist or the
+   * sysadmin), before the client record is known (a guest has none), and
+   * offline. A gone visit keeps it: the export writes nothing to the visit.
+   */
+  readonly privacy: Signal<ClientPrivacyVm | null> = computed(() => {
+    const words = this.words();
+    const translateCode = this.translateCode();
+    if (
+      this.privacyPorts === null ||
+      this.ids === null ||
+      !this.privacyOn ||
+      words === null ||
+      translateCode === null ||
+      this.customerId() === null ||
+      !this._online() ||
+      !Roles.handlesClientPrivacy(this._context()?.viewer?.roles ?? [])
+    ) {
+      return null;
+    }
+    return clientPrivacyVm({
+      words: words.privacy,
+      exportState: this._export(),
+      translateCode,
+    });
+  });
+
+  /**
+   * «Изтегли данните»: `exportClientData` for the person's record, under
+   * ONE operation id per act — minted on the act's first tap and kept for
+   * its retry, so a replay answers what the first call did. Answers the
+   * bundle for the page to save (the DOM is the component's), or `null`:
+   * refused (its words on the block), no block, an export already on its
+   * way, or the person changed while it ran (the answer is dropped).
+   */
+  async exportData(): Promise<ClientPrivacyCall.Exported | null> {
+    const ports = this.privacyPorts;
+    const ids = this.ids;
+    const customerId = untracked(this.customerId);
+    if (
+      ports === null ||
+      ids === null ||
+      customerId === null ||
+      untracked(this.privacy) === null ||
+      untracked(this._export).clientExportPhase === ClientExportPhase.Running
+    ) {
+      return null;
+    }
+    const call = this.exportCallFor(customerId, ids);
+    if (call === null) {
+      // A minted name the wire cannot carry: refused before anything goes out.
+      this._export.set({
+        clientExportPhase: ClientExportPhase.Refused,
+        exportError: PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      });
+      return null;
+    }
+    this._export.set({ clientExportPhase: ClientExportPhase.Running });
+    const answer = await ports.exportClientData(call);
+    if (this.exportCall !== call) return null;
+    if (!answer.ok) {
+      this._export.set({
+        clientExportPhase: ClientExportPhase.Refused,
+        exportError: answer.error,
+      });
+      return null;
+    }
+    this.exportCall = null;
+    this._export.set({ clientExportPhase: ClientExportPhase.Done });
+    return answer.value;
+  }
+
+  /** The act's call: the kept one for this record, else one under a freshly minted id. */
+  private exportCallFor(
+    customerId: CustomerId,
+    ids: IdPorts,
+  ): ClientPrivacyCall | null {
+    const kept = this.exportCall;
+    if (kept !== null && kept.customerId === customerId) return kept;
+    const operationId = ClientOperationId.parse(ids.nextId());
+    this.exportCall = operationId.ok
+      ? { customerId, operationId: operationId.value }
+      : null;
+    return this.exportCall;
   }
 
   /** «Покажи още»: the next page of the history (a no-op offline, at the end, or while one is loading). */
@@ -1771,6 +1928,8 @@ export class ClientCardStore {
     this.waitlistSubscription = null;
     this._customerId.set(undefined);
     this._filter.set(VisitFilter.All);
+    this.exportCall = null;
+    this._export.set(EXPORT_IDLE);
     this._avatar.set(null);
     this._money.set(null);
     const account = subject.userId !== null;

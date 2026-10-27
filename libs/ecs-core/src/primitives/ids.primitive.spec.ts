@@ -264,6 +264,16 @@ describe('AuditResourceId — the one id that may hold a slash', () => {
     expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
   });
 
+  it('names a client record by its collection path — the restated name is the registry’s (Phase 3 WS-C)', () => {
+    const record = CustomerId.forUser(UserId.of('u_42'), fixtureHash);
+    const resource = AuditResourceId.forCustomer(record);
+    expect(resource).toBe(`${Collections.Customers}/${record}`);
+    expect(resource).toBe(`customers/${record}`);
+    expect(unwrapOk(AuditResourceId.parse(resource))).toBe(resource);
+    // A record's row never reads as the account's: two spellings, two resources.
+    expect(resource).not.toBe(AuditResourceId.forUser(UserId.of('u_42')));
+  });
+
   it('parse takes at most one slash', () => {
     expect(unwrapOk(AuditResourceId.parse('users/u_42'))).toBe('users/u_42');
     expect(unwrapOk(AuditResourceId.parse('apt_1'))).toBe('apt_1');

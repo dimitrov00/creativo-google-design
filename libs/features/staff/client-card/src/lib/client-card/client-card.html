@@ -599,4 +599,41 @@
     </button>
   </li>
 </ul>
+}
+
+<!-- L · PERSONAL DATA — the shop's admin only (client.privacy on, the record
+     known, online): a second group after the exits, apart from them. It
+     stays on a gone visit — it writes nothing to the visit. The line under
+     it is a STATUS, announced when it appears: the file saved, or why not. -->
+@if (privacy(); as block) {
+<ui-stack uiSpacing="compact" data-testid="client-privacy">
+  <ul uiListGroup [attr.aria-label]="block.groupLabel">
+    <li>
+      <button
+        uiListRow
+        uiSize="large"
+        type="button"
+        [uiInteractive]="true"
+        data-testid="client-export"
+        (click)="exportData()"
+      >
+        <span uiLeading>
+          <ui-icon uiName="client.export" aria-hidden="true" />
+        </span>
+        {{ block.exportLabel }}
+      </button>
+    </li>
+  </ul>
+  @if (block.exportStatus; as status) {
+  <p
+    uiText
+    uiFont="footnote"
+    uiForegroundStyle="secondary"
+    role="status"
+    data-testid="client-export-status"
+  >
+    {{ status }}
+  </p>
+  }
+</ui-stack>
 } }

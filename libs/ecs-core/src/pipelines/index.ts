@@ -9,6 +9,7 @@ export * from './customer-records.pipeline';
 export * from './edit-appointment.pipeline';
 export * from './end-impersonation.pipeline';
 export * from './ensure-session-ready.pipeline';
+export * from './export-client-data.pipeline';
 export * from './mark-arrival.pipeline';
 export * from './match-waitlist.pipeline';
 export * from './program-content.pipeline';

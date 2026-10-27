@@ -600,6 +600,15 @@ export const AuditSystem = {
     registration(userId: UserId): string {
       return `registration:${userId}`;
     },
+    /**
+     * An admin's data-subject export (audit-hardening Phase 3 WS-C): its
+     * operation id — the act the admin minted once and keeps for a retry,
+     * so a replay of the same export plans the same row id (and the
+     * pipeline's probe read finds it), while a new export is a new row.
+     */
+    clientExported(operationId: OperationId): string {
+      return `export:${operationId}`;
+    },
   },
 
   /**

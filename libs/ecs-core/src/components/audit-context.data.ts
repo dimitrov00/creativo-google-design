@@ -48,7 +48,8 @@ import type { TransitionDelta } from './transition-delta.data';
  * the governance flip, which the legacy shims converted. A new audited act
  * is a deliberate code change here — the impersonation and governed-document
  * verbs were added by audit-hardening WS-3 (DEP-17), the sign-in verbs
- * (`IDENTITY_*`) by audit-hardening Phase 3 (P3-DEP-7).
+ * (`IDENTITY_*`) by audit-hardening Phase 3 (P3-DEP-7), the data-subject
+ * verbs (`PRIVACY_*`) by its WS-C (P3-DEP-10).
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',
@@ -104,6 +105,8 @@ export const AuditAction = {
   IdentitySessionIssued: 'IDENTITY_SESSION_ISSUED',
   /** An account's first registration completed (`completeRegistration`). */
   IdentityRegistrationCompleted: 'IDENTITY_REGISTRATION_COMPLETED',
+  /** An admin exported a client's data (`exportClientData`, Phase 3 WS-C) — counts only. */
+  PrivacyClientExported: 'PRIVACY_CLIENT_EXPORTED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -154,7 +157,8 @@ export type AuditContext =
   | AuditContext.OtpVerified
   | AuditContext.OtpRefused
   | AuditContext.SessionIssued
-  | AuditContext.RegistrationCompleted;
+  | AuditContext.RegistrationCompleted
+  | AuditContext.ClientExported;
 
 /** A copy of a nullable id list — `null` stays `null`. */
 function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
@@ -442,6 +446,22 @@ export const AuditContext = {
       registrationIdentifierChannel,
     };
   },
+  /**
+   * A client's data exported (Phase 3 WS-C): how many documents, audit rows
+   * and bytes the bundle held — never the bundle, a section or a value.
+   */
+  clientExported(
+    exportDocumentCount: number,
+    exportAuditRowCount: number,
+    exportByteCount: number,
+  ): AuditContext.ClientExported {
+    return {
+      auditAction: AuditAction.PrivacyClientExported,
+      exportDocumentCount,
+      exportAuditRowCount,
+      exportByteCount,
+    };
+  },
 
   /** The edge guard for a stored or submitted verb. */
   isAuditAction(value: unknown): value is AuditAction {
@@ -629,5 +649,20 @@ export namespace AuditContext {
   export type RegistrationCompleted = {
     readonly auditAction: typeof AuditAction.IdentityRegistrationCompleted;
     readonly registrationIdentifierChannel: IdentifierChannel;
+  };
+  /**
+   * An admin's data-subject export (audit-hardening Phase 3 WS-C, P3-RU-15):
+   * the resource is `customers/<id>`, the target the client record, the
+   * actor the admin. Counts only — never the bundle, a section or any value
+   * of the person (R36 / T5); the row is never inside its own bundle.
+   */
+  export type ClientExported = {
+    readonly auditAction: typeof AuditAction.PrivacyClientExported;
+    /** The documents in the bundle, its audit rows included. */
+    readonly exportDocumentCount: number;
+    /** Of those, the audit rows that target the person. */
+    readonly exportAuditRowCount: number;
+    /** The UTF-8 bytes of the bundle's canonical JSON. */
+    readonly exportByteCount: number;
   };
 }

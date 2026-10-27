@@ -333,6 +333,11 @@ export const UI_ICON_REGISTRY = {
    *  `cake` with `loyalty.badge.birthday`, the birthday MEDAL's face: that
    *  one is an achievement, this one is a day. */
   'client.birthday': 'cake',
+  /** An admin's download of everything the shop holds about the person
+   *  (GDPR Art. 15 / 20, the card's «Лични данни» group). Shares
+   *  `receipt_long` with `loyalty.ledger` (the points activity): both are a
+   *  record read out line by line; the intents differ. */
+  'client.export': 'receipt_long',
   /* `client.visits` is an ALIAS of `account.reservations` — see
      UI_ICON_ALIASES. */
 

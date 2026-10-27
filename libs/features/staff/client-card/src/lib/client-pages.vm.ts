@@ -652,6 +652,35 @@ export interface ClientOverviewVm {
   readonly failed: readonly ClientCardRegion[];
 }
 
+// ── L «Лични данни»: an admin's data-subject acts (audit-hardening Phase 3) ──
+
+/**
+ * Where the card's export of the person's data stands: none asked, on its
+ * way, saved as a file, or refused. Values: SCREAMING tags, the store's.
+ */
+export const ClientExportPhase = {
+  Idle: 'IDLE',
+  Running: 'RUNNING',
+  Done: 'DONE',
+  Refused: 'REFUSED',
+} as const;
+export type ClientExportPhase =
+  (typeof ClientExportPhase)[keyof typeof ClientExportPhase];
+
+/**
+ * L — the separate block after the exits (K), never part of
+ * `ClientOverviewVm`: present only for an admin with `client.privacy` on,
+ * a known client record and the network; `null` otherwise.
+ */
+export interface ClientPrivacyVm {
+  /** «Лични данни» — the group's name for a reader. */
+  readonly groupLabel: string;
+  /** «Изтегли данните». */
+  readonly exportLabel: string;
+  /** «Файлът е изтеглен.» or a refusal's words; `null` while idle or on its way. */
+  readonly exportStatus: string | null;
+}
+
 // ── «Лоялност»: the wallet (§2.2) ───────────────────────────────────────
 
 /** WA — the loyalty pass: the page's one orange slab, as `ui-pass-card` takes it. */

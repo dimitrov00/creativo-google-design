@@ -5,6 +5,7 @@ export * from './deep-freeze';
 export * from './identity.fixtures';
 export * from './loyalty.fixtures';
 export * from './port-doubles';
+export * from './privacy-doubles';
 export * from './programs.fixtures';
 export * from './scheduling.port.contract';
 export * from './streak-publish-gateway.double';

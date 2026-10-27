@@ -38,6 +38,7 @@ describe('LogEvent', () => {
       PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
       PolicyRecomputeSweepStarted:
         'policy recompute started by the sweep: a dropped start',
+      PrivacyClientExported: 'privacy.client_exported',
       ProfileUpdateRefused: 'profile.update.refused',
       RegistrationDisplayNameFailed: 'registration.display_name_failed',
       RhythmRuleWriteFailed: 'rhythm rule write failed',
@@ -75,6 +76,12 @@ describe('LogEvent', () => {
     expect(LogEvent.TriggerFailureNotRecorded).not.toBe(
       LogEvent.TriggerAttemptFailed,
     );
+  });
+
+  it('spells the Phase 3 privacy value dotted and domain-prefixed (WS-C)', () => {
+    expect(LogEvent.PrivacyClientExported).toBe('privacy.client_exported');
+    expect(LogEvent.PrivacyClientExported).toMatch(/^[a-z]+\.[a-z_]+$/);
+    expect(LogEvent.PrivacyClientExported.startsWith('privacy.')).toBe(true);
   });
 
   it('names every message once: no two events share a text', () => {

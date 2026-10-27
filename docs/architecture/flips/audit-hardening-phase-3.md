@@ -2147,7 +2147,10 @@ frozen.
 - **P3-DEP-9 (PC3) — a new admin callable `exportClientData`.** Exports
   47 → 48; bound to `WALK_IN_SECRETS` (the walk-in key now reaches an
   admin-only reader as well as the two minting callables, P3-RU-36). Specs: `main.spec.ts` title, `EXPORTS`, `ENDPOINTS`, a `FLIPPED`
-  case, `toHaveLength(48)` (`:981`, `:1018-1027`); `main.ts` header. Wire
+  case, `toHaveLength(48)` (`:981`, `:1018-1027`); `main.ts` header;
+  found at C_C, `edge.spec.ts`'s closed `namedBy(NamedField.Field)` list
+  gains `PrivacyErrorCode.InvalidInput` (forced by `InvalidInput`'s
+  `withField` contract; a pin added, none weakened). Wire
   skew: the web's export button reaches a callable only after the
   functions deploy (deploy functions, then light the flag — §7 item 17).
 - **P3-DEP-10 (PC1, PC2) — the privacy vocabulary.** `AuditAction` gains
@@ -2439,7 +2442,12 @@ gates keep their reference counts.
    `PRIVACY_ERASURE_LINK_MISMATCH`, `PRIVACY_ERASURE_TOO_LARGE`,
    `BOOKING_CLIENT_ERASED`; two icon keys on existing glyphs
    (`client.export` → `receipt_long`, `client.erase` → `delete`, P3-L-23).
-   No existing string changes.
+   No existing string changes. Built at C_C: `errors.PRIVACY_FORBIDDEN`
+   reuses OR-50's ONE forbidden line («Нямаш права за това. Влез отново
+   или питай администратора.» / "You don't have access to this. Sign in
+   again or ask an admin.") — the line the admin-only
+   `LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN` already prints — instead of
+   §2.C's «Само администратор може да го направи.».
 2. **The latitude register** P3-L-1 … P3-L-23 (§0.3) — in particular the
    human seed's live default (P3-RU-1; flipping it is one constant,
    `SEED_DEFAULT`).
@@ -2590,7 +2598,7 @@ gates keep their reference counts.
 | ----------------------------- | ------------------------------------ | ------ | ---------- | ----------- |
 | WS-A — seed clock pinning     | PA1, PA2                             | GREEN  | (C_A)      | §8.A        |
 | WS-B — login / OTP audit rows | PB1, PB2, PB3                        | GREEN  | (C_B)      | §8.B        |
-| WS-C — GDPR export            | PC1, PC2, PC4, PC3, PC5              | TODO   |            |             |
+| WS-C — GDPR export            | PC1, PC2, PC4, PC3, PC5              | GREEN  | (C_C)      | §8.C        |
 | WS-D — GDPR erasure           | PD1, PD2a, PD3b, PD2b, PD4, PD3, PD5 | TODO   |            |             |
 | WS-E — CI pipeline            | PE1, PE2                             | TODO   |            |             |
 | Review round 1                | fixer                                | TODO   |            |             |
@@ -2651,6 +2659,34 @@ gates keep their reference counts.
   +1) + 361; `verify:p0` (a)–(f); `e2e:web` 63/63 in 587 s against the
   baseline's 577 s — the settle fingerprint's extra rows cost +1.7 %, inside
   P3-DEP-7's 10 % budget.
+
+### 8.C C_C — WS-C GDPR export (2026-10-27)
+
+- **Built** by PC1 · (PC2 ‖ PC4) · (PC3 ‖ PC5) (`stage-C_C` report).
+  Integrator edits: the `WalkInKeyPorts` doc comment (`tx.port.ts`) names
+  the admin privacy pipelines (P3-RU-36); `pipelines/index.ts` back in
+  alphabetical order. Accepted deviations: a `PrivacyMarker` root type and
+  `PrivacyError.InputField`; `documentCount` takes `ownRowId`; a
+  distributive `Without<>` over the union archetypes (no `Omit` on a ports
+  type); token roles checked before the stored roles; a `cursor-stalled`
+  read guard on the audit paging; the card block absent when `ID_PORTS` is
+  unbound; the integration spec holds 10 cases (the plan named 6).
+- **Checks:** typecheck 40/40; layering 971 files / 4,362 edges; sync;
+  lint 44 projects, 0 errors, 246 warnings; `run-many -t test` 14,259
+  vitest (ecs-core 6,847, functions 1,376, staff-client-card 1,010) +
+  verify-tools 178, 0 failed; prettier; indexes 24 / 107 (46 on
+  `auditLog`), no footprint field switched off.
+- **Journeys:** `test:emulator` 123 (+10:
+  `export-client-data.integration.spec.ts`) + 361; `e2e:web` 66/66 (+3:
+  `staff-client-privacy.spec.ts`) in 642 s; runbook gates as the baseline.
+- **Open for the review rounds (not built):** the export does not check
+  the D29 link (`record.id === CustomerId.forUser(record.userId)`) the
+  erasure checks (P3-L-9) — a corrupt `userId` would export another
+  account's profile; `PRIVACY_EXPORT_TOO_LARGE`'s counts are not in the
+  edge's `WIRE_PARAM_ALLOWLIST` (the web words the code only); TTL'd
+  notification / waitlist documents export `purgeAt` in the Admin SDK's
+  Timestamp shape (`{_seconds,_nanoseconds}`); stale runbook line
+  references in `docs/production-deploy.md` (a records item).
 
 Statuses: TODO / IN-PROGRESS / GREEN / BLOCKED. On resume, continue from
 the first non-GREEN row; never redo a GREEN one. The records (the Phase

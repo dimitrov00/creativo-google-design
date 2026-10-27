@@ -43,6 +43,7 @@ import {
   MoveErrorCode,
   PhoneError,
   PhoneInvalidReason,
+  PrivacyErrorCode,
   RepositoryError,
   SchedulingErrorCode,
   ShopUnavailableReason,
@@ -427,7 +428,9 @@ describe('edge — the wire table', () => {
           ...(ALLOWLIST.get(code) ?? []),
         ]);
       }
-      // `field` and `refusal` leave exactly where the legacy rows named them.
+      // `field` and `refusal` leave exactly where the legacy rows named them
+      // — and, since audit-hardening Phase 3 (P3-DEP-9), where a privacy
+      // request names the payload field it refused.
       const namedBy = (name: string) =>
         Object.entries(EDGE_WIRE)
           .filter(
@@ -444,6 +447,7 @@ describe('edge — the wire table', () => {
           'BOOKING_WAITLIST_INVALID_REQUEST',
           StreakPublishErrorCode.InvalidInput,
           IdentityErrorCode.RegistrationFieldMissing,
+          PrivacyErrorCode.InvalidInput,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([

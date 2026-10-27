@@ -10,9 +10,11 @@ import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BirthDate,
+  ClientPrivacyCall,
   CouponOccasion,
   JournalEffect,
   JournalFeed,
+  Role,
   VisitFilter,
 } from '@core/components';
 import type { Appointment, JournalEntry } from '@core/entities';
@@ -21,11 +23,13 @@ import type {
   AppointmentReadPorts,
   AvatarPorts,
   ClientJournalPorts,
+  ClientPrivacyGatewayPorts,
   DefaultLocationPorts,
   LocationLoadPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  IdPorts,
   JournalPage,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
@@ -39,7 +43,10 @@ import {
   Result as CoreResult,
   UserId,
 } from '@core/primitives';
-import { RepositoryError as CoreRepositoryError } from '@core/errors';
+import {
+  PipelineError,
+  RepositoryError as CoreRepositoryError,
+} from '@core/errors';
 import {
   loyaltyCatalogFixture,
   memoryAppointmentReadPorts,
@@ -49,9 +56,11 @@ import {
   APPOINTMENT_READ_PORTS,
   AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
+  CLIENT_PRIVACY_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  ID_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
@@ -81,6 +90,7 @@ import {
   MARTIN,
   NBSP_EURO,
   NOW,
+  NOW_MS,
   type PortDouble,
   avatarPortsOf,
   catalogPortsOf,
@@ -1964,5 +1974,250 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
       wordsOf('en').achievements.records,
     );
     expect(store.hero().tier?.name).toBe('Gold');
+  });
+});
+
+/*
+ * L «Лични данни» (audit-hardening Phase 3, WS-C): the admin's privacy
+ * block. The rig binds the callables' port and the id source only here
+ * (`privacyRig`), so every case above runs without them — and with
+ * `client.privacy` off — exactly as before.
+ */
+describe('ClientCardStore — the admin’s export (audit-hardening Phase 3)', () => {
+  const PRIVACY_FLAGS = { ...ALL_FLAGS, 'client.privacy': true };
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+
+  const EXPORTED: ClientPrivacyCall.Exported = {
+    clientExportVersion: ClientPrivacyCall.EXPORT_VERSION,
+    exportedCustomerId: GEORGI_CUSTOMER_ID,
+    exportedAtUtcMs: NOW_MS,
+    exportDocumentCount: 4,
+    exportByteCount: 21,
+    exportJson: '{"clientExportVersion":1}',
+  };
+
+  /** The export callable, scripted: each answer in turn (the last one repeats), every call recorded. */
+  function scriptedExport(
+    ...answers: CoreResult<ClientPrivacyCall.Exported, PipelineError>[]
+  ): ClientPrivacyGatewayPorts & { readonly calls: ClientPrivacyCall[] } {
+    const calls: ClientPrivacyCall[] = [];
+    return {
+      calls,
+      exportClientData: async (call) => {
+        calls.push(call);
+        return must(
+          answers[Math.min(calls.length, answers.length) - 1],
+          'a scripted answer',
+        );
+      },
+    };
+  }
+
+  /** Names the wire can carry, `op-card-export-0001`, … — each one recorded. */
+  function namedIds(): IdPorts & { readonly minted: string[] } {
+    const minted: string[] = [];
+    return {
+      minted,
+      nextId: () => {
+        const id = `op-card-export-${String(minted.length + 1).padStart(4, '0')}`;
+        minted.push(id);
+        return id;
+      },
+    };
+  }
+
+  function privacyRig(
+    options: RigOptions & {
+      readonly privacy?: ClientPrivacyGatewayPorts | null;
+      readonly ids?: IdPorts | null;
+    } = {},
+  ) {
+    const privacy =
+      options.privacy === undefined
+        ? scriptedExport(CoreResult.ok(EXPORTED))
+        : options.privacy;
+    const ids = options.ids === undefined ? namedIds() : options.ids;
+    TestBed.configureTestingModule({
+      providers: [
+        ...(privacy === null
+          ? []
+          : [{ provide: CLIENT_PRIVACY_PORTS, useValue: privacy }]),
+        ...(ids === null ? [] : [{ provide: ID_PORTS, useValue: ids }]),
+      ],
+    });
+    return rig({ flags: PRIVACY_FLAGS, ...options });
+  }
+
+  async function openedAs(
+    store: ClientCardStore,
+    viewer: ClientCardContext['viewer'],
+    subject: ClientCardSubject = subjectOf(GEORGI),
+  ): Promise<void> {
+    open(store, subject, georgiContext({ viewer }));
+    await settle();
+  }
+
+  it('offers the export to the shop’s admin, worded, with no line until it runs', async () => {
+    const { store } = privacyRig();
+    await openedAs(store, ADMIN);
+    expect(store.privacy()).toEqual({
+      groupLabel: 'Лични данни',
+      exportLabel: 'Изтегли данните',
+      exportStatus: null,
+    });
+    // Never part of the overview: its key set stays as it was.
+    expect('privacy' in store.overview()).toBe(false);
+  });
+
+  it('is absent without the port, the id source or the flag', async () => {
+    const noPort = privacyRig({ privacy: null });
+    await openedAs(noPort.store, ADMIN);
+    expect(noPort.store.privacy()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const noIds = privacyRig({ ids: null });
+    await openedAs(noIds.store, ADMIN);
+    expect(noIds.store.privacy()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const flagOff = privacyRig({ flags: ALL_FLAGS });
+    await openedAs(flagOff.store, ADMIN);
+    expect(flagOff.store.privacy()).toBeNull();
+  });
+
+  it('is absent for a barber, a receptionist, the sysadmin and no viewer — the admin alone', async () => {
+    for (const viewer of [
+      null,
+      { userId: UserId.of('dev-barber'), roles: [Role.Barber] },
+      { userId: UserId.of('dev-desk'), roles: [Role.Receptionist] },
+      { userId: UserId.of('dev-sysadmin'), roles: [Role.Sysadmin] },
+    ]) {
+      const { store } = privacyRig();
+      await openedAs(store, viewer);
+      expect(store.privacy()).toBeNull();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it('is absent until the client record is known: a guest, an account with no record', async () => {
+    const guest = privacyRig();
+    open(guest.store, GUEST, georgiContext({ viewer: ADMIN }));
+    await settle();
+    expect(guest.store.privacy()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const noRecord = privacyRig({ customers: customerPortsOf([]) });
+    await openedAs(noRecord.store, ADMIN);
+    expect(noRecord.store.customerId()).toBeNull();
+    expect(noRecord.store.privacy()).toBeNull();
+  });
+
+  it('is absent offline, and back with the network', async () => {
+    const { store } = privacyRig();
+    await openedAs(store, ADMIN);
+    window.dispatchEvent(new Event('offline'));
+    expect(store.privacy()).toBeNull();
+    expect(await store.exportData()).toBeNull();
+    window.dispatchEvent(new Event('online'));
+    expect(store.privacy()).not.toBeNull();
+  });
+
+  it('stays on a gone visit: the export writes nothing to the visit', async () => {
+    const { store } = privacyRig();
+    open(
+      store,
+      subjectOf(GEORGI),
+      georgiContext({ viewer: ADMIN, gone: true }),
+    );
+    await settle();
+    expect(store.overview().canRemove).toBe(false);
+    expect(store.privacy()).not.toBeNull();
+  });
+
+  it('sends the record under one minted id, hands the bundle on and says it is downloaded', async () => {
+    const privacy = scriptedExport(CoreResult.ok(EXPORTED));
+    const ids = namedIds();
+    const { store } = privacyRig({ privacy, ids });
+    await openedAs(store, ADMIN);
+
+    const answer = await store.exportData();
+
+    expect(answer).toBe(EXPORTED);
+    expect(privacy.calls).toEqual([
+      {
+        customerId: GEORGI_CUSTOMER_ID,
+        operationId: 'op-card-export-0001',
+      },
+    ]);
+    expect(store.privacy()?.exportStatus).toBe('Файлът е изтеглен.');
+
+    // A new tap is a new act: a new name.
+    await store.exportData();
+    expect(privacy.calls.map((call) => call.operationId)).toEqual([
+      'op-card-export-0001',
+      'op-card-export-0002',
+    ]);
+    expect(ids.minted).toHaveLength(2);
+  });
+
+  it('keeps a refused act’s id for its retry, words the refusal, and mints anew once it lands', async () => {
+    const refused = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: 'PRIVACY_EXPORT_TOO_LARGE',
+    });
+    const privacy = scriptedExport(
+      CoreResult.err(refused),
+      CoreResult.ok(EXPORTED),
+    );
+    const ids = namedIds();
+    const { store } = privacyRig({ privacy, ids });
+    await openedAs(store, ADMIN);
+
+    expect(await store.exportData()).toBeNull();
+    expect(store.privacy()?.exportStatus).toBe(
+      'Данните са твърде много за един файл. Свържи се с поддръжката.',
+    );
+
+    expect(await store.exportData()).toBe(EXPORTED);
+    expect(privacy.calls.map((call) => call.operationId)).toEqual([
+      'op-card-export-0001',
+      'op-card-export-0001',
+    ]);
+    expect(ids.minted).toEqual(['op-card-export-0001']);
+    expect(store.privacy()?.exportStatus).toBe('Файлът е изтеглен.');
+  });
+
+  it('asks once while an export is on its way, and drops the answer of a person no longer on the card', async () => {
+    const pending: { release: (() => void) | null } = { release: null };
+    const calls: ClientPrivacyCall[] = [];
+    const held: ClientPrivacyGatewayPorts = {
+      exportClientData: (call) => {
+        calls.push(call);
+        return new Promise((resolve) => {
+          pending.release = () => resolve(CoreResult.ok(EXPORTED));
+        });
+      },
+    };
+    const { store } = privacyRig({ privacy: held });
+    await openedAs(store, ADMIN);
+
+    const first = store.exportData();
+    expect(await store.exportData()).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(store.privacy()?.exportStatus).toBeNull();
+
+    open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN }));
+    must(pending.release, 'the held export')();
+    expect(await first).toBeNull();
+    await settle();
+    expect(store.privacy()?.exportStatus).toBeNull();
+  });
+
+  it('forgets the last line when the same person is opened again', async () => {
+    const { store } = privacyRig();
+    await openedAs(store, ADMIN);
+    await store.exportData();
+    expect(store.privacy()?.exportStatus).toBe('Файлът е изтеглен.');
+    await openedAs(store, ADMIN);
+    expect(store.privacy()?.exportStatus).toBeNull();
   });
 });

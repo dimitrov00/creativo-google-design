@@ -30,6 +30,7 @@ import {
   MoveErrorCode,
   PhoneErrorCode,
   PipelineErrorCode,
+  PrivacyErrorCode,
   RepositoryErrorCode,
   RunBackfillRefusalCode,
   SchedulingErrorCode,
@@ -111,6 +112,7 @@ export const EDGE_DICTIONARIES = {
   MoveErrorCode,
   PhoneErrorCode,
   PipelineErrorCode,
+  PrivacyErrorCode,
   RepositoryErrorCode,
   RunBackfillRefusalCode,
   SchedulingErrorCode,
@@ -139,6 +141,7 @@ export type EdgeCode =
   | MoveErrorCode
   | PhoneErrorCode
   | PipelineErrorCode
+  | PrivacyErrorCode
   | RepositoryErrorCode
   | RunBackfillRefusalCode
   | SchedulingErrorCode
@@ -505,6 +508,21 @@ const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {
   [PipelineErrorCode.Unknown]: fields(S.Internal),
 };
 
+/**
+ * The admin's data-subject requests (audit-hardening Phase 3, WS-C): the
+ * caller's gate, a payload field missing or malformed (its NAME leaves,
+ * never its value), the deployment's flag, an unknown record and an export
+ * past its cap — refused whole, never truncated.
+ */
+const PRIVACY_WIRE: WireTable<PrivacyErrorCode> = {
+  [PrivacyErrorCode.Unauthenticated]: fields(S.Unauthenticated),
+  [PrivacyErrorCode.Forbidden]: fields(S.PermissionDenied),
+  [PrivacyErrorCode.InvalidInput]: withField(S.InvalidArgument),
+  [PrivacyErrorCode.Unavailable]: fields(S.FailedPrecondition),
+  [PrivacyErrorCode.ClientNotFound]: fields(S.NotFound),
+  [PrivacyErrorCode.ExportTooLarge]: fields(S.FailedPrecondition),
+};
+
 const REPOSITORY_WIRE: WireTable<RepositoryErrorCode> = {
   // As the retired `repository_failure` did: `internal`, the cause in the
   // log only.
@@ -697,6 +715,7 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...MOVE_WIRE,
     ...PHONE_WIRE,
     ...PIPELINE_WIRE,
+    ...PRIVACY_WIRE,
     ...REPOSITORY_WIRE,
     ...RUN_BACKFILL_WIRE,
     ...SCHEDULING_WIRE,

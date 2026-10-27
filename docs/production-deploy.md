@@ -487,7 +487,10 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 - [ ] **Review the production feature-flag map.** All 13 flags in
       `config/feature-flags.json` → `production` are `false` today, so loyalty,
       the client profile, pause, support, merge, privacy, referrals and
-      discount grants ship dark. The web bakes the map in at build time. The
+      discount grants ship dark. `client.privacy` gates the admin's GDPR
+      export (`exportClientData` and the card's «Лични данни» block); it is
+      on in `development` only, for the emulators and the e2e journey. The
+      web bakes the map in at build time. The
       functions get it from `.env.<projectId>`, which the predeploy writes. A
       real project gets the `production` map unless `FLAGS_ENV` / `--env` says
       otherwise. To light a flag: deploy functions first, then web. To turn one
@@ -695,7 +698,7 @@ ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
 still wired (P8), or if `WALKIN_ID_KEY` is missing.
 
-The deploy holds 47 functions. Audit-hardening WS-3 (DEP-14) added thirteen
+The deploy holds 48 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:
 `auditSettingsChanges`, `auditServicesChanges`, `auditBarbersChanges`,
 `auditLocationsChanges`, `auditBarberSchedulesChanges`,
@@ -710,6 +713,14 @@ param is now `users/{docId}` (was `users/{uid}`), and it also records
 pattern's wildcard: the trigger still fires on every `users` document).
 Source: `firebase.json:19-23`; `docs/architecture/firestore-runbook.md:231`;
 `apps/functions/src/main.ts` (`documentAuditTrigger`).
+
+Audit-hardening Phase 3 (WS-C, P3-DEP-9) added the 48th: `exportClientData`,
+the admin's GDPR export of one client's data (one JSON file, downloaded from
+the staff client card). It is bound to `WALKIN_ID_KEY` and `LOG_DIGEST_KEY`
+like the walk-in callables, and refuses `PRIVACY_UNAVAILABLE` until
+`client.privacy` is lit, so it ships dark (the flag item above).
+Source: `apps/functions/src/main.ts` (`exportClientData`);
+`docs/architecture/firestore-runbook.md` §1.1 ("The export's reads") and §3.
 
 ### 3.4 Hosting, straight after functions
 

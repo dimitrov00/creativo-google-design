@@ -42,6 +42,7 @@ const seam = vi.hoisted(() => {
     'continuePolicyRecompute',
     'editAppointment',
     'endImpersonation',
+    'exportClientData',
     'markArrival',
     'matchWaitlist',
     'projectClientStats',
@@ -173,7 +174,11 @@ const tracedCallable = {
   secretEnvironmentVariables: [{ key: 'LOG_DIGEST_KEY' }],
 };
 
-/** A callable bound to the walk-in key (OR-26) — the two that mint walk-in records — and the log digest key. */
+/**
+ * A callable bound to the walk-in key (OR-26) — the two that mint walk-in
+ * records, and the admin privacy callables that recognise them (P3-RU-36)
+ * — and the log digest key.
+ */
 const walkInCallable = {
   ...callable,
   secretEnvironmentVariables: [
@@ -234,7 +239,10 @@ const daily = (schedule: string) => ({
  * Pass F's new sink, `reportClientIssues` (OR-34), declares its own: two
  * instances, 80 concurrent calls each, 256 MiB, 10 s. The two callables
  * that mint walk-in records (`commitBooking`, `staffEditAppointment`) bind
- * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26), and every
+ * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26), as does
+ * audit-hardening Phase 3's `exportClientData` (P3-DEP-9: the admin's
+ * data-subject export, 512 MiB, recognising a walk-in's contact by that
+ * key, P3-RU-36), and every
  * callable but the sink binds `LOG_DIGEST_KEY` (audit-hardening WS-4.2,
  * DEP-18: the outcome line's keyed `inputDigest`); no other export holds a
  * secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
@@ -307,6 +315,7 @@ const ENDPOINTS = {
   startImpersonation: tracedCallable,
   endImpersonation: tracedCallable,
   redeemInvitation: tracedCallable,
+  exportClientData: { ...walkInCallable, availableMemoryMb: 512 },
   reportClientIssues: {
     ...callable,
     availableMemoryMb: 256,
@@ -353,6 +362,18 @@ const CLIENT = { uid: 'u-client' } as const;
 const STAFF = { uid: 'u-staff', roles: ['barber'] } as const;
 const SYSADMIN = { uid: 'u-admin', roles: ['sysadmin'] } as const;
 const OWNER = { uid: 'u-owner', roles: ['barber', 'admin'] } as const;
+/** The shop's admin alone — the one role `Roles.PRIVACY` admits (P3-RU-13). */
+const PRIVACY_ADMIN = { uid: 'u-owner', roles: ['admin'] } as const;
+
+/** An export's answer, as the pipeline returns it and the call answers it verbatim. */
+const EXPORTED = {
+  clientExportVersion: 1,
+  exportedCustomerId: 'cus-1',
+  exportedAtUtcMs: Date.UTC(2026, 9, 11, 7),
+  exportDocumentCount: 2,
+  exportByteCount: 17,
+  exportJson: '{"customers":[]}',
+} as const;
 
 /** The call component, as the admin page sends it — the rule's body is the pipeline's to judge. */
 const STREAK_PUBLISH = {
@@ -901,6 +922,22 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ invitationId: 'inv-1', redemptionCount: 3 }),
     expected: { invitationId: 'inv-1', redemptionCount: 3 },
   },
+  // ── audit-hardening Phase 3: the admin's data-subject export (P3-DEP-9) ──
+  exportClientData: {
+    pipeline: 'exportClientData',
+    input: request(
+      { customerId: 'cus-1', operationId: 'operation-0123456789ab' },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      customerId: 'cus-1',
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok(EXPORTED),
+    expected: EXPORTED,
+  },
   // ── pass F: the client issue sink (OR-34) ──
   reportClientIssues: {
     pipeline: 'reportClientIssues',
@@ -978,7 +1015,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 47 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink and WS-3’s thirteen governed-collection audit triggers', () => {
+  it('exports exactly the 48 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers and Phase 3’s client export', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1024,7 +1061,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(47);
+    expect(FLIPPED_EXPORTS).toHaveLength(48);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {
@@ -1213,6 +1250,62 @@ describe('main.ts — the composition root', () => {
         errorCode: 'ENGAGEMENT_INVITATION_UNAUTHENTICATED',
       });
       expect(seam.calls).toEqual([]);
+    });
+
+    it('gates exportClientData on the verified admin before any pipeline runs — the sysadmin is not enough (P3-RU-13)', async () => {
+      const call = {
+        customerId: 'cus-1',
+        operationId: 'operation-0123456789ab',
+      };
+      const nobody = await rejection(
+        run('exportClientData', request(call, null)),
+      );
+      expect(nobody.code).toBe('unauthenticated');
+      expect(nobody.details).toEqual({ errorCode: 'PRIVACY_UNAUTHENTICATED' });
+      for (const auth of [SYSADMIN, STAFF, { uid: 'u-client', roles: [] }]) {
+        const refused = await rejection(
+          run('exportClientData', request(call, auth)),
+        );
+        expect(refused.code).toBe('permission-denied');
+        expect(refused.details).toEqual({ errorCode: 'PRIVACY_FORBIDDEN' });
+      }
+      const missing = await rejection(
+        run(
+          'exportClientData',
+          request({ customerId: 'cus-1' }, PRIVACY_ADMIN),
+        ),
+      );
+      expect(missing.code).toBe('invalid-argument');
+      expect(missing.details).toEqual({
+        errorCode: 'PRIVACY_INVALID_INPUT',
+        field: 'operationId',
+      });
+      expect(seam.calls).toEqual([]);
+    });
+
+    it('hands exportClientData the server ports, the keyed walk-in digest, the footprint reads, the audit timelines and the flags — and never one operation’s rows', async () => {
+      const own = caseOf('exportClientData');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('exportClientData', own.input);
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      for (const member of [
+        'walkInHash',
+        'flagOn',
+        'loadClientRecord',
+        'loadProfile',
+        'listClientVisits',
+        'listPhotosOfClient',
+        'listClientJournal',
+        'loadLoyaltyAccount',
+        'loadClientMoney',
+        'pageAuditByTargetCustomer',
+        'pageAuditByTargetUser',
+      ]) {
+        expect(typeof Reflect.get(ports, member), member).toBe('function');
+      }
+      expect(ports).not.toHaveProperty('auditRowsForOperation');
+      expect(ports).toMatchObject({ sentinel: seam.BUNDLE.sentinel });
+      expect(seam.built).toHaveLength(1);
     });
 
     it('fails a non-retrying trigger on a store failure, and lets a retrying one log its one attempt line and rethrow a transient', async () => {

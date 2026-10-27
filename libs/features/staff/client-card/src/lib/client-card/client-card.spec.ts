@@ -1,14 +1,27 @@
-import { CouponGrantId } from '@core/primitives';
-import { CouponOccasion, type VisitLeg } from '@core/components';
+import { TestBed } from '@angular/core/testing';
+import { CouponGrantId, Result, UserId } from '@core/primitives';
+import {
+  ClientPrivacyCall,
+  CouponOccasion,
+  Role,
+  type VisitLeg,
+} from '@core/components';
+import type { ClientPrivacyGatewayPorts } from '@core/ports';
+import {
+  CLIENT_PRIVACY_PORTS,
+  ID_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
 import { RECORD_KIND_WORDS } from '../client-card.words';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
   GEORGI_NOTE,
   GUEST,
   MARTIN,
+  NOW_MS,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
@@ -27,6 +40,7 @@ import {
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
+  ALL_LOYALTY_FLAGS,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -1089,5 +1103,145 @@ describe('lib-client-card — its states', () => {
     expect(byId('client-head-tier')).toBeNull();
     expect(byId('client-loyalty-skeleton')).toBeNull();
     expect(byId('client-achievements-skeleton')).toBeNull();
+  });
+});
+
+/*
+ * L «Лични данни» (audit-hardening Phase 3, WS-C): the shop's admin, with
+ * `client.privacy` on, the callables' port and the id source bound — every
+ * case above mounts without them, so the block is absent there.
+ */
+describe('lib-client-card — the admin’s privacy block', () => {
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+  const EXPORTED: ClientPrivacyCall.Exported = {
+    clientExportVersion: ClientPrivacyCall.EXPORT_VERSION,
+    exportedCustomerId: GEORGI_CUSTOMER_ID,
+    exportedAtUtcMs: NOW_MS,
+    exportDocumentCount: 4,
+    exportByteCount: 25,
+    exportJson: '{"clientExportVersion":1}',
+  };
+
+  /** The export answering `EXPORTED`; the store's calls recorded. */
+  function bindPrivacy(): ClientPrivacyCall[] {
+    const calls: ClientPrivacyCall[] = [];
+    const privacy: ClientPrivacyGatewayPorts = {
+      exportClientData: async (call) => {
+        calls.push(call);
+        return Result.ok(EXPORTED);
+      },
+    };
+    let minted = 0;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        {
+          provide: ID_PORTS,
+          useValue: { nextId: () => `op-card-export-${(minted += 1)}-000000` },
+        },
+      ],
+    });
+    return calls;
+  }
+
+  /** A blob's text, read as the browser reads a file (jsdom's `Blob` has no `text()`). */
+  const textOfBlob = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+
+  const asAdmin = (overrides: Parameters<typeof georgiContext>[0] = {}) =>
+    mount({
+      context: georgiContext({ viewer: ADMIN, ...overrides }),
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true } },
+    });
+
+  afterEach(() => {
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+    vi.restoreAllMocks();
+  });
+
+  it('sits after the exits as a group of its own, its row with a leading icon', async () => {
+    bindPrivacy();
+    const { byId, text, before } = await asAdmin();
+    const block = must(byId('client-privacy'));
+    const exits = must(byId('client-exits'));
+    expect(before(exits, block)).toBe(true);
+    expect(exits.contains(block)).toBe(false);
+    const group = must(block.querySelector('ul'));
+    expect(group.getAttribute('aria-label')).toBe('Лични данни');
+    const row = must(byId<HTMLButtonElement>('client-export'));
+    expect(row.parentElement?.tagName).toBe('LI');
+    expect(row.type).toBe('button');
+    expect(row.getAttribute('data-role')).not.toBe('destructive');
+    expect(
+      row.querySelector('[uileading] ui-icon')?.getAttribute('uiName'),
+    ).toBe('client.export');
+    expect(text(row)).toBe('Изтегли данните');
+    expect(byId('client-export-status')).toBeNull();
+  });
+
+  it('renders on a cancelled visit too, where the exits are gone', async () => {
+    bindPrivacy();
+    const { byId } = await asAdmin({ gone: true });
+    expect(byId('client-exits')).toBeNull();
+    expect(byId('client-privacy')).not.toBeNull();
+  });
+
+  it('is absent for a barber', async () => {
+    bindPrivacy();
+    const { byId } = await mount({
+      rig: { flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true } },
+    });
+    expect(byId('client-exits')).not.toBeNull();
+    expect(byId('client-privacy')).toBeNull();
+  });
+
+  it('saves the answer as creativo-client-<id>.json, byte for byte, and says so', async () => {
+    const calls = bindPrivacy();
+    const blobs: Blob[] = [];
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:creativo-export';
+      }),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const saved: { readonly href: string; readonly download: string }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved.push({ href: this.href, download: this.download });
+    });
+    const { click, byId, text } = await asAdmin();
+
+    await click('client-export');
+
+    expect(calls).toEqual([
+      {
+        customerId: GEORGI_CUSTOMER_ID,
+        operationId: 'op-card-export-1-000000',
+      },
+    ]);
+    expect(saved).toEqual([
+      {
+        href: 'blob:creativo-export',
+        download: `creativo-client-${GEORGI_CUSTOMER_ID}.json`,
+      },
+    ]);
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0]?.type).toBe('application/json;charset=utf-8');
+    expect(await textOfBlob(must(blobs[0]))).toBe(EXPORTED.exportJson);
+    const status = must(byId('client-export-status'));
+    expect(status.matches('[role="status"]')).toBe(true);
+    expect(text(status)).toBe('Файлът е изтеглен.');
   });
 });

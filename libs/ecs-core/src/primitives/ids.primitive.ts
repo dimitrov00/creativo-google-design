@@ -537,10 +537,13 @@ const IMPERSONATION_SESSIONS = 'impersonationSessions';
 /** `Collections.Otps` — restated likewise (spec-checked). */
 const OTPS = 'otps';
 
+/** `Collections.Customers` — restated likewise (spec-checked). */
+const CUSTOMERS = 'customers';
+
 /**
  * The resource an audit row names — the one id whose text may hold ONE `/`
  * (`users/{uid}`, `streakDefinitions/{id}`, `impersonationSessions/{id}`,
- * `otps/{id}`),
+ * `otps/{id}`, `customers/{id}`),
  * so it has its own companion instead of the plain one: one `for*` door per
  * spelling a writer derives from a brand. A governed document's
  * `<path>/<docId>` (audit-hardening WS-3, RU-40) arrives as foreign text
@@ -582,6 +585,10 @@ export const AuditResourceId = {
   /** A pre-session sign-in row names its challenge, `otps/{id}` (audit-hardening Phase 3 WS-B). */
   forOtp(id: OtpId): AuditResourceId {
     return `${OTPS}/${id}` as AuditResourceId;
+  },
+  /** A data-subject row (an export, an erasure) names the client record, `customers/{id}` (audit-hardening Phase 3 WS-C). */
+  forCustomer(id: CustomerId): AuditResourceId {
+    return `${CUSTOMERS}/${id}` as AuditResourceId;
   },
 } as const;
 

@@ -441,6 +441,46 @@ if (row.auditAction === AuditAction.IdentityRegistrationCompleted) {
   // @ts-expect-error — nor any profile field (the users trigger's row does that)
   void row.profileFields;
 }
+/*
+ * The data-subject export row (audit-hardening Phase 3 WS-C, P3-DEP-10):
+ * flat, counts only, disjoint from the actor, target and meta slices — the
+ * bundle, a section or a value of the person is never on a row (R36 / T5).
+ */
+export const clientExportedFlat: AllTrue<
+  NoNested<AuditContext.ClientExported>
+> = true;
+export const clientExportedDisjoint: [
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, AuditTargetRef>,
+  Disjoint<Omit<AuditContext.ClientExported, 'auditAction'>, AuditEntryMeta>,
+] = [true, true, true];
+/** The check is not vacuous: an export row repeating the target's record id would share a key. */
+export const clientExportedTargetRepeatCaught: Disjoint<
+  Omit<AuditContext.ClientExported, 'auditAction'> & {
+    readonly targetCustomerId: CustomerId;
+  },
+  AuditTargetRef
+> = false;
+export const clientExportedFieldsAre: [
+  Equals<AuditContext.ClientExported['exportDocumentCount'], number>,
+  Equals<AuditContext.ClientExported['exportAuditRowCount'], number>,
+  Equals<AuditContext.ClientExported['exportByteCount'], number>,
+] = [true, true, true];
+export const auditEntryWithExportNotNever: IsNever<
+  Extract<AuditEntry, { readonly auditAction: 'PRIVACY_CLIENT_EXPORTED' }>
+> = false;
+if (row.auditAction === AuditAction.PrivacyClientExported) {
+  const documents: number = row.exportDocumentCount;
+  void documents;
+  void row.exportAuditRowCount;
+  void row.exportByteCount;
+  // @ts-expect-error — an export row carries no profile field list
+  void row.profileFields;
+  // @ts-expect-error — nor the bundle's text
+  void row.exportJson;
+  // @ts-expect-error — nor a governed field list
+  void row.governedFields;
+}
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;

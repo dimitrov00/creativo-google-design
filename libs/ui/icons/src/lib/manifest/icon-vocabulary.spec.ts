@@ -137,6 +137,7 @@ describe('the client card vocabulary', () => {
     'contact.viber': 'forum',
     'client.remove': 'person_remove',
     'client.photos': 'photo_library',
+    'client.export': 'receipt_long',
     'connection.offline': 'cloud_off',
     'loyalty.program': 'loyalty',
     'loyalty.points': 'stars',

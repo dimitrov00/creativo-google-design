@@ -3,6 +3,7 @@ import {
   BookingCall,
   CallAnswer,
   type ClientIssue,
+  ClientPrivacyCall,
   GovernanceCall,
   IdentityCall,
   InvitationCall,
@@ -23,8 +24,10 @@ import type { PipelineError } from '@core/errors';
  *
  * Phase 4a adds `startImpersonation`, `endImpersonation` and
  * `redeemInvitation` with their server pipelines (4A-3 (4), (5)); pass F
- * adds `reportClientIssues`, the web's first-party issue sink (OR-34).
- * Triggers and schedules are never dialled, so they are not here.
+ * adds `reportClientIssues`, the web's first-party issue sink (OR-34);
+ * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
+ * export (WS-C). Triggers and schedules are never dialled, so they are not
+ * here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
@@ -47,6 +50,7 @@ export const Callables = {
   EndImpersonation: 'endImpersonation',
   RedeemInvitation: 'redeemInvitation',
   ReportClientIssues: 'reportClientIssues',
+  ExportClientData: 'exportClientData',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -142,6 +146,16 @@ export type CallableWire = {
     readonly input: readonly ClientIssue[];
     readonly answer: { readonly loggedCount: number };
   };
+  /**
+   * An admin's data-subject export (audit-hardening Phase 3 WS-C): the
+   * record and the act's own id in; the person's ONE bundle out, as the
+   * server's canonical JSON text beside its counts (P3-RU-16) — the web
+   * decodes no entity of it and saves the text verbatim.
+   */
+  readonly [Callables.ExportClientData]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.Exported;
+  };
 };
 
 /**
@@ -183,6 +197,7 @@ export const OPERATION_ID_FIELD: {
   [Callables.EndImpersonation]: 'operationId',
   [Callables.RedeemInvitation]: 'operationId',
   [Callables.ReportClientIssues]: null,
+  [Callables.ExportClientData]: 'operationId',
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -240,4 +255,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.EndImpersonation]: GovernanceCall.decodeEnded,
   [Callables.RedeemInvitation]: InvitationCall.decodeRedeemed,
   [Callables.ReportClientIssues]: decodeIssuesLogged,
+  [Callables.ExportClientData]: ClientPrivacyCall.decodeExported,
 };

@@ -11,6 +11,7 @@ import type {
   BookingDraftPorts,
   CatalogReadPorts,
   ClientJournalPorts,
+  ClientPrivacyGatewayPorts,
   ClientStatsReadPorts,
   ClockPorts,
   CouponVoucherPorts,
@@ -192,6 +193,14 @@ export const AUTH_SESSION_PORTS = new InjectionToken<AuthSessionPorts>(
 export const OTP_CHALLENGE_PORTS = new InjectionToken<OtpChallengePorts>(
   'OTP_CHALLENGE_PORTS',
 );
+
+/**
+ * An admin's data-subject callables on the staff client card
+ * (`ClientPrivacyGatewayPorts`, audit-hardening Phase 3): the export today.
+ * The card injects it optionally — unbound, the card offers none of it.
+ */
+export const CLIENT_PRIVACY_PORTS =
+  new InjectionToken<ClientPrivacyGatewayPorts>('CLIENT_PRIVACY_PORTS');
 
 /**
  * The deployment's authentication configuration (`AuthDeploymentPorts`) —

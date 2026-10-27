@@ -152,6 +152,10 @@
     "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Влез отново, за да продължиш.",
     "LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE": "Досегашните ритми засега само се запазват.",
     "LOYALTY_STREAK_PUBLISH_PREVIEW_STALE": "Прегледът вече не е актуален. Запази отново.",
+    "PRIVACY_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
+    "PRIVACY_UNAVAILABLE": "Това още не е включено за салона.",
+    "PRIVACY_CLIENT_NOT_FOUND": "Не намерихме този клиент.",
+    "PRIVACY_EXPORT_TOO_LARGE": "Данните са твърде много за един файл. Свържи се с поддръжката.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
     "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
     "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Опитай пак.",
@@ -2105,6 +2109,11 @@
         "firstVisit": "първо посещение"
       },
       "empty": "Рекордите идват с първите посещения."
+    },
+    "privacy": {
+      "groupLabel": "Лични данни",
+      "export": "Изтегли данните",
+      "exportDone": "Файлът е изтеглен."
     }
   },
   "visits": {

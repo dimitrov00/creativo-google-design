@@ -45,6 +45,8 @@ export const LogEvent = {
   PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
   PolicyRecomputeSweepStarted:
     'policy recompute started by the sweep: a dropped start',
+  /** An admin's data-subject export answered (audit-hardening Phase 3 WS-C): counts and ids only, never the bundle. */
+  PrivacyClientExported: 'privacy.client_exported',
   ProfileUpdateRefused: 'profile.update.refused',
   RegistrationDisplayNameFailed: 'registration.display_name_failed',
   RhythmRuleWriteFailed: 'rhythm rule write failed',

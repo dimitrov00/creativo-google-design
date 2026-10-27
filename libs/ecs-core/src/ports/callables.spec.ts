@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ClientPrivacyCall } from '@core/components';
 import {
   CALLABLE_ANSWER_DECODERS,
   Callables,
@@ -33,6 +34,14 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
       [Callables.RecordSeatTip]: 'operationId',
       [Callables.StaffEditAppointment]: 'operationId',
     });
+  });
+
+  it('the data-subject export rides `operationId` — the field its input names (Phase 3 WS-C)', () => {
+    expect(OPERATION_ID_FIELD[Callables.ExportClientData]).toBe('operationId');
+    expect(Callables.ExportClientData).toBe('exportClientData');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.ExportClientData]).toBe(
+      ClientPrivacyCall.decodeExported,
+    );
   });
 
   it('the client issue sink alone carries none (OR-34)', () => {

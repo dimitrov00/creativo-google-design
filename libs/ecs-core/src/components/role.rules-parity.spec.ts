@@ -13,6 +13,10 @@ import { Roles } from './roles.data';
  * capability-matrix harness (client-details design §12.6.3), which later drives
  * the rules lane from the same role sets.
  *
+ * `Roles.PRIVACY` (the admin alone — the data-subject export and erasure,
+ * audit-hardening Phase 3 P3-RU-13) is CALLABLE-ONLY: no rules helper twins
+ * it, because the callables are the only door, so it has no case here.
+ *
  * The reader is deliberately small: it understands a helper whose body is a
  * single `return` of role checks joined by `||`, which is how every
  * role-group helper is written. Anything else (an `&&`, a `let`, a

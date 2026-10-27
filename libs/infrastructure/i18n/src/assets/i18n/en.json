@@ -152,6 +152,10 @@
     "LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED": "Sign in again to continue.",
     "LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE": "For now, existing runs can only be kept.",
     "LOYALTY_STREAK_PUBLISH_PREVIEW_STALE": "The preview is out of date. Save again.",
+    "PRIVACY_FORBIDDEN": "You don't have access to this. Sign in again or ask an admin.",
+    "PRIVACY_UNAVAILABLE": "This isn't on for the shop yet.",
+    "PRIVACY_CLIENT_NOT_FOUND": "We couldn't find this client.",
+    "PRIVACY_EXPORT_TOO_LARGE": "There's too much data for one file. Contact support.",
     "PIPELINE_UNAUTHENTICATED": "Something went wrong. Try again.",
     "PIPELINE_SLOT_UNAVAILABLE": "Something went wrong. Try again.",
     "PIPELINE_CATALOG_CHANGED": "Something went wrong. Try again.",
@@ -2102,6 +2106,11 @@
         "firstVisit": "the first visit"
       },
       "empty": "Records come with the first visits."
+    },
+    "privacy": {
+      "groupLabel": "Personal data",
+      "export": "Download the data",
+      "exportDone": "The file is downloaded."
     }
   },
   "visits": {

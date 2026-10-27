@@ -174,8 +174,10 @@ export type HashPorts = {
 /**
  * The keyed digest a walk-in's record id is derived with
  * (`CustomerId.forWalkIn`, OR-26) — only the server pipelines that mint
- * walk-ins (`bookAppointment`, `editAppointment`) take it, and only the two
- * callables that run them hold its secret (`WALKIN_ID_KEY`).
+ * walk-ins (`bookAppointment`, `editAppointment`) and the admin privacy
+ * pipelines that recognise them (`exportClientData`, audit-hardening
+ * Phase 3, P3-RU-36) take it, and only the callables that run them hold its
+ * secret (`WALKIN_ID_KEY`).
  */
 export type WalkInKeyPorts = {
   readonly walkInHash: KeyedHash;

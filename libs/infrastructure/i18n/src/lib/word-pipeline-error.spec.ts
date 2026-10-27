@@ -33,6 +33,7 @@ import {
   MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
+  PrivacyErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
@@ -263,13 +264,15 @@ describe('wordPipelineError — today’s copy, in the real catalogues', () => {
  * `invalid-argument`) is a defect no user can act on, so its four keys were
  * deleted (OR-50): the surface's own generic line answers it, one level
  * down included. Read from the catalogue, never re-typed — the voice pass
- * owns that line's words.
+ * owns that line's words. The admin privacy callables' own
+ * (`PRIVACY_INVALID_INPUT`, audit-hardening Phase 3) never had words.
  */
 const INVALID_INPUT_CODES: readonly string[] = [
   CancellationRefusalCode.InvalidInput,
   BookingErrorCode.ArrivedInvalidInput,
   BookingErrorCode.TipInvalidInput,
   BookingErrorCode.TransitionInvalidInput,
+  PrivacyErrorCode.InvalidInput,
 ];
 
 describe('wordPipelineError — an unreadable request is the surface’s generic line (OR-50)', () => {
@@ -357,6 +360,14 @@ const booking = refusalOn(BookingErrorCode.CallFailed);
  * fallback here.
  */
 const identity = refusalOn(IdentityErrorCode.CallFailed);
+/**
+ * The staff client card's export (audit-hardening Phase 3, WS-C — its
+ * presenter words a refusal against the generic `PIPELINE_UNKNOWN`).
+ * `PRIVACY_UNAUTHENTICATED` and `PRIVACY_INVALID_INPUT` reach no surface
+ * (the card's block needs a signed-in admin and sends a well-formed call),
+ * so they have no words.
+ */
+const privacy = refusalOn(PipelineErrorCode.Unknown);
 
 const S = HttpsStatus;
 
@@ -425,6 +436,20 @@ const E18_WORDS: readonly WordedRefusal[] = [
     en: "We couldn't finish signing you up. Try again.",
     bg: 'Не успяхме да завършим регистрацията. Опитай пак.',
   }),
+  // The staff client card's export (audit-hardening Phase 3, WS-C).
+  privacy(PrivacyErrorCode.Forbidden, S.PermissionDenied, FORBIDDEN),
+  privacy(PrivacyErrorCode.Unavailable, S.FailedPrecondition, {
+    en: "This isn't on for the shop yet.",
+    bg: 'Това още не е включено за салона.',
+  }),
+  privacy(PrivacyErrorCode.ClientNotFound, S.NotFound, {
+    en: "We couldn't find this client.",
+    bg: 'Не намерихме този клиент.',
+  }),
+  privacy(PrivacyErrorCode.ExportTooLarge, S.FailedPrecondition, {
+    en: "There's too much data for one file. Contact support.",
+    bg: 'Данните са твърде много за един файл. Свържи се с поддръжката.',
+  }),
 ];
 
 describe('wordPipelineError — every UI-reachable refusal words as itself (E-18)', () => {
@@ -454,6 +479,7 @@ describe('wordPipelineError — every UI-reachable refusal words as itself (E-18
     BookingErrorCode.TransitionForbidden,
     StaffEditErrorCode.Forbidden,
     StreakPublishErrorCode.CallerNotAdmin,
+    PrivacyErrorCode.Forbidden,
   ])('words %s in the one not-allowed line', (errorCode) => {
     expect(errorsOf(en.errors)(errorCode, {})).toBe(FORBIDDEN.en);
     expect(errorsOf(bg.errors)(errorCode, {})).toBe(FORBIDDEN.bg);
