@@ -18,9 +18,9 @@ import {
   Placement,
   RequestedSubjectRole,
 } from '@core/components';
-import { LogEvent, OperationId } from '@core/primitives';
+import { LogEvent, OperationId, Result } from '@core/primitives';
 import { Callables } from '@core/ports';
-import { Collections } from '@core/entities';
+import { Collections, type TriggerFailure } from '@core/entities';
 import { LogDigestSystem } from '@core/systems';
 import {
   barberFixture,
@@ -33,7 +33,11 @@ import {
 } from '@core/testing';
 import { consoleTelemetry } from '../adapters/console-telemetry.adapter';
 import { hmacSha256Hex } from '../adapters/crypto.adapter';
-import { type DeliveredEvent, type EdgePorts, retryingTrigger } from '../edge';
+import {
+  type DeliveredEvent,
+  retryingTrigger,
+  type TriggerEdgePorts,
+} from '../edge';
 import { decodeCommitBooking } from '../wire/booking.wire';
 
 /**
@@ -49,7 +53,9 @@ import { decodeCommitBooking } from '../wire/booking.wire';
  *   3. every committed audit row's `auditOperationId` (WS-1, WS-4.4);
  *   4. the `writeOperationId` of the attempt line a `retryingTrigger` writes
  *      when its handler throws for that very document — beside the
- *      `documentPath` the delivery named (WS-4.3, DEP-19).
+ *      `documentPath` the delivery named (WS-4.3, DEP-19) — and of the dead
+ *      letter it records for that PERMANENT failure (WS-6, DEP-23); an
+ *      early TRANSIENT failure is rethrown and records none.
  * Every line is read where Cloud Logging would read it: off
  * `firebase-functions/logger`, through the console telemetry adapter.
  *
@@ -250,9 +256,16 @@ describe('one operation id, from the callable to a trigger’s attempt line (emu
     );
 
     // ── 4. a trigger woken by that write fails, and its line joins back ──
-    const triggerEdge: EdgePorts = {
+    // The dead letter is recorded, not written: its own adapter has its own
+    // emulator spec (`firestore-trigger-failures.adapter.integration.spec.ts`).
+    const deadLetters: TriggerFailure[] = [];
+    const triggerEdge: TriggerEdgePorts = {
       ...consoleTelemetry(),
       nowUtcMs: pinnedNowUtcMs(FIXTURE_NOW_UTC_MS),
+      writeTriggerFailure: async (failure) => {
+        deadLetters.push(failure);
+        return Result.ok(undefined);
+      },
     };
     const failing = retryingTrigger(
       { fn: 'operationTraceProbe', timeoutSeconds: null },
@@ -294,5 +307,31 @@ describe('one operation id, from the callable to a trigger’s attempt line (emu
         },
       },
     ]);
+    // …and the dead letter it leaves joins back the same way (WS-6, DEP-23).
+    expect(deadLetters).toEqual([
+      expect.objectContaining({
+        id: 'event-trace-1',
+        fn: 'operationTraceProbe',
+        documentPath: APPOINTMENT_PATH,
+        attemptOutcome: AttemptOutcome.Permanent,
+        writeOperationId: OPERATION,
+      }),
+    ]);
+
+    // ── 5. an early TRANSIENT failure is redelivered, never dead-lettered ──
+    const unavailable = Object.assign(new Error('the probe is busy'), {
+      code: 'unavailable',
+    });
+    const busy = retryingTrigger(
+      { fn: 'operationTraceProbe', timeoutSeconds: null },
+      triggerEdge,
+      async (): Promise<void> => {
+        throw unavailable;
+      },
+    );
+    await expect(busy({ ...delivery, id: 'event-trace-2' })).rejects.toBe(
+      unavailable,
+    );
+    expect(deadLetters.map((failure) => failure.id)).toEqual(['event-trace-1']);
   });
 });

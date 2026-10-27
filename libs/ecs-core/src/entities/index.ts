@@ -41,5 +41,6 @@ export * from './shop-location.entity';
 export * from './streak-definition-version.entity';
 export * from './streak-definition.entity';
 export * from './tier-definition.entity';
+export * from './trigger-failure.entity';
 export * from './user.entity';
 export * from './waitlist-request.entity';

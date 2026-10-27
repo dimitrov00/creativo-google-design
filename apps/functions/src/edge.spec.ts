@@ -56,9 +56,18 @@ import {
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
 import { AttemptOutcome, ResizeEdge } from '@core/components';
-import { Callables, type LogContext, type TelemetryPorts } from '@core/ports';
+import type { Firestore } from 'firebase-admin/firestore';
+import type { TriggerFailure } from '@core/entities';
+import {
+  Callables,
+  type LogContext,
+  type TelemetryPorts,
+  type TriggerFailurePorts,
+  type WriteTriggerFailure,
+} from '@core/ports';
 import {
   type AttemptLine,
+  TriggerAttemptSystem,
   WorkBudgetSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -87,6 +96,8 @@ import {
   wireRuleOf,
   workBudget,
 } from './edge';
+import { firestoreTriggerFailurePorts } from './adapters/firestore-trigger-failures.adapter';
+import { createProjectionFirestore } from './test-support/fake-projection-firestore';
 
 /** A literal instant as the brand — specs only. */
 function utc(ms: number): UtcEpochMs {
@@ -1101,9 +1112,18 @@ function edgePorts(start = 1_000) {
     log: (level, msg, fields) => logged.push({ level, msg, fields }),
     trackError: (error, context) => tracked.push({ error, context }),
   };
-  const ports: CallableEdgePorts = {
+  /** Every dead letter the edge asked to write (WS-6), and how the next write answers. */
+  const deadLetters: TriggerFailure[] = [];
+  const writer: { write: WriteTriggerFailure } = {
+    write: async () => Result.ok(undefined),
+  };
+  const ports: CallableEdgePorts & TriggerFailurePorts = {
     ...telemetry,
     nowUtcMs: () => utc(now),
+    writeTriggerFailure: async (failure) => {
+      deadLetters.push(failure);
+      return writer.write(failure);
+    },
     bindLogContext: (context, run) => {
       bound.push({ ...context });
       return run();
@@ -1119,6 +1139,8 @@ function edgePorts(start = 1_000) {
     logged,
     bound,
     added,
+    deadLetters,
+    writer,
     advance: (ms: number) => {
       now += ms;
     },
@@ -1609,7 +1631,7 @@ describe('edge — the wrappers', () => {
     });
 
     it('logs the one attempt line and rethrows what a redelivery could fix', async () => {
-      const { ports, logged } = edgePorts(2_000);
+      const { ports, logged, deadLetters } = edgePorts(2_000);
       const transient = Object.assign(new Error('unavailable'), { code: 14 });
       const trigger = retryingTrigger(
         { fn: 'dispatchClientProjections', timeoutSeconds: null },
@@ -1634,6 +1656,8 @@ describe('edge — the wrappers', () => {
           },
         },
       ]);
+      // An early transient failure earns its redelivery, not a dead letter (WS-6).
+      expect(deadLetters).toEqual([]);
     });
 
     it('logs and drops what would fail the same way for the whole window', async () => {
@@ -1652,6 +1676,179 @@ describe('edge — the wrappers', () => {
         outcome: 'PERMANENT',
         errorCode: 'invalid-argument',
         ageMs: null,
+      });
+    });
+
+    describe('the dead letter (audit-hardening WS-6, DEP-23)', () => {
+      const FINAL_AGE_MS =
+        TriggerAttemptSystem.RETRY_WINDOW_MS -
+        TriggerAttemptSystem.LAST_ATTEMPT_MARGIN_MS;
+      const written = {
+        id: 'evt-w',
+        time: new Date(500).toISOString(),
+        document: 'appointments/apt-1',
+        data: {
+          before: { exists: false, data: () => undefined },
+          after: {
+            exists: true,
+            data: () => ({ writeOperationId: 'op-0000000000000001' }),
+          },
+        },
+      };
+
+      it('writes exactly one dead letter for a PERMANENT failure, after its line — the event id its id — and drops the delivery', async () => {
+        const { ports, logged, deadLetters } = edgePorts(2_000);
+        const trigger = retryingTrigger(
+          { fn: 'rebuildBusyOnAppointmentChange', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 3 });
+          },
+        );
+        await expect(trigger(written)).resolves.toBeUndefined();
+        expect(deadLetters).toEqual([
+          {
+            id: 'evt-w',
+            fn: 'rebuildBusyOnAppointmentChange',
+            documentPath: 'appointments/apt-1',
+            attemptOutcome: AttemptOutcome.Permanent,
+            failureCode: 'invalid-argument',
+            recordedAtUtcMs: 2_000,
+            writeOperationId: 'op-0000000000000001',
+          },
+        ]);
+        expect(logged.map((line) => line.msg)).toEqual([
+          'trigger attempt failed',
+        ]);
+      });
+
+      it('leaves one dead letter when the same event fails twice — the adapter creates it once', async () => {
+        const fake = createProjectionFirestore();
+        const { ports, logged } = edgePorts(2_000);
+        const trigger = retryingTrigger(
+          { fn: 'auditProfileChanges', timeoutSeconds: null },
+          {
+            ...ports,
+            ...firestoreTriggerFailurePorts(fake.db as unknown as Firestore),
+          },
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 3 });
+          },
+        );
+        await trigger(event);
+        await trigger(event);
+        expect([...fake.docs.keys()]).toEqual(['triggerFailures/evt-1']);
+        expect(fake.docs.get('triggerFailures/evt-1')).toMatchObject({
+          fn: 'auditProfileChanges',
+          attemptOutcome: AttemptOutcome.Permanent,
+          recordedAtUtcMs: 2_000,
+        });
+        expect(
+          logged.filter((line) => line.msg === 'trigger.failure_not_recorded'),
+        ).toEqual([]);
+      });
+
+      it('writes none for a TRANSIENT failure one ms before the last stretch, and rethrows it', async () => {
+        const { ports, deadLetters } = edgePorts(500 + FINAL_AGE_MS - 1);
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const trigger = retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(trigger(event)).rejects.toBe(transient);
+        expect(deadLetters).toEqual([]);
+      });
+
+      it('writes one for a TRANSIENT failure in the window’s last stretch — the redelivery may never come — and still rethrows it', async () => {
+        const { ports, logged, deadLetters } = edgePorts(500 + FINAL_AGE_MS);
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const trigger = retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(trigger(event)).rejects.toBe(transient);
+        expect(deadLetters).toEqual([
+          {
+            id: 'evt-1',
+            fn: 'dispatchClientProjections',
+            documentPath: null,
+            attemptOutcome: AttemptOutcome.Transient,
+            failureCode: 'unavailable',
+            recordedAtUtcMs: 500 + FINAL_AGE_MS,
+            writeOperationId: null,
+          },
+        ]);
+        expect(logged[0]?.fields).toMatchObject({ ageMs: FINAL_AGE_MS });
+      });
+
+      it('logs a refused write once and changes nothing else — the PERMANENT delivery still drops, the TRANSIENT one still rethrows', async () => {
+        const permanent = edgePorts(2_000);
+        permanent.writer.write = async () =>
+          Result.err(
+            RepositoryError.writeFailed('triggerFailures/evt-1', 'unavailable'),
+          );
+        await expect(
+          retryingTrigger(
+            { fn: 'auditProfileChanges', timeoutSeconds: null },
+            permanent.ports,
+            async () => {
+              throw Object.assign(new Error('bad'), { code: 3 });
+            },
+          )(event),
+        ).resolves.toBeUndefined();
+        expect(permanent.logged).toEqual([
+          expect.objectContaining({ msg: 'trigger attempt failed' }),
+          {
+            level: 'error',
+            msg: 'trigger.failure_not_recorded',
+            fields: {
+              fn: 'auditProfileChanges',
+              eventId: 'evt-1',
+              errorCode: 'unavailable',
+            },
+          },
+        ]);
+        expect(permanent.tracked).toEqual([]);
+
+        const transient = edgePorts(500 + FINAL_AGE_MS);
+        transient.writer.write = async () => {
+          throw Object.assign(new Error('7 PERMISSION_DENIED'), { code: 7 });
+        };
+        const thrown = Object.assign(new Error('aborted'), { code: 10 });
+        await expect(
+          retryingTrigger(
+            { fn: 'dispatchClientProjections', timeoutSeconds: null },
+            transient.ports,
+            async () => {
+              throw thrown;
+            },
+          )(event),
+        ).rejects.toBe(thrown);
+        expect(transient.deadLetters).toHaveLength(1);
+        expect(transient.logged.map((line) => line.fields)).toEqual([
+          expect.objectContaining({ outcome: 'TRANSIENT' }),
+          {
+            fn: 'dispatchClientProjections',
+            eventId: 'evt-1',
+            errorCode: 'permission-denied',
+          },
+        ]);
+      });
+
+      it('writes none when the attempt succeeds', async () => {
+        const { ports, deadLetters } = edgePorts(500 + FINAL_AGE_MS);
+        await retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => undefined,
+        )(event);
+        expect(deadLetters).toEqual([]);
       });
     });
 

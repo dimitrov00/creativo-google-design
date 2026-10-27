@@ -1,0 +1,26 @@
+# Alert: a stored document the read guard refuses (audit-hardening WS-6)
+# over the document_refused metric of tools/ops/log-metrics.sh. A refused
+# body is a schema defect, never traffic: one is worth a look. Add a
+# notification channel before relying on it.
+displayName: 'Creativo: malformed documents refused (document_refused)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A server read refused a stored document its guard does not admit. The
+    line names the path and the field; fix the document or the writer.
+combiner: OR
+conditions:
+  - displayName: 'any document_refused in 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/document_refused" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

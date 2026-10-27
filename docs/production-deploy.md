@@ -34,12 +34,13 @@ Both predeploy hooks in `firebase.json` run it too and refuse the deploy if a
 check fails. Run it by hand before you start, in both scopes as above, so a
 failure doesn't land in the middle of a deploy. By hand it defaults to
 `--scope web` (P1–P6), so build the web first (`pnpm nx build web`) or P4
-fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P8) runs
-P7 and P8. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
+fails with "no built scripts"; only `--scope functions` (P1–P3, P6–P9) runs
+P7, P8 and P9. Without `--project` it falls back to `$GCLOUD_PROJECT`, then to
 `.firebaserc`'s default. On a first deploy P2 and P3 fail until the index
 deploy of section 3.1 has run; that is expected. P8 fails every functions
-deploy until the OTP sender of section 1 lands — that is the point. Its eight
-checks are:
+deploy until the OTP sender of section 1 lands — that is the point. P9 never
+fails: it reports the platform backstops (PITR, backups, the audit sink and
+its bucket) as `INFO` lines. Its nine checks are:
 
 | Check | Passes when                                                                                                       |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
@@ -51,6 +52,7 @@ checks are:
 | P6    | no `*EMULATOR*` variable is set, and the project isn't the placeholder or a `demo-*` project                      |
 | P7    | every use of an `@emulatorOnly` export in `apps/functions/src` sits behind `onEmulator()` (functions scope only)  |
 | P8    | no `@launchBlocker` export in `apps/functions/src` is used at all (functions scope only)                          |
+| P9    | always — informational: reports PITR, the backup schedules, the audit sink and its bucket (functions scope only)  |
 
 The `@emulatorOnly` exports are the console OTP sender (`consoleOtpSender`),
 the fixed-code OTP crypto (`fixedCodeOtpCryptoPorts`) and its code
@@ -64,10 +66,14 @@ top-level `const` or `function`; anywhere else it fails, so it can't drop out
 unnoticed. The one `@launchBlocker` export is the refusing OTP sender
 (`refusingOtpSender`); P8 follows its uses the same way and fails on any use
 at all, behind `onEmulator()` or not. Exit codes: 0 = pass, 1 = a check
-failed, 2 = bad arguments. If P6 fails, P1–P3 are skipped; P7 and P8 read only
-the repository, so they run either way.
-Source: `tools/verify/preflight/preflight.mjs:1-56`, `:100-103`, `:463-920`,
-`:1039-1062`; runbook §3 (`docs/architecture/firestore-runbook.md:193-209`).
+failed, 2 = bad arguments. If P6 fails, P1–P3 and P9 are skipped; P7 and P8
+read only the repository, so they run either way. P9 reads the names in
+`tools/ops/names.env` (the ones the `tools/ops` scripts create) and turns
+every read it cannot make into an `INFO … unreadable` line (audit-hardening
+WS-6, plan RU-33): promoting it to a gate is the owner's call.
+Source: `tools/verify/preflight/preflight.mjs:1-64`, `:110-113`, `:492-948`
+(P7, P8), `:950-1147` (P9, `opsNamesOf` … `readBackstops`), `:1269-1291`;
+`tools/ops/names.env`; runbook §3 (the preflight table and its bullets).
 
 Set these once in the shell you deploy from:
 
@@ -183,9 +189,10 @@ Source: `firebase.json:41`; `tools/verify/csp/check-csp.mjs:20-22`,
       does not (next item).
 - [ ] **Set up application-default credentials for the preflight**, signed in
       as Owner or Editor, or as an account with `roles/datastore.viewer` plus
-      `roles/serviceusage.serviceUsageConsumer`. `firebase login` alone is not
-      enough. The step-1 index/TTL deploy also needs Owner or Cloud Datastore
-      Index Admin.
+      `roles/serviceusage.serviceUsageConsumer`, and `roles/logging.viewer`
+      for P9's sink and bucket lines (without it P9 still passes, reading
+      them as "unreadable"). `firebase login` alone is not enough. The
+      step-1 index/TTL deploy also needs Owner or Cloud Datastore Index Admin.
 
 ```bash
 gcloud auth application-default login
@@ -352,28 +359,73 @@ Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
       declared in `firestore.indexes.json` and created by the step-1 index
       deploy (section 3). They must read `ACTIVE` (P2) before functions deploy.
       Source: `docs/architecture/firestore-runbook.md` §2.2–§2.3.
-- [ ] **Backups — nothing in the repo sets them up. decide.** Suggested: turn
-      on Point-in-Time Recovery and add a daily backup schedule. Storage objects
-      (media, avatars, visit photos) need their own policy, such as soft delete
-      or versioning. This matters most during the hand-written bootstrap
-      (section 2), which has no undo.
+- [ ] **Backups — decide.** Nothing turns them on by itself; the script
+      is ready. Recommended (audit-hardening WS-6): Point-in-Time Recovery on
+      (7 days of versions, the only window Firestore offers) and a daily
+      backup schedule kept 28 days. `tools/ops/firestore-backups.sh` does both,
+      idempotently: without `--apply` it only prints its `gcloud` commands
+      (read them first); with it, it turns PITR on when off and creates the
+      schedule when none exists. The preflight's P9 then reports both.
+      Storage objects (media, avatars, visit photos) need their own policy,
+      such as soft delete or versioning. This matters most during the
+      hand-written bootstrap (section 2), which has no undo — so run it before
+      section 2.
 
 ```bash
-gcloud firestore databases update --database='(default)' --enable-pitr --project="$PROJECT_ID"
+tools/ops/firestore-backups.sh --project "$PROJECT_ID"
 ```
 
 ```bash
-gcloud firestore backups schedules create --database='(default)' --recurrence=daily --retention=28d --project="$PROJECT_ID"
+tools/ops/firestore-backups.sh --project "$PROJECT_ID" --apply
 ```
 
-Source: `firebase.json:2-8` (only rules and indexes configured).
+Source: `firebase.json:2-8` (only rules and indexes configured);
+`tools/ops/firestore-backups.sh`, `tools/ops/names.env` (`PITR_DAYS`,
+`BACKUP_RECURRENCE`, `BACKUP_RETENTION`); runbook §2.5, §3 step 8.
 
-- [ ] **Cloud Audit Logs (optional, decide).** Turn on DATA_WRITE (not
-      DATA_READ) for the Cloud Firestore API, and route it to a separate
-      long-retention bucket so the 30-day `_Default` promise below isn't
-      affected. This comes from the design-research launch checklist, not
-      from an owner ruling.
-      Source: `docs/design-research/client-details-design.md:11430`, `:11451`.
+- [ ] **Cloud Audit Logs (optional, decide).** Recommended (audit-hardening
+      WS-6): Data Access `DATA_WRITE` and `ADMIN_READ` (never `DATA_READ`)
+      for `datastore.googleapis.com` — the service name Google documents for
+      Firestore's audit configuration, which covers
+      `firestore.googleapis.com` too (plan RU-34) — and for
+      `identitytoolkit.googleapis.com` (Firebase Auth; the name is
+      unconfirmed: check it under IAM & Admin → Audit Logs first), routed to
+      a separate 400-day bucket so the 30-day `_Default` promise below isn't
+      affected. Two scripts, each printing its `gcloud` commands unless
+      `--apply` is passed: `tools/ops/audit-logs.sh` (a read-modify-write of
+      the IAM policy's `auditConfigs`; it prints the volume and billing
+      caveat first — every Firestore write becomes a billable log entry, and
+      the entries name principals by e-mail) and `tools/ops/log-sink.sh` (the
+      bucket `creativo-audit-400d`, 400 days, and the sink
+      `creativo-audit-sink`: Admin Activity and Data Access audit logs plus
+      every Cloud Functions line, never a client issue — plan RU-36). Keeping
+      account ids for 400 days needs a legal basis (plan §7 item 9).
+      **Locking** the bucket (`--apply --lock`) is a separate decision and
+      **irreversible**: the bucket can then never be deleted, and its
+      retention only grows. The preflight's P9 reports the sink and the
+      bucket. This began as a design-research launch-checklist item, not an
+      owner ruling.
+      Source: `docs/design-research/client-details-design.md:11430`, `:11451`;
+      `tools/ops/audit-logs.sh`, `tools/ops/log-sink.sh`; runbook §2.5, §3
+      step 8.
+
+```bash
+tools/ops/audit-logs.sh --project "$PROJECT_ID"
+```
+
+```bash
+tools/ops/log-sink.sh --project "$PROJECT_ID"
+```
+
+- [ ] **Check the Data Access audit config by hand** once it is decided (the
+      preflight's role set cannot read the IAM policy, so P9 does not report
+      it — plan RU-33). Expect `datastore.googleapis.com` (and
+      `identitytoolkit.googleapis.com`) with `DATA_WRITE` and `ADMIN_READ`:
+
+```bash
+gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
+```
+
 - [ ] **Budget and alerts — decide the amount.** Google Cloud console →
       Billing → Budgets & alerts: a monthly budget with e-mail alerts. All
       callables are reachable without App Check (see section 8), and only
@@ -382,19 +434,31 @@ Source: `firebase.json:2-8` (only rules and indexes configured).
 
 ### Monitoring and privacy (owner's, OR-34)
 
-- [ ] **Create the `client_issue_count` logs metric** after the first
-      functions deploy. Write the YAML from runbook §3 step 7 (filter
-      `jsonPayload.clientIssueKind:*`, label `kind`, DELTA INT64) to
-      `/tmp/client_issue_count.yaml`, then:
+- [ ] **Create the logs-based metrics and their alerts** after the first
+      functions deploy: `tools/ops/log-metrics.sh` (runbook §3 step 7). It
+      creates or updates `client_issue_count` (OR-34: filter
+      `jsonPayload.clientIssueKind:*`, label `kind`, DELTA INT64 — the recipe
+      this item used to spell out), and, recommended by audit-hardening WS-6,
+      `trigger_attempt_failed` (labels `outcome`, `fn`), `document_refused`,
+      `audit_actor_missing` and `callable_failed` (label `callable`), then
+      the alert policies of `tools/ops/alerts/` (client issues above 100 per
+      5 minutes, as before; any PERMANENT trigger attempt or more than 10
+      failing in 5 minutes; any refused document; any act without its audit
+      row; more than 5 failures of one callable in 5 minutes). Read the dry
+      run first:
 
 ```bash
-gcloud logging metrics create client_issue_count --project="$PROJECT_ID" --config-from-file=/tmp/client_issue_count.yaml
+tools/ops/log-metrics.sh --project "$PROJECT_ID"
 ```
 
-- [ ] **Add an alert policy** in Cloud Monitoring → Alerting on
-      `logging.googleapis.com/user/client_issue_count` above 100 per 5 minutes,
-      with an e-mail notification channel.
-      Source: `docs/architecture/firestore-runbook.md:240-259`;
+```bash
+tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
+```
+
+- [ ] **Attach an e-mail notification channel** to each of the five alert
+      policies in Cloud Monitoring → Alerting (the files name none).
+      Source: `docs/architecture/firestore-runbook.md` §3 step 7;
+      `tools/ops/log-metrics.sh`, `tools/ops/alerts/*.yaml`;
       `docs/architecture/decisions/2026-10-26-owner-rulings.md:915`.
 - [ ] **Turn on Error Reporting notifications.** There is no Sentry or Pino
       (D11(a)): Cloud Logging plus Error Reporting is the only error channel
@@ -514,6 +578,18 @@ functions and hosting, `firestore-runbook.md:265-270`) protects a project
 already serving a pre-4a web whose direct writes the tightened rules close;
 a first deploy has no such web, so the ordinary order applies.
 
+**The audit-hardening deploy, on a project already serving an older tree:
+indexes → hosting → rules → functions** (runbook §3, "Audit-hardening";
+plan §7 item 7). That is 3.1, then 3.4, then 3.2, then 3.3. The new web
+goes out before the new functions because old functions ignore the extra
+`operationId` every mutating call now sends, and the new photo stamp must be
+live before the rules' stamp window. **Wire skew, accepted:** between the
+hosting and the functions deploys the old `reportClientIssues` refuses the
+new web's 12-key issue batches (those issues are lost, nothing else —
+DEP-22); once functions are live, a tab opened before the hosting deploy has
+its id-less booking calls refused until it reloads (DEP-4). Like the Phase
+4a exception, this is moot for a first deploy.
+
 ### 3.0 The gate
 
 - [ ] Run the full gate from `docs/architecture/HANDOFF.md` §4 (sync:check,
@@ -532,7 +608,8 @@ pnpm run verify:csp
 
 - [ ] Make sure no emulator variable (`FIRESTORE_EMULATOR_HOST`,
       `FUNCTIONS_EMULATOR`, …) is set in the deploying shell, then run the
-      preflight in both scopes (only the functions scope runs P7 and P8):
+      preflight in both scopes (only the functions scope runs P7, P8 and
+      P9):
 
 ```bash
 pnpm run preflight --project "$PROJECT_ID"
@@ -608,7 +685,7 @@ firebase deploy --only functions --project "$PROJECT_ID"
 The predeploy hook already runs, in order: `pnpm nx build functions`, then
 `node tools/flags/write-functions-env.mjs` (the `production` flag map into
 `dist/apps/functions/.env.<projectId>`), then the preflight with
-`--scope functions` (P1–P3, P6–P8). Don't set `FLAGS_ENV` for production.
+`--scope functions` (P1–P3, P6–P9). Don't set `FLAGS_ENV` for production.
 The deploy fails closed if `loc-center`, the TTLs or the composites aren't
 ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
@@ -651,8 +728,15 @@ Source: `firebase.json:26-34`; `docs/architecture/firestore-runbook.md:235`,
 
 ### 3.5 After the first functions deploy (once)
 
-- [ ] Create the `client_issue_count` metric and its alert (section 1,
-      Monitoring).
+- [ ] Create the five logs-based metrics and their alert policies:
+      `tools/ops/log-metrics.sh --project "$PROJECT_ID"`, read the dry run,
+      then the same with `--apply` (section 1, Monitoring). The metrics count
+      only lines written after they exist.
+- [ ] If decided (section 1, Data retention): the backstops not yet applied
+      — `tools/ops/firestore-backups.sh`, `tools/ops/audit-logs.sh`,
+      `tools/ops/log-sink.sh`, each with `--apply`; never `--lock` without
+      the owner's explicit word. Re-run the functions-scope preflight: P9
+      lists what is in place.
 
 ---
 
@@ -681,7 +765,9 @@ curl -sI "https://<domain>/"
 ```
 
 - [ ] **Logs:** Cloud Logging has **no** `[otp] would send` line. The
-      `client_issue_count` metric exists. Error Reporting shows no new group.
+      five metrics of `tools/ops/log-metrics.sh` exist
+      (`gcloud logging metrics list --project="$PROJECT_ID"`). Error Reporting
+      shows no new group.
 - [ ] **The next morning:** the 03:00, 03:30 and 04:00 schedules ran without
       errors.
 - [ ] Re-run the preflight.

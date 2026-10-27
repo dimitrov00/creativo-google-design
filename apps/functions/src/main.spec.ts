@@ -78,7 +78,12 @@ const seam = vi.hoisted(() => {
   const DB = { sentinel: 'db' };
   /** The Firestore bundle's commit port — a case scripts it (`mockImplementationOnce`). */
   const commit = vi.fn(async (): Promise<unknown> => ({ ok: true, value: {} }));
-  const BUNDLE = { sentinel: 'firestore ports', commit };
+  /** The Firestore bundle's dead-letter writer (audit-hardening WS-6) — answers success. */
+  const writeTriggerFailure = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: undefined,
+  }));
+  const BUNDLE = { sentinel: 'firestore ports', commit, writeTriggerFailure };
   /** Every `firestorePorts(...)` call's arguments — never cleared, the cold-start-once proof. */
   const built: (readonly unknown[])[] = [];
   const pipelines = Object.fromEntries(
@@ -103,6 +108,7 @@ const seam = vi.hoisted(() => {
     DB,
     BUNDLE,
     commit,
+    writeTriggerFailure,
     built,
     pipelines,
     adminFirestore: vi.fn(() => DB),
@@ -1308,6 +1314,38 @@ describe('main.ts — the composition root', () => {
             errorCode: 'data-loss',
           }),
         ]);
+      },
+    );
+
+    it.each(RETRIED)(
+      '%s records a dropped delivery once as a dead letter, through the server ports built on first use (WS-6, DEP-23)',
+      async (name, pipeline) => {
+        seam.writeTriggerFailure.mockClear();
+        seam.answers.set(pipeline, () => ({
+          ok: false,
+          error: RepositoryError.malformed(
+            'barberBusy/b-1__2026-10-12',
+            'blocks[0].startMinutes',
+          ),
+        }));
+        await expect(run(name, caseOf(name).input)).resolves.toBeUndefined();
+        expect(seam.writeTriggerFailure).toHaveBeenCalledTimes(1);
+        expect(seam.writeTriggerFailure).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'event-1',
+            fn: name,
+            attemptOutcome: 'PERMANENT',
+            failureCode: 'data-loss',
+          }),
+        );
+        expect(seam.firestorePorts).toHaveBeenCalled();
+        expect(
+          vi
+            .mocked(logger.error)
+            .mock.calls.filter(
+              ([msg]) => msg === 'trigger.failure_not_recorded',
+            ),
+        ).toEqual([]);
       },
     );
 

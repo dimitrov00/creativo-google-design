@@ -2098,6 +2098,76 @@ describe('firestore.rules', () => {
     });
   });
 
+  describe('triggerFailures — the admin pair reads the dead letters, no client writes one (WS-6, DEP-23)', () => {
+    // The flat `TriggerFailure` minus its id — the event id IS the document id.
+    const DEAD_LETTER = 'triggerFailures/evt-1';
+    const deadLetterBody = {
+      fn: 'dispatchClientProjections',
+      documentPath: 'appointments/appt-1',
+      attemptOutcome: 'PERMANENT',
+      failureCode: 'invalid-argument',
+      recordedAtUtcMs: SEPT_FIRST,
+      writeOperationId: null,
+    };
+
+    beforeEach(async () => {
+      await seed(DEAD_LETTER, deadLetterBody);
+    });
+
+    it.each(['admin', 'sysadmin'])(
+      'lets %s read a dead letter, by id and by list',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertSucceeds(getDoc(doc(db, DEAD_LETTER)));
+        await assertSucceeds(getDocs(collection(db, 'triggerFailures')));
+      },
+    );
+
+    it.each(['receptionist', 'barber', 'content_manager', 'client'])(
+      'refuses a %s reading the dead letters',
+      async (role) => {
+        const db = signedIn('user-1', role).firestore();
+        await assertFails(getDoc(doc(db, DEAD_LETTER)));
+        await assertFails(getDocs(collection(db, 'triggerFailures')));
+      },
+    );
+
+    it('refuses an anonymous visitor the read', async () => {
+      const db = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDoc(doc(db, DEAD_LETTER)));
+      await assertFails(getDocs(collection(db, 'triggerFailures')));
+    });
+
+    it.each([
+      'admin',
+      'sysadmin',
+      'receptionist',
+      'barber',
+      'content_manager',
+      'client',
+    ])(
+      'refuses a %s creating, rewriting or deleting a dead letter',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertFails(
+          setDoc(doc(db, 'triggerFailures', 'evt-2'), deadLetterBody),
+        );
+        await assertFails(
+          updateDoc(doc(db, DEAD_LETTER), { failureCode: 'unavailable' }),
+        );
+        await assertFails(deleteDoc(doc(db, DEAD_LETTER)));
+      },
+    );
+
+    it('refuses an anonymous visitor every write', async () => {
+      const db = testEnv.unauthenticatedContext().firestore();
+      await assertFails(
+        setDoc(doc(db, 'triggerFailures', 'evt-2'), deadLetterBody),
+      );
+      await assertFails(deleteDoc(doc(db, DEAD_LETTER)));
+    });
+  });
+
   describe('clientStats — the book reads, only the server writes', () => {
     // Keyed by the client RECORD (D29): `clientStats/{customerId}`.
     const statsPath = `clientStats/${recordOf('client-1')}`;

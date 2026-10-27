@@ -17,6 +17,7 @@ import {
   type BackfillJob,
   type PolicyRecomputeJob,
   RecomputeJobName,
+  type TriggerFailure,
 } from '@core/entities';
 import {
   type AttemptFailure,
@@ -155,6 +156,7 @@ export type StatsOpsDictionaryFields = [
   Expect<Equals<PolicyPassJudgement['policyPassVerdict'], PolicyPassVerdict>>, // components/policy-pass-verdict.data.ts
   Expect<Equals<AttemptFailure['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
   Expect<Equals<AttemptLine['attemptOutcome'], AttemptOutcome>>, // systems/trigger-attempt.system.ts
+  Expect<Equals<TriggerFailure['attemptOutcome'], AttemptOutcome>>, // entities/trigger-failure.entity.ts
   Expect<Equals<ClientIssue['clientIssueKind'], ClientIssueKind>>, // components/client-issue.data.ts
 ];
 

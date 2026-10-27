@@ -730,6 +730,16 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /triggerFailures/{eventId} {
+      // The dead letter (audit-hardening WS-6, DEP-23): the flat
+      // `TriggerFailure` a retrying trigger records once, keyed by the event
+      // id, when it gives up on a delivery. The admin pair reads; no client
+      // writes — `retryingTrigger` (Admin SDK) is the one writer, and the
+      // record is never updated, deleted or TTL'd.
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ── tenant settings ─────────────────────────────────────────────────
     // `settings/bookingPolicy` — the flat `BookingPolicySettings`, read live
     // by `schedulingReadPorts.observePolicy`. Public-read because the booking

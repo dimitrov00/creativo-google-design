@@ -20,10 +20,12 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import { GovernanceError, RepositoryError } from '@core/errors';
+import type { TriggerFailurePorts } from '@core/ports';
 import {
   type Appointment,
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
+  type TriggerFailure,
 } from '@core/entities';
 import { GovernedChangeSystem, TriggerAttemptSystem } from '@core/systems';
 import {
@@ -63,6 +65,23 @@ import {
  * and a retrying pipeline's answer turned into today's attempt line and
  * redelivery (`lib/trigger-attempts.ts`'s `reportAttempt`/`logAttempt`).
  */
+
+/**
+ * A dead-letter writer that records what `retryingTrigger` asked it to
+ * write and answers success (audit-hardening WS-6, DEP-23).
+ */
+function recordingDeadLetters(): TriggerFailurePorts & {
+  readonly written: readonly TriggerFailure[];
+} {
+  const written: TriggerFailure[] = [];
+  return {
+    written,
+    writeTriggerFailure: async (failure) => {
+      written.push(failure);
+      return Result.ok(undefined);
+    },
+  };
+}
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -672,9 +691,10 @@ describe('decodeDocumentChangeEvent — the thirteen governed collections (WS-3,
       decodeDocumentChangeEvent(GovernedCollection.Coupons, event),
     ).toThrow(/defect/);
     const telemetry = { ...recordingTelemetry(), nowUtcMs: pinnedNowUtcMs() };
+    const deadLetters = recordingDeadLetters();
     const handler = retryingTrigger(
       { fn: 'auditCouponsChanges', timeoutSeconds: null },
-      telemetry,
+      { ...telemetry, ...deadLetters },
       async (delivered: typeof event) => {
         decodeDocumentChangeEvent(GovernedCollection.Coupons, delivered);
       },
@@ -682,6 +702,12 @@ describe('decodeDocumentChangeEvent — the thirteen governed collections (WS-3,
     await expect(handler(event)).resolves.toBeUndefined();
     expect(telemetry.lines[0]?.fields).toMatchObject({
       outcome: AttemptOutcome.Permanent,
+    });
+    // Never redelivered, so recorded once as a dead letter (WS-6, DEP-23).
+    expect(deadLetters.written).toHaveLength(1);
+    expect(deadLetters.written[0]).toMatchObject({
+      fn: 'auditCouponsChanges',
+      attemptOutcome: AttemptOutcome.Permanent,
     });
   });
 });
@@ -772,9 +798,10 @@ describe('attempts — today’s line and redelivery', () => {
   it('redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`', async () => {
     const run = (failure: typeof transient) => {
       const telemetry = ports();
+      const deadLetters = recordingDeadLetters();
       const handler = retryingTrigger(
         { fn: 'dispatchClientProjections', timeoutSeconds: null },
-        telemetry,
+        { ...telemetry, ...deadLetters },
         async (delivered: typeof event) =>
           settleAttempt(
             'dispatchClientProjections',
@@ -783,7 +810,7 @@ describe('attempts — today’s line and redelivery', () => {
             telemetry,
           ),
       );
-      return { telemetry, done: handler(event) };
+      return { telemetry, deadLetters, done: handler(event) };
     };
     const redelivered = run(transient);
     await expect(redelivered.done).rejects.toBe(transient.error);
@@ -791,12 +818,21 @@ describe('attempts — today’s line and redelivery', () => {
       outcome: 'TRANSIENT',
       errorCode: 'unavailable',
     });
+    // A one-second-old transient failure earns its redelivery, not a dead letter (WS-6).
+    expect(redelivered.deadLetters.written).toEqual([]);
     const dropped = run(permanent);
     await expect(dropped.done).resolves.toBeUndefined();
     expect(dropped.telemetry.lines[0]?.fields).toMatchObject({
       outcome: 'PERMANENT',
       errorCode: 'internal',
     });
+    expect(dropped.deadLetters.written).toEqual([
+      expect.objectContaining({
+        id: 'evt-job',
+        attemptOutcome: 'PERMANENT',
+        failureCode: 'internal',
+      }),
+    ]);
   });
 
   it('logs the survived failure and settles quietly when nothing answers', () => {

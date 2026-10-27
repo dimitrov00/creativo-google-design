@@ -26,6 +26,7 @@ import {
   type HashPorts,
   type IdPorts,
   type NowUtcMs,
+  type TriggerFailurePorts,
 } from '@core/ports';
 import { GovernedChangeSystem, LogDigestSystem } from '@core/systems';
 import {
@@ -292,19 +293,6 @@ const LOG_DIGEST_KEY = defineSecret('LOG_DIGEST_KEY');
 const LOG_DIGEST_SECRETS = { secrets: [LOG_DIGEST_KEY] };
 
 /**
- * What the edge itself reads: telemetry, the clock, the per-invocation log
- * scope (`consoleLogContext`, WS-4.2) and the keyed input digest — read per
- * call (a secret is a runtime value). The triggers' edge reads the first
- * two only.
- */
-const edge: CallableEdgePorts = {
-  ...telemetry,
-  ...consoleLogContext(),
-  ...logDigestPorts(() => LOG_DIGEST_KEY.value()),
-  nowUtcMs,
-};
-
-/**
  * The server's ports, in one bundle: every Firestore-backed port (the
  * locations among them — where every pipeline reads its wall clock's
  * zone), the telemetry, and the deployment's default location
@@ -317,6 +305,22 @@ const serverPorts = once(() => ({
   ...telemetry,
   defaultLocationId: TenantConfig.DEFAULT.defaultLocationId,
 }));
+
+/**
+ * What the edge itself reads: telemetry, the clock, the per-invocation log
+ * scope (`consoleLogContext`, WS-4.2) and the keyed input digest — read per
+ * call (a secret is a runtime value). The triggers' edge reads the first
+ * two, and the dead-letter writer (audit-hardening WS-6, RU-32): LAZY — it
+ * reaches the server ports, so the Admin SDK is built only when a retrying
+ * trigger first gives up on a delivery, never at load.
+ */
+const edge: CallableEdgePorts & TriggerFailurePorts = {
+  ...telemetry,
+  ...consoleLogContext(),
+  ...logDigestPorts(() => LOG_DIGEST_KEY.value()),
+  nowUtcMs,
+  writeTriggerFailure: (failure) => serverPorts().writeTriggerFailure(failure),
+};
 
 /**
  * The identity callables' ports: the server ports, Admin Auth, the

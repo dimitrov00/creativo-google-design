@@ -14,5 +14,6 @@ export * from './programs.port';
 export * from './scheduling.port';
 export * from './storage.port';
 export * from './telemetry.port';
+export * from './trigger-failure.port';
 export * from './tx.port';
 export * from './visit-edit.port';

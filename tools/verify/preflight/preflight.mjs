@@ -30,18 +30,26 @@
 //       tagged `@launchBlocker` is used anywhere, followed as P7 follows
 //       its tag — today the deployed branch wires `refusingOtpSender`, which
 //       refuses every sign-in (the launch blocker of
-//       docs/production-deploy.md §1), so P8 fails by design.
+//       docs/production-deploy.md §1), so P8 fails by design;
+//   P9  the platform backstops (audit-hardening WS-6, plan RU-33) —
+//       informational: Point-in-Time Recovery, the backup schedules, the
+//       audit sink and its 400-day bucket (named in tools/ops/names.env,
+//       created by the tools/ops scripts) are each reported as an INFO line
+//       inside a PASS row; a missing backstop or an unreadable one never
+//       fails a deploy.
 //
 // `--scope web` (the default; the hosting predeploy) runs P1–P6,
-// `--scope functions` (the functions predeploy) P1–P3 and P6–P8. The
+// `--scope functions` (the functions predeploy) P1–P3 and P6–P9. The
 // project is `--project`, else $GCLOUD_PROJECT (the Firebase CLI sets it for
-// a predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 never
-// read (SKIP): the read would reach an emulator, or a project nobody deploys
-// to.
+// a predeploy), else `.firebaserc`'s default. When P6 fails, P1–P3 and P9
+// never read (SKIP): the read would reach an emulator, or a project nobody
+// deploys to.
 //
 // Reads only. P1 reads through firebase-admin under the application-default
-// credentials; P2 and P3 list through the Firestore Admin REST API with the
-// same credentials' token, the project named as the quota project
+// credentials; P2, P3 and P9's database and backup reads go through the
+// Firestore Admin REST API with the same credentials' token, P9's sink and
+// bucket reads through the Cloud Logging API (`roles/logging.viewer`), the
+// project named as the quota project
 // (`gcloud auth application-default login` first; runbook §3); P7 and P8
 // read no project: they resolve names across the files of
 // apps/functions/src that tsconfig.app.json builds, in memory, with the
@@ -82,6 +90,7 @@ export const CHECKS = {
   P6: 'no emulator variable; a real project',
   P7: 'the emulator-only adapters run only behind onEmulator()',
   P8: 'no launch-blocker stand-in is wired (@launchBlocker)',
+  P9: 'the platform backstops (PITR, backups, audit sink, locked bucket) — informational',
 };
 
 /** What each check proves something about — the escape hatch names what went unproven. */
@@ -94,16 +103,17 @@ const SUBJECTS = {
   P6: 'the environment',
   P7: 'the emulator-only adapters',
   P8: 'the launch blockers',
+  P9: 'the platform backstops',
 };
 
 /** The checks each predeploy runs (firebase.json). */
 export const SCOPES = {
   web: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'],
-  functions: ['P1', 'P2', 'P3', 'P6', 'P7', 'P8'],
+  functions: ['P1', 'P2', 'P3', 'P6', 'P7', 'P8', 'P9'],
 };
 
 /** The checks that read the hosted project — never run when P6 fails. */
-const READS_PROJECT = ['P1', 'P2', 'P3'];
+const READS_PROJECT = ['P1', 'P2', 'P3', 'P9'];
 
 /** The checks that need a project id to compare against. */
 const NAMES_PROJECT = ['P4', 'P5'];
@@ -132,6 +142,24 @@ const LAUNCH_BLOCKER_TAG = 'launchBlocker';
 
 /** The Firestore Admin REST API. */
 const FIRESTORE_ADMIN = 'https://firestore.googleapis.com/v1';
+
+/** The Cloud Logging API (P9's sink and bucket). */
+const CLOUD_LOGGING = 'https://logging.googleapis.com/v2';
+
+/** The platform backstops' names — the one file the tools/ops scripts source too. */
+const OPS_NAMES = 'tools/ops/names.env';
+
+/** The database PITR enablement P9 reads as on. */
+const PITR_ENABLED = 'POINT_IN_TIME_RECOVERY_ENABLED';
+
+/** P9's way to each backstop, and what an unreadable one needs. */
+const BACKSTOP_SCRIPTS = {
+  firestore: 'tools/ops/firestore-backups.sh --apply',
+  sink: 'tools/ops/log-sink.sh --apply',
+  lock: 'tools/ops/log-sink.sh --apply --lock — irreversible, an owner decision (docs/production-deploy.md §1)',
+};
+const BACKSTOP_CREDENTIALS_HINT =
+  'the backstop reads need roles/datastore.viewer (PITR, backups) and roles/logging.viewer (sink, bucket) — runbook §3';
 
 /** A listing that takes longer than this is a failed read, not a hung deploy. */
 const READ_TIMEOUT_MS = 30_000;
@@ -920,14 +948,215 @@ export function checkLaunchBlockers({ root, sources }) {
 }
 
 /**
+ * `tools/ops/names.env` as the shell reads it: one `KEY=value` per line,
+ * a value single- or double-quoted only to keep the shell off it (the file
+ * holds no expansion and no command — ops-scripts.spec.mjs holds this
+ * reading equal to bash's), comments and blank lines skipped.
+ */
+export function opsNamesOf(text) {
+  const names = {};
+  for (const line of text.split('\n')) {
+    const match = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+    if (match === null) continue;
+    const raw = match[2];
+    names[match[1]] = /^(?:'[^']*'|"[^"]*")$/.test(raw)
+      ? raw.slice(1, -1)
+      : raw;
+  }
+  return names;
+}
+
+/** A Google `Duration` (`604800s`) in whole days, or `null` when it is not one. */
+function durationDays(duration) {
+  if (typeof duration !== 'string' || !duration.endsWith('s')) return null;
+  const seconds = Number(duration.slice(0, -1));
+  return Number.isFinite(seconds) && seconds >= 0
+    ? Math.floor(seconds / 86_400)
+    : null;
+}
+
+/** The last segment of a resource name (`…/backupSchedules/abc` → `abc`). */
+function lastSegmentOf(name) {
+  return (name ?? '').split('/').at(-1) || '(unnamed)';
+}
+
+/** A backup schedule's recurrence, in words. */
+function recurrenceOf(schedule) {
+  if (schedule.dailyRecurrence !== undefined) return 'daily';
+  if (schedule.weeklyRecurrence !== undefined) {
+    return `weekly (${schedule.weeklyRecurrence.day ?? 'day unset'})`;
+  }
+  return 'no recurrence';
+}
+
+/**
+ * P9 — the platform backstops (audit-hardening WS-6), INFORMATIONAL (plan
+ * RU-33: the preflight has no INFO verdict; P2's and P3's INFO lines are the
+ * precedent): always a PASS row whose four `INFO` lines report
+ * Point-in-Time Recovery (`pitr`: the database, `projects…/databases/
+ * (default)`), the backup schedules (`backups`: the listing's
+ * `backupSchedules`), the audit sink (`sink`: the LogSink, or `null` when
+ * absent) and its bucket (`bucket`: the LogBucket, or `null`). Each read
+ * arrives settled — `{ ok: true, value }` or `{ ok: false, reason }` — and
+ * an unreadable one is an `INFO … unreadable` line, never a failure: a 403
+ * under the documented role set must not stop a deploy. `names` (settled
+ * too) is tools/ops/names.env: the sink, the bucket and the retention the
+ * scripts create. Promoting P9 to a gate is the owner's call (plan §7 item
+ * 5); the flip is local to this function.
+ */
+export function checkBackstops({ names, pitr, backups, sink, bucket }) {
+  const expected = names.ok ? names.value : {};
+  const sinkName = expected.LOG_SINK_NAME ?? '';
+  const bucketId = expected.LOG_BUCKET_ID ?? '';
+  const wantedDays = Number(expected.LOG_BUCKET_RETENTION_DAYS ?? Number.NaN);
+  const lines = [];
+  const unreadable = [];
+  let inPlace = 0;
+  const report = (subject, read, judge) => {
+    if (!read.ok) {
+      unreadable.push(read.reason);
+      lines.push(`INFO  ${subject} unreadable — ${read.reason}`);
+      return;
+    }
+    const { held, line } = judge(read.value);
+    if (held) inPlace += 1;
+    lines.push(`INFO  ${line}`);
+  };
+
+  report('PITR', pitr, (database) => {
+    if (database?.pointInTimeRecoveryEnablement !== PITR_ENABLED) {
+      return {
+        held: false,
+        line: `PITR off — ${BACKSTOP_SCRIPTS.firestore}`,
+      };
+    }
+    const days = durationDays(database.versionRetentionPeriod);
+    return {
+      held: true,
+      line: `PITR on — ${days === null ? 'retention unreported' : `${days} days of versions`}`,
+    };
+  });
+
+  report('the backup schedules', backups, (schedules) => {
+    if (schedules.length === 0) {
+      return {
+        held: false,
+        line: `no backup schedule — ${BACKSTOP_SCRIPTS.firestore}`,
+      };
+    }
+    const each = schedules.map((schedule) => {
+      const days = durationDays(schedule.retention);
+      return `${lastSegmentOf(schedule.name)} ${recurrenceOf(schedule)}, kept ${days === null ? '?' : days} days`;
+    });
+    return {
+      held: true,
+      line: `backup schedule${schedules.length === 1 ? '' : 's'}: ${each.join('; ')}`,
+    };
+  });
+
+  report(`the audit sink${sinkName ? ` ${sinkName}` : ''}`, sink, (found) => {
+    if (found === null) {
+      return {
+        held: false,
+        line: `audit sink ${sinkName} absent — ${BACKSTOP_SCRIPTS.sink}`,
+      };
+    }
+    const routed = (found.destination ?? '').endsWith(`/buckets/${bucketId}`);
+    if (!routed) {
+      return {
+        held: false,
+        line: `audit sink ${sinkName} routes to ${found.destination ?? 'nowhere'}, not ${bucketId} — ${BACKSTOP_SCRIPTS.sink}`,
+      };
+    }
+    if (found.disabled === true) {
+      return {
+        held: false,
+        line: `audit sink ${sinkName} → ${bucketId}, DISABLED — ${BACKSTOP_SCRIPTS.sink}`,
+      };
+    }
+    return { held: true, line: `audit sink ${sinkName} → ${bucketId}` };
+  });
+
+  report(
+    `the audit bucket${bucketId ? ` ${bucketId}` : ''}`,
+    bucket,
+    (found) => {
+      if (found === null) {
+        return {
+          held: false,
+          line: `audit bucket ${bucketId} absent — ${BACKSTOP_SCRIPTS.sink}`,
+        };
+      }
+      const days = Number(found.retentionDays ?? 0);
+      const short = Number.isFinite(wantedDays) && days < wantedDays;
+      const lock =
+        found.locked === true
+          ? 'locked'
+          : `not locked — ${BACKSTOP_SCRIPTS.lock}`;
+      return {
+        held: !short,
+        line: `audit bucket ${bucketId}: ${days} days${short ? `, below the ${wantedDays} of ${OPS_NAMES} — ${BACKSTOP_SCRIPTS.sink}` : ''}, ${lock}`,
+      };
+    },
+  );
+
+  if (!names.ok) {
+    lines.push(`INFO  ${OPS_NAMES} unreadable — ${names.reason}`);
+  }
+  if (unreadable.some((reason) => CREDENTIALS_FAILURE.test(reason))) {
+    lines.push(`INFO  ${BACKSTOP_CREDENTIALS_HINT}`);
+  }
+  return row(
+    'P9',
+    Verdict.Pass,
+    `${inPlace} of 4 backstops in place — informational, never stops a deploy`,
+    lines,
+  );
+}
+
+/** A read, settled: `{ ok: true, value }`, or `{ ok: false, reason }` when it throws. */
+async function settle(load) {
+  try {
+    return { ok: true, value: await load() };
+  } catch (error) {
+    return { ok: false, reason: error?.message ?? String(error) };
+  }
+}
+
+/**
+ * P9's reads, every one settled (RU-33: P9 never throws): the names first,
+ * then the four backstops — the sink and the bucket by the names' ids.
+ */
+async function readBackstops(read) {
+  const names = await settle(() => read.opsNames());
+  const byName = (load) =>
+    names.ok
+      ? settle(() => load(names.value))
+      : Promise.resolve({
+          ok: false,
+          reason: `no names: ${OPS_NAMES} is unreadable`,
+        });
+  const [pitr, backups, sink, bucket] = await Promise.all([
+    settle(() => read.database()),
+    settle(() => read.backupSchedules()),
+    byName(read.sink),
+    byName(read.bucket),
+  ]);
+  return { names, pitr, backups, sink, bucket };
+}
+
+/**
  * Every check of `scope`, over what `read` answers: `domain()` (the seed
  * bundle), `location(domain)` (the default location as stored, or `null`),
  * `declared()` (firestore.indexes.json), `ttlFields()` and `indexes()` (the
  * project's listings), `bundle()` (`{ dist, scripts }`), `config()`
- * (firebase.json) and `functionsSource()` (`{ root, sources }`). A read that
- * throws fails its check; P6 runs first and, failing, keeps P1–P3 from
- * reading at all — P7 and P8 read the repository only (one read, shared),
- * so they run either way.
+ * (firebase.json), `functionsSource()` (`{ root, sources }`), and P9's
+ * `opsNames()` (tools/ops/names.env), `database()`, `backupSchedules()`,
+ * `sink(names)` and `bucket(names)` (the last two `null` when absent). A
+ * read that throws fails its check — but P9's, each an INFO line (RU-33);
+ * P6 runs first and, failing, keeps P1–P3 and P9 from reading at all — P7
+ * and P8 read the repository only (one read, shared), so they run either
+ * way.
  */
 export async function runPreflight({ scope, projectId, env, read }) {
   const environment = checkEnvironment({ env, projectId });
@@ -955,6 +1184,7 @@ export async function runPreflight({ scope, projectId, env, read }) {
     P6: async () => environment,
     P7: async () => checkEmulatorOnly(await functionsSource()),
     P8: async () => checkLaunchBlockers(await functionsSource()),
+    P9: async () => checkBackstops(await readBackstops(read)),
   };
   return Promise.all(
     SCOPES[scope].map(async (check) => {
@@ -1144,10 +1374,11 @@ function once(load) {
 
 /**
  * The live reads for `options`: the files on disk (the functions' source
- * among them), the default location through firebase-admin, and the two
- * listings through the Firestore Admin REST API — all under the one
- * application-default credential. firebase-admin loads only when a project
- * read runs.
+ * and tools/ops/names.env among them), the default location through
+ * firebase-admin, the two listings and P9's database and backup schedules
+ * through the Firestore Admin REST API, P9's sink and bucket through the
+ * Cloud Logging API — all under the one application-default credential.
+ * firebase-admin loads only when a project read runs.
  */
 function liveReaders({ projectId, dist, config }) {
   const configPath = resolve(config);
@@ -1157,9 +1388,33 @@ function liveReaders({ projectId, dist, config }) {
     return applicationDefault();
   });
 
-  /** Every item of a paged Admin listing (`key`: `indexes` or `fields`). */
-  async function listAll(path, key, filter) {
+  /**
+   * One GET of a Google API under the credential, the project as the quota
+   * project: the JSON body; `null` on a 404 when `absent` allows it (P9's
+   * sink and bucket); else a throw naming `label` and the status.
+   */
+  async function getJson(url, label, { absent = false } = {}) {
     const { access_token: token } = await (await credential()).getAccessToken();
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        'x-goog-user-project': projectId,
+      },
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
+    const body = await response.json().catch(() => ({}));
+    const { status } = response;
+    if (absent && status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `${label}: HTTP ${status}${body.error?.message ? ` — ${body.error.message}` : ''}`,
+      );
+    }
+    return body;
+  }
+
+  /** Every item of a paged Admin listing (`key`: `indexes`, `fields` or `backupSchedules`). */
+  async function listAll(path, key, filter) {
     const items = [];
     let pageToken = '';
     do {
@@ -1168,19 +1423,7 @@ function liveReaders({ projectId, dist, config }) {
       );
       if (filter) url.searchParams.set('filter', filter);
       if (pageToken) url.searchParams.set('pageToken', pageToken);
-      const response = await fetch(url, {
-        headers: {
-          authorization: `Bearer ${token}`,
-          'x-goog-user-project': projectId,
-        },
-        signal: AbortSignal.timeout(READ_TIMEOUT_MS),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          `${path}: HTTP ${response.status}${body.error?.message ? ` — ${body.error.message}` : ''}`,
-        );
-      }
+      const body = await getJson(url, path);
       items.push(...(body[key] ?? []));
       pageToken = body.nextPageToken ?? '';
     } while (pageToken);
@@ -1230,6 +1473,31 @@ function liveReaders({ projectId, dist, config }) {
       root: FUNCTIONS_SOURCE,
       sources: functionsSourceUnder(resolve(FUNCTIONS_SOURCE)),
     }),
+    opsNames: once(async () =>
+      opsNamesOf(readFileSync(resolve(OPS_NAMES), 'utf8')),
+    ),
+    database: () =>
+      getJson(
+        new URL(`${FIRESTORE_ADMIN}/projects/${projectId}/databases/(default)`),
+        'databases/(default)',
+      ),
+    backupSchedules: () => listAll('backupSchedules', 'backupSchedules'),
+    sink: (names) =>
+      getJson(
+        new URL(
+          `${CLOUD_LOGGING}/projects/${projectId}/sinks/${encodeURIComponent(names.LOG_SINK_NAME)}`,
+        ),
+        `sinks/${names.LOG_SINK_NAME}`,
+        { absent: true },
+      ),
+    bucket: (names) =>
+      getJson(
+        new URL(
+          `${CLOUD_LOGGING}/projects/${projectId}/locations/${encodeURIComponent(names.LOG_BUCKET_LOCATION)}/buckets/${encodeURIComponent(names.LOG_BUCKET_ID)}`,
+        ),
+        `buckets/${names.LOG_BUCKET_ID}`,
+        { absent: true },
+      ),
   };
 }
 

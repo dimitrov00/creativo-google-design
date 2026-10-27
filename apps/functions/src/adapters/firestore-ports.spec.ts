@@ -1,7 +1,12 @@
 import { type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { BusyKey, Result, UtcEpochMs } from '@core/primitives';
+import { BusyKey, Result, TriggerEventId, UtcEpochMs } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
-import { Email, ParsedIdentifier, WriteOp } from '@core/components';
+import {
+  AttemptOutcome,
+  Email,
+  ParsedIdentifier,
+  WriteOp,
+} from '@core/components';
 import type { ClockPorts, HashPorts, IdPorts } from '@core/ports';
 import {
   appointmentFixture,
@@ -75,6 +80,8 @@ describe('firestorePorts — the assembler', () => {
       'loadOpenOtps',
       'saveOtp',
       'findUserByDestination',
+      // audit-hardening WS-6: the retrying triggers' dead letter
+      'writeTriggerFailure',
     ] as const) {
       expect(typeof (ports as Record<string, unknown>)[member], member).toBe(
         'function',
@@ -112,6 +119,29 @@ describe('firestorePorts — the assembler', () => {
       ParsedIdentifier.email(mail),
     );
     expect(found.ok && found.value?.id).toBe(id);
+  });
+
+  it('records a dead letter through the same db, once per event (WS-6)', async () => {
+    const { fake, ports } = assemble();
+    const failure = {
+      id: TriggerEventId.of('evt-1'),
+      fn: 'dispatchClientProjections',
+      documentPath: null,
+      attemptOutcome: AttemptOutcome.Permanent,
+      failureCode: 'invalid-argument',
+      recordedAtUtcMs: ports.nowUtcMs(),
+      writeOperationId: null,
+    };
+    expect((await ports.writeTriggerFailure(failure)).ok).toBe(true);
+    expect((await ports.writeTriggerFailure(failure)).ok).toBe(true);
+    expect(fake.docs.get('triggerFailures/evt-1')).toEqual({
+      fn: 'dispatchClientProjections',
+      documentPath: null,
+      attemptOutcome: AttemptOutcome.Permanent,
+      failureCode: 'invalid-argument',
+      recordedAtUtcMs: 1_760_000_000_000,
+      writeOperationId: null,
+    });
   });
 
   it('reads the settings through the same db', async () => {

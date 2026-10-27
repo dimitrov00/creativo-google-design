@@ -1,0 +1,43 @@
+# Alert: retrying triggers failing (audit-hardening WS-6) over the
+# trigger_attempt_failed metric of tools/ops/log-metrics.sh (labels outcome,
+# fn). A PERMANENT failure is dropped after its line (and dead-lettered to
+# triggerFailures, runbook §1.1), so one is worth a page; TRANSIENT ones
+# retry, so only a burst is. Add a notification channel before relying on it.
+displayName: 'Creativo: trigger attempts failing (trigger_attempt_failed)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A retrying trigger failed: any PERMANENT attempt, or more than 10
+    attempts of any outcome in 5 minutes. The fn label names the trigger;
+    the attempt line carries eventId, documentPath and writeOperationId, and
+    a dead letter sits in triggerFailures/{eventId} (runbook §1.1, §2.5).
+combiner: OR
+conditions:
+  - displayName: 'a PERMANENT trigger attempt'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/trigger_attempt_failed" AND resource.type="cloud_run_revision" AND metric.label.outcome="PERMANENT"'
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields:
+            - metric.label.fn
+      trigger:
+        count: 1
+  - displayName: 'more than 10 trigger attempts failing per 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/trigger_attempt_failed" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 10
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

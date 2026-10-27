@@ -1,0 +1,27 @@
+# Alert: an act committed without its audit rows because no verified actor
+# was found (audit-hardening WS-1; plan §7 item 4) over the
+# audit_actor_missing metric of tools/ops/log-metrics.sh. Every one is a gap
+# in the trail. Add a notification channel before relying on it.
+displayName: 'Creativo: audit rows without a verified actor (audit_actor_missing)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A booking act committed without its audit row: the caller had no
+    verified actor. The line carries the operation id; join it to the
+    callable outcome line in the audit bucket.
+combiner: OR
+conditions:
+  - displayName: 'any audit_actor_missing in 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/audit_actor_missing" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

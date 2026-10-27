@@ -49,6 +49,7 @@ import {
   OPERATION_ID_FIELD,
   type OperationIdField,
   type TelemetryPorts,
+  type TriggerFailurePorts,
 } from '@core/ports';
 import {
   type AttemptEvent,
@@ -933,6 +934,13 @@ export type EdgePorts = TelemetryPorts & ClockPorts;
 export type CallableEdgePorts = EdgePorts & LogContextPorts & LogDigestPorts;
 
 /**
+ * What a retrying trigger's edge reads (audit-hardening WS-6, RU-32): the
+ * edge's own ports and the dead-letter writer `retryingTrigger` records a
+ * delivery it gives up on through — `EdgePorts` keep their members.
+ */
+export type TriggerEdgePorts = EdgePorts & TriggerFailurePorts;
+
+/**
  * What a traced handler may tell its edge mid-call (WS-4.2): the decoded
  * command's keyed digest (`LogDigestSystem.digestOf`, `null` with no key),
  * printed as the outcome line's `inputDigest` and added to the scope.
@@ -1242,11 +1250,17 @@ export type DeliveredEvent = { readonly id: string; readonly time: string };
  * a failed attempt logs its ONE line — ids and codes, and how deep into
  * the retry window it is — then rethrows what a redelivery could fix and
  * returns on the rest, which would fail the same way for the whole window.
+ *
+ * The dead letter (audit-hardening WS-6, DEP-23): after the line, a
+ * delivery `TriggerAttemptSystem.deadLetter` gives up on — a PERMANENT
+ * failure, or a TRANSIENT one in the window's last stretch — is recorded
+ * once at `triggerFailures/{eventId}` ({@link recordDeadLetter}). Neither
+ * the verdict nor the rethrow depends on that write.
  */
 export const retryingTrigger =
   <E extends DeliveredEvent>(
     spec: TriggerSpec,
-    ports: EdgePorts,
+    ports: TriggerEdgePorts,
     handle: (event: E, budget: WorkBudget) => Promise<void>,
   ) =>
   async (event: E): Promise<void> => {
@@ -1260,20 +1274,53 @@ export const retryingTrigger =
       await handle(event, budget);
     } catch (thrown) {
       const failure = TriggerAttemptSystem.attemptFailure(thrown);
+      const nowUtcMs = ports.nowUtcMs();
       const line = TriggerAttemptSystem.attemptLine(
         spec.fn,
         attemptEventOf(event),
         failure,
-        ports.nowUtcMs(),
+        nowUtcMs,
       );
       ports.log(
         'error',
         LogEvent.TriggerAttemptFailed,
         attemptLineFields(line),
       );
+      if (TriggerAttemptSystem.deadLetter(failure, line.ageMs)) {
+        await recordDeadLetter(ports, line, nowUtcMs);
+      }
       if (failure.attemptOutcome === AttemptOutcome.Transient) throw thrown;
     }
   };
+
+/**
+ * Writes one attempt line's dead letter (WS-6, RU-32) — never throws: a
+ * refused write, or a writer that throws, is logged as ONE
+ * `trigger.failure_not_recorded` line (ids and the write's own code, judged
+ * as `TriggerAttemptSystem` judges any failure) and the trigger's verdict
+ * stands as it was.
+ */
+async function recordDeadLetter(
+  ports: TriggerEdgePorts,
+  line: AttemptLine,
+  nowUtcMs: UtcEpochMs,
+): Promise<void> {
+  let refusal: unknown;
+  try {
+    const written = await ports.writeTriggerFailure(
+      TriggerAttemptSystem.triggerFailure(line, nowUtcMs),
+    );
+    if (written.ok) return;
+    refusal = written.error;
+  } catch (thrown) {
+    refusal = thrown;
+  }
+  ports.log('error', LogEvent.TriggerFailureNotRecorded, {
+    fn: line.fn,
+    eventId: line.eventId,
+    errorCode: TriggerAttemptSystem.attemptFailure(refusal).failureCode,
+  });
+}
 
 /**
  * THE ONE attempt line, in the flipped vocabulary (Phase 4a 4A-2 (c)) —

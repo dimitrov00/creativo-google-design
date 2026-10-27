@@ -322,6 +322,130 @@ describe('a malformed stored document — judged data-loss, never redelivered (e
   });
 });
 
+describe('the dead letter — what a retrying trigger records when it gives up (WS-6, DEP-23)', () => {
+  const {
+    deadLetter,
+    triggerFailure,
+    RETRY_WINDOW_MS,
+    LAST_ATTEMPT_MARGIN_MS,
+  } = TriggerAttemptSystem;
+  const transient = attemptFailure({ code: 14 });
+  const permanent = attemptFailure({ code: 3 });
+  /** The first age that counts as the window's last stretch. */
+  const FINAL = RETRY_WINDOW_MS - LAST_ATTEMPT_MARGIN_MS;
+
+  it('keeps a 24 h window and a 15 min last stretch', () => {
+    expect(RETRY_WINDOW_MS).toBe(86_400_000);
+    expect(LAST_ATTEMPT_MARGIN_MS).toBe(900_000);
+    expect(FINAL).toBe(85_500_000);
+  });
+
+  it.each([
+    ['PERMANENT, age unknown', permanent, null, true],
+    ['PERMANENT, fresh', permanent, 0, true],
+    ['PERMANENT, inside the last stretch', permanent, FINAL, true],
+    ['TRANSIENT, age unknown', transient, null, false],
+    ['TRANSIENT, fresh', transient, 0, false],
+    ['TRANSIENT, one ms before the last stretch', transient, FINAL - 1, false],
+    ['TRANSIENT, at the last stretch', transient, FINAL, true],
+    ['TRANSIENT, at the window’s end', transient, RETRY_WINDOW_MS, true],
+    ['TRANSIENT, past the window', transient, RETRY_WINDOW_MS + 1, true],
+  ] as const)('%s → %s', (_name, failure, ageMs, expected) => {
+    expect(deadLetter(failure, ageMs)).toBe(expected);
+  });
+
+  it('records the line’s ids and codes, the event id as the document id, stamped at now', () => {
+    const NOW = at(1_790_000_000_000);
+    const op = OperationId.of('op-00000000000005');
+    const line = attemptLine(
+      'rebuildBusyOnAppointmentChange',
+      {
+        id: TriggerEventId.of('evt-5'),
+        eventAtUtcMs: at(1_790_000_000_000 - 2_000),
+        documentPath: 'appointments/apt-5',
+        writeOperationId: op,
+      },
+      permanent,
+      NOW,
+    );
+    expect(triggerFailure(line, NOW)).toEqual({
+      id: 'evt-5',
+      fn: 'rebuildBusyOnAppointmentChange',
+      documentPath: 'appointments/apt-5',
+      attemptOutcome: AttemptOutcome.Permanent,
+      failureCode: 'invalid-argument',
+      recordedAtUtcMs: NOW,
+      writeOperationId: op,
+    });
+  });
+
+  it('records a schedule tick with no document and no operation as nulls, never absent keys', () => {
+    const NOW = at(5_000);
+    const failure = triggerFailure(
+      attemptLine(
+        'sweepClientStatsPolicyRecompute',
+        {
+          id: TriggerEventId.of('evt-6'),
+          eventAtUtcMs: null,
+          documentPath: null,
+          writeOperationId: null,
+        },
+        transient,
+        NOW,
+      ),
+      NOW,
+    );
+    expect(failure).toEqual({
+      id: 'evt-6',
+      fn: 'sweepClientStatsPolicyRecompute',
+      documentPath: null,
+      attemptOutcome: AttemptOutcome.Transient,
+      failureCode: 'unavailable',
+      recordedAtUtcMs: NOW,
+      writeOperationId: null,
+    });
+    expect(Object.keys(failure)).toHaveLength(7);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const NOW = at(9_000);
+    const line = deepFreeze(
+      attemptLine(
+        'fn',
+        {
+          id: TriggerEventId.of('evt-7'),
+          eventAtUtcMs: at(1_000),
+          documentPath: 'customers/cus-7',
+          writeOperationId: OperationId.of('op-00000000000007'),
+        },
+        transient,
+        NOW,
+      ),
+    );
+    const failure = deepFreeze(attemptFailure({ code: 10 }));
+    expect(triggerFailure(line, NOW)).toEqual(triggerFailure(line, NOW));
+    expect(deadLetter(failure, FINAL)).toBe(deadLetter(failure, FINAL));
+  });
+
+  it('dead-letters every PERMANENT failure, and a TRANSIENT one exactly when its known age reaches the last stretch', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(3, 5, 7, 10, 13, 14),
+        fc.option(fc.integer({ min: 0, max: 2 * RETRY_WINDOW_MS }), {
+          nil: null,
+        }),
+        (status, ageMs) => {
+          const failure = attemptFailure({ code: status });
+          const expected =
+            failure.attemptOutcome === AttemptOutcome.Permanent ||
+            (ageMs !== null && ageMs >= FINAL);
+          expect(deadLetter(failure, ageMs)).toBe(expected);
+        },
+      ),
+    );
+  });
+});
+
 describe('properties', () => {
   it('reads every gRPC status by its own name, and never an age below zero', () => {
     fc.assert(

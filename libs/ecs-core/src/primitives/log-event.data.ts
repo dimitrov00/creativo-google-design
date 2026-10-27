@@ -49,6 +49,7 @@ export const LogEvent = {
   RegistrationDisplayNameFailed: 'registration.display_name_failed',
   RhythmRuleWriteFailed: 'rhythm rule write failed',
   TriggerAttemptFailed: 'trigger attempt failed',
+  TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
   WaitlistBarberSkipped: 'waitlist barber skipped',
   WaitlistMatchFailed: 'waitlist match failed',
 } as const;

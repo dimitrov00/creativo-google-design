@@ -42,6 +42,7 @@ describe('LogEvent', () => {
       RegistrationDisplayNameFailed: 'registration.display_name_failed',
       RhythmRuleWriteFailed: 'rhythm rule write failed',
       TriggerAttemptFailed: 'trigger attempt failed',
+      TriggerFailureNotRecorded: 'trigger.failure_not_recorded',
       WaitlistBarberSkipped: 'waitlist barber skipped',
       WaitlistMatchFailed: 'waitlist match failed',
     });
@@ -64,6 +65,16 @@ describe('LogEvent', () => {
         LogEvent.CallableFailed,
       ].every((text) => text.startsWith('callable.')),
     ).toBe(true);
+  });
+
+  it('spells the WS-6 dead-letter value dotted and domain-prefixed, beside the attempt line it follows', () => {
+    expect(LogEvent.TriggerFailureNotRecorded).toMatch(/^[a-z]+\.[a-z_]+$/);
+    expect(LogEvent.TriggerFailureNotRecorded.startsWith('trigger.')).toBe(
+      true,
+    );
+    expect(LogEvent.TriggerFailureNotRecorded).not.toBe(
+      LogEvent.TriggerAttemptFailed,
+    );
   });
 
   it('names every message once: no two events share a text', () => {

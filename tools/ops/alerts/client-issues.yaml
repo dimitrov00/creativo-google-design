@@ -1,0 +1,27 @@
+# Alert: web client issues (OR-34) — the recipe of runbook §3 step 7, as code.
+# Created by tools/ops/log-metrics.sh (dry run by default) over the
+# client_issue_count metric it creates. Add a notification channel in Cloud
+# Monitoring (or a notificationChannels: list here) before relying on it.
+displayName: 'Creativo: web client issues (client_issue_count)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    More than 100 web client issues in 5 minutes (OR-34). Group them by the
+    kind label and jsonPayload.clientIssueFingerprint in Logs Explorer;
+    runbook docs/architecture/firestore-runbook.md §3 step 7.
+combiner: OR
+conditions:
+  - displayName: 'client_issue_count above 100 per 5 minutes'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/client_issue_count" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 100
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

@@ -14,6 +14,7 @@ import {
   CHECKS,
   SCOPES,
   Verdict,
+  checkBackstops,
   checkBundle,
   checkComposites,
   checkConnectSrc,
@@ -204,6 +205,46 @@ const tree = (...lines) => [
   { path: `${FUNCTIONS}/main.ts`, text: lines.join('\n') },
 ];
 
+/** tools/ops/names.env as the preflight reads it — the names P9 judges against. */
+const OPS_NAMES = {
+  DATABASE_ID: '(default)',
+  LOG_SINK_NAME: 'creativo-audit-sink',
+  LOG_BUCKET_ID: 'creativo-audit-400d',
+  LOG_BUCKET_LOCATION: 'global',
+  LOG_BUCKET_RETENTION_DAYS: '400',
+  PITR_DAYS: '7',
+  BACKUP_RECURRENCE: 'daily',
+  BACKUP_RETENTION: '28d',
+};
+
+/** The Firestore database as the Admin API answers it, PITR on. */
+const DATABASE = {
+  name: `projects/${PROJECT}/databases/(default)`,
+  pointInTimeRecoveryEnablement: 'POINT_IN_TIME_RECOVERY_ENABLED',
+  versionRetentionPeriod: '604800s',
+};
+
+/** The daily schedule tools/ops/firestore-backups.sh creates. */
+const SCHEDULE = {
+  name: `projects/${PROJECT}/databases/(default)/backupSchedules/daily-1`,
+  retention: '2419200s',
+  dailyRecurrence: {},
+};
+
+const BUCKET_PATH = `projects/${PROJECT}/locations/global/buckets/creativo-audit-400d`;
+
+/** The sink tools/ops/log-sink.sh creates, and its locked bucket. */
+const SINK = {
+  name: 'creativo-audit-sink',
+  destination: `logging.googleapis.com/${BUCKET_PATH}`,
+  filter: 'NOT jsonPayload.clientIssueKind:*',
+};
+const BUCKET = {
+  name: BUCKET_PATH,
+  retentionDays: 400,
+  locked: true,
+};
+
 /** Readers that answer a healthy project, each overridable, and count their calls. */
 function fakeReaders(overrides = {}) {
   const calls = [];
@@ -237,6 +278,11 @@ function fakeReaders(overrides = {}) {
       root: FUNCTIONS,
       sources: tree(GATED_ROOT),
     })),
+    opsNames: counted('opsNames', () => OPS_NAMES),
+    database: counted('database', () => DATABASE),
+    backupSchedules: counted('backupSchedules', () => [SCHEDULE]),
+    sink: counted('sink', () => SINK),
+    bucket: counted('bucket', () => BUCKET),
     ...overrides,
   };
   return { read, calls };
@@ -1064,12 +1110,227 @@ describe('P8 · no launch-blocker stand-in is wired (@launchBlocker)', () => {
   });
 });
 
+describe('P9 · the platform backstops (informational, RU-33)', () => {
+  /** Settled reads of a healthy project, each overridable. */
+  const reads = (overrides = {}) => ({
+    names: { ok: true, value: OPS_NAMES },
+    pitr: { ok: true, value: DATABASE },
+    backups: { ok: true, value: [SCHEDULE] },
+    sink: { ok: true, value: SINK },
+    bucket: { ok: true, value: BUCKET },
+    ...overrides,
+  });
+
+  it('passes with four INFO lines on a project whose backstops are all in place', () => {
+    const answer = checkBackstops(reads());
+    assert.equal(answer.check, 'P9');
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(
+      answer.detail,
+      '4 of 4 backstops in place — informational, never stops a deploy',
+    );
+    assert.deepEqual(answer.lines, [
+      'INFO  PITR on — 7 days of versions',
+      'INFO  backup schedule: daily-1 daily, kept 28 days',
+      'INFO  audit sink creativo-audit-sink → creativo-audit-400d',
+      'INFO  audit bucket creativo-audit-400d: 400 days, locked',
+    ]);
+  });
+
+  it('still passes on a project with none of them, naming the script that creates each', () => {
+    const answer = checkBackstops(
+      reads({
+        pitr: {
+          ok: true,
+          value: {
+            ...DATABASE,
+            pointInTimeRecoveryEnablement: 'POINT_IN_TIME_RECOVERY_DISABLED',
+          },
+        },
+        backups: { ok: true, value: [] },
+        sink: { ok: true, value: null },
+        bucket: { ok: true, value: null },
+      }),
+    );
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(
+      answer.detail,
+      '0 of 4 backstops in place — informational, never stops a deploy',
+    );
+    assert.deepEqual(answer.lines, [
+      'INFO  PITR off — tools/ops/firestore-backups.sh --apply',
+      'INFO  no backup schedule — tools/ops/firestore-backups.sh --apply',
+      'INFO  audit sink creativo-audit-sink absent — tools/ops/log-sink.sh --apply',
+      'INFO  audit bucket creativo-audit-400d absent — tools/ops/log-sink.sh --apply',
+    ]);
+  });
+
+  it('reports a sink routed elsewhere or disabled, a short bucket and an unlocked one — the lock left to the owner', () => {
+    const elsewhere = checkBackstops(
+      reads({
+        sink: {
+          ok: true,
+          value: { ...SINK, destination: 'storage.googleapis.com/a-bucket' },
+        },
+        bucket: {
+          ok: true,
+          value: { ...BUCKET, retentionDays: 30, locked: false },
+        },
+      }),
+    );
+    assert.equal(elsewhere.verdict, Verdict.Pass);
+    assert.match(elsewhere.detail, /^2 of 4 backstops in place/);
+    assert.equal(
+      elsewhere.lines[2],
+      'INFO  audit sink creativo-audit-sink routes to storage.googleapis.com/a-bucket, not creativo-audit-400d — tools/ops/log-sink.sh --apply',
+    );
+    assert.equal(
+      elsewhere.lines[3],
+      'INFO  audit bucket creativo-audit-400d: 30 days, below the 400 of tools/ops/names.env — tools/ops/log-sink.sh --apply, not locked — tools/ops/log-sink.sh --apply --lock — irreversible, an owner decision (docs/production-deploy.md §1)',
+    );
+    const disabled = checkBackstops(
+      reads({
+        sink: { ok: true, value: { ...SINK, disabled: true } },
+        bucket: { ok: true, value: { ...BUCKET, locked: false } },
+      }),
+    );
+    assert.match(disabled.detail, /^3 of 4 backstops in place/);
+    assert.match(disabled.lines[2], /→ creativo-audit-400d, DISABLED — /);
+    assert.match(
+      disabled.lines[3],
+      /^INFO {2}audit bucket creativo-audit-400d: 400 days, not locked — /,
+    );
+  });
+
+  it('lists every backup schedule with its recurrence and retention', () => {
+    const answer = checkBackstops(
+      reads({
+        backups: {
+          ok: true,
+          value: [
+            SCHEDULE,
+            {
+              name: `${SCHEDULE.name.replace('daily-1', 'weekly-1')}`,
+              retention: '8467200s',
+              weeklyRecurrence: { day: 'SUNDAY' },
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal(
+      answer.lines[1],
+      'INFO  backup schedules: daily-1 daily, kept 28 days; weekly-1 weekly (SUNDAY), kept 98 days',
+    );
+  });
+
+  it('turns an unreadable backstop into an INFO line, never a failure — with the roles when the credentials explain it', () => {
+    const answer = checkBackstops(
+      reads({
+        pitr: { ok: false, reason: 'databases/(default): HTTP 500' },
+        sink: {
+          ok: false,
+          reason: 'sinks/creativo-audit-sink: HTTP 403 — Permission denied',
+        },
+      }),
+    );
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.match(answer.detail, /^2 of 4 backstops in place/);
+    assert.equal(
+      answer.lines[0],
+      'INFO  PITR unreadable — databases/(default): HTTP 500',
+    );
+    assert.equal(
+      answer.lines[2],
+      'INFO  the audit sink creativo-audit-sink unreadable — sinks/creativo-audit-sink: HTTP 403 — Permission denied',
+    );
+    assert.match(answer.lines.at(-1), /roles\/logging\.viewer/);
+    // A failure the credentials do not explain carries no roles line.
+    const plain = checkBackstops(
+      reads({ pitr: { ok: false, reason: 'databases/(default): HTTP 500' } }),
+    );
+    assert.equal(plain.lines.length, 4);
+  });
+
+  it('never fails the run: every P9 read throwing — the names included — still answers PASS, and the deploy goes on', async () => {
+    const thrown = async () => {
+      throw new Error('HTTP 403 — caller does not have permission');
+    };
+    const { read, calls } = fakeReaders({
+      opsNames: async () => {
+        throw new Error('ENOENT: no such file, tools/ops/names.env');
+      },
+      database: thrown,
+      backupSchedules: thrown,
+    });
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    const p9 = rows.find((entry) => entry.check === 'P9');
+    assert.equal(p9.verdict, Verdict.Pass);
+    assert.match(p9.detail, /^0 of 4 backstops in place/);
+    assert.deepEqual(p9.lines, [
+      'INFO  PITR unreadable — HTTP 403 — caller does not have permission',
+      'INFO  the backup schedules unreadable — HTTP 403 — caller does not have permission',
+      'INFO  the audit sink unreadable — no names: tools/ops/names.env is unreadable',
+      'INFO  the audit bucket unreadable — no names: tools/ops/names.env is unreadable',
+      'INFO  tools/ops/names.env unreadable — ENOENT: no such file, tools/ops/names.env',
+      'INFO  the backstop reads need roles/datastore.viewer (PITR, backups) and roles/logging.viewer (sink, bucket) — runbook §3',
+    ]);
+    // Without names, the sink and the bucket are never asked for.
+    assert.equal(calls.includes('sink'), false);
+    assert.equal(calls.includes('bucket'), false);
+    assert.equal(exitCodeOf(rows.filter((entry) => entry.check !== 'P8')), 0);
+  });
+
+  it('asks for the sink and the bucket by the ids of tools/ops/names.env', async () => {
+    const asked = [];
+    const { read } = fakeReaders({
+      sink: async (names) => {
+        asked.push(['sink', names.LOG_SINK_NAME]);
+        return SINK;
+      },
+      bucket: async (names) => {
+        asked.push(['bucket', names.LOG_BUCKET_ID, names.LOG_BUCKET_LOCATION]);
+        return BUCKET;
+      },
+    });
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    assert.deepEqual(asked.sort(), [
+      ['bucket', 'creativo-audit-400d', 'global'],
+      ['sink', 'creativo-audit-sink'],
+    ]);
+    assert.match(
+      rows.find((entry) => entry.check === 'P9').detail,
+      /^4 of 4 backstops in place/,
+    );
+  });
+});
+
 describe('runPreflight', () => {
   const env = { GCLOUD_PROJECT: PROJECT };
 
-  it('runs P1–P6 for the web scope and P1–P3, P6–P8 for the functions scope — every check in one of them', async () => {
+  // Widened ON PURPOSE by audit-hardening WS-6 (DEP-24): the functions
+  // scope gains P9, the informational backstop row.
+  it('runs P1–P6 for the web scope and P1–P3, P6–P9 for the functions scope — every check in one of them', async () => {
     assert.deepEqual(SCOPES.web, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
-    assert.deepEqual(SCOPES.functions, ['P1', 'P2', 'P3', 'P6', 'P7', 'P8']);
+    assert.deepEqual(SCOPES.functions, [
+      'P1',
+      'P2',
+      'P3',
+      'P6',
+      'P7',
+      'P8',
+      'P9',
+    ]);
     assert.deepEqual(
       [...new Set([...SCOPES.web, ...SCOPES.functions])].sort(),
       Object.keys(CHECKS),
@@ -1098,9 +1359,15 @@ describe('runPreflight', () => {
     );
     assert.equal(calls.includes('bundle'), false);
     assert.equal(calls.includes('config'), false);
+    assert.equal(
+      web.some((entry) => entry.check === 'P9'),
+      false,
+    );
   });
 
-  it('reads nothing of the project when P6 fails: P1–P3 SKIP, P7 and P8 still judge the source (read once), and the run fails', async () => {
+  // P9 joins the SKIP rows ON PURPOSE (audit-hardening WS-6, DEP-24): it
+  // reads the project, so a failed P6 keeps it from reading too.
+  it('reads nothing of the project when P6 fails: P1–P3 and P9 SKIP, P7 and P8 still judge the source (read once), and the run fails', async () => {
     const { read, calls } = fakeReaders();
     const rows = await runPreflight({
       scope: 'functions',
@@ -1117,6 +1384,7 @@ describe('runPreflight', () => {
         Verdict.Fail,
         Verdict.Pass,
         Verdict.Pass,
+        Verdict.Skip,
       ],
     );
     assert.deepEqual(calls, ['functionsSource']);
@@ -1144,6 +1412,7 @@ describe('runPreflight', () => {
         ['P6', Verdict.Pass],
         ['P7', Verdict.Fail],
         ['P8', Verdict.Pass],
+        ['P9', Verdict.Pass],
       ],
     );
     assert.equal(exitCodeOf(rows), 1);
@@ -1250,7 +1519,7 @@ describe('preflight · the command', () => {
     const functions = skipBanner({ projectId: PROJECT, scope: 'functions' });
     assert.match(
       functions,
-      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters or the launch blockers of creativo-prod\./,
+      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers or the platform backstops of creativo-prod\./,
     );
     assert.match(
       functions,
@@ -1311,7 +1580,7 @@ describe('the deploy wiring', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
   const json = (file) => JSON.parse(readFileSync(join(root, file), 'utf8'));
 
-  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6–P8), on the deployed project', () => {
+  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6–P9), on the deployed project', () => {
     const config = json('firebase.json');
     const web = config.hosting.find((entry) => entry.target === 'web');
     assert.deepEqual(web.predeploy, [
@@ -1426,6 +1695,7 @@ describe('the deploy wiring', () => {
         ['P6', Verdict.Pass],
         ['P7', Verdict.Pass],
         ['P8', Verdict.Fail],
+        ['P9', Verdict.Pass],
       ],
     );
     assert.equal(exitCodeOf(rows), 1);
