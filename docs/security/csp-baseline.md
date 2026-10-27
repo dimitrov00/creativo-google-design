@@ -79,9 +79,12 @@ upgrade-insecure-requests
   default — the placeholder `creativo-replace-me` until the project exists;
   the production preflight refuses a mismatch or the placeholder (OR-35 P5,
   P6).
-- **`worker-src 'self' blob:`** — the Angular service worker, and the tile
-  worker MapLibre starts from a `blob:` URL (without it the map silently
-  never draws).
+- **`worker-src 'self' blob:`** — the Angular service worker, and MapLibre's
+  tile worker (without it the map silently never draws). Since maplibre-gl
+  6 that worker is the self-hosted module `/maplibre-gl-worker.mjs`, which
+  `'self'` admits (`MAPLIBRE_WORKER_PATH`, `maplibre-loader.ts`); v5 started
+  it from a `blob:` URL. The map no longer needs `blob:` here: dropping it is
+  a policy change, left to the owner.
 - **`manifest-src 'self'`** — `manifest.webmanifest`.
 - **`frame-src 'none'`** — the app embeds nothing. This holds because Auth
   is built with `initializeAuth` and no popup/redirect resolver (OR-32):

@@ -128,8 +128,8 @@ async function watch(page: Page): Promise<Watch> {
   page.on('response', (response) => {
     const url = new URL(response.url());
     // A `blob:` URL carries its creator's origin, but the page minted it in
-    // memory (a map worker, a fetched portrait): Hosting never served it, so
-    // it has no headers to hold.
+    // memory (a fetched portrait): Hosting never served it, so it has no
+    // headers to hold.
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
     if (url.origin !== origin) return;
     const headers = response.headers();
