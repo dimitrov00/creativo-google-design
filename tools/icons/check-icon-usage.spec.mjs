@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import rootConfig from '#eslint-config';
 import {
+  INLINE_SVG_ALLOWED,
   KEY_PATTERN,
   WORKSPACE_ROOT,
   proposeKey,
@@ -70,6 +72,21 @@ describe('check-icon-usage', () => {
     );
     expect(inside.violations).toEqual([]);
     expect(inside.usages.map((u) => u.key)).toEqual(['sheet.close']);
+  });
+
+  it('allows a hand-drawn <svg> in exactly the files the lint rule allows', () => {
+    // The sweep backs `creativo/icon-registry-only`: the rule's block in the
+    // root eslint.config.mjs must name the same files in `allowInlineSvg`,
+    // so neither list can change alone.
+    const blocks = rootConfig.filter(
+      (block) => block.rules?.['creativo/icon-registry-only'],
+    );
+    expect(blocks, 'one root block configures the rule').toHaveLength(1);
+    // `'error'` alone or `['error', options]`; the rule defaults to `[]`.
+    const [, options] = [blocks[0].rules['creativo/icon-registry-only']].flat();
+    expect([...(options?.allowInlineSvg ?? [])].sort()).toEqual(
+      [...INLINE_SVG_ALLOWED].sort(),
+    );
   });
 
   it('proposes slice-scoped camelCase keys for raw glyphs', () => {

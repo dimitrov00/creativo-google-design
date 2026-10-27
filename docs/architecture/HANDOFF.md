@@ -2632,16 +2632,20 @@ built on a reversible default, or proposed and not built):
   son `CustomerId.forUser(SON, sha256Hex)`): it is green only because it
   asserts no audit rows — a row assertion there would meet the two-record
   artefact `audit-in-commit.integration.spec.ts` was fixed for.
-- CI's `main` job is red at `pnpm icons:check`, on `main` too (at the
+- CI's `main` job was red at `pnpm icons:check`, on `main` too (at the
   branch point and on its last five runs) and outside the §4 gate: three
   hits — `gauge.ts:192` inline-svg (`INLINE_SVG_ALLOWED` in
   `tools/icons/check-icon-usage.mjs` drifted from `eslint.config.mjs`,
   which also allows the gauge ring) and `accent-rule.spec.ts:610` / `:615`
-  (the placeholder key `a.b`; the checker scans specs). The proposed
-  two-line patch (on the PR, not pushed): add
-  `'libs/ui/patterns/src/lib/gauge/gauge.ts'` to `INLINE_SVG_ALLOWED`, and
-  replace `uiName="a.b"` at `:610` and `:615` with a key from the icon
-  manifest (the spec asserts the accent law on the tag, not on the key).
+  (the placeholder key `a.b`; the checker scans specs). CLOSED after the
+  pass by `805353d` (`fix(icons): icons:check green again …`): the gauge
+  added to `INLINE_SVG_ALLOWED`, and `uiName="checklist.done"` (a
+  vocabulary key the choice menu already wears in accent) in place of
+  `a.b` — `pnpm icons:check` exits 0, the spec's expectations unchanged.
+  The two lists cannot drift apart silently again:
+  `tools/icons/check-icon-usage.spec.mjs` pins `INLINE_SVG_ALLOWED` to the
+  rule's `allowInlineSvg` option in the root `eslint.config.mjs`, and the
+  `icon-tools` test inputs name that config and `tools/lint-rules`.
 - The e2e load and time-of-day flakes, as before (§4):
   `client-card-glance.spec.ts:364` after ~23:15 shop time;
   `client-card-harness.spec.ts:17` [tablet] and `:40` [phone] under load;

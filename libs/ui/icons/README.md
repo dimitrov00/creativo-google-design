@@ -214,9 +214,11 @@ element handed out is not rewritten when the manifest changes.
 ## What is NOT an icon — the sanctioned exceptions
 
 Audited 2026-09-24 across `apps/` and `libs/` (templates, inline templates,
-CSS, copy). Everything that draws a glyph goes through `ui-icon`/`ui-logo`;
-these do not, on purpose, and the lint rule's `allowInlineSvg` list names
-the SVG ones so a fourth needs a decision:
+CSS, copy); the gauge's ring joined on 2026-10-07. Everything that draws a
+glyph goes through `ui-icon`/`ui-logo`; these do not, on purpose, and the
+lint rule's `allowInlineSvg` list names the four SVG ones — the sweep's
+`INLINE_SVG_ALLOWED` must match it (`check-icon-usage.spec.mjs` pins the
+two together) — so a fifth needs a decision:
 
 | What                                   | Where                                | Why it is not a registry icon                                                          |
 | -------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
@@ -224,6 +226,7 @@ the SVG ones so a fourth needs a decision:
 | Draw-on checkmark                      | `ui-reward-moment`                   | a `pathLength`-normalised stroke choreographed by CSS; the geometry is the animation   |
 | Countdown ring                         | `ui-toast`                           | a progress arc; the ✕ over it IS a registry icon (`toast.dismiss`)                     |
 | Progress ring                          | `ui-progress-ring`                   | data, not iconography                                                                  |
+| Gauge ring (`circularCapacity`)        | `ui-gauge`                           | a capacity arc round a disc (a medal, a face) or one figure — data, not iconography    |
 | Country flags                          | `ui-phone-field`                     | `flag-icons` SVGs as `<img alt="">` — images of emblems, not glyphs                    |
 | Noise texture, hatches, ticket notches | landing, staff grid, coupon card     | CSS backgrounds and masks — shapes, not symbols                                        |
 | PWA icons and favicon                  | `apps/*/public/icons`, `favicon.ico` | rasters the OS shows outside the DOM; not derived from the registry's logo (open item) |
