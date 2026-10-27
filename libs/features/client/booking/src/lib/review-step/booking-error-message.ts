@@ -1,4 +1,5 @@
 import type { TranslocoService } from '@jsverse/transloco';
+import type { ClientOperationId } from '@core/primitives';
 import { ShopReach } from '@core/components';
 import {
   BookingErrorCode,
@@ -7,6 +8,8 @@ import {
   PipelineError,
 } from '@core/errors';
 import {
+  type OperationReferenceWords,
+  operationReferenceWords,
   translateCodedError,
   wordPipelineError,
 } from '@creativo/infrastructure/i18n';
@@ -45,6 +48,26 @@ export function bookingErrorMessage(
     BookingErrorCode.CallFailed,
     { reach: transloco.translate(ShopReach.forCallHref(callHref)) },
   );
+}
+
+/**
+ * The reference line under a failed call (audit-hardening WS-4.5): the
+ * call's operation id — what the line prints in full and a tap copies —
+ * with its words (`operationReferenceWords`), or `null` for a failure that
+ * carries none (a step the machine itself refused, a call that sent no id):
+ * the review step then prints no line.
+ */
+export function bookingErrorReference(
+  transloco: TranslocoService,
+  error: BookingFlowError.Failure,
+): (OperationReferenceWords & { readonly value: ClientOperationId }) | null {
+  if (!PipelineError.isPipelineError(error) || error.operationId === null)
+    return null;
+  const value = error.operationId;
+  const words = operationReferenceWords(value, (key, params) =>
+    transloco.translate<string>(key, params),
+  );
+  return words === null ? null : { value, ...words };
 }
 
 /**

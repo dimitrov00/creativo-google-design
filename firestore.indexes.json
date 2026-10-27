@@ -458,6 +458,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "appointments",
+      "fieldPath": "writeOperationId",
+      "indexes": []
+    },
+    {
       "collectionGroup": "barberBusy",
       "fieldPath": "blocks",
       "indexes": []
@@ -810,6 +815,11 @@
     {
       "collectionGroup": "customers",
       "fieldPath": "searchPrefixes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "customers",
+      "fieldPath": "writeOperationId",
       "indexes": []
     },
     {

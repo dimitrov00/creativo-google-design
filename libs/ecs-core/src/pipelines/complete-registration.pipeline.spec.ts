@@ -19,6 +19,7 @@ import {
 } from '@core/components';
 import {
   IdentifierChannel,
+  OperationId,
   Result,
   UserId,
   UtcEpochMs,
@@ -174,6 +175,8 @@ describe('completeRegistration', () => {
       ...SearchFieldsSystem.searchFields('Ada', 'Lovelace', PHONE, null),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Registration,
+      // The call sent no operation id (RU-29): the record names none.
+      writeOperationId: null,
     };
     expect(tx.plans).toEqual([
       [
@@ -197,6 +200,16 @@ describe('completeRegistration', () => {
     expect(stored(world, CUSTOMER_PATH)).toEqual(record);
     expect(minted(world)).toEqual([{ uid: UID, claims: CLIENT_CLAIMS }]);
     expect(world.displayNames.get(UID)).toBe('Ada Lovelace');
+  });
+
+  it('stamps the call’s own operation id on the record it creates — the registration’s trace (WS-4.3, RU-29)', async () => {
+    const world = memoryIdentityWorld({ users: [phoneStub()] });
+    const { run } = rig({ world });
+    const operationId = OperationId.of('op-register-1');
+    expect((await run({ ...byPhone(ADA), operationId })).ok).toBe(true);
+    expect(stored(world, CUSTOMER_PATH)?.['writeOperationId']).toBe(
+      operationId,
+    );
   });
 
   it('reads the account AND its client record in ONE getAll inside the transaction', async () => {

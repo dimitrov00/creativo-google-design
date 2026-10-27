@@ -310,6 +310,32 @@ describe('markArrival', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('stamps the stored visit with the act’s operation id; an unchanged tap stamps nothing (WS-4.3, DEP-19)', async () => {
+    const { store, tx, run } = rig([appointmentFixture()]);
+    const cmd = {
+      markArrivalAction: MarkArrivalAction.Arrive,
+      appointmentId: FIXTURE_IDS.appointment,
+      operationId: OPERATION,
+      actor: STAFF,
+    };
+    await run(cmd);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+    const second = await run({
+      ...cmd,
+      operationId: OperationId.of('arrival-op-second-tap'),
+    });
+    expect(second.ok && second.value.unchanged).toBe(true);
+    expect(tx.plans[1]).toEqual([]);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+    const undo = OperationId.of('arrival-op-undo-0001');
+    await run({
+      ...cmd,
+      markArrivalAction: MarkArrivalAction.Clear,
+      operationId: undo,
+    });
+    expect(store.get(PATH)?.['writeOperationId']).toBe(undo);
+  });
+
   it('a Create of a row already there refuses the WHOLE act as REPOSITORY_ALREADY_EXISTS — nothing applied', async () => {
     const id = rowId(AuditAction.BookingStaffArrived, `arrived:${OPERATION}`);
     const { store, tx, run } = rig([appointmentFixture()]);
@@ -358,6 +384,8 @@ describe('markArrival', () => {
           ...BookingLifecycle.sliceOf(before),
           seats: before.seats,
           arrivedAtUtcMs: FIXTURE_NOW_UTC_MS,
+          // The act that wrote the visit (WS-4.3, DEP-19).
+          writeOperationId: OPERATION,
         },
         [],
       ),

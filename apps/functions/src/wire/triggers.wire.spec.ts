@@ -719,9 +719,48 @@ describe('attempts — today’s line and redelivery', () => {
           outcome: 'PERMANENT',
           errorCode: 'internal',
           ageMs: 1_000,
+          documentPath: null,
+          writeOperationId: null,
         },
       },
     ]);
+  });
+
+  it('names the written document and the operation id it carries — a malformed stored id reads null, never a cast (WS-4.3, DEP-19)', () => {
+    const written = (writeOperationId: unknown) => ({
+      ...event,
+      document: 'appointments/apt-1',
+      data: {
+        before: { exists: false, data: () => undefined },
+        after: { exists: true, data: () => ({ writeOperationId }) },
+      },
+    });
+    const telemetry = ports();
+    logAttempt(
+      'dispatchClientProjections',
+      written('op-0000000000000001'),
+      permanent,
+      telemetry,
+    );
+    for (const malformed of ['a/b', '__op__', '', 7, null]) {
+      logAttempt(
+        'dispatchClientProjections',
+        written(malformed),
+        permanent,
+        telemetry,
+      );
+    }
+    expect(telemetry.lines[0]?.fields).toMatchObject({
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-0000000000000001',
+    });
+    for (const line of telemetry.lines.slice(1)) {
+      expect(line.fields).toMatchObject({
+        documentPath: 'appointments/apt-1',
+        writeOperationId: null,
+      });
+    }
+    expect(telemetry.lines).toHaveLength(6);
   });
 
   it('throws a failure as a value the edge judges the same way — a port refusal by the code in its reason', () => {

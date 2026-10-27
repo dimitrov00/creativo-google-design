@@ -2,7 +2,7 @@ import { Component, input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { Translation } from '@jsverse/transloco';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
@@ -23,6 +23,7 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
+  ClientOperationId,
   CustomerId,
   LocalDate,
   LocationId,
@@ -76,6 +77,7 @@ const COPY: Translation = {
     review: { withBarber: 'with {{name}}' },
     reach: { call: 'REACH:call', contact: 'REACH:contact' },
   },
+  operation: { reference: 'REF:{{ref}}', referenceCopied: 'REF:copied' },
   errors: {
     [BookingErrorCode.CallFailed]: 'COPY:gateway-failed',
     [BookingErrorCode.InvalidInput]: 'COPY:invalid-input',
@@ -487,6 +489,73 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
       'COPY:gateway-failed',
     );
     expect(query(fixture, 'booking-review-call')).toBeNull();
+  });
+});
+
+/*
+ * THE REFERENCE UNDER THE FAILURE (audit-hardening WS-4.5): a failed call
+ * that carries its operation id prints it beside the message — a sibling,
+ * the message's own text unchanged — and copies it on a tap; a failure
+ * without one prints no line.
+ */
+describe('BookingReviewStep — the failed call’s reference', () => {
+  let gateway: Server;
+  const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    gateway = server();
+  });
+
+  afterEach(() => {
+    if (original) Object.defineProperty(navigator, 'clipboard', original);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('prints the id beside the message and copies it; prints none without an id', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const operationId = unwrapOk(
+      ClientOperationId.parse('attempt-0123456789abcdef'),
+    );
+    gateway.answer = Result.err(
+      PipelineError.withOperation(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+        operationId,
+      ),
+    );
+    const { fixture } = await render(gateway);
+
+    await confirm(fixture);
+
+    expect(query(fixture, 'booking-review-error')?.textContent?.trim()).toBe(
+      'COPY:gateway-failed',
+    );
+    const reference = query(fixture, 'booking-review-reference');
+    const line = reference?.querySelector<HTMLButtonElement>(
+      '.ui-reference__line',
+    );
+    expect(line?.textContent?.trim()).toBe('REF:attempt-0123456789abcdef');
+    line?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(writeText).toHaveBeenCalledWith('attempt-0123456789abcdef');
+    expect(reference?.querySelector('[role="status"]')?.textContent).toBe(
+      'REF:copied',
+    );
+
+    // The same failure with no id: the message, and no line.
+    gateway.answer = Result.err(
+      PipelineError.bare(PipelineErrorCode.InvalidRequest),
+    );
+    await confirm(fixture);
+    expect(query(fixture, 'booking-review-error')?.textContent?.trim()).toBe(
+      'COPY:gateway-failed',
+    );
+    expect(query(fixture, 'booking-review-reference')).toBeNull();
   });
 });
 

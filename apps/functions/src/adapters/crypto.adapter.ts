@@ -11,6 +11,7 @@ import type {
   Hash,
   HashPorts,
   IdPorts,
+  LogDigestPorts,
   NextId,
   WalkInKeyPorts,
 } from '@core/ports';
@@ -82,4 +83,19 @@ export const cryptoPorts = (): HashPorts & IdPorts => ({
  */
 export const walkInKeyPorts = (key: () => string): WalkInKeyPorts => ({
   walkInHash: (input) => hmacSha256Hex(key(), input),
+});
+
+/**
+ * The keyed digest a callable's outcome line prints as `inputDigest`
+ * (`LogDigestPorts`, audit-hardening WS-4.2, RU-23): HMAC-SHA-256 under the
+ * key `key()` answers, read at EACH call — the composition root hands the
+ * `LOG_DIGEST_KEY` secret's reader. `''` when the key is empty: an unkeyed
+ * digest of an id set is guessable, so `LogDigestSystem.digestOf` prints
+ * none (`null`) and the call still answers.
+ */
+export const logDigestPorts = (key: () => string): LogDigestPorts => ({
+  logDigest: (input) => {
+    const secret = key();
+    return secret === '' ? '' : hmacSha256Hex(secret, input);
+  },
 });

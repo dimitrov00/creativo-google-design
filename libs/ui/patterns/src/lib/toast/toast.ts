@@ -18,6 +18,7 @@ import {
   UiRadiusDirective,
 } from '@creativo/ui/modifiers';
 import { UiIcon } from '@creativo/ui/icons';
+import { UiReference } from '../reference/reference';
 
 /**
  * ui-toast — a transient status line with ONE action, docked at the bottom.
@@ -56,6 +57,13 @@ import { UiIcon } from '@creativo/ui/icons';
  * `uiDismissed`; the toast owns nothing but the timer and its own surface.
  * One toast per page. A second message replaces the first — stacking undo
  * banners is how someone undoes the wrong thing.
+ *
+ * ### The reference under a refusal (audit-hardening WS-4.5)
+ * A toast that carries a failed call's sentence may carry its id too:
+ * `uiReferenceValue` (the id), `uiReferenceText` (the line, the id in it)
+ * and `uiReferenceCopiedText` print a `ui-reference` under the sentence —
+ * one tap copies it, for the report the person writes. `''` = no line,
+ * and the toast is exactly the one-line pill it always was.
  */
 @Component({
   selector: 'ui-toast',
@@ -64,6 +72,7 @@ import { UiIcon } from '@creativo/ui/icons';
     UiInteractiveDirective,
     UiMaterialDirective,
     UiRadiusDirective,
+    UiReference,
   ],
   template: `
     @if (shown()) {
@@ -81,7 +90,17 @@ import { UiIcon } from '@creativo/ui/icons';
         (focusin)="hold(true)"
         (focusout)="hold(false)"
       >
-        <span class="ui-toast__label">{{ uiLabel() }}</span>
+        <div class="ui-toast__body">
+          <span class="ui-toast__label">{{ uiLabel() }}</span>
+          @if (uiReferenceValue()) {
+            <ui-reference
+              class="ui-toast__reference"
+              [uiLabel]="uiReferenceText()"
+              [uiValue]="uiReferenceValue()"
+              [uiCopiedText]="uiReferenceCopiedText()"
+            />
+          }
+        </div>
         @if (uiActionLabel()) {
           <!-- A plain button, not uiButton: controls already depends on
                patterns (the modal sheet uses the sheet header), so a pattern
@@ -149,6 +168,12 @@ export class UiToast {
   readonly uiDismissLabel = input.required<string>();
   /** How long it stays while nobody is holding it, in ms. */
   readonly uiDuration = input(8000);
+  /** A failed call's id, printed and copied under the sentence. `''` = none. */
+  readonly uiReferenceValue = input('');
+  /** The reference line as printed — the consumer's words, the id in them. */
+  readonly uiReferenceText = input('');
+  /** What the reference announces once its id is copied. */
+  readonly uiReferenceCopiedText = input('');
 
   readonly uiAction = output<void>();
   readonly uiDismissed = output<void>();

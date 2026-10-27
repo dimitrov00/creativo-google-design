@@ -5,7 +5,7 @@ import {
   OtpPurpose,
   ParsedIdentifier,
 } from '@core/components';
-import { type OtpId, Result } from '@core/primitives';
+import { LogEvent, type OtpId, Result } from '@core/primitives';
 import { IdentityError, type RequestOtpError } from '@core/errors';
 import type {
   AuthDeploymentPorts,
@@ -157,7 +157,7 @@ export const requestOtp =
 
     const sent = await ports.sendOtp(parsed.value, rawCode);
     if (!sent.ok) {
-      ports.log('warn', 'otp.send_failed', {
+      ports.log('warn', LogEvent.OtpSendFailed, {
         otpId: otp.id,
         errorCode: sent.error.errorCode,
       });

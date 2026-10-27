@@ -240,7 +240,12 @@ describe('callableClientPorts — the answer, through its call component’s dec
 
       const failure = unwrapErr(await client()(Callables.CommitBooking)(COLD));
 
-      expect(failure).toEqual(PipelineError.bare(PipelineErrorCode.Unknown));
+      expect(failure).toEqual(
+        PipelineError.withOperation(
+          PipelineError.bare(PipelineErrorCode.Unknown),
+          COLD.attemptId,
+        ),
+      );
     },
   );
 
@@ -278,7 +283,10 @@ describe('callableClientPorts — a refusal, through the ONE classification', ()
     const failure = unwrapErr(await client()(Callables.CommitBooking)(COLD));
 
     expect(failure).toEqual(
-      PipelineError.fromWire('functions/failed-precondition', details),
+      PipelineError.withOperation(
+        PipelineError.fromWire('functions/failed-precondition', details),
+        COLD.attemptId,
+      ),
     );
     expect(failure.errorCode).toBe(PipelineErrorCode.SlotUnavailable);
     expect(failure.serverErrorCode).toBe(BookingErrorCode.SlotUnavailable);
@@ -323,7 +331,12 @@ describe('callableClientPorts — a refusal, through the ONE classification', ()
 
     const failure = unwrapErr(await client()(Callables.CommitBooking)(COLD));
 
-    expect(failure).toEqual(PipelineError.bare(PipelineErrorCode.Unknown));
+    expect(failure).toEqual(
+      PipelineError.withOperation(
+        PipelineError.bare(PipelineErrorCode.Unknown),
+        COLD.attemptId,
+      ),
+    );
   });
 
   it('never rejects: every failure is a value', async () => {
@@ -332,5 +345,81 @@ describe('callableClientPorts — a refusal, through the ONE classification', ()
     await expect(
       client()(Callables.CommitBooking)(COLD),
     ).resolves.toMatchObject({ ok: false });
+  });
+});
+
+// WS-4.5: every failure carries the id its call went out with — the
+// reference the surface prints — read off the input AS SENT, so a minted
+// transport id is the one the server logged.
+describe('callableClientPorts — the operation id on every failure', () => {
+  beforeEach(() => callableMock.mockReset());
+
+  const OTP_REQUEST = {
+    identifierChannel: IdentifierChannel.Phone,
+    identifier: '+359888123456',
+  } as const;
+
+  it('carries the attempt id of a booking refusal', async () => {
+    callableMock.mockRejectedValueOnce(new FunctionsError('unavailable'));
+
+    const failure = unwrapErr(await client()(Callables.CommitBooking)(COLD));
+
+    expect(failure.operationId).toBe('attempt-0123456789abcdef');
+  });
+
+  it('carries the transport id minted for the call, on a refusal and on PIPELINE_UNKNOWN', async () => {
+    callableMock.mockRejectedValueOnce(new FunctionsError('permission-denied'));
+    const refused = unwrapErr(
+      await client()(Callables.RequestOtpChallenge)(OTP_REQUEST),
+    );
+    callableMock.mockRejectedValueOnce(new Error('network'));
+    const unknown = unwrapErr(
+      await client()(Callables.RequestOtpChallenge)(OTP_REQUEST),
+    );
+
+    expect(refused.operationId).toBe(TRANSPORT_ID);
+    expect(unknown).toEqual(
+      PipelineError.withOperation(
+        PipelineError.bare(PipelineErrorCode.Unknown),
+        brand(ClientOperationId.parse(TRANSPORT_ID)),
+      ),
+    );
+  });
+
+  it('carries a store-named act’s own id', async () => {
+    callableMock.mockRejectedValueOnce(new FunctionsError('internal'));
+    const cancel: BookingCall.Cancel = {
+      ...BookingCall.clientCancel(brand(AppointmentId.parse('appt-1')), 'нещо'),
+      operationId: brand(ClientOperationId.parse('store-minted-0123456789')),
+    };
+
+    const failure = unwrapErr(
+      await client()(Callables.CancelAppointment)(cancel),
+    );
+
+    expect(failure.operationId).toBe('store-minted-0123456789');
+  });
+
+  it('carries the id when the answer’s decoder refuses it', async () => {
+    callableMock.mockResolvedValueOnce({ data: {} });
+
+    const failure = unwrapErr(await client()(Callables.CommitBooking)(COLD));
+
+    expect(failure.errorCode).toBe(PipelineErrorCode.Unknown);
+    expect(failure.operationId).toBe('attempt-0123456789abcdef');
+  });
+
+  it('carries none for the issue sink, nor for a call that sent none', async () => {
+    callableMock.mockRejectedValueOnce(new FunctionsError('internal'));
+    const sink = unwrapErr(await client()(Callables.ReportClientIssues)([]));
+    callableMock.mockRejectedValueOnce(new FunctionsError('internal'));
+    const unminted = unwrapErr(
+      await client({ nextId: () => 'short' })(Callables.RequestOtpChallenge)(
+        OTP_REQUEST,
+      ),
+    );
+
+    expect(sink.operationId).toBeNull();
+    expect(unminted.operationId).toBeNull();
   });
 });

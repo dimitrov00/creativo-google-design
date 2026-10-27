@@ -41,6 +41,7 @@ import {
   OtpCode,
   type Principal,
   SessionKind,
+  WriteProvenance,
 } from '@core/components';
 import {
   AppointmentId,
@@ -1003,6 +1004,7 @@ describe('memoryCustomerPorts — the signed-in account’s client record', () =
       searchPrefixes: ['ан', 'ана'],
       createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
       customerOrigin: CustomerOrigin.FirstBooking,
+      ...WriteProvenance.NONE,
     };
     const ports = memoryCustomerPorts([record]);
     expect(unwrapOk(await ports.loadCustomerForUser(ANA))).toBe(record);
@@ -1061,6 +1063,7 @@ describe('memoryCustomerSearchPorts — the staff client search over the records
     searchPrefixes,
     createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
     customerOrigin: CustomerOrigin.StaffWalkIn,
+    ...WriteProvenance.NONE,
   });
 
   it('answers the records whose prefixes contain the query, by searchName then id, cut at the limit', async () => {

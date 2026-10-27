@@ -2434,5 +2434,9 @@
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"
     }
+  },
+  "operation": {
+    "reference": "Reference: {{ref}}",
+    "referenceCopied": "Reference copied."
   }
 }

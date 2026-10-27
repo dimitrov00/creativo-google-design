@@ -212,6 +212,27 @@ Source: `docs/architecture/firestore-runbook.md:233`;
 `apps/functions/src/main.ts:330-351`;
 `docs/architecture/decisions/2026-10-26-owner-rulings.md:710`.
 
+- [ ] **Create `LOG_DIGEST_KEY` before the first functions deploy that
+      binds it.** Every callable but `reportClientIssues` binds this secret
+      (audit-hardening WS-4.2): each call's one outcome line
+      (`callable.completed` / `callable.refused` / `callable.failed`)
+      carries `inputDigest`, an HMAC-SHA-256 of the decoded command's
+      allowlisted ids, codes and numbers under this key — never a contact
+      value or free text. A function deploy fails while the secret is
+      missing. An empty value is not fatal: the line prints
+      `inputDigest: null` and the call still answers.
+
+```bash
+openssl rand -hex 32 | firebase functions:secrets:set LOG_DIGEST_KEY --data-file=- --project "$PROJECT_ID"
+```
+
+> Rotating it is safe: only the digests written from then on change
+> (they join log lines to each other, never to a document).
+
+Source: `docs/architecture/firestore-runbook.md` deploy step 4;
+`apps/functions/src/main.ts` (`LOG_DIGEST_KEY`);
+`docs/architecture/flips/audit-hardening.md` §2.6.
+
 ### Sign-in: the OTP sender (LAUNCH BLOCKER)
 
 - [ ] **Replace the refusing OTP sender with a real transactional sender.**

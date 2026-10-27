@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { TriggerEventId, UtcEpochMs } from '@core/primitives';
+import { OperationId, TriggerEventId, UtcEpochMs } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import { AttemptOutcome } from '@core/components';
@@ -102,6 +102,8 @@ describe('the attempt line — what every retrying handler logs', () => {
   const event = {
     id: TriggerEventId.of('evt-1'),
     eventAtUtcMs: at(NOW - 2_500),
+    documentPath: null,
+    writeOperationId: null,
   };
 
   it('judges one failure by its code, or by a code it is given', () => {
@@ -130,6 +132,8 @@ describe('the attempt line — what every retrying handler logs', () => {
       attemptOutcome: 'TRANSIENT',
       failureCode: 'aborted',
       ageMs: 2_500,
+      documentPath: null,
+      writeOperationId: null,
     });
   });
 
@@ -143,7 +147,12 @@ describe('the attempt line — what every retrying handler logs', () => {
     expect(
       attemptLine(
         'someTrigger',
-        { id: TriggerEventId.of('evt-2'), eventAtUtcMs: null },
+        {
+          id: TriggerEventId.of('evt-2'),
+          eventAtUtcMs: null,
+          documentPath: null,
+          writeOperationId: null,
+        },
         attemptFailure({ code: 10 }),
         NOW,
       ),
@@ -153,6 +162,33 @@ describe('the attempt line — what every retrying handler logs', () => {
       attemptOutcome: 'TRANSIENT',
       failureCode: 'aborted',
       ageMs: null,
+      documentPath: null,
+      writeOperationId: null,
+    });
+  });
+
+  it('carries the written document and the operation id it holds, as the event names them (WS-4.3, DEP-19)', () => {
+    const op = OperationId.of('op-00000000000001');
+    expect(
+      attemptLine(
+        'rebuildBusyOnAppointmentChange',
+        {
+          id: TriggerEventId.of('evt-4'),
+          eventAtUtcMs: at(NOW - 100),
+          documentPath: 'appointments/apt-1',
+          writeOperationId: op,
+        },
+        attemptFailure({ code: 14 }),
+        NOW,
+      ),
+    ).toEqual({
+      fn: 'rebuildBusyOnAppointmentChange',
+      eventId: 'evt-4',
+      attemptOutcome: 'TRANSIENT',
+      failureCode: 'unavailable',
+      ageMs: 100,
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-00000000000001',
     });
   });
 });
@@ -316,6 +352,8 @@ describe('properties', () => {
     const event = deepFreeze({
       id: TriggerEventId.of('evt-3'),
       eventAtUtcMs: at(1_000),
+      documentPath: 'customers/cus-1',
+      writeOperationId: OperationId.of('op-00000000000003'),
     });
     expect(
       attemptLine('fn', event, attemptFailure({ code: 14 }), at(4_000)),

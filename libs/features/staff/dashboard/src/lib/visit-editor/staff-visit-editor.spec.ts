@@ -33,6 +33,7 @@ import {
   SubjectRelationship,
   type VisitLeg,
   VoucherCode,
+  WriteProvenance,
 } from '@core/components';
 import type {
   Appointment,
@@ -7352,6 +7353,7 @@ const GEORGI_RECORD: Customer = {
   searchPrefixes: [],
   createdAtUtcMs: utcMs('2025-03-01T10:00:00+02:00'),
   customerOrigin: CustomerOrigin.Registration,
+  ...WriteProvenance.NONE,
 };
 
 /** Мартин's client record (D29): the card resolves every account holder's loyalty through his record. */

@@ -20,6 +20,7 @@ import { Collections } from '@core/entities';
 import {
   ClientIssueSystem,
   GovernedChangeSystem,
+  LogDigestSystem,
   TriggerAttemptSystem,
 } from '@core/systems';
 import { appointmentFixture, FIXTURE_IDS, localDate } from '@core/testing';
@@ -153,12 +154,26 @@ const PLATFORM = {
 const DATABASE = { database: '(default)', namespace: '(default)' } as const;
 const WRITTEN = 'google.cloud.firestore.document.v1.written';
 
+/** A callable bound to no secret — the client issue sink alone (RU-24). */
 const callable = { ...PLATFORM, callableTrigger: {} };
 
-/** A callable bound to the walk-in key (OR-26) — the two that mint walk-in records. */
+/**
+ * A traced callable (audit-hardening WS-4.2, DEP-18): bound to the log
+ * digest key its outcome line's `inputDigest` is keyed by — every callable
+ * but the sink.
+ */
+const tracedCallable = {
+  ...callable,
+  secretEnvironmentVariables: [{ key: 'LOG_DIGEST_KEY' }],
+};
+
+/** A callable bound to the walk-in key (OR-26) — the two that mint walk-in records — and the log digest key. */
 const walkInCallable = {
   ...callable,
-  secretEnvironmentVariables: [{ key: 'WALKIN_ID_KEY' }],
+  secretEnvironmentVariables: [
+    { key: 'WALKIN_ID_KEY' },
+    { key: 'LOG_DIGEST_KEY' },
+  ],
 };
 
 /**
@@ -213,8 +228,10 @@ const daily = (schedule: string) => ({
  * Pass F's new sink, `reportClientIssues` (OR-34), declares its own: two
  * instances, 80 concurrent calls each, 256 MiB, 10 s. The two callables
  * that mint walk-in records (`commitBooking`, `staffEditAppointment`) bind
- * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26); no other
- * export holds a secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
+ * the `WALKIN_ID_KEY` secret their ids are keyed by (OR-26), and every
+ * callable but the sink binds `LOG_DIGEST_KEY` (audit-hardening WS-4.2,
+ * DEP-18: the outcome line's keyed `inputDigest`); no other export holds a
+ * secret. Audit-hardening WS-3 (DEP-14, RU-40) added the
  * thirteen governed-collection audit triggers (`auditSettingsChanges` …
  * `auditAppointmentPhotosChanges`), each the write with its auth context on
  * its own `<collection>/{docId}`, retrying — the one helper behind them is
@@ -224,10 +241,10 @@ const daily = (schedule: string) => ({
  * timeout, memory, instance cap, secret or schedule fails here.
  */
 const ENDPOINTS = {
-  requestOtpChallenge: callable,
-  verifyOtpChallenge: callable,
-  completeRegistration: callable,
-  updateProfile: callable,
+  requestOtpChallenge: tracedCallable,
+  verifyOtpChallenge: tracedCallable,
+  completeRegistration: tracedCallable,
+  updateProfile: tracedCallable,
   auditProfileChanges: audited('users/{docId}'),
   auditSettingsChanges: audited('settings/{docId}'),
   auditServicesChanges: audited('services/{docId}'),
@@ -243,12 +260,12 @@ const ENDPOINTS = {
   auditAppointmentNotesChanges: audited('appointmentNotes/{docId}'),
   auditAppointmentPhotosChanges: audited('appointmentPhotos/{docId}'),
   commitBooking: walkInCallable,
-  cancelAppointment: callable,
-  rescheduleAppointment: callable,
-  transitionAppointment: callable,
-  markArrived: callable,
-  clearArrival: callable,
-  recordSeatTip: callable,
+  cancelAppointment: tracedCallable,
+  rescheduleAppointment: tracedCallable,
+  transitionAppointment: tracedCallable,
+  markArrived: tracedCallable,
+  clearArrival: tracedCallable,
+  recordSeatTip: tracedCallable,
   staffEditAppointment: walkInCallable,
   rebuildBusyOnAppointmentChange: written('appointments/{appointmentId}', true),
   rebuildCapacityOnBusyChange: written('barberBusy/{docId}', true),
@@ -258,8 +275,8 @@ const ENDPOINTS = {
   rebuildCapacityOnSettingsChange: written('settings/{docId}', true),
   sweepCapacityDaily: daily('every day 03:00'),
   sampleBarberLeadTimeDaily: daily('every day 04:00'),
-  requestWaitlist: callable,
-  cancelWaitlist: callable,
+  requestWaitlist: tracedCallable,
+  cancelWaitlist: tracedCallable,
   matchWaitlistOnBusyChange: written('barberBusy/{docId}', true),
   dispatchClientProjections: written('appointments/{appointmentId}', true),
   recomputeClientStatsOnPolicyChange: written('settings/{docId}', true),
@@ -275,11 +292,15 @@ const ENDPOINTS = {
     },
   },
   sweepClientStatsPolicyDaily: daily('every day 03:30'),
-  runBackfill: { ...callable, availableMemoryMb: 512, timeoutSeconds: 540 },
-  publishStreakDefinition: callable,
-  startImpersonation: callable,
-  endImpersonation: callable,
-  redeemInvitation: callable,
+  runBackfill: {
+    ...tracedCallable,
+    availableMemoryMb: 512,
+    timeoutSeconds: 540,
+  },
+  publishStreakDefinition: tracedCallable,
+  startImpersonation: tracedCallable,
+  endImpersonation: tracedCallable,
+  redeemInvitation: tracedCallable,
   reportClientIssues: {
     ...callable,
     availableMemoryMb: 256,
@@ -916,6 +937,19 @@ async function rejection(promise: Promise<unknown>): Promise<HttpsError> {
   }
   throw new Error('expected a rejection');
 }
+
+/** The log digest key the spec runs under — a fixed, public test value. */
+const SPEC_LOG_DIGEST_KEY = 'spec-log-digest-key';
+const LOG_DIGEST_KEY_BEFORE = process.env['LOG_DIGEST_KEY'];
+
+beforeAll(() => {
+  process.env['LOG_DIGEST_KEY'] = SPEC_LOG_DIGEST_KEY;
+});
+
+afterAll(() => {
+  if (LOG_DIGEST_KEY_BEFORE === undefined) delete process.env['LOG_DIGEST_KEY'];
+  else process.env['LOG_DIGEST_KEY'] = LOG_DIGEST_KEY_BEFORE;
+});
 
 beforeEach(() => {
   seam.calls.length = 0;
@@ -1581,7 +1615,16 @@ describe('main.ts — the composition root', () => {
       expect(down.details).toEqual({
         errorCode: 'IDENTITY_REPOSITORY_FAILURE',
       });
-      expect(logger.error).toHaveBeenCalledTimes(1);
+      // The store failure tracked once, and its ONE outcome line (DEP-18).
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenLastCalledWith(
+        'callable.failed',
+        expect.objectContaining({
+          callable: 'verifyOtpChallenge',
+          errorCode: 'IDENTITY_REPOSITORY_FAILURE',
+          wireStatus: 'internal',
+        }),
+      );
     });
   });
 
@@ -1684,10 +1727,26 @@ describe('main.ts — the composition root', () => {
       });
       // The cause stays on the server.
       expect(JSON.stringify(refusal.details)).not.toContain('deadline');
-      expect(logged).toHaveBeenCalledTimes(1);
-      expect(logged).toHaveBeenCalledWith('rhythm rule write failed', {
-        error: 'Error: deadline exceeded',
-      });
+      // The cause line and the call's outcome line (DEP-18) — the cause line
+      // carries the invocation's scope (callable, operation id, uid, roles,
+      // input digest) under its own field.
+      expect(logged).toHaveBeenCalledTimes(2);
+      expect(logged).toHaveBeenCalledWith(
+        'rhythm rule write failed',
+        expect.objectContaining({
+          callable: 'publishStreakDefinition',
+          operationId: STREAK_PUBLISH.requestId,
+          uid: OWNER.uid,
+          error: 'Error: deadline exceeded',
+        }),
+      );
+      expect(logged).toHaveBeenLastCalledWith(
+        'callable.failed',
+        expect.objectContaining({
+          errorCode: 'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
+          wireStatus: 'internal',
+        }),
+      );
     });
 
     it('logs a version number a concurrent writer took by its code and path (F3-1 (c)), and throws internal', async () => {
@@ -1708,10 +1767,14 @@ describe('main.ts — the composition root', () => {
       expect(refusal.details).toEqual({
         errorCode: 'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
       });
-      expect(logged).toHaveBeenCalledWith('rhythm rule write failed', {
-        error:
-          'REPOSITORY_ALREADY_EXISTS streakDefinitions/cadence/versions/000002',
-      });
+      expect(logged).toHaveBeenCalledWith(
+        'rhythm rule write failed',
+        expect.objectContaining({
+          callable: 'publishStreakDefinition',
+          error:
+            'REPOSITORY_ALREADY_EXISTS streakDefinitions/cadence/versions/000002',
+        }),
+      );
     });
   });
 
@@ -1808,10 +1871,127 @@ describe('main.ts — the composition root', () => {
       });
       const answer = await rejection(run(name, own.input));
       expect(answer.code).toBe('internal');
-      expect(trackError).toHaveBeenCalledTimes(1);
-      expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });
+      // Tracked ONCE, under its own name — inside a traced call the
+      // invocation's scope rides under the context (DEP-18) — and, but for
+      // the untraced sink, ONE `callable.failed` outcome line beside it.
+      const calls = trackError.mock.calls;
+      expect(calls.filter(([first]) => first === thrown)).toHaveLength(1);
+      expect(trackError).toHaveBeenCalledWith(
+        thrown,
+        expect.objectContaining({ callable: name }),
+      );
+      const outcomes = calls.filter(([first]) => first === 'callable.failed');
+      if (TELEMETRY_EXPORTS.has(name)) {
+        expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });
+        expect(calls).toHaveLength(1);
+      } else {
+        expect(outcomes).toHaveLength(1);
+        expect(outcomes[0]?.[1]).toMatchObject({
+          callable: name,
+          wireStatus: 'internal',
+        });
+        expect(calls).toHaveLength(2);
+      }
     },
   );
+
+  describe('WS-4.2 — every callable but the sink is traced (DEP-18)', () => {
+    /** Every logger line of the spied levels, as `[msg, fields]`. */
+    function spyLines() {
+      const lines: (readonly unknown[])[] = [];
+      for (const level of ['info', 'warn', 'error'] as const) {
+        vi.spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+          lines.push(args);
+        });
+      }
+      return lines;
+    }
+
+    it('binds LOG_DIGEST_KEY on every callable export but the sink, and on nothing else', () => {
+      for (const name of EXPORTS) {
+        const endpoint = endpointOf(exported.get(name)) as {
+          readonly secretEnvironmentVariables?: readonly {
+            readonly key: string;
+          }[];
+        };
+        const keys = (endpoint.secretEnvironmentVariables ?? []).map(
+          (secret) => secret.key,
+        );
+        const traced = CALLABLE_NAMES.has(name) && !TELEMETRY_EXPORTS.has(name);
+        expect(keys.includes('LOG_DIGEST_KEY'), name).toBe(traced);
+      }
+    });
+
+    it('writes ONE callable.completed line: the operation id, the verified uid and roles, the keyed digest of the decoded command', async () => {
+      const lines = spyLines();
+      const own = caseOf('cancelAppointment');
+      seam.answers.set(own.pipeline, own.answer);
+      await expect(run('cancelAppointment', own.input)).resolves.toEqual(
+        own.expected,
+      );
+      const command = seam.calls[0]?.args[0];
+      const outcomes = lines.filter(([msg]) => msg === 'callable.completed');
+      expect(outcomes).toHaveLength(1);
+      expect(outcomes[0]?.[1]).toEqual({
+        callable: 'cancelAppointment',
+        operationId: 'operation-0123456789ab',
+        uid: CLIENT.uid,
+        roles: [],
+        errorCode: null,
+        wireStatus: 'ok',
+        durationMs: expect.any(Number),
+        inputDigest: LogDigestSystem.digestOf(command, (input) =>
+          hmacSha256Hex(SPEC_LOG_DIGEST_KEY, input),
+        ),
+      });
+      expect(
+        (outcomes[0]?.[1] as { readonly inputDigest: string }).inputDigest,
+      ).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    it('an empty key prints no digest — inputDigest null — and the call still answers', async () => {
+      const lines = spyLines();
+      process.env['LOG_DIGEST_KEY'] = '';
+      try {
+        const own = caseOf('cancelAppointment');
+        seam.answers.set(own.pipeline, own.answer);
+        await expect(run('cancelAppointment', own.input)).resolves.toEqual(
+          own.expected,
+        );
+      } finally {
+        process.env['LOG_DIGEST_KEY'] = SPEC_LOG_DIGEST_KEY;
+      }
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({ inputDigest: null });
+    });
+
+    it('the publish notes its digest after its own decode', async () => {
+      const lines = spyLines();
+      const own = caseOf('publishStreakDefinition');
+      seam.answers.set(own.pipeline, own.answer);
+      await run('publishStreakDefinition', own.input);
+      const outcome = lines.find(([msg]) => msg === 'callable.completed');
+      expect(outcome?.[1]).toMatchObject({
+        callable: 'publishStreakDefinition',
+        operationId: STREAK_PUBLISH.requestId,
+        uid: OWNER.uid,
+        inputDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
+      });
+    });
+
+    it('the sink logs no outcome line and no uid — untraced (RU-24)', async () => {
+      const lines = spyLines();
+      const sink = caseOf('reportClientIssues');
+      seam.answers.set(sink.pipeline, sink.answer);
+      await expect(run('reportClientIssues', sink.input)).resolves.toEqual(
+        sink.expected,
+      );
+      expect(
+        lines.filter(([msg]) => String(msg).startsWith('callable.')),
+      ).toEqual([]);
+      expect(JSON.stringify(lines)).not.toContain(STAFF.uid);
+    });
+  });
 
   // Last in the file: each case loads a FRESH composition root (the identity
   // ports are built once per module), so no earlier case's cold start is

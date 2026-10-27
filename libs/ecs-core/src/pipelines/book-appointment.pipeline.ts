@@ -19,6 +19,7 @@ import {
   type CustomerId,
   LocalDate,
   LocationId,
+  LogEvent,
   MinuteOfDay,
   type OperationId,
   ServiceId,
@@ -29,11 +30,19 @@ import {
 import {
   type BookAppointmentError,
   BookingError,
+  BookingErrorCode,
   BookingErrorField,
+  type EditAppointmentError,
+  type RescheduleAppointmentError,
   ShopUnavailableReason,
+  StaffEditErrorCode,
   type TimeError,
 } from '@core/errors';
-import type { AccountContact, Appointment } from '@core/entities';
+import type {
+  AccountContact,
+  Appointment,
+  BarberBusyDay,
+} from '@core/entities';
 import type {
   AccountContactPorts,
   PolicyReadPorts,
@@ -48,7 +57,9 @@ import {
   BookingDecisionSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   PartyAdmissionSystem,
+  type SlotRefusal,
   type WalkInGuest,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -115,6 +126,11 @@ import {
  *   (`attempt:<attemptId>` — the attempt id is required, WS-4.1),
  *   `Create`d in the SAME plan (WS-1): they land with the booking or not at
  *   all. A replay plans none — it never meets its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot — captured in the
+ *   impure read callback, never inside the pure `decide` (Law 4) — never
+ *   in the error (OR-12).
  */
 
 /**
@@ -226,6 +242,32 @@ export function frameWallClock(
 }
 
 /**
+ * The refused seat's place when the refusal names one — a slot somebody
+ * holds (`BOOKING_SLOT_UNAVAILABLE`) or a staff edit's overlap
+ * (`BOOKING_STAFF_EDIT_OVERLAPS`) — the error itself, by structural typing
+ * (Law 3: no mapping); `null` for every other refusal. Shared by the
+ * commit, the reschedule and the staff edit, whose refused commits log
+ * `DecisionInputSystem.slotFacts` (WS-4.2).
+ */
+export function slotRefusalOf(
+  error:
+    BookAppointmentError | RescheduleAppointmentError | EditAppointmentError,
+): SlotRefusal | null {
+  return error.errorCode === BookingErrorCode.SlotUnavailable ||
+    error.errorCode === StaffEditErrorCode.Overlaps
+    ? error
+    : null;
+}
+
+/** The busy days a booking snapshot read — none before its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
+}
+
+/**
  * The ids a request names that could be documents — the ones their brand's
  * `parse` takes (a reserved name refused with the rest, OR-44) are read; the
  * rest are refused by the decision.
@@ -269,13 +311,21 @@ export const bookAppointment =
     // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const committed = await runWithCustomerRetry(() =>
       ports.commit(
-        (tx) =>
-          readBooking(tx, cmd, [
+        (tx) => {
+          lastRead = null;
+          return readBooking(tx, cmd, [
             ...customerIdsOf(customerIds),
             ...walkIns.map((walkIn) => walkIn.customerId),
-          ]),
+          ]).then((snapshot) => {
+            lastRead = snapshot;
+            return snapshot;
+          });
+        },
         (snapshot) =>
           decideBooking(
             snapshot,
@@ -291,8 +341,13 @@ export const bookAppointment =
       ),
     );
     if (!committed.ok) {
-      ports.log('warn', 'booking.rejected', {
+      ports.log('warn', LogEvent.BookingRejected, {
         errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          null,
+        ),
       });
       return committed;
     }
@@ -456,7 +511,12 @@ function decideBooking(
     },
   );
   if (!decided.ok) return decided;
-  const appointment = decided.value.appointment;
+  // The decision drafts the visit; the CALL that writes it is stamped here
+  // (WS-4.3) — a fact of the call, not of the decision.
+  const appointment: Appointment = {
+    ...decided.value.appointment,
+    writeOperationId: cmd.operationId,
+  };
   const { id, ...body } = appointment;
   const audit = AuditSystem.commitWrites(
     [
@@ -490,8 +550,14 @@ function decideBooking(
         contacts,
         CustomerOrigin.FirstBooking,
         nowUtcMs,
+        cmd.operationId,
       ),
-      ...CustomerRecordSystem.walkInCreates(walkIns, set.customers, nowUtcMs),
+      ...CustomerRecordSystem.walkInCreates(
+        walkIns,
+        set.customers,
+        nowUtcMs,
+        cmd.operationId,
+      ),
       ...audit.writes,
     ],
   });

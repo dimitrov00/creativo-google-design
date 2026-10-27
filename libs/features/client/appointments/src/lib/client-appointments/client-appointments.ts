@@ -66,6 +66,7 @@ import {
   UiPageActionBar,
   UiQuickAction,
   UiQuickActions,
+  UiReference,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import {
@@ -102,6 +103,7 @@ import {
 import { LoadState } from '@creativo/shared/view-state';
 import {
   bookingStatusWords,
+  operationReferenceWords,
   translateCodedError,
   wordPipelineError,
   loadedLanguage,
@@ -254,6 +256,7 @@ interface VisitMonthVm {
     UiQuickAction,
     UiQuickActions,
     UiRadiusDirective,
+    UiReference,
     UiSheetActionBar,
     UiSkeleton,
     UiSpacer,
@@ -1065,6 +1068,21 @@ export class ClientAppointments {
       { reach },
     );
   }
+
+  /**
+   * The refused cancel's reference under its sentence (audit-hardening
+   * WS-4.5): the call's operation id — printed whole, copied on a tap —
+   * with its words, or `null` when the refusal carries none (a refusal
+   * this page made itself, a call that sent no id): no line then.
+   */
+  protected readonly cancelErrorReference = computed(() => {
+    const id = this.store.cancelError()?.operationId ?? null;
+    if (id === null) return null;
+    const words = operationReferenceWords(id, (key, params) =>
+      this.transloco.translate<string>(key, params),
+    );
+    return words === null ? null : { value: id, ...words };
+  });
 
   // ── Internals ────────────────────────────────────────────────────────
 

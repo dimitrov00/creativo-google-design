@@ -4,6 +4,7 @@ import {
   AuditResourceId,
   BackfillJobId,
   CustomerId,
+  LogEvent,
   Result,
   type TimeZone,
   type UserId,
@@ -659,7 +660,7 @@ export const runBackfill = (
       await ports.appendAudit(rows);
     } catch (error) {
       // Never fatal: a failed audit write never replaces the call's answer.
-      ports.log('error', 'backfill audit row not written', {
+      ports.log('error', LogEvent.BackfillAuditNotWritten, {
         code: TriggerAttemptSystem.failureCode(error),
       });
     }

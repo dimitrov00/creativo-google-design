@@ -13,7 +13,7 @@
  * and stats the seed writes name the same record.
  */
 import { createHash } from 'node:crypto';
-import { CustomerOrigin, Email } from '@core/components';
+import { CustomerOrigin, Email, WriteProvenance } from '@core/components';
 import { type Customer, Profile } from '@core/entities';
 import { CustomerId, UserId, type UtcEpochMs } from '@core/primitives';
 import { PhoneSystem, SearchFieldsSystem } from '@core/systems';
@@ -68,5 +68,6 @@ export function seededCustomerBody(
     ),
     createdAtUtcMs,
     customerOrigin: CustomerOrigin.Seed,
+    ...WriteProvenance.NONE,
   } satisfies Omit<Customer, 'id'>;
 }

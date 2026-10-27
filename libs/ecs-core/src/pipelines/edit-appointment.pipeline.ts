@@ -29,6 +29,7 @@ import {
   CouponGrantId,
   CouponId,
   LocationId,
+  LogEvent,
   MinuteDelta,
   type OperationId,
   type SeatId,
@@ -51,6 +52,7 @@ import {
 import {
   type AccountContact,
   type Appointment,
+  type BarberBusyDay,
   Collections,
   type Coupon,
   type CouponGrant,
@@ -78,6 +80,7 @@ import {
   CouponGrantSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   type DecisionStandingSeat,
   DiscountSystem,
   type EditCommandRequest,
@@ -107,7 +110,7 @@ import {
   readRedemptionVouchers,
   zoneOf,
 } from './booking-read-set.pipeline';
-import { frameWallClock } from './book-appointment.pipeline';
+import { frameWallClock, slotRefusalOf } from './book-appointment.pipeline';
 import {
   customerIdsFor,
   customerIdsOf,
@@ -169,6 +172,12 @@ import {
  *   `Create`d in the SAME plan so they land with the edit or not at all. A
  *   replayed intent and the contacts-first pass plan none — a replay never
  *   meets its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.staff_edit_rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot (the target day's
+ *   busy days, the stored visit's revision) — captured in the impure read
+ *   callback, never inside the pure `decide` (Law 4) — never in the error
+ *   (OR-12).
  */
 
 /**
@@ -283,14 +292,22 @@ export const editAppointment =
     // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const run = (contacts: ReadonlyMap<UserId, AccountContact>) =>
       runWithCustomerRetry(() =>
         ports.commit(
-          (tx) =>
-            readEdit(tx, cmd, operation, {
+          (tx) => {
+            lastRead = null;
+            return readEdit(tx, cmd, operation, {
               hash: ports.hash,
               walkInHash: ports.walkInHash,
-            }),
+            }).then((snapshot) => {
+              lastRead = snapshot;
+              return snapshot;
+            });
+          },
           (snapshot) =>
             decideEdit(snapshot, {
               cmd,
@@ -316,7 +333,17 @@ export const editAppointment =
       if (!contacts.ok) return contacts;
       committed = await run(contacts.value);
     }
-    if (!committed.ok) return committed;
+    if (!committed.ok) {
+      ports.log('warn', LogEvent.BookingStaffEditRejected, {
+        errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          revisionRead(lastRead),
+        ),
+      });
+      return committed;
+    }
     const { editCallOutcome, revision, unaudited } = committed.value;
     logUnaudited(ports, unaudited);
     return Result.ok({
@@ -325,6 +352,22 @@ export const editAppointment =
       replayed: editCallOutcome === EditCallOutcome.Replayed,
     });
   };
+
+/** The busy days an edit's snapshot read — the target day's, once its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
+}
+
+/** The stored visit's revision, when the snapshot holds the visit. */
+function revisionRead(snapshot: Snapshot | null): number | null {
+  return snapshot === null ||
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused
+    ? null
+    : snapshot.stored.revision;
+}
 
 /** An instant on the shop's clock. */
 function wallOf(at: UtcEpochMs, zone: TimeZone) {
@@ -946,6 +989,8 @@ function decideEdit(
       revision,
       context.operation.digest,
     ),
+    // The call that wrote it last (WS-4.3) — the join key to its rows.
+    writeOperationId: cmd.operationId,
     // THE PAIRS THIS SAVE BROKE, remembered for its undo under the revision
     // it stamps (none: whatever an older save remembered is dropped).
     ...StoodSeatPairs.remember(
@@ -1017,11 +1062,13 @@ function decideEdit(
         context.contacts,
         CustomerOrigin.FirstBooking,
         nowUtcMs,
+        cmd.operationId,
       ),
       ...CustomerRecordSystem.walkInCreates(
         loaded.addedWalkIns,
         loaded.set.customers,
         nowUtcMs,
+        cmd.operationId,
       ),
       ...audit.writes,
     ],

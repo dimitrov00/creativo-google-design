@@ -22,6 +22,7 @@ import {
   type ClientOperationId,
   type LocalDate,
   LocationId,
+  LogEvent,
   type MinuteOfDay,
   OperationId,
   SeatKeyText,
@@ -38,7 +39,7 @@ import {
   CancellationRefusalCode,
   type RescheduleAppointmentError,
 } from '@core/errors';
-import type { Appointment } from '@core/entities';
+import type { Appointment, BarberBusyDay } from '@core/entities';
 import type {
   HashPorts,
   IdPorts,
@@ -59,6 +60,7 @@ import {
   type CarriedLine,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   type DecisionStandingSeat,
   type MovedCartLine,
   type MovePlan,
@@ -82,7 +84,7 @@ import {
   type ShopDayFrame,
   zoneOf,
 } from './booking-read-set.pipeline';
-import { frameWallClock } from './book-appointment.pipeline';
+import { frameWallClock, slotRefusalOf } from './book-appointment.pipeline';
 import { customerIdsFor } from './customer-records.pipeline';
 
 /**
@@ -126,6 +128,12 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   they land with the move or not at all. A replayed named move and a
  *   request for where the visit already is plan none — a replay never meets
  *   its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.move_rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot (the new day's
+ *   busy days, the stored visit's revision) — captured in the impure read
+ *   callback, never inside the pure `decide` (Law 4) — never in the error
+ *   (OR-12).
  */
 
 /**
@@ -235,8 +243,17 @@ export const rescheduleAppointment =
     // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const committed = await ports.commit(
-      (tx) => readMove(tx, cmd, owner, operation),
+      (tx) => {
+        lastRead = null;
+        return readMove(tx, cmd, owner, operation).then((snapshot) => {
+          lastRead = snapshot;
+          return snapshot;
+        });
+      },
       (snapshot) =>
         decideMove(
           snapshot,
@@ -248,7 +265,17 @@ export const rescheduleAppointment =
           ports,
         ),
     );
-    if (!committed.ok) return committed;
+    if (!committed.ok) {
+      ports.log('warn', LogEvent.BookingMoveRejected, {
+        errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          revisionRead(lastRead),
+        ),
+      });
+      return committed;
+    }
     const { moveOutcome, revision, unaudited } = committed.value;
     logUnaudited(ports, unaudited);
     return Result.ok({
@@ -257,6 +284,22 @@ export const rescheduleAppointment =
       replayed: moveOutcome !== MoveOutcome.Moved,
     });
   };
+
+/** The busy days a move's snapshot read — the new day's, once its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
+}
+
+/** The stored visit's revision, when the snapshot holds the visit. */
+function revisionRead(snapshot: Snapshot | null): number | null {
+  return snapshot === null ||
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused
+    ? null
+    : snapshot.stored.revision;
+}
 
 /** The cart on the request's shop day — `null` when a start or an id is none. */
 function cartOf(
@@ -683,6 +726,8 @@ function decideMove(
       revision,
       operation.digest,
     ),
+    // The call that wrote it last (WS-4.3) — the join key to its row.
+    writeOperationId: cmd.operationId,
   });
   // Everyone the move touched: who the visit had, and who it has now.
   const audit = AuditSystem.commitWrites(

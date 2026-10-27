@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { CustomerOrigin, E164 } from '@core/components';
+import { CustomerOrigin, E164, WriteProvenance } from '@core/components';
 import { CustomerId, Result, UserId } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import type { Customer } from '@core/entities';
@@ -148,6 +148,7 @@ describe('customerSearchPorts.searchCustomers — the client records the desk ca
       createdAtUtcMs: utcMs('2026-09-28T09:00:00.000+03:00'),
       customerOrigin:
         userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
+      ...WriteProvenance.NONE,
     };
   }
   const MARIA = record('cus_maria', 'Мария', '+359888123456', null);

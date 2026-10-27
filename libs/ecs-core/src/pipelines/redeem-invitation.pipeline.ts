@@ -1,5 +1,10 @@
 import { type InvitationCall, WriteOp } from '@core/components';
-import { type InvitationId, Result, type UserId } from '@core/primitives';
+import {
+  type InvitationId,
+  LogEvent,
+  Result,
+  type UserId,
+} from '@core/primitives';
 import {
   EngagementError,
   type RedeemInvitationError,
@@ -127,7 +132,7 @@ export const redeemInvitation =
         committed.error.errorCode === RepositoryErrorCode.AlreadyExists
           ? EngagementError.invitationAlreadyRedeemed(cmd.invitationId)
           : committed.error;
-      ports.log('info', 'invitation.redeem.refused', {
+      ports.log('info', LogEvent.InvitationRedeemRefused, {
         invitationId: cmd.invitationId,
         errorCode: error.errorCode,
       });

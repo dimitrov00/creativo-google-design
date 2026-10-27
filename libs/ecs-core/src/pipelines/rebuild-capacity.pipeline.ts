@@ -2,6 +2,7 @@ import {
   type BarberId,
   type CapacityMonthId,
   type LocalDate,
+  LogEvent,
   Result,
   type TimeZone,
 } from '@core/primitives';
@@ -213,7 +214,7 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
     if (span.truncated) {
       // An authoring error, but a SILENT truncation would leave the tail
       // unmaterialized with nothing to see.
-      ports.log('warn', 'capacity span truncated at 500 days', {
+      ports.log('warn', LogEvent.CapacitySpanTruncated, {
         fromKey: from,
         toKey: to,
       });
@@ -304,14 +305,14 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
             );
             if (rebuilt.ok) rebuiltBarberIds.push(barberId);
             else {
-              ports.log('error', 'capacity sweep failed for barber', {
+              ports.log('error', LogEvent.CapacitySweepFailed, {
                 barberId,
                 error: rebuilt.error,
               });
             }
           } catch (error) {
             // One barber's bad roster must not cost the others their sweep.
-            ports.log('error', 'capacity sweep failed for barber', {
+            ports.log('error', LogEvent.CapacitySweepFailed, {
               barberId,
               error,
             });

@@ -422,6 +422,136 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
       expect(fake.writes).toEqual([]);
     });
 
+    describe('the versions a refused decide read (WS-4.2, RU-25)', () => {
+      const VOUCHER_CODE = 'GIFT-SENTINEL-7Q2X';
+
+      function logged(seed: Record<string, Doc>) {
+        const fake = createProjectionFirestore(seed);
+        const telemetry = recordingTelemetry();
+        return {
+          fake,
+          telemetry,
+          commit: firestoreCommitPlan(
+            fake.db as unknown as Firestore,
+            unguarded,
+            telemetry.log,
+          ),
+        };
+      }
+
+      it('logs ONE document.versions_read line after a refused decide — the returned snapshots’ paths only, never a query value or a missed key', async () => {
+        const { telemetry, commit } = logged({
+          'appointments/a1': { v: 1 },
+          'giftVouchers/gv-1': { code: VOUCHER_CODE },
+          'barberBusy/k1': { blocks: [] },
+        });
+        const refusal = {
+          errorCode: CancellationRefusalCode.NotCancellable,
+        } as const;
+        const result = await commit(
+          async (tx) => {
+            await tx.get(APPT);
+            await tx.get(['giftVouchers', `missed-${VOUCHER_CODE}`]);
+            await tx.getAll([
+              ['barberBusy', 'k1'],
+              ['barberBusy', 'k2'],
+            ]);
+            return tx.query({
+              collection: ['giftVouchers'],
+              where: [{ field: 'code', op: QueryOp.Eq, value: VOUCHER_CODE }],
+              orderBy: [],
+              limit: null,
+            });
+          },
+          () => Result.err(refusal),
+        );
+        expect(result).toEqual({ ok: false, error: refusal });
+        expect(telemetry.lines).toEqual([
+          {
+            level: 'warn',
+            msg: 'document.versions_read',
+            fields: {
+              reads: [
+                { path: 'appointments/a1', updateTimeMs: null },
+                { path: 'barberBusy/k1', updateTimeMs: null },
+                { path: 'giftVouchers/gv-1', updateTimeMs: null },
+              ],
+            },
+          },
+        ]);
+        expect(JSON.stringify(telemetry.lines)).not.toContain(VOUCHER_CODE);
+      });
+
+      it('reads the store’s updateTime as epoch milliseconds, and caps a line at 50 reads', async () => {
+        const seed: Record<string, Doc> = {};
+        for (let i = 0; i < 60; i++) seed[`barberBusy/k${100 + i}`] = {};
+        const { fake, telemetry } = logged(seed);
+        const db = fake.db as unknown as {
+          runTransaction: (
+            fn: (tx: unknown) => Promise<unknown>,
+          ) => Promise<unknown>;
+        };
+        const stamped = {
+          ...db,
+          runTransaction: (fn: (tx: unknown) => Promise<unknown>) =>
+            db.runTransaction((tx) => {
+              const inner = tx as {
+                get: (target: unknown) => Promise<object>;
+              };
+              return fn({
+                ...inner,
+                get: async (target: unknown) => {
+                  const snap = await inner.get(target);
+                  return 'docs' in snap
+                    ? snap
+                    : { ...snap, updateTime: Timestamp.fromMillis(1_700) };
+                },
+              });
+            }),
+        };
+        const commit = firestoreCommitPlan(
+          stamped as unknown as Firestore,
+          unguarded,
+          telemetry.log,
+        );
+        await commit(
+          async (tx) => {
+            await tx.get(['barberBusy', 'k100']);
+            return tx.query({
+              collection: ['barberBusy'],
+              where: [],
+              orderBy: [],
+              limit: null,
+            });
+          },
+          () => Result.err({ errorCode: 'X' }),
+        );
+        const reads = (
+          telemetry.lines[0]?.fields as {
+            readonly reads: readonly { readonly updateTimeMs: unknown }[];
+          }
+        ).reads;
+        expect(reads).toHaveLength(50);
+        expect(reads[0]).toEqual({
+          path: 'barberBusy/k100',
+          updateTimeMs: 1_700,
+        });
+        expect(reads[1]).toEqual({
+          path: 'barberBusy/k100',
+          updateTimeMs: null,
+        });
+      });
+
+      it('logs nothing when the decide answers', async () => {
+        const { telemetry, commit } = logged({ 'appointments/a1': { v: 1 } });
+        await commit(
+          async (tx) => tx.get(APPT),
+          () => Result.ok({ writes: [] }),
+        );
+        expect(telemetry.lines).toEqual([]);
+      });
+    });
+
     it('ALREADY_EXISTS on a Create comes back as a value — and nothing of the plan is applied', async () => {
       const { fake, commit } = store({ 'auditLog/row-1': { action: 'first' } });
       const result = await commit(

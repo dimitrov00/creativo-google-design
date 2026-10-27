@@ -3,7 +3,12 @@ import type {
   DocumentReference,
   Firestore,
 } from 'firebase-admin/firestore';
-import { Result, type AuditEntryId, AuditResourceId } from '@core/primitives';
+import {
+  Result,
+  type AuditEntryId,
+  AuditResourceId,
+  LogEvent,
+} from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import type { AuditPorts, TelemetryPorts } from '@core/ports';
@@ -97,7 +102,7 @@ export const firestoreAuditPorts = (
       }
     } catch (error) {
       const first = rows[0];
-      telemetry.log('error', 'audit write failed', {
+      telemetry.log('error', LogEvent.AuditWriteFailed, {
         action: first?.auditAction ?? null,
         resourceId: first?.resourceId ?? null,
         error: String(error),

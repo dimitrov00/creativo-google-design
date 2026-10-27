@@ -48,6 +48,7 @@ import {
   ServiceTerms,
   StoodSeatPairs,
   SubjectRelationship,
+  WriteProvenance,
 } from '@core/components';
 import type { Appointment, AppointmentPhoto } from '@core/entities';
 import {
@@ -386,6 +387,7 @@ export function appointmentBody(plan: AppointmentPlan): Body<Appointment> {
     arrivedAtUtcMs:
       plan.arrivedAtUtcMs === null ? null : instant(plan.arrivedAtUtcMs),
     ...StoodSeatPairs.NONE,
+    ...WriteProvenance.NONE,
     ...BookingLifecycle.sliceOf(lifecycle),
   } satisfies Omit<Appointment, 'id'>;
 }

@@ -1,4 +1,9 @@
-import { type CustomerId, Result, type TimeZone } from '@core/primitives';
+import {
+  type CustomerId,
+  LogEvent,
+  Result,
+  type TimeZone,
+} from '@core/primitives';
 import {
   AttemptOutcome,
   ClientStatsPolicy,
@@ -238,13 +243,13 @@ export const continuePolicyRecompute = (
             : Result.ok({ writes: [] }),
       );
       if (!committed.ok) {
-        ports.log('warn', 'policy recompute stall not recorded', {
+        ports.log('warn', LogEvent.PolicyRecomputeStallNotRecorded, {
           code: TriggerAttemptSystem.repositoryFailure(committed.error)
             .failureCode,
         });
       }
     } catch (error) {
-      ports.log('warn', 'policy recompute stall not recorded', {
+      ports.log('warn', LogEvent.PolicyRecomputeStallNotRecorded, {
         code: TriggerAttemptSystem.failureCode(error),
       });
     }

@@ -24,6 +24,7 @@ import {
   AuditResourceId,
   type CustomerId,
   CustomerId as CustomerIds,
+  OperationId,
   Result,
   SeatId,
   UserId,
@@ -353,6 +354,32 @@ describe('runBackfill — the subject mirror job', () => {
     const { tx, run } = rig([visitOf('a1', ANA), visitOf('a2', BOB)]);
     await run(command(resume(BackfillJobName.SubjectMirror)), unbounded);
     expect(tx.transactions).toEqual([]);
+  });
+
+  it('leaves the write provenance as it was — a mirror stamp neither sets nor clears it (RU-29)', async () => {
+    const booked = OperationId.of('op-book-a1');
+    const { tx, store, run } = rig([
+      { ...visitOf('a1', ANA, true), writeOperationId: booked },
+      visitOf('a2', BOB, true),
+    ]);
+    await run(command(resume(BackfillJobName.SubjectMirror)), unbounded);
+    expect(tx.plans).toHaveLength(2);
+    for (const plan of tx.plans) {
+      expect(plan).toHaveLength(1);
+      expect(plan[0]).toMatchObject({ fields: {} });
+      expect(
+        Object.hasOwn(
+          (plan[0] as { readonly fields: object }).fields,
+          'writeOperationId',
+        ),
+      ).toBe(false);
+    }
+    expect(
+      store.get(`${Collections.Appointments}/a1`)?.['writeOperationId'],
+    ).toBe(booked);
+    expect(
+      store.get(`${Collections.Appointments}/a2`)?.['writeOperationId'],
+    ).toBeNull();
   });
 });
 

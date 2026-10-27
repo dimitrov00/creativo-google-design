@@ -1,5 +1,6 @@
 import type { Actor, CancellationReason, WriteOp } from '@core/components';
 import {
+  LogEvent,
   Result,
   type AppointmentId,
   type OperationId,
@@ -91,7 +92,7 @@ export const cancelAppointment =
   ): Promise<Result<CancelAppointmentAnswer, CancelAppointmentError>> => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) {
-      ports.log('warn', 'cancellation policy unread; cancel refused', {
+      ports.log('warn', LogEvent.CancelPolicyUnread, {
         errorCode: CancellationRefusalCode.PolicyUnavailable,
         resourceId: cmd.appointmentId,
         error: policy.error.reason,

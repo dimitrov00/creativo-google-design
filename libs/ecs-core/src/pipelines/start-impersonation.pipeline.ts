@@ -8,6 +8,7 @@ import {
 import {
   defect,
   ImpersonationSessionId,
+  LogEvent,
   type OperationId,
   Result,
   type UserId,
@@ -91,7 +92,7 @@ export const startImpersonation =
   ): Promise<Result<GovernanceCall.Started, StartImpersonationError>> => {
     const admitted = admitImpersonationCaller(cmd.adminUserId, cmd.adminRoles);
     if (!admitted.ok) {
-      ports.log('info', 'impersonation.start.refused', {
+      ports.log('info', LogEvent.ImpersonationStartRefused, {
         errorCode: admitted.error.errorCode,
       });
       return admitted;
@@ -134,7 +135,7 @@ export const startImpersonation =
         }),
     );
     if (!committed.ok) return committed;
-    ports.log('info', 'impersonation.started', {
+    ports.log('info', LogEvent.ImpersonationStarted, {
       sessionId: id,
       adminUserId: session.adminUserId,
       targetUserId: session.targetUserId,

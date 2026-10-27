@@ -153,6 +153,7 @@ describe('auth-claims adapter', () => {
           field: null,
           wireStatus: null,
           serverParams: {},
+          operationId: null,
         },
       });
     });
@@ -177,6 +178,7 @@ describe('auth-claims adapter', () => {
           field: null,
           wireStatus: null,
           serverParams: {},
+          operationId: null,
         },
       });
     });

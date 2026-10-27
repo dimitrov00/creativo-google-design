@@ -44,6 +44,7 @@ export const consoleOtpSender = (log: Log): OtpDeliveryPorts => ({
       LEGACY_OTP_DESTINATION_TYPE[
         ParsedIdentifier.destinationTypeOf(destination)
       ];
+    // eslint-disable-next-line creativo/no-literal-log-message -- emulator-only QA line, WS-0 keeps it word for word
     log(
       'info',
       `[otp] would send ${channel} OTP to ${destination.identifier}: ${code}`,

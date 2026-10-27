@@ -2437,5 +2437,9 @@
       "shopHidden": "{{name}} (скрит)",
       "shopMissing": "Изтрит салон"
     }
+  },
+  "operation": {
+    "reference": "Код за справка: {{ref}}",
+    "referenceCopied": "Кодът е копиран."
   }
 }

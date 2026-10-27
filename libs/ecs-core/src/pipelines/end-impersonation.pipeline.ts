@@ -7,6 +7,7 @@ import {
 } from '@core/components';
 import {
   defect,
+  LogEvent,
   type OperationId,
   Result,
   type UserId,
@@ -76,7 +77,7 @@ export const endImpersonation =
   ): Promise<Result<GovernanceCall.Ended, EndImpersonationError>> => {
     const admitted = admitImpersonationCaller(cmd.adminUserId, cmd.adminRoles);
     if (!admitted.ok) {
-      ports.log('info', 'impersonation.end.refused', {
+      ports.log('info', LogEvent.ImpersonationEndRefused, {
         errorCode: admitted.error.errorCode,
       });
       return admitted;
@@ -122,7 +123,7 @@ export const endImpersonation =
     );
     if (!committed.ok) return committed;
     const { sessionId, impersonationEndReason } = committed.value;
-    ports.log('info', 'impersonation.ended', {
+    ports.log('info', LogEvent.ImpersonationEnded, {
       sessionId,
       impersonationEndReason,
     });

@@ -29,6 +29,12 @@ import {
  *   the ONE classification of a failed call;
  * - anything else thrown is `PIPELINE_UNKNOWN`.
  *
+ * Every failure — a refusal, an answer its decoder refuses, anything thrown
+ * — carries the operation id the call went out with (WS-4.5,
+ * `PipelineError.withOperation`): the value of its `OPERATION_ID_FIELD`
+ * field in the input as sent (`null` for the issue sink and for a call that
+ * sent none), the reference the surface prints.
+ *
  * The request goes on the wire as the call component it is — never a cast,
  * never a field renamed here. One addition (WS-4.1): a callable whose
  * operation id rides in `operationId` (`OPERATION_ID_FIELD`) and whose input
@@ -44,22 +50,45 @@ export const callableClientPorts = (
   ids: IdPorts,
 ): GatewayPorts => ({
   callableClient: (name) => async (input) => {
+    const sent = withTransportId(name, input, ids);
     try {
-      const answer = await httpsCallable(
-        functions,
-        name,
-      )(withTransportId(name, input, ids));
+      const answer = await httpsCallable(functions, name)(sent);
       // eslint-disable-next-line security/detect-object-injection -- `name` is a closed `CallableName` literal and `CALLABLE_ANSWER_DECODERS` is total over it.
-      return CALLABLE_ANSWER_DECODERS[name](answer.data);
+      const decoded = CALLABLE_ANSWER_DECODERS[name](answer.data);
+      return decoded.ok
+        ? decoded
+        : Result.err(
+            PipelineError.withOperation(
+              decoded.error,
+              operationIdOf(name, sent),
+            ),
+          );
     } catch (error) {
       return Result.err(
-        error instanceof FunctionsError
-          ? PipelineError.fromWire(error.code, error.details)
-          : PipelineError.bare(PipelineErrorCode.Unknown),
+        PipelineError.withOperation(
+          error instanceof FunctionsError
+            ? PipelineError.fromWire(error.code, error.details)
+            : PipelineError.bare(PipelineErrorCode.Unknown),
+          operationIdOf(name, sent),
+        ),
       );
     }
   },
 });
+
+/**
+ * The operation id a call went out with — its `OPERATION_ID_FIELD` field of
+ * the input as sent, when that holds a well-formed key; `null` for a
+ * callable that carries none (the issue sink) or a call that sent none.
+ */
+function operationIdOf<N extends CallableName>(
+  name: N,
+  sent: CallableWire[N]['input'],
+): ClientOperationId | null {
+  // eslint-disable-next-line security/detect-object-injection -- `name` is a closed `CallableName` literal and `OPERATION_ID_FIELD` is total over it.
+  const field = OPERATION_ID_FIELD[name];
+  return field === null ? null : ClientOperationId.inPayload(sent, field);
+}
 
 /**
  * The input as it goes on the wire: itself, or — for an `operationId`

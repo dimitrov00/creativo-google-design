@@ -312,3 +312,4 @@ export * from './waitlisted-summary.data';
 export * from './wall-time.data';
 export * from './wallet-action.data';
 export * from './write-op.data';
+export * from './write-provenance.data';

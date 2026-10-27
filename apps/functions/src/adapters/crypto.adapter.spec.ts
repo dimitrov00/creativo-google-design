@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { HashPorts, IdPorts, WalkInKeyPorts } from '@core/ports';
+import type {
+  HashPorts,
+  IdPorts,
+  LogDigestPorts,
+  WalkInKeyPorts,
+} from '@core/ports';
+import { LogDigestSystem } from '@core/systems';
 import {
   cryptoPorts,
   hexEqualInConstantTime,
   hmacSha256Hex,
+  logDigestPorts,
   randomHex,
   randomIntBelow,
   randomUuid,
@@ -122,6 +129,46 @@ describe('crypto adapter', () => {
         hmacSha256Hex('after', 'walkin/v1:x'),
       );
       expect(Object.keys(ports)).toEqual(['walkInHash']);
+    });
+  });
+
+  describe('logDigestPorts — the outcome line’s keyed input digest (WS-4.2, RU-23)', () => {
+    it('is HMAC-SHA-256 under the key, read at each call', () => {
+      let key = 'Jefe';
+      const ports: LogDigestPorts = logDigestPorts(() => key);
+      expect(Object.keys(ports)).toEqual(['logDigest']);
+      expect(ports.logDigest('what do ya want for nothing?')).toBe(
+        '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
+      );
+      key = 'other';
+      expect(ports.logDigest('what do ya want for nothing?')).toBe(
+        hmacSha256Hex('other', 'what do ya want for nothing?'),
+      );
+    });
+
+    it('answers `` with no key — and the outcome line then prints no digest', () => {
+      const ports = logDigestPorts(() => '');
+      expect(ports.logDigest('{"appointmentId":"a-1"}')).toBe('');
+      expect(
+        LogDigestSystem.digestOf({ appointmentId: 'a-1' }, ports.logDigest),
+      ).toBeNull();
+    });
+
+    it('digests the allowlisted basis only — a contact value changes nothing', () => {
+      const { logDigest } = logDigestPorts(() => 'spec-log-key');
+      const one = LogDigestSystem.digestOf(
+        { appointmentId: 'a-1', contact: { phone: '+359888123456' } },
+        logDigest,
+      );
+      const two = LogDigestSystem.digestOf(
+        { appointmentId: 'a-1', contact: { phone: '+359888999999' } },
+        logDigest,
+      );
+      expect(one).toMatch(/^[0-9a-f]{16}$/);
+      expect(two).toBe(one);
+      expect(
+        LogDigestSystem.digestOf({ appointmentId: 'a-2' }, logDigest),
+      ).not.toBe(one);
     });
   });
 });

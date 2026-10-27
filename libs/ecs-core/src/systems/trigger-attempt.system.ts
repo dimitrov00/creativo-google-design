@@ -1,4 +1,8 @@
-import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
+import {
+  type OperationId,
+  type TriggerEventId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
 
@@ -88,12 +92,31 @@ export type AttemptLine = {
   readonly failureCode: string;
   /** A duration (N5), not an instant. */
   readonly ageMs: number | null;
+  /**
+   * The written document's path (`appointments/<id>`) — ids only, never a
+   * body — or `null` for a delivery that names none (a schedule tick).
+   * Audit-hardening WS-4.3 (DEP-19).
+   */
+  readonly documentPath: string | null;
+  /**
+   * The operation id the written document carries (`WriteProvenance`) —
+   * the callable whose write woke this trigger — or `null` (none stored,
+   * a malformed one, or no document). WS-4.3 (DEP-19).
+   */
+  readonly writeOperationId: OperationId | null;
 };
 
-/** A delivered event as the verdict reads it: its id and its own time (`null` when unreadable). */
+/**
+ * A delivered event as the verdict reads it: its id and its own time
+ * (`null` when unreadable), the document it names and the operation id
+ * that document carries (WS-4.3 — each `null` when absent; the wire reads
+ * them, a malformed id as `null`).
+ */
 export type AttemptEvent = {
   readonly id: TriggerEventId;
   readonly eventAtUtcMs: UtcEpochMs | null;
+  readonly documentPath: string | null;
+  readonly writeOperationId: OperationId | null;
 };
 
 /** The `code` a thrown value carries, read without trusting its shape. */
@@ -218,6 +241,8 @@ export const TriggerAttemptSystem = {
       attemptOutcome: failure.attemptOutcome,
       failureCode: failure.failureCode,
       ageMs: TriggerAttemptSystem.eventAgeMs(event.eventAtUtcMs, nowUtcMs),
+      documentPath: event.documentPath,
+      writeOperationId: event.writeOperationId,
     };
   },
 } as const;

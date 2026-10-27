@@ -15,6 +15,7 @@ import {
   type WriteOp,
   type BookingCall,
   RequestedSubjectRole,
+  WriteProvenance,
 } from '@core/components';
 import {
   AppointmentId,
@@ -27,6 +28,7 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  BookingError,
   BookingErrorCode,
   type RepositoryError,
   RepositoryError as RepoError,
@@ -36,6 +38,7 @@ import {
 import {
   type AccountContact,
   type AuditEntry,
+  type BarberBusyDay,
   Collections,
   type Customer,
   Profile,
@@ -43,6 +46,7 @@ import {
 import type { CommitPlan } from '@core/ports';
 import {
   AuditSystem,
+  DecisionInputSystem,
   SearchFieldsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -52,6 +56,7 @@ import {
   barberBusyDayFixture,
   barberScheduleFixture,
   contendedCommit,
+  deepFreeze,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -62,6 +67,7 @@ import {
   memoryCommitPlan,
   memoryStore,
   memoryTxPorts,
+  minute,
   recordingCommit,
   recordingTelemetry,
   serviceFixture,
@@ -236,6 +242,8 @@ describe('bookAppointment', () => {
       ownerCustomerId: FIXTURE_IDS.customer,
       subjectCustomerIds: [FIXTURE_IDS.customer],
       placement: 'SELF',
+      // WS-4.3: the call that wrote it — its operation id.
+      writeOperationId: OperationId.of(ATTEMPT),
     });
     expect(appointment).not.toHaveProperty('id');
     expect(store.get(`${Collections.BarberBusy}/${BUSY_KEY}`)).toEqual({
@@ -252,6 +260,7 @@ describe('bookAppointment', () => {
       ...SearchFieldsSystem.searchFields('Maria', 'Ivanova', null, null),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.FirstBooking,
+      writeOperationId: OperationId.of(ATTEMPT),
     };
     expect(store.get(CUSTOMER_PATH)).toEqual(expected);
     // The contact snapshot is read OUTSIDE the transaction, for the cart's accounts.
@@ -344,6 +353,7 @@ describe('bookAppointment', () => {
       searchPrefixes: [],
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Seed,
+      ...WriteProvenance.NONE,
     };
     const { store, tx, run } = rig([
       ...catalogue(),
@@ -587,6 +597,126 @@ describe('bookAppointment', () => {
     expect(tx.plans).toEqual([]);
   });
 
+  it('logs what the refused decision read — the LAST snapshot, handed to `decide` frozen and refused alike (WS-4.2, DEP-18)', async () => {
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(BUSY_KEY),
+      localDate: TOMORROW,
+      blocks: [MinuteBlock.of(at(10), until(11), BlockKind.Busy)],
+    });
+    // Every snapshot the read hands `decide` is frozen all the way down: a
+    // decision that wrote into its input would throw instead of refusing.
+    let lastSeen: unknown = null;
+    const { tx, telemetry, run } = rig(
+      [
+        ...catalogue(),
+        { path: [Collections.BarberBusy, BUSY_KEY], body: bodyOf(taken) },
+      ],
+      {
+        commit: (base) => (read, decide) =>
+          base(async (readTx) => {
+            const snapshot = deepFreeze(await read(readTx));
+            lastSeen = snapshot;
+            return snapshot;
+          }, decide),
+      },
+    );
+    const answer = await run(command());
+    expect(answer).toEqual(
+      Result.err(
+        BookingError.slotUnavailable(
+          FIXTURE_IDS.barber,
+          TOMORROW,
+          minute(600),
+          0,
+        ),
+      ),
+    );
+    expect(tx.plans).toEqual([]);
+    const read = lastSeen as {
+      readonly placement: { readonly busy: readonly BarberBusyDay[] };
+    };
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          ...DecisionInputSystem.slotFacts(
+            read.placement.busy,
+            {
+              barberId: FIXTURE_IDS.barber,
+              localDate: TOMORROW,
+              startMinutes: minute(600),
+            },
+            null,
+          ),
+        },
+      },
+    ]);
+    // Flat scalars of the public busy geometry — no client, no service.
+    expect(telemetry.lines[0]?.fields).toEqual({
+      errorCode: BookingErrorCode.SlotUnavailable,
+      readBusyKeys: [BUSY_KEY],
+      collidingStartMinutes: 600,
+      collidingEndMinutes: 660,
+      readRevision: null,
+    });
+  });
+
+  it('a read re-run on contention logs the facts of the LAST read — the one the refusing `decide` saw', async () => {
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(BUSY_KEY),
+      localDate: TOMORROW,
+      blocks: [MinuteBlock.of(at(10), until(11), BlockKind.Busy)],
+    });
+    // The first read sees a free day; a rival books it before the re-read.
+    const { tx, telemetry, run, store } = rig(catalogue(), {
+      commit: (base) => (read, decide) =>
+        base(async (readTx) => {
+          await read(readTx);
+          store.set(`${Collections.BarberBusy}/${BUSY_KEY}`, bodyOf(taken));
+          return read(readTx);
+        }, decide),
+    });
+    const answer = await run(command());
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      BookingErrorCode.SlotUnavailable,
+    );
+    expect(tx.plans).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          readBusyKeys: [BUSY_KEY],
+          collidingStartMinutes: 600,
+          collidingEndMinutes: 660,
+          readRevision: null,
+        },
+      },
+    ]);
+  });
+
+  it('a refusal before any busy day was read logs empty facts — never a stale read', async () => {
+    const { telemetry, run } = rig(catalogue());
+    const answer = await run(command({ locationId: 'loc-nowhere' }));
+    expect(answer.ok).toBe(false);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: !answer.ok && answer.error.errorCode,
+          readBusyKeys: [],
+          collidingStartMinutes: null,
+          collidingEndMinutes: null,
+          readRevision: null,
+        },
+      },
+    ]);
+  });
+
   it('refuses a start that did not parse (the seat’s startMinutes)', async () => {
     const { run } = rig(catalogue());
     const answer = await run(
@@ -776,6 +906,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       ),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.StaffWalkIn,
+      writeOperationId: OperationId.of(ATTEMPT),
     };
     expect(store.get(MARIA_PATH)).toEqual(expected);
     // The record rides the phase-one getAll — no extra round trip.
@@ -791,6 +922,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       ownerUserId: null,
       ownerCustomerId: null,
       subjectCustomerIds: [MARIA_RECORD],
+      writeOperationId: OperationId.of(ATTEMPT),
       seats: [
         {
           seatSubject: SeatSubject.WalkIn,

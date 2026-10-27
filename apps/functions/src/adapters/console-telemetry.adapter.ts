@@ -1,5 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { logger } from 'firebase-functions';
-import type { Log, TelemetryPorts } from '@core/ports';
+import type {
+  Log,
+  LogContext,
+  LogContextPorts,
+  TelemetryPorts,
+} from '@core/ports';
 import { ClientIssueSystem } from '@core/systems';
 
 /**
@@ -19,7 +25,26 @@ import { ClientIssueSystem } from '@core/systems';
  * as a whole entry: the logger's `error` would replace an ERROR message
  * that carries no `Error` with the SERVER's own stack, and every client
  * error would collapse into one group. Its message is already the client's
- * one-frame stack.
+ * one-frame stack. It never gets the invocation's scope: the sink is
+ * untraced (RU-24 — OR-34's privacy by shape, no uid).
+ *
+ * **The invocation's scope (audit-hardening WS-4.2, RU-26).**
+ * {@link consoleLogContext} binds the correlation fields of ONE invocation
+ * (`callable`, `operationId`, `uid`, `roles`, later `inputDigest`) in a
+ * module `AsyncLocalStorage` (`node:async_hooks`, a Node built-in — no
+ * dependency, and nothing of it reaches the core); every `log` and
+ * `trackError` written inside the scope carries them UNDER its own fields
+ * (the call's fields win a name both hold). Two interleaved invocations
+ * never see each other's scope.
+ *
+ * **An `Error` in the fields (WS-4.6, RU-38).** The logger would serialise
+ * an `Error` value as `{}`; each top-level `Error` value of `fields` /
+ * `context` is written as `{ name, code, message, stack }` instead — its
+ * message through `ClientIssueSystem.scrub` and its stack rebuilt as
+ * `<name>: <scrubbed message>` plus each frame line through
+ * `ClientIssueSystem.frame` (the existing pure masks, reused): a provider's
+ * message can embed a phone number or an e-mail, which never enters a log
+ * line (R36 / T5).
  */
 
 /** The slice of `firebase-functions/logger` this adapter writes through. */
@@ -60,6 +85,65 @@ function writerFor(
   }
 }
 
+/**
+ * The ONE scope store of this process — module state, like the logger
+ * itself: {@link consoleLogContext} binds into it, {@link consoleTelemetry}
+ * reads it. A store is a fresh object per bind, so an `add` changes only
+ * its own invocation's scope.
+ */
+const scopes = new AsyncLocalStorage<Record<string, unknown>>();
+
+/** A stack's frame line: optional indentation, then `at `. */
+const FRAME_LINE = /^\s*at\s/;
+
+/** An `Error`'s `code`, when it carries a string or a number — else `null`. */
+function codeOfError(error: Error): string | number | null {
+  const code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+  if (typeof code === 'number') return code;
+  return typeof code === 'string' ? ClientIssueSystem.scrub(code) : null;
+}
+
+/**
+ * An `Error` as a log field (RU-38): `{ name, code, message, stack }` — the
+ * message scrubbed, the stack's head rewritten as `<name>: <scrubbed
+ * message>` and every frame line kept only through `ClientIssueSystem.frame`
+ * (any other stack line — a message's own continuation — is dropped).
+ */
+function errorField(error: Error): {
+  readonly name: string;
+  readonly code: string | number | null;
+  readonly message: string;
+  readonly stack: string;
+} {
+  const name = ClientIssueSystem.scrub(error.name);
+  const message = ClientIssueSystem.scrub(error.message);
+  const lines = [`${name}: ${message}`];
+  for (const line of (error.stack ?? '').split('\n')) {
+    if (FRAME_LINE.test(line)) {
+      lines.push(`    at ${ClientIssueSystem.frame(line)}`);
+    }
+  }
+  return { name, code: codeOfError(error), message, stack: lines.join('\n') };
+}
+
+/**
+ * The fields a line is written with: the scope's UNDER the call's own, and
+ * each top-level `Error` value normalised ({@link errorField}). A new plain
+ * object — never the caller's.
+ */
+function withScope(
+  own: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const scope = scopes.getStore();
+  if (own === undefined && scope === undefined) return undefined;
+  return Object.fromEntries(
+    Object.entries({ ...scope, ...own }).map(([name, value]) => [
+      name,
+      value instanceof Error ? errorField(value) : value,
+    ]),
+  );
+}
+
 export const consoleTelemetry = (sink: LogSink = logger): TelemetryPorts => ({
   log: (level, msg, fields) => {
     if (fields?.['@type'] === ClientIssueSystem.REPORTED_ERROR_EVENT) {
@@ -67,12 +151,27 @@ export const consoleTelemetry = (sink: LogSink = logger): TelemetryPorts => ({
       return;
     }
     const write = writerFor(sink, level);
-    if (fields === undefined) write(msg);
-    else write(msg, { ...fields });
+    const payload = withScope(fields);
+    if (payload === undefined) write(msg);
+    else write(msg, payload);
   },
   trackError: (error, context) => {
-    if (error instanceof Error) sink.error(error, { ...context });
+    const payload = withScope(context) ?? {};
+    if (error instanceof Error) sink.error(error, payload);
     else
-      sink.error('non-error thrown', { ...context, thrown: describe(error) });
+      sink.error('non-error thrown', { ...payload, thrown: describe(error) });
+  },
+});
+
+/**
+ * The per-invocation log scope ({@link LogContextPorts}, WS-4.2): `bind`
+ * runs `run` inside a fresh scope holding a copy of `context`; `add` merges
+ * fields into the CURRENT scope, and does nothing outside one.
+ */
+export const consoleLogContext = (): LogContextPorts => ({
+  bindLogContext: (context, run) => scopes.run({ ...context }, run),
+  addLogContext: (context: LogContext) => {
+    const scope = scopes.getStore();
+    if (scope !== undefined) Object.assign(scope, context);
   },
 });

@@ -1520,6 +1520,17 @@ describe('BookingDecisionSystem — the draft and purity', () => {
     ]);
   });
 
+  it('drafts NO write provenance — the pipeline that writes it stamps its call’s operation id (WS-4.3)', () => {
+    const decision = unwrap(
+      decideBooking(
+        request([seat()], { attemptId: 'attempt-7' }),
+        snapshot(),
+        deps(),
+      ),
+    );
+    expect(decision.appointment.writeOperationId).toBeNull();
+  });
+
   it('leaves a booking pending when the shop confirms by hand', () => {
     let counter = 0;
     const result = BookingDecisionSystem.decide(

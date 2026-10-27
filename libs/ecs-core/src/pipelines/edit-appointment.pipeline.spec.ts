@@ -67,16 +67,18 @@ import {
   type AccountContact,
   type Appointment,
   type AuditEntry,
+  type BarberBusyDay,
   Collections,
   type Coupon,
   type CouponGrant,
   type GiftVoucher,
 } from '@core/entities';
-
+import type { CommitPlan } from '@core/ports';
 import {
   AppointmentEditSystem,
   AuditSystem,
   CouponGrantSystem,
+  DecisionInputSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -87,6 +89,7 @@ import {
   barberScheduleFixture,
   cents,
   contendedCommit,
+  deepFreeze,
   duration,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -274,6 +277,7 @@ function voucher(balance: number): GiftVoucher {
 function rig(
   documents: readonly { readonly path: DocPath; readonly body: DocBody }[],
   coupons: ReadonlyMap<string, Coupon> = new Map(),
+  wrap: (base: CommitPlan) => CommitPlan = (base) => base,
 ) {
   const store = memoryStore(documents);
   const tx = memoryTxPorts(store);
@@ -282,7 +286,7 @@ function rig(
   const codesAsked: string[] = [];
   const contactsAsked: (readonly UserId[])[] = [];
   const telemetry = recordingTelemetry();
-  const contended = contendedCommit(tx.commit);
+  const contended = contendedCommit(wrap(tx.commit));
   const pipeline = editAppointment({
     ...tx,
     commit: contended.commit,
@@ -400,6 +404,8 @@ describe('editAppointment — the shop moving its own book', () => {
         },
       ],
       bookingStatus: 'CONFIRMED',
+      // WS-4.3: the save is the call that wrote it last.
+      writeOperationId: OPERATION,
     });
     for (const op of plan) {
       if (op.path[0] === Collections.BarberBusy) {
@@ -617,6 +623,78 @@ describe('editAppointment — the shop moving its own book', () => {
       command({ commands: [resize], acknowledgedOverlap: true }),
     );
     expect(acknowledged.ok).toBe(true);
+  });
+
+  it('logs what the refused edit read — the LAST snapshot, handed to `decide` frozen and refused alike (WS-4.2, DEP-18)', async () => {
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(THURSDAY_KEY),
+      localDate: THURSDAY,
+      blocks: [
+        MinuteBlock.of(at(10), until(10, 30), BlockKind.Busy),
+        MinuteBlock.of(at(10, 30), until(11), BlockKind.Busy),
+      ],
+    });
+    const resize: BookingCall.EditCommand = {
+      editCommand: EditCommand.Resize,
+      resizeEdge: ResizeEdge.End,
+      localDate: THURSDAY,
+      atMinutes: until(10, 45),
+      seatIds: null,
+    };
+    const docs = [
+      ...catalogue(),
+      stored(visit({ revision: 5 })),
+      { path: [Collections.BarberBusy, THURSDAY_KEY], body: bodyOf(taken) },
+    ];
+    const cmd = command({ commands: [resize], expectedVersion: 5 });
+    const plain = await rig(docs).run(cmd);
+    // Every snapshot the read hands `decide` is frozen all the way down: a
+    // decision that wrote into its input would throw instead of refusing.
+    let lastSeen: unknown = null;
+    const { tx, telemetry, run } = rig(
+      docs,
+      new Map(),
+      (base) => (read, decide) =>
+        base(async (readTx) => {
+          const snapshot = deepFreeze(await read(readTx));
+          lastSeen = snapshot;
+          return snapshot;
+        }, decide),
+    );
+    const refused = await run(cmd);
+    expect(refused).toEqual(plain);
+    if (refused.ok || refused.error.errorCode !== StaffEditErrorCode.Overlaps) {
+      throw new Error('expected the overlap');
+    }
+    expect(tx.plans).toEqual([]);
+    const read = lastSeen as {
+      readonly placement: { readonly busy: readonly BarberBusyDay[] };
+    };
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingStaffEditRejected,
+        fields: {
+          errorCode: StaffEditErrorCode.Overlaps,
+          ...DecisionInputSystem.slotFacts(
+            read.placement.busy,
+            {
+              barberId: refused.error.barberId,
+              localDate: refused.error.localDate,
+              startMinutes: refused.error.startMinutes,
+            },
+            5,
+          ),
+        },
+      },
+    ]);
+    expect(telemetry.lines[0]?.fields).toMatchObject({
+      readBusyKeys: [THURSDAY_KEY],
+      readRevision: 5,
+    });
+    expect(
+      telemetry.lines[0]?.fields?.['collidingStartMinutes'],
+    ).not.toBeNull();
   });
 
   it('refuses a visit that never happened (bookingStatus) and an end before the arrival (BEFORE_ARRIVAL)', async () => {
@@ -1211,6 +1289,7 @@ describe('editAppointment — the shop moving its own book', () => {
       userId: FIXTURE_IDS.client,
       displayName: 'Maria Ivanova',
       customerOrigin: CustomerOrigin.FirstBooking,
+      writeOperationId: OPERATION,
     });
     // The customer record was read in the placement getAll, never users/{uid}.
     expect(
@@ -1268,6 +1347,7 @@ describe('editAppointment — a walk-in the desk took a contact for (OR-26)', ()
       phone: MARIA_PHONE,
       email: null,
       customerOrigin: CustomerOrigin.StaffWalkIn,
+      writeOperationId: OPERATION,
     });
     expect(readKeys(tx).has(MARIA_PATH)).toBe(true);
     const saved = store.get(PATH);

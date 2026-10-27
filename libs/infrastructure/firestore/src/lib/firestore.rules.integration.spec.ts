@@ -70,6 +70,7 @@ import {
   VoucherCode,
   VoucherLifecycle,
   WaitlistLifecycle,
+  WriteProvenance,
 } from '@core/components';
 import type {
   AppointmentNote,
@@ -1668,6 +1669,7 @@ describe('firestore.rules', () => {
         createdAtUtcMs: SEPT_FIRST,
         customerOrigin:
           userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
+        ...WriteProvenance.NONE,
       }) satisfies Omit<Customer, 'id'>;
 
     beforeEach(async () => {

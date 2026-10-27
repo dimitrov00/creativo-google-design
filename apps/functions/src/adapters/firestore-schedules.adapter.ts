@@ -31,7 +31,8 @@ import { admitStored } from './firestore-tx.adapter';
  * passes its stored-document guard first (edge hardening D-3, a SINGLE
  * read): admitted, it is the same object as before; refused, the read
  * answers `RepositoryError.malformed(path, field)` and logs the refusal
- * once (`'malformed document refused'`, `{ path, field }`). The registry
+ * once (`LogEvent.DocumentRefused` — `'malformed document refused'` —
+ * `{ path, field }`). The registry
  * and the log are REQUIRED (OR-33, DEP-F24): a bare
  * `firestoreSchedulePorts(db)` does not type-check.
  */

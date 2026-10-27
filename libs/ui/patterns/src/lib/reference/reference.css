@@ -1,0 +1,39 @@
+/* ui-reference — a call's id under its refusal: one quiet mono line that
+   copies itself on a tap, and the confirmation under it once it has.
+   Secondary ink in the footnote role (words are ink, the accent law): it is
+   for the report, not the next step. */
+.ui-reference {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-inline-size: 0;
+}
+
+/* The line is the button: no chrome, the state layer of `uiInteractive`
+   for hover and press. The id is printed whole and may wrap anywhere — a
+   reference cut to an ellipsis cannot be quoted. */
+.ui-reference__line {
+  max-inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-footnote);
+  font-family: var(--sys-font-family-mono);
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: copy;
+}
+
+.ui-reference__copied {
+  color: var(--sys-color-secondary-label);
+  font: var(--sys-font-footnote);
+}
+
+/* Nothing copied yet, the region is empty and takes no room — but stays
+   rendered (never `display: none`), so the confirmation is announced when
+   it lands. */
+.ui-reference__copied:not(:empty) {
+  margin-block-start: var(--sys-space-tight);
+}

@@ -1,5 +1,6 @@
 import { type ProfileEdits, WriteOp } from '@core/components';
 import {
+  LogEvent,
   type OperationId,
   Result,
   type UserId,
@@ -123,7 +124,7 @@ export const updateProfile =
       },
     );
     if (!committed.ok) {
-      ports.log('info', 'profile.update.refused', {
+      ports.log('info', LogEvent.ProfileUpdateRefused, {
         uid: cmd.callerUserId,
         errorCode: committed.error.errorCode,
       });

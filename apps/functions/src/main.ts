@@ -27,7 +27,7 @@ import {
   type IdPorts,
   type NowUtcMs,
 } from '@core/ports';
-import { GovernedChangeSystem } from '@core/systems';
+import { GovernedChangeSystem, LogDigestSystem } from '@core/systems';
 import {
   auditDocumentChange,
   bookAppointment,
@@ -59,8 +59,15 @@ import {
 } from '@core/pipelines';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
-import { consoleTelemetry } from './adapters/console-telemetry.adapter';
-import { cryptoPorts, walkInKeyPorts } from './adapters/crypto.adapter';
+import {
+  consoleLogContext,
+  consoleTelemetry,
+} from './adapters/console-telemetry.adapter';
+import {
+  cryptoPorts,
+  logDigestPorts,
+  walkInKeyPorts,
+} from './adapters/crypto.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
 import { logRefusal } from './adapters/firestore-tx.adapter';
 import { paramFlagsPorts } from './adapters/flags.adapter';
@@ -71,10 +78,11 @@ import {
 import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
+  type CallableEdgePorts,
   callableEdge,
+  type CallTrace,
   type EdgeCode,
   type EdgeError,
-  type EdgePorts,
   retryingTrigger,
   throttledCallable,
   tokenBucket,
@@ -195,7 +203,9 @@ import { settle, type WireRequest } from './wire/wire-read';
  * below), which no export sets a region, secret or App Check on — except
  * the walk-in key the two callables that mint walk-in records bind
  * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
- * their ids are keyed by, OR-26), and seven retry flags: edge-hardening D-5 flipped
+ * their ids are keyed by, OR-26), the log digest key every callable but
+ * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
+ * line's keyed `inputDigest`), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
  * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, and pass E
  * (E-1) the four other capacity triggers `rebuildCapacityOnExceptionChange`,
@@ -266,8 +276,33 @@ const DEFAULT_TENANT: TenantId = ((): TenantId => {
 /** Under the emulator every OTP code is the fixed one and `devCode` is answered; a deployment never is. */
 const onEmulator = (): boolean => process.env['FUNCTIONS_EMULATOR'] === 'true';
 
-/** What the edge itself reads: telemetry and the clock. */
-const edge: EdgePorts = { ...telemetry, nowUtcMs };
+/**
+ * The key a callable's outcome line digests its decoded command under
+ * (audit-hardening WS-4.2, RU-23 — `LogDigestPorts`): a Secret Manager
+ * secret bound to every callable but the client issue sink
+ * (`LOG_DIGEST_SECRETS`, `WALK_IN_SECRETS`). A deployment holds its own
+ * (`firebase functions:secrets:set LOG_DIGEST_KEY`, the runbook's step 4);
+ * the emulator reads the fixed test key `tools/flags/write-functions-env.mjs`
+ * writes beside the build. Unlike the walk-in key, an empty one is no
+ * defect: the line prints no digest (`null`) and the call still answers.
+ */
+const LOG_DIGEST_KEY = defineSecret('LOG_DIGEST_KEY');
+
+/** The options of every traced callable that mints no walk-in: the log digest key, bound. */
+const LOG_DIGEST_SECRETS = { secrets: [LOG_DIGEST_KEY] };
+
+/**
+ * What the edge itself reads: telemetry, the clock, the per-invocation log
+ * scope (`consoleLogContext`, WS-4.2) and the keyed input digest — read per
+ * call (a secret is a runtime value). The triggers' edge reads the first
+ * two only.
+ */
+const edge: CallableEdgePorts = {
+  ...telemetry,
+  ...consoleLogContext(),
+  ...logDigestPorts(() => LOG_DIGEST_KEY.value()),
+  nowUtcMs,
+};
 
 /**
  * The server's ports, in one bundle: every Firestore-backed port (the
@@ -346,8 +381,8 @@ const streakPorts = once(() => {
  */
 const WALKIN_ID_KEY = defineSecret('WALKIN_ID_KEY');
 
-/** The options of the two callables that mint walk-in records: the walk-in key, bound. */
-const WALK_IN_SECRETS = { secrets: [WALKIN_ID_KEY] };
+/** The options of the two callables that mint walk-in records: the walk-in key and the log digest key, bound. */
+const WALK_IN_SECRETS = { secrets: [WALKIN_ID_KEY, LOG_DIGEST_KEY] };
 
 /**
  * The walk-in key as the digest reads it — at each call (a secret is a
@@ -390,12 +425,23 @@ type Wiring = {
    */
   readonly failureCode: EdgeCode | null;
   readonly timeoutSeconds: number | null;
+  /** Traced (WS-4.2): the scope and the outcome line — `false` for the sink alone (RU-24). */
+  readonly traced: boolean;
 };
+
+/** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
+const noteDigest =
+  (trace: CallTrace) =>
+  (command: unknown): void =>
+    trace.noteInputDigest(
+      LogDigestSystem.digestOf(command, root.edge.logDigest),
+    );
 
 /**
  * One callable: the call component decoded into the command (or refused),
  * the pipeline run over its ports, its answer encoded and its refusal in
- * the callable's own words.
+ * the callable's own words. A traced callable notes its decoded command's
+ * digest (the sink reads no key: it digests nothing).
  */
 function wiredCallable<P, C, A, E, Out>(
   wiring: Wiring,
@@ -411,11 +457,13 @@ function wiredCallable<P, C, A, E, Out>(
       failureCode: wiring.failureCode,
       timeoutSeconds: wiring.timeoutSeconds,
       answer: null,
+      traced: wiring.traced,
     },
     root.edge,
-    async (request: CallableRequest<unknown>, budget) => {
+    async (request: CallableRequest<unknown>, budget, trace) => {
       const cmd = decode(request);
       if (!cmd.ok) return cmd;
+      if (wiring.traced) noteDigest(trace)(cmd.value);
       return settle(await run(ports(), cmd.value, budget), encode, (error) =>
         refuse(error, cmd.value),
       );
@@ -423,11 +471,11 @@ function wiredCallable<P, C, A, E, Out>(
   );
 }
 
-/** A callable with the platform's options and timeout. */
+/** A traced callable with the platform's timeout. */
 const plain = (
   callable: CallableName,
   failureCode: EdgeCode | null,
-): Wiring => ({ callable, failureCode, timeoutSeconds: null });
+): Wiring => ({ callable, failureCode, timeoutSeconds: null, traced: true });
 
 // ── Trigger paths, spelled through the collection registry ────────────────
 
@@ -450,6 +498,7 @@ const LARGE_MEMORY = '512MiB';
 // ── Identity ──────────────────────────────────────────────────────────────
 
 export const requestOtpChallenge = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
     root.identity,
@@ -462,6 +511,7 @@ export const requestOtpChallenge = onCall(
 );
 
 export const verifyOtpChallenge = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.VerifyOtpChallenge, IdentityErrorCode.RepositoryFailure),
     root.identity,
@@ -473,6 +523,7 @@ export const verifyOtpChallenge = onCall(
 );
 
 export const completeRegistration = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.CompleteRegistration, IdentityErrorCode.RepositoryFailure),
     root.identity,
@@ -489,6 +540,7 @@ export const completeRegistration = onCall(
  * every client update) and its own auditor (4A-16).
  */
 export const updateProfile = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.UpdateProfile, null),
     root.ports,
@@ -624,6 +676,7 @@ export const commitBooking = onCall(
 );
 
 export const cancelAppointment = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.CancelAppointment, null),
     root.ports,
@@ -635,6 +688,7 @@ export const cancelAppointment = onCall(
 );
 
 export const rescheduleAppointment = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.RescheduleAppointment, BookingErrorCode.CommitStoreFailed),
     root.ports,
@@ -646,6 +700,7 @@ export const rescheduleAppointment = onCall(
 );
 
 export const transitionAppointment = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.TransitionAppointment, null),
     root.ports,
@@ -657,6 +712,7 @@ export const transitionAppointment = onCall(
 );
 
 export const markArrived = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.MarkArrived, null),
     root.ports,
@@ -668,6 +724,7 @@ export const markArrived = onCall(
 );
 
 export const clearArrival = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.ClearArrival, null),
     root.ports,
@@ -679,6 +736,7 @@ export const clearArrival = onCall(
 );
 
 export const recordSeatTip = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.RecordSeatTip, null),
     root.ports,
@@ -828,6 +886,7 @@ export const sampleBarberLeadTimeDaily = onSchedule(
 // ── Waitlist ──────────────────────────────────────────────────────────────
 
 export const requestWaitlist = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.RequestWaitlist, null),
     root.ports,
@@ -839,6 +898,7 @@ export const requestWaitlist = onCall(
 );
 
 export const cancelWaitlist = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.CancelWaitlist, null),
     root.ports,
@@ -946,12 +1006,17 @@ export const sweepClientStatsPolicyDaily = onSchedule(
 // ── Operations, loyalty, governance and referrals ─────────────────────────
 
 export const runBackfill = onCall(
-  { timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS, memory: LARGE_MEMORY },
+  {
+    timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS,
+    memory: LARGE_MEMORY,
+    ...LOG_DIGEST_SECRETS,
+  },
   wiredCallable(
     {
       callable: Callables.RunBackfill,
       failureCode: null,
       timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS,
+      traced: true,
     },
     root.ports,
     decodeRunBackfill,
@@ -969,15 +1034,24 @@ export const runBackfill = onCall(
  * Behind no feature flag of its own.
  */
 export const publishStreakDefinition = onCall(
+  LOG_DIGEST_SECRETS,
   callableEdge<unknown, StreakPublishAnswer>(
     {
       callable: Callables.PublishStreakDefinition,
       failureCode: StreakPublishErrorCode.StoreFailed,
       timeoutSeconds: null,
       answer: null,
+      traced: true,
     },
     root.edge,
-    (request) => answerStreakPublish(request, root.streak, root.telemetry),
+    // Calls `callableEdge` directly: it notes its digest after its own decode.
+    (request, _budget, trace) =>
+      answerStreakPublish(
+        request,
+        root.streak,
+        root.telemetry,
+        noteDigest(trace),
+      ),
   ),
 );
 
@@ -986,6 +1060,7 @@ export const publishStreakDefinition = onCall(
  * `impersonationSessions` since the rules refused the direct write.
  */
 export const startImpersonation = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.StartImpersonation, null),
     root.ports,
@@ -998,6 +1073,7 @@ export const startImpersonation = onCall(
 
 /** An admin ends an impersonation — the same caller gate, ONE `Set` of the ended body (4A-3 (4)). */
 export const endImpersonation = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.EndImpersonation, null),
     root.ports,
@@ -1010,6 +1086,7 @@ export const endImpersonation = onCall(
 
 /** A signed-in user redeems an invitation (4A-3 (5)) — the only writer of its count and redemptions. */
 export const redeemInvitation = onCall(
+  LOG_DIGEST_SECRETS,
   wiredCallable(
     plain(Callables.RedeemInvitation, null),
     root.ports,
@@ -1031,7 +1108,8 @@ const issueThrottle = tokenBucket(CLIENT_ISSUE_RATE, nowUtcMs);
 /**
  * The web's issues into Cloud Logging, one line each — over the telemetry
  * alone: it reads nothing and writes no document, so it never builds the
- * server ports or touches the Admin SDK. Any device may dial it, signed in
+ * server ports or touches the Admin SDK. It binds no secret and logs no
+ * outcome line (untraced, RU-24). Any device may dial it, signed in
  * or not, so a call first passes the instance's bucket; the batch is
  * admitted whole or refused (`client-issue.wire.ts`).
  */
@@ -1049,6 +1127,9 @@ export const reportClientIssues = onCall(
         callable: Callables.ReportClientIssues,
         failureCode: null,
         timeoutSeconds: REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
+        // Untraced (RU-24): no scope, no outcome line, no key — OR-34's
+        // privacy by shape (no uid) and the throttle's "no line of ours".
+        traced: false,
       },
       () => root.telemetry,
       (request) => decodeReportClientIssues(request, root.telemetry.log),

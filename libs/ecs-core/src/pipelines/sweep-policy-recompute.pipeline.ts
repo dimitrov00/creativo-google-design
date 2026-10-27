@@ -1,4 +1,4 @@
-import { Result } from '@core/primitives';
+import { LogEvent, Result } from '@core/primitives';
 import {
   PolicySweepOutcome,
   PreciseInstant,
@@ -124,19 +124,15 @@ export const sweepPolicyRecompute =
     }
     const { policySweepOutcome, job } = committed.value;
     if (policySweepOutcome === PolicySweepOutcome.Started && job !== null) {
-      ports.log(
-        'warn',
-        'policy recompute started by the sweep: a dropped start',
-        {
-          generation: job.generation,
-          changedAtSeconds: job.changedAtSeconds,
-          changedAtNanos: job.changedAtNanos,
-          windowHours: job.windowHours,
-        },
-      );
+      ports.log('warn', LogEvent.PolicyRecomputeSweepStarted, {
+        generation: job.generation,
+        changedAtSeconds: job.changedAtSeconds,
+        changedAtNanos: job.changedAtNanos,
+        windowHours: job.windowHours,
+      });
     }
     if (policySweepOutcome === PolicySweepOutcome.Nudged && job !== null) {
-      ports.log('info', 'policy recompute nudged', {
+      ports.log('info', LogEvent.PolicyRecomputeNudged, {
         generation: job.generation,
         cursor: job.cursor,
         lastFailureCode: job.lastFailureCode,

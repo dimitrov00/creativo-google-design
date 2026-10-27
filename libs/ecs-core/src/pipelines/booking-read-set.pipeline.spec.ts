@@ -30,6 +30,7 @@ import {
   CustomerId,
   GiftVoucherId,
   LogEvent,
+  OperationId,
   ServiceId,
 } from '@core/primitives';
 import {
@@ -435,8 +436,11 @@ describe('the booking read set', () => {
     });
   });
 
-  it('placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle', () => {
-    const fields = placementFields(appointmentFixture());
+  it('placement fields are the geometry, the mirrors, the ledger and the writing call — nothing of the lifecycle', () => {
+    const fields = placementFields(
+      appointmentFixture({ writeOperationId: OperationId.of('op-move-1') }),
+    );
+    expect(fields['writeOperationId']).toBe('op-move-1');
     expect(Object.keys(fields)).toEqual([
       'locationId',
       'seats',
@@ -452,6 +456,7 @@ describe('the booking read set', () => {
       'busyKeys',
       'revision',
       'appliedOperations',
+      'writeOperationId',
     ]);
   });
 

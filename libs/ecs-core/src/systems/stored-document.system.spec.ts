@@ -7,7 +7,12 @@ import {
 } from '@core/components';
 import { RepositoryErrorCode } from '@core/errors';
 import { type AppointmentNote, Collections } from '@core/entities';
-import { AppointmentId, CustomerId, UserId } from '@core/primitives';
+import {
+  AppointmentId,
+  CustomerId,
+  OperationId,
+  UserId,
+} from '@core/primitives';
 import {
   appointmentFixture,
   at,
@@ -115,6 +120,9 @@ describe('StoredDocumentSystem.appointment — appointments/{id} as read', () =>
     ['contactPhone', 359, 'contactPhone'],
     ['contactEmail', {}, 'contactEmail'],
     ['contactNote', [], 'contactNote'],
+    ['writeOperationId', '', 'writeOperationId'],
+    ['writeOperationId', 'a/b', 'writeOperationId'],
+    ['writeOperationId', 42, 'writeOperationId'],
   ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
     const doc = { ...appointmentFixture(), [field]: value };
     expect(StoredDocumentSystem.appointment(doc)).toEqual(
@@ -199,6 +207,19 @@ describe('StoredDocumentSystem.appointment — appointments/{id} as read', () =>
     }
   });
 
+  it('admits the write provenance absent (written before WS-4.3), null or an OperationId', () => {
+    const doc = appointmentFixture();
+    for (const stored of [
+      without(doc, 'writeOperationId'),
+      { ...doc, writeOperationId: null },
+      { ...doc, writeOperationId: OperationId.of('op-7f3a') },
+    ]) {
+      const answer = StoredDocumentSystem.appointment(stored);
+      expect(answer.ok).toBe(true);
+      expect(answer.ok && answer.value).toBe(stored);
+    }
+  });
+
   it('leaves the unchecked fields alone — query keys and repair targets no decision reads', () => {
     const legacy = without(
       appointmentFixture(),
@@ -247,11 +268,27 @@ describe('StoredDocumentSystem.customer — customers/{id} as read', () => {
     ['email', {}, 'email'],
     ['createdAtUtcMs', '2026-09-27', 'createdAtUtcMs'],
     ['customerOrigin', 'WALK_IN', 'customerOrigin'],
+    ['writeOperationId', '', 'writeOperationId'],
+    ['writeOperationId', 'a/b', 'writeOperationId'],
+    ['writeOperationId', 42, 'writeOperationId'],
   ] as const)('refuses %s = %j, naming %s', (field, value, reason) => {
     const doc = { ...customerFixture(), [field]: value };
     expect(StoredDocumentSystem.customer(doc)).toEqual(
       refused(`customers/${doc.id}`, reason),
     );
+  });
+
+  it('admits the write provenance absent (written before WS-4.3), null or an OperationId', () => {
+    const doc = customerFixture();
+    for (const stored of [
+      without(doc, 'writeOperationId'),
+      { ...doc, writeOperationId: null },
+      { ...doc, writeOperationId: OperationId.of('op-7f3a') },
+    ]) {
+      const answer = StoredDocumentSystem.customer(stored);
+      expect(answer.ok).toBe(true);
+      expect(answer.ok && answer.value).toBe(stored);
+    }
   });
 
   it('leaves the search mirrors alone — only index #8 reads them', () => {
@@ -285,6 +322,14 @@ describe('StoredDocumentSystem.busyDay — barberBusy/{id} as read', () => {
     expect(StoredDocumentSystem.busyDay(doc)).toEqual(
       refused(`barberBusy/${doc.id}`, reason),
     );
+  });
+
+  it('ignores a writeOperationId key — a busy day carries no provenance (L5), whatever the key holds', () => {
+    for (const value of [null, 'op-7f3a', '', 42]) {
+      const doc = { ...barberBusyDayFixture(), writeOperationId: value };
+      const answer = StoredDocumentSystem.busyDay(doc);
+      expect(answer.ok && answer.value).toBe(doc);
+    }
   });
 
   it('names a block’s field with the block’s index — the span, then the kind', () => {

@@ -2,6 +2,7 @@ import {
   type BarberId,
   BusyKey,
   type LocalDate,
+  LogEvent,
   NotificationId,
   Result,
   type WaitlistRequestId,
@@ -233,7 +234,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           return busy;
         }
         // Fail-closed per barber: time that cannot be read is never offered.
-        ports.log('error', 'waitlist barber skipped', {
+        ports.log('error', LogEvent.WaitlistBarberSkipped, {
           key: BusyKey.of(entry.barberId, localDate),
           error: busy.error,
         });
@@ -393,7 +394,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
       try {
         expired = await expire(request, now);
       } catch (error) {
-        ports.log('error', 'waitlist match failed', {
+        ports.log('error', LogEvent.WaitlistMatchFailed, {
           requestId: request.id,
           error: String(error),
         });
@@ -401,7 +402,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         continue;
       }
       if (!expired.ok) {
-        ports.log('error', 'waitlist match failed', {
+        ports.log('error', LogEvent.WaitlistMatchFailed, {
           requestId: request.id,
           error: expired.error,
         });
@@ -460,7 +461,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
           policy.value,
         );
       } catch (error) {
-        ports.log('error', 'waitlist match failed', {
+        ports.log('error', LogEvent.WaitlistMatchFailed, {
           requestId: request.id,
           error: String(error),
         });
@@ -468,7 +469,7 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
         continue;
       }
       if (!settled.ok) {
-        ports.log('error', 'waitlist match failed', {
+        ports.log('error', LogEvent.WaitlistMatchFailed, {
           requestId: request.id,
           error: settled.error,
         });

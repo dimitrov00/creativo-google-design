@@ -4,6 +4,7 @@ import {
   BusyKey,
   CustomerId,
   defect,
+  LogEvent,
   type PrimitiveError,
   Result,
   type StoredFields,
@@ -41,6 +42,7 @@ import {
   type StartPolicyRecomputeCommand,
 } from '@core/pipelines';
 import {
+  attemptEventOf,
   attemptLineFields,
   type DeliveredEvent,
   type EdgePorts,
@@ -472,14 +474,11 @@ export function logAttempt(
 ): void {
   const line = TriggerAttemptSystem.attemptLine(
     fn,
-    {
-      id: TriggerEventId.of(event.id),
-      eventAtUtcMs: eventInstantOf(event.time),
-    },
+    attemptEventOf(event),
     failure,
     ports.nowUtcMs(),
   );
-  ports.log('error', 'trigger attempt failed', attemptLineFields(line));
+  ports.log('error', LogEvent.TriggerAttemptFailed, attemptLineFields(line));
 }
 
 /**

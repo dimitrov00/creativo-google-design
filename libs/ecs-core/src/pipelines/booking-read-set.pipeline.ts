@@ -534,8 +534,9 @@ export function grantReleaseWrites<D extends DiscountProvenance>(
 
 /**
  * The root fields a placing write sets — the geometry, the query mirrors
- * (`AppointmentIndexSystem.withQueryKeys`) and the edit ledger: what a move
- * or a staff edit changes about a visit that stays the same document.
+ * (`AppointmentIndexSystem.withQueryKeys`), the edit ledger and the writing
+ * call's `writeOperationId` (WS-4.3): what a move or a staff edit changes
+ * about a visit that stays the same document.
  */
 export function placementFields(after: Appointment): DocBody {
   return {
@@ -553,5 +554,6 @@ export function placementFields(after: Appointment): DocBody {
     busyKeys: after.busyKeys,
     revision: after.revision,
     appliedOperations: after.appliedOperations,
+    writeOperationId: after.writeOperationId,
   };
 }

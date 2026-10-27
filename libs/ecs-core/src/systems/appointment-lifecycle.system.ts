@@ -202,12 +202,17 @@ function withOutcomes(
   return out;
 }
 
-/** The appointment with a new lifecycle variant — the old variant's fields gone. */
+/**
+ * The appointment with a new lifecycle variant — the old variant's fields
+ * gone — as the act named `writeOperationId` leaves it (WS-4.3: the last
+ * callable that wrote the visit, `WriteProvenance`).
+ */
 function withLifecycle(
   appointment: Appointment,
   lifecycle: BookingLifecycle,
   seats: readonly Seat[],
   arrivedAtUtcMs: UtcEpochMs | null,
+  writeOperationId: OperationId,
 ): Appointment {
   return {
     id: appointment.id,
@@ -238,6 +243,7 @@ function withLifecycle(
     arrivedAtUtcMs,
     stoodSeatPairsRevision: appointment.stoodSeatPairsRevision,
     stoodSeatPairs: appointment.stoodSeatPairs,
+    writeOperationId,
     ...BookingLifecycle.sliceOf(lifecycle),
   };
 }
@@ -245,27 +251,35 @@ function withLifecycle(
 function applySlice(
   appointment: Appointment,
   slice: LifecycleSlice,
+  operationId: OperationId,
 ): Appointment {
   return withLifecycle(
     appointment,
     slice.lifecycle,
     withOutcomes(appointment.seats, slice.outcomes),
     appointment.arrivedAtUtcMs,
+    operationId,
   );
 }
 
 /**
  * The write plan of a lifecycle step: ONE update of the appointment's root —
- * every field of the new lifecycle variant, the seats (their outcomes) and
- * the arrival stamp set; every field of the old variant the new one does not
- * declare deleted, so the stored document is always exactly one variant.
+ * every field of the new lifecycle variant, the seats (their outcomes), the
+ * arrival stamp and the writing act's `writeOperationId` (WS-4.3) set;
+ * every field of the old variant the new one does not declare deleted, so
+ * the stored document is always exactly one variant.
  */
 function transitionWrite(before: Appointment, after: Appointment): WriteOp {
   const from = BookingLifecycle.sliceOf(before);
   const to = BookingLifecycle.sliceOf(after);
   return WriteOp.transition(
     [Collections.Appointments, after.id],
-    { ...to, seats: after.seats, arrivedAtUtcMs: after.arrivedAtUtcMs },
+    {
+      ...to,
+      seats: after.seats,
+      arrivedAtUtcMs: after.arrivedAtUtcMs,
+      writeOperationId: after.writeOperationId,
+    },
     WriteOp.variantFieldsToDelete(from, to),
   );
 }
@@ -537,20 +551,29 @@ function transitionAt(
     );
     if (!resolved.ok) return resolved;
     return Result.ok(
-      step(appointment, applySlice(appointment, resolved.value), [
-        staffFact(
-          appointment,
-          verb,
-          reason,
-          request.seatId,
-          request.operationId,
-        ),
-      ]),
+      step(
+        appointment,
+        applySlice(appointment, resolved.value, request.operationId),
+        [
+          staffFact(
+            appointment,
+            verb,
+            reason,
+            request.seatId,
+            request.operationId,
+          ),
+        ],
+      ),
     );
   }
 
   if (readsShopToday(appointment, request)) {
-    const reopened = reopenSettledAt(appointment, nowUtcMs, today);
+    const reopened = reopenSettledAt(
+      appointment,
+      nowUtcMs,
+      today,
+      request.operationId,
+    );
     if (!reopened.ok) return reopened;
     return Result.ok(
       step(appointment, reopened.value, [
@@ -570,15 +593,19 @@ function transitionAt(
     const reopened = reopenNoShowSlice(slice, nowUtcMs);
     if (!reopened.ok) return reopened;
     return Result.ok(
-      step(appointment, applySlice(appointment, reopened.value), [
-        staffFact(
-          appointment,
-          AuditAction.BookingStaffReopenNoShow,
-          null,
-          null,
-          request.operationId,
-        ),
-      ]),
+      step(
+        appointment,
+        applySlice(appointment, reopened.value, request.operationId),
+        [
+          staffFact(
+            appointment,
+            AuditAction.BookingStaffReopenNoShow,
+            null,
+            null,
+            request.operationId,
+          ),
+        ],
+      ),
     );
   }
   const moved = partyVerb(
@@ -590,9 +617,11 @@ function transitionAt(
   );
   if (!moved.ok) return moved;
   return Result.ok(
-    step(appointment, applySlice(appointment, moved.value), [
-      staffFact(appointment, verb, reason, null, request.operationId),
-    ]),
+    step(
+      appointment,
+      applySlice(appointment, moved.value, request.operationId),
+      [staffFact(appointment, verb, reason, null, request.operationId)],
+    ),
   );
 }
 
@@ -605,6 +634,7 @@ function reopenSettledAt(
   appointment: Appointment,
   nowUtcMs: UtcEpochMs,
   today: LocalDate,
+  operationId: OperationId,
 ): Result<Appointment, SchedulingError> {
   const reopened = reopenSettledSlice(
     sliceOf(appointment),
@@ -613,7 +643,7 @@ function reopenSettledAt(
     nowUtcMs,
   );
   return reopened.ok
-    ? Result.ok(applySlice(appointment, reopened.value))
+    ? Result.ok(applySlice(appointment, reopened.value, operationId))
     : reopened;
 }
 
@@ -671,7 +701,7 @@ export const AppointmentLifecycleSystem = {
     );
     if (!moved.ok) return moved;
     return Result.ok(
-      step(appointment, applySlice(appointment, moved.value), [
+      step(appointment, applySlice(appointment, moved.value, operationId), [
         {
           resourceId: AuditResourceId.forAppointment(appointment.id),
           subjects: AuditSystem.subjectsOf(appointment),
@@ -769,6 +799,7 @@ export const AppointmentLifecycleSystem = {
       appointment,
       appointment.seats,
       nowUtcMs,
+      operationId,
     );
     return Result.ok(
       step(appointment, arrived, [
@@ -804,6 +835,7 @@ export const AppointmentLifecycleSystem = {
       appointment,
       appointment.seats,
       null,
+      operationId,
     );
     return Result.ok(
       step(appointment, cleared, [

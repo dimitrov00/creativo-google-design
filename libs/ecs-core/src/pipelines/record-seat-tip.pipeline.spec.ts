@@ -122,6 +122,8 @@ describe('recordSeatTip', () => {
             { ...before.seats[0], tipCents: cents(300) },
             before.seats[1],
           ],
+          // The act that wrote the visit (WS-4.3, DEP-19).
+          writeOperationId: OPERATION,
         }),
         WriteOp.create([Collections.AuditLog, TIP_ROW], {
           recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
@@ -199,6 +201,22 @@ describe('recordSeatTip', () => {
     });
     expect(tx.plans[1]).toEqual([]);
     expect(rows.map((row) => row.id)).toEqual([TIP_ROW]);
+  });
+
+  it('stamps the stored visit with the act’s operation id; an unchanged figure stamps nothing (WS-4.3, DEP-19)', async () => {
+    const { store, tx, run } = rig([party()]);
+    const cmd = {
+      appointmentId: FIXTURE_IDS.appointment,
+      seatId: FIXTURE_IDS.seat,
+      tipCents: cents(300),
+      operationId: OPERATION,
+      actor: STAFF,
+    };
+    await run(cmd);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+    await run({ ...cmd, operationId: OperationId.of('tip-op-same-figure') });
+    expect(tx.plans[1]).toEqual([]);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
   });
 
   it('commits the tip without a row when no verified actor is known, and logs it loudly', async () => {

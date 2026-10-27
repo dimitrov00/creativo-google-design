@@ -33,14 +33,21 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  BookingError,
   BookingErrorCode,
   CarriedSeatRefusal,
   MoveErrorCode,
   RepositoryErrorCode,
   TimeErrorCode,
 } from '@core/errors';
-import { type Appointment, type AuditEntry, Collections } from '@core/entities';
-import { AuditSystem, MoveSystem } from '@core/systems';
+import {
+  type Appointment,
+  type AuditEntry,
+  type BarberBusyDay,
+  Collections,
+} from '@core/entities';
+import type { CommitPlan } from '@core/ports';
+import { AuditSystem, DecisionInputSystem, MoveSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -48,6 +55,7 @@ import {
   barberBusyDayFixture,
   barberScheduleFixture,
   contendedCommit,
+  deepFreeze,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -146,13 +154,14 @@ function command(
 
 function rig(
   documents: readonly { readonly path: DocPath; readonly body: DocBody }[],
+  wrap: (base: CommitPlan) => CommitPlan = (base) => base,
 ) {
   const store = memoryStore(documents);
   const tx = memoryTxPorts(store);
   // The rows the committed plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
   const telemetry = recordingTelemetry();
-  const contended = contendedCommit(tx.commit);
+  const contended = contendedCommit(wrap(tx.commit));
   const pipeline = rescheduleAppointment({
     ...tx,
     commit: contended.commit,
@@ -256,6 +265,8 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       // Identity kept: status, booking instant, placement stamp.
       bookingStatus: 'CONFIRMED',
       placement: 'SELF',
+      // WS-4.3: the move is the call that wrote it last.
+      writeOperationId: OperationId.of(ATTEMPT),
     });
     // The old day is left to rebuildBusy; every busy key written was read.
     const read = new Set(
@@ -727,6 +738,88 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
         startMinutes: at(9, 45),
       });
     });
+  });
+
+  it('logs what the refused move read — the LAST snapshot, handed to `decide` frozen and refused alike (WS-4.2, DEP-18)', async () => {
+    const friday = BusyKey.of(FIXTURE_IDS.barber, FRIDAY);
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(friday),
+      localDate: FRIDAY,
+      blocks: [MinuteBlock.of(at(11), until(12), BlockKind.Busy)],
+    });
+    // Every snapshot the read hands `decide` is frozen all the way down: a
+    // decision that wrote into its input would throw instead of refusing.
+    let lastSeen: unknown = null;
+    const { tx, telemetry, run } = rig(
+      [
+        ...catalogue(),
+        stored(visit({ revision: 3 })),
+        { path: [Collections.BarberBusy, friday], body: bodyOf(taken) },
+      ],
+      (base) => (read, decide) =>
+        base(async (readTx) => {
+          const snapshot = deepFreeze(await read(readTx));
+          lastSeen = snapshot;
+          return snapshot;
+        }, decide),
+    );
+    const answer = await run(command());
+    expect(answer).toEqual(
+      Result.err(
+        BookingError.slotUnavailable(FIXTURE_IDS.barber, FRIDAY, at(11), 0),
+      ),
+    );
+    expect(tx.plans).toEqual([]);
+    const read = lastSeen as {
+      readonly placement: { readonly busy: readonly BarberBusyDay[] };
+    };
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingMoveRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          ...DecisionInputSystem.slotFacts(
+            read.placement.busy,
+            {
+              barberId: FIXTURE_IDS.barber,
+              localDate: FRIDAY,
+              startMinutes: at(11),
+            },
+            3,
+          ),
+        },
+      },
+    ]);
+    expect(telemetry.lines[0]?.fields).toEqual({
+      errorCode: BookingErrorCode.SlotUnavailable,
+      readBusyKeys: [friday],
+      collidingStartMinutes: 660,
+      collidingEndMinutes: 720,
+      readRevision: 3,
+    });
+  });
+
+  it('a move refused before its placement was read logs no busy day — and no revision for a visit it could not read', async () => {
+    const { telemetry, run } = rig([...catalogue()]);
+    const answer = await run(command());
+    expect(!answer.ok && answer.error).toMatchObject({
+      errorCode: BookingErrorCode.InvalidInput,
+      field: 'appointmentId',
+    });
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingMoveRejected,
+        fields: {
+          errorCode: BookingErrorCode.InvalidInput,
+          readBusyKeys: [],
+          collidingStartMinutes: null,
+          collidingEndMinutes: null,
+          readRevision: null,
+        },
+      },
+    ]);
   });
 
   it('still answers the client’s own taken slot first when the companion’s service is gone too', async () => {

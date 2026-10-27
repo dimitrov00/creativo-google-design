@@ -14,6 +14,7 @@ import {
   LocationId,
   MinuteCount,
   MinuteOfDay,
+  OperationId,
   PositionId,
   PrimitiveErrorCode,
   Result,
@@ -55,7 +56,7 @@ import {
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
 import { AttemptOutcome, ResizeEdge } from '@core/components';
-import { Callables, type TelemetryPorts } from '@core/ports';
+import { Callables, type LogContext, type TelemetryPorts } from '@core/ports';
 import {
   type AttemptLine,
   WorkBudgetSystem,
@@ -63,6 +64,8 @@ import {
 } from '@core/systems';
 import {
   attemptLineFields,
+  attemptProvenanceOf,
+  type CallableEdgePorts,
   EDGE_DICTIONARIES,
   EDGE_WIRE,
   type EdgeError,
@@ -1005,6 +1008,8 @@ describe('edge — the attempt line (Phase 4a 4A-2 (c))', () => {
       attemptOutcome: AttemptOutcome.Transient,
       failureCode: 'unavailable',
       ageMs: 1_500,
+      documentPath: 'appointments/apt-1',
+      writeOperationId: OperationId.of('op-00000000000001'),
     };
     expect(attemptLineFields(line)).toEqual({
       fn: 'dispatchClientProjections',
@@ -1012,7 +1017,67 @@ describe('edge — the attempt line (Phase 4a 4A-2 (c))', () => {
       outcome: 'TRANSIENT',
       errorCode: 'unavailable',
       ageMs: 1_500,
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-00000000000001',
     });
+  });
+});
+
+describe('edge — what a delivery says about the write (WS-4.3, DEP-19)', () => {
+  const snapshot = (body: Record<string, unknown> | undefined) => ({
+    exists: body !== undefined,
+    data: () => body,
+  });
+
+  it('reads the written path and the after-image’s operation id', () => {
+    expect(
+      attemptProvenanceOf({
+        id: 'evt-1',
+        document: 'appointments/apt-1',
+        data: {
+          before: snapshot({ writeOperationId: 'op-before-000000001' }),
+          after: snapshot({ writeOperationId: 'op-after-0000000001' }),
+        },
+      }),
+    ).toEqual({
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-after-0000000001',
+    });
+  });
+
+  it('reads the before-image on a delete, and nothing from a tick', () => {
+    expect(
+      attemptProvenanceOf({
+        document: 'customers/cus-1',
+        data: {
+          before: snapshot({ writeOperationId: 'op-before-000000001' }),
+          after: snapshot(undefined),
+        },
+      }),
+    ).toEqual({
+      documentPath: 'customers/cus-1',
+      writeOperationId: 'op-before-000000001',
+    });
+    expect(attemptProvenanceOf({ id: 'run', time: 'x' })).toEqual({
+      documentPath: null,
+      writeOperationId: null,
+    });
+    expect(attemptProvenanceOf(null)).toEqual({
+      documentPath: null,
+      writeOperationId: null,
+    });
+  });
+
+  it('reads a malformed stored id as null — OperationId.is, never a cast — and never refuses', () => {
+    for (const raw of ['a/b', '__x__', '', 42, { id: 'x' }, null]) {
+      expect(
+        attemptProvenanceOf({
+          document: 'appointments/apt-1',
+          data: { after: snapshot({ writeOperationId: raw }) },
+        }),
+        String(raw),
+      ).toEqual({ documentPath: 'appointments/apt-1', writeOperationId: null });
+    }
   });
 });
 
@@ -1029,23 +1094,49 @@ function edgePorts(start = 1_000) {
   let now = start;
   const tracked: Tracked[] = [];
   const logged: Logged[] = [];
+  /** Every scope bound (a copy), and every field added to one. */
+  const bound: LogContext[] = [];
+  const added: LogContext[] = [];
   const telemetry: TelemetryPorts = {
     log: (level, msg, fields) => logged.push({ level, msg, fields }),
     trackError: (error, context) => tracked.push({ error, context }),
   };
+  const ports: CallableEdgePorts = {
+    ...telemetry,
+    nowUtcMs: () => utc(now),
+    bindLogContext: (context, run) => {
+      bound.push({ ...context });
+      return run();
+    },
+    addLogContext: (context) => {
+      added.push({ ...context });
+    },
+    logDigest: (input) => `digest(${input})`,
+  };
   return {
-    ports: { ...telemetry, nowUtcMs: () => utc(now) },
+    ports,
     tracked,
     logged,
+    bound,
+    added,
     advance: (ms: number) => {
       now += ms;
     },
   };
 }
 
-const request = (data: unknown): CallableRequest<unknown> =>
+const request = (
+  data: unknown,
+  auth: {
+    readonly uid: string;
+    readonly roles: readonly unknown[];
+  } | null = null,
+): CallableRequest<unknown> =>
   ({
     data,
+    ...(auth === null
+      ? {}
+      : { auth: { uid: auth.uid, token: { roles: auth.roles } } }),
     rawRequest: {},
     acceptsStreaming: false,
   }) as unknown as CallableRequest<unknown>;
@@ -1067,6 +1158,7 @@ describe('edge — the wrappers', () => {
       failureCode: BookingErrorCode.CommitStoreFailed,
       timeoutSeconds: null,
       answer: null,
+      traced: true,
     } as const;
 
     it('answers Result.ok with its value', async () => {
@@ -1104,6 +1196,7 @@ describe('edge — the wrappers', () => {
             streakPublishOutcome: 'REFUSED',
             errorCode: refusal.errorCode,
           }),
+          traced: true,
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
@@ -1193,6 +1286,200 @@ describe('edge — the wrappers', () => {
         },
       ]);
       expect(WorkBudgetSystem.callableBudgetMs(540)).toBe(49_000);
+    });
+  });
+
+  describe('callableEdge — traced: the scope and ONE outcome line (WS-4.2, DEP-18)', () => {
+    const spec = {
+      callable: Callables.CancelAppointment,
+      failureCode: null,
+      timeoutSeconds: null,
+      answer: null,
+      traced: true,
+    } as const;
+    const OP = 'op-0000000000000001';
+    const STAFF = { uid: 'u-staff', roles: ['barber', 'not-a-role'] } as const;
+    const SCOPE = {
+      callable: 'cancelAppointment',
+      operationId: OP,
+      uid: 'u-staff',
+      roles: ['barber'],
+    } as const;
+
+    it('binds the invocation’s scope once — callable, operation id, uid, known roles — and logs callable.completed', async () => {
+      const { ports, logged, bound, added, advance } = edgePorts();
+      const handler = callableEdge(spec, ports, async (_r, _b, trace) => {
+        trace.noteInputDigest('0123456789abcdef');
+        advance(42);
+        return Result.ok({ cancelled: true });
+      });
+      await expect(
+        handler(request({ operationId: OP, appointmentId: 'a-1' }, STAFF)),
+      ).resolves.toEqual({ cancelled: true });
+      expect(bound).toEqual([SCOPE]);
+      expect(added).toEqual([{ inputDigest: '0123456789abcdef' }]);
+      expect(logged).toEqual([
+        {
+          level: 'info',
+          msg: 'callable.completed',
+          fields: {
+            ...SCOPE,
+            errorCode: null,
+            wireStatus: 'ok',
+            durationMs: 42,
+            inputDigest: '0123456789abcdef',
+          },
+        },
+      ]);
+    });
+
+    it('reads the operation id only when the payload’s field passes ClientOperationId — never refusing the call', async () => {
+      for (const data of [
+        { operationId: 'short' },
+        { operationId: 'has/slash-00000000000' },
+        { operationId: 42 },
+        { attemptId: OP },
+        null,
+        'text',
+      ]) {
+        const { ports, bound } = edgePorts();
+        const handler = callableEdge(spec, ports, async () => Result.ok(1));
+        await expect(handler(request(data, null))).resolves.toBe(1);
+        expect(bound, JSON.stringify(data)).toEqual([
+          {
+            callable: 'cancelAppointment',
+            operationId: null,
+            uid: null,
+            roles: [],
+          },
+        ]);
+      }
+      // The booking calls' id rides in `attemptId` (OPERATION_ID_FIELD).
+      const { ports, bound } = edgePorts();
+      await callableEdge(
+        { ...spec, callable: Callables.CommitBooking },
+        ports,
+        async () => Result.ok(1),
+      )(request({ attemptId: OP }, null));
+      expect(bound[0]).toMatchObject({ operationId: OP });
+    });
+
+    it('logs a thrown refusal as callable.refused at warn, with its status — the answer unchanged', async () => {
+      const { ports, logged } = edgePorts();
+      const handler = callableEdge(spec, ports, async () =>
+        Result.err(BookingError.tooSoon(sure(MinuteCount.of(30)))),
+      );
+      const thrown = await rejection(handler(request({}, STAFF)));
+      expect(thrown.code).toBe('failed-precondition');
+      expect(logged).toEqual([
+        {
+          level: 'warn',
+          msg: 'callable.refused',
+          fields: {
+            ...SCOPE,
+            operationId: null,
+            errorCode: 'BOOKING_TOO_SOON',
+            wireStatus: 'failed-precondition',
+            durationMs: 0,
+            inputDigest: null,
+          },
+        },
+      ]);
+    });
+
+    it('logs an ANSWERED refusal as callable.refused with wireStatus ok', async () => {
+      const { ports, logged } = edgePorts();
+      const handler = callableEdge(
+        {
+          ...spec,
+          callable: Callables.PublishStreakDefinition,
+          answer: (refusal) => ({ refused: refusal.errorCode }),
+        },
+        ports,
+        async () => Result.err(StreakPublishError.stale(2, 3)),
+      );
+      await expect(handler(request({}))).resolves.toEqual({
+        refused: 'LOYALTY_STREAK_PUBLISH_STALE',
+      });
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        level: 'warn',
+        msg: 'callable.refused',
+        fields: {
+          errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+          wireStatus: 'ok',
+        },
+      });
+    });
+
+    it('logs a decoder’s own HttpsError as callable.refused — its status and its code — untracked', async () => {
+      const { ports, logged, tracked } = edgePorts();
+      const own = new HttpsError('permission-denied', 'Sysadmin only', {
+        errorCode: 'OPS_BACKFILL_FORBIDDEN',
+      });
+      const handler = callableEdge(spec, ports, async () => {
+        throw own;
+      });
+      expect(await rejection(handler(request({})))).toBe(own);
+      expect(tracked).toEqual([]);
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        level: 'warn',
+        msg: 'callable.refused',
+        fields: {
+          errorCode: 'OPS_BACKFILL_FORBIDDEN',
+          wireStatus: 'permission-denied',
+        },
+      });
+    });
+
+    it('logs an unexpected throw as callable.failed at error — the coded failure — tracked exactly once', async () => {
+      const { ports, logged, tracked } = edgePorts();
+      const boom = new Error('boom');
+      const coded = callableEdge(
+        { ...spec, failureCode: BookingErrorCode.CommitStoreFailed },
+        ports,
+        async () => {
+          throw boom;
+        },
+      );
+      const thrown = await rejection(coded(request({}, STAFF)));
+      expect(thrown.message).toBe('BOOKING_COMMIT_STORE_FAILED');
+      const bare = callableEdge(spec, ports, async () => {
+        throw boom;
+      });
+      expect((await rejection(bare(request({})))).message).toBe('INTERNAL');
+      expect(tracked).toHaveLength(2);
+      expect(logged.map((line) => [line.level, line.msg])).toEqual([
+        ['error', 'callable.failed'],
+        ['error', 'callable.failed'],
+      ]);
+      expect(logged[0]?.fields).toMatchObject({
+        errorCode: 'BOOKING_COMMIT_STORE_FAILED',
+        wireStatus: 'internal',
+      });
+      expect(logged[1]?.fields).toMatchObject({
+        errorCode: null,
+        wireStatus: 'internal',
+      });
+    });
+
+    it('an untraced callable (the sink, RU-24) binds no scope, logs no line and is handed a trace that records nothing', async () => {
+      const { ports, logged, bound, added } = edgePorts();
+      const handler = callableEdge(
+        { ...spec, callable: Callables.ReportClientIssues, traced: false },
+        ports,
+        async (_r, _b, trace) => {
+          trace.noteInputDigest('ignored');
+          return Result.ok({ loggedCount: 1 });
+        },
+      );
+      await expect(handler(request([], STAFF))).resolves.toEqual({
+        loggedCount: 1,
+      });
+      expect(bound).toEqual([]);
+      expect(added).toEqual([]);
+      expect(logged).toEqual([]);
     });
   });
 
@@ -1342,6 +1629,8 @@ describe('edge — the wrappers', () => {
             outcome: 'TRANSIENT',
             errorCode: 'unavailable',
             ageMs: 1_500,
+            documentPath: null,
+            writeOperationId: null,
           },
         },
       ]);

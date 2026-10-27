@@ -1,4 +1,4 @@
-import { type BarberId, Result } from '@core/primitives';
+import { type BarberId, LogEvent, Result } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
 import type {
@@ -92,12 +92,12 @@ export const sampleLeadTime =
           sampledBarberIds.push(barberId);
           continue;
         }
-        ports.log('error', 'lead-time sample failed for barber', {
+        ports.log('error', LogEvent.LeadTimeSampleFailed, {
           barberId,
           error: written.error,
         });
       } catch (error) {
-        ports.log('error', 'lead-time sample failed for barber', {
+        ports.log('error', LogEvent.LeadTimeSampleFailed, {
           barberId,
           error,
         });

@@ -42,6 +42,7 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
+  ClientOperationId,
   CustomerId,
   LocationId,
   Result,
@@ -210,6 +211,7 @@ const COPY: Translation = {
     cancel: { windowClosed: 'COPY:window-closed-page {{reach}}' },
     visit: { shopMoves: 'COPY:shop-moves {{reach}}' },
   },
+  operation: { reference: 'REF:{{ref}}', referenceCopied: 'REF:copied' },
   errors: {
     BOOKING_CALL_FAILED: 'COPY:gateway-failed',
     BOOKING_CANCEL_POLICY_UNAVAILABLE: 'COPY:policy-unavailable',
@@ -1515,6 +1517,77 @@ describe('ClientAppointments', () => {
         .querySelector('[data-testid="appointment-cancel-error"]')
         ?.textContent?.trim(),
     ).toBe('COPY:gateway-failed');
+  });
+
+  /*
+   * THE REFERENCE UNDER THE REFUSAL (audit-hardening WS-4.5): a refused
+   * cancel that carries its call's operation id prints it beside the
+   * sentence — a sibling, the sentence unchanged — and copies it on a tap;
+   * a refusal without one prints no line.
+   */
+  it('prints a refused cancel’s reference beside its sentence and copies it; none without an id', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const operationId = unwrapOk(ClientOperationId.parse('cancel-operation-1'));
+    const answers: readonly Result<BookingCall.Cancelled, PipelineError>[] = [
+      Result.err(
+        PipelineError.withOperation(refused('unavailable'), operationId),
+      ),
+      Result.err(refused('unavailable')),
+    ];
+    let calls = 0;
+    try {
+      const fixture = await configure(
+        [appointment('appt_1', '2030-06-01T10:00:00')],
+        (request) => answers[calls++] ?? cancelled(request),
+      );
+      const host = await render(fixture);
+      await openFirstVisit(fixture, host);
+      const reference = () =>
+        host.querySelector('[data-testid="appointment-cancel-reference"]');
+
+      click(host, 'appointment-cancel-trigger');
+      fixture.detectChanges();
+      click(host, 'appointment-cancel-confirm');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(
+        host
+          .querySelector('[data-testid="appointment-cancel-error"]')
+          ?.textContent?.trim(),
+      ).toBe('COPY:gateway-failed');
+      const line = reference()?.querySelector<HTMLButtonElement>(
+        '.ui-reference__line',
+      );
+      expect(line?.textContent?.trim()).toBe('REF:cancel-operation-1');
+      line?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(writeText).toHaveBeenCalledWith('cancel-operation-1');
+      expect(reference()?.querySelector('[role="status"]')?.textContent).toBe(
+        'REF:copied',
+      );
+
+      // The same refusal with no id: the sentence, and no line.
+      click(host, 'appointment-cancel-confirm');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(calls).toBe(2);
+      expect(
+        host
+          .querySelector('[data-testid="appointment-cancel-error"]')
+          ?.textContent?.trim(),
+      ).toBe('COPY:gateway-failed');
+      expect(reference()).toBeNull();
+    } finally {
+      if (original) Object.defineProperty(navigator, 'clipboard', original);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 
   it('says to try again in a moment when the terms could not be read — and the same button does', async () => {

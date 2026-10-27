@@ -267,6 +267,8 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
             ...BookingLifecycle.confirm(FIXTURE_NOW_UTC_MS),
             seats: pending.seats,
             arrivedAtUtcMs: null,
+            // The act that wrote the visit (WS-4.3, DEP-19).
+            writeOperationId: opOf(BookingStatus.Confirmed),
           },
           ['pendingAtUtcMs'],
         ),
@@ -342,6 +344,25 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
     expect((await run(cmd)).ok).toBe(false);
     expect(tx.plans).toHaveLength(1);
     expect(rows).toHaveLength(1);
+  });
+
+  it('stamps the stored visit with the act’s operation id — party or seat; a refused retry leaves it (WS-4.3, DEP-19)', async () => {
+    const { store, run } = rig([party()]);
+    const seatAct = command(BookingStatus.NoShow, {
+      seatId: FIXTURE_IDS.seat,
+    });
+    expect((await run(seatAct)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(seatAct.operationId);
+    const partyAct = command(BookingStatus.Completed);
+    expect((await run(partyAct)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(partyAct.operationId);
+    const retry = await run(
+      command(BookingStatus.Completed, {
+        operationId: OperationId.of('transition-op-retry'),
+      }),
+    );
+    expect(retry.ok).toBe(false);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(partyAct.operationId);
   });
 
   it('commits the move without a row when no verified actor is known, and logs it loudly', async () => {

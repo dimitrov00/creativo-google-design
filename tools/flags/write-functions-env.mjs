@@ -91,11 +91,14 @@ export function manifestErrors(manifest) {
 /**
  * The emulator's secret values (`.secret.local`) — one fixed, public TEST
  * value per secret the functions bind, so an emulated function never asks
- * Secret Manager: today the key walk-in record ids are keyed by (OR-26,
- * `WALKIN_ID_KEY`, `apps/functions/src/main.ts`). Never a real key.
+ * Secret Manager: the key walk-in record ids are keyed by (OR-26,
+ * `WALKIN_ID_KEY`) and the key a callable's outcome line digests its input
+ * under (audit-hardening WS-4.2, `LOG_DIGEST_KEY`), both bound in
+ * `apps/functions/src/main.ts`. Never a real key.
  */
 export const EMULATOR_SECRETS = Object.freeze({
   WALKIN_ID_KEY: 'emulator-walkin-id-key-not-secret',
+  LOG_DIGEST_KEY: 'emulator-log-digest-key-not-secret',
 });
 
 export function isDemoProject(projectId) {

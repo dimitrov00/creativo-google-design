@@ -26,6 +26,7 @@ import {
   PolicyPassStamp,
   RegistrationState,
   Role,
+  WriteProvenance,
 } from '@core/components';
 import {
   type AppointmentPhoto,
@@ -206,6 +207,7 @@ export async function seedCustomerRecord(uid: string): Promise<CustomerId> {
     ),
     createdAtUtcMs: RECORD_OPENED_AT_UTC_MS,
     customerOrigin: CustomerOrigin.Seed,
+    ...WriteProvenance.NONE,
   } satisfies Omit<Customer, 'id'>;
   await db.collection(Collections.Customers).doc(id).set(body);
   return id;

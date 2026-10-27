@@ -27,8 +27,9 @@ import {
  * same figure again is not a change: a retried call or a second tap on
  * «Запази» writes nothing and logs nothing. Otherwise the stored seats are
  * rewritten with that one field changed — inside the transaction, so the
- * read is what the write is conditioned on — and the act's row (the act AND
- * the amount, before and after, in the seat's currency — WS-2) is
+ * read is what the write is conditioned on, the visit stamped with the
+ * act's operation id (`writeOperationId`, WS-4.3) — and the act's row (the
+ * act AND the amount, before and after, in the seat's currency — WS-2) is
  * `Create`d in the SAME plan (WS-1), keyed by the act's operation id and
  * the seat (`tip:<operationId>:<seatId>`) and naming that seat's person.
  * An unchanged figure plans no row, so a replay never meets its own.
@@ -114,6 +115,7 @@ export const recordSeatTip =
           writes: [
             WriteOp.update(appointmentPath(appointment.id), {
               seats: tip.value.seats,
+              writeOperationId: cmd.operationId,
             }),
             ...audit.writes,
           ],

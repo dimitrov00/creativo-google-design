@@ -81,7 +81,7 @@ export const bookAppointment =
         }), // 2
     ); // 3
     if (!result.ok) {
-      ports.log('warn', 'booking.rejected', {
+      ports.log('warn', LogEvent.BookingRejected, {
         errorCode: result.error.errorCode,
       });
       return result;
@@ -158,7 +158,7 @@ the route/handler edge, with a pure guard from the component's companion.
 — the Admin SDK ones on first use, and the console telemetry
 (`console-telemetry.adapter.ts`, over `firebase-functions/logger`; Pino and
 Sentry are not installed, and their adapters would replace it with the same
-two ports) — assemble the port bundles, call the pipeline factories, wrap
+bundles (`TelemetryPorts`, `LogContextPorts`)) — assemble the port bundles, call the pipeline factories, wrap
 each use-case function in `onCall`/`onDocument*`/`onSchedule` through the
 edge (`edge.ts`) and the wire (`wire/*.wire.ts`), and map `Result.err` →
 `HttpsError` at that edge only. If the Hono-on-Cloud-Run

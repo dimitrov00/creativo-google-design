@@ -10,6 +10,7 @@ import {
   BookingStatus,
   type BusyKey,
   type HourCount,
+  LogEvent,
   type OperationId,
   Result,
   type AppointmentId,
@@ -239,7 +240,7 @@ export const transitionAppointment =
       if (policy.ok) {
         windowHours = CancellationPolicySystem.stampOf(policy.value);
       } else {
-        ports.log('warn', 'cancellation window unread; stamped unknown', {
+        ports.log('warn', LogEvent.CancelWindowUnread, {
           resourceId: cmd.appointmentId,
           error: policy.error.reason,
         });

@@ -34,7 +34,8 @@ import { admitStored } from './firestore-tx.adapter';
  * guard registry (`StoredDocumentSystem.guardOf`, the composition root's),
  * it runs every row through the appointment guard, and the FIRST malformed
  * row fails the whole page — `RepositoryError.malformed(path, field)`,
- * logged once (`'malformed document refused'`, `{ path, field }`) — so the
+ * logged once (`LogEvent.DocumentRefused` — `'malformed document refused'` —
+ * `{ path, field }`) — so the
  * backfill call stops AT the document and names it. Dropping the row would
  * shorten the page, and `BackfillPlanSystem.pageWalk` reads a short page
  * as "exhausted": the walk would end early and silently. Legacy rows

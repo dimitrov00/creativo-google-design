@@ -49,12 +49,13 @@ rows of root fields — not a serialized object graph.
   discounts:               []                       // 1-to-N
   voucherRedemptions:      []                       // 1-to-N
   appliedOperations:       []                       // 1-to-N, never queried
+  writeOperationId:        'op-7f3a…'               // WriteProvenance — the last writing call; null when it sent none, absent on older rows; never queried
 ```
 
 The body is `Appointment` minus `id` (`appointment.entity.ts`), the
-intersection of seven flat slices: `AppointmentMeta & AppointmentClientRefs
+intersection of eight flat slices: `AppointmentMeta & AppointmentClientRefs
 & TimeCoordinate & BookingLifecycle & BookingContact & AppointmentStamps &
-StoodSeatPairs`. No payment slice is stored yet.
+StoodSeatPairs & WriteProvenance`. No payment slice is stored yet.
 
 - Every 1-to-1 field is a root key; the document, the wire JSON and the
   TypeScript entity are the same flat layout. `snap.data()` is the entity

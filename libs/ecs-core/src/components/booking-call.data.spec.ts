@@ -47,6 +47,7 @@ const UNKNOWN = {
     field: null,
     wireStatus: null,
     serverParams: {},
+    operationId: null,
   },
 };
 

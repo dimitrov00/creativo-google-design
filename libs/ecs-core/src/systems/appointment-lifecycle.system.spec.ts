@@ -530,6 +530,8 @@ describe('AppointmentLifecycleSystem — cancel', () => {
         cancellationReason: 'OTHER',
         seats: step.appointment.seats,
         arrivedAtUtcMs: null,
+        // The act that wrote the visit (WS-4.3, DEP-19).
+        writeOperationId: OP,
       },
       deleteFields: ['confirmedAtUtcMs'],
     });
@@ -1086,6 +1088,120 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
         nowAt(RESOLVED_AT),
       ).ok,
     ).toBe(false);
+  });
+});
+
+describe('AppointmentLifecycleSystem — write provenance (WS-4.3)', () => {
+  /** The operation that wrote the visit before this act. */
+  const EARLIER = OperationId.of('op-lifecycle-earlier');
+
+  /** A step's entity and its one root update both name the act that wrote it. */
+  function expectStamped(step: {
+    readonly appointment: Appointment;
+    readonly writes: readonly { readonly writeAction: string }[];
+  }): void {
+    expect(step.appointment.writeOperationId).toBe(OP);
+    expect(step.writes).toHaveLength(1);
+    expect(step.writes[0]).toMatchObject({
+      writeAction: 'UPDATE',
+      fields: { writeOperationId: OP },
+    });
+  }
+
+  it('the client’s cancel stamps the act’s operation id on the visit and its write', () => {
+    const before = visit([seat()], CONFIRMED, { writeOperationId: EARLIER });
+    expectStamped(
+      unwrapOk(
+        AppointmentLifecycleSystem.cancelByClient(
+          before,
+          CancellationReason.Other,
+          hourCount(6),
+          RESOLVED_AT,
+          OP,
+        ),
+      ),
+    );
+  });
+
+  it('every staff transition stamps it — a party move, one seat, a no-show reopened, a settled visit reopened', () => {
+    const moved = party();
+    expectStamped(
+      unwrapOk(
+        AppointmentLifecycleSystem.transition(
+          moved,
+          request(BookingStatus.Completed),
+          nowAt(RESOLVED_AT),
+        ),
+      ),
+    );
+    const partly = party();
+    expectStamped(
+      unwrapOk(
+        AppointmentLifecycleSystem.transition(
+          partly,
+          request(BookingStatus.Completed, { seatId: seatIdAt(partly, 0) }),
+          nowAt(RESOLVED_AT),
+        ),
+      ),
+    );
+    for (const lifecycle of [NO_SHOW, COMPLETED]) {
+      const settled = visit([seat()], lifecycle, { writeOperationId: EARLIER });
+      expectStamped(
+        unwrapOk(
+          AppointmentLifecycleSystem.transition(
+            settled,
+            request(BookingStatus.Confirmed),
+            nowAt(endInstantOf(settled)),
+          ),
+        ),
+      );
+    }
+  });
+
+  it('the arrival and its undo stamp it; an unchanged tap writes nothing and keeps the earlier stamp', () => {
+    const live = visit([seat()], CONFIRMED, { writeOperationId: EARLIER });
+    const arrived = unwrapOk(
+      AppointmentLifecycleSystem.markArrived(live, RESOLVED_AT, OP),
+    );
+    expectStamped(arrived);
+    const cleared = unwrapOk(
+      AppointmentLifecycleSystem.clearArrival(arrived.appointment, OP),
+    );
+    expectStamped(cleared);
+
+    const again = OperationId.of('op-lifecycle-again');
+    const secondTap = unwrapOk(
+      AppointmentLifecycleSystem.markArrived(
+        arrived.appointment,
+        plus(RESOLVED_AT, MINUTE),
+        again,
+      ),
+    );
+    expect(secondTap.writes).toEqual([]);
+    expect(secondTap.appointment.writeOperationId).toBe(OP);
+    const nothingToClear = unwrapOk(
+      AppointmentLifecycleSystem.clearArrival(live, again),
+    );
+    expect(nothingToClear.writes).toEqual([]);
+    expect(nothingToClear.appointment.writeOperationId).toBe(EARLIER);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const appointment = deepFreeze(
+      visit([seat()], CONFIRMED, { writeOperationId: EARLIER }),
+    );
+    const first = AppointmentLifecycleSystem.markArrived(
+      appointment,
+      RESOLVED_AT,
+      OP,
+    );
+    const second = AppointmentLifecycleSystem.markArrived(
+      appointment,
+      RESOLVED_AT,
+      OP,
+    );
+    expect(first).toEqual(second);
+    expect(appointment.writeOperationId).toBe(EARLIER);
   });
 });
 

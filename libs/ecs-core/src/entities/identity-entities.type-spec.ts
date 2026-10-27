@@ -27,6 +27,7 @@ import {
   type StaffEditDelta,
   type TipDelta,
   type TransitionDelta,
+  type WriteProvenance,
 } from '@core/components';
 import type {
   AttendanceState,
@@ -39,7 +40,7 @@ import type {
 import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
-import type { Customer } from './customer.entity';
+import type { Customer, CustomerMeta } from './customer.entity';
 import type {
   ImpersonationSession,
   ImpersonationSessionMeta,
@@ -364,11 +365,17 @@ if (row.auditTarget === AuditTarget.Customer) {
   void row.targetUserId;
 }
 
-/* ── Customer — one flat archetype (D29) ───────────────────────────────── */
+/* ── Customer = Meta & WriteProvenance (D29, WS-4.3) ───────────────────── */
 
 export const customerNotNever: IsNever<Customer> = false;
 export const customerFlat: EveryVariantFlat<Customer> = true;
+export const customerProvenanceDisjoint: Disjoint<
+  CustomerMeta,
+  WriteProvenance
+> = true;
 declare const customer: Customer;
+const customerWriteOperationId: OperationId | null = customer.writeOperationId;
+void customerWriteOperationId;
 // @ts-expect-error — a CustomerId is never a UserId (Law 7.4, D29)
 export const customerIdIsNotUser: UserId = customer.id;
 // @ts-expect-error — a UserId is never a CustomerId (Law 7.4, D29)

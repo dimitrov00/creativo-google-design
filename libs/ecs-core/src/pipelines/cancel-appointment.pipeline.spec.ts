@@ -239,7 +239,13 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       [
         WriteOp.transition(
           [Collections.Appointments, visit.id],
-          { ...after, seats: [cancelledSeat], arrivedAtUtcMs: null },
+          {
+            ...after,
+            seats: [cancelledSeat],
+            arrivedAtUtcMs: null,
+            // The act that wrote the visit (WS-4.3, DEP-19).
+            writeOperationId: OPERATION,
+          },
           ['confirmedAtUtcMs'],
         ),
         // The act's row, LAST in the SAME plan (WS-1).
@@ -320,6 +326,26 @@ describe('cancelAppointment — the client calling off their own visit', () => {
     );
     expect(tx.plans).toHaveLength(1);
     expect(rows.map((row) => row.id)).toEqual([CANCEL_ROW]);
+  });
+
+  it('stamps the stored visit with the act’s operation id; a refused retry leaves it (WS-4.3, DEP-19)', async () => {
+    const visit = laterVisit();
+    const { store, run } = rig([visit]);
+    const cmd = {
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: CLIENT,
+    };
+    expect((await run(cmd)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+    const retry = await run({
+      ...cmd,
+      operationId: OperationId.of('cancel-op-retry-0001'),
+    });
+    expect(retry.ok).toBe(false);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
   });
 
   it('commits the cancel without a row when no verified actor is known, and logs it loudly', async () => {
