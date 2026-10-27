@@ -384,8 +384,12 @@ test.describe('client card — the glance (client.profile on)', () => {
       // are known (S1-5) — and the quiet line under the name.
       const head = card.getByTestId('client-head');
       await expect(head).toHaveAttribute('data-headline-style', 'hero');
+      // The name is the profile's (`users/{uid}`, one server read): it
+      // waits as the plate below does — an emulator stall once held the
+      // read past the default 5 s (Phase 3 plan §8.A).
       await expect(card.getByTestId('client-head-title')).toHaveText(
         'Георги Петров',
+        { timeout: 20_000 },
       );
       await expect(card.getByTestId('client-head-avatar')).toBeVisible();
       await expect(head).toHaveAttribute('data-plate', '', {
@@ -724,6 +728,7 @@ test.describe('client card — the glance (client.profile on)', () => {
       const card = await openCardOf(page, today, `${uid}-today#ivan`, uid);
       await expect(card.getByTestId('client-head-title')).toHaveText(
         'Мартин Илиев',
+        { timeout: 20_000 },
       );
 
       // THE BIRTHDAY CARD (§2.1.2 a): once the profile has answered, the

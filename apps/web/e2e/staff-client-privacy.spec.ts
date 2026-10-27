@@ -98,6 +98,7 @@ async function openCardOf(
   const card = page.getByTestId('client-card');
   await expect(card.getByTestId('client-head-title')).toHaveText(
     'Елена Тодорова',
+    { timeout: 20_000 },
   );
   await expect(card.getByTestId('client-visits')).toBeVisible({
     timeout: 20_000,

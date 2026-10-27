@@ -2087,7 +2087,11 @@ frozen.
   every assertion unchanged; the journey proves "a visit ahead of the
   pinned 10:00 is upcoming" (P3-RU-4). Specs: `client-card-glance.spec.ts`
   (`:31`, `:162`, `:197`, `:364`, `:370`, `:707`, `:713`),
-  `appointments.spec.ts` (`:9`, `:14-16`, `:100`).
+  `appointments.spec.ts` (`:9`, `:14-16`, `:100`). Added after the C_A
+  gate and the late run (§8.A): the pin is a RUNNING clock
+  (`setSystemTime`), and the glance's two `client-head-title` assertions
+  (and the privacy journey's) wait 20 s for the profile read, the spec's
+  own idiom for a server read — the asserted names unchanged.
 - **P3-DEP-5 (orchestrator, records) — the time-of-day flake leaves the
   record.** HANDOFF §4 "Known flakes" and §3.3's carried list drop the
   glance clause once the late-shop-time run (§6.1 addition 2) — the e2e
@@ -2638,7 +2642,28 @@ gates keep their reference counts.
 - **Reported, not made:** `tools/verify/project.json` test `inputs` do not
   name `tools/seed/calendar.mjs` (a cached `verify-tools` run would miss a
   calendar change) — PE1 adds it (it owns that file at C_E).
-- **P3-DEP-5** waits for the late real-hour run (§0.5).
+- **The late real-hour run** (§6.1 addition 2, P3-RU-34) on the committed
+  C_A tree (`987e6e5`, `/home/user/baseline3`): e2e half STARTED 23:15:11
+  and ended 23:29:07 Europe/Sofia (21:15–21:29 UTC) — the glance and
+  `appointments.spec.ts`, `--repeat-each=3`: 46 / 48. The two reds are not
+  the clock: the glance barber case at [desktop, light, repeat 2] — the
+  card's name still the seat's after 5 s; its trace shows the Firestore
+  channel's forward POST blocked 4.9 s before the profile's `addTarget`
+  could even be sent (an emulator stall, the same attempt slot as two
+  earlier solo runs) — and `appointments.spec.ts:36` (UNPINNED, unchanged
+  by WS-A: the page still `loading` after 5 s). The failure WS-A removes
+  never appeared: every «Предстоящи» / `history-upcoming` assertion held in
+  the 17 barber and 18 birthday runs between 23:15 and 23:29, and the month
+  navigation passed 3/3. Seed half: `SEED_NOW=2026-10-27T23:40 verify:p0`
+  (a)–(f) green (23:31:32).
+- **The name waits as the plate does** (orchestrator, after the late run):
+  the glance's two `client-head-title` assertions and the privacy
+  journey's take `{ timeout: 20_000 }`, the spec's own idiom for a server
+  read (the plate, the ledger, the medal, the verb all wait 20 s); the
+  asserted text is unchanged. P3-DEP-4 carries it.
+- **P3-DEP-5 applied:** the glance time-of-day clause leaves HANDOFF §4
+  (records pass), with this run as its evidence; the owner may repeat it
+  after 23:15 shop time (`late-proof` recipe, §6.1 addition 2).
 
 ### 8.B C_B — WS-B login / OTP audit rows (2026-10-27)
 
