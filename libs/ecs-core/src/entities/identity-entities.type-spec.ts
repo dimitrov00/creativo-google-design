@@ -21,9 +21,11 @@ import {
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
+  type OtpRefusalReason,
   type RescheduleDelta,
   type Role,
   type SearchFields,
+  type SessionKind,
   type StaffEditDelta,
   type TipDelta,
   type TransitionDelta,
@@ -32,6 +34,7 @@ import {
 import type {
   AttendanceState,
   CustomerId,
+  IdentifierChannel,
   ImpersonationSessionId,
   OperationId,
   UserId,
@@ -352,6 +355,90 @@ if (row.auditAction === AuditAction.GovernedDocDeleted) {
   void collection;
   void fields;
   // @ts-expect-error — a governed row carries no profile field list
+  void row.profileFields;
+}
+/*
+ * The sign-in rows (audit-hardening Phase 3 WS-B, P3-DEP-7): each verb
+ * narrows to its own fields, every variant is flat, and the new context
+ * fields are disjoint from the actor, target and meta slices — tags, counts
+ * and the expiry only; the challenge's destination, hash and salt are never
+ * on a row (R36 / T5).
+ */
+export const identityContextsFlat: [
+  AllTrue<NoNested<AuditContext.OtpRequested>>,
+  AllTrue<NoNested<AuditContext.OtpVerified>>,
+  AllTrue<NoNested<AuditContext.OtpRefused>>,
+  AllTrue<NoNested<AuditContext.SessionIssued>>,
+  AllTrue<NoNested<AuditContext.RegistrationCompleted>>,
+] = [true, true, true, true, true];
+/** Each identity variant minus its verb, against the three other slices of the row. */
+type IdentityFacts =
+  | Omit<AuditContext.OtpRequested, 'auditAction'>
+  | Omit<AuditContext.OtpVerified, 'auditAction'>
+  | Omit<AuditContext.OtpRefused, 'auditAction'>
+  | Omit<AuditContext.SessionIssued, 'auditAction'>
+  | Omit<AuditContext.RegistrationCompleted, 'auditAction'>;
+export const identityContextsDisjoint: [
+  Disjoint<Omit<AuditContext.OtpRequested, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.OtpVerified, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.OtpRefused, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.SessionIssued, 'auditAction'>, Actor>,
+  Disjoint<Omit<AuditContext.RegistrationCompleted, 'auditAction'>, Actor>,
+  Disjoint<IdentityFacts, AuditTargetRef>,
+  Disjoint<IdentityFacts, AuditEntryMeta>,
+] = [true, true, true, true, true, true, true];
+/** The check is not vacuous: a context repeating the target's id would share a key. */
+export const identityTargetRepeatCaught: Disjoint<
+  Omit<AuditContext.SessionIssued, 'auditAction'> & {
+    readonly targetUserId: UserId;
+  },
+  AuditTargetRef
+> = false;
+export const identityFieldsAre: [
+  Equals<AuditContext.OtpRequested['otpExpiresAtUtcMs'], UtcEpochMs>,
+  Equals<AuditContext.OtpVerified['otpAttemptCount'], number>,
+  Equals<AuditContext.OtpRefused['otpAttemptCount'], number>,
+  Equals<AuditContext.OtpRefused['otpMaxAttempts'], number>,
+] = [true, true, true, true];
+if (row.auditAction === AuditAction.IdentityOtpRequested) {
+  const expires: UtcEpochMs = row.otpExpiresAtUtcMs;
+  void expires;
+  void row.otpDestinationType;
+  void row.otpPurpose;
+  // @ts-expect-error — a request has no refusal reason
+  void row.otpRefusalReason;
+  // @ts-expect-error — the destination (a phone or an e-mail) is never on a row (R36)
+  void row.destination;
+  // @ts-expect-error — nor the code's hash
+  void row.codeHash;
+}
+if (row.auditAction === AuditAction.IdentityOtpVerified) {
+  const attempts: number = row.otpAttemptCount;
+  void attempts;
+  // @ts-expect-error — a verification carries no limit
+  void row.otpMaxAttempts;
+}
+if (row.auditAction === AuditAction.IdentityOtpRefused) {
+  const reason: OtpRefusalReason = row.otpRefusalReason;
+  void reason;
+  void row.otpAttemptCount;
+  void row.otpMaxAttempts;
+  // @ts-expect-error — a refusal carries no expiry
+  void row.otpExpiresAtUtcMs;
+}
+if (row.auditAction === AuditAction.IdentitySessionIssued) {
+  const kind: SessionKind = row.sessionKind;
+  void kind;
+  void row.otpDestinationType;
+  // @ts-expect-error — a session row names no purpose
+  void row.otpPurpose;
+}
+if (row.auditAction === AuditAction.IdentityRegistrationCompleted) {
+  const channel: IdentifierChannel = row.registrationIdentifierChannel;
+  void channel;
+  // @ts-expect-error — a registration row names no challenge channel
+  void row.otpDestinationType;
+  // @ts-expect-error — nor any profile field (the users trigger's row does that)
   void row.profileFields;
 }
 if (row.auditTarget === AuditTarget.User) {

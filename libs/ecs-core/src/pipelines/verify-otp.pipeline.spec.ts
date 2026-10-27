@@ -6,33 +6,48 @@ import {
   Identifier,
   OtpCode,
   OtpDestinationType,
+  OtpRefusalReason,
   ParsedIdentifier,
   RegistrationState,
   Role,
   SessionKind,
   WriteOp,
 } from '@core/components';
-import { OtpId, Result, UserId, UtcEpochMs } from '@core/primitives';
+import {
+  OperationId,
+  OtpId,
+  Result,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import {
   IdentityErrorCode,
   PipelineError,
   PipelineErrorCode,
+  RepositoryError,
   RepositoryErrorCode,
 } from '@core/errors';
-import { Collections } from '@core/entities';
+import { Collections, type Otp } from '@core/entities';
 import type {
   AuthAdminPorts,
   AuthUserLookupPorts,
   CommitPlan,
   NowUtcMs,
 } from '@core/ports';
-import { RegistrationSystem } from '@core/systems';
 import {
+  AuditSystem,
+  IdentityAuditSystem,
+  RegistrationSystem,
+} from '@core/systems';
+import {
+  auditRowsOf,
+  contendedCommit,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_OTP_CODE,
   FIXTURE_PHONE,
   FIXTURE_TENANT_ID,
   fixedOtpCryptoPorts,
+  fixtureHash,
   type IdentityWorld,
   memoryAuthAdminPorts,
   memoryAuthUserLookupPorts,
@@ -54,7 +69,10 @@ import { type VerifyOtpCommand, verifyOtp } from './verify-otp.pipeline';
  * looked up outside; a new identity's stub is created in tx 2 only when
  * absent, adopted only when it is a stub of this same contact, refused
  * otherwise; the claims come from the body the session signs into. Every
- * case the deleted use-case spec held, plus the flip's own.
+ * case the deleted use-case spec held, plus the flip's own. Audit-hardening
+ * Phase 3 (P3-DEP-7): tx 1's state changes carry their sign-in rows
+ * (VERIFIED, REFUSED) and a minted token its SESSION_ISSUED row, in one
+ * more commit — the plan pins below include them on purpose.
  */
 
 const OTP_ID = OtpId.of('otp-1');
@@ -66,6 +84,7 @@ const RIGHT = OtpCode.of(FIXTURE_OTP_CODE);
 const command = (code: OtpCode = RIGHT): VerifyOtpCommand => ({
   otpId: OTP_ID,
   code,
+  operationId: null,
 });
 
 /** The fixture challenge for the e-mail destination. */
@@ -93,6 +112,7 @@ function rig(options: Rig) {
     commit:
       options.commit === undefined ? tx.commit : options.commit(tx.commit),
     nowUtcMs: tx.nowUtcMs,
+    hash: tx.hash,
     ...fixedOtpCryptoPorts(),
     ...memoryUserLookupPorts(options.world),
     ...memoryAuthUserLookupPorts(options.world),
@@ -111,6 +131,13 @@ function bodyAt(world: IdentityWorld, path: readonly string[]) {
 const later = (ms: number): NowUtcMs =>
   pinnedNowUtcMs(UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, ms));
 
+/** The `IDENTITY_OTP_VERIFIED` Create a consumption plans — through the system's own planner. */
+const verifiedRow = (consumed: Otp) =>
+  AuditSystem.createsOf(
+    [IdentityAuditSystem.planOtpVerified(consumed)],
+    fixtureHash,
+  );
+
 describe('verifyOtp', () => {
   describe('tx 1 — the attempt', () => {
     it('consumes the challenge with ONE root-key Update on a correct code', async () => {
@@ -119,6 +146,7 @@ describe('verifyOtp', () => {
       expect((await run(command())).ok).toBe(true);
       expect(tx.plans[0]).toEqual([
         WriteOp.update(OTP_PATH, { consumedAtUtcMs: FIXTURE_NOW_UTC_MS }),
+        ...verifiedRow(mailOtp({ consumedAtUtcMs: FIXTURE_NOW_UTC_MS })),
       ]);
       expect(bodyAt(world, OTP_PATH)).toMatchObject({
         consumedAtUtcMs: FIXTURE_NOW_UTC_MS,
@@ -134,7 +162,19 @@ describe('verifyOtp', () => {
         error: { errorCode: IdentityErrorCode.OtpWrongCode },
       });
       expect(tx.plans).toEqual([
-        [WriteOp.update(OTP_PATH, { attemptCount: 1 })],
+        [
+          WriteOp.update(OTP_PATH, { attemptCount: 1 }),
+          ...AuditSystem.createsOf(
+            [
+              IdentityAuditSystem.planOtpRefused(
+                mailOtp({ attemptCount: 1 }),
+                OtpRefusalReason.WrongCode,
+                FIXTURE_NOW_UTC_MS,
+              ),
+            ],
+            fixtureHash,
+          ),
+        ],
       ]);
       expect(bodyAt(world, OTP_PATH)).toMatchObject({ attemptCount: 1 });
       expect(world.minted).toEqual([]);
@@ -374,12 +414,28 @@ describe('verifyOtp', () => {
         customToken: 'token:auth-uid-1:1',
         sessionKind: SessionKind.New,
       });
-      // tx 1's Update, then the re-run's empty plan — the refused Create applied nothing.
+      // tx 1's Update and its row, then the re-run's empty plan — the
+      // refused Create applied nothing — then the session row (P3-DEP-7).
       expect(tx.plans).toEqual([
-        [WriteOp.update(OTP_PATH, { consumedAtUtcMs: FIXTURE_NOW_UTC_MS })],
+        [
+          WriteOp.update(OTP_PATH, { consumedAtUtcMs: FIXTURE_NOW_UTC_MS }),
+          ...verifiedRow(mailOtp({ consumedAtUtcMs: FIXTURE_NOW_UTC_MS })),
+        ],
         [],
+        AuditSystem.createsOf(
+          [
+            IdentityAuditSystem.planSessionIssued(
+              mailOtp({ consumedAtUtcMs: FIXTURE_NOW_UTC_MS }),
+              UserId.of('auth-uid-1'),
+              SessionKind.New,
+              null,
+              FIXTURE_NOW_UTC_MS,
+            ),
+          ],
+          fixtureHash,
+        ),
       ]);
-      expect(tx.transactions).toHaveLength(3);
+      expect(tx.transactions).toHaveLength(4);
     });
 
     it('answers a second ALREADY_EXISTS as itself — a lost race is never success', async () => {
@@ -456,6 +512,7 @@ describe('verifyOtp', () => {
       const again = await rig({ world }).run({
         otpId: id,
         code: OtpCode.of('654321'),
+        operationId: null,
       });
       expect(unwrapOk(again).sessionKind).toBe(SessionKind.Returning);
       expect(
@@ -520,7 +577,8 @@ describe('verifyOtp', () => {
       expect(world.minted[0]?.claims).toEqual(
         AuthClaims.onboarding(FIXTURE_TENANT_ID),
       );
-      expect(tx.plans).toHaveLength(1);
+      // tx 1, then the session row — no tx 2 for a returning account.
+      expect(tx.plans).toHaveLength(2);
     });
 
     it('answers a mint failure as itself', async () => {
@@ -543,3 +601,270 @@ function unwrapErrCode<T>(
   if (result.ok) throw new Error('expected a refusal');
   return result.error.errorCode;
 }
+
+/*
+ * The sign-in rows (audit-hardening Phase 3 WS-B, P3-DEP-7): tx 1 plans a
+ * row with each state change and none without one (P3-L-2); the session
+ * row commits after the mint and before the answer (P3-RU-12). Every
+ * PII-bearing input is a SENTINEL, and the serialised rows are searched.
+ */
+describe('verifyOtp — the sign-in rows', () => {
+  const SENTINEL_EMAIL = 'sentinel@example.invalid';
+  const OP = OperationId.of('op-verify-abcdefghij');
+
+  /** Every row the APPLIED plans of a rig created, in commit order. */
+  const rowsOf = (plans: Parameters<typeof auditRowsOf>[0]) =>
+    auditRowsOf(plans);
+
+  it('a correct code: [consume Update, VERIFIED Create] in tx 1 — no operation id even when the call sent one (P3-L-20)', async () => {
+    const world = memoryIdentityWorld({ otps: [mailOtp()] });
+    const { tx, run } = rig({ world });
+    expect((await run({ ...command(), operationId: OP })).ok).toBe(true);
+    const [verified] = rowsOf([tx.plans[0] ?? []]);
+    expect(verified).toEqual({
+      id: expect.any(String),
+      recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      resourceId: 'otps/otp-1',
+      auditOperationId: null,
+      actorRole: 'SYSTEM',
+      actorSystemSource: 'IDENTITY_CALLABLE',
+      auditAction: 'IDENTITY_OTP_VERIFIED',
+      otpDestinationType: OtpDestinationType.Email,
+      otpPurpose: 'LOGIN',
+      otpAttemptCount: 0,
+      auditTarget: 'NONE',
+    });
+  });
+
+  it('a wrong code: [attempt Update, REFUSED Create (WRONG_CODE)]; the attempt that reaches maxAttempts: LOCKED_OUT; the answer unchanged', async () => {
+    const world = memoryIdentityWorld({
+      otps: [mailOtp({ attemptCount: 3 })],
+    });
+    const { tx, run } = rig({ world });
+    // maxAttempts − 2 recorded before: this attempt leaves one more.
+    expect(unwrapErrCode(await run(command(WRONG)))).toBe(
+      IdentityErrorCode.OtpWrongCode,
+    );
+    // maxAttempts − 1 recorded before: this attempt exhausts the challenge.
+    expect(unwrapErrCode(await run(command(WRONG)))).toBe(
+      IdentityErrorCode.OtpWrongCode,
+    );
+    expect(
+      rowsOf(tx.plans).map((row) => ({
+        auditAction: row.auditAction,
+        ...('otpRefusalReason' in row
+          ? {
+              otpRefusalReason: row.otpRefusalReason,
+              otpAttemptCount: row.otpAttemptCount,
+              otpMaxAttempts: row.otpMaxAttempts,
+            }
+          : {}),
+      })),
+    ).toEqual([
+      {
+        auditAction: 'IDENTITY_OTP_REFUSED',
+        otpRefusalReason: OtpRefusalReason.WrongCode,
+        otpAttemptCount: 4,
+        otpMaxAttempts: 5,
+      },
+      {
+        auditAction: 'IDENTITY_OTP_REFUSED',
+        otpRefusalReason: OtpRefusalReason.LockedOut,
+        otpAttemptCount: 5,
+        otpMaxAttempts: 5,
+      },
+    ]);
+    // The challenge is now locked: even the right code changes nothing and plans no row.
+    expect(unwrapErrCode(await run(command()))).toBe(
+      IdentityErrorCode.OtpLockedOut,
+    );
+    expect(tx.plans[2]).toEqual([]);
+    expect(rowsOf(tx.plans)).toHaveLength(2);
+    expect(world.minted).toEqual([]);
+  });
+
+  it('the same wrong code twice is two recorded attempts — two rows with distinct ids', async () => {
+    const world = memoryIdentityWorld({ otps: [mailOtp()] });
+    const { tx, run } = rig({ world });
+    await run(command(WRONG));
+    await run(command(WRONG));
+    const rows = rowsOf(tx.plans);
+    expect(rows.map((row) => row.auditAction)).toEqual([
+      'IDENTITY_OTP_REFUSED',
+      'IDENTITY_OTP_REFUSED',
+    ]);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(2);
+    expect(
+      [...world.store.keys()].filter((key) =>
+        key.startsWith(`${Collections.AuditLog}/`),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('a contended tx 1 decides the same row id twice — a re-run never plans a second row', async () => {
+    const world = memoryIdentityWorld({ otps: [mailOtp()] });
+    let decisions: readonly (readonly WriteOp[])[] = [];
+    const { tx, run } = rig({
+      world,
+      commit: (inner) => {
+        const contended = contendedCommit(inner);
+        decisions = contended.decisions;
+        return contended.commit;
+      },
+    });
+    expect(unwrapErrCode(await run(command(WRONG)))).toBe(
+      IdentityErrorCode.OtpWrongCode,
+    );
+    expect(decisions).toHaveLength(2);
+    expect(decisions[1]).toEqual(decisions[0]);
+    expect(rowsOf(tx.plans)).toHaveLength(1);
+  });
+
+  it('a retry after consumption is ALREADY_CONSUMED — no write, no row, no second session', async () => {
+    const world = memoryIdentityWorld({ otps: [mailOtp()] });
+    expect((await rig({ world }).run(command())).ok).toBe(true);
+    const retry = rig({ world });
+    expect(unwrapErrCode(await retry.run(command()))).toBe(
+      IdentityErrorCode.OtpAlreadyConsumed,
+    );
+    expect(retry.tx.plans).toEqual([[]]);
+  });
+
+  it('expired and unknown challenges plan no row', async () => {
+    const expired = memoryIdentityWorld({ otps: [mailOtp()] });
+    const late = rig({ world: expired, nowUtcMs: later(10 * 60_000) });
+    await late.run(command());
+    expect(rowsOf(late.tx.plans)).toEqual([]);
+    const unknown = rig({ world: memoryIdentityWorld() });
+    await unknown.run(command());
+    expect(rowsOf(unknown.tx.plans)).toEqual([]);
+  });
+
+  it('the session commit after the mint holds ONE SESSION_ISSUED row naming the account — NEW, with the call’s operation id', async () => {
+    const world = memoryIdentityWorld({ otps: [mailOtp()] });
+    const { tx, run } = rig({ world });
+    expect(unwrapOk(await run({ ...command(), operationId: OP }))).toEqual({
+      customToken: 'token:auth-uid-1:1',
+      sessionKind: SessionKind.New,
+    });
+    // tx 1, tx 2 (the stub), then the session commit — one Create, no reads.
+    expect(tx.plans).toHaveLength(3);
+    expect(tx.transactions[2]?.reads).toEqual([]);
+    expect(rowsOf([tx.plans[2] ?? []])).toEqual([
+      {
+        id: expect.any(String),
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: 'users/auth-uid-1',
+        auditOperationId: OP,
+        actorRole: 'SYSTEM',
+        actorSystemSource: 'IDENTITY_CALLABLE',
+        auditAction: 'IDENTITY_SESSION_ISSUED',
+        sessionKind: SessionKind.New,
+        otpDestinationType: OtpDestinationType.Email,
+        auditTarget: 'USER',
+        targetUserId: 'auth-uid-1',
+      },
+    ]);
+  });
+
+  it('a RETURNING session’s row names the stored account; a call with no operation id names none (RU-21)', async () => {
+    const staff = registeredUserFixture({
+      id: UserId.of('uid_staff'),
+      email: MAIL,
+      roles: [Role.Barber],
+    });
+    const world = memoryIdentityWorld({ otps: [mailOtp()], users: [staff] });
+    const { tx, run } = rig({ world });
+    expect(unwrapOk(await run(command())).sessionKind).toBe(
+      SessionKind.Returning,
+    );
+    const session = rowsOf(tx.plans).filter(
+      (row) => row.auditAction === 'IDENTITY_SESSION_ISSUED',
+    );
+    expect(session).toEqual([
+      expect.objectContaining({
+        resourceId: 'users/uid_staff',
+        auditOperationId: null,
+        sessionKind: SessionKind.Returning,
+        auditTarget: 'USER',
+        targetUserId: 'uid_staff',
+      }),
+    ]);
+  });
+
+  it('a mint failure plans no session row', async () => {
+    const staff = registeredUserFixture({ email: MAIL });
+    const world = memoryIdentityWorld({ otps: [mailOtp()], users: [staff] });
+    const down = PipelineError.bare(PipelineErrorCode.Unknown);
+    const { tx, run } = rig({
+      world,
+      auth: { mintCustomToken: async () => Result.err(down) },
+    });
+    expect(await run(command())).toEqual({ ok: false, error: down });
+    expect(tx.plans).toHaveLength(1);
+    expect(rowsOf(tx.plans).map((row) => row.auditAction)).toEqual([
+      'IDENTITY_OTP_VERIFIED',
+    ]);
+  });
+
+  it('a session-commit failure answers the store failure — the minted token is never answered', async () => {
+    const staff = registeredUserFixture({ email: MAIL });
+    const world = memoryIdentityWorld({ otps: [mailOtp()], users: [staff] });
+    const down = RepositoryError.writeFailed(Collections.AuditLog, 'x');
+    const { run } = rig({
+      world,
+      commit: (inner) => {
+        let calls = 0;
+        const wrapped: CommitPlan = (read, decide) =>
+          ++calls === 2
+            ? Promise.resolve(Result.err(down))
+            : inner(read, decide);
+        return wrapped;
+      },
+    });
+    const answer = await run(command());
+    expect(answer).toEqual({ ok: false, error: down });
+    expect(JSON.stringify(answer)).not.toContain('token:');
+    expect(world.minted).toHaveLength(1);
+    expect(
+      [...world.store.keys()].filter((key) =>
+        key.startsWith(`${Collections.AuditLog}/`),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('no row holds the destination, the code, its hash or its salt (R36 / T5)', async () => {
+    const otp = mailOtp({ destination: Identifier.of(SENTINEL_EMAIL) });
+    const world = memoryIdentityWorld({
+      otps: [otp, { ...otp, id: OtpId.of('otp-2') }],
+    });
+    const { tx, run } = rig({ world });
+    await run({ otpId: OtpId.of('otp-2'), code: WRONG, operationId: OP });
+    expect((await run({ ...command(), operationId: OP })).ok).toBe(true);
+    const rows = rowsOf(tx.plans);
+    expect(rows.map((row) => row.auditAction)).toEqual([
+      'IDENTITY_OTP_REFUSED',
+      'IDENTITY_OTP_VERIFIED',
+      'IDENTITY_SESSION_ISSUED',
+    ]);
+    for (const row of rows) {
+      // The body only: the row id is a hash, never a value of the person.
+      const body = Object.fromEntries(
+        Object.entries(row).filter(([key]) => key !== 'id'),
+      );
+      const json = JSON.stringify(body);
+      for (const secret of [
+        SENTINEL_EMAIL,
+        FIXTURE_OTP_CODE,
+        '000000',
+        otp.codeHash,
+        otp.salt,
+      ]) {
+        expect(json).not.toContain(secret);
+      }
+      for (const key of ['destination', 'codeHash', 'salt', 'code']) {
+        expect(Object.keys(body)).not.toContain(key);
+      }
+    }
+  });
+});

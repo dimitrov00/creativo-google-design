@@ -683,6 +683,21 @@
       "indexes": []
     },
     {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpExpiresAtUtcMs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpAttemptCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "otpMaxAttempts",
+      "indexes": []
+    },
+    {
       "collectionGroup": "loyaltyAccounts",
       "fieldPath": "streaks",
       "indexes": []

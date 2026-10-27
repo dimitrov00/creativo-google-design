@@ -8,9 +8,10 @@ import { RetentionSystem } from '@core/systems';
  * THE ONE `purgeAt` STAMP (flip 1, F-1-7; `firestore-layout.md`): the TTL
  * root field is the one Firestore `Timestamp` a document holds, stamped by
  * the adapter beside the entity body and never part of the entity type.
- * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group;
- * the lead-time sample writer, `saveOtp` and the seed call this same
- * function, so every write stamps through here.
+ * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group
+ * (the issued OTP challenge's `Set` among them — `requestOtp`'s commit,
+ * audit-hardening Phase 3 P3-RU-6); the lead-time sample writer and the
+ * seed call this same function, so every write stamps through here.
  *
  * The group is matched by the LAST COLLECTION SEGMENT of the path
  * (`users/u1/notifications/n1` → `notifications`); any other group answers

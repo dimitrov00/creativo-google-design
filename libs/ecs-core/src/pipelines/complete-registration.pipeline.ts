@@ -2,6 +2,7 @@ import {
   type BirthDate,
   CustomerOrigin,
   ParsedIdentifier,
+  Registration,
   RegistrationField,
   type RegistrationFields,
   WriteOp,
@@ -34,7 +35,9 @@ import type {
 } from '@core/ports';
 import {
   AgeSystem,
+  AuditSystem,
   CustomerRecordSystem,
+  IdentityAuditSystem,
   ProfileEditSystem,
   RegistrationSystem,
 } from '@core/systems';
@@ -68,8 +71,14 @@ import { runWithCustomerRetry } from './customer-records.pipeline';
  * registered body as ONE `Set` (the entity minus `id`, exactly one
  * lifecycle variant — value-idempotent, so a re-run writes the same body),
  * plus the `REGISTRATION` client record when the read found none
- * (`CustomerRecordSystem.createsFor`). A record `Create` that loses its race
- * at commit re-runs the transaction once (`runWithCustomerRetry`).
+ * (`CustomerRecordSystem.createsFor`), plus — on the account's FIRST
+ * completion only (the read found it not yet `REGISTERED`) — the
+ * `IDENTITY_REGISTRATION_COMPLETED` audit row credited to the verified
+ * caller over the stored roles the transaction read, keyed by the account
+ * and naming the call's operation id (audit-hardening Phase 3, P3-DEP-7); a
+ * re-run on a registered account plans no row, so it never meets its own
+ * row's `ALREADY_EXISTS`. A record `Create` that loses its race at commit
+ * re-runs the transaction once (`runWithCustomerRetry`).
  *
  * After the commit: the Auth display name (best-effort — its failure never
  * fails a complete registration, as today) and a fresh custom token with the
@@ -238,6 +247,21 @@ export const completeRegistration =
                 // The call's own optional id (RU-29) — `null` when none was sent.
                 cmd.operationId,
               ),
+              // The first completion only: a re-run changes no state (P3-RU-7).
+              ...(Registration.isRegistered(read.stored)
+                ? []
+                : AuditSystem.createsOf(
+                    [
+                      IdentityAuditSystem.planRegistrationCompleted(
+                        uid,
+                        read.stored.roles,
+                        cmd.identifierChannel,
+                        cmd.operationId,
+                        nowUtcMs,
+                      ),
+                    ],
+                    ports.hash,
+                  )),
             ],
           });
         },

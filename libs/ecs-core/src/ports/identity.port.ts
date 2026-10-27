@@ -14,7 +14,8 @@ import type { AccountContact, Customer, Otp, User } from '@core/entities';
 
 /**
  * The identity context's server ports (blueprint §4.1 `requestOtp`,
- * `verifyOtp`, `completeRegistration`): the `otps` reads and write, the
+ * `verifyOtp`, `completeRegistration`): the `otps` read (every `otps` write
+ * is an entry of a `CommitPlan`, `tx.port.ts`), the
  * users lookup by destination, the customer record of an account (D29), the
  * Admin-Auth calls, the login-OTP sender, the OTP randomness and the
  * deployment's auth configuration. Outbound side channels (Auth, the
@@ -47,12 +48,6 @@ export type LoadOpenOtps = (
   destination: Identifier,
   sinceUtcMs: UtcEpochMs,
 ) => Promise<Result<readonly Otp[], RepositoryError>>;
-
-/**
- * `otps/{id}` `Set` — the issued or updated challenge; the adapter stamps
- * the root `purgeAt` TTL (`expiresAtUtcMs` + 24 h) beside the entity body.
- */
-export type SaveOtp = (otp: Otp) => Promise<Result<void, RepositoryError>>;
 
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
@@ -193,10 +188,15 @@ export type TenantPorts = {
   readonly loadTenant: LoadTenant;
 };
 
-/** The OTP challenges' store. */
+/**
+ * The OTP challenges' store — the open-window probe. The issued challenge
+ * is saved by `requestOtp`'s commit (a whole-body `Set` of `otps/{id}`
+ * beside its `IDENTITY_OTP_REQUESTED` audit row, audit-hardening Phase 3
+ * P3-RU-6; the transaction adapter stamps the `purgeAt` TTL), never by a
+ * port of its own.
+ */
 export type OtpStorePorts = {
   readonly loadOpenOtps: LoadOpenOtps;
-  readonly saveOtp: SaveOtp;
 };
 
 /** The login-OTP sender — never a campaign sender. */
@@ -242,7 +242,8 @@ export type AuthDeploymentPorts = {
 
 /**
  * The identity context's whole port suite — an intersection of its
- * bundles. The users stub `Create` and the registered body `Set` are
+ * bundles. The challenge's `Set` and its attempt `Update`s, the users stub
+ * `Create`, the registered body `Set` and the sign-in audit rows are
  * entries of a `CommitPlan` (`tx.port.ts`), never a port of their own; so
  * is a `FIRST_BOOKING` or `REGISTRATION` customer `Create` (F1-5, F2-7b).
  */

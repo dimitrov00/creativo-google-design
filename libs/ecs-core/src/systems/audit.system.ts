@@ -30,6 +30,7 @@ import {
   defect,
   type ImpersonationSessionId,
   type OperationId,
+  type OtpId,
   type PublishRequestId,
   type SeatId,
   type StoredFields,
@@ -319,6 +320,23 @@ export const AuditSystem = {
    */
   rowBasis,
 
+  /**
+   * The id basis of one row, typed (audit-hardening Phase 3, P3-RU-7): the
+   * verb, the resource and the target as their brands (Law 7.4 — a
+   * `CustomerId` for a client-record row, a `UserId` for an account row,
+   * `null` for an untargeted one) — exactly {@link rowBasis}'s bytes, so
+   * every stored row id stays what it was. The planners that build a row
+   * outside this file (`IdentityAuditSystem`) key it through here.
+   */
+  idBasisOf(
+    action: AuditAction,
+    resourceId: AuditResourceId,
+    targetId: CustomerId | UserId | null,
+    changeKey: string,
+  ): string {
+    return rowBasis(action, resourceId, targetId, changeKey);
+  },
+
   targets,
 
   /**
@@ -551,6 +569,36 @@ export const AuditSystem = {
      */
     ownProfileEdit(ownerUserId: UserId, editedAtUtcMs: UtcEpochMs): string {
       return `profile-edit:${ownerUserId}:${editedAtUtcMs}`;
+    },
+    /*
+     * The sign-in rows (audit-hardening Phase 3, P3-RU-7): keyed by STATE the
+     * act's own commit proves, never by the caller's transport id — these
+     * callables are unauthenticated, so a client id would neither dedupe a
+     * retry nor bound the rows a caller can mint.
+     */
+    /** A challenge saved: one per challenge (a fresh `nextId`). */
+    otpRequested(otpId: OtpId): string {
+      return `otp-requested:${otpId}`;
+    },
+    /** A challenge consumed: one per challenge (the transaction proves it was open). */
+    otpVerified(otpId: OtpId): string {
+      return `otp-verified:${otpId}`;
+    },
+    /**
+     * A wrong code recorded: the challenge and the attempt count AFTER the
+     * increment — strictly increasing, read in the same transaction, so each
+     * recorded attempt is its own row and a retried one is the same row.
+     */
+    otpRefused(otpId: OtpId, attemptCount: number): string {
+      return `otp-refused:${otpId}:${attemptCount}`;
+    },
+    /** A sign-in token answered: one per consumed challenge. */
+    sessionIssued(otpId: OtpId): string {
+      return `session:${otpId}`;
+    },
+    /** An account's first registration: one per account (a re-run plans no row). */
+    registration(userId: UserId): string {
+      return `registration:${userId}`;
     },
   },
 

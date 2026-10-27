@@ -118,6 +118,7 @@ describe('identity wire', () => {
         value: {
           otpDestinationType: OtpDestinationType.Sms,
           rawDestination: 'a@b.com',
+          operationId: null,
         },
       });
       for (const channel of [
@@ -147,8 +148,24 @@ describe('identity wire', () => {
         value: {
           otpDestinationType: OtpDestinationType.Email,
           rawDestination: ' a@b.com ',
+          operationId: null,
         },
       });
+    });
+
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21, P3-DEP-8)', () => {
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeRequestOtp(
+          request({
+            identifierChannel: IdentifierChannel.Email,
+            identifier: 'a@b.com',
+            operationId,
+          }),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
     });
 
     it('answers { challengeId, devCode } — the code only behind the emulator gate, else `null`', () => {
@@ -300,7 +317,21 @@ describe('identity wire', () => {
     it('decodes { challengeId, code } into the command', () => {
       expect(
         decodeVerifyOtp(request({ challengeId: 'otp-1', code: '042917' })),
-      ).toEqual({ ok: true, value: { otpId: 'otp-1', code: '042917' } });
+      ).toEqual({
+        ok: true,
+        value: { otpId: 'otp-1', code: '042917', operationId: null },
+      });
+    });
+
+    it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21, P3-DEP-8)', () => {
+      const idOf = (operationId: unknown) => {
+        const decoded = decodeVerifyOtp(
+          request({ challengeId: 'otp-1', code: '042917', operationId }),
+        );
+        return decoded.ok ? decoded.value.operationId : 'refused';
+      };
+      expect(idOf(OPERATION_TEXT)).toBe(OperationId.of(OPERATION_TEXT));
+      for (const sent of NOT_AN_OPERATION_ID) expect(idOf(sent)).toBeNull();
     });
 
     it('answers { sessionKind, customToken } with the SCREAMING kinds', () => {

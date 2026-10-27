@@ -80,11 +80,13 @@ function filledText(source: unknown, name: string): string | null {
 // ── requestOtpChallenge ─────────────────────────────────────────────────
 
 /**
- * `{ identifierChannel, identifier }` → the command. The channel is never
- * refused (`PHONE` → SMS, anything else → e-mail); a blank `identifier` is
- * `'missing or empty destination'` — checked on the UNTRIMMED text's trim;
- * the text itself is handed on untrimmed for the pipeline's single trim
- * (F2-10).
+ * `{ identifierChannel, identifier, operationId? }` → the command. The
+ * channel is never refused (`PHONE` → SMS, anything else → e-mail); a blank
+ * `identifier` is `'missing or empty destination'` — checked on the
+ * UNTRIMMED text's trim; the text itself is handed on untrimmed for the
+ * pipeline's single trim (F2-10). The transport `operationId` is OPTIONAL
+ * (RU-21, audit-hardening Phase 3 P3-DEP-8): absent or malformed is `null`,
+ * never refused — it reaches no audit row (P3-L-20), only the outcome line.
  */
 export function decodeRequestOtp(
   request: WireRequest,
@@ -101,6 +103,7 @@ export function decodeRequestOtp(
         ? OtpDestinationType.Sms
         : OtpDestinationType.Email,
     rawDestination: identifier,
+    operationId: operationIdOf(request.data, 'operationId'),
   });
 }
 
@@ -143,9 +146,12 @@ export function requestOtpRefusal(error: RequestOtpError): EdgeError {
 // ── verifyOtpChallenge ──────────────────────────────────────────────────
 
 /**
- * `{ challengeId, code }` → the command, the refusals in today's order: a
- * blank `challengeId`, then a `code` that is not exactly six ASCII digits
- * (untrimmed — `' 123456'` is refused), then an id that is no document id.
+ * `{ challengeId, code, operationId? }` → the command, the refusals in
+ * today's order: a blank `challengeId`, then a `code` that is not exactly
+ * six ASCII digits (untrimmed — `' 123456'` is refused), then an id that is
+ * no document id. The transport `operationId` is OPTIONAL (RU-21,
+ * P3-DEP-8): absent or malformed is `null`, never refused — only the
+ * session row names it (P3-L-20).
  */
 export function decodeVerifyOtp(
   request: WireRequest,
@@ -168,7 +174,11 @@ export function decodeVerifyOtp(
       IdentityError.invalidInput('code must be a 6-digit string'),
     );
   }
-  return Result.ok({ otpId: otpId.value, code: otpCode.value });
+  return Result.ok({
+    otpId: otpId.value,
+    code: otpCode.value,
+    operationId: operationIdOf(request.data, 'operationId'),
+  });
 }
 
 /** `{ sessionKind, customToken }` — the SCREAMING `SessionKind`. */

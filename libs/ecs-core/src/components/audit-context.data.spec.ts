@@ -7,6 +7,7 @@ import {
   BookingStatus,
   Currency,
   CustomerId,
+  IdentifierChannel,
   ImpersonationSessionId,
   LocationId,
   PriceCents,
@@ -30,9 +31,13 @@ import { ImpersonationEndReason } from './end-reason-fields.data';
 import type { GovernedAction } from './governed-action.data';
 import { GovernedCollection } from './governed-collection.data';
 import { ImpersonationScope } from './impersonation-scope.data';
+import { OtpDestinationType } from './otp-destination-type.data';
+import { OtpPurpose } from './otp-purpose.data';
+import { OtpRefusalReason } from './otp-refusal-reason.data';
 import { RegistrationField } from './registration.data';
 import { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
+import { SessionKind } from './session-kind.data';
 import { StaffEditDelta } from './staff-edit-delta.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { TipAction } from './tip-action.data';
@@ -58,7 +63,7 @@ describe('AuditAction', () => {
     );
     for (const action of AuditContext.ACTIONS) {
       expect(action).toMatch(
-        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED)_[A-Z_]+$/,
+        /^(BOOKING|LOYALTY|OPS|PROFILE|GOVERNANCE|GOVERNED|IDENTITY)_[A-Z_]+$/,
       );
     }
     // Spot-check the upper-snaked spelling of today's stored strings.
@@ -78,6 +83,16 @@ describe('AuditAction', () => {
     expect(
       AuditContext.ACTIONS.filter((action) => action.includes('REVOKE')),
     ).toEqual([]);
+    // The sign-in verbs (audit-hardening Phase 3, P3-DEP-7).
+    expect(
+      AuditContext.ACTIONS.filter((action) => action.startsWith('IDENTITY_')),
+    ).toEqual([
+      'IDENTITY_OTP_REQUESTED',
+      'IDENTITY_OTP_VERIFIED',
+      'IDENTITY_OTP_REFUSED',
+      'IDENTITY_SESSION_ISSUED',
+      'IDENTITY_REGISTRATION_COMPLETED',
+    ]);
   });
 
   it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
@@ -88,7 +103,12 @@ describe('AuditAction', () => {
       | typeof AuditAction.LoyaltyStreakDefinitionWithdrawn
       | typeof AuditAction.OpsBackfill
       | typeof AuditAction.GovernanceImpersonationStarted
-      | typeof AuditAction.GovernanceImpersonationEnded;
+      | typeof AuditAction.GovernanceImpersonationEnded
+      | typeof AuditAction.IdentityOtpRequested
+      | typeof AuditAction.IdentityOtpVerified
+      | typeof AuditAction.IdentityOtpRefused
+      | typeof AuditAction.IdentitySessionIssued
+      | typeof AuditAction.IdentityRegistrationCompleted;
     type Groups = [
       PlacementAction,
       TransitionAction,
@@ -401,6 +421,54 @@ describe('AuditContext — one flat variant per verb family, every field present
       governedCollection: 'BARBER_SCHEDULES',
       governedFields: ['dayOfWeek', 'closed'],
     });
+  });
+
+  it('the sign-in rows — tags, counts and the expiry, never a destination or a code (Phase 3 WS-B)', () => {
+    expect(
+      AuditContext.otpRequested(OtpDestinationType.Sms, OtpPurpose.Login, AT),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_REQUESTED',
+      otpDestinationType: 'SMS',
+      otpPurpose: 'LOGIN',
+      otpExpiresAtUtcMs: AT,
+    });
+    expect(
+      AuditContext.otpVerified(OtpDestinationType.Email, OtpPurpose.Signup, 2),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_VERIFIED',
+      otpDestinationType: 'EMAIL',
+      otpPurpose: 'SIGNUP',
+      otpAttemptCount: 2,
+    });
+    expect(
+      AuditContext.otpRefused(
+        OtpDestinationType.Sms,
+        OtpPurpose.Login,
+        OtpRefusalReason.LockedOut,
+        5,
+        5,
+      ),
+    ).toEqual({
+      auditAction: 'IDENTITY_OTP_REFUSED',
+      otpDestinationType: 'SMS',
+      otpPurpose: 'LOGIN',
+      otpRefusalReason: 'LOCKED_OUT',
+      otpAttemptCount: 5,
+      otpMaxAttempts: 5,
+    });
+    expect(
+      AuditContext.sessionIssued(SessionKind.New, OtpDestinationType.Sms),
+    ).toEqual({
+      auditAction: 'IDENTITY_SESSION_ISSUED',
+      sessionKind: 'NEW',
+      otpDestinationType: 'SMS',
+    });
+    expect(AuditContext.registrationCompleted(IdentifierChannel.Phone)).toEqual(
+      {
+        auditAction: 'IDENTITY_REGISTRATION_COMPLETED',
+        registrationIdentifierChannel: 'PHONE',
+      },
+    );
   });
 });
 

@@ -2130,7 +2130,11 @@ frozen.
   and recorded in §8; a regression past 10 % is a stop-and-report. Specs: `audit-context.data.spec.ts`
   regex + `Singles`, `verify-otp.pipeline.spec.ts:120`, `:136`,
   `complete-registration.pipeline.spec.ts` plan assertions, the two
-  integration specs (rows added to their assertions).
+  integration specs (rows added to their assertions); found at C_B, two
+  more `verify-otp.pipeline.spec.ts` plan pins move with the rows — "re-runs
+  tx 2 ONCE" (plans `[[Update,VERIFIED],[],[SESSION]]`, four transactions
+  where there were three) and "lands an abandoned registration"
+  (`tx.plans` 1 → 2).
 - **P3-DEP-8 (PB1, PB3) — the identity vocabulary.** `SystemSource`
   gains `IDENTITY_CALLABLE`; `decodeRequestOtp` and `decodeVerifyOtp` read
   the optional transport `operationId` (RU-21's four optional readers →
@@ -2585,7 +2589,7 @@ gates keep their reference counts.
 | Workstream                    | Packages                             | Status | Commit sha | Gate result |
 | ----------------------------- | ------------------------------------ | ------ | ---------- | ----------- |
 | WS-A — seed clock pinning     | PA1, PA2                             | GREEN  | (C_A)      | §8.A        |
-| WS-B — login / OTP audit rows | PB1, PB2, PB3                        | TODO   |            |             |
+| WS-B — login / OTP audit rows | PB1, PB2, PB3                        | GREEN  | (C_B)      | §8.B        |
 | WS-C — GDPR export            | PC1, PC2, PC4, PC3, PC5              | TODO   |            |             |
 | WS-D — GDPR erasure           | PD1, PD2a, PD3b, PD2b, PD4, PD3, PD5 | TODO   |            |             |
 | WS-E — CI pipeline            | PE1, PE2                             | TODO   |            |             |
@@ -2627,6 +2631,26 @@ gates keep their reference counts.
   name `tools/seed/calendar.mjs` (a cached `verify-tools` run would miss a
   calendar change) — PE1 adds it (it owns that file at C_E).
 - **P3-DEP-5** waits for the late real-hour run (§0.5).
+
+### 8.B C_B — WS-B login / OTP audit rows (2026-10-27)
+
+- **Built** by PB1 · PB2 · PB3 (`stage-C_B` report), no integrator edit;
+  accepted deviations: `idBasisOf` is the typed face of the already public
+  `rowBasis`; `registrationIdentifierChannel` carries an `N15-exempt` pair
+  line; two added commits annotate decide `Result<…, never>`; a
+  `requestOtp` store failure throws inside the commit and still answers the
+  coded `IDENTITY_REPOSITORY_FAILURE` at the edge. Orchestrator edit: the
+  `AuditEntryMeta` doc comment lists `impersonationSessions/{id}` and
+  `otps/{id}` among the resource spellings.
+- **Checks:** typecheck 40/40; layering; sync; lint 44 projects, 0 errors,
+  246 warnings (the baseline's); `run-many -t test` 14,060 vitest (ecs-core
+  6,677 → 6,731, functions 1,320 → 1,322) + verify-tools 178 + lint-rules
+  355, 0 failed; prettier; `saveOtp` 0; indexes 24 / 104 (43 on `auditLog`).
+- **Journeys:** runbook gates as the baseline; `test:emulator` 113 (+10:
+  `request-otp.integration.spec.ts` 5, `verify-otp` +4, `complete-registration`
+  +1) + 361; `verify:p0` (a)–(f); `e2e:web` 63/63 in 587 s against the
+  baseline's 577 s — the settle fingerprint's extra rows cost +1.7 %, inside
+  P3-DEP-7's 10 % budget.
 
 Statuses: TODO / IN-PROGRESS / GREEN / BLOCKED. On resume, continue from
 the first non-GREEN row; never redo a GREEN one. The records (the Phase

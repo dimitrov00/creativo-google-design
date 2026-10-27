@@ -36,14 +36,18 @@ import { Collections, type Customer, type User } from '@core/entities';
 import type { AuthAdminPorts, CommitPlan, UserLookupPorts } from '@core/ports';
 import {
   AuditSystem,
+  IdentityAuditSystem,
   RegistrationSystem,
   SearchFieldsSystem,
 } from '@core/systems';
 import {
+  auditRowsOf,
+  contendedCommit,
   customerOf,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TENANT_ID,
   fixedTenantPorts,
+  fixtureHash,
   type IdentityWorld,
   memoryAuthAdminPorts,
   memoryIdentityWorld,
@@ -65,7 +69,9 @@ import {
  * record are read in one `getAll`, the profile settles on THAT read, and the
  * plan is one `Set` of the flat registered body plus the `REGISTRATION`
  * record when it is absent. Every case the deleted use-case spec held, plus
- * the flip's own.
+ * the flip's own. Audit-hardening Phase 3 (P3-DEP-7): the FIRST completion's
+ * plan also carries its `IDENTITY_REGISTRATION_COMPLETED` row — the plan pins
+ * below include it on purpose; a re-run plans none.
  */
 
 const UID = UserId.of('uid_1');
@@ -158,6 +164,25 @@ const CLIENT_CLAIMS = unwrapOk(
   AuthClaims.active(FIXTURE_TENANT_ID, [Role.Client]),
 );
 
+/** The registration row a first completion plans — through the system's own planner. */
+const registrationRow = (
+  roles: readonly unknown[] = [],
+  operationId: OperationId | null = null,
+  identifierChannel: IdentifierChannel = IdentifierChannel.Phone,
+) =>
+  AuditSystem.createsOf(
+    [
+      IdentityAuditSystem.planRegistrationCompleted(
+        UID,
+        roles,
+        identifierChannel,
+        operationId,
+        FIXTURE_NOW_UTC_MS,
+      ),
+    ],
+    fixtureHash,
+  );
+
 describe('completeRegistration', () => {
   it('fills in the required profile fields and promotes claims to active — ONE Set of the flat body, the REGISTRATION record beside it', async () => {
     const world = memoryIdentityWorld({ users: [phoneStub()] });
@@ -182,6 +207,7 @@ describe('completeRegistration', () => {
       [
         WriteOp.set(USER_PATH, bodyOf(registered)),
         WriteOp.create(CUSTOMER_PATH, record),
+        ...registrationRow(),
       ],
     ]);
     expect(stored(world, USER_PATH)).toEqual({
@@ -509,7 +535,11 @@ describe('completeRegistration', () => {
       world.store.set(CUSTOMER_PATH.join('/'), firstBooking);
       const { tx, run } = rig({ world });
       await run(byPhone(ADA));
-      expect(tx.plans[0]).toHaveLength(1);
+      // The users `Set` and the first completion's row — no customers write.
+      expect(tx.plans[0]?.map((op) => op.path[0])).toEqual([
+        Collections.Users,
+        Collections.AuditLog,
+      ]);
       expect(stored(world, CUSTOMER_PATH)).toEqual(firstBooking);
     });
 
@@ -544,7 +574,7 @@ describe('completeRegistration', () => {
       expect((await run(byPhone(ADA))).ok).toBe(true);
       expect(tx.transactions).toHaveLength(2);
       expect(tx.plans).toEqual([
-        [WriteOp.set(USER_PATH, bodyOf(registeredAda()))],
+        [WriteOp.set(USER_PATH, bodyOf(registeredAda())), ...registrationRow()],
       ]);
       expect(stored(world, CUSTOMER_PATH)).toEqual(winner);
     });
@@ -670,5 +700,177 @@ describe('completeRegistration', () => {
       expect(viaEmail.ok).toBe(true);
       expect(stored(world, USER_PATH)?.['phone']).toBe('+14155552671');
     });
+  });
+});
+
+/*
+ * The registration row (audit-hardening Phase 3 WS-B, P3-DEP-7): the FIRST
+ * completion plans ONE `IDENTITY_REGISTRATION_COMPLETED` row in its own
+ * commit, credited to the verified caller over the STORED roles the
+ * transaction read (P3-RU-10), naming the call's operation id; a re-run and
+ * every refusal plan none; the row holds ids and tags only (R36 / T5).
+ */
+describe('completeRegistration — the IDENTITY_REGISTRATION_COMPLETED row', () => {
+  const OP = OperationId.of('op-register-abcdefghij');
+
+  it('the first completion plans ONE row — the caller as USER over the stub’s stored roles, the account as resource and target, the operation id', async () => {
+    const world = memoryIdentityWorld({ users: [phoneStub()] });
+    const { tx, run } = rig({ world });
+    expect((await run({ ...byPhone(ADA), operationId: OP })).ok).toBe(true);
+    expect(auditRowsOf(tx.plans)).toEqual([
+      {
+        id: expect.any(String),
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: 'users/uid_1',
+        auditOperationId: OP,
+        actorRole: 'USER',
+        actorUserId: UID,
+        auditAction: 'IDENTITY_REGISTRATION_COMPLETED',
+        registrationIdentifierChannel: IdentifierChannel.Phone,
+        auditTarget: 'USER',
+        targetUserId: UID,
+      },
+    ]);
+    expect(tx.plans[0]?.slice(2)).toEqual(registrationRow([], OP));
+    expect(
+      [...world.store.keys()].filter((key) =>
+        key.startsWith(`${Collections.AuditLog}/`),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('credits the STORED roles the transaction read — an admin granted on the stub is the ADMIN actor', async () => {
+    const world = memoryIdentityWorld({
+      users: [{ ...phoneStub(), roles: [Role.Admin] }],
+    });
+    const { tx, run } = rig({ world });
+    expect((await run(byPhone(ADA))).ok).toBe(true);
+    expect(auditRowsOf(tx.plans)).toEqual([
+      expect.objectContaining({
+        actorRole: 'ADMIN',
+        actorAdminUserId: UID,
+        auditOperationId: null,
+      }),
+    ]);
+  });
+
+  it('names the channel the login used — an e-mail registration', async () => {
+    const mailStub = RegistrationSystem.provision(
+      UID,
+      ParsedIdentifier.email(Email.of('ada@example.com')),
+    );
+    const world = memoryIdentityWorld({ users: [mailStub] });
+    const { tx, run } = rig({ world });
+    const answer = await run({
+      callerUserId: UID,
+      identifierChannel: IdentifierChannel.Email,
+      rawIdentifier: 'ada@example.com',
+      fields: fields({ ...ADA, phone: '+14155552671' }),
+      operationId: null,
+    });
+    expect(answer.ok).toBe(true);
+    expect(tx.plans[0]?.slice(-1)).toEqual(
+      registrationRow([], null, IdentifierChannel.Email),
+    );
+  });
+
+  it('a re-run on a REGISTERED account plans no row — one row in all, never its ALREADY_EXISTS', async () => {
+    const world = memoryIdentityWorld({ users: [phoneStub()] });
+    const { tx, run } = rig({ world });
+    expect((await run(byPhone(ADA))).ok).toBe(true);
+    expect((await run({ ...byPhone(ADA), operationId: OP })).ok).toBe(true);
+    expect(auditRowsOf([tx.plans[1] ?? []])).toEqual([]);
+    expect(auditRowsOf(tx.plans)).toHaveLength(1);
+  });
+
+  it('a contended transaction decides the same row id twice', async () => {
+    const world = memoryIdentityWorld({ users: [phoneStub()] });
+    let decisions: readonly (readonly WriteOp[])[] = [];
+    const { tx, run } = rig({
+      world,
+      commit: (inner) => {
+        const contended = contendedCommit(inner);
+        decisions = contended.decisions;
+        return contended.commit;
+      },
+    });
+    expect((await run(byPhone(ADA))).ok).toBe(true);
+    expect(decisions).toHaveLength(2);
+    expect(decisions[1]).toEqual(decisions[0]);
+    expect(auditRowsOf(tx.plans)).toHaveLength(1);
+  });
+
+  it('a forbidden, a not-found, a vanished account and a refused profile plan no row', async () => {
+    const cases: readonly {
+      readonly world: IdentityWorld;
+      readonly lookup?: Partial<UserLookupPorts>;
+      readonly cmd: CompleteRegistrationCommand;
+    }[] = [
+      {
+        world: memoryIdentityWorld({ users: [phoneStub()] }),
+        cmd: byPhone(ADA, UserId.of('uid_someone_else')),
+      },
+      { world: memoryIdentityWorld(), cmd: byPhone(ADA) },
+      {
+        world: memoryIdentityWorld(),
+        lookup: { findUserByDestination: async () => Result.ok(phoneStub()) },
+        cmd: byPhone(ADA),
+      },
+      {
+        world: memoryIdentityWorld({ users: [phoneStub()] }),
+        cmd: byPhone({ firstName: 'A', lastName: 'B' }),
+      },
+    ];
+    for (const entry of cases) {
+      const { tx, run } = rig({ world: entry.world, lookup: entry.lookup });
+      expect((await run(entry.cmd)).ok).toBe(false);
+      expect(auditRowsOf(tx.plans)).toEqual([]);
+      expect(
+        [...entry.world.store.keys()].filter((key) =>
+          key.startsWith(`${Collections.AuditLog}/`),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it('the row holds no name, contact value or birth date (R36 / T5)', async () => {
+    const SENTINEL_PHONE = E164.of('+359880000777');
+    const sentinels = [
+      'Sentinelfirst',
+      'Sentinellast',
+      '+359880000777',
+      'sentinel@example.invalid',
+      '1990-07-03',
+    ];
+    const world = memoryIdentityWorld({
+      users: [
+        RegistrationSystem.provision(
+          UID,
+          ParsedIdentifier.phone(SENTINEL_PHONE),
+        ),
+      ],
+    });
+    const { tx, run } = rig({ world });
+    const answer = await run({
+      callerUserId: UID,
+      identifierChannel: IdentifierChannel.Phone,
+      rawIdentifier: SENTINEL_PHONE,
+      fields: fields({
+        firstName: 'Sentinelfirst',
+        lastName: 'Sentinellast',
+        email: 'sentinel@example.invalid',
+        birthDate: '1990-07-03',
+      }),
+      operationId: OP,
+    });
+    expect(answer.ok).toBe(true);
+    // The account itself DOES hold them — the scan is not vacuous.
+    expect(JSON.stringify(stored(world, USER_PATH))).toContain('Sentinelfirst');
+    const rows = auditRowsOf(tx.plans);
+    expect(rows).toHaveLength(1);
+    for (const row of rows) {
+      const json = JSON.stringify(row);
+      for (const sentinel of sentinels) expect(json).not.toContain(sentinel);
+    }
   });
 });

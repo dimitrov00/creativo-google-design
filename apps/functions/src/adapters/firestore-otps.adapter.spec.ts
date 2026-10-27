@@ -1,4 +1,4 @@
-import { type Firestore, Timestamp } from 'firebase-admin/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
 import { Identifier } from '@core/components';
 import { OtpId, UtcEpochMs } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
@@ -31,18 +31,13 @@ const asDb = (fake: { readonly db: unknown }) =>
   fake.db as unknown as Firestore;
 
 describe('firestoreOtpPorts', () => {
-  it('saves an OTP — the flat body, plus purgeAt = expiresAtUtcMs + 24 h', async () => {
-    const fake = createProjectionFirestore();
-    const ports = firestoreOtpPorts(asDb(fake));
-    const otp = otpFixture({ destination: DESTINATION });
-    expect(await ports.saveOtp(otp)).toEqual({ ok: true, value: undefined });
-    expect(fake.docs.get('otps/otp-1')).toEqual({
-      ...bodyOf(otp),
-      purgeAt: Timestamp.fromMillis(otp.expiresAtUtcMs + 86_400_000),
-    });
-    // dead: the read-back through `loadOtp` and «returns null for a missing
-    // OTP» — Phase 4a 4A-14: `loadOtp` had no caller; the member is gone.
-  });
+  // dead: «saves an OTP — the flat body, plus purgeAt = expiresAtUtcMs +
+  // 24 h» — audit-hardening Phase 3 P3-DEP-6: the store's save member is
+  // gone; the issued challenge is a `Set` of `requestOtp`'s commit, its
+  // `purgeAt` stamped by the transaction adapter (pinned in
+  // `firestore-ports.spec.ts` and the emulator's
+  // `request-otp.integration.spec.ts`). (Earlier, Phase 4a 4A-14: the
+  // read-back through `loadOtp` had no caller; the member is gone.)
 
   it('finds a recent unconsumed OTP for rate limiting — by destination, unconsumed, created at or after the window start', async () => {
     const fake = seeded(
@@ -84,28 +79,18 @@ describe('firestoreOtpPorts', () => {
     expect(result).toEqual({ ok: true, value: [] });
   });
 
-  it('answers a read or a write that throws as a RepositoryError value', async () => {
+  it('answers a read that throws as a RepositoryError value', async () => {
     const throwing = {
       collection: () => {
         throw new Error('down');
       },
-      doc: () => ({
-        get: async () => {
-          throw new Error('down');
-        },
-        set: async () => {
-          throw new Error('down');
-        },
-      }),
     } as unknown as Firestore;
     const ports = firestoreOtpPorts(throwing);
     const probe = await ports.loadOpenOtps(DESTINATION, minus(60_000));
     expect(!probe.ok && probe.error.errorCode).toBe(
       RepositoryErrorCode.ReadFailed,
     );
-    const saved = await ports.saveOtp(otpFixture());
-    expect(!saved.ok && saved.error.errorCode).toBe(
-      RepositoryErrorCode.WriteFailed,
-    );
+    // dead: the save half (a write that throws → `WRITE_FAILED`) —
+    // P3-DEP-6; the commit's own failure is `firestore-tx.adapter.spec.ts`'s.
   });
 });

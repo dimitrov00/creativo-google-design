@@ -1590,6 +1590,21 @@ describe('main.ts — the composition root', () => {
       expect(await loadTenant()).toEqual({ ok: true, value: 'creativo' });
     });
 
+    it('hands requestOtp and verifyOtp the commit and the hash their audit rows ride on (Phase 3 P3-DEP-6, P3-DEP-7)', async () => {
+      await run('requestOtpChallenge', caseOf('requestOtpChallenge').input);
+      await run('verifyOtpChallenge', caseOf('verifyOtpChallenge').input);
+      for (const pipeline of ['requestOtp', 'verifyOtp']) {
+        const ports = seam.calls.find((call) => call.pipeline === pipeline)
+          ?.ports as Record<string, unknown>;
+        expect(ports, pipeline).toHaveProperty('commit', seam.commit);
+      }
+      // The hash is the server bundle's own member: `firestorePorts` spreads
+      // the primitives it is handed (`firestore-ports.spec.ts`), and here
+      // the bundle is the seam's — so the proof is what the root hands it.
+      const primitives = seam.built[0]?.[1] as Record<string, unknown>;
+      expect(typeof primitives['hash']).toBe('function');
+    });
+
     it('answers devCode only under the emulator — `null` everywhere else', async () => {
       const own = caseOf('requestOtpChallenge');
       seam.answers.set(own.pipeline, own.answer);

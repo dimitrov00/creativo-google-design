@@ -77,6 +77,7 @@ import {
 } from './onboarding-flow.data';
 import { OtpDestinationType } from './otp-destination-type.data';
 import { OtpPurpose } from './otp-purpose.data';
+import { OtpRefusalReason } from './otp-refusal-reason.data';
 import type { ParsedIdentifier } from './parsed-identifier.data';
 import { type Principal, PrincipalKind } from './principal.data';
 import { ProfileCompletionKey } from './profile-completion-key.data';
@@ -121,6 +122,11 @@ type BackfillContext = AuditContext.Backfill;
 type GovernedContext = AuditContext.Governed;
 type ImpersonationStartedContext = AuditContext.ImpersonationStarted;
 type ImpersonationEndedContext = AuditContext.ImpersonationEnded;
+type OtpRequestedContext = AuditContext.OtpRequested;
+type OtpVerifiedContext = AuditContext.OtpVerified;
+type OtpRefusedContext = AuditContext.OtpRefused;
+type SessionIssuedContext = AuditContext.SessionIssued;
+type RegistrationCompletedContext = AuditContext.RegistrationCompleted;
 type DoneAuthFlow = AuthFlowState.Done;
 type OAuthEntry = AuthProvider.OAuth;
 type IdentifierRefusal = IdentityError.IdentifierInvalid;
@@ -157,6 +163,7 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof OnboardingFlowEventKind, OnboardingFlowEventKind>>, // onboarding-flow-event.data.ts
   Expect<Holds<typeof OtpDestinationType, OtpDestinationType>>, // otp-destination-type.data.ts
   Expect<Holds<typeof OtpPurpose, OtpPurpose>>, // otp-purpose.data.ts
+  Expect<Holds<typeof OtpRefusalReason, OtpRefusalReason>>, // otp-refusal-reason.data.ts
   Expect<Holds<typeof PhoneErrorCode, PhoneErrorCode>>, // phone.error.ts
   Expect<Holds<typeof PhoneInvalidReason, PhoneInvalidReason>>, // phone.error.ts
   Expect<Holds<typeof PrincipalKind, PrincipalKind>>, // principal.data.ts
@@ -233,6 +240,23 @@ export type IdentityDictionaryFields = [
   >, // onboarding-flow-event.data.ts
   Expect<Equals<Otp['otpDestinationType'], OtpDestinationType>>, // otp.entity.ts
   Expect<Equals<Otp['otpPurpose'], OtpPurpose>>, // otp.entity.ts
+  Expect<Equals<OtpRequestedContext['otpDestinationType'], OtpDestinationType>>, // audit-context.data.ts
+  Expect<Equals<OtpRequestedContext['otpPurpose'], OtpPurpose>>, // audit-context.data.ts
+  Expect<Equals<OtpVerifiedContext['otpDestinationType'], OtpDestinationType>>, // audit-context.data.ts
+  Expect<Equals<OtpVerifiedContext['otpPurpose'], OtpPurpose>>, // audit-context.data.ts
+  Expect<Equals<OtpRefusedContext['otpDestinationType'], OtpDestinationType>>, // audit-context.data.ts
+  Expect<Equals<OtpRefusedContext['otpPurpose'], OtpPurpose>>, // audit-context.data.ts
+  Expect<Equals<OtpRefusedContext['otpRefusalReason'], OtpRefusalReason>>, // audit-context.data.ts
+  Expect<Equals<SessionIssuedContext['sessionKind'], SessionKind>>, // audit-context.data.ts
+  Expect<
+    Equals<SessionIssuedContext['otpDestinationType'], OtpDestinationType>
+  >, // audit-context.data.ts
+  Expect<
+    Equals<
+      RegistrationCompletedContext['registrationIdentifierChannel'],
+      IdentifierChannel
+    >
+  >, // N15-exempt: a slice-prefixed reference — the registration row's channel (Law 6.2)
   Expect<Equals<Principal['principalKind'], PrincipalKind>>, // principal.data.ts
   Expect<Equals<User['registrationState'], RegistrationState>>, // user.entity.ts
   Expect<Equals<User['accountStatus'], AccountStatus>>, // user.entity.ts
@@ -273,6 +297,7 @@ export type IdentityScreamingChecks = [
   Expect<Screaming<OnboardingFlowEventKind>>,
   Expect<Screaming<OtpDestinationType>>,
   Expect<Screaming<OtpPurpose>>,
+  Expect<Screaming<OtpRefusalReason>>,
   Expect<Screaming<PhoneErrorCode>>,
   Expect<Screaming<PrincipalKind>>,
   Expect<Screaming<RegistrationState>>,

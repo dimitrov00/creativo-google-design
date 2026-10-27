@@ -3,6 +3,7 @@ import type { StreakRuleParameter } from './streak-rule-parameter.data';
 import type { StreakTransition } from './streak-transition.data';
 import type { BackfillJobName } from './backfill-job-name.data';
 import {
+  type IdentifierChannel,
   type ImpersonationSessionId,
   type LocalDate,
   type LocationId,
@@ -20,9 +21,13 @@ import type { ImpersonationEndReason } from './end-reason-fields.data';
 import type { GovernedAction } from './governed-action.data';
 import type { GovernedCollection } from './governed-collection.data';
 import type { ImpersonationScope } from './impersonation-scope.data';
+import type { OtpDestinationType } from './otp-destination-type.data';
+import type { OtpPurpose } from './otp-purpose.data';
+import type { OtpRefusalReason } from './otp-refusal-reason.data';
 import type { ProfileAction } from './profile-action.data';
 import type { Role } from './role.data';
 import type { RescheduleDelta } from './reschedule-delta.data';
+import type { SessionKind } from './session-kind.data';
 import type { StaffEditAction } from './staff-edit-action.data';
 import type { StaffEditDelta } from './staff-edit-delta.data';
 import type { TipAction } from './tip-action.data';
@@ -42,7 +47,8 @@ import type { TransitionDelta } from './transition-delta.data';
  * `_` (flatten-spec §3.7); the stored bytes were the dotted strings until
  * the governance flip, which the legacy shims converted. A new audited act
  * is a deliberate code change here — the impersonation and governed-document
- * verbs were added by audit-hardening WS-3 (DEP-17).
+ * verbs were added by audit-hardening WS-3 (DEP-17), the sign-in verbs
+ * (`IDENTITY_*`) by audit-hardening Phase 3 (P3-DEP-7).
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',
@@ -88,6 +94,16 @@ export const AuditAction = {
   GovernedDocCreated: 'GOVERNED_DOC_CREATED',
   GovernedDocUpdated: 'GOVERNED_DOC_UPDATED',
   GovernedDocDeleted: 'GOVERNED_DOC_DELETED',
+  /** A one-time-code challenge saved (`requestOtpChallenge`, Phase 3 WS-B). */
+  IdentityOtpRequested: 'IDENTITY_OTP_REQUESTED',
+  /** A challenge consumed by the right code. */
+  IdentityOtpVerified: 'IDENTITY_OTP_VERIFIED',
+  /** A wrong code recorded against a challenge (`otpRefusalReason` says whether it locked it). */
+  IdentityOtpRefused: 'IDENTITY_OTP_REFUSED',
+  /** A sign-in token answered to the caller who proved the destination (`verifyOtpChallenge`). */
+  IdentitySessionIssued: 'IDENTITY_SESSION_ISSUED',
+  /** An account's first registration completed (`completeRegistration`). */
+  IdentityRegistrationCompleted: 'IDENTITY_REGISTRATION_COMPLETED',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -133,7 +149,12 @@ export type AuditContext =
   | AuditContext.Profile
   | AuditContext.ImpersonationStarted
   | AuditContext.ImpersonationEnded
-  | AuditContext.Governed;
+  | AuditContext.Governed
+  | AuditContext.OtpRequested
+  | AuditContext.OtpVerified
+  | AuditContext.OtpRefused
+  | AuditContext.SessionIssued
+  | AuditContext.RegistrationCompleted;
 
 /** A copy of a nullable id list — `null` stays `null`. */
 function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
@@ -355,6 +376,72 @@ export const AuditContext = {
       governedFields: [...governedFields],
     };
   },
+  /**
+   * A challenge saved (Phase 3 WS-B): its channel, purpose and expiry —
+   * never the destination, the code, its hash or its salt (R36 / T5).
+   */
+  otpRequested(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpExpiresAtUtcMs: UtcEpochMs,
+  ): AuditContext.OtpRequested {
+    return {
+      auditAction: AuditAction.IdentityOtpRequested,
+      otpDestinationType,
+      otpPurpose,
+      otpExpiresAtUtcMs,
+    };
+  },
+  /** A challenge consumed: its channel, purpose and the wrong codes before the right one. */
+  otpVerified(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpAttemptCount: number,
+  ): AuditContext.OtpVerified {
+    return {
+      auditAction: AuditAction.IdentityOtpVerified,
+      otpDestinationType,
+      otpPurpose,
+      otpAttemptCount,
+    };
+  },
+  /** A wrong code recorded: why, and the attempt count after it against the limit. */
+  otpRefused(
+    otpDestinationType: OtpDestinationType,
+    otpPurpose: OtpPurpose,
+    otpRefusalReason: OtpRefusalReason,
+    otpAttemptCount: number,
+    otpMaxAttempts: number,
+  ): AuditContext.OtpRefused {
+    return {
+      auditAction: AuditAction.IdentityOtpRefused,
+      otpDestinationType,
+      otpPurpose,
+      otpRefusalReason,
+      otpAttemptCount,
+      otpMaxAttempts,
+    };
+  },
+  /** A sign-in token answered: whether the person was new, and over which channel. */
+  sessionIssued(
+    sessionKind: SessionKind,
+    otpDestinationType: OtpDestinationType,
+  ): AuditContext.SessionIssued {
+    return {
+      auditAction: AuditAction.IdentitySessionIssued,
+      sessionKind,
+      otpDestinationType,
+    };
+  },
+  /** An account's first registration completed, and the channel it signed in with. */
+  registrationCompleted(
+    registrationIdentifierChannel: IdentifierChannel,
+  ): AuditContext.RegistrationCompleted {
+    return {
+      auditAction: AuditAction.IdentityRegistrationCompleted,
+      registrationIdentifierChannel,
+    };
+  },
 
   /** The edge guard for a stored or submitted verb. */
   isAuditAction(value: unknown): value is AuditAction {
@@ -495,5 +582,52 @@ export namespace AuditContext {
     readonly governedCollection: GovernedCollection;
     /** Changed top-level field NAMES, ascending, deduplicated — never a value (R36). */
     readonly governedFields: readonly string[];
+  };
+  /*
+   * The sign-in rows (audit-hardening Phase 3 WS-B, P3-DEP-7): tags, counts
+   * and the expiry only — never the destination (a phone or an e-mail), the
+   * code, its hash or salt, a name or any free text (R36 / T5). A field
+   * several of these variants share (`otpDestinationType`, `otpPurpose`,
+   * `otpAttemptCount`) is legal: the union is discriminated by
+   * `auditAction` alone, and each field is disjoint from the actor, target
+   * and meta slices (`identity-entities.type-spec.ts`).
+   */
+  /** A challenge saved — the resource is `otps/<id>`, the target none (no account resolved yet). */
+  export type OtpRequested = {
+    readonly auditAction: typeof AuditAction.IdentityOtpRequested;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpExpiresAtUtcMs: UtcEpochMs;
+  };
+  /** A challenge consumed; `otpAttemptCount` is the wrong codes recorded before this success. */
+  export type OtpVerified = {
+    readonly auditAction: typeof AuditAction.IdentityOtpVerified;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpAttemptCount: number;
+  };
+  /**
+   * A wrong code recorded against a challenge; `otpAttemptCount` is the
+   * count AFTER this attempt, `otpMaxAttempts` the challenge's limit
+   * (`LOCKED_OUT` when the first reaches the second).
+   */
+  export type OtpRefused = {
+    readonly auditAction: typeof AuditAction.IdentityOtpRefused;
+    readonly otpDestinationType: OtpDestinationType;
+    readonly otpPurpose: OtpPurpose;
+    readonly otpRefusalReason: OtpRefusalReason;
+    readonly otpAttemptCount: number;
+    readonly otpMaxAttempts: number;
+  };
+  /** A sign-in token answered — on the account's own timeline (`users/<uid>`). */
+  export type SessionIssued = {
+    readonly auditAction: typeof AuditAction.IdentitySessionIssued;
+    readonly sessionKind: SessionKind;
+    readonly otpDestinationType: OtpDestinationType;
+  };
+  /** An account's first registration completed, credited to the verified caller. */
+  export type RegistrationCompleted = {
+    readonly auditAction: typeof AuditAction.IdentityRegistrationCompleted;
+    readonly registrationIdentifierChannel: IdentifierChannel;
   };
 }

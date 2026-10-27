@@ -1086,7 +1086,7 @@ describe('memoryIdentityWorld — the one state the identity doubles share', () 
   const PHONE = ParsedIdentifier.phone(E164.of('+359888123456'));
   const EMAIL = ParsedIdentifier.email(Email.of('maria@example.com'));
 
-  it('loads open challenges by destination, unconsumed and recent, oldest first; saves a Set', async () => {
+  it('loads open challenges by destination, unconsumed and recent, oldest first — and sees a challenge a commit saved', async () => {
     const recent = otpFixture({ id: OtpId.of('otp-2') });
     const older = otpFixture({
       id: OtpId.of('otp-1'),
@@ -1117,14 +1117,28 @@ describe('memoryIdentityWorld — the one state the identity doubles share', () 
       consumedAtUtcMs: recent.createdAtUtcMs,
     });
 
-    const saved = otpFixture({ id: OtpId.of('otp-9'), attemptCount: 1 });
-    expect(await ports.saveOtp(saved)).toEqual({ ok: true, value: undefined });
-    // The SAME table a transaction reads — the body, no id.
-    expect(world.store.get(`otps/${saved.id}`)).toMatchObject({
-      attemptCount: 1,
-      destination: saved.destination,
+    // `requestOtp` saves a challenge as a commit-plan `Set` (audit-hardening
+    // Phase 3, P3-DEP-6 — the store port has no save of its own): the SAME
+    // table the probe and every transaction read — the body, no id.
+    const saved = otpFixture({
+      id: OtpId.of('otp-9'),
+      createdAtUtcMs: utcMs('2026-09-28T05:59:45Z'),
     });
-    expect(world.store.get(`otps/${saved.id}`)).not.toHaveProperty('id');
+    const { id: savedId, ...savedBody } = saved;
+    expect(
+      applyWrites(world.store, [
+        WriteOp.set([Collections.Otps, savedId], savedBody),
+      ]).ok,
+    ).toBe(true);
+    expect(world.store.get(`otps/${savedId}`)).not.toHaveProperty('id');
+    expect(
+      unwrapOk(
+        await ports.loadOpenOtps(
+          recent.destination,
+          utcMs('2026-09-28T05:59:00Z'),
+        ),
+      ),
+    ).toEqual([older, saved, recent]);
   });
 
   it('finds the account by the destination’s own field, a stub included — and sees a stub a transaction created', async () => {

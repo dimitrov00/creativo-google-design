@@ -4,6 +4,7 @@ import {
   type Identifier,
   type OtpDestinationType,
   type OtpPurpose,
+  OtpRefusalReason,
   ParsedIdentifier,
 } from '@core/components';
 import {
@@ -214,6 +215,24 @@ export const OtpSystem = {
           ? OtpSystem.recordAttempt(otp)
           : null,
     };
+  },
+
+  /**
+   * Why an attempt's refusal is worth an audit row (audit-hardening Phase 3,
+   * P3-RU-8): `null` unless it RECORDED a wrong code (a refusal with a
+   * write — the only refusal that changes the challenge); `LOCKED_OUT` when
+   * the recorded attempt reaches the challenge's `maxAttempts` (the next
+   * attempt, even with the right code, is refused), `WRONG_CODE` otherwise.
+   * A success, and every refusal that writes nothing (expired, consumed,
+   * already locked), answer `null`.
+   */
+  refusalReasonOf<O extends OtpCounters>(
+    attempt: OtpAttempt<O>,
+  ): OtpRefusalReason | null {
+    if (attempt.result.ok || attempt.write === null) return null;
+    return attempt.write.attemptCount >= attempt.write.maxAttempts
+      ? OtpRefusalReason.LockedOut
+      : OtpRefusalReason.WrongCode;
   },
 
   /**

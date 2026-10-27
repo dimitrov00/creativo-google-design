@@ -4,7 +4,14 @@ import {
   SessionKind,
   WriteOp,
 } from '@core/components';
-import { LogEvent, type OtpId, Result, type UserId } from '@core/primitives';
+import {
+  LogEvent,
+  type OperationId,
+  type OtpId,
+  Result,
+  type UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
 import {
   IdentityError,
   PipelineError,
@@ -17,11 +24,19 @@ import type {
   AuthUserLookupPorts,
   ClockPorts,
   CommitPorts,
+  Hash,
+  HashPorts,
   OtpCryptoPorts,
   TelemetryPorts,
   UserLookupPorts,
 } from '@core/ports';
-import { type OtpAttempt, OtpSystem, RegistrationSystem } from '@core/systems';
+import {
+  AuditSystem,
+  IdentityAuditSystem,
+  type OtpAttempt,
+  OtpSystem,
+  RegistrationSystem,
+} from '@core/systems';
 import { parseContactPhone } from './booking-read-set.pipeline';
 import { runWithCreateRetry } from './customer-records.pipeline';
 
@@ -40,6 +55,13 @@ import { runWithCreateRetry } from './customer-records.pipeline';
  *   increment COMMITS and the refusal is answered after (a `Result.err`
  *   from decide would write nothing and silently disable the lock-out).
  *   Root-key `Update`s only: the expiry (and so `purgeAt`) never moves.
+ *   Each state change carries its audit row in the same plan
+ *   (audit-hardening Phase 3, P3-DEP-7): the consumption
+ *   `IDENTITY_OTP_VERIFIED`, a recorded wrong code `IDENTITY_OTP_REFUSED`
+ *   (`WRONG_CODE`, or `LOCKED_OUT` when it exhausts the challenge —
+ *   `OtpSystem.refusalReasonOf`), keyed by the challenge and its attempt
+ *   count, no operation id (P3-L-20); a refusal that changes nothing
+ *   (expired, consumed, locked, not found) plans no row (P3-L-2).
  * - **Outside.** The stored destination re-parsed on its channel
  *   (`IDENTITY_OTP_DESTINATION_CORRUPTED` when it no longer parses, F2-10),
  *   then the account holding it (`findUserByDestination`). Found: a
@@ -62,10 +84,18 @@ import { runWithCreateRetry } from './customer-records.pipeline';
  * token), plain `client` for a registered account with none, onboarding
  * before that (`RegistrationSystem.claimsFor`) — and the tenant from the
  * challenge.
+ *
+ * - **The session row** (P3-RU-12, P3-L-3). After a successful mint and
+ *   BEFORE the answer, one more commit with no reads creates
+ *   `IDENTITY_SESSION_ISSUED` on the account's timeline, keyed by the
+ *   consumed challenge and naming the call's operation id: the row exists
+ *   iff the token was answered. A failed mint plans no row; a failed row
+ *   commit answers the store failure and the token is never answered.
  */
 
 export type VerifyOtpPorts = CommitPorts &
   ClockPorts &
+  HashPorts &
   OtpCryptoPorts &
   UserLookupPorts &
   AuthUserLookupPorts &
@@ -75,6 +105,13 @@ export type VerifyOtpPorts = CommitPorts &
 export type VerifyOtpCommand = {
   readonly otpId: OtpId;
   readonly code: OtpCode;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused. Only the session
+   * row names it (the caller has proved the destination by then); the
+   * pre-session rows never do (P3-L-20).
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type VerifyOtpAnswer = {
@@ -115,6 +152,31 @@ function attemptWrites(otpId: OtpId, attempt: OtpAttempt): readonly WriteOp[] {
     : [WriteOp.update(path, { attemptCount: attempt.write.attemptCount })];
 }
 
+/**
+ * The audit row an attempt's state change carries (P3-DEP-7): the
+ * consumed challenge's `IDENTITY_OTP_VERIFIED`, a recorded wrong code's
+ * `IDENTITY_OTP_REFUSED` with `OtpSystem.refusalReasonOf`'s reason, and no
+ * row for an attempt that changed nothing.
+ */
+function attemptRows(
+  attempt: OtpAttempt,
+  nowUtcMs: UtcEpochMs,
+  hash: Hash,
+): readonly WriteOp[] {
+  if (attempt.result.ok) {
+    return AuditSystem.createsOf(
+      [IdentityAuditSystem.planOtpVerified(attempt.result.value)],
+      hash,
+    );
+  }
+  const reason = OtpSystem.refusalReasonOf(attempt);
+  if (reason === null || attempt.write === null) return [];
+  return AuditSystem.createsOf(
+    [IdentityAuditSystem.planOtpRefused(attempt.write, reason, nowUtcMs)],
+    hash,
+  );
+}
+
 export const verifyOtp =
   (ports: VerifyOtpPorts) =>
   async (
@@ -147,7 +209,10 @@ export const verifyOtp =
         const attempt = OtpSystem.attempt(read.otp, read.codeMatches, nowUtcMs);
         return Result.ok({
           verdict: attempt.result,
-          writes: attemptWrites(read.otp.id, attempt),
+          writes: [
+            ...attemptWrites(read.otp.id, attempt),
+            ...attemptRows(attempt, nowUtcMs, ports.hash),
+          ],
         });
       },
     );
@@ -224,6 +289,27 @@ export const verifyOtp =
       ),
     );
     if (!token.ok) return token;
+
+    // ── the session row: after the mint, before the answer (P3-RU-12) ───
+    const issued = await ports.commit(
+      async () => null,
+      (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
+        Result.ok({
+          writes: AuditSystem.createsOf(
+            [
+              IdentityAuditSystem.planSessionIssued(
+                otp,
+                user.id,
+                sessionKind,
+                cmd.operationId,
+                nowUtcMs,
+              ),
+            ],
+            ports.hash,
+          ),
+        }),
+    );
+    if (!issued.ok) return issued;
     return Result.ok({ customToken: token.value, sessionKind });
   };
 

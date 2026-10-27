@@ -35,6 +35,7 @@ export * from './governed-change.system';
 export * from './grid-layout.system';
 export * from './guest-guard.system';
 export * from './guest-label.system';
+export * from './identity-audit.system';
 export * from './impersonation.system';
 export * from './interval-set.system';
 export * from './lead-time.system';

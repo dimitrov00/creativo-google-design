@@ -35,7 +35,9 @@ import {
   ClientOperationId,
   CustomerId,
   ImpersonationSessionId,
+  LocationId,
   OperationId,
+  OtpId,
   PublishRequestId,
   SeatId,
   ServiceId,
@@ -513,6 +515,93 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.tip(a, SeatId.of('s1'))).not.toBe(keys.tip(a, SeatId.of('s2')));
     // The arrival pair keeps its two verb words: an undo is its own act.
     expect(keys.arrived(a)).not.toBe(keys.unarrived(a));
+  });
+
+  it('keys the sign-in rows by state, never by the caller’s operation id (Phase 3 WS-B, P3-RU-7)', () => {
+    const keys = AuditSystem.changeKey;
+    const otp = OtpId.of('otp-1');
+    expect(keys.otpRequested(otp)).toBe('otp-requested:otp-1');
+    expect(keys.otpVerified(otp)).toBe('otp-verified:otp-1');
+    expect(keys.otpRefused(otp, 1)).toBe('otp-refused:otp-1:1');
+    expect(keys.otpRefused(otp, 2)).toBe('otp-refused:otp-1:2');
+    expect(keys.sessionIssued(otp)).toBe('session:otp-1');
+    expect(keys.registration(UserId.of('u-1'))).toBe('registration:u-1');
+    // Each recorded attempt is its own change; the verbs of one challenge stay apart.
+    expect(keys.otpRefused(otp, 1)).not.toBe(keys.otpRefused(otp, 2));
+    expect(
+      new Set([
+        keys.otpRequested(otp),
+        keys.otpVerified(otp),
+        keys.otpRefused(otp, 1),
+        keys.sessionIssued(otp),
+      ]).size,
+    ).toBe(4);
+  });
+
+  it('idBasisOf is rowBasis’s exact bytes over the brands — a stored row id stays what it was (Phase 3)', () => {
+    // A booking act's stored row: verb, the bare appointment id, the client record, its key.
+    const booking = AuditSystem.idBasisOf(
+      AuditAction.BookingCommitted,
+      APPT_1,
+      cus('maria'),
+      AuditSystem.changeKey.attempt(AppointmentId.of('appt-1')),
+    );
+    expect(booking).toBe(
+      AuditSystem.rowBasis(
+        'BOOKING_COMMITTED',
+        'appt-1',
+        cus('maria'),
+        'attempt:appt-1',
+      ),
+    );
+    expect(booking).toBe(
+      JSON.stringify([
+        'audit-row/v2',
+        'BOOKING_COMMITTED',
+        'appt-1',
+        cus('maria'),
+        'attempt:appt-1',
+      ]),
+    );
+    // The id a planner already writes is the id idBasisOf derives — byte for byte.
+    const planned = unwrapOk(
+      AuditSystem.plan(
+        [
+          fact({
+            context: AuditContext.placement(
+              AuditAction.BookingCommitted,
+              LocationId.of('loc-1'),
+            ),
+            changeKey: AuditSystem.changeKey.attempt(
+              AppointmentId.of('appt-1'),
+            ),
+          }),
+        ],
+        ivan,
+        AT,
+      ),
+    );
+    expect(planned.map((plan) => hashOf(plan.idBasis))).toEqual([
+      hashOf(booking),
+    ]);
+    // An account row and an untargeted row.
+    const profile = AuditSystem.planOwnProfileEdit(
+      UserId.of('maria'),
+      [AuditedProfileField.FirstName],
+      AT,
+      OP,
+    );
+    expect(profile?.idBasis).toBe(
+      AuditSystem.idBasisOf(
+        AuditAction.ProfileUpdated,
+        AuditResourceId.forUser(UserId.of('maria')),
+        UserId.of('maria'),
+        AuditSystem.changeKey.ownProfileEdit(UserId.of('maria'), AT),
+      ),
+    );
+    expect(
+      AuditSystem.idBasisOf(AuditAction.OpsBackfill, APPT_1, null, 'k'),
+    ).toBe(AuditSystem.rowBasis('OPS_BACKFILL', 'appt-1', null, 'k'));
   });
 });
 

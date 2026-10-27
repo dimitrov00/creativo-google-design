@@ -148,6 +148,7 @@ export * from './opening-hours.data';
 export * from './otp-code.data';
 export * from './otp-destination-type.data';
 export * from './otp-purpose.data';
+export * from './otp-refusal-reason.data';
 export * from './page-key.data';
 export * from './page-step.data';
 export * from './page.data';
