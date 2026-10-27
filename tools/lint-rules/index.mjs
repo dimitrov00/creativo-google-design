@@ -16,6 +16,7 @@ import { errorDictionaryHome } from './error-dictionary-home.mjs';
 import { noSlicedPorts } from './no-sliced-ports.mjs';
 import { presenterPurity } from './presenter-purity.mjs';
 import { noUndecoratedClass } from './no-undecorated-class.mjs';
+import { noLiteralLogMessage } from './no-literal-log-message.mjs';
 
 export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
@@ -56,6 +57,7 @@ const plugin = {
     'error-dictionary-home': errorDictionaryHome,
     'presenter-purity': presenterPurity,
     'no-undecorated-class': noUndecoratedClass,
+    'no-literal-log-message': noLiteralLogMessage,
   },
 };
 

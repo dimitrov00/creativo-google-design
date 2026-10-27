@@ -1,6 +1,7 @@
 import {
   ClientOperationId,
   LocalDate,
+  LogEvent,
   PublishRequestId,
   Result,
   ServiceCategoryId,
@@ -90,7 +91,7 @@ export function publishStreakRefusal(
   ports: LogPorts,
 ): Result<StreakPublishAnswer, EdgeError> {
   if (isStoreFailure(failure)) {
-    ports.log('error', 'rhythm rule write failed', {
+    ports.log('error', LogEvent.RhythmRuleWriteFailed, {
       error: failure.reason ?? `${failure.errorCode} ${failure.path}`,
     });
     return Result.err(StreakPublishError.storeFailed());
@@ -116,16 +117,28 @@ function settleStreakAnswer<A>(
  * ({@link decodeStreakPublish} — the caller, then the envelope), the act's
  * pipeline run over the callable's ports, its answer or refusal on the
  * wire. `main.ts` hands it the streak ports (built on first use, so a
- * request refused at the door builds none) and the telemetry.
+ * request refused at the door builds none), the telemetry and — for the
+ * outcome line's `inputDigest` (WS-4.2) — what to do with the decoded
+ * command (`noteDecoded`, nothing by default).
  */
 export async function answerStreakPublish(
   request: WireRequest,
   ports: () => PublishStreakDefinitionPorts,
   telemetry: LogPorts,
+  noteDecoded: (
+    command: PublishStreakDefinitionCommand | WithdrawStreakDefinitionCommand,
+  ) => void = () => undefined,
 ): Promise<Result<StreakPublishAnswer, EdgeError>> {
   const asked = decodeStreakPublish(request);
   if (!asked.ok) return publishStreakRefusal(asked.error, telemetry);
   const ask = asked.value;
+  // The decoded command, for the outcome line's input digest (WS-4.2) —
+  // the edge's trace, handed in by the composition root.
+  noteDecoded(
+    ask.streakPublishOp === StreakPublishOp.Withdraw
+      ? ask.withdraw
+      : ask.publish,
+  );
   return ask.streakPublishOp === StreakPublishOp.Withdraw
     ? settleStreakAnswer(
         await withdrawStreakDefinition(ports())(ask.withdraw),

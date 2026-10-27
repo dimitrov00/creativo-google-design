@@ -38,7 +38,9 @@ import {
   type EndMinute,
   GiftVoucherId,
   GrantStatus,
+  LogEvent,
   type MinuteOfDay,
+  OperationId,
   Result,
   SeatId,
   UserId,
@@ -46,6 +48,7 @@ import {
 import {
   BookingErrorCode,
   RepositoryError,
+  RepositoryErrorCode,
   SchedulingErrorCode,
 } from '@core/errors';
 import {
@@ -65,6 +68,8 @@ import {
 } from '@core/systems';
 import {
   appointmentFixture,
+  auditRowsOf,
+  contendedCommit,
   at,
   barberBusyDayFixture,
   barberScheduleFixture,
@@ -163,44 +168,87 @@ function rig(
     })),
   ]);
   const tx = memoryTxPorts(store);
+  // The rows the committed plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
   const telemetry = recordingTelemetry();
   let policyReads = 0;
-  const run = transitionAppointment({
+  const contended = contendedCommit(tx.commit);
+  const pipeline = transitionAppointment({
     ...tx,
+    commit: contended.commit,
     ...telemetry,
     loadPolicy: async () => {
       policyReads++;
       return options.policy ?? Result.ok(BookingPolicy.DEFAULT);
     },
-    appendAudit: async (written) => {
-      rows.push(...written);
-    },
   });
-  return { store, tx, rows, telemetry, run, policyReads: () => policyReads };
+  const run: typeof pipeline = async (cmd) => {
+    const answer = await pipeline(cmd);
+    rows.splice(0, rows.length, ...auditRowsOf(tx.plans));
+    return answer;
+  };
+  return {
+    store,
+    tx,
+    rows,
+    telemetry,
+    run,
+    policyReads: () => policyReads,
+    decisions: contended.decisions,
+  };
 }
 
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 
+/**
+ * A staff transition as the edge decodes it. Its operation id (WS-4.1 —
+ * required on the call) names the verb by default, so two different acts in
+ * one spec never share a name; `extra.operationId` names a retry.
+ */
 function command(
   to: BookingStatus,
-  extra: { seatId?: SeatId | null; reason?: CancellationReason | null } = {},
+  extra: {
+    seatId?: SeatId | null;
+    reason?: CancellationReason | null;
+    operationId?: OperationId;
+  } = {},
 ) {
   return {
     appointmentId: FIXTURE_IDS.appointment,
     to,
     seatId: extra.seatId ?? null,
     reason: extra.reason ?? null,
+    operationId: extra.operationId ?? opOf(to),
     actor: STAFF,
   };
 }
 
+/** The default operation id {@link command} names a verb's act with. */
+function opOf(to: BookingStatus): OperationId {
+  return OperationId.of(`transition-op-${to.toLowerCase()}`);
+}
+
+/** The row id a staff act on the fixture visit files for its client (`transition:<op>[:<seat>]`). */
+function rowId(
+  action: AuditAction,
+  operationId: OperationId,
+  seatId: SeatId | null = null,
+): string {
+  return fixtureHash(
+    AuditSystem.rowBasis(
+      action,
+      FIXTURE_IDS.appointment,
+      FIXTURE_IDS.customer,
+      AuditSystem.changeKey.transition(operationId, seatId),
+    ),
+  );
+}
+
 describe('transitionAppointment — the shop’s lifecycle pen', () => {
   it('confirms a pending booking: one transition, the pending stamp deleted, audited as the staff verb', async () => {
+    const pendingAt = utcMs('2026-09-27T09:00:00.000+03:00');
     const pending = appointmentFixture({
-      lifecycle: BookingLifecycle.pending(
-        utcMs('2026-09-27T09:00:00.000+03:00'),
-      ),
+      lifecycle: BookingLifecycle.pending(pendingAt),
     });
     const { tx, rows, run } = rig([pending]);
     const answer = await run(command(BookingStatus.Confirmed));
@@ -219,24 +267,148 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
             ...BookingLifecycle.confirm(FIXTURE_NOW_UTC_MS),
             seats: pending.seats,
             arrivedAtUtcMs: null,
+            // The act that wrote the visit (WS-4.3, DEP-19).
+            writeOperationId: opOf(BookingStatus.Confirmed),
           },
           ['pendingAtUtcMs'],
+        ),
+        // The act's row, LAST in the SAME plan (WS-1).
+        WriteOp.create(
+          [
+            Collections.AuditLog,
+            rowId(
+              AuditAction.BookingStaffConfirmed,
+              opOf(BookingStatus.Confirmed),
+            ),
+          ],
+          {
+            recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+            resourceId: pending.id,
+            auditOperationId: opOf(BookingStatus.Confirmed),
+            ...STAFF,
+            auditAction: AuditAction.BookingStaffConfirmed,
+            transitionReason: null,
+            transitionSeatId: null,
+            // The state the act left — and the stamp it deleted (WS-2).
+            transitionFromBookingStatus: BookingStatus.Pending,
+            transitionFromStatusAtUtcMs: pendingAt,
+            transitionFromAttendanceState: null,
+            auditTarget: 'CUSTOMER',
+            targetCustomerId: FIXTURE_IDS.customer,
+          },
         ),
       ],
     ]);
     expect(rows.map((row) => row.auditAction)).toEqual([
       AuditAction.BookingStaffConfirmed,
     ]);
-    expect(rows[0]?.id).toBe(
+  });
+
+  it('keys the row `transition:<operationId>` for the party — never an instant (WS-1, DEP-6)', async () => {
+    const pending = appointmentFixture({
+      lifecycle: BookingLifecycle.pending(
+        utcMs('2026-09-27T09:00:00.000+03:00'),
+      ),
+    });
+    const { rows, run } = rig([pending]);
+    expect((await run(command(BookingStatus.Confirmed))).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingStaffConfirmed,
           pending.id,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.transition(null, FIXTURE_NOW_UTC_MS),
+          `transition:${opOf(BookingStatus.Confirmed)}`,
         ),
       ),
+    ]);
+  });
+
+  it('the same transition twice: the second is the graph’s refusal, commits nothing and plans ZERO audit ops (RU-4)', async () => {
+    const { tx, rows, run } = rig([appointmentFixture()]);
+    expect((await run(command(BookingStatus.Completed))).ok).toBe(true);
+    const again = await run(command(BookingStatus.Completed));
+    expect(!again.ok && again.error.errorCode).toBe(
+      SchedulingErrorCode.AppointmentInvalidTransition,
     );
+    expect(tx.plans).toHaveLength(1);
+    expect(rows.map((row) => row.id)).toEqual([
+      rowId(AuditAction.BookingStaffCompleted, opOf(BookingStatus.Completed)),
+    ]);
+  });
+
+  it('the same seat act twice: the second is the seat’s refusal, plans ZERO audit ops', async () => {
+    const { tx, rows, run } = rig([party()]);
+    const cmd = command(BookingStatus.NoShow, { seatId: FIXTURE_IDS.seat });
+    expect((await run(cmd)).ok).toBe(true);
+    expect((await run(cmd)).ok).toBe(false);
+    expect(tx.plans).toHaveLength(1);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('stamps the stored visit with the act’s operation id — party or seat; a refused retry leaves it (WS-4.3, DEP-19)', async () => {
+    const { store, run } = rig([party()]);
+    const seatAct = command(BookingStatus.NoShow, {
+      seatId: FIXTURE_IDS.seat,
+    });
+    expect((await run(seatAct)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(seatAct.operationId);
+    const partyAct = command(BookingStatus.Completed);
+    expect((await run(partyAct)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(partyAct.operationId);
+    const retry = await run(
+      command(BookingStatus.Completed, {
+        operationId: OperationId.of('transition-op-retry'),
+      }),
+    );
+    expect(retry.ok).toBe(false);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(partyAct.operationId);
+  });
+
+  it('commits the move without a row when no verified actor is known, and logs it loudly', async () => {
+    const { store, tx, rows, telemetry, run } = rig([appointmentFixture()]);
+    const answer = await run({
+      ...command(BookingStatus.Completed),
+      actor: null,
+    });
+    expect(answer.ok).toBe(true);
+    expect(store.get(PATH)?.['bookingStatus']).toBe('COMPLETED');
+    expect(tx.plans[0]?.map((op) => op.path[0])).toEqual([
+      Collections.Appointments,
+    ]);
+    expect(rows).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: LogEvent.AuditActorMissing,
+        fields: {
+          action: AuditAction.BookingStaffCompleted,
+          resourceId: FIXTURE_IDS.appointment,
+        },
+      },
+    ]);
+  });
+
+  it('a Create of a row already there refuses the WHOLE move as REPOSITORY_ALREADY_EXISTS — nothing applied', async () => {
+    const { store, tx, run } = rig([appointmentFixture()]);
+    const id = rowId(
+      AuditAction.BookingStaffCompleted,
+      opOf(BookingStatus.Completed),
+    );
+    store.set(`${Collections.AuditLog}/${id}`, { seeded: true });
+    const answer = await run(command(BookingStatus.Completed));
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      RepositoryErrorCode.AlreadyExists,
+    );
+    expect(store.get(PATH)?.['bookingStatus']).toBe('CONFIRMED');
+    expect(tx.plans).toEqual([]);
+  });
+
+  it('a contention re-run of the decision derives the identical plan — row ids included', async () => {
+    const { decisions, run } = rig([party()]);
+    await run(command(BookingStatus.Completed));
+    expect(decisions).toHaveLength(2);
+    expect(decisions[1]).toEqual(decisions[0]);
   });
 
   it('completes the party: every open seat worked; the read set is the visit and its shop', async () => {
@@ -280,18 +452,13 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
       targetCustomerId: FIXTURE_IDS.customer,
     });
     expect(rows[0]?.id).toBe(
-      fixtureHash(
-        AuditSystem.rowBasis(
-          AuditAction.BookingStaffNoShow,
-          FIXTURE_IDS.appointment,
-          FIXTURE_IDS.customer,
-          AuditSystem.changeKey.transition(
-            FIXTURE_IDS.seat,
-            FIXTURE_NOW_UTC_MS,
-          ),
-        ),
+      rowId(
+        AuditAction.BookingStaffNoShow,
+        opOf(BookingStatus.NoShow),
+        FIXTURE_IDS.seat,
       ),
     );
+    expect(rows[0]?.auditOperationId).toBe(opOf(BookingStatus.NoShow));
   });
 
   it.each([
@@ -407,7 +574,9 @@ describe('transitionAppointment — the shop’s lifecycle pen', () => {
         reason: CancellationReason.Unspecified,
       }),
     );
-    expect(tx.plans[0]).toHaveLength(2);
+    // The visit, the voucher's restore and — last — the act's row (WS-1).
+    expect(tx.plans[0]).toHaveLength(3);
+    expect(tx.plans[0]?.[2]?.path[0]).toBe(Collections.AuditLog);
     expect(
       store.get(`${Collections.GiftVouchers}/${VOUCHER}`)?.['balanceCents'],
     ).toBe(1000);
@@ -732,7 +901,7 @@ describe('transitionAppointment — what the client holds goes back only when th
     'a %s gives back the reward AND the voucher draw, in the same plan — the reward’s line dropped from the bill',
     async (to, reason) => {
       const spent = spentGrant();
-      const { store, tx, run } = rig(
+      const { store, tx, rows, run } = rig(
         [
           appointmentFixture({
             discounts: [GRANT_LINE, MANUAL_LINE],
@@ -750,10 +919,12 @@ describe('transitionAppointment — what the client holds goes back only when th
         [Collections.CouponGrants, GRANT],
       ]);
       const plan = tx.plans[0] ?? [];
+      expect(rows).toHaveLength(1);
       expect(plan.map((op) => op.path.join('/'))).toEqual([
         PATH,
         VOUCHER_PATH,
         GRANT_PATH,
+        `${Collections.AuditLog}/${rows[0]?.id}`,
       ]);
       expect(plan[2]).toEqual(
         CouponGrantSystem.transitionWrite(
@@ -778,7 +949,7 @@ describe('transitionAppointment — what the client holds goes back only when th
   );
 
   it('a completed visit keeps the reward USED and the draw spent — nothing it holds is read or written', async () => {
-    const { store, tx, run } = rig(
+    const { store, tx, rows, run } = rig(
       [
         appointmentFixture({
           discounts: [GRANT_LINE],
@@ -792,14 +963,18 @@ describe('transitionAppointment — what the client holds goes back only when th
       [Collections.Appointments, FIXTURE_IDS.appointment],
       [Collections.Locations, FIXTURE_IDS.location],
     ]);
-    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([PATH]);
+    expect(rows).toHaveLength(1);
+    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([
+      PATH,
+      `${Collections.AuditLog}/${rows[0]?.id}`,
+    ]);
     expect(store.get(PATH)?.['discounts']).toEqual([GRANT_LINE]);
     expect(store.get(GRANT_PATH)?.['grantStatus']).toBe(GrantStatus.Used);
     expect(store.get(VOUCHER_PATH)?.['balanceCents']).toBe(0);
   });
 
   it('one seat’s no-show while the party still happens gives nothing back', async () => {
-    const { store, tx, run } = rig(
+    const { store, tx, rows, run } = rig(
       [party({ discounts: [GRANT_LINE], voucherRedemptions: [DRAW] })],
       { vouchers: [drawnVoucher()], grants: [spentGrant()] },
     );
@@ -808,7 +983,11 @@ describe('transitionAppointment — what the client holds goes back only when th
     );
     expect(answer.ok).toBe(true);
     expect(store.get(PATH)?.['bookingStatus']).toBe('CONFIRMED');
-    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([PATH]);
+    expect(rows).toHaveLength(1);
+    expect(tx.plans[0]?.map((op) => op.path.join('/'))).toEqual([
+      PATH,
+      `${Collections.AuditLog}/${rows[0]?.id}`,
+    ]);
     expect(store.get(PATH)?.['discounts']).toEqual([GRANT_LINE]);
     expect(store.get(GRANT_PATH)?.['grantStatus']).toBe(GrantStatus.Used);
   });
@@ -902,8 +1081,8 @@ const LEFT_VISITS: readonly (readonly [BookingStatus, Appointment])[] = [
   [BookingStatus.Completed, COMPLETED_VISIT],
 ];
 
-/** The reopen's own writes, as the system decides them on the pinned now — the plan's head. */
-function reopenWrites(left: Appointment): readonly WriteOp[] {
+/** The reopen's step, as the system decides it on the pinned now. */
+function reopenStep(left: Appointment) {
   const step = AppointmentLifecycleSystem.transition(
     left,
     {
@@ -911,11 +1090,27 @@ function reopenWrites(left: Appointment): readonly WriteOp[] {
       seatId: null,
       reason: null,
       windowHours: null,
+      operationId: opOf(BookingStatus.Confirmed),
     },
     FIXTURE_NOW,
   );
   if (!step.ok) throw new Error('a broken reopen fixture');
-  return step.value.writes;
+  return step.value;
+}
+
+/** The reopen's own writes — the plan's head. */
+function reopenWrites(left: Appointment): readonly WriteOp[] {
+  return reopenStep(left).writes;
+}
+
+/** The reopen's audit Creates — the plan's tail (WS-1), as the audit planner builds them. */
+function reopenAudit(left: Appointment): readonly WriteOp[] {
+  return AuditSystem.commitWrites(
+    reopenStep(left).auditFacts,
+    STAFF,
+    FIXTURE_NOW_UTC_MS,
+    fixtureHash,
+  ).writes;
 }
 
 function busyBlock(from: MinuteOfDay, to: EndMinute): MinuteBlock {
@@ -941,8 +1136,10 @@ describe('transitionAppointment — a reopen holds its chair in barberBusy at on
             [Collections.BarberBusy, BUSY_KEY],
             busyDayBody([busyBlock(at(10), until(10, 30))]),
           ),
+          ...reopenAudit(left),
         ],
       ]);
+      expect(reopenAudit(left)).toHaveLength(1);
       // The busy day and its exceptions are read in the transaction, absent ones too.
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Appointments, FIXTURE_IDS.appointment],
@@ -969,9 +1166,11 @@ describe('transitionAppointment — a reopen holds its chair in barberBusy at on
       busyBlock(at(10), until(11)),
       busyBlock(at(12), until(12, 30)),
     ]);
-    expect(tx.plans[0]?.at(-1)).toEqual(
+    // The busy day, then the act's row last (WS-1).
+    expect(tx.plans[0]?.at(-2)).toEqual(
       WriteOp.set([Collections.BarberBusy, BUSY_KEY], merged),
     );
+    expect(tx.plans[0]?.at(-1)?.path[0]).toBe(Collections.AuditLog);
     expect(store.get(BUSY_PATH)).toEqual(merged);
   });
 
@@ -979,7 +1178,7 @@ describe('transitionAppointment — a reopen holds its chair in barberBusy at on
     const { tx, run } = rig([NO_SHOW_VISIT], { location: null });
     expect((await run(command(BookingStatus.Confirmed))).ok).toBe(true);
     expect(tx.plans.map((plan) => plan.map((op) => op.path[0]))).toEqual([
-      [Collections.Appointments],
+      [Collections.Appointments, Collections.AuditLog],
     ]);
   });
 
@@ -997,6 +1196,7 @@ describe('transitionAppointment — a reopen holds its chair in barberBusy at on
     for (const { tx } of [pending, ended]) {
       expect(tx.plans.flat().map((op) => op.path[0])).toEqual([
         Collections.Appointments,
+        Collections.AuditLog,
       ]);
       expect(tx.transactions[0]?.reads).toEqual([
         [Collections.Appointments, FIXTURE_IDS.appointment],
@@ -1049,7 +1249,8 @@ const WALK_IN: BookAppointmentCommand = {
       },
     },
   ],
-  attemptId: null,
+  attemptId: AppointmentId.of('walk-in-attempt-0123456789'),
+  operationId: OperationId.of('walk-in-attempt-0123456789'),
   bookedFromAppointmentId: null,
   contact: null,
   ownerUserId: null,
@@ -1085,12 +1286,10 @@ function windowRig() {
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
   const policy = async () => Result.ok(BookingPolicy.DEFAULT);
-  const appendAudit = async () => undefined;
   const transition = transitionAppointment({
     ...tx,
     ...telemetry,
     loadPolicy: policy,
-    appendAudit,
   });
   const rebuild = rebuildBusy({
     ...tx,
@@ -1106,7 +1305,6 @@ function windowRig() {
     ...telemetry,
     loadPolicy: policy,
     loadAccountContacts: async () => Result.ok(new Map()),
-    appendAudit,
   });
   /** The visit as stored now — the side the trigger is handed. */
   const visit = (): Appointment =>

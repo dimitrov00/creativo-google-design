@@ -1,6 +1,7 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
 import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
+import { StoredFields } from './stored-fields.data';
 
 /*
  * The id family (Law 7.4, flatten-spec §1.5) — every entity id, key and
@@ -263,6 +264,23 @@ export const ClientOperationId = {
   is(raw: unknown): raw is ClientOperationId {
     return typeof raw === 'string' && CLIENT_OPERATION_ID.test(raw);
   },
+  /**
+   * The client-minted id `payload[field]` carries, else `null` — never an
+   * unvalidated string (WS-4.1): `payload` a record, `field` its OWN
+   * property (an inherited `operationId` is no id the caller sent), its
+   * value of the key's shape. How the edge reads an operation id from a
+   * callable payload, and how the web's callable client asks whether the
+   * input already names one. No allocation.
+   */
+  inPayload(payload: unknown, field: string): ClientOperationId | null {
+    if (!StoredFields.isRecord(payload) || !Object.hasOwn(payload, field)) {
+      return null;
+    }
+    const raw = payload[field];
+    return typeof raw === 'string' && CLIENT_OPERATION_ID.test(raw)
+      ? (raw as ClientOperationId)
+      : null;
+  },
 } as const;
 
 /**
@@ -513,10 +531,17 @@ export const TriggerEventId = idCompanion('TriggerEventId');
 /** `Collections.StreakDefinitions` — restated so a primitive imports no registry (spec-checked). */
 const STREAK_DEFINITIONS = 'streakDefinitions';
 
+/** `Collections.ImpersonationSessions` — restated likewise (spec-checked). */
+const IMPERSONATION_SESSIONS = 'impersonationSessions';
+
 /**
  * The resource an audit row names — the one id whose text may hold ONE `/`
- * (`users/{uid}`, `streakDefinitions/{id}`), so it has its own companion
- * instead of the plain one: the three spellings today's writers use.
+ * (`users/{uid}`, `streakDefinitions/{id}`, `impersonationSessions/{id}`),
+ * so it has its own companion instead of the plain one: one `for*` door per
+ * spelling a writer derives from a brand. A governed document's
+ * `<path>/<docId>` (audit-hardening WS-3, RU-40) arrives as foreign text
+ * from the trigger's path and becomes a brand through `parse` alone, at the
+ * wire edge (Law 7.4) — there is no door taking a raw collection or id.
  */
 export type AuditResourceId = Brand<string, 'AuditResourceId'>;
 export const AuditResourceId = {
@@ -545,6 +570,10 @@ export const AuditResourceId = {
   /** A streak-definition row names `streakDefinitions/{id}`. */
   forStreakDefinition(id: StreakDefinitionId): AuditResourceId {
     return `${STREAK_DEFINITIONS}/${id}` as AuditResourceId;
+  },
+  /** An impersonation row names `impersonationSessions/{id}` (audit-hardening WS-3). */
+  forImpersonationSession(id: ImpersonationSessionId): AuditResourceId {
+    return `${IMPERSONATION_SESSIONS}/${id}` as AuditResourceId;
   },
 } as const;
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { type ClientIssue, ClientIssueKind, Role } from '@core/components';
+import { ClientOperationId } from '@core/primitives';
 import { ClientIssueSystem } from '@core/systems';
-import { deepFreeze, recordingTelemetry } from '@core/testing';
+import { deepFreeze, recordingTelemetry, unwrapOk } from '@core/testing';
 import {
   type ReportClientIssuesCommand,
   reportClientIssues,
@@ -27,6 +28,9 @@ const issue = (
   scrubbedMessage: null,
   release: '2026.10.26+1322b78',
   occurrences: 1,
+  operationId: null,
+  callableName: null,
+  callableErrorCode: null,
   ...fields,
 });
 
@@ -110,6 +114,42 @@ describe('reportClientIssues', () => {
       "TypeError: Cannot read properties of null (reading 'seats')\n    at StaffDay.render (https://creativo.app/main-5XKQ3RZB.js:1:23456)",
     );
     expect(telemetry.lines[0]?.fields).not.toHaveProperty('@type');
+  });
+
+  // WS-5 (DEP-22): a call that never answered as a callable reaches Cloud
+  // Logging through this sink — at `warn`, its callable, code and operation
+  // id at the line's root (the server-side join to that call's outcome
+  // line, RU-39), and still no uid.
+  it('writes a transport failure at warn, its callable, code and operation id at the root', async () => {
+    const { telemetry, run } = rig();
+    const transport = ClientIssueSystem.composeTransport({
+      callableName: 'commitBooking',
+      errorName: 'TypeError',
+      callableErrorCode: 'functions/internal',
+      operationId: unwrapOk(
+        ClientOperationId.parse('attempt-0123456789abcdef'),
+      ),
+      release: null,
+    });
+    expect(await run(command([transport]))).toEqual({ loggedCount: 1 });
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: 'client issue CALLABLE_TRANSPORT_FAILED',
+        fields: expect.objectContaining({
+          clientIssueKind: 'CALLABLE_TRANSPORT_FAILED',
+          operationId: 'attempt-0123456789abcdef',
+          callableName: 'commitBooking',
+          callableErrorCode: 'functions/internal',
+          reporterRoles: ['barber'],
+          reporterAuthed: true,
+        }),
+      },
+    ]);
+    const fields = telemetry.lines[0]?.fields ?? {};
+    expect(Object.keys(fields).some((key) => /uid|userId/i.test(key))).toBe(
+      false,
+    );
   });
 
   it('writes nothing for an empty batch', async () => {

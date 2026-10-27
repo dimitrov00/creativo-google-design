@@ -115,7 +115,7 @@ import { CatalogContentService } from '@creativo/features/shared/catalog';
  * `StaffDayStore.claimFor`), so a re-send is recognised by what the wire
  * carried.
  */
-function intentOf(request: BookingCall.StaffEdit): string {
+function intentOf(request: BookingCall.StaffEditIntent): string {
   return StaffIntentSystem.intentBasis(
     request.appointmentId,
     request.commands,
@@ -448,7 +448,7 @@ export class StaffDayStore {
   /** The one typed callable client — every write of the day goes through it. */
   private readonly gateway = inject(GATEWAY_PORTS);
   private readonly clock = inject(CLOCK_PORTS);
-  /** Mints each staff intent's `operationId` — see `staffEdit`. */
+  /** Mints each act's `operationId` (WS-4.1) — see `staffEdit` and `mintFor`. */
   private readonly ids = inject(ID_PORTS);
   private readonly catalog = inject(CatalogContentService);
   private readonly shopZones = inject(ShopZoneService);
@@ -2005,6 +2005,8 @@ export class StaffDayStore {
   async markArrived(appointmentId: AppointmentId): Promise<boolean> {
     const id = appointmentId;
     if (this._pending().has(id)) return false;
+    const operationId = this.mintFor(id);
+    if (operationId === null) return false;
 
     this._pending.update((set) => new Set(set).add(id));
     this._errors.update((map) => {
@@ -2016,6 +2018,7 @@ export class StaffDayStore {
     try {
       const result = await this.gateway.callableClient(Callables.MarkArrived)({
         appointmentId: id,
+        operationId,
       });
       if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
@@ -2035,6 +2038,8 @@ export class StaffDayStore {
   async clearArrival(appointmentId: AppointmentId): Promise<boolean> {
     const id = appointmentId;
     if (this._pending().has(id)) return false;
+    const operationId = this.mintFor(id);
+    if (operationId === null) return false;
 
     this._pending.update((set) => new Set(set).add(id));
     this._errors.update((map) => {
@@ -2046,6 +2051,7 @@ export class StaffDayStore {
     try {
       const result = await this.gateway.callableClient(Callables.ClearArrival)({
         appointmentId: id,
+        operationId,
       });
       if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
@@ -2081,11 +2087,12 @@ export class StaffDayStore {
    * landed in between (see `unsettledOperations`). The server remembers the
    * names it applied, so a
    * save whose answer was lost in transit and is tapped again lands ONCE,
-   * with one audit row, instead of twice. A caller that names its own
-   * intent keeps its name.
+   * with one audit row, instead of twice. The caller hands the INTENT
+   * only (`BookingCall.StaffEditIntent`): the name is this store's to mint
+   * and to keep (required on the wire since WS-4.1).
    *
    * ### Every send states the revision it was made on (round 5)
-   * `expectedVersion` is required by the call (`BookingCall.StaffEdit`): the
+   * `expectedVersion` is required by the call (`BookingCall.StaffEditIntent`): the
    * revision of the copy the sheet's draft was drawn from. A colleague's save
    * since is refused by the server as `BOOKING_STAFF_EDIT_STALE`, and the sheet then
    * reloads the visit and says so, instead of overwriting it with an older
@@ -2095,7 +2102,7 @@ export class StaffDayStore {
    * never refused by the save before them. A re-send under the same name is
    * still answered from the server's ledger ahead of the stale check.
    */
-  async staffEdit(intent: BookingCall.StaffEdit): Promise<boolean> {
+  async staffEdit(intent: BookingCall.StaffEditIntent): Promise<boolean> {
     const id = intent.appointmentId;
 
     /*
@@ -2131,7 +2138,7 @@ export class StaffDayStore {
       return next;
     });
 
-    const request: BookingCall.StaffEdit = {
+    const request: BookingCall.StaffEditIntent = {
       ...intent,
       expectedVersion: this.claimFor(id, intent.expectedVersion),
     };
@@ -2185,7 +2192,7 @@ export class StaffDayStore {
    */
   private readonly queuedEdits = new Map<
     AppointmentId,
-    BookingCall.StaffEdit
+    BookingCall.StaffEditIntent
   >();
 
   /**
@@ -2285,10 +2292,9 @@ export class StaffDayStore {
    * `null` for a freshly minted one the wire cannot carry.
    */
   private operationIdFor(
-    request: BookingCall.StaffEdit,
+    request: BookingCall.StaffEditIntent,
     intent: string,
   ): ClientOperationId | null {
-    if (request.operationId !== null) return request.operationId;
     const kept = StaffIntentSystem.operationIdFor(
       this.unsettledOperations.get(request.appointmentId) ?? [],
       intent,
@@ -2328,18 +2334,22 @@ export class StaffDayStore {
    * No pending guard and no coalescing: a tip is entered once, by hand, on a
    * visit that is already over. There is no stream of positions to collapse
    * and nothing racing it, so the request goes straight out and the error,
-   * if any, lands on the row like every other write's.
+   * if any, lands on the row like every other write's. Each call is its own
+   * act under a fresh name (`mintFor`).
    */
-  async recordTip(request: BookingCall.Tip): Promise<boolean> {
-    const id = request.appointmentId;
+  async recordTip(intent: BookingCall.TipIntent): Promise<boolean> {
+    const id = intent.appointmentId;
+    const operationId = this.mintFor(id);
+    if (operationId === null) return false;
     this._errors.update((map) => {
       const next = new Map(map);
       next.delete(id);
       return next;
     });
-    const result = await this.gateway.callableClient(Callables.RecordSeatTip)(
-      request,
-    );
+    const result = await this.gateway.callableClient(Callables.RecordSeatTip)({
+      ...intent,
+      operationId,
+    });
     if (!result.ok) {
       this._errors.update((map) => new Map(map).set(id, result.error));
       return false;
@@ -2376,9 +2386,11 @@ export class StaffDayStore {
   }
 
   /** `true` on success — the caller closes whatever asked for the reason. */
-  async transition(request: BookingCall.Transition): Promise<boolean> {
-    const id = request.appointmentId;
+  async transition(intent: BookingCall.TransitionIntent): Promise<boolean> {
+    const id = intent.appointmentId;
     if (this._pending().has(id)) return false;
+    const operationId = this.mintFor(id);
+    if (operationId === null) return false;
 
     this._pending.update((set) => new Set(set).add(id));
     this._errors.update((map) => {
@@ -2390,7 +2402,7 @@ export class StaffDayStore {
     try {
       const result = await this.gateway.callableClient(
         Callables.TransitionAppointment,
-      )(request);
+      )({ ...intent, operationId });
       if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
@@ -2403,5 +2415,25 @@ export class StaffDayStore {
         return next;
       });
     }
+  }
+
+  /**
+   * A fresh name for ONE act on the visit (WS-4.1) — an arrival, its
+   * undo, a transition, a tip: each call is a new act, so a second tap
+   * mints a new name (no unsettled-name memory for these verbs, unlike
+   * `staffEdit`'s). A minted name the wire cannot carry is refused here as
+   * the server refuses a malformed call — on the row, before anything goes
+   * out (`createBooking`'s discipline) — and answers `null`.
+   */
+  private mintFor(appointmentId: AppointmentId): ClientOperationId | null {
+    const minted = ClientOperationId.parse(this.ids.nextId());
+    if (minted.ok) return minted.value;
+    this._errors.update((map) =>
+      new Map(map).set(
+        appointmentId,
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      ),
+    );
+    return null;
   }
 }

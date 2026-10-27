@@ -9,5 +9,6 @@ export * from './lib/visit-list-words';
 export * from './lib/streak-period-words';
 export * from './lib/daypart-words';
 export * from './lib/word-pipeline-error';
+export * from './lib/operation-reference.words';
 export * from './lib/word-flow-failure';
 export * from './lib/loaded-language';

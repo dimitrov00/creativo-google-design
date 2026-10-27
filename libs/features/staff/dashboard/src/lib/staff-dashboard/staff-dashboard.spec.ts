@@ -520,6 +520,10 @@ type GatewayHandlers = {
 type CatalogueCopy = {
   readonly errors: { readonly BOOKING_TRANSITION_NOT_ALLOWED: string };
   readonly staff: { readonly day: { readonly cancelNoteFailed: string } };
+  readonly operation: {
+    readonly reference: string;
+    readonly referenceCopied: string;
+  };
   readonly appointments: {
     readonly status: {
       readonly completed: string;
@@ -729,8 +733,9 @@ describe('StaffDashboard', () => {
         provideRouter([]),
         { provide: CLOCK_PORTS, useValue: memoryClockPorts(utcMs(nowIso)) },
         {
-          // Names each staff intent; counted, so a spec can tell a reused
-          // name from a fresh one without comparing random strings.
+          // Names each act — every staff intent, arrival, transition and
+          // tip (WS-4.1); counted, so a spec can tell a reused name from a
+          // fresh one without comparing random strings.
           provide: ID_PORTS,
           useValue: {
             nextId: () => `operation-${String(++minted).padStart(12, '0')}`,
@@ -4168,17 +4173,19 @@ describe('StaffDashboard', () => {
       BookingCall.editMove(DAY, unwrapOk(MinuteOfDay.of(minuteOfDay)), null);
     const MOVE = moveTo(11 * 60);
 
-    /** One staff intent on `appointment-1` — a claim of nothing unless said. */
+    /**
+     * One staff intent on `appointment-1` — a claim of nothing unless said.
+     * The INTENT only (WS-4.1): its name is the store's to mint.
+     */
     function intent(
       command: BookingCall.EditCommand,
-      extra: Partial<BookingCall.StaffEdit> = {},
-    ): BookingCall.StaffEdit {
+      extra: Partial<BookingCall.StaffEditIntent> = {},
+    ): BookingCall.StaffEditIntent {
       return {
         appointmentId: AppointmentId.of('appointment-1'),
         commands: [command],
         acknowledgedOverlap: false,
         expectedVersion: null,
-        operationId: null,
         ...extra,
       };
     }
@@ -4202,13 +4209,15 @@ describe('StaffDashboard', () => {
     }
 
     function store(): {
-      staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+      staffEdit: (request: BookingCall.StaffEditIntent) => Promise<boolean>;
       errorFor: (id: string) => PipelineError | null;
     } {
       return (
         fixture.componentInstance as unknown as {
           store: {
-            staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+            staffEdit: (
+              request: BookingCall.StaffEditIntent,
+            ) => Promise<boolean>;
             errorFor: (id: string) => PipelineError | null;
           };
         }
@@ -4248,18 +4257,17 @@ describe('StaffDashboard', () => {
       expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
     });
 
-    it('keeps a name the caller chose', async () => {
+    // WS-4.1: the caller hands the intent only — the name is required on
+    // the wire and is the store's own, so no caller can send an unnamed
+    // intent or pick a name of its own (was: "keeps a name the caller chose").
+    it('names an intent the caller hands without one — the name is the store’s own', async () => {
       const sent = sends(['ok']);
+      const handed = intent(MOVE);
 
-      await store().staffEdit(
-        intent(MOVE, {
-          operationId: unwrapOk(
-            ClientOperationId.parse('operation-chosen-by-caller'),
-          ),
-        }),
-      );
+      await store().staffEdit(handed);
 
-      expect(sent[0]?.operationId).toBe('operation-chosen-by-caller');
+      expect(handed).not.toHaveProperty('operationId');
+      expect(sent[0]?.operationId).toMatch(/^operation-\d{12}$/);
     });
 
     it('refuses an intent whose freshly minted name the call cannot carry — nothing goes out', async () => {
@@ -4553,6 +4561,107 @@ describe('StaffDashboard', () => {
     expect(toast()?.querySelectorAll('button').length).toBe(1);
     expect(component.undo()).toBeNull();
     expect(component.visitSheetRow()?.appointmentId).toBe(row.appointmentId);
+  });
+
+  /*
+   * THE REFERENCE UNDER A REFUSAL (audit-hardening WS-4.5): a refused call
+   * that carries its operation id prints it under the toast's sentence, in
+   * the catalogue's words, and copies it on a tap; a refusal without one
+   * prints no line — and the sentence itself is pinned as before.
+   */
+  it('prints a refused save’s reference under the toast and copies it; none without an id', async () => {
+    const transloco = TestBed.inject(TranslocoService);
+    transloco.setTranslation(
+      {
+        'operation.reference': bgCatalogue.operation.reference,
+        'operation.referenceCopied': bgCatalogue.operation.referenceCopied,
+      },
+      'bg',
+      { merge: true },
+    );
+    const writeText = vi.fn(() => Promise.resolve());
+    const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const operationId = unwrapOk(
+      ClientOperationId.parse('operation-202608051030'),
+    );
+    let answer: PipelineError = PipelineError.withOperation(
+      refusal(
+        PipelineErrorCode.InvalidRequest,
+        BookingErrorCode.ConflictingServices,
+      ),
+      operationId,
+    );
+    gateway[Callables.StaffEditAppointment] = async () =>
+      PortResult.err(answer);
+    const component = fixture.componentInstance as unknown as {
+      commitFromEditor: (id: string, commit: unknown) => Promise<void>;
+      visitSheetRow: () => { appointmentId: string } | null;
+    };
+    const save = async (appointmentId: string) => {
+      await component.commitFromEditor(appointmentId, {
+        revision: null,
+        dayKey: '2026-08-05',
+        startMinute: 600,
+        endMinute: 630,
+        locationId: null,
+        note: null,
+        discounts: [],
+        vouchers: [],
+        tipCents: null,
+        drawn: null,
+        clients: [],
+        legs: [],
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const toast = () => host().querySelector('[data-testid="staff-toast"]');
+    try {
+      (
+        host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const row = component.visitSheetRow();
+      if (row === null) throw new Error('the sheet did not open');
+
+      await save(row.appointmentId);
+      // The sentence stays the sentence (the sibling line never joins it).
+      expect(
+        toast()?.querySelector('.ui-toast__label')?.textContent?.trim(),
+      ).toBe('BOOKING_CALL_FAILED');
+      const line = toast()?.querySelector<HTMLButtonElement>(
+        'ui-reference .ui-reference__line',
+      );
+      expect(line?.textContent?.trim()).toBe(
+        'Код за справка: operation-202608051030',
+      );
+      line?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(writeText).toHaveBeenCalledWith('operation-202608051030');
+      expect(
+        toast()?.querySelector('ui-reference [role="status"]')?.textContent,
+      ).toBe('Кодът е копиран.');
+
+      // The same refusal with no id: the sentence, and no line.
+      answer = refusal(
+        PipelineErrorCode.InvalidRequest,
+        BookingErrorCode.ConflictingServices,
+      );
+      await save(row.appointmentId);
+      expect(toast()?.hasAttribute('data-presented')).toBe(true);
+      expect(
+        toast()?.querySelector('.ui-toast__label')?.textContent?.trim(),
+      ).toBe('BOOKING_CALL_FAILED');
+      expect(toast()?.querySelector('ui-reference')).toBeNull();
+    } finally {
+      if (original) Object.defineProperty(navigator, 'clipboard', original);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 
   // Round 4 (2026-09-25): a refusal that names WHY (`field`) is worded one
@@ -6861,10 +6970,10 @@ describe('StaffDashboard', () => {
         'bg',
         { merge: true },
       );
-      const sent: BookingCall.StaffEdit[] = [];
+      const sent: BookingCall.StaffEditIntent[] = [];
       const component = fixture.componentInstance as unknown as {
         store: {
-          staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+          staffEdit: (request: BookingCall.StaffEditIntent) => Promise<boolean>;
         };
         commitFromEditor: (
           id: string,

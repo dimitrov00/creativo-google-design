@@ -1,20 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Actor,
   ImpersonationScope,
   ImpersonationStatus,
   Role,
   WriteOp,
 } from '@core/components';
 import {
+  AuditEntryId,
   ImpersonationSessionId,
+  OperationId,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode, RepositoryError } from '@core/errors';
-import { Collections } from '@core/entities';
+import { Collections, type ImpersonationSession } from '@core/entities';
+import { AuditSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
+  fixtureHash,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
@@ -31,7 +36,8 @@ import {
  * admin's direct write: the caller gate first (no session → unauthenticated,
  * no admin role → forbidden, nothing written), then
  * `ImpersonationSystem.start` over a minted id and the server's clock, and
- * ONE `Create` of the flat ACTIVE body. Carries the legacy
+ * ONE commit of the flat ACTIVE body's `Create` and its audit row's
+ * (audit-hardening WS-3, DEP-12). Carries the legacy
  * `StartImpersonationUseCase` spec's cases (a staff admin starts and saves;
  * a non-staff impersonator is refused, nothing saved).
  */
@@ -57,11 +63,37 @@ const start = (
   impersonationScope: ImpersonationScope.Write,
   reason: 'support ticket #123',
   expiresAtUtcMs: IN_AN_HOUR,
+  operationId: null,
   ...extra,
 });
 
+/** The session the start writes, as the audit planner reads it. */
+const SESSION: ImpersonationSession = {
+  id: ImpersonationSessionId.of('session-1'),
+  adminUserId: ADMIN,
+  targetUserId: TARGET,
+  impersonationScope: ImpersonationScope.Write,
+  reason: 'support ticket #123',
+  startedAtUtcMs: FIXTURE_NOW_UTC_MS,
+  expiresAtUtcMs: IN_AN_HOUR,
+  impersonationStatus: ImpersonationStatus.Active,
+};
+
+/** The start's audit row as the plan `Create`s it, under `hash(basis)`. */
+function auditCreateOf(actor: Actor, operationId: OperationId | null): WriteOp {
+  const plan = AuditSystem.planImpersonationStarted(
+    SESSION,
+    actor,
+    operationId,
+  );
+  return WriteOp.create(
+    [Collections.AuditLog, AuditEntryId.of(fixtureHash(plan.idBasis))],
+    plan.row,
+  );
+}
+
 describe('startImpersonation', () => {
-  it('starts and writes ONE Create of the flat ACTIVE body for an admin — the id minted, the clock the server’s', async () => {
+  it('starts and commits the flat ACTIVE body and its audit row together — the id minted, the clock the server’s (DEP-12)', async () => {
     const { tx, run } = rig();
     expect(await run(start({ reason: '  support ticket #123 ' }))).toEqual(
       Result.ok({ sessionId: ImpersonationSessionId.of('session-1') }),
@@ -77,8 +109,49 @@ describe('startImpersonation', () => {
           expiresAtUtcMs: IN_AN_HOUR,
           impersonationStatus: ImpersonationStatus.Active,
         }),
+        auditCreateOf(Actor.admin(ADMIN), null),
       ],
     ]);
+  });
+
+  it('the row names the session resource, the impersonated account and the call’s operation id — never the reason', async () => {
+    const op = OperationId.of('op-start-1');
+    const reason = 'DISTINCTIVE-reason-text-5521';
+    const { tx, run } = rig();
+    await run(start({ reason, operationId: op }));
+    const auditOp = tx.plans[0]?.[1];
+    expect(auditOp).toMatchObject({
+      path: [Collections.AuditLog, expect.any(String)],
+      body: {
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: `${Collections.ImpersonationSessions}/session-1`,
+        auditOperationId: op,
+        actorRole: 'ADMIN',
+        actorAdminUserId: ADMIN,
+        auditAction: 'GOVERNANCE_IMPERSONATION_STARTED',
+        impersonationSessionId: 'session-1',
+        impersonationScope: 'WRITE',
+        impersonationExpiresAtUtcMs: IN_AN_HOUR,
+        auditTarget: 'USER',
+        targetUserId: TARGET,
+      },
+    });
+    expect(JSON.stringify(auditOp)).not.toContain(reason);
+  });
+
+  it('credits the sysadmin as STAFF with a role snapshot, an admin as ADMIN (RU-13)', async () => {
+    const { tx, run } = rig();
+    await run(start({ adminRoles: [Role.Sysadmin] }));
+    expect(tx.plans[0]?.[1]).toEqual(
+      auditCreateOf(Actor.forCaller(ADMIN, [Role.Sysadmin]), null),
+    );
+    expect(tx.plans[0]?.[1]).toMatchObject({
+      body: {
+        actorRole: 'STAFF',
+        actorUserId: ADMIN,
+        actorRoles: ['sysadmin'],
+      },
+    });
   });
 
   it('refuses no caller as unauthenticated and a caller with no admin role as forbidden — before anything is written', async () => {

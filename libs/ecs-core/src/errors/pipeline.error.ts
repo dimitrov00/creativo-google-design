@@ -1,4 +1,4 @@
-import { Tag } from '@core/primitives';
+import { type ClientOperationId, Tag } from '@core/primitives';
 import { BookingErrorCode } from './booking.error';
 import { CancellationRefusalCode } from './cancellation.error';
 import { CarriedSeatRefusal, MoveErrorCode } from './move.error';
@@ -22,6 +22,10 @@ import { WaitlistErrorCode } from './waitlist.error';
  * `wireStatus` is the `HttpsError` status the call failed with (`null` off
  * the wire): the OTP "blocked" reading is the status, not a code
  * ({@link PipelineError.isBlocked}).
+ * `operationId` is the id the failed call carried (WS-4.5) — the reference a
+ * person reads out so their report can be traced to the server's lines; set
+ * by the web's callable client ({@link PipelineError.withOperation}), never
+ * read off the wire.
  */
 
 /**
@@ -100,6 +104,13 @@ export type PipelineError = {
   readonly wireStatus: HttpsStatus | null;
   /** The refusal's allowlisted scalar context; `{}` when none. */
   readonly serverParams: WireParams;
+  /**
+   * The operation id the failed call went out with (`OPERATION_ID_FIELD`'s
+   * field of its input) — the reference the surface prints; `null` for a
+   * failure no call carried an id for (a client-side refusal, the issue
+   * sink, a call that sent none).
+   */
+  readonly operationId: ClientOperationId | null;
 };
 
 /**
@@ -356,6 +367,7 @@ export const PipelineError = {
       field,
       wireStatus: null,
       serverParams: {},
+      operationId: null,
     };
   },
 
@@ -394,7 +406,20 @@ export const PipelineError = {
       field,
       wireStatus,
       serverParams: paramsOf(struct, serverErrorCode),
+      operationId: null,
     };
+  },
+
+  /**
+   * The same failure, carrying the operation id its call went out with
+   * (WS-4.5) — the web's callable client stamps it on every refusal and on
+   * `PIPELINE_UNKNOWN`. `null` keeps the failure without a reference.
+   */
+  withOperation(
+    error: PipelineError,
+    operationId: ClientOperationId | null,
+  ): PipelineError {
+    return { ...error, operationId };
   },
 
   /**

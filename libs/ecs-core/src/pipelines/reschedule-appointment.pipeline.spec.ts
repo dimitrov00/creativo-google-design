@@ -3,6 +3,7 @@ import {
   AuditAction,
   BlockKind,
   BookingPolicy,
+  type ChairTime,
   type DocBody,
   type DocPath,
   LocationStatus,
@@ -25,6 +26,7 @@ import {
   ClientOperationId,
   CustomerId,
   LocationId,
+  LogEvent,
   OperationId,
   Result,
   SeatId,
@@ -32,19 +34,31 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  BookingError,
   BookingErrorCode,
   CarriedSeatRefusal,
   MoveErrorCode,
+  RepositoryErrorCode,
   TimeErrorCode,
 } from '@core/errors';
-import { type Appointment, type AuditEntry, Collections } from '@core/entities';
-import { AuditSystem, MoveSystem } from '@core/systems';
+import {
+  type Appointment,
+  type AuditEntry,
+  type BarberBusyDay,
+  Collections,
+} from '@core/entities';
+import type { CommitPlan } from '@core/ports';
+import { AuditSystem, DecisionInputSystem, MoveSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
+  auditRowsOf,
   barberBusyDayFixture,
   barberScheduleFixture,
+  contendedCommit,
+  deepFreeze,
   FIXTURE_IDS,
+  FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   fixtureHash,
   localDate,
@@ -133,6 +147,7 @@ function command(
     localDate: FRIDAY,
     seats: [CART_SEAT],
     attemptId: ATTEMPT,
+    operationId: OperationId.of(ATTEMPT),
     actor: Actor.user(FIXTURE_IDS.client),
     ...extra,
   };
@@ -140,20 +155,37 @@ function command(
 
 function rig(
   documents: readonly { readonly path: DocPath; readonly body: DocBody }[],
+  wrap: (base: CommitPlan) => CommitPlan = (base) => base,
 ) {
   const store = memoryStore(documents);
   const tx = memoryTxPorts(store);
+  // The rows the committed plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
-  const run = rescheduleAppointment({
+  const telemetry = recordingTelemetry();
+  const contended = contendedCommit(wrap(tx.commit));
+  const pipeline = rescheduleAppointment({
     ...tx,
-    ...recordingTelemetry(),
+    commit: contended.commit,
+    ...telemetry,
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
-    appendAudit: async (written) => {
-      rows.push(...written);
-    },
   });
-  return { store, tx, rows, run };
+  const run: typeof pipeline = async (cmd) => {
+    const answer = await pipeline(cmd);
+    rows.splice(0, rows.length, ...auditRowsOf(tx.plans));
+    return answer;
+  };
+  return { store, tx, rows, telemetry, run, decisions: contended.decisions };
 }
+
+/** The row a move of the fixture visit files for its client (`move:<attemptId>`). */
+const MOVE_ROW = fixtureHash(
+  AuditSystem.rowBasis(
+    AuditAction.BookingRescheduled,
+    FIXTURE_IDS.appointment,
+    FIXTURE_IDS.customer,
+    `move:${ATTEMPT}`,
+  ),
+);
 
 function stored(appointment: Appointment) {
   return {
@@ -174,7 +206,7 @@ const digestOf = (cmd: RescheduleAppointmentCommand): string =>
   ).slice(0, 16);
 
 describe('rescheduleAppointment — the client moving their own visit', () => {
-  it('moves the visit in ONE plan: its Update (revision, ledger) and the busy Set of the NEW day only', async () => {
+  it('moves the visit in ONE plan: its Update (revision, ledger), the busy Set of the NEW day only and, last, the act’s row (WS-1)', async () => {
     const { store, tx, rows, run } = rig([...catalogue(), stored(visit())]);
     const answer = await run(command());
     expect(answer).toEqual({
@@ -192,7 +224,32 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     ).toEqual([
       [WriteAction.Update, PATH],
       [WriteAction.Set, `${Collections.BarberBusy}/${friday}`],
+      [WriteAction.Create, `${Collections.AuditLog}/${MOVE_ROW}`],
     ]);
+    expect(plan.at(-1)).toEqual({
+      writeAction: WriteAction.Create,
+      path: [Collections.AuditLog, MOVE_ROW],
+      body: {
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: FIXTURE_IDS.appointment,
+        auditOperationId: ATTEMPT,
+        ...Actor.user(FIXTURE_IDS.client),
+        auditAction: AuditAction.BookingRescheduled,
+        rescheduleRevision: 2,
+        // Where the move took the visit (WS-2): Thursday 10:00 → Friday
+        // 11:00, the same shop, Ivan on the one seat before and after.
+        rescheduleFromLocalDate: THURSDAY,
+        rescheduleToLocalDate: FRIDAY,
+        rescheduleFromStartMinutes: at(10),
+        rescheduleToStartMinutes: at(11),
+        rescheduleFromBarberIds: [FIXTURE_IDS.barber],
+        rescheduleToBarberIds: [FIXTURE_IDS.barber],
+        rescheduleFromLocationId: FIXTURE_IDS.location,
+        rescheduleToLocationId: FIXTURE_IDS.location,
+        auditTarget: 'CUSTOMER',
+        targetCustomerId: FIXTURE_IDS.customer,
+      },
+    });
     expect(store.get(PATH)).toMatchObject({
       localDate: FRIDAY,
       startMinutes: at(11),
@@ -209,6 +266,8 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       // Identity kept: status, booking instant, placement stamp.
       bookingStatus: 'CONFIRMED',
       placement: 'SELF',
+      // WS-4.3: the move is the call that wrote it last.
+      writeOperationId: OperationId.of(ATTEMPT),
     });
     // The old day is left to rebuildBusy; every busy key written was read.
     const read = new Set(
@@ -222,8 +281,9 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     expect(rows[0]).toMatchObject({
       auditAction: AuditAction.BookingRescheduled,
       rescheduleRevision: 2,
-      loggedOnRetry: false,
     });
+    // `loggedOnRetry` is gone (DEP-7, RU-10): a replay files no row.
+    expect(rows[0]).not.toHaveProperty('loggedOnRetry');
     expect(rows[0]?.id).toBe(
       fixtureHash(
         AuditSystem.rowBasis(
@@ -236,19 +296,21 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     );
   });
 
-  it('an unnamed move is logged under the revision it stamped', async () => {
+  it('keys the row `move:<attemptId>` — every move is named (WS-4.1), the key byte for byte today’s', async () => {
+    // The unnamed move (`attemptId: null` → `revision:<n>`) is gone: the
+    // edge refuses a move without its attempt id, and the web always sent one.
     const { rows, run } = rig([...catalogue(), stored(visit())]);
-    await run(command({ attemptId: null }));
-    expect(rows[0]?.id).toBe(
+    expect((await run(command())).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
           FIXTURE_IDS.appointment,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.revision(2),
+          'move:move-attempt-0123456789',
         ),
       ),
-    );
+    ]);
   });
 
   it('a request for exactly where the visit already is changes nothing and logs nothing', async () => {
@@ -271,7 +333,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     expect(rows).toEqual([]);
   });
 
-  it('a re-sent named move answers its original revision, writes nothing, and re-files its row', async () => {
+  it('a re-sent named move answers its original revision, writes nothing and plans ZERO audit ops (WS-1, DEP-7)', async () => {
     const applied = visit({
       revision: 4,
       appliedOperations: [
@@ -293,10 +355,79 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       },
     });
     expect(tx.plans).toEqual([[]]);
-    expect(rows[0]).toMatchObject({
-      rescheduleRevision: 4,
-      loggedOnRetry: true,
+    expect(rows).toEqual([]);
+  });
+
+  it('the same move twice on one store: the second answers the first’s revision as a replay, ZERO audit ops', async () => {
+    const { tx, rows, run } = rig([...catalogue(), stored(visit())]);
+    const first = await run(command());
+    const second = await run(command());
+    expect(first).toEqual({
+      ok: true,
+      value: {
+        appointmentId: FIXTURE_IDS.appointment,
+        revision: 2,
+        replayed: false,
+      },
     });
+    expect(second).toEqual({
+      ok: true,
+      value: {
+        appointmentId: FIXTURE_IDS.appointment,
+        revision: 2,
+        replayed: true,
+      },
+    });
+    expect(tx.plans[1]).toEqual([]);
+    expect(rows.map((row) => row.id)).toEqual([MOVE_ROW]);
+  });
+
+  it('commits the move without a row when no verified actor is known, and logs it loudly', async () => {
+    const { store, tx, rows, telemetry, run } = rig([
+      ...catalogue(),
+      stored(visit()),
+    ]);
+    const answer = await run(command({ actor: null }));
+    expect(answer.ok).toBe(true);
+    expect(store.get(PATH)?.['revision']).toBe(2);
+    expect(
+      (tx.plans[0] ?? []).some((op) => op.path[0] === Collections.AuditLog),
+    ).toBe(false);
+    expect(rows).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: LogEvent.AuditActorMissing,
+        fields: {
+          action: AuditAction.BookingRescheduled,
+          resourceId: FIXTURE_IDS.appointment,
+        },
+      },
+    ]);
+  });
+
+  it('a Create of a row already there refuses the WHOLE move as REPOSITORY_ALREADY_EXISTS — nothing applied', async () => {
+    const { store, tx, run } = rig([
+      ...catalogue(),
+      stored(visit()),
+      { path: [Collections.AuditLog, MOVE_ROW], body: { seeded: true } },
+    ]);
+    const answer = await run(command());
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      RepositoryErrorCode.AlreadyExists,
+    );
+    expect(store.get(PATH)?.['revision']).toBe(1);
+    expect(tx.plans).toEqual([]);
+  });
+
+  it('a contention re-run of the decision derives the identical rows', async () => {
+    const { decisions, run } = rig([...catalogue(), stored(visit())]);
+    expect((await run(command())).ok).toBe(true);
+    expect(decisions).toHaveLength(2);
+    const auditOf = (plan: readonly WriteOp[] | undefined) =>
+      (plan ?? []).filter((op) => op.path[0] === Collections.AuditLog);
+    expect(auditOf(decisions[0])).toHaveLength(1);
+    expect(auditOf(decisions[1])).toEqual(auditOf(decisions[0]));
   });
 
   it('refuses a known name with another batch (attemptId)', async () => {
@@ -608,6 +739,90 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
         startMinutes: at(9, 45),
       });
     });
+  });
+
+  it('logs what the refused move read — the LAST snapshot, handed to `decide` frozen and refused alike (WS-4.2, DEP-18)', async () => {
+    const friday = BusyKey.of(FIXTURE_IDS.barber, FRIDAY);
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(friday),
+      localDate: FRIDAY,
+      blocks: [MinuteBlock.of(at(11), until(12), BlockKind.Busy)],
+    });
+    // Every snapshot the read hands `decide` is frozen all the way down: a
+    // decision that wrote into its input would throw instead of refusing.
+    let lastSeen: unknown = null;
+    const { tx, telemetry, run } = rig(
+      [
+        ...catalogue(),
+        stored(visit({ revision: 3 })),
+        { path: [Collections.BarberBusy, friday], body: bodyOf(taken) },
+      ],
+      (base) => (read, decide) =>
+        base(async (readTx) => {
+          const snapshot = deepFreeze(await read(readTx));
+          lastSeen = snapshot;
+          return snapshot;
+        }, decide),
+    );
+    const answer = await run(command());
+    expect(answer).toEqual(
+      Result.err(
+        BookingError.slotUnavailable(FIXTURE_IDS.barber, FRIDAY, at(11), 0),
+      ),
+    );
+    expect(tx.plans).toEqual([]);
+    const read = lastSeen as {
+      readonly placement: { readonly busy: readonly BarberBusyDay[] };
+      readonly plan: { readonly release: readonly ChairTime[] };
+    };
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingMoveRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          ...DecisionInputSystem.slotFacts(
+            read.placement.busy,
+            {
+              barberId: FIXTURE_IDS.barber,
+              localDate: FRIDAY,
+              startMinutes: at(11),
+            },
+            3,
+            read.plan.release,
+          ),
+        },
+      },
+    ]);
+    expect(telemetry.lines[0]?.fields).toEqual({
+      errorCode: BookingErrorCode.SlotUnavailable,
+      readBusyKeys: [friday],
+      collidingStartMinutes: 660,
+      collidingEndMinutes: 720,
+      readRevision: 3,
+    });
+  });
+
+  it('a move refused before its placement was read logs no busy day — and no revision for a visit it could not read', async () => {
+    const { telemetry, run } = rig([...catalogue()]);
+    const answer = await run(command());
+    expect(!answer.ok && answer.error).toMatchObject({
+      errorCode: BookingErrorCode.InvalidInput,
+      field: 'appointmentId',
+    });
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingMoveRejected,
+        fields: {
+          errorCode: BookingErrorCode.InvalidInput,
+          readBusyKeys: [],
+          collidingStartMinutes: null,
+          collidingEndMinutes: null,
+          readRevision: null,
+        },
+      },
+    ]);
   });
 
   it('still answers the client’s own taken slot first when the companion’s service is gone too', async () => {

@@ -19,12 +19,14 @@ import {
   AttendanceState,
   AuditResourceId,
   type HourCount,
+  type OperationId,
   type SeatId,
   type LocalDate,
   type UtcEpochMs,
 } from '@core/primitives';
 import { SchedulingError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
+import { AuditDeltaSystem } from './audit-delta.system';
 import { type AuditFact, AuditSystem } from './audit.system';
 
 /**
@@ -54,15 +56,17 @@ type LifecycleSlice = {
 
 /**
  * A staff lifecycle request (`transition-appointment.ts`): the target state,
- * ONE seat or the whole party (`seatId: null`), and — for a cancel only —
- * the reason code and the window in force (`null` when the policy could not
- * be read: the seats are stamped unknown, the shop's cancel still lands).
+ * ONE seat or the whole party (`seatId: null`), — for a cancel only — the
+ * reason code and the window in force (`null` when the policy could not be
+ * read: the seats are stamped unknown, the shop's cancel still lands), and
+ * the act's operation id, which keys its audit fact (WS-1).
  */
 export type LifecycleTransitionRequest = {
   readonly to: BookingStatus;
   readonly seatId: SeatId | null;
   readonly reason: CancellationReason | null;
   readonly windowHours: HourCount | null;
+  readonly operationId: OperationId;
 };
 
 /**
@@ -198,12 +202,17 @@ function withOutcomes(
   return out;
 }
 
-/** The appointment with a new lifecycle variant — the old variant's fields gone. */
+/**
+ * The appointment with a new lifecycle variant — the old variant's fields
+ * gone — as the act named `writeOperationId` leaves it (WS-4.3: the last
+ * callable that wrote the visit, `WriteProvenance`).
+ */
 function withLifecycle(
   appointment: Appointment,
   lifecycle: BookingLifecycle,
   seats: readonly Seat[],
   arrivedAtUtcMs: UtcEpochMs | null,
+  writeOperationId: OperationId,
 ): Appointment {
   return {
     id: appointment.id,
@@ -234,6 +243,7 @@ function withLifecycle(
     arrivedAtUtcMs,
     stoodSeatPairsRevision: appointment.stoodSeatPairsRevision,
     stoodSeatPairs: appointment.stoodSeatPairs,
+    writeOperationId,
     ...BookingLifecycle.sliceOf(lifecycle),
   };
 }
@@ -241,27 +251,35 @@ function withLifecycle(
 function applySlice(
   appointment: Appointment,
   slice: LifecycleSlice,
+  operationId: OperationId,
 ): Appointment {
   return withLifecycle(
     appointment,
     slice.lifecycle,
     withOutcomes(appointment.seats, slice.outcomes),
     appointment.arrivedAtUtcMs,
+    operationId,
   );
 }
 
 /**
  * The write plan of a lifecycle step: ONE update of the appointment's root —
- * every field of the new lifecycle variant, the seats (their outcomes) and
- * the arrival stamp set; every field of the old variant the new one does not
- * declare deleted, so the stored document is always exactly one variant.
+ * every field of the new lifecycle variant, the seats (their outcomes), the
+ * arrival stamp and the writing act's `writeOperationId` (WS-4.3) set;
+ * every field of the old variant the new one does not declare deleted, so
+ * the stored document is always exactly one variant.
  */
 function transitionWrite(before: Appointment, after: Appointment): WriteOp {
   const from = BookingLifecycle.sliceOf(before);
   const to = BookingLifecycle.sliceOf(after);
   return WriteOp.transition(
     [Collections.Appointments, after.id],
-    { ...to, seats: after.seats, arrivedAtUtcMs: after.arrivedAtUtcMs },
+    {
+      ...to,
+      seats: after.seats,
+      arrivedAtUtcMs: after.arrivedAtUtcMs,
+      writeOperationId: after.writeOperationId,
+    },
     WriteOp.variantFieldsToDelete(from, to),
   );
 }
@@ -285,18 +303,28 @@ function indexOfSeat(seats: readonly Seat[], seatId: SeatId): number {
   return -1;
 }
 
+/**
+ * The staff verb's fact, on the visit BEFORE the act (`appointment`): whom
+ * it touched, and — WS-2 — the state it left (`AuditDeltaSystem.transitioned`).
+ */
 function staffFact(
   appointment: Appointment,
   action: TransitionAction,
   reason: CancellationReason | null,
   seatId: SeatId | null,
-  nowUtcMs: UtcEpochMs,
+  operationId: OperationId,
 ): AuditFact {
   return {
     resourceId: AuditResourceId.forAppointment(appointment.id),
     subjects: AuditSystem.subjectsOfSeats(appointment.seats, seatId),
-    changeKey: AuditSystem.changeKey.transition(seatId, nowUtcMs),
-    context: AuditContext.transition(action, reason, seatId),
+    changeKey: AuditSystem.changeKey.transition(operationId, seatId),
+    operationId,
+    context: AuditContext.transition(
+      action,
+      reason,
+      seatId,
+      AuditDeltaSystem.transitioned(appointment, seatId),
+    ),
   };
 }
 
@@ -306,11 +334,13 @@ function arrivalFact(
     | typeof AuditAction.BookingStaffArrived
     | typeof AuditAction.BookingStaffUnarrived,
   changeKey: string,
+  operationId: OperationId,
 ): AuditFact {
   return {
     resourceId: AuditResourceId.forAppointment(appointment.id),
     subjects: AuditSystem.subjectsOf(appointment),
     changeKey,
+    operationId,
     context: AuditContext.arrival(action),
   };
 }
@@ -521,14 +551,29 @@ function transitionAt(
     );
     if (!resolved.ok) return resolved;
     return Result.ok(
-      step(appointment, applySlice(appointment, resolved.value), [
-        staffFact(appointment, verb, reason, request.seatId, nowUtcMs),
-      ]),
+      step(
+        appointment,
+        applySlice(appointment, resolved.value, request.operationId),
+        [
+          staffFact(
+            appointment,
+            verb,
+            reason,
+            request.seatId,
+            request.operationId,
+          ),
+        ],
+      ),
     );
   }
 
   if (readsShopToday(appointment, request)) {
-    const reopened = reopenSettledAt(appointment, nowUtcMs, today);
+    const reopened = reopenSettledAt(
+      appointment,
+      nowUtcMs,
+      today,
+      request.operationId,
+    );
     if (!reopened.ok) return reopened;
     return Result.ok(
       step(appointment, reopened.value, [
@@ -539,7 +584,7 @@ function transitionAt(
             : AuditAction.BookingStaffReinstate,
           null,
           null,
-          nowUtcMs,
+          request.operationId,
         ),
       ]),
     );
@@ -548,15 +593,19 @@ function transitionAt(
     const reopened = reopenNoShowSlice(slice, nowUtcMs);
     if (!reopened.ok) return reopened;
     return Result.ok(
-      step(appointment, applySlice(appointment, reopened.value), [
-        staffFact(
-          appointment,
-          AuditAction.BookingStaffReopenNoShow,
-          null,
-          null,
-          nowUtcMs,
-        ),
-      ]),
+      step(
+        appointment,
+        applySlice(appointment, reopened.value, request.operationId),
+        [
+          staffFact(
+            appointment,
+            AuditAction.BookingStaffReopenNoShow,
+            null,
+            null,
+            request.operationId,
+          ),
+        ],
+      ),
     );
   }
   const moved = partyVerb(
@@ -568,9 +617,11 @@ function transitionAt(
   );
   if (!moved.ok) return moved;
   return Result.ok(
-    step(appointment, applySlice(appointment, moved.value), [
-      staffFact(appointment, verb, reason, null, nowUtcMs),
-    ]),
+    step(
+      appointment,
+      applySlice(appointment, moved.value, request.operationId),
+      [staffFact(appointment, verb, reason, null, request.operationId)],
+    ),
   );
 }
 
@@ -583,6 +634,7 @@ function reopenSettledAt(
   appointment: Appointment,
   nowUtcMs: UtcEpochMs,
   today: LocalDate,
+  operationId: OperationId,
 ): Result<Appointment, SchedulingError> {
   const reopened = reopenSettledSlice(
     sliceOf(appointment),
@@ -591,7 +643,7 @@ function reopenSettledAt(
     nowUtcMs,
   );
   return reopened.ok
-    ? Result.ok(applySlice(appointment, reopened.value))
+    ? Result.ok(applySlice(appointment, reopened.value, operationId))
     : reopened;
 }
 
@@ -623,14 +675,16 @@ export const AppointmentLifecycleSystem = {
    * The client's own cancel (`cancel-appointment.ts:180-219`): every open
    * seat cancelled BY THE CLIENT under the window it was allowed under, the
    * root carrying the code, one `BOOKING_CANCELLED` fact for everyone on the
-   * visit keyed by the instant it stamped. Whether the client MAY cancel is
-   * `CancellationPolicySystem.mayCancel`, asked first.
+   * visit keyed by the act's operation id (WS-1), carrying the state the
+   * cancel left (WS-2, `AuditDeltaSystem.cancelled`). Whether the client MAY
+   * cancel is `CancellationPolicySystem.mayCancel`, asked first.
    */
   cancelByClient(
     appointment: Appointment,
     reason: CancellationReason,
     windowHours: HourCount | null,
     nowUtcMs: UtcEpochMs,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     const stamp = SeatOutcome.cancelled(
       nowUtcMs,
@@ -647,12 +701,16 @@ export const AppointmentLifecycleSystem = {
     );
     if (!moved.ok) return moved;
     return Result.ok(
-      step(appointment, applySlice(appointment, moved.value), [
+      step(appointment, applySlice(appointment, moved.value, operationId), [
         {
           resourceId: AuditResourceId.forAppointment(appointment.id),
           subjects: AuditSystem.subjectsOf(appointment),
-          changeKey: AuditSystem.changeKey.cancelled(nowUtcMs),
-          context: AuditContext.cancelled(reason),
+          changeKey: AuditSystem.changeKey.cancel(operationId),
+          operationId,
+          context: AuditContext.cancelled(
+            reason,
+            AuditDeltaSystem.cancelled(appointment),
+          ),
         },
       ]),
     );
@@ -665,7 +723,8 @@ export const AppointmentLifecycleSystem = {
    * stamp; `COMPLETED`/`CANCELLED → CONFIRMED` reopens on the visit's own
    * day only (`now.localDate` against the visit's `localDate`). The audit
    * fact names the verb — a correction under its own action — the reason
-   * CODE, the seat, and keys the change by the seat and `now.utcEpochMs`.
+   * CODE, the seat, and keys the change by the act's operation id and the
+   * seat (WS-1).
    */
   transition(
     appointment: Appointment,
@@ -725,6 +784,7 @@ export const AppointmentLifecycleSystem = {
   markArrived(
     appointment: Appointment,
     nowUtcMs: UtcEpochMs,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     if (!BookingLifecycle.isLive(appointment)) {
       return Result.err(
@@ -739,13 +799,15 @@ export const AppointmentLifecycleSystem = {
       appointment,
       appointment.seats,
       nowUtcMs,
+      operationId,
     );
     return Result.ok(
       step(appointment, arrived, [
         arrivalFact(
           appointment,
           AuditAction.BookingStaffArrived,
-          AuditSystem.changeKey.arrived(nowUtcMs),
+          AuditSystem.changeKey.arrived(operationId),
+          operationId,
         ),
       ]),
     );
@@ -757,6 +819,7 @@ export const AppointmentLifecycleSystem = {
    */
   clearArrival(
     appointment: Appointment,
+    operationId: OperationId,
   ): Result<LifecycleStep, SchedulingError> {
     if (!BookingLifecycle.isLive(appointment)) {
       return Result.err(
@@ -772,13 +835,15 @@ export const AppointmentLifecycleSystem = {
       appointment,
       appointment.seats,
       null,
+      operationId,
     );
     return Result.ok(
       step(appointment, cleared, [
         arrivalFact(
           appointment,
           AuditAction.BookingStaffUnarrived,
-          AuditSystem.changeKey.unarrived(stamp),
+          AuditSystem.changeKey.unarrived(operationId),
+          operationId,
         ),
       ]),
     );

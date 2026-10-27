@@ -13,6 +13,7 @@ import {
   PrincipalKind,
   RegistrationState,
   Role,
+  WriteProvenance,
 } from '@core/components';
 import type { Customer, ImpersonationSession, Otp, User } from '@core/entities';
 import {
@@ -162,6 +163,7 @@ export function customerFixture(overrides: Partial<Customer> = {}): Customer {
     searchPrefixes: ['m', 'ma', 'mar', 'p', 'pe', 'pet'],
     createdAtUtcMs: instant(NOW_MS - 86_400_000),
     customerOrigin: CustomerOrigin.FirstBooking,
+    ...WriteProvenance.NONE,
     ...overrides,
   };
 }

@@ -1,7 +1,13 @@
 import {
+  AuditResourceId,
   BarberId,
   BusyKey,
+  CustomerId,
+  defect,
+  LogEvent,
+  type PrimitiveError,
   Result,
+  type StoredFields,
   TriggerEventId,
   UserId,
   UtcEpochMs,
@@ -10,6 +16,7 @@ import { type GovernanceError, type RepositoryError } from '@core/errors';
 import {
   BookingPolicy,
   CapacityTrigger,
+  GovernedCollection,
   PreciseInstant,
 } from '@core/components';
 import { POLICY_RECOMPUTE_DOC, type PolicyRecomputeJob } from '@core/entities';
@@ -18,14 +25,15 @@ import {
   type AttemptFailure,
   AuditSystem,
   ClientStatsSystem,
-  type ProfileChange,
+  type DocumentChange,
+  GovernedChangeSystem,
   type StoredDocument,
   StoredDocumentSystem,
   TriggerAttemptSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  type AuditProfileChangeAnswer,
+  type AuditDocumentChangeAnswer,
   type ContinuePolicyRecomputeCommand,
   type MatchWaitlistCommand,
   type ProjectClientStatsCommand,
@@ -34,6 +42,7 @@ import {
   type StartPolicyRecomputeCommand,
 } from '@core/pipelines';
 import {
+  attemptEventOf,
   attemptLineFields,
   type DeliveredEvent,
   type EdgePorts,
@@ -59,10 +68,15 @@ import { eventInstantOf } from './wire-read';
  * - `decodePolicyRecomputeEvent` / `decodePolicyStepEvent` /
  *   `decodePolicySweepRun` — the policy pass's settings write, job write and
  *   daily tick;
- * - `decodeProfileChangeEvent` — a `users/{uid}` write, its writer from the
- *   auth context and both sides' `profileEditedAtUtcMs` stamps.
+ * - `decodeDocumentChangeEvent` — a write of `users` or of one of the
+ *   thirteen governed collections (audit-hardening WS-3, RU-40: ONE decoder
+ *   for all fourteen audit triggers), its writer from the auth context and
+ *   the changed field NAMES; a `users` write adds both sides'
+ *   `profileEditedAtUtcMs` stamps and the role / status tags.
  *
- * **Which triggers retry.** `auditProfileChanges`, `dispatchClientProjections`,
+ * **Which triggers retry.** The fourteen audit triggers (`auditProfileChanges`
+ * and the thirteen `audit…Changes` of the governed collections),
+ * `dispatchClientProjections`,
  * the policy pass's start and step and its daily sweep, and every projection
  * trigger — since edge-hardening D-5 `rebuildBusyOnAppointmentChange`,
  * `rebuildCapacityOnBusyChange` and `matchWaitlistOnBusyChange`, since pass E
@@ -346,22 +360,82 @@ function profileEditedAtOf(
   return instant.ok ? instant.value : null;
 }
 
-/** A `users/{uid}` write as the profile change it audits — field NAMES only. */
-export function decodeProfileChangeEvent(
-  event: AuthDocumentWriteEvent<{ readonly uid: string }>,
-): ProfileChange {
+/** A side of a write as its stored fields — `null` when the document is absent there. */
+function fieldsOf(snapshot: StoredSnapshot | undefined): StoredFields | null {
+  return snapshot?.exists === true ? (snapshot.data() ?? null) : null;
+}
+
+/**
+ * A brand the event's own path made — a Firestore path segment is never
+ * empty and holds no `/`, so a refusal is a broken platform, never an
+ * expected outcome: thrown as a defect inside the trigger's handler, where
+ * `retryingTrigger` judges it PERMANENT (one attempt line, no redelivery).
+ */
+function fromPath<T>(parsed: Result<T, PrimitiveError>): T {
+  return parsed.ok
+    ? parsed.value
+    : defect(
+        `a document path is no ${parsed.error.brand}: ${parsed.error.raw}`,
+      );
+}
+
+/**
+ * ONE decoder behind every audit trigger (audit-hardening WS-3, RU-40): a
+ * write of `users` or of a governed collection as the change it audits —
+ * field NAMES only, never a value (R36). The shared core is the delivery's
+ * id, the event's instant (`null` when unreadable — the pipeline's clock
+ * stands in), the writer the auth context names
+ * (`AuditSystem.writerOf`) and both sides' existence. A `users/{docId}`
+ * write adds the account (`docId`), the audited profile fields, the role /
+ * status tags and both sides' `profileEditedAtUtcMs` stamps (4A-16); any
+ * other collection the resource `<path>/<docId>` (branded here, Law 7.4),
+ * the client record a `customers` write is (`CustomerId.parse` of the id;
+ * `null` for every other collection) and the changed top-level field names
+ * (`GovernedChangeSystem.changedFields`: a delete lists the before-image's).
+ */
+export function decodeDocumentChangeEvent(
+  governedCollection: GovernedCollection,
+  event: AuthDocumentWriteEvent<{ readonly docId: string }>,
+): DocumentChange {
   const before = event.data?.before;
   const after = event.data?.after;
-  return {
+  const docId = event.params.docId;
+  const core = {
     eventId: TriggerEventId.of(event.id),
     eventAtUtcMs: eventInstantOf(event.time),
-    ownerUserId: UserId.of(event.params.uid),
-    writer: AuditSystem.profileWriter(event.authType, event.authId ?? null),
+    writer: AuditSystem.writerOf(event.authType, event.authId ?? null),
     beforeExists: before?.exists === true,
     afterExists: after?.exists === true,
-    fields: AuditSystem.changedProfileFields(bodyOf(before), bodyOf(after)),
-    beforeProfileEditedAtUtcMs: profileEditedAtOf(before),
-    afterProfileEditedAtUtcMs: profileEditedAtOf(after),
+  };
+  if (governedCollection === GovernedCollection.Users) {
+    const was = bodyOf(before);
+    const is = bodyOf(after);
+    return {
+      governedCollection,
+      ...core,
+      ownerUserId: UserId.of(docId),
+      fields: AuditSystem.changedProfileFields(was, is),
+      ...AuditSystem.profileTagDelta(was, is),
+      beforeProfileEditedAtUtcMs: profileEditedAtOf(before),
+      afterProfileEditedAtUtcMs: profileEditedAtOf(after),
+    };
+  }
+  return {
+    governedCollection,
+    ...core,
+    resourceId: fromPath(
+      AuditResourceId.parse(
+        `${GovernedChangeSystem.pathOf(governedCollection)}/${docId}`,
+      ),
+    ),
+    targetCustomerId:
+      governedCollection === GovernedCollection.Customers
+        ? fromPath(CustomerId.parse(docId))
+        : null,
+    fields: GovernedChangeSystem.changedFields(
+      fieldsOf(before),
+      fieldsOf(after),
+    ),
   };
 }
 
@@ -400,14 +474,11 @@ export function logAttempt(
 ): void {
   const line = TriggerAttemptSystem.attemptLine(
     fn,
-    {
-      id: TriggerEventId.of(event.id),
-      eventAtUtcMs: eventInstantOf(event.time),
-    },
+    attemptEventOf(event),
     failure,
     ports.nowUtcMs(),
   );
-  ports.log('error', 'trigger attempt failed', attemptLineFields(line));
+  ports.log('error', LogEvent.TriggerAttemptFailed, attemptLineFields(line));
 }
 
 /**
@@ -449,10 +520,10 @@ export function projectionReport(
   };
 }
 
-/** The profile audit's answer as an attempt report — a refusal is permanent by construction. */
-export function profileAuditReport(
+/** The document audit's answer as an attempt report — a refusal is permanent by construction. */
+export function documentAuditReport(
   result: Result<
-    AuditProfileChangeAnswer,
+    AuditDocumentChangeAnswer,
     GovernanceError.AuditEntryEmptyAction | RepositoryError
   >,
 ): AttemptReport {

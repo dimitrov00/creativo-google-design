@@ -22,7 +22,10 @@ import type { RepositoryError } from './repository.error';
  * `AuthStrategy.parse`, AgeSystem and the two flow machines. The nine from
  * `OtpChannelMismatch` to `RegistrationFieldMissing` (identity flip (2),
  * F2-4) are the refusals of the `requestOtp`, `verifyOtp` and
- * `completeRegistration` pipelines that no dictionary spelled before; the
+ * `completeRegistration` pipelines that no dictionary spelled before;
+ * `OtpSendUnavailable` (audit-hardening WS-0) is the deployed project's
+ * login-OTP sender refusing every delivery until a transactional provider
+ * lands, which `requestOtp` answers as it is; the
  * callables' own faults follow them (Phase 4a 4A-4), and the web's own two
  * failure words close the dictionary (Phase 4b, 4B-4: no pipeline raises
  * them, so they stay outside the {@link IdentityError} union and their edge
@@ -90,6 +93,13 @@ export const IdentityErrorCode = {
   RegistrationUserNotFound: 'IDENTITY_REGISTRATION_USER_NOT_FOUND',
   /** A field the deployment's strategy requires is absent or blank (`field` names it). */
   RegistrationFieldMissing: 'IDENTITY_REGISTRATION_FIELD_MISSING',
+  /**
+   * No login-OTP sender is wired in this deployment: the deployed project's
+   * `refusingOtpSender` answers it for every delivery until a transactional
+   * provider lands (audit-hardening WS-0). Unlike `OtpSendFailure`, a retry
+   * can never succeed, so its words offer none.
+   */
+  OtpSendUnavailable: 'IDENTITY_OTP_SEND_UNAVAILABLE',
   /*
    * The OTP and registration callables' own faults and payload refusals —
    * the successors of the undotted wire codes retired in Phase 4a (4A-4).
@@ -161,7 +171,8 @@ export type IdentityError =
   | IdentityError.RegistrationUnauthenticated
   | IdentityError.RegistrationForbidden
   | IdentityError.RegistrationUserNotFound
-  | IdentityError.RegistrationFieldMissing;
+  | IdentityError.RegistrationFieldMissing
+  | IdentityError.OtpSendUnavailable;
 
 /** Shared, payload-free OTP verdicts: one struct per code, never rebuilt. */
 const OTP_ALREADY_CONSUMED: IdentityError.OtpAlreadyConsumed = {
@@ -321,6 +332,9 @@ export const IdentityError = {
     field: string,
   ): IdentityError.RegistrationFieldMissing {
     return { errorCode: IdentityErrorCode.RegistrationFieldMissing, field };
+  },
+  otpSendUnavailable(): IdentityError.OtpSendUnavailable {
+    return { errorCode: IdentityErrorCode.OtpSendUnavailable };
   },
   invalidInput(reason: string): IdentityError.InvalidInput {
     return { errorCode: IdentityErrorCode.InvalidInput, reason };
@@ -484,6 +498,9 @@ export namespace IdentityError {
     /** The `RegistrationField` value, as its plain string. */
     readonly field: string;
   };
+  export type OtpSendUnavailable = {
+    readonly errorCode: typeof IdentityErrorCode.OtpSendUnavailable;
+  };
   /** The four birth-date refusals — what a registration's wrapper nests. */
   export type BirthDate =
     BirthDateInvalid | BirthDateInFuture | BirthDateTooYoung | BirthDateTooOld;
@@ -544,7 +561,11 @@ export type CompleteRegistrationRefusal = {
  * (E-20, E-21; Law 7.5: never in a pipeline or component file).
  */
 
-/** What `requestOtp` answers with: a refusal (`IdentityError`), a store failure, or a failed delivery. */
+/**
+ * What `requestOtp` answers with: a refusal (`IdentityError` — the unwired
+ * sender's `IDENTITY_OTP_SEND_UNAVAILABLE` among them), a store failure, or
+ * a failed delivery.
+ */
 export type RequestOtpError = IdentityError | RepositoryError | PipelineError;
 
 /** What `verifyOtp` answers with: a refusal (`IdentityError`), a store failure, or an Admin-Auth failure. */

@@ -85,6 +85,7 @@ import {
   SubjectRelationship,
   type VisitFact,
   WaitlistLifecycle,
+  WriteProvenance,
 } from '@core/components';
 import type {
   Appointment,
@@ -929,6 +930,7 @@ export function fixtureCustomers(): readonly Customer[] {
     searchPrefixes: [],
     createdAtUtcMs: sofia('2025-03-01T10:00:00'),
     customerOrigin: CustomerOrigin.Registration,
+    ...WriteProvenance.NONE,
   });
   return [
     recordOf(GEORGI, 'Георги Петров', '+359881234567', 'georgi@example.test'),

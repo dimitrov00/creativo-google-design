@@ -45,6 +45,18 @@ describe('IdentityError', () => {
     });
   });
 
+  it('spells the deployed sender’s refusal apart from a failed delivery — a retry never succeeds (WS-0)', () => {
+    expect(IdentityErrorCode.OtpSendUnavailable).toBe(
+      'IDENTITY_OTP_SEND_UNAVAILABLE',
+    );
+    expect(IdentityErrorCode.OtpSendUnavailable).not.toBe(
+      IdentityErrorCode.OtpSendFailure,
+    );
+    expect(IdentityError.otpSendUnavailable()).toEqual({
+      errorCode: 'IDENTITY_OTP_SEND_UNAVAILABLE',
+    });
+  });
+
   it('the four OTP verdicts carry no payload and are shared structs', () => {
     expect(IdentityError.otpAlreadyConsumed()).toEqual({
       errorCode: 'IDENTITY_OTP_ALREADY_CONSUMED',

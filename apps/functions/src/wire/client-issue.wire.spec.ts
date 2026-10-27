@@ -4,9 +4,9 @@ import {
   ClientIssueError,
   ClientIssueErrorCode,
 } from '@core/errors';
-import type { Result } from '@core/primitives';
+import { ClientOperationId, type Result } from '@core/primitives';
 import { ClientIssueSystem } from '@core/systems';
-import { recordingTelemetry } from '@core/testing';
+import { recordingTelemetry, unwrapOk } from '@core/testing';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   CLIENT_ISSUE_RATE,
@@ -76,6 +76,45 @@ describe('reportClientIssues — the wire', () => {
       value: { reporterRoles: ['barber'], reporterAuthed: true, issues: BATCH },
     });
     if (decoded.ok) expect(decoded.value.issues).toBe(BATCH);
+    expect(lines).toEqual([]);
+  });
+
+  // WS-5 (RU-30): the three new keys are optional on the wire, so a batch
+  // from a web shell opened before the deploy (nine keys an issue) still
+  // lands — each absent key read as null — and a transport failure's
+  // callable, code and operation id come through as sent.
+  it('admits an old web’s nine-key batch, each absent WS-5 key null, and a transport failure as sent', () => {
+    const { log, lines } = recordingTelemetry();
+    const ws5 = new Set(['operationId', 'callableName', 'callableErrorCode']);
+    const oldShell = BATCH.map((one) =>
+      Object.fromEntries(Object.entries(one).filter(([key]) => !ws5.has(key))),
+    );
+    const decoded = decodeReportClientIssues(request(oldShell, CLIENT), log);
+    expect(decoded).toEqual({
+      ok: true,
+      value: { reporterRoles: [], reporterAuthed: true, issues: BATCH },
+    });
+
+    const transport = [
+      ClientIssueSystem.composeTransport({
+        callableName: 'commitBooking',
+        errorName: 'TypeError',
+        callableErrorCode: 'functions/internal',
+        operationId: unwrapOk(
+          ClientOperationId.parse('attempt-0123456789abcdef'),
+        ),
+        release: '2026.10.26',
+      }),
+    ];
+    const admitted = decodeReportClientIssues(request(transport, STAFF), log);
+    if (!admitted.ok) throw new Error('expected an admitted batch');
+    expect(admitted.value.issues).toBe(transport);
+    expect(admitted.value.issues[0]).toMatchObject({
+      clientIssueKind: ClientIssueKind.CallableTransportFailed,
+      operationId: 'attempt-0123456789abcdef',
+      callableName: 'commitBooking',
+      callableErrorCode: 'functions/internal',
+    });
     expect(lines).toEqual([]);
   });
 

@@ -11,6 +11,7 @@ import {
 } from './pipeline.error';
 import { StaffEditErrorCode } from './staff-edit.error';
 import { TimeErrorCode } from './time.error';
+import { ClientOperationId } from '@core/primitives';
 import { WaitlistErrorCode } from './waitlist.error';
 
 /*
@@ -52,6 +53,7 @@ describe('PipelineError', () => {
       field: null,
       wireStatus: null,
       serverParams: {},
+      operationId: null,
     });
   });
 
@@ -63,7 +65,25 @@ describe('PipelineError', () => {
       field: null,
       wireStatus: null,
       serverParams: {},
+      operationId: null,
     });
+  });
+
+  // WS-4.5: the reference a person reads out. Only the web's callable
+  // client stamps it — `of`, `bare` and `fromWire` carry none (above, and
+  // the wire rows below), so the wire never decides it.
+  it('withOperation() carries the call’s operation id and keeps every other detail', () => {
+    const id = ClientOperationId.parse('op-0123456789abcdef');
+    if (!id.ok) throw new Error('fixture failed its smart constructor');
+    const refused = PipelineError.fromWire('failed-precondition', {
+      errorCode: BookingErrorCode.SlotUnavailable,
+    });
+
+    const carried = PipelineError.withOperation(refused, id.value);
+
+    expect(carried).toEqual({ ...refused, operationId: 'op-0123456789abcdef' });
+    expect(refused.operationId).toBeNull();
+    expect(PipelineError.withOperation(carried, null)).toEqual(refused);
   });
 
   it('is() compares the code', () => {
@@ -386,6 +406,7 @@ describe('PipelineError.fromWire — today’s adapter rows, re-keyed', () => {
       field: 'person_overlap',
       wireStatus: 'invalid-argument',
       serverParams: {},
+      operationId: null,
     });
   });
 
@@ -424,6 +445,7 @@ describe('PipelineError.fromWire — today’s adapter rows, re-keyed', () => {
       field: null,
       wireStatus: 'internal',
       serverParams: {},
+      operationId: null,
     });
     expect(PipelineError.fromWire('unknown', null).errorCode).toBe(P.Unknown);
   });

@@ -63,13 +63,16 @@ import {
   staffEditAppointmentRefusal,
   transitionAppointmentRefusal,
 } from './booking.wire';
-import { settle } from './wire-read';
+import { settle, type WireRequest } from './wire-read';
 
 const signedIn = (uid: string, roles: readonly string[] = []) => ({
   auth: { uid, token: { roles } },
 });
 const staff = signedIn('u-staff', ['barber']);
 const ATTEMPT = 'attempt-0123456789abcdef';
+/** A client-minted act name (WS-4.1) — the key's shape, a plain id. */
+const OP = 'operation-0123456789ab';
+const OPERATION = OperationId.of(OP);
 const A1 = AppointmentId.of('a1');
 
 /** A refusal as the client sees it on the wire. */
@@ -92,6 +95,7 @@ function valueOf<T>(result: Result<T, EdgeError>): T {
 const arrival = (markArrivalAction: MarkArrivalAction): MarkArrivalCommand => ({
   markArrivalAction,
   appointmentId: A1,
+  operationId: OPERATION,
   actor: null,
 });
 
@@ -99,6 +103,7 @@ const TIP: RecordSeatTipCommand = {
   appointmentId: A1,
   seatId: SeatId.of('s1'),
   tipCents: null,
+  operationId: OPERATION,
   actor: null,
 };
 
@@ -150,6 +155,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         locationId: 'loc-center',
         localDate: '2026-09-29',
         attemptId: ATTEMPT,
+        operationId: ATTEMPT,
         bookedFromAppointmentId: null,
         ownerUserId: 'u-client',
         staffPlacement: false,
@@ -187,12 +193,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       ]);
     });
 
-    it('drops, never refuses, a malformed attempt id, rebooking edge, guest key or contact', () => {
+    it('drops, never refuses, a malformed rebooking edge, guest key or contact', () => {
       const command = valueOf(
         decodeCommitBooking({
           ...signedIn('u-client'),
           data: {
-            attemptId: 'short',
+            attemptId: ATTEMPT,
             bookedFromAppointmentId: 'has spaces',
             contact: { name: '', phone: '' },
             seats: [
@@ -206,7 +212,6 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           },
         }),
       );
-      expect(command.attemptId).toBeNull();
       expect(command.bookedFromAppointmentId).toBeNull();
       expect(command.contact).toBeNull();
       expect(command.locationId).toBe('');
@@ -223,7 +228,11 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       valueOf(
         decodeCommitBooking({
           ...signedIn('u-client'),
-          data: { locationId: 'loc-center', seats: [{ subject }] },
+          data: {
+            locationId: 'loc-center',
+            attemptId: ATTEMPT,
+            seats: [{ subject }],
+          },
         }),
       ).seats[0]?.subject;
 
@@ -346,6 +355,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         decodeCommitBooking({
           ...signedIn('u-client'),
           data: {
+            attemptId: ATTEMPT,
             seats: [
               { barberPreference: BarberPreference.Any },
               { barberPreference: BarberPreference.Specific },
@@ -393,6 +403,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         details: { errorCode: 'BOOKING_COMMIT_FORBIDDEN' },
       });
       const guestsOnly = {
+        attemptId: ATTEMPT,
         placement: Placement.Staff,
         onBehalfOfUserId: null,
         seats: [
@@ -411,7 +422,11 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       const named = valueOf(
         decodeCommitBooking({
           ...staff,
-          data: { placement: Placement.Staff, onBehalfOfUserId: 'u-client' },
+          data: {
+            attemptId: ATTEMPT,
+            placement: Placement.Staff,
+            onBehalfOfUserId: 'u-client',
+          },
         }),
       );
       expect(named).toMatchObject({
@@ -428,6 +443,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           decodeCommitBooking({
             ...staff,
             data: {
+              attemptId: ATTEMPT,
               placement: Placement.Staff,
               onBehalfOfUserId: 'has spaces',
             },
@@ -442,6 +458,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           decodeCommitBooking({
             ...staff,
             data: {
+              attemptId: ATTEMPT,
               placement: Placement.Self,
               onBehalfOfUserId: null,
               seats: [
@@ -460,6 +477,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           decodeCommitBooking({
             ...staff,
             data: {
+              attemptId: ATTEMPT,
               placement: Placement.Self,
               onBehalfOfUserId: null,
               seats: [
@@ -479,6 +497,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           decodeCommitBooking({
             ...signedIn('u-client'),
             data: {
+              attemptId: ATTEMPT,
               placement: Placement.Self,
               onBehalfOfUserId: null,
               seats: [
@@ -584,10 +603,15 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           valueOf(
             decodeCancelAppointment({
               ...signedIn('u1'),
-              data: { appointmentId: 'a1', reason },
+              data: { appointmentId: 'a1', reason, operationId: OP },
             }),
           ),
-        ).toMatchObject({ appointmentId: 'a1', callerUserId: 'u1', reason });
+        ).toMatchObject({
+          appointmentId: 'a1',
+          callerUserId: 'u1',
+          reason,
+          operationId: OPERATION,
+        });
       }
     });
 
@@ -595,7 +619,11 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       const cmd = valueOf(
         decodeCancelAppointment({
           ...signedIn('u1'),
-          data: { appointmentId: 'a1', reason: CancellationReason.Other },
+          data: {
+            appointmentId: 'a1',
+            reason: CancellationReason.Other,
+            operationId: OP,
+          },
         }),
       );
       expect(
@@ -676,6 +704,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         locationId: 'loc-center',
         localDate: '2026-10-02',
         attemptId: ATTEMPT,
+        operationId: ATTEMPT,
       });
       expect(
         command.seats.map((seat) => [
@@ -687,8 +716,13 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         [RequestedSubjectRole.Guest, 660],
       ]);
       expect(
-        valueOf(decodeRescheduleAppointment({ data: { appointmentId: 'a1' } })),
-      ).toMatchObject({ callerUserId: null, attemptId: null, seats: [] });
+        valueOf(
+          decodeRescheduleAppointment({
+            ...signedIn('u-client'),
+            data: { appointmentId: 'a1', attemptId: ATTEMPT },
+          }),
+        ),
+      ).toMatchObject({ callerUserId: 'u-client', seats: [] });
     });
 
     it('refuses a request that names no visit', () => {
@@ -784,6 +818,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
               toBookingStatus: BookingStatus.Cancelled,
               seatId: 'seat-2',
               cancellationReason: CancellationReason.ClientUnwell,
+              operationId: OP,
             },
           }),
         ),
@@ -792,6 +827,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         to: BookingStatus.Cancelled,
         seatId: 'seat-2',
         reason: CancellationReason.ClientUnwell,
+        operationId: OPERATION,
       });
       expect(
         valueOf(
@@ -801,6 +837,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
               appointmentId: 'a1',
               toBookingStatus: BookingStatus.Cancelled,
               cancellationReason: null,
+              operationId: OP,
             },
           }),
         ).reason,
@@ -814,17 +851,20 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           appointmentId: 'a1',
           toBookingStatus: BookingStatus.Cancelled,
           cancellationReason: CancellationReason.Other,
+          operationId: OP,
         },
         {
           appointmentId: 'a1',
           toBookingStatus: BookingStatus.Cancelled,
           cancellationReason: CancellationReason.Other,
+          operationId: OP,
           note: ' ',
         },
         {
           appointmentId: 'a1',
           toBookingStatus: BookingStatus.Cancelled,
           cancellationReason: CancellationReason.Other,
+          operationId: OP,
           note: 'flooded',
         },
       ]) {
@@ -840,6 +880,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         expect(Object.keys(command).sort()).toEqual([
           'actor',
           'appointmentId',
+          'operationId',
           'reason',
           'seatId',
           'to',
@@ -854,6 +895,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
               appointmentId: 'a1',
               toBookingStatus: BookingStatus.NoShow,
               cancellationReason: CancellationReason.ClientUnwell,
+              operationId: OP,
             },
           }),
         ),
@@ -866,6 +908,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         to: BookingStatus.Completed,
         seatId: null,
         reason: null,
+        operationId: OPERATION,
         actor: null,
       };
       expect(
@@ -1026,17 +1069,27 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       });
       expect(
         valueOf(
-          decodeClearArrival({ ...staff, data: { appointmentId: 'a1' } }),
+          decodeClearArrival({
+            ...staff,
+            data: { appointmentId: 'a1', operationId: OP },
+          }),
         ),
       ).toMatchObject({
         markArrivalAction: MarkArrivalAction.Clear,
         appointmentId: 'a1',
+        operationId: OPERATION,
       });
       expect(
-        valueOf(decodeMarkArrived({ ...staff, data: { appointmentId: 'a1' } })),
+        valueOf(
+          decodeMarkArrived({
+            ...staff,
+            data: { appointmentId: 'a1', operationId: OP },
+          }),
+        ),
       ).toMatchObject({
         markArrivalAction: MarkArrivalAction.Arrive,
         appointmentId: 'a1',
+        operationId: OPERATION,
       });
       expect(
         wire(
@@ -1090,15 +1143,25 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         valueOf(
           decodeRecordSeatTip({
             ...staff,
-            data: { appointmentId: 'a1', seatId: 's1', amountCents: 250 },
+            data: {
+              appointmentId: 'a1',
+              seatId: 's1',
+              amountCents: 250,
+              operationId: OP,
+            },
           }),
         ),
-      ).toMatchObject({ tipCents: 250 });
+      ).toMatchObject({ tipCents: 250, operationId: OPERATION });
       expect(
         valueOf(
           decodeRecordSeatTip({
             ...staff,
-            data: { appointmentId: 'a1', seatId: 's1', amountCents: null },
+            data: {
+              appointmentId: 'a1',
+              seatId: 's1',
+              amountCents: null,
+              operationId: OP,
+            },
           }),
         ).tipCents,
       ).toBeNull();
@@ -1107,7 +1170,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         valueOf(
           decodeRecordSeatTip({
             ...staff,
-            data: { appointmentId: 'a1', seatId: 's1', amountMinorUnits: 250 },
+            data: {
+              appointmentId: 'a1',
+              seatId: 's1',
+              amountMinorUnits: 250,
+              operationId: OP,
+            },
           }),
         ).tipCents,
       ).toBeNull();
@@ -1173,6 +1241,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       });
     const one = (command: Record<string, unknown>) => ({
       appointmentId: 'a1',
+      operationId: OP,
       commands: [command],
     });
 
@@ -1220,15 +1289,19 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           'operationId',
         ],
         [{ ...one(move), operationId: 'x'.repeat(65) }, 'operationId'],
+        // REQUIRED (WS-4.1): an absent, `null` or reserved name is refused too.
+        [{ appointmentId: 'a1', commands: [move] }, 'operationId'],
+        [{ ...one(move), operationId: null }, 'operationId'],
+        [{ ...one(move), operationId: '_'.repeat(16) }, 'operationId'],
         [
           { ...one(move), operationId: { id: 'operation-0123456789ab' } },
           'operationId',
         ],
-        [{ appointmentId: 'a1' }, 'commands'],
-        [{ appointmentId: 'a1', commands: [] }, 'commands'],
+        [{ appointmentId: 'a1', operationId: OP }, 'commands'],
+        [{ appointmentId: 'a1', operationId: OP, commands: [] }, 'commands'],
         // The legacy lone `command` is no request: always an array.
-        [{ appointmentId: 'a1', command: move }, 'commands'],
-        [{ appointmentId: 'a1', commands: move }, 'commands'],
+        [{ appointmentId: 'a1', operationId: OP, command: move }, 'commands'],
+        [{ appointmentId: 'a1', operationId: OP, commands: move }, 'commands'],
         [one({}), 'editCommand'],
         [one({ editCommand: 'TELEPORT' }), 'editCommand'],
         [one({ editCommand: 'move' }), 'editCommand'],
@@ -1478,7 +1551,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       });
     });
 
-    it('an added seat is the owner’s or a guest’s; an absent claim and name are none', () => {
+    it('an added seat is the owner’s or a guest’s; an absent claim is none', () => {
       const command = valueOf(
         edit(
           one({
@@ -1504,20 +1577,19 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         durationMinutes: 30,
         addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
       });
-      expect(command.operationId).toBeNull();
+      expect(command.operationId).toBe(OPERATION);
       expect(command.expectedVersion).toBeNull();
       expect(command.acknowledgedOverlap).toBe(false);
-      // An explicit `null` is no claim and no name either.
+      // An explicit `null` is no claim either.
       const unclaimed = valueOf(
         edit({
           ...one({ editCommand: EditCommand.RemoveSeat, seatId: 's1' }),
           expectedVersion: null,
-          operationId: null,
         }),
       );
       expect(unclaimed).toMatchObject({
         expectedVersion: null,
-        operationId: null,
+        operationId: OPERATION,
       });
       // A claim is handed on exactly as sent — revision 0 included.
       expect(
@@ -1562,6 +1634,248 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     });
   });
 
+  describe('operation ids — REQUIRED on the booking acts (WS-4.1, DEP-4)', () => {
+    /** Every way a sent id is no id: absent, `null`, malformed, reserved (OR-44). */
+    const NOT_AN_ID: readonly (readonly [string, unknown])[] = [
+      ['absent', undefined],
+      ['null', null],
+      ['too short', 'short'],
+      ['65 characters', 'x'.repeat(65)],
+      ['spaced', 'has spaces in it, sixteen+'],
+      ['a number', 1234567890123456],
+      ['an object', { id: OP }],
+      ['a reserved name', '_'.repeat(16)],
+    ];
+    /** A payload with the id under its field — or without the field at all. */
+    const withId = (
+      base: Record<string, unknown>,
+      name: 'attemptId' | 'operationId',
+      id: unknown,
+    ): Record<string, unknown> =>
+      id === undefined
+        ? base
+        : name === 'attemptId'
+          ? { ...base, attemptId: id }
+          : { ...base, operationId: id };
+
+    type Act = {
+      readonly callable: string;
+      readonly name: 'attemptId' | 'operationId';
+      readonly decode: (
+        request: WireRequest,
+      ) => Result<{ readonly operationId: OperationId }, EdgeError>;
+      readonly base: Record<string, unknown>;
+      readonly caller: WireRequest;
+      readonly refusal: EdgeError;
+    };
+    const ACTS: readonly Act[] = [
+      {
+        callable: 'commitBooking',
+        name: 'attemptId',
+        decode: decodeCommitBooking,
+        base: { placement: Placement.Self, seats: [] },
+        caller: signedIn('u-client'),
+        refusal: BookingError.invalidInput('attemptId'),
+      },
+      {
+        callable: 'rescheduleAppointment',
+        name: 'attemptId',
+        decode: decodeRescheduleAppointment,
+        base: { appointmentId: 'a1' },
+        caller: signedIn('u-client'),
+        refusal: BookingError.invalidInput('attemptId'),
+      },
+      {
+        callable: 'cancelAppointment',
+        name: 'operationId',
+        decode: decodeCancelAppointment,
+        base: { appointmentId: 'a1', reason: CancellationReason.Other },
+        caller: signedIn('u-client'),
+        refusal: CancellationRefusal.invalidInput('operationId'),
+      },
+      {
+        callable: 'transitionAppointment',
+        name: 'operationId',
+        decode: decodeTransitionAppointment,
+        base: { appointmentId: 'a1', toBookingStatus: BookingStatus.NoShow },
+        caller: staff,
+        refusal: BookingError.callInvalidInput(
+          BookingErrorCode.TransitionInvalidInput,
+          'operationId',
+        ),
+      },
+      {
+        callable: 'markArrived',
+        name: 'operationId',
+        decode: decodeMarkArrived,
+        base: { appointmentId: 'a1' },
+        caller: staff,
+        refusal: BookingError.callInvalidInput(
+          BookingErrorCode.ArrivedInvalidInput,
+          'operationId',
+        ),
+      },
+      {
+        callable: 'clearArrival',
+        name: 'operationId',
+        decode: decodeClearArrival,
+        base: { appointmentId: 'a1' },
+        caller: staff,
+        refusal: BookingError.callInvalidInput(
+          BookingErrorCode.ArrivedInvalidInput,
+          'operationId',
+        ),
+      },
+      {
+        callable: 'recordSeatTip',
+        name: 'operationId',
+        decode: decodeRecordSeatTip,
+        base: { appointmentId: 'a1', seatId: 's1', amountCents: 250 },
+        caller: staff,
+        refusal: BookingError.callInvalidInput(
+          BookingErrorCode.TipInvalidInput,
+          'operationId',
+        ),
+      },
+      {
+        callable: 'staffEditAppointment',
+        name: 'operationId',
+        decode: decodeStaffEditAppointment,
+        base: {
+          appointmentId: 'a1',
+          commands: [{ editCommand: EditCommand.RemoveSeat, seatId: 's1' }],
+        },
+        caller: signedIn('u-desk', ['receptionist']),
+        refusal: StaffEditError.invalidCommand('operationId'),
+      },
+    ];
+
+    describe.each(ACTS)('$callable', (act) => {
+      it.each(NOT_AN_ID)(
+        `refuses an id that is %s with its own invalid input, naming the field`,
+        (_what, id) => {
+          expect(
+            refusalOf(
+              act.decode({
+                ...act.caller,
+                data: withId(act.base, act.name, id),
+              }),
+            ),
+          ).toEqual(act.refusal);
+        },
+      );
+
+      it('hands a well-formed id on as the act’s OperationId, its text unchanged', () => {
+        const sentText = act.name === 'attemptId' ? ATTEMPT : OP;
+        expect(
+          valueOf(
+            act.decode({
+              ...act.caller,
+              data: withId(act.base, act.name, sentText),
+            }),
+          ).operationId,
+        ).toBe(OperationId.of(sentText));
+      });
+    });
+
+    it('a booking’s attempt id is the new visit’s id and the act’s name, one text; a move’s too', () => {
+      expect(
+        valueOf(
+          decodeCommitBooking({
+            ...signedIn('u-client'),
+            data: { attemptId: ATTEMPT },
+          }),
+        ),
+      ).toMatchObject({
+        attemptId: AppointmentId.of(ATTEMPT),
+        operationId: OperationId.of(ATTEMPT),
+      });
+      expect(
+        valueOf(
+          decodeRescheduleAppointment({
+            ...signedIn('u-client'),
+            data: { appointmentId: 'a1', attemptId: ATTEMPT },
+          }),
+        ),
+      ).toMatchObject({ attemptId: ATTEMPT, operationId: ATTEMPT });
+    });
+
+    it('unauthenticated and forbidden still win over a missing id', () => {
+      const anonymous = (
+        decode: Act['decode'],
+        data: Record<string, unknown>,
+      ) => wire(refusalOf(decode({ data }))).details;
+      expect(anonymous(decodeCommitBooking, {})).toEqual({
+        errorCode: 'BOOKING_UNAUTHENTICATED',
+      });
+      expect(
+        anonymous(decodeRescheduleAppointment, { appointmentId: 'a1' }),
+      ).toEqual({ errorCode: 'BOOKING_UNAUTHENTICATED' });
+      expect(anonymous(decodeCancelAppointment, {})).toEqual({
+        errorCode: 'BOOKING_CANCEL_UNAUTHENTICATED',
+      });
+      expect(anonymous(decodeTransitionAppointment, {})).toEqual({
+        errorCode: 'BOOKING_TRANSITION_UNAUTHENTICATED',
+      });
+      expect(anonymous(decodeMarkArrived, {})).toEqual({
+        errorCode: 'BOOKING_ARRIVED_UNAUTHENTICATED',
+      });
+      expect(anonymous(decodeClearArrival, {})).toEqual({
+        errorCode: 'BOOKING_ARRIVED_UNAUTHENTICATED',
+      });
+      expect(anonymous(decodeRecordSeatTip, {})).toEqual({
+        errorCode: 'BOOKING_TIP_UNAUTHENTICATED',
+      });
+      expect(anonymous(decodeStaffEditAppointment, {})).toEqual({
+        errorCode: StaffEditErrorCode.Unauthenticated,
+      });
+      const roleless = (decode: Act['decode'], data: Record<string, unknown>) =>
+        wire(refusalOf(decode({ ...signedIn('u1'), data }))).details;
+      expect(
+        roleless(decodeCommitBooking, { placement: Placement.Staff }),
+      ).toEqual({ errorCode: 'BOOKING_COMMIT_FORBIDDEN' });
+      expect(roleless(decodeTransitionAppointment, {})).toEqual({
+        errorCode: 'BOOKING_TRANSITION_FORBIDDEN',
+      });
+      expect(roleless(decodeMarkArrived, {})).toEqual({
+        errorCode: 'BOOKING_ARRIVED_FORBIDDEN',
+      });
+      expect(roleless(decodeClearArrival, {})).toEqual({
+        errorCode: 'BOOKING_ARRIVED_FORBIDDEN',
+      });
+      expect(roleless(decodeRecordSeatTip, {})).toEqual({
+        errorCode: 'BOOKING_TIP_FORBIDDEN',
+      });
+      expect(roleless(decodeStaffEditAppointment, {})).toEqual({
+        errorCode: StaffEditErrorCode.Forbidden,
+      });
+    });
+
+    it('every other payload field is judged before the id — today’s answers for today’s faults', () => {
+      expect(
+        refusalOf(
+          decodeCancelAppointment({ ...signedIn('u1'), data: { reason: 7 } }),
+        ),
+      ).toEqual(CancellationRefusal.invalidInput('appointmentId'));
+      expect(
+        refusalOf(
+          decodeRecordSeatTip({
+            ...staff,
+            data: { appointmentId: 'a1', seatId: 's1', amountCents: -1 },
+          }),
+        ),
+      ).toEqual(
+        BookingError.callInvalidInput(
+          BookingErrorCode.TipInvalidInput,
+          'amountCents',
+        ),
+      );
+      expect(
+        refusalOf(decodeRescheduleAppointment({ ...signedIn('u1'), data: {} })),
+      ).toEqual(BookingError.invalidInput('appointmentId'));
+    });
+  });
+
   describe('a refused field as the refusal names it (LEGACY_FIELD_OF deleted)', () => {
     it('leaves every field — a start, a handle, the stored lifecycle — as the struct holds it, never renamed', () => {
       for (const name of [
@@ -1601,12 +1915,14 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         to: BookingStatus.Cancelled,
         seatId: null,
         reason: CancellationReason.ClientUnwell,
+        operationId: OPERATION,
         actor: null,
       };
       const cancel = {
         appointmentId: A1,
         callerUserId: UserId.of('u1'),
         reason: CancellationReason.Other,
+        operationId: OPERATION,
         actor: null,
       };
       const refusals: readonly (() => EdgeError)[] = [
@@ -1630,6 +1946,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         appointmentId: A1,
         callerUserId: UserId.of('u1'),
         reason: CancellationReason.Other,
+        operationId: OPERATION,
         actor: null,
       };
       expect(
@@ -1657,6 +1974,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       decodeCommitBooking({
         auth: { uid: 'u-token' },
         data: {
+          attemptId: ATTEMPT,
           locationId: 'loc',
           seats: [],
           ownerUserId: 'u-payload',
@@ -1667,7 +1985,16 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     expect(command.ownerUserId).toBe(UserId.of('u-token'));
     expect(command.staffPlacement).toBe(false);
     expect(
-      valueOf(decodeCommitBooking({ data: { uid: 'u-payload' } })).ownerUserId,
-    ).toBeNull();
+      wire(
+        refusalOf(
+          decodeCommitBooking({
+            data: { attemptId: ATTEMPT, uid: 'u-payload' },
+          }),
+        ),
+      ),
+    ).toEqual({
+      code: 'unauthenticated',
+      details: { errorCode: 'BOOKING_UNAUTHENTICATED' },
+    });
   });
 });

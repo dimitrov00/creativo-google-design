@@ -1,5 +1,4 @@
 import {
-  type Actor,
   BlockKind,
   DiscountProvenance,
   type E164,
@@ -12,7 +11,6 @@ import {
   type DocPath,
 } from '@core/components';
 import {
-  AuditEntryId,
   BarberId,
   BusyKey,
   type AppointmentId,
@@ -22,13 +20,13 @@ import {
   type LocationId,
   ServiceId,
   type LocalDate,
+  LogEvent,
   type MinuteOfDay,
   TimeZone,
   UtcEpochMs,
 } from '@core/primitives';
 import {
   type Appointment,
-  type AuditEntry,
   type BarberBusyDay,
   type BarberSchedule,
   type CouponGrant,
@@ -39,17 +37,9 @@ import {
   type ShopLocation,
   Collections,
 } from '@core/entities';
-import type {
-  AuditAppendPorts,
-  ClockPorts,
-  HashPorts,
-  IdPorts,
-  LogPorts,
-  ReadTx,
-} from '@core/ports';
+import type { LogPorts, ReadTx } from '@core/ports';
 import {
   type AuditFact,
-  AuditSystem,
   type BookingSnapshot,
   type BusyWrite,
   BusySystem,
@@ -378,53 +368,25 @@ export function zoneOf(location: ShopLocation): TimeZone | null {
   return zone.ok ? zone.value : null;
 }
 
-/** What the after-commit audit write needs: the write port, the id mints, the clock and the log. */
-export type AuditWritePorts = AuditAppendPorts &
-  HashPorts &
-  IdPorts &
-  ClockPorts &
-  LogPorts;
-
 /**
- * The act's audit rows, AFTER the commit and never inside it (blueprint §4):
- * planned by `AuditSystem.plan` — one row per person per fact — each id
- * `hash(idBasis)` (a replay derives the same id and writes nothing twice;
- * a fact with no change key mints `nextId()`), written by `appendAudit`,
- * which is never fatal. A missing verified actor or a row the planner
- * refuses is logged loudly and writes nothing — the act already happened.
+ * After a landed commit, the facts its decide step could not audit for
+ * want of a verified actor (`AuditSystem.commitWrites`' `unaudited`): the
+ * act committed without rows (unchanged behaviour — unreachable over the
+ * wire, every decoder refuses an anonymous caller first), so each fact is
+ * logged loudly, one `LogEvent.AuditActorMissing` error line per fact. The
+ * rows themselves are never written here: they are `WriteOp.create`
+ * entries of the act's own commit plan (WS-1).
  */
-export async function appendAuditFacts(
-  ports: AuditWritePorts,
-  facts: readonly AuditFact[],
-  actor: Actor | null,
-): Promise<void> {
-  if (facts.length === 0) return;
-  const first = facts[0] as AuditFact;
-  if (actor === null) {
-    ports.log('error', 'audit row has no verified actor', {
-      action: first.context.auditAction,
-      resourceId: first.resourceId,
-    });
-    return;
-  }
-  const planned = AuditSystem.plan(facts, actor, ports.nowUtcMs());
-  if (!planned.ok) {
-    ports.log('error', 'audit entry refused by domain', {
-      action: first.context.auditAction,
-      errorCode: planned.error.errorCode,
-    });
-    return;
-  }
-  const rows: AuditEntry[] = [];
-  for (const plan of planned.value) {
-    rows.push({
-      id: AuditEntryId.of(
-        plan.idBasis === null ? ports.nextId() : ports.hash(plan.idBasis),
-      ),
-      ...plan.row,
+export function logUnaudited(
+  ports: LogPorts,
+  unaudited: readonly AuditFact[],
+): void {
+  for (const fact of unaudited) {
+    ports.log('error', LogEvent.AuditActorMissing, {
+      action: fact.context.auditAction,
+      resourceId: fact.resourceId,
     });
   }
-  await ports.appendAudit(rows);
 }
 
 /** `giftVouchers/{id}`. */
@@ -572,8 +534,9 @@ export function grantReleaseWrites<D extends DiscountProvenance>(
 
 /**
  * The root fields a placing write sets — the geometry, the query mirrors
- * (`AppointmentIndexSystem.withQueryKeys`) and the edit ledger: what a move
- * or a staff edit changes about a visit that stays the same document.
+ * (`AppointmentIndexSystem.withQueryKeys`), the edit ledger and the writing
+ * call's `writeOperationId` (WS-4.3): what a move or a staff edit changes
+ * about a visit that stays the same document.
  */
 export function placementFields(after: Appointment): DocBody {
   return {
@@ -591,5 +554,6 @@ export function placementFields(after: Appointment): DocBody {
     busyKeys: after.busyKeys,
     revision: after.revision,
     appliedOperations: after.appliedOperations,
+    writeOperationId: after.writeOperationId,
   };
 }

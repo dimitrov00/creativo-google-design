@@ -19,7 +19,9 @@ import {
   type CustomerId,
   LocalDate,
   LocationId,
+  LogEvent,
   MinuteOfDay,
+  type OperationId,
   ServiceId,
   TimeZone,
   type UserId,
@@ -28,14 +30,21 @@ import {
 import {
   type BookAppointmentError,
   BookingError,
+  BookingErrorCode,
   BookingErrorField,
+  type EditAppointmentError,
+  type RescheduleAppointmentError,
   ShopUnavailableReason,
+  StaffEditErrorCode,
   type TimeError,
 } from '@core/errors';
-import type { AccountContact, Appointment } from '@core/entities';
+import type {
+  AccountContact,
+  Appointment,
+  BarberBusyDay,
+} from '@core/entities';
 import type {
   AccountContactPorts,
-  AuditAppendPorts,
   PolicyReadPorts,
   ReadTx,
   TelemetryPorts,
@@ -48,13 +57,15 @@ import {
   BookingDecisionSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   PartyAdmissionSystem,
+  type SlotRefusal,
   type WalkInGuest,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
+  logUnaudited,
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
@@ -111,10 +122,15 @@ import {
  *   meanwhile (ALREADY_EXISTS) re-runs the whole transaction ONCE — it
  *   re-reads and finds the record — and is never answered as success; the
  *   same phone twice is one record, and a retried attempt is answered
- *   before anything is planned.
- * - **After the commit:** the act's rows (`attempt:<attemptId>`, else the
- *   new id), never fatal. A replay appends them again — the same ids, so
- *   nothing is written twice.
+ *   before anything is planned — and, LAST, the act's rows
+ *   (`attempt:<attemptId>` — the attempt id is required, WS-4.1),
+ *   `Create`d in the SAME plan (WS-1): they land with the booking or not at
+ *   all. A replay plans none — it never meets its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot — captured in the
+ *   impure read callback, never inside the pure `decide` (Law 4) — never
+ *   in the error (OR-12).
  */
 
 /**
@@ -134,8 +150,13 @@ export type BookAppointmentCommand = {
   readonly localDate: string;
   /** Each seat's start a minute of that day (`null`: not one). */
   readonly seats: readonly BookingCall.SeatInput[];
-  /** The client's idempotency key — the new appointment's id; `null` mints one. */
-  readonly attemptId: AppointmentId | null;
+  /**
+   * The client's idempotency key — the new appointment's id, REQUIRED
+   * (WS-4.1: the edge refuses a call without one; the web always minted it).
+   */
+  readonly attemptId: AppointmentId;
+  /** The act's operation id — the attempt id's own text, parsed once at the edge (RU-20). */
+  readonly operationId: OperationId;
   /** The rebooking edge — an analytics link, no authority. */
   readonly bookedFromAppointmentId: AppointmentId | null;
   readonly contact: BookingContact.Input | null;
@@ -159,7 +180,6 @@ export type BookAppointmentPorts = TxPorts &
   WalkInKeyPorts &
   PolicyReadPorts &
   AccountContactPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 type Snapshot =
@@ -181,6 +201,8 @@ type Snapshot =
 type Decided = {
   readonly appointment: Appointment;
   readonly replayed: boolean;
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -217,6 +239,32 @@ export function frameWallClock(
     startMinutes: minutes,
     startUtcMs: startUtcMs.value,
   });
+}
+
+/**
+ * The refused seat's place when the refusal names one — a slot somebody
+ * holds (`BOOKING_SLOT_UNAVAILABLE`) or a staff edit's overlap
+ * (`BOOKING_STAFF_EDIT_OVERLAPS`) — the error itself, by structural typing
+ * (Law 3: no mapping); `null` for every other refusal. Shared by the
+ * commit, the reschedule and the staff edit, whose refused commits log
+ * `DecisionInputSystem.slotFacts` (WS-4.2).
+ */
+export function slotRefusalOf(
+  error:
+    BookAppointmentError | RescheduleAppointmentError | EditAppointmentError,
+): SlotRefusal | null {
+  return error.errorCode === BookingErrorCode.SlotUnavailable ||
+    error.errorCode === StaffEditErrorCode.Overlaps
+    ? error
+    : null;
+}
+
+/** The busy days a booking snapshot read — none before its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
 }
 
 /**
@@ -259,15 +307,25 @@ export const bookAppointment =
       : [];
     const contacts = await ports.loadAccountContacts(accounts);
     if (!contacts.ok) return contacts;
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const committed = await runWithCustomerRetry(() =>
       ports.commit(
-        (tx) =>
-          readBooking(tx, cmd, [
+        (tx) => {
+          lastRead = null;
+          return readBooking(tx, cmd, [
             ...customerIdsOf(customerIds),
             ...walkIns.map((walkIn) => walkIn.customerId),
-          ]),
+          ]).then((snapshot) => {
+            lastRead = snapshot;
+            return snapshot;
+          });
+        },
         (snapshot) =>
           decideBooking(
             snapshot,
@@ -278,28 +336,25 @@ export const bookAppointment =
             contacts.value,
             nowUtcMs,
             ports.nextId,
+            ports.hash,
           ),
       ),
     );
     if (!committed.ok) {
-      ports.log('warn', 'booking.rejected', {
+      ports.log('warn', LogEvent.BookingRejected, {
         errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          null,
+          // A new booking hands no chair back (`decide`'s `release` is `[]`).
+          [],
+        ),
       });
       return committed;
     }
-    const { appointment, replayed } = committed.value;
-    const fact: AuditFact = {
-      resourceId: AuditResourceId.forAppointment(appointment.id),
-      subjects: AuditSystem.subjectsOf(appointment),
-      changeKey: AuditSystem.changeKey.attempt(cmd.attemptId, appointment.id),
-      context: AuditContext.placement(
-        cmd.staffPlacement
-          ? AuditAction.BookingStaffCreated
-          : AuditAction.BookingCommitted,
-        appointment.locationId,
-      ),
-    };
-    await appendAuditFacts(ports, [fact], cmd.actor);
+    const { appointment, replayed, unaudited } = committed.value;
+    logUnaudited(ports, unaudited);
     return Result.ok({ appointmentId: appointment.id, replayed });
   };
 
@@ -309,11 +364,9 @@ async function readBooking(
   cmd: BookAppointmentCommand,
   customerIds: readonly CustomerId[],
 ): Promise<Snapshot> {
-  if (cmd.attemptId !== null) {
-    const existing = await readAppointment(tx, cmd.attemptId);
-    if (existing !== null) {
-      return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
-    }
+  const existing = await readAppointment(tx, cmd.attemptId);
+  if (existing !== null) {
+    return { bookingReadSnapshot: BookingReadSnapshot.Replay, existing };
   }
   // A shop id `LocationId.parse` refuses — blank, a `/`, a reserved name
   // (OR-44) — is an invalid request, refused UNREAD (DEP-F31): no document
@@ -391,11 +444,14 @@ function decideBooking(
   contacts: ReadonlyMap<UserId, AccountContact>,
   nowUtcMs: UtcEpochMs,
   nextId: () => string,
+  hash: (input: string) => string,
 ): Result<Decided, BookingError | TimeError> {
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
+    // A replay plans NO row: its rows landed with the first commit.
     return Result.ok({
       appointment: snapshot.existing,
       replayed: true,
+      unaudited: [],
       writes: [],
     });
   }
@@ -457,10 +513,36 @@ function decideBooking(
     },
   );
   if (!decided.ok) return decided;
-  const { id, ...body } = decided.value.appointment;
+  // The decision drafts the visit; the CALL that writes it is stamped here
+  // (WS-4.3) — a fact of the call, not of the decision.
+  const appointment: Appointment = {
+    ...decided.value.appointment,
+    writeOperationId: cmd.operationId,
+  };
+  const { id, ...body } = appointment;
+  const audit = AuditSystem.commitWrites(
+    [
+      {
+        resourceId: AuditResourceId.forAppointment(id),
+        subjects: AuditSystem.subjectsOf(appointment),
+        changeKey: AuditSystem.changeKey.attempt(cmd.attemptId),
+        operationId: cmd.operationId,
+        context: AuditContext.placement(
+          cmd.staffPlacement
+            ? AuditAction.BookingStaffCreated
+            : AuditAction.BookingCommitted,
+          appointment.locationId,
+        ),
+      },
+    ],
+    cmd.actor,
+    nowUtcMs,
+    hash,
+  );
   return Result.ok({
-    appointment: decided.value.appointment,
+    appointment,
     replayed: false,
+    unaudited: audit.unaudited,
     writes: [
       WriteOp.create(appointmentPath(id), body),
       ...busyMergeWrites(placement, decided.value.busyWrites, zone),
@@ -470,8 +552,15 @@ function decideBooking(
         contacts,
         CustomerOrigin.FirstBooking,
         nowUtcMs,
+        cmd.operationId,
       ),
-      ...CustomerRecordSystem.walkInCreates(walkIns, set.customers, nowUtcMs),
+      ...CustomerRecordSystem.walkInCreates(
+        walkIns,
+        set.customers,
+        nowUtcMs,
+        cmd.operationId,
+      ),
+      ...audit.writes,
     ],
   });
 }

@@ -6,7 +6,7 @@ working on this codebase after the ECS / data-oriented migration. It is the
 migration record: what landed in which order and how each step was proved
 (§2, §3), the gate every change still passes and its baselines (§4), the
 operating rules (§5), the owner's rulings and open questions (§6), and what
-was carried forward as follow-up work (end of §3.3). Last updated 2026-10-26
+was carried forward as follow-up work (end of §3.3). Last updated 2026-10-27
 (flip 1 complete; Law 9 port-composition pass; flips 2, 3 and 4 integrated;
 Phase 4a integrated; Phase 4b integrated — `libs/application/*`,
 `libs/domain/*`, `luxon`, `dinero.js` and the dotted i18n keys are gone,
@@ -33,7 +33,14 @@ root causes, the FULL gate green with no standing reds, end of §3.3; pass F
 `decisions/2026-10-26-owner-rulings.md` (OR-57…OR-59, pass E's N-5, N-2 and
 N-1, ruled and built after it the same day): every open question of §3.3
 and §6 ruled, the rulings built in four waves and integrated, the FULL gate green
-with no standing reds and `verify:csp` passing, end of §3.3).
+with no standing reds and `verify:csp` passing, end of §3.3; the audit
+hardening — Phases 0–2 of the audit, `flips/audit-hardening.md`, on the
+branch `audit-hardening` and its pull request: the booking verbs' audit rows
+in the act's own transaction with typed before/after deltas, privileged and
+governed changes audited, one operation id traceable from the UI's reference
+line to the callable, its writes, its rows and its triggers, the OTP sender
+gated to the emulator and the platform backstop as scripts, every workstream
+committed at a green boundary, DEP-1…DEP-24, end of §3.3).
 
 ## 1. Read these, in this order
 
@@ -70,34 +77,35 @@ with no standing reds and `verify:csp` passing, end of §3.3).
 
 ## 2. Where the work stands
 
-| Step                                                                                                                | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Commit(s)                                                    |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 81ac087                                                      |
-| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | defb4da                                                      |
-| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 056ae43                                                      |
-| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 0416587                                                      |
-| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | a6c7253                                                      |
-| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 291d3f9                                                      |
-| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 268aa0e, dbd39d4                                             |
-| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 3458349, ab6d266, c0e5d73                                    |
-| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
-| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | the "Law 9" commit                                           |
-| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the "flip 2 commit"                                          |
-| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | the "flip 3 commit"                                          |
-| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "flip 4 commit"                                          |
-| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | the "Phase 4a" commit                                        |
-| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 applied the same day on the owner's go-ahead                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the "Phase 4b" commit                                        |
-| **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the "UI residue cleanup" commit                              |
-| **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "@core/errors tier" commit                               |
-| **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | the "Law 10" commit                                          |
-| **Law 10.2 — the decision-extraction pass (presenters word, systems decide)**                                       | **done** — integrated 2026-10-23 (`flips/law-10-decision-extraction.md` §9): every MOVE/DUP row answered by an ecs-core system with a purity + boundary spec (2 new systems — `LoyaltyPassSystem`, `WalletSystem` — and 23 extended, 4 component companions, 23 new tag dictionaries plus `BirthdayMoment` moved down from the vm; 428 new ecs-core cases), every presenter spec unchanged; the FULL gate of §4 green (baseline reds only — `verify:p0`, `test:emulator` 65 + 255, `e2e:web` 41 + the 19), runbook §4.2–§4.5, §4.7–§4.9 PASS, the §5 review checklist clean, a DOM differential of 2,611 specs and the §6.3 dev-stack smoke (90 signatures) identical to `fd5f2a6` but the agenda's relative minutes                                                                                                                                                                                                                                                                                                                                               | the "decision-extraction" commit                             |
-| **Pass A — the audit's defects**                                                                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: the four defects of the read-only audit fixed (end of §3.3): the client photo strip's post-`limit` origin filter (index #22 gains `photoOrigin`), the client profile's age-window words missing their figure, the edit and reschedule pipelines' DST-gap fallback to a stale instant, and three staff-day defects (a cancel's words on the call, `periodLabel` on an empty day list, another chair's terms quoted)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | the "Pass A" commit                                          |
-| **Pass B — dead code, old-style leftovers, stale docs**                                                             | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: eight packages, one integrator and the review's fixer (end of §3.3): three dead Nx projects (`ui`, `cursor`, `design-tokens`) and `generated/**`, the four staff-dashboard shims, ~135 callerless ecs-core members (50 system members, ~45 component, entity and error members, four unused port families — six port types — with their tokens and adapters, 23 producer-less error codes, the `Retired*` registry) and three composite indexes, ~40 dead feature exports, the seed's symbolic mappers and private zone engines, ten unused packages; `translateCodedError`, `CatalogWording`; the docs re-derived                                                                                                                                                                                                                                                                                                                                                           | the "Pass B" commit                                          |
-| **Pass C — components, stores, pipelines, adapters and the edge decide nothing**                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24 (`flips/pass-c-ui-decisions.md` §9): ten wave-0 ecs-core packages, eight wave-1 re-point packages, the integrator's two rounds and the review's fixer (twelve findings, DEP-2 amended to one rule — §9.7); 3 new systems (`CatalogSystem`, `MediaSystem`, `RetentionSystem`) and ~40 extended, 8 new browser/server pipelines, fifteen tag dictionaries new or moved down out of features and the pipelines tier, ~685 new ecs-core cases; every KEEP-FOR-C system wired or re-ruled KEEP-PARKED; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (59 spec files, 1,197 captured tests) and the §6.4 dev-stack smoke against `2bd2354` show only DEP differences (end of §3.3)                                                                                                                                                                                                                               | the "Pass C" commit                                          |
-| **Pass D — brands, shapes, discriminators, error homes**                                                            | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-d-brands-shapes.md` §9): seven wave-0 ecs-core packages, nine wave-1, three wave-2 and two wave-3 packages, the integrator's two rounds, the review's six fixes and a second review's eight (type level, the FULL gate re-run green after each); Law 7.4 brands across every type boundary (new `TrackMinute`, `MinuteOfDay.parseClock`, `DraftPersonKey`, `Tag`, `formatClock`), Law 7.3 for the staff day (OQ-14, one zone engine), Law 1 shapes (~180 new component files, one name per `*.data.ts`), Law 1/6.2 tags (~110 UI unions, the icon manifest's `iconAsset`), Law 7.5 error homes; 23 DEPARTURES (DEP-1…DEP-23); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (94 spec files, 1,470 captured tests) and the §6.4 dev-stack smoke against `cf91b43` show only DEP differences (end of §3.3)                                                                                                                    | the "Pass D" commit                                          |
-| **Edge hardening — read-time guards, trigger retry, the transactional team note**                                   | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/edge-hardening.md` §8): three packages (GUARD, RETRY, NOTE) and the integrator; `StoredDocumentSystem` guards every read of `appointments`, `customers` and `barberBusy` (web adapters, functions transactions, singles, the backfill walk, both trigger sides — a single/transactional read refuses `REPOSITORY_MALFORMED` with path + field, a list drops and reports, refusing only when the WHOLE answer keeps none — the search's halves together, the history on its first page); the three projection triggers deploy `retry: true` through `retryingTrigger` (transient rejects, decisive logged and swallowed, reruns idempotent); `appendTeamNote` is ONE web transaction (`updateAppointmentNote`) — an unreachable server refuses after ~7 s, never overwrites; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the review's six findings fixed and the gate re-run green (plan §8.6) (end of §3.3)           | the "edge hardening" commit                                  |
-| **Pass E — the leftovers**                                                                                          | **done — FULL gate green, no standing reds, runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-e-leftovers.md` §8): twelve wave-0 packages, E2E and the integrator (end of §3.3); every carried ENGINEERING item closed — the four other capacity triggers retry, `appointmentNotes` guarded at read, TTL and the `purgeAt` exemptions declared in `firestore.indexes.json`, the waitlist cart branded inside its door, the spec-only survivors, the avatar union, `BirthDate.toLocalDate`, `UiDayKey`, the alias specs, cached number formatters, `familyOfMedal` by a typed id, the reopen's busy merge, the programs rules shape-checked and the unused client write grants denied, the programs status words in the catalogues, words for 19 UI-reachable codes, a programs e2e journey — and the standing red baseline fixed at each root cause (typecheck `patterns`, the 6 unit reds, the 19 e2e reds); 9 DEPARTURES (DEP-1…DEP-9); `verify:p0`, `test:emulator` 65 + 301, `e2e:web` 61 passed, 0 failures (41 + the 19 former reds + the programs journey) | the "Pass E" commit                                          |
-| **Owner rulings (2026-10-26) — pass F, OR-1…OR-56, built in four waves**                                            | **done — FULL gate green, no standing reds, runbook §4.2–§4.10 PASS, `verify:csp` PASS** — 2026-10-26 (`decisions/2026-10-26-owner-rulings.md`, marked BUILT with a per-ruling ledger; end of §3.3): the owner delegated every open decision; 56 rulings close every owner question of §3.3, §6 and the plans' open-question sections; 39 DEPARTURES (DEP-F1…DEP-F38, DEP-F10b — a no-show gives back the grant and the voucher draw, the orchestrator's override of OR-13 — and DEP-F39, the integrator's month-only upcoming tile); the live gaps built at once — coupon grants burned at save (OR-13), the walk-in client record (OR-26), the notification inbox (OR-19), the hash CSP and security headers with `verify:csp` (OR-29–OR-31), the fail-closed production preflight as predeploy (OR-35), the client issue sink (OR-34), the required read guard (OR-33); four waves of disjoint packages and one integrator round; the six baselines the rulings change regenerated after review (OR-51 voice, OR-56 tile and rail)                              | the per-package "Pass F" commits                             |
+| Step                                                                                                                | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Commit(s)                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Constitution + blueprint                                                                                            | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 81ac087                                                      |
+| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                                                         | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | defb4da                                                      |
+| Phase 1 — `libs/ecs-core` foundation                                                                                | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 056ae43                                                      |
+| Phase 2 — all business math in pure systems, legacy classes shimmed                                                 | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0416587                                                      |
+| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)                                           | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | a6c7253                                                      |
+| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support                                  | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 291d3f9                                                      |
+| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`)                               | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 268aa0e, dbd39d4                                             |
+| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                                                      | done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 3458349, ab6d266, c0e5d73                                    |
+| **Phase 3b flip 1 — booking core**                                                                                  | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)                                       | done — 2026-10-21, full gate green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | the "Law 9" commit                                           |
+| **Phase 3b flip 2 — identity and accounts**                                                                         | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "flip 2 commit"                                          |
+| **Phase 3b flip 3 — loyalty and invitations**                                                                       | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | the "flip 3 commit"                                          |
+| **Phase 3b flip 4 — programs**                                                                                      | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | the "flip 4 commit"                                          |
+| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**                                 | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | the "Phase 4a" commit                                        |
+| **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 applied the same day on the owner's go-ahead                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "Phase 4b" commit                                        |
+| **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | the "UI residue cleanup" commit                              |
+| **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | the "@core/errors tier" commit                               |
+| **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | the "Law 10" commit                                          |
+| **Law 10.2 — the decision-extraction pass (presenters word, systems decide)**                                       | **done** — integrated 2026-10-23 (`flips/law-10-decision-extraction.md` §9): every MOVE/DUP row answered by an ecs-core system with a purity + boundary spec (2 new systems — `LoyaltyPassSystem`, `WalletSystem` — and 23 extended, 4 component companions, 23 new tag dictionaries plus `BirthdayMoment` moved down from the vm; 428 new ecs-core cases), every presenter spec unchanged; the FULL gate of §4 green (baseline reds only — `verify:p0`, `test:emulator` 65 + 255, `e2e:web` 41 + the 19), runbook §4.2–§4.5, §4.7–§4.9 PASS, the §5 review checklist clean, a DOM differential of 2,611 specs and the §6.3 dev-stack smoke (90 signatures) identical to `fd5f2a6` but the agenda's relative minutes                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | the "decision-extraction" commit                             |
+| **Pass A — the audit's defects**                                                                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: the four defects of the read-only audit fixed (end of §3.3): the client photo strip's post-`limit` origin filter (index #22 gains `photoOrigin`), the client profile's age-window words missing their figure, the edit and reschedule pipelines' DST-gap fallback to a stale instant, and three staff-day defects (a cancel's words on the call, `periodLabel` on an empty day list, another chair's terms quoted)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | the "Pass A" commit                                          |
+| **Pass B — dead code, old-style leftovers, stale docs**                                                             | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24: eight packages, one integrator and the review's fixer (end of §3.3): three dead Nx projects (`ui`, `cursor`, `design-tokens`) and `generated/**`, the four staff-dashboard shims, ~135 callerless ecs-core members (50 system members, ~45 component, entity and error members, four unused port families — six port types — with their tokens and adapters, 23 producer-less error codes, the `Retired*` registry) and three composite indexes, ~40 dead feature exports, the seed's symbolic mappers and private zone engines, ten unused packages; `translateCodedError`, `CatalogWording`; the docs re-derived                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | the "Pass B" commit                                          |
+| **Pass C — components, stores, pipelines, adapters and the edge decide nothing**                                    | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-24 (`flips/pass-c-ui-decisions.md` §9): ten wave-0 ecs-core packages, eight wave-1 re-point packages, the integrator's two rounds and the review's fixer (twelve findings, DEP-2 amended to one rule — §9.7); 3 new systems (`CatalogSystem`, `MediaSystem`, `RetentionSystem`) and ~40 extended, 8 new browser/server pipelines, fifteen tag dictionaries new or moved down out of features and the pipelines tier, ~685 new ecs-core cases; every KEEP-FOR-C system wired or re-ruled KEEP-PARKED; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (59 spec files, 1,197 captured tests) and the §6.4 dev-stack smoke against `2bd2354` show only DEP differences (end of §3.3)                                                                                                                                                                                                                                                                                                                                                         | the "Pass C" commit                                          |
+| **Pass D — brands, shapes, discriminators, error homes**                                                            | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-d-brands-shapes.md` §9): seven wave-0 ecs-core packages, nine wave-1, three wave-2 and two wave-3 packages, the integrator's two rounds, the review's six fixes and a second review's eight (type level, the FULL gate re-run green after each); Law 7.4 brands across every type boundary (new `TrackMinute`, `MinuteOfDay.parseClock`, `DraftPersonKey`, `Tag`, `formatClock`), Law 7.3 for the staff day (OQ-14, one zone engine), Law 1 shapes (~180 new component files, one name per `*.data.ts`), Law 1/6.2 tags (~110 UI unions, the icon manifest's `iconAsset`), Law 7.5 error homes; 23 DEPARTURES (DEP-1…DEP-23); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the DOM differential (94 spec files, 1,470 captured tests) and the §6.4 dev-stack smoke against `cf91b43` show only DEP differences (end of §3.3)                                                                                                                                                                                                                                              | the "Pass D" commit                                          |
+| **Edge hardening — read-time guards, trigger retry, the transactional team note**                                   | **done — FULL gate green (baseline reds only), runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/edge-hardening.md` §8): three packages (GUARD, RETRY, NOTE) and the integrator; `StoredDocumentSystem` guards every read of `appointments`, `customers` and `barberBusy` (web adapters, functions transactions, singles, the backfill walk, both trigger sides — a single/transactional read refuses `REPOSITORY_MALFORMED` with path + field, a list drops and reports, refusing only when the WHOLE answer keeps none — the search's halves together, the history on its first page); the three projection triggers deploy `retry: true` through `retryingTrigger` (transient rejects, decisive logged and swallowed, reruns idempotent); `appendTeamNote` is ONE web transaction (`updateAppointmentNote`) — an unreachable server refuses after ~7 s, never overwrites; 15 DEPARTURES (DEP-1…DEP-15); `verify:p0`, `test:emulator` 65 + 253, `e2e:web` 41 + the 19; the review's six findings fixed and the gate re-run green (plan §8.6) (end of §3.3)                                                                                                                                     | the "edge hardening" commit                                  |
+| **Pass E — the leftovers**                                                                                          | **done — FULL gate green, no standing reds, runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-e-leftovers.md` §8): twelve wave-0 packages, E2E and the integrator (end of §3.3); every carried ENGINEERING item closed — the four other capacity triggers retry, `appointmentNotes` guarded at read, TTL and the `purgeAt` exemptions declared in `firestore.indexes.json`, the waitlist cart branded inside its door, the spec-only survivors, the avatar union, `BirthDate.toLocalDate`, `UiDayKey`, the alias specs, cached number formatters, `familyOfMedal` by a typed id, the reopen's busy merge, the programs rules shape-checked and the unused client write grants denied, the programs status words in the catalogues, words for 19 UI-reachable codes, a programs e2e journey — and the standing red baseline fixed at each root cause (typecheck `patterns`, the 6 unit reds, the 19 e2e reds); 9 DEPARTURES (DEP-1…DEP-9); `verify:p0`, `test:emulator` 65 + 301, `e2e:web` 61 passed, 0 failures (41 + the 19 former reds + the programs journey)                                                                                                                           | the "Pass E" commit                                          |
+| **Owner rulings (2026-10-26) — pass F, OR-1…OR-56, built in four waves**                                            | **done — FULL gate green, no standing reds, runbook §4.2–§4.10 PASS, `verify:csp` PASS** — 2026-10-26 (`decisions/2026-10-26-owner-rulings.md`, marked BUILT with a per-ruling ledger; end of §3.3): the owner delegated every open decision; 56 rulings close every owner question of §3.3, §6 and the plans' open-question sections; 39 DEPARTURES (DEP-F1…DEP-F38, DEP-F10b — a no-show gives back the grant and the voucher draw, the orchestrator's override of OR-13 — and DEP-F39, the integrator's month-only upcoming tile); the live gaps built at once — coupon grants burned at save (OR-13), the walk-in client record (OR-26), the notification inbox (OR-19), the hash CSP and security headers with `verify:csp` (OR-29–OR-31), the fail-closed production preflight as predeploy (OR-35), the client issue sink (OR-34), the required read guard (OR-33); four waves of disjoint packages and one integrator round; the six baselines the rulings change regenerated after review (OR-51 voice, OR-56 tile and rail)                                                                                                                                                        | the per-package "Pass F" commits                             |
+| **Audit hardening (Phases 0–2) — every write provable, every report traceable**                                     | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green (§4 "Reference numbers on the audit-hardening tree")** — 2026-10-26 – 2026-10-27 (`flips/audit-hardening.md`, ledger §8; branch `audit-hardening` and its PR; end of §3.3): the OTP sender gated to the emulator, a deployed sign-in refused until a transactional sender lands (P8, fail-closed); an operation id on every mutating callable; the booking verbs' audit rows in the act's own transaction, keyed by that id, with typed before/after deltas; impersonation, `roles` / `accountStatus` and 13 governed collections audited by one document-change handler, forged note and photo authors and stale stamps refused; one outcome line per callable, `writeOperationId`, a reference line under three failure surfaces, `LogEvent` everywhere; transport failures in the OR-34 sink; five `auditLog` timelines and `AuditReadPorts`; a trigger dead letter, `tools/ops/` scripts (nothing applied) and preflight P9 (INFO); RU-1…RU-41, L1–L6, DEP-1…DEP-26 and DEP-10a (DEP-8 withdrawn); two adversarial review rounds (11 findings confirmed and fixed, 10 refuted) | `8f3501d` (plan), `1f027ee` … `d15f193` (§3.3)               |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it with no standing reds
@@ -133,7 +141,9 @@ list at the end of §3.3). Since pass F (2026-10-26) no carried owner item is
 waiting on a ruling: `decisions/2026-10-26-owner-rulings.md` rules every one
 (each carried list below names its OR id), and §6 keeps only the rulings'
 standing contracts, the reversible defaults the record flags, and the three
-pass E findings it does not rule.
+pass E findings it does not rule. The audit hardening (2026-10-27) ruled
+nothing new: its owner flags (end of §3.3) are each built on a reversible
+default, or proposed and not built.
 
 ## 3. What landed, in order
 
@@ -2097,7 +2107,547 @@ the per-ruling list) and ran the FULL gate on the integrated tree:
   service worker's Trusted Types report are listed in `csp-baseline.md`;
   `libs/ui/patterns` `gauge.css` sits 45 bytes over its 10 kB warning
   budget (unchanged); the OR-34 ops half (the `client_issue_count` metric
-  and alert) and the privacy-policy line are the owner's (runbook).
+  and alert) — SCRIPTED since the audit hardening (WS-6, below):
+  `tools/ops/log-metrics.sh` and `tools/ops/alerts/client-issues.yaml`, a dry
+  run by default, applied once per project by the owner with `--apply`
+  (runbook §3 step 7) — and the privacy-policy line, whose wording the audit
+  hardening's flag 9 revises, are the owner's.
+
+**Audit hardening — Phases 0–2 (2026-10-26 – 2026-10-27,
+`docs/architecture/flips/audit-hardening.md`, ledger §8).** The owner's
+brief: _"Close the audit gaps …, so that for any write the system can prove
+who did it, when, from which operation, and with what before/after values,
+and a user's report can be traced to the failing line (auditability ≈4/10 →
+≈7/10)."_ It is the first pass landed through a branch and a pull request
+(`audit-hardening`, PR "Audit hardening: Phases 0–2"; the brief overrides
+§5's "work directly on `main`" for this pass), from the branch point
+`0df7d7ab`. The plan (`8f3501d`) reconciled every sub-item of the brief
+against the branch point (§0.1 — the OR-34 sink, the transaction adapter's
+`ALREADY_EXISTS` refusal, the admin-only `auditLog` rules and the closed
+`customers` / `coupons` client writes were already done), recorded 41
+rulings where a design of the brief met a law or an OR ruling (RU-1…RU-41,
+both quotes each, the higher source applied — §0.2), a latitude register
+(L1–L6, §0.3), the measured write volume (§0.4: the worst commit ≈ 113 KB,
+1.1 % of the 10 MiB request; the largest document ≈ 66 KB, 6.3 % of 1 MiB —
+no stop condition) and the gate baseline measured on the branch point
+(§6.3), and split the work into packages P0–P17 with disjoint file
+ownership, built in waves by sub-agents and integrated per workstream by the
+orchestrator; three critics (completeness, fidelity, laws) found 46 gaps
+(C-1…C-20, F-1…F-14, L-1…L-12 — one blocker, a raw-string document id
+against Law 7.4), every one applied (§0.6). Behaviour stayed frozen but for
+each workstream's declared DEPARTURE; one commit per workstream, each at a
+green boundary (its gate in its commit message); the runbook (the §1.1
+matrix, the §3 deploy steps, the retention policy), `production-deploy.md`
+and three `.claude/rules` files were brought in line where the pass made
+them false. No `CLAUDE.md` / `AGENTS.md` edit and no law amendment
+(`LogEvent` is an operator vocabulary, not a discriminator — RU-9).
+
+**WS-0 — the OTP sender gated to the emulator (`1f027ee`, committed
+first).** The functions wired `consoleOtpSender` in every environment: a
+deployed project would have logged each sign-in code and its destination at
+info — an account takeover for anyone with Logs Viewer; P7 refused such a
+deploy, but `CREATIVO_SKIP_PREFLIGHT=1` exists, so the code itself is now
+safe. `identityPorts` wires `onEmulator() ? consoleOtpSender(…) :
+refusingOtpSender()`, mirroring the OTP crypto line; the new adapter (tagged
+`@launchBlocker`, never `@emulatorOnly` — RU-1; it takes no `Log` and logs
+nothing) answers the new `IDENTITY_OTP_SEND_UNAVAILABLE`
+(`failed-precondition`, never the web's `permission-denied` lockout — L1),
+which `requestOtpRefusal` passes through before the
+`IDENTITY_OTP_SEND_FAILURE` collapse; the pipeline order is frozen (RU-3).
+The preflight's tag machinery is shared (`taggedExportUses`, now following
+namespace element access and whole-namespace uses too): P7 passes on the
+real tree, and the new P8 fails while the refusing sender is wired, so the
+launch stays fail-closed (`production-deploy.md` §1, its checkbox open).
+DEP-1–DEP-3; `verify:p0` green, `e2e:web` 63/63.
+
+**WS-4.1 — an operation id on every mutating callable (`9fd3830`).** The
+web mints one id per mutating call (the five verb stores and the booking
+flow through `ID_PORTS`, as they own their retries); the edge validates it
+with `ClientOperationId`'s guard and carries it as `OperationId`. Required
+on the eight booking verbs — `commitBooking` / `rescheduleAppointment`
+`attemptId` (book's is `AppointmentId.parse`d, so a reserved `__x__` name is
+refused, not a 500) and `staffEditAppointment`, `cancelAppointment`,
+`transitionAppointment`, `markArrived`, `clearArrival`, `recordSeatTip`
+`operationId` (RU-20) — each refusing a missing, malformed or reserved id
+with its own invalid-input struct naming the field; optional elsewhere
+(RU-21): the web callable adapter adds a transport `operationId` to every
+other callable but the sink, read by `updateProfile`, `startImpersonation`,
+`endImpersonation` and `completeRegistration` (absent or malformed →
+`null`, never refused). `SendStaffEdit` / `SendSeatTip` take named intent
+types (RU-22, Law 9.3). An anonymous book is refused
+`BOOKING_UNAUTHENTICATED` at the decoder before the id check (the answer is
+unchanged). DEP-4; `test:emulator` 69 + 311, `e2e:web` 63/63.
+
+**WS-1 + WS-4.4 — the audit rows commit in the act's own transaction,
+keyed by its operation id (`80019e2`).** The seven booking pipelines (book,
+reschedule, staff edit, client cancel, transition, arrival / clear-arrival,
+seat tip) filed their rows after the commit and swallowed failures
+(`appendAuditFacts`): a crash, a timeout or a failed batch left a permanent
+change with no record of who made it. Each decide step now plans its rows
+with `AuditSystem.commitWrites` as `WriteOp.create([auditLog, id], row)`,
+last in the plan the transaction port commits (the `updateProfile`
+pattern). Keys carry no instant (RU-6: `attempt:`, `move:`, `operation:`,
+`cancel:`, `transition:<op>[:<seatId>]`, `arrived:`, `unarrived:`,
+`tip:<op>:<seatId>`; `ROW_BASIS_TAG` is `audit-row/v2`), and a change key is
+never null (RU-41 — `run-backfill`'s FAILED call keys
+`backfill-failed:<nextId>`). A replay or an unchanged act plans zero audit
+ops (a replayed cancel or transition is refused by the status graph,
+RU-4), so the Create is a tripwire a legitimate replay never reaches;
+`nowUtcMs` is read before the transaction, so a contention re-run derives
+the same row ids. A missing verified actor still commits, with no rows, and
+logs `LogEvent.AuditActorMissing` at error (`logUnaudited`; `LogEvent` is
+born here, every existing message text byte for byte — RU-8). Every row
+carries `auditOperationId` (WS-4.4). `run-backfill` stays on `appendAudit`
+(L2) and the triggers on `createAuditRows`; `appendAuditFacts` /
+`AuditWritePorts` are deleted. New emulator proof
+`audit-in-commit.integration.spec.ts` (a failed commit writes no row, a
+committed act exactly its rows, a replay no second row). DEP-5–DEP-7,
+DEP-9; `test:emulator` 91 + 311, `e2e:web` 63/63.
+
+**WS-7 — the reviewable trail (`67ffad6`).** Five `auditLog` composites —
+`targetCustomerId`, `targetUserId`, `resourceId`, `actorUserId` and
+`actorAdminUserId`, each with `recordedAtUtcMs` desc (19 → 24 composites);
+`auditOperationId` keeps its automatic single-field index, and
+`auditActionsFor`'s `resourceId in` read is unchanged. `AuditReadPorts =
+AuditTimelinePorts & AuditOperationPorts` (one port per field, RU-35, paged
+by `recordedAtUtcMs`; `auditRowsForOperation`), ordered by the pure
+`AuditSystem.chronological`; one web adapter and one `InjectionToken`
+(`AUDIT_READ_PORTS`), admin-only by the rules, with no screen yet (the
+Activity screen is out of scope). P3, `production-deploy.md` and the
+runbook count 24. New emulator proof `audit.adapter.integration.spec.ts`
+(admin served; staff and client refused). DEP-11; `test:emulator` 91 + 329.
+
+**WS-2 — typed before/after deltas (`f937350`).** Rows held verbs and ids
+only — no old/new slot on a reschedule, no price or discount delta, no tip
+amount, no prior status. Each relevant `AuditContext` variant now carries
+flat, variant-prefixed delta fields (Law 6.2) of scalars or flat arrays of
+brands, composed by intersection from one delta slice per file (RU-12) and
+computed by the pure `AuditDeltaSystem` from the before and after entities
+already in each decide step's read set — zero extra reads. A multi-command
+staff save writes one row per client record with every touched delta (L3).
+Money, time and ids are stored in full; no PII (profile rows keep field
+names only). 32 `auditLog` field overrides with `indexes: []` (never
+queried); type-specs prove every variant narrows. DEP-10, DEP-10a;
+`test:emulator` 91 + 329, `e2e:web` 62/63 (`client-card-harness.spec.ts:17`
+[tablet] under load, 27/27 alone with `--repeat-each=3`).
+
+**WS-3 — privileged and governed changes leave a trail (`de045ff`).**
+Impersonation start / end create `GOVERNANCE_IMPERSONATION_STARTED` /
+`_ENDED` rows in their own commit (actor `Actor.forCaller`, RU-13; never the
+free-text reason or `revocationNotes`; the rows are never TTL'd, the
+session keeps its TTL; end reasons `ADMIN_ENDED` / `EXPIRED`, while
+`ALREADY_ENDED` is a refusal that writes nothing — RU-14). `users` `roles`
+and `accountStatus` are audited (appended to `AuditedProfileField`; the
+false "their writers audit themselves" comment corrected); Auth custom
+claims fire no Firestore trigger and stay unaudited until a `setRoles`
+callable exists. ONE document-change handler (RU-40):
+`auditDocumentChange` + `decodeDocumentChangeEvent` + one non-exported
+`main.ts` helper behind 14 `onDocumentWrittenWithAuthContext` exports —
+`users` plus `settings`, `services`, `barbers`, `locations`,
+`barberSchedules`, `scheduleExceptions`, `coupons`, `positions`, `courses`,
+`events`, `customers`, `appointmentNotes` and `appointmentPhotos` — each
+`retry: true` through `retryingTrigger` (exports 34 → 47); verbs
+`GOVERNED_DOC_CREATED` / `_UPDATED` / `_DELETED`, changed field NAMES only,
+deletes from the before-image, the writer from `AuditSystem.writerOf`
+(renamed from `profileWriter`, RU-17); every write recorded, no skip (L4).
+The rules require the caller's uid as a note's or photo's author and a
+stamp within ±300 s of `request.time` (L6: the photo stamp is read after
+the Storage upload), and deny a photo update (RU-19). New emulator proofs
+`governed-audit.integration.spec.ts` and
+`visit-media-writers.integration.spec.ts`. DEP-12–DEP-17; `test:emulator`
+97 + 347, `e2e:web` 57/63 — the six reds ONE case,
+`client-card-glance.spec.ts:364` on every project and theme, run at 23:45
+shop time (the known glance flake of §4), 36/36 alone after the shop's
+midnight.
+
+**WS-4.2–4.6 — one operation id traceable from the UI to the callable, its
+writes, its rows and its triggers (`b20cd84`).** WS-4.2: `callableEdge`
+writes one `callable.completed` / `callable.refused` / `callable.failed`
+line per invocation (not for the sink, RU-24) with `callable`,
+`operationId`, `uid`, `roles`, `errorCode`, `wireStatus`, `durationMs` and
+`inputDigest` — HMAC-SHA-256 under the new `LOG_DIGEST_KEY` secret over the
+canonical JSON of an ALLOWLISTED basis of the decoded command (ids, codes,
+minutes, cents, dates, flags — never contact, free text, OTP or voucher
+codes; RU-23), 16 hex characters; the context is bound once per invocation
+(`AsyncLocalStorage` in the console telemetry adapter, no SDK in ecs-core),
+so every `ports.log` line of the call carries it; book and move refusals
+log what the decision read, captured in the commit's read callback, the
+snapshots' `updateTime` kept adapter-locally (RU-25). WS-4.3:
+`WriteProvenance { writeOperationId }` on appointments and customers (no
+uid on documents; not on `barberBusy`, L5), absent valid; trigger attempt
+lines carry it with the document path. WS-4.5: a copy-on-tap mono reference
+line (`<ui-reference>`) under the three surfaces that word a callable
+failure through `wordPipelineError` — the staff toast, the booking review
+error, the client cancel error (RU-28) — worded by one pure helper,
+`operation-reference.words.ts`, with the keys `operation.reference` /
+`operation.referenceCopied` (RU-27). WS-4.6: every log call site passes
+`LogEvent.X`; `creativo/no-literal-log-message` refuses a literal message
+(two justified exemptions, RU-37); an `Error` in log fields is written
+scrubbed (RU-38). `toast.spec.ts`'s clock case runs on fake timers (it
+raced on loaded runners and failed CI on `de045ff`; now stricter). New
+emulator proof `operation-trace.integration.spec.ts`. DEP-18–DEP-21;
+`test:emulator` 98 + 347, `e2e:web` 63/63.
+
+**WS-5 — callable transport failures reach the OR-34 sink (`940a4eb`).**
+`callable-client.adapter.ts` still answers `PIPELINE_UNKNOWN` for a
+non-Functions error and now also reports it once through the existing
+reporter port, as the 7th kind `CALLABLE_TRANSPORT_FAILED` (warn), with the
+callable's name and the error's name, scrubbed; it never rejects, skips the
+sink's own call and reads the reporter lazily (no DI cycle). `ClientIssue`
+gains `operationId`, `callableName` and `callableErrorCode` — `| null` on
+the struct, optional on the wire (`admitBatch` admits the nine OR-34 keys
+plus any subset of the three, RU-30). The fingerprint mixes the callable
+fields only when set and never the operation id (`'97594ab2'` unchanged);
+caps, rates and the per-instance bucket unchanged; still no uid, raw
+message or stack (RU-39). DEP-22; `e2e:web` 63/63.
+
+**WS-6 — the platform backstop (`d15f193`).** `triggerFailures/{eventId}`,
+a flat `TriggerFailure` entity written through
+`TriggerFailurePorts.writeTriggerFailure` (RU-32) when a retrying trigger's
+attempt is PERMANENT, or TRANSIENT in the final window before the 24 h event
+age limit — idempotent by event id, no TTL, admin read, no client write.
+`tools/ops/` (gcloud, idempotent, a dry run by default; `--apply` never run
+here; a retention LOCK only with `--lock`): Data Access audit logs for
+Firestore (configured through `datastore.googleapis.com`, RU-34) and
+Identity Toolkit; a log sink into a ≥ 400-day bucket keeping the audit logs
+and every function line, client issues left at OR-34's 30 days (RU-36);
+PITR (7 days) and scheduled backups; log-based metrics and alerts keyed on
+`LogEvent` values (`trigger_attempt_failed`, `document_refused`,
+`audit_actor_missing`, `callable_failed`, with OR-34's `client_issue_count`
+folded in), each filter pinned to a `LogEvent` value by
+`ops-scripts.spec.mjs`. The retention policy is in the runbook (`auditLog`
+indefinite, `clientJournal` as today, logs 30 days by default and 400 in
+the audit bucket, legal hold an owner procedure); `production-deploy.md`'s
+Backups and Cloud Audit Logs stay owner "decide" items, with the
+recommended values and a Data Access checkbox. Preflight P9 (functions
+scope) reports PITR, the backups, the sink and the bucket as INFO lines
+inside a PASS row (RU-33). DEP-23, DEP-24; `verify:p0` green,
+`test:emulator` 101 + 361, `e2e:web` 63/63.
+
+**The integrators' edits** (plan §4.1, each pinned by its specs): the
+`logUnaudited` cases of `booking-read-set.pipeline.spec.ts` replace the
+deleted `appendAuditFacts` describe, `log-event.data.spec.ts` pins unique
+values and the "dropped" pair `reporting-error-handler.ts` classifies on
+(RU-9), and the book, reschedule and edit contention re-run cases compare
+the audit rows only (their seat and decision ids come from `nextId`, RU-7 —
+C2); `audit-in-commit.integration.spec.ts`'s fixture names the client's one
+record as the server derives it — it mixed the fixture hash and the
+production hash, so a move named two records (a fixture artefact, no code
+defect; the fix kept "exactly one row"); `profile-edit.system.spec.ts`'s
+`stub → registered` lists end in `'roles'` (C4); P11c left the four
+functions integration specs unedited (they pass unchanged) and P11b's
+missing `book…:285` pin became new cases (C5); the Cyrillic and astral
+`TOO_LARGE` cases send nine-key issues, keeping their own "under 4,096
+units, over 4,096 bytes" premise (C6); `firestore-trigger-failures.adapter.ts`'s
+`bodyOf` filters `id` (the stored body unchanged, C7).
+
+**The DEPARTURES** (plan §5, each pinned by the specs its §4 row names):
+
+- DEP-1 (WS-0) — a deployed project wired the console sender, logging each
+  sign-in code and its destination and answering success; it now refuses
+  `IDENTITY_OTP_SEND_UNAVAILABLE` (`failed-precondition`), worded with no
+  retry; the emulator is unchanged. The challenge is still saved and the
+  OR-9 window consumed first (RU-3): a repeat inside 60 s answers
+  `IDENTITY_OTP_RATE_LIMITED`.
+- DEP-2 (WS-0) — P7 FAILed on the real tree; P7 now passes and the new P8
+  FAILs while `refusingOtpSender` is wired, flipping to PASS with a
+  transactional sender; `--scope functions` runs P1–P3 and P6–P8 (P6–P9
+  since DEP-24).
+- DEP-3 (WS-0, copy) — the new `errors.IDENTITY_OTP_SEND_UNAVAILABLE` in bg
+  and en; no existing string changed.
+- DEP-4 (WS-4.1) — book's absent or malformed `attemptId` meant a fresh id,
+  reschedule's and edit's ids were optional, cancel / transition /
+  markArrived / clearArrival / recordSeatTip carried none; all eight now
+  refuse a missing, malformed or reserved id with their own invalid-input
+  struct. Wire skew: an already-open old shell's id-less cancel, transition,
+  arrival, clear-arrival and tip calls are refused after the functions
+  deploy until it reloads (deploy hosting first, flag 7).
+- DEP-5 (WS-1) — rows were appended after the commit, failures swallowed, a
+  book / reschedule / edit replay re-appended one, un-keyed facts took a
+  `nextId()`; rows are now `WriteOp.create`s of the act's own plan — a
+  failed commit writes none, a replay or unchanged act plans none, and a
+  Create of an existing row refuses the whole act `REPOSITORY_ALREADY_EXISTS`
+  (before: re-applied silently).
+- DEP-6 (WS-1) — cancel / transition / arrival / clear / tip keys carried
+  instants under `audit-row/v1`; every key is instant-free under
+  `audit-row/v2`, so every row id basis changes (no hosted data exists).
+- DEP-7 (WS-1) — `BOOKING_RESCHEDULED` rows lose `loggedOnRetry` (its only
+  writer was the replay row).
+- DEP-8 — withdrawn, not a departure: `unchanged` still means "the lifecycle
+  step wrote nothing".
+- DEP-9 (WS-4.4) — every row gains the root field `auditOperationId`
+  (single-field indexed).
+- DEP-10 (WS-2) — rows held verbs and ids only; reschedule, staff-edit,
+  tip, transition and cancel rows carry the brief's 19 typed before/after
+  fields, `null` when untouched.
+- DEP-10a (WS-2, RU-11) — 13 planner-added delta fields beyond the brief's
+  decided 19: `rescheduleFrom/ToLocationId`, `editMoveFrom/ToLocalDate`,
+  `editMoveFrom/ToStartMinutes`, `editRestaffFrom/ToBarberIds`,
+  `editDiscountFromIds`, `tipFromCents`, `transitionFromAttendanceState`,
+  `cancellationFromBookingStatus`, `cancellationFromStatusAtUtcMs` — each
+  strike-able alone (19 + 13 = 32 field overrides; flag 15).
+- DEP-11 (WS-7) — 19 composites → 24: the five `auditLog` timelines (a
+  deploy builds them).
+- DEP-12 (WS-3) — impersonation start / end committed the session alone (1
+  op); each also creates its audit row now (2 ops), actor
+  `Actor.forCaller` (flag 10).
+- DEP-13 (WS-3) — `roles` and `accountStatus` were not audited; they join
+  `profileFields` (appended), a PROFILE_CREATED row lists `accountStatus`,
+  the registration PROFILE_UPDATED row gains `roles`.
+- DEP-14 (WS-3) — `auditProfileChanges` was the only auditing trigger; 14
+  exports behind ONE handler audit `users` and 13 governed collections,
+  deletes included (`GOVERNED_DOC_*`), exports 34 → 47; the
+  `auditProfileChanges` path param `{uid}` → `{docId}` (flag 21). Seeds
+  and settle take longer (more trigger runs).
+- DEP-15 (WS-3) — any `worksTheBook()` write of a note or photo passed the
+  rules; note create / update and photo create now need the caller's uid as
+  author and a stamp within ±300 s of `request.time`, and a photo update is
+  refused (flag 11).
+- DEP-16 (WS-3, L6) — a photo's document stamp was taken before its
+  Storage upload; it is now read after it.
+- DEP-17 (WS-3) — five new verbs: `GOVERNANCE_IMPERSONATION_STARTED` /
+  `_ENDED`, `GOVERNED_DOC_CREATED` / `_UPDATED` / `_DELETED`.
+- DEP-18 (WS-4.2) — callables logged nothing on success or refusal; one
+  outcome line per invocation now (not the sink), the bound context on
+  every line of the call, `LOG_DIGEST_KEY` bound on every callable but the
+  sink, book / move / staff-edit refusals logging what the decision read
+  and a refused decide the read documents' `updateTime`s; answers
+  unchanged.
+- DEP-19 (WS-4.3) — appointments and customers gain `writeOperationId` (the
+  last booking-verb or registration callable writer; `runBackfill`'s mirror
+  stamps leave it, RU-29; absent on old documents is valid); trigger
+  attempt lines gain `documentPath` and `writeOperationId`.
+- DEP-20 (WS-4.5) — a reference line under the three callable-failure
+  surfaces (new copy `operation.reference` / `.referenceCopied`, flag 1);
+  no screenshot baseline renders a failure.
+- DEP-21 (WS-4.6) — messages are `LogEvent` values (texts byte-identical),
+  a literal message is a lint error (two recorded exemptions, RU-37), and an
+  `Error` in log fields is written `{ name, code, message, stack }` with the
+  message and frames scrubbed (before: `{}`).
+- DEP-22 (WS-5) — a non-Functions throw answered `PIPELINE_UNKNOWN` and
+  reported nothing; it is now also reported once as
+  `CALLABLE_TRANSPORT_FAILED`, and every issue carries the three new fields
+  (optional on the wire). Between the hosting and the functions deploys the
+  old sink refuses the new web's 12-key batches `SHAPE` — client issues of
+  that window are lost, never a user's act.
+- DEP-23 (WS-6) — a failed trigger was only logged; PERMANENT and
+  final-window TRANSIENT failures now write `triggerFailures/{eventId}`
+  once; verdicts and rethrows unchanged.
+- DEP-24 (WS-6) — preflight P9 (INFO) joins the functions scope; the ops
+  scripts and docs only, nothing applied to the platform.
+- DEP-25 (review round 1, WS-4.2) — a booking / move refusal's decision
+  log names only a busy span that holds the sold start, with the moved
+  visit's own released chairs cut out, else `null` (before: the first raw
+  block on the day, which could be a block the decision never collided
+  with).
+- DEP-26 (review round 1, WS-3) — `governedFields` of the three
+  browser-written collections (`appointmentNotes`, `appointmentPhotos`,
+  `scheduleExceptions`) lists only names from their entities' key tables;
+  any other key becomes one `'<unknown>'` marker (before: every top-level
+  key a browser chose reached a permanent row).
+
+Frozen (no DEP): WS-7's ports and adapter (additive), the OR-34 caps and
+rates, every callable answer but DEP-4's new refusals.
+
+**The review rounds (plan §8.R1, §8.R2).** Two adversarial rounds, three
+lenses each (correctness / atomicity, laws / reuse, security / PII), every
+finding put to a skeptic who tried to refute it, one fixer per round, the
+journeys re-run after each. Round 1 (`524eebe`): 13 findings, 12 after
+dedupe, 8 refuted, 4 fixed — a TRANSIENT Firestore failure in a
+document-change trigger was answered PERMANENT, so its row was never
+redelivered (MAJOR, `createAuditRows` now records
+`TriggerAttemptSystem.failureCode`); DEP-25; stale comments; DEP-26. Round 2
+(`f7a627a`): 9 findings, 2 refuted, 7 fixed (all MINOR) — two triggers
+failing on one event no longer share a dead letter silently; the SDK's own
+`FunctionsError` for a dropped network or a timeout is reported to the
+sink; the deploy checklist's Source anchors re-mapped; the runbook's
+`auditLog` writers cell; `Settled` keyed by an `as const` dictionary;
+`ownField` deleted for wire-read's `field`; `writeOperationId` read only in
+the server's own shape (free text never reaches an attempt line or a dead
+letter). The FULL gate after both rounds is §4's audit-hardening block.
+
+**Owner flags** (plan §7, copied into the PR — none blocks anything; each is
+built on a reversible default, or proposed and not built):
+
+1. **New copy, for review** (OR-51 / OR-55): `errors.IDENTITY_OTP_SEND_UNAVAILABLE`
+   — bg «Кодовете за вход още не се изпращат. Свържи се със салона.», en
+   "Sign-in codes aren't being sent yet. Contact the shop."; `operation.reference`
+   — bg «Код за справка: {{ref}}», en "Reference: {{ref}}";
+   `operation.referenceCopied` — bg «Кодът е копиран.», en "Reference
+   copied." (the brief's `errors.reference*` renamed: an `errors.*` key is
+   SCREAMING — RU-27).
+2. **The latitude register:** L1 a new code `IDENTITY_OTP_SEND_UNAVAILABLE`,
+   not `_SEND_FAILURE`, whose «Опитай пак» promises a retry that cannot
+   succeed (OR-55); L2 `run-backfill` stays on `appendAudit` (one call is
+   many commits; its row records the CALL, a FAILED one included); L3 one
+   row per client record for a multi-command staff save, every touched
+   delta on it; L4 the governed trigger records every write, no skip (a skip
+   needs a cross-document read inside a trigger); L5 `barberBusy` carries no
+   provenance (its whole-body writers and the rebuild trigger would erase or
+   churn it); L6 the photo stamp read after the Storage upload, the note
+   stamps where they were, LIBRARY photos under the same ±300 s window.
+3. **The `maxPartySize` cap — proposed, not built** (plan §0.5): no
+   validated upper bound, and unbounded seats per person, put the first
+   limit at the appointment's 1 MiB (≈ 650 seats); proposal —
+   `BookingPolicy.create` refuses `maxPartySize > 20` and
+   `PartyAdmissionSystem` refuses more than `maxPartySize × 8` seats (≈ 246
+   KB, 24 % of 1 MiB at the cap).
+4. **A missing verified actor** commits the act without rows and logs
+   `audit row has no verified actor` at error (built as before; unreachable
+   over the wire) — refusing the act instead is the owner's call.
+5. **Preflight severities:** P8 FAILs until a transactional sender lands
+   (the fail-closed launch); P9 is INFO — the owner may rule it a gate (the
+   flip is local to `checkBackstops`).
+6. **`.claude/rules` edits** where the pass made the text false
+   (`git diff --stat 0df7d7ab..HEAD -- .claude/rules`: three files, 16
+   insertions, 11 deletions): `ecs-pipelines.md` — the
+   `BookAppointmentPorts` example (`WalkInKeyPorts`, no `AuditAppendPorts`),
+   the audit rows planned inside the decide step (no `appendAuditFacts`),
+   the example's `log` on `LogEvent.BookingRejected` and the
+   composition-root sentence ("the same bundles (`TelemetryPorts`,
+   `LogContextPorts`)"); `ecs-components.md` — the stored `Appointment`
+   intersects eight slices, `WriteProvenance` the eighth;
+   `firestore-layout.md` — the stored layout's `writeOperationId` line and
+   "eight flat slices". No `CLAUDE.md` / `AGENTS.md` edit.
+7. **Deploy steps (owner):** create `LOG_DIGEST_KEY` once, before the first
+   functions deploy, beside `WALKIN_ID_KEY`
+   (`openssl rand -hex 32 | firebase functions:secrets:set LOG_DIGEST_KEY`;
+   rotating it breaks digest comparability, nothing else); deploy `firestore:indexes` (the five
+   composites, the new overrides) → `hosting` (old functions ignore the
+   extra `operationId`) → `firestore:rules` (the notes / photos window,
+   `triggerFailures`) → `functions` (the 13 new triggers) — from the
+   functions deploy an already-open pre-hosting shell's id-less verb calls
+   are refused until it reloads (DEP-4), and between the hosting and the
+   functions deploys the old sink refuses the new web's 12-key issue batches
+   (DEP-22) (runbook §3, `production-deploy.md` §3); `roles/logging.viewer`
+   for the preflight credentials (P9); `tools/ops/*.sh --apply` by hand when
+   decided, `--lock` only on purpose (irreversible); the Data Access logs'
+   volume and billing; Auth custom-claims changes stay unaudited until a
+   `setRoles` callable.
+8. **OR-34 amended:** a 7th kind `CALLABLE_TRANSPORT_FAILED` and three
+   allowlisted fields (RU-30), optional on the wire, so an old web's 9-key
+   batch is still admitted.
+9. **The privacy line:** server lines now carry account ids and roles (the
+   outcome lines, the bound context), so OR-34's published "no personal
+   identifiers" should read "no names, contact details or free text"; the
+   400-day bucket keeps the audit logs and every function line (uids and
+   roles included, RU-36) but no client issue, and Data Access logs hold
+   principal e-mails — 400 days of account identifiers is a legal-basis
+   decision (an allowlist filter is the alternative, at the cost of the
+   trace after 30 days).
+10. **Impersonation attribution** (RU-13): `Actor.forCaller` — an admin's
+    session is recorded as ADMIN, a sysadmin's as STAFF with
+    `actorRoles: ['sysadmin']` (the brief's `Actor.admin` would record the
+    vendor sysadmin as the owner).
+11. **Device clock** (DEP-15): a phone more than 5 minutes off, or a note or
+    photo synced later from offline, is refused (`REPOSITORY_WRITE_FAILED`
+    on screen); server timestamps would need a different schema.
+12. **Money beside a client record** (WS-2): tip and price figures sit on
+    rows that name `targetCustomerId` — read as "no PII values; money, time
+    and ids allowed" (R36 / T5).
+13. **WS-0 quirk** (RU-3): after a refused send, a repeat inside 60 s reads
+    "we already sent you a code".
+14. **P8 and OR-35:** P8 is recorded here and in the plan, not appended to
+    OR-35's text.
+15. **The 13 planner-added delta fields** (RU-11, DEP-10a) beyond the
+    brief's decided 19 — each strike-able on its own (its field, its
+    override, its spec case).
+16. **Single-field exemptions:** 61 before the pass, ≈ 100 after; the
+    per-database cap is not in the confirmed quota list (recalled as 200) —
+    confirm on the quotas page before deploy.
+17. **Dead-letter constants:** a 24 h retry window and a 15 min last-attempt
+    margin, owner-tunable.
+18. **The Identity Toolkit audit service name**
+    (`identitytoolkit.googleapis.com`) is unconfirmed; the script header
+    says so.
+19. **Out-of-scope edges touched** (brief §5): no impersonation read-as
+    (OR-24 — no IMPERSONATOR actor or claim); no real OTP provider (P8 waits
+    for it); no login / OTP audit rows; no `setRoles`; no Activity screen
+    (ports only); no existing copy changed.
+20. **Client issues joinable to an account** (RU-39 against OR-34's
+    "privacy by shape: no uid"): an issue's `operationId` joins it,
+    server-side only, to a `callable.*` outcome line that carries the uid,
+    for the log retention period; the issue struct still holds no uid. A
+    strict reading of OR-34 drops `operationId` from `ClientIssue` (one
+    field, its cap and its admit case) and keeps `callableName` /
+    `callableErrorCode`.
+21. **The merged document-change handler** (RU-40): `GovernedCollection`
+    carries `USERS`; the `auditProfileChanges` export keeps its name, but
+    its path changes from `users/{uid}` to `users/{docId}` — a redeploy of
+    the same function; if `firebase deploy` refuses to update the trigger in
+    place, delete that one function and deploy again.
+22. **From the integration** (plan §4.1): whether a REORDERED `roles` list
+    counts as a change (today it does); P9 stays INFO; locking the 400-day
+    bucket (irreversible) and keeping uids that long; the alert policies
+    name no notification channel and use the alpha
+    `gcloud monitoring policies` command; a final-window TRANSIENT dead
+    letter stays even when a later redelivery succeeds.
+
+**Carried from the audit hardening** (none blocks anything; plan §8 and
+§4.1):
+
+- The `maxPartySize` cap (flag 3) — proposed, not built.
+- Auth custom claims are unaudited until a `setRoles` callable exists (they
+  are re-derived at sign-in from `users.roles`, which is audited).
+- Cancel / transition / arrival / clear-arrival / tip mint a new id per tap:
+  a genuine second tap is a new operation (no unsettled-name memory for
+  these verbs, plan P3 — R7).
+- `blockReason` and `blockedUntilUtcMs` are not audited (the WS-3
+  inventory's R11).
+- Governed rows carry `auditOperationId: null` even when the written
+  document holds a `writeOperationId`.
+- On the three browser-written governed collections (`appointmentNotes`,
+  `appointmentPhotos`, `scheduleExceptions`) the DOCUMENT ID is caller text
+  no rule checks: it reaches the row's `resourceId` and the attempt line's
+  `documentPath` unfiltered (review round 1, plan §8.R1 item 4 — field
+  NAMES are now allowlisted, an id cannot be). A notes rule
+  `exists(/databases/$(database)/documents/appointments/$(appointmentId))`
+  would close it for notes at one read per write; owner flag. The optional
+  `keys().hasOnly([…])` on the notes and photos rules is not built either
+  (the system's allowlist covers all three; a rules edit needs its emulator
+  run).
+- Preflight P8 flips to PASS when a transactional OTP sender lands
+  (`production-deploy.md` §1).
+- The Identity Toolkit audit service name and the single-field exemption
+  cap are unconfirmed (flags 16, 18); the OR-34 privacy-line rewording (flag
+  9); DEP-4's wire skew and the deploy order (flag 7); the OR-34 /
+  operation-id join (flag 20).
+- `trackError(error)` still hands the raw `Error` to Error Reporting,
+  unscrubbed (pre-existing; RU-38 scrubs an `Error` inside `fields` only).
+- The reference line's tap target is one footnote line, under WCAG 2.5.8's
+  24 px, and the toast nests one polite live region inside another.
+- The input digest's allowlist includes `operationId` / `attemptId` /
+  `requestId`, so two digests match only on a retry of the same operation;
+  a short `publishStreakDefinition` `requestId` prints no reference.
+- `trigger.failure_not_recorded` has no metric or alert; `main.spec.ts`'s
+  TRANSIENT trigger cases fall in the final retry window under the real
+  clock (their mocked dead-letter writer answers success, so no assertion
+  depends on the date); `shellcheck` is not installed in the container —
+  the owner runs it before any `--apply`.
+- `libs/infrastructure/firestore`'s inferred `test` target does not list the
+  root `firestore.rules` as an input, so a CACHED run can skip the
+  rules-text spec after a rules edit (the gate runs `--skip-nx-cache`).
+- `reschedule-appointment.integration.spec.ts` mixes two hashes (the
+  father's seat names `FIXTURE_IDS.customer`, the fixture hash's record; the
+  son `CustomerId.forUser(SON, sha256Hex)`): it is green only because it
+  asserts no audit rows — a row assertion there would meet the two-record
+  artefact `audit-in-commit.integration.spec.ts` was fixed for.
+- CI's `main` job is red at `pnpm icons:check`, on `main` too (at the
+  branch point and on its last five runs) and outside the §4 gate: three
+  hits — `gauge.ts:192` inline-svg (`INLINE_SVG_ALLOWED` in
+  `tools/icons/check-icon-usage.mjs` drifted from `eslint.config.mjs`,
+  which also allows the gauge ring) and `accent-rule.spec.ts:610` / `:615`
+  (the placeholder key `a.b`; the checker scans specs). The proposed
+  two-line patch (on the PR, not pushed): add
+  `'libs/ui/patterns/src/lib/gauge/gauge.ts'` to `INLINE_SVG_ALLOWED`, and
+  replace `uiName="a.b"` at `:610` and `:615` with a key from the icon
+  manifest (the spec asserts the accent law on the tag, not on the key).
+- The e2e load and time-of-day flakes, as before (§4):
+  `client-card-glance.spec.ts:364` after ~23:15 shop time;
+  `client-card-harness.spec.ts:17` [tablet] and `:40` [phone] under load;
+  `auth-onboarding.spec.ts:63` and `:106`; `appointments.spec.ts:158` (§4's
+  `:152`) — each green alone or on a quiet run (a solo `--repeat-each=3`
+  run judges it).
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -2149,10 +2699,21 @@ bundle names the project, P5 `connect-src` names its callables host, P6 no
 emulator variable and no placeholder or `demo-*` project, and (functions
 scope, 2026-10-26) P7 every use of an `@emulatorOnly` export (the console
 OTP sender, the fixed-code OTP crypto) behind `onEmulator()`, followed by the
-TypeScript checker through renames and re-exports — and exits 1 unless every
-row passes. P7 FAILs on today's tree by design: it is the OTP-sender launch
-blocker of `docs/production-deploy.md` §1, pinned by the spec until the
-transactional sender lands. Its pure checks run in `run-many -t test`
+TypeScript checker through renames and re-exports, P8 no use at all of a
+`@launchBlocker` export (the refusing OTP sender), followed the same way,
+and (functions scope, audit-hardening WS-6) P9 the platform backstops —
+Point-in-Time Recovery, the backup schedules, the audit log sink and its
+400-day bucket named in `tools/ops/names.env` — and exits 1 unless every
+row passes (`--scope web`, the hosting predeploy, runs P1–P6; `--scope
+functions`, the functions predeploy, P1–P3 and P6–P9). P7 passes since
+audit-hardening WS-0 gated the console sender; P8 FAILs on today's tree by
+design: it is the OTP-sender launch blocker of `docs/production-deploy.md`
+§1 (a deployed project refuses every sign-in
+`IDENTITY_OTP_SEND_UNAVAILABLE`), pinned by the spec until the
+transactional sender lands. P9 is INFORMATIONAL: each backstop, a missing
+or unreadable one included, is an INFO line inside a PASS row, so it never
+fails a deploy (its reads need `roles/logging.viewer` on the preflight
+credentials; promoting it to a gate is the owner's call, end of §3.3). Its pure checks run in `run-many -t test`
 (`verify-tools`, `preflight.spec.mjs`); against the emulator project it
 stops at P6 by design, so the gate on a tree with no hosted project is that
 spec, and the run against the real project is the release step before any
@@ -2174,6 +2735,27 @@ re-run it after midnight). Under `run-many -t test --parallel=3` the heavy
 `client-booking`'s `booking-return-url.spec.ts` property case) can time
 out — re-run the project alone before calling it a regression. Typecheck
 after `rm -rf dist/out-tsc`.
+
+**Reference numbers on the audit-hardening tree (2026-10-27, the FULL gate
+after the review rounds — `flips/audit-hardening.md` §6.3 "Final", §8)** — a
+drop without a reason is a lost case: `nx sync:check` up to date; layering
+**952 files and 4,245 import edges**; typecheck **40 projects, all
+green**; 44 projects lint, 0 errors (242 warnings by a per-project
+count); `run-many -t test` 44 test targets, **14,120 passed, 0
+failed** (13,948 vitest + `verify-tools` 172, the preflight's and the ops
+scripts' specs among them); `lint-rules` 355 tests; ecs-core **6,677
+tests, 98.47 % statements** (15,072/15,305); functions **1,320 tests**;
+`seed-tools` typecheck; `lint:styles`; `build web` initial **585.94 kB**
+(159.03 kB transfer) + `verify:bundle`; the functions dist's four runtime
+dependencies; `firestore.indexes.json` 24 composites (5 on
+`auditLog`) and 101 field overrides; the functions' 47 exports;
+runbook §4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7
+24, §4.8 27, §4.9 25, §4.10 20; `verify:csp` — both builds'
+inline-script hashes match `script-src`, the Hosting smoke **10
+passed** (desktop + Pixel 7), no violation beyond the MapLibre report-only
+baseline; the preflight's spec 62 passed (its real-tree P8 pin a FAIL,
+by design); `verify:p0` (a)–(f); `test:emulator` **103 +
+361**; `e2e:web` **63 passed, 0 failed**.
 
 **Reference numbers after the pass-F fixer round (2026-10-26, the FULL
 gate after the review's seven findings, §3.3 "The fixer round")** — a drop
@@ -2335,6 +2917,14 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 ## 6. Open questions for the owner
 
+- **Audit hardening (2026-10-27) — no new ruling.** The pass decided no
+  owner question. It relied on the rulings below and in
+  `decisions/2026-10-26-owner-rulings.md` — OR-9, OR-12, OR-24, OR-25 /
+  OR-58, OR-26, OR-33, OR-34, OR-35, OR-51 / OR-55 — applying them and the
+  laws to the brief as RU-1…RU-41 (`flips/audit-hardening.md` §0.2). Its
+  latitude register L1–L6 and its owner flags (the new copy, the
+  `maxPartySize` cap proposal, the OR-34 amendments and privacy line, P9's
+  severity among them) are listed at the end of §3.3.
 - **Ruled 2026-10-26 — the owner rulings (pass F,
   `docs/architecture/decisions/2026-10-26-owner-rulings.md`).** The owner
   delegated every open decision; OR-1 … OR-56 rule every owner item this

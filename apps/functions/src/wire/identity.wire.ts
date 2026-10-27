@@ -37,6 +37,7 @@ import {
   field,
   isRecord,
   isStoreFailure,
+  operationIdOf,
   storeFailure,
   type WireRequest,
 } from './wire-read';
@@ -118,9 +119,15 @@ export function encodeRequestOtpAnswer(
   };
 }
 
-/** A `requestOtp` refusal (a store failure thrown). */
+/**
+ * A `requestOtp` refusal (a store failure thrown). The deployed sender's
+ * refusal leaves as its own code, BEFORE a failed delivery collapses to
+ * `IDENTITY_OTP_SEND_FAILURE`: a retry can never succeed, and the web must
+ * not offer one (WS-0).
+ */
 export function requestOtpRefusal(error: RequestOtpError): EdgeError {
   if (isStoreFailure(error)) throw storeFailure(error);
+  if (error.errorCode === IdentityErrorCode.OtpSendUnavailable) return error;
   if (PipelineError.isPipelineError(error))
     return IdentityError.otpSendFailure();
   if (error.errorCode === IdentityErrorCode.IdentifierInvalid) {
@@ -246,6 +253,8 @@ export function decodeCompleteRegistration(
     identifierChannel: channel,
     rawIdentifier: identifier,
     fields: registrationFieldsOf(fields),
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(payload, 'operationId'),
   });
 }
 
@@ -350,6 +359,8 @@ export function decodeUpdateProfile(
       lastName: lastName.text,
       birthDate: birthDate.text,
     },
+    // The transport id, OPTIONAL (RU-21): absent or malformed is none.
+    operationId: operationIdOf(request.data, 'operationId'),
   });
 }
 

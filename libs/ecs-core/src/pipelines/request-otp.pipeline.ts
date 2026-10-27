@@ -5,7 +5,7 @@ import {
   OtpPurpose,
   ParsedIdentifier,
 } from '@core/components';
-import { type OtpId, Result } from '@core/primitives';
+import { LogEvent, type OtpId, Result } from '@core/primitives';
 import { IdentityError, type RequestOtpError } from '@core/errors';
 import type {
   AuthDeploymentPorts,
@@ -40,7 +40,16 @@ import { parseContactPhone } from './booking-read-set.pipeline';
  * then the challenge is issued with the strategy's own
  * `ttlMinutes`/`maxAttempts`, saved (`saveOtp`, which stamps `purgeAt`) and
  * sent. A send failure is answered as such — the saved challenge stays, as
- * today.
+ * today — and so is the deployed sender's refusal
+ * (`IDENTITY_OTP_SEND_UNAVAILABLE`, audit-hardening WS-0), passed through
+ * unchanged so the edge words it as its own code. The save and the resend
+ * window still come BEFORE the send: an unwired sender refuses every
+ * request that reaches it, its saved challenge is TTL-purged and
+ * unreachable without a delivered code, and sending first would change what
+ * the OR-9 window counts. The cost, under that sender: the refused request
+ * used up the window, so a repeat for the same destination inside it
+ * answers `IDENTITY_OTP_RATE_LIMITED` (worded as a code already sent,
+ * though none was) before the refusal answers again.
  *
  * The stored `destination` is the payload text TRIMMED, byte-identical to
  * today (F2-10): the probe queries the parsed identifier while the challenge
@@ -148,7 +157,7 @@ export const requestOtp =
 
     const sent = await ports.sendOtp(parsed.value, rawCode);
     if (!sent.ok) {
-      ports.log('warn', 'otp.send_failed', {
+      ports.log('warn', LogEvent.OtpSendFailed, {
         otpId: otp.id,
         errorCode: sent.error.errorCode,
       });

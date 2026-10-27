@@ -1,5 +1,12 @@
-import { Result, Tag, type UtcEpochMs } from '@core/primitives';
+import {
+  ClientOperationId,
+  OperationId,
+  Result,
+  Tag,
+  type UtcEpochMs,
+} from '@core/primitives';
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
+import type { OperationIdField } from '@core/ports';
 import { ZonedTimeSystem } from '@core/systems';
 import type { EdgeError } from '../edge';
 import type { VerifiedRequest } from '../lib/booking/caller-roles';
@@ -82,6 +89,22 @@ export function idOf<T>(
   if (typeof raw !== 'string') return null;
   const parsed = parse(raw);
   return parsed.ok ? parsed.value : null;
+}
+
+/**
+ * The operation id a callable's payload carries in `field` (WS-4.1,
+ * `OPERATION_ID_FIELD`), else `null`: the client-minted key's shape
+ * (`ClientOperationId.inPayload` — an own property, `[A-Za-z0-9_-]{16,64}`)
+ * and then a plain id (`OperationId.parse` — a reserved `__x__` name reads
+ * as none). Never an unvalidated string; the decoder decides whether `null`
+ * is a refusal (a booking act) or no id (an optional transport id).
+ */
+export function operationIdOf(
+  payload: unknown,
+  field: OperationIdField,
+): OperationId | null {
+  const sent = ClientOperationId.inPayload(payload, field);
+  return sent === null ? null : idOf(sent, OperationId.parse);
 }
 
 /** Whether a failure is a store failure (any {@link RepositoryErrorCode}) — the infrastructure, never a refusal. */

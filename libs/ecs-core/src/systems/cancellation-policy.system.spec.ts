@@ -16,6 +16,7 @@ import {
   type Result,
   AttendanceState,
   BarberId,
+  OperationId,
   SeatId,
   UserId,
   UtcEpochMs,
@@ -316,6 +317,8 @@ const START = utcMs('2030-01-15T08:00:00Z');
 const ANA = UserId.of('ana');
 const BOB = UserId.of('bob');
 const NOW = FIXTURE_NOW_UTC_MS;
+/** The lifecycle act's operation id (WS-1) — type-forced, asserted nowhere here. */
+const OPERATION_ID = OperationId.of('op-cancel-policy-0001');
 
 /** Ana and Bob, far in the future, one of them possibly already resolved. */
 function storedParty(
@@ -375,6 +378,7 @@ describe('the client’s own cancel — stamped with the window it was allowed u
       CancellationReason.Unspecified,
       allowed.value.windowHours,
       NOW,
+      OPERATION_ID,
     );
   }
 
@@ -450,6 +454,7 @@ describe('the shop cancelling, often on the client’s word', () => {
         seatId,
         reason,
         windowHours: CancellationPolicySystem.stampOf(policy),
+        operationId: OPERATION_ID,
       },
       now,
     );
@@ -561,6 +566,7 @@ describe('the shop cancelling, often on the client’s word', () => {
           seatId: null,
           reason: null,
           windowHours: CancellationPolicySystem.stampOf(policyWithWindow(24)),
+          operationId: OPERATION_ID,
         },
         now,
       ),

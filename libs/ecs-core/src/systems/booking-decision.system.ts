@@ -20,6 +20,7 @@ import {
   SubjectRelationship,
   ServiceTerms,
   type ShopNow,
+  WriteProvenance,
 } from '@core/components';
 import {
   Result,
@@ -853,6 +854,10 @@ export const BookingDecisionSystem = {
       arrivedAtUtcMs: null,
       stoodSeatPairsRevision: null,
       stoodSeatPairs: [],
+      // No call is known here: the pipeline that writes the draft stamps
+      // its own operation id on it (WS-4.3) — the decision decides nothing
+      // about who calls.
+      ...WriteProvenance.NONE,
     };
     return Result.ok({
       appointment: AppointmentIndexSystem.withQueryKeys(draft),

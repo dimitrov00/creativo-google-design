@@ -74,7 +74,8 @@ type PhotoLook = {
  * THE ONE RECORD BUILDER both entries share (pass C, D-3): the photo's id
  * from `nextId`, then its taker, then `takenAtUtcMs = nowUtcMs` — in that
  * order, the stamps filled here from the injected id source and clock
- * (`notes-photos.port.ts`), never by the adapter.
+ * (`notes-photos.port.ts`), never by the adapter. A shot re-reads the stamp
+ * after its upload ({@link attachVisitPhoto}); an adoption keeps this one.
  */
 function visitPhotoFacts(
   ports: IdPorts & ClockPorts,
@@ -120,6 +121,14 @@ function photoRefusal(refusal: MediaRefusal): MediaError {
  * the object path from the facts), and its document written with Storage's
  * answer. The photo as written on success; the upload's `MediaError` or the
  * save's `RepositoryError` as they come.
+ *
+ * The document's `takenAtUtcMs` is read from the clock AGAIN once the bytes
+ * are up (audit hardening WS-3, L6, DEP-16): `firestore.rules` admits a
+ * photo only with a stamp within five minutes of the server's clock
+ * (`stampInWindow`), and an upload of up to 8 MiB may outlast a stamp read
+ * before it — the document would be refused and the object orphaned. The
+ * object's own metadata keeps the provisional stamp the record was built
+ * with (`uploadPhotoBytes`); a failed upload reads the clock once only.
  */
 export const attachVisitPhoto =
   (ports: AttachVisitPhotoPorts) =>
@@ -138,6 +147,7 @@ export const attachVisitPhoto =
     if (!stored.ok) return stored;
     const photo: AppointmentPhoto = {
       ...facts,
+      takenAtUtcMs: ports.nowUtcMs(),
       path: stored.value.path,
       url: stored.value.url,
     };

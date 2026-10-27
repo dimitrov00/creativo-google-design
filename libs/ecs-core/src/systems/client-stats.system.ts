@@ -52,6 +52,7 @@ import {
 import type { RepositoryError } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import { BillingSystem } from './billing.system';
+import { CanonicalJsonSystem } from './canonical-json.system';
 import {
   type AppointmentSide,
   StoredDocumentSystem,
@@ -1259,16 +1260,13 @@ export const ClientStatsSystem = {
     return noShows >= NO_SHOW_WARNING_AT ? noShows : null;
   },
 
-  /** JSON with object keys sorted, so two equal values always print the same. */
+  /**
+   * JSON with object keys sorted, so two equal values always print the
+   * same — {@link CanonicalJsonSystem.of}, its one home (audit-hardening
+   * WS-4.2); kept here as the stats system's own name for it.
+   */
   canonicalJson(value: unknown): string {
-    return JSON.stringify(value, (_key, raw: unknown) => {
-      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-        return raw;
-      }
-      return Object.fromEntries(
-        Object.entries(raw).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-      );
-    });
+    return CanonicalJsonSystem.of(value);
   },
 
   /**

@@ -35,6 +35,7 @@ import {
   type AppointmentPhotoId,
   BarberId,
   BookingStatus,
+  type ClientOperationId,
   Currency,
   type CustomerId,
   DraftPersonKey,
@@ -168,6 +169,7 @@ import {
 import {
   bookingStatusWords,
   cancellationReasonWords,
+  operationReferenceWords,
   pluralForm,
   relativeTime,
   translateCodedError,
@@ -902,14 +904,15 @@ const ANCHOR_TOLERANCE = 2;
  * One lifecycle move as the call carries it — the whole party (`seatId`
  * `null`) or one seat; a reason only on a cancellation, and a CODE only
  * (D23): what the barber typed beside «Друго…» is the visit's note, written
- * once the cancel has landed (`confirmCancel`), never the call's.
+ * once the cancel has landed (`confirmCancel`), never the call's. The
+ * INTENT only: the store names each act (`operationId`, WS-4.1).
  */
 function transitionOf(
   appointmentId: AppointmentId,
   toBookingStatus: BookingStatus,
   cancellationReason: CancellationReason | null,
   seatId: SeatId | null,
-): BookingCall.Transition {
+): BookingCall.TransitionIntent {
   return { appointmentId, toBookingStatus, cancellationReason, seatId };
 }
 
@@ -3968,6 +3971,34 @@ export class StaffDashboard {
    */
   protected readonly notice = signal<string | null>(null);
 
+  /**
+   * The refused call's id beside the toast's sentence (audit-hardening
+   * WS-4.5), or `null`: set with every refusal `notice` words, cleared with
+   * every other notice — a receipt or a closed toast carries no reference.
+   */
+  protected readonly noticeReference = signal<ClientOperationId | null>(null);
+
+  /**
+   * The reference line the toast prints under a refusal: the id and its
+   * words (`operationReferenceWords`), or `null` — no refusal on show, an
+   * undo on offer in its place, or a failure that carries no id.
+   */
+  protected readonly noticeReferenceLine = computed(() => {
+    const id = this.noticeReference();
+    if (this.undo() !== null || this.notice() === null || id === null)
+      return null;
+    const words = operationReferenceWords(id, (key, params) =>
+      this.transloco.translate<string>(key, params),
+    );
+    return words === null ? null : { value: id, ...words };
+  });
+
+  /** A notice that is not a refusal (a receipt, or none): no reference. */
+  private setNotice(message: string | null): void {
+    this.noticeReference.set(null);
+    this.notice.set(message);
+  }
+
   private refuse(
     error: PipelineError | null,
     fallbackKey = `errors.${BookingErrorCode.CallFailed}`,
@@ -3976,6 +4007,7 @@ export class StaffDashboard {
     this.notice.set(
       error ? this.describeError(error) : this.transloco.translate(fallbackKey),
     );
+    this.noticeReference.set(error?.operationId ?? null);
   }
 
   protected async runUndo(): Promise<void> {
@@ -4670,7 +4702,7 @@ export class StaffDashboard {
       return;
     }
     if (before !== null && row !== null && plan.reversible) {
-      this.notice.set(null);
+      this.setNotice(null);
       this.offerSaveUndo(
         appointmentId,
         row,
@@ -4687,7 +4719,7 @@ export class StaffDashboard {
      * would only ever be refused. The toast still says the save landed.
      */
     this.undo.set(null);
-    this.notice.set(this.transloco.translate('staff.day.undo.saved'));
+    this.setNotice(this.transloco.translate('staff.day.undo.saved'));
   }
 
   /**
@@ -4864,6 +4896,7 @@ export class StaffDashboard {
               reason: error === null ? '' : this.describeError(error),
             }),
           );
+          this.noticeReference.set(error?.operationId ?? null);
           // Somebody else saved the visit after this save: the undo is not
           // written over them, and the sheet shows what they left.
           if (!VisitEditWrite.batchLanded(landed) && isStaleRefusal(error)) {

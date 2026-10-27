@@ -23,6 +23,7 @@ import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AUDIT_READ_PORTS,
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
@@ -321,14 +322,23 @@ export const appConfig: ApplicationConfig = {
       } satisfies DefaultLocationPorts,
     },
     // The session and the callables, eager: the shell reads the session at
-    // boot, and every callable goes through the ONE typed client.
+    // boot, and every callable goes through the ONE typed client (which
+    // mints a transport operation id from the id source, WS-4.1, and
+    // reports a call that never answered as a callable to the page's issue
+    // reporter, WS-5 — the reporter reads this client back lazily, on its
+    // first send, so the two never wait on each other).
     {
       provide: AUTH_SESSION_PORTS,
       useFactory: () => authSessionPorts(inject(FIREBASE_AUTH)),
     },
     {
       provide: GATEWAY_PORTS,
-      useFactory: () => callableClientPorts(inject(FIREBASE_FUNCTIONS)),
+      useFactory: () =>
+        callableClientPorts(
+          inject(FIREBASE_FUNCTIONS),
+          inject(ID_PORTS),
+          inject(CLIENT_ISSUE_REPORTER),
+        ),
     },
     {
       provide: OTP_CHALLENGE_PORTS,
@@ -413,6 +423,22 @@ export const appConfig: ApplicationConfig = {
         loadClientStats: LazyMethod.Promise,
         loadClientMoney: LazyMethod.Promise,
         pageClientStats: LazyMethod.Promise,
+      },
+      onLoadError: dataUnavailable,
+    }),
+    // The admin's read of the audit trail (audit-hardening WS-7): the five
+    // timelines and one operation's rows. `auditLog` is admin-read in the
+    // rules; no screen consumes it yet (the Activity screen is out of scope).
+    provideLazyPort(AUDIT_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.auditReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        pageAuditByTargetCustomer: LazyMethod.Promise,
+        pageAuditByTargetUser: LazyMethod.Promise,
+        pageAuditByResource: LazyMethod.Promise,
+        pageAuditByActorUser: LazyMethod.Promise,
+        pageAuditByActorAdmin: LazyMethod.Promise,
+        auditRowsForOperation: LazyMethod.Promise,
       },
       onLoadError: dataUnavailable,
     }),

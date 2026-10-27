@@ -1,5 +1,4 @@
 import {
-  Actor,
   type AppliedDiscount,
   AuditAction,
   AuditContext,
@@ -30,16 +29,16 @@ import {
   Currency,
   CustomerId,
   GiftVoucherId,
+  LogEvent,
+  OperationId,
   ServiceId,
-  UserId,
 } from '@core/primitives';
 import {
-  type AuditEntry,
   type CouponGrant,
   type GiftVoucher,
   Collections,
 } from '@core/entities';
-import { AuditSystem, CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
+import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -50,22 +49,20 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  fixtureHash,
   localDate,
   locationFixture,
   memoryReadTx,
   memoryStore,
   recordingTelemetry,
-  sequentialIds,
   serviceFixture,
   until,
   unwrapOk,
 } from '@core/testing';
 import {
-  appendAuditFacts,
   bookingSnapshotOf,
   busyMergeWrites,
   grantReleaseWrites,
+  logUnaudited,
   placementFields,
   placementKeysOf,
   readBookingSet,
@@ -439,8 +436,11 @@ describe('the booking read set', () => {
     });
   });
 
-  it('placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle', () => {
-    const fields = placementFields(appointmentFixture());
+  it('placement fields are the geometry, the mirrors, the ledger and the writing call — nothing of the lifecycle', () => {
+    const fields = placementFields(
+      appointmentFixture({ writeOperationId: OperationId.of('op-move-1') }),
+    );
+    expect(fields['writeOperationId']).toBe('op-move-1');
     expect(Object.keys(fields)).toEqual([
       'locationId',
       'seats',
@@ -456,68 +456,55 @@ describe('the booking read set', () => {
       'busyKeys',
       'revision',
       'appliedOperations',
+      'writeOperationId',
     ]);
   });
 
-  describe('appendAuditFacts — after the commit, never fatal', () => {
+  describe('logUnaudited — the facts a commit landed without rows (WS-1)', () => {
     const fact = {
       resourceId: AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
       subjects: [{ seatSubject: 'ANONYMOUS' as const }],
       changeKey: 'attempt:x',
+      operationId: null,
       context: AuditContext.placement(
         AuditAction.BookingCommitted,
         FIXTURE_IDS.location,
       ),
     };
 
-    it('ids each row hash(rowBasis) — a fact without a change key mints one', async () => {
-      const rows: AuditEntry[] = [];
-      const ports = {
-        appendAudit: async (written: readonly AuditEntry[]) => {
-          rows.push(...written);
-        },
-        hash: fixtureHash,
-        nextId: sequentialIds('row'),
-        nowUtcMs: () => FIXTURE_NOW_UTC_MS,
-        ...recordingTelemetry(),
-      };
-      await appendAuditFacts(
-        ports,
-        [fact, { ...fact, changeKey: null }],
-        Actor.user(UserId.of('u1')),
-      );
-      expect(rows.map((row) => row.id)).toEqual([
-        fixtureHash(
-          AuditSystem.rowBasis(
-            AuditAction.BookingCommitted,
-            FIXTURE_IDS.appointment,
-            null,
-            'attempt:x',
-          ),
-        ),
-        'row-1',
+    it('logs one AuditActorMissing error line per fact — the verb and the resource, never a row', () => {
+      const telemetry = recordingTelemetry();
+      logUnaudited(telemetry, [fact, { ...fact, changeKey: 'attempt:y' }]);
+      expect(
+        telemetry.lines.map((line) => [line.level, line.msg, line.fields]),
+      ).toEqual([
+        [
+          'error',
+          LogEvent.AuditActorMissing,
+          {
+            action: AuditAction.BookingCommitted,
+            resourceId: FIXTURE_IDS.appointment,
+          },
+        ],
+        [
+          'error',
+          LogEvent.AuditActorMissing,
+          {
+            action: AuditAction.BookingCommitted,
+            resourceId: FIXTURE_IDS.appointment,
+          },
+        ],
       ]);
-      expect(rows[0]?.recordedAtUtcMs).toBe(FIXTURE_NOW_UTC_MS);
+      // The message text is today's, byte for byte (the metric filters read it).
+      expect(LogEvent.AuditActorMissing).toBe(
+        'audit row has no verified actor',
+      );
     });
 
-    it('logs and writes nothing without a verified actor, or for nothing to log', async () => {
-      const rows: AuditEntry[] = [];
+    it('logs nothing when every fact was audited', () => {
       const telemetry = recordingTelemetry();
-      const ports = {
-        appendAudit: async (written: readonly AuditEntry[]) => {
-          rows.push(...written);
-        },
-        hash: fixtureHash,
-        nextId: sequentialIds(),
-        nowUtcMs: () => FIXTURE_NOW_UTC_MS,
-        ...telemetry,
-      };
-      await appendAuditFacts(ports, [fact], null);
-      await appendAuditFacts(ports, [], Actor.user(UserId.of('u1')));
-      expect(rows).toEqual([]);
-      expect(telemetry.lines.map((line) => [line.level, line.msg])).toEqual([
-        ['error', 'audit row has no verified actor'],
-      ]);
+      logUnaudited(telemetry, []);
+      expect(telemetry.lines).toEqual([]);
     });
   });
 

@@ -12,9 +12,18 @@ import {
   type ClientStatsKey,
   type ClientStatsMeta,
   type PolicyPassStamp,
+  type WriteProvenance,
+  AttemptOutcome,
   BackfillJobName,
 } from '@core/components';
-import type { ClientMoneyStatsId, CustomerId, UserId } from '@core/primitives';
+import type {
+  ClientMoneyStatsId,
+  CustomerId,
+  OperationId,
+  TriggerEventId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BackfillJob } from './backfill-job.entity';
 import type { ClientMoneyRecord } from './client-money-stats.entity';
@@ -23,6 +32,10 @@ import {
   type PolicyRecomputeJob,
   RecomputeJobName,
 } from './policy-recompute-job.entity';
+import type {
+  TriggerFailure,
+  TriggerFailureMeta,
+} from './trigger-failure.entity';
 
 type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
@@ -133,3 +146,32 @@ export const policyJobTagNarrows: boolean =
 export const policyCursor: CustomerId | null = policyJob.cursor;
 // @ts-expect-error — the change instant is flat (`changedAtSeconds/Nanos`), never a nested struct
 export const noNestedChangedAt: unknown = policyJob.changedAt;
+
+/* ── TriggerFailure = TriggerFailureMeta & WriteProvenance (WS-6, RU-31) ── */
+
+export const triggerFailureNotNever: IsNever<TriggerFailure> = false;
+export const triggerFailureFlat: EveryVariantFlat<TriggerFailure> = true;
+export const triggerFailureDisjoint: Disjoint<
+  TriggerFailureMeta,
+  WriteProvenance
+> = true;
+
+declare const deadLetter: TriggerFailure;
+// Every field at the root: the event id IS the document id (Law 5).
+export const deadLetterId: TriggerEventId = deadLetter.id;
+export const deadLetterRoot: readonly unknown[] = [
+  deadLetter.fn,
+  deadLetter.documentPath,
+  deadLetter.failureCode,
+];
+export const deadLetterRecordedAt: UtcEpochMs = deadLetter.recordedAtUtcMs;
+export const deadLetterProvenance: OperationId | null =
+  deadLetter.writeOperationId;
+export const deadLetterTagNarrows: boolean =
+  deadLetter.attemptOutcome === AttemptOutcome.Permanent;
+// @ts-expect-error — the event id is the document id, never a second `eventId` field
+export const noEventIdField: unknown = deadLetter.eventId;
+// @ts-expect-error — the attempt's age is the log line's (`ageMs`), never stored
+export const noAgeMs: unknown = deadLetter.ageMs;
+// @ts-expect-error — the tag is `attemptOutcome` (N15), never `outcome`
+export const noOutcomeField: unknown = deadLetter.outcome;

@@ -1586,14 +1586,19 @@
        refusals, never a client-side rollback. One toast per page; a new act
        replaces the last one — and so does A REFUSAL (owner, 2026-09-17: "if
        there is an error message it should appear as a toast"): the server's
-       sentence, with no action, above the sheet it answers. -->
+       sentence, with no action, above the sheet it answers; under it the
+       refused call's reference, copied on a tap, when it carries one
+       (audit-hardening WS-4.5). -->
   <ui-toast
     [uiPresented]="undo() !== null || notice() !== null"
     [uiLabel]="undo()?.message ?? notice() ?? ''"
     [uiActionLabel]="undo() !== null ? t('staff.day.undo.action') : ''"
     [uiDismissLabel]="t('staff.day.undo.dismiss')"
+    [uiReferenceValue]="noticeReferenceLine()?.value ?? ''"
+    [uiReferenceText]="noticeReferenceLine()?.text ?? ''"
+    [uiReferenceCopiedText]="noticeReferenceLine()?.copiedText ?? ''"
     data-testid="staff-toast"
     (uiAction)="runUndo()"
-    (uiDismissed)="undo.set(null); notice.set(null)"
+    (uiDismissed)="undo.set(null); notice.set(null); noticeReference.set(null)"
   />
 </ng-container>

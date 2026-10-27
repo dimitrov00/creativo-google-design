@@ -167,9 +167,10 @@ export type Appointment = AppointmentMeta &
 **`PaymentRecord` is the owner's illustrative payment slice** (`paymentMethod:
 'UNPAID' | 'CASH' | 'CARD'`, variant fields such as `paidCents` and
 `stripePaymentIntentId`). No payment data is stored yet, so today's stored
-`Appointment` in `libs/ecs-core` intersects seven slices and no payment slice:
+`Appointment` in `libs/ecs-core` intersects eight slices and no payment slice:
 `AppointmentMeta & AppointmentClientRefs & TimeCoordinate & BookingLifecycle &
-BookingContact & AppointmentStamps & StoodSeatPairs`. Its `AppointmentMeta`
+BookingContact & AppointmentStamps & StoodSeatPairs & WriteProvenance` (the
+last writing call's `writeOperationId`, audit-hardening WS-4.3). Its `AppointmentMeta`
 stores no `tenantId` and no root price — the money lives on each seat
 (`priceCents` + `currency`) — and holds the query mirrors, the placement, the
 discount and voucher lines and the staff-edit ledger beside the seats.

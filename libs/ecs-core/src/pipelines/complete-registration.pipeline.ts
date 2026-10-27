@@ -10,6 +10,8 @@ import {
   CustomerId,
   type IdentifierChannel,
   type LocalDate,
+  LogEvent,
+  type OperationId,
   Result,
   type UserId,
 } from '@core/primitives';
@@ -98,6 +100,11 @@ export type CompleteRegistrationCommand = {
    * 7.4 exception): its refusal needs the age day.
    */
   readonly fields: RegistrationFields;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type CompleteRegistrationAnswer = {
@@ -228,6 +235,8 @@ export const completeRegistration =
                 new Map([[uid, registered]]),
                 CustomerOrigin.Registration,
                 nowUtcMs,
+                // The call's own optional id (RU-29) — `null` when none was sent.
+                cmd.operationId,
               ),
             ],
           });
@@ -241,7 +250,7 @@ export const completeRegistration =
     // Auth display name. Its failure never fails the registration.
     const named = await ports.setDisplayName(uid, Profile.fullName(registered));
     if (!named.ok) {
-      ports.log('warn', 'registration.display_name_failed', {
+      ports.log('warn', LogEvent.RegistrationDisplayNameFailed, {
         uid,
         errorCode: named.error.errorCode,
       });

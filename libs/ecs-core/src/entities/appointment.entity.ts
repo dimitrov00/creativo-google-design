@@ -8,6 +8,7 @@ import type {
   StoodSeatPairs,
   Seat,
   VoucherRedemption,
+  WriteProvenance,
 } from '@core/components';
 import type {
   BusyKey,
@@ -107,8 +108,9 @@ export type AppointmentStamps = {
  * (`AppointmentClientRefs`, D29), the shop wall clock and the one instant
  * (`TimeCoordinate`), the lifecycle variant (`BookingLifecycle`), the
  * contact snapshot (`BookingContact`, all `null` for a walk-in with nobody
- * to call), the two stamps, and the stood-pair memory (`StoodSeatPairs`).
- * The document body is this type minus `id`. No zone: it is the location's
+ * to call), the two stamps, the stood-pair memory (`StoodSeatPairs`) and
+ * the last writing call's operation id (`WriteProvenance`, WS-4.3). The
+ * document body is this type minus `id`. No zone: it is the location's
  * (Law 7.2).
  */
 export type Appointment = AppointmentMeta &
@@ -117,4 +119,5 @@ export type Appointment = AppointmentMeta &
   BookingLifecycle &
   BookingContact &
   AppointmentStamps &
-  StoodSeatPairs;
+  StoodSeatPairs &
+  WriteProvenance;

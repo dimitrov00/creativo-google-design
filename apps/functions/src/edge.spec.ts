@@ -14,6 +14,7 @@ import {
   LocationId,
   MinuteCount,
   MinuteOfDay,
+  OperationId,
   PositionId,
   PrimitiveErrorCode,
   Result,
@@ -55,14 +56,25 @@ import {
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
 import { AttemptOutcome, ResizeEdge } from '@core/components';
-import { Callables, type TelemetryPorts } from '@core/ports';
+import type { Firestore } from 'firebase-admin/firestore';
+import type { TriggerFailure } from '@core/entities';
+import {
+  Callables,
+  type LogContext,
+  type TelemetryPorts,
+  type TriggerFailurePorts,
+  type WriteTriggerFailure,
+} from '@core/ports';
 import {
   type AttemptLine,
+  TriggerAttemptSystem,
   WorkBudgetSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   attemptLineFields,
+  attemptProvenanceOf,
+  type CallableEdgePorts,
   EDGE_DICTIONARIES,
   EDGE_WIRE,
   type EdgeError,
@@ -84,6 +96,8 @@ import {
   wireRuleOf,
   workBudget,
 } from './edge';
+import { firestoreTriggerFailurePorts } from './adapters/firestore-trigger-failures.adapter';
+import { createProjectionFirestore } from './test-support/fake-projection-firestore';
 
 /** A literal instant as the brand — specs only. */
 function utc(ms: number): UtcEpochMs {
@@ -679,6 +693,14 @@ describe('edge — the wire table', () => {
       );
     });
 
+    it('the deployed sender’s refusal is `failed-precondition`, its code alone — never the lockout’s `permission-denied`, never a retryable `internal` (WS-0)', () => {
+      expect(wire(IdentityError.otpSendUnavailable())).toEqual({
+        status: 'failed-precondition',
+        message: 'IDENTITY_OTP_SEND_UNAVAILABLE',
+        details: { errorCode: 'IDENTITY_OTP_SEND_UNAVAILABLE' },
+      });
+    });
+
     it('both waitlist doors answer the shared WaitlistError shape', () => {
       expect(wire(WaitlistError.unauthenticated())).toEqual({
         status: 'unauthenticated',
@@ -997,6 +1019,8 @@ describe('edge — the attempt line (Phase 4a 4A-2 (c))', () => {
       attemptOutcome: AttemptOutcome.Transient,
       failureCode: 'unavailable',
       ageMs: 1_500,
+      documentPath: 'appointments/apt-1',
+      writeOperationId: OperationId.of('op-00000000000001'),
     };
     expect(attemptLineFields(line)).toEqual({
       fn: 'dispatchClientProjections',
@@ -1004,7 +1028,80 @@ describe('edge — the attempt line (Phase 4a 4A-2 (c))', () => {
       outcome: 'TRANSIENT',
       errorCode: 'unavailable',
       ageMs: 1_500,
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-00000000000001',
     });
+  });
+});
+
+describe('edge — what a delivery says about the write (WS-4.3, DEP-19)', () => {
+  const snapshot = (body: Record<string, unknown> | undefined) => ({
+    exists: body !== undefined,
+    data: () => body,
+  });
+
+  it('reads the written path and the after-image’s operation id', () => {
+    expect(
+      attemptProvenanceOf({
+        id: 'evt-1',
+        document: 'appointments/apt-1',
+        data: {
+          before: snapshot({ writeOperationId: 'op-before-000000001' }),
+          after: snapshot({ writeOperationId: 'op-after-0000000001' }),
+        },
+      }),
+    ).toEqual({
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-after-0000000001',
+    });
+  });
+
+  it('reads the before-image on a delete, and nothing from a tick', () => {
+    expect(
+      attemptProvenanceOf({
+        document: 'customers/cus-1',
+        data: {
+          before: snapshot({ writeOperationId: 'op-before-000000001' }),
+          after: snapshot(undefined),
+        },
+      }),
+    ).toEqual({
+      documentPath: 'customers/cus-1',
+      writeOperationId: 'op-before-000000001',
+    });
+    expect(attemptProvenanceOf({ id: 'run', time: 'x' })).toEqual({
+      documentPath: null,
+      writeOperationId: null,
+    });
+    expect(attemptProvenanceOf(null)).toEqual({
+      documentPath: null,
+      writeOperationId: null,
+    });
+  });
+
+  it('reads a malformed stored id as null — the stamped shape, never a cast — and never refuses', () => {
+    for (const raw of [
+      'a/b',
+      '__x__',
+      '',
+      42,
+      { id: 'x' },
+      null,
+      // Free text, an over-length value and a short one — none the shape the
+      // server stamps (`[A-Za-z0-9_-]{16,64}`, review round 2, DEP-19).
+      'Георги Иванов 0888123456 georgi@mail.bg',
+      'x'.repeat(100_000),
+      'x'.repeat(65),
+      'short-op-id',
+    ]) {
+      expect(
+        attemptProvenanceOf({
+          document: 'appointments/apt-1',
+          data: { after: snapshot({ writeOperationId: raw }) },
+        }),
+        String(raw),
+      ).toEqual({ documentPath: 'appointments/apt-1', writeOperationId: null });
+    }
   });
 });
 
@@ -1021,23 +1118,60 @@ function edgePorts(start = 1_000) {
   let now = start;
   const tracked: Tracked[] = [];
   const logged: Logged[] = [];
+  /** Every scope bound (a copy), and every field added to one. */
+  const bound: LogContext[] = [];
+  const added: LogContext[] = [];
   const telemetry: TelemetryPorts = {
     log: (level, msg, fields) => logged.push({ level, msg, fields }),
     trackError: (error, context) => tracked.push({ error, context }),
   };
+  /** Every dead letter the edge asked to write (WS-6), and how the next write answers. */
+  const deadLetters: TriggerFailure[] = [];
+  const writer: { write: WriteTriggerFailure } = {
+    write: async () => Result.ok(undefined),
+  };
+  const ports: CallableEdgePorts & TriggerFailurePorts = {
+    ...telemetry,
+    nowUtcMs: () => utc(now),
+    writeTriggerFailure: async (failure) => {
+      deadLetters.push(failure);
+      return writer.write(failure);
+    },
+    bindLogContext: (context, run) => {
+      bound.push({ ...context });
+      return run();
+    },
+    addLogContext: (context) => {
+      added.push({ ...context });
+    },
+    logDigest: (input) => `digest(${input})`,
+  };
   return {
-    ports: { ...telemetry, nowUtcMs: () => utc(now) },
+    ports,
     tracked,
     logged,
+    bound,
+    added,
+    deadLetters,
+    writer,
     advance: (ms: number) => {
       now += ms;
     },
   };
 }
 
-const request = (data: unknown): CallableRequest<unknown> =>
+const request = (
+  data: unknown,
+  auth: {
+    readonly uid: string;
+    readonly roles: readonly unknown[];
+  } | null = null,
+): CallableRequest<unknown> =>
   ({
     data,
+    ...(auth === null
+      ? {}
+      : { auth: { uid: auth.uid, token: { roles: auth.roles } } }),
     rawRequest: {},
     acceptsStreaming: false,
   }) as unknown as CallableRequest<unknown>;
@@ -1059,6 +1193,7 @@ describe('edge — the wrappers', () => {
       failureCode: BookingErrorCode.CommitStoreFailed,
       timeoutSeconds: null,
       answer: null,
+      traced: true,
     } as const;
 
     it('answers Result.ok with its value', async () => {
@@ -1096,6 +1231,7 @@ describe('edge — the wrappers', () => {
             streakPublishOutcome: 'REFUSED',
             errorCode: refusal.errorCode,
           }),
+          traced: true,
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
@@ -1185,6 +1321,200 @@ describe('edge — the wrappers', () => {
         },
       ]);
       expect(WorkBudgetSystem.callableBudgetMs(540)).toBe(49_000);
+    });
+  });
+
+  describe('callableEdge — traced: the scope and ONE outcome line (WS-4.2, DEP-18)', () => {
+    const spec = {
+      callable: Callables.CancelAppointment,
+      failureCode: null,
+      timeoutSeconds: null,
+      answer: null,
+      traced: true,
+    } as const;
+    const OP = 'op-0000000000000001';
+    const STAFF = { uid: 'u-staff', roles: ['barber', 'not-a-role'] } as const;
+    const SCOPE = {
+      callable: 'cancelAppointment',
+      operationId: OP,
+      uid: 'u-staff',
+      roles: ['barber'],
+    } as const;
+
+    it('binds the invocation’s scope once — callable, operation id, uid, known roles — and logs callable.completed', async () => {
+      const { ports, logged, bound, added, advance } = edgePorts();
+      const handler = callableEdge(spec, ports, async (_r, _b, trace) => {
+        trace.noteInputDigest('0123456789abcdef');
+        advance(42);
+        return Result.ok({ cancelled: true });
+      });
+      await expect(
+        handler(request({ operationId: OP, appointmentId: 'a-1' }, STAFF)),
+      ).resolves.toEqual({ cancelled: true });
+      expect(bound).toEqual([SCOPE]);
+      expect(added).toEqual([{ inputDigest: '0123456789abcdef' }]);
+      expect(logged).toEqual([
+        {
+          level: 'info',
+          msg: 'callable.completed',
+          fields: {
+            ...SCOPE,
+            errorCode: null,
+            wireStatus: 'ok',
+            durationMs: 42,
+            inputDigest: '0123456789abcdef',
+          },
+        },
+      ]);
+    });
+
+    it('reads the operation id only when the payload’s field passes ClientOperationId — never refusing the call', async () => {
+      for (const data of [
+        { operationId: 'short' },
+        { operationId: 'has/slash-00000000000' },
+        { operationId: 42 },
+        { attemptId: OP },
+        null,
+        'text',
+      ]) {
+        const { ports, bound } = edgePorts();
+        const handler = callableEdge(spec, ports, async () => Result.ok(1));
+        await expect(handler(request(data, null))).resolves.toBe(1);
+        expect(bound, JSON.stringify(data)).toEqual([
+          {
+            callable: 'cancelAppointment',
+            operationId: null,
+            uid: null,
+            roles: [],
+          },
+        ]);
+      }
+      // The booking calls' id rides in `attemptId` (OPERATION_ID_FIELD).
+      const { ports, bound } = edgePorts();
+      await callableEdge(
+        { ...spec, callable: Callables.CommitBooking },
+        ports,
+        async () => Result.ok(1),
+      )(request({ attemptId: OP }, null));
+      expect(bound[0]).toMatchObject({ operationId: OP });
+    });
+
+    it('logs a thrown refusal as callable.refused at warn, with its status — the answer unchanged', async () => {
+      const { ports, logged } = edgePorts();
+      const handler = callableEdge(spec, ports, async () =>
+        Result.err(BookingError.tooSoon(sure(MinuteCount.of(30)))),
+      );
+      const thrown = await rejection(handler(request({}, STAFF)));
+      expect(thrown.code).toBe('failed-precondition');
+      expect(logged).toEqual([
+        {
+          level: 'warn',
+          msg: 'callable.refused',
+          fields: {
+            ...SCOPE,
+            operationId: null,
+            errorCode: 'BOOKING_TOO_SOON',
+            wireStatus: 'failed-precondition',
+            durationMs: 0,
+            inputDigest: null,
+          },
+        },
+      ]);
+    });
+
+    it('logs an ANSWERED refusal as callable.refused with wireStatus ok', async () => {
+      const { ports, logged } = edgePorts();
+      const handler = callableEdge(
+        {
+          ...spec,
+          callable: Callables.PublishStreakDefinition,
+          answer: (refusal) => ({ refused: refusal.errorCode }),
+        },
+        ports,
+        async () => Result.err(StreakPublishError.stale(2, 3)),
+      );
+      await expect(handler(request({}))).resolves.toEqual({
+        refused: 'LOYALTY_STREAK_PUBLISH_STALE',
+      });
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        level: 'warn',
+        msg: 'callable.refused',
+        fields: {
+          errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+          wireStatus: 'ok',
+        },
+      });
+    });
+
+    it('logs a decoder’s own HttpsError as callable.refused — its status and its code — untracked', async () => {
+      const { ports, logged, tracked } = edgePorts();
+      const own = new HttpsError('permission-denied', 'Sysadmin only', {
+        errorCode: 'OPS_BACKFILL_FORBIDDEN',
+      });
+      const handler = callableEdge(spec, ports, async () => {
+        throw own;
+      });
+      expect(await rejection(handler(request({})))).toBe(own);
+      expect(tracked).toEqual([]);
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        level: 'warn',
+        msg: 'callable.refused',
+        fields: {
+          errorCode: 'OPS_BACKFILL_FORBIDDEN',
+          wireStatus: 'permission-denied',
+        },
+      });
+    });
+
+    it('logs an unexpected throw as callable.failed at error — the coded failure — tracked exactly once', async () => {
+      const { ports, logged, tracked } = edgePorts();
+      const boom = new Error('boom');
+      const coded = callableEdge(
+        { ...spec, failureCode: BookingErrorCode.CommitStoreFailed },
+        ports,
+        async () => {
+          throw boom;
+        },
+      );
+      const thrown = await rejection(coded(request({}, STAFF)));
+      expect(thrown.message).toBe('BOOKING_COMMIT_STORE_FAILED');
+      const bare = callableEdge(spec, ports, async () => {
+        throw boom;
+      });
+      expect((await rejection(bare(request({})))).message).toBe('INTERNAL');
+      expect(tracked).toHaveLength(2);
+      expect(logged.map((line) => [line.level, line.msg])).toEqual([
+        ['error', 'callable.failed'],
+        ['error', 'callable.failed'],
+      ]);
+      expect(logged[0]?.fields).toMatchObject({
+        errorCode: 'BOOKING_COMMIT_STORE_FAILED',
+        wireStatus: 'internal',
+      });
+      expect(logged[1]?.fields).toMatchObject({
+        errorCode: null,
+        wireStatus: 'internal',
+      });
+    });
+
+    it('an untraced callable (the sink, RU-24) binds no scope, logs no line and is handed a trace that records nothing', async () => {
+      const { ports, logged, bound, added } = edgePorts();
+      const handler = callableEdge(
+        { ...spec, callable: Callables.ReportClientIssues, traced: false },
+        ports,
+        async (_r, _b, trace) => {
+          trace.noteInputDigest('ignored');
+          return Result.ok({ loggedCount: 1 });
+        },
+      );
+      await expect(handler(request([], STAFF))).resolves.toEqual({
+        loggedCount: 1,
+      });
+      expect(bound).toEqual([]);
+      expect(added).toEqual([]);
+      expect(logged).toEqual([]);
     });
   });
 
@@ -1314,7 +1644,7 @@ describe('edge — the wrappers', () => {
     });
 
     it('logs the one attempt line and rethrows what a redelivery could fix', async () => {
-      const { ports, logged } = edgePorts(2_000);
+      const { ports, logged, deadLetters } = edgePorts(2_000);
       const transient = Object.assign(new Error('unavailable'), { code: 14 });
       const trigger = retryingTrigger(
         { fn: 'dispatchClientProjections', timeoutSeconds: null },
@@ -1334,9 +1664,13 @@ describe('edge — the wrappers', () => {
             outcome: 'TRANSIENT',
             errorCode: 'unavailable',
             ageMs: 1_500,
+            documentPath: null,
+            writeOperationId: null,
           },
         },
       ]);
+      // An early transient failure earns its redelivery, not a dead letter (WS-6).
+      expect(deadLetters).toEqual([]);
     });
 
     it('logs and drops what would fail the same way for the whole window', async () => {
@@ -1355,6 +1689,280 @@ describe('edge — the wrappers', () => {
         outcome: 'PERMANENT',
         errorCode: 'invalid-argument',
         ageMs: null,
+      });
+    });
+
+    describe('the dead letter (audit-hardening WS-6, DEP-23)', () => {
+      const FINAL_AGE_MS =
+        TriggerAttemptSystem.RETRY_WINDOW_MS -
+        TriggerAttemptSystem.LAST_ATTEMPT_MARGIN_MS;
+      const written = {
+        id: 'evt-w',
+        time: new Date(500).toISOString(),
+        document: 'appointments/apt-1',
+        data: {
+          before: { exists: false, data: () => undefined },
+          after: {
+            exists: true,
+            data: () => ({ writeOperationId: 'op-0000000000000001' }),
+          },
+        },
+      };
+
+      it('writes exactly one dead letter for a PERMANENT failure, after its line — the event id its id — and drops the delivery', async () => {
+        const { ports, logged, deadLetters } = edgePorts(2_000);
+        const trigger = retryingTrigger(
+          { fn: 'rebuildBusyOnAppointmentChange', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 3 });
+          },
+        );
+        await expect(trigger(written)).resolves.toBeUndefined();
+        expect(deadLetters).toEqual([
+          {
+            id: 'evt-w',
+            fn: 'rebuildBusyOnAppointmentChange',
+            documentPath: 'appointments/apt-1',
+            attemptOutcome: AttemptOutcome.Permanent,
+            failureCode: 'invalid-argument',
+            recordedAtUtcMs: 2_000,
+            writeOperationId: 'op-0000000000000001',
+          },
+        ]);
+        expect(logged.map((line) => line.msg)).toEqual([
+          'trigger attempt failed',
+        ]);
+      });
+
+      it('leaves one dead letter when the same event fails twice — the adapter creates it once', async () => {
+        const fake = createProjectionFirestore();
+        const { ports, logged } = edgePorts(2_000);
+        const trigger = retryingTrigger(
+          { fn: 'auditProfileChanges', timeoutSeconds: null },
+          {
+            ...ports,
+            ...firestoreTriggerFailurePorts(fake.db as unknown as Firestore),
+          },
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 3 });
+          },
+        );
+        await trigger(event);
+        await trigger(event);
+        expect([...fake.docs.keys()]).toEqual(['triggerFailures/evt-1']);
+        expect(fake.docs.get('triggerFailures/evt-1')).toMatchObject({
+          fn: 'auditProfileChanges',
+          attemptOutcome: AttemptOutcome.Permanent,
+          recordedAtUtcMs: 2_000,
+        });
+        expect(
+          logged.filter((line) => line.msg === 'trigger.failure_not_recorded'),
+        ).toEqual([]);
+      });
+
+      it('logs a second trigger’s dead letter for the same event as not recorded — the first record stands, the verdicts and the rethrow unchanged (review round 2)', async () => {
+        const fake = createProjectionFirestore();
+        const { ports, logged } = edgePorts(500 + FINAL_AGE_MS);
+        const writer = {
+          ...ports,
+          ...firestoreTriggerFailurePorts(fake.db as unknown as Firestore),
+        };
+        const capacity = retryingTrigger(
+          { fn: 'rebuildCapacityOnSettingsChange', timeoutSeconds: null },
+          writer,
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 15 });
+          },
+        );
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const stats = retryingTrigger(
+          { fn: 'recomputeClientStatsOnPolicyChange', timeoutSeconds: null },
+          writer,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(capacity(event)).resolves.toBeUndefined();
+        await expect(stats(event)).rejects.toBe(transient);
+        expect([...fake.docs.keys()]).toEqual(['triggerFailures/evt-1']);
+        expect(fake.docs.get('triggerFailures/evt-1')).toMatchObject({
+          fn: 'rebuildCapacityOnSettingsChange',
+          attemptOutcome: AttemptOutcome.Permanent,
+          failureCode: 'data-loss',
+        });
+        expect(
+          logged.filter((line) => line.msg === 'trigger.failure_not_recorded'),
+        ).toEqual([
+          {
+            level: 'error',
+            msg: 'trigger.failure_not_recorded',
+            fields: {
+              fn: 'recomputeClientStatsOnPolicyChange',
+              eventId: 'evt-1',
+              errorCode: 'already-exists',
+            },
+          },
+        ]);
+        expect(logged.map((line) => line.msg)).toEqual([
+          'trigger attempt failed',
+          'trigger attempt failed',
+          'trigger.failure_not_recorded',
+        ]);
+      });
+
+      it('carries no free text a browser writer put on a governed document into the line or the dead letter (review round 2, DEP-19)', async () => {
+        const { ports, logged, deadLetters } = edgePorts(2_000);
+        const planted = {
+          id: 'evt-x',
+          time: new Date(500).toISOString(),
+          document: 'scheduleExceptions/b1__2026-11-03',
+          data: {
+            before: { exists: false, data: () => undefined },
+            after: {
+              exists: true,
+              data: () => ({
+                barberId: 'b1',
+                localDate: '2026-11-03',
+                exceptionEffect: 'BLOCKED',
+                exceptionRanges: null,
+                writeOperationId: 'Георги Иванов 0888123456 georgi@mail.bg',
+              }),
+            },
+          },
+        };
+        await expect(
+          retryingTrigger(
+            { fn: 'rebuildCapacityOnExceptionChange', timeoutSeconds: null },
+            ports,
+            async () => {
+              throw new TypeError(
+                "Cannot read properties of null (reading 'length')",
+              );
+            },
+          )(planted),
+        ).resolves.toBeUndefined();
+        expect(logged).toHaveLength(1);
+        expect(logged[0]).toMatchObject({
+          msg: 'trigger attempt failed',
+          fields: {
+            fn: 'rebuildCapacityOnExceptionChange',
+            outcome: 'PERMANENT',
+            documentPath: 'scheduleExceptions/b1__2026-11-03',
+            writeOperationId: null,
+          },
+        });
+        expect(deadLetters).toHaveLength(1);
+        expect(deadLetters[0]).toMatchObject({
+          documentPath: 'scheduleExceptions/b1__2026-11-03',
+          attemptOutcome: AttemptOutcome.Permanent,
+          writeOperationId: null,
+        });
+        expect(JSON.stringify(logged)).not.toContain('georgi');
+        expect(JSON.stringify(deadLetters)).not.toContain('georgi');
+      });
+
+      it('writes none for a TRANSIENT failure one ms before the last stretch, and rethrows it', async () => {
+        const { ports, deadLetters } = edgePorts(500 + FINAL_AGE_MS - 1);
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const trigger = retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(trigger(event)).rejects.toBe(transient);
+        expect(deadLetters).toEqual([]);
+      });
+
+      it('writes one for a TRANSIENT failure in the window’s last stretch — the redelivery may never come — and still rethrows it', async () => {
+        const { ports, logged, deadLetters } = edgePorts(500 + FINAL_AGE_MS);
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const trigger = retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(trigger(event)).rejects.toBe(transient);
+        expect(deadLetters).toEqual([
+          {
+            id: 'evt-1',
+            fn: 'dispatchClientProjections',
+            documentPath: null,
+            attemptOutcome: AttemptOutcome.Transient,
+            failureCode: 'unavailable',
+            recordedAtUtcMs: 500 + FINAL_AGE_MS,
+            writeOperationId: null,
+          },
+        ]);
+        expect(logged[0]?.fields).toMatchObject({ ageMs: FINAL_AGE_MS });
+      });
+
+      it('logs a refused write once and changes nothing else — the PERMANENT delivery still drops, the TRANSIENT one still rethrows', async () => {
+        const permanent = edgePorts(2_000);
+        permanent.writer.write = async () =>
+          Result.err(
+            RepositoryError.writeFailed('triggerFailures/evt-1', 'unavailable'),
+          );
+        await expect(
+          retryingTrigger(
+            { fn: 'auditProfileChanges', timeoutSeconds: null },
+            permanent.ports,
+            async () => {
+              throw Object.assign(new Error('bad'), { code: 3 });
+            },
+          )(event),
+        ).resolves.toBeUndefined();
+        expect(permanent.logged).toEqual([
+          expect.objectContaining({ msg: 'trigger attempt failed' }),
+          {
+            level: 'error',
+            msg: 'trigger.failure_not_recorded',
+            fields: {
+              fn: 'auditProfileChanges',
+              eventId: 'evt-1',
+              errorCode: 'unavailable',
+            },
+          },
+        ]);
+        expect(permanent.tracked).toEqual([]);
+
+        const transient = edgePorts(500 + FINAL_AGE_MS);
+        transient.writer.write = async () => {
+          throw Object.assign(new Error('7 PERMISSION_DENIED'), { code: 7 });
+        };
+        const thrown = Object.assign(new Error('aborted'), { code: 10 });
+        await expect(
+          retryingTrigger(
+            { fn: 'dispatchClientProjections', timeoutSeconds: null },
+            transient.ports,
+            async () => {
+              throw thrown;
+            },
+          )(event),
+        ).rejects.toBe(thrown);
+        expect(transient.deadLetters).toHaveLength(1);
+        expect(transient.logged.map((line) => line.fields)).toEqual([
+          expect.objectContaining({ outcome: 'TRANSIENT' }),
+          {
+            fn: 'dispatchClientProjections',
+            eventId: 'evt-1',
+            errorCode: 'permission-denied',
+          },
+        ]);
+      });
+
+      it('writes none when the attempt succeeds', async () => {
+        const { ports, deadLetters } = edgePorts(500 + FINAL_AGE_MS);
+        await retryingTrigger(
+          { fn: 'dispatchClientProjections', timeoutSeconds: null },
+          ports,
+          async () => undefined,
+        )(event);
+        expect(deadLetters).toEqual([]);
       });
     });
 

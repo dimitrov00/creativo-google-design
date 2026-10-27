@@ -1,6 +1,11 @@
-import { type TriggerEventId, UtcEpochMs } from '@core/primitives';
+import {
+  type OperationId,
+  type TriggerEventId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
+import type { TriggerFailure } from '@core/entities';
 
 /**
  * How a retrying handler judges one failed attempt
@@ -67,6 +72,19 @@ const TRANSIENT_CODES: readonly string[] = [
 ];
 
 /**
+ * How long the platform redelivers a `retry: true` event: 24 h from the
+ * event's own time (a duration, N5).
+ */
+const RETRY_WINDOW_MS = 86_400_000;
+
+/**
+ * The last stretch of the retry window (15 min): a TRANSIENT failure this
+ * deep into it may be the last attempt the platform makes, so it is
+ * dead-lettered as well as rethrown (audit-hardening WS-6).
+ */
+const LAST_ATTEMPT_MARGIN_MS = 900_000;
+
+/**
  * One failure, judged: the failure itself, its canonical gRPC code name
  * (`failureCode` — an external vocabulary, never an `errorCode` of ours), and
  * whether a redelivery could help.
@@ -88,12 +106,31 @@ export type AttemptLine = {
   readonly failureCode: string;
   /** A duration (N5), not an instant. */
   readonly ageMs: number | null;
+  /**
+   * The written document's path (`appointments/<id>`) — ids only, never a
+   * body — or `null` for a delivery that names none (a schedule tick).
+   * Audit-hardening WS-4.3 (DEP-19).
+   */
+  readonly documentPath: string | null;
+  /**
+   * The operation id the written document carries (`WriteProvenance`) —
+   * the callable whose write woke this trigger — or `null` (none stored,
+   * a malformed one, or no document). WS-4.3 (DEP-19).
+   */
+  readonly writeOperationId: OperationId | null;
 };
 
-/** A delivered event as the verdict reads it: its id and its own time (`null` when unreadable). */
+/**
+ * A delivered event as the verdict reads it: its id and its own time
+ * (`null` when unreadable), the document it names and the operation id
+ * that document carries (WS-4.3 — each `null` when absent; the wire reads
+ * them, a malformed id as `null`).
+ */
 export type AttemptEvent = {
   readonly id: TriggerEventId;
   readonly eventAtUtcMs: UtcEpochMs | null;
+  readonly documentPath: string | null;
+  readonly writeOperationId: OperationId | null;
 };
 
 /** The `code` a thrown value carries, read without trusting its shape. */
@@ -121,6 +158,8 @@ function judgedCode(error: unknown): string {
 export const TriggerAttemptSystem = {
   UNKNOWN_CODE,
   DATA_LOSS_CODE,
+  RETRY_WINDOW_MS,
+  LAST_ATTEMPT_MARGIN_MS,
 
   /** A failure's canonical code — numeric (Admin SDK) or string, `unknown` otherwise. */
   failureCode(error: unknown): string {
@@ -218,6 +257,39 @@ export const TriggerAttemptSystem = {
       attemptOutcome: failure.attemptOutcome,
       failureCode: failure.failureCode,
       ageMs: TriggerAttemptSystem.eventAgeMs(event.eventAtUtcMs, nowUtcMs),
+      documentPath: event.documentPath,
+      writeOperationId: event.writeOperationId,
+    };
+  },
+
+  /**
+   * Whether a failed attempt earns a dead letter (audit-hardening WS-6,
+   * DEP-23): a PERMANENT failure always — no redelivery comes; a TRANSIENT
+   * one only when its age is known and inside the window's last
+   * {@link LAST_ATTEMPT_MARGIN_MS} (`ageMs >= RETRY_WINDOW_MS −
+   * LAST_ATTEMPT_MARGIN_MS`), where the redelivery it earns may never come.
+   * An early transient failure, or one of unknown age, writes none.
+   */
+  deadLetter(failure: AttemptFailure, ageMs: number | null): boolean {
+    if (failure.attemptOutcome === AttemptOutcome.Permanent) return true;
+    return ageMs !== null && ageMs >= RETRY_WINDOW_MS - LAST_ATTEMPT_MARGIN_MS;
+  },
+
+  /**
+   * The dead letter of one attempt line, recorded at `nowUtcMs`
+   * (`triggerFailures/{eventId}`, RU-31): the line's ids and codes, the
+   * event id as the document id, the written document's operation id as
+   * its `WriteProvenance` — never the failure itself, never a body.
+   */
+  triggerFailure(line: AttemptLine, nowUtcMs: UtcEpochMs): TriggerFailure {
+    return {
+      id: line.eventId,
+      fn: line.fn,
+      documentPath: line.documentPath,
+      attemptOutcome: line.attemptOutcome,
+      failureCode: line.failureCode,
+      recordedAtUtcMs: nowUtcMs,
+      writeOperationId: line.writeOperationId,
     };
   },
 } as const;

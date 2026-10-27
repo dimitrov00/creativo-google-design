@@ -302,6 +302,8 @@ describe('publishStreakDefinition — what one publish writes', () => {
           {
             recordedAtUtcMs: NOW,
             resourceId: 'streakDefinitions/cadence',
+            // The intent's request id is the row's operation (WS-4.4).
+            auditOperationId: cmd.requestId,
             actorRole: 'ADMIN',
             actorAdminUserId: OWNER,
             auditAction: AuditAction.LoyaltyStreakDefinitionPublished,
@@ -853,6 +855,8 @@ describe('withdrawStreakDefinition', () => {
           {
             recordedAtUtcMs: NOW,
             resourceId: 'streakDefinitions/cadence',
+            // The intent's request id is the row's operation (WS-4.4).
+            auditOperationId: cmd.requestId,
             actorRole: 'ADMIN',
             actorAdminUserId: OWNER,
             auditAction: AuditAction.LoyaltyStreakDefinitionWithdrawn,

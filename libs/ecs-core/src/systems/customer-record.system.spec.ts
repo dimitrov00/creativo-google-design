@@ -12,6 +12,7 @@ import {
   BarberId,
   CartLineId,
   CustomerId,
+  OperationId,
   SeatId,
   ServiceId,
   UserId,
@@ -44,6 +45,10 @@ import { SearchFieldsSystem } from './search-fields.system';
  */
 
 const SON = UserId.of('u-son');
+/** The calls that carried no operation id — a create then stamps `null` (WS-4.3). */
+const NO_OPERATION = null;
+/** A booking verb's operation id — stamped on every record it creates (WS-4.3). */
+const BOOK_OPERATION = OperationId.of('op-book-1');
 const SON_RECORD = CustomerId.forUser(SON, fixtureHash);
 
 const MARIA: AccountContact = {
@@ -75,6 +80,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       new Map([[FIXTURE_IDS.client, MARIA]]),
       CustomerOrigin.FirstBooking,
       FIXTURE_NOW_UTC_MS,
+      BOOK_OPERATION,
     );
     const body: Omit<Customer, 'id'> = {
       userId: FIXTURE_IDS.client,
@@ -84,6 +90,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       ...SearchFieldsSystem.searchFields('Maria', 'Ivanova', null, MARIA.email),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.FirstBooking,
+      writeOperationId: BOOK_OPERATION,
     };
     expect(writes).toEqual([
       WriteOp.create([Collections.Customers, FIXTURE_IDS.customer], body),
@@ -97,6 +104,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       new Map(),
       CustomerOrigin.FirstBooking,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     expect(writes).toHaveLength(1);
     expect(writes[0]).toEqual(
@@ -109,6 +117,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
         searchPrefixes: [],
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.FirstBooking,
+        writeOperationId: null,
       }),
     );
   });
@@ -126,6 +135,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       new Map([[FIXTURE_IDS.client, registered]]),
       CustomerOrigin.Registration,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     expect(writes).toEqual([
       WriteOp.create([Collections.Customers, FIXTURE_IDS.customer], {
@@ -141,6 +151,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
         ),
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.Registration,
+        writeOperationId: null,
       }),
     ]);
     // A re-run that reads the record it created plans nothing.
@@ -153,6 +164,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
         new Map([[FIXTURE_IDS.client, registered]]),
         CustomerOrigin.Registration,
         FIXTURE_NOW_UTC_MS,
+        NO_OPERATION,
       ),
     ).toEqual([]);
   });
@@ -168,6 +180,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       new Map([[FIXTURE_IDS.client, MARIA]]),
       CustomerOrigin.FirstBooking,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     expect(writes).toHaveLength(1);
   });
@@ -185,6 +198,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       contacts,
       CustomerOrigin.FirstBooking,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     const twice = CustomerRecordSystem.createsFor(
       resolved,
@@ -192,6 +206,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       contacts,
       CustomerOrigin.FirstBooking,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     expect(twice).toEqual(once);
     expect([...stored.values()]).toEqual([null, null]);
@@ -460,6 +475,7 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
         maria,
         new Map<CustomerId, Customer | null>([[MARIA_RECORD, null]]),
         FIXTURE_NOW_UTC_MS,
+        BOOK_OPERATION,
       ),
     ).toEqual([
       WriteOp.create([Collections.Customers, MARIA_RECORD], {
@@ -475,6 +491,7 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
         ),
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.StaffWalkIn,
+        writeOperationId: BOOK_OPERATION,
       }),
     ]);
   });
@@ -484,6 +501,7 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
       maria,
       new Map<CustomerId, Customer | null>([[MARIA_RECORD, null]]),
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     const body = (create as WriteOp.Create).body as Omit<Customer, 'id'>;
     expect(body.searchPrefixes).toContain('мар');
@@ -505,6 +523,7 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
         twice,
         new Map<CustomerId, Customer | null>([[MARIA_RECORD, null]]),
         FIXTURE_NOW_UTC_MS,
+        NO_OPERATION,
       ),
     ).toHaveLength(1);
     expect(
@@ -514,13 +533,19 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
           [MARIA_RECORD, { id: MARIA_RECORD } as Customer],
         ]),
         FIXTURE_NOW_UTC_MS,
+        NO_OPERATION,
       ),
     ).toEqual([]);
   });
 
   it('a record never read is not absent — nothing is planned for it', () => {
     expect(
-      CustomerRecordSystem.walkInCreates(maria, new Map(), FIXTURE_NOW_UTC_MS),
+      CustomerRecordSystem.walkInCreates(
+        maria,
+        new Map(),
+        FIXTURE_NOW_UTC_MS,
+        NO_OPERATION,
+      ),
     ).toEqual([]);
   });
 
@@ -531,9 +556,15 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
       guests,
       stored,
       FIXTURE_NOW_UTC_MS,
+      NO_OPERATION,
     );
     expect(
-      CustomerRecordSystem.walkInCreates(guests, stored, FIXTURE_NOW_UTC_MS),
+      CustomerRecordSystem.walkInCreates(
+        guests,
+        stored,
+        FIXTURE_NOW_UTC_MS,
+        NO_OPERATION,
+      ),
     ).toEqual(once);
     expect(stored.get(MARIA_RECORD)).toBeNull();
     expect(stored.size).toBe(1);

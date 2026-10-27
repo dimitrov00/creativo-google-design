@@ -29,6 +29,7 @@ import {
   ServiceTerms,
   StoodSeatPairs,
   SubjectRelationship,
+  WriteProvenance,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
 import {
@@ -192,6 +193,7 @@ function chairVisitBody(
     bookedAtUtcMs,
     arrivedAtUtcMs: null,
     ...StoodSeatPairs.NONE,
+    ...WriteProvenance.NONE,
     ...BookingLifecycle.sliceOf(
       worked
         ? BookingLifecycle.complete(sure(workedAtUtcMs, 'completed at'))

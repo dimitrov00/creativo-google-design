@@ -18,7 +18,13 @@ import {
   StreakPublishErrorCode,
   StreakRuleField,
 } from '@core/errors';
-import { localDate, unwrapErr, unwrapOk } from '@core/testing';
+import {
+  localDate,
+  memoryIdPorts,
+  recordingClientIssuePorts,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
 
 const { callableMock, httpsCallableMock } = vi.hoisted(() => {
   const callable = vi.fn();
@@ -72,7 +78,14 @@ function setUp() {
   const memo = { ...loyaltyCatalogMemo(), invalidate };
   return {
     invalidate,
-    ports: streakPublishPorts(callableClientPorts(FUNCTIONS), memo),
+    ports: streakPublishPorts(
+      callableClientPorts(
+        FUNCTIONS,
+        memoryIdPorts('transport-operation'),
+        recordingClientIssuePorts().ports,
+      ),
+      memo,
+    ),
   };
 }
 

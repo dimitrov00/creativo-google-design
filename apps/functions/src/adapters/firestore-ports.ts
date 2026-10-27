@@ -22,6 +22,7 @@ import type {
   RecentNotificationPorts,
   ShopDayReadPorts,
   TelemetryPorts,
+  TriggerFailurePorts,
   TxPorts,
   UserLookupPorts,
 } from '@core/ports';
@@ -38,6 +39,7 @@ import { firestoreNotificationPorts } from './firestore-notifications.adapter';
 import { firestoreOtpPorts } from './firestore-otps.adapter';
 import { firestoreSchedulePorts } from './firestore-schedules.adapter';
 import { firestoreSettingsPorts } from './firestore-settings.adapter';
+import { firestoreTriggerFailurePorts } from './firestore-trigger-failures.adapter';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 import { firestoreUserPorts } from './firestore-users.adapter';
 import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
@@ -115,7 +117,9 @@ export type FirestorePorts = TxPorts &
   // firestoreOtpPorts
   OtpStorePorts &
   // firestoreUserPorts
-  UserLookupPorts;
+  UserLookupPorts &
+  // firestoreTriggerFailurePorts (audit-hardening WS-6)
+  TriggerFailurePorts;
 
 export const firestorePorts = (
   db: Firestore,
@@ -140,4 +144,5 @@ export const firestorePorts = (
   ...firestoreJobPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
   ...firestoreOtpPorts(db),
   ...firestoreUserPorts(db),
+  ...firestoreTriggerFailurePorts(db),
 });

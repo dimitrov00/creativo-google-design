@@ -34,8 +34,10 @@ export const CLIENT_ISSUE_REPORTER = new InjectionToken<ClientIssueReporter>(
 
 /**
  * The tail of the data layer's line for a row a list DROPPED
- * (`observe.ts`: `'malformed document dropped'`); every other `DataLog` line
- * is a refusal (`'malformed document refused'`).
+ * (`observe.ts`: `LogEvent.DocumentDropped`, `'malformed document dropped'`);
+ * every other `DataLog` line is a refusal (`LogEvent.DocumentRefused`,
+ * `'malformed document refused'`). `log-event.data.spec.ts` pins the pair's
+ * texts this classifier reads (RU-9).
  */
 const DROPPED_LINE_END = 'dropped';
 

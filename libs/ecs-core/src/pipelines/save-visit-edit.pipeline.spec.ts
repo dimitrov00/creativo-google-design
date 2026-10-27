@@ -178,7 +178,6 @@ describe('saveVisitEdit — the batch first, then the note, then the tip (round 
           ],
           acknowledgedOverlap: false,
           expectedVersion: 3,
-          operationId: null,
         },
       },
       { port: 'saveTeamNoteText', appointmentId: VISIT, text: NOTE },

@@ -4,7 +4,7 @@ import {
   SessionKind,
   WriteOp,
 } from '@core/components';
-import { type OtpId, Result, type UserId } from '@core/primitives';
+import { LogEvent, type OtpId, Result, type UserId } from '@core/primitives';
 import {
   IdentityError,
   PipelineError,
@@ -205,7 +205,7 @@ export const verifyOtp =
         [Collections.Users],
       );
       if (!adopted.ok) {
-        ports.log('warn', 'otp.verify.adoption_refused', {
+        ports.log('warn', LogEvent.OtpVerifyAdoptionRefused, {
           uid,
           errorCode: adopted.error.errorCode,
         });

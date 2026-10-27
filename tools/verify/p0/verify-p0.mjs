@@ -52,6 +52,7 @@
  * name, then puts both back.
  */
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -469,14 +470,15 @@ async function newAuditRows(seen, field, value) {
 /**
  * One staff move as the flipped wire carries it (Phase 4a 4A-4): the whole
  * party to `startMinutes` on `localDate`, the shop's wall clock — the
- * pipeline places it on the location's zone.
+ * pipeline places it on the location's zone. Named by `operationId`, which
+ * the callable REQUIRES (WS-4.1): a fresh id per save, as the staff day mints.
  */
-const staffMove = (appointmentId, localDate, startMinutes) => ({
+const staffMove = (appointmentId, localDate, startMinutes, operationId) => ({
   appointmentId,
   commands: [{ editCommand: 'MOVE', localDate, startMinutes, seatIds: null }],
   acknowledgedOverlap: true,
   expectedVersion: null,
-  operationId: null,
+  operationId,
 });
 
 // ── the proofs ──────────────────────────────────────────────────────────
@@ -694,7 +696,12 @@ await check(
     await callable(
       'staffEditAppointment',
       ivan,
-      staffMove(PARTY_ID, original.localDate, original.startMinutes + 15),
+      staffMove(
+        PARTY_ID,
+        original.localDate,
+        original.startMinutes + 15,
+        randomUUID(),
+      ),
     );
     proveRows(
       await waitFor(() => rowsFor(seen), 2, 'rows for the move'),
@@ -712,7 +719,12 @@ await check(
     await callable(
       'staffEditAppointment',
       ivan,
-      staffMove(PARTY_ID, original.localDate, original.startMinutes),
+      staffMove(
+        PARTY_ID,
+        original.localDate,
+        original.startMinutes,
+        randomUUID(),
+      ),
     );
     const back = await waitFor(
       () => rowsFor(seen),

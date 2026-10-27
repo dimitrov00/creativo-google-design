@@ -1,4 +1,9 @@
-import type { CustomerOrigin, Email, E164 } from '@core/components';
+import type {
+  CustomerOrigin,
+  Email,
+  E164,
+  WriteProvenance,
+} from '@core/components';
 import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
 
 /**
@@ -25,8 +30,11 @@ import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
  * commit and edit, each only when its read found the record absent; the dev
  * seed writes `SEED` records. Never synchronised with later profile edits
  * (OQ-5).
+ *
+ * The record's identity slice — every plain 1-to-1 field of the archetype
+ * {@link Customer} but its write provenance.
  */
-export type Customer = {
+export type CustomerMeta = {
   readonly id: CustomerId;
   /** The account this person signs in with; `null` for a walk-in the shop entered. */
   readonly userId: UserId | null;
@@ -40,3 +48,11 @@ export type Customer = {
   readonly createdAtUtcMs: UtcEpochMs;
   readonly customerOrigin: CustomerOrigin;
 };
+
+/**
+ * The archetype (Law 6): the record's fields and the operation id of the
+ * last booking-verb or registration callable that wrote it
+ * (`WriteProvenance`, WS-4.3 — RU-29). The document body is this type minus
+ * `id`.
+ */
+export type Customer = CustomerMeta & WriteProvenance;

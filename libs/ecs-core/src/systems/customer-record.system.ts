@@ -13,6 +13,7 @@ import {
 import {
   CartLineId,
   CustomerId,
+  type OperationId,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -123,7 +124,9 @@ export const CustomerRecordSystem = {
    * planned for it. Each body is the account's contact as given — the full
    * name as `displayName`, the phone and e-mail, the search keys
    * `SearchFieldsSystem` derives — the `origin` and `nowUtcMs` as its
-   * `createdAtUtcMs`, and the explicit link `userId`.
+   * `createdAtUtcMs`, the explicit link `userId`, and the writing call's
+   * `writeOperationId` (WS-4.3 — the booking verb's operation id, or the
+   * registration call's optional one; `null` when it carried none).
    */
   createsFor(
     resolved: ReadonlyMap<UserId, CustomerId>,
@@ -131,6 +134,7 @@ export const CustomerRecordSystem = {
     contacts: ReadonlyMap<UserId, AccountContact>,
     origin: CustomerOrigin,
     nowUtcMs: UtcEpochMs,
+    writeOperationId: OperationId | null,
   ): readonly WriteOp[] {
     const writes: WriteOp[] = [];
     const planned = new Set<CustomerId>();
@@ -152,6 +156,7 @@ export const CustomerRecordSystem = {
         ),
         createdAtUtcMs: nowUtcMs,
         customerOrigin: origin,
+        writeOperationId,
       };
       writes.push(WriteOp.create([Collections.Customers, customerId], body));
     }
@@ -290,12 +295,14 @@ export const CustomerRecordSystem = {
    * is not absent. Each body has no account (`userId: null`), the label as
    * its `displayName`, the phone and the e-mail the desk took, the search
    * keys `SearchFieldsSystem` derives (so the desk finds them again),
-   * `nowUtcMs` and `STAFF_WALK_IN`.
+   * `nowUtcMs`, `STAFF_WALK_IN` and the staff call's `writeOperationId`
+   * (WS-4.3).
    */
   walkInCreates(
     guests: readonly WalkInGuest[],
     stored: ReadonlyMap<CustomerId, Customer | null>,
     nowUtcMs: UtcEpochMs,
+    writeOperationId: OperationId | null,
   ): readonly WriteOp[] {
     const writes: WriteOp[] = [];
     const planned = new Set<CustomerId>();
@@ -317,6 +324,7 @@ export const CustomerRecordSystem = {
         ),
         createdAtUtcMs: nowUtcMs,
         customerOrigin: CustomerOrigin.StaffWalkIn,
+        writeOperationId,
       };
       writes.push(
         WriteOp.create([Collections.Customers, guest.customerId], body),

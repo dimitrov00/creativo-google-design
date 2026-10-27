@@ -7,7 +7,7 @@ import {
   type Query,
   type Transaction,
 } from 'firebase-admin/firestore';
-import { Result } from '@core/primitives';
+import { LogEvent, Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import {
   type DocBody,
@@ -39,7 +39,12 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  * else. Body-free: documents are read as `{ id, ...data }` and written as
  * the plan carries them — no mapping, no business logic.
  *
- * - A refusal (`Result.err` from `decide`) writes nothing.
+ * - A refusal (`Result.err` from `decide`) writes nothing; it logs ONE
+ *   line after the settle (audit-hardening WS-4.2, RU-25):
+ *   `LogEvent.DocumentVersionsRead` with `{ reads: [{ path, updateTimeMs }] }`
+ *   — the documents the refusing attempt read (at most 50), each RETURNED
+ *   snapshot's path and the store's `updateTime`: what the decision saw.
+ *   Never a query's values or a missed lookup's key.
  * - Contention re-runs read → decide (the SDK's own retry on ABORTED), which
  *   is why `decide` must be pure.
  * - A `Create` over an existing document is Firestore's ALREADY_EXISTS: it
@@ -69,7 +74,7 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  *   read callback can finish without touching it, and the FIRST refusal is
  *   recorded. After `read` and before `decide`, a recorded refusal answers
  *   `RepositoryError.malformed(path, field)` and nothing is written; it is
- *   logged ONCE per commit (`'malformed document refused'`, `{ path, field }`
+ *   logged ONCE per commit (`LogEvent.DocumentRefused`, `{ path, field }`
  *   — the edge's wire projection drops both, so the refusal logs itself).
  *   Each contention attempt starts with a clean record. The registry and
  *   the log are REQUIRED (OR-33, DEP-F24, reversing DEP-11): a bare
@@ -95,16 +100,15 @@ export const FIELD_SET_AND_DELETED = 'field-set-and-deleted';
 const ALREADY_EXISTS = 'already-exists';
 
 /**
- * The line every functions read site logs a refused document under (edge
- * hardening D-4) — the schedule and job adapters (through
+ * Logs one refusal under the line every functions read site logs a refused
+ * document under (edge hardening D-4) — `LogEvent.DocumentRefused`
+ * (`'malformed document refused'`), `{ path, field }` (`field` = the
+ * error's `reason`). The schedule and job adapters (through
  * {@link admitStored}) and the trigger decoders' root binding log through
- * {@link logRefusal} too, so an operator searches one phrase.
+ * it too, so an operator searches one phrase.
  */
-export const MALFORMED_DOCUMENT_REFUSED = 'malformed document refused';
-
-/** Logs one refusal: `'malformed document refused'`, `{ path, field }` (`field` = the error's `reason`). */
 export function logRefusal(log: Log, error: RepositoryError): void {
-  log('error', MALFORMED_DOCUMENT_REFUSED, {
+  log('error', LogEvent.DocumentRefused, {
     path: error.path,
     field: error.reason,
   });
@@ -169,6 +173,34 @@ function toQuery(db: Firestore, spec: QuerySpec): Query {
 }
 
 /**
+ * One document a commit attempt read (audit-hardening WS-4.2, RU-25): its
+ * path and the store's `updateTime` in epoch milliseconds (`null` when the
+ * snapshot carries none) — adapter-local, never a port or an entity field.
+ */
+type ReadVersion = {
+  readonly path: string;
+  readonly updateTimeMs: number | null;
+};
+
+/** The slice of a returned snapshot the versions record reads — defensively (a mechanics fake may lack `ref`). */
+type ReadSnapshot = {
+  readonly exists: boolean;
+  readonly ref?: { readonly path?: unknown };
+  readonly updateTime?: unknown;
+};
+
+/** At most this many reads are recorded per attempt — a line stays a line. */
+const READ_VERSIONS_CAP = 50;
+
+/** The snapshot's `updateTime` as epoch milliseconds, read defensively (`null` when absent). */
+function updateTimeMsOf(snap: ReadSnapshot): number | null {
+  const time = snap.updateTime as { readonly toMillis?: unknown } | undefined;
+  return time !== undefined && typeof time.toMillis === 'function'
+    ? (time.toMillis as () => number).call(time)
+    : null;
+}
+
+/**
  * The read half over one SDK transaction. An absent document answers
  * `null` (and still enters the conflict set); the entity is the body plus
  * its id, cast once here — the document body IS the entity minus `id`.
@@ -183,9 +215,11 @@ export const firestoreReadTx = (
   tx: Transaction,
   guardOf: StoredGuardOf,
   onRefused: (error: RepositoryError) => void,
+  onRead: (snap: ReadSnapshot) => void = () => undefined,
 ): ReadTx => ({
   get: async <E>(path: DocPath): Promise<E | null> => {
     const snap = await tx.get(docRef(db, path));
+    onRead(snap);
     return snap.exists
       ? admittedOrNull<E>(
           guardOf,
@@ -200,6 +234,7 @@ export const firestoreReadTx = (
   ): Promise<readonly (E | null)[]> => {
     if (paths.length === 0) return [];
     const snaps = await tx.getAll(...paths.map((path) => docRef(db, path)));
+    for (const snap of snaps) onRead(snap);
     return snaps.map((snap, i) =>
       snap.exists
         ? admittedOrNull<E>(
@@ -217,6 +252,7 @@ export const firestoreReadTx = (
       spec.collection.length === 1 ? (spec.collection[0] ?? null) : null;
     const rows: E[] = [];
     for (const doc of snap.docs) {
+      onRead(doc);
       const row = admittedOrNull<E>(
         guardOf,
         collection,
@@ -330,16 +366,39 @@ export const firestoreCommitPlan =
     // The refusal the LAST attempt answered (at most one entry) — logged
     // once, after the transaction settles, never per contention attempt.
     const answered: RepositoryError[] = [];
+    // The documents the LAST attempt read, when its decide refused (WS-4.2,
+    // RU-25 — at most one entry); logged once, after the settle.
+    const refusedReads: (readonly ReadVersion[])[] = [];
     try {
       const settled = await db.runTransaction(
         async (tx): Promise<Result<D, E | RepositoryError>> => {
           answered.length = 0;
+          refusedReads.length = 0;
           // Each attempt records its own refusals, first one first.
           const refusals: RepositoryError[] = [];
+          // …and the versions it read: the path of each RETURNED snapshot
+          // only — never a query's `where` values, never a missed lookup's
+          // key (a voucher code is a bearer credential, R36).
+          const reads: ReadVersion[] = [];
           const snapshot = await read(
-            firestoreReadTx(db, tx, guardOf, (error) => {
-              refusals.push(error);
-            }),
+            firestoreReadTx(
+              db,
+              tx,
+              guardOf,
+              (error) => {
+                refusals.push(error);
+              },
+              (snap) => {
+                const path = snap.ref?.path;
+                if (
+                  snap.exists &&
+                  typeof path === 'string' &&
+                  reads.length < READ_VERSIONS_CAP
+                ) {
+                  reads.push({ path, updateTimeMs: updateTimeMsOf(snap) });
+                }
+              },
+            ),
           );
           const malformed = refusals[0];
           if (malformed !== undefined) {
@@ -347,7 +406,10 @@ export const firestoreCommitPlan =
             return Result.err(malformed);
           }
           const decision = decide(snapshot);
-          if (!decision.ok) return decision;
+          if (!decision.ok) {
+            refusedReads.push(reads);
+            return decision;
+          }
           const { writes, ...answer } = decision.value;
           const refused = setAndDeleted(writes);
           if (refused !== null) {
@@ -369,6 +431,10 @@ export const firestoreCommitPlan =
       );
       const refusal = answered[0];
       if (refusal !== undefined) logRefusal(log, refusal);
+      const versions = refusedReads[0];
+      if (versions !== undefined) {
+        log('warn', LogEvent.DocumentVersionsRead, { reads: versions });
+      }
       return settled;
     } catch (error) {
       if (TriggerAttemptSystem.failureCode(error) !== ALREADY_EXISTS) {

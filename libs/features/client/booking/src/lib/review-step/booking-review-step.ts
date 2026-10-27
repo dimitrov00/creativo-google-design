@@ -65,6 +65,7 @@ import {
   UiDateBadge,
   UiListGroup,
   UiListRow,
+  UiReference,
   UiSectionHeader,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
@@ -87,6 +88,7 @@ import {
 } from '../booking-wall-clock';
 import {
   bookingErrorMessage,
+  bookingErrorReference,
   callHrefForRefusal,
 } from './booking-error-message';
 import { placeRiders } from './rider-placement';
@@ -179,6 +181,7 @@ interface ReviewGroupVm {
     UiListRow,
     UiMap,
     UiModalSheet,
+    UiReference,
     UiSectionHeader,
     UiSheetActionBar,
     UiStack,
@@ -672,6 +675,17 @@ export class BookingReviewStep {
     // Told whether the call button is beside it, so the copy says "call"
     // only when there is one to press.
     return bookingErrorMessage(this.transloco, error, this.refusalCallHref());
+  });
+
+  /**
+   * The failed call's reference under the message (audit-hardening WS-4.5),
+   * on the same terms as the message itself, or `null` when the failure
+   * carries no id — see `bookingErrorReference`.
+   */
+  protected readonly errorReference = computed(() => {
+    const error = this.store.error();
+    if (!error || this.store.slotTaken()) return null;
+    return bookingErrorReference(this.transloco, error);
   });
 
   /** `tel:` for the shop beside a refused move — see `callHrefForRefusal`. */

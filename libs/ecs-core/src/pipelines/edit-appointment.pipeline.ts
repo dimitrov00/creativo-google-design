@@ -4,6 +4,7 @@ import {
   BillPending,
   type BookingPolicy,
   BookingReadSnapshot,
+  type ChairTime,
   CustomerOrigin,
   DiscountSource,
   EditCallOutcome,
@@ -29,6 +30,7 @@ import {
   CouponGrantId,
   CouponId,
   LocationId,
+  LogEvent,
   MinuteDelta,
   type OperationId,
   type SeatId,
@@ -51,6 +53,7 @@ import {
 import {
   type AccountContact,
   type Appointment,
+  type BarberBusyDay,
   Collections,
   type Coupon,
   type CouponGrant,
@@ -59,7 +62,6 @@ import {
 } from '@core/entities';
 import type {
   AccountContactPorts,
-  AuditAppendPorts,
   CouponLookupPorts,
   HashPorts,
   PolicyReadPorts,
@@ -71,6 +73,7 @@ import type {
 import {
   AppointmentEditSystem,
   AppointmentIndexSystem,
+  AuditDeltaSystem,
   type AuditFact,
   AuditSystem,
   BillingSystem,
@@ -78,6 +81,7 @@ import {
   CouponGrantSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   type DecisionStandingSeat,
   DiscountSystem,
   type EditCommandRequest,
@@ -92,11 +96,11 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
+  logUnaudited,
   type PlacementSet,
   placementFields,
   placementKeysOf,
@@ -107,7 +111,7 @@ import {
   readRedemptionVouchers,
   zoneOf,
 } from './booking-read-set.pipeline';
-import { frameWallClock } from './book-appointment.pipeline';
+import { frameWallClock, slotRefusalOf } from './book-appointment.pipeline';
 import {
   customerIdsFor,
   customerIdsOf,
@@ -163,9 +167,19 @@ import {
  *   the busy `Set`s merged onto what this attempt read, each settled
  *   voucher's balance, each moved grant's lifecycle transition, a
  *   `customers` `Create` for an added account with no record, and one for
- *   each added walk-in whose record was absent (`STAFF_WALK_IN`).
- * - **After:** the act's rows (`operation:<operationId>`, else
- *   `revision:<n>`) — a replay appends them again under the same key.
+ *   each added walk-in whose record was absent (`STAFF_WALK_IN`) — and,
+ *   LAST, the act's rows (WS-1: `operation:<operationId>` — every intent is
+ *   named, WS-4.1; one row per client record with every touched delta, L3),
+ *   `Create`d in the SAME plan so they land with the edit or not at all. A
+ *   replayed intent and the contacts-first pass plan none — a replay never
+ *   meets its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.staff_edit_rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot (the target day's
+ *   busy days, the stored visit's revision, the visit's own chairs the
+ *   decision handed back, so they are never named) — captured in the impure read
+ *   callback, never inside the pure `decide` (Law 4) — never in the error
+ *   (OR-12).
  */
 
 /**
@@ -184,8 +198,8 @@ export type EditAppointmentCommand = {
   readonly acknowledgedOverlap: boolean;
   /** The revision the intent was drawn on; `null` makes no claim. */
   readonly expectedVersion: number | null;
-  /** The client's name for this ONE intent; `null` for an older client. */
-  readonly operationId: OperationId | null;
+  /** The client's name for this ONE intent — REQUIRED (WS-4.1; the web always minted it). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 
@@ -202,7 +216,6 @@ export type EditAppointmentPorts = TxPorts &
   PolicyReadPorts &
   CouponLookupPorts &
   AccountContactPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 type CouponsByCode = ReadonlyMap<VoucherCode, Coupon | null>;
@@ -244,13 +257,12 @@ type Snapshot =
   | Loaded;
 
 type Decided = {
-  readonly stored: Appointment;
   /** How the call ended (`EditCallOutcome`, a component). */
   readonly editCallOutcome: EditCallOutcome;
   readonly revision: number;
   readonly needsContacts: readonly UserId[];
-  /** The batch as the fold applied it (none on a replay) — what the audit planner reads. */
-  readonly requests: readonly EditCommandRequest[];
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -272,25 +284,32 @@ export const editAppointment =
       if (!found.ok) return found;
       couponsByCode.set(request.code, found.value);
     }
-    const operation: Operation | null =
-      cmd.operationId === null
-        ? null
-        : {
-            id: cmd.operationId,
-            digest: AppointmentEditSystem.digestOf(
-              ports.hash(AppointmentEditSystem.digestBasis(cmd.commands)),
-            ),
-          };
+    const operation: Operation = {
+      id: cmd.operationId,
+      digest: AppointmentEditSystem.digestOf(
+        ports.hash(AppointmentEditSystem.digestBasis(cmd.commands)),
+      ),
+    };
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const run = (contacts: ReadonlyMap<UserId, AccountContact>) =>
       runWithCustomerRetry(() =>
         ports.commit(
-          (tx) =>
-            readEdit(tx, cmd, operation, {
+          (tx) => {
+            lastRead = null;
+            return readEdit(tx, cmd, operation, {
               hash: ports.hash,
               walkInHash: ports.walkInHash,
-            }),
+            }).then((snapshot) => {
+              lastRead = snapshot;
+              return snapshot;
+            });
+          },
           (snapshot) =>
             decideEdit(snapshot, {
               cmd,
@@ -316,31 +335,50 @@ export const editAppointment =
       if (!contacts.ok) return contacts;
       committed = await run(contacts.value);
     }
-    if (!committed.ok) return committed;
-    const { stored, editCallOutcome, revision } = committed.value;
-
-    const fact: AuditFact = {
-      resourceId: AuditResourceId.forAppointment(stored.id),
-      // Everyone the visit had before — plus the owner a batch seats. A
-      // replay's stored visit already holds what its first send added.
-      subjects: AuditSystem.staffEditSubjects(
-        AuditSystem.subjectsOf(stored),
-        stored.ownerCustomerId,
-        committed.value.requests,
-      ),
-      changeKey: AuditSystem.changeKey.staffEdit(cmd.operationId, revision),
-      context: AuditContext.staffEdit(
-        AppointmentEditSystem.auditVerb(cmd.commands),
-        revision,
-      ),
-    };
-    await appendAuditFacts(ports, [fact], cmd.actor);
+    if (!committed.ok) {
+      ports.log('warn', LogEvent.BookingStaffEditRejected, {
+        errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          revisionRead(lastRead),
+          releaseRead(lastRead),
+        ),
+      });
+      return committed;
+    }
+    const { editCallOutcome, revision, unaudited } = committed.value;
+    logUnaudited(ports, unaudited);
     return Result.ok({
       appointmentId: cmd.appointmentId,
       revision,
       replayed: editCallOutcome === EditCallOutcome.Replayed,
     });
   };
+
+/** The busy days an edit's snapshot read — the target day's, once its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
+}
+
+/** The stored visit's revision, when the snapshot holds the visit. */
+function revisionRead(snapshot: Snapshot | null): number | null {
+  return snapshot === null ||
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused
+    ? null
+    : snapshot.stored.revision;
+}
+
+/** The chairs the edit's decision was handed back — the stored visit's own, once loaded. */
+function releaseRead(snapshot: Snapshot | null): readonly ChairTime[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? MoveSystem.release(snapshot.stored)
+    : [];
+}
 
 /** An instant on the shop's clock. */
 function wallOf(at: UtcEpochMs, zone: TimeZone) {
@@ -464,7 +502,7 @@ function requestOf(
 async function readEdit(
   tx: ReadTx,
   cmd: EditAppointmentCommand,
-  operation: Operation | null,
+  operation: Operation,
   { hash, walkInHash }: HashPorts & WalkInKeyPorts,
 ): Promise<Snapshot> {
   const stored = await readAppointment(tx, cmd.appointmentId);
@@ -475,25 +513,23 @@ async function readEdit(
     };
   }
   // A RE-SENT INTENT IS ANSWERED, NOT APPLIED — and before anything else.
-  if (operation !== null) {
-    const verdict = AppointmentEditSystem.ledgerVerdict(
-      stored.appliedOperations,
-      operation.id,
-      operation.digest,
-    );
-    if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Refused,
-        error: StaffEditError.invalidCommand('operationId'),
-      };
-    }
-    if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Replay,
-        stored,
-        revision: verdict.applied.revision,
-      };
-    }
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    stored.appliedOperations,
+    operation.id,
+    operation.digest,
+  );
+  if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: StaffEditError.invalidCommand('operationId'),
+    };
+  }
+  if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Replay,
+      stored,
+      revision: verdict.applied.revision,
+    };
   }
   const fresh = AppointmentEditSystem.checkRevision(
     stored,
@@ -726,7 +762,7 @@ function subjectOfSeat(seat: Seat): BookingCall.SubjectInput | null {
 
 type DecideContext = {
   readonly cmd: EditAppointmentCommand;
-  readonly operation: Operation | null;
+  readonly operation: Operation;
   readonly policy: BookingPolicy;
   readonly couponsByCode: CouponsByCode;
   readonly contacts: ReadonlyMap<UserId, AccountContact>;
@@ -742,13 +778,13 @@ function decideEdit(
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
     return Result.err(snapshot.error);
   }
+  // A replayed intent plans NO row: its rows landed with its first send.
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
-      stored: snapshot.stored,
       editCallOutcome: EditCallOutcome.Replayed,
       revision: snapshot.revision,
       needsContacts: [],
-      requests: [],
+      unaudited: [],
       writes: [],
     });
   }
@@ -937,12 +973,12 @@ function decideEdit(
     context.contacts,
   );
   if (missing.length > 0) {
+    // Nothing written on this pass, so no row either: the edit runs again.
     return Result.ok({
-      stored,
       editCallOutcome: EditCallOutcome.NeedsContacts,
       revision: stored.revision,
       needsContacts: missing,
-      requests: loaded.requests,
+      unaudited: [],
       writes: [],
     });
   }
@@ -958,15 +994,14 @@ function decideEdit(
     discounts,
     voucherRedemptions: paid.value.voucherRedemptions,
     revision,
-    appliedOperations:
-      context.operation === null
-        ? stored.appliedOperations
-        : AppointmentEditSystem.record(
-            stored.appliedOperations,
-            context.operation.id,
-            revision,
-            context.operation.digest,
-          ),
+    appliedOperations: AppointmentEditSystem.record(
+      stored.appliedOperations,
+      context.operation.id,
+      revision,
+      context.operation.digest,
+    ),
+    // The call that wrote it last (WS-4.3) — the join key to its rows.
+    writeOperationId: cmd.operationId,
     // THE PAIRS THIS SAVE BROKE, remembered for its undo under the revision
     // it stamps (none: whatever an older save remembered is dropped).
     ...StoodSeatPairs.remember(
@@ -991,12 +1026,36 @@ function decideEdit(
     if (was !== undefined)
       voucherWrites.push(VoucherSystem.transitionWrite(was, settled));
   }
+  const audit = AuditSystem.commitWrites(
+    [
+      {
+        resourceId: AuditResourceId.forAppointment(stored.id),
+        // Everyone the visit had before — plus the owner a batch seats.
+        subjects: AuditSystem.staffEditSubjects(
+          AuditSystem.subjectsOf(stored),
+          stored.ownerCustomerId,
+          loaded.requests,
+        ),
+        changeKey: AuditSystem.changeKey.staffEdit(cmd.operationId),
+        operationId: cmd.operationId,
+        // What the save changed — stored against saved, every command of
+        // the batch folded into one delta (WS-2, L3).
+        context: AuditContext.staffEdit(
+          AppointmentEditSystem.auditVerb(cmd.commands),
+          revision,
+          AuditDeltaSystem.staffEdit(stored, after),
+        ),
+      },
+    ],
+    cmd.actor,
+    nowUtcMs,
+    context.hash,
+  );
   return Result.ok({
-    stored,
     editCallOutcome: EditCallOutcome.Edited,
     revision,
     needsContacts: [],
-    requests: loaded.requests,
+    unaudited: audit.unaudited,
     writes: [
       WriteOp.update(appointmentPath(stored.id), {
         ...placementFields(after),
@@ -1014,12 +1073,15 @@ function decideEdit(
         context.contacts,
         CustomerOrigin.FirstBooking,
         nowUtcMs,
+        cmd.operationId,
       ),
       ...CustomerRecordSystem.walkInCreates(
         loaded.addedWalkIns,
         loaded.set.customers,
         nowUtcMs,
+        cmd.operationId,
       ),
+      ...audit.writes,
     ],
   });
 }

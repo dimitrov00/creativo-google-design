@@ -1,6 +1,7 @@
 import { ImpersonationEndReason, ImpersonationScope } from '@core/components';
 import {
   ImpersonationSessionId,
+  OperationId,
   PrimitiveErrorCode,
   type Result,
   UserId,
@@ -54,6 +55,20 @@ function wire(result: Result<unknown, EdgeError>) {
   return { code: thrown.code, details: thrown.details };
 }
 
+/** A client-minted transport id (WS-4.1) — the key's shape, a plain id. */
+const OPERATION_TEXT = 'operation-0123456789ab';
+/** Absent, `null`, malformed and reserved (OR-44): none of them an id. */
+const NOT_AN_OPERATION_ID: readonly unknown[] = [
+  undefined,
+  null,
+  'short',
+  'x'.repeat(65),
+  'has spaces in it, sixteen+',
+  1234567890123456,
+  { id: OPERATION_TEXT },
+  '_'.repeat(16),
+];
+
 const START = {
   targetUserId: 'u-client',
   impersonationScope: ImpersonationScope.Read,
@@ -102,6 +117,7 @@ describe('decodeStartImpersonation', () => {
       impersonationScope: ImpersonationScope.Read,
       reason: 'support ticket 42',
       expiresAtUtcMs: EXPIRES,
+      operationId: null,
     });
     expect(
       valueOf(
@@ -133,6 +149,22 @@ describe('decodeStartImpersonation', () => {
         wire(decodeStartImpersonation(admin({ ...START, expiresAtUtcMs })))
           .details,
       ).toEqual({ errorCode: GovernanceErrorCode.ImpersonationInvalidExpiry });
+    }
+  });
+
+  it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21)', () => {
+    expect(
+      valueOf(
+        decodeStartImpersonation(
+          admin({ ...START, operationId: OPERATION_TEXT }),
+        ),
+      ).operationId,
+    ).toBe(OperationId.of(OPERATION_TEXT));
+    for (const operationId of NOT_AN_OPERATION_ID) {
+      expect(
+        valueOf(decodeStartImpersonation(admin({ ...START, operationId })))
+          .operationId,
+      ).toBeNull();
     }
   });
 
@@ -176,7 +208,25 @@ describe('decodeEndImpersonation', () => {
       sessionId: 'imp-1',
       adminUserId: 'u-owner',
       adminRoles: ['barber', 'admin'],
+      operationId: null,
     });
+  });
+
+  it('reads the transport operation id OPTIONALLY — a well-formed one as the OperationId, anything else none, never refused (RU-21)', () => {
+    expect(
+      valueOf(
+        decodeEndImpersonation(
+          admin({ sessionId: 'imp-1', operationId: OPERATION_TEXT }),
+        ),
+      ).operationId,
+    ).toBe(OperationId.of(OPERATION_TEXT));
+    for (const operationId of NOT_AN_OPERATION_ID) {
+      expect(
+        valueOf(
+          decodeEndImpersonation(admin({ sessionId: 'imp-1', operationId })),
+        ).operationId,
+      ).toBeNull();
+    }
   });
 
   it('refuses a request that names no session', () => {

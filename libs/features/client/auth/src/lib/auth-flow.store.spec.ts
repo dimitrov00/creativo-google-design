@@ -348,6 +348,22 @@ describe('AuthFlowStore', () => {
     expect(unavailable.serverErrorCode).toBeNull();
   });
 
+  it('returns to identify with the deployed sender’s refusal on failed-precondition — never the lockout, no code sent (WS-0)', async () => {
+    const unsent = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: IdentityErrorCode.OtpSendUnavailable,
+    });
+    requestChallenge.mockResolvedValue(Result.err(unsent));
+    await store.submitIdentifier(requiredIdentifier());
+
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Identify,
+      error: unsent,
+    });
+    expect(unsent.serverErrorCode).toBe('IDENTITY_OTP_SEND_UNAVAILABLE');
+    expect(store.sendCount()).toBe(0);
+    expect(store.resendSecondsLeft()).toBe(0);
+  });
+
   it('never verifies outside the otp step', async () => {
     const result = await store.submitCode('123456');
 

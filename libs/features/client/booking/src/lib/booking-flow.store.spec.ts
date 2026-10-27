@@ -984,9 +984,10 @@ describe('BookingFlowStore — a move names its attempt, like a commit', () => {
 /*
  * THE ATTEMPT ID COMES FROM THE ID SOURCE (`ID_PORTS`, 4A-12), parsed as a
  * `ClientOperationId`. An id the server's charset refuses never reaches the
- * wire: a move travels without one (it names its audit rows only), and a
- * new booking — whose attempt id IS the appointment's idempotency key — is
- * refused before anything is sent.
+ * wire: a new booking — whose attempt id IS the appointment's idempotency
+ * key — and a move — whose attempt id the server requires since WS-4.1 (it
+ * keys the move's replay answer and audit rows) — are both refused before
+ * anything is sent.
  */
 describe('BookingFlowStore — the attempt id is the id source’s', () => {
   const unnamed: IdPorts = { nextId: () => 'short' };
@@ -1012,7 +1013,10 @@ describe('BookingFlowStore — the attempt id is the id source’s', () => {
     expect(store.error()?.errorCode).toBe(PipelineErrorCode.InvalidRequest);
   });
 
-  it('sends a move without an attempt id it could not name', async () => {
+  // WS-4.1 (DEP-4): was "sends a move without an attempt id it could not
+  // name" — the id is required on the wire now, so the move is refused here
+  // as the commit is.
+  it('refuses a move whose attempt the source could not name — nothing is sent', async () => {
     const gateway = server();
     const store = createStore(gateway, nullDrafts(), visits(), unnamed);
     store.claim(CLIENT);
@@ -1020,8 +1024,10 @@ describe('BookingFlowStore — the attempt id is the id source’s', () => {
     armSchedule(store);
     await store.commit();
 
-    expect(gateway.moves()).toHaveLength(1);
-    expect(gateway.moves()[0]?.attemptId).toBeNull();
+    expect(gateway.moves()).toHaveLength(0);
+    expect(gateway.calls).toHaveLength(0);
+    expect(store.step()).toBe(BookingFlowStep.Review);
+    expect(store.error()?.errorCode).toBe(PipelineErrorCode.InvalidRequest);
   });
 });
 

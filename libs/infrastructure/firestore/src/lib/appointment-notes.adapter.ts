@@ -23,9 +23,11 @@ import {
  * `appointmentNotes/{appointmentId}` — the team's note on a visit,
  * staff-only (flip 1, plan §3.4), one note per visit so the id IS the
  * appointment's. A plain write, deliberately: the collection is
- * `read, write: if worksTheBook()` and nothing here is the availability
- * engine's business, so no callable stands between the sheet and the
- * document.
+ * `worksTheBook()`-gated — a create or update also needs
+ * `authorUserId == request.auth.uid` and `writtenAtUtcMs` within ±300 s of
+ * `request.time` (audit-hardening WS-3, DEP-15) — and nothing here is the
+ * availability engine's business, so no callable stands between the sheet
+ * and the document.
  *
  * The note arrives whole: its trimmed text, its author and its instant are
  * the caller's (a system decides blankness; the session and the injected

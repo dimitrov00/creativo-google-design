@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiToast } from './toast';
 
@@ -88,18 +88,28 @@ describe('UiToast', () => {
     expect(surface().hasAttribute('data-paused')).toBe(false);
   });
 
-  it('resumes with what was left of the clock, not from the top', async () => {
-    fixture.componentInstance.presented.set(true);
-    fixture.detectChanges();
-    // 50ms clock: hold after 30, release, and it should go within ~20 more —
-    // long before a restarted 50 would have.
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    surface().dispatchEvent(new Event('pointerenter'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    expect(fixture.componentInstance.dismissed).toBe(0);
-    surface().dispatchEvent(new Event('pointerleave'));
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    expect(fixture.componentInstance.dismissed).toBe(1);
+  it('resumes with what was left of the clock, not from the top', () => {
+    // The toast's own clock (setTimeout + performance.now()) runs on fake
+    // time here: on a loaded runner a real 30 ms wait could overshoot the
+    // 50 ms clock and dismiss the toast before the hold.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      fixture.componentInstance.presented.set(true);
+      fixture.detectChanges();
+      // 50ms clock: hold after 30, release, and it should go within ~20 more —
+      // long before a restarted 50 would have.
+      vi.advanceTimersByTime(30);
+      surface().dispatchEvent(new Event('pointerenter'));
+      vi.advanceTimersByTime(80);
+      expect(fixture.componentInstance.dismissed).toBe(0);
+      surface().dispatchEvent(new Event('pointerleave'));
+      vi.advanceTimersByTime(19);
+      expect(fixture.componentInstance.dismissed).toBe(0);
+      vi.advanceTimersByTime(21);
+      expect(fixture.componentInstance.dismissed).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('emits the action once and stops its own clock', async () => {
@@ -170,6 +180,82 @@ describe('UiToast', () => {
     fixture.componentInstance.presented.set(false);
     fixture.detectChanges();
     expect(surface()).toBeNull();
+  });
+});
+
+/*
+ * ── THE REFERENCE UNDER A REFUSAL (audit-hardening WS-4.5) ───────────────
+ * A refused call's sentence may carry its id: a `ui-reference` under the
+ * sentence, copied on a tap; without one the toast prints no line at all.
+ */
+@Component({
+  imports: [UiToast],
+  template: `
+    <ui-toast
+      [uiPresented]="true"
+      uiLabel="Часът вече е зает."
+      uiDismissLabel="Затвори"
+      [uiReferenceValue]="reference()"
+      [uiReferenceText]="'Код за справка: ' + reference()"
+      uiReferenceCopiedText="Кодът е копиран."
+    />
+  `,
+})
+class RefusalHost {
+  readonly reference = signal('op_7f3c2a9b41d84e0c');
+}
+
+describe('UiToast — the reference line', () => {
+  const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  afterEach(() => {
+    if (original) Object.defineProperty(navigator, 'clipboard', original);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  async function render(): Promise<ComponentFixture<RefusalHost>> {
+    await TestBed.configureTestingModule({
+      imports: [RefusalHost],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(RefusalHost);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('prints the id under the sentence and copies it on a tap', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const fixture = await render();
+    const surface = fixture.nativeElement.querySelector(
+      '.ui-toast__surface',
+    ) as HTMLElement;
+    const reference = surface.querySelector('.ui-toast__body ui-reference');
+
+    expect(surface.textContent).toContain('Часът вече е зает.');
+    expect(
+      reference?.querySelector('.ui-reference__line')?.textContent?.trim(),
+    ).toBe('Код за справка: op_7f3c2a9b41d84e0c');
+
+    reference?.querySelector<HTMLButtonElement>('.ui-reference__line')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith('op_7f3c2a9b41d84e0c');
+    expect(reference?.querySelector('[role="status"]')?.textContent).toBe(
+      'Кодът е копиран.',
+    );
+  });
+
+  it('prints no line without an id', async () => {
+    const fixture = await render();
+    fixture.componentInstance.reference.set('');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('ui-reference')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('.ui-toast__surface').textContent,
+    ).toContain('Часът вече е зает.');
   });
 });
 

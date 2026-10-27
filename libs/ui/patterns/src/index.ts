@@ -23,6 +23,7 @@ export * from './lib/page-action-bar/page-action-bar';
 export * from './lib/pass-card/pass-card';
 export * from './lib/quick-actions/quick-actions';
 export * from './lib/rating/rating';
+export * from './lib/reference/reference';
 export * from './lib/reward-moment/reward-moment';
 export * from './lib/empty-state/empty-state';
 export * from './lib/section-header/section-header';

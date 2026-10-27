@@ -206,7 +206,7 @@ describe('writeFunctionsEnv', () => {
     expect(read('.env.demo-creativo-test')).toEqual(read('.env.local'));
   });
 
-  it('gives a demo project the emulator’s TEST secrets — the walk-in key among them (OR-26)', () => {
+  it('gives a demo project the emulator’s TEST secrets — the walk-in key (OR-26) and the log digest key (WS-4.2) among them', () => {
     const result = writeFunctionsEnv({
       manifest: manifest(),
       projectId: 'demo-creativo-test',
@@ -220,6 +220,11 @@ describe('writeFunctionsEnv', () => {
     expect(result.files).toContain(join(outDir, '.secret.local'));
     expect(read('.secret.local')).toEqual(EMULATOR_SECRETS);
     expect(read('.secret.local')['WALKIN_ID_KEY']).toMatch(/\S/);
+    expect(read('.secret.local')['LOG_DIGEST_KEY']).toMatch(/\S/);
+    expect(Object.keys(EMULATOR_SECRETS).sort()).toEqual([
+      'LOG_DIGEST_KEY',
+      'WALKIN_ID_KEY',
+    ]);
   });
 
   it('never writes the TEST secrets beside a real project’s build', () => {

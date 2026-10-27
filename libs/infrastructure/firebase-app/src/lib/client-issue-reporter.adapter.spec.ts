@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { type ClientIssue, ClientIssueKind } from '@core/components';
 import { Callables, type GatewayPorts } from '@core/ports';
-import { Result } from '@core/primitives';
+import { ClientOperationId, Result } from '@core/primitives';
 import { ClientIssueSystem } from '@core/systems';
+import { unwrapOk } from '@core/testing';
 import { clientIssueReporter } from './client-issue-reporter.adapter';
 import { CLIENT_ISSUE_REPORTER } from './reporting-error-handler';
 
@@ -110,6 +111,30 @@ describe('clientIssueReporter — the page session’s issue sink (OR-34)', () =
     reporter.reportClientIssues([issue(1)]);
     await vi.advanceTimersByTimeAsync(3_000);
     expect(batches).toHaveLength(1);
+  });
+
+  // WS-5 (RU-30): the operation id is no identity — a callable failing on
+  // every retry is one issue counted, never one per attempt.
+  it('counts transport failures of one callable as one issue, whatever their operation ids', async () => {
+    const reporter = clientIssueReporter(window);
+    const { gateway, batches } = recordingGateway();
+    reporter.connect(() => gateway);
+    const failure = (operationId: string): ClientIssue =>
+      ClientIssueSystem.composeTransport({
+        callableName: 'commitBooking',
+        errorName: 'TypeError',
+        callableErrorCode: null,
+        operationId: unwrapOk(ClientOperationId.parse(operationId)),
+        release: null,
+      });
+
+    reporter.reportClientIssues([failure('attempt-0000000000000001')]);
+    reporter.reportClientIssues([failure('attempt-0000000000000002')]);
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(batches).toEqual([
+      [{ ...failure('attempt-0000000000000001'), occurrences: 2 }],
+    ]);
   });
 
   it('sends at most twenty distinct issues in a page session', async () => {

@@ -428,6 +428,17 @@
       >
         {{ message }}
       </p>
+      <!-- The failed call's reference, copied on a tap, for the report the
+           client may send (audit-hardening WS-4.5). A sibling of the
+           sentence, never inside it; no id, no line. -->
+      @if (errorReference(); as reference) {
+      <ui-reference
+        [uiLabel]="reference.text"
+        [uiValue]="reference.value"
+        [uiCopiedText]="reference.copiedText"
+        data-testid="booking-review-reference"
+      />
+      }
       <!-- A move somebody else on the visit cannot follow: the copy says
            when a call is the answer, and this makes it one tap rather than
            a number to look up. Another time is the chrome's back chevron. -->

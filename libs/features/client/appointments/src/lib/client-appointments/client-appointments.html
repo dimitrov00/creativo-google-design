@@ -653,7 +653,17 @@
       >
         {{ error }}
       </p>
-      }
+      <!-- The refused call's reference, copied on a tap, for the report the
+           client may send (audit-hardening WS-4.5): a sibling of the
+           sentence; no id, no line. -->
+      @if (cancelErrorReference(); as reference) {
+      <ui-reference
+        [uiLabel]="reference.text"
+        [uiValue]="reference.value"
+        [uiCopiedText]="reference.copiedText"
+        data-testid="appointment-cancel-reference"
+      />
+      } }
     </ui-stack>
 
     <ui-sheet-action-bar sheet-overlay [uiVisible]="true">

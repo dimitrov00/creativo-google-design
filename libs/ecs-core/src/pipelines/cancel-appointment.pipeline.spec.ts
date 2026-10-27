@@ -23,17 +23,21 @@ import {
 import {
   AppliedDiscountId,
   AppointmentId,
+  BookingStatus,
   CouponGrantId,
   CouponId,
   Currency,
   GiftVoucherId,
   GrantStatus,
+  LogEvent,
+  OperationId,
   Result,
   UserId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
   RepositoryError,
+  RepositoryErrorCode,
   CancellationRefusalCode,
 } from '@core/errors';
 import {
@@ -46,7 +50,9 @@ import {
 import { AuditSystem, CouponGrantSystem } from '@core/systems';
 import {
   appointmentFixture,
+  auditRowsOf,
   cents,
+  contendedCommit,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   fixtureHash,
@@ -172,20 +178,36 @@ function rig(
     })),
   ]);
   const tx = memoryTxPorts(store);
+  // The rows the committed plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
   const telemetry = recordingTelemetry();
-  const run = cancelAppointment({
+  const contended = contendedCommit(tx.commit);
+  const pipeline = cancelAppointment({
     ...tx,
+    commit: contended.commit,
     ...telemetry,
     loadPolicy: async () => policy,
-    appendAudit: async (written) => {
-      rows.push(...written);
-    },
   });
-  return { store, tx, rows, telemetry, run };
+  const run: typeof pipeline = async (cmd) => {
+    const answer = await pipeline(cmd);
+    rows.splice(0, rows.length, ...auditRowsOf(tx.plans));
+    return answer;
+  };
+  return { store, tx, rows, telemetry, run, decisions: contended.decisions };
 }
 
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
+/** The cancel's client-minted operation id (WS-4.1 — required on the call). */
+const OPERATION = OperationId.of('cancel-op-0123456789');
+/** The row a cancel of the fixture visit files for its client (`cancel:<operationId>`). */
+const CANCEL_ROW = fixtureHash(
+  AuditSystem.rowBasis(
+    AuditAction.BookingCancelled,
+    FIXTURE_IDS.appointment,
+    FIXTURE_IDS.customer,
+    `cancel:${OPERATION}`,
+  ),
+);
 
 describe('cancelAppointment — the client calling off their own visit', () => {
   it('moves the visit to CANCELLED in ONE variant transition (the old variant’s fields deleted) and every open seat cancelled by the client under the window', async () => {
@@ -195,6 +217,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer).toEqual({ ok: true, value: { appointmentId: visit.id } });
@@ -216,9 +239,30 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       [
         WriteOp.transition(
           [Collections.Appointments, visit.id],
-          { ...after, seats: [cancelledSeat], arrivedAtUtcMs: null },
+          {
+            ...after,
+            seats: [cancelledSeat],
+            arrivedAtUtcMs: null,
+            // The act that wrote the visit (WS-4.3, DEP-19).
+            writeOperationId: OPERATION,
+          },
           ['confirmedAtUtcMs'],
         ),
+        // The act's row, LAST in the SAME plan (WS-1).
+        WriteOp.create([Collections.AuditLog, CANCEL_ROW], {
+          recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+          resourceId: visit.id,
+          auditOperationId: OPERATION,
+          ...CLIENT,
+          auditAction: AuditAction.BookingCancelled,
+          cancellationReason: CancellationReason.Unspecified,
+          // The state the cancel left — and the stamp it deleted (WS-2):
+          // the fixture's confirmation, a day before the pinned now.
+          cancellationFromBookingStatus: BookingStatus.Confirmed,
+          cancellationFromStatusAtUtcMs: utcMs('2026-09-27T09:00:00.000+03:00'),
+          auditTarget: 'CUSTOMER',
+          targetCustomerId: FIXTURE_IDS.customer,
+        }),
       ],
     ]);
     expect(store.get(PATH)).toMatchObject({
@@ -236,16 +280,133 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       cancellationReason: CancellationReason.Unspecified,
       targetCustomerId: FIXTURE_IDS.customer,
     });
-    expect(rows[0]?.id).toBe(
+    expect(rows[0]?.id).toBe(CANCEL_ROW);
+  });
+
+  it('keys the row `cancel:<operationId>` — never an instant (WS-1, DEP-6)', async () => {
+    const visit = laterVisit();
+    const { rows, run } = rig([visit]);
+    expect(
+      (
+        await run({
+          appointmentId: visit.id,
+          callerUserId: FIXTURE_IDS.client,
+          reason: CancellationReason.Unspecified,
+          operationId: OPERATION,
+          actor: CLIENT,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingCancelled,
           visit.id,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.cancelled(FIXTURE_NOW_UTC_MS),
+          AuditSystem.changeKey.cancel(OPERATION),
         ),
       ),
+    ]);
+  });
+
+  it('the same cancel twice: the second is the graph’s NOT_CANCELLABLE, commits nothing and plans ZERO audit ops (RU-4)', async () => {
+    const visit = laterVisit();
+    const { tx, rows, run } = rig([visit]);
+    const cmd = {
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: CLIENT,
+    };
+    expect((await run(cmd)).ok).toBe(true);
+    const again = await run(cmd);
+    expect(!again.ok && again.error.errorCode).toBe(
+      CancellationRefusalCode.NotCancellable,
     );
+    expect(tx.plans).toHaveLength(1);
+    expect(rows.map((row) => row.id)).toEqual([CANCEL_ROW]);
+  });
+
+  it('stamps the stored visit with the act’s operation id; a refused retry leaves it (WS-4.3, DEP-19)', async () => {
+    const visit = laterVisit();
+    const { store, run } = rig([visit]);
+    const cmd = {
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: CLIENT,
+    };
+    expect((await run(cmd)).ok).toBe(true);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+    const retry = await run({
+      ...cmd,
+      operationId: OperationId.of('cancel-op-retry-0001'),
+    });
+    expect(retry.ok).toBe(false);
+    expect(store.get(PATH)?.['writeOperationId']).toBe(OPERATION);
+  });
+
+  it('commits the cancel without a row when no verified actor is known, and logs it loudly', async () => {
+    const visit = laterVisit();
+    const { store, tx, rows, telemetry, run } = rig([visit]);
+    const answer = await run({
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: null,
+    });
+    expect(answer).toEqual({ ok: true, value: { appointmentId: visit.id } });
+    expect(store.get(PATH)?.['bookingStatus']).toBe('CANCELLED');
+    expect(tx.plans[0]).toHaveLength(1);
+    expect(rows).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: LogEvent.AuditActorMissing,
+        fields: {
+          action: AuditAction.BookingCancelled,
+          resourceId: visit.id,
+        },
+      },
+    ]);
+  });
+
+  it('a Create of a row already there refuses the WHOLE cancel as REPOSITORY_ALREADY_EXISTS — nothing applied', async () => {
+    const visit = laterVisit({ voucherRedemptions: [LINE] });
+    const { store, tx, run } = rig([visit], [voucher(1000)]);
+    store.set(`${Collections.AuditLog}/${CANCEL_ROW}`, { seeded: true });
+    const answer = await run({
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: CLIENT,
+    });
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      RepositoryErrorCode.AlreadyExists,
+    );
+    expect(store.get(PATH)?.['bookingStatus']).toBe('CONFIRMED');
+    expect(
+      store.get(`${Collections.GiftVouchers}/${VOUCHER}`)?.['balanceCents'],
+    ).toBe(1000);
+    expect(tx.plans).toEqual([]);
+  });
+
+  it('a contention re-run of the decision derives the identical plan — row ids included', async () => {
+    const visit = laterVisit();
+    const { decisions, run } = rig([visit]);
+    await run({
+      appointmentId: visit.id,
+      callerUserId: FIXTURE_IDS.client,
+      reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
+      actor: CLIENT,
+    });
+    expect(decisions).toHaveLength(2);
+    expect(decisions[1]).toEqual(decisions[0]);
   });
 
   it('files a typed reason as OTHER (code-only, D23)', async () => {
@@ -254,6 +415,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Other,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(store.get(PATH)?.['cancellationReason']).toBe('OTHER');
@@ -266,6 +428,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
@@ -274,7 +437,9 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       [Collections.GiftVouchers, VOUCHER],
     ]);
     const plan = tx.plans[0] ?? [];
-    expect(plan).toHaveLength(2);
+    // The visit, the voucher's restore and — last — the act's row (WS-1).
+    expect(plan).toHaveLength(3);
+    expect(plan[2]?.path).toEqual([Collections.AuditLog, CANCEL_ROW]);
     expect(plan[1]).toEqual(
       WriteOp.transition(
         [Collections.GiftVouchers, VOUCHER],
@@ -303,6 +468,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
@@ -317,6 +483,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       `${Collections.Appointments}/${visit.id}`,
       `${Collections.GiftVouchers}/${VOUCHER}`,
       `${Collections.CouponGrants}/${GRANT}`,
+      `${Collections.AuditLog}/${CANCEL_ROW}`,
     ]);
     expect(plan[2]).toEqual(
       CouponGrantSystem.transitionWrite(
@@ -346,11 +513,13 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: visit.id,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer.ok).toBe(true);
     expect(tx.plans[0]?.map((op) => op.path[0])).toEqual([
       Collections.Appointments,
+      Collections.AuditLog,
     ]);
     expect(store.get(PATH)?.['discounts']).toEqual([]);
   });
@@ -365,6 +534,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
         appointmentId,
         callerUserId,
         reason: CancellationReason.Unspecified,
+        operationId: OPERATION,
         actor: CLIENT,
       });
       expect(!answer.ok && answer.error).toMatchObject({
@@ -388,6 +558,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(!answer.ok && answer.error.errorCode).toBe(
@@ -404,6 +575,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(!answer.ok && answer.error).toMatchObject({
@@ -423,6 +595,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       reason: CancellationReason.Unspecified,
+      operationId: OPERATION,
       actor: CLIENT,
     });
     expect(answer).toEqual({

@@ -1,3 +1,5 @@
+import type { ClientOperationId } from '@core/primitives';
+
 /**
  * What went wrong on a device — the field `clientIssueKind`, the ONLY
  * source of these strings (OR-34). Two families: the data layer's own
@@ -16,6 +18,17 @@ export const ClientIssueKind = {
   UnhandledRejection: 'UNHANDLED_REJECTION',
   /** The browser refused something the Content Security Policy does not admit. */
   CspViolation: 'CSP_VIOLATION',
+  /**
+   * A callable got no answer the server wrote — a fetch that failed, a body
+   * with no JSON, the client timeout (the SDK's own `FunctionsError`s), or a
+   * throw that is no `FunctionsError` (a lookalike): the web's callable
+   * client reports it once (`callableName`, `operationId`,
+   * `callableErrorCode`) and answers what it already answered —
+   * `PipelineError.fromWire`'s answer for the SDK's own, `PIPELINE_UNKNOWN`
+   * otherwise (audit-hardening WS-5, RU-30; review round 2). A condition,
+   * logged at `warn`.
+   */
+  CallableTransportFailed: 'CALLABLE_TRANSPORT_FAILED',
 } as const;
 export type ClientIssueKind =
   (typeof ClientIssueKind)[keyof typeof ClientIssueKind];
@@ -43,11 +56,22 @@ export type ClientIssueKind =
  * - `release` — the build that ran (`serviceContext.version` in Error
  *   Reporting);
  * - `occurrences` — how many times the device saw it before it was sent (a
- *   positive whole number: the reporter counts its repeats, then sends once).
+ *   positive whole number: the reporter counts its repeats, then sends once);
+ * - `operationId` — the operation id the failed call went out with
+ *   (audit-hardening WS-5): a server-side join to that call's `callable.*`
+ *   outcome line, inside Cloud Logging, when the call reached the server —
+ *   never a uid on the device's side (RU-39, OR-34);
+ * - `callableName` — the callable that failed (`commitBooking`);
+ * - `callableErrorCode` — the code the failure carried
+ *   (`functions/internal`, `functions/deadline-exceeded` from the SDK's own
+ *   failures, or a lookalike's), never a domain `errorCode`.
  *
- * Built by `ClientIssueSystem.compose` on the device, admitted by
- * `ClientIssueSystem.admitBatch` at the callable's edge: a payload that is
- * not exactly this shape is refused whole (`CLIENT_ISSUE_BATCH_REFUSED`).
+ * The last three are `null` on every kind but `CALLABLE_TRANSPORT_FAILED`.
+ * Built by `ClientIssueSystem.compose` / `.composeTransport` on the device,
+ * admitted by `ClientIssueSystem.admitBatch` at the callable's edge: a
+ * payload that is not this shape is refused whole
+ * (`CLIENT_ISSUE_BATCH_REFUSED`) — the one leniency being an old web's issue
+ * without the last three keys, admitted with them `null` (RU-30).
  */
 export type ClientIssue = {
   readonly clientIssueKind: ClientIssueKind;
@@ -59,6 +83,9 @@ export type ClientIssue = {
   readonly scrubbedMessage: string | null;
   readonly release: string | null;
   readonly occurrences: number;
+  readonly operationId: ClientOperationId | null;
+  readonly callableName: string | null;
+  readonly callableErrorCode: string | null;
 };
 
 /** The struct's fields in declaration order — the closed key set a payload is held to. */
@@ -72,6 +99,9 @@ const FIELDS = [
   'scrubbedMessage',
   'release',
   'occurrences',
+  'operationId',
+  'callableName',
+  'callableErrorCode',
 ] as const satisfies readonly (keyof ClientIssue)[];
 
 export const ClientIssue = {

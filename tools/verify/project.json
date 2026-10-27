@@ -5,7 +5,7 @@
   "projectType": "library",
   "tags": ["scope:tooling", "type:tooling"],
   "// tags": "type:tooling since OR-35: the production preflight (tools/verify/preflight) runs the ecs-core domain through tools/seed/load-domain.mjs, so this project reads the typed core the way seed-tools does",
-  "// test": "The runners here (the initial-bundle guard, the P0 proofs) keep their pure parts in node:test specs, so `test` is node's own runner rather than vitest; the runners themselves need a build or the emulators and run as `pnpm run verify:bundle` and `pnpm run verify:p0`. Its inputs reach past tools/verify because the preflight's spec reads the repository: the functions' source (P7's real-tree pin), firebase.json and package.json (the deploy wiring), tools/seed/load-domain.mjs (imported by the preflight) and the TypeScript compiler P7 parses with — a cache keyed on tools/verify alone would replay a stale pass",
+  "// test": "The runners here (the initial-bundle guard, the P0 proofs) keep their pure parts in node:test specs, so `test` is node's own runner rather than vitest; the runners themselves need a build or the emulators and run as `pnpm run verify:bundle` and `pnpm run verify:p0`. Its inputs reach past tools/verify because the preflight's spec reads the repository: the functions' source (P7's and P8's real-tree pins), firebase.json and package.json (the deploy wiring), tools/seed/load-domain.mjs (imported by the preflight), firestore.indexes.json (the audit-index spec's pins, tools/verify/indexes, and the retention spec's TTL groups, tools/verify/ops), tools/ops (the backstop scripts, their names.env — also read by the preflight's P9 — and the alert policies, which the ops spec dry-runs and pins), libs/ecs-core/src/primitives/log-event.data.ts (every metric's message must be one of its values) and the TypeScript compiler P7 and P8 parse with — a cache keyed on tools/verify alone would replay a stale pass",
   "// layering": "Law 8 (CLAUDE.md): tier hierarchy, import cycles, tier barrels and the root-barrel ban in libs/ecs-core, deep relative imports across libs/apps/tools. It reads the whole workspace in about a second, so it is never cached: a cached pass could hide a new violation in a project it does not depend on",
   "targets": {
     "layering": {
@@ -24,8 +24,11 @@
         "default",
         "{workspaceRoot}/apps/functions/src/**/*",
         "{workspaceRoot}/firebase.json",
+        "{workspaceRoot}/firestore.indexes.json",
         "{workspaceRoot}/package.json",
         "{workspaceRoot}/tools/seed/load-domain.mjs",
+        "{workspaceRoot}/tools/ops/**/*",
+        "{workspaceRoot}/libs/ecs-core/src/primitives/log-event.data.ts",
         { "externalDependencies": ["typescript"] }
       ],
       "options": {

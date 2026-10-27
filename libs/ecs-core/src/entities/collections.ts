@@ -91,6 +91,12 @@ export const Collections = {
   Settings: 'settings',
   /** `BackfillJob` / `PolicyRecomputeJob`, keyed by the job. */
   BackfillJobs: 'backfillJobs',
+  /**
+   * `TriggerFailure`, keyed by the delivery's event id — the dead letter a
+   * retrying trigger writes once when it gives up (audit-hardening WS-6):
+   * admin-read, written by no client, never TTL'd.
+   */
+  TriggerFailures: 'triggerFailures',
 } as const;
 
 /** Subcollections — `/{parent}/{parentId}/{name}/{id}`. */

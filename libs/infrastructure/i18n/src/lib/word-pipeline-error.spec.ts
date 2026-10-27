@@ -412,6 +412,12 @@ const E18_WORDS: readonly WordedRefusal[] = [
     en: "We couldn't find your profile. Sign in again.",
     bg: 'Не намерихме профила ти. Влез отново.',
   }),
+  // The code request on a deployed project with no login-OTP sender yet
+  // (WS-0): a retry cannot succeed, so the words offer none.
+  identity(IdentityErrorCode.OtpSendUnavailable, S.FailedPrecondition, {
+    en: "Sign-in codes aren't being sent yet. Contact the shop.",
+    bg: 'Кодовете за вход още не се изпращат. Свържи се със салона.',
+  }),
   // `internal` on the wire, but its details reach the flow, which printed
   // the raw code (`wordFlowFailure`): worded like the identity flows' other
   // "our side" failures (`IDENTITY_TOKEN_MINTING_FAILURE`).

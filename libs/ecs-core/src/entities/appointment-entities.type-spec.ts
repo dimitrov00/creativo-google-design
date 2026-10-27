@@ -26,8 +26,14 @@ import {
   type VoucherRedemption,
   type VoucherLifecycle,
   VoucherStatus,
+  type WriteProvenance,
 } from '@core/components';
-import { BookingStatus, GrantStatus, AttendanceState } from '@core/primitives';
+import {
+  BookingStatus,
+  GrantStatus,
+  AttendanceState,
+  type OperationId,
+} from '@core/primitives';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AppointmentNote } from './appointment-note.entity';
 import type { AppointmentPhoto } from './appointment-photo.entity';
@@ -45,7 +51,7 @@ type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
-/* ── Appointment = Meta & ClientRefs & Time & Lifecycle & Contact & Stamps & StoodPairs ── */
+/* ── Appointment = Meta & ClientRefs & Time & Lifecycle & Contact & Stamps & StoodPairs & Provenance ── */
 
 export const appointmentNotNever: IsNever<Appointment> = false;
 export const appointmentFlat: EveryVariantFlat<Appointment> = true;
@@ -57,6 +63,15 @@ export const clientRefsDisjoint: [
   Disjoint<AppointmentClientRefs, AppointmentStamps>,
   Disjoint<AppointmentClientRefs, StoodSeatPairs>,
 ] = [true, true, true, true, true, true];
+export const provenanceDisjoint: [
+  Disjoint<WriteProvenance, AppointmentMeta>,
+  Disjoint<WriteProvenance, AppointmentClientRefs>,
+  Disjoint<WriteProvenance, TimeCoordinate>,
+  Disjoint<WriteProvenance, BookingLifecycle>,
+  Disjoint<WriteProvenance, BookingContact>,
+  Disjoint<WriteProvenance, AppointmentStamps>,
+  Disjoint<WriteProvenance, StoodSeatPairs>,
+] = [true, true, true, true, true, true, true];
 export const appointmentDisjoint: [
   Disjoint<AppointmentMeta, TimeCoordinate>,
   Disjoint<AppointmentMeta, BookingLifecycle>,
@@ -110,6 +125,9 @@ void apt.ownerUserId;
 void apt.ownerCustomerId;
 void apt.subjectUserIds;
 void apt.subjectCustomerIds;
+// WS-4.3: the last writing call's operation id sits at the root (Law 6).
+const aptWriteOperationId: OperationId | null = apt.writeOperationId;
+void aptWriteOperationId;
 // @ts-expect-error — no time-zone field on a temporal entity (Law 7.2)
 void apt.zone;
 // @ts-expect-error — the nested lifecycle object is gone (Law 6)

@@ -4,6 +4,7 @@ import {
   BookingCall,
   type BookingPolicy,
   BookingReadSnapshot,
+  type ChairTime,
   LedgerVerdict,
   MoveOutcome,
   Placement,
@@ -22,6 +23,7 @@ import {
   type ClientOperationId,
   type LocalDate,
   LocationId,
+  LogEvent,
   type MinuteOfDay,
   OperationId,
   SeatKeyText,
@@ -38,9 +40,8 @@ import {
   CancellationRefusalCode,
   type RescheduleAppointmentError,
 } from '@core/errors';
-import type { Appointment } from '@core/entities';
+import type { Appointment, BarberBusyDay } from '@core/entities';
 import type {
-  AuditAppendPorts,
   HashPorts,
   IdPorts,
   PolicyReadPorts,
@@ -51,6 +52,7 @@ import type {
 import {
   AppointmentEditSystem,
   AppointmentIndexSystem,
+  AuditDeltaSystem,
   type AuditFact,
   AuditSystem,
   BookingDecisionSystem,
@@ -59,6 +61,7 @@ import {
   type CarriedLine,
   CustomerRecordSystem,
   type DecideBookingInput,
+  DecisionInputSystem,
   type DecisionStandingSeat,
   type MovedCartLine,
   type MovePlan,
@@ -67,8 +70,8 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  appendAuditFacts,
   appointmentPath,
+  logUnaudited,
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
@@ -82,7 +85,7 @@ import {
   type ShopDayFrame,
   zoneOf,
 } from './booking-read-set.pipeline';
-import { frameWallClock } from './book-appointment.pipeline';
+import { frameWallClock, slotRefusalOf } from './book-appointment.pipeline';
 import { customerIdsFor } from './customer-records.pipeline';
 
 /**
@@ -119,11 +122,20 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   the decision seats the line of that label `WALK_IN` again
  *   (`CustomerRecordSystem.walkInsByLabel`, OR-26).
  * - **One plan:** the appointment `Update` (the revision stamped, a named
- *   move recorded in the ledger) and the busy `Set`s of the NEW day merged
- *   onto what this attempt read; the old day is left to `rebuildBusy`.
- * - **After:** the row (`move:<attemptId>`, else `revision:<n>`), naming
- *   everyone the move touched; a replayed named move appends it again
- *   (`loggedOnRetry`), a request for where the visit already is logs none.
+ *   move recorded in the ledger), the busy `Set`s of the NEW day merged
+ *   onto what this attempt read (the old day is left to `rebuildBusy`) and,
+ *   LAST, the act's rows (WS-1: `move:<attemptId>` — every move is named,
+ *   WS-4.1), naming everyone the move touched, `Create`d in the SAME plan so
+ *   they land with the move or not at all. A replayed named move and a
+ *   request for where the visit already is plan none — a replay never meets
+ *   its own row.
+ * - **A refusal logs what the decision read** (WS-4.2, RU-25):
+ *   `booking.move_rejected` with the `errorCode` and
+ *   `DecisionInputSystem.slotFacts` of the LAST snapshot (the new day's
+ *   busy days, the stored visit's revision, the chairs the plan handed
+ *   back, so its own block is never named) — captured in the impure read
+ *   callback, never inside the pure `decide` (Law 4) — never in the error
+ *   (OR-12).
  */
 
 /**
@@ -142,8 +154,10 @@ export type RescheduleAppointmentCommand = {
   /** The ONE shop day the cart is on, as sent (`YYYY-MM-DD`). */
   readonly localDate: string;
   readonly seats: readonly BookingCall.SeatInput[];
-  /** The client's name for this move; `null` makes no claim. */
-  readonly attemptId: ClientOperationId | null;
+  /** The client's name for this move — REQUIRED (WS-4.1; the web always minted it). */
+  readonly attemptId: ClientOperationId;
+  /** The act's operation id — the attempt id's own text, parsed once at the edge (RU-20). */
+  readonly operationId: OperationId;
   readonly actor: Actor | null;
 };
 
@@ -157,7 +171,6 @@ export type RescheduleAppointmentAnswer = {
 
 export type RescheduleAppointmentPorts = TxPorts &
   PolicyReadPorts &
-  AuditAppendPorts &
   TelemetryPorts;
 
 /** The ledger name of a client's move — one ledger with the staff edits. */
@@ -195,11 +208,11 @@ type Snapshot =
   | Loaded;
 
 type Decided = {
-  readonly stored: Appointment;
-  readonly after: Appointment | null;
   /** How the call ended: written, a named move replayed, or nothing to do (`MoveOutcome`, a component). */
   readonly moveOutcome: MoveOutcome;
   readonly revision: number;
+  /** The facts no row was planned for: no verified actor. */
+  readonly unaudited: readonly AuditFact[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -214,61 +227,90 @@ export const rescheduleAppointment =
     if (owner === null) return Result.err(BookingError.unauthenticated());
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;
-    const operation: Operation | null =
-      cmd.attemptId === null
-        ? null
-        : {
-            id: OperationId.of(`${MOVE_OPERATION}${cmd.attemptId}`),
-            // The shop, the day and the seats, as sent — the staff edit's
-            // basis over one `{ move }` command, so both kinds of intent
-            // share a ledger.
-            digest: AppointmentEditSystem.digestOf(
-              ports.hash(
-                MoveSystem.digestBasis({
-                  locationId: cmd.locationId,
-                  localDate: cmd.localDate,
-                  seats: cmd.seats,
-                }),
-              ),
-            ),
-          };
+    const operation: Operation = {
+      id: OperationId.of(`${MOVE_OPERATION}${cmd.attemptId}`),
+      // The shop, the day and the seats, as sent — the staff edit's basis
+      // over one `{ move }` command, so both kinds of intent share a ledger.
+      digest: AppointmentEditSystem.digestOf(
+        ports.hash(
+          MoveSystem.digestBasis({
+            locationId: cmd.locationId,
+            localDate: cmd.localDate,
+            seats: cmd.seats,
+          }),
+        ),
+      ),
+    };
+    // Read before the transaction: a contention re-run of `decide` derives
+    // the same plan, row ids included.
     const nowUtcMs = ports.nowUtcMs();
 
+    // The decision's input, kept by the IMPURE read (Law 4): the snapshot
+    // the last attempt read is exactly what a refusing `decide` saw.
+    let lastRead: Snapshot | null = null;
     const committed = await ports.commit(
-      (tx) => readMove(tx, cmd, owner, operation),
+      (tx) => {
+        lastRead = null;
+        return readMove(tx, cmd, owner, operation).then((snapshot) => {
+          lastRead = snapshot;
+          return snapshot;
+        });
+      },
       (snapshot) =>
-        decideMove(snapshot, owner, operation, policy.value, nowUtcMs, ports),
-    );
-    if (!committed.ok) return committed;
-    const { stored, after, moveOutcome, revision } = committed.value;
-
-    if (moveOutcome !== MoveOutcome.Unchanged) {
-      const fact: AuditFact = {
-        resourceId: AuditResourceId.forAppointment(stored.id),
-        subjects:
-          after === null
-            ? AuditSystem.subjectsOf(stored)
-            : [
-                ...AuditSystem.subjectsOf(stored),
-                ...AuditSystem.subjectsOf(after),
-              ],
-        changeKey:
-          cmd.attemptId === null
-            ? AuditSystem.changeKey.revision(revision)
-            : AuditSystem.changeKey.move(cmd.attemptId),
-        context: AuditContext.rescheduled(
-          revision,
-          moveOutcome === MoveOutcome.Replayed,
+        decideMove(
+          snapshot,
+          cmd,
+          owner,
+          operation,
+          policy.value,
+          nowUtcMs,
+          ports,
         ),
-      };
-      await appendAuditFacts(ports, [fact], cmd.actor);
+    );
+    if (!committed.ok) {
+      ports.log('warn', LogEvent.BookingMoveRejected, {
+        errorCode: committed.error.errorCode,
+        ...DecisionInputSystem.slotFacts(
+          busyRead(lastRead),
+          slotRefusalOf(committed.error),
+          revisionRead(lastRead),
+          releaseRead(lastRead),
+        ),
+      });
+      return committed;
     }
+    const { moveOutcome, revision, unaudited } = committed.value;
+    logUnaudited(ports, unaudited);
     return Result.ok({
       appointmentId: cmd.appointmentId,
       revision,
       replayed: moveOutcome !== MoveOutcome.Moved,
     });
   };
+
+/** The busy days a move's snapshot read — the new day's, once its placement was read. */
+function busyRead(snapshot: Snapshot | null): readonly BarberBusyDay[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.placement.busy
+    : [];
+}
+
+/** The stored visit's revision, when the snapshot holds the visit. */
+function revisionRead(snapshot: Snapshot | null): number | null {
+  return snapshot === null ||
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused
+    ? null
+    : snapshot.stored.revision;
+}
+
+/** The chairs the move's decision was handed back — its plan's `release`, once loaded. */
+function releaseRead(snapshot: Snapshot | null): readonly ChairTime[] {
+  return snapshot !== null &&
+    snapshot.bookingReadSnapshot === BookingReadSnapshot.Loaded
+    ? snapshot.plan.release
+    : [];
+}
 
 /** The cart on the request's shop day — `null` when a start or an id is none. */
 function cartOf(
@@ -321,7 +363,7 @@ async function readMove(
   tx: ReadTx,
   cmd: RescheduleAppointmentCommand,
   owner: UserId,
-  operation: Operation | null,
+  operation: Operation,
 ): Promise<Snapshot> {
   const stored = await readAppointment(tx, cmd.appointmentId);
   if (stored === null || stored.ownerUserId !== owner) {
@@ -330,25 +372,23 @@ async function readMove(
       error: BookingError.invalidInput('appointmentId'),
     };
   }
-  if (operation !== null) {
-    const verdict = AppointmentEditSystem.ledgerVerdict(
-      stored.appliedOperations,
-      operation.id,
-      operation.digest,
-    );
-    if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Refused,
-        error: BookingError.invalidInput('attemptId'),
-      };
-    }
-    if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
-      return {
-        bookingReadSnapshot: BookingReadSnapshot.Replay,
-        stored,
-        revision: verdict.applied.revision,
-      };
-    }
+  const verdict = AppointmentEditSystem.ledgerVerdict(
+    stored.appliedOperations,
+    operation.id,
+    operation.digest,
+  );
+  if (verdict.ledgerVerdict === LedgerVerdict.Mismatch) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Refused,
+      error: BookingError.invalidInput('attemptId'),
+    };
+  }
+  if (verdict.ledgerVerdict === LedgerVerdict.Replay) {
+    return {
+      bookingReadSnapshot: BookingReadSnapshot.Replay,
+      stored,
+      revision: verdict.applied.revision,
+    };
   }
   const notFound: Snapshot = {
     bookingReadSnapshot: BookingReadSnapshot.Refused,
@@ -619,8 +659,9 @@ function decideLines(
 /** The pure half — the decision and its one write plan. */
 function decideMove(
   snapshot: Snapshot,
+  cmd: RescheduleAppointmentCommand,
   owner: UserId,
-  operation: Operation | null,
+  operation: Operation,
   policy: BookingPolicy,
   nowUtcMs: UtcEpochMs,
   ports: DecidePorts,
@@ -628,21 +669,21 @@ function decideMove(
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Refused) {
     return Result.err(snapshot.error);
   }
+  // A replayed named move and a move to where the visit already is plan NO
+  // row: the first landed with its move; the second moved nothing.
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Replay) {
     return Result.ok({
-      stored: snapshot.stored,
-      after: null,
       moveOutcome: MoveOutcome.Replayed,
       revision: snapshot.revision,
+      unaudited: [],
       writes: [],
     });
   }
   if (snapshot.bookingReadSnapshot === BookingReadSnapshot.Unchanged) {
     return Result.ok({
-      stored: snapshot.stored,
-      after: null,
       moveOutcome: MoveOutcome.Unchanged,
       revision: snapshot.stored.revision,
+      unaudited: [],
       writes: [],
     });
   }
@@ -690,21 +731,41 @@ function decideMove(
     utcEpochMs: loaded.startUtcMs,
     seats,
     revision,
-    appliedOperations:
-      operation === null
-        ? stored.appliedOperations
-        : AppointmentEditSystem.record(
-            stored.appliedOperations,
-            operation.id,
-            revision,
-            operation.digest,
-          ),
+    appliedOperations: AppointmentEditSystem.record(
+      stored.appliedOperations,
+      operation.id,
+      revision,
+      operation.digest,
+    ),
+    // The call that wrote it last (WS-4.3) — the join key to its row.
+    writeOperationId: cmd.operationId,
   });
+  // Everyone the move touched: who the visit had, and who it has now.
+  const audit = AuditSystem.commitWrites(
+    [
+      {
+        resourceId: AuditResourceId.forAppointment(stored.id),
+        subjects: [
+          ...AuditSystem.subjectsOf(stored),
+          ...AuditSystem.subjectsOf(after),
+        ],
+        changeKey: AuditSystem.changeKey.move(cmd.attemptId),
+        operationId: cmd.operationId,
+        // Where the move took the visit — stored against moved (WS-2).
+        context: AuditContext.rescheduled(
+          revision,
+          AuditDeltaSystem.rescheduled(stored, after),
+        ),
+      },
+    ],
+    cmd.actor,
+    nowUtcMs,
+    ports.hash,
+  );
   return Result.ok({
-    stored,
-    after,
     moveOutcome: MoveOutcome.Moved,
     revision,
+    unaudited: audit.unaudited,
     writes: [
       WriteOp.update(appointmentPath(stored.id), placementFields(after)),
       ...busyMergeWrites(
@@ -712,6 +773,7 @@ function decideMove(
         decided.value.busyWrites,
         loaded.zone,
       ),
+      ...audit.writes,
     ],
   });
 }

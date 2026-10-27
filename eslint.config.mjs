@@ -468,6 +468,20 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/presenter-purity': 'error' },
   },
+  // WS-4.6 (audit-hardening RU-8, RU-9, RU-37) — a structured log line's
+  // message is a `LogEvent` value (`@core/primitives`), never a string
+  // literal: `ports.log('warn', LogEvent.BookingRejected, { errorCode })`.
+  // Every production `.ts` file; specs and test support stay free to spell
+  // a line. The two recorded exemptions: the emulator-only console OTP line
+  // (a justified `eslint-disable-next-line`) and the client-issue sink's
+  // non-literal `line.msg`, which the rule never reports. Tested in
+  // tools/lint-rules/no-literal-log-message.spec.mjs.
+  {
+    files: ['**/*.ts'],
+    ignores: [...PRODUCTION_TS_IGNORES, '**/test-support/**'],
+    plugins: { creativo },
+    rules: { 'creativo/no-literal-log-message': 'error' },
+  },
   // OR-33 (owner rulings 2026-10-26, DEP-F24) — the read guard is a required
   // parameter, and the registries that guard NOTHING are test support:
   // `unguarded` (@core/testing, libs/ecs-core/src/testing/unguarded.ts) and

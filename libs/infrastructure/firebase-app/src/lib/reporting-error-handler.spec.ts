@@ -55,6 +55,9 @@ describe('errorIssue — the one classification of what reached the ErrorHandler
       scrubbedMessage: 'malformed document dropped',
       release: null,
       occurrences: 1,
+      operationId: null,
+      callableName: null,
+      callableErrorCode: null,
     });
   });
 
@@ -146,6 +149,9 @@ describe('errorIssue — the one classification of what reached the ErrorHandler
       scrubbedMessage: 'no seat for [email]',
       release: null,
       occurrences: 1,
+      operationId: null,
+      callableName: null,
+      callableErrorCode: null,
     });
   });
 
@@ -237,6 +243,9 @@ describe('cspViolationIssue — a CSP report as a CSP_VIOLATION issue (OR-30)', 
       scrubbedMessage: 'enforce https://evil.example',
       release: null,
       occurrences: 1,
+      operationId: null,
+      callableName: null,
+      callableErrorCode: null,
     });
   });
 

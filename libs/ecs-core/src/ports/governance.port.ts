@@ -4,7 +4,11 @@ import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
 
 /**
  * The governance context's ports (blueprint §4, §4.1, §4.2): the audit
- * trail and the operator backfill's reads and progress write. Impersonation
+ * trail and the operator backfill's reads and progress write. A booking
+ * verb's, an own profile edit's and a streak publish's audit rows are NOT
+ * written through these ports: they are `WriteOp.create` entries of the
+ * act's own `CommitPlan` (audit-hardening WS-1, `AuditSystem.commitWrites`
+ * / `createsOf`), landing with the act or not at all. Impersonation
  * starts and ends, and every backfill row
  * stamp, are `CommitPlan` transactions (`tx.port.ts`) — the backfill's
  * `writePage` re-reads each row inside its own plan, so a staff edit since
@@ -14,17 +18,20 @@ import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
 // ── Audit ─────────────────────────────────────────────────────────────────
 
 /**
- * The after-commit audit write (§4): rows planned by `AuditSystem.plan`,
- * ids `hash(AuditSystem.rowBasis(…))`, each written with `create()` —
- * ALREADY_EXISTS is the replay, not an error — and NEVER fatal: a failure
- * is logged through `Log`/`TrackError` and the booking stands (today's
- * `appendAudit`, `audit.ts:286`, "after the commit, never inside it").
+ * The ONE after-commit audit write left (§4; L2 of the audit-hardening
+ * pass): the operator backfill's per-CALL row — one call is many commits
+ * and a job document, so there is no single commit to join. Rows planned
+ * by `AuditSystem.plan`, ids `hash(AuditSystem.rowBasis(…))`, each written
+ * with `create()` — ALREADY_EXISTS is the replay, not an error — and NEVER
+ * fatal: a failure is logged and the call's answer stands. Never inside a
+ * transaction (there, ALREADY_EXISTS refuses the whole plan).
  */
 export type AppendAudit = (rows: readonly AuditEntry[]) => Promise<void>;
 
 /**
- * `createAuditRows` — the profile-change trigger's ONLY write
- * (`auditProfileChange`, §4.1): the same deterministic-id `create()` rows,
+ * `createAuditRows` — the document-change trigger's ONLY write
+ * (`auditDocumentChange`, §4.1; audit-hardening WS-3, RU-40 — the users and
+ * the thirteen governed collections): the same deterministic-id `create()` rows,
  * ALREADY_EXISTS a success (a redelivered event writes nothing new), but a
  * real failure IS reported, so the trigger's retry can deliver the row.
  */
@@ -65,7 +72,7 @@ export type PageAppointments = (
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
-/** The after-commit audit write — every booking pipeline's audit step. */
+/** The after-commit audit write — the operator backfill's per-call row only (L2). */
 export type AuditAppendPorts = {
   readonly appendAudit: AppendAudit;
 };

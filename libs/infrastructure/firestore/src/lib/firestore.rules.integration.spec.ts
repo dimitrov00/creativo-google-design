@@ -16,8 +16,10 @@ import {
   limit,
   orderBy,
   query,
+  serverTimestamp,
   setDoc,
   startAfter,
+  type Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -68,8 +70,10 @@ import {
   VoucherCode,
   VoucherLifecycle,
   WaitlistLifecycle,
+  WriteProvenance,
 } from '@core/components';
 import type {
+  AppointmentNote,
   AppointmentPhoto,
   AuditEntry,
   Barber,
@@ -105,6 +109,7 @@ import {
   ServiceCategoryId,
   StreakDefinitionVersionId,
   UserId,
+  UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
 import { RegistrationSystem, SearchFieldsSystem } from '@core/systems';
@@ -401,6 +406,33 @@ describe('firestore.rules', () => {
       await setDoc(doc(ctx.firestore(), path), data);
     });
   }
+
+  /**
+   * THE ONE READ OF THE EMULATOR'S CLOCK (audit hardening RU-18): the
+   * stamp window (`stampInWindow`, ±300 s) judges `request.time` — the
+   * emulator's own clock, which no spec can pin — so a stamp under test is
+   * built from what the emulator answers for "now": a `serverTimestamp()`
+   * written (rules off) to a probe document and read back, the probe then
+   * removed. Read immediately before each write it times; every offset in
+   * the cases below is a margin of at least 60 s around the 300 s edge.
+   */
+  async function emulatorNowMs(): Promise<UtcEpochMs> {
+    // Assigned inside the callback: typed wide so the check below is real.
+    let at = null as number | null;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const probe = doc(ctx.firestore(), 'clockProbes/now');
+      await setDoc(probe, { at: serverTimestamp() });
+      const read = (await getDoc(probe)).get('at') as Timestamp;
+      at = read.toMillis();
+      await deleteDoc(probe);
+    });
+    if (at === null) throw new Error('emulatorNowMs: the probe read nothing');
+    return unwrapOk(UtcEpochMs.of(at));
+  }
+
+  /** `now` moved by `seconds` — a stamp that far from the emulator's clock. */
+  const shifted = (now: UtcEpochMs, seconds: number): UtcEpochMs =>
+    UtcEpochMs.plusMs(now, seconds * 1000);
 
   describe('users/{uid} — owner-only', () => {
     it('lets a signed-in user read their own doc', async () => {
@@ -1249,6 +1281,18 @@ describe('firestore.rules', () => {
         ),
       );
     });
+
+    it('lets a barber write and delete a day (`mayEditRoster`), and refuses a content manager both (WS-3.4: no field change)', async () => {
+      const path = 'scheduleExceptions/ivan__2026-09-03';
+      const barber = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(setDoc(doc(barber, path), closedDay('2026-09-03')));
+      await assertSucceeds(deleteDoc(doc(barber, path)));
+
+      await seed(path, closedDay('2026-09-03'));
+      const copy = signedIn('copy-1', 'content_manager').firestore();
+      await assertFails(setDoc(doc(copy, path), closedDay('2026-09-03')));
+      await assertFails(deleteDoc(doc(copy, path)));
+    });
   });
 
   describe('couponGrants — the holder, and the book (2026-09-10)', () => {
@@ -1625,6 +1669,7 @@ describe('firestore.rules', () => {
         createdAtUtcMs: SEPT_FIRST,
         customerOrigin:
           userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
+        ...WriteProvenance.NONE,
       }) satisfies Omit<Customer, 'id'>;
 
     beforeEach(async () => {
@@ -1749,15 +1794,24 @@ describe('firestore.rules', () => {
   describe('appointmentPhotos — the book’s pictures of a visit, staff-only both ways', () => {
     const photoPath = 'appointmentPhotos/photo-1';
 
-    /** A photo as `appointmentPhotos/{id}` stores it (`AppointmentPhoto`, `clientCustomerId`). */
-    const photoBody = (): Omit<AppointmentPhoto, 'id'> =>
+    /**
+     * A photo as `appointmentPhotos/{id}` stores it (`AppointmentPhoto`,
+     * `clientCustomerId`) — taken by `takenBy` at `takenAtUtcMs`. The seeded
+     * one keeps the flat fixtures' `SEPT_FIRST`; a WRITE under test is built
+     * for its caller with a fresh stamp (DEP-15), so each refusal below is for
+     * its stated reason only.
+     */
+    const photoBody = (
+      takenBy: string | null = 'staff-1',
+      takenAtUtcMs: UtcEpochMs = SEPT_FIRST,
+    ): Omit<AppointmentPhoto, 'id'> =>
       ({
         appointmentId: AppointmentId.of('appt-1'),
         barberId: BarberId.of('ivan'),
         clientCustomerId: recordOf('client-1'),
         clientLabel: 'Иван Петров',
-        takenByUserId: UserId.of('staff-1'),
-        takenAtUtcMs: SEPT_FIRST,
+        takenByUserId: takenBy === null ? null : UserId.of(takenBy),
+        takenAtUtcMs,
         path: 'appointmentPhotos/appt-1/photo-1',
         url: 'https://example.test/photo-1.jpg',
         width: 1100,
@@ -1786,34 +1840,209 @@ describe('firestore.rules', () => {
       );
       await assertSucceeds(
         setDoc(doc(db, 'appointmentPhotos/photo-2'), {
-          ...photoBody(),
+          ...photoBody('staff-1', await emulatorNowMs()),
           path: 'appointmentPhotos/appt-1/photo-2',
         }),
       );
     });
 
     it('refuses the client in the picture, a content manager and an anonymous visitor', async () => {
-      for (const db of [
-        signedIn('client-1', 'client').firestore(),
-        signedIn('copy-1', 'content_manager').firestore(),
-        testEnv.unauthenticatedContext().firestore(),
-      ]) {
+      for (const [uid, db] of [
+        ['client-1', signedIn('client-1', 'client').firestore()],
+        ['copy-1', signedIn('copy-1', 'content_manager').firestore()],
+        [null, testEnv.unauthenticatedContext().firestore()],
+      ] as const) {
         await assertFails(getDoc(doc(db, photoPath)));
+        // A body that names THIS caller with a fresh stamp: the role refuses it.
         await assertFails(
-          setDoc(doc(db, 'appointmentPhotos/photo-3'), photoBody()),
+          setDoc(
+            doc(db, 'appointmentPhotos/photo-3'),
+            photoBody(uid, await emulatorNowMs()),
+          ),
         );
+      }
+    });
+
+    it('admits a photo stamped now and 240 s either side of the emulator’s clock (WS-3.4, DEP-15)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      for (const [id, seconds] of [
+        ['photo-now', 0],
+        ['photo-early', -240],
+        ['photo-late', 240],
+      ] as const) {
+        await assertSucceeds(
+          setDoc(
+            doc(db, `appointmentPhotos/${id}`),
+            photoBody('staff-1', shifted(await emulatorNowMs(), seconds)),
+          ),
+        );
+      }
+    });
+
+    it('refuses a forged taker and a photo with no taker (WS-3.4, DEP-15)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(
+          doc(db, 'appointmentPhotos/photo-forged'),
+          photoBody('staff-2', await emulatorNowMs()),
+        ),
+      );
+      await assertFails(
+        setDoc(
+          doc(db, 'appointmentPhotos/photo-nobody'),
+          photoBody(null, await emulatorNowMs()),
+        ),
+      );
+    });
+
+    it('refuses a stamp 301 s and 360 s from the emulator’s clock either way, and a stamp that is no integer (WS-3.4, DEP-15)', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      for (const seconds of [-301, 301, -360, 360]) {
+        await assertFails(
+          setDoc(
+            doc(db, `appointmentPhotos/photo-off-${seconds}`),
+            photoBody('staff-1', shifted(await emulatorNowMs(), seconds)),
+          ),
+        );
+      }
+      const now = await emulatorNowMs();
+      for (const [id, stamp] of [
+        ['photo-fraction', now + 0.5],
+        ['photo-text', String(now)],
+        ['photo-null', null],
+      ] as const) {
+        await assertFails(
+          setDoc(doc(db, `appointmentPhotos/${id}`), {
+            ...photoBody('staff-1', now),
+            takenAtUtcMs: stamp,
+          }),
+        );
+      }
+    });
+
+    it('refuses every update — no update path exists (RU-19), the taker’s own fresh one included', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertFails(
+        setDoc(doc(db, photoPath), photoBody('staff-1', await emulatorNowMs())),
+      );
+      await assertFails(updateDoc(doc(db, photoPath), { label: 'Фейд' }));
+    });
+
+    it('lets anyone who works the book delete a photo, not only its taker', async () => {
+      const db = signedIn('staff-2', 'receptionist').firestore();
+      await assertSucceeds(deleteDoc(doc(db, photoPath)));
+    });
+  });
+
+  describe('appointmentNotes — the team’s note on a visit, staff-only, its author and instant truthful (WS-3.4, DEP-15)', () => {
+    const notePath = 'appointmentNotes/appt-1';
+
+    /** A note as `appointmentNotes/{appointmentId}` stores it (`AppointmentNote` minus `id`). */
+    const noteBody = (
+      authorUserId: string | null,
+      writtenAtUtcMs: UtcEpochMs,
+      text = 'Иска същото като миналия път.',
+    ): Omit<AppointmentNote, 'id'> =>
+      ({
+        text,
+        authorUserId: authorUserId === null ? null : UserId.of(authorUserId),
+        writtenAtUtcMs,
+      }) satisfies Omit<AppointmentNote, 'id'>;
+
+    beforeEach(async () => {
+      await seed(notePath, noteBody('staff-1', SEPT_FIRST));
+    });
+
+    it('lets the book read a note, and its author create and rewrite one stamped now and 240 s either side', async () => {
+      const db = signedIn('staff-2', 'receptionist').firestore();
+      await assertSucceeds(getDoc(doc(db, notePath)));
+      for (const seconds of [0, -240, 240]) {
+        // An update of the seeded note by a new author …
+        await assertSucceeds(
+          setDoc(
+            doc(db, notePath),
+            noteBody('staff-2', shifted(await emulatorNowMs(), seconds)),
+          ),
+        );
+        // … and a create of a note that does not exist yet.
+        await assertSucceeds(
+          setDoc(
+            doc(db, `appointmentNotes/appt-new${seconds}`),
+            noteBody('staff-2', shifted(await emulatorNowMs(), seconds)),
+          ),
+        );
+      }
+    });
+
+    it('refuses a forged author and a note with no author, on create and on update', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      for (const path of [notePath, 'appointmentNotes/appt-2']) {
+        await assertFails(
+          setDoc(doc(db, path), noteBody('staff-2', await emulatorNowMs())),
+        );
+        await assertFails(
+          setDoc(doc(db, path), noteBody(null, await emulatorNowMs())),
+        );
+      }
+    });
+
+    it('refuses a stamp 301 s and 360 s from the emulator’s clock either way, and a stamp that is no integer', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      for (const path of [notePath, 'appointmentNotes/appt-2']) {
+        for (const seconds of [-301, 301, -360, 360]) {
+          await assertFails(
+            setDoc(
+              doc(db, path),
+              noteBody('staff-1', shifted(await emulatorNowMs(), seconds)),
+            ),
+          );
+        }
+        const now = await emulatorNowMs();
+        for (const stamp of [now + 0.5, String(now), null]) {
+          await assertFails(
+            setDoc(doc(db, path), {
+              ...noteBody('staff-1', now),
+              writtenAtUtcMs: stamp,
+            }),
+          );
+        }
+      }
+    });
+
+    it('lets anyone who works the book delete a note — an empty note deletes it — not only its author', async () => {
+      const db = signedIn('staff-2', 'receptionist').firestore();
+      await assertSucceeds(deleteDoc(doc(db, notePath)));
+    });
+
+    it('refuses a content manager, the client and an anonymous visitor both ways', async () => {
+      for (const [uid, db] of [
+        ['copy-1', signedIn('copy-1', 'content_manager').firestore()],
+        ['client-1', signedIn('client-1', 'client').firestore()],
+        [null, testEnv.unauthenticatedContext().firestore()],
+      ] as const) {
+        await assertFails(getDoc(doc(db, notePath)));
+        // A body that names THIS caller with a fresh stamp: the role refuses it.
+        await assertFails(
+          setDoc(doc(db, notePath), noteBody(uid, await emulatorNowMs())),
+        );
+        await assertFails(deleteDoc(doc(db, notePath)));
       }
     });
   });
 
   describe('auditLog — admins read, only the server writes (FIX 1)', () => {
-    // The flat row a booking act appends (`AuditEntry`): the actor, the
-    // context and the CUSTOMER target slices at the root (D29).
+    // The flat row a booking act commits with itself (`AuditEntry`, WS-1):
+    // the actor, the context and the CUSTOMER target slices at the root
+    // (D29); a system actor's row names no operation (WS-4.4).
     const row = {
       recordedAtUtcMs: utcMs('2026-09-25T13:00:00.000+03:00'),
       resourceId: AuditResourceId.forAppointment(AppointmentId.of('appt-1')),
+      auditOperationId: null,
       ...Actor.system(SystemSource.FirestoreSystem),
-      ...AuditContext.cancelled('CLIENT_CHANGED_PLANS'),
+      ...AuditContext.cancelled('CLIENT_CHANGED_PLANS', {
+        cancellationFromBookingStatus: 'CONFIRMED',
+        cancellationFromStatusAtUtcMs: utcMs('2026-09-24T10:00:00.000+03:00'),
+      }),
       ...AuditTargetRef.customer(recordOf('client-1')),
     } satisfies Omit<AuditEntry, 'id'>;
 
@@ -1866,6 +2095,76 @@ describe('firestore.rules', () => {
         updateDoc(target, { auditAction: AuditAction.BookingCommitted }),
       );
       await assertFails(deleteDoc(target));
+    });
+  });
+
+  describe('triggerFailures — the admin pair reads the dead letters, no client writes one (WS-6, DEP-23)', () => {
+    // The flat `TriggerFailure` minus its id — the event id IS the document id.
+    const DEAD_LETTER = 'triggerFailures/evt-1';
+    const deadLetterBody = {
+      fn: 'dispatchClientProjections',
+      documentPath: 'appointments/appt-1',
+      attemptOutcome: 'PERMANENT',
+      failureCode: 'invalid-argument',
+      recordedAtUtcMs: SEPT_FIRST,
+      writeOperationId: null,
+    };
+
+    beforeEach(async () => {
+      await seed(DEAD_LETTER, deadLetterBody);
+    });
+
+    it.each(['admin', 'sysadmin'])(
+      'lets %s read a dead letter, by id and by list',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertSucceeds(getDoc(doc(db, DEAD_LETTER)));
+        await assertSucceeds(getDocs(collection(db, 'triggerFailures')));
+      },
+    );
+
+    it.each(['receptionist', 'barber', 'content_manager', 'client'])(
+      'refuses a %s reading the dead letters',
+      async (role) => {
+        const db = signedIn('user-1', role).firestore();
+        await assertFails(getDoc(doc(db, DEAD_LETTER)));
+        await assertFails(getDocs(collection(db, 'triggerFailures')));
+      },
+    );
+
+    it('refuses an anonymous visitor the read', async () => {
+      const db = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDoc(doc(db, DEAD_LETTER)));
+      await assertFails(getDocs(collection(db, 'triggerFailures')));
+    });
+
+    it.each([
+      'admin',
+      'sysadmin',
+      'receptionist',
+      'barber',
+      'content_manager',
+      'client',
+    ])(
+      'refuses a %s creating, rewriting or deleting a dead letter',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertFails(
+          setDoc(doc(db, 'triggerFailures', 'evt-2'), deadLetterBody),
+        );
+        await assertFails(
+          updateDoc(doc(db, DEAD_LETTER), { failureCode: 'unavailable' }),
+        );
+        await assertFails(deleteDoc(doc(db, DEAD_LETTER)));
+      },
+    );
+
+    it('refuses an anonymous visitor every write', async () => {
+      const db = testEnv.unauthenticatedContext().firestore();
+      await assertFails(
+        setDoc(doc(db, 'triggerFailures', 'evt-2'), deadLetterBody),
+      );
+      await assertFails(deleteDoc(doc(db, DEAD_LETTER)));
     });
   });
 

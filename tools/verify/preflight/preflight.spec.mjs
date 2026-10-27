@@ -14,12 +14,14 @@ import {
   CHECKS,
   SCOPES,
   Verdict,
+  checkBackstops,
   checkBundle,
   checkComposites,
   checkConnectSrc,
   checkDefaultLocation,
   checkEnvironment,
   checkEmulatorOnly,
+  checkLaunchBlockers,
   checkTtlPolicies,
   exitCodeOf,
   fieldKeyOf,
@@ -203,6 +205,46 @@ const tree = (...lines) => [
   { path: `${FUNCTIONS}/main.ts`, text: lines.join('\n') },
 ];
 
+/** tools/ops/names.env as the preflight reads it — the names P9 judges against. */
+const OPS_NAMES = {
+  DATABASE_ID: '(default)',
+  LOG_SINK_NAME: 'creativo-audit-sink',
+  LOG_BUCKET_ID: 'creativo-audit-400d',
+  LOG_BUCKET_LOCATION: 'global',
+  LOG_BUCKET_RETENTION_DAYS: '400',
+  PITR_DAYS: '7',
+  BACKUP_RECURRENCE: 'daily',
+  BACKUP_RETENTION: '28d',
+};
+
+/** The Firestore database as the Admin API answers it, PITR on. */
+const DATABASE = {
+  name: `projects/${PROJECT}/databases/(default)`,
+  pointInTimeRecoveryEnablement: 'POINT_IN_TIME_RECOVERY_ENABLED',
+  versionRetentionPeriod: '604800s',
+};
+
+/** The daily schedule tools/ops/firestore-backups.sh creates. */
+const SCHEDULE = {
+  name: `projects/${PROJECT}/databases/(default)/backupSchedules/daily-1`,
+  retention: '2419200s',
+  dailyRecurrence: {},
+};
+
+const BUCKET_PATH = `projects/${PROJECT}/locations/global/buckets/creativo-audit-400d`;
+
+/** The sink tools/ops/log-sink.sh creates, and its locked bucket. */
+const SINK = {
+  name: 'creativo-audit-sink',
+  destination: `logging.googleapis.com/${BUCKET_PATH}`,
+  filter: 'NOT jsonPayload.clientIssueKind:*',
+};
+const BUCKET = {
+  name: BUCKET_PATH,
+  retentionDays: 400,
+  locked: true,
+};
+
 /** Readers that answer a healthy project, each overridable, and count their calls. */
 function fakeReaders(overrides = {}) {
   const calls = [];
@@ -236,6 +278,11 @@ function fakeReaders(overrides = {}) {
       root: FUNCTIONS,
       sources: tree(GATED_ROOT),
     })),
+    opsNames: counted('opsNames', () => OPS_NAMES),
+    database: counted('database', () => DATABASE),
+    backupSchedules: counted('backupSchedules', () => [SCHEDULE]),
+    sink: counted('sink', () => SINK),
+    bucket: counted('bucket', () => BUCKET),
     ...overrides,
   };
   return { read, calls };
@@ -694,6 +741,39 @@ describe('P7 · the emulator-only adapters', () => {
     );
   });
 
+  it('judges a namespace member reached by a string literal, and a namespace used as a whole at the use', () => {
+    const NS = "import * as dev from './adapters/console-otp-sender.adapter';";
+    const whole = (line) =>
+      `${main}:${line} uses the namespace of ${ADAPTER_PATH} (@emulatorOnly consoleOtpSender) as a whole outside the emulator — P7 cannot follow which export it reaches; reach it by name`;
+    const answer = judge(
+      tree(
+        NS,
+        "const a = { ...dev['consoleOtpSender'](log) };",
+        'const b = { ...Object.values(dev)[0](log) };',
+        'const c = { ...dev };',
+        'const d = { dev };',
+        'const e = dev[kind];',
+        'const f = dev.somethingElse;',
+      ),
+    );
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.deepEqual(answer.lines.slice(0, -1), [
+      outside(2),
+      whole(3),
+      whole(4),
+      whole(5),
+      whole(6),
+    ]);
+    const gated = judge(
+      tree(NS, 'const p = onEmulator() ? Object.values(dev)[0](log) : real();'),
+    );
+    assert.equal(gated.verdict, Verdict.Pass);
+    assert.equal(
+      gated.detail,
+      'consoleOtpSender: the one use behind onEmulator()',
+    );
+  });
+
   it('judges a run-time load of an emulator-only module at the load, and a default export at its importers', () => {
     const load = (line) =>
       `${main}:${line} loads ${ADAPTER_PATH} (@emulatorOnly consoleOtpSender) outside the emulator — import it statically, so each use can be followed`;
@@ -846,12 +926,411 @@ describe('P7 · the emulator-only adapters', () => {
   });
 });
 
+describe('P8 · no launch-blocker stand-in is wired (@launchBlocker)', () => {
+  const main = `${FUNCTIONS}/main.ts`;
+  const judge = (sources) => checkLaunchBlockers({ root: FUNCTIONS, sources });
+  const REFUSING_PATH = `${FUNCTIONS}/adapters/refusing-otp-sender.adapter.ts`;
+  /** The deployed sender until a provider lands, tagged `@launchBlocker` as the real one is. */
+  const refusingExporting = (name) => ({
+    path: REFUSING_PATH,
+    text: [
+      '/**',
+      " * The deployed project's login-OTP sender: it refuses every delivery.",
+      ' *',
+      ' * @launchBlocker The production preflight refuses a deploy that uses it.',
+      ' */',
+      `export const ${name} = (): OtpDeliveryPorts => ({ sendOtp: async () => refused });`,
+    ].join('\n'),
+  });
+  const REFUSING = refusingExporting('refusingOtpSender');
+  const REFUSING_IMPORT =
+    "import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';";
+  /** The refusing adapter beside a composition root of `lines`. */
+  const wired = (...lines) => [
+    ADAPTER,
+    REFUSING,
+    { path: main, text: lines.join('\n') },
+  ];
+  /** The failure line of a use at `line` of main.ts. */
+  const used = (line, name = 'refusingOtpSender') =>
+    `${main}:${line} uses ${name} (@launchBlocker, ${REFUSING_PATH})`;
+
+  it('fails on a tagged export used anywhere — the deployed branch of the emulator gate included — naming the use, the way out last', () => {
+    const answer = judge(
+      wired(
+        IMPORT,
+        REFUSING_IMPORT,
+        'const identityPorts = once(() => ({',
+        '  ...(onEmulator() ? consoleOtpSender(telemetry.log) : refusingOtpSender()),',
+        '}));',
+      ),
+    );
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.equal(
+      answer.detail,
+      'a launch blocker is still wired into the functions',
+    );
+    assert.deepEqual(answer.lines.slice(0, -1), [used(4)]);
+    assert.match(
+      answer.lines.at(-1),
+      /replace each use with the real adapter — .* docs\/production-deploy\.md §1, "Sign-in: the OTP sender"$/,
+    );
+    // Behind the emulator's own branch it is still a use: P8 asks for none.
+    assert.deepEqual(
+      judge(
+        wired(
+          REFUSING_IMPORT,
+          'const p = onEmulator() ? refusingOtpSender() : real();',
+        ),
+      ).lines.slice(0, -1),
+      [used(2)],
+    );
+  });
+
+  it('passes once no tagged export is used — unused, or no tag at all', () => {
+    const unused = judge(
+      wired(
+        IMPORT,
+        REFUSING_IMPORT,
+        'type Sender = ReturnType<typeof refusingOtpSender>;',
+        '// ...refusingOtpSender() until the provider lands',
+        'const ports = onEmulator() ? consoleOtpSender(log) : transactionalOtpSender(apiKey.value());',
+      ),
+    );
+    assert.equal(unused.verdict, Verdict.Pass);
+    assert.equal(unused.detail, 'refusingOtpSender: never used');
+    const absent = judge(tree(GATED_ROOT));
+    assert.equal(absent.verdict, Verdict.Pass);
+    assert.equal(
+      absent.detail,
+      `no @launchBlocker export in 2 files under ${FUNCTIONS}`,
+    );
+  });
+
+  it('follows a renamed export, an aliased import, a barrel re-export and a run-time load back to the tagged declaration', () => {
+    const failing = (sources) => judge(sources).lines.slice(0, -1);
+    assert.deepEqual(
+      failing([
+        refusingExporting('deployedOtpSender'),
+        {
+          path: main,
+          text: [
+            "import { deployedOtpSender } from './adapters/refusing-otp-sender.adapter';",
+            'const ports = { ...deployedOtpSender() };',
+          ].join('\n'),
+        },
+      ]),
+      [used(2, 'deployedOtpSender')],
+    );
+    assert.deepEqual(
+      failing(
+        wired(
+          "import { refusingOtpSender as otpSender } from './adapters/refusing-otp-sender.adapter';",
+          'const ports = { ...otpSender() };',
+        ),
+      ),
+      [used(2)],
+    );
+    assert.deepEqual(
+      failing([
+        ...wired(
+          "import { otpSenderPorts } from './adapters';",
+          'const ports = { ...otpSenderPorts() };',
+        ),
+        {
+          path: `${FUNCTIONS}/adapters/index.ts`,
+          text: "export { refusingOtpSender as otpSenderPorts } from './refusing-otp-sender.adapter';",
+        },
+      ]),
+      [used(2)],
+    );
+    assert.deepEqual(
+      failing(
+        wired(
+          "const a = async () => (await import('./adapters/refusing-otp-sender.adapter')).refusingOtpSender();",
+          'const b = (kind) => import(`./adapters/${kind}-otp-sender.adapter`);',
+        ),
+      ),
+      [
+        `${main}:1 loads ${REFUSING_PATH} (@launchBlocker refusingOtpSender) — import it statically, so each use can be followed`,
+        `${main}:2 loads a module named at run time — P8 cannot follow it; name it with a string literal`,
+      ],
+    );
+  });
+
+  it('follows a namespace as P7 does: a member reached by name, or the namespace used as a whole', () => {
+    const NS =
+      "import * as deployed from './adapters/refusing-otp-sender.adapter';";
+    const whole = (line) =>
+      `${main}:${line} uses the namespace of ${REFUSING_PATH} (@launchBlocker refusingOtpSender) as a whole — P8 cannot follow which export it reaches; reach it by name`;
+    const answer = judge(
+      wired(
+        NS,
+        'const a = { ...deployed.refusingOtpSender() };',
+        "const b = { ...deployed['refusingOtpSender']() };",
+        'const c = { ...Object.values(deployed)[0]() };',
+        'const d = { deployed };',
+      ),
+    );
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.deepEqual(answer.lines.slice(0, -1), [
+      used(2),
+      used(3),
+      whole(4),
+      whole(5),
+    ]);
+  });
+
+  it('anchors the tag as P7 does: on an exported top-level const or function only, anything else fails', () => {
+    const answer = judge([
+      {
+        path: REFUSING_PATH,
+        text: [
+          '/** @launchBlocker */',
+          'const refusingOtpSender = () => ({});',
+          'export const senders = {',
+          '  /** @launchBlocker */',
+          '  refusing: () => ({}),',
+          '};',
+        ].join('\n'),
+      },
+      { path: main, text: 'const ports = {};' },
+    ]);
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.deepEqual(answer.lines.slice(0, -1), [
+      `${REFUSING_PATH}:2 tags refusingOtpSender @launchBlocker, which its module does not export — move the tag onto the export`,
+      `${REFUSING_PATH}:5 tags a PropertyAssignment @launchBlocker — the tag anchors only on an exported top-level const or function`,
+    ]);
+  });
+
+  it('fails when there is no functions source to judge', () => {
+    const answer = judge([]);
+    assert.equal(answer.verdict, Verdict.Fail);
+    assert.equal(answer.detail, `no functions source under ${FUNCTIONS}`);
+  });
+});
+
+describe('P9 · the platform backstops (informational, RU-33)', () => {
+  /** Settled reads of a healthy project, each overridable. */
+  const reads = (overrides = {}) => ({
+    names: { ok: true, value: OPS_NAMES },
+    pitr: { ok: true, value: DATABASE },
+    backups: { ok: true, value: [SCHEDULE] },
+    sink: { ok: true, value: SINK },
+    bucket: { ok: true, value: BUCKET },
+    ...overrides,
+  });
+
+  it('passes with four INFO lines on a project whose backstops are all in place', () => {
+    const answer = checkBackstops(reads());
+    assert.equal(answer.check, 'P9');
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(
+      answer.detail,
+      '4 of 4 backstops in place — informational, never stops a deploy',
+    );
+    assert.deepEqual(answer.lines, [
+      'INFO  PITR on — 7 days of versions',
+      'INFO  backup schedule: daily-1 daily, kept 28 days',
+      'INFO  audit sink creativo-audit-sink → creativo-audit-400d',
+      'INFO  audit bucket creativo-audit-400d: 400 days, locked',
+    ]);
+  });
+
+  it('still passes on a project with none of them, naming the script that creates each', () => {
+    const answer = checkBackstops(
+      reads({
+        pitr: {
+          ok: true,
+          value: {
+            ...DATABASE,
+            pointInTimeRecoveryEnablement: 'POINT_IN_TIME_RECOVERY_DISABLED',
+          },
+        },
+        backups: { ok: true, value: [] },
+        sink: { ok: true, value: null },
+        bucket: { ok: true, value: null },
+      }),
+    );
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.equal(
+      answer.detail,
+      '0 of 4 backstops in place — informational, never stops a deploy',
+    );
+    assert.deepEqual(answer.lines, [
+      'INFO  PITR off — tools/ops/firestore-backups.sh --apply',
+      'INFO  no backup schedule — tools/ops/firestore-backups.sh --apply',
+      'INFO  audit sink creativo-audit-sink absent — tools/ops/log-sink.sh --apply',
+      'INFO  audit bucket creativo-audit-400d absent — tools/ops/log-sink.sh --apply',
+    ]);
+  });
+
+  it('reports a sink routed elsewhere or disabled, a short bucket and an unlocked one — the lock left to the owner', () => {
+    const elsewhere = checkBackstops(
+      reads({
+        sink: {
+          ok: true,
+          value: { ...SINK, destination: 'storage.googleapis.com/a-bucket' },
+        },
+        bucket: {
+          ok: true,
+          value: { ...BUCKET, retentionDays: 30, locked: false },
+        },
+      }),
+    );
+    assert.equal(elsewhere.verdict, Verdict.Pass);
+    assert.match(elsewhere.detail, /^2 of 4 backstops in place/);
+    assert.equal(
+      elsewhere.lines[2],
+      'INFO  audit sink creativo-audit-sink routes to storage.googleapis.com/a-bucket, not creativo-audit-400d — tools/ops/log-sink.sh --apply',
+    );
+    assert.equal(
+      elsewhere.lines[3],
+      'INFO  audit bucket creativo-audit-400d: 30 days, below the 400 of tools/ops/names.env — tools/ops/log-sink.sh --apply, not locked — tools/ops/log-sink.sh --apply --lock — irreversible, an owner decision (docs/production-deploy.md §1)',
+    );
+    const disabled = checkBackstops(
+      reads({
+        sink: { ok: true, value: { ...SINK, disabled: true } },
+        bucket: { ok: true, value: { ...BUCKET, locked: false } },
+      }),
+    );
+    assert.match(disabled.detail, /^3 of 4 backstops in place/);
+    assert.match(disabled.lines[2], /→ creativo-audit-400d, DISABLED — /);
+    assert.match(
+      disabled.lines[3],
+      /^INFO {2}audit bucket creativo-audit-400d: 400 days, not locked — /,
+    );
+  });
+
+  it('lists every backup schedule with its recurrence and retention', () => {
+    const answer = checkBackstops(
+      reads({
+        backups: {
+          ok: true,
+          value: [
+            SCHEDULE,
+            {
+              name: `${SCHEDULE.name.replace('daily-1', 'weekly-1')}`,
+              retention: '8467200s',
+              weeklyRecurrence: { day: 'SUNDAY' },
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal(
+      answer.lines[1],
+      'INFO  backup schedules: daily-1 daily, kept 28 days; weekly-1 weekly (SUNDAY), kept 98 days',
+    );
+  });
+
+  it('turns an unreadable backstop into an INFO line, never a failure — with the roles when the credentials explain it', () => {
+    const answer = checkBackstops(
+      reads({
+        pitr: { ok: false, reason: 'databases/(default): HTTP 500' },
+        sink: {
+          ok: false,
+          reason: 'sinks/creativo-audit-sink: HTTP 403 — Permission denied',
+        },
+      }),
+    );
+    assert.equal(answer.verdict, Verdict.Pass);
+    assert.match(answer.detail, /^2 of 4 backstops in place/);
+    assert.equal(
+      answer.lines[0],
+      'INFO  PITR unreadable — databases/(default): HTTP 500',
+    );
+    assert.equal(
+      answer.lines[2],
+      'INFO  the audit sink creativo-audit-sink unreadable — sinks/creativo-audit-sink: HTTP 403 — Permission denied',
+    );
+    assert.match(answer.lines.at(-1), /roles\/logging\.viewer/);
+    // A failure the credentials do not explain carries no roles line.
+    const plain = checkBackstops(
+      reads({ pitr: { ok: false, reason: 'databases/(default): HTTP 500' } }),
+    );
+    assert.equal(plain.lines.length, 4);
+  });
+
+  it('never fails the run: every P9 read throwing — the names included — still answers PASS, and the deploy goes on', async () => {
+    const thrown = async () => {
+      throw new Error('HTTP 403 — caller does not have permission');
+    };
+    const { read, calls } = fakeReaders({
+      opsNames: async () => {
+        throw new Error('ENOENT: no such file, tools/ops/names.env');
+      },
+      database: thrown,
+      backupSchedules: thrown,
+    });
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    const p9 = rows.find((entry) => entry.check === 'P9');
+    assert.equal(p9.verdict, Verdict.Pass);
+    assert.match(p9.detail, /^0 of 4 backstops in place/);
+    assert.deepEqual(p9.lines, [
+      'INFO  PITR unreadable — HTTP 403 — caller does not have permission',
+      'INFO  the backup schedules unreadable — HTTP 403 — caller does not have permission',
+      'INFO  the audit sink unreadable — no names: tools/ops/names.env is unreadable',
+      'INFO  the audit bucket unreadable — no names: tools/ops/names.env is unreadable',
+      'INFO  tools/ops/names.env unreadable — ENOENT: no such file, tools/ops/names.env',
+      'INFO  the backstop reads need roles/datastore.viewer (PITR, backups) and roles/logging.viewer (sink, bucket) — runbook §3',
+    ]);
+    // Without names, the sink and the bucket are never asked for.
+    assert.equal(calls.includes('sink'), false);
+    assert.equal(calls.includes('bucket'), false);
+    assert.equal(exitCodeOf(rows.filter((entry) => entry.check !== 'P8')), 0);
+  });
+
+  it('asks for the sink and the bucket by the ids of tools/ops/names.env', async () => {
+    const asked = [];
+    const { read } = fakeReaders({
+      sink: async (names) => {
+        asked.push(['sink', names.LOG_SINK_NAME]);
+        return SINK;
+      },
+      bucket: async (names) => {
+        asked.push(['bucket', names.LOG_BUCKET_ID, names.LOG_BUCKET_LOCATION]);
+        return BUCKET;
+      },
+    });
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read,
+    });
+    assert.deepEqual(asked.sort(), [
+      ['bucket', 'creativo-audit-400d', 'global'],
+      ['sink', 'creativo-audit-sink'],
+    ]);
+    assert.match(
+      rows.find((entry) => entry.check === 'P9').detail,
+      /^4 of 4 backstops in place/,
+    );
+  });
+});
+
 describe('runPreflight', () => {
   const env = { GCLOUD_PROJECT: PROJECT };
 
-  it('runs P1–P6 for the web scope and P1–P3, P6, P7 for the functions scope — every check in one of them', async () => {
+  // Widened ON PURPOSE by audit-hardening WS-6 (DEP-24): the functions
+  // scope gains P9, the informational backstop row.
+  it('runs P1–P6 for the web scope and P1–P3, P6–P9 for the functions scope — every check in one of them', async () => {
     assert.deepEqual(SCOPES.web, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
-    assert.deepEqual(SCOPES.functions, ['P1', 'P2', 'P3', 'P6', 'P7']);
+    assert.deepEqual(SCOPES.functions, [
+      'P1',
+      'P2',
+      'P3',
+      'P6',
+      'P7',
+      'P8',
+      'P9',
+    ]);
     assert.deepEqual(
       [...new Set([...SCOPES.web, ...SCOPES.functions])].sort(),
       Object.keys(CHECKS),
@@ -880,9 +1359,15 @@ describe('runPreflight', () => {
     );
     assert.equal(calls.includes('bundle'), false);
     assert.equal(calls.includes('config'), false);
+    assert.equal(
+      web.some((entry) => entry.check === 'P9'),
+      false,
+    );
   });
 
-  it('reads nothing of the project when P6 fails: P1–P3 SKIP, P7 still judges the source, and the run fails', async () => {
+  // P9 joins the SKIP rows ON PURPOSE (audit-hardening WS-6, DEP-24): it
+  // reads the project, so a failed P6 keeps it from reading too.
+  it('reads nothing of the project when P6 fails: P1–P3 and P9 SKIP, P7 and P8 still judge the source (read once), and the run fails', async () => {
     const { read, calls } = fakeReaders();
     const rows = await runPreflight({
       scope: 'functions',
@@ -892,7 +1377,15 @@ describe('runPreflight', () => {
     });
     assert.deepEqual(
       rows.map((entry) => entry.verdict),
-      [Verdict.Skip, Verdict.Skip, Verdict.Skip, Verdict.Fail, Verdict.Pass],
+      [
+        Verdict.Skip,
+        Verdict.Skip,
+        Verdict.Skip,
+        Verdict.Fail,
+        Verdict.Pass,
+        Verdict.Pass,
+        Verdict.Skip,
+      ],
     );
     assert.deepEqual(calls, ['functionsSource']);
     assert.equal(exitCodeOf(rows), 1);
@@ -918,6 +1411,8 @@ describe('runPreflight', () => {
         ['P3', Verdict.Pass],
         ['P6', Verdict.Pass],
         ['P7', Verdict.Fail],
+        ['P8', Verdict.Pass],
+        ['P9', Verdict.Pass],
       ],
     );
     assert.equal(exitCodeOf(rows), 1);
@@ -1024,7 +1519,7 @@ describe('preflight · the command', () => {
     const functions = skipBanner({ projectId: PROJECT, scope: 'functions' });
     assert.match(
       functions,
-      /Nothing proved the default location, the TTL policies, the indexes, the environment or the emulator-only adapters of creativo-prod\./,
+      /Nothing proved the default location, the TTL policies, the indexes, the environment, the emulator-only adapters, the launch blockers or the platform backstops of creativo-prod\./,
     );
     assert.match(
       functions,
@@ -1035,7 +1530,7 @@ describe('preflight · the command', () => {
       web,
       /the bundle, the CSP or the environment of creativo-prod\./,
     );
-    assert.doesNotMatch(web, /emulator-only/);
+    assert.doesNotMatch(web, /emulator-only|launch blocker/);
     assert.match(
       skipBanner({ projectId: null, scope: 'web' }),
       /--scope web --project <id>` after this deploy/,
@@ -1085,7 +1580,7 @@ describe('the deploy wiring', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
   const json = (file) => JSON.parse(readFileSync(join(root, file), 'utf8'));
 
-  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6, P7), on the deployed project', () => {
+  it('runs the preflight as the hosting predeploy (P1–P6) and last in the functions predeploy (P1–P3, P6–P9), on the deployed project', () => {
     const config = json('firebase.json');
     const web = config.hosting.find((entry) => entry.target === 'web');
     assert.deepEqual(web.predeploy, [
@@ -1097,11 +1592,8 @@ describe('the deploy wiring', () => {
     );
   });
 
-  // The launch blocker, read off the repository: P7 resolves the very files
-  // the functions build compiles. This pin flips to PASS in the change that
-  // wires a transactional sender (docs/production-deploy.md §1, "Sign-in:
-  // the OTP sender") — update it there, with that checklist item.
-  it('P7 refuses today’s functions on main.ts’s console sender alone, and passes once that one line is gated — both OTP adapters and the fixed code tagged', () => {
+  /** The files the functions build compiles, read off the repository. */
+  const realTree = () => {
     const sources = functionsSourceUnder(join(root, FUNCTIONS));
     assert.ok(sources.some(({ path }) => path.endsWith('/main.ts')));
     assert.equal(
@@ -1110,33 +1602,103 @@ describe('the deploy wiring', () => {
       ),
       false,
     );
+    return sources;
+  };
+  const GATED_SENDER =
+    '...(onEmulator() ? consoleOtpSender(telemetry.log) : refusingOtpSender()),';
+
+  // Flipped ON PURPOSE by audit-hardening WS-0 (it pinned FAIL on the
+  // console sender wired outright): main.ts now gates the console sender
+  // behind onEmulator(), so P7 passes on the real tree — and ungating that
+  // one line still fails it. The launch stays fail-closed through P8, below.
+  it('P7 passes on today’s functions — the console sender gated beside the OTP crypto — and refuses them again if that one line is ungated', () => {
+    const sources = realTree();
     const today = checkEmulatorOnly({ root: FUNCTIONS, sources });
-    assert.equal(today.verdict, Verdict.Fail);
-    assert.equal(today.lines.length, 2);
-    assert.match(
-      today.lines[0],
-      /apps\/functions\/src\/main\.ts:\d+ uses consoleOtpSender \(@emulatorOnly, .*apps\/functions\/src\/adapters\/console-otp-sender\.adapter\.ts\) outside the emulator$/,
+    assert.equal(today.verdict, Verdict.Pass);
+    assert.equal(
+      today.detail,
+      'consoleOtpSender, OTP_FIXED_CODE, fixedCodeOtpCryptoPorts: all 2 uses behind onEmulator()',
     );
-    const wired = '...consoleOtpSender(telemetry.log),';
     const main = sources.find(({ path }) => path.endsWith('/main.ts'));
-    assert.ok(main.text.includes(wired));
-    const gated = sources.map((file) =>
+    assert.ok(main.text.includes(GATED_SENDER));
+    const ungated = sources.map((file) =>
       file === main
         ? {
             ...file,
             text: file.text.replace(
-              wired,
+              GATED_SENDER,
+              '...consoleOtpSender(telemetry.log),',
+            ),
+          }
+        : file,
+    );
+    const reverted = checkEmulatorOnly({ root: FUNCTIONS, sources: ungated });
+    assert.equal(reverted.verdict, Verdict.Fail);
+    assert.equal(reverted.lines.length, 2);
+    assert.match(
+      reverted.lines[0],
+      /apps\/functions\/src\/main\.ts:\d+ uses consoleOtpSender \(@emulatorOnly, .*apps\/functions\/src\/adapters\/console-otp-sender\.adapter\.ts\) outside the emulator$/,
+    );
+  });
+
+  // The launch blocker, read off the repository: P8 resolves the very files
+  // the functions build compiles. This pin flips to PASS in the change that
+  // wires a transactional sender in place of refusingOtpSender
+  // (docs/production-deploy.md §1, "Sign-in: the OTP sender") — update it
+  // there, with that checklist item.
+  it('P8 refuses today’s functions on main.ts’s refusing sender alone, and passes once a real sender replaces it', () => {
+    const sources = realTree();
+    const today = checkLaunchBlockers({ root: FUNCTIONS, sources });
+    assert.equal(today.verdict, Verdict.Fail);
+    assert.equal(today.lines.length, 2);
+    assert.match(
+      today.lines[0],
+      /apps\/functions\/src\/main\.ts:\d+ uses refusingOtpSender \(@launchBlocker, .*apps\/functions\/src\/adapters\/refusing-otp-sender\.adapter\.ts\)$/,
+    );
+    const main = sources.find(({ path }) => path.endsWith('/main.ts'));
+    assert.ok(main.text.includes(GATED_SENDER));
+    const replaced = sources.map((file) =>
+      file === main
+        ? {
+            ...file,
+            text: file.text.replace(
+              GATED_SENDER,
               '...(onEmulator() ? consoleOtpSender(telemetry.log) : transactionalOtpSender()),',
             ),
           }
         : file,
     );
-    const tomorrow = checkEmulatorOnly({ root: FUNCTIONS, sources: gated });
+    const tomorrow = checkLaunchBlockers({
+      root: FUNCTIONS,
+      sources: replaced,
+    });
     assert.equal(tomorrow.verdict, Verdict.Pass);
-    assert.equal(
-      tomorrow.detail,
-      'consoleOtpSender, OTP_FIXED_CODE, fixedCodeOtpCryptoPorts: all 2 uses behind onEmulator()',
+    assert.equal(tomorrow.detail, 'refusingOtpSender: never used');
+  });
+
+  it('keeps the functions predeploy fail-closed on today’s tree — every other row passing on a healthy project, P8 alone stops it', async () => {
+    const sources = realTree();
+    const rows = await runPreflight({
+      scope: 'functions',
+      projectId: PROJECT,
+      env: { GCLOUD_PROJECT: PROJECT },
+      read: fakeReaders({
+        functionsSource: async () => ({ root: FUNCTIONS, sources }),
+      }).read,
+    });
+    assert.deepEqual(
+      rows.map((entry) => [entry.check, entry.verdict]),
+      [
+        ['P1', Verdict.Pass],
+        ['P2', Verdict.Pass],
+        ['P3', Verdict.Pass],
+        ['P6', Verdict.Pass],
+        ['P7', Verdict.Pass],
+        ['P8', Verdict.Fail],
+        ['P9', Verdict.Pass],
+      ],
     );
+    assert.equal(exitCodeOf(rows), 1);
   });
 
   it('names it `pnpm run preflight`', () => {

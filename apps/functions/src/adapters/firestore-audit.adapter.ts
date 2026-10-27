@@ -3,7 +3,12 @@ import type {
   DocumentReference,
   Firestore,
 } from 'firebase-admin/firestore';
-import { Result, type AuditEntryId, AuditResourceId } from '@core/primitives';
+import {
+  Result,
+  type AuditEntryId,
+  AuditResourceId,
+  LogEvent,
+} from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import type { AuditPorts, TelemetryPorts } from '@core/ports';
@@ -16,24 +21,31 @@ import { TriggerAttemptSystem } from '@core/systems';
  * derived the id (`hash(AuditSystem.rowBasis(…))`), so this adapter writes
  * what it is given — no mapping, no business logic.
  *
- * - `appendAudit` — the after-commit rows of a booking act. Each row is
+ * - `appendAudit` — the ONE after-commit audit write left: the operator
+ *   backfill's per-CALL row (audit-hardening L2 — one call is many commits
+ *   and a job document, so there is no single commit to join). Each row is
  *   CREATED, never set: a replay of the same logical change derives the
  *   same ids, and ALREADY_EXISTS is the answer "already logged", not an
  *   error. The rows go in one batch (an act is logged for everybody or for
  *   nobody); when the batch meets a row already there, the rows are created
  *   one by one so a replay that names somebody the first call did not still
  *   gets that one row, and no row the first call wrote is rewritten. NEVER
- *   fatal and never silent (today's `appendAudit`): any other failure is
- *   logged at error level and the booking stands.
- * - `createAuditRows` — the profile trigger's only write: the same
+ *   fatal and never silent: any other failure is logged at error level and
+ *   the call's answer stands.
+ * - `createAuditRows` — the document-change triggers' only write (the
+ *   profile trigger and the thirteen governed-collection triggers): the same
  *   deterministic-id `create()`s, ALREADY_EXISTS a success, but a real
  *   failure IS answered (a `RepositoryError` value) so the trigger's retry
  *   can deliver the row.
  * - `auditActionsFor` — every row filed against the given appointment ids
  *   (`resourceId in`, chunks of 30, single-field): the backfill's read.
  *
- * A row that must commit together with its act (the streak publish's) is
- * not written here: it is a `WriteOp` of that act's own `CommitPlan`.
+ * A row that must commit together with its act is not written here: the
+ * seven booking verbs' rows (book, reschedule, staff edit, cancel,
+ * transition, arrival, tip), an owner's own profile edit's and a streak
+ * publish's are `WriteOp.create` entries of that act's own `CommitPlan`
+ * (audit-hardening WS-1, `AuditSystem.commitWrites` / `createsOf`) — they
+ * land with the act or not at all.
  */
 
 /** Firestore's `in` takes at most 30 values per query. */
@@ -90,7 +102,7 @@ export const firestoreAuditPorts = (
       }
     } catch (error) {
       const first = rows[0];
-      telemetry.log('error', 'audit write failed', {
+      telemetry.log('error', LogEvent.AuditWriteFailed, {
         action: first?.auditAction ?? null,
         resourceId: first?.resourceId ?? null,
         error: String(error),
@@ -103,8 +115,15 @@ export const firestoreAuditPorts = (
       await createEach(db, rows);
       return Result.ok(undefined);
     } catch (error) {
+      // The canonical code (`unavailable`, `aborted`, …), never the
+      // message: the retrying edge judges the attempt by this `reason`
+      // (`TriggerAttemptSystem.repositoryFailure`), and only a transient
+      // code earns the redelivery that writes the row.
       return Result.err(
-        RepositoryError.writeFailed(Collections.AuditLog, String(error)),
+        RepositoryError.writeFailed(
+          Collections.AuditLog,
+          TriggerAttemptSystem.failureCode(error),
+        ),
       );
     }
   },

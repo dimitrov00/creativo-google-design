@@ -4,6 +4,9 @@ import {
   HttpsError,
 } from 'firebase-functions/v2/https';
 import {
+  ClientOperationId,
+  LogEvent,
+  OperationId,
   PrimitiveErrorCode,
   type Result,
   TriggerEventId,
@@ -40,15 +43,23 @@ import { AttemptOutcome } from '@core/components';
 import {
   type CallableName,
   type ClockPorts,
+  type LogContext,
+  type LogContextPorts,
+  type LogDigestPorts,
   type NowUtcMs,
+  OPERATION_ID_FIELD,
+  type OperationIdField,
   type TelemetryPorts,
+  type TriggerFailurePorts,
 } from '@core/ports';
 import {
+  type AttemptEvent,
   type AttemptLine,
   TriggerAttemptSystem,
   WorkBudgetSystem,
 } from '@core/systems';
-import { eventInstantOf } from './wire/wire-read';
+import { callerKnownRoles, callerUserId } from './lib/booking/caller-roles';
+import { eventInstantOf, field, idOf, operationIdOf } from './wire/wire-read';
 
 /**
  * THE EDGE (blueprint §4.3, D1(a)) — the one place a `Result.err` becomes an
@@ -430,6 +441,10 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.RegistrationForbidden]: fields(S.FailedPrecondition),
   [IdentityErrorCode.RegistrationUserNotFound]: fields(S.FailedPrecondition),
   [IdentityErrorCode.RegistrationFieldMissing]: withField(S.InvalidArgument),
+  // The deployed sender refuses every delivery (WS-0) — a precondition of
+  // the deployment, never `permission-denied` (the lockout) and never
+  // `internal` (the web would offer a retry that cannot succeed).
+  [IdentityErrorCode.OtpSendUnavailable]: fields(S.FailedPrecondition),
   // The identity callables' own faults and payload refusals (Phase 4a 4A-4);
   // `reason` leaves for the invalid input, as the legacy one did.
   [IdentityErrorCode.InvalidInput]: fields(S.InvalidArgument),
@@ -912,6 +927,90 @@ export const tokenBucket = (
 /** What the edge itself reads: telemetry and the clock (`ClockPorts`, flatten-spec T4). */
 export type EdgePorts = TelemetryPorts & ClockPorts;
 
+/**
+ * What a callable's edge reads (audit-hardening WS-4.2, RU-26): the edge's
+ * own ports, the per-invocation log scope and the keyed input digest the
+ * composition root notes after a decode — `EdgePorts` keep their members.
+ */
+export type CallableEdgePorts = EdgePorts & LogContextPorts & LogDigestPorts;
+
+/**
+ * What a retrying trigger's edge reads (audit-hardening WS-6, RU-32): the
+ * edge's own ports and the dead-letter writer `retryingTrigger` records a
+ * delivery it gives up on through — `EdgePorts` keep their members.
+ */
+export type TriggerEdgePorts = EdgePorts & TriggerFailurePorts;
+
+/**
+ * What a traced handler may tell its edge mid-call (WS-4.2): the decoded
+ * command's keyed digest (`LogDigestSystem.digestOf`, `null` with no key),
+ * printed as the outcome line's `inputDigest` and added to the scope.
+ */
+export type CallTrace = {
+  readonly noteInputDigest: (digest: string | null) => void;
+};
+
+/** The trace an untraced callable (the sink) is handed: it records nothing. */
+const NO_TRACE: CallTrace = { noteInputDigest: () => undefined };
+
+/**
+ * How an invocation ended, as its ONE outcome line says it: the
+ * `LogEvent`, its level, the code (`null` on success) and the status the
+ * wire carried (`'ok'` for an answer, an answered refusal included).
+ */
+type Outcome = {
+  readonly level: 'info' | 'warn' | 'error';
+  readonly msg: LogEvent;
+  readonly errorCode: string | null;
+  readonly wireStatus: string;
+};
+
+/** The `errorCode` an `HttpsError`'s details carry (the flipped wire, 4A-4), else `null`. */
+function wireCodeOf(error: HttpsError): string | null {
+  const details: unknown = error.details;
+  if (details === null || typeof details !== 'object') return null;
+  const code = Object.getOwnPropertyDescriptor(details, 'errorCode')?.value;
+  return typeof code === 'string' ? code : null;
+}
+
+/**
+ * A thrown `HttpsError` — a refusal or a decoder's own — as its outcome:
+ * warn, its status; but an `internal` one (a store failure answered as the
+ * callable's coded failure, the streak publish's `…_STORE_FAILED`) is a
+ * failure, not a refusal — error, `callable.failed`, as an unexpected throw.
+ */
+function thrownOutcome(error: HttpsError, errorCode: string | null): Outcome {
+  const failed = error.code === S.Internal;
+  return {
+    level: failed ? 'error' : 'warn',
+    msg: failed ? LogEvent.CallableFailed : LogEvent.CallableRefused,
+    errorCode,
+    wireStatus: error.code,
+  };
+}
+
+/**
+ * The correlation fields ONE invocation binds (WS-4.2): the callable, the
+ * operation id its payload carries in its `OPERATION_ID_FIELD` (a
+ * client-minted key of the right shape, else `null` — never refused here),
+ * the VERIFIED uid and the claim's known roles. Ids, codes and roles only
+ * (R36 / T5).
+ */
+function invocationContext(
+  callable: CallableName,
+  request: CallableRequest<unknown>,
+): LogContext {
+  const field: OperationIdField | null =
+    Object.getOwnPropertyDescriptor(OPERATION_ID_FIELD, callable)?.value ??
+    null;
+  return {
+    callable,
+    operationId: field === null ? null : operationIdOf(request.data, field),
+    uid: callerUserId(request),
+    roles: callerKnownRoles(request),
+  };
+}
+
 /** The platform's own answer to an uncaught throw: `internal`, `INTERNAL`, no details. */
 const PLATFORM_INTERNAL_MESSAGE = 'INTERNAL';
 
@@ -947,6 +1046,12 @@ export type CallableSpec<Out> = {
   readonly timeoutSeconds: number | null;
   /** How an ANSWERED refusal becomes the callable's answer; `null` when it answers none. */
   readonly answer: ((refusal: EdgeError) => Out) | null;
+  /**
+   * Whether the invocation is traced (WS-4.2, DEP-18): a scope bound around
+   * the handler and ONE outcome line. `false` for the client issue sink
+   * alone (RU-24 — OR-34's privacy by shape: no uid, no line of ours).
+   */
+  readonly traced: boolean;
 };
 
 /**
@@ -955,14 +1060,26 @@ export type CallableSpec<Out> = {
  * and an infrastructure throw is tracked and answered as {@link unexpected}
  * says. The budget is a share of whichever gives up first — the platform's
  * timeout or the callable client's 70 s wait.
+ *
+ * **Traced (WS-4.2, DEP-18).** A traced callable runs its handler inside
+ * a log scope bound ONCE (`bindLogContext`: `callable`, `operationId`,
+ * `uid`, `roles` — every `log` line of the invocation carries them) and
+ * writes ONE outcome line: `callable.completed` (info) for an answer,
+ * `callable.refused` (warn) for an answered refusal (`wireStatus: 'ok'`),
+ * a thrown refusal or a decoder's own `HttpsError` (its status), and
+ * `callable.failed` (error) for an unexpected throw (`'internal'`, the
+ * coded failure as `errorCode`) — tracked once, as before. The line holds
+ * `{ callable, operationId, uid, roles, errorCode, wireStatus, durationMs,
+ * inputDigest }`; the answer is unchanged.
  */
 export const callableEdge =
   <In, Out>(
     spec: CallableSpec<Out>,
-    ports: EdgePorts,
+    ports: CallableEdgePorts,
     handle: (
       request: CallableRequest<In>,
       budget: WorkBudget,
+      trace: CallTrace,
     ) => Promise<Result<Out, EdgeError>>,
   ) =>
   async (request: CallableRequest<In>): Promise<Out> => {
@@ -972,18 +1089,137 @@ export const callableEdge =
         spec.timeoutSeconds ?? PLATFORM_TIMEOUT_SECONDS,
       ),
     );
-    let result: Result<Out, EdgeError>;
-    try {
-      result = await handle(request, budget);
-    } catch (thrown) {
-      throw unexpected(spec.callable, spec.failureCode, ports, thrown);
+    if (!spec.traced) {
+      return settleCallable(
+        spec,
+        await attempt(spec, ports, handle, request, budget, NO_TRACE),
+      );
     }
-    if (result.ok) return result.value;
-    if (spec.answer !== null && isAnswered(result.error.errorCode)) {
-      return spec.answer(result.error);
-    }
-    throw toHttpsError(result.error);
+    const context = invocationContext(
+      spec.callable,
+      request as CallableRequest<unknown>,
+    );
+    return ports.bindLogContext(context, async () => {
+      let inputDigest: string | null = null;
+      const trace: CallTrace = {
+        noteInputDigest: (digest) => {
+          inputDigest = digest;
+          ports.addLogContext({ inputDigest: digest });
+        },
+      };
+      const settled = await attempt(
+        spec,
+        ports,
+        handle,
+        request,
+        budget,
+        trace,
+      );
+      const outcome = outcomeOf(spec, settled);
+      ports.log(outcome.level, outcome.msg, {
+        ...context,
+        errorCode: outcome.errorCode,
+        wireStatus: outcome.wireStatus,
+        durationMs: UtcEpochMs.elapsedMs(
+          budget.startedAtUtcMs,
+          ports.nowUtcMs(),
+        ),
+        inputDigest,
+      });
+      return settleCallable(spec, settled);
+    });
   };
+
+/** How a handler run settled — the ONLY source of these strings (Law 1). */
+const SettledAs = { Result: 'RESULT', Thrown: 'THROWN' } as const;
+
+/** One handler run, settled into what the edge does with it — never a throw. */
+type Settled<Out> =
+  | {
+      readonly settledAs: typeof SettledAs.Result;
+      readonly result: Result<Out, EdgeError>;
+    }
+  | {
+      readonly settledAs: typeof SettledAs.Thrown;
+      readonly thrown: HttpsError;
+      readonly unexpected: boolean;
+    };
+
+/** Runs the handler; a throw becomes the `HttpsError` {@link unexpected} answers (tracked there, once). */
+async function attempt<In, Out>(
+  spec: CallableSpec<Out>,
+  ports: EdgePorts,
+  handle: (
+    request: CallableRequest<In>,
+    budget: WorkBudget,
+    trace: CallTrace,
+  ) => Promise<Result<Out, EdgeError>>,
+  request: CallableRequest<In>,
+  budget: WorkBudget,
+  trace: CallTrace,
+): Promise<Settled<Out>> {
+  try {
+    return {
+      settledAs: SettledAs.Result,
+      result: await handle(request, budget, trace),
+    };
+  } catch (thrown) {
+    return {
+      settledAs: SettledAs.Thrown,
+      thrown: unexpected(spec.callable, spec.failureCode, ports, thrown),
+      unexpected: !(thrown instanceof HttpsError),
+    };
+  }
+}
+
+/** What the caller gets: the answer, an answered refusal's answer, or the throw. */
+function settleCallable<Out>(
+  spec: CallableSpec<Out>,
+  settled: Settled<Out>,
+): Out {
+  if (settled.settledAs === SettledAs.Thrown) throw settled.thrown;
+  const result = settled.result;
+  if (result.ok) return result.value;
+  if (spec.answer !== null && isAnswered(result.error.errorCode)) {
+    return spec.answer(result.error);
+  }
+  throw toHttpsError(result.error);
+}
+
+/** The outcome line's verdict over a settled run — the same branches {@link settleCallable} takes. */
+function outcomeOf<Out>(
+  spec: CallableSpec<Out>,
+  settled: Settled<Out>,
+): Outcome {
+  if (settled.settledAs === SettledAs.Thrown) {
+    return settled.unexpected
+      ? {
+          level: 'error',
+          msg: LogEvent.CallableFailed,
+          errorCode: spec.failureCode,
+          wireStatus: settled.thrown.code,
+        }
+      : thrownOutcome(settled.thrown, wireCodeOf(settled.thrown));
+  }
+  const result = settled.result;
+  if (result.ok) {
+    return {
+      level: 'info',
+      msg: LogEvent.CallableCompleted,
+      errorCode: null,
+      wireStatus: 'ok',
+    };
+  }
+  if (spec.answer !== null && isAnswered(result.error.errorCode)) {
+    return {
+      level: 'warn',
+      msg: LogEvent.CallableRefused,
+      errorCode: result.error.errorCode,
+      wireStatus: 'ok',
+    };
+  }
+  return thrownOutcome(toHttpsError(result.error), result.error.errorCode);
+}
 
 /** The answer a throttled call gets: the status's own name, as the platform's bare INTERNAL is named. */
 const THROTTLED_MESSAGE = 'RESOURCE_EXHAUSTED';
@@ -1021,11 +1257,17 @@ export type DeliveredEvent = { readonly id: string; readonly time: string };
  * a failed attempt logs its ONE line — ids and codes, and how deep into
  * the retry window it is — then rethrows what a redelivery could fix and
  * returns on the rest, which would fail the same way for the whole window.
+ *
+ * The dead letter (audit-hardening WS-6, DEP-23): after the line, a
+ * delivery `TriggerAttemptSystem.deadLetter` gives up on — a PERMANENT
+ * failure, or a TRANSIENT one in the window's last stretch — is recorded
+ * once at `triggerFailures/{eventId}` ({@link recordDeadLetter}). Neither
+ * the verdict nor the rethrow depends on that write.
  */
 export const retryingTrigger =
   <E extends DeliveredEvent>(
     spec: TriggerSpec,
-    ports: EdgePorts,
+    ports: TriggerEdgePorts,
     handle: (event: E, budget: WorkBudget) => Promise<void>,
   ) =>
   async (event: E): Promise<void> => {
@@ -1039,26 +1281,63 @@ export const retryingTrigger =
       await handle(event, budget);
     } catch (thrown) {
       const failure = TriggerAttemptSystem.attemptFailure(thrown);
+      const nowUtcMs = ports.nowUtcMs();
       const line = TriggerAttemptSystem.attemptLine(
         spec.fn,
-        {
-          id: TriggerEventId.of(event.id),
-          eventAtUtcMs: eventInstantOf(event.time),
-        },
+        attemptEventOf(event),
         failure,
-        ports.nowUtcMs(),
+        nowUtcMs,
       );
-      ports.log('error', 'trigger attempt failed', attemptLineFields(line));
+      ports.log(
+        'error',
+        LogEvent.TriggerAttemptFailed,
+        attemptLineFields(line),
+      );
+      if (TriggerAttemptSystem.deadLetter(failure, line.ageMs)) {
+        await recordDeadLetter(ports, line, nowUtcMs);
+      }
       if (failure.attemptOutcome === AttemptOutcome.Transient) throw thrown;
     }
   };
 
 /**
+ * Writes one attempt line's dead letter (WS-6, RU-32) — never throws: a
+ * refused write, or a writer that throws, is logged as ONE
+ * `trigger.failure_not_recorded` line (ids and the write's own code, judged
+ * as `TriggerAttemptSystem` judges any failure) and the trigger's verdict
+ * stands as it was.
+ */
+async function recordDeadLetter(
+  ports: TriggerEdgePorts,
+  line: AttemptLine,
+  nowUtcMs: UtcEpochMs,
+): Promise<void> {
+  let refusal: unknown;
+  try {
+    const written = await ports.writeTriggerFailure(
+      TriggerAttemptSystem.triggerFailure(line, nowUtcMs),
+    );
+    if (written.ok) return;
+    refusal = written.error;
+  } catch (thrown) {
+    refusal = thrown;
+  }
+  ports.log('error', LogEvent.TriggerFailureNotRecorded, {
+    fn: line.fn,
+    eventId: line.eventId,
+    errorCode: TriggerAttemptSystem.attemptFailure(refusal).failureCode,
+  });
+}
+
+/**
  * THE ONE attempt line, in the flipped vocabulary (Phase 4a 4A-2 (c)) —
- * `{ fn, eventId, outcome, errorCode, ageMs }`: `outcome` the SCREAMING
- * `AttemptOutcome`, `errorCode` the failure's code as `TriggerAttemptSystem`
- * judged it. Operator telemetry, never a user surface; every retrying
- * trigger and every survived failure (`triggers.wire.ts`) logs through it.
+ * `{ fn, eventId, outcome, errorCode, ageMs, documentPath,
+ * writeOperationId }`: `outcome` the SCREAMING `AttemptOutcome`,
+ * `errorCode` the failure's code as `TriggerAttemptSystem` judged it, the
+ * written document and the operation id it carries (WS-4.3, DEP-19 — the
+ * join from a failed trigger back to the callable that wrote). Operator
+ * telemetry, never a user surface; every retrying trigger and every
+ * survived failure (`triggers.wire.ts`) logs through it.
  */
 export function attemptLineFields(line: AttemptLine): Record<string, unknown> {
   return {
@@ -1067,5 +1346,59 @@ export function attemptLineFields(line: AttemptLine): Record<string, unknown> {
     outcome: line.attemptOutcome,
     errorCode: line.failureCode,
     ageMs: line.ageMs,
+    documentPath: line.documentPath,
+    writeOperationId: line.writeOperationId,
+  };
+}
+
+/**
+ * A side of a write event that exists, read defensively: its body, else
+ * `undefined`. A snapshot's `exists` and `data()` live on its prototype
+ * (the Admin SDK's getter and method), so they are read as members.
+ */
+function existingBody(side: unknown): unknown {
+  if (side === null || typeof side !== 'object') return undefined;
+  const snapshot = side as {
+    readonly exists?: unknown;
+    readonly data?: unknown;
+  };
+  if (snapshot.exists !== true || typeof snapshot.data !== 'function') {
+    return undefined;
+  }
+  return (snapshot.data as () => unknown).call(side);
+}
+
+/**
+ * What a delivery says about the write that woke it (audit-hardening WS-4.3,
+ * DEP-19): `event.document` (the written path — ids only) and the
+ * `writeOperationId` the after-image (else the before-image, on a delete)
+ * carries, read in the shape the server stamps — the client-minted key's
+ * shape (`ClientOperationId.inPayload`, `[A-Za-z0-9_-]{16,64}`), then a
+ * plain id (`OperationId.parse`), never a cast (Law 7.4). Anything else —
+ * free text a browser writer put on a governed document, an over-length
+ * value, a reserved name — reads `null` (review round 2, the DEP-19
+ * amendment) and never refuses the attempt. A schedule tick names neither.
+ */
+export function attemptProvenanceOf(event: unknown): {
+  readonly documentPath: string | null;
+  readonly writeOperationId: OperationId | null;
+} {
+  const document = field(event, 'document');
+  const data = field(event, 'data');
+  const body =
+    existingBody(field(data, 'after')) ?? existingBody(field(data, 'before'));
+  const sent = ClientOperationId.inPayload(body, 'writeOperationId');
+  return {
+    documentPath: typeof document === 'string' ? document : null,
+    writeOperationId: sent === null ? null : idOf(sent, OperationId.parse),
+  };
+}
+
+/** A delivery as the attempt verdict reads it: its id, its own time and its provenance. */
+export function attemptEventOf(event: DeliveredEvent): AttemptEvent {
+  return {
+    id: TriggerEventId.of(event.id),
+    eventAtUtcMs: eventInstantOf(event.time),
+    ...attemptProvenanceOf(event),
   };
 }

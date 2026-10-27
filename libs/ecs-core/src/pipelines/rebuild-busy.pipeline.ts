@@ -3,6 +3,7 @@ import {
   type BusyKey,
   type LocalDate,
   type LocationId,
+  LogEvent,
   Result,
 } from '@core/primitives';
 import { type RepositoryError } from '@core/errors';
@@ -144,12 +145,12 @@ export const rebuildBusy =
         // Surfaced for the operator, never swallowed: a persistent failure
         // here means cancelled time stays blocked. The verdict decides
         // whether the event is redelivered.
-        ports.log('error', 'barberBusy rebuild failed', { key, error });
+        ports.log('error', LogEvent.BarberBusyRebuildFailed, { key, error });
         failures.push(error);
         continue;
       }
       if (!committed.ok) {
-        ports.log('error', 'barberBusy rebuild failed', {
+        ports.log('error', LogEvent.BarberBusyRebuildFailed, {
           key,
           error: committed.error,
         });

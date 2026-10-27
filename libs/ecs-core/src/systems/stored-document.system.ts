@@ -6,6 +6,7 @@ import {
   Seat,
   StoodSeatPairs,
   TimeCoordinate,
+  WriteProvenance,
 } from '@core/components';
 import { RepositoryError } from '@core/errors';
 import {
@@ -175,6 +176,8 @@ function appointmentFault(doc: StoredDocument): string | null {
   }
   if (!isUtcOrNull(doc['bookedAtUtcMs'])) return 'bookedAtUtcMs';
   if (!isUtcOrNull(doc['arrivedAtUtcMs'])) return 'arrivedAtUtcMs';
+  const provenance = WriteProvenance.fieldFault(doc);
+  if (provenance !== null) return provenance;
   return BookingContact.fieldFault(doc);
 }
 
@@ -186,9 +189,8 @@ function customerFault(doc: StoredDocument): string | null {
   if (!StoredFields.isTextOrNull(doc['phone'])) return 'phone';
   if (!StoredFields.isTextOrNull(doc['email'])) return 'email';
   if (!UtcEpochMs.is(doc['createdAtUtcMs'])) return 'createdAtUtcMs';
-  return Tag.has(CustomerOrigin, doc['customerOrigin'])
-    ? null
-    : 'customerOrigin';
+  if (!Tag.has(CustomerOrigin, doc['customerOrigin'])) return 'customerOrigin';
+  return WriteProvenance.fieldFault(doc);
 }
 
 function busyDayFault(doc: StoredDocument): string | null {
@@ -318,12 +320,13 @@ function appointmentNote(
  *   bill and the ledger replay iterate them); the stood-pair memory
  *   (`StoodSeatPairs.fieldFault`); `revision` (a non-negative safe
  *   integer); `bookedFromAppointmentId` (an id or `null`);
- *   `bookedAtUtcMs`, `arrivedAtUtcMs` (an instant or `null`); the contact
- *   (`BookingContact.fieldFault`).
+ *   `bookedAtUtcMs`, `arrivedAtUtcMs` (an instant or `null`);
+ *   `writeOperationId` (`WriteProvenance.fieldFault`, see below); the
+ *   contact (`BookingContact.fieldFault`).
  * - `customers/{id}`: `id`; `userId` (an account id or `null` — D29's
  *   explicit link); `displayName` (a string); `phone`, `email` (a string or
  *   `null`); `createdAtUtcMs`; `customerOrigin` (a `CustomerOrigin`
- *   member).
+ *   member); `writeOperationId` (`WriteProvenance.fieldFault`).
  * - `barberBusy/{id}`: `id` (a `BusyKey` — the id IS the key); `barberId`;
  *   `localDate`; `utcEpochMs`; `blocks` (each a record and
  *   `MinuteBlock.fieldFault` clean) — a busy day feeds the collision math
@@ -348,6 +351,16 @@ function appointmentNote(
  * absent or `null` mirror although its type says `readonly CustomerId[]`;
  * no reader trusts the type there: every trigger reads the subjects through
  * {@link StoredDocumentSystem.salvage}, which reads absent / `null` as `[]`.
+ *
+ * **Write provenance (WS-4.3) — absent is admitted too.** An appointment's
+ * or a customer's `writeOperationId` is the join key from the document to
+ * the call that last wrote it (the trigger attempt lines carry it). It is
+ * checked so a stored value is always `null` or an `OperationId`
+ * (`REPOSITORY_MALFORMED` naming `writeOperationId` otherwise), but a
+ * document written before the field carries none, and no backfill invents
+ * one (Law 5): an admitted document may lack the key although its type
+ * says `OperationId | null`. No system reads it; a writer only stamps it.
+ * A busy day carries no provenance (L5) and its guard ignores the key.
  *
  * **Deliberately NOT checked** (each a query key, a repair target or a
  * display field no decision reads): `ownerUserId`, `ownerCustomerId`,

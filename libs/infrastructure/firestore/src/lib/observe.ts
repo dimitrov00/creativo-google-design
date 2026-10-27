@@ -7,7 +7,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { type Observable, map } from 'rxjs';
-import { Result, defect } from '@core/primitives';
+import { LogEvent, Result, defect } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import type { Log, LogPorts } from '@core/ports';
 import {
@@ -139,11 +139,6 @@ export function guardedReads(ports: LogPorts): ReadGuard {
   return { guardOf: StoredDocumentSystem.guardOf, log: ports.log };
 }
 
-/** The report line of a single or a strict list's refusal. */
-const REFUSED = 'malformed document refused';
-/** The report line of a row a list dropped. */
-const DROPPED = 'malformed document dropped';
-
 /**
  * How a list answers a malformed row — the ONLY source of these strings (an
  * adapter-local dictionary).
@@ -169,7 +164,7 @@ export type ListAdmission = (typeof ListAdmission)[keyof typeof ListAdmission];
  */
 function report(
   guard: ReadGuard,
-  line: string,
+  line: LogEvent,
   error: RepositoryError,
   reported: Set<string> | null,
 ): void {
@@ -206,7 +201,7 @@ export function admitted<E>(
     // Admitted field by field (or read as stored, unguarded) — the entity.
     return verdict as unknown as Result<E | null, RepositoryError>;
   }
-  report(guard, REFUSED, verdict.error, reported);
+  report(guard, LogEvent.DocumentRefused, verdict.error, reported);
   return verdict;
 }
 
@@ -258,10 +253,10 @@ export function admitCounted<E>(
       continue;
     }
     if (admission === ListAdmission.RefuseMalformed) {
-      report(guard, REFUSED, verdict.error, reported);
+      report(guard, LogEvent.DocumentRefused, verdict.error, reported);
       return verdict;
     }
-    report(guard, DROPPED, verdict.error, reported);
+    report(guard, LogEvent.DocumentDropped, verdict.error, reported);
     dropped++;
     firstRefusal ??= verdict.error;
     // Every row before this one was admitted.

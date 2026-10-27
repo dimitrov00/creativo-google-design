@@ -1,0 +1,29 @@
+# Alert: the callable failure rate (audit-hardening WS-4.2 / WS-6) over the
+# callable_failed metric of tools/ops/log-metrics.sh (label callable). A
+# refusal is an answer, not a failure: only callable.failed lines count.
+# Add a notification channel before relying on it.
+displayName: 'Creativo: callables failing (callable_failed)'
+documentation:
+  mimeType: text/markdown
+  content: >-
+    More than 5 callable failures in 5 minutes for one callable. The
+    callable label names it; each outcome line carries the operation id the
+    user's reference shows.
+combiner: OR
+conditions:
+  - displayName: 'callable_failed above 5 per 5 minutes, per callable'
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/user/callable_failed" AND resource.type="cloud_run_revision"'
+      comparison: COMPARISON_GT
+      thresholdValue: 5
+      duration: 0s
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields:
+            - metric.label.callable
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 604800s

@@ -19,9 +19,13 @@ import type { AppointmentId } from '@core/primitives';
  * The `staffEditAppointment` batch — ONE request folding every command over
  * the stored seats, claiming the revision the draft was drawn from
  * (`expectedVersion`). `true` once it landed; `false` when it was refused,
- * its refusal kept on the row.
+ * its refusal kept on the row. The INTENT only (WS-4.1): the store's
+ * writer names the act (`BookingCall.Operated`) — the id it re-sends on a
+ * retry of the same intent is its own to keep.
  */
-export type SendStaffEdit = (intent: BookingCall.StaffEdit) => Promise<boolean>;
+export type SendStaffEdit = (
+  intent: BookingCall.StaffEditIntent,
+) => Promise<boolean>;
 
 /**
  * The visit's team note, written straight through beside the batch (the
@@ -35,9 +39,10 @@ export type SaveTeamNoteText = (
 
 /**
  * One seat's tip (`recordSeatTip`, `amountCents: null` clears it) — a stamp
- * on a seat the batch KEPT, sent after it. `true` once recorded.
+ * on a seat the batch KEPT, sent after it. `true` once recorded. The
+ * intent only: the store's writer mints the call's operation id (WS-4.1).
  */
-export type SendSeatTip = (request: BookingCall.Tip) => Promise<boolean>;
+export type SendSeatTip = (request: BookingCall.TipIntent) => Promise<boolean>;
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 

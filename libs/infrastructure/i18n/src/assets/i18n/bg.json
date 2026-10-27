@@ -127,6 +127,7 @@
     "IDENTITY_OTP_CHANNEL_MISMATCH": "Входът през този канал не е достъпен. Използвай формата за вход.",
     "IDENTITY_OTP_RATE_LIMITED": "Вече ти изпратихме код. Нов можеш да поискаш след {{seconds}} сек.",
     "IDENTITY_OTP_SEND_FAILURE": "Не успяхме да изпратим кода за потвърждение. Опитай пак.",
+    "IDENTITY_OTP_SEND_UNAVAILABLE": "Кодовете за вход още не се изпращат. Свържи се със салона.",
     "IDENTITY_OTP_NOT_FOUND": "Тази заявка за код вече не съществува.",
     "IDENTITY_OTP_ALREADY_CONSUMED": "Този код вече е използван.",
     "IDENTITY_OTP_EXPIRED": "Този код е изтекъл. Можем да ти изпратим нов.",
@@ -2436,5 +2437,9 @@
       "shopHidden": "{{name}} (скрит)",
       "shopMissing": "Изтрит салон"
     }
+  },
+  "operation": {
+    "reference": "Код за справка: {{ref}}",
+    "referenceCopied": "Кодът е копиран."
   }
 }

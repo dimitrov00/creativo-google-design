@@ -46,7 +46,6 @@ import {
   utcMs,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
-import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
@@ -120,6 +119,7 @@ function fatherAndSon(): Appointment {
   });
 }
 
+/** Every move is named (WS-4.1): the attempt id, and the act's name in its text. */
 const MOVE: RescheduleAppointmentCommand = {
   appointmentId: FIXTURE_IDS.appointment,
   callerUserId: FIXTURE_IDS.client,
@@ -137,7 +137,8 @@ const MOVE: RescheduleAppointmentCommand = {
       subject: { requestedSubjectRole: RequestedSubjectRole.Self },
     },
   ],
-  attemptId: null,
+  attemptId: ATTEMPT,
+  operationId: OperationId.of(ATTEMPT),
   actor: Actor.user(FIXTURE_IDS.client),
 };
 
@@ -207,7 +208,6 @@ describe('rescheduleAppointment (emulator)', () => {
       nextId: () => `id-${++minted}`,
       hash: sha256Hex,
       ...firestoreSettingsPorts(db),
-      ...firestoreAuditPorts(db, telemetry),
       ...telemetry,
     })(cmd);
   }

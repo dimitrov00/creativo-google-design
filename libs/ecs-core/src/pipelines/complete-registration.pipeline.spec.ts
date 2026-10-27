@@ -19,6 +19,7 @@ import {
 } from '@core/components';
 import {
   IdentifierChannel,
+  OperationId,
   Result,
   UserId,
   UtcEpochMs,
@@ -91,6 +92,7 @@ const byPhone = (
   identifierChannel: IdentifierChannel.Phone,
   rawIdentifier: PHONE,
   fields: fields(submitted),
+  operationId: null,
 });
 
 const ADA = { firstName: 'Ada', lastName: 'Lovelace' } as const;
@@ -173,6 +175,8 @@ describe('completeRegistration', () => {
       ...SearchFieldsSystem.searchFields('Ada', 'Lovelace', PHONE, null),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Registration,
+      // The call sent no operation id (RU-29): the record names none.
+      writeOperationId: null,
     };
     expect(tx.plans).toEqual([
       [
@@ -198,6 +202,16 @@ describe('completeRegistration', () => {
     expect(world.displayNames.get(UID)).toBe('Ada Lovelace');
   });
 
+  it('stamps the call’s own operation id on the record it creates — the registration’s trace (WS-4.3, RU-29)', async () => {
+    const world = memoryIdentityWorld({ users: [phoneStub()] });
+    const { run } = rig({ world });
+    const operationId = OperationId.of('op-register-1');
+    expect((await run({ ...byPhone(ADA), operationId })).ok).toBe(true);
+    expect(stored(world, CUSTOMER_PATH)?.['writeOperationId']).toBe(
+      operationId,
+    );
+  });
+
   it('reads the account AND its client record in ONE getAll inside the transaction', async () => {
     const world = memoryIdentityWorld({ users: [phoneStub()] });
     const { tx, run } = rig({ world });
@@ -205,13 +219,22 @@ describe('completeRegistration', () => {
     expect(tx.transactions[0]?.reads).toEqual([USER_PATH, CUSTOMER_PATH]);
   });
 
-  it('changes exactly the audited fields today’s registered `set` changes over the stub', async () => {
+  it('changes exactly the audited fields today’s registered `set` changes over the stub — the roles it sets included (WS-3, DEP-13)', async () => {
     const world = memoryIdentityWorld({ users: [phoneStub()] });
     const before = { ...(stored(world, USER_PATH) ?? {}) };
     await rig({ world }).run(byPhone(ADA));
     expect(
       AuditSystem.changedProfileFields(before, stored(world, USER_PATH) ?? {}),
-    ).toEqual(['firstName', 'lastName']);
+    ).toEqual(['firstName', 'lastName', 'roles']);
+    // The registration row's role tags: from the stub's empty list to the client role.
+    expect(
+      AuditSystem.profileTagDelta(before, stored(world, USER_PATH) ?? {}),
+    ).toEqual({
+      profileRolesFrom: [],
+      profileRolesTo: ['client'],
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+    });
 
     const withMore = memoryIdentityWorld({ users: [phoneStub()] });
     const stub = { ...(stored(withMore, USER_PATH) ?? {}) };
@@ -220,7 +243,7 @@ describe('completeRegistration', () => {
     );
     expect(
       AuditSystem.changedProfileFields(stub, stored(withMore, USER_PATH) ?? {}),
-    ).toEqual(['firstName', 'lastName', 'email', 'birthDate']);
+    ).toEqual(['firstName', 'lastName', 'email', 'birthDate', 'roles']);
   });
 
   it('lands a spaced login phone and a mixed-case form e-mail as E.164 and lower-case — in users and in the record', async () => {
@@ -415,6 +438,7 @@ describe('completeRegistration', () => {
       identifierChannel: IdentifierChannel.Email,
       rawIdentifier: 'ada@example.com',
       fields: fields({ ...ADA, phone: '+14155552671' }),
+      operationId: null,
     });
     expect(answer.ok).toBe(true);
     expect(stored(world, USER_PATH)).toMatchObject({
@@ -641,6 +665,7 @@ describe('completeRegistration', () => {
         identifierChannel: IdentifierChannel.Email,
         rawIdentifier: 'ada@example.com',
         fields: fields({ ...ADA, phone: '+14155550999' }),
+        operationId: null,
       });
       expect(viaEmail.ok).toBe(true);
       expect(stored(world, USER_PATH)?.['phone']).toBe('+14155552671');

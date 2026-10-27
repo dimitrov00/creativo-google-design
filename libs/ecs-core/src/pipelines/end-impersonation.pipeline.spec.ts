@@ -1,20 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Actor,
+  EndReasonFields,
   ImpersonationEndReason,
   ImpersonationStatus,
   Role,
   WriteOp,
 } from '@core/components';
 import {
+  AuditEntryId,
   ImpersonationSessionId,
+  OperationId,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import { Collections, type ImpersonationSession } from '@core/entities';
+import { AuditSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
+  fixtureHash,
   impersonationSessionFixture,
   memoryStore,
   memoryTxPorts,
@@ -34,7 +40,8 @@ import {
  * session); then the session read by id in the transaction and ended on
  * the server's clock; the plan ONE `Set` of the whole ENDED body, never a
  * field transition, so the TTL adapter re-stamps `purgeAt` to
- * `endedAtUtcMs` + 30 d. Carries the legacy `EndImpersonationUseCase`
+ * `endedAtUtcMs` + 30 d — and, in the same commit, the end's audit row
+ * (audit-hardening WS-3, DEP-12). Carries the legacy `EndImpersonationUseCase`
  * spec's cases (admin end before expiry, expired end, unknown session).
  */
 
@@ -67,17 +74,31 @@ function rig(
   };
 }
 
+/** The end's audit row as the plan `Create`s it, under `hash(basis)`. */
+function auditCreateOf(
+  ended: ImpersonationSession,
+  actor: Actor,
+  operationId: OperationId | null,
+): WriteOp {
+  const plan = AuditSystem.planImpersonationEnded(ended, actor, operationId);
+  return WriteOp.create(
+    [Collections.AuditLog, AuditEntryId.of(fixtureHash(plan.idBasis))],
+    plan.row,
+  );
+}
+
 const end = (
   extra: Partial<EndImpersonationCommand> = {},
 ): EndImpersonationCommand => ({
   sessionId: SESSION,
   adminUserId: ADMIN,
   adminRoles: [Role.Admin],
+  operationId: null,
   ...extra,
 });
 
 describe('endImpersonation', () => {
-  it('ends an active session ADMIN_ENDED before its expiry — ONE Set of the whole ENDED body', async () => {
+  it('ends an active session ADMIN_ENDED before its expiry — ONE Set of the whole ENDED body and its audit row, one commit (DEP-12)', async () => {
     const at = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 5 * 60_000);
     const session = impersonationSessionFixture();
     const { tx, run } = rig([session], at);
@@ -87,6 +108,12 @@ describe('endImpersonation', () => {
         impersonationEndReason: ImpersonationEndReason.AdminEnded,
       }),
     );
+    const ended: ImpersonationSession = {
+      ...session,
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: at,
+      ...EndReasonFields.adminEnded(ADMIN),
+    };
     expect(tx.plans).toEqual([
       [
         WriteOp.set(PATH, {
@@ -96,11 +123,12 @@ describe('endImpersonation', () => {
           impersonationEndReason: ImpersonationEndReason.AdminEnded,
           endedByUserId: ADMIN,
         }),
+        auditCreateOf(ended, Actor.admin(ADMIN), null),
       ],
     ]);
   });
 
-  it('tags the reason EXPIRED when the window had already lapsed', async () => {
+  it('tags the reason EXPIRED when the window had already lapsed — on the session and on its row', async () => {
     const at = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 40 * 60_000);
     const { tx, run } = rig([impersonationSessionFixture()], at);
     expect(await run(end())).toEqual(
@@ -116,6 +144,49 @@ describe('endImpersonation', () => {
         impersonationEndReason: ImpersonationEndReason.Expired,
       },
     });
+    expect(tx.plans[0]?.[1]).toMatchObject({
+      body: {
+        recordedAtUtcMs: at,
+        auditAction: 'GOVERNANCE_IMPERSONATION_ENDED',
+        impersonationEndReason: 'EXPIRED',
+      },
+    });
+  });
+
+  it('the row names the session resource, the impersonated account and the call’s operation id — never the reason', async () => {
+    const op = OperationId.of('op-end-1');
+    const reason = 'DISTINCTIVE-reason-text-8812';
+    const session = impersonationSessionFixture({ reason });
+    const { tx, run } = rig([session]);
+    await run(end({ operationId: op }));
+    expect(tx.plans[0]).toHaveLength(2);
+    const auditOp = tx.plans[0]?.[1];
+    expect(auditOp).toMatchObject({
+      path: [Collections.AuditLog, expect.any(String)],
+      body: {
+        resourceId: `${Collections.ImpersonationSessions}/${SESSION}`,
+        auditOperationId: op,
+        impersonationSessionId: SESSION,
+        impersonationScope: session.impersonationScope,
+        impersonationExpiresAtUtcMs: session.expiresAtUtcMs,
+        impersonationEndReason: 'ADMIN_ENDED',
+        auditTarget: 'USER',
+        targetUserId: session.targetUserId,
+      },
+    });
+    expect(JSON.stringify(auditOp)).not.toContain(reason);
+  });
+
+  it('credits the sysadmin as STAFF with a role snapshot (RU-13)', async () => {
+    const { tx, run } = rig([impersonationSessionFixture()]);
+    await run(end({ adminRoles: [Role.Sysadmin] }));
+    expect(tx.plans[0]?.[1]).toMatchObject({
+      body: {
+        actorRole: 'STAFF',
+        actorUserId: ADMIN,
+        actorRoles: ['sysadmin'],
+      },
+    });
   });
 
   it('reports an unknown session as not found, writing nothing', async () => {
@@ -129,7 +200,7 @@ describe('endImpersonation', () => {
     expect(tx.plans).toEqual([]);
   });
 
-  it('refuses a second end — the first end wins', async () => {
+  it('refuses a second end — the first end wins, before any plan: no audit op, no tripwire', async () => {
     const ended = impersonationSessionFixture({
       impersonationStatus: ImpersonationStatus.Ended,
       endedAtUtcMs: FIXTURE_NOW_UTC_MS,

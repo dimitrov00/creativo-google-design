@@ -5,7 +5,11 @@ import type {
   ParsedIdentifier,
 } from '@core/components';
 import type { Result, TenantId, UserId, UtcEpochMs } from '@core/primitives';
-import type { PipelineError, RepositoryError } from '@core/errors';
+import type {
+  IdentityError,
+  PipelineError,
+  RepositoryError,
+} from '@core/errors';
 import type { AccountContact, Customer, Otp, User } from '@core/entities';
 
 /**
@@ -52,9 +56,12 @@ export type SaveOtp = (otp: Otp) => Promise<Result<void, RepositoryError>>;
 
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
- * a campaign sender (`console-otp-sender.adapter.ts`'s `consoleOtpSender`
- * writes it through `Log` until a real SMS/e-mail sender lands). The
- * destination arrives parsed —
+ * a campaign sender. Until a real SMS/e-mail sender lands, the emulator
+ * wires `console-otp-sender.adapter.ts`'s `consoleOtpSender` (it writes the
+ * code through `Log`) and a deployed project `refusing-otp-sender.adapter.ts`'s
+ * `refusingOtpSender`, which answers `IDENTITY_OTP_SEND_UNAVAILABLE` for
+ * every delivery (audit-hardening WS-0); a delivery that failed answers its
+ * `PipelineError`. The destination arrives parsed —
  * its channel is the `identifierChannel` the edge parse or the stored
  * `otpDestinationType` named (`ParsedIdentifier.ofDestination`) — so no
  * adapter ever infers an SMS from an e-mail by sniffing the string.
@@ -62,7 +69,7 @@ export type SaveOtp = (otp: Otp) => Promise<Result<void, RepositoryError>>;
 export type SendOtp = (
   destination: ParsedIdentifier,
   code: string,
-) => Promise<Result<void, PipelineError>>;
+) => Promise<Result<void, PipelineError | IdentityError.OtpSendUnavailable>>;
 
 /**
  * The OTP's randomness and hashing (functions Q3): the pipeline draws a

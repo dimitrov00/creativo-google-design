@@ -1,7 +1,7 @@
 import { type ProfileEdits, WriteOp } from '@core/components';
 import {
-  AuditEntryId,
-  defect,
+  LogEvent,
+  type OperationId,
   Result,
   type UserId,
   type UtcEpochMs,
@@ -50,6 +50,11 @@ export type UpdateProfileCommand = {
   /** The VERIFIED session's uid — an owner edits only their own account. */
   readonly callerUserId: UserId;
   readonly edits: ProfileEdits;
+  /**
+   * The call's transport operation id (WS-4.1, RU-21) — optional on the
+   * wire: absent or malformed is `null`, never refused.
+   */
+  readonly operationId: OperationId | null;
 };
 
 export type UpdateProfileAnswer = {
@@ -65,28 +70,27 @@ type ProfileDecision = {
 
 /**
  * The plan of one decided edit: the owner keys alone — or, when an audited
- * field changed, the keys with the marker stamped and the edit's row.
+ * field changed, the keys with the marker stamped and the edit's row
+ * (naming the call's transport operation id, WS-4.4).
  */
 function editWrites(
   stored: User,
   keys: Readonly<Record<string, unknown>>,
-  callerUserId: UserId,
+  cmd: UpdateProfileCommand,
   nowUtcMs: UtcEpochMs,
   hash: (input: string) => string,
 ): readonly WriteOp[] {
-  const path = [Collections.Users, callerUserId];
+  const path = [Collections.Users, cmd.callerUserId];
   const audit = AuditSystem.planOwnProfileEdit(
-    callerUserId,
+    cmd.callerUserId,
     AuditSystem.changedProfileFields(stored, { ...stored, ...keys }),
     nowUtcMs,
+    cmd.operationId,
   );
   if (audit === null) return [WriteOp.update(path, keys)];
-  const id = AuditEntryId.of(
-    hash(audit.idBasis ?? defect('an own edit’s row carries its basis')),
-  );
   return [
     WriteOp.update(path, { ...keys, profileEditedAtUtcMs: nowUtcMs }),
-    WriteOp.create([Collections.AuditLog, id], audit.row),
+    ...AuditSystem.createsOf([audit], hash),
   ];
 }
 
@@ -112,7 +116,7 @@ export const updateProfile =
               writes: editWrites(
                 stored,
                 decided.value,
-                cmd.callerUserId,
+                cmd,
                 nowUtcMs,
                 ports.hash,
               ),
@@ -120,7 +124,7 @@ export const updateProfile =
       },
     );
     if (!committed.ok) {
-      ports.log('info', 'profile.update.refused', {
+      ports.log('info', LogEvent.ProfileUpdateRefused, {
         uid: cmd.callerUserId,
         errorCode: committed.error.errorCode,
       });

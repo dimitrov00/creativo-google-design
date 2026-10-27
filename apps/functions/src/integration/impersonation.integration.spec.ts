@@ -2,11 +2,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore, Timestamp } from 'firebase-admin/firestore';
 import {
+  Actor,
+  AuditAction,
+  AuditTargetRef,
   ImpersonationEndReason,
   ImpersonationScope,
   Role,
 } from '@core/components';
-import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
+import {
+  AuditResourceId,
+  ImpersonationSessionId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import { StoredDocumentSystem } from '@core/systems';
@@ -16,6 +24,7 @@ import {
   pinnedNowUtcMs,
   recordingTelemetry,
 } from '@core/testing';
+import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
 /**
@@ -25,7 +34,10 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * a start writes ONE body whose TTL stamp is its expiry + 30 days; an end
  * writes ONE `Set` of the ENDED body, so the adapter RE-STAMPS `purgeAt` on
  * the end + 30 days (an `Update` would have kept the expiry's); a session
- * nobody holds is refused, nothing written.
+ * nobody holds is refused, nothing written. Since audit-hardening WS-3
+ * (DEP-12) each start and each end also CREATES its audit row in the same
+ * commit — credited to the admin, targeted at the impersonated user, on the
+ * session's resource, never carrying the reason; the refusal writes none.
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -83,6 +95,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       ),
       nowUtcMs: pinnedNowUtcMs(nowUtcMs),
       nextId: () => SESSION,
+      hash: sha256Hex,
       ...telemetry,
     };
   };
@@ -91,6 +104,21 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
     (
       await db.doc(`${Collections.ImpersonationSessions}/${SESSION}`).get()
     ).data();
+  const auditRows = async () =>
+    (await db.collection(Collections.AuditLog).get()).docs.map((row) =>
+      row.data(),
+    );
+  /** What every row of this session names: who, about whom, on what. */
+  const SESSION_ROW = {
+    ...Actor.admin(OWNER),
+    ...AuditTargetRef.user(CLIENT),
+    resourceId: AuditResourceId.forImpersonationSession(SESSION),
+    impersonationSessionId: SESSION,
+    impersonationScope: ImpersonationScope.Read,
+    impersonationExpiresAtUtcMs: EXPIRES,
+    // No transport id was sent (RU-21): the row names no operation.
+    auditOperationId: null,
+  };
   const purgeAtOf = (body: Record<string, unknown> | undefined): number =>
     (body?.['purgeAt'] as Timestamp).toMillis();
 
@@ -102,6 +130,8 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       impersonationScope: ImpersonationScope.Read,
       reason: 'support ticket 42',
       expiresAtUtcMs: EXPIRES,
+      // The optional transport id (RU-21): none sent.
+      operationId: null,
     });
 
   it('starts ONE session, stamped to purge 30 days after its expiry', async () => {
@@ -114,6 +144,16 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       expiresAtUtcMs: EXPIRES,
     });
     expect(purgeAtOf(body)).toBe(EXPIRES + 30 * DAY_MS);
+    // ONE audit row, committed with the session (DEP-12) — never the reason.
+    const rows = await auditRows();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        ...SESSION_ROW,
+        auditAction: AuditAction.GovernanceImpersonationStarted,
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    ]);
+    expect(JSON.stringify(rows)).not.toContain('support ticket 42');
   });
 
   it('ends it with ONE Set of the ended body — purgeAt RE-STAMPED on the end + 30 days', async () => {
@@ -123,6 +163,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
         sessionId: SESSION,
         adminUserId: OWNER,
         adminRoles: [Role.Admin],
+        operationId: null,
       }),
     ).toEqual({
       ok: true,
@@ -137,6 +178,18 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       impersonationEndReason: ImpersonationEndReason.AdminEnded,
     });
     expect(purgeAtOf(body)).toBe(ENDED + 30 * DAY_MS);
+    // The start's row and the end's, each committed with its own write.
+    const rows = await auditRows();
+    expect(rows).toHaveLength(2);
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        ...SESSION_ROW,
+        auditAction: AuditAction.GovernanceImpersonationEnded,
+        impersonationEndReason: ImpersonationEndReason.AdminEnded,
+        recordedAtUtcMs: ENDED,
+      }),
+    );
+    expect(JSON.stringify(rows)).not.toContain('support ticket 42');
   });
 
   it('refuses a session nobody holds, and writes nothing', async () => {
@@ -144,10 +197,12 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       sessionId: SESSION,
       adminUserId: OWNER,
       adminRoles: [Role.Admin],
+      operationId: null,
     });
     expect(!answer.ok && answer.error.errorCode).toBe(
       GovernanceErrorCode.EndImpersonationNotFound,
     );
     expect(await stored()).toBeUndefined();
+    expect(await auditRows()).toEqual([]);
   });
 });

@@ -2,11 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ClientIssue, ClientIssueKind, Role } from '@core/components';
 import { ClientIssueBatchRefusedReason } from '@core/errors';
+import { ClientOperationId } from '@core/primitives';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import {
   type ClientIssueInput,
   type ClientIssueReporter,
   ClientIssueSystem,
+  type TransportIssueInput,
 } from './client-issue.system';
 
 /*
@@ -22,6 +24,33 @@ import {
 
 const { scrub, frame } = ClientIssueSystem;
 
+/** The three keys WS-5 added — on the wire an old web leaves them out (RU-30). */
+const WS5_KEYS: readonly string[] = [
+  'operationId',
+  'callableName',
+  'callableErrorCode',
+];
+
+/** An issue as an old web sends it: the nine OR-34 keys alone (RU-30). */
+const nineKeys = (one: ClientIssue): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(one).filter(([key]) => !WS5_KEYS.includes(key)),
+  );
+
+const OPERATION_ID = unwrapOk(
+  ClientOperationId.parse('attempt-0123456789abcdef'),
+);
+
+/** A call that never answered as a callable, as the web's callable client reports it. */
+const transport = (): ClientIssue =>
+  issue({
+    clientIssueKind: ClientIssueKind.CallableTransportFailed,
+    errorName: 'TypeError',
+    operationId: OPERATION_ID,
+    callableName: 'commitBooking',
+    callableErrorCode: 'functions/internal',
+  });
+
 /** An issue with every text absent — a spec overrides what it is about. */
 const issue = (fields: Partial<ClientIssue> = {}): ClientIssue => ({
   clientIssueKind: ClientIssueKind.DataDocumentDropped,
@@ -33,6 +62,9 @@ const issue = (fields: Partial<ClientIssue> = {}): ClientIssue => ({
   scrubbedMessage: null,
   release: null,
   occurrences: 1,
+  operationId: null,
+  callableName: null,
+  callableErrorCode: null,
   ...fields,
 });
 
@@ -311,6 +343,29 @@ describe('ClientIssueSystem.fingerprint — one issue, one key', () => {
     );
     expect(keys.size).toBe(11);
   });
+
+  // RU-30: the callable and its code join the identity only where they
+  // exist — every OR-34 issue keeps its key (FINGERPRINT_OF_DROPPED above);
+  // the operation id never does (one per attempt: it would defeat the dedupe).
+  it('mixes the callable and its code only when either is set, and never the operation id', () => {
+    const plain = ClientIssueSystem.fingerprint(issue());
+    expect(
+      ClientIssueSystem.fingerprint(issue({ operationId: OPERATION_ID })),
+    ).toBe(plain);
+    const keys = new Set(
+      [
+        issue(),
+        issue({ callableName: 'commitBooking' }),
+        issue({ callableErrorCode: 'commitBooking' }),
+        issue({ callableName: 'commitBooking', callableErrorCode: 'x' }),
+        issue({ callableName: 'commitBookin', callableErrorCode: 'gx' }),
+      ].map(ClientIssueSystem.fingerprint),
+    );
+    expect(keys.size).toBe(5);
+    expect(
+      ClientIssueSystem.fingerprint({ ...transport(), operationId: null }),
+    ).toBe(ClientIssueSystem.fingerprint(transport()));
+  });
 });
 
 describe('ClientIssueSystem.compose — the issue a device sends', () => {
@@ -401,6 +456,103 @@ describe('ClientIssueSystem.compose — the issue a device sends', () => {
   });
 });
 
+describe('ClientIssueSystem.composeTransport — a call that never answered as a callable', () => {
+  const input = (
+    fields: Partial<TransportIssueInput> = {},
+  ): TransportIssueInput => ({
+    callableName: 'commitBooking',
+    errorName: 'TypeError',
+    callableErrorCode: 'functions/internal',
+    operationId: OPERATION_ID,
+    release: null,
+    ...fields,
+  });
+
+  it('names the callable, the thrown name and code and the operation id — no text, no frame, no route, seen once', () => {
+    expect(ClientIssueSystem.composeTransport(input())).toEqual(transport());
+    expect(
+      ClientIssueSystem.composeTransport(
+        input({ errorName: null, callableErrorCode: null, operationId: null }),
+      ),
+    ).toEqual(
+      issue({
+        clientIssueKind: ClientIssueKind.CallableTransportFailed,
+        callableName: 'commitBooking',
+      }),
+    );
+  });
+
+  it('drops a part of the wrong shape or past its cap to null — never refuses', () => {
+    expect(
+      ClientIssueSystem.composeTransport(
+        input({
+          callableName: 'Commit Booking',
+          errorName: 'not a name!',
+          callableErrorCode: 'functions internal',
+          release: 'v 1',
+        }),
+      ),
+    ).toEqual(
+      issue({
+        clientIssueKind: ClientIssueKind.CallableTransportFailed,
+        operationId: OPERATION_ID,
+      }),
+    );
+    const capped = ClientIssueSystem.composeTransport(
+      input({
+        callableName: `c${'a'.repeat(64)}`,
+        callableErrorCode: `e${'a'.repeat(64)}`,
+      }),
+    );
+    expect([capped.callableName, capped.callableErrorCode]).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it('is a condition, never an Error Reporting group', () => {
+    const line = ClientIssueSystem.logLine(transport(), REPORTER);
+    expect(line).toEqual({
+      level: 'warn',
+      msg: 'client issue CALLABLE_TRANSPORT_FAILED',
+      fields: {
+        ...transport(),
+        clientIssueFingerprint: ClientIssueSystem.fingerprint(transport()),
+        reporterRoles: ['barber', 'admin'],
+        reporterAuthed: true,
+      },
+    });
+  });
+
+  it('builds only what admission admits', () => {
+    const text = fc.option(fc.oneof(trickyText(80), fc.string()), {
+      nil: null,
+    });
+    fc.assert(
+      fc.property(
+        fc.record({
+          callableName: fc.oneof(
+            fc.constantFrom('commitBooking', 'reportClientIssues'),
+            fc.string(),
+          ),
+          errorName: text,
+          callableErrorCode: text,
+          operationId: fc.constantFrom(null, OPERATION_ID),
+          release: text,
+        }),
+        (parts) => {
+          const composed = ClientIssueSystem.composeTransport(parts);
+          expect(ClientIssueSystem.admitBatch([composed])).toEqual({
+            ok: true,
+            value: [composed],
+          });
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+});
+
 describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
   it('admits a closed batch as THE SAME array (zero mapping)', () => {
     const batch = [dropped(), uncaught(), heaviest()];
@@ -435,9 +587,11 @@ describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
         ClientIssueSystem.admitBatch(Array.from({ length: 5 }, heaviest)),
       ),
     ).toEqual(refusal(ClientIssueBatchRefusedReason.TooLarge, null, null));
-    // Ten Cyrillic messages: under 4096 code units, over 4096 bytes.
+    // Ten Cyrillic messages: under 4096 code units, over 4096 bytes — sent
+    // as an old web's nine-key issues, so the batch keeps its OR-34 weight
+    // (the weight is the payload's as sent, RU-30).
     const cyrillic = Array.from({ length: 10 }, () =>
-      issue({ scrubbedMessage: 'щ'.repeat(160) }),
+      nineKeys(issue({ scrubbedMessage: 'щ'.repeat(160) })),
     );
     expect(JSON.stringify(cyrillic).length).toBeLessThan(4096);
     expect(unwrapErr(ClientIssueSystem.admitBatch(cyrillic))).toEqual(
@@ -445,7 +599,7 @@ describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
     );
     // Four bytes for each astral character.
     const astral = Array.from({ length: 10 }, () =>
-      issue({ scrubbedMessage: '😀'.repeat(80) }),
+      nineKeys(issue({ scrubbedMessage: '😀'.repeat(80) })),
     );
     expect(JSON.stringify(astral).length).toBeLessThan(4096);
     expect(ClientIssueSystem.admitBatch(astral).ok).toBe(false);
@@ -473,6 +627,110 @@ describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
     );
   });
 
+  // RU-30: on the wire the three WS-5 keys are optional, so an old web's
+  // nine-key batch still lands after the functions deploy.
+  it('admits an old web’s nine-key issue, each absent WS-5 key read as null — a copy, the payload untouched', () => {
+    const old = deepFreeze([nineKeys(dropped()), nineKeys(uncaught())]);
+    const admitted = unwrapOk(ClientIssueSystem.admitBatch(old));
+    expect(admitted).toEqual([dropped(), uncaught()]);
+    expect(admitted).not.toBe(old);
+    for (const one of admitted) {
+      expect(Object.keys(one)).toEqual([...ClientIssue.FIELDS]);
+    }
+    expect(Object.keys(old[0] as object)).toHaveLength(9);
+  });
+
+  it('admits the nine keys and any subset of the WS-5 three, the rest read as null', () => {
+    const full = transport();
+    const subsets: readonly (readonly string[])[] = [
+      ['operationId'],
+      ['callableName'],
+      ['callableErrorCode'],
+      ['operationId', 'callableName'],
+      ['callableName', 'callableErrorCode'],
+      ['operationId', 'callableErrorCode'],
+    ];
+    for (const kept of subsets) {
+      const raw = Object.fromEntries(
+        Object.entries(full).filter(
+          ([key]) => !WS5_KEYS.includes(key) || kept.includes(key),
+        ),
+      );
+      const admitted = unwrapOk(ClientIssueSystem.admitBatch([raw]));
+      expect(admitted).toEqual([
+        {
+          ...full,
+          operationId: kept.includes('operationId') ? full.operationId : null,
+          callableName: kept.includes('callableName')
+            ? full.callableName
+            : null,
+          callableErrorCode: kept.includes('callableErrorCode')
+            ? full.callableErrorCode
+            : null,
+        },
+      ]);
+    }
+    // A batch mixing old and new issues is admitted whole, each as the struct.
+    expect(
+      unwrapOk(ClientIssueSystem.admitBatch([full, nineKeys(dropped())])),
+    ).toEqual([full, dropped()]);
+  });
+
+  it('refuses a present WS-5 key of the wrong type, shape or length, naming it', () => {
+    const cases: readonly (readonly [
+      string,
+      unknown,
+      ClientIssueBatchRefusedReason,
+    ])[] = [
+      ['operationId', 42, ClientIssueBatchRefusedReason.Shape],
+      ['operationId', 'short', ClientIssueBatchRefusedReason.Shape],
+      ['operationId', 'a b'.repeat(8), ClientIssueBatchRefusedReason.Shape],
+      ['operationId', '', ClientIssueBatchRefusedReason.Shape],
+      ['operationId', 'a'.repeat(65), ClientIssueBatchRefusedReason.TooLarge],
+      ['callableName', false, ClientIssueBatchRefusedReason.Shape],
+      ['callableName', 'CommitBooking', ClientIssueBatchRefusedReason.Shape],
+      ['callableName', 'commit-booking', ClientIssueBatchRefusedReason.Shape],
+      ['callableName', 'c'.repeat(65), ClientIssueBatchRefusedReason.TooLarge],
+      ['callableErrorCode', {}, ClientIssueBatchRefusedReason.Shape],
+      ['callableErrorCode', '/x', ClientIssueBatchRefusedReason.Shape],
+      [
+        'callableErrorCode',
+        'e'.repeat(65),
+        ClientIssueBatchRefusedReason.TooLarge,
+      ],
+    ];
+    for (const [field, value, reason] of cases) {
+      // Present on a full issue…
+      expect(refusedWith({ [field]: value })).toEqual(
+        refusal(reason, 0, field),
+      );
+      // …and alone beside an old web's nine keys.
+      expect(
+        unwrapErr(
+          ClientIssueSystem.admitBatch([
+            { ...nineKeys(dropped()), [field]: value },
+          ]),
+        ),
+      ).toEqual(refusal(reason, 0, field));
+    }
+  });
+
+  it('still refuses a missing OR-34 key and an unknown key on a nine-key issue', () => {
+    const missing = Object.fromEntries(
+      Object.entries(nineKeys(dropped())).filter(([key]) => key !== 'topFrame'),
+    );
+    expect(unwrapErr(ClientIssueSystem.admitBatch([missing]))).toEqual(
+      refusal(ClientIssueBatchRefusedReason.Shape, 0, 'topFrame'),
+    );
+    expect(
+      unwrapErr(
+        ClientIssueSystem.admitBatch([
+          { ...nineKeys(dropped()), uid: 'u-client' },
+        ]),
+      ),
+    ).toEqual(refusal(ClientIssueBatchRefusedReason.Shape, 0, null));
+  });
+
   it('refuses an unknown kind and a value of the wrong type', () => {
     expect(refusedWith({ clientIssueKind: 'SOMETHING' })).toEqual(
       refusal(ClientIssueBatchRefusedReason.Shape, 0, 'clientIssueKind'),
@@ -495,6 +753,8 @@ describe('ClientIssueSystem.admitBatch — the callable’s edge guard', () => {
       topFrame: 200,
       scrubbedMessage: 160,
       release: 64,
+      callableName: 64,
+      callableErrorCode: 64,
     });
     for (const [field, cap] of Object.entries(caps)) {
       expect(refusedWith({ [field]: '!'.repeat(cap + 1) })).toEqual(
@@ -734,12 +994,22 @@ describe('ClientIssueSystem — purity', () => {
       message: 'boom 1234',
       release: null,
     });
+    const transportInput = deepFreeze({
+      callableName: 'commitBooking',
+      errorName: 'TypeError',
+      callableErrorCode: 'functions/internal',
+      operationId: OPERATION_ID,
+      release: null,
+    });
+    const old = deepFreeze([nineKeys(dropped()), nineKeys(transport())]);
     const run = () => ({
       scrub: scrub('mail maria@example.com 0888123456'),
       frame: frame('at f (a.js?x=1:1:2)'),
       fingerprint: ClientIssueSystem.fingerprint(batch[1] as ClientIssue),
       compose: ClientIssueSystem.compose(input),
+      composeTransport: ClientIssueSystem.composeTransport(transportInput),
       admitted: ClientIssueSystem.admitBatch(batch),
+      admittedOld: ClientIssueSystem.admitBatch(old),
       packed: ClientIssueSystem.pack(batch),
       lines: batch.map((one) => ClientIssueSystem.logLine(one, reporter)),
     });

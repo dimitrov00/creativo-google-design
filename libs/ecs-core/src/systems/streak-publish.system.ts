@@ -1,6 +1,7 @@
 import {
   AuditResourceId,
   defect,
+  OperationId,
   Result,
   type StreakDefinitionId,
   LocalDate,
@@ -784,6 +785,8 @@ function auditRows(
         resourceId: AuditResourceId.forStreakDefinition(streakId),
         subjects: [],
         changeKey: requestId,
+        // The intent's request id is the act's operation id (WS-4.4).
+        operationId: OperationId.of(requestId),
         context,
       },
     ],

@@ -54,8 +54,8 @@ No interfaces with methods, no abstract classes, no `InjectionToken`s here.
 Port functions are grouped in focused bundle records declared in the ports
 tier and composed bottom-up with `&` (Law 9, `ecs-ports.md`); a pipeline's
 dependency type is an intersection of named bundles —
-`export type BookAppointmentPorts = TxPorts & PolicyReadPorts &
-AccountContactPorts & AuditAppendPorts & TelemetryPorts` — never a
+`export type BookAppointmentPorts = TxPorts & WalkInKeyPorts &
+PolicyReadPorts & AccountContactPorts & TelemetryPorts` — never a
 `Pick`/`Omit` of a larger catalogue.
 The sandwich derives the shop's `ShopNow` ONCE from `ports.nowUtcMs()` and
 the location's `timeZone` (`ZonedTimeSystem.shopNow`) and hands that to the
@@ -81,7 +81,7 @@ export const bookAppointment =
         }), // 2
     ); // 3
     if (!result.ok) {
-      ports.log('warn', 'booking.rejected', {
+      ports.log('warn', LogEvent.BookingRejected, {
         errorCode: result.error.errorCode,
       });
       return result;
@@ -97,9 +97,12 @@ export const bookAppointment =
 - The example is schematic: `BookingSystem.decide` and `ports.enqueue` stand
   for the real system calls and the future task port. The real
   `book-appointment.pipeline.ts` reads through `readBookingSet` inside
-  `ports.commit` and files its audit rows after the commit
-  (`appendAuditFacts`); the follow-up work rides the triggers on the written
-  document (`rebuildBusyOnAppointmentChange`, `dispatchClientProjections`).
+  `ports.commit` and plans its audit rows inside the same decide step
+  (`AuditSystem.commitWrites`), as `WriteOp.create` entries of the one
+  commit plan — they land with the act or not at all; a fact with no
+  verified actor is logged after the commit (`logUnaudited`). The follow-up
+  work rides the triggers on the written document
+  (`rebuildBusyOnAppointmentChange`, `dispatchClientProjections`).
 - No business math inside the pipeline; if you are comparing intervals or
   summing money here, move it to a system.
 - No SDK import (`firebase-admin`, `pino`, `@sentry/*`) inside a pipeline.
@@ -155,7 +158,7 @@ the route/handler edge, with a pure guard from the component's companion.
 — the Admin SDK ones on first use, and the console telemetry
 (`console-telemetry.adapter.ts`, over `firebase-functions/logger`; Pino and
 Sentry are not installed, and their adapters would replace it with the same
-two ports) — assemble the port bundles, call the pipeline factories, wrap
+bundles (`TelemetryPorts`, `LogContextPorts`)) — assemble the port bundles, call the pipeline factories, wrap
 each use-case function in `onCall`/`onDocument*`/`onSchedule` through the
 edge (`edge.ts`) and the wire (`wire/*.wire.ts`), and map `Result.err` →
 `HttpsError` at that edge only. If the Hono-on-Cloud-Run

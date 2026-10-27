@@ -15,16 +15,20 @@ import {
   type WriteOp,
   type BookingCall,
   RequestedSubjectRole,
+  WriteProvenance,
 } from '@core/components';
 import {
   AppointmentId,
   BarberBusyDayId,
   BusyKey,
   CustomerId,
+  LogEvent,
+  OperationId,
   Result,
   UserId,
 } from '@core/primitives';
 import {
+  BookingError,
   BookingErrorCode,
   type RepositoryError,
   RepositoryError as RepoError,
@@ -34,6 +38,7 @@ import {
 import {
   type AccountContact,
   type AuditEntry,
+  type BarberBusyDay,
   Collections,
   type Customer,
   Profile,
@@ -41,13 +46,17 @@ import {
 import type { CommitPlan } from '@core/ports';
 import {
   AuditSystem,
+  DecisionInputSystem,
   SearchFieldsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   at,
+  auditRowsOf,
   barberBusyDayFixture,
   barberScheduleFixture,
+  contendedCommit,
+  deepFreeze,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
@@ -58,6 +67,8 @@ import {
   memoryCommitPlan,
   memoryStore,
   memoryTxPorts,
+  minute,
+  recordingCommit,
   recordingTelemetry,
   serviceFixture,
   until,
@@ -122,6 +133,7 @@ function command(
     localDate: TOMORROW,
     seats: [SEAT],
     attemptId: ATTEMPT,
+    operationId: OperationId.of(ATTEMPT),
     bookedFromAppointmentId: null,
     contact: null,
     ownerUserId: FIXTURE_IDS.client,
@@ -140,25 +152,41 @@ function rig(
 ) {
   const store = memoryStore(documents);
   const tx = memoryTxPorts(store);
+  // The rows the LANDED plans created (WS-1: inside the act's commit).
   const rows: AuditEntry[] = [];
   const contactsAsked: (readonly UserId[])[] = [];
-  const run = bookAppointment({
+  const telemetry = recordingTelemetry();
+  const recorded = recordingCommit(
+    options.commit === undefined ? tx.commit : options.commit(tx.commit),
+  );
+  const pipeline = bookAppointment({
     ...tx,
-    commit:
-      options.commit === undefined ? tx.commit : options.commit(tx.commit),
+    commit: recorded.commit,
     walkInHash: fixtureWalkInHash,
-    ...recordingTelemetry(),
+    ...telemetry,
     loadPolicy: async () => options.policy ?? Result.ok(BookingPolicy.DEFAULT),
     loadAccountContacts: async (userIds) => {
       contactsAsked.push(userIds);
       return Result.ok(new Map([[FIXTURE_IDS.client, MARIA]]));
     },
-    appendAudit: async (written) => {
-      rows.push(...written);
-    },
   });
-  return { store, tx, rows, contactsAsked, run };
+  const run: typeof pipeline = async (cmd) => {
+    const answer = await pipeline(cmd);
+    rows.splice(0, rows.length, ...auditRowsOf(recorded.applied));
+    return answer;
+  };
+  return { store, tx, rows, telemetry, contactsAsked, run };
 }
+
+/** The row a commit of {@link ATTEMPT} files for the client's record (`attempt:<attemptId>`). */
+const BOOK_ROW = fixtureHash(
+  AuditSystem.rowBasis(
+    AuditAction.BookingCommitted,
+    ATTEMPT,
+    FIXTURE_IDS.customer,
+    `attempt:${ATTEMPT}`,
+  ),
+);
 
 const CUSTOMER_PATH = `${Collections.Customers}/${FIXTURE_IDS.customer}`;
 
@@ -172,7 +200,7 @@ function writeKeys(
 }
 
 describe('bookAppointment', () => {
-  it('commits ONE plan — the appointment Create, the busy Set, the FIRST_BOOKING customer Create — and audits after', async () => {
+  it('commits ONE plan — the appointment Create, the busy Set, the FIRST_BOOKING customer Create and, last, the act’s row (WS-1)', async () => {
     const { store, tx, rows, contactsAsked, run } = rig(catalogue());
     const answer = await run(command());
     expect(answer).toEqual({
@@ -185,7 +213,22 @@ describe('bookAppointment', () => {
       [WriteAction.Create, `${Collections.Appointments}/${ATTEMPT}`],
       [WriteAction.Set, `${Collections.BarberBusy}/${BUSY_KEY}`],
       [WriteAction.Create, CUSTOMER_PATH],
+      [WriteAction.Create, `${Collections.AuditLog}/${BOOK_ROW}`],
     ]);
+    expect(plan.at(-1)).toEqual({
+      writeAction: WriteAction.Create,
+      path: [Collections.AuditLog, BOOK_ROW],
+      body: {
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        resourceId: ATTEMPT,
+        auditOperationId: ATTEMPT,
+        ...Actor.user(FIXTURE_IDS.client),
+        auditAction: AuditAction.BookingCommitted,
+        placementLocationId: FIXTURE_IDS.location,
+        auditTarget: 'CUSTOMER',
+        targetCustomerId: FIXTURE_IDS.customer,
+      },
+    });
     const appointment = store.get(`${Collections.Appointments}/${ATTEMPT}`);
     expect(appointment).toMatchObject({
       locationId: FIXTURE_IDS.location,
@@ -199,6 +242,8 @@ describe('bookAppointment', () => {
       ownerCustomerId: FIXTURE_IDS.customer,
       subjectCustomerIds: [FIXTURE_IDS.customer],
       placement: 'SELF',
+      // WS-4.3: the call that wrote it — its operation id.
+      writeOperationId: OperationId.of(ATTEMPT),
     });
     expect(appointment).not.toHaveProperty('id');
     expect(store.get(`${Collections.BarberBusy}/${BUSY_KEY}`)).toEqual({
@@ -215,6 +260,7 @@ describe('bookAppointment', () => {
       ...SearchFieldsSystem.searchFields('Maria', 'Ivanova', null, null),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.FirstBooking,
+      writeOperationId: OperationId.of(ATTEMPT),
     };
     expect(store.get(CUSTOMER_PATH)).toEqual(expected);
     // The contact snapshot is read OUTSIDE the transaction, for the cart's accounts.
@@ -231,10 +277,25 @@ describe('bookAppointment', () => {
           AuditAction.BookingCommitted,
           ATTEMPT,
           FIXTURE_IDS.customer,
-          AuditSystem.changeKey.attempt(ATTEMPT, ATTEMPT),
+          AuditSystem.changeKey.attempt(ATTEMPT),
         ),
       ),
     );
+  });
+
+  it('keys the row `attempt:<attemptId>` — byte for byte today’s key, the id now required (WS-4.1, DEP-4)', async () => {
+    const { rows, run } = rig(catalogue());
+    expect((await run(command())).ok).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual([
+      fixtureHash(
+        AuditSystem.rowBasis(
+          AuditAction.BookingCommitted,
+          ATTEMPT,
+          FIXTURE_IDS.customer,
+          'attempt:attempt-0123456789abcdef',
+        ),
+      ),
+    ]);
   });
 
   it('reads the attempt FIRST, then the customer record inside the phase-one getAll — never users/{uid}', async () => {
@@ -292,6 +353,7 @@ describe('bookAppointment', () => {
       searchPrefixes: [],
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Seed,
+      ...WriteProvenance.NONE,
     };
     const { store, tx, run } = rig([
       ...catalogue(),
@@ -302,7 +364,7 @@ describe('bookAppointment', () => {
     expect(store.get(CUSTOMER_PATH)).toEqual(existing);
   });
 
-  it('answers a replayed attempt with its original booking — nothing written, the row appended again under the same id', async () => {
+  it('answers a replayed attempt with its original booking — nothing written, ZERO audit ops planned (WS-1)', async () => {
     const first = rig(catalogue());
     await first.run(command());
     const replay = rig(
@@ -317,9 +379,85 @@ describe('bookAppointment', () => {
     expect(replay.tx.transactions[0]?.reads).toEqual([
       [Collections.Appointments, ATTEMPT],
     ]);
-    expect(replay.rows.map((row) => row.id)).toEqual(
-      first.rows.map((row) => row.id),
+    expect(first.rows.map((row) => row.id)).toEqual([BOOK_ROW]);
+    expect(replay.rows).toEqual([]);
+    // The first commit's row is still the one row on the store.
+    expect(replay.store.has(`${Collections.AuditLog}/${BOOK_ROW}`)).toBe(true);
+  });
+
+  it('the same command twice on one store: the second is the replay — the same answer’s id, ZERO audit ops', async () => {
+    const { tx, rows, run } = rig(catalogue());
+    const first = await run(command());
+    const second = await run(command());
+    expect(first).toEqual({
+      ok: true,
+      value: { appointmentId: ATTEMPT, replayed: false },
+    });
+    expect(second).toEqual({
+      ok: true,
+      value: { appointmentId: ATTEMPT, replayed: true },
+    });
+    expect(tx.plans[1]).toEqual([]);
+    expect(rows.map((row) => row.id)).toEqual([BOOK_ROW]);
+  });
+
+  it('commits the booking without a row when no verified actor is known, and logs it loudly', async () => {
+    const { store, tx, rows, telemetry, run } = rig(catalogue());
+    const answer = await run(command({ actor: null }));
+    expect(answer.ok).toBe(true);
+    expect(store.has(`${Collections.Appointments}/${ATTEMPT}`)).toBe(true);
+    expect(
+      (tx.plans[0] ?? []).some((op) => op.path[0] === Collections.AuditLog),
+    ).toBe(false);
+    expect(rows).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'error',
+        msg: LogEvent.AuditActorMissing,
+        fields: {
+          action: AuditAction.BookingCommitted,
+          resourceId: ATTEMPT,
+        },
+      },
+    ]);
+  });
+
+  it('a Create of a row already there refuses the WHOLE booking as REPOSITORY_ALREADY_EXISTS — nothing applied, never retried', async () => {
+    const { store, tx, run } = rig([
+      ...catalogue(),
+      { path: [Collections.AuditLog, BOOK_ROW], body: { seeded: true } },
+    ]);
+    const answer = await run(command());
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      RepositoryErrorCode.AlreadyExists,
     );
+    expect(store.has(`${Collections.Appointments}/${ATTEMPT}`)).toBe(false);
+    expect(store.has(CUSTOMER_PATH)).toBe(false);
+    expect(store.has(`${Collections.BarberBusy}/${BUSY_KEY}`)).toBe(false);
+    expect(tx.plans).toEqual([]);
+    // Only a customer-record collision re-runs the transaction.
+    expect(tx.transactions).toHaveLength(1);
+  });
+
+  it('a contention re-run of the decision derives the identical rows — the ids from the attempt, never a mint', async () => {
+    const seen: { decisions: readonly (readonly WriteOp[])[] } = {
+      decisions: [],
+    };
+    const { run } = rig(catalogue(), {
+      commit: (base) => {
+        const contended = contendedCommit(base);
+        seen.decisions = contended.decisions;
+        return contended.commit;
+      },
+    });
+    expect((await run(command())).ok).toBe(true);
+    const decisions = seen.decisions;
+    expect(decisions).toHaveLength(2);
+    // The seat ids are minted (`nextId`) per decision; the rows are not.
+    const auditOf = (plan: readonly WriteOp[] | undefined) =>
+      (plan ?? []).filter((op) => op.path[0] === Collections.AuditLog);
+    expect(auditOf(decisions[0])).toHaveLength(1);
+    expect(auditOf(decisions[1])).toEqual(auditOf(decisions[0]));
   });
 
   it('a customer Create that meets a record created meanwhile re-runs the transaction ONCE — it re-reads and books', async () => {
@@ -386,7 +524,6 @@ describe('bookAppointment', () => {
       command({
         staffPlacement: true,
         ownerUserId: null,
-        attemptId: null,
         seats: [
           {
             ...SEAT,
@@ -458,6 +595,127 @@ describe('bookAppointment', () => {
       BookingErrorCode.SlotUnavailable,
     );
     expect(tx.plans).toEqual([]);
+  });
+
+  it('logs what the refused decision read — the LAST snapshot, handed to `decide` frozen and refused alike (WS-4.2, DEP-18)', async () => {
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(BUSY_KEY),
+      localDate: TOMORROW,
+      blocks: [MinuteBlock.of(at(10), until(11), BlockKind.Busy)],
+    });
+    // Every snapshot the read hands `decide` is frozen all the way down: a
+    // decision that wrote into its input would throw instead of refusing.
+    let lastSeen: unknown = null;
+    const { tx, telemetry, run } = rig(
+      [
+        ...catalogue(),
+        { path: [Collections.BarberBusy, BUSY_KEY], body: bodyOf(taken) },
+      ],
+      {
+        commit: (base) => (read, decide) =>
+          base(async (readTx) => {
+            const snapshot = deepFreeze(await read(readTx));
+            lastSeen = snapshot;
+            return snapshot;
+          }, decide),
+      },
+    );
+    const answer = await run(command());
+    expect(answer).toEqual(
+      Result.err(
+        BookingError.slotUnavailable(
+          FIXTURE_IDS.barber,
+          TOMORROW,
+          minute(600),
+          0,
+        ),
+      ),
+    );
+    expect(tx.plans).toEqual([]);
+    const read = lastSeen as {
+      readonly placement: { readonly busy: readonly BarberBusyDay[] };
+    };
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          ...DecisionInputSystem.slotFacts(
+            read.placement.busy,
+            {
+              barberId: FIXTURE_IDS.barber,
+              localDate: TOMORROW,
+              startMinutes: minute(600),
+            },
+            null,
+            [],
+          ),
+        },
+      },
+    ]);
+    // Flat scalars of the public busy geometry — no client, no service.
+    expect(telemetry.lines[0]?.fields).toEqual({
+      errorCode: BookingErrorCode.SlotUnavailable,
+      readBusyKeys: [BUSY_KEY],
+      collidingStartMinutes: 600,
+      collidingEndMinutes: 660,
+      readRevision: null,
+    });
+  });
+
+  it('a read re-run on contention logs the facts of the LAST read — the one the refusing `decide` saw', async () => {
+    const taken = barberBusyDayFixture({
+      id: BarberBusyDayId.of(BUSY_KEY),
+      localDate: TOMORROW,
+      blocks: [MinuteBlock.of(at(10), until(11), BlockKind.Busy)],
+    });
+    // The first read sees a free day; a rival books it before the re-read.
+    const { tx, telemetry, run, store } = rig(catalogue(), {
+      commit: (base) => (read, decide) =>
+        base(async (readTx) => {
+          await read(readTx);
+          store.set(`${Collections.BarberBusy}/${BUSY_KEY}`, bodyOf(taken));
+          return read(readTx);
+        }, decide),
+    });
+    const answer = await run(command());
+    expect(!answer.ok && answer.error.errorCode).toBe(
+      BookingErrorCode.SlotUnavailable,
+    );
+    expect(tx.plans).toEqual([]);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: BookingErrorCode.SlotUnavailable,
+          readBusyKeys: [BUSY_KEY],
+          collidingStartMinutes: 600,
+          collidingEndMinutes: 660,
+          readRevision: null,
+        },
+      },
+    ]);
+  });
+
+  it('a refusal before any busy day was read logs empty facts — never a stale read', async () => {
+    const { telemetry, run } = rig(catalogue());
+    const answer = await run(command({ locationId: 'loc-nowhere' }));
+    expect(answer.ok).toBe(false);
+    expect(telemetry.lines).toEqual([
+      {
+        level: 'warn',
+        msg: LogEvent.BookingRejected,
+        fields: {
+          errorCode: !answer.ok && answer.error.errorCode,
+          readBusyKeys: [],
+          collidingStartMinutes: null,
+          collidingEndMinutes: null,
+          readRevision: null,
+        },
+      },
+    ]);
   });
 
   it('refuses a start that did not parse (the seat’s startMinutes)', async () => {
@@ -634,6 +892,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       [WriteAction.Create, `${Collections.Appointments}/${ATTEMPT}`],
       [WriteAction.Set, `${Collections.BarberBusy}/${BUSY_KEY}`],
       [WriteAction.Create, MARIA_PATH],
+      [WriteAction.Create, `${Collections.AuditLog}/${rows[0]?.id}`],
     ]);
     const expected: Omit<Customer, 'id'> = {
       userId: null,
@@ -648,6 +907,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       ),
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.StaffWalkIn,
+      writeOperationId: OperationId.of(ATTEMPT),
     };
     expect(store.get(MARIA_PATH)).toEqual(expected);
     // The record rides the phase-one getAll — no extra round trip.
@@ -663,6 +923,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       ownerUserId: null,
       ownerCustomerId: null,
       subjectCustomerIds: [MARIA_RECORD],
+      writeOperationId: OperationId.of(ATTEMPT),
       seats: [
         {
           seatSubject: SeatSubject.WalkIn,

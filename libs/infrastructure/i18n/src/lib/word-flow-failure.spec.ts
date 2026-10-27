@@ -106,6 +106,21 @@ describe('wordFlowFailure', () => {
     );
   });
 
+  it('words the deployed sender’s refusal as its own copy, never the lockout and never a retry (WS-0)', async () => {
+    const refused = PipelineError.fromWire('failed-precondition', {
+      errorCode: IdentityErrorCode.OtpSendUnavailable,
+    });
+    expect(PipelineError.isBlocked(refused)).toBe(false);
+
+    expect(wordFlowFailure(await translocoIn('bg'), refused)).toBe(
+      'Кодовете за вход още не се изпращат. Свържи се със салона.',
+    );
+    TestBed.resetTestingModule();
+    expect(wordFlowFailure(await translocoIn('en'), refused)).toBe(
+      "Sign-in codes aren't being sent yet. Contact the shop.",
+    );
+  });
+
   it('falls back to the raw server code the catalogue has no copy for, as before', async () => {
     const transloco = await translocoIn('bg');
 

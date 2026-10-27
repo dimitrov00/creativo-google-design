@@ -19,6 +19,7 @@ import {
   SeatOccupant,
   SubjectRelationship,
   type ServiceTerms,
+  WriteProvenance,
 } from '@core/components';
 import type {
   Appointment,
@@ -78,7 +79,8 @@ export type AppointmentFixtureOverrides = Partial<
     TimeCoordinate &
     BookingContact &
     AppointmentStamps &
-    StoodSeatPairs
+    StoodSeatPairs &
+    WriteProvenance
 > & {
   readonly lifecycle?: BookingLifecycle;
 };
@@ -133,6 +135,7 @@ export function appointmentFixture(
     arrivedAtUtcMs: null,
     stoodSeatPairsRevision: null,
     stoodSeatPairs: [],
+    ...WriteProvenance.NONE,
     ...fields,
   };
   return {

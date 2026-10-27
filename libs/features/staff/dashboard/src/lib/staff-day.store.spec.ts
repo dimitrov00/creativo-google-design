@@ -21,16 +21,24 @@ import {
 import {
   AppointmentId,
   BarberId,
+  BookingStatus,
   CouponGrantId,
   CouponId,
   CustomerId,
   GrantStatus,
   LocalDate,
   LocationId,
+  PriceCents,
   Result,
+  SeatId,
   Weekday,
 } from '@core/primitives';
-import { CatalogErrorCode, RepositoryError } from '@core/errors';
+import {
+  CatalogErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import {
   Combinability,
   CouponExpiryRule,
@@ -49,16 +57,19 @@ import type {
   CouponGrant,
   ShopLocation,
 } from '@core/entities';
-import type {
-  AppointmentNotePorts,
-  AppointmentReadPorts,
-  CouponVoucherPorts,
-  MediaResolvePorts,
-  ObserveBarberDay,
+import {
+  type AppointmentNotePorts,
+  type AppointmentReadPorts,
+  Callables,
+  type CouponVoucherPorts,
+  type IdPorts,
+  type MediaResolvePorts,
+  type ObserveBarberDay,
 } from '@core/ports';
 import { CouponGrantSystem, ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  type GatewayCall,
   appointmentFixture,
   at,
   barberFixture,
@@ -129,6 +140,10 @@ async function build(
     /** The chairs' days as the read port answers them — every chair empty and clean by default. */
     readonly barberDay?: ObserveBarberDay;
     readonly couponsVouchers?: CouponVoucherPorts;
+    /** The id source each act's `operationId` is minted from — one fixed name by default. */
+    readonly ids?: IdPorts;
+    /** Every callable the store dialled, in order (each answers `PIPELINE_UNKNOWN`). */
+    readonly calls?: GatewayCall[];
   } = {},
 ): Promise<Harness> {
   localStorage.clear();
@@ -148,7 +163,7 @@ async function build(
       },
       {
         provide: ID_PORTS,
-        useValue: { nextId: () => 'operation-000000000001' },
+        useValue: options.ids ?? { nextId: () => 'operation-000000000001' },
       },
       {
         provide: LOCATION_LOAD_PORTS,
@@ -174,7 +189,10 @@ async function build(
           searchAppointmentWindow: async () => Result.ok([]),
         } satisfies AppointmentReadPorts,
       },
-      { provide: GATEWAY_PORTS, useValue: scriptedGatewayPorts() },
+      {
+        provide: GATEWAY_PORTS,
+        useValue: scriptedGatewayPorts({}, options.calls),
+      },
       {
         provide: CATALOG_PORTS,
         useValue: memoryCatalogReadPorts({
@@ -635,4 +653,105 @@ describe('StaffDayStore — the team note’s append, one transaction', () => {
     expect(await store.appendTeamNote(VISIT, 'наводнение')).toBe(false);
     expect(world.decided).toEqual([]);
   });
+});
+
+/*
+ * WS-4.1 — every act the day sends goes out NAMED: an arrival, its undo, a
+ * transition and a tip each carry an `operationId` minted here, per call (a
+ * second tap is a second act: no unsettled-name memory for these verbs,
+ * unlike the staff edit's), and a minted name the wire cannot carry is
+ * refused on the row before anything goes out.
+ */
+describe('StaffDayStore — each act goes out named (WS-4.1)', () => {
+  const VISIT = AppointmentId.of('appointment-1');
+  const SEAT = SeatId.of('seat-1');
+
+  /** A counted id source: `operation-000000000001`, `-…2`, … in call order. */
+  function countedIds(): IdPorts {
+    let n = 0;
+    return { nextId: () => `operation-${String((n += 1)).padStart(12, '0')}` };
+  }
+
+  /** The four acts, each sent once for `appointment-1`. */
+  const acts: readonly (readonly [
+    string,
+    (store: StaffDayStore) => Promise<boolean>,
+    Record<string, unknown>,
+  ])[] = [
+    [
+      Callables.MarkArrived,
+      (store) => store.markArrived(VISIT),
+      { appointmentId: VISIT },
+    ],
+    [
+      Callables.ClearArrival,
+      (store) => store.clearArrival(VISIT),
+      { appointmentId: VISIT },
+    ],
+    [
+      Callables.TransitionAppointment,
+      (store) =>
+        store.transition({
+          appointmentId: VISIT,
+          toBookingStatus: BookingStatus.NoShow,
+          cancellationReason: null,
+          seatId: SEAT,
+        }),
+      {
+        appointmentId: VISIT,
+        toBookingStatus: BookingStatus.NoShow,
+        cancellationReason: null,
+        seatId: SEAT,
+      },
+    ],
+    [
+      Callables.RecordSeatTip,
+      (store) =>
+        store.recordTip({
+          appointmentId: VISIT,
+          seatId: SEAT,
+          amountCents: unwrapOk(PriceCents.of(500)),
+        }),
+      { appointmentId: VISIT, seatId: SEAT, amountCents: 500 },
+    ],
+  ];
+
+  it.each(acts)(
+    '%s carries its intent and a freshly minted operationId — a second tap a new one',
+    async (callable, send, intent) => {
+      const calls: GatewayCall[] = [];
+      const { store } = await build({ ids: countedIds(), calls });
+
+      // The scripted gateway answers PIPELINE_UNKNOWN: refused, or lost.
+      expect(await send(store)).toBe(false);
+      expect(await send(store)).toBe(false);
+
+      expect(calls).toEqual([
+        {
+          callable,
+          input: { ...intent, operationId: 'operation-000000000001' },
+        },
+        {
+          callable,
+          input: { ...intent, operationId: 'operation-000000000002' },
+        },
+      ]);
+    },
+  );
+
+  it.each(acts)(
+    '%s refuses a minted name the call cannot carry — nothing goes out, the row says why',
+    async (_callable, send) => {
+      const calls: GatewayCall[] = [];
+      const { store } = await build({ ids: { nextId: () => 'short' }, calls });
+
+      expect(await send(store)).toBe(false);
+
+      expect(calls).toEqual([]);
+      expect(store.errorFor(VISIT)).toEqual(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      );
+      expect(store.isPending(VISIT)).toBe(false);
+    },
+  );
 });

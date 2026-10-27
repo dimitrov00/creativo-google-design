@@ -1,14 +1,20 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  AccountStatus,
   Actor,
   type BackfillCall,
   BackfillJobName,
   SystemSource,
   AuditAction,
   AuditContext,
+  AuditedProfileField,
   AuditTarget,
   AuditTargetRef,
+  EndReasonFields,
+  GovernedCollection,
+  ImpersonationScope,
+  ImpersonationStatus,
   RegistrationField,
   Role,
   SeatLabel,
@@ -16,13 +22,19 @@ import {
   SeatSubject,
   SubjectRelationship,
   EditCommand,
+  StaffEditDelta,
 } from '@core/components';
 import {
   DurationMinutes,
   AppointmentId,
+  AttendanceState,
+  AuditEntryId,
   AuditResourceId,
   BarberId,
+  BookingStatus,
+  ClientOperationId,
   CustomerId,
+  ImpersonationSessionId,
   OperationId,
   PublishRequestId,
   SeatId,
@@ -32,6 +44,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { GovernanceErrorCode } from '@core/errors';
+import { Collections, type ImpersonationSession } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,
   deepFreeze,
@@ -43,7 +56,12 @@ import {
   seatFixture,
   customerOf,
 } from '@core/testing';
-import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
+import {
+  type AuditFact,
+  type AuditSubject,
+  AuditSystem,
+  type ProfileChange,
+} from './audit.system';
 
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
@@ -68,12 +86,21 @@ const AT = utcMs('2026-09-25T08:00:00Z');
 const APPT_1 = AuditResourceId.forAppointment(AppointmentId.of('appt-1'));
 const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
+const OP = OperationId.of('op-0123456789abcdef');
+/** A stand-in digest: the hash is a port; the plan must hash exactly the basis. */
+const hashOf = (input: string): string => `h(${input.length}:${input})`;
+
 function fact(overrides: Partial<AuditFact> = {}): AuditFact {
   return {
     resourceId: APPT_1,
     subjects: [account('maria')],
-    changeKey: null,
-    context: AuditContext.staffEdit(AuditAction.BookingStaffMove, 3),
+    changeKey: 'operation:op-0123456789abcdef',
+    operationId: OP,
+    context: AuditContext.staffEdit(
+      AuditAction.BookingStaffMove,
+      3,
+      StaffEditDelta.NONE,
+    ),
     ...overrides,
   };
 }
@@ -191,27 +218,39 @@ describe('AuditSystem.plan — one row per person', () => {
     });
   });
 
-  it('bases each row id on its change, once a change key is given — and leaves it to the pipeline without one', () => {
+  it('bases each row id on its change — every fact carries its key (RU-41), so no row is left to a minted id', () => {
     const subjects = [account('maria'), account('stefan')];
     const keyed = unwrapOk(
-      AuditSystem.plan([fact({ subjects, changeKey: 'revision:4' })], ivan, AT),
+      AuditSystem.plan(
+        [fact({ subjects, changeKey: 'operation:op-4' })],
+        ivan,
+        AT,
+      ),
     );
     expect(keyed.map((r) => r.idBasis)).toEqual([
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
         cus('maria'),
-        'revision:4',
+        'operation:op-4',
       ),
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
         cus('stefan'),
-        'revision:4',
+        'operation:op-4',
       ),
     ]);
-    const random = unwrapOk(AuditSystem.plan([fact({ subjects })], ivan, AT));
-    expect(random.map((r) => r.idBasis)).toEqual([null, null]);
+  });
+
+  it('copies the fact’s operation onto every row it fans out to (WS-4.4) — null stays null', () => {
+    const subjects = [account('maria'), account('stefan')];
+    const named = unwrapOk(AuditSystem.plan([fact({ subjects })], ivan, AT));
+    expect(named.map((r) => r.row.auditOperationId)).toEqual([OP, OP]);
+    const unnamed = unwrapOk(
+      AuditSystem.plan([fact({ subjects, operationId: null })], ivan, AT),
+    );
+    expect(unnamed.map((r) => r.row.auditOperationId)).toEqual([null, null]);
   });
 
   it('carries the target slice and the instant onto the flat row: NONE when nobody, the context as given', () => {
@@ -230,6 +269,7 @@ describe('AuditSystem.plan — one row per person', () => {
     expect(rows[0]?.row).toEqual({
       recordedAtUtcMs: AT,
       resourceId: 'appt-1',
+      auditOperationId: 'op-0123456789abcdef',
       actorRole: 'SYSTEM',
       actorSystemSource: 'FIXTURE',
       auditAction: 'BOOKING_STAFF_ARRIVED',
@@ -335,21 +375,36 @@ describe('audit context carries codes, never free text (T5)', () => {
       AuditAction.BookingStaffCancelled,
       'OTHER',
       SeatId.of('s1'),
+      {
+        transitionFromBookingStatus: BookingStatus.Confirmed,
+        transitionFromStatusAtUtcMs: AT,
+        transitionFromAttendanceState: AttendanceState.Scheduled,
+      },
     );
     expect(context).toEqual({
       auditAction: 'BOOKING_STAFF_CANCELLED',
       transitionReason: 'OTHER',
       transitionSeatId: 's1',
+      transitionFromBookingStatus: 'CONFIRMED',
+      transitionFromStatusAtUtcMs: AT,
+      transitionFromAttendanceState: 'SCHEDULED',
     });
   });
 
-  it('records nothing when there is nothing to record', () => {
+  it('records nothing when there is nothing to record — but the state it left', () => {
     expect(
-      AuditContext.transition(AuditAction.BookingStaffCompleted, null, null),
+      AuditContext.transition(AuditAction.BookingStaffCompleted, null, null, {
+        transitionFromBookingStatus: BookingStatus.Confirmed,
+        transitionFromStatusAtUtcMs: AT,
+        transitionFromAttendanceState: null,
+      }),
     ).toEqual({
       auditAction: 'BOOKING_STAFF_COMPLETED',
       transitionReason: null,
       transitionSeatId: null,
+      transitionFromBookingStatus: 'CONFIRMED',
+      transitionFromStatusAtUtcMs: AT,
+      transitionFromAttendanceState: null,
     });
   });
 });
@@ -368,7 +423,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(basis(parts)).toBe(basis({ ...parts }));
     expect(basis(parts)).toBe(
       JSON.stringify([
-        'audit-row/v1',
+        'audit-row/v2',
         'booking.committed',
         'appt-1',
         'maria',
@@ -389,7 +444,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
             AuditSystem.rowBasis(action, resourceId, targetUserId, changeKey),
           );
           expect(parsed).toEqual([
-            'audit-row/v1',
+            'audit-row/v2',
             action,
             resourceId,
             targetUserId,
@@ -422,27 +477,46 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     );
   });
 
-  it('a retried attempt derives the same key, verb by verb — no per-attempt instant the verb does not carry', () => {
+  it('a retried attempt derives the same key, verb by verb — from the act’s operation id, never an instant (WS-1, RU-6)', () => {
     const keys = AuditSystem.changeKey;
-    const appt = AppointmentId.of('appt-1');
-    expect(keys.attempt('abc', appt)).toBe('attempt:abc');
-    expect(keys.attempt(null, appt)).toBe('attempt:appt-1');
-    expect(keys.move('m1')).toBe('move:m1');
-    expect(keys.revision(4)).toBe('revision:4');
-    expect(keys.staffEdit(OperationId.of('op-1'), 4)).toBe('operation:op-1');
-    expect(keys.staffEdit(null, 4)).toBe('revision:4');
-    expect(keys.cancelled(at(123))).toBe('cancelled:123');
-    expect(keys.transition(SeatId.of('s1'), at(9))).toBe('transition:s1:9');
-    expect(keys.transition(null, at(9))).toBe('transition:party:9');
-    expect(keys.arrived(at(5))).toBe('arrived:5');
-    expect(keys.unarrived(at(5))).toBe('unarrived:5');
-    expect(keys.tip(SeatId.of('s1'), at(7))).toBe('tip:s1:7');
+    const op = OperationId.of('op-1');
+    expect(keys.attempt(AppointmentId.of('abc'))).toBe('attempt:abc');
+    expect(
+      keys.move(unwrapOk(ClientOperationId.parse('m1m1m1m1m1m1m1m1'))),
+    ).toBe('move:m1m1m1m1m1m1m1m1');
+    expect(keys.staffEdit(op)).toBe('operation:op-1');
+    expect(keys.cancel(op)).toBe('cancel:op-1');
+    expect(keys.transition(op, SeatId.of('s1'))).toBe('transition:op-1:s1');
+    expect(keys.transition(op, null)).toBe('transition:op-1');
+    expect(keys.arrived(op)).toBe('arrived:op-1');
+    expect(keys.unarrived(op)).toBe('unarrived:op-1');
+    expect(keys.tip(op, SeatId.of('s1'))).toBe('tip:op-1:s1');
+    expect(keys.backfillFailed('minted-1')).toBe('backfill-failed:minted-1');
     expect(keys.publish(PublishRequestId.of('req-1'))).toBe('req-1');
     expect(keys.profile(TriggerEventId.of('evt-1'))).toBe('evt-1');
+    expect(keys.impersonationStarted(ImpersonationSessionId.of('imp-1'))).toBe(
+      'impersonation-start:imp-1',
+    );
+    expect(keys.impersonationEnded(ImpersonationSessionId.of('imp-1'))).toBe(
+      'impersonation-end:imp-1',
+    );
+  });
+
+  it('keeps two acts apart however close in time — and a seat act apart from the party act', () => {
+    const keys = AuditSystem.changeKey;
+    const a = OperationId.of('op-a');
+    const b = OperationId.of('op-b');
+    expect(keys.cancel(a)).not.toBe(keys.cancel(b));
+    expect(keys.transition(a, null)).not.toBe(
+      keys.transition(a, SeatId.of('s1')),
+    );
+    expect(keys.tip(a, SeatId.of('s1'))).not.toBe(keys.tip(a, SeatId.of('s2')));
+    // The arrival pair keeps its two verb words: an undo is its own act.
+    expect(keys.arrived(a)).not.toBe(keys.unarrived(a));
   });
 });
 
-/* ── The profile trigger (audit-profile-changes.ts) ──────────────────── */
+/* ── The users half of the document-change trigger (audit-profile-changes.ts) ── */
 
 describe('AuditSystem.changedProfileFields — names, never values', () => {
   it('lists the audited fields whose value changed, in a fixed order', () => {
@@ -463,7 +537,7 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
     ).toEqual(['birthDate']);
   });
 
-  it('ignores fields other writers own — roles and status are audited by their callables', () => {
+  it('lists roles and accountStatus too, appended — no writer audits them on its own (WS-3, DEP-13)', () => {
     expect(
       AuditSystem.changedProfileFields(
         // A provisioned stub's server-owned keys, flat at the root…
@@ -474,7 +548,7 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
           searchName: null,
           searchPrefixes: [],
         },
-        // …set over by a registered, blocked body: no audited field among them.
+        // …set over by a registered, blocked body: roles and status changed.
         {
           registrationState: 'REGISTERED',
           roles: ['barber'],
@@ -485,25 +559,67 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
           searchPrefixes: ['b'],
         },
       ),
+    ).toEqual(['roles', 'accountStatus']);
+    // The other server-owned keys are still nobody's row.
+    expect(
+      AuditSystem.changedProfileFields(
+        { registrationState: 'PROVISIONED', searchPrefixes: [] },
+        { registrationState: 'REGISTERED', searchPrefixes: ['b'] },
+      ),
     ).toEqual([]);
   });
 
-  it('never lets a value into the row context, whatever the profile held', () => {
+  it('reads an empty roles list as "no value" — the stub lists nothing; the stored order is the registration five first', () => {
+    expect(AuditSystem.changedProfileFields({}, { roles: [] })).toEqual([]);
+    expect(AuditSystem.changedProfileFields({ roles: [] }, {})).toEqual([]);
+    expect(
+      AuditSystem.changedProfileFields({}, { accountStatus: 'ACTIVE' }),
+    ).toEqual(['accountStatus']);
+    expect(
+      AuditSystem.changedProfileFields(
+        { roles: ['client'] },
+        { roles: [], email: 'a@b.bg', accountStatus: 'ACTIVE' },
+      ),
+    ).toEqual(['email', 'roles', 'accountStatus']);
+  });
+
+  it('never lets a value into the row context, whatever the profile held — the tags carry closed vocabularies only', () => {
     const FIELDS = ['firstName', 'lastName', 'phone', 'email', 'birthDate'];
+    const AUDITED = [...FIELDS, 'roles', 'accountStatus'];
     const value = fc.oneof(
       fc.constant(undefined),
       fc.constant(null),
       fc.string({ minLength: 1, maxLength: 12 }),
     );
-    const profile = fc.record(
-      Object.fromEntries(FIELDS.map((f) => [f, value])),
+    // Roles and a status as a writer may spell them — known, unknown or junk.
+    const roles = fc.oneof(
+      fc.constant(undefined),
+      fc.constant(null),
+      fc.array(
+        fc.oneof(
+          fc.constantFrom(...Object.values(Role)),
+          fc.string({ minLength: 1, maxLength: 12 }),
+        ),
+        { maxLength: 4 },
+      ),
     );
+    const status = fc.oneof(
+      fc.constant(undefined),
+      fc.constantFrom('ACTIVE', 'BLOCKED'),
+      fc.string({ minLength: 1, maxLength: 12 }),
+    );
+    const profile = fc.record({
+      ...Object.fromEntries(FIELDS.map((f) => [f, value])),
+      roles,
+      accountStatus: status,
+    });
     fc.assert(
       fc.property(profile, profile, (before, after) => {
         const fields = AuditSystem.changedProfileFields(before, after);
         const plan = unwrapOk(
           AuditSystem.planProfileChange(
             {
+              governedCollection: GovernedCollection.Users,
               eventId: TriggerEventId.of('evt-1'),
               eventAtUtcMs: AT,
               ownerUserId: UserId.of('maria'),
@@ -513,6 +629,7 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
               fields,
               beforeProfileEditedAtUtcMs: null,
               afterProfileEditedAtUtcMs: null,
+              ...AuditSystem.profileTagDelta(before, after),
             },
             AT,
           ),
@@ -525,9 +642,117 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
           auditAction: 'PROFILE_UPDATED',
           profileFields: fields,
         });
-        for (const name of fields) expect(FIELDS).toContain(name);
+        for (const name of fields) expect(AUDITED).toContain(name);
+        const row = plan?.row as unknown as Record<string, unknown>;
+        // Each tag pair is set iff its field is named.
+        expect(row['profileRolesFrom'] !== null).toBe(fields.includes('roles'));
+        expect(row['profileRolesTo'] !== null).toBe(fields.includes('roles'));
+        // An unchanged status leaves its pair null (a changed one may still
+        // read null on a side whose status is unknown).
+        if (!fields.includes('accountStatus')) {
+          expect(row['profileAccountStatusFrom']).toBeNull();
+          expect(row['profileAccountStatusTo']).toBeNull();
+        }
+        // Nothing but role tags and status tags ever reaches them.
+        const roleLists = [
+          row['profileRolesFrom'],
+          row['profileRolesTo'],
+        ] as readonly (readonly unknown[] | null)[];
+        for (const list of roleLists) {
+          for (const role of list ?? []) {
+            expect(Object.values(Role)).toContain(role);
+          }
+        }
+        for (const tag of [
+          row['profileAccountStatusFrom'],
+          row['profileAccountStatusTo'],
+        ]) {
+          expect([null, 'ACTIVE', 'BLOCKED']).toContain(tag);
+        }
       }),
     );
+  });
+});
+
+describe('AuditSystem.profileTagDelta — the role and status tags, before and after (WS-3)', () => {
+  it('leaves every pair null when neither roles nor accountStatus changed', () => {
+    expect(
+      AuditSystem.profileTagDelta(
+        { firstName: 'Мария', roles: ['barber'], accountStatus: 'ACTIVE' },
+        { firstName: 'Мариа', roles: ['barber'], accountStatus: 'ACTIVE' },
+      ),
+    ).toEqual({
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+    });
+    // An empty list is "no value" on both sides.
+    expect(
+      AuditSystem.profileTagDelta({ roles: [] }, {}).profileRolesFrom,
+    ).toBeNull();
+  });
+
+  it('sets the roles pair to each side’s known roles when roles changed — unknown strings dropped', () => {
+    expect(
+      AuditSystem.profileTagDelta(
+        { roles: ['client'] },
+        { roles: ['barber', 'admin', 'root', 'barber'] },
+      ),
+    ).toEqual({
+      profileRolesFrom: ['client'],
+      profileRolesTo: ['barber', 'admin'],
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+    });
+    // Registration sets the stub's empty list: from nothing to a role.
+    expect(
+      AuditSystem.profileTagDelta({ roles: [] }, { roles: ['client'] }),
+    ).toMatchObject({ profileRolesFrom: [], profileRolesTo: ['client'] });
+    // A non-list holds no role.
+    expect(
+      AuditSystem.profileTagDelta({ roles: 'admin' }, { roles: ['admin'] }),
+    ).toMatchObject({ profileRolesFrom: [], profileRolesTo: ['admin'] });
+  });
+
+  it('sets the status pair when accountStatus changed — an absent or unknown side is null', () => {
+    expect(
+      AuditSystem.profileTagDelta(
+        { accountStatus: 'ACTIVE' },
+        { accountStatus: 'BLOCKED' },
+      ),
+    ).toEqual({
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: 'ACTIVE',
+      profileAccountStatusTo: 'BLOCKED',
+    });
+    // The provisioned stub's creation: nothing before, ACTIVE after.
+    expect(
+      AuditSystem.profileTagDelta({}, { accountStatus: 'ACTIVE', roles: [] }),
+    ).toEqual({
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: 'ACTIVE',
+    });
+    expect(
+      AuditSystem.profileTagDelta(
+        { accountStatus: 'SUSPENDED' },
+        { accountStatus: 'ACTIVE' },
+      ),
+    ).toMatchObject({
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: 'ACTIVE',
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const before = deepFreeze({ roles: ['client'], accountStatus: 'ACTIVE' });
+    const after = deepFreeze({ roles: ['barber'], accountStatus: 'BLOCKED' });
+    const once = AuditSystem.profileTagDelta(before, after);
+    expect(AuditSystem.profileTagDelta(before, after)).toEqual(once);
+    expect(before).toEqual({ roles: ['client'], accountStatus: 'ACTIVE' });
   });
 });
 
@@ -539,57 +764,70 @@ describe('AuditSystem.profileAction', () => {
   });
 });
 
-describe('AuditSystem.profileWriter — who wrote it, from the auth context', () => {
+describe('AuditSystem.writerOf — who wrote it, from the auth context (RU-17: was profileWriter)', () => {
   it('credits the end user a client-SDK write came from', () => {
-    expect(AuditSystem.profileWriter('api_key', 'maria-uid')).toEqual(
+    expect(AuditSystem.writerOf('api_key', 'maria-uid')).toEqual(
       Actor.user(UserId.of('maria-uid')),
     );
   });
 
   it('credits the uid, not the profile owner, when somebody else wrote it', () => {
-    expect(AuditSystem.profileWriter('api_key', 'someone-else')).toEqual(
+    expect(AuditSystem.writerOf('api_key', 'someone-else')).toEqual(
       Actor.user(UserId.of('someone-else')),
     );
   });
 
   it('attributes an Admin SDK write to the process, whatever the id says', () => {
     expect(
-      AuditSystem.profileWriter(
+      AuditSystem.writerOf(
         'service_account',
         'fn@project.iam.gserviceaccount.com',
       ),
     ).toEqual(Actor.system(SystemSource.AdminSdk));
     // The tag itself reads the same as the platform's lower-case spelling.
-    expect(AuditSystem.profileWriter('SERVICE_ACCOUNT', null)).toEqual(
+    expect(AuditSystem.writerOf('SERVICE_ACCOUNT', null)).toEqual(
       Actor.system(SystemSource.AdminSdk),
     );
   });
 
   it('attributes a platform write to the platform', () => {
-    expect(AuditSystem.profileWriter('system', null)).toEqual(
+    expect(AuditSystem.writerOf('system', null)).toEqual(
       Actor.system(SystemSource.FirestoreSystem),
     );
   });
 
   it('does not guess when the id is missing or not a uid (the emulator reports a fake e-mail)', () => {
-    expect(
-      AuditSystem.profileWriter('unknown', 'fake-auth-id@gmail.com'),
-    ).toEqual(Actor.system(SystemSource.UnattributedUnknown));
-    expect(AuditSystem.profileWriter('api_key', null)).toEqual(
-      Actor.system(SystemSource.UnattributedApiKey),
-    );
-    expect(AuditSystem.profileWriter('unauthenticated', null)).toEqual(
-      Actor.system(SystemSource.UnattributedUnauthenticated),
-    );
-    expect(AuditSystem.profileWriter('something_new', '')).toEqual(
+    expect(AuditSystem.writerOf('unknown', 'fake-auth-id@gmail.com')).toEqual(
       Actor.system(SystemSource.UnattributedUnknown),
     );
+    expect(AuditSystem.writerOf('api_key', null)).toEqual(
+      Actor.system(SystemSource.UnattributedApiKey),
+    );
+    expect(AuditSystem.writerOf('unauthenticated', null)).toEqual(
+      Actor.system(SystemSource.UnattributedUnauthenticated),
+    );
+    expect(AuditSystem.writerOf('something_new', '')).toEqual(
+      Actor.system(SystemSource.UnattributedUnknown),
+    );
+  });
+
+  it('is pure: same input → same output', () => {
+    for (const [type, id] of [
+      ['api_key', 'maria-uid'],
+      ['service_account', null],
+      ['unknown', 'fake-auth-id@gmail.com'],
+    ] as const) {
+      expect(AuditSystem.writerOf(type, id)).toEqual(
+        AuditSystem.writerOf(type, id),
+      );
+    }
   });
 });
 
 describe('AuditSystem.planProfileChange — one row per event', () => {
   const EVENT_AT = utcMs('2026-09-25T08:00:00.123Z');
-  const change = {
+  const change: ProfileChange = {
+    governedCollection: GovernedCollection.Users,
     eventId: TriggerEventId.of('evt-1f2e'),
     eventAtUtcMs: EVENT_AT,
     ownerUserId: UserId.of('maria'),
@@ -599,6 +837,10 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     fields: [RegistrationField.FirstName, RegistrationField.LastName],
     beforeProfileEditedAtUtcMs: null,
     afterProfileEditedAtUtcMs: null,
+    profileRolesFrom: null,
+    profileRolesTo: null,
+    profileAccountStatusFrom: null,
+    profileAccountStatusTo: null,
   };
 
   it('keys the row by the event id, so a redelivery lands on the same document', () => {
@@ -628,6 +870,44 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
       profileFields: ['firstName', 'lastName'],
       actorRole: 'SYSTEM',
       actorSystemSource: 'ADMIN_SDK',
+    });
+    // A trigger row names no operation (WS-4.4).
+    expect(plan?.row.auditOperationId).toBeNull();
+    // No role or status moved: the four tags stay null (WS-3).
+    expect(plan?.row).toMatchObject({
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
+    });
+  });
+
+  it('carries the role and status tags the decoder found (WS-3, DEP-13) — the lists copied', () => {
+    const rolesTo: Role[] = [Role.Barber];
+    const plan = unwrapOk(
+      AuditSystem.planProfileChange(
+        {
+          ...change,
+          fields: [
+            AuditedProfileField.Roles,
+            AuditedProfileField.AccountStatus,
+          ],
+          profileRolesFrom: [Role.Client],
+          profileRolesTo: rolesTo,
+          profileAccountStatusFrom: AccountStatus.Active,
+          profileAccountStatusTo: AccountStatus.Blocked,
+        },
+        AT,
+      ),
+    );
+    rolesTo.push(Role.Admin);
+    expect(plan?.row).toMatchObject({
+      auditAction: 'PROFILE_UPDATED',
+      profileFields: ['roles', 'accountStatus'],
+      profileRolesFrom: ['client'],
+      profileRolesTo: ['barber'],
+      profileAccountStatusFrom: 'ACTIVE',
+      profileAccountStatusTo: 'BLOCKED',
     });
   });
 
@@ -760,16 +1040,23 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
       OWNER,
       ['firstName', 'birthDate'],
       EDITED_AT,
+      OP,
     );
     expect(plan?.row).toMatchObject({
       recordedAtUtcMs: EDITED_AT,
       resourceId: 'users/maria',
+      auditOperationId: OP,
       auditAction: 'PROFILE_UPDATED',
       profileFields: ['firstName', 'birthDate'],
       actorRole: 'USER',
       actorUserId: 'maria',
       auditTarget: 'USER',
       targetUserId: 'maria',
+      // An own edit never touches roles or status (WS-3).
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
     });
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
@@ -782,12 +1069,190 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
   });
 
   it('plans nothing for an edit that changed no audited field', () => {
-    expect(AuditSystem.planOwnProfileEdit(OWNER, [], EDITED_AT)).toBeNull();
+    expect(AuditSystem.planOwnProfileEdit(OWNER, [], EDITED_AT, OP)).toBeNull();
+  });
+
+  it('names no operation when the call sent none (RU-21: optional on the wire)', () => {
+    expect(
+      AuditSystem.planOwnProfileEdit(OWNER, ['lastName'], EDITED_AT, null)?.row
+        .auditOperationId,
+    ).toBeNull();
   });
 
   it('keys each landed edit by its owner and instant', () => {
     expect(AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT)).toBe(
       `profile-edit:maria:${EDITED_AT}`,
+    );
+  });
+});
+
+describe('AuditSystem.planImpersonationStarted / planImpersonationEnded — the session rows (WS-3, DEP-12)', () => {
+  const SESSION = ImpersonationSessionId.of('imp-7');
+  const STARTED_AT = utcMs('2026-09-25T08:00:00.000Z');
+  const EXPIRES_AT = utcMs('2026-09-25T09:00:00.000Z');
+  const ENDED_AT = utcMs('2026-09-25T08:30:00.000Z');
+  /** A reason nobody may ever find in a row (free text, T5 / R36). */
+  const SECRET = 'XYZZY-a-distinctive-reason-417';
+  const active: ImpersonationSession = {
+    id: SESSION,
+    adminUserId: UserId.of('ivan'),
+    targetUserId: UserId.of('maria'),
+    impersonationScope: ImpersonationScope.Write,
+    reason: SECRET,
+    startedAtUtcMs: STARTED_AT,
+    expiresAtUtcMs: EXPIRES_AT,
+    impersonationStatus: ImpersonationStatus.Active,
+  };
+  const ended = (reason: EndReasonFields): ImpersonationSession => ({
+    ...active,
+    impersonationStatus: ImpersonationStatus.Ended,
+    endedAtUtcMs: ENDED_AT,
+    ...reason,
+  });
+  const admin = Actor.forCaller(UserId.of('ivan'), [Role.Admin, Role.Barber]);
+  const sysadmin = Actor.forCaller(UserId.of('ops-1'), [Role.Sysadmin]);
+
+  it('a start row: the session resource, the impersonated account as target, the scope and window — stamped at the start', () => {
+    const plan = AuditSystem.planImpersonationStarted(active, admin, OP);
+    expect(plan.row).toEqual({
+      recordedAtUtcMs: STARTED_AT,
+      resourceId: `${Collections.ImpersonationSessions}/imp-7`,
+      auditOperationId: OP,
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'ivan',
+      auditAction: 'GOVERNANCE_IMPERSONATION_STARTED',
+      impersonationSessionId: 'imp-7',
+      impersonationScope: 'WRITE',
+      impersonationExpiresAtUtcMs: EXPIRES_AT,
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
+    expect(plan.row.resourceId).toBe(
+      AuditResourceId.forImpersonationSession(SESSION),
+    );
+    expect(plan.idBasis).toBe(
+      AuditSystem.rowBasis(
+        'GOVERNANCE_IMPERSONATION_STARTED',
+        'impersonationSessions/imp-7',
+        'maria',
+        'impersonation-start:imp-7',
+      ),
+    );
+  });
+
+  it('an end row: the end reason, stamped at the end; the same resource and target', () => {
+    const plan = AuditSystem.planImpersonationEnded(
+      ended(EndReasonFields.adminEnded(UserId.of('ivan'))),
+      admin,
+      OP,
+    );
+    expect(plan.row).toEqual({
+      recordedAtUtcMs: ENDED_AT,
+      resourceId: 'impersonationSessions/imp-7',
+      auditOperationId: OP,
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'ivan',
+      auditAction: 'GOVERNANCE_IMPERSONATION_ENDED',
+      impersonationSessionId: 'imp-7',
+      impersonationScope: 'WRITE',
+      impersonationExpiresAtUtcMs: EXPIRES_AT,
+      impersonationEndReason: 'ADMIN_ENDED',
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
+    expect(plan.idBasis).toBe(
+      AuditSystem.rowBasis(
+        'GOVERNANCE_IMPERSONATION_ENDED',
+        'impersonationSessions/imp-7',
+        'maria',
+        'impersonation-end:imp-7',
+      ),
+    );
+    // The start and the end of one session are two rows, never one.
+    expect(plan.idBasis).not.toBe(
+      AuditSystem.planImpersonationStarted(active, admin, OP).idBasis,
+    );
+  });
+
+  it('names the call’s operation, or none when the call sent none (RU-21)', () => {
+    expect(
+      AuditSystem.planImpersonationStarted(active, admin, null).row
+        .auditOperationId,
+    ).toBeNull();
+    expect(
+      AuditSystem.planImpersonationEnded(
+        ended(EndReasonFields.expired()),
+        admin,
+        null,
+      ).row.auditOperationId,
+    ).toBeNull();
+  });
+
+  it('credits the sysadmin as STAFF with a role snapshot, never as the owner (RU-13)', () => {
+    expect(
+      AuditSystem.planImpersonationStarted(active, sysadmin, OP).row,
+    ).toMatchObject({
+      actorRole: 'STAFF',
+      actorUserId: 'ops-1',
+      actorRoles: ['sysadmin'],
+    });
+    expect(
+      AuditSystem.planImpersonationStarted(active, admin, OP).row,
+    ).toMatchObject({ actorRole: 'ADMIN', actorAdminUserId: 'ivan' });
+  });
+
+  it('writes only ADMIN_ENDED or EXPIRED — a revoked or a still-active session is a defect, never a row (RU-14)', () => {
+    expect(
+      AuditSystem.planImpersonationEnded(
+        ended(EndReasonFields.expired()),
+        admin,
+        OP,
+      ).row,
+    ).toMatchObject({ impersonationEndReason: 'EXPIRED' });
+    expect(() =>
+      AuditSystem.planImpersonationEnded(
+        ended(
+          EndReasonFields.revokedBySecurity(
+            UserId.of('sec-1'),
+            'notes-QWERTY-free-text',
+          ),
+        ),
+        admin,
+        OP,
+      ),
+    ).toThrow(/defect/);
+    expect(() => AuditSystem.planImpersonationEnded(active, admin, OP)).toThrow(
+      /defect/,
+    );
+  });
+
+  it('never carries the reason or revocation notes — no free text in a row (T5, R36)', () => {
+    const rows = [
+      AuditSystem.planImpersonationStarted(active, admin, OP).row,
+      AuditSystem.planImpersonationEnded(
+        ended(EndReasonFields.adminEnded(UserId.of('ivan'))),
+        admin,
+        OP,
+      ).row,
+    ];
+    for (const row of rows) {
+      const json = JSON.stringify(row);
+      expect(json).not.toContain(SECRET);
+      expect(Object.keys(row)).not.toContain('reason');
+      expect(Object.keys(row)).not.toContain('revocationNotes');
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const session = deepFreeze(ended(EndReasonFields.expired()));
+    const actor = deepFreeze(sysadmin);
+    const once = AuditSystem.planImpersonationEnded(session, actor, OP);
+    expect(AuditSystem.planImpersonationEnded(session, actor, OP)).toEqual(
+      once,
+    );
+    const start = deepFreeze({ ...active });
+    expect(AuditSystem.planImpersonationStarted(start, actor, OP)).toEqual(
+      AuditSystem.planImpersonationStarted(start, actor, OP),
     );
   });
 });
@@ -877,5 +1342,202 @@ describe('AuditSystem — purity', () => {
     const once = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
     const twice = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
     expect(twice).toEqual(once);
+  });
+
+  it('createsOf is pure: same input → same output, inputs untouched', () => {
+    const plans = deepFreeze(
+      unwrapOk(
+        AuditSystem.plan(
+          [fact({ subjects: [account('a'), account('b')] })],
+          ivan,
+          AT,
+        ),
+      ),
+    );
+    expect(AuditSystem.createsOf(plans, hashOf)).toEqual(
+      AuditSystem.createsOf(plans, hashOf),
+    );
+  });
+
+  it('commitWrites is pure: same input → same output, inputs untouched', () => {
+    const facts = deepFreeze([fact({ subjects: [account('a'), guest] })]);
+    const actor = deepFreeze(ivan);
+    const once = AuditSystem.commitWrites(facts, actor, AT, hashOf);
+    expect(AuditSystem.commitWrites(facts, actor, AT, hashOf)).toEqual(once);
+    expect(AuditSystem.commitWrites(facts, null, AT, hashOf)).toEqual(
+      AuditSystem.commitWrites(facts, null, AT, hashOf),
+    );
+  });
+});
+
+describe('AuditSystem.createsOf — each planned row a Create of the commit plan (WS-1)', () => {
+  it('creates auditLog/<hash(idBasis)> with the row as its body, in plan order', () => {
+    const plans = unwrapOk(
+      AuditSystem.plan(
+        [fact({ subjects: [account('maria'), account('stefan')] })],
+        ivan,
+        AT,
+      ),
+    );
+    expect(AuditSystem.createsOf(plans, hashOf)).toEqual(
+      plans.map((plan) => ({
+        writeAction: 'CREATE',
+        path: [Collections.AuditLog, AuditEntryId.of(hashOf(plan.idBasis))],
+        body: plan.row,
+      })),
+    );
+  });
+
+  it('plans nothing for no rows', () => {
+    expect(AuditSystem.createsOf([], hashOf)).toEqual([]);
+  });
+});
+
+describe('AuditSystem.commitWrites — an act’s rows inside its own commit (WS-1)', () => {
+  it('plans one Create per person per fact, under the derived ids', () => {
+    const facts = [
+      fact({ subjects: [account('maria'), guest, account('stefan')] }),
+    ];
+    const commit = AuditSystem.commitWrites(facts, ivan, AT, hashOf);
+    expect(commit.unaudited).toEqual([]);
+    expect(commit.writes).toEqual(
+      AuditSystem.createsOf(
+        unwrapOk(AuditSystem.plan(facts, ivan, AT)),
+        hashOf,
+      ),
+    );
+    expect(commit.writes).toHaveLength(2);
+  });
+
+  it('derives the same ids on a re-run of the decision — the same facts, actor and instant', () => {
+    const facts = [fact()];
+    expect(AuditSystem.commitWrites(facts, ivan, AT, hashOf).writes).toEqual(
+      AuditSystem.commitWrites(facts, ivan, AT, hashOf).writes,
+    );
+  });
+
+  it('plans no row without a verified actor — every fact comes back unaudited, the act still commits', () => {
+    const facts = [fact(), fact({ changeKey: 'operation:other' })];
+    expect(AuditSystem.commitWrites(facts, null, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: facts,
+    });
+  });
+
+  it('plans nothing for no facts — an unchanged act, with or without an actor', () => {
+    expect(AuditSystem.commitWrites([], ivan, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: [],
+    });
+    expect(AuditSystem.commitWrites([], null, AT, hashOf)).toEqual({
+      writes: [],
+      unaudited: [],
+    });
+  });
+
+  it('treats a fact the planner refuses as a programmer defect — the verb sets are closed', () => {
+    const blank = fact({
+      context: { auditAction: '  ' as AuditAction } as AuditContext,
+    });
+    expect(() => AuditSystem.commitWrites([blank], ivan, AT, hashOf)).toThrow(
+      /audit entry refused by domain/,
+    );
+  });
+});
+
+describe('AuditSystem.chronological — one operation’s rows, oldest first (WS-7)', () => {
+  const OWNER = UserId.of('u-owner');
+  const row = (id: string, recordedAtUtcMs: UtcEpochMs) => ({
+    id: AuditEntryId.of(id),
+    recordedAtUtcMs,
+    resourceId: AuditResourceId.forUser(OWNER),
+    auditOperationId: OP,
+    ...Actor.user(OWNER),
+    ...AuditContext.profile(AuditAction.ProfileUpdated, [
+      RegistrationField.FirstName,
+    ]),
+    ...AuditTargetRef.user(OWNER),
+  });
+  const idsOf = (rows: readonly { readonly id: AuditEntryId }[]) =>
+    rows.map((entry) => entry.id);
+
+  it('reads the oldest instant first', () => {
+    const rows = [
+      row('c', at(3_000)),
+      row('a', at(1_000)),
+      row('b', at(2_000)),
+    ];
+
+    expect(idsOf(AuditSystem.chronological(rows))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('orders rows sharing one instant by id, in code-unit order', () => {
+    // 'Z' (U+005A) < 'a' (U+0061) < 'ä' (U+00E4): code units, never a locale.
+    const rows = [
+      row('ä', at(1_000)),
+      row('a', at(1_000)),
+      row('Z', at(1_000)),
+      row('0', at(500)),
+    ];
+
+    expect(idsOf(AuditSystem.chronological(rows))).toEqual([
+      '0',
+      'Z',
+      'a',
+      'ä',
+    ]);
+  });
+
+  it('answers an empty list for no rows, and the one row for one', () => {
+    expect(AuditSystem.chronological([])).toEqual([]);
+    expect(idsOf(AuditSystem.chronological([row('x', at(7))]))).toEqual(['x']);
+  });
+
+  it('is total: every arrival order of the same rows reads the same', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 4 }),
+            atMs: fc.integer({ min: 0, max: 3 }),
+          }),
+          { selector: (entry) => entry.id, maxLength: 12 },
+        ),
+        (specs) => {
+          const rows = specs.map((entry) => row(entry.id, at(entry.atMs)));
+          const once = AuditSystem.chronological(rows);
+          const reversed = AuditSystem.chronological([...rows].reverse());
+
+          expect(reversed).toEqual(once);
+          expect(once).toHaveLength(rows.length);
+          let prev: (typeof once)[number] | null = null;
+          for (const next of once) {
+            if (prev !== null) {
+              expect(
+                prev.recordedAtUtcMs < next.recordedAtUtcMs ||
+                  (prev.recordedAtUtcMs === next.recordedAtUtcMs &&
+                    prev.id < next.id),
+              ).toBe(true);
+            }
+            prev = next;
+          }
+        },
+      ),
+    );
+  });
+
+  it('is pure: same input → same output, input untouched, a copy answered', () => {
+    const rows = deepFreeze([
+      row('b', at(2_000)),
+      row('a', at(2_000)),
+      row('c', at(1_000)),
+    ]);
+
+    const once = AuditSystem.chronological(rows);
+    const twice = AuditSystem.chronological(rows);
+
+    expect(twice).toEqual(once);
+    expect(once).not.toBe(rows);
+    expect(idsOf(rows)).toEqual(['b', 'a', 'c']);
   });
 });

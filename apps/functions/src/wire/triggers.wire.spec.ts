@@ -1,12 +1,16 @@
 import {
+  AccountStatus,
   Actor,
   AttemptOutcome,
   BookingPolicy,
   CapacityTrigger,
+  GovernedCollection,
   PreciseInstant,
+  Role,
   SystemSource,
 } from '@core/components';
 import {
+  AuditResourceId,
   BarberId,
   BusyKey,
   CustomerId,
@@ -16,12 +20,14 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import { GovernanceError, RepositoryError } from '@core/errors';
+import type { TriggerFailurePorts } from '@core/ports';
 import {
   type Appointment,
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
+  type TriggerFailure,
 } from '@core/entities';
-import { TriggerAttemptSystem } from '@core/systems';
+import { GovernedChangeSystem, TriggerAttemptSystem } from '@core/systems';
 import {
   appointmentFixture,
   FIXTURE_IDS,
@@ -40,15 +46,15 @@ import {
   decodeMatchWaitlistEvent,
   decodePolicyRecomputeEvent,
   decodePolicyStepEvent,
+  decodeDocumentChangeEvent,
   decodePolicySweepRun,
-  decodeProfileChangeEvent,
   decodeRebuildBusyEvent,
   type DocumentWriteEvent,
+  documentAuditReport,
   failOnRefusal,
   logAttempt,
   POLICY_STEP_TIMEOUT_SECONDS,
   preciseInstantOf,
-  profileAuditReport,
   projectionReport,
   settleAttempt,
 } from './triggers.wire';
@@ -59,6 +65,23 @@ import {
  * and a retrying pipeline's answer turned into today's attempt line and
  * redelivery (`lib/trigger-attempts.ts`'s `reportAttempt`/`logAttempt`).
  */
+
+/**
+ * A dead-letter writer that records what `retryingTrigger` asked it to
+ * write and answers success (audit-hardening WS-6, DEP-23).
+ */
+function recordingDeadLetters(): TriggerFailurePorts & {
+  readonly written: readonly TriggerFailure[];
+} {
+  const written: TriggerFailure[] = [];
+  return {
+    written,
+    writeTriggerFailure: async (failure) => {
+      written.push(failure);
+      return Result.ok(undefined);
+    },
+  };
+}
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -438,64 +461,254 @@ describe('decodePolicyStepEvent / decodePolicySweepRun', () => {
   });
 });
 
-describe('decodeProfileChangeEvent', () => {
+describe('decodeDocumentChangeEvent — a users write (RU-40: the profile decoder, re-pointed)', () => {
+  const users = (
+    event: DocumentWriteEvent<{ readonly docId: string }>,
+    auth: { readonly authType: string; readonly authId?: string },
+  ) =>
+    decodeDocumentChangeEvent(GovernedCollection.Users, { ...event, ...auth });
+  /** A users write decodes to a profile change — narrowed on the discriminator. */
+  const profileOf = (change: ReturnType<typeof users>) => {
+    if (change.governedCollection !== GovernedCollection.Users) {
+      throw new Error('a users write decodes to a profile change');
+    }
+    return change;
+  };
+
   it('reads the field NAMES that changed, the writer the auth context names and the event’s own instant', () => {
-    const change = decodeProfileChangeEvent({
-      ...writeEvent(
-        { uid: 'u-maria' },
+    const change = users(
+      writeEvent(
+        { docId: 'u-maria' },
         { firstName: 'Maria', phone: '+359888000001', roles: ['client'] },
         { firstName: 'Maria', phone: '+359888000002', roles: ['staff'] },
         { id: 'evt-9', time: '2026-09-28T06:00:00.000Z' },
       ),
-      authType: 'service_account',
-    });
+      { authType: 'service_account' },
+    );
     expect(change).toEqual({
+      governedCollection: GovernedCollection.Users,
       eventId: TriggerEventId.of('evt-9'),
       eventAtUtcMs: utcMs('2026-09-28T06:00:00.000Z'),
       ownerUserId: UserId.of('u-maria'),
       writer: Actor.system(SystemSource.AdminSdk),
       beforeExists: true,
       afterExists: true,
-      fields: ['phone'],
+      // DEP-13: `roles` is audited now (appended after the registration five);
+      // its tags hold each side's KNOWN roles — 'staff' is none.
+      fields: ['phone', 'roles'],
+      profileRolesFrom: [Role.Client],
+      profileRolesTo: [],
+      profileAccountStatusFrom: null,
+      profileAccountStatusTo: null,
       beforeProfileEditedAtUtcMs: null,
       afterProfileEditedAtUtcMs: null,
     });
   });
 
   it('carries each side’s raw profileEditedAtUtcMs stamp — an absent side or key reads null (4A-16)', () => {
-    const stamped = decodeProfileChangeEvent({
-      ...writeEvent(
-        { uid: 'u-maria' },
-        { firstName: 'Maria' },
-        { firstName: 'Mila', profileEditedAtUtcMs: 1_790_575_200_000 },
-        { id: 'evt-10', time: '2026-09-28T06:00:00.000Z' },
+    const stamped = profileOf(
+      users(
+        writeEvent(
+          { docId: 'u-maria' },
+          { firstName: 'Maria' },
+          { firstName: 'Mila', profileEditedAtUtcMs: 1_790_575_200_000 },
+          { id: 'evt-10', time: '2026-09-28T06:00:00.000Z' },
+        ),
+        { authType: 'service_account' },
       ),
-      authType: 'service_account',
-    });
+    );
     expect(stamped.beforeProfileEditedAtUtcMs).toBeNull();
     expect(stamped.afterProfileEditedAtUtcMs).toBe(1_790_575_200_000);
-    const created = decodeProfileChangeEvent({
-      ...writeEvent({ uid: 'u-maria' }, null, { firstName: 'Maria' }, {}),
-      authType: 'service_account',
-    });
+    const created = profileOf(
+      users(
+        writeEvent({ docId: 'u-maria' }, null, { firstName: 'Maria' }, {}),
+        { authType: 'service_account' },
+      ),
+    );
     expect(created.beforeProfileEditedAtUtcMs).toBeNull();
     expect(created.afterProfileEditedAtUtcMs).toBeNull();
   });
 
   it('credits a uid-shaped writer, and leaves an unreadable time to the pipeline’s clock', () => {
-    const change = decodeProfileChangeEvent({
-      ...writeEvent(
-        { uid: 'u-maria' },
+    const change = users(
+      writeEvent(
+        { docId: 'u-maria' },
         null,
         { firstName: 'Maria' },
         { time: 'nope' },
       ),
-      authType: 'unknown',
-      authId: 'u-desk',
-    });
+      { authType: 'unknown', authId: 'u-desk' },
+    );
     expect(change.writer).toEqual(Actor.user(UserId.of('u-desk')));
     expect(change.beforeExists).toBe(false);
     expect(change.eventAtUtcMs).toBeNull();
+  });
+
+  it('sets the role / status tags iff their field changed — an account blocked by the console', () => {
+    const change = users(
+      writeEvent(
+        { docId: 'u-maria' },
+        {
+          firstName: 'Maria',
+          roles: [Role.Client],
+          accountStatus: AccountStatus.Active,
+        },
+        {
+          firstName: 'Maria',
+          roles: [Role.Client],
+          accountStatus: AccountStatus.Blocked,
+        },
+      ),
+      { authType: 'service_account' },
+    );
+    expect(change).toMatchObject({
+      fields: ['accountStatus'],
+      profileRolesFrom: null,
+      profileRolesTo: null,
+      profileAccountStatusFrom: AccountStatus.Active,
+      profileAccountStatusTo: AccountStatus.Blocked,
+    });
+  });
+});
+
+/** The thirteen governed collections — every `GovernedCollection` member but `USERS`. */
+const GOVERNED = Object.values(GovernedCollection).filter(
+  (member) => member !== GovernedCollection.Users,
+);
+
+describe('decodeDocumentChangeEvent — the thirteen governed collections (WS-3, RU-40)', () => {
+  it('covers thirteen collections', () => {
+    expect(GOVERNED).toHaveLength(13);
+  });
+
+  describe.each(GOVERNED)('%s', (governedCollection) => {
+    const DOC = 'doc-7';
+    const decode = (
+      before: Record<string, unknown> | null,
+      after: Record<string, unknown> | null,
+      auth: { readonly authType: string; readonly authId?: string } = {
+        authType: 'service_account',
+      },
+      overrides: { readonly id?: string; readonly time?: string } = {},
+    ) =>
+      decodeDocumentChangeEvent(governedCollection, {
+        ...writeEvent({ docId: DOC }, before, after, overrides),
+        ...auth,
+      });
+
+    const resource = AuditResourceId.parse(
+      `${GovernedChangeSystem.pathOf(governedCollection)}/${DOC}`,
+    );
+    /** A `customers` write targets the record it is — every other none. */
+    const target =
+      governedCollection === GovernedCollection.Customers
+        ? CustomerId.of(DOC)
+        : null;
+
+    it('decodes a create: the after-image’s keys, ascending, the resource `<path>/<docId>` and the event’s own id and instant', () => {
+      expect(resource.ok).toBe(true);
+      expect(
+        decode(null, { zeta: 1, alpha: 'a' }, undefined, {
+          id: 'evt-gov',
+          time: '2026-09-28T06:00:00.000Z',
+        }),
+      ).toEqual({
+        governedCollection,
+        eventId: TriggerEventId.of('evt-gov'),
+        eventAtUtcMs: utcMs('2026-09-28T06:00:00.000Z'),
+        writer: Actor.system(SystemSource.AdminSdk),
+        beforeExists: false,
+        afterExists: true,
+        resourceId: resource.ok ? resource.value : null,
+        targetCustomerId: target,
+        fields: ['alpha', 'zeta'],
+      });
+    });
+
+    it('decodes an update as the names whose value changed — never a value', () => {
+      const change = decode(
+        { name: 'Old', sortOrder: 1, tags: ['a'] },
+        { name: 'New', sortOrder: 1, tags: [] },
+      );
+      expect(change).toMatchObject({
+        beforeExists: true,
+        afterExists: true,
+        fields: ['name', 'tags'],
+      });
+      expect(JSON.stringify(change)).not.toContain('Old');
+      expect(JSON.stringify(change)).not.toContain('New');
+    });
+
+    it('decodes a delete as the before-image’s keys', () => {
+      expect(decode({ b: 2, a: 1 }, null)).toMatchObject({
+        beforeExists: true,
+        afterExists: false,
+        fields: ['a', 'b'],
+      });
+    });
+
+    it('names the resource `<path>/<docId>` as a brand, and the client record for CUSTOMERS only', () => {
+      const change = decode(null, { a: 1 });
+      expect(change).toMatchObject({
+        resourceId: `${GovernedChangeSystem.pathOf(governedCollection)}/${DOC}`,
+        targetCustomerId: target,
+      });
+    });
+
+    it.each([
+      ['service_account', undefined, Actor.system(SystemSource.AdminSdk)],
+      ['system', undefined, Actor.system(SystemSource.FirestoreSystem)],
+      ['api_key', undefined, Actor.system(SystemSource.UnattributedApiKey)],
+      [
+        'unauthenticated',
+        undefined,
+        Actor.system(SystemSource.UnattributedUnauthenticated),
+      ],
+      ['unknown', undefined, Actor.system(SystemSource.UnattributedUnknown)],
+      ['unknown', 'u-desk', Actor.user(UserId.of('u-desk'))],
+    ] as const)(
+      'credits the writer the auth context names: authType %s, authId %s',
+      (authType, authId, writer) => {
+        const auth = authId === undefined ? { authType } : { authType, authId };
+        expect(decode(null, { a: 1 }, auth).writer).toEqual(writer);
+      },
+    );
+
+    it('leaves an unreadable time to the pipeline’s clock', () => {
+      expect(
+        decode(null, { a: 1 }, undefined, { time: 'nope' }).eventAtUtcMs,
+      ).toBeNull();
+    });
+  });
+
+  it('throws a path that is no resource as a defect — the edge judges it PERMANENT, never redelivered', async () => {
+    const event = {
+      // Unreachable from Firestore (a path segment holds no `/`).
+      ...writeEvent({ docId: 'a/b' }, null, { a: 1 }),
+      authType: 'service_account',
+    };
+    expect(() =>
+      decodeDocumentChangeEvent(GovernedCollection.Coupons, event),
+    ).toThrow(/defect/);
+    const telemetry = { ...recordingTelemetry(), nowUtcMs: pinnedNowUtcMs() };
+    const deadLetters = recordingDeadLetters();
+    const handler = retryingTrigger(
+      { fn: 'auditCouponsChanges', timeoutSeconds: null },
+      { ...telemetry, ...deadLetters },
+      async (delivered: typeof event) => {
+        decodeDocumentChangeEvent(GovernedCollection.Coupons, delivered);
+      },
+    );
+    await expect(handler(event)).resolves.toBeUndefined();
+    expect(telemetry.lines[0]?.fields).toMatchObject({
+      outcome: AttemptOutcome.Permanent,
+    });
+    // Never redelivered, so recorded once as a dead letter (WS-6, DEP-23).
+    expect(deadLetters.written).toHaveLength(1);
+    expect(deadLetters.written[0]).toMatchObject({
+      fn: 'auditCouponsChanges',
+      attemptOutcome: AttemptOutcome.Permanent,
+    });
   });
 });
 
@@ -532,9 +745,48 @@ describe('attempts — today’s line and redelivery', () => {
           outcome: 'PERMANENT',
           errorCode: 'internal',
           ageMs: 1_000,
+          documentPath: null,
+          writeOperationId: null,
         },
       },
     ]);
+  });
+
+  it('names the written document and the operation id it carries — a malformed stored id reads null, never a cast (WS-4.3, DEP-19)', () => {
+    const written = (writeOperationId: unknown) => ({
+      ...event,
+      document: 'appointments/apt-1',
+      data: {
+        before: { exists: false, data: () => undefined },
+        after: { exists: true, data: () => ({ writeOperationId }) },
+      },
+    });
+    const telemetry = ports();
+    logAttempt(
+      'dispatchClientProjections',
+      written('op-0000000000000001'),
+      permanent,
+      telemetry,
+    );
+    for (const malformed of ['a/b', '__op__', '', 7, null]) {
+      logAttempt(
+        'dispatchClientProjections',
+        written(malformed),
+        permanent,
+        telemetry,
+      );
+    }
+    expect(telemetry.lines[0]?.fields).toMatchObject({
+      documentPath: 'appointments/apt-1',
+      writeOperationId: 'op-0000000000000001',
+    });
+    for (const line of telemetry.lines.slice(1)) {
+      expect(line.fields).toMatchObject({
+        documentPath: 'appointments/apt-1',
+        writeOperationId: null,
+      });
+    }
+    expect(telemetry.lines).toHaveLength(6);
   });
 
   it('throws a failure as a value the edge judges the same way — a port refusal by the code in its reason', () => {
@@ -546,9 +798,10 @@ describe('attempts — today’s line and redelivery', () => {
   it('redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`', async () => {
     const run = (failure: typeof transient) => {
       const telemetry = ports();
+      const deadLetters = recordingDeadLetters();
       const handler = retryingTrigger(
         { fn: 'dispatchClientProjections', timeoutSeconds: null },
-        telemetry,
+        { ...telemetry, ...deadLetters },
         async (delivered: typeof event) =>
           settleAttempt(
             'dispatchClientProjections',
@@ -557,7 +810,7 @@ describe('attempts — today’s line and redelivery', () => {
             telemetry,
           ),
       );
-      return { telemetry, done: handler(event) };
+      return { telemetry, deadLetters, done: handler(event) };
     };
     const redelivered = run(transient);
     await expect(redelivered.done).rejects.toBe(transient.error);
@@ -565,12 +818,21 @@ describe('attempts — today’s line and redelivery', () => {
       outcome: 'TRANSIENT',
       errorCode: 'unavailable',
     });
+    // A one-second-old transient failure earns its redelivery, not a dead letter (WS-6).
+    expect(redelivered.deadLetters.written).toEqual([]);
     const dropped = run(permanent);
     await expect(dropped.done).resolves.toBeUndefined();
     expect(dropped.telemetry.lines[0]?.fields).toMatchObject({
       outcome: 'PERMANENT',
       errorCode: 'internal',
     });
+    expect(dropped.deadLetters.written).toEqual([
+      expect.objectContaining({
+        id: 'evt-job',
+        attemptOutcome: 'PERMANENT',
+        failureCode: 'internal',
+      }),
+    ]);
   });
 
   it('logs the survived failure and settles quietly when nothing answers', () => {
@@ -637,17 +899,17 @@ describe('attempts — today’s line and redelivery', () => {
     });
   });
 
-  it('reads the profile audit’s refusal as permanent, a failed write by its reason', () => {
+  it('reads the document audit’s refusal as permanent, a failed write by its reason', () => {
     expect(
-      profileAuditReport(Result.err(GovernanceError.auditEntryEmptyAction()))
+      documentAuditReport(Result.err(GovernanceError.auditEntryEmptyAction()))
         .attemptFailure,
     ).toMatchObject({ attemptOutcome: AttemptOutcome.Permanent });
     expect(
-      profileAuditReport(
+      documentAuditReport(
         Result.err(RepositoryError.writeFailed('auditLog/x', 'aborted')),
       ).attemptFailure,
     ).toMatchObject({ attemptOutcome: AttemptOutcome.Transient });
-    expect(profileAuditReport(Result.ok({ rows: 1 }))).toEqual({
+    expect(documentAuditReport(Result.ok({ rows: 1 }))).toEqual({
       attemptFailure: null,
       survivedFailure: null,
     });

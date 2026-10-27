@@ -89,6 +89,18 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    /**
+     * A client-minted lifecycle stamp within five minutes of the server's
+     * clock (audit hardening WS-3.4, DEP-15) — an integer `*UtcMs` instant,
+     * judged against the request's server time. Only an author's own stamp
+     * is windowed (`writtenAtUtcMs`, `takenAtUtcMs`), never `utcEpochMs` or
+     * any shop-time coordinate (Law 7.3: elapsed-time rules run on stamps
+     * only).
+     */
+    function stampInWindow(ms) {
+      return ms is int && math.abs(ms - request.time.toMillis()) <= 300000;
+    }
+
     // ── the programs bodies (pass E, E-15 / DEP-7) ──────────────────────
     // A programs write must BE its document: the flat `Position`, `Course`
     // or `ShopEvent` (`@core/entities`) minus `id`, every key present
@@ -339,8 +351,15 @@ service cloud.firestore {
     // the shop writes about a client can never live on it. `worksTheBook()`,
     // not `isStaff()` — a marketing role has no business reading these. The
     // visit editor reads and saves it through `appointmentNotePorts`.
+    // A write names its author and its instant truthfully (audit hardening
+    // WS-3.4, DEP-15): the author is the caller, the stamp is fresh. An empty
+    // note deletes the document, which any book worker may do.
     match /appointmentNotes/{appointmentId} {
-      allow read, write: if worksTheBook();
+      allow read: if worksTheBook();
+      allow create, update: if worksTheBook()
+        && request.resource.data.authorUserId == request.auth.uid
+        && stampInWindow(request.resource.data.writtenAtUtcMs);
+      allow delete: if worksTheBook();
     }
 
     // ── the shop's photos of a visit ─────────────────────────────────────
@@ -349,9 +368,18 @@ service cloud.firestore {
     // the shop's pictures of them are not. One document per photo, pointing
     // at the visit; the bytes sit in Storage under the same rule
     // (`storage.rules`, `/appointmentPhotos`), and `appointmentPhotoPorts`
-    // (`libs/infrastructure/storage`) writes both halves.
+    // (`libs/infrastructure/storage`) writes both halves. A photo names its
+    // taker and its instant truthfully (audit hardening WS-3.4, DEP-15): the
+    // taker is the caller, the stamp is fresh — read after the upload
+    // (`attachVisitPhoto`, L6). No update path exists (RU-19); a delete is
+    // the book's.
     match /appointmentPhotos/{photoId} {
-      allow read, write: if worksTheBook();
+      allow read: if worksTheBook();
+      allow create: if worksTheBook()
+        && request.resource.data.takenByUserId == request.auth.uid
+        && stampInWindow(request.resource.data.takenAtUtcMs);
+      allow update: if false;
+      allow delete: if worksTheBook();
     }
 
     // ── the shop's client records (D29) ──────────────────────────────────
@@ -700,6 +728,16 @@ service cloud.firestore {
       // only, and are never updated or deleted.
       allow read: if isAdmin();
       allow create, update, delete: if false;
+    }
+
+    match /triggerFailures/{eventId} {
+      // The dead letter (audit-hardening WS-6, DEP-23): the flat
+      // `TriggerFailure` a retrying trigger records once, keyed by the event
+      // id, when it gives up on a delivery. The admin pair reads; no client
+      // writes — `retryingTrigger` (Admin SDK) is the one writer, and the
+      // record is never updated, deleted or TTL'd.
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ── tenant settings ─────────────────────────────────────────────────

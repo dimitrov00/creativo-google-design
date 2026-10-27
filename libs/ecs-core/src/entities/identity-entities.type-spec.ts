@@ -9,22 +9,38 @@
 import {
   type AccountLifecycle,
   AccountStatus,
+  type AuditedProfileField,
   type Actor,
   ActorRole,
   AuditAction,
   type AuditContext,
   AuditTarget,
   type AuditTargetRef,
+  type CancellationDelta,
+  type GovernedCollection,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
   ImpersonationStatus,
+  type RescheduleDelta,
+  type Role,
   type SearchFields,
+  type StaffEditDelta,
+  type TipDelta,
+  type TransitionDelta,
+  type WriteProvenance,
 } from '@core/components';
-import type { CustomerId, UserId } from '@core/primitives';
+import type {
+  AttendanceState,
+  CustomerId,
+  ImpersonationSessionId,
+  OperationId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
 import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
-import type { Customer } from './customer.entity';
+import type { Customer, CustomerMeta } from './customer.entity';
 import type {
   ImpersonationSession,
   ImpersonationSessionMeta,
@@ -182,6 +198,162 @@ if (row.auditAction === AuditAction.OpsBackfill) {
 if (row.auditAction === AuditAction.BookingCommitted) {
   void row.placementLocationId;
 }
+/** Every row names its operation (WS-4.4): an id, or `null` for a trigger or backfill row. */
+export const auditOperationIdOf: OperationId | null = row.auditOperationId;
+/** The operation slot is the meta's — a root field, never nested, never optional. */
+export const auditOperationIdIsMeta: Equals<
+  AuditEntryMeta['auditOperationId'],
+  OperationId | null
+> = true;
+
+/*
+ * The typed deltas (audit-hardening WS-2, RU-12): each delta slice is flat,
+ * shares no field with its variant's head nor with any other slice of the
+ * row, and each verb narrows to ITS delta fields only.
+ */
+type StaffEditHead = {
+  readonly auditAction: unknown;
+  readonly editRevision: unknown;
+};
+export const auditDeltaDisjoint: [
+  Disjoint<StaffEditDelta, StaffEditHead>,
+  Disjoint<RescheduleDelta, AuditEntryMeta>,
+  Disjoint<RescheduleDelta, Actor>,
+  Disjoint<RescheduleDelta, AuditTargetRef>,
+  Disjoint<StaffEditDelta, AuditEntryMeta>,
+  Disjoint<StaffEditDelta, Actor>,
+  Disjoint<StaffEditDelta, AuditTargetRef>,
+  Disjoint<TipDelta, AuditEntryMeta>,
+  Disjoint<TipDelta, Actor>,
+  Disjoint<TipDelta, AuditTargetRef>,
+  Disjoint<TransitionDelta, AuditEntryMeta>,
+  Disjoint<TransitionDelta, Actor>,
+  Disjoint<TransitionDelta, AuditTargetRef>,
+  Disjoint<CancellationDelta, AuditEntryMeta>,
+  Disjoint<CancellationDelta, Actor>,
+  Disjoint<CancellationDelta, AuditTargetRef>,
+  Disjoint<RescheduleDelta, StaffEditDelta>,
+  Disjoint<TransitionDelta, CancellationDelta>,
+  Disjoint<TipDelta, StaffEditDelta>,
+] = [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+];
+export const auditDeltaFlat: [
+  AllTrue<NoNested<RescheduleDelta>>,
+  AllTrue<NoNested<StaffEditDelta>>,
+  AllTrue<NoNested<TipDelta>>,
+  AllTrue<NoNested<TransitionDelta>>,
+  AllTrue<NoNested<CancellationDelta>>,
+] = [true, true, true, true, true];
+/** The nullable tag field, pinned here (the L8 pair regex reads one dictionary name only). */
+export const transitionFromAttendanceStateIs: Equals<
+  TransitionDelta['transitionFromAttendanceState'],
+  AttendanceState | null
+> = true;
+if (row.auditAction === AuditAction.BookingRescheduled) {
+  void row.rescheduleFromLocalDate;
+  void row.rescheduleToBarberIds;
+  void row.rescheduleToLocationId;
+  // @ts-expect-error — a client move carries no staff-edit delta
+  void row.editRepriceFromCents;
+}
+if (row.auditAction === AuditAction.BookingStaffReprice) {
+  void row.editRepriceFromCents;
+  void row.editDiscountIds;
+  void row.editMoveToStartMinutes;
+  // @ts-expect-error — a staff edit carries no client-move delta
+  void row.rescheduleToLocalDate;
+}
+if (row.auditAction === AuditAction.BookingTipRecorded) {
+  void row.tipAmountCents;
+  void row.tipFromCents;
+  void row.tipCurrency;
+  // @ts-expect-error — a tip carries no transition delta
+  void row.transitionFromBookingStatus;
+}
+if (row.auditAction === AuditAction.BookingStaffNoShow) {
+  void row.transitionFromBookingStatus;
+  void row.transitionFromStatusAtUtcMs;
+  void row.transitionFromAttendanceState;
+  // @ts-expect-error — a staff transition carries no client-cancel delta
+  void row.cancellationFromBookingStatus;
+}
+if (row.auditAction === AuditAction.BookingCancelled) {
+  void row.cancellationFromBookingStatus;
+  void row.cancellationFromStatusAtUtcMs;
+  // @ts-expect-error — a client cancel carries no tip delta
+  void row.tipAmountCents;
+}
+if (row.auditAction === AuditAction.BookingStaffArrived) {
+  // @ts-expect-error — an arrival is the verb alone: no delta
+  void row.transitionFromBookingStatus;
+}
+/*
+ * The privileged and governed rows (audit-hardening WS-3): each verb narrows
+ * to its own fields, and the profile row's role / status tags are nullable
+ * closed vocabularies (pinned here — the L8 pair regex reads one dictionary
+ * name only).
+ */
+export const profileRolesAre: [
+  Equals<AuditContext.Profile['profileRolesFrom'], readonly Role[] | null>,
+  Equals<AuditContext.Profile['profileRolesTo'], readonly Role[] | null>,
+  Equals<
+    AuditContext.Profile['profileAccountStatusFrom'],
+    AccountStatus | null
+  >,
+  Equals<AuditContext.Profile['profileAccountStatusTo'], AccountStatus | null>,
+  Equals<AuditContext.Profile['profileFields'], readonly AuditedProfileField[]>,
+] = [true, true, true, true, true];
+if (row.auditAction === AuditAction.ProfileUpdated) {
+  void row.profileFields;
+  void row.profileRolesTo;
+  void row.profileAccountStatusFrom;
+  // @ts-expect-error — a profile row names no governed collection
+  void row.governedCollection;
+}
+if (row.auditAction === AuditAction.GovernanceImpersonationStarted) {
+  const session: ImpersonationSessionId = row.impersonationSessionId;
+  const expires: UtcEpochMs = row.impersonationExpiresAtUtcMs;
+  void session;
+  void expires;
+  void row.impersonationScope;
+  // @ts-expect-error — a start has no end reason
+  void row.impersonationEndReason;
+  // @ts-expect-error — the session's free-text reason is never on a row (T5, R36)
+  void row.reason;
+}
+if (row.auditAction === AuditAction.GovernanceImpersonationEnded) {
+  void row.impersonationEndReason;
+  void row.impersonationSessionId;
+  // @ts-expect-error — nor its revocation notes
+  void row.revocationNotes;
+}
+if (row.auditAction === AuditAction.GovernedDocDeleted) {
+  const collection: GovernedCollection = row.governedCollection;
+  const fields: readonly string[] = row.governedFields;
+  void collection;
+  void fields;
+  // @ts-expect-error — a governed row carries no profile field list
+  void row.profileFields;
+}
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;
@@ -193,11 +365,17 @@ if (row.auditTarget === AuditTarget.Customer) {
   void row.targetUserId;
 }
 
-/* ── Customer — one flat archetype (D29) ───────────────────────────────── */
+/* ── Customer = Meta & WriteProvenance (D29, WS-4.3) ───────────────────── */
 
 export const customerNotNever: IsNever<Customer> = false;
 export const customerFlat: EveryVariantFlat<Customer> = true;
+export const customerProvenanceDisjoint: Disjoint<
+  CustomerMeta,
+  WriteProvenance
+> = true;
 declare const customer: Customer;
+const customerWriteOperationId: OperationId | null = customer.writeOperationId;
+void customerWriteOperationId;
 // @ts-expect-error — a CustomerId is never a UserId (Law 7.4, D29)
 export const customerIdIsNotUser: UserId = customer.id;
 // @ts-expect-error — a UserId is never a CustomerId (Law 7.4, D29)

@@ -144,6 +144,47 @@ export type CallableWire = {
   };
 };
 
+/**
+ * The payload field a callable's operation id rides in (WS-4.1): the staff
+ * edit's spelling (`operationId`) for every act, the two booking calls'
+ * `attemptId` (the id is the new appointment's / the move's ledger name)
+ * and the streak publish's `requestId`.
+ */
+export type OperationIdField = 'operationId' | 'attemptId' | 'requestId';
+
+/**
+ * Where each callable's operation id rides on the wire (WS-4.1) — the ONE
+ * table the web's callable client looks it up in (it adds a transport
+ * `operationId` where the input names none); the functions decoders read
+ * the same field (`operationIdOf`). `null`: the client issue sink
+ * carries none (OR-34 — privacy by shape, no line of ours). Total over
+ * {@link CallableName} by its mapped type.
+ */
+export const OPERATION_ID_FIELD: {
+  readonly [N in CallableName]: OperationIdField | null;
+} = {
+  [Callables.RequestOtpChallenge]: 'operationId',
+  [Callables.VerifyOtpChallenge]: 'operationId',
+  [Callables.CompleteRegistration]: 'operationId',
+  [Callables.UpdateProfile]: 'operationId',
+  [Callables.CommitBooking]: 'attemptId',
+  [Callables.CancelAppointment]: 'operationId',
+  [Callables.RescheduleAppointment]: 'attemptId',
+  [Callables.TransitionAppointment]: 'operationId',
+  [Callables.MarkArrived]: 'operationId',
+  [Callables.ClearArrival]: 'operationId',
+  [Callables.RecordSeatTip]: 'operationId',
+  [Callables.StaffEditAppointment]: 'operationId',
+  [Callables.RequestWaitlist]: 'operationId',
+  [Callables.CancelWaitlist]: 'operationId',
+  [Callables.RunBackfill]: 'operationId',
+  [Callables.PublishStreakDefinition]: 'requestId',
+  [Callables.StartImpersonation]: 'operationId',
+  [Callables.EndImpersonation]: 'operationId',
+  [Callables.RedeemInvitation]: 'operationId',
+  [Callables.ReportClientIssues]: null,
+};
+
 /** One callable's answer decoder — the only way its answer becomes branded data. */
 export type AnswerDecoder<N extends CallableName> = (
   raw: unknown,

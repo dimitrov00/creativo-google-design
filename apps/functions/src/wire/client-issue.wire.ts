@@ -1,4 +1,4 @@
-import { Result } from '@core/primitives';
+import { LogEvent, Result } from '@core/primitives';
 import type { Callables, CallableWire, Log } from '@core/ports';
 import type {
   ReportClientIssuesAnswer,
@@ -43,7 +43,7 @@ export function decodeReportClientIssues(
   const reporterAuthed = callerUserId(request) !== null;
   const batch = ClientIssueSystem.admitBatch(request.data);
   if (!batch.ok) {
-    log('warn', 'client issue batch refused', {
+    log('warn', LogEvent.ClientIssueBatchRefused, {
       ...batch.error,
       reporterRoles,
       reporterAuthed,
