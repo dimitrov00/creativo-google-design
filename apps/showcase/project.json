@@ -23,10 +23,14 @@
             "glob": "*.svg",
             "input": "node_modules/flag-icons/flags/1x1",
             "output": "assets/flags/1x1"
+          },
+          {
+            "glob": "maplibre-gl-worker.mjs",
+            "input": "node_modules/maplibre-gl/dist",
+            "output": "/"
           }
         ],
-        "styles": ["apps/showcase/src/styles.css"],
-        "allowedCommonJsDependencies": ["maplibre-gl"]
+        "styles": ["apps/showcase/src/styles.css"]
       },
       "configurations": {
         "production": {

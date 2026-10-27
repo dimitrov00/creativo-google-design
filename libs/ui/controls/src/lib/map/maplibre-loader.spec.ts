@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   MAPLIBRE_SOURCES,
   MAPLIBRE_STYLESHEET_ATTRIBUTE,
+  MAPLIBRE_WORKER_PATH,
   MapLibreLoader,
   type MapLibreNamespace,
   type MapLibreSources,
@@ -370,6 +371,29 @@ describe('the apps’ build and serve targets', () => {
             Array.isArray(prebundle.exclude) &&
             prebundle.exclude.includes('maplibre-gl'));
         expect(bundlesMapLibre, `${id} ${set}: prebundle`).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * The loader points MapLibre at `MAPLIBRE_WORKER_PATH`, and nothing else
+   * puts a file there: a build that does not copy the worker serves the app
+   * shell in its place (Hosting's `**` rewrite), and every map stays blank.
+   */
+  it('copy MapLibre’s worker to the site root in every app build', () => {
+    const builds = appTargets().filter(([, target]) =>
+      /:application$/.test(target.executor ?? ''),
+    );
+    expect(builds.map(([id]) => id)).toEqual(
+      expect.arrayContaining(['web:build', 'showcase:build']),
+    );
+    for (const [id, target] of builds) {
+      for (const [set, options] of optionSets(target)) {
+        expect(options['assets'], `${id} ${set}: assets`).toContainEqual({
+          glob: MAPLIBRE_WORKER_PATH.slice(1),
+          input: 'node_modules/maplibre-gl/dist',
+          output: '/',
+        });
       }
     }
   });

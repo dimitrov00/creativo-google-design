@@ -53,7 +53,7 @@ const BOTTOM_EDGE_PADDING = 56;
  *
  * Promoted out of the landing's locations section when `/book` needed the same
  * thing, and it carries all of that section's hard-won knowledge rather than
- * re-learning it: the UMD import shape, MapLibre's attribution that mounts
+ * re-learning it: the loader the library comes through, MapLibre's attribution that mounts
  * expanded, stacking containment for the cooperative-gesture veil, and why
  * pin transforms must never be transitioned.
  *
@@ -236,7 +236,7 @@ export class UiMap {
 
     try {
       // The library AND its stylesheet (off the initial path since
-      // 2026-09-26), with the UMD `.default` already unwrapped — see
+      // 2026-09-26), already pointed at its worker — see
       // `MapLibreLoader`. Inside the try: chunks that cannot be fetched
       // (offline, a deploy that replaced them) fail as soft as no WebGL.
       const maplibregl = await this.mapLibre.load();

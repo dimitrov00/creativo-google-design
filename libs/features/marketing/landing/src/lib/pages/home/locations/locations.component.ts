@@ -338,7 +338,7 @@ export class LocationsComponent implements AfterViewInit {
     const host = this.elementRef.nativeElement;
 
     // The library and its stylesheet, lazily and once for every map in the
-    // app; the UMD bundle's `.default` quirk is unwrapped there too (see
+    // app, already pointed at its worker (see
     // `MapLibreLoader`). Chunks that cannot be fetched (offline, a deploy
     // that replaced them) fail as soft as no WebGL does below: logged, both
     // maps left empty, the location list untouched.

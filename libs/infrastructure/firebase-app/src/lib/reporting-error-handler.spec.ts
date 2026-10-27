@@ -212,7 +212,7 @@ function violation(overrides: Partial<CspViolationReport>): CspViolationReport {
 
 /** The three samples of the measured MapLibre baseline, as Chromium writes them. */
 const MAPLIBRE_SAMPLES = [
-  'Worker constructor|blob:http://127.0.0.1:5050/0b5e2c1a-4d3f',
+  'Worker constructor|/maplibre-gl-worker.mjs?v=6.16.0',
   'DOMParser parseFromString|<a href="https://openfreemap.org"',
   'Element innerHTML|<a href="https://www.openstreetmap.org/copyright"',
 ] as const;
@@ -308,7 +308,7 @@ describe('cspViolationIssue — a CSP report as a CSP_VIOLATION issue (OR-30)', 
         violation({
           disposition: 'report',
           effectiveDirective: 'worker-src',
-          blockedURI: 'blob:http://127.0.0.1:5050/0b5e2c1a-4d3f',
+          blockedURI: 'http://127.0.0.1:5050/maplibre-gl-worker.mjs?v=6.16.0',
           sample: MAPLIBRE_SAMPLES[0],
         }),
         null,
