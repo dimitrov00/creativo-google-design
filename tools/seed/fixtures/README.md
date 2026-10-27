@@ -45,6 +45,19 @@ contact and the birth date its fixture places; `seed-dev-catalog.mjs` writes
 `registeredAccountBody`. There is no second copy of the search-prefix rule:
 every body's keys are `SearchFieldsSystem.searchFields`'.)
 
+The calendar is anchored at ONE instant, the seed's: `seedNowOf`
+(`calendar.mjs`, handed out as `seed.book.seedNowOf`) reads `--now=<text>`
+first, then env `SEED_NOW`, else the caller's live clock (`SEED_DEFAULT`,
+`'LIVE'`) — epoch milliseconds, a wall time on the shop's clock
+(`2026-10-27T23:40`) or an ISO instant with `Z` / an offset, through
+`ZonedTimeSystem.parseIsoIn`; a text that names no instant throws.
+`seed-dev-catalog.mjs` builds the book at it (`buildClientBook(seedNowMs)`),
+`verify:p0` (a) seeds twice at one, and the e2e global setup seeds the
+catalogue at its suite day's 10:00. No builder here reads a clock: the
+book is a function of that instant alone (`seed-data.spec.mjs` builds it at
+every 5-minute instant of three days, `seed-clock.spec.mjs` pins the
+grammar).
+
 ## The rule for every file here
 
 - One file per collection family, named after it. A file exports plain

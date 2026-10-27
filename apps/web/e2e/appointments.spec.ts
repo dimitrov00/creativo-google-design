@@ -6,13 +6,14 @@ import {
   seedUserProfile,
   seedWorkedAppointment,
 } from './support/seed-firestore';
-import { shopToday } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
+import { pinBrowserClock, suiteDay } from './support/suite-clock';
 
-/** Today's `YYYY-MM` in the shop's zone — the month the calendar opens on,
- *  whatever day it already is on the device. */
+/** The suite day's `YYYY-MM` in the shop's zone — the month the calendar of a
+ *  pinned page (`pinBrowserClock`) opens on, whatever day it already is on
+ *  the device. */
 function shopMonthKey(): string {
-  return shopToday().slice(0, 7);
+  return suiteDay().slice(0, 7);
 }
 
 /**
@@ -100,6 +101,8 @@ test.describe('account appointments', () => {
   test('month navigation moves the calendar forward and back', async ({
     page,
   }) => {
+    // The page's "this month" and `shopMonthKey()` read one day (P3-DEP-4).
+    await pinBrowserClock(page);
     const uid = `e2e-appts-calendar-nav-${test.info().testId}`;
     await seedUserProfile(uid);
     await signInAs(page, uid, ['client']);

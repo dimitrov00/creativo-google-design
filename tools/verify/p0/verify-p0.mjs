@@ -7,8 +7,13 @@
  *
  *   pnpm run verify:p0
  *
- * (a) `pnpm run seed:dev` succeeds twice, and the second run writes the same
- *     appointments, users, client records and client stats as the first.
+ * (a) `pnpm run seed:dev` succeeds twice with one instant, and the second run
+ *     writes the same appointments, users, client records and client stats
+ *     as the first. The instant is captured ONCE — the caller's `SEED_NOW`
+ *     when set (any form the seed reads: epoch ms, a shop wall time such as
+ *     `2026-10-27T23:40`, an ISO instant), else the clock — and handed to
+ *     both runs as `SEED_NOW` (`seed-run.mjs`), so a today-visit ending or
+ *     the shop's midnight passing between the runs cannot make them differ.
  * (b) Two backfill runs (the `runBackfill` callable, as a sysadmin) leave
  *     every `clientStats/{customerId}` and `restricted/money` document
  *     byte-equal apart from `updatedAtUtcMs`; the second run writes nothing.
@@ -61,6 +66,7 @@ import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import { settleTriggers } from '../../seed/settle.mjs';
 import { CallableAnswer, readCallableAnswer } from './callable-answer.mjs';
 import { checkFunctionsDeps } from './functions-deps.mjs';
+import { proofInstantOf, seedRunEnv } from './seed-run.mjs';
 
 const WORKSPACE_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -303,13 +309,14 @@ async function ownerUpdate(path, fields, idToken) {
   return { ok: response.ok, status: response.status };
 }
 
-function runSeed() {
+/** One `seed:dev` run at the proof's ONE instant (`SEED_NOW`, P3-DEP-2). */
+function runSeed(seedNowMs) {
   const run = spawnSync(
     process.execPath,
     [join(WORKSPACE_ROOT, 'tools/seed-dev-catalog.mjs')],
     {
       cwd: WORKSPACE_ROOT,
-      env: process.env,
+      env: seedRunEnv(process.env, seedNowMs),
       encoding: 'utf8',
     },
   );
@@ -493,11 +500,26 @@ await check(
 let seedStats = null;
 let subjects = [];
 
+/*
+ * The seed's bundle: its instant reader for (a) (`book.seedNowOf`, the one
+ * parser of `--now` / `SEED_NOW`) and the account builder the backfill's
+ * sysadmin is built with.
+ */
+const seedDomain = await loadSeedDomain();
+
 await check(
-  '(a) seed:dev succeeds twice and the second run changes nothing',
+  '(a) seed:dev succeeds twice at one instant and the second run changes nothing',
   async () => {
+    // ONE instant for both runs (P3-DEP-2); the settle `since` reads below
+    // stay on the real clock — they compare with the Logging emulator's
+    // real entry times.
+    const seedNowMs = proofInstantOf(
+      process.env,
+      Date.now(),
+      seedDomain.book.seedNowOf,
+    );
     const firstSince = Date.now();
-    const first = runSeed();
+    const first = runSeed(seedNowMs);
     await settle(firstSince);
     const before = {
       appointments: await collectionBytes('appointments'),
@@ -506,7 +528,7 @@ await check(
       stats: bookBytes(await statsBook(), 'updatedAtUtcMs'),
     };
     const secondSince = Date.now();
-    runSeed();
+    runSeed(seedNowMs);
     await settle(secondSince);
     const after = {
       appointments: await collectionBytes('appointments'),
@@ -523,7 +545,7 @@ await check(
     }
     seedStats = await statsBook();
     subjects = await seededSubjects();
-    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.customers.size} client records, ${before.stats.size} stats pairs identical after the second run; last lines: ${first}`;
+    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.customers.size} client records, ${before.stats.size} stats pairs identical after the second run at ${new Date(seedNowMs).toISOString()}; last lines: ${first}`;
   },
 );
 
@@ -539,7 +561,7 @@ if (seedStats === null) {
  * (`tools/seed/fixtures/users.fixtures.ts`, `satisfies Body<User>`) — so
  * this account is held to the archetype like every seeded one.
  */
-const { users: seedUsers } = await loadSeedDomain();
+const { users: seedUsers } = seedDomain;
 await db.doc(`users/${SYSADMIN_UID}`).set(
   seedUsers.registeredAccountBody(
     {

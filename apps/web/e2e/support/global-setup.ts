@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { workspaceRoot } from '@nx/devkit';
+import { browserNowUtcMs, fixSuiteInstant } from './suite-clock';
 
 /**
  * Seeds the dev catalogue (shops, services, barbers, rosters, the booking
@@ -24,7 +25,15 @@ import { workspaceRoot } from '@nx/devkit';
  * from each worker once ran those storms underneath the tests, and a
  * Storage round trip inside one took longer than an assertion waits.
  *
- * FIRST, THE CLI. The emulators must be the workspace's pinned firebase-tools
+ * FIRST, THE RUN'S ONE INSTANT (`suite-clock.ts`, P3-DEP-3): `E2E_NOW` when
+ * given — refused here, and only here, unless it falls on the real shop
+ * day — else the real clock, written back to `process.env.E2E_NOW` for every
+ * worker to inherit. The catalogue is seeded at that instant's day at 10:00
+ * on the shop's clock, the instant a pinned browser reads. `seededFrom`
+ * stays the real clock: the settle compares it with the Logging emulator's
+ * real entry times.
+ *
+ * THEN, THE CLI. The emulators must be the workspace's pinned firebase-tools
  * (`tools/seed/emulator-cli.mjs`): the suite runs with no local retries, and
  * another CLI's defects would read as our flakes (15.11's Storage emulator
  * lost rules answers that arrived together and hung the browser's request).
@@ -42,11 +51,19 @@ import { workspaceRoot } from '@nx/devkit';
  * `--allow-data-only` here).
  */
 export default function globalSetup(): void {
+  // The run's one instant, first: an `E2E_NOW` off the real shop day stops
+  // the run before anything starts; every worker inherits the answer.
+  fixSuiteInstant();
   // One line: the CLI the emulators run, or why the run stops here.
   run('node tools/seed/emulator-cli.mjs', 'inherit');
   const seededFrom = Date.now();
   // The seed's progress log is noise; stderr says why it refused, if it did.
-  run('node tools/seed-dev-catalog.mjs --catalog-only', 'ignore');
+  // The catalogue at the instant a pinned browser reads (the suite's day at
+  // 10:00), so its busy days, exceptions and seasons sit on that day.
+  run(
+    `node tools/seed-dev-catalog.mjs --catalog-only --now=${browserNowUtcMs()}`,
+    'ignore',
+  );
   // One line: how long the triggers took to go quiet.
   run(`node tools/seed/settle.mjs --since=${seededFrom}`, 'inherit');
 }
