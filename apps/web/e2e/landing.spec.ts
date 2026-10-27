@@ -18,10 +18,10 @@ declare global {
  */
 /**
  * The path a bundled chunk names a `maplibre-gl` module by
- * (`// node_modules/.pnpm/maplibre-gl@5.24.0/node_modules/maplibre-gl/dist/maplibre-gl.js`,
+ * (`// node_modules/.pnpm/maplibre-gl@6.16.0/node_modules/maplibre-gl/dist/maplibre-gl.mjs`,
  * and its `maplibre-gl.css` text twin).
  */
-const MAPLIBRE_MODULE = /\/maplibre-gl\/dist\/maplibre-gl\.(?:js|css)\b/;
+const MAPLIBRE_MODULE = /\/maplibre-gl\/dist\/maplibre-gl\.(?:mjs|css)\b/;
 
 async function scrollThroughPage(page: Page): Promise<void> {
   // Forces every `@defer (on viewport)` section to hydrate — the page has

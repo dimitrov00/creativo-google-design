@@ -12,15 +12,12 @@ import {
 } from '@angular/core';
 
 /**
- * MapLibre's namespace as it exists at RUNTIME — the object `Map` and
- * `Marker` hang off.
+ * MapLibre's namespace — the object `Map` and `Marker` hang off.
  *
- * maplibre-gl ships a UMD bundle, not a real ESM module: it builds its exports
- * object inside a factory, so esbuild cannot detect named exports and a
- * dynamic import's named properties come back undefined — only `.default` is
- * populated. Confirmed live on both maps: `maplibregl.Map` off the named
- * import threw "not a constructor". The sources below unwrap `.default` once,
- * here, so no map has to know.
+ * Since v6 maplibre-gl is ESM only (`dist/maplibre-gl.mjs`) with named
+ * exports and no `default`, so the dynamic import's namespace IS the library.
+ * (v5 was a UMD bundle whose exports esbuild could not see: only `.default`
+ * was populated, and the sources below unwrapped it.)
  */
 export type MapLibreNamespace = typeof import('maplibre-gl');
 
@@ -30,6 +27,22 @@ export interface MapLibreSources {
   /** `maplibre-gl/dist/maplibre-gl.css`, as text. */
   readonly stylesheet: () => Promise<string>;
 }
+
+/**
+ * Where MapLibre's tile worker is served: `maplibre-gl/dist/maplibre-gl-worker.mjs`,
+ * copied to the site root by every app's build (`assets`;
+ * `maplibre-loader.spec.ts` holds each app to it).
+ *
+ * v6 starts its worker from a URL, not from a `blob:` it builds itself, and
+ * finds that URL off its own `import.meta.url` — which, bundled into a hashed
+ * chunk, names the chunk, not the package. So a bundling app tells it where
+ * the worker lives (`setWorkerUrl`, as MapLibre's v5→v6 guide asks of every
+ * bundler). Root-relative, so it is same-origin on any host and MapLibre
+ * starts it as a module worker directly (`worker-src 'self'`); the version
+ * query, MapLibre's own default, keeps a cached worker of one release away
+ * from the next release's library.
+ */
+export const MAPLIBRE_WORKER_PATH = '/maplibre-gl-worker.mjs';
 
 /**
  * Both halves as lazy chunks — neither is on the initial path.
@@ -51,6 +64,9 @@ export interface MapLibreSources {
  * `maplibre-gl` from prebundling (`prebundle.exclude`), bundling it exactly
  * as a production build does; `maplibre-loader.spec.ts` holds each app to it.
  *
+ * The library comes back pointed at its worker ({@link MAPLIBRE_WORKER_PATH})
+ * before any map can start one.
+ *
  * A token so a test swaps the network out; nothing in the app overrides it.
  */
 export const MAPLIBRE_SOURCES = new InjectionToken<MapLibreSources>(
@@ -58,7 +74,13 @@ export const MAPLIBRE_SOURCES = new InjectionToken<MapLibreSources>(
   {
     providedIn: 'root',
     factory: () => ({
-      library: async () => (await import('maplibre-gl')).default,
+      library: async () => {
+        const maplibregl = await import('maplibre-gl');
+        maplibregl.setWorkerUrl(
+          `${MAPLIBRE_WORKER_PATH}?v=${maplibregl.getVersion()}`,
+        );
+        return maplibregl;
+      },
       stylesheet: async () =>
         (
           await import('maplibre-gl/dist/maplibre-gl.css', {
