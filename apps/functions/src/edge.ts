@@ -4,6 +4,7 @@ import {
   HttpsError,
 } from 'firebase-functions/v2/https';
 import {
+  ClientOperationId,
   LogEvent,
   OperationId,
   PrimitiveErrorCode,
@@ -58,7 +59,7 @@ import {
   WorkBudgetSystem,
 } from '@core/systems';
 import { callerKnownRoles, callerUserId } from './lib/booking/caller-roles';
-import { eventInstantOf, operationIdOf } from './wire/wire-read';
+import { eventInstantOf, field, idOf, operationIdOf } from './wire/wire-read';
 
 /**
  * THE EDGE (blueprint §4.3, D1(a)) — the one place a `Result.err` becomes an
@@ -1129,11 +1130,17 @@ export const callableEdge =
     });
   };
 
+/** How a handler run settled — the ONLY source of these strings (Law 1). */
+const SettledAs = { Result: 'RESULT', Thrown: 'THROWN' } as const;
+
 /** One handler run, settled into what the edge does with it — never a throw. */
 type Settled<Out> =
-  | { readonly settledAs: 'RESULT'; readonly result: Result<Out, EdgeError> }
   | {
-      readonly settledAs: 'THROWN';
+      readonly settledAs: typeof SettledAs.Result;
+      readonly result: Result<Out, EdgeError>;
+    }
+  | {
+      readonly settledAs: typeof SettledAs.Thrown;
       readonly thrown: HttpsError;
       readonly unexpected: boolean;
     };
@@ -1153,12 +1160,12 @@ async function attempt<In, Out>(
 ): Promise<Settled<Out>> {
   try {
     return {
-      settledAs: 'RESULT',
+      settledAs: SettledAs.Result,
       result: await handle(request, budget, trace),
     };
   } catch (thrown) {
     return {
-      settledAs: 'THROWN',
+      settledAs: SettledAs.Thrown,
       thrown: unexpected(spec.callable, spec.failureCode, ports, thrown),
       unexpected: !(thrown instanceof HttpsError),
     };
@@ -1170,7 +1177,7 @@ function settleCallable<Out>(
   spec: CallableSpec<Out>,
   settled: Settled<Out>,
 ): Out {
-  if (settled.settledAs === 'THROWN') throw settled.thrown;
+  if (settled.settledAs === SettledAs.Thrown) throw settled.thrown;
   const result = settled.result;
   if (result.ok) return result.value;
   if (spec.answer !== null && isAnswered(result.error.errorCode)) {
@@ -1184,7 +1191,7 @@ function outcomeOf<Out>(
   spec: CallableSpec<Out>,
   settled: Settled<Out>,
 ): Outcome {
-  if (settled.settledAs === 'THROWN') {
+  if (settled.settledAs === SettledAs.Thrown) {
     return settled.unexpected
       ? {
           level: 'error',
@@ -1344,13 +1351,6 @@ export function attemptLineFields(line: AttemptLine): Record<string, unknown> {
   };
 }
 
-/** One own field of an untrusted value, read without a dynamic index; `undefined` when absent. */
-function ownField(source: unknown, name: string): unknown {
-  return source !== null && typeof source === 'object'
-    ? Object.getOwnPropertyDescriptor(source, name)?.value
-    : undefined;
-}
-
 /**
  * A side of a write event that exists, read defensively: its body, else
  * `undefined`. A snapshot's `exists` and `data()` live on its prototype
@@ -1372,23 +1372,25 @@ function existingBody(side: unknown): unknown {
  * What a delivery says about the write that woke it (audit-hardening WS-4.3,
  * DEP-19): `event.document` (the written path — ids only) and the
  * `writeOperationId` the after-image (else the before-image, on a delete)
- * carries — `OperationId.is(raw) ? raw : null`, the companion's guard, never
- * a cast (Law 7.4): a malformed stored value reads `null` and never refuses
- * the attempt. A schedule tick names neither.
+ * carries, read in the shape the server stamps — the client-minted key's
+ * shape (`ClientOperationId.inPayload`, `[A-Za-z0-9_-]{16,64}`), then a
+ * plain id (`OperationId.parse`), never a cast (Law 7.4). Anything else —
+ * free text a browser writer put on a governed document, an over-length
+ * value, a reserved name — reads `null` (review round 2, the DEP-19
+ * amendment) and never refuses the attempt. A schedule tick names neither.
  */
 export function attemptProvenanceOf(event: unknown): {
   readonly documentPath: string | null;
   readonly writeOperationId: OperationId | null;
 } {
-  const document = ownField(event, 'document');
-  const data = ownField(event, 'data');
+  const document = field(event, 'document');
+  const data = field(event, 'data');
   const body =
-    existingBody(ownField(data, 'after')) ??
-    existingBody(ownField(data, 'before'));
-  const raw = ownField(body, 'writeOperationId');
+    existingBody(field(data, 'after')) ?? existingBody(field(data, 'before'));
+  const sent = ClientOperationId.inPayload(body, 'writeOperationId');
   return {
     documentPath: typeof document === 'string' ? document : null,
-    writeOperationId: OperationId.is(raw) ? raw : null,
+    writeOperationId: sent === null ? null : idOf(sent, OperationId.parse),
   };
 }
 

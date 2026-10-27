@@ -8,7 +8,11 @@ import type { TriggerEventId, UtcEpochMs } from '@core/primitives';
  * (`triggerFailures/{eventId}`, Law 5: the body is the entity minus `id`) —
  * so every redelivery of one event names the same document and the dead
  * letter is written once (the adapter's `create()`, ALREADY_EXISTS a
- * success).
+ * success when the held record's `fn` is the writer's own). One write is
+ * one CloudEvent for every trigger on the document: when a second trigger
+ * gives up on the same event, the first record stands and the second is
+ * refused, so `retryingTrigger` logs it as `trigger.failure_not_recorded`
+ * with its `fn` and event id (review round 2).
  */
 export type TriggerFailureMeta = {
   readonly id: TriggerEventId;

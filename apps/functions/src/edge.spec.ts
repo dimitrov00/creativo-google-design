@@ -1079,8 +1079,21 @@ describe('edge — what a delivery says about the write (WS-4.3, DEP-19)', () =>
     });
   });
 
-  it('reads a malformed stored id as null — OperationId.is, never a cast — and never refuses', () => {
-    for (const raw of ['a/b', '__x__', '', 42, { id: 'x' }, null]) {
+  it('reads a malformed stored id as null — the stamped shape, never a cast — and never refuses', () => {
+    for (const raw of [
+      'a/b',
+      '__x__',
+      '',
+      42,
+      { id: 'x' },
+      null,
+      // Free text, an over-length value and a short one — none the shape the
+      // server stamps (`[A-Za-z0-9_-]{16,64}`, review round 2, DEP-19).
+      'Георги Иванов 0888123456 georgi@mail.bg',
+      'x'.repeat(100_000),
+      'x'.repeat(65),
+      'short-op-id',
+    ]) {
       expect(
         attemptProvenanceOf({
           document: 'appointments/apt-1',
@@ -1746,6 +1759,107 @@ describe('edge — the wrappers', () => {
         expect(
           logged.filter((line) => line.msg === 'trigger.failure_not_recorded'),
         ).toEqual([]);
+      });
+
+      it('logs a second trigger’s dead letter for the same event as not recorded — the first record stands, the verdicts and the rethrow unchanged (review round 2)', async () => {
+        const fake = createProjectionFirestore();
+        const { ports, logged } = edgePorts(500 + FINAL_AGE_MS);
+        const writer = {
+          ...ports,
+          ...firestoreTriggerFailurePorts(fake.db as unknown as Firestore),
+        };
+        const capacity = retryingTrigger(
+          { fn: 'rebuildCapacityOnSettingsChange', timeoutSeconds: null },
+          writer,
+          async () => {
+            throw Object.assign(new Error('bad'), { code: 15 });
+          },
+        );
+        const transient = Object.assign(new Error('unavailable'), { code: 14 });
+        const stats = retryingTrigger(
+          { fn: 'recomputeClientStatsOnPolicyChange', timeoutSeconds: null },
+          writer,
+          async () => {
+            throw transient;
+          },
+        );
+        await expect(capacity(event)).resolves.toBeUndefined();
+        await expect(stats(event)).rejects.toBe(transient);
+        expect([...fake.docs.keys()]).toEqual(['triggerFailures/evt-1']);
+        expect(fake.docs.get('triggerFailures/evt-1')).toMatchObject({
+          fn: 'rebuildCapacityOnSettingsChange',
+          attemptOutcome: AttemptOutcome.Permanent,
+          failureCode: 'data-loss',
+        });
+        expect(
+          logged.filter((line) => line.msg === 'trigger.failure_not_recorded'),
+        ).toEqual([
+          {
+            level: 'error',
+            msg: 'trigger.failure_not_recorded',
+            fields: {
+              fn: 'recomputeClientStatsOnPolicyChange',
+              eventId: 'evt-1',
+              errorCode: 'already-exists',
+            },
+          },
+        ]);
+        expect(logged.map((line) => line.msg)).toEqual([
+          'trigger attempt failed',
+          'trigger attempt failed',
+          'trigger.failure_not_recorded',
+        ]);
+      });
+
+      it('carries no free text a browser writer put on a governed document into the line or the dead letter (review round 2, DEP-19)', async () => {
+        const { ports, logged, deadLetters } = edgePorts(2_000);
+        const planted = {
+          id: 'evt-x',
+          time: new Date(500).toISOString(),
+          document: 'scheduleExceptions/b1__2026-11-03',
+          data: {
+            before: { exists: false, data: () => undefined },
+            after: {
+              exists: true,
+              data: () => ({
+                barberId: 'b1',
+                localDate: '2026-11-03',
+                exceptionEffect: 'BLOCKED',
+                exceptionRanges: null,
+                writeOperationId: 'Георги Иванов 0888123456 georgi@mail.bg',
+              }),
+            },
+          },
+        };
+        await expect(
+          retryingTrigger(
+            { fn: 'rebuildCapacityOnExceptionChange', timeoutSeconds: null },
+            ports,
+            async () => {
+              throw new TypeError(
+                "Cannot read properties of null (reading 'length')",
+              );
+            },
+          )(planted),
+        ).resolves.toBeUndefined();
+        expect(logged).toHaveLength(1);
+        expect(logged[0]).toMatchObject({
+          msg: 'trigger attempt failed',
+          fields: {
+            fn: 'rebuildCapacityOnExceptionChange',
+            outcome: 'PERMANENT',
+            documentPath: 'scheduleExceptions/b1__2026-11-03',
+            writeOperationId: null,
+          },
+        });
+        expect(deadLetters).toHaveLength(1);
+        expect(deadLetters[0]).toMatchObject({
+          documentPath: 'scheduleExceptions/b1__2026-11-03',
+          attemptOutcome: AttemptOutcome.Permanent,
+          writeOperationId: null,
+        });
+        expect(JSON.stringify(logged)).not.toContain('georgi');
+        expect(JSON.stringify(deadLetters)).not.toContain('georgi');
       });
 
       it('writes none for a TRANSIENT failure one ms before the last stretch, and rethrows it', async () => {

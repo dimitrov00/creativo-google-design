@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import { OperationId, TriggerEventId, type UtcEpochMs } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { AttemptOutcome } from '@core/components';
 import { Collections, type TriggerFailure } from '@core/entities';
 import { utcMs } from '@core/testing';
@@ -33,10 +34,11 @@ function deadLetter(
   eventId: string,
   recordedAtUtcMs: UtcEpochMs,
   attemptOutcome: AttemptOutcome = AttemptOutcome.Permanent,
+  fn = 'dispatchClientProjections',
 ): TriggerFailure {
   return {
     id: TriggerEventId.of(eventId),
-    fn: 'dispatchClientProjections',
+    fn,
     documentPath: 'appointments/appt-1',
     attemptOutcome,
     failureCode:
@@ -101,6 +103,43 @@ describe('firestoreTriggerFailurePorts.writeTriggerFailure (emulator)', () => {
     expect(docs[0]?.data()).toMatchObject({
       recordedAtUtcMs: FIRST,
       attemptOutcome: AttemptOutcome.Transient,
+    });
+  });
+
+  it("refuses a second trigger's dead letter for the same event — the first record stands (review round 2)", async () => {
+    const ports = firestoreTriggerFailurePorts(db);
+    expect(
+      await ports.writeTriggerFailure(
+        deadLetter(
+          'evt-1',
+          FIRST,
+          AttemptOutcome.Permanent,
+          'rebuildBusyOnAppointmentChange',
+        ),
+      ),
+    ).toEqual({ ok: true, value: undefined });
+    expect(
+      await ports.writeTriggerFailure(
+        deadLetter(
+          'evt-1',
+          LATER,
+          AttemptOutcome.Permanent,
+          'dispatchClientProjections',
+        ),
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.WriteFailed,
+        path: 'triggerFailures/evt-1',
+        reason: 'already-exists',
+      },
+    });
+    const docs = await stored();
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.data()).toMatchObject({
+      fn: 'rebuildBusyOnAppointmentChange',
+      recordedAtUtcMs: FIRST,
     });
   });
 

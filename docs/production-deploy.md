@@ -27,7 +27,7 @@ pnpm run preflight --scope functions --project "$PROJECT_ID"
 > straight after the script name, as above (checked on 2026-10-26 with a dry
 > `--scope bogus` run; the runbook, the HANDOFF gate and the preflight's usage
 > line were corrected the same day). Source: `package.json:18`, `:31`;
-> `tools/verify/preflight/preflight.mjs:1039-1049`.
+> `tools/verify/preflight/preflight.mjs:1269-1279` (`optionsOf`).
 
 The preflight is a read-only check that the project is ready (OR-35, DEP-F26).
 Both predeploy hooks in `firebase.json` run it too and refuse the deploy if a
@@ -95,13 +95,14 @@ so the owner has to make the call.
 ### Project, plan, region
 
 - [ ] **Create the Firebase project and upgrade it to Blaze.** The functions are
-      gen 2 (`runtime: nodejs22`), they bind a Secret Manager secret, and three
+      gen 2 (`runtime: nodejs22`), they bind Secret Manager secrets, and three
       `onSchedule` jobs need Cloud Scheduler. None of these deploy on the Spark
       plan. The first `firebase deploy --only functions` offers to enable the
       APIs it needs (Cloud Functions, Cloud Build, Artifact Registry, Cloud Run,
       Eventarc, Pub/Sub, Cloud Scheduler, Secret Manager). Accept them.
-      Source: `firebase.json:9-25`; `apps/functions/src/main.ts:338`, `:722-732`,
-      `:839-841`.
+      Source: `firebase.json:9-25`; `apps/functions/src/main.ts:290`
+      (`LOG_DIGEST_KEY`), `:386` (`WALKIN_ID_KEY`), `:877-887`,
+      `:996-998` (the `onSchedule` jobs).
 - [ ] **Choose the Firestore location knowing that functions run in
       `us-central1`.** No export sets a `region` and there is no
       `setGlobalOptions`. The web calls `getFunctions(app)` with no region, and
@@ -113,7 +114,7 @@ so the owner has to make the call.
       the `connect-src` host in `firebase.json` and the `functionsHost` in
       `check-csp.mjs`, all in one change. **decide** (the repo records no
       location decision).
-      Source: `apps/functions/src/main.ts:186-191`;
+      Source: `apps/functions/src/main.ts:200-205`;
       `libs/infrastructure/firebase-app/src/lib/firebase-app.provider.ts:121`;
       `firebase.json:41`; `tools/verify/csp/check-csp.mjs:170-173`.
 - [ ] **Create the (default) Firestore database (Native mode) and the Storage
@@ -144,7 +145,7 @@ another id and put it in `.firebaserc` → `targets` → `<id>` → `hosting` �
 `web` (the template comment calls it `<site-id>`).
 
 Source: `.firebaserc:2-12`; P6 refuses the placeholder
-(`tools/verify/preflight/preflight.mjs:23-24`, `:200-203`).
+(`tools/verify/preflight/preflight.mjs:23-24`, `:228-231` (`checkEnvironment`)).
 
 - [ ] **Fill in the production web Firebase config.** Replace every
       `REPLACE_ME` in `apps/web/src/environments/environment.production.ts`
@@ -156,7 +157,7 @@ Source: `.firebaserc:2-12`; P6 refuses the placeholder
       names the project id as a string literal.
       Source: `apps/web/src/environments/environment.production.ts:8-15`;
       `apps/web/project.json:52-57`;
-      `tools/verify/preflight/preflight.mjs:399-435`.
+      `tools/verify/preflight/preflight.mjs:427-463` (`checkBundle`).
 - [ ] **Point the CSP at the real callables host.** In `firebase.json`, change
       `https://us-central1-creativo-replace-me.cloudfunctions.net` to
       `https://us-central1-<PROJECT_ID>.cloudfunctions.net`. If the host is
@@ -216,7 +217,7 @@ openssl rand -hex 32 | firebase functions:secrets:set WALKIN_ID_KEY --data-file=
 > record. Set it once and keep its current version enabled.
 
 Source: `docs/architecture/firestore-runbook.md:233`;
-`apps/functions/src/main.ts:330-351`;
+`apps/functions/src/main.ts:378-399` (`WALKIN_ID_KEY`, `walkInKey`);
 `docs/architecture/decisions/2026-10-26-owner-rulings.md:710`.
 
 - [ ] **Create `LOG_DIGEST_KEY` before the first functions deploy that
@@ -286,11 +287,13 @@ firebase functions:secrets:set <NAME> --project "$PROJECT_ID"
 - add each new secret to `EMULATOR_SECRETS` so the emulator keeps working.
 
 Source: `apps/functions/src/adapters/refusing-otp-sender.adapter.ts:5-25`;
-`apps/functions/src/adapters/console-otp-sender.adapter.ts:6-53`;
-`apps/functions/src/main.ts:284-299`, `:338-341`, `:444-474`;
+`apps/functions/src/adapters/console-otp-sender.adapter.ts:6-54`;
+`apps/functions/src/main.ts:333-347` (`identityPorts`), `:386-389`
+(`WALK_IN_SECRETS`), `:504-538` (the three identity callables);
 `apps/functions/src/edge.ts` (`IDENTITY_WIRE`);
-`tools/flags/write-functions-env.mjs:97-99`;
-`tools/verify/preflight/preflight.mjs:831-879` (P7), `:881-920` (P8).
+`tools/flags/write-functions-env.mjs:99-102` (`EMULATOR_SECRETS`);
+`tools/verify/preflight/preflight.mjs:859-907` (P7, `checkEmulatorOnly`),
+`:909-948` (P8, `checkLaunchBlockers`).
 
 - [ ] **Keep the login-OTP sender separate from any campaign or marketing
       sender (owner rule).** It gets its own provider account or sub-account,
@@ -299,7 +302,7 @@ Source: `apps/functions/src/adapters/refusing-otp-sender.adapter.ts:5-25`;
       file. Never send marketing through `OtpDeliveryPorts`, and never reuse
       this identity from a campaign adapter. No campaign sender exists today.
       Source: `apps/functions/src/adapters/console-otp-sender.adapter.ts:7-11`;
-      `apps/functions/src/main.ts:288-292`.
+      `apps/functions/src/main.ts:336-340` (`identityPorts`).
 - [ ] **Publish the provider's e-mail DNS records (SPF, DKIM, DMARC) for the
       `auth.*` sending domain**, and register an SMS sender id if the BG
       provider requires one. The provider defines these steps; the repo has no
@@ -430,7 +433,8 @@ gcloud projects get-iam-policy "$PROJECT_ID" --format='yaml(auditConfigs)'
       Billing → Budgets & alerts: a monthly budget with e-mail alerts. All
       callables are reachable without App Check (see section 8), and only
       `reportClientIssues` is capped (`maxInstances: 2`).
-      Source: `apps/functions/src/main.ts:945-952`; Deferred #4.
+      Source: `apps/functions/src/main.ts:1120-1127` (`reportClientIssues`);
+      Deferred #4.
 
 ### Monitoring and privacy (owner's, OR-34)
 
@@ -463,7 +467,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 - [ ] **Turn on Error Reporting notifications.** There is no Sentry or Pino
       (D11(a)): Cloud Logging plus Error Reporting is the only error channel
       for both server and client errors.
-      Source: `apps/functions/src/adapters/console-telemetry.adapter.ts:5-22`;
+      Source: `apps/functions/src/adapters/console-telemetry.adapter.ts:11-28`;
       `docs/architecture/decisions/2026-10-26-owner-rulings.md:886`, `:1528`.
 - [ ] **Publish the privacy-policy line:** "diagnostic data under legitimate
       interest, 30-day Cloud Logging retention, no personal identifiers". Keep
@@ -479,7 +483,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       `'Europe/Sofia'`, a deploy-time constant. If `loc-center.timeZone` is a
       different zone, edit the constant before deploying functions.
       Source: `apps/functions/src/lib/cron-zone.ts:11`;
-      `apps/functions/src/main.ts:722-732`, `:839-841`.
+      `apps/functions/src/main.ts:877-887`, `:996-998` (the `onSchedule` jobs).
 - [ ] **Review the production feature-flag map.** All 13 flags in
       `config/feature-flags.json` → `production` are `false` today, so loyalty,
       the client profile, pause, support, merge, privacy, referrals and
@@ -490,7 +494,7 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       off: web first.
       Source: `config/feature-flags.json:32-46`;
       `apps/web/src/environments/environment.production.ts:2`;
-      `tools/flags/write-functions-env.mjs:7-24`, `:106-115`;
+      `tools/flags/write-functions-env.mjs:7-24`, `:109-118`;
       `apps/functions/src/lib/flags.ts:4-16` (callables refuse with
       `feature.off` while a param is off; enable a param before its web flag,
       disable it after).
@@ -522,7 +526,7 @@ Admin-SDK edit of those collections is recorded as `SYSTEM` / `ADMIN_SDK`
       `photos`, `openingHours` (seven days, Monday first: the envelope every
       barber's hours are clamped to), `timeZone`, `locationStatus`,
       `sortOrder`, and the flat geo, phone and cover fields.
-      Source: `firestore.rules:511-514`;
+      Source: `firestore.rules:539-542`;
       `libs/ecs-core/src/components/tenant-config.data.ts:20-24`;
       `libs/ecs-core/src/entities/shop-location.entity.ts:63`;
       `tools/seed/fixtures/catalog.fixtures.ts:172-208`;
@@ -537,13 +541,13 @@ pnpm run preflight --project "$PROJECT_ID"
       `locations`. Upload cover images and barber faces under Storage `media/**`
       with the console or the Admin SDK (no client writer). If the catalogue is
       empty, `/book` shows nothing.
-      Source: `firestore.rules:496-535`; `storage.rules:54-57`;
+      Source: `firestore.rules:524-563`; `storage.rules:54-57`;
       `tools/seed/fixtures/catalog.fixtures.ts`, `schedules.fixtures.ts`.
 - [ ] **`settings/bookingPolicy` (optional).** If it is absent,
       `BookingPolicy.withDefaults` applies. Writing it fires
       `rebuildCapacityOnSettingsChange`.
       Source: `apps/functions/src/adapters/firestore-settings.adapter.ts:26-36`;
-      `firestore.rules:712-720`; `tools/seed/fixtures/settings.fixtures.ts`.
+      `firestore.rules:750-757`; `tools/seed/fixtures/settings.fixtures.ts`.
 - [ ] **The first admin, then the staff.** No callable grants roles
       (`grantRoles` is unbuilt), and the rules never let a client write
       `users/{uid}`. Roles reach the ID token only from the stored
@@ -558,7 +562,7 @@ pnpm run preflight --project "$PROJECT_ID"
 
      The known tags are `client`, `barber`, `receptionist`, `content_manager`,
      `admin` and `sysadmin`; an unknown one is dropped from the token.
-     Source: `firestore.rules:190-219`;
+     Source: `firestore.rules:202-231`;
      `libs/ecs-core/src/pipelines/verify-otp.pipeline.ts:60-64`;
      `libs/ecs-core/src/components/role.data.ts:15-22`;
      `libs/ecs-core/src/components/auth-claims.data.ts:94-101`;
@@ -838,8 +842,8 @@ CREATIVO_SKIP_PREFLIGHT=1 firebase deploy --only functions,hosting:web --project
       (section 1).
 
 Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
-`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:53-56`,
-`:1083-1086`;
+`firebase.json:26-34`; `tools/verify/preflight/preflight.mjs:61-64`,
+`:1313-1316` (`preflight()`'s `CREATIVO_SKIP_PREFLIGHT` branch);
 `docs/security/csp-baseline.md` ("The service-worker header lag").
 
 ---
@@ -856,8 +860,10 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
       Under `FUNCTIONS_EMULATOR=true` every OTP code is the fixed one,
       `devCode` is returned to the caller and the console sender writes every
       code to the log, which means anyone can take over any account. P6 refuses these variables in the shell.
-      Source: `apps/functions/src/main.ts:257-258`, `:293-295`, `:450-451`;
-      `tools/verify/preflight/preflight.mjs:117-118`, `:189-195`.
+      Source: `apps/functions/src/main.ts:277-278` (`onEmulator`), `:340-343`
+      (`identityPorts`), `:511-512` (`requestOtpChallenge`);
+      `tools/verify/preflight/preflight.mjs:127-128` (`EMULATOR_VARIABLE`),
+      `:217-223` (`checkEnvironment`).
 - [ ] **Never deploy the test `WALKIN_ID_KEY`.** `.secret.local` (a public
       TEST value) is written only for `demo-*` projects, and `firebase.json`'s
       `functions.ignore` keeps it and `.env.local` out of the upload. Keep
@@ -867,7 +873,7 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
       (`pnpm run dev`, `e2e:web`, `verify:p0`, `verify:csp`) in the same tree
       between the build and a real deploy.
       Source: `firebase.json:11-24`; `tools/flags/write-functions-env.mjs:12-20`,
-      `:97-99`, `:158-164`.
+      `:99-102`, `:161-167`.
 - [ ] **Keep `emulators.enabled: false`** in `environment.production.ts`. It
       also keeps the `window.__e2eSignIn` test hook unwired.
       Source: `apps/web/src/environments/environment.production.ts:16-23`;
@@ -877,7 +883,7 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
 - [ ] **Never deploy production with `FLAGS_ENV=staging`** (or
       `--env staging`): the predeploy would write the staging map into the
       production project's `.env.<projectId>`.
-      Source: `tools/flags/write-functions-env.mjs:7-24`, `:106-115`.
+      Source: `tools/flags/write-functions-env.mjs:7-24`, `:109-118`.
 
 ---
 
@@ -889,4 +895,4 @@ Source: `docs/architecture/firestore-runbook.md:207`, `:265-267`;
 | **Trusted Types, enforced**                                          | Report-Only (`require-trusted-types-for 'script'`). Waits until the MapLibre sinks and the SW-registration report are gone.                                                                                              | Deferred #3 (`…owner-rulings.md:1471`); `firebase.json:43-46`                                                 |
 | **HSTS `preload`**                                                   | Not set (close to irreversible). Add it once the apex domain is final.                                                                                                                                                   | Deferred #10 (`…owner-rulings.md:1478`); OR-29                                                                |
 | **Firestore connectivity probe** (`www.google.com` in `img-src`)     | Blocked: clients on a failing network report an `img-src` violation and see "no network". Owner's call.                                                                                                                  | `docs/security/csp-baseline.md` (Follow-ups)                                                                  |
-| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:945-952`                                                                          |
+| **Instance caps or warm instances** on the booking and OTP callables | Platform defaults. Only `reportClientIssues` is capped (`maxInstances: 2`, plus a token bucket). **decide**                                                                                                              | `apps/functions/src/main.ts:1120-1127` (`reportClientIssues`)                                                 |

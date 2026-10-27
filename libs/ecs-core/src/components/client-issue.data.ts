@@ -19,11 +19,14 @@ export const ClientIssueKind = {
   /** The browser refused something the Content Security Policy does not admit. */
   CspViolation: 'CSP_VIOLATION',
   /**
-   * A callable never answered as a callable — the throw was no
-   * `FunctionsError` (a network that dropped, a lookalike): the web's
-   * callable client reports it once (`callableName`, `operationId`,
-   * `callableErrorCode`) and still answers `PIPELINE_UNKNOWN`
-   * (audit-hardening WS-5, RU-30). A condition, logged at `warn`.
+   * A callable got no answer the server wrote — a fetch that failed, a body
+   * with no JSON, the client timeout (the SDK's own `FunctionsError`s), or a
+   * throw that is no `FunctionsError` (a lookalike): the web's callable
+   * client reports it once (`callableName`, `operationId`,
+   * `callableErrorCode`) and answers what it already answered —
+   * `PipelineError.fromWire`'s answer for the SDK's own, `PIPELINE_UNKNOWN`
+   * otherwise (audit-hardening WS-5, RU-30; review round 2). A condition,
+   * logged at `warn`.
    */
   CallableTransportFailed: 'CALLABLE_TRANSPORT_FAILED',
 } as const;
@@ -59,8 +62,9 @@ export type ClientIssueKind =
  *   outcome line, inside Cloud Logging, when the call reached the server —
  *   never a uid on the device's side (RU-39, OR-34);
  * - `callableName` — the callable that failed (`commitBooking`);
- * - `callableErrorCode` — the code the failure carried (`functions/internal`
- *   on a lookalike), never a domain `errorCode`.
+ * - `callableErrorCode` — the code the failure carried
+ *   (`functions/internal`, `functions/deadline-exceeded` from the SDK's own
+ *   failures, or a lookalike's), never a domain `errorCode`.
  *
  * The last three are `null` on every kind but `CALLABLE_TRANSPORT_FAILED`.
  * Built by `ClientIssueSystem.compose` / `.composeTransport` on the device,

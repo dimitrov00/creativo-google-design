@@ -501,7 +501,12 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
 
   it('reports the transport id minted for the call — the one the server would have logged', async () => {
     const sink = recordingClientIssuePorts();
-    callableMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    // What the SDK throws for a fetch that failed (status 0) — a network
+    // that dropped, a backend that crashed without a CORS header (review
+    // round 2: never a bare `TypeError`, the SDK catches that itself).
+    callableMock.mockRejectedValueOnce(
+      new FunctionsError('internal', 'internal'),
+    );
 
     await client(IDS, sink.ports)(Callables.RequestOtpChallenge)({
       identifierChannel: IdentifierChannel.Phone,
@@ -509,9 +514,65 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
     });
 
     expect(sink.reported).toEqual([
-      reported('requestOtpChallenge', 'TypeError', null, TRANSPORT_ID),
+      reported(
+        'requestOtpChallenge',
+        'FirebaseError',
+        'functions/internal',
+        TRANSPORT_ID,
+      ),
     ]);
   });
+
+  // The SDK's own failures — no answer the server wrote — are all
+  // `FunctionsError`s worded by the SDK (review round 2): reported once, the
+  // answer still `fromWire`'s.
+  it.each([
+    [
+      'a fetch that failed (status 0)',
+      new FunctionsError('internal', 'internal'),
+    ],
+    [
+      'a platform 5xx page with no JSON',
+      new FunctionsError('unavailable', 'unavailable'),
+    ],
+    [
+      'the SDK’s 70 s timeout',
+      new FunctionsError('deadline-exceeded', 'deadline-exceeded'),
+    ],
+    [
+      'a body with no data field',
+      new FunctionsError('internal', 'Response is missing data field.'),
+    ],
+    [
+      'a body that is no JSON object',
+      new FunctionsError('internal', 'Response is not valid JSON object.'),
+    ],
+  ])(
+    'reports %s once — FirebaseError and its code — and still answers fromWire',
+    async (_what, thrown) => {
+      const sink = recordingClientIssuePorts();
+      callableMock.mockRejectedValueOnce(thrown);
+
+      const failure = unwrapErr(
+        await client(IDS, sink.ports)(Callables.CommitBooking)(COLD),
+      );
+
+      expect(failure).toEqual(
+        PipelineError.withOperation(
+          PipelineError.fromWire(thrown.code, undefined),
+          COLD.attemptId,
+        ),
+      );
+      expect(sink.reported).toEqual([
+        reported(
+          'commitBooking',
+          'FirebaseError',
+          thrown.code,
+          'attempt-0123456789abcdef',
+        ),
+      ]);
+    },
+  );
 
   it('reports nothing for a refusal or an answer its decoder refuses — the server answered', async () => {
     const sink = recordingClientIssuePorts();
@@ -520,6 +581,50 @@ describe('callableClientPorts — a transport failure, reported to the issue sin
     callableMock.mockResolvedValueOnce({ data: {} });
     await client(IDS, sink.ports)(Callables.CommitBooking)(COLD);
 
+    expect(sink.reported).toEqual([]);
+  });
+
+  // What this edge and the platform answer: the SCREAMING errorCode with its
+  // details, or the uppercase bare status — never the SDK's own wording.
+  it.each([
+    [
+      'the platform’s bare INTERNAL',
+      new FunctionsError('internal', 'INTERNAL'),
+    ],
+    [
+      'the throttle',
+      new FunctionsError('resource-exhausted', 'RESOURCE_EXHAUSTED'),
+    ],
+    [
+      'a coded refusal',
+      new FunctionsError(
+        'failed-precondition',
+        BookingErrorCode.SlotUnavailable,
+        {
+          errorCode: BookingErrorCode.SlotUnavailable,
+        },
+      ),
+    ],
+    [
+      'a refusal worded like a bare code, with details',
+      new FunctionsError('internal', 'internal', {
+        errorCode: 'PIPELINE_UNKNOWN',
+      }),
+    ],
+  ])('reports nothing for %s — the server answered', async (_what, thrown) => {
+    const sink = recordingClientIssuePorts();
+    callableMock.mockRejectedValueOnce(thrown);
+
+    const failure = unwrapErr(
+      await client(IDS, sink.ports)(Callables.CommitBooking)(COLD),
+    );
+
+    expect(failure).toEqual(
+      PipelineError.withOperation(
+        PipelineError.fromWire(thrown.code, thrown.details),
+        COLD.attemptId,
+      ),
+    );
     expect(sink.reported).toEqual([]);
   });
 
