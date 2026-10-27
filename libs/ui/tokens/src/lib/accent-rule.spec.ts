@@ -607,12 +607,12 @@ describe('6 · `uiForegroundStyle` accent and promo, in every template', () => {
     ).toEqual(['strong']);
 
     // The wearers the law names.
-    expect(tags('<ui-icon uiName="a.b" uiForegroundStyle="accent" />')).toEqual(
-      [],
-    );
+    expect(
+      tags('<ui-icon uiName="checklist.done" uiForegroundStyle="accent" />'),
+    ).toEqual([]);
     expect(
       tags(
-        `<ui-icon uiName="a.b" [uiForegroundStyle]="on ? 'accent' : 'secondary'" />`,
+        `<ui-icon uiName="checklist.done" [uiForegroundStyle]="on ? 'accent' : 'secondary'" />`,
       ),
     ).toEqual([]);
     expect(

@@ -15,8 +15,9 @@
  *   - a static `uiName`/`uiIcon` or a literal in its binding that is not a
  *     key the vocabulary knows;
  *   - an <img> pointing at a logo file;
- *   - a hand-written <svg> outside INLINE_SVG_ALLOWED (the same three files
- *     the lint rule allows: a data ring, a countdown ring, a choreographed stroke).
+ *   - a hand-written <svg> outside INLINE_SVG_ALLOWED (the same four files
+ *     the lint rule allows: a data ring, a countdown ring, a choreographed
+ *     stroke, the gauge's circular arc).
  *
  * The codemod is deliberately narrow: it rewrites the shapes an icon-font
  * codebase actually has (`<span class="material-symbols-…">glyph</span>`,
@@ -90,6 +91,7 @@ export const INLINE_SVG_ALLOWED = [
   'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
   'libs/ui/patterns/src/lib/toast/toast.ts',
   'libs/ui/patterns/src/lib/reward-moment/reward-moment.ts',
+  'libs/ui/patterns/src/lib/gauge/gauge.ts',
 ];
 const INLINE_SVG = /<svg\b/g;
 
