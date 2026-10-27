@@ -10,8 +10,9 @@
  *     both checked;
  *   - `<img src="…logo….svg">` — the brand mark outside `<ui-logo>`;
  *   - a hand-written `<svg>` anywhere but the files named in the rule's
- *     `allowInlineSvg` option — the three that exist are a data ring, a
- *     countdown ring and a choreographed stroke, none of them a glyph.
+ *     `allowInlineSvg` option — the four that exist are a data ring, a
+ *     countdown ring, a choreographed stroke and the gauge's circular arc
+ *     (round a medal or a face), none of them a glyph.
  *
  * Template type-checking already rejects a raw `uiName` on `ui-icon`; this
  * rule catches the cases types cannot see, and does so at lint time, per

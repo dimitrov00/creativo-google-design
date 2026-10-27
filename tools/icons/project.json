@@ -4,5 +4,21 @@
   "sourceRoot": "tools/icons",
   "projectType": "library",
   "tags": ["scope:tooling", "type:util"],
-  "targets": {}
+  "// inputs": "check-icon-usage.spec.mjs imports the root eslint.config.mjs (which imports tools/lint-rules) and pins INLINE_SVG_ALLOWED to the icon-registry-only rule's allowInlineSvg option: an edit to either list alone must re-run it, not replay a cached pass",
+  "targets": {
+    "test": {
+      "inputs": [
+        "...",
+        "{workspaceRoot}/eslint.config.mjs",
+        "{workspaceRoot}/tools/lint-rules/**/*"
+      ]
+    },
+    "test-ci--check-icon-usage.spec.mjs": {
+      "inputs": [
+        "...",
+        "{workspaceRoot}/eslint.config.mjs",
+        "{workspaceRoot}/tools/lint-rules/**/*"
+      ]
+    }
+  }
 }
