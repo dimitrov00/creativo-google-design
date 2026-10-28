@@ -278,8 +278,9 @@ function erasureRow(
  * The client erasure's pure half (audit-hardening Phase 3 WS-D, GDPR
  * Art. 17, "pseudonymize, keep records"): who may not be erased, what of a
  * person's footprint still holds a personal value (the census), and every
- * write plan of the erasure's commits — the stamp, one visit's patch, the
- * photos, the loose documents, the completion and the re-sweep — each
+ * write plan of the erasure's commits — the contact sweep and its row, the
+ * stamp, one visit's patch, the photos, the loose documents, the completion
+ * and the re-sweep — each
  * idempotent: a document already clean plans nothing, so any call resumes
  * from the stored state alone. Visits, money, statistics, loyalty, the
  * journal and audit rows are never touched; every write that clears a
@@ -483,6 +484,11 @@ export const ClientErasureSystem = {
    * and the `AuditAction.PrivacyClientErasureStarted` row carries the census BEFORE.
    * Atomically, so the guard every writer reads and the stripping land
    * together; keyed by STATE (`AuditSystem.changeKey.erasureStarted`), so a replay plans none.
+   * The census is the one the stamping call read: what is left at the stamp.
+   * A contact an EARLIER call's sweep cleared (a budget spent mid-sweep, or a
+   * commit failed between the sweep and the stamp) is not in it — that act's
+   * `PRIVACY_CLIENT_ERASURE_SWEPT` row holds its census ({@link
+   * ClientErasureSystem.sweepRowWrites}; plan §7 item 28).
    */
   stampWrites(
     person: ClientPerson,
@@ -551,33 +557,26 @@ export const ClientErasureSystem = {
   },
 
   /**
-   * THE CONTACT SWEEP (P3-DEP-28) — run BEFORE the stamp clears the values
-   * it matches on, one visit at a time: the visit's contact cleared to
-   * {@link BookingContact.NONE} under the erasure's `writeOperationId` when
-   * it carries one of the person's contact values
-   * ({@link ClientPrivacySystem.contactCarriesValueOf}) and nothing would
-   * recognise it after the stamp — the visit does not seat the person (a
-   * staff edit removed their seat and kept their contact), or seats them
-   * on a shared visit whose ids do not prove the contact theirs. `[]` for
-   * every other visit (its contact is {@link ClientErasureSystem.visitWrites}'
-   * after the stamp, or not the person's) and once the values are gone.
+   * THE CONTACT SWEEP (P3-DEP-28, P3-DEP-34) — run BEFORE the stamp clears
+   * the values it matches on, one visit at a time: the visit's contact
+   * cleared to {@link BookingContact.NONE} under the erasure's
+   * `writeOperationId` whenever it carries one of the person's contact
+   * values ({@link ClientPrivacySystem.contactCarriesValueOf}) — whether or
+   * not the visit seats the person, and whatever its ids prove. After the
+   * stamp the values are gone and a staff `REMOVE_SEAT` takes a visit out of
+   * every footprint read, so a contact holding the person's values must be
+   * cleared while those values still find it (P3-DEP-34). `[]` for a visit
+   * whose contact carries none of them (its contact is
+   * {@link ClientErasureSystem.visitWrites}' after the stamp, or not the
+   * person's), with no contact, and once the values are gone.
    */
   contactSweepWrites(
     visit: Appointment,
     person: ClientPerson,
     operationId: OperationId,
-    walkInHash: (input: string) => string,
   ): readonly WriteOp[] {
     if (!hasContact(visit)) return [];
     if (!ClientPrivacySystem.contactCarriesValueOf(visit, person)) return [];
-    const customerId = person.record.id;
-    if (
-      visit.subjectCustomerIds.includes(customerId) &&
-      (ClientPrivacySystem.isSoleSubject(visit, customerId) ||
-        ClientPrivacySystem.contactProvedById(visit, person, walkInHash))
-    ) {
-      return [];
-    }
     return [
       WriteOp.update([Collections.Appointments, visit.id], {
         ...BookingContact.NONE,
@@ -587,11 +586,67 @@ export const ClientErasureSystem = {
   },
 
   /**
+   * The id basis of the SWEPT row one act plans for a record — known before
+   * the commit, so the pipeline probe-reads it in each sweep commit (the
+   * re-sweep's idiom): an operation key, `AuditSystem.changeKey.erasureSweep`.
+   */
+  sweepRowIdBasis(customerId: CustomerId, operationId: OperationId): string {
+    return AuditSystem.idBasisOf(
+      AuditAction.PrivacyClientErasureSwept,
+      AuditResourceId.forCustomer(customerId),
+      customerId,
+      AuditSystem.changeKey.erasureSweep(operationId),
+    );
+  },
+
+  /**
+   * The pre-stamp sweep's audit row (P3-DEP-33) — planned INSIDE a sweep
+   * commit, so the contacts it clears land with a row naming the act or not
+   * at all (WS-1), even when the stamp never follows: ONE
+   * `AuditAction.PrivacyClientErasureSwept` row holding the act's census
+   * BEFORE (counts only), credited to the admin, the record its target. `[]`
+   * for a record that is not `NONE` (no sweep runs after the stamp), when
+   * the commit clears nothing (`sweepWriteCount`), or when the probe read
+   * found this act's row (`rowPresent` — a later chunk, or a resumed call of
+   * the same act, plans none).
+   */
+  sweepRowWrites(
+    record: Customer,
+    before: ErasureCensus,
+    rowPresent: boolean,
+    sweepWriteCount: number,
+    actor: Actor,
+    operationId: OperationId,
+    nowUtcMs: UtcEpochMs,
+    hash: (input: string) => string,
+  ): readonly WriteOp[] {
+    if (record.erasureStatus !== ErasureStatus.None) return [];
+    if (rowPresent || sweepWriteCount === 0) return [];
+    return AuditSystem.createsOf(
+      [
+        erasureRow(
+          AuditAction.PrivacyClientErasureSwept,
+          record.id,
+          before,
+          actor,
+          operationId,
+          nowUtcMs,
+          AuditSystem.changeKey.erasureSweep(operationId),
+        ),
+      ],
+      hash,
+    );
+  },
+
+  /**
    * ONE visit's patch (P3-L-12, P3-RU-33) — `[]` when nothing of the
    * person is left on it (idempotent), and for a visit that does not seat
    * the person (its contact is the sweep's, before the stamp): the visit
    * contact cleared to {@link BookingContact.NONE}
-   * when it is the person's or the visit is sole-subject; the
+   * when it is the person's or the visit is sole-subject (a contact that
+   * carries the person's values is already the sweep's, P3-DEP-34 — this
+   * clears the rest: a sole-subject visit's other contact, one the ids
+   * prove whose values are not the person's stored ones); the
    * person's named walk-in seats marked `— <n>`; the patched visit stamped
    * with the erasure's `writeOperationId` (ids, times, money, statuses and
    * every other seat kept); and the visit's note removed when present —

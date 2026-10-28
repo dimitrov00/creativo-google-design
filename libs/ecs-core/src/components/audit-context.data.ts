@@ -110,6 +110,13 @@ export const AuditAction = {
   /** An admin exported a client's data (`exportClientData`, Phase 3 WS-C) — counts only. */
   PrivacyClientExported: 'PRIVACY_CLIENT_EXPORTED',
   /**
+   * An admin's erasure swept, BEFORE its stamp, the contacts of visits that
+   * carry the person's contact values (P3-DEP-28, P3-DEP-33): written in the
+   * sweep's first commit that lands, once per act — the census BEFORE,
+   * counts only.
+   */
+  PrivacyClientErasureSwept: 'PRIVACY_CLIENT_ERASURE_SWEPT',
+  /**
    * An admin's erasure began (`eraseClient`, Phase 3 WS-D): the stamp commit
    * cleared the record and the account — the census BEFORE, counts only.
    */
@@ -691,7 +698,9 @@ export namespace AuditContext {
   /**
    * An admin's data-subject erasure (audit-hardening Phase 3 WS-D, P3-RU-22)
    * — the resource is `customers/<id>`, the target the client record, the
-   * actor the admin. The verb says which census the row carries: STARTED
+   * actor the admin. The verb says which census the row carries: SWEPT the
+   * census BEFORE of the act whose pre-stamp contact sweep it accounts for
+   * (P3-DEP-33), STARTED
    * the census BEFORE (what will be erased), ERASED the residue AFTER (every
    * personal count 0, beside what was retained), RESWEPT the census BEFORE a
    * sweep of an erased record that found residue (P3-L-19). Counts only

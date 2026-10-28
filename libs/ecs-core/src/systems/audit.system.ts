@@ -618,6 +618,15 @@ export const AuditSystem = {
      * reaches the ALREADY_EXISTS tripwire — one STARTED and one ERASED row
      * per record, ever.
      */
+    /**
+     * The pre-stamp contact sweep (P3-DEP-28, P3-DEP-33): its operation id —
+     * the act's first sweep commit that lands plans it after its probe read
+     * finds it absent (the re-sweep's idiom), so a resumed call of the same
+     * act plans none, while a new act (a re-minted id) is its own row.
+     */
+    erasureSweep(operationId: OperationId): string {
+      return `erasure-sweep:${operationId}`;
+    },
     /** The stamp commit (`NONE → ERASING`): one per record. */
     erasureStarted(customerId: CustomerId): string {
       return `erasure-start:${customerId}`;

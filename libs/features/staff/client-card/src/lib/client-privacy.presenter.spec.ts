@@ -177,6 +177,7 @@ function erasureInputOf(
     alertOpen: false,
     preview: null,
     siblings: [],
+    alertSiblings: [],
     translateCode: errorsOf(lang),
     ...overrides,
   };
@@ -220,6 +221,7 @@ describe('clientErasureVm — the erasure’s rows and its ONE alert (audit-hard
         alertOpen: true,
         preview: PREVIEW,
         siblings: PREVIEW.erasureSiblingCustomerIds,
+        alertSiblings: PREVIEW.erasureSiblingCustomerIds,
       }),
     ).alert;
     expect(bg).toEqual({
@@ -248,7 +250,11 @@ describe('clientErasureVm — the erasure’s rows and its ONE alert (audit-hard
       ],
     });
     const en = clientErasureVm(
-      erasureInputOf('en', { alertOpen: true, preview: PREVIEW }),
+      erasureInputOf('en', {
+        alertOpen: true,
+        preview: PREVIEW,
+        alertSiblings: PREVIEW.erasureSiblingCustomerIds,
+      }),
     ).alert;
     expect(en.title).toBe('Erase personal data?');
     expect(en.body).toBe(
@@ -261,6 +267,26 @@ describe('clientErasureVm — the erasure’s rows and its ONE alert (audit-hard
       'Erase',
       'Cancel',
     ]);
+  });
+
+  it('counts the siblings the act names (the store’s list), not the preview’s — a preview after the stamp names none while the card keeps two rows (P3-DEP-35)', () => {
+    const after: ClientPrivacyCall.ErasurePreview = {
+      ...PREVIEW,
+      erasureStatus: ErasureStatus.Erasing,
+      erasureSiblingCustomerIds: [],
+    };
+    const input = {
+      alertOpen: true,
+      preview: after,
+      siblings: [SIBLING_A, SIBLING_B],
+      alertSiblings: [SIBLING_A, SIBLING_B],
+    };
+    expect(clientErasureVm(erasureInputOf('bg', input)).alert.body).toContain(
+      'Други записи със същия телефон или имейл: 2.',
+    );
+    expect(clientErasureVm(erasureInputOf('en', input)).alert.body).toContain(
+      'Other records with this phone or e-mail: 2.',
+    );
   });
 
   it('keeps the alert worded once it closes, and has no figures before the first preview', () => {

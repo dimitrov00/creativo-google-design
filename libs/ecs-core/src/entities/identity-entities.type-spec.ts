@@ -500,7 +500,7 @@ if (row.auditAction === AuditAction.PrivacyClientExported) {
 }
 /*
  * The data-subject erasure rows (audit-hardening Phase 3 WS-D, P3-DEP-18):
- * ONE variant for the three verbs, flat — the verb and the eleven census
+ * ONE variant for the four verbs, flat — the verb and the eleven census
  * counts, disjoint from the actor, target and meta slices; a name, a contact
  * value, a label, free text or a sibling's id is never on a row (R36 / T5).
  */
@@ -525,6 +525,7 @@ export const clientErasureLifecycleDisjoint: Disjoint<
 export const clientErasureVerbsAre: [
   Equals<
     ErasureAction,
+    | 'PRIVACY_CLIENT_ERASURE_SWEPT'
     | 'PRIVACY_CLIENT_ERASURE_STARTED'
     | 'PRIVACY_CLIENT_ERASED'
     | 'PRIVACY_CLIENT_ERASURE_RESWEPT'
@@ -534,11 +535,14 @@ export const clientErasureVerbsAre: [
   Equals<AuditContext.ClientErasure['erasureJournalCount'], number>,
 ] = [true, true, true, true];
 /*
- * ONE variant carries the three verbs (its `auditAction` is the union), so
+ * ONE variant carries the four verbs (its `auditAction` is the union), so
  * it is extracted by the union and each verb narrows it by intersection.
  */
 export const auditEntryWithErasureNotNever: [
   IsNever<Extract<AuditEntry, { readonly auditAction: ErasureAction }>>,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_SWEPT' }
+  >,
   IsNever<
     AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_STARTED' }
   >,
@@ -546,12 +550,13 @@ export const auditEntryWithErasureNotNever: [
   IsNever<
     AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_RESWEPT' }
   >,
-] = [false, false, false, false];
+] = [false, false, false, false, false];
 /** The check is not vacuous: a verb no variant carries narrows the entry to `never`. */
 export const auditEntryWithForeignVerbIsNever: IsNever<
   AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_FORGOTTEN' }
 > = true;
 if (
+  row.auditAction === AuditAction.PrivacyClientErasureSwept ||
   row.auditAction === AuditAction.PrivacyClientErasureStarted ||
   row.auditAction === AuditAction.PrivacyClientErased ||
   row.auditAction === AuditAction.PrivacyClientErasureReswept

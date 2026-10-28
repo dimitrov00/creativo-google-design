@@ -34,8 +34,12 @@ export const PrivacyErrorCode = {
   ExportTooLarge: 'PRIVACY_EXPORT_TOO_LARGE',
   /**
    * The record links an account the shop must not erase from here
-   * (`failed-precondition`) — a staff role in its STORED account or in its
-   * Auth custom claims (P3-L-16): an erasure would remove an operator.
+   * (`failed-precondition`): a staff role in its STORED account or in its
+   * Auth custom claims, or — fail-closed, P3-DEP-29 — a linked uid with no
+   * `users` document while its Auth user exists. No production path sets
+   * custom claims, so without the document nothing proves the account
+   * belongs to no operator (P3-L-16; `ClientErasureSystem.refusalOf`). An
+   * erasure would remove an operator.
    */
   ErasureStaffAccount: 'PRIVACY_ERASURE_STAFF_ACCOUNT',
   /**

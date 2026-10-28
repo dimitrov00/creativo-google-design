@@ -81,15 +81,23 @@ import type { ExportClientDataCommand } from './export-client-data.pipeline';
  *    one of the person's contact values (P3-DEP-28) and the sign-in
  *    challenges stored under them are listed too.
  * 3. **Sweeps** (record `NONE` only), before the stamp clears the values
- *    they are found by: the challenges removed; then the contacts
- *    `ClientErasureSystem.contactSweepWrites` clears (a visit that no longer
- *    seats the person but carries their contact) in chunks of
- *    `ERASURE_CHUNK_SIZE`, each re-read and re-decided in its transaction,
- *    the budget looked at between them (always the first) — a spent budget
- *    answers "not done" BEFORE the stamp, so the next call finds the rest.
+ *    they are found by: the challenges removed (no row — a sign-in artefact
+ *    with a TTL, P3-RU-21); then every contact that carries one of the
+ *    person's contact values, whether or not its visit still seats them
+ *    (`ClientErasureSystem.contactSweepWrites`, P3-DEP-28, P3-DEP-34 — after
+ *    the stamp a desk `REMOVE_SEAT` would take it out of every read), in
+ *    chunks of `ERASURE_CHUNK_SIZE`, each re-read and re-decided in its
+ *    transaction, which also probes this act's
+ *    `AuditAction.PrivacyClientErasureSwept` row and creates it in the first
+ *    chunk that lands (the census BEFORE, P3-DEP-33 — so the clears are
+ *    audited even if the stamp never lands), the budget looked at between
+ *    them (always the first) — a spent budget answers "not done" BEFORE the
+ *    stamp, so the next call finds the rest.
  * 4. **Stamp** — ONE commit, the record and the account read in it:
  *    `ClientErasureSystem.stampWrites` (empty unless `NONE`). From here every
- *    writer refuses the person.
+ *    writer refuses the person. The STARTED row counts what is left at the
+ *    stamp: a contact an EARLIER call swept is not in it — that act's SWEPT
+ *    row holds it (plan §7 item 28).
  * 5. **Units**, each its own commit, the budget looked at between them
  *    (and the sweep's chunks): the visits whose patch is non-empty on the
  *    outside read, in chunks of `ERASURE_CHUNK_SIZE`, each re-read and
@@ -432,8 +440,9 @@ export const eraseClient =
     const nowUtcMs: UtcEpochMs = ports.nowUtcMs();
 
     // 3. The sweeps, before the stamp clears the values they are found by:
-    //    the challenges, then the contacts of the visits only those values
-    //    find (the budget looked at between chunks — spent, nothing stamped).
+    //    the challenges, then every contact carrying one of those values, the
+    //    act's SWEPT row in the first chunk that lands (the budget looked at
+    //    between chunks — spent, nothing stamped).
     for (const chunk of chunksOf(
       ClientErasureSystem.otpWrites(otps),
       ERASURE_CHUNK_SIZE,
@@ -451,12 +460,8 @@ export const eraseClient =
       const contacts: Appointment[] = [];
       for (const visit of read.value.footprint.visits) {
         if (
-          ClientErasureSystem.contactSweepWrites(
-            visit,
-            person,
-            operationId,
-            ports.walkInHash,
-          ).length > 0
+          ClientErasureSystem.contactSweepWrites(visit, person, operationId)
+            .length > 0
         ) {
           contacts.push(visit);
         }
@@ -466,18 +471,21 @@ export const eraseClient =
           spent = true;
           break;
         }
-        const swept = await commitContactSweep(
-          ports,
-          chunk,
+        const swept = await commitContactSweep(ports, chunk, {
           person,
+          before,
+          actor,
           operationId,
-        );
+          nowUtcMs,
+        });
         if (!swept.ok) return swept;
         handled++;
       }
     }
 
-    // 4. The stamp: the record and the account cleared, the STARTED row.
+    // 4. The stamp: the record and the account cleared, the STARTED row —
+    //    the census this call read: a contact an earlier call swept is not
+    //    in it, that act's SWEPT row is (§7 item 28).
     let erasureStatus: ErasureStatus = record.erasureStatus;
     if (!spent && record.erasureStatus === ErasureStatus.None) {
       const stamped = await ports.commit(
@@ -826,35 +834,66 @@ function unitsOf(
   return units;
 }
 
+/** What one act's contact sweep decides with — the person as read BEFORE the stamp, the census BEFORE, the act. */
+type SweepAct = {
+  readonly person: ClientPerson;
+  readonly before: ErasureCensus;
+  readonly actor: Actor;
+  readonly operationId: OperationId;
+  readonly nowUtcMs: UtcEpochMs;
+};
+
 /**
  * One chunk of the contact sweep (step 3): its visits read in the
  * transaction, each one's contact re-decided on what is stored NOW against
  * the person read before the stamp (a visit edited meanwhile plans what it
- * holds; one gone plans nothing).
+ * holds; one gone plans nothing), beside a probe of this act's SWEPT row —
+ * created with the first chunk that clears anything, so the clears land
+ * with their row or not at all (P3-DEP-33).
  */
 async function commitContactSweep(
   ports: EraseClientPorts,
   chunk: readonly Appointment[],
-  person: ClientPerson,
-  operationId: OperationId,
+  act: SweepAct,
 ): Promise<Result<true, RepositoryError>> {
+  const { person, before, actor, operationId, nowUtcMs } = act;
+  const record = person.record;
+  const rowPath = [
+    Collections.AuditLog,
+    AuditEntryId.of(
+      ports.hash(ClientErasureSystem.sweepRowIdBasis(record.id, operationId)),
+    ),
+  ];
   const paths: string[][] = [];
   for (const visit of chunk) paths.push([Collections.Appointments, visit.id]);
   const committed = await ports.commit(
-    (tx) => tx.getAll<Appointment>(paths),
-    (docs): Result<{ readonly writes: readonly WriteOp[] }, never> => {
+    async (tx) => ({
+      visits: await tx.getAll<Appointment>(paths),
+      present: (await tx.get(rowPath)) !== null,
+    }),
+    ({
+      visits,
+      present,
+    }): Result<{ readonly writes: readonly WriteOp[] }, never> => {
       const writes: WriteOp[] = [];
-      for (const fresh of docs) {
+      for (const fresh of visits) {
         if (fresh === null) continue;
         writes.push(
-          ...ClientErasureSystem.contactSweepWrites(
-            fresh,
-            person,
-            operationId,
-            ports.walkInHash,
-          ),
+          ...ClientErasureSystem.contactSweepWrites(fresh, person, operationId),
         );
       }
+      writes.push(
+        ...ClientErasureSystem.sweepRowWrites(
+          record,
+          before,
+          present,
+          writes.length,
+          actor,
+          operationId,
+          nowUtcMs,
+          ports.hash,
+        ),
+      );
       return Result.ok({ writes });
     },
   );

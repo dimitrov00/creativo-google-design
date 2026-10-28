@@ -96,11 +96,12 @@ describe('AuditAction', () => {
       'IDENTITY_REGISTRATION_COMPLETED',
     ]);
     // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10; the
-    // erasure's three, WS-D, P3-DEP-18).
+    // erasure's four, WS-D, P3-DEP-18 — the sweep's, P3-DEP-33).
     expect(
       AuditContext.ACTIONS.filter((action) => action.startsWith('PRIVACY_')),
     ).toEqual([
       'PRIVACY_CLIENT_EXPORTED',
+      'PRIVACY_CLIENT_ERASURE_SWEPT',
       'PRIVACY_CLIENT_ERASURE_STARTED',
       'PRIVACY_CLIENT_ERASED',
       'PRIVACY_CLIENT_ERASURE_RESWEPT',
@@ -513,6 +514,7 @@ describe('AuditContext — one flat variant per verb family, every field present
       erasureJournalCount: 12,
     };
     for (const auditAction of [
+      AuditAction.PrivacyClientErasureSwept,
       AuditAction.PrivacyClientErasureStarted,
       AuditAction.PrivacyClientErased,
       AuditAction.PrivacyClientErasureReswept,

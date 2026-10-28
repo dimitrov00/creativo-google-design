@@ -2624,6 +2624,10 @@ describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS
     // The stamp committed, then the call failed: the act is refused.
     await store.confirmErasure();
     await store.previewErasure(GEORGI_CUSTOMER_ID);
+    // The alert counts the two rows the card still lists beside it (P3-DEP-35).
+    expect(store.erasure()?.alert.body).toContain(
+      'Други записи със същия телефон или имейл: 2.',
+    );
     store.dismissErasure();
 
     expect(store.erasure()?.siblings.map((row) => row.customerId)).toEqual([
@@ -2631,6 +2635,10 @@ describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS
       OTHER_SIBLING,
     ]);
     await store.previewErasure(SIBLING);
+    // A sibling's own act counts its own preview's list (it names none).
+    expect(store.erasure()?.alert.body).toContain(
+      'Други записи със същия телефон или имейл: 0.',
+    );
     expect(privacy.previews.map((sent) => sent.customerId)).toEqual([
       GEORGI_CUSTOMER_ID,
       GEORGI_CUSTOMER_ID,
@@ -2651,6 +2659,9 @@ describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS
     expect(store.erasure()?.erasedLine).toBe('Изтрит клиент');
     // The RESWEEP row previews the record again.
     await store.previewErasure(GEORGI_CUSTOMER_ID);
+    expect(store.erasure()?.alert.body).toContain(
+      'Други записи със същия телефон или имейл: 2.',
+    );
     store.dismissErasure();
 
     expect(store.erasure()?.siblings.map((row) => row.customerId)).toEqual([

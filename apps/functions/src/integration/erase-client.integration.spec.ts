@@ -163,7 +163,8 @@ import {
  * without its `clientLabel` metadata (P3-DEP-31);
  * W erased in its own act, its party's contact NONE; (2) the visits, the
  * money, loyalty, the journal and every earlier audit row byte-equal, one
- * STARTED and one ERASED row; (3) no erased value reaches a row of the
+ * SWEPT (the contacts carrying P's values, cleared before the stamp —
+ * P3-DEP-33, P3-DEP-34), one STARTED and one ERASED row; (3) no erased value reaches a row of the
  * document-change audit or a log line, and the erased documents carry the
  * erasure's `writeOperationId` (WS-4.3's join from a trigger's attempt line
  * back to the act); (4) a second call is a no-op, and an erasure cut short
@@ -174,7 +175,8 @@ import {
  * linked uid with an Auth user and no `users` document (P3-DEP-29), a
  * record whose link fails D29; (7) a visit that kept P's contact after the
  * desk removed P's seat is found by P's contact value and cleared before
- * the stamp (P3-DEP-28).
+ * the stamp (P3-DEP-28), its clear accounted for by the act's ONE SWEPT row
+ * (P3-DEP-33).
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -877,7 +879,7 @@ describe('eraseClient (emulator)', () => {
 
   // ── (2) visits, money and audit rows remain ───────────────────────────
 
-  it('(2) keeps the visits, the money and the audit rows — every document but the erased ones byte-equal; ONE STARTED and ONE ERASED row', async () => {
+  it('(2) keeps the visits, the money and the audit rows — every document but the erased ones byte-equal; ONE SWEPT, ONE STARTED and ONE ERASED row', async () => {
     const before = await allDocuments();
     await eraseUntilDone(p(), OP);
     const after = await allDocuments();
@@ -913,9 +915,11 @@ describe('eraseClient (emulator)', () => {
         expect(after.get(path), path).toBe(text);
       }
     }
-    // Only the two rows are new.
+    // Only the three rows are new: the solo visit's contact carries P's
+    // values, so the sweep cleared it before the stamp under its own SWEPT
+    // row (P3-DEP-33, P3-DEP-34).
     const added = [...after.keys()].filter((path) => !before.has(path));
-    expect(added).toHaveLength(2);
+    expect(added).toHaveLength(3);
     for (const path of added) expect(path.startsWith('auditLog/')).toBe(true);
 
     // The solo visit: only its contact cleared and its writer named.
@@ -969,31 +973,33 @@ describe('eraseClient (emulator)', () => {
       reason: PrivacyMarker.TEXT,
     });
 
-    // ONE STARTED row (the census BEFORE) and ONE ERASED row (the residue).
+    // ONE SWEPT and ONE STARTED row (each the census BEFORE) and ONE ERASED
+    // row (the residue).
     const journal = world.state.journal.filter(
       (entry) => entry.customerId === p(),
     ).length;
     const admin = Actor.forCaller(world.admin, ADMIN_ROLES);
+    const censusBefore = {
+      ...admin,
+      auditOperationId: OP,
+      recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      resourceId: record,
+      erasureRecordCount: 1,
+      erasureAccountCount: 1,
+      erasureContactCount: 1,
+      erasureLabelCount: 0,
+      erasureNoteCount: 2,
+      erasurePhotoCount: 3,
+      erasureDocumentCount: 3,
+      erasurePseudonymCount: 2,
+      erasureVisitCount: 2,
+      erasureContactKeptCount: 1,
+      erasureJournalCount: journal,
+    };
+    const swept = await rowsOf(p(), AuditAction.PrivacyClientErasureSwept);
+    expect(swept).toEqual([expect.objectContaining(censusBefore)]);
     const started = await rowsOf(p(), AuditAction.PrivacyClientErasureStarted);
-    expect(started).toEqual([
-      expect.objectContaining({
-        ...admin,
-        auditOperationId: OP,
-        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
-        resourceId: record,
-        erasureRecordCount: 1,
-        erasureAccountCount: 1,
-        erasureContactCount: 1,
-        erasureLabelCount: 0,
-        erasureNoteCount: 2,
-        erasurePhotoCount: 3,
-        erasureDocumentCount: 3,
-        erasurePseudonymCount: 2,
-        erasureVisitCount: 2,
-        erasureContactKeptCount: 1,
-        erasureJournalCount: journal,
-      }),
-    ]);
+    expect(started).toEqual([expect.objectContaining(censusBefore)]);
     const erasedRows = await rowsOf(p(), AuditAction.PrivacyClientErased);
     expect(erasedRows).toEqual([
       expect.objectContaining({
@@ -1134,7 +1140,8 @@ describe('eraseClient (emulator)', () => {
     await eraseUntilDone(p(), OP);
     const straight = await everything();
 
-    // A budget spent at once: the stamp, then the first unit only.
+    // A budget spent at once: the contact sweep's first chunk (always taken)
+    // and the stamp, then no unit.
     await seed();
     const cut = await erase(p(), OP, spentAtOnce);
     expect(cut).toEqual({
@@ -1309,6 +1316,14 @@ describe('eraseClient (emulator)', () => {
     );
     expect(started).toMatchObject({ erasureContactCount: 2 });
     expect(await rowsOf(p(), AuditAction.PrivacyClientErased)).toHaveLength(1);
+    // The clear landed with the act's ONE SWEPT row — the census BEFORE —
+    // which the visit's writeOperationId joins (P3-DEP-33).
+    expect(await rowsOf(p(), AuditAction.PrivacyClientErasureSwept)).toEqual([
+      expect.objectContaining({
+        auditOperationId: OP,
+        erasureContactCount: 2,
+      }),
+    ]);
     // No appointment keeps a value of P's contact.
     const appointments = new Map(
       [...(await allDocuments())].filter(([key]) =>

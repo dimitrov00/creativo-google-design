@@ -414,7 +414,7 @@ describe('eraseClient — one call, start to finish', () => {
     });
   });
 
-  it('the order: the OTP sweep BEFORE the stamp, the stamp before every unit, the objects before their documents, the Auth user, the completion last', async () => {
+  it('the order: the OTP and contact sweeps BEFORE the stamp, the stamp before every unit, the objects before their documents, the Auth user, the completion last', async () => {
     const r = rig();
     const answer = unwrapOk(await r.erase());
     expect(answer).toEqual({
@@ -431,8 +431,12 @@ describe('eraseClient — one call, start to finish', () => {
     expect(r.stores.calls).toEqual([
       `loadAuthRoles:${uid}`,
       `commit:${Collections.Otps}`,
+      // The solo visit's contact carries P's values: swept before the stamp,
+      // with the act's SWEPT row (P3-DEP-33, P3-DEP-34).
+      `commit:${Collections.Appointments}+${Collections.AuditLog}`,
       `commit:${Collections.Customers}+${Collections.Users}+${Collections.AuditLog}`,
-      `commit:${Collections.Appointments}+${Collections.AppointmentNotes}`,
+      // The visits' unit: only the notes are left to remove.
+      `commit:${Collections.AppointmentNotes}`,
       `deleteStoredObject:${shot?.path}`,
       `deleteStoredObject:${nobody?.path}`,
       // The kept LIBRARY object's label, before its document (P3-DEP-31).
@@ -534,12 +538,24 @@ describe('eraseClient — one call, start to finish', () => {
     });
   });
 
-  it('exactly one STARTED row (the census BEFORE) and one ERASED row (the residue), each crediting the admin and naming the record', async () => {
+  it('exactly one SWEPT row (the sweep before the stamp), one STARTED row (the census BEFORE) and one ERASED row (the residue), each crediting the admin and naming the record', async () => {
     const r = await oneShot();
+    const swept = rowsNamed(r.store, AuditAction.PrivacyClientErasureSwept);
     const started = rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted);
     const erased = rowsNamed(r.store, AuditAction.PrivacyClientErased);
+    expect(swept).toHaveLength(1);
     expect(started).toHaveLength(1);
     expect(erased).toHaveLength(1);
+    // The solo visit's contact was cleared by the sweep (P3-DEP-34): its row
+    // carries the same census BEFORE, under the act's id (P3-DEP-33).
+    expect(swept[0]).toMatchObject({
+      ...BEFORE,
+      actorRole: 'ADMIN',
+      actorAdminUserId: r.world.admin,
+      auditTarget: 'CUSTOMER',
+      targetCustomerId: r.world.person.customerId,
+      auditOperationId: OPERATION,
+    });
     expect(started[0]).toMatchObject({
       ...BEFORE,
       actorRole: 'ADMIN',
@@ -552,7 +568,7 @@ describe('eraseClient — one call, start to finish', () => {
       ...RESIDUE,
       auditOperationId: OPERATION,
     });
-    expect(rowsOf(r.store)).toHaveLength(2);
+    expect(rowsOf(r.store)).toHaveLength(3);
     const rows = JSON.stringify(rowsOf(r.store));
     for (const sentinel of [
       ...P_SENTINELS,
@@ -739,7 +755,7 @@ describe('eraseClient — an ERASED record (P3-L-19)', () => {
     expect(r.tx.transactions).toHaveLength(commits);
     expect(snapshotOf(r.store)).toEqual(before);
     // The second call only re-ran the idempotent deletes: no commit.
-    expect(r.stores.calls.slice(14)).toEqual([
+    expect(r.stores.calls.slice(15)).toEqual([
       `loadAuthRoles:${r.world.person.userId}`,
       `deleteStoredPrefix:avatars/${r.world.person.userId}/`,
       `deleteAuthUser:${r.world.person.userId}`,
@@ -854,15 +870,24 @@ describe('eraseClient — the units', () => {
     expect(r.tx.plans).toHaveLength(2);
   });
 
-  it('no plan exceeds 2 × ERASURE_CHUNK_SIZE + 1 operations; 30 dirty visits take two visit commits', async () => {
+  it('no plan exceeds 2 × ERASURE_CHUNK_SIZE + 1 operations; 30 dirty visits take two sweep commits and two visit commits', async () => {
     const { world, store, x } = walkInWorld(30, true);
     const r = rig({ world, store });
     expect(unwrapOk(await r.erase({ customerId: x })).erasureDone).toBe(true);
     for (const plan of r.tx.plans) {
       expect(plan.length).toBeLessThanOrEqual(2 * ERASURE_CHUNK_SIZE + 1);
     }
+    // Before the stamp, the contacts carrying X's phone (P3-DEP-34): 25 and
+    // the act's SWEPT row, then 5 (P3-DEP-33).
+    const sweepCommits = r.tx.plans.filter(
+      (plan) =>
+        plan.some((op) => op.path[0] === Collections.Appointments) &&
+        !plan.some((op) => op.path[0] === Collections.AppointmentNotes),
+    );
+    expect(sweepCommits.map((plan) => plan.length)).toEqual([26, 5]);
+    // After it, the visits' units: each visit's label and note.
     const visitCommits = r.tx.plans.filter((plan) =>
-      plan.some((op) => op.path[0] === Collections.Appointments),
+      plan.some((op) => op.path[0] === Collections.AppointmentNotes),
     );
     expect(visitCommits.map((plan) => plan.length)).toEqual([50, 10]);
     const json = JSON.stringify(snapshotOf(store));
@@ -1014,8 +1039,10 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
       ...BookingContact.NONE,
       writeOperationId: OPERATION,
     });
-    // The sweep's commit (the visit alone) came before the stamp.
-    const sweep = stores.calls.indexOf(`commit:${Collections.Appointments}`);
+    // The sweep's commit (the visits and the act's SWEPT row) came before the stamp.
+    const sweep = stores.calls.indexOf(
+      `commit:${Collections.Appointments}+${Collections.AuditLog}`,
+    );
     const stamp = stores.calls.indexOf(
       `commit:${Collections.Customers}+${Collections.Users}+${Collections.AuditLog}`,
     );
@@ -1032,6 +1059,15 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
     ]);
     expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
     expect(holdingP(store)).toEqual([]);
+    // ONE SWEPT row names the act the visit's writeOperationId names (P3-DEP-33).
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureSwept),
+    ).toMatchObject([
+      {
+        erasureContactCount: BEFORE.erasureContactCount + 1,
+        auditOperationId: OPERATION,
+      },
+    ]);
   });
 
   it('the preview counts its contact — and writes nothing', async () => {
@@ -1063,9 +1099,9 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
       erasureStatus: ErasureStatus.Erasing,
       erasureDone: false,
     });
-    expect(holdingP(store)).toEqual([
-      `${Collections.Appointments}/${world.visits.solo.id}`,
-    ]);
+    // Every contact carrying P's values went with the sweep, the solo
+    // visit's included (P3-DEP-34) — nothing waits for a unit.
+    expect(holdingP(store)).toEqual([]);
     expect(unwrapOk(await rig({ world, store, stores }).erase())).toEqual({
       erasureStatus: ErasureStatus.Erased,
       erasureDone: true,
@@ -1091,8 +1127,17 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
     expect(rowsNamed(store, AuditAction.PrivacyClientErasureStarted)).toEqual(
       [],
     );
-    // One chunk swept; one visit still holds P's contact (and the solo).
+    // One chunk swept (the solo visit and 24 of the 26): two still hold P's contact.
     expect(holdingP(store)).toHaveLength(2);
+    // The chunk that landed carries the act's ONE SWEPT row — the census
+    // BEFORE: the solo's contact and the 26 (P3-DEP-33).
+    const sweptRow = {
+      erasureContactCount: BEFORE.erasureContactCount + ERASURE_CHUNK_SIZE + 1,
+      auditOperationId: OPERATION,
+    };
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureSwept),
+    ).toMatchObject([sweptRow]);
     const done = unwrapOk(await rig({ world, store, stores }).erase());
     expect(done).toEqual({
       erasureStatus: ErasureStatus.Erased,
@@ -1100,10 +1145,84 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
       ...RESIDUE,
     });
     expect(holdingP(store)).toEqual([]);
+    // The resumed call of the same act plans no second SWEPT row.
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureSwept),
+    ).toMatchObject([sweptRow]);
+    // The STARTED row counts what was left at the stamp — the two the second
+    // call swept, not the 25 the first did (plan §7 item 28): those are on
+    // the SWEPT row above.
     expect(
       rowsNamed(store, AuditAction.PrivacyClientErasureStarted),
-    ).toHaveLength(1);
+    ).toMatchObject([{ erasureContactCount: 2 }]);
     expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a stamp commit that fails after the sweep answers its failure and leaves the record NONE — the cleared visit’s writeOperationId joins exactly ONE SWEPT row (P3-DEP-33)', async () => {
+    const { world, store, stores, removed } = withRemoved();
+    // 0: the OTP sweep, 1: the contact sweep, 2: the stamp.
+    const r = rig({ world, store, stores, failCommitAt: 2 });
+    expect(unwrapErr(await r.erase())).toEqual(COMMIT_FAILURE);
+    expect(stores.calls).toContain(
+      `commit:${Collections.Appointments}+${Collections.AuditLog}`,
+    );
+    expect(stores.calls).not.toContain(
+      `commit:${Collections.Customers}+${Collections.Users}+${Collections.AuditLog}`,
+    );
+    expect(
+      store.get(`${Collections.Customers}/${world.person.customerId}`),
+    ).toMatchObject({ erasureStatus: ErasureStatus.None });
+    const visit = store.get(
+      `${Collections.Appointments}/${(removed[0] as Appointment).id}`,
+    );
+    expect(visit).toMatchObject({
+      ...BookingContact.NONE,
+      writeOperationId: OPERATION,
+    });
+    const joined = rowsOf(store).filter(
+      (row) => row.auditOperationId === visit?.['writeOperationId'],
+    );
+    expect(joined).toHaveLength(1);
+    expect(joined[0]).toMatchObject({
+      auditAction: AuditAction.PrivacyClientErasureSwept,
+      auditOperationId: OPERATION,
+      actorRole: 'ADMIN',
+      actorAdminUserId: world.admin,
+      auditTarget: 'CUSTOMER',
+      targetCustomerId: world.person.customerId,
+      ...BEFORE,
+      erasureContactCount: BEFORE.erasureContactCount + 1,
+    });
+  });
+
+  it('a new act after that failure (a re-minted operation id) completes; its STARTED row counts only what was left — the first act’s SWEPT row holds the swept contacts (plan §7 item 28)', async () => {
+    const { world, store, stores } = withRemoved();
+    unwrapErr(await rig({ world, store, stores, failCommitAt: 2 }).erase());
+    const next = OperationId.of('op-erase-0002');
+    expect(
+      unwrapOk(
+        await rig({ world, store, stores }).erase({ operationId: next }),
+      ),
+    ).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(holdingP(store)).toEqual([]);
+    // A straight run's STARTED row counts BEFORE + 1 contacts; this one 0 —
+    // the solo's and the removed visit's contacts were swept by the first act.
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureStarted),
+    ).toMatchObject([{ erasureContactCount: 0, auditOperationId: next }]);
+    // The first act's SWEPT row accounts for them; the new act swept nothing.
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureSwept),
+    ).toMatchObject([
+      {
+        erasureContactCount: BEFORE.erasureContactCount + 1,
+        auditOperationId: OPERATION,
+      },
+    ]);
   });
 
   it('a visit edited meanwhile to another person’s contact is re-decided in the sweep’s transaction — kept', async () => {
@@ -1132,6 +1251,136 @@ describe('eraseClient — a visit that kept P’s contact without seating P (P3-
       contactPhone: OTHER_SENTINELS.phone,
     });
   });
+});
+
+describe('eraseClient — P’s seat removed while the erasure is in flight (P3-DEP-34)', () => {
+  /** P's contact values on a visit — what no kept appointment may hold once P is erased. */
+  const P_CONTACT: readonly string[] = [
+    PRIVACY_SENTINELS.name,
+    PRIVACY_SENTINELS.phone,
+    PRIVACY_SENTINELS.email,
+    PRIVACY_SENTINELS.contactNote,
+  ];
+
+  /** The world plus P's own party [SELF P, COMPANION Q], P's contact on it. */
+  function withParty() {
+    const world = privacyWorld();
+    const party = personsParty(world);
+    const store = footprintStoreOf({
+      ...world.state,
+      visits: [...world.state.visits, party],
+    });
+    const stores = memoryErasureStores({
+      authUsers: new Map<UserId, readonly Role[]>([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+    return { world, store, stores, party };
+  }
+
+  /** The stored appointments that still hold one of P's contact values. */
+  function holdingP(store: MemoryStore): readonly string[] {
+    const out: string[] = [];
+    for (const [key, body] of store) {
+      if (!key.startsWith(`${Collections.Appointments}/`)) continue;
+      const json = JSON.stringify(body);
+      if (P_CONTACT.some((value) => json.includes(value))) out.push(key);
+    }
+    return out;
+  }
+
+  /**
+   * The desk's `REMOVE_SEAT` of P's seat on the party, as the edit pipeline
+   * writes it (`withSeatRemoved`), run ONCE before the first commit `when`
+   * accepts — a concurrent writer.
+   */
+  function removalWhen(
+    world: PrivacyWorld,
+    party: Appointment,
+    when: (index: number, record: DocBody | undefined) => boolean,
+  ) {
+    let done = false;
+    return (index: number, at: MemoryStore) => {
+      if (done) return;
+      const record = at.get(
+        `${Collections.Customers}/${world.person.customerId}`,
+      );
+      if (!when(index, record)) return;
+      done = true;
+      const path = `${Collections.Appointments}/${party.id}`;
+      const stored = { id: party.id, ...at.get(path) } as Appointment;
+      at.set(path, bodyOf(withSeatRemoved(stored, PERSONS_PARTY_SELF_SEAT)));
+    };
+  }
+
+  const afterStamp = (_index: number, record: DocBody | undefined) =>
+    record?.['erasureStatus'] === ErasureStatus.Erasing;
+  const beforeAnyCommit = (index: number) => index === 0;
+
+  it.each([
+    ['after the stamp, before the visits’ unit', afterStamp],
+    [
+      'after the outside read, before any commit (the record NONE)',
+      beforeAnyCommit,
+    ],
+  ] as const)(
+    'removed %s: the call certifies ERASED and no kept visit holds P’s contact',
+    async (_when, when) => {
+      const { world, store, stores, party } = withParty();
+      const r = rig({
+        world,
+        store,
+        stores,
+        beforeCommit: removalWhen(world, party, when),
+      });
+      expect(unwrapOk(await r.erase())).toEqual({
+        erasureStatus: ErasureStatus.Erased,
+        erasureDone: true,
+        ...RESIDUE,
+      });
+      const stored = store.get(`${Collections.Appointments}/${party.id}`);
+      // The seat is gone (the desk's edit) and the contact with it (the sweep).
+      expect(stored?.['subjectCustomerIds']).not.toContain(
+        world.person.customerId,
+      );
+      expect(stored).toMatchObject(BookingContact.NONE);
+      expect(holdingP(store)).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['after the stamp, before the visits’ unit', afterStamp],
+    [
+      'after the outside read, before any commit (the record NONE)',
+      beforeAnyCommit,
+    ],
+  ] as const)(
+    'removed %s, then the visits’ unit fails: the next call certifies ERASED and no kept visit holds P’s contact',
+    async (_when, when) => {
+      const { world, store, stores, party } = withParty();
+      // 0: the OTP sweep, 1: the contact sweep, 2: the stamp, 3: the visits.
+      const first = rig({
+        world,
+        store,
+        stores,
+        beforeCommit: removalWhen(world, party, when),
+        failCommitAt: 3,
+      });
+      expect(unwrapErr(await first.erase())).toEqual(COMMIT_FAILURE);
+      expect(
+        store.get(`${Collections.Customers}/${world.person.customerId}`),
+      ).toMatchObject({ erasureStatus: ErasureStatus.Erasing });
+      const second = rig({ world, store, stores });
+      expect(unwrapOk(await second.erase())).toEqual({
+        erasureStatus: ErasureStatus.Erased,
+        erasureDone: true,
+        ...RESIDUE,
+      });
+      expect(holdingP(store)).toEqual([]);
+    },
+  );
 });
 
 describe('eraseClient — the photos a staff member writes (P3-DEP-30, P3-DEP-31)', () => {
@@ -1422,16 +1671,30 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
     },
   );
 
+  // 0: the OTP sweep, 1: the contact sweep (the solo visit, P3-DEP-34),
+  // 2: the stamp, 3: the visits, 4: the photos, 5: the removals, 6 and 7:
+  // the marks, 8: the completion.
+  // The last column: the contacts the resumed act's STARTED row counts. A
+  // stamp that failed AFTER the sweep leaves the solo visit's contact swept,
+  // so the next call's census — what is left at its stamp — has one fewer;
+  // the act's SWEPT row holds it (plan §7 item 28). Every other state is
+  // the one straight call's.
   it.each([
-    ['the stamp', 1, ErasureStatus.None],
-    ['the visits’ unit', 2, ErasureStatus.Erasing],
-    ['the photos’ unit', 3, ErasureStatus.Erasing],
-    ['the removals’ unit', 4, ErasureStatus.Erasing],
-    ['the marks’ unit', 5, ErasureStatus.Erasing],
-    ['the completion', 7, ErasureStatus.Erasing],
+    ['the contact sweep', 1, ErasureStatus.None, BEFORE.erasureContactCount],
+    ['the stamp', 2, ErasureStatus.None, BEFORE.erasureContactCount - 1],
+    ['the visits’ unit', 3, ErasureStatus.Erasing, BEFORE.erasureContactCount],
+    ['the photos’ unit', 4, ErasureStatus.Erasing, BEFORE.erasureContactCount],
+    [
+      'the removals’ unit',
+      5,
+      ErasureStatus.Erasing,
+      BEFORE.erasureContactCount,
+    ],
+    ['the marks’ unit', 6, ErasureStatus.Erasing, BEFORE.erasureContactCount],
+    ['the completion', 8, ErasureStatus.Erasing, BEFORE.erasureContactCount],
   ] as const)(
     'a failed commit of %s answers its failure; the record stays where it stood; the next call completes',
-    async (_step, index, status) => {
+    async (_step, index, status, startedContacts) => {
       const reference = await oneShot();
       const world = privacyWorld();
       const store = footprintStoreOf(world.state);
@@ -1450,7 +1713,23 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
       expect(failing.telemetry.lines).toEqual([]);
       const resumed = rig({ world, store, stores });
       expect(unwrapOk(await resumed.erase()).erasureDone).toBe(true);
-      expect(snapshotOf(store)).toEqual(snapshotOf(reference.store));
+      const expected = snapshotOf(reference.store).map(
+        ([key, body]): [string, unknown] =>
+          (body as DocBody)['auditAction'] ===
+          AuditAction.PrivacyClientErasureStarted
+            ? [
+                key,
+                {
+                  ...(body as DocBody),
+                  erasureContactCount: startedContacts,
+                },
+              ]
+            : [key, body],
+      );
+      expect(snapshotOf(store)).toEqual(expected);
+      expect(
+        rowsNamed(store, AuditAction.PrivacyClientErasureSwept),
+      ).toMatchObject([{ ...BEFORE, auditOperationId: OPERATION }]);
     },
   );
 
@@ -1479,10 +1758,10 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
   });
 
   it.each([
-    ['the stamp', 1],
-    // 6 is the last unit: the record is gone when the residue is re-read.
-    ['the residue re-read', 6],
-    ['the completion', 7],
+    ['the stamp', 2],
+    // 7 is the last unit: the record is gone when the residue is re-read.
+    ['the residue re-read', 7],
+    ['the completion', 8],
   ] as const)(
     'a record gone before %s’s transaction → PRIVACY_CLIENT_NOT_FOUND, nothing of that commit written',
     async (_step, index) => {
@@ -1505,7 +1784,8 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
     const r = rig({
       world,
       beforeCommit: (at, store) => {
-        if (at === 0) {
+        // 0: W's contact sweep (its staff party carries W's phone), 1: the stamp.
+        if (at === 1) {
           store.delete(`${Collections.Customers}/${world.walkIn.customerId}`);
         }
       },
@@ -1520,7 +1800,8 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
     const r = rig({
       world,
       beforeCommit: (at, store) => {
-        if (at !== 1) return;
+        // 2: this call's stamp (after its OTP and contact sweeps).
+        if (at !== 2) return;
         // The other act's stamp: the record ERASING and the account ERASED, both stripped.
         const key = `${Collections.Customers}/${world.person.customerId}`;
         store.set(key, {
@@ -1561,7 +1842,8 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
     const r = rig({
       world,
       beforeCommit: (at, store) => {
-        if (at !== 7) return;
+        // 8: this call's completion.
+        if (at !== 8) return;
         const key = `${Collections.Customers}/${world.person.customerId}`;
         store.set(key, {
           ...store.get(key),
@@ -1586,8 +1868,8 @@ describe('eraseClient — every failure is answered, never swallowed', () => {
     const r = rig({
       world,
       beforeCommit: (at, store) => {
-        // 5: the invitations' marks
-        if (at === 5) store.delete(`${Collections.Invitations}/inv-p`);
+        // 6: the invitations' marks
+        if (at === 6) store.delete(`${Collections.Invitations}/inv-p`);
       },
     });
     expect(unwrapOk(await r.erase()).erasureDone).toBe(true);

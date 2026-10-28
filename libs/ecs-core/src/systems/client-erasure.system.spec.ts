@@ -836,28 +836,24 @@ describe('ClientErasureSystem.visitWrites — one visit’s patch (P3-L-12, P3-R
   });
 });
 
-describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE the stamp (P3-DEP-28)', () => {
+describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE the stamp (P3-DEP-28, P3-DEP-34)', () => {
   const p = personOf(P);
   const w = personOf(W);
   const sweep = (visit: Appointment, person: ClientPerson) =>
-    ClientErasureSystem.contactSweepWrites(
-      visit,
-      person,
-      OPERATION,
-      fixtureWalkInHash,
-    );
+    ClientErasureSystem.contactSweepWrites(visit, person, OPERATION);
+  const cleared = (visit: Appointment) => [
+    WriteOp.update([Collections.Appointments, visit.id], {
+      ...BookingContact.NONE,
+      writeOperationId: OPERATION,
+    }),
+  ];
   // P booked [SELF P, COMPANION Q]; the desk removed P's seat — the edit
   // pipeline's own write (`AppointmentIndexSystem.withQueryKeys`).
   const removed = withSeatRemoved(personsParty(world), PERSONS_PARTY_SELF_SEAT);
 
   it('a visit that no longer seats P but carries P’s contact: cleared to NONE under the erasure’s id — which visitWrites never reaches', () => {
     expect(removed.subjectCustomerIds).not.toContain(P);
-    expect(sweep(removed, p)).toEqual([
-      WriteOp.update([Collections.Appointments, removed.id], {
-        ...BookingContact.NONE,
-        writeOperationId: OPERATION,
-      }),
-    ]);
+    expect(sweep(removed, p)).toEqual(cleared(removed));
     expect(
       ClientErasureSystem.visitWrites(
         removed,
@@ -872,12 +868,7 @@ describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE t
   it('a staff party [WALK_IN W, ANONYMOUS] whose W seat was removed: W’s contact swept the same way', () => {
     const left = withSeatRemoved(world.visits.walkInParty, SeatId.of('seat-w'));
     expect(left.subjectCustomerIds).toEqual([]);
-    expect(sweep(left, w)).toEqual([
-      WriteOp.update([Collections.Appointments, left.id], {
-        ...BookingContact.NONE,
-        writeOperationId: OPERATION,
-      }),
-    ]);
+    expect(sweep(left, w)).toEqual(cleared(left));
   });
 
   it('P seated on a party another owns, P’s phone as its contact: swept — after the stamp no id would recognise it', () => {
@@ -887,30 +878,39 @@ describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE t
       contactPhone: PRIVACY_SENTINELS.phone,
       contactEmail: null,
     };
-    expect(sweep(shared, p)).toEqual([
-      WriteOp.update([Collections.Appointments, shared.id], {
-        ...BookingContact.NONE,
-        writeOperationId: OPERATION,
-      }),
-    ]);
+    expect(sweep(shared, p)).toEqual(cleared(shared));
   });
 
-  it('nothing for a visit the stamp leaves recognisable, another person’s contact, no contact, or once the values are gone', () => {
-    // P's own solo visit: its ids prove the contact — visitWrites' after the stamp.
-    expect(sweep(world.visits.solo, p)).toEqual([]);
-    // W's staff party: the walk-in key proves it.
-    expect(sweep(world.visits.walkInParty, w)).toEqual([]);
+  it('a SEATED visit whose ids prove the contact P’s and which carries P’s value is swept too — a seat removed after the stamp would leave it unfindable (P3-DEP-34)', () => {
+    // P's own party [SELF P, COMPANION Q]: P owns it, its contact is P's.
+    const party = personsParty(world);
+    expect(party.subjectCustomerIds).toContain(P);
+    expect(
+      ClientPrivacySystem.contactProvedById(party, p, fixtureWalkInHash),
+    ).toBe(true);
+    expect(sweep(party, p)).toEqual(cleared(party));
+    // P's own solo visit and W's staff party (the walk-in key proves it) alike.
+    expect(sweep(world.visits.solo, p)).toEqual(cleared(world.visits.solo));
+    expect(sweep(world.visits.walkInParty, w)).toEqual(
+      cleared(world.visits.walkInParty),
+    );
+  });
+
+  it('nothing for a contact that carries none of the person’s values, no contact, or once the values are gone', () => {
     // Q's contact on Q's party, for P.
     expect(sweep(world.visits.party, p)).toEqual([]);
+    // A visit W sat alone carrying a THIRD person's contact: visitWrites'
+    // after the stamp (sole-subject), never the sweep's.
+    expect(sweep(world.visits.walkInThird, w)).toEqual([]);
     expect(sweep({ ...removed, ...BookingContact.NONE }, p)).toEqual([]);
     const account = p.account;
     if (account === null) throw new Error('P has an account');
-    expect(
-      sweep(removed, {
-        record: strippedRecord(p.record, ErasureLifecycle.begin(STARTED)),
-        account: strippedAccount(account),
-      }),
-    ).toEqual([]);
+    const stripped: ClientPerson = {
+      record: strippedRecord(p.record, ErasureLifecycle.begin(STARTED)),
+      account: strippedAccount(account),
+    };
+    expect(sweep(removed, stripped)).toEqual([]);
+    expect(sweep(personsParty(world), stripped)).toEqual([]);
   });
 
   it('holds no personal value; is pure — same input, same output, inputs untouched', () => {
@@ -922,6 +922,114 @@ describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE t
     expect(sweep(frozen, person)).toEqual(once);
     expect(frozen).toEqual(removed);
     expectNoSentinel(once, sentinelsOf(PRIVACY_SENTINELS));
+  });
+});
+
+describe('ClientErasureSystem.sweepRowWrites — the sweep’s ONE row, inside its commit (P3-DEP-33)', () => {
+  const p = personOf(P);
+  const before = ClientErasureSystem.census(pFootprint(), fixtureWalkInHash);
+  const row = (
+    record: Customer,
+    census: ErasureCensus,
+    rowPresent: boolean,
+    sweepWriteCount: number,
+  ) =>
+    ClientErasureSystem.sweepRowWrites(
+      record,
+      census,
+      rowPresent,
+      sweepWriteCount,
+      ADMIN,
+      OPERATION,
+      FIXTURE_NOW_UTC_MS,
+      fixtureHash,
+    );
+
+  it('ONE SWEPT row holding the census BEFORE, credited to the admin, the record its target, keyed by the act', () => {
+    const resourceId = AuditResourceId.forCustomer(P);
+    expect(row(p.record, before, false, 3)).toEqual([
+      WriteOp.create(
+        [
+          Collections.AuditLog,
+          AuditEntryId.of(
+            fixtureHash(ClientErasureSystem.sweepRowIdBasis(P, OPERATION)),
+          ),
+        ],
+        {
+          recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+          resourceId,
+          auditOperationId: OPERATION,
+          ...ADMIN,
+          ...AuditContext.clientErasure(
+            AuditAction.PrivacyClientErasureSwept,
+            before,
+          ),
+          ...AuditTargetRef.customer(P),
+        },
+      ),
+    ]);
+    expect(ClientErasureSystem.sweepRowIdBasis(P, OPERATION)).toBe(
+      AuditSystem.idBasisOf(
+        AuditAction.PrivacyClientErasureSwept,
+        resourceId,
+        P,
+        `erasure-sweep:${OPERATION}`,
+      ),
+    );
+    // Never the re-sweep's row of the same act.
+    expect(ClientErasureSystem.sweepRowIdBasis(P, OPERATION)).not.toBe(
+      ClientErasureSystem.resweepRowIdBasis(P, OPERATION),
+    );
+  });
+
+  it('[] with the row already present (a later chunk, a resumed call), when the commit clears nothing, or for a record that is not NONE', () => {
+    expect(row(p.record, before, true, 3)).toEqual([]);
+    expect(row(p.record, before, false, 0)).toEqual([]);
+    expect(
+      row(
+        strippedRecord(p.record, ErasureLifecycle.begin(STARTED)),
+        before,
+        false,
+        3,
+      ),
+    ).toEqual([]);
+    expect(
+      row(
+        strippedRecord(
+          p.record,
+          ErasureLifecycle.complete(ErasureLifecycle.begin(STARTED), STARTED),
+        ),
+        before,
+        false,
+        3,
+      ),
+    ).toEqual([]);
+  });
+
+  it('another act is another row', () => {
+    const other = ClientErasureSystem.sweepRowWrites(
+      p.record,
+      before,
+      false,
+      1,
+      ADMIN,
+      OperationId.of('op-erase-0002'),
+      FIXTURE_NOW_UTC_MS,
+      fixtureHash,
+    );
+    expect(other[0]?.path).not.toEqual(
+      row(p.record, before, false, 1)[0]?.path,
+    );
+  });
+
+  it('holds no personal value — the census, ids and tags only; is pure', () => {
+    const record = deepFreeze(p.record);
+    const census = deepFreeze(before);
+    const once = row(record, census, false, 2);
+    expect(row(record, census, false, 2)).toEqual(once);
+    expect(record).toEqual(p.record);
+    expect(census).toEqual(before);
+    expectNoSentinel(once, sentinelsOf(PRIVACY_SENTINELS, OTHER_SENTINELS));
   });
 });
 
@@ -1301,10 +1409,20 @@ describe('ClientErasureSystem — purity', () => {
 });
 
 describe('ClientErasureSystem — no personal value in any planned row (R36 / T5)', () => {
-  it('the STARTED, ERASED and RESWEPT rows carry ids, tags and counts only', () => {
+  it('the SWEPT, STARTED, ERASED and RESWEPT rows carry ids, tags and counts only', () => {
     const p = personOf(P);
     const census = ClientErasureSystem.census(pFootprint(), fixtureWalkInHash);
     const rows = [
+      ...ClientErasureSystem.sweepRowWrites(
+        p.record,
+        census,
+        false,
+        1,
+        ADMIN,
+        OPERATION,
+        FIXTURE_NOW_UTC_MS,
+        fixtureHash,
+      ),
       ...ClientErasureSystem.stampWrites(
         p,
         census,
@@ -1334,7 +1452,7 @@ describe('ClientErasureSystem — no personal value in any planned row (R36 / T5
         fixtureHash,
       ),
     ].filter((op) => op.path[0] === Collections.AuditLog);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expectNoSentinel(rows, sentinelsOf(PRIVACY_SENTINELS, OTHER_SENTINELS));
     for (const row of rows) {
       if (row.writeAction !== WriteAction.Create) continue;

@@ -111,6 +111,12 @@ export interface ClientErasureInput {
   readonly preview: ClientPrivacyCall.ErasurePreview | null;
   /** The sibling records the record's last preview named, in its order. */
   readonly siblings: readonly CustomerId[];
+  /**
+   * The sibling records the alert's act names: for the card's own record
+   * the list the card keeps (`ClientPrivacySystem.siblingsAfterPreview`),
+   * for a sibling's own act its preview's list (P3-DEP-35).
+   */
+  readonly alertSiblings: readonly CustomerId[];
   /** `errors.<code>` in the card's language, the code itself when the catalogue has none. */
   readonly translateCode: TranslateCode;
 }
@@ -123,7 +129,8 @@ export interface ClientErasureInput {
  * the act's phase picks the status (a refusal in the server's own words,
  * else the generic `PIPELINE_UNKNOWN` line), and the alert's figures are
  * the server's census counts as they came (visits, notes, photos, sign-in
- * accounts) and the number of sibling records the preview named.
+ * accounts) and the number of sibling records the act names (the store's
+ * `alertSiblings` — the rows the card shows for its own record).
  */
 export function clientErasureVm(input: ClientErasureInput): ClientErasureVm {
   const { words } = input;
@@ -176,7 +183,7 @@ function alertOf(input: ClientErasureInput): ClientErasureAlertVm {
             notes: preview.erasureNoteCount,
             photos: preview.erasurePhotoCount,
             accounts: preview.erasureAccountCount,
-            siblings: preview.erasureSiblingCustomerIds.length,
+            siblings: input.alertSiblings.length,
           }),
     actions: [
       {

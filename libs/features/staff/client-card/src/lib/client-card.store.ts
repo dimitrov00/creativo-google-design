@@ -571,6 +571,13 @@ export class ClientCardStore {
    */
   private readonly _erasureSiblings = signal<readonly CustomerId[]>([]);
   /**
+   * The sibling records the open alert's act names, set with its preview:
+   * for the card's own record the list the card keeps (the rows beside the
+   * alert — a preview after the stamp names none), for a sibling's own act
+   * its preview's list. The alert counts this list (P3-DEP-35).
+   */
+  private readonly _alertSiblings = signal<readonly CustomerId[]>([]);
+  /**
    * The erasure act in flight — its call, from the preview to the last
    * answer; an answer for another act, or for a person no longer on the
    * card, is dropped.
@@ -1722,6 +1729,7 @@ export class ClientCardStore {
       alertOpen: this._pendingErasure() !== null,
       preview: this._erasurePreview(),
       siblings: this._erasureSiblings(),
+      alertSiblings: this._alertSiblings(),
       translateCode,
     });
   });
@@ -1777,7 +1785,8 @@ export class ClientCardStore {
       return;
     }
     const preview = answer.value;
-    if (customerId === untracked(this.customerId)) {
+    const own = customerId === untracked(this.customerId);
+    if (own) {
       this._erasureStatus.set(preview.erasureStatus);
       // A preview after the stamp names no sibling: the list kept stays.
       this._erasureSiblings.set(
@@ -1789,6 +1798,12 @@ export class ClientCardStore {
     }
     this._erasure.set(ERASURE_IDLE);
     this._erasurePreview.set(preview);
+    // The alert counts the rows the card shows beside it for its own record.
+    this._alertSiblings.set(
+      own
+        ? untracked(this._erasureSiblings)
+        : preview.erasureSiblingCustomerIds,
+    );
     this._pendingErasure.set({ call, preview });
   }
 
@@ -2167,6 +2182,7 @@ export class ClientCardStore {
     this._pendingErasure.set(null);
     this._erasurePreview.set(null);
     this._erasureSiblings.set([]);
+    this._alertSiblings.set([]);
     this._erasureStatus.set(null);
     this._avatar.set(null);
     this._money.set(null);
