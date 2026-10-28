@@ -106,6 +106,7 @@ committed at a green boundary, DEP-1…DEP-24, end of §3.3).
 | **Pass E — the leftovers**                                                                                          | **done — FULL gate green, no standing reds, runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-e-leftovers.md` §8): twelve wave-0 packages, E2E and the integrator (end of §3.3); every carried ENGINEERING item closed — the four other capacity triggers retry, `appointmentNotes` guarded at read, TTL and the `purgeAt` exemptions declared in `firestore.indexes.json`, the waitlist cart branded inside its door, the spec-only survivors, the avatar union, `BirthDate.toLocalDate`, `UiDayKey`, the alias specs, cached number formatters, `familyOfMedal` by a typed id, the reopen's busy merge, the programs rules shape-checked and the unused client write grants denied, the programs status words in the catalogues, words for 19 UI-reachable codes, a programs e2e journey — and the standing red baseline fixed at each root cause (typecheck `patterns`, the 6 unit reds, the 19 e2e reds); 9 DEPARTURES (DEP-1…DEP-9); `verify:p0`, `test:emulator` 65 + 301, `e2e:web` 61 passed, 0 failures (41 + the 19 former reds + the programs journey)                                                                                                                           | the "Pass E" commit                                          |
 | **Owner rulings (2026-10-26) — pass F, OR-1…OR-56, built in four waves**                                            | **done — FULL gate green, no standing reds, runbook §4.2–§4.10 PASS, `verify:csp` PASS** — 2026-10-26 (`decisions/2026-10-26-owner-rulings.md`, marked BUILT with a per-ruling ledger; end of §3.3): the owner delegated every open decision; 56 rulings close every owner question of §3.3, §6 and the plans' open-question sections; 39 DEPARTURES (DEP-F1…DEP-F38, DEP-F10b — a no-show gives back the grant and the voucher draw, the orchestrator's override of OR-13 — and DEP-F39, the integrator's month-only upcoming tile); the live gaps built at once — coupon grants burned at save (OR-13), the walk-in client record (OR-26), the notification inbox (OR-19), the hash CSP and security headers with `verify:csp` (OR-29–OR-31), the fail-closed production preflight as predeploy (OR-35), the client issue sink (OR-34), the required read guard (OR-33); four waves of disjoint packages and one integrator round; the six baselines the rulings change regenerated after review (OR-51 voice, OR-56 tile and rail)                                                                                                                                                        | the per-package "Pass F" commits                             |
 | **Audit hardening (Phases 0–2) — every write provable, every report traceable**                                     | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green (§4 "Reference numbers on the audit-hardening tree")** — 2026-10-26 – 2026-10-27 (`flips/audit-hardening.md`, ledger §8; branch `audit-hardening` and its PR; end of §3.3): the OTP sender gated to the emulator, a deployed sign-in refused until a transactional sender lands (P8, fail-closed); an operation id on every mutating callable; the booking verbs' audit rows in the act's own transaction, keyed by that id, with typed before/after deltas; impersonation, `roles` / `accountStatus` and 13 governed collections audited by one document-change handler, forged note and photo authors and stale stamps refused; one outcome line per callable, `writeOperationId`, a reference line under three failure surfaces, `LogEvent` everywhere; transport failures in the OR-34 sink; five `auditLog` timelines and `AuditReadPorts`; a trigger dead letter, `tools/ops/` scripts (nothing applied) and preflight P9 (INFO); RU-1…RU-41, L1–L6, DEP-1…DEP-26 and DEP-10a (DEP-8 withdrawn); two adversarial review rounds (11 findings confirmed and fixed, 10 refuted) | `8f3501d` (plan), `1f027ee` … `d15f193` (§3.3)               |
+| **Audit hardening (Phase 3) — seed clock, sign-in rows, the GDPR export and erasure, CI**                           | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green — its one e2e red a listed load flake, 27/27 alone (§4 "Reference numbers on the Phase 3 tree")** — 2026-10-28 (`flips/audit-hardening-phase-3.md`, ledger §8; branch `claude/adoring-pascal-o0miro`, PR #5; end of §3.3): (A) one injectable seed instant (`--now` / `SEED_NOW` / `E2E_NOW`), `verify:p0` (a) at one instant, the glance and the month navigation on a pinned browser clock — the time-of-day flake gone; (B) sign-in leaves audit rows inside its commits (`IDENTITY_OTP_*`, `IDENTITY_SESSION_ISSUED`, `IDENTITY_REGISTRATION_COMPLETED`); (C) the admin-only `exportClientData`, one versioned bundle per person; (D) the erasure — `previewClientErasure` / `eraseClient` pseudonymize the person and keep the records; (E) CI runs seven jobs, the runbook gates have a committed runner; P3-RU-1…37 (P3-RU-37 the owner's delegation), P3-L-1…23, P3-DEP-1…35 (P3-DEP-27 withdrawn); two adversarial review rounds (12 findings confirmed, 4 decided)                                                                                                       | `987e6e5` … `d2c85b7`, `ff69759` (§3.3)                      |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it with no standing reds
@@ -143,7 +144,11 @@ waiting on a ruling: `decisions/2026-10-26-owner-rulings.md` rules every one
 standing contracts, the reversible defaults the record flags, and the three
 pass E findings it does not rule. The audit hardening (2026-10-27) ruled
 nothing new: its owner flags (end of §3.3) are each built on a reversible
-default, or proposed and not built.
+default, or proposed and not built. Its Phase 3 (2026-10-28) ran under the
+owner's delegation (P3-RU-37): every open call took the plan's
+recommendation, and what the owner must still do by hand — the deploy
+steps, the legal review of retention, lighting `client.privacy` — stays an
+owner flag (end of §3.3).
 
 ## 3. What landed, in order
 
@@ -1832,8 +1837,7 @@ the owner rulings keep R-1 as it is, OR-28, and rule nothing else here —
 the rest stay engineering follow-ups):
 R-1 — for the Location / Settings capacity triggers the retry covers the
 sweep's zone, policy and roster-list reads, not one barber's commit (still
-logged and healed by the 03:00 `sweepCapacityDaily`); the glance e2e seed
-cannot seed a visit still to come today after ~23:15 shop time; no Nx target
+logged and healed by the 03:00 `sweepCapacityDaily`); no Nx target
 typechecks `apps/web/e2e/**`; three per-call `Intl.ListFormat` sites
 (`admin-rhythm.words.ts`, `rhythm-rule.words.ts`, `staff-block-editor.ts`);
 `translate-coded-error.spec.ts`' `AUTH_FLOW_ERROR_CODES` does not list the
@@ -2562,8 +2566,8 @@ built on a reversible default, or proposed and not built):
     says so.
 19. **Out-of-scope edges touched** (brief §5): no impersonation read-as
     (OR-24 — no IMPERSONATOR actor or claim); no real OTP provider (P8 waits
-    for it); no login / OTP audit rows; no `setRoles`; no Activity screen
-    (ports only); no existing copy changed.
+    for it); no `setRoles`; no Activity screen (ports only); no existing
+    copy changed.
 20. **Client issues joinable to an account** (RU-39 against OR-34's
     "privacy by shape: no uid"): an issue's `operationId` joins it,
     server-side only, to a `callable.*` outcome line that carries the uid,
@@ -2646,12 +2650,450 @@ built on a reversible default, or proposed and not built):
   `tools/icons/check-icon-usage.spec.mjs` pins `INLINE_SVG_ALLOWED` to the
   rule's `allowInlineSvg` option in the root `eslint.config.mjs`, and the
   `icon-tools` test inputs name that config and `tools/lint-rules`.
-- The e2e load and time-of-day flakes, as before (§4):
-  `client-card-glance.spec.ts:364` after ~23:15 shop time;
-  `client-card-harness.spec.ts:17` [tablet] and `:40` [phone] under load;
-  `auth-onboarding.spec.ts:63` and `:106`; `appointments.spec.ts:158` (§4's
-  `:152`) — each green alone or on a quiet run (a solo `--repeat-each=3`
-  run judges it).
+- The e2e load flakes, as before (§4): `client-card-harness.spec.ts:17`
+  [tablet] and `:40` [phone]; `auth-onboarding.spec.ts:63` and `:106`;
+  `appointments.spec.ts:158` (§4's `:152`; `:161` since Phase 3) — each
+  green alone or on a quiet run (a solo `--repeat-each=3` run judges it).
+
+**Audit hardening — Phase 3 (2026-10-27 – 2026-10-28,
+`docs/architecture/flips/audit-hardening-phase-3.md`, ledger §8).** The
+five workstreams the Phase 0–2 brief's §5 left for Phase 3 — (A) seed clock
+pinning, (B) login / OTP audit rows, (C) the GDPR export, (D) the GDPR
+erasure, (E) the CI pipeline — built on the owner's three answers of
+2026-10-27: that scope; the erasure semantics _"pseudonymize, keep records
+— strip names, contact values and free text from the person's documents;
+keep visits, money and audit rows keyed by opaque ids"_; App Check stays
+deferred (Deferred #4, enforcement OFF). One branch and one pull request
+(`claude/adoring-pascal-o0miro`, PR #5) from `20785b8` (= `origin/main`:
+Phases 0–2 by PR #1, PR #3's `icons:check` fix and PR #4's Nx 23.1.3 /
+Angular 22.2.3 / maplibre-gl 6 / firebase-tools 15.34.1). The plan
+reconciled every sub-item against the branch point (§0.1 — no OR ruling
+decided any Phase 3 item), recorded 37 rulings where a design of the brief
+met a law, an OR ruling or the code (P3-RU-1…P3-RU-37, both quotes each —
+§0.2), a latitude register (P3-L-1…P3-L-23, §0.3), the person data map the
+export and the erasure share (§0.4) and the gate baseline measured on the
+branch point in its own worktree (§6.3), and split the work into packages
+PA1…PE2 with disjoint file ownership, built in waves by sub-agents and
+integrated per workstream by the orchestrator; three critiques
+(completeness, fidelity, laws) were applied before the build (§0.6).
+Behaviour stayed frozen but for the declared DEPARTURES; one commit per
+workstream, each at a green boundary (its gate in its commit message) —
+but C_E, committed and pushed before its full local gate, because its jobs
+prove only on GitHub's runners (§8.E). No `CLAUDE.md` / `AGENTS.md` or
+`.claude/rules` edit and no law amendment (every design had a lawful form,
+§0.2). The records prune the glance time-of-day flake (§4 "Known flakes",
+the pass E and Phase 0–2 carried lists — P3-DEP-5) and Phase 0–2 flag 19's
+"no login / OTP audit rows" (built by WS-B).
+
+**WS-A — one injectable instant (`987e6e5`, then `7d4bca9`).** The dev
+seed (`buildClientBook(Date.now())`), `verify:p0` and the e2e suite read
+the wall clock wherever they needed "today", so the glance's barber test
+could not seed a visit still to come after ~23:15 shop time.
+`tools/seed/calendar.mjs` reads ONE instant — `--now=<text>`, then
+`SEED_NOW`, else the live clock (`SEED_DEFAULT`: the human `seed:dev`
+writes what it wrote, P3-RU-1 / P3-L-1) — in one grammar (epoch ms, a shop
+wall time on the shop's zone with the DST gap refused and the fall-back's
+earlier offset, or an ISO instant; P3-RU-3); the stats projection clock
+stays live (`verify:p0` (c) compares it with the functions' real clock,
+P3-RU-2). `verify:p0` (a) captures one instant for both seed runs
+(`tools/verify/p0/seed-run.mjs`). The e2e global setup resolves the run's
+one instant (`E2E_NOW`, refused off the real shop day, else the live
+clock), hands it to every worker and seeds the catalogue at its day's
+10:00; the glance's two tests and the month navigation pin the BROWSER
+there with a running clock (`page.clock.setSystemTime` — a frozen `Date`
+starved the Firestore channel's watchdog), today's visits start at a fixed
+21:00, and `stillAheadToday` / `EVENING_START` / `LATEST_START` are gone;
+the unpinned, callable-driven specs keep the live `shopToday()` (P3-RU-4,
+P3-RU-5). `7d4bca9`: the glance's two `client-head-title` assertions and
+the privacy journey's wait 20 s for the profile read, the spec's own idiom
+for a server read — a trace showed the Firestore emulator's forward
+channel blocked 4.9 s before the profile's `addTarget` was even sent (an
+emulator stall, not the clock); the asserted names are unchanged. **The
+late real-hour run** (plan §6.1 addition 2, P3-RU-34) on `987e6e5`: the
+e2e half (the glance and `appointments.spec.ts`, `--repeat-each=3`)
+STARTED 23:15:11 and ended 23:29:07 Europe/Sofia (21:15–21:29 UTC), 46/48 —
+the two reds that emulator stall and the unpinned `appointments.spec.ts:36`
+load timeout; every «Предстоящи» / `history-upcoming` assertion held in the
+35 glance runs past 23:15 and the month navigation passed 3/3; the seed
+half `SEED_NOW=2026-10-27T23:40 verify:p0` (a)–(f) green. P3-DEP-1–P3-DEP-5;
+`verify:p0` (a)–(f), `verify:csp` 10, `e2e:web` 62/63 (the unpinned
+`appointments.spec.ts:36`, 12/12 solo); the glance solo 36/36.
+
+**WS-B — sign-in leaves audit rows inside its commits (`0ac7801`).**
+Signing in left no row of its own (only the `users` trigger's anonymous
+profile rows). Each identity act that changes state now plans ONE row in
+the commit that changes it, keyed by state the commit proves, so a retried
+attempt plans the same id (P3-RU-7): `IDENTITY_OTP_REQUESTED` — `requestOtp`
+saves the challenge through `ports.commit` (the `Set` and the row;
+`saveOtp` / `SaveOtp` deleted, P3-RU-6; the RU-3 order and every answer
+unchanged); `IDENTITY_OTP_VERIFIED` / `IDENTITY_OTP_REFUSED` (`WRONG_CODE`,
+or `LOCKED_OUT` on the attempt that exhausts the challenge) in `verifyOtp`'s
+tx1; `IDENTITY_SESSION_ISSUED` in one added commit after the token mint and
+before the answer (P3-RU-12, P3-L-3); `IDENTITY_REGISTRATION_COMPLETED` on
+the first completion only. Expired, consumed, locked, unknown and cooldown
+refusals change nothing and plan no row; a refused send follows its
+already committed REQUESTED row (P3-RU-8, P3-L-2). R36 / T5: ids, the
+channel / purpose / refusal tags and counts — never the destination, the
+code, a name or free text; the three pre-session rows carry no operation id
+(P3-L-20) and their actor is `Actor.system(IDENTITY_CALLABLE)` (P3-RU-10);
+`decodeRequestOtp` / `decodeVerifyOtp` read the optional transport
+`operationId`; three `auditLog` overrides (101 → 104, P3-L-4). The settle
+fingerprint counts `auditLog`, so parallel sign-ins reopen a settle's quiet
+window — measured at C_B: `e2e:web` 63/63 in 587 s against the baseline's
+577 s (+1.7 %, inside P3-DEP-7's 10 % budget). P3-DEP-6–P3-DEP-8;
+`test:emulator` 113 + 361, `verify:p0` (a)–(f), `e2e:web` 63/63.
+
+**WS-C — the GDPR export (`bd5c1a4`).** The admin-only callable
+`exportClientData` (Art. 15 / 20) takes a `customerId`, resolves the linked
+account and answers ONE canonical JSON bundle (`clientExportVersion` 1)
+inside a typed answer (P3-RU-16): the record, the account profile, every
+visit of the person (owner or subject), the sole-subject visits' notes,
+photo metadata, loyalty (account, grants, vouchers), stats, notifications,
+waitlist requests, invitations, the journal and the audit rows that target
+the person, read server-side through named bundles (P3-RU-26). Nothing of
+another person (P3-RU-18, P3-L-5): a shared visit's other seats wear the
+marker label, its contact is withheld unless provably the person's (owner
+record, owner account, or the contact's walk-in key derives the record —
+P3-RU-36), party notes are withheld (P3-RU-33), no bearer capability
+(photo `url`, voucher `code`) is exported. Refused
+`PRIVACY_EXPORT_TOO_LARGE` past 20,000 documents or 4 MiB, never truncated
+(P3-L-6); sorted keys through one canonicaliser (`utf8Bytes` moved to
+`CanonicalJsonSystem`, P3-RU-27); the call's own `PRIVACY_CLIENT_EXPORTED`
+row, written in a commit with a replay probe, is left out, so a replay
+answers the same bytes. `Roles.PRIVACY = [admin]` — the shop's owner, not
+the vendor sysadmin (P3-RU-13) — checked on the token and re-read from the
+stored roles; `client.privacy` gates it (P3-RU-14; on in development only).
+The staff client card's admin-only privacy block downloads
+`creativo-client-<customerId>.json`. P3-DEP-9–P3-DEP-12; exports 47 → 48;
+`test:emulator` 123 + 361, `e2e:web` 66/66 (+3: `staff-client-privacy.spec.ts`).
+
+**WS-D — the GDPR erasure: pseudonymize the person, keep the records
+(`7f26e84`).** `previewClientErasure` (read-only: the census and the ids of
+the walk-in records sharing the person's phone or e-mail, no row — P3-L-17)
+and `eraseClient` (one resumable, budgeted call), admin-only and flag-gated
+like the export. The order: the gates (the flag, the admin token and
+stored roles, the D29 account link — `PRIVACY_ACCOUNT_LINK_MISMATCH` — and
+no staff account, P3-L-16); the footprint read at the cap + 1
+(`PRIVACY_ERASURE_TOO_LARGE` before any write, P3-L-21); the OTP challenges
+swept; ONE stamp commit — the record `ERASING` and stripped, the account
+`ERASED` and stripped (names → the language-neutral marker, P3-RU-23,
+P3-L-22), the `PRIVACY_CLIENT_ERASURE_STARTED` row with the census (counts,
+never values — P3-RU-21, P3-RU-22); then, in chunks, the dirty visits'
+contacts and walk-in labels, EVERY visit's note (P3-RU-33), the person's
+photos of every origin with their `SHOT` objects first, notifications and
+waitlist requests deleted, invitation names and impersonation reasons
+pseudonymized (P3-RU-24); the avatar prefix and the Auth user DELETED
+(P3-L-9, P3-L-10); the completion commit (`ERASED` and
+`PRIVACY_CLIENT_ERASED` with the residue census) only when nothing personal
+is left. A call on an `ERASED` record re-sweeps late residue
+(`PRIVACY_CLIENT_ERASURE_RESWEPT`, P3-L-19). Every write stamps
+`writeOperationId` with the erasure's id; visits, money, stats, loyalty,
+the journal and audit rows are kept. Never resurrected: book / edit refuse
+`BOOKING_CLIENT_ERASED` for a record under erasure (P3-RU-20, P3-L-8) and
+`updateProfile` refuses an erased account. `erasureStatus` (`NONE` |
+`ERASING` | `ERASED`) is required on every customer body (P3-L-18);
+`AccountStatus` gains `ERASED`. The card: the admin's erase row (and one
+per sibling record), ONE `ui-alert` with the census in figures,
+«Изтрит клиент» beside the re-sweep. The functions reach Storage through
+`firebase-admin/storage` (no new package, P3-RU-28); `test:emulator` starts
+the Storage emulator; `verify:p0` gains (g). P3-DEP-13–P3-DEP-23; exports
+48 → 50, field overrides 107 → 118; `test:emulator` 134 + 361, `verify:p0`
+(a)–(g), `e2e:web` 68/68 (after `sheetAtRest`, below).
+
+**WS-E — CI runs the rest of the gate (`825b6e9`).** CI ran one job
+(format, the affected lint / test / build, the CSP static gate, the icon
+checks, `pnpm audit`, gitleaks). It runs seven parallel jobs now: `main`
+(the same plus `typecheck` among the affected targets — P3-RU-32 — a
+75-minute timeout and concurrency), `static` (`nx sync:check`, layering,
+the `seed-tools` typecheck, the `lint-rules` tests, `lint:styles`,
+`verify:bundle`, the functions build and its dependency check),
+`runbook-gates`, `coverage` (ecs-core with its thresholds), `emulators`
+(`test:emulator`, then `verify:p0`; JDK 21, the emulator jars cached),
+`e2e` (`e2e:web` without the ten macOS-only screenshot tests: the four
+screenshot describes carry `@screenshot`, skipped only under
+`CREATIVO_E2E_SCREENSHOTS=skip`, which only this job sets — the owner's
+macOS full gate stays the screenshot gate, P3-RU-30; the config's own two
+CI retries and one worker stay, P3-RU-35) and `csp-smoke` (`verify:csp`,
+P3-RU-31); a shared setup action holds the install; no secret but
+`GITHUB_TOKEN`, the emulators on `demo-creativo-test`, nothing deploys. The
+runbook gates have a committed runner (P3-RU-29):
+`tools/verify/runbook-gates/run-gates.mjs` behind `pnpm nx run
+verify-tools:runbook-gates` (`pnpm run verify:runbook`) reads the runbook's
+blocks at run time — the runbook stays the gates' only copy — and runs
+§4.0 plus each block alone, failing on a FAIL, an ERROR, an empty block or
+a leaked file. Under `nx run` it first FAILED §4.9: Nx forces colour into
+its tasks, and the nested `nx lint` wrapped the canary count the gate
+parses in ANSI codes; every gate now runs with `NO_COLOR=1` (`gateEnvOf`),
+and the runner equals the scratch extractor section for section
+(28/22/17/6/24/27/25/20, 0 FAIL). P3-DEP-24–P3-DEP-26 (P3-DEP-27
+withdrawn).
+
+**The integrators' edits** (plan §8.A–§8.E): `pinBrowserClock` on
+`setSystemTime`, a running clock (C_A); the `AuditEntryMeta` doc comment
+lists `impersonationSessions/{id}` and `otps/{id}` (C_B); the
+`WalkInKeyPorts` doc comment names the admin privacy callables and
+`pipelines/index.ts` is alphabetical again (C_C, C_D); the client card's
+`tsconfig.lib.json` gains the `ui/patterns` reference (`UiAlert`,
+`sync:check`), the `verify:p0` README gains (g), and
+`staff-client-privacy.spec.ts` waits for the sheet's scroll to rest before
+each axe scan (`sheetAtRest` — a `target-size` hit on the visits header's
+small action caught under the sticky bar mid-scroll; the axe gate
+unchanged) (C_D); `tools/verify/project.json`'s test inputs widened to the
+e2e specs, the CSP config, the web project and `@playwright/test`, and
+`gateEnvOf` (C_E). Corrections to the plan: the governed triggers' rows
+carry `auditOperationId: null`, so the erasure proof joins through the
+erased documents' `writeOperationId`; `export-client-data.integration.spec.ts`
+derives its ids with its world's `fixtureHash` (§8.D).
+
+**The owner's delegation (`ce5ac31`, P3-RU-37).** Mid-build the owner
+wrote _"pick decisions as a FAANG grade decision maker and proceed with
+recommended stuff"_: every §7 flag that asked for a choice takes the plan's
+recommendation — (a) the Auth user DELETED, not disabled; (b) immediate
+erasure behind the read-only preview and ONE `ui-alert`, no undo window,
+no step-up; (c) visits, money, stats, loyalty and audit rows retained; (d)
+identity rows on every challenge, a refused send included; (e) the human
+`seed:dev` default stays the live clock; (f) CI keeps the config's two e2e
+retries; (g) `errors.PRIVACY_FORBIDDEN` keeps OR-50's one forbidden line —
+and two gaps found at C_C close the safer way: (h) the export, the preview
+and the erasure all refuse `PRIVACY_ACCOUNT_LINK_MISMATCH` (renamed from
+the erasure-only code) on a broken D29 link, before any read keyed by the
+uid (`ClientPrivacySystem.linkOf`); (i) the export drops the
+adapter-stamped `purgeAt`. What the owner must still do by hand stays a
+flag (deploy steps, the legal review of retention, lighting
+`client.privacy`). At C_D the orchestrator decided four more under the
+same delegation (D1–D4, P3-DEP-31).
+
+**The DEPARTURES** (plan §5, each pinned by the specs it names):
+
+- P3-DEP-1 (WS-A) — the seed reads one injectable instant (`--now` /
+  `SEED_NOW`; a refused text stops it; the live clock without either) and
+  prints `seed: instant <ISO> (pinned | live)`.
+- P3-DEP-2 (WS-A) — `verify:p0` (a) seeds twice at ONE instant (before:
+  each run read its own clock).
+- P3-DEP-3 (WS-A) — the e2e suite's one instant (`E2E_NOW`, else the live
+  clock) reaches every worker; the catalogue seeds at the suite day's 10:00;
+  `stillAheadToday`, `EVENING_START`, `LATEST_START` deleted.
+- P3-DEP-4 (WS-A) — the glance's two tests and the month navigation pin the
+  browser (a running clock at the suite day's 10:00, today's visits at
+  21:00); the glance's and the privacy journey's name assertions wait 20 s.
+- P3-DEP-5 (records) — the glance time-of-day flake leaves the record
+  (§4, the carried lists), the late real-hour run its evidence; the load
+  flakes stay.
+- P3-DEP-6 (WS-B) — `requestOtp` saves the challenge by a commit (the `Set`
+  and the REQUESTED row); `saveOtp` deleted; answers and order unchanged.
+- P3-DEP-7 (WS-B) — sign-in leaves rows (`IDENTITY_OTP_REQUESTED` /
+  `_VERIFIED` / `_REFUSED`, `IDENTITY_SESSION_ISSUED`,
+  `IDENTITY_REGISTRATION_COMPLETED`); a failed session-row commit answers
+  the store failure and no token; the settle fingerprint moves with them.
+- P3-DEP-8 (WS-B) — `SystemSource.IDENTITY_CALLABLE`; the two OTP decoders
+  read the transport `operationId`; overrides 101 → 104.
+- P3-DEP-9 (WS-C) — the admin callable `exportClientData` (exports 47 → 48),
+  bound to `WALK_IN_SECRETS`.
+- P3-DEP-10 (WS-C) — `PRIVACY_CLIENT_EXPORTED`, `Roles.PRIVACY = [admin]`,
+  `LogEvent.PrivacyClientExported`; overrides 104 → 107; `utf8Bytes` moves
+  to `CanonicalJsonSystem` (behaviour-neutral).
+- P3-DEP-11 (WS-C) — the card's admin-only privacy block, «Изтегли данните».
+- P3-DEP-12 (WS-C) — `client.privacy` on in development (staging and
+  production stay off).
+- P3-DEP-13 (WS-D) — book / edit refuse `BOOKING_CLIENT_ERASED` for a record
+  under erasure (before: an erased walk-in's phone silently re-seated it).
+- P3-DEP-14 (WS-D) — `updateProfile` refuses an erased account
+  (`ACCOUNTS_UPDATE_PROFILE_NOT_FOUND`), reachable only inside the ≤ 1 h
+  ID-token window.
+- P3-DEP-15 (WS-D) — `previewClientErasure` and `eraseClient`; the three
+  privacy callables bind `WALK_IN_SECRETS`.
+- P3-DEP-16 (WS-D) — every customer body carries `erasureStatus` (`NONE`
+  from every writer and seed; the read guard requires it).
+- P3-DEP-17 (WS-D) — `AccountStatus` gains `ERASED`
+  (`accountErasedAtUtcMs`; `isBlockedAt` answers `true`).
+- P3-DEP-18 (WS-D) — the erasure vocabulary: `PRIVACY_CLIENT_ERASURE_STARTED`
+  / `PRIVACY_CLIENT_ERASED` / `PRIVACY_CLIENT_ERASURE_RESWEPT`, three
+  `PRIVACY_*` codes, `BOOKING_CLIENT_ERASED`; overrides 107 → 118.
+- P3-DEP-19 (WS-D) — exports 48 → 50.
+- P3-DEP-20 (WS-D) — `test:emulator` starts the Storage emulator.
+- P3-DEP-21 (WS-D) — `verify:p0` gains (g): the erasure end to end, the
+  Logging emulator scanned.
+- P3-DEP-22 (WS-D) — the card's «Изтрий личните данни», ONE `ui-alert`
+  with the census, «Изтрит клиент», a row per sibling record.
+- P3-DEP-23 (WS-D) — the functions reach Storage (`firebase-admin/storage`)
+  and delete Auth users, only from `eraseClient`.
+- P3-DEP-24 (WS-E) — CI runs seven jobs (`main`, `static`, `runbook-gates`,
+  `coverage`, `emulators`, `e2e`, `csp-smoke`).
+- P3-DEP-25 (WS-E) — the four screenshot describes carry `@screenshot`,
+  skipped only under `CREATIVO_E2E_SCREENSHOTS=skip` (CI's `e2e` job).
+- P3-DEP-26 (WS-E) — the runbook gates' committed runner; §4's gate names
+  it.
+- P3-DEP-27 — WITHDRAWN: CI keeps the config's owner-authored e2e policy
+  (P3-RU-35).
+- P3-DEP-28 (review round 1) — the export's and the erasure's footprint
+  also read visits by contact value; the erasure clears those contacts
+  before the stamp.
+- P3-DEP-29 (review round 1) — a linked uid with no `users` document but a
+  live Auth user is refused `PRIVACY_ERASURE_STAFF_ACCOUNT` (fail-closed).
+- P3-DEP-30 (review round 1) — a `SHOT` photo's object is deleted only at
+  its own `appointmentPhotos/{appointmentId}/{id}`.
+- P3-DEP-31 (C_D decisions D1–D4) — a kept `LIBRARY` object loses its
+  `clientLabel`; the customer stamps get `indexes: []` (118 → 120); the
+  boxless `ui-alert` host; the eraser reuses the Auth error helpers.
+- P3-DEP-32 (review round 1) — `isOwnWalkInSeat`, `distinct` and
+  `contactValuesOf` have one home each in `ClientPrivacySystem` (behaviour
+  unchanged).
+- P3-DEP-33 (review round 2) — the contact sweep writes its own
+  `PRIVACY_CLIENT_ERASURE_SWEPT` row (`erasure-sweep:<operationId>`).
+- P3-DEP-34 (review round 2) — the sweep clears every contact carrying one
+  of the person's values, seated or not.
+- P3-DEP-35 (review round 2) — the alert counts the sibling rows the card
+  shows.
+
+Frozen (no DEP): everything else — `adoptStub` and `completeRegistration`
+already refused an erased account at `20785b8` (added cases pin them).
+
+**The review rounds (plan §8.R1, §8.R2).** Two adversarial rounds, three
+lenses each, every finding put to a skeptic, one fixer per round. Round 1
+(`d2c85b7`): 9 findings, 2 refuted, 7 confirmed (two of them one defect)
+and the orchestrator's four decisions (D1–D4), all fixed with specs — a
+visit that kept a removed person's contact was neither exported nor
+erased, and `ERASED` was still certified (MAJOR, P3-DEP-28); the erasure
+deleted any Storage object a staff-written photo document named, and a bad
+path stalled it (MAJOR, P3-DEP-30); a preview of the card's own record
+after the stamp wiped the sibling rows (MAJOR,
+`ClientPrivacySystem.siblingsAfterPreview`); the staff-account refusal
+fails closed (P3-DEP-29); the shared own-walk-in rule's one home
+(P3-DEP-32); stale comments. Its FULL gate (03:48–04:22 UTC) was green but
+for `e2e:web` 67/68 — `appointments.spec.ts:161`, the listed cancel load
+flake, 12/12 solo. Round 2 (`ff69759`): 5 confirmed, 4 fixed and 1
+recorded — the sweep's clears gain their own audit row (P3-DEP-33); the
+STARTED census is the census when the stamp lands (recorded and pinned,
+§7 item 28); the alert's sibling figure (P3-DEP-35); stale docs; a desk
+`REMOVE_SEAT` after the stamp left the person's contact on a kept visit
+and `ERASED` was certified (MAJOR, P3-DEP-34). The FULL gate after both
+rounds is §4's Phase 3 block.
+
+**Owner flags** (plan §7, copied into the PR — none blocks anything; each
+is built on the recommended, reversible default, or proposed and not
+built):
+
+1. **New copy, for review** (OR-51 / OR-55): the card's
+   `clientCard.privacy.*` keys, eight `errors.*` codes (seven `PRIVACY_*`,
+   `BOOKING_CLIENT_ERASED`) in bg and en, two icon keys on existing glyphs
+   (`client.export` → `receipt_long`, `client.erase` → `delete`);
+   `errors.PRIVACY_FORBIDDEN` reuses OR-50's one forbidden line.
+2. **The latitude register** P3-L-1…P3-L-23 — the human seed's live
+   default is one constant (`SEED_DEFAULT`).
+3. **Legal retention:** erasure keeps visits, money, the journal, stats,
+   loyalty and audit rows by opaque ids; PITR (7 days), backups (28 days),
+   the 400-day log bucket and Storage soft delete (7 days) keep earlier
+   values until they age out; an OTP challenge requested between the sweep
+   and the stamp, or stored under another spelling, keeps its destination
+   until its TTL — counsel to confirm Art. 17(3)(b)/(e).
+4. **Auth user DELETED**, not disabled (P3-L-9) — the identifier is freed;
+   a ban list is a separate decision.
+5. **Permanent identity rows from an unauthenticated path:** one
+   `IDENTITY_OTP_REQUESTED` per accepted request, never TTL'd, also for a
+   code never sent while P8 is FAIL — accepted as built (P3-RU-37 (d)).
+6. **No undo window, no step-up** (P3-L-13; R47 needs App Check); the
+   person's future visits stay booked, with no contact to call.
+7. **Who exports and erases:** the shop's `admin`, not the vendor
+   `sysadmin` (P3-RU-13; one line to widen).
+8. **The export cap** (P3-L-6): 20,000 documents or 4 MiB, refused, never
+   truncated; the callable response limit was not verifiable here.
+9. **Export redaction** (P3-RU-18): no other person's values, staff by uid,
+   no `otps` / `impersonationSessions`, no voucher `code`, party notes
+   withheld, no avatar bytes — counsel to confirm.
+10. **Search after erasure** (P3-RU-19): unfindable by search; «Изтрит
+    клиент» where the card is opened by id.
+11. **Walk-in siblings are not merged** (P3-L-7): each is its own act, only
+    before the stamp, from the same card session; a walk-in-only person has
+    no card yet.
+12. **Notes and photos written during or after an erasure:** the next call
+    sweeps them; after completion only an admin's re-sweep call does.
+13. **No resurrection — refused** (P3-RU-20): an erased contact is booked
+    as an anonymous guest, never recorded as a walk-in again.
+14. **Single-field exemptions:** 101 → 120 field overrides; confirm the
+    per-database cap before deploy (Phase 0–2 flag 16).
+15. **CI required checks:** `main` keeps its name; the six new jobs start
+    non-required; runner size and minutes are the owner's.
+16. **The Hosting CSP smoke in CI** supplements OR-31; the macOS full gate
+    is the screenshot gate (P3-RU-30, P3-RU-31).
+17. **Deploy steps (owner):** `firestore:indexes` → `functions` →
+    `hosting`; `client.privacy` stays off in production until lit
+    (functions first, then web); the default Storage bucket and the
+    functions' service-account roles (runbook §3) confirmed before deploy;
+    `WALKIN_ID_KEY` also bound to the three privacy callables (P3-RU-36).
+18. **`.claude/rules`:** no edit was needed; no `CLAUDE.md` / `AGENTS.md`
+    edit; no law amendment.
+19. **Out of scope:** App Check, impersonation read-as, an OTP provider
+    (P8 stays FAIL), the Activity screen, `setRoles` (a staff account is
+    refused, not demoted), the `maxPartySize` cap, existing copy.
+20. **Party-visit notes are erased with the person** (P3-RU-33) and not
+    exported.
+21. **Dated e2e seeds:** the `2030-06-01T10:00` visits turn past after
+    2030-05-31; `booking-core.spec.ts` is exposed to a run crossing the
+    shop's midnight (pre-existing).
+22. **CI keeps the config's two e2e retries** (P3-RU-35): a retried pass
+    is reported `flaky`; strict CI is one line.
+23. **Writers the erasure does not refuse:** `startImpersonation` on an
+    erased uid; the erased account's live ID token (≤ 1 h) uploading an
+    avatar — each undone by the next call.
+24. **A contact matched by value may name a phone-sharer** (P3-DEP-28): it
+    is cleared even when the name is a family member's.
+25. **A one-time contact override stays unfindable** (P3-DEP-28,
+    P3-DEP-34), and a visit booked between the outside read and the stamp
+    can be orphaned by a desk `REMOVE_SEAT` after the stamp.
+26. **Storage writes aimed by staff-written documents** (P3-DEP-30, -31):
+    the `appointmentPhotos` rules hardening is not built.
+27. **A missing `users` document refuses the erasure** (P3-DEP-29) until an
+    operator deletes the Auth user or restores the document.
+28. **The STARTED census is the census when the stamp lands** (review
+    round 2): an earlier call's swept contacts are on that act's SWEPT row,
+    not in it.
+
+**Carried from the audit hardening, Phase 3** (none blocks anything; plan
+§7 and §8):
+
+- The legal review of the kept records and the backup, log-bucket and
+  Storage soft-delete windows (flag 3), of the export's redaction (flag 9)
+  and of the erased party notes — alternatives an admin redaction surface,
+  or exporting them (flag 20).
+- One `IDENTITY_OTP_REQUESTED` row per accepted request, never TTL'd — one
+  also for a code never sent while P8 is FAIL; the alternatives drop the
+  verb or move the row after a successful send; App Check stays deferred
+  (flag 5).
+- No undo window and no step-up re-verification; the alert does not single
+  out future visits (flag 6).
+- A person past the export cap needs a runbook export (the research's
+  Storage ZIP; flag 8).
+- A walk-in-only person (no account) has no card: the callable takes the
+  record id, but no UI reaches it — a staff search → record route is the
+  follow-up; siblings are derivable only before the stamp; a referee's
+  `invitations/*/redemptions/{uid}` is kept (flag 11).
+- A note or photo written after completion stays until an admin's re-sweep
+  call (flag 12); a returning person's phone is never a walk-in again until
+  a generation scheme is designed; no Nx target typechecks
+  `apps/web/e2e/**` (flag 13).
+- The single-field exemption cap, now 120 overrides (flag 14).
+- CI: mark the six new jobs required after a run of green builds; the
+  runner size and minutes (flag 15); the two e2e retries under CI, strict
+  CI expecting red runs on the §4 load flakes (flag 22).
+- The `2030-06-01T10:00` seeds of `appointments.spec.ts:57`, `:123`,
+  `:161`, `account-dashboard.spec.ts:58` and
+  `account-dashboard-screenshots.spec.ts:38-39` (re-dating the screenshot
+  seed is a macOS-gate change); `booking-core.spec.ts:302` / `:371-378`'s
+  midnight exposure (flag 21).
+- `startImpersonation` may target an erased uid and the erased account's
+  live ID token may upload an avatar; a `storage.rules` guard reading
+  `users/{uid}.accountStatus` is not built (flag 23).
+- By-value contact matching may clear a phone-sharer's contact and exports
+  it to the phone's owner (flag 24); an override-valued contact, or a visit
+  booked between the outside read and the stamp, can still be orphaned by
+  a `REMOVE_SEAT` after the stamp — refusing that `REMOVE_SEAT` or clearing
+  the contact at the source is a desk-behaviour change, not built (flag
+  25); the `appointmentPhotos` rules pinning `photoOrigin` and the `SHOT`
+  path (flag 26); a missing `users` document refuses the erasure (flag 27);
+  the STARTED census undercounts an earlier call's sweep — move the stamp
+  into the last sweep chunk, or keep a swept count (flag 28).
+- `PRIVACY_EXPORT_TOO_LARGE`'s counts stay out of the edge's
+  `WIRE_PARAM_ALLOWLIST` (decided, §8.R1): the web words the code only.
 
 ## 4. The gate — every step must pass it before landing on `main`
 
@@ -2666,15 +3108,21 @@ pnpm nx typecheck seed-tools
 pnpm nx build web
 pnpm run verify:bundle
 pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
-# the grep gates, under bash: runbook §4.0 (the preamble), then §4.2–§4.5,
-# §4.7 (since Phase 4a: no legacy consumer, the wire flipped, no graph edge)
-# and §4.8 (since Phase 4b: the deletion — no legacy path, alias, tag, package
-# or dotted key; the root ECS lint blocks; the firestore.rules test inputs)
-# and §4.9 (since the UI residue cleanup: no shim or legacy table, no kind/status
+# the runbook grep gates, ALONE (never beside a typecheck, lint or test: §4.9
+# writes a transient canary), through their committed runner (audit hardening
+# Phase 3, P3-DEP-26; also `pnpm run verify:runbook`; pass `--allow-dirty` on an
+# uncommitted tree): it reads runbook §4.0 (the preamble) and §4.2–§4.5,
+# §4.7–§4.10 at run time — the runbook stays the gates' only copy — and runs
+# each block alone, failing on a FAIL, an ERROR, an empty block or a leaked file.
+# §4.7 since Phase 4a (no legacy consumer, the wire flipped, no graph edge);
+# §4.8 since Phase 4b (the deletion — no legacy path, alias, tag, package or
+# dotted key; the root ECS lint blocks; the firestore.rules test inputs); §4.9
+# since the UI residue cleanup (no shim or legacy table, no kind/status
 # discriminator, no undecorated class, no ambient clock, no hand-built load
-# slice — the four rules proven under both ESLint base paths, with a canary)
-# and §4.10 (since pass F, OR-33: the read guard is a required parameter, the
+# slice — the four rules proven under both ESLint base paths, with a canary);
+# §4.10 since pass F (OR-33: the read guard is a required parameter, the
 # unguarded registries live in test support only)
+pnpm nx run verify-tools:runbook-gates
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
@@ -2686,11 +3134,46 @@ pnpm run verify:csp   # since pass F (OR-31): the static hash gate on the produc
 pnpm run preflight --project "$PROJECT_ID"
 ```
 
+**The late-shop-time proof (audit hardening Phase 3 — plan §6.1 addition
+2, P3-RU-34).** The pinned e2e specs pin the browser to the suite DAY at
+10:00, so a late hour is exercised only by a run STARTED late on the REAL
+clock; `E2E_NOW` set to a late time on the real day never is (the instant
+reaches the pinned specs only as its day). Run it after a change to the
+suite clock, the seed's calendar or a pinned spec:
+
+```bash
+# (i) the e2e half — START it between 23:15 and 23:30 Europe/Sofia on the real
+#     clock, with no E2E_NOW (the run resolves its one instant itself):
+TZ=Europe/Sofia date +%H:%M
+pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test
+START_LOGGING_EMULATOR=true pnpm exec firebase emulators:exec \
+  --only firestore,auth,functions,storage --project demo-creativo-test \
+  "pnpm nx e2e web -- e2e/client-card-glance.spec.ts e2e/appointments.spec.ts --repeat-each=3"
+# (ii) the seed half — any hour: the seed reads the instant (settledOnlyIfPast)
+SEED_NOW="$(TZ=Europe/Sofia date +%F)T23:40" pnpm run verify:p0
+# behind an HTTPS proxy firebase-tools also routes 127.0.0.1 through, run each
+# under: env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy
+```
+
+Expected: (i) the glance 36/36 (2 tests × 2 themes × 3 projects × 3) and
+the month navigation 3/3 — a run that crosses the shop's midnight is
+welcome, one instant per run keeps its day; (ii) `verify:p0` (a)–(g) green
+at the 23:40 seed instant. Only the pinned specs run in (i): every other
+e2e spec is callable-driven and books or edits days ≥ tomorrow, or is
+pinned already, so the ordinary `e2e:web` runs them at whatever hour it
+runs. Last run: on `987e6e5`, 2026-10-27, STARTED 23:15:11 and ended
+23:29:07 Europe/Sofia (end of §3.3).
+
 **`verify:csp` and the preflight (pass F).** `pnpm run verify:csp`
 (`docs/security/csp-baseline.md`) builds production and the `csp-smoke`
 configuration, proves each `index.html`'s inline-script hashes against
 `firebase.json`'s `script-src` (`tools/verify/csp/check-csp.mjs` — CI runs
-this static half after every build), writes the emulator superset config
+this static half after every build in its `main` job; since audit
+hardening Phase 3 (P3-DEP-24) CI runs seven parallel jobs — `main`,
+`static`, `runbook-gates`, `coverage`, `emulators`, `e2e` without the ten
+macOS-only `@screenshot` tests (P3-RU-30: the owner's macOS full gate is
+the screenshot gate) and `csp-smoke`, the whole of `verify:csp`, P3-RU-31),
+writes the emulator superset config
 (`tools/verify/csp/emulator-config.mjs`, its difference from production
 asserted) and runs `apps/web/e2e/csp/csp-smoke.spec.ts` on a desktop and a
 Pixel 7 under Hosting: any violation of either disposition, a missing
@@ -2731,14 +3214,49 @@ regression. **Known flakes under load** (judge each on a solo
 `--repeat-each=3` run: `START_LOGGING_EMULATOR=true pnpm exec firebase
 emulators:exec --only firestore,auth,functions,storage --project
 demo-creativo-test "pnpm nx e2e web -- e2e/<spec> --repeat-each=3"`):
-`auth-onboarding.spec.ts:106`, `appointments.spec.ts:152`, the landing
-hero screenshot; and the glance's barber test cannot seed a visit still to
-come today when it runs after ~23:15 shop time (pass E ledger §8.4 —
-re-run it after midnight). Under `run-many -t test --parallel=3` the heavy
-`staff-dashboard`, `staff-client-card` and `marketing-landing` specs (and
-`client-booking`'s `booking-return-url.spec.ts` property case) can time
+`auth-onboarding.spec.ts:63` and `:106`; `appointments.spec.ts:161` (the
+cancel case — listed as `:152` / `:158` before Phase 3: the row not yet
+drawn after 5 s) and `:36` (the file's first test, the page still
+`loading` after 5 s); `client-card-harness.spec.ts:17` [tablet] and `:40`
+[phone] ([desktop] on the Phase 3 final gate — the account page still
+`loading` after 5 s); the landing hero screenshot. The glance's
+time-of-day failure after ~23:15 shop time is gone by construction (audit
+hardening Phase 3, P3-DEP-4 / P3-DEP-5: the browser is pinned to the suite
+day's 10:00; the late real-hour run, end of §3.3, is the evidence). The
+Firestore emulator can stall its forward channel for ~5 s under load — a
+traced glance attempt left the card's name at the seat's label after the
+default 5 s — so the glance's and the privacy journey's name reads wait
+20 s for the profile read, the specs' own idiom for a server read. Under
+`run-many -t test --parallel=3` the heavy `staff-dashboard`,
+`staff-client-card` and `marketing-landing` specs (and `client-booking`'s `booking-return-url.spec.ts` property case) can time
 out — re-run the project alone before calling it a regression. Typecheck
 after `rm -rf dist/out-tsc`.
+
+**Reference numbers on the Phase 3 tree (2026-10-28, the FULL gate after
+the review rounds — `flips/audit-hardening-phase-3.md` §6.3 "Final",
+§8.R2)** — a drop without a reason is a lost case: `nx sync:check` up to
+date; layering **984 files and 4,437 import edges** (2,684 files scanned);
+typecheck **40 projects, all green**; 44 projects lint, 0 errors (246
+warnings by a per-project count — the branch point's); `run-many -t test`
+44 test targets, **14,866 passed, 0 failed** (14,627 vitest +
+`verify-tools` 239, the runbook runner's and the CI workflow's specs among
+them); `lint-rules` 355 tests; ecs-core **7,120 tests, 98.52 %
+statements** (16,067/16,308; the seven new system and pipeline files
+98.50–100 %); functions **1,437 tests**; `seed-tools` typecheck;
+`lint:styles`; `build web` initial **587.74 kB** (159.30 kB transfer) +
+`verify:bundle`; the functions dist's four runtime dependencies; `build
+showcase`; `firestore.indexes.json` 24 composites (5 on `auditLog`) and
+120 field overrides (57 on `auditLog`); the functions' 50 exports; runbook
+§4.2 28 `ok`, §4.3 22, §4.4 17, §4.5 6, §4.7 24, §4.8 27, §4.9 25, §4.10
+20; `verify:csp` — both builds' inline-script hashes match `script-src`,
+the Hosting smoke **10 passed**; `verify:p0` (a)–(g); `test:emulator`
+**135 + 361**; `e2e:web` **67 passed, 1 failed** —
+`client-card-harness.spec.ts:17` [desktop, light], the account page still
+`loading` after 5 s (a listed load flake, untouched by the pass; 27/27 in
+a solo `--repeat-each=3` run of the file). The committed runbook runner
+(`pnpm nx run verify-tools:runbook-gates`) on this tree: the same eight
+counts, 0 FAIL. The late-shop-time proof ran on
+`987e6e5` (end of §3.3), not on this tree.
 
 **Reference numbers on the audit-hardening tree (2026-10-27, the FULL gate
 after the review rounds — `flips/audit-hardening.md` §6.3 "Final", §8)** — a
@@ -2921,6 +3439,17 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 ## 6. Open questions for the owner
 
+- **Audit hardening Phase 3 (2026-10-28) — the owner's delegation
+  (P3-RU-37).** The owner delegated the phase's open calls (_"pick
+  decisions as a FAANG grade decision maker and proceed with recommended
+  stuff"_); each took the plan's recommendation — the Auth user deleted,
+  immediate erasure behind one alert, the records retained, identity rows
+  on every challenge, the live seed default, CI's config retries, OR-50's
+  forbidden line, the D29 link checked by every privacy callable, no
+  `purgeAt` in the export (`flips/audit-hardening-phase-3.md` §0.2). Its
+  latitude register P3-L-1…P3-L-23 and its owner flags (the new copy, the
+  legal retention review, the deploy steps, lighting `client.privacy`
+  among them) are listed at the end of §3.3.
 - **Audit hardening (2026-10-27) — no new ruling.** The pass decided no
   owner question. It relied on the rulings below and in
   `decisions/2026-10-26-owner-rulings.md` — OR-9, OR-12, OR-24, OR-25 /
