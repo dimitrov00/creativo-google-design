@@ -4,12 +4,15 @@ import {
   BlockKind,
   BookingPolicy,
   CustomerOrigin,
+  ErasureLifecycle,
+  ErasureStatus,
   type DocBody,
   type DocPath,
   E164,
   Email,
   LocationStatus,
   MinuteBlock,
+  PrivacyMarker,
   SeatSubject,
   WriteAction,
   type WriteOp,
@@ -261,6 +264,7 @@ describe('bookAppointment', () => {
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.FirstBooking,
       writeOperationId: OperationId.of(ATTEMPT),
+      erasureStatus: ErasureStatus.None,
     };
     expect(store.get(CUSTOMER_PATH)).toEqual(expected);
     // The contact snapshot is read OUTSIDE the transaction, for the cart's accounts.
@@ -354,6 +358,7 @@ describe('bookAppointment', () => {
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.Seed,
       ...WriteProvenance.NONE,
+      erasureStatus: ErasureStatus.None,
     };
     const { store, tx, run } = rig([
       ...catalogue(),
@@ -471,7 +476,10 @@ describe('bookAppointment', () => {
         const snapshot = await read(tx);
         if (attempts === 1) {
           // A concurrent first booking of the same account lands here.
-          store.set(CUSTOMER_PATH, { userId: FIXTURE_IDS.client });
+          store.set(CUSTOMER_PATH, {
+            userId: FIXTURE_IDS.client,
+            erasureStatus: ErasureStatus.None,
+          });
         }
         return snapshot;
       }, decide);
@@ -908,6 +916,7 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.StaffWalkIn,
       writeOperationId: OperationId.of(ATTEMPT),
+      erasureStatus: ErasureStatus.None,
     };
     expect(store.get(MARIA_PATH)).toEqual(expected);
     // The record rides the phase-one getAll — no extra round trip.
@@ -978,7 +987,10 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
   it('meets the record a visit before created: the same id, nothing written over it', async () => {
     const stored = {
       path: [Collections.Customers, MARIA_RECORD],
-      body: { displayName: 'Мария Иванова' },
+      body: {
+        displayName: 'Мария Иванова',
+        erasureStatus: ErasureStatus.None,
+      },
     };
     const { store, tx, run } = rig([...catalogue(), stored]);
     const answer = await run(
@@ -986,7 +998,10 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
     );
     expect(answer.ok).toBe(true);
     expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([]);
-    expect(store.get(MARIA_PATH)).toEqual({ displayName: 'Мария Иванова' });
+    expect(store.get(MARIA_PATH)).toEqual({
+      displayName: 'Мария Иванова',
+      erasureStatus: ErasureStatus.None,
+    });
     expect(store.get(`${Collections.Appointments}/${ATTEMPT}`)).toMatchObject({
       seats: [{ seatSubject: SeatSubject.WalkIn, guestLabel: 'Мими' }],
     });
@@ -1045,7 +1060,10 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
       commit: (base) => async (read, decide) => {
         calls += 1;
         if (calls === 1) {
-          store.set(MARIA_PATH, { displayName: 'Мария' });
+          store.set(MARIA_PATH, {
+            displayName: 'Мария',
+            erasureStatus: ErasureStatus.None,
+          });
           return Result.err(RepoError.alreadyExists(MARIA_PATH));
         }
         return base(read, decide);
@@ -1060,6 +1078,137 @@ describe('bookAppointment — a walk-in the desk took a contact for (OR-26)', ()
     });
     expect(calls).toBe(2);
     expect(writeKeys(tx.plans.at(-1) ?? [], Collections.Customers)).toEqual([]);
+  });
+});
+
+describe('bookAppointment — a record under erasure is never seated or re-created (P3-RU-20)', () => {
+  const MARIA_PHONE = E164.of('+359888123456');
+  const MARIA_RECORD = CustomerId.forWalkIn(MARIA_PHONE, fixtureWalkInHash);
+  const STAFF = Actor.staff(UserId.of('u-staff'), []);
+  const STARTED = utcMs('2026-09-20T10:00:00.000+03:00');
+
+  /** A record the erasure stripped — the marker name, no contact — at `lifecycle`. */
+  const tombstone = (
+    userId: UserId | null,
+    lifecycle: ErasureLifecycle,
+  ): DocBody => ({
+    userId,
+    displayName: PrivacyMarker.TEXT,
+    phone: null,
+    email: null,
+    searchName: '',
+    searchPrefixes: [],
+    createdAtUtcMs: FIXTURE_NOW_UTC_MS,
+    customerOrigin: CustomerOrigin.Seed,
+    ...WriteProvenance.NONE,
+    ...lifecycle,
+  });
+  const LIFECYCLES: readonly (readonly [string, ErasureLifecycle])[] = [
+    ['ERASING', ErasureLifecycle.begin(STARTED)],
+    [
+      'ERASED',
+      ErasureLifecycle.complete(
+        ErasureLifecycle.begin(STARTED),
+        utcMs('2026-09-21T10:00:00.000+03:00'),
+      ),
+    ],
+  ];
+  const walkInSeat: BookingCall.SeatInput = {
+    ...SEAT,
+    subject: {
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label: 'Мария',
+      guestKey: null,
+      contact: { phone: MARIA_PHONE, email: null },
+    },
+  };
+
+  it.each(LIFECYCLES)(
+    'an account whose record is %s → BOOKING_CLIENT_ERASED: no plan, the record untouched, no appointment',
+    async (_status, lifecycle) => {
+      const record = tombstone(FIXTURE_IDS.client, lifecycle);
+      const { store, tx, rows, run } = rig([
+        ...catalogue(),
+        { path: [Collections.Customers, FIXTURE_IDS.customer], body: record },
+      ]);
+      expect(await run(command())).toEqual({
+        ok: false,
+        error: BookingError.clientErased(),
+      });
+      expect(tx.plans).toEqual([]);
+      expect(rows).toEqual([]);
+      expect(store.get(CUSTOMER_PATH)).toEqual(record);
+      expect(
+        store.get(`${Collections.Appointments}/${ATTEMPT}`),
+      ).toBeUndefined();
+    },
+  );
+
+  it.each(LIFECYCLES)(
+    'a staff walk-in whose contact keys a record that is %s → BOOKING_CLIENT_ERASED, never re-seated (the contact maps back to it)',
+    async (_status, lifecycle) => {
+      const record = tombstone(null, lifecycle);
+      const { store, tx, run } = rig([
+        ...catalogue(),
+        { path: [Collections.Customers, MARIA_RECORD], body: record },
+      ]);
+      const answer = await run(
+        command({
+          staffPlacement: true,
+          ownerUserId: null,
+          seats: [walkInSeat],
+          actor: STAFF,
+        }),
+      );
+      expect(answer).toEqual({ ok: false, error: BookingError.clientErased() });
+      expect(tx.plans).toEqual([]);
+      expect(store.get(`${Collections.Customers}/${MARIA_RECORD}`)).toEqual(
+        record,
+      );
+    },
+  );
+
+  it('the refusal is logged as a rejected booking by its code — no value of the person', async () => {
+    const { telemetry, run } = rig([
+      ...catalogue(),
+      {
+        path: [Collections.Customers, FIXTURE_IDS.customer],
+        body: tombstone(FIXTURE_IDS.client, ErasureLifecycle.begin(STARTED)),
+      },
+    ]);
+    await run(command());
+    const line = telemetry.lines.find(
+      (entry) => entry.msg === LogEvent.BookingRejected,
+    );
+    expect(line?.fields?.['errorCode']).toBe(BookingErrorCode.ClientErased);
+  });
+
+  it('a NONE record books as before — the guard reads the tag, nothing else', async () => {
+    const { tx, run } = rig([
+      ...catalogue(),
+      {
+        path: [Collections.Customers, FIXTURE_IDS.customer],
+        body: tombstone(FIXTURE_IDS.client, ErasureLifecycle.none()),
+      },
+    ]);
+    expect((await run(command())).ok).toBe(true);
+    expect(writeKeys(tx.plans[0] ?? [], Collections.Customers)).toEqual([]);
+  });
+
+  it('a walk-in whose record is absent is created NONE, as before', async () => {
+    const { store, run } = rig(catalogue());
+    const answer = await run(
+      command({
+        staffPlacement: true,
+        ownerUserId: null,
+        seats: [walkInSeat],
+        actor: STAFF,
+      }),
+    );
+    expect(answer.ok).toBe(true);
+    expect(store.get(`${Collections.Customers}/${MARIA_RECORD}`)).toMatchObject(
+      { erasureStatus: ErasureStatus.None },
+    );
   });
 });
 

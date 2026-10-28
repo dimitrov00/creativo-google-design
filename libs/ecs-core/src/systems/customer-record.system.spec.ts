@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BookingCall,
   CustomerOrigin,
+  ErasureLifecycle,
+  ErasureStatus,
   E164,
   Email,
   SeatLabel,
@@ -26,6 +28,7 @@ import {
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
+  customerFixture,
   deepFreeze,
   duration,
   fixtureHash,
@@ -91,6 +94,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       createdAtUtcMs: FIXTURE_NOW_UTC_MS,
       customerOrigin: CustomerOrigin.FirstBooking,
       writeOperationId: BOOK_OPERATION,
+      erasureStatus: ErasureStatus.None,
     };
     expect(writes).toEqual([
       WriteOp.create([Collections.Customers, FIXTURE_IDS.customer], body),
@@ -118,6 +122,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.FirstBooking,
         writeOperationId: null,
+        erasureStatus: ErasureStatus.None,
       }),
     );
   });
@@ -152,6 +157,7 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.Registration,
         writeOperationId: null,
+        erasureStatus: ErasureStatus.None,
       }),
     ]);
     // A re-run that reads the record it created plans nothing.
@@ -183,6 +189,26 @@ describe('CustomerRecordSystem.createsFor — the client records a transaction c
       NO_OPERATION,
     );
     expect(writes).toHaveLength(1);
+  });
+
+  it('every record it creates is born outside any erasure — erasureStatus NONE, no erasure stamp (P3-L-18)', () => {
+    for (const origin of [
+      CustomerOrigin.FirstBooking,
+      CustomerOrigin.Registration,
+    ]) {
+      const [create] = CustomerRecordSystem.createsFor(
+        resolvedFor(FIXTURE_IDS.client),
+        new Map<CustomerId, Customer | null>([[FIXTURE_IDS.customer, null]]),
+        new Map([[FIXTURE_IDS.client, MARIA]]),
+        origin,
+        FIXTURE_NOW_UTC_MS,
+        BOOK_OPERATION,
+      );
+      const body = (create as WriteOp.Create).body;
+      expect(body['erasureStatus']).toBe(ErasureStatus.None);
+      expect(body).not.toHaveProperty('erasureStartedAtUtcMs');
+      expect(body).not.toHaveProperty('erasedAtUtcMs');
+    }
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
@@ -492,6 +518,7 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.StaffWalkIn,
         writeOperationId: BOOK_OPERATION,
+        erasureStatus: ErasureStatus.None,
       }),
     ]);
   });
@@ -547,6 +574,25 @@ describe('CustomerRecordSystem.walkInCreates — the walk-in records a transacti
         NO_OPERATION,
       ),
     ).toEqual([]);
+  });
+
+  it('an ERASED or ERASING record read is left alone — never re-created over its tombstone (P3-RU-20: refusing the seat is the pipeline’s)', () => {
+    const erasing = ErasureLifecycle.begin(FIXTURE_NOW_UTC_MS);
+    for (const lifecycle of [
+      erasing,
+      ErasureLifecycle.complete(erasing, FIXTURE_NOW_UTC_MS),
+    ]) {
+      expect(
+        CustomerRecordSystem.walkInCreates(
+          maria,
+          new Map<CustomerId, Customer | null>([
+            [MARIA_RECORD, customerFixture({ id: MARIA_RECORD, ...lifecycle })],
+          ]),
+          FIXTURE_NOW_UTC_MS,
+          BOOK_OPERATION,
+        ),
+      ).toEqual([]);
+    }
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

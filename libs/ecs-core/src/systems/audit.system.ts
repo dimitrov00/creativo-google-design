@@ -609,6 +609,32 @@ export const AuditSystem = {
     clientExported(operationId: OperationId): string {
       return `export:${operationId}`;
     },
+    /*
+     * An admin's data-subject erasure (audit-hardening Phase 3 WS-D,
+     * P3-RU-22). The start and the completion are keyed by STATE, never by
+     * the act's id: each row is planned only on the transition its own
+     * transaction read (`NONE → ERASING`, `ERASING → ERASED`), so a replay,
+     * a resumed call or a concurrent second act plans none and never
+     * reaches the ALREADY_EXISTS tripwire — one STARTED and one ERASED row
+     * per record, ever.
+     */
+    /** The stamp commit (`NONE → ERASING`): one per record. */
+    erasureStarted(customerId: CustomerId): string {
+      return `erasure-start:${customerId}`;
+    },
+    /** The completion commit (`ERASING → ERASED`): one per record. */
+    erased(customerId: CustomerId): string {
+      return `erasure-done:${customerId}`;
+    },
+    /**
+     * A sweep of an ERASED record that found residue (P3-L-19): its
+     * operation id — an ERASED record may be swept by many acts, each its
+     * own row, and the pipeline plans it only when its probe read finds the
+     * row absent (the export row's idiom), so a replay of one act plans none.
+     */
+    erasureResweep(operationId: OperationId): string {
+      return `erasure-resweep:${operationId}`;
+    },
   },
 
   /**

@@ -17,6 +17,10 @@ import {
   AuditTarget,
   type AuditTargetRef,
   type CancellationDelta,
+  type ErasureAction,
+  type ErasureCensus,
+  type ErasureLifecycle,
+  ErasureStatus,
   type GovernedCollection,
   ImpersonationEndReason,
   type ImpersonationLifecycle,
@@ -78,6 +82,19 @@ if (user.accountStatus === AccountStatus.Blocked) {
 if (user.accountStatus === AccountStatus.Active) {
   // @ts-expect-error — an active account has no block reason
   void user.blockReason;
+}
+/** The erased account (Phase 3 WS-D, P3-DEP-17) narrows to its terminal stamp — and to nothing of a block. */
+if (user.accountStatus === AccountStatus.Erased) {
+  const erasedAt: UtcEpochMs = user.accountErasedAtUtcMs;
+  void erasedAt;
+  // @ts-expect-error — an erasure is no block: no reason
+  void user.blockReason;
+  // @ts-expect-error — nor a block's expiry
+  void user.blockedUntilUtcMs;
+}
+if (user.accountStatus === AccountStatus.Blocked) {
+  // @ts-expect-error — a blocked account carries no erasure stamp
+  void user.accountErasedAtUtcMs;
 }
 // @ts-expect-error — the nested `{ kind }` status object is gone (Law 6)
 void user.accountStatus.kind;
@@ -481,6 +498,81 @@ if (row.auditAction === AuditAction.PrivacyClientExported) {
   // @ts-expect-error — nor a governed field list
   void row.governedFields;
 }
+/*
+ * The data-subject erasure rows (audit-hardening Phase 3 WS-D, P3-DEP-18):
+ * ONE variant for the three verbs, flat — the verb and the eleven census
+ * counts, disjoint from the actor, target and meta slices; a name, a contact
+ * value, a label, free text or a sibling's id is never on a row (R36 / T5).
+ */
+export const clientErasureFlat: AllTrue<NoNested<AuditContext.ClientErasure>> =
+  true;
+export const clientErasureDisjoint: [
+  Disjoint<ErasureCensus, Actor>,
+  Disjoint<ErasureCensus, AuditTargetRef>,
+  Disjoint<ErasureCensus, AuditEntryMeta>,
+  Disjoint<ErasureCensus, Omit<AuditContext.ClientExported, 'auditAction'>>,
+] = [true, true, true, true];
+/** The check is not vacuous: a census repeating the target's record id would share a key. */
+export const clientErasureTargetRepeatCaught: Disjoint<
+  ErasureCensus & { readonly targetCustomerId: CustomerId },
+  AuditTargetRef
+> = false;
+/** The census never collides with the record's erasure slice it reports on. */
+export const clientErasureLifecycleDisjoint: Disjoint<
+  ErasureCensus,
+  ErasureLifecycle
+> = true;
+export const clientErasureVerbsAre: [
+  Equals<
+    ErasureAction,
+    | 'PRIVACY_CLIENT_ERASURE_STARTED'
+    | 'PRIVACY_CLIENT_ERASED'
+    | 'PRIVACY_CLIENT_ERASURE_RESWEPT'
+  >,
+  Equals<AuditContext.ClientErasure['auditAction'], ErasureAction>,
+  Equals<AuditContext.ClientErasure['erasureNoteCount'], number>,
+  Equals<AuditContext.ClientErasure['erasureJournalCount'], number>,
+] = [true, true, true, true];
+/*
+ * ONE variant carries the three verbs (its `auditAction` is the union), so
+ * it is extracted by the union and each verb narrows it by intersection.
+ */
+export const auditEntryWithErasureNotNever: [
+  IsNever<Extract<AuditEntry, { readonly auditAction: ErasureAction }>>,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_STARTED' }
+  >,
+  IsNever<AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASED' }>,
+  IsNever<
+    AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_ERASURE_RESWEPT' }
+  >,
+] = [false, false, false, false];
+/** The check is not vacuous: a verb no variant carries narrows the entry to `never`. */
+export const auditEntryWithForeignVerbIsNever: IsNever<
+  AuditEntry & { readonly auditAction: 'PRIVACY_CLIENT_FORGOTTEN' }
+> = true;
+if (
+  row.auditAction === AuditAction.PrivacyClientErasureStarted ||
+  row.auditAction === AuditAction.PrivacyClientErased ||
+  row.auditAction === AuditAction.PrivacyClientErasureReswept
+) {
+  const notes: number = row.erasureNoteCount;
+  void notes;
+  void row.erasureRecordCount;
+  void row.erasureContactKeptCount;
+  // @ts-expect-error — an erasure row carries no export count
+  void row.exportDocumentCount;
+  // @ts-expect-error — nor the record's erasure tag (the census is counts only)
+  void row.erasureStatus;
+  // @ts-expect-error — nor any sibling record's id
+  void row.erasureSiblingCustomerIds;
+  // @ts-expect-error — nor a name
+  void row.displayName;
+}
+if (row.auditAction === AuditAction.PrivacyClientExported) {
+  // @ts-expect-error — an export row carries no census
+  void row.erasureNoteCount;
+}
 if (row.auditTarget === AuditTarget.User) {
   const target: UserId = row.targetUserId;
   void target;
@@ -492,7 +584,7 @@ if (row.auditTarget === AuditTarget.Customer) {
   void row.targetUserId;
 }
 
-/* ── Customer = Meta & WriteProvenance (D29, WS-4.3) ───────────────────── */
+/* ── Customer = Meta & WriteProvenance & ErasureLifecycle (D29, WS-4.3, P3 WS-D) ── */
 
 export const customerNotNever: IsNever<Customer> = false;
 export const customerFlat: EveryVariantFlat<Customer> = true;
@@ -500,9 +592,43 @@ export const customerProvenanceDisjoint: Disjoint<
   CustomerMeta,
   WriteProvenance
 > = true;
+/** The erasure slice shares no field with the record's other two slices (P3-L-18). */
+export const customerErasureDisjoint: [
+  Disjoint<CustomerMeta, ErasureLifecycle>,
+  Disjoint<WriteProvenance, ErasureLifecycle>,
+] = [true, true];
+/** The check is not vacuous: an erasure slice repeating the record's name would share a key. */
+export const customerErasureRepeatCaught: Disjoint<
+  CustomerMeta,
+  ErasureLifecycle & { readonly displayName: string }
+> = false;
+/** Every variant of the record keeps the archetype — no variant collapses it to `never`. */
+export const customerVariantsNotNever: [
+  IsNever<Extract<Customer, { readonly erasureStatus: 'NONE' }>>,
+  IsNever<Extract<Customer, { readonly erasureStatus: 'ERASING' }>>,
+  IsNever<Extract<Customer, { readonly erasureStatus: 'ERASED' }>>,
+] = [false, false, false];
 declare const customer: Customer;
 const customerWriteOperationId: OperationId | null = customer.writeOperationId;
 void customerWriteOperationId;
+const customerErasureStatus: ErasureStatus = customer.erasureStatus;
+void customerErasureStatus;
+if (customer.erasureStatus === ErasureStatus.Erasing) {
+  const started: UtcEpochMs = customer.erasureStartedAtUtcMs;
+  void started;
+  // @ts-expect-error — an erasure under way is not yet certified erased
+  void customer.erasedAtUtcMs;
+}
+if (customer.erasureStatus === ErasureStatus.Erased) {
+  const started: UtcEpochMs = customer.erasureStartedAtUtcMs;
+  const erasedAt: UtcEpochMs = customer.erasedAtUtcMs;
+  void started;
+  void erasedAt;
+}
+if (customer.erasureStatus === ErasureStatus.None) {
+  // @ts-expect-error — a record no erasure reached carries no erasure stamp
+  void customer.erasureStartedAtUtcMs;
+}
 // @ts-expect-error — a CustomerId is never a UserId (Law 7.4, D29)
 export const customerIdIsNotUser: UserId = customer.id;
 // @ts-expect-error — a UserId is never a CustomerId (Law 7.4, D29)

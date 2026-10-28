@@ -26,6 +26,7 @@ import {
   ServiceStatus,
   VoucherCode,
   CustomerOrigin,
+  ErasureStatus,
   Email,
   E164,
   AuthClaims,
@@ -1005,6 +1006,7 @@ describe('memoryCustomerPorts — the signed-in account’s client record', () =
       createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
       customerOrigin: CustomerOrigin.FirstBooking,
       ...WriteProvenance.NONE,
+      erasureStatus: ErasureStatus.None,
     };
     const ports = memoryCustomerPorts([record]);
     expect(unwrapOk(await ports.loadCustomerForUser(ANA))).toBe(record);
@@ -1064,6 +1066,7 @@ describe('memoryCustomerSearchPorts — the staff client search over the records
     createdAtUtcMs: utcMs('2026-09-01T09:00:00+03:00'),
     customerOrigin: CustomerOrigin.StaffWalkIn,
     ...WriteProvenance.NONE,
+    erasureStatus: ErasureStatus.None,
   });
 
   it('answers the records whose prefixes contain the query, by searchName then id, cut at the limit', async () => {

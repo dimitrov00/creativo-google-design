@@ -103,7 +103,10 @@ function keysOf(legs: readonly GlanceLeg[]): string {
 export const ClientGlanceSystem = {
   /**
    * Online booking paused AS OF `nowUtcMs`: `{ untilUtcMs }` (`null` = for
-   * good), or `null` — a temporary pause that has run out is no pause.
+   * good), or `null` — a temporary pause that has run out is no pause. An
+   * ERASED account (Phase 3 WS-D, P3-DEP-17) reads as paused for good: the
+   * glance words the pause, never the erasure — the card words the
+   * record's erasure tag.
    */
   pauseOf(
     lifecycle: AccountLifecycle | null,

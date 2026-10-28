@@ -42,9 +42,11 @@ import {
   continuePolicyRecompute,
   editAppointment,
   endImpersonation as endImpersonationPipeline,
+  eraseClient as eraseClientPipeline,
   exportClientData as exportClientDataPipeline,
   markArrival,
   matchWaitlist,
+  previewClientErasure as previewClientErasurePipeline,
   projectClientStats,
   rebuildBusy,
   rebuildCapacity,
@@ -65,6 +67,7 @@ import {
 } from '@core/pipelines';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
+import { authEraserPorts } from './adapters/firebase-auth-eraser.adapter';
 import {
   consoleLogContext,
   consoleTelemetry,
@@ -84,6 +87,7 @@ import {
   nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
 import { refusingOtpSender } from './adapters/refusing-otp-sender.adapter';
+import { storageObjectPorts } from './adapters/storage-objects.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   type CallableEdgePorts,
@@ -97,7 +101,7 @@ import {
   type WorkBudget,
 } from './edge';
 import { CRON_TIME_ZONE } from './lib/cron-zone';
-import { adminAuth, adminFirestore } from './lib/firebase-admin';
+import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import {
   arrivalRefusal,
   cancelAppointmentRefusal,
@@ -168,8 +172,14 @@ import {
   runBackfillRefusal,
 } from './wire/ops.wire';
 import {
+  decodeEraseClient,
   decodeExportClientData,
+  decodePreviewClientErasure,
+  encodeEraseClientAnswer,
+  encodeErasurePreviewAnswer,
   encodeExportClientDataAnswer,
+  ERASE_CLIENT_TIMEOUT_SECONDS,
+  eraseClientRefusal,
   exportClientDataRefusal,
 } from './wire/privacy.wire';
 import {
@@ -217,7 +227,8 @@ import { settle, type WireRequest } from './wire/wire-read';
  * the walk-in key the two callables that mint walk-in records bind
  * (`commitBooking`, `staffEditAppointment`: the `WALKIN_ID_KEY` secret
  * their ids are keyed by, OR-26) and the admin privacy callables that
- * recognise them (`exportClientData`, P3-RU-36), the log digest key every callable but
+ * recognise them (`exportClientData`, `previewClientErasure`,
+ * `eraseClient`, P3-RU-36), the log digest key every callable but
  * the sink binds (`LOG_DIGEST_KEY`, audit-hardening WS-4.2: the outcome
  * line's keyed `inputDigest`), and seven retry flags: edge-hardening D-5 flipped
  * `rebuildBusyOnAppointmentChange`,
@@ -245,7 +256,11 @@ import { settle, type WireRequest } from './wire/wire-read';
  * the ONE `documentAuditTrigger` helper: 47 exports. Audit-hardening
  * Phase 3 (WS-C, P3-DEP-9) added `exportClientData`, the admin's
  * data-subject export — bound to the walk-in key it recognises a walk-in's
- * contact by (P3-RU-36) and the log digest key: 48 exports.
+ * contact by (P3-RU-36) and the log digest key: 48 exports. WS-D
+ * (P3-DEP-15, P3-DEP-19) added the admin's data-subject erasure — the
+ * read-only `previewClientErasure` and the resumable `eraseClient` (540 s,
+ * 512 MiB, the `runBackfill` idiom: its work budgeted by its timeout) —
+ * both bound to the same two keys: 50 exports.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -339,6 +354,12 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
 };
 
 /**
+ * Admin Auth, built on first use and SHARED — the identity callables' and
+ * the erasure pair's (an instance builds its Auth client once).
+ */
+const auth = once(() => adminAuth());
+
+/**
  * The identity callables' ports: the server ports, Admin Auth, the
  * login-OTP sender, the OTP crypto, the tenant and the deployment's auth
  * configuration — each callable's pipeline names the bundles it reads
@@ -348,7 +369,7 @@ const edge: CallableEdgePorts & TriggerFailurePorts = {
  */
 const identityPorts = once(() => ({
   ...serverPorts(),
-  ...authClaimsPorts(adminAuth()),
+  ...authClaimsPorts(auth()),
   // The login-OTP sender identity — never a campaign sender. Under the
   // emulator the code goes to the log (manual QA reads `devCode` anyway); a
   // deployed environment can only construct the refusing sender, which
@@ -431,7 +452,8 @@ const walkInPorts = once(() => ({
 
 /**
  * The admin privacy callables' ports (`exportClientData`, audit-hardening
- * Phase 3 WS-C): the server ports (the commit, the clock, the digests, the
+ * Phase 3 WS-C; the erasure's below build on them): the server ports (the
+ * commit, the clock, the digests, the
  * caller's stored roles, the telemetry), the keyed walk-in digest a visit's
  * contact is recognised by (P3-RU-36), the person's footprint reads — the
  * guarded ones over the stored-document guard and the telemetry log
@@ -450,6 +472,30 @@ const privacyPorts = once(() => ({
   ...paramFlagsPorts(),
 }));
 
+/**
+ * The erasure preview's ports (`previewClientErasure`, WS-D): the privacy
+ * ports and the Admin-Auth eraser bundle — the preview's port type reads
+ * only its claim roles (`loadAuthRoles`: the staff-account refusal,
+ * P3-L-16). Built on first use; handed to no other export.
+ */
+const previewPorts = once(() => ({
+  ...privacyPorts(),
+  ...authEraserPorts(auth()),
+}));
+
+/**
+ * The erasure's ports (`eraseClient`, WS-D): the privacy ports, the Auth
+ * user's claim roles and its deletion, and the default bucket's object
+ * deletions (P3-L-9, P3-L-10, P3-DEP-23 — the only export that reaches
+ * Storage or deletes an Auth user). Built on first use; handed to no other
+ * export.
+ */
+const erasurePorts = once(() => ({
+  ...privacyPorts(),
+  ...authEraserPorts(auth()),
+  ...storageObjectPorts(adminBucket()),
+}));
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -460,6 +506,8 @@ const root = {
   identity: identityPorts,
   streak: streakPorts,
   privacy: privacyPorts,
+  erasurePreview: previewPorts,
+  erasure: erasurePorts,
 } as const;
 
 /** How one callable is wired: its name, its coded failure, its timeout. */
@@ -536,9 +584,10 @@ const POLICY_RECOMPUTE_JOB_DOC =
   `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}` as const;
 
 /**
- * The two handlers whose input is the size of the book take a long timeout
- * and the larger instance, as today — the timeouts read from the wire that
- * budgets their work by them, so the two can never disagree.
+ * The handlers whose input is the size of the book — or of one person's
+ * footprint (the export's bundle, the erasure) — take the larger instance,
+ * and those that budget their work a long timeout read from the wire that
+ * budgets it, so the two can never disagree.
  */
 const LARGE_MEMORY = '512MiB';
 
@@ -1161,6 +1210,52 @@ export const exportClientData = onCall(
     (ports, cmd) => exportClientDataPipeline(ports)(cmd),
     encodeExportClientDataAnswer,
     exportClientDataRefusal,
+  ),
+);
+
+/**
+ * An admin previews an erasure (WS-D, P3-L-17): read-only — the record's
+ * tag, the census of the person's footprint and the sibling walk-in records
+ * the card's ONE alert words in figures; it refuses as the erasure would.
+ * No row, no write.
+ */
+export const previewClientErasure = onCall(
+  WALK_IN_SECRETS,
+  wiredCallable(
+    plain(Callables.PreviewClientErasure, null),
+    root.erasurePreview,
+    decodePreviewClientErasure,
+    (ports, cmd) => previewClientErasurePipeline(ports)(cmd),
+    encodeErasurePreviewAnswer,
+    eraseClientRefusal,
+  ),
+);
+
+/**
+ * An admin erases one client (WS-D, GDPR Art. 17 — "pseudonymize, keep
+ * records"): ONE resumable call — the stamp, the paged units, the avatar
+ * and the Auth user, the completion — its work budgeted by its timeout
+ * (the `runBackfill` idiom); the browser calls again with the same act
+ * until it answers `erasureDone`.
+ */
+export const eraseClient = onCall(
+  {
+    timeoutSeconds: ERASE_CLIENT_TIMEOUT_SECONDS,
+    memory: LARGE_MEMORY,
+    ...WALK_IN_SECRETS,
+  },
+  wiredCallable(
+    {
+      callable: Callables.EraseClient,
+      failureCode: null,
+      timeoutSeconds: ERASE_CLIENT_TIMEOUT_SECONDS,
+      traced: true,
+    },
+    root.erasure,
+    decodeEraseClient,
+    (ports, cmd, budget) => eraseClientPipeline(ports)(cmd, budget),
+    encodeEraseClientAnswer,
+    eraseClientRefusal,
   ),
 );
 

@@ -25,6 +25,7 @@ import type {
   BadgeSeriesId,
   BarberId,
   CouponGrantId,
+  CustomerId,
   GiftVoucherId,
   JournalEntryId,
   LocalDate,
@@ -679,6 +680,88 @@ export interface ClientPrivacyVm {
   readonly exportLabel: string;
   /** «Файлът е изтеглен.» or a refusal's words; `null` while idle or on its way. */
   readonly exportStatus: string | null;
+}
+
+/**
+ * Where the card's erasure act stands (audit-hardening Phase 3, WS-D): none
+ * asked (or the last one forgotten), its preview on its way, its resumable
+ * calls on their way, answered "not finished yet", or refused. The ONE
+ * alert is open while a previewed act waits for its answer — the store's
+ * pending call, not a phase. Values: SCREAMING tags, the store's.
+ */
+export const ClientErasurePhase = {
+  Idle: 'IDLE',
+  Previewing: 'PREVIEWING',
+  Running: 'RUNNING',
+  Unfinished: 'UNFINISHED',
+  Refused: 'REFUSED',
+} as const;
+export type ClientErasurePhase =
+  (typeof ClientErasurePhase)[keyof typeof ClientErasurePhase];
+
+/** The erasure alert's two answers — the `uiPicked` ids. */
+export const ErasureAlertAnswer = {
+  Erase: 'ERASE',
+  Keep: 'KEEP',
+} as const;
+export type ErasureAlertAnswer =
+  (typeof ErasureAlertAnswer)[keyof typeof ErasureAlertAnswer];
+
+/** One answer of the erasure alert, in the shape `ui-alert` takes. */
+export interface ClientErasureAlertActionVm {
+  readonly id: ErasureAlertAnswer;
+  /** «Изтрий» · «Отказ». */
+  readonly label: string;
+  /** The destructive answer first, the safe one last. */
+  readonly role: 'destructive' | 'cancel';
+  /** The safe answer is the preferred one (bold, Return). */
+  readonly preferred: boolean;
+  readonly testId: string;
+}
+
+/**
+ * The ONE `ui-alert` of an erasure: the question, the census in figures
+ * and the two answers. Its words stay after it closes (the alert leaves
+ * worded as it came).
+ */
+export interface ClientErasureAlertVm {
+  /** A previewed act waits for its answer. */
+  readonly open: boolean;
+  /** «Да изтрием ли личните данни?» */
+  readonly title: string;
+  /** «Посещения: 12 · Бележки: 2 · …» — `null` before the first preview. */
+  readonly body: string | null;
+  readonly actions: readonly ClientErasureAlertActionVm[];
+}
+
+/**
+ * A walk-in record sharing the person's phone or e-mail (P3-L-7) — its own
+ * act, worded without a name (it may be another person's).
+ */
+export interface ClientErasureSiblingVm {
+  /** The record the row previews and erases. */
+  readonly customerId: CustomerId;
+  /** «Изтрий записа със същия телефон или имейл». */
+  readonly label: string;
+  /** `client-privacy-sibling-<n>`, n from 1 in the preview's order. */
+  readonly testId: string;
+}
+
+/**
+ * L — the erasure's rows in the privacy group (audit-hardening Phase 3,
+ * WS-D), beside the export: present exactly when the block is
+ * ({@link ClientPrivacyVm}) and the record's erasure tag is known.
+ */
+export interface ClientErasureVm {
+  /** «Изтрий личните данни» — erase, resume or re-sweep alike (the system's offer). */
+  readonly eraseLabel: string;
+  /** «Изтрит клиент» on an erased record, beside the re-sweep; `null` otherwise. */
+  readonly erasedLine: string | null;
+  /** «Изтриването още не е завършило. Опитай пак.» or a refusal's words; `null` otherwise. */
+  readonly eraseStatus: string | null;
+  /** One row per sibling record the record's last preview named. */
+  readonly siblings: readonly ClientErasureSiblingVm[];
+  readonly alert: ClientErasureAlertVm;
 }
 
 // ── «Лоялност»: the wallet (§2.2) ───────────────────────────────────────

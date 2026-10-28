@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BlockKind,
+  ErasureLifecycle,
+  ErasureStatus,
   MinuteBlock,
+  PrivacyMarker,
   SeatLabel,
   SeatOccupant,
 } from '@core/components';
@@ -24,6 +27,7 @@ import {
   until,
   utcMs,
 } from '@core/testing';
+import { SearchFieldsSystem } from './search-fields.system';
 import {
   type StoredDocument,
   StoredDocumentSystem,
@@ -268,6 +272,9 @@ describe('StoredDocumentSystem.customer — customers/{id} as read', () => {
     ['email', {}, 'email'],
     ['createdAtUtcMs', '2026-09-27', 'createdAtUtcMs'],
     ['customerOrigin', 'WALK_IN', 'customerOrigin'],
+    ['erasureStatus', 'DELETED', 'erasureStatus'],
+    ['erasureStatus', 'none', 'erasureStatus'],
+    ['erasureStatus', null, 'erasureStatus'],
     ['writeOperationId', '', 'writeOperationId'],
     ['writeOperationId', 'a/b', 'writeOperationId'],
     ['writeOperationId', 42, 'writeOperationId'],
@@ -297,6 +304,69 @@ describe('StoredDocumentSystem.customer — customers/{id} as read', () => {
         without(customerFixture(), 'searchName', 'searchPrefixes'),
       ),
     ).toBeNull();
+  });
+
+  it('refuses a record WITHOUT the erasure tag — strict, unlike the write provenance (P3-L-18)', () => {
+    const doc = without(customerFixture(), 'erasureStatus');
+    expect(StoredDocumentSystem.customer(doc)).toEqual(
+      refused(`customers/${doc.id}`, 'erasureStatus'),
+    );
+    // Checked before the write provenance: the tag is the first fault named.
+    expect(
+      StoredDocumentSystem.customerFault({
+        ...doc,
+        writeOperationId: 'a/b',
+      }),
+    ).toBe('erasureStatus');
+  });
+
+  it('admits the erased record — the marker name, the cleared contact, the ERASING / ERASED stamps — as the same object', () => {
+    const started = utcMs('2026-10-27T09:00:00Z');
+    const erasing = ErasureLifecycle.begin(started);
+    const cleared = {
+      displayName: PrivacyMarker.TEXT,
+      phone: null,
+      email: null,
+      ...SearchFieldsSystem.searchFields(null, null, null, null),
+      writeOperationId: OperationId.of('op-erase-1'),
+    };
+    const tombstones = [
+      customerFixture({ ...cleared, ...erasing }),
+      customerFixture({
+        ...cleared,
+        ...ErasureLifecycle.complete(erasing, utcMs('2026-10-27T09:05:00Z')),
+      }),
+      customerFixture({ ...cleared, userId: null, ...erasing }),
+    ];
+    for (const doc of tombstones) {
+      const answer = StoredDocumentSystem.customer(doc);
+      expect(answer.ok && answer.value).toBe(doc);
+    }
+    expect(tombstones[1]).toMatchObject({
+      erasureStatus: ErasureStatus.Erased,
+      erasureStartedAtUtcMs: started,
+    });
+  });
+
+  it.each([
+    [{ erasureStatus: 'ERASING' }, 'erasureStartedAtUtcMs'],
+    [
+      { erasureStatus: 'ERASING', erasureStartedAtUtcMs: '2026-10-27' },
+      'erasureStartedAtUtcMs',
+    ],
+    [
+      { erasureStatus: 'ERASED', erasedAtUtcMs: 1_793_000_000_000 },
+      'erasureStartedAtUtcMs',
+    ],
+    [
+      { erasureStatus: 'ERASED', erasureStartedAtUtcMs: 1_793_000_000_000 },
+      'erasedAtUtcMs',
+    ],
+  ] as const)('refuses the erasure variant %j, naming %s', (slice, reason) => {
+    const doc = { ...customerFixture(), ...slice };
+    expect(StoredDocumentSystem.customer(doc)).toEqual(
+      refused(`customers/${doc.id}`, reason),
+    );
   });
 });
 

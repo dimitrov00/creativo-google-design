@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CustomerOrigin, E164, Email } from '@core/components';
+import {
+  CustomerOrigin,
+  E164,
+  Email,
+  ErasureLifecycle,
+} from '@core/components';
 import { RepositoryError } from '@core/errors';
 import { CustomerId, Result, UserId } from '@core/primitives';
 import { customerFixture, registeredUserFixture } from '@core/testing';
@@ -36,6 +41,7 @@ const IVAN_WALK_IN = customerFixture({
   phone: E164.of('+359888123123'),
   email: Email.of('ivan@mail.bg'),
   customerOrigin: CustomerOrigin.StaffWalkIn,
+  ...ErasureLifecycle.none(),
 });
 
 /** Another Иван, another walk-in: the same name, his own number. */
@@ -46,6 +52,7 @@ const OTHER_IVAN = customerFixture({
   phone: E164.of('+359888999000'),
   email: null,
   customerOrigin: CustomerOrigin.StaffWalkIn,
+  ...ErasureLifecycle.none(),
 });
 
 const nobody = Result.ok([]);

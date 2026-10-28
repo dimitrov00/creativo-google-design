@@ -119,6 +119,11 @@ so the owner has to make the call.
       `firebase.json:41`; `tools/verify/csp/check-csp.mjs:170-173`.
 - [ ] **Create the (default) Firestore database (Native mode) and the Storage
       bucket** before the first rules or functions deploy. P1–P3 read Firestore.
+      The bucket is the project's DEFAULT one (the `storageBucket` of the web
+      config): the web uploads avatars and visit photos there, and the admin's
+      GDPR erasure (`eraseClient`) deletes a person's objects from it with the
+      functions' default service account (runbook §3, "the GDPR erasure ships
+      dark").
       Source: `docs/architecture/firestore-runbook.md:193-208`.
 
 ### Project id, hosting site, web config, CSP host
@@ -372,7 +377,14 @@ Source: `apps/functions/src/adapters/auth-claims.adapter.ts:62`;
       Storage objects (media, avatars, visit photos) need their own policy,
       such as soft delete or versioning. This matters most during the
       hand-written bootstrap (section 2), which has no undo — so run it before
-      section 2.
+      section 2. Every window here also keeps an ERASED person's values: PITR
+      for 7 days and each backup for 28 days hold the documents as they were
+      before the erasure, and the bucket's soft-delete window (7 days by
+      default on a new bucket) keeps a deleted avatar or visit-photo object,
+      its `clientLabel` metadata included — a restore from any of them brings
+      the person back, so re-run `eraseClient` for everyone erased since the
+      restored instant (runbook §2.5, "Erased persons"; a legal call for
+      counsel).
 
 ```bash
 tools/ops/firestore-backups.sh --project "$PROJECT_ID"
@@ -469,6 +481,30 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       for both server and client errors.
       Source: `apps/functions/src/adapters/console-telemetry.adapter.ts:11-28`;
       `docs/architecture/decisions/2026-10-26-owner-rulings.md:886`, `:1528`.
+- [ ] **Data-subject requests (GDPR Art. 15 / 17) — know the path before
+      lighting `client.privacy`.** The shop's `admin` (never the vendor
+      `sysadmin`) serves them from the staff client card's «Лични данни»
+      block, reached through a visit of the person: «Изтегли данните» saves
+      ONE JSON file of the person's data (Art. 15 / 20); «Изтрий личните
+      данни» shows the cascade in figures in ONE alert, then pseudonymizes
+      the record and the account, deletes the sign-in account, the notes,
+      the photos and the avatar, and keeps the visits, the money and the
+      audit trail (Art. 17). A walk-in record sharing the person's phone or
+      e-mail is offered as its own erase row ("Erase the record with the same
+      phone or e-mail") — only while the person's own record still holds
+      those values, so erase the siblings from the same card. A walk-in-ONLY
+      person (no sign-in account) has no card in Phase 3: the callables
+      accept the record id, but no screen reaches it — such a request needs
+      a hand-run call until a search → record route exists. A person past
+      the caps is refused, never served partly: the export at 20,000
+      documents or 4 MiB (`PRIVACY_EXPORT_TOO_LARGE`), the erasure at 5,000
+      documents in any one list (`PRIVACY_ERASURE_TOO_LARGE`) — both need a
+      runbook procedure. A staff account is refused
+      (`PRIVACY_ERASURE_STAFF_ACCOUNT`). What backups, PITR and the Storage
+      soft-delete window keep is the backups item above.
+      Source: `docs/architecture/firestore-runbook.md` §1.1 ("The export's
+      reads", "The erasure's reads and writes"), §2.5;
+      `docs/architecture/flips/audit-hardening-phase-3.md` §7 items 3, 4, 8, 11.
 - [ ] **Publish the privacy-policy line:** "diagnostic data under legitimate
       interest, 30-day Cloud Logging retention, no personal identifiers". Keep
       the `_Default` log bucket at 30 days so the statement stays true.
@@ -488,8 +524,9 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
       `config/feature-flags.json` → `production` are `false` today, so loyalty,
       the client profile, pause, support, merge, privacy, referrals and
       discount grants ship dark. `client.privacy` gates the admin's GDPR
-      export (`exportClientData` and the card's «Лични данни» block); it is
-      on in `development` only, for the emulators and the e2e journey. The
+      export and erasure (`exportClientData`, `previewClientErasure`,
+      `eraseClient` and the card's «Лични данни» block with its erase rows);
+      it is on in `development` only, for the emulators and the e2e journeys. The
       web bakes the map in at build time. The
       functions get it from `.env.<projectId>`, which the predeploy writes. A
       real project gets the `production` map unless `FLAGS_ENV` / `--env` says
@@ -698,7 +735,7 @@ ready, if an emulator-only adapter (the console OTP sender, the fixed OTP
 code) is wired outside the emulator (P7), while the refusing OTP sender is
 still wired (P8), or if `WALKIN_ID_KEY` is missing.
 
-The deploy holds 48 functions. Audit-hardening WS-3 (DEP-14) added thirteen
+The deploy holds 50 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:
 `auditSettingsChanges`, `auditServicesChanges`, `auditBarbersChanges`,
 `auditLocationsChanges`, `auditBarberSchedulesChanges`,
@@ -721,6 +758,19 @@ like the walk-in callables, and refuses `PRIVACY_UNAVAILABLE` until
 `client.privacy` is lit, so it ships dark (the flag item above).
 Source: `apps/functions/src/main.ts` (`exportClientData`);
 `docs/architecture/firestore-runbook.md` §1.1 ("The export's reads") and §3.
+
+Audit-hardening Phase 3 (WS-D, P3-DEP-15) added the 49th and 50th:
+`previewClientErasure` (read-only: the census the card's alert prints) and
+`eraseClient` (the admin's GDPR erasure — "pseudonymize, keep records";
+`timeoutSeconds: 540`, `LARGE_MEMORY`, resumable: the card calls it again
+until it answers done). Both are bound to `WALKIN_ID_KEY` and
+`LOG_DIGEST_KEY` like the export, and refuse `PRIVACY_UNAVAILABLE` until
+`client.privacy` is lit, so they ship dark too. `eraseClient` deletes Auth
+users and objects of the default Storage bucket with the functions' default
+service account: confirm its roles on the project (runbook §3).
+Source: `apps/functions/src/main.ts` (`previewClientErasure`,
+`eraseClient`); `docs/architecture/firestore-runbook.md` §1.1 ("The
+erasure's reads and writes"), §2.5 and §3.
 
 ### 3.4 Hosting, straight after functions
 

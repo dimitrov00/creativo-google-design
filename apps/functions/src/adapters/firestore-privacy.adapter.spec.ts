@@ -1,5 +1,6 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { type Firestore, Timestamp } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
+import { Identifier } from '@core/components';
 import { AppointmentId, LogEvent } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import {
@@ -10,7 +11,7 @@ import {
 } from '@core/entities';
 import type { Log } from '@core/ports';
 import { StoredDocumentSystem } from '@core/systems';
-import { privacyWorld, unguarded } from '@core/testing';
+import { PRIVACY_SENTINELS, privacyWorld, unguarded } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestorePrivacyPorts } from './firestore-privacy.adapter';
 
@@ -20,7 +21,11 @@ import { firestorePrivacyPorts } from './firestore-privacy.adapter';
  * `array-contains`, the limit it is handed, never an `orderBy`), the
  * documents it answers as stored, the stored-document guard on the three
  * guarded collections (the first malformed document fails the read, logged
- * once) and a throwing read answered as a code-only value.
+ * once) and a throwing read answered as a code-only value. The erasure's
+ * two reads (WS-D): the sessions that targeted the account and the
+ * challenges under a destination — whose failure names `otps` alone, never
+ * the destination; and no read carries the adapter-stamped `purgeAt` into
+ * an entity (P3-RU-37 (i)).
  */
 
 type Data = Record<string, unknown>;
@@ -67,6 +72,10 @@ function seeded() {
   for (const invitation of world.state.invitations) {
     put(Collections.Invitations, invitation);
   }
+  for (const session of world.state.sessions) {
+    put(Collections.ImpersonationSessions, session);
+  }
+  for (const otp of world.state.otps) put(Collections.Otps, otp);
   for (const [customerId, account] of world.loyalty.accounts) {
     put(Collections.LoyaltyAccounts, account);
     for (const progress of world.loyalty.badgeProgress.get(customerId) ?? []) {
@@ -269,6 +278,32 @@ describe('firestorePrivacyPorts — the query shapes', () => {
     expect(shapes).toEqual([]);
     expect(getAll).not.toHaveBeenCalled();
   });
+
+  it('reads the erasure’s two lists by ONE root equality and the limit it is handed — the account’s sessions, the challenges under a destination', async () => {
+    const { world, fake } = seeded();
+    const { db, shapes } = recording(fake.db);
+    const ports = firestorePrivacyPorts(db, unguarded, NO_LOG);
+    const u = world.person.userId;
+    const destination = Identifier.of(PRIVACY_SENTINELS.phone);
+    await ports.listAccountSessions(u, 19);
+    await ports.listOtpsByDestination(destination, 20);
+    expect(shapes).toEqual([
+      {
+        path: Collections.ImpersonationSessions,
+        steps: [
+          ['where', 'targetUserId', '==', u],
+          ['limit', 19],
+        ],
+      },
+      {
+        path: Collections.Otps,
+        steps: [
+          ['where', 'destination', '==', destination],
+          ['limit', 20],
+        ],
+      },
+    ]);
+  });
 });
 
 describe('firestorePrivacyPorts — the documents', () => {
@@ -365,6 +400,78 @@ describe('firestorePrivacyPorts — the documents', () => {
       ok: true,
       value: world.stats.money.find((m) => m.customerId === p),
     });
+  });
+
+  it('answers the sessions that targeted the account and the challenges under a destination as stored — and nobody else’s', async () => {
+    const { world, fake } = seeded();
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      NO_LOG,
+    );
+    const u = world.person.userId;
+    expect(await ports.listAccountSessions(u, 50)).toEqual({
+      ok: true,
+      value: world.state.sessions.filter(
+        (session) => session.targetUserId === u,
+      ),
+    });
+    const destination = Identifier.of(PRIVACY_SENTINELS.phone);
+    expect(await ports.listOtpsByDestination(destination, 50)).toEqual({
+      ok: true,
+      value: world.state.otps.filter((otp) => otp.destination === destination),
+    });
+    expect(
+      await ports.listOtpsByDestination(
+        Identifier.of('nobody@example.invalid'),
+        50,
+      ),
+    ).toEqual({ ok: true, value: [] });
+  });
+
+  it('never reads the adapter-stamped purgeAt into an entity — the TTL stamp is part of none (P3-RU-37 (i))', async () => {
+    const { world, fake } = seeded();
+    const u = world.person.userId;
+    const purgeAt = Timestamp.fromMillis(1_800_000_000_000);
+    const stamped = (path: string): void => {
+      fake.docs.set(path, { ...(fake.docs.get(path) ?? {}), purgeAt });
+    };
+    const [notification] = world.state.notifications.get(u) ?? [];
+    const [request] = world.state.waitlist.filter((r) => r.ownerUserId === u);
+    const [session] = world.state.sessions.filter((s) => s.targetUserId === u);
+    const [otp] = world.state.otps;
+    if (!notification || !request || !session || !otp) {
+      throw new Error('the world must hold one of each TTL group');
+    }
+    stamped(
+      `${Collections.Users}/${u}/${Subcollections.Notifications}/${notification.id}`,
+    );
+    stamped(`${Collections.WaitlistRequests}/${request.id}`);
+    stamped(`${Collections.ImpersonationSessions}/${session.id}`);
+    stamped(`${Collections.Otps}/${otp.id}`);
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      NO_LOG,
+    );
+    const reads = [
+      await ports.listAccountNotifications(u, 50),
+      await ports.listAccountWaitlist(u, 50),
+      await ports.listAccountSessions(u, 50),
+      await ports.listOtpsByDestination(otp.destination, 50),
+    ];
+    expect(reads).toEqual([
+      { ok: true, value: [notification] },
+      { ok: true, value: [request] },
+      { ok: true, value: [session] },
+      { ok: true, value: [otp] },
+    ]);
+    for (const read of reads) {
+      if (!read.ok) continue;
+      for (const entity of read.value) {
+        expect(entity).not.toHaveProperty('purgeAt');
+      }
+    }
   });
 
   it('answers an absent document as null and an empty list as []', async () => {
@@ -511,5 +618,30 @@ describe('firestorePrivacyPorts — the guard and the failures', () => {
       });
       expect(JSON.stringify(failed.error)).not.toContain('sentinel');
     }
+  });
+
+  it('names the collection alone when the challenges under a destination cannot be read — never the destination', async () => {
+    const { fake } = seeded();
+    vi.spyOn(fake.db, 'collection').mockImplementation(() => {
+      throw Object.assign(
+        new Error(`14 UNAVAILABLE: ${PRIVACY_SENTINELS.phone}`),
+        { code: 14 },
+      );
+    });
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
+    const failed = await ports.listOtpsByDestination(
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      5,
+    );
+    expect(failed).toEqual({
+      ok: false,
+      error: RepositoryError.readFailed(Collections.Otps, 'unavailable'),
+    });
+    expect(JSON.stringify(failed)).not.toContain(PRIVACY_SENTINELS.phone);
+    expect(JSON.stringify(failed)).not.toContain('359880000777');
   });
 });

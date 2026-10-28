@@ -10,7 +10,7 @@
     "lint:styles": "stylelint \"apps/**/*.css\" \"libs/**/*.css\"",
     "dev": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test --ui \"pnpm run seed:dev && node tools/dev-host.mjs && pnpm nx serve web --host 0.0.0.0 --allowedHosts\"",
     "seed:dev": "node tools/seed-dev-catalog.mjs",
-    "test:emulator": "firebase emulators:exec --only firestore,auth --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
+    "test:emulator": "firebase emulators:exec --only firestore,auth,storage --project demo-creativo-test \"pnpm nx run-many -t test-integration\"",
     "e2e:web": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"pnpm nx e2e web\"",
     "verify:p0": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"node tools/verify/p0/verify-p0.mjs\"",
     "verify:bundle": "pnpm nx build web -- --stats-json && node tools/verify/bundle/check-initial-bundle.mjs",

@@ -603,8 +603,12 @@
 
 <!-- L · PERSONAL DATA — the shop's admin only (client.privacy on, the record
      known, online): a second group after the exits, apart from them. It
-     stays on a gone visit — it writes nothing to the visit. The line under
-     it is a STATUS, announced when it appears: the file saved, or why not. -->
+     stays on a gone visit — the export writes nothing to the visit, and the
+     erasure keeps every visit. The export's line under it is a STATUS,
+     announced when it appears: the file saved, or why not. The erasure's
+     rows (WS-D) are destructive: the record's one row, then one row per
+     record sharing its phone or e-mail (never named — it may be another
+     person); each opens the ONE alert with the census in figures. -->
 @if (privacy(); as block) {
 <ui-stack uiSpacing="compact" data-testid="client-privacy">
   <ul uiListGroup [attr.aria-label]="block.groupLabel">
@@ -623,6 +627,41 @@
         {{ block.exportLabel }}
       </button>
     </li>
+    @if (erasure(); as erasure) {
+    <li>
+      <button
+        uiListRow
+        uiSize="large"
+        type="button"
+        uiRole="destructive"
+        [uiInteractive]="true"
+        data-testid="client-erase"
+        (click)="eraseRecord()"
+      >
+        <span uiLeading>
+          <ui-icon uiName="client.erase" aria-hidden="true" />
+        </span>
+        {{ erasure.eraseLabel }}
+      </button>
+    </li>
+    @for (sibling of erasure.siblings; track sibling.customerId) {
+    <li>
+      <button
+        uiListRow
+        uiSize="large"
+        type="button"
+        uiRole="destructive"
+        [uiInteractive]="true"
+        [attr.data-testid]="sibling.testId"
+        (click)="eraseSibling(sibling.customerId)"
+      >
+        <span uiLeading>
+          <ui-icon uiName="client.erase" aria-hidden="true" />
+        </span>
+        {{ sibling.label }}
+      </button>
+    </li>
+    } }
   </ul>
   @if (block.exportStatus; as status) {
   <p
@@ -634,6 +673,38 @@
   >
     {{ status }}
   </p>
+  } @if (erasure(); as erasure) { @if (erasure.erasedLine; as line) {
+  <p
+    uiText
+    uiFont="footnote"
+    uiForegroundStyle="secondary"
+    data-testid="client-erased"
+  >
+    {{ line }}
+  </p>
+  } @if (erasure.eraseStatus; as status) {
+  <p
+    uiText
+    uiFont="footnote"
+    uiForegroundStyle="secondary"
+    role="status"
+    data-testid="client-erase-status"
+  >
+    {{ status }}
+  </p>
+  }
+  <!-- THE ONE QUESTION (P3-DEP-22): the census in figures, the destructive
+       answer first and the safe one last and preferred; no typed
+       confirmation. It leaves worded as it came. -->
+  <ui-alert
+    [uiPresented]="erasure.alert.open"
+    [uiTitle]="erasure.alert.title"
+    [uiMessage]="erasure.alert.body"
+    [uiActions]="erasure.alert.actions"
+    data-testid="client-privacy-alert"
+    (uiPicked)="onErasurePick($event)"
+    (uiDismissed)="dismissErasure()"
+  />
   }
 </ui-stack>
 } }

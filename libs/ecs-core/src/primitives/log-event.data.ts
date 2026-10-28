@@ -45,8 +45,12 @@ export const LogEvent = {
   PolicyRecomputeStallNotRecorded: 'policy recompute stall not recorded',
   PolicyRecomputeSweepStarted:
     'policy recompute started by the sweep: a dropped start',
+  /** An admin's data-subject erasure completed — its record certified `ERASED` (audit-hardening Phase 3 WS-D): ids and counts only. */
+  PrivacyClientErased: 'privacy.client_erased',
   /** An admin's data-subject export answered (audit-hardening Phase 3 WS-C): counts and ids only, never the bundle. */
   PrivacyClientExported: 'privacy.client_exported',
+  /** One call of an admin's erasure answered (audit-hardening Phase 3 WS-D): the record's tag, done or not, the residue counts — never a value. */
+  PrivacyErasureStep: 'privacy.erasure_step',
   ProfileUpdateRefused: 'profile.update.refused',
   RegistrationDisplayNameFailed: 'registration.display_name_failed',
   RhythmRuleWriteFailed: 'rhythm rule write failed',

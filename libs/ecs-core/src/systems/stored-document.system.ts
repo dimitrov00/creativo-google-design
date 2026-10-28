@@ -2,6 +2,7 @@ import {
   BookingContact,
   BookingLifecycle,
   CustomerOrigin,
+  ErasureLifecycle,
   MinuteBlock,
   Seat,
   StoodSeatPairs,
@@ -190,6 +191,8 @@ function customerFault(doc: StoredDocument): string | null {
   if (!StoredFields.isTextOrNull(doc['email'])) return 'email';
   if (!UtcEpochMs.is(doc['createdAtUtcMs'])) return 'createdAtUtcMs';
   if (!Tag.has(CustomerOrigin, doc['customerOrigin'])) return 'customerOrigin';
+  const erasure = ErasureLifecycle.fieldFault(doc);
+  if (erasure !== null) return erasure;
   return WriteProvenance.fieldFault(doc);
 }
 
@@ -326,7 +329,11 @@ function appointmentNote(
  * - `customers/{id}`: `id`; `userId` (an account id or `null` — D29's
  *   explicit link); `displayName` (a string); `phone`, `email` (a string or
  *   `null`); `createdAtUtcMs`; `customerOrigin` (a `CustomerOrigin`
- *   member); `writeOperationId` (`WriteProvenance.fieldFault`).
+ *   member); the erasure tag (`ErasureLifecycle.fieldFault`, STRICT — see
+ *   below); `writeOperationId` (`WriteProvenance.fieldFault`).
+ *   An erased record (its name the marker, its contact `null`, the
+ *   `ERASING` / `ERASED` stamps) is admitted like any other, as the same
+ *   object.
  * - `barberBusy/{id}`: `id` (a `BusyKey` — the id IS the key); `barberId`;
  *   `localDate`; `utcEpochMs`; `blocks` (each a record and
  *   `MinuteBlock.fieldFault` clean) — a busy day feeds the collision math
@@ -361,6 +368,15 @@ function appointmentNote(
  * one (Law 5): an admitted document may lack the key although its type
  * says `OperationId | null`. No system reads it; a writer only stamps it.
  * A busy day carries no provenance (L5) and its guard ignores the key.
+ *
+ * **The erasure tag (Phase 3 WS-D, P3-L-18) — absent is REFUSED.** A
+ * customer's `erasureStatus` is the tag every writer that would seat or
+ * re-create the record reads (P3-RU-20), so the guard requires it on every
+ * body — a member of `ErasureStatus`, with its variant's stamps instants.
+ * Every writer creates `NONE`, so an admitted record never lies about its
+ * tag. The erased record itself (the marker name, the `null` contact, the
+ * stamps) passes like any other: a REFUSED record reads as ABSENT inside a
+ * transaction, and an absent record is one a writer would re-create.
  *
  * **Deliberately NOT checked** (each a query key, a repair target or a
  * display field no decision reads): `ownerUserId`, `ownerCustomerId`,

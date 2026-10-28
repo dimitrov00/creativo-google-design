@@ -2,6 +2,7 @@ import type {
   CustomerOrigin,
   Email,
   E164,
+  ErasureLifecycle,
   WriteProvenance,
 } from '@core/components';
 import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
@@ -50,9 +51,15 @@ export type CustomerMeta = {
 };
 
 /**
- * The archetype (Law 6): the record's fields and the operation id of the
- * last booking-verb or registration callable that wrote it
- * (`WriteProvenance`, WS-4.3 — RU-29). The document body is this type minus
- * `id`.
+ * The archetype (Law 6): the record's fields, the operation id of the last
+ * booking-verb or registration callable that wrote it (`WriteProvenance`,
+ * WS-4.3 — RU-29), and where it stands with respect to a data-subject
+ * erasure (`ErasureLifecycle` — `erasureStatus`, REQUIRED on every body:
+ * every writer creates `NONE`, and every writer that would seat or
+ * re-create the record reads it, audit-hardening Phase 3 WS-D, P3-L-18).
+ * An erased record keeps its id, `userId`, `createdAtUtcMs` and
+ * `customerOrigin` (visits and balances reference it); its name is the
+ * language-neutral marker and its contact `null`. The document body is this
+ * type minus `id`.
  */
-export type Customer = CustomerMeta & WriteProvenance;
+export type Customer = CustomerMeta & WriteProvenance & ErasureLifecycle;

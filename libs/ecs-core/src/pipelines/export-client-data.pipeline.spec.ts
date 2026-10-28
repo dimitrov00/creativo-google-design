@@ -206,6 +206,34 @@ describe('exportClientData — the gate, before any read', () => {
     expect(r.tx.transactions).toHaveLength(0);
   });
 
+  it('a record whose userId its id does not derive from → PRIVACY_ACCOUNT_LINK_MISMATCH before any uid-keyed read, nothing committed (P3-RU-37 (h))', async () => {
+    const world = privacyWorld();
+    // P's record naming Q's account: a corrupt or foreign link.
+    const corrupt = {
+      ...world.personFootprint.record,
+      userId: world.other.userId,
+    };
+    const r = rig(
+      { loadClientRecord: async () => Result.ok(corrupt) },
+      { world },
+    );
+    expect(unwrapErr(await r.run())).toEqual(
+      PrivacyError.accountLinkMismatch(),
+    );
+    expect(r.reads).toEqual(['loadCallerRoles', 'loadClientRecord']);
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(r.telemetry.lines).toEqual([]);
+  });
+
+  it('a record that links its own account (the forUser id) and a walk-in with none both pass the link', async () => {
+    const r = rig();
+    unwrapOk(await r.run());
+    expect(r.reads).toContain('loadProfile');
+    const walkIn = rig();
+    unwrapOk(await walkIn.run({ customerId: walkIn.world.walkIn.customerId }));
+    expect(walkIn.reads).not.toContain('loadProfile');
+  });
+
   it('a failed record read answers that failure', async () => {
     const failure = RepositoryError.malformed('customers/x', 'displayName');
     const r = rig({ loadClientRecord: async () => Result.err(failure) });

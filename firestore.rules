@@ -221,8 +221,10 @@ service cloud.firestore {
       // `completeRegistration` sets the REGISTERED body over it,
       // `updateProfile` writes the owner's names and birth date (the search
       // keys re-derived, the `profileEditedAtUtcMs` marker beside ONE audit
-      // row credited to the user, in one transaction), and the account
-      // blocks move `accountStatus`. The owner's direct update — FIX 2's
+      // row credited to the user, in one transaction), the account
+      // blocks move `accountStatus`, and the admin erasure (`eraseClient`,
+      // audit-hardening Phase 3) pseudonymises the body and sets it
+      // `ERASED`. The owner's direct update — FIX 2's
       // allowlist with its value checks — closed with the callable that
       // replaced it: a client write could neither audit itself nor keep the
       // search keys honest. Roles and the account status were never a
@@ -233,8 +235,9 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         // The recipient's own inbox (`InboxNotification`). Delivered
         // server-side only (the waitlist matcher writes here via the Admin
-        // SDK, which bypasses these rules) — a client that could write its
-        // own notifications could forge a "your slot is free" message.
+        // SDK, which bypasses these rules; the admin erasure deletes here
+        // the same way) — a client that could write its own notifications
+        // could forge a "your slot is free" message.
         allow read: if isOwner(uid);
         // The ONE thing a recipient may change is their own read stamp,
         // `readAtUtcMs` (the flat root field `inboxPorts.markNotificationsRead`
@@ -391,10 +394,12 @@ service cloud.firestore {
     //
     // NO CLIENT WRITES A RECORD — the book included (OR-25, DEP-F19).
     // Records are written only by the booking, edit and registration
-    // callables, with the Admin SDK (which bypasses these rules): the
-    // booking transaction (`FIRST_BOOKING`), `completeRegistration`
-    // (`REGISTRATION`), and the book and edit pipelines' walk-in creates
-    // (`STAFF_WALK_IN`, OR-26). The desk's `create`/`update` grant that
+    // callables and the admin erasure, with the Admin SDK (which bypasses
+    // these rules): the booking transaction (`FIRST_BOOKING`),
+    // `completeRegistration` (`REGISTRATION`), the book and edit
+    // pipelines' walk-in creates (`STAFF_WALK_IN`, OR-26), and
+    // `eraseClient` (audit-hardening Phase 3), which pseudonymises a record
+    // and stamps its `erasureStatus`. The desk's `create`/`update` grant that
     // stood here checked no field and had no web writer
     // (`customerPorts` only reads): any staff session could set `userId`
     // to another account's uid and hand the record — name, phone, e-mail —

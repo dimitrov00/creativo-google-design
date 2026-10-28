@@ -1,11 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { CouponGrantId, Result, UserId } from '@core/primitives';
+import { By } from '@angular/platform-browser';
+import { CouponGrantId, CustomerId, Result, UserId } from '@core/primitives';
 import {
   ClientPrivacyCall,
   CouponOccasion,
+  ErasureCensus,
+  ErasureLifecycle,
+  ErasureStatus,
   Role,
   type VisitLeg,
 } from '@core/components';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import type { ClientPrivacyGatewayPorts } from '@core/ports';
 import {
   CLIENT_PRIVACY_PORTS,
@@ -22,6 +27,8 @@ import {
   GUEST,
   MARTIN,
   NOW_MS,
+  customerPortsOf,
+  fixtureCustomers,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
@@ -46,6 +53,7 @@ import {
   mountAchievementsPage,
 } from '../../testing/achievements-pages.rig';
 import { cssRule } from '../../testing/css-rule';
+import { UiAlert } from '@creativo/ui/patterns';
 import { ClientCard } from './client-card';
 import { LoadState } from '@creativo/shared/view-state';
 
@@ -1130,6 +1138,10 @@ describe('lib-client-card — the admin’s privacy block', () => {
         calls.push(call);
         return Result.ok(EXPORTED);
       },
+      previewClientErasure: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      eraseClient: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
     };
     let minted = 0;
     TestBed.configureTestingModule({
@@ -1243,5 +1255,168 @@ describe('lib-client-card — the admin’s privacy block', () => {
     const status = must(byId('client-export-status'));
     expect(status.matches('[role="status"]')).toBe(true);
     expect(text(status)).toBe('Файлът е изтеглен.');
+  });
+});
+
+/*
+ * L — the admin's erasure (audit-hardening Phase 3, WS-D, P3-DEP-22): the
+ * record's destructive row, ONE `ui-alert` worded with the preview's census,
+ * the sibling rows, and the erased line on an `ERASED` record.
+ */
+describe('lib-client-card — the admin’s erasure', () => {
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+  const SIBLING = CustomerId.of('cus_5151515151515151515a');
+  const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.None,
+    erasureRecordCount: 1,
+    erasureAccountCount: 1,
+    erasureVisitCount: 12,
+    erasureNoteCount: 2,
+    erasurePhotoCount: 3,
+    erasureSiblingCustomerIds: [SIBLING],
+  };
+  const ERASED: ClientPrivacyCall.Erasure = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.Erased,
+    erasureDone: true,
+    erasureVisitCount: 12,
+  };
+
+  /** The erasure answering `PREVIEW` and `ERASED`; the store's calls recorded. */
+  function bindErasure(): {
+    readonly previews: ClientPrivacyCall[];
+    readonly erasures: ClientPrivacyCall[];
+  } {
+    const previews: ClientPrivacyCall[] = [];
+    const erasures: ClientPrivacyCall[] = [];
+    const privacy: ClientPrivacyGatewayPorts = {
+      exportClientData: async () =>
+        Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      previewClientErasure: async (call) => {
+        previews.push(call);
+        return Result.ok(PREVIEW);
+      },
+      eraseClient: async (call) => {
+        erasures.push(call);
+        return Result.ok(ERASED);
+      },
+    };
+    let minted = 0;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        {
+          provide: ID_PORTS,
+          useValue: { nextId: () => `op-card-erase-${(minted += 1)}-000000` },
+        },
+      ],
+    });
+    return { previews, erasures };
+  }
+
+  const asAdmin = (
+    customers: Parameters<typeof customerPortsOf>[0] = fixtureCustomers(),
+  ) =>
+    mount({
+      context: georgiContext({ viewer: ADMIN }),
+      rig: {
+        flags: { ...ALL_LOYALTY_FLAGS, 'client.privacy': true },
+        customers: customerPortsOf(customers),
+      },
+    });
+
+  it('offers the record’s destructive row after the export, its leading icon `client.erase`, and no erased line', async () => {
+    bindErasure();
+    const { byId, text, before } = await asAdmin();
+    const exportRow = must(byId('client-export'));
+    const row = must(byId<HTMLButtonElement>('client-erase'));
+    expect(before(exportRow, row)).toBe(true);
+    expect(row.closest('ul')).toBe(exportRow.closest('ul'));
+    expect(row.parentElement?.tagName).toBe('LI');
+    expect(row.getAttribute('uiRole')).toBe('destructive');
+    expect(
+      row.querySelector('[uileading] ui-icon')?.getAttribute('uiName'),
+    ).toBe('client.erase');
+    expect(text(row)).toBe('Изтрий личните данни');
+    expect(byId('client-erased')).toBeNull();
+    expect(byId('client-erase-status')).toBeNull();
+  });
+
+  it('opens ONE alert worded with the census: the destructive answer first, the safe one last and preferred', async () => {
+    const calls = bindErasure();
+    const { click, fixture, store } = await asAdmin();
+
+    await click('client-erase');
+
+    expect(calls.previews).toHaveLength(1);
+    const alerts = fixture.debugElement.queryAll(By.directive(UiAlert));
+    expect(alerts).toHaveLength(1);
+    const alert = alerts[0]?.componentInstance as UiAlert;
+    expect(alert.uiPresented()).toBe(true);
+    expect(alert.uiTitle()).toBe('Да изтрием ли личните данни?');
+    expect(alert.uiMessage()).toBe(
+      'Посещения: 12 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 1. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+    );
+    expect(alert.uiActions()).toEqual([
+      {
+        id: 'ERASE',
+        label: 'Изтрий',
+        role: 'destructive',
+        preferred: false,
+        testId: 'client-privacy-erase-confirm',
+      },
+      {
+        id: 'KEEP',
+        label: 'Отказ',
+        role: 'cancel',
+        preferred: true,
+        testId: 'client-privacy-erase-keep',
+      },
+    ]);
+    expect(store.erasure()?.alert.open).toBe(true);
+  });
+
+  it('«Отказ» erases nothing; «Изтрий» erases the previewed record and shows the erased line', async () => {
+    const calls = bindErasure();
+    const { click, byId, text, fixture, render } = await asAdmin();
+    const alertOf = () =>
+      fixture.debugElement.query(By.directive(UiAlert))
+        .componentInstance as UiAlert;
+
+    await click('client-erase');
+    alertOf().uiPicked.emit('KEEP');
+    await render();
+    expect(calls.erasures).toEqual([]);
+    expect(alertOf().uiPresented()).toBe(false);
+
+    await click('client-erase');
+    alertOf().uiPicked.emit('ERASE');
+    await render();
+
+    expect(calls.erasures).toEqual([calls.previews[1]]);
+    expect(calls.previews[1]?.customerId).toBe(calls.previews[0]?.customerId);
+    expect(calls.previews[1]?.operationId).not.toBe(
+      calls.previews[0]?.operationId,
+    );
+    expect(text(byId('client-erased'))).toBe('Изтрит клиент');
+    // The sibling the preview named: its own row, no name.
+    const sibling = must(byId<HTMLButtonElement>('client-privacy-sibling-1'));
+    expect(text(sibling)).toBe('Изтрий записа със същия телефон или имейл');
+    expect(sibling.getAttribute('uiRole')).toBe('destructive');
+  });
+
+  it('shows the erased line beside the re-sweep row on an ERASED record', async () => {
+    bindErasure();
+    const erased = fixtureCustomers().map((record) => ({
+      ...record,
+      ...ErasureLifecycle.complete(ErasureLifecycle.begin(NOW_MS), NOW_MS),
+    }));
+    const { byId, text } = await asAdmin(erased);
+    expect(text(byId('client-erase'))).toBe('Изтрий личните данни');
+    expect(text(byId('client-erased'))).toBe('Изтрит клиент');
   });
 });

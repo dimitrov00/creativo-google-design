@@ -2617,7 +2617,7 @@ gates keep their reference counts.
 | WS-A — seed clock pinning     | PA1, PA2                             | GREEN  | (C_A)      | §8.A        |
 | WS-B — login / OTP audit rows | PB1, PB2, PB3                        | GREEN  | (C_B)      | §8.B        |
 | WS-C — GDPR export            | PC1, PC2, PC4, PC3, PC5              | GREEN  | (C_C)      | §8.C        |
-| WS-D — GDPR erasure           | PD1, PD2a, PD3b, PD2b, PD4, PD3, PD5 | TODO   |            |             |
+| WS-D — GDPR erasure           | PD1, PD2a, PD3b, PD2b, PD4, PD3, PD5 | GREEN  | (C_D)      | §8.D        |
 | WS-E — CI pipeline            | PE1, PE2                             | TODO   |            |             |
 | Review round 1                | fixer                                | TODO   |            |             |
 | Review round 2 + FULL gate    | fixer                                | TODO   |            |             |
@@ -2726,6 +2726,49 @@ gates keep their reference counts.
   notification / waitlist documents export `purgeAt` in the Admin SDK's
   Timestamp shape (`{_seconds,_nanoseconds}`); stale runbook line
   references in `docs/production-deploy.md` (a records item).
+
+### 8.D C_D — WS-D GDPR erasure (2026-10-28)
+
+- **Built** by PD1 · (PD2a ‖ PD3b) · (PD2b ‖ PD4) · (PD3 ‖ PD5); a
+  container restart at ~22:24 UTC interrupted W-D2 — the run resumed (PD1
+  from its cached result, PD2a / PD3b finishing their own half-edited
+  files). Integrator edits: `libs/features/staff/client-card/tsconfig.lib.json`
+  gains the `ui/patterns` reference (`UiAlert`; `sync:check`), the
+  `WalkInKeyPorts` doc names the two erasure callables, the `verify:p0`
+  README (g) sentence. Orchestrator edit at the gate:
+  `staff-client-privacy.spec.ts` waits for the sheet's scroll to rest
+  before each axe scan (`sheetAtRest`) — a `target-size` on the visits
+  header's small action, caught passing under the sticky bar mid-scroll
+  after the export press (2 of 4 dark runs); the axe gate is unchanged.
+- **Checks:** typecheck 40/40; layering; sync; lint 44 projects, 0 errors,
+  warnings as the baseline; `run-many -t test` green (ecs-core 7,071,
+  functions 1,429, staff-client-card 1,032, staff-dashboard 582); builds,
+  `verify:bundle`, `icons:check`, the functions' four dependencies; indexes
+  24 / 118 (57 on `auditLog`); ecs-core statements 98.52 % (PD2b).
+- **Journeys:** runbook gates as the baseline; `test:emulator` 134 (+11:
+  `erase-client.integration.spec.ts` 9, the export's link and `purgeAt`
+  cases) + 361; `verify:p0` (a)–(g) — (g) "an admin erasure leaves no
+  personal value in a row, a dead letter or a log line — and keeps the
+  visits"; `e2e:web` 67/68 then, after `sheetAtRest`, the privacy spec 15/15
+  solo and the suite 68/68.
+- **Corrections to the plan:** §4 PD3 (3) — the governed triggers' rows
+  carry `auditOperationId: null` (WS-3 never names an operation on a
+  trigger row, `governed-audit.integration.spec.ts`); the proof joins the
+  erasure through the erased documents' `writeOperationId`.
+  `export-client-data.integration.spec.ts` derives its ids with its world's
+  `fixtureHash` (under `sha256Hex` the P3-RU-37 (h) link arm refuses every
+  case); P3-DEP-9 carries it.
+- **Decided for review round 1 (P3-RU-37 delegation):** a `LIBRARY`
+  photo's KEPT object loses its `clientLabel` custom metadata on erasure
+  (a name in Storage metadata is a personal value — the object is kept,
+  the label is not); the customer stamps `erasureStartedAtUtcMs` /
+  `erasedAtUtcMs` get `indexes: []` (scalars never queried — the WS-2 /
+  P3-L-4 precedent), `erasureStatus` keeps its index; the empty
+  `ui-alert` host adds no gap to the privacy block; the eraser adapter
+  reuses `auth-claims.adapter.ts`'s Auth error helpers instead of
+  restating them. **Owner (§7):** the runbook §3 service-account roles
+  (Firebase Authentication Admin + Storage Object Admin, or Editor) are
+  confirmed on the real project before deploy.
 
 Statuses: TODO / IN-PROGRESS / GREEN / BLOCKED. On resume, continue from
 the first non-GREEN row; never redo a GREEN one. The records (the Phase

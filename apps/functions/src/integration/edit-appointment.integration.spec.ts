@@ -11,6 +11,7 @@ import {
   VoucherCode,
   VoucherLifecycle,
   EditCommand,
+  ErasureLifecycle,
   RequestedSubjectRole,
 } from '@core/components';
 import {
@@ -188,6 +189,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
           searchPrefixes: [],
           createdAtUtcMs: FIXTURE_NOW_UTC_MS,
           customerOrigin: CustomerOrigin.Seed,
+          ...ErasureLifecycle.none(),
         },
       ],
       [PATH, bodyOf(visit())],

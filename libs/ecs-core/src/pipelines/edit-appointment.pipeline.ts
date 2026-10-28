@@ -78,6 +78,7 @@ import {
   AuditSystem,
   BillingSystem,
   BookingDecisionSystem,
+  ClientErasureSystem,
   CouponGrantSystem,
   CustomerRecordSystem,
   type DecideBookingInput,
@@ -860,6 +861,24 @@ function decideEdit(
     return Result.err(StaffEditError.invalidCommand('barberId'));
   }
 
+  // 3b. THE ERASURE GUARD (P3-RU-20): the batch seats no record under
+  //     erasure — each id read in the map that holds it: an added account's
+  //     record in the placement getAll, an added walk-in's in phase one. The
+  //     stored seats' records are carried back untouched (no personal value
+  //     is written for them).
+  const added = customerIdsFor(loaded.addedAccounts, context.hash);
+  const erased = [
+    ...ClientErasureSystem.underErasureAmong(
+      added.values(),
+      loaded.placement.customers,
+    ),
+    ...ClientErasureSystem.underErasureAmong(
+      loaded.addedWalkIns.map((walkIn) => walkIn.customerId),
+      loaded.set.customers,
+    ),
+  ];
+  if (erased.length > 0) return Result.err(BookingError.clientErased());
+
   // 4. The decision, under the shop's rules, with the stored ids and terms.
   const lines: BookingCall.SeatInput[] = [];
   for (const seat of draft.seats) {
@@ -966,7 +985,6 @@ function decideEdit(
 
   // 7. The client records of added accounts: a missing one needs its
   //    contact snapshot first (read outside, then the edit runs again).
-  const added = customerIdsFor(loaded.addedAccounts, context.hash);
   const missing = CustomerRecordSystem.missingContacts(
     added,
     loaded.placement.customers,

@@ -1,14 +1,20 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { Role } from '@core/components';
+import { ErasureStatus, Role } from '@core/components';
+import { Collections } from '@core/entities';
 // Types only (erased): the bundle's shape, as the server's system builds it.
 import type { ClientExportBundle } from '@core/systems';
 import { attemptKey } from './support/attempt-key';
 import { expectNoAxeViolations } from './support/axe';
 import {
+  authUserExists,
   customerIdFor,
+  readStoredBody,
+  seedErasablePerson,
+  seedProfilePhoto,
   seedUpcomingAppointment,
   seedUserProfile,
   seedWorkedAppointment,
+  storedObjectExists,
 } from './support/seed-firestore';
 import { EVENING_VISIT_START } from './support/shop-clock';
 import { signInAs } from './support/sign-in';
@@ -34,7 +40,19 @@ import { THEMES, pinTheme } from './support/theme';
  * dev catalogue the workers share is safe. The page's clock is pinned to
  * the suite's day at 10:00 (`pinBrowserClock`), so today's 21:00 visit is
  * one to come whatever the real hour; nothing here authors a note, a photo
- * or a read stamp.
+ * or a read stamp through the page.
+ *
+ * THE ERASURE (WS-D, Art. 17 — "pseudonymize, keep records") is
+ * irreversible, so it never touches a catalogue person: each attempt seeds
+ * its OWN person (`seedErasablePerson` — a run-unique uid and phone, the
+ * account, its Auth user, the record, today's visit with the person's
+ * contact, the visit's note and photo, and an avatar). The admin's
+ * «Изтрий личните данни» opens ONE alert with the server's census in
+ * figures (`previewClientErasure`); «Отказ» changes nothing; «Изтрий» loops
+ * the resumable `eraseClient` calls until done, and the card says
+ * «Изтрит клиент». The Admin SDK then reads what the server FILED: the
+ * record `ERASED` and pseudonymized, the visit KEPT with its contact
+ * cleared, the note, the photo, the avatar and the Auth user gone.
  */
 
 /** The second client's words: never in the first client's file. */
@@ -110,6 +128,30 @@ async function openCardOf(
 }
 
 /** The saved file's text, read through Playwright's own stream (UTF-8). */
+/**
+ * The sheet at rest: its scroll position the same on two reads 200 ms
+ * apart. axe measures boxes — a row press scrolls the sheet, and a target
+ * caught passing under its sticky bar mid-scroll reads as too small
+ * (`target-size`), which is no state a reader ever stops on.
+ */
+async function sheetAtRest(page: Page): Promise<void> {
+  const scroller = page
+    .locator('[data-testid="staff-visit-sheet"] .modal-sheet__scroll')
+    .first();
+  let last = '';
+  await expect
+    .poll(
+      async () => {
+        const now = String(await scroller.evaluate((el) => el.scrollTop));
+        const rested = now === last;
+        last = now;
+        return rested;
+      },
+      { intervals: [200], timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
 async function textOf(download: Download): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of await download.createReadStream()) {
@@ -180,6 +222,7 @@ test.describe('client card — the personal data (client.privacy on)', () => {
       expect(text).not.toContain(SENTINEL_PHONE);
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await sheetAtRest(page);
       await expectNoAxeViolations(page, {
         include: '[data-testid="staff-visit-sheet"]',
       });
@@ -201,4 +244,136 @@ test.describe('client card — the personal data (client.privacy on)', () => {
     await expect(card.getByTestId('client-privacy')).toHaveCount(0);
     await expect(card.getByTestId('client-export')).toHaveCount(0);
   });
+});
+
+/** The ONE question's census, in figures: one visit, its note and photo, one sign-in account, no sibling record. */
+const ERASURE_CENSUS =
+  /Посещения: 1 · Бележки: 1 · Снимки: 1 · Профили за вход: 1 · Други записи със същия телефон или имейл: 0\.|Visits: 1 · Notes: 1 · Photos: 1 · Sign-in accounts: 1 · Other records with this phone or e-mail: 0\./;
+
+test.describe('client card — the erasure (client.privacy on)', () => {
+  // Once per theme, as `expectNoAxeViolations` asks: contrast differs.
+  for (const theme of THEMES) {
+    test(`the admin erases the client's personal data: one alert with the census, «Отказ» keeps, «Изтрий» erases — ${theme}`, async ({
+      page,
+    }) => {
+      await pinBrowserClock(page);
+      test.setTimeout(180_000);
+      const run = attemptKey(test.info());
+      const uid = `e2e-erasure-${run}`;
+      const adminUid = `e2e-erasure-admin-${run}`;
+      const today = suiteDay();
+      const person = await seedErasablePerson(
+        uid,
+        { firstName: 'Елена', lastName: 'Тодорова' },
+        `${today}T${EVENING_VISIT_START}`,
+      );
+      await seedProfilePhoto(uid);
+      const avatarPath = `avatars/${uid}/original`;
+      // The admin's stored roles: the erasure judges the caller by these.
+      await seedUserProfile(adminUid, {
+        firstName: 'Админ',
+        lastName: 'Салонов',
+        roles: [Role.Admin],
+      });
+      await pinTheme(page, theme);
+      await signInAs(page, adminUid, [Role.Admin]);
+
+      const card = await openCardOf(page, today, `${person.visitId}#ivan`, uid);
+      const block = card.getByTestId('client-privacy');
+      const eraseRow = block.getByTestId('client-erase');
+      await expect(eraseRow).toHaveText(
+        /Изтрий личните данни|Erase personal data/,
+      );
+      await expect(block.getByTestId('client-erased')).toHaveCount(0);
+      const alert = page.getByRole('alertdialog');
+      await expect(alert).toHaveCount(0);
+
+      // THE ONE QUESTION, answered «Отказ»: the census in figures, then nothing changes.
+      await eraseRow.click();
+      await expect(alert).toHaveCount(1, { timeout: 30_000 });
+      await expect(alert).toHaveAccessibleName(
+        /Да изтрием ли личните данни\?|Erase personal data\?/,
+      );
+      await expect(alert).toContainText(ERASURE_CENSUS);
+      await page.getByTestId('client-privacy-erase-keep').click();
+      await expect(alert).toHaveCount(0);
+      await expect(block.getByTestId('client-erased')).toHaveCount(0);
+      await expect(block.getByTestId('client-erase-status')).toHaveCount(0);
+      const kept = await readStoredBody(
+        Collections.Customers,
+        person.customerId,
+      );
+      expect(kept?.['erasureStatus']).toBe(ErasureStatus.None);
+      expect(kept?.['displayName']).toBe('Елена Тодорова');
+      expect(
+        (await readStoredBody(Collections.Appointments, person.visitId))?.[
+          'contactName'
+        ],
+      ).toBe('Елена Тодорова');
+      expect(
+        await readStoredBody(Collections.AppointmentNotes, person.visitId),
+      ).not.toBeNull();
+      expect(await authUserExists(uid)).toBe(true);
+
+      // Asked again: the same ONE alert — scanned while it is open, its entrance settled.
+      await eraseRow.click();
+      await expect(alert).toHaveCount(1, { timeout: 30_000 });
+      await expect(alert).toContainText(ERASURE_CENSUS);
+      await alert.evaluate(async (dialog) => {
+        await Promise.all(
+          dialog
+            .getAnimations({ subtree: true })
+            .map((animation) => animation.finished),
+        );
+      });
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await sheetAtRest(page);
+      await expectNoAxeViolations(page, {
+        include: '[data-testid="client-privacy-alert"]',
+      });
+
+      // «Изтрий»: the erased line, and no line saying it is unfinished or refused.
+      await page.getByTestId('client-privacy-erase-confirm').click();
+      await expect(alert).toHaveCount(0);
+      await expect(block.getByTestId('client-erased')).toHaveText(
+        /Изтрит клиент|Erased client/,
+        { timeout: 60_000 },
+      );
+      await expect(block.getByTestId('client-erase-status')).toHaveCount(0);
+
+      // WHAT THE SERVER FILED: the record kept, ERASED and pseudonymized ...
+      const record = await readStoredBody(
+        Collections.Customers,
+        person.customerId,
+      );
+      expect(record?.['erasureStatus']).toBe(ErasureStatus.Erased);
+      expect(record?.['displayName']).not.toContain('Елена');
+      expect(record?.['phone']).toBeNull();
+      expect(record?.['userId']).toBe(uid);
+      // ... the visit KEPT — its status and seats — with the contact cleared ...
+      const visit = await readStoredBody(
+        Collections.Appointments,
+        person.visitId,
+      );
+      expect(visit).not.toBeNull();
+      expect(visit?.['bookingStatus']).toBe('CONFIRMED');
+      expect(visit?.['subjectCustomerIds']).toEqual([person.customerId]);
+      expect(visit?.['contactName']).toBeNull();
+      expect(visit?.['contactPhone']).toBeNull();
+      expect(visit?.['contactNote']).toBeNull();
+      // ... the account pseudonymized, and the note, the photo, the avatar and the Auth user gone.
+      const account = await readStoredBody(Collections.Users, uid);
+      expect(account?.['firstName']).not.toBe('Елена');
+      expect(account?.['phone']).toBeNull();
+      expect(
+        await readStoredBody(Collections.AppointmentNotes, person.visitId),
+      ).toBeNull();
+      expect(
+        await readStoredBody(Collections.AppointmentPhotos, person.photoId),
+      ).toBeNull();
+      expect(await storedObjectExists(person.photoPath)).toBe(false);
+      expect(await storedObjectExists(avatarPath)).toBe(false);
+      expect(await authUserExists(uid)).toBe(false);
+    });
+  }
 });

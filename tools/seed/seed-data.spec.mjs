@@ -20,6 +20,7 @@ import {
   CancelledBy,
   ClientStatsPolicy,
   CustomerOrigin,
+  ErasureStatus,
   ParsedIdentifier,
   Placement,
   RegistrationState,
@@ -307,6 +308,7 @@ describe('the dev seed client book', () => {
       expect(id.startsWith('cus_'), uid).toBe(true);
       expect(body.userId, uid).toBe(uid);
       expect(body.customerOrigin, uid).toBe(CustomerOrigin.Seed);
+      expect(body.erasureStatus, uid).toBe(ErasureStatus.None);
       const visits = book.appointments.filter(({ doc }) =>
         doc.subjectUserIds.includes(uid),
       );

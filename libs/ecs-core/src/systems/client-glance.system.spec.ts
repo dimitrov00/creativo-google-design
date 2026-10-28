@@ -99,6 +99,20 @@ describe('ClientGlanceSystem.pauseOf', () => {
       ),
     ).toBeNull();
   });
+
+  it('reads an ERASED account as paused for good — whatever the instant, the stamp before or after it (P3-DEP-17)', () => {
+    for (const erasedAtUtcMs of [
+      utcMs('2026-08-31T21:00:00.000Z'),
+      utcMs('2027-01-01T00:00:00.000Z'),
+    ]) {
+      expect(
+        ClientGlanceSystem.pauseOf(
+          AccountLifecycle.erase(erasedAtUtcMs),
+          NOW_UTC_MS,
+        ),
+      ).toEqual({ untilUtcMs: null });
+    }
+  });
 });
 
 describe('ClientGlanceSystem.sameLegs', () => {

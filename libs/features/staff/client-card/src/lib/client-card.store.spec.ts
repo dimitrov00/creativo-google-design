@@ -12,6 +12,9 @@ import {
   BirthDate,
   ClientPrivacyCall,
   CouponOccasion,
+  ErasureCensus,
+  ErasureLifecycle,
+  ErasureStatus,
   JournalEffect,
   JournalFeed,
   Role,
@@ -29,27 +32,33 @@ import type {
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  EraseClient,
   IdPorts,
   JournalPage,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
+  PreviewClientErasure,
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
   AppointmentId,
   BadgeSeriesId,
-  type CustomerId,
+  ClientOperationId,
+  CustomerId,
   Result as CoreResult,
   UserId,
 } from '@core/primitives';
 import {
   PipelineError,
+  PipelineErrorCode,
   RepositoryError as CoreRepositoryError,
 } from '@core/errors';
+import { MAX_ERASURE_CALLS } from '@core/pipelines';
 import {
   loyaltyCatalogFixture,
   memoryAppointmentReadPorts,
+  unwrapOk,
 } from '@core/testing';
 import {
   APPOINTMENT_PHOTO_PORTS,
@@ -96,6 +105,7 @@ import {
   catalogPortsOf,
   catalogueOf,
   customerPortsOf,
+  fixtureCustomers,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
@@ -1977,6 +1987,17 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
   });
 });
 
+/** The erasure's two callables where a case never dials them: unreachable. */
+const NO_ERASURE: {
+  readonly previewClientErasure: PreviewClientErasure;
+  readonly eraseClient: EraseClient;
+} = {
+  previewClientErasure: async () =>
+    CoreResult.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+  eraseClient: async () =>
+    CoreResult.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+};
+
 /*
  * L «Лични данни» (audit-hardening Phase 3, WS-C): the admin's privacy
  * block. The rig binds the callables' port and the id source only here
@@ -2010,6 +2031,7 @@ describe('ClientCardStore — the admin’s export (audit-hardening Phase 3)', (
           'a scripted answer',
         );
       },
+      ...NO_ERASURE,
     };
   }
 
@@ -2196,6 +2218,7 @@ describe('ClientCardStore — the admin’s export (audit-hardening Phase 3)', (
           pending.release = () => resolve(CoreResult.ok(EXPORTED));
         });
       },
+      ...NO_ERASURE,
     };
     const { store } = privacyRig({ privacy: held });
     await openedAs(store, ADMIN);
@@ -2219,5 +2242,404 @@ describe('ClientCardStore — the admin’s export (audit-hardening Phase 3)', (
     expect(store.privacy()?.exportStatus).toBe('Файлът е изтеглен.');
     await openedAs(store, ADMIN);
     expect(store.privacy()?.exportStatus).toBeNull();
+  });
+});
+
+/*
+ * L «Лични данни» — the admin's erasure (audit-hardening Phase 3, WS-D,
+ * P3-DEP-22): ONE act per row — preview (the census) → ONE alert → confirm
+ * → `completeClientErasure` with the act's ONE captured call. The rig binds
+ * the callables only here, as the export's does.
+ */
+describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS-D)', () => {
+  const PRIVACY_FLAGS = { ...ALL_FLAGS, 'client.privacy': true };
+  const ADMIN = { userId: UserId.of('dev-admin'), roles: [Role.Admin] };
+  const SIBLING = CustomerId.of('cus_5151515151515151515a');
+  const OTHER_SIBLING = CustomerId.of('cus_5252525252525252525b');
+
+  const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.None,
+    erasureRecordCount: 1,
+    erasureAccountCount: 1,
+    erasureContactCount: 4,
+    erasureVisitCount: 12,
+    erasureNoteCount: 2,
+    erasurePhotoCount: 3,
+    erasureSiblingCustomerIds: [SIBLING, OTHER_SIBLING],
+  };
+  const SIBLING_PREVIEW: ClientPrivacyCall.ErasurePreview = {
+    ...ErasureCensus.EMPTY,
+    erasureStatus: ErasureStatus.None,
+    erasureRecordCount: 1,
+    erasureVisitCount: 1,
+    erasureSiblingCustomerIds: [],
+  };
+  const erasureOf = (
+    erasureStatus: ErasureStatus,
+    erasureDone: boolean,
+  ): ClientPrivacyCall.Erasure => ({
+    ...ErasureCensus.EMPTY,
+    erasureStatus,
+    erasureDone,
+    erasureVisitCount: 12,
+  });
+  const ERASED = erasureOf(ErasureStatus.Erased, true);
+  const STILL_ERASING = erasureOf(ErasureStatus.Erasing, false);
+
+  type Answer<T> = CoreResult<T, PipelineError>;
+
+  /** The two erasure callables, scripted per record: each answer in turn (the last one repeats), every call recorded. */
+  function scriptedErasure(script: {
+    readonly previews?: ReadonlyMap<
+      CustomerId,
+      Answer<ClientPrivacyCall.ErasurePreview>
+    >;
+    readonly erasures?: readonly Answer<ClientPrivacyCall.Erasure>[];
+  }): ClientPrivacyGatewayPorts & {
+    readonly previews: ClientPrivacyCall[];
+    readonly erasures: ClientPrivacyCall[];
+  } {
+    const previews: ClientPrivacyCall[] = [];
+    const erasures: ClientPrivacyCall[] = [];
+    const erasureAnswers = script.erasures ?? [CoreResult.ok(ERASED)];
+    return {
+      previews,
+      erasures,
+      exportClientData: async () =>
+        CoreResult.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      previewClientErasure: async (call) => {
+        previews.push(call);
+        return must(
+          (
+            script.previews ??
+            new Map([
+              [GEORGI_CUSTOMER_ID, CoreResult.ok(PREVIEW)],
+              [SIBLING, CoreResult.ok(SIBLING_PREVIEW)],
+              [OTHER_SIBLING, CoreResult.ok(SIBLING_PREVIEW)],
+            ])
+          ).get(call.customerId),
+          'a scripted preview',
+        );
+      },
+      eraseClient: async (call) => {
+        erasures.push(call);
+        return must(
+          erasureAnswers[Math.min(erasures.length, erasureAnswers.length) - 1],
+          'a scripted erasure',
+        );
+      },
+    };
+  }
+
+  /** Names the wire can carry, `op-card-erase-0001`, … — each one recorded. */
+  function namedIds(): IdPorts & { readonly minted: string[] } {
+    const minted: string[] = [];
+    return {
+      minted,
+      nextId: () => {
+        const id = `op-card-erase-${String(minted.length + 1).padStart(4, '0')}`;
+        minted.push(id);
+        return id;
+      },
+    };
+  }
+
+  function erasureRig(
+    options: RigOptions & {
+      readonly privacy?: ClientPrivacyGatewayPorts;
+      readonly ids?: IdPorts;
+    } = {},
+  ) {
+    const privacy = options.privacy ?? scriptedErasure({});
+    const ids = options.ids ?? namedIds();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CLIENT_PRIVACY_PORTS, useValue: privacy },
+        { provide: ID_PORTS, useValue: ids },
+      ],
+    });
+    return rig({ flags: PRIVACY_FLAGS, ...options });
+  }
+
+  /** Георги's record under the given erasure slice; every other record as the fixture holds it. */
+  function customersWithGeorgi(
+    lifecycle: ErasureLifecycle,
+  ): ReturnType<typeof customerPortsOf> {
+    return customerPortsOf(
+      fixtureCustomers().map((record) =>
+        record.id === GEORGI_CUSTOMER_ID ? { ...record, ...lifecycle } : record,
+      ),
+    );
+  }
+
+  async function openedAsAdmin(store: ClientCardStore): Promise<void> {
+    open(store, subjectOf(GEORGI), georgiContext({ viewer: ADMIN }));
+    await settle();
+  }
+
+  const call = (customerId: CustomerId, n: number): ClientPrivacyCall => ({
+    customerId,
+    operationId: unwrapOk(
+      ClientOperationId.parse(`op-card-erase-${String(n).padStart(4, '0')}`),
+    ),
+  });
+
+  it('offers the erase row to the shop’s admin on a record the system offers erasure for, with no alert yet', async () => {
+    const { store } = erasureRig();
+    await openedAsAdmin(store);
+    const vm = must(store.erasure(), 'the erasure rows');
+    expect(vm.eraseLabel).toBe('Изтрий личните данни');
+    expect(vm.erasedLine).toBeNull();
+    expect(vm.eraseStatus).toBeNull();
+    expect(vm.siblings).toEqual([]);
+    expect(vm.alert.open).toBe(false);
+    expect(vm.alert.body).toBeNull();
+    // Never part of the overview, nor of the export's block.
+    expect('erasure' in store.overview()).toBe(false);
+    expect(store.privacy()).toEqual({
+      groupLabel: 'Лични данни',
+      exportLabel: 'Изтегли данните',
+      exportStatus: null,
+    });
+  });
+
+  it('is absent wherever the privacy block is: a barber, the flag off, offline', async () => {
+    const barber = erasureRig();
+    open(
+      barber.store,
+      subjectOf(GEORGI),
+      georgiContext({
+        viewer: { userId: UserId.of('dev-barber'), roles: [Role.Barber] },
+      }),
+    );
+    await settle();
+    expect(barber.store.erasure()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const flagOff = erasureRig({ flags: ALL_FLAGS });
+    await openedAsAdmin(flagOff.store);
+    expect(flagOff.store.erasure()).toBeNull();
+    TestBed.resetTestingModule();
+
+    const { store } = erasureRig();
+    await openedAsAdmin(store);
+    window.dispatchEvent(new Event('offline'));
+    expect(store.erasure()).toBeNull();
+    window.dispatchEvent(new Event('online'));
+    expect(store.erasure()).not.toBeNull();
+  });
+
+  it('words an ERASED record’s line beside the re-sweep row, and an ERASING record’s unfinished line', async () => {
+    const begun = ErasureLifecycle.begin(NOW_MS);
+    const erased = erasureRig({
+      customers: customersWithGeorgi(ErasureLifecycle.complete(begun, NOW_MS)),
+    });
+    await openedAsAdmin(erased.store);
+    expect(erased.store.erasure()?.erasedLine).toBe('Изтрит клиент');
+    expect(erased.store.erasure()?.eraseLabel).toBe('Изтрий личните данни');
+    expect(erased.store.erasure()?.eraseStatus).toBeNull();
+    TestBed.resetTestingModule();
+
+    const erasing = erasureRig({ customers: customersWithGeorgi(begun) });
+    await openedAsAdmin(erasing.store);
+    expect(erasing.store.erasure()?.erasedLine).toBeNull();
+    expect(erasing.store.erasure()?.eraseStatus).toBe(
+      'Изтриването още не е завършило. Опитай пак.',
+    );
+  });
+
+  it('previews under ONE minted id, opens the ONE alert with the census, and confirms with EXACTLY that call until the erasure is done', async () => {
+    const privacy = scriptedErasure({
+      erasures: [CoreResult.ok(STILL_ERASING), CoreResult.ok(ERASED)],
+    });
+    const ids = namedIds();
+    const { store } = erasureRig({ privacy, ids });
+    await openedAsAdmin(store);
+
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+
+    expect(privacy.previews).toEqual([call(GEORGI_CUSTOMER_ID, 1)]);
+    const alert = must(store.erasure(), 'the rows').alert;
+    expect(alert.open).toBe(true);
+    expect(alert.title).toBe('Да изтрием ли личните данни?');
+    expect(alert.body).toBe(
+      'Посещения: 12 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 2. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+    );
+    expect(privacy.erasures).toEqual([]);
+
+    await store.confirmErasure();
+
+    // The loop resumed the SAME act: one id, the same call each time.
+    expect(privacy.erasures).toEqual([
+      call(GEORGI_CUSTOMER_ID, 1),
+      call(GEORGI_CUSTOMER_ID, 1),
+    ]);
+    expect(privacy.erasures[0]).toBe(privacy.previews[0]);
+    expect(ids.minted).toEqual(['op-card-erase-0001']);
+    const vm = must(store.erasure(), 'the rows');
+    expect(vm.alert.open).toBe(false);
+    expect(vm.erasedLine).toBe('Изтрит клиент');
+    expect(vm.eraseStatus).toBeNull();
+    // The siblings the preview named stay after the act.
+    expect(vm.siblings.map((row) => row.customerId)).toEqual([
+      SIBLING,
+      OTHER_SIBLING,
+    ]);
+  });
+
+  it('«Отказ» calls nothing and closes the alert', async () => {
+    const privacy = scriptedErasure({});
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    expect(store.erasure()?.alert.open).toBe(true);
+
+    store.dismissErasure();
+    await store.confirmErasure();
+
+    expect(privacy.erasures).toEqual([]);
+    expect(store.erasure()?.alert.open).toBe(false);
+    expect(store.erasure()?.erasedLine).toBeNull();
+    expect(store.erasure()?.eraseStatus).toBeNull();
+  });
+
+  it('switching the card to another client between preview and confirm calls nothing and clears the pending act', async () => {
+    const privacy = scriptedErasure({});
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    expect(store.erasure()?.alert.open).toBe(true);
+
+    open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN }));
+    await store.confirmErasure();
+    await settle();
+
+    expect(privacy.erasures).toEqual([]);
+    expect(store.erasure()?.alert.open).toBe(false);
+    expect(store.erasure()?.alert.body).toBeNull();
+    expect(store.erasure()?.siblings).toEqual([]);
+  });
+
+  it('drops a preview answered for a person no longer on the card', async () => {
+    const release: { answer: (() => void) | null } = { answer: null };
+    const previews: ClientPrivacyCall[] = [];
+    const held: ClientPrivacyGatewayPorts = {
+      ...scriptedErasure({}),
+      previewClientErasure: (asked) => {
+        previews.push(asked);
+        return new Promise((resolve) => {
+          release.answer = () => resolve(CoreResult.ok(PREVIEW));
+        });
+      },
+    };
+    const { store } = erasureRig({ privacy: held });
+    await openedAsAdmin(store);
+
+    const first = store.previewErasure(GEORGI_CUSTOMER_ID);
+    // One act at a time: a second tap while the preview runs asks nothing.
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    expect(previews).toHaveLength(1);
+
+    open(store, subjectOf(MARTIN), martinContext({ viewer: ADMIN }));
+    must(release.answer, 'the held preview')();
+    await first;
+    await settle();
+    expect(store.erasure()?.alert.open).toBe(false);
+    expect(store.erasure()?.alert.body).toBeNull();
+  });
+
+  it('a sibling row runs its own preview with a NEW operation id and the sibling’s id, and leaves the list once erased', async () => {
+    const privacy = scriptedErasure({});
+    const ids = namedIds();
+    const { store } = erasureRig({ privacy, ids });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    store.dismissErasure();
+    expect(store.erasure()?.siblings.map((row) => row.testId)).toEqual([
+      'client-privacy-sibling-1',
+      'client-privacy-sibling-2',
+    ]);
+
+    await store.previewErasure(SIBLING);
+    expect(privacy.previews).toEqual([
+      call(GEORGI_CUSTOMER_ID, 1),
+      call(SIBLING, 2),
+    ]);
+    expect(store.erasure()?.alert.body).toContain('Посещения: 1 ·');
+
+    await store.confirmErasure();
+
+    expect(privacy.erasures).toEqual([call(SIBLING, 2)]);
+    const vm = must(store.erasure(), 'the rows');
+    expect(vm.siblings.map((row) => row.customerId)).toEqual([OTHER_SIBLING]);
+    // The card's own record is untouched by a sibling's act.
+    expect(vm.erasedLine).toBeNull();
+    // A record neither the card's nor a named sibling is never previewed.
+    await store.previewErasure(CustomerId.of('cus_7777777777777777777c'));
+    expect(privacy.previews).toHaveLength(2);
+  });
+
+  it('a refused erasure keeps the alert’s words and says the refusal on the rows; a refused preview opens no alert', async () => {
+    const staff = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: 'PRIVACY_ERASURE_STAFF_ACCOUNT',
+    });
+    const privacy = scriptedErasure({ erasures: [CoreResult.err(staff)] });
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    const worded = store.erasure()?.alert.body;
+
+    await store.confirmErasure();
+
+    const vm = must(store.erasure(), 'the rows');
+    expect(vm.alert.open).toBe(false);
+    expect(vm.alert.body).toBe(worded);
+    expect(vm.eraseStatus).toBe(
+      'Профил на служител не може да се изтрие оттук.',
+    );
+    expect(vm.erasedLine).toBeNull();
+    TestBed.resetTestingModule();
+
+    const mismatch = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: 'PRIVACY_ACCOUNT_LINK_MISMATCH',
+    });
+    const refusing = scriptedErasure({
+      previews: new Map([[GEORGI_CUSTOMER_ID, CoreResult.err(mismatch)]]),
+    });
+    const second = erasureRig({ privacy: refusing });
+    await openedAsAdmin(second.store);
+    await second.store.previewErasure(GEORGI_CUSTOMER_ID);
+    expect(second.store.erasure()?.alert.open).toBe(false);
+    expect(second.store.erasure()?.eraseStatus).toBe(
+      'Профилът не съвпада със записа на клиента. Свържи се с поддръжката.',
+    );
+    await second.store.confirmErasure();
+    expect(refusing.erasures).toEqual([]);
+  });
+
+  it('says «not finished yet» when the calls run out, the record left ERASING for a resume', async () => {
+    const privacy = scriptedErasure({
+      erasures: [CoreResult.ok(STILL_ERASING)],
+    });
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+
+    await store.confirmErasure();
+
+    expect(privacy.erasures).toHaveLength(MAX_ERASURE_CALLS);
+    expect(store.erasure()?.eraseStatus).toBe(
+      'Изтриването още не е завършило. Опитай пак.',
+    );
+    expect(store.erasure()?.erasedLine).toBeNull();
+    // A re-open of the same person keeps the record's own word for it (RESUME).
+    await openedAsAdmin(store);
+    expect(store.erasure()?.eraseStatus).toBe(
+      'Изтриването още не е завършило. Опитай пак.',
+    );
   });
 });

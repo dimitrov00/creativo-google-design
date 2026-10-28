@@ -8,7 +8,7 @@ import {
   output,
 } from '@angular/core';
 import type { ClientPrivacyCall, VisitLeg } from '@core/components';
-import type { CouponGrantId } from '@core/primitives';
+import type { CouponGrantId, CustomerId } from '@core/primitives';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -38,12 +38,14 @@ import {
   UiVisuallyHiddenDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
+import { UiAlert } from '@creativo/ui/patterns';
 import { BirthdayCard } from '../birthday-card/birthday-card';
 import { ClientCardRegion, type WalletAnchor } from '../client-card.contracts';
 import { figure, partedAtJoints } from '../client-card.format';
 import { ClientCardStore } from '../client-card.store';
 import {
   type ClientPhotoVm,
+  ErasureAlertAnswer,
   type LinePart,
   QuickActionId,
 } from '../client-pages.vm';
@@ -110,7 +112,9 @@ const PLACEHOLDER = {
  * named rings in a grid with the cue and the records line; the photos as a
  * grid of three, never a rail; one list group, the exits. After them, for
  * the shop's admin only, a second group: the person's data (L), whose
- * «Изтегли данните» saves the bundle the server answers as a file.
+ * «Изтегли данните» saves the bundle the server answers as a file, and
+ * whose «Изтрий личните данни» asks ONE alert, worded with the server's
+ * census, before the store erases exactly the record it previewed.
  *
  * A module is ABSENT when its slice is (a flag off, no account, a guest,
  * nothing to show); while its read runs it holds a placeholder shaped like
@@ -122,7 +126,8 @@ const PLACEHOLDER = {
  * The page computes nothing: the store's `hero`, `overview` and `privacy`
  * are already worded. It writes nothing either — every act is an output the
  * visit editor turns into a push, a draft change or a pop, except the
- * admin's export, which the store asks the server for and this page saves.
+ * admin's export, which the store asks the server for and this page saves,
+ * and the admin's erasure, which the store carries out.
  */
 @Component({
   selector: 'lib-client-card',
@@ -132,6 +137,7 @@ const PLACEHOLDER = {
     MedalsGlance,
     NgTemplateOutlet,
     UI_SHEET_HEADLINE,
+    UiAlert,
     UiAvatar,
     UiBadge,
     UiButton,
@@ -204,6 +210,8 @@ export class ClientCard {
   protected readonly overview = this.store.overview;
   /** L — the admin's privacy block; `null` is no block. */
   protected readonly privacy = this.store.privacy;
+  /** L — the erasure's rows and its ONE alert; `null` is none. */
+  protected readonly erasure = this.store.erasure;
   protected readonly online = this.store.online;
 
   protected readonly placeholder = PLACEHOLDER;
@@ -348,6 +356,28 @@ export class ClientCard {
     // Freed on the next turn of the loop — revoking synchronously races the
     // click the browser has not finished handling.
     setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  /** L «Изтрий личните данни»: the store previews the card's record; its census opens the alert. */
+  protected eraseRecord(): void {
+    const customerId = this.store.customerId();
+    if (customerId !== null) void this.store.previewErasure(customerId);
+  }
+
+  /** L a sibling record's row: its own act — its own preview, alert and id. */
+  protected eraseSibling(customerId: CustomerId): void {
+    void this.store.previewErasure(customerId);
+  }
+
+  /** The alert's answer: «Изтрий» erases the previewed record; «Отказ» drops the act. */
+  protected onErasurePick(answer: string): void {
+    if (answer === ErasureAlertAnswer.Erase) void this.store.confirmErasure();
+    else this.store.dismissErasure();
+  }
+
+  /** Escape or the scrim: the safe answer. */
+  protected dismissErasure(): void {
+    this.store.dismissErasure();
   }
 
   /** «Опитай пак» under the head: every failed module again — or the whole card. */

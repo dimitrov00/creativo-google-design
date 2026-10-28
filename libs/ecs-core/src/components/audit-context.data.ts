@@ -18,6 +18,8 @@ import type { CancellationDelta } from './cancellation-delta.data';
 import type { PlacementAction } from './placement-action.data';
 import type { CancellationReason } from './cancellation-reason.data';
 import type { ImpersonationEndReason } from './end-reason-fields.data';
+import type { ErasureAction } from './erasure-action.data';
+import { ErasureCensus } from './erasure-census.data';
 import type { GovernedAction } from './governed-action.data';
 import type { GovernedCollection } from './governed-collection.data';
 import type { ImpersonationScope } from './impersonation-scope.data';
@@ -49,7 +51,7 @@ import type { TransitionDelta } from './transition-delta.data';
  * is a deliberate code change here — the impersonation and governed-document
  * verbs were added by audit-hardening WS-3 (DEP-17), the sign-in verbs
  * (`IDENTITY_*`) by audit-hardening Phase 3 (P3-DEP-7), the data-subject
- * verbs (`PRIVACY_*`) by its WS-C (P3-DEP-10).
+ * verbs (`PRIVACY_*`) by its WS-C (P3-DEP-10) and WS-D (P3-DEP-18).
  */
 export const AuditAction = {
   BookingCommitted: 'BOOKING_COMMITTED',
@@ -107,6 +109,15 @@ export const AuditAction = {
   IdentityRegistrationCompleted: 'IDENTITY_REGISTRATION_COMPLETED',
   /** An admin exported a client's data (`exportClientData`, Phase 3 WS-C) — counts only. */
   PrivacyClientExported: 'PRIVACY_CLIENT_EXPORTED',
+  /**
+   * An admin's erasure began (`eraseClient`, Phase 3 WS-D): the stamp commit
+   * cleared the record and the account — the census BEFORE, counts only.
+   */
+  PrivacyClientErasureStarted: 'PRIVACY_CLIENT_ERASURE_STARTED',
+  /** The erasure completed: nothing personal left — the residue census AFTER. */
+  PrivacyClientErased: 'PRIVACY_CLIENT_ERASED',
+  /** An erased record's sweep found residue and cleared it — the census BEFORE the sweep (P3-L-19). */
+  PrivacyClientErasureReswept: 'PRIVACY_CLIENT_ERASURE_RESWEPT',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -158,7 +169,8 @@ export type AuditContext =
   | AuditContext.OtpRefused
   | AuditContext.SessionIssued
   | AuditContext.RegistrationCompleted
-  | AuditContext.ClientExported;
+  | AuditContext.ClientExported
+  | AuditContext.ClientErasure;
 
 /** A copy of a nullable id list — `null` stays `null`. */
 function copyOrNull<T>(list: readonly T[] | null): readonly T[] | null {
@@ -462,6 +474,17 @@ export const AuditContext = {
       exportByteCount,
     };
   },
+  /**
+   * An erasure row (Phase 3 WS-D, P3-RU-22): the verb and exactly the
+   * eleven census counts ({@link ErasureCensus.countsOf} — a wider struct's
+   * other fields never reach the row) — never a value of the person.
+   */
+  clientErasure(
+    auditAction: ErasureAction,
+    census: ErasureCensus,
+  ): AuditContext.ClientErasure {
+    return { auditAction, ...ErasureCensus.countsOf(census) };
+  },
 
   /** The edge guard for a stored or submitted verb. */
   isAuditAction(value: unknown): value is AuditAction {
@@ -665,4 +688,17 @@ export namespace AuditContext {
     /** The UTF-8 bytes of the bundle's canonical JSON. */
     readonly exportByteCount: number;
   };
+  /**
+   * An admin's data-subject erasure (audit-hardening Phase 3 WS-D, P3-RU-22)
+   * — the resource is `customers/<id>`, the target the client record, the
+   * actor the admin. The verb says which census the row carries: STARTED
+   * the census BEFORE (what will be erased), ERASED the residue AFTER (every
+   * personal count 0, beside what was retained), RESWEPT the census BEFORE a
+   * sweep of an erased record that found residue (P3-L-19). Counts only
+   * ({@link ErasureCensus}) — never a name, a contact value, a label, free
+   * text or a sibling record's id (R36 / T5).
+   */
+  export type ClientErasure = {
+    readonly auditAction: ErasureAction;
+  } & ErasureCensus;
 }

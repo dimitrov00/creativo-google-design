@@ -62,6 +62,7 @@ import {
   barberScheduleFixture,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
+  fixtureHash,
   localDate,
   locationFixture,
   OTHER_SENTINELS,
@@ -84,6 +85,7 @@ import { firestoreJobPorts } from '../adapters/firestore-jobs.adapter';
 import { firestorePrivacyPorts } from '../adapters/firestore-privacy.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
+import { withPurgeAt } from '../adapters/firestore-ttl.adapter';
 import { decodeCommitBooking } from '../wire/booking.wire';
 
 /**
@@ -104,7 +106,17 @@ import { decodeCommitBooking } from '../wire/booking.wire';
  * (the `BookingCall` the staff sheet sends → the `commitBooking` wire →
  * `bookAppointment`), so its contact is W's sentinel phone and W's record
  * the one the booking keyed. Every personal value is a SENTINEL, so a scan
- * of the bundle, the rows and the log lines proves absence by search.
+ * of the bundle, the rows and the log lines proves absence by search. The
+ * documents are stored as the transaction adapter writes them: every TTL
+ * group's body carries its `purgeAt` stamp (`withPurgeAt`).
+ *
+ * THE HASH. The world's account records are `CustomerId.forUser(uid,
+ * fixtureHash)` (D29 under the fixture hash of `@core/testing`), so the
+ * pipeline runs over `fixtureHash` too: the export checks the record's
+ * account link with the `hash` port (P3-RU-37 (h)), and under the
+ * production `sha256Hex` every world record would read as a corrupt link.
+ * The deployed export (5b) runs the composition root's own `sha256Hex`, on
+ * a copy of P's record at the id that hash derives.
  *
  * Proved: (1) every section of the plan's §0.4 "export?" column holds
  * exactly P's documents — the library photo on Q's party included, no
@@ -116,7 +128,11 @@ import { decodeCommitBooking } from '../wire/booking.wire';
  * (counts only, the admin, P's record), never inside its own bundle, a
  * replay adding none; (5) the log lines hold no sentinel and no part of
  * the bundle; (6) a person past the cap is refused through the real
- * adapters, no row written.
+ * adapters, no row written; (h) a record whose `userId` its id does not
+ * derive is refused `PRIVACY_ACCOUNT_LINK_MISMATCH` before any read keyed
+ * by that uid, no row written (P3-RU-37 (h)); (i) the bundle carries no
+ * `purgeAt` — the adapter-stamped TTL field is part of no entity
+ * (P3-RU-37 (i)).
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -392,7 +408,8 @@ describe('exportClientData (emulator)', () => {
     for (const [path, body] of order === 'forward'
       ? docs
       : [...docs].reverse()) {
-      await db.doc(path).set(body);
+      // As the transaction adapter writes a TTL group's body: stamped.
+      await db.doc(path).set(withPurgeAt(path.split('/'), body));
     }
     await bookWalkInParty();
   }
@@ -452,7 +469,8 @@ describe('exportClientData (emulator)', () => {
         telemetry.log,
       ),
       nowUtcMs: pinnedNowUtcMs(),
-      hash: sha256Hex,
+      // The hash the world's account records were derived under (see THE HASH).
+      hash: fixtureHash,
       ...walkInKeyPorts(() => WALKIN_KEY),
       ...firestoreJobPorts(db, StoredDocumentSystem.guardOf, telemetry.log),
       flagOn: (key) => key === FlagName.ClientPrivacy,
@@ -514,7 +532,7 @@ describe('exportClientData (emulator)', () => {
   /** The id of the row an operation's export plans — known before any read. */
   const rowIdOf = (customerId: CustomerId, operationId: OperationId) =>
     AuditEntryId.of(
-      sha256Hex(ClientExportSystem.rowIdBasis(customerId, operationId)),
+      fixtureHash(ClientExportSystem.rowIdBasis(customerId, operationId)),
     );
 
   it('(1) holds every section with exactly P’s documents — the library photo on Q’s party included, no url', async () => {
@@ -704,7 +722,7 @@ describe('exportClientData (emulator)', () => {
           FIXTURE_NOW_UTC_MS,
         ),
       ],
-      sha256Hex,
+      fixtureHash,
     );
     expect(planned?.writeAction).toBe(WriteAction.Create);
     expect(row).toEqual({
@@ -763,7 +781,16 @@ describe('exportClientData (emulator)', () => {
     vi.stubEnv('LOG_DIGEST_KEY', 'export-log-digest-key');
     vi.stubEnv('WALKIN_ID_KEY', WALKIN_KEY);
     vi.stubEnv('CLIENT_PRIVACY', 'true');
-    const p = world.person.customerId;
+    // The composition root hashes with the production `sha256Hex`: P's
+    // record, copied to the id that hash derives from P's uid, links P's
+    // account — the bundle holds P's sentinels (the record and the account).
+    const u = world.person.userId;
+    const p = CustomerId.forUser(u, sha256Hex);
+    const record = world.state.records.find(
+      (stored) => stored.id === world.person.customerId,
+    );
+    if (record === undefined) throw new Error('the world holds no P record');
+    await db.doc(`${Collections.Customers}/${p}`).set(bodyOf(record));
     lines.length = 0;
     const answer = (await (main.exportClientData as unknown as Runnable).run({
       data: { customerId: p, operationId: OP_ONE },
@@ -773,6 +800,9 @@ describe('exportClientData (emulator)', () => {
     })) as ClientPrivacyCall.Exported;
     expect(answer.exportedCustomerId).toBe(p);
     expect(ClientPrivacyCall.decodeExported(answer).ok).toBe(true);
+    // The bundle holds P's values — the log lines below must not.
+    expect(answer.exportJson).toContain(PRIVACY_SENTINELS.phone);
+    expect(sectionIds(bundleOf(answer), 'users')).toEqual([u]);
     expect(lines.filter(([msg]) => msg === LogEvent.CallableCompleted)).toEqual(
       [
         [
@@ -843,5 +873,66 @@ describe('exportClientData (emulator)', () => {
       error: { errorCode: PrivacyErrorCode.ClientNotFound },
     });
     expect(await exportRows()).toEqual([]);
+  });
+
+  it('(h) refuses a record whose account link its id does not derive — PRIVACY_ACCOUNT_LINK_MISMATCH before any read keyed by the uid, no row (P3-RU-37 (h))', async () => {
+    // A corrupt record: P's uid on an id `forUser` never derives from it.
+    const corrupt = CustomerId.of('cus-corrupt-link');
+    const record = world.state.records.find(
+      (stored) => stored.id === world.person.customerId,
+    );
+    if (record === undefined) throw new Error('the world holds no P record');
+    await db
+      .doc(`${Collections.Customers}/${corrupt}`)
+      .set({ ...bodyOf(record), userId: world.person.userId });
+    const real = ports();
+    // Every read keyed by the uid, spied over the real adapter.
+    const uidKeyed = {
+      loadProfile: vi.fn(real.loadProfile),
+      listAccountNotifications: vi.fn(real.listAccountNotifications),
+      listAccountWaitlist: vi.fn(real.listAccountWaitlist),
+      listAccountInvitations: vi.fn(real.listAccountInvitations),
+      pageAuditByTargetUser: vi.fn(real.pageAuditByTargetUser),
+    };
+    const before = await auditRows();
+    const answer = await exportOf(corrupt, OP_ONE, uidKeyed);
+    expect(answer).toEqual({
+      ok: false,
+      error: { errorCode: PrivacyErrorCode.AccountLinkMismatch },
+    });
+    for (const [name, read] of Object.entries(uidKeyed)) {
+      expect(read, name).not.toHaveBeenCalled();
+    }
+    expect(await auditRows()).toEqual(before);
+    expect(await exportRows()).toEqual([]);
+    // The same account's own record still exports — the link is the record's fault.
+    expect((await exportOf(world.person.customerId, OP_ONE)).ok).toBe(true);
+  });
+
+  it('(i) carries no purgeAt — the stored TTL stamp is part of no entity; the inbox and the waitlist leave exactly as the entities (P3-RU-37 (i))', async () => {
+    const u = world.person.userId;
+    const [notification] = world.state.notifications.get(u) ?? [];
+    const [request] = world.state.waitlist.filter(
+      (stored) => stored.ownerUserId === u,
+    );
+    if (notification === undefined || request === undefined) {
+      throw new Error('the world holds no inbox or waitlist request of P');
+    }
+    // The seed stored them as the transaction adapter does — stamped.
+    const notificationPath = `${Collections.Users}/${u}/${Subcollections.Notifications}/${notification.id}`;
+    const requestPath = `${Collections.WaitlistRequests}/${request.id}`;
+    expect((await db.doc(notificationPath).get()).get('purgeAt')).toBeDefined();
+    expect((await db.doc(requestPath).get()).get('purgeAt')).toBeDefined();
+
+    const answer = await exported(world.person.customerId, OP_ONE);
+    expect(answer.exportJson).not.toContain('purgeAt');
+    expect(answer.exportJson).not.toContain('_seconds');
+    const bundle = bundleOf(answer);
+    expect(Reflect.get(bundle, 'notifications')).toEqual([
+      JSON.parse(JSON.stringify(notification)),
+    ]);
+    expect(Reflect.get(bundle, 'waitlistRequests')).toEqual([
+      JSON.parse(JSON.stringify(request)),
+    ]);
   });
 });

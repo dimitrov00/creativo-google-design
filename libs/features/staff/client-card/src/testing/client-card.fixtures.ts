@@ -69,6 +69,7 @@ import {
   DayWindows,
   E164,
   Email,
+  ErasureLifecycle,
   MinuteRange,
   PhotoOrigin,
   Placement,
@@ -931,6 +932,7 @@ export function fixtureCustomers(): readonly Customer[] {
     createdAtUtcMs: sofia('2025-03-01T10:00:00'),
     customerOrigin: CustomerOrigin.Registration,
     ...WriteProvenance.NONE,
+    ...ErasureLifecycle.none(),
   });
   return [
     recordOf(GEORGI, 'Георги Петров', '+359881234567', 'georgi@example.test'),

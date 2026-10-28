@@ -338,6 +338,11 @@ export const UI_ICON_REGISTRY = {
    *  `receipt_long` with `loyalty.ledger` (the points activity): both are a
    *  record read out line by line; the intents differ. */
   'client.export': 'receipt_long',
+  /** An admin's erasure of the person's personal data (GDPR Art. 17, the
+   *  card's «Лични данни» group) — and the same act on a record sharing the
+   *  person's phone or e-mail. Shares `delete` with `booking.removeLine` and
+   *  `account.photoRemove`: each removes something; the intents differ. */
+  'client.erase': 'delete',
   /* `client.visits` is an ALIAS of `account.reservations` — see
      UI_ICON_ALIASES. */
 

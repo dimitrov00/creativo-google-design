@@ -9,6 +9,7 @@ import {
   CancellationReason,
   CustomerOrigin,
   EditCommand,
+  ErasureLifecycle,
   MarkArrivalAction,
   RequestedSubjectRole,
   Role,
@@ -158,6 +159,7 @@ const CLIENT_RECORD: Record<string, unknown> = {
   searchPrefixes: [],
   createdAtUtcMs: FIXTURE_NOW_UTC_MS,
   customerOrigin: CustomerOrigin.Seed,
+  ...ErasureLifecycle.none(),
 };
 
 /** One person's row id for one change — `hash(AuditSystem.rowBasis(…))`, as the planner derives it. */

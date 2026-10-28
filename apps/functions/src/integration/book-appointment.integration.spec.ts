@@ -4,6 +4,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import {
   Actor,
   BarberPreference,
+  ErasureStatus,
   RequestedSubjectRole,
 } from '@core/components';
 import {
@@ -225,6 +226,7 @@ describe('bookAppointment (emulator)', () => {
       displayName: 'Maria Ivanova',
       phone: '+359888123456',
       customerOrigin: 'FIRST_BOOKING',
+      erasureStatus: ErasureStatus.None,
     });
     expect(UtcEpochMs.of(Number(record?.['createdAtUtcMs'])).ok).toBe(true);
     for (const id of [ATTEMPT, second]) {

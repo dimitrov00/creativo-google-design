@@ -46,8 +46,10 @@ import {
   RepositoryError,
 } from '@core/errors';
 import type { IdPorts } from '@core/ports';
+import { completeClientErasure } from '@core/pipelines';
 import {
   type ClientPrivacyCall,
+  type ErasureStatus,
   FlagName,
   JournalFeed,
   Registration,
@@ -58,6 +60,7 @@ import {
   VisitRowOutcome,
 } from '@core/components';
 import {
+  ClientPrivacySystem,
   ClientStatsSystem,
   LoyaltyCatalogSystem,
   StreakRuleSystem,
@@ -118,6 +121,8 @@ import {
 import {
   type AchievementsData,
   type BirthdayVm,
+  ClientErasurePhase,
+  type ClientErasureVm,
   ClientExportPhase,
   type ClientHeroVm,
   type ClientOverviewVm,
@@ -169,7 +174,9 @@ import {
 import { detailActionOf } from './medal-detail.presenter';
 import { CHIP_ALL } from './medals.presenter';
 import {
+  type ClientErasureState,
   type ClientExportState,
+  clientErasureVm,
   clientPrivacyVm,
 } from './client-privacy.presenter';
 import { recordsPageVm } from './records.presenter';
@@ -309,6 +316,21 @@ const EXPORT_IDLE: ClientExportState = {
   clientExportPhase: ClientExportPhase.Idle,
 };
 
+/** No erasure act on its way (or the last one's line forgotten). */
+const ERASURE_IDLE: ClientErasureState = {
+  clientErasurePhase: ClientErasurePhase.Idle,
+};
+
+/**
+ * A previewed erasure act waiting for the admin's answer (the ONE alert is
+ * open): the act's ONE `ClientPrivacyCall` — the record and the act's own
+ * minted id, captured at the preview — sent verbatim at confirm.
+ */
+interface PendingErasure {
+  readonly call: ClientPrivacyCall;
+  readonly preview: ClientPrivacyCall.ErasurePreview;
+}
+
 const LOADING = LoadSlice.loading;
 const FAILED = LoadSlice.failed;
 
@@ -445,6 +467,15 @@ export class ClientCardStore {
   });
   /** Mints each privacy act's `operationId` (WS-4.1); unbound, the privacy block is absent. */
   private readonly ids = inject(ID_PORTS, { optional: true });
+  /**
+   * The erasure's loop of resumable `eraseClient` calls (`@core/pipelines`
+   * `completeClientErasure`, audit-hardening Phase 3 WS-D) over the same
+   * port; `null` with the port unbound.
+   */
+  private readonly eraseLoop =
+    this.privacyPorts === null
+      ? null
+      : completeClientErasure(this.privacyPorts);
 
   /** Bumped by every `open`: an answer for an older one is dropped. */
   private generation = 0;
@@ -520,6 +551,31 @@ export class ClientCardStore {
    * `null` once a bundle came back, and for another person.
    */
   private exportCall: ClientPrivacyCall | null = null;
+  /**
+   * The record's erasure tag (`erasureStatus`), read with the record and
+   * kept beside `_customerId`; refreshed by every preview and erasure answer
+   * about the record. `null` while the record is unknown, or for none.
+   */
+  private readonly _erasureStatus = signal<ErasureStatus | null>(null);
+  /** Where the admin's erasure act stands (L). */
+  private readonly _erasure = signal<ClientErasureState>(ERASURE_IDLE);
+  /** The previewed act the ONE alert asks about; `null` — no alert. */
+  private readonly _pendingErasure = signal<PendingErasure | null>(null);
+  /** The preview the alert was last opened on: its words stay while it leaves. */
+  private readonly _erasurePreview =
+    signal<ClientPrivacyCall.ErasurePreview | null>(null);
+  /**
+   * The walk-in records sharing the person's phone or e-mail, as the
+   * record's last preview named them (P3-L-7) — kept after the act (the
+   * stamp clears the values they derive from), each one's own act.
+   */
+  private readonly _erasureSiblings = signal<readonly CustomerId[]>([]);
+  /**
+   * The erasure act in flight — its call, from the preview to the last
+   * answer; an answer for another act, or for a person no longer on the
+   * card, is dropped.
+   */
+  private erasureCall: ClientPrivacyCall | null = null;
 
   /** The person the card is about; `null` before the first `open`. */
   readonly subject = this._subject.asReadonly();
@@ -1543,10 +1599,20 @@ export class ClientCardStore {
       this._nowUtcMs.set(this.readNow());
       this.generation += 1;
       if (!same) this.reset(subject);
-      // A re-open of the same person forgets the last export's line (an act
-      // still on its way keeps it); a refused act keeps its call for a retry.
-      else if (this._export().clientExportPhase !== ClientExportPhase.Running) {
-        this._export.set(EXPORT_IDLE);
+      else {
+        // A re-open of the same person forgets the last export's line (an act
+        // still on its way keeps it); a refused act keeps its call for a retry.
+        if (this._export().clientExportPhase !== ClientExportPhase.Running) {
+          this._export.set(EXPORT_IDLE);
+        }
+        // ... and the erasure's last line, as long as no act is on its way.
+        const erasurePhase = this._erasure().clientErasurePhase;
+        if (
+          erasurePhase === ClientErasurePhase.Unfinished ||
+          erasurePhase === ClientErasurePhase.Refused
+        ) {
+          this._erasure.set(ERASURE_IDLE);
+        }
       }
       if (subject.userId !== null) {
         void this.loadAll(this.generation, subject.userId);
@@ -1628,6 +1694,161 @@ export class ClientCardStore {
     this.exportCall = null;
     this._export.set({ clientExportPhase: ClientExportPhase.Done });
     return answer.value;
+  }
+
+  /**
+   * L — the erasure's rows (audit-hardening Phase 3, WS-D, P3-DEP-22) in
+   * the privacy block: present exactly when the block is, once the record's
+   * erasure tag is known. The record's row is what
+   * `ClientPrivacySystem.erasureOffer` offers for that tag (erase, resume,
+   * re-sweep — Law 10.2: the presenter only words it).
+   */
+  readonly erasure: Signal<ClientErasureVm | null> = computed(() => {
+    const words = this.words();
+    const translateCode = this.translateCode();
+    const erasureStatus = this._erasureStatus();
+    if (
+      this.privacy() === null ||
+      words === null ||
+      translateCode === null ||
+      erasureStatus === null
+    ) {
+      return null;
+    }
+    return clientErasureVm({
+      words: words.erasure,
+      offer: ClientPrivacySystem.erasureOffer(erasureStatus),
+      erasureState: this._erasure(),
+      alertOpen: this._pendingErasure() !== null,
+      preview: this._erasurePreview(),
+      siblings: this._erasureSiblings(),
+      translateCode,
+    });
+  });
+
+  /**
+   * «Изтрий личните данни» (the record) or a sibling's row: ONE act — its
+   * operation id minted here, captured with the record as ONE
+   * `ClientPrivacyCall` beside the read-only preview's census, which opens
+   * the ONE alert. Only the card's record or a sibling its last preview
+   * named; nothing while another act is on its way or awaits its answer,
+   * without the rows, or offline. A refused preview opens no alert: its
+   * words go on the rows' line.
+   */
+  async previewErasure(customerId: CustomerId): Promise<void> {
+    const ports = this.privacyPorts;
+    const ids = this.ids;
+    const phase = untracked(this._erasure).clientErasurePhase;
+    if (
+      ports === null ||
+      ids === null ||
+      untracked(this.erasure) === null ||
+      !this.erasureTargets(customerId) ||
+      untracked(this._pendingErasure) !== null ||
+      phase === ClientErasurePhase.Previewing ||
+      phase === ClientErasurePhase.Running
+    ) {
+      return;
+    }
+    const operationId = ClientOperationId.parse(ids.nextId());
+    if (!operationId.ok) {
+      // A minted name the wire cannot carry: refused before anything goes out.
+      this.erasureCall = null;
+      this._erasure.set({
+        clientErasurePhase: ClientErasurePhase.Refused,
+        erasureError: PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      });
+      return;
+    }
+    const call: ClientPrivacyCall = {
+      customerId,
+      operationId: operationId.value,
+    };
+    this.erasureCall = call;
+    this._erasure.set({ clientErasurePhase: ClientErasurePhase.Previewing });
+    const answer = await ports.previewClientErasure(call);
+    if (this.erasureCall !== call) return;
+    if (!answer.ok) {
+      this.erasureCall = null;
+      this._erasure.set({
+        clientErasurePhase: ClientErasurePhase.Refused,
+        erasureError: answer.error,
+      });
+      return;
+    }
+    const preview = answer.value;
+    if (customerId === untracked(this.customerId)) {
+      this._erasureStatus.set(preview.erasureStatus);
+      this._erasureSiblings.set(preview.erasureSiblingCustomerIds);
+    }
+    this._erasure.set(ERASURE_IDLE);
+    this._erasurePreview.set(preview);
+    this._pendingErasure.set({ call, preview });
+  }
+
+  /**
+   * The alert's «Изтрий»: EXACTLY the call captured at the preview, sent
+   * through `completeClientErasure` (the same act until the server says it
+   * is done, or «not finished yet»). Never re-reads the card's record: an
+   * act whose record is no longer the card's (or one of its siblings) is
+   * dropped and calls nothing. The record's tag follows the answer; a
+   * sibling whose erasure is done leaves the list.
+   */
+  async confirmErasure(): Promise<void> {
+    const pending = untracked(this._pendingErasure);
+    const loop = this.eraseLoop;
+    this._pendingErasure.set(null);
+    if (pending === null || loop === null) return;
+    const call = pending.call;
+    if (
+      this.erasureCall !== call ||
+      !this.erasureTargets(call.customerId) ||
+      untracked(this.erasure) === null
+    ) {
+      this.erasureCall = null;
+      this._erasure.set(ERASURE_IDLE);
+      return;
+    }
+    this._erasure.set({ clientErasurePhase: ClientErasurePhase.Running });
+    const answer = await loop(call);
+    if (this.erasureCall !== call) return;
+    this.erasureCall = null;
+    if (!answer.ok) {
+      this._erasure.set({
+        clientErasurePhase: ClientErasurePhase.Refused,
+        erasureError: answer.error,
+      });
+      return;
+    }
+    const erasure = answer.value;
+    if (call.customerId === untracked(this.customerId)) {
+      this._erasureStatus.set(erasure.erasureStatus);
+    } else if (erasure.erasureDone) {
+      this._erasureSiblings.update((siblings) =>
+        siblings.filter((sibling) => sibling !== call.customerId),
+      );
+    }
+    this._erasure.set(
+      erasure.erasureDone
+        ? ERASURE_IDLE
+        : { clientErasurePhase: ClientErasurePhase.Unfinished },
+    );
+  }
+
+  /** The alert's «Отказ», Escape or the scrim: the previewed act is dropped — nothing is called. */
+  dismissErasure(): void {
+    if (untracked(this._pendingErasure) === null) return;
+    this._pendingErasure.set(null);
+    this.erasureCall = null;
+    this._erasure.set(ERASURE_IDLE);
+  }
+
+  /** The card's record, or a sibling record its last preview named. */
+  private erasureTargets(customerId: CustomerId): boolean {
+    return (
+      customerId === untracked(this.customerId) ||
+      untracked(this._erasureSiblings).includes(customerId)
+    );
   }
 
   /** The act's call: the kept one for this record, else one under a freshly minted id. */
@@ -1899,6 +2120,9 @@ export class ClientCardStore {
     if (!result.ok) return FAILED;
     const record = result.value === null ? null : result.value.id;
     this._customerId.set(record);
+    this._erasureStatus.set(
+      result.value === null ? null : result.value.erasureStatus,
+    );
     return recordSliceOf(record);
   }
 
@@ -1930,6 +2154,14 @@ export class ClientCardStore {
     this._filter.set(VisitFilter.All);
     this.exportCall = null;
     this._export.set(EXPORT_IDLE);
+    // A change of person drops any erasure act: a card that switched person
+    // while the alert was open erases nobody.
+    this.erasureCall = null;
+    this._erasure.set(ERASURE_IDLE);
+    this._pendingErasure.set(null);
+    this._erasurePreview.set(null);
+    this._erasureSiblings.set([]);
+    this._erasureStatus.set(null);
     this._avatar.set(null);
     this._money.set(null);
     const account = subject.userId !== null;

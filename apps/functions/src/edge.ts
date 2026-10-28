@@ -313,6 +313,10 @@ const BOOKING_WIRE: WireTable<BookingErrorCode> = {
   // them; inert rows — the answer the edge gives a code it does not know.
   [BookingErrorCode.CallFailed]: fields(S.Internal),
   [BookingErrorCode.TransitionSeatResolved]: fields(S.Internal),
+  // A seated or created record under erasure (audit-hardening Phase 3,
+  // P3-RU-20): a state that forbids the booking — the code alone, no id
+  // (the desk knows whom it typed).
+  [BookingErrorCode.ClientErased]: fields(S.FailedPrecondition),
 };
 
 const MOVE_WIRE: WireTable<MoveErrorCode> = {
@@ -509,10 +513,13 @@ const PIPELINE_WIRE: WireTable<PipelineErrorCode> = {
 };
 
 /**
- * The admin's data-subject requests (audit-hardening Phase 3, WS-C): the
- * caller's gate, a payload field missing or malformed (its NAME leaves,
- * never its value), the deployment's flag, an unknown record and an export
- * past its cap — refused whole, never truncated.
+ * The admin's data-subject requests (audit-hardening Phase 3, WS-C / WS-D):
+ * the caller's gate, a payload field missing or malformed (its NAME leaves,
+ * never its value), the deployment's flag, an unknown record, an export or
+ * an erasure past its cap — refused whole, never truncated — a staff
+ * account, and a record whose account link fails the D29 check (one row for
+ * all three privacy callables, P3-RU-37 (h)): each a state that forbids the
+ * act, its code alone on the wire.
  */
 const PRIVACY_WIRE: WireTable<PrivacyErrorCode> = {
   [PrivacyErrorCode.Unauthenticated]: fields(S.Unauthenticated),
@@ -521,6 +528,9 @@ const PRIVACY_WIRE: WireTable<PrivacyErrorCode> = {
   [PrivacyErrorCode.Unavailable]: fields(S.FailedPrecondition),
   [PrivacyErrorCode.ClientNotFound]: fields(S.NotFound),
   [PrivacyErrorCode.ExportTooLarge]: fields(S.FailedPrecondition),
+  [PrivacyErrorCode.ErasureStaffAccount]: fields(S.FailedPrecondition),
+  [PrivacyErrorCode.AccountLinkMismatch]: fields(S.FailedPrecondition),
+  [PrivacyErrorCode.ErasureTooLarge]: fields(S.FailedPrecondition),
 };
 
 const REPOSITORY_WIRE: WireTable<RepositoryErrorCode> = {

@@ -10,6 +10,7 @@ import {
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
+  Identifier,
   NotificationPayload,
   PhotoOrigin,
   Role,
@@ -34,39 +35,61 @@ import {
   CouponId,
   CustomerId,
   GiftVoucherId,
+  ImpersonationSessionId,
   InvitationId,
   JournalEntryId,
   NotificationId,
+  OtpId,
   Result,
   SeatId,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
-import type {
-  Appointment,
-  AppointmentNote,
-  AppointmentPhoto,
-  AuditEntry,
-  BadgeProgress,
-  ClientMoneyRecord,
-  ClientStatsRecord,
-  CouponGrant,
-  Customer,
-  GiftVoucher,
-  InboxNotification,
-  Invitation,
-  JournalEntry,
-  LoyaltyAccount,
-  SeasonProgress,
-  User,
-  WaitlistRequest,
+import {
+  type Appointment,
+  type AppointmentNote,
+  type AppointmentPhoto,
+  type AuditEntry,
+  type BadgeProgress,
+  type ClientMoneyRecord,
+  type ClientStatsRecord,
+  Collections,
+  type CouponGrant,
+  type Customer,
+  type GiftVoucher,
+  type ImpersonationSession,
+  type InboxNotification,
+  type Invitation,
+  type JournalEntry,
+  type LoyaltyAccount,
+  type Otp,
+  type SeasonProgress,
+  Subcollections,
+  type User,
+  type WaitlistRequest,
 } from '@core/entities';
-import type { CallerRolesPorts, ClientFootprintPorts } from '@core/ports';
+import {
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
+import type {
+  AuthEraserPorts,
+  AuthRolesPorts,
+  CallerRolesPorts,
+  ClientFootprintPorts,
+  ObjectEraserPorts,
+} from '@core/ports';
 import { type ClientFootprint, ClientStatsSystem } from '@core/systems';
 import { appointmentFixture, seatFixture } from './appointment.fixtures';
 import { cents, EUR } from './booking-core.fixtures';
-import { customerFixture, userFixture } from './identity.fixtures';
+import {
+  customerFixture,
+  impersonationSessionFixture,
+  otpFixture,
+  userFixture,
+} from './identity.fixtures';
 import {
   type LoyaltyClientFixture,
   loyaltyAccountFixtures,
@@ -77,24 +100,30 @@ import {
   FIXTURE_NOW,
   FIXTURE_NOW_UTC_MS,
   fixtureWalkInHash,
+  type MemoryStore,
+  memoryStore,
 } from './test-support';
 
 /*
  * The data-subject requests' doubles and fixtures (audit-hardening Phase 3,
- * WS-C): the in-memory footprint reads (`ClientFootprintPorts`), the stored
- * roles behind a token (`CallerRolesPorts`), and ONE small world of three
- * people whose personal values are SENTINELS (plan §4: a scan of the
- * serialised bundle, row or log line for a sentinel proves its absence):
+ * WS-C / WS-D): the in-memory footprint reads (`ClientFootprintPorts`) —
+ * over fixed arrays, or over a `MemoryStore` an erasure's own commits write
+ * — the stored roles behind a token (`CallerRolesPorts`), the erasure's
+ * Auth and Storage doubles (`AuthRolesPorts`, `AuthEraserPorts`,
+ * `ObjectEraserPorts`), and ONE small world of three people whose personal
+ * values are SENTINELS (plan §4: a scan of the serialised bundle, row, write
+ * or log line for a sentinel proves its absence):
  *
  * - P, the person asked about — an account and its record, a solo visit
  *   (a note, a shot photo, a photo naming nobody, a line of P's own
  *   voucher), a place on Q's party, a library photo naming P on that party,
  *   money, loyalty, statistics, the journal, the inbox, a waitlist request,
- *   an invitation and audit rows filed against P (and one where P only
- *   acted, against Q);
+ *   an invitation, an impersonation session whose reason names P, a
+ *   sign-in challenge to P's phone and audit rows filed against P (and one
+ *   where P only acted, against Q);
  * - Q, another account, who owns the party: Q's contact on it, Q's walk-in
  *   companion and an anonymous guest, Q's note on it, a line of Q's
- *   voucher, Q's own documents;
+ *   voucher, Q's own documents (a session and a challenge included);
  * - W, a walk-in with no account: a staff party `[WALK_IN W, ANONYMOUS]`
  *   whose contact is W's (the keyed-hash arm), and a visit only W sat that
  *   carries a THIRD person's contact.
@@ -120,6 +149,10 @@ export type ClientFootprintState = {
   readonly notifications: ReadonlyMap<UserId, readonly InboxNotification[]>;
   readonly waitlist: readonly WaitlistRequest[];
   readonly invitations: readonly Invitation[];
+  /** Impersonation sessions — the erasure pseudonymises their target's `reason` (P3-RU-24). */
+  readonly sessions: readonly ImpersonationSession[];
+  /** Sign-in challenges — the erasure deletes those stored under the person's contact (P3-RU-21). */
+  readonly otps: readonly Otp[];
 };
 
 /**
@@ -193,7 +226,183 @@ export function memoryClientFootprintPorts(
           .filter((invitation) => invitation.inviterUserId === userId)
           .slice(0, limit),
       ),
+    listAccountSessions: async (userId, limit) =>
+      Result.ok(
+        (state.sessions ?? [])
+          .filter((session) => session.targetUserId === userId)
+          .slice(0, limit),
+      ),
+    listOtpsByDestination: async (destination, limit) =>
+      Result.ok(
+        (state.otps ?? [])
+          .filter((otp) => otp.destination === destination)
+          .slice(0, limit),
+      ),
   };
+}
+
+/** Every entity stored directly under `collection` (`{collection}/{id}`), in the store's insertion order. */
+function storedIn<E>(store: MemoryStore, collection: string): readonly E[] {
+  const prefix = `${collection}/`;
+  const out: E[] = [];
+  for (const [key, body] of store) {
+    if (!key.startsWith(prefix)) continue;
+    const id = key.slice(prefix.length);
+    if (id.includes('/')) continue;
+    out.push({ id, ...body } as E);
+  }
+  return out;
+}
+
+/** The entity at `{collection}/{id}`, or `null`. */
+function storedAt<E>(
+  store: MemoryStore,
+  collection: string,
+  id: string,
+): E | null {
+  const body = store.get(`${collection}/${id}`);
+  return body === undefined ? null : ({ id, ...body } as E);
+}
+
+/**
+ * `ClientFootprintPorts` over a {@link MemoryStore}: every read answers what
+ * the store holds NOW — the same equality and `limit` as
+ * {@link memoryClientFootprintPorts}, in the store's insertion order — so an
+ * erasure spec whose commits (`memoryTxPorts` over the SAME store) clear,
+ * stamp and delete reads them back: the residue after a unit, a resumed
+ * call's footprint, a re-sweep. Nothing guarded (every body is admitted).
+ */
+export function storeClientFootprintPorts(
+  store: MemoryStore,
+): ClientFootprintPorts {
+  const listed = async <E>(
+    collection: string,
+    keep: (entity: E) => boolean,
+    limit: number,
+  ) => Result.ok(storedIn<E>(store, collection).filter(keep).slice(0, limit));
+  return {
+    loadClientRecord: async (customerId) =>
+      Result.ok(storedAt<Customer>(store, Collections.Customers, customerId)),
+    loadProfile: async (userId) =>
+      Result.ok(storedAt<User>(store, Collections.Users, userId)),
+    listClientVisits: (customerId, limit) =>
+      listed<Appointment>(
+        Collections.Appointments,
+        (visit) => visit.subjectCustomerIds.includes(customerId),
+        limit,
+      ),
+    loadVisitNotes: async (appointmentIds) => {
+      const notes: AppointmentNote[] = [];
+      for (const id of appointmentIds) {
+        const note = storedAt<AppointmentNote>(
+          store,
+          Collections.AppointmentNotes,
+          id,
+        );
+        if (note !== null) notes.push(note);
+      }
+      return Result.ok(notes);
+    },
+    listPhotosOfClient: (clientCustomerId, limit) =>
+      listed<AppointmentPhoto>(
+        Collections.AppointmentPhotos,
+        (photo) => photo.clientCustomerId === clientCustomerId,
+        limit,
+      ),
+    listVisitPhotos: (appointmentIds, limit) =>
+      listed<AppointmentPhoto>(
+        Collections.AppointmentPhotos,
+        (photo) => appointmentIds.includes(photo.appointmentId),
+        limit,
+      ),
+    listClientGrants: (customerId, limit) =>
+      listed<CouponGrant>(
+        Collections.CouponGrants,
+        (grant) => grant.customerId === customerId,
+        limit,
+      ),
+    listClientVouchers: (customerId, limit) =>
+      listed<GiftVoucher>(
+        Collections.GiftVouchers,
+        (voucher) => voucher.issuedToCustomerId === customerId,
+        limit,
+      ),
+    listClientJournal: (customerId, limit) =>
+      listed<JournalEntry>(
+        Collections.ClientJournal,
+        (entry) => entry.customerId === customerId,
+        limit,
+      ),
+    listAccountNotifications: (userId, limit) =>
+      listed<InboxNotification>(
+        `${Collections.Users}/${userId}/${Subcollections.Notifications}`,
+        () => true,
+        limit,
+      ),
+    listAccountWaitlist: (userId, limit) =>
+      listed<WaitlistRequest>(
+        Collections.WaitlistRequests,
+        (request) => request.ownerUserId === userId,
+        limit,
+      ),
+    listAccountInvitations: (userId, limit) =>
+      listed<Invitation>(
+        Collections.Invitations,
+        (invitation) => invitation.inviterUserId === userId,
+        limit,
+      ),
+    listAccountSessions: (userId, limit) =>
+      listed<ImpersonationSession>(
+        Collections.ImpersonationSessions,
+        (session) => session.targetUserId === userId,
+        limit,
+      ),
+    listOtpsByDestination: (destination, limit) =>
+      listed<Otp>(
+        Collections.Otps,
+        (otp) => otp.destination === destination,
+        limit,
+      ),
+  };
+}
+
+/**
+ * A {@link MemoryStore} holding the state's documents at their paths — each
+ * body the entity minus `id` (Law 5), an inbox under
+ * `users/{uid}/notifications` — for {@link storeClientFootprintPorts} and
+ * the `memoryTxPorts` of the same spec.
+ */
+export function footprintStoreOf(
+  state: Partial<ClientFootprintState>,
+): MemoryStore {
+  const store = memoryStore();
+  const put = (
+    collection: string,
+    entities: readonly { readonly id: string }[] | undefined,
+  ): void => {
+    for (const { id, ...body } of entities ?? []) {
+      store.set(`${collection}/${id}`, body);
+    }
+  };
+  put(Collections.Customers, state.records);
+  put(Collections.Users, state.users);
+  put(Collections.Appointments, state.visits);
+  put(Collections.AppointmentNotes, state.notes);
+  put(Collections.AppointmentPhotos, state.photos);
+  put(Collections.CouponGrants, state.grants);
+  put(Collections.GiftVouchers, state.vouchers);
+  put(Collections.ClientJournal, state.journal);
+  for (const [userId, inbox] of state.notifications ?? []) {
+    put(
+      `${Collections.Users}/${userId}/${Subcollections.Notifications}`,
+      inbox,
+    );
+  }
+  put(Collections.WaitlistRequests, state.waitlist);
+  put(Collections.Invitations, state.invitations);
+  put(Collections.ImpersonationSessions, state.sessions);
+  put(Collections.Otps, state.otps);
+  return store;
 }
 
 /** `CallerRolesPorts` — each uid's STORED roles; `[]` for an unknown uid, as the port says. */
@@ -202,6 +411,119 @@ export function memoryCallerRolesPorts(
 ): CallerRolesPorts {
   return {
     loadCallerRoles: async (userId) => Result.ok(roles.get(userId) ?? []),
+  };
+}
+
+// ── The erasure's Auth and Storage ────────────────────────────────────────
+
+/**
+ * The Firebase Auth users and Storage objects an erasure reaches (WS-D),
+ * data only, mutated IN PLACE by the eraser doubles, and ONE ordered log of
+ * every call those doubles answered (`loadAuthRoles:<uid>`,
+ * `deleteAuthUser:<uid>`, `deleteStoredObject:<path>`,
+ * `deleteStoredPrefix:<prefix>`) — a spec may push its own entries (a
+ * wrapped commit) into the same log to read the order of the erasure's
+ * impure steps.
+ */
+export type ErasureStores = {
+  /** Each existing Auth user's custom-claim roles (`[]` for a client's). */
+  readonly authUsers: Map<UserId, readonly Role[]>;
+  /** Every existing Storage object path. */
+  readonly objects: Set<string>;
+  readonly calls: string[];
+};
+
+/** What the eraser doubles fail — each a code-only failure, never a value. */
+export type ErasureStoresScript = {
+  /** `loadAuthRoles` answers `PIPELINE_UNAVAILABLE` (`auth/internal-error`). */
+  readonly authRolesFailing?: boolean;
+  /** `deleteAuthUser` answers `PIPELINE_UNAVAILABLE` (`auth/internal-error`). */
+  readonly authDeleteFailing?: boolean;
+  /**
+   * Object paths whose delete answers `REPOSITORY_WRITE_FAILED`
+   * (`storage/internal`) — a prefix delete fails when it would reach one.
+   */
+  readonly failingPaths?: readonly string[];
+};
+
+/** The stores an erasure starts from — no Auth user and no object when omitted. */
+export function memoryErasureStores(
+  seed: {
+    readonly authUsers?: ReadonlyMap<UserId, readonly Role[]>;
+    readonly objects?: Iterable<string>;
+  } = {},
+): ErasureStores {
+  return {
+    authUsers: new Map(seed.authUsers ?? []),
+    objects: new Set(seed.objects ?? []),
+    calls: [],
+  };
+}
+
+/** The SDK code the Auth doubles fail with — a code, never a message. */
+const AUTH_FAILURE = PipelineError.of(
+  PipelineErrorCode.Unavailable,
+  null,
+  'auth/internal-error',
+  null,
+);
+
+/** `AuthRolesPorts` — the Auth user's claim roles, `null` when it does not exist. */
+export function memoryAuthRolesPorts(
+  stores: ErasureStores,
+  script: ErasureStoresScript = {},
+): AuthRolesPorts {
+  return {
+    loadAuthRoles: async (userId) => {
+      stores.calls.push(`loadAuthRoles:${userId}`);
+      if (script.authRolesFailing === true) return Result.err(AUTH_FAILURE);
+      return Result.ok(stores.authUsers.get(userId) ?? null);
+    },
+  };
+}
+
+/** `AuthEraserPorts` — deletes the Auth user; one already gone answers ok (`auth/user-not-found`). */
+export function memoryAuthEraserPorts(
+  stores: ErasureStores,
+  script: ErasureStoresScript = {},
+): AuthEraserPorts {
+  return {
+    deleteAuthUser: async (userId) => {
+      stores.calls.push(`deleteAuthUser:${userId}`);
+      if (script.authDeleteFailing === true) return Result.err(AUTH_FAILURE);
+      stores.authUsers.delete(userId);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * `ObjectEraserPorts` — one object deleted by its path (one already gone is
+ * ok), or every object under a prefix, answering how many were listed.
+ */
+export function memoryObjectEraserPorts(
+  stores: ErasureStores,
+  script: ErasureStoresScript = {},
+): ObjectEraserPorts {
+  const failing = script.failingPaths ?? [];
+  const failure = (path: string) =>
+    Result.err(RepositoryError.writeFailed(path, 'storage/internal'));
+  return {
+    deleteStoredObject: async (path) => {
+      stores.calls.push(`deleteStoredObject:${path}`);
+      if (failing.includes(path)) return failure(path);
+      stores.objects.delete(path);
+      return Result.ok(undefined);
+    },
+    deleteStoredPrefix: async (prefix) => {
+      stores.calls.push(`deleteStoredPrefix:${prefix}`);
+      const listed = [...stores.objects].filter((path) =>
+        path.startsWith(prefix),
+      );
+      if (listed.some((path) => failing.includes(path))) return failure(prefix);
+      for (const path of listed) stores.objects.delete(path);
+      return Result.ok(listed.length);
+    },
   };
 }
 
@@ -219,6 +541,7 @@ export const PRIVACY_SENTINELS = {
   voucherCode: 'PSENTINELCODE',
   shotUrl: 'https://example.invalid/sentinel-shot-token',
   libraryUrl: 'https://example.invalid/sentinel-library-token',
+  sessionReason: 'sentinel session reason',
 } as const;
 
 /** Q's personal values — none may reach P's bundle. */
@@ -232,6 +555,7 @@ export const OTHER_SENTINELS = {
   guestLabel: 'Other Guest',
   voucherCode: 'QSENTINELCODE',
   url: 'https://example.invalid/other-photo-token',
+  sessionReason: 'other session reason',
 } as const;
 
 /** W's values (a walk-in) and a THIRD person's contact on W's own visit. */
@@ -712,6 +1036,16 @@ export function privacyWorld(): PrivacyWorld {
   );
   const pWaitlist = waitlistRequest('wl-p', pUser);
   const pInvitation = invitation('inv-p', pUser, PRIVACY_SENTINELS.name);
+  const pSession = impersonationSessionFixture({
+    id: ImpersonationSessionId.of('session-p'),
+    adminUserId: admin,
+    targetUserId: pUser,
+    reason: PRIVACY_SENTINELS.sessionReason,
+  });
+  const pOtp = otpFixture({
+    id: OtpId.of('otp-p-phone'),
+    destination: Identifier.of(PRIVACY_SENTINELS.phone),
+  });
   const pLoyalty = loyaltyOf(p, loyaltyAccountFixtures.georgi);
   const qLoyalty = loyaltyOf(q, loyaltyAccountFixtures.martin);
   const notifications = new Map<UserId, readonly InboxNotification[]>([
@@ -774,6 +1108,22 @@ export function privacyWorld(): PrivacyWorld {
     invitations: [
       pInvitation,
       invitation('inv-q', qUser, OTHER_SENTINELS.name),
+    ],
+    sessions: [
+      pSession,
+      impersonationSessionFixture({
+        id: ImpersonationSessionId.of('session-q'),
+        adminUserId: admin,
+        targetUserId: qUser,
+        reason: OTHER_SENTINELS.sessionReason,
+      }),
+    ],
+    otps: [
+      pOtp,
+      otpFixture({
+        id: OtpId.of('otp-q-phone'),
+        destination: Identifier.of(OTHER_SENTINELS.phone),
+      }),
     ],
   };
   const loyalty: LoyaltyWorld = {

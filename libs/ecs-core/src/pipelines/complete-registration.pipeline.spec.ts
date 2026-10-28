@@ -7,6 +7,7 @@ import {
   type BirthDate,
   BlockReason,
   CustomerOrigin,
+  ErasureStatus,
   type DocBody,
   E164,
   Email,
@@ -202,6 +203,7 @@ describe('completeRegistration', () => {
       customerOrigin: CustomerOrigin.Registration,
       // The call sent no operation id (RU-29): the record names none.
       writeOperationId: null,
+      erasureStatus: ErasureStatus.None,
     };
     expect(tx.plans).toEqual([
       [
@@ -323,6 +325,32 @@ describe('completeRegistration', () => {
       error: { errorCode: IdentityErrorCode.RegistrationUserNotFound },
     });
     expect(tx.transactions).toEqual([]);
+  });
+
+  it('an ERASED account is found by nobody — its cleared destination has no holder: not found, nothing written (P3-RU-17)', async () => {
+    const erased: User = {
+      ...registeredAda(),
+      firstName: '—',
+      lastName: '—',
+      phone: null,
+      email: null,
+      birthDate: null,
+      searchName: null,
+      searchPrefixes: [],
+      profileEditedAtUtcMs: null,
+      ...AccountLifecycle.erase(FIXTURE_NOW_UTC_MS),
+    };
+    const world = memoryIdentityWorld({ users: [erased] });
+    const before = { ...stored(world, USER_PATH) };
+    const { tx, run } = rig({ world });
+    expect(await run(byPhone(ADA))).toEqual({
+      ok: false,
+      error: { errorCode: IdentityErrorCode.RegistrationUserNotFound },
+    });
+    expect(tx.transactions).toEqual([]);
+    expect(minted(world)).toEqual([]);
+    expect(stored(world, USER_PATH)).toEqual(before);
+    expect(before).toMatchObject({ accountStatus: AccountStatus.Erased });
   });
 
   it('answers not-found when the account vanished between the lookup and the transaction', async () => {
@@ -531,6 +559,7 @@ describe('completeRegistration', () => {
         searchPrefixes: [],
         createdAtUtcMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, -86_400_000),
         customerOrigin: CustomerOrigin.FirstBooking,
+        erasureStatus: ErasureStatus.None,
       };
       world.store.set(CUSTOMER_PATH.join('/'), firstBooking);
       const { tx, run } = rig({ world });
@@ -554,6 +583,7 @@ describe('completeRegistration', () => {
         searchPrefixes: [],
         createdAtUtcMs: FIXTURE_NOW_UTC_MS,
         customerOrigin: CustomerOrigin.FirstBooking,
+        erasureStatus: ErasureStatus.None,
       };
       const { tx, run } = rig({
         world,

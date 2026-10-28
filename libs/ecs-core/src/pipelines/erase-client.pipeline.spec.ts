@@ -1,0 +1,1346 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AccountStatus,
+  AuditAction,
+  BookingContact,
+  E164,
+  ErasureCensus,
+  ErasureStatus,
+  FlagName,
+  PrivacyMarker,
+  RedemptionCount,
+  Role,
+  SeatLabel,
+  SeatOccupant,
+  type DocBody,
+  type WriteOp,
+} from '@core/components';
+import { PrivacyError, RepositoryError } from '@core/errors';
+import {
+  AppointmentId,
+  CustomerId,
+  InvitationId,
+  LogEvent,
+  OperationId,
+  Result,
+  SeatId,
+  type UserId,
+} from '@core/primitives';
+import {
+  type AuditEntry,
+  Collections,
+  type Invitation,
+  Subcollections,
+} from '@core/entities';
+import type { CommitPlan } from '@core/ports';
+import {
+  ClientErasureSystem,
+  ERASURE_CHUNK_SIZE,
+  ERASURE_MAX_DOCUMENTS,
+} from '@core/systems';
+import {
+  appointmentFixture,
+  customerFixture,
+  type ErasureStores,
+  type ErasureStoresScript,
+  FIXTURE_NOW_UTC_MS,
+  fixtureWalkInHash,
+  footprintStoreOf,
+  type MemoryStore,
+  memoryAuthEraserPorts,
+  memoryAuthRolesPorts,
+  memoryCallerRolesPorts,
+  memoryErasureStores,
+  memoryFlagsPorts,
+  memoryObjectEraserPorts,
+  memoryTxPorts,
+  OTHER_SENTINELS,
+  PRIVACY_SENTINELS,
+  type PrivacyWorld,
+  privacyWorld,
+  recordingTelemetry,
+  seatFixture,
+  storeClientFootprintPorts,
+  unwrapErr,
+  unwrapOk,
+} from '@core/testing';
+import type { StepBudget } from './continue-policy-recompute.pipeline';
+import {
+  type EraseClientCommand,
+  type EraseClientPorts,
+  eraseClient,
+  previewClientErasure,
+} from './erase-client.pipeline';
+
+/* `previewClientErasure` and `eraseClient` (audit-hardening Phase 3 WS-D):
+ * the gate before any write, the caps, the OTP sweep before the stamp, the
+ * stamp before every unit, dirty-only chunks, the objects before their
+ * documents, the Auth user, the completion last; a spent budget, a failing
+ * object or Auth delete resumed by the next call into the SAME final state;
+ * an ERASED record re-swept. Over the privacy world of `@core/testing`, a
+ * store the erasure's own commits write and the footprint reads read back,
+ * and a pinned clock. */
+
+const OPERATION = OperationId.of('op-erase-0001');
+const unbounded: StepBudget = { spent: () => false };
+const COMMIT_FAILURE = RepositoryError.writeFailed('auditLog', 'unavailable');
+const spentAtOnce: StepBudget = { spent: () => true };
+
+/** Every personal value of P a scan must not find — the voucher code is money, kept by design. */
+const P_SENTINELS = Object.entries(PRIVACY_SENTINELS)
+  .filter(([key]) => key !== 'voucherCode')
+  .map(([, value]) => value);
+
+type Rig = {
+  readonly world: PrivacyWorld;
+  readonly store: MemoryStore;
+  readonly stores: ErasureStores;
+  readonly tx: ReturnType<typeof memoryTxPorts>;
+  readonly telemetry: ReturnType<typeof recordingTelemetry>;
+  readonly ports: EraseClientPorts;
+  readonly erase: (
+    cmd?: Partial<EraseClientCommand>,
+    budget?: StepBudget,
+  ) => ReturnType<ReturnType<typeof eraseClient>>;
+  readonly preview: (
+    cmd?: Partial<EraseClientCommand>,
+  ) => ReturnType<ReturnType<typeof previewClientErasure>>;
+};
+
+/** The object paths of the world's photos and P's avatar, as Storage holds them. */
+function objectsOf(world: PrivacyWorld): readonly string[] {
+  return [
+    ...world.state.photos.map((photo) => photo.path),
+    `avatars/${world.person.userId}/avatar.jpg`,
+  ];
+}
+
+function rig(
+  options: {
+    readonly world?: PrivacyWorld;
+    readonly store?: MemoryStore;
+    readonly stores?: ErasureStores;
+    readonly script?: ErasureStoresScript;
+    readonly flagOn?: boolean;
+    readonly overrides?: Partial<EraseClientPorts>;
+    /** Runs before the `index`-th commit of the rig (0-based) — a concurrent writer. */
+    readonly beforeCommit?: (index: number, store: MemoryStore) => void;
+    /** The `index`-th commit fails as the store would (`REPOSITORY_WRITE_FAILED`). */
+    readonly failCommitAt?: number;
+  } = {},
+): Rig {
+  const world = options.world ?? privacyWorld();
+  const store = options.store ?? footprintStoreOf(world.state);
+  const stores =
+    options.stores ??
+    memoryErasureStores({
+      authUsers: new Map<UserId, readonly Role[]>([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+  const tx = memoryTxPorts(store);
+  const telemetry = recordingTelemetry();
+  // Every commit that lands is logged into the eraser doubles' ONE call log,
+  // by the collections its plan writes — so a spec reads the whole order.
+  let commits = 0;
+  const commit: CommitPlan = (read, decide) => {
+    const index = commits++;
+    options.beforeCommit?.(index, store);
+    if (options.failCommitAt === index) {
+      return Promise.resolve(Result.err(COMMIT_FAILURE));
+    }
+    return tx.commit(read, (snapshot) => {
+      const decided = decide(snapshot);
+      if (decided.ok) {
+        const collections: string[] = [];
+        for (const op of decided.value.writes) {
+          const collection = op.path[0] ?? '';
+          if (!collections.includes(collection)) collections.push(collection);
+        }
+        stores.calls.push(`commit:${collections.join('+')}`);
+      }
+      return decided;
+    });
+  };
+  const ports: EraseClientPorts = {
+    commit,
+    nowUtcMs: tx.nowUtcMs,
+    hash: tx.hash,
+    walkInHash: fixtureWalkInHash,
+    ...memoryCallerRolesPorts(world.roles),
+    ...memoryFlagsPorts(
+      options.flagOn === false ? [] : [FlagName.ClientPrivacy],
+    ),
+    ...storeClientFootprintPorts(store),
+    ...memoryAuthRolesPorts(stores, options.script),
+    ...memoryAuthEraserPorts(stores, options.script),
+    ...memoryObjectEraserPorts(stores, options.script),
+    log: telemetry.log,
+    trackError: telemetry.trackError,
+    ...options.overrides,
+  };
+  const command = (cmd: Partial<EraseClientCommand>): EraseClientCommand => ({
+    callerUserId: world.admin,
+    callerRoles: [Role.Admin],
+    customerId: world.person.customerId,
+    operationId: OPERATION,
+    ...cmd,
+  });
+  return {
+    world,
+    store,
+    stores,
+    tx,
+    telemetry,
+    ports,
+    erase: (cmd = {}, budget = unbounded) =>
+      eraseClient(ports)(command(cmd), budget),
+    preview: (cmd = {}) => previewClientErasure(ports)(command(cmd)),
+  };
+}
+
+/** A stored body — the entity minus `id` (Law 5). */
+function bodyOf(entity: { readonly id: string }): DocBody {
+  return Object.fromEntries(
+    Object.entries(entity).filter(([key]) => key !== 'id'),
+  );
+}
+
+/** The store as sorted entries — two runs that end alike compare equal. */
+function snapshotOf(store: MemoryStore): readonly [string, unknown][] {
+  return [...store.entries()]
+    .map(([key, body]): [string, unknown] => [key, structuredClone(body)])
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** Every stored audit row, as `{ id, ...body }`. */
+function rowsOf(store: MemoryStore): readonly AuditEntry[] {
+  const rows: AuditEntry[] = [];
+  for (const [key, body] of store) {
+    if (key.startsWith(`${Collections.AuditLog}/`)) {
+      rows.push({
+        id: key.slice(Collections.AuditLog.length + 1),
+        ...body,
+      } as unknown as AuditEntry);
+    }
+  }
+  return rows;
+}
+
+function rowsNamed(store: MemoryStore, action: AuditAction) {
+  return rowsOf(store).filter((row) => row.auditAction === action);
+}
+
+/** P's footprint census after a complete erasure: nothing personal, the visits, Q's contact and the journal retained. */
+const RESIDUE: ErasureCensus = {
+  ...ErasureCensus.EMPTY,
+  erasureVisitCount: 2,
+  erasureContactKeptCount: 1,
+  erasureJournalCount: 2,
+};
+
+/** P's footprint census before: as `client-erasure.system.spec.ts` derives it. */
+const BEFORE: ErasureCensus = {
+  erasureRecordCount: 1,
+  erasureAccountCount: 1,
+  erasureContactCount: 1,
+  erasureLabelCount: 0,
+  erasureNoteCount: 2,
+  erasurePhotoCount: 3,
+  erasureDocumentCount: 2,
+  erasurePseudonymCount: 2,
+  erasureVisitCount: 2,
+  erasureContactKeptCount: 1,
+  erasureJournalCount: 2,
+};
+
+/** One full erasure of P on a fresh rig — the final state the resumed runs must reach. */
+async function oneShot(): Promise<Rig> {
+  const r = rig();
+  unwrapOk(await r.erase());
+  return r;
+}
+
+describe('eraseClient — the gate, before any write', () => {
+  it('the flag off → PRIVACY_UNAVAILABLE: nothing read, nothing written, nothing deleted', async () => {
+    const r = rig({ flagOn: false });
+    const before = snapshotOf(r.store);
+    expect(unwrapErr(await r.erase())).toEqual(PrivacyError.unavailable());
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(r.stores.calls).toEqual([]);
+    expect(snapshotOf(r.store)).toEqual(before);
+  });
+
+  it('a token that is not the admin’s (a sysadmin) → PRIVACY_FORBIDDEN', async () => {
+    const r = rig();
+    expect(
+      unwrapErr(
+        await r.erase({
+          callerUserId: r.world.sysadmin,
+          callerRoles: [Role.Sysadmin],
+        }),
+      ),
+    ).toEqual(PrivacyError.forbidden());
+    expect(r.stores.calls).toEqual([]);
+  });
+
+  it('stored roles that are not the admin’s (the claims said admin) → PRIVACY_FORBIDDEN', async () => {
+    const r = rig();
+    expect(
+      unwrapErr(
+        await r.erase({
+          callerUserId: r.world.barber,
+          callerRoles: [Role.Admin],
+        }),
+      ),
+    ).toEqual(PrivacyError.forbidden());
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(r.stores.calls).toEqual([]);
+  });
+
+  it('an unknown record → PRIVACY_CLIENT_NOT_FOUND', async () => {
+    const r = rig();
+    expect(
+      unwrapErr(await r.erase({ customerId: CustomerId.of('cus_nobody') })),
+    ).toEqual(PrivacyError.clientNotFound());
+    expect(r.tx.transactions).toHaveLength(0);
+  });
+
+  it('a userId the record id does not derive from → PRIVACY_ACCOUNT_LINK_MISMATCH before any uid-keyed read; the account and the Auth user untouched', async () => {
+    const r = rig();
+    const key = `${Collections.Customers}/${r.world.person.customerId}`;
+    r.store.set(key, { ...r.store.get(key), userId: r.world.other.userId });
+    const before = snapshotOf(r.store);
+    let profileReads = 0;
+    const reading = rig({
+      world: r.world,
+      store: r.store,
+      stores: r.stores,
+      overrides: {
+        loadProfile: async (userId) => {
+          profileReads++;
+          return storeClientFootprintPorts(r.store).loadProfile(userId);
+        },
+      },
+    });
+    expect(unwrapErr(await reading.erase())).toEqual(
+      PrivacyError.accountLinkMismatch(),
+    );
+    expect(profileReads).toBe(0);
+    expect(r.stores.calls).toEqual([]);
+    expect(reading.tx.transactions).toHaveLength(0);
+    expect(snapshotOf(r.store)).toEqual(before);
+    expect(r.stores.authUsers.has(r.world.other.userId)).toBe(true);
+  });
+
+  it('a staff role in the STORED account → PRIVACY_ERASURE_STAFF_ACCOUNT: nothing written, the Auth user kept', async () => {
+    const r = rig();
+    const key = `${Collections.Users}/${r.world.person.userId}`;
+    r.store.set(key, { ...r.store.get(key), roles: [Role.Barber] });
+    const before = snapshotOf(r.store);
+    expect(unwrapErr(await r.erase())).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(snapshotOf(r.store)).toEqual(before);
+    expect(r.stores.calls).toEqual([`loadAuthRoles:${r.world.person.userId}`]);
+    expect(r.stores.authUsers.has(r.world.person.userId)).toBe(true);
+  });
+
+  it('a staff claim ONLY in Auth, with no users document → refused all the same (an operator’s Auth account is never deleted)', async () => {
+    const r = rig();
+    r.store.delete(`${Collections.Users}/${r.world.person.userId}`);
+    r.stores.authUsers.set(r.world.person.userId, [Role.Admin]);
+    expect(unwrapErr(await r.erase())).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(r.stores.authUsers.get(r.world.person.userId)).toEqual([Role.Admin]);
+  });
+
+  it('a failed Auth roles read answers its code-only failure, before any write', async () => {
+    const r = rig({ script: { authRolesFailing: true } });
+    const refused = unwrapErr(await r.erase());
+    expect(refused.errorCode).toBe('PIPELINE_UNAVAILABLE');
+    expect(r.tx.transactions).toHaveLength(0);
+  });
+
+  it('a list past ERASURE_MAX_DOCUMENTS → PRIVACY_ERASURE_TOO_LARGE with the count it reached: no write, no delete', async () => {
+    const world = privacyWorld();
+    const r = rig({
+      world,
+      overrides: {
+        listAccountInvitations: async (userId, limit) => {
+          const many: Invitation[] = [];
+          for (let i = 0; i < limit; i++) {
+            many.push({
+              id: InvitationId.of(`inv-${i}`),
+              inviterUserId: userId,
+              inviterName: 'x',
+              redemptionCount: RedemptionCount.zero(),
+              createdAtUtcMs: FIXTURE_NOW_UTC_MS,
+            });
+          }
+          return Result.ok(many);
+        },
+      },
+    });
+    const before = snapshotOf(r.store);
+    expect(unwrapErr(await r.erase())).toEqual(
+      PrivacyError.erasureTooLarge(ERASURE_MAX_DOCUMENTS + 1),
+    );
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(snapshotOf(r.store)).toEqual(before);
+    expect(r.stores.calls).toEqual([`loadAuthRoles:${world.person.userId}`]);
+  });
+});
+
+describe('eraseClient — one call, start to finish', () => {
+  it('answers ERASED and done, with the residue: nothing personal left, the visits, Q’s contact and the journal retained', async () => {
+    const r = await oneShot();
+    const again = rig({ world: r.world, store: r.store, stores: r.stores });
+    // A second call of the act answers the same, and writes nothing.
+    expect(unwrapOk(await again.erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+  });
+
+  it('the order: the OTP sweep BEFORE the stamp, the stamp before every unit, the objects before their documents, the Auth user, the completion last', async () => {
+    const r = rig();
+    const answer = unwrapOk(await r.erase());
+    expect(answer).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    const shot = r.world.state.photos.find((p) => p.id === 'photo-p-shot');
+    const nobody = r.world.state.photos.find((p) => p.id === 'photo-p-nobody');
+    const uid = r.world.person.userId;
+    expect(r.stores.calls).toEqual([
+      `loadAuthRoles:${uid}`,
+      `commit:${Collections.Otps}`,
+      `commit:${Collections.Customers}+${Collections.Users}+${Collections.AuditLog}`,
+      `commit:${Collections.Appointments}+${Collections.AppointmentNotes}`,
+      `deleteStoredObject:${shot?.path}`,
+      `deleteStoredObject:${nobody?.path}`,
+      `commit:${Collections.AppointmentPhotos}`,
+      `commit:${Collections.Users}+${Collections.WaitlistRequests}`,
+      `commit:${Collections.Invitations}`,
+      `commit:${Collections.ImpersonationSessions}`,
+      `deleteStoredPrefix:avatars/${uid}/`,
+      `deleteAuthUser:${uid}`,
+      `commit:${Collections.Customers}+${Collections.AuditLog}`,
+    ]);
+  });
+
+  it('every personal value of P is gone from every document; the record and the account are tombstones under the erasure’s id', async () => {
+    const r = await oneShot();
+    const json = JSON.stringify(snapshotOf(r.store));
+    for (const sentinel of P_SENTINELS) expect(json).not.toContain(sentinel);
+    const p = r.world.person;
+    expect(r.store.get(`${Collections.Customers}/${p.customerId}`)).toEqual({
+      userId: p.userId,
+      displayName: PrivacyMarker.TEXT,
+      phone: null,
+      email: null,
+      searchName: '',
+      searchPrefixes: [],
+      createdAtUtcMs: r.world.personFootprint.record.createdAtUtcMs,
+      customerOrigin: r.world.personFootprint.record.customerOrigin,
+      writeOperationId: OPERATION,
+      erasureStatus: ErasureStatus.Erased,
+      erasureStartedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      erasedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    expect(r.store.get(`${Collections.Users}/${p.userId}`)).toMatchObject({
+      firstName: PrivacyMarker.TEXT,
+      lastName: PrivacyMarker.TEXT,
+      phone: null,
+      email: null,
+      birthDate: null,
+      searchName: null,
+      searchPrefixes: [],
+      roles: [Role.Client],
+      accountStatus: AccountStatus.Erased,
+      accountErasedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    // The visit keeps everything but P's contact, and names the erasure.
+    expect(
+      r.store.get(`${Collections.Appointments}/${r.world.visits.solo.id}`),
+    ).toMatchObject({ ...BookingContact.NONE, writeOperationId: OPERATION });
+    // The Auth user and P's objects are gone; the shop's library picture stays.
+    expect(r.stores.authUsers.has(p.userId)).toBe(false);
+    const library = r.world.state.photos.find(
+      (photo) => photo.id === 'photo-p-library',
+    );
+    expect([...r.stores.objects].sort()).toEqual(
+      [
+        library?.path,
+        r.world.state.photos.find((photo) => photo.id === 'photo-q-shot')?.path,
+        r.world.state.photos.find((photo) => photo.id === 'photo-party-nobody')
+          ?.path,
+      ].sort(),
+    );
+    // The party's note (P3-RU-33) and the library photo's DOCUMENT are gone too.
+    expect(
+      r.store.has(`${Collections.AppointmentNotes}/${r.world.visits.party.id}`),
+    ).toBe(false);
+    expect(
+      r.store.has(`${Collections.AppointmentPhotos}/photo-p-library`),
+    ).toBe(false);
+  });
+
+  it('visits, money, the journal, Q’s documents and every earlier audit row are kept byte for byte', async () => {
+    const world = privacyWorld();
+    const before = footprintStoreOf(world.state);
+    const r = rig({ world });
+    unwrapOk(await r.erase());
+    const kept = [...before.keys()].filter(
+      (key) =>
+        key.startsWith(`${Collections.CouponGrants}/`) ||
+        key.startsWith(`${Collections.GiftVouchers}/`) ||
+        key.startsWith(`${Collections.ClientJournal}/`) ||
+        key === `${Collections.Appointments}/${world.visits.party.id}` ||
+        key === `${Collections.Appointments}/${world.visits.walkInParty.id}` ||
+        key.includes(world.other.userId) ||
+        key.includes(world.other.customerId) ||
+        key.endsWith('-q') ||
+        key.endsWith('-q-phone') ||
+        key.endsWith('photo-q-shot') ||
+        key.endsWith('photo-party-nobody'),
+    );
+    expect(kept.length).toBeGreaterThan(10);
+    for (const key of kept) expect(r.store.get(key)).toEqual(before.get(key));
+    // The solo visit: only the contact and the call that wrote it changed.
+    const solo = `${Collections.Appointments}/${world.visits.solo.id}`;
+    expect(r.store.get(solo)).toEqual({
+      ...before.get(solo),
+      ...BookingContact.NONE,
+      writeOperationId: OPERATION,
+    });
+  });
+
+  it('exactly one STARTED row (the census BEFORE) and one ERASED row (the residue), each crediting the admin and naming the record', async () => {
+    const r = await oneShot();
+    const started = rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted);
+    const erased = rowsNamed(r.store, AuditAction.PrivacyClientErased);
+    expect(started).toHaveLength(1);
+    expect(erased).toHaveLength(1);
+    expect(started[0]).toMatchObject({
+      ...BEFORE,
+      actorRole: 'ADMIN',
+      actorAdminUserId: r.world.admin,
+      auditTarget: 'CUSTOMER',
+      targetCustomerId: r.world.person.customerId,
+      auditOperationId: OPERATION,
+    });
+    expect(erased[0]).toMatchObject({
+      ...RESIDUE,
+      auditOperationId: OPERATION,
+    });
+    expect(rowsOf(r.store)).toHaveLength(2);
+    const rows = JSON.stringify(rowsOf(r.store));
+    for (const sentinel of [
+      ...P_SENTINELS,
+      ...Object.values(OTHER_SENTINELS),
+    ]) {
+      expect(rows).not.toContain(sentinel);
+    }
+  });
+
+  it('logs ONE step line and, on completion, ONE erased line — ids, tags and counts only', async () => {
+    const r = await oneShot();
+    expect(r.telemetry.lines).toEqual([
+      {
+        level: 'info',
+        msg: LogEvent.PrivacyErasureStep,
+        fields: {
+          customerId: r.world.person.customerId,
+          erasureStatus: ErasureStatus.Erased,
+          erasureDone: true,
+          ...RESIDUE,
+        },
+      },
+      {
+        level: 'info',
+        msg: LogEvent.PrivacyClientErased,
+        fields: { customerId: r.world.person.customerId, ...RESIDUE },
+      },
+    ]);
+    const logged = JSON.stringify(r.telemetry.lines);
+    for (const sentinel of Object.values(PRIVACY_SENTINELS)) {
+      expect(logged).not.toContain(sentinel);
+    }
+  });
+
+  it('the challenges under P’s contact are swept; Q’s stay', async () => {
+    const r = await oneShot();
+    expect(r.store.has(`${Collections.Otps}/otp-p-phone`)).toBe(false);
+    expect(r.store.has(`${Collections.Otps}/otp-q-phone`)).toBe(true);
+  });
+
+  it('a commit that fails answers its failure; the record keeps where it stood, and the next call resumes', async () => {
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const stores = memoryErasureStores({
+      authUsers: new Map([[world.person.userId, [Role.Client]]]),
+      objects: objectsOf(world),
+    });
+    const failing = rig({
+      world,
+      store,
+      stores,
+      overrides: {
+        commit: async () =>
+          Result.err(RepositoryError.writeFailed('otps', 'unavailable')),
+      },
+    });
+    expect((await failing.erase()).ok).toBe(false);
+    expect(
+      store.get(`${Collections.Customers}/${world.person.customerId}`),
+    ).toMatchObject({ erasureStatus: ErasureStatus.None });
+    const resumed = rig({ world, store, stores });
+    expect(unwrapOk(await resumed.erase()).erasureDone).toBe(true);
+  });
+});
+
+describe('eraseClient — resumable: every interruption finishes in the SAME final state', () => {
+  it('a budget spent right after the stamp → ERASING, not done; the next call completes, ONE STARTED and ONE ERASED row', async () => {
+    const reference = await oneShot();
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const stores = memoryErasureStores({
+      authUsers: new Map([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+    const first = rig({ world, store, stores });
+    const partial = unwrapOk(await first.erase({}, spentAtOnce));
+    expect(partial.erasureStatus).toBe(ErasureStatus.Erasing);
+    expect(partial.erasureDone).toBe(false);
+    expect(ClientErasureSystem.isComplete(partial)).toBe(false);
+    // The first unit always runs; the Auth user waits for the units.
+    expect(stores.authUsers.has(world.person.userId)).toBe(true);
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toEqual([]);
+    const second = rig({ world, store, stores });
+    expect(unwrapOk(await second.erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(snapshotOf(store)).toEqual(snapshotOf(reference.store));
+    expect([...stores.objects].sort()).toEqual(
+      [...reference.stores.objects].sort(),
+    );
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureStarted),
+    ).toHaveLength(1);
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a failing object delete → ERASING, not done, the photo documents kept for a resume; the next call completes', async () => {
+    const reference = await oneShot();
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const stores = memoryErasureStores({
+      authUsers: new Map([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+    const shot = world.state.photos.find(
+      (photo) => photo.id === 'photo-p-shot',
+    );
+    const first = rig({
+      world,
+      store,
+      stores,
+      script: { failingPaths: [shot?.path ?? ''] },
+    });
+    const partial = unwrapOk(await first.erase());
+    expect(partial).toMatchObject({
+      erasureStatus: ErasureStatus.Erasing,
+      erasureDone: false,
+      erasurePhotoCount: 3,
+    });
+    expect(store.has(`${Collections.AppointmentPhotos}/photo-p-shot`)).toBe(
+      true,
+    );
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toEqual([]);
+    const second = rig({ world, store, stores });
+    expect(unwrapOk(await second.erase()).erasureDone).toBe(true);
+    expect(snapshotOf(store)).toEqual(snapshotOf(reference.store));
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a failing Auth delete answers its error; the record stays ERASING; the next call completes', async () => {
+    const reference = await oneShot();
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const stores = memoryErasureStores({
+      authUsers: new Map([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+    const first = rig({
+      world,
+      store,
+      stores,
+      script: { authDeleteFailing: true },
+    });
+    const refused = unwrapErr(await first.erase());
+    expect(refused).toMatchObject({ errorCode: 'PIPELINE_UNAVAILABLE' });
+    expect(JSON.stringify(refused)).not.toContain(PRIVACY_SENTINELS.phone);
+    expect(
+      store.get(`${Collections.Customers}/${world.person.customerId}`),
+    ).toMatchObject({ erasureStatus: ErasureStatus.Erasing });
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toEqual([]);
+    expect(first.telemetry.lines).toEqual([]);
+    const second = rig({ world, store, stores });
+    expect(unwrapOk(await second.erase()).erasureDone).toBe(true);
+    expect(snapshotOf(store)).toEqual(snapshotOf(reference.store));
+  });
+});
+
+describe('eraseClient — an ERASED record (P3-L-19)', () => {
+  it('with nothing left to sweep: no commit at all — a second call is a no-op', async () => {
+    const r = await oneShot();
+    const before = snapshotOf(r.store);
+    const commits = r.tx.transactions.length;
+    const again = rig({ world: r.world, store: r.store, stores: r.stores });
+    const answer = unwrapOk(
+      await again.erase({ operationId: OperationId.of('op-erase-0002') }),
+    );
+    expect(answer).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(again.tx.transactions).toHaveLength(0);
+    expect(r.tx.transactions).toHaveLength(commits);
+    expect(snapshotOf(r.store)).toEqual(before);
+    // The second call only re-ran the idempotent deletes: no commit.
+    expect(r.stores.calls.slice(13)).toEqual([
+      `loadAuthRoles:${r.world.person.userId}`,
+      `deleteStoredPrefix:avatars/${r.world.person.userId}/`,
+      `deleteAuthUser:${r.world.person.userId}`,
+    ]);
+  });
+
+  it('a note written on an OLD visit after completion is removed, with ONE RESWEPT row (the census before); a replay of that act adds none', async () => {
+    const r = await oneShot();
+    const noteKey = `${Collections.AppointmentNotes}/${r.world.visits.solo.id}`;
+    const note = {
+      text: PRIVACY_SENTINELS.note,
+      authorUserId: r.world.barber,
+      writtenAtUtcMs: FIXTURE_NOW_UTC_MS,
+    };
+    r.store.set(noteKey, note);
+    const resweep = OperationId.of('op-resweep-0001');
+    const sweep = rig({ world: r.world, store: r.store, stores: r.stores });
+    expect(unwrapOk(await sweep.erase({ operationId: resweep }))).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(r.store.has(noteKey)).toBe(false);
+    const rows = rowsNamed(r.store, AuditAction.PrivacyClientErasureReswept);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      ...RESIDUE,
+      erasureNoteCount: 1,
+      auditOperationId: resweep,
+    });
+    // The same act again, after yet another note: swept, but no second row.
+    r.store.set(noteKey, note);
+    const replay = rig({ world: r.world, store: r.store, stores: r.stores });
+    unwrapOk(await replay.erase({ operationId: resweep }));
+    expect(r.store.has(noteKey)).toBe(false);
+    expect(
+      rowsNamed(r.store, AuditAction.PrivacyClientErasureReswept),
+    ).toHaveLength(1);
+    // Never a second STARTED or ERASED row.
+    expect(
+      rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted),
+    ).toHaveLength(1);
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+});
+
+describe('eraseClient — the units', () => {
+  /** A walk-in X with `count` visits seating X alone; each named and noted when `dirty`. */
+  function walkInWorld(count: number, dirty: boolean) {
+    const world = privacyWorld();
+    const phone = E164.of('+359880000321');
+    const x = CustomerId.forWalkIn(phone, fixtureWalkInHash);
+    const store = footprintStoreOf({
+      records: [
+        customerFixture({
+          id: x,
+          userId: null,
+          displayName: 'Walkin Many',
+          phone,
+          email: null,
+          searchName: 'walkin many',
+          searchPrefixes: ['w', 'wa'],
+        }),
+      ],
+    });
+    for (let i = 0; i < count; i++) {
+      const id = AppointmentId.of(`appt-x-${String(i).padStart(3, '0')}`);
+      const body = bodyOf(
+        appointmentFixture({
+          id,
+          ownerUserId: null,
+          ownerCustomerId: null,
+          subjectUserIds: [],
+          subjectCustomerIds: [x],
+          seats: [
+            seatFixture({
+              seatId: SeatId.of(`seat-x-${i}`),
+              occupant: SeatOccupant.walkIn(
+                x,
+                dirty
+                  ? SeatLabel.of('Walkin Many')
+                  : PrivacyMarker.seatLabel(1),
+              ),
+            }),
+          ],
+          ...(dirty ? { contactName: 'Walkin Many', contactPhone: phone } : {}),
+        }),
+      );
+      store.set(`${Collections.Appointments}/${id}`, body);
+      if (dirty) {
+        store.set(`${Collections.AppointmentNotes}/${id}`, {
+          text: 'walkin note',
+          authorUserId: world.barber,
+          writtenAtUtcMs: FIXTURE_NOW_UTC_MS,
+        });
+      }
+    }
+    return { world, store, x };
+  }
+
+  it('only dirty visits are chunked — a clean history of 3 × ERASURE_CHUNK_SIZE visits plans no visit commit', async () => {
+    const { world, store, x } = walkInWorld(3 * ERASURE_CHUNK_SIZE, false);
+    const r = rig({ world, store });
+    expect(unwrapOk(await r.erase({ customerId: x }))).toMatchObject({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      erasureVisitCount: 3 * ERASURE_CHUNK_SIZE,
+    });
+    const touched = r.tx.plans.flat().map((op: WriteOp) => op.path[0]);
+    expect(touched).not.toContain(Collections.Appointments);
+    // The stamp and the completion — nothing else.
+    expect(r.tx.plans).toHaveLength(2);
+  });
+
+  it('no plan exceeds 2 × ERASURE_CHUNK_SIZE + 1 operations; 30 dirty visits take two visit commits', async () => {
+    const { world, store, x } = walkInWorld(30, true);
+    const r = rig({ world, store });
+    expect(unwrapOk(await r.erase({ customerId: x })).erasureDone).toBe(true);
+    for (const plan of r.tx.plans) {
+      expect(plan.length).toBeLessThanOrEqual(2 * ERASURE_CHUNK_SIZE + 1);
+    }
+    const visitCommits = r.tx.plans.filter((plan) =>
+      plan.some((op) => op.path[0] === Collections.Appointments),
+    );
+    expect(visitCommits.map((plan) => plan.length)).toEqual([50, 10]);
+    const json = JSON.stringify(snapshotOf(store));
+    expect(json).not.toContain('Walkin Many');
+    expect(json).not.toContain('walkin note');
+    expect(json).not.toContain('+359880000321');
+  });
+
+  it('a record with no footprint at all: the stamp, then the completion — nothing else read or written', async () => {
+    const world = privacyWorld();
+    const lone = CustomerId.forWalkIn('+359880000654', fixtureWalkInHash);
+    const store = footprintStoreOf({
+      records: [
+        customerFixture({
+          id: lone,
+          userId: null,
+          displayName: 'Walkin Lone',
+          phone: E164.of('+359880000654'),
+        }),
+      ],
+    });
+    const r = rig({ world, store });
+    expect(unwrapOk(await r.erase({ customerId: lone }))).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...ErasureCensus.EMPTY,
+    });
+    expect(r.tx.plans).toHaveLength(2);
+    expect(JSON.stringify(snapshotOf(store))).not.toContain('Walkin Lone');
+  });
+
+  it('a linked uid whose users document is gone: the record alone is stripped; the uid-keyed steps still run (inbox, Auth, avatar)', async () => {
+    const r = rig();
+    const uid = r.world.person.userId;
+    r.store.delete(`${Collections.Users}/${uid}`);
+    expect(unwrapOk(await r.erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(r.store.has(`${Collections.Users}/${uid}`)).toBe(false);
+    expect(r.stores.authUsers.has(uid)).toBe(false);
+    expect(r.stores.calls).toContain(`deleteStoredPrefix:avatars/${uid}/`);
+    expect(r.store.has(`${Collections.WaitlistRequests}/wl-p`)).toBe(false);
+    const started = rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted);
+    expect(started[0]).toMatchObject({ erasureAccountCount: 0 });
+  });
+
+  it('a walk-in record links no account: no account read, no Auth or avatar call', async () => {
+    const r = rig();
+    unwrapOk(await r.erase({ customerId: r.world.walkIn.customerId }));
+    expect(
+      r.stores.calls.filter((call) => !call.startsWith('commit:')),
+    ).toEqual([]);
+  });
+});
+
+describe('previewClientErasure — read-only (P3-L-17)', () => {
+  it('answers the tag, the census BEFORE and the sibling walk-in records that exist — and writes nothing', async () => {
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const sibling = CustomerId.forWalkIn(
+      PRIVACY_SENTINELS.phone,
+      fixtureWalkInHash,
+    );
+    const body = bodyOf(
+      customerFixture({
+        id: sibling,
+        userId: null,
+        displayName: 'Shares a phone',
+        phone: PRIVACY_SENTINELS.phone,
+      }),
+    );
+    store.set(`${Collections.Customers}/${sibling}`, body);
+    const r = rig({ world, store });
+    const before = snapshotOf(store);
+    expect(unwrapOk(await r.preview())).toEqual({
+      erasureStatus: ErasureStatus.None,
+      erasureSiblingCustomerIds: [sibling],
+      ...BEFORE,
+    });
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(snapshotOf(store)).toEqual(before);
+    expect(r.stores.calls).toEqual([`loadAuthRoles:${world.person.userId}`]);
+    expect(r.telemetry.lines).toEqual([]);
+  });
+
+  it('an ERASING record names no sibling — its contact values are gone', async () => {
+    const r = rig();
+    unwrapOk(await r.erase({}, spentAtOnce));
+    const preview = unwrapOk(await r.preview());
+    expect(preview.erasureStatus).toBe(ErasureStatus.Erasing);
+    expect(preview.erasureSiblingCustomerIds).toEqual([]);
+    expect(preview.erasureRecordCount).toBe(0);
+  });
+
+  it('refuses as the erasure would: the flag, a link mismatch, a staff account, a list past the cap', async () => {
+    expect(unwrapErr(await rig({ flagOn: false }).preview())).toEqual(
+      PrivacyError.unavailable(),
+    );
+    const mismatch = rig();
+    const key = `${Collections.Customers}/${mismatch.world.person.customerId}`;
+    mismatch.store.set(key, {
+      ...mismatch.store.get(key),
+      userId: mismatch.world.other.userId,
+    });
+    expect(unwrapErr(await mismatch.preview())).toEqual(
+      PrivacyError.accountLinkMismatch(),
+    );
+    const staff = rig();
+    staff.stores.authUsers.set(staff.world.person.userId, [Role.Receptionist]);
+    expect(unwrapErr(await staff.preview())).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    const large = rig({
+      overrides: {
+        listClientVisits: async (customerId, limit) => {
+          const visits = [];
+          for (let i = 0; i < limit; i++) {
+            visits.push(
+              appointmentFixture({
+                id: AppointmentId.of(`appt-many-${i}`),
+                subjectCustomerIds: [customerId],
+              }),
+            );
+          }
+          return Result.ok(visits);
+        },
+      },
+    });
+    expect(unwrapErr(await large.preview())).toEqual(
+      PrivacyError.erasureTooLarge(ERASURE_MAX_DOCUMENTS + 1),
+    );
+  });
+});
+
+describe('the notifications path', () => {
+  it('P’s inbox lives under users/{uid}/notifications and is emptied', async () => {
+    const r = await oneShot();
+    const prefix = `${Collections.Users}/${r.world.person.userId}/${Subcollections.Notifications}/`;
+    expect([...r.store.keys()].filter((key) => key.startsWith(prefix))).toEqual(
+      [],
+    );
+    const qPrefix = `${Collections.Users}/${r.world.other.userId}/${Subcollections.Notifications}/`;
+    expect(
+      [...r.store.keys()].filter((key) => key.startsWith(qPrefix)),
+    ).toHaveLength(1);
+  });
+});
+
+describe('eraseClient — every failure is answered, never swallowed', () => {
+  const READ_PORTS = [
+    'loadCallerRoles',
+    'loadClientRecord',
+    'loadProfile',
+    'listClientVisits',
+    'loadVisitNotes',
+    'listPhotosOfClient',
+    'listVisitPhotos',
+    'listClientJournal',
+    'listAccountNotifications',
+    'listAccountWaitlist',
+    'listAccountInvitations',
+    'listAccountSessions',
+    'listOtpsByDestination',
+  ] as const;
+
+  it.each(READ_PORTS)(
+    'a failed %s answers that failure — no commit, no delete',
+    async (port) => {
+      const failure = RepositoryError.readFailed(port, 'unavailable');
+      const r = rig({ overrides: { [port]: async () => Result.err(failure) } });
+      const before = snapshotOf(r.store);
+      expect(unwrapErr(await r.erase())).toEqual(failure);
+      expect(r.tx.transactions).toHaveLength(0);
+      expect(snapshotOf(r.store)).toEqual(before);
+      expect(
+        r.stores.calls.filter((call) => call.startsWith('delete')),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    'listPhotosOfClient',
+    'listVisitPhotos',
+    'listClientJournal',
+    'listAccountNotifications',
+    'listAccountWaitlist',
+    'listAccountSessions',
+    'listOtpsByDestination',
+  ] as const)(
+    '%s past the cap → PRIVACY_ERASURE_TOO_LARGE before any write',
+    async (port) => {
+      const world = privacyWorld();
+      const samples = new Map<string, unknown>([
+        ['listPhotosOfClient', world.state.photos[0]],
+        ['listVisitPhotos', world.state.photos[0]],
+        ['listClientJournal', world.state.journal[0]],
+        ['listAccountNotifications', world.personFootprint.notifications[0]],
+        ['listAccountWaitlist', world.state.waitlist[0]],
+        ['listAccountSessions', world.state.sessions[0]],
+        ['listOtpsByDestination', world.state.otps[0]],
+      ]);
+      const r = rig({
+        world,
+        overrides: {
+          [port]: async (_key: unknown, limit: number) =>
+            Result.ok(new Array(limit).fill(samples.get(port))),
+        },
+      });
+      const before = snapshotOf(r.store);
+      expect(unwrapErr(await r.erase())).toEqual(
+        PrivacyError.erasureTooLarge(ERASURE_MAX_DOCUMENTS + 1),
+      );
+      expect(r.tx.transactions).toHaveLength(0);
+      expect(snapshotOf(r.store)).toEqual(before);
+    },
+  );
+
+  it.each([
+    ['the stamp', 1, ErasureStatus.None],
+    ['the visits’ unit', 2, ErasureStatus.Erasing],
+    ['the photos’ unit', 3, ErasureStatus.Erasing],
+    ['the removals’ unit', 4, ErasureStatus.Erasing],
+    ['the marks’ unit', 5, ErasureStatus.Erasing],
+    ['the completion', 7, ErasureStatus.Erasing],
+  ] as const)(
+    'a failed commit of %s answers its failure; the record stays where it stood; the next call completes',
+    async (_step, index, status) => {
+      const reference = await oneShot();
+      const world = privacyWorld();
+      const store = footprintStoreOf(world.state);
+      const stores = memoryErasureStores({
+        authUsers: new Map([
+          [world.person.userId, [Role.Client]],
+          [world.other.userId, [Role.Client]],
+        ]),
+        objects: objectsOf(world),
+      });
+      const failing = rig({ world, store, stores, failCommitAt: index });
+      expect(unwrapErr(await failing.erase())).toEqual(COMMIT_FAILURE);
+      expect(
+        store.get(`${Collections.Customers}/${world.person.customerId}`),
+      ).toMatchObject({ erasureStatus: status });
+      expect(failing.telemetry.lines).toEqual([]);
+      const resumed = rig({ world, store, stores });
+      expect(unwrapOk(await resumed.erase()).erasureDone).toBe(true);
+      expect(snapshotOf(store)).toEqual(snapshotOf(reference.store));
+    },
+  );
+
+  it('a failed RESWEPT commit answers its failure', async () => {
+    const r = await oneShot();
+    r.store.set(`${Collections.AppointmentNotes}/${r.world.visits.solo.id}`, {
+      text: PRIVACY_SENTINELS.note,
+      authorUserId: r.world.barber,
+      writtenAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    const sweep = rig({
+      world: r.world,
+      store: r.store,
+      stores: r.stores,
+      // 0: the note's unit, 1: the RESWEPT row
+      failCommitAt: 1,
+    });
+    expect(
+      unwrapErr(
+        await sweep.erase({ operationId: OperationId.of('op-resweep-0002') }),
+      ),
+    ).toEqual(COMMIT_FAILURE);
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErasureReswept)).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    ['the stamp', 1],
+    // 6 is the last unit: the record is gone when the residue is re-read.
+    ['the residue re-read', 6],
+    ['the completion', 7],
+  ] as const)(
+    'a record gone before %s’s transaction → PRIVACY_CLIENT_NOT_FOUND, nothing of that commit written',
+    async (_step, index) => {
+      const r = rig({
+        beforeCommit: (at, store) => {
+          if (at === index) {
+            store.delete(
+              `${Collections.Customers}/${privacyWorld().person.customerId}`,
+            );
+          }
+        },
+      });
+      expect(unwrapErr(await r.erase())).toEqual(PrivacyError.clientNotFound());
+      expect(rowsNamed(r.store, AuditAction.PrivacyClientErased)).toEqual([]);
+    },
+  );
+
+  it('a walk-in record gone before the stamp’s transaction → PRIVACY_CLIENT_NOT_FOUND', async () => {
+    const world = privacyWorld();
+    const r = rig({
+      world,
+      beforeCommit: (at, store) => {
+        if (at === 0) {
+          store.delete(`${Collections.Customers}/${world.walkIn.customerId}`);
+        }
+      },
+    });
+    expect(
+      unwrapErr(await r.erase({ customerId: world.walkIn.customerId })),
+    ).toEqual(PrivacyError.clientNotFound());
+  });
+
+  it('a concurrent act stamped first: this call plans no second STARTED row and carries on to the end', async () => {
+    const world = privacyWorld();
+    const r = rig({
+      world,
+      beforeCommit: (at, store) => {
+        if (at !== 1) return;
+        // The other act's stamp: the record ERASING and the account ERASED, both stripped.
+        const key = `${Collections.Customers}/${world.person.customerId}`;
+        store.set(key, {
+          ...store.get(key),
+          displayName: PrivacyMarker.TEXT,
+          phone: null,
+          email: null,
+          searchName: '',
+          searchPrefixes: [],
+          erasureStatus: ErasureStatus.Erasing,
+          erasureStartedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        });
+        const user = `${Collections.Users}/${world.person.userId}`;
+        store.set(user, {
+          ...store.get(user),
+          firstName: PrivacyMarker.TEXT,
+          lastName: PrivacyMarker.TEXT,
+          phone: null,
+          email: null,
+          birthDate: null,
+          searchName: null,
+          searchPrefixes: [],
+          accountStatus: AccountStatus.Erased,
+          accountErasedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        });
+      },
+    });
+    const answer = unwrapOk(await r.erase());
+    expect(answer.erasureStatus).toBe(ErasureStatus.Erased);
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted)).toEqual(
+      [],
+    );
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a concurrent act completed first: this call plans no second ERASED row, answers ERASED and done, and logs no completion', async () => {
+    const world = privacyWorld();
+    const r = rig({
+      world,
+      beforeCommit: (at, store) => {
+        if (at !== 7) return;
+        const key = `${Collections.Customers}/${world.person.customerId}`;
+        store.set(key, {
+          ...store.get(key),
+          erasureStatus: ErasureStatus.Erased,
+          erasedAtUtcMs: FIXTURE_NOW_UTC_MS,
+        });
+      },
+    });
+    expect(unwrapOk(await r.erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErased)).toEqual([]);
+    expect(r.telemetry.lines.map((line) => line.msg)).toEqual([
+      LogEvent.PrivacyErasureStep,
+    ]);
+  });
+
+  it('an invitation gone before its mark: the mark is decided on what is still there', async () => {
+    const world = privacyWorld();
+    const r = rig({
+      world,
+      beforeCommit: (at, store) => {
+        // 5: the invitations' marks
+        if (at === 5) store.delete(`${Collections.Invitations}/inv-p`);
+      },
+    });
+    expect(unwrapOk(await r.erase()).erasureDone).toBe(true);
+    expect(r.store.has(`${Collections.Invitations}/inv-p`)).toBe(false);
+  });
+
+  it('a failed avatar delete → ERASING, not done (the Auth user is deleted all the same); the next call completes', async () => {
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const stores = memoryErasureStores({
+      authUsers: new Map([[world.person.userId, [Role.Client]]]),
+      objects: objectsOf(world),
+    });
+    const avatar = `avatars/${world.person.userId}/avatar.jpg`;
+    const first = rig({
+      world,
+      store,
+      stores,
+      script: { failingPaths: [avatar] },
+    });
+    expect(unwrapOk(await first.erase())).toMatchObject({
+      erasureStatus: ErasureStatus.Erasing,
+      erasureDone: false,
+    });
+    expect(stores.authUsers.has(world.person.userId)).toBe(false);
+    expect(stores.objects.has(avatar)).toBe(true);
+    const second = rig({ world, store, stores });
+    expect(unwrapOk(await second.erase()).erasureDone).toBe(true);
+    expect(stores.objects.has(avatar)).toBe(false);
+  });
+
+  it.each(['loadClientRecord', 'loadProfile', 'listClientVisits'] as const)(
+    'a failed %s at the residue re-read answers that failure — after the units, the record ERASING',
+    async (port) => {
+      const world = privacyWorld();
+      const store = footprintStoreOf(world.state);
+      const reads = new Map<string, unknown>(
+        Object.entries(storeClientFootprintPorts(store)),
+      );
+      const original = reads.get(port) as (...input: unknown[]) => unknown;
+      const failure = RepositoryError.readFailed(port, 'unavailable');
+      let calls = 0;
+      const r = rig({
+        world,
+        store,
+        overrides: {
+          [port]: async (...args: unknown[]) => {
+            calls++;
+            if (calls === 2) return Result.err(failure);
+            return original(...args);
+          },
+        },
+      });
+      expect(unwrapErr(await r.erase())).toEqual(failure);
+      expect(
+        store.get(`${Collections.Customers}/${world.person.customerId}`),
+      ).toMatchObject({ erasureStatus: ErasureStatus.Erasing });
+    },
+  );
+
+  it('a record gone before the RESWEPT commit plans no row, and is answered as not found', async () => {
+    const r = await oneShot();
+    r.store.set(`${Collections.AppointmentNotes}/${r.world.visits.solo.id}`, {
+      text: PRIVACY_SENTINELS.note,
+      authorUserId: r.world.barber,
+      writtenAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    const sweep = rig({
+      world: r.world,
+      store: r.store,
+      stores: r.stores,
+      beforeCommit: (at, store) => {
+        // 0: the note's unit, 1: the RESWEPT row
+        if (at === 1) {
+          store.delete(`${Collections.Customers}/${r.world.person.customerId}`);
+        }
+      },
+    });
+    expect(
+      unwrapErr(
+        await sweep.erase({ operationId: OperationId.of('op-resweep-0003') }),
+      ),
+    ).toEqual(PrivacyError.clientNotFound());
+    expect(rowsNamed(r.store, AuditAction.PrivacyClientErasureReswept)).toEqual(
+      [],
+    );
+  });
+
+  it('the preview answers a failed sibling read', async () => {
+    const world = privacyWorld();
+    const store = footprintStoreOf(world.state);
+    const reads = storeClientFootprintPorts(store);
+    const failure = RepositoryError.readFailed('customers', 'unavailable');
+    const r = rig({
+      world,
+      store,
+      overrides: {
+        loadClientRecord: async (customerId) =>
+          customerId === world.person.customerId
+            ? reads.loadClientRecord(customerId)
+            : Result.err(failure),
+      },
+    });
+    expect(unwrapErr(await r.preview())).toEqual(failure);
+  });
+});

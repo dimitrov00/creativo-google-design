@@ -45,6 +45,20 @@
  *     needs no emulator, so it lives in `functions-deps.mjs` (this file
  *     refuses to load outside one) and also runs alone:
  *     `node tools/verify/p0/check-functions-deps.mjs`.
+ * (g) An admin erasure end to end, the live triggers on (audit-hardening
+ *     Phase 3, P3-DEP-21): `dev-staff-ivan` (`admin` in his claims and his
+ *     stored roles) erases the first-visit client `dev-client-9` through
+ *     the `eraseClient` callable — `customerId` is the RECORD's id
+ *     (`customerIdOf`, never the uid text, which would parse and answer
+ *     `PRIVACY_CLIENT_NOT_FOUND` and make every scan pass trivially), the
+ *     act's one operation id resent until the call answers `erasureDone`.
+ *     The record ends `ERASED`, exactly one `PRIVACY_CLIENT_ERASURE_STARTED`
+ *     and one `PRIVACY_CLIENT_ERASED` row target it, the client's Auth user
+ *     (created by a sign-in first) is gone; after the settle, no `auditLog`
+ *     document, no `triggerFailures` document (the dead letter) and no
+ *     Logging-emulator entry since the call holds any of the client's
+ *     seeded values, and every visit of the client remains, its contact
+ *     cleared. It runs LAST: the client stays erased.
  *
  * Each check prints `pass` or `FAIL` with its evidence; the exit code is the
  * number of failures. The live triggers stay on throughout, as in dev: they
@@ -54,7 +68,7 @@
  * Emulator-only by construction (the seed's own guard): refuses to run
  * unless FIRESTORE_EMULATOR_HOST points at this machine. It rebuilds
  * `clientStats` from scratch, and edits the party and dev-client-1's first
- * name, then puts both back.
+ * name, then puts both back; it erases dev-client-9 for good (g).
  */
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -102,6 +116,8 @@ const PARTY_PEOPLE = ['dev-client-10', 'dev-client-3'];
 const STAFF_UID = 'dev-staff-ivan';
 const RENAMED_UID = 'dev-client-1';
 const SYSADMIN_UID = 'p0-verify-sysadmin';
+/** The first-visit client (g) erases — an account client, never staff. */
+const ERASED_UID = 'dev-client-9';
 
 // ── the harness ─────────────────────────────────────────────────────────
 
@@ -879,6 +895,248 @@ await check(
       `the callable left no profileEditedAtUtcMs marker: ${canonical(restored)}`,
     );
     return `owner write denied (HTTP ${direct.status}); profileFields ${canonical(renameRow.profileFields)}; one row per call, actor ${canonical(actorOf(restoreRow))}; resourceId ${renameRow.resourceId}`;
+  },
+);
+
+/**
+ * How long the runner waits on one `eraseClient` call: past the callable's
+ * platform timeout (`ERASE_CLIENT_TIMEOUT_SECONDS`, 540 s), as for the
+ * backfill; the call's own budget (49 s) brings its answer in under a
+ * minute.
+ */
+const ERASE_CALL_TIMEOUT_MS = 600_000;
+
+/** The resumable calls (g) sends before it calls the erasure unfinished — the web's `MAX_ERASURE_CALLS`. */
+const ERASE_CALLS = 10;
+
+/**
+ * Every Logging-emulator entry logged from `sinceMs` on, as the emulator
+ * replays its history to a new connection (`tools/seed/settle.mjs`
+ * `watchExecutions` reads the same stream): the hub names where the
+ * Logging emulator runs; the replay is read until it has been quiet for
+ * `quietMs`. `null` when no Logging emulator can be reached.
+ */
+async function loggedSince(sinceMs, quietMs = 1_500) {
+  const hub = local(process.env.FIREBASE_EMULATOR_HUB ?? '127.0.0.1:4400');
+  let logging;
+  try {
+    const emulators = await (
+      await fetch(`http://${hub}/emulators`, {
+        signal: AbortSignal.timeout(2_000),
+      })
+    ).json();
+    logging = emulators?.logging;
+  } catch {
+    return null;
+  }
+  if (!logging?.port) return null;
+  const socket = new WebSocket(
+    `ws://${local(logging.host ?? '127.0.0.1')}:${logging.port}`,
+  );
+  const entries = [];
+  let last = performance.now();
+  // Listening before the socket opens: the replay follows the handshake.
+  socket.addEventListener('message', (event) => {
+    last = performance.now();
+    try {
+      const bundle = JSON.parse(String(event.data));
+      if (typeof bundle?.timestamp === 'number' && bundle.timestamp >= sinceMs)
+        entries.push(bundle);
+    } catch {
+      // Not a log bundle; nothing to scan.
+    }
+  });
+  try {
+    await new Promise((resolveOpen, rejectOpen) => {
+      socket.addEventListener('open', resolveOpen, { once: true });
+      socket.addEventListener('error', rejectOpen, { once: true });
+    });
+    while (performance.now() - last < quietMs) await sleep(250);
+  } catch {
+    return null;
+  } finally {
+    socket.close();
+  }
+  return entries;
+}
+
+/** The values a scan must never find: the texts given, each with its digits alone when it is a phone. */
+function personalValuesOf(texts) {
+  const values = new Set();
+  for (const text of texts) {
+    if (typeof text !== 'string' || text.trim().length < 4) continue;
+    values.add(text);
+    if (/^\+\d+$/.test(text)) values.add(text.slice(1));
+  }
+  return [...values];
+}
+
+await check(
+  '(g) an admin erasure leaves no personal value in a row, a dead letter or a log line — and keeps the visits',
+  async () => {
+    const customerId = seedDomain.customers.customerIdOf(ERASED_UID);
+    const record = (await db.doc(`customers/${customerId}`).get()).data();
+    assert(
+      record?.userId === ERASED_UID && record.erasureStatus === 'NONE',
+      `customers/${customerId} is not ${ERASED_UID}'s record before the erasure: ${canonical(record ?? null)}`,
+    );
+    const account = (await db.doc(`users/${ERASED_UID}`).get()).data();
+    assert(
+      account?.registrationState === 'REGISTERED',
+      `users/${ERASED_UID} is not a registered account: ${canonical(account ?? null)}`,
+    );
+    const visitsOf = async () =>
+      (
+        await db
+          .collection('appointments')
+          .where('subjectCustomerIds', 'array-contains', customerId)
+          .get()
+      ).docs;
+    const visitsBefore = await visitsOf();
+    assert(visitsBefore.length > 0, `${ERASED_UID} has no seeded visit`);
+    const notes = (
+      await db.getAll(
+        ...visitsBefore.map((visit) => db.doc(`appointmentNotes/${visit.id}`)),
+      )
+    ).filter((note) => note.exists);
+    // The client's seeded strings: the record's, the account's, and those
+    // the client's visits and their notes carry.
+    const values = personalValuesOf([
+      record.displayName,
+      record.phone,
+      record.email,
+      account.firstName,
+      account.lastName,
+      account.phone,
+      account.email,
+      account.birthDate,
+      ...visitsBefore.flatMap((visit) => [
+        visit.get('contactName'),
+        visit.get('contactPhone'),
+        visit.get('contactEmail'),
+        visit.get('contactNote'),
+      ]),
+      ...notes.map((note) => note.get('text')),
+    ]);
+    assert(values.length >= 4, `too few seeded values: ${values.length}`);
+
+    // The client's Auth user, as a first sign-in creates it — the erasure
+    // deletes it (P3-L-9), so its absence afterwards proves a deletion.
+    await idTokenFor(ERASED_UID, {
+      tenantId: TENANT,
+      stage: 'active',
+      roles: ['client'],
+    });
+    await admin.auth().getUser(ERASED_UID);
+    const ivan = await idTokenFor(STAFF_UID, {
+      tenantId: TENANT,
+      stage: 'active',
+      roles: ['barber', 'admin'],
+    });
+
+    // ONE act: its operation id resent until the erasure answers done.
+    const operationId = randomUUID();
+    const since = Date.now();
+    let answer = null;
+    let calls = 0;
+    while (calls < ERASE_CALLS && answer?.erasureDone !== true) {
+      calls += 1;
+      answer = await callable(
+        'eraseClient',
+        ivan,
+        { customerId, operationId },
+        ERASE_CALL_TIMEOUT_MS,
+      );
+    }
+    assert(
+      answer?.erasureDone === true && answer.erasureStatus === 'ERASED',
+      `the erasure is not done after ${calls} calls: ${canonical(answer)}`,
+    );
+    await settle(since);
+
+    const erased = (await db.doc(`customers/${customerId}`).get()).data();
+    assert(
+      erased?.erasureStatus === 'ERASED',
+      `the record is not ERASED: ${canonical(erased ?? null)}`,
+    );
+    const rows = (
+      await db
+        .collection('auditLog')
+        .where('targetCustomerId', '==', customerId)
+        .get()
+    ).docs.map((doc) => doc.data());
+    const started = rows.filter(
+      (row) => row.auditAction === 'PRIVACY_CLIENT_ERASURE_STARTED',
+    );
+    const done = rows.filter(
+      (row) => row.auditAction === 'PRIVACY_CLIENT_ERASED',
+    );
+    assert(
+      started.length === 1 && done.length === 1,
+      `${started.length} STARTED and ${done.length} ERASED rows, expected one each`,
+    );
+    assert(
+      done[0].auditOperationId === operationId &&
+        done[0].actorAdminUserId === STAFF_UID,
+      `the ERASED row names ${done[0].auditOperationId} by ${canonical(actorOf(done[0]))}`,
+    );
+    const auth = await admin
+      .auth()
+      .getUser(ERASED_UID)
+      .then(
+        () => 'present',
+        (error) => error?.code ?? String(error),
+      );
+    assert(
+      auth === 'auth/user-not-found',
+      `the client's Auth user: ${auth}, expected auth/user-not-found`,
+    );
+
+    // The scans: every row, every dead letter, every log line since the call.
+    const leaksIn = (label, documents) => {
+      const found = [];
+      for (const document of documents) {
+        const bytes = canonical(document);
+        for (const value of values) {
+          if (bytes.includes(value)) found.push(`${label}: ${value}`);
+        }
+      }
+      return found;
+    };
+    const logged = await loggedSince(since);
+    assert(logged !== null, 'no Logging emulator to scan');
+    const leaks = [
+      ...leaksIn(
+        'auditLog',
+        (await db.collection('auditLog').get()).docs.map((doc) => doc.data()),
+      ),
+      ...leaksIn(
+        'triggerFailures',
+        (await db.collection('triggerFailures').get()).docs.map((doc) =>
+          doc.data(),
+        ),
+      ),
+      ...leaksIn('log', logged),
+    ];
+    assert(leaks.length === 0, `erased values found: ${leaks.join('; ')}`);
+
+    // The visits remain — the same ones, the contact cleared.
+    const visitsAfter = await visitsOf();
+    const idsOf = (docs) => canonical(docs.map((doc) => doc.id).sort());
+    assert(
+      idsOf(visitsAfter) === idsOf(visitsBefore),
+      `the visits changed: ${idsOf(visitsBefore)} → ${idsOf(visitsAfter)}`,
+    );
+    assert(
+      visitsAfter.every(
+        (visit) =>
+          visit.get('contactName') === null &&
+          visit.get('contactPhone') === null &&
+          visit.get('contactEmail') === null,
+      ),
+      'a visit still carries a contact',
+    );
+    return `${calls} call(s), ${visitsAfter.length} visits kept, ${values.length} seeded values absent from ${rows.length} rows targeting the record, the dead letter and ${logged.length} log entries; the Auth user deleted`;
   },
 );
 

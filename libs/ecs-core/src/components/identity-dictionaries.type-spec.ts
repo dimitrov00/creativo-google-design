@@ -61,6 +61,7 @@ import {
   type EndReasonFields,
   ImpersonationEndReason,
 } from './end-reason-fields.data';
+import { type ErasureLifecycle, ErasureStatus } from './erasure-lifecycle.data';
 import { FlagName } from './feature-flags.data';
 import { ImpersonationScope } from './impersonation-scope.data';
 import {
@@ -150,6 +151,7 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof AuthProviderKind, AuthProviderKind>>, // auth-provider.data.ts
   Expect<Holds<typeof OAuthProvider, OAuthProvider>>, // auth-provider.data.ts
   Expect<Holds<typeof CustomerOrigin, CustomerOrigin>>, // customer-origin.data.ts
+  Expect<Holds<typeof ErasureStatus, ErasureStatus>>, // erasure-lifecycle.data.ts
   Expect<Holds<typeof FlagName, FlagName>>, // feature-flags.data.ts
   Expect<Holds<typeof GovernanceErrorCode, GovernanceErrorCode>>, // governance.error.ts
   Expect<Holds<typeof IdentifierChannel, IdentifierChannel>>, // primitives/identifier-channel.data.ts
@@ -217,6 +219,8 @@ export type IdentityDictionaryFields = [
   Expect<Equals<AuthProvider['authProviderKind'], AuthProviderKind>>, // auth-provider.data.ts
   Expect<Equals<OAuthEntry['provider'], OAuthProvider>>, // N15-exempt: the OAuth variant's named provider reference (flatten-spec §3.7 keeps it)
   Expect<Equals<Customer['customerOrigin'], CustomerOrigin>>, // customer.entity.ts
+  Expect<Equals<ErasureLifecycle['erasureStatus'], ErasureStatus>>, // erasure-lifecycle.data.ts
+  Expect<Equals<Customer['erasureStatus'], ErasureStatus>>, // customer.entity.ts
   Expect<Equals<ParsedIdentifier['identifierChannel'], IdentifierChannel>>, // parsed-identifier.data.ts
   Expect<Equals<IdentifierRefusal['identifierKind'], IdentifierChannel>>, // N15-exempt: an i18n param keeping its name, typed by the renamed tag (N12)
   Expect<
@@ -286,6 +290,7 @@ export type IdentityScreamingChecks = [
   Expect<Screaming<AuthProviderKind>>,
   Expect<Screaming<OAuthProvider>>,
   Expect<Screaming<CustomerOrigin>>,
+  Expect<Screaming<ErasureStatus>>,
   Expect<Screaming<GovernanceErrorCode>>,
   Expect<Screaming<IdentifierChannel>>,
   Expect<Screaming<IdentityErrorCode>>,

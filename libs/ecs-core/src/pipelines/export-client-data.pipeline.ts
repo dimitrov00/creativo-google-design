@@ -52,8 +52,10 @@ import {
  *    roles (`loadCallerRoles` — an export of a person's data trusts no stale
  *    claim, the `runBackfill` precedent) not the admin's (`Roles.PRIVACY`,
  *    the sysadmin is not enough) → `PRIVACY_FORBIDDEN`.
- * 2. The record (`null` → `PRIVACY_CLIENT_NOT_FOUND`) and, when it links
- *    one, the account.
+ * 2. The record (`null` → `PRIVACY_CLIENT_NOT_FOUND`); a `userId` the
+ *    record does not provably link (`ClientPrivacySystem.linkOf`, the D29
+ *    check) → `PRIVACY_ACCOUNT_LINK_MISMATCH` before any read keyed by it;
+ *    then, when it links one, the account.
  * 3. The footprint, OUTSIDE any transaction: every list read with
  *    `EXPORT_MAX_DOCUMENTS + 1`, the audit rows filed against the record and
  *    the account paged newest first until nothing is older or the cap is
@@ -119,6 +121,10 @@ export const exportClientData =
     if (!loaded.ok) return loaded;
     const record = loaded.value;
     if (record === null) return Result.err(PrivacyError.clientNotFound());
+    // The D29 link, before any read keyed by the uid (P3-RU-37 (h)): a
+    // corrupt or foreign `userId` never exports another account.
+    const link = ClientPrivacySystem.linkOf(record, ports.hash);
+    if (!link.ok) return link;
 
     const nowUtcMs = ports.nowUtcMs();
     const ownRowId = AuditEntryId.of(

@@ -1,5 +1,5 @@
-import type { ClientPrivacyCall } from '@core/components';
-import type { RepositoryError } from '@core/errors';
+import type { ClientPrivacyCall, Identifier, Role } from '@core/components';
+import type { PipelineError, RepositoryError } from '@core/errors';
 import type {
   Appointment,
   AppointmentNote,
@@ -7,9 +7,11 @@ import type {
   CouponGrant,
   Customer,
   GiftVoucher,
+  ImpersonationSession,
   InboxNotification,
   Invitation,
   JournalEntry,
+  Otp,
   WaitlistRequest,
 } from '@core/entities';
 import type {
@@ -22,9 +24,10 @@ import type { LoadProfile } from './accounts.port';
 import type { Callable } from './scheduling.port';
 
 /*
- * The data-subject requests' ports (audit-hardening Phase 3, WS-C; the
- * erasure, WS-D, adds its own): every document holding one person's data,
- * read OUTSIDE any transaction by the admin's privacy callables. The person
+ * The data-subject requests' ports (audit-hardening Phase 3, WS-C / WS-D):
+ * every document holding one person's data, read OUTSIDE any transaction
+ * by the admin's privacy callables, and the erasure's impure steps that are
+ * no Firestore write (the Auth user, the Storage objects). The person
  * is a client RECORD (`customers/{id}`) and the account it links
  * (`users/{record.userId}`); each read is one equality or `array-contains`
  * on a root field over the automatic single-field index — no new composite,
@@ -137,6 +140,65 @@ export type ListAccountInvitations = (
   limit: number,
 ) => Promise<Result<readonly Invitation[], RepositoryError>>;
 
+/**
+ * The impersonation sessions that targeted the account —
+ * `impersonationSessions where targetUserId ==`, at most `limit` (the
+ * erasure pseudonymises their admin-typed `reason`, P3-RU-24).
+ */
+export type ListAccountSessions = (
+  userId: UserId,
+  limit: number,
+) => Promise<Result<readonly ImpersonationSession[], RepositoryError>>;
+
+/**
+ * The one-time-code challenges stored under one destination —
+ * `otps where destination ==`, at most `limit` (the erasure deletes them
+ * before its stamp clears the contact values, P3-RU-21). A failure names
+ * the collection only (`RepositoryError.readFailed('otps', code)`) — never
+ * the destination, a person's phone or e-mail.
+ */
+export type ListOtpsByDestination = (
+  destination: Identifier,
+  limit: number,
+) => Promise<Result<readonly Otp[], RepositoryError>>;
+
+// ── The erasure's other stores ────────────────────────────────────────────
+
+/**
+ * Delete the account's Firebase Auth user (P3-L-9: deleted, not disabled)
+ * — `auth/user-not-found` answers ok (already done, a resumed erasure); any
+ * other failure carries the SDK's CODE only, never its message.
+ */
+export type DeleteAuthUser = (
+  userId: UserId,
+) => Promise<Result<void, PipelineError>>;
+
+/**
+ * The Auth user's custom-claim roles (`Roles.known` over its claims) —
+ * `null` when no Auth user exists; a failure carries the SDK's code only.
+ * The staff-account refusal reads it beside the stored roles (P3-L-16), so a
+ * missing `users` document never lets an operator's Auth account through.
+ */
+export type LoadAuthRoles = (
+  userId: UserId,
+) => Promise<Result<readonly Role[] | null, PipelineError>>;
+
+/** Delete one Storage object by its path — an object already gone answers ok. */
+export type DeleteStoredObject = (
+  path: string,
+) => Promise<Result<void, RepositoryError>>;
+
+/**
+ * Delete every Storage object under a prefix (`avatars/<uid>/`): the prefix
+ * is LISTED (`getFiles({ prefix })`) and each object deleted (an object
+ * already gone is ok) — the count is the list's length, since
+ * `bucket.deleteFiles` resolves `void` (@google-cloud/storage 7.21,
+ * `bucket.d.ts:702`).
+ */
+export type DeleteStoredPrefix = (
+  prefix: string,
+) => Promise<Result<number, RepositoryError>>;
+
 // ── The web's privacy callables ───────────────────────────────────────────
 
 /**
@@ -146,6 +208,27 @@ export type ListAccountInvitations = (
 export type ExportClientData = Callable<
   ClientPrivacyCall,
   ClientPrivacyCall.Exported
+>;
+
+/**
+ * `previewClientErasure` — read-only (P3-L-17): the record's erasure tag,
+ * the census of the person's footprint and the sibling walk-in records, for
+ * the card's ONE alert. No row, no write.
+ */
+export type PreviewClientErasure = Callable<
+  ClientPrivacyCall,
+  ClientPrivacyCall.ErasurePreview
+>;
+
+/**
+ * `eraseClient` — one resumable call of an admin's erasure (the record and
+ * the act's own id in; the record's tag after the call, whether it is done
+ * and the residue census out). Idempotent: the same act sent again finishes
+ * what a call left (`completeClientErasure` loops it).
+ */
+export type EraseClient = Callable<
+  ClientPrivacyCall,
+  ClientPrivacyCall.Erasure
 >;
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
@@ -165,9 +248,32 @@ export type ClientFootprintPorts = {
   readonly listAccountNotifications: ListAccountNotifications;
   readonly listAccountWaitlist: ListAccountWaitlist;
   readonly listAccountInvitations: ListAccountInvitations;
+  readonly listAccountSessions: ListAccountSessions;
+  readonly listOtpsByDestination: ListOtpsByDestination;
+};
+
+/**
+ * The Auth user's claim roles — the preview's and the erasure's staff-account
+ * refusal (`firebase-auth-eraser.adapter.ts`, functions).
+ */
+export type AuthRolesPorts = {
+  readonly loadAuthRoles: LoadAuthRoles;
+};
+
+/** The Auth user's deletion — the erasure only (Law 9: split from {@link AuthRolesPorts}, never sliced). */
+export type AuthEraserPorts = {
+  readonly deleteAuthUser: DeleteAuthUser;
+};
+
+/** Storage deletions — the erasure only (`storage-objects.adapter.ts`, functions). */
+export type ObjectEraserPorts = {
+  readonly deleteStoredObject: DeleteStoredObject;
+  readonly deleteStoredPrefix: DeleteStoredPrefix;
 };
 
 /** The web's privacy callables — ONE token, `CLIENT_PRIVACY_PORTS` (the staff client card). */
 export type ClientPrivacyGatewayPorts = {
   readonly exportClientData: ExportClientData;
+  readonly previewClientErasure: PreviewClientErasure;
+  readonly eraseClient: EraseClient;
 };

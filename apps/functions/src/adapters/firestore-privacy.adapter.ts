@@ -1,4 +1,4 @@
-import type { Firestore, Query } from 'firebase-admin/firestore';
+import type { DocumentData, Firestore, Query } from 'firebase-admin/firestore';
 import { Result } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
 import {
@@ -14,9 +14,11 @@ import {
   type Customer,
   type GiftVoucher,
   type InboxNotification,
+  type ImpersonationSession,
   type Invitation,
   type JournalEntry,
   type LoyaltyAccount,
+  type Otp,
   type SeasonProgress,
   Subcollections,
   type User,
@@ -28,7 +30,11 @@ import type {
   Log,
   LoyaltyAccountReadPorts,
 } from '@core/ports';
-import { type StoredGuardOf, TriggerAttemptSystem } from '@core/systems';
+import {
+  type StoredDocument,
+  type StoredGuardOf,
+  TriggerAttemptSystem,
+} from '@core/systems';
 import { admitStored } from './firestore-tx.adapter';
 
 /**
@@ -52,13 +58,22 @@ import { admitStored } from './firestore-tx.adapter';
  * - `listAccountNotifications` — `users/{uid}/notifications`;
  *   `listAccountWaitlist` — `waitlistRequests where ownerUserId ==`;
  *   `listAccountInvitations` — `invitations where inviterUserId ==`;
+ *   `listAccountSessions` — `impersonationSessions where targetUserId ==`;
+ * - `listOtpsByDestination` — `otps where destination ==` (the erasure's
+ *   sweep, WS-D): a failure names the COLLECTION only
+ *   (`RepositoryError.readFailed('otps', code)`) — never the destination, a
+ *   person's phone or e-mail (the `firestore-otps.adapter.ts` idiom);
  * - `loadLoyaltyAccount`, `listBadgeProgress`, `listSeasonProgress` —
  *   `loyaltyAccounts/{id}` and its two subcollections; `loadClientStats`,
  *   `loadClientMoney` — `clientStats/{id}` and its `restricted/money`.
  *
  * Every list applies the `limit` it is handed (the pipeline passes its cap
  * and one, so a person past the cap is refused, never truncated). Bodies
- * spread as stored (`{ id, ...data }`, Law 5 — zero mapping). The guarded
+ * spread as stored (`{ id, ...data }`, Law 5 — zero mapping) but for the
+ * TTL stamp: the adapter-stamped root `purgeAt` (`notifications`,
+ * `waitlistRequests`, `impersonationSessions`, `otps`) is part of no entity
+ * (`firestore-layout.md`), so it is never read into one — the export's
+ * bundle IS the entities (P3-RU-37 (i)). The guarded
  * collections (`customers`, `appointments`, `appointmentNotes`) pass the
  * stored-document guard the composition root hands in
  * (`StoredDocumentSystem.guardOf`): the FIRST malformed document fails the
@@ -70,6 +85,25 @@ import { admitStored } from './firestore-tx.adapter';
 
 /** The `in` operator's most values per query (Firestore's own bound). */
 const IN_CHUNK = 30;
+
+/**
+ * The adapter-stamped TTL root field — the one Firestore `Timestamp` a
+ * document holds (`firestore-ttl.adapter.ts`), outside every entity type.
+ */
+const TTL_FIELD = 'purgeAt';
+
+/**
+ * A stored document as its entity: `{ id, ...data }` without the TTL stamp
+ * (P3-RU-37 (i)) — every other field as stored, nothing mapped.
+ */
+function entityOf(id: string, data: DocumentData | undefined): StoredDocument {
+  return {
+    id,
+    ...Object.fromEntries(
+      Object.entries(data ?? {}).filter(([field]) => field !== TTL_FIELD),
+    ),
+  };
+}
 
 function readFailed(path: string, error: unknown): RepositoryError {
   return RepositoryError.readFailed(
@@ -101,7 +135,7 @@ export const firestorePrivacyPorts = (
     return admitStored<E>(
       guardOf,
       guarded,
-      { id: snap.id, ...snap.data() },
+      entityOf(snap.id, snap.data()),
       log,
     );
   };
@@ -127,7 +161,7 @@ export const firestorePrivacyPorts = (
       const row = admitStored<E>(
         guardOf,
         guarded,
-        { id: snap.id, ...snap.data() },
+        entityOf(snap.id, snap.data()),
         log,
       );
       if (!row.ok) return row;
@@ -187,7 +221,7 @@ export const firestorePrivacyPorts = (
         const note = admitStored<AppointmentNote>(
           guardOf,
           path,
-          { id: snap.id, ...snap.data() },
+          entityOf(snap.id, snap.data()),
           log,
         );
         if (!note.ok) return note;
@@ -274,6 +308,19 @@ export const firestorePrivacyPorts = (
         userId,
         limit,
       ),
+
+    listAccountSessions: (userId, limit) =>
+      where<ImpersonationSession>(
+        Collections.ImpersonationSessions,
+        'targetUserId',
+        userId,
+        limit,
+      ),
+
+    // The path a failure names is the collection alone — the destination
+    // (a person's phone or e-mail) is the query's VALUE, never in an error.
+    listOtpsByDestination: (destination, limit) =>
+      where<Otp>(Collections.Otps, 'destination', destination, limit),
 
     loadLoyaltyAccount: (customerId) =>
       one<LoyaltyAccount>(

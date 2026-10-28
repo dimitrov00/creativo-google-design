@@ -4,6 +4,7 @@ import {
   type E164,
   EditCommand,
   type Email,
+  ErasureLifecycle,
   RequestedSubjectRole,
   type Seat,
   SeatLabel,
@@ -124,9 +125,10 @@ export const CustomerRecordSystem = {
    * planned for it. Each body is the account's contact as given — the full
    * name as `displayName`, the phone and e-mail, the search keys
    * `SearchFieldsSystem` derives — the `origin` and `nowUtcMs` as its
-   * `createdAtUtcMs`, the explicit link `userId`, and the writing call's
+   * `createdAtUtcMs`, the explicit link `userId`, the writing call's
    * `writeOperationId` (WS-4.3 — the booking verb's operation id, or the
-   * registration call's optional one; `null` when it carried none).
+   * registration call's optional one; `null` when it carried none) and no
+   * erasure (`erasureStatus: NONE`, P3-L-18).
    */
   createsFor(
     resolved: ReadonlyMap<UserId, CustomerId>,
@@ -157,6 +159,7 @@ export const CustomerRecordSystem = {
         createdAtUtcMs: nowUtcMs,
         customerOrigin: origin,
         writeOperationId,
+        ...ErasureLifecycle.none(),
       };
       writes.push(WriteOp.create([Collections.Customers, customerId], body));
     }
@@ -295,8 +298,8 @@ export const CustomerRecordSystem = {
    * is not absent. Each body has no account (`userId: null`), the label as
    * its `displayName`, the phone and the e-mail the desk took, the search
    * keys `SearchFieldsSystem` derives (so the desk finds them again),
-   * `nowUtcMs`, `STAFF_WALK_IN` and the staff call's `writeOperationId`
-   * (WS-4.3).
+   * `nowUtcMs`, `STAFF_WALK_IN`, the staff call's `writeOperationId`
+   * (WS-4.3) and no erasure (`erasureStatus: NONE`, P3-L-18).
    */
   walkInCreates(
     guests: readonly WalkInGuest[],
@@ -325,6 +328,7 @@ export const CustomerRecordSystem = {
         createdAtUtcMs: nowUtcMs,
         customerOrigin: CustomerOrigin.StaffWalkIn,
         writeOperationId,
+        ...ErasureLifecycle.none(),
       };
       writes.push(
         WriteOp.create([Collections.Customers, guest.customerId], body),

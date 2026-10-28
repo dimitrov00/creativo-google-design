@@ -130,6 +130,10 @@ const CLOSED_SETS: Readonly<Record<string, readonly (readonly unknown[])[]>> = {
   'words.achievement.whatBarber': NAMED_IN_BOTH_FORMS,
   'words.achievement.whatShop': NAMED_IN_BOTH_FORMS,
   'words.achievements.dayGroupName': NAMED_IN_BOTH_FORMS,
+  'words.erasure.alertBody': [
+    [{ visits: 12, notes: 2, photos: 3, accounts: 1, siblings: 1 }],
+    [{ visits: 1, notes: 0, photos: 0, accounts: 0, siblings: 0 }],
+  ],
   'words.achievements.collectionName': [
     [18, 42, 38],
     [1, 1, 1],
@@ -1119,6 +1123,54 @@ describe('the privacy group (audit-hardening Phase 3, WS-C)', () => {
       groupLabel: 'Personal data',
       export: 'Download the data',
       exportDone: 'The file is downloaded.',
+    });
+  });
+});
+
+describe('the erasure’s words (audit-hardening Phase 3, WS-D)', () => {
+  it('words the rows, the lines and the ONE alert in bg and en, the figures grouped the locale’s way', () => {
+    const bg = clientCardWordsOf(translatorOf('bg'), 'bg');
+    const en = clientCardWordsOf(translatorOf('en'), 'en');
+    const figures = {
+      visits: 1200,
+      notes: 2,
+      photos: 3,
+      accounts: 1,
+      siblings: 0,
+    };
+    expect({
+      ...bg.erasure,
+      alertBody: bg.erasure.alertBody(figures),
+    }).toEqual({
+      erase: 'Изтрий личните данни',
+      eraseSibling: 'Изтрий записа със същия телефон или имейл',
+      erased: 'Изтрит клиент',
+      eraseUnfinished: 'Изтриването още не е завършило. Опитай пак.',
+      alertTitle: 'Да изтрием ли личните данни?',
+      alertBody:
+        'Посещения: 1200 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 0. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+      eraseConfirm: 'Изтрий',
+      eraseKeep: 'Отказ',
+    });
+    expect({
+      ...en.erasure,
+      alertBody: en.erasure.alertBody(figures),
+    }).toEqual({
+      erase: 'Erase personal data',
+      eraseSibling: 'Erase the record with the same phone or e-mail',
+      erased: 'Erased client',
+      eraseUnfinished: "The erasure isn't finished yet. Try again.",
+      alertTitle: 'Erase personal data?',
+      alertBody:
+        'Visits: 1,200 · Notes: 2 · Photos: 3 · Sign-in accounts: 1 · ' +
+        'Other records with this phone or e-mail: 0. The name, phone and ' +
+        'e-mail are removed and the sign-in account is deleted. Visits and ' +
+        'payments stay.',
+      eraseConfirm: 'Erase',
+      eraseKeep: 'Cancel',
     });
   });
 });

@@ -992,6 +992,12 @@ export interface ClientCardWords {
    * presenter through `wordPipelineError`, never held here.
    */
   readonly privacy: ClientPrivacyWords;
+  /**
+   * L — the erasure's words in the same group (audit-hardening Phase 3,
+   * WS-D; the catalogue's `clientCard.privacy.erase*` / `alert*` keys). A
+   * refusal's words are `errors.<errorCode>`, as the export's.
+   */
+  readonly erasure: ClientErasureWords;
 }
 
 /** L — the privacy group's own words (`clientCard.privacy.*`). */
@@ -1002,6 +1008,35 @@ export interface ClientPrivacyWords {
   readonly export: string;
   /** «Файлът е изтеглен.» */
   readonly exportDone: string;
+}
+
+/** The figures the erasure's alert prints — each a server census count, or the siblings' number. */
+export interface ErasureAlertFigures {
+  readonly visits: number;
+  readonly notes: number;
+  readonly photos: number;
+  readonly accounts: number;
+  readonly siblings: number;
+}
+
+/** L — the erasure's words (`clientCard.privacy.erase*`, `clientCard.privacy.alert*`). */
+export interface ClientErasureWords {
+  /** «Изтрий личните данни» — the record's row, whatever the system offers (erase, resume, re-sweep). */
+  readonly erase: string;
+  /** «Изтрий записа със същия телефон или имейл» — a sibling record's row; never its name. */
+  readonly eraseSibling: string;
+  /** «Изтрит клиент» — an erased record's line. */
+  readonly erased: string;
+  /** «Изтриването още не е завършило. Опитай пак.» */
+  readonly eraseUnfinished: string;
+  /** «Да изтрием ли личните данни?» — the alert's question. */
+  readonly alertTitle: string;
+  /** The alert's message: the census in figures, then what goes and what stays. */
+  readonly alertBody: (figures: ErasureAlertFigures) => string;
+  /** «Изтрий» — the alert's destructive answer. */
+  readonly eraseConfirm: string;
+  /** «Отказ» — the alert's safe answer. */
+  readonly eraseKeep: string;
 }
 
 /**
@@ -1642,6 +1677,23 @@ export function clientCardWordsOf(
       groupLabel: t('clientCard.privacy.groupLabel'),
       export: t('clientCard.privacy.export'),
       exportDone: t('clientCard.privacy.exportDone'),
+    },
+    erasure: {
+      erase: t('clientCard.privacy.erase'),
+      eraseSibling: t('clientCard.privacy.eraseSibling'),
+      erased: t('clientCard.privacy.erased'),
+      eraseUnfinished: t('clientCard.privacy.eraseUnfinished'),
+      alertTitle: t('clientCard.privacy.alertTitle'),
+      alertBody: (figures) =>
+        t('clientCard.privacy.alertBody', {
+          visits: n(figures.visits),
+          notes: n(figures.notes),
+          photos: n(figures.photos),
+          accounts: n(figures.accounts),
+          siblings: n(figures.siblings),
+        }),
+      eraseConfirm: t('clientCard.privacy.eraseConfirm'),
+      eraseKeep: t('clientCard.privacy.eraseKeep'),
     },
   };
 }

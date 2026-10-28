@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ClientPrivacyCall } from '@core/components';
+import {
+  ClientPrivacyCall,
+  ErasureCensus,
+  ErasureStatus,
+} from '@core/components';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables } from '@core/ports';
 import {
@@ -29,6 +33,24 @@ const EXPORTED: ClientPrivacyCall.Exported = {
   exportDocumentCount: 3,
   exportByteCount: 17,
   exportJson: '{"customers":[]}\n',
+};
+
+const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+  ...ErasureCensus.EMPTY,
+  erasureStatus: ErasureStatus.None,
+  erasureRecordCount: 1,
+  erasureAccountCount: 1,
+  erasureVisitCount: 7,
+  erasureNoteCount: 2,
+  erasurePhotoCount: 3,
+  erasureSiblingCustomerIds: [CustomerId.of('cus_fedcba9876543210fedc')],
+};
+
+const ERASURE: ClientPrivacyCall.Erasure = {
+  ...ErasureCensus.EMPTY,
+  erasureStatus: ErasureStatus.Erased,
+  erasureDone: true,
+  erasureVisitCount: 7,
 };
 
 describe('clientPrivacyPorts', () => {
@@ -76,5 +98,74 @@ describe('clientPrivacyPorts', () => {
     const error = unwrapErr(await ports.exportClientData(CALL));
 
     expect(error.errorCode).toBe(PipelineErrorCode.Unknown);
+  });
+});
+
+describe('clientPrivacyPorts — the erasure (audit-hardening Phase 3, WS-D)', () => {
+  it('previewClientErasure dials previewClientErasure with the call as captured, answering the census and the siblings as counted', async () => {
+    const calls: GatewayCall[] = [];
+    const ports = clientPrivacyPorts(
+      scriptedGatewayPorts(
+        { [Callables.PreviewClientErasure]: () => Result.ok(PREVIEW) },
+        calls,
+      ),
+    );
+    const call = deepFreeze({ ...CALL });
+
+    const answer = await ports.previewClientErasure(call);
+
+    expect(unwrapOk(answer)).toBe(PREVIEW);
+    expect(calls).toEqual([
+      { callable: Callables.PreviewClientErasure, input: CALL },
+    ]);
+    expect(calls[0]?.input).toBe(call);
+    expect(call).toEqual(CALL);
+  });
+
+  it('eraseClient dials eraseClient with the call as captured, answering the residue as counted', async () => {
+    const calls: GatewayCall[] = [];
+    const ports = clientPrivacyPorts(
+      scriptedGatewayPorts(
+        { [Callables.EraseClient]: () => Result.ok(ERASURE) },
+        calls,
+      ),
+    );
+    const call = deepFreeze({ ...CALL });
+
+    const answer = await ports.eraseClient(call);
+
+    expect(unwrapOk(answer)).toBe(ERASURE);
+    expect(calls).toEqual([{ callable: Callables.EraseClient, input: CALL }]);
+    expect(calls[0]?.input).toBe(call);
+    expect(call).toEqual(CALL);
+  });
+
+  it('hands each refusal on as the one PipelineError, unchanged', async () => {
+    const staff = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: 'PRIVACY_ERASURE_STAFF_ACCOUNT',
+    });
+    const mismatch = PipelineError.fromWire('functions/failed-precondition', {
+      errorCode: 'PRIVACY_ACCOUNT_LINK_MISMATCH',
+    });
+    const ports = clientPrivacyPorts(
+      scriptedGatewayPorts({
+        [Callables.PreviewClientErasure]: () => Result.err(staff),
+        [Callables.EraseClient]: () => Result.err(mismatch),
+      }),
+    );
+
+    expect(unwrapErr(await ports.previewClientErasure(CALL))).toBe(staff);
+    expect(unwrapErr(await ports.eraseClient(CALL))).toBe(mismatch);
+  });
+
+  it('answers PIPELINE_UNKNOWN when the client cannot reach either callable', async () => {
+    const ports = clientPrivacyPorts(scriptedGatewayPorts());
+
+    expect(unwrapErr(await ports.previewClientErasure(CALL)).errorCode).toBe(
+      PipelineErrorCode.Unknown,
+    );
+    expect(unwrapErr(await ports.eraseClient(CALL)).errorCode).toBe(
+      PipelineErrorCode.Unknown,
+    );
   });
 });

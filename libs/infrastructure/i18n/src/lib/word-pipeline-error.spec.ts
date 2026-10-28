@@ -361,8 +361,9 @@ const booking = refusalOn(BookingErrorCode.CallFailed);
  */
 const identity = refusalOn(IdentityErrorCode.CallFailed);
 /**
- * The staff client card's export (audit-hardening Phase 3, WS-C — its
- * presenter words a refusal against the generic `PIPELINE_UNKNOWN`).
+ * The staff client card's export and erasure (audit-hardening Phase 3,
+ * WS-C / WS-D — its presenter words a refusal against the generic
+ * `PIPELINE_UNKNOWN`).
  * `PRIVACY_UNAUTHENTICATED` and `PRIVACY_INVALID_INPUT` reach no surface
  * (the card's block needs a signed-in admin and sends a well-formed call),
  * so they have no words.
@@ -418,6 +419,13 @@ const E18_WORDS: readonly WordedRefusal[] = [
   }),
   booking(StaffEditErrorCode.Unauthenticated, S.Unauthenticated, SIGN_IN_AGAIN),
   booking(StaffEditErrorCode.Forbidden, S.PermissionDenied, FORBIDDEN),
+  // A booking or an edit that would seat a record under erasure
+  // (audit-hardening Phase 3, WS-D): no retry can succeed, so the words
+  // say what the desk can do instead.
+  booking(BookingErrorCode.ClientErased, S.FailedPrecondition, {
+    en: "This client's data was erased. Book them without a phone or e-mail.",
+    bg: 'Данните на този клиент са изтрити. Запиши го без телефон и имейл.',
+  }),
   // The onboarding flow's registration.
   identity(IdentityErrorCode.RegistrationUserNotFound, S.FailedPrecondition, {
     en: "We couldn't find your profile. Sign in again.",
@@ -449,6 +457,20 @@ const E18_WORDS: readonly WordedRefusal[] = [
   privacy(PrivacyErrorCode.ExportTooLarge, S.FailedPrecondition, {
     en: "There's too much data for one file. Contact support.",
     bg: 'Данните са твърде много за един файл. Свържи се с поддръжката.',
+  }),
+  // The staff client card's erasure (audit-hardening Phase 3, WS-D); the
+  // link check answers the export too (P3-RU-37 (h)).
+  privacy(PrivacyErrorCode.ErasureStaffAccount, S.FailedPrecondition, {
+    en: "A staff account can't be erased here.",
+    bg: 'Профил на служител не може да се изтрие оттук.',
+  }),
+  privacy(PrivacyErrorCode.AccountLinkMismatch, S.FailedPrecondition, {
+    en: "The account doesn't match the client's record. Contact support.",
+    bg: 'Профилът не съвпада със записа на клиента. Свържи се с поддръжката.',
+  }),
+  privacy(PrivacyErrorCode.ErasureTooLarge, S.FailedPrecondition, {
+    en: 'There are too many records for one erasure. Contact support.',
+    bg: 'Записите са твърде много за едно изтриване. Свържи се с поддръжката.',
   }),
 ];
 

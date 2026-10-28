@@ -43,6 +43,7 @@ import {
   E164,
   Email,
   EnrollmentStatus,
+  ErasureLifecycle,
   ExceptionEffectRule,
   GrantCapacityTerms,
   GrantExpiryTerms,
@@ -1670,6 +1671,7 @@ describe('firestore.rules', () => {
         customerOrigin:
           userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
         ...WriteProvenance.NONE,
+        ...ErasureLifecycle.none(),
       }) satisfies Omit<Customer, 'id'>;
 
     beforeEach(async () => {

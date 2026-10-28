@@ -34,6 +34,7 @@
     "BOOKING_BEYOND_HORIZON": "Още не приемаме резервации толкова напред.",
     "BOOKING_PARTY_TOO_LARGE": "Максимум {{maxPartySize}} души в една резервация.",
     "BOOKING_INVARIANT_VIOLATED": "Тази комбинация не е възможна. Пробвай друг час.",
+    "BOOKING_CLIENT_ERASED": "Данните на този клиент са изтрити. Запиши го без телефон и имейл.",
     "BOOKING_STAFF_EDIT_UNAUTHENTICATED": "Влез отново, за да продължиш.",
     "BOOKING_STAFF_EDIT_FORBIDDEN": "Нямаш права за това. Влез отново или питай администратора.",
     "BOOKING_STAFF_EDIT_INVALID_COMMAND": "Заявката не е валидна за това посещение.",
@@ -156,6 +157,9 @@
     "PRIVACY_UNAVAILABLE": "Това още не е включено за салона.",
     "PRIVACY_CLIENT_NOT_FOUND": "Не намерихме този клиент.",
     "PRIVACY_EXPORT_TOO_LARGE": "Данните са твърде много за един файл. Свържи се с поддръжката.",
+    "PRIVACY_ERASURE_STAFF_ACCOUNT": "Профил на служител не може да се изтрие оттук.",
+    "PRIVACY_ACCOUNT_LINK_MISMATCH": "Профилът не съвпада със записа на клиента. Свържи се с поддръжката.",
+    "PRIVACY_ERASURE_TOO_LARGE": "Записите са твърде много за едно изтриване. Свържи се с поддръжката.",
     "PIPELINE_UNAUTHENTICATED": "Нещо се обърка. Опитай пак.",
     "PIPELINE_SLOT_UNAVAILABLE": "Нещо се обърка. Опитай пак.",
     "PIPELINE_CATALOG_CHANGED": "Нещо се обърка. Опитай пак.",
@@ -2113,7 +2117,15 @@
     "privacy": {
       "groupLabel": "Лични данни",
       "export": "Изтегли данните",
-      "exportDone": "Файлът е изтеглен."
+      "exportDone": "Файлът е изтеглен.",
+      "erase": "Изтрий личните данни",
+      "eraseSibling": "Изтрий записа със същия телефон или имейл",
+      "erased": "Изтрит клиент",
+      "eraseUnfinished": "Изтриването още не е завършило. Опитай пак.",
+      "alertTitle": "Да изтрием ли личните данни?",
+      "alertBody": "Посещения: {{visits}} · Бележки: {{notes}} · Снимки: {{photos}} · Профили за вход: {{accounts}} · Други записи със същия телефон или имейл: {{siblings}}. Името, телефонът и имейлът изчезват, профилът за вход се изтрива. Посещенията и плащанията остават.",
+      "eraseConfirm": "Изтрий",
+      "eraseKeep": "Отказ"
     }
   },
   "visits": {

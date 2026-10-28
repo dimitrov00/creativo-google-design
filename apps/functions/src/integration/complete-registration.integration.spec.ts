@@ -6,6 +6,7 @@ import {
   AuthDeployment,
   CustomerOrigin,
   E164,
+  ErasureStatus,
   ParsedIdentifier,
   Registration,
   RegistrationState,
@@ -218,6 +219,7 @@ describe('completeRegistration (emulator)', () => {
       phone: PHONE,
       email: null,
       customerOrigin: CustomerOrigin.Registration,
+      erasureStatus: ErasureStatus.None,
     });
     expect((await auth.getUser(UID)).displayName).toBe('Ada Lovelace');
   });

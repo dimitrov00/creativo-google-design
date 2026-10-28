@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type ClientPrivacyCall,
+  ErasureCensus,
+  ErasureOffer,
+  ErasureStatus,
+} from '@core/components';
+import {
   HttpsStatus,
   PipelineError,
   PipelineErrorCode,
@@ -8,12 +14,20 @@ import {
 import { deepFreeze } from '@core/testing';
 import type { TranslateCode } from '@creativo/infrastructure/i18n';
 import { catalogueOf, wordsOf } from '../testing/client-card.fixtures';
+import { CustomerId } from '@core/primitives';
 import {
+  type ClientErasureInput,
+  type ClientErasureState,
   type ClientExportState,
   type ClientPrivacyInput,
+  clientErasureVm,
   clientPrivacyVm,
 } from './client-privacy.presenter';
-import { ClientExportPhase } from './client-pages.vm';
+import {
+  ClientErasurePhase,
+  ClientExportPhase,
+  ErasureAlertAnswer,
+} from './client-pages.vm';
 
 /** `errors.<code>` from the real catalogue, the code itself when it has none (`translateCodedError`'s contract). */
 function errorsOf(lang: 'bg' | 'en'): TranslateCode {
@@ -129,5 +143,226 @@ describe('clientPrivacyVm — «Лични данни» (audit-hardening Phase 3
       ),
     );
     expect(clientPrivacyVm(input)).toEqual(clientPrivacyVm(input));
+  });
+});
+
+// ── The erasure (audit-hardening Phase 3, WS-D) ─────────────────────────
+
+const SIBLING_A = CustomerId.of('cus_aaaaaaaaaaaaaaaaaaaa');
+const SIBLING_B = CustomerId.of('cus_bbbbbbbbbbbbbbbbbbbb');
+
+/** A preview's census: 1 200 visits, 2 notes, 3 photos, one sign-in account, two siblings. */
+const PREVIEW: ClientPrivacyCall.ErasurePreview = {
+  ...ErasureCensus.EMPTY,
+  erasureStatus: ErasureStatus.None,
+  erasureRecordCount: 1,
+  erasureAccountCount: 1,
+  erasureContactCount: 9,
+  erasureVisitCount: 1200,
+  erasureNoteCount: 2,
+  erasurePhotoCount: 3,
+  erasureSiblingCustomerIds: [SIBLING_A, SIBLING_B],
+};
+
+const IDLE = { clientErasurePhase: ClientErasurePhase.Idle } as const;
+
+function erasureInputOf(
+  lang: 'bg' | 'en',
+  overrides: Partial<ClientErasureInput> = {},
+): ClientErasureInput {
+  return {
+    words: wordsOf(lang).erasure,
+    offer: ErasureOffer.Erase,
+    erasureState: IDLE,
+    alertOpen: false,
+    preview: null,
+    siblings: [],
+    translateCode: errorsOf(lang),
+    ...overrides,
+  };
+}
+
+const erasureRefusedWith = (
+  errorCode: string,
+  status: HttpsStatus,
+): ClientErasureState => ({
+  clientErasurePhase: ClientErasurePhase.Refused,
+  erasureError: PipelineError.fromWire(`functions/${status}`, { errorCode }),
+});
+
+describe('clientErasureVm — the erasure’s rows and its ONE alert (audit-hardening Phase 3, WS-D)', () => {
+  it('words the erase row per the system’s offer: ERASE alone, RESUME with the unfinished line, RESWEEP beside the erased line', () => {
+    const erase = clientErasureVm(erasureInputOf('bg'));
+    expect(erase.eraseLabel).toBe('Изтрий личните данни');
+    expect(erase.erasedLine).toBeNull();
+    expect(erase.eraseStatus).toBeNull();
+
+    const resume = clientErasureVm(
+      erasureInputOf('bg', { offer: ErasureOffer.Resume }),
+    );
+    expect(resume.eraseLabel).toBe('Изтрий личните данни');
+    expect(resume.erasedLine).toBeNull();
+    expect(resume.eraseStatus).toBe(
+      'Изтриването още не е завършило. Опитай пак.',
+    );
+
+    const resweep = clientErasureVm(
+      erasureInputOf('en', { offer: ErasureOffer.Resweep }),
+    );
+    expect(resweep.eraseLabel).toBe('Erase personal data');
+    expect(resweep.erasedLine).toBe('Erased client');
+    expect(resweep.eraseStatus).toBeNull();
+  });
+
+  it('words the alert: the question, the five figures, the destructive answer first and the safe one last and preferred', () => {
+    const bg = clientErasureVm(
+      erasureInputOf('bg', {
+        alertOpen: true,
+        preview: PREVIEW,
+        siblings: PREVIEW.erasureSiblingCustomerIds,
+      }),
+    ).alert;
+    expect(bg).toEqual({
+      open: true,
+      title: 'Да изтрием ли личните данни?',
+      body:
+        'Посещения: 1200 · Бележки: 2 · Снимки: 3 · Профили за вход: 1 · ' +
+        'Други записи със същия телефон или имейл: 2. Името, телефонът и ' +
+        'имейлът изчезват, профилът за вход се изтрива. Посещенията и ' +
+        'плащанията остават.',
+      actions: [
+        {
+          id: ErasureAlertAnswer.Erase,
+          label: 'Изтрий',
+          role: 'destructive',
+          preferred: false,
+          testId: 'client-privacy-erase-confirm',
+        },
+        {
+          id: ErasureAlertAnswer.Keep,
+          label: 'Отказ',
+          role: 'cancel',
+          preferred: true,
+          testId: 'client-privacy-erase-keep',
+        },
+      ],
+    });
+    const en = clientErasureVm(
+      erasureInputOf('en', { alertOpen: true, preview: PREVIEW }),
+    ).alert;
+    expect(en.title).toBe('Erase personal data?');
+    expect(en.body).toBe(
+      'Visits: 1,200 · Notes: 2 · Photos: 3 · Sign-in accounts: 1 · ' +
+        'Other records with this phone or e-mail: 2. The name, phone and ' +
+        'e-mail are removed and the sign-in account is deleted. Visits and ' +
+        'payments stay.',
+    );
+    expect(en.actions.map((action) => action.label)).toEqual([
+      'Erase',
+      'Cancel',
+    ]);
+  });
+
+  it('keeps the alert worded once it closes, and has no figures before the first preview', () => {
+    const closed = clientErasureVm(
+      erasureInputOf('bg', { alertOpen: false, preview: PREVIEW }),
+    ).alert;
+    expect(closed.open).toBe(false);
+    expect(closed.body).toContain('Посещения: 1200');
+    expect(clientErasureVm(erasureInputOf('bg')).alert.body).toBeNull();
+  });
+
+  it('lists one row per sibling record, in the preview’s order, with no name', () => {
+    const vm = clientErasureVm(
+      erasureInputOf('bg', { siblings: [SIBLING_A, SIBLING_B] }),
+    );
+    expect(vm.siblings).toEqual([
+      {
+        customerId: SIBLING_A,
+        label: 'Изтрий записа със същия телефон или имейл',
+        testId: 'client-privacy-sibling-1',
+      },
+      {
+        customerId: SIBLING_B,
+        label: 'Изтрий записа със същия телефон или имейл',
+        testId: 'client-privacy-sibling-2',
+      },
+    ]);
+    expect(
+      clientErasureVm(erasureInputOf('en', { siblings: [SIBLING_A] }))
+        .siblings[0]?.label,
+    ).toBe('Erase the record with the same phone or e-mail');
+  });
+
+  it('says nothing while the preview or the calls are on their way, and «not finished yet» when the calls ran out', () => {
+    for (const phase of [
+      ClientErasurePhase.Previewing,
+      ClientErasurePhase.Running,
+    ] as const) {
+      expect(
+        clientErasureVm(
+          erasureInputOf('bg', {
+            offer: ErasureOffer.Resume,
+            erasureState: { clientErasurePhase: phase },
+          }),
+        ).eraseStatus,
+      ).toBeNull();
+    }
+    expect(
+      clientErasureVm(
+        erasureInputOf('en', {
+          erasureState: { clientErasurePhase: ClientErasurePhase.Unfinished },
+        }),
+      ).eraseStatus,
+    ).toBe("The erasure isn't finished yet. Try again.");
+  });
+
+  it('words a refusal in the server’s own words, else the generic line', () => {
+    const staff = erasureRefusedWith(
+      PrivacyErrorCode.ErasureStaffAccount,
+      HttpsStatus.FailedPrecondition,
+    );
+    expect(
+      clientErasureVm(erasureInputOf('bg', { erasureState: staff }))
+        .eraseStatus,
+    ).toBe('Профил на служител не може да се изтрие оттук.');
+    const mismatch = erasureRefusedWith(
+      PrivacyErrorCode.AccountLinkMismatch,
+      HttpsStatus.FailedPrecondition,
+    );
+    expect(
+      clientErasureVm(erasureInputOf('en', { erasureState: mismatch }))
+        .eraseStatus,
+    ).toBe("The account doesn't match the client's record. Contact support.");
+    const tooLarge = erasureRefusedWith(
+      PrivacyErrorCode.ErasureTooLarge,
+      HttpsStatus.FailedPrecondition,
+    );
+    expect(
+      clientErasureVm(erasureInputOf('bg', { erasureState: tooLarge }))
+        .eraseStatus,
+    ).toBe(
+      'Записите са твърде много за едно изтриване. Свържи се с поддръжката.',
+    );
+    const unreachable: ClientErasureState = {
+      clientErasurePhase: ClientErasurePhase.Refused,
+      erasureError: PipelineError.bare(PipelineErrorCode.Unavailable),
+    };
+    expect(
+      clientErasureVm(erasureInputOf('bg', { erasureState: unreachable }))
+        .eraseStatus,
+    ).toBe('Нещо се обърка. Опитай пак.');
+  });
+
+  it('is pure: the same input gives the same output and is left untouched', () => {
+    const input = deepFreeze(
+      erasureInputOf('bg', {
+        offer: ErasureOffer.Resweep,
+        alertOpen: true,
+        preview: PREVIEW,
+        siblings: [SIBLING_A],
+      }),
+    );
+    expect(clientErasureVm(input)).toEqual(clientErasureVm(input));
   });
 });

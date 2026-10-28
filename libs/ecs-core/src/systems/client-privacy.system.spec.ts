@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   BookingContact,
+  E164,
+  Email,
+  ErasureOffer,
+  ErasureStatus,
   type StaffEditDraft,
   SeatLabel,
   SeatOccupant,
   SubjectRelationship,
 } from '@core/components';
+import { PrivacyErrorCode } from '@core/errors';
 import {
   AppointmentId,
   AppointmentPhotoId,
@@ -26,12 +31,15 @@ import {
   draftPersonKey,
   duration,
   FIXTURE_TODAY,
+  fixtureHash,
   fixtureWalkInHash,
   OTHER_SENTINELS,
+  PRIVACY_SENTINELS,
   privacyWorld,
   seatFixture,
   trackMinute,
   unwrapOk,
+  userFixture,
   WALK_IN_SENTINELS,
 } from '@core/testing';
 import {
@@ -398,6 +406,133 @@ describe('ClientPrivacySystem.photoIsPersons', () => {
   });
 });
 
+describe('ClientPrivacySystem.linkOf — the one D29 link check (P3-L-9, P3-RU-37 (h))', () => {
+  it('a record whose id derives from its userId links that account', () => {
+    expect(ClientPrivacySystem.linkOf(personOf(P).record, fixtureHash)).toEqual(
+      { ok: true, value: world.person.userId },
+    );
+    expect(ClientPrivacySystem.linkOf(personOf(Q).record, fixtureHash)).toEqual(
+      { ok: true, value: world.other.userId },
+    );
+  });
+
+  it('a walk-in record links no account — ok(null), nothing to check', () => {
+    expect(ClientPrivacySystem.linkOf(personOf(W).record, fixtureHash)).toEqual(
+      { ok: true, value: null },
+    );
+  });
+
+  it('a foreign userId — another person’s uid on P’s record — is a mismatch, never a link', () => {
+    const corrupt = customerFixture({ id: P, userId: world.other.userId });
+    expect(ClientPrivacySystem.linkOf(corrupt, fixtureHash)).toEqual({
+      ok: false,
+      error: { errorCode: PrivacyErrorCode.AccountLinkMismatch },
+    });
+  });
+
+  it('a stale or invented userId on a walk-in record is a mismatch too', () => {
+    const stale = customerFixture({ id: W, userId: UserId.of('u-stale') });
+    const refused = ClientPrivacySystem.linkOf(stale, fixtureHash);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.error.errorCode).toBe('PRIVACY_ACCOUNT_LINK_MISMATCH');
+      // The refusal names neither id (no uid on the wire).
+      expect(Object.keys(refused.error)).toEqual(['errorCode']);
+    }
+  });
+
+  it('checks under the plain hash only — the walk-in key derives no account record', () => {
+    expect(
+      ClientPrivacySystem.linkOf(personOf(P).record, fixtureWalkInHash).ok,
+    ).toBe(false);
+  });
+});
+
+describe('ClientPrivacySystem.siblingIdsOf — the walk-in records the person’s contact derives (P3-L-7)', () => {
+  it('each non-null value once — the record’s and the account’s shared phone and e-mail derive two ids', () => {
+    expect(
+      ClientPrivacySystem.siblingIdsOf(personOf(P), fixtureWalkInHash),
+    ).toEqual([
+      CustomerId.forWalkIn(PRIVACY_SENTINELS.phone, fixtureWalkInHash),
+      CustomerId.forWalkIn(PRIVACY_SENTINELS.email, fixtureWalkInHash),
+    ]);
+  });
+
+  it('the order is record phone, record e-mail, account phone, account e-mail — an account value of its own adds its id', () => {
+    const accountPhone = E164.of('+359880000111');
+    const accountEmail = Email.of('account@example.invalid');
+    const person: ClientPerson = {
+      record: personOf(P).record,
+      account: userFixture({
+        id: world.person.userId,
+        phone: accountPhone,
+        email: accountEmail,
+      }),
+    };
+    expect(ClientPrivacySystem.siblingIdsOf(person, fixtureWalkInHash)).toEqual(
+      [
+        CustomerId.forWalkIn(PRIVACY_SENTINELS.phone, fixtureWalkInHash),
+        CustomerId.forWalkIn(PRIVACY_SENTINELS.email, fixtureWalkInHash),
+        CustomerId.forWalkIn(accountPhone, fixtureWalkInHash),
+        CustomerId.forWalkIn(accountEmail, fixtureWalkInHash),
+      ],
+    );
+  });
+
+  it('the record itself is excluded — a walk-in record keyed by its own phone has no sibling by it', () => {
+    expect(
+      ClientPrivacySystem.siblingIdsOf(personOf(W), fixtureWalkInHash),
+    ).toEqual([]);
+    const withEmail: ClientPerson = {
+      record: { ...personOf(W).record, email: OTHER_SENTINELS.email },
+      account: null,
+    };
+    expect(
+      ClientPrivacySystem.siblingIdsOf(withEmail, fixtureWalkInHash),
+    ).toEqual([CustomerId.forWalkIn(OTHER_SENTINELS.email, fixtureWalkInHash)]);
+  });
+
+  it('a cleared record and account (after the stamp) derive nothing', () => {
+    const cleared: ClientPerson = {
+      record: { ...personOf(P).record, phone: null, email: null },
+      account: userFixture({
+        id: world.person.userId,
+        phone: null,
+        email: null,
+      }),
+    };
+    expect(
+      ClientPrivacySystem.siblingIdsOf(cleared, fixtureWalkInHash),
+    ).toEqual([]);
+  });
+
+  it('derives under the keyed digest — never the plain hash', () => {
+    expect(
+      ClientPrivacySystem.siblingIdsOf(personOf(P), fixtureHash),
+    ).not.toEqual(
+      ClientPrivacySystem.siblingIdsOf(personOf(P), fixtureWalkInHash),
+    );
+  });
+});
+
+describe('ClientPrivacySystem.erasureOffer — what the card offers (P3-L-19, Law 10.2)', () => {
+  it('NONE → ERASE, ERASING → RESUME, ERASED → RESWEEP — one offer per status', () => {
+    expect(ClientPrivacySystem.erasureOffer(ErasureStatus.None)).toBe(
+      ErasureOffer.Erase,
+    );
+    expect(ClientPrivacySystem.erasureOffer(ErasureStatus.Erasing)).toBe(
+      ErasureOffer.Resume,
+    );
+    expect(ClientPrivacySystem.erasureOffer(ErasureStatus.Erased)).toBe(
+      ErasureOffer.Resweep,
+    );
+    const offers = Object.values(ErasureStatus).map((status) =>
+      ClientPrivacySystem.erasureOffer(status),
+    );
+    expect(new Set(offers).size).toBe(Object.values(ErasureOffer).length);
+  });
+});
+
 describe('ClientPrivacySystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const frozen = deepFreeze(privacyWorld());
@@ -430,9 +565,14 @@ describe('ClientPrivacySystem — purity', () => {
           frozen.person.customerId,
         ),
       ),
+      link: ClientPrivacySystem.linkOf(person.record, fixtureHash),
+      siblings: ClientPrivacySystem.siblingIdsOf(person, fixtureWalkInHash),
+      offer: ClientPrivacySystem.erasureOffer(person.record.erasureStatus),
     });
     expect(run()).toEqual(run());
     expect(run().photos).toEqual([true, true, true, false, false]);
+    expect(run().link).toEqual({ ok: true, value: frozen.person.userId });
+    expect(run().offer).toBe(ErasureOffer.Erase);
   });
 
   it('never names a uid as a record id: an account seat’s uid is not the record', () => {

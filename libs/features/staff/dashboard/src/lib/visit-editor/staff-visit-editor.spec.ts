@@ -23,6 +23,7 @@ import {
   DiscountSource,
   E164,
   EditCommand,
+  ErasureLifecycle,
   FlagName,
   PhotoOrigin,
   Role,
@@ -7354,6 +7355,7 @@ const GEORGI_RECORD: Customer = {
   createdAtUtcMs: utcMs('2025-03-01T10:00:00+02:00'),
   customerOrigin: CustomerOrigin.Registration,
   ...WriteProvenance.NONE,
+  ...ErasureLifecycle.none(),
 };
 
 /** Мартин's client record (D29): the card resolves every account holder's loyalty through his record. */

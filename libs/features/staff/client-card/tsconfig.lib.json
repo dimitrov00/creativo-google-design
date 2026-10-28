@@ -51,6 +51,9 @@
     },
     {
       "path": "../../../ui/controls/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/patterns/tsconfig.lib.json"
     }
   ]
 }

@@ -44,6 +44,21 @@ describe('OPERATION_ID_FIELD — where each callable carries its operation id (W
     );
   });
 
+  it('the erasure’s preview and act ride `operationId` — one act, one id, each answer its own decoder (Phase 3 WS-D)', () => {
+    expect(Callables.PreviewClientErasure).toBe('previewClientErasure');
+    expect(Callables.EraseClient).toBe('eraseClient');
+    expect(OPERATION_ID_FIELD[Callables.PreviewClientErasure]).toBe(
+      'operationId',
+    );
+    expect(OPERATION_ID_FIELD[Callables.EraseClient]).toBe('operationId');
+    expect(CALLABLE_ANSWER_DECODERS[Callables.PreviewClientErasure]).toBe(
+      ClientPrivacyCall.decodeErasurePreview,
+    );
+    expect(CALLABLE_ANSWER_DECODERS[Callables.EraseClient]).toBe(
+      ClientPrivacyCall.decodeErasure,
+    );
+  });
+
   it('the client issue sink alone carries none (OR-34)', () => {
     expect(ROWS.filter(([, field]) => field === null)).toEqual([
       [Callables.ReportClientIssues, null],

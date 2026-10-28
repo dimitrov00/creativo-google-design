@@ -28,6 +28,8 @@ import type { ProfileAction } from './profile-action.data';
 import { AccountStatus } from './account-status.data';
 import { AuditedProfileField } from './audited-profile-field.data';
 import { ImpersonationEndReason } from './end-reason-fields.data';
+import type { ErasureAction } from './erasure-action.data';
+import { ErasureCensus } from './erasure-census.data';
 import type { GovernedAction } from './governed-action.data';
 import { GovernedCollection } from './governed-collection.data';
 import { ImpersonationScope } from './impersonation-scope.data';
@@ -93,10 +95,16 @@ describe('AuditAction', () => {
       'IDENTITY_SESSION_ISSUED',
       'IDENTITY_REGISTRATION_COMPLETED',
     ]);
-    // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10).
+    // The data-subject verbs (audit-hardening Phase 3 WS-C, P3-DEP-10; the
+    // erasure's three, WS-D, P3-DEP-18).
     expect(
       AuditContext.ACTIONS.filter((action) => action.startsWith('PRIVACY_')),
-    ).toEqual(['PRIVACY_CLIENT_EXPORTED']);
+    ).toEqual([
+      'PRIVACY_CLIENT_EXPORTED',
+      'PRIVACY_CLIENT_ERASURE_STARTED',
+      'PRIVACY_CLIENT_ERASED',
+      'PRIVACY_CLIENT_ERASURE_RESWEPT',
+    ]);
   });
 
   it('the verb groups plus the single-verb variants partition the dictionary — each verb in exactly one (tsc)', () => {
@@ -122,6 +130,7 @@ describe('AuditAction', () => {
       StaffEditAction,
       ProfileAction,
       GovernedAction,
+      ErasureAction,
       Singles,
     ];
     // `tsc` failing on either constant IS the failure.
@@ -484,6 +493,51 @@ describe('AuditContext — one flat variant per verb family, every field present
       exportAuditRowCount: 7,
       exportByteCount: 18_304,
     });
+    for (const [field, value] of Object.entries(context)) {
+      if (field !== 'auditAction') expect(typeof value, field).toBe('number');
+    }
+  });
+
+  it('the erasure rows — the verb and the eleven census counts, nothing else (Phase 3 WS-D)', () => {
+    const census: ErasureCensus = {
+      erasureRecordCount: 1,
+      erasureAccountCount: 1,
+      erasureContactCount: 3,
+      erasureLabelCount: 2,
+      erasureNoteCount: 4,
+      erasurePhotoCount: 5,
+      erasureDocumentCount: 6,
+      erasurePseudonymCount: 1,
+      erasureVisitCount: 9,
+      erasureContactKeptCount: 1,
+      erasureJournalCount: 12,
+    };
+    for (const auditAction of [
+      AuditAction.PrivacyClientErasureStarted,
+      AuditAction.PrivacyClientErased,
+      AuditAction.PrivacyClientErasureReswept,
+    ] as const) {
+      expect(AuditContext.clientErasure(auditAction, census)).toEqual({
+        auditAction,
+        ...census,
+      });
+    }
+    // A wider struct (an answer with its status, a stray value) is copied
+    // count by count: nothing but the eleven reaches the row.
+    const wider = {
+      ...census,
+      erasureStatus: 'ERASING',
+      displayName: 'Sentinel Firstname',
+    };
+    const context = AuditContext.clientErasure(
+      AuditAction.PrivacyClientErased,
+      wider,
+    );
+    expect(Object.keys(context)).toEqual([
+      'auditAction',
+      ...Object.keys(ErasureCensus.EMPTY),
+    ]);
+    expect(JSON.stringify(context)).not.toContain('Sentinel');
     for (const [field, value] of Object.entries(context)) {
       if (field !== 'auditAction') expect(typeof value, field).toBe('number');
     }

@@ -522,6 +522,27 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(keys.clientExported(a)).not.toBe(keys.staffEdit(a));
   });
 
+  it('keys the erasure’s start and completion by the record’s STATE, the re-sweep by its act (Phase 3 WS-D, P3-RU-22)', () => {
+    const keys = AuditSystem.changeKey;
+    const record = CustomerId.of('cus_0123456789abcdef0123');
+    const other = CustomerId.of('cus_fedcba9876543210fedc');
+    const op = OperationId.of('op-1');
+    expect(keys.erasureStarted(record)).toBe(
+      'erasure-start:cus_0123456789abcdef0123',
+    );
+    expect(keys.erased(record)).toBe('erasure-done:cus_0123456789abcdef0123');
+    expect(keys.erasureResweep(op)).toBe('erasure-resweep:op-1');
+    // One start and one completion per record, whatever act runs them.
+    expect(keys.erasureStarted(record)).toBe(keys.erasureStarted(record));
+    expect(keys.erasureStarted(record)).not.toBe(keys.erasureStarted(other));
+    expect(keys.erasureStarted(record)).not.toBe(keys.erased(record));
+    // Two re-sweeps are two acts; a re-sweep never shares an export’s key.
+    expect(keys.erasureResweep(op)).not.toBe(
+      keys.erasureResweep(OperationId.of('op-2')),
+    );
+    expect(keys.erasureResweep(op)).not.toBe(keys.clientExported(op));
+  });
+
   it('keys the sign-in rows by state, never by the caller’s operation id (Phase 3 WS-B, P3-RU-7)', () => {
     const keys = AuditSystem.changeKey;
     const otp = OtpId.of('otp-1');

@@ -26,7 +26,8 @@ import type { PipelineError } from '@core/errors';
  * `redeemInvitation` with their server pipelines (4A-3 (4), (5)); pass F
  * adds `reportClientIssues`, the web's first-party issue sink (OR-34);
  * audit-hardening Phase 3 adds `exportClientData`, the admin's data-subject
- * export (WS-C). Triggers and schedules are never dialled, so they are not
+ * export (WS-C), and `previewClientErasure` / `eraseClient`, the admin's
+ * erasure (WS-D). Triggers and schedules are never dialled, so they are not
  * here.
  */
 export const Callables = {
@@ -51,6 +52,8 @@ export const Callables = {
   RedeemInvitation: 'redeemInvitation',
   ReportClientIssues: 'reportClientIssues',
   ExportClientData: 'exportClientData',
+  PreviewClientErasure: 'previewClientErasure',
+  EraseClient: 'eraseClient',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -156,6 +159,23 @@ export type CallableWire = {
     readonly input: ClientPrivacyCall;
     readonly answer: ClientPrivacyCall.Exported;
   };
+  /**
+   * An admin's erasure preview (audit-hardening Phase 3 WS-D, P3-L-17) —
+   * read-only: the record and the act's own id in; the record's erasure tag,
+   * the census and the sibling walk-in records out.
+   */
+  readonly [Callables.PreviewClientErasure]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.ErasurePreview;
+  };
+  /**
+   * One resumable call of an admin's erasure — the SAME `ClientPrivacyCall`
+   * (one act, one operation id) until the answer says it is done.
+   */
+  readonly [Callables.EraseClient]: {
+    readonly input: ClientPrivacyCall;
+    readonly answer: ClientPrivacyCall.Erasure;
+  };
 };
 
 /**
@@ -198,6 +218,8 @@ export const OPERATION_ID_FIELD: {
   [Callables.RedeemInvitation]: 'operationId',
   [Callables.ReportClientIssues]: null,
   [Callables.ExportClientData]: 'operationId',
+  [Callables.PreviewClientErasure]: 'operationId',
+  [Callables.EraseClient]: 'operationId',
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -256,4 +278,6 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.RedeemInvitation]: InvitationCall.decodeRedeemed,
   [Callables.ReportClientIssues]: decodeIssuesLogged,
   [Callables.ExportClientData]: ClientPrivacyCall.decodeExported,
+  [Callables.PreviewClientErasure]: ClientPrivacyCall.decodeErasurePreview,
+  [Callables.EraseClient]: ClientPrivacyCall.decodeErasure,
 };

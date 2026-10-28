@@ -1,9 +1,10 @@
 /**
  * The data-subject requests' error codes (audit-hardening Phase 3, WS-C /
  * WS-D) — the refusals of the admin-only privacy callables (the client
- * export, `exportClientData`; the erasure adds its own codes here), one
- * dictionary of flat structs discriminated by `errorCode` (Law 7.5),
- * SCREAMING_SNAKE with the `PRIVACY_` prefix. The UI looks them up as
+ * export, `exportClientData`; the erasure's preview and act,
+ * `previewClientErasure` and `eraseClient`), one dictionary of flat
+ * structs discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the
+ * `PRIVACY_` prefix. The UI looks them up as
  * `errors.<errorCode>`; the edge sends the code itself on the wire. Every
  * field beside `errorCode` is a scalar — a payload field's NAME or a count,
  * never a value of the person the request is about (R36 / T5).
@@ -31,6 +32,27 @@ export const PrivacyErrorCode = {
    * refused whole, never truncated; the counts say how far it reached.
    */
   ExportTooLarge: 'PRIVACY_EXPORT_TOO_LARGE',
+  /**
+   * The record links an account the shop must not erase from here
+   * (`failed-precondition`) — a staff role in its STORED account or in its
+   * Auth custom claims (P3-L-16): an erasure would remove an operator.
+   */
+  ErasureStaffAccount: 'PRIVACY_ERASURE_STAFF_ACCOUNT',
+  /**
+   * The record's `userId` is no PROVABLE link (`failed-precondition`):
+   * `record.id !== CustomerId.forUser(record.userId, hash)`, the D29
+   * invariant every account-holder record is created under — refused by
+   * every privacy callable before any read keyed by that uid, so a corrupt
+   * link never exports or erases another account (P3-L-9, P3-RU-37 (h);
+   * `ClientPrivacySystem.linkOf` is the one check).
+   */
+  AccountLinkMismatch: 'PRIVACY_ACCOUNT_LINK_MISMATCH',
+  /**
+   * A footprint list past the erasure's cap (`failed-precondition`) —
+   * refused before any write, never a silent truncation (P3-L-21); the
+   * count says how far the list reached.
+   */
+  ErasureTooLarge: 'PRIVACY_ERASURE_TOO_LARGE',
 } as const;
 export type PrivacyErrorCode =
   (typeof PrivacyErrorCode)[keyof typeof PrivacyErrorCode];
@@ -41,7 +63,10 @@ export type PrivacyError =
   | PrivacyError.InvalidInput
   | PrivacyError.Unavailable
   | PrivacyError.ClientNotFound
-  | PrivacyError.ExportTooLarge;
+  | PrivacyError.ExportTooLarge
+  | PrivacyError.ErasureStaffAccount
+  | PrivacyError.AccountLinkMismatch
+  | PrivacyError.ErasureTooLarge;
 
 export const PrivacyError = {
   unauthenticated(): PrivacyError.Unauthenticated {
@@ -68,6 +93,15 @@ export const PrivacyError = {
       exportDocumentCount,
       exportByteCount,
     };
+  },
+  erasureStaffAccount(): PrivacyError.ErasureStaffAccount {
+    return { errorCode: PrivacyErrorCode.ErasureStaffAccount };
+  },
+  accountLinkMismatch(): PrivacyError.AccountLinkMismatch {
+    return { errorCode: PrivacyErrorCode.AccountLinkMismatch };
+  },
+  erasureTooLarge(erasureListedCount: number): PrivacyError.ErasureTooLarge {
+    return { errorCode: PrivacyErrorCode.ErasureTooLarge, erasureListedCount };
   },
 
   /** Narrows an error to one code — `PrivacyError.is(e, PrivacyErrorCode.ExportTooLarge)`. */
@@ -106,5 +140,17 @@ export namespace PrivacyError {
     readonly exportDocumentCount: number;
     /** How many UTF-8 bytes of canonical JSON it measured (none when the document cap refused first). */
     readonly exportByteCount: number;
+  };
+  export type ErasureStaffAccount = {
+    readonly errorCode: typeof PrivacyErrorCode.ErasureStaffAccount;
+  };
+  /** No uid, no id: the admin knows which record they asked for; a uid on the wire would name the account. */
+  export type AccountLinkMismatch = {
+    readonly errorCode: typeof PrivacyErrorCode.AccountLinkMismatch;
+  };
+  export type ErasureTooLarge = {
+    readonly errorCode: typeof PrivacyErrorCode.ErasureTooLarge;
+    /** How many documents the list that passed the cap returned (the cap and one). */
+    readonly erasureListedCount: number;
   };
 }

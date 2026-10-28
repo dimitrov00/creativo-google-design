@@ -23,6 +23,7 @@ export * from './canonical-json.system';
 export * from './capacity.system';
 export * from './catalog-pricing.system';
 export * from './catalog.system';
+export * from './client-erasure.system';
 export * from './client-export.system';
 export * from './client-glance.system';
 export * from './client-issue.system';

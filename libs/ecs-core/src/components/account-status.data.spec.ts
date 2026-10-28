@@ -83,6 +83,45 @@ describe('AccountLifecycle', () => {
     ).toBe(true);
     expect(AccountLifecycle.isBlockedAt(lifecycle, NOW)).toBe(false);
   });
+
+  it('erase() is the terminal variant — the tag and its stamp, no block fields (P3-RU-17)', () => {
+    const lifecycle = AccountLifecycle.erase(NOW);
+    expect(lifecycle).toEqual({
+      accountStatus: 'ERASED',
+      accountErasedAtUtcMs: NOW,
+    });
+    expect(lifecycle.accountStatus).toBe(AccountStatus.Erased);
+  });
+
+  it('isErased() — only the erased variant', () => {
+    expect(AccountLifecycle.isErased(AccountLifecycle.erase(NOW))).toBe(true);
+    expect(AccountLifecycle.isErased(AccountLifecycle.active())).toBe(false);
+    expect(
+      AccountLifecycle.isErased(
+        AccountLifecycle.block(BlockReason.Manual, null),
+      ),
+    ).toBe(false);
+  });
+
+  it('isBlockedAt() — an erased account is denied at ANY instant, before or after its stamp', () => {
+    const lifecycle = AccountLifecycle.erase(NOW);
+    for (const at of [
+      minutesFrom(NOW, -60 * 24 * 365),
+      UtcEpochMs.plusMs(NOW, -1),
+      NOW,
+      minutesFrom(NOW, 60 * 24 * 365 * 10),
+    ]) {
+      expect(AccountLifecycle.isBlockedAt(lifecycle, at)).toBe(true);
+    }
+  });
+});
+
+describe('AccountStatus', () => {
+  it('names the three states, SCREAMING, each once', () => {
+    const statuses = Object.values(AccountStatus);
+    expect(statuses).toEqual(['ACTIVE', 'BLOCKED', 'ERASED']);
+    expect(new Set(statuses).size).toBe(statuses.length);
+  });
 });
 
 describe('BlockReason', () => {

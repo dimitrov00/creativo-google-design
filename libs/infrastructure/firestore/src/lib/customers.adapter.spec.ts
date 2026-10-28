@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { CustomerOrigin, E164, WriteProvenance } from '@core/components';
+import {
+  CustomerOrigin,
+  E164,
+  ErasureLifecycle,
+  ErasureStatus,
+  WriteProvenance,
+} from '@core/components';
 import { CustomerId, Result, UserId } from '@core/primitives';
 import { RepositoryErrorCode } from '@core/errors';
 import type { Customer } from '@core/entities';
@@ -29,6 +35,7 @@ describe('customerPorts.loadCustomerForUser — the client record of an account'
     searchPrefixes: ['ге', 'гео'],
     createdAtUtcMs: 1,
     customerOrigin: 'FIRST_BOOKING',
+    erasureStatus: ErasureStatus.None,
   };
 
   it('asks by the link field, one document, and answers the record', async () => {
@@ -89,6 +96,7 @@ describe('customerPorts.loadCustomerForUser, guarded — the SINGLE rule (edge h
     searchPrefixes: ['ге', 'гео'],
     createdAtUtcMs: 1_790_575_200_000,
     customerOrigin: 'FIRST_BOOKING',
+    erasureStatus: ErasureStatus.None,
   };
 
   it('answers a malformed record as REPOSITORY_MALFORMED — never ok(null), never “no record yet”', async () => {
@@ -149,6 +157,7 @@ describe('customerSearchPorts.searchCustomers — the client records the desk ca
       customerOrigin:
         userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
       ...WriteProvenance.NONE,
+      ...ErasureLifecycle.none(),
     };
   }
   const MARIA = record('cus_maria', 'Мария', '+359888123456', null);

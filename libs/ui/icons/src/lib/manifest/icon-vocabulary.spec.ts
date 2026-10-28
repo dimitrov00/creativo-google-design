@@ -138,6 +138,7 @@ describe('the client card vocabulary', () => {
     'client.remove': 'person_remove',
     'client.photos': 'photo_library',
     'client.export': 'receipt_long',
+    'client.erase': 'delete',
     'connection.offline': 'cloud_off',
     'loyalty.program': 'loyalty',
     'loyalty.points': 'stars',

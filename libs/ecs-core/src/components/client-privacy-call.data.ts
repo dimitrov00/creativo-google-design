@@ -6,14 +6,17 @@ import {
 } from '@core/primitives';
 import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
+import type { ErasureCensus } from './erasure-census.data';
+import { ErasureStatus } from './erasure-lifecycle.data';
 
 /** The export bundle's format version — bumped by any change of a section's shape or order. */
 const EXPORT_VERSION = 1;
 
 /**
- * THE PRIVACY WIRE (audit-hardening Phase 3, WS-C) — what the web sends to
- * an admin's data-subject callable (`exportClientData`; the erasure's
- * calls take the same struct): the client RECORD the request is about and
+ * THE PRIVACY WIRE (audit-hardening Phase 3, WS-C / WS-D) — what the web
+ * sends to an admin's data-subject callable (`exportClientData`, and the
+ * erasure's `previewClientErasure` and `eraseClient`, which take the same
+ * struct): the client RECORD the request is about and
  * the act's own minted id, REQUIRED — one id per act, kept for a retry of
  * the same act, so a replay answers what the first call did. The server
  * adds the caller.
@@ -79,7 +82,144 @@ export const ClientPrivacyCall = {
       exportJson,
     });
   },
+
+  /**
+   * `previewClientErasure`'s answer, read through {@link CallAnswer}: the
+   * record's erasure tag, every census count a whole number ≥ 0 and each
+   * sibling id through `CustomerId.parse` — anything else is
+   * `PIPELINE_UNKNOWN` (the alert never words a figure the server did not
+   * send).
+   */
+  decodeErasurePreview(
+    raw: unknown,
+  ): Result<ClientPrivacyCall.ErasurePreview, PipelineError> {
+    const answer = CallAnswer.read(raw);
+    if (answer === null) return CallAnswer.unusable();
+    const erasureStatus = CallAnswer.tag(
+      answer,
+      'erasureStatus',
+      ErasureStatus,
+    );
+    const census = censusOf(answer);
+    const siblings = customerIdsOf(
+      CallAnswer.field(answer, 'erasureSiblingCustomerIds'),
+    );
+    if (erasureStatus === null || census === null || siblings === null) {
+      return CallAnswer.unusable();
+    }
+    return Result.ok({
+      erasureStatus,
+      erasureSiblingCustomerIds: siblings,
+      ...census,
+    });
+  },
+
+  /**
+   * `eraseClient`'s answer — the record's erasure tag after the call,
+   * whether the erasure is done, and the residue census — read through
+   * {@link CallAnswer}; anything else is `PIPELINE_UNKNOWN`.
+   */
+  decodeErasure(
+    raw: unknown,
+  ): Result<ClientPrivacyCall.Erasure, PipelineError> {
+    const answer = CallAnswer.read(raw);
+    if (answer === null) return CallAnswer.unusable();
+    const erasureStatus = CallAnswer.tag(
+      answer,
+      'erasureStatus',
+      ErasureStatus,
+    );
+    const erasureDone = CallAnswer.flag(answer, 'erasureDone');
+    const census = censusOf(answer);
+    if (erasureStatus === null || erasureDone === null || census === null) {
+      return CallAnswer.unusable();
+    }
+    return Result.ok({ erasureStatus, erasureDone, ...census });
+  },
 } as const;
+
+/**
+ * The eleven census counts of an answer, each a whole number ≥ 0, in the
+ * census's field order — `null` when any is missing or malformed.
+ */
+function censusOf(answer: CallAnswer): ErasureCensus | null {
+  const erasureRecordCount = CallAnswer.whole(answer, 'erasureRecordCount', 0);
+  const erasureAccountCount = CallAnswer.whole(
+    answer,
+    'erasureAccountCount',
+    0,
+  );
+  const erasureContactCount = CallAnswer.whole(
+    answer,
+    'erasureContactCount',
+    0,
+  );
+  const erasureLabelCount = CallAnswer.whole(answer, 'erasureLabelCount', 0);
+  const erasureNoteCount = CallAnswer.whole(answer, 'erasureNoteCount', 0);
+  const erasurePhotoCount = CallAnswer.whole(answer, 'erasurePhotoCount', 0);
+  const erasureDocumentCount = CallAnswer.whole(
+    answer,
+    'erasureDocumentCount',
+    0,
+  );
+  const erasurePseudonymCount = CallAnswer.whole(
+    answer,
+    'erasurePseudonymCount',
+    0,
+  );
+  const erasureVisitCount = CallAnswer.whole(answer, 'erasureVisitCount', 0);
+  const erasureContactKeptCount = CallAnswer.whole(
+    answer,
+    'erasureContactKeptCount',
+    0,
+  );
+  const erasureJournalCount = CallAnswer.whole(
+    answer,
+    'erasureJournalCount',
+    0,
+  );
+  if (
+    erasureRecordCount === null ||
+    erasureAccountCount === null ||
+    erasureContactCount === null ||
+    erasureLabelCount === null ||
+    erasureNoteCount === null ||
+    erasurePhotoCount === null ||
+    erasureDocumentCount === null ||
+    erasurePseudonymCount === null ||
+    erasureVisitCount === null ||
+    erasureContactKeptCount === null ||
+    erasureJournalCount === null
+  ) {
+    return null;
+  }
+  return {
+    erasureRecordCount,
+    erasureAccountCount,
+    erasureContactCount,
+    erasureLabelCount,
+    erasureNoteCount,
+    erasurePhotoCount,
+    erasureDocumentCount,
+    erasurePseudonymCount,
+    erasureVisitCount,
+    erasureContactKeptCount,
+    erasureJournalCount,
+  };
+}
+
+/** A list of client record ids, each through `CustomerId.parse` — `null` when it is no array or any id is malformed. */
+function customerIdsOf(raw: unknown): readonly CustomerId[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: CustomerId[] = [];
+  for (const id of raw as readonly unknown[]) {
+    if (typeof id !== 'string') return null;
+    const parsed = CustomerId.parse(id);
+    if (!parsed.ok) return null;
+    out.push(parsed.value);
+  }
+  return out;
+}
 
 export namespace ClientPrivacyCall {
   /**
@@ -99,4 +239,28 @@ export namespace ClientPrivacyCall {
     /** The canonical JSON of the bundle. */
     readonly exportJson: string;
   };
+  /**
+   * `previewClientErasure`'s answer — read-only, no row (P3-L-17): the
+   * record's erasure tag and the census of the person's footprint (what an
+   * erasure would clear, and what it would keep), which the card's ONE alert
+   * words in figures, beside the sibling walk-in records.
+   */
+  export type ErasurePreview = {
+    readonly erasureStatus: ErasureStatus;
+    /**
+     * Existing walk-in records keyed by the person's phone / e-mail, the
+     * record itself excluded (P3-L-7) — ids only, an admin-only answer;
+     * empty once the stamp has cleared the contact values.
+     */
+    readonly erasureSiblingCustomerIds: readonly CustomerId[];
+  } & ErasureCensus;
+  /**
+   * `eraseClient`'s answer — one resumable call's outcome: `ERASING` while
+   * work is left (`erasureDone` false — call again with the SAME act),
+   * `ERASED` when done; the census is the residue after this call.
+   */
+  export type Erasure = {
+    readonly erasureStatus: ErasureStatus;
+    readonly erasureDone: boolean;
+  } & ErasureCensus;
 }

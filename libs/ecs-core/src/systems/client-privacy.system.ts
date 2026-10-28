@@ -1,9 +1,23 @@
-import { type BookingContact, type Seat, SeatSubject } from '@core/components';
-import { type AppointmentId, CustomerId, type SeatId } from '@core/primitives';
+import {
+  type BookingContact,
+  ErasureOffer,
+  ErasureStatus,
+  type Seat,
+  SeatSubject,
+} from '@core/components';
+import { PrivacyError } from '@core/errors';
+import {
+  type AppointmentId,
+  CustomerId,
+  Result,
+  type SeatId,
+  type UserId,
+} from '@core/primitives';
 import type {
   Appointment,
   AppointmentPhoto,
   Customer,
+  CustomerMeta,
   User,
 } from '@core/entities';
 
@@ -28,9 +42,84 @@ export type ClientPerson = {
  * never the plain hash — its input is a person's contact). Nothing here
  * reads a value to compare it with the person's: the visit's own contact is
  * recognised by the id it derives, so the rule still answers once the
- * record's values are gone.
+ * record's values are gone. The erasure's own decisions live in
+ * `ClientErasureSystem`; the first three below are shared by every privacy
+ * callable and the admin's card (P3-RU-37 (h), P3-L-7, P3-L-19).
  */
 export const ClientPrivacySystem = {
+  /**
+   * THE ONE D29 LINK CHECK of every privacy callable (P3-L-9, P3-RU-37 (h)):
+   * the account the record PROVABLY links — `ok(record.userId)` when
+   * `record.id === CustomerId.forUser(record.userId, hash)` (the invariant
+   * every account-holder record is created under,
+   * `CustomerRecordSystem.createsFor`), `ok(null)` when the record links
+   * none (a walk-in), and `PRIVACY_ACCOUNT_LINK_MISMATCH` for a `userId`
+   * the id does not derive from — a corrupt or foreign link. The export, the
+   * preview and the erasure refuse on it BEFORE any read keyed by the uid,
+   * so a broken link never exports or erases another account. `hash` is the
+   * pipeline's plain `Hash` port (the record id's own digest), never the
+   * walk-in key.
+   */
+  linkOf(
+    record: CustomerMeta,
+    hash: (input: string) => string,
+  ): Result<UserId | null, PrivacyError.AccountLinkMismatch> {
+    const userId = record.userId;
+    if (userId === null) return Result.ok(null);
+    return CustomerId.forUser(userId, hash) === record.id
+      ? Result.ok(userId)
+      : Result.err(PrivacyError.accountLinkMismatch());
+  },
+
+  /**
+   * The walk-in record ids the person's contact values derive (P3-L-7):
+   * `CustomerId.forWalkIn` of the record's phone, the record's e-mail, the
+   * account's phone and the account's e-mail — each non-null value once, in
+   * that order — the record itself excluded. Ids only (an admin-only
+   * answer): the pipeline reads which of them exist, and the card offers
+   * each as its own act; none is ever merged into this person's erasure (two
+   * people sharing a phone share a walk-in record, OR-26). `walkInHash` is
+   * the keyed digest (`WalkInKeyPorts.walkInHash`) — its input is a contact.
+   * Once the stamp has cleared the values, nothing derives: `[]`.
+   */
+  siblingIdsOf(
+    person: ClientPerson,
+    walkInHash: (input: string) => string,
+  ): readonly CustomerId[] {
+    const record = person.record;
+    const account = person.account;
+    const keys: readonly (string | null)[] = [
+      record.phone,
+      record.email,
+      account === null ? null : account.phone,
+      account === null ? null : account.email,
+    ];
+    const out: CustomerId[] = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i] ?? null;
+      if (key === null) continue;
+      const id = CustomerId.forWalkIn(key, walkInHash);
+      if (id !== record.id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  },
+
+  /**
+   * What the admin's card offers for a record (Law 10.2 — the presenter
+   * only words it, P3-L-19): `NONE` → erase, `ERASING` → resume the
+   * unfinished erasure, `ERASED` → re-sweep whatever was written since.
+   */
+  erasureOffer(erasureStatus: ErasureStatus): ErasureOffer {
+    switch (erasureStatus) {
+      case ErasureStatus.None:
+        return ErasureOffer.Erase;
+      case ErasureStatus.Erasing:
+        return ErasureOffer.Resume;
+      case ErasureStatus.Erased:
+        return ErasureOffer.Resweep;
+    }
+  },
+
   /**
    * Whether every seat of the visit is the person's record — an account
    * seat or a walk-in seat naming `customerId`. An anonymous guest's seat

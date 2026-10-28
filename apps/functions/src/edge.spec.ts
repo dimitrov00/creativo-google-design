@@ -43,6 +43,7 @@ import {
   MoveErrorCode,
   PhoneError,
   PhoneInvalidReason,
+  PrivacyError,
   PrivacyErrorCode,
   RepositoryError,
   SchedulingErrorCode,
@@ -703,6 +704,21 @@ describe('edge — the wire table', () => {
         message: 'IDENTITY_OTP_SEND_UNAVAILABLE',
         details: { errorCode: 'IDENTITY_OTP_SEND_UNAVAILABLE' },
       });
+    });
+
+    it('the erasure’s refusals are `failed-precondition`, each its code alone — the listed count and the person stay on the server (P3-DEP-13, P3-DEP-15)', () => {
+      for (const error of [
+        PrivacyError.erasureStaffAccount(),
+        PrivacyError.accountLinkMismatch(),
+        PrivacyError.erasureTooLarge(5_001),
+        BookingError.clientErased(),
+      ]) {
+        expect(wire(error)).toEqual({
+          status: 'failed-precondition',
+          message: error.errorCode,
+          details: { errorCode: error.errorCode },
+        });
+      }
     });
 
     it('both waitlist doors answer the shared WaitlistError shape', () => {

@@ -54,9 +54,11 @@ import { guardedReads } from './observe';
  *   `appendTeamNote` (a transaction) over the notes adapter ITSELF
  *   (`appointmentNotePorts`, the composition root's `guardedReads`).
  * - Photos: `attachVisitPhoto` and `adoptVisitPhoto` over memory ports —
- *   `test:emulator` runs no Storage emulator — with the document written by
- *   the storage adapter's own line, `setDoc(doc(db, 'appointmentPhotos', id),
- *   body)` (`appointment-photos.adapter.ts` `saveAppointmentPhoto`).
+ *   this spec drives no Storage emulator (`test:emulator` starts one since
+ *   audit-hardening Phase 3, for the functions' erasure proof only) — with
+ *   the document written by the storage adapter's own line,
+ *   `setDoc(doc(db, 'appointmentPhotos', id), body)`
+ *   (`appointment-photos.adapter.ts` `saveAppointmentPhoto`).
  *
  * The clock the pipelines read is the EMULATOR's (`emulatorNowMs`, RU-18):
  * the rule judges `request.time`, which no spec can pin.
