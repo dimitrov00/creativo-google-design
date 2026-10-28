@@ -1,5 +1,5 @@
 import {
-  type AppliedDiscount,
+  AppliedDiscount,
   AuditAction,
   BillPending,
   type BookingCall,
@@ -263,11 +263,6 @@ type VoucherDrawer = {
   readonly prior: VoucherRedemption | null;
   readonly previous: Money;
 };
-
-/** A redemption line's amount as a `Money` in its own currency. */
-function drawOf(redemption: VoucherRedemption): Money {
-  return { amountCents: redemption.amountCents, currency: redemption.currency };
-}
 
 /**
  * A visit's bill (`appointment.ts:510-560`, `staff-edit-appointment.use-case.ts:833,974`,
@@ -578,7 +573,7 @@ export const BillingSystem = {
         }
       }
     }
-    if (manualCount > 1 || !DiscountSystem.isLegalSet(settled)) {
+    if (manualCount > 1 || !AppliedDiscount.isLegalSelection(settled)) {
       return invalid('discounts');
     }
     return Result.ok(settled);
@@ -653,7 +648,7 @@ export const BillingSystem = {
         findVoucher(vouchers, (entry) => entry.id === prior.voucherId) ??
         findVoucher(vouchers, (entry) => entry.code === prior.code);
       if (voucher !== null) {
-        const back = VoucherSystem.settle(voucher, drawOf(prior), zero);
+        const back = VoucherSystem.settle(voucher, prior, zero);
         if (!back.ok) return invalid('vouchers');
         setTouched(touched, back.value);
       }
@@ -679,7 +674,7 @@ export const BillingSystem = {
       if (prior === null && VoucherSystem.refusal(voucher, nowUtcMs) !== null) {
         return invalid('vouchers');
       }
-      const previous = prior === null ? zero : drawOf(prior);
+      const previous: Money = prior === null ? zero : prior;
       drawers.push({ voucher, prior, previous });
       available.push(cents(voucher.balanceCents + previous.amountCents));
     }

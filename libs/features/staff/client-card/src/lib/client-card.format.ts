@@ -6,12 +6,14 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import { formatCount, formatWallClock } from '@creativo/ui/wall-clock';
+import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { LinePart } from './client-pages.vm';
 
 /*
- * THE CARD'S FIGURES AND DATES — the few formatting rules every presenter
- * shares, in one place so a page never words a date two ways.
+ * THE CARD'S DATES — the few formatting rules every presenter shares, in
+ * one place so a page never words a date two ways. A figure (a count,
+ * grouped the locale's way) is the shared cached `formatCount` of
+ * `@creativo/ui/wall-clock`, which every presenter calls directly.
  *
  * Dates are the house form (old spec R59): a fact line or a caption says
  * «12.08», with the year only outside the current one («6.03.2025 г.»); a
@@ -120,14 +122,6 @@ export function monthLong(day: LocalDate, lang: string): string {
  * one range formatter for the whole card, never a second (wave D r6).
  */
 export { dayRange } from '@creativo/features/shared/visits';
-
-/**
- * «12 450» — a count or a figure, grouped the locale's way, through the
- * shared cached `formatCount` (pass E, E-12).
- */
-export function figure(value: number, lang: string): string {
-  return formatCount(value, lang);
-}
 
 /** The Roman numerals, largest first. */
 const NUMERALS: readonly (readonly [number, string])[] = [

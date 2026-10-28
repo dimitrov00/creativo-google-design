@@ -1,15 +1,15 @@
 /**
  * The landing's hand-authored content: the work gallery's art direction
  * and the two shops, as presentational view models — localized strings
- * stay `{ en, bg }` pairs resolved at render time. Services and barbers
+ * stay `LocalizedText` pairs resolved at render time. Services and barbers
  * are the catalogue's (`CatalogContentService`, behind
  * `LandingContentService`); the authored shelf the specs serve through the
  * catalogue's ports is test support (`src/testing/landing-catalog.ts`).
  */
 
-import type { Localized } from '@creativo/features/shared/catalog';
+import type { LocalizedText } from '@core/components';
 
-const lt = (en: string, bg: string): Localized => ({ en, bg });
+const lt = (en: string, bg: string): LocalizedText => ({ en, bg });
 
 // ─── Work gallery ───────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ const lt = (en: string, bg: string): Localized => ({ en, bg });
 export interface WorkShotVm {
   readonly id: string;
   readonly src: string;
-  readonly alt: Localized;
+  readonly alt: LocalizedText;
   readonly aspectRatio: string;
   readonly driftY: number;
   readonly captionKey: string;
@@ -97,8 +97,8 @@ export const WORK_SHOTS: readonly WorkShotVm[] = [
 
 export interface LocationVm {
   readonly id: string;
-  readonly name: Localized;
-  readonly address: Localized;
+  readonly name: LocalizedText;
+  readonly address: LocalizedText;
   readonly phoneE164: string;
   readonly phoneDisplay: string;
   readonly mapUrl: string;

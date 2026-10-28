@@ -738,23 +738,6 @@ export const BookingCartSystem = {
   },
 
   /**
-   * `label(n)` for the first `n` from `from` that is not `taken` — the ONE
-   * placeholder rule (`firstUnusedLabel`, `booking-flow.store.ts:1477-1500`),
-   * trimmed. Never a taken label: the party refuses a second guest under one,
-   * and `taken` can block at most `taken.length` ordinals, so one more try
-   * always lands — unless `label` ignores its ordinal, when the number is
-   * written after it («Гост 2»), which the same pigeonhole bound lands too.
-   */
-  firstUnusedLabel(
-    taken: readonly string[],
-    label: (ordinal: number) => string,
-    from: number,
-  ): string {
-    // The rule is `GuestLabelSystem`'s; the cart names it for its prefill.
-    return GuestLabelSystem.firstUnusedLabel(taken, label, from);
-  },
-
-  /**
    * The account a visit was read FOR (`readerOf`,
    * `booking-flow.store.ts:1026-1034`): the party's claimed owner, or —
    * before any claim — the visit's own `SELF` account seat, which an
@@ -788,7 +771,7 @@ export const BookingCartSystem = {
    * (`AS_GUESTS`) and is left to the server on a move (`CARRIED_BY_SERVER`).
    * Guest seat keys are minted `guest-0…` in visit order; lines are `line-1…`
    * with the visit's barber as a SPECIFIC preference. A guest the visit has no
-   * name for gets a placeholder no other guest holds ({@link firstUnusedLabel}
+   * name for gets a placeholder no other guest holds ({@link GuestLabelSystem.firstUnusedLabel}
    * from 1). `null` when nothing is left for the cart, or a placeholder is no
    * label at all.
    */
@@ -874,7 +857,7 @@ export const BookingCartSystem = {
       guestCount++;
       let raw = storedLabels[i] as string | null;
       if (raw === null) {
-        raw = BookingCartSystem.firstUnusedLabel(taken, guestLabel, 1);
+        raw = GuestLabelSystem.firstUnusedLabel(taken, guestLabel, 1);
         taken.push(raw);
       }
       const label = SeatLabel.parse(raw);
@@ -896,7 +879,7 @@ export const BookingCartSystem = {
    * `booking-flow.store.ts:914-958`): a waitlist request froze the BAG, never
    * the guests' labels (a guest is only a label until they have an account),
    * so every non-booker seat of the cart comes back as a guest under its own
-   * seat key and a placeholder no other guest holds ({@link firstUnusedLabel}
+   * seat key and a placeholder no other guest holds ({@link GuestLabelSystem.firstUnusedLabel}
    * from 1) — the party lands past the rename that would fix a clash. `null`
    * when a placeholder is no label at all.
    */
@@ -910,7 +893,7 @@ export const BookingCartSystem = {
     for (let i = 0; i < cart.cartSeats.length; i++) {
       const seatKey = (cart.cartSeats[i] as CartSeatLines).seatKey;
       if (seatKey === SELF_KEY) continue;
-      const raw = BookingCartSystem.firstUnusedLabel(taken, guestLabel, 1);
+      const raw = GuestLabelSystem.firstUnusedLabel(taken, guestLabel, 1);
       taken.push(raw);
       const label = SeatLabel.parse(raw);
       if (!label.ok) return null;

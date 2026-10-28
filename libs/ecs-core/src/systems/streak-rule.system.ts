@@ -310,8 +310,11 @@ function inRole(head: StreakSchedule, role: HeadRole): StreakHeadRule | null {
   return null;
 }
 
-/** The rule in force since its day — a head always holds one (F-9). */
-function currentOf(head: StreakSchedule): StreakHeadRule {
+/**
+ * The head's element in force today's role holds — the `CURRENT` one, the
+ * rule in force since its day (a head always holds one, F-9).
+ */
+function current(head: StreakSchedule): StreakHeadRule {
   return (
     inRole(head, HeadRole.Current) ??
     defect('a streak head holds no CURRENT rule')
@@ -377,10 +380,7 @@ export const StreakRuleSystem = {
         });
   },
 
-  /** The head's element in force today's role holds — the `CURRENT` one (a head always has it). */
-  current(head: StreakSchedule): StreakHeadRule {
-    return currentOf(head);
-  },
+  current,
 
   /** The head's waiting element, its day come or not, or `null` when nothing waits. */
   scheduled(head: StreakSchedule): StreakHeadRule | null {
@@ -392,7 +392,7 @@ export const StreakRuleSystem = {
     const scheduled = inRole(head, HeadRole.Scheduled);
     return scheduled !== null && today >= scheduled.effectiveFromLocalDate
       ? scheduled
-      : currentOf(head);
+      : current(head);
   },
 
   /** What still waits on a shop day, or `null` once its day has come. */
@@ -681,18 +681,5 @@ export const StreakRuleSystem = {
     readonly excuses: readonly StreakExcuse[];
   }): StreakExcuseCount {
     return { on: rule.excuses.length, all: StreakRule.EXCUSES.length };
-  },
-
-  /**
-   * The period a personal interval opens for a client of `habitDays` — the
-   * admin's tolerance example («Клиент, който идва на 4 седмици, има срок 6
-   * седмици»). The rule's ONE period computation, `StreakIntervalRule.daysFor`
-   * — never a copy of it.
-   */
-  exampleDue(
-    interval: StreakIntervalRule.Personal,
-    habitDays: number,
-  ): StreakIntervalRule.Period {
-    return StreakIntervalRule.daysFor(interval, habitDays);
   },
 } as const;

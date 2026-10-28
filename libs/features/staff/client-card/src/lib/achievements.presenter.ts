@@ -3,7 +3,6 @@ import {
   BadgeEmblem,
   BadgeSubject,
   type EarnedDay,
-  type EarnedLevel,
   FamilyScopeFilter,
   MedalCaption,
   MedalMeter,
@@ -53,7 +52,6 @@ import {
   dayLong,
   dayRange,
   dayShort,
-  figure,
   levelNumeral,
   monogramOf,
 } from './client-card.format';
@@ -71,6 +69,7 @@ import type {
   SeasonTrackVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * «ПОСТИЖЕНИЯ» — the collection, a scope, a medal (client-card-redesign
@@ -286,21 +285,6 @@ export function progressList(data: AchievementsData): readonly BadgeProgress[] {
   return [...data.progress.values()];
 }
 
-/** The shop day a level was earned on (a yearly one keeps its latest) — the stored day (T5), never re-bucketed (`BadgeSystem.earnedOn`). */
-export function earnedOnOf(
-  progress: BadgeProgress | null,
-  level: number,
-): LocalDate | null {
-  return BadgeSystem.earnedOn(progress, level);
-}
-
-/** The level earned most recently (`BadgeSystem.latestEarned`). */
-export function latestEarned(
-  progress: BadgeProgress | null,
-): EarnedLevel | null {
-  return BadgeSystem.latestEarned(progress);
-}
-
 /** The season or event a family belongs to, or `null`. */
 export function seasonOfSeries(
   series: Pick<BadgeSeries, 'seasonId'>,
@@ -414,21 +398,6 @@ export function familyCountsOf(
  * own cap, and the sentence says the rest («с това посещение»).
  */
 export const PENDING_RING = 0.92;
-
-/** A single act: one level with no target («Добре дошъл», «Рожден ден в салона») — `BadgeSystem.isOneOff`. */
-export function isOneOff(series: BadgeSeries): boolean {
-  return BadgeSystem.isOneOff(series);
-}
-
-/**
- * A family of ONE level, counted or not («Есенно утро», «Всеки летен
- * месец», «Добре дошъл»): earning it is the whole family, so once earned
- * it is worded as a single act — by its day — never «Всички нива», the
- * words for a ladder climbed to its top (`BadgeSystem.isSingleLevel`).
- */
-export function isSingleLevel(series: BadgeSeries): boolean {
-  return BadgeSystem.isSingleLevel(series);
-}
 
 /**
  * The family's season or event has ended on `data.today` (CF): it keeps
@@ -708,7 +677,7 @@ function captionOf(
   ctx: AchievementsContext,
 ): string | null {
   const words = ctx.words.achievements;
-  const last = latestEarned(progress);
+  const last = BadgeSystem.latestEarned(progress);
   // The caption reads the UNGATED day a calendar-driven level lands (the
   // meter alone reads it only towards a next level it draws).
   const on = landsOn(series, standing, data);
@@ -825,7 +794,7 @@ export function medalVm(
     (options.markNew ?? false) &&
     StandingSystem.isFamilyNew(
       standing,
-      latestEarned(progress),
+      BadgeSystem.latestEarned(progress),
       data.previousVisitUtcMs,
     );
   // An ended season's family has no next level to be drawn towards (CF).
@@ -873,7 +842,7 @@ export function medalVm(
     : '';
   let accessibleName: string;
   if (standing.medalState === MedalState.Earned) {
-    const earnedOn = earnedOnOf(progress, standing.highestLevel);
+    const earnedOn = BadgeSystem.earnedOn(progress, standing.highestLevel);
     accessibleName =
       achievement.medalEarnedName(
         title,
@@ -1114,7 +1083,7 @@ export function latestTiles(
     // +2», the count bound to the name), over «28.09».
     const count = day.levels.length;
     const medal = medalVm(series, data, ctx, {
-      title: `${series.title[localeOf(ctx)]}\u00a0+${figure(
+      title: `${series.title[localeOf(ctx)]}\u00a0+${formatCount(
         count - 1,
         words.lang,
       )}`,
@@ -1387,7 +1356,7 @@ export function archiveRowOf(
 ): ArchiveRowVm | null {
   const count = archivedSeasons(data).length;
   if (count === 0) return null;
-  const text = figure(count, ctx.words.lang);
+  const text = formatCount(count, ctx.words.lang);
   return {
     count: text,
     accessibleName: `${ctx.words.achievements.archive}, ${text}`,

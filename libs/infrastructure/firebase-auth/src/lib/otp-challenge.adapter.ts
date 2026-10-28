@@ -49,10 +49,9 @@ export const otpChallengePorts = (
   document: Document,
 ): OtpChallengePorts => ({
   requestOtpChallenge: async (identifier) => {
-    const answer = await gateway.callableClient(Callables.RequestOtpChallenge)({
-      identifierChannel: identifier.identifierChannel,
-      identifier: identifier.identifier,
-    });
+    const answer = await gateway.callableClient(Callables.RequestOtpChallenge)(
+      identifier,
+    );
     if (!answer.ok) return answer;
     const view: E2eWindow | null = document.defaultView;
     if (answer.value.devCode !== null && view !== null) {
@@ -73,11 +72,7 @@ export const otpChallengePorts = (
 
   completeRegistration: async (identifier, fields) => {
     const answer = await gateway.callableClient(Callables.CompleteRegistration)(
-      {
-        identifierChannel: identifier.identifierChannel,
-        identifier: identifier.identifier,
-        fields,
-      },
+      { ...identifier, fields },
     );
     if (!answer.ok) return answer;
     return signInWith(auth, answer.value.customToken);

@@ -60,7 +60,7 @@ export const IdentityAuditSystem = {
         ),
         ...AuditTargetRef.none(),
       },
-      idBasis: AuditSystem.idBasisOf(
+      idBasis: AuditSystem.rowBasis(
         action,
         resourceId,
         null,
@@ -93,7 +93,7 @@ export const IdentityAuditSystem = {
         ),
         ...AuditTargetRef.none(),
       },
-      idBasis: AuditSystem.idBasisOf(
+      idBasis: AuditSystem.rowBasis(
         action,
         resourceId,
         null,
@@ -131,7 +131,7 @@ export const IdentityAuditSystem = {
         ),
         ...AuditTargetRef.none(),
       },
-      idBasis: AuditSystem.idBasisOf(
+      idBasis: AuditSystem.rowBasis(
         action,
         resourceId,
         null,
@@ -164,7 +164,7 @@ export const IdentityAuditSystem = {
         ...AuditContext.sessionIssued(sessionKind, otp.otpDestinationType),
         ...AuditTargetRef.user(userId),
       },
-      idBasis: AuditSystem.idBasisOf(
+      idBasis: AuditSystem.rowBasis(
         action,
         resourceId,
         userId,
@@ -198,7 +198,7 @@ export const IdentityAuditSystem = {
         ...AuditContext.registrationCompleted(channel),
         ...AuditTargetRef.user(userId),
       },
-      idBasis: AuditSystem.idBasisOf(
+      idBasis: AuditSystem.rowBasis(
         action,
         resourceId,
         userId,

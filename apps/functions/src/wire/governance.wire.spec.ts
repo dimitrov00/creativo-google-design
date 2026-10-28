@@ -1,6 +1,5 @@
-import { ImpersonationEndReason, ImpersonationScope } from '@core/components';
+import { ImpersonationScope } from '@core/components';
 import {
-  ImpersonationSessionId,
   OperationId,
   PrimitiveErrorCode,
   type Result,
@@ -15,12 +14,8 @@ import { type EdgeError, toHttpsError } from '../edge';
 import {
   decodeEndImpersonation,
   decodeStartImpersonation,
-  encodeEndImpersonationAnswer,
-  encodeStartImpersonationAnswer,
-  endImpersonationRefusal,
-  startImpersonationRefusal,
 } from './governance.wire';
-import type { WireRequest } from './wire-read';
+import { refusalOf, type WireRequest } from './wire-read';
 
 /*
  * The impersonation callables' wire (Phase 4a 4A-3 (4)) — new with the
@@ -176,27 +171,18 @@ describe('decodeStartImpersonation', () => {
     }
   });
 
-  it('answers `{ sessionId }`, a start’s refusal as itself (the pipeline picked its first fault), and throws a store failure', () => {
+  it('leaves a start’s refusal as itself (`refusalOf` — the pipeline picked its first fault), and throws a store failure', () => {
+    expect(refusalOf(GovernanceError.impersonationSelf())).toEqual(
+      GovernanceError.impersonationSelf(),
+    );
     expect(
-      encodeStartImpersonationAnswer({
-        sessionId: ImpersonationSessionId.of('imp-1'),
-      }),
-    ).toEqual({ sessionId: 'imp-1' });
-    expect(
-      startImpersonationRefusal(GovernanceError.impersonationSelf()),
-    ).toEqual(GovernanceError.impersonationSelf());
-    expect(
-      startImpersonationRefusal(
-        GovernanceError.impersonationForbidden(UserId.of('u-1')),
-      ),
+      refusalOf(GovernanceError.impersonationForbidden(UserId.of('u-1'))),
     ).toEqual(GovernanceError.impersonationForbidden(UserId.of('u-1')));
     const down = RepositoryError.writeFailed(
       'impersonationSessions/x',
       'aborted',
     );
-    expect(() => startImpersonationRefusal(down)).toThrow(
-      'REPOSITORY_WRITE_FAILED',
-    );
+    expect(() => refusalOf(down)).toThrow('REPOSITORY_WRITE_FAILED');
   });
 });
 
@@ -237,15 +223,9 @@ describe('decodeEndImpersonation', () => {
     }
   });
 
-  it('answers the session and how it ended, and throws a store failure', () => {
-    expect(
-      encodeEndImpersonationAnswer({
-        sessionId: ImpersonationSessionId.of('imp-1'),
-        impersonationEndReason: ImpersonationEndReason.AdminEnded,
-      }),
-    ).toEqual({ sessionId: 'imp-1', impersonationEndReason: 'ADMIN_ENDED' });
+  it('throws an end’s store failure (`refusalOf`)', () => {
     expect(() =>
-      endImpersonationRefusal(
+      refusalOf(
         RepositoryError.readFailed(
           'impersonationSessions/imp-1',
           'unavailable',

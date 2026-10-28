@@ -60,8 +60,9 @@ export type CallableName = (typeof Callables)[keyof typeof Callables];
 /**
  * THE WIRE, BY NAME (Phase 4a 4A-4) — what each callable takes and answers:
  * the flat call components of `@core/components`. The web's
- * `callableClient` is typed through it; the server's decoders and encoders
- * type against it too. Total over {@link CallableName}.
+ * `callableClient` is typed through it; the server's decoders type against
+ * it, and its wiring proves each pipeline's answer IS the wire answer (or a
+ * named projection onto it). Total over {@link CallableName}.
  */
 export type CallableWire = {
   readonly [Callables.RequestOtpChallenge]: {
@@ -262,15 +263,15 @@ export const CALLABLE_ANSWER_DECODERS: {
     IdentityCall.decodeCompleteRegistrationAnswer,
   [Callables.UpdateProfile]: IdentityCall.decodeUpdateProfileAnswer,
   [Callables.CommitBooking]: BookingCall.decodeCommitted,
-  [Callables.CancelAppointment]: BookingCall.decodeCancelled,
-  [Callables.RescheduleAppointment]: BookingCall.decodeRescheduled,
+  [Callables.CancelAppointment]: BookingCall.decodeCommitted,
+  [Callables.RescheduleAppointment]: BookingCall.decodeCommitted,
   [Callables.TransitionAppointment]: BookingCall.decodeTransitioned,
   [Callables.MarkArrived]: BookingCall.decodeArrived,
   [Callables.ClearArrival]: BookingCall.decodeCleared,
   [Callables.RecordSeatTip]: BookingCall.decodeTipRecorded,
   [Callables.StaffEditAppointment]: BookingCall.decodeStaffEdited,
   [Callables.RequestWaitlist]: WaitlistCall.decodeRequested,
-  [Callables.CancelWaitlist]: WaitlistCall.decodeCancelled,
+  [Callables.CancelWaitlist]: WaitlistCall.decodeRequested,
   [Callables.RunBackfill]: BackfillCall.decodePage,
   [Callables.PublishStreakDefinition]: StreakPublishCall.decodeAnswer,
   [Callables.StartImpersonation]: GovernanceCall.decodeStarted,

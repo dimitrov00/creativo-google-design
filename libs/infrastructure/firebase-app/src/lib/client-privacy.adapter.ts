@@ -25,9 +25,7 @@ import {
 export const clientPrivacyPorts = (
   gateway: GatewayPorts,
 ): ClientPrivacyGatewayPorts => ({
-  exportClientData: (call) =>
-    gateway.callableClient(Callables.ExportClientData)(call),
-  previewClientErasure: (call) =>
-    gateway.callableClient(Callables.PreviewClientErasure)(call),
-  eraseClient: (call) => gateway.callableClient(Callables.EraseClient)(call),
+  exportClientData: gateway.callableClient(Callables.ExportClientData),
+  previewClientErasure: gateway.callableClient(Callables.PreviewClientErasure),
+  eraseClient: gateway.callableClient(Callables.EraseClient),
 });

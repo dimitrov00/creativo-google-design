@@ -21,7 +21,7 @@
             [style.aspect-ratio]="shot.aspectRatio"
             [style.--drift]="motionEnabled() ? shot.driftY + 'px' : '0px'"
             (click)="openLightbox(shot)"
-            [attr.aria-label]="content.text(shot.alt)"
+            [attr.aria-label]="words.text(shot.alt)"
           >
             <ui-async-image
               class="cr-gallery__figure"
@@ -78,7 +78,7 @@
       <img
         class="cr-gallery__lightbox-image"
         [src]="shot.src"
-        [alt]="content.text(shot.alt)"
+        [alt]="words.text(shot.alt)"
       />
       <div uiOverlay="ring" aria-hidden="true"></div>
       <button

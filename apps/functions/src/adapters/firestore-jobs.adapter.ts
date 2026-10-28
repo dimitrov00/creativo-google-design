@@ -44,10 +44,6 @@ import { admitStored } from './firestore-tx.adapter';
  * bare `firestoreJobPorts(db)` does not type-check.
  */
 
-function code(error: unknown): string {
-  return TriggerAttemptSystem.failureCode(error);
-}
-
 export const firestoreJobPorts = (
   db: Firestore,
   guardOf: StoredGuardOf,
@@ -61,7 +57,12 @@ export const firestoreJobPorts = (
         snap.exists ? ({ id: snap.id, ...snap.data() } as BackfillJob) : null,
       );
     } catch (error) {
-      return Result.err(RepositoryError.readFailed(path, code(error)));
+      return Result.err(
+        RepositoryError.readFailed(
+          path,
+          TriggerAttemptSystem.failureCode(error),
+        ),
+      );
     }
   },
 
@@ -72,7 +73,12 @@ export const firestoreJobPorts = (
       await db.doc(path).set(body);
       return Result.ok(undefined);
     } catch (error) {
-      return Result.err(RepositoryError.writeFailed(path, code(error)));
+      return Result.err(
+        RepositoryError.writeFailed(
+          path,
+          TriggerAttemptSystem.failureCode(error),
+        ),
+      );
     }
   },
 
@@ -87,7 +93,10 @@ export const firestoreJobPorts = (
       page = await query.get();
     } catch (error) {
       return Result.err(
-        RepositoryError.readFailed(Collections.Appointments, code(error)),
+        RepositoryError.readFailed(
+          Collections.Appointments,
+          TriggerAttemptSystem.failureCode(error),
+        ),
       );
     }
     const rows: Appointment[] = [];
@@ -110,7 +119,12 @@ export const firestoreJobPorts = (
       const roles: unknown = (await db.doc(path).get()).get('roles');
       return Result.ok(Array.isArray(roles) ? Roles.known(roles) : []);
     } catch (error) {
-      return Result.err(RepositoryError.readFailed(path, code(error)));
+      return Result.err(
+        RepositoryError.readFailed(
+          path,
+          TriggerAttemptSystem.failureCode(error),
+        ),
+      );
     }
   },
 });

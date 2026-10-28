@@ -538,7 +538,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
     pipeline: 'verifyOtp',
     input: request({ challengeId: 'otp-1', code: '123456' }, null),
     command: { otpId: 'otp-1', code: '123456' },
-    answer: ok({ customToken: 'token-1', sessionKind: 'NEW' }),
+    answer: ok({ sessionKind: 'NEW', customToken: 'token-1' }),
     expected: { sessionKind: 'NEW', customToken: 'token-1' },
   },
   completeRegistration: {
@@ -673,7 +673,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
       STAFF,
     ),
     command: { appointmentId: 'a-1', to: 'COMPLETED', seatId: null },
-    answer: ok({ appointmentId: 'a-1', to: 'COMPLETED' }),
+    answer: ok({ appointmentId: 'a-1', toBookingStatus: 'COMPLETED' }),
     expected: { appointmentId: 'a-1', toBookingStatus: 'COMPLETED' },
   },
   markArrived: {
@@ -1149,6 +1149,9 @@ describe('main.ts — the composition root', () => {
         seam.answers.set(own.pipeline, own.answer);
         const answer = await run(name, own.input);
         expect(answer).toEqual(own.expected);
+        // The answer's bytes — key order included: the wire JSON is the
+        // pipeline's answer as it is, or its named projection.
+        expect(JSON.stringify(answer)).toBe(JSON.stringify(own.expected));
         expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
         const call = seam.calls[0];
         if (TELEMETRY_EXPORTS.has(name)) {

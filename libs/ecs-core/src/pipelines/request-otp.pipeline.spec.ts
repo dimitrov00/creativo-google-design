@@ -580,7 +580,7 @@ describe('requestOtp — the IDENTITY_OTP_REQUESTED row', () => {
     // path never reaches the permanent log).
     const resourceId = AuditResourceId.forOtp(OTP_1);
     const rowId = fixtureHash(
-      AuditSystem.idBasisOf(
+      AuditSystem.rowBasis(
         'IDENTITY_OTP_REQUESTED',
         resourceId,
         null,

@@ -52,6 +52,7 @@ import {
   customerOf,
 } from '@core/testing';
 import { LocationScopeSystem } from './location-scope.system';
+import { VisitListSystem } from './visit-list.system';
 import { type SubjectStory, VisitStorySystem } from './visit-story.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -1490,21 +1491,31 @@ describe('VisitStorySystem.chairResolution — what settled one chair', () => {
  * `started` (its exits) and its frame's neighbour `past`, on the shop's
  * wall clock. NOW is 2026-09-28 12:00 (minute 720).
  */
-describe('VisitStorySystem.hasStarted / hasEnded — on the shop’s wall clock', () => {
+describe('VisitListSystem.hasStarted / VisitStorySystem.hasEnded — on the shop’s wall clock', () => {
   it('has started at the start minute, after it, and on any earlier day', () => {
-    expect(S.hasStarted(wall('2026-09-28T12:00:00'), NOW)).toBe(true);
-    expect(S.hasStarted(wall('2026-09-28T11:59:00'), NOW)).toBe(true);
-    expect(S.hasStarted(wall('2026-09-27T23:59:00'), NOW)).toBe(true);
+    expect(VisitListSystem.hasStarted(wall('2026-09-28T12:00:00'), NOW)).toBe(
+      true,
+    );
+    expect(VisitListSystem.hasStarted(wall('2026-09-28T11:59:00'), NOW)).toBe(
+      true,
+    );
+    expect(VisitListSystem.hasStarted(wall('2026-09-27T23:59:00'), NOW)).toBe(
+      true,
+    );
   });
 
   it('has not started a minute before, nor on a later day', () => {
-    expect(S.hasStarted(wall('2026-09-28T12:01:00'), NOW)).toBe(false);
-    expect(S.hasStarted(wall('2026-09-29T00:00:00'), NOW)).toBe(false);
+    expect(VisitListSystem.hasStarted(wall('2026-09-28T12:01:00'), NOW)).toBe(
+      false,
+    );
+    expect(VisitListSystem.hasStarted(wall('2026-09-29T00:00:00'), NOW)).toBe(
+      false,
+    );
   });
 
   it('is not `!isUpcoming` — at the start minute an open visit has begun AND is still upcoming', () => {
     const start = wall('2026-09-28T12:00:00');
-    expect(S.hasStarted(start, NOW)).toBe(true);
+    expect(VisitListSystem.hasStarted(start, NOW)).toBe(true);
     expect(S.isUpcoming('OPEN', start, NOW)).toBe(true);
   });
 
@@ -1537,26 +1548,23 @@ describe('VisitStorySystem.hasStarted / hasEnded — on the shop’s wall clock'
   });
 });
 
-describe('VisitStorySystem.seatPersonKey — one person, one key, off the seat', () => {
-  it('keys an account by its id and a guest by the seat’s name, as personKeyOf does', () => {
+describe('VisitStorySystem.personKeyOf — one person, one key, off the seat', () => {
+  it('keys an account by its id and a guest by the seat’s name — a whole seat passes straight in', () => {
     const account = seat('2026-09-04T10:00:00', { who: IVO });
     const guest = seat('2026-09-04T10:00:00', { guest: 'Мария' });
-    expect(S.seatPersonKey(account)).toBe('account:ivo');
-    expect(S.seatPersonKey(guest)).toBe('guest:Мария');
-    for (const entry of [account, guest]) {
-      expect(S.seatPersonKey(entry)).toBe(S.personKeyOf(entry));
-    }
+    expect(S.personKeyOf(account)).toBe('account:ivo');
+    expect(S.personKeyOf(guest)).toBe('guest:Мария');
   });
 
   it('keys a companion and a self seat of one account alike — one person', () => {
     expect(
-      S.seatPersonKey(
+      S.personKeyOf(
         seat('2026-09-04T10:00:00', {
           who: IVO,
           relationship: SubjectRelationship.Companion,
         }),
       ),
-    ).toBe(S.seatPersonKey(seat('2026-09-04T10:00:00', { who: IVO })));
+    ).toBe(S.personKeyOf(seat('2026-09-04T10:00:00', { who: IVO })));
   });
 });
 
@@ -1586,10 +1594,12 @@ describe('VisitStorySystem — the pass-C additions are pure', () => {
     );
     const now = deepFreeze(NOW);
     const start = deepFreeze(wall('2026-09-28T12:00:00'));
-    expect(S.hasStarted(start, now)).toBe(S.hasStarted(start, now));
+    expect(VisitListSystem.hasStarted(start, now)).toBe(
+      VisitListSystem.hasStarted(start, now),
+    );
     expect(S.hasEnded(start, now)).toBe(S.hasEnded(start, now));
-    expect(S.seatPersonKey(chair[0] as Seat)).toBe(
-      S.seatPersonKey(chair[0] as Seat),
+    expect(S.personKeyOf(chair[0] as Seat)).toBe(
+      S.personKeyOf(chair[0] as Seat),
     );
     expect(JSON.stringify(chair)).toBe(before);
   });

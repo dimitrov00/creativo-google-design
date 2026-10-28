@@ -23,6 +23,7 @@ import {
   memoryStore,
   memoryTxPorts,
   minute,
+  unwrapOk,
 } from '@core/testing';
 import { cancelWaitlist } from './cancel-waitlist.pipeline';
 
@@ -78,10 +79,14 @@ describe('cancelWaitlist', () => {
     'withdraws a %s request: ONE transition to CANCELLED, stamped now, nothing to delete',
     async (status) => {
       const { tx, store, run } = rig(requestWith(status));
-      expect(await run(mine)).toEqual({
+      const answer = await run(mine);
+      expect(answer).toEqual({
         ok: true,
         value: { requestId: REQUEST },
       });
+      // The callable answers this value as it is (Law 5 — no wire encoder):
+      // exactly these keys, in this order, byte for byte on the wire.
+      expect(Object.keys(unwrapOk(answer))).toEqual(['requestId']);
       expect(tx.plans).toEqual([
         [
           WriteOp.transition(

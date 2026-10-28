@@ -201,18 +201,8 @@ const NO_RANGES: readonly MinuteRange[] = [];
 
 /** The whole shop day, `[00:00, 24:00)`. */
 const WHOLE_DAY: readonly MinuteRange[] = [
-  MinuteRange.of(startOf(0), endOf(MINUTES_PER_DAY)),
+  MinuteRange.of(MinuteOfDay.ofProven(0), EndMinute.ofProven(MINUTES_PER_DAY)),
 ];
-
-/** A searched start back under its brand — the walk never leaves `[0, 1440)`. */
-function startOf(minutes: number): MinuteOfDay {
-  return MinuteOfDay.ofProven(minutes);
-}
-
-/** A searched end back under its brand — the walk never leaves `(0, 1440]`. */
-function endOf(minutes: number): EndMinute {
-  return EndMinute.ofProven(minutes);
-}
 
 /** Code-unit order — runtime-locale independent, so browser and server agree. */
 function compareIds(a: string, b: string): number {
@@ -569,13 +559,13 @@ function search(
         lineId: (lines[order[p] as number] as AvailabilityLine).lineId,
         barberId: (barbers[barberIndex] as BarberDayAvailability).barberId,
         barberIndex,
-        startMinutes: startOf(chosenSlotStart[p] as number),
-        endMinutes: endOf(chosenSlotEnd[p] as number),
+        startMinutes: MinuteOfDay.ofProven(chosenSlotStart[p] as number),
+        endMinutes: EndMinute.ofProven(chosenSlotEnd[p] as number),
       });
     }
     return {
-      startMinutes: startOf(envelopeStart),
-      endMinutes: endOf(envelopeEnd),
+      startMinutes: MinuteOfDay.ofProven(envelopeStart),
+      endMinutes: EndMinute.ofProven(envelopeEnd),
       assignments,
     };
   };
@@ -752,7 +742,7 @@ export const AvailabilitySystem = {
     const floor =
       now.currentMinute + policy.minLeadMinutes - daysAhead * MINUTES_PER_DAY;
     if (floor >= MINUTES_PER_DAY) return null;
-    return startOf(floor > 0 ? floor : 0);
+    return MinuteOfDay.ofProven(floor > 0 ? floor : 0);
   },
 
   /**

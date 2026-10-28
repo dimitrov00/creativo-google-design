@@ -83,6 +83,7 @@ import {
   type PrefillSeat,
 } from './booking-cart.system';
 import { BookingFlowSystem } from './booking-flow.system';
+import { GuestLabelSystem } from './guest-label.system';
 import { RosterSystem } from './roster.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 import cartSystemSource from './booking-cart.system.ts?raw';
@@ -1325,10 +1326,10 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
       PrefillCompanions.CarriedByServer,
     );
     const taken = guestLabels(bag.party);
-    expect(BookingCartSystem.firstUnusedLabel(taken, guestLabel, 3)).toBe(
+    expect(GuestLabelSystem.firstUnusedLabel(taken, guestLabel, 3)).toBe(
       'Guest 4',
     );
-    expect(BookingCartSystem.firstUnusedLabel(taken, guestLabel, 1)).toBe(
+    expect(GuestLabelSystem.firstUnusedLabel(taken, guestLabel, 1)).toBe(
       'Guest 1',
     );
   });
@@ -1543,68 +1544,6 @@ describe('BookingCartSystem.partyForCart — a waitlist landing, one label one g
           locationId: null,
         }),
     ).toBe(true);
-  });
-});
-
-describe('BookingCartSystem.firstUnusedLabel — the one placeholder rule', () => {
-  const guest = (ordinal: number): string => `Гост ${ordinal}`;
-  const first = (
-    taken: readonly string[],
-    label: (n: number) => string,
-    from = 1,
-  ) => BookingCartSystem.firstUnusedLabel(taken, label, from);
-
-  it('counts up from `from`, stepping past every name in use', () => {
-    expect(first([], guest)).toBe('Гост 1');
-    expect(first(['Гост 1', 'Гост 2'], guest)).toBe('Гост 3');
-    expect(first(['Гост 4'], guest, 4)).toBe('Гост 5');
-    expect(first(['Мария'], guest, 2)).toBe('Гост 2');
-  });
-
-  it('matches the label a guest is stored under — trimmed, as `SeatLabel` keeps it', () => {
-    expect(first(['Гост 1'], (n) => ` Гост ${n} `)).toBe('Гост 2');
-  });
-
-  it('numbers the word itself when the catalogue ignores the number — never a taken label', () => {
-    expect(first([], () => 'Гост')).toBe('Гост');
-    expect(first(['Гост'], () => 'Гост')).toBe('Гост 1');
-    expect(first(['Гост', 'Гост 2'], () => 'Гост', 2)).toBe('Гост 3');
-  });
-
-  it('never answers a taken label, whatever the catalogue does with the number (property)', () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.constantFrom('Гост', 'Гост 1', 'Гост 2', 'Гост 3'), {
-          maxLength: 4,
-        }),
-        fc.boolean(),
-        fc.integer({ min: 1, max: 4 }),
-        (takenLabels, ignoresNumber, from) => {
-          const taken: readonly string[] = takenLabels;
-          const label = ignoresNumber ? () => 'Гост' : guest;
-          expect(taken.includes(first(taken, label, from))).toBe(false);
-        },
-      ),
-    );
-  });
-
-  it('is the SMALLEST free ordinal from `from`, and never a taken one (property)', () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.integer({ min: 1, max: 12 }), { maxLength: 10 }),
-        fc.integer({ min: 1, max: 6 }),
-        (takenOrdinals, from) => {
-          const taken = takenOrdinals.map(guest);
-          const label = first(taken, guest, from);
-          expect(taken.includes(label)).toBe(false);
-          const ordinal = Number(label.replace('Гост ', ''));
-          expect(ordinal).toBeGreaterThanOrEqual(from);
-          for (let earlier = from; earlier < ordinal; earlier++) {
-            expect(taken.includes(guest(earlier))).toBe(true);
-          }
-        },
-      ),
-    );
   });
 });
 

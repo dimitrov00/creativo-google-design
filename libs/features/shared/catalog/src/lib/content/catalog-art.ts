@@ -1,7 +1,7 @@
-import type { Localized } from './catalog.vm';
+import type { LocalizedText } from '@core/components';
 
 /** Terse localized-pair literal — these tables are mostly copy. */
-const lt = (en: string, bg: string): Localized => ({ en, bg });
+const lt = (en: string, bg: string): LocalizedText => ({ en, bg });
 
 /**
  * Art direction — the editorial extras the catalog has no business carrying.
@@ -23,7 +23,7 @@ export const BARBER_ART: Readonly<
   Record<
     string,
     {
-      readonly specialty: Localized;
+      readonly specialty: LocalizedText;
       readonly gallery: readonly string[];
       readonly objectPosition: string;
     }

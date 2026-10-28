@@ -9,7 +9,6 @@ import {
   dayRange,
   dayShort,
   dayWithYear,
-  figure,
   monogramOf,
   monthYearLong,
 } from './client-card.format';
@@ -21,6 +20,7 @@ import {
   clientCardWordsOf,
 } from './client-card.words';
 import { catalogueOf, translatorOf } from '../testing/client-card.fixtures';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /** The sixteen words a metric is said with («Как се печели», the progress card). */
 const HOW_WORDS = [
@@ -460,7 +460,7 @@ describe('clientCardWordsOf', () => {
     ).toBe('Продукт по избор, 400 точки, още 92');
     expect(page.rewardName(1, 'Стикер', '')).toBe('Стикер, 1 точка');
     expect(page.rewardName(1200, 'Сешоар', '')).toBe(
-      `Сешоар, ${figure(1200, 'bg')} точки`,
+      `Сешоар, ${formatCount(1200, 'bg')} точки`,
     );
     expect(bg.reward.stack(2)).toBe('×2');
     expect(bg.history.statsInterval(1)).toBe(', средно на 1 седмица');
@@ -687,7 +687,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
   it('words the loyalty card: the unit in agreement, the name with whatever the card holds', () => {
     expect(bg.loyalty.points(371)).toBe('371 точки');
     expect(bg.loyalty.points(1)).toBe('1 точка');
-    expect(bg.loyalty.points(12450)).toBe(`${figure(12450, 'bg')} точки`);
+    expect(bg.loyalty.points(12450)).toBe(`${formatCount(12450, 'bg')} точки`);
     expect(bg.loyalty.pointsWord(371)).toBe('точки');
     expect(bg.loyalty.pointsWord(1)).toBe('точка');
     expect(bg.loyalty.enoughForPoints('безплатно оформяне на брада')).toBe(
@@ -878,7 +878,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
     expect(page.signed(27)).toBe('+27 т.');
     expect(page.signed(-250)).toBe('−250 т.');
     expect(page.signed(0)).toBe('0 т.');
-    expect(page.signed(-12450)).toBe(`−${figure(12450, 'bg')} т.`);
+    expect(page.signed(-12450)).toBe(`−${formatCount(12450, 'bg')} т.`);
     expect(page.points(371)).toBe('371 т.');
     expect(page.points(-40)).toBe('−40 т.');
     expect(page.subline('Георги Петров', page.points(371))).toBe(
@@ -1353,7 +1353,7 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
       'Награди за точки: 1 точка, стигат за 0 от 1 награда',
     );
     expect(page.catalogListName(bg.loyalty.points(1200), 1, 3)).toBe(
-      `Награди за точки: ${figure(1200, 'bg')} точки, стигат за 1 от 3 награди`,
+      `Награди за точки: ${formatCount(1200, 'bg')} точки, стигат за 1 от 3 награди`,
     );
     expect(bg.achievements.collectionOf(1)).toBe('от 1 медал');
     expect(bg.achievements.collectionName(1, 1, 1)).toBe(
@@ -1687,7 +1687,7 @@ describe('the card’s dates and figures (R59)', () => {
   });
 
   it('groups figures the locale’s way', () => {
-    expect(figure(12450, 'bg')).toBe('12 450');
+    expect(formatCount(12450, 'bg')).toBe('12 450');
   });
 
   it('draws a monogram from the first letter', () => {

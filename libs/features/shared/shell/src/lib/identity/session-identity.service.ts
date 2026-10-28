@@ -7,7 +7,7 @@ import {
   untracked,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Observable, from, of, startWith, switchMap } from 'rxjs';
+import { from, of, startWith, switchMap } from 'rxjs';
 import {
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
@@ -18,11 +18,6 @@ import { Profile } from '@core/entities';
 import { IdentifierChannel, type UserId } from '@core/primitives';
 import { OnboardingFlowSystem, ProfileCompletionSystem } from '@core/systems';
 import { OnboardingStepHint } from './onboarding-link';
-
-/** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
-function settled(url: string | null): Observable<string | null | undefined> {
-  return of(url);
-}
 
 /**
  * "Who is signed in, and what does the app-wide chrome show for them" — the
@@ -194,10 +189,11 @@ export class SessionIdentityService {
     ).pipe(
       switchMap(({ principal }) => {
         // The explicit widening is what lets `undefined` (in flight) live
-        // alongside `null` (settled: no photo) in this signal's type.
+        // alongside `null` (settled: no photo) in this signal's type: an
+        // answer that has ARRIVED, `undefined` reserved for "still looking".
         if (!Principal.isActive(principal)) {
           this.avatarOwner = null;
-          return settled(null);
+          return of<string | null | undefined>(null);
         }
         const owner = principal.userId;
         const samePerson = this.avatarOwner === owner;

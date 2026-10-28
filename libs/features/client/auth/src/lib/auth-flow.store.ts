@@ -7,7 +7,7 @@ import {
 } from '@angular/core';
 import {
   AuthFlowEvent,
-  type AuthFlowState,
+  AuthFlowState,
   AuthFlowStep,
   OtpCode,
   ParsedIdentifier,
@@ -62,7 +62,7 @@ function retryAfterSecondsOf(error: PipelineError): number {
 export class AuthFlowStore {
   private readonly otp = inject(OTP_CHALLENGE_PORTS);
 
-  private readonly _state = signal<AuthFlowState>(AuthFlowSystem.initial());
+  private readonly _state = signal<AuthFlowState>(AuthFlowState.initial());
   readonly state = this._state.asReadonly();
 
   private readonly _pending = signal(false);

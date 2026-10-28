@@ -47,7 +47,7 @@ import {
   type DeliveredEvent,
   type EdgePorts,
 } from '../edge';
-import { eventInstantOf } from './wire-read';
+import { eventInstantOf, field, isStoreFailure } from './wire-read';
 
 /**
  * The flip-1 TRIGGERS' edge (blueprint §4.1, F1-3): a Firestore write or a
@@ -352,9 +352,7 @@ function profileEditedAtOf(
   snapshot: StoredSnapshot | undefined,
 ): UtcEpochMs | null {
   if (snapshot?.exists !== true) return null;
-  const stamp = new Map<string, unknown>(Object.entries(bodyOf(snapshot))).get(
-    'profileEditedAtUtcMs',
-  );
+  const stamp = field(bodyOf(snapshot), 'profileEditedAtUtcMs');
   if (typeof stamp !== 'number') return null;
   const instant = UtcEpochMs.of(stamp);
   return instant.ok ? instant.value : null;
@@ -530,10 +528,9 @@ export function documentAuditReport(
   if (result.ok) return { attemptFailure: null, survivedFailure: null };
   const error = result.error;
   return {
-    attemptFailure:
-      'path' in error
-        ? TriggerAttemptSystem.repositoryFailure(error)
-        : TriggerAttemptSystem.attemptFailure(error, error.errorCode),
+    attemptFailure: isStoreFailure(error)
+      ? TriggerAttemptSystem.repositoryFailure(error)
+      : TriggerAttemptSystem.attemptFailure(error, error.errorCode),
     survivedFailure: null,
   };
 }

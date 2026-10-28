@@ -74,10 +74,7 @@ import {
   unwrapOk,
   utcMs,
 } from '@core/testing';
-import {
-  ADMIN_RHYTHM_STREAK_ID,
-  AdminRhythmStore,
-} from '../admin-rhythm.store';
+import { AdminRhythmStore } from '../admin-rhythm.store';
 import {
   type RhythmRecorder,
   rhythmRecorder,
@@ -549,7 +546,7 @@ describe('«Ритъм», its states', () => {
     unwrapOk(
       await rules.gateway.publishStreakRule({
         requestId: PublishRequestId.of('elsewhere'),
-        streakId: ADMIN_RHYTHM_STREAK_ID,
+        streakId: StreakRule.DEFAULT_DEFINITION_ID,
         baseVersion: 1,
         rule: next,
         streakTransition: StreakTransition.Grandfather,

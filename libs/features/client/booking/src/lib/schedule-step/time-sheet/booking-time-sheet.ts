@@ -431,9 +431,7 @@ export class BookingTimeSheet {
     const location = this.catalog
       .locations()
       .find((candidate) => candidate.id === locationId);
-    return location
-      ? this.content.text({ en: location.name.en, bg: location.name.bg })
-      : locationId;
+    return location ? this.content.text(location.name) : locationId;
   }
 
   /** A barber as the steps name them (`barberNameOf`, the one copy). */

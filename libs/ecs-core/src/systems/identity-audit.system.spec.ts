@@ -24,6 +24,7 @@ import {
   deepFreeze,
   fixtureHash,
   otpFixture,
+  auditResource,
 } from '@core/testing';
 import { AuditSystem } from './audit.system';
 import { IdentityAuditSystem } from './identity-audit.system';
@@ -106,7 +107,7 @@ describe('IdentityAuditSystem.planOtpRequested — the challenge saved', () => {
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'IDENTITY_OTP_REQUESTED',
-        'otps/otp-7',
+        auditResource('otps/otp-7'),
         null,
         'otp-requested:otp-7',
       ),
@@ -165,7 +166,7 @@ describe('IdentityAuditSystem.planOtpVerified — the challenge consumed', () =>
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'IDENTITY_OTP_VERIFIED',
-        'otps/otp-7',
+        auditResource('otps/otp-7'),
         null,
         'otp-verified:otp-7',
       ),
@@ -217,7 +218,7 @@ describe('IdentityAuditSystem.planOtpRefused — a wrong code recorded', () => {
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'IDENTITY_OTP_REFUSED',
-        'otps/otp-7',
+        auditResource('otps/otp-7'),
         null,
         'otp-refused:otp-7:1',
       ),
@@ -287,8 +288,8 @@ describe('IdentityAuditSystem.planSessionIssued — the token answered', () => {
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'IDENTITY_SESSION_ISSUED',
-        'users/u-maria',
-        'u-maria',
+        auditResource('users/u-maria'),
+        UserId.of('u-maria'),
         'session:otp-7',
       ),
     );
@@ -359,8 +360,8 @@ describe('IdentityAuditSystem.planRegistrationCompleted — the first registrati
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'IDENTITY_REGISTRATION_COMPLETED',
-        'users/u-maria',
-        'u-maria',
+        auditResource('users/u-maria'),
+        UserId.of('u-maria'),
         'registration:u-maria',
       ),
     );

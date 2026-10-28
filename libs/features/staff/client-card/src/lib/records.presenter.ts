@@ -17,7 +17,6 @@ import type { AchievementsContext } from './achievements.presenter';
 import {
   dayLong,
   dayWithYear,
-  figure,
   monthYearLong,
   runningCase,
 } from './client-card.format';
@@ -37,6 +36,7 @@ import {
 } from './client-card.words';
 import { rhythmStateOf } from './loyalty.presenter';
 import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8) — the page behind the
@@ -118,9 +118,6 @@ const ROW_ICONS: Readonly<
   [RecordRowWord.UsualServices]: 'loyalty.record.usualServices',
 };
 
-/** «По години» says something from the second year on: one bar is «Общо посещения» again. */
-export const YEARS_MIN = RecordsSystem.YEARS_MIN;
-
 function themeOf(id: RecordRowId): RecordTheme {
   return (
     THEMES.find((group) => group.rows.includes(id))?.theme ?? RecordTheme.Visits
@@ -181,7 +178,7 @@ function featuredOf(
   let sentence: string;
   switch (record.personalRecordKind) {
     case PersonalRecordKind.FavouriteService:
-      value = figure(record.value, lang);
+      value = formatCount(record.value, lang);
       detail = null;
       sentence = words.records.sentenceFavourite(
         runningCase(card.value, lang),
@@ -305,7 +302,7 @@ function countRow(
 ): RecordRowVm {
   const words = input.ctx.words;
   const title = words.records.row(id);
-  const value = figure(count, words.lang);
+  const value = formatCount(count, words.lang);
   return {
     id,
     theme: themeOf(id),
@@ -489,7 +486,7 @@ function yearsOf(
     const name = words.records.yearName(label, count, record);
     years.push({
       year: label,
-      count: figure(count, words.lang),
+      count: formatCount(count, words.lang),
       gauge: {
         value: count,
         min: 0,

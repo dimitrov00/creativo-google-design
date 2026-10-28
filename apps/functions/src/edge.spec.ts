@@ -1212,7 +1212,6 @@ describe('edge — the wrappers', () => {
       callable: Callables.CommitBooking,
       failureCode: BookingErrorCode.CommitStoreFailed,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     } as const;
 
@@ -1240,24 +1239,21 @@ describe('edge — the wrappers', () => {
       expect(tracked).toEqual([]);
     });
 
-    it('answers an ANSWERED refusal through the callable’s own answer', async () => {
+    it('throws an ANSWERED code that reaches it as a Result.err as `internal` — a callable answers its own refusal as Result.ok', async () => {
       const { ports } = edgePorts();
       const handler = callableEdge(
         {
           callable: Callables.PublishStreakDefinition,
           failureCode: StreakPublishErrorCode.StoreFailed,
           timeoutSeconds: null,
-          answer: (refusal) => ({
-            streakPublishOutcome: 'REFUSED',
-            errorCode: refusal.errorCode,
-          }),
           traced: true,
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
       );
-      await expect(handler(request({}))).resolves.toEqual({
-        streakPublishOutcome: 'REFUSED',
+      const thrown = await rejection(handler(request({})));
+      expect(thrown.code).toBe('internal');
+      expect(thrown.details).toEqual({
         errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       });
     });
@@ -1349,7 +1345,6 @@ describe('edge — the wrappers', () => {
       callable: Callables.CancelAppointment,
       failureCode: null,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     } as const;
     const OP = 'op-0000000000000001';
@@ -1442,28 +1437,26 @@ describe('edge — the wrappers', () => {
       ]);
     });
 
-    it('logs an ANSWERED refusal as callable.refused with wireStatus ok', async () => {
+    it('logs a refusal the callable answers itself (returned as Result.ok) as callable.completed, wireStatus ok', async () => {
       const { ports, logged } = edgePorts();
       const handler = callableEdge(
-        {
-          ...spec,
-          callable: Callables.PublishStreakDefinition,
-          answer: (refusal) => ({ refused: refusal.errorCode }),
-        },
+        { ...spec, callable: Callables.PublishStreakDefinition },
         ports,
-        async () => Result.err(StreakPublishError.stale(2, 3)),
+        async () =>
+          Result.ok({
+            streakPublishOutcome: 'REFUSED',
+            errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+          }),
       );
       await expect(handler(request({}))).resolves.toEqual({
-        refused: 'LOYALTY_STREAK_PUBLISH_STALE',
+        streakPublishOutcome: 'REFUSED',
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       });
       expect(logged).toHaveLength(1);
       expect(logged[0]).toMatchObject({
-        level: 'warn',
-        msg: 'callable.refused',
-        fields: {
-          errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
-          wireStatus: 'ok',
-        },
+        level: 'info',
+        msg: 'callable.completed',
+        fields: { errorCode: null, wireStatus: 'ok' },
       });
     });
 

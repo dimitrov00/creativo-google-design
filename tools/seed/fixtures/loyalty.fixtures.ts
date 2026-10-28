@@ -14,10 +14,11 @@
  * folds anything, and nothing touches Firebase.
  *
  * - The catalogue is `catalog.json` of `@core/testing` (shared with the
- *   specs and the e2e, read by path by `loyalty.mjs`): each builder takes
- *   one stored body and writes back exactly the entity's fields, so a field
- *   the entity no longer has never reaches the emulator, and the season
- *   builder moves a window and its announcement by whole days.
+ *   specs and the e2e, read by path by `loyalty.mjs`): the seed writes each
+ *   catalogue document as stored; `ExcessKeys` (`@core/testing`) proves at
+ *   compile time that no body carries a field its entity lacks, and the
+ *   fixtures spec that none carries another variant's. The one builder,
+ *   the season's, moves a window and its announcement by whole days.
  * - D29: an account, its progress and its journal are keyed by the client
  *   RECORD (`customerIdOf(uid)`, the production sha256); WHO acted on a row
  *   stays a `UserId` (`actor*`), and the opaque award and idempotency keys
@@ -30,8 +31,6 @@
 import {
   AchievementOp,
   Actor,
-  BadgeSubjectSlot,
-  BadgeSubject,
   EarnedVia,
   GrantRefFields,
   JournalEffect,
@@ -46,8 +45,6 @@ import {
   type PersonalRecord,
   PointsExpiry,
   RedemptionOp,
-  RewardGrant,
-  RewardGrantRule,
   RewardOp,
   RewardRefFields,
   Role,
@@ -62,25 +59,18 @@ import {
   TierOverride,
 } from '@core/components';
 import type {
-  BadgeCategory,
   BadgeProgress,
-  BadgeSeries,
   JournalEntry,
   LoyaltyAccount,
-  RewardCatalogItem,
   Season,
   SeasonProgress,
-  StreakDefinition,
   StreakDefinitionVersion,
-  TierDefinition,
 } from '@core/entities';
 import {
   AchievementRuleId,
   AppointmentId,
   CorrelationId,
   CouponGrantId,
-  type CustomerId,
-  JournalEntryId,
   JournalEventId,
   LocalDate,
   PublishRequestId,
@@ -104,56 +94,7 @@ const instant = (ms: number): UtcEpochMs =>
 const shopDayOf = (at: UtcEpochMs): LocalDate =>
   ZonedTimeSystem.toLocal(at, SHOP_TIME_ZONE).localDate;
 
-// ── The catalogue (catalog.json, field by field) ───────────────────────────
-
-/** `badgeCategories/{id}`: a shelf of the medals page. */
-export function badgeCategoryBody(
-  stored: Body<BadgeCategory>,
-): Body<BadgeCategory> {
-  return {
-    badgeCategoryKind: stored.badgeCategoryKind,
-    title: stored.title,
-    order: stored.order,
-  } satisfies Omit<BadgeCategory, 'id'>;
-}
-
-/** What a family is about — a service, a barber, a shop, or nothing in particular. */
-function subjectSlotOf(stored: BadgeSubjectSlot): BadgeSubjectSlot {
-  switch (stored.badgeSubject) {
-    case null:
-      return BadgeSubjectSlot.none();
-    case BadgeSubject.Service:
-      return BadgeSubjectSlot.service(stored.subjectServiceId);
-    case BadgeSubject.Barber:
-      return BadgeSubjectSlot.barber(stored.subjectBarberId);
-    case BadgeSubject.Location:
-      return BadgeSubjectSlot.location(stored.subjectLocationId);
-  }
-}
-
-/** `badgeSeries/{id}`: a medal family, its levels and what each pays. */
-export function badgeSeriesBody(stored: Body<BadgeSeries>): Body<BadgeSeries> {
-  return {
-    categoryId: stored.categoryId,
-    seasonId: stored.seasonId,
-    title: stored.title,
-    requirement: stored.requirement,
-    emblem: stored.emblem,
-    artPath: stored.artPath,
-    levels: stored.levels,
-    repeatable: stored.repeatable,
-    order: stored.order,
-    retiredAtUtcMs: stored.retiredAtUtcMs,
-    retiredLocalDate: stored.retiredLocalDate,
-    version: stored.version,
-    metric: stored.metric,
-    metricWindowDays: stored.metricWindowDays,
-    metricScopeServiceId: stored.metricScopeServiceId,
-    metricScopeBarberId: stored.metricScopeBarberId,
-    metricScopeLocationId: stored.metricScopeLocationId,
-    ...subjectSlotOf(stored),
-  } satisfies Omit<BadgeSeries, 'id'>;
-}
+// ── The catalogue (catalog.json, as stored) ──────────────────────────────
 
 /**
  * `seasons/{id}`, moved `shiftDays` whole days: its window by shop days,
@@ -170,86 +111,15 @@ export function seasonBody(
     shiftDays,
   );
   return {
-    seasonKind: stored.seasonKind,
-    title: stored.title,
-    emblem: stored.emblem,
-    trackSeriesId: stored.trackSeriesId,
-    seriesIds: stored.seriesIds,
+    ...stored,
     announcedAtUtcMs,
     announcedLocalDate: shopDayOf(announcedAtUtcMs),
-    version: stored.version,
     windowFrom: LocalDate.addDays(stored.windowFrom, shiftDays),
     windowUntil: LocalDate.addDays(stored.windowUntil, shiftDays),
-  } satisfies Omit<Season, 'id'>;
-}
-
-/** `tierDefinitions/{id}`: a tier and what qualifies for it. */
-export function tierDefinitionBody(
-  stored: Body<TierDefinition>,
-): Body<TierDefinition> {
-  return {
-    name: stored.name,
-    rank: stored.rank,
-    benefits: stored.benefits,
-    version: stored.version,
-    effectiveFromLocalDate: stored.effectiveFromLocalDate,
-    qualifyMetric: stored.qualifyMetric,
-    qualifyAtLeast: stored.qualifyAtLeast,
-    qualifyWindowDays: stored.qualifyWindowDays,
-  } satisfies Omit<TierDefinition, 'id'>;
-}
-
-/** What a reward mints, by its `rewardGrant`. */
-function grantRuleOf(stored: RewardGrantRule): RewardGrantRule {
-  switch (stored.rewardGrant) {
-    case RewardGrant.Coupon:
-      return RewardGrantRule.coupon(stored.grantCouponId);
-    case RewardGrant.Voucher:
-      return RewardGrantRule.voucher(
-        stored.grantVoucherCents,
-        stored.grantVoucherCurrency,
-        stored.grantVoucherExpiresInDays,
-      );
-    case RewardGrant.Perk:
-      return {
-        rewardGrant: RewardGrant.Perk,
-        grantPerkId: stored.grantPerkId,
-        grantPerkForDays: stored.grantPerkForDays,
-      } satisfies RewardGrantRule.Perk;
-  }
-}
-
-/** `rewardsCatalog/{id}`: what points buy at the desk. */
-export function rewardCatalogItemBody(
-  stored: Body<RewardCatalogItem>,
-): Body<RewardCatalogItem> {
-  return {
-    name: stored.name,
-    cost: stored.cost,
-    enabled: stored.enabled,
-    order: stored.order,
-    availableFrom: stored.availableFrom,
-    availableUntil: stored.availableUntil,
-    perClientLimitCount: stored.perClientLimitCount,
-    perClientLimitWindowDays: stored.perClientLimitWindowDays,
-    totalLimit: stored.totalLimit,
-    redeemedCount: stored.redeemedCount,
-    ...grantRuleOf(stored),
-  } satisfies Omit<RewardCatalogItem, 'id'>;
+  };
 }
 
 // ── The rhythm's rule: the head and its first version ──────────────────────
-
-/** `streakDefinitions/{id}`: the rule in force (`CURRENT`) and at most one that waits. */
-export function streakDefinitionBody(
-  stored: Body<StreakDefinition>,
-): Body<StreakDefinition> {
-  return {
-    name: stored.name,
-    rules: stored.rules,
-    updatedAtUtcMs: stored.updatedAtUtcMs,
-  } satisfies Omit<StreakDefinition, 'id'>;
-}
 
 /**
  * Who published the seed's first version of a rule: no person did — the
@@ -260,16 +130,14 @@ export function streakDefinitionBody(
  */
 export const SEED_RULE_PUBLISHER: UserId = StreakPublishSystem.SYSTEM_PUBLISHER;
 
-/** `000001` — a version's document id; the history sorts by it. */
-export const ruleVersionIdOf = (version: number): StreakDefinitionVersionId =>
-  StreakDefinitionVersionId.forVersion(version);
-
 /** The seed's own intent behind a version it writes: a second run writes the same document. */
 export const seedRuleRequestIdOf = (
   streakId: string,
   version: number,
 ): PublishRequestId =>
-  PublishRequestId.of(`seed-${streakId}-${ruleVersionIdOf(version)}`);
+  PublishRequestId.of(
+    `seed-${streakId}-${StreakDefinitionVersionId.forVersion(version)}`,
+  );
 
 /**
  * `streakDefinitions/{id}/versions/{version:06}` for the rule a head the
@@ -561,12 +429,6 @@ export const redemptionEffect = (
   redemptionCost: cost,
   ...GrantRefFields.couponGrant(CouponGrantId.of(couponGrantId)),
 });
-
-/** `{customerId}_{seq:06}` — a row's id; the ids sort as the ledger does. */
-export const journalRowIdOf = (
-  customerId: CustomerId,
-  seq: number,
-): JournalEntryId => JournalEntryId.forEntry(customerId, seq);
 
 /** One row of the journal as the fold writes it. */
 export type SeedJournalRow = {

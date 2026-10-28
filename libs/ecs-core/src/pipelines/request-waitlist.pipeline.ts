@@ -68,10 +68,6 @@ export type RequestWaitlistCommand = {
   readonly ask: WaitlistCall.Input;
 };
 
-export type RequestWaitlistAnswer = {
-  readonly requestId: WaitlistRequestId;
-};
-
 export type RequestWaitlistPorts = CommitPorts &
   HashPorts &
   ClockPorts &
@@ -118,7 +114,7 @@ export const requestWaitlist =
   async (
     cmd: RequestWaitlistCommand,
   ): Promise<
-    Result<RequestWaitlistAnswer, WaitlistError | RepositoryError>
+    Result<WaitlistCall.Requested, WaitlistError | RepositoryError>
   > => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;

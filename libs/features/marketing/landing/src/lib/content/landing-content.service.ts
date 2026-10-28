@@ -1,15 +1,13 @@
 import {
   type BarberVm,
   CatalogContentService,
-  CatalogWording,
-  type Localized,
   type ServiceTermsVm,
   type ServiceVm,
   termsToVm,
 } from '@creativo/features/shared/catalog';
 import { Injectable, type Signal, computed, inject } from '@angular/core';
 import type { BarberId } from '@core/primitives';
-import { CompositionKind, type Money } from '@core/components';
+import { CompositionKind } from '@core/components';
 import { CatalogPricingSystem, CatalogSystem } from '@core/systems';
 import {
   LOCATIONS,
@@ -33,7 +31,8 @@ import {
  * Still hand-authored: locations and work shots (no seeded counterpart
  * yet), and the editorial art direction merged in by `catalog.presenter.ts`.
  * The words its templates print — a localized pair, a price — are
- * `CatalogWording`'s, the locale-bound reads every catalog surface shares.
+ * `CatalogWording`'s, the locale-bound reads every catalog surface shares;
+ * the landing's components inject it themselves.
  *
  * Collections are SIGNALS, not plain arrays — Firestore answers
  * asynchronously, and templates re-read them as the catalog arrives.
@@ -41,7 +40,6 @@ import {
 @Injectable({ providedIn: 'root' })
 export class LandingContentService {
   private readonly catalog = inject(CatalogContentService);
-  private readonly words = inject(CatalogWording);
 
   readonly workShots: readonly WorkShotVm[] = WORK_SHOTS;
   readonly locations: readonly LocationVm[] = LOCATIONS;
@@ -89,15 +87,5 @@ export class LandingContentService {
       const service = shelf.get(entry.service.id);
       return service ? [{ service, terms: termsToVm(entry.terms) }] : [];
     });
-  }
-
-  /** Resolve a localized pair against the active language (`CatalogWording.text`). */
-  text(localized: Localized): string {
-    return this.words.text(localized);
-  }
-
-  /** An amount in the active language, in its own currency (`CatalogWording.price`). */
-  price(money: Money): string {
-    return this.words.price(money);
   }
 }

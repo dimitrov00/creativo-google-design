@@ -295,11 +295,6 @@ type Run = {
   readonly judgedOn: LocalDate[];
 };
 
-const dayOf = (epochDay: number): LocalDate => LocalDate.fromEpochDay(epochDay);
-
-/** A real shop day — a stored fact may carry a corrupt one, which the fold leaves out. */
-const isDay = (raw: string): boolean => LocalDate.parse(raw).ok;
-
 /** The visit on the book that holds the open period, on the fold's way out. */
 type Held = { readonly appointmentId: AppointmentId; readonly on: LocalDate };
 
@@ -334,7 +329,11 @@ function pausesOf(
   const sound: Pause[] = [];
   for (let i = 0; i < facts.length; i++) {
     const pause = facts[i] as StreakPauseFact;
-    if (!isDay(pause.from) || !isDay(pause.until) || pause.until < pause.from) {
+    if (
+      !LocalDate.is(pause.from) ||
+      !LocalDate.is(pause.until) ||
+      pause.until < pause.from
+    ) {
       continue;
     }
     sound.push({
@@ -502,7 +501,10 @@ function heldOn(run: Run, today: number): Held | null {
   const hold = holdOn(run, today, dueDay, graceEnd(run, dueDay), from);
   return hold === null || hold.appointmentId === null
     ? null
-    : { appointmentId: hold.appointmentId, on: dayOf(hold.day) };
+    : {
+        appointmentId: hold.appointmentId,
+        on: LocalDate.fromEpochDay(hold.day),
+      };
 }
 
 /** P11. Inside the window of the break, and the year's earn-backs not used up. */
@@ -526,26 +528,32 @@ function phaseOn(run: Run, day: number): StreakPhaseState {
       rule.onBreak === StreakOnBreak.Restart &&
       repairableOn(run, run.brokenOn, lastDay);
     return StreakPhaseState.broken(
-      dayOf(run.brokenOn),
-      dayOf(restores ? lastDay : run.brokenOn - 1),
+      LocalDate.fromEpochDay(run.brokenOn),
+      LocalDate.fromEpochDay(restores ? lastDay : run.brokenOn - 1),
     );
   }
   if (run.anchor === null) return StreakPhaseState.active();
   const pause = pauseOn(run, day);
   if (pause !== null)
-    return StreakPhaseState.frozen(dayOf(pause.until), pause.reason);
+    return StreakPhaseState.frozen(
+      LocalDate.fromEpochDay(pause.until),
+      pause.reason,
+    );
   const dueDay = due(run);
   if (day <= dueDay) {
     if (run.carriedBy !== null) {
-      return StreakPhaseState.frozen(dayOf(dueDay), run.carriedBy);
+      return StreakPhaseState.frozen(
+        LocalDate.fromEpochDay(dueDay),
+        run.carriedBy,
+      );
     }
     return dueDay - day <= rule.riskLeadDays
-      ? StreakPhaseState.atRisk(dayOf(dueDay))
+      ? StreakPhaseState.atRisk(LocalDate.fromEpochDay(dueDay))
       : StreakPhaseState.active();
   }
   const end = graceEnd(run, dueDay);
   const hold = day > end ? holdOn(run, day, dueDay, end, day) : null;
-  return StreakPhaseState.inGrace(dayOf(hold?.day ?? end));
+  return StreakPhaseState.inGrace(LocalDate.fromEpochDay(hold?.day ?? end));
 }
 
 /**
@@ -586,7 +594,7 @@ function miss(run: Run, day: number, dueDay: number): void {
     run.banked -= 1;
     run.marks.push({
       streakPeriodMark: StreakPeriodMark.Protected,
-      on: dayOf(dueDay),
+      on: LocalDate.fromEpochDay(dueDay),
       periodReason: FreezeReason.Freeze,
     });
     // The due date it covered closes a period, and the next one opens on it.
@@ -596,14 +604,14 @@ function miss(run: Run, day: number, dueDay: number): void {
   }
   run.marks.push({
     streakPeriodMark: StreakPeriodMark.Missed,
-    on: dayOf(dueDay),
+    on: LocalDate.fromEpochDay(dueDay),
     periodReason: null,
   });
   run.brokenOn = day;
   run.brokenRun = run.current;
   if (run.rule.onBreak === StreakOnBreak.Restart) {
     run.current = 0;
-    run.counts.push({ on: dayOf(day), current: 0 });
+    run.counts.push({ on: LocalDate.fromEpochDay(day), current: 0 });
   }
   run.cover = null;
   run.carriedBy = null;
@@ -621,7 +629,7 @@ function draw(run: Run, day: number, end: number): void {
     if (day <= cover.graceEnd) return;
     run.marks.push({
       streakPeriodMark: StreakPeriodMark.Protected,
-      on: dayOf(cover.due),
+      on: LocalDate.fromEpochDay(cover.due),
       periodReason: cover.reason,
     });
     run.cover = null;
@@ -642,7 +650,7 @@ function draw(run: Run, day: number, end: number): void {
     // Closed days made the deadline wait, and the wait is now in use.
     run.marks.push({
       streakPeriodMark: StreakPeriodMark.Protected,
-      on: dayOf(nominal),
+      on: LocalDate.fromEpochDay(nominal),
       periodReason: StreakExcuse.ClosedDays,
     });
     run.covered = true;
@@ -680,7 +688,7 @@ function judge(run: Run, day: number): void {
   const kind = phaseKindOn(run, day, knownDue);
   if (kind !== run.phaseKind) {
     run.phaseKind = kind;
-    run.judgedOn.push(dayOf(day));
+    run.judgedOn.push(LocalDate.fromEpochDay(day));
   }
 }
 
@@ -733,11 +741,11 @@ function visit(run: Run, day: number, utcMs: UtcEpochMs | null): void {
     run.comebackArmed = true;
   }
   run.brokenOn = null;
-  run.counts.push({ on: dayOf(day), current: run.current });
+  run.counts.push({ on: LocalDate.fromEpochDay(day), current: run.current });
   if (run.current === 1 || run.runStartedOn === null) run.runStartedOn = day;
   if (run.comebackArmed && run.current === 2) {
     run.comebackArmed = false;
-    run.comebacks.push(dayOf(day));
+    run.comebacks.push(LocalDate.fromEpochDay(day));
   }
 
   // P8. What a run starts with is given once, with the first visit on
@@ -762,7 +770,7 @@ function visit(run: Run, day: number, utcMs: UtcEpochMs | null): void {
   open(run, day);
   run.marks.push({
     streakPeriodMark: mark,
-    on: dayOf(day),
+    on: LocalDate.fromEpochDay(day),
     periodReason: null,
   });
   run.jobDay = day;
@@ -787,7 +795,7 @@ function excuse(run: Run, day: number, reason: StreakExcuse): void {
 function startedOn(run: Run): LocalDate | null {
   return run.current === 0 || run.runStartedOn === null
     ? null
-    : dayOf(run.runStartedOn);
+    : LocalDate.fromEpochDay(run.runStartedOn);
 }
 
 /** The account's state as of `today`, or `null` before any counted visit — flat (Law 6). */
@@ -810,7 +818,9 @@ function stateOn(
     current: run.current,
     best: run.best,
     lastQualifiedAtUtcMs: run.lastUtcMs,
-    dueBy: isOpen ? dayOf(due(run) + pausedAfter(run, today)) : null,
+    dueBy: isOpen
+      ? LocalDate.fromEpochDay(due(run) + pausedAfter(run, today))
+      : null,
     freezesBanked: run.banked,
     periodIntervalDays: terms === null ? null : terms.intervalDays,
     periodGraceDays: terms === null ? null : terms.graceDays,
@@ -879,9 +889,11 @@ function foldRun(
   facts: StreakFacts,
   today: LocalDate,
 ): Run | null {
-  if (!rule.enabled || !isDay(today)) return null;
+  if (!rule.enabled || !LocalDate.is(today)) return null;
   const now = LocalDate.toEpochDay(today);
-  const past = (day: LocalDate): boolean => isDay(day) && day <= today;
+  // A real shop day (`LocalDate.is`, allocation-free) — a stored fact may
+  // carry a corrupt one, which the fold leaves out.
+  const past = (day: LocalDate): boolean => LocalDate.is(day) && day <= today;
 
   const steps: Step[] = [];
   const closed = new Set<number>();
@@ -934,8 +946,8 @@ function foldRun(
   for (let i = 0; i < facts.bookings.length; i++) {
     const fact = facts.bookings[i] as StreakBookingFact;
     if (
-      !isDay(fact.localDate) ||
-      !isDay(fact.placedOn) ||
+      !LocalDate.is(fact.localDate) ||
+      !LocalDate.is(fact.placedOn) ||
       fact.placedOn > fact.localDate
     ) {
       continue;
@@ -990,7 +1002,9 @@ export const StreakSystem = {
     return {
       state: stateOn(run, streakId, now),
       record:
-        run.bestOn === null ? null : { value: run.best, on: dayOf(run.bestOn) },
+        run.bestOn === null
+          ? null
+          : { value: run.best, on: LocalDate.fromEpochDay(run.bestOn) },
       runStartedOn: startedOn(run),
       counts,
       comebacks: run.comebacks,

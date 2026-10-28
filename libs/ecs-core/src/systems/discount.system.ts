@@ -258,14 +258,6 @@ export const DiscountSystem = {
   },
 
   /**
-   * May these share one bill? An exclusive discount must be alone, and no
-   * promise may be counted twice (`AppliedDiscount.isLegalSelection`).
-   */
-  isLegalSet(discounts: readonly AppliedDiscount[]): boolean {
-    return AppliedDiscount.isLegalSelection(discounts);
-  },
-
-  /**
    * The same PROMISE: source, provenance and value agree — the instant it
    * was applied is not identity (`AppliedDiscount.equals`). Reads the
    * provenance and value slices alone, so an applied discount or any

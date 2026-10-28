@@ -1,6 +1,7 @@
 import {
   MonthlyAnchor,
   RecurrenceEnd,
+  RecurrenceEndRule,
   RecurrenceFrequency,
   RecurrencePattern,
   RecurrenceRule,
@@ -71,7 +72,7 @@ function withPattern(
   return RecurrenceRule.of(
     pattern,
     rule.recurrenceInterval,
-    RecurrenceRule.endOf(rule),
+    RecurrenceEndRule.of(rule),
   );
 }
 

@@ -34,6 +34,7 @@ import {
 import { Locale, type ServiceId, Tag } from '@core/primitives';
 import {
   CatalogSystem,
+  RhythmDraftSystem,
   StreakPublishSystem,
   StreakRuleSystem,
 } from '@core/systems';
@@ -98,7 +99,6 @@ import {
   RhythmEstimate,
   type RhythmEstimateLine,
   afterMissRow,
-  daysOf,
   effectiveOptions,
   effectiveReading,
   excusesRow,
@@ -122,7 +122,6 @@ import {
   toleranceReadout,
   upcomingLine,
   weekMarks,
-  weeksOf,
 } from './admin-rhythm.words';
 
 /** A word the page prints that is not a bare key: built once the catalogue has loaded. */
@@ -340,7 +339,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** The interval as the ruler holds it, in weeks: the newcomer's period (`StreakIntervalRule.daysFor`, no habit yet). */
   protected readonly weeks = computed(() =>
-    weeksOf(StreakIntervalRule.daysFor(this.draft(), null).days),
+    RhythmDraftSystem.weeksOf(
+      StreakIntervalRule.daysFor(this.draft(), null).days,
+    ),
   );
 
   /** «6 седмици» — the interval ruler's readout and its value text. */
@@ -718,7 +719,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
   }
 
   protected setWeeks(weeks: number): void {
-    this.patch({ interval: fixedInterval(daysOf(weeks)) });
+    this.patch({ interval: fixedInterval(RhythmDraftSystem.daysOf(weeks)) });
   }
 
   protected setTolerance(percent: number): void {
@@ -733,7 +734,9 @@ export class AdminRhythm implements AdminRhythmLeaving {
   ): void {
     const weeks = this.typed(value);
     if (weeks === undefined) return;
-    this.patch({ interval: personalInterval({ [part]: daysOf(weeks) }) });
+    this.patch({
+      interval: personalInterval({ [part]: RhythmDraftSystem.daysOf(weeks) }),
+    });
   }
 
   protected setHoldDays(value: string): void {
@@ -781,7 +784,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** A clamp's figure in weeks, as the field edits it. */
   protected weeksOf(days: number): number {
-    return weeksOf(days);
+    return RhythmDraftSystem.weeksOf(days);
   }
 
   // ── «Запази», the receipt, «Отмени» ─────────────────────────────────────

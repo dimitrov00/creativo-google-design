@@ -1,15 +1,7 @@
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
-import {
-  type TextSegment,
-  emailSegments,
-  nameSegments,
-  parseClientQuery,
-  phoneInternationalDigits,
-  phoneSegments,
-  rankClients,
-} from './client-query';
+import { rankClients } from './client-query';
 import { ROW_VERB_WORD, type RowVerb } from '../row-verb';
 import { clientQueryShapeWords } from '../tag-words';
 import {
@@ -25,6 +17,7 @@ import {
   type CustomerId,
   DraftPersonKey,
   type DurationMinutes,
+  EndMinute,
   type GiftVoucherId,
   LocalDate,
   type LocationId,
@@ -81,14 +74,16 @@ import {
   LocationScopeSystem,
   type ParsedClientQuery,
   PhoneSystem,
+  type TextSegment,
   VisitDraftSystem,
+  VisitListSystem,
   VisitSidesSystem,
   VisitStorySystem,
 } from '@core/systems';
 import {
   combinabilityOf,
   promiseOf,
-  toCouponValue,
+  couponValueInBill,
 } from './visit-editor-discount';
 import {
   AUTH_DEPLOYMENT_PORTS,
@@ -521,7 +516,7 @@ export interface VisitEditorVm {
    * `now.localDate`, and the clock reads on this sheet's day only when that
    * day IS today. The month picker marks it, the relative shortcuts resolve
    * against it, and the story's wall-clock rules
-   * (`VisitStorySystem.hasStarted`/`hasEnded`) read it — never its instant.
+   * (`VisitListSystem.hasStarted`/`hasEnded`) read it — never its instant.
    */
   readonly now: ShopNow | null;
   /**
@@ -1308,8 +1303,8 @@ function readableShiftOf(
 ): { startMinute: TrackMinute; endMinute: TrackMinute } | null {
   const shift = shiftOf(day);
   return shift !== null &&
-    TrackMinute.toStart(shift.startMinute).ok &&
-    TrackMinute.toEnd(shift.endMinute).ok
+    MinuteOfDay.of(shift.startMinute).ok &&
+    EndMinute.of(shift.endMinute).ok
     ? shift
     : null;
 }
@@ -2850,7 +2845,7 @@ export class StaffVisitEditor {
     const now = day.nowMinute === null ? null : today;
     const ended = (endMinute: TrackMinute): boolean => {
       if (dayGone) return true;
-      const end = TrackMinute.toEnd(endMinute);
+      const end = EndMinute.of(endMinute);
       return (
         now !== null &&
         end.ok &&
@@ -3071,11 +3066,11 @@ export class StaffVisitEditor {
   /**
    * WHAT WAS TYPED, read for every part at once (2026-09-18): the words
    * are a name, the digit run a number, the `@` token a mail — see
-   * `client-query.ts`. The most selective part leads the lookup and the
-   * filter; the rest rank the rows and prefill the form.
+   * `ClientQuerySystem.parse`. The most selective part leads the lookup and
+   * the filter; the rest rank the rows and prefill the form.
    */
   protected readonly parsedQuery = computed<ParsedClientQuery>(() =>
-    parseClientQuery(this.query()),
+    ClientQuerySystem.parse(this.query()),
   );
 
   /**
@@ -3099,14 +3094,18 @@ export class StaffVisitEditor {
       lines.push({
         text: client.email,
         icon: 'contact.email',
-        parts: markedRuns(emailSegments(client.email, parsed)),
+        parts: markedRuns(
+          ClientQuerySystem.emailSegments(client.email, parsed),
+        ),
       });
     }
     if (client.phone) {
       lines.push({
         text: client.phone,
         icon: 'contact.phone',
-        parts: markedRuns(phoneSegments(client.phone, parsed, code)),
+        parts: markedRuns(
+          ClientQuerySystem.phoneSegments(client.phone, parsed, code),
+        ),
       });
     }
     // `meta` is the owner's own line — «посл. 22.09» — unless it only
@@ -3128,7 +3127,9 @@ export class StaffVisitEditor {
       ...client,
       selected: chosen.has(client.id),
       exact,
-      titleParts: markedRuns(nameSegments(client.label, parsed)) ?? null,
+      titleParts:
+        markedRuns(ClientQuerySystem.nameSegments(client.label, parsed)) ??
+        null,
       lines,
     };
   }
@@ -3142,7 +3143,7 @@ export class StaffVisitEditor {
     () =>
       PhoneSystem.countryCallingCode(
         this.newClientCountry() ?? this.deployment.defaultCountry,
-      ) ?? undefined,
+      ) ?? ClientQuerySystem.DEFAULT_CALLING_CODE,
   );
 
   /**
@@ -3364,7 +3365,7 @@ export class StaffVisitEditor {
 
   /**
    * Has the visit begun — its start at or before the shop's "now" on the
-   * wall clock (`VisitStorySystem.hasStarted`, the start minute included),
+   * wall clock (`VisitListSystem.hasStarted`, the start minute included),
    * "now" being the owner's (`vm.now`, pass D D-10.5 — never built here).
    * Without a "now" nothing has begun; a start the day's clock cannot hold
    * (the closing midnight) has begun only on a day already gone.
@@ -3373,9 +3374,9 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const now = vm.now;
     if (now === null) return false;
-    const start = TrackMinute.toStart(vm.startMinute);
+    const start = MinuteOfDay.of(vm.startMinute);
     return start.ok
-      ? VisitStorySystem.hasStarted(WallTime.of(vm.dayKey, start.value), now)
+      ? VisitListSystem.hasStarted(WallTime.of(vm.dayKey, start.value), now)
       : LocalDate.compare(vm.dayKey, now.localDate) < 0;
   });
 
@@ -4372,7 +4373,7 @@ export class StaffVisitEditor {
    */
   protected readonly clientSections = computed(() => {
     const chosen = new Set(this.draft().clients.map((client) => client.id));
-    const nothing = parseClientQuery('');
+    const nothing = ClientQuerySystem.parse('');
     return this.uiClientSections()
       .map((section) => ({
         ...section,
@@ -4435,7 +4436,7 @@ export class StaffVisitEditor {
    * formatter, fed the international form.
    */
   private phoneAsTyped(parsed: ParsedClientQuery): string {
-    const [international] = phoneInternationalDigits(
+    const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
       this.callingCode(),
     );
@@ -4592,7 +4593,7 @@ export class StaffVisitEditor {
   /** The picked, as rows of their own group — selected, unmarked. */
   protected readonly pickedRows = computed<readonly ClientRowVm[]>(() => {
     const chosen = new Set(this.draft().clients.map((client) => client.id));
-    const nothing = parseClientQuery('');
+    const nothing = ClientQuerySystem.parse('');
     return this.pickedClients().map((client) =>
       this.toRowVm(client, nothing, chosen, false),
     );
@@ -4690,10 +4691,10 @@ export class StaffVisitEditor {
     // The number in front of the phone field as E.164 by the shop's own
     // dial code — the field validates for real. Too few digits are not a
     // number on its way anywhere (`ClientQuerySystem.prefillsPhone`).
-    const [international] = phoneInternationalDigits(
+    const [international] = ClientQuerySystem.phoneInternationalDigits(
       parsed,
       PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
-        undefined,
+        ClientQuerySystem.DEFAULT_CALLING_CODE,
     );
     this.newClient.set({
       name: parsed.name,
@@ -6192,7 +6193,7 @@ export class StaffVisitEditor {
     const keys = new Map<string, VisitEditorDiscount>();
     const currency = this.vm().currency;
     discounts.forEach((discount, index) => {
-      const value = toCouponValue(discount, currency);
+      const value = couponValueInBill(discount, currency);
       if (value === null) return;
       const key = discountKey(discount);
       keys.set(key, discount);
@@ -7061,7 +7062,7 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const draft = this.draft();
     const partyOfOne = draft.clients.length <= 1;
-    const startMinutes = TrackMinute.toStart(draft.startMinute);
+    const startMinutes = MinuteOfDay.of(draft.startMinute);
     const legs: ClientCardLeg[] = draft.legs
       .filter((leg) => partyOfOne || leg.clientId === client.id)
       .map((leg) => ({

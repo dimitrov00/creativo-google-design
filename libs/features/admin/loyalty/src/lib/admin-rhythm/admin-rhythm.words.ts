@@ -5,7 +5,7 @@ import {
   RhythmEffectiveChoice,
   type StreakExcuse,
   StreakInterval,
-  type StreakIntervalRule,
+  StreakIntervalRule,
   StreakOnBreak,
   type StreakPreview,
   StreakPreviewOutcome,
@@ -190,14 +190,6 @@ function counted(
 }
 
 /**
- * «12 450» — a figure grouped the language's way, through the shared
- * cached `formatCount` (pass E, E-12).
- */
-function figure(context: AdminRhythmContext, value: number): string {
-  return formatCount(value, context.lang);
-}
-
-/**
  * «+17» · «−3» — a movement the system measured, signed; `null` for none
  * (the zero form and the sign glyph are the words', D-2.2/D-2.3).
  */
@@ -207,15 +199,9 @@ function signedMovement(
 ): string | null {
   if (delta === 0) return null;
   return delta > 0
-    ? `+${figure(context, delta)}`
-    : `${MINUS}${figure(context, -delta)}`;
+    ? `+${formatCount(delta, context.lang)}`
+    : `${MINUS}${formatCount(-delta, context.lang)}`;
 }
-
-/** Days ↔ weeks, as the interval is edited in weeks and held in days: `RhythmDraftSystem`'s unit arithmetic. */
-export const weeksOf = (days: number): number =>
-  RhythmDraftSystem.weeksOf(days);
-export const daysOf = (weeks: number): number =>
-  RhythmDraftSystem.daysOf(weeks);
 
 // ── The menus ────────────────────────────────────────────────────────────
 
@@ -321,7 +307,11 @@ export function repairPerYearOptions(
   context: AdminRhythmContext,
 ): readonly UiChoiceOption[] {
   return ADMIN_RHYTHM_CHOICES.repairPerYear.map((count) =>
-    option(String(count), figure(context, count), `repair-per-year-${count}`),
+    option(
+      String(count),
+      formatCount(count, context.lang),
+      `repair-per-year-${count}`,
+    ),
   );
 }
 
@@ -523,17 +513,16 @@ const EXAMPLE_HABIT_DAYS = 28;
 /**
  * «Клиент, който идва на 4 седмици, има срок 6 седмици.» — the tolerance
  * explained on one habit. The period is the rule's own
- * (`StreakRuleSystem.exampleDue`, through `StreakIntervalRule.daysFor`),
- * never a copy of it.
+ * (`StreakIntervalRule.daysFor`), never a copy of it.
  */
 export function toleranceExample(
   context: AdminRhythmContext,
   interval: StreakIntervalRule.Personal,
 ): string {
-  const due = StreakRuleSystem.exampleDue(interval, EXAMPLE_HABIT_DAYS);
+  const due = StreakIntervalRule.daysFor(interval, EXAMPLE_HABIT_DAYS);
   return context.translate('admin.rhythm.interval.example', {
-    habit: context.rule.weeks(weeksOf(EXAMPLE_HABIT_DAYS)),
-    interval: context.rule.weeks(weeksOf(due.days)),
+    habit: context.rule.weeks(RhythmDraftSystem.weeksOf(EXAMPLE_HABIT_DAYS)),
+    interval: context.rule.weeks(RhythmDraftSystem.weeksOf(due.days)),
   });
 }
 
@@ -822,11 +811,11 @@ export function previewWords(
           return {
             id,
             caption,
-            value: figure(context, to),
+            value: formatCount(to, context.lang),
             delta: signedMovement(context, standingOf(moved, id)),
             label: `${caption}: ${t('admin.rhythm.preview.delta', {
-              from: figure(context, from),
-              to: figure(context, to),
+              from: formatCount(from, context.lang),
+              to: formatCount(to, context.lang),
             })}`,
           };
         });
@@ -842,7 +831,9 @@ export function previewWords(
     rhythmEstimate: RhythmEstimate.Estimate,
     clients: counted(context, 'admin.rhythm.preview.clients', preview.clients),
     capped: capped
-      ? t('admin.rhythm.preview.capped', { count: figure(context, cap) })
+      ? t('admin.rhythm.preview.capped', {
+          count: formatCount(cap, context.lang),
+        })
       : null,
     metrics,
     summary: jointed(t('admin.rhythm.preview.summary', { back, out })),

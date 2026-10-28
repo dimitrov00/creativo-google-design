@@ -316,3 +316,51 @@ describe('StreakIntervalRule, as a value', () => {
     expect(StreakIntervalRule.of(fixed(42))).toEqual(fixed(42));
   });
 });
+
+describe('StreakIntervalRule.daysFor — the admin’s tolerance example on one habit', () => {
+  const HABIT = 28;
+  const personal = StreakIntervalRule.personal(50, 21, 70, 42);
+
+  it('stretches the habit by the tolerance', () => {
+    expect(StreakIntervalRule.daysFor(personal, HABIT)).toEqual({
+      days: 42,
+      source: StreakIntervalSource.Personal,
+    });
+  });
+
+  it('holds the example inside the clamp', () => {
+    expect(
+      StreakIntervalRule.daysFor({ ...personal, intervalMaxDays: 35 }, HABIT)
+        .days,
+    ).toBe(35);
+    expect(
+      StreakIntervalRule.daysFor(
+        StreakIntervalRule.personal(0, 35, 70, 42),
+        HABIT,
+      ).days,
+    ).toBe(35);
+  });
+
+  it('equals the words’ old round(28·(1 + p/100)) for every whole percent (§7 R-13)', () => {
+    const clamps: readonly (readonly [number, number])[] = [
+      [14, 182],
+      [21, 70],
+      [30, 35],
+      [42, 56],
+    ];
+    for (const [min, max] of clamps) {
+      for (let pct = 0; pct <= 100; pct++) {
+        const old = Math.min(
+          max,
+          Math.max(min, Math.round(HABIT * (1 + pct / 100))),
+        );
+        expect(
+          StreakIntervalRule.daysFor(
+            StreakIntervalRule.personal(pct, min, max, min),
+            HABIT,
+          ).days,
+        ).toBe(old);
+      }
+    }
+  });
+});

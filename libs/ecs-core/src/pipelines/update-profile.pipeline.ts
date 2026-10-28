@@ -1,4 +1,8 @@
-import { type ProfileEdits, WriteOp } from '@core/components';
+import {
+  type IdentityCall,
+  type ProfileEdits,
+  WriteOp,
+} from '@core/components';
 import {
   LogEvent,
   type OperationId,
@@ -57,11 +61,6 @@ export type UpdateProfileCommand = {
   readonly operationId: OperationId | null;
 };
 
-export type UpdateProfileAnswer = {
-  /** Whether anything was written — `false` for an edit equal to the stored values. */
-  readonly changed: boolean;
-};
-
 /** The transaction's decision: whether it writes, and its plan. */
 type ProfileDecision = {
   readonly changed: boolean;
@@ -98,7 +97,7 @@ export const updateProfile =
   (ports: UpdateProfilePorts) =>
   async (
     cmd: UpdateProfileCommand,
-  ): Promise<Result<UpdateProfileAnswer, UpdateProfileError>> => {
+  ): Promise<Result<IdentityCall.UpdateProfileAnswer, UpdateProfileError>> => {
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const ageDay = AgeSystem.judgedOn(nowUtcMs);

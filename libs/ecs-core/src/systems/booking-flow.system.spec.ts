@@ -659,7 +659,9 @@ describe('BookingFlowSystem.next — the schedule step', () => {
       }),
     );
     expect(waitlisted.bookingFlowStep).toBe(BookingFlowStep.Waitlisted);
-    expect(BookingFlowSystem.isTerminal(waitlisted.bookingFlowStep)).toBe(true);
+    expect(BookingFlowState.isTerminalStep(waitlisted.bookingFlowStep)).toBe(
+      true,
+    );
     expect(next(waitlisted, { bookingFlowEventKind: E.Back }).ok).toBe(false);
   });
 
@@ -716,26 +718,28 @@ describe('BookingFlowSystem — the spine', () => {
     ).toBe(schedule);
   });
 
-  it('asks the ONE terminal rule — the state’s — and agrees with the spine on all six steps', () => {
+  it('asks the ONE terminal rule (`BookingFlowState.isTerminalStep`) and agrees with the spine on all six steps', () => {
     for (const step of Object.values(BookingFlowStep)) {
-      const terminal = BookingFlowSystem.isTerminal(step);
-      expect(terminal).toBe(BookingFlowState.isTerminalStep(step));
-      // The spelling it delegated away from: off the spine is terminal.
-      expect(terminal).toBe(BookingFlowState.spineIndex(step) === -1);
+      // Off the spine is terminal.
+      expect(BookingFlowState.isTerminalStep(step)).toBe(
+        BookingFlowState.spineIndex(step) === -1,
+      );
     }
     expect(
       Object.values(BookingFlowStep).filter((step) =>
-        BookingFlowSystem.isTerminal(step),
+        BookingFlowState.isTerminalStep(step),
       ),
     ).toEqual([BookingFlowStep.Confirmed, BookingFlowStep.Waitlisted]);
     const location = BookingFlowState.initial(newParty());
     expect(BookingFlowState.isTerminal(location)).toBe(
-      BookingFlowSystem.isTerminal(location.bookingFlowStep),
+      BookingFlowState.isTerminalStep(location.bookingFlowStep),
     );
     const schedule = scheduleState();
     expect(BookingFlowState.isTerminal(schedule)).toBe(
-      BookingFlowSystem.isTerminal(schedule.bookingFlowStep),
+      BookingFlowState.isTerminalStep(schedule.bookingFlowStep),
     );
+    // A back control never shows on a terminal step.
+    expect(BookingFlowSystem.canGoBack(BookingFlowStep.Waitlisted)).toBe(false);
   });
 
   it('counts the party’s free seats against the policy', () => {

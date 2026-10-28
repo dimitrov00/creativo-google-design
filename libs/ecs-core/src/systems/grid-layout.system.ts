@@ -162,23 +162,12 @@ function spanContains(outer: TrackSpan, inner: TrackSpan): boolean {
   );
 }
 
-/**
- * A start this file computed on one shop day's track (a cursor, a clamp, the
- * clock's minute) — inside `[0, 1440)` by construction; anything else is a
- * broken invariant, not an input.
- */
-function startOf(minutes: number): MinuteOfDay {
-  return MinuteOfDay.ofProven(minutes);
-}
-
-/** An exclusive end this file computed — inside `(0, 1440]` by construction. */
-function endOf(minutes: number): EndMinute {
-  return EndMinute.ofProven(minutes);
-}
-
 /** A run between two computed track minutes. */
 function runOf(startMinutes: number, endMinutes: number): MinuteRun {
-  return { startMinutes: startOf(startMinutes), endMinutes: endOf(endMinutes) };
+  return {
+    startMinutes: MinuteOfDay.ofProven(startMinutes),
+    endMinutes: EndMinute.ofProven(endMinutes),
+  };
 }
 
 /** `order` sorted by the events' start, input order breaking ties. */
@@ -278,8 +267,8 @@ export const GridLayoutSystem = {
     const day = LocalDate.compare(localDate, now.localDate);
     const out: LaneGap[] = [];
     const push = (start: number, end: number): void => {
-      const startMinutes = startOf(start);
-      const endMinutes = endOf(end);
+      const startMinutes = MinuteOfDay.ofProven(start);
+      const endMinutes = EndMinute.ofProven(end);
       const minutes = MinuteCount.span(startMinutes, endMinutes);
       if (minutes < SHORTEST_SELLABLE_MINUTES) return;
       out.push({

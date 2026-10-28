@@ -20,11 +20,6 @@ import { IdentityError } from '@core/errors';
  * collapse into the events the store dispatches once the callables settle.
  */
 export const AuthFlowSystem = {
-  /** The flow opens on identify — the welcome interstitial is retired. */
-  initial(): AuthFlowState {
-    return AuthFlowState.initial();
-  },
-
   next(
     state: AuthFlowState,
     event: AuthFlowEvent,

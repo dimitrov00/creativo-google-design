@@ -9,13 +9,7 @@ import {
   type UtcEpochMs,
   defect,
 } from '@core/primitives';
-import {
-  DialSource,
-  MedalCue,
-  type ShopNow,
-  type VisitLeg,
-  WallTime,
-} from '@core/components';
+import { DialSource, MedalCue, type ShopNow, WallTime } from '@core/components';
 import {
   AgeSystem,
   BadgeSystem,
@@ -202,18 +196,6 @@ export function phoneOf(
         display: PhoneSystem.formatInternational(number.e164),
       }
     : { e164: number.digits, display: subject.phone ?? number.digits };
-}
-
-/**
- * The visit on screen already holds the last visit's services. A draft leg
- * IS a `GlanceLeg` (its `serviceId` and `variantId`, branded as the draft
- * holds them), so it goes to the system as it is (Law 3).
- */
-export function sameLegs(
-  last: readonly VisitLeg[],
-  draft: ClientCardContext['legs'],
-): boolean {
-  return ClientGlanceSystem.sameLegs(last, draft);
 }
 
 export interface ActionsInput {
@@ -494,10 +476,7 @@ export function medalStripVm(
               progressOf(data, completing),
             ),
           },
-    newest:
-      newest === null || newestSeries === null
-        ? null
-        : { level: newest.level, earnedAtUtcMs: newest.earnedAtUtcMs },
+    newest: newest === null || newestSeries === null ? null : newest,
     previousVisitAtUtcMs: data.previousVisitUtcMs,
     closest: closestStanding,
   });

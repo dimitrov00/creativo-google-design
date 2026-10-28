@@ -1,5 +1,6 @@
 import {
   type Actor,
+  type BookingCall,
   BookingLifecycle,
   type CancellationReason,
   type Seat,
@@ -134,11 +135,6 @@ export type TransitionAppointmentCommand = {
   readonly actor: Actor | null;
 };
 
-export type TransitionAppointmentAnswer = {
-  readonly appointmentId: AppointmentId;
-  readonly to: BookingStatus;
-};
-
 export type TransitionAppointmentPorts = TxPorts &
   PolicyReadPorts &
   TelemetryPorts;
@@ -231,9 +227,7 @@ export const transitionAppointment =
   (ports: TransitionAppointmentPorts) =>
   async (
     cmd: TransitionAppointmentCommand,
-  ): Promise<
-    Result<TransitionAppointmentAnswer, TransitionAppointmentError>
-  > => {
+  ): Promise<Result<BookingCall.Transitioned, TransitionAppointmentError>> => {
     let windowHours: HourCount | null = null;
     if (cmd.to === BookingStatus.Cancelled) {
       const policy = await ports.loadPolicy();
@@ -391,5 +385,8 @@ export const transitionAppointment =
     );
     if (!committed.ok) return committed;
     logUnaudited(ports, committed.value.unaudited);
-    return Result.ok({ appointmentId: cmd.appointmentId, to: cmd.to });
+    return Result.ok({
+      appointmentId: cmd.appointmentId,
+      toBookingStatus: cmd.to,
+    });
   };

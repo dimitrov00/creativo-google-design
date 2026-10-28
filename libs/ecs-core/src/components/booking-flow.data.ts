@@ -76,8 +76,8 @@ export const BookingFlowState = {
   /**
    * THE terminal rule, on a bare step: confirmed or waitlisted — the two
    * steps off the {@link SPINE} (the shell drops its navigation chrome
-   * there). `BookingFlowSystem.isTerminal` delegates here (pass D, D-10.8:
-   * one spelling of the rule).
+   * there). Takes the bare step (`state.bookingFlowStep`), so a view asks
+   * without the whole state (pass D, D-10.8: one spelling of the rule).
    */
   isTerminalStep(step: BookingFlowStep): step is BookingFlowState.TerminalStep {
     return (

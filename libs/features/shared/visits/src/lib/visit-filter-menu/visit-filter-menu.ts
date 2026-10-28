@@ -18,7 +18,8 @@ import {
   UiMenuTrigger,
 } from '@creativo/ui/controls';
 import { visitFilterWords } from '@creativo/infrastructure/i18n';
-import { visitFilterWordKey, visitFiltersFor } from '../visit-filter';
+import { VisitListSystem } from '@core/systems';
+import { visitFilterWordKey } from '../visit-filter';
 import { VisitFilter, type VisitPerspective } from '../visit-row.vm';
 
 /**
@@ -48,7 +49,7 @@ import { VisitFilter, type VisitPerspective } from '../visit-row.vm';
  * says it outright where a host wants another rung.
  *
  * The options and their order are the perspective's
- * (`visitFiltersFor`), one word differing by who reads it
+ * (`VisitListSystem.filtersFor`), one word differing by who reads it
  * (`visitFilterWordKey`: a client «Пропуснати» their own hour, a barber
  * records «Неявявания»). A host that knows its rows passes `offered`, and an
  * option nothing answers is left out rather than offered to lead nowhere
@@ -94,13 +95,13 @@ import { VisitFilter, type VisitPerspective } from '../visit-row.vm';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VisitFilterMenu {
-  /** The choice, two-way: the host narrows its rows with `matchesVisitFilter`. */
+  /** The choice, two-way: the host narrows its rows with `VisitListSystem.matches`. */
   readonly value = model<VisitFilter>(VisitFilter.All);
   readonly perspective = input.required<VisitPerspective>();
   /** The trigger's test id; each option's is `{prefix}-{option}`. */
   readonly testIdPrefix = input.required<string>();
   /**
-   * The options the host's rows can answer (`offeredVisitFilters`): the
+   * The options the host's rows can answer (`VisitListSystem.offered`): the
    * rest are left out, never disabled. `all` and the choice in force always
    * stay, so a narrowed list can always be widened again. Null offers every
    * option of the perspective.
@@ -129,7 +130,7 @@ export class VisitFilterMenu {
   );
 
   private readonly filters = computed(() =>
-    visitFiltersFor(this.perspective()),
+    VisitListSystem.filtersFor(this.perspective()),
   );
 
   /**

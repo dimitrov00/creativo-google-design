@@ -344,11 +344,9 @@ function activeGrantOf(uid: string, couponId: CouponId, value: CouponValue) {
     couponId,
     grantedAtUtcMs: SEEDED_AT_UTC_MS,
     ...CouponValue.of(value),
-    ...GrantLifecycle.of(
-      GrantLifecycle.active(
-        GrantCapacityTerms.singleUse(),
-        GrantExpiryTerms.none(),
-      ),
+    ...GrantLifecycle.active(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.none(),
     ),
   } satisfies Omit<CouponGrant, 'id'>;
 }

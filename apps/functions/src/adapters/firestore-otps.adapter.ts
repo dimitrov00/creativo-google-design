@@ -23,10 +23,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * `reason` is the failure's canonical code.
  */
 
-function failureOf(error: unknown): string {
-  return TriggerAttemptSystem.failureCode(error);
-}
-
 export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
   loadOpenOtps: async (destination, sinceUtcMs) => {
     try {
@@ -41,7 +37,10 @@ export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
       );
     } catch (error) {
       return Result.err(
-        RepositoryError.readFailed(Collections.Otps, failureOf(error)),
+        RepositoryError.readFailed(
+          Collections.Otps,
+          TriggerAttemptSystem.failureCode(error),
+        ),
       );
     }
   },

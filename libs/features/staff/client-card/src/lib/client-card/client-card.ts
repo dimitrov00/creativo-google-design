@@ -41,7 +41,7 @@ import {
 import { UiAlert } from '@creativo/ui/patterns';
 import { BirthdayCard } from '../birthday-card/birthday-card';
 import { ClientCardRegion, type WalletAnchor } from '../client-card.contracts';
-import { figure, partedAtJoints } from '../client-card.format';
+import { partedAtJoints } from '../client-card.format';
 import { ClientCardStore } from '../client-card.store';
 import {
   type ClientPhotoVm,
@@ -53,6 +53,7 @@ import { LoadState } from '@creativo/shared/view-state';
 import { LoyaltyGlance } from '../loyalty-glance/loyalty-glance';
 import { MedalsGlance } from '../medals-glance/medals-glance';
 import { regularSheetWidth } from '../sheet-width';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /** A module of the glance that reads data of its own, and can fail on its own. */
 type GlanceModule = Exclude<
@@ -281,7 +282,7 @@ export class ClientCard {
     }
     const count = slice.data.count;
     return {
-      figure: figure(count, words.lang),
+      figure: formatCount(count, words.lang),
       name: words.visitsModule.allName(count),
     };
   });
@@ -295,7 +296,7 @@ export class ClientCard {
     }
     const count = slice.data.levelCount;
     return {
-      figure: figure(count, words.lang),
+      figure: formatCount(count, words.lang),
       name: words.achievements.allName(count),
     };
   });

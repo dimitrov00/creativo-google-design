@@ -89,15 +89,12 @@ import {
 import {
   ADMIN_RHYTHM_CHOICES,
   ADMIN_RHYTHM_HISTORY_LIMIT,
-  ADMIN_RHYTHM_NOTICE_DAYS,
   ADMIN_RHYTHM_READ_TIMEOUT_MS,
-  ADMIN_RHYTHM_STREAK_ID,
   type AdminRhythmPatch,
   AdminRhythmStore,
   fixedInterval,
   patchedRhythmDraft,
   personalInterval,
-  rhythmBoundsOf,
 } from './admin-rhythm.store';
 import { type RhythmRecorder, rhythmRecorder } from './testing/rhythm-recorder';
 
@@ -293,7 +290,7 @@ const holdingWrites = (rules: Rules): Rules => {
 function headIn(world: StreakWorld): StreakDefinition | null {
   let head: StreakDefinition | null = null;
   memoryStreakDefinitionPorts(world)
-    .observeStreakDefinitionHead(ADMIN_RHYTHM_STREAK_ID)
+    .observeStreakDefinitionHead(StreakRule.DEFAULT_DEFINITION_ID)
     .pipe(take(1))
     .subscribe((read) => {
       if (read.ok) head = read.value;
@@ -328,7 +325,7 @@ async function elsewhere(
   if (!next.ok) throw new Error('the other rule was refused');
   const written = await rules.gateway.publishStreakRule({
     requestId: PublishRequestId.of(`elsewhere-${baseVersion}-${effectiveFrom}`),
-    streakId: ADMIN_RHYTHM_STREAK_ID,
+    streakId: StreakRule.DEFAULT_DEFINITION_ID,
     baseVersion,
     rule: next.value,
     streakTransition: StreakTransition.Grandfather,
@@ -773,42 +770,12 @@ describe('patchedRhythmDraft', () => {
   });
 });
 
-describe('rhythmBoundsOf', () => {
-  it('holds grace, the cue and the minimum gap under the interval', () => {
-    expect(rhythmBoundsOf(RECOMMENDED)).toEqual({
-      graceDays: { min: 0, max: 21 },
-      riskLeadDays: { min: 0, max: 21 },
-      minGapDays: { min: 0, max: 14 },
-      startWith: { min: 0, max: 2 },
-      fallbackDays: StreakIntervalRule.LIMITS.intervalDays,
-    });
-    expect(
-      rhythmBoundsOf(patchedRhythmDraft(RECOMMENDED, { interval: fixed(14) })),
-    ).toMatchObject({
-      graceDays: { min: 0, max: 13 },
-      riskLeadDays: { min: 0, max: 13 },
-      minGapDays: { min: 0, max: 13 },
-    });
-  });
-
-  it('holds the newcomer’s interval inside a personal clamp', () => {
-    expect(
-      rhythmBoundsOf(
-        patchedRhythmDraft(RECOMMENDED, { interval: personalInterval() }),
-      ),
-    ).toMatchObject({
-      graceDays: { min: 0, max: 20 },
-      fallbackDays: { min: 21, max: 70 },
-    });
-  });
-});
-
 // ── The store ────────────────────────────────────────────────────────────
 
 describe('AdminRhythmStore: opening', () => {
   it('holds the page’s figures', () => {
-    expect(ADMIN_RHYTHM_STREAK_ID).toBe('cadence');
-    expect(ADMIN_RHYTHM_NOTICE_DAYS).toBe(30);
+    expect(StreakRule.DEFAULT_DEFINITION_ID).toBe('cadence');
+    expect(StreakRule.RULE_CHANGE_NOTICE_DAYS).toBe(30);
     expect(ADMIN_RHYTHM_READ_TIMEOUT_MS).toBe(10_000);
     expect(ADMIN_RHYTHM_HISTORY_LIMIT).toBe(20);
   });
@@ -1275,7 +1242,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     expect(rules.published).toHaveLength(1);
     expect(rules.published[0]).toMatchObject({
       requestId: 'request-000000000001',
-      streakId: ADMIN_RHYTHM_STREAK_ID,
+      streakId: StreakRule.DEFAULT_DEFINITION_ID,
       baseVersion: 1,
       streakTransition: StreakTransition.Grandfather,
       previewHash: null,
@@ -1867,7 +1834,7 @@ describe('AdminRhythmStore: «Отмени»', () => {
     expect(rules.withdrawn).toEqual([
       StreakPublishCall.withdraw(
         PublishRequestId.of('request-000000000002'),
-        ADMIN_RHYTHM_STREAK_ID,
+        StreakRule.DEFAULT_DEFINITION_ID,
         2,
       ),
     ]);

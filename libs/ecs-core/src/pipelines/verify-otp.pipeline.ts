@@ -1,4 +1,5 @@
 import {
+  type IdentityCall,
   type OtpCode,
   ParsedIdentifier,
   SessionKind,
@@ -114,13 +115,6 @@ export type VerifyOtpCommand = {
   readonly operationId: OperationId | null;
 };
 
-export type VerifyOtpAnswer = {
-  /** The custom token the client signs in with — the ONLY place it is answered. */
-  readonly customToken: string;
-  /** `NEW` when no account held the destination, else `RETURNING`. */
-  readonly sessionKind: SessionKind;
-};
-
 /** What tx 1 read: the challenge, and whether the typed code matches its hash. */
 type AttemptRead = {
   readonly otp: Otp;
@@ -181,7 +175,7 @@ export const verifyOtp =
   (ports: VerifyOtpPorts) =>
   async (
     cmd: VerifyOtpCommand,
-  ): Promise<Result<VerifyOtpAnswer, VerifyOtpError>> => {
+  ): Promise<Result<IdentityCall.VerifyOtpAnswer, VerifyOtpError>> => {
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
 
@@ -310,7 +304,7 @@ export const verifyOtp =
         }),
     );
     if (!issued.ok) return issued;
-    return Result.ok({ customToken: token.value, sessionKind });
+    return Result.ok({ sessionKind, customToken: token.value });
   };
 
 /**

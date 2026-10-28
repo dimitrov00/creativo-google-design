@@ -265,7 +265,7 @@ function erasureRow(
       ...AuditContext.clientErasure(auditAction, census),
       ...AuditTargetRef.customer(customerId),
     },
-    idBasis: AuditSystem.idBasisOf(
+    idBasis: AuditSystem.rowBasis(
       auditAction,
       resourceId,
       customerId,
@@ -591,7 +591,7 @@ export const ClientErasureSystem = {
    * re-sweep's idiom): an operation key, `AuditSystem.changeKey.erasureSweep`.
    */
   sweepRowIdBasis(customerId: CustomerId, operationId: OperationId): string {
-    return AuditSystem.idBasisOf(
+    return AuditSystem.rowBasis(
       AuditAction.PrivacyClientErasureSwept,
       AuditResourceId.forCustomer(customerId),
       customerId,
@@ -828,7 +828,7 @@ export const ClientErasureSystem = {
    * idiom): an operation key, `AuditSystem.changeKey.erasureResweep`.
    */
   resweepRowIdBasis(customerId: CustomerId, operationId: OperationId): string {
-    return AuditSystem.idBasisOf(
+    return AuditSystem.rowBasis(
       AuditAction.PrivacyClientErasureReswept,
       AuditResourceId.forCustomer(customerId),
       customerId,

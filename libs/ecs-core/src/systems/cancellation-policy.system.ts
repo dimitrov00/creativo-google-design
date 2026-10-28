@@ -101,6 +101,7 @@ export const CancellationPolicySystem = {
    * window, read off the CURRENT start — the commitment the shop planned
    * around (`reschedule-booking.use-case.ts:446,651-664`).
    */
+  // eslint-disable-next-line creativo/no-identity-mapper -- a move is judged by the cancellation rule today; its own name keeps the call sites honest when the rules part
   mayMove(
     appointment: Appointment,
     policy: BookingPolicy | null,

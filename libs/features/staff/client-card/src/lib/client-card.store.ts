@@ -67,6 +67,7 @@ import {
   StreakSystem,
   type StreakRuleSummary,
   type ValidLoyaltyCatalog,
+  VisitListSystem,
   WalletSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -92,7 +93,6 @@ import {
   VisitRowEntry,
   type VisitRowVm,
   firstNameOf,
-  matchesVisitFilter,
 } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
@@ -2481,7 +2481,7 @@ export class ClientCardStore {
     for (let page = 0; page < FILTER_REFILL_PAGES; page += 1) {
       if (untracked(this._filter) !== filter) return;
       const shown = untracked(this.historyRowVms).filter((row) =>
-        matchesVisitFilter(row, filter),
+        VisitListSystem.matches(row, filter),
       ).length;
       if (shown >= FILTER_REFILL_ROWS) return;
       if (!(await this.fetchMore())) return;

@@ -56,12 +56,14 @@ function codeUnitOrder(a: GiftVoucherId, b: GiftVoucherId): number {
 }
 
 /**
- * The one by-last-day order of {@link VoucherSystem.soonestFirst} and
- * {@link VoucherSystem.held}: by the voucher's last DAY on the shop's
+ * The vouchers, the soonest to run out first — the one by-last-day order
+ * {@link VoucherSystem.held} shares: by the voucher's last DAY on the shop's
  * calendar (`expiresLocalDate`), the never-expiring ones last, equal days
  * by id in code units. A new array; the input is untouched.
  */
-function byLastDay(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
+function soonestFirst(
+  vouchers: readonly GiftVoucher[],
+): readonly GiftVoucher[] {
   const sorted = [...vouchers];
   sorted.sort((a, b) => {
     const dayA = a.expiresLocalDate ?? NEVER_EXPIRES;
@@ -335,14 +337,7 @@ export const VoucherSystem = {
     return sums;
   },
 
-  /**
-   * The vouchers, the soonest to run out first — by their last DAY on the
-   * shop's calendar (`expiresLocalDate`), the never-expiring ones last, ties
-   * by id. A new array; the input is untouched.
-   */
-  soonestFirst(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
-    return byLastDay(vouchers);
-  },
+  soonestFirst,
 
   /**
    * What the wallet holds (`wallet.presenter.ts` `voucherVms`): the
@@ -360,7 +355,7 @@ export const VoucherSystem = {
       const voucher = vouchers[i] as GiftVoucher;
       if (VoucherSystem.spendable(voucher, today)) spendable.push(voucher);
     }
-    return byLastDay(spendable);
+    return soonestFirst(spendable);
   },
 
   /** Nothing has been drawn from it yet: the balance is the whole value it was issued with. */

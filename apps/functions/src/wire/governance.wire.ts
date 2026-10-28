@@ -4,12 +4,8 @@ import {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import {
-  type EndImpersonationError,
-  GovernanceError,
-  type StartImpersonationError,
-} from '@core/errors';
-import { type GovernanceCall, ImpersonationLifecycle } from '@core/components';
+import { GovernanceError } from '@core/errors';
+import { ImpersonationLifecycle } from '@core/components';
 import {
   admitImpersonationCaller,
   type EndImpersonationCommand,
@@ -17,21 +13,17 @@ import {
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
-import {
-  field,
-  operationIdOf,
-  payloadOf,
-  refusalOf,
-  type WireRequest,
-} from './wire-read';
+import { field, operationIdOf, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE IMPERSONATION CALLABLES' WIRE (Phase 4a 4A-3 (4)) — new with the
  * rules tightening that took the admin's direct write away
  * (`impersonationSessions` `allow write: if false`): the requests are the
  * call component `GovernanceCall` (`startImpersonation`) and
- * `GovernanceCall.End` (`endImpersonation`), the answers theirs, a refusal
- * its ecs-core struct.
+ * `GovernanceCall.End` (`endImpersonation`); each pipeline answers the call
+ * component's answer itself (`GovernanceCall.Started` / `.Ended`, wired as
+ * it is), and a refusal leaves as its ecs-core struct (`refusalOf`: a store
+ * failure thrown).
  *
  * Both read the caller off the VERIFIED token FIRST — no session →
  * `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, no admin role →
@@ -92,19 +84,6 @@ export function decodeStartImpersonation(
   });
 }
 
-export function encodeStartImpersonationAnswer(
-  answer: GovernanceCall.Started,
-): GovernanceCall.Started {
-  return { sessionId: answer.sessionId };
-}
-
-/** A start's refusal as itself — the pipeline already chose the first fault (a store failure thrown). */
-export function startImpersonationRefusal(
-  error: StartImpersonationError,
-): EdgeError {
-  return refusalOf(error);
-}
-
 export function decodeEndImpersonation(
   request: WireRequest,
 ): Result<EndImpersonationCommand, EdgeError> {
@@ -122,20 +101,4 @@ export function decodeEndImpersonation(
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
   });
-}
-
-export function encodeEndImpersonationAnswer(
-  answer: GovernanceCall.Ended,
-): GovernanceCall.Ended {
-  return {
-    sessionId: answer.sessionId,
-    impersonationEndReason: answer.impersonationEndReason,
-  };
-}
-
-/** An end's refusal as itself (a store failure thrown). */
-export function endImpersonationRefusal(
-  error: EndImpersonationError,
-): EdgeError {
-  return refusalOf(error);
 }

@@ -27,7 +27,7 @@ import {
   type AuditRowPlan,
   type ProfileChange,
 } from './audit.system';
-import { ClientStatsSystem } from './client-stats.system';
+import { CanonicalJsonSystem } from './canonical-json.system';
 
 /**
  * A write to one of the thirteen governed collections, as the
@@ -191,7 +191,7 @@ export const GovernedChangeSystem = {
   ): readonly string[] {
     if (before === null) return after === null ? [] : keysOf(after);
     if (after === null) return keysOf(before);
-    const canonical = ClientStatsSystem.canonicalJson;
+    const canonical = CanonicalJsonSystem.of;
     const keys = new Set<string>([
       ...Object.keys(before),
       ...Object.keys(after),

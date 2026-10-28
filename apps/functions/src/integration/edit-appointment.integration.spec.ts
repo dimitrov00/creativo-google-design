@@ -22,6 +22,7 @@ import {
   Currency,
   GiftVoucherId,
   OperationId,
+  Result,
   SeatId,
 } from '@core/primitives';
 import { BookingErrorCode, StaffEditErrorCode } from '@core/errors';
@@ -57,11 +58,8 @@ import {
 } from '@core/testing';
 import { sha256Hex, walkInKeyPorts } from '../adapters/crypto.adapter';
 import { toHttpsError } from '../edge';
-import {
-  encodeStaffEditAppointmentAnswer,
-  staffEditAppointmentRefusal,
-} from '../wire/booking.wire';
-import { settle } from '../wire/wire-read';
+import { staffEditedOf } from '../wire/booking.wire';
+import { refusalOf } from '../wire/wire-read';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
@@ -468,18 +466,20 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       commands: BookingCall.EditCommand | readonly BookingCall.EditCommand[],
       expectedVersion: number | null = null,
     ): Promise<unknown> {
-      const settled = settle(
-        await editAppointment(ports())({
-          appointmentId: PAIR,
-          actorRoles: [Role.Receptionist],
-          commands: Array.isArray(commands) ? commands : [commands],
-          acknowledgedOverlap: false,
-          expectedVersion,
-          operationId: nextOperation(),
-          actor: RECEPTION,
-        }),
-        encodeStaffEditAppointmentAnswer,
-        staffEditAppointmentRefusal,
+      const settled = Result.mapError(
+        Result.map(
+          await editAppointment(ports())({
+            appointmentId: PAIR,
+            actorRoles: [Role.Receptionist],
+            commands: Array.isArray(commands) ? commands : [commands],
+            acknowledgedOverlap: false,
+            expectedVersion,
+            operationId: nextOperation(),
+            actor: RECEPTION,
+          }),
+          staffEditedOf,
+        ),
+        refusalOf,
       );
       if (!settled.ok) throw toHttpsError(settled.error);
       return settled.value;

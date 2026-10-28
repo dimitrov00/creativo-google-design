@@ -188,10 +188,14 @@ describe('completeRegistration', () => {
   it('fills in the required profile fields and promotes claims to active — ONE Set of the flat body, the REGISTRATION record beside it', async () => {
     const world = memoryIdentityWorld({ users: [phoneStub()] });
     const { tx, run } = rig({ world });
-    expect(await run(byPhone(ADA))).toEqual({
+    const answer = await run(byPhone(ADA));
+    expect(answer).toEqual({
       ok: true,
       value: { customToken: 'token:uid_1:1' },
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['customToken']);
     const registered = registeredAda();
     const record: Omit<Customer, 'id'> = {
       userId: UID,

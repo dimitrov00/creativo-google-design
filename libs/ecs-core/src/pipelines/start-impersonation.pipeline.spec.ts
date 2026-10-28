@@ -24,6 +24,7 @@ import {
   memoryTxPorts,
   recordingTelemetry,
   sequentialIds,
+  unwrapOk,
 } from '@core/testing';
 import {
   admitImpersonationCaller,
@@ -95,9 +96,13 @@ function auditCreateOf(actor: Actor, operationId: OperationId | null): WriteOp {
 describe('startImpersonation', () => {
   it('starts and commits the flat ACTIVE body and its audit row together — the id minted, the clock the server’s (DEP-12)', async () => {
     const { tx, run } = rig();
-    expect(await run(start({ reason: '  support ticket #123 ' }))).toEqual(
+    const answer = await run(start({ reason: '  support ticket #123 ' }));
+    expect(answer).toEqual(
       Result.ok({ sessionId: ImpersonationSessionId.of('session-1') }),
     );
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['sessionId']);
     expect(tx.plans).toEqual([
       [
         WriteOp.create([Collections.ImpersonationSessions, 'session-1'], {

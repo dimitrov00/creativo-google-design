@@ -4,6 +4,7 @@ import {
   BadgeCategoryKind,
   BadgeEmblem,
   BadgeSubject,
+  BadgeSubjectSlot,
   EarnedVia,
   JournalEffect,
   JournalSource,
@@ -13,6 +14,7 @@ import {
   PerkId,
   PersonalRecordKind,
   RewardGrant,
+  RewardGrantRule,
   Role,
   SeasonKind,
   StreakIntervalSource,
@@ -27,8 +29,14 @@ import {
 import type { LoyaltyAccount } from '@core/entities';
 import {
   AwardKind,
+  BarberId,
+  CouponId,
+  Currency,
   CustomerId,
   JournalEntryId,
+  LocationId,
+  PriceCents,
+  ServiceId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -145,6 +153,79 @@ describe('the loyalty JSON fixtures — the flat documents as Firestore holds th
     expect(Object.isFrozen(loyaltyAccountFixtures.georgi.clientJournal)).toBe(
       true,
     );
+  });
+
+  it('carries no other variant’s field in a catalogue body — a family’s subject, a reward’s grant (D8)', () => {
+    // Each variant's keys read off its companion's own factory; the seed
+    // writes each body as it is (Law 5), so a stale field of a variant the
+    // body is not would reach Firestore. The compile-time half (a key NO
+    // variant declares) is `loyalty.fixtures.type-spec.ts`.
+    const subjects = new Map<string | null, readonly string[]>([
+      [null, Object.keys(BadgeSubjectSlot.none())],
+      [
+        BadgeSubject.Service,
+        Object.keys(BadgeSubjectSlot.service(ServiceId.of('s'))),
+      ],
+      [
+        BadgeSubject.Barber,
+        Object.keys(BadgeSubjectSlot.barber(BarberId.of('b'))),
+      ],
+      [
+        BadgeSubject.Location,
+        Object.keys(BadgeSubjectSlot.location(LocationId.of('l'))),
+      ],
+    ]);
+    const grants = new Map<string, readonly string[]>([
+      [
+        RewardGrant.Coupon,
+        Object.keys(RewardGrantRule.coupon(CouponId.of('c'))),
+      ],
+      [
+        RewardGrant.Voucher,
+        Object.keys(RewardGrantRule.voucher(PriceCents.ZERO, Currency.EUR, 1)),
+      ],
+      [
+        RewardGrant.Perk,
+        Object.keys(RewardGrantRule.perk(PerkId.FreeReschedule, null)),
+      ],
+    ]);
+    /** The body's keys that belong to a variant of `variants` other than `own`. */
+    const strangers = (
+      body: object,
+      own: readonly string[] | undefined,
+      variants: ReadonlyMap<unknown, readonly string[]>,
+    ): readonly string[] => {
+      const foreign = new Set<string>();
+      for (const keys of variants.values()) {
+        for (const key of keys)
+          if (!(own ?? []).includes(key)) foreign.add(key);
+      }
+      return Object.keys(body).filter((key) => foreign.has(key));
+    };
+    for (const [id, body] of Object.entries(loyaltyCatalogJson.badgeSeries)) {
+      const own = subjects.get(body.badgeSubject);
+      expect([id, own === undefined]).toEqual([id, false]);
+      expect([id, strangers(body, own, subjects)]).toEqual([id, []]);
+    }
+    for (const [id, body] of Object.entries(
+      loyaltyCatalogJson.rewardsCatalog,
+    )) {
+      const own = grants.get(body.rewardGrant);
+      expect([id, own === undefined]).toEqual([id, false]);
+      expect([id, strangers(body, own, grants)]).toEqual([id, []]);
+    }
+    // The check is loud: a SERVICE family carrying a barber's id is caught.
+    expect(
+      strangers(
+        {
+          badgeSubject: BadgeSubject.Service,
+          subjectServiceId: 's',
+          subjectBarberId: 'b',
+        },
+        subjects.get(BadgeSubject.Service),
+        subjects,
+      ),
+    ).toEqual(['subjectBarberId']);
   });
 
   it('is dated before FIXTURE_TODAY, the day it is true on', () => {

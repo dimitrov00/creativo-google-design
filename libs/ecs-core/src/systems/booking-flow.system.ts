@@ -330,18 +330,6 @@ export const BookingFlowSystem = {
     }
   },
 
-  /**
-   * The flow is OVER at this step — confirmed or waitlisted, the states off
-   * the spine (the shell drops its navigation chrome there). Takes the step
-   * (`state.bookingFlowStep`), so a view can ask without the whole state.
-   * Delegates to the component's ONE terminal rule
-   * ({@link BookingFlowState.isTerminalStep}, the step half of the
-   * `BookingFlowState.isTerminal` guard — pass D, D-10.8).
-   */
-  isTerminal(step: BookingFlowStep): boolean {
-    return BookingFlowState.isTerminalStep(step);
-  },
-
   /** 1-based position on the wizard spine; terminal steps report the end. */
   currentStep(step: BookingFlowStep): number {
     const index = BookingFlowState.spineIndex(step);
@@ -354,7 +342,7 @@ export const BookingFlowSystem = {
    */
   canGoBack(step: BookingFlowStep): boolean {
     return (
-      !BookingFlowSystem.isTerminal(step) &&
+      !BookingFlowState.isTerminalStep(step) &&
       BookingFlowSystem.currentStep(step) > 1
     );
   },

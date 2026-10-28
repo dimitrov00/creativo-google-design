@@ -1,14 +1,8 @@
 import { Result, WaitlistRequestId } from '@core/primitives';
-import {
-  type CancelWaitlistRefusal,
-  type RepositoryError,
-  WaitlistError,
-} from '@core/errors';
+import { WaitlistError } from '@core/errors';
 import type { WaitlistCall } from '@core/components';
 import type {
-  CancelWaitlistAnswer,
   CancelWaitlistCommand,
-  RequestWaitlistAnswer,
   RequestWaitlistCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
@@ -18,7 +12,6 @@ import {
   idOf,
   listOf,
   payloadOf,
-  refusalOf,
   text,
   textOrNull,
   type WireRequest,
@@ -27,8 +20,10 @@ import {
 /**
  * THE WAITLIST CALLABLES' WIRE (Phase 4a 4A-4) — flipped with the web's
  * `callableClient`: the request is the call component `WaitlistCall` read
- * into its raw twin (`WaitlistCall.Input`), the answer its answer type, a
- * refusal its ecs-core struct.
+ * into its raw twin (`WaitlistCall.Input`); each pipeline answers the call
+ * component's answer itself (`WaitlistCall.Requested` / `.Cancelled`, wired
+ * as it is), and a refusal leaves as its ecs-core struct (`refusalOf`: a
+ * store failure thrown).
  *
  * - `requestWaitlist` `{ locationId, days: [{ localDate, windows:
  *   [{ startMinutes, endMinutes }] }], cart: { cartSeats: [{ seatKey,
@@ -105,19 +100,6 @@ export function decodeRequestWaitlist(
   });
 }
 
-export function encodeRequestWaitlistAnswer(
-  answer: RequestWaitlistAnswer,
-): WaitlistCall.Requested {
-  return { requestId: answer.requestId };
-}
-
-/** The door's refusals leave as themselves (a store failure thrown). */
-export function requestWaitlistRefusal(
-  error: WaitlistError | RepositoryError,
-): EdgeError {
-  return refusalOf(error);
-}
-
 /** `{ requestId }` from a verified caller. */
 export function decodeCancelWaitlist(
   request: WireRequest,
@@ -132,17 +114,4 @@ export function decodeCancelWaitlist(
     return Result.err(WaitlistError.invalidRequest('requestId'));
   }
   return Result.ok({ ownerUserId, requestId });
-}
-
-export function encodeCancelWaitlistAnswer(
-  answer: CancelWaitlistAnswer,
-): WaitlistCall.Cancelled {
-  return { requestId: answer.requestId };
-}
-
-/** Not found / not cancellable leave as themselves (a store failure thrown). */
-export function cancelWaitlistRefusal(
-  error: CancelWaitlistRefusal | RepositoryError,
-): EdgeError {
-  return refusalOf(error);
 }

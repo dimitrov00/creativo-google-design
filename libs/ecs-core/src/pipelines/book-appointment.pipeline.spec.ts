@@ -29,6 +29,7 @@ import {
   OperationId,
   Result,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingError,
@@ -185,7 +186,7 @@ function rig(
 const BOOK_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingCommitted,
-    ATTEMPT,
+    AuditResourceId.forAppointment(ATTEMPT),
     FIXTURE_IDS.customer,
     `attempt:${ATTEMPT}`,
   ),
@@ -279,7 +280,7 @@ describe('bookAppointment', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingCommitted,
-          ATTEMPT,
+          AuditResourceId.forAppointment(ATTEMPT),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.attempt(ATTEMPT),
         ),
@@ -294,7 +295,7 @@ describe('bookAppointment', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingCommitted,
-          ATTEMPT,
+          AuditResourceId.forAppointment(ATTEMPT),
           FIXTURE_IDS.customer,
           'attempt:attempt-0123456789abcdef',
         ),

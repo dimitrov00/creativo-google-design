@@ -19,7 +19,7 @@ export type WaitlistCall = {
 };
 
 export const WaitlistCall = {
-  /** `requestWaitlist`'s answer — the request's id, or nothing usable. */
+  /** `requestWaitlist`'s answer — and `cancelWaitlist`'s, the same shape: the request's id, or nothing usable. */
   decodeRequested(raw: unknown): Result<WaitlistCall.Requested, PipelineError> {
     const answer = CallAnswer.read(raw);
     const requestId =
@@ -29,11 +29,6 @@ export const WaitlistCall = {
     return requestId === null
       ? CallAnswer.unusable()
       : Result.ok({ requestId });
-  },
-
-  /** `cancelWaitlist`'s answer. */
-  decodeCancelled(raw: unknown): Result<WaitlistCall.Cancelled, PipelineError> {
-    return WaitlistCall.decodeRequested(raw);
   },
 } as const;
 

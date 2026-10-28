@@ -560,7 +560,7 @@ describe('ClientErasureSystem.stampWrites — the FIRST commit (P3-RU-21)', () =
         Collections.AuditLog,
         AuditEntryId.of(
           fixtureHash(
-            AuditSystem.idBasisOf(
+            AuditSystem.rowBasis(
               AuditAction.PrivacyClientErasureStarted,
               resourceId,
               P,
@@ -969,7 +969,7 @@ describe('ClientErasureSystem.sweepRowWrites — the sweep’s ONE row, inside i
       ),
     ]);
     expect(ClientErasureSystem.sweepRowIdBasis(P, OPERATION)).toBe(
-      AuditSystem.idBasisOf(
+      AuditSystem.rowBasis(
         AuditAction.PrivacyClientErasureSwept,
         resourceId,
         P,
@@ -1222,7 +1222,7 @@ describe('ClientErasureSystem.completionWrites — the LAST commit', () => {
           Collections.AuditLog,
           AuditEntryId.of(
             fixtureHash(
-              AuditSystem.idBasisOf(
+              AuditSystem.rowBasis(
                 AuditAction.PrivacyClientErased,
                 resourceId,
                 P,
@@ -1313,7 +1313,7 @@ describe('ClientErasureSystem.resweepWrites — an ERASED record’s sweep that 
       ),
     ]);
     expect(ClientErasureSystem.resweepRowIdBasis(P, OPERATION)).toBe(
-      AuditSystem.idBasisOf(
+      AuditSystem.rowBasis(
         AuditAction.PrivacyClientErasureReswept,
         resourceId,
         P,

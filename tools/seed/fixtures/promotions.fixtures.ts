@@ -179,21 +179,19 @@ export function couponGrantBody(
     couponId: CouponId.of(couponId),
     grantedAtUtcMs: sure(UtcEpochMs.of(grantedAtUtcMs), 'granted'),
     ...CouponValue.of(couponOf(couponId)),
-    ...GrantLifecycle.of(
-      usedAtUtcMs === null
-        ? GrantLifecycle.active(
-            GrantCapacityTerms.singleUse(),
-            GrantExpiryTerms.none(),
-          )
-        : GrantLifecycle.used(
-            {
-              ...GrantCapacityTerms.singleUse(),
-              ...GrantExpiryTerms.none(),
-            },
-            sure(UtcEpochMs.of(usedAtUtcMs), 'used'),
-            'seed',
-          ),
-    ),
+    ...(usedAtUtcMs === null
+      ? GrantLifecycle.active(
+          GrantCapacityTerms.singleUse(),
+          GrantExpiryTerms.none(),
+        )
+      : GrantLifecycle.used(
+          {
+            ...GrantCapacityTerms.singleUse(),
+            ...GrantExpiryTerms.none(),
+          },
+          sure(UtcEpochMs.of(usedAtUtcMs), 'used'),
+          'seed',
+        )),
   } satisfies Omit<CouponGrant, 'id'>;
 }
 

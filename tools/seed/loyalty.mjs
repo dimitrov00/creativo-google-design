@@ -80,7 +80,9 @@ import {
   AttendanceState,
   AwardKind,
   Currency,
+  JournalEntryId,
   LocalDate,
+  StreakDefinitionVersionId,
   UtcEpochMs,
   Weekday,
 } from '@core/primitives';
@@ -93,13 +95,10 @@ import {
   ENGINE_ACTOR,
   SEED_RULE_PUBLISHER,
   achievementEffect,
-  badgeCategoryBody,
   badgeProgressBody,
-  badgeSeriesBody,
   favouriteServiceRecord,
   firstVisitRecord,
   journalEntryBody,
-  journalRowIdOf,
   longestRhythmRecord,
   loyaltyAccountBody,
   mostVisitsInYearRecord,
@@ -107,16 +106,12 @@ import {
   qualifierCounts,
   redemptionEffect,
   redemptionSource,
-  rewardCatalogItemBody,
   rewardEffect,
   ruleSource,
-  ruleVersionIdOf,
   seasonBody,
   seasonProgressBody,
   seedRuleRequestIdOf,
   seedRuleVersionBody,
-  streakDefinitionBody,
-  tierDefinitionBody,
   tierEffect,
   tierJobSource,
 } from './fixtures/loyalty.fixtures.ts';
@@ -147,15 +142,6 @@ export const LOYALTY_ACCOUNTS_COLLECTION = 'loyaltyAccounts';
 export const BADGE_PROGRESS_COLLECTION = 'badgeProgress';
 export const SEASON_PROGRESS_COLLECTION = 'seasonProgress';
 export const CLIENT_JOURNAL_COLLECTION = 'clientJournal';
-
-/** The builder of each catalogue collection's bodies (`fixtures/loyalty.fixtures.ts`). */
-const CATALOG_BODY = Object.freeze({
-  badgeCategories: badgeCategoryBody,
-  badgeSeries: badgeSeriesBody,
-  tierDefinitions: tierDefinitionBody,
-  rewardsCatalog: rewardCatalogItemBody,
-  streakDefinitions: streakDefinitionBody,
-});
 
 // ── The engine's own rules (not catalogue data) ────────────────────────────
 
@@ -274,17 +260,15 @@ export const LOYALTY_CATALOG_TODAY = '2026-09-28';
 
 /**
  * The published catalogue as of the shop's `today`: `catalog.json`
- * (`{ [collection]: { [id]: body } }`), every body rebuilt by its builder,
- * every season's window and announcement moved by the whole days between
- * the fixtures' day and `today`. A fresh copy per call.
+ * (`{ [collection]: { [id]: body } }`), every body as stored, every
+ * season's window and announcement moved by the whole days between the
+ * fixtures' day and `today`. A fresh copy per call.
  */
 export function loyaltyCatalogFor(today) {
   const stored = JSON.parse(readFileSync(CATALOG_FILE, 'utf8'));
   const shift = LocalDate.daysBetween(LOYALTY_CATALOG_TODAY, today);
   const bodyOf = (collection, body) =>
-    collection === 'seasons'
-      ? seasonBody(body, shift)
-      : CATALOG_BODY[collection](body);
+    collection === 'seasons' ? seasonBody(body, shift) : body;
   return Object.fromEntries(
     LOYALTY_CATALOG_PARTS.map(([collection]) => [
       collection,
@@ -322,7 +306,7 @@ export function loyaltyCatalogWritesOf(catalog) {
 const ruleHeadPath = (streakId) =>
   `${STREAK_DEFINITIONS_COLLECTION}/${streakId}`;
 const ruleVersionPath = (streakId, version) =>
-  `${ruleHeadPath(streakId)}/${STREAK_DEFINITION_VERSIONS_COLLECTION}/${ruleVersionIdOf(version)}`;
+  `${ruleHeadPath(streakId)}/${STREAK_DEFINITION_VERSIONS_COLLECTION}/${StreakDefinitionVersionId.forVersion(version)}`;
 
 const isMap = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -993,9 +977,9 @@ const FACT_RANK = Object.freeze({
  * `account-*.json` (`LoyaltyClientJson` of `@core/testing`): `{ uid,
  * customerId, account, badgeProgress, seasonProgress, clientJournal }`,
  * each a flat body, progress keyed by family and season, the journal by
- * `journalRowIdOf(customerId, seq)` and holding every row the activity feed
- * shows: the points, the levels, the tiers, the stamp card's coupons and
- * the redemptions. `null` for somebody the engine never saw (no visit, no
+ * `JournalEntryId.forEntry(customerId, seq)` and holding every row the
+ * activity feed shows: the points, the levels, the tiers, the stamp card's
+ * coupons and the redemptions. `null` for somebody the engine never saw (no visit, no
  * booking).
  *
  * `domain` is the production code the fold is handed, never imports:
@@ -1509,7 +1493,7 @@ export function projectLoyaltyFor(
     badgeProgress,
     seasonProgress,
     clientJournal: Object.fromEntries(
-      rows.map((row) => [journalRowIdOf(customerId, row.seq), row]),
+      rows.map((row) => [JournalEntryId.forEntry(customerId, row.seq), row]),
     ),
   };
 }
@@ -1829,7 +1813,7 @@ export function readLoyaltyWrites(domain, writes) {
       read.problems.push(`${path}: a version of a rule with no head`);
       continue;
     }
-    if (versionId !== ruleVersionIdOf(data.version)) {
+    if (versionId !== StreakDefinitionVersionId.forVersion(data.version)) {
       read.problems.push(
         `${path}: .version ${shown(data.version)} is not the version ${versionId} names`,
       );

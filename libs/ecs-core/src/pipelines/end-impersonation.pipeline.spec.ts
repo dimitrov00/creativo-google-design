@@ -26,6 +26,7 @@ import {
   memoryTxPorts,
   pinnedNowUtcMs,
   recordingTelemetry,
+  unwrapOk,
 } from '@core/testing';
 import {
   type EndImpersonationCommand,
@@ -102,12 +103,19 @@ describe('endImpersonation', () => {
     const at = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 5 * 60_000);
     const session = impersonationSessionFixture();
     const { tx, run } = rig([session], at);
-    expect(await run(end())).toEqual(
+    const answer = await run(end());
+    expect(answer).toEqual(
       Result.ok({
         sessionId: SESSION,
         impersonationEndReason: ImpersonationEndReason.AdminEnded,
       }),
     );
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'sessionId',
+      'impersonationEndReason',
+    ]);
     const ended: ImpersonationSession = {
       ...session,
       impersonationStatus: ImpersonationStatus.Ended,

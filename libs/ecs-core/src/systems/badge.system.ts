@@ -564,9 +564,4 @@ export const BadgeSystem = {
   isRetired(series: Pick<BadgeSeries, 'retiredAtUtcMs'>): boolean {
     return series.retiredAtUtcMs !== null;
   },
-
-  /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
-  isCalendarDriven(series: Pick<BadgeSeries, 'metric'>): boolean {
-    return MetricRef.isCalendarDriven(series);
-  },
 } as const;

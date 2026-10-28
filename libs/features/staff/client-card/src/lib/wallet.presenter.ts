@@ -22,9 +22,10 @@ import type {
   StreakDefinition,
 } from '@core/entities';
 import {
+  LedgerSystem,
+  LoyaltyCatalogSystem,
   type LoyaltyPass,
   LoyaltyPassSystem,
-  LoyaltyCatalogSystem,
   RewardSystem,
   type RewardTiles,
   type StreakOutlookAnswer,
@@ -42,14 +43,13 @@ import {
   rhythmClosedMarkPeriod,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
-import { formatCents } from '@creativo/ui/wall-clock';
+import { formatCents, formatCount } from '@creativo/ui/wall-clock';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
   cardLocaleOf,
   dayLong,
   dayMonth,
   dayShort,
-  figure,
   monthLong,
   monthYearLong,
   runningCase,
@@ -81,7 +81,6 @@ import {
   NO_VISIT_NAMES,
   type VisitNames,
   activityGroups,
-  foldByEvent,
   wholeMonthsOf,
 } from './ledger.presenter';
 import {
@@ -184,7 +183,7 @@ function catalogOf(input: WalletInput): ValidLoyaltyCatalog | null {
 
 /** A balance or a count as a display figure; one that owes wears the minus. */
 function signedFigureOf(value: number, lang: string): string {
-  return `${value < 0 ? MINUS : ''}${figure(Math.abs(value), lang)}`;
+  return `${value < 0 ? MINUS : ''}${formatCount(Math.abs(value), lang)}`;
 }
 
 // ── WA · The pass ───────────────────────────────────────────────────────
@@ -256,7 +255,7 @@ export function passVm(input: WalletInput): PassVm {
   if (pass.passFigure === PassFigure.Visits) {
     const visits = pass.figure;
     return {
-      figure: figure(visits, lang),
+      figure: formatCount(visits, lang),
       unit: words.loyalty.rhythmUnit(visits),
       holder,
       tier,
@@ -297,19 +296,6 @@ export function passVm(input: WalletInput): PassVm {
 
 // ── WC · What is held ───────────────────────────────────────────────────
 
-/**
- * The vouchers held (`VoucherSystem.held`): the spendable ones — issued,
- * not voided, not past their day, with a balance — the soonest to run out
- * first, two that end on one day by id in UTF-16 code units (OR-18,
- * DEP-F13: no device locale decides an order).
- */
-function heldOf(
-  vouchers: readonly GiftVoucher[],
-  today: LocalDate,
-): readonly GiftVoucher[] {
-  return VoucherSystem.held(vouchers, today);
-}
-
 function voucherVm(
   voucher: GiftVoucher,
   today: LocalDate,
@@ -343,16 +329,17 @@ function voucherVm(
 }
 
 /**
- * WC1 — the vouchers the person can spend, the soonest to expire first. A
- * voided voucher, an empty one and one past its day are absent: the wallet
- * holds what can be used, and a voucher's history is the bill's.
+ * WC1 — the vouchers the person can spend, the soonest to expire first
+ * (`VoucherSystem.held`). A voided voucher, an empty one and one past its
+ * day are absent: the wallet holds what can be used, and a voucher's
+ * history is the bill's.
  */
 export function voucherVms(
   vouchers: readonly GiftVoucher[],
   today: LocalDate,
   words: Words,
 ): readonly VoucherVm[] {
-  return heldOf(vouchers, today).map((voucher) =>
+  return VoucherSystem.held(vouchers, today).map((voucher) =>
     voucherVm(voucher, today, words),
   );
 }
@@ -594,10 +581,7 @@ function inChairDueOf(
   state: StreakState,
   input: WalletInput,
 ): LocalDate | null {
-  return StreakSystem.inChairDue(state, input.today, {
-    inChairToday: input.inChairToday,
-    paused: input.paused,
-  });
+  return StreakSystem.inChairDue(state, input.today, input);
 }
 
 /**
@@ -798,7 +782,7 @@ export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
   const best = StreakSystem.record(state);
   const protections = StreakSystem.protectionsHeld(state, summary);
   return {
-    figure: figure(state.current, lang),
+    figure: formatCount(state.current, lang),
     unit: words.loyaltyPage.inRhythm(state.current),
     phase: standing.phase,
     periods: rhythmMarks(state, standing, input),
@@ -907,7 +891,7 @@ function tierOf(
       label: page.tier,
       valueText: sentence,
     },
-    remaining: figure(remaining, words.lang),
+    remaining: formatCount(remaining, words.lang),
     line1: page.tierTo(next.name[locale]),
     line2: page.tierQualifying(track.value),
     steps: steps(sentence),
@@ -942,7 +926,9 @@ function tilesOf(
   const locale = cardLocaleOf(words.lang);
   return answer.tiles.map(({ reward, reach }): RewardTileVm => {
     const title = reward.name[locale];
-    const missing = reach.affordable ? null : figure(reach.short, words.lang);
+    const missing = reach.affordable
+      ? null
+      : formatCount(reach.short, words.lang);
     return {
       rewardId: reward.id,
       title,
@@ -991,7 +977,7 @@ function rewardGrid(
 function walletActivity(entries: readonly JournalEntry[], input: WalletInput) {
   // A read that came back full may have cut its oldest event.
   const whole = entries.length < WALLET_ACTIVITY_READ;
-  const groups = activityGroups(foldByEvent(entries, whole), {
+  const groups = activityGroups(LedgerSystem.fold(entries, whole), {
     visitTitles: input.visitTitles ?? NO_VISIT_NAMES,
     visitBarbers: input.visitBarbers,
     catalog: catalogOf(input),

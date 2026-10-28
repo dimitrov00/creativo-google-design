@@ -31,10 +31,8 @@ import {
   type VisitSectionVm,
   type VisitWords,
   VisitsBrowser,
-  matchesVisitFilter,
   sectionVisits,
   visitRowOf,
-  visitSectionKey,
   visitSectionLabel,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
@@ -406,9 +404,7 @@ export class ClientAppointments {
     return {
       serviceName: (id) => {
         const service = this.catalog.findService(id);
-        return service
-          ? this.content.text({ en: service.name.en, bg: service.name.bg })
-          : null;
+        return service ? this.content.text(service.name) : null;
       },
       barberName: (id) => {
         const barber = barbers.get(id);
@@ -417,9 +413,7 @@ export class ClientAppointments {
       barberAvatarSrc: (id) => barbers.get(id)?.avatarSrc ?? null,
       locationName: (id) => {
         const shop = locations.find((location) => location.id === id);
-        return shop
-          ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
-          : null;
+        return shop ? this.content.text(shop.name) : null;
       },
       locationCount: locations.length,
       locationTimeZone: (id) =>
@@ -484,7 +478,9 @@ export class ClientAppointments {
   /** What the funnel lets through — the list's rows and the calendar's days alike. */
   private readonly shownVisits = computed<readonly PageVisit[]>(() => {
     const filter = this.filter();
-    return this.visits().filter(({ row }) => matchesVisitFilter(row, filter));
+    return this.visits().filter(({ row }) =>
+      VisitListSystem.matches(row, filter),
+    );
   });
 
   /**
@@ -631,16 +627,12 @@ export class ClientAppointments {
 
   protected readonly openVisitAddress = computed(() => {
     const shop = this.openVisitShop();
-    return shop
-      ? this.content.text({ en: shop.address.en, bg: shop.address.bg })
-      : '';
+    return shop ? this.content.text(shop.address) : '';
   });
 
   protected readonly openVisitShopName = computed(() => {
     const shop = this.openVisitShop();
-    return shop
-      ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
-      : '';
+    return shop ? this.content.text(shop.name) : '';
   });
 
   /**
@@ -829,7 +821,7 @@ export class ClientAppointments {
   protected scrollToToday(smooth = false): void {
     const today = this.store.today();
     if (today === null) return;
-    const key = visitSectionKey(today, VisitGrain.Month);
+    const key = VisitListSystem.sectionKeyOf(today, VisitGrain.Month);
     afterNextRender(
       () => {
         this.calendarScroller()
@@ -1155,7 +1147,7 @@ export class ClientAppointments {
     const sameYear =
       LocalDate.parts(month).year === LocalDate.parts(today).year;
     return {
-      key: visitSectionKey(month, VisitGrain.Month),
+      key: VisitListSystem.sectionKeyOf(month, VisitGrain.Month),
       // The month's name as the shop's calendar has it (no zone consulted).
       label: this.capitalize(
         formatWallClock(month, null, this.locale(), {

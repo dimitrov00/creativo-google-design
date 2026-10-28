@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-  type AppliedDiscount,
+  AppliedDiscount,
   Combinability,
   CouponExpiryRule,
   CouponStatus,
@@ -339,11 +339,15 @@ describe('DiscountSystem — the discounts on a visit', () => {
       ...birthday,
       combinability: Combinability.Exclusive,
     };
-    expect(DiscountSystem.isLegalSet([])).toBe(true);
-    expect(DiscountSystem.isLegalSet([stackable, birthday])).toBe(true);
-    expect(DiscountSystem.isLegalSet([exclusive])).toBe(true);
-    expect(DiscountSystem.isLegalSet([exclusive, stackable])).toBe(false);
-    expect(DiscountSystem.isLegalSet([stackable, stackable])).toBe(false);
+    expect(AppliedDiscount.isLegalSelection([])).toBe(true);
+    expect(AppliedDiscount.isLegalSelection([stackable, birthday])).toBe(true);
+    expect(AppliedDiscount.isLegalSelection([exclusive])).toBe(true);
+    expect(AppliedDiscount.isLegalSelection([exclusive, stackable])).toBe(
+      false,
+    );
+    expect(AppliedDiscount.isLegalSelection([stackable, stackable])).toBe(
+      false,
+    );
   });
 
   it('takes one value off an amount — never more than it, zero across a currency line', () => {

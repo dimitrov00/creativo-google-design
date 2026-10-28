@@ -57,8 +57,13 @@ export type ImpersonationShape = Pick<
   | 'expiresAtUtcMs'
 >;
 
-/** The meta slice of a session — the fields an end carries over unchanged. */
-function metaOf(session: ImpersonationSessionMeta): ImpersonationSessionMeta {
+/**
+ * A projection: the meta slice of a whole session — the fields an end
+ * carries over unchanged; the active variant's fields are left behind.
+ */
+function metaOf<S extends ImpersonationSessionMeta>(
+  session: S,
+): ImpersonationSessionMeta {
   return {
     id: session.id,
     adminUserId: session.adminUserId,

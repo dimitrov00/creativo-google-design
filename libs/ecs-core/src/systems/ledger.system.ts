@@ -135,14 +135,18 @@ function pointsLineOf(entry: JournalEntry): LedgerLineAnswer {
   }
 }
 
-/** The ids a loaded row compensates: the rows that are struck. */
-function voidedIds(entries: readonly JournalEntry[]): Set<JournalEntryId> {
-  const voided = new Set<JournalEntryId>();
+/**
+ * The ids the loaded rows compensate — the rows that are struck (each
+ * row's `reverses`); the set {@link LedgerSystem.fold} keeps a struck row
+ * apart by, and {@link LedgerSystem.isStruck} reads.
+ */
+function voided(entries: readonly JournalEntry[]): ReadonlySet<JournalEntryId> {
+  const struck = new Set<JournalEntryId>();
   for (let i = 0; i < entries.length; i++) {
     const reverses = (entries[i] as JournalEntry).reverses;
-    if (reverses !== null) voided.add(reverses);
+    if (reverses !== null) struck.add(reverses);
   }
-  return voided;
+  return struck;
 }
 
 /**
@@ -231,12 +235,12 @@ export const LedgerSystem = {
     entries: readonly E[],
     whole: boolean,
   ): readonly LedgerEvent<E>[] {
-    const voided = voidedIds(entries);
+    const struck = voided(entries);
     const folded = new Map<string, E[]>();
     const newestFirst = [...entries].sort((a, b) => b.seq - a.seq);
     for (let i = 0; i < newestFirst.length; i++) {
       const entry = newestFirst[i] as E;
-      const key = eventKeyOf(entry, voided);
+      const key = eventKeyOf(entry, struck);
       const event = folded.get(key);
       if (event === undefined) folded.set(key, [entry]);
       else event.push(entry);
@@ -257,11 +261,6 @@ export const LedgerSystem = {
     return whole || events.length < 2 ? events : events.slice(0, -1);
   },
 
-  /** The shop-calendar month a shop day falls in: `YYYY-MM`. */
-  monthOf(localDate: LocalDate): string {
-    return LocalDate.monthKey(localDate);
-  },
-
   /**
    * The months the loaded entries hold WHOLE, oldest first: every month
    * newer than the oldest one loaded, and the oldest too once nothing older
@@ -275,7 +274,7 @@ export const LedgerSystem = {
     const months = new Set<string>();
     for (let i = 0; i < entries.length; i++) {
       months.add(
-        LedgerSystem.monthOf(
+        LocalDate.monthKey(
           (entries[i] as Pick<JournalEntry, 'localDate'>).localDate,
         ),
       );
@@ -304,12 +303,12 @@ export const LedgerSystem = {
     );
     const cut = new Set<string>();
     for (let i = shownCount; i < ordered.length; i++) {
-      cut.add(LedgerSystem.monthOf((ordered[i] as V).localDate));
+      cut.add(LocalDate.monthKey((ordered[i] as V).localDate));
     }
     const months = new Map<string, V[]>();
     for (let i = 0; i < shownCount; i++) {
       const event = ordered[i] as V;
-      const key = LedgerSystem.monthOf(event.localDate);
+      const key = LocalDate.monthKey(event.localDate);
       const month = months.get(key);
       if (month === undefined) months.set(key, [event]);
       else month.push(event);
@@ -349,14 +348,7 @@ export const LedgerSystem = {
     return leading;
   },
 
-  /**
-   * The ids the loaded rows compensate — the rows that are struck (each
-   * row's `reverses`); the set {@link LedgerSystem.fold} keeps a struck row
-   * apart by, and {@link LedgerSystem.isStruck} reads.
-   */
-  voided(entries: readonly JournalEntry[]): ReadonlySet<JournalEntryId> {
-    return voidedIds(entries);
-  },
+  voided,
 
   /** A row is struck when any entry of its event was compensated (`voided`). */
   isStruck(

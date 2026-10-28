@@ -464,10 +464,10 @@ console.log(`seeded settings/${BOOKING_POLICY.id}`);
  * THE LOYALTY CATALOGUE (client-card-redesign.md §4.6): the achievement
  * shelves and their medal families, the seasons and the event, the tiers,
  * the rewards and the rhythm — `catalog.json` from ecs-core's test fixtures
- * (`libs/ecs-core/src/testing/fixtures/loyalty/`),
- * the same file the mapper specs and the e2e read, with its seasons moved to
- * the shop's today so every run has one open season, one open event and one
- * ended season. Presentation, not personal data: anyone signed in reads it,
+ * (`libs/ecs-core/src/testing/fixtures/loyalty/`), the same file the
+ * ecs-core specs (`@core/testing`'s loyalty fixtures) and the e2e read,
+ * with its seasons moved to the shop's today so every run has one open
+ * season, one open event and one ended season. Presentation, not personal data: anyone signed in reads it,
  * so the catalogue mode writes it too.
  *
  * THE RHYTHM'S RULE goes in with it: the head, and the first version under

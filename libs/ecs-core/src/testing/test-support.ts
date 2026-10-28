@@ -42,6 +42,7 @@ import {
 import {
   Result,
   AppointmentId,
+  AuditResourceId,
   BarberId,
   CustomerId,
   LocationId,
@@ -168,6 +169,15 @@ export function trackMinute(raw: number): TrackMinute {
  */
 export function hourCount(raw: number): HourCount {
   return unwrapOk(HourCount.of(raw));
+}
+
+/**
+ * An `AuditResourceId` literal, spelled as the row stores it —
+ * `auditResource('otps/otp-7')`, `auditResource('appt-1')`; throws on a
+ * blank id or a second `/` (`AuditResourceId.parse`).
+ */
+export function auditResource(raw: string): AuditResourceId {
+  return unwrapOk(AuditResourceId.parse(raw));
 }
 
 /**

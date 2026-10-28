@@ -33,7 +33,6 @@ import { daypartWords, pluralForm } from '@creativo/infrastructure/i18n';
 import { DayRangeFace, dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
-import { UPCOMING_SECTION_KEY } from './visit-sections';
 import {
   formatCents,
   formatMinute,
@@ -644,7 +643,7 @@ export function waitlistRowOf(
     visitRowEntry: VisitRowEntry.Waitlist,
     localDate: point.localDate,
     startMinutes: point.minute,
-    sectionKey: UPCOMING_SECTION_KEY,
+    sectionKey: VisitListSystem.UPCOMING_SECTION_KEY,
     upcoming: true,
     tile: null,
     leadingIcon: 'calendar.watching',

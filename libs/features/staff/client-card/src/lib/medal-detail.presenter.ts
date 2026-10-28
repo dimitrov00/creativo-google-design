@@ -40,10 +40,7 @@ import {
   draftVisitOf,
   familyOfMedal,
   inEndedSeason,
-  isOneOff,
-  isSingleLevel,
   landsOn,
-  latestEarned,
   localeOf,
   progressOf,
   relatedOf,
@@ -57,7 +54,6 @@ import {
   NO_BREAK,
   dayLong,
   dayWithYear,
-  figure,
   inSentence,
   levelNumeral,
 } from './client-card.format';
@@ -83,6 +79,7 @@ import {
 import type { HistoryRowsInput } from './history.presenter';
 import { medalRingVm } from './medals.presenter';
 import { visitsRows } from './visits-page.presenter';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * A MEDAL'S DETAIL (client-card revision 3 §2.4, R2-H) — one family's page
@@ -481,7 +478,8 @@ function whatOf(
   const lang = ctx.words.lang;
   const own = inSentence(series.requirement[localeOf(ctx)], lang);
   const metric = series.metric;
-  if (metric === null) return isOneOff(series) ? own : words.whatRhythm(count);
+  if (metric === null)
+    return BadgeSystem.isOneOff(series) ? own : words.whatRhythm(count);
   if (metric !== Metric.VisitsCompleted) {
     return words.what(achievementMetricWord(metric), count);
   }
@@ -542,9 +540,10 @@ function progressCardOf(
   switch (card.medalProgressCard) {
     case MedalProgressCard.OneOff: {
       // A single act is one: «0 от 1» until done, its day once done.
-      const last = latestEarned(progress);
+      const last = BadgeSystem.latestEarned(progress);
       return {
-        value: last === null ? figure(card.value, lang) : medalDay(last, lang),
+        value:
+          last === null ? formatCount(card.value, lang) : medalDay(last, lang),
         unit: card.unitShown ? words.progressOf(1) : null,
         what: whatOf(series, ctx, 1),
         remaining: null,
@@ -555,17 +554,17 @@ function progressCardOf(
     }
     case MedalProgressCard.Complete:
       return {
-        value: figure(card.value, lang),
+        value: formatCount(card.value, lang),
         unit: null,
         what: whatOf(series, ctx, card.value),
-        remaining: isSingleLevel(series)
+        remaining: BadgeSystem.isSingleLevel(series)
           ? null
           : ctx.words.achievements.complete,
         thisVisit: null,
       };
     case MedalProgressCard.Stopped:
       return {
-        value: figure(card.value, lang),
+        value: formatCount(card.value, lang),
         unit: null,
         what: whatOf(series, ctx, card.value),
         remaining: null,
@@ -575,7 +574,7 @@ function progressCardOf(
       const target = card.target ?? defect('TO_NEXT without a threshold');
       const level = levelNumeral(BadgeSystem.nextLevelNumber(standing));
       return {
-        value: figure(card.value, lang),
+        value: formatCount(card.value, lang),
         unit: words.progressOf(target),
         what: whatOf(series, ctx, target),
         // Tenure is worded by the day its next level lands.
@@ -612,7 +611,7 @@ function howSentenceOf(
   const own = oneStop(series.requirement[localeOf(ctx)]);
   const metric = series.metric;
   if (metric === null) {
-    return isOneOff(series) ? own : (rule?.sentence ?? own);
+    return BadgeSystem.isOneOff(series) ? own : (rule?.sentence ?? own);
   }
   if (metric !== Metric.VisitsCompleted) {
     return words.how(achievementMetricWord(metric));
@@ -832,7 +831,7 @@ function ladderOf(
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
   const locale = localeOf(ctx);
-  const oneOff = isOneOff(series);
+  const oneOff = BadgeSystem.isOneOff(series);
   return BadgeSystem.ladder(
     series,
     standing,

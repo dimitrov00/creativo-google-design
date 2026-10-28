@@ -3,7 +3,7 @@ import {
   BadgeSubject,
   type EarnedLevel,
   Metric,
-  type MetricRef,
+  MetricRef,
   type Seat,
   SeasonPhase,
   type SeasonWindow,
@@ -282,7 +282,7 @@ export const AchievementsSystem = {
     seasonPhase: SeasonPhase | null,
     today: LocalDate,
   ): boolean {
-    if (BadgeSystem.isRetired(series) || BadgeSystem.isCalendarDriven(series)) {
+    if (BadgeSystem.isRetired(series) || MetricRef.isCalendarDriven(series)) {
       return false;
     }
     if (series.seasonId !== null && seasonPhase !== SeasonPhase.Open) {

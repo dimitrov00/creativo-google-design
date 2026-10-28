@@ -20,19 +20,6 @@
 import { EndMinute, MinuteOfDay, TrackMinute } from '@core/primitives';
 import { GridLayoutSystem, type MinuteRun } from '@core/systems';
 
-/**
- * A minute a frame's own arithmetic or its producer holds WHOLE and
- * NON-NEGATIVE, as the track's (`TrackMinute.ofProven` — no `Result` per
- * drag tick). The one door every frame uses: a stored seat or roster
- * minute, a block's range, the noon default, an axis bound (a whole hour),
- * a snapped drag (a whole multiple of the snap, clamped to the drawn axis,
- * whose first minute is ≥ 0), a keyboard step clamped the same way. A value
- * outside that is a broken invariant of the caller, never foreign input.
- */
-export function trackMinuteOf(raw: number): TrackMinute {
-  return TrackMinute.ofProven(raw);
-}
-
 /** A minute of the track as a start, clamped onto the day — proven, so no `Result` per drag tick. */
 export function trackStart(minute: TrackMinute): MinuteOfDay {
   return MinuteOfDay.ofProven(Math.min(1439, Math.max(0, Math.round(minute))));

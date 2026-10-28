@@ -257,14 +257,21 @@ function accountStatusOf(raw: unknown): AccountStatus | null {
 }
 
 /**
- * The basis of one person's row id for one logical change — TEXT in, text
- * out (the brands' text is what is hashed: a booking act's client record, a
- * profile act's account; the action is the verb as the row stores it).
+ * The basis of one person's row id for one logical change — the legacy
+ * row-id derivation minus the SHA-256: `JSON.stringify(['audit-row/v2',
+ * action, resourceId, targetId, changeKey])`. Typed (audit-hardening Phase 3,
+ * P3-RU-7): the verb, the resource and the target as their brands (Law 7.4 —
+ * a `CustomerId` for a client-record row, a `UserId` for an account row,
+ * `null` for an untargeted one); the brands' TEXT is what is hashed, so every
+ * stored row id stays what it was. The JSON array keeps the parts
+ * unambiguous (`("a:b","c")` and `("a","b:c")` never collide). The planners
+ * that build a row outside this file (`IdentityAuditSystem`) key it through
+ * here.
  */
 function rowBasis(
-  action: string,
-  resourceId: string,
-  targetId: string | null,
+  action: AuditAction,
+  resourceId: AuditResourceId,
+  targetId: CustomerId | UserId | null,
   changeKey: string,
 ): string {
   return JSON.stringify([
@@ -310,32 +317,7 @@ function targets(
  * and `CreateAuditRows` (the document-change trigger).
  */
 export const AuditSystem = {
-  /**
-   * The basis of one person's row id for one logical change — the legacy
-   * row-id derivation minus the SHA-256: `JSON.stringify(['audit-row/v2',
-   * action, resourceId, targetId, changeKey])` (the target's id text: a
-   * client record for a booking act, an account for a profile act). The JSON
-   * array keeps the parts unambiguous (`("a:b","c")` and `("a","b:c")` never
-   * collide).
-   */
   rowBasis,
-
-  /**
-   * The id basis of one row, typed (audit-hardening Phase 3, P3-RU-7): the
-   * verb, the resource and the target as their brands (Law 7.4 — a
-   * `CustomerId` for a client-record row, a `UserId` for an account row,
-   * `null` for an untargeted one) — exactly {@link rowBasis}'s bytes, so
-   * every stored row id stays what it was. The planners that build a row
-   * outside this file (`IdentityAuditSystem`) key it through here.
-   */
-  idBasisOf(
-    action: AuditAction,
-    resourceId: AuditResourceId,
-    targetId: CustomerId | UserId | null,
-    changeKey: string,
-  ): string {
-    return rowBasis(action, resourceId, targetId, changeKey);
-  },
 
   targets,
 

@@ -20,17 +20,14 @@ import type { VisitRowVm, VisitSectionVm } from './visit-row.vm';
  * «Посещения» is the client's screen, and the jump pills make its length
  * walkable. The year grain stays for a future dense list.
  *
- * The sectioning, the section key and the worked figure are
- * `VisitListSystem` in `@core/systems`; the headings' words, the figure's
+ * The sectioning, the section key (`sectionKeyOf`, the upcoming run's
+ * `UPCOMING_SECTION_KEY`) and the worked figure are `VisitListSystem` in
+ * `@core/systems`, which callers read directly; the headings' words, the figure's
  * word and the test ids stay here. A row carries its shop day and minute
  * (`localDate` + `startMinutes`, Law 7.3), so it IS the system's
  * `SectionRow` and is sectioned as it is; the grain's test-id segment is
  * its one lower-case word (`visitGrainWords`).
  */
-
-/** The upcoming run's key — not a date, so it can never collide with one. */
-export const UPCOMING_SECTION_KEY: string =
-  VisitListSystem.UPCOMING_SECTION_KEY;
 
 /** The words a list's headings take; the host reads them from the catalogue. */
 export interface VisitSectionLabels {
@@ -80,15 +77,6 @@ export function workedVisitsDetail(
 }
 
 /**
- * The dated section a visit files under — `2026-09` by month, `2026` by
- * year — by its SHOP day (`localDate`, the wall clock it is stored on), so
- * a visit at 00:30 on the 1st is never filed under the month before.
- */
-export function visitSectionKey(day: LocalDate, grain: VisitGrain): string {
-  return VisitListSystem.sectionKeyOf(day, grain);
-}
-
-/**
  * A dated section's heading, in the house form (R59): a month with its
  * year — «Септември 2026 г.», capitalised because a heading is not prose
  * (Bulgarian writes months lowercase in a sentence) — or the year alone,
@@ -130,7 +118,7 @@ export function sectionVisits(
           label: options.labels.upcoming,
           detail: null,
           rows: sectionRows,
-          testId: `${prefix}-${UPCOMING_SECTION_KEY}`,
+          testId: `${prefix}-${VisitListSystem.UPCOMING_SECTION_KEY}`,
         }
       : {
           key: section.key,

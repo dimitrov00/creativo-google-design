@@ -422,6 +422,14 @@ describe('eraseClient — one call, start to finish', () => {
       erasureDone: true,
       ...RESIDUE,
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // the tag, whether it is done and the eleven counts in census order —
+    // nothing else.
+    expect(Object.keys(answer)).toEqual([
+      'erasureStatus',
+      'erasureDone',
+      ...Object.keys(ErasureCensus.EMPTY),
+    ]);
     const shot = r.world.state.photos.find((p) => p.id === 'photo-p-shot');
     const nobody = r.world.state.photos.find((p) => p.id === 'photo-p-nobody');
     const library = r.world.state.photos.find(
@@ -1528,11 +1536,20 @@ describe('previewClientErasure — read-only (P3-L-17)', () => {
     store.set(`${Collections.Customers}/${sibling}`, body);
     const r = rig({ world, store });
     const before = snapshotOf(store);
-    expect(unwrapOk(await r.preview())).toEqual({
+    const preview = unwrapOk(await r.preview());
+    expect(preview).toEqual({
       erasureStatus: ErasureStatus.None,
       erasureSiblingCustomerIds: [sibling],
       ...BEFORE,
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // the tag, the sibling ids and the eleven counts in census order —
+    // nothing else.
+    expect(Object.keys(preview)).toEqual([
+      'erasureStatus',
+      'erasureSiblingCustomerIds',
+      ...Object.keys(ErasureCensus.EMPTY),
+    ]);
     expect(r.tx.transactions).toHaveLength(0);
     expect(snapshotOf(store)).toEqual(before);
     expect(r.stores.calls).toEqual([`loadAuthRoles:${world.person.userId}`]);

@@ -30,6 +30,7 @@ import {
   unwrapErr,
   unwrapOk,
   WALK_IN_SENTINELS,
+  auditResource,
 } from '@core/testing';
 import { AuditSystem } from './audit.system';
 import { CanonicalJsonSystem } from './canonical-json.system';
@@ -545,7 +546,7 @@ describe('ClientExportSystem.planClientExported — the one row', () => {
       },
       idBasis: AuditSystem.rowBasis(
         AuditAction.PrivacyClientExported,
-        `customers/${customerId}`,
+        auditResource(`customers/${customerId}`),
         customerId,
         `export:${OPERATION}`,
       ),

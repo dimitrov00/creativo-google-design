@@ -33,6 +33,7 @@ import {
   OperationId,
   Result,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -203,7 +204,7 @@ const OPERATION = OperationId.of('cancel-op-0123456789');
 const CANCEL_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingCancelled,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `cancel:${OPERATION}`,
   ),
@@ -221,6 +222,9 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       actor: CLIENT,
     });
     expect(answer).toEqual({ ok: true, value: { appointmentId: visit.id } });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual(['appointmentId']);
     const seat = visit.seats[0];
     const cancelledSeat = {
       ...seat,
@@ -301,7 +305,7 @@ describe('cancelAppointment — the client calling off their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingCancelled,
-          visit.id,
+          AuditResourceId.forAppointment(visit.id),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.cancel(OPERATION),
         ),

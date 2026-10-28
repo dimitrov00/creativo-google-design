@@ -1,4 +1,5 @@
 import {
+  ArrivalVerb,
   BarberPreference,
   CancellationReason,
   DiscountMethod,
@@ -32,6 +33,7 @@ import {
   StaffEditErrorCode,
 } from '@core/errors';
 import {
+  type BookAppointmentAnswer,
   type MarkArrivalCommand,
   type RecordSeatTipCommand,
 } from '@core/pipelines';
@@ -39,9 +41,11 @@ import { endMinute, localDate, minute, utcMs } from '@core/testing';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   arrivalRefusal,
+  arrivedOf,
   CallStateWord,
   cancelAppointmentRefusal,
-  commitBookingRefusal,
+  clearedOf,
+  committedOf,
   decodeCancelAppointment,
   decodeClearArrival,
   decodeCommitBooking,
@@ -50,20 +54,12 @@ import {
   decodeRescheduleAppointment,
   decodeStaffEditAppointment,
   decodeTransitionAppointment,
-  encodeCancelAppointmentAnswer,
-  encodeClearArrivalAnswer,
-  encodeCommitBookingAnswer,
-  encodeMarkArrivedAnswer,
-  encodeRecordSeatTipAnswer,
-  encodeRescheduleAppointmentAnswer,
-  encodeStaffEditAppointmentAnswer,
-  encodeTransitionAppointmentAnswer,
   recordSeatTipRefusal,
-  rescheduleAppointmentRefusal,
-  staffEditAppointmentRefusal,
+  rescheduledOf,
+  staffEditedOf,
   transitionAppointmentRefusal,
 } from './booking.wire';
-import { settle, type WireRequest } from './wire-read';
+import { refusalOf, type WireRequest } from './wire-read';
 
 const signedIn = (uid: string, roles: readonly string[] = []) => ({
   auth: { uid, token: { roles } },
@@ -81,7 +77,7 @@ function wire(error: EdgeError) {
   return { code: thrown.code, details: thrown.details };
 }
 
-function refusalOf<T>(result: Result<T, EdgeError>): EdgeError {
+function errorOf<T>(result: Result<T, EdgeError>): EdgeError {
   if (result.ok) throw new Error('expected a refusal');
   return result.error;
 }
@@ -378,7 +374,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     it('a staff placement says so — or names its client — and needs a role that works the book', () => {
       expect(
         wire(
-          refusalOf(
+          errorOf(
             decodeCommitBooking({
               ...signedIn('u-client'),
               data: { onBehalfOfUserId: 'u-other' },
@@ -391,7 +387,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       });
       expect(
         wire(
-          refusalOf(
+          errorOf(
             decodeCommitBooking({
               ...signedIn('u-client'),
               data: { placement: Placement.Staff, onBehalfOfUserId: null },
@@ -514,19 +510,17 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       ).toMatchObject({ staffPlacement: false, ownerUserId: 'u-client' });
     });
 
-    it('answers the call component’s answer, and leaves the commit’s refusals as their structs projected', () => {
-      expect(
-        encodeCommitBookingAnswer({ appointmentId: A1, replayed: true }),
-      ).toEqual({ appointmentId: 'a1' });
-      expect(
-        wire(commitBookingRefusal(BookingError.unauthenticated())),
-      ).toEqual({
+    it('projects the commit’s answer to the id alone (`replayed` stays on the server), and leaves its refusals as their structs projected', () => {
+      expect(committedOf({ appointmentId: A1, replayed: true })).toStrictEqual({
+        appointmentId: 'a1',
+      });
+      expect(wire(refusalOf(BookingError.unauthenticated()))).toEqual({
         code: 'unauthenticated',
         details: { errorCode: 'BOOKING_UNAUTHENTICATED' },
       });
       expect(
         wire(
-          commitBookingRefusal(
+          refusalOf(
             BookingError.slotUnavailable(
               BarberId.of('b-ivan'),
               localDate('2026-09-29'),
@@ -552,7 +546,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     it('refuses an anonymous caller, a missing id and a reason that is no code', () => {
       expect(
         wire(
-          refusalOf(
+          errorOf(
             decodeCancelAppointment({
               data: {
                 appointmentId: 'a1',
@@ -566,9 +560,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         details: { errorCode: 'BOOKING_CANCEL_UNAUTHENTICATED' },
       });
       expect(
-        wire(
-          refusalOf(decodeCancelAppointment({ ...signedIn('u1'), data: {} })),
-        ),
+        wire(errorOf(decodeCancelAppointment({ ...signedIn('u1'), data: {} }))),
       ).toEqual({
         code: 'invalid-argument',
         details: { errorCode: 'BOOKING_CANCEL_INVALID_INPUT' },
@@ -579,7 +571,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       for (const reason of [undefined, '  sick ', 'client_unwell', 7]) {
         expect(
           wire(
-            refusalOf(
+            errorOf(
               decodeCancelAppointment({
                 ...signedIn('u1'),
                 data: { appointmentId: 'a1', reason },
@@ -662,9 +654,6 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         code: 'unavailable',
         details: { errorCode: 'BOOKING_CANCEL_POLICY_UNAVAILABLE' },
       });
-      expect(encodeCancelAppointmentAnswer({ appointmentId: A1 })).toEqual({
-        appointmentId: 'a1',
-      });
     });
   });
 
@@ -726,9 +715,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     });
 
     it('refuses a request that names no visit', () => {
-      expect(
-        wire(refusalOf(decodeRescheduleAppointment({ data: {} }))),
-      ).toEqual({
+      expect(wire(errorOf(decodeRescheduleAppointment({ data: {} })))).toEqual({
         code: 'invalid-argument',
         details: {
           errorCode: 'BOOKING_INVALID_INPUT',
@@ -737,20 +724,16 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       });
     });
 
-    it('answers the moved visit and leaves the move’s refusals as themselves', () => {
+    it('projects the moved visit to its id (`revision`, `replayed` stay on the server) and leaves the move’s refusals as themselves', () => {
       expect(
-        encodeRescheduleAppointmentAnswer({
+        rescheduledOf({
           appointmentId: A1,
           revision: 3,
           replayed: false,
         }),
-      ).toEqual({ appointmentId: 'a1' });
+      ).toStrictEqual({ appointmentId: 'a1' });
       expect(
-        wire(
-          rescheduleAppointmentRefusal(
-            BookingError.invalidInput('startMinutes'),
-          ),
-        ),
+        wire(refusalOf(BookingError.invalidInput('startMinutes'))),
       ).toEqual({
         code: 'invalid-argument',
         details: { errorCode: 'BOOKING_INVALID_INPUT', field: 'startMinutes' },
@@ -760,15 +743,13 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
 
   describe('transitionAppointment', () => {
     it('refuses anonymous and role-less callers, and a request that is no transition', () => {
-      expect(
-        wire(refusalOf(decodeTransitionAppointment({ data: {} }))),
-      ).toEqual({
+      expect(wire(errorOf(decodeTransitionAppointment({ data: {} })))).toEqual({
         code: 'unauthenticated',
         details: { errorCode: 'BOOKING_TRANSITION_UNAUTHENTICATED' },
       });
       expect(
         wire(
-          refusalOf(
+          errorOf(
             decodeTransitionAppointment({
               ...signedIn('u1', ['content_manager']),
               data: {},
@@ -800,7 +781,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         },
       ]) {
         expect(
-          wire(refusalOf(decodeTransitionAppointment({ ...staff, data }))),
+          wire(errorOf(decodeTransitionAppointment({ ...staff, data }))),
         ).toEqual({
           code: 'invalid-argument',
           details: { errorCode: 'BOOKING_TRANSITION_INVALID_INPUT' },
@@ -1040,30 +1021,22 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         code: 'invalid-argument',
         details: { errorCode: 'BOOKING_TRANSITION_INVALID_INPUT' },
       });
-      expect(
-        encodeTransitionAppointmentAnswer({
-          appointmentId: A1,
-          to: BookingStatus.NoShow,
-        }),
-      ).toEqual({ appointmentId: 'a1', toBookingStatus: 'NO_SHOW' });
     });
   });
 
   describe('markArrived / clearArrival', () => {
     it('refuses as their own codes and answers the call component’s answers', () => {
-      expect(wire(refusalOf(decodeMarkArrived({ data: {} })))).toEqual({
+      expect(wire(errorOf(decodeMarkArrived({ data: {} })))).toEqual({
         code: 'unauthenticated',
         details: { errorCode: 'BOOKING_ARRIVED_UNAUTHENTICATED' },
       });
       expect(
-        wire(refusalOf(decodeClearArrival({ ...signedIn('u1'), data: {} }))),
+        wire(errorOf(decodeClearArrival({ ...signedIn('u1'), data: {} }))),
       ).toEqual({
         code: 'permission-denied',
         details: { errorCode: 'BOOKING_ARRIVED_FORBIDDEN' },
       });
-      expect(
-        wire(refusalOf(decodeMarkArrived({ ...staff, data: {} }))),
-      ).toEqual({
+      expect(wire(errorOf(decodeMarkArrived({ ...staff, data: {} })))).toEqual({
         code: 'invalid-argument',
         details: { errorCode: 'BOOKING_ARRIVED_INVALID_INPUT' },
       });
@@ -1103,7 +1076,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         details: {
           errorCode: 'BOOKING_ARRIVED_NOT_ALLOWED',
           fromBookingStatus: 'COMPLETED',
-          toBookingStatus: CallStateWord.Arrived,
+          toBookingStatus: ArrivalVerb.Arrived,
         },
       });
       expect(
@@ -1113,7 +1086,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
             arrival(MarkArrivalAction.Clear),
           ),
         ).details,
-      ).toMatchObject({ toBookingStatus: CallStateWord.Unarrived });
+      ).toMatchObject({ toBookingStatus: ArrivalVerb.Unarrived });
       expect(
         wire(
           arrivalRefusal(
@@ -1126,11 +1099,11 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         details: { errorCode: 'BOOKING_ARRIVED_NOT_FOUND' },
       });
       const answer = { appointmentId: A1, unchanged: true };
-      expect(encodeMarkArrivedAnswer(answer)).toEqual({
+      expect(arrivedOf(answer)).toStrictEqual({
         appointmentId: 'a1',
         alreadyArrived: true,
       });
-      expect(encodeClearArrivalAnswer(answer)).toEqual({
+      expect(clearedOf(answer)).toStrictEqual({
         appointmentId: 'a1',
         alreadyClear: true,
       });
@@ -1182,7 +1155,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       for (const amountCents of [-1, 2.5, '3']) {
         expect(
           wire(
-            refusalOf(
+            errorOf(
               decodeRecordSeatTip({
                 ...staff,
                 data: { appointmentId: 'a1', seatId: 's1', amountCents },
@@ -1194,12 +1167,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           details: { errorCode: 'BOOKING_TIP_INVALID_INPUT' },
         });
       }
-      expect(wire(refusalOf(decodeRecordSeatTip({ data: {} })))).toEqual({
+      expect(wire(errorOf(decodeRecordSeatTip({ data: {} })))).toEqual({
         code: 'unauthenticated',
         details: { errorCode: 'BOOKING_TIP_UNAUTHENTICATED' },
       });
       expect(
-        wire(refusalOf(decodeRecordSeatTip({ ...signedIn('u1'), data: {} }))),
+        wire(errorOf(decodeRecordSeatTip({ ...signedIn('u1'), data: {} }))),
       ).toEqual({
         code: 'permission-denied',
         details: { errorCode: 'BOOKING_TIP_FORBIDDEN' },
@@ -1223,13 +1196,6 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           recordSeatTipRefusal(BookingError.invalidInput('appointmentId'), TIP),
         ).details,
       ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND' });
-      expect(
-        encodeRecordSeatTipAnswer({
-          appointmentId: A1,
-          seatId: SeatId.of('s1'),
-          unchanged: false,
-        }),
-      ).toEqual({ appointmentId: 'a1', seatId: 's1', unchanged: false });
     });
   });
 
@@ -1246,18 +1212,16 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     });
 
     it('refuses before anything is read: anonymous, role-less, no visit, a malformed name or version', () => {
-      expect(wire(refusalOf(decodeStaffEditAppointment({ data: {} })))).toEqual(
-        {
-          code: 'unauthenticated',
-          details: { errorCode: StaffEditErrorCode.Unauthenticated },
-        },
-      );
+      expect(wire(errorOf(decodeStaffEditAppointment({ data: {} })))).toEqual({
+        code: 'unauthenticated',
+        details: { errorCode: StaffEditErrorCode.Unauthenticated },
+      });
       // `mayBook`, not `isStaff`: a role-less caller, a plain client and the
       // content manager the RULES refuse every read may not move the book.
       for (const roles of [[], ['client'], ['content_manager']]) {
         expect(
           wire(
-            refusalOf(
+            errorOf(
               decodeStaffEditAppointment({
                 ...signedIn('u1', roles),
                 data: {},
@@ -1402,7 +1366,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
           'addedSubject',
         ],
       ] as const) {
-        expect(wire(refusalOf(edit(data)))).toEqual({
+        expect(wire(errorOf(edit(data)))).toEqual({
           code: 'invalid-argument',
           details: {
             errorCode: StaffEditErrorCode.InvalidCommand,
@@ -1602,10 +1566,10 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       ).toBe(0);
     });
 
-    it('names an overlap’s handle as the struct holds it and answers the call component’s answer', () => {
+    it('names an overlap’s handle as the struct holds it and projects the answer to the id and revision (`replayed` stays on the server)', () => {
       expect(
         wire(
-          staffEditAppointmentRefusal(
+          refusalOf(
             StaffEditError.overlaps(
               BarberId.of('b-ivan'),
               localDate('2026-10-01'),
@@ -1625,12 +1589,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         },
       });
       expect(
-        encodeStaffEditAppointmentAnswer({
+        staffEditedOf({
           appointmentId: A1,
           revision: 4,
           replayed: true,
         }),
-      ).toEqual({ appointmentId: 'a1', revision: 4 });
+      ).toStrictEqual({ appointmentId: 'a1', revision: 4 });
     });
   });
 
@@ -1755,7 +1719,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         `refuses an id that is %s with its own invalid input, naming the field`,
         (_what, id) => {
           expect(
-            refusalOf(
+            errorOf(
               act.decode({
                 ...act.caller,
                 data: withId(act.base, act.name, id),
@@ -1804,7 +1768,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       const anonymous = (
         decode: Act['decode'],
         data: Record<string, unknown>,
-      ) => wire(refusalOf(decode({ data }))).details;
+      ) => wire(errorOf(decode({ data }))).details;
       expect(anonymous(decodeCommitBooking, {})).toEqual({
         errorCode: 'BOOKING_UNAUTHENTICATED',
       });
@@ -1830,7 +1794,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         errorCode: StaffEditErrorCode.Unauthenticated,
       });
       const roleless = (decode: Act['decode'], data: Record<string, unknown>) =>
-        wire(refusalOf(decode({ ...signedIn('u1'), data }))).details;
+        wire(errorOf(decode({ ...signedIn('u1'), data }))).details;
       expect(
         roleless(decodeCommitBooking, { placement: Placement.Staff }),
       ).toEqual({ errorCode: 'BOOKING_COMMIT_FORBIDDEN' });
@@ -1853,12 +1817,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
 
     it('every other payload field is judged before the id — today’s answers for today’s faults', () => {
       expect(
-        refusalOf(
+        errorOf(
           decodeCancelAppointment({ ...signedIn('u1'), data: { reason: 7 } }),
         ),
       ).toEqual(CancellationRefusal.invalidInput('appointmentId'));
       expect(
-        refusalOf(
+        errorOf(
           decodeRecordSeatTip({
             ...staff,
             data: { appointmentId: 'a1', seatId: 's1', amountCents: -1 },
@@ -1871,7 +1835,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         ),
       );
       expect(
-        refusalOf(decodeRescheduleAppointment({ ...signedIn('u1'), data: {} })),
+        errorOf(decodeRescheduleAppointment({ ...signedIn('u1'), data: {} })),
       ).toEqual(BookingError.invalidInput('appointmentId'));
     });
   });
@@ -1884,19 +1848,13 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         'person_overlap',
         'window_closed',
       ]) {
-        expect(
-          wire(rescheduleAppointmentRefusal(BookingError.invalidInput(name))),
-        ).toEqual({
+        expect(wire(refusalOf(BookingError.invalidInput(name)))).toEqual({
           code: 'invalid-argument',
           details: { errorCode: BookingErrorCode.InvalidInput, field: name },
         });
       }
       for (const name of ['atMinutes', 'startMinutes', 'durationMinutes']) {
-        expect(
-          wire(
-            staffEditAppointmentRefusal(StaffEditError.invalidCommand(name)),
-          ),
-        ).toEqual({
+        expect(wire(refusalOf(StaffEditError.invalidCommand(name)))).toEqual({
           code: 'invalid-argument',
           details: {
             errorCode: StaffEditErrorCode.InvalidCommand,
@@ -1926,13 +1884,12 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         actor: null,
       };
       const refusals: readonly (() => EdgeError)[] = [
-        () => commitBookingRefusal(down),
+        // commit, reschedule and staff edit pass the shared `refusalOf`
+        () => refusalOf(down),
         () => cancelAppointmentRefusal(down, cancel),
-        () => rescheduleAppointmentRefusal(down),
         () => transitionAppointmentRefusal(down, party),
         () => arrivalRefusal(down, arrival(MarkArrivalAction.Arrive)),
         () => recordSeatTipRefusal(down, TIP),
-        () => staffEditAppointmentRefusal(down),
       ];
       for (const refuse of refusals) {
         expect(refuse).toThrowError(
@@ -1941,7 +1898,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
       }
     });
 
-    it('settles a pipeline result: the answer encoded, a refusal in the callable’s words', () => {
+    it('settles a pipeline result as the root wires it: a projection by name, a refusal in the callable’s words, a store failure thrown', () => {
       const cancel = {
         appointmentId: A1,
         callerUserId: UserId.of('u1'),
@@ -1949,17 +1906,23 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
         operationId: OPERATION,
         actor: null,
       };
+      const committed = (
+        result: Result<BookAppointmentAnswer, EdgeError | RepositoryError>,
+      ) => Result.mapError(Result.map(result, committedOf), refusalOf);
       expect(
-        settle(
-          Result.ok({ appointmentId: A1, replayed: true }),
-          encodeCommitBookingAnswer,
-          commitBookingRefusal,
-        ),
-      ).toEqual({ ok: true, value: { appointmentId: 'a1' } });
+        committed(Result.ok({ appointmentId: A1, replayed: true })),
+      ).toStrictEqual({ ok: true, value: { appointmentId: 'a1' } });
+      expect(committed(Result.err(BookingError.unauthenticated()))).toEqual({
+        ok: false,
+        error: BookingError.unauthenticated(),
+      });
+      const down = RepositoryError.writeFailed('appointments/a1', 'aborted');
+      expect(() => committed(Result.err(down))).toThrowError(
+        expect.objectContaining({ repositoryError: down }),
+      );
       expect(
-        settle(
+        Result.mapError(
           Result.err(BookingError.invalidInput('appointmentId')),
-          encodeCancelAppointmentAnswer,
           (error) => cancelAppointmentRefusal(error, cancel),
         ),
       ).toEqual({
@@ -1986,7 +1949,7 @@ describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
     expect(command.staffPlacement).toBe(false);
     expect(
       wire(
-        refusalOf(
+        errorOf(
           decodeCommitBooking({
             data: { attemptId: ATTEMPT, uid: 'u-payload' },
           }),

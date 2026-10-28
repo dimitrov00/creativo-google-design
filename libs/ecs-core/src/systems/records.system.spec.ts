@@ -199,6 +199,50 @@ describe('RecordsSystem — the featured record (RC)', () => {
   });
 });
 
+describe('RecordsSystem.setOn / isNew — the boundaries (medals.presenter.spec.ts `recordSetOn`, `isNewRecord`)', () => {
+  it('sets a run on its last visit, a first visit on its day, a closed record year on its last day', () => {
+    expect(RecordsSystem.setOn(record('longestRhythm'), TODAY)).toBe(
+      '2026-09-28',
+    );
+    expect(RecordsSystem.setOn(record('firstVisit'), TODAY)).toBe('2025-03-01');
+    expect(RecordsSystem.setOn(record('mostVisitsInYear'), TODAY)).toBe(
+      '2025-12-31',
+    );
+  });
+
+  it('is new for a run set within the last thirty days of the shop’s today — never one dated ahead', () => {
+    const run = (on: string) => record('longestRhythm', { on: localDate(on) });
+    expect(RecordsSystem.NEW_RECORD_DAYS).toBe(30);
+    expect(RecordsSystem.isNew(run('2026-09-28'), TODAY)).toBe(true);
+    expect(RecordsSystem.isNew(run('2026-08-29'), TODAY)).toBe(true);
+    expect(RecordsSystem.isNew(run('2026-08-28'), TODAY)).toBe(false);
+    expect(RecordsSystem.isNew(run('2026-09-29'), TODAY)).toBe(false);
+  });
+
+  it('is new for a best year the thirty days after it closed, never the year still running', () => {
+    const year = (value: number) => record('mostVisitsInYear', { year: value });
+    expect(RecordsSystem.isNew(year(2025), localDate('2026-01-01'))).toBe(true);
+    expect(RecordsSystem.isNew(year(2025), localDate('2026-01-30'))).toBe(true);
+    expect(RecordsSystem.isNew(year(2025), localDate('2026-01-31'))).toBe(
+      false,
+    );
+    expect(RecordsSystem.isNew(year(2026), TODAY)).toBe(false);
+    expect(RecordsSystem.isNew(year(2026), localDate('2026-12-31'))).toBe(
+      false,
+    );
+  });
+
+  it('is never new for a first visit, nor a favourite', () => {
+    expect(
+      RecordsSystem.isNew(
+        record('firstVisit', { on: localDate('2026-09-28') }),
+        TODAY,
+      ),
+    ).toBe(false);
+    expect(RecordsSystem.isNew(record('favouriteService'), TODAY)).toBe(false);
+  });
+});
+
 describe('RecordsSystem.years — «По години» (RF)', () => {
   const visit = (appointmentId: string, day: string): RecordVisit => ({
     appointmentId: AppointmentId.of(appointmentId),

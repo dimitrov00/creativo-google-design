@@ -54,6 +54,7 @@ import {
   recordingTelemetry,
   seatFixture,
   sequentialIds,
+  auditResource,
 } from '@core/testing';
 import type { StepBudget } from './continue-policy-recompute.pipeline';
 import { clientStatsPaths } from './project-client-stats.pipeline';
@@ -644,7 +645,7 @@ describe('runBackfill — one audit row per call', () => {
       id: fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.OpsBackfill,
-          'backfillJobs/subjectMirror',
+          auditResource('backfillJobs/subjectMirror'),
           null,
           AuditSystem.changeKey.backfillFailed('rnd-1'),
         ),

@@ -95,11 +95,8 @@ describe('the built helpers the new presenters import (§7.3)', () => {
         // Exported in W0.
         'localeOf',
         'progressOf',
-        // `earnedAtOf` read an instant; the stored shop day is the fact (T5).
-        'earnedOnOf',
-        'latestEarned',
-        'isOneOff',
-        'isSingleLevel',
+        // The badge facts (`earnedOn`, `latestEarned`, `isOneOff`,
+        // `isSingleLevel`) are `BadgeSystem`'s, called directly.
         'inEndedSeason',
         'landsOn',
         'familyTile',
@@ -126,7 +123,6 @@ describe('the built helpers the new presenters import (§7.3)', () => {
       card,
       [
         'phoneOf',
-        'sameLegs',
         'pauseOf',
         'isBirthdayToday',
         'displayNameOf',
@@ -166,11 +162,8 @@ describe('the built helpers the new presenters import (§7.3)', () => {
       | { readonly loadState: 'FAILED' }
       | undefined
     >();
-    expectTypeOf(achievements.isOneOff).returns.toEqualTypeOf<boolean>();
-    expectTypeOf(achievements.isSingleLevel).returns.toEqualTypeOf<boolean>();
     expectTypeOf(
       achievements.landsOn,
     ).returns.toEqualTypeOf<LocalDate | null>();
-    expectTypeOf(card.sameLegs).returns.toEqualTypeOf<boolean>();
   });
 });

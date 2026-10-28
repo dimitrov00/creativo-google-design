@@ -519,7 +519,7 @@ export const VisitDraftSystem = {
       const candidate = RecurrenceRule.create(
         patternOf(preset, startLocalDate),
         1,
-        RecurrenceRule.endOf(rule),
+        RecurrenceEndRule.of(rule),
       );
       if (candidate.ok && RecurrenceRule.equals(candidate.value, rule)) {
         return preset;
@@ -538,7 +538,7 @@ export const VisitDraftSystem = {
     return fitted(
       patternOf(preset, startLocalDate),
       1,
-      current === null ? null : RecurrenceRule.endOf(current),
+      current === null ? null : RecurrenceEndRule.of(current),
       startLocalDate,
     );
   },
@@ -573,7 +573,7 @@ export const VisitDraftSystem = {
       fitted(
         RecurrenceSystem.patternFor(frequency, startLocalDate),
         rule.recurrenceInterval,
-        RecurrenceRule.endOf(rule),
+        RecurrenceEndRule.of(rule),
         startLocalDate,
       ) ?? rule
     );
@@ -634,7 +634,7 @@ export const VisitDraftSystem = {
       fitted(
         RecurrenceRule.patternOf(followed),
         followed.recurrenceInterval,
-        RecurrenceRule.endOf(followed),
+        RecurrenceEndRule.of(followed),
         toLocalDate,
       ) ?? followed
     );

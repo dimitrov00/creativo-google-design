@@ -25,6 +25,7 @@ import {
   BookingCartSystem,
   BookingTotalSystem,
   CalendarGridSystem,
+  MoveSystem,
   OfferingPriceSystem,
   PhoneSystem,
   ShopReachSystem,
@@ -91,7 +92,6 @@ import {
   bookingErrorReference,
   callHrefForRefusal,
 } from './booking-error-message';
-import { placeRiders } from './rider-placement';
 import { BookingContactSheet } from '../contact-sheet/booking-contact-sheet';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
@@ -231,15 +231,13 @@ export class BookingReviewStep {
 
   protected readonly locationName = computed(() => {
     const shop = this.shop();
-    if (shop) return this.content.text({ en: shop.name.en, bg: shop.name.bg });
+    if (shop) return this.content.text(shop.name);
     return this.store.selection()?.locationId ?? '';
   });
 
   protected readonly locationAddress = computed(() => {
     const shop = this.shop();
-    return shop
-      ? this.content.text({ en: shop.address.en, bg: shop.address.bg })
-      : '';
+    return shop ? this.content.text(shop.address) : '';
   });
 
   /** ONE pin — the shop the booking is at, already selected so the camera
@@ -253,7 +251,7 @@ export class BookingReviewStep {
         id: shop.id,
         lat: shop.latitude,
         lng: shop.longitude,
-        label: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
+        label: this.content.text(shop.name),
       },
     ];
   });
@@ -523,13 +521,8 @@ export class BookingReviewStep {
       lines.push({
         key: assignment.lineId,
         coverSrc: vm.coverSrc ?? null,
-        serviceName: this.content.text({
-          en: service.name.en,
-          bg: service.name.bg,
-        }),
-        variantName: variant
-          ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
-          : null,
+        serviceName: this.content.text(service.name),
+        variantName: variant ? this.content.text(variant.name) : null,
         barberName: this.barberName(assignment.barberId),
         barberAvatarSrc: this.barberAvatarSrc(assignment.barberId),
         // Filled below, once the total line count is known — a lone service
@@ -539,7 +532,7 @@ export class BookingReviewStep {
           assignment.startMinutes,
           locale,
         ),
-        priceLabel: this.money(price),
+        priceLabel: this.content.price(price),
       });
       bySeat.set(found.seatKey, lines);
     }
@@ -583,7 +576,7 @@ export class BookingReviewStep {
         lines: seatLines.map((line) =>
           lineCount > 1 ? line : { ...line, timeLabel: null },
         ),
-        subtotalLabel: subtotal !== null ? this.money(subtotal) : null,
+        subtotalLabel: subtotal !== null ? this.content.price(subtotal) : null,
       };
     });
   });
@@ -598,16 +591,17 @@ export class BookingReviewStep {
    * never carry a person the client was not told about, and "call the shop"
    * lands better when the client could see who it was about.
    *
-   * Placed by the server's own arithmetic — the cart's new earliest start
-   * plus each rider's stored distance from it — so the minute on the card is
-   * the minute the server will write.
+   * Placed by the server's own arithmetic (`MoveSystem.placeRiders`, the
+   * move's one shift) — the cart's new earliest start plus each rider's
+   * stored distance from it, on the one shop day the move lands on — so the
+   * minute on the card is the minute the server will write.
    */
   protected readonly riderLines = computed<readonly RiderLineVm[]>(() => {
     const selection = this.store.selection();
     const riders = this.store.moveRiders();
     if (!selection || riders.length === 0) return [];
 
-    return placeRiders(selection, riders).map(
+    return MoveSystem.placeRiders(selection.assignments, riders).map(
       ({ rider, startMinutes }, index) => {
         const service = this.catalog.findService(rider.serviceId);
         const variant =
@@ -624,11 +618,9 @@ export class BookingReviewStep {
           // A service the catalogue no longer lists still names a PERSON who
           // is moving — the line stays, under a neutral name.
           serviceName: service
-            ? this.content.text({ en: service.name.en, bg: service.name.bg })
+            ? this.content.text(service.name)
             : this.transloco.translate('booking.review.riderService'),
-          variantName: variant
-            ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
-            : null,
+          variantName: variant ? this.content.text(variant.name) : null,
           barberName: this.barberName(rider.barberId),
           barberAvatarSrc: this.barberAvatarSrc(rider.barberId),
           // The minute on the shop's wall clock the server seats them at; a
@@ -662,7 +654,7 @@ export class BookingReviewStep {
       cart,
       this.catalog.services(),
     );
-    return total ? this.money(total) : null;
+    return total ? this.content.price(total) : null;
   });
 
   /**
@@ -714,11 +706,6 @@ export class BookingReviewStep {
       return;
     }
     await this.store.commit();
-  }
-
-  /** «28,00 €» — the catalogue's one money wording (`CatalogWording.price`). */
-  private money(money: Money): string {
-    return this.content.price(money);
   }
 
   /** The portrait the team cards already show — one source, not a second copy. */

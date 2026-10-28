@@ -268,6 +268,17 @@ describe('exportClientData — the answer and its ONE row', () => {
       exportByteCount: expected.byteCount,
       exportJson: expected.json,
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // the six fields in this order and nothing else, the JSON byte for byte.
+    expect(Object.keys(answer)).toEqual([
+      'clientExportVersion',
+      'exportedCustomerId',
+      'exportedAtUtcMs',
+      'exportDocumentCount',
+      'exportByteCount',
+      'exportJson',
+    ]);
+    expect(answer.exportJson).toBe(expected.json);
     // The answer decodes as the web reads it.
     expect(ClientPrivacyCall.decodeExported(answer)).toEqual(Result.ok(answer));
     expect(r.tx.plans).toHaveLength(1);

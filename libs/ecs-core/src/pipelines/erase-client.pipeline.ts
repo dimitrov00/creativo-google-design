@@ -1,7 +1,7 @@
 import {
   Actor,
   type ClientPrivacyCall,
-  ErasureCensus,
+  type ErasureCensus,
   ErasureStatus,
   FlagName,
   type Role,
@@ -391,7 +391,7 @@ export const previewClientErasure =
     return Result.ok({
       erasureStatus: person.record.erasureStatus,
       erasureSiblingCustomerIds: siblings,
-      ...ErasureCensus.countsOf(read.value.census),
+      ...read.value.census,
     });
   };
 
@@ -636,20 +636,19 @@ export const eraseClient =
       ClientErasureSystem.isComplete(residue);
 
     // 8. The log — ids, tags and counts only.
-    const counts = ErasureCensus.countsOf(residue);
     ports.log('info', LogEvent.PrivacyErasureStep, {
       customerId: record.id,
       erasureStatus,
       erasureDone,
-      ...counts,
+      ...residue,
     });
     if (completed) {
       ports.log('info', LogEvent.PrivacyClientErased, {
         customerId: record.id,
-        ...counts,
+        ...residue,
       });
     }
-    return Result.ok({ erasureStatus, erasureDone, ...counts });
+    return Result.ok({ erasureStatus, erasureDone, ...residue });
   };
 
 /** The stamp's read: the record and the account it links, in ONE `getAll` — `null` when the record is gone. */

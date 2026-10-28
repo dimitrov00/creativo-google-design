@@ -86,12 +86,12 @@ export const ErasureCensus = {
   RETAINED_FIELDS,
 
   /**
-   * Exactly the eleven counts of any struct that carries them, in field
-   * order — what a row or an answer copies, so a wider struct (an answer
-   * with its `erasureStatus`, a caller's object) never leaks a stray field
-   * into an audit row, and every census shares one shape.
+   * A projection: exactly the eleven counts of any struct that carries them,
+   * in field order — the audit row's guard (`AuditContext.clientErasure`),
+   * so a wider struct (a caller's object) never leaks a stray field into a
+   * privacy-sensitive row.
    */
-  countsOf(source: ErasureCensus): ErasureCensus {
+  countsOf<C extends ErasureCensus>(source: C): ErasureCensus {
     return {
       erasureRecordCount: source.erasureRecordCount,
       erasureAccountCount: source.erasureAccountCount,

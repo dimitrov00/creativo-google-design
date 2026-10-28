@@ -628,6 +628,8 @@ describe('RhythmDraftSystem.diff (the store’s `touchedOf`)', () => {
 describe('RhythmDraftSystem.weeksOf and daysOf (admin-rhythm.words.ts)', () => {
   it('shows days as the nearest whole number of weeks, and weeks as days', () => {
     expect(RhythmDraftSystem.weeksOf(42)).toBe(6);
+    expect(RhythmDraftSystem.weeksOf(39)).toBe(6);
+    expect(RhythmDraftSystem.daysOf(8)).toBe(56);
     expect(RhythmDraftSystem.weeksOf(45)).toBe(6);
     expect(RhythmDraftSystem.weeksOf(46)).toBe(7);
     expect(RhythmDraftSystem.daysOf(6)).toBe(42);

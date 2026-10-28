@@ -33,7 +33,7 @@ const withInterval = (base: RecurrenceRule, interval: number) =>
   RecurrenceRule.of(
     RecurrenceRule.patternOf(base),
     interval,
-    RecurrenceRule.endOf(base),
+    RecurrenceEndRule.of(base),
   );
 
 describe('RecurrenceRule — the caps', () => {

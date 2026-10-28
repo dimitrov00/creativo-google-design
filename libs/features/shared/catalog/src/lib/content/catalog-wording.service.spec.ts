@@ -56,3 +56,12 @@ describe('CatalogWording.price — the one money formatter, at the catalogue loc
     expect(line).not.toBe(retiredFormatPrice(28, 'bg'));
   });
 });
+
+describe('CatalogWording.text — a localized pair in the active language', () => {
+  it.each([
+    ['bg', 'Фейд'],
+    ['en', 'Skin fade'],
+  ] as const)('reads the %s half', (lang, words) => {
+    expect(wordingIn(lang).text({ en: 'Skin fade', bg: 'Фейд' })).toBe(words);
+  });
+});

@@ -189,7 +189,7 @@ function chairVisitBody(
     startMinutes: envelope.startMinutes,
     endMinutes: envelope.endMinutes,
     utcEpochMs: startUtcMs,
-    ...BookingContact.of(BookingContact.NONE),
+    ...BookingContact.NONE,
     bookedAtUtcMs,
     arrivedAtUtcMs: null,
     ...StoodSeatPairs.NONE,

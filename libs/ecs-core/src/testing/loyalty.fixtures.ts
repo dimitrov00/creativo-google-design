@@ -82,6 +82,21 @@ type Json<T> = T extends string
 /** An entity's stored body — the entity minus its id, variant by variant. */
 type Body<E> = E extends unknown ? Omit<E, 'id'> : never;
 
+/** Every key of every variant of `T` (distributes over a union). */
+type KeysOf<T> = T extends unknown ? keyof T : never;
+
+/**
+ * The keys of a fixture collection's documents that NO variant of `E`'s
+ * body declares — `never` when every key is one some variant knows. JSON
+ * modules are not fresh literals, so `satisfies` never reports an excess
+ * key; this does, at compile time (`loyalty.fixtures.type-spec.ts`). The
+ * seed writes each body as it is (Law 5 — no mapper strips a stale key on
+ * the way in), so a stale key here would reach Firestore.
+ */
+export type ExcessKeys<J, E> = {
+  [Id in keyof J]: Exclude<keyof J[Id], KeysOf<Body<E>>>;
+}[keyof J];
+
 /** One collection as the fixture files key it: document id → body. */
 type JsonCollection<E> = { readonly [id: string]: Json<Body<E>> };
 

@@ -27,6 +27,7 @@ import {
   UiTextDirective,
   UiVisuallyHiddenDirective,
 } from '@creativo/ui/modifiers';
+import { CatalogWording } from '@creativo/features/shared/catalog';
 import { LandingContentService } from '../../content/landing-content.service';
 import type { WorkShotVm } from '../../content/landing-content';
 
@@ -72,7 +73,8 @@ const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
   },
 })
 export class WorkGalleryComponent {
-  protected readonly content = inject(LandingContentService);
+  private readonly content = inject(LandingContentService);
+  protected readonly words = inject(CatalogWording);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -88,7 +90,7 @@ export class WorkGalleryComponent {
   /** Accessible name for the lightbox dialog — the open shot's alt text. */
   protected readonly lightboxAlt = computed(() => {
     const shot = this.lightboxShot();
-    return shot ? this.content.text(shot.alt) : null;
+    return shot ? this.words.text(shot.alt) : null;
   });
 
   // NOT `.required`: the refs sit inside `*transloco`, whose embedded view

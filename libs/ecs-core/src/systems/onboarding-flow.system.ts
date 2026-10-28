@@ -88,10 +88,6 @@ function invalid(
 }
 
 export const OnboardingFlowSystem = {
-  initial(): OnboardingFlowState {
-    return OnboardingFlowState.initial();
-  },
-
   next(
     state: OnboardingFlowState,
     event: OnboardingFlowEvent,
@@ -172,11 +168,6 @@ export const OnboardingFlowSystem = {
     }
   },
 
-  /** A personalization step (services, birthday, avatar) — the ones a plan may leave out. */
-  isPersonalizeStep(step: string): step is PersonalizeStep {
-    return PersonalizeStep.is(step);
-  },
-
   /**
    * One event, then every personalization step the plan leaves out stepped
    * over with its skip event (at most one pass over the three steps). The
@@ -194,8 +185,7 @@ export const OnboardingFlowSystem = {
     let current = first.value;
     for (let guard = 0; guard < PersonalizeStep.ALL.length; guard++) {
       const step = current.onboardingFlowStep;
-      if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
-        break;
+      if (!PersonalizeStep.is(step) || planHas(plan, step)) break;
       const skipped = OnboardingFlowSystem.next(current, skipEventOf(step));
       if (!skipped.ok) break;
       current = skipped.value;
@@ -218,8 +208,7 @@ export const OnboardingFlowSystem = {
     let current = first.value;
     for (let guard = 0; guard < PersonalizeStep.ALL.length; guard++) {
       const step = current.onboardingFlowStep;
-      if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
-        break;
+      if (!PersonalizeStep.is(step) || planHas(plan, step)) break;
       const stepped = OnboardingFlowSystem.next(current, back);
       if (!stepped.ok) break;
       current = stepped.value;
@@ -253,7 +242,7 @@ export const OnboardingFlowSystem = {
     state: OnboardingFlowState,
     plan: readonly PersonalizeStep[],
   ): number {
-    if (!OnboardingFlowSystem.isPersonalizeStep(state.onboardingFlowStep)) {
+    if (!PersonalizeStep.is(state.onboardingFlowStep)) {
       return 0;
     }
     for (let i = 0; i < plan.length; i++) {

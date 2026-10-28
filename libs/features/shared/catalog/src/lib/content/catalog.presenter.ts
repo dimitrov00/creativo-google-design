@@ -2,6 +2,7 @@ import type { DurationMinutes } from '@core/primitives';
 import {
   type BarberOffering,
   CompositionKind,
+  type LocalizedText,
   Money,
   ServiceComposition,
   type ServiceTerms,
@@ -10,7 +11,6 @@ import { CatalogPricingSystem, type OfferingRange } from '@core/systems';
 import type { Barber, Service } from '@core/entities';
 import {
   type BarberVm,
-  type Localized,
   type ServiceOfferingVm,
   type ServiceTermsVm,
   type ServiceVm,
@@ -35,7 +35,7 @@ import {
 
 /** Editorial extras the catalog has no business carrying, keyed by barber id. */
 export interface BarberArtDirection {
-  readonly specialty: Localized;
+  readonly specialty: LocalizedText;
   readonly gallery: readonly string[];
   readonly objectPosition: string;
 }
@@ -46,10 +46,6 @@ export interface ServiceArtDirection {
 }
 
 const DEFAULT_OBJECT_POSITION = '50% 25%';
-
-function localized(text: { en: string; bg: string }): Localized {
-  return { en: text.en, bg: text.bg };
-}
 
 /**
  * The flat terms → the VM's terms: the cents beside their currency and the
@@ -91,7 +87,7 @@ export function serviceToVm(
 ): ServiceVm {
   const variants: ServiceVariantVm[] = service.variants.map((variant) => ({
     id: variant.variantId,
-    name: localized(variant.name),
+    name: variant.name,
     // The icon is a rendering choice, not catalog data; length is the only
     // axis the seed declares, and `skin` was never wired to anything.
     icon: VariantIcon.Length,
@@ -107,8 +103,8 @@ export function serviceToVm(
   return {
     id: service.id,
     compositionKind,
-    name: localized(service.name),
-    description: localized(service.description),
+    name: service.name,
+    description: service.description,
     ...(coverSrc ? { coverSrc } : {}),
     variants,
     // Who performs it, at their base terms — `[]` when nobody does yet. The
@@ -135,13 +131,13 @@ export function barberToVm(
 ): BarberVm {
   return {
     id: barber.id,
-    name: localized(barber.name),
-    title: localized(barber.title),
-    bio: localized(barber.bio),
+    name: barber.name,
+    title: barber.title,
+    bio: barber.bio,
     avatarSrc: avatarSrc ?? '',
     objectPosition: art?.objectPosition ?? DEFAULT_OBJECT_POSITION,
     // No `rating` — see the note at the top of this file.
-    specialty: art?.specialty ?? localized(barber.title),
+    specialty: art?.specialty ?? barber.title,
     gallery: art?.gallery ?? [],
   };
 }

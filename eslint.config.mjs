@@ -468,6 +468,16 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/presenter-purity': 'error' },
   },
+  // No no-op mappers (Law 5 zero-mapper, Law 3 zero inbound mapping, Law 1): a function that copies
+  // its argument into the type it already has, a `LocalizedText` copied field by field, or a module
+  // function / companion member / private member that only forwards its own arguments to another
+  // function. Tested in tools/lint-rules/no-identity-mapper.spec.mjs.
+  {
+    files: ['**/*.ts'],
+    ignores: [...PRODUCTION_TS_IGNORES, '**/test-support/**'],
+    plugins: { creativo },
+    rules: { 'creativo/no-identity-mapper': 'error' },
+  },
   // WS-4.6 (audit-hardening RU-8, RU-9, RU-37) — a structured log line's
   // message is a `LogEvent` value (`@core/primitives`), never a string
   // literal: `ports.log('warn', LogEvent.BookingRejected, { errorCode })`.

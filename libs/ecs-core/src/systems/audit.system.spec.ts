@@ -57,6 +57,7 @@ import {
   appointmentFixture,
   seatFixture,
   customerOf,
+  auditResource,
 } from '@core/testing';
 import {
   type AuditFact,
@@ -232,13 +233,13 @@ describe('AuditSystem.plan — one row per person', () => {
     expect(keyed.map((r) => r.idBasis)).toEqual([
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
-        'appt-1',
+        auditResource('appt-1'),
         cus('maria'),
         'operation:op-4',
       ),
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
-        'appt-1',
+        auditResource('appt-1'),
         cus('stefan'),
         'operation:op-4',
       ),
@@ -412,21 +413,36 @@ describe('audit context carries codes, never free text (T5)', () => {
 });
 
 describe('AuditSystem.rowBasis — one id per person per logical change', () => {
-  const parts = {
-    action: 'booking.committed',
-    resourceId: 'appt-1',
-    targetUserId: 'maria' as string | null,
+  type Parts = {
+    readonly action: AuditAction;
+    readonly resourceId: AuditResourceId;
+    readonly targetUserId: UserId | null;
+    readonly changeKey: string;
+  };
+  const parts: Parts = {
+    action: AuditAction.BookingCommitted,
+    resourceId: auditResource('appt-1'),
+    targetUserId: UserId.of('maria'),
     changeKey: 'attempt:abc',
   };
-  const basis = (p: typeof parts) =>
+  const basis = (p: Parts) =>
     AuditSystem.rowBasis(p.action, p.resourceId, p.targetUserId, p.changeKey);
+  /** Every text a brand's own `parse` accepts — the parts' real domain. */
+  const resourceIds = fc
+    .string()
+    .filter((raw) => AuditResourceId.parse(raw).ok)
+    .map(auditResource);
+  const userIds = fc
+    .string()
+    .filter((raw) => UserId.parse(raw).ok)
+    .map((raw) => unwrapOk(UserId.parse(raw)));
 
   it('derives the same basis from the same change, every time', () => {
     expect(basis(parts)).toBe(basis({ ...parts }));
     expect(basis(parts)).toBe(
       JSON.stringify([
         'audit-row/v2',
-        'booking.committed',
+        'BOOKING_COMMITTED',
         'appt-1',
         'maria',
         'attempt:abc',
@@ -437,9 +453,9 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
   it('keeps every part recoverable whatever goes in — a hash of it is a legal id', () => {
     fc.assert(
       fc.property(
-        fc.string(),
-        fc.string(),
-        fc.option(fc.string(), { nil: null }),
+        fc.constantFrom(...Object.values(AuditAction)),
+        resourceIds,
+        fc.option(userIds, { nil: null }),
         fc.string(),
         (action, resourceId, targetUserId, changeKey) => {
           const parsed: unknown = JSON.parse(
@@ -460,22 +476,43 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
   it('separates every part — a change to any one of them is a different row', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('action', 'resourceId', 'targetUserId', 'changeKey'),
-        fc.string({ minLength: 1 }),
-        (field, suffix) => {
-          const changed = {
-            ...parts,
-            [field]: `${String(parts[field as keyof typeof parts])}${suffix}`,
-          };
-          expect(basis(changed)).not.toBe(basis(parts));
+        fc.constantFrom(...Object.values(AuditAction)),
+        resourceIds,
+        fc.option(userIds, { nil: null }),
+        fc.string(),
+        (action, resourceId, targetUserId, changeKey) => {
+          const changed = [
+            { ...parts, action },
+            { ...parts, resourceId },
+            { ...parts, targetUserId },
+            { ...parts, changeKey },
+          ];
+          for (const each of changed) {
+            const same =
+              each.action === parts.action &&
+              each.resourceId === parts.resourceId &&
+              each.targetUserId === parts.targetUserId &&
+              each.changeKey === parts.changeKey;
+            expect(basis(each) === basis(parts)).toBe(same);
+          }
         },
       ),
     );
     expect(
-      basis({ ...parts, resourceId: 'appt-1:x', changeKey: 'y' }),
-    ).not.toBe(basis({ ...parts, resourceId: 'appt-1', changeKey: 'x:y' }));
+      basis({
+        ...parts,
+        resourceId: auditResource('appt-1:x'),
+        changeKey: 'y',
+      }),
+    ).not.toBe(
+      basis({
+        ...parts,
+        resourceId: auditResource('appt-1'),
+        changeKey: 'x:y',
+      }),
+    );
     expect(basis({ ...parts, targetUserId: null })).not.toBe(
-      basis({ ...parts, targetUserId: '' }),
+      basis({ ...parts, targetUserId: UserId.of('null') }),
     );
   });
 
@@ -572,9 +609,9 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     ).toBe(4);
   });
 
-  it('idBasisOf is rowBasis’s exact bytes over the brands — a stored row id stays what it was (Phase 3)', () => {
+  it('rowBasis over the brands is the brands’ exact text — a stored row id stays what it was (Phase 3)', () => {
     // A booking act's stored row: verb, the bare appointment id, the client record, its key.
-    const booking = AuditSystem.idBasisOf(
+    const booking = AuditSystem.rowBasis(
       AuditAction.BookingCommitted,
       APPT_1,
       cus('maria'),
@@ -583,7 +620,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
     expect(booking).toBe(
       AuditSystem.rowBasis(
         'BOOKING_COMMITTED',
-        'appt-1',
+        auditResource('appt-1'),
         cus('maria'),
         'attempt:appt-1',
       ),
@@ -597,7 +634,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
         'attempt:appt-1',
       ]),
     );
-    // The id a planner already writes is the id idBasisOf derives — byte for byte.
+    // The id a planner already writes is the id rowBasis derives — byte for byte.
     const planned = unwrapOk(
       AuditSystem.plan(
         [
@@ -626,7 +663,7 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
       OP,
     );
     expect(profile?.idBasis).toBe(
-      AuditSystem.idBasisOf(
+      AuditSystem.rowBasis(
         AuditAction.ProfileUpdated,
         AuditResourceId.forUser(UserId.of('maria')),
         UserId.of('maria'),
@@ -634,8 +671,10 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
       ),
     );
     expect(
-      AuditSystem.idBasisOf(AuditAction.OpsBackfill, APPT_1, null, 'k'),
-    ).toBe(AuditSystem.rowBasis('OPS_BACKFILL', 'appt-1', null, 'k'));
+      AuditSystem.rowBasis(AuditAction.OpsBackfill, APPT_1, null, 'k'),
+    ).toBe(
+      AuditSystem.rowBasis('OPS_BACKFILL', auditResource('appt-1'), null, 'k'),
+    );
   });
 });
 
@@ -971,8 +1010,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
         'PROFILE_UPDATED',
-        'users/maria',
-        'maria',
+        auditResource('users/maria'),
+        UserId.of('maria'),
         'evt-1f2e',
       ),
     );
@@ -1184,8 +1223,8 @@ describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
         'PROFILE_UPDATED',
-        'users/maria',
-        'maria',
+        auditResource('users/maria'),
+        UserId.of('maria'),
         AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT),
       ),
     );
@@ -1256,8 +1295,8 @@ describe('AuditSystem.planImpersonationStarted / planImpersonationEnded — the 
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'GOVERNANCE_IMPERSONATION_STARTED',
-        'impersonationSessions/imp-7',
-        'maria',
+        auditResource('impersonationSessions/imp-7'),
+        UserId.of('maria'),
         'impersonation-start:imp-7',
       ),
     );
@@ -1286,8 +1325,8 @@ describe('AuditSystem.planImpersonationStarted / planImpersonationEnded — the 
     expect(plan.idBasis).toBe(
       AuditSystem.rowBasis(
         'GOVERNANCE_IMPERSONATION_ENDED',
-        'impersonationSessions/imp-7',
-        'maria',
+        auditResource('impersonationSessions/imp-7'),
+        UserId.of('maria'),
         'impersonation-end:imp-7',
       ),
     );

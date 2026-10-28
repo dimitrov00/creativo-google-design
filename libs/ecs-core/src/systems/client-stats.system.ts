@@ -20,7 +20,7 @@ import {
   TenureState,
   type SeatOutcome,
   type AccountSeat,
-  type Seat,
+  Seat,
   SeatSubject,
   type ShopNow,
   type DocPath,
@@ -31,7 +31,6 @@ import {
   SubjectVisitOutcomeState,
 } from '@core/components';
 import {
-  BookingStatus,
   AttendanceState,
   Currency,
   type DurationMinutes,
@@ -637,8 +636,11 @@ function countWithin(
   return n;
 }
 
-/** The windows of {@link ClientStatsSystem.statWindows} at a wall-clock point — its one core (D-5). */
-function windowsAt(stats: WindowedStats, now: ShopClock): StatWindows {
+/**
+ * The windows every counter reads, computed at read from the stored facts
+ * (R33, T8) at a wall-clock point — `ShopNow` passes straight in (D-5).
+ */
+function statWindows(stats: WindowedStats, now: ShopClock): StatWindows {
   const windowed = (
     lifetime: number,
     facts: readonly VisitFact[],
@@ -821,8 +823,11 @@ function moneyOf(
   };
 }
 
-/** The projection's CONTENT — everything but the bookkeeping and the stamp. */
-function statsContent(stats: ClientStats): ClientStats {
+/**
+ * A projection: the stats' CONTENT — everything but the bookkeeping and the
+ * stamp a stored document carries beside it.
+ */
+function statsContent<S extends ClientStats>(stats: S): ClientStats {
   return {
     lifetimeVisitsCompleted: stats.lifetimeVisitsCompleted,
     lifetimeNoShows: stats.lifetimeNoShows,
@@ -855,69 +860,15 @@ function statsContent(stats: ClientStats): ClientStats {
   };
 }
 
-function moneyContent(money: ClientMoneyStats): ClientMoneyStats {
+/**
+ * A projection: the money's CONTENT — the spend and its currency, without
+ * the bookkeeping and the stamp a stored document carries beside them.
+ */
+function moneyContent<M extends ClientMoneyStats>(money: M): ClientMoneyStats {
   return {
     lifetimeSpendCents: money.lifetimeSpendCents,
     currency: money.currency,
   };
-}
-
-/** The lifecycle slice of an appointment — its tag and exactly its variant's fields. */
-function lifecycleOf(lifecycle: BookingLifecycle): BookingLifecycle {
-  switch (lifecycle.bookingStatus) {
-    case BookingStatus.Pending:
-      return {
-        bookingStatus: lifecycle.bookingStatus,
-        pendingAtUtcMs: lifecycle.pendingAtUtcMs,
-      };
-    case BookingStatus.Confirmed:
-      return {
-        bookingStatus: lifecycle.bookingStatus,
-        confirmedAtUtcMs: lifecycle.confirmedAtUtcMs,
-      };
-    case BookingStatus.Completed:
-      return {
-        bookingStatus: lifecycle.bookingStatus,
-        completedAtUtcMs: lifecycle.completedAtUtcMs,
-      };
-    case BookingStatus.NoShow:
-      return {
-        bookingStatus: lifecycle.bookingStatus,
-        noShowAtUtcMs: lifecycle.noShowAtUtcMs,
-      };
-    case BookingStatus.Cancelled:
-      return {
-        bookingStatus: lifecycle.bookingStatus,
-        cancelledAtUtcMs: lifecycle.cancelledAtUtcMs,
-        cancellationReason: lifecycle.cancellationReason,
-      };
-  }
-}
-
-/** The outcome slice of a seat — its state and exactly its variant's fields. */
-function seatOutcomeOf(seat: SeatOutcome): SeatOutcome {
-  switch (seat.attendanceState) {
-    case AttendanceState.Scheduled:
-      return { attendanceState: seat.attendanceState };
-    case AttendanceState.Worked:
-      return {
-        attendanceState: seat.attendanceState,
-        workedAtUtcMs: seat.workedAtUtcMs,
-      };
-    case AttendanceState.NoShow:
-      return {
-        attendanceState: seat.attendanceState,
-        noShowAtUtcMs: seat.noShowAtUtcMs,
-      };
-    case AttendanceState.Cancelled:
-      return {
-        attendanceState: seat.attendanceState,
-        cancelledAtUtcMs: seat.cancelledAtUtcMs,
-        cancelledBy: seat.cancelledBy,
-        cancellationReason: seat.cancellationReason,
-        cancellationWindowHours: seat.cancellationWindowHours,
-      };
-  }
 }
 
 function seatInputOf(seat: Seat): StatsInputSeat {
@@ -938,7 +889,7 @@ function seatInputOf(seat: Seat): StatsInputSeat {
     variantId: seat.variantId,
     barberId: seat.barberId,
     barberPreference: seat.barberPreference,
-    ...seatOutcomeOf(seat),
+    ...Seat.outcomeOf(seat),
   };
 }
 
@@ -1230,10 +1181,7 @@ export const ClientStatsSystem = {
     };
   },
 
-  /** The windows every counter reads, computed at read from the stored facts (R33, T8). */
-  statWindows(stats: WindowedStats, now: ShopNow): StatWindows {
-    return windowsAt(stats, now);
-  },
+  statWindows,
 
   /**
    * {@link statWindows} over a WHOLE shop day — read at its last minute,
@@ -1242,7 +1190,7 @@ export const ClientStatsSystem = {
    * no instant is built; it shares {@link statWindows}' core.
    */
   statWindowsOnDay(stats: WindowedStats, today: LocalDate): StatWindows {
-    return windowsAt(stats, {
+    return statWindows(stats, {
       localDate: today,
       currentMinute: MinuteOfDay.LAST,
     });
@@ -1261,15 +1209,6 @@ export const ClientStatsSystem = {
   },
 
   /**
-   * JSON with object keys sorted, so two equal values always print the
-   * same — {@link CanonicalJsonSystem.of}, its one home (audit-hardening
-   * WS-4.2); kept here as the stats system's own name for it.
-   */
-  canonicalJson(value: unknown): string {
-    return CanonicalJsonSystem.of(value);
-  },
-
-  /**
    * The stats input of a stored appointment (§13 R28): the booking
    * lifecycle, the booking instant (the late-cancel rule), the discounts
    * (spend is net of them), the commit's placement (the preferred barber),
@@ -1284,7 +1223,7 @@ export const ClientStatsSystem = {
       seats.push(seatInputOf(appointment.seats[i] as Seat));
     }
     return {
-      ...lifecycleOf(appointment),
+      ...BookingLifecycle.sliceOf(appointment),
       bookedAtUtcMs: appointment.bookedAtUtcMs,
       discounts: appointment.discounts,
       placement: appointment.placement,
@@ -1299,10 +1238,8 @@ export const ClientStatsSystem = {
     after: Appointment | null,
   ): boolean {
     return (
-      ClientStatsSystem.canonicalJson(
-        ClientStatsSystem.statsInputOf(before),
-      ) !==
-      ClientStatsSystem.canonicalJson(ClientStatsSystem.statsInputOf(after))
+      CanonicalJsonSystem.of(ClientStatsSystem.statsInputOf(before)) !==
+      CanonicalJsonSystem.of(ClientStatsSystem.statsInputOf(after))
     );
   },
 
@@ -1384,7 +1321,7 @@ export const ClientStatsSystem = {
     a: { readonly stats: ClientStats; readonly money: ClientMoneyStats },
     b: { readonly stats: ClientStats; readonly money: ClientMoneyStats },
   ): boolean {
-    const canonical = ClientStatsSystem.canonicalJson;
+    const canonical = CanonicalJsonSystem.of;
     return (
       canonical(statsContent(a.stats)) === canonical(statsContent(b.stats)) &&
       canonical(moneyContent(a.money)) === canonical(moneyContent(b.money))

@@ -89,10 +89,10 @@ describe('EndMinute — an exclusive end in (0, 1440] (F-1)', () => {
     expect(() => EndMinute.ofLaterStart(m(0))).toThrow(/defect/);
   });
 
-  it('plusClamped stops at the closing midnight; toStart is fromEnd', () => {
+  it('plusClamped stops at the closing midnight; fromEnd reads the end as the next start', () => {
     expect(EndMinute.plusClamped(e(600), count(30))).toBe(630);
     expect(EndMinute.plusClamped(e(1430), count(30))).toBe(1440);
-    expect(EndMinute.toStart(e(630))).toEqual({ ok: true, value: 630 });
+    expect(MinuteOfDay.fromEnd(e(630))).toEqual({ ok: true, value: 630 });
   });
 });
 
@@ -193,11 +193,11 @@ describe('TrackMinute — a minute on a frame’s anchored axis (pass D, D-5)', 
     expect(TrackMinute.span(t(1455), t(1405))).toBe(0);
   });
 
-  it('toStart reads 0 and 1439 back onto the clock, refusing 1440 and 1455', () => {
-    expect(TrackMinute.toStart(t(0))).toEqual({ ok: true, value: 0 });
-    expect(TrackMinute.toStart(t(1439))).toEqual({ ok: true, value: 1439 });
+  it('MinuteOfDay.of reads track minutes 0 and 1439 back onto the clock, refusing 1440 and 1455', () => {
+    expect(MinuteOfDay.of(t(0))).toEqual({ ok: true, value: 0 });
+    expect(MinuteOfDay.of(t(1439))).toEqual({ ok: true, value: 1439 });
     for (const raw of [1440, 1455]) {
-      expect(unwrapErr(TrackMinute.toStart(t(raw)))).toEqual({
+      expect(unwrapErr(MinuteOfDay.of(t(raw)))).toEqual({
         errorCode: 'PRIMITIVE_MINUTE_OUT_OF_RANGE',
         raw,
         brand: 'MinuteOfDay',
@@ -205,11 +205,11 @@ describe('TrackMinute — a minute on a frame’s anchored axis (pass D, D-5)', 
     }
   });
 
-  it('toEnd reads 1439 and 1440 back as exclusive ends, refusing 0 and 1455', () => {
-    expect(TrackMinute.toEnd(t(1439))).toEqual({ ok: true, value: 1439 });
-    expect(TrackMinute.toEnd(t(1440))).toEqual({ ok: true, value: 1440 });
+  it('EndMinute.of reads track minutes 1439 and 1440 back as exclusive ends, refusing 0 and 1455', () => {
+    expect(EndMinute.of(t(1439))).toEqual({ ok: true, value: 1439 });
+    expect(EndMinute.of(t(1440))).toEqual({ ok: true, value: 1440 });
     for (const raw of [0, 1455]) {
-      expect(unwrapErr(TrackMinute.toEnd(t(raw)))).toEqual({
+      expect(unwrapErr(EndMinute.of(t(raw)))).toEqual({
         errorCode: 'PRIMITIVE_MINUTE_OUT_OF_RANGE',
         raw,
         brand: 'EndMinute',
@@ -223,8 +223,8 @@ describe('TrackMinute — a minute on a frame’s anchored axis (pass D, D-5)', 
       TrackMinute.plus(t(1405), count(50)),
     );
     expect(TrackMinute.span(t(1), t(9))).toBe(TrackMinute.span(t(1), t(9)));
-    expect(TrackMinute.toStart(t(1440))).toEqual(TrackMinute.toStart(t(1440)));
-    expect(TrackMinute.toEnd(t(1440))).toEqual(TrackMinute.toEnd(t(1440)));
+    expect(MinuteOfDay.of(t(1440))).toEqual(MinuteOfDay.of(t(1440)));
+    expect(EndMinute.of(t(1440))).toEqual(EndMinute.of(t(1440)));
   });
 });
 

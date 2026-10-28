@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ClientQueryShape } from '@core/components';
-import {
-  clientLookupKeys,
-  emailSegments,
-  nameSegments,
-  parseClientQuery,
-  phoneLookupVariants,
-  phoneSegments,
-  rankClients,
-} from './client-query';
+import { ClientQuerySystem } from '@core/systems';
+import { rankClients } from './client-query';
+
+// The reading, the lookup keys and the marked segments are
+// `ClientQuerySystem`'s, proved in `client-query.system.spec.ts`; this file
+// keeps what the feature adds: the ranking resolved onto the caller's own
+// objects.
 
 const MARTIN = {
   label: 'Мартин Илиев',
@@ -23,99 +20,9 @@ const ANNA = {
 const MARIA = { label: 'Мария Мартинова', phone: null, email: null };
 const PEOPLE = [ANNA, MARIA, MARTIN];
 
-describe('parseClientQuery', () => {
-  it('reads nothing as empty', () => {
-    expect(parseClientQuery('   ').clientQueryShape).toBe(
-      ClientQueryShape.Empty,
-    );
-  });
-
-  it('reads words as a name, lowercased for matching and kept as typed for the form', () => {
-    const parsed = parseClientQuery('  Мария  Иванова ');
-    expect(parsed.clientQueryShape).toBe(ClientQueryShape.Name);
-    expect(parsed.name).toBe('Мария Иванова');
-    expect(parsed.nameTokens).toEqual(['мария', 'иванова']);
-  });
-
-  it('reads a number however it is dialled, spaced or punctuated', () => {
-    for (const [typed, digits, international] of [
-      ['088 765 4321', '0887654321', false],
-      ['+359 (88) 765-43-21', '359887654321', true],
-      ['00359887654321', '359887654321', true],
-      ['887654321', '887654321', false],
-    ] as const) {
-      const parsed = parseClientQuery(typed);
-      expect(parsed.clientQueryShape, typed).toBe(ClientQueryShape.Phone);
-      expect(parsed.phoneDigits, typed).toBe(digits);
-      expect(parsed.phoneInternational, typed).toBe(international);
-    }
-  });
-
-  it('reads a mail, or the beginning of one, lowercased', () => {
-    expect(parseClientQuery('Maria@Mail.BG').email).toBe('maria@mail.bg');
-    expect(parseClientQuery('maria@').clientQueryShape).toBe(
-      ClientQueryShape.Email,
-    );
-  });
-
-  it('finds every part of a pasted line at once, the mail leading', () => {
-    const parsed = parseClientQuery(
-      'Мария Иванова 088 765 4321 <maria@mail.bg>,',
-    );
-    expect(parsed.clientQueryShape).toBe(ClientQueryShape.Email);
-    expect(parsed.name).toBe('Мария Иванова');
-    expect(parsed.phoneTyped).toBe('088 765 4321');
-    expect(parsed.email).toBe('maria@mail.bg');
-  });
-
-  it('keeps a stray figure in the name — «Мария 2» is not a number', () => {
-    const parsed = parseClientQuery('Мария 2');
-    expect(parsed.clientQueryShape).toBe(ClientQueryShape.Name);
-    expect(parsed.name).toBe('Мария 2');
-    expect(parsed.phoneDigits).toBe('');
-  });
-});
-
-describe('clientLookupKeys', () => {
-  it('asks by the mail first, then the number in its forms, then the longest word', () => {
-    expect(
-      clientLookupKeys(parseClientQuery('Мария maria@mail.bg 0887')),
-    ).toEqual(['maria@mail.bg']);
-    expect(clientLookupKeys(parseClientQuery('Мария 088 765'))).toEqual([
-      '088765',
-      '35988765',
-    ]);
-    expect(clientLookupKeys(parseClientQuery('Ив Мартинова'))).toEqual([
-      'мартинова',
-    ]);
-  });
-
-  it('dials a bare number every way the index holds it', () => {
-    expect(phoneLookupVariants(parseClientQuery('887654321'))).toEqual([
-      '887654321',
-      '0887654321',
-      '359887654321',
-    ]);
-    expect(phoneLookupVariants(parseClientQuery('+359 88 765'))).toEqual([
-      '35988765',
-      '088765',
-    ]);
-    expect(phoneLookupVariants(parseClientQuery('359887'))).toEqual([
-      '359887',
-      '0887',
-    ]);
-  });
-
-  it('asks nothing of one letter, two digits or a bare @', () => {
-    expect(clientLookupKeys(parseClientQuery('м'))).toEqual([]);
-    expect(clientLookupKeys(parseClientQuery('08'))).toEqual([]);
-    expect(clientLookupKeys(parseClientQuery('@mail'))).toEqual([]);
-  });
-});
-
 describe('rankClients', () => {
   const labels = (query: string) =>
-    rankClients(PEOPLE, parseClientQuery(query)).map(
+    rankClients(PEOPLE, ClientQuerySystem.parse(query)).map(
       (ranked) => ranked.client.label,
     );
 
@@ -137,11 +44,11 @@ describe('rankClients', () => {
   it('matches a number by its beginning in any form, and says when it is exactly theirs', () => {
     expect(labels('088 765')).toEqual(['Мартин Илиев']);
     expect(labels('885')).toEqual(['Анна Костова']);
-    const exact = rankClients(PEOPLE, parseClientQuery('0887654321'));
+    const exact = rankClients(PEOPLE, ClientQuerySystem.parse('0887654321'));
     expect(exact).toEqual([{ client: MARTIN, exact: true }]);
-    expect(rankClients(PEOPLE, parseClientQuery('088765'))[0]?.exact).toBe(
-      false,
-    );
+    expect(
+      rankClients(PEOPLE, ClientQuerySystem.parse('088765'))[0]?.exact,
+    ).toBe(false);
   });
 
   it("leads with the number and only ranks by the name beside it — a number that is somebody else's still shows", () => {
@@ -152,48 +59,7 @@ describe('rankClients', () => {
     expect(labels('martin@')).toEqual(['Мартин Илиев']);
     expect(labels('anna.k@mail.bg')).toEqual(['Анна Костова']);
     expect(
-      rankClients(PEOPLE, parseClientQuery('anna.k@mail.bg'))[0]?.exact,
+      rankClients(PEOPLE, ClientQuerySystem.parse('anna.k@mail.bg'))[0]?.exact,
     ).toBe(true);
-  });
-});
-
-describe('segments', () => {
-  it('marks the typed beginning of each matched word of a name', () => {
-    expect(nameSegments('Мартин Илиев', parseClientQuery('ил март'))).toEqual([
-      { text: 'Март', hit: true },
-      { text: 'ин', hit: false },
-      { text: ' ', hit: false },
-      { text: 'Ил', hit: true },
-      { text: 'иев', hit: false },
-    ]);
-    expect(nameSegments('Анна', parseClientQuery(''))).toEqual([
-      { text: 'Анна', hit: false },
-    ]);
-  });
-
-  it('marks the typed run of a printed number, spacing kept, however it was dialled', () => {
-    expect(
-      phoneSegments('+359 88 765 4321', parseClientQuery('088 765')),
-    ).toEqual([
-      { text: '+', hit: false },
-      { text: '359 88 765', hit: true },
-      { text: ' 4321', hit: false },
-    ]);
-    expect(phoneSegments('+359 88 765 4321', parseClientQuery('7654'))).toEqual(
-      [
-        { text: '+359 88 ', hit: false },
-        { text: '765 4', hit: true },
-        { text: '321', hit: false },
-      ],
-    );
-  });
-
-  it('marks the typed fragment of a mail', () => {
-    expect(
-      emailSegments('martin@test.local', parseClientQuery('MARTIN@')),
-    ).toEqual([
-      { text: 'martin@', hit: true },
-      { text: 'test.local', hit: false },
-    ]);
   });
 });

@@ -86,7 +86,7 @@ import {
   CLIENT_CARD_READ_TIMEOUT_MS,
   ClientCardStore,
 } from './client-card.store';
-import { LEDGER_PAGE_READ, foldByEvent } from './ledger.presenter';
+import { LEDGER_PAGE_READ } from './ledger.presenter';
 import { WALLET_ACTIVITY_READ } from './wallet.presenter';
 import {
   GEORGI,
@@ -135,6 +135,7 @@ import {
 import { cardRuntimeProviders } from '../testing/achievements-pages.rig';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import { BirthdayMoment, WalletHolding } from './client-pages.vm';
+import { LedgerSystem } from '@core/systems';
 
 @Injectable()
 class CatalogueLoader implements TranslocoLoader {
@@ -1658,7 +1659,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     const journal = await journalOf();
     expect(
       ledger.groups.reduce((rows, group) => rows + group.rows.length, 0),
-    ).toBe(foldByEvent(journal, true).length);
+    ).toBe(LedgerSystem.fold(journal, true).length);
     const pages = paged.calls.filter((call) => call.limit === LEDGER_PAGE_READ);
     expect(pages[0]?.beforeSeq).toBeNull();
     for (const call of pages.slice(1)) {

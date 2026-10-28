@@ -67,16 +67,16 @@ function standingOf(phase: StreakPhase | null): StreakStanding | null {
   }
 }
 
-/** A real shop day — a fact may carry a corrupt stored day, which no rule judges. */
-function isDay(raw: string): boolean {
-  return LocalDate.parse(raw).ok;
-}
-
 /** A counted visit on a real day, today or before it: what opens a run under any rule that is on. */
 function hasVisit(facts: StreakFacts, today: LocalDate): boolean {
   for (let i = 0; i < facts.visits.length; i++) {
     const visit = facts.visits[i] as StreakVisitFact;
-    if (visit.counted && isDay(visit.localDate) && visit.localDate <= today) {
+    // A fact may carry a corrupt stored day, which no rule judges.
+    if (
+      visit.counted &&
+      LocalDate.is(visit.localDate) &&
+      visit.localDate <= today
+    ) {
       return true;
     }
   }

@@ -38,15 +38,12 @@ import {
   UserId,
 } from '@core/primitives';
 import {
-  type BookAppointmentError,
   BookingError,
   BookingErrorCode,
   type CancelAppointmentError,
   CancellationRefusal,
-  type EditAppointmentError,
   type MarkArrivalError,
   type RecordSeatTipError,
-  type RescheduleAppointmentError,
   SchedulingErrorCode,
   StaffEditError,
   StaffEditErrorCode,
@@ -55,17 +52,14 @@ import {
 import {
   type BookAppointmentAnswer,
   type BookAppointmentCommand,
-  type CancelAppointmentAnswer,
   type CancelAppointmentCommand,
   type EditAppointmentAnswer,
   type EditAppointmentCommand,
   type MarkArrivalAnswer,
   type MarkArrivalCommand,
-  type RecordSeatTipAnswer,
   type RecordSeatTipCommand,
   type RescheduleAppointmentAnswer,
   type RescheduleAppointmentCommand,
-  type TransitionAppointmentAnswer,
   type TransitionAppointmentCommand,
 } from '@core/pipelines';
 import { PhoneSystem } from '@core/systems';
@@ -105,12 +99,17 @@ import {
  *   cents, the caller and their roles off the VERIFIED token. The refusals
  *   a decoder answers itself — unauthenticated, forbidden, a payload that is
  *   no request — are the ecs-core successors of the legacy codes.
- * - **Out:** one encoder per callable answers the call component's answer;
- *   one refusal function per callable turns a pipeline refusal whose meaning
- *   is the callable's own into its successor struct
- *   (`BOOKING_CANCEL_NOT_FOUND`, `BOOKING_TRANSITION_NOT_ALLOWED` with its
- *   SCREAMING `fromBookingStatus`/`toBookingStatus`, …); every other refusal
- *   leaves as itself, projected by the shared table (`EDGE_WIRE`). A store
+ * - **Out:** a pipeline whose answer IS the call component's answer
+ *   (cancel, transition, tip) is answered as it is; one that keeps
+ *   server-only fields (`replayed`, `revision`) or one arrival answer worded
+ *   two ways is projected by name (`committedOf`, `rescheduledOf`,
+ *   `staffEditedOf`, `arrivedOf`, `clearedOf`). A refusal function exists
+ *   only where a pipeline refusal's meaning is the callable's own — it turns
+ *   it into its successor struct (`BOOKING_CANCEL_NOT_FOUND`,
+ *   `BOOKING_TRANSITION_NOT_ALLOWED` with its SCREAMING
+ *   `fromBookingStatus`/`toBookingStatus`, …); every other callable passes
+ *   `refusalOf`, and its refusals leave as themselves, projected by the
+ *   shared table (`EDGE_WIRE`). A store
  *   failure is no refusal: it is thrown, for the edge to track and answer as
  *   the callable's coded `internal` (`BOOKING_COMMIT_STORE_FAILED`) or the
  *   platform's bare one.
@@ -119,15 +118,13 @@ import {
 /**
  * The states a lifecycle refusal names that the `BookingStatus` graph does
  * not — the callable's own words, SCREAMING beside the graph's values (the
- * web words them with its status table, its own for these).
+ * web words them with its status table, its own for these). An arrival
+ * refusal names the arrival asked for in `ArrivalVerb`'s words, declared
+ * once there.
  */
 export const CallStateWord = {
   /** A seat whose story is over (served, no-show, cancelled). */
   Resolved: 'RESOLVED',
-  /** The arrival `markArrived` asks for. */
-  Arrived: ArrivalVerb.Arrived,
-  /** The arrival `clearArrival` takes back. */
-  Unarrived: ArrivalVerb.Unarrived,
 } as const;
 export type CallStateWord = (typeof CallStateWord)[keyof typeof CallStateWord];
 
@@ -322,15 +319,15 @@ export function decodeCommitBooking(
   });
 }
 
-export function encodeCommitBookingAnswer(
+/**
+ * The commit's wire answer, a projection: the id alone — `replayed` stays
+ * on the server (a replay answers exactly as the first commit did). The
+ * commit's refusals all leave as themselves (`refusalOf`).
+ */
+export function committedOf(
   answer: BookAppointmentAnswer,
 ): BookingCall.Committed {
   return { appointmentId: answer.appointmentId };
-}
-
-/** The commit's refusals all leave as themselves, through the shared table. */
-export function commitBookingRefusal(error: BookAppointmentError): EdgeError {
-  return refusalOf(error);
 }
 
 // ── cancelAppointment ────────────────────────────────────────────────────
@@ -365,12 +362,6 @@ export function decodeCancelAppointment(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeCancelAppointmentAnswer(
-  answer: CancelAppointmentAnswer,
-): BookingCall.Cancelled {
-  return { appointmentId: answer.appointmentId };
 }
 
 /** A visit that is not there — or not the caller's — is `BOOKING_CANCEL_NOT_FOUND`. */
@@ -420,17 +411,15 @@ export function decodeRescheduleAppointment(
   });
 }
 
-export function encodeRescheduleAppointmentAnswer(
+/**
+ * The move's wire answer, a projection: the id alone — `revision` and
+ * `replayed` stay on the server. The move's refusals — the commit's codes
+ * and its own — all leave as themselves (`refusalOf`).
+ */
+export function rescheduledOf(
   answer: RescheduleAppointmentAnswer,
 ): BookingCall.Rescheduled {
   return { appointmentId: answer.appointmentId };
-}
-
-/** The move's refusals — the commit's codes and its own — all leave as themselves. */
-export function rescheduleAppointmentRefusal(
-  error: RescheduleAppointmentError,
-): EdgeError {
-  return refusalOf(error);
 }
 
 // ── transitionAppointment ────────────────────────────────────────────────
@@ -501,12 +490,6 @@ export function decodeTransitionAppointment(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeTransitionAppointmentAnswer(
-  answer: TransitionAppointmentAnswer,
-): BookingCall.Transitioned {
-  return { appointmentId: answer.appointmentId, toBookingStatus: answer.to };
 }
 
 /** A state as the refusal names it: a `BookingStatus` value, else the callable's own word. */
@@ -620,18 +603,22 @@ export function decodeClearArrival(
   return arrivalOf(request, MarkArrivalAction.Clear);
 }
 
-export function encodeMarkArrivedAnswer(
-  answer: MarkArrivalAnswer,
-): BookingCall.Arrived {
+/**
+ * `markArrived`'s wire answer: the one arrival pipeline's `unchanged`
+ * worded as the arrival's own `alreadyArrived` (a second tap).
+ */
+export function arrivedOf(answer: MarkArrivalAnswer): BookingCall.Arrived {
   return {
     appointmentId: answer.appointmentId,
     alreadyArrived: answer.unchanged,
   };
 }
 
-export function encodeClearArrivalAnswer(
-  answer: MarkArrivalAnswer,
-): BookingCall.Cleared {
+/**
+ * `clearArrival`'s wire answer: the one arrival pipeline's `unchanged`
+ * worded as the clearing's own `alreadyClear`.
+ */
+export function clearedOf(answer: MarkArrivalAnswer): BookingCall.Cleared {
   return {
     appointmentId: answer.appointmentId,
     alreadyClear: answer.unchanged,
@@ -655,8 +642,8 @@ export function arrivalRefusal(
       BookingErrorCode.ArrivedNotAllowed,
       error.bookingStatus,
       cmd.markArrivalAction === MarkArrivalAction.Arrive
-        ? CallStateWord.Arrived
-        : CallStateWord.Unarrived,
+        ? ArrivalVerb.Arrived
+        : ArrivalVerb.Unarrived,
     );
   }
   return error;
@@ -707,16 +694,6 @@ export function decodeRecordSeatTip(
     operationId,
     actor: callerActorAsClaimed(request),
   });
-}
-
-export function encodeRecordSeatTipAnswer(
-  answer: RecordSeatTipAnswer,
-): BookingCall.TipRecorded {
-  return {
-    appointmentId: answer.appointmentId,
-    seatId: answer.seatId,
-    unchanged: answer.unchanged,
-  };
 }
 
 /** No such visit, or no such seat on it, is `BOOKING_TIP_NOT_FOUND`. */
@@ -1104,15 +1081,13 @@ export function decodeStaffEditAppointment(
   });
 }
 
-export function encodeStaffEditAppointmentAnswer(
+/**
+ * The staff edit's wire answer, a projection: the id and the revision the
+ * sheet sends next — `replayed` stays on the server. Its refusals leave as
+ * themselves (`refusalOf`) — an overlap with its SCREAMING `resizeEdge`.
+ */
+export function staffEditedOf(
   answer: EditAppointmentAnswer,
 ): BookingCall.StaffEdited {
   return { appointmentId: answer.appointmentId, revision: answer.revision };
-}
-
-/** The staff edit's refusals leave as themselves — an overlap with its SCREAMING `resizeEdge`. */
-export function staffEditAppointmentRefusal(
-  failure: EditAppointmentError,
-): EdgeError {
-  return refusalOf(failure);
 }

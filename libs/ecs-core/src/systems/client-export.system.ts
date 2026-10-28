@@ -536,7 +536,7 @@ export const ClientExportSystem = {
    * for), {@link ClientExportSystem.planClientExported} carries it.
    */
   rowIdBasis(customerId: CustomerId, operationId: OperationId): string {
-    return AuditSystem.idBasisOf(
+    return AuditSystem.rowBasis(
       AuditAction.PrivacyClientExported,
       AuditResourceId.forCustomer(customerId),
       customerId,

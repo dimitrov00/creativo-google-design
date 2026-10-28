@@ -189,11 +189,6 @@ export const RecurrenceRule = {
     }
   },
 
-  /** The rule's end slice, as a fresh struct. */
-  endOf(rule: RecurrenceRule): RecurrenceEndRule {
-    return RecurrenceEndRule.of(rule);
-  },
-
   frequency(rule: RecurrenceRule): RecurrenceFrequency {
     return rule.recurrenceFrequency;
   },

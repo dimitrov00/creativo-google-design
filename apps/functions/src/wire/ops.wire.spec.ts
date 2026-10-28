@@ -1,28 +1,18 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
-import {
-  Actor,
-  type BackfillCall,
-  BackfillJobName,
-  BackfillStart,
-  Role,
-} from '@core/components';
-import { CustomerId, type Result, UserId } from '@core/primitives';
+import { Actor, BackfillJobName, BackfillStart, Role } from '@core/components';
+import { type Result, UserId } from '@core/primitives';
 import { RepositoryError, RunBackfillRefusalCode } from '@core/errors';
 import { WorkBudgetSystem } from '@core/systems';
-import { utcMs } from '@core/testing';
 import { type EdgeError, toHttpsError } from '../edge';
-import {
-  decodeRunBackfill,
-  encodeRunBackfillAnswer,
-  RUN_BACKFILL_TIMEOUT_SECONDS,
-  runBackfillRefusal,
-} from './ops.wire';
+import { decodeRunBackfill, RUN_BACKFILL_TIMEOUT_SECONDS } from './ops.wire';
+import { refusalOf } from './wire-read';
 
 /*
  * The `runBackfill` callable's flipped wire (Phase 4a 4A-4): the call
  * component `BackfillCall` `{ backfillJobName, backfillResume, cursor }`
- * decoded, the page answered as `BackfillCall.Page` (no ISO text), a
- * refusal the ecs-core struct projected by the shared table.
+ * decoded; the pipeline's page (`BackfillCall.Page`, no ISO text) is
+ * answered as it is; a refusal leaves as the ecs-core struct projected by
+ * the shared table (`refusalOf`).
  */
 
 function callable(
@@ -47,7 +37,7 @@ function valueOf<T>(result: Result<T, EdgeError>): T {
   return result.value;
 }
 
-function refusalOf<T>(result: Result<T, EdgeError>): EdgeError {
+function errorOf<T>(result: Result<T, EdgeError>): EdgeError {
   if (result.ok) throw new Error('expected a refusal');
   return result.error;
 }
@@ -69,7 +59,7 @@ const RESUME = {
 
 describe('decodeRunBackfill', () => {
   it('refuses a caller nobody verified as OPS_BACKFILL_UNAUTHENTICATED', () => {
-    expect(wire(refusalOf(decodeRunBackfill(callable(RESUME, null))))).toEqual({
+    expect(wire(errorOf(decodeRunBackfill(callable(RESUME, null))))).toEqual({
       code: 'unauthenticated',
       message: 'OPS_BACKFILL_UNAUTHENTICATED',
       details: { errorCode: 'OPS_BACKFILL_UNAUTHENTICATED' },
@@ -79,7 +69,7 @@ describe('decodeRunBackfill', () => {
   it('refuses a token without the sysadmin claim as OPS_BACKFILL_FORBIDDEN', () => {
     expect(
       wire(
-        refusalOf(
+        errorOf(
           decodeRunBackfill(
             callable(RESUME, { uid: 'u-admin', roles: ['admin'] }),
           ),
@@ -162,79 +152,12 @@ describe('decodeRunBackfill', () => {
   });
 });
 
-describe('encodeRunBackfillAnswer / runBackfillRefusal', () => {
-  const page: BackfillCall.Page = {
-    backfillJobName: BackfillJobName.ClientStats,
-    cursor: null,
-    done: true,
-    processed: 0,
-    storedClients: 2,
-    stamped: 0,
-    recomputed: 1,
-    total: 40,
-    runStartedAtUtcMs: utcMs('2026-09-28T09:00:00.123+03:00'),
-    startedFrom: '~',
-    sampleChecked: 2,
-    sampleMismatched: [CustomerId.of('cus_ana')],
-    budgetSpent: false,
-  };
-
-  it('answers the page as `BackfillCall.Page`, key for key — the run’s start an instant, never an ISO text', () => {
-    const encoded = encodeRunBackfillAnswer(page);
-    expect(encoded).toEqual({
-      backfillJobName: 'CLIENT_STATS',
-      cursor: null,
-      done: true,
-      processed: 0,
-      storedClients: 2,
-      stamped: 0,
-      recomputed: 1,
-      total: 40,
-      runStartedAtUtcMs: Date.UTC(2026, 8, 28, 6, 0, 0, 123),
-      startedFrom: '~',
-      sampleChecked: 2,
-      sampleMismatched: ['cus_ana'],
-      budgetSpent: false,
-    });
-    expect(Object.keys(encoded).sort()).toEqual(
-      [
-        'backfillJobName',
-        'cursor',
-        'done',
-        'processed',
-        'storedClients',
-        'stamped',
-        'recomputed',
-        'total',
-        'runStartedAtUtcMs',
-        'startedFrom',
-        'sampleChecked',
-        'sampleMismatched',
-        'budgetSpent',
-      ].sort(),
-    );
-  });
-
-  it('answers `sampleChecked: null` when none was taken', () => {
-    expect(
-      encodeRunBackfillAnswer({
-        ...page,
-        backfillJobName: BackfillJobName.SubjectMirror,
-        sampleChecked: null,
-        sampleMismatched: [],
-      }),
-    ).toMatchObject({
-      backfillJobName: 'SUBJECT_MIRROR',
-      sampleChecked: null,
-      sampleMismatched: [],
-    });
-  });
-
+describe('runBackfill’s refusals (`refusalOf`)', () => {
   it.each([
     [RunBackfillRefusalCode.Forbidden, 'permission-denied'],
     [RunBackfillRefusalCode.InvalidInput, 'invalid-argument'],
   ])('lets %s leave as its code alone', (errorCode, status) => {
-    expect(wire(runBackfillRefusal({ errorCode }))).toEqual({
+    expect(wire(refusalOf({ errorCode }))).toEqual({
       code: status,
       message: errorCode,
       details: { errorCode },
@@ -243,7 +166,7 @@ describe('encodeRunBackfillAnswer / runBackfillRefusal', () => {
 
   it('turns a store failure into the edge’s unexpected throw', () => {
     expect(() =>
-      runBackfillRefusal(
+      refusalOf(
         RepositoryError.readFailed('backfillJobs/clientStats', 'unavailable'),
       ),
     ).toThrow('REPOSITORY_READ_FAILED');

@@ -756,16 +756,11 @@ export function isAnswered(code: string): boolean {
 
 // ── Result.err → HttpsError ────────────────────────────────────────────────
 
-/** One own field of a struct, read without a dynamic index; `undefined` when absent. */
-function fieldOf(error: object, field: string): unknown {
-  return Object.getOwnPropertyDescriptor(error, field)?.value;
-}
-
 function isEdgeError(value: unknown): value is EdgeError {
   return (
     value !== null &&
     typeof value === 'object' &&
-    typeof fieldOf(value, 'errorCode') === 'string'
+    typeof field(value, 'errorCode') === 'string'
   );
 }
 
@@ -780,7 +775,7 @@ export function projected(
 ): Record<string, unknown> {
   const entries: [string, unknown][] = [['errorCode', error.errorCode]];
   for (const name of wireFields) {
-    const value = fieldOf(error, name);
+    const value = field(error, name);
     if (value !== undefined) entries.push([name, value]);
   }
   return Object.fromEntries(entries);
@@ -797,7 +792,7 @@ function projectedByRule(error: EdgeError): Record<string, unknown> {
 
 /** An aggregate's nested refusals, each projected by its own row. */
 function nestedOf(error: EdgeError): readonly Record<string, unknown>[] {
-  const nested = fieldOf(error, 'errors');
+  const nested = field(error, 'errors');
   if (!Array.isArray(nested)) return [];
   return nested.filter(isEdgeError).map(projectedByRule);
 }
@@ -1062,9 +1057,9 @@ function unexpected(
     : toHttpsError({ errorCode: failureCode });
 }
 
-/** How one callable meets the wire. */
-export type CallableSpec<Out> = {
-  readonly callable: CallableName;
+/** How one callable meets the wire — `N`, its name, keys its wire answer (`WireAnswer<N>`). */
+export type CallableSpec<N extends CallableName = CallableName> = {
+  readonly callable: N;
   /**
    * The code an infrastructure failure answers with — the callable's coded
    * `internal` (`BOOKING_COMMIT_STORE_FAILED`) — or `null` for the
@@ -1073,8 +1068,6 @@ export type CallableSpec<Out> = {
   readonly failureCode: EdgeCode | null;
   /** The definition's `timeoutSeconds`, which the work budget is a share of; `null`: the platform's. */
   readonly timeoutSeconds: number | null;
-  /** How an ANSWERED refusal becomes the callable's answer; `null` when it answers none. */
-  readonly answer: ((refusal: EdgeError) => Out) | null;
   /**
    * Whether the invocation is traced (WS-4.2, DEP-18): a scope bound around
    * the handler and ONE outcome line. `false` for the client issue sink
@@ -1084,18 +1077,21 @@ export type CallableSpec<Out> = {
 };
 
 /**
- * A pipeline as a callable handler: `Result.ok` is the answer, an ANSWERED
- * refusal is answered, any other `Result.err` is thrown as the table says,
- * and an infrastructure throw is tracked and answered as {@link unexpected}
- * says. The budget is a share of whichever gives up first — the platform's
+ * A pipeline as a callable handler: `Result.ok` is the answer, every
+ * `Result.err` is thrown as the table says, and an infrastructure throw is
+ * tracked and answered as {@link unexpected} says. A callable that answers
+ * its own refusal (the rhythm's publish, `loyalty.wire.ts`) returns it as
+ * `Result.ok`, so its outcome line is `callable.completed`; an ANSWERED
+ * code that reaches the table as a `Result.err` was wired to a callable
+ * that does not answer it, and leaves `internal` ({@link toHttpsError}). The budget is a share of whichever gives up first — the platform's
  * timeout or the callable client's 70 s wait.
  *
  * **Traced (WS-4.2, DEP-18).** A traced callable runs its handler inside
  * a log scope bound ONCE (`bindLogContext`: `callable`, `operationId`,
  * `uid`, `roles` — every `log` line of the invocation carries them) and
  * writes ONE outcome line: `callable.completed` (info) for an answer,
- * `callable.refused` (warn) for an answered refusal (`wireStatus: 'ok'`),
- * a thrown refusal or a decoder's own `HttpsError` (its status), and
+ * `callable.refused` (warn) for a thrown refusal or a decoder's own
+ * `HttpsError` (its status), and
  * `callable.failed` (error) for an unexpected throw (`'internal'`, the
  * coded failure as `errorCode`) — tracked once, as before. The line holds
  * `{ callable, operationId, uid, roles, errorCode, wireStatus, durationMs,
@@ -1103,7 +1099,7 @@ export type CallableSpec<Out> = {
  */
 export const callableEdge =
   <In, Out>(
-    spec: CallableSpec<Out>,
+    spec: CallableSpec,
     ports: CallableEdgePorts,
     handle: (
       request: CallableRequest<In>,
@@ -1120,7 +1116,6 @@ export const callableEdge =
     );
     if (!spec.traced) {
       return settleCallable(
-        spec,
         await attempt(spec, ports, handle, request, budget, NO_TRACE),
       );
     }
@@ -1155,7 +1150,7 @@ export const callableEdge =
         ),
         inputDigest,
       });
-      return settleCallable(spec, settled);
+      return settleCallable(settled);
     });
   };
 
@@ -1176,7 +1171,7 @@ type Settled<Out> =
 
 /** Runs the handler; a throw becomes the `HttpsError` {@link unexpected} answers (tracked there, once). */
 async function attempt<In, Out>(
-  spec: CallableSpec<Out>,
+  spec: CallableSpec,
   ports: EdgePorts,
   handle: (
     request: CallableRequest<In>,
@@ -1201,25 +1196,16 @@ async function attempt<In, Out>(
   }
 }
 
-/** What the caller gets: the answer, an answered refusal's answer, or the throw. */
-function settleCallable<Out>(
-  spec: CallableSpec<Out>,
-  settled: Settled<Out>,
-): Out {
+/** What the caller gets: the answer, or the throw. */
+function settleCallable<Out>(settled: Settled<Out>): Out {
   if (settled.settledAs === SettledAs.Thrown) throw settled.thrown;
   const result = settled.result;
   if (result.ok) return result.value;
-  if (spec.answer !== null && isAnswered(result.error.errorCode)) {
-    return spec.answer(result.error);
-  }
   throw toHttpsError(result.error);
 }
 
 /** The outcome line's verdict over a settled run — the same branches {@link settleCallable} takes. */
-function outcomeOf<Out>(
-  spec: CallableSpec<Out>,
-  settled: Settled<Out>,
-): Outcome {
+function outcomeOf<Out>(spec: CallableSpec, settled: Settled<Out>): Outcome {
   if (settled.settledAs === SettledAs.Thrown) {
     return settled.unexpected
       ? {
@@ -1236,14 +1222,6 @@ function outcomeOf<Out>(
       level: 'info',
       msg: LogEvent.CallableCompleted,
       errorCode: null,
-      wireStatus: 'ok',
-    };
-  }
-  if (spec.answer !== null && isAnswered(result.error.errorCode)) {
-    return {
-      level: 'warn',
-      msg: LogEvent.CallableRefused,
-      errorCode: result.error.errorCode,
       wireStatus: 'ok',
     };
   }

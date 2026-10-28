@@ -6,7 +6,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import type { WallTime } from '@core/components';
-import { ZonedTimeSystem } from '@core/systems';
+import { VisitListSystem, ZonedTimeSystem } from '@core/systems';
 import { unwrapOk } from '@core/testing';
 import {
   VisitGrain,
@@ -15,9 +15,7 @@ import {
   type VisitRowVm,
 } from './visit-row.vm';
 import {
-  UPCOMING_SECTION_KEY,
   sectionVisits,
-  visitSectionKey,
   visitSectionLabel,
   workedVisitsDetail,
 } from './visit-sections';
@@ -48,8 +46,11 @@ function row(
     localDate: start.localDate,
     startMinutes: start.minute,
     sectionKey: upcoming
-      ? UPCOMING_SECTION_KEY
-      : visitSectionKey(start.localDate, options.grain ?? VisitGrain.Month),
+      ? VisitListSystem.UPCOMING_SECTION_KEY
+      : VisitListSystem.sectionKeyOf(
+          start.localDate,
+          options.grain ?? VisitGrain.Month,
+        ),
     upcoming,
     tile: {
       caption: 'пт',
@@ -276,7 +277,7 @@ describe('workedVisitsDetail', () => {
     );
     expect(sections.map((section) => [section.key, section.detail])).toEqual([
       // The upcoming run is a promise, not a record: never asked.
-      [UPCOMING_SECTION_KEY, null],
+      [VisitListSystem.UPCOMING_SECTION_KEY, null],
       ['2026-09', '3 посещения'],
       // «1 посещение» over one row says what the row already does.
       ['2026-08', null],
@@ -324,22 +325,6 @@ describe('workedVisitsDetail', () => {
         }),
       ]),
     ).toBeNull();
-  });
-});
-
-describe('visitSectionKey', () => {
-  it('files a visit on its own calendar, never the device’s', () => {
-    // 00:30 on 1 October in Sofia is still 30 September in UTC: the visit
-    // files under its SHOP day, the one it is stored on.
-    const justAfterMidnight = at('2026-10-01T00:30:00');
-    expect(visitSectionKey(justAfterMidnight.localDate, VisitGrain.Month)).toBe(
-      '2026-10',
-    );
-    expect(visitSectionKey(justAfterMidnight.localDate, VisitGrain.Year)).toBe(
-      '2026',
-    );
-    const newYear = at('2027-01-01T00:15:00');
-    expect(visitSectionKey(newYear.localDate, VisitGrain.Year)).toBe('2027');
   });
 });
 

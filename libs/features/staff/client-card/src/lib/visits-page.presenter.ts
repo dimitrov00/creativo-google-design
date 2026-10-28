@@ -10,8 +10,6 @@ import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type VisitRowVm,
   type VisitSectionVm,
-  matchesVisitFilter,
-  offeredVisitFilters,
   sectionVisits,
   visitRowOf,
   visitSectionLabel,
@@ -22,7 +20,6 @@ import {
   LINE_JOINT,
   dayWithYear,
   factRun,
-  figure,
   joined,
   quietRun,
   runsOf,
@@ -39,10 +36,10 @@ import {
 import type { ClientCardWords } from './client-card.words';
 import {
   type HistoryRowsInput,
-  cadenceWeeks,
   historyCells,
   historyNoteWords,
 } from './history.presenter';
+import { formatCount } from '@creativo/ui/wall-clock';
 
 /*
  * «ПОСЕЩЕНИЯ», REVISION 3 (client-card-revision-3 §2.5, R2-I) — the staff
@@ -55,8 +52,8 @@ import {
  *
  * NEW BESIDE BUILT (§7.0, rule 5): `history.presenter.ts` words the page
  * that is on screen until its body is re-drawn, by year; what holds for
- * both (`historyCells`, `cadenceWeeks`, `HistoryRowsInput`) is imported
- * from it, never copied.
+ * both (`historyCells`, `HistoryRowsInput`) is imported from it, never
+ * copied, and the interval in weeks is `ClientStatsSystem.cadenceWeeks`.
  */
 
 /** The family the page's test ids belong to: `history-upcoming`, `history-month-2026-09` (R17). */
@@ -108,7 +105,7 @@ export function visitsSections(
   words: ClientCardWords,
 ): readonly VisitSectionVm[] {
   return sectionVisits(
-    rows.filter((row) => matchesVisitFilter(row, filter)),
+    rows.filter((row) => VisitListSystem.matches(row, filter)),
     {
       grain: VisitGrain.Month,
       testIdPrefix: TEST_ID_PREFIX,
@@ -168,7 +165,9 @@ function headOf(
   // FIRST_VISIT before the first worked visit, CLEAN over a clean record.
   const note = ClientStatsSystem.historyNote(stats);
   const weeks =
-    stats?.avgCadenceDays == null ? null : cadenceWeeks(stats.avgCadenceDays);
+    stats?.avgCadenceDays == null
+      ? null
+      : ClientStatsSystem.cadenceWeeks(stats.avgCadenceDays);
   const cells = historyCells(stats, words).filter(
     (cell) => visits > 0 || cell.id !== HistoryCellId.Visits,
   );
@@ -195,14 +194,14 @@ function headOf(
   }
 
   const counted = words.visitsModule.sectionVisits(visits);
-  const count: FactMark = { slot: counted, fact: figure(visits, lang) };
+  const count: FactMark = { slot: counted, fact: formatCount(visits, lang) };
   // A cadence needs three worked visits (R34): until then the count alone.
   let lead = runsOf(counted, [count]);
   if (weeks !== null) {
     const cadence = words.head.cadence(weeks);
     lead = runsOf(words.history.line(counted, cadence), [
       count,
-      { slot: cadence, fact: figure(weeks, lang) },
+      { slot: cadence, fact: formatCount(weeks, lang) },
     ]);
   }
 
@@ -321,9 +320,11 @@ export function visitsPageVm(input: VisitsPageInput): VisitsPageVm {
     ...head,
     filter: input.filter,
     offeredFilters: offeredOf(
-      offeredVisitFilters(VisitPerspective.Staff, rows, {
-        complete: paging?.pagingState === PagingState.End,
-      }),
+      VisitListSystem.offered(
+        VisitPerspective.Staff,
+        rows,
+        paging?.pagingState === PagingState.End,
+      ),
       input.filter,
     ),
     sections,

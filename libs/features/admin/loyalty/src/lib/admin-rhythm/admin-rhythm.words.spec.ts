@@ -45,7 +45,6 @@ import {
   type AdminRhythmContext,
   afterMissRow,
   changeWord,
-  daysOf,
   earnEveryOptions,
   effectiveOptions,
   effectiveReading,
@@ -78,7 +77,6 @@ import {
   toleranceReadout,
   upcomingLine,
   weekMarks,
-  weeksOf,
 } from './admin-rhythm.words';
 
 // ── The app's own words, read by key ─────────────────────────────────────
@@ -215,16 +213,6 @@ describe('the dates', () => {
   it('never move a day across a zone', () => {
     expect(shortDay(localDate('2026-12-31'), TODAY, 'bg')).toBe('31.12');
     expect(shortDay(localDate('2026-01-01'), TODAY, 'bg')).toBe('1.01');
-  });
-});
-
-// ── Figures ──────────────────────────────────────────────────────────────
-
-describe('the figures', () => {
-  it('turn days into weeks and back', () => {
-    expect(weeksOf(42)).toBe(6);
-    expect(weeksOf(39)).toBe(6);
-    expect(daysOf(8)).toBe(56);
   });
 });
 

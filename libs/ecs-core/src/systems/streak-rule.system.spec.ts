@@ -661,60 +661,6 @@ describe('StreakRuleSystem.excuseCount — «3 от 4»', () => {
   });
 });
 
-describe('StreakRuleSystem.exampleDue — the tolerance explained on one habit', () => {
-  const HABIT = 28;
-  const personal = StreakIntervalRule.personal(50, 21, 70, 42);
-
-  it('stretches the habit by the tolerance', () => {
-    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual({
-      days: 42,
-      source: StreakIntervalSource.Personal,
-    });
-  });
-
-  it('holds the example inside the clamp', () => {
-    expect(
-      StreakRuleSystem.exampleDue({ ...personal, intervalMaxDays: 35 }, HABIT)
-        .days,
-    ).toBe(35);
-    expect(
-      StreakRuleSystem.exampleDue(
-        StreakIntervalRule.personal(0, 35, 70, 42),
-        HABIT,
-      ).days,
-    ).toBe(35);
-  });
-
-  it('is the period the projector opens (`daysFor`)', () => {
-    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual(
-      StreakIntervalRule.daysFor(personal, HABIT),
-    );
-  });
-
-  it('equals the words’ old round(28·(1 + p/100)) for every whole percent (§7 R-13)', () => {
-    const clamps: readonly (readonly [number, number])[] = [
-      [14, 182],
-      [21, 70],
-      [30, 35],
-      [42, 56],
-    ];
-    for (const [min, max] of clamps) {
-      for (let pct = 0; pct <= 100; pct++) {
-        const old = Math.min(
-          max,
-          Math.max(min, Math.round(HABIT * (1 + pct / 100))),
-        );
-        expect(
-          StreakRuleSystem.exampleDue(
-            StreakIntervalRule.personal(pct, min, max, min),
-            HABIT,
-          ).days,
-        ).toBe(old);
-      }
-    }
-  });
-});
-
 describe('StreakRuleSystem.earliestEffectiveDay', () => {
   const TODAY = localDate('2026-09-29');
   const change = (direction: StreakRuleDirection): StreakRuleChange => ({
@@ -1476,7 +1422,7 @@ describe('StreakRuleSystem purity', () => {
       ),
       StreakRuleSystem.changesInRuleOrder(changed),
       StreakRuleSystem.excuseCount(next),
-      StreakRuleSystem.exampleDue(PERSONAL, 28),
+      StreakIntervalRule.daysFor(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
@@ -1495,7 +1441,7 @@ describe('StreakRuleSystem purity', () => {
       ),
       StreakRuleSystem.changesInRuleOrder(changed),
       StreakRuleSystem.excuseCount(next),
-      StreakRuleSystem.exampleDue(PERSONAL, 28),
+      StreakIntervalRule.daysFor(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {

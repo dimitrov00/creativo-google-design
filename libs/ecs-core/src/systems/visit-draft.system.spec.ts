@@ -11,6 +11,7 @@ import {
 import {
   DraftPersonKey,
   DurationMinutes,
+  EndMinute,
   LocalDate,
   MinuteOfDay,
   TrackMinute,
@@ -101,7 +102,7 @@ function withRule(
     RecurrenceRule.create(
       patch.pattern ?? RecurrenceRule.patternOf(rule),
       patch.interval ?? rule.recurrenceInterval,
-      RecurrenceRule.endOf(rule),
+      RecurrenceEndRule.of(rule),
     ),
   );
 }
@@ -214,7 +215,7 @@ describe('the repeat page policy', () => {
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, null);
     if (weekly === null) throw new Error('fixture');
     const counted = S.ruleForEndKind(weekly, RecurrenceEnd.Count, thursday);
-    expect(RecurrenceRule.endOf(counted)).toEqual({
+    expect(RecurrenceEndRule.of(counted)).toEqual({
       recurrenceEnd: 'COUNT',
       occurrenceCount: 5,
     });
@@ -265,7 +266,7 @@ describe('the repeat page policy — identities and fallbacks', () => {
       ),
     );
     expect(
-      RecurrenceRule.endOf(
+      RecurrenceEndRule.of(
         S.ruleForEndKind(stale, RecurrenceEnd.Count, thursday),
       ),
     ).toEqual({ recurrenceEnd: 'COUNT', occurrenceCount: 10 });
@@ -577,8 +578,8 @@ describe('the grain and the person key, branded (pass D)', () => {
   it('answers a snapped mark as a TrackMinute — the closing midnight included, never refused', () => {
     const near: TrackMinute = S.snap(minute(1439));
     expect(near).toBe(1440);
-    expect(TrackMinute.toStart(near).ok).toBe(false);
-    expect(TrackMinute.toEnd(near).ok).toBe(true);
+    expect(MinuteOfDay.of(near).ok).toBe(false);
+    expect(EndMinute.of(near).ok).toBe(true);
   });
 
   it('names the placeholder by its draft key (whose a key is: `DraftPersonKey.accountOf`, ids.primitive.spec.ts)', () => {

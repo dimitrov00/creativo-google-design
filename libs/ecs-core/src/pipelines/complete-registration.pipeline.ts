@@ -1,6 +1,7 @@
 import {
   type BirthDate,
   CustomerOrigin,
+  type IdentityCall,
   ParsedIdentifier,
   Registration,
   RegistrationField,
@@ -116,10 +117,6 @@ export type CompleteRegistrationCommand = {
   readonly operationId: OperationId | null;
 };
 
-export type CompleteRegistrationAnswer = {
-  readonly customToken: string;
-};
-
 /** The transaction's read: the account and its client record (`null` when absent). */
 type RegistrationRead = {
   readonly stored: User | null;
@@ -151,7 +148,9 @@ export const completeRegistration =
   (ports: CompleteRegistrationPorts) =>
   async (
     cmd: CompleteRegistrationCommand,
-  ): Promise<Result<CompleteRegistrationAnswer, CompleteRegistrationError>> => {
+  ): Promise<
+    Result<IdentityCall.CompleteRegistrationAnswer, CompleteRegistrationError>
+  > => {
     // The identifier satisfies whichever of phone/e-mail is the login
     // channel — the form never re-submits it.
     const fields = RegistrationSystem.effectiveFields(

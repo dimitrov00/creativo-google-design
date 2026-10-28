@@ -92,6 +92,7 @@ import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   type CallableEdgePorts,
   callableEdge,
+  type CallableSpec,
   type CallTrace,
   type EdgeCode,
   type EdgeError,
@@ -104,8 +105,10 @@ import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import {
   arrivalRefusal,
+  arrivedOf,
   cancelAppointmentRefusal,
-  commitBookingRefusal,
+  clearedOf,
+  committedOf,
   decodeCancelAppointment,
   decodeClearArrival,
   decodeCommitBooking,
@@ -114,33 +117,19 @@ import {
   decodeRescheduleAppointment,
   decodeStaffEditAppointment,
   decodeTransitionAppointment,
-  encodeCancelAppointmentAnswer,
-  encodeClearArrivalAnswer,
-  encodeCommitBookingAnswer,
-  encodeMarkArrivedAnswer,
-  encodeRecordSeatTipAnswer,
-  encodeRescheduleAppointmentAnswer,
-  encodeStaffEditAppointmentAnswer,
-  encodeTransitionAppointmentAnswer,
   recordSeatTipRefusal,
-  rescheduleAppointmentRefusal,
-  staffEditAppointmentRefusal,
+  rescheduledOf,
+  staffEditedOf,
   transitionAppointmentRefusal,
 } from './wire/booking.wire';
 import {
   CLIENT_ISSUE_RATE,
   decodeReportClientIssues,
-  encodeReportClientIssuesAnswer,
   REPORT_CLIENT_ISSUES_TIMEOUT_SECONDS,
-  reportClientIssuesRefusal,
 } from './wire/client-issue.wire';
 import {
   decodeEndImpersonation,
   decodeStartImpersonation,
-  encodeEndImpersonationAnswer,
-  encodeStartImpersonationAnswer,
-  endImpersonationRefusal,
-  startImpersonationRefusal,
 } from './wire/governance.wire';
 import {
   completeRegistrationRefusal,
@@ -148,39 +137,22 @@ import {
   decodeRequestOtp,
   decodeUpdateProfile,
   decodeVerifyOtp,
-  encodeCompleteRegistrationAnswer,
-  encodeRequestOtpAnswer,
-  encodeUpdateProfileAnswer,
-  encodeVerifyOtpAnswer,
+  otpChallengeOf,
   requestOtpRefusal,
-  updateProfileRefusal,
   verifyOtpRefusal,
 } from './wire/identity.wire';
-import {
-  decodeRedeemInvitation,
-  encodeRedeemInvitationAnswer,
-  redeemInvitationRefusal,
-} from './wire/invitation.wire';
+import { decodeRedeemInvitation } from './wire/invitation.wire';
 import {
   answerStreakPublish,
   type StreakPublishAnswer,
 } from './wire/loyalty.wire';
 import {
   decodeRunBackfill,
-  encodeRunBackfillAnswer,
   RUN_BACKFILL_TIMEOUT_SECONDS,
-  runBackfillRefusal,
 } from './wire/ops.wire';
 import {
-  decodeEraseClient,
-  decodeExportClientData,
-  decodePreviewClientErasure,
-  encodeEraseClientAnswer,
-  encodeErasurePreviewAnswer,
-  encodeExportClientDataAnswer,
+  decodeClientPrivacyCall,
   ERASE_CLIENT_TIMEOUT_SECONDS,
-  eraseClientRefusal,
-  exportClientDataRefusal,
 } from './wire/privacy.wire';
 import {
   CapacitySource,
@@ -200,14 +172,11 @@ import {
   settleAttempt,
 } from './wire/triggers.wire';
 import {
-  cancelWaitlistRefusal,
   decodeCancelWaitlist,
   decodeRequestWaitlist,
-  encodeCancelWaitlistAnswer,
-  encodeRequestWaitlistAnswer,
-  requestWaitlistRefusal,
 } from './wire/waitlist.wire';
-import { settle, type WireRequest } from './wire/wire-read';
+import type { AnswerIsTheWire, WireAnswer } from './wire/wire-answer';
+import { refusalOf, type WireRequest } from './wire/wire-read';
 
 /**
  * THE COMPOSITION ROOT (blueprint §4.3, D1(a)) — the only place in the
@@ -215,9 +184,12 @@ import { settle, type WireRequest } from './wire/wire-read';
  * assembles the port bundles, and wraps each pipeline in `onCall` /
  * `onDocument*` / `onSchedule` through the edge (`edge.ts`) and the wire
  * (`wire/*.wire.ts`): a decoder turns the call component or event into the
- * pipeline's command, an encoder turns its answer into the call
- * component's answer, and a `Result.err` becomes an `HttpsError`
- * (callables) or an attempt line (triggers). A handler here holds no logic.
+ * pipeline's command, a pipeline answers the call component's answer
+ * itself — a callable whose pipeline keeps server-only fields maps them
+ * away by name (`committedOf`), and `wiredCallable` proves the answer IS
+ * the wire's (`AnswerIsTheWire`) — and a `Result.err` becomes an
+ * `HttpsError` (callables) or an attempt line (triggers). A handler here
+ * holds no logic.
  *
  * The exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
@@ -510,20 +482,6 @@ const root = {
   erasure: erasurePorts,
 } as const;
 
-/** How one callable is wired: its name, its coded failure, its timeout. */
-type Wiring = {
-  readonly callable: CallableName;
-  /**
-   * What an infrastructure failure answers with — the callable's coded
-   * `internal` (`BOOKING_COMMIT_STORE_FAILED`) — or `null` for the
-   * platform's bare INTERNAL.
-   */
-  readonly failureCode: EdgeCode | null;
-  readonly timeoutSeconds: number | null;
-  /** Traced (WS-4.2): the scope and the outcome line — `false` for the sink alone (RU-24). */
-  readonly traced: boolean;
-};
-
 /** A decoded command's keyed digest, noted on the trace (WS-4.2, RU-23). */
 const noteDigest =
   (trace: CallTrace) =>
@@ -534,32 +492,36 @@ const noteDigest =
 
 /**
  * One callable: the call component decoded into the command (or refused),
- * the pipeline run over its ports, its answer encoded and its refusal in
- * the callable's own words. A traced callable notes its decoded command's
- * digest (the sink reads no key: it digests nothing).
+ * the pipeline run over its ports, its answer answered AS IT IS and its
+ * refusal in the callable's own words (`refusalOf` when every refusal
+ * leaves as itself; a store failure thrown on the way). The answer must be
+ * exactly callable `N`'s wire answer — the spec's `AnswerIsTheWire` half
+ * does not compile otherwise; a pipeline that keeps server-only
+ * fields is projected by name inside `run` (`committedOf`). A traced
+ * callable notes its decoded command's digest (the sink reads no key: it
+ * digests nothing).
  */
-function wiredCallable<P, C, A, E, Out>(
-  wiring: Wiring,
+function wiredCallable<
+  N extends CallableName,
+  P,
+  C,
+  A extends WireAnswer<N>,
+  E,
+>(
+  spec: CallableSpec<N> & AnswerIsTheWire<A, N>,
   ports: () => P,
   decode: (request: WireRequest) => Result<C, EdgeError>,
   run: (ports: P, cmd: C, budget: WorkBudget) => Promise<Result<A, E>>,
-  encode: (answer: A) => Out,
   refuse: (error: E, cmd: C) => EdgeError,
 ) {
-  return callableEdge<unknown, Out>(
-    {
-      callable: wiring.callable,
-      failureCode: wiring.failureCode,
-      timeoutSeconds: wiring.timeoutSeconds,
-      answer: null,
-      traced: wiring.traced,
-    },
+  return callableEdge<unknown, WireAnswer<N>>(
+    spec,
     root.edge,
     async (request: CallableRequest<unknown>, budget, trace) => {
       const cmd = decode(request);
       if (!cmd.ok) return cmd;
-      if (wiring.traced) noteDigest(trace)(cmd.value);
-      return settle(await run(ports(), cmd.value, budget), encode, (error) =>
+      if (spec.traced) noteDigest(trace)(cmd.value);
+      return Result.mapError(await run(ports(), cmd.value, budget), (error) =>
         refuse(error, cmd.value),
       );
     },
@@ -567,10 +529,15 @@ function wiredCallable<P, C, A, E, Out>(
 }
 
 /** A traced callable with the platform's timeout. */
-const plain = (
-  callable: CallableName,
+const plain = <N extends CallableName>(
+  callable: N,
   failureCode: EdgeCode | null,
-): Wiring => ({ callable, failureCode, timeoutSeconds: null, traced: true });
+): CallableSpec<N> => ({
+  callable,
+  failureCode,
+  timeoutSeconds: null,
+  traced: true,
+});
 
 // ── Trigger paths, spelled through the collection registry ────────────────
 
@@ -599,9 +566,11 @@ export const requestOtpChallenge = onCall(
     plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
     root.identity,
     decodeRequestOtp,
-    (ports, cmd) => requestOtp(ports)(cmd),
     // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
-    (answer) => encodeRequestOtpAnswer(answer, onEmulator()),
+    async (ports, cmd) =>
+      Result.map(await requestOtp(ports)(cmd), (answer) =>
+        otpChallengeOf(answer, onEmulator()),
+      ),
     requestOtpRefusal,
   ),
 );
@@ -613,7 +582,6 @@ export const verifyOtpChallenge = onCall(
     root.identity,
     decodeVerifyOtp,
     (ports, cmd) => verifyOtp(ports)(cmd),
-    encodeVerifyOtpAnswer,
     verifyOtpRefusal,
   ),
 );
@@ -625,7 +593,6 @@ export const completeRegistration = onCall(
     root.identity,
     decodeCompleteRegistration,
     (ports, cmd) => completeRegistrationPipeline(ports)(cmd),
-    encodeCompleteRegistrationAnswer,
     completeRegistrationRefusal,
   ),
 );
@@ -642,8 +609,7 @@ export const updateProfile = onCall(
     root.ports,
     decodeUpdateProfile,
     (ports, cmd) => updateProfilePipeline(ports)(cmd),
-    encodeUpdateProfileAnswer,
-    updateProfileRefusal,
+    refusalOf,
   ),
 );
 
@@ -765,9 +731,9 @@ export const commitBooking = onCall(
     plain(Callables.CommitBooking, BookingErrorCode.CommitStoreFailed),
     root.walkIns,
     decodeCommitBooking,
-    (ports, cmd) => bookAppointment(ports)(cmd),
-    encodeCommitBookingAnswer,
-    commitBookingRefusal,
+    async (ports, cmd) =>
+      Result.map(await bookAppointment(ports)(cmd), committedOf),
+    refusalOf,
   ),
 );
 
@@ -778,7 +744,6 @@ export const cancelAppointment = onCall(
     root.ports,
     decodeCancelAppointment,
     (ports, cmd) => cancelAppointmentPipeline(ports)(cmd),
-    encodeCancelAppointmentAnswer,
     cancelAppointmentRefusal,
   ),
 );
@@ -789,9 +754,12 @@ export const rescheduleAppointment = onCall(
     plain(Callables.RescheduleAppointment, BookingErrorCode.CommitStoreFailed),
     root.ports,
     decodeRescheduleAppointment,
-    (ports, cmd) => rescheduleAppointmentPipeline(ports)(cmd),
-    encodeRescheduleAppointmentAnswer,
-    rescheduleAppointmentRefusal,
+    async (ports, cmd) =>
+      Result.map(
+        await rescheduleAppointmentPipeline(ports)(cmd),
+        rescheduledOf,
+      ),
+    refusalOf,
   ),
 );
 
@@ -802,7 +770,6 @@ export const transitionAppointment = onCall(
     root.ports,
     decodeTransitionAppointment,
     (ports, cmd) => transitionAppointmentPipeline(ports)(cmd),
-    encodeTransitionAppointmentAnswer,
     transitionAppointmentRefusal,
   ),
 );
@@ -813,8 +780,7 @@ export const markArrived = onCall(
     plain(Callables.MarkArrived, null),
     root.ports,
     decodeMarkArrived,
-    (ports, cmd) => markArrival(ports)(cmd),
-    encodeMarkArrivedAnswer,
+    async (ports, cmd) => Result.map(await markArrival(ports)(cmd), arrivedOf),
     arrivalRefusal,
   ),
 );
@@ -825,8 +791,7 @@ export const clearArrival = onCall(
     plain(Callables.ClearArrival, null),
     root.ports,
     decodeClearArrival,
-    (ports, cmd) => markArrival(ports)(cmd),
-    encodeClearArrivalAnswer,
+    async (ports, cmd) => Result.map(await markArrival(ports)(cmd), clearedOf),
     arrivalRefusal,
   ),
 );
@@ -838,7 +803,6 @@ export const recordSeatTip = onCall(
     root.ports,
     decodeRecordSeatTip,
     (ports, cmd) => recordSeatTipPipeline(ports)(cmd),
-    encodeRecordSeatTipAnswer,
     recordSeatTipRefusal,
   ),
 );
@@ -849,9 +813,9 @@ export const staffEditAppointment = onCall(
     plain(Callables.StaffEditAppointment, BookingErrorCode.CommitStoreFailed),
     root.walkIns,
     decodeStaffEditAppointment,
-    (ports, cmd) => editAppointment(ports)(cmd),
-    encodeStaffEditAppointmentAnswer,
-    staffEditAppointmentRefusal,
+    async (ports, cmd) =>
+      Result.map(await editAppointment(ports)(cmd), staffEditedOf),
+    refusalOf,
   ),
 );
 
@@ -988,8 +952,7 @@ export const requestWaitlist = onCall(
     root.ports,
     decodeRequestWaitlist,
     (ports, cmd) => requestWaitlistPipeline(ports)(cmd),
-    encodeRequestWaitlistAnswer,
-    requestWaitlistRefusal,
+    refusalOf,
   ),
 );
 
@@ -1000,8 +963,7 @@ export const cancelWaitlist = onCall(
     root.ports,
     decodeCancelWaitlist,
     (ports, cmd) => cancelWaitlistPipeline(ports)(cmd),
-    encodeCancelWaitlistAnswer,
-    cancelWaitlistRefusal,
+    refusalOf,
   ),
 );
 
@@ -1117,8 +1079,7 @@ export const runBackfill = onCall(
     root.ports,
     decodeRunBackfill,
     (ports, cmd, budget) => runBackfillPipeline(ports)(cmd, budget),
-    encodeRunBackfillAnswer,
-    runBackfillRefusal,
+    refusalOf,
   ),
 );
 
@@ -1136,7 +1097,6 @@ export const publishStreakDefinition = onCall(
       callable: Callables.PublishStreakDefinition,
       failureCode: StreakPublishErrorCode.StoreFailed,
       timeoutSeconds: null,
-      answer: null,
       traced: true,
     },
     root.edge,
@@ -1162,8 +1122,7 @@ export const startImpersonation = onCall(
     root.ports,
     decodeStartImpersonation,
     (ports, cmd) => startImpersonationPipeline(ports)(cmd),
-    encodeStartImpersonationAnswer,
-    startImpersonationRefusal,
+    refusalOf,
   ),
 );
 
@@ -1175,8 +1134,7 @@ export const endImpersonation = onCall(
     root.ports,
     decodeEndImpersonation,
     (ports, cmd) => endImpersonationPipeline(ports)(cmd),
-    encodeEndImpersonationAnswer,
-    endImpersonationRefusal,
+    refusalOf,
   ),
 );
 
@@ -1188,8 +1146,7 @@ export const redeemInvitation = onCall(
     root.ports,
     decodeRedeemInvitation,
     (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
-    encodeRedeemInvitationAnswer,
-    redeemInvitationRefusal,
+    refusalOf,
   ),
 );
 
@@ -1206,10 +1163,9 @@ export const exportClientData = onCall(
   wiredCallable(
     plain(Callables.ExportClientData, null),
     root.privacy,
-    decodeExportClientData,
+    decodeClientPrivacyCall,
     (ports, cmd) => exportClientDataPipeline(ports)(cmd),
-    encodeExportClientDataAnswer,
-    exportClientDataRefusal,
+    refusalOf,
   ),
 );
 
@@ -1224,10 +1180,9 @@ export const previewClientErasure = onCall(
   wiredCallable(
     plain(Callables.PreviewClientErasure, null),
     root.erasurePreview,
-    decodePreviewClientErasure,
+    decodeClientPrivacyCall,
     (ports, cmd) => previewClientErasurePipeline(ports)(cmd),
-    encodeErasurePreviewAnswer,
-    eraseClientRefusal,
+    refusalOf,
   ),
 );
 
@@ -1252,10 +1207,9 @@ export const eraseClient = onCall(
       traced: true,
     },
     root.erasure,
-    decodeEraseClient,
+    decodeClientPrivacyCall,
     (ports, cmd, budget) => eraseClientPipeline(ports)(cmd, budget),
-    encodeEraseClientAnswer,
-    eraseClientRefusal,
+    refusalOf,
   ),
 );
 
@@ -1295,10 +1249,13 @@ export const reportClientIssues = onCall(
       },
       () => root.telemetry,
       (request) => decodeReportClientIssues(request, root.telemetry.log),
-      async (ports, cmd) =>
-        Result.ok(await reportClientIssuesPipeline(ports)(cmd)),
-      encodeReportClientIssuesAnswer,
-      reportClientIssuesRefusal,
+      async (
+        ports,
+        cmd,
+      ): Promise<
+        Result<WireAnswer<typeof Callables.ReportClientIssues>, never>
+      > => Result.ok(await reportClientIssuesPipeline(ports)(cmd)),
+      refusalOf,
     ),
   ),
 );

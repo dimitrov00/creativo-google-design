@@ -8,8 +8,9 @@ import { ClientPrivacyCall } from './client-privacy-call.data';
  * The privacy wire (audit-hardening Phase 3, WS-C / WS-D): the export's
  * answer through its primitives' smart constructors and the format version,
  * the erasure's two answers through the erasure tag and the census counts;
- * anything else `PIPELINE_UNKNOWN`. The round trip with the server's encoder
- * lives in `privacy.wire.spec.ts`.
+ * anything else `PIPELINE_UNKNOWN`. The server answers the pipelines' values
+ * as they are (Law 5 — no encoder); their keys are pinned in the pipeline
+ * specs.
  */
 const unusable = (result: { readonly ok: boolean; readonly error?: unknown }) =>
   !result.ok &&

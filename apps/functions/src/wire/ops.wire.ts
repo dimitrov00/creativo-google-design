@@ -1,21 +1,18 @@
 import { Result } from '@core/primitives';
-import {
-  type RepositoryError,
-  type RunBackfillRefusal,
-  RunBackfillRefusalCode,
-} from '@core/errors';
-import { Actor, type BackfillCall, Role } from '@core/components';
+import { RunBackfillRefusalCode } from '@core/errors';
+import { Actor, Role } from '@core/components';
 import { BackfillPlanSystem } from '@core/systems';
 import type { RunBackfillCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerRoles, callerUserId } from '../lib/booking/caller-roles';
-import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';
+import { field, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE `runBackfill` CALLABLE'S WIRE (Phase 4a 4A-4) — flipped with the
  * runners that loop it (`verify:p0`): the request is the call component
  * `BackfillCall` `{ backfillJobName, backfillResume, cursor }`, the answer
- * one page, `BackfillCall.Page` (`runStartedAtUtcMs`, never an ISO text).
+ * one page, `BackfillCall.Page` (`runStartedAtUtcMs`, never an ISO text) —
+ * the pipeline's own answer, wired as it is.
  *
  * - `backfillResume: true` continues wherever the job's progress document
  *   says (the request names no cursor); otherwise `cursor` is the page to
@@ -24,7 +21,7 @@ import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';
  *   which the pipeline refuses — AFTER the stored-roles check, as today.
  * - No caller → `OPS_BACKFILL_UNAUTHENTICATED`, a token without `sysadmin`
  *   → `OPS_BACKFILL_FORBIDDEN`, answered here; the stored-roles refusal and
- *   a bad job leave as the pipeline's own.
+ *   a bad job leave as the pipeline's own (`refusalOf`).
  *
  * A store failure is no refusal: it is thrown, for the edge to track and
  * answer as the platform's bare INTERNAL.
@@ -63,18 +60,4 @@ export function decodeRunBackfill(
     actor: Actor.forCaller(uid, roles),
     request: BackfillPlanSystem.requestOf(requestStruct(payloadOf(request))),
   });
-}
-
-/** One page, as the pipeline answered it. */
-export function encodeRunBackfillAnswer(
-  page: BackfillCall.Page,
-): BackfillCall.Page {
-  return page;
-}
-
-/** The stored-roles refusal and a bad job leave as themselves (a store failure thrown). */
-export function runBackfillRefusal(
-  error: RunBackfillRefusal | RepositoryError,
-): EdgeError {
-  return refusalOf(error);
 }

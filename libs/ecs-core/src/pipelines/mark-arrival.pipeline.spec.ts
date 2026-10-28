@@ -12,6 +12,7 @@ import {
   OperationId,
   UserId,
   UtcEpochMs,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -77,7 +78,7 @@ function rowId(
   return fixtureHash(
     AuditSystem.rowBasis(
       action,
-      FIXTURE_IDS.appointment,
+      AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
       FIXTURE_IDS.customer,
       changeKey,
     ),

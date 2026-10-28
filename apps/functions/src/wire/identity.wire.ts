@@ -18,17 +18,13 @@ import {
   PipelineError,
   type RegistrationProfileError,
   type RequestOtpError,
-  type UpdateProfileError,
   type VerifyOtpError,
 } from '@core/errors';
 import type {
-  CompleteRegistrationAnswer,
   CompleteRegistrationCommand,
   RequestOtpAnswer,
   RequestOtpCommand,
-  UpdateProfileAnswer,
   UpdateProfileCommand,
-  VerifyOtpAnswer,
   VerifyOtpCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
@@ -36,9 +32,8 @@ import { callerUserId } from '../lib/booking/caller-roles';
 import {
   field,
   isRecord,
-  isStoreFailure,
   operationIdOf,
-  storeFailure,
+  refusalOf,
   type WireRequest,
 } from './wire-read';
 
@@ -56,15 +51,17 @@ import {
  *   the callable cannot read is `IDENTITY_INVALID_INPUT` with today's
  *   `reason` (its `reason` words the field by its new name).
  * - **Out:** `{ challengeId, devCode }` (`devCode` only under the emulator,
- *   else `null`), `{ sessionKind: 'NEW' | 'RETURNING', customToken }`,
- *   `{ customToken }`, `{ changed }`.
+ *   else `null` — `otpChallengeOf`, the one projection), then
+ *   `{ sessionKind: 'NEW' | 'RETURNING', customToken }`, `{ customToken }`
+ *   and `{ changed }`: those three pipelines answer the call component's
+ *   answer itself, wired as it is.
  * - **Refusals:** one function per OTP callable turns the pipeline refusals
  *   whose meaning is the callable's own into their successors (an Auth
  *   failure as `IDENTITY_TOKEN_MINTING_FAILURE` /
  *   `IDENTITY_CLAIMS_PROMOTION_FAILURE`, a refused adoption as the token
  *   failure, an identifier as the invalid input it always answered, the
  *   registration's birth date wrapping its cause); every other refusal
- *   leaves as itself. The registration's refused profile leaves as the
+ *   leaves as itself (`updateProfile` passes `refusalOf` alone). The registration's refused profile leaves as the
  *   aggregate it always was, each nested refusal the successor of its
  *   legacy nested code. A store failure is no refusal: it is thrown, for
  *   the edge to track and answer as the callable's coded
@@ -108,11 +105,12 @@ export function decodeRequestOtp(
 }
 
 /**
- * `{ challengeId, devCode }` — `devCode` only when `exposeDevCode` (the root
- * passes the `FUNCTIONS_EMULATOR` gate): there is no inbox for the e2e
- * suite to read a real code from, and production never forwards it.
+ * The challenge's wire answer, a projection: `otpId` as `challengeId`, and
+ * `devCode` only when `exposeDevCode` (the root passes the
+ * `FUNCTIONS_EMULATOR` gate): there is no inbox for the e2e suite to read a
+ * real code from, and production never forwards it.
  */
-export function encodeRequestOtpAnswer(
+export function otpChallengeOf(
   answer: RequestOtpAnswer,
   exposeDevCode: boolean,
 ): IdentityCall.RequestOtpAnswer {
@@ -128,8 +126,8 @@ export function encodeRequestOtpAnswer(
  * `IDENTITY_OTP_SEND_FAILURE`: a retry can never succeed, and the web must
  * not offer one (WS-0).
  */
-export function requestOtpRefusal(error: RequestOtpError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+export function requestOtpRefusal(failure: RequestOtpError): EdgeError {
+  const error = refusalOf(failure);
   if (error.errorCode === IdentityErrorCode.OtpSendUnavailable) return error;
   if (PipelineError.isPipelineError(error))
     return IdentityError.otpSendFailure();
@@ -181,19 +179,9 @@ export function decodeVerifyOtp(
   });
 }
 
-/** `{ sessionKind, customToken }` — the SCREAMING `SessionKind`. */
-export function encodeVerifyOtpAnswer(
-  answer: VerifyOtpAnswer,
-): IdentityCall.VerifyOtpAnswer {
-  return {
-    sessionKind: answer.sessionKind,
-    customToken: answer.customToken,
-  };
-}
-
 /** A `verifyOtp` refusal (a store failure thrown). */
-export function verifyOtpRefusal(error: VerifyOtpError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+export function verifyOtpRefusal(failure: VerifyOtpError): EdgeError {
+  const error = refusalOf(failure);
   if (PipelineError.isPipelineError(error))
     return IdentityError.tokenMintingFailure();
   // A refused adoption answers as a failed provisioning (F2-9).
@@ -268,13 +256,6 @@ export function decodeCompleteRegistration(
   });
 }
 
-/** `{ customToken }`. */
-export function encodeCompleteRegistrationAnswer(
-  answer: CompleteRegistrationAnswer,
-): IdentityCall.CompleteRegistrationAnswer {
-  return { customToken: answer.customToken };
-}
-
 /** The birth-date refusals — wrapped as `IDENTITY_REGISTRATION_BIRTH_DATE_INVALID`, their cause nested. */
 const BIRTH_DATE_CODES: ReadonlySet<string> = new Set([
   IdentityErrorCode.BirthDateInvalid,
@@ -313,9 +294,9 @@ function nestedProfileRefusal(
 
 /** A `completeRegistration` refusal (a store failure thrown). */
 export function completeRegistrationRefusal(
-  error: CompleteRegistrationError,
+  failure: CompleteRegistrationError,
 ): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
+  const error = refusalOf(failure);
   if (PipelineError.isPipelineError(error))
     return IdentityError.claimsPromotionFailure();
   if (error.errorCode === CompleteRegistrationRefusalCode.ProfileInvalid) {
@@ -372,17 +353,4 @@ export function decodeUpdateProfile(
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(request.data, 'operationId'),
   });
-}
-
-/** `{ changed }`. */
-export function encodeUpdateProfileAnswer(
-  answer: UpdateProfileAnswer,
-): IdentityCall.UpdateProfileAnswer {
-  return { changed: answer.changed };
-}
-
-/** An `updateProfile` refusal: its ecs-core code as itself (a store failure thrown). */
-export function updateProfileRefusal(error: UpdateProfileError): EdgeError {
-  if (isStoreFailure(error)) throw storeFailure(error);
-  return error;
 }

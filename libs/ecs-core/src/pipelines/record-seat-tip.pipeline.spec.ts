@@ -13,6 +13,7 @@ import {
   OperationId,
   SeatId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingErrorCode,
@@ -33,6 +34,7 @@ import {
   memoryTxPorts,
   recordingTelemetry,
   seatFixture,
+  unwrapOk,
 } from '@core/testing';
 import { recordSeatTip } from './record-seat-tip.pipeline';
 
@@ -88,7 +90,7 @@ function rig(appointments: readonly Appointment[]) {
 const TIP_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingTipRecorded,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `tip:${OPERATION}:${FIXTURE_IDS.seat}`,
   ),
@@ -114,6 +116,13 @@ describe('recordSeatTip', () => {
         unchanged: false,
       },
     });
+    // The callable answers this value as it is (Law 5 — no wire encoder):
+    // exactly these keys, in this order, byte for byte on the wire.
+    expect(Object.keys(unwrapOk(answer))).toEqual([
+      'appointmentId',
+      'seatId',
+      'unchanged',
+    ]);
     const before = party();
     expect(tx.plans).toEqual([
       [
@@ -171,7 +180,7 @@ describe('recordSeatTip', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingTipRecorded,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.tip(OPERATION, FIXTURE_IDS.seat),
         ),

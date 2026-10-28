@@ -8,7 +8,6 @@ import {
 import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import type { OperationIdField } from '@core/ports';
 import { ZonedTimeSystem } from '@core/systems';
-import type { EdgeError } from '../edge';
 import type { VerifiedRequest } from '../lib/booking/caller-roles';
 
 /**
@@ -125,25 +124,13 @@ export function storeFailure(error: RepositoryError): Error {
 
 /**
  * Throws a store failure for the edge's unexpected path ({@link storeFailure});
- * any other refusal comes back narrowed.
+ * any other refusal comes back narrowed, as itself. The refusal of every
+ * callable whose refusals all leave as themselves, and the first step of
+ * every refusal function that words some in the callable's own codes.
  */
 export function refusalOf<E extends { readonly errorCode: string }>(
   error: E | RepositoryError,
 ): Exclude<E, RepositoryError> {
   if (isStoreFailure(error)) throw storeFailure(error);
   return error as Exclude<E, RepositoryError>;
-}
-
-/**
- * A pipeline's result as the callable answers it: the answer encoded, a
- * refusal in the callable's own words (a store failure thrown on the way).
- */
-export function settle<A, E, Out>(
-  result: Result<A, E>,
-  encode: (answer: A) => Out,
-  refuse: (error: E) => EdgeError,
-): Result<Out, EdgeError> {
-  return result.ok
-    ? Result.ok(encode(result.value))
-    : Result.err(refuse(result.error));
 }

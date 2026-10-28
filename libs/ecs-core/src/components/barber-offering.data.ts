@@ -21,17 +21,6 @@ export type BarberOffering = {
   readonly overrides: readonly VariantTerms[];
 } & ServiceTerms;
 
-/** The five terms fields of anything that carries them — a fresh `ServiceTerms`. */
-function termsOf(raw: ServiceTermsInput): ServiceTermsInput {
-  return {
-    priceCents: raw.priceCents,
-    currency: raw.currency,
-    durationMinutes: raw.durationMinutes,
-    setupMinutes: raw.setupMinutes,
-    cleanupMinutes: raw.cleanupMinutes,
-  };
-}
-
 export const BarberOffering = {
   /**
    * This barber's terms for `variantId`, falling back to the offering's own
@@ -79,7 +68,7 @@ export const BarberOffering = {
     if (raw.barberId.trim().length === 0) {
       errors.push(CatalogError.idEmpty('BarberId'));
     }
-    const base = ServiceTerms.parse(termsOf(raw));
+    const base = ServiceTerms.parse(raw);
     if (!base.ok) errors.push(...base.error);
 
     const overrides: VariantTerms[] = [];
@@ -103,7 +92,7 @@ export const BarberOffering = {
         );
         continue;
       }
-      const terms = ServiceTerms.parse(termsOf(override));
+      const terms = ServiceTerms.parse(override);
       if (!terms.ok) {
         errors.push(...terms.error);
         continue;

@@ -1,17 +1,17 @@
-import type { InvitationCall } from '@core/components';
 import { InvitationId, Result } from '@core/primitives';
-import { EngagementError, type RedeemInvitationError } from '@core/errors';
+import { EngagementError } from '@core/errors';
 import type { RedeemInvitationCommand } from '@core/pipelines';
 import type { EdgeError } from '../edge';
 import { callerUserId } from '../lib/booking/caller-roles';
-import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';
+import { field, payloadOf, type WireRequest } from './wire-read';
 
 /**
  * THE `redeemInvitation` CALLABLE'S WIRE (flip-3 plan F3-2, Phase 4a
  * 4A-3 (5)) — new with the rules tightening that took the client's direct
  * create/update away: the request is the call component `InvitationCall`
  * (`{ invitationId }`), the answer `InvitationCall.Redeemed`
- * (`{ invitationId, redemptionCount }`), a refusal its ecs-core struct. The
+ * (`{ invitationId, redemptionCount }`) — the pipeline's own, wired as it
+ * is — and a refusal its ecs-core struct (`refusalOf`). The
  * referee is the VERIFIED caller, read FIRST (no session →
  * `ENGAGEMENT_INVITATION_UNAUTHENTICATED`). No web caller exists yet.
  */
@@ -31,20 +31,4 @@ export function decodeRedeemInvitation(
     invitationId: invitationId.value,
     refereeUserId: referee,
   });
-}
-
-export function encodeRedeemInvitationAnswer(
-  answer: InvitationCall.Redeemed,
-): InvitationCall.Redeemed {
-  return {
-    invitationId: answer.invitationId,
-    redemptionCount: answer.redemptionCount,
-  };
-}
-
-/** A redemption's refusal as itself (a store failure thrown). */
-export function redeemInvitationRefusal(
-  error: RedeemInvitationError,
-): EdgeError {
-  return refusalOf(error);
 }

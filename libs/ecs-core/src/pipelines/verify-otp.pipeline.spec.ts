@@ -260,6 +260,12 @@ describe('verifyOtp', () => {
           sessionKind: SessionKind.New,
         },
       });
+      // The callable answers this value as it is (Law 5 — no wire encoder):
+      // exactly these keys, in this order, byte for byte on the wire.
+      expect(Object.keys(unwrapOk(answer))).toEqual([
+        'sessionKind',
+        'customToken',
+      ]);
       const uid = UserId.of('auth-uid-1');
       const { id, ...stub } = RegistrationSystem.provision(
         uid,

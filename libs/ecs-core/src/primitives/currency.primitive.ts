@@ -71,8 +71,8 @@ export const Currency = {
   },
 
   /**
-   * The currency a NEW amount may be priced in, or `null` — EUR only (today's
-   * `Money.currencyFrom`; the set `Money.of` accepts, unchanged).
+   * The currency a NEW amount may be priced in, or `null` — EUR only, the
+   * code trimmed and case-folded (the set `Money.of` accepts).
    */
   tradable(raw: string): Currency | null {
     return find(TRADABLE, raw);

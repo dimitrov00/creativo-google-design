@@ -32,6 +32,7 @@ import {
   SeatId,
   ServiceId,
   UserId,
+  AuditResourceId,
 } from '@core/primitives';
 import {
   BookingError,
@@ -181,7 +182,7 @@ function rig(
 const MOVE_ROW = fixtureHash(
   AuditSystem.rowBasis(
     AuditAction.BookingRescheduled,
-    FIXTURE_IDS.appointment,
+    AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
     FIXTURE_IDS.customer,
     `move:${ATTEMPT}`,
   ),
@@ -288,7 +289,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           AuditSystem.changeKey.move(ATTEMPT),
         ),
@@ -305,7 +306,7 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       fixtureHash(
         AuditSystem.rowBasis(
           AuditAction.BookingRescheduled,
-          FIXTURE_IDS.appointment,
+          AuditResourceId.forAppointment(FIXTURE_IDS.appointment),
           FIXTURE_IDS.customer,
           'move:move-attempt-0123456789',
         ),

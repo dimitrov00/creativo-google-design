@@ -9,12 +9,8 @@ import {
   RepositoryError,
 } from '@core/errors';
 import { type EdgeError, toHttpsError } from '../edge';
-import {
-  decodeRedeemInvitation,
-  encodeRedeemInvitationAnswer,
-  redeemInvitationRefusal,
-} from './invitation.wire';
-import type { WireRequest } from './wire-read';
+import { decodeRedeemInvitation } from './invitation.wire';
+import { refusalOf, type WireRequest } from './wire-read';
 
 /*
  * The `redeemInvitation` callable's wire (Phase 4a 4A-3 (5)) — new with the
@@ -67,21 +63,13 @@ describe('redeemInvitation — the wire', () => {
     }
   });
 
-  it('answers the invitation and its count, a refusal as its struct, and throws a store failure', () => {
-    expect(
-      encodeRedeemInvitationAnswer({
-        invitationId: InvitationId.of('inv-1'),
-        redemptionCount: 3,
-      }),
-    ).toEqual({ invitationId: 'inv-1', redemptionCount: 3 });
+  it('leaves a refusal as its struct (`refusalOf`), and throws a store failure', () => {
     const invitation = InvitationId.of('inv-1');
-    expect(
-      redeemInvitationRefusal(EngagementError.invitationNotFound(invitation)),
-    ).toEqual(EngagementError.invitationNotFound(invitation));
+    expect(refusalOf(EngagementError.invitationNotFound(invitation))).toEqual(
+      EngagementError.invitationNotFound(invitation),
+    );
     expect(() =>
-      redeemInvitationRefusal(
-        RepositoryError.writeFailed('invitations/inv-1', 'aborted'),
-      ),
+      refusalOf(RepositoryError.writeFailed('invitations/inv-1', 'aborted')),
     ).toThrow('REPOSITORY_WRITE_FAILED');
   });
 });

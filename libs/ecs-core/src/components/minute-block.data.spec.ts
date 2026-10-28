@@ -12,16 +12,16 @@ describe('MinuteBlock', () => {
     });
   });
 
-  it('overlaps on the span alone, half-open, whatever the kinds', () => {
+  it('overlaps (`MinuteRange.overlaps`) on the span alone, half-open, whatever the kinds', () => {
     const seat = MinuteBlock.of(at(10), until(10, 45), BlockKind.Busy);
     expect(
-      MinuteBlock.overlaps(
+      MinuteRange.overlaps(
         seat,
         MinuteBlock.of(at(10, 40), until(10, 50), BlockKind.Padding),
       ),
     ).toBe(true);
     expect(
-      MinuteBlock.overlaps(
+      MinuteRange.overlaps(
         seat,
         MinuteBlock.of(at(10, 45), until(10, 55), BlockKind.Padding),
       ),

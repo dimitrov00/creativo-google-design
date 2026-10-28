@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '@core/testing';
 import { CanonicalJsonSystem } from './canonical-json.system';
-import { ClientStatsSystem } from './client-stats.system';
 
-/* The one canonical JSON printer (audit-hardening WS-4.2): moved out of
- * `ClientStatsSystem.canonicalJson`, which delegates — its own spec is
- * unchanged. */
+/* The one canonical JSON printer (audit-hardening WS-4.2), moved out of the
+ * client-stats system: every caller (the stats' revision guard, the governed
+ * change's field diff) names it here. */
 
 describe('CanonicalJsonSystem.of', () => {
   it('prints object keys sorted, at every depth', () => {
@@ -42,13 +41,6 @@ describe('CanonicalJsonSystem.of', () => {
     expect(CanonicalJsonSystem.of([undefined])).toBe('[null]');
     expect(CanonicalJsonSystem.of({})).toBe('{}');
     expect(CanonicalJsonSystem.of([])).toBe('[]');
-  });
-
-  it('is what ClientStatsSystem.canonicalJson answers (the delegation)', () => {
-    const value = { b: [{ d: 1, c: 2 }], a: 'x' };
-    expect(ClientStatsSystem.canonicalJson(value)).toBe(
-      CanonicalJsonSystem.of(value),
-    );
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

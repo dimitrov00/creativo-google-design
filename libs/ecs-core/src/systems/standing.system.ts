@@ -411,7 +411,7 @@ export const StandingSystem = {
           : LoyaltyCatalogSystem.season(catalog, series.seasonId);
       if (
         BadgeSystem.isRetired(series) ||
-        BadgeSystem.isCalendarDriven(series) ||
+        MetricRef.isCalendarDriven(series) ||
         (series.seasonId !== null &&
           (season === null ||
             SeasonSystem.phaseOn(season, today) !== SeasonPhase.Open))

@@ -81,21 +81,6 @@ function textOf(entry: JournalEntry, name: string): string | null {
 }
 
 /**
- * The entries as events, newest first. `whole` says the entries are
- * everything there is under the pill (no cursor is left); when they are
- * NOT, the page boundary may have cut the oldest event, so it is held back
- * until the next page, or the end, confirms it (§4.7). An event that is
- * the only one read is kept: a page never reads as empty while it holds a
- * row.
- */
-export function foldByEvent(
-  entries: readonly JournalEntry[],
-  whole: boolean,
-): readonly ActivityEvent[] {
-  return LedgerSystem.fold(entries, whole);
-}
-
-/**
  * The months the loaded entries hold WHOLE: every month newer than the
  * oldest one loaded, and the oldest too once nothing older is left
  * (`whole`). A month the page boundary may have cut is in doubt, and a
@@ -614,7 +599,7 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
         : runsOf(words.ledgerPage.subline(holder, balance), [balance]),
     filter: input.filter,
     groups: ready
-      ? activityGroups(foldByEvent(input.entries, input.next === null), {
+      ? activityGroups(LedgerSystem.fold(input.entries, input.next === null), {
           ...input,
           // Only under the pills of POINT rows is a month's net the month's
           // (`LedgerSystem.netsUnder`).

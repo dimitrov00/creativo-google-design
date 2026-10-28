@@ -87,16 +87,6 @@ export type ShopOpeningAt = {
 /** The forward scan's reach: the same weekday next week included. */
 const DAYS_IN_WEEK = 7;
 
-/** A set-algebra start back under its brand — the algebra never leaves `[0, 1440)`. */
-function startOf(minutes: number): MinuteOfDay {
-  return MinuteOfDay.ofProven(minutes);
-}
-
-/** A set-algebra end back under its brand — the algebra never leaves `(0, 1440]`. */
-function endOf(minutes: number): EndMinute {
-  return EndMinute.ofProven(minutes);
-}
-
 /** The exceptions that fall on `localDate`, in their given order. */
 function exceptionsOn(
   exceptions: readonly DayException[],
@@ -424,8 +414,8 @@ export const RosterSystem = {
           ShiftSegment.of(
             weekday,
             first.locationId,
-            startOf(range.startMinutes),
-            endOf(range.endMinutes),
+            MinuteOfDay.ofProven(range.startMinutes),
+            EndMinute.ofProven(range.endMinutes),
           ),
         );
       }
@@ -450,8 +440,8 @@ export const RosterSystem = {
           RosterWindow.of(
             input.barberId,
             segment.locationId,
-            startOf(range.startMinutes),
-            endOf(range.endMinutes),
+            MinuteOfDay.ofProven(range.startMinutes),
+            EndMinute.ofProven(range.endMinutes),
           ),
         );
       }
@@ -500,8 +490,8 @@ export const RosterSystem = {
           RosterWindow.of(
             window.barberId,
             window.locationId,
-            startOf(range.startMinutes),
-            endOf(range.endMinutes),
+            MinuteOfDay.ofProven(range.startMinutes),
+            EndMinute.ofProven(range.endMinutes),
           ),
         );
       }

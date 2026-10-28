@@ -127,9 +127,7 @@ export const firestorePorts = (
   telemetry: TelemetryPorts,
 ): FirestorePorts => ({
   commit: firestoreCommitPlan(db, StoredDocumentSystem.guardOf, telemetry.log),
-  nowUtcMs: primitives.nowUtcMs,
-  nextId: primitives.nextId,
-  hash: primitives.hash,
+  ...primitives,
   ...firestoreSettingsPorts(db),
   ...firestoreCouponPorts(db),
   ...firestoreAccountPorts(db),

@@ -381,11 +381,6 @@ function releaseRead(snapshot: Snapshot | null): readonly ChairTime[] {
     : [];
 }
 
-/** An instant on the shop's clock. */
-function wallOf(at: UtcEpochMs, zone: TimeZone) {
-  return ZonedTimeSystem.toLocal(at, zone);
-}
-
 /**
  * A wall-clock minute the shop's zone shows — the ingestion boundary's ONE
  * check (Law 7.3, Phase 4a 4A-2 (a)): a time inside the spring-forward gap
@@ -846,7 +841,9 @@ function decideEdit(
     stored.bookingStatus,
     draft.localDate,
     draft.seats,
-    stored.arrivedAtUtcMs === null ? null : wallOf(stored.arrivedAtUtcMs, zone),
+    stored.arrivedAtUtcMs === null
+      ? null
+      : ZonedTimeSystem.toLocal(stored.arrivedAtUtcMs, zone),
   );
   if (refusal !== null) return Result.err(refusal);
 

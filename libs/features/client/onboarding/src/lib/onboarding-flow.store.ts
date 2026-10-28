@@ -4,7 +4,7 @@ import { Observable, map } from 'rxjs';
 import {
   type BirthDate,
   OnboardingFlowEvent,
-  type OnboardingFlowState,
+  OnboardingFlowState,
   type ParsedIdentifier,
   PersonalizeStep,
   Principal,
@@ -83,7 +83,7 @@ export class OnboardingFlowStore {
   readonly deployment = this.deploymentPorts.authDeployment;
 
   private readonly _state = signal<OnboardingFlowState>(
-    OnboardingFlowSystem.initial(),
+    OnboardingFlowState.initial(),
   );
   readonly state = this._state.asReadonly();
 

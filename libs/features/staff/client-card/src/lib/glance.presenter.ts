@@ -11,7 +11,11 @@ import {
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
-import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
+import {
+  formatCents,
+  formatCount,
+  formatWallClock,
+} from '@creativo/ui/wall-clock';
 import {
   type CouponId,
   type LocalDate,
@@ -56,7 +60,6 @@ import {
   cardLocaleOf,
   dayShort,
   dayWithYear,
-  figure,
   heldFacts,
   hungJoints,
   inSentence,
@@ -639,7 +642,7 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   }
 
   if (held.rhythm !== null) {
-    const value = figure(held.rhythm, words.lang);
+    const value = formatCount(held.rhythm, words.lang);
     holdings.push({
       id: LoyaltyHoldingWord.Rhythm,
       label: words.loyalty.holding(LoyaltyHoldingWord.Rhythm),
@@ -709,8 +712,8 @@ function pointsSentence(
 /** «371» · «1 200» · «−40»: the balance as the card's figure; what is owed wears the true minus. */
 function balanceFigure(balance: number, lang: string): string {
   return balance < 0
-    ? `${MINUS}${figure(Math.abs(balance), lang)}`
-    : figure(balance, lang);
+    ? `${MINUS}${formatCount(Math.abs(balance), lang)}`
+    : formatCount(balance, lang);
 }
 
 /**
@@ -774,7 +777,7 @@ function recordFact(
           : ctx.catalog.serviceName(record.serviceId);
       break;
     case PersonalRecordKind.MostVisitsInYear:
-      value = figure(record.value, words.lang);
+      value = formatCount(record.value, words.lang);
       break;
     case PersonalRecordKind.FirstVisit:
       value = record.on === null ? null : dayWithYear(record.on, words.lang);
