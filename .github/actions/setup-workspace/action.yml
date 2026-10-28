@@ -1,0 +1,19 @@
+name: setup-workspace
+description: >-
+  pnpm (the version `packageManager` pins), Node from .nvmrc with the pnpm
+  store cached, then a frozen install — written once for every CI job that
+  does not need the `main` job's full history.
+runs:
+  using: composite
+  steps:
+    # No `version:` — pnpm/action-setup reads `packageManager` from the root
+    # package.json, so the CLI and the lockfile never drift apart.
+    - uses: pnpm/action-setup@v4
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version-file: '.nvmrc'
+        cache: 'pnpm'
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash

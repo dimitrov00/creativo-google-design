@@ -180,7 +180,7 @@ node tools/verify/csp/check-csp.mjs
 ```
 
 Source: `firebase.json:41`; `tools/verify/csp/check-csp.mjs:20-22`,
-`:170-173`, `:312`; `.github/workflows/ci.yml:42-43`;
+`:170-173`, `:312`; `.github/workflows/ci.yml:64-65`;
 `docs/security/csp-baseline.md` (Follow-ups, "The project id"); P5.
 
 ### Credentials on the deploying machine
@@ -613,9 +613,17 @@ pnpm run preflight --project "$PROJECT_ID"
 ## 3. Every deploy, in order
 
 Deploys are manual, from a clean `main` whose CI is green. CI
-(`.github/workflows/ci.yml`) has no deploy job. It runs format, affected
-lint/test/build, the static CSP hash check, the icon checks, `pnpm audit` and
-gitleaks. It doesn't run the emulator CSP smoke.
+(`.github/workflows/ci.yml`) has no deploy job and names no secret but
+`GITHUB_TOKEN`. Its jobs run in parallel: `main` runs format, affected
+lint/test/build/typecheck, the static CSP hash check, the icon checks,
+`pnpm audit` and gitleaks; `static` the sync check, the layering check, the
+seed-tools typecheck, the lint-rules tests, the style lint, the
+initial-bundle guard and the functions build with its dependency check;
+`runbook-gates` the runbook's §4 grep gates; `coverage` the ecs-core
+coverage thresholds; `emulators` `pnpm run test:emulator` then
+`pnpm run verify:p0`; `e2e` `pnpm run e2e:web` without the `@screenshot`
+tests, whose baselines are macOS renders (the owner's macOS full gate runs
+them); `csp-smoke` the emulator CSP smoke (`pnpm run verify:csp`).
 
 This is runbook §3's ordinary order. Its Phase 4a exception (rules after
 functions and hosting, `firestore-runbook.md:265-270`) protects a project

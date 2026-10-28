@@ -52,17 +52,21 @@ async function gotoWithTheme(page: Page, theme: Theme): Promise<void> {
   });
 }
 
-test.describe('marketing landing — hero visual regression', () => {
-  for (const theme of THEMES) {
-    test(`hero fold — ${theme}`, async ({ page }) => {
-      await gotoWithTheme(page, theme);
-      // Not pixel-for-pixel: video poster decode and font rasterization
-      // differ between two runs even of the SAME app. The checklist's
-      // cross-cutting target is ≤1% pixel delta on key pages (Goal 08
-      // audits); the hero gate here uses the same envelope.
-      await expect(page).toHaveScreenshot(`landing-hero-${theme}.png`, {
-        maxDiffPixelRatio: 0.01,
+test.describe(
+  'marketing landing — hero visual regression',
+  { tag: '@screenshot' },
+  () => {
+    for (const theme of THEMES) {
+      test(`hero fold — ${theme}`, async ({ page }) => {
+        await gotoWithTheme(page, theme);
+        // Not pixel-for-pixel: video poster decode and font rasterization
+        // differ between two runs even of the SAME app. The checklist's
+        // cross-cutting target is ≤1% pixel delta on key pages (Goal 08
+        // audits); the hero gate here uses the same envelope.
+        await expect(page).toHaveScreenshot(`landing-hero-${theme}.png`, {
+          maxDiffPixelRatio: 0.01,
+        });
       });
-    });
-  }
-});
+    }
+  },
+);

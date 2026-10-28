@@ -15,6 +15,7 @@
     "verify:p0": "pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && START_LOGGING_EMULATOR=true firebase emulators:exec --only firestore,auth,functions,storage --project demo-creativo-test \"node tools/verify/p0/verify-p0.mjs\"",
     "verify:bundle": "pnpm nx build web -- --stats-json && node tools/verify/bundle/check-initial-bundle.mjs",
     "verify:csp": "pnpm nx build web && node tools/verify/csp/check-csp.mjs && pnpm nx build web --configuration=csp-smoke && node tools/verify/csp/check-csp.mjs --dist=dist/apps/web-csp-smoke/browser && pnpm nx build functions && node tools/flags/write-functions-env.mjs --project demo-creativo-test && node tools/verify/csp/emulator-config.mjs && START_LOGGING_EMULATOR=true firebase emulators:exec --config dist/firebase.csp-smoke.json --only firestore,auth,functions,storage,hosting --project demo-creativo-test \"pnpm nx run web:e2e-csp\"",
+    "verify:runbook": "pnpm nx run verify-tools:runbook-gates",
     "preflight": "node tools/verify/preflight/preflight.mjs",
     "icons:glyphs": "node tools/icons/build-material-glyphs.mjs",
     "icons:check": "node tools/icons/check-icon-usage.mjs"

@@ -2618,7 +2618,7 @@ gates keep their reference counts.
 | WS-B — login / OTP audit rows | PB1, PB2, PB3                        | GREEN  | (C_B)      | §8.B        |
 | WS-C — GDPR export            | PC1, PC2, PC4, PC3, PC5              | GREEN  | (C_C)      | §8.C        |
 | WS-D — GDPR erasure           | PD1, PD2a, PD3b, PD2b, PD4, PD3, PD5 | GREEN  | (C_D)      | §8.D        |
-| WS-E — CI pipeline            | PE1, PE2                             | TODO   |            |             |
+| WS-E — CI pipeline            | PE1, PE2                             | GREEN  | (C_E)      | §8.E        |
 | Review round 1                | fixer                                | TODO   |            |             |
 | Review round 2 + FULL gate    | fixer                                | TODO   |            |             |
 
@@ -2769,6 +2769,32 @@ gates keep their reference counts.
   restating them. **Owner (§7):** the runbook §3 service-account roles
   (Firebase Authentication Admin + Storage Object Admin, or Editor) are
   confirmed on the real project before deploy.
+
+### 8.E C_E — WS-E the CI pipeline (2026-10-28)
+
+- **Built** by PE1 ‖ PE2. Integrator edit: `tools/verify/project.json`'s
+  test inputs widened (`apps/web/e2e/**/*.ts`, the CSP config, the web
+  project and tsconfigs, `@playwright/test`). Accepted deviations: `main`
+  times out at 75 min (sized on the baseline's cold typecheck and test);
+  the e2e report uploads on `!cancelled()` (a flaky pass keeps its trace);
+  `main` keeps its own install steps; the runner skips headings inside a
+  fence and refuses an explicit §4.0 / §4.6 / unknown section with exit 2.
+- **Orchestrator edit at the gate:** run under `nx run`, the committed
+  runner FAILED §4.9 (6 FAIL) where the scratch extractor passed: Nx forces
+  colour into its tasks, and the nested `nx lint` printed ANSI codes
+  around the canary count the gate parses. `gateEnvOf` (in
+  `runbook-gates.mjs`, spec'd) runs every gate with `NO_COLOR=1` and no
+  `FORCE_COLOR`. After it, `pnpm nx run verify-tools:runbook-gates` equals
+  the extractor section for section: §4.2 28 · §4.3 22 · §4.4 17 · §4.5 6
+  · §4.7 24 · §4.8 27 · §4.9 25 · §4.10 20, 0 FAIL, 0 ERROR (96 s).
+- **Checks:** typecheck 40/40; layering; sync; lint `verify-tools`, `web`
+  0 errors; `verify-tools` 223 (+45) and `web` 57 green; prettier;
+  `node --check`; `CREATIVO_E2E_SCREENSHOTS` only in `ci.yml` (the e2e job)
+  and `playwright.config.mts`; name check 0.
+- **Order:** C_E is committed and pushed BEFORE its full local gate (a
+  departure from §3's boundary): the seven jobs can only be proven on
+  GitHub's runners, so they run while the FULL gate (§6.1) runs here on
+  the same tree; a regression either finds is fixed in its own commit.
 
 Statuses: TODO / IN-PROGRESS / GREEN / BLOCKED. On resume, continue from
 the first non-GREEN row; never redo a GREEN one. The records (the Phase

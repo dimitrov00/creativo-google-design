@@ -19,7 +19,7 @@ async function gotoWithTheme(
   await page.goto(path);
 }
 
-test.describe('auth — screenshot baseline', () => {
+test.describe('auth — screenshot baseline', { tag: '@screenshot' }, () => {
   for (const theme of THEMES) {
     // The welcome interstitial is retired (auth-flow design §1.5) — the
     // flow opens directly on identify, which now carries the brand trio.
