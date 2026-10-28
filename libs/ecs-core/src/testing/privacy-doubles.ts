@@ -81,7 +81,11 @@ import type {
   ClientFootprintPorts,
   ObjectEraserPorts,
 } from '@core/ports';
-import { type ClientFootprint, ClientStatsSystem } from '@core/systems';
+import {
+  AppointmentIndexSystem,
+  type ClientFootprint,
+  ClientStatsSystem,
+} from '@core/systems';
 import { appointmentFixture, seatFixture } from './appointment.fixtures';
 import { cents, EUR } from './booking-core.fixtures';
 import {
@@ -180,6 +184,12 @@ export function memoryClientFootprintPorts(
           .filter((visit) => visit.subjectCustomerIds.includes(customerId))
           .slice(0, limit),
       ),
+    listVisitsByContact: async (contact, limit) =>
+      Result.ok(
+        visits
+          .filter((visit) => carriesContact(visit, contact))
+          .slice(0, limit),
+      ),
     loadVisitNotes: async (appointmentIds) =>
       Result.ok(notes.filter((note) => appointmentIds.includes(note.id))),
     listPhotosOfClient: async (clientCustomerId, limit) =>
@@ -241,6 +251,12 @@ export function memoryClientFootprintPorts(
   };
 }
 
+/** `ListVisitsByContact`'s two equalities: the visit's contact phone or e-mail is the value. */
+function carriesContact(visit: Appointment, contact: Identifier): boolean {
+  const value: string = contact;
+  return visit.contactPhone === value || visit.contactEmail === value;
+}
+
 /** Every entity stored directly under `collection` (`{collection}/{id}`), in the store's insertion order. */
 function storedIn<E>(store: MemoryStore, collection: string): readonly E[] {
   const prefix = `${collection}/`;
@@ -289,6 +305,12 @@ export function storeClientFootprintPorts(
       listed<Appointment>(
         Collections.Appointments,
         (visit) => visit.subjectCustomerIds.includes(customerId),
+        limit,
+      ),
+    listVisitsByContact: (contact, limit) =>
+      listed<Appointment>(
+        Collections.Appointments,
+        (visit) => carriesContact(visit, contact),
         limit,
       ),
     loadVisitNotes: async (appointmentIds) => {
@@ -421,15 +443,17 @@ export function memoryCallerRolesPorts(
  * data only, mutated IN PLACE by the eraser doubles, and ONE ordered log of
  * every call those doubles answered (`loadAuthRoles:<uid>`,
  * `deleteAuthUser:<uid>`, `deleteStoredObject:<path>`,
- * `deleteStoredPrefix:<prefix>`) — a spec may push its own entries (a
- * wrapped commit) into the same log to read the order of the erasure's
- * impure steps.
+ * `deleteStoredPrefix:<prefix>`, `clearStoredLabel:<path>`) — a spec may
+ * push its own entries (a wrapped commit) into the same log to read the
+ * order of the erasure's impure steps.
  */
 export type ErasureStores = {
   /** Each existing Auth user's custom-claim roles (`[]` for a client's). */
   readonly authUsers: Map<UserId, readonly Role[]>;
   /** Every existing Storage object path. */
   readonly objects: Set<string>;
+  /** The `clientLabel` custom metadata of the objects that carry one, by path. */
+  readonly labels: Map<string, string>;
   readonly calls: string[];
 };
 
@@ -440,22 +464,25 @@ export type ErasureStoresScript = {
   /** `deleteAuthUser` answers `PIPELINE_UNAVAILABLE` (`auth/internal-error`). */
   readonly authDeleteFailing?: boolean;
   /**
-   * Object paths whose delete answers `REPOSITORY_WRITE_FAILED`
-   * (`storage/internal`) — a prefix delete fails when it would reach one.
+   * Object paths whose delete or label clear answers
+   * `REPOSITORY_WRITE_FAILED` (`storage/internal`) — a prefix delete fails
+   * when it would reach one.
    */
   readonly failingPaths?: readonly string[];
 };
 
-/** The stores an erasure starts from — no Auth user and no object when omitted. */
+/** The stores an erasure starts from — no Auth user, no object and no label when omitted. */
 export function memoryErasureStores(
   seed: {
     readonly authUsers?: ReadonlyMap<UserId, readonly Role[]>;
     readonly objects?: Iterable<string>;
+    readonly labels?: ReadonlyMap<string, string>;
   } = {},
 ): ErasureStores {
   return {
     authUsers: new Map(seed.authUsers ?? []),
     objects: new Set(seed.objects ?? []),
+    labels: new Map(seed.labels ?? []),
     calls: [],
   };
 }
@@ -499,7 +526,8 @@ export function memoryAuthEraserPorts(
 
 /**
  * `ObjectEraserPorts` — one object deleted by its path (one already gone is
- * ok), or every object under a prefix, answering how many were listed.
+ * ok), every object under a prefix (answering how many were listed), or one
+ * object's `clientLabel` cleared (no label, or no object, is ok).
  */
 export function memoryObjectEraserPorts(
   stores: ErasureStores,
@@ -513,6 +541,13 @@ export function memoryObjectEraserPorts(
       stores.calls.push(`deleteStoredObject:${path}`);
       if (failing.includes(path)) return failure(path);
       stores.objects.delete(path);
+      stores.labels.delete(path);
+      return Result.ok(undefined);
+    },
+    clearStoredLabel: async (path) => {
+      stores.calls.push(`clearStoredLabel:${path}`);
+      if (failing.includes(path)) return failure(path);
+      stores.labels.delete(path);
       return Result.ok(undefined);
     },
     deleteStoredPrefix: async (prefix) => {
@@ -521,7 +556,10 @@ export function memoryObjectEraserPorts(
         path.startsWith(prefix),
       );
       if (listed.some((path) => failing.includes(path))) return failure(prefix);
-      for (const path of listed) stores.objects.delete(path);
+      for (const path of listed) {
+        stores.objects.delete(path);
+        stores.labels.delete(path);
+      }
       return Result.ok(listed.length);
     },
   };
@@ -654,7 +692,8 @@ function photo(
     height: null,
     photoOrigin,
     label: null,
-    path: `appointmentPhotos/${appointmentId}/${id}.jpg`,
+    // The object a SHOT photo owns — `uploadPhotoBytes`' own layout.
+    path: `appointmentPhotos/${appointmentId}/${id}`,
     url,
   };
 }
@@ -1188,4 +1227,66 @@ export function privacyWorld(): PrivacyWorld {
     ]),
     personFootprint,
   };
+}
+
+// ── A visit that kept a removed person's contact (P3-DEP-28) ──────────────
+
+/**
+ * A visit as a staff edit leaves it once `REMOVE_SEAT` took `seatId`: the
+ * seats without it and the query mirrors (`ownerUserId`, `ownerCustomerId`,
+ * `subjectCustomerIds`, …) recomputed by
+ * `AppointmentIndexSystem.withQueryKeys` — the edit pipeline's own write —
+ * every other field, the `BookingContact` included, as stored.
+ */
+export function withSeatRemoved(
+  visit: Appointment,
+  seatId: SeatId,
+): Appointment {
+  return AppointmentIndexSystem.withQueryKeys({
+    ...visit,
+    seats: visit.seats.filter((seat) => seat.seatId !== seatId),
+  });
+}
+
+/** The seat {@link personsParty} seats P on — P's own, the booker's SELF seat. */
+export const PERSONS_PARTY_SELF_SEAT = SeatId.of('seat-p-party-self');
+
+/**
+ * P's own booking of a party — P's SELF seat and Q on a companion seat, P's
+ * contact (name, phone, e-mail, note) on the visit — the visit a desk edit
+ * may strip of P's seat ({@link withSeatRemoved}) while keeping P's contact.
+ */
+export function personsParty(world: PrivacyWorld): Appointment {
+  const p = world.person;
+  const q = world.other;
+  return appointmentFixture({
+    id: AppointmentId.of('appt-p-party'),
+    ownerUserId: p.userId,
+    subjectUserIds: [p.userId, q.userId].sort(),
+    ownerCustomerId: p.customerId,
+    subjectCustomerIds: [p.customerId, q.customerId].sort(),
+    seats: [
+      seatFixture({
+        seatId: PERSONS_PARTY_SELF_SEAT,
+        occupant: SeatOccupant.account(
+          p.userId,
+          p.customerId,
+          SubjectRelationship.Self,
+        ),
+      }),
+      seatFixture({
+        seatId: SeatId.of('seat-q-party-companion'),
+        occupant: SeatOccupant.account(
+          q.userId,
+          q.customerId,
+          SubjectRelationship.Companion,
+        ),
+      }),
+    ],
+    contactName: PRIVACY_SENTINELS.name,
+    contactPhone: PRIVACY_SENTINELS.phone,
+    contactEmail: PRIVACY_SENTINELS.email,
+    contactNote: PRIVACY_SENTINELS.contactNote,
+    utcEpochMs: daysAgo(2),
+  });
 }

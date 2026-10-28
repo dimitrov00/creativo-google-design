@@ -1,8 +1,11 @@
 import {
   type BookingContact,
+  type ClientPrivacyCall,
   ErasureOffer,
   ErasureStatus,
+  Identifier,
   type Seat,
+  type SeatOccupant,
   SeatSubject,
 } from '@core/components';
 import { PrivacyError } from '@core/errors';
@@ -10,7 +13,6 @@ import {
   type AppointmentId,
   CustomerId,
   Result,
-  type SeatId,
   type UserId,
 } from '@core/primitives';
 import type {
@@ -39,12 +41,14 @@ export type ClientPerson = {
  * P3-RU-18, P3-RU-36, P3-L-11, P3-L-12). Pure (Law 3): documents as stored
  * in, a yes / no or the person's ids out; the keyed digest a walk-in's
  * record id is derived with is a parameter (`WalkInKeyPorts.walkInHash`,
- * never the plain hash — its input is a person's contact). Nothing here
- * reads a value to compare it with the person's: the visit's own contact is
- * recognised by the id it derives, so the rule still answers once the
- * record's values are gone. The erasure's own decisions live in
- * `ClientErasureSystem`; the first three below are shared by every privacy
- * callable and the admin's card (P3-RU-37 (h), P3-L-7, P3-L-19).
+ * never the plain hash — its input is a person's contact). A visit's own
+ * contact is recognised by the ids it derives — which still answer once the
+ * record's values are gone — and, while the record and the account still
+ * hold them, by the person's contact VALUES too (P3-DEP-28: a visit may
+ * carry the person's contact without seating them). The erasure's own
+ * decisions live in `ClientErasureSystem`; the link, the contact values,
+ * the siblings and the offer below are shared by every privacy callable and
+ * the admin's card (P3-RU-37 (h), P3-L-7, P3-L-19).
  */
 export const ClientPrivacySystem = {
   /**
@@ -72,36 +76,71 @@ export const ClientPrivacySystem = {
   },
 
   /**
-   * The walk-in record ids the person's contact values derive (P3-L-7):
-   * `CustomerId.forWalkIn` of the record's phone, the record's e-mail, the
-   * account's phone and the account's e-mail — each non-null value once, in
-   * that order — the record itself excluded. Ids only (an admin-only
-   * answer): the pipeline reads which of them exist, and the card offers
-   * each as its own act; none is ever merged into this person's erasure (two
-   * people sharing a phone share a walk-in record, OR-26). `walkInHash` is
-   * the keyed digest (`WalkInKeyPorts.walkInHash`) — its input is a contact.
-   * Once the stamp has cleared the values, nothing derives: `[]`.
+   * THE PERSON'S CONTACT VALUES — the record's phone, the record's e-mail,
+   * the account's phone and the account's e-mail, each non-null value once,
+   * in that order: what the erasure's sweeps find a challenge or a visit
+   * contact by (P3-RU-21, P3-DEP-28), what the export finds a visit contact
+   * by, and what the sibling records derive from (P3-L-7). `[]` once the
+   * stamp has cleared them.
    */
-  siblingIdsOf(
-    person: ClientPerson,
-    walkInHash: (input: string) => string,
-  ): readonly CustomerId[] {
+  contactValuesOf(person: ClientPerson): readonly Identifier[] {
     const record = person.record;
     const account = person.account;
-    const keys: readonly (string | null)[] = [
+    const values: readonly (string | null)[] = [
       record.phone,
       record.email,
       account === null ? null : account.phone,
       account === null ? null : account.email,
     ];
-    const out: CustomerId[] = [];
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i] ?? null;
-      if (key === null) continue;
-      const id = CustomerId.forWalkIn(key, walkInHash);
-      if (id !== record.id && !out.includes(id)) out.push(id);
+    const out: Identifier[] = [];
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i] ?? null;
+      if (value === null) continue;
+      const identifier = Identifier.of(value);
+      if (!out.includes(identifier)) out.push(identifier);
     }
     return out;
+  },
+
+  /**
+   * The walk-in record ids the person's contact values derive (P3-L-7):
+   * `CustomerId.forWalkIn` of each of
+   * {@link ClientPrivacySystem.contactValuesOf}, in that order, each once —
+   * the record itself excluded. Ids only (an admin-only answer): the
+   * pipeline reads which of them exist, and the card offers each as its own
+   * act; none is ever merged into this person's erasure (two people sharing
+   * a phone share a walk-in record, OR-26). `walkInHash` is the keyed digest
+   * (`WalkInKeyPorts.walkInHash`) — its input is a contact. Once the stamp
+   * has cleared the values, nothing derives: `[]`.
+   */
+  siblingIdsOf(
+    person: ClientPerson,
+    walkInHash: (input: string) => string,
+  ): readonly CustomerId[] {
+    const values = ClientPrivacySystem.contactValuesOf(person);
+    const out: CustomerId[] = [];
+    for (let i = 0; i < values.length; i++) {
+      const id = CustomerId.forWalkIn(values[i] as Identifier, walkInHash);
+      if (id !== person.record.id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  },
+
+  /**
+   * The sibling records the admin's card keeps after a preview of its OWN
+   * record (P3-L-7, Law 10.2): the preview's list while the record is
+   * `NONE` — the only state whose contact values still derive one, so even
+   * its `[]` replaces the list — else the list the card kept from before
+   * the stamp (an `ERASING` or `ERASED` record's preview names none, and its
+   * siblings must still be erased from the same card session).
+   */
+  siblingsAfterPreview(
+    kept: readonly CustomerId[],
+    preview: ClientPrivacyCall.ErasurePreview,
+  ): readonly CustomerId[] {
+    return preview.erasureStatus === ErasureStatus.None
+      ? preview.erasureSiblingCustomerIds
+      : kept;
   },
 
   /**
@@ -147,17 +186,17 @@ export const ClientPrivacySystem = {
   },
 
   /**
-   * Whether the visit's {@link BookingContact} is PROVABLY the person's
-   * (P3-L-12, P3-RU-36): the visit's owner is the person's record, or the
-   * person's linked account, or the contact derives the person's record
-   * under the walk-in key (`CustomerId.forWalkIn(contactKeyOf(visit),
-   * walkInHash) === record.id` — a staff booking with no account seats its
-   * FIRST walk-in's contact on the visit, `staff-edit-plan.system.ts`). A
-   * visit with no contact is nobody's. Sole-subject is NOT an arm: the
-   * export withholds a contact it cannot prove (a sole-subject visit may
-   * carry a third person's number); the erasure adds that arm on its side.
+   * Whether the visit's ids PROVE its {@link BookingContact} is the
+   * person's — the value-free arms of
+   * {@link ClientPrivacySystem.contactIsPersons}, which still answer once
+   * the stamp has cleared the person's values: the visit's owner is the
+   * person's record, or the person's linked account, or the contact derives
+   * the person's record under the walk-in key
+   * (`CustomerId.forWalkIn(contactKeyOf(visit), walkInHash) === record.id` —
+   * a staff booking with no account seats its FIRST walk-in's contact on
+   * the visit, `staff-edit-plan.system.ts`).
    */
-  contactIsPersons(
+  contactProvedById(
     visit: Appointment,
     person: ClientPerson,
     walkInHash: (input: string) => string,
@@ -178,26 +217,54 @@ export const ClientPrivacySystem = {
   },
 
   /**
-   * The person's own walk-in seats — `seatSubject` WALK_IN naming
-   * `customerId` — in seat order: the seats whose label is the person's
-   * (an account seat carries no label; an anonymous one is nobody's).
+   * Whether the visit's contact phone or e-mail is one of the person's
+   * contact values ({@link ClientPrivacySystem.contactValuesOf}) — exactly
+   * what `ListVisitsByContact` finds a visit by (P3-DEP-28). `false` once
+   * the stamp has cleared the values. No allocation.
    */
-  ownWalkInSeatIds(
+  contactCarriesValueOf(visit: Appointment, person: ClientPerson): boolean {
+    return (
+      isContactValueOf(person, visit.contactPhone) ||
+      isContactValueOf(person, visit.contactEmail)
+    );
+  },
+
+  /**
+   * Whether the visit's {@link BookingContact} is the person's (P3-L-12,
+   * P3-RU-36, P3-DEP-28): its ids prove it
+   * ({@link ClientPrivacySystem.contactProvedById}), or it carries one of
+   * the person's contact values
+   * ({@link ClientPrivacySystem.contactCarriesValueOf} — a visit whose
+   * booker's seat a staff edit removed keeps the booker's contact). A visit
+   * with no contact is nobody's. Sole-subject is NOT an arm: the export
+   * withholds a contact it cannot prove (a sole-subject visit may carry a
+   * third person's number); the erasure adds that arm on its side.
+   */
+  contactIsPersons(
     visit: Appointment,
+    person: ClientPerson,
+    walkInHash: (input: string) => string,
+  ): boolean {
+    return (
+      ClientPrivacySystem.contactProvedById(visit, person, walkInHash) ||
+      ClientPrivacySystem.contactCarriesValueOf(visit, person)
+    );
+  },
+
+  /**
+   * THE ONE RULE of the person's own walk-in seat — `seatSubject` WALK_IN
+   * naming `customerId`: the seat whose label is the person's (an account
+   * seat carries no label; an anonymous one is nobody's). The erasure marks
+   * those labels, the export shows them as stored.
+   */
+  isOwnWalkInSeat(
+    seat: Seat,
     customerId: CustomerId,
-  ): readonly SeatId[] {
-    const out: SeatId[] = [];
-    const seats = visit.seats;
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as Seat;
-      if (
-        seat.seatSubject === SeatSubject.WalkIn &&
-        seat.subjectCustomerId === customerId
-      ) {
-        out.push(seat.seatId);
-      }
-    }
-    return out;
+  ): seat is Seat & SeatOccupant.WalkIn {
+    return (
+      seat.seatSubject === SeatSubject.WalkIn &&
+      seat.subjectCustomerId === customerId
+    );
   },
 
   /**
@@ -216,7 +283,36 @@ export const ClientPrivacySystem = {
     }
     return soleSubjectVisitIds.has(photo.appointmentId);
   },
+
+  /**
+   * Each document once, in the order read — the FIRST read of an id wins
+   * (two footprint reads may meet one document). The input untouched.
+   */
+  distinct<E extends { readonly id: string }>(
+    documents: readonly E[],
+  ): readonly E[] {
+    const seen = new Set<string>();
+    const out: E[] = [];
+    for (let i = 0; i < documents.length; i++) {
+      const document = documents[i] as E;
+      if (seen.has(document.id)) continue;
+      seen.add(document.id);
+      out.push(document);
+    }
+    return out;
+  },
 } as const;
+
+/** Whether `value` is one of the person's contact values — the record's or the account's phone or e-mail. */
+function isContactValueOf(person: ClientPerson, value: string | null): boolean {
+  if (value === null) return false;
+  const record = person.record;
+  if (value === record.phone || value === record.email) return true;
+  const account = person.account;
+  return (
+    account !== null && (value === account.phone || value === account.email)
+  );
+}
 
 /** Whether a seat is the person's record — an account or walk-in seat naming it. */
 function isPersonsSeat(seat: Seat, customerId: CustomerId): boolean {

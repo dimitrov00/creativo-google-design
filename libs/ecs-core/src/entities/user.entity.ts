@@ -28,9 +28,10 @@ export type UserMeta = {
   /**
    * When the owner last edited their profile through `updateProfile` — a
    * lifecycle stamp (Law 7.3 T2), `null` on the provisioned stub and on
-   * registration. The callable writes the audit row itself, inside its
-   * transaction; the `auditProfileChanges` trigger skips the event in which
-   * this stamp changed (owner ruling flip-2 §10.15, Phase 4a 4A-16).
+   * registration, and reset to `null` by the erasure's stamp (WS-D). The
+   * callable writes the audit row itself, inside its transaction; the
+   * `auditProfileChanges` trigger skips the event in which this stamp
+   * changed (owner ruling flip-2 §10.15, Phase 4a 4A-16).
    */
   readonly profileEditedAtUtcMs: UtcEpochMs | null;
 };
@@ -50,11 +51,12 @@ export type AccountContact = {
 
 /**
  * The archetype of `users/{uid}` — **flat** (Law 6): the identity slice, the
- * account lifecycle (`accountStatus`, and a block's `blockReason` /
- * `blockedUntilUtcMs`, at the root) and the clientele search keys. One type
- * for both stored states: the `PROVISIONED` stub (`verifyOtp`'s first
- * sign-in, `RegistrationSystem.provision`) is created with EVERY key
- * present and the `REGISTERED` body `completeRegistration` sets over it
+ * account lifecycle (`accountStatus`, a block's `blockReason` /
+ * `blockedUntilUtcMs`, or the terminal erasure's `accountErasedAtUtcMs`, at
+ * the root) and the clientele search keys. One type for both stored
+ * states: the `PROVISIONED` stub (`verifyOtp`'s first sign-in,
+ * `RegistrationSystem.provision`) is created with EVERY key present and
+ * the `REGISTERED` body `completeRegistration` sets over it
  * (`RegistrationSystem.register`). The document body is this type minus
  * `id`, byte for byte — the server's `WriteOp` plans and the web's
  * `snap.data()` read and write it as is, with no mapper.

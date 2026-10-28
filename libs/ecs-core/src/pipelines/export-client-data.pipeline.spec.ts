@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   Actor,
+  BookingContact,
   ClientPrivacyCall,
   FlagName,
+  Identifier,
   RedemptionCount,
   Role,
   WriteAction,
@@ -32,12 +34,15 @@ import {
   memoryStore,
   memoryTxPorts,
   OTHER_SENTINELS,
+  PERSONS_PARTY_SELF_SEAT,
+  personsParty,
   PRIVACY_SENTINELS,
   type PrivacyWorld,
   privacyWorld,
   recordingTelemetry,
   unwrapErr,
   unwrapOk,
+  withSeatRemoved,
 } from '@core/testing';
 import { ClientExportSystem, EXPORT_MAX_DOCUMENTS } from '@core/systems';
 import {
@@ -59,6 +64,7 @@ const READS = new Set([
   'loadClientRecord',
   'loadProfile',
   'listClientVisits',
+  'listVisitsByContact',
   'loadVisitNotes',
   'listPhotosOfClient',
   'listVisitPhotos',
@@ -393,6 +399,73 @@ describe('exportClientData — the reads', () => {
       EXPORT_MAX_DOCUMENTS + 1,
     ]);
     expect(visitIds).toEqual([[world.visits.solo.id], [world.visits.solo.id]]);
+  });
+
+  it('reads the visits carrying each of the person’s contact values, with the cap + 1 (P3-DEP-28)', async () => {
+    const asked: [string, number][] = [];
+    const world = privacyWorld();
+    const footprint = memoryClientFootprintPorts(world.state);
+    const r = rig(
+      {
+        listVisitsByContact: async (contact, limit) => {
+          asked.push([contact, limit]);
+          return footprint.listVisitsByContact(contact, limit);
+        },
+      },
+      { world },
+    );
+    unwrapOk(await r.run());
+    expect(asked).toEqual([
+      [Identifier.of(PRIVACY_SENTINELS.phone), EXPORT_MAX_DOCUMENTS + 1],
+      [Identifier.of(PRIVACY_SENTINELS.email), EXPORT_MAX_DOCUMENTS + 1],
+    ]);
+  });
+
+  it('a visit that kept P’s contact without seating P — the desk removed P’s seat — is in P’s bundle, with P’s contact; its note is not (P3-DEP-28)', async () => {
+    const world = privacyWorld();
+    const removed = withSeatRemoved(
+      personsParty(world),
+      PERSONS_PARTY_SELF_SEAT,
+    );
+    const note = {
+      id: removed.id,
+      text: OTHER_SENTINELS.note,
+      authorUserId: world.barber,
+      writtenAtUtcMs: FIXTURE_NOW_UTC_MS,
+    };
+    const state = {
+      ...world.state,
+      visits: [...world.state.visits, removed],
+      notes: [...world.state.notes, note],
+    };
+    const r = rig(memoryClientFootprintPorts(state), { world });
+    const answer = unwrapOk(await r.run());
+    const bundle = JSON.parse(answer.exportJson) as {
+      readonly appointments: readonly Record<string, unknown>[];
+      readonly appointmentNotes: readonly Record<string, unknown>[];
+    };
+    const exported = bundle.appointments.find(
+      (visit) => visit['id'] === removed.id,
+    );
+    expect(exported).toMatchObject({
+      ...BookingContact.of(removed),
+      subjectCustomerIds: [world.other.customerId],
+    });
+    expect(bundle.appointmentNotes.map((entry) => entry['id'])).not.toContain(
+      removed.id,
+    );
+    // Q's own export never shows P's contact on it: Q's values do not match it.
+    const forQ = unwrapOk(
+      await rig(memoryClientFootprintPorts(state), { world }).run({
+        customerId: world.other.customerId,
+      }),
+    );
+    const qBundle = JSON.parse(forQ.exportJson) as {
+      readonly appointments: readonly Record<string, unknown>[];
+    };
+    expect(
+      qBundle.appointments.find((visit) => visit['id'] === removed.id),
+    ).toMatchObject(BookingContact.NONE);
   });
 
   it('a record that links no account reads no account-keyed list and no account timeline', async () => {

@@ -351,7 +351,7 @@ export const appConfig: ApplicationConfig = {
           inject(DOCUMENT),
         ),
     },
-    // An admin's data-subject callables (the staff client card's export),
+    // An admin's data-subject callables (the staff client card's export and erasure),
     // over the same callable client.
     {
       provide: CLIENT_PRIVACY_PORTS,

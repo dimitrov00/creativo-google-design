@@ -5,45 +5,83 @@ import type { AdminBucket } from '../lib/firebase-admin';
 import { storageObjectPorts } from './storage-objects.adapter';
 
 /*
- * The erasure's Storage deletions (audit-hardening Phase 3, WS-D, §4 PD3)
- * over a fake bucket: one object deleted with `ignoreNotFound`; a prefix
- * LISTED, then each listed object deleted, the count the list's length;
- * a failure carries the canonical CODE and the path (ids only) — never the
- * SDK's message.
+ * The erasure's Storage writes (audit-hardening Phase 3, WS-D, §4 PD3) over
+ * a fake bucket: one object deleted with `ignoreNotFound`; a prefix LISTED,
+ * then each listed object deleted, the count the list's length; a KEPT
+ * object's `clientLabel` custom metadata removed, every other key kept (a
+ * `LIBRARY` photo's picture, P3-DEP-31); a failure carries the canonical
+ * CODE and the path (ids only) — never the SDK's message.
  */
 
 type FakeFile = {
   readonly name: string;
   readonly delete: ReturnType<typeof vi.fn>;
+  readonly getMetadata: ReturnType<typeof vi.fn>;
+  readonly setMetadata: ReturnType<typeof vi.fn>;
 };
 
 type FakeBucket = {
   readonly objects: Map<string, FakeFile>;
+  /** Each object's custom metadata (`metadata.metadata`), by path. */
+  readonly custom: Map<string, Record<string, string>>;
   readonly file: ReturnType<typeof vi.fn>;
   readonly getFiles: ReturnType<typeof vi.fn>;
 };
 
-/** A bucket holding `paths`; deleting an object removes it (absent with `ignoreNotFound` is no failure). */
-function fakeBucket(paths: readonly string[]): FakeBucket {
+const noSuchObject = (name: string): Error =>
+  Object.assign(new Error(`No such object: ${name}`), { code: 404 });
+
+/**
+ * A bucket holding `paths`; deleting an object removes it (absent with
+ * `ignoreNotFound` is no failure); its custom metadata read and patched as
+ * the JSON API does — a key set to `null` is removed, the rest merged.
+ */
+function fakeBucket(
+  paths: readonly string[],
+  custom: Readonly<Record<string, Record<string, string>>> = {},
+): FakeBucket {
   const objects = new Map<string, FakeFile>();
+  const metadata = new Map<string, Record<string, string>>(
+    Object.entries(custom).map(([path, keys]) => [path, { ...keys }]),
+  );
   const fileOf = (name: string): FakeFile => {
     const file: FakeFile = {
       name,
       delete: vi.fn(async (options?: { readonly ignoreNotFound?: boolean }) => {
         if (!objects.has(name) && options?.ignoreNotFound !== true) {
-          throw Object.assign(new Error(`No such object: ${name}`), {
-            code: 404,
-          });
+          throw noSuchObject(name);
         }
         objects.delete(name);
+        metadata.delete(name);
         return [{}];
       }),
+      getMetadata: vi.fn(async () => {
+        if (!objects.has(name)) throw noSuchObject(name);
+        const keys = metadata.get(name);
+        return [keys === undefined ? { name } : { name, metadata: keys }];
+      }),
+      setMetadata: vi.fn(
+        async (patch: {
+          readonly metadata: Readonly<Record<string, string | null>>;
+        }) => {
+          if (!objects.has(name)) throw noSuchObject(name);
+          const merged = new Map(Object.entries(metadata.get(name) ?? {}));
+          for (const [key, value] of Object.entries(patch.metadata)) {
+            if (value === null) merged.delete(key);
+            else merged.set(key, value);
+          }
+          const next = Object.fromEntries(merged);
+          metadata.set(name, next);
+          return [{ name, metadata: next }];
+        },
+      ),
     };
     return file;
   };
   for (const path of paths) objects.set(path, fileOf(path));
   return {
     objects,
+    custom: metadata,
     file: vi.fn((name: string) => objects.get(name) ?? fileOf(name)),
     getFiles: vi.fn(async (query: { readonly prefix: string }) => [
       [...objects.values()].filter((file) =>
@@ -63,7 +101,8 @@ const storageError = (code: string | number): Error =>
     { code },
   );
 
-const SHOT = 'appointmentPhotos/appt-p-solo/photo-p-shot.jpg';
+const SHOT = 'appointmentPhotos/appt-p-solo/photo-p-shot';
+const LIBRARY = 'appointmentPhotos/appt-q-party/photo-p-library';
 const AVATAR = 'avatars/u-erased/avatar.jpg';
 const AVATAR_THUMB = 'avatars/u-erased/thumb.jpg';
 const OTHER_AVATAR = 'avatars/u-erased-not/avatar.jpg';
@@ -74,6 +113,7 @@ describe('storage-objects adapter', () => {
       asBucket(fakeBucket([])),
     );
     expect(Object.keys(ports).sort()).toEqual([
+      'clearStoredLabel',
       'deleteStoredObject',
       'deleteStoredPrefix',
     ]);
@@ -196,6 +236,91 @@ describe('storage-objects adapter', () => {
         },
       });
       expect(JSON.stringify(result)).not.toContain(PRIVACY_SENTINELS.email);
+    });
+  });
+
+  describe('clearStoredLabel', () => {
+    it('removes the clientLabel key of a KEPT object — the object stays, every other key kept', async () => {
+      const bucket = fakeBucket([LIBRARY, SHOT], {
+        [LIBRARY]: {
+          clientLabel: PRIVACY_SENTINELS.label,
+          appointmentId: 'appt-q-party',
+        },
+        [SHOT]: { clientLabel: 'Other Label' },
+      });
+      const ports = storageObjectPorts(asBucket(bucket));
+      expect(await ports.clearStoredLabel(LIBRARY)).toEqual({
+        ok: true,
+        value: undefined,
+      });
+      expect(bucket.objects.has(LIBRARY)).toBe(true);
+      expect(bucket.custom.get(LIBRARY)).toEqual({
+        appointmentId: 'appt-q-party',
+      });
+      const file = bucket.objects.get(LIBRARY);
+      expect(file?.setMetadata).toHaveBeenCalledWith({
+        metadata: { clientLabel: null },
+      });
+      // Another object's label is untouched.
+      expect(bucket.custom.get(SHOT)).toEqual({ clientLabel: 'Other Label' });
+    });
+
+    it('is idempotent: an object without the label (or an empty one) writes nothing; no object at the path is done', async () => {
+      const bucket = fakeBucket([LIBRARY, SHOT], {
+        [SHOT]: { clientLabel: '' },
+      });
+      const ports = storageObjectPorts(asBucket(bucket));
+      for (const path of [LIBRARY, SHOT, 'media/services/gone.jpg']) {
+        expect(await ports.clearStoredLabel(path), path).toEqual({
+          ok: true,
+          value: undefined,
+        });
+      }
+      for (const file of bucket.objects.values()) {
+        expect(file.setMetadata).not.toHaveBeenCalled();
+      }
+      expect([...bucket.objects.keys()].sort()).toEqual([LIBRARY, SHOT].sort());
+    });
+
+    it('answers a failure as writeFailed(path, canonical code) — never the message', async () => {
+      const bucket = fakeBucket([LIBRARY], {
+        [LIBRARY]: { clientLabel: PRIVACY_SENTINELS.label },
+      });
+      bucket.objects
+        .get(LIBRARY)
+        ?.setMetadata.mockRejectedValueOnce(storageError('permission-denied'));
+      const result = await storageObjectPorts(
+        asBucket(bucket),
+      ).clearStoredLabel(LIBRARY);
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          errorCode: RepositoryErrorCode.WriteFailed,
+          path: LIBRARY,
+          reason: 'permission-denied',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain(PRIVACY_SENTINELS.email);
+      expect(JSON.stringify(result)).not.toContain(PRIVACY_SENTINELS.label);
+    });
+
+    it('answers a path the SDK refuses to name as a failure, never a throw', async () => {
+      const bucket = fakeBucket([]);
+      bucket.file.mockImplementationOnce(() => {
+        throw Object.assign(new Error('A file name must be specified.'), {
+          code: 'storage/invalid-argument',
+        });
+      });
+      expect(
+        await storageObjectPorts(asBucket(bucket)).clearStoredLabel(''),
+      ).toEqual({
+        ok: false,
+        error: {
+          errorCode: RepositoryErrorCode.WriteFailed,
+          path: '',
+          reason: 'invalid-argument',
+        },
+      });
     });
   });
 });

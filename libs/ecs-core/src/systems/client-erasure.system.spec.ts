@@ -25,6 +25,7 @@ import {
 import { PrivacyError } from '@core/errors';
 import {
   AppointmentId,
+  AppointmentPhotoId,
   AuditEntryId,
   AuditResourceId,
   CustomerId,
@@ -50,11 +51,14 @@ import {
   fixtureWalkInHash,
   OTHER_SENTINELS,
   otpFixture,
+  PERSONS_PARTY_SELF_SEAT,
+  personsParty,
   PRIVACY_SENTINELS,
   privacyWorld,
   seatFixture,
   utcMs,
   WALK_IN_SENTINELS,
+  withSeatRemoved,
 } from '@core/testing';
 import { AuditSystem } from './audit.system';
 import {
@@ -63,7 +67,10 @@ import {
   ERASURE_MAX_DOCUMENTS,
   type ErasureFootprint,
 } from './client-erasure.system';
-import { type ClientPerson } from './client-privacy.system';
+import {
+  type ClientPerson,
+  ClientPrivacySystem,
+} from './client-privacy.system';
 import { SearchFieldsSystem } from './search-fields.system';
 
 /* The erasure's pure half (audit-hardening Phase 3 WS-D, P3-RU-20…P3-RU-25,
@@ -290,6 +297,22 @@ describe('ClientErasureSystem.refusalOf — who may not be erased (P3-L-9, P3-L-
     },
   );
 
+  it('a linked uid with NO users document while its Auth user exists → refused (P3-DEP-29: production never sets custom claims, so nothing proves it no operator’s)', () => {
+    const person: ClientPerson = { record: pRecord, account: null };
+    // Production's shape: an Auth user with no custom claims.
+    expect(ClientErasureSystem.refusalOf(person, [], fixtureHash)).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    expect(
+      ClientErasureSystem.refusalOf(person, [Role.Client], fixtureHash),
+    ).toEqual(PrivacyError.erasureStaffAccount());
+  });
+
+  it('a linked uid with no users document AND no Auth user → passes (nothing to delete)', () => {
+    const person: ClientPerson = { record: pRecord, account: null };
+    expect(ClientErasureSystem.refusalOf(person, null, fixtureHash)).toBeNull();
+  });
+
   it('a userId the record id does not derive from → PRIVACY_ACCOUNT_LINK_MISMATCH, before any staff check', () => {
     const corrupt: ClientPerson = {
       record: { ...pRecord, userId: world.other.userId },
@@ -309,13 +332,13 @@ describe('ClientErasureSystem.refusalOf — who may not be erased (P3-L-9, P3-L-
   });
 });
 
-describe('ClientErasureSystem.destinationsOf / otpWrites — the challenges swept before the stamp (P3-RU-21)', () => {
+describe('ClientPrivacySystem.contactValuesOf / otpWrites — the challenges swept before the stamp (P3-RU-21)', () => {
   it('the record’s and the account’s contact values, each once, in order', () => {
-    expect(ClientErasureSystem.destinationsOf(personOf(P))).toEqual([
+    expect(ClientPrivacySystem.contactValuesOf(personOf(P))).toEqual([
       Identifier.of(PRIVACY_SENTINELS.phone),
       Identifier.of(PRIVACY_SENTINELS.email),
     ]);
-    expect(ClientErasureSystem.destinationsOf(personOf(W))).toEqual([
+    expect(ClientPrivacySystem.contactValuesOf(personOf(W))).toEqual([
       Identifier.of(WALK_IN_SENTINELS.phone),
     ]);
   });
@@ -325,7 +348,7 @@ describe('ClientErasureSystem.destinationsOf / otpWrites — the challenges swep
     const account = p.account;
     if (account === null) throw new Error('P has an account');
     expect(
-      ClientErasureSystem.destinationsOf({
+      ClientPrivacySystem.contactValuesOf({
         record: strippedRecord(p.record, ErasureLifecycle.begin(STARTED)),
         account: strippedAccount(account),
       }),
@@ -426,6 +449,41 @@ describe('ClientErasureSystem.census — what still holds a personal value (P3-R
       fixtureWalkInHash,
     );
     expect(census).toEqual(EXPECTED_P_CENSUS);
+  });
+
+  it('a visit found by P’s contact value that no longer seats P (a staff edit removed P’s seat): its contact counts, nothing else of it (P3-DEP-28)', () => {
+    const removed = withSeatRemoved(
+      personsParty(world),
+      PERSONS_PARTY_SELF_SEAT,
+    );
+    const census = ClientErasureSystem.census(
+      {
+        ...pFootprint(),
+        visits: [...pFootprint().visits, removed],
+        notes: [
+          ...pFootprint().notes,
+          { ...pFootprint().notes[0], id: removed.id } as AppointmentNote,
+        ],
+      },
+      fixtureWalkInHash,
+    );
+    expect(census).toEqual({
+      ...EXPECTED_P_CENSUS,
+      erasureContactCount: EXPECTED_P_CENSUS.erasureContactCount + 1,
+    });
+    // Its contact cleared by the sweep, the census finds nothing of it.
+    expect(
+      ClientErasureSystem.census(
+        {
+          ...pFootprint(),
+          visits: [
+            ...pFootprint().visits,
+            { ...removed, ...BookingContact.NONE },
+          ],
+        },
+        fixtureWalkInHash,
+      ),
+    ).toEqual(EXPECTED_P_CENSUS);
   });
 
   it('counts a document met by two reads once', () => {
@@ -778,6 +836,95 @@ describe('ClientErasureSystem.visitWrites — one visit’s patch (P3-L-12, P3-R
   });
 });
 
+describe('ClientErasureSystem.contactSweepWrites — the contacts swept BEFORE the stamp (P3-DEP-28)', () => {
+  const p = personOf(P);
+  const w = personOf(W);
+  const sweep = (visit: Appointment, person: ClientPerson) =>
+    ClientErasureSystem.contactSweepWrites(
+      visit,
+      person,
+      OPERATION,
+      fixtureWalkInHash,
+    );
+  // P booked [SELF P, COMPANION Q]; the desk removed P's seat — the edit
+  // pipeline's own write (`AppointmentIndexSystem.withQueryKeys`).
+  const removed = withSeatRemoved(personsParty(world), PERSONS_PARTY_SELF_SEAT);
+
+  it('a visit that no longer seats P but carries P’s contact: cleared to NONE under the erasure’s id — which visitWrites never reaches', () => {
+    expect(removed.subjectCustomerIds).not.toContain(P);
+    expect(sweep(removed, p)).toEqual([
+      WriteOp.update([Collections.Appointments, removed.id], {
+        ...BookingContact.NONE,
+        writeOperationId: OPERATION,
+      }),
+    ]);
+    expect(
+      ClientErasureSystem.visitWrites(
+        removed,
+        null,
+        p,
+        OPERATION,
+        fixtureWalkInHash,
+      ),
+    ).toEqual([]);
+  });
+
+  it('a staff party [WALK_IN W, ANONYMOUS] whose W seat was removed: W’s contact swept the same way', () => {
+    const left = withSeatRemoved(world.visits.walkInParty, SeatId.of('seat-w'));
+    expect(left.subjectCustomerIds).toEqual([]);
+    expect(sweep(left, w)).toEqual([
+      WriteOp.update([Collections.Appointments, left.id], {
+        ...BookingContact.NONE,
+        writeOperationId: OPERATION,
+      }),
+    ]);
+  });
+
+  it('P seated on a party another owns, P’s phone as its contact: swept — after the stamp no id would recognise it', () => {
+    const shared: Appointment = {
+      ...world.visits.party,
+      contactName: PRIVACY_SENTINELS.name,
+      contactPhone: PRIVACY_SENTINELS.phone,
+      contactEmail: null,
+    };
+    expect(sweep(shared, p)).toEqual([
+      WriteOp.update([Collections.Appointments, shared.id], {
+        ...BookingContact.NONE,
+        writeOperationId: OPERATION,
+      }),
+    ]);
+  });
+
+  it('nothing for a visit the stamp leaves recognisable, another person’s contact, no contact, or once the values are gone', () => {
+    // P's own solo visit: its ids prove the contact — visitWrites' after the stamp.
+    expect(sweep(world.visits.solo, p)).toEqual([]);
+    // W's staff party: the walk-in key proves it.
+    expect(sweep(world.visits.walkInParty, w)).toEqual([]);
+    // Q's contact on Q's party, for P.
+    expect(sweep(world.visits.party, p)).toEqual([]);
+    expect(sweep({ ...removed, ...BookingContact.NONE }, p)).toEqual([]);
+    const account = p.account;
+    if (account === null) throw new Error('P has an account');
+    expect(
+      sweep(removed, {
+        record: strippedRecord(p.record, ErasureLifecycle.begin(STARTED)),
+        account: strippedAccount(account),
+      }),
+    ).toEqual([]);
+  });
+
+  it('holds no personal value; is pure — same input, same output, inputs untouched', () => {
+    const frozen = deepFreeze(
+      withSeatRemoved(personsParty(world), PERSONS_PARTY_SELF_SEAT),
+    );
+    const person = deepFreeze(personOf(P));
+    const once = sweep(frozen, person);
+    expect(sweep(frozen, person)).toEqual(once);
+    expect(frozen).toEqual(removed);
+    expectNoSentinel(once, sentinelsOf(PRIVACY_SENTINELS));
+  });
+});
+
 describe('ClientErasureSystem.photoPlan — objects first, documents after (P3-L-10, P3-L-11)', () => {
   const sole = new Set([world.visits.solo.id]);
   const byId = (id: string) =>
@@ -798,9 +945,53 @@ describe('ClientErasureSystem.photoPlan — objects first, documents after (P3-L
       WriteOp.remove([Collections.AppointmentPhotos, 'photo-p-library']),
       WriteOp.remove([Collections.AppointmentPhotos, 'photo-p-nobody']),
     ]);
-    // The library picture's object is the shop's: its document goes, its bytes stay.
+    // The library picture's object is the shop's: its document goes, its
+    // bytes stay — its `clientLabel` metadata cleared first (P3-DEP-31).
     expect(byId('photo-p-library').photoOrigin).toBe(PhotoOrigin.Library);
     expect(plan.objectPaths).not.toContain(byId('photo-p-library').path);
+    expect(plan.labelPaths).toEqual([byId('photo-p-library').path]);
+  });
+
+  it('a SHOT document naming P whose path is not its own object — the shop’s media, another’s avatar, another visit’s shot, empty: the document goes, Storage is never handed the path (P3-DEP-30)', () => {
+    const forged = (id: string, path: string): AppointmentPhoto => ({
+      ...byId('photo-p-shot'),
+      id: AppointmentPhotoId.of(id),
+      path,
+    });
+    const photos = [
+      forged('photo-forged-media', 'media/services/cover.jpg'),
+      forged('photo-forged-avatar', 'avatars/u-other/original'),
+      forged('photo-forged-shot', byId('photo-q-shot').path),
+      forged('photo-forged-empty', ''),
+      byId('photo-p-shot'),
+    ];
+    const plan = ClientErasureSystem.photoPlan(photos, sole, personOf(P));
+    expect(plan.objectPaths).toEqual([
+      `${Collections.AppointmentPhotos}/${world.visits.solo.id}/photo-p-shot`,
+    ]);
+    expect(plan.labelPaths).toEqual([]);
+    expect(plan.writes).toEqual([
+      WriteOp.remove([Collections.AppointmentPhotos, 'photo-forged-media']),
+      WriteOp.remove([Collections.AppointmentPhotos, 'photo-forged-avatar']),
+      WriteOp.remove([Collections.AppointmentPhotos, 'photo-forged-shot']),
+      WriteOp.remove([Collections.AppointmentPhotos, 'photo-forged-empty']),
+      WriteOp.remove([Collections.AppointmentPhotos, 'photo-p-shot']),
+    ]);
+  });
+
+  it('a LIBRARY document with an empty path names no object: its document goes, no label is cleared', () => {
+    const plan = ClientErasureSystem.photoPlan(
+      [{ ...byId('photo-p-library'), path: '' }],
+      sole,
+      personOf(P),
+    );
+    expect(plan).toEqual({
+      objectPaths: [],
+      labelPaths: [],
+      writes: [
+        WriteOp.remove([Collections.AppointmentPhotos, 'photo-p-library']),
+      ],
+    });
   });
 
   it('Q’s photo and the photo naming nobody on a shared visit are kept; a photo met twice is planned once', () => {
@@ -823,6 +1014,7 @@ describe('ClientErasureSystem.photoPlan — objects first, documents after (P3-L
   it('nothing to plan for nothing', () => {
     expect(ClientErasureSystem.photoPlan([], sole, personOf(P))).toEqual({
       objectPaths: [],
+      labelPaths: [],
       writes: [],
     });
   });

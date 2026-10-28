@@ -71,7 +71,8 @@ type Without<E, K extends PropertyKey> = E extends unknown ? Omit<E, K> : never;
 /**
  * What the export pipeline READ about one person (audit-hardening Phase 3,
  * WS-C) — every document as stored (`{ id, ...body }`), zero mapping (Law
- * 5): the record and its linked account, the visits that seat the record,
+ * 5): the record and its linked account, the visits that seat the record
+ * and those whose contact carries the person's contact value (P3-DEP-28),
  * the notes of the visits only the person sat, the photos that may be the
  * person's (every origin naming the record, and those of the person's
  * sole-subject visits), money, loyalty, statistics, the journal, the
@@ -211,21 +212,6 @@ function byId<E extends { readonly id: string }>(
   return [...documents].sort((a, b) => byText(a.id, b.id));
 }
 
-/** Each id once — the first spelling read wins (two reads may meet one document). */
-function distinct<E extends { readonly id: string }>(
-  documents: readonly E[],
-): readonly E[] {
-  const seen = new Set<string>();
-  const out: E[] = [];
-  for (let i = 0; i < documents.length; i++) {
-    const document = documents[i] as E;
-    if (seen.has(document.id)) continue;
-    seen.add(document.id);
-    out.push(document);
-  }
-  return out;
-}
-
 /** `[value]`, or `[]` for none. */
 function listOf<E>(value: E | null): readonly E[] {
   return value === null ? [] : [value];
@@ -253,12 +239,23 @@ function sectionsOf(
 ): Sections {
   const customerId = footprint.record.id;
   const userId = footprint.record.userId;
+  const person: ClientPerson = {
+    record: footprint.record,
+    account: footprint.account,
+  };
   const visits: Appointment[] = [];
   const soleSubjectVisitIds = new Set<AppointmentId>();
-  const read = distinct(footprint.visits);
+  const read = ClientPrivacySystem.distinct(footprint.visits);
   for (let i = 0; i < read.length; i++) {
     const visit = read[i] as Appointment;
-    if (!visit.subjectCustomerIds.includes(customerId)) continue;
+    // A visit that seats the person, or one carrying the person's contact
+    // without seating them (a staff edit removed their seat, P3-DEP-28).
+    if (
+      !visit.subjectCustomerIds.includes(customerId) &&
+      !ClientPrivacySystem.contactCarriesValueOf(visit, person)
+    ) {
+      continue;
+    }
     visits.push(visit);
     if (ClientPrivacySystem.isSoleSubject(visit, customerId)) {
       soleSubjectVisitIds.add(visit.id);
@@ -269,11 +266,11 @@ function sectionsOf(
       UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs) || byText(a.id, b.id),
   );
   const notes: AppointmentNote[] = [];
-  for (const note of distinct(footprint.notes)) {
+  for (const note of ClientPrivacySystem.distinct(footprint.notes)) {
     if (soleSubjectVisitIds.has(note.id)) notes.push(note);
   }
   const photos: AppointmentPhoto[] = [];
-  for (const photo of distinct(footprint.photos)) {
+  for (const photo of ClientPrivacySystem.distinct(footprint.photos)) {
     if (
       ClientPrivacySystem.photoIsPersons(photo, soleSubjectVisitIds, customerId)
     ) {
@@ -281,7 +278,7 @@ function sectionsOf(
     }
   }
   const auditRows: AuditEntry[] = [];
-  for (const row of distinct(footprint.auditRows)) {
+  for (const row of ClientPrivacySystem.distinct(footprint.auditRows)) {
     if (row.id === ownRowId) continue;
     if (targetsPerson(row, customerId, userId)) auditRows.push(row);
   }
@@ -291,14 +288,18 @@ function sectionsOf(
     soleSubjectVisitIds,
     notes: byId(notes),
     photos: byId(photos),
-    giftVouchers: byId(distinct(footprint.giftVouchers)),
-    couponGrants: byId(distinct(footprint.couponGrants)),
-    badgeProgress: byId(distinct(footprint.badgeProgress)),
-    seasonProgress: byId(distinct(footprint.seasonProgress)),
-    journal: byId(distinct(footprint.journal)),
-    notifications: byId(distinct(footprint.notifications)),
-    waitlistRequests: byId(distinct(footprint.waitlistRequests)),
-    invitations: byId(distinct(footprint.invitations)),
+    giftVouchers: byId(ClientPrivacySystem.distinct(footprint.giftVouchers)),
+    couponGrants: byId(ClientPrivacySystem.distinct(footprint.couponGrants)),
+    badgeProgress: byId(ClientPrivacySystem.distinct(footprint.badgeProgress)),
+    seasonProgress: byId(
+      ClientPrivacySystem.distinct(footprint.seasonProgress),
+    ),
+    journal: byId(ClientPrivacySystem.distinct(footprint.journal)),
+    notifications: byId(ClientPrivacySystem.distinct(footprint.notifications)),
+    waitlistRequests: byId(
+      ClientPrivacySystem.distinct(footprint.waitlistRequests),
+    ),
+    invitations: byId(ClientPrivacySystem.distinct(footprint.invitations)),
     auditRows: AuditSystem.chronological(auditRows),
   };
 }
@@ -355,8 +356,7 @@ function seatsSeenBy(
     const seat = seats[i] as Seat;
     if (
       seat.seatSubject === SeatSubject.Account ||
-      (seat.seatSubject === SeatSubject.WalkIn &&
-        seat.subjectCustomerId === customerId)
+      ClientPrivacySystem.isOwnWalkInSeat(seat, customerId)
     ) {
       out.push(seat);
       continue;

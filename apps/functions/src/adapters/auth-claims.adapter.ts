@@ -30,8 +30,11 @@ const AuthRefusal = {
   UserNotFound: 'auth/user-not-found',
 } as const;
 
-/** The Admin SDK error's own code (`auth/…`), or `null`. */
-function authCodeOf(error: unknown): string | null {
+/**
+ * The Admin SDK error's own code (`auth/…`), or `null` — the ONE home of the
+ * Admin-Auth error helpers, reused by `firebase-auth-eraser.adapter.ts`.
+ */
+export function authCodeOf(error: unknown): string | null {
   if (error === null || typeof error !== 'object' || !('code' in error)) {
     return null;
   }
@@ -44,7 +47,7 @@ function authCodeOf(error: unknown): string | null {
  * vocabulary's transient codes), `unknown` otherwise; the SDK's code rides
  * as `refusal`.
  */
-function authFailure(error: unknown): PipelineError {
+export function authFailure(error: unknown): PipelineError {
   const canonical = TriggerAttemptSystem.failureCode(error);
   const code =
     TriggerAttemptSystem.attemptOutcome(canonical) === AttemptOutcome.Transient

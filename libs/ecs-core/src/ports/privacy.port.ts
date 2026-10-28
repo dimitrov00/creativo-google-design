@@ -30,7 +30,8 @@ import type { Callable } from './scheduling.port';
  * no Firestore write (the Auth user, the Storage objects). The person
  * is a client RECORD (`customers/{id}`) and the account it links
  * (`users/{record.userId}`); each read is one equality or `array-contains`
- * on a root field over the automatic single-field index — no new composite,
+ * on a root field (the by-contact read: one equality per contact field)
+ * over the automatic single-field index — no new composite,
  * no `orderBy` (the system orders what it reads). Every list takes `limit`:
  * the caller passes its cap + 1, so a person past the cap is REFUSED by the
  * pipeline, never silently truncated (P3-L-6). The reads of the guarded
@@ -61,6 +62,22 @@ export type LoadClientRecord = (
  */
 export type ListClientVisits = (
   customerId: CustomerId,
+  limit: number,
+) => Promise<Result<readonly Appointment[], RepositoryError>>;
+
+/**
+ * The visits whose CONTACT carries one value — `appointments where
+ * contactPhone ==` and `where contactEmail ==` that value, each at most
+ * `limit`, merged by id (a visit both answer comes once), guarded, in no
+ * promised order (review round 1, P3-DEP-28). A visit can carry a person's
+ * contact without seating them — a staff edit that removed the booker's
+ * seat recomputes the subject mirrors and keeps the contact — so the export
+ * and the erasure find those visits by the person's contact values too,
+ * while the record still holds them. A failure names the collection only
+ * (`RepositoryError.readFailed('appointments', code)`) — never the value.
+ */
+export type ListVisitsByContact = (
+  contact: Identifier,
   limit: number,
 ) => Promise<Result<readonly Appointment[], RepositoryError>>;
 
@@ -176,8 +193,11 @@ export type DeleteAuthUser = (
 /**
  * The Auth user's custom-claim roles (`Roles.known` over its claims) —
  * `null` when no Auth user exists; a failure carries the SDK's code only.
- * The staff-account refusal reads it beside the stored roles (P3-L-16), so a
- * missing `users` document never lets an operator's Auth account through.
+ * The staff-account refusal reads it beside the stored roles (P3-L-16):
+ * whether an Auth user exists at all is what makes a missing `users`
+ * document refuse (`ClientErasureSystem.refusalOf`, P3-DEP-29), since no
+ * production path sets custom claims (roles ride the minted custom token,
+ * Phase 4a 4A-14) — the claim roles are defence in depth.
  */
 export type LoadAuthRoles = (
   userId: UserId,
@@ -185,6 +205,16 @@ export type LoadAuthRoles = (
 
 /** Delete one Storage object by its path — an object already gone answers ok. */
 export type DeleteStoredObject = (
+  path: string,
+) => Promise<Result<void, RepositoryError>>;
+
+/**
+ * Remove the `clientLabel` key from one KEPT Storage object's custom
+ * metadata (a `LIBRARY` photo's picture — the object stays, the name on it
+ * goes; review round 1, P3-DEP-31): idempotent — an object without the key, or no
+ * object at the path, is done; every other key of the object kept.
+ */
+export type ClearStoredLabel = (
   path: string,
 ) => Promise<Result<void, RepositoryError>>;
 
@@ -239,6 +269,7 @@ export type ClientFootprintPorts = {
   /** The EXISTING account read (`accounts.port.ts`), never a copy. */
   readonly loadProfile: LoadProfile;
   readonly listClientVisits: ListClientVisits;
+  readonly listVisitsByContact: ListVisitsByContact;
   readonly loadVisitNotes: LoadVisitNotes;
   readonly listPhotosOfClient: ListPhotosOfClient;
   readonly listVisitPhotos: ListVisitPhotos;
@@ -265,10 +296,11 @@ export type AuthEraserPorts = {
   readonly deleteAuthUser: DeleteAuthUser;
 };
 
-/** Storage deletions — the erasure only (`storage-objects.adapter.ts`, functions). */
+/** Storage deletions and the kept objects' label — the erasure only (`storage-objects.adapter.ts`, functions). */
 export type ObjectEraserPorts = {
   readonly deleteStoredObject: DeleteStoredObject;
   readonly deleteStoredPrefix: DeleteStoredPrefix;
+  readonly clearStoredLabel: ClearStoredLabel;
 };
 
 /** The web's privacy callables — ONE token, `CLIENT_PRIVACY_PORTS` (the staff client card). */

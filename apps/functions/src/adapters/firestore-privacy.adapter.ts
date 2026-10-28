@@ -48,8 +48,11 @@ import { admitStored } from './firestore-tx.adapter';
  *
  * - `loadClientRecord` — `customers/{id}`; `loadProfile` — `users/{uid}`;
  * - `listClientVisits` — `appointments where subjectCustomerIds
- *   array-contains`; `loadVisitNotes` — `appointmentNotes/{visitId}` by one
- *   `getAll`;
+ *   array-contains`; `listVisitsByContact` — `appointments where
+ *   contactPhone ==` and `where contactEmail ==` the value, each limited,
+ *   merged by id (a visit that carries the person's contact without seating
+ *   them, P3-DEP-28) — a failure names `appointments` alone, never the
+ *   value; `loadVisitNotes` — `appointmentNotes/{visitId}` by one `getAll`;
  * - `listPhotosOfClient` — `appointmentPhotos where clientCustomerId ==`
  *   (every origin); `listVisitPhotos` — `appointmentId in` chunks of 30;
  * - `listClientGrants` — `couponGrants where customerId ==`;
@@ -203,6 +206,31 @@ export const firestorePrivacyPorts = (
         Collections.Appointments,
         Collections.Appointments,
       ),
+
+    // Two root equalities over the automatic single-field indexes (neither
+    // field has a `fieldOverrides` entry); the path a failure names is the
+    // collection alone — the value is a person's phone or e-mail.
+    listVisitsByContact: async (contact, limit) => {
+      const path = Collections.Appointments;
+      const byField = (field: 'contactPhone' | 'contactEmail') =>
+        many<Appointment>(
+          () => db.collection(path).where(field, '==', contact).limit(limit),
+          path,
+          path,
+        );
+      const [byPhone, byEmail] = await Promise.all([
+        byField('contactPhone'),
+        byField('contactEmail'),
+      ]);
+      if (!byPhone.ok) return byPhone;
+      if (!byEmail.ok) return byEmail;
+      const seen = new Set(byPhone.value.map((visit) => visit.id));
+      const visits = [...byPhone.value];
+      for (const visit of byEmail.value) {
+        if (!seen.has(visit.id)) visits.push(visit);
+      }
+      return Result.ok(visits);
+    },
 
     loadVisitNotes: async (appointmentIds) => {
       if (appointmentIds.length === 0) return Result.ok([]);

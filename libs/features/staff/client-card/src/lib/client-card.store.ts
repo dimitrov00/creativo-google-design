@@ -459,8 +459,8 @@ export class ClientCardStore {
     FlagName.ClientPrivacy,
   );
   /**
-   * An admin's data-subject callables (audit-hardening Phase 3, WS-C) —
-   * optional: unbound, the privacy block is absent.
+   * An admin's data-subject callables (audit-hardening Phase 3, WS-C /
+   * WS-D) — optional: unbound, the privacy block is absent.
    */
   private readonly privacyPorts = inject(CLIENT_PRIVACY_PORTS, {
     optional: true,
@@ -1779,7 +1779,13 @@ export class ClientCardStore {
     const preview = answer.value;
     if (customerId === untracked(this.customerId)) {
       this._erasureStatus.set(preview.erasureStatus);
-      this._erasureSiblings.set(preview.erasureSiblingCustomerIds);
+      // A preview after the stamp names no sibling: the list kept stays.
+      this._erasureSiblings.set(
+        ClientPrivacySystem.siblingsAfterPreview(
+          untracked(this._erasureSiblings),
+          preview,
+        ),
+      );
     }
     this._erasure.set(ERASURE_IDLE);
     this._erasurePreview.set(preview);

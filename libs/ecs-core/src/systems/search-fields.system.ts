@@ -43,7 +43,8 @@ const INTERNATIONAL_PREFIX = /^00/;
 
 /**
  * The keys as computed — a name always present (a computed full name is a
- * string, `''` at worst); the slice's `null` belongs to a stub only.
+ * string, `''` at worst); the slice's `null` belongs to a stub or an erased
+ * account (written by `ClientErasureSystem`, not computed here).
  */
 type ComputedSearchFields = SearchFields & { readonly searchName: string };
 

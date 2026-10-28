@@ -709,7 +709,7 @@ gcloud firestore fields ttls update purgeAt --collection-group="$GROUP" --enable
 ```
 
 Source: `docs/architecture/firestore-runbook.md:135-180`, `:221-230`;
-`firestore.indexes.json` (24 `indexes`, 99 `fieldOverrides`, 7 with
+`firestore.indexes.json` (24 `indexes`, 120 `fieldOverrides`, 7 with
 `ttl: true`).
 
 ### 3.2 Rules

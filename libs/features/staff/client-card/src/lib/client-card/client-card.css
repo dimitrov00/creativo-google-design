@@ -109,3 +109,11 @@ article.client-card__origin:focus-visible {
 article.client-card__origin:focus-visible::before {
   box-shadow: none;
 }
+
+/* L — the erasure's ONE alert draws nothing until asked, but its empty host
+   would still be an item of the privacy block's `compact` stack and add a
+   gap under the block's last line. The host is no box: unasked it holds
+   nothing, asked its dialog sits in the top layer (fixed, out of flow). */
+.client-card__privacy > ui-alert {
+  display: contents;
+}

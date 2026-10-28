@@ -91,12 +91,15 @@ import {
   localDate,
   locationFixture,
   otpFixture,
+  PERSONS_PARTY_SELF_SEAT,
+  personsParty,
   pinnedNowUtcMs,
   PRIVACY_SENTINELS,
   privacyWorld,
   serviceFixture,
   unwrapOk,
   WALK_IN_SENTINELS,
+  withSeatRemoved,
 } from '@core/testing';
 import { authClaimsPorts } from '../adapters/auth-claims.adapter';
 import { consoleTelemetry } from '../adapters/console-telemetry.adapter';
@@ -136,15 +139,17 @@ import {
  * e-mail, the record R, an avatar object), P's solo visit with a note, a
  * SHOT photo and a SHOT photo naming nobody (objects uploaded), Q's party
  * with P on an account companion seat, Q's note and a LIBRARY photo naming
- * P (its object the shop's), two notifications, a waitlist request, an
+ * P (its object the shop's, its `clientLabel` metadata P's label), two
+ * notifications, a waitlist request, an
  * invitation, an impersonation session targeting P, a sign-in challenge
  * for P's phone, the journal, loyalty, statistics and money, a grant, a
  * voucher, audit rows filed before; a walk-in record S keyed by P's phone
  * (P's SIBLING); walk-in W — a walk-in-only record whose solo visit and
  * party `[WALK_IN W, ANONYMOUS]` are booked HERE through the staff request
  * the desk sends, so its contact is W's sentinel phone; a record L whose
- * `userId` names a STAFF uid holding a staff claim on its Auth user and NO
- * `users` document; person Q, untouched.
+ * `userId` names a STAFF uid holding an Auth user with NO custom claims
+ * (production's shape: roles ride the minted custom token, never the Auth
+ * user — Phase 4a 4A-14) and NO `users` document; person Q, untouched.
  *
  * THE HASH. The world's account records are `CustomerId.forUser(uid,
  * fixtureHash)` (D29 under the fixture hash of `@core/testing`), so every
@@ -154,7 +159,8 @@ import {
  *
  * Proved: (1) every personal value is gone — every document of every
  * collection scanned after P's erasure and its sibling's own; the Auth
- * user, the avatar and the SHOT objects deleted, the LIBRARY object kept;
+ * user, the avatar and the SHOT objects deleted, the LIBRARY object kept
+ * without its `clientLabel` metadata (P3-DEP-31);
  * W erased in its own act, its party's contact NONE; (2) the visits, the
  * money, loyalty, the journal and every earlier audit row byte-equal, one
  * STARTED and one ERASED row; (3) no erased value reaches a row of the
@@ -165,7 +171,10 @@ import {
  * same final state; (4b) a note written on P's old visit afterwards is
  * swept by the next call with ONE `PRIVACY_CLIENT_ERASURE_RESWEPT` row;
  * (5) no later writer resurrects P or W; (6) never the wrong account — a
- * staff account by its Auth claim alone, a record whose link fails D29.
+ * linked uid with an Auth user and no `users` document (P3-DEP-29), a
+ * record whose link fails D29; (7) a visit that kept P's contact after the
+ * desk removed P's seat is found by P's contact value and cleared before
+ * the stamp (P3-DEP-28).
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -205,7 +214,7 @@ const OP_RESWEEP = OperationId.of('erase-operation-resweep1');
 const OP_WRONG = OperationId.of('erase-operation-wrong001');
 
 const ADMIN_ROLES: readonly Role[] = [Role.Admin];
-/** A staff account with an Auth user and a staff claim — and NO `users` document. */
+/** A staff account with an Auth user (no custom claims, as production sets one up) — and NO `users` document. */
 const STAFF_UID = UserId.of('u-privacy-staff-auth-only');
 const CORRUPT = CustomerId.of('cus-corrupt-link');
 
@@ -568,7 +577,8 @@ describe('eraseClient (emulator)', () => {
       await db.doc(path).set(withPurgeAt(path.split('/'), body));
     }
 
-    // The Auth users: P's holds P's phone and e-mail; L's uid a staff claim.
+    // The Auth users: P's holds P's phone and e-mail; L's uid none of its
+    // roles — production never sets custom claims (Phase 4a 4A-14).
     await auth.createUser({
       uid: u(),
       phoneNumber: PRIVACY_SENTINELS.phone,
@@ -577,14 +587,10 @@ describe('eraseClient (emulator)', () => {
     });
     await auth.createUser({ uid: world.other.userId });
     await auth.createUser({ uid: STAFF_UID });
-    await auth.setCustomUserClaims(STAFF_UID, {
-      tenantId: 'creativo',
-      stage: 'active',
-      roles: ['barber'],
-    });
 
     // The objects: P's avatar, the SHOT photos' bytes (their metadata names
-    // the client), the LIBRARY picture's (the shop's), Q's.
+    // the client), the LIBRARY picture's (the shop's — a name on it too,
+    // P3-DEP-31), Q's.
     const upload = (path: string, clientLabel: string | null) =>
       bucket.file(path).save(Buffer.from('jpeg bytes'), {
         resumable: false,
@@ -593,10 +599,7 @@ describe('eraseClient (emulator)', () => {
       });
     await upload(avatarPath(), null);
     for (const stored of world.state.photos) {
-      await upload(
-        stored.path,
-        stored.photoOrigin === 'SHOT' ? stored.clientLabel : null,
-      );
+      await upload(stored.path, stored.clientLabel);
     }
 
     // W, as the desk books it: a solo visit, and the party [W, a guest].
@@ -735,6 +738,12 @@ describe('eraseClient (emulator)', () => {
   const exists = async (path: string): Promise<boolean> =>
     (await bucket.file(path).exists())[0];
 
+  /** An object's custom metadata (`metadata.metadata`), `{}` when it holds none. */
+  const customMetadataOf = async (
+    path: string,
+  ): Promise<Readonly<Record<string, unknown>>> =>
+    (await bucket.file(path).getMetadata())[0].metadata ?? {};
+
   /** The rows of one erasure verb that target a record. */
   const rowsOf = async (
     customerId: CustomerId,
@@ -798,6 +807,13 @@ describe('eraseClient (emulator)', () => {
     expect(await exists(photo('photo-p-library').path)).toBe(true);
     expect(await exists(photo('photo-q-shot').path)).toBe(true);
     expect(await exists(photo('photo-party-nobody').path)).toBe(true);
+    // The kept LIBRARY object no longer names P (P3-DEP-31); Q's still does.
+    expect(
+      await customMetadataOf(photo('photo-p-library').path),
+    ).not.toHaveProperty('clientLabel');
+    expect(await customMetadataOf(photo('photo-q-shot').path)).toMatchObject({
+      clientLabel: photo('photo-q-shot').clientLabel,
+    });
     // The LIBRARY photo's DOCUMENT on Q's party and that party's note are gone.
     expect(
       await docData(`${Collections.AppointmentPhotos}/photo-p-library`),
@@ -1208,7 +1224,7 @@ describe('eraseClient (emulator)', () => {
 
   // ── (6) never the wrong account ───────────────────────────────────────
 
-  it('(6) never the wrong account: a staff account by its Auth claim alone, and a record whose link fails D29 — refused, nothing touched', async () => {
+  it('(6) never the wrong account: a linked uid with an Auth user and no users document (production’s staff shape — no custom claims), and a record whose link fails D29 — refused, nothing touched', async () => {
     // A record naming P's uid on an id `forUser` never derives from it.
     const record = world.state.records.find((stored) => stored.id === p());
     if (record === undefined) throw new Error('the world holds no P record');
@@ -1217,7 +1233,8 @@ describe('eraseClient (emulator)', () => {
       .set({ ...bodyOf(record), userId: u() });
     const before = await everything();
 
-    // L: the staff uid holds no `users` document — its Auth claim refuses it.
+    // L: the staff uid holds no `users` document while its Auth user exists —
+    // nothing proves it no operator's, so it is refused (P3-DEP-29).
     expect(await erase(staffLinked(), OP_WRONG)).toEqual({
       ok: false,
       error: { errorCode: PrivacyErrorCode.ErasureStaffAccount },
@@ -1253,6 +1270,59 @@ describe('eraseClient (emulator)', () => {
     }
     expect(await authCodeOf(u())).toBe('present');
     expect(await everything()).toEqual(before);
+  }, 60_000);
+
+  // ── (7) a visit that kept P's contact without seating P ──────────────
+
+  it('(7) a visit that kept P’s contact after the desk removed P’s seat is found by P’s contact value, its contact cleared before the stamp — no kept visit holds P’s contact (P3-DEP-28)', async () => {
+    // P's party [SELF P, COMPANION Q] as the edit pipeline writes it once
+    // REMOVE_SEAT took P's seat: the mirrors name Q alone, the contact P's.
+    const removed = withSeatRemoved(
+      personsParty(world),
+      PERSONS_PARTY_SELF_SEAT,
+    );
+    const path = `${Collections.Appointments}/${removed.id}`;
+    await db.doc(path).set(bodyOf(removed));
+    expect(removed.subjectCustomerIds).not.toContain(p());
+
+    const preview = await previewClientErasure(erasePorts())(command(p(), OP));
+    expect(preview).toEqual({
+      ok: true,
+      value: expect.objectContaining({
+        erasureContactCount: 2,
+        erasureVisitCount: 2,
+      }),
+    });
+    const done = await eraseUntilDone(p(), OP);
+    expect(done).toMatchObject(NO_PERSONAL_VALUE);
+    expect(await docData(path)).toEqual({
+      ...bodyOf(removed),
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      contactNote: null,
+      writeOperationId: OP,
+    });
+    const [started] = await rowsOf(
+      p(),
+      AuditAction.PrivacyClientErasureStarted,
+    );
+    expect(started).toMatchObject({ erasureContactCount: 2 });
+    expect(await rowsOf(p(), AuditAction.PrivacyClientErased)).toHaveLength(1);
+    // No appointment keeps a value of P's contact.
+    const appointments = new Map(
+      [...(await allDocuments())].filter(([key]) =>
+        key.startsWith(`${Collections.Appointments}/`),
+      ),
+    );
+    expect(
+      leaks(appointments, [
+        PRIVACY_SENTINELS.name,
+        PRIVACY_SENTINELS.phone,
+        PRIVACY_SENTINELS.email,
+        PRIVACY_SENTINELS.contactNote,
+      ]),
+    ).toEqual([]);
   }, 60_000);
 
   // ── (5) no later writer resurrects the person ─────────────────────────

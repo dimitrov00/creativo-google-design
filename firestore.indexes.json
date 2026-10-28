@@ -908,6 +908,16 @@
       "indexes": []
     },
     {
+      "collectionGroup": "customers",
+      "fieldPath": "erasureStartedAtUtcMs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "customers",
+      "fieldPath": "erasedAtUtcMs",
+      "indexes": []
+    },
+    {
       "collectionGroup": "users",
       "fieldPath": "roles",
       "indexes": []

@@ -18,6 +18,7 @@ import {
 import { PrivacyError, RepositoryError } from '@core/errors';
 import {
   AppointmentId,
+  AppointmentPhotoId,
   CustomerId,
   InvitationId,
   LogEvent,
@@ -27,6 +28,7 @@ import {
   type UserId,
 } from '@core/primitives';
 import {
+  type Appointment,
   type AuditEntry,
   Collections,
   type Invitation,
@@ -55,6 +57,8 @@ import {
   memoryObjectEraserPorts,
   memoryTxPorts,
   OTHER_SENTINELS,
+  PERSONS_PARTY_SELF_SEAT,
+  personsParty,
   PRIVACY_SENTINELS,
   type PrivacyWorld,
   privacyWorld,
@@ -63,6 +67,7 @@ import {
   storeClientFootprintPorts,
   unwrapErr,
   unwrapOk,
+  withSeatRemoved,
 } from '@core/testing';
 import type { StepBudget } from './continue-policy-recompute.pipeline';
 import {
@@ -419,6 +424,9 @@ describe('eraseClient — one call, start to finish', () => {
     });
     const shot = r.world.state.photos.find((p) => p.id === 'photo-p-shot');
     const nobody = r.world.state.photos.find((p) => p.id === 'photo-p-nobody');
+    const library = r.world.state.photos.find(
+      (p) => p.id === 'photo-p-library',
+    );
     const uid = r.world.person.userId;
     expect(r.stores.calls).toEqual([
       `loadAuthRoles:${uid}`,
@@ -427,6 +435,8 @@ describe('eraseClient — one call, start to finish', () => {
       `commit:${Collections.Appointments}+${Collections.AppointmentNotes}`,
       `deleteStoredObject:${shot?.path}`,
       `deleteStoredObject:${nobody?.path}`,
+      // The kept LIBRARY object's label, before its document (P3-DEP-31).
+      `clearStoredLabel:${library?.path}`,
       `commit:${Collections.AppointmentPhotos}`,
       `commit:${Collections.Users}+${Collections.WaitlistRequests}`,
       `commit:${Collections.Invitations}`,
@@ -729,7 +739,7 @@ describe('eraseClient — an ERASED record (P3-L-19)', () => {
     expect(r.tx.transactions).toHaveLength(commits);
     expect(snapshotOf(r.store)).toEqual(before);
     // The second call only re-ran the idempotent deletes: no commit.
-    expect(r.stores.calls.slice(13)).toEqual([
+    expect(r.stores.calls.slice(14)).toEqual([
       `loadAuthRoles:${r.world.person.userId}`,
       `deleteStoredPrefix:avatars/${r.world.person.userId}/`,
       `deleteAuthUser:${r.world.person.userId}`,
@@ -884,10 +894,30 @@ describe('eraseClient — the units', () => {
     expect(JSON.stringify(snapshotOf(store))).not.toContain('Walkin Lone');
   });
 
-  it('a linked uid whose users document is gone: the record alone is stripped; the uid-keyed steps still run (inbox, Auth, avatar)', async () => {
+  it('a linked uid whose users document is gone while its Auth user exists → PRIVACY_ERASURE_STAFF_ACCOUNT: nothing written, the Auth user kept (P3-DEP-29 — production never sets custom claims)', async () => {
     const r = rig();
     const uid = r.world.person.userId;
     r.store.delete(`${Collections.Users}/${uid}`);
+    // Production's shape: the Auth user carries no custom claims.
+    r.stores.authUsers.set(uid, []);
+    const before = snapshotOf(r.store);
+    expect(unwrapErr(await r.erase())).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    expect(unwrapErr(await r.preview())).toEqual(
+      PrivacyError.erasureStaffAccount(),
+    );
+    expect(r.tx.transactions).toHaveLength(0);
+    expect(snapshotOf(r.store)).toEqual(before);
+    expect(r.stores.authUsers.has(uid)).toBe(true);
+    expect(r.stores.calls).not.toContain(`deleteAuthUser:${uid}`);
+  });
+
+  it('a linked uid whose users document AND Auth user are gone: the record alone is stripped; the uid-keyed steps still run (inbox, avatar, the idempotent Auth delete)', async () => {
+    const r = rig();
+    const uid = r.world.person.userId;
+    r.store.delete(`${Collections.Users}/${uid}`);
+    r.stores.authUsers.delete(uid);
     expect(unwrapOk(await r.erase())).toEqual({
       erasureStatus: ErasureStatus.Erased,
       erasureDone: true,
@@ -895,6 +925,7 @@ describe('eraseClient — the units', () => {
     });
     expect(r.store.has(`${Collections.Users}/${uid}`)).toBe(false);
     expect(r.stores.authUsers.has(uid)).toBe(false);
+    expect(r.stores.calls).toContain(`deleteAuthUser:${uid}`);
     expect(r.stores.calls).toContain(`deleteStoredPrefix:avatars/${uid}/`);
     expect(r.store.has(`${Collections.WaitlistRequests}/wl-p`)).toBe(false);
     const started = rowsNamed(r.store, AuditAction.PrivacyClientErasureStarted);
@@ -907,6 +938,325 @@ describe('eraseClient — the units', () => {
     expect(
       r.stores.calls.filter((call) => !call.startsWith('commit:')),
     ).toEqual([]);
+  });
+});
+
+describe('eraseClient — a visit that kept P’s contact without seating P (P3-DEP-28)', () => {
+  /** P's contact values on a visit — what no kept appointment may hold once P is erased. */
+  const P_CONTACT: readonly string[] = [
+    PRIVACY_SENTINELS.name,
+    PRIVACY_SENTINELS.phone,
+    PRIVACY_SENTINELS.email,
+    PRIVACY_SENTINELS.contactNote,
+  ];
+
+  /**
+   * The world plus `count` copies of P's party [SELF P, COMPANION Q] after
+   * the desk removed P's seat — `withSeatRemoved`, the edit pipeline's own
+   * write: the mirrors name Q alone, the contact is still P's.
+   */
+  function withRemoved(count = 1) {
+    const world = privacyWorld();
+    const base = withSeatRemoved(personsParty(world), PERSONS_PARTY_SELF_SEAT);
+    const removed: Appointment[] = [base];
+    for (let i = 1; i < count; i++) {
+      removed.push({
+        ...base,
+        id: AppointmentId.of(`appt-p-removed-${String(i).padStart(2, '0')}`),
+      });
+    }
+    const store = footprintStoreOf({
+      ...world.state,
+      visits: [...world.state.visits, ...removed],
+    });
+    const stores = memoryErasureStores({
+      authUsers: new Map<UserId, readonly Role[]>([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: objectsOf(world),
+    });
+    return { world, store, stores, removed };
+  }
+
+  /** The stored appointments that still hold one of P's contact values. */
+  function holdingP(store: MemoryStore): readonly string[] {
+    const out: string[] = [];
+    for (const [key, body] of store) {
+      if (!key.startsWith(`${Collections.Appointments}/`)) continue;
+      const json = JSON.stringify(body);
+      if (P_CONTACT.some((value) => json.includes(value))) out.push(key);
+    }
+    return out;
+  }
+
+  it('the visit seats Q alone — the footprint’s subject read never finds it', () => {
+    const { removed } = withRemoved();
+    expect(removed[0]?.subjectCustomerIds).not.toContain(
+      privacyWorld().person.customerId,
+    );
+    expect(removed[0]?.contactPhone).toBe(PRIVACY_SENTINELS.phone);
+  });
+
+  it('clears its contact BEFORE the stamp: the STARTED row counts it, the ERASED row certifies no residue, no kept visit holds P’s contact', async () => {
+    const { world, store, stores, removed } = withRemoved();
+    const r = rig({ world, store, stores });
+    expect(unwrapOk(await r.erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    const visit = removed[0] as Appointment;
+    // Only its contact cleared, under the erasure's id; Q's seat, the ids,
+    // the times and the money kept.
+    expect(store.get(`${Collections.Appointments}/${visit.id}`)).toEqual({
+      ...bodyOf(visit),
+      ...BookingContact.NONE,
+      writeOperationId: OPERATION,
+    });
+    // The sweep's commit (the visit alone) came before the stamp.
+    const sweep = stores.calls.indexOf(`commit:${Collections.Appointments}`);
+    const stamp = stores.calls.indexOf(
+      `commit:${Collections.Customers}+${Collections.Users}+${Collections.AuditLog}`,
+    );
+    expect(sweep).toBeGreaterThan(-1);
+    expect(sweep).toBeLessThan(stamp);
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureStarted),
+    ).toMatchObject([
+      {
+        erasureContactCount: BEFORE.erasureContactCount + 1,
+        erasureContactKeptCount: BEFORE.erasureContactKeptCount,
+        erasureVisitCount: BEFORE.erasureVisitCount,
+      },
+    ]);
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+    expect(holdingP(store)).toEqual([]);
+  });
+
+  it('the preview counts its contact — and writes nothing', async () => {
+    const { world, store, stores } = withRemoved();
+    const r = rig({ world, store, stores });
+    const before = snapshotOf(store);
+    expect(unwrapOk(await r.preview())).toMatchObject({
+      erasureStatus: ErasureStatus.None,
+      erasureContactCount: BEFORE.erasureContactCount + 1,
+      erasureVisitCount: BEFORE.erasureVisitCount,
+    });
+    expect(snapshotOf(store)).toEqual(before);
+  });
+
+  it('a budget spent after the sweep: the stamp, then no unit; the next call ends in the SAME state as one straight call — no residue, no second ERASED row', async () => {
+    const straight = withRemoved();
+    unwrapOk(
+      await rig({
+        world: straight.world,
+        store: straight.store,
+        stores: straight.stores,
+      }).erase(),
+    );
+    const { world, store, stores } = withRemoved();
+    const partial = unwrapOk(
+      await rig({ world, store, stores }).erase({}, spentAtOnce),
+    );
+    expect(partial).toMatchObject({
+      erasureStatus: ErasureStatus.Erasing,
+      erasureDone: false,
+    });
+    expect(holdingP(store)).toEqual([
+      `${Collections.Appointments}/${world.visits.solo.id}`,
+    ]);
+    expect(unwrapOk(await rig({ world, store, stores }).erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(snapshotOf(store)).toEqual(snapshotOf(straight.store));
+    // Once more: nothing left, nothing written.
+    const done = snapshotOf(store);
+    unwrapOk(await rig({ world, store, stores }).erase());
+    expect(snapshotOf(store)).toEqual(done);
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a budget spent DURING the sweep stamps nothing — NONE, not done; the next call finds the rest by value, then completes', async () => {
+    const { world, store, stores } = withRemoved(ERASURE_CHUNK_SIZE + 1);
+    const partial = unwrapOk(
+      await rig({ world, store, stores }).erase({}, spentAtOnce),
+    );
+    expect(partial).toMatchObject({
+      erasureStatus: ErasureStatus.None,
+      erasureDone: false,
+    });
+    expect(rowsNamed(store, AuditAction.PrivacyClientErasureStarted)).toEqual(
+      [],
+    );
+    // One chunk swept; one visit still holds P's contact (and the solo).
+    expect(holdingP(store)).toHaveLength(2);
+    const done = unwrapOk(await rig({ world, store, stores }).erase());
+    expect(done).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(holdingP(store)).toEqual([]);
+    expect(
+      rowsNamed(store, AuditAction.PrivacyClientErasureStarted),
+    ).toHaveLength(1);
+    expect(rowsNamed(store, AuditAction.PrivacyClientErased)).toHaveLength(1);
+  });
+
+  it('a visit edited meanwhile to another person’s contact is re-decided in the sweep’s transaction — kept', async () => {
+    const { world, store, stores, removed } = withRemoved();
+    const visit = removed[0] as Appointment;
+    const path = `${Collections.Appointments}/${visit.id}`;
+    const r = rig({
+      world,
+      store,
+      stores,
+      // Before the sweep's commit (after the OTP sweep's), the desk retypes the contact.
+      beforeCommit: (index, at) => {
+        if (index !== 1) return;
+        at.set(path, {
+          ...at.get(path),
+          contactName: OTHER_SENTINELS.name,
+          contactPhone: OTHER_SENTINELS.phone,
+          contactEmail: null,
+          contactNote: null,
+        });
+      },
+    });
+    unwrapOk(await r.erase());
+    expect(store.get(path)).toMatchObject({
+      contactName: OTHER_SENTINELS.name,
+      contactPhone: OTHER_SENTINELS.phone,
+    });
+  });
+});
+
+describe('eraseClient — the photos a staff member writes (P3-DEP-30, P3-DEP-31)', () => {
+  const MEDIA = 'media/services/cover.jpg';
+
+  function photoWorld(
+    extra: (
+      world: PrivacyWorld,
+    ) => readonly PrivacyWorld['state']['photos'][number][],
+    labels: (world: PrivacyWorld) => ReadonlyMap<string, string> = () =>
+      new Map(),
+    script: ErasureStoresScript = {},
+  ) {
+    const world = privacyWorld();
+    const store = footprintStoreOf({
+      ...world.state,
+      photos: [...world.state.photos, ...extra(world)],
+    });
+    const stores = memoryErasureStores({
+      authUsers: new Map<UserId, readonly Role[]>([
+        [world.person.userId, [Role.Client]],
+        [world.other.userId, [Role.Client]],
+      ]),
+      objects: [...objectsOf(world), MEDIA],
+      labels: labels(world),
+    });
+    return { world, store, stores, script };
+  }
+
+  const photoOf = (world: PrivacyWorld, id: string) => {
+    const found = world.state.photos.find((photo) => photo.id === id);
+    if (found === undefined) throw new Error(`no fixture photo ${id}`);
+    return found;
+  };
+
+  it('a SHOT document naming P whose path is the shop’s media, or empty: Storage is never handed it; it and its chunk-mates are removed; ERASED and done', async () => {
+    const { world, store, stores } = photoWorld((w) => [
+      {
+        ...photoOf(w, 'photo-p-shot'),
+        id: AppointmentPhotoId.of('photo-forged-media'),
+        path: MEDIA,
+      },
+      {
+        ...photoOf(w, 'photo-p-shot'),
+        id: AppointmentPhotoId.of('photo-forged-empty'),
+        path: '',
+      },
+    ]);
+    const r = rig({ world, store, stores });
+    expect(unwrapOk(await r.erase())).toMatchObject({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      erasurePhotoCount: 0,
+    });
+    const deleted = stores.calls.filter((call) =>
+      call.startsWith('deleteStoredObject:'),
+    );
+    expect(deleted).toEqual([
+      `deleteStoredObject:${photoOf(world, 'photo-p-shot').path}`,
+      `deleteStoredObject:${photoOf(world, 'photo-p-nobody').path}`,
+    ]);
+    expect(stores.objects.has(MEDIA)).toBe(true);
+    for (const id of [
+      'photo-forged-media',
+      'photo-forged-empty',
+      'photo-p-shot',
+      'photo-p-nobody',
+      'photo-p-library',
+    ]) {
+      expect(store.has(`${Collections.AppointmentPhotos}/${id}`), id).toBe(
+        false,
+      );
+    }
+  });
+
+  it('the kept LIBRARY object loses its clientLabel BEFORE its document goes — the object stays; Q’s label is untouched', async () => {
+    const { world, store, stores } = photoWorld(
+      () => [],
+      (w) =>
+        new Map([
+          [photoOf(w, 'photo-p-library').path, PRIVACY_SENTINELS.label],
+          [photoOf(w, 'photo-q-shot').path, OTHER_SENTINELS.label],
+        ]),
+    );
+    const library = photoOf(world, 'photo-p-library').path;
+    unwrapOk(await rig({ world, store, stores }).erase());
+    expect(stores.objects.has(library)).toBe(true);
+    expect(stores.labels.has(library)).toBe(false);
+    expect([...stores.labels]).toEqual([
+      [photoOf(world, 'photo-q-shot').path, OTHER_SENTINELS.label],
+    ]);
+    const cleared = stores.calls.indexOf(`clearStoredLabel:${library}`);
+    expect(cleared).toBeGreaterThan(-1);
+    expect(cleared).toBeLessThan(
+      stores.calls.indexOf(`commit:${Collections.AppointmentPhotos}`),
+    );
+  });
+
+  it('a failing label clear keeps the chunk’s documents for a resume — ERASING, not done; the next call completes', async () => {
+    const { world, store, stores } = photoWorld(
+      () => [],
+      (w) => new Map([[photoOf(w, 'photo-p-library').path, 'x']]),
+    );
+    const library = photoOf(world, 'photo-p-library').path;
+    const partial = unwrapOk(
+      await rig({
+        world,
+        store,
+        stores,
+        script: { failingPaths: [library] },
+      }).erase(),
+    );
+    expect(partial).toMatchObject({
+      erasureStatus: ErasureStatus.Erasing,
+      erasureDone: false,
+    });
+    expect(store.has(`${Collections.AppointmentPhotos}/photo-p-library`)).toBe(
+      true,
+    );
+    expect(unwrapOk(await rig({ world, store, stores }).erase())).toEqual({
+      erasureStatus: ErasureStatus.Erased,
+      erasureDone: true,
+      ...RESIDUE,
+    });
+    expect(stores.labels.has(library)).toBe(false);
   });
 });
 

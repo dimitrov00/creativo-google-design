@@ -306,6 +306,117 @@ describe('firestorePrivacyPorts — the query shapes', () => {
   });
 });
 
+describe('firestorePrivacyPorts — the visits by contact (P3-DEP-28)', () => {
+  it('reads ONE root equality per contact field, each at the limit it is handed — never an orderBy', async () => {
+    const { fake } = seeded();
+    const { db, shapes } = recording(fake.db);
+    const ports = firestorePrivacyPorts(db, unguarded, NO_LOG);
+    const value = Identifier.of(PRIVACY_SENTINELS.phone);
+    await ports.listVisitsByContact(value, 21);
+    expect(shapes).toEqual([
+      {
+        path: Collections.Appointments,
+        steps: [
+          ['where', 'contactPhone', '==', value],
+          ['limit', 21],
+        ],
+      },
+      {
+        path: Collections.Appointments,
+        steps: [
+          ['where', 'contactEmail', '==', value],
+          ['limit', 21],
+        ],
+      },
+    ]);
+  });
+
+  it('answers every visit carrying the value as stored — a visit both equalities answer comes once; nobody’s value answers none', async () => {
+    const { world, fake } = seeded();
+    // A visit carrying P's phone AND P's e-mail, seating Q alone.
+    fake.docs.set(`${Collections.Appointments}/appt-p-removed`, {
+      ...bodyOf(world.visits.party),
+      contactPhone: PRIVACY_SENTINELS.phone,
+      contactEmail: PRIVACY_SENTINELS.phone,
+    });
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      NO_LOG,
+    );
+    const byPhone = await ports.listVisitsByContact(
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      50,
+    );
+    expect(byPhone.ok).toBe(true);
+    if (!byPhone.ok) return;
+    expect(byPhone.value.map((visit) => visit.id).sort()).toEqual(
+      ['appt-p-removed', world.visits.solo.id].sort(),
+    );
+    expect(
+      byPhone.value.find((visit) => visit.id === world.visits.solo.id),
+    ).toEqual(world.visits.solo);
+    expect(
+      await ports.listVisitsByContact(
+        Identifier.of(PRIVACY_SENTINELS.email),
+        50,
+      ),
+    ).toEqual({ ok: true, value: [world.visits.solo] });
+    expect(
+      await ports.listVisitsByContact(
+        Identifier.of('nobody@example.invalid'),
+        50,
+      ),
+    ).toEqual({ ok: true, value: [] });
+  });
+
+  it('refuses a malformed visit it finds — the guarded collection', async () => {
+    const { fake } = seeded();
+    fake.docs.set(`${Collections.Appointments}/appt-broken`, {
+      contactPhone: PRIVACY_SENTINELS.phone,
+      junk: true,
+    });
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      StoredDocumentSystem.guardOf,
+      NO_LOG,
+    );
+    const read = await ports.listVisitsByContact(
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      50,
+    );
+    expect(read.ok).toBe(false);
+    if (!read.ok) expect(read.error.errorCode).toBe('REPOSITORY_MALFORMED');
+  });
+
+  it('names the collection alone when it cannot be read — never the value', async () => {
+    const { fake } = seeded();
+    vi.spyOn(fake.db, 'collection').mockImplementation(() => {
+      throw Object.assign(
+        new Error(`14 UNAVAILABLE: ${PRIVACY_SENTINELS.phone}`),
+        { code: 14 },
+      );
+    });
+    const ports = firestorePrivacyPorts(
+      fake.db as unknown as Firestore,
+      unguarded,
+      NO_LOG,
+    );
+    const failed = await ports.listVisitsByContact(
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      5,
+    );
+    expect(failed).toEqual({
+      ok: false,
+      error: RepositoryError.readFailed(
+        Collections.Appointments,
+        'unavailable',
+      ),
+    });
+    expect(JSON.stringify(failed)).not.toContain('359880000777');
+  });
+});
+
 describe('firestorePrivacyPorts — the documents', () => {
   it('answers the person’s documents as stored — and nobody else’s', async () => {
     const { world, fake } = seeded();

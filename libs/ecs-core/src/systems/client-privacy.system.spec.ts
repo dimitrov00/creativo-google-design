@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   BookingContact,
+  type ClientPrivacyCall,
   E164,
   Email,
+  ErasureCensus,
   ErasureOffer,
   ErasureStatus,
+  Identifier,
+  type Seat,
   type StaffEditDraft,
   SeatLabel,
   SeatOccupant,
@@ -34,6 +38,8 @@ import {
   fixtureHash,
   fixtureWalkInHash,
   OTHER_SENTINELS,
+  PERSONS_PARTY_SELF_SEAT,
+  personsParty,
   PRIVACY_SENTINELS,
   privacyWorld,
   seatFixture,
@@ -41,6 +47,7 @@ import {
   unwrapOk,
   userFixture,
   WALK_IN_SENTINELS,
+  withSeatRemoved,
 } from '@core/testing';
 import {
   type ClientPerson,
@@ -295,12 +302,21 @@ describe('ClientPrivacySystem.contactIsPersons', () => {
         fixtureWalkInHash,
       ),
     ).toBe(true);
-    // Another key cannot derive the record: the arm is the keyed digest's.
+    // Another key cannot derive the record: the arm is the keyed digest's
+    // (asked of the id arms alone — the whole rule also matches W's phone
+    // by value while W's record holds it, P3-DEP-28).
     expect(
-      ClientPrivacySystem.contactIsPersons(visit, personOf(W), (input) =>
+      ClientPrivacySystem.contactProvedById(visit, personOf(W), (input) =>
         fixtureWalkInHash(`other-key:${input}`),
       ),
     ).toBe(false);
+    expect(
+      ClientPrivacySystem.contactProvedById(
+        visit,
+        personOf(W),
+        fixtureWalkInHash,
+      ),
+    ).toBe(true);
   });
 
   it('the world’s staff party `[WALK_IN W, ANONYMOUS]` is W’s by the same arm, and nobody else’s', () => {
@@ -321,34 +337,278 @@ describe('ClientPrivacySystem.contactIsPersons', () => {
   });
 });
 
-describe('ClientPrivacySystem.ownWalkInSeatIds', () => {
-  it('names the person’s walk-in seats, in seat order, and nobody else’s', () => {
-    const visit = appointmentFixture({
-      seats: [
-        seatFixture({
-          seatId: SeatId.of('a'),
-          occupant: SeatOccupant.walkIn(
-            W,
-            unwrapOk(SeatLabel.parse(WALK_IN_SENTINELS.label)),
-          ),
-        }),
-      ],
-    });
-    expect(ClientPrivacySystem.ownWalkInSeatIds(visit, W)).toEqual([
-      SeatId.of('a'),
-    ]);
+describe('ClientPrivacySystem — a visit that kept a removed person’s contact (P3-DEP-28)', () => {
+  // P booked [SELF P, COMPANION Q] with P's contact; the desk removed P's
+  // seat — the mirrors no longer name P, the contact is still P's.
+  const removed = withSeatRemoved(personsParty(world), PERSONS_PARTY_SELF_SEAT);
+
+  it('the edit’s write: P is in no mirror, P’s contact is kept', () => {
+    expect(removed.subjectCustomerIds).toEqual([Q]);
+    expect(removed.ownerCustomerId).toBeNull();
+    expect(removed.ownerUserId).toBeNull();
+    expect(BookingContact.of(removed)).toEqual(
+      BookingContact.of(personsParty(world)),
+    );
+  });
+
+  it('no id proves the contact P’s — the owner mirrors are gone, its key derives P’s sibling', () => {
     expect(
-      ClientPrivacySystem.ownWalkInSeatIds(world.visits.walkInParty, W),
-    ).toEqual([SeatId.of('seat-w')]);
-    expect(ClientPrivacySystem.ownWalkInSeatIds(world.visits.party, P)).toEqual(
-      [],
+      ClientPrivacySystem.contactProvedById(
+        removed,
+        personOf(P),
+        fixtureWalkInHash,
+      ),
+    ).toBe(false);
+  });
+
+  it('its value does: the visit carries P’s phone and e-mail, so the contact is P’s — never Q’s', () => {
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(removed, personOf(P)),
+    ).toBe(true);
+    expect(
+      ClientPrivacySystem.contactIsPersons(
+        removed,
+        personOf(P),
+        fixtureWalkInHash,
+      ),
+    ).toBe(true);
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(removed, personOf(Q)),
+    ).toBe(false);
+    expect(
+      ClientPrivacySystem.contactIsPersons(
+        removed,
+        personOf(Q),
+        fixtureWalkInHash,
+      ),
+    ).toBe(false);
+  });
+
+  it('the e-mail alone carries it too; another person’s values never do', () => {
+    const byEmail = { ...removed, contactPhone: OTHER_SENTINELS.phone };
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(byEmail, personOf(P)),
+    ).toBe(true);
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(
+        world.visits.party,
+        personOf(P),
+      ),
+    ).toBe(false);
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(
+        { ...removed, ...BookingContact.NONE },
+        personOf(P),
+      ),
+    ).toBe(false);
+  });
+
+  it('an account value of its own matches as the record’s does', () => {
+    const accountPhone = E164.of('+359880000112');
+    const person: ClientPerson = {
+      record: { ...personOf(P).record, phone: null, email: null },
+      account: userFixture({
+        id: world.person.userId,
+        phone: accountPhone,
+        email: null,
+      }),
+    };
+    expect(
+      ClientPrivacySystem.contactCarriesValueOf(
+        { ...removed, contactPhone: accountPhone, contactEmail: null },
+        person,
+      ),
+    ).toBe(true);
+  });
+
+  it('once the stamp cleared the values, nothing matches by value', () => {
+    const cleared: ClientPerson = {
+      record: { ...personOf(P).record, phone: null, email: null },
+      account: userFixture({
+        id: world.person.userId,
+        phone: null,
+        email: null,
+      }),
+    };
+    expect(ClientPrivacySystem.contactCarriesValueOf(removed, cleared)).toBe(
+      false,
     );
     expect(
-      ClientPrivacySystem.ownWalkInSeatIds(
-        world.visits.party,
+      ClientPrivacySystem.contactIsPersons(removed, cleared, fixtureWalkInHash),
+    ).toBe(false);
+  });
+
+  it('a walk-in W removed from the staff party `[W, ANONYMOUS]` it was the contact of: W’s by its key and by its value', () => {
+    const left = withSeatRemoved(world.visits.walkInParty, SeatId.of('seat-w'));
+    expect(left.subjectCustomerIds).toEqual([]);
+    expect(
+      ClientPrivacySystem.contactProvedById(
+        left,
+        personOf(W),
+        fixtureWalkInHash,
+      ),
+    ).toBe(true);
+    expect(ClientPrivacySystem.contactCarriesValueOf(left, personOf(W))).toBe(
+      true,
+    );
+  });
+});
+
+describe('ClientPrivacySystem.contactValuesOf — the person’s contact values (P3-RU-21, P3-DEP-28)', () => {
+  it('the record’s and the account’s values, each once, in order', () => {
+    expect(ClientPrivacySystem.contactValuesOf(personOf(P))).toEqual([
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      Identifier.of(PRIVACY_SENTINELS.email),
+    ]);
+    expect(ClientPrivacySystem.contactValuesOf(personOf(W))).toEqual([
+      Identifier.of(WALK_IN_SENTINELS.phone),
+    ]);
+    const accountPhone = E164.of('+359880000113');
+    expect(
+      ClientPrivacySystem.contactValuesOf({
+        record: personOf(P).record,
+        account: userFixture({
+          id: world.person.userId,
+          phone: accountPhone,
+          email: PRIVACY_SENTINELS.email,
+        }),
+      }),
+    ).toEqual([
+      Identifier.of(PRIVACY_SENTINELS.phone),
+      Identifier.of(PRIVACY_SENTINELS.email),
+      Identifier.of(accountPhone),
+    ]);
+  });
+
+  it('nothing once the stamp cleared them', () => {
+    expect(
+      ClientPrivacySystem.contactValuesOf({
+        record: { ...personOf(P).record, phone: null, email: null },
+        account: null,
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('ClientPrivacySystem.isOwnWalkInSeat — the one rule of the person’s own walk-in seat', () => {
+  const seatOf = (visit: { readonly seats: readonly Seat[] }, id: string) => {
+    const seat = visit.seats.find((entry) => entry.seatId === id);
+    if (seat === undefined) throw new Error(`no fixture seat ${id}`);
+    return seat;
+  };
+
+  it('the person’s own WALK_IN seat → true', () => {
+    expect(
+      ClientPrivacySystem.isOwnWalkInSeat(
+        seatOf(world.visits.walkInParty, 'seat-w'),
+        W,
+      ),
+    ).toBe(true);
+    const own = seatFixture({
+      occupant: SeatOccupant.walkIn(
+        W,
+        unwrapOk(SeatLabel.parse(WALK_IN_SENTINELS.label)),
+      ),
+    });
+    expect(ClientPrivacySystem.isOwnWalkInSeat(own, W)).toBe(true);
+  });
+
+  it('another record’s WALK_IN seat → false', () => {
+    expect(
+      ClientPrivacySystem.isOwnWalkInSeat(
+        seatOf(world.visits.party, 'seat-q-walk-in'),
+        W,
+      ),
+    ).toBe(false);
+    expect(
+      ClientPrivacySystem.isOwnWalkInSeat(
+        seatOf(world.visits.party, 'seat-q-walk-in'),
         world.otherWalkIn.customerId,
       ),
-    ).toEqual([SeatId.of('seat-q-walk-in')]);
+    ).toBe(true);
+  });
+
+  it('an ACCOUNT seat naming the record → false; an ANONYMOUS seat → false', () => {
+    expect(
+      ClientPrivacySystem.isOwnWalkInSeat(
+        seatOf(world.visits.party, 'seat-p-companion'),
+        P,
+      ),
+    ).toBe(false);
+    expect(
+      ClientPrivacySystem.isOwnWalkInSeat(
+        seatOf(world.visits.walkInParty, 'seat-w-guest'),
+        W,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('ClientPrivacySystem.distinct — each document once', () => {
+  it('keeps a duplicate id once, the FIRST read winning, in the order read — the input untouched', () => {
+    const first = { id: 'a', read: 1 };
+    const input = deepFreeze([
+      first,
+      { id: 'b', read: 2 },
+      { id: 'a', read: 3 },
+    ]);
+    expect(ClientPrivacySystem.distinct(input)).toEqual([
+      { id: 'a', read: 1 },
+      { id: 'b', read: 2 },
+    ]);
+    expect(ClientPrivacySystem.distinct(input)[0]).toBe(input[0]);
+    expect(input).toHaveLength(3);
+    expect(ClientPrivacySystem.distinct([])).toEqual([]);
+  });
+});
+
+describe('ClientPrivacySystem.siblingsAfterPreview — what the card keeps (P3-L-7, Law 10.2)', () => {
+  const KEPT = [
+    CustomerId.forWalkIn(PRIVACY_SENTINELS.phone, fixtureWalkInHash),
+    CustomerId.forWalkIn(PRIVACY_SENTINELS.email, fixtureWalkInHash),
+  ];
+  const NAMED = [CustomerId.forWalkIn('+359880000114', fixtureWalkInHash)];
+  const preview = (
+    erasureStatus: ErasureStatus,
+    erasureSiblingCustomerIds: readonly CustomerId[],
+  ): ClientPrivacyCall.ErasurePreview => ({
+    ...ErasureCensus.EMPTY,
+    erasureStatus,
+    erasureSiblingCustomerIds,
+  });
+
+  it('a NONE record’s preview replaces the list — even with []', () => {
+    expect(
+      ClientPrivacySystem.siblingsAfterPreview(
+        KEPT,
+        preview(ErasureStatus.None, NAMED),
+      ),
+    ).toEqual(NAMED);
+    expect(
+      ClientPrivacySystem.siblingsAfterPreview(
+        KEPT,
+        preview(ErasureStatus.None, []),
+      ),
+    ).toEqual([]);
+  });
+
+  it('an ERASING or ERASED record’s preview names none — the kept list stays', () => {
+    for (const status of [ErasureStatus.Erasing, ErasureStatus.Erased]) {
+      expect(
+        ClientPrivacySystem.siblingsAfterPreview(KEPT, preview(status, [])),
+      ).toEqual(KEPT);
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const kept = deepFreeze([...KEPT]);
+    const answered = deepFreeze(preview(ErasureStatus.Erasing, []));
+    const once = ClientPrivacySystem.siblingsAfterPreview(kept, answered);
+    expect(ClientPrivacySystem.siblingsAfterPreview(kept, answered)).toEqual(
+      once,
+    );
+    expect(kept).toEqual(KEPT);
+    expect(answered.erasureSiblingCustomerIds).toEqual([]);
   });
 });
 
@@ -554,10 +814,20 @@ describe('ClientPrivacySystem — purity', () => {
         person,
         fixtureWalkInHash,
       ),
-      seats: ClientPrivacySystem.ownWalkInSeatIds(
-        frozen.visits.walkInParty,
-        frozen.walkIn.customerId,
+      seats: frozen.visits.walkInParty.seats.map((seat) =>
+        ClientPrivacySystem.isOwnWalkInSeat(seat, frozen.walkIn.customerId),
       ),
+      values: ClientPrivacySystem.contactValuesOf(person),
+      carries: ClientPrivacySystem.contactCarriesValueOf(
+        frozen.visits.solo,
+        person,
+      ),
+      proved: ClientPrivacySystem.contactProvedById(
+        frozen.visits.solo,
+        person,
+        fixtureWalkInHash,
+      ),
+      once: ClientPrivacySystem.distinct(frozen.state.visits),
       photos: frozen.state.photos.map((entry) =>
         ClientPrivacySystem.photoIsPersons(
           entry,
@@ -570,6 +840,8 @@ describe('ClientPrivacySystem — purity', () => {
       offer: ClientPrivacySystem.erasureOffer(person.record.erasureStatus),
     });
     expect(run()).toEqual(run());
+    expect(run().seats).toEqual([true, false]);
+    expect(run().once).toEqual(frozen.state.visits);
     expect(run().photos).toEqual([true, true, true, false, false]);
     expect(run().link).toEqual({ ok: true, value: frozen.person.userId });
     expect(run().offer).toBe(ErasureOffer.Erase);

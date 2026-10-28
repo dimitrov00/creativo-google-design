@@ -610,7 +610,11 @@
      record sharing its phone or e-mail (never named — it may be another
      person); each opens the ONE alert with the census in figures. -->
 @if (privacy(); as block) {
-<ui-stack uiSpacing="compact" data-testid="client-privacy">
+<ui-stack
+  uiSpacing="compact"
+  class="client-card__privacy"
+  data-testid="client-privacy"
+>
   <ul uiListGroup [attr.aria-label]="block.groupLabel">
     <li>
       <button
@@ -695,7 +699,8 @@
   }
   <!-- THE ONE QUESTION (P3-DEP-22): the census in figures, the destructive
        answer first and the safe one last and preferred; no typed
-       confirmation. It leaves worded as it came. -->
+       confirmation. It leaves worded as it came. Its host is no box
+       (client-card.css): unasked, it adds no gap under the block. -->
   <ui-alert
     [uiPresented]="erasure.alert.open"
     [uiTitle]="erasure.alert.title"

@@ -2583,6 +2583,82 @@ describe('ClientCardStore — the admin’s erasure (audit-hardening Phase 3, WS
     expect(privacy.previews).toHaveLength(2);
   });
 
+  /**
+   * The scripted callables, but the card's record previews as `PREVIEW`
+   * the first time and as `after` (its erasure stamped) from then on — every
+   * preview call recorded, the siblings answered as scripted.
+   */
+  function previewsAfterStamp(
+    erasures: readonly Answer<ClientPrivacyCall.Erasure>[],
+    after: ClientPrivacyCall.ErasurePreview,
+  ) {
+    const base = scriptedErasure({ erasures });
+    let own = 0;
+    return {
+      ...base,
+      previewClientErasure: async (
+        call: ClientPrivacyCall,
+      ): Promise<Answer<ClientPrivacyCall.ErasurePreview>> => {
+        if (call.customerId !== GEORGI_CUSTOMER_ID) {
+          return base.previewClientErasure(call);
+        }
+        base.previews.push(call);
+        own += 1;
+        return CoreResult.ok(own === 1 ? PREVIEW : after);
+      },
+    };
+  }
+
+  it('keeps the sibling rows when the card’s record is previewed again after the stamp — a refusal mid-act, then the RESUME preview names none (P3-L-7)', async () => {
+    const privacy = previewsAfterStamp(
+      [CoreResult.err(PipelineError.bare(PipelineErrorCode.Unavailable))],
+      {
+        ...PREVIEW,
+        erasureStatus: ErasureStatus.Erasing,
+        erasureSiblingCustomerIds: [],
+      },
+    );
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    // The stamp committed, then the call failed: the act is refused.
+    await store.confirmErasure();
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    store.dismissErasure();
+
+    expect(store.erasure()?.siblings.map((row) => row.customerId)).toEqual([
+      SIBLING,
+      OTHER_SIBLING,
+    ]);
+    await store.previewErasure(SIBLING);
+    expect(privacy.previews.map((sent) => sent.customerId)).toEqual([
+      GEORGI_CUSTOMER_ID,
+      GEORGI_CUSTOMER_ID,
+      SIBLING,
+    ]);
+  });
+
+  it('keeps the sibling rows when an ERASED record is re-swept — its preview names none (P3-L-7, P3-L-19)', async () => {
+    const privacy = previewsAfterStamp([CoreResult.ok(ERASED)], {
+      ...PREVIEW,
+      erasureStatus: ErasureStatus.Erased,
+      erasureSiblingCustomerIds: [],
+    });
+    const { store } = erasureRig({ privacy });
+    await openedAsAdmin(store);
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    await store.confirmErasure();
+    expect(store.erasure()?.erasedLine).toBe('Изтрит клиент');
+    // The RESWEEP row previews the record again.
+    await store.previewErasure(GEORGI_CUSTOMER_ID);
+    store.dismissErasure();
+
+    expect(store.erasure()?.siblings.map((row) => row.customerId)).toEqual([
+      SIBLING,
+      OTHER_SIBLING,
+    ]);
+  });
+
   it('a refused erasure keeps the alert’s words and says the refusal on the rows; a refused preview opens no alert', async () => {
     const staff = PipelineError.fromWire('functions/failed-precondition', {
       errorCode: 'PRIVACY_ERASURE_STAFF_ACCOUNT',

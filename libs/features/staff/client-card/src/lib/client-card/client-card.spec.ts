@@ -1409,6 +1409,25 @@ describe('lib-client-card — the admin’s erasure', () => {
     expect(sibling.getAttribute('uiRole')).toBe('destructive');
   });
 
+  it('the alert’s empty host adds no gap under the privacy block — a boxless child of its stack (client-card.css)', async () => {
+    bindErasure();
+    const { byId } = await asAdmin();
+    const block = must(byId('client-privacy'));
+    expect(block.classList.contains('client-card__privacy')).toBe(true);
+    const host = must(byId('client-privacy-alert'));
+    expect(host.tagName).toBe('UI-ALERT');
+    expect(host.parentElement).toBe(block);
+    // Unasked, it draws nothing — yet as a box it would be a stack item.
+    expect(host.childElementCount).toBe(0);
+    // jsdom lays nothing out: the stylesheet is the contract.
+    expect(
+      cssRule(
+        'client-card/client-card.css',
+        '.client-card__privacy > ui-alert',
+      ).get('display'),
+    ).toBe('contents');
+  });
+
   it('shows the erased line beside the re-sweep row on an ERASED record', async () => {
     bindErasure();
     const erased = fixtureCustomers().map((record) => ({

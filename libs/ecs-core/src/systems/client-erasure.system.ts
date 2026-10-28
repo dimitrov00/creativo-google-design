@@ -11,12 +11,12 @@ import {
   ErasureCensus,
   ErasureLifecycle,
   ErasureStatus,
-  Identifier,
   PhotoOrigin,
   PrivacyMarker,
   type Role,
   Roles,
   type Seat,
+  type SeatOccupant,
   SeatSubject,
   WriteOp,
 } from '@core/components';
@@ -78,12 +78,15 @@ export type ErasureLooseDocuments = {
 /**
  * What the erasure READ about one person (audit-hardening Phase 3 WS-D,
  * §0.4) — every document as stored, zero mapping (Law 5): the record and
- * its linked account, the visits that seat the record, the notes of those
- * visits (party visits' too, P3-RU-33), the photos that may be the
- * person's (every origin naming the record, and those of the person's
- * sole-subject visits), the account's loose documents and how many journal
- * rows the record has (retained, only counted). In no promised order; a
- * document met by two reads is counted once.
+ * its linked account, the visits that seat the record and — while the
+ * record still holds its contact values — the visits whose contact carries
+ * one of them (P3-DEP-28: a staff edit may have removed the person's seat
+ * and kept their contact), the notes of the visits that seat the record
+ * (party visits' too, P3-RU-33), the photos that may be the person's (every
+ * origin naming the record, and those of the person's sole-subject
+ * visits), the account's loose documents and how many journal rows the
+ * record has (retained, only counted). In no promised order; a document
+ * met by two reads is counted once.
  */
 export type ErasureFootprint = ErasureLooseDocuments & {
   readonly visits: readonly Appointment[];
@@ -94,8 +97,17 @@ export type ErasureFootprint = ErasureLooseDocuments & {
 
 /** The person's photos to delete — the Storage objects first (P3-L-10), then the documents. */
 export type ErasurePhotoPlan = {
-  /** The `SHOT` photos' object paths — deleted BEFORE their documents, so a resume still knows them. */
+  /**
+   * The `SHOT` photos' OWN object paths (`appointmentPhotos/{visit}/{photo}`,
+   * P3-DEP-30) — deleted BEFORE their documents, so a resume still knows
+   * them; a path the photo does not own is never deleted.
+   */
   readonly objectPaths: readonly string[];
+  /**
+   * The `LIBRARY` photos' object paths — KEPT objects whose `clientLabel`
+   * metadata is cleared BEFORE their documents go (P3-DEP-31).
+   */
+  readonly labelPaths: readonly string[];
   readonly writes: readonly WriteOp[];
 };
 
@@ -134,12 +146,24 @@ function hasContact(visit: Appointment): boolean {
 }
 
 /** Whether the person's walk-in seat still shows a label that is no mark. */
-function isNamedOwnWalkIn(seat: Seat, customerId: CustomerId): boolean {
+function isNamedOwnWalkIn(
+  seat: Seat,
+  customerId: CustomerId,
+): seat is Seat & SeatOccupant.WalkIn {
   return (
-    seat.seatSubject === SeatSubject.WalkIn &&
-    seat.subjectCustomerId === customerId &&
+    ClientPrivacySystem.isOwnWalkInSeat(seat, customerId) &&
     !PrivacyMarker.isMarker(seat.guestLabel)
   );
+}
+
+/**
+ * The object a `SHOT` photo OWNS — `appointmentPhotos/{appointmentId}/{id}`,
+ * the one path its upload writes (`uploadPhotoBytes`). The document is
+ * staff-written and its `path` unchecked by the rules (P3-DEP-30): the
+ * erasure deletes only this object, never another one a document names.
+ */
+function ownObjectPath(photo: AppointmentPhoto): string {
+  return `${Collections.AppointmentPhotos}/${photo.appointmentId}/${photo.id}`;
 }
 
 /** How many of the person's walk-in seats on the visit still show a name. */
@@ -167,13 +191,7 @@ function markedSeats(
   let ordinal = 1;
   for (let i = 0; i < seats.length; i++) {
     const seat = seats[i] as Seat;
-    if (
-      seat.seatSubject !== SeatSubject.WalkIn ||
-      seat.subjectCustomerId !== customerId ||
-      PrivacyMarker.isMarker(seat.guestLabel)
-    ) {
-      continue;
-    }
+    if (!isNamedOwnWalkIn(seat, customerId)) continue;
     if (out === null || used === null) {
       out = [...seats];
       used = new Set<string>();
@@ -221,21 +239,6 @@ function accountSliceOf(account: User): AccountLifecycle {
     case AccountStatus.Erased:
       return AccountLifecycle.erase(account.accountErasedAtUtcMs);
   }
-}
-
-/** Each document once — the first read wins (two reads may meet one document). */
-function distinct<E extends { readonly id: string }>(
-  documents: readonly E[],
-): readonly E[] {
-  const seen = new Set<string>();
-  const out: E[] = [];
-  for (let i = 0; i < documents.length; i++) {
-    const document = documents[i] as E;
-    if (seen.has(document.id)) continue;
-    seen.add(document.id);
-    out.push(document);
-  }
-  return out;
 }
 
 /**
@@ -312,11 +315,17 @@ export const ClientErasureSystem = {
    * `userId` the record does not provably link
    * (`PRIVACY_ACCOUNT_LINK_MISMATCH`, through
    * {@link ClientPrivacySystem.linkOf}, the one check); a linked account
-   * holding any staff role — in its STORED roles or in its Auth custom
-   * claims (`authRoles`, `null` when no Auth user exists) — which would
-   * remove an operator (`PRIVACY_ERASURE_STAFF_ACCOUNT`). A missing `users`
-   * document never lets an operator's Auth account through. A walk-in (no
-   * link) has no account to refuse.
+   * holding any staff role in its STORED roles, which would remove an
+   * operator (`PRIVACY_ERASURE_STAFF_ACCOUNT`); and — fail-closed
+   * (P3-DEP-29) — a linked uid whose `users` document is absent while its
+   * Auth user exists (`authRoles` not `null`): roles reach a session only
+   * as claims minted onto the custom token from the stored `users.roles`
+   * (Phase 4a 4A-14 — no production path sets Auth custom claims, so
+   * `getUser().customClaims` never shows them), so without the document
+   * nothing proves the account is no operator's. The Auth claim roles stay
+   * a second check (defence in depth, a future `setRoles`). No account and
+   * no Auth user leaves nothing to delete: the erasure proceeds. A walk-in
+   * (no link) has no account to refuse.
    */
   refusalOf(
     person: ClientPerson,
@@ -334,37 +343,16 @@ export const ClientErasureSystem = {
     if (authRoles !== null && Roles.isStaff(authRoles)) {
       return PrivacyError.erasureStaffAccount();
     }
-    return null;
-  },
-
-  /**
-   * The contact values a challenge may be stored under (P3-RU-21): the
-   * record's phone and e-mail and the account's — each non-null value
-   * once, in that order. `[]` once the stamp has cleared them.
-   */
-  destinationsOf(person: ClientPerson): readonly Identifier[] {
-    const record = person.record;
-    const account = person.account;
-    const values: readonly (string | null)[] = [
-      record.phone,
-      record.email,
-      account === null ? null : account.phone,
-      account === null ? null : account.email,
-    ];
-    const out: Identifier[] = [];
-    for (let i = 0; i < values.length; i++) {
-      const value = values[i] ?? null;
-      if (value === null) continue;
-      const destination = Identifier.of(value);
-      if (!out.includes(destination)) out.push(destination);
+    if (account === null && authRoles !== null) {
+      return PrivacyError.erasureStaffAccount();
     }
-    return out;
+    return null;
   },
 
   /** The challenges stored under the person's contact, removed — each once (a sign-in artefact, P3-RU-21). */
   otpWrites(otps: readonly Otp[]): readonly WriteOp[] {
     const writes: WriteOp[] = [];
-    const listed = distinct(otps);
+    const listed = ClientPrivacySystem.distinct(otps);
     for (let i = 0; i < listed.length; i++) {
       writes.push(WriteOp.remove([Collections.Otps, (listed[i] as Otp).id]));
     }
@@ -374,11 +362,14 @@ export const ClientErasureSystem = {
   /**
    * THE CENSUS of a person's footprint (P3-RU-22): the eight personal
    * counts — what still holds a personal value — and the three retained
-   * ones, over the footprint as read (each document once; only the visits
-   * that seat the record, and only their notes). A visit's contact is the
-   * person's when it is PROVABLY theirs or the visit is sole-subject (the
-   * erasure errs to clearing, P3-L-12); any other contact is retained and
-   * counted. Stateless, so it is recomputed on every resume.
+   * ones, over the footprint as read (each document once; the visits that
+   * seat the record and only their notes, and the contact of a visit that
+   * no longer seats the record but carries the person's contact,
+   * P3-DEP-28). A visit's contact is the person's when it is theirs
+   * ({@link ClientPrivacySystem.contactIsPersons}) or the visit is
+   * sole-subject (the erasure errs to clearing, P3-L-12); any other contact
+   * of a visit that seats the record is retained and counted. Stateless, so
+   * it is recomputed on every resume.
    */
   census(
     footprint: ErasureFootprint,
@@ -393,10 +384,19 @@ export const ClientErasureSystem = {
     let erasureContactCount = 0;
     let erasureContactKeptCount = 0;
     let erasureLabelCount = 0;
-    const visits = distinct(footprint.visits);
+    const visits = ClientPrivacySystem.distinct(footprint.visits);
     for (let i = 0; i < visits.length; i++) {
       const visit = visits[i] as Appointment;
-      if (!visit.subjectCustomerIds.includes(customerId)) continue;
+      if (!visit.subjectCustomerIds.includes(customerId)) {
+        // Found by the person's contact value only: its contact, nothing else.
+        if (
+          hasContact(visit) &&
+          ClientPrivacySystem.contactIsPersons(visit, person, walkInHash)
+        ) {
+          erasureContactCount++;
+        }
+        continue;
+      }
       visitIds.add(visit.id);
       const sole = ClientPrivacySystem.isSoleSubject(visit, customerId);
       if (sole) soleSubjectVisitIds.add(visit.id);
@@ -413,12 +413,12 @@ export const ClientErasureSystem = {
       erasureLabelCount += namedOwnWalkIns(visit, customerId);
     }
     let erasureNoteCount = 0;
-    const notes = distinct(footprint.notes);
+    const notes = ClientPrivacySystem.distinct(footprint.notes);
     for (let i = 0; i < notes.length; i++) {
       if (visitIds.has((notes[i] as AppointmentNote).id)) erasureNoteCount++;
     }
     let erasurePhotoCount = 0;
-    const photos = distinct(footprint.photos);
+    const photos = ClientPrivacySystem.distinct(footprint.photos);
     for (let i = 0; i < photos.length; i++) {
       if (
         ClientPrivacySystem.photoIsPersons(
@@ -551,10 +551,47 @@ export const ClientErasureSystem = {
   },
 
   /**
+   * THE CONTACT SWEEP (P3-DEP-28) — run BEFORE the stamp clears the values
+   * it matches on, one visit at a time: the visit's contact cleared to
+   * {@link BookingContact.NONE} under the erasure's `writeOperationId` when
+   * it carries one of the person's contact values
+   * ({@link ClientPrivacySystem.contactCarriesValueOf}) and nothing would
+   * recognise it after the stamp — the visit does not seat the person (a
+   * staff edit removed their seat and kept their contact), or seats them
+   * on a shared visit whose ids do not prove the contact theirs. `[]` for
+   * every other visit (its contact is {@link ClientErasureSystem.visitWrites}'
+   * after the stamp, or not the person's) and once the values are gone.
+   */
+  contactSweepWrites(
+    visit: Appointment,
+    person: ClientPerson,
+    operationId: OperationId,
+    walkInHash: (input: string) => string,
+  ): readonly WriteOp[] {
+    if (!hasContact(visit)) return [];
+    if (!ClientPrivacySystem.contactCarriesValueOf(visit, person)) return [];
+    const customerId = person.record.id;
+    if (
+      visit.subjectCustomerIds.includes(customerId) &&
+      (ClientPrivacySystem.isSoleSubject(visit, customerId) ||
+        ClientPrivacySystem.contactProvedById(visit, person, walkInHash))
+    ) {
+      return [];
+    }
+    return [
+      WriteOp.update([Collections.Appointments, visit.id], {
+        ...BookingContact.NONE,
+        writeOperationId: operationId,
+      }),
+    ];
+  },
+
+  /**
    * ONE visit's patch (P3-L-12, P3-RU-33) — `[]` when nothing of the
    * person is left on it (idempotent), and for a visit that does not seat
-   * the person: the visit contact cleared to {@link BookingContact.NONE}
-   * when it is provably the person's or the visit is sole-subject; the
+   * the person (its contact is the sweep's, before the stamp): the visit
+   * contact cleared to {@link BookingContact.NONE}
+   * when it is the person's or the visit is sole-subject; the
    * person's named walk-in seats marked `— <n>`; the patched visit stamped
    * with the erasure's `writeOperationId` (ids, times, money, statuses and
    * every other seat kept); and the visit's note removed when present —
@@ -593,9 +630,14 @@ export const ClientErasureSystem = {
   /**
    * The person's photos to delete (P3-L-10, P3-L-11): every photo naming
    * the record (any origin) and every photo naming nobody on a visit only
-   * the person sat — each document removed once; a `SHOT` photo's object
-   * path listed to go FIRST (it owns its bytes; a `LIBRARY` picture's object
-   * is the shop's and stays). Any other photo is kept.
+   * the person sat — each document removed once. FIRST, a `SHOT` photo's
+   * object is listed for deletion — only when the document's `path` is the
+   * object the photo owns, `appointmentPhotos/{appointmentId}/{id}` (the
+   * document is staff-written: any other path, an empty one included, is
+   * never handed to Storage, and its document still goes — P3-DEP-30); a
+   * `LIBRARY` picture's object is the shop's and stays, its `clientLabel`
+   * metadata listed to be cleared (a non-empty path; P3-DEP-31). Any other
+   * photo is kept.
    */
   photoPlan(
     photos: readonly AppointmentPhoto[],
@@ -604,8 +646,9 @@ export const ClientErasureSystem = {
   ): ErasurePhotoPlan {
     const customerId = person.record.id;
     const objectPaths: string[] = [];
+    const labelPaths: string[] = [];
     const writes: WriteOp[] = [];
-    const listed = distinct(photos);
+    const listed = ClientPrivacySystem.distinct(photos);
     for (let i = 0; i < listed.length; i++) {
       const photo = listed[i] as AppointmentPhoto;
       if (
@@ -618,11 +661,14 @@ export const ClientErasureSystem = {
         continue;
       }
       if (PhotoOrigin.ownsBytes(photo.photoOrigin)) {
-        objectPaths.push(photo.path);
+        if (photo.path === ownObjectPath(photo)) objectPaths.push(photo.path);
+      } else if (typeof photo.path === 'string' && photo.path.length > 0) {
+        // Read unguarded and staff-written: a missing or empty path names no object.
+        labelPaths.push(photo.path);
       }
       writes.push(WriteOp.remove([Collections.AppointmentPhotos, photo.id]));
     }
-    return { objectPaths, writes };
+    return { objectPaths, labelPaths, writes };
   },
 
   /**
@@ -637,7 +683,7 @@ export const ClientErasureSystem = {
     const userId = loose.person.record.userId;
     if (userId === null) return [];
     const writes: WriteOp[] = [];
-    const notifications = distinct(loose.notifications);
+    const notifications = ClientPrivacySystem.distinct(loose.notifications);
     for (let i = 0; i < notifications.length; i++) {
       writes.push(
         WriteOp.remove([
@@ -648,13 +694,13 @@ export const ClientErasureSystem = {
         ]),
       );
     }
-    const requests = distinct(loose.waitlistRequests);
+    const requests = ClientPrivacySystem.distinct(loose.waitlistRequests);
     for (let i = 0; i < requests.length; i++) {
       const request = requests[i] as WaitlistRequest;
       if (request.ownerUserId !== userId) continue;
       writes.push(WriteOp.remove([Collections.WaitlistRequests, request.id]));
     }
-    const invitations = distinct(loose.invitations);
+    const invitations = ClientPrivacySystem.distinct(loose.invitations);
     for (let i = 0; i < invitations.length; i++) {
       const invitation = invitations[i] as Invitation;
       if (invitation.inviterUserId !== userId) continue;
@@ -665,7 +711,7 @@ export const ClientErasureSystem = {
         }),
       );
     }
-    const sessions = distinct(loose.sessions);
+    const sessions = ClientPrivacySystem.distinct(loose.sessions);
     for (let i = 0; i < sessions.length; i++) {
       const session = sessions[i] as ImpersonationSession;
       if (session.targetUserId !== userId) continue;

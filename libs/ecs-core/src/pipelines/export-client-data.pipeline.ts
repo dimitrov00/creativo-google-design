@@ -17,7 +17,12 @@ import {
   type UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import { type AuditEntry, Collections, type Customer } from '@core/entities';
+import {
+  type Appointment,
+  type AuditEntry,
+  Collections,
+  type Customer,
+} from '@core/entities';
 import type {
   AuditTimelinePage,
   AuditTimelinePorts,
@@ -180,9 +185,12 @@ async function none<E>(): Promise<Result<readonly E[], never>> {
 
 /**
  * Everything the bundle may hold, read outside any transaction: the
- * account, the visits, then — knowing which visits only the person sat —
- * those visits' notes and photos beside every other list, then the audit
- * rows. A failed read answers its `RepositoryError`; nothing is written.
+ * account and the visits that seat the record, then the visits whose
+ * contact carries one of the person's contact values (P3-DEP-28 — a staff
+ * edit may have removed the person's seat and kept their contact), then —
+ * knowing which visits only the person sat — those visits' notes and
+ * photos beside every other list, then the audit rows. A failed read
+ * answers its `RepositoryError`; nothing is written.
  */
 async function readFootprint(
   ports: ExportClientDataPorts,
@@ -191,17 +199,28 @@ async function readFootprint(
 ): Promise<Result<ClientFootprint, RepositoryError>> {
   const customerId = record.id;
   const userId = record.userId;
-  const [account, visits] = await Promise.all([
+  const [account, seated] = await Promise.all([
     userId === null
       ? Promise.resolve(Result.ok(null))
       : ports.loadProfile(userId),
     ports.listClientVisits(customerId, LIST_LIMIT),
   ]);
   if (!account.ok) return account;
-  if (!visits.ok) return visits;
+  if (!seated.ok) return seated;
+  const byContact = await Promise.all(
+    ClientPrivacySystem.contactValuesOf({
+      record,
+      account: account.value,
+    }).map((value) => ports.listVisitsByContact(value, LIST_LIMIT)),
+  );
+  const visits: Appointment[] = [...seated.value];
+  for (const list of byContact) {
+    if (!list.ok) return list;
+    visits.push(...list.value);
+  }
 
   const soleSubjectVisitIds: AppointmentId[] = [];
-  for (const visit of visits.value) {
+  for (const visit of seated.value) {
     if (ClientPrivacySystem.isSoleSubject(visit, customerId)) {
       soleSubjectVisitIds.push(visit.id);
     }
@@ -265,7 +284,7 @@ async function readFootprint(
   const base: ClientFootprint = {
     record,
     account: account.value,
-    visits: visits.value,
+    visits,
     notes: notes.value,
     photos: [...photosOfClient.value, ...visitPhotos.value],
     couponGrants: couponGrants.value,

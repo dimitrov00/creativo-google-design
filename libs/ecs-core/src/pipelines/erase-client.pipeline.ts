@@ -26,7 +26,6 @@ import {
 import {
   type Appointment,
   type AppointmentNote,
-  type AppointmentPhoto,
   Collections,
   type Customer,
   type ImpersonationSession,
@@ -78,19 +77,26 @@ import type { ExportClientDataCommand } from './export-client-data.pipeline';
  *    stored roles or Auth claims → `PRIVACY_ERASURE_STAFF_ACCOUNT`.
  * 2. **Footprint**, outside any transaction, every list at the cap + 1 —
  *    past it `PRIVACY_ERASURE_TOO_LARGE`, before any write; the census
- *    BEFORE. While the record is `NONE`, the sign-in challenges stored under
- *    its contact values are listed too.
- * 3. **OTP sweep** (record `NONE` only) — the challenges removed, before the
- *    stamp clears the values they are found by.
+ *    BEFORE. While the record is `NONE`, the visits whose contact carries
+ *    one of the person's contact values (P3-DEP-28) and the sign-in
+ *    challenges stored under them are listed too.
+ * 3. **Sweeps** (record `NONE` only), before the stamp clears the values
+ *    they are found by: the challenges removed; then the contacts
+ *    `ClientErasureSystem.contactSweepWrites` clears (a visit that no longer
+ *    seats the person but carries their contact) in chunks of
+ *    `ERASURE_CHUNK_SIZE`, each re-read and re-decided in its transaction,
+ *    the budget looked at between them (always the first) — a spent budget
+ *    answers "not done" BEFORE the stamp, so the next call finds the rest.
  * 4. **Stamp** — ONE commit, the record and the account read in it:
  *    `ClientErasureSystem.stampWrites` (empty unless `NONE`). From here every
  *    writer refuses the person.
  * 5. **Units**, each its own commit, the budget looked at between them
- *    (always the first): the visits whose patch is non-empty on the outside
- *    read, in chunks of `ERASURE_CHUNK_SIZE`, each re-read and re-decided in
- *    its transaction; the photos (the `SHOT` objects deleted FIRST, the
- *    documents only once every object of the chunk is gone); the account's
- *    loose documents. A spent budget answers "not done" with the residue.
+ *    (and the sweep's chunks): the visits whose patch is non-empty on the
+ *    outside read, in chunks of `ERASURE_CHUNK_SIZE`, each re-read and
+ *    re-decided in its transaction; the photos (the `SHOT` objects deleted
+ *    and the `LIBRARY` objects' `clientLabel` cleared FIRST, the documents
+ *    only once every object of the chunk is done); the account's loose
+ *    documents. A spent budget answers "not done" with the residue.
  * 6. **Account and avatar** (linked only, idempotent): the `avatars/<uid>/`
  *    prefix deleted, then the Auth user (a failure answers its error).
  * 7. **Residue** — the footprint read again, the census AFTER. `ERASING`
@@ -222,10 +228,12 @@ async function admit(
 
 /**
  * Step 2 (and step 7's re-read) — the person's footprint, outside any
- * transaction, every list at the cap + 1: the visits, then the notes of
- * every visit and the photos (naming the record, and those of the visits
- * only the person sat), the account's loose documents (linked only) and the
- * journal's size. Then the census.
+ * transaction, every list at the cap + 1: the visits that seat the record
+ * and, while it is `NONE`, those whose contact carries one of its contact
+ * values (P3-DEP-28; the union refused past the cap too), then the notes of
+ * every visit that seats it and the photos (naming the record, and those of
+ * the visits only the person sat), the account's loose documents (linked
+ * only) and the journal's size. Then the census.
  */
 async function readFootprint(
   ports: PreviewClientErasurePorts,
@@ -233,11 +241,28 @@ async function readFootprint(
   userId: UserId | null,
 ): Promise<Result<Read, RepositoryError | PrivacyError>> {
   const customerId = person.record.id;
-  const visits = capped(await ports.listClientVisits(customerId, LIST_LIMIT));
+  const seated = capped(await ports.listClientVisits(customerId, LIST_LIMIT));
+  if (!seated.ok) return seated;
+  const byContact: Appointment[] = [];
+  if (person.record.erasureStatus === ErasureStatus.None) {
+    const listed = await Promise.all(
+      ClientPrivacySystem.contactValuesOf(person).map((value) =>
+        ports.listVisitsByContact(value, LIST_LIMIT),
+      ),
+    );
+    for (const list of listed) {
+      const checked = capped(list);
+      if (!checked.ok) return checked;
+      byContact.push(...checked.value);
+    }
+  }
+  const visits = capped(
+    Result.ok(ClientPrivacySystem.distinct([...seated.value, ...byContact])),
+  );
   if (!visits.ok) return visits;
   const visitIds: AppointmentId[] = [];
   const soleSubjectVisitIds = new Set<AppointmentId>();
-  for (const visit of visits.value) {
+  for (const visit of seated.value) {
     visitIds.push(visit.id);
     if (ClientPrivacySystem.isSoleSubject(visit, customerId)) {
       soleSubjectVisitIds.add(visit.id);
@@ -392,7 +417,7 @@ export const eraseClient =
     let otps: readonly Otp[] = [];
     if (record.erasureStatus === ErasureStatus.None) {
       const listed = await Promise.all(
-        ClientErasureSystem.destinationsOf(person).map((destination) =>
+        ClientPrivacySystem.contactValuesOf(person).map((destination) =>
           ports.listOtpsByDestination(destination, LIST_LIMIT),
         ),
       );
@@ -406,7 +431,9 @@ export const eraseClient =
     }
     const nowUtcMs: UtcEpochMs = ports.nowUtcMs();
 
-    // 3. The OTP sweep, before the stamp clears the values they are found by.
+    // 3. The sweeps, before the stamp clears the values they are found by:
+    //    the challenges, then the contacts of the visits only those values
+    //    find (the budget looked at between chunks — spent, nothing stamped).
     for (const chunk of chunksOf(
       ClientErasureSystem.otpWrites(otps),
       ERASURE_CHUNK_SIZE,
@@ -418,10 +445,41 @@ export const eraseClient =
       );
       if (!swept.ok) return swept;
     }
+    let handled = 0;
+    let spent = false;
+    if (record.erasureStatus === ErasureStatus.None) {
+      const contacts: Appointment[] = [];
+      for (const visit of read.value.footprint.visits) {
+        if (
+          ClientErasureSystem.contactSweepWrites(
+            visit,
+            person,
+            operationId,
+            ports.walkInHash,
+          ).length > 0
+        ) {
+          contacts.push(visit);
+        }
+      }
+      for (const chunk of chunksOf(contacts, ERASURE_CHUNK_SIZE)) {
+        if (!WorkBudgetSystem.takesChunk(handled, () => budget.spent())) {
+          spent = true;
+          break;
+        }
+        const swept = await commitContactSweep(
+          ports,
+          chunk,
+          person,
+          operationId,
+        );
+        if (!swept.ok) return swept;
+        handled++;
+      }
+    }
 
     // 4. The stamp: the record and the account cleared, the STARTED row.
     let erasureStatus: ErasureStatus = record.erasureStatus;
-    if (record.erasureStatus === ErasureStatus.None) {
+    if (!spent && record.erasureStatus === ErasureStatus.None) {
       const stamped = await ports.commit(
         (tx) => readPerson(tx, record.id, userId),
         (
@@ -456,10 +514,8 @@ export const eraseClient =
     }
 
     // 5. The units — only what is dirty on the outside read, the budget
-    //    looked at between them (always the first).
-    const units = unitsOf(ports, read.value, operationId);
-    let handled = 0;
-    let spent = false;
+    //    looked at between them and the sweep's chunks (always the first).
+    const units = spent ? [] : unitsOf(ports, read.value, operationId);
     let leftWork = false;
     for (const unit of units) {
       if (!WorkBudgetSystem.takesChunk(handled, () => budget.spent())) {
@@ -671,21 +727,16 @@ function unitsOf(
     });
   }
 
-  // The photos: every SHOT object of a chunk deleted FIRST; the documents
-  // only once all of them are gone (a failure keeps the paths for a resume).
+  // The photos: every SHOT object of a chunk deleted and every LIBRARY
+  // object's label cleared FIRST; the documents only once all of them are
+  // done (a failure keeps the paths for a resume).
   const photos = ClientErasureSystem.photoPlan(
     footprint.photos,
     soleSubjectVisitIds,
     person,
   );
   if (photos.writes.length > 0) {
-    const listed: AppointmentPhoto[] = [];
-    const seen = new Set<string>();
-    for (const photo of footprint.photos) {
-      if (seen.has(photo.id)) continue;
-      seen.add(photo.id);
-      listed.push(photo);
-    }
+    const listed = ClientPrivacySystem.distinct(footprint.photos);
     for (const chunk of chunksOf(listed, ERASURE_CHUNK_SIZE)) {
       const plan = ClientErasureSystem.photoPlan(
         chunk,
@@ -694,12 +745,16 @@ function unitsOf(
       );
       if (plan.writes.length === 0) continue;
       units.push(async () => {
-        let objectsGone = true;
+        let objectsDone = true;
         for (const path of plan.objectPaths) {
           const deleted = await ports.deleteStoredObject(path);
-          if (!deleted.ok) objectsGone = false;
+          if (!deleted.ok) objectsDone = false;
         }
-        if (!objectsGone) return Result.ok(false);
+        for (const path of plan.labelPaths) {
+          const cleared = await ports.clearStoredLabel(path);
+          if (!cleared.ok) objectsDone = false;
+        }
+        if (!objectsDone) return Result.ok(false);
         const committed = await ports.commit(
           async () => null,
           (): Result<{ readonly writes: readonly WriteOp[] }, never> =>
@@ -769,6 +824,41 @@ function unitsOf(
     );
   }
   return units;
+}
+
+/**
+ * One chunk of the contact sweep (step 3): its visits read in the
+ * transaction, each one's contact re-decided on what is stored NOW against
+ * the person read before the stamp (a visit edited meanwhile plans what it
+ * holds; one gone plans nothing).
+ */
+async function commitContactSweep(
+  ports: EraseClientPorts,
+  chunk: readonly Appointment[],
+  person: ClientPerson,
+  operationId: OperationId,
+): Promise<Result<true, RepositoryError>> {
+  const paths: string[][] = [];
+  for (const visit of chunk) paths.push([Collections.Appointments, visit.id]);
+  const committed = await ports.commit(
+    (tx) => tx.getAll<Appointment>(paths),
+    (docs): Result<{ readonly writes: readonly WriteOp[] }, never> => {
+      const writes: WriteOp[] = [];
+      for (const fresh of docs) {
+        if (fresh === null) continue;
+        writes.push(
+          ...ClientErasureSystem.contactSweepWrites(
+            fresh,
+            person,
+            operationId,
+            ports.walkInHash,
+          ),
+        );
+      }
+      return Result.ok({ writes });
+    },
+  );
+  return committed.ok ? Result.ok(true) : committed;
 }
 
 /** One chunk of marks: its documents read in the transaction, the marks decided on what is still there. */
