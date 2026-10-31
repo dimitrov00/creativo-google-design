@@ -2849,6 +2849,7 @@ gates keep their reference counts.
 | WS-E — CI pipeline            | PE1, PE2                             | GREEN  | `825b6e9`                         | §8.E                                                                                                                                                                             |
 | Review round 1                | fixer                                | GREEN  | `d2c85b7`                         | §8.R1                                                                                                                                                                            |
 | Review round 2 + FULL gate    | fixer                                | GREEN  | `ff69759`                         | §8.R2 + final gate — all green; `e2e:web` 67/68, the red a listed load flake (`client-card-harness.spec.ts:17`), 27/27 solo; the committed runbook runner equal to the extractor |
+| Owner review — no-op mappers  | sweep A + law fixes B                | GREEN  | `968a97e`, `ac23b1d`              | §8.R3 — every journey green on each                                                                                                                                              |
 
 ### 8.A C_A — WS-A seed clock (2026-10-27)
 
@@ -3267,3 +3268,57 @@ round); its solo `--repeat-each=3` re-run judges it (not run by the
 records pass). The late-shop-time proof was not repeated on this tree:
 §8.A's run on `987e6e5` stands. Indexes 24 / 120 (57 on `auditLog`); the
 functions' 50 exports.
+
+### 8.R3 Owner review — no-op mappers and the reported law fixes (2026-10-28 → 2026-10-31)
+
+The owner, on the ready PR: _"why I see useless functions like
+`encodeExportClientDataAnswer` … doing effectively nothing, just copy —
+lying function name; check whether there are similar not following the
+Laws and our constitution; fix all those; follow DOD"_. Applied in two
+commits, behaviour byte-for-byte the same:
+
+- **Sweep A (`968a97e`).** A TypeScript-AST scanner over every production
+  `.ts` file found 260 candidates (36 copy-shaped, 224 forwarder-shaped);
+  four auditors classified each, a planner re-checked every verdict
+  against the code. Deleted: 57 identity copies (the 17 wire encoders whose
+  answer already was the wire type — a callable now answers its pipeline's
+  value, and `wiredCallable` proves at compile time that it IS
+  `CallableWire[N]['answer']`, `AnswerIsTheWire`), 136 pure forwarders (13
+  `…Refusal` wrappers of `refusalOf`, per-callable decoder copies, ~45
+  feature re-exports of ecs-core systems, companion members that only
+  renamed another tier's function, second doors to the minute brands), 8
+  lying names; six real wire projections named (`committedOf` …); three
+  Law 3 breaks (a struct stripped before a system) passed as they are.
+  Enforced by `creativo/no-identity-mapper` (error, 67 spec cases).
+  Scanner 260 → 128, every remaining row a recorded keep (Angular template
+  bridges, real projections, documented domain aliases, curried
+  factories).
+- **Law fixes B (`ac23b1d`)** — what sweep A only reported:
+  `FailureCodeSystem.codeOf` (the generic SDK-failure reader, out of
+  `TriggerAttemptSystem`); one home per duplicated helper (`store-answer.ts`,
+  `StoredFields.field`, the stored-entity helper, the wall-clock day
+  forms, `@core/testing`'s `bodyOf`); one language rule (`localeFor`,
+  `DEFAULT_LOCALE` bg, `LocalizedText.pick`); the repeat-rule edits into
+  `VisitDraftSystem`; systems take the request / slice as it is; the photo
+  VM without a rename; `IdentityCall.identifier` branded (Law 7.4); the 11
+  `X.of` slice projections → `sliceOf`; type-only aliases and defensive
+  copies gone; the seed fixtures on the README's distributive
+  `Body<X>`; a `script-tools` lint project for the loose `tools/*.mjs`.
+  Correction recorded: Law 9.3 bans `Pick`/`Omit` of PORT bundles, not
+  `Omit<Entity, 'id'>` in specs or fixtures — the fixtures moved to `Body`
+  for its per-variant strictness, and the remaining `Omit<X, 'id'>` in
+  specs and e2e support are lawful and stay.
+- **Left as decided:** the unchecked document casts of decision D-1
+  (`entityOf` in `firestore-catalog`, `firestore-privacy`, `triggers.wire`);
+  history citations of deleted files in docs.
+- **Gate on `ac23b1d`:** typecheck 40/40; layering 987 files / 4,453 edges;
+  sync; lint 45 projects, 0 errors (warnings 246 → 220); `run-many -t
+test` 14,639 vitest + `verify-tools` 239; `lint-rules` 422; functions
+  1,428 (−9: the deleted encoders' cases, their key-order and
+  nothing-else proofs now in 16 pipeline specs and a `JSON.stringify` pin
+  in `main.spec`); ecs-core 7,136, 98.57 % statements (16,034 / 16,266);
+  builds + the functions' four dependencies + `verify:bundle`; runbook gates
+  28/22/17/6/24/27/25/20; `verify:p0` (a)–(g); `test:emulator` 135 + 361;
+  `e2e:web` 68/68; `verify:csp` 10. A container restart and an API limit
+  interrupted fix B's second wave; it was resumed from its cached plan and
+  first wave.

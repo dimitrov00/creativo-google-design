@@ -106,7 +106,7 @@ committed at a green boundary, DEP-1…DEP-24, end of §3.3).
 | **Pass E — the leftovers**                                                                                          | **done — FULL gate green, no standing reds, runbook §4.2–§4.9 PASS** — 2026-10-25 (`flips/pass-e-leftovers.md` §8): twelve wave-0 packages, E2E and the integrator (end of §3.3); every carried ENGINEERING item closed — the four other capacity triggers retry, `appointmentNotes` guarded at read, TTL and the `purgeAt` exemptions declared in `firestore.indexes.json`, the waitlist cart branded inside its door, the spec-only survivors, the avatar union, `BirthDate.toLocalDate`, `UiDayKey`, the alias specs, cached number formatters, `familyOfMedal` by a typed id, the reopen's busy merge, the programs rules shape-checked and the unused client write grants denied, the programs status words in the catalogues, words for 19 UI-reachable codes, a programs e2e journey — and the standing red baseline fixed at each root cause (typecheck `patterns`, the 6 unit reds, the 19 e2e reds); 9 DEPARTURES (DEP-1…DEP-9); `verify:p0`, `test:emulator` 65 + 301, `e2e:web` 61 passed, 0 failures (41 + the 19 former reds + the programs journey)                                                                                                                           | the "Pass E" commit                                          |
 | **Owner rulings (2026-10-26) — pass F, OR-1…OR-56, built in four waves**                                            | **done — FULL gate green, no standing reds, runbook §4.2–§4.10 PASS, `verify:csp` PASS** — 2026-10-26 (`decisions/2026-10-26-owner-rulings.md`, marked BUILT with a per-ruling ledger; end of §3.3): the owner delegated every open decision; 56 rulings close every owner question of §3.3, §6 and the plans' open-question sections; 39 DEPARTURES (DEP-F1…DEP-F38, DEP-F10b — a no-show gives back the grant and the voucher draw, the orchestrator's override of OR-13 — and DEP-F39, the integrator's month-only upcoming tile); the live gaps built at once — coupon grants burned at save (OR-13), the walk-in client record (OR-26), the notification inbox (OR-19), the hash CSP and security headers with `verify:csp` (OR-29–OR-31), the fail-closed production preflight as predeploy (OR-35), the client issue sink (OR-34), the required read guard (OR-33); four waves of disjoint packages and one integrator round; the six baselines the rulings change regenerated after review (OR-51 voice, OR-56 tile and rail)                                                                                                                                                        | the per-package "Pass F" commits                             |
 | **Audit hardening (Phases 0–2) — every write provable, every report traceable**                                     | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green (§4 "Reference numbers on the audit-hardening tree")** — 2026-10-26 – 2026-10-27 (`flips/audit-hardening.md`, ledger §8; branch `audit-hardening` and its PR; end of §3.3): the OTP sender gated to the emulator, a deployed sign-in refused until a transactional sender lands (P8, fail-closed); an operation id on every mutating callable; the booking verbs' audit rows in the act's own transaction, keyed by that id, with typed before/after deltas; impersonation, `roles` / `accountStatus` and 13 governed collections audited by one document-change handler, forged note and photo authors and stale stamps refused; one outcome line per callable, `writeOperationId`, a reference line under three failure surfaces, `LogEvent` everywhere; transport failures in the OR-34 sink; five `auditLog` timelines and `AuditReadPorts`; a trigger dead letter, `tools/ops/` scripts (nothing applied) and preflight P9 (INFO); RU-1…RU-41, L1–L6, DEP-1…DEP-26 and DEP-10a (DEP-8 withdrawn); two adversarial review rounds (11 findings confirmed and fixed, 10 refuted) | `8f3501d` (plan), `1f027ee` … `d15f193` (§3.3)               |
-| **Audit hardening (Phase 3) — seed clock, sign-in rows, the GDPR export and erasure, CI**                           | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green — its one e2e red a listed load flake, 27/27 alone (§4 "Reference numbers on the Phase 3 tree")** — 2026-10-28 (`flips/audit-hardening-phase-3.md`, ledger §8; branch `claude/adoring-pascal-o0miro`, PR #5; end of §3.3): (A) one injectable seed instant (`--now` / `SEED_NOW` / `E2E_NOW`), `verify:p0` (a) at one instant, the glance and the month navigation on a pinned browser clock — the time-of-day flake gone; (B) sign-in leaves audit rows inside its commits (`IDENTITY_OTP_*`, `IDENTITY_SESSION_ISSUED`, `IDENTITY_REGISTRATION_COMPLETED`); (C) the admin-only `exportClientData`, one versioned bundle per person; (D) the erasure — `previewClientErasure` / `eraseClient` pseudonymize the person and keep the records; (E) CI runs seven jobs, the runbook gates have a committed runner; P3-RU-1…37 (P3-RU-37 the owner's delegation), P3-L-1…23, P3-DEP-1…35 (P3-DEP-27 withdrawn); two adversarial review rounds (12 findings confirmed, 4 decided)                                                                                                       | `987e6e5` … `d2c85b7`, `ff69759` (§3.3)                      |
+| **Audit hardening (Phase 3) — seed clock, sign-in rows, the GDPR export and erasure, CI**                           | **done — one commit per workstream, each at a green boundary; the FULL gate after the review rounds green — its one e2e red a listed load flake, 27/27 alone (§4 "Reference numbers on the Phase 3 tree")** — 2026-10-28 (`flips/audit-hardening-phase-3.md`, ledger §8; branch `claude/adoring-pascal-o0miro`, PR #5; end of §3.3): (A) one injectable seed instant (`--now` / `SEED_NOW` / `E2E_NOW`), `verify:p0` (a) at one instant, the glance and the month navigation on a pinned browser clock — the time-of-day flake gone; (B) sign-in leaves audit rows inside its commits (`IDENTITY_OTP_*`, `IDENTITY_SESSION_ISSUED`, `IDENTITY_REGISTRATION_COMPLETED`); (C) the admin-only `exportClientData`, one versioned bundle per person; (D) the erasure — `previewClientErasure` / `eraseClient` pseudonymize the person and keep the records; (E) CI runs seven jobs, the runbook gates have a committed runner; P3-RU-1…37 (P3-RU-37 the owner's delegation), P3-L-1…23, P3-DEP-1…35 (P3-DEP-27 withdrawn); two adversarial review rounds (12 findings confirmed, 4 decided)                                                                                                       | `987e6e5` … `ff69759`, `968a97e`, `ac23b1d` (§3.3)           |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it with no standing reds
@@ -2969,6 +2969,26 @@ STARTED census is the census when the stamp lands (recorded and pinned,
 and `ERASED` was certified (MAJOR, P3-DEP-34). The FULL gate after both
 rounds is §4's Phase 3 block.
 
+**Owner review — no mapper that does nothing (`968a97e`, `ac23b1d`, plan
+§8.R3).** The owner, on the ready PR: _"useless functions like
+`encodeExportClientDataAnswer` … just copy — lying function name; fix all
+those; follow DOD"_. A repo-wide scan (260 candidates, each judged against
+the code) deleted 57 identity copies — every wire encoder whose answer
+already was the wire type: a callable answers its pipeline's value and
+`wiredCallable` proves the answer IS `CallableWire[N]['answer']`
+(`AnswerIsTheWire`) — 136 pure forwarders (the `…Refusal` wrappers of
+`refusalOf`, per-callable decoder copies, feature re-exports of ecs-core
+systems, companion members that only renamed another tier's function)
+and 8 lying names; `creativo/no-identity-mapper` (error) keeps them out.
+The reported law fixes followed: `FailureCodeSystem.codeOf`, one home per
+duplicated helper, one language rule (`localeFor`, `LocalizedText.pick`),
+the repeat-rule edits in `VisitDraftSystem`, systems taking the request
+or slice as it is, `IdentityCall.identifier` branded, the slice
+projections spelled `sliceOf`, the seed fixtures on `Body<X>`, a lint
+project for the loose `tools/*.mjs`. Behaviour unchanged; every journey
+green on both commits (§4's Phase 3 block, its "After the owner-review
+sweep" line).
+
 **Owner flags** (plan §7, copied into the PR — none blocks anything; each
 is built on the recommended, reversible default, or proposed and not
 built):
@@ -3257,6 +3277,15 @@ a solo `--repeat-each=3` run of the file). The committed runbook runner
 (`pnpm nx run verify-tools:runbook-gates`) on this tree: the same eight
 counts, 0 FAIL. The late-shop-time proof ran on
 `987e6e5` (end of §3.3), not on this tree.
+
+**After the owner-review sweep (`968a97e`, `ac23b1d`, 2026-10-31 — plan
+§8.R3)**, the same gate: layering **987 files and 4,453 import edges**;
+lint 45 projects, 0 errors (**220 warnings**); `run-many -t test`
+**14,639 vitest** + `verify-tools` 239; `lint-rules` **422** (the new
+`creativo/no-identity-mapper`, 67 cases); functions **1,428** (the
+deleted wire encoders' cases moved into the pipeline specs); ecs-core
+**7,136 tests, 98.57 % statements** (16,034/16,266); runbook, `verify:p0`
+(a)–(g), `test:emulator` 135 + 361, **`e2e:web` 68/68**, `verify:csp` 10.
 
 **Reference numbers on the audit-hardening tree (2026-10-27, the FULL gate
 after the review rounds — `flips/audit-hardening.md` §6.3 "Final", §8)** — a
